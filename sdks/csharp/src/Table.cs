@@ -47,29 +47,41 @@ namespace SpacetimeDB
         public abstract class UniqueIndexBase<Column> : IndexBase<Column>
             where Column : IEquatable<Column>
         {
-            private readonly Dictionary<Column, Row> Cache = new();
+            private readonly Dictionary<Column, Row> cache = new();
 
             public UniqueIndexBase(RemoteTableHandle<EventContext, Row> table)
             {
-                table.OnInternalInsert += row => Cache.Add(GetKey(row), row);
-                table.OnInternalDelete += row => Cache.Remove(GetKey(row));
+                table.OnInternalInsert += row => cache.Add(GetKey(row), row);
+                table.OnInternalDelete += row => cache.Remove(GetKey(row));
             }
 
-            public Row? Find(Column value) => Cache.TryGetValue(value, out var row) ? row : null;
+            public Row? Find(Column value) => cache.TryGetValue(value, out var row) ? row : null;
         }
 
         public abstract class BTreeIndexBase<Column> : IndexBase<Column>
             where Column : IComparable<Column>
         {
-            private readonly RemoteTableHandle<EventContext, Row> table;
+            // TODO: use SortedList when implementing actual BTree filters with range queries.
+            private readonly Dictionary<Column, List<Row>> cache = new();
 
             public BTreeIndexBase(RemoteTableHandle<EventContext, Row> table)
             {
-                this.table = table;
+                table.OnInternalInsert += row =>
+                {
+                    var key = GetKey(row);
+                    if (!cache.TryGetValue(key, out var rows))
+                    {
+                        rows = new();
+                        cache.Add(key, rows);
+                    }
+                    rows.Add(row);
+                };
+
+                table.OnInternalDelete += row => cache[GetKey(row)].Remove(row);
             }
 
             public IEnumerable<Row> Filter(Column value) =>
-                table.Query(row => GetKey(row).Equals(value));
+                cache.TryGetValue(value, out var rows) ? rows : Enumerable.Empty<Row>();
         }
 
         string? name;
