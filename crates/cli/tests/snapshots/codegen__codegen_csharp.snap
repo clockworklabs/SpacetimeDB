@@ -785,49 +785,31 @@ namespace SpacetimeDB
     {
         public sealed class LoggedOutPlayerHandle : RemoteTableHandle<EventContext, Player>
         {
-            public override void InternalInvokeValueInserted(Player row)
+            public sealed class PlayerIdUniqueIndex : UniqueIndexBase<ulong>
             {
-                Identity.Cache[row.Identity] = row;
-                PlayerId.Cache[row.PlayerId] = row;
+                protected override ulong GetKey(Player row) => row.PlayerId;
+
+                public PlayerIdUniqueIndex(LoggedOutPlayerHandle table) : base(table) { }
             }
 
-            public override void InternalInvokeValueDeleted(Player row)
+            public readonly PlayerIdUniqueIndex PlayerId;
+
+            public sealed class IdentityUniqueIndex : UniqueIndexBase<SpacetimeDB.Identity>
             {
-                Identity.Cache.Remove(row.Identity);
-                PlayerId.Cache.Remove(row.PlayerId);
+                protected override SpacetimeDB.Identity GetKey(Player row) => row.Identity;
+
+                public IdentityUniqueIndex(LoggedOutPlayerHandle table) : base(table) { }
             }
 
-            public sealed class IdentityUniqueIndex
-            {
-                internal readonly Dictionary<SpacetimeDB.Identity, Player> Cache = new(16);
-
-                public Player? Find(SpacetimeDB.Identity value)
-                {
-                    Cache.TryGetValue(value, out var r);
-                    return r;
-                }
-            }
-
-            public IdentityUniqueIndex Identity = new();
-
-            public sealed class PlayerIdUniqueIndex
-            {
-                internal readonly Dictionary<ulong, Player> Cache = new(16);
-
-                public Player? Find(ulong value)
-                {
-                    Cache.TryGetValue(value, out var r);
-                    return r;
-                }
-            }
-
-            public PlayerIdUniqueIndex PlayerId = new();
+            public readonly IdentityUniqueIndex Identity;
 
             internal LoggedOutPlayerHandle()
             {
+                PlayerId = new(this);
+                Identity = new(this);
             }
 
-            public override object GetPrimaryKey(Player row) => row.Identity;
+            protected override object GetPrimaryKey(Player row) => row.Identity;
         }
 
         public readonly LoggedOutPlayerHandle LoggedOutPlayer = new();
@@ -854,49 +836,31 @@ namespace SpacetimeDB
     {
         public sealed class PkMultiIdentityHandle : RemoteTableHandle<EventContext, PkMultiIdentity>
         {
-            public override void InternalInvokeValueInserted(PkMultiIdentity row)
+            public sealed class IdUniqueIndex : UniqueIndexBase<uint>
             {
-                Id.Cache[row.Id] = row;
-                Other.Cache[row.Other] = row;
+                protected override uint GetKey(PkMultiIdentity row) => row.Id;
+
+                public IdUniqueIndex(PkMultiIdentityHandle table) : base(table) { }
             }
 
-            public override void InternalInvokeValueDeleted(PkMultiIdentity row)
+            public readonly IdUniqueIndex Id;
+
+            public sealed class OtherUniqueIndex : UniqueIndexBase<uint>
             {
-                Id.Cache.Remove(row.Id);
-                Other.Cache.Remove(row.Other);
+                protected override uint GetKey(PkMultiIdentity row) => row.Other;
+
+                public OtherUniqueIndex(PkMultiIdentityHandle table) : base(table) { }
             }
 
-            public sealed class IdUniqueIndex
-            {
-                internal readonly Dictionary<uint, PkMultiIdentity> Cache = new(16);
-
-                public PkMultiIdentity? Find(uint value)
-                {
-                    Cache.TryGetValue(value, out var r);
-                    return r;
-                }
-            }
-
-            public IdUniqueIndex Id = new();
-
-            public sealed class OtherUniqueIndex
-            {
-                internal readonly Dictionary<uint, PkMultiIdentity> Cache = new(16);
-
-                public PkMultiIdentity? Find(uint value)
-                {
-                    Cache.TryGetValue(value, out var r);
-                    return r;
-                }
-            }
-
-            public OtherUniqueIndex Other = new();
+            public readonly OtherUniqueIndex Other;
 
             internal PkMultiIdentityHandle()
             {
+                Id = new(this);
+                Other = new(this);
             }
 
-            public override object GetPrimaryKey(PkMultiIdentity row) => row.Id;
+            protected override object GetPrimaryKey(PkMultiIdentity row) => row.Id;
         }
 
         public readonly PkMultiIdentityHandle PkMultiIdentity = new();
@@ -923,49 +887,31 @@ namespace SpacetimeDB
     {
         public sealed class PlayerHandle : RemoteTableHandle<EventContext, Player>
         {
-            public override void InternalInvokeValueInserted(Player row)
+            public sealed class PlayerIdUniqueIndex : UniqueIndexBase<ulong>
             {
-                Identity.Cache[row.Identity] = row;
-                PlayerId.Cache[row.PlayerId] = row;
+                protected override ulong GetKey(Player row) => row.PlayerId;
+
+                public PlayerIdUniqueIndex(PlayerHandle table) : base(table) { }
             }
 
-            public override void InternalInvokeValueDeleted(Player row)
+            public readonly PlayerIdUniqueIndex PlayerId;
+
+            public sealed class IdentityUniqueIndex : UniqueIndexBase<SpacetimeDB.Identity>
             {
-                Identity.Cache.Remove(row.Identity);
-                PlayerId.Cache.Remove(row.PlayerId);
+                protected override SpacetimeDB.Identity GetKey(Player row) => row.Identity;
+
+                public IdentityUniqueIndex(PlayerHandle table) : base(table) { }
             }
 
-            public sealed class IdentityUniqueIndex
-            {
-                internal readonly Dictionary<SpacetimeDB.Identity, Player> Cache = new(16);
-
-                public Player? Find(SpacetimeDB.Identity value)
-                {
-                    Cache.TryGetValue(value, out var r);
-                    return r;
-                }
-            }
-
-            public IdentityUniqueIndex Identity = new();
-
-            public sealed class PlayerIdUniqueIndex
-            {
-                internal readonly Dictionary<ulong, Player> Cache = new(16);
-
-                public Player? Find(ulong value)
-                {
-                    Cache.TryGetValue(value, out var r);
-                    return r;
-                }
-            }
-
-            public PlayerIdUniqueIndex PlayerId = new();
+            public readonly IdentityUniqueIndex Identity;
 
             internal PlayerHandle()
             {
+                PlayerId = new(this);
+                Identity = new(this);
             }
 
-            public override object GetPrimaryKey(Player row) => row.Identity;
+            protected override object GetPrimaryKey(Player row) => row.Identity;
         }
 
         public readonly PlayerHandle Player = new();
@@ -1050,34 +996,21 @@ namespace SpacetimeDB
     {
         public sealed class RepeatingTestArgHandle : RemoteTableHandle<EventContext, RepeatingTestArg>
         {
-            public override void InternalInvokeValueInserted(RepeatingTestArg row)
+            public sealed class ScheduledIdUniqueIndex : UniqueIndexBase<ulong>
             {
-                ScheduledId.Cache[row.ScheduledId] = row;
+                protected override ulong GetKey(RepeatingTestArg row) => row.ScheduledId;
+
+                public ScheduledIdUniqueIndex(RepeatingTestArgHandle table) : base(table) { }
             }
 
-            public override void InternalInvokeValueDeleted(RepeatingTestArg row)
-            {
-                ScheduledId.Cache.Remove(row.ScheduledId);
-            }
-
-            public sealed class ScheduledIdUniqueIndex
-            {
-                internal readonly Dictionary<ulong, RepeatingTestArg> Cache = new(16);
-
-                public RepeatingTestArg? Find(ulong value)
-                {
-                    Cache.TryGetValue(value, out var r);
-                    return r;
-                }
-            }
-
-            public ScheduledIdUniqueIndex ScheduledId = new();
+            public readonly ScheduledIdUniqueIndex ScheduledId;
 
             internal RepeatingTestArgHandle()
             {
+                ScheduledId = new(this);
             }
 
-            public override object GetPrimaryKey(RepeatingTestArg row) => row.ScheduledId;
+            protected override object GetPrimaryKey(RepeatingTestArg row) => row.ScheduledId;
         }
 
         public readonly RepeatingTestArgHandle RepeatingTestArg = new();
@@ -1104,15 +1037,14 @@ namespace SpacetimeDB
     {
         public sealed class TestAHandle : RemoteTableHandle<EventContext, TestA>
         {
-            public sealed class FooIndex
+            public sealed class FooIndex : BTreeIndexBase<uint>
             {
-                TestAHandle Handle;
-                internal FooIndex(TestAHandle handle) => Handle = handle;
-                public IEnumerable<TestA> Filter(uint value) =>
-                    Handle.Query(x => x.X == value);
+                protected override uint GetKey(TestA row) => row.X;
+
+                public FooIndex(TestAHandle table) : base(table) { }
             }
 
-            public FooIndex Foo { get; init; }
+            public readonly FooIndex Foo;
 
             internal TestAHandle()
             {
@@ -1173,45 +1105,31 @@ namespace SpacetimeDB
     {
         public sealed class TestEHandle : RemoteTableHandle<EventContext, TestE>
         {
-            public override void InternalInvokeValueInserted(TestE row)
+            public sealed class IdUniqueIndex : UniqueIndexBase<ulong>
             {
-                Id.Cache[row.Id] = row;
+                protected override ulong GetKey(TestE row) => row.Id;
+
+                public IdUniqueIndex(TestEHandle table) : base(table) { }
             }
 
-            public override void InternalInvokeValueDeleted(TestE row)
+            public readonly IdUniqueIndex Id;
+
+            public sealed class NameIndex : BTreeIndexBase<string>
             {
-                Id.Cache.Remove(row.Id);
+                protected override string GetKey(TestE row) => row.Name;
+
+                public NameIndex(TestEHandle table) : base(table) { }
             }
 
-            public sealed class IdUniqueIndex
-            {
-                internal readonly Dictionary<ulong, TestE> Cache = new(16);
-
-                public TestE? Find(ulong value)
-                {
-                    Cache.TryGetValue(value, out var r);
-                    return r;
-                }
-            }
-
-            public IdUniqueIndex Id = new();
-
-            public sealed class NameIndex
-            {
-                TestEHandle Handle;
-                internal NameIndex(TestEHandle handle) => Handle = handle;
-                public IEnumerable<TestE> Filter(string value) =>
-                    Handle.Query(x => x.Name == value);
-            }
-
-            public NameIndex Name { get; init; }
+            public readonly NameIndex Name;
 
             internal TestEHandle()
             {
+                Id = new(this);
                 Name = new(this);
             }
 
-            public override object GetPrimaryKey(TestE row) => row.Id;
+            protected override object GetPrimaryKey(TestE row) => row.Id;
         }
 
         public readonly TestEHandle TestE = new();

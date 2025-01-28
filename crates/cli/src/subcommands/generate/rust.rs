@@ -235,7 +235,7 @@ pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::Remote
 ",
             |out| {
                 writeln!(out, "let _table = client_cache.get_or_make_table::<{row_type}>({table_name:?});");
-                for (_unique_field_pos, unique_field_ident, unique_field_type_use) in iter_unique_cols(&schema, product_def) {
+                for (unique_field_ident, unique_field_type_use) in iter_unique_cols(&schema, product_def) {
                     let unique_field_name = unique_field_ident.deref().to_case(Case::Snake);
                     let unique_field_type = type_name(module, unique_field_type_use);
                     writeln!(
@@ -300,7 +300,7 @@ pub(super) fn parse_table_update(
             );
         }
 
-        for (_unique_field_pos, unique_field_ident, unique_field_type_use) in iter_unique_cols(&schema, product_def) {
+        for (unique_field_ident, unique_field_type_use) in iter_unique_cols(&schema, product_def) {
             let unique_field_name = unique_field_ident.deref().to_case(Case::Snake);
             let unique_field_name_pascalcase = unique_field_name.to_case(Case::Pascal);
 

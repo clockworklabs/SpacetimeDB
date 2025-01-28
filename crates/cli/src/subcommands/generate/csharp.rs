@@ -1,6 +1,6 @@
 // Note: the generated code depends on APIs and interfaces from crates/bindings-csharp/BSATN.Runtime.
 use super::util::fmt_fn;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 use std::fmt::{self, Write};
 use std::ops::Deref;
@@ -8,8 +8,7 @@ use std::ops::Deref;
 use super::code_indenter::CodeIndenter;
 use super::Lang;
 use crate::generate::util::{
-    collect_case, is_reducer_invokable, iter_reducers, iter_tables, iter_unique_cols,
-    print_auto_generated_file_comment, type_ref_name,
+    collect_case, is_reducer_invokable, iter_reducers, iter_tables, print_auto_generated_file_comment, type_ref_name,
 };
 use crate::indent_scope;
 use convert_case::{Case, Casing};
@@ -89,59 +88,6 @@ impl Lang for Csharp {
                 let product_type = module.typespace_for_generate()[table.product_type_ref]
                     .as_product()
                     .unwrap();
-                let unique_indexes = iter_unique_cols(&schema, product_type)
-                    .map(|(col_id, name, ty)| (col_id, (name.deref().to_case(Case::Pascal), ty)))
-                    .collect::<BTreeMap<_, _>>();
-                if !unique_indexes.is_empty() {
-                    // OnInsert method for updating indexes
-                    writeln!(
-                        output,
-                        "protected override void InternalInvokeValueInserted({table_type} row)"
-                    );
-                    indented_block(output, |output| {
-                        for (field_name, _) in unique_indexes.values() {
-                            writeln!(output, "{field_name}.Cache[row.{field_name}] = row;");
-                        }
-                    });
-                    writeln!(output);
-                    // OnDelete method for updating indexes
-                    writeln!(
-                        output,
-                        "protected override void InternalInvokeValueDeleted({table_type} row)"
-                    );
-                    indented_block(output, |output| {
-                        for (field_name, _) in unique_indexes.values() {
-                            writeln!(output, "{field_name}.Cache.Remove(row.{field_name});");
-                        }
-                    });
-                    writeln!(output);
-                }
-
-                // If this is a table, we want to include functions for accessing the table data
-                // Insert the funcs for accessing this struct
-                for (csharp_field_name_pascal, field_type) in unique_indexes.values() {
-                    let csharp_field_type = ty_fmt(module, field_type, "SpacetimeDB");
-                    writeln!(output, "public sealed class {csharp_field_name_pascal}UniqueIndex");
-                    indented_block(output, |output| {
-                        writeln!(
-                            output,
-                            "internal readonly Dictionary<{csharp_field_type}, {table_type}> Cache = new(16);"
-                        );
-                        writeln!(output);
-
-                        writeln!(output, "public {table_type}? Find({csharp_field_type} value)");
-                        indented_block(output, |output| {
-                            writeln!(output, "Cache.TryGetValue(value, out var r);");
-                            writeln!(output, "return r;");
-                        });
-                    });
-                    writeln!(output);
-                    writeln!(
-                        output,
-                        "public {csharp_field_name_pascal}UniqueIndex {csharp_field_name_pascal} = new();"
-                    );
-                    writeln!(output);
-                }
 
                 let mut index_names = Vec::new();
 
@@ -158,37 +104,29 @@ impl Lang for Csharp {
                                 continue;
                             };
 
-                            if unique_indexes.contains_key(&col_pos) {
-                                // Unique indexes are handled above.
-                                continue;
-                            }
-
                             let (field_name, field_type) = &product_type.elements[col_pos.idx()];
                             let csharp_field_name_pascal = field_name.deref().to_case(Case::Pascal);
                             let csharp_index_name = accessor_name.deref().to_case(Case::Pascal);
+                            let csharp_field_type = ty_fmt(module, field_type, namespace);
 
-                            writeln!(output, "public sealed class {csharp_index_name}Index");
+                            let csharp_index_base_class_name;
+                            let mut csharp_index_class_name = csharp_index_name.clone();
+                            if schema.is_unique(&col_pos.into()) {
+                                csharp_index_class_name += "UniqueIndex";
+                                csharp_index_base_class_name = "UniqueIndexBase";
+                            } else {
+                                csharp_index_class_name += "Index";
+                                csharp_index_base_class_name = "BTreeIndexBase";
+                            }
+
+                            writeln!(output, "public sealed class {csharp_index_class_name} : {csharp_index_base_class_name}<{csharp_field_type}>");
                             indented_block(output, |output| {
-                                writeln!(output, "{csharp_table_name}Handle Handle;");
-                                writeln!(
-                                    output,
-                                    "internal {csharp_index_name}Index({csharp_table_name}Handle handle) => Handle = handle;"
-                                );
-                                writeln!(
-                                    output,
-                                    "public IEnumerable<{table_type}> Filter({csharp_field_type} value) =>",
-                                    csharp_field_type = ty_fmt(module, field_type, "SpacetimeDB"),
-                                );
-                                {
-                                    indent_scope!(output);
-                                    writeln!(output, "Handle.Query(x => x.{csharp_field_name_pascal} == value);");
-                                }
+                                writeln!(output, "protected override {csharp_field_type} GetKey({table_type} row) => row.{csharp_field_name_pascal};");
+                                writeln!(output);
+                                writeln!(output, "public {csharp_index_class_name}({csharp_table_name}Handle table) : base(table) {{ }}");
                             });
                             writeln!(output);
-                            writeln!(
-                                output,
-                                "public {csharp_index_name}Index {csharp_index_name} {{ get; init; }}"
-                            );
+                            writeln!(output, "public readonly {csharp_index_class_name} {csharp_index_name};");
                             writeln!(output);
 
                             index_names.push(csharp_index_name);
