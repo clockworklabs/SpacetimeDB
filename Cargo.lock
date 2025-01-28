@@ -4987,6 +4987,7 @@ dependencies = [
  "spacetimedb-lib",
  "spacetimedb-physical-plan",
  "spacetimedb-primitives",
+ "spacetimedb-sats",
  "spacetimedb-sql-parser",
  "spacetimedb-table",
 ]
