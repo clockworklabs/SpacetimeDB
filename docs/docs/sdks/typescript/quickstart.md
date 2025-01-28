@@ -652,7 +652,7 @@ Note that `onInsert` and `onDelete` callbacks takes two arguments: an `EventCont
 
 ## Conclusion
 
-Congratulations! You've built a simple chat app with SpacetimeDB. You can find the full source code for this app [here](https://github.com/clockworklabs/spacetimedb-typescript-sdk/tree/main/examples/quickstart)
+Congratulations! You've built a simple chat app with SpacetimeDB. You can find the full source code for the client we've created in this quickstart tutorial [here](https://github.com/clockworklabs/spacetimedb-typescript-sdk/tree/main/examples/quickstart-chat).
 
 At this point you've learned how to create a basic TypeScript client for your SpacetimeDB `quickstart-chat` module. You've learned how to connect to SpacetimeDB and call reducers to update data. You've learned how to subscribe to table data, and hook it up so that it updates reactively in a React application.
 
