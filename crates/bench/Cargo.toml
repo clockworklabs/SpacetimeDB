@@ -21,6 +21,10 @@ harness = false
 name = "subscription"
 harness = false
 
+[[bench]]
+name = "delete_table"
+harness = false
+
 [[bin]]
 name = "summarize"
 
@@ -57,11 +61,13 @@ rusqlite.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 serial_test.workspace = true
+smallvec.workspace = true
 tempdir.workspace = true
 tokio.workspace = true
 tracing-subscriber.workspace = true
 walkdir.workspace = true
 itertools.workspace = true
+foldhash = "0.1.4"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 # only try to build these on linux

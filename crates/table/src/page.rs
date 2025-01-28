@@ -39,7 +39,7 @@ use super::{
     layout::MIN_ROW_SIZE,
     var_len::{is_granule_offset_aligned, VarLenGranule, VarLenGranuleHeader, VarLenMembers, VarLenRef},
 };
-use crate::{fixed_bit_set::IterSet, static_assert_size, table::BlobNumBytes, MemoryUsage};
+use crate::{fixed_bit_set::IterSet, indexes::max_rows_in_page, static_assert_size, table::BlobNumBytes, MemoryUsage};
 use core::{mem, ops::ControlFlow};
 use spacetimedb_lib::{de::Deserialize, ser::Serialize};
 use thiserror::Error;
@@ -185,7 +185,7 @@ impl FixedHeader {
             // Points one after the last allocated fixed-length row, or `NULL` for an empty page.
             last: PageOffset::VAR_LEN_NULL,
             num_rows: 0,
-            present_rows: FixedBitSet::new(PageOffset::PAGE_END.idx().div_ceil(fixed_row_size.len())),
+            present_rows: FixedBitSet::new(max_rows_in_page(fixed_row_size)),
         }
     }
 

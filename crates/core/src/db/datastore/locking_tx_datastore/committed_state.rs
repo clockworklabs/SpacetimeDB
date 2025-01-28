@@ -1,8 +1,9 @@
 use super::{
     datastore::Result,
+    delete_table::DeleteTable,
     sequence::{Sequence, SequencesState},
     state_view::{IterByColRangeTx, StateView},
-    tx_state::{DeleteTable, IndexIdMap, RemovedIndexIdSet, TxState},
+    tx_state::{IndexIdMap, RemovedIndexIdSet, TxState},
     IterByColEqTx,
 };
 use crate::{
@@ -44,7 +45,7 @@ use spacetimedb_table::{
     table::{IndexScanIter, InsertError, RowRef, Table, TableAndIndex},
     MemoryUsage,
 };
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 /// Contains the live, in-memory snapshot of a database. This structure
@@ -547,7 +548,7 @@ impl CommittedState {
                 // holds only committed rows which should be deleted,
                 // i.e. `RowPointer`s with `SquashedOffset::COMMITTED_STATE`,
                 // so no need to check before applying the deletes.
-                for row_ptr in row_ptrs.iter().copied() {
+                for row_ptr in row_ptrs.iter() {
                     debug_assert!(row_ptr.squashed_offset().is_committed_state());
 
                     // TODO: re-write `TxData` to remove `ProductValue`s
@@ -686,7 +687,7 @@ pub struct CommittedIndexIterWithDeletedMutTx<'a> {
 }
 
 impl<'a> CommittedIndexIterWithDeletedMutTx<'a> {
-    pub(super) fn new(committed_rows: IndexScanIter<'a>, del_table: &'a BTreeSet<RowPointer>) -> Self {
+    pub(super) fn new(committed_rows: IndexScanIter<'a>, del_table: &'a DeleteTable) -> Self {
         Self {
             committed_rows,
             del_table,
@@ -699,6 +700,6 @@ impl<'a> Iterator for CommittedIndexIterWithDeletedMutTx<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         self.committed_rows
-            .find(|row_ref| !self.del_table.contains(&row_ref.pointer()))
+            .find(|row_ref| !self.del_table.contains(row_ref.pointer()))
     }
 }
