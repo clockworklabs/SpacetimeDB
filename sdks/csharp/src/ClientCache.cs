@@ -1,15 +1,10 @@
-﻿using System;
-using System.Collections;
-using System.Collections.Generic;
-using System.Linq;
-using SpacetimeDB.BSATN;
-using SpacetimeDB.Internal;
+﻿using System.Collections.Generic;
 
 namespace SpacetimeDB
 {
     // TODO: merge this into `RemoteTables`.
     // It should just provide auto-generated `GetTable` and `GetTables` methods.
-    public class ClientCache
+    public sealed class ClientCache
     {
         private readonly IDbConnection conn;
 
@@ -17,15 +12,10 @@ namespace SpacetimeDB
 
         public ClientCache(IDbConnection conn) => this.conn = conn;
 
-        public void AddTable<Row>(string name, IRemoteTableHandle table)
-            where Row : IStructuralReadWrite, new()
+        public void AddTable(IRemoteTableHandle table)
         {
-            if (!tables.TryAdd(name, table))
-            {
-                Log.Error($"Table with name already exists: {name}");
-            }
-
-            table.Initialize(name, conn);
+            tables.Add(table.Name, table);
+            table.Initialize(conn);
         }
 
         internal IRemoteTableHandle? GetTable(string name)

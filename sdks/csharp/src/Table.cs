@@ -20,6 +20,7 @@ namespace SpacetimeDB
     public interface IRemoteTableHandle
     {
         internal object? GetPrimaryKey(IStructuralReadWrite row);
+        internal string Name { get; }
 
         internal Type ClientTableType { get; }
         internal IEnumerable<KeyValuePair<byte[], IStructuralReadWrite>> IterEntries();
@@ -32,7 +33,7 @@ namespace SpacetimeDB
         internal void InvokeBeforeDelete(IEventContext context, IStructuralReadWrite row);
         internal void InvokeUpdate(IEventContext context, IStructuralReadWrite oldRow, IStructuralReadWrite newRow);
 
-        internal void Initialize(string name, IDbConnection conn);
+        internal void Initialize(IDbConnection conn);
     }
 
     public abstract class RemoteTableHandle<EventContext, Row> : IRemoteTableHandle
@@ -94,14 +95,11 @@ namespace SpacetimeDB
                 cache.TryGetValue(value, out var rows) ? rows : Enumerable.Empty<Row>();
         }
 
-        string? name;
+        protected abstract string Name { get; }
+        string IRemoteTableHandle.Name => Name;
         IDbConnection? conn;
 
-        void IRemoteTableHandle.Initialize(string name, IDbConnection conn)
-        {
-            this.name = name;
-            this.conn = conn;
-        }
+        void IRemoteTableHandle.Initialize(IDbConnection conn) => this.conn = conn;
 
         // This method needs to be overridden by autogen.
         protected virtual object? GetPrimaryKey(Row row) => null;
@@ -179,7 +177,7 @@ namespace SpacetimeDB
         protected IEnumerable<Row> Query(Func<Row, bool> filter) => Iter().Where(filter);
 
         public Task<Row[]> RemoteQuery(string query) =>
-            conn!.RemoteQuery<Row>($"SELECT {name!}.* FROM {name!} {query}");
+            conn!.RemoteQuery<Row>($"SELECT {Name}.* FROM {Name} {query}");
 
         void IRemoteTableHandle.InvokeInsert(IEventContext context, IStructuralReadWrite row) =>
             OnInsert?.Invoke((EventContext)context, (Row)row);
