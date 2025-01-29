@@ -40,6 +40,7 @@ namespace SpacetimeDB
         where Row : class, IStructuralReadWrite, new()
     {
         public abstract class IndexBase<Column>
+            where Column : IEquatable<Column>
         {
             protected abstract Column GetKey(Row row);
         }
@@ -59,9 +60,9 @@ namespace SpacetimeDB
         }
 
         public abstract class BTreeIndexBase<Column> : IndexBase<Column>
-            where Column : IComparable<Column>
+            where Column : IEquatable<Column>, IComparable<Column>
         {
-            // TODO: use SortedList when implementing actual BTree filters with range queries.
+            // TODO: change to SortedDictionary when adding support for range queries.
             private readonly Dictionary<Column, List<Row>> cache = new();
 
             public BTreeIndexBase(RemoteTableHandle<EventContext, Row> table)
@@ -77,7 +78,16 @@ namespace SpacetimeDB
                     rows.Add(row);
                 };
 
-                table.OnInternalDelete += row => cache[GetKey(row)].Remove(row);
+                table.OnInternalDelete += row =>
+                {
+                    var key = GetKey(row);
+                    var keyCache = cache[key];
+                    keyCache.Remove(row);
+                    if (keyCache.Count == 0)
+                    {
+                        cache.Remove(key);
+                    }
+                };
             }
 
             public IEnumerable<Row> Filter(Column value) =>
