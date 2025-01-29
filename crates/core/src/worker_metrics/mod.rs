@@ -85,6 +85,11 @@ metrics_group!(
         #[labels(caller_identity: Identity, module_hash: Hash, caller_address: Address, reducer_symbol: str)]
         pub wasm_instance_errors: IntCounterVec,
 
+        #[name = spacetime_worker_wasm_memory_bytes]
+        #[help = "The number of bytes of linear memory allocated by the database's WASM module instance"]
+        #[labels(database_identity: Identity)]
+        pub wasm_memory_bytes: IntGaugeVec,
+
         #[name = spacetime_active_queries]
         #[help = "The number of active subscription queries"]
         #[labels(database_identity: Identity)]

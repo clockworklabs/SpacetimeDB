@@ -227,10 +227,12 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
             used: (budget - remaining).into(),
             remaining,
         };
+        let memory_allocation = store.data().get_mem().memory.data_size(&store);
 
         module_host_actor::ExecuteResult {
             energy,
             timings,
+            memory_allocation,
             call_result,
         }
     }
