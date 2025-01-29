@@ -34,10 +34,4 @@ namespace SpacetimeDB.Types
             string IReducerArgs.ReducerName => "disconnect";
         }
     }
-
-    public sealed partial class SetReducerFlags
-    {
-        internal CallReducerFlags DisconnectFlags;
-        public void Disconnect(CallReducerFlags flags) { this.DisconnectFlags = flags; }
-    }
 }
