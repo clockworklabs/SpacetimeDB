@@ -6,7 +6,6 @@ on:
       - master
       - staging
       - dev
-      - noa/fix-master-ci
     tags:
       - 'v*'
 

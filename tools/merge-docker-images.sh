@@ -1,5 +1,5 @@
 #!/bin/bash
-set -ex
+set -e
 
 # Shorten the first argument (commit sha) to 7 chars
 SHORT_SHA=${1:0:7}

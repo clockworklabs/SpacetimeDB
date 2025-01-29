@@ -7,7 +7,6 @@ on:
     branches:
       - master
       - release/*
-      - noa/fix-master-ci
 
 jobs:
   build-cli:
