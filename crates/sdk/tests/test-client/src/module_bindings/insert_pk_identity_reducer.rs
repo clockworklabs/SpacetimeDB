@@ -39,17 +39,14 @@ pub trait insert_pk_identity {
     fn insert_pk_identity(&self, i: __sdk::Identity, data: i32) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `insert_pk_identity`.
     ///
-    /// The [`super::EventContext`] passed to the `callback`
-    /// will always have [`__sdk::Event::Reducer`] as its `event`,
-    /// but it may or may not have terminated successfully and been committed.
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::EventContext`]
+    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
     /// to determine the reducer's status.
     ///
     /// The returned [`InsertPkIdentityCallbackId`] can be passed to [`Self::remove_on_insert_pk_identity`]
     /// to cancel the callback.
     fn on_insert_pk_identity(
         &self,
-        callback: impl FnMut(&super::EventContext, &__sdk::Identity, &i32) + Send + 'static,
+        callback: impl FnMut(&super::ReducerEventContext, &__sdk::Identity, &i32) + Send + 'static,
     ) -> InsertPkIdentityCallbackId;
     /// Cancel a callback previously registered by [`Self::on_insert_pk_identity`],
     /// causing it not to run in the future.
@@ -63,17 +60,17 @@ impl insert_pk_identity for super::RemoteReducers {
     }
     fn on_insert_pk_identity(
         &self,
-        mut callback: impl FnMut(&super::EventContext, &__sdk::Identity, &i32) + Send + 'static,
+        mut callback: impl FnMut(&super::ReducerEventContext, &__sdk::Identity, &i32) + Send + 'static,
     ) -> InsertPkIdentityCallbackId {
         InsertPkIdentityCallbackId(self.imp.on_reducer(
             "insert_pk_identity",
-            Box::new(move |ctx: &super::EventContext| {
-                let super::EventContext {
+            Box::new(move |ctx: &super::ReducerEventContext| {
+                let super::ReducerEventContext {
                     event:
-                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                        __sdk::ReducerEvent {
                             reducer: super::Reducer::InsertPkIdentity { i, data },
                             ..
-                        }),
+                        },
                     ..
                 } = ctx
                 else {

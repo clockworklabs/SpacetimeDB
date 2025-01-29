@@ -37,17 +37,14 @@ pub trait insert_one_every_primitive_struct {
     fn insert_one_every_primitive_struct(&self, s: EveryPrimitiveStruct) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `insert_one_every_primitive_struct`.
     ///
-    /// The [`super::EventContext`] passed to the `callback`
-    /// will always have [`__sdk::Event::Reducer`] as its `event`,
-    /// but it may or may not have terminated successfully and been committed.
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::EventContext`]
+    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
     /// to determine the reducer's status.
     ///
     /// The returned [`InsertOneEveryPrimitiveStructCallbackId`] can be passed to [`Self::remove_on_insert_one_every_primitive_struct`]
     /// to cancel the callback.
     fn on_insert_one_every_primitive_struct(
         &self,
-        callback: impl FnMut(&super::EventContext, &EveryPrimitiveStruct) + Send + 'static,
+        callback: impl FnMut(&super::ReducerEventContext, &EveryPrimitiveStruct) + Send + 'static,
     ) -> InsertOneEveryPrimitiveStructCallbackId;
     /// Cancel a callback previously registered by [`Self::on_insert_one_every_primitive_struct`],
     /// causing it not to run in the future.
@@ -63,17 +60,17 @@ impl insert_one_every_primitive_struct for super::RemoteReducers {
     }
     fn on_insert_one_every_primitive_struct(
         &self,
-        mut callback: impl FnMut(&super::EventContext, &EveryPrimitiveStruct) + Send + 'static,
+        mut callback: impl FnMut(&super::ReducerEventContext, &EveryPrimitiveStruct) + Send + 'static,
     ) -> InsertOneEveryPrimitiveStructCallbackId {
         InsertOneEveryPrimitiveStructCallbackId(self.imp.on_reducer(
             "insert_one_every_primitive_struct",
-            Box::new(move |ctx: &super::EventContext| {
-                let super::EventContext {
+            Box::new(move |ctx: &super::ReducerEventContext| {
+                let super::ReducerEventContext {
                     event:
-                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                        __sdk::ReducerEvent {
                             reducer: super::Reducer::InsertOneEveryPrimitiveStruct { s },
                             ..
-                        }),
+                        },
                     ..
                 } = ctx
                 else {

@@ -33,17 +33,14 @@ pub trait identity_disconnected {
     fn identity_disconnected(&self) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `identity_disconnected`.
     ///
-    /// The [`super::EventContext`] passed to the `callback`
-    /// will always have [`__sdk::Event::Reducer`] as its `event`,
-    /// but it may or may not have terminated successfully and been committed.
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::EventContext`]
+    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
     /// to determine the reducer's status.
     ///
     /// The returned [`IdentityDisconnectedCallbackId`] can be passed to [`Self::remove_on_identity_disconnected`]
     /// to cancel the callback.
     fn on_identity_disconnected(
         &self,
-        callback: impl FnMut(&super::EventContext) + Send + 'static,
+        callback: impl FnMut(&super::ReducerEventContext) + Send + 'static,
     ) -> IdentityDisconnectedCallbackId;
     /// Cancel a callback previously registered by [`Self::on_identity_disconnected`],
     /// causing it not to run in the future.
@@ -57,17 +54,17 @@ impl identity_disconnected for super::RemoteReducers {
     }
     fn on_identity_disconnected(
         &self,
-        mut callback: impl FnMut(&super::EventContext) + Send + 'static,
+        mut callback: impl FnMut(&super::ReducerEventContext) + Send + 'static,
     ) -> IdentityDisconnectedCallbackId {
         IdentityDisconnectedCallbackId(self.imp.on_reducer(
             "identity_disconnected",
-            Box::new(move |ctx: &super::EventContext| {
-                let super::EventContext {
+            Box::new(move |ctx: &super::ReducerEventContext| {
+                let super::ReducerEventContext {
                     event:
-                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                        __sdk::ReducerEvent {
                             reducer: super::Reducer::IdentityDisconnected {},
                             ..
-                        }),
+                        },
                     ..
                 } = ctx
                 else {

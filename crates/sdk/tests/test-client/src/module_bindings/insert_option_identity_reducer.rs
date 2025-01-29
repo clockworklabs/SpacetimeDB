@@ -35,17 +35,14 @@ pub trait insert_option_identity {
     fn insert_option_identity(&self, i: Option<__sdk::Identity>) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `insert_option_identity`.
     ///
-    /// The [`super::EventContext`] passed to the `callback`
-    /// will always have [`__sdk::Event::Reducer`] as its `event`,
-    /// but it may or may not have terminated successfully and been committed.
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::EventContext`]
+    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
     /// to determine the reducer's status.
     ///
     /// The returned [`InsertOptionIdentityCallbackId`] can be passed to [`Self::remove_on_insert_option_identity`]
     /// to cancel the callback.
     fn on_insert_option_identity(
         &self,
-        callback: impl FnMut(&super::EventContext, &Option<__sdk::Identity>) + Send + 'static,
+        callback: impl FnMut(&super::ReducerEventContext, &Option<__sdk::Identity>) + Send + 'static,
     ) -> InsertOptionIdentityCallbackId;
     /// Cancel a callback previously registered by [`Self::on_insert_option_identity`],
     /// causing it not to run in the future.
@@ -59,17 +56,17 @@ impl insert_option_identity for super::RemoteReducers {
     }
     fn on_insert_option_identity(
         &self,
-        mut callback: impl FnMut(&super::EventContext, &Option<__sdk::Identity>) + Send + 'static,
+        mut callback: impl FnMut(&super::ReducerEventContext, &Option<__sdk::Identity>) + Send + 'static,
     ) -> InsertOptionIdentityCallbackId {
         InsertOptionIdentityCallbackId(self.imp.on_reducer(
             "insert_option_identity",
-            Box::new(move |ctx: &super::EventContext| {
-                let super::EventContext {
+            Box::new(move |ctx: &super::ReducerEventContext| {
+                let super::ReducerEventContext {
                     event:
-                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                        __sdk::ReducerEvent {
                             reducer: super::Reducer::InsertOptionIdentity { i },
                             ..
-                        }),
+                        },
                     ..
                 } = ctx
                 else {

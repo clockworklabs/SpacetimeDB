@@ -37,17 +37,14 @@ pub trait insert_primitives_as_strings {
     fn insert_primitives_as_strings(&self, s: EveryPrimitiveStruct) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `insert_primitives_as_strings`.
     ///
-    /// The [`super::EventContext`] passed to the `callback`
-    /// will always have [`__sdk::Event::Reducer`] as its `event`,
-    /// but it may or may not have terminated successfully and been committed.
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::EventContext`]
+    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
     /// to determine the reducer's status.
     ///
     /// The returned [`InsertPrimitivesAsStringsCallbackId`] can be passed to [`Self::remove_on_insert_primitives_as_strings`]
     /// to cancel the callback.
     fn on_insert_primitives_as_strings(
         &self,
-        callback: impl FnMut(&super::EventContext, &EveryPrimitiveStruct) + Send + 'static,
+        callback: impl FnMut(&super::ReducerEventContext, &EveryPrimitiveStruct) + Send + 'static,
     ) -> InsertPrimitivesAsStringsCallbackId;
     /// Cancel a callback previously registered by [`Self::on_insert_primitives_as_strings`],
     /// causing it not to run in the future.
@@ -61,17 +58,17 @@ impl insert_primitives_as_strings for super::RemoteReducers {
     }
     fn on_insert_primitives_as_strings(
         &self,
-        mut callback: impl FnMut(&super::EventContext, &EveryPrimitiveStruct) + Send + 'static,
+        mut callback: impl FnMut(&super::ReducerEventContext, &EveryPrimitiveStruct) + Send + 'static,
     ) -> InsertPrimitivesAsStringsCallbackId {
         InsertPrimitivesAsStringsCallbackId(self.imp.on_reducer(
             "insert_primitives_as_strings",
-            Box::new(move |ctx: &super::EventContext| {
-                let super::EventContext {
+            Box::new(move |ctx: &super::ReducerEventContext| {
+                let super::ReducerEventContext {
                     event:
-                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                        __sdk::ReducerEvent {
                             reducer: super::Reducer::InsertPrimitivesAsStrings { s },
                             ..
-                        }),
+                        },
                     ..
                 } = ctx
                 else {

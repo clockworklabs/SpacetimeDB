@@ -35,17 +35,14 @@ pub trait insert_one_bool {
     fn insert_one_bool(&self, b: bool) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `insert_one_bool`.
     ///
-    /// The [`super::EventContext`] passed to the `callback`
-    /// will always have [`__sdk::Event::Reducer`] as its `event`,
-    /// but it may or may not have terminated successfully and been committed.
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::EventContext`]
+    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
     /// to determine the reducer's status.
     ///
     /// The returned [`InsertOneBoolCallbackId`] can be passed to [`Self::remove_on_insert_one_bool`]
     /// to cancel the callback.
     fn on_insert_one_bool(
         &self,
-        callback: impl FnMut(&super::EventContext, &bool) + Send + 'static,
+        callback: impl FnMut(&super::ReducerEventContext, &bool) + Send + 'static,
     ) -> InsertOneBoolCallbackId;
     /// Cancel a callback previously registered by [`Self::on_insert_one_bool`],
     /// causing it not to run in the future.
@@ -58,17 +55,17 @@ impl insert_one_bool for super::RemoteReducers {
     }
     fn on_insert_one_bool(
         &self,
-        mut callback: impl FnMut(&super::EventContext, &bool) + Send + 'static,
+        mut callback: impl FnMut(&super::ReducerEventContext, &bool) + Send + 'static,
     ) -> InsertOneBoolCallbackId {
         InsertOneBoolCallbackId(self.imp.on_reducer(
             "insert_one_bool",
-            Box::new(move |ctx: &super::EventContext| {
-                let super::EventContext {
+            Box::new(move |ctx: &super::ReducerEventContext| {
+                let super::ReducerEventContext {
                     event:
-                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                        __sdk::ReducerEvent {
                             reducer: super::Reducer::InsertOneBool { b },
                             ..
-                        }),
+                        },
                     ..
                 } = ctx
                 else {

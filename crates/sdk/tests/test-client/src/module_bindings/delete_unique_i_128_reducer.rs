@@ -35,17 +35,14 @@ pub trait delete_unique_i_128 {
     fn delete_unique_i_128(&self, n: i128) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `delete_unique_i128`.
     ///
-    /// The [`super::EventContext`] passed to the `callback`
-    /// will always have [`__sdk::Event::Reducer`] as its `event`,
-    /// but it may or may not have terminated successfully and been committed.
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::EventContext`]
+    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
     /// to determine the reducer's status.
     ///
     /// The returned [`DeleteUniqueI128CallbackId`] can be passed to [`Self::remove_on_delete_unique_i_128`]
     /// to cancel the callback.
     fn on_delete_unique_i_128(
         &self,
-        callback: impl FnMut(&super::EventContext, &i128) + Send + 'static,
+        callback: impl FnMut(&super::ReducerEventContext, &i128) + Send + 'static,
     ) -> DeleteUniqueI128CallbackId;
     /// Cancel a callback previously registered by [`Self::on_delete_unique_i_128`],
     /// causing it not to run in the future.
@@ -58,17 +55,17 @@ impl delete_unique_i_128 for super::RemoteReducers {
     }
     fn on_delete_unique_i_128(
         &self,
-        mut callback: impl FnMut(&super::EventContext, &i128) + Send + 'static,
+        mut callback: impl FnMut(&super::ReducerEventContext, &i128) + Send + 'static,
     ) -> DeleteUniqueI128CallbackId {
         DeleteUniqueI128CallbackId(self.imp.on_reducer(
             "delete_unique_i128",
-            Box::new(move |ctx: &super::EventContext| {
-                let super::EventContext {
+            Box::new(move |ctx: &super::ReducerEventContext| {
+                let super::ReducerEventContext {
                     event:
-                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                        __sdk::ReducerEvent {
                             reducer: super::Reducer::DeleteUniqueI128 { n },
                             ..
-                        }),
+                        },
                     ..
                 } = ctx
                 else {

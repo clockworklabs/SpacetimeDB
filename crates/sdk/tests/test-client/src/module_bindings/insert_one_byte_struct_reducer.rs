@@ -37,17 +37,14 @@ pub trait insert_one_byte_struct {
     fn insert_one_byte_struct(&self, s: ByteStruct) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `insert_one_byte_struct`.
     ///
-    /// The [`super::EventContext`] passed to the `callback`
-    /// will always have [`__sdk::Event::Reducer`] as its `event`,
-    /// but it may or may not have terminated successfully and been committed.
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::EventContext`]
+    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
     /// to determine the reducer's status.
     ///
     /// The returned [`InsertOneByteStructCallbackId`] can be passed to [`Self::remove_on_insert_one_byte_struct`]
     /// to cancel the callback.
     fn on_insert_one_byte_struct(
         &self,
-        callback: impl FnMut(&super::EventContext, &ByteStruct) + Send + 'static,
+        callback: impl FnMut(&super::ReducerEventContext, &ByteStruct) + Send + 'static,
     ) -> InsertOneByteStructCallbackId;
     /// Cancel a callback previously registered by [`Self::on_insert_one_byte_struct`],
     /// causing it not to run in the future.
@@ -61,17 +58,17 @@ impl insert_one_byte_struct for super::RemoteReducers {
     }
     fn on_insert_one_byte_struct(
         &self,
-        mut callback: impl FnMut(&super::EventContext, &ByteStruct) + Send + 'static,
+        mut callback: impl FnMut(&super::ReducerEventContext, &ByteStruct) + Send + 'static,
     ) -> InsertOneByteStructCallbackId {
         InsertOneByteStructCallbackId(self.imp.on_reducer(
             "insert_one_byte_struct",
-            Box::new(move |ctx: &super::EventContext| {
-                let super::EventContext {
+            Box::new(move |ctx: &super::ReducerEventContext| {
+                let super::ReducerEventContext {
                     event:
-                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                        __sdk::ReducerEvent {
                             reducer: super::Reducer::InsertOneByteStruct { s },
                             ..
-                        }),
+                        },
                     ..
                 } = ctx
                 else {

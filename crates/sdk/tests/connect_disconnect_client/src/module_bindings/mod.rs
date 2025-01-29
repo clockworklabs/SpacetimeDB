@@ -302,79 +302,6 @@ impl __sdk::DbConnection for DbConnection {
     }
 }
 
-/// A [`DbConnection`] augmented with an [`__sdk::Event`],
-/// passed to various callbacks invoked by the SDK.
-pub struct EventContext {
-    /// Access to tables defined by the module via extension traits implemented for [`RemoteTables`].
-    pub db: RemoteTables,
-    /// Access to reducers defined by the module via extension traits implemented for [`RemoteReducers`].
-    pub reducers: RemoteReducers,
-    /// Access to setting the call-flags of each reducer defined for each reducer defined by the module
-    /// via extension traits implemented for [`SetReducerFlags`].
-    ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    pub set_reducer_flags: SetReducerFlags,
-    /// The event which caused these callbacks to run.
-    pub event: __sdk::Event<Reducer>,
-    imp: __sdk::DbContextImpl<RemoteModule>,
-}
-
-impl __sdk::InModule for EventContext {
-    type Module = RemoteModule;
-}
-
-impl __sdk::DbContext for EventContext {
-    type DbView = RemoteTables;
-    type Reducers = RemoteReducers;
-    type SetReducerFlags = SetReducerFlags;
-
-    fn db(&self) -> &Self::DbView {
-        &self.db
-    }
-    fn reducers(&self) -> &Self::Reducers {
-        &self.reducers
-    }
-    fn set_reducer_flags(&self) -> &Self::SetReducerFlags {
-        &self.set_reducer_flags
-    }
-
-    fn is_active(&self) -> bool {
-        self.imp.is_active()
-    }
-
-    fn disconnect(&self) -> __sdk::Result<()> {
-        self.imp.disconnect()
-    }
-
-    type SubscriptionBuilder = __sdk::SubscriptionBuilder<RemoteModule>;
-
-    fn subscription_builder(&self) -> Self::SubscriptionBuilder {
-        __sdk::SubscriptionBuilder::new(&self.imp)
-    }
-
-    fn try_identity(&self) -> Option<__sdk::Identity> {
-        self.imp.try_identity()
-    }
-    fn address(&self) -> __sdk::Address {
-        self.imp.address()
-    }
-}
-
-impl __sdk::EventContext for EventContext {
-    fn event(&self) -> &__sdk::Event<Reducer> {
-        &self.event
-    }
-    fn new(imp: __sdk::DbContextImpl<RemoteModule>, event: __sdk::Event<Reducer>) -> Self {
-        Self {
-            db: RemoteTables { imp: imp.clone() },
-            reducers: RemoteReducers { imp: imp.clone() },
-            set_reducer_flags: SetReducerFlags { imp: imp.clone() },
-            event,
-            imp,
-        }
-    }
-}
-
 /// A handle on a subscribed query.
 // TODO: Document this better after implementing the new subscription API.
 #[derive(Clone)]
@@ -437,9 +364,312 @@ impl<
 {
 }
 
+/// An [`__sdk::DbContext`] augmented with a [`__sdk::Event`],
+/// passed to [`__sdk::Table::on_insert`], [`__sdk::Table::on_delete`] and [`__sdk::TableWithPrimaryKey::on_update`] callbacks.
+pub struct EventContext {
+    /// Access to tables defined by the module via extension traits implemented for [`RemoteTables`].
+    pub db: RemoteTables,
+    /// Access to reducers defined by the module via extension traits implemented for [`RemoteReducers`].
+    pub reducers: RemoteReducers,
+    /// Access to setting the call-flags of each reducer defined for each reducer defined by the module
+    /// via extension traits implemented for [`SetReducerFlags`].
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    pub set_reducer_flags: SetReducerFlags,
+    /// The event which caused these callbacks to run.
+    pub event: __sdk::Event<Reducer>,
+    imp: __sdk::DbContextImpl<RemoteModule>,
+}
+
+impl __sdk::AbstractEventContext for EventContext {
+    type Event = __sdk::Event<Reducer>;
+    fn event(&self) -> &Self::Event {
+        &self.event
+    }
+    fn new(imp: __sdk::DbContextImpl<RemoteModule>, event: Self::Event) -> Self {
+        Self {
+            db: RemoteTables { imp: imp.clone() },
+            reducers: RemoteReducers { imp: imp.clone() },
+            set_reducer_flags: SetReducerFlags { imp: imp.clone() },
+            event,
+            imp,
+        }
+    }
+}
+
+impl __sdk::InModule for EventContext {
+    type Module = RemoteModule;
+}
+
+impl __sdk::DbContext for EventContext {
+    type DbView = RemoteTables;
+    type Reducers = RemoteReducers;
+    type SetReducerFlags = SetReducerFlags;
+
+    fn db(&self) -> &Self::DbView {
+        &self.db
+    }
+    fn reducers(&self) -> &Self::Reducers {
+        &self.reducers
+    }
+    fn set_reducer_flags(&self) -> &Self::SetReducerFlags {
+        &self.set_reducer_flags
+    }
+
+    fn is_active(&self) -> bool {
+        self.imp.is_active()
+    }
+
+    fn disconnect(&self) -> __sdk::Result<()> {
+        self.imp.disconnect()
+    }
+
+    type SubscriptionBuilder = __sdk::SubscriptionBuilder<RemoteModule>;
+
+    fn subscription_builder(&self) -> Self::SubscriptionBuilder {
+        __sdk::SubscriptionBuilder::new(&self.imp)
+    }
+
+    fn try_identity(&self) -> Option<__sdk::Identity> {
+        self.imp.try_identity()
+    }
+    fn address(&self) -> __sdk::Address {
+        self.imp.address()
+    }
+}
+
+impl __sdk::EventContext for EventContext {}
+
+/// An [`__sdk::DbContext`] augmented with a [`__sdk::ReducerEvent`],
+/// passed to on-reducer callbacks.
+pub struct ReducerEventContext {
+    /// Access to tables defined by the module via extension traits implemented for [`RemoteTables`].
+    pub db: RemoteTables,
+    /// Access to reducers defined by the module via extension traits implemented for [`RemoteReducers`].
+    pub reducers: RemoteReducers,
+    /// Access to setting the call-flags of each reducer defined for each reducer defined by the module
+    /// via extension traits implemented for [`SetReducerFlags`].
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    pub set_reducer_flags: SetReducerFlags,
+    /// The event which caused these callbacks to run.
+    pub event: __sdk::ReducerEvent<Reducer>,
+    imp: __sdk::DbContextImpl<RemoteModule>,
+}
+
+impl __sdk::AbstractEventContext for ReducerEventContext {
+    type Event = __sdk::ReducerEvent<Reducer>;
+    fn event(&self) -> &Self::Event {
+        &self.event
+    }
+    fn new(imp: __sdk::DbContextImpl<RemoteModule>, event: Self::Event) -> Self {
+        Self {
+            db: RemoteTables { imp: imp.clone() },
+            reducers: RemoteReducers { imp: imp.clone() },
+            set_reducer_flags: SetReducerFlags { imp: imp.clone() },
+            event,
+            imp,
+        }
+    }
+}
+
+impl __sdk::InModule for ReducerEventContext {
+    type Module = RemoteModule;
+}
+
+impl __sdk::DbContext for ReducerEventContext {
+    type DbView = RemoteTables;
+    type Reducers = RemoteReducers;
+    type SetReducerFlags = SetReducerFlags;
+
+    fn db(&self) -> &Self::DbView {
+        &self.db
+    }
+    fn reducers(&self) -> &Self::Reducers {
+        &self.reducers
+    }
+    fn set_reducer_flags(&self) -> &Self::SetReducerFlags {
+        &self.set_reducer_flags
+    }
+
+    fn is_active(&self) -> bool {
+        self.imp.is_active()
+    }
+
+    fn disconnect(&self) -> __sdk::Result<()> {
+        self.imp.disconnect()
+    }
+
+    type SubscriptionBuilder = __sdk::SubscriptionBuilder<RemoteModule>;
+
+    fn subscription_builder(&self) -> Self::SubscriptionBuilder {
+        __sdk::SubscriptionBuilder::new(&self.imp)
+    }
+
+    fn try_identity(&self) -> Option<__sdk::Identity> {
+        self.imp.try_identity()
+    }
+    fn address(&self) -> __sdk::Address {
+        self.imp.address()
+    }
+}
+
+impl __sdk::ReducerEventContext for ReducerEventContext {}
+
+/// An [`__sdk::DbContext`] passed to [`__sdk::SubscriptionBuilder::on_applied`] and [`SubscriptionHandle::unsubscribe_then`] callbacks.
+pub struct SubscriptionEventContext {
+    /// Access to tables defined by the module via extension traits implemented for [`RemoteTables`].
+    pub db: RemoteTables,
+    /// Access to reducers defined by the module via extension traits implemented for [`RemoteReducers`].
+    pub reducers: RemoteReducers,
+    /// Access to setting the call-flags of each reducer defined for each reducer defined by the module
+    /// via extension traits implemented for [`SetReducerFlags`].
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    pub set_reducer_flags: SetReducerFlags,
+    imp: __sdk::DbContextImpl<RemoteModule>,
+}
+
+impl __sdk::AbstractEventContext for SubscriptionEventContext {
+    type Event = ();
+    fn event(&self) -> &Self::Event {
+        &()
+    }
+    fn new(imp: __sdk::DbContextImpl<RemoteModule>, _event: Self::Event) -> Self {
+        Self {
+            db: RemoteTables { imp: imp.clone() },
+            reducers: RemoteReducers { imp: imp.clone() },
+            set_reducer_flags: SetReducerFlags { imp: imp.clone() },
+            imp,
+        }
+    }
+}
+
+impl __sdk::InModule for SubscriptionEventContext {
+    type Module = RemoteModule;
+}
+
+impl __sdk::DbContext for SubscriptionEventContext {
+    type DbView = RemoteTables;
+    type Reducers = RemoteReducers;
+    type SetReducerFlags = SetReducerFlags;
+
+    fn db(&self) -> &Self::DbView {
+        &self.db
+    }
+    fn reducers(&self) -> &Self::Reducers {
+        &self.reducers
+    }
+    fn set_reducer_flags(&self) -> &Self::SetReducerFlags {
+        &self.set_reducer_flags
+    }
+
+    fn is_active(&self) -> bool {
+        self.imp.is_active()
+    }
+
+    fn disconnect(&self) -> __sdk::Result<()> {
+        self.imp.disconnect()
+    }
+
+    type SubscriptionBuilder = __sdk::SubscriptionBuilder<RemoteModule>;
+
+    fn subscription_builder(&self) -> Self::SubscriptionBuilder {
+        __sdk::SubscriptionBuilder::new(&self.imp)
+    }
+
+    fn try_identity(&self) -> Option<__sdk::Identity> {
+        self.imp.try_identity()
+    }
+    fn address(&self) -> __sdk::Address {
+        self.imp.address()
+    }
+}
+
+impl __sdk::SubscriptionEventContext for SubscriptionEventContext {}
+
+/// An [`__sdk::DbContext`] augmented with a [`__sdk::Error`],
+/// passed to [`__sdk::DbConnectionBuilder::on_disconnect`], [`__sdk::DbConnectionBuilder::on_connect_error`] and [`__sdk::SubscriptionBuilder::on_error`] callbacks.
+pub struct ErrorContext {
+    /// Access to tables defined by the module via extension traits implemented for [`RemoteTables`].
+    pub db: RemoteTables,
+    /// Access to reducers defined by the module via extension traits implemented for [`RemoteReducers`].
+    pub reducers: RemoteReducers,
+    /// Access to setting the call-flags of each reducer defined for each reducer defined by the module
+    /// via extension traits implemented for [`SetReducerFlags`].
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    pub set_reducer_flags: SetReducerFlags,
+    /// The event which caused these callbacks to run.
+    pub event: __sdk::Error,
+    imp: __sdk::DbContextImpl<RemoteModule>,
+}
+
+impl __sdk::AbstractEventContext for ErrorContext {
+    type Event = __sdk::Error;
+    fn event(&self) -> &Self::Event {
+        &self.event
+    }
+    fn new(imp: __sdk::DbContextImpl<RemoteModule>, event: Self::Event) -> Self {
+        Self {
+            db: RemoteTables { imp: imp.clone() },
+            reducers: RemoteReducers { imp: imp.clone() },
+            set_reducer_flags: SetReducerFlags { imp: imp.clone() },
+            event,
+            imp,
+        }
+    }
+}
+
+impl __sdk::InModule for ErrorContext {
+    type Module = RemoteModule;
+}
+
+impl __sdk::DbContext for ErrorContext {
+    type DbView = RemoteTables;
+    type Reducers = RemoteReducers;
+    type SetReducerFlags = SetReducerFlags;
+
+    fn db(&self) -> &Self::DbView {
+        &self.db
+    }
+    fn reducers(&self) -> &Self::Reducers {
+        &self.reducers
+    }
+    fn set_reducer_flags(&self) -> &Self::SetReducerFlags {
+        &self.set_reducer_flags
+    }
+
+    fn is_active(&self) -> bool {
+        self.imp.is_active()
+    }
+
+    fn disconnect(&self) -> __sdk::Result<()> {
+        self.imp.disconnect()
+    }
+
+    type SubscriptionBuilder = __sdk::SubscriptionBuilder<RemoteModule>;
+
+    fn subscription_builder(&self) -> Self::SubscriptionBuilder {
+        __sdk::SubscriptionBuilder::new(&self.imp)
+    }
+
+    fn try_identity(&self) -> Option<__sdk::Identity> {
+        self.imp.try_identity()
+    }
+    fn address(&self) -> __sdk::Address {
+        self.imp.address()
+    }
+}
+
+impl __sdk::ErrorContext for ErrorContext {}
+
 impl __sdk::SpacetimeModule for RemoteModule {
     type DbConnection = DbConnection;
     type EventContext = EventContext;
+    type ReducerEventContext = ReducerEventContext;
+    type SubscriptionEventContext = SubscriptionEventContext;
+    type ErrorContext = ErrorContext;
     type Reducer = Reducer;
     type DbView = RemoteTables;
     type Reducers = RemoteReducers;
