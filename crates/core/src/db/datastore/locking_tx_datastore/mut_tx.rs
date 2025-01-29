@@ -1,10 +1,11 @@
 use super::{
     committed_state::CommittedState,
     datastore::{record_metrics, Result},
+    delete_table::DeleteTable,
     sequence::{Sequence, SequencesState},
     state_view::{IndexSeekIterIdMutTx, ScanIterByColRangeMutTx, StateView},
     tx::TxId,
-    tx_state::{DeleteTable, IndexIdMap, TxState},
+    tx_state::{IndexIdMap, TxState},
     SharedMutexGuard, SharedWriteGuard,
 };
 use crate::db::datastore::system_tables::{
@@ -1166,7 +1167,7 @@ impl<'a> Iterator for BTreeScan<'a> {
 impl<'a> Iterator for IndexScanFilterDeleted<'a> {
     type Item = RowRef<'a>;
     fn next(&mut self) -> Option<Self::Item> {
-        self.iter.find(|row| !self.deletes.contains(&row.pointer()))
+        self.iter.find(|row| !self.deletes.contains(row.pointer()))
     }
 }
 
@@ -1320,7 +1321,7 @@ impl MutTxId {
                         // It's possible that `row` appears in the committed state,
                         // but is marked as deleted.
                         // In this case, undelete it, so it remains in the committed state.
-                        delete_table.remove(&commit_ptr);
+                        delete_table.remove(commit_ptr);
 
                         // No new row was inserted, but return `committed_ptr`.
                         let blob_store = &self.committed_state_write_lock.blob_store;
@@ -1343,7 +1344,7 @@ impl MutTxId {
                     if let Err(e) = commit_table.check_unique_constraints(
                         tx_row_ref,
                         |ixs| ixs,
-                        |commit_ptr| delete_table.contains(&commit_ptr),
+                        |commit_ptr| delete_table.contains(commit_ptr),
                     ) {
                         // There was a constraint violation, so undo the insertion.
                         tx_table.delete(tx_blob_store, tx_row_ptr, |_| {});
@@ -1464,7 +1465,7 @@ impl MutTxId {
                     new_row,
                     // Don't check this index since we'll do a 1-1 old/new replacement.
                     |ixs| ixs.filter(|(&id, _)| id != ignore_index_id),
-                    |commit_ptr| commit_ptr == old_ptr || del_table.contains(&commit_ptr),
+                    |commit_ptr| commit_ptr == old_ptr || del_table.contains(commit_ptr),
                 )
                 .map_err(IndexError::from)
                 .map_err(Into::into)
@@ -1500,7 +1501,7 @@ impl MutTxId {
                     .committed_state_write_lock
                     .get_index_by_id_with_table(table_id, index_id)
                     .and_then(|index| find_old_row(tx_row_ref, index).0.map(|ptr| (index, ptr)))
-                    .filter(|(_, ptr)| !del_table.contains(ptr))
+                    .filter(|(_, ptr)| !del_table.contains(*ptr))
             {
                 // 1. Ensure the index is unique.
                 // 2. Ensure the new row doesn't violate any other committed state unique indices.
@@ -1532,7 +1533,7 @@ impl MutTxId {
                 let (old_ptr, needle) = find_old_row(tx_row_ref, tx_index);
                 let res = old_ptr
                     // If we have an old committed state row, ensure it hasn't been deleted in our tx.
-                    .filter(|ptr| ptr.squashed_offset() == SquashedOffset::TX_STATE || !del_table.contains(ptr))
+                    .filter(|ptr| ptr.squashed_offset() == SquashedOffset::TX_STATE || !del_table.contains(*ptr))
                     .ok_or_else(|| IndexError::KeyNotFound(index_id, needle).into())
                     .and_then(|old_ptr| {
                         ensure_unique(index_id, tx_index)?;
@@ -1602,11 +1603,16 @@ impl MutTxId {
                 Ok(table.delete(blob_store, row_pointer, |_| ()).is_some())
             }
             SquashedOffset::COMMITTED_STATE => {
+                let commit_table = self
+                    .committed_state_write_lock
+                    .get_table(table_id)
+                    .expect("there's a row in committed state so there should be a committed table");
                 // NOTE: We trust the `row_pointer` refers to an extant row,
                 // and check only that it hasn't yet been deleted.
-                let delete_table = self.tx_state.get_delete_table_mut(table_id);
-
-                Ok(delete_table.insert(row_pointer))
+                self.tx_state
+                    .get_delete_table_mut(table_id, commit_table)
+                    .insert(row_pointer);
+                Ok(true)
             }
             _ => unreachable!("Invalid SquashedOffset for RowPointer: {:?}", row_pointer),
         }
