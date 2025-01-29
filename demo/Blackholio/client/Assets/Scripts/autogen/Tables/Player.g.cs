@@ -15,6 +15,8 @@ namespace SpacetimeDB.Types
     {
         public sealed class PlayerHandle : RemoteTableHandle<EventContext, Player>
         {
+            protected override string Name => "player";
+
             public sealed class IdentityUniqueIndex : UniqueIndexBase<SpacetimeDB.Identity>
             {
                 protected override SpacetimeDB.Identity GetKey(Player row) => row.Identity;

@@ -53,17 +53,17 @@ namespace SpacetimeDB.Types
             SetReducerFlags = new();
             Reducers = new(this, this.SetReducerFlags);
 
-            clientDB.AddTable<Circle>("circle", Db.Circle);
-            clientDB.AddTable<CircleDecayTimer>("circle_decay_timer", Db.CircleDecayTimer);
-            clientDB.AddTable<CircleRecombineTimer>("circle_recombine_timer", Db.CircleRecombineTimer);
-            clientDB.AddTable<Config>("config", Db.Config);
-            clientDB.AddTable<ConsumeEntityTimer>("consume_entity_timer", Db.ConsumeEntityTimer);
-            clientDB.AddTable<Entity>("entity", Db.Entity);
-            clientDB.AddTable<Food>("food", Db.Food);
-            clientDB.AddTable<LoggedOutPlayer>("logged_out_player", Db.LoggedOutPlayer);
-            clientDB.AddTable<MoveAllPlayersTimer>("move_all_players_timer", Db.MoveAllPlayersTimer);
-            clientDB.AddTable<Player>("player", Db.Player);
-            clientDB.AddTable<SpawnFoodTimer>("spawn_food_timer", Db.SpawnFoodTimer);
+            clientDB.AddTable(Db.Circle);
+            clientDB.AddTable(Db.CircleDecayTimer);
+            clientDB.AddTable(Db.CircleRecombineTimer);
+            clientDB.AddTable(Db.Config);
+            clientDB.AddTable(Db.ConsumeEntityTimer);
+            clientDB.AddTable(Db.Entity);
+            clientDB.AddTable(Db.Food);
+            clientDB.AddTable(Db.LoggedOutPlayer);
+            clientDB.AddTable(Db.MoveAllPlayersTimer);
+            clientDB.AddTable(Db.Player);
+            clientDB.AddTable(Db.SpawnFoodTimer);
         }
 
         protected override Reducer ToReducer(TransactionUpdate update)

@@ -15,6 +15,8 @@ namespace SpacetimeDB.Types
     {
         public sealed class CircleDecayTimerHandle : RemoteTableHandle<EventContext, CircleDecayTimer>
         {
+            protected override string Name => "circle_decay_timer";
+
             public sealed class ScheduledIdUniqueIndex : UniqueIndexBase<ulong>
             {
                 protected override ulong GetKey(CircleDecayTimer row) => row.ScheduledId;

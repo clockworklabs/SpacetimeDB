@@ -15,6 +15,8 @@ namespace SpacetimeDB.Types
     {
         public sealed class EntityHandle : RemoteTableHandle<EventContext, Entity>
         {
+            protected override string Name => "entity";
+
             public sealed class EntityIdUniqueIndex : UniqueIndexBase<uint>
             {
                 protected override uint GetKey(Entity row) => row.EntityId;

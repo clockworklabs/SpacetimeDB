@@ -15,6 +15,8 @@ namespace SpacetimeDB.Types
     {
         public sealed class ConfigHandle : RemoteTableHandle<EventContext, Config>
         {
+            protected override string Name => "config";
+
             public sealed class IdUniqueIndex : UniqueIndexBase<uint>
             {
                 protected override uint GetKey(Config row) => row.Id;

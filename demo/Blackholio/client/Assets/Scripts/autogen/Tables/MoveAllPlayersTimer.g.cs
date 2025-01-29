@@ -15,6 +15,8 @@ namespace SpacetimeDB.Types
     {
         public sealed class MoveAllPlayersTimerHandle : RemoteTableHandle<EventContext, MoveAllPlayersTimer>
         {
+            protected override string Name => "move_all_players_timer";
+
             public sealed class ScheduledIdUniqueIndex : UniqueIndexBase<ulong>
             {
                 protected override ulong GetKey(MoveAllPlayersTimer row) => row.ScheduledId;

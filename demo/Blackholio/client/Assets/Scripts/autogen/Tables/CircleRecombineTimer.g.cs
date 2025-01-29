@@ -15,6 +15,8 @@ namespace SpacetimeDB.Types
     {
         public sealed class CircleRecombineTimerHandle : RemoteTableHandle<EventContext, CircleRecombineTimer>
         {
+            protected override string Name => "circle_recombine_timer";
+
             public sealed class ScheduledIdUniqueIndex : UniqueIndexBase<ulong>
             {
                 protected override ulong GetKey(CircleRecombineTimer row) => row.ScheduledId;

@@ -15,6 +15,8 @@ namespace SpacetimeDB.Types
     {
         public sealed class SpawnFoodTimerHandle : RemoteTableHandle<EventContext, SpawnFoodTimer>
         {
+            protected override string Name => "spawn_food_timer";
+
             public sealed class ScheduledIdUniqueIndex : UniqueIndexBase<ulong>
             {
                 protected override ulong GetKey(SpawnFoodTimer row) => row.ScheduledId;

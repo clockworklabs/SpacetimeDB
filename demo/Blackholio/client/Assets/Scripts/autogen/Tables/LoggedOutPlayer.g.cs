@@ -15,6 +15,8 @@ namespace SpacetimeDB.Types
     {
         public sealed class LoggedOutPlayerHandle : RemoteTableHandle<EventContext, LoggedOutPlayer>
         {
+            protected override string Name => "logged_out_player";
+
             public sealed class IdentityUniqueIndex : UniqueIndexBase<SpacetimeDB.Identity>
             {
                 protected override SpacetimeDB.Identity GetKey(LoggedOutPlayer row) => row.Identity;

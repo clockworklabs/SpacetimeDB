@@ -15,6 +15,8 @@ namespace SpacetimeDB.Types
     {
         public sealed class ConsumeEntityTimerHandle : RemoteTableHandle<EventContext, ConsumeEntityTimer>
         {
+            protected override string Name => "consume_entity_timer";
+
             public sealed class ScheduledIdUniqueIndex : UniqueIndexBase<ulong>
             {
                 protected override ulong GetKey(ConsumeEntityTimer row) => row.ScheduledId;
