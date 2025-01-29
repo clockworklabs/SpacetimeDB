@@ -404,7 +404,11 @@ impl MutTxId {
         // the existing rows having the same value for some column(s).
         let mut insert_index = table.new_index(columns.clone(), is_unique)?;
         let mut build_from_rows = |table: &Table, bs: &dyn BlobStore| -> Result<()> {
-            if let Some(violation) = insert_index.build_from_rows(table.scan_rows(bs))? {
+            let rows = table.scan_rows(bs);
+            // SAFETY: (1) `insert_index` was derived from `table`
+            // which in turn was derived from `commit_table`.
+            let violation = unsafe { insert_index.build_from_rows(rows) };
+            if let Err(violation) = violation {
                 let violation = table
                     .get_row_ref(bs, violation)
                     .expect("row came from scanning the table")
@@ -435,7 +439,8 @@ impl MutTxId {
             columns
         );
 
-        table.add_index(index_id, insert_index);
+        // SAFETY: same as (1).
+        unsafe { table.add_index(index_id, insert_index) };
         // Associate `index_id -> table_id` for fast lookup.
         idx_map.insert(index_id, table_id);
 
@@ -1360,11 +1365,11 @@ impl MutTxId {
                     // but it could do so wrt., `commit_table`,
                     // assuming the conflicting row hasn't been deleted since.
                     // Ensure that it doesn't, or roll back the insertion.
-                    if let Err(e) = commit_table.check_unique_constraints(
-                        tx_row_ref,
-                        |ixs| ixs,
-                        |commit_ptr| delete_table.contains(commit_ptr),
-                    ) {
+                    let is_deleted = |commit_ptr| delete_table.contains(commit_ptr);
+                    // SAFETY: `commit_table.row_layout() == tx_row_ref.row_layout()` holds
+                    // as the `tx_table` is derived from `commit_table`.
+                    let res = unsafe { commit_table.check_unique_constraints(tx_row_ref, |ixs| ixs, is_deleted) };
+                    if let Err(e) = res {
                         // There was a constraint violation, so undo the insertion.
                         tx_table.delete(tx_blob_store, tx_row_ptr, |_| {});
                         return Err(IndexError::from(e).into());
@@ -1479,24 +1484,27 @@ impl MutTxId {
             new_row: RowRef<'_>,
             old_ptr: RowPointer,
         ) -> Result<()> {
-            commit_table
-                .check_unique_constraints(
+            let is_deleted = |commit_ptr| commit_ptr == old_ptr || del_table.contains(commit_ptr);
+            // SAFETY: `commit_table.row_layout() == new_row.row_layout()` holds
+            // as the `tx_table` is derived from `commit_table`.
+            let res = unsafe {
+                commit_table.check_unique_constraints(
                     new_row,
                     // Don't check this index since we'll do a 1-1 old/new replacement.
                     |ixs| ixs.filter(|(&id, _)| id != ignore_index_id),
-                    |commit_ptr| commit_ptr == old_ptr || del_table.contains(commit_ptr),
+                    is_deleted,
                 )
-                .map_err(IndexError::from)
-                .map_err(Into::into)
+            };
+            res.map_err(IndexError::from).map_err(Into::into)
         }
         /// Projects the new row to the index to find the old row.
         #[inline]
         fn find_old_row(new_row: RowRef<'_>, index: TableAndIndex<'_>) -> (Option<RowPointer>, AlgebraicValue) {
             let index = index.index();
             // Project the row to the index's columns/type.
-            let needle = new_row
-                .project(&index.indexed_columns)
-                .expect("projecting a table row to one of the table's indices should never fail");
+            // SAFETY: `new_row` belongs to the same table as `index`,
+            // so all `index.indexed_columns` will be in-bounds of the row layout.
+            let needle = unsafe { new_row.project_unchecked(&index.indexed_columns) };
             // Find the old row.
             (index.seek(&needle).next(), needle)
         }

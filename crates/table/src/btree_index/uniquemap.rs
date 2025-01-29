@@ -29,13 +29,13 @@ impl<K: Ord, V: Ord> UniqueMap<K, V> {
     ///
     /// If `key` was already present in the map, does not add an association with `val`.
     /// Returns the existing associated value instead.
-    pub fn insert(&mut self, key: K, val: V) -> Option<&V> {
+    pub fn insert(&mut self, key: K, val: V) -> Result<(), &V> {
         match self.map.entry(key) {
             Entry::Vacant(e) => {
                 e.insert(val);
-                None
+                Ok(())
             }
-            Entry::Occupied(e) => Some(e.into_mut()),
+            Entry::Occupied(e) => Err(e.into_mut()),
         }
     }
 

@@ -728,7 +728,8 @@ fn make_table_with_index<R: IndexedRow>(unique: bool) -> (Table, IndexId) {
     let cols = R::indexed_columns();
     let index_id = IndexId::SENTINEL;
     let idx = tbl.new_index(cols, unique).unwrap();
-    tbl.insert_index(&NullBlobStore, index_id, idx);
+    // SAFETY: index was derived from the table.
+    unsafe { tbl.insert_index(&NullBlobStore, index_id, idx) };
 
     (tbl, index_id)
 }
