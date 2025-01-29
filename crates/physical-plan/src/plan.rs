@@ -6,7 +6,7 @@ use std::{
 
 use derive_more::From;
 use spacetimedb_expr::StatementSource;
-use spacetimedb_lib::{query::Delta, AlgebraicValue, ProductValue};
+use spacetimedb_lib::{query::Delta, sats::size_of::SizeOf, AlgebraicValue, ProductValue};
 use spacetimedb_primitives::{ColId, ColSet, IndexId};
 use spacetimedb_schema::schema::{IndexSchema, TableSchema};
 use spacetimedb_sql_parser::ast::{BinOp, LogOp};
@@ -902,8 +902,21 @@ impl PhysicalExpr {
         self.eval(row).as_bool().copied().unwrap_or(false)
     }
 
+    /// Evaluate this boolean expression over `row`
+    pub fn eval_bool_with_metrics(&self, row: &impl ProjectField, bytes_scanned: &mut usize) -> bool {
+        self.eval_with_metrics(row, bytes_scanned)
+            .as_bool()
+            .copied()
+            .unwrap_or(false)
+    }
+
     /// Evaluate this expression over `row`
     fn eval(&self, row: &impl ProjectField) -> Cow<'_, AlgebraicValue> {
+        self.eval_with_metrics(row, &mut 0)
+    }
+
+    /// Evaluate this expression over `row`
+    fn eval_with_metrics(&self, row: &impl ProjectField, bytes_scanned: &mut usize) -> Cow<'_, AlgebraicValue> {
         fn eval_bin_op(op: BinOp, a: &AlgebraicValue, b: &AlgebraicValue) -> bool {
             match op {
                 BinOp::Eq => a == b,
@@ -916,20 +929,28 @@ impl PhysicalExpr {
         }
         let into = |b| Cow::Owned(AlgebraicValue::Bool(b));
         match self {
-            Self::BinOp(op, a, b) => into(eval_bin_op(*op, &a.eval(row), &b.eval(row))),
+            Self::BinOp(op, a, b) => into(eval_bin_op(
+                *op,
+                &a.eval_with_metrics(row, bytes_scanned),
+                &b.eval_with_metrics(row, bytes_scanned),
+            )),
             Self::LogOp(LogOp::And, exprs) => into(
                 exprs
                     .iter()
                     // ALL is equivalent to AND
-                    .all(|expr| expr.eval_bool(row)),
+                    .all(|expr| expr.eval_bool_with_metrics(row, bytes_scanned)),
             ),
             Self::LogOp(LogOp::Or, exprs) => into(
                 exprs
                     .iter()
                     // ANY is equivalent to OR
-                    .any(|expr| expr.eval_bool(row)),
+                    .any(|expr| expr.eval_bool_with_metrics(row, bytes_scanned)),
             ),
-            Self::Field(field) => Cow::Owned(row.project(field)),
+            Self::Field(field) => {
+                let value = row.project(field);
+                *bytes_scanned += value.size_of();
+                Cow::Owned(value)
+            }
             Self::Value(v) => Cow::Borrowed(v),
         }
     }

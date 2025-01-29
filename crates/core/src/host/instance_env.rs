@@ -80,7 +80,12 @@ impl ChunkedWriter {
         self.chunks
     }
 
-    pub fn collect_iter(pool: &mut ChunkPool, iter: impl Iterator<Item = impl ToBsatn>) -> Vec<Vec<u8>> {
+    pub fn collect_iter(
+        pool: &mut ChunkPool,
+        iter: impl Iterator<Item = impl ToBsatn>,
+        rows_scanned: &mut usize,
+        bytes_scanned: &mut usize,
+    ) -> Vec<Vec<u8>> {
         let mut chunked_writer = Self::default();
         // Consume the iterator, serializing each `item`,
         // while allowing a chunk to be created at boundaries.
@@ -89,9 +94,16 @@ impl ChunkedWriter {
             item.to_bsatn_extend(&mut chunked_writer.curr).unwrap();
             // Flush at item boundaries.
             chunked_writer.flush(pool);
+            // Update rows scanned
+            *rows_scanned += 1;
         }
 
-        chunked_writer.into_chunks()
+        let chunks = chunked_writer.into_chunks();
+
+        // Update (BSATN) bytes scanned
+        *bytes_scanned += chunks.iter().map(|chunk| chunk.len()).sum::<usize>();
+
+        chunks
     }
 }
 
@@ -163,6 +175,10 @@ impl InstanceEnv {
         if insert_flags.is_scheduler_table {
             self.schedule_row(stdb, tx, table_id, row_ptr)?;
         }
+
+        // Note, we update the metric for bytes written after the insert.
+        // This is to capture auto-inc columns.
+        tx.metrics.bytes_written += buffer.len();
 
         Ok(row_len)
     }
@@ -238,6 +254,14 @@ impl InstanceEnv {
         // Re. `SmallVec`, `delete_by_field` only cares about 1 element, so optimize for that.
         let rows_to_delete = iter.map(|row_ref| row_ref.pointer()).collect::<SmallVec<[_; 1]>>();
 
+        // Note, we're deleting rows based on the result of a btree scan.
+        // Hence we must update our `index_seeks` and `rows_scanned` metrics.
+        //
+        // Note that we're not updating `bytes_scanned` at all,
+        // because we never dereference any of the returned `RowPointer`s.
+        tx.metrics.index_seeks += 1;
+        tx.metrics.rows_scanned += rows_to_delete.len();
+
         // Delete them and count how many we deleted.
         Ok(stdb.delete(tx, table_id, rows_to_delete))
     }
@@ -255,11 +279,19 @@ impl InstanceEnv {
         let stdb = &*self.replica_ctx.relational_db;
         let tx = &mut *self.get_tx()?;
 
+        // Track the number of bytes coming from the caller
+        tx.metrics.bytes_scanned += relation.len();
+
         // Find the row schema using it to decode a vector of product values.
         let row_ty = stdb.row_schema_for_table(tx, table_id)?;
         // `TableType::delete` cares about a single element
         // so in that case we can avoid the allocation by using `smallvec`.
         let relation = ProductValue::decode_smallvec(&row_ty, &mut &*relation).map_err(NodesError::DecodeRow)?;
+
+        // Note, we track the number of rows coming from the caller,
+        // regardless of whether or not we actually delete them,
+        // since we have to derive row ids for each one of them.
+        tx.metrics.rows_scanned += relation.len();
 
         // Delete them and return how many we deleted.
         Ok(stdb.delete_by_rel(tx, table_id, relation))
@@ -315,7 +347,21 @@ impl InstanceEnv {
         let stdb = &*self.replica_ctx.relational_db;
         let tx = &mut *self.tx.get()?;
 
-        let chunks = ChunkedWriter::collect_iter(pool, stdb.iter_mut(tx, table_id)?);
+        // Track the number of rows and the number of bytes scanned by the iterator
+        let mut rows_scanned = 0;
+        let mut bytes_scanned = 0;
+
+        // Scan table and serialize rows to bsatn
+        let chunks = ChunkedWriter::collect_iter(
+            pool,
+            stdb.iter_mut(tx, table_id)?,
+            &mut rows_scanned,
+            &mut bytes_scanned,
+        );
+
+        tx.metrics.rows_scanned += rows_scanned;
+        tx.metrics.bytes_scanned += bytes_scanned;
+
         Ok(chunks)
     }
 
@@ -332,8 +378,20 @@ impl InstanceEnv {
         let stdb = &*self.replica_ctx.relational_db;
         let tx = &mut *self.tx.get()?;
 
+        // Track rows and bytes scanned by the iterator
+        let mut rows_scanned = 0;
+        let mut bytes_scanned = 0;
+
+        // Open index iterator
         let (_, iter) = stdb.btree_scan(tx, index_id, prefix, prefix_elems, rstart, rend)?;
-        let chunks = ChunkedWriter::collect_iter(pool, iter);
+
+        // Scan the index and serialize rows to bsatn
+        let chunks = ChunkedWriter::collect_iter(pool, iter, &mut rows_scanned, &mut bytes_scanned);
+
+        tx.metrics.index_seeks += 1;
+        tx.metrics.rows_scanned += rows_scanned;
+        tx.metrics.bytes_scanned += bytes_scanned;
+
         Ok(chunks)
     }
 }
@@ -363,5 +421,315 @@ pub struct GetTxError;
 impl From<GetTxError> for NodesError {
     fn from(_: GetTxError) -> Self {
         NodesError::NotInTransaction
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::{ops::Bound, sync::Arc};
+
+    use anyhow::{anyhow, Result};
+    use spacetimedb_lib::{bsatn::to_vec, AlgebraicType, AlgebraicValue, Hash, Identity, ProductValue};
+    use spacetimedb_paths::{server::ModuleLogsDir, FromPathUnchecked};
+    use spacetimedb_primitives::{IndexId, TableId};
+    use spacetimedb_sats::product;
+    use tempfile::TempDir;
+
+    use crate::{
+        database_logger::DatabaseLogger,
+        db::{
+            datastore::traits::IsolationLevel,
+            relational_db::{tests_utils::TestDB, RelationalDB},
+        },
+        execution_context::Workload,
+        host::Scheduler,
+        messages::control_db::{Database, HostType},
+        replica_context::ReplicaContext,
+        subscription::module_subscription_actor::ModuleSubscriptions,
+    };
+
+    use super::{ChunkPool, InstanceEnv, TxSlot};
+
+    /// An `InstanceEnv` requires a `DatabaseLogger`
+    fn temp_logger() -> Result<DatabaseLogger> {
+        let temp = TempDir::new()?;
+        let path = ModuleLogsDir::from_path_unchecked(temp.into_path());
+        let path = path.today();
+        Ok(DatabaseLogger::open(path))
+    }
+
+    /// An `InstanceEnv` requires `ModuleSubscriptions`
+    fn subscription_actor(relational_db: Arc<RelationalDB>) -> ModuleSubscriptions {
+        ModuleSubscriptions::new(relational_db, Identity::ZERO)
+    }
+
+    /// An `InstanceEnv` requires a `ReplicaContext`.
+    /// For our purposes this is just a wrapper for `RelationalDB`.
+    fn replica_ctx(relational_db: Arc<RelationalDB>) -> Result<ReplicaContext> {
+        Ok(ReplicaContext {
+            database: Database {
+                id: 0,
+                database_identity: Identity::ZERO,
+                owner_identity: Identity::ZERO,
+                host_type: HostType::Wasm,
+                initial_program: Hash::ZERO,
+            },
+            replica_id: 0,
+            logger: Arc::new(temp_logger()?),
+            subscriptions: subscription_actor(relational_db.clone()),
+            relational_db,
+        })
+    }
+
+    /// An `InstanceEnv` used for testing the database syscalls.
+    fn instance_env(db: Arc<RelationalDB>) -> Result<InstanceEnv> {
+        let (scheduler, _) = Scheduler::open(db.clone());
+        Ok(InstanceEnv {
+            replica_ctx: Arc::new(replica_ctx(db)?),
+            scheduler,
+            tx: TxSlot::default(),
+        })
+    }
+
+    /// An in-memory `RelationalDB` for testing.
+    /// It does not persist data to disk.
+    fn relational_db() -> Result<Arc<RelationalDB>> {
+        let TestDB { db, .. } = TestDB::in_memory()?;
+        Ok(Arc::new(db))
+    }
+
+    /// Generate a `ProductValue` for use in [create_table_with_index]
+    fn product_row(i: usize) -> ProductValue {
+        let str = i.to_string();
+        let str = str.repeat(i);
+        let id = i as u64;
+        product!(id, str)
+    }
+
+    /// Generate a BSATN encoded row for use in [create_table_with_index]
+    fn bsatn_row(i: usize) -> Result<Vec<u8>> {
+        Ok(to_vec(&product_row(i))?)
+    }
+
+    /// Instantiate the following table:
+    ///
+    /// ```text
+    /// id | str
+    /// -- | ---
+    /// 1  | "1"
+    /// 2  | "22"
+    /// 3  | "333"
+    /// 4  | "4444"
+    /// 5  | "55555"
+    /// ```
+    ///
+    /// with an index on `id`.
+    fn create_table_with_index(db: &RelationalDB) -> Result<(TableId, IndexId)> {
+        let table_id = db.create_table_for_test(
+            "t",
+            &[("id", AlgebraicType::U64), ("str", AlgebraicType::String)],
+            &[0.into()],
+        )?;
+        let index_id = db.with_read_only(Workload::ForTests, |tx| {
+            db.schema_for_table(tx, table_id)?
+                .indexes
+                .iter()
+                .find(|schema| {
+                    schema
+                        .index_algorithm
+                        .columns()
+                        .as_singleton()
+                        .is_some_and(|col_id| col_id.idx() == 0)
+                })
+                .map(|schema| schema.index_id)
+                .ok_or_else(|| anyhow!("Index not found for ColId `{}`", 0))
+        })?;
+        db.with_auto_commit(Workload::ForTests, |tx| -> Result<_> {
+            for i in 1..=5 {
+                db.insert(tx, table_id, &bsatn_row(i)?)?;
+            }
+            Ok(())
+        })?;
+        Ok((table_id, index_id))
+    }
+
+    #[test]
+    fn table_scan_metrics() -> Result<()> {
+        let db = relational_db()?;
+        let env = instance_env(db.clone())?;
+
+        let (table_id, _) = create_table_with_index(&db)?;
+
+        let mut tx_slot = env.tx.clone();
+
+        let f = || env.datastore_table_scan_bsatn_chunks(&mut ChunkPool::default(), table_id);
+        let tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let (tx, scan_result) = tx_slot.set(tx, f);
+
+        scan_result?;
+
+        let bytes_scanned = (1..=5)
+            .map(bsatn_row)
+            .filter_map(|bsatn_result| bsatn_result.ok())
+            .map(|bsatn| bsatn.len())
+            .sum::<usize>();
+
+        // The only non-zero metrics should be rows and bytes scanned.
+        // The table has 5 rows, so we should have 5 rows scanned.
+        // We should also have scanned the same number of bytes that we inserted.
+        assert_eq!(0, tx.metrics.index_seeks);
+        assert_eq!(5, tx.metrics.rows_scanned);
+        assert_eq!(bytes_scanned, tx.metrics.bytes_scanned);
+        assert_eq!(0, tx.metrics.bytes_written);
+        assert_eq!(0, tx.metrics.bytes_sent_to_clients);
+        Ok(())
+    }
+
+    #[test]
+    fn index_scan_metrics() -> Result<()> {
+        let db = relational_db()?;
+        let env = instance_env(db.clone())?;
+
+        let (_, index_id) = create_table_with_index(&db)?;
+
+        let mut tx_slot = env.tx.clone();
+
+        // Perform two index scans
+        let f = || -> Result<_> {
+            let index_key_3 = to_vec(&Bound::Included(AlgebraicValue::U64(3)))?;
+            let index_key_5 = to_vec(&Bound::Included(AlgebraicValue::U64(5)))?;
+            env.datastore_btree_scan_bsatn_chunks(
+                &mut ChunkPool::default(),
+                index_id,
+                &[],
+                0.into(),
+                &index_key_3,
+                &index_key_3,
+            )?;
+            env.datastore_btree_scan_bsatn_chunks(
+                &mut ChunkPool::default(),
+                index_id,
+                &[],
+                0.into(),
+                &index_key_5,
+                &index_key_5,
+            )?;
+            Ok(())
+        };
+        let tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let (tx, scan_result) = tx_slot.set(tx, f);
+
+        scan_result?;
+
+        let bytes_scanned = [3, 5]
+            .into_iter()
+            .map(bsatn_row)
+            .filter_map(|bsatn_result| bsatn_result.ok())
+            .map(|bsatn| bsatn.len())
+            .sum::<usize>();
+
+        // We performed two index scans to fetch rows 3 and 5
+        assert_eq!(2, tx.metrics.index_seeks);
+        assert_eq!(2, tx.metrics.rows_scanned);
+        assert_eq!(bytes_scanned, tx.metrics.bytes_scanned);
+        assert_eq!(0, tx.metrics.bytes_written);
+        assert_eq!(0, tx.metrics.bytes_sent_to_clients);
+        Ok(())
+    }
+
+    #[test]
+    fn insert_metrics() -> Result<()> {
+        let db = relational_db()?;
+        let env = instance_env(db.clone())?;
+
+        let (table_id, _) = create_table_with_index(&db)?;
+
+        let mut tx_slot = env.tx.clone();
+
+        // Insert 4 new rows into `t`
+        let f = || -> Result<_> {
+            for i in 6..=9 {
+                let mut buffer = bsatn_row(i)?;
+                env.insert(table_id, &mut buffer)?;
+            }
+            Ok(())
+        };
+        let tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let (tx, insert_result) = tx_slot.set(tx, f);
+
+        insert_result?;
+
+        let bytes_written = (6..=9)
+            .map(bsatn_row)
+            .filter_map(|bsatn_result| bsatn_result.ok())
+            .map(|bsatn| bsatn.len())
+            .sum::<usize>();
+
+        // The only metric affected by inserts is bytes written
+        assert_eq!(0, tx.metrics.index_seeks);
+        assert_eq!(0, tx.metrics.rows_scanned);
+        assert_eq!(0, tx.metrics.bytes_scanned);
+        assert_eq!(bytes_written, tx.metrics.bytes_written);
+        assert_eq!(0, tx.metrics.bytes_sent_to_clients);
+        Ok(())
+    }
+
+    #[test]
+    fn delete_by_index_metrics() -> Result<()> {
+        let db = relational_db()?;
+        let env = instance_env(db.clone())?;
+
+        let (_, index_id) = create_table_with_index(&db)?;
+
+        let mut tx_slot = env.tx.clone();
+
+        // Delete a single row via the index
+        let f = || -> Result<_> {
+            let index_key = to_vec(&Bound::Included(AlgebraicValue::U64(3)))?;
+            env.datastore_delete_by_btree_scan_bsatn(index_id, &[], 0.into(), &index_key, &index_key)?;
+            Ok(())
+        };
+        let tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let (tx, delete_result) = tx_slot.set(tx, f);
+
+        delete_result?;
+
+        assert_eq!(1, tx.metrics.index_seeks);
+        assert_eq!(1, tx.metrics.rows_scanned);
+        assert_eq!(0, tx.metrics.bytes_scanned);
+        assert_eq!(0, tx.metrics.bytes_written);
+        assert_eq!(0, tx.metrics.bytes_sent_to_clients);
+        Ok(())
+    }
+
+    #[test]
+    fn delete_by_value_metrics() -> Result<()> {
+        let db = relational_db()?;
+        let env = instance_env(db.clone())?;
+
+        let (table_id, _) = create_table_with_index(&db)?;
+
+        let mut tx_slot = env.tx.clone();
+
+        let bsatn_rows = to_vec(&(3..=5).map(product_row).collect::<Vec<_>>())?;
+
+        // Delete 3 rows by value
+        let f = || -> Result<_> {
+            env.datastore_delete_all_by_eq_bsatn(table_id, &bsatn_rows)?;
+            Ok(())
+        };
+        let tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let (tx, delete_result) = tx_slot.set(tx, f);
+
+        delete_result?;
+
+        let bytes_scanned = bsatn_rows.len();
+
+        assert_eq!(0, tx.metrics.index_seeks);
+        assert_eq!(3, tx.metrics.rows_scanned);
+        assert_eq!(bytes_scanned, tx.metrics.bytes_scanned);
+        assert_eq!(0, tx.metrics.bytes_written);
+        assert_eq!(0, tx.metrics.bytes_sent_to_clients);
+        Ok(())
     }
 }

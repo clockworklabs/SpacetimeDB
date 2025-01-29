@@ -1,6 +1,6 @@
 use super::{
     committed_state::CommittedState,
-    datastore::{record_metrics, Result},
+    datastore::{record_tx_metrics, Result},
     delete_table::DeleteTable,
     sequence::{Sequence, SequencesState},
     state_view::{IndexSeekIterIdMutTx, ScanIterByColRangeMutTx, StateView},
@@ -33,8 +33,8 @@ use core::cell::RefCell;
 use core::ops::RangeBounds;
 use core::{iter, ops::Bound};
 use smallvec::SmallVec;
-use spacetimedb_lib::db::raw_def::v9::RawSql;
 use spacetimedb_lib::db::{auth::StAccess, raw_def::SEQUENCE_ALLOCATION_STEP};
+use spacetimedb_lib::{db::raw_def::v9::RawSql, metrics::ExecutionMetrics};
 use spacetimedb_primitives::{ColId, ColList, ColSet, ConstraintId, IndexId, ScheduleId, SequenceId, TableId};
 use spacetimedb_sats::{
     bsatn::{self, to_writer, DecodeError, Deserializer},
@@ -70,6 +70,7 @@ pub struct MutTxId {
     pub(super) lock_wait_time: Duration,
     pub(crate) timer: Instant,
     pub(crate) ctx: ExecutionContext,
+    pub(crate) metrics: ExecutionMetrics,
 }
 
 impl MutTxId {
@@ -1052,13 +1053,14 @@ impl MutTxId {
         let tx_data = committed_state_write_lock.merge(tx_state, &self.ctx);
         // Record metrics for the transaction at the very end,
         // right before we drop and release the lock.
-        record_metrics(
+        record_tx_metrics(
             &self.ctx,
             self.timer,
             self.lock_wait_time,
             true,
             Some(&tx_data),
             Some(&committed_state_write_lock),
+            Some(self.metrics),
         );
         tx_data
     }
@@ -1072,13 +1074,14 @@ impl MutTxId {
         let tx_data = committed_state_write_lock.merge(tx_state, &self.ctx);
         // Record metrics for the transaction at the very end,
         // right before we drop and release the lock.
-        record_metrics(
+        record_tx_metrics(
             &self.ctx,
             self.timer,
             self.lock_wait_time,
             true,
             Some(&tx_data),
             Some(&committed_state_write_lock),
+            Some(self.metrics),
         );
         // Update the workload type of the execution context
         self.ctx.workload = workload.into();
@@ -1094,13 +1097,29 @@ impl MutTxId {
     pub fn rollback(self) {
         // Record metrics for the transaction at the very end,
         // right before we drop and release the lock.
-        record_metrics(&self.ctx, self.timer, self.lock_wait_time, false, None, None);
+        record_tx_metrics(
+            &self.ctx,
+            self.timer,
+            self.lock_wait_time,
+            false,
+            None,
+            None,
+            Some(self.metrics),
+        );
     }
 
     pub fn rollback_downgrade(mut self, workload: Workload) -> TxId {
         // Record metrics for the transaction at the very end,
         // right before we drop and release the lock.
-        record_metrics(&self.ctx, self.timer, self.lock_wait_time, false, None, None);
+        record_tx_metrics(
+            &self.ctx,
+            self.timer,
+            self.lock_wait_time,
+            false,
+            None,
+            None,
+            Some(self.metrics),
+        );
         // Update the workload type of the execution context
         self.ctx.workload = workload.into();
         TxId {
