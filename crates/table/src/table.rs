@@ -279,26 +279,6 @@ impl Table {
         Ok((hash, row_ref))
     }
 
-    /// Insert a `row` into this table during replay.
-    ///
-    /// NOTE: This method skips index updating. Use `insert` to insert a row with index updating.
-    pub fn insert_for_replay(
-        &mut self,
-        blob_store: &mut dyn BlobStore,
-        row: &ProductValue,
-    ) -> Result<(Option<RowHash>, RowPointer), InsertError> {
-        // Insert the `row`. There should be no errors
-        let (row_ref, blob_bytes) = self.insert_physically_pv(blob_store, row)?;
-        let row_ptr = row_ref.pointer();
-
-        // SAFETY: We just inserted the row, so `self.is_row_present(row_ptr)` holds.
-        let row_hash = unsafe { self.insert_into_pointer_map(blob_store, row_ptr) }?;
-
-        self.update_statistics_added_row(blob_bytes);
-
-        Ok((row_hash, row_ptr))
-    }
-
     /// Physically inserts `row` into the page
     /// without inserting it logically into the pointer map.
     ///
@@ -901,7 +881,6 @@ impl Table {
         &mut self,
         blob_store: &mut dyn BlobStore,
         row: &ProductValue,
-        skip_index_update: bool,
     ) -> Result<Option<RowPointer>, InsertError> {
         // Insert `row` temporarily so `temp_ptr` and `hash` can be used to find the row.
         // This must avoid consulting and inserting to the pointer map,
@@ -921,12 +900,9 @@ impl Table {
 
         // If an equal row was present, delete it.
         if let Some(existing_row_ptr) = existing_row_ptr {
-            let blob_bytes_deleted = if skip_index_update {
+            let blob_bytes_deleted = unsafe {
                 // SAFETY: `find_same_row` ensures that the pointer is valid.
-                unsafe { self.delete_internal(blob_store, existing_row_ptr) }
-            } else {
-                // SAFETY: `find_same_row` ensures that the pointer is valid.
-                unsafe { self.delete_unchecked(blob_store, existing_row_ptr) }
+                self.delete_unchecked(blob_store, existing_row_ptr)
             };
             self.update_statistics_deleted_row(blob_bytes_deleted);
         }

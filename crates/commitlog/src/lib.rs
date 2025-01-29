@@ -24,8 +24,8 @@ pub use crate::{
 pub mod error;
 pub mod payload;
 
-#[cfg(test)]
-mod tests;
+#[cfg(any(test, feature = "test"))]
+pub mod tests;
 
 /// [`Commitlog`] options.
 #[derive(Clone, Copy, Debug)]

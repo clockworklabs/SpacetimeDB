@@ -11,17 +11,17 @@ using System.Runtime.InteropServices;
 [SpacetimeDB.Type] // we should be able to encode it to BSATN too
 public partial struct DateTimeOffsetRepr(DateTimeOffset time)
 {
-    public ulong MicrosecondsSinceEpoch = (ulong)time.Ticks / 10;
+    public ulong MicrosecondsSinceEpoch = ScheduleAt.ToMicrosecondsSinceUnixEpoch(time);
 
     public readonly DateTimeOffset ToStd() =>
-        DateTimeOffset.UnixEpoch.AddTicks(10 * (long)MicrosecondsSinceEpoch);
+        ScheduleAt.DateTimeOffsetFromMicrosSinceUnixEpoch(MicrosecondsSinceEpoch);
 }
 
 [StructLayout(LayoutKind.Sequential)] // we should be able to use it in FFI
 [SpacetimeDB.Type] // we should be able to encode it to BSATN too
 public partial struct TimeSpanRepr(TimeSpan duration)
 {
-    public ulong Microseconds = (ulong)duration.Ticks / 10;
+    public ulong Microseconds = ScheduleAt.ToMicroseconds(duration);
 
-    public readonly TimeSpan ToStd() => TimeSpan.FromTicks(10 * (long)Microseconds);
+    public readonly TimeSpan ToStd() => ScheduleAt.TimeSpanFromMicroseconds(Microseconds);
 }
