@@ -96,6 +96,7 @@ public static partial class Module
         public List<Identity> q;
         public List<Address> r;
         public List<Timestamp> s;
+        public List<TimeDuration> t;
     }
 
     [SpacetimeDB.Table(Name = "one_u8", Public = true)]
