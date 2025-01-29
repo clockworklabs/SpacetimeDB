@@ -174,8 +174,6 @@ namespace SpacetimeDB
 
         public IEnumerable<Row> Iter() => Entries.Values;
 
-        protected IEnumerable<Row> Query(Func<Row, bool> filter) => Iter().Where(filter);
-
         public Task<Row[]> RemoteQuery(string query) =>
             conn!.RemoteQuery<Row>($"SELECT {Name}.* FROM {Name} {query}");
 
