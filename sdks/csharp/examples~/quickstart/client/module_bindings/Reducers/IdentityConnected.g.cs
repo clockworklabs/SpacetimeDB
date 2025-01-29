@@ -34,10 +34,4 @@ namespace SpacetimeDB.Types
             string IReducerArgs.ReducerName => "identity_connected";
         }
     }
-
-    public sealed partial class SetReducerFlags
-    {
-        internal CallReducerFlags IdentityConnectedFlags;
-        public void IdentityConnected(CallReducerFlags flags) { this.IdentityConnectedFlags = flags; }
-    }
 }
