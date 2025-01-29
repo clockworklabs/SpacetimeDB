@@ -143,9 +143,9 @@ public static class BSATNRuntimeTests
     [Fact]
     public static void TimestampConversionChecks()
     {
-        ulong us = 1737582793990639;
-        var time = ScheduleAt.DateTimeOffsetFromMicrosSinceUnixEpoch(us);
+        var us = 1737582793990639L;
 
+        var time = ScheduleAt.DateTimeOffsetFromMicrosSinceUnixEpoch(us);
         Assert.Equal(ScheduleAt.ToMicrosecondsSinceUnixEpoch(time), us);
 
         var interval = ScheduleAt.TimeSpanFromMicroseconds(us);
