@@ -1,20 +1,15 @@
 @echo off
 setlocal
 
-if "%CL_HOME%"=="" (
-  echo "Variable CL_HOME not set"
-  exit /b 1
-)
+set "STDB_PATH=%1"
+set "SDK_PATH=%~dp0.."
 
-cd %CL_HOME%\SpacetimeDB\crates\client-api-messages
-cargo run --example get_ws_schema > %CL_HOME%/schema.json
+cargo run --manifest-path %STDB_PATH%/crates/client-api-messages/Cargo.toml --example get_ws_schema | ^
+cargo run --manifest-path %STDB_PATH%/crates/cli/Cargo.toml -- generate -l csharp --namespace SpacetimeDB.ClientApi ^
+  --module-def ^
+  -o %SDK_PATH%/src/SpacetimeDB/ClientApi/.output
 
-cd %CL_HOME%\SpacetimeDB\crates\cli
-cargo run -- generate -l csharp --namespace SpacetimeDB.ClientApi ^
-  --module-def %CL_HOME%\schema.json ^
-  -o %CL_HOME%\spacetimedb-csharp-sdk\src\SpacetimeDB\ClientApi
+move "%SDK_PATH%\src\SpacetimeDB\ClientApi\.output\Types\*" "%SDK_PATH%\src\SpacetimeDB\ClientApi"
+rmdir /s /q "%SDK_PATH%\src\SpacetimeDB\ClientApi\.output"
 
-cd %CL_HOME%\spacetimedb-csharp-sdk\src\SpacetimeDB\ClientApi
-del /q _Globals
-
-del %CL_HOME%\schema.json
+endlocal
