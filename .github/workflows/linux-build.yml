@@ -1,4 +1,4 @@
-name: Build Linux SpacetimeDB CLI
+name: Build SpacetimeDB CLI
 
 on:
   push:
@@ -7,54 +7,53 @@ on:
     branches:
       - master
       - release/*
+      - noa/fix-master-ci
 
 jobs:
-  linux-amd64-cli:
-    runs-on: bare-metal
+  build-cli:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: x86_64-unknown-linux-gnu, runner: bare-metal }
+          - { target: aarch64-unknown-linux-gnu, runner: arm-runner }
+          - { target: aarch64-apple-darwin, runner: macos-latest }
+          - { target: x86_64-apple-darwin, runner: macos-latest }
+          - { target: x86_64-pc-windows-msvc, runner: windows-latest }
+
+    name: Build CLI for ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v3
 
-      - name: Compile x86
+      - name: Show arch
+        run: uname -a
+
+      - name: Install Rust
+        uses: dsherret/rust-toolchain-file@v1
+
+      - name: Install rust target
+        run: rustup target add ${{ matrix.target }}
+
+      - name: Compile
         run: |
-          export PATH=$HOME/.cargo/bin:$PATH
-          cargo build --release -p spacetimedb-cli
-          mkdir build
-          cp --sparse=never target/release/spacetime build/spacetime
-          cd build && tar -czf spacetime.linux-amd64.tar.gz spacetime
-          rm spacetime
+          cargo build --release --target ${{ matrix.target }} -p spacetimedb-cli -p spacetimedb-standalone -p spacetimedb-update
 
-      - name: Extract branch name
-        shell: bash
-        run: echo "branch=${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}" >> $GITHUB_OUTPUT
-        id: extract_branch
-
-      - name: Upload to DO Spaces
-        uses: shallwefootball/s3-upload-action@master
-        with:
-          aws_key_id: ${{ secrets.AWS_KEY_ID }}
-          aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY}}
-          aws_bucket: ${{ vars.AWS_BUCKET }}
-          source_dir: build
-          endpoint: https://nyc3.digitaloceanspaces.com
-          destination_dir: ${{ steps.extract_branch.outputs.branch }}
-
-  linux-arm64-cli:
-    runs-on: arm-runner
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v3
-
-      - name: Compile ARM64
+      - name: Package (unix)
+        if: ${{ runner.os != 'Windows' }}
         run: |
-          export PATH=$HOME/.cargo/bin:$PATH
-          cargo build --release -p spacetimedb-cli
           mkdir build
-          cp --sparse=never target/release/spacetime build/spacetime
-          cd build && tar -czf spacetime.linux-arm64.tar.gz spacetime
-          rm spacetime
+          cd target/${{matrix.target}}/release
+          tar -czf ../../../build/spacetime-${{matrix.target}}.tar.gz spacetimedb-{cli,standalone,update}
+
+      - name: Package (windows)
+        if: ${{ runner.os == 'Windows' }}
+        run: |
+          mkdir build
+          cd target/${{matrix.target}}/release
+          7z a ../../../build/spacetime-${{matrix.target}}.zip spacetimedb-cli.exe spacetimedb-standalone.exe spacetimedb-update.exe
 
       - name: Extract branch name
         shell: bash
