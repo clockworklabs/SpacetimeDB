@@ -1,7 +1,7 @@
 use errors::{SqlParseError, SqlRequired, SqlUnsupported};
 use sqlparser::ast::{
     BinaryOperator, Expr, Ident, Join, JoinConstraint, JoinOperator, ObjectName, Query, SelectItem, TableAlias,
-    TableFactor, TableWithJoins, Value, WildcardAdditionalOptions,
+    TableFactor, TableWithJoins, UnaryOperator, Value, WildcardAdditionalOptions,
 };
 
 use crate::ast::{BinOp, LogOp, Project, ProjectElem, ProjectExpr, SqlExpr, SqlFrom, SqlIdent, SqlJoin, SqlLiteral};
@@ -167,9 +167,27 @@ pub(crate) fn parse_proj(expr: Expr) -> SqlParseResult<ProjectExpr> {
 
 /// Parse a scalar expression
 pub(crate) fn parse_expr(expr: Expr) -> SqlParseResult<SqlExpr> {
+    fn signed_num(sign: impl Into<String>, expr: Expr) -> Result<SqlExpr, SqlUnsupported> {
+        match expr {
+            Expr::Value(Value::Number(n, _)) => Ok(SqlExpr::Lit(SqlLiteral::Num((sign.into() + &n).into_boxed_str()))),
+            expr => Err(SqlUnsupported::Expr(expr)),
+        }
+    }
     match expr {
         Expr::Nested(expr) => parse_expr(*expr),
         Expr::Value(v) => Ok(SqlExpr::Lit(parse_literal(v)?)),
+        Expr::UnaryOp {
+            op: UnaryOperator::Plus,
+            expr,
+        } if matches!(&*expr, Expr::Value(Value::Number(..))) => {
+            signed_num("+", *expr).map_err(SqlParseError::SqlUnsupported)
+        }
+        Expr::UnaryOp {
+            op: UnaryOperator::Minus,
+            expr,
+        } if matches!(&*expr, Expr::Value(Value::Number(..))) => {
+            signed_num("-", *expr).map_err(SqlParseError::SqlUnsupported)
+        }
         Expr::Identifier(ident) => Ok(SqlExpr::Var(ident.into())),
         Expr::CompoundIdentifier(mut idents) if idents.len() == 2 => {
             let table = idents.swap_remove(0).into();

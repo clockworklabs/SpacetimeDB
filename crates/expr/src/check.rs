@@ -239,9 +239,13 @@ mod tests {
             (
                 "t",
                 ProductType::from([
-                    ("int", AlgebraicType::U32),
+                    ("i8", AlgebraicType::I8),
+                    ("u8", AlgebraicType::U8),
+                    ("i32", AlgebraicType::I32),
                     ("u32", AlgebraicType::U32),
+                    ("int", AlgebraicType::U32),
                     ("f32", AlgebraicType::F32),
+                    ("u256", AlgebraicType::U256),
                     ("str", AlgebraicType::String),
                     ("arr", AlgebraicType::array(AlgebraicType::String)),
                 ]),
@@ -259,23 +263,150 @@ mod tests {
     }
 
     #[test]
+    fn valid_literals() {
+        let tx = SchemaViewer(module_def());
+
+        struct TestCase {
+            sql: &'static str,
+            msg: &'static str,
+        }
+
+        for TestCase { sql, msg } in [
+            TestCase {
+                sql: "select * from t where i32 = -1",
+                msg: "Leading `-`",
+            },
+            TestCase {
+                sql: "select * from t where u32 = +1",
+                msg: "Leading `+`",
+            },
+            TestCase {
+                sql: "select * from t where u32 = 1e3",
+                msg: "Scientific notation",
+            },
+            TestCase {
+                sql: "select * from t where u32 = 1E3",
+                msg: "Case insensitive scientific notation",
+            },
+            TestCase {
+                sql: "select * from t where f32 = 1e3",
+                msg: "Integers can parse as floats",
+            },
+            TestCase {
+                sql: "select * from t where f32 = 1e-3",
+                msg: "Negative exponent",
+            },
+            TestCase {
+                sql: "select * from t where f32 = 0.1",
+                msg: "Standard decimal notation",
+            },
+            TestCase {
+                sql: "select * from t where f32 = .1",
+                msg: "Leading `.`",
+            },
+            TestCase {
+                sql: "select * from t where f32 = 1e40",
+                msg: "Infinity",
+            },
+            TestCase {
+                sql: "select * from t where u256 = 1e40",
+                msg: "u256",
+            },
+        ] {
+            let result = parse_and_type_sub(sql, &tx);
+            assert!(result.is_ok(), "{msg}");
+        }
+    }
+
+    #[test]
+    fn invalid_literals() {
+        let tx = SchemaViewer(module_def());
+
+        struct TestCase {
+            sql: &'static str,
+            msg: &'static str,
+        }
+
+        for TestCase { sql, msg } in [
+            TestCase {
+                sql: "select * from t where u8 = -1",
+                msg: "Negative integer for unsigned column",
+            },
+            TestCase {
+                sql: "select * from t where u8 = 1e3",
+                msg: "Out of bounds",
+            },
+            TestCase {
+                sql: "select * from t where u8 = 0.1",
+                msg: "Float as integer",
+            },
+            TestCase {
+                sql: "select * from t where u32 = 1e-3",
+                msg: "Float as integer",
+            },
+            TestCase {
+                sql: "select * from t where i32 = 1e-3",
+                msg: "Float as integer",
+            },
+        ] {
+            let result = parse_and_type_sub(sql, &tx);
+            assert!(result.is_err(), "{msg}");
+        }
+    }
+
+    #[test]
     fn valid() {
         let tx = SchemaViewer(module_def());
 
-        for sql in [
-            "select * from t",
-            "select * from t where true",
-            "select * from t where t.u32 = 1",
-            "select * from t where u32 = 1",
-            "select * from t where t.u32 = 1 or t.str = ''",
-            "select * from s where s.bytes = 0xABCD or bytes = X'ABCD'",
-            "select * from s as r where r.bytes = 0xABCD or bytes = X'ABCD'",
-            "select t.* from t join s",
-            "select t.* from t join s join s as r where t.u32 = s.u32 and s.u32 = r.u32",
-            "select t.* from t join s on t.u32 = s.u32 where t.f32 = 0.1",
+        struct TestCase {
+            sql: &'static str,
+            msg: &'static str,
+        }
+
+        for TestCase { sql, msg } in [
+            TestCase {
+                sql: "select * from t",
+                msg: "Can select * on any table",
+            },
+            TestCase {
+                sql: "select * from t where true",
+                msg: "Boolean literals are valid in WHERE clause",
+            },
+            TestCase {
+                sql: "select * from t where t.u32 = 1",
+                msg: "Can qualify column references with table name",
+            },
+            TestCase {
+                sql: "select * from t where u32 = 1",
+                msg: "Can leave columns unqualified when unambiguous",
+            },
+            TestCase {
+                sql: "select * from t where t.u32 = 1 or t.str = ''",
+                msg: "Type OR with qualified column references",
+            },
+            TestCase {
+                sql: "select * from s where s.bytes = 0xABCD or bytes = X'ABCD'",
+                msg: "Type OR with mixed qualified and unqualified column references",
+            },
+            TestCase {
+                sql: "select * from s as r where r.bytes = 0xABCD or bytes = X'ABCD'",
+                msg: "Type OR with table alias",
+            },
+            TestCase {
+                sql: "select t.* from t join s",
+                msg: "Type cross join + projection",
+            },
+            TestCase {
+                sql: "select t.* from t join s join s as r where t.u32 = s.u32 and s.u32 = r.u32",
+                msg: "Type self join + projection",
+            },
+            TestCase {
+                sql: "select t.* from t join s on t.u32 = s.u32 where t.f32 = 0.1",
+                msg: "Type inner join + projection",
+            },
         ] {
             let result = parse_and_type_sub(sql, &tx);
-            assert!(result.is_ok());
+            assert!(result.is_ok(), "{msg}");
         }
     }
 
@@ -283,32 +414,59 @@ mod tests {
     fn invalid() {
         let tx = SchemaViewer(module_def());
 
-        for sql in [
-            // Table r does not exist
-            "select * from r",
-            // Field a does not exist on table t
-            "select * from t where t.a = 1",
-            // Field a does not exist on table t
-            "select * from t as r where r.a = 1",
-            // Field u32 is not a string
-            "select * from t where u32 = 'str'",
-            // Field u32 is not a float
-            "select * from t where t.u32 = 1.3",
-            // t is not in scope after alias
-            "select * from t as r where t.u32 = 5",
-            // Subscriptions must be typed to a single table
-            "select u32 from t",
-            // Subscriptions must be typed to a single table
-            "select * from t join s",
-            // Self join requires aliases
-            "select t.* from t join t",
-            // Product values are not comparable
-            "select t.* from t join s on t.arr = s.arr",
-            // Alias r is not in scope when it is referenced
-            "select t.* from t join s on t.u32 = r.u32 join s as r",
+        struct TestCase {
+            sql: &'static str,
+            msg: &'static str,
+        }
+
+        for TestCase { sql, msg } in [
+            TestCase {
+                sql: "select * from r",
+                msg: "Table r does not exist",
+            },
+            TestCase {
+                sql: "select * from t where t.a = 1",
+                msg: "Field a does not exist on table t",
+            },
+            TestCase {
+                sql: "select * from t as r where r.a = 1",
+                msg: "Field a does not exist on table t",
+            },
+            TestCase {
+                sql: "select * from t where u32 = 'str'",
+                msg: "Field u32 is not a string",
+            },
+            TestCase {
+                sql: "select * from t where t.u32 = 1.3",
+                msg: "Field u32 is not a float",
+            },
+            TestCase {
+                sql: "select * from t as r where t.u32 = 5",
+                msg: "t is not in scope after alias",
+            },
+            TestCase {
+                sql: "select u32 from t",
+                msg: "Subscriptions must be typed to a single table",
+            },
+            TestCase {
+                sql: "select * from t join s",
+                msg: "Subscriptions must be typed to a single table",
+            },
+            TestCase {
+                sql: "select t.* from t join t",
+                msg: "Self join requires aliases",
+            },
+            TestCase {
+                sql: "select t.* from t join s on t.arr = s.arr",
+                msg: "Product values are not comparable",
+            },
+            TestCase {
+                sql: "select t.* from t join s on t.u32 = r.u32 join s as r",
+                msg: "Alias r is not in scope when it is referenced",
+            },
         ] {
             let result = parse_and_type_sub(sql, &tx);
-            assert!(result.is_err());
+            assert!(result.is_err(), "{msg}");
         }
     }
 }
