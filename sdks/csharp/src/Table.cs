@@ -7,11 +7,11 @@ using SpacetimeDB.BSATN;
 
 namespace SpacetimeDB
 {
-    public abstract class RemoteBase<DbConnection>
+    public abstract class RemoteBase
     {
-        protected readonly DbConnection conn;
+        protected readonly IDbConnection conn;
 
-        protected RemoteBase(DbConnection conn)
+        protected RemoteBase(IDbConnection conn)
         {
             this.conn = conn;
         }
@@ -32,11 +32,9 @@ namespace SpacetimeDB
         internal void InvokeDelete(IEventContext context, IStructuralReadWrite row);
         internal void InvokeBeforeDelete(IEventContext context, IStructuralReadWrite row);
         internal void InvokeUpdate(IEventContext context, IStructuralReadWrite oldRow, IStructuralReadWrite newRow);
-
-        internal void Initialize(IDbConnection conn);
     }
 
-    public abstract class RemoteTableHandle<EventContext, Row> : IRemoteTableHandle
+    public abstract class RemoteTableHandle<EventContext, Row> : RemoteBase, IRemoteTableHandle
         where EventContext : class, IEventContext
         where Row : class, IStructuralReadWrite, new()
     {
@@ -97,9 +95,8 @@ namespace SpacetimeDB
 
         protected abstract string Name { get; }
         string IRemoteTableHandle.Name => Name;
-        IDbConnection? conn;
 
-        void IRemoteTableHandle.Initialize(IDbConnection conn) => this.conn = conn;
+        public RemoteTableHandle(IDbConnection conn) : base(conn) { }
 
         // This method needs to be overridden by autogen.
         protected virtual object? GetPrimaryKey(Row row) => null;
@@ -175,7 +172,7 @@ namespace SpacetimeDB
         public IEnumerable<Row> Iter() => Entries.Values;
 
         public Task<Row[]> RemoteQuery(string query) =>
-            conn!.RemoteQuery<Row>($"SELECT {Name}.* FROM {Name} {query}");
+            conn.RemoteQuery<Row>($"SELECT {Name}.* FROM {Name} {query}");
 
         void IRemoteTableHandle.InvokeInsert(IEventContext context, IStructuralReadWrite row) =>
             OnInsert?.Invoke((EventContext)context, (Row)row);

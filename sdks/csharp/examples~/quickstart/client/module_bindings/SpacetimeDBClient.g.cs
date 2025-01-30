@@ -10,27 +10,34 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-    public sealed partial class RemoteReducers : RemoteBase<DbConnection>
+    public sealed partial class RemoteReducers : RemoteBase
     {
-        internal RemoteReducers(DbConnection conn, SetReducerFlags SetReducerFlags) : base(conn) { this.SetCallReducerFlags = SetReducerFlags; }
+        internal RemoteReducers(DbConnection conn, SetReducerFlags flags) : base(conn) => SetCallReducerFlags = flags;
         internal readonly SetReducerFlags SetCallReducerFlags;
     }
 
-    public sealed partial class SetReducerFlags
+    public sealed partial class RemoteTables : RemoteTablesBase
     {
-        internal SetReducerFlags() { }
+        public RemoteTables(DbConnection conn)
+        {
+            AddTable(Message = new(conn));
+            AddTable(User = new(conn));
+        }
     }
 
-    public sealed record EventContext : DbContext<RemoteTables>, IEventContext
+    public sealed partial class SetReducerFlags { }
+    public sealed class EventContext : IEventContext
     {
-        public readonly RemoteReducers Reducers;
-        public readonly SetReducerFlags SetReducerFlags;
+        private readonly DbConnection conn;
         public readonly Event<Reducer> Event;
 
-        internal EventContext(DbConnection conn, Event<Reducer> reducerEvent) : base(conn.Db)
+        public RemoteTables Db => conn.Db;
+        public RemoteReducers Reducers => conn.Reducers;
+        public SetReducerFlags SetReducerFlags => conn.SetReducerFlags;
+
+        internal EventContext(DbConnection conn, Event<Reducer> reducerEvent)
         {
-            Reducers = conn.Reducers;
-            SetReducerFlags = conn.SetReducerFlags;
+            this.conn = conn;
             Event = reducerEvent;
         }
     }
@@ -42,19 +49,16 @@ namespace SpacetimeDB.Types
         public sealed class StdbNone : Reducer { }
     }
 
-    public sealed class DbConnection : DbConnectionBase<DbConnection, Reducer>
+    public sealed class DbConnection : DbConnectionBase<DbConnection, RemoteTables, Reducer>
     {
-        public readonly RemoteTables Db = new();
+        public override RemoteTables Db { get; }
         public readonly RemoteReducers Reducers;
-        public readonly SetReducerFlags SetReducerFlags;
+        public readonly SetReducerFlags SetReducerFlags = new();
 
         public DbConnection()
         {
-            SetReducerFlags = new();
-            Reducers = new(this, this.SetReducerFlags);
-
-            clientDB.AddTable(Db.Message);
-            clientDB.AddTable(Db.User);
+            Db = new(this);
+            Reducers = new(this, SetReducerFlags);
         }
 
         protected override Reducer ToReducer(TransactionUpdate update)

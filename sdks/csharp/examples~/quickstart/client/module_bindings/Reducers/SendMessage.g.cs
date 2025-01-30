@@ -10,7 +10,7 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-    public sealed partial class RemoteReducers : RemoteBase<DbConnection>
+    public sealed partial class RemoteReducers : RemoteBase
     {
         public delegate void SendMessageHandler(EventContext ctx, string text);
         public event SendMessageHandler? OnSendMessage;
@@ -57,6 +57,6 @@ namespace SpacetimeDB.Types
     public sealed partial class SetReducerFlags
     {
         internal CallReducerFlags SendMessageFlags;
-        public void SendMessage(CallReducerFlags flags) { this.SendMessageFlags = flags; }
+        public void SendMessage(CallReducerFlags flags) => SendMessageFlags = flags;
     }
 }

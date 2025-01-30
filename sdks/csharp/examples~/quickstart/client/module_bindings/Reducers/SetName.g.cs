@@ -10,7 +10,7 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-    public sealed partial class RemoteReducers : RemoteBase<DbConnection>
+    public sealed partial class RemoteReducers : RemoteBase
     {
         public delegate void SetNameHandler(EventContext ctx, string name);
         public event SetNameHandler? OnSetName;
@@ -57,6 +57,6 @@ namespace SpacetimeDB.Types
     public sealed partial class SetReducerFlags
     {
         internal CallReducerFlags SetNameFlags;
-        public void SetName(CallReducerFlags flags) { this.SetNameFlags = flags; }
+        public void SetName(CallReducerFlags flags) => SetNameFlags = flags;
     }
 }

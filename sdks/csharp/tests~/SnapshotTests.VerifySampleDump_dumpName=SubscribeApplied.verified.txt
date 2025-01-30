@@ -7,12 +7,12 @@
     },
     OnInsertUser: {
       eventContext: {
-        Reducers: {Scrubbed},
-        SetReducerFlags: {},
         Event: {
           $type: Event<Reducer>.SubscribeApplied
         },
-        Db: {Scrubbed}
+        Db: {Scrubbed},
+        Reducers: {Scrubbed},
+        SetReducerFlags: {}
       },
       user: {
         identity: Identity_1,
@@ -22,8 +22,6 @@
     LogException: Unknown reducer unknown-reducer (Parameter 'Reducer'),
     OnInsertUser: {
       eventContext: {
-        Reducers: {Scrubbed},
-        SetReducerFlags: {},
         Event: {
           $type: Event<Reducer>.Reducer,
           ReducerEvent: {
@@ -39,7 +37,9 @@
             }
           }
         },
-        Db: {Scrubbed}
+        Db: {Scrubbed},
+        Reducers: {Scrubbed},
+        SetReducerFlags: {}
       },
       user: {
         identity: Identity_2,
@@ -48,8 +48,6 @@
     },
     OnUpdateUser: {
       eventContext: {
-        Reducers: {Scrubbed},
-        SetReducerFlags: {},
         Event: {
           $type: Event<Reducer>.Reducer,
           ReducerEvent: {
@@ -66,7 +64,9 @@
             }
           }
         },
-        Db: {Scrubbed}
+        Db: {Scrubbed},
+        Reducers: {Scrubbed},
+        SetReducerFlags: {}
       },
       oldUser: {
         identity: Identity_1,
@@ -79,8 +79,6 @@
       }
     },
     OnSetName: {
-      Reducers: {Scrubbed},
-      SetReducerFlags: {},
       Event: {
         $type: Event<Reducer>.Reducer,
         ReducerEvent: {
@@ -97,12 +95,12 @@
           }
         }
       },
-      Db: {Scrubbed}
+      Db: {Scrubbed},
+      Reducers: {Scrubbed},
+      SetReducerFlags: {}
     },
     OnInsertMessage: {
       eventContext: {
-        Reducers: {Scrubbed},
-        SetReducerFlags: {},
         Event: {
           $type: Event<Reducer>.Reducer,
           ReducerEvent: {
@@ -119,7 +117,9 @@
             }
           }
         },
-        Db: {Scrubbed}
+        Db: {Scrubbed},
+        Reducers: {Scrubbed},
+        SetReducerFlags: {}
       },
       message: {
         sender: Identity_2,
@@ -128,8 +128,6 @@
       }
     },
     OnSendMessage: {
-      Reducers: {Scrubbed},
-      SetReducerFlags: {},
       Event: {
         $type: Event<Reducer>.Reducer,
         ReducerEvent: {
@@ -146,12 +144,12 @@
           }
         }
       },
-      Db: {Scrubbed}
+      Db: {Scrubbed},
+      Reducers: {Scrubbed},
+      SetReducerFlags: {}
     },
     OnUpdateUser: {
       eventContext: {
-        Reducers: {Scrubbed},
-        SetReducerFlags: {},
         Event: {
           $type: Event<Reducer>.Reducer,
           ReducerEvent: {
@@ -168,7 +166,9 @@
             }
           }
         },
-        Db: {Scrubbed}
+        Db: {Scrubbed},
+        Reducers: {Scrubbed},
+        SetReducerFlags: {}
       },
       oldUser: {
         identity: Identity_2,
@@ -181,8 +181,6 @@
       }
     },
     OnSetName: {
-      Reducers: {Scrubbed},
-      SetReducerFlags: {},
       Event: {
         $type: Event<Reducer>.Reducer,
         ReducerEvent: {
@@ -199,12 +197,12 @@
           }
         }
       },
-      Db: {Scrubbed}
+      Db: {Scrubbed},
+      Reducers: {Scrubbed},
+      SetReducerFlags: {}
     },
     OnInsertMessage: {
       eventContext: {
-        Reducers: {Scrubbed},
-        SetReducerFlags: {},
         Event: {
           $type: Event<Reducer>.Reducer,
           ReducerEvent: {
@@ -221,7 +219,9 @@
             }
           }
         },
-        Db: {Scrubbed}
+        Db: {Scrubbed},
+        Reducers: {Scrubbed},
+        SetReducerFlags: {}
       },
       message: {
         sender: Identity_1,
@@ -230,8 +230,6 @@
       }
     },
     OnSendMessage: {
-      Reducers: {Scrubbed},
-      SetReducerFlags: {},
       Event: {
         $type: Event<Reducer>.Reducer,
         ReducerEvent: {
@@ -248,12 +246,12 @@
           }
         }
       },
-      Db: {Scrubbed}
+      Db: {Scrubbed},
+      Reducers: {Scrubbed},
+      SetReducerFlags: {}
     },
     OnInsertMessage: {
       eventContext: {
-        Reducers: {Scrubbed},
-        SetReducerFlags: {},
         Event: {
           $type: Event<Reducer>.Reducer,
           ReducerEvent: {
@@ -270,7 +268,9 @@
             }
           }
         },
-        Db: {Scrubbed}
+        Db: {Scrubbed},
+        Reducers: {Scrubbed},
+        SetReducerFlags: {}
       },
       message: {
         sender: Identity_2,
@@ -279,8 +279,6 @@
       }
     },
     OnSendMessage: {
-      Reducers: {Scrubbed},
-      SetReducerFlags: {},
       Event: {
         $type: Event<Reducer>.Reducer,
         ReducerEvent: {
@@ -297,12 +295,12 @@
           }
         }
       },
-      Db: {Scrubbed}
+      Db: {Scrubbed},
+      Reducers: {Scrubbed},
+      SetReducerFlags: {}
     },
     OnUpdateUser: {
       eventContext: {
-        Reducers: {Scrubbed},
-        SetReducerFlags: {},
         Event: {
           $type: Event<Reducer>.Reducer,
           ReducerEvent: {
@@ -318,7 +316,9 @@
             }
           }
         },
-        Db: {Scrubbed}
+        Db: {Scrubbed},
+        Reducers: {Scrubbed},
+        SetReducerFlags: {}
       },
       oldUser: {
         identity: Identity_2,
@@ -333,8 +333,6 @@
     },
     OnInsertMessage: {
       eventContext: {
-        Reducers: {Scrubbed},
-        SetReducerFlags: {},
         Event: {
           $type: Event<Reducer>.Reducer,
           ReducerEvent: {
@@ -351,7 +349,9 @@
             }
           }
         },
-        Db: {Scrubbed}
+        Db: {Scrubbed},
+        Reducers: {Scrubbed},
+        SetReducerFlags: {}
       },
       message: {
         sender: Identity_1,
@@ -360,8 +360,6 @@
       }
     },
     OnSendMessage: {
-      Reducers: {Scrubbed},
-      SetReducerFlags: {},
       Event: {
         $type: Event<Reducer>.Reducer,
         ReducerEvent: {
@@ -378,16 +376,18 @@
           }
         }
       },
-      Db: {Scrubbed}
+      Db: {Scrubbed},
+      Reducers: {Scrubbed},
+      SetReducerFlags: {}
     },
     OnDeleteMessage: {
       eventContext: {
-        Reducers: {Scrubbed},
-        SetReducerFlags: {},
         Event: {
           $type: Event<Reducer>.UnsubscribeApplied
         },
-        Db: {Scrubbed}
+        Db: {Scrubbed},
+        Reducers: {Scrubbed},
+        SetReducerFlags: {}
       },
       message: {
         sender: Identity_2,
@@ -397,12 +397,12 @@
     },
     OnDeleteMessage: {
       eventContext: {
-        Reducers: {Scrubbed},
-        SetReducerFlags: {},
         Event: {
           $type: Event<Reducer>.UnsubscribeApplied
         },
-        Db: {Scrubbed}
+        Db: {Scrubbed},
+        Reducers: {Scrubbed},
+        SetReducerFlags: {}
       },
       message: {
         sender: Identity_1,
@@ -412,12 +412,12 @@
     },
     OnDeleteMessage: {
       eventContext: {
-        Reducers: {Scrubbed},
-        SetReducerFlags: {},
         Event: {
           $type: Event<Reducer>.UnsubscribeApplied
         },
-        Db: {Scrubbed}
+        Db: {Scrubbed},
+        Reducers: {Scrubbed},
+        SetReducerFlags: {}
       },
       message: {
         sender: Identity_2,
@@ -427,12 +427,12 @@
     },
     OnDeleteMessage: {
       eventContext: {
-        Reducers: {Scrubbed},
-        SetReducerFlags: {},
         Event: {
           $type: Event<Reducer>.UnsubscribeApplied
         },
-        Db: {Scrubbed}
+        Db: {Scrubbed},
+        Reducers: {Scrubbed},
+        SetReducerFlags: {}
       },
       message: {
         sender: Identity_1,
@@ -443,12 +443,12 @@
     LogWarning: Subscription Error: $bad query dude,
     OnInsertMessage: {
       eventContext: {
-        Reducers: {Scrubbed},
-        SetReducerFlags: {},
         Event: {
           $type: Event<Reducer>.SubscribeApplied
         },
-        Db: {Scrubbed}
+        Db: {Scrubbed},
+        Reducers: {Scrubbed},
+        SetReducerFlags: {}
       },
       message: {
         sender: Identity_2,
@@ -458,12 +458,12 @@
     },
     OnInsertMessage: {
       eventContext: {
-        Reducers: {Scrubbed},
-        SetReducerFlags: {},
         Event: {
           $type: Event<Reducer>.SubscribeApplied
         },
-        Db: {Scrubbed}
+        Db: {Scrubbed},
+        Reducers: {Scrubbed},
+        SetReducerFlags: {}
       },
       message: {
         sender: Identity_1,
@@ -473,12 +473,12 @@
     },
     OnInsertMessage: {
       eventContext: {
-        Reducers: {Scrubbed},
-        SetReducerFlags: {},
         Event: {
           $type: Event<Reducer>.SubscribeApplied
         },
-        Db: {Scrubbed}
+        Db: {Scrubbed},
+        Reducers: {Scrubbed},
+        SetReducerFlags: {}
       },
       message: {
         sender: Identity_2,
@@ -488,12 +488,12 @@
     },
     OnInsertMessage: {
       eventContext: {
-        Reducers: {Scrubbed},
-        SetReducerFlags: {},
         Event: {
           $type: Event<Reducer>.SubscribeApplied
         },
-        Db: {Scrubbed}
+        Db: {Scrubbed},
+        Reducers: {Scrubbed},
+        SetReducerFlags: {}
       },
       message: {
         sender: Identity_1,

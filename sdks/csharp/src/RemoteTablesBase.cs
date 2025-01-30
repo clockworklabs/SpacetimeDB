@@ -1,21 +1,15 @@
 ﻿using System.Collections.Generic;
+using System.Linq;
 
 namespace SpacetimeDB
 {
-    // TODO: merge this into `RemoteTables`.
-    // It should just provide auto-generated `GetTable` and `GetTables` methods.
-    public sealed class ClientCache
+    public abstract class RemoteTablesBase
     {
-        private readonly IDbConnection conn;
-
         private readonly Dictionary<string, IRemoteTableHandle> tables = new();
 
-        public ClientCache(IDbConnection conn) => this.conn = conn;
-
-        public void AddTable(IRemoteTableHandle table)
+        protected void AddTable(IRemoteTableHandle table)
         {
             tables.Add(table.Name, table);
-            table.Initialize(conn);
         }
 
         internal IRemoteTableHandle? GetTable(string name)

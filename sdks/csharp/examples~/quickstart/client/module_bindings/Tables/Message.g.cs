@@ -17,11 +17,11 @@ namespace SpacetimeDB.Types
         {
             protected override string Name => "message";
 
-            internal MessageHandle()
+            internal MessageHandle(DbConnection conn) : base(conn)
             {
             }
         }
 
-        public readonly MessageHandle Message = new();
+        public readonly MessageHandle Message;
     }
 }

@@ -536,7 +536,7 @@ public class SnapshotTests
                 new EnergyQuantaConverter()
             ]))
             .ScrubMember<TransactionUpdate>(x => x.Status)
-            .ScrubMember<DbContext<RemoteTables>>(x => x.Db)
+            .ScrubMember<EventContext>(x => x.Db)
             .ScrubMember<EventContext>(x => x.Reducers);
     }
 }

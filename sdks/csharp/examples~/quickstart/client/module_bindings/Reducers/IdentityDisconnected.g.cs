@@ -10,7 +10,7 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-    public sealed partial class RemoteReducers : RemoteBase<DbConnection>
+    public sealed partial class RemoteReducers : RemoteBase
     {
         public delegate void IdentityDisconnectedHandler(EventContext ctx);
         public event IdentityDisconnectedHandler? OnIdentityDisconnected;
