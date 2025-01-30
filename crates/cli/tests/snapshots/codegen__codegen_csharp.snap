@@ -16,7 +16,7 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB
 {
-    public sealed partial class RemoteReducers : RemoteBase<DbConnection>
+    public sealed partial class RemoteReducers : RemoteBase
     {
         public delegate void AddPlayerHandler(EventContext ctx, string name);
         public event AddPlayerHandler? OnAddPlayer;
@@ -63,7 +63,7 @@ namespace SpacetimeDB
     public sealed partial class SetReducerFlags
     {
         internal CallReducerFlags AddPlayerFlags;
-        public void AddPlayer(CallReducerFlags flags) { this.AddPlayerFlags = flags; }
+        public void AddPlayer(CallReducerFlags flags) => AddPlayerFlags = flags;
     }
 }
 '''
@@ -80,7 +80,7 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB
 {
-    public sealed partial class RemoteReducers : RemoteBase<DbConnection>
+    public sealed partial class RemoteReducers : RemoteBase
     {
         public delegate void AddPrivateHandler(EventContext ctx, string name);
         public event AddPrivateHandler? OnAddPrivate;
@@ -127,7 +127,7 @@ namespace SpacetimeDB
     public sealed partial class SetReducerFlags
     {
         internal CallReducerFlags AddPrivateFlags;
-        public void AddPrivate(CallReducerFlags flags) { this.AddPrivateFlags = flags; }
+        public void AddPrivate(CallReducerFlags flags) => AddPrivateFlags = flags;
     }
 }
 '''
@@ -144,7 +144,7 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB
 {
-    public sealed partial class RemoteReducers : RemoteBase<DbConnection>
+    public sealed partial class RemoteReducers : RemoteBase
     {
         public delegate void AssertCallerIdentityIsModuleIdentityHandler(EventContext ctx);
         public event AssertCallerIdentityIsModuleIdentityHandler? OnAssertCallerIdentityIsModuleIdentity;
@@ -177,7 +177,7 @@ namespace SpacetimeDB
     public sealed partial class SetReducerFlags
     {
         internal CallReducerFlags AssertCallerIdentityIsModuleIdentityFlags;
-        public void AssertCallerIdentityIsModuleIdentity(CallReducerFlags flags) { this.AssertCallerIdentityIsModuleIdentityFlags = flags; }
+        public void AssertCallerIdentityIsModuleIdentity(CallReducerFlags flags) => AssertCallerIdentityIsModuleIdentityFlags = flags;
     }
 }
 '''
@@ -194,7 +194,7 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB
 {
-    public sealed partial class RemoteReducers : RemoteBase<DbConnection>
+    public sealed partial class RemoteReducers : RemoteBase
     {
         public delegate void ClientConnectedHandler(EventContext ctx);
         public event ClientConnectedHandler? OnClientConnected;
@@ -233,7 +233,7 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB
 {
-    public sealed partial class RemoteReducers : RemoteBase<DbConnection>
+    public sealed partial class RemoteReducers : RemoteBase
     {
         public delegate void DeletePlayerHandler(EventContext ctx, ulong id);
         public event DeletePlayerHandler? OnDeletePlayer;
@@ -279,7 +279,7 @@ namespace SpacetimeDB
     public sealed partial class SetReducerFlags
     {
         internal CallReducerFlags DeletePlayerFlags;
-        public void DeletePlayer(CallReducerFlags flags) { this.DeletePlayerFlags = flags; }
+        public void DeletePlayer(CallReducerFlags flags) => DeletePlayerFlags = flags;
     }
 }
 '''
@@ -296,7 +296,7 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB
 {
-    public sealed partial class RemoteReducers : RemoteBase<DbConnection>
+    public sealed partial class RemoteReducers : RemoteBase
     {
         public delegate void DeletePlayersByNameHandler(EventContext ctx, string name);
         public event DeletePlayersByNameHandler? OnDeletePlayersByName;
@@ -343,7 +343,7 @@ namespace SpacetimeDB
     public sealed partial class SetReducerFlags
     {
         internal CallReducerFlags DeletePlayersByNameFlags;
-        public void DeletePlayersByName(CallReducerFlags flags) { this.DeletePlayersByNameFlags = flags; }
+        public void DeletePlayersByName(CallReducerFlags flags) => DeletePlayersByNameFlags = flags;
     }
 }
 '''
@@ -360,7 +360,7 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB
 {
-    public sealed partial class RemoteReducers : RemoteBase<DbConnection>
+    public sealed partial class RemoteReducers : RemoteBase
     {
         public delegate void QueryPrivateHandler(EventContext ctx);
         public event QueryPrivateHandler? OnQueryPrivate;
@@ -393,7 +393,7 @@ namespace SpacetimeDB
     public sealed partial class SetReducerFlags
     {
         internal CallReducerFlags QueryPrivateFlags;
-        public void QueryPrivate(CallReducerFlags flags) { this.QueryPrivateFlags = flags; }
+        public void QueryPrivate(CallReducerFlags flags) => QueryPrivateFlags = flags;
     }
 }
 '''
@@ -410,7 +410,7 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB
 {
-    public sealed partial class RemoteReducers : RemoteBase<DbConnection>
+    public sealed partial class RemoteReducers : RemoteBase
     {
         public delegate void RepeatingTestHandler(EventContext ctx, RepeatingTestArg arg);
         public event RepeatingTestHandler? OnRepeatingTest;
@@ -457,7 +457,7 @@ namespace SpacetimeDB
     public sealed partial class SetReducerFlags
     {
         internal CallReducerFlags RepeatingTestFlags;
-        public void RepeatingTest(CallReducerFlags flags) { this.RepeatingTestFlags = flags; }
+        public void RepeatingTest(CallReducerFlags flags) => RepeatingTestFlags = flags;
     }
 }
 '''
@@ -474,7 +474,7 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB
 {
-    public sealed partial class RemoteReducers : RemoteBase<DbConnection>
+    public sealed partial class RemoteReducers : RemoteBase
     {
         public delegate void TestHandler(EventContext ctx, TestA arg, TestB arg2, NamespaceTestC arg3, NamespaceTestF arg4);
         public event TestHandler? OnTest;
@@ -540,7 +540,7 @@ namespace SpacetimeDB
     public sealed partial class SetReducerFlags
     {
         internal CallReducerFlags TestFlags;
-        public void Test(CallReducerFlags flags) { this.TestFlags = flags; }
+        public void Test(CallReducerFlags flags) => TestFlags = flags;
     }
 }
 '''
@@ -557,7 +557,7 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB
 {
-    public sealed partial class RemoteReducers : RemoteBase<DbConnection>
+    public sealed partial class RemoteReducers : RemoteBase
     {
         public delegate void TestBtreeIndexArgsHandler(EventContext ctx);
         public event TestBtreeIndexArgsHandler? OnTestBtreeIndexArgs;
@@ -590,7 +590,7 @@ namespace SpacetimeDB
     public sealed partial class SetReducerFlags
     {
         internal CallReducerFlags TestBtreeIndexArgsFlags;
-        public void TestBtreeIndexArgs(CallReducerFlags flags) { this.TestBtreeIndexArgsFlags = flags; }
+        public void TestBtreeIndexArgs(CallReducerFlags flags) => TestBtreeIndexArgsFlags = flags;
     }
 }
 '''
@@ -607,27 +607,43 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB
 {
-    public sealed partial class RemoteReducers : RemoteBase<DbConnection>
+    public sealed partial class RemoteReducers : RemoteBase
     {
-        internal RemoteReducers(DbConnection conn, SetReducerFlags SetReducerFlags) : base(conn) { this.SetCallReducerFlags = SetReducerFlags; }
+        internal RemoteReducers(DbConnection conn, SetReducerFlags flags) : base(conn) => SetCallReducerFlags = flags;
         internal readonly SetReducerFlags SetCallReducerFlags;
     }
 
-    public sealed partial class SetReducerFlags
+    public sealed partial class RemoteTables : RemoteTablesBase
     {
-        internal SetReducerFlags() { }
+        public RemoteTables(DbConnection conn)
+        {
+            AddTable(HasSpecialStuff = new(conn));
+            AddTable(LoggedOutPlayer = new(conn));
+            AddTable(PkMultiIdentity = new(conn));
+            AddTable(Player = new(conn));
+            AddTable(Points = new(conn));
+            AddTable(Private = new(conn));
+            AddTable(RepeatingTestArg = new(conn));
+            AddTable(TestA = new(conn));
+            AddTable(TestD = new(conn));
+            AddTable(TestE = new(conn));
+            AddTable(TestF = new(conn));
+        }
     }
 
-    public sealed record EventContext : DbContext<RemoteTables>, IEventContext
+    public sealed partial class SetReducerFlags { }
+    public sealed class EventContext: IEventContext
     {
-        public readonly RemoteReducers Reducers;
-        public readonly SetReducerFlags SetReducerFlags;
+        private readonly DbConnection conn;
         public readonly Event<Reducer> Event;
 
-        internal EventContext(DbConnection conn, Event<Reducer> reducerEvent) : base(conn.Db)
+        public RemoteTables Db => conn.Db;
+        public RemoteReducers Reducers => conn.Reducers;
+        public SetReducerFlags SetReducerFlags => conn.SetReducerFlags;
+
+        internal EventContext(DbConnection conn, Event<Reducer> reducerEvent)
         {
-            Reducers = conn.Reducers;
-            SetReducerFlags = conn.SetReducerFlags;
+            this.conn = conn;
             Event = reducerEvent;
         }
     }
@@ -639,28 +655,16 @@ namespace SpacetimeDB
         public sealed class StdbNone : Reducer {}
     }
 
-    public sealed class DbConnection : DbConnectionBase<DbConnection, Reducer>
+    public sealed class DbConnection : DbConnectionBase<DbConnection, RemoteTables, Reducer>
     {
-        public readonly RemoteTables Db = new();
+        public override RemoteTables Db { get; }
         public readonly RemoteReducers Reducers;
-        public readonly SetReducerFlags SetReducerFlags;
+        public readonly SetReducerFlags SetReducerFlags = new();
 
         public DbConnection()
         {
-            SetReducerFlags = new();
-            Reducers = new(this, this.SetReducerFlags);
-
-            clientDB.AddTable(Db.HasSpecialStuff);
-            clientDB.AddTable(Db.LoggedOutPlayer);
-            clientDB.AddTable(Db.PkMultiIdentity);
-            clientDB.AddTable(Db.Player);
-            clientDB.AddTable(Db.Points);
-            clientDB.AddTable(Db.Private);
-            clientDB.AddTable(Db.RepeatingTestArg);
-            clientDB.AddTable(Db.TestA);
-            clientDB.AddTable(Db.TestD);
-            clientDB.AddTable(Db.TestE);
-            clientDB.AddTable(Db.TestF);
+            Db = new(this);
+            Reducers = new(this, SetReducerFlags);
         }
 
         protected override Reducer ToReducer(TransactionUpdate update)
@@ -728,12 +732,12 @@ namespace SpacetimeDB
         {
             protected override string Name => "has_special_stuff";
 
-            internal HasSpecialStuffHandle()
+            internal HasSpecialStuffHandle(DbConnection conn) : base(conn)
             {
             }
         }
 
-        public readonly HasSpecialStuffHandle HasSpecialStuff = new();
+        public readonly HasSpecialStuffHandle HasSpecialStuff;
     }
 }
 '''
@@ -775,7 +779,7 @@ namespace SpacetimeDB
 
             public readonly PlayerIdUniqueIndex PlayerId;
 
-            internal LoggedOutPlayerHandle()
+            internal LoggedOutPlayerHandle(DbConnection conn) : base(conn)
             {
                 Identity = new(this);
                 PlayerId = new(this);
@@ -784,7 +788,7 @@ namespace SpacetimeDB
             protected override object GetPrimaryKey(Player row) => row.Identity;
         }
 
-        public readonly LoggedOutPlayerHandle LoggedOutPlayer = new();
+        public readonly LoggedOutPlayerHandle LoggedOutPlayer;
     }
 }
 '''
@@ -826,7 +830,7 @@ namespace SpacetimeDB
 
             public readonly OtherUniqueIndex Other;
 
-            internal PkMultiIdentityHandle()
+            internal PkMultiIdentityHandle(DbConnection conn) : base(conn)
             {
                 Id = new(this);
                 Other = new(this);
@@ -835,7 +839,7 @@ namespace SpacetimeDB
             protected override object GetPrimaryKey(PkMultiIdentity row) => row.Id;
         }
 
-        public readonly PkMultiIdentityHandle PkMultiIdentity = new();
+        public readonly PkMultiIdentityHandle PkMultiIdentity;
     }
 }
 '''
@@ -877,7 +881,7 @@ namespace SpacetimeDB
 
             public readonly PlayerIdUniqueIndex PlayerId;
 
-            internal PlayerHandle()
+            internal PlayerHandle(DbConnection conn) : base(conn)
             {
                 Identity = new(this);
                 PlayerId = new(this);
@@ -886,7 +890,7 @@ namespace SpacetimeDB
             protected override object GetPrimaryKey(Player row) => row.Identity;
         }
 
-        public readonly PlayerHandle Player = new();
+        public readonly PlayerHandle Player;
     }
 }
 '''
@@ -919,13 +923,13 @@ namespace SpacetimeDB
 
             public readonly MultiColumnIndexIndex MultiColumnIndex;
 
-            internal PointsHandle()
+            internal PointsHandle(DbConnection conn) : base(conn)
             {
                 MultiColumnIndex = new(this);
             }
         }
 
-        public readonly PointsHandle Points = new();
+        public readonly PointsHandle Points;
     }
 }
 '''
@@ -949,12 +953,12 @@ namespace SpacetimeDB
         {
             protected override string Name => "private";
 
-            internal PrivateHandle()
+            internal PrivateHandle(DbConnection conn) : base(conn)
             {
             }
         }
 
-        public readonly PrivateHandle Private = new();
+        public readonly PrivateHandle Private;
     }
 }
 '''
@@ -987,7 +991,7 @@ namespace SpacetimeDB
 
             public readonly ScheduledIdUniqueIndex ScheduledId;
 
-            internal RepeatingTestArgHandle()
+            internal RepeatingTestArgHandle(DbConnection conn) : base(conn)
             {
                 ScheduledId = new(this);
             }
@@ -995,7 +999,7 @@ namespace SpacetimeDB
             protected override object GetPrimaryKey(RepeatingTestArg row) => row.ScheduledId;
         }
 
-        public readonly RepeatingTestArgHandle RepeatingTestArg = new();
+        public readonly RepeatingTestArgHandle RepeatingTestArg;
     }
 }
 '''
@@ -1028,13 +1032,13 @@ namespace SpacetimeDB
 
             public readonly FooIndex Foo;
 
-            internal TestAHandle()
+            internal TestAHandle(DbConnection conn) : base(conn)
             {
                 Foo = new(this);
             }
         }
 
-        public readonly TestAHandle TestA = new();
+        public readonly TestAHandle TestA;
     }
 }
 '''
@@ -1058,12 +1062,12 @@ namespace SpacetimeDB
         {
             protected override string Name => "test_d";
 
-            internal TestDHandle()
+            internal TestDHandle(DbConnection conn) : base(conn)
             {
             }
         }
 
-        public readonly TestDHandle TestD = new();
+        public readonly TestDHandle TestD;
     }
 }
 '''
@@ -1105,7 +1109,7 @@ namespace SpacetimeDB
 
             public readonly NameIndex Name;
 
-            internal TestEHandle()
+            internal TestEHandle(DbConnection conn) : base(conn)
             {
                 Id = new(this);
                 Name = new(this);
@@ -1114,7 +1118,7 @@ namespace SpacetimeDB
             protected override object GetPrimaryKey(TestE row) => row.Id;
         }
 
-        public readonly TestEHandle TestE = new();
+        public readonly TestEHandle TestE;
     }
 }
 '''
@@ -1138,12 +1142,12 @@ namespace SpacetimeDB
         {
             protected override string Name => "test_f";
 
-            internal TestFHandle()
+            internal TestFHandle(DbConnection conn) : base(conn)
             {
             }
         }
 
-        public readonly TestFHandle TestF = new();
+        public readonly TestFHandle TestF;
     }
 }
 '''
