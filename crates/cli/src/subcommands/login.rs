@@ -112,7 +112,10 @@ async fn spacetimedb_token_cached(config: &mut Config, host: &Url, direct_login:
 
 pub async fn spacetimedb_login_force(config: &mut Config, host: &Url, direct_login: bool) -> anyhow::Result<String> {
     let token = if direct_login {
-        spacetimedb_direct_login(host).await?
+        let token = spacetimedb_direct_login(host).await?;
+        println!("We have logged in directly to your target server.");
+        println!("WARNING: This login will NOT work for any other servers.");
+        token
     } else {
         let session_token = web_login_cached(config, host).await?;
         spacetimedb_login(host, &session_token).await?
