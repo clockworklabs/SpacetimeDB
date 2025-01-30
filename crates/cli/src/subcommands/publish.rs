@@ -199,20 +199,15 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             ));
         }
         PublishResult::PermissionDenied { domain } => {
-            let token = if anon_identity {
-                None
-            } else {
-                // Note: Technically, this logic could be simplified, because if we're not in the `anon_identity` case, then a check further up will have forced the user to log in and get a token.
-                // So, in principle, the "token is None" case is exactly the "anon_identity" case, and we can assume that config.spacetimedb_token() is actually Some otherwise.
-                // However, this version is more correct in isolation / doesn't require relying on assumptions about code elsewhere that might change.
-                config.spacetimedb_token()
-            };
-            let token = if let Some(token) = token {
-                token
-            } else {
-                anyhow::bail!("You need to be logged in to publish to {}", domain.tld());
-            };
-
+            if anon_identity {
+                anyhow::bail!(
+                    "You need to be logged in as the owner of {} to publish to {}",
+                    domain.tld(),
+                    domain.tld()
+                );
+            }
+            // If we're not in the `anon_identity` case, then we have already forced the user to log in above (using `get_login_token_or_log_in`), so this should be safe to unwrap.
+            let token = config.spacetimedb_token().unwrap();
             let identity = decode_identity(token)?;
             //TODO(jdetter): Have a nice name generator here, instead of using some abstract characters
             // we should perhaps generate fun names like 'green-fire-dragon' instead
