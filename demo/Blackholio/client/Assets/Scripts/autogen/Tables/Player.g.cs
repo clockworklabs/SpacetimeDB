@@ -35,7 +35,7 @@ namespace SpacetimeDB.Types
 
             public readonly PlayerIdUniqueIndex PlayerId;
 
-            internal PlayerHandle()
+            internal PlayerHandle(DbConnection conn) : base(conn)
             {
                 Identity = new(this);
                 PlayerId = new(this);
@@ -44,6 +44,6 @@ namespace SpacetimeDB.Types
             protected override object GetPrimaryKey(Player row) => row.Identity;
         }
 
-        public readonly PlayerHandle Player = new();
+        public readonly PlayerHandle Player;
     }
 }

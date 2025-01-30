@@ -26,7 +26,7 @@ namespace SpacetimeDB.Types
 
             public readonly IdUniqueIndex Id;
 
-            internal ConfigHandle()
+            internal ConfigHandle(DbConnection conn) : base(conn)
             {
                 Id = new(this);
             }
@@ -34,6 +34,6 @@ namespace SpacetimeDB.Types
             protected override object GetPrimaryKey(Config row) => row.Id;
         }
 
-        public readonly ConfigHandle Config = new();
+        public readonly ConfigHandle Config;
     }
 }

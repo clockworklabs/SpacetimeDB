@@ -26,7 +26,7 @@ namespace SpacetimeDB.Types
 
             public readonly ScheduledIdUniqueIndex ScheduledId;
 
-            internal SpawnFoodTimerHandle()
+            internal SpawnFoodTimerHandle(DbConnection conn) : base(conn)
             {
                 ScheduledId = new(this);
             }
@@ -34,6 +34,6 @@ namespace SpacetimeDB.Types
             protected override object GetPrimaryKey(SpawnFoodTimer row) => row.ScheduledId;
         }
 
-        public readonly SpawnFoodTimerHandle SpawnFoodTimer = new();
+        public readonly SpawnFoodTimerHandle SpawnFoodTimer;
     }
 }

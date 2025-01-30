@@ -10,7 +10,7 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-    public sealed partial class RemoteReducers : RemoteBase<DbConnection>
+    public sealed partial class RemoteReducers : RemoteBase
     {
         public delegate void ConsumeEntityHandler(EventContext ctx, ConsumeEntityTimer request);
         public event ConsumeEntityHandler? OnConsumeEntity;
@@ -57,6 +57,6 @@ namespace SpacetimeDB.Types
     public sealed partial class SetReducerFlags
     {
         internal CallReducerFlags ConsumeEntityFlags;
-        public void ConsumeEntity(CallReducerFlags flags) { this.ConsumeEntityFlags = flags; }
+        public void ConsumeEntity(CallReducerFlags flags) => ConsumeEntityFlags = flags;
     }
 }

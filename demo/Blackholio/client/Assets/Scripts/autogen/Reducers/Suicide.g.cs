@@ -10,7 +10,7 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-    public sealed partial class RemoteReducers : RemoteBase<DbConnection>
+    public sealed partial class RemoteReducers : RemoteBase
     {
         public delegate void SuicideHandler(EventContext ctx);
         public event SuicideHandler? OnSuicide;
@@ -43,6 +43,6 @@ namespace SpacetimeDB.Types
     public sealed partial class SetReducerFlags
     {
         internal CallReducerFlags SuicideFlags;
-        public void Suicide(CallReducerFlags flags) { this.SuicideFlags = flags; }
+        public void Suicide(CallReducerFlags flags) => SuicideFlags = flags;
     }
 }

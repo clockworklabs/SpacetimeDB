@@ -26,7 +26,7 @@ namespace SpacetimeDB.Types
 
             public readonly ScheduledIdUniqueIndex ScheduledId;
 
-            internal ConsumeEntityTimerHandle()
+            internal ConsumeEntityTimerHandle(DbConnection conn) : base(conn)
             {
                 ScheduledId = new(this);
             }
@@ -34,6 +34,6 @@ namespace SpacetimeDB.Types
             protected override object GetPrimaryKey(ConsumeEntityTimer row) => row.ScheduledId;
         }
 
-        public readonly ConsumeEntityTimerHandle ConsumeEntityTimer = new();
+        public readonly ConsumeEntityTimerHandle ConsumeEntityTimer;
     }
 }

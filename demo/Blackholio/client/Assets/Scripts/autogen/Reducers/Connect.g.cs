@@ -10,7 +10,7 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-    public sealed partial class RemoteReducers : RemoteBase<DbConnection>
+    public sealed partial class RemoteReducers : RemoteBase
     {
         public delegate void ConnectHandler(EventContext ctx);
         public event ConnectHandler? OnConnect;

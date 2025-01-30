@@ -10,7 +10,7 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-    public sealed partial class RemoteReducers : RemoteBase<DbConnection>
+    public sealed partial class RemoteReducers : RemoteBase
     {
         public delegate void PlayerSplitHandler(EventContext ctx);
         public event PlayerSplitHandler? OnPlayerSplit;
@@ -43,6 +43,6 @@ namespace SpacetimeDB.Types
     public sealed partial class SetReducerFlags
     {
         internal CallReducerFlags PlayerSplitFlags;
-        public void PlayerSplit(CallReducerFlags flags) { this.PlayerSplitFlags = flags; }
+        public void PlayerSplit(CallReducerFlags flags) => PlayerSplitFlags = flags;
     }
 }

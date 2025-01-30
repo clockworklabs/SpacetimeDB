@@ -26,7 +26,7 @@ namespace SpacetimeDB.Types
 
             public readonly ScheduledIdUniqueIndex ScheduledId;
 
-            internal MoveAllPlayersTimerHandle()
+            internal MoveAllPlayersTimerHandle(DbConnection conn) : base(conn)
             {
                 ScheduledId = new(this);
             }
@@ -34,6 +34,6 @@ namespace SpacetimeDB.Types
             protected override object GetPrimaryKey(MoveAllPlayersTimer row) => row.ScheduledId;
         }
 
-        public readonly MoveAllPlayersTimerHandle MoveAllPlayersTimer = new();
+        public readonly MoveAllPlayersTimerHandle MoveAllPlayersTimer;
     }
 }

@@ -10,7 +10,7 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-    public sealed partial class RemoteReducers : RemoteBase<DbConnection>
+    public sealed partial class RemoteReducers : RemoteBase
     {
         public delegate void CircleDecayHandler(EventContext ctx, CircleDecayTimer timer);
         public event CircleDecayHandler? OnCircleDecay;
@@ -57,6 +57,6 @@ namespace SpacetimeDB.Types
     public sealed partial class SetReducerFlags
     {
         internal CallReducerFlags CircleDecayFlags;
-        public void CircleDecay(CallReducerFlags flags) { this.CircleDecayFlags = flags; }
+        public void CircleDecay(CallReducerFlags flags) => CircleDecayFlags = flags;
     }
 }

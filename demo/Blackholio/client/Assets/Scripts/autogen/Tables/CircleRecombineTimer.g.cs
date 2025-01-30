@@ -26,7 +26,7 @@ namespace SpacetimeDB.Types
 
             public readonly ScheduledIdUniqueIndex ScheduledId;
 
-            internal CircleRecombineTimerHandle()
+            internal CircleRecombineTimerHandle(DbConnection conn) : base(conn)
             {
                 ScheduledId = new(this);
             }
@@ -34,6 +34,6 @@ namespace SpacetimeDB.Types
             protected override object GetPrimaryKey(CircleRecombineTimer row) => row.ScheduledId;
         }
 
-        public readonly CircleRecombineTimerHandle CircleRecombineTimer = new();
+        public readonly CircleRecombineTimerHandle CircleRecombineTimer;
     }
 }

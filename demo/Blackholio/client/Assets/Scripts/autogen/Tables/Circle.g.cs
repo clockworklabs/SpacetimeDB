@@ -35,7 +35,7 @@ namespace SpacetimeDB.Types
 
             public readonly PlayerIdIndex PlayerId;
 
-            internal CircleHandle()
+            internal CircleHandle(DbConnection conn) : base(conn)
             {
                 EntityId = new(this);
                 PlayerId = new(this);
@@ -44,6 +44,6 @@ namespace SpacetimeDB.Types
             protected override object GetPrimaryKey(Circle row) => row.EntityId;
         }
 
-        public readonly CircleHandle Circle = new();
+        public readonly CircleHandle Circle;
     }
 }

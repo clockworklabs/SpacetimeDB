@@ -10,7 +10,7 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-    public sealed partial class RemoteReducers : RemoteBase<DbConnection>
+    public sealed partial class RemoteReducers : RemoteBase
     {
         public delegate void UpdatePlayerInputHandler(EventContext ctx, DbVector2 direction);
         public event UpdatePlayerInputHandler? OnUpdatePlayerInput;
@@ -57,6 +57,6 @@ namespace SpacetimeDB.Types
     public sealed partial class SetReducerFlags
     {
         internal CallReducerFlags UpdatePlayerInputFlags;
-        public void UpdatePlayerInput(CallReducerFlags flags) { this.UpdatePlayerInputFlags = flags; }
+        public void UpdatePlayerInput(CallReducerFlags flags) => UpdatePlayerInputFlags = flags;
     }
 }

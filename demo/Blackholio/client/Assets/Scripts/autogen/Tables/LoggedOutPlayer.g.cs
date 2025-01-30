@@ -26,7 +26,7 @@ namespace SpacetimeDB.Types
 
             public readonly IdentityUniqueIndex Identity;
 
-            internal LoggedOutPlayerHandle()
+            internal LoggedOutPlayerHandle(DbConnection conn) : base(conn)
             {
                 Identity = new(this);
             }
@@ -34,6 +34,6 @@ namespace SpacetimeDB.Types
             protected override object GetPrimaryKey(LoggedOutPlayer row) => row.Identity;
         }
 
-        public readonly LoggedOutPlayerHandle LoggedOutPlayer = new();
+        public readonly LoggedOutPlayerHandle LoggedOutPlayer;
     }
 }

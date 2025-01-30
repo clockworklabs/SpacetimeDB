@@ -26,7 +26,7 @@ namespace SpacetimeDB.Types
 
             public readonly EntityIdUniqueIndex EntityId;
 
-            internal EntityHandle()
+            internal EntityHandle(DbConnection conn) : base(conn)
             {
                 EntityId = new(this);
             }
@@ -34,6 +34,6 @@ namespace SpacetimeDB.Types
             protected override object GetPrimaryKey(Entity row) => row.EntityId;
         }
 
-        public readonly EntityHandle Entity = new();
+        public readonly EntityHandle Entity;
     }
 }

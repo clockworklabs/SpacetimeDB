@@ -10,7 +10,7 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-    public sealed partial class RemoteReducers : RemoteBase<DbConnection>
+    public sealed partial class RemoteReducers : RemoteBase
     {
         public delegate void RespawnHandler(EventContext ctx);
         public event RespawnHandler? OnRespawn;
@@ -43,6 +43,6 @@ namespace SpacetimeDB.Types
     public sealed partial class SetReducerFlags
     {
         internal CallReducerFlags RespawnFlags;
-        public void Respawn(CallReducerFlags flags) { this.RespawnFlags = flags; }
+        public void Respawn(CallReducerFlags flags) => RespawnFlags = flags;
     }
 }

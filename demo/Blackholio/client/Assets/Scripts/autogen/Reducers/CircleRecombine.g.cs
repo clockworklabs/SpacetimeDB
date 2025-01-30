@@ -10,7 +10,7 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-    public sealed partial class RemoteReducers : RemoteBase<DbConnection>
+    public sealed partial class RemoteReducers : RemoteBase
     {
         public delegate void CircleRecombineHandler(EventContext ctx, CircleRecombineTimer timer);
         public event CircleRecombineHandler? OnCircleRecombine;
@@ -57,6 +57,6 @@ namespace SpacetimeDB.Types
     public sealed partial class SetReducerFlags
     {
         internal CallReducerFlags CircleRecombineFlags;
-        public void CircleRecombine(CallReducerFlags flags) { this.CircleRecombineFlags = flags; }
+        public void CircleRecombine(CallReducerFlags flags) => CircleRecombineFlags = flags;
     }
 }

@@ -10,7 +10,7 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-    public sealed partial class RemoteReducers : RemoteBase<DbConnection>
+    public sealed partial class RemoteReducers : RemoteBase
     {
         public delegate void SpawnFoodHandler(EventContext ctx, SpawnFoodTimer timer);
         public event SpawnFoodHandler? OnSpawnFood;
@@ -57,6 +57,6 @@ namespace SpacetimeDB.Types
     public sealed partial class SetReducerFlags
     {
         internal CallReducerFlags SpawnFoodFlags;
-        public void SpawnFood(CallReducerFlags flags) { this.SpawnFoodFlags = flags; }
+        public void SpawnFood(CallReducerFlags flags) => SpawnFoodFlags = flags;
     }
 }

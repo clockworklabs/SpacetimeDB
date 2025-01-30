@@ -26,7 +26,7 @@ namespace SpacetimeDB.Types
 
             public readonly EntityIdUniqueIndex EntityId;
 
-            internal FoodHandle()
+            internal FoodHandle(DbConnection conn) : base(conn)
             {
                 EntityId = new(this);
             }
@@ -34,6 +34,6 @@ namespace SpacetimeDB.Types
             protected override object GetPrimaryKey(Food row) => row.EntityId;
         }
 
-        public readonly FoodHandle Food = new();
+        public readonly FoodHandle Food;
     }
 }
