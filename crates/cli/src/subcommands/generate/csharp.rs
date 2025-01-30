@@ -163,7 +163,10 @@ impl Lang for Csharp<'_> {
                     }
                 }
 
-                writeln!(output, "internal {csharp_table_class_name}()");
+                writeln!(
+                    output,
+                    "internal {csharp_table_class_name}(DbConnection conn) : base(conn)"
+                );
                 indented_block(output, |output| {
                     for csharp_index_name in &index_names {
                         writeln!(output, "{csharp_index_name} = new(this);");
@@ -180,10 +183,7 @@ impl Lang for Csharp<'_> {
                 }
             });
             writeln!(output);
-            writeln!(
-                output,
-                "public readonly {csharp_table_class_name} {csharp_table_name} = new();"
-            );
+            writeln!(output, "public readonly {csharp_table_class_name} {csharp_table_name};");
         });
 
         output.into_inner()
@@ -208,10 +208,7 @@ impl Lang for Csharp<'_> {
             ],
         );
 
-        writeln!(
-            output,
-            "public sealed partial class RemoteReducers : RemoteBase<DbConnection>"
-        );
+        writeln!(output, "public sealed partial class RemoteReducers : RemoteBase");
         indented_block(&mut output, |output| {
             let func_name_pascal_case = reducer.name.deref().to_case(Case::Pascal);
             let delegate_separator = if reducer.params_for_generate.elements.is_empty() {
@@ -305,7 +302,7 @@ impl Lang for Csharp<'_> {
             indented_block(&mut output, |output| {
                 let func_name_pascal_case = reducer.name.deref().to_case(Case::Pascal);
                 writeln!(output, "internal CallReducerFlags {func_name_pascal_case}Flags;");
-                writeln!(output, "public void {func_name_pascal_case}(CallReducerFlags flags) {{ this.{func_name_pascal_case}Flags = flags; }}");
+                writeln!(output, "public void {func_name_pascal_case}(CallReducerFlags flags) => {func_name_pascal_case}Flags = flags;");
             });
         }
 
@@ -322,41 +319,53 @@ impl Lang for Csharp<'_> {
             ],
         );
 
-        writeln!(
-            output,
-            "public sealed partial class RemoteReducers : RemoteBase<DbConnection>"
-        );
+        writeln!(output, "public sealed partial class RemoteReducers : RemoteBase");
         indented_block(&mut output, |output| {
             writeln!(
                 output,
-                "internal RemoteReducers(DbConnection conn, SetReducerFlags SetReducerFlags) : base(conn) {{ this.SetCallReducerFlags = SetReducerFlags; }}"
+                "internal RemoteReducers(DbConnection conn, SetReducerFlags flags) : base(conn) => SetCallReducerFlags = flags;"
             );
             writeln!(output, "internal readonly SetReducerFlags SetCallReducerFlags;");
         });
         writeln!(output);
 
-        writeln!(output, "public sealed partial class SetReducerFlags");
+        writeln!(output, "public sealed partial class RemoteTables : RemoteTablesBase");
         indented_block(&mut output, |output| {
-            writeln!(output, "internal SetReducerFlags() {{ }}");
+            writeln!(output, "public RemoteTables(DbConnection conn)");
+            indented_block(output, |output| {
+                for table in iter_tables(module) {
+                    writeln!(
+                        output,
+                        "AddTable({} = new(conn));",
+                        table.name.deref().to_case(Case::Pascal)
+                    );
+                }
+            });
         });
         writeln!(output);
 
-        writeln!(
-            output,
-            "public sealed record EventContext : DbContext<RemoteTables>, IEventContext"
-        );
+        writeln!(output, "public sealed partial class SetReducerFlags {{ }}");
+
+        writeln!(output, "public sealed class EventContext: IEventContext");
         indented_block(&mut output, |output| {
-            writeln!(output, "public readonly RemoteReducers Reducers;");
-            writeln!(output, "public readonly SetReducerFlags SetReducerFlags;");
+            writeln!(output, "private readonly DbConnection conn;");
             writeln!(output, "public readonly Event<Reducer> Event;");
             writeln!(output);
+
+            writeln!(output, "public RemoteTables Db => conn.Db;");
+            writeln!(output, "public RemoteReducers Reducers => conn.Reducers;");
             writeln!(
                 output,
-                "internal EventContext(DbConnection conn, Event<Reducer> reducerEvent) : base(conn.Db)"
+                "public SetReducerFlags SetReducerFlags => conn.SetReducerFlags;"
+            );
+            writeln!(output);
+
+            writeln!(
+                output,
+                "internal EventContext(DbConnection conn, Event<Reducer> reducerEvent)"
             );
             indented_block(output, |output| {
-                writeln!(output, "Reducers = conn.Reducers;");
-                writeln!(output, "SetReducerFlags = conn.SetReducerFlags;");
+                writeln!(output, "this.conn = conn;");
                 writeln!(output, "Event = reducerEvent;");
             });
         });
@@ -373,27 +382,18 @@ impl Lang for Csharp<'_> {
 
         writeln!(
             output,
-            "public sealed class DbConnection : DbConnectionBase<DbConnection, Reducer>"
+            "public sealed class DbConnection : DbConnectionBase<DbConnection, RemoteTables, Reducer>"
         );
         indented_block(&mut output, |output| {
-            writeln!(output, "public readonly RemoteTables Db = new();");
+            writeln!(output, "public override RemoteTables Db {{ get; }}");
             writeln!(output, "public readonly RemoteReducers Reducers;");
-            writeln!(output, "public readonly SetReducerFlags SetReducerFlags;");
+            writeln!(output, "public readonly SetReducerFlags SetReducerFlags = new();");
             writeln!(output);
 
             writeln!(output, "public DbConnection()");
             indented_block(output, |output| {
-                writeln!(output, "SetReducerFlags = new();");
-                writeln!(output, "Reducers = new(this, this.SetReducerFlags);");
-                writeln!(output);
-
-                for table in iter_tables(module) {
-                    writeln!(
-                        output,
-                        "clientDB.AddTable(Db.{csharp_table_name});",
-                        csharp_table_name = table.name.deref().to_case(Case::Pascal)
-                    );
-                }
+                writeln!(output, "Db = new(this);");
+                writeln!(output, "Reducers = new(this, SetReducerFlags);");
             });
             writeln!(output);
 
