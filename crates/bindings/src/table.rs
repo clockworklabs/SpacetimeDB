@@ -257,30 +257,22 @@ impl MaybeError for AutoIncOverflow {
 }
 
 pub trait Column {
-    type Row;
-    type ColType;
+    type Table: Table;
+    type ColType: SpacetimeType + Serialize + DeserializeOwned;
     const COLUMN_NAME: &'static str;
-    fn get_field(row: &Self::Row) -> &Self::ColType;
+    fn get_field(row: &<Self::Table as Table>::Row) -> &Self::ColType;
 }
 
-pub struct UniqueColumn<Tbl: Table, ColType, Col>
-where
-    ColType: SpacetimeType + Serialize + DeserializeOwned,
-    Col: Index + Column<Row = Tbl::Row, ColType = ColType>,
-{
-    _marker: PhantomData<(Tbl, Col)>,
+pub struct UniqueColumn<Tbl, ColType, Col> {
+    _marker: PhantomData<(Tbl, ColType, Col)>,
 }
 
-impl<Tbl: Table, ColType, Col> UniqueColumn<Tbl, ColType, Col>
-where
-    ColType: SpacetimeType + Serialize + DeserializeOwned,
-    Col: Index + Column<Row = Tbl::Row, ColType = ColType>,
-{
+impl<Tbl: Table, Col: Index + Column<Table = Tbl>> UniqueColumn<Tbl, Col::ColType, Col> {
     #[doc(hidden)]
     pub const __NEW: Self = Self { _marker: PhantomData };
 
     #[inline]
-    fn get_args(&self, col_val: &ColType) -> BTreeScanArgs {
+    fn get_args(&self, col_val: &Col::ColType) -> BTreeScanArgs {
         BTreeScanArgs {
             data: IterBuf::serialize(&std::ops::Bound::Included(col_val)).unwrap(),
             prefix_elems: 0,
@@ -298,11 +290,11 @@ where
     // whereas by-ref makes passing `!Copy` fields more performant.
     // Can we do something smart with `std::borrow::Borrow`?
     #[inline]
-    pub fn find(&self, col_val: impl Borrow<ColType>) -> Option<Tbl::Row> {
+    pub fn find(&self, col_val: impl Borrow<Col::ColType>) -> Option<Tbl::Row> {
         self._find(col_val.borrow())
     }
 
-    fn _find(&self, col_val: &ColType) -> Option<Tbl::Row> {
+    fn _find(&self, col_val: &Col::ColType) -> Option<Tbl::Row> {
         // Find the row with a match.
         let index_id = Col::index_id();
         let args = self.get_args(col_val);
@@ -330,11 +322,11 @@ where
     /// May panic if deleting the row would violate a constraint,
     /// though as of proposing no such constraints exist.
     #[inline]
-    pub fn delete(&self, col_val: impl Borrow<ColType>) -> bool {
+    pub fn delete(&self, col_val: impl Borrow<Col::ColType>) -> bool {
         self._delete(col_val.borrow()).0
     }
 
-    fn _delete(&self, col_val: &ColType) -> (bool, IterBuf) {
+    fn _delete(&self, col_val: &Col::ColType) -> (bool, IterBuf) {
         let index_id = Col::index_id();
         let args = self.get_args(col_val);
         let (prefix, prefix_elems, rstart, rend) = args.args_for_syscall();
@@ -355,19 +347,9 @@ where
     /// or if either the delete or the insertion would violate a constraint.
     #[track_caller]
     pub fn update(&self, new_row: Tbl::Row) -> Tbl::Row {
-        let (deleted, buf) = self._delete(Col::get_field(&new_row));
-        if !deleted {
-            update_row_didnt_exist(Tbl::TABLE_NAME, Col::COLUMN_NAME)
-        }
-        insert::<Tbl>(new_row, buf).unwrap_or_else(|e| panic!("{e}"))
+        let buf = IterBuf::take();
+        update::<Tbl>(Col::index_id(), new_row, buf)
     }
-}
-
-#[cold]
-#[inline(never)]
-#[track_caller]
-fn update_row_didnt_exist(table_name: &str, unique_column: &str) -> ! {
-    panic!("UniqueColumn::update: row in table `{table_name}` being updated by unique column `{unique_column}` did not already exist")
 }
 
 pub trait Index {
@@ -821,7 +803,7 @@ fn insert<T: Table>(mut row: T::Row, mut buf: IterBuf) -> Result<T::Row, TryInse
     // Insert row into table.
     // When table has an auto-incrementing column, we must re-decode the changed `buf`.
     let res = sys::datastore_insert_bsatn(table_id, &mut buf).map(|gen_cols| {
-        // Let the caller handle any generated columns written back by `sys::insert` to `buf`.
+        // Let the caller handle any generated columns written back by `sys::datastore_insert_bsatn` to `buf`.
         T::integrate_generated_columns(&mut row, gen_cols);
         row
     });
@@ -835,6 +817,26 @@ fn insert<T: Table>(mut row: T::Row, mut buf: IterBuf) -> Result<T::Row, TryInse
         };
         err.unwrap_or_else(|| panic!("unexpected insertion error: {e}"))
     })
+}
+
+/// Update a row of type `T` to `row` using the index identified by `index_id`.
+#[track_caller]
+fn update<T: Table>(index_id: IndexId, mut row: T::Row, mut buf: IterBuf) -> T::Row {
+    let table_id = T::table_id();
+    // Encode the row as bsatn into the buffer `buf`.
+    buf.clear();
+    buf.serialize_into(&row).unwrap();
+
+    // Insert row into table.
+    // When table has an auto-incrementing column, we must re-decode the changed `buf`.
+    let res = sys::datastore_update_bsatn(table_id, index_id, &mut buf).map(|gen_cols| {
+        // Let the caller handle any generated columns written back by `sys::datastore_update_bsatn` to `buf`.
+        T::integrate_generated_columns(&mut row, gen_cols);
+        row
+    });
+
+    // TODO(centril): introduce a `TryUpdateError`.
+    res.unwrap_or_else(|e| panic!("unexpected update error: {e}"))
 }
 
 /// A table iterator which yields values of the `TableType` corresponding to the table.

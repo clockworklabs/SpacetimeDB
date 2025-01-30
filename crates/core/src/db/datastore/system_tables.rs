@@ -905,7 +905,7 @@ impl From<StModuleRow> for ProductValue {
 /// identity                                                                                | address
 /// -----------------------------------------------------------------------------------------+--------------------------------------------------------
 ///  (__identity_bytes = 0x7452047061ea2502003412941d85a42f89b0702588b823ab55fc4f12e9ea8363) | (__address_bytes = 0x6bdea3ab517f5857dc9b1b5fe99e1b14)
-#[derive(Clone, Debug, Eq, PartialEq, SpacetimeType)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, SpacetimeType)]
 #[sats(crate = spacetimedb_lib)]
 pub struct StClientRow {
     pub(crate) identity: IdentityViaU256,

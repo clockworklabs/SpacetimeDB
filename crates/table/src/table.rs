@@ -31,6 +31,7 @@ use core::{
     hint::unreachable_unchecked,
 };
 use derive_more::{Add, AddAssign, From, Sub, SubAssign};
+use enum_as_inner::EnumAsInner;
 use smallvec::SmallVec;
 use spacetimedb_lib::{bsatn::DecodeError, de::DeserializeOwned};
 use spacetimedb_primitives::{ColId, ColList, IndexId, SequenceId};
@@ -44,7 +45,10 @@ use spacetimedb_sats::{
     u256, AlgebraicValue, ProductType, ProductValue,
 };
 use spacetimedb_schema::{schema::TableSchema, type_for_generate::PrimitiveType};
-use std::{collections::BTreeMap, sync::Arc};
+use std::{
+    collections::{btree_map, BTreeMap},
+    sync::Arc,
+};
 use thiserror::Error;
 
 /// The number of bytes used by, added to, or removed from a [`Table`]'s share of a [`BlobStore`].
@@ -88,6 +92,10 @@ pub struct Table {
     /// Note that the [`HashMapBlobStore`] does ref-counting and de-duplication,
     /// but this sum will count an object each time its hash is mentioned, rather than just once.
     blob_store_bytes: BlobNumBytes,
+    /// Indicates whether this is a scheduler table or not.
+    ///
+    /// This is an optimization to avoid checking the schema in e.g., `InstanceEnv::{insert, update}`.
+    is_scheduler: bool,
 }
 
 /// The part of a `Table` concerned only with storing rows.
@@ -163,6 +171,7 @@ impl MemoryUsage for Table {
             squashed_offset,
             row_count,
             blob_store_bytes,
+            is_scheduler,
         } = self;
         inner.heap_usage()
             + pointer_map.heap_usage()
@@ -170,6 +179,7 @@ impl MemoryUsage for Table {
             + squashed_offset.heap_usage()
             + row_count.heap_usage()
             + blob_store_bytes.heap_usage()
+            + is_scheduler.heap_usage()
     }
 }
 
@@ -185,12 +195,17 @@ impl MemoryUsage for TableInner {
     }
 }
 
-/// Various error that can happen on table insertion.
+/// There was already a row with the same value.
 #[derive(Error, Debug, PartialEq, Eq)]
+#[error("Duplicate insertion of row {0:?} violates set semantics")]
+pub struct DuplicateError(pub RowPointer);
+
+/// Various error that can happen on table insertion.
+#[derive(Error, Debug, PartialEq, Eq, EnumAsInner)]
 pub enum InsertError {
     /// There was already a row with the same value.
-    #[error("Duplicate insertion of row {0:?} violates set semantics")]
-    Duplicate(RowPointer),
+    #[error(transparent)]
+    Duplicate(#[from] DuplicateError),
 
     /// Couldn't write the row to the page manager.
     #[error(transparent)]
@@ -224,6 +239,11 @@ impl Table {
         Self::new_with_indexes_capacity(schema, row_layout, static_layout, visitor_prog, squashed_offset, pm)
     }
 
+    /// Returns whether this is a scheduler table.
+    pub fn is_scheduler(&self) -> bool {
+        self.is_scheduler
+    }
+
     /// Check if the `row` conflicts with any unique index on `self`,
     /// and if there is a conflict, return `Err`.
     ///
@@ -231,12 +251,13 @@ impl Table {
     /// returns true if and only if that row should be ignored.
     /// While checking unique constraints against the committed state,
     /// `MutTxId::insert` will ignore rows which are listed in the delete table.
-    pub fn check_unique_constraints(
-        &self,
+    pub fn check_unique_constraints<'a, I: Iterator<Item = (&'a IndexId, &'a BTreeIndex)>>(
+        &'a self,
         row: RowRef<'_>,
+        adapt: impl FnOnce(btree_map::Iter<'a, IndexId, BTreeIndex>) -> I,
         mut is_deleted: impl FnMut(RowPointer) -> bool,
     ) -> Result<(), UniqueConstraintViolation> {
-        for (&index_id, index) in self.indexes.iter().filter(|(_, index)| index.is_unique()) {
+        for (&index_id, index) in adapt(self.indexes.iter()).filter(|(_, index)| index.is_unique()) {
             let value = row.project(&index.indexed_columns).unwrap();
             if index.seek(&value).next().is_some_and(|ptr| !is_deleted(ptr)) {
                 return Err(self.build_error_unique(index, index_id, value));
@@ -279,26 +300,6 @@ impl Table {
         Ok((hash, row_ref))
     }
 
-    /// Insert a `row` into this table during replay.
-    ///
-    /// NOTE: This method skips index updating. Use `insert` to insert a row with index updating.
-    pub fn insert_for_replay(
-        &mut self,
-        blob_store: &mut dyn BlobStore,
-        row: &ProductValue,
-    ) -> Result<(Option<RowHash>, RowPointer), InsertError> {
-        // Insert the `row`. There should be no errors
-        let (row_ref, blob_bytes) = self.insert_physically_pv(blob_store, row)?;
-        let row_ptr = row_ref.pointer();
-
-        // SAFETY: We just inserted the row, so `self.is_row_present(row_ptr)` holds.
-        let row_hash = unsafe { self.insert_into_pointer_map(blob_store, row_ptr) }?;
-
-        self.update_statistics_added_row(blob_bytes);
-
-        Ok((row_hash, row_ptr))
-    }
-
     /// Physically inserts `row` into the page
     /// without inserting it logically into the pointer map.
     ///
@@ -308,7 +309,7 @@ impl Table {
         &'a mut self,
         blob_store: &'a mut dyn BlobStore,
         row: &ProductValue,
-    ) -> Result<(RowRef<'a>, BlobNumBytes), InsertError> {
+    ) -> Result<(RowRef<'a>, BlobNumBytes), Error> {
         // SAFETY: `self.pages` is known to be specialized for `self.row_layout`,
         // as `self.pages` was constructed from `self.row_layout` in `Table::new`.
         let (ptr, blob_bytes) = unsafe {
@@ -344,7 +345,7 @@ impl Table {
         &'a mut self,
         blob_store: &'a mut dyn BlobStore,
         row: &[u8],
-    ) -> Result<(RowRef<'a>, BlobNumBytes), InsertError> {
+    ) -> Result<(RowRef<'a>, BlobNumBytes), Error> {
         // Got a static layout? => Use fast-path insertion.
         let (ptr, blob_bytes) = if let Some((static_layout, static_validator)) = self.inner.static_layout.as_ref() {
             // Before inserting, validate the row, ensuring type safety.
@@ -495,6 +496,50 @@ impl Table {
         Ok((hash, ptr))
     }
 
+    /// Confirms a row update, after first updating indices and checking constraints.
+    ///
+    /// On `Ok(_)`:
+    /// - the statistics of the table are also updated,
+    /// - the `ptr` still points to a valid row.
+    ///
+    /// Otherwise, on `Err(_)`:
+    /// - `ptr` will not point to a valid row,
+    /// - the statistics won't be updated.
+    ///
+    /// # Safety
+    ///
+    /// `self.is_row_present(new_row)` and `self.is_row_present(old_row)`  must hold.
+    pub unsafe fn confirm_update<'a>(
+        &'a mut self,
+        blob_store: &'a mut dyn BlobStore,
+        new_ptr: RowPointer,
+        old_ptr: RowPointer,
+        blob_bytes_added: BlobNumBytes,
+    ) -> Result<RowPointer, UniqueConstraintViolation> {
+        // (1) Remove old row from indices.
+        // SAFETY: Caller promised that `self.is_row_present(old_ptr)` holds.
+        unsafe { self.delete_from_indices(blob_store, old_ptr) };
+
+        // Insert new row into indices.
+        // SAFETY: Caller promised that `self.is_row_present(ptr)` holds.
+        let res = unsafe { self.insert_into_indices(blob_store, new_ptr) };
+        if let Err(e) = res {
+            // Undo (1).
+            unsafe { self.insert_into_indices(blob_store, old_ptr) }
+                .expect("re-inserting the old row into indices should always work");
+            return Err(e);
+        }
+
+        // Remove the old row physically.
+        // SAFETY: The physical `old_ptr` still exists.
+        let blob_bytes_removed = unsafe { self.delete_internal_skip_pointer_map(blob_store, old_ptr) };
+        self.update_statistics_deleted_row(blob_bytes_removed);
+
+        // Update statistics.
+        self.update_statistics_added_row(blob_bytes_added);
+        Ok(new_ptr)
+    }
+
     /// We've added a row, update the statistics to record this.
     #[inline]
     fn update_statistics_added_row(&mut self, blob_bytes: BlobNumBytes) {
@@ -519,7 +564,7 @@ impl Table {
         &'a mut self,
         blob_store: &'a mut dyn BlobStore,
         ptr: RowPointer,
-    ) -> Result<(), InsertError> {
+    ) -> Result<(), UniqueConstraintViolation> {
         let mut index_error = None;
         for (&index_id, index) in self.indexes.iter_mut() {
             // SAFETY: We just inserted `ptr`, so it must be present.
@@ -527,8 +572,7 @@ impl Table {
             if index.check_and_insert(row_ref).unwrap().is_some() {
                 let cols = &index.indexed_columns;
                 let value = row_ref.project(cols).unwrap();
-                let error =
-                    InsertError::IndexError(UniqueConstraintViolation::build(&self.schema, index, index_id, value));
+                let error = UniqueConstraintViolation::build(&self.schema, index, index_id, value);
                 index_error = Some(error);
                 break;
             }
@@ -601,7 +645,7 @@ impl Table {
         &'a mut self,
         blob_store: &'a mut dyn BlobStore,
         ptr: RowPointer,
-    ) -> Result<Option<RowHash>, InsertError> {
+    ) -> Result<Option<RowHash>, DuplicateError> {
         if self.pointer_map.is_none() {
             // No pointer map? Set semantic constraint is checked by a unique index instead.
             return Ok(None);
@@ -622,7 +666,7 @@ impl Table {
                     .pages
                     .delete_row(&self.inner.visitor_prog, self.row_size(), ptr, blob_store)
             };
-            return Err(InsertError::Duplicate(existing_row));
+            return Err(DuplicateError(existing_row));
         }
 
         // If the optimistic insertion was correct,
@@ -838,22 +882,30 @@ impl Table {
 
     /// Deletes the row identified by `ptr` from the table.
     ///
-    /// Returns the number of blob bytes added. This method does not update statistics by itself.
+    /// Returns the number of blob bytes deleted. This method does not update statistics by itself.
     ///
     /// SAFETY: `self.is_row_present(row)` must hold.
     unsafe fn delete_unchecked(&mut self, blob_store: &mut dyn BlobStore, ptr: RowPointer) -> BlobNumBytes {
-        // SAFETY: `self.is_row_present(row)` holds.
-        let row_ref = unsafe { self.inner.get_row_ref_unchecked(blob_store, ptr) };
-
         // Delete row from indices.
         // Do this before the actual deletion, as `index.delete` needs a `RowRef`
         // so it can extract the appropriate value.
+        // SAFETY: Caller promised that `self.is_row_present(row)` holds.
+        unsafe { self.delete_from_indices(blob_store, ptr) };
+
+        // SAFETY: Caller promised that `self.is_row_present(row)` holds.
+        unsafe { self.delete_internal(blob_store, ptr) }
+    }
+
+    /// Delete `row_ref` from all the indices of this table.
+    ///
+    /// SAFETY: `self.is_row_present(row)` must hold.
+    unsafe fn delete_from_indices(&mut self, blob_store: &dyn BlobStore, ptr: RowPointer) {
+        // SAFETY: Caller promised that `self.is_row_present(row)` holds.
+        let row_ref = unsafe { self.inner.get_row_ref_unchecked(blob_store, ptr) };
+
         for index in self.indexes.values_mut() {
             index.delete(row_ref).unwrap();
         }
-
-        // SAFETY: We've checked above that `self.is_row_present(ptr)`.
-        unsafe { self.delete_internal(blob_store, ptr) }
     }
 
     /// Deletes the row identified by `ptr` from the table.
@@ -901,8 +953,7 @@ impl Table {
         &mut self,
         blob_store: &mut dyn BlobStore,
         row: &ProductValue,
-        skip_index_update: bool,
-    ) -> Result<Option<RowPointer>, InsertError> {
+    ) -> Result<Option<RowPointer>, Error> {
         // Insert `row` temporarily so `temp_ptr` and `hash` can be used to find the row.
         // This must avoid consulting and inserting to the pointer map,
         // as the row is already present, set-semantically.
@@ -921,12 +972,9 @@ impl Table {
 
         // If an equal row was present, delete it.
         if let Some(existing_row_ptr) = existing_row_ptr {
-            let blob_bytes_deleted = if skip_index_update {
+            let blob_bytes_deleted = unsafe {
                 // SAFETY: `find_same_row` ensures that the pointer is valid.
-                unsafe { self.delete_internal(blob_store, existing_row_ptr) }
-            } else {
-                // SAFETY: `find_same_row` ensures that the pointer is valid.
-                unsafe { self.delete_unchecked(blob_store, existing_row_ptr) }
+                self.delete_unchecked(blob_store, existing_row_ptr)
             };
             self.update_statistics_deleted_row(blob_bytes_deleted);
         }
@@ -1004,6 +1052,12 @@ impl Table {
         if index.is_some_and(|i| i.is_unique()) && !self.indexes.values().any(|idx| idx.is_unique()) {
             self.rebuild_pointer_map(blob_store);
         }
+
+        // Remove index from schema.
+        //
+        // This likely will do a clone-write as over time?
+        // The schema might have found other referents.
+        self.with_mut_schema(|s| s.indexes.retain(|x| x.index_id != index_id));
 
         ret
     }
@@ -1440,6 +1494,10 @@ pub struct TableAndIndex<'a> {
 }
 
 impl<'a> TableAndIndex<'a> {
+    pub fn table(&self) -> &'a Table {
+        self.table
+    }
+
     pub fn index(&self) -> &'a BTreeIndex {
         self.index
     }
@@ -1557,6 +1615,7 @@ impl Table {
                 visitor_prog,
                 pages: Pages::default(),
             },
+            is_scheduler: schema.schedule.is_some(),
             schema,
             indexes: BTreeMap::new(),
             pointer_map,
@@ -1596,8 +1655,8 @@ impl Table {
     }
 
     /// Returns the row size for a row in the table.
-    fn row_size(&self) -> Size {
-        self.inner.row_layout.size()
+    pub fn row_size(&self) -> Size {
+        self.row_layout().size()
     }
 
     /// Returns the layout for a row in the table.

@@ -7,6 +7,7 @@ pub use mut_tx::MutTxId;
 mod sequence;
 pub mod state_view;
 pub use state_view::{IterByColEqTx, IterByColRangeTx};
+pub mod delete_table;
 pub(crate) mod tx;
 mod tx_state;
 

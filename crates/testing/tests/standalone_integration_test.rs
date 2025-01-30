@@ -265,7 +265,7 @@ fn test_index_scans() {
     );
 }
 
-async fn bench_call<'a>(module: &ModuleHandle, call: &str, count: &u32) -> Duration {
+async fn bench_call(module: &ModuleHandle, call: &str, count: &u32) -> Duration {
     let now = Instant::now();
 
     // Note: using JSON variant because some functions accept u64 instead, so we rely on JSON's dynamic typing.

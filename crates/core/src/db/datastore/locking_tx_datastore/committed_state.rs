@@ -1,11 +1,15 @@
 use super::{
     datastore::Result,
+    delete_table::DeleteTable,
     sequence::{Sequence, SequencesState},
     state_view::{IterByColRangeTx, StateView},
-    tx_state::{DeleteTable, IndexIdMap, RemovedIndexIdSet, TxState},
+    tx_state::{IndexIdMap, RemovedIndexIdSet, TxState},
     IterByColEqTx,
 };
-use crate::db::datastore::locking_tx_datastore::state_view::{IterTx, ScanIterByColRangeTx};
+use crate::{
+    db::datastore::locking_tx_datastore::state_view::{IterTx, ScanIterByColRangeTx},
+    error::IndexError,
+};
 use crate::{
     db::{
         datastore::{
@@ -41,7 +45,7 @@ use spacetimedb_table::{
     table::{IndexScanIter, InsertError, RowRef, Table, TableAndIndex},
     MemoryUsage,
 };
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 /// Contains the live, in-memory snapshot of a database. This structure
@@ -73,7 +77,8 @@ impl MemoryUsage for CommittedState {
 impl StateView for CommittedState {
     type Iter<'a> = IterTx<'a>;
     type IterByColRange<'a, R: RangeBounds<AlgebraicValue>> = IterByColRangeTx<'a, R>;
-    type IterByColEq<'a, 'r> = IterByColEqTx<'a, 'r>
+    type IterByColEq<'a, 'r>
+        = IterByColEqTx<'a, 'r>
     where
         Self: 'a;
 
@@ -132,8 +137,8 @@ fn ignore_duplicate_insert_error<T>(res: std::result::Result<T, InsertError>) ->
     match res {
         Ok(_) => Ok(()),
         Err(InsertError::Duplicate(_)) => Ok(()),
-        // TODO(error-handling): impl From<InsertError> for DBError.
-        Err(err) => Err(TableError::Insert(err).into()),
+        Err(InsertError::Bflatn(e)) => Err(e.into()),
+        Err(InsertError::IndexError(e)) => Err(IndexError::from(e).into()),
     }
 }
 
@@ -317,12 +322,11 @@ impl CommittedState {
         let table = self
             .tables
             .get_mut(&table_id)
-            .ok_or_else(|| TableError::IdNotFoundState(table_id))?;
+            .ok_or(TableError::IdNotFoundState(table_id))?;
         let blob_store = &mut self.blob_store;
-        let skip_index_update = true;
         table
-            .delete_equal_row(blob_store, rel, skip_index_update)
-            .map_err(TableError::Insert)?
+            .delete_equal_row(blob_store, rel)
+            .map_err(TableError::Bflatn)?
             .ok_or_else(|| anyhow!("Delete for non-existent row when replaying transaction"))?;
         Ok(())
     }
@@ -334,8 +338,11 @@ impl CommittedState {
         row: &ProductValue,
     ) -> Result<()> {
         let (table, blob_store) = self.get_table_and_blob_store_or_create(table_id, schema);
-        table.insert_for_replay(blob_store, row).map_err(TableError::Insert)?;
-        Ok(())
+        table.insert(blob_store, row).map(drop).map_err(|e| match e {
+            InsertError::Bflatn(e) => TableError::Bflatn(e).into(),
+            InsertError::Duplicate(e) => TableError::Duplicate(e).into(),
+            InsertError::IndexError(e) => IndexError::UniqueConstraintViolation(e).into(),
+        })
     }
 
     pub(super) fn build_sequence_state(&mut self, sequence_state: &mut SequencesState) -> Result<()> {
@@ -512,15 +519,15 @@ impl CommittedState {
     pub(super) fn merge(&mut self, tx_state: TxState, ctx: &ExecutionContext) -> TxData {
         let mut tx_data = TxData::default();
 
+        // First, merge index id fast-lookup map changes and delete indices.
+        self.merge_index_map(tx_state.index_id_map, tx_state.index_id_map_removals.as_deref());
+
         // First, apply deletes. This will free up space in the committed tables.
         self.merge_apply_deletes(&mut tx_data, tx_state.delete_tables);
 
         // Then, apply inserts. This will re-fill the holes freed by deletions
         // before allocating new pages.
         self.merge_apply_inserts(&mut tx_data, tx_state.insert_tables, tx_state.blob_store);
-
-        // Merge index id fast-lookup map changes.
-        self.merge_index_map(tx_state.index_id_map, tx_state.index_id_map_removals.as_deref());
 
         // If the TX will be logged, record its projected tx offset,
         // then increment the counter.
@@ -541,7 +548,7 @@ impl CommittedState {
                 // holds only committed rows which should be deleted,
                 // i.e. `RowPointer`s with `SquashedOffset::COMMITTED_STATE`,
                 // so no need to check before applying the deletes.
-                for row_ptr in row_ptrs.iter().copied() {
+                for row_ptr in row_ptrs.iter() {
                     debug_assert!(row_ptr.squashed_offset().is_committed_state());
 
                     // TODO: re-write `TxData` to remove `ProductValue`s
@@ -614,9 +621,21 @@ impl CommittedState {
     }
 
     fn merge_index_map(&mut self, index_id_map: IndexIdMap, index_id_map_removals: Option<&RemovedIndexIdSet>) {
-        for index_id in index_id_map_removals.into_iter().flatten() {
-            self.index_id_map.remove(index_id);
+        // Remove indices that tx-state removed.
+        // It's not necessarily the case that the index already existed in the committed state.
+        for (index_id, table_id) in index_id_map_removals
+            .into_iter()
+            .flatten()
+            .filter_map(|index_id| self.index_id_map.remove(index_id).map(|x| (*index_id, x)))
+        {
+            assert!(self
+                .tables
+                .get_mut(&table_id)
+                .expect("table to delete index from should exist")
+                .delete_index(&self.blob_store, index_id));
         }
+
+        // Add the ones tx-state added.
         self.index_id_map.extend(index_id_map);
     }
 
@@ -668,7 +687,7 @@ pub struct CommittedIndexIterWithDeletedMutTx<'a> {
 }
 
 impl<'a> CommittedIndexIterWithDeletedMutTx<'a> {
-    pub(super) fn new(committed_rows: IndexScanIter<'a>, del_table: &'a BTreeSet<RowPointer>) -> Self {
+    pub(super) fn new(committed_rows: IndexScanIter<'a>, del_table: &'a DeleteTable) -> Self {
         Self {
             committed_rows,
             del_table,
@@ -681,6 +700,6 @@ impl<'a> Iterator for CommittedIndexIterWithDeletedMutTx<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         self.committed_rows
-            .find(|row_ref| !self.del_table.contains(&row_ref.pointer()))
+            .find(|row_ref| !self.del_table.contains(row_ref.pointer()))
     }
 }

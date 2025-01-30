@@ -4,7 +4,8 @@ use super::datastore::locking_tx_datastore::state_view::{
 };
 use super::datastore::system_tables::ST_MODULE_ID;
 use super::datastore::traits::{
-    IsolationLevel, Metadata, MutTx as _, MutTxDatastore, Program, RowTypeForTable, Tx as _, TxDatastore,
+    InsertFlags, IsolationLevel, Metadata, MutTx as _, MutTxDatastore, Program, RowTypeForTable, Tx as _, TxDatastore,
+    UpdateFlags,
 };
 use super::datastore::{
     locking_tx_datastore::{
@@ -1130,8 +1131,18 @@ impl RelationalDB {
         tx: &'a mut MutTx,
         table_id: TableId,
         row: &[u8],
-    ) -> Result<(ColList, RowRef<'a>), DBError> {
+    ) -> Result<(ColList, RowRef<'a>, InsertFlags), DBError> {
         self.inner.insert_mut_tx(tx, table_id, row)
+    }
+
+    pub fn update<'a>(
+        &'a self,
+        tx: &'a mut MutTx,
+        table_id: TableId,
+        index_id: IndexId,
+        row: &[u8],
+    ) -> Result<(ColList, RowRef<'a>, UpdateFlags), DBError> {
+        self.inner.update_mut_tx(tx, table_id, index_id, row)
     }
 
     pub fn delete(&self, tx: &mut MutTx, table_id: TableId, row_ids: impl IntoIterator<Item = RowPointer>) -> u32 {
@@ -1332,7 +1343,7 @@ pub mod tests_utils {
 
     pub struct TempReplicaDir(ReplicaDir);
     impl TempReplicaDir {
-        fn new() -> io::Result<Self> {
+        pub fn new() -> io::Result<Self> {
             let dir = TempDir::with_prefix("stdb_test")?;
             Ok(Self(ReplicaDir::from_path_unchecked(dir.into_path())))
         }
@@ -1388,6 +1399,28 @@ pub mod tests_utils {
                 db,
 
                 durable: Some(durable),
+                tmp_dir: dir,
+            })
+        }
+
+        /// Create a [`TestDB`] which stores data in a local commitlog,
+        /// initialized with pre-existing data from `history`.
+        ///
+        /// [`TestHistory::from_txes`] is an easy-ish way to construct a non-empty [`History`].
+        ///
+        /// `expected_num_clients` is the expected size of the `connected_clients` return
+        /// from [`RelationalDB::open`] after replaying `history`.
+        /// Opening with an empty history, or one that does not insert into `st_client`,
+        /// should result in this number being 0.
+        pub fn in_memory_with_history(
+            history: impl durability::History<TxData = Txdata>,
+            expected_num_clients: usize,
+        ) -> Result<Self, DBError> {
+            let dir = TempReplicaDir::new()?;
+            let db = Self::open_db(&dir, history, None, None, expected_num_clients)?;
+            Ok(Self {
+                db,
+                durable: None,
                 tmp_dir: dir,
             })
         }
@@ -1472,7 +1505,7 @@ pub mod tests_utils {
         }
 
         fn in_memory_internal(root: &ReplicaDir) -> Result<RelationalDB, DBError> {
-            Self::open_db(root, EmptyHistory::new(), None, None)
+            Self::open_db(root, EmptyHistory::new(), None, None, 0)
         }
 
         fn durable_internal(
@@ -1483,7 +1516,7 @@ pub mod tests_utils {
             let history = local.clone();
             let durability = local.clone() as Arc<dyn Durability<TxData = Txdata>>;
             let snapshot_repo = open_snapshot_repo(root.snapshots(), Identity::ZERO, 0)?;
-            let db = Self::open_db(root, history, Some((durability, disk_size_fn)), Some(snapshot_repo))?;
+            let db = Self::open_db(root, history, Some((durability, disk_size_fn)), Some(snapshot_repo), 0)?;
 
             Ok((db, local))
         }
@@ -1493,6 +1526,7 @@ pub mod tests_utils {
             history: impl durability::History<TxData = Txdata>,
             durability: Option<(Arc<dyn Durability<TxData = Txdata>>, DiskSizeFn)>,
             snapshot_repo: Option<Arc<SnapshotRepository>>,
+            expected_num_clients: usize,
         ) -> Result<RelationalDB, DBError> {
             let (db, connected_clients) = RelationalDB::open(
                 root,
@@ -1502,7 +1536,7 @@ pub mod tests_utils {
                 durability,
                 snapshot_repo,
             )?;
-            debug_assert!(connected_clients.is_empty());
+            assert_eq!(connected_clients.len(), expected_num_clients);
             let db = db.with_row_count(Self::row_count_fn());
             db.with_auto_commit(Workload::Internal, |tx| {
                 db.set_initialized(tx, HostType::Wasm, Program::empty())
@@ -1530,9 +1564,46 @@ pub mod tests_utils {
         table_id: TableId,
         row: &T,
     ) -> Result<(AlgebraicValue, RowRef<'a>), DBError> {
-        let (gen_cols, row_ref) = db.insert(tx, table_id, &to_vec(row).unwrap())?;
+        let (gen_cols, row_ref, _) = db.insert(tx, table_id, &to_vec(row).unwrap())?;
         let gen_cols = row_ref.project(&gen_cols).unwrap();
         Ok((gen_cols, row_ref))
+    }
+
+    /// An in-memory commitlog used for tests that want to replay a known history.
+    pub struct TestHistory(commitlog::commitlog::Generic<commitlog::repo::Memory, Txdata>);
+
+    impl durability::History for TestHistory {
+        type TxData = Txdata;
+        fn fold_transactions_from<D>(&self, offset: TxOffset, decoder: D) -> Result<(), D::Error>
+        where
+            D: commitlog::Decoder,
+            D::Error: From<commitlog::error::Traversal>,
+        {
+            self.0.fold_transactions_from(offset, decoder)
+        }
+        fn transactions_from<'a, D>(
+            &self,
+            offset: TxOffset,
+            decoder: &'a D,
+        ) -> impl Iterator<Item = Result<commitlog::Transaction<Self::TxData>, D::Error>>
+        where
+            D: commitlog::Decoder<Record = Self::TxData>,
+            D::Error: From<commitlog::error::Traversal>,
+            Self::TxData: 'a,
+        {
+            self.0.transactions_from(offset, decoder)
+        }
+        fn max_tx_offset(&self) -> Option<TxOffset> {
+            self.0.max_committed_offset()
+        }
+    }
+
+    impl TestHistory {
+        pub fn from_txes(txes: impl IntoIterator<Item = Txdata>) -> Self {
+            let mut log = commitlog::tests::helpers::mem_log::<Txdata>(32);
+            commitlog::tests::helpers::fill_log_with(&mut log, txes);
+            Self(log)
+        }
     }
 }
 
@@ -1567,6 +1638,7 @@ mod tests {
     use spacetimedb_schema::schema::RowLevelSecuritySchema;
     use spacetimedb_table::read_column::ReadColumn;
     use spacetimedb_table::table::RowRef;
+    use tests::tests_utils::TestHistory;
 
     fn my_table(col_type: AlgebraicType) -> TableSchema {
         table("MyTable", ProductType::from([("my_col", col_type)]), |builder| builder)
@@ -2432,5 +2504,82 @@ mod tests {
             assert_eq!(caller_address, Address::ZERO);
             assert_eq!(reducer_timestamp, timestamp);
         }
+    }
+
+    /// This tests that we are able to correctly replay mutations to system tables,
+    /// in this case specifically `st_client`.
+    ///
+    /// [SpacetimeDB PR #2161](https://github.com/clockworklabs/SpacetimeDB/pull/2161)
+    /// fixed a bug where replaying deletes to `st_client` would fail due to an unpopulated index.
+    #[test]
+    fn replay_delete_from_st_client() {
+        use crate::db::datastore::system_tables::{StClientRow, ST_CLIENT_ID};
+
+        let row_0 = StClientRow {
+            identity: Identity::ZERO.into(),
+            address: Address::ZERO.into(),
+        };
+        let row_1 = StClientRow {
+            identity: Identity::ZERO.into(),
+            address: Address::from_u128(1).into(),
+        };
+
+        let history = TestHistory::from_txes([
+            // TX 0: insert row 0
+            Txdata {
+                inputs: None,
+                outputs: None,
+                mutations: Some(txdata::Mutations {
+                    inserts: Box::new([txdata::Ops {
+                        table_id: ST_CLIENT_ID,
+                        rowdata: Arc::new([row_0.into()]),
+                    }]),
+                    deletes: Box::new([]),
+                    truncates: Box::new([]),
+                }),
+            },
+            // TX 1: delete row 0
+            Txdata {
+                inputs: None,
+                outputs: None,
+                mutations: Some(txdata::Mutations {
+                    inserts: Box::new([]),
+                    deletes: Box::new([txdata::Ops {
+                        table_id: ST_CLIENT_ID,
+                        rowdata: Arc::new([row_0.into()]),
+                    }]),
+                    truncates: Box::new([]),
+                }),
+            },
+            // TX 2: insert row 1
+            Txdata {
+                inputs: None,
+                outputs: None,
+                mutations: Some(txdata::Mutations {
+                    inserts: Box::new([txdata::Ops {
+                        table_id: ST_CLIENT_ID,
+                        rowdata: Arc::new([row_1.into()]),
+                    }]),
+                    deletes: Box::new([]),
+                    truncates: Box::new([]),
+                }),
+            },
+        ]);
+
+        // We expect 1 client, since we left `row_1` in there.
+        let stdb = TestDB::in_memory_with_history(history, /* expected_num_clients: */ 1).unwrap();
+
+        let read_tx = stdb.begin_tx(Workload::ForTests);
+
+        // Read all of st_client, assert that there's only one row, and that said row is `row_1`.
+        let present_rows: Vec<StClientRow> = stdb
+            .iter(&read_tx, ST_CLIENT_ID)
+            .unwrap()
+            .map(|row_ref| row_ref.try_into().unwrap())
+            .collect();
+        assert_eq!(present_rows.len(), 1);
+        assert_eq!(present_rows[0], row_1);
+
+        stdb.release_tx(read_tx);
     }
 }

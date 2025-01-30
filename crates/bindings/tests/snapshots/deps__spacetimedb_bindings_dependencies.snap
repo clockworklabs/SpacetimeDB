@@ -37,7 +37,6 @@ spacetimedb
 │   └── rand_core (*)
 ├── scoped_tls
 ├── spacetimedb_bindings_macro
-│   ├── bitflags
 │   ├── heck
 │   ├── humantime
 │   ├── proc_macro2 (*)

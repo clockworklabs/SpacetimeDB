@@ -1,6 +1,7 @@
 use super::execution_unit::QueryHash;
 use super::module_subscription_manager::{Plan, SubscriptionManager};
 use super::query::compile_read_only_query;
+use super::record_exec_metrics;
 use super::tx::DeltaTx;
 use crate::client::messages::{
     SubscriptionError, SubscriptionMessage, SubscriptionResult, SubscriptionRows, SubscriptionUpdateMessage,
@@ -11,7 +12,7 @@ use crate::db::datastore::locking_tx_datastore::tx::TxId;
 use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::error::DBError;
 use crate::estimation::estimate_rows_scanned;
-use crate::execution_context::Workload;
+use crate::execution_context::{Workload, WorkloadType};
 use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent};
 use crate::messages::websocket::Subscribe;
 use crate::vm::check_row_limit;
@@ -21,6 +22,7 @@ use spacetimedb_client_api_messages::websocket::{
     BsatnFormat, FormatSwitch, JsonFormat, SubscribeSingle, TableUpdate, Unsubscribe,
 };
 use spacetimedb_lib::identity::AuthCtx;
+use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::Identity;
 use spacetimedb_query::{execute_plans, SubscribePlan};
 use std::{sync::Arc, time::Instant};
@@ -37,6 +39,7 @@ pub struct ModuleSubscriptions {
 }
 
 type AssertTxFn = Arc<dyn Fn(&Tx)>;
+type SubscriptionUpdate = FormatSwitch<TableUpdate<BsatnFormat>, TableUpdate<JsonFormat>>;
 
 impl ModuleSubscriptions {
     pub fn new(relational_db: Arc<RelationalDB>, owner_identity: Identity) -> Self {
@@ -54,7 +57,7 @@ impl ModuleSubscriptions {
         query: Arc<Plan>,
         tx: &TxId,
         auth: &AuthCtx,
-    ) -> Result<FormatSwitch<TableUpdate<BsatnFormat>, TableUpdate<JsonFormat>>, DBError> {
+    ) -> Result<(SubscriptionUpdate, ExecutionMetrics), DBError> {
         let comp = sender.config.compression;
         let plan = SubscribePlan::from_delta_plan(&query);
 
@@ -68,8 +71,12 @@ impl ModuleSubscriptions {
 
         let tx = DeltaTx::from(tx);
         Ok(match sender.config.protocol {
-            Protocol::Binary => FormatSwitch::Bsatn(plan.collect_table_update(comp, &tx)?),
-            Protocol::Text => FormatSwitch::Json(plan.collect_table_update(comp, &tx)?),
+            Protocol::Binary => plan
+                .collect_table_update(comp, &tx)
+                .map(|(table_update, metrics)| (FormatSwitch::Bsatn(table_update), metrics))?,
+            Protocol::Text => plan
+                .collect_table_update(comp, &tx)
+                .map(|(table_update, metrics)| (FormatSwitch::Json(table_update), metrics))?,
         })
     }
 
@@ -85,20 +92,42 @@ impl ModuleSubscriptions {
             self.relational_db.release_tx(tx);
         });
         let auth = AuthCtx::new(self.owner_identity, sender.id.identity);
-        let guard = self.subscriptions.read();
         let query = super::query::WHITESPACE.replace_all(&request.query, " ");
         let sql = query.trim();
         let hash = QueryHash::from_string(sql);
-        let query = if let Some(unit) = guard.query(&hash) {
-            unit
-        } else {
+        let existing_query = {
+            let guard = self.subscriptions.read();
+            guard.query(&hash)
+        };
+        let query: Result<Arc<Plan>, DBError> = existing_query.map(Ok).unwrap_or_else(|| {
+            // NOTE: The following ensures compliance with the 1.0 sql api.
+            // Come 1.0, it will have replaced the current compilation stack.
             let compiled = compile_read_only_query(&auth, &tx, sql)?;
-            Arc::new(compiled)
+            Ok(Arc::new(compiled))
+        });
+        let query = match query {
+            Ok(query) => query,
+            Err(e) => {
+                let _ = sender.send_message(SubscriptionMessage {
+                    request_id: Some(request.request_id),
+                    query_id: Some(request.query_id),
+                    timer: Some(timer),
+                    result: SubscriptionResult::Error(SubscriptionError {
+                        table_id: None,
+                        message: e.to_string().into(),
+                    }),
+                });
+                return Ok(());
+            }
         };
 
-        drop(guard);
+        let (table_rows, metrics) = self.evaluate_initial_subscription(sender.clone(), query.clone(), &tx, &auth)?;
 
-        let table_rows = self.evaluate_initial_subscription(sender.clone(), query.clone(), &tx, &auth)?;
+        record_exec_metrics(
+            &WorkloadType::Subscribe,
+            &self.relational_db.database_identity(),
+            metrics,
+        );
 
         // It acquires the subscription lock after `eval`, allowing `add_subscription` to run concurrently.
         // This also makes it possible for `broadcast_event` to get scheduled before the subsequent part here
@@ -161,7 +190,13 @@ impl ModuleSubscriptions {
             self.relational_db.release_tx(tx);
         });
         let auth = AuthCtx::new(self.owner_identity, sender.id.identity);
-        let table_rows = self.evaluate_initial_subscription(sender.clone(), query.clone(), &tx, &auth)?;
+        let (table_rows, metrics) = self.evaluate_initial_subscription(sender.clone(), query.clone(), &tx, &auth)?;
+
+        record_exec_metrics(
+            &WorkloadType::Subscribe,
+            &self.relational_db.database_identity(),
+            metrics,
+        );
 
         WORKER_METRICS
             .subscription_queries
@@ -247,10 +282,18 @@ impl ModuleSubscriptions {
         )?;
 
         let tx = DeltaTx::from(&*tx);
-        let database_update = match sender.config.protocol {
-            Protocol::Text => FormatSwitch::Json(execute_plans(plans, comp, &tx)?),
-            Protocol::Binary => FormatSwitch::Bsatn(execute_plans(plans, comp, &tx)?),
+        let (database_update, metrics) = match sender.config.protocol {
+            Protocol::Binary => execute_plans(plans, comp, &tx)
+                .map(|(table_update, metrics)| (FormatSwitch::Bsatn(table_update), metrics))?,
+            Protocol::Text => execute_plans(plans, comp, &tx)
+                .map(|(table_update, metrics)| (FormatSwitch::Json(table_update), metrics))?,
         };
+
+        record_exec_metrics(
+            &WorkloadType::Subscribe,
+            &self.relational_db.database_identity(),
+            metrics,
+        );
 
         // It acquires the subscription lock after `eval`, allowing `add_subscription` to run concurrently.
         // This also makes it possible for `broadcast_event` to get scheduled before the subsequent part here
@@ -328,7 +371,9 @@ impl ModuleSubscriptions {
         let event = Arc::new(event);
 
         match &event.status {
-            EventStatus::Committed(_) => subscriptions.eval_updates(&read_tx, event.clone(), caller),
+            EventStatus::Committed(_) => {
+                subscriptions.eval_updates(&read_tx, event.clone(), caller, &self.relational_db.database_identity())
+            }
             EventStatus::Failed(_) => {
                 if let Some(client) = caller {
                     let message = TransactionUpdateMessage {

@@ -257,6 +257,31 @@ public abstract partial record ScheduleAt
 
     public static implicit operator ScheduleAt(DateTimeOffset time) => new Time(time);
 
+    /// <summary>
+    /// There are 10 C# Timestamp "Ticks" per microsecond.
+    /// </summary>
+    public static readonly ulong TicksPerMicrosecond = 10;
+
+    public static ulong ToMicroseconds(TimeSpan interval)
+    {
+        return (ulong)interval.Ticks / TicksPerMicrosecond;
+    }
+
+    public static TimeSpan TimeSpanFromMicroseconds(ulong intervalMicros)
+    {
+        return TimeSpan.FromTicks((long)(TicksPerMicrosecond * intervalMicros));
+    }
+
+    public static ulong ToMicrosecondsSinceUnixEpoch(DateTimeOffset time)
+    {
+        return ToMicroseconds(time - DateTimeOffset.UnixEpoch);
+    }
+
+    public static DateTimeOffset DateTimeOffsetFromMicrosSinceUnixEpoch(ulong microsSinceUnixEpoch)
+    {
+        return DateTimeOffset.UnixEpoch + TimeSpanFromMicroseconds(microsSinceUnixEpoch);
+    }
+
     public readonly partial struct BSATN : IReadWrite<ScheduleAt>
     {
         [SpacetimeDB.Type]
@@ -289,6 +314,10 @@ public abstract partial record ScheduleAt
         public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) =>
             // Constructing a custom one instead of ScheduleAtRepr.GetAlgebraicType()
             // to avoid leaking the internal *Repr wrappers in generated SATS.
+            // We are leveraging the fact that single-element structs are byte-compatible with their elements
+            // when parsing BSATN.
+            // TODO: this might break when working with other formats like JSON, but this is all going to be rewritten
+            // anyway with Phoebe's Timestamp PR.
             new AlgebraicType.Sum(
                 [
                     new("Interval", new AlgebraicType.U64(default)),

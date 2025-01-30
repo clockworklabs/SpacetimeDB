@@ -30,3 +30,21 @@ fn second(_ctx: &ReducerContext) {
         
         self.call("second")
         self.assertIn("Test Passed", self.logs(2))
+
+class ReducerError(Smoketest):
+    MODULE_CODE = """
+use spacetimedb::ReducerContext;
+
+#[spacetimedb::reducer]
+fn fail(_ctx: &ReducerContext) -> Result<(), String> {
+    Err("oopsie :(".into())
+}
+"""
+
+    def test_reducer_error_message(self):
+        """Tests to ensure an error message returned from a reducer gets printed to logs"""
+
+        with self.assertRaises(Exception):
+            self.call("fail")
+
+        self.assertIn("oopsie :(", self.logs(2))
