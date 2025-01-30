@@ -51,7 +51,7 @@ pub fn moment_milliseconds() -> u64 {
     1
     // Duration::from_micros(1000).as_millis() as u64
     // or previously...
-    // Timestamp::from_micros_since_epoch(1000)
+    // Timestamp::from_micros_since_unix_epoch(1000)
     //     .duration_since(Timestamp::UNIX_EPOCH)
     //     .ok()
     //     .unwrap()

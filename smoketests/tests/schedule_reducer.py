@@ -1,6 +1,7 @@
 from .. import Smoketest
 import time
 
+
 class CancelReducer(Smoketest):
 
     MODULE_CODE = """
@@ -50,7 +51,9 @@ fn reducer(_ctx: &ReducerContext, args: ScheduledReducerArgs) {
         logs = "\n".join(self.logs(5))
         self.assertNotIn("the reducer ran", logs)
 
-TIMESTAMP_ZERO = {'__timestamp_nanos_since_unix_epoch':0}
+
+TIMESTAMP_ZERO = {"__timestamp_nanos_since_unix_epoch": 0}
+
 
 class SubscribeScheduledTable(Smoketest):
     MODULE_CODE = """
@@ -67,12 +70,12 @@ pub struct ScheduledTable {
 
 #[spacetimedb::reducer]
 fn schedule_reducer(ctx: &ReducerContext) {
-    ctx.db.scheduled_table().insert(ScheduledTable { prev: Timestamp::from_micros_since_epoch(0), scheduled_id: 2, sched_at: Timestamp::from_micros_since_epoch(0).into(), });
+    ctx.db.scheduled_table().insert(ScheduledTable { prev: Timestamp::from_micros_since_unix_epoch(0), scheduled_id: 2, sched_at: Timestamp::from_micros_since_unix_epoch(0).into(), });
 }
 
 #[spacetimedb::reducer]
 fn schedule_repeated_reducer(ctx: &ReducerContext) {
-    ctx.db.scheduled_table().insert(ScheduledTable { prev: Timestamp::from_micros_since_epoch(0), scheduled_id: 1, sched_at: duration!(100ms).into(), });
+    ctx.db.scheduled_table().insert(ScheduledTable { prev: Timestamp::from_micros_since_unix_epoch(0), scheduled_id: 1, sched_at: duration!(100ms).into(), });
 }
 
 #[spacetimedb::reducer]
@@ -80,6 +83,7 @@ pub fn my_reducer(ctx: &ReducerContext, arg: ScheduledTable) {
     log::info!("Invoked: ts={:?}, delta={:?}", ctx.timestamp, ctx.timestamp.duration_since(arg.prev));
 }
 """
+
     def test_scheduled_table_subscription(self):
         """This test deploys a module with a scheduled reducer and check if client receives subscription update for scheduled table entry and deletion of reducer once it ran"""
         # subscribe to empy scheduled_table
@@ -92,11 +96,19 @@ pub fn my_reducer(ctx: &ReducerContext, arg: ScheduledTable) {
         # scheduled reducer should be ran by now
         self.assertEqual(lines, 1)
 
-        row_entry = {'prev': TIMESTAMP_ZERO, 'scheduled_id': 2, 'sched_at': {'Time': TIMESTAMP_ZERO}}
+        row_entry = {
+            "prev": TIMESTAMP_ZERO,
+            "scheduled_id": 2,
+            "sched_at": {"Time": TIMESTAMP_ZERO},
+        }
         # subscription should have 2 updates, first for row insert in scheduled table and second for row deletion.
-        self.assertEqual(sub(), [{'scheduled_table': {'deletes': [], 'inserts': [row_entry]}}, {'scheduled_table': {'deletes': [row_entry], 'inserts': []}}])
-
-
+        self.assertEqual(
+            sub(),
+            [
+                {"scheduled_table": {"deletes": [], "inserts": [row_entry]}},
+                {"scheduled_table": {"deletes": [row_entry], "inserts": []}},
+            ],
+        )
 
     def test_scheduled_table_subscription_repeated_reducer(self):
         """This test deploys a module with a  repeated reducer and check if client receives subscription update for scheduled table entry and no delete entry"""
@@ -113,11 +125,25 @@ pub fn my_reducer(ctx: &ReducerContext, arg: ScheduledTable) {
         # scheduling repeated reducer again just to get 2nd subscription update.
         self.call("schedule_reducer")
 
-        repeated_row_entry = {'prev': TIMESTAMP_ZERO, 'scheduled_id': 1, 'sched_at': {'Interval': {'__time_duration_micros': 100000 }}}
-        row_entry = {'prev': TIMESTAMP_ZERO, 'scheduled_id': 2, 'sched_at': {'Time': TIMESTAMP_ZERO}}
+        repeated_row_entry = {
+            "prev": TIMESTAMP_ZERO,
+            "scheduled_id": 1,
+            "sched_at": {"Interval": {"__time_duration_micros": 100000}},
+        }
+        row_entry = {
+            "prev": TIMESTAMP_ZERO,
+            "scheduled_id": 2,
+            "sched_at": {"Time": TIMESTAMP_ZERO},
+        }
 
         # subscription should have 2 updates and should not have any deletes
-        self.assertEqual(sub(), [{'scheduled_table': {'deletes': [], 'inserts': [repeated_row_entry]}}, {'scheduled_table': {'deletes': [], 'inserts': [row_entry]}}])
+        self.assertEqual(
+            sub(),
+            [
+                {"scheduled_table": {"deletes": [], "inserts": [repeated_row_entry]}},
+                {"scheduled_table": {"deletes": [], "inserts": [row_entry]}},
+            ],
+        )
 
 
 class VolatileNonatomicScheduleImmediate(Smoketest):
@@ -140,6 +166,7 @@ fn do_insert(ctx: &ReducerContext, x: String) {
     ctx.db.my_table().insert(MyTable { x });
 }
 """
+
     def test_volatile_nonatomic_schedule_immediate(self):
         """Check that volatile_nonatomic_schedule_immediate works"""
 
@@ -148,4 +175,10 @@ fn do_insert(ctx: &ReducerContext, x: String) {
         self.call("do_insert", "yay!")
         self.call("do_schedule")
 
-        self.assertEqual(sub(), [{'my_table': {'deletes': [], 'inserts': [{'x': 'yay!'}]}}, {'my_table': {'deletes': [], 'inserts': [{'x': 'hello'}]}}])
+        self.assertEqual(
+            sub(),
+            [
+                {"my_table": {"deletes": [], "inserts": [{"x": "yay!"}]}},
+                {"my_table": {"deletes": [], "inserts": [{"x": "hello"}]}},
+            ],
+        )
