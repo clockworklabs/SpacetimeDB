@@ -1,4 +1,4 @@
-name: Build SpacetimeDB CLI
+name: Package SpacetimeDB CLI
 
 on:
   push:
@@ -14,13 +14,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { target: x86_64-unknown-linux-gnu, runner: bare-metal }
-          - { target: aarch64-unknown-linux-gnu, runner: arm-runner }
-          - { target: aarch64-apple-darwin, runner: macos-latest }
-          - { target: x86_64-apple-darwin, runner: macos-latest }
-          - { target: x86_64-pc-windows-msvc, runner: windows-latest }
+          - { name: x86_64 Linux, target: x86_64-unknown-linux-gnu, runner: bare-metal }
+          - { name: aarch64 Linux, target: aarch64-unknown-linux-gnu, runner: arm-runner }
+          - { name: aarch64 macOS, target: aarch64-apple-darwin, runner: macos-latest }
+          - { name: x86_64 macOS, target: x86_64-apple-darwin, runner: macos-latest }
+          - { name: x86_64 Windows, target: x86_64-pc-windows-msvc, runner: windows-latest }
 
-    name: Build CLI for ${{ matrix.target }}
+    name: Build CLI for ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
 
     steps:
