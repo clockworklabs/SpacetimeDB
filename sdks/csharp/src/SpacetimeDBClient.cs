@@ -14,8 +14,8 @@ using Thread = System.Threading.Thread;
 
 namespace SpacetimeDB
 {
-    public sealed class DbConnectionBuilder<DbConnection, Reducer>
-        where DbConnection : DbConnectionBase<DbConnection, Reducer>, new()
+    public sealed class DbConnectionBuilder<DbConnection>
+        where DbConnection : IDbConnection, new()
     {
         readonly DbConnection conn = new();
 
@@ -45,31 +45,31 @@ namespace SpacetimeDB
             return conn;
         }
 
-        public DbConnectionBuilder<DbConnection, Reducer> WithUri(string uri)
+        public DbConnectionBuilder<DbConnection> WithUri(string uri)
         {
             this.uri = uri;
             return this;
         }
 
-        public DbConnectionBuilder<DbConnection, Reducer> WithModuleName(string nameOrAddress)
+        public DbConnectionBuilder<DbConnection> WithModuleName(string nameOrAddress)
         {
             this.nameOrAddress = nameOrAddress;
             return this;
         }
 
-        public DbConnectionBuilder<DbConnection, Reducer> WithToken(string? token)
+        public DbConnectionBuilder<DbConnection> WithToken(string? token)
         {
             this.token = token;
             return this;
         }
 
-        public DbConnectionBuilder<DbConnection, Reducer> WithCompression(Compression compression)
+        public DbConnectionBuilder<DbConnection> WithCompression(Compression compression)
         {
             this.compression = compression;
             return this;
         }
 
-        public DbConnectionBuilder<DbConnection, Reducer> WithLightMode(bool light)
+        public DbConnectionBuilder<DbConnection> WithLightMode(bool light)
         {
             this.light = light;
             return this;
@@ -77,31 +77,37 @@ namespace SpacetimeDB
 
         public delegate void ConnectCallback(DbConnection conn, Identity identity, string token);
 
-        public DbConnectionBuilder<DbConnection, Reducer> OnConnect(ConnectCallback cb)
+        public DbConnectionBuilder<DbConnection> OnConnect(ConnectCallback cb)
         {
-            conn.onConnect += (identity, token) => cb.Invoke(conn, identity, token);
+            conn.AddOnConnect((identity, token) => cb(conn, identity, token));
             return this;
         }
 
         public delegate void ConnectErrorCallback(Exception e);
 
-        public DbConnectionBuilder<DbConnection, Reducer> OnConnectError(ConnectErrorCallback cb)
+        public DbConnectionBuilder<DbConnection> OnConnectError(ConnectErrorCallback cb)
         {
-            conn.webSocket.OnConnectError += (e) => cb.Invoke(e);
+            conn.AddOnConnectError(e => cb(e));
             return this;
         }
 
         public delegate void DisconnectCallback(DbConnection conn, Exception? e);
 
-        public DbConnectionBuilder<DbConnection, Reducer> OnDisconnect(DisconnectCallback cb)
+        public DbConnectionBuilder<DbConnection> OnDisconnect(DisconnectCallback cb)
         {
-            conn.webSocket.OnClose += (e) => cb.Invoke(conn, e);
+            conn.AddOnDisconnect(e => cb(conn, e));
             return this;
         }
     }
 
     public interface IDbConnection
     {
+        internal void Connect(string? token, string uri, string addressOrName, Compression compression, bool light);
+
+        internal void AddOnConnect(Action<Identity, string> cb);
+        internal void AddOnConnectError(WebSocket.ConnectErrorEventHandler cb);
+        internal void AddOnDisconnect(WebSocket.CloseEventHandler cb);
+
         internal void LegacySubscribe(ISubscriptionHandle handle, string[] querySqls);
         internal void Subscribe(ISubscriptionHandle handle, string querySql);
         internal void Unsubscribe(QueryId queryId);
@@ -114,7 +120,7 @@ namespace SpacetimeDB
     public abstract class DbConnectionBase<DbConnection, Reducer> : IDbConnection
         where DbConnection : DbConnectionBase<DbConnection, Reducer>, new()
     {
-        public static DbConnectionBuilder<DbConnection, Reducer> Builder() => new();
+        public static DbConnectionBuilder<DbConnection> Builder() => new();
 
         readonly struct DbValue
         {
@@ -691,7 +697,7 @@ namespace SpacetimeDB
         /// </summary>
         /// <param name="uri"> URI of the SpacetimeDB server (ex: https://testnet.spacetimedb.com)
         /// <param name="addressOrName">The name or address of the database to connect to</param>
-        internal void Connect(string? token, string uri, string addressOrName, Compression compression, bool light)
+        void IDbConnection.Connect(string? token, string uri, string addressOrName, Compression compression, bool light)
         {
             isClosing = false;
 
@@ -1132,6 +1138,12 @@ namespace SpacetimeDB
             }));
 
         }
+
+        void IDbConnection.AddOnConnect(Action<Identity, string> cb) => onConnect += cb;
+
+        void IDbConnection.AddOnConnectError(WebSocket.ConnectErrorEventHandler cb) => webSocket.OnConnectError += cb;
+
+        void IDbConnection.AddOnDisconnect(WebSocket.CloseEventHandler cb) => webSocket.OnClose += cb;
     }
 
     internal struct UintAllocator
