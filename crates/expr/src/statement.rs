@@ -315,6 +315,8 @@ pub fn type_and_rewrite_show(show: SqlShow, tx: &impl SchemaView) -> TypingResul
     // -------------------------------------------
     let var_name_field = Expr::Field(FieldProject {
         table: ST_VAR_NAME.into(),
+        // TODO: Avoid hard coding the field position.
+        // See `StVarFields` for the schema of `st_var`.
         field: 0,
         ty: AlgebraicType::String,
     });
@@ -333,6 +335,8 @@ pub fn type_and_rewrite_show(show: SqlShow, tx: &impl SchemaView) -> TypingResul
         VALUE_COLUMN.into(),
         FieldProject {
             table: ST_VAR_NAME.into(),
+            // TODO: Avoid hard coding the field position.
+            // See `StVarFields` for the schema of `st_var`.
             field: 1,
             ty: value_col_ty.clone(),
         },

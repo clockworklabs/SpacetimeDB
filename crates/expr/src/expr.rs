@@ -47,7 +47,7 @@ impl ProjectName {
     }
 
     /// Iterate over the returned column names and types
-    pub fn iter_return_fields(&self, mut f: impl FnMut(&str, &AlgebraicType)) {
+    pub fn for_each_return_field(&self, mut f: impl FnMut(&str, &AlgebraicType)) {
         if let Some(schema) = self.return_table() {
             for schema in schema.columns() {
                 f(&schema.col_name, &schema.col_type);
@@ -98,10 +98,10 @@ impl ProjectList {
     }
 
     /// Iterate over the projected column names and types
-    pub fn iter_return_fields(&self, mut f: impl FnMut(&str, &AlgebraicType)) {
+    pub fn for_each_return_field(&self, mut f: impl FnMut(&str, &AlgebraicType)) {
         match self {
             Self::Name(project) => {
-                project.iter_return_fields(f);
+                project.for_each_return_field(f);
             }
             Self::List(_, fields) => {
                 for (name, FieldProject { ty, .. }) in fields {

@@ -199,7 +199,7 @@ pub fn run(
             });
 
             // Compute the header for the result set
-            stmt.iter_return_fields(|col_name, col_type| {
+            stmt.for_each_return_field(|col_name, col_type| {
                 head.push((col_name.into(), col_type.clone()));
             });
 
