@@ -1,5 +1,6 @@
 use crate::common_args;
 use crate::util;
+use crate::util::get_login_token_or_log_in;
 use crate::Config;
 use clap::{ArgMatches, Command};
 use reqwest::StatusCode;
@@ -14,6 +15,7 @@ pub fn cli() -> Command {
     Command::new("list")
         .about("Lists the databases attached to an identity")
         .arg(common_args::server().help("The nickname, host name or URL of the server from which to list databases"))
+        .arg(common_args::yes())
 }
 
 #[derive(Deserialize)]
@@ -27,9 +29,11 @@ struct IdentityRow {
     pub db_identity: Identity,
 }
 
-pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
-    let identity = util::decode_identity(&config)?;
+    let force = args.get_flag("force");
+    let token = get_login_token_or_log_in(&mut config, server, !force).await?;
+    let identity = util::decode_identity(&token)?;
 
     let client = reqwest::Client::new();
     let res = client
@@ -38,7 +42,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
             config.get_host_url(server)?,
             identity
         ))
-        .basic_auth("token", Some(config.spacetimedb_token_or_error()?))
+        .basic_auth("token", Some(token))
         .send()
         .await?;
 

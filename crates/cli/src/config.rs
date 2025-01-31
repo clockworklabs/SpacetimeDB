@@ -820,14 +820,6 @@ Update the server's fingerprint with:
     pub fn spacetimedb_token(&self) -> Option<&String> {
         self.home.spacetimedb_token.as_ref()
     }
-
-    pub fn spacetimedb_token_or_error(&self) -> anyhow::Result<&String> {
-        if let Some(token) = self.spacetimedb_token() {
-            Ok(token)
-        } else {
-            Err(anyhow::anyhow!("No login token found. Please run `spacetime login`."))
-        }
-    }
 }
 
 #[cfg(test)]
