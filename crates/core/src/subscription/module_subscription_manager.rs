@@ -3,15 +3,18 @@ use super::tx::DeltaTx;
 use crate::client::messages::{SubscriptionUpdateMessage, TransactionUpdateMessage};
 use crate::client::{ClientConnectionSender, Protocol};
 use crate::error::DBError;
+use crate::execution_context::WorkloadType;
 use crate::host::module_host::{DatabaseTableUpdate, ModuleEvent, UpdatesRelValue};
 use crate::messages::websocket::{self as ws, TableUpdate};
 use crate::subscription::delta::eval_delta;
+use crate::subscription::record_exec_metrics;
 use hashbrown::hash_map::OccupiedError;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use spacetimedb_client_api_messages::websocket::{
     BsatnFormat, CompressableQueryUpdate, FormatSwitch, JsonFormat, QueryId, QueryUpdate, WebsocketFormat,
 };
 use spacetimedb_data_structures::map::{Entry, HashCollectionExt, HashMap, HashSet, IntMap};
+use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::{Address, Identity};
 use spacetimedb_primitives::TableId;
 use spacetimedb_query::delta::DeltaPlan;
@@ -137,6 +140,11 @@ impl SubscriptionManager {
     #[cfg(test)]
     fn contains_query(&self, hash: &QueryHash) -> bool {
         self.queries.contains_key(hash)
+    }
+
+    #[cfg(test)]
+    fn contains_client(&self, subscriber: &ClientId) -> bool {
+        self.clients.contains_key(subscriber)
     }
 
     #[cfg(test)]
@@ -284,7 +292,7 @@ impl SubscriptionManager {
     #[tracing::instrument(level = "trace", skip_all)]
     pub fn remove_all_subscriptions(&mut self, client: &ClientId) {
         self.remove_legacy_subscriptions(client);
-        let Some(client_info) = self.clients.get(client) else {
+        let Some(client_info) = self.clients.remove(client) else {
             return;
         };
         debug_assert!(client_info.legacy_subscriptions.is_empty());
@@ -310,7 +318,13 @@ impl SubscriptionManager {
     /// evaluates only the necessary queries for those delta tables,
     /// and then sends the results to each client.
     #[tracing::instrument(level = "trace", skip_all)]
-    pub fn eval_updates(&self, tx: &DeltaTx, event: Arc<ModuleEvent>, caller: Option<&ClientConnectionSender>) {
+    pub fn eval_updates(
+        &self,
+        tx: &DeltaTx,
+        event: Arc<ModuleEvent>,
+        caller: Option<&ClientConnectionSender>,
+        database_identity: &Identity,
+    ) {
         use FormatSwitch::{Bsatn, Json};
 
         let tables = &event.status.database_update().unwrap().tables;
@@ -318,7 +332,7 @@ impl SubscriptionManager {
         // Put the main work on a rayon compute thread.
         rayon::scope(|_| {
             let span = tracing::info_span!("eval_incr").entered();
-            let mut eval = tables
+            let (updates, metrics) = tables
                 .iter()
                 .filter(|table| !table.inserts.is_empty() || !table.deletes.is_empty())
                 .map(|DatabaseTableUpdate { table_id, .. }| table_id)
@@ -330,7 +344,7 @@ impl SubscriptionManager {
                 // If N clients are subscribed to a query,
                 // we copy the DatabaseTableUpdate N times,
                 // which involves cloning BSATN (binary) or product values (json).
-                .flat_map_iter(|(hash, plan)| {
+                .map(|(hash, plan)| {
                     let table_id = plan.table_id();
                     let table_name = plan.table_name();
                     // Store at most one copy of the serialization to BSATN
@@ -339,23 +353,38 @@ impl SubscriptionManager {
                     // but we only fill `ops_bin` and `ops_json` at most once.
                     // The former will be `Some(_)` if some subscriber uses `Protocol::Binary`
                     // and the latter `Some(_)` if some subscriber uses `Protocol::Text`.
-                    let mut ops_bin: Option<(CompressableQueryUpdate<BsatnFormat>, _)> = None;
-                    let mut ops_json: Option<(QueryUpdate<JsonFormat>, _)> = None;
+                    let mut ops_bin: Option<(CompressableQueryUpdate<BsatnFormat>, _, _)> = None;
+                    let mut ops_json: Option<(QueryUpdate<JsonFormat>, _, _)> = None;
 
                     fn memo_encode<F: WebsocketFormat>(
                         updates: &UpdatesRelValue<'_>,
                         client: &ClientConnectionSender,
-                        memory: &mut Option<(F::QueryUpdate, u64)>,
+                        memory: &mut Option<(F::QueryUpdate, u64, usize)>,
+                        metrics: &mut ExecutionMetrics,
                     ) -> (F::QueryUpdate, u64) {
-                        memory
-                            .get_or_insert_with(|| updates.encode::<F>(client.config.compression))
-                            .clone()
+                        let (update, num_rows, num_bytes) = memory
+                            .get_or_insert_with(|| {
+                                let encoded = updates.encode::<F>(client.config.compression);
+                                // The first time we insert into this map, we call encode.
+                                // This is when we serialize the rows to BSATN/JSON.
+                                // Hence this is where we increment `bytes_scanned`.
+                                metrics.bytes_scanned += encoded.2;
+                                encoded
+                            })
+                            .clone();
+                        // We call this function for each query,
+                        // and for each client subscribed to it.
+                        // Therefore every time we call this function,
+                        // we update the `bytes_sent_to_clients` metric.
+                        metrics.bytes_sent_to_clients += num_bytes;
+                        (update, num_rows)
                     }
 
                     let evaluator = plan.evaluator(tx);
+                    let mut metrics = ExecutionMetrics::default();
 
                     // TODO: Handle errors instead of skipping them
-                    eval_delta(tx, &evaluator)
+                    let updates = eval_delta(tx, &mut metrics, &evaluator)
                         .ok()
                         .filter(|delta_updates| delta_updates.has_updates())
                         .map(|delta_updates| {
@@ -363,23 +392,42 @@ impl SubscriptionManager {
                                 .get(hash)
                                 .into_iter()
                                 .flat_map(|query| query.all_clients())
-                                .map(move |id| {
+                                .map(|id| {
                                     let client = &self.clients[id].outbound_ref;
                                     let update = match client.config.protocol {
-                                        Protocol::Binary => {
-                                            Bsatn(memo_encode::<BsatnFormat>(&delta_updates, client, &mut ops_bin))
-                                        }
-                                        Protocol::Text => {
-                                            Json(memo_encode::<JsonFormat>(&delta_updates, client, &mut ops_json))
-                                        }
+                                        Protocol::Binary => Bsatn(memo_encode::<BsatnFormat>(
+                                            &delta_updates,
+                                            client,
+                                            &mut ops_bin,
+                                            &mut metrics,
+                                        )),
+                                        Protocol::Text => Json(memo_encode::<JsonFormat>(
+                                            &delta_updates,
+                                            client,
+                                            &mut ops_json,
+                                            &mut metrics,
+                                        )),
                                     };
                                     (id, table_id, table_name.clone(), update)
                                 })
                                 .collect::<Vec<_>>()
                         })
-                        .unwrap_or_default()
+                        .unwrap_or_default();
+
+                    (updates, metrics)
                 })
-                .collect::<Vec<_>>()
+                .reduce(
+                    || (vec![], ExecutionMetrics::default()),
+                    |(mut updates, mut aggregated_metrics), (table_upates, metrics)| {
+                        updates.extend(table_upates);
+                        aggregated_metrics.merge(metrics);
+                        (updates, aggregated_metrics)
+                    },
+                );
+
+            record_exec_metrics(&WorkloadType::Update, database_identity, metrics);
+
+            let mut eval = updates
                 .into_iter()
                 // For each subscriber, aggregate all the updates for the same table.
                 // That is, we build a map `(subscriber_id, table_id) -> updates`.
@@ -688,14 +736,17 @@ mod tests {
             .map(|client| (client.id.identity, client.id.address))
             .collect::<Vec<_>>();
         subscriptions.remove_all_subscriptions(&client_ids[0]);
+        assert!(!subscriptions.contains_client(&client_ids[0]));
         // There are still two left.
         assert!(subscriptions.query_reads_from_table(&hash, &table_id));
         subscriptions.remove_all_subscriptions(&client_ids[1]);
         // There is still one left.
         assert!(subscriptions.query_reads_from_table(&hash, &table_id));
+        assert!(!subscriptions.contains_client(&client_ids[1]));
         subscriptions.remove_all_subscriptions(&client_ids[2]);
         // Now there are no subscribers.
         assert!(!subscriptions.query_reads_from_table(&hash, &table_id));
+        assert!(!subscriptions.contains_client(&client_ids[2]));
 
         Ok(())
     }
@@ -948,7 +999,7 @@ mod tests {
         });
 
         db.with_read_only(Workload::Update, |tx| {
-            subscriptions.eval_updates(&(&*tx).into(), event, Some(&client0))
+            subscriptions.eval_updates(&(&*tx).into(), event, Some(&client0), &db.database_identity())
         });
 
         tokio::runtime::Builder::new_current_thread()

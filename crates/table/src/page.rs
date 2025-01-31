@@ -39,8 +39,8 @@ use super::{
     layout::MIN_ROW_SIZE,
     var_len::{is_granule_offset_aligned, VarLenGranule, VarLenGranuleHeader, VarLenMembers, VarLenRef},
 };
-use crate::{fixed_bit_set::IterSet, static_assert_size, table::BlobNumBytes, MemoryUsage};
-use core::{mem, ops::ControlFlow, ptr};
+use crate::{fixed_bit_set::IterSet, indexes::max_rows_in_page, static_assert_size, table::BlobNumBytes, MemoryUsage};
+use core::{mem, ops::ControlFlow};
 use spacetimedb_lib::{de::Deserialize, ser::Serialize};
 use thiserror::Error;
 
@@ -185,7 +185,7 @@ impl FixedHeader {
             // Points one after the last allocated fixed-length row, or `NULL` for an empty page.
             last: PageOffset::VAR_LEN_NULL,
             num_rows: 0,
-            present_rows: FixedBitSet::new(PageOffset::PAGE_END.idx().div_ceil(fixed_row_size.len())),
+            present_rows: FixedBitSet::new(max_rows_in_page(fixed_row_size)),
         }
     }
 
@@ -740,7 +740,7 @@ impl<'page> VarView<'page> {
         // We need to initialize `Page::header`
         // without materializing a `&mut` as that is instant UB.
         // SAFETY: `ptr` isn't NULL as `&mut self.row_data` itself is a non-null pointer.
-        let header = unsafe { ptr::addr_of_mut!((*ptr).header) };
+        let header = unsafe { &raw mut (*ptr).header };
 
         // SAFETY: `header` is valid for writes as only we have exclusive access.
         //          (1) The `ptr` was also promised as aligned
@@ -1099,6 +1099,7 @@ impl Page {
         // so it is safe for `row_data` to have type `[u8; _]` rather than `[MaybeUninit<u8>; _]`.
         // `alloc_zeroed` may be more efficient than `alloc` + `memset`;
         // in particular, it may `mmap` pages directly from the OS, which are always zeroed for security reasons.
+        // TODO: use Box::new_zeroed() once stabilized.
         // SAFETY: The layout's size is non-zero.
         let raw: *mut Page = unsafe { alloc_zeroed(layout) }.cast();
 
@@ -1109,7 +1110,7 @@ impl Page {
         // We need to initialize `Page::header`
         // without materializing a `&mut` as that is instant UB.
         // SAFETY: `raw` isn't NULL.
-        let header = unsafe { ptr::addr_of_mut!((*raw).header) };
+        let header = unsafe { &raw mut (*raw).header };
 
         // SAFETY: `header` is valid for writes as only we have exclusive access.
         //          The pointer is also aligned.
@@ -1500,7 +1501,7 @@ impl Page {
     ///   of all past, present, and future rows in this page and future rows in this page.
     ///
     /// - The `var_len_visitor` must visit the same set of `VarLenRef`s in the row
-    /// as the visitor provided to `insert_row`.
+    ///   as the visitor provided to `insert_row`.
     pub unsafe fn delete_row(
         &mut self,
         fixed_row: PageOffset,
@@ -1546,10 +1547,10 @@ impl Page {
     /// # Safety
     ///
     /// - `fixed_row_offset` must refer to a previously-allocated and initialized row in `self`,
-    /// and must not have been de-allocated. In other words, the fixed row must be *valid*.
+    ///   and must not have been de-allocated. In other words, the fixed row must be *valid*.
     ///
     /// - `fixed_row_size` and `var_len_visitor` must be consistent with each other
-    /// and with all other calls to any methods on `self`.
+    ///   and with all other calls to any methods on `self`.
     pub unsafe fn row_total_granules(
         &self,
         fixed_row_offset: PageOffset,
@@ -1698,7 +1699,7 @@ impl Page {
     /// - `src_vlr.first_granule` must point to a valid granule or be NULL.
     ///
     /// - To avoid leaving dangling uninitialized allocations in `dst_var`,
-    ///  `dst_var` must already be checked to have enough size to store `src_vlr`
+    ///   `dst_var` must already be checked to have enough size to store `src_vlr`
     ///   using `Self::has_space_for_row`.
     unsafe fn copy_var_len_into(
         &self,

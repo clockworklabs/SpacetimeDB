@@ -26,7 +26,7 @@ pub enum CliError {
     ConfigType {
         key: String,
         kind: &'static str,
-        found: toml_edit::Item,
+        found: Box<toml_edit::Item>,
     },
 }
 

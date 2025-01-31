@@ -387,9 +387,9 @@ impl From<&ColList> for ColSet {
     }
 }
 
-impl From<ColId> for ColSet {
-    fn from(id: ColId) -> Self {
-        Self::from(ColList::new(id))
+impl<C: Into<ColId>> From<C> for ColSet {
+    fn from(value: C) -> Self {
+        Self::from(ColList::new(value.into()))
     }
 }
 

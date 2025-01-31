@@ -12,7 +12,7 @@ pub mod blob_store;
 pub mod btree_index;
 pub mod eq;
 mod eq_to_pv;
-mod fixed_bit_set;
+pub mod fixed_bit_set;
 pub mod indexes;
 pub mod layout;
 pub mod page;
