@@ -44,8 +44,8 @@ impl __sdk::InModule for Reducer {
 impl __sdk::Reducer for Reducer {
     fn reducer_name(&self) -> &'static str {
         match self {
-            Reducer::IdentityConnected => "__identity_connected__",
-            Reducer::IdentityDisconnected => "__identity_disconnected__",
+            Reducer::IdentityConnected => "identity_connected",
+            Reducer::IdentityDisconnected => "identity_disconnected",
         }
     }
 }
@@ -53,13 +53,16 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
     type Error = __anyhow::Error;
     fn try_from(value: __ws::ReducerCallInfo<__ws::BsatnFormat>) -> __anyhow::Result<Self> {
         match &value.reducer_name[..] {
-            "__identity_connected__" => Ok(__sdk::parse_reducer_args::<
-                identity_connected_reducer::IdentityConnectedArgs,
-            >("__identity_connected__", &value.args)?
-            .into()),
-            "__identity_disconnected__" => Ok(__sdk::parse_reducer_args::<
+            "identity_connected" => Ok(
+                __sdk::parse_reducer_args::<identity_connected_reducer::IdentityConnectedArgs>(
+                    "identity_connected",
+                    &value.args,
+                )?
+                .into(),
+            ),
+            "identity_disconnected" => Ok(__sdk::parse_reducer_args::<
                 identity_disconnected_reducer::IdentityDisconnectedArgs,
-            >("__identity_disconnected__", &value.args)?
+            >("identity_disconnected", &value.args)?
             .into()),
             _ => Err(__anyhow::anyhow!("Unknown reducer {:?}", value.reducer_name)),
         }
@@ -375,6 +378,7 @@ impl __sdk::EventContext for EventContext {
 
 /// A handle on a subscribed query.
 // TODO: Document this better after implementing the new subscription API.
+#[derive(Clone)]
 pub struct SubscriptionHandle {
     imp: __sdk::SubscriptionHandleImpl<RemoteModule>,
 }
@@ -386,6 +390,26 @@ impl __sdk::InModule for SubscriptionHandle {
 impl __sdk::SubscriptionHandle for SubscriptionHandle {
     fn new(imp: __sdk::SubscriptionHandleImpl<RemoteModule>) -> Self {
         Self { imp }
+    }
+
+    /// Returns true if this subscription has been terminated due to an unsubscribe call or an error.
+    fn is_ended(&self) -> bool {
+        self.imp.is_ended()
+    }
+
+    /// Returns true if this subscription has been applied and has not yet been unsubscribed.
+    fn is_active(&self) -> bool {
+        self.imp.is_active()
+    }
+
+    /// Unsubscribe from the query controlled by this `SubscriptionHandle`,
+    /// then run `on_end` when its rows are removed from the client cache.
+    fn unsubscribe_then(self, on_end: __sdk::OnEndedCallback<RemoteModule>) -> __anyhow::Result<()> {
+        self.imp.unsubscribe_then(Some(on_end))
+    }
+
+    fn unsubscribe(self) -> __anyhow::Result<()> {
+        self.imp.unsubscribe_then(None)
     }
 }
 
