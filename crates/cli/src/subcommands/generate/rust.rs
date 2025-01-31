@@ -621,7 +621,7 @@ pub fn type_name(module: &ModuleDef, ty: &AlgebraicTypeUse) -> String {
     s
 }
 
-const ALLOW_UNUSED: &str = "#![allow(unused)]";
+const ALLOW_LINTS: &str = "#![allow(unused, clippy::all)]";
 
 const SPACETIMEDB_IMPORTS: &[&str] = &[
     "use spacetimedb_sdk::__codegen::{",
@@ -639,7 +639,7 @@ fn print_spacetimedb_imports(output: &mut Indenter) {
 
 fn print_file_header(output: &mut Indenter) {
     print_auto_generated_file_comment(output);
-    write!(output, "{ALLOW_UNUSED}");
+    writeln!(output, "{ALLOW_LINTS}");
     print_spacetimedb_imports(output);
 }
 

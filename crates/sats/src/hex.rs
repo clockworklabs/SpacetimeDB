@@ -115,9 +115,7 @@ impl HexByte {
     fn as_nybbles(this: &[Self]) -> &[HexNybble] {
         // SAFETY: HexByte is repr(transparent) over [HexNybble; 2]
         let arrays = unsafe { &*(this as *const [HexByte] as *const [[HexNybble; 2]]) };
-        // SAFETY: this is equivalent to the unstable [[T; N]].flatten() -> &[T] method
-        // TODO: switch to <[[T; N]]>::flatten() once stabilized
-        unsafe { arrays.align_to::<HexNybble>().1 }
+        arrays.as_flattened()
     }
     #[inline(always)]
     fn as_str(this: &[Self]) -> &str {

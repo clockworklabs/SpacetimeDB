@@ -69,7 +69,7 @@ pub(crate) fn build_csharp(project_path: &Path, build_debug: bool) -> anyhow::Re
     dotnet!("publish", "-c", config_name, "-v", "quiet").run()?;
 
     // check if file exists
-    let subdir = if std::env::var_os("EXPERIMENTAL_WASM_AOT").map_or(false, |v| v == "1") {
+    let subdir = if std::env::var_os("EXPERIMENTAL_WASM_AOT").is_some_and(|v| v == "1") {
         "publish"
     } else {
         "AppBundle"

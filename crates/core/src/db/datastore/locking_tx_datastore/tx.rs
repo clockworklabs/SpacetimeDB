@@ -1,4 +1,4 @@
-use super::datastore::record_metrics;
+use super::datastore::record_tx_metrics;
 use super::{
     committed_state::CommittedState,
     datastore::Result,
@@ -40,7 +40,8 @@ impl Datastore for TxId {
 impl StateView for TxId {
     type Iter<'a> = IterTx<'a>;
     type IterByColRange<'a, R: RangeBounds<AlgebraicValue>> = IterByColRangeTx<'a, R>;
-    type IterByColEq<'a, 'r> = IterByColEqTx<'a, 'r>
+    type IterByColEq<'a, 'r>
+        = IterByColEqTx<'a, 'r>
     where
         Self: 'a;
 
@@ -85,7 +86,7 @@ impl StateView for TxId {
 
 impl TxId {
     pub(super) fn release(self) {
-        record_metrics(&self.ctx, self.timer, self.lock_wait_time, true, None, None);
+        record_tx_metrics(&self.ctx, self.timer, self.lock_wait_time, true, None, None, None);
     }
 
     /// The Number of Distinct Values (NDV) for a column or list of columns,

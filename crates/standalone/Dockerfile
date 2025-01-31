@@ -1,10 +1,10 @@
 ARG CARGO_PROFILE=release
 
 
-FROM rust:1.78.0 AS chef
+FROM rust:1.84.0 AS chef
 RUN rust_target=$(rustc -vV | awk '/^host:/{ print $2 }') && \
   curl https://github.com/cargo-bins/cargo-binstall/releases/latest/download/cargo-binstall-$rust_target.tgz -fL | tar xz -C $CARGO_HOME/bin
-RUN cargo binstall -y cargo-chef@0.1.56
+RUN cargo binstall -y cargo-chef@0.1.70
 WORKDIR /usr/src/app
 
 FROM chef AS planner
@@ -32,7 +32,7 @@ RUN mkdir -p /stdb/data && ln -s /usr/src/app/crates/standalone/config.toml /std
 ENV PATH="/usr/src/app/target/debug:${PATH}"
 
 FROM debian as env-release
-COPY --from=builder /usr/src/app/target/release/spacetimedb /usr/local/bin/
+COPY --from=builder /usr/src/app/target/release/spacetimedb-standalone /usr/local/bin/
 COPY --from=builder /usr/src/app/crates/standalone/config.toml /stdb/data/config.toml
 
 FROM env-${CARGO_PROFILE}
@@ -40,5 +40,5 @@ FROM env-${CARGO_PROFILE}
 EXPOSE 3000
 
 ENV RUST_BACKTRACE=1
-ENTRYPOINT ["spacetimedb", "--data-dir=/stdb/data", "--jwt-pub-key-path=/etc/spacetimedb/id_ecdsa.pub", "--jwt-priv-key-path=/etc/spacetimedb/id_ecdsa"]
+ENTRYPOINT ["spacetimedb-standalone", "--data-dir=/stdb/data", "--jwt-pub-key-path=/etc/spacetimedb/id_ecdsa.pub", "--jwt-priv-key-path=/etc/spacetimedb/id_ecdsa"]
 CMD ["start"]

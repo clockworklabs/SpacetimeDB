@@ -1,3 +1,4 @@
+use super::delete_table::DeleteTable;
 use core::ops::RangeBounds;
 use spacetimedb_data_structures::map::{IntMap, IntSet};
 use spacetimedb_primitives::{ColList, IndexId, TableId};
@@ -8,9 +9,7 @@ use spacetimedb_table::{
     static_assert_size,
     table::{IndexScanIter, RowRef, Table, TableAndIndex},
 };
-use std::collections::{btree_map, BTreeMap, BTreeSet};
-
-pub(super) type DeleteTable = BTreeSet<RowPointer>;
+use std::collections::{btree_map, BTreeMap};
 
 /// A mapping to find the actual index given an `IndexId`.
 pub(super) type IndexIdMap = IntMap<IndexId, TableId>;
@@ -154,7 +153,7 @@ impl TxState {
         );
         self.delete_tables
             .get(&table_id)
-            .map(|tbl| tbl.contains(&row_ptr))
+            .map(|tbl| tbl.contains(row_ptr))
             .unwrap_or(false)
     }
 
@@ -164,8 +163,8 @@ impl TxState {
     }
 
     /// Guarantees that the `table_id` returns a `DeleteTable`.
-    pub(super) fn get_delete_table_mut(&mut self, table_id: TableId) -> &mut DeleteTable {
-        self.delete_tables.entry(table_id).or_default()
+    pub(super) fn get_delete_table_mut(&mut self, table_id: TableId, commit_table: &Table) -> &mut DeleteTable {
+        get_delete_table_mut(&mut self.delete_tables, table_id, commit_table)
     }
 
     pub(super) fn get_table_and_blob_store(&mut self, table_id: TableId) -> Option<(&mut Table, &mut dyn BlobStore)> {
@@ -185,17 +184,17 @@ impl TxState {
         &'this mut DeleteTable,
     )> {
         let insert_tables = &mut self.insert_tables;
-        let delete_tables = &mut self.delete_tables;
         let blob_store = &mut self.blob_store;
         let idx_map = &mut self.index_id_map;
-        let tbl = match insert_tables.entry(table_id) {
+        let table = match insert_tables.entry(table_id) {
             btree_map::Entry::Vacant(e) => {
                 let new_table = template?.clone_structure(SquashedOffset::TX_STATE);
                 e.insert(new_table)
             }
             btree_map::Entry::Occupied(e) => e.into_mut(),
         };
-        Some((tbl, blob_store, idx_map, delete_tables.entry(table_id).or_default()))
+        let delete_table = get_delete_table_mut(&mut self.delete_tables, table_id, table);
+        Some((table, blob_store, idx_map, delete_table))
     }
 
     /// Assumes that the insert and delete tables exist for `table_id` and fetches them.
@@ -216,4 +215,14 @@ impl TxState {
         let delete_table = unsafe { delete_table.unwrap_unchecked() };
         (tx_table, tx_blob_store, delete_table)
     }
+}
+
+fn get_delete_table_mut<'a>(
+    delete_tables: &'a mut BTreeMap<TableId, DeleteTable>,
+    table_id: TableId,
+    table: &Table,
+) -> &'a mut DeleteTable {
+    delete_tables
+        .entry(table_id)
+        .or_insert_with(|| DeleteTable::new(table.row_size()))
 }
