@@ -161,7 +161,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     if res.status() == StatusCode::UNAUTHORIZED && !anon_identity {
         // If we're not in the `anon_identity` case, then we have already forced the user to log in above (using `get_auth_header`), so this should be safe to unwrap.
         let token = config.spacetimedb_token().unwrap();
-        let identity = decode_identity(&token)?;
+        let identity = decode_identity(token)?;
         let err = res.text().await?;
         return unauth_error_context(
             Err(anyhow::anyhow!(err)),
