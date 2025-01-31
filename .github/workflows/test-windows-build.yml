@@ -1,0 +1,20 @@
+name: Package SpacetimeDB CLI
+
+on:
+  push:
+
+jobs:
+  test-cli-build:
+    name: Test CLI build for Windows
+    runs-on: windows-latest
+
+    steps:
+      - name: Show arch
+        run: uname -a
+        wget https://spacetimedb-client-binaries.nyc3.digitaloceanspaces.com/noa/fix-master-ci/spacetime-x86_64-pc-windows-msvc.zip
+        7z x spacetime-x86_64-pc-windows-msvc.zip
+        ./spacetimedb-cli help
+        ./spacetimedb-update version help
+        ./spacetimedb-standalone help &
+        sleep 10
+        kill $!
