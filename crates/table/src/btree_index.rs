@@ -315,35 +315,60 @@ impl TypedIndex {
     /// Add the row referred to by `row_ref` to the index `self`,
     /// which must be keyed at `cols`.
     ///
-    /// If `cols` is inconsistent with `self`,
-    /// or the `row_ref` has a row type other than that used for `self`,
-    /// this will behave oddly; it may return an error,
-    /// or may insert a nonsense value into the index.
-    /// Note, however, that it will not invoke undefined behavior.
-    ///
-    /// Returns `Ok(Some(existing_row))` if this index was a unique index that was violated.
+    /// Returns `Errs(existing_row)` if this index was a unique index that was violated.
     /// The index is not inserted to in that case.
-    fn insert(&mut self, cols: &ColList, row_ref: RowRef<'_>) -> Result<Option<RowPointer>, InvalidFieldError> {
+    ///
+    /// # Safety
+    ///
+    /// 1. Caller promises that `cols` matches what was given at construction (`Self::new`).
+    /// 2. Caller promises that the projection of `row_ref`'s type's equals the index's key type.
+    unsafe fn insert(&mut self, cols: &ColList, row_ref: RowRef<'_>) -> Result<(), RowPointer> {
+        fn project_to_singleton_key<T: ReadColumn>(cols: &ColList, row_ref: RowRef<'_>) -> T {
+            // Extract the column.
+            let col_pos = cols.as_singleton();
+            // SAFETY: Caller promised that `cols` matches what was given at construction (`Self::new`).
+            // In the case of `.clone_structure()`, the structure is preserved,
+            // so the promise is also preserved.
+            // This entails, that because we reached here, that `cols` is singleton.
+            let col_pos = unsafe { col_pos.unwrap_unchecked() }.idx();
+
+            // Extract the layout of the column.
+            let col_layouts = &row_ref.row_layout().product().elements;
+            // SAFETY:
+            // - Caller promised that projecting the `row_ref`'s type/layout to `self.indexed_columns`
+            //   gives us the index's key type.
+            //   This entails that each `ColId` in `self.indexed_columns`
+            //   must be in-bounds of `row_ref`'s layout.
+            let col_layout = unsafe { col_layouts.get_unchecked(col_pos) };
+
+            // Read the column in `row_ref`.
+            // SAFETY:
+            // - `col_layout` was just derived from the row layout.
+            // - Caller promised that the type-projection of the row type/layout
+            //   equals the index's key type.
+            //   We've reached here, so the index's key type is compatible with `T`.
+            // - `self` is a valid row so offsetting to `col_layout` is valid.
+            unsafe { T::unchecked_read_column(row_ref, col_layout) }
+        }
+
         fn mm_insert_at_type<T: Ord + ReadColumn>(
             this: &mut Index<T>,
             cols: &ColList,
             row_ref: RowRef<'_>,
-        ) -> Result<Option<RowPointer>, InvalidFieldError> {
-            let col_pos = cols.as_singleton().unwrap();
-            let key = row_ref.read_col(col_pos).map_err(|_| col_pos)?;
+        ) -> Result<(), RowPointer> {
+            let key = project_to_singleton_key(cols, row_ref);
             this.insert(key, row_ref.pointer());
-            Ok(None)
+            Ok(())
         }
         fn um_insert_at_type<T: Ord + ReadColumn>(
             this: &mut UniqueIndex<T>,
             cols: &ColList,
             row_ref: RowRef<'_>,
-        ) -> Result<Option<RowPointer>, InvalidFieldError> {
-            let col_pos = cols.as_singleton().unwrap();
-            let key = row_ref.read_col(col_pos).map_err(|_| col_pos)?;
-            Ok(this.insert(key, row_ref.pointer()).copied())
+        ) -> Result<(), RowPointer> {
+            let key = project_to_singleton_key(cols, row_ref);
+            this.insert(key, row_ref.pointer()).map_err(|ptr| *ptr)
         }
-        let unique_violation = match self {
+        match self {
             Self::Bool(idx) => mm_insert_at_type(idx, cols, row_ref),
             Self::U8(idx) => mm_insert_at_type(idx, cols, row_ref),
             Self::I8(idx) => mm_insert_at_type(idx, cols, row_ref),
@@ -359,9 +384,10 @@ impl TypedIndex {
             Self::I256(idx) => mm_insert_at_type(idx, cols, row_ref),
             Self::String(idx) => mm_insert_at_type(idx, cols, row_ref),
             Self::AV(this) => {
-                let key = row_ref.project(cols)?;
+                // SAFETY: Caller promised that any `col` in `cols` is in-bounds of `row_ref`'s layout.
+                let key = unsafe { row_ref.project_unchecked(cols) };
                 this.insert(key, row_ref.pointer());
-                Ok(None)
+                Ok(())
             }
             Self::UniqueBool(idx) => um_insert_at_type(idx, cols, row_ref),
             Self::UniqueU8(idx) => um_insert_at_type(idx, cols, row_ref),
@@ -378,11 +404,11 @@ impl TypedIndex {
             Self::UniqueI256(idx) => um_insert_at_type(idx, cols, row_ref),
             Self::UniqueString(idx) => um_insert_at_type(idx, cols, row_ref),
             Self::UniqueAV(this) => {
-                let key = row_ref.project(cols)?;
-                Ok(this.insert(key, row_ref.pointer()).copied())
+                // SAFETY: Caller promised that any `col` in `cols` is in-bounds of `row_ref`'s layout.
+                let key = unsafe { row_ref.project_unchecked(cols) };
+                this.insert(key, row_ref.pointer()).map_err(|ptr| *ptr)
             }
-        }?;
-        Ok(unique_violation)
+        }
     }
 
     /// Remove the row referred to by `row_ref` from the index `self`,
@@ -686,9 +712,20 @@ impl BTreeIndex {
     /// Inserts `ptr` with the value `row` to this index.
     /// This index will extract the necessary values from `row` based on `self.indexed_columns`.
     ///
-    /// Returns `Ok(Some(existing_row))` if this insertion would violate a unique constraint.
-    pub fn check_and_insert(&mut self, row_ref: RowRef<'_>) -> Result<Option<RowPointer>, InvalidFieldError> {
-        self.idx.insert(&self.indexed_columns, row_ref)
+    /// Returns `Err(existing_row)` if this insertion would violate a unique constraint.
+    ///
+    /// # Safety
+    ///
+    /// Caller promises that projecting the `row_ref`'s type
+    /// to the index's columns equals the index's key type.
+    /// This is entailed by an index belonging to the table's schema.
+    /// It also follows from `row_ref`'s type/layout
+    /// being the same as passed in on `self`'s construction.
+    pub unsafe fn check_and_insert(&mut self, row_ref: RowRef<'_>) -> Result<(), RowPointer> {
+        // SAFETY:
+        // 1. We're passing the same `ColList` that was provided during construction.
+        // 2. Forward the caller's proof obligation.
+        unsafe { self.idx.insert(&self.indexed_columns, row_ref) }
     }
 
     /// Deletes `row_ref` with its indexed value `row_ref.project(&self.indexed_columns)` from this index.
@@ -724,16 +761,21 @@ impl BTreeIndex {
     /// Extends [`BTreeIndex`] with `rows`.
     ///
     /// Returns the first unique constraint violation caused when adding this index, if any.
-    pub fn build_from_rows<'table>(
+    ///
+    /// # Safety
+    ///
+    /// Caller promises that projecting any of the `row_ref`'s type
+    /// to the index's columns equals the index's key type.
+    /// This is entailed by an index belonging to the table's schema.
+    /// It also follows from `row_ref`'s type/layout
+    /// being the same as passed in on `self`'s construction.
+    pub unsafe fn build_from_rows<'table>(
         &mut self,
         rows: impl IntoIterator<Item = RowRef<'table>>,
-    ) -> Result<Option<RowPointer>, InvalidFieldError> {
-        for row_ref in rows {
-            if let violation @ Some(_) = self.check_and_insert(row_ref)? {
-                return Ok(violation);
-            }
-        }
-        Ok(None)
+    ) -> Result<(), RowPointer> {
+        rows.into_iter()
+            // SAFETY: Forward caller proof obligation.
+            .try_for_each(|row_ref| unsafe { self.check_and_insert(row_ref) })
     }
 
     /// Deletes all entries from the index, leaving it empty.
@@ -828,7 +870,7 @@ mod test {
             prop_assert_eq!(index.idx.len(), 0);
             prop_assert_eq!(index.contains_any(&value), false);
 
-            prop_assert_eq!(index.check_and_insert(row_ref).unwrap(), None);
+            prop_assert_eq!(unsafe { index.check_and_insert(row_ref) }, Ok(()));
             prop_assert_eq!(index.idx.len(), 1);
             prop_assert_eq!(index.contains_any(&value), true);
 
@@ -854,7 +896,8 @@ mod test {
             );
 
             // Insert.
-            prop_assert_eq!(index.check_and_insert(row_ref).unwrap(), None);
+            // SAFETY: `row_ref` has the same type as was passed in when constructing `index`.
+            prop_assert_eq!(unsafe { index.check_and_insert(row_ref) }, Ok(()));
 
             // Inserting again would be a problem.
             prop_assert_eq!(index.idx.len(), 1);
@@ -863,7 +906,8 @@ mod test {
                 get_rows_that_violate_unique_constraint(&index, &value).unwrap().collect::<Vec<_>>(),
                 [row_ref.pointer()]
             );
-            prop_assert_eq!(index.check_and_insert(row_ref).unwrap(), Some(row_ref.pointer()));
+            // SAFETY: `row_ref` has the same type as was passed in when constructing `index`.
+            prop_assert_eq!(unsafe { index.check_and_insert(row_ref) }, Err(row_ref.pointer()));
         }
 
         #[test]
@@ -887,7 +931,8 @@ mod test {
                 let row = product![x];
                 let row_ref = table.insert(&mut blob_store, &row).unwrap().1;
                 val_to_ptr.insert(x, row_ref.pointer());
-                prop_assert_eq!(index.check_and_insert(row_ref).unwrap(), None);
+                // SAFETY: `row_ref` has the same type as was passed in when constructing `index`.
+                prop_assert_eq!(unsafe { index.check_and_insert(row_ref) }, Ok(()));
             }
 
             fn test_seek(index: &BTreeIndex, val_to_ptr: &HashMap<u64, RowPointer>, range: impl RangeBounds<AlgebraicValue>, expect: impl IntoIterator<Item = u64>) -> TestCaseResult {

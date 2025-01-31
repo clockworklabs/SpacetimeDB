@@ -393,7 +393,8 @@ impl CommittedState {
             };
             let is_unique = unique_constraints.contains(&(table_id, (&columns).into()));
             let index = table.new_index(columns.clone(), is_unique)?;
-            table.insert_index(blob_store, index_id, index);
+            // SAFETY: `index` was derived from `table`.
+            unsafe { table.insert_index(blob_store, index_id, index) };
             self.index_id_map.insert(index_id, table_id);
         }
         Ok(())
@@ -609,7 +610,11 @@ impl CommittedState {
             for (cols, mut index) in tx_table.indexes {
                 if !commit_table.indexes.contains_key(&cols) {
                     index.clear();
-                    commit_table.insert_index(commit_blob_store, cols, index);
+                    // SAFETY: `tx_table` is derived from `commit_table`,
+                    // so they have the same row type.
+                    // This entails that all indices in `tx_table`
+                    // were constructed with the same row type/layout as `commit_table`.
+                    unsafe { commit_table.insert_index(commit_blob_store, cols, index) };
                 }
             }
 
