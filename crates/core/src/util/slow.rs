@@ -49,11 +49,12 @@ mod tests {
     use super::*;
 
     use crate::db::datastore::system_tables::ST_VARNAME_SLOW_QRY;
-    use crate::db::datastore::system_tables::{StVarName, StVarValue, ST_VARNAME_SLOW_INC, ST_VARNAME_SLOW_SUB};
+    use crate::db::datastore::system_tables::{StVarName, ST_VARNAME_SLOW_INC, ST_VARNAME_SLOW_SUB};
     use crate::sql::compiler::compile_sql;
     use crate::sql::execute::tests::execute_for_testing;
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::identity::AuthCtx;
+    use spacetimedb_lib::st_var::StVarValue;
     use spacetimedb_lib::ProductValue;
 
     use crate::db::relational_db::tests_utils::{insert, TestDB};

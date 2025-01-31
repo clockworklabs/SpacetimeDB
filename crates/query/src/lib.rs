@@ -6,10 +6,21 @@ use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use spacetimedb_client_api_messages::websocket::{
     ByteListLen, Compression, DatabaseUpdate, QueryUpdate, TableUpdate, WebsocketFormat,
 };
-use spacetimedb_execution::{pipelined::PipelinedProject, Datastore, DeltaStore};
-use spacetimedb_expr::check::{type_subscription, SchemaView};
-use spacetimedb_lib::metrics::ExecutionMetrics;
-use spacetimedb_physical_plan::{compile::compile_project_plan, plan::ProjectPlan};
+use spacetimedb_execution::{
+    dml::{MutDatastore, MutExecutor},
+    pipelined::{PipelinedProject, ProjectListExecutor},
+    Datastore, DeltaStore,
+};
+use spacetimedb_expr::{
+    check::{type_subscription, SchemaView},
+    expr::ProjectList,
+    statement::{parse_and_type_sql, Statement, DML},
+};
+use spacetimedb_lib::{metrics::ExecutionMetrics, ProductValue};
+use spacetimedb_physical_plan::{
+    compile::{compile_dml_plan, compile_select, compile_select_list},
+    plan::{ProjectListPlan, ProjectPlan},
+};
 use spacetimedb_primitives::TableId;
 use spacetimedb_sql_parser::parser::sub::parse_subscription;
 
@@ -19,6 +30,39 @@ pub mod delta;
 /// Any query longer than this will be rejected.
 /// This prevents a stack overflow when compiling queries with deeply-nested `AND` and `OR` conditions.
 const MAX_SQL_LENGTH: usize = 50_000;
+
+/// A utility for parsing and type checking a sql statement
+pub fn compile_sql_stmt(sql: &str, tx: &impl SchemaView) -> Result<Statement> {
+    if sql.len() > MAX_SQL_LENGTH {
+        bail!("SQL query exceeds maximum allowed length: \"{sql:.120}...\"")
+    }
+    Ok(parse_and_type_sql(sql, tx)?)
+}
+
+/// A utility for executing a sql select statement
+pub fn execute_select_stmt<Tx: Datastore + DeltaStore>(
+    stmt: ProjectList,
+    tx: &Tx,
+    metrics: &mut ExecutionMetrics,
+    check_row_limit: impl Fn(ProjectListPlan) -> Result<ProjectListPlan>,
+) -> Result<Vec<ProductValue>> {
+    let plan = compile_select_list(stmt).optimize();
+    let plan = check_row_limit(plan)?;
+    let plan = ProjectListExecutor::from(plan);
+    let mut rows = vec![];
+    plan.execute(tx, metrics, &mut |row| {
+        rows.push(row);
+        Ok(())
+    })?;
+    Ok(rows)
+}
+
+/// A utility for executing a sql dml statement
+pub fn execute_dml_stmt<Tx: MutDatastore>(stmt: DML, tx: &mut Tx, metrics: &mut ExecutionMetrics) -> Result<()> {
+    let plan = compile_dml_plan(stmt).optimize();
+    let plan = MutExecutor::from(plan);
+    plan.execute(tx, metrics)
+}
 
 /// A subscription query plan that is NOT used for incremental evaluation
 #[derive(Debug)]
@@ -72,7 +116,7 @@ impl SubscribePlan {
         let ast = parse_subscription(sql)?;
         let sub = type_subscription(ast, tx)?;
 
-        let Some(table_id) = sub.table_id() else {
+        let Some(table_id) = sub.return_table_id() else {
             bail!("Failed to determine TableId for query")
         };
 
@@ -80,7 +124,7 @@ impl SubscribePlan {
             bail!("TableId `{table_id}` does not exist")
         };
 
-        let plan = compile_project_plan(sub);
+        let plan = compile_select(sub);
         let plan = plan.optimize();
 
         Ok(Self {

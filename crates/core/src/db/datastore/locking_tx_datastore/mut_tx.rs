@@ -33,8 +33,12 @@ use core::cell::RefCell;
 use core::ops::RangeBounds;
 use core::{iter, ops::Bound};
 use smallvec::SmallVec;
-use spacetimedb_lib::db::{auth::StAccess, raw_def::SEQUENCE_ALLOCATION_STEP};
+use spacetimedb_execution::{dml::MutDatastore, Datastore, DeltaStore};
 use spacetimedb_lib::{db::raw_def::v9::RawSql, metrics::ExecutionMetrics};
+use spacetimedb_lib::{
+    db::{auth::StAccess, raw_def::SEQUENCE_ALLOCATION_STEP},
+    query::Delta,
+};
 use spacetimedb_primitives::{ColId, ColList, ColSet, ConstraintId, IndexId, ScheduleId, SequenceId, TableId};
 use spacetimedb_sats::{
     bsatn::{self, to_writer, DecodeError, Deserializer},
@@ -71,6 +75,48 @@ pub struct MutTxId {
     pub(crate) timer: Instant,
     pub(crate) ctx: ExecutionContext,
     pub(crate) metrics: ExecutionMetrics,
+}
+
+impl Datastore for MutTxId {
+    fn blob_store(&self) -> &dyn BlobStore {
+        &self.committed_state_write_lock.blob_store
+    }
+
+    fn table(&self, table_id: TableId) -> Option<&Table> {
+        self.committed_state_write_lock.get_table(table_id)
+    }
+}
+
+/// Note, deltas are evaluated using read-only transactions, not mutable ones.
+/// Nevertheless this contract is still required for query evaluation.
+impl DeltaStore for MutTxId {
+    fn has_inserts(&self, _: TableId) -> Option<Delta> {
+        None
+    }
+
+    fn has_deletes(&self, _: TableId) -> Option<Delta> {
+        None
+    }
+
+    fn inserts_for_table(&self, _: TableId) -> Option<std::slice::Iter<'_, ProductValue>> {
+        None
+    }
+
+    fn deletes_for_table(&self, _: TableId) -> Option<std::slice::Iter<'_, ProductValue>> {
+        None
+    }
+}
+
+impl MutDatastore for MutTxId {
+    fn insert_product_value(&mut self, table_id: TableId, row: &ProductValue) -> anyhow::Result<()> {
+        self.insert_via_serialize_bsatn(table_id, row)?;
+        Ok(())
+    }
+
+    fn delete_product_value(&mut self, table_id: TableId, row: &ProductValue) -> anyhow::Result<()> {
+        self.delete_by_row_value(table_id, row)?;
+        Ok(())
+    }
 }
 
 impl MutTxId {
@@ -1065,7 +1111,7 @@ impl MutTxId {
             true,
             Some(&tx_data),
             Some(&committed_state_write_lock),
-            Some(self.metrics),
+            self.metrics,
         );
         tx_data
     }
@@ -1086,7 +1132,7 @@ impl MutTxId {
             true,
             Some(&tx_data),
             Some(&committed_state_write_lock),
-            Some(self.metrics),
+            self.metrics,
         );
         // Update the workload type of the execution context
         self.ctx.workload = workload.into();
@@ -1095,6 +1141,7 @@ impl MutTxId {
             lock_wait_time: Duration::ZERO,
             timer: Instant::now(),
             ctx: self.ctx,
+            metrics: ExecutionMetrics::default(),
         };
         (tx_data, tx)
     }
@@ -1109,7 +1156,7 @@ impl MutTxId {
             false,
             None,
             None,
-            Some(self.metrics),
+            self.metrics,
         );
     }
 
@@ -1123,7 +1170,7 @@ impl MutTxId {
             false,
             None,
             None,
-            Some(self.metrics),
+            self.metrics,
         );
         // Update the workload type of the execution context
         self.ctx.workload = workload.into();
@@ -1132,6 +1179,7 @@ impl MutTxId {
             lock_wait_time: Duration::ZERO,
             timer: Instant::now(),
             ctx: self.ctx,
+            metrics: ExecutionMetrics::default(),
         }
     }
 }

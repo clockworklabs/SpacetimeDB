@@ -372,7 +372,6 @@ mod tests {
         );
         run_for_testing(&db, sql)?;
 
-        let tx = db.begin_tx(Workload::ForTests);
         // Compile query, check for both hex formats and it to be case-insensitive...
         let sql = &format!(
             "select * from test where identity = {} AND identity_mix = x'93dda09db9a56d8fa6c024d843e805D8262191db3b4bA84c5efcd1ad451fed4e' AND address = x'{}' AND address = {}",
@@ -383,6 +382,7 @@ mod tests {
 
         let rows = run_for_testing(&db, sql)?;
 
+        let tx = db.begin_tx(Workload::ForTests);
         let CrudExpr::Query(QueryExpr {
             source: _,
             query: mut ops,
@@ -398,7 +398,7 @@ mod tests {
             panic!("Expected Select");
         };
 
-        assert_eq!(rows[0].data, vec![row]);
+        assert_eq!(rows, vec![row]);
 
         Ok(())
     }

@@ -6,11 +6,60 @@ use std::{
 use anyhow::{anyhow, Result};
 use spacetimedb_lib::{metrics::ExecutionMetrics, query::Delta, sats::size_of::SizeOf, AlgebraicValue, ProductValue};
 use spacetimedb_physical_plan::plan::{
-    HashJoin, IxJoin, IxScan, PhysicalExpr, PhysicalPlan, ProjectField, ProjectPlan, Sarg, Semi, TupleField,
+    HashJoin, IxJoin, IxScan, PhysicalExpr, PhysicalPlan, ProjectField, ProjectListPlan, ProjectPlan, Sarg, Semi,
+    TupleField,
 };
 use spacetimedb_primitives::{ColId, IndexId, TableId};
 
 use crate::{Datastore, DeltaStore, Row, Tuple};
+
+/// An executor for explicit column projections.
+/// Note, this plan can only be constructed from the http api,
+/// which is not considered performance critical.
+/// Hence this operator is not particularly optimized.
+pub enum ProjectListExecutor {
+    Name(PipelinedProject),
+    List(PipelinedExecutor, Vec<TupleField>),
+}
+
+impl From<ProjectListPlan> for ProjectListExecutor {
+    fn from(plan: ProjectListPlan) -> Self {
+        match plan {
+            ProjectListPlan::Name(plan) => Self::Name(plan.into()),
+            ProjectListPlan::List(plan, fields) => Self::List(plan.into(), fields),
+        }
+    }
+}
+
+impl ProjectListExecutor {
+    pub fn execute<Tx: Datastore + DeltaStore>(
+        &self,
+        tx: &Tx,
+        metrics: &mut ExecutionMetrics,
+        f: &mut dyn FnMut(ProductValue) -> Result<()>,
+    ) -> Result<()> {
+        let mut n = 0;
+        let mut bytes_scanned = 0;
+        let mut f = |row: ProductValue| {
+            n += 1;
+            bytes_scanned += row.size_of();
+            f(row)
+        };
+        match self {
+            Self::Name(plan) => {
+                plan.execute(tx, metrics, &mut |row| f(row.to_product_value()))?;
+            }
+            Self::List(plan, fields) => {
+                plan.execute(tx, metrics, &mut |t| {
+                    f(ProductValue::from_iter(fields.iter().map(|field| t.project(field))))
+                })?;
+            }
+        }
+        metrics.rows_scanned += n;
+        metrics.bytes_scanned += bytes_scanned;
+        Ok(())
+    }
+}
 
 /// Implements a projection on top of a pipelined executor
 pub enum PipelinedProject {
