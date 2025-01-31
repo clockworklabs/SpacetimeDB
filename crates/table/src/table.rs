@@ -251,14 +251,21 @@ impl Table {
     /// returns true if and only if that row should be ignored.
     /// While checking unique constraints against the committed state,
     /// `MutTxId::insert` will ignore rows which are listed in the delete table.
-    pub fn check_unique_constraints<'a, I: Iterator<Item = (&'a IndexId, &'a BTreeIndex)>>(
+    ///
+    /// # Safety
+    ///
+    /// `row.row_layout() == self.row_layout()` must hold.
+    pub unsafe fn check_unique_constraints<'a, I: Iterator<Item = (&'a IndexId, &'a BTreeIndex)>>(
         &'a self,
         row: RowRef<'_>,
         adapt: impl FnOnce(btree_map::Iter<'a, IndexId, BTreeIndex>) -> I,
         mut is_deleted: impl FnMut(RowPointer) -> bool,
     ) -> Result<(), UniqueConstraintViolation> {
         for (&index_id, index) in adapt(self.indexes.iter()).filter(|(_, index)| index.is_unique()) {
-            let value = row.project(&index.indexed_columns).unwrap();
+            // SAFETY: Caller promised that `row´ has the same layout as `self`.
+            // Thus, as `index.indexed_columns` is in-bounds of `self`'s layout,
+            // it's also in-bounds of `row`'s layout.
+            let value = unsafe { row.project_unchecked(&index.indexed_columns) };
             if index.seek(&value).next().is_some_and(|ptr| !is_deleted(ptr)) {
                 return Err(self.build_error_unique(index, index_id, value));
             }
@@ -569,7 +576,9 @@ impl Table {
         for (&index_id, index) in self.indexes.iter_mut() {
             // SAFETY: We just inserted `ptr`, so it must be present.
             let row_ref = unsafe { self.inner.get_row_ref_unchecked(blob_store, ptr) };
-            if index.check_and_insert(row_ref).unwrap().is_some() {
+            // SAFETY: any index in this table was constructed with the same row type as this table.
+            let violation = unsafe { index.check_and_insert(row_ref) };
+            if violation.is_err() {
                 let cols = &index.indexed_columns;
                 let value = row_ref.project(cols).unwrap();
                 let error = UniqueConstraintViolation::build(&self.schema, index, index_id, value);
@@ -1020,18 +1029,30 @@ impl Table {
     ///
     /// # Panics
     ///
-    /// Panics if `index.indexed_columns` has some column that is out of bounds of the table's row layout.
-    /// Also panics if any row would violate `index`'s unique constraint, if it has one.
-    pub fn insert_index(&mut self, blob_store: &dyn BlobStore, index_id: IndexId, mut index: BTreeIndex) {
-        index
-            .build_from_rows(self.scan_rows(blob_store))
-            .expect("`cols` should consist of valid columns for this table")
-            .inspect(|ptr| panic!("adding `index` should cause no unique constraint violations, but {ptr:?} would"));
-        self.add_index(index_id, index);
+    /// Panics if any row would violate `index`'s unique constraint, if it has one.
+    ///
+    /// # Safety
+    ///
+    /// Caller must promise that `index` was constructed with the same row type/layout as this table.
+    pub unsafe fn insert_index(&mut self, blob_store: &dyn BlobStore, index_id: IndexId, mut index: BTreeIndex) {
+        let rows = self.scan_rows(blob_store);
+        // SAFETY: Caller promised that table's row type/layout
+        // matches that which `index` was constructed with.
+        // It follows that this applies to any `rows`, as required.
+        let violation = unsafe { index.build_from_rows(rows) };
+        violation.unwrap_or_else(|ptr| {
+            panic!("adding `index` should cause no unique constraint violations, but {ptr:?} would")
+        });
+        // SAFETY: Forward caller requirement.
+        unsafe { self.add_index(index_id, index) };
     }
 
     /// Adds an index to the table without populating.
-    pub fn add_index(&mut self, index_id: IndexId, index: BTreeIndex) {
+    ///
+    /// # Safety
+    ///
+    /// Caller must promise that `index` was constructed with the same row type/layout as this table.
+    pub unsafe fn add_index(&mut self, index_id: IndexId, index: BTreeIndex) {
         let is_unique = index.is_unique();
         self.indexes.insert(index_id, index);
 
@@ -1228,6 +1249,41 @@ impl<'a> RowRef<'a> {
     #[inline]
     pub fn read_col<T: ReadColumn>(self, col: impl Into<ColId>) -> Result<T, TypeError> {
         T::read_column(self, col.into().idx())
+    }
+
+    /// Construct a projection of the row at `self` by extracting the `cols`.
+    ///
+    /// If `cols` contains zero or more than one column, the values of the projected columns are wrapped in a [`ProductValue`].
+    /// If `cols` is a single column, the value of that column is returned without wrapping in a `ProductValue`.
+    ///
+    /// # Safety
+    ///
+    /// - `cols` must not specify any column which is out-of-bounds for the row `self´.
+    pub unsafe fn project_unchecked(self, cols: &ColList) -> AlgebraicValue {
+        let col_layouts = &self.row_layout().product().elements;
+
+        if let Some(head) = cols.as_singleton() {
+            let head = head.idx();
+            // SAFETY: caller promised that `head` is in-bounds of `col_layouts`.
+            let col_layout = unsafe { col_layouts.get_unchecked(head) };
+            // SAFETY:
+            // - `col_layout` was just derived from the row layout.
+            // - `AlgebraicValue` is compatible with any  `col_layout`.
+            // - `self` is a valid row and offsetting to `col_layout` is valid.
+            return unsafe { AlgebraicValue::unchecked_read_column(self, col_layout) };
+        }
+        let mut elements = Vec::with_capacity(cols.len() as usize);
+        for col in cols.iter() {
+            let col = col.idx();
+            // SAFETY: caller promised that any `col` is in-bounds of `col_layouts`.
+            let col_layout = unsafe { col_layouts.get_unchecked(col) };
+            // SAFETY:
+            // - `col_layout` was just derived from the row layout.
+            // - `AlgebraicValue` is compatible with any  `col_layout`.
+            // - `self` is a valid row and offsetting to `col_layout` is valid.
+            elements.push(unsafe { AlgebraicValue::unchecked_read_column(self, col_layout) });
+        }
+        AlgebraicValue::product(elements)
     }
 
     /// Construct a projection of the row at `self` by extracting the `cols`.
@@ -1556,6 +1612,7 @@ pub struct UniqueConstraintViolation {
 impl UniqueConstraintViolation {
     /// Returns a unique constraint violation error for the given `index`
     /// and the `value` that would have been duplicated.
+    #[cold]
     fn build(schema: &TableSchema, index: &BTreeIndex, index_id: IndexId, value: AlgebraicValue) -> Self {
         // Fetch the table name.
         let table_name = schema.table_name.clone();
@@ -1589,6 +1646,7 @@ impl UniqueConstraintViolation {
 impl Table {
     /// Returns a unique constraint violation error for the given `index`
     /// and the `value` that would have been duplicated.
+    #[cold]
     pub fn build_error_unique(
         &self,
         index: &BTreeIndex,
@@ -1772,7 +1830,8 @@ pub(crate) mod test {
         let cols = ColList::new(0.into());
 
         let index = table.new_index(cols.clone(), true).unwrap();
-        table.insert_index(&NullBlobStore, index_schema.index_id, index);
+        // SAFETY: Index was derived from `table`.
+        unsafe { table.insert_index(&NullBlobStore, index_schema.index_id, index) };
 
         // Reserve a page so that we can check the hash.
         let pi = table.inner.pages.reserve_empty_page(table.row_size()).unwrap();
