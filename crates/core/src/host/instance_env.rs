@@ -14,7 +14,7 @@ use spacetimedb_sats::{
     AlgebraicValue, ProductValue,
 };
 use spacetimedb_table::indexes::RowPointer;
-use spacetimedb_table::table::{RowRef, UniqueConstraintViolation};
+use spacetimedb_table::table::RowRef;
 use std::ops::DerefMut;
 use std::sync::Arc;
 
@@ -160,17 +160,21 @@ impl InstanceEnv {
                 let row_len = Self::project_cols_bsatn(buffer, gen_cols, row_ref);
                 (row_len, row_ref.pointer(), insert_flags)
             })
-            .inspect_err(|e| match e {
-                DBError::Index(IndexError::UniqueConstraintViolation(UniqueConstraintViolation { .. })) => {}
-                _ => {
-                    let res = stdb.table_name_from_id_mut(tx, table_id);
-                    if let Ok(Some(table_name)) = res {
-                        log::debug!("insert(table: {table_name}, table_id: {table_id}): {e}")
-                    } else {
-                        log::debug!("insert(table_id: {table_id}): {e}")
+            .inspect_err(
+                #[cold]
+                #[inline(never)]
+                |e| match e {
+                    DBError::Index(IndexError::UniqueConstraintViolation(_)) => {}
+                    _ => {
+                        let res = stdb.table_name_from_id_mut(tx, table_id);
+                        if let Ok(Some(table_name)) = res {
+                            log::debug!("insert(table: {table_name}, table_id: {table_id}): {e}")
+                        } else {
+                            log::debug!("insert(table_id: {table_id}): {e}")
+                        }
                     }
-                }
-            })?;
+                },
+            )?;
 
         if insert_flags.is_scheduler_table {
             self.schedule_row(stdb, tx, table_id, row_ptr)?;
@@ -218,17 +222,21 @@ impl InstanceEnv {
                 let row_len = Self::project_cols_bsatn(buffer, gen_cols, row_ref);
                 (row_len, row_ref.pointer(), update_flags)
             })
-            .inspect_err(|e| match e {
-                DBError::Index(IndexError::UniqueConstraintViolation(UniqueConstraintViolation { .. })) => {}
-                _ => {
-                    let res = stdb.table_name_from_id_mut(tx, table_id);
-                    if let Ok(Some(table_name)) = res {
-                        log::debug!("update(table: {table_name}, table_id: {table_id}, index_id: {index_id}): {e}")
-                    } else {
-                        log::debug!("update(table_id: {table_id}, index_id: {index_id}): {e}")
+            .inspect_err(
+                #[cold]
+                #[inline(never)]
+                |e| match e {
+                    DBError::Index(IndexError::UniqueConstraintViolation(_)) => {}
+                    _ => {
+                        let res = stdb.table_name_from_id_mut(tx, table_id);
+                        if let Ok(Some(table_name)) = res {
+                            log::debug!("update(table: {table_name}, table_id: {table_id}, index_id: {index_id}): {e}")
+                        } else {
+                            log::debug!("update(table_id: {table_id}, index_id: {index_id}): {e}")
+                        }
                     }
-                }
-            })?;
+                },
+            )?;
 
         if update_flags.is_scheduler_table {
             self.schedule_row(stdb, tx, table_id, row_ptr)?;
