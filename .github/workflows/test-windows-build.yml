@@ -12,8 +12,8 @@ jobs:
       - name: Show arch
         run: |
           uname -a
-          wget https://spacetimedb-client-binaries.nyc3.digitaloceanspaces.com/noa/fix-master-ci/spacetime-x86_64-pc-windows-msvc.zip
-          7z x spacetime-x86_64-pc-windows-msvc.zip
+          curl -o spacetime-windows.zip https://spacetimedb-client-binaries.nyc3.digitaloceanspaces.com/noa/fix-master-ci/spacetime-x86_64-pc-windows-msvc.zip
+          7z x spacetime-windows.zip
           ./spacetimedb-cli help
           ./spacetimedb-update version help
           ./spacetimedb-standalone help &
