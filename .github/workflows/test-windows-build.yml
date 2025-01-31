@@ -14,8 +14,9 @@ jobs:
           uname -a
           curl -o spacetime-windows.zip https://spacetimedb-client-binaries.nyc3.digitaloceanspaces.com/noa/fix-master-ci/spacetime-x86_64-pc-windows-msvc.zip
           7z x spacetime-windows.zip
+          echo "spacetime-cli"
           ./spacetimedb-cli help
+          echo "spacetime-update"
           ./spacetimedb-update version help
-          ./spacetimedb-standalone help &
-          sleep 10
-          kill $!
+          echo "spacetime-standalone"
+          ./spacetimedb-standalone help
