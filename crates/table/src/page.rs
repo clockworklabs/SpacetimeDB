@@ -39,7 +39,7 @@ use super::{
     layout::MIN_ROW_SIZE,
     var_len::{is_granule_offset_aligned, VarLenGranule, VarLenGranuleHeader, VarLenMembers, VarLenRef},
 };
-use crate::{fixed_bit_set::IterSet, static_assert_size, table::BlobNumBytes, MemoryUsage};
+use crate::{fixed_bit_set::IterSet, indexes::max_rows_in_page, static_assert_size, table::BlobNumBytes, MemoryUsage};
 use core::{mem, ops::ControlFlow};
 use spacetimedb_lib::{de::Deserialize, ser::Serialize};
 use thiserror::Error;
@@ -185,7 +185,7 @@ impl FixedHeader {
             // Points one after the last allocated fixed-length row, or `NULL` for an empty page.
             last: PageOffset::VAR_LEN_NULL,
             num_rows: 0,
-            present_rows: FixedBitSet::new(PageOffset::PAGE_END.idx().div_ceil(fixed_row_size.len())),
+            present_rows: FixedBitSet::new(max_rows_in_page(fixed_row_size)),
         }
     }
 
@@ -248,6 +248,12 @@ struct VarHeader {
     /// pre-decrement this index.
     // TODO(perf,future-work): determine how to "lower" the high water mark when freeing the "top"-most granule.
     first: PageOffset,
+
+    /// The number of granules currently used by rows within this page.
+    ///
+    /// [`Page::bytes_used_by_rows`] needs this information.
+    /// Stored here because otherwise counting it would require traversing all the present rows.
+    num_granules: u16,
 }
 
 impl MemoryUsage for VarHeader {
@@ -256,12 +262,13 @@ impl MemoryUsage for VarHeader {
             next_free,
             freelist_len,
             first,
+            num_granules,
         } = self;
-        next_free.heap_usage() + freelist_len.heap_usage() + first.heap_usage()
+        next_free.heap_usage() + freelist_len.heap_usage() + first.heap_usage() + num_granules.heap_usage()
     }
 }
 
-static_assert_size!(VarHeader, 6);
+static_assert_size!(VarHeader, 8);
 
 impl Default for VarHeader {
     fn default() -> Self {
@@ -269,6 +276,7 @@ impl Default for VarHeader {
             next_free: FreeCellRef::NIL,
             freelist_len: 0,
             first: PageOffset::PAGE_END,
+            num_granules: 0,
         }
     }
 }
@@ -771,6 +779,8 @@ impl<'page> VarView<'page> {
             granule,
         );
 
+        self.header.num_granules += 1;
+
         Ok(granule)
     }
 
@@ -812,6 +822,7 @@ impl<'page> VarView<'page> {
         //       but we want to return a whole "run" of sequential freed chunks,
         //       which requries some bookkeeping (or an O(> n) linked list traversal).
         self.header.freelist_len += 1;
+        self.header.num_granules -= 1;
         let adjuster = self.adjuster();
 
         // SAFETY: Per caller contract, `offset` is a valid `VarLenGranule`,
@@ -1113,8 +1124,36 @@ impl Page {
     }
 
     /// Returns the number of rows stored in this page.
+    ///
+    /// This method runs in constant time.
     pub fn num_rows(&self) -> usize {
         self.header.fixed.num_rows as usize
+    }
+
+    /// Returns the number of var-len granules allocated in this page.
+    ///
+    /// This method runs in constant time.
+    pub fn num_var_len_granules(&self) -> usize {
+        self.header.var.num_granules as usize
+    }
+
+    /// Returns the number of bytes used by rows stored in this page.
+    ///
+    /// This is necessarily an overestimate of live data bytes, as it includes:
+    /// - Padding bytes within the fixed-length portion of the rows.
+    /// - [`VarLenRef`] pointer-like portions of rows.
+    /// - Unused trailing parts of partially-filled [`VarLenGranule`]s.
+    /// - [`VarLenGranule`]s used to store [`BlobHash`]es.
+    ///
+    /// Note that large blobs themselves are not counted.
+    /// The caller should obtain a count of the bytes used by large blobs
+    /// from the [`super::blob_store::BlobStore`].
+    ///
+    /// This method runs in constant time.
+    pub fn bytes_used_by_rows(&self, fixed_row_size: Size) -> usize {
+        let fixed_row_bytes = self.num_rows() * fixed_row_size.len();
+        let var_len_bytes = self.num_var_len_granules() * VarLenGranule::SIZE.len();
+        fixed_row_bytes + var_len_bytes
     }
 
     /// Returns the range of row data starting at `offset` and lasting `size` bytes.

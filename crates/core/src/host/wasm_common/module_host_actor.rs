@@ -10,7 +10,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use super::instrumentation::CallTimes;
-use crate::database_logger::SystemLogger;
+use crate::database_logger::{self, SystemLogger};
 use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::db::datastore::system_tables::{StClientRow, ST_CLIENT_ID};
 use crate::db::datastore::traits::{IsolationLevel, Program};
@@ -77,6 +77,7 @@ pub struct ExecutionTimings {
 pub struct ExecuteResult<E> {
     pub energy: EnergyStats,
     pub timings: ExecutionTimings,
+    pub memory_allocation: usize,
     pub call_result: Result<Result<(), Box<str>>, E>,
 }
 
@@ -193,6 +194,8 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
             instance,
             info: self.info.clone(),
             energy_monitor: self.energy_monitor.clone(),
+            // will be updated on the first reducer call
+            allocated_memory: 0,
             trapped: false,
         }
     }
@@ -236,6 +239,7 @@ pub struct WasmModuleInstance<T: WasmInstance> {
     instance: T,
     info: Arc<ModuleInfo>,
     energy_monitor: Arc<dyn EnergyMonitor>,
+    allocated_memory: usize,
     trapped: bool,
 }
 
@@ -410,7 +414,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
 
         let replica_ctx = self.replica_context();
         let stdb = &*replica_ctx.relational_db.clone();
-        let address = replica_ctx.database_identity;
+        let database_identity = replica_ctx.database_identity;
         let reducer_def = self.info.module_def.reducer_by_id(reducer_id);
         let reducer_name = &*reducer_def.name;
 
@@ -446,7 +450,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         });
         let _guard = WORKER_METRICS
             .reducer_plus_query_duration
-            .with_label_values(&address, op.name)
+            .with_label_values(&database_identity, op.name)
             .with_timer(tx.timer);
 
         let mut tx_slot = self.instance.instance_env().tx.clone();
@@ -466,11 +470,19 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         let ExecuteResult {
             energy,
             timings,
+            memory_allocation,
             call_result,
         } = result;
 
         self.energy_monitor
             .record_reducer(&energy_fingerprint, energy.used, timings.total_duration);
+        if self.allocated_memory != memory_allocation {
+            WORKER_METRICS
+                .wasm_memory_bytes
+                .with_label_values(&database_identity)
+                .set(memory_allocation as i64);
+            self.allocated_memory = memory_allocation;
+        }
 
         reducer_span
             .record("timings.total_duration", tracing::field::debug(timings.total_duration))
@@ -508,6 +520,17 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             Ok(Err(errmsg)) => {
                 log::info!("reducer returned error: {errmsg}");
 
+                self.replica_context().logger.write(
+                    database_logger::LogLevel::Error,
+                    &database_logger::Record {
+                        ts: chrono::DateTime::from_timestamp_micros(timestamp.microseconds as i64).unwrap(),
+                        target: Some(reducer_name),
+                        filename: None,
+                        line_number: None,
+                        message: &errmsg,
+                    },
+                    &(),
+                );
                 EventStatus::Failed(errmsg.into())
             }
             // we haven't actually comitted yet - `commit_and_broadcast_event` will commit

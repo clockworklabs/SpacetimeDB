@@ -1,9 +1,12 @@
+use std::thread::available_parallelism;
+
 use crate::execution_context::WorkloadType;
 use crate::hash::Hash;
 use once_cell::sync::Lazy;
-use prometheus::{HistogramVec, IntCounterVec, IntGaugeVec};
+use prometheus::{core::Collector, Gauge, HistogramVec, IntCounterVec, IntGaugeVec, PullingGauge};
 use spacetimedb_lib::{Address, Identity};
 use spacetimedb_metrics::metrics_group;
+use memory_stats::memory_stats;
 
 metrics_group!(
     pub struct WorkerMetrics {
@@ -85,6 +88,11 @@ metrics_group!(
         #[labels(caller_identity: Identity, module_hash: Hash, caller_address: Address, reducer_symbol: str)]
         pub wasm_instance_errors: IntCounterVec,
 
+        #[name = spacetime_worker_wasm_memory_bytes]
+        #[help = "The number of bytes of linear memory allocated by the database's WASM module instance"]
+        #[labels(database_identity: Identity)]
+        pub wasm_memory_bytes: IntGaugeVec,
+
         #[name = spacetime_active_queries]
         #[help = "The number of active subscription queries"]
         #[labels(database_identity: Identity)]
@@ -99,7 +107,93 @@ metrics_group!(
         #[help = "The time spent executing a reducer (in seconds), plus the time spent evaluating its subscription queries"]
         #[labels(db: Identity, reducer: str)]
         pub reducer_plus_query_duration: HistogramVec,
+
+        #[name = spacetime_num_bytes_sent_to_clients_total]
+        #[help = "The cumulative number of bytes sent to clients"]
+        #[labels(txn_type: WorkloadType, db: Identity)]
+        pub bytes_sent_to_clients: IntCounterVec,
     }
 );
 
 pub static WORKER_METRICS: Lazy<WorkerMetrics> = Lazy::new(WorkerMetrics::new);
+
+fn build_global_metrics() -> Vec<Box<dyn Collector>> {
+        let mut metrics: Vec<Box<dyn Collector>> = Vec::new();
+        metrics.push(Box::new(PullingGauge::new(
+            "available_parallelism",
+            "The available parallelism, usually the numbers of logical cores.",
+            Box::new(|| available_parallelism().unwrap().get() as f64),
+        ).unwrap()));
+
+        metrics.push(Box::new(PullingGauge::new(
+            "physical_memory_bytes",
+            "The total amount of physical memory used by this process in bytes.",
+            Box::new(|| {
+                if let Some(usage) = memory_stats() {
+                    usage.physical_mem as f64
+                } else {
+                    0.0
+                }
+            })
+        ).unwrap()));
+
+        metrics.push(Box::new(PullingGauge::new(
+            "virtual_memory_bytes",
+            "The total amount of physical memory used by this process in bytes.",
+            Box::new(|| {
+                if let Some(usage) = memory_stats() {
+                    usage.virtual_mem as f64
+                } else {
+                    0.0
+                }
+            })
+        ).unwrap()));
+
+
+        metrics
+}
+
+// pub static GLOBAL_METRICS: Lazy<Vec<Box<dyn Collector>>> = Lazy::new(|| {
+//         let mut metrics: Vec<Box<dyn Collector>> = Vec::new();
+//         metrics.push(Box::new(PullingGauge::new(
+//             "available_parallelism",
+//             "The available parallelism, usually the numbers of logical cores.",
+//             Box::new(|| available_parallelism().unwrap().get() as f64),
+//         ).unwrap()));
+
+//         metrics.push(Box::new(PullingGauge::new(
+//             "physical_memory_bytes",
+//             "The total amount of physical memory used by this process in bytes.",
+//             Box::new(|| {
+//                 if let Some(usage) = memory_stats() {
+//                     usage.physical_mem as f64
+//                 } else {
+//                     0.0
+//                 }
+//             })
+//         ).unwrap()));
+
+//         metrics.push(Box::new(PullingGauge::new(
+//             "virtual_memory_bytes",
+//             "The total amount of physical memory used by this process in bytes.",
+//             Box::new(|| {
+//                 if let Some(usage) = memory_stats() {
+//                     usage.virtual_mem as f64
+//                 } else {
+//                     0.0
+//                 }
+//             })
+//         ).unwrap()));
+
+
+//         metrics
+// });
+
+pub fn register_global_metrics(registry: &prometheus::Registry) {
+    let mut metrics = build_global_metrics();
+    for metric in metrics.drain(..) {
+        if let Err(e) = registry.register(metric) {
+            log::error!("Failed to register global metric: {}", e);
+        }
+    }
+}

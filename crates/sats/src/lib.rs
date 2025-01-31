@@ -18,6 +18,7 @@ pub mod product_value;
 mod resolve_refs;
 pub mod satn;
 pub mod ser;
+pub mod size_of;
 pub mod sum_type;
 pub mod sum_type_variant;
 pub mod sum_value;

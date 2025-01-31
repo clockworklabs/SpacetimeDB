@@ -1,8 +1,4 @@
-use super::{
-    committed_state::CommittedState,
-    datastore::Result,
-    tx_state::{DeleteTable, TxState},
-};
+use super::{committed_state::CommittedState, datastore::Result, delete_table::DeleteTable, tx_state::TxState};
 use crate::db::datastore::locking_tx_datastore::committed_state::CommittedIndexIterWithDeletedMutTx;
 use crate::{
     db::datastore::system_tables::{
@@ -261,7 +257,7 @@ impl<'a> Iterator for IterMutTx<'a> {
                     //
                     // As a result, in MVCC, this branch will need to check if the `row_ref`
                     // also exists in the `tx_state.insert_tables` and ensure it is yielded only once.
-                    if let next @ Some(_) = iter.find(|row_ref| !del_tables.contains(&row_ref.pointer())) {
+                    if let next @ Some(_) = iter.find(|row_ref| !del_tables.contains(row_ref.pointer())) {
                         return next;
                     }
                 }
@@ -358,7 +354,7 @@ impl<'a> Iterator for IndexSeekIterIdWithDeletedMutTx<'a> {
             //
             // As a result, in MVCC, this branch will need to check if the `row_ref`
             // also exists in the `tx_state.insert_tables` and ensure it is yielded only once.
-            .and_then(|i| i.find(|row_ref| !self.del_table.contains(&row_ref.pointer())))
+            .and_then(|i| i.find(|row_ref| !self.del_table.contains(row_ref.pointer())))
         {
             // TODO(metrics): This doesn't actually fetch a row.
             // Move this counter to `RowRef::read_row`.

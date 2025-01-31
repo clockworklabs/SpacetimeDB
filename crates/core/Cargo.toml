@@ -67,6 +67,7 @@ memchr.workspace = true
 once_cell.workspace = true
 openssl.workspace = true
 parking_lot.workspace = true
+memory-stats.workspace = true
 paste.workspace = true
 pin-project-lite.workspace = true
 prometheus.workspace = true
@@ -119,7 +120,7 @@ default = ["unindexed_iter_by_col_range_warn"]
 # Enable timing for wasm ABI calls
 spacetimedb-wasm-instance-env-times = []
 # Enable test helpers and utils
-test = []
+test = ["spacetimedb-commitlog/test"]
 
 [dev-dependencies]
 spacetimedb-lib = { path = "../lib", features = ["proptest"] }

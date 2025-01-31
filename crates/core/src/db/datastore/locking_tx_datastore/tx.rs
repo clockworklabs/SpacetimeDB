@@ -1,4 +1,4 @@
-use super::datastore::record_metrics;
+use super::datastore::record_tx_metrics;
 use super::{
     committed_state::CommittedState,
     datastore::Result,
@@ -86,7 +86,7 @@ impl StateView for TxId {
 
 impl TxId {
     pub(super) fn release(self) {
-        record_metrics(&self.ctx, self.timer, self.lock_wait_time, true, None, None);
+        record_tx_metrics(&self.ctx, self.timer, self.lock_wait_time, true, None, None, None);
     }
 
     /// The Number of Distinct Values (NDV) for a column or list of columns,
