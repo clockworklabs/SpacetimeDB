@@ -5018,7 +5018,6 @@ dependencies = [
  "spacetimedb-sats",
  "spacetimedb-schema",
  "spacetimedb-sql-parser",
- "string-interner",
  "thiserror",
 ]
 
@@ -5508,17 +5507,6 @@ name = "str_stack"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9091b6114800a5f2141aee1d1b9d6ca3592ac062dc5decb3764ec5895a47b4eb"
-
-[[package]]
-name = "string-interner"
-version = "0.17.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1c6a0d765f5807e98a091107bae0a56ea3799f66a5de47b2c84c94a39c09974e"
-dependencies = [
- "cfg-if",
- "hashbrown 0.14.5",
- "serde",
-]
 
 [[package]]
 name = "stringprep"

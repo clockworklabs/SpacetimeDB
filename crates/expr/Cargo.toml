@@ -11,7 +11,6 @@ anyhow.workspace = true
 bigdecimal.workspace = true
 derive_more.workspace = true
 ethnum.workspace = true
-string-interner.workspace = true
 thiserror.workspace = true
 spacetimedb-lib.workspace = true
 spacetimedb-primitives.workspace = true

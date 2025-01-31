@@ -228,7 +228,6 @@ socket2 = "0.5"
 sqllogictest = "0.17"
 sqllogictest-engines = "0.17"
 sqlparser = "0.38.0"
-string-interner = "0.17.0"
 strum = { version = "0.25.0", features = ["derive"] }
 syn = { version = "2", features = ["full", "extra-traits"] }
 syntect = { version = "5.0.0", default-features = false, features = ["default-fancy"] }
