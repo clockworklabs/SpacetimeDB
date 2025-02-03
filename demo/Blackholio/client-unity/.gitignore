@@ -73,3 +73,6 @@ crashlytics-build.properties
 
 Build/
 .vscode/
+
+obj~
+bin~
