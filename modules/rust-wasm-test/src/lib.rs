@@ -370,5 +370,6 @@ pub struct Player {
     #[auto_inc]
     #[unique]
     player_id: u64,
+    #[unique] // fields called "name" previously caused name collisions in generated table handles
     name: String,
 }
