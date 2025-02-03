@@ -1179,6 +1179,75 @@ impl Table {
         self.compute_row_count(blob_store);
         self.rebuild_pointer_map(blob_store);
     }
+
+    /// Returns the number of rows resident in this table.
+    ///
+    /// This scales in runtime with the number of pages in the table.
+    pub fn num_rows(&self) -> u64 {
+        self.pages().iter().map(|page| page.num_rows() as u64).sum()
+    }
+
+    #[cfg(test)]
+    fn reconstruct_num_rows(&self) -> u64 {
+        self.pages().iter().map(|page| page.reconstruct_num_rows() as u64).sum()
+    }
+
+    /// Returns the number of bytes used by rows resident in this table.
+    ///
+    /// This includes data bytes, padding bytes and some overhead bytes,
+    /// as described in the docs for [`Page::bytes_used_by_rows`],
+    /// but *does not* include:
+    ///
+    /// - Unallocated space within pages.
+    /// - Per-page overhead (e.g. page headers).
+    /// - Table overhead (e.g. the [`RowTypeLayout`], [`PointerMap`], [`Schema`] &c).
+    /// - Indexes.
+    /// - Large blobs in the [`BlobStore`].
+    ///
+    /// Of these, the caller should inspect the blob store in order to account for memory usage by large blobs,
+    /// and call [`Self::bytes_used_by_index_keys`] to account for indexes,
+    /// but we intend to eat all the other overheads when billing.
+    pub fn bytes_used_by_rows(&self) -> u64 {
+        self.pages()
+            .iter()
+            .map(|page| page.bytes_used_by_rows(self.inner.row_layout.size()) as u64)
+            .sum()
+    }
+
+    #[cfg(test)]
+    fn reconstruct_bytes_used_by_rows(&self) -> u64 {
+        self.pages()
+            .iter()
+            .map(|page| unsafe {
+                // Safety: `page` is in `self`, and was constructed using `self.innser.row_layout` and `self.inner.visitor_prog`,
+                // so the three are mutually consistent.
+                page.reconstruct_bytes_used_by_rows(self.inner.row_layout.size(), &self.inner.visitor_prog)
+            } as u64)
+            .sum()
+    }
+
+    /// Returns the number of rows (or [`RowPointer`]s, more accurately)
+    /// stored in indexes by this table.
+    ///
+    /// This method runs in constant time.
+    pub fn num_rows_in_indexes(&self) -> u64 {
+        // Assume that each index contains all rows in the table.
+        self.num_rows() * self.indexes.len() as u64
+    }
+
+    /// Returns the number of bytes used by keys stored in indexes by this table.
+    ///
+    /// This method scales in runtime with the number of indexes in the table,
+    /// but not with the number of pages or rows.
+    ///
+    /// Key size is measured using a metric called "key size" or "data size,"
+    /// which is intended to capture the number of live user-supplied bytes,
+    /// not including representational overhead.
+    /// This is distinct from the BFLATN size measured by [`Self::bytes_used_by_rows`].
+    /// See the trait [`crate::btree_index::KeySize`] for specifics on the metric measured.
+    pub fn bytes_used_by_index_keys(&self) -> u64 {
+        self.indexes.values().map(|idx| idx.num_key_bytes()).sum()
+    }
 }
 
 /// A reference to a single row within a table.
@@ -1790,7 +1859,7 @@ pub(crate) mod test {
     use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, RawModuleDefV9Builder};
     use spacetimedb_primitives::{col_list, TableId};
     use spacetimedb_sats::bsatn::to_vec;
-    use spacetimedb_sats::proptest::generate_typed_row;
+    use spacetimedb_sats::proptest::{generate_typed_row, generate_typed_row_vec};
     use spacetimedb_sats::{product, AlgebraicType, ArrayValue};
     use spacetimedb_schema::def::ModuleDef;
     use spacetimedb_schema::schema::Schema as _;
@@ -1909,6 +1978,93 @@ pub(crate) mod test {
         insert_retrieve_body(ty, AlgebraicValue::from(arr)).unwrap();
     }
 
+    fn reconstruct_index_num_key_bytes(table: &Table, blob_store: &dyn BlobStore, index_id: IndexId) -> u64 {
+        let index = table.get_index_by_id(index_id).unwrap();
+
+        index
+            .seek(&(..))
+            .map(|row_ptr| {
+                let row_ref = table.get_row_ref(blob_store, row_ptr).unwrap();
+                let key = row_ref.project(&index.indexed_columns).unwrap();
+                crate::btree_index::KeySize::key_size_in_bytes(&key) as u64
+            })
+            .sum()
+    }
+
+    /// Given a row type `ty`, a set of rows of that type `vals`,
+    /// and a set of columns within that type `indexed_columns`,
+    /// populate a table with `vals`, add an index on the `indexed_columns`,
+    /// and perform various assertions that the reported index size metrics are correct.
+    fn test_index_size_reporting(
+        ty: ProductType,
+        vals: Vec<ProductValue>,
+        indexed_columns: ColList,
+    ) -> Result<(), TestCaseError> {
+        let mut blob_store = HashMapBlobStore::default();
+        let mut table = table(ty.clone());
+
+        for row in &vals {
+            prop_assume!(table.insert(&mut blob_store, row).is_ok());
+        }
+
+        // We haven't added any indexes yet, so there should be 0 rows in indexes.
+        prop_assert_eq!(table.num_rows_in_indexes(), 0);
+
+        let index_id = IndexId(0);
+
+        // Add an index on column 0.
+        // Safety:
+        // We're using `ty` as the row type for both `table` and the new index.
+        unsafe {
+            table.insert_index(
+                &blob_store,
+                index_id,
+                BTreeIndex::new(&ty, indexed_columns.clone(), false).unwrap(),
+            );
+        }
+
+        // We have one index, which should be fully populated,
+        // so in total we should have the same number of rows in indexes as we have rows.
+        prop_assert_eq!(table.num_rows_in_indexes(), table.num_rows());
+
+        let index = table.get_index_by_id(index_id).unwrap();
+
+        // One index, so table's reporting of bytes used should match that index's reporting.
+        prop_assert_eq!(table.bytes_used_by_index_keys(), index.num_key_bytes());
+
+        // Walk all the rows in the index, sum their key size,
+        // and assert it matches the `index.num_key_bytes()`
+        prop_assert_eq!(
+            index.num_key_bytes(),
+            reconstruct_index_num_key_bytes(&table, &blob_store, index_id)
+        );
+
+        // Walk all the rows we inserted, project them to the cols that will be their keys,
+        // sum their key size,
+        // and assert it matches the `index.num_key_bytes()`
+        let key_size_in_pvs = vals
+            .iter()
+            .map(|row| crate::btree_index::KeySize::key_size_in_bytes(&row.project(&indexed_columns).unwrap()) as u64)
+            .sum();
+        prop_assert_eq!(index.num_key_bytes(), key_size_in_pvs);
+
+        // Add a duplicate of the same index, so we can check that all above quantities double.
+        // Safety:
+        // As above, we're using `ty` as the row type for both `table` and the new index.
+        unsafe {
+            table.insert_index(
+                &blob_store,
+                IndexId(1),
+                BTreeIndex::new(&ty, indexed_columns, false).unwrap(),
+            );
+        }
+
+        prop_assert_eq!(table.num_rows_in_indexes(), table.num_rows() * 2);
+        prop_assert_eq!(table.bytes_used_by_index_keys(), key_size_in_pvs * 2);
+
+        Ok(())
+    }
+
     proptest! {
         #![proptest_config(ProptestConfig { max_shrink_iters: 0x10000000, ..Default::default() })]
 
@@ -1996,6 +2152,39 @@ pub(crate) mod test {
             prop_assert_eq!(res_pv, res_bsatn);
             prop_assert_eq!(bs_pv, bs_bsatn);
             prop_assert_eq!(table_pv, table_bsatn);
+        }
+
+        #[test]
+        fn row_size_reporting_matches_slow_implementations((ty, vals) in generate_typed_row_vec(128, 2048)) {
+            let mut blob_store = HashMapBlobStore::default();
+            let mut table = table(ty.clone());
+
+            for row in &vals {
+                prop_assume!(table.insert(&mut blob_store, row).is_ok());
+            }
+
+            prop_assert_eq!(table.bytes_used_by_rows(), table.reconstruct_bytes_used_by_rows());
+            prop_assert_eq!(table.num_rows(), table.reconstruct_num_rows());
+            prop_assert_eq!(table.num_rows(), vals.len() as u64);
+
+            // TODO(testing): Determine if there's a meaningful way to test that the blob store reporting is correct.
+            // I (pgoldman 2025-01-27) doubt it, as the test would be "visit every blob and sum their size,"
+            // which is already what the actual implementation does.
+        }
+
+        #[test]
+        fn index_size_reporting_matches_slow_implementations_single_column((ty, vals) in generate_typed_row_vec(128, 2048)) {
+            prop_assume!(!ty.elements.is_empty());
+
+            test_index_size_reporting(ty, vals, ColList::from(ColId(0)))?;
+        }
+
+        #[test]
+        fn index_size_reporting_matches_slow_implementations_two_column((ty, vals) in generate_typed_row_vec(128, 2048)) {
+            prop_assume!(ty.elements.len() >= 2);
+
+
+            test_index_size_reporting(ty, vals, ColList::from([ColId(0), ColId(1)]))?;
         }
     }
 
