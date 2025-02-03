@@ -268,14 +268,19 @@ public readonly record struct Identity
     public override string ToString() => Util.ToHexBigEndian(value);
 }
 
+/// <summary>
+/// A timestamp that represents a unique moment in time (in the Earth's reference frame).
+///
+/// This type may be converted to/from a DateTimeOffset, but the conversion can lose precision.
+/// This type has less precision than DateTimeOffset (units of microseconds rather than units of 100ns).
+/// </summary>
 [StructLayout(LayoutKind.Sequential)] // we should be able to use it in FFI
-public partial record struct Timestamp(long MicrosecondsSinceUnixEpoch)
-    : IStructuralReadWrite
+public record struct Timestamp(long MicrosecondsSinceUnixEpoch) : IStructuralReadWrite
 {
     public static implicit operator DateTimeOffset(Timestamp t) =>
-        DateTimeOffset.UnixEpoch.AddTicks(
-            t.MicrosecondsSinceUnixEpoch * Util.TicksPerMicrosecond
-        );
+     DateTimeOffset.UnixEpoch.AddTicks(
+         t.MicrosecondsSinceUnixEpoch * Util.TicksPerMicrosecond
+     );
 
     public static implicit operator Timestamp(DateTimeOffset offset) =>
         new Timestamp(offset.Subtract(DateTimeOffset.UnixEpoch).Ticks / Util.TicksPerMicrosecond);
@@ -338,8 +343,14 @@ public partial record struct Timestamp(long MicrosecondsSinceUnixEpoch)
     }
 }
 
+/// <summary>
+/// A duration that represents an interval between two events (in a particular reference frame).
+///
+/// This type may be converted to/from a TimeSpan, but the conversion can lose precision.
+/// This type has less precision than TimeSpan (units of microseconds rather than units of 100ns).
+/// </summary>
 [StructLayout(LayoutKind.Sequential)]
-public partial record struct TimeDuration(long Microseconds) : IStructuralReadWrite
+public record struct TimeDuration(long Microseconds) : IStructuralReadWrite
 {
     public static implicit operator TimeSpan(TimeDuration d) =>
         new(d.Microseconds * Util.TicksPerMicrosecond);
