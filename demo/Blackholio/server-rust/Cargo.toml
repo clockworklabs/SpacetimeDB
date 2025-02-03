@@ -10,6 +10,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 # spacetimedb = { version = "1.0.0-rc2" }
-spacetimedb = { git = "https://github.com/ClockworkLabs/SpacetimeDB" }
+spacetimedb = { path = "../../../SpacetimeDB/crates/bindings" }
+# spacetimedb = { git = "https://github.com/ClockworkLabs/SpacetimeDB" }
 log = "0.4"
 rand = "0.8.5"
