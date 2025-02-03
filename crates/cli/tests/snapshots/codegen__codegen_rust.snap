@@ -49,15 +49,12 @@ pub trait add_player {
 ) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `add_player`.
     ///
-    /// The [`super::EventContext`] passed to the `callback`
-    /// will always have [`__sdk::Event::Reducer`] as its `event`,
-    /// but it may or may not have terminated successfully and been committed.
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::EventContext`]
+    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
     /// to determine the reducer's status.
     ///
     /// The returned [`AddPlayerCallbackId`] can be passed to [`Self::remove_on_add_player`]
     /// to cancel the callback.
-    fn on_add_player(&self, callback: impl FnMut(&super::EventContext, &String, ) + Send + 'static) -> AddPlayerCallbackId;
+    fn on_add_player(&self, callback: impl FnMut(&super::ReducerEventContext, &String, ) + Send + 'static) -> AddPlayerCallbackId;
     /// Cancel a callback previously registered by [`Self::on_add_player`],
     /// causing it not to run in the future.
     fn remove_on_add_player(&self, callback: AddPlayerCallbackId);
@@ -70,18 +67,18 @@ impl add_player for super::RemoteReducers {
     }
     fn on_add_player(
         &self,
-        mut callback: impl FnMut(&super::EventContext, &String, ) + Send + 'static,
+        mut callback: impl FnMut(&super::ReducerEventContext, &String, ) + Send + 'static,
     ) -> AddPlayerCallbackId {
         AddPlayerCallbackId(self.imp.on_reducer(
             "add_player",
-            Box::new(move |ctx: &super::EventContext| {
-                let super::EventContext {
-                    event: __sdk::Event::Reducer(__sdk::ReducerEvent {
+            Box::new(move |ctx: &super::ReducerEventContext| {
+                let super::ReducerEventContext {
+                    event: __sdk::ReducerEvent {
                         reducer: super::Reducer::AddPlayer {
                             name, 
                         },
                         ..
-                    }),
+                    },
                     ..
                 } = ctx else { unreachable!() };
                 callback(ctx, name, )
@@ -161,15 +158,12 @@ pub trait add_private {
 ) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `add_private`.
     ///
-    /// The [`super::EventContext`] passed to the `callback`
-    /// will always have [`__sdk::Event::Reducer`] as its `event`,
-    /// but it may or may not have terminated successfully and been committed.
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::EventContext`]
+    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
     /// to determine the reducer's status.
     ///
     /// The returned [`AddPrivateCallbackId`] can be passed to [`Self::remove_on_add_private`]
     /// to cancel the callback.
-    fn on_add_private(&self, callback: impl FnMut(&super::EventContext, &String, ) + Send + 'static) -> AddPrivateCallbackId;
+    fn on_add_private(&self, callback: impl FnMut(&super::ReducerEventContext, &String, ) + Send + 'static) -> AddPrivateCallbackId;
     /// Cancel a callback previously registered by [`Self::on_add_private`],
     /// causing it not to run in the future.
     fn remove_on_add_private(&self, callback: AddPrivateCallbackId);
@@ -182,18 +176,18 @@ impl add_private for super::RemoteReducers {
     }
     fn on_add_private(
         &self,
-        mut callback: impl FnMut(&super::EventContext, &String, ) + Send + 'static,
+        mut callback: impl FnMut(&super::ReducerEventContext, &String, ) + Send + 'static,
     ) -> AddPrivateCallbackId {
         AddPrivateCallbackId(self.imp.on_reducer(
             "add_private",
-            Box::new(move |ctx: &super::EventContext| {
-                let super::EventContext {
-                    event: __sdk::Event::Reducer(__sdk::ReducerEvent {
+            Box::new(move |ctx: &super::ReducerEventContext| {
+                let super::ReducerEventContext {
+                    event: __sdk::ReducerEvent {
                         reducer: super::Reducer::AddPrivate {
                             name, 
                         },
                         ..
-                    }),
+                    },
                     ..
                 } = ctx else { unreachable!() };
                 callback(ctx, name, )
@@ -269,15 +263,12 @@ pub trait assert_caller_identity_is_module_identity {
     fn assert_caller_identity_is_module_identity(&self, ) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `assert_caller_identity_is_module_identity`.
     ///
-    /// The [`super::EventContext`] passed to the `callback`
-    /// will always have [`__sdk::Event::Reducer`] as its `event`,
-    /// but it may or may not have terminated successfully and been committed.
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::EventContext`]
+    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
     /// to determine the reducer's status.
     ///
     /// The returned [`AssertCallerIdentityIsModuleIdentityCallbackId`] can be passed to [`Self::remove_on_assert_caller_identity_is_module_identity`]
     /// to cancel the callback.
-    fn on_assert_caller_identity_is_module_identity(&self, callback: impl FnMut(&super::EventContext, ) + Send + 'static) -> AssertCallerIdentityIsModuleIdentityCallbackId;
+    fn on_assert_caller_identity_is_module_identity(&self, callback: impl FnMut(&super::ReducerEventContext, ) + Send + 'static) -> AssertCallerIdentityIsModuleIdentityCallbackId;
     /// Cancel a callback previously registered by [`Self::on_assert_caller_identity_is_module_identity`],
     /// causing it not to run in the future.
     fn remove_on_assert_caller_identity_is_module_identity(&self, callback: AssertCallerIdentityIsModuleIdentityCallbackId);
@@ -289,18 +280,18 @@ impl assert_caller_identity_is_module_identity for super::RemoteReducers {
     }
     fn on_assert_caller_identity_is_module_identity(
         &self,
-        mut callback: impl FnMut(&super::EventContext, ) + Send + 'static,
+        mut callback: impl FnMut(&super::ReducerEventContext, ) + Send + 'static,
     ) -> AssertCallerIdentityIsModuleIdentityCallbackId {
         AssertCallerIdentityIsModuleIdentityCallbackId(self.imp.on_reducer(
             "assert_caller_identity_is_module_identity",
-            Box::new(move |ctx: &super::EventContext| {
-                let super::EventContext {
-                    event: __sdk::Event::Reducer(__sdk::ReducerEvent {
+            Box::new(move |ctx: &super::ReducerEventContext| {
+                let super::ReducerEventContext {
+                    event: __sdk::ReducerEvent {
                         reducer: super::Reducer::AssertCallerIdentityIsModuleIdentity {
                             
                         },
                         ..
-                    }),
+                    },
                     ..
                 } = ctx else { unreachable!() };
                 callback(ctx, )
@@ -405,15 +396,12 @@ pub trait delete_player {
 ) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `delete_player`.
     ///
-    /// The [`super::EventContext`] passed to the `callback`
-    /// will always have [`__sdk::Event::Reducer`] as its `event`,
-    /// but it may or may not have terminated successfully and been committed.
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::EventContext`]
+    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
     /// to determine the reducer's status.
     ///
     /// The returned [`DeletePlayerCallbackId`] can be passed to [`Self::remove_on_delete_player`]
     /// to cancel the callback.
-    fn on_delete_player(&self, callback: impl FnMut(&super::EventContext, &u64, ) + Send + 'static) -> DeletePlayerCallbackId;
+    fn on_delete_player(&self, callback: impl FnMut(&super::ReducerEventContext, &u64, ) + Send + 'static) -> DeletePlayerCallbackId;
     /// Cancel a callback previously registered by [`Self::on_delete_player`],
     /// causing it not to run in the future.
     fn remove_on_delete_player(&self, callback: DeletePlayerCallbackId);
@@ -426,18 +414,18 @@ impl delete_player for super::RemoteReducers {
     }
     fn on_delete_player(
         &self,
-        mut callback: impl FnMut(&super::EventContext, &u64, ) + Send + 'static,
+        mut callback: impl FnMut(&super::ReducerEventContext, &u64, ) + Send + 'static,
     ) -> DeletePlayerCallbackId {
         DeletePlayerCallbackId(self.imp.on_reducer(
             "delete_player",
-            Box::new(move |ctx: &super::EventContext| {
-                let super::EventContext {
-                    event: __sdk::Event::Reducer(__sdk::ReducerEvent {
+            Box::new(move |ctx: &super::ReducerEventContext| {
+                let super::ReducerEventContext {
+                    event: __sdk::ReducerEvent {
                         reducer: super::Reducer::DeletePlayer {
                             id, 
                         },
                         ..
-                    }),
+                    },
                     ..
                 } = ctx else { unreachable!() };
                 callback(ctx, id, )
@@ -517,15 +505,12 @@ pub trait delete_players_by_name {
 ) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `delete_players_by_name`.
     ///
-    /// The [`super::EventContext`] passed to the `callback`
-    /// will always have [`__sdk::Event::Reducer`] as its `event`,
-    /// but it may or may not have terminated successfully and been committed.
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::EventContext`]
+    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
     /// to determine the reducer's status.
     ///
     /// The returned [`DeletePlayersByNameCallbackId`] can be passed to [`Self::remove_on_delete_players_by_name`]
     /// to cancel the callback.
-    fn on_delete_players_by_name(&self, callback: impl FnMut(&super::EventContext, &String, ) + Send + 'static) -> DeletePlayersByNameCallbackId;
+    fn on_delete_players_by_name(&self, callback: impl FnMut(&super::ReducerEventContext, &String, ) + Send + 'static) -> DeletePlayersByNameCallbackId;
     /// Cancel a callback previously registered by [`Self::on_delete_players_by_name`],
     /// causing it not to run in the future.
     fn remove_on_delete_players_by_name(&self, callback: DeletePlayersByNameCallbackId);
@@ -538,18 +523,18 @@ impl delete_players_by_name for super::RemoteReducers {
     }
     fn on_delete_players_by_name(
         &self,
-        mut callback: impl FnMut(&super::EventContext, &String, ) + Send + 'static,
+        mut callback: impl FnMut(&super::ReducerEventContext, &String, ) + Send + 'static,
     ) -> DeletePlayersByNameCallbackId {
         DeletePlayersByNameCallbackId(self.imp.on_reducer(
             "delete_players_by_name",
-            Box::new(move |ctx: &super::EventContext| {
-                let super::EventContext {
-                    event: __sdk::Event::Reducer(__sdk::ReducerEvent {
+            Box::new(move |ctx: &super::ReducerEventContext| {
+                let super::ReducerEventContext {
+                    event: __sdk::ReducerEvent {
                         reducer: super::Reducer::DeletePlayersByName {
                             name, 
                         },
                         ..
-                    }),
+                    },
                     ..
                 } = ctx else { unreachable!() };
                 callback(ctx, name, )
@@ -783,15 +768,12 @@ pub trait init {
     fn init(&self, ) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `init`.
     ///
-    /// The [`super::EventContext`] passed to the `callback`
-    /// will always have [`__sdk::Event::Reducer`] as its `event`,
-    /// but it may or may not have terminated successfully and been committed.
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::EventContext`]
+    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
     /// to determine the reducer's status.
     ///
     /// The returned [`InitCallbackId`] can be passed to [`Self::remove_on_init`]
     /// to cancel the callback.
-    fn on_init(&self, callback: impl FnMut(&super::EventContext, ) + Send + 'static) -> InitCallbackId;
+    fn on_init(&self, callback: impl FnMut(&super::ReducerEventContext, ) + Send + 'static) -> InitCallbackId;
     /// Cancel a callback previously registered by [`Self::on_init`],
     /// causing it not to run in the future.
     fn remove_on_init(&self, callback: InitCallbackId);
@@ -803,18 +785,18 @@ impl init for super::RemoteReducers {
     }
     fn on_init(
         &self,
-        mut callback: impl FnMut(&super::EventContext, ) + Send + 'static,
+        mut callback: impl FnMut(&super::ReducerEventContext, ) + Send + 'static,
     ) -> InitCallbackId {
         InitCallbackId(self.imp.on_reducer(
             "init",
-            Box::new(move |ctx: &super::EventContext| {
-                let super::EventContext {
-                    event: __sdk::Event::Reducer(__sdk::ReducerEvent {
+            Box::new(move |ctx: &super::ReducerEventContext| {
+                let super::ReducerEventContext {
+                    event: __sdk::ReducerEvent {
                         reducer: super::Reducer::Init {
                             
                         },
                         ..
-                    }),
+                    },
                     ..
                 } = ctx else { unreachable!() };
                 callback(ctx, )
@@ -1474,79 +1456,6 @@ impl __sdk::DbConnection for DbConnection {
     }
 }
 
-/// A [`DbConnection`] augmented with an [`__sdk::Event`],
-/// passed to various callbacks invoked by the SDK.
-pub struct EventContext {
-    /// Access to tables defined by the module via extension traits implemented for [`RemoteTables`].
-    pub db: RemoteTables,
-    /// Access to reducers defined by the module via extension traits implemented for [`RemoteReducers`].
-    pub reducers: RemoteReducers,
-    /// Access to setting the call-flags of each reducer defined for each reducer defined by the module
-    /// via extension traits implemented for [`SetReducerFlags`].
-    ///
-    /// This type is currently unstable and may be removed without a major version bump.
-    pub set_reducer_flags: SetReducerFlags,
-    /// The event which caused these callbacks to run.
-    pub event: __sdk::Event<Reducer>,
-    imp: __sdk::DbContextImpl<RemoteModule>,
-}
-
-impl __sdk::InModule for EventContext {
-    type Module = RemoteModule;
-}
-
-impl __sdk::DbContext for EventContext {
-    type DbView = RemoteTables;
-    type Reducers = RemoteReducers;
-    type SetReducerFlags = SetReducerFlags;
-
-    fn db(&self) -> &Self::DbView {
-        &self.db
-    }
-    fn reducers(&self) -> &Self::Reducers {
-        &self.reducers
-    }
-    fn set_reducer_flags(&self) -> &Self::SetReducerFlags {
-        &self.set_reducer_flags
-    }
-
-    fn is_active(&self) -> bool {
-        self.imp.is_active()
-    }
-
-    fn disconnect(&self) -> __sdk::Result<()> {
-        self.imp.disconnect()
-    }
-
-    type SubscriptionBuilder = __sdk::SubscriptionBuilder<RemoteModule>;
-
-    fn subscription_builder(&self) -> Self::SubscriptionBuilder {
-        __sdk::SubscriptionBuilder::new(&self.imp)
-    }
-
-    fn try_identity(&self) -> Option<__sdk::Identity> {
-        self.imp.try_identity()
-    }
-    fn address(&self) -> __sdk::Address {
-        self.imp.address()
-    }
-}
-
-impl __sdk::EventContext for EventContext {
-    fn event(&self) -> &__sdk::Event<Reducer> {
-        &self.event
-    }
-    fn new(imp: __sdk::DbContextImpl<RemoteModule>, event: __sdk::Event<Reducer>) -> Self {
-        Self {
-            db: RemoteTables { imp: imp.clone() },
-            reducers: RemoteReducers { imp: imp.clone() },
-            set_reducer_flags: SetReducerFlags { imp: imp.clone() },
-            event,
-            imp,
-        }
-    }
-}
-
 /// A handle on a subscribed query.
 // TODO: Document this better after implementing the new subscription API.
 #[derive(Clone)]
@@ -1604,10 +1513,313 @@ impl<Ctx: __sdk::DbContext<
 >> RemoteDbContext for Ctx {}
 
 
+/// An [`__sdk::DbContext`] augmented with a [`__sdk::Event`],
+/// passed to [`__sdk::Table::on_insert`], [`__sdk::Table::on_delete`] and [`__sdk::TableWithPrimaryKey::on_update`] callbacks.
+pub struct EventContext {
+    /// Access to tables defined by the module via extension traits implemented for [`RemoteTables`].
+    pub db: RemoteTables,
+    /// Access to reducers defined by the module via extension traits implemented for [`RemoteReducers`].
+    pub reducers: RemoteReducers,
+    /// Access to setting the call-flags of each reducer defined for each reducer defined by the module
+    /// via extension traits implemented for [`SetReducerFlags`].
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    pub set_reducer_flags: SetReducerFlags,
+    /// The event which caused these callbacks to run.
+    pub event: __sdk::Event<Reducer>,
+    imp: __sdk::DbContextImpl<RemoteModule>,
+}
+
+impl __sdk::AbstractEventContext for EventContext {
+    type Event = __sdk::Event<Reducer>;
+    fn event(&self) -> &Self::Event {
+        &self.event
+    }
+    fn new(imp: __sdk::DbContextImpl<RemoteModule>, event: Self::Event) -> Self {
+        Self {
+            db: RemoteTables { imp: imp.clone() },
+            reducers: RemoteReducers { imp: imp.clone() },
+            set_reducer_flags: SetReducerFlags { imp: imp.clone() },
+            event,
+            imp,
+        }
+    }
+}
+
+impl __sdk::InModule for EventContext {
+    type Module = RemoteModule;
+}
+
+impl __sdk::DbContext for EventContext {
+    type DbView = RemoteTables;
+    type Reducers = RemoteReducers;
+    type SetReducerFlags = SetReducerFlags;
+
+    fn db(&self) -> &Self::DbView {
+        &self.db
+    }
+    fn reducers(&self) -> &Self::Reducers {
+        &self.reducers
+    }
+    fn set_reducer_flags(&self) -> &Self::SetReducerFlags {
+        &self.set_reducer_flags
+    }
+
+    fn is_active(&self) -> bool {
+        self.imp.is_active()
+    }
+
+    fn disconnect(&self) -> __sdk::Result<()> {
+        self.imp.disconnect()
+    }
+
+    type SubscriptionBuilder = __sdk::SubscriptionBuilder<RemoteModule>;
+
+    fn subscription_builder(&self) -> Self::SubscriptionBuilder {
+        __sdk::SubscriptionBuilder::new(&self.imp)
+    }
+
+    fn try_identity(&self) -> Option<__sdk::Identity> {
+        self.imp.try_identity()
+    }
+    fn address(&self) -> __sdk::Address {
+        self.imp.address()
+    }
+}
+
+impl __sdk::EventContext for EventContext {}
+
+/// An [`__sdk::DbContext`] augmented with a [`__sdk::ReducerEvent`],
+/// passed to on-reducer callbacks.
+pub struct ReducerEventContext {
+    /// Access to tables defined by the module via extension traits implemented for [`RemoteTables`].
+    pub db: RemoteTables,
+    /// Access to reducers defined by the module via extension traits implemented for [`RemoteReducers`].
+    pub reducers: RemoteReducers,
+    /// Access to setting the call-flags of each reducer defined for each reducer defined by the module
+    /// via extension traits implemented for [`SetReducerFlags`].
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    pub set_reducer_flags: SetReducerFlags,
+    /// The event which caused these callbacks to run.
+    pub event: __sdk::ReducerEvent<Reducer>,
+    imp: __sdk::DbContextImpl<RemoteModule>,
+}
+
+impl __sdk::AbstractEventContext for ReducerEventContext {
+    type Event = __sdk::ReducerEvent<Reducer>;
+    fn event(&self) -> &Self::Event {
+        &self.event
+    }
+    fn new(imp: __sdk::DbContextImpl<RemoteModule>, event: Self::Event) -> Self {
+        Self {
+            db: RemoteTables { imp: imp.clone() },
+            reducers: RemoteReducers { imp: imp.clone() },
+            set_reducer_flags: SetReducerFlags { imp: imp.clone() },
+            event,
+            imp,
+        }
+    }
+}
+
+impl __sdk::InModule for ReducerEventContext {
+    type Module = RemoteModule;
+}
+
+impl __sdk::DbContext for ReducerEventContext {
+    type DbView = RemoteTables;
+    type Reducers = RemoteReducers;
+    type SetReducerFlags = SetReducerFlags;
+
+    fn db(&self) -> &Self::DbView {
+        &self.db
+    }
+    fn reducers(&self) -> &Self::Reducers {
+        &self.reducers
+    }
+    fn set_reducer_flags(&self) -> &Self::SetReducerFlags {
+        &self.set_reducer_flags
+    }
+
+    fn is_active(&self) -> bool {
+        self.imp.is_active()
+    }
+
+    fn disconnect(&self) -> __sdk::Result<()> {
+        self.imp.disconnect()
+    }
+
+    type SubscriptionBuilder = __sdk::SubscriptionBuilder<RemoteModule>;
+
+    fn subscription_builder(&self) -> Self::SubscriptionBuilder {
+        __sdk::SubscriptionBuilder::new(&self.imp)
+    }
+
+    fn try_identity(&self) -> Option<__sdk::Identity> {
+        self.imp.try_identity()
+    }
+    fn address(&self) -> __sdk::Address {
+        self.imp.address()
+    }
+}
+
+impl __sdk::ReducerEventContext for ReducerEventContext {}
+
+/// An [`__sdk::DbContext`] passed to [`__sdk::SubscriptionBuilder::on_applied`] and [`SubscriptionHandle::unsubscribe_then`] callbacks.
+pub struct SubscriptionEventContext {
+    /// Access to tables defined by the module via extension traits implemented for [`RemoteTables`].
+    pub db: RemoteTables,
+    /// Access to reducers defined by the module via extension traits implemented for [`RemoteReducers`].
+    pub reducers: RemoteReducers,
+    /// Access to setting the call-flags of each reducer defined for each reducer defined by the module
+    /// via extension traits implemented for [`SetReducerFlags`].
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    pub set_reducer_flags: SetReducerFlags,
+    imp: __sdk::DbContextImpl<RemoteModule>,
+}
+
+impl __sdk::AbstractEventContext for SubscriptionEventContext {
+    type Event = ();
+    fn event(&self) -> &Self::Event {
+        &()
+    }
+    fn new(imp: __sdk::DbContextImpl<RemoteModule>, _event: Self::Event) -> Self {
+        Self {
+            db: RemoteTables { imp: imp.clone() },
+            reducers: RemoteReducers { imp: imp.clone() },
+            set_reducer_flags: SetReducerFlags { imp: imp.clone() },
+            imp,
+        }
+    }
+}
+
+impl __sdk::InModule for SubscriptionEventContext {
+    type Module = RemoteModule;
+}
+
+impl __sdk::DbContext for SubscriptionEventContext {
+    type DbView = RemoteTables;
+    type Reducers = RemoteReducers;
+    type SetReducerFlags = SetReducerFlags;
+
+    fn db(&self) -> &Self::DbView {
+        &self.db
+    }
+    fn reducers(&self) -> &Self::Reducers {
+        &self.reducers
+    }
+    fn set_reducer_flags(&self) -> &Self::SetReducerFlags {
+        &self.set_reducer_flags
+    }
+
+    fn is_active(&self) -> bool {
+        self.imp.is_active()
+    }
+
+    fn disconnect(&self) -> __sdk::Result<()> {
+        self.imp.disconnect()
+    }
+
+    type SubscriptionBuilder = __sdk::SubscriptionBuilder<RemoteModule>;
+
+    fn subscription_builder(&self) -> Self::SubscriptionBuilder {
+        __sdk::SubscriptionBuilder::new(&self.imp)
+    }
+
+    fn try_identity(&self) -> Option<__sdk::Identity> {
+        self.imp.try_identity()
+    }
+    fn address(&self) -> __sdk::Address {
+        self.imp.address()
+    }
+}
+
+impl __sdk::SubscriptionEventContext for SubscriptionEventContext {}
+
+/// An [`__sdk::DbContext`] augmented with a [`__sdk::Error`],
+/// passed to [`__sdk::DbConnectionBuilder::on_disconnect`], [`__sdk::DbConnectionBuilder::on_connect_error`] and [`__sdk::SubscriptionBuilder::on_error`] callbacks.
+pub struct ErrorContext {
+    /// Access to tables defined by the module via extension traits implemented for [`RemoteTables`].
+    pub db: RemoteTables,
+    /// Access to reducers defined by the module via extension traits implemented for [`RemoteReducers`].
+    pub reducers: RemoteReducers,
+    /// Access to setting the call-flags of each reducer defined for each reducer defined by the module
+    /// via extension traits implemented for [`SetReducerFlags`].
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    pub set_reducer_flags: SetReducerFlags,
+    /// The event which caused these callbacks to run.
+    pub event: __sdk::Error,
+    imp: __sdk::DbContextImpl<RemoteModule>,
+}
+
+impl __sdk::AbstractEventContext for ErrorContext {
+    type Event = __sdk::Error;
+    fn event(&self) -> &Self::Event {
+        &self.event
+    }
+    fn new(imp: __sdk::DbContextImpl<RemoteModule>, event: Self::Event) -> Self {
+        Self {
+            db: RemoteTables { imp: imp.clone() },
+            reducers: RemoteReducers { imp: imp.clone() },
+            set_reducer_flags: SetReducerFlags { imp: imp.clone() },
+            event,
+            imp,
+        }
+    }
+}
+
+impl __sdk::InModule for ErrorContext {
+    type Module = RemoteModule;
+}
+
+impl __sdk::DbContext for ErrorContext {
+    type DbView = RemoteTables;
+    type Reducers = RemoteReducers;
+    type SetReducerFlags = SetReducerFlags;
+
+    fn db(&self) -> &Self::DbView {
+        &self.db
+    }
+    fn reducers(&self) -> &Self::Reducers {
+        &self.reducers
+    }
+    fn set_reducer_flags(&self) -> &Self::SetReducerFlags {
+        &self.set_reducer_flags
+    }
+
+    fn is_active(&self) -> bool {
+        self.imp.is_active()
+    }
+
+    fn disconnect(&self) -> __sdk::Result<()> {
+        self.imp.disconnect()
+    }
+
+    type SubscriptionBuilder = __sdk::SubscriptionBuilder<RemoteModule>;
+
+    fn subscription_builder(&self) -> Self::SubscriptionBuilder {
+        __sdk::SubscriptionBuilder::new(&self.imp)
+    }
+
+    fn try_identity(&self) -> Option<__sdk::Identity> {
+        self.imp.try_identity()
+    }
+    fn address(&self) -> __sdk::Address {
+        self.imp.address()
+    }
+}
+
+impl __sdk::ErrorContext for ErrorContext {}
+
 impl __sdk::SpacetimeModule for RemoteModule {
 	
 	type DbConnection = DbConnection;
 	type EventContext = EventContext;
+	type ReducerEventContext = ReducerEventContext;
+	type SubscriptionEventContext = SubscriptionEventContext;
+	type ErrorContext = ErrorContext;
 	type Reducer = Reducer;
 	type DbView = RemoteTables;
 	type Reducers = RemoteReducers;
@@ -1732,15 +1944,12 @@ pub trait on_connect {
     fn on_connect(&self, ) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `on_connect`.
     ///
-    /// The [`super::EventContext`] passed to the `callback`
-    /// will always have [`__sdk::Event::Reducer`] as its `event`,
-    /// but it may or may not have terminated successfully and been committed.
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::EventContext`]
+    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
     /// to determine the reducer's status.
     ///
     /// The returned [`OnConnectCallbackId`] can be passed to [`Self::remove_on_on_connect`]
     /// to cancel the callback.
-    fn on_on_connect(&self, callback: impl FnMut(&super::EventContext, ) + Send + 'static) -> OnConnectCallbackId;
+    fn on_on_connect(&self, callback: impl FnMut(&super::ReducerEventContext, ) + Send + 'static) -> OnConnectCallbackId;
     /// Cancel a callback previously registered by [`Self::on_on_connect`],
     /// causing it not to run in the future.
     fn remove_on_on_connect(&self, callback: OnConnectCallbackId);
@@ -1752,18 +1961,18 @@ impl on_connect for super::RemoteReducers {
     }
     fn on_on_connect(
         &self,
-        mut callback: impl FnMut(&super::EventContext, ) + Send + 'static,
+        mut callback: impl FnMut(&super::ReducerEventContext, ) + Send + 'static,
     ) -> OnConnectCallbackId {
         OnConnectCallbackId(self.imp.on_reducer(
             "on_connect",
-            Box::new(move |ctx: &super::EventContext| {
-                let super::EventContext {
-                    event: __sdk::Event::Reducer(__sdk::ReducerEvent {
+            Box::new(move |ctx: &super::ReducerEventContext| {
+                let super::ReducerEventContext {
+                    event: __sdk::ReducerEvent {
                         reducer: super::Reducer::OnConnect {
                             
                         },
                         ..
-                    }),
+                    },
                     ..
                 } = ctx else { unreachable!() };
                 callback(ctx, )
@@ -2507,15 +2716,12 @@ pub trait query_private {
     fn query_private(&self, ) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `query_private`.
     ///
-    /// The [`super::EventContext`] passed to the `callback`
-    /// will always have [`__sdk::Event::Reducer`] as its `event`,
-    /// but it may or may not have terminated successfully and been committed.
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::EventContext`]
+    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
     /// to determine the reducer's status.
     ///
     /// The returned [`QueryPrivateCallbackId`] can be passed to [`Self::remove_on_query_private`]
     /// to cancel the callback.
-    fn on_query_private(&self, callback: impl FnMut(&super::EventContext, ) + Send + 'static) -> QueryPrivateCallbackId;
+    fn on_query_private(&self, callback: impl FnMut(&super::ReducerEventContext, ) + Send + 'static) -> QueryPrivateCallbackId;
     /// Cancel a callback previously registered by [`Self::on_query_private`],
     /// causing it not to run in the future.
     fn remove_on_query_private(&self, callback: QueryPrivateCallbackId);
@@ -2527,18 +2733,18 @@ impl query_private for super::RemoteReducers {
     }
     fn on_query_private(
         &self,
-        mut callback: impl FnMut(&super::EventContext, ) + Send + 'static,
+        mut callback: impl FnMut(&super::ReducerEventContext, ) + Send + 'static,
     ) -> QueryPrivateCallbackId {
         QueryPrivateCallbackId(self.imp.on_reducer(
             "query_private",
-            Box::new(move |ctx: &super::EventContext| {
-                let super::EventContext {
-                    event: __sdk::Event::Reducer(__sdk::ReducerEvent {
+            Box::new(move |ctx: &super::ReducerEventContext| {
+                let super::ReducerEventContext {
+                    event: __sdk::ReducerEvent {
                         reducer: super::Reducer::QueryPrivate {
                             
                         },
                         ..
-                    }),
+                    },
                     ..
                 } = ctx else { unreachable!() };
                 callback(ctx, )
@@ -2797,15 +3003,12 @@ pub trait repeating_test {
 ) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `repeating_test`.
     ///
-    /// The [`super::EventContext`] passed to the `callback`
-    /// will always have [`__sdk::Event::Reducer`] as its `event`,
-    /// but it may or may not have terminated successfully and been committed.
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::EventContext`]
+    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
     /// to determine the reducer's status.
     ///
     /// The returned [`RepeatingTestCallbackId`] can be passed to [`Self::remove_on_repeating_test`]
     /// to cancel the callback.
-    fn on_repeating_test(&self, callback: impl FnMut(&super::EventContext, &RepeatingTestArg, ) + Send + 'static) -> RepeatingTestCallbackId;
+    fn on_repeating_test(&self, callback: impl FnMut(&super::ReducerEventContext, &RepeatingTestArg, ) + Send + 'static) -> RepeatingTestCallbackId;
     /// Cancel a callback previously registered by [`Self::on_repeating_test`],
     /// causing it not to run in the future.
     fn remove_on_repeating_test(&self, callback: RepeatingTestCallbackId);
@@ -2818,18 +3021,18 @@ impl repeating_test for super::RemoteReducers {
     }
     fn on_repeating_test(
         &self,
-        mut callback: impl FnMut(&super::EventContext, &RepeatingTestArg, ) + Send + 'static,
+        mut callback: impl FnMut(&super::ReducerEventContext, &RepeatingTestArg, ) + Send + 'static,
     ) -> RepeatingTestCallbackId {
         RepeatingTestCallbackId(self.imp.on_reducer(
             "repeating_test",
-            Box::new(move |ctx: &super::EventContext| {
-                let super::EventContext {
-                    event: __sdk::Event::Reducer(__sdk::ReducerEvent {
+            Box::new(move |ctx: &super::ReducerEventContext| {
+                let super::ReducerEventContext {
+                    event: __sdk::ReducerEvent {
                         reducer: super::Reducer::RepeatingTest {
                             arg, 
                         },
                         ..
-                    }),
+                    },
                     ..
                 } = ctx else { unreachable!() };
                 callback(ctx, arg, )
@@ -3057,15 +3260,12 @@ pub trait test_btree_index_args {
     fn test_btree_index_args(&self, ) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `test_btree_index_args`.
     ///
-    /// The [`super::EventContext`] passed to the `callback`
-    /// will always have [`__sdk::Event::Reducer`] as its `event`,
-    /// but it may or may not have terminated successfully and been committed.
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::EventContext`]
+    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
     /// to determine the reducer's status.
     ///
     /// The returned [`TestBtreeIndexArgsCallbackId`] can be passed to [`Self::remove_on_test_btree_index_args`]
     /// to cancel the callback.
-    fn on_test_btree_index_args(&self, callback: impl FnMut(&super::EventContext, ) + Send + 'static) -> TestBtreeIndexArgsCallbackId;
+    fn on_test_btree_index_args(&self, callback: impl FnMut(&super::ReducerEventContext, ) + Send + 'static) -> TestBtreeIndexArgsCallbackId;
     /// Cancel a callback previously registered by [`Self::on_test_btree_index_args`],
     /// causing it not to run in the future.
     fn remove_on_test_btree_index_args(&self, callback: TestBtreeIndexArgsCallbackId);
@@ -3077,18 +3277,18 @@ impl test_btree_index_args for super::RemoteReducers {
     }
     fn on_test_btree_index_args(
         &self,
-        mut callback: impl FnMut(&super::EventContext, ) + Send + 'static,
+        mut callback: impl FnMut(&super::ReducerEventContext, ) + Send + 'static,
     ) -> TestBtreeIndexArgsCallbackId {
         TestBtreeIndexArgsCallbackId(self.imp.on_reducer(
             "test_btree_index_args",
-            Box::new(move |ctx: &super::EventContext| {
-                let super::EventContext {
-                    event: __sdk::Event::Reducer(__sdk::ReducerEvent {
+            Box::new(move |ctx: &super::ReducerEventContext| {
+                let super::ReducerEventContext {
+                    event: __sdk::ReducerEvent {
                         reducer: super::Reducer::TestBtreeIndexArgs {
                             
                         },
                         ..
-                    }),
+                    },
                     ..
                 } = ctx else { unreachable!() };
                 callback(ctx, )
@@ -3612,15 +3812,12 @@ arg_4: NamespaceTestF,
 ) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `test`.
     ///
-    /// The [`super::EventContext`] passed to the `callback`
-    /// will always have [`__sdk::Event::Reducer`] as its `event`,
-    /// but it may or may not have terminated successfully and been committed.
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::EventContext`]
+    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
     /// to determine the reducer's status.
     ///
     /// The returned [`TestCallbackId`] can be passed to [`Self::remove_on_test`]
     /// to cancel the callback.
-    fn on_test(&self, callback: impl FnMut(&super::EventContext, &TestA, &TestB, &NamespaceTestC, &NamespaceTestF, ) + Send + 'static) -> TestCallbackId;
+    fn on_test(&self, callback: impl FnMut(&super::ReducerEventContext, &TestA, &TestB, &NamespaceTestC, &NamespaceTestF, ) + Send + 'static) -> TestCallbackId;
     /// Cancel a callback previously registered by [`Self::on_test`],
     /// causing it not to run in the future.
     fn remove_on_test(&self, callback: TestCallbackId);
@@ -3636,18 +3833,18 @@ arg_4: NamespaceTestF,
     }
     fn on_test(
         &self,
-        mut callback: impl FnMut(&super::EventContext, &TestA, &TestB, &NamespaceTestC, &NamespaceTestF, ) + Send + 'static,
+        mut callback: impl FnMut(&super::ReducerEventContext, &TestA, &TestB, &NamespaceTestC, &NamespaceTestF, ) + Send + 'static,
     ) -> TestCallbackId {
         TestCallbackId(self.imp.on_reducer(
             "test",
-            Box::new(move |ctx: &super::EventContext| {
-                let super::EventContext {
-                    event: __sdk::Event::Reducer(__sdk::ReducerEvent {
+            Box::new(move |ctx: &super::ReducerEventContext| {
+                let super::ReducerEventContext {
+                    event: __sdk::ReducerEvent {
                         reducer: super::Reducer::Test {
                             arg, arg_2, arg_3, arg_4, 
                         },
                         ..
-                    }),
+                    },
                     ..
                 } = ctx else { unreachable!() };
                 callback(ctx, arg, arg_2, arg_3, arg_4, )

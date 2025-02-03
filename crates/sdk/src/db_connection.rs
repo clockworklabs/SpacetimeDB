@@ -261,11 +261,11 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
 
         // Grap the `on_disconnect` callback and invoke it.
         if let Some(disconnect_callback) = inner.on_disconnect.take() {
-            disconnect_callback(&ctx);
+            disconnect_callback(ctx);
         }
 
         // Call the `on_disconnect` method for all subscriptions.
-        inner.subscriptions.on_disconnect(&ctx);
+        inner.subscriptions.on_disconnect(ctx);
     }
 
     fn make_event_ctx<E, Ctx: AbstractEventContext<Module = M, Event = E>>(&self, event: E) -> Ctx {
