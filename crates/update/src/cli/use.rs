@@ -8,6 +8,6 @@ pub(super) struct Use {
 
 impl Use {
     pub(super) fn exec(self, paths: &SpacetimePaths) -> anyhow::Result<()> {
-        paths.cli_bin_dir.set_current_version(&self.version)
+        paths.cli_bin_dir.set_current_version(&self.version.to_string())
     }
 }

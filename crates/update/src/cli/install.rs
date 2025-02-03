@@ -41,7 +41,7 @@ impl Install {
             let client = super::reqwest_client()?;
             let version = download_and_install(&client, Some(self.version), self.artifact_name, paths).await?;
             if self.r#use {
-                paths.cli_bin_dir.set_current_version(&version)?;
+                paths.cli_bin_dir.set_current_version(&version.to_string())?;
             }
             Ok(())
         })?
@@ -109,7 +109,7 @@ pub(super) async fn download_and_install(
     pb.set_style(pb_style);
     pb.set_message("unpacking...");
 
-    let version_dir = paths.cli_bin_dir.version_dir(&release_version);
+    let version_dir = paths.cli_bin_dir.version_dir(&release_version.to_string());
     match artifact_type {
         ArtifactType::TarGz => {
             let tgz = archive.aggregate().reader();
@@ -144,11 +144,14 @@ impl ArtifactType {
     }
 }
 
-pub(super) async fn available_releases(client: &reqwest::Client) -> anyhow::Result<Vec<semver::Version>> {
+pub(super) async fn available_releases(client: &reqwest::Client) -> anyhow::Result<Vec<String>> {
     let url = "https://api.github.com/repos/clockworklabs/SpacetimeDB/releases";
     let releases: Vec<Release> = client.get(url).send().await?.json().await?;
 
-    releases.into_iter().map(|release| release.version()).collect()
+    releases
+        .into_iter()
+        .map(|release| Ok(release.version()?.to_string()))
+        .collect()
 }
 
 #[derive(Deserialize)]

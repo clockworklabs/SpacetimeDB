@@ -19,7 +19,13 @@ fn main() -> anyhow::Result<ExitCode> {
     if cmd == "spacetimedb-update" {
         spacetimedb_update_main()
     } else if cmd == "spacetime" {
-        proxy::run_cli(None, Some(argv0.as_os_str()), args.collect())
+        let args = args.collect::<Vec<_>>();
+        if args.first().is_some_and(|s| s == "version") {
+            // if the first arg is unambiguously `version`, go straight to `spacetime version`
+            spacetimedb_update_main()
+        } else {
+            proxy::run_cli(None, Some(argv0.as_os_str()), args)
+        }
     } else {
         anyhow::bail!(
             "unknown command name for spacetimedb-update multicall binary: {}",

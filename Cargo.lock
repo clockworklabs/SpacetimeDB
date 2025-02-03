@@ -5263,7 +5263,6 @@ dependencies = [
  "fs2",
  "itoa",
  "junction",
- "semver",
  "serde",
  "tempfile",
  "thiserror 1.0.69",

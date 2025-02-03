@@ -4,9 +4,11 @@ use std::ffi::OsString;
 use std::future::Future;
 use std::process::ExitCode;
 
+use anyhow::Context;
 use spacetimedb_paths::{RootDir, SpacetimePaths};
 
 mod install;
+mod link;
 mod list;
 mod uninstall;
 mod upgrade;
@@ -36,6 +38,26 @@ impl Args {
                 crate::proxy::run_cli(Some(&paths), None, cli_args)
             }
             Subcommand::Version(version) => version.exec(&paths).map(|()| ExitCode::SUCCESS),
+            Subcommand::SelfInstall { install_latest } => {
+                let current_exe = std::env::current_exe().context("could not get current exe")?;
+                let suppress_eexists = |r: std::io::Result<()>| {
+                    r.or_else(|e| (e.kind() == std::io::ErrorKind::AlreadyExists).then_some(()).ok_or(e))
+                };
+                suppress_eexists(paths.cli_bin_dir.create()).context("could not create bin dir")?;
+                suppress_eexists(paths.cli_config_dir.create()).context("could not create config dir")?;
+                suppress_eexists(paths.data_dir.create()).context("could not create data dir")?;
+                paths
+                    .cli_bin_file
+                    .create_parent()
+                    .and_then(|()| std::fs::copy(&current_exe, &paths.cli_bin_file))
+                    .context("could not install binary")?;
+
+                if install_latest {
+                    upgrade::Upgrade {}.exec(&paths)?;
+                }
+
+                Ok(ExitCode::SUCCESS)
+            }
         }
     }
 }
@@ -47,6 +69,11 @@ enum Subcommand {
     Cli {
         #[clap(allow_hyphen_values = true)]
         args: Vec<OsString>,
+    },
+    SelfInstall {
+        /// Download and install the latest CLI version after self-installing.
+        #[arg(long)]
+        install_latest: bool,
     },
 }
 
@@ -66,6 +93,7 @@ impl Version {
             Upgrade(subcmd) => subcmd.exec(paths),
             Install(subcmd) => subcmd.exec(paths),
             Uninstall(subcmd) => subcmd.exec(paths),
+            Link(subcmd) => subcmd.exec(paths),
         }
     }
 }
@@ -77,6 +105,8 @@ enum VersionSubcommand {
     Upgrade(upgrade::Upgrade),
     Install(install::Install),
     Uninstall(uninstall::Uninstall),
+    #[command(hide = true)]
+    Link(link::Link),
 }
 
 fn reqwest_client() -> anyhow::Result<reqwest::Client> {
