@@ -28,6 +28,7 @@
 //!     Mark hash join as unique
 use anyhow::{bail, Result};
 use spacetimedb_primitives::{ColId, ColSet, IndexId};
+use spacetimedb_schema::def::IndexAlgorithm;
 use spacetimedb_schema::schema::IndexSchema;
 use spacetimedb_sql_parser::ast::{BinOp, LogOp};
 
@@ -326,6 +327,13 @@ impl RewriteRule for PushConstAnd {
     }
 }
 
+/// Find the column index for a given field.
+///
+/// *NOTE*: This take in account the possibility of permutations.
+fn find_col_index(index_algorithm: &IndexAlgorithm, pos: usize) -> Option<ColId> {
+    index_algorithm.columns().iter().find(|col_id| col_id.idx() == pos)
+}
+
 /// Match single field equality predicates such as:
 ///
 /// ```sql
@@ -358,12 +366,12 @@ impl RewriteRule for IxScanEq {
                              index_algorithm,
                              ..
                          }| {
-                            index_algorithm
-                                .columns()
-                                // TODO: Support prefix scans
-                                .as_singleton()
-                                .filter(|col_id| col_id.idx() == *pos)
-                                .map(|col_id| (*index_id, col_id))
+                            // TODO: Support prefix scans
+                            if index_algorithm.columns().len() == 1 {
+                                Some((*index_id, find_col_index(index_algorithm, *pos)?))
+                            } else {
+                                None
+                            }
                         },
                     );
                 }
@@ -510,22 +518,8 @@ impl RewriteRule for IxScanEq2Col {
                                             Some(IxScanInfo {
                                                 index_id: *index_id,
                                                 cols: vec![
-                                                    (
-                                                        i,
-                                                        index_algorithm
-                                                            .columns()
-                                                            .iter()
-                                                            .next()
-                                                            .filter(|col_id| col_id.idx() == u.field_pos)?,
-                                                    ),
-                                                    (
-                                                        j,
-                                                        index_algorithm
-                                                            .columns()
-                                                            .iter()
-                                                            .nth(1)
-                                                            .filter(|col_id| col_id.idx() == v.field_pos)?,
-                                                    ),
+                                                    (i, find_col_index(index_algorithm, u.field_pos)?),
+                                                    (j, find_col_index(index_algorithm, v.field_pos)?),
                                                 ],
                                             })
                                         },
@@ -674,30 +668,9 @@ impl RewriteRule for IxScanEq3Col {
                                                 Some(IxScanInfo {
                                                     index_id: *index_id,
                                                     cols: vec![
-                                                        (
-                                                            i,
-                                                            index_algorithm
-                                                                .columns()
-                                                                .iter()
-                                                                .next()
-                                                                .filter(|col_id| col_id.idx() == u.field_pos)?,
-                                                        ),
-                                                        (
-                                                            j,
-                                                            index_algorithm
-                                                                .columns()
-                                                                .iter()
-                                                                .nth(1)
-                                                                .filter(|col_id| col_id.idx() == v.field_pos)?,
-                                                        ),
-                                                        (
-                                                            k,
-                                                            index_algorithm
-                                                                .columns()
-                                                                .iter()
-                                                                .nth(2)
-                                                                .filter(|col_id| col_id.idx() == w.field_pos)?,
-                                                        ),
+                                                        (i, find_col_index(index_algorithm, u.field_pos)?),
+                                                        (j, find_col_index(index_algorithm, v.field_pos)?),
+                                                        (k, find_col_index(index_algorithm, w.field_pos)?),
                                                     ],
                                                 })
                                             },

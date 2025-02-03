@@ -1622,6 +1622,28 @@ mod tests {
             proj => panic!("unexpected plan: {:#?}", proj),
         };
 
+        // Test permutations of the same query
+        let sql = "select * from t where z = 5 and y = 4 and x = 3";
+        let lp = parse_and_type_sub(sql, &db).unwrap();
+        let pp = compile_select(lp).optimize();
+
+        match pp {
+            ProjectPlan::None(PhysicalPlan::IxScan(
+                IxScan {
+                    schema, prefix, arg, ..
+                },
+                _,
+            )) => {
+                assert_eq!(schema.table_id, t_id);
+                assert_eq!(arg, Sarg::Eq(ColId(1), AlgebraicValue::U8(3)));
+                assert_eq!(
+                    prefix,
+                    vec![(ColId(3), AlgebraicValue::U8(5)), (ColId(2), AlgebraicValue::U8(4))]
+                );
+            }
+            proj => panic!("unexpected plan: {:#?}", proj),
+        };
+
         let sql = "select * from t where x = 3 and y = 4";
         let lp = parse_and_type_sub(sql, &db).unwrap();
         let pp = compile_select(lp).optimize().unwrap();
@@ -1688,6 +1710,44 @@ mod tests {
                 assert!(matches!(*input, PhysicalPlan::TableScan(..)));
                 assert!(matches!(*field, PhysicalExpr::Field(TupleField { field_pos: 2, .. })));
                 assert!(matches!(*value, PhysicalExpr::Value(AlgebraicValue::U8(1))));
+            }
+            proj => panic!("unexpected plan: {:#?}", proj),
+        };
+
+        // Select index on [y, z]
+        let sql = "select * from t where y = 1 and z = 2";
+        let lp = parse_and_type_sub(sql, &db).unwrap();
+        let pp = compile_select(lp).optimize();
+
+        match pp {
+            ProjectPlan::None(PhysicalPlan::IxScan(
+                IxScan {
+                    schema, prefix, arg, ..
+                },
+                _,
+            )) => {
+                assert_eq!(schema.table_id, t_id);
+                assert_eq!(arg, Sarg::Eq(ColId(3), AlgebraicValue::U8(2)));
+                assert_eq!(prefix, vec![(ColId(2), AlgebraicValue::U8(1))]);
+            }
+            proj => panic!("unexpected plan: {:#?}", proj),
+        };
+
+        // Check permutations of the same query
+        let sql = "select * from t where z = 2 and y = 1";
+        let lp = parse_and_type_sub(sql, &db).unwrap();
+        let pp = compile_select(lp).optimize();
+
+        match pp {
+            ProjectPlan::None(PhysicalPlan::IxScan(
+                IxScan {
+                    schema, prefix, arg, ..
+                },
+                _,
+            )) => {
+                assert_eq!(schema.table_id, t_id);
+                assert_eq!(arg, Sarg::Eq(ColId(2), AlgebraicValue::U8(1)));
+                assert_eq!(prefix, vec![(ColId(3), AlgebraicValue::U8(2))]);
             }
             proj => panic!("unexpected plan: {:#?}", proj),
         };
