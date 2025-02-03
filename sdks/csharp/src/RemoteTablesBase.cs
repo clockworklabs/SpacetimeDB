@@ -9,7 +9,7 @@ namespace SpacetimeDB
 
         protected void AddTable(IRemoteTableHandle table)
         {
-            tables.Add(table.Name, table);
+            tables.Add(table.RemoteTableName, table);
         }
 
         internal IRemoteTableHandle? GetTable(string name)

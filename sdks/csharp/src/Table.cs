@@ -20,7 +20,7 @@ namespace SpacetimeDB
     public interface IRemoteTableHandle
     {
         internal object? GetPrimaryKey(IStructuralReadWrite row);
-        internal string Name { get; }
+        internal string RemoteTableName { get; }
 
         internal Type ClientTableType { get; }
         internal IEnumerable<KeyValuePair<byte[], IStructuralReadWrite>> IterEntries();
@@ -93,8 +93,8 @@ namespace SpacetimeDB
                 cache.TryGetValue(value, out var rows) ? rows : Enumerable.Empty<Row>();
         }
 
-        protected abstract string Name { get; }
-        string IRemoteTableHandle.Name => Name;
+        protected abstract string RemoteTableName { get; }
+        string IRemoteTableHandle.RemoteTableName => RemoteTableName;
 
         public RemoteTableHandle(IDbConnection conn) : base(conn) { }
 
@@ -172,7 +172,7 @@ namespace SpacetimeDB
         public IEnumerable<Row> Iter() => Entries.Values;
 
         public Task<Row[]> RemoteQuery(string query) =>
-            conn.RemoteQuery<Row>($"SELECT {Name}.* FROM {Name} {query}");
+            conn.RemoteQuery<Row>($"SELECT {RemoteTableName}.* FROM {RemoteTableName} {query}");
 
         void IRemoteTableHandle.InvokeInsert(IEventContext context, IStructuralReadWrite row) =>
             OnInsert?.Invoke((EventContext)context, (Row)row);
