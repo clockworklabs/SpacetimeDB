@@ -41,6 +41,7 @@ bytemuck = { workspace = true, features = ["derive"] }
 decorum.workspace = true
 derive_more.workspace = true
 enum-as-inner.workspace = true
+foldhash.workspace = true
 itertools.workspace = true
 smallvec.workspace = true
 thiserror.workspace = true

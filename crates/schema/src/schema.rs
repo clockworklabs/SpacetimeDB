@@ -7,6 +7,7 @@
 // This doesn't affect the ABI so can wait until 1.0.
 
 use itertools::Itertools;
+use smallvec::SmallVec;
 use spacetimedb_lib::db::auth::{StAccess, StTableType};
 use spacetimedb_lib::db::error::{DefType, SchemaError};
 use spacetimedb_lib::db::raw_def::v9::RawSql;
@@ -212,6 +213,11 @@ impl TableSchema {
     /// Removes the given `sequence_id`
     pub fn remove_sequence(&mut self, sequence_id: SequenceId) {
         self.sequences.retain(|x| x.sequence_id != sequence_id)
+    }
+
+    /// Returns the list of sequence column positions and a corresponding list of sequence ids.
+    pub fn get_sequence_cols_and_ids(&self) -> (ColList, SeqIdList) {
+        self.sequences.iter().map(|seq| (seq.col_pos, seq.sequence_id)).unzip()
     }
 
     /// Add OR replace the [IndexSchema]
@@ -807,6 +813,8 @@ impl From<ColumnSchemaRef<'_>> for ProductTypeElement {
         ProductTypeElement::new(value.column.col_type.clone(), Some(value.column.col_name.clone()))
     }
 }
+
+pub type SeqIdList = SmallVec<[SequenceId; 4]>;
 
 /// Represents a schema definition for a database sequence.
 #[derive(Debug, Clone, PartialEq, Eq)]

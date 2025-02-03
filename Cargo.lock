@@ -5305,6 +5305,7 @@ dependencies = [
  "decorum",
  "derive_more",
  "enum-as-inner",
+ "foldhash",
  "itertools 0.12.1",
  "proptest",
  "proptest-derive",

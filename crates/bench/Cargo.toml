@@ -25,6 +25,10 @@ harness = false
 name = "delete_table"
 harness = false
 
+[[bench]]
+name = "index"
+harness = false
+
 [[bin]]
 name = "summarize"
 
@@ -67,7 +71,7 @@ tokio.workspace = true
 tracing-subscriber.workspace = true
 walkdir.workspace = true
 itertools.workspace = true
-foldhash = "0.1.4"
+foldhash.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 # only try to build these on linux

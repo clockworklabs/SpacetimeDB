@@ -1,30 +1,40 @@
 use crate::MemoryUsage;
 use core::ops::RangeBounds;
-use std::collections::btree_map::{BTreeMap, Entry, Range};
+use core::option::IntoIter;
+use core::{hash::Hash, ops::Bound};
+use foldhash::fast::RandomState;
+use spacetimedb_data_structures::map::{Entry, HashMap};
 
 /// A "unique map" that relates a `K` to a `V`.
 ///
-/// (This is just a `BTreeMap<K, V>`) with a slightly modified interface.
-#[derive(Debug, PartialEq, Eq, Clone)]
+/// (This is just a `HashMap<K, V>`) with a slightly modified interface.
+#[derive(Debug, Clone)]
 pub struct UniqueMap<K, V> {
-    /// The map is backed by a `BTreeMap` for relating a key to a value.
-    map: BTreeMap<K, V>,
+    /// The map is backed by a `HashMap` for relating a key to a value.
+    map: HashMap<K, V, RandomState>,
 }
 
 impl<K, V> Default for UniqueMap<K, V> {
     fn default() -> Self {
-        Self { map: BTreeMap::new() }
+        Self { map: HashMap::new() }
     }
 }
 
-impl<K: MemoryUsage, V: MemoryUsage> MemoryUsage for UniqueMap<K, V> {
+impl<K: MemoryUsage + Eq + Hash, V: MemoryUsage> MemoryUsage for UniqueMap<K, V> {
     fn heap_usage(&self) -> usize {
         let Self { map } = self;
         map.heap_usage()
     }
 }
 
-impl<K: Ord, V: Ord> UniqueMap<K, V> {
+impl<K: Eq + Hash, V: PartialEq> Eq for UniqueMap<K, V> {}
+impl<K: Eq + Hash, V: PartialEq> PartialEq for UniqueMap<K, V> {
+    fn eq(&self, other: &Self) -> bool {
+        self.map.eq(&other.map)
+    }
+}
+
+impl<K: Eq + Hash, V> UniqueMap<K, V> {
     /// Inserts the relation `key -> val` to this map.
     ///
     /// If `key` was already present in the map, does not add an association with `val`.
@@ -48,10 +58,12 @@ impl<K: Ord, V: Ord> UniqueMap<K, V> {
 
     /// Returns an iterator over the map that yields all the `V`s
     /// of the `K`s that fall within the specified `range`.
-    pub fn values_in_range(&self, range: &impl RangeBounds<K>) -> UniqueMapRangeIter<'_, K, V> {
-        UniqueMapRangeIter {
-            iter: self.map.range((range.start_bound(), range.end_bound())),
-        }
+    pub fn values_in_range(&self, range: &impl RangeBounds<K>) -> UniqueMapIter<'_, V> {
+        let Bound::Included(key) = range.start_bound() else {
+            unreachable!();
+        };
+        let iter = self.map.get(key).into_iter();
+        UniqueMapIter { iter }
     }
 
     /// Returns the number of unique keys in the map.
@@ -77,16 +89,16 @@ impl<K: Ord, V: Ord> UniqueMap<K, V> {
     }
 }
 
-/// An iterator over values in a [`UniqueMap`] where the keys are in a certain range.
-pub struct UniqueMapRangeIter<'a, K, V> {
-    /// The iterator seeking for matching keys in the range.
-    iter: Range<'a, K, V>,
+/// An iterator over value in [`UniqueMap`] where the key matches exactly.
+pub struct UniqueMapIter<'a, V> {
+    /// The iterator seeking for the matching key.
+    iter: IntoIter<&'a V>,
 }
 
-impl<'a, K, V> Iterator for UniqueMapRangeIter<'a, K, V> {
+impl<'a, V> Iterator for UniqueMapIter<'a, V> {
     type Item = &'a V;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next().map(|(_, v)| v)
+        self.iter.next()
     }
 }

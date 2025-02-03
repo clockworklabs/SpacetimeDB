@@ -32,9 +32,8 @@ use core::{
 };
 use derive_more::{Add, AddAssign, From, Sub, SubAssign};
 use enum_as_inner::EnumAsInner;
-use smallvec::SmallVec;
 use spacetimedb_lib::{bsatn::DecodeError, de::DeserializeOwned};
-use spacetimedb_primitives::{ColId, ColList, IndexId, SequenceId};
+use spacetimedb_primitives::{ColId, ColList, IndexId};
 use spacetimedb_sats::{
     algebraic_value::ser::ValueSerializer,
     bsatn::{self, ser::BsatnError, ToBsatn},
@@ -44,7 +43,10 @@ use spacetimedb_sats::{
     ser::{Serialize, Serializer},
     u256, AlgebraicValue, ProductType, ProductValue,
 };
-use spacetimedb_schema::{schema::TableSchema, type_for_generate::PrimitiveType};
+use spacetimedb_schema::{
+    schema::{SeqIdList, TableSchema},
+    type_for_generate::PrimitiveType,
+};
 use std::{
     collections::{btree_map, BTreeMap},
     sync::Arc,
@@ -56,9 +58,6 @@ use thiserror::Error;
 pub struct BlobNumBytes(usize);
 
 impl MemoryUsage for BlobNumBytes {}
-
-pub type SeqIdList = SmallVec<[SequenceId; 4]>;
-static_assert_size!(SeqIdList, 24);
 
 /// A database table containing the row schema, the rows, and indices.
 ///
@@ -96,6 +95,8 @@ pub struct Table {
     ///
     /// This is an optimization to avoid checking the schema in e.g., `InstanceEnv::{insert, update}`.
     is_scheduler: bool,
+    /// Caches the list of columns with sequences and their corresponding [`SequenceId`]s.
+    pub sequences: (ColList, SeqIdList),
 }
 
 /// The part of a `Table` concerned only with storing rows.
@@ -158,7 +159,7 @@ impl TableInner {
     }
 }
 
-static_assert_size!(Table, 264);
+static_assert_size!(Table, 296);
 
 impl MemoryUsage for Table {
     fn heap_usage(&self) -> usize {
@@ -172,6 +173,7 @@ impl MemoryUsage for Table {
             row_count,
             blob_store_bytes,
             is_scheduler,
+            sequences,
         } = self;
         inner.heap_usage()
             + pointer_map.heap_usage()
@@ -180,6 +182,7 @@ impl MemoryUsage for Table {
             + row_count.heap_usage()
             + blob_store_bytes.heap_usage()
             + is_scheduler.heap_usage()
+            + sequences.heap_usage()
     }
 }
 
@@ -412,26 +415,25 @@ impl Table {
         blob_store: &'a dyn BlobStore,
         row: RowPointer,
     ) -> (ColList, SeqIdList) {
-        let sequences = &*self.get_schema().sequences;
-        let row_ty = self.row_layout().product();
-
         // SAFETY: Caller promised that `self.is_row_present(row)` holds.
         let row_ref = unsafe { self.get_row_ref_unchecked(blob_store, row) };
+        let row_ty = self.row_layout().product();
 
-        sequences
+        self.sequences
+            .0
             .iter()
+            .zip(self.sequences.1.iter().copied())
             // Find all the sequences that are triggered by this row.
-            .filter(|seq| {
-                // SAFETY: `seq.col_pos` is in-bounds of `row_ty.elements`
-                // as `row_ty` was derived from the same schema as `seq` is part of.
-                let elem_ty = unsafe { &row_ty.elements.get_unchecked(seq.col_pos.idx()) };
+            .filter(|(col_pos, _)| {
+                // SAFETY: `col_pos` is in-bounds of `row_ty.elements`
+                // as `row_ty` was derived from the same schema as `self.sequences` was made from.
+                let elem_ty = unsafe { &row_ty.elements.get_unchecked(col_pos.idx()) };
                 // SAFETY:
                 // - `elem_ty` appears as a column in the row type.
                 // - `AlgebraicValue` is compatible with all types.
                 let val = unsafe { AlgebraicValue::unchecked_read_column(row_ref, elem_ty) };
                 val.is_numeric_zero()
             })
-            .map(|seq| (seq.col_pos, seq.sequence_id))
             .unzip()
     }
 
@@ -1674,6 +1676,7 @@ impl Table {
                 pages: Pages::default(),
             },
             is_scheduler: schema.schedule.is_some(),
+            sequences: schema.get_sequence_cols_and_ids(),
             schema,
             indexes: BTreeMap::new(),
             pointer_map,

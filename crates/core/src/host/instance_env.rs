@@ -419,6 +419,7 @@ impl TxSlot {
         (tx, res)
     }
 
+    #[inline(never)]
     pub fn get(&self) -> Result<impl DerefMut<Target = MutTxId> + '_, GetTxError> {
         MutexGuard::try_map(self.inner.lock(), |map| map.as_mut()).map_err(|_| GetTxError)
     }

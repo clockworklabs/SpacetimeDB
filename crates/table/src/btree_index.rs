@@ -30,8 +30,11 @@ use spacetimedb_sats::{
     algebraic_value::Packed, i256, product_value::InvalidFieldError, u256, AlgebraicType, AlgebraicValue, ProductType,
 };
 
+mod densevec_uniquemap;
+mod foldhash_uniquemap;
 mod multimap;
-mod uniquemap;
+mod nestedvec_uniquemap;
+pub mod uniquemap;
 
 type Index<K> = multimap::MultiMap<K, RowPointer>;
 type IndexIter<'a, K> = multimap::MultiMapRangeIter<'a, K, RowPointer>;
@@ -65,7 +68,7 @@ enum TypedIndexRangeIter<'a> {
     UniqueI8(UniqueIndexIter<'a, i8>),
     UniqueU16(UniqueIndexIter<'a, u16>),
     UniqueI16(UniqueIndexIter<'a, i16>),
-    UniqueU32(UniqueIndexIter<'a, u32>),
+    UniqueU32(densevec_uniquemap::UniqueMapIter<'a, RowPointer>),
     UniqueI32(UniqueIndexIter<'a, i32>),
     UniqueU64(UniqueIndexIter<'a, u64>),
     UniqueI64(UniqueIndexIter<'a, i64>),
@@ -159,7 +162,7 @@ enum TypedIndex {
     UniqueI8(UniqueIndex<i8>),
     UniqueU16(UniqueIndex<u16>),
     UniqueI16(UniqueIndex<i16>),
-    UniqueU32(UniqueIndex<u32>),
+    UniqueU32(densevec_uniquemap::UniqueMap),
     UniqueI32(UniqueIndex<i32>),
     UniqueU64(UniqueIndex<u64>),
     UniqueI64(UniqueIndex<i64>),
@@ -394,7 +397,10 @@ impl TypedIndex {
             Self::UniqueI8(idx) => um_insert_at_type(idx, cols, row_ref),
             Self::UniqueU16(idx) => um_insert_at_type(idx, cols, row_ref),
             Self::UniqueI16(idx) => um_insert_at_type(idx, cols, row_ref),
-            Self::UniqueU32(idx) => um_insert_at_type(idx, cols, row_ref),
+            Self::UniqueU32(idx) => {
+                let key = project_to_singleton_key(cols, row_ref);
+                idx.insert(key, row_ref.pointer()).map_err(|ptr| *ptr)
+            }
             Self::UniqueI32(idx) => um_insert_at_type(idx, cols, row_ref),
             Self::UniqueU64(idx) => um_insert_at_type(idx, cols, row_ref),
             Self::UniqueI64(idx) => um_insert_at_type(idx, cols, row_ref),
@@ -463,7 +469,11 @@ impl TypedIndex {
             Self::UniqueI8(this) => um_delete_at_type(this, cols, row_ref),
             Self::UniqueU16(this) => um_delete_at_type(this, cols, row_ref),
             Self::UniqueI16(this) => um_delete_at_type(this, cols, row_ref),
-            Self::UniqueU32(this) => um_delete_at_type(this, cols, row_ref),
+            Self::UniqueU32(this) => {
+                let col_pos = cols.as_singleton().unwrap();
+                let key = row_ref.read_col(col_pos).map_err(|_| col_pos)?;
+                Ok(this.delete(&key))
+            }
             Self::UniqueI32(this) => um_delete_at_type(this, cols, row_ref),
             Self::UniqueU64(this) => um_delete_at_type(this, cols, row_ref),
             Self::UniqueI64(this) => um_delete_at_type(this, cols, row_ref),
@@ -524,7 +534,12 @@ impl TypedIndex {
             Self::UniqueI8(this) => UniqueI8(um_iter_at_type(this, range, AlgebraicValue::as_i8)),
             Self::UniqueU16(this) => UniqueU16(um_iter_at_type(this, range, AlgebraicValue::as_u16)),
             Self::UniqueI16(this) => UniqueI16(um_iter_at_type(this, range, AlgebraicValue::as_i16)),
-            Self::UniqueU32(this) => UniqueU32(um_iter_at_type(this, range, AlgebraicValue::as_u32)),
+            Self::UniqueU32(this) => UniqueU32({
+                let av_as_t = |v| AlgebraicValue::as_u32(v).expect("bound does not conform to key type of index");
+                let start = range.start_bound().map(av_as_t);
+                let end = range.end_bound().map(av_as_t);
+                this.values_in_range(&(start, end))
+            }),
             Self::UniqueI32(this) => UniqueI32(um_iter_at_type(this, range, AlgebraicValue::as_i32)),
             Self::UniqueU64(this) => UniqueU64(um_iter_at_type(this, range, AlgebraicValue::as_u64)),
             Self::UniqueI64(this) => UniqueI64(um_iter_at_type(this, range, AlgebraicValue::as_i64)),

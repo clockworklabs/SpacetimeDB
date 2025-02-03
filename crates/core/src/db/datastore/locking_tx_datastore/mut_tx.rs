@@ -53,7 +53,7 @@ use spacetimedb_schema::{
 use spacetimedb_table::{
     blob_store::{BlobStore, HashMapBlobStore},
     indexes::{RowPointer, SquashedOffset},
-    table::{DuplicateError, IndexScanIter, InsertError, RowRef, Table, TableAndIndex},
+    table::{BlobNumBytes, DuplicateError, IndexScanIter, InsertError, RowRef, Table, TableAndIndex},
 };
 use std::{
     sync::Arc,
@@ -827,9 +827,11 @@ impl MutTxId {
         sequence_row.sequence_id = seq_id;
 
         let schema: SequenceSchema = sequence_row.into();
-        self.get_insert_table_mut(schema.table_id)?
-            // This won't clone-write when creating a table but likely to otherwise.
-            .with_mut_schema(|s| s.update_sequence(schema.clone()));
+        let table = self.get_insert_table_mut(schema.table_id)?;
+        // This won't clone-write when creating a table but likely to otherwise.
+        // TODO(centril): move this to a method on `Table`.
+        table.with_mut_schema(|s| s.update_sequence(schema.clone()));
+        table.sequences = table.schema.get_sequence_cols_and_ids();
         self.sequence_state_lock.insert(seq_id, Sequence::new(schema));
 
         log::trace!("SEQUENCE CREATED: id = {}", seq_id);
@@ -854,7 +856,9 @@ impl MutTxId {
         if let Some((insert_table, _)) = self.tx_state.get_table_and_blob_store(table_id) {
             // This likely will do a clone-write as over time?
             // The schema might have found other referents.
+            // TODO(centril): move this to a method on `Table`.
             insert_table.with_mut_schema(|s| s.remove_sequence(sequence_id));
+            insert_table.sequences = insert_table.schema.get_sequence_cols_and_ids();
         }
         Ok(())
     }
@@ -1446,6 +1450,67 @@ impl MutTxId {
         }
     }
 
+    #[inline(never)]
+    fn foobar(
+        &mut self,
+        table_id: TableId,
+        row: &[u8],
+    ) -> Result<(
+        (&mut Table, &mut dyn BlobStore, &mut DeleteTable, &CommittedState),
+        (RowPointer, BlobNumBytes, ColList),
+    )> {
+        // 1. Insert the physical row into the tx insert table.
+        //----------------------------------------------------------------------
+        // As we are provided the `row` encoded in BSATN,
+        // and since we don't have a convenient way to BSATN to a set of columns,
+        // we cannot really do an in-place update in the row-was-in-tx-state case.
+        // So we will begin instead by inserting the row physically to the tx state and project that.
+        let commit_table = self.committed_state_write_lock.get_table(table_id);
+        let (tx_table, tx_blob_store, ..) = self
+            .tx_state
+            .get_table_and_blob_store_or_maybe_create_from(table_id, commit_table)
+            .ok_or_else(|| TableError::IdNotFoundState(table_id))?;
+        let (tx_row_ref, blob_bytes) = tx_table.insert_physically_bsatn(tx_blob_store, row)?;
+
+        // 2. Detect, generate, write sequence values in the new row.
+        //----------------------------------------------------------------------
+        // Unlike the `fn insert(...)` case, this is not conditional on a `GENERATE` flag.
+        // Collect all the columns with sequences that need generation.
+        let tx_row_ptr = tx_row_ref.pointer();
+        let (cols_to_gen, (tx_table, tx_blob_store, del_table)) = if tx_table.sequences.0.is_empty() {
+            // SAFETY: By virtue of `get_table_and_blob_store_or_maybe_create_from` above succeeding,
+            // we can assume we have an insert and delete table.
+            let stuff = unsafe { self.tx_state.assume_present_get_mut_table(table_id) };
+            (ColList::empty(), stuff)
+        } else {
+            let (cols_to_gen, seqs_to_use) = unsafe { tx_table.sequence_triggers_for(tx_blob_store, tx_row_ptr) };
+            // Generate a value for every column in the row that needs it.
+            let mut seq_vals: SmallVec<[i128; 1]> = <_>::default();
+            for sequence_id in seqs_to_use {
+                seq_vals.push(self.get_next_sequence_value(sequence_id)?);
+            }
+            // SAFETY: By virtue of `get_table_and_blob_store_or_maybe_create_from` above succeeding,
+            // we can assume we have an insert and delete table.
+            let (tx_table, tx_blob_store, del_table) = unsafe { self.tx_state.assume_present_get_mut_table(table_id) };
+
+            // Write the generated values to the physical row at `tx_row_ptr`.
+            // We assume here that column with a sequence is of a sequence-compatible type.
+            for (col_id, seq_val) in cols_to_gen.iter().zip(seq_vals) {
+                // SAFETY:
+                // - `self.is_row_present(row)` holds as we haven't deleted the row.
+                // - `col_id` is a valid column, and has a sequence, so it must have a primitive type.
+                unsafe { tx_table.write_gen_val_to_col(col_id, tx_row_ptr, seq_val) };
+            }
+
+            (cols_to_gen, (tx_table, tx_blob_store, del_table))
+        };
+
+        Ok((
+            (tx_table, tx_blob_store, del_table, &self.committed_state_write_lock),
+            (tx_row_ptr, blob_bytes, cols_to_gen),
+        ))
+    }
+
     /// Update a row, encoded in BSATN, into a table.
     ///
     /// Zero placeholders, i.e., sequence triggers,
@@ -1470,43 +1535,9 @@ impl MutTxId {
     ) -> Result<(ColList, RowRef<'_>, UpdateFlags)> {
         let tx_removed_index = self.tx_state_removed_index(index_id);
 
-        // 1. Insert the physical row into the tx insert table.
-        //----------------------------------------------------------------------
-        // As we are provided the `row` encoded in BSATN,
-        // and since we don't have a convenient way to BSATN to a set of columns,
-        // we cannot really do an in-place update in the row-was-in-tx-state case.
-        // So we will begin instead by inserting the row physically to the tx state and project that.
-        let (tx_table, tx_blob_store, ..) = self
-            .tx_state
-            .get_table_and_blob_store_or_maybe_create_from(
-                table_id,
-                self.committed_state_write_lock.get_table(table_id),
-            )
-            .ok_or(TableError::IdNotFoundState(table_id))?;
-        let (tx_row_ref, blob_bytes) = tx_table.insert_physically_bsatn(tx_blob_store, row)?;
+        let ((tx_table, tx_blob_store, del_table, committed_state), (tx_row_ptr, blob_bytes, cols_to_gen)) =
+            self.foobar(table_id, row)?;
 
-        // 2. Detect, generate, write sequence values in the new row.
-        //----------------------------------------------------------------------
-        // Unlike the `fn insert(...)` case, this is not conditional on a `GENERATE` flag.
-        // Collect all the columns with sequences that need generation.
-        let tx_row_ptr = tx_row_ref.pointer();
-        let (cols_to_gen, seqs_to_use) = unsafe { tx_table.sequence_triggers_for(tx_blob_store, tx_row_ptr) };
-        // Generate a value for every column in the row that needs it.
-        let mut seq_vals: SmallVec<[i128; 1]> = <_>::default();
-        for sequence_id in seqs_to_use {
-            seq_vals.push(self.get_next_sequence_value(sequence_id)?);
-        }
-        // Write the generated values to the physical row at `tx_row_ptr`.
-        // We assume here that column with a sequence is of a sequence-compatible type.
-        // SAFETY: By virtue of `get_table_and_blob_store_or_maybe_create_from` above succeeding,
-        // we can assume we have an insert and delete table.
-        let (tx_table, tx_blob_store, del_table) = unsafe { self.tx_state.assume_present_get_mut_table(table_id) };
-        for (col_id, seq_val) in cols_to_gen.iter().zip(seq_vals) {
-            // SAFETY:
-            // - `self.is_row_present(row)` holds as we haven't deleted the row.
-            // - `col_id` is a valid column, and has a sequence, so it must have a primitive type.
-            unsafe { tx_table.write_gen_val_to_col(col_id, tx_row_ptr, seq_val) };
-        }
         // SAFETY: `tx_table.is_row_present(tx_row_ptr)` holds as we haven't deleted it yet.
         let tx_row_ref = unsafe { tx_table.get_row_ref_unchecked(tx_blob_store, tx_row_ptr) };
 
@@ -1572,8 +1603,7 @@ impl MutTxId {
                 // If the old row wasn't found, it may still exist in the tx state,
                 // which inherits the index structure of the committed state,
                 // so we'd like to avoid an early error in that case.
-                self
-                    .committed_state_write_lock
+                committed_state
                     .get_index_by_id_with_table(table_id, index_id)
                     .and_then(|index| find_old_row(tx_row_ref, index).0.map(|ptr| (index, ptr)))
                     .filter(|(_, ptr)| !del_table.contains(*ptr))
@@ -1612,7 +1642,7 @@ impl MutTxId {
                     .ok_or_else(|| IndexError::KeyNotFound(index_id, needle).into())
                     .and_then(|old_ptr| {
                         ensure_unique(index_id, tx_index)?;
-                        if let Some(commit_table) = self.committed_state_write_lock.get_table(table_id) {
+                        if let Some(commit_table) = committed_state.get_table(table_id) {
                             check_commit_unique_constraints(commit_table, del_table, index_id, tx_row_ref, old_ptr)?;
                         }
                         Ok(old_ptr)

@@ -202,6 +202,7 @@ impl TxState {
     /// # Safety
     ///
     /// The insert and delete tables must exist.
+    #[inline(never)]
     pub unsafe fn assume_present_get_mut_table(
         &mut self,
         table_id: TableId,
