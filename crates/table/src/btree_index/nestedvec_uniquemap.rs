@@ -24,8 +24,10 @@ type K = u32;
 
 const NONE_PTR: RowPointer = RowPointer::new(true, PageIndex(0), PageOffset(0), SquashedOffset::TX_STATE);
 
+const KEYS_PER_INNER: usize = 4_096 / size_of::<RowPointer>();
+
 fn split_key(key: K) -> (usize, usize) {
-    const N: K = (4_096 / size_of::<usize>()) as K;
+    const N: K = KEYS_PER_INNER as K;
     let (k1, k2) = (key / N, key % N);
     (k1 as usize, k2 as usize)
 }
@@ -43,9 +45,11 @@ impl UniqueMap {
 
         // SAFETY: ensured in `.resize(_)` that `k1 < inner.len()`, making indexing to `k1` valid.
         let inner = unsafe { outer.get_unchecked_mut(k1) };
-        inner.resize(inner.len().max(k2 + 1), NONE_PTR);
+        inner.resize(KEYS_PER_INNER, NONE_PTR);
 
-        // SAFETY: ensured in `.resize(_)` that `k2 < inner.len()`, making indexing to `k2` valid.
+        // SAFETY: ensured in `.resize(_)` that `inner.len() = KEYS_PER_INNER`,
+        // and `k2 = key % KEYS_PER_INNER`, so `k2 < KEYS_PER_INNER`,
+        // making indexing to `k2` valid.
         let slot = unsafe { inner.get_unchecked_mut(k2) };
 
         if slot.reserved_bit() {
