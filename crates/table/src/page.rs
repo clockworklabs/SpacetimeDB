@@ -248,6 +248,12 @@ struct VarHeader {
     /// pre-decrement this index.
     // TODO(perf,future-work): determine how to "lower" the high water mark when freeing the "top"-most granule.
     first: PageOffset,
+
+    /// The number of granules currently used by rows within this page.
+    ///
+    /// [`Page::bytes_used_by_rows`] needs this information.
+    /// Stored here because otherwise counting it would require traversing all the present rows.
+    num_granules: u16,
 }
 
 impl MemoryUsage for VarHeader {
@@ -256,12 +262,13 @@ impl MemoryUsage for VarHeader {
             next_free,
             freelist_len,
             first,
+            num_granules,
         } = self;
-        next_free.heap_usage() + freelist_len.heap_usage() + first.heap_usage()
+        next_free.heap_usage() + freelist_len.heap_usage() + first.heap_usage() + num_granules.heap_usage()
     }
 }
 
-static_assert_size!(VarHeader, 6);
+static_assert_size!(VarHeader, 8);
 
 impl Default for VarHeader {
     fn default() -> Self {
@@ -269,6 +276,7 @@ impl Default for VarHeader {
             next_free: FreeCellRef::NIL,
             freelist_len: 0,
             first: PageOffset::PAGE_END,
+            num_granules: 0,
         }
     }
 }
@@ -771,6 +779,8 @@ impl<'page> VarView<'page> {
             granule,
         );
 
+        self.header.num_granules += 1;
+
         Ok(granule)
     }
 
@@ -812,6 +822,7 @@ impl<'page> VarView<'page> {
         //       but we want to return a whole "run" of sequential freed chunks,
         //       which requries some bookkeeping (or an O(> n) linked list traversal).
         self.header.freelist_len += 1;
+        self.header.num_granules -= 1;
         let adjuster = self.adjuster();
 
         // SAFETY: Per caller contract, `offset` is a valid `VarLenGranule`,
@@ -1113,8 +1124,92 @@ impl Page {
     }
 
     /// Returns the number of rows stored in this page.
+    ///
+    /// This method runs in constant time.
     pub fn num_rows(&self) -> usize {
         self.header.fixed.num_rows as usize
+    }
+
+    #[cfg(test)]
+    /// Use this page's present rows bitvec to compute the number of present rows.
+    ///
+    /// This can be compared with [`Self::num_rows`] as a consistency check during tests.
+    pub fn reconstruct_num_rows(&self) -> usize {
+        // If we cared, we could rewrite this to `u64::count_ones` on each block of the bitset.
+        // We do not care. This method is slow.
+        self.header.fixed.present_rows.iter_set().count()
+    }
+
+    /// Returns the number of var-len granules allocated in this page.
+    ///
+    /// This method runs in constant time.
+    pub fn num_var_len_granules(&self) -> usize {
+        self.header.var.num_granules as usize
+    }
+
+    #[cfg(test)]
+    /// # Safety
+    ///
+    /// - `var_len_visitor` must be a valid [`VarLenMembers`] visitor
+    ///   specialized to the type and layout of rows within this [`Page`].
+    /// - `fixed_row_size` must be exactly the length in bytes of fixed rows in this page,
+    ///   which must further be the length of rows expected by the `var_len_visitor`.
+    pub unsafe fn reconstruct_num_var_len_granules(
+        &self,
+        fixed_row_size: Size,
+        var_len_visitor: &impl VarLenMembers,
+    ) -> usize {
+        self.iter_fixed_len(fixed_row_size)
+            .flat_map(|row| unsafe {
+                // Safety: `row` came out of `iter_fixed_len`,
+                // which, due to caller requirements on `fixed_row_size`,
+                // is giving us valid, aligned, initialized rows of the row type.
+                var_len_visitor.visit_var_len(self.get_row_data(row, fixed_row_size))
+            })
+            .flat_map(|var_len_obj| unsafe {
+                // Safety: We believe `row` to be valid
+                // and `var_len_visitor` to be correctly visiting its var-len members.
+                // Therefore, `var_len_obj` is a valid var-len object.
+                self.iter_var_len_object(var_len_obj.first_granule)
+            })
+            .count()
+    }
+
+    /// Returns the number of bytes used by rows stored in this page.
+    ///
+    /// This is necessarily an overestimate of live data bytes, as it includes:
+    /// - Padding bytes within the fixed-length portion of the rows.
+    /// - [`VarLenRef`] pointer-like portions of rows.
+    /// - Unused trailing parts of partially-filled [`VarLenGranule`]s.
+    /// - [`VarLenGranule`]s used to store [`BlobHash`]es.
+    ///
+    /// Note that large blobs themselves are not counted.
+    /// The caller should obtain a count of the bytes used by large blobs
+    /// from the [`super::blob_store::BlobStore`].
+    ///
+    /// This method runs in constant time.
+    pub fn bytes_used_by_rows(&self, fixed_row_size: Size) -> usize {
+        let fixed_row_bytes = self.num_rows() * fixed_row_size.len();
+        let var_len_bytes = self.num_var_len_granules() * VarLenGranule::SIZE.len();
+        fixed_row_bytes + var_len_bytes
+    }
+
+    #[cfg(test)]
+    /// # Safety
+    ///
+    /// - `var_len_visitor` must be a valid [`VarLenMembers`] visitor
+    ///   specialized to the type and layout of rows within this [`Page`].
+    /// - `fixed_row_size` must be exactly the length in bytes of fixed rows in this page,
+    ///   which must further be the length of rows expected by the `var_len_visitor`.
+    pub unsafe fn reconstruct_bytes_used_by_rows(
+        &self,
+        fixed_row_size: Size,
+        var_len_visitor: &impl VarLenMembers,
+    ) -> usize {
+        let fixed_row_bytes = self.reconstruct_num_rows() * fixed_row_size.len();
+        let var_len_bytes = unsafe { self.reconstruct_num_var_len_granules(fixed_row_size, var_len_visitor) }
+            * VarLenGranule::SIZE.len();
+        fixed_row_bytes + var_len_bytes
     }
 
     /// Returns the range of row data starting at `offset` and lasting `size` bytes.
