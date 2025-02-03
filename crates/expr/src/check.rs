@@ -241,10 +241,18 @@ mod tests {
                 ProductType::from([
                     ("i8", AlgebraicType::I8),
                     ("u8", AlgebraicType::U8),
+                    ("i16", AlgebraicType::I16),
+                    ("u16", AlgebraicType::U16),
                     ("i32", AlgebraicType::I32),
                     ("u32", AlgebraicType::U32),
+                    ("i64", AlgebraicType::I64),
+                    ("u64", AlgebraicType::U64),
                     ("int", AlgebraicType::U32),
                     ("f32", AlgebraicType::F32),
+                    ("f64", AlgebraicType::F64),
+                    ("i128", AlgebraicType::I128),
+                    ("u128", AlgebraicType::U128),
+                    ("i256", AlgebraicType::I256),
                     ("u256", AlgebraicType::U256),
                     ("str", AlgebraicType::String),
                     ("arr", AlgebraicType::array(AlgebraicType::String)),
@@ -315,6 +323,19 @@ mod tests {
         ] {
             let result = parse_and_type_sub(sql, &tx);
             assert!(result.is_ok(), "{msg}");
+        }
+    }
+
+    #[test]
+    fn valid_literals_for_type() {
+        let tx = SchemaViewer(module_def());
+
+        for ty in [
+            "i8", "u8", "i16", "u16", "i32", "u32", "i64", "u64", "f32", "f64", "i128", "u128", "i256", "u256",
+        ] {
+            let sql = format!("select * from t where {ty} = 127");
+            let result = parse_and_type_sub(&sql, &tx);
+            assert!(result.is_ok(), "Faild to parse {ty}: {}", result.unwrap_err());
         }
     }
 
