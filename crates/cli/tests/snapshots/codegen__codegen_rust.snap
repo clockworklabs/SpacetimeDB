@@ -9,7 +9,6 @@ expression: outfiles
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{
 	self as __sdk,
-	anyhow::{self as __anyhow, Context as _},
 	__lib,
 	__sats,
 	__ws,
@@ -47,7 +46,7 @@ pub trait add_player {
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed by listening for [`Self::on_add_player`] callbacks.
     fn add_player(&self, name: String,
-) -> __anyhow::Result<()>;
+) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `add_player`.
     ///
     /// The [`super::EventContext`] passed to the `callback`
@@ -66,7 +65,7 @@ pub trait add_player {
 
 impl add_player for super::RemoteReducers {
     fn add_player(&self, name: String,
-) -> __anyhow::Result<()> {
+) -> __sdk::Result<()> {
         self.imp.call_reducer("add_player", AddPlayerArgs { name,  })
     }
     fn on_add_player(
@@ -122,7 +121,6 @@ impl set_flags_for_add_player for super::SetReducerFlags {
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{
 	self as __sdk,
-	anyhow::{self as __anyhow, Context as _},
 	__lib,
 	__sats,
 	__ws,
@@ -160,7 +158,7 @@ pub trait add_private {
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed by listening for [`Self::on_add_private`] callbacks.
     fn add_private(&self, name: String,
-) -> __anyhow::Result<()>;
+) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `add_private`.
     ///
     /// The [`super::EventContext`] passed to the `callback`
@@ -179,7 +177,7 @@ pub trait add_private {
 
 impl add_private for super::RemoteReducers {
     fn add_private(&self, name: String,
-) -> __anyhow::Result<()> {
+) -> __sdk::Result<()> {
         self.imp.call_reducer("add_private", AddPrivateArgs { name,  })
     }
     fn on_add_private(
@@ -235,7 +233,6 @@ impl set_flags_for_add_private for super::SetReducerFlags {
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{
 	self as __sdk,
-	anyhow::{self as __anyhow, Context as _},
 	__lib,
 	__sats,
 	__ws,
@@ -269,7 +266,7 @@ pub trait assert_caller_identity_is_module_identity {
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed by listening for [`Self::on_assert_caller_identity_is_module_identity`] callbacks.
-    fn assert_caller_identity_is_module_identity(&self, ) -> __anyhow::Result<()>;
+    fn assert_caller_identity_is_module_identity(&self, ) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `assert_caller_identity_is_module_identity`.
     ///
     /// The [`super::EventContext`] passed to the `callback`
@@ -287,7 +284,7 @@ pub trait assert_caller_identity_is_module_identity {
 }
 
 impl assert_caller_identity_is_module_identity for super::RemoteReducers {
-    fn assert_caller_identity_is_module_identity(&self, ) -> __anyhow::Result<()> {
+    fn assert_caller_identity_is_module_identity(&self, ) -> __sdk::Result<()> {
         self.imp.call_reducer("assert_caller_identity_is_module_identity", AssertCallerIdentityIsModuleIdentityArgs {  })
     }
     fn on_assert_caller_identity_is_module_identity(
@@ -343,7 +340,6 @@ impl set_flags_for_assert_caller_identity_is_module_identity for super::SetReduc
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{
 	self as __sdk,
-	anyhow::{self as __anyhow, Context as _},
 	__lib,
 	__sats,
 	__ws,
@@ -369,7 +365,6 @@ impl __sdk::InModule for Baz {
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{
 	self as __sdk,
-	anyhow::{self as __anyhow, Context as _},
 	__lib,
 	__sats,
 	__ws,
@@ -407,7 +402,7 @@ pub trait delete_player {
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed by listening for [`Self::on_delete_player`] callbacks.
     fn delete_player(&self, id: u64,
-) -> __anyhow::Result<()>;
+) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `delete_player`.
     ///
     /// The [`super::EventContext`] passed to the `callback`
@@ -426,7 +421,7 @@ pub trait delete_player {
 
 impl delete_player for super::RemoteReducers {
     fn delete_player(&self, id: u64,
-) -> __anyhow::Result<()> {
+) -> __sdk::Result<()> {
         self.imp.call_reducer("delete_player", DeletePlayerArgs { id,  })
     }
     fn on_delete_player(
@@ -482,7 +477,6 @@ impl set_flags_for_delete_player for super::SetReducerFlags {
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{
 	self as __sdk,
-	anyhow::{self as __anyhow, Context as _},
 	__lib,
 	__sats,
 	__ws,
@@ -520,7 +514,7 @@ pub trait delete_players_by_name {
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed by listening for [`Self::on_delete_players_by_name`] callbacks.
     fn delete_players_by_name(&self, name: String,
-) -> __anyhow::Result<()>;
+) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `delete_players_by_name`.
     ///
     /// The [`super::EventContext`] passed to the `callback`
@@ -539,7 +533,7 @@ pub trait delete_players_by_name {
 
 impl delete_players_by_name for super::RemoteReducers {
     fn delete_players_by_name(&self, name: String,
-) -> __anyhow::Result<()> {
+) -> __sdk::Result<()> {
         self.imp.call_reducer("delete_players_by_name", DeletePlayersByNameArgs { name,  })
     }
     fn on_delete_players_by_name(
@@ -595,7 +589,6 @@ impl set_flags_for_delete_players_by_name for super::SetReducerFlags {
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{
 	self as __sdk,
-	anyhow::{self as __anyhow, Context as _},
 	__lib,
 	__sats,
 	__ws,
@@ -628,7 +621,6 @@ impl __sdk::InModule for Foobar {
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{
 	self as __sdk,
-	anyhow::{self as __anyhow, Context as _},
 	__lib,
 	__sats,
 	__ws,
@@ -712,9 +704,14 @@ pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::Remote
 #[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __anyhow::Result<__sdk::TableUpdate<HasSpecialStuff>> {
+) -> __sdk::Result<__sdk::TableUpdate<HasSpecialStuff>> {
     __sdk::TableUpdate::parse_table_update_no_primary_key(raw_updates)
-        .context("Failed to parse table update for table \"has_special_stuff\"")
+        .map_err(|e| {
+             __sdk::InternalError::failed_parse(
+                "TableUpdate<HasSpecialStuff>",
+                "TableUpdate",
+            ).with_cause(e).into()
+        })
 }
 '''
 "has_special_stuff_type.rs" = '''
@@ -724,7 +721,6 @@ pub(super) fn parse_table_update(
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{
 	self as __sdk,
-	anyhow::{self as __anyhow, Context as _},
 	__lib,
 	__sats,
 	__ws,
@@ -751,7 +747,6 @@ impl __sdk::InModule for HasSpecialStuff {
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{
 	self as __sdk,
-	anyhow::{self as __anyhow, Context as _},
 	__lib,
 	__sats,
 	__ws,
@@ -785,7 +780,7 @@ pub trait init {
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed by listening for [`Self::on_init`] callbacks.
-    fn init(&self, ) -> __anyhow::Result<()>;
+    fn init(&self, ) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `init`.
     ///
     /// The [`super::EventContext`] passed to the `callback`
@@ -803,7 +798,7 @@ pub trait init {
 }
 
 impl init for super::RemoteReducers {
-    fn init(&self, ) -> __anyhow::Result<()> {
+    fn init(&self, ) -> __sdk::Result<()> {
         self.imp.call_reducer("init", InitArgs {  })
     }
     fn on_init(
@@ -859,7 +854,6 @@ impl set_flags_for_init for super::SetReducerFlags {
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{
 	self as __sdk,
-	anyhow::{self as __anyhow, Context as _},
 	__lib,
 	__sats,
 	__ws,
@@ -962,11 +956,17 @@ impl<'ctx> __sdk::TableWithPrimaryKey for LoggedOutPlayerTableHandle<'ctx> {
 #[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __anyhow::Result<__sdk::TableUpdate<Player>> {
+) -> __sdk::Result<__sdk::TableUpdate<Player>> {
     __sdk::TableUpdate::parse_table_update_with_primary_key::<__sdk::Identity>(
         raw_updates,
         |row: &Player| &row.identity,
-    ).context("Failed to parse table update for table \"logged_out_player\"")
+    )
+        .map_err(|e| {
+             __sdk::InternalError::failed_parse(
+                "TableUpdate<Player>",
+                "TableUpdate",
+            ).with_cause(e).into()
+        })
 }
 
         /// Access to the `identity` unique index on the table `logged_out_player`,
@@ -1036,7 +1036,6 @@ pub(super) fn parse_table_update(
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{
 	self as __sdk,
-	anyhow::{self as __anyhow, Context as _},
 	__lib,
 	__sats,
 	__ws,
@@ -1177,8 +1176,8 @@ impl __sdk::Reducer for Reducer {
 }
 }
 impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
-		type Error = __anyhow::Error;
-fn try_from(value: __ws::ReducerCallInfo<__ws::BsatnFormat>) -> __anyhow::Result<Self> {
+		type Error = __sdk::Error;
+fn try_from(value: __ws::ReducerCallInfo<__ws::BsatnFormat>) -> __sdk::Result<Self> {
 		match &value.reducer_name[..] {
 						"add_player" => Ok(__sdk::parse_reducer_args::<add_player_reducer::AddPlayerArgs>("add_player", &value.args)?.into()),
 			"add_private" => Ok(__sdk::parse_reducer_args::<add_private_reducer::AddPrivateArgs>("add_private", &value.args)?.into()),
@@ -1191,7 +1190,7 @@ fn try_from(value: __ws::ReducerCallInfo<__ws::BsatnFormat>) -> __anyhow::Result
 			"repeating_test" => Ok(__sdk::parse_reducer_args::<repeating_test_reducer::RepeatingTestArgs>("repeating_test", &value.args)?.into()),
 			"test" => Ok(__sdk::parse_reducer_args::<test_reducer::TestArgs>("test", &value.args)?.into()),
 			"test_btree_index_args" => Ok(__sdk::parse_reducer_args::<test_btree_index_args_reducer::TestBtreeIndexArgsArgs>("test_btree_index_args", &value.args)?.into()),
-			_ => Err(__anyhow::anyhow!("Unknown reducer {:?}", value.reducer_name)),
+			unknown => Err(__sdk::InternalError::unknown_name("reducer", unknown, "ReducerCallInfo").into()),
 }
 }
 }
@@ -1215,7 +1214,7 @@ pub struct DbUpdate {
 
 
 impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
-    type Error = __anyhow::Error;
+    type Error = __sdk::Error;
     fn try_from(raw: __ws::DatabaseUpdate<__ws::BsatnFormat>) -> Result<Self, Self::Error> {
         let mut db_update = DbUpdate::default();
         for table_update in raw.tables {
@@ -1233,7 +1232,13 @@ impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
 	"test_e" => db_update.test_e = test_e_table::parse_table_update(table_update)?,
 	"test_f" => db_update.test_f = test_f_table::parse_table_update(table_update)?,
 
-                unknown => __anyhow::bail!("Unknown table {unknown:?} in DatabaseUpdate"),
+                unknown => {
+                    return Err(__sdk::InternalError::unknown_name(
+                        "table",
+                        unknown,
+                        "DatabaseUpdate",
+                    ).into());
+                }
             }
         }
         Ok(db_update)
@@ -1369,7 +1374,7 @@ impl __sdk::DbContext for DbConnection {
         self.imp.is_active()
     }
 
-    fn disconnect(&self) -> __anyhow::Result<()> {
+    fn disconnect(&self) -> __sdk::Result<()> {
         self.imp.disconnect()
     }
 
@@ -1409,7 +1414,7 @@ impl DbConnection {
     /// This is a low-level primitive exposed for power users who need significant control over scheduling.
     /// Most applications should call [`Self::frame_tick`] each frame
     /// to fully exhaust the queue whenever time is available.
-    pub fn advance_one_message(&self) -> __anyhow::Result<bool> {
+    pub fn advance_one_message(&self) -> __sdk::Result<bool> {
         self.imp.advance_one_message()
     }
 
@@ -1423,7 +1428,7 @@ impl DbConnection {
     /// This is a low-level primitive exposed for power users who need significant control over scheduling.
     /// Most applications should call [`Self::run_threaded`] to spawn a thread
     /// which advances the connection automatically.
-    pub fn advance_one_message_blocking(&self) -> __anyhow::Result<()> {
+    pub fn advance_one_message_blocking(&self) -> __sdk::Result<()> {
         self.imp.advance_one_message_blocking()
     }
 
@@ -1437,13 +1442,13 @@ impl DbConnection {
     /// This is a low-level primitive exposed for power users who need significant control over scheduling.
     /// Most applications should call [`Self::run_async`] to run an `async` loop
     /// which advances the connection when polled.
-    pub async fn advance_one_message_async(&self) -> __anyhow::Result<()> {
+    pub async fn advance_one_message_async(&self) -> __sdk::Result<()> {
         self.imp.advance_one_message_async().await
     }
 
     /// Process all WebSocket messages waiting in the queue,
     /// then return without `await`ing or blocking the current thread.
-    pub fn frame_tick(&self) -> __anyhow::Result<()> {
+    pub fn frame_tick(&self) -> __sdk::Result<()> {
         self.imp.frame_tick()
     }
 
@@ -1453,7 +1458,7 @@ impl DbConnection {
     }
 
     /// Run an `async` loop which processes WebSocket messages when polled.
-    pub async fn run_async(&self) -> __anyhow::Result<()> {
+    pub async fn run_async(&self) -> __sdk::Result<()> {
         self.imp.run_async().await
     }
 }
@@ -1509,7 +1514,7 @@ impl __sdk::DbContext for EventContext {
         self.imp.is_active()
     }
 
-    fn disconnect(&self) -> __anyhow::Result<()> {
+    fn disconnect(&self) -> __sdk::Result<()> {
         self.imp.disconnect()
     }
 
@@ -1570,11 +1575,11 @@ impl __sdk::SubscriptionHandle for SubscriptionHandle {
 
     /// Unsubscribe from the query controlled by this `SubscriptionHandle`,
     /// then run `on_end` when its rows are removed from the client cache.
-    fn unsubscribe_then(self, on_end: __sdk::OnEndedCallback<RemoteModule>) -> __anyhow::Result<()> {
+    fn unsubscribe_then(self, on_end: __sdk::OnEndedCallback<RemoteModule>) -> __sdk::Result<()> {
         self.imp.unsubscribe_then(Some(on_end))
     }
 
-    fn unsubscribe(self) -> __anyhow::Result<()> {
+    fn unsubscribe(self) -> __sdk::Result<()> {
         self.imp.unsubscribe_then(None)
     }
 
@@ -1632,7 +1637,6 @@ fn register_tables(client_cache: &mut __sdk::ClientCache<Self>) {
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{
 	self as __sdk,
-	anyhow::{self as __anyhow, Context as _},
 	__lib,
 	__sats,
 	__ws,
@@ -1661,7 +1665,6 @@ impl __sdk::InModule for NamespaceTestC {
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{
 	self as __sdk,
-	anyhow::{self as __anyhow, Context as _},
 	__lib,
 	__sats,
 	__ws,
@@ -1693,7 +1696,6 @@ impl __sdk::InModule for NamespaceTestF {
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{
 	self as __sdk,
-	anyhow::{self as __anyhow, Context as _},
 	__lib,
 	__sats,
 	__ws,
@@ -1727,7 +1729,7 @@ pub trait on_connect {
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed by listening for [`Self::on_on_connect`] callbacks.
-    fn on_connect(&self, ) -> __anyhow::Result<()>;
+    fn on_connect(&self, ) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `on_connect`.
     ///
     /// The [`super::EventContext`] passed to the `callback`
@@ -1745,7 +1747,7 @@ pub trait on_connect {
 }
 
 impl on_connect for super::RemoteReducers {
-    fn on_connect(&self, ) -> __anyhow::Result<()> {
+    fn on_connect(&self, ) -> __sdk::Result<()> {
         self.imp.call_reducer("on_connect", OnConnectArgs {  })
     }
     fn on_on_connect(
@@ -1801,7 +1803,6 @@ impl set_flags_for_on_connect for super::SetReducerFlags {
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{
 	self as __sdk,
-	anyhow::{self as __anyhow, Context as _},
 	__lib,
 	__sats,
 	__ws,
@@ -1904,11 +1905,17 @@ impl<'ctx> __sdk::TableWithPrimaryKey for PkMultiIdentityTableHandle<'ctx> {
 #[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __anyhow::Result<__sdk::TableUpdate<PkMultiIdentity>> {
+) -> __sdk::Result<__sdk::TableUpdate<PkMultiIdentity>> {
     __sdk::TableUpdate::parse_table_update_with_primary_key::<u32>(
         raw_updates,
         |row: &PkMultiIdentity| &row.id,
-    ).context("Failed to parse table update for table \"pk_multi_identity\"")
+    )
+        .map_err(|e| {
+             __sdk::InternalError::failed_parse(
+                "TableUpdate<PkMultiIdentity>",
+                "TableUpdate",
+            ).with_cause(e).into()
+        })
 }
 
         /// Access to the `id` unique index on the table `pk_multi_identity`,
@@ -1978,7 +1985,6 @@ pub(super) fn parse_table_update(
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{
 	self as __sdk,
-	anyhow::{self as __anyhow, Context as _},
 	__lib,
 	__sats,
 	__ws,
@@ -2005,7 +2011,6 @@ impl __sdk::InModule for PkMultiIdentity {
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{
 	self as __sdk,
-	anyhow::{self as __anyhow, Context as _},
 	__lib,
 	__sats,
 	__ws,
@@ -2108,11 +2113,17 @@ impl<'ctx> __sdk::TableWithPrimaryKey for PlayerTableHandle<'ctx> {
 #[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __anyhow::Result<__sdk::TableUpdate<Player>> {
+) -> __sdk::Result<__sdk::TableUpdate<Player>> {
     __sdk::TableUpdate::parse_table_update_with_primary_key::<__sdk::Identity>(
         raw_updates,
         |row: &Player| &row.identity,
-    ).context("Failed to parse table update for table \"player\"")
+    )
+        .map_err(|e| {
+             __sdk::InternalError::failed_parse(
+                "TableUpdate<Player>",
+                "TableUpdate",
+            ).with_cause(e).into()
+        })
 }
 
         /// Access to the `identity` unique index on the table `player`,
@@ -2182,7 +2193,6 @@ pub(super) fn parse_table_update(
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{
 	self as __sdk,
-	anyhow::{self as __anyhow, Context as _},
 	__lib,
 	__sats,
 	__ws,
@@ -2210,7 +2220,6 @@ impl __sdk::InModule for Player {
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{
 	self as __sdk,
-	anyhow::{self as __anyhow, Context as _},
 	__lib,
 	__sats,
 	__ws,
@@ -2237,7 +2246,6 @@ impl __sdk::InModule for Point {
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{
 	self as __sdk,
-	anyhow::{self as __anyhow, Context as _},
 	__lib,
 	__sats,
 	__ws,
@@ -2321,9 +2329,14 @@ pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::Remote
 #[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __anyhow::Result<__sdk::TableUpdate<Point>> {
+) -> __sdk::Result<__sdk::TableUpdate<Point>> {
     __sdk::TableUpdate::parse_table_update_no_primary_key(raw_updates)
-        .context("Failed to parse table update for table \"points\"")
+        .map_err(|e| {
+             __sdk::InternalError::failed_parse(
+                "TableUpdate<Point>",
+                "TableUpdate",
+            ).with_cause(e).into()
+        })
 }
 '''
 "private_table.rs" = '''
@@ -2333,7 +2346,6 @@ pub(super) fn parse_table_update(
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{
 	self as __sdk,
-	anyhow::{self as __anyhow, Context as _},
 	__lib,
 	__sats,
 	__ws,
@@ -2417,9 +2429,14 @@ pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::Remote
 #[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __anyhow::Result<__sdk::TableUpdate<Private>> {
+) -> __sdk::Result<__sdk::TableUpdate<Private>> {
     __sdk::TableUpdate::parse_table_update_no_primary_key(raw_updates)
-        .context("Failed to parse table update for table \"private\"")
+        .map_err(|e| {
+             __sdk::InternalError::failed_parse(
+                "TableUpdate<Private>",
+                "TableUpdate",
+            ).with_cause(e).into()
+        })
 }
 '''
 "private_type.rs" = '''
@@ -2429,7 +2446,6 @@ pub(super) fn parse_table_update(
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{
 	self as __sdk,
-	anyhow::{self as __anyhow, Context as _},
 	__lib,
 	__sats,
 	__ws,
@@ -2455,7 +2471,6 @@ impl __sdk::InModule for Private {
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{
 	self as __sdk,
-	anyhow::{self as __anyhow, Context as _},
 	__lib,
 	__sats,
 	__ws,
@@ -2489,7 +2504,7 @@ pub trait query_private {
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed by listening for [`Self::on_query_private`] callbacks.
-    fn query_private(&self, ) -> __anyhow::Result<()>;
+    fn query_private(&self, ) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `query_private`.
     ///
     /// The [`super::EventContext`] passed to the `callback`
@@ -2507,7 +2522,7 @@ pub trait query_private {
 }
 
 impl query_private for super::RemoteReducers {
-    fn query_private(&self, ) -> __anyhow::Result<()> {
+    fn query_private(&self, ) -> __sdk::Result<()> {
         self.imp.call_reducer("query_private", QueryPrivateArgs {  })
     }
     fn on_query_private(
@@ -2563,7 +2578,6 @@ impl set_flags_for_query_private for super::SetReducerFlags {
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{
 	self as __sdk,
-	anyhow::{self as __anyhow, Context as _},
 	__lib,
 	__sats,
 	__ws,
@@ -2665,11 +2679,17 @@ impl<'ctx> __sdk::TableWithPrimaryKey for RepeatingTestArgTableHandle<'ctx> {
 #[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __anyhow::Result<__sdk::TableUpdate<RepeatingTestArg>> {
+) -> __sdk::Result<__sdk::TableUpdate<RepeatingTestArg>> {
     __sdk::TableUpdate::parse_table_update_with_primary_key::<u64>(
         raw_updates,
         |row: &RepeatingTestArg| &row.scheduled_id,
-    ).context("Failed to parse table update for table \"repeating_test_arg\"")
+    )
+        .map_err(|e| {
+             __sdk::InternalError::failed_parse(
+                "TableUpdate<RepeatingTestArg>",
+                "TableUpdate",
+            ).with_cause(e).into()
+        })
 }
 
         /// Access to the `scheduled_id` unique index on the table `repeating_test_arg`,
@@ -2709,7 +2729,6 @@ pub(super) fn parse_table_update(
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{
 	self as __sdk,
-	anyhow::{self as __anyhow, Context as _},
 	__lib,
 	__sats,
 	__ws,
@@ -2737,7 +2756,6 @@ impl __sdk::InModule for RepeatingTestArg {
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{
 	self as __sdk,
-	anyhow::{self as __anyhow, Context as _},
 	__lib,
 	__sats,
 	__ws,
@@ -2776,7 +2794,7 @@ pub trait repeating_test {
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed by listening for [`Self::on_repeating_test`] callbacks.
     fn repeating_test(&self, arg: RepeatingTestArg,
-) -> __anyhow::Result<()>;
+) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `repeating_test`.
     ///
     /// The [`super::EventContext`] passed to the `callback`
@@ -2795,7 +2813,7 @@ pub trait repeating_test {
 
 impl repeating_test for super::RemoteReducers {
     fn repeating_test(&self, arg: RepeatingTestArg,
-) -> __anyhow::Result<()> {
+) -> __sdk::Result<()> {
         self.imp.call_reducer("repeating_test", RepeatingTestArgs { arg,  })
     }
     fn on_repeating_test(
@@ -2851,7 +2869,6 @@ impl set_flags_for_repeating_test for super::SetReducerFlags {
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{
 	self as __sdk,
-	anyhow::{self as __anyhow, Context as _},
 	__lib,
 	__sats,
 	__ws,
@@ -2935,9 +2952,14 @@ pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::Remote
 #[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __anyhow::Result<__sdk::TableUpdate<TestA>> {
+) -> __sdk::Result<__sdk::TableUpdate<TestA>> {
     __sdk::TableUpdate::parse_table_update_no_primary_key(raw_updates)
-        .context("Failed to parse table update for table \"test_a\"")
+        .map_err(|e| {
+             __sdk::InternalError::failed_parse(
+                "TableUpdate<TestA>",
+                "TableUpdate",
+            ).with_cause(e).into()
+        })
 }
 '''
 "test_a_type.rs" = '''
@@ -2947,7 +2969,6 @@ pub(super) fn parse_table_update(
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{
 	self as __sdk,
-	anyhow::{self as __anyhow, Context as _},
 	__lib,
 	__sats,
 	__ws,
@@ -2975,7 +2996,6 @@ impl __sdk::InModule for TestA {
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{
 	self as __sdk,
-	anyhow::{self as __anyhow, Context as _},
 	__lib,
 	__sats,
 	__ws,
@@ -3001,7 +3021,6 @@ impl __sdk::InModule for TestB {
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{
 	self as __sdk,
-	anyhow::{self as __anyhow, Context as _},
 	__lib,
 	__sats,
 	__ws,
@@ -3035,7 +3054,7 @@ pub trait test_btree_index_args {
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed by listening for [`Self::on_test_btree_index_args`] callbacks.
-    fn test_btree_index_args(&self, ) -> __anyhow::Result<()>;
+    fn test_btree_index_args(&self, ) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `test_btree_index_args`.
     ///
     /// The [`super::EventContext`] passed to the `callback`
@@ -3053,7 +3072,7 @@ pub trait test_btree_index_args {
 }
 
 impl test_btree_index_args for super::RemoteReducers {
-    fn test_btree_index_args(&self, ) -> __anyhow::Result<()> {
+    fn test_btree_index_args(&self, ) -> __sdk::Result<()> {
         self.imp.call_reducer("test_btree_index_args", TestBtreeIndexArgsArgs {  })
     }
     fn on_test_btree_index_args(
@@ -3109,7 +3128,6 @@ impl set_flags_for_test_btree_index_args for super::SetReducerFlags {
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{
 	self as __sdk,
-	anyhow::{self as __anyhow, Context as _},
 	__lib,
 	__sats,
 	__ws,
@@ -3194,9 +3212,14 @@ pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::Remote
 #[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __anyhow::Result<__sdk::TableUpdate<TestD>> {
+) -> __sdk::Result<__sdk::TableUpdate<TestD>> {
     __sdk::TableUpdate::parse_table_update_no_primary_key(raw_updates)
-        .context("Failed to parse table update for table \"test_d\"")
+        .map_err(|e| {
+             __sdk::InternalError::failed_parse(
+                "TableUpdate<TestD>",
+                "TableUpdate",
+            ).with_cause(e).into()
+        })
 }
 '''
 "test_d_type.rs" = '''
@@ -3206,7 +3229,6 @@ pub(super) fn parse_table_update(
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{
 	self as __sdk,
-	anyhow::{self as __anyhow, Context as _},
 	__lib,
 	__sats,
 	__ws,
@@ -3233,7 +3255,6 @@ impl __sdk::InModule for TestD {
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{
 	self as __sdk,
-	anyhow::{self as __anyhow, Context as _},
 	__lib,
 	__sats,
 	__ws,
@@ -3335,11 +3356,17 @@ impl<'ctx> __sdk::TableWithPrimaryKey for TestETableHandle<'ctx> {
 #[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __anyhow::Result<__sdk::TableUpdate<TestE>> {
+) -> __sdk::Result<__sdk::TableUpdate<TestE>> {
     __sdk::TableUpdate::parse_table_update_with_primary_key::<u64>(
         raw_updates,
         |row: &TestE| &row.id,
-    ).context("Failed to parse table update for table \"test_e\"")
+    )
+        .map_err(|e| {
+             __sdk::InternalError::failed_parse(
+                "TableUpdate<TestE>",
+                "TableUpdate",
+            ).with_cause(e).into()
+        })
 }
 
         /// Access to the `id` unique index on the table `test_e`,
@@ -3379,7 +3406,6 @@ pub(super) fn parse_table_update(
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{
 	self as __sdk,
-	anyhow::{self as __anyhow, Context as _},
 	__lib,
 	__sats,
 	__ws,
@@ -3406,7 +3432,6 @@ impl __sdk::InModule for TestE {
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{
 	self as __sdk,
-	anyhow::{self as __anyhow, Context as _},
 	__lib,
 	__sats,
 	__ws,
@@ -3491,9 +3516,14 @@ pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::Remote
 #[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __anyhow::Result<__sdk::TableUpdate<TestFoobar>> {
+) -> __sdk::Result<__sdk::TableUpdate<TestFoobar>> {
     __sdk::TableUpdate::parse_table_update_no_primary_key(raw_updates)
-        .context("Failed to parse table update for table \"test_f\"")
+        .map_err(|e| {
+             __sdk::InternalError::failed_parse(
+                "TableUpdate<TestFoobar>",
+                "TableUpdate",
+            ).with_cause(e).into()
+        })
 }
 '''
 "test_foobar_type.rs" = '''
@@ -3503,7 +3533,6 @@ pub(super) fn parse_table_update(
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{
 	self as __sdk,
-	anyhow::{self as __anyhow, Context as _},
 	__lib,
 	__sats,
 	__ws,
@@ -3530,7 +3559,6 @@ impl __sdk::InModule for TestFoobar {
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{
 	self as __sdk,
-	anyhow::{self as __anyhow, Context as _},
 	__lib,
 	__sats,
 	__ws,
@@ -3581,7 +3609,7 @@ pub trait test {
 arg_2: TestB,
 arg_3: NamespaceTestC,
 arg_4: NamespaceTestF,
-) -> __anyhow::Result<()>;
+) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `test`.
     ///
     /// The [`super::EventContext`] passed to the `callback`
@@ -3603,7 +3631,7 @@ impl test for super::RemoteReducers {
 arg_2: TestB,
 arg_3: NamespaceTestC,
 arg_4: NamespaceTestF,
-) -> __anyhow::Result<()> {
+) -> __sdk::Result<()> {
         self.imp.call_reducer("test", TestArgs { arg, arg_2, arg_3, arg_4,  })
     }
     fn on_test(
