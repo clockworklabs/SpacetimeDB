@@ -8,10 +8,12 @@
     <WasmImport Include="$(SpacetimeNamespace)!index_id_from_name" />
     <WasmImport Include="$(SpacetimeNamespace)!datastore_table_row_count" />
     <WasmImport Include="$(SpacetimeNamespace)!datastore_table_scan_bsatn" />
+    <WasmImport Include="$(SpacetimeNamespace)!datastore_index_scan_range_bsatn" />
     <WasmImport Include="$(SpacetimeNamespace)!datastore_btree_scan_bsatn" />
     <WasmImport Include="$(SpacetimeNamespace)!row_iter_bsatn_advance" />
     <WasmImport Include="$(SpacetimeNamespace)!row_iter_bsatn_close" />
     <WasmImport Include="$(SpacetimeNamespace)!datastore_insert_bsatn" />
+    <WasmImport Include="$(SpacetimeNamespace)!datastore_delete_by_index_scan_range_bsatn" />
     <WasmImport Include="$(SpacetimeNamespace)!datastore_delete_by_btree_scan_bsatn" />
     <WasmImport Include="$(SpacetimeNamespace)!datastore_delete_all_by_eq_bsatn" />
     <WasmImport Include="$(SpacetimeNamespace)!bytes_source_read" />
