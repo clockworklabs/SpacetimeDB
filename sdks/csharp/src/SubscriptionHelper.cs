@@ -10,8 +10,8 @@ namespace SpacetimeDB
     /// <summary>
     /// Helper class for maintaining a pool of open subscriptions.
     /// 
-    /// You construct one of these with a way to create SubscriptionBuilders,
-    /// register a callback with OnSubscriptionsSteady, and then call SetSubscriptions as often as you want.
+    /// You construct one of these with a way to create SubscriptionBuilders and an error handler.
+    /// Next, register a callback with OnSubscriptionsSteady, and then call SetSubscriptions as often as you want.
     /// 
     /// Your callback will be invoked as soon as all subscriptions reach a steady state: needed subscriptions are open (or errored)
     /// and unneeded subscriptions are closed (or errored).
@@ -70,16 +70,19 @@ namespace SpacetimeDB
         }
 
         public delegate SubscriptionBuilder<EventContext> SubscriptionBuilderBuilder();
+        public delegate void OnError(string query, EventContext context);
 
         public event Action? OnSubscriptionsSteady;
 
         private readonly SubscriptionBuilderBuilder subscriptionBuilderBuilder;
+        private readonly OnError onError;
         private readonly Dictionary<string, (SubscriptionHandle<EventContext> subscription, State state)> subscriptions = new();
         private readonly Dictionary<State, uint> stateCounts = new() { { State.Pending, 0 }, { State.Ready, 0 }, { State.Errored, 0 }, { State.Closing, 0 }, { State.ClosingThenReopening, 0 } };
 
-        public SubscriptionHelper(SubscriptionBuilderBuilder subscriptionBuilderBuilder)
+        public SubscriptionHelper(SubscriptionBuilderBuilder subscriptionBuilderBuilder, OnError onError)
         {
             this.subscriptionBuilderBuilder = subscriptionBuilderBuilder;
+            this.onError = onError;
         }
 
         private readonly Dictionary<State, uint> actualStateCounts = new();
@@ -174,6 +177,8 @@ namespace SpacetimeDB
                             return;
                         }
                         var (subscription, state) = result;
+
+                        onError(query, ctx);
 
                         SetState(query, State.Errored);
 
@@ -274,7 +279,7 @@ namespace SpacetimeDB
                     return;
                 }
                 var (_, state) = subscriptions[query];
-                Debug.Assert(state == State.Closing);
+                Debug.Assert(state == State.Closing || state == State.ClosingThenReopening);
                 stateCounts[state]--;
             }
         }
