@@ -300,15 +300,15 @@ impl<Tbl: Table, Col: Index + Column<Table = Tbl>> UniqueColumn<Tbl, Col::ColTyp
         let args = self.get_args(col_val);
         let (prefix, prefix_elems, rstart, rend) = args.args_for_syscall();
 
-        let iter = sys::datastore_btree_scan_bsatn(index_id, prefix, prefix_elems, rstart, rend)
-            .unwrap_or_else(|e| panic!("unique: unexpected error from datastre_btree_scan_bsatn: {e}"));
+        let iter = sys::datastore_index_scan_range_bsatn(index_id, prefix, prefix_elems, rstart, rend)
+            .unwrap_or_else(|e| panic!("unique: unexpected error from `datastore_index_scan_range_bsatn`: {e}"));
         let mut iter = TableIter::new_with_buf(iter, args.data);
 
         // We will always find either 0 or 1 rows here due to the unique constraint.
         let row = iter.next();
         assert!(
             iter.is_exhausted(),
-            "datastore_btree_scan_bsatn on unique field cannot return >1 rows"
+            "`datastore_index_scan_range_bsatn` on unique field cannot return >1 rows"
         );
         row
     }
@@ -331,8 +331,10 @@ impl<Tbl: Table, Col: Index + Column<Table = Tbl>> UniqueColumn<Tbl, Col::ColTyp
         let args = self.get_args(col_val);
         let (prefix, prefix_elems, rstart, rend) = args.args_for_syscall();
 
-        let n_del = sys::datastore_delete_by_btree_scan_bsatn(index_id, prefix, prefix_elems, rstart, rend)
-            .unwrap_or_else(|e| panic!("unique: unexpected error from datastore_delete_by_btree_scan_bsatn: {e}"));
+        let n_del = sys::datastore_delete_by_index_scan_range_bsatn(index_id, prefix, prefix_elems, rstart, rend)
+            .unwrap_or_else(|e| {
+                panic!("unique: unexpected error from datastore_delete_by_index_scan_range_bsatn: {e}")
+            });
 
         (n_del > 0, args.data)
     }
@@ -377,8 +379,8 @@ impl<Tbl: Table, IndexType, Idx: Index> BTreeIndex<Tbl, IndexType, Idx> {
         let index_id = Idx::index_id();
         let args = b.get_args();
         let (prefix, prefix_elems, rstart, rend) = args.args_for_syscall();
-        let iter = sys::datastore_btree_scan_bsatn(index_id, prefix, prefix_elems, rstart, rend)
-            .unwrap_or_else(|e| panic!("unexpected error from datastore_btree_scan_bsatn: {e}"));
+        let iter = sys::datastore_index_scan_range_bsatn(index_id, prefix, prefix_elems, rstart, rend)
+            .unwrap_or_else(|e| panic!("unexpected error from `datastore_index_scan_range_bsatn`: {e}"));
         TableIter::new(iter)
     }
 
@@ -398,8 +400,8 @@ impl<Tbl: Table, IndexType, Idx: Index> BTreeIndex<Tbl, IndexType, Idx> {
         let index_id = Idx::index_id();
         let args = b.get_args();
         let (prefix, prefix_elems, rstart, rend) = args.args_for_syscall();
-        sys::datastore_delete_by_btree_scan_bsatn(index_id, prefix, prefix_elems, rstart, rend)
-            .unwrap_or_else(|e| panic!("unexpected error from datastore_delete_by_btree_scan_bsatn: {e}"))
+        sys::datastore_delete_by_index_scan_range_bsatn(index_id, prefix, prefix_elems, rstart, rend)
+            .unwrap_or_else(|e| panic!("unexpected error from `datastore_delete_by_index_scan_range_bsatn`: {e}"))
             .into()
     }
 }

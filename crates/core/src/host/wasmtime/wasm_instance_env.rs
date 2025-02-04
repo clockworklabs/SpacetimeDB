@@ -465,14 +465,14 @@ impl WasmInstanceEnv {
     ///
     /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
     /// - `NO_SUCH_INDEX`, when `index_id` is not a known ID of an index.
-    /// - `WRONG_INDEX_ALGO` if the index is not a btree index.
+    /// - `WRONG_INDEX_ALGO` if the index is not a range-scan compatible index.
     /// - `BSATN_DECODE_ERROR`, when `prefix` cannot be decoded to
     ///    a `prefix_elems` number of `AlgebraicValue`
     ///    typed at the initial `prefix_elems` `AlgebraicType`s of the index's key type.
     ///    Or when `rstart` or `rend` cannot be decoded to an `Bound<AlgebraicValue>`
     ///    where the inner `AlgebraicValue`s are
     ///    typed at the `prefix_elems + 1` `AlgebraicType` of the index's key type.
-    pub fn datastore_btree_scan_bsatn(
+    pub fn datastore_index_scan_range_bsatn(
         caller: Caller<'_, Self>,
         index_id: u32,
         prefix_ptr: WasmPtr<u8>,
@@ -484,7 +484,7 @@ impl WasmInstanceEnv {
         rend_len: u32,
         out: WasmPtr<RowIterIdx>,
     ) -> RtResult<u32> {
-        Self::cvt_ret(caller, AbiCall::DatastoreBtreeScanBsatn, out, |caller| {
+        Self::cvt_ret(caller, AbiCall::DatastoreIndexScanRangeBsatn, out, |caller| {
             let prefix_elems = Self::convert_u32_to_col_id(prefix_elems)?;
 
             let (mem, env) = Self::mem_env(caller);
@@ -498,7 +498,7 @@ impl WasmInstanceEnv {
             let rend = mem.deref_slice(rend_ptr, rend_len)?;
 
             // Find the relevant rows.
-            let chunks = env.instance_env.datastore_btree_scan_bsatn_chunks(
+            let chunks = env.instance_env.datastore_index_scan_range_bsatn_chunks(
                 &mut env.chunk_pool,
                 index_id.into(),
                 prefix,
@@ -510,6 +510,34 @@ impl WasmInstanceEnv {
             // Insert the encoded + concatenated rows into a new buffer and return its id.
             Ok(env.iters.insert(chunks.into_iter()))
         })
+    }
+
+    /// Deprecated name for [`Self::datastore_index_scan_range_bsatn`].
+    #[deprecated = "use `datastore_index_scan_range_bsatn` instead"]
+    pub fn datastore_btree_scan_bsatn(
+        caller: Caller<'_, Self>,
+        index_id: u32,
+        prefix_ptr: WasmPtr<u8>,
+        prefix_len: u32,
+        prefix_elems: u32,
+        rstart_ptr: WasmPtr<u8>, // Bound<AlgebraicValue>
+        rstart_len: u32,
+        rend_ptr: WasmPtr<u8>, // Bound<AlgebraicValue>
+        rend_len: u32,
+        out: WasmPtr<RowIterIdx>,
+    ) -> RtResult<u32> {
+        Self::datastore_index_scan_range_bsatn(
+            caller,
+            index_id,
+            prefix_ptr,
+            prefix_len,
+            prefix_elems,
+            rstart_ptr,
+            rstart_len,
+            rend_ptr,
+            rend_len,
+            out,
+        )
     }
 
     /// Reads rows from the given iterator registered under `iter`.
@@ -755,9 +783,9 @@ impl WasmInstanceEnv {
     /// in WASM memory.
     ///
     /// This syscall will delete all the rows found by
-    /// [`datastore_btree_scan_bsatn`] with the same arguments passed,
+    /// [`datastore_index_scan_range_bsatn`] with the same arguments passed,
     /// including `prefix_elems`.
-    /// See `datastore_btree_scan_bsatn` for details.
+    /// See `datastore_index_scan_range_bsatn` for details.
     ///
     /// The number of rows deleted is written to the WASM pointer `out`.
     ///
@@ -776,14 +804,14 @@ impl WasmInstanceEnv {
     ///
     /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
     /// - `NO_SUCH_INDEX`, when `index_id` is not a known ID of an index.
-    /// - `WRONG_INDEX_ALGO` if the index is not a btree index.
+    /// - `WRONG_INDEX_ALGO` if the index is not a range-compatible index.
     /// - `BSATN_DECODE_ERROR`, when `prefix` cannot be decoded to
     ///    a `prefix_elems` number of `AlgebraicValue`
     ///    typed at the initial `prefix_elems` `AlgebraicType`s of the index's key type.
     ///    Or when `rstart` or `rend` cannot be decoded to an `Bound<AlgebraicValue>`
     ///    where the inner `AlgebraicValue`s are
     ///    typed at the `prefix_elems + 1` `AlgebraicType` of the index's key type.
-    pub fn datastore_delete_by_btree_scan_bsatn(
+    pub fn datastore_delete_by_index_scan_range_bsatn(
         caller: Caller<'_, Self>,
         index_id: u32,
         prefix_ptr: WasmPtr<u8>,
@@ -795,7 +823,7 @@ impl WasmInstanceEnv {
         rend_len: u32,
         out: WasmPtr<u32>,
     ) -> RtResult<u32> {
-        Self::cvt_ret(caller, AbiCall::DatastoreDeleteByBtreeScanBsatn, out, |caller| {
+        Self::cvt_ret(caller, AbiCall::DatastoreDeleteByIndexScanRangeBsatn, out, |caller| {
             let prefix_elems = Self::convert_u32_to_col_id(prefix_elems)?;
 
             let (mem, env) = Self::mem_env(caller);
@@ -809,7 +837,7 @@ impl WasmInstanceEnv {
             let rend = mem.deref_slice(rend_ptr, rend_len)?;
 
             // Delete the relevant rows.
-            Ok(env.instance_env.datastore_delete_by_btree_scan_bsatn(
+            Ok(env.instance_env.datastore_delete_by_index_scan_range_bsatn(
                 index_id.into(),
                 prefix,
                 prefix_elems,
@@ -817,6 +845,34 @@ impl WasmInstanceEnv {
                 rend,
             )?)
         })
+    }
+
+    /// Deprecated name for [`Self::datastore_delete_by_index_scan_range_bsatn`].
+    #[deprecated = "use `datastore_delete_by_index_scan_range_bsatn` instead"]
+    pub fn datastore_delete_by_btree_scan_bsatn(
+        caller: Caller<'_, Self>,
+        index_id: u32,
+        prefix_ptr: WasmPtr<u8>,
+        prefix_len: u32,
+        prefix_elems: u32,
+        rstart_ptr: WasmPtr<u8>, // Bound<AlgebraicValue>
+        rstart_len: u32,
+        rend_ptr: WasmPtr<u8>, // Bound<AlgebraicValue>
+        rend_len: u32,
+        out: WasmPtr<u32>,
+    ) -> RtResult<u32> {
+        Self::datastore_delete_by_index_scan_range_bsatn(
+            caller,
+            index_id,
+            prefix_ptr,
+            prefix_len,
+            prefix_elems,
+            rstart_ptr,
+            rstart_len,
+            rend_ptr,
+            rend_len,
+            out,
+        )
     }
 
     /// Deletes those rows, in the table identified by `table_id`,
