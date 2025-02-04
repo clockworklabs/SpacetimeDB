@@ -31,7 +31,7 @@ public static partial class circles
         public uint player_id = player_id;
         public Vector2 direction = new(x, y);
         public float magnitude = magnitude;
-        public ulong last_split_time = (ulong)(DateTimeOffset.UtcNow.Ticks / 10);
+        public Timestamp last_split_time = new Timestamp(DateTimeOffset.UtcNow.Ticks / 10);
     }
 
     [SpacetimeDB.Table(Name = "food")]
