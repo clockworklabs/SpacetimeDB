@@ -52,7 +52,7 @@ fn reducer(_ctx: &ReducerContext, args: ScheduledReducerArgs) {
         self.assertNotIn("the reducer ran", logs)
 
 
-TIMESTAMP_ZERO = {"__timestamp_nanos_since_unix_epoch": 0}
+TIMESTAMP_ZERO = {"__timestamp_micros_since_unix_epoch__": 0}
 
 
 class SubscribeScheduledTable(Smoketest):
@@ -128,7 +128,7 @@ pub fn my_reducer(ctx: &ReducerContext, arg: ScheduledTable) {
         repeated_row_entry = {
             "prev": TIMESTAMP_ZERO,
             "scheduled_id": 1,
-            "sched_at": {"Interval": {"__time_duration_micros": 100000}},
+            "sched_at": {"Interval": {"__time_duration_micros__": 100000}},
         }
         row_entry = {
             "prev": TIMESTAMP_ZERO,
