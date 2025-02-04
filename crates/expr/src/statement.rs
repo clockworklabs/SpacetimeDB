@@ -137,7 +137,7 @@ pub fn type_insert(insert: SqlInsert, tx: &impl SchemaView) -> TypingResult<Tabl
                     return Err(UnexpectedType::new(&AlgebraicType::String, ty).into());
                 }
                 (SqlLiteral::Hex(v), ty) | (SqlLiteral::Num(v), ty) => {
-                    values.push(parse(v.into_string(), ty)?);
+                    values.push(parse(&v, ty).map_err(|_| InvalidLiteral::new(v.into_string(), ty))?);
                 }
             }
         }
@@ -204,7 +204,10 @@ pub fn type_update(update: SqlUpdate, tx: &impl SchemaView) -> TypingResult<Tabl
                 return Err(UnexpectedType::new(&AlgebraicType::String, ty).into());
             }
             (SqlLiteral::Hex(v), ty) | (SqlLiteral::Num(v), ty) => {
-                values.push((*col_id, parse(v.into_string(), ty)?));
+                values.push((
+                    *col_id,
+                    parse(&v, ty).map_err(|_| InvalidLiteral::new(v.into_string(), ty))?,
+                ));
             }
         }
     }
@@ -268,9 +271,12 @@ pub fn type_and_rewrite_set(set: SqlSet, tx: &impl SchemaView) -> TypingResult<T
         SqlLiteral::Num(n) => {
             let table = tx.schema(ST_VAR_NAME).ok_or_else(|| Unresolved::table(ST_VAR_NAME))?;
             let var_name = AlgebraicValue::String(var_name);
-            let sum_value = StVarValue::try_from_primitive(parse(n.clone().into_string(), &AlgebraicType::U64)?)
-                .map_err(|_| InvalidLiteral::new(n.into_string(), &AlgebraicType::U64))?
-                .into();
+            let sum_value = StVarValue::try_from_primitive(
+                parse(&n, &AlgebraicType::U64)
+                    .map_err(|_| InvalidLiteral::new(n.clone().into_string(), &AlgebraicType::U64))?,
+            )
+            .map_err(|_| InvalidLiteral::new(n.into_string(), &AlgebraicType::U64))?
+            .into();
             Ok(TableInsert {
                 table,
                 rows: Box::new([ProductValue::from_iter([var_name, sum_value])]),

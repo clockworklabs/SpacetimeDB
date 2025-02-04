@@ -127,6 +127,7 @@ axum = { version = "0.7", features = ["tracing"] }
 axum-extra = { version = "0.9", features = ["typed-header"] }
 backtrace = "0.3.66"
 base64 = "0.21.2"
+bigdecimal = "0.4.7"
 bitflags = "2.3.3"
 blake3 = "1.5.1"
 brotli = "3.5"
@@ -227,7 +228,6 @@ socket2 = "0.5"
 sqllogictest = "0.17"
 sqllogictest-engines = "0.17"
 sqlparser = "0.38.0"
-string-interner = "0.17.0"
 strum = { version = "0.25.0", features = ["derive"] }
 syn = { version = "2", features = ["full", "extra-traits"] }
 syntect = { version = "5.0.0", default-features = false, features = ["default-fancy"] }
