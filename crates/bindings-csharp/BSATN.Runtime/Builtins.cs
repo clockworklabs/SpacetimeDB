@@ -187,10 +187,12 @@ public readonly record struct Address
         // --- customized ---
         public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) =>
             // Return a Product directly, not a Ref, because this is a special type.
-            new AlgebraicType.Product([
-                // Using this specific name here is important.
-                new("__address__", new AlgebraicType.U128(default))
-            ]);
+            new AlgebraicType.Product(
+                [
+                    // Using this specific name here is important.
+                    new("__address__", new AlgebraicType.U128(default)),
+                ]
+            );
         // --- / customized ---
     }
 
@@ -257,10 +259,12 @@ public readonly record struct Identity
         // --- customized ---
         public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) =>
             // Return a Product directly, not a Ref, because this is a special type.
-            new AlgebraicType.Product([
-                // Using this specific name here is important.
-                new("__identity__", new AlgebraicType.U256(default))
-            ]);
+            new AlgebraicType.Product(
+                [
+                    // Using this specific name here is important.
+                    new("__identity__", new AlgebraicType.U256(default)),
+                ]
+            );
         // --- / customized ---
     }
 
@@ -278,9 +282,7 @@ public readonly record struct Identity
 public record struct Timestamp(long MicrosecondsSinceUnixEpoch) : IStructuralReadWrite
 {
     public static implicit operator DateTimeOffset(Timestamp t) =>
-     DateTimeOffset.UnixEpoch.AddTicks(
-         t.MicrosecondsSinceUnixEpoch * Util.TicksPerMicrosecond
-     );
+        DateTimeOffset.UnixEpoch.AddTicks(t.MicrosecondsSinceUnixEpoch * Util.TicksPerMicrosecond);
 
     public static implicit operator Timestamp(DateTimeOffset offset) =>
         new Timestamp(offset.Subtract(DateTimeOffset.UnixEpoch).Ticks / Util.TicksPerMicrosecond);
@@ -302,26 +304,19 @@ public record struct Timestamp(long MicrosecondsSinceUnixEpoch) : IStructuralRea
 
     public void ReadFields(BinaryReader reader)
     {
-        MicrosecondsSinceUnixEpoch = BSATN.MicrosecondsSinceUnixEpoch.Read(
-            reader
-        );
+        MicrosecondsSinceUnixEpoch = BSATN.MicrosecondsSinceUnixEpoch.Read(reader);
     }
 
     public readonly void WriteFields(BinaryWriter writer)
     {
-        BSATN.MicrosecondsSinceUnixEpoch.Write(
-            writer,
-            MicrosecondsSinceUnixEpoch
-        );
+        BSATN.MicrosecondsSinceUnixEpoch.Write(writer, MicrosecondsSinceUnixEpoch);
     }
 
     public readonly partial struct BSATN : IReadWrite<Timestamp>
     {
-        internal static readonly I64 MicrosecondsSinceUnixEpoch =
-            new();
+        internal static readonly I64 MicrosecondsSinceUnixEpoch = new();
 
-        public Timestamp Read(BinaryReader reader) =>
-            IStructuralReadWrite.Read<Timestamp>(reader);
+        public Timestamp Read(BinaryReader reader) => IStructuralReadWrite.Read<Timestamp>(reader);
 
         public void Write(BinaryWriter writer, Timestamp value)
         {
@@ -331,9 +326,7 @@ public record struct Timestamp(long MicrosecondsSinceUnixEpoch) : IStructuralRea
         // --- / auto-generated ---
 
         // --- customized ---
-        public AlgebraicType GetAlgebraicType(
-            ITypeRegistrar registrar
-        ) =>
+        public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) =>
             // Return a Product directly, not a Ref, because this is a special type.
             new AlgebraicType.Product(
                 // Using this specific name here is important.
@@ -395,16 +388,13 @@ public record struct TimeDuration(long Microseconds) : IStructuralReadWrite
         }
 
         // --- customized ---
-        public AlgebraicType GetAlgebraicType(
-            ITypeRegistrar registrar
-        ) =>
+        public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) =>
             // Return a Product directly, not a Ref, because this is a special type.
             new AlgebraicType.Product(
                 // Using this specific name here is important.
                 [new("__time_duration_micros__", new AlgebraicType.I64(default))]
             );
         // --- / customized ---
-
     }
 }
 
@@ -420,11 +410,15 @@ public partial record ScheduleAt : TaggedEnum<(TimeDuration Interval, Timestamp 
 
     public static long ToMicroseconds(TimeSpan interval) => ((TimeDuration)interval).Microseconds;
 
-    public static TimeSpan TimeSpanFromMicroseconds(long intervalMicros) => (TimeSpan)(new TimeDuration(intervalMicros));
+    public static TimeSpan TimeSpanFromMicroseconds(long intervalMicros) =>
+        (TimeSpan)(new TimeDuration(intervalMicros));
 
-    public static long ToMicrosecondsSinceUnixEpoch(DateTimeOffset time) => ((Timestamp)time).MicrosecondsSinceUnixEpoch;
+    public static long ToMicrosecondsSinceUnixEpoch(DateTimeOffset time) =>
+        ((Timestamp)time).MicrosecondsSinceUnixEpoch;
 
-    public static DateTimeOffset DateTimeOffsetFromMicrosSinceUnixEpoch(long microsSinceUnixEpoch) => (DateTimeOffset)(new Timestamp(microsSinceUnixEpoch));
+    public static DateTimeOffset DateTimeOffsetFromMicrosSinceUnixEpoch(
+        long microsSinceUnixEpoch
+    ) => (DateTimeOffset)(new Timestamp(microsSinceUnixEpoch));
 
     // --- auto-generated ---
     private ScheduleAt() { }
@@ -474,17 +468,15 @@ public partial record ScheduleAt : TaggedEnum<(TimeDuration Interval, Timestamp 
         // --- / auto-generated ---
 
         // --- customized ---
-        public AlgebraicType GetAlgebraicType(
-            ITypeRegistrar registrar
-        ) =>
-                // Return a Sum directly, not a Ref, because this is a special type.
-                new AlgebraicType.Sum(
-                    [
-                        // Using these specific names here is important.
-                        new("Interval", Interval.GetAlgebraicType(registrar)),
-                        new("Time", Time.GetAlgebraicType(registrar)),
-                    ]
-                );
+        public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) =>
+            // Return a Sum directly, not a Ref, because this is a special type.
+            new AlgebraicType.Sum(
+                [
+                    // Using these specific names here is important.
+                    new("Interval", Interval.GetAlgebraicType(registrar)),
+                    new("Time", Time.GetAlgebraicType(registrar)),
+                ]
+            );
         // --- / customized ---
     }
 }
