@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::{collections::HashSet, ops::Deref};
 
 use crate::statement::Statement;
 use check::{Relvars, TypingResult};
@@ -61,7 +61,7 @@ pub(crate) fn type_expr(vars: &Relvars, expr: SqlExpr, expected: Option<&Algebra
             Ok(Expr::Value(parse(v.into_string(), ty)?, ty.clone()))
         }
         (SqlExpr::Field(SqlIdent(table), SqlIdent(field)), None) => {
-            let table_type = vars.get(&table).ok_or_else(|| Unresolved::var(&table))?;
+            let table_type = vars.deref().get(&table).ok_or_else(|| Unresolved::var(&table))?;
             let ColumnSchema { col_pos, col_type, .. } = table_type
                 .get_column_by_name(&field)
                 .ok_or_else(|| Unresolved::var(&field))?;
@@ -72,8 +72,9 @@ pub(crate) fn type_expr(vars: &Relvars, expr: SqlExpr, expected: Option<&Algebra
             }))
         }
         (SqlExpr::Field(SqlIdent(table), SqlIdent(field)), Some(ty)) => {
-            let table_type = vars.get(&table).ok_or_else(|| Unresolved::var(&table))?;
+            let table_type = vars.deref().get(&table).ok_or_else(|| Unresolved::var(&table))?;
             let ColumnSchema { col_pos, col_type, .. } = table_type
+                .as_ref()
                 .get_column_by_name(&field)
                 .ok_or_else(|| Unresolved::var(&field))?;
             if col_type != ty {

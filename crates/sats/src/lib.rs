@@ -18,6 +18,7 @@ pub mod product_value;
 mod resolve_refs;
 pub mod satn;
 pub mod ser;
+pub mod size_of;
 pub mod sum_type;
 pub mod sum_type_variant;
 pub mod sum_value;
@@ -148,7 +149,7 @@ impl<'a, T: Value> ValueWithType<'a, T> {
 }
 
 impl<'a, T: Value> ValueWithType<'a, Box<[T]>> {
-    pub fn iter(&self) -> impl Iterator<Item = ValueWithType<'_, T>> {
+    pub fn iter(&self) -> impl Iterator<Item = ValueWithType<'a, T>> + use<'_, 'a, T> {
         self.value().iter().map(|val| ValueWithType { ty: self.ty, val })
     }
 }

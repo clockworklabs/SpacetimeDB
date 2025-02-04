@@ -1,4 +1,4 @@
-use super::datastore::record_metrics;
+use super::datastore::record_tx_metrics;
 use super::{
     committed_state::CommittedState,
     datastore::Result,
@@ -8,6 +8,7 @@ use super::{
 use crate::db::datastore::locking_tx_datastore::state_view::IterTx;
 use crate::execution_context::ExecutionContext;
 use spacetimedb_execution::Datastore;
+use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_primitives::{ColList, TableId};
 use spacetimedb_sats::AlgebraicValue;
 use spacetimedb_schema::schema::TableSchema;
@@ -25,6 +26,7 @@ pub struct TxId {
     pub(super) lock_wait_time: Duration,
     pub(super) timer: Instant,
     pub(crate) ctx: ExecutionContext,
+    pub(crate) metrics: ExecutionMetrics,
 }
 
 impl Datastore for TxId {
@@ -40,7 +42,8 @@ impl Datastore for TxId {
 impl StateView for TxId {
     type Iter<'a> = IterTx<'a>;
     type IterByColRange<'a, R: RangeBounds<AlgebraicValue>> = IterByColRangeTx<'a, R>;
-    type IterByColEq<'a, 'r> = IterByColEqTx<'a, 'r>
+    type IterByColEq<'a, 'r>
+        = IterByColEqTx<'a, 'r>
     where
         Self: 'a;
 
@@ -85,7 +88,15 @@ impl StateView for TxId {
 
 impl TxId {
     pub(super) fn release(self) {
-        record_metrics(&self.ctx, self.timer, self.lock_wait_time, true, None, None);
+        record_tx_metrics(
+            &self.ctx,
+            self.timer,
+            self.lock_wait_time,
+            true,
+            None,
+            None,
+            self.metrics,
+        );
     }
 
     /// The Number of Distinct Values (NDV) for a column or list of columns,

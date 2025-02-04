@@ -4,11 +4,23 @@ use anyhow::{bail, Result};
 use delta::DeltaPlan;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use spacetimedb_client_api_messages::websocket::{
-    Compression, DatabaseUpdate, QueryUpdate, TableUpdate, WebsocketFormat,
+    ByteListLen, Compression, DatabaseUpdate, QueryUpdate, TableUpdate, WebsocketFormat,
 };
-use spacetimedb_execution::{pipelined::PipelinedProject, Datastore, DeltaStore};
-use spacetimedb_expr::check::{type_subscription, SchemaView};
-use spacetimedb_physical_plan::{compile::compile_project_plan, plan::ProjectPlan};
+use spacetimedb_execution::{
+    dml::{MutDatastore, MutExecutor},
+    pipelined::{PipelinedProject, ProjectListExecutor},
+    Datastore, DeltaStore,
+};
+use spacetimedb_expr::{
+    check::{type_subscription, SchemaView},
+    expr::ProjectList,
+    statement::{parse_and_type_sql, Statement, DML},
+};
+use spacetimedb_lib::{metrics::ExecutionMetrics, ProductValue};
+use spacetimedb_physical_plan::{
+    compile::{compile_dml_plan, compile_select, compile_select_list},
+    plan::{ProjectListPlan, ProjectPlan},
+};
 use spacetimedb_primitives::TableId;
 use spacetimedb_sql_parser::parser::sub::parse_subscription;
 
@@ -18,6 +30,39 @@ pub mod delta;
 /// Any query longer than this will be rejected.
 /// This prevents a stack overflow when compiling queries with deeply-nested `AND` and `OR` conditions.
 const MAX_SQL_LENGTH: usize = 50_000;
+
+/// A utility for parsing and type checking a sql statement
+pub fn compile_sql_stmt(sql: &str, tx: &impl SchemaView) -> Result<Statement> {
+    if sql.len() > MAX_SQL_LENGTH {
+        bail!("SQL query exceeds maximum allowed length: \"{sql:.120}...\"")
+    }
+    Ok(parse_and_type_sql(sql, tx)?)
+}
+
+/// A utility for executing a sql select statement
+pub fn execute_select_stmt<Tx: Datastore + DeltaStore>(
+    stmt: ProjectList,
+    tx: &Tx,
+    metrics: &mut ExecutionMetrics,
+    check_row_limit: impl Fn(ProjectListPlan) -> Result<ProjectListPlan>,
+) -> Result<Vec<ProductValue>> {
+    let plan = compile_select_list(stmt).optimize();
+    let plan = check_row_limit(plan)?;
+    let plan = ProjectListExecutor::from(plan);
+    let mut rows = vec![];
+    plan.execute(tx, metrics, &mut |row| {
+        rows.push(row);
+        Ok(())
+    })?;
+    Ok(rows)
+}
+
+/// A utility for executing a sql dml statement
+pub fn execute_dml_stmt<Tx: MutDatastore>(stmt: DML, tx: &mut Tx, metrics: &mut ExecutionMetrics) -> Result<()> {
+    let plan = compile_dml_plan(stmt).optimize();
+    let plan = MutExecutor::from(plan);
+    plan.execute(tx, metrics)
+}
 
 /// A subscription query plan that is NOT used for incremental evaluation
 #[derive(Debug)]
@@ -71,7 +116,7 @@ impl SubscribePlan {
         let ast = parse_subscription(sql)?;
         let sub = type_subscription(ast, tx)?;
 
-        let Some(table_id) = sub.table_id() else {
+        let Some(table_id) = sub.return_table_id() else {
             bail!("Failed to determine TableId for query")
         };
 
@@ -79,7 +124,7 @@ impl SubscribePlan {
             bail!("TableId `{table_id}` does not exist")
         };
 
-        let plan = compile_project_plan(sub);
+        let plan = compile_select(sub);
         let plan = plan.optimize();
 
         Ok(Self {
@@ -90,37 +135,48 @@ impl SubscribePlan {
     }
 
     /// Execute a subscription query
-    pub fn execute<Tx, F>(&self, tx: &Tx) -> Result<(F::List, u64)>
+    pub fn execute<Tx, F>(&self, tx: &Tx) -> Result<(F::List, u64, ExecutionMetrics)>
     where
         Tx: Datastore + DeltaStore,
         F: WebsocketFormat,
     {
         let plan = PipelinedProject::from(self.plan.clone());
         let mut rows = vec![];
-        plan.execute(tx, &mut |row| {
+        let mut metrics = ExecutionMetrics::default();
+        plan.execute(tx, &mut metrics, &mut |row| {
             rows.push(row);
             Ok(())
         })?;
-        Ok(F::encode_list(rows.into_iter()))
+        let (list, n) = F::encode_list(rows.into_iter());
+        metrics.bytes_scanned += list.num_bytes();
+        metrics.bytes_sent_to_clients += list.num_bytes();
+        Ok((list, n, metrics))
     }
 
     /// Execute a subscription query and collect the results in a [TableUpdate]
-    pub fn collect_table_update<Tx, F>(&self, comp: Compression, tx: &Tx) -> Result<TableUpdate<F>>
+    pub fn collect_table_update<Tx, F>(&self, comp: Compression, tx: &Tx) -> Result<(TableUpdate<F>, ExecutionMetrics)>
     where
         Tx: Datastore + DeltaStore,
         F: WebsocketFormat,
     {
-        self.execute::<Tx, F>(tx).map(|(inserts, num_rows)| {
+        self.execute::<Tx, F>(tx).map(|(inserts, num_rows, metrics)| {
             let deletes = F::List::default();
             let qu = QueryUpdate { deletes, inserts };
             let update = F::into_query_update(qu, comp);
-            TableUpdate::new(self.table_id, self.table_name.clone(), (update, num_rows))
+            (
+                TableUpdate::new(self.table_id, self.table_name.clone(), (update, num_rows)),
+                metrics,
+            )
         })
     }
 }
 
 /// Execute a collection of subscription queries in parallel
-pub fn execute_plans<Tx, F>(plans: Vec<SubscribePlan>, comp: Compression, tx: &Tx) -> Result<DatabaseUpdate<F>>
+pub fn execute_plans<Tx, F>(
+    plans: Vec<SubscribePlan>,
+    comp: Compression,
+    tx: &Tx,
+) -> Result<(DatabaseUpdate<F>, ExecutionMetrics)>
 where
     Tx: Datastore + DeltaStore + Sync,
     F: WebsocketFormat,
@@ -128,6 +184,15 @@ where
     plans
         .par_iter()
         .map(|plan| plan.collect_table_update(comp, tx))
-        .collect::<Result<_>>()
-        .map(|tables| DatabaseUpdate { tables })
+        .collect::<Result<Vec<_>>>()
+        .map(|table_updates_with_metrics| {
+            let n = table_updates_with_metrics.len();
+            let mut tables = Vec::with_capacity(n);
+            let mut aggregated_metrics = ExecutionMetrics::default();
+            for (update, metrics) in table_updates_with_metrics {
+                tables.push(update);
+                aggregated_metrics.merge(metrics);
+            }
+            (DatabaseUpdate { tables }, aggregated_metrics)
+        })
 }

@@ -58,6 +58,17 @@ impl<T, L: Deref<Target = [T]>> RowListLen for L {
     }
 }
 
+pub trait ByteListLen {
+    /// Returns the uncompressed size of the list in bytes
+    fn num_bytes(&self) -> usize;
+}
+
+impl ByteListLen for Vec<ByteString> {
+    fn num_bytes(&self) -> usize {
+        self.iter().map(|str| str.len()).sum()
+    }
+}
+
 /// A format / codec used by the websocket API.
 ///
 /// This can be e.g., BSATN, JSON.
@@ -66,7 +77,14 @@ pub trait WebsocketFormat: Sized {
     type Single: SpacetimeType + for<'de> Deserialize<'de> + Serialize + Debug + Clone;
 
     /// The type used for the encoding of a list of items.
-    type List: SpacetimeType + for<'de> Deserialize<'de> + Serialize + RowListLen + Debug + Clone + Default;
+    type List: SpacetimeType
+        + for<'de> Deserialize<'de>
+        + Serialize
+        + RowListLen
+        + ByteListLen
+        + Debug
+        + Clone
+        + Default;
 
     /// Encodes the `elems` to a list in the format and also returns the length of the list.
     fn encode_list<R: ToBsatn + Serialize>(elems: impl Iterator<Item = R>) -> (Self::List, u64);
@@ -897,6 +915,13 @@ impl<B: AsRef<[u8]>, I: AsRef<[RowOffset]>> RowListLen for BsatnRowList<B, I> {
             RowSizeHint::FixedSize(size) => self.rows_data.as_ref().len() / *size as usize,
             RowSizeHint::RowOffsets(offsets) => offsets.as_ref().len(),
         }
+    }
+}
+
+impl<B: AsRef<[u8]>, I> ByteListLen for BsatnRowList<B, I> {
+    /// Returns the uncompressed size of the list in bytes
+    fn num_bytes(&self) -> usize {
+        self.rows_data.as_ref().len()
     }
 }
 

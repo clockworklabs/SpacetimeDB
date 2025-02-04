@@ -27,6 +27,7 @@ pub use db_context::DbContext;
 pub use event::{Event, ReducerEvent, Status};
 pub use table::{Table, TableWithPrimaryKey};
 
+pub use spacetime_module::SubscriptionHandle;
 pub use spacetimedb_lib::{Address, Identity, ScheduleAt, TimeDuration, Timestamp};
 pub use spacetimedb_sats::{i256, u256};
 
@@ -50,7 +51,7 @@ pub mod __codegen {
         parse_reducer_args, DbConnection, DbUpdate, EventContext, InModule, Reducer, SpacetimeModule,
         SubscriptionHandle, TableUpdate,
     };
-    pub use crate::subscription::{SubscriptionBuilder, SubscriptionHandleImpl};
+    pub use crate::subscription::{OnEndedCallback, SubscriptionBuilder, SubscriptionHandleImpl};
     pub use crate::{
         Address, DbConnectionBuilder, DbContext, DisconnectedError, Event, Identity, ReducerEvent, ScheduleAt, Table,
         TableWithPrimaryKey, TimeDuration, Timestamp,

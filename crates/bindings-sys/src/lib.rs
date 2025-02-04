@@ -108,6 +108,7 @@ pub mod raw {
         /// - `prefix = prefix_ptr[..prefix_len]`,
         /// - `rstart = rstart_ptr[..rstart_len]`,
         /// - `rend = rend_ptr[..rend_len]`,
+        ///
         /// in WASM memory.
         ///
         /// The index itself has a schema/type.
@@ -158,13 +159,28 @@ pub mod raw {
         ///
         /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
         /// - `NO_SUCH_INDEX`, when `index_id` is not a known ID of an index.
-        /// - `WRONG_INDEX_ALGO` if the index is not a btree index.
+        /// - `WRONG_INDEX_ALGO` if the index is not a range-compatible index.
         /// - `BSATN_DECODE_ERROR`, when `prefix` cannot be decoded to
         ///    a `prefix_elems` number of `AlgebraicValue`
         ///    typed at the initial `prefix_elems` `AlgebraicType`s of the index's key type.
         ///    Or when `rstart` or `rend` cannot be decoded to an `Bound<AlgebraicValue>`
         ///    where the inner `AlgebraicValue`s are
         ///    typed at the `prefix_elems + 1` `AlgebraicType` of the index's key type.
+        pub fn datastore_index_scan_range_bsatn(
+            index_id: IndexId,
+            prefix_ptr: *const u8,
+            prefix_len: usize,
+            prefix_elems: ColId,
+            rstart_ptr: *const u8, // Bound<AlgebraicValue>
+            rstart_len: usize,
+            rend_ptr: *const u8, // Bound<AlgebraicValue>
+            rend_len: usize,
+            out: *mut RowIter,
+        ) -> u16;
+
+        /// This is the same as [`datastore_index_scan_range_bsatn`].
+        #[deprecated = "use `datastore_index_scan_range_bsatn` instead"]
+        #[doc(alias = "datastore_index_scan_range_bsatn")]
         pub fn datastore_btree_scan_bsatn(
             index_id: IndexId,
             prefix_ptr: *const u8,
@@ -182,12 +198,13 @@ pub mod raw {
         /// - `prefix = prefix_ptr[..prefix_len]`,
         /// - `rstart = rstart_ptr[..rstart_len]`,
         /// - `rend = rend_ptr[..rend_len]`,
+        ///
         /// in WASM memory.
         ///
         /// This syscall will delete all the rows found by
-        /// [`datastore_btree_scan_bsatn`] with the same arguments passed,
+        /// [`datastore_index_scan_range_bsatn`] with the same arguments passed,
         /// including `prefix_elems`.
-        /// See `datastore_btree_scan_bsatn` for details.
+        /// See `datastore_index_scan_range_bsatn` for details.
         ///
         /// The number of rows deleted is written to the WASM pointer `out`.
         ///
@@ -206,13 +223,28 @@ pub mod raw {
         ///
         /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
         /// - `NO_SUCH_INDEX`, when `index_id` is not a known ID of an index.
-        /// - `WRONG_INDEX_ALGO` if the index is not a btree index.
+        /// - `WRONG_INDEX_ALGO` if the index is not a range-compatible index.
         /// - `BSATN_DECODE_ERROR`, when `prefix` cannot be decoded to
         ///    a `prefix_elems` number of `AlgebraicValue`
         ///    typed at the initial `prefix_elems` `AlgebraicType`s of the index's key type.
         ///    Or when `rstart` or `rend` cannot be decoded to an `Bound<AlgebraicValue>`
         ///    where the inner `AlgebraicValue`s are
         ///    typed at the `prefix_elems + 1` `AlgebraicType` of the index's key type.
+        pub fn datastore_delete_by_index_scan_range_bsatn(
+            index_id: IndexId,
+            prefix_ptr: *const u8,
+            prefix_len: usize,
+            prefix_elems: ColId,
+            rstart_ptr: *const u8, // Bound<AlgebraicValue>
+            rstart_len: usize,
+            rend_ptr: *const u8, // Bound<AlgebraicValue>
+            rend_len: usize,
+            out: *mut u32,
+        ) -> u16;
+
+        /// This is the same as [`datastore_delete_by_index_scan_range_bsatn`].
+        #[deprecated = "use `datastore_delete_by_index_scan_range_bsatn` instead"]
+        #[doc(alias = "datastore_delete_by_index_scan_range_bsatn")]
         pub fn datastore_delete_by_btree_scan_bsatn(
             index_id: IndexId,
             prefix_ptr: *const u8,
@@ -813,11 +845,12 @@ pub fn datastore_insert_bsatn(table_id: TableId, row: &mut [u8]) -> Result<&[u8]
 ///
 /// Returns an error if
 /// - a table with the provided `table_id` doesn't exist
-/// - an index with the provided `index_id` doesn't exist
+/// - an index with the provided `index_id` doesn't exist or if the index was not unique.
 /// - there were unique constraint violations
 /// - `row` doesn't decode from BSATN to a `ProductValue`
 ///   according to the `ProductType` that the table's schema specifies
 ///   or if `row` cannot project to the index's type.
+/// - the row was not found
 #[inline]
 pub fn datastore_update_bsatn(table_id: TableId, index_id: IndexId, row: &mut [u8]) -> Result<&[u8], Errno> {
     let row_ptr = row.as_mut_ptr();
@@ -907,14 +940,14 @@ pub fn datastore_table_scan_bsatn(table_id: TableId) -> Result<RowIter, Errno> {
 ///
 /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
 /// - `NO_SUCH_INDEX`, when `index_id` is not a known ID of an index.
-/// - `WRONG_INDEX_ALGO` if the index is not a btree index.
+/// - `WRONG_INDEX_ALGO` if the index is not a range-compatible index.
 /// - `BSATN_DECODE_ERROR`, when `prefix` cannot be decoded to
 ///    a `prefix_elems` number of `AlgebraicValue`
 ///    typed at the initial `prefix_elems` `AlgebraicType`s of the index's key type.
 ///    Or when `rstart` or `rend` cannot be decoded to an `Bound<AlgebraicValue>`
 ///    where the inner `AlgebraicValue`s are
 ///    typed at the `prefix_elems + 1` `AlgebraicType` of the index's key type.
-pub fn datastore_btree_scan_bsatn(
+pub fn datastore_index_scan_range_bsatn(
     index_id: IndexId,
     prefix: &[u8],
     prefix_elems: ColId,
@@ -923,7 +956,7 @@ pub fn datastore_btree_scan_bsatn(
 ) -> Result<RowIter, Errno> {
     let raw = unsafe {
         call(|out| {
-            raw::datastore_btree_scan_bsatn(
+            raw::datastore_index_scan_range_bsatn(
                 index_id,
                 prefix.as_ptr(),
                 prefix.len(),
@@ -943,9 +976,9 @@ pub fn datastore_btree_scan_bsatn(
 /// according to the `prefix`, `rstart`, and `rend`.
 ///
 /// This syscall will delete all the rows found by
-/// [`datastore_btree_scan_bsatn`] with the same arguments passed,
+/// [`datastore_index_scan_range_bsatn`] with the same arguments passed,
 /// including `prefix_elems`.
-/// See `datastore_btree_scan_bsatn` for details.
+/// See `datastore_index_scan_range_bsatn` for details.
 ///
 /// The number of rows deleted is returned on success.
 ///
@@ -955,14 +988,14 @@ pub fn datastore_btree_scan_bsatn(
 ///
 /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
 /// - `NO_SUCH_INDEX`, when `index_id` is not a known ID of an index.
-/// - `WRONG_INDEX_ALGO` if the index is not a btree index.
+/// - `WRONG_INDEX_ALGO` if the index is not a range-compatible index.
 /// - `BSATN_DECODE_ERROR`, when `prefix` cannot be decoded to
 ///    a `prefix_elems` number of `AlgebraicValue`
 ///    typed at the initial `prefix_elems` `AlgebraicType`s of the index's key type.
 ///    Or when `rstart` or `rend` cannot be decoded to an `Bound<AlgebraicValue>`
 ///    where the inner `AlgebraicValue`s are
 ///    typed at the `prefix_elems + 1` `AlgebraicType` of the index's key type.
-pub fn datastore_delete_by_btree_scan_bsatn(
+pub fn datastore_delete_by_index_scan_range_bsatn(
     index_id: IndexId,
     prefix: &[u8],
     prefix_elems: ColId,
@@ -971,7 +1004,7 @@ pub fn datastore_delete_by_btree_scan_bsatn(
 ) -> Result<u32, Errno> {
     unsafe {
         call(|out| {
-            raw::datastore_delete_by_btree_scan_bsatn(
+            raw::datastore_delete_by_index_scan_range_bsatn(
                 index_id,
                 prefix.as_ptr(),
                 prefix.len(),

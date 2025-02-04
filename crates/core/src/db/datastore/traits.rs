@@ -65,16 +65,16 @@ use spacetimedb_table::table::RowRef;
 /// The ANSI SQL standard defined three anomalies in 1992:
 ///
 /// - Dirty Reads: Occur when a transaction reads data written by a concurrent
-/// uncommitted transaction.
+///   uncommitted transaction.
 ///
 /// - Non-repeatable Reads: Occur when a transaction reads the same row twice
-/// and gets different data each time because another transaction has modified
-/// the data in between the reads.
+///   and gets different data each time because another transaction has modified
+///   the data in between the reads.
 ///
 /// - Phantom Reads: Occur when a transaction re-executes a query returning a
-/// set of rows that satisfy a search condition and finds that the set of rows
-/// satisfying the condition has changed due to another recently-committed
-/// transaction.
+///   set of rows that satisfy a search condition and finds that the set of rows
+///   satisfying the condition has changed due to another recently-committed
+///   transaction.
 ///
 /// However since then database researchers have identified and cataloged many
 /// more. See:
@@ -90,14 +90,14 @@ use spacetimedb_table::table::RowRef;
 /// The following anomalies are not part of the SQL standard, but are important:
 ///
 /// - Write Skew: Occurs when two transactions concurrently read the same data,
-/// make decisions based on that data, and then write back modifications that
-/// are mutually inconsistent with the decisions made by the other transaction,
-/// despite no direct conflict on the same row being detected. e.g. I read what
-/// you write and you read what I write.
+///   make decisions based on that data, and then write back modifications that
+///   are mutually inconsistent with the decisions made by the other transaction,
+///   despite no direct conflict on the same row being detected. e.g. I read what
+///   you write and you read what I write.
 ///
 /// - Serialization Anomalies: Occur when the results of a set of transactions
-/// are inconsistent with any serial execution of those transactions.
-
+///   are inconsistent with any serial execution of those transactions.
+///
 /// PostgreSQL's documentation provides a good summary of the anomalies and
 /// isolation levels that it supports:
 ///
@@ -345,6 +345,19 @@ impl Program {
     }
 }
 
+/// Additional information about an insert operation.
+pub struct InsertFlags {
+    /// Is the table a scheduler table?
+    pub is_scheduler_table: bool,
+}
+
+/// Additional information about an update operation.
+// TODO(centril): consider fusing this with `InsertFlags`.
+pub struct UpdateFlags {
+    /// Is the table a scheduler table?
+    pub is_scheduler_table: bool,
+}
+
 pub trait TxDatastore: DataRow + Tx {
     type IterTx<'a>: Iterator<Item = Self::RowRef<'a>>
     where
@@ -486,15 +499,34 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
     ///
     /// Returns the list of columns with sequence-trigger values that were replaced with generated ones
     /// and a reference to the row as a [`RowRef`].
+    /// Also returns any additional insert flags.
     ///
     /// Generated columns are columns with an auto-inc sequence
     /// and where the column was `0` in `row`.
+    // TODO(centril): consider making the tuple into a struct.
     fn insert_mut_tx<'a>(
         &'a self,
         tx: &'a mut Self::MutTx,
         table_id: TableId,
         row: &[u8],
-    ) -> Result<(ColList, RowRef<'a>)>;
+    ) -> Result<(ColList, RowRef<'a>, InsertFlags)>;
+    /// Updates a row to `row`, encoded in BSATN, into the table identified by `table_id`
+    /// using the index identified by `index_id`.
+    ///
+    /// Returns the list of columns with sequence-trigger values that were replaced with generated ones
+    /// and a reference to the row as a [`RowRef`].
+    /// Also returns any additional update flags.
+    ///
+    /// Generated columns are columns with an auto-inc sequence
+    /// and where the column was `0` in `row`.
+    // TODO(centril): consider making the tuple into a struct.
+    fn update_mut_tx<'a>(
+        &'a self,
+        tx: &'a mut Self::MutTx,
+        table_id: TableId,
+        index_id: IndexId,
+        row: &[u8],
+    ) -> Result<(ColList, RowRef<'a>, UpdateFlags)>;
 
     /// Obtain the [`Metadata`] for this datastore.
     ///

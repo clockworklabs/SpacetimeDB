@@ -85,6 +85,11 @@ metrics_group!(
         #[labels(caller_identity: Identity, module_hash: Hash, caller_address: Address, reducer_symbol: str)]
         pub wasm_instance_errors: IntCounterVec,
 
+        #[name = spacetime_worker_wasm_memory_bytes]
+        #[help = "The number of bytes of linear memory allocated by the database's WASM module instance"]
+        #[labels(database_identity: Identity)]
+        pub wasm_memory_bytes: IntGaugeVec,
+
         #[name = spacetime_active_queries]
         #[help = "The number of active subscription queries"]
         #[labels(database_identity: Identity)]
@@ -99,6 +104,11 @@ metrics_group!(
         #[help = "The time spent executing a reducer (in seconds), plus the time spent evaluating its subscription queries"]
         #[labels(db: Identity, reducer: str)]
         pub reducer_plus_query_duration: HistogramVec,
+
+        #[name = spacetime_num_bytes_sent_to_clients_total]
+        #[help = "The cumulative number of bytes sent to clients"]
+        #[labels(txn_type: WorkloadType, db: Identity)]
+        pub bytes_sent_to_clients: IntCounterVec,
     }
 );
 

@@ -37,10 +37,10 @@ impl WasmtimeModule {
     pub const IMPLEMENTED_ABI: abi::VersionTuple = abi::VersionTuple::new(10, 0);
 
     pub(super) fn link_imports(linker: &mut Linker<WasmInstanceEnv>) -> anyhow::Result<()> {
-        #[allow(clippy::assertions_on_constants)]
-        const _: () = assert!(WasmtimeModule::IMPLEMENTED_ABI.major == spacetimedb_lib::MODULE_ABI_MAJOR_VERSION);
+        const { assert!(WasmtimeModule::IMPLEMENTED_ABI.major == spacetimedb_lib::MODULE_ABI_MAJOR_VERSION) };
         macro_rules! link_functions {
             ($($module:literal :: $func:ident,)*) => {
+                #[allow(deprecated)]
                 linker$(.func_wrap($module, stringify!($func), WasmInstanceEnv::$func)?)*;
             }
         }
@@ -228,10 +228,12 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
             used: (budget - remaining).into(),
             remaining,
         };
+        let memory_allocation = store.data().get_mem().memory.data_size(&store);
 
         module_host_actor::ExecuteResult {
             energy,
             timings,
+            memory_allocation,
             call_result,
         }
     }

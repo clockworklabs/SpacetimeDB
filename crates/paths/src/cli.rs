@@ -17,8 +17,9 @@ impl ConfigDir {
     }
 }
 
-path_type!(#[non_exhaustive(FALSE)] PrivKeyPath: file);
-path_type!(#[non_exhaustive(FALSE)] PubKeyPath: file);
+// TODO: replace cfg(any()) with cfg(false) once stabilized
+path_type!(#[non_exhaustive(any())] PrivKeyPath: file);
+path_type!(#[non_exhaustive(any())] PubKeyPath: file);
 
 path_type!(BinFile: file);
 

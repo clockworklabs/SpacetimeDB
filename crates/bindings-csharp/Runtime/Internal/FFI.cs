@@ -150,7 +150,7 @@ internal static partial class FFI
     );
 
     [LibraryImport(StdbNamespace)]
-    public static partial CheckedStatus datastore_btree_scan_bsatn(
+    public static partial CheckedStatus datastore_index_scan_range_bsatn(
         IndexId index_id,
         ReadOnlySpan<byte> prefix,
         uint prefix_len,
@@ -180,7 +180,7 @@ internal static partial class FFI
     );
 
     [LibraryImport(StdbNamespace)]
-    public static partial CheckedStatus datastore_delete_by_btree_scan_bsatn(
+    public static partial CheckedStatus datastore_delete_by_index_scan_range_bsatn(
         IndexId index_id,
         ReadOnlySpan<byte> prefix,
         uint prefix_len,

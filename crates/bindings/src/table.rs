@@ -300,15 +300,15 @@ impl<Tbl: Table, Col: Index + Column<Table = Tbl>> UniqueColumn<Tbl, Col::ColTyp
         let args = self.get_args(col_val);
         let (prefix, prefix_elems, rstart, rend) = args.args_for_syscall();
 
-        let iter = sys::datastore_btree_scan_bsatn(index_id, prefix, prefix_elems, rstart, rend)
-            .unwrap_or_else(|e| panic!("unique: unexpected error from datastre_btree_scan_bsatn: {e}"));
+        let iter = sys::datastore_index_scan_range_bsatn(index_id, prefix, prefix_elems, rstart, rend)
+            .unwrap_or_else(|e| panic!("unique: unexpected error from `datastore_index_scan_range_bsatn`: {e}"));
         let mut iter = TableIter::new_with_buf(iter, args.data);
 
         // We will always find either 0 or 1 rows here due to the unique constraint.
         let row = iter.next();
         assert!(
             iter.is_exhausted(),
-            "datastore_btree_scan_bsatn on unique field cannot return >1 rows"
+            "`datastore_index_scan_range_bsatn` on unique field cannot return >1 rows"
         );
         row
     }
@@ -331,8 +331,10 @@ impl<Tbl: Table, Col: Index + Column<Table = Tbl>> UniqueColumn<Tbl, Col::ColTyp
         let args = self.get_args(col_val);
         let (prefix, prefix_elems, rstart, rend) = args.args_for_syscall();
 
-        let n_del = sys::datastore_delete_by_btree_scan_bsatn(index_id, prefix, prefix_elems, rstart, rend)
-            .unwrap_or_else(|e| panic!("unique: unexpected error from datastore_delete_by_btree_scan_bsatn: {e}"));
+        let n_del = sys::datastore_delete_by_index_scan_range_bsatn(index_id, prefix, prefix_elems, rstart, rend)
+            .unwrap_or_else(|e| {
+                panic!("unique: unexpected error from datastore_delete_by_index_scan_range_bsatn: {e}")
+            });
 
         (n_del > 0, args.data)
     }
@@ -347,19 +349,9 @@ impl<Tbl: Table, Col: Index + Column<Table = Tbl>> UniqueColumn<Tbl, Col::ColTyp
     /// or if either the delete or the insertion would violate a constraint.
     #[track_caller]
     pub fn update(&self, new_row: Tbl::Row) -> Tbl::Row {
-        let (deleted, buf) = self._delete(Col::get_field(&new_row));
-        if !deleted {
-            update_row_didnt_exist(Tbl::TABLE_NAME, Col::COLUMN_NAME)
-        }
-        insert::<Tbl>(new_row, buf).unwrap_or_else(|e| panic!("{e}"))
+        let buf = IterBuf::take();
+        update::<Tbl>(Col::index_id(), new_row, buf)
     }
-}
-
-#[cold]
-#[inline(never)]
-#[track_caller]
-fn update_row_didnt_exist(table_name: &str, unique_column: &str) -> ! {
-    panic!("UniqueColumn::update: row in table `{table_name}` being updated by unique column `{unique_column}` did not already exist")
 }
 
 pub trait Index {
@@ -387,8 +379,8 @@ impl<Tbl: Table, IndexType, Idx: Index> BTreeIndex<Tbl, IndexType, Idx> {
         let index_id = Idx::index_id();
         let args = b.get_args();
         let (prefix, prefix_elems, rstart, rend) = args.args_for_syscall();
-        let iter = sys::datastore_btree_scan_bsatn(index_id, prefix, prefix_elems, rstart, rend)
-            .unwrap_or_else(|e| panic!("unexpected error from datastore_btree_scan_bsatn: {e}"));
+        let iter = sys::datastore_index_scan_range_bsatn(index_id, prefix, prefix_elems, rstart, rend)
+            .unwrap_or_else(|e| panic!("unexpected error from `datastore_index_scan_range_bsatn`: {e}"));
         TableIter::new(iter)
     }
 
@@ -408,8 +400,8 @@ impl<Tbl: Table, IndexType, Idx: Index> BTreeIndex<Tbl, IndexType, Idx> {
         let index_id = Idx::index_id();
         let args = b.get_args();
         let (prefix, prefix_elems, rstart, rend) = args.args_for_syscall();
-        sys::datastore_delete_by_btree_scan_bsatn(index_id, prefix, prefix_elems, rstart, rend)
-            .unwrap_or_else(|e| panic!("unexpected error from datastore_delete_by_btree_scan_bsatn: {e}"))
+        sys::datastore_delete_by_index_scan_range_bsatn(index_id, prefix, prefix_elems, rstart, rend)
+            .unwrap_or_else(|e| panic!("unexpected error from `datastore_delete_by_index_scan_range_bsatn`: {e}"))
             .into()
     }
 }
@@ -813,7 +805,7 @@ fn insert<T: Table>(mut row: T::Row, mut buf: IterBuf) -> Result<T::Row, TryInse
     // Insert row into table.
     // When table has an auto-incrementing column, we must re-decode the changed `buf`.
     let res = sys::datastore_insert_bsatn(table_id, &mut buf).map(|gen_cols| {
-        // Let the caller handle any generated columns written back by `sys::insert` to `buf`.
+        // Let the caller handle any generated columns written back by `sys::datastore_insert_bsatn` to `buf`.
         T::integrate_generated_columns(&mut row, gen_cols);
         row
     });
@@ -827,6 +819,26 @@ fn insert<T: Table>(mut row: T::Row, mut buf: IterBuf) -> Result<T::Row, TryInse
         };
         err.unwrap_or_else(|| panic!("unexpected insertion error: {e}"))
     })
+}
+
+/// Update a row of type `T` to `row` using the index identified by `index_id`.
+#[track_caller]
+fn update<T: Table>(index_id: IndexId, mut row: T::Row, mut buf: IterBuf) -> T::Row {
+    let table_id = T::table_id();
+    // Encode the row as bsatn into the buffer `buf`.
+    buf.clear();
+    buf.serialize_into(&row).unwrap();
+
+    // Insert row into table.
+    // When table has an auto-incrementing column, we must re-decode the changed `buf`.
+    let res = sys::datastore_update_bsatn(table_id, index_id, &mut buf).map(|gen_cols| {
+        // Let the caller handle any generated columns written back by `sys::datastore_update_bsatn` to `buf`.
+        T::integrate_generated_columns(&mut row, gen_cols);
+        row
+    });
+
+    // TODO(centril): introduce a `TryUpdateError`.
+    res.unwrap_or_else(|e| panic!("unexpected update error: {e}"))
 }
 
 /// A table iterator which yields values of the `TableType` corresponding to the table.

@@ -202,9 +202,15 @@ impl fmt::LowerHex for PageOffset {
     }
 }
 
+/// Returns the maximum number of rows with `fixed_row_size` that a page can hold.
+#[inline]
+pub fn max_rows_in_page(fixed_row_size: Size) -> usize {
+    PageOffset::PAGE_END.idx().div_ceil(fixed_row_size.len())
+}
+
 /// The index of a [`Page`] within a [`Pages`].
 #[cfg_attr(any(test, feature = "proptest"), derive(proptest_derive::Arbitrary))]
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct PageIndex(#[cfg_attr(any(test, feature = "proptest"), proptest(strategy = "0..MASK_PI"))] pub u64);
 
 impl MemoryUsage for PageIndex {}

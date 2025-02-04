@@ -4,7 +4,8 @@ use super::datastore::locking_tx_datastore::state_view::{
 };
 use super::datastore::system_tables::ST_MODULE_ID;
 use super::datastore::traits::{
-    IsolationLevel, Metadata, MutTx as _, MutTxDatastore, Program, RowTypeForTable, Tx as _, TxDatastore,
+    InsertFlags, IsolationLevel, Metadata, MutTx as _, MutTxDatastore, Program, RowTypeForTable, Tx as _, TxDatastore,
+    UpdateFlags,
 };
 use super::datastore::{
     locking_tx_datastore::{
@@ -1113,7 +1114,7 @@ impl RelationalDB {
         self.inner.iter_by_col_range_tx(tx, table_id.into(), cols, range)
     }
 
-    pub fn btree_scan<'a>(
+    pub fn index_scan_range<'a>(
         &'a self,
         tx: &'a MutTx,
         index_id: IndexId,
@@ -1122,7 +1123,7 @@ impl RelationalDB {
         rstart: &[u8],
         rend: &[u8],
     ) -> Result<(TableId, impl Iterator<Item = RowRef<'a>>), DBError> {
-        tx.btree_scan(index_id, prefix, prefix_elems, rstart, rend)
+        tx.index_scan_range(index_id, prefix, prefix_elems, rstart, rend)
     }
 
     pub fn insert<'a>(
@@ -1130,8 +1131,18 @@ impl RelationalDB {
         tx: &'a mut MutTx,
         table_id: TableId,
         row: &[u8],
-    ) -> Result<(ColList, RowRef<'a>), DBError> {
+    ) -> Result<(ColList, RowRef<'a>, InsertFlags), DBError> {
         self.inner.insert_mut_tx(tx, table_id, row)
+    }
+
+    pub fn update<'a>(
+        &'a self,
+        tx: &'a mut MutTx,
+        table_id: TableId,
+        index_id: IndexId,
+        row: &[u8],
+    ) -> Result<(ColList, RowRef<'a>, UpdateFlags), DBError> {
+        self.inner.update_mut_tx(tx, table_id, index_id, row)
     }
 
     pub fn delete(&self, tx: &mut MutTx, table_id: TableId, row_ids: impl IntoIterator<Item = RowPointer>) -> u32 {
@@ -1553,7 +1564,7 @@ pub mod tests_utils {
         table_id: TableId,
         row: &T,
     ) -> Result<(AlgebraicValue, RowRef<'a>), DBError> {
-        let (gen_cols, row_ref) = db.insert(tx, table_id, &to_vec(row).unwrap())?;
+        let (gen_cols, row_ref, _) = db.insert(tx, table_id, &to_vec(row).unwrap())?;
         let gen_cols = row_ref.project(&gen_cols).unwrap();
         Ok((gen_cols, row_ref))
     }

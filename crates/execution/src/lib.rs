@@ -16,6 +16,7 @@ use spacetimedb_table::{
     table::{IndexScanIter, RowRef, Table, TableScanIter},
 };
 
+pub mod dml;
 pub mod iter;
 pub mod pipelined;
 
@@ -77,6 +78,15 @@ pub trait DeltaStore {
 pub enum Row<'a> {
     Ptr(RowRef<'a>),
     Ref(&'a ProductValue),
+}
+
+impl Row<'_> {
+    pub fn to_product_value(&self) -> ProductValue {
+        match self {
+            Self::Ptr(ptr) => ptr.to_product_value(),
+            Self::Ref(val) => (*val).clone(),
+        }
+    }
 }
 
 impl_serialize!(['a] Row<'a>, (self, ser) => match self {
