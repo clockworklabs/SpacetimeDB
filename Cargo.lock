@@ -4764,6 +4764,7 @@ dependencies = [
  "wasmbin",
  "wasmtime",
  "webbrowser",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -5368,6 +5369,7 @@ dependencies = [
  "semver",
  "spacetimedb-paths",
  "tracing",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

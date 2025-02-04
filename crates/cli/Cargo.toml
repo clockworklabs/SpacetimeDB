@@ -69,6 +69,9 @@ wasmbin.workspace = true
 wasmtime.workspace = true
 webbrowser.workspace = true
 
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, features = ["Win32_System_Console"] }
+
 [dev-dependencies]
 insta.workspace = true
 fs-err.workspace = true
