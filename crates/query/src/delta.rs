@@ -6,7 +6,7 @@ use spacetimedb_execution::{pipelined::PipelinedProject, Datastore, DeltaStore, 
 use spacetimedb_expr::check::{type_subscription, SchemaView};
 use spacetimedb_lib::{metrics::ExecutionMetrics, query::Delta};
 use spacetimedb_physical_plan::{
-    compile::compile_project_plan,
+    compile::compile_select,
     plan::{HashJoin, IxJoin, Label, PhysicalPlan, ProjectPlan},
 };
 use spacetimedb_primitives::TableId;
@@ -40,7 +40,7 @@ impl DeltaPlan {
         let ast = parse_subscription(sql)?;
         let sub = type_subscription(ast, tx)?;
 
-        let Some(table_id) = sub.table_id() else {
+        let Some(table_id) = sub.return_table_id() else {
             bail!("Failed to determine TableId for query")
         };
 
@@ -48,7 +48,7 @@ impl DeltaPlan {
             bail!("TableId `{table_id}` does not exist")
         };
 
-        let plan = compile_project_plan(sub);
+        let plan = compile_select(sub);
 
         let mut ix_joins = true;
         plan.visit(&mut |plan| match plan {

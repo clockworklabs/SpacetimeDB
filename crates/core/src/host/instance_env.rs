@@ -14,7 +14,7 @@ use spacetimedb_sats::{
     AlgebraicValue, ProductValue,
 };
 use spacetimedb_table::indexes::RowPointer;
-use spacetimedb_table::table::{RowRef, UniqueConstraintViolation};
+use spacetimedb_table::table::RowRef;
 use std::ops::DerefMut;
 use std::sync::Arc;
 
@@ -160,17 +160,21 @@ impl InstanceEnv {
                 let row_len = Self::project_cols_bsatn(buffer, gen_cols, row_ref);
                 (row_len, row_ref.pointer(), insert_flags)
             })
-            .inspect_err(|e| match e {
-                DBError::Index(IndexError::UniqueConstraintViolation(UniqueConstraintViolation { .. })) => {}
-                _ => {
-                    let res = stdb.table_name_from_id_mut(tx, table_id);
-                    if let Ok(Some(table_name)) = res {
-                        log::debug!("insert(table: {table_name}, table_id: {table_id}): {e}")
-                    } else {
-                        log::debug!("insert(table_id: {table_id}): {e}")
+            .inspect_err(
+                #[cold]
+                #[inline(never)]
+                |e| match e {
+                    DBError::Index(IndexError::UniqueConstraintViolation(_)) => {}
+                    _ => {
+                        let res = stdb.table_name_from_id_mut(tx, table_id);
+                        if let Ok(Some(table_name)) = res {
+                            log::debug!("insert(table: {table_name}, table_id: {table_id}): {e}")
+                        } else {
+                            log::debug!("insert(table_id: {table_id}): {e}")
+                        }
                     }
-                }
-            })?;
+                },
+            )?;
 
         if insert_flags.is_scheduler_table {
             self.schedule_row(stdb, tx, table_id, row_ptr)?;
@@ -218,17 +222,21 @@ impl InstanceEnv {
                 let row_len = Self::project_cols_bsatn(buffer, gen_cols, row_ref);
                 (row_len, row_ref.pointer(), update_flags)
             })
-            .inspect_err(|e| match e {
-                DBError::Index(IndexError::UniqueConstraintViolation(UniqueConstraintViolation { .. })) => {}
-                _ => {
-                    let res = stdb.table_name_from_id_mut(tx, table_id);
-                    if let Ok(Some(table_name)) = res {
-                        log::debug!("update(table: {table_name}, table_id: {table_id}, index_id: {index_id}): {e}")
-                    } else {
-                        log::debug!("update(table_id: {table_id}, index_id: {index_id}): {e}")
+            .inspect_err(
+                #[cold]
+                #[inline(never)]
+                |e| match e {
+                    DBError::Index(IndexError::UniqueConstraintViolation(_)) => {}
+                    _ => {
+                        let res = stdb.table_name_from_id_mut(tx, table_id);
+                        if let Ok(Some(table_name)) = res {
+                            log::debug!("update(table: {table_name}, table_id: {table_id}, index_id: {index_id}): {e}")
+                        } else {
+                            log::debug!("update(table_id: {table_id}, index_id: {index_id}): {e}")
+                        }
                     }
-                }
-            })?;
+                },
+            )?;
 
         if update_flags.is_scheduler_table {
             self.schedule_row(stdb, tx, table_id, row_ptr)?;
@@ -238,7 +246,7 @@ impl InstanceEnv {
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
-    pub fn datastore_delete_by_btree_scan_bsatn(
+    pub fn datastore_delete_by_index_scan_range_bsatn(
         &self,
         index_id: IndexId,
         prefix: &[u8],
@@ -250,7 +258,7 @@ impl InstanceEnv {
         let tx = &mut *self.tx.get()?;
 
         // Find all rows in the table to delete.
-        let (table_id, iter) = stdb.btree_scan(tx, index_id, prefix, prefix_elems, rstart, rend)?;
+        let (table_id, iter) = stdb.index_scan_range(tx, index_id, prefix, prefix_elems, rstart, rend)?;
         // Re. `SmallVec`, `delete_by_field` only cares about 1 element, so optimize for that.
         let rows_to_delete = iter.map(|row_ref| row_ref.pointer()).collect::<SmallVec<[_; 1]>>();
 
@@ -366,7 +374,7 @@ impl InstanceEnv {
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
-    pub fn datastore_btree_scan_bsatn_chunks(
+    pub fn datastore_index_scan_range_bsatn_chunks(
         &self,
         pool: &mut ChunkPool,
         index_id: IndexId,
@@ -383,7 +391,7 @@ impl InstanceEnv {
         let mut bytes_scanned = 0;
 
         // Open index iterator
-        let (_, iter) = stdb.btree_scan(tx, index_id, prefix, prefix_elems, rstart, rend)?;
+        let (_, iter) = stdb.index_scan_range(tx, index_id, prefix, prefix_elems, rstart, rend)?;
 
         // Scan the index and serialize rows to bsatn
         let chunks = ChunkedWriter::collect_iter(pool, iter, &mut rows_scanned, &mut bytes_scanned);
@@ -598,7 +606,7 @@ mod test {
         let f = || -> Result<_> {
             let index_key_3 = to_vec(&Bound::Included(AlgebraicValue::U64(3)))?;
             let index_key_5 = to_vec(&Bound::Included(AlgebraicValue::U64(5)))?;
-            env.datastore_btree_scan_bsatn_chunks(
+            env.datastore_index_scan_range_bsatn_chunks(
                 &mut ChunkPool::default(),
                 index_id,
                 &[],
@@ -606,7 +614,7 @@ mod test {
                 &index_key_3,
                 &index_key_3,
             )?;
-            env.datastore_btree_scan_bsatn_chunks(
+            env.datastore_index_scan_range_bsatn_chunks(
                 &mut ChunkPool::default(),
                 index_id,
                 &[],
@@ -686,7 +694,7 @@ mod test {
         // Delete a single row via the index
         let f = || -> Result<_> {
             let index_key = to_vec(&Bound::Included(AlgebraicValue::U64(3)))?;
-            env.datastore_delete_by_btree_scan_bsatn(index_id, &[], 0.into(), &index_key, &index_key)?;
+            env.datastore_delete_by_index_scan_range_bsatn(index_id, &[], 0.into(), &index_key, &index_key)?;
             Ok(())
         };
         let tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);

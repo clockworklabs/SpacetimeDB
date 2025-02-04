@@ -378,6 +378,7 @@ impl __sdk::EventContext for EventContext {
 
 /// A handle on a subscribed query.
 // TODO: Document this better after implementing the new subscription API.
+#[derive(Clone)]
 pub struct SubscriptionHandle {
     imp: __sdk::SubscriptionHandleImpl<RemoteModule>,
 }
@@ -389,6 +390,26 @@ impl __sdk::InModule for SubscriptionHandle {
 impl __sdk::SubscriptionHandle for SubscriptionHandle {
     fn new(imp: __sdk::SubscriptionHandleImpl<RemoteModule>) -> Self {
         Self { imp }
+    }
+
+    /// Returns true if this subscription has been terminated due to an unsubscribe call or an error.
+    fn is_ended(&self) -> bool {
+        self.imp.is_ended()
+    }
+
+    /// Returns true if this subscription has been applied and has not yet been unsubscribed.
+    fn is_active(&self) -> bool {
+        self.imp.is_active()
+    }
+
+    /// Unsubscribe from the query controlled by this `SubscriptionHandle`,
+    /// then run `on_end` when its rows are removed from the client cache.
+    fn unsubscribe_then(self, on_end: __sdk::OnEndedCallback<RemoteModule>) -> __anyhow::Result<()> {
+        self.imp.unsubscribe_then(Some(on_end))
+    }
+
+    fn unsubscribe(self) -> __anyhow::Result<()> {
+        self.imp.unsubscribe_then(None)
     }
 }
 

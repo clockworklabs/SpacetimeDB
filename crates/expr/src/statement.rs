@@ -1,18 +1,22 @@
 use std::sync::Arc;
 
-use spacetimedb_lib::{AlgebraicType, AlgebraicValue};
-use spacetimedb_primitives::ColId;
+use spacetimedb_lib::{st_var::StVarValue, AlgebraicType, AlgebraicValue, ProductValue};
+use spacetimedb_primitives::{ColId, TableId};
 use spacetimedb_schema::schema::{ColumnSchema, TableSchema};
 use spacetimedb_sql_parser::{
     ast::{
         sql::{SqlAst, SqlDelete, SqlInsert, SqlSelect, SqlSet, SqlShow, SqlUpdate},
-        SqlIdent, SqlLiteral,
+        BinOp, SqlIdent, SqlLiteral,
     },
     parser::sql::parse_sql,
 };
 use thiserror::Error;
 
-use crate::{check::Relvars, expr::ProjectList};
+use crate::{
+    check::Relvars,
+    errors::InvalidLiteral,
+    expr::{FieldProject, ProjectList, RelExpr, Relvar},
+};
 
 use super::{
     check::{SchemaView, TypeChecker, TypingResult},
@@ -23,29 +27,49 @@ use super::{
 
 pub enum Statement {
     Select(ProjectList),
+    DML(DML),
+}
+
+pub enum DML {
     Insert(TableInsert),
     Update(TableUpdate),
     Delete(TableDelete),
-    Set(SetVar),
-    Show(ShowVar),
 }
 
-/// A resolved row of literal values for an insert
-pub type Row = Box<[AlgebraicValue]>;
+impl DML {
+    /// Returns the schema of the table on which this mutation applies
+    pub fn table_schema(&self) -> &TableSchema {
+        match self {
+            Self::Insert(insert) => &insert.table,
+            Self::Delete(delete) => &delete.table,
+            Self::Update(update) => &update.table,
+        }
+    }
+
+    /// Returns the id of the table on which this mutation applies
+    pub fn table_id(&self) -> TableId {
+        self.table_schema().table_id
+    }
+
+    /// Returns the name of the table on which this mutation applies
+    pub fn table_name(&self) -> Box<str> {
+        self.table_schema().table_name.clone()
+    }
+}
 
 pub struct TableInsert {
-    pub into: Arc<TableSchema>,
-    pub rows: Box<[Row]>,
+    pub table: Arc<TableSchema>,
+    pub rows: Box<[ProductValue]>,
 }
 
 pub struct TableDelete {
-    pub from: Arc<TableSchema>,
-    pub expr: Option<Expr>,
+    pub table: Arc<TableSchema>,
+    pub filter: Option<Expr>,
 }
 
 pub struct TableUpdate {
-    pub schema: Arc<TableSchema>,
-    pub values: Box<[(ColId, AlgebraicValue)]>,
+    pub table: Arc<TableSchema>,
+    pub columns: Box<[(ColId, AlgebraicValue)]>,
     pub filter: Option<Expr>,
 }
 
@@ -92,10 +116,13 @@ pub fn type_insert(insert: SqlInsert, tx: &impl SchemaView) -> TypingResult<Tabl
             }));
         }
         let mut values = Vec::new();
-        for (value, ty) in row
-            .into_iter()
-            .zip(schema.columns().iter().map(|ColumnSchema { col_type, .. }| col_type))
-        {
+        for (value, ty) in row.into_iter().zip(
+            schema
+                .as_ref()
+                .columns()
+                .iter()
+                .map(|ColumnSchema { col_type, .. }| col_type),
+        ) {
             match (value, ty) {
                 (SqlLiteral::Bool(v), AlgebraicType::Bool) => {
                     values.push(AlgebraicValue::Bool(v));
@@ -110,15 +137,15 @@ pub fn type_insert(insert: SqlInsert, tx: &impl SchemaView) -> TypingResult<Tabl
                     return Err(UnexpectedType::new(&AlgebraicType::String, ty).into());
                 }
                 (SqlLiteral::Hex(v), ty) | (SqlLiteral::Num(v), ty) => {
-                    values.push(parse(v.into_string(), ty)?);
+                    values.push(parse(&v, ty).map_err(|_| InvalidLiteral::new(v.into_string(), ty))?);
                 }
             }
         }
-        rows.push(values.into_boxed_slice());
+        rows.push(ProductValue::from(values));
     }
     let into = schema;
     let rows = rows.into_boxed_slice();
-    Ok(TableInsert { into, rows })
+    Ok(TableInsert { table: into, rows })
 }
 
 /// Type check a DELETE statement
@@ -136,7 +163,10 @@ pub fn type_delete(delete: SqlDelete, tx: &impl SchemaView) -> TypingResult<Tabl
     let expr = filter
         .map(|expr| type_expr(&vars, expr, Some(&AlgebraicType::Bool)))
         .transpose()?;
-    Ok(TableDelete { from, expr })
+    Ok(TableDelete {
+        table: from,
+        filter: expr,
+    })
 }
 
 /// Type check an UPDATE statement
@@ -157,6 +187,7 @@ pub fn type_update(update: SqlUpdate, tx: &impl SchemaView) -> TypingResult<Tabl
             col_type: ty,
             ..
         } = schema
+            .as_ref()
             .get_column_by_name(&field)
             .ok_or_else(|| Unresolved::field(&table_name, &field))?;
         match (lit, ty) {
@@ -173,7 +204,10 @@ pub fn type_update(update: SqlUpdate, tx: &impl SchemaView) -> TypingResult<Tabl
                 return Err(UnexpectedType::new(&AlgebraicType::String, ty).into());
             }
             (SqlLiteral::Hex(v), ty) | (SqlLiteral::Num(v), ty) => {
-                values.push((*col_id, parse(v.into_string(), ty)?));
+                values.push((
+                    *col_id,
+                    parse(&v, ty).map_err(|_| InvalidLiteral::new(v.into_string(), ty))?,
+                ));
             }
         }
     }
@@ -183,7 +217,11 @@ pub fn type_update(update: SqlUpdate, tx: &impl SchemaView) -> TypingResult<Tabl
     let filter = filter
         .map(|expr| type_expr(&vars, expr, Some(&AlgebraicType::Bool)))
         .transpose()?;
-    Ok(TableUpdate { schema, values, filter })
+    Ok(TableUpdate {
+        table: schema,
+        columns: values,
+        filter,
+    })
 }
 
 #[derive(Error, Debug)]
@@ -201,36 +239,139 @@ fn is_var_valid(var: &str) -> bool {
     var == VAR_ROW_LIMIT || var == VAR_SLOW_QUERY || var == VAR_SLOW_UPDATE || var == VAR_SLOW_SUB
 }
 
-pub fn type_set(set: SqlSet) -> TypingResult<SetVar> {
-    let SqlSet(SqlIdent(name), lit) = set;
-    if !is_var_valid(&name) {
+const ST_VAR_NAME: &str = "st_var";
+const VALUE_COLUMN: &str = "value";
+
+/// The concept of `SET` only exists in the ast.
+/// We translate it here to an `INSERT` on the `st_var` system table.
+/// That is:
+///
+/// ```sql
+/// SET var TO ...
+/// ```
+///
+/// is rewritten as
+///
+/// ```sql
+/// INSERT INTO st_var (name, value) VALUES ('var', ...)
+/// ```
+pub fn type_and_rewrite_set(set: SqlSet, tx: &impl SchemaView) -> TypingResult<TableInsert> {
+    let SqlSet(SqlIdent(var_name), lit) = set;
+    if !is_var_valid(&var_name) {
         return Err(InvalidVar {
-            name: name.into_string(),
+            name: var_name.into_string(),
         }
         .into());
     }
+
     match lit {
         SqlLiteral::Bool(_) => Err(UnexpectedType::new(&AlgebraicType::U64, &AlgebraicType::Bool).into()),
         SqlLiteral::Str(_) => Err(UnexpectedType::new(&AlgebraicType::U64, &AlgebraicType::String).into()),
         SqlLiteral::Hex(_) => Err(UnexpectedType::new(&AlgebraicType::U64, &AlgebraicType::bytes()).into()),
-        SqlLiteral::Num(n) => Ok(SetVar {
-            name: name.into_string(),
-            value: parse(n.into_string(), &AlgebraicType::U64)?,
-        }),
+        SqlLiteral::Num(n) => {
+            let table = tx.schema(ST_VAR_NAME).ok_or_else(|| Unresolved::table(ST_VAR_NAME))?;
+            let var_name = AlgebraicValue::String(var_name);
+            let sum_value = StVarValue::try_from_primitive(
+                parse(&n, &AlgebraicType::U64)
+                    .map_err(|_| InvalidLiteral::new(n.clone().into_string(), &AlgebraicType::U64))?,
+            )
+            .map_err(|_| InvalidLiteral::new(n.into_string(), &AlgebraicType::U64))?
+            .into();
+            Ok(TableInsert {
+                table,
+                rows: Box::new([ProductValue::from_iter([var_name, sum_value])]),
+            })
+        }
     }
 }
 
-pub fn type_show(show: SqlShow) -> TypingResult<ShowVar> {
-    let SqlShow(SqlIdent(name)) = show;
-    if !is_var_valid(&name) {
+/// The concept of `SHOW` only exists in the ast.
+/// We translate it here to a `SELECT` on the `st_var` system table.
+/// That is:
+///
+/// ```sql
+/// SHOW var
+/// ```
+///
+/// is rewritten as
+///
+/// ```sql
+/// SELECT value FROM st_var WHERE name = 'var'
+/// ```
+pub fn type_and_rewrite_show(show: SqlShow, tx: &impl SchemaView) -> TypingResult<ProjectList> {
+    let SqlShow(SqlIdent(var_name)) = show;
+    if !is_var_valid(&var_name) {
         return Err(InvalidVar {
-            name: name.into_string(),
+            name: var_name.into_string(),
         }
         .into());
     }
-    Ok(ShowVar {
-        name: name.into_string(),
-    })
+
+    let table_schema = tx.schema(ST_VAR_NAME).ok_or_else(|| Unresolved::table(ST_VAR_NAME))?;
+
+    let value_col_ty = table_schema
+        .as_ref()
+        .get_column(1)
+        .map(|ColumnSchema { col_type, .. }| col_type)
+        .ok_or_else(|| Unresolved::field(ST_VAR_NAME, VALUE_COLUMN))?;
+
+    // -------------------------------------------
+    // SELECT value FROM st_var WHERE name = 'var'
+    //                                ^^^^
+    // -------------------------------------------
+    let var_name_field = Expr::Field(FieldProject {
+        table: ST_VAR_NAME.into(),
+        // TODO: Avoid hard coding the field position.
+        // See `StVarFields` for the schema of `st_var`.
+        field: 0,
+        ty: AlgebraicType::String,
+    });
+
+    // -------------------------------------------
+    // SELECT value FROM st_var WHERE name = 'var'
+    //                                        ^^^
+    // -------------------------------------------
+    let var_name_value = Expr::Value(AlgebraicValue::String(var_name), AlgebraicType::String);
+
+    // -------------------------------------------
+    // SELECT value FROM st_var WHERE name = 'var'
+    //        ^^^^^
+    // -------------------------------------------
+    let column_list = vec![(
+        VALUE_COLUMN.into(),
+        FieldProject {
+            table: ST_VAR_NAME.into(),
+            // TODO: Avoid hard coding the field position.
+            // See `StVarFields` for the schema of `st_var`.
+            field: 1,
+            ty: value_col_ty.clone(),
+        },
+    )];
+
+    // -------------------------------------------
+    // SELECT value FROM st_var WHERE name = 'var'
+    //                   ^^^^^^
+    // -------------------------------------------
+    let relvar = RelExpr::RelVar(Relvar {
+        schema: table_schema,
+        alias: ST_VAR_NAME.into(),
+        delta: None,
+    });
+
+    let filter = Expr::BinOp(
+        // -------------------------------------------
+        // SELECT value FROM st_var WHERE name = 'var'
+        //                                    ^^^
+        // -------------------------------------------
+        BinOp::Eq,
+        Box::new(var_name_field),
+        Box::new(var_name_value),
+    );
+
+    Ok(ProjectList::List(
+        RelExpr::Select(Box::new(relvar), filter),
+        column_list,
+    ))
 }
 
 /// Type-checker for regular `SQL` queries
@@ -266,14 +407,14 @@ impl TypeChecker for SqlChecker {
     }
 }
 
-fn parse_and_type_sql(sql: &str, tx: &impl SchemaView) -> TypingResult<Statement> {
+pub fn parse_and_type_sql(sql: &str, tx: &impl SchemaView) -> TypingResult<Statement> {
     match parse_sql(sql)? {
-        SqlAst::Insert(insert) => Ok(Statement::Insert(type_insert(insert, tx)?)),
-        SqlAst::Delete(delete) => Ok(Statement::Delete(type_delete(delete, tx)?)),
-        SqlAst::Update(update) => Ok(Statement::Update(type_update(update, tx)?)),
         SqlAst::Select(ast) => Ok(Statement::Select(SqlChecker::type_ast(ast, tx)?)),
-        SqlAst::Set(set) => Ok(Statement::Set(type_set(set)?)),
-        SqlAst::Show(show) => Ok(Statement::Show(type_show(show)?)),
+        SqlAst::Insert(insert) => Ok(Statement::DML(DML::Insert(type_insert(insert, tx)?))),
+        SqlAst::Delete(delete) => Ok(Statement::DML(DML::Delete(type_delete(delete, tx)?))),
+        SqlAst::Update(update) => Ok(Statement::DML(DML::Update(type_update(update, tx)?))),
+        SqlAst::Set(set) => Ok(Statement::DML(DML::Insert(type_and_rewrite_set(set, tx)?))),
+        SqlAst::Show(show) => Ok(Statement::Select(type_and_rewrite_show(show, tx)?)),
     }
 }
 

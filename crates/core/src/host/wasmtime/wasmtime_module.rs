@@ -40,6 +40,7 @@ impl WasmtimeModule {
         const { assert!(WasmtimeModule::IMPLEMENTED_ABI.major == spacetimedb_lib::MODULE_ABI_MAJOR_VERSION) };
         macro_rules! link_functions {
             ($($module:literal :: $func:ident,)*) => {
+                #[allow(deprecated)]
                 linker$(.func_wrap($module, stringify!($func), WasmInstanceEnv::$func)?)*;
             }
         }

@@ -318,11 +318,13 @@ impl Tx for Locking {
         let committed_state_shared_lock = self.committed_state.read_arc();
         let lock_wait_time = timer.elapsed();
         let ctx = ExecutionContext::with_workload(self.database_identity, workload);
+        let metrics = ExecutionMetrics::default();
         Self::Tx {
             committed_state_shared_lock,
             lock_wait_time,
             timer,
             ctx,
+            metrics,
         }
     }
 
@@ -639,7 +641,7 @@ pub(super) fn record_tx_metrics(
     committed: bool,
     tx_data: Option<&TxData>,
     committed_state: Option<&CommittedState>,
-    metrics: Option<ExecutionMetrics>,
+    metrics: ExecutionMetrics,
 ) {
     let workload = &ctx.workload();
     let db = &ctx.database_identity();
@@ -666,9 +668,7 @@ pub(super) fn record_tx_metrics(
         .with_label_values(workload, db, reducer)
         .observe(elapsed_time);
 
-    if let Some(metrics) = metrics {
-        record_exec_metrics(workload, db, metrics);
-    }
+    record_exec_metrics(workload, db, metrics);
 
     /// Update table rows and table size gauges,
     /// and sets them to zero if no table is present.
@@ -705,6 +705,12 @@ pub(super) fn record_tx_metrics(
                 .with_label_values(workload, db, reducer, &table_id.0, table_name)
                 .inc_by(deletes.len() as u64);
         }
+    }
+
+    if let Some(committed_state) = committed_state {
+        // TODO(cleanliness,bikeshedding): Consider inlining `report_data_size` here,
+        // or moving the above metric writes into it, for consistency of organization.
+        committed_state.report_data_size(*db);
     }
 }
 
@@ -1004,10 +1010,10 @@ mod tests {
     use crate::db::datastore::system_tables::{
         system_tables, StColumnRow, StConstraintData, StConstraintFields, StConstraintRow, StIndexAlgorithm,
         StIndexFields, StIndexRow, StRowLevelSecurityFields, StScheduledFields, StSequenceFields, StSequenceRow,
-        StTableRow, StVarFields, StVarValue, ST_CLIENT_NAME, ST_COLUMN_ID, ST_COLUMN_NAME, ST_CONSTRAINT_ID,
-        ST_CONSTRAINT_NAME, ST_INDEX_ID, ST_INDEX_NAME, ST_MODULE_NAME, ST_RESERVED_SEQUENCE_RANGE,
-        ST_ROW_LEVEL_SECURITY_ID, ST_ROW_LEVEL_SECURITY_NAME, ST_SCHEDULED_ID, ST_SCHEDULED_NAME, ST_SEQUENCE_ID,
-        ST_SEQUENCE_NAME, ST_TABLE_NAME, ST_VAR_ID, ST_VAR_NAME,
+        StTableRow, StVarFields, ST_CLIENT_NAME, ST_COLUMN_ID, ST_COLUMN_NAME, ST_CONSTRAINT_ID, ST_CONSTRAINT_NAME,
+        ST_INDEX_ID, ST_INDEX_NAME, ST_MODULE_NAME, ST_RESERVED_SEQUENCE_RANGE, ST_ROW_LEVEL_SECURITY_ID,
+        ST_ROW_LEVEL_SECURITY_NAME, ST_SCHEDULED_ID, ST_SCHEDULED_NAME, ST_SEQUENCE_ID, ST_SEQUENCE_NAME,
+        ST_TABLE_NAME, ST_VAR_ID, ST_VAR_NAME,
     };
     use crate::db::datastore::traits::{IsolationLevel, MutTx};
     use crate::db::datastore::Result;
@@ -1018,6 +1024,7 @@ mod tests {
     use pretty_assertions::{assert_eq, assert_matches};
     use spacetimedb_lib::db::auth::{StAccess, StTableType};
     use spacetimedb_lib::error::ResultTest;
+    use spacetimedb_lib::st_var::StVarValue;
     use spacetimedb_lib::{resolved_type_via_v9, ScheduleAt};
     use spacetimedb_primitives::{col_list, ColId, ScheduleId};
     use spacetimedb_sats::algebraic_value::ser::value_serialize;

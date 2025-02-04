@@ -1114,7 +1114,7 @@ impl RelationalDB {
         self.inner.iter_by_col_range_tx(tx, table_id.into(), cols, range)
     }
 
-    pub fn btree_scan<'a>(
+    pub fn index_scan_range<'a>(
         &'a self,
         tx: &'a MutTx,
         index_id: IndexId,
@@ -1123,7 +1123,7 @@ impl RelationalDB {
         rstart: &[u8],
         rend: &[u8],
     ) -> Result<(TableId, impl Iterator<Item = RowRef<'a>>), DBError> {
-        tx.btree_scan(index_id, prefix, prefix_elems, rstart, rend)
+        tx.index_scan_range(index_id, prefix, prefix_elems, rstart, rend)
     }
 
     pub fn insert<'a>(

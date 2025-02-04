@@ -385,6 +385,8 @@ macro_rules! abi_funcs {
             "spacetime_10.0"::console_timer_start,
             "spacetime_10.0"::console_timer_end,
             "spacetime_10.0"::index_id_from_name,
+            "spacetime_10.0"::datastore_index_scan_range_bsatn,
+            "spacetime_10.0"::datastore_delete_by_index_scan_range_bsatn,
             "spacetime_10.0"::datastore_btree_scan_bsatn,
             "spacetime_10.0"::datastore_delete_by_btree_scan_bsatn,
             "spacetime_10.0"::identity,

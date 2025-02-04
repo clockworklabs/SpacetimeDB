@@ -239,6 +239,8 @@ mod test {
     proptest! {
         #[test]
         fn insertion_entails_contained((size, [ptr_a, ptr_b]) in gen_size_and_ptrs()) {
+            prop_assume!(ptr_a != ptr_b);
+
             let mut dt = TestDT::new(size);
 
             // Initially we have nothing.
@@ -266,7 +268,10 @@ mod test {
 
         #[test]
         fn deleting_non_existent_does_nothing((size, [ptr_a, ptr_b]) in gen_size_and_ptrs()) {
+            prop_assume!(ptr_a != ptr_b);
+
             let mut dt = TestDT::new(size);
+
             prop_assert!(!dt.remove(ptr_b));
             prop_assert!(dt.insert(ptr_a));
             prop_assert!(!dt.remove(ptr_b));

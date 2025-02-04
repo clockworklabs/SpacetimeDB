@@ -393,7 +393,8 @@ impl CommittedState {
             };
             let is_unique = unique_constraints.contains(&(table_id, (&columns).into()));
             let index = table.new_index(columns.clone(), is_unique)?;
-            table.insert_index(blob_store, index_id, index);
+            // SAFETY: `index` was derived from `table`.
+            unsafe { table.insert_index(blob_store, index_id, index) };
             self.index_id_map.insert(index_id, table_id);
         }
         Ok(())
@@ -609,7 +610,11 @@ impl CommittedState {
             for (cols, mut index) in tx_table.indexes {
                 if !commit_table.indexes.contains_key(&cols) {
                     index.clear();
-                    commit_table.insert_index(commit_blob_store, cols, index);
+                    // SAFETY: `tx_table` is derived from `commit_table`,
+                    // so they have the same row type.
+                    // This entails that all indices in `tx_table`
+                    // were constructed with the same row type/layout as `commit_table`.
+                    unsafe { commit_table.insert_index(commit_blob_store, cols, index) };
                 }
             }
 
@@ -678,6 +683,39 @@ impl CommittedState {
             .or_insert_with(|| Self::make_table(schema.clone()));
         let blob_store = &mut self.blob_store;
         (table, blob_store)
+    }
+
+    pub(super) fn report_data_size(&self, database_identity: Identity) {
+        use crate::db::db_metrics::data_size::DATA_SIZE_METRICS;
+
+        for (table_id, table) in &self.tables {
+            let table_name = &table.schema.table_name;
+            DATA_SIZE_METRICS
+                .data_size_table_num_rows
+                .with_label_values(&database_identity, &table_id.0, table_name)
+                .set(table.num_rows() as _);
+            DATA_SIZE_METRICS
+                .data_size_table_bytes_used_by_rows
+                .with_label_values(&database_identity, &table_id.0, table_name)
+                .set(table.bytes_used_by_rows() as _);
+            DATA_SIZE_METRICS
+                .data_size_table_num_rows_in_indexes
+                .with_label_values(&database_identity, &table_id.0, table_name)
+                .set(table.num_rows_in_indexes() as _);
+            DATA_SIZE_METRICS
+                .data_size_table_bytes_used_by_index_keys
+                .with_label_values(&database_identity, &table_id.0, table_name)
+                .set(table.bytes_used_by_index_keys() as _);
+        }
+
+        DATA_SIZE_METRICS
+            .data_size_blob_store_num_blobs
+            .with_label_values(&database_identity)
+            .set(self.blob_store.num_blobs() as _);
+        DATA_SIZE_METRICS
+            .data_size_blob_store_bytes_used_by_blobs
+            .with_label_values(&database_identity)
+            .set(self.blob_store.bytes_used_by_blobs() as _);
     }
 }
 

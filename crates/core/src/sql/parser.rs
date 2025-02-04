@@ -22,7 +22,7 @@ impl RowLevelExpr {
 
         Ok(Self {
             def: RowLevelSecuritySchema {
-                table_id: sql.table_id().unwrap(),
+                table_id: sql.return_table_id().unwrap(),
                 sql: rls.sql.clone(),
             },
             sql,

@@ -11,3 +11,6 @@ anyhow.workspace = true
 clap.workspace = true
 semver.workspace = true
 tracing = { workspace = true, features = ["release_max_level_off"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, features = ["Win32_System_Console"] }

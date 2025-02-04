@@ -2,6 +2,7 @@ use anyhow::Context;
 use spacetimedb_paths::{FromPathUnchecked, RootDir, SpacetimePaths};
 use std::ffi::OsStr;
 use std::ffi::OsString;
+use std::io;
 use std::path::PathBuf;
 use std::process::Command;
 use std::process::ExitCode;
@@ -34,15 +35,52 @@ pub(crate) fn run_cli(paths: &SpacetimePaths, argv0: Option<&OsStr>, args: Vec<O
         if let Some(argv0) = argv0 {
             cmd.arg0(argv0);
         }
+    }
+    exec_replace(&mut cmd).with_context(|| format!("exec failed for {}", cli_path.display()))
+}
+
+// implementation based on and docs taken verbatim from `cargo_util::ProcessBuilder::exec_replace`
+//
+/// Replaces the current process with the target process.
+///
+/// On Unix, this executes the process using the Unix syscall `execvp`, which will block
+/// this process, and will only return if there is an error.
+///
+/// On Windows this isn't technically possible. Instead we emulate it to the best of our
+/// ability. One aspect we fix here is that we specify a handler for the Ctrl-C handler.
+/// In doing so (and by effectively ignoring it) we should emulate proxying Ctrl-C
+/// handling to the application at hand, which will either terminate or handle it itself.
+/// According to Microsoft's documentation at
+/// <https://docs.microsoft.com/en-us/windows/console/ctrl-c-and-ctrl-break-signals>.
+/// the Ctrl-C signal is sent to all processes attached to a terminal, which should
+/// include our child process. If the child terminates then we'll reap them in Cargo
+/// pretty quickly, and if the child handles the signal then we won't terminate
+/// (and we shouldn't!) until the process itself later exits.
+fn exec_replace(cmd: &mut Command) -> io::Result<ExitCode> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        // if exec() succeeds, it diverges, so the function just returns an io::Error
         let err = cmd.exec();
-        Err(err).context(format!("exec failed for {}", cli_path.display()))
+        Err(err)
     }
     #[cfg(windows)]
     {
-        let status = cmd
-            .status()
-            .with_context(|| format!("failed to run {}", cli_path.display()))?;
-        Ok(ExitCode::from(status.code().unwrap_or(1) as u8))
+        use windows_sys::Win32::Foundation::{BOOL, FALSE, TRUE};
+        use windows_sys::Win32::System::Console::SetConsoleCtrlHandler;
+
+        unsafe extern "system" fn ctrlc_handler(_: u32) -> BOOL {
+            // Do nothing. Let the child process handle it.
+            TRUE
+        }
+        unsafe {
+            if SetConsoleCtrlHandler(Some(ctrlc_handler), TRUE) == FALSE {
+                return Err(io::Error::new(io::ErrorKind::Other, "Unable to set console handler"));
+            }
+        }
+
+        cmd.status()
+            .map(|status| ExitCode::from(status.code().unwrap_or(1).try_into().unwrap_or(1)))
     }
 }
 

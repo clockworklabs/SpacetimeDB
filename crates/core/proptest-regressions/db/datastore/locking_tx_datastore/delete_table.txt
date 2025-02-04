@@ -5,3 +5,4 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc 9d74a36309d35ba5b09bd33cbc24f72f95a498152b469caeeeb8c2adf712974c # shrinks to (size, [ptr_a, ptr_b]) = (Size(2), [RowPointer(r: 0, pi: 0, po: 0, so: 1), RowPointer(r: 0, pi: 0, po: 0, so: 1)])
+cc daf4d4880192b4f6d95f928ed49d80465b48ff4fde4ae31aea5cfea3996cdbc6 # shrinks to minimal failing input: (size, [ptr_a, ptr_b]) = (Size(23), [RowPointer(r: 0, pi: 75, po: 828, so: 1), RowPointer(r: 0, pi: 75, po: 828, so: 1)])
