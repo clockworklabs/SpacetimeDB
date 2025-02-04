@@ -1,7 +1,5 @@
 use jsonwebtoken::{DecodingKey, EncodingKey};
-use openssl::ec::{EcGroup, EcKey};
-use openssl::nid::Nid;
-use openssl::pkey::PKey;
+use rcgen::KeyPair;
 use spacetimedb_paths::cli::{PrivKeyPath, PubKeyPath};
 
 use crate::config::CertificateAuthority;
@@ -88,20 +86,14 @@ impl EcKeyPair {
     }
 
     pub fn generate() -> anyhow::Result<Self> {
-        // Create a new EC group from a named curve.
-        let group = EcGroup::from_curve_name(Nid::X9_62_PRIME256V1)?;
-
-        // Create a new EC key with the specified group.
-        let eckey = EcKey::generate(&group)?;
-
-        // Create a new PKey from the EC key.
-        let pkey = PKey::from_ec_key(eckey.clone())?;
+        // Generate a new key pair for the P-256 curve (equivalent to `Nid::X9_62_PRIME256V1`).
+        let key_pair = KeyPair::generate_for(&rcgen::PKCS_ECDSA_P256_SHA256)?;
 
         // Get the private key in PKCS#8 PEM format & write it.
-        let private_key_bytes = pkey.private_key_to_pem_pkcs8()?;
+        let public_key_bytes = key_pair.public_key_pem().into_bytes();
 
         // Get the public key in PEM format & write it.
-        let public_key_bytes = eckey.public_key_to_pem()?;
+        let private_key_bytes = key_pair.serialize_pem().into_bytes();
 
         Ok(Self {
             public_key_bytes,
