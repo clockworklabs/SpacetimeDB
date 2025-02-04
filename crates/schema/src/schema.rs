@@ -332,6 +332,7 @@ impl TableSchema {
             })
             .chain(self.indexes.iter().map(|x| match &x.index_algorithm {
                 IndexAlgorithm::BTree(btree) => (btree.columns.clone(), Constraints::indexed()),
+                IndexAlgorithm::Direct(direct) => (direct.column.into(), Constraints::indexed()),
             }))
             .chain(
                 self.sequences
@@ -390,8 +391,12 @@ impl TableSchema {
             .sequences
             .iter()
             .map(|x| (DefType::Sequence, x.sequence_name.clone(), ColList::new(x.col_pos)))
-            .chain(self.indexes.iter().map(|x| match &x.index_algorithm {
-                IndexAlgorithm::BTree(btree) => (DefType::Index, x.index_name.clone(), btree.columns.clone()),
+            .chain(self.indexes.iter().map(|x| {
+                let cols = match &x.index_algorithm {
+                    IndexAlgorithm::BTree(btree) => btree.columns.clone(),
+                    IndexAlgorithm::Direct(direct) => direct.column.into(),
+                };
+                (DefType::Index, x.index_name.clone(), cols)
             }))
             .chain(self.constraints.iter().map(|x| {
                 (

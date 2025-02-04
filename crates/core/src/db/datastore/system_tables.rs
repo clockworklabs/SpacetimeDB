@@ -26,7 +26,9 @@ use spacetimedb_sats::algebraic_value::ser::value_serialize;
 use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::product_value::InvalidFieldError;
 use spacetimedb_sats::{impl_deserialize, impl_serialize, impl_st, u256, AlgebraicType, AlgebraicValue, ArrayValue};
-use spacetimedb_schema::def::{BTreeAlgorithm, ConstraintData, IndexAlgorithm, ModuleDef, UniqueConstraintData};
+use spacetimedb_schema::def::{
+    BTreeAlgorithm, ConstraintData, DirectAlgorithm, IndexAlgorithm, ModuleDef, UniqueConstraintData,
+};
 use spacetimedb_schema::schema::{
     ColumnSchema, ConstraintSchema, IndexSchema, RowLevelSecuritySchema, ScheduleSchema, Schema, SequenceSchema,
     TableSchema,
@@ -596,12 +598,16 @@ pub enum StIndexAlgorithm {
 
     /// A BTree index.
     BTree { columns: ColList },
+
+    /// A Direct index.
+    Direct { column: ColId },
 }
 
 impl From<IndexAlgorithm> for StIndexAlgorithm {
     fn from(algorithm: IndexAlgorithm) -> Self {
         match algorithm {
-            IndexAlgorithm::BTree(BTreeAlgorithm { columns }) => StIndexAlgorithm::BTree { columns },
+            IndexAlgorithm::BTree(BTreeAlgorithm { columns }) => Self::BTree { columns },
+            IndexAlgorithm::Direct(DirectAlgorithm { column }) => Self::Direct { column },
             _ => unimplemented!(),
         }
     }
@@ -628,6 +634,7 @@ impl From<StIndexRow> for IndexSchema {
             index_name: x.index_name,
             index_algorithm: match x.index_algorithm {
                 StIndexAlgorithm::BTree { columns } => BTreeAlgorithm { columns }.into(),
+                StIndexAlgorithm::Direct { column } => DirectAlgorithm { column }.into(),
                 StIndexAlgorithm::Unused(_) => panic!("Someone put a forbidden variant in the system table!"),
             },
         }

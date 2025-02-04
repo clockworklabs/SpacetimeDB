@@ -57,8 +57,16 @@ pub enum ValidationError {
     RepeatedPrimaryKey { table: RawIdentifier },
     #[error("Attempt to define {column} with more than 1 auto_inc sequence")]
     OneAutoInc { column: RawColumnName },
-    #[error("Only Btree Indexes are supported: index `{index}` is not a btree")]
-    OnlyBtree { index: RawIdentifier },
+    #[error("Hash indexes are not supported: `{index}` is a hash index")]
+    HashIndexUnsupported { index: RawIdentifier },
+    #[error("No index found to support unique constraint `{constraint}`")]
+    UniqueConstraintWithoutIndex { constraint: Box<str> },
+    #[error("Direct index does not support type `{ty}` in column `{column}` in index `{index}`")]
+    DirectIndexOnNonUnsignedInt {
+        index: RawIdentifier,
+        column: RawIdentifier,
+        ty: PrettyAlgebraicType,
+    },
     #[error("def `{def}` has duplicate columns: {columns:?}")]
     DuplicateColumns { def: RawIdentifier, columns: ColList },
     #[error("invalid sequence column type: {column} with type `{column_type:?}` in sequence `{sequence}`")]

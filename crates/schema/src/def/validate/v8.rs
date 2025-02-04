@@ -743,7 +743,7 @@ mod tests {
         );
         let result: Result<ModuleDef> = builder.finish().try_into();
 
-        expect_error_matching!(result, ValidationError::OnlyBtree { index } => {
+        expect_error_matching!(result, ValidationError::HashIndexUnsupported { index } => {
             &index[..] == "Bananas_index"
         });
     }

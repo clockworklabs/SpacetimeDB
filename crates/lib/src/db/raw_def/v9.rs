@@ -274,6 +274,13 @@ pub enum RawIndexAlgorithm {
         /// The columns to index on. These are ordered.
         columns: ColList,
     },
+    /// Implemented using direct indexing in list(s) of `RowPointer`s.
+    /// The column this is placed on must also have a unique constraint.
+    Direct {
+        /// The column to index on.
+        /// Only one is allowed, as direct indexing with more is nonsensical.
+        column: ColId,
+    },
 }
 
 /// Marks a table as a timer table for a scheduled reducer.

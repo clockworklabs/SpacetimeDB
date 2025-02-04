@@ -989,7 +989,7 @@ impl RelationalDB {
     ) -> Result<Constraints, DBError> {
         let table = self.inner.schema_for_table_mut_tx(tx, table_id)?;
 
-        let index = table.indexes.iter().find(|i| i.index_algorithm.columns() == cols);
+        let index = table.indexes.iter().find(|i| i.index_algorithm.columns() == *cols);
         let cols_set = ColSet::from(cols);
         let unique_constraint = table
             .constraints

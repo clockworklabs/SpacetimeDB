@@ -35,8 +35,10 @@ mod sym {
     symbol!(btree);
     symbol!(client_connected);
     symbol!(client_disconnected);
+    symbol!(column);
     symbol!(columns);
     symbol!(crate_, crate);
+    symbol!(direct);
     symbol!(index);
     symbol!(init);
     symbol!(name);
