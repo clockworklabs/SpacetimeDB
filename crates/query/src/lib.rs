@@ -46,7 +46,7 @@ pub fn execute_select_stmt<Tx: Datastore + DeltaStore>(
     metrics: &mut ExecutionMetrics,
     check_row_limit: impl Fn(ProjectListPlan) -> Result<ProjectListPlan>,
 ) -> Result<Vec<ProductValue>> {
-    let plan = compile_select_list(stmt).optimize();
+    let plan = compile_select_list(stmt).optimize()?;
     let plan = check_row_limit(plan)?;
     let plan = ProjectListExecutor::from(plan);
     let mut rows = vec![];
@@ -59,7 +59,7 @@ pub fn execute_select_stmt<Tx: Datastore + DeltaStore>(
 
 /// A utility for executing a sql dml statement
 pub fn execute_dml_stmt<Tx: MutDatastore>(stmt: DML, tx: &mut Tx, metrics: &mut ExecutionMetrics) -> Result<()> {
-    let plan = compile_dml_plan(stmt).optimize();
+    let plan = compile_dml_plan(stmt).optimize()?;
     let plan = MutExecutor::from(plan);
     plan.execute(tx, metrics)
 }
@@ -96,16 +96,16 @@ impl SubscribePlan {
 
     /// Delta plans are only materialized, and optimized, at runtime.
     /// Hence we are free to instantiate a non-delta plans from them.
-    pub fn from_delta_plan(plan: &DeltaPlan) -> Self {
+    pub fn from_delta_plan(plan: &DeltaPlan) -> Result<Self> {
         let table_id = plan.table_id();
         let table_name = plan.table_name();
         let plan = &**plan;
-        let plan = plan.clone().optimize();
-        Self {
+        let plan = plan.clone().optimize()?;
+        Ok(Self {
             plan,
             table_id,
             table_name,
-        }
+        })
     }
 
     /// Compile a subscription query for standard execution
@@ -125,7 +125,7 @@ impl SubscribePlan {
         };
 
         let plan = compile_select(sub);
-        let plan = plan.optimize();
+        let plan = plan.optimize()?;
 
         Ok(Self {
             plan,

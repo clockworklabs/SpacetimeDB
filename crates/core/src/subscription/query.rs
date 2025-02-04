@@ -82,7 +82,7 @@ pub fn compile_read_only_query(auth: &AuthCtx, tx: &Tx, input: &str) -> Result<P
     let plan = DeltaPlan::compile(&input, &tx)?;
     let hash = QueryHash::from_string(&input);
 
-    Ok(Plan::new(plan, hash))
+    Ok(Plan::new(plan, hash, input.into_owned()))
 }
 
 /// The kind of [`QueryExpr`] currently supported for incremental evaluation.
@@ -752,7 +752,7 @@ mod tests {
         let table_id = plan.table_id();
         let table_name = plan.table_name();
         let tx = DeltaTx::new(&tx, &data);
-        let evaluator = plan.evaluator(&tx);
+        let evaluator = plan.evaluator(&tx).unwrap();
         let updates = eval_delta(&tx, metrics, &evaluator).unwrap();
 
         let inserts = updates

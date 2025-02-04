@@ -37,6 +37,7 @@ type SubscriptionId = (ClientId, ClientQueryId);
 #[derive(Debug)]
 pub struct Plan {
     hash: QueryHash,
+    sql: String,
     plan: DeltaPlan,
 }
 
@@ -49,8 +50,8 @@ impl Deref for Plan {
 }
 
 impl Plan {
-    pub fn new(plan: DeltaPlan, hash: QueryHash) -> Self {
-        Self { plan, hash }
+    pub fn new(plan: DeltaPlan, hash: QueryHash, text: String) -> Self {
+        Self { plan, hash, sql: text }
     }
 
     pub fn hash(&self) -> QueryHash {
@@ -341,10 +342,22 @@ impl SubscriptionManager {
                 .collect::<HashSet<_>>()
                 .par_iter()
                 .filter_map(|&hash| self.queries.get(hash).map(|state| (hash, &state.query)))
+                .filter_map(|(hash, plan)| match plan.evaluator(tx) {
+                    Ok(evaluator) => Some((hash, plan, evaluator, ExecutionMetrics::default())),
+                    Err(err) => {
+                        // TODO: Handle errors instead of just logging them
+                        tracing::error!(
+                            message = "Query errored during tx update",
+                            sql = plan.sql,
+                            reason = ?err,
+                        );
+                        None
+                    }
+                })
                 // If N clients are subscribed to a query,
                 // we copy the DatabaseTableUpdate N times,
                 // which involves cloning BSATN (binary) or product values (json).
-                .map(|(hash, plan)| {
+                .map(|(hash, plan, evaluator, mut metrics)| {
                     let table_id = plan.table_id();
                     let table_name = plan.table_name();
                     // Store at most one copy of the serialization to BSATN
@@ -380,12 +393,20 @@ impl SubscriptionManager {
                         (update, num_rows)
                     }
 
-                    let evaluator = plan.evaluator(tx);
-                    let mut metrics = ExecutionMetrics::default();
+                    let delta_updates_opt = match eval_delta(tx, &mut metrics, &evaluator) {
+                        Ok(delta_updates) => Some(delta_updates),
+                        Err(err) => {
+                            // TODO: Handle errors instead of just logging them
+                            tracing::error!(
+                                message = "Query errored during tx update",
+                                sql = plan.sql,
+                                reason = ?err,
+                            );
+                            None
+                        }
+                    };
 
-                    // TODO: Handle errors instead of skipping them
-                    let updates = eval_delta(tx, &mut metrics, &evaluator)
-                        .ok()
+                    let updates = delta_updates_opt
                         .filter(|delta_updates| delta_updates.has_updates())
                         .map(|delta_updates| {
                             self.queries
@@ -546,7 +567,7 @@ mod tests {
             let tx = SchemaViewer::new(&*tx, &auth);
             let hash = QueryHash::from_string(sql);
             let plan = DeltaPlan::compile(sql, &tx).unwrap();
-            Ok(Arc::new(Plan::new(plan, hash)))
+            Ok(Arc::new(Plan::new(plan, hash, sql.into())))
         })
     }
 
