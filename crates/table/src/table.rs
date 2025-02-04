@@ -547,7 +547,7 @@ impl Table {
         // Project the needle row to the columns of the index, and then seek.
         // As this is a unique index, there are 0-1 rows for this key.
         let needle_row = unsafe { needle_table.get_row_ref_unchecked(needle_bs, needle_ptr) };
-        let key = needle_row.project(&cols).expect("needle row should be valid");
+        let key = needle_row.project(cols).expect("needle row should be valid");
         target_index.seek(&key).next().filter(|&target_ptr| {
             // SAFETY:
             // - Caller promised that the row layouts were the same.
