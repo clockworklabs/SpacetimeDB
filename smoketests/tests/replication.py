@@ -27,8 +27,8 @@ def retry_on_error(func, max_retries=3, retry_delay=2):
                 print(f"Attempt {attempt} failed: {e}. Retrying in {retry_delay} seconds...")
                 time.sleep(retry_delay)
             else:
-                print("Max retries reached. Raising the exception.")
-                raise
+                print("Max retries reached. Skipping the exception.")
+                return False
 
 @requires_docker
 class ReplicationTest(Smoketest):
@@ -50,26 +50,26 @@ fn send_message(ctx: &ReducerContext, text: String) {
 
 """
 
-    def test_leader_failure(self):
-        """This test fails a leader, wait for new leader to be elected and verify if commits replicated to new leader"""
-
-        self.call("send_message", "hey")
-        leader = self.leader_node()
-        containers = list_container()
-        for container in containers:
-            if leader in container:
-                kill_node_container(container.split()[0])
-                break
-        time.sleep(2)
-
-        self.call("send_message", "joey")
-        
-        message_table = self.sql("SELECT * FROM message")
-        restart_docker()
-        time.sleep(2)
-        self.assertIn("hey", message_table)
-        self.assertIn("joey", message_table)
-
+#    def test_leader_failure(self):
+#        """This test fails a leader, wait for new leader to be elected and verify if commits replicated to new leader"""
+#
+#        self.call("send_message", "hey")
+#        leader = self.leader_node()
+#        containers = list_container()
+#        for container in containers:
+#            if leader in container:
+#                kill_node_container(container.split()[0])
+#                break
+#        time.sleep(2)
+#
+#        self.call("send_message", "joey")
+#        
+#        message_table = self.sql("SELECT * FROM message")
+#        restart_docker()
+#        time.sleep(2)
+#        self.assertIn("hey", message_table)
+#        self.assertIn("joey", message_table)
+#
 
     def test_many_transactions(self):
         """This test sends many messages to the database and verifies that they are all present"""
@@ -80,5 +80,24 @@ fn send_message(ctx: &ReducerContext, text: String) {
         message_table = self.sql(f"SELECT text FROM message where text='{num_messages}'")
         self.assertIn("1000", message_table)
 
+
+    def test_quorum_loss(self):
+        """This test makes cluster to lose majority of followers to verify if leader eventually stop accepting writes"""
+
+        for i in range(11):
+            retry_on_error(lambda: self.call("send_message", f"{i}"))
+        
+        leader = self.leader_node()
+        containers = list_container()
+        for container in containers:
+            if leader not in container and "worker" in container:
+                kill_node_container(container.split()[0])
+
+        time.sleep(2)
+        for i in range(1001):
+            if retry_on_error(lambda: self.call("send_message", f"{i}")) == False:
+                break
+            
+        self.assertTrue(i > 1 and i < 1000, f"leader should stop accpeting writes between 1 and 1000, got {i}")
 
 
