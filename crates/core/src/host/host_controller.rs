@@ -694,6 +694,8 @@ impl Host {
 
     #[tracing::instrument(level = "debug", skip_all, err)]
     async fn try_init(host_controller: &HostController, database: Database, replica_id: u64) -> anyhow::Result<Self> {
+        let db_identity = database.database_identity;
+        log::info!("starting init for {}/{}", db_identity, replica_id);
         let HostController {
             data_dir,
             default_config: config,
@@ -783,6 +785,7 @@ impl Host {
         scheduler_starter.start(&module_host)?;
         let metrics_task = tokio::spawn(storage_monitor(replica_ctx.clone(), energy_monitor.clone())).abort_handle();
 
+        log::info!("successful init for {}/{}", db_identity, replica_id);
         Ok(Host {
             module: watch::Sender::new(module_host),
             replica_ctx,
