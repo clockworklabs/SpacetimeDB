@@ -6,8 +6,14 @@ use super::{
     tx::TxId,
     tx_state::TxState,
 };
-use crate::db::datastore::locking_tx_datastore::state_view::{IterByColRangeMutTx, IterMutTx, IterTx};
 use crate::execution_context::Workload;
+use crate::{
+    db::datastore::{
+        locking_tx_datastore::state_view::{IterByColRangeMutTx, IterMutTx, IterTx},
+        traits::{InsertFlags, UpdateFlags},
+    },
+    subscription::record_exec_metrics,
+};
 use crate::{
     db::{
         datastore::{
@@ -31,7 +37,7 @@ use core::{cell::RefCell, ops::RangeBounds};
 use parking_lot::{Mutex, RwLock};
 use spacetimedb_commitlog::payload::{txdata, Txdata};
 use spacetimedb_durability::TxOffset;
-use spacetimedb_lib::db::auth::StAccess;
+use spacetimedb_lib::{db::auth::StAccess, metrics::ExecutionMetrics};
 use spacetimedb_lib::{Address, Identity};
 use spacetimedb_paths::server::SnapshotDirPath;
 use spacetimedb_primitives::{ColList, ConstraintId, IndexId, SequenceId, TableId};
@@ -312,11 +318,13 @@ impl Tx for Locking {
         let committed_state_shared_lock = self.committed_state.read_arc();
         let lock_wait_time = timer.elapsed();
         let ctx = ExecutionContext::with_workload(self.database_identity, workload);
+        let metrics = ExecutionMetrics::default();
         Self::Tx {
             committed_state_shared_lock,
             lock_wait_time,
             timer,
             ctx,
+            metrics,
         }
     }
 
@@ -408,12 +416,13 @@ impl TxDatastore for Locking {
 }
 
 impl MutTxDatastore for Locking {
-    type IterMutTx<'a>= IterMutTx<'a>
+    type IterMutTx<'a>
+        = IterMutTx<'a>
     where
         Self: 'a;
     type IterByColRangeMutTx<'a, R: RangeBounds<AlgebraicValue>> = IterByColRangeMutTx<'a, R>;
     type IterByColEqMutTx<'a, 'r>
-    = IterByColRangeMutTx<'a, &'r AlgebraicValue>
+        = IterByColRangeMutTx<'a, &'r AlgebraicValue>
     where
         Self: 'a;
 
@@ -576,9 +585,9 @@ impl MutTxDatastore for Locking {
         tx: &'a mut Self::MutTx,
         table_id: TableId,
         row: &[u8],
-    ) -> Result<(ColList, RowRef<'a>)> {
-        let (gens, row_ref) = tx.insert::<true>(table_id, row)?;
-        Ok((gens, row_ref.collapse()))
+    ) -> Result<(ColList, RowRef<'a>, InsertFlags)> {
+        let (gens, row_ref, insert_flags) = tx.insert::<true>(table_id, row)?;
+        Ok((gens, row_ref.collapse(), insert_flags))
     }
 
     fn update_mut_tx<'a>(
@@ -587,7 +596,7 @@ impl MutTxDatastore for Locking {
         table_id: TableId,
         index_id: IndexId,
         row: &[u8],
-    ) -> Result<(ColList, RowRef<'a>)> {
+    ) -> Result<(ColList, RowRef<'a>, UpdateFlags)> {
         tx.update(table_id, index_id, row)
     }
 
@@ -625,13 +634,14 @@ impl MutTxDatastore for Locking {
 }
 
 /// This utility is responsible for recording all transaction metrics.
-pub(super) fn record_metrics(
+pub(super) fn record_tx_metrics(
     ctx: &ExecutionContext,
     tx_timer: Instant,
     lock_wait_time: Duration,
     committed: bool,
     tx_data: Option<&TxData>,
     committed_state: Option<&CommittedState>,
+    metrics: ExecutionMetrics,
 ) {
     let workload = &ctx.workload();
     let db = &ctx.database_identity();
@@ -657,6 +667,8 @@ pub(super) fn record_metrics(
         .rdb_txn_elapsed_time_sec
         .with_label_values(workload, db, reducer)
         .observe(elapsed_time);
+
+    record_exec_metrics(workload, db, metrics);
 
     /// Update table rows and table size gauges,
     /// and sets them to zero if no table is present.
@@ -694,6 +706,12 @@ pub(super) fn record_metrics(
                 .inc_by(deletes.len() as u64);
         }
     }
+
+    if let Some(committed_state) = committed_state {
+        // TODO(cleanliness,bikeshedding): Consider inlining `report_data_size` here,
+        // or moving the above metric writes into it, for consistency of organization.
+        committed_state.report_data_size(*db);
+    }
 }
 
 impl MutTx for Locking {
@@ -715,6 +733,7 @@ impl MutTx for Locking {
             lock_wait_time,
             timer,
             ctx,
+            metrics: ExecutionMetrics::default(),
         }
     }
 
@@ -991,10 +1010,10 @@ mod tests {
     use crate::db::datastore::system_tables::{
         system_tables, StColumnRow, StConstraintData, StConstraintFields, StConstraintRow, StIndexAlgorithm,
         StIndexFields, StIndexRow, StRowLevelSecurityFields, StScheduledFields, StSequenceFields, StSequenceRow,
-        StTableRow, StVarFields, StVarValue, ST_CLIENT_NAME, ST_COLUMN_ID, ST_COLUMN_NAME, ST_CONSTRAINT_ID,
-        ST_CONSTRAINT_NAME, ST_INDEX_ID, ST_INDEX_NAME, ST_MODULE_NAME, ST_RESERVED_SEQUENCE_RANGE,
-        ST_ROW_LEVEL_SECURITY_ID, ST_ROW_LEVEL_SECURITY_NAME, ST_SCHEDULED_ID, ST_SCHEDULED_NAME, ST_SEQUENCE_ID,
-        ST_SEQUENCE_NAME, ST_TABLE_NAME, ST_VAR_ID, ST_VAR_NAME,
+        StTableRow, StVarFields, ST_CLIENT_NAME, ST_COLUMN_ID, ST_COLUMN_NAME, ST_CONSTRAINT_ID, ST_CONSTRAINT_NAME,
+        ST_INDEX_ID, ST_INDEX_NAME, ST_MODULE_NAME, ST_RESERVED_SEQUENCE_RANGE, ST_ROW_LEVEL_SECURITY_ID,
+        ST_ROW_LEVEL_SECURITY_NAME, ST_SCHEDULED_ID, ST_SCHEDULED_NAME, ST_SEQUENCE_ID, ST_SEQUENCE_NAME,
+        ST_TABLE_NAME, ST_VAR_ID, ST_VAR_NAME,
     };
     use crate::db::datastore::traits::{IsolationLevel, MutTx};
     use crate::db::datastore::Result;
@@ -1005,12 +1024,14 @@ mod tests {
     use pretty_assertions::{assert_eq, assert_matches};
     use spacetimedb_lib::db::auth::{StAccess, StTableType};
     use spacetimedb_lib::error::ResultTest;
-    use spacetimedb_lib::resolved_type_via_v9;
+    use spacetimedb_lib::st_var::StVarValue;
+    use spacetimedb_lib::{resolved_type_via_v9, ScheduleAt};
     use spacetimedb_primitives::{col_list, ColId, ScheduleId};
+    use spacetimedb_sats::algebraic_value::ser::value_serialize;
     use spacetimedb_sats::{product, AlgebraicType, GroundSpacetimeType};
     use spacetimedb_schema::def::{BTreeAlgorithm, ConstraintData, IndexAlgorithm, UniqueConstraintData};
     use spacetimedb_schema::schema::{
-        ColumnSchema, ConstraintSchema, IndexSchema, RowLevelSecuritySchema, SequenceSchema,
+        ColumnSchema, ConstraintSchema, IndexSchema, RowLevelSecuritySchema, ScheduleSchema, SequenceSchema,
     };
     use spacetimedb_table::table::UniqueConstraintViolation;
 
@@ -1409,7 +1430,7 @@ mod tests {
         row: &ProductValue,
     ) -> Result<(AlgebraicValue, RowRef<'a>)> {
         let row = to_vec(&row).unwrap();
-        let (gen_cols, row_ref) = datastore.insert_mut_tx(tx, table_id, &row)?;
+        let (gen_cols, row_ref, _) = datastore.insert_mut_tx(tx, table_id, &row)?;
         let gen_cols = row_ref.project(&gen_cols)?;
         Ok((gen_cols, row_ref))
     }
@@ -1422,7 +1443,7 @@ mod tests {
         row: &ProductValue,
     ) -> Result<(AlgebraicValue, RowRef<'a>)> {
         let row = to_vec(&row).unwrap();
-        let (gen_cols, row_ref) = datastore.update_mut_tx(tx, table_id, index_id, &row)?;
+        let (gen_cols, row_ref, _) = datastore.update_mut_tx(tx, table_id, index_id, &row)?;
         let gen_cols = row_ref.project(&gen_cols)?;
         Ok((gen_cols, row_ref))
     }
@@ -2498,6 +2519,73 @@ mod tests {
         assert_eq!(&all_rows_tx(&read_tx_1, table_id), rows);
         read_tx_2.release();
         read_tx_1.release();
+        Ok(())
+    }
+
+    #[test]
+    fn test_scheduled_table_insert_and_update() -> ResultTest<()> {
+        let table_id = TableId::SENTINEL;
+        // Build the minimal schema that is a valid scheduler table.
+        let schema = TableSchema::new(
+            table_id,
+            "Foo".into(),
+            vec![
+                ColumnSchema {
+                    table_id,
+                    col_pos: 0.into(),
+                    col_name: "id".into(),
+                    col_type: AlgebraicType::U64,
+                },
+                ColumnSchema {
+                    table_id,
+                    col_pos: 1.into(),
+                    col_name: "at".into(),
+                    col_type: ScheduleAt::get_type(),
+                },
+            ],
+            vec![IndexSchema {
+                table_id,
+                index_id: IndexId::SENTINEL,
+                index_name: "id_idx".into(),
+                index_algorithm: IndexAlgorithm::BTree(BTreeAlgorithm { columns: 0.into() }),
+            }],
+            vec![ConstraintSchema {
+                table_id,
+                constraint_id: ConstraintId::SENTINEL,
+                constraint_name: "id_unique".into(),
+                data: ConstraintData::Unique(UniqueConstraintData { columns: 0.into() }),
+            }],
+            vec![],
+            StTableType::User,
+            StAccess::Public,
+            Some(ScheduleSchema {
+                table_id,
+                schedule_id: ScheduleId::SENTINEL,
+                schedule_name: "schedule".into(),
+                reducer_name: "reducer".into(),
+                at_column: 1.into(),
+            }),
+            Some(0.into()),
+        );
+
+        // Create the table.
+        let datastore = get_datastore()?;
+        let mut tx = begin_mut_tx(&datastore);
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        let index_id = datastore
+            .index_id_from_name_mut_tx(&tx, "id_idx")?
+            .expect("there should be an index with this name");
+
+        // Make us a row and insert + identity update.
+        let row = &product![24u64, value_serialize(&ScheduleAt::Interval(42))];
+        let row = &to_vec(row).unwrap();
+        let (_, _, insert_flags) = datastore.insert_mut_tx(&mut tx, table_id, row)?;
+        let (_, _, update_flags) = datastore.update_mut_tx(&mut tx, table_id, index_id, row)?;
+
+        // The whole point of the test.
+        assert!(insert_flags.is_scheduler_table);
+        assert!(update_flags.is_scheduler_table);
+
         Ok(())
     }
 

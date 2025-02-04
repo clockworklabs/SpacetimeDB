@@ -44,9 +44,9 @@ members = [
   "tools/upgrade-version",
 ]
 default-members = ["crates/cli"]
-# cargo feature graph resolver. v2 is default in edition2021 but workspace
+# cargo feature graph resolver. v3 is default in edition2024 but workspace
 # manifests don't have editions.
-resolver = "2"
+resolver = "3"
 
 [profile.release]
 opt-level = 3
@@ -88,7 +88,7 @@ debug = true
 version = "1.0.0-rc4"
 edition = "2021"
 # update rust-toolchain.toml too!
-rust-version = "1.78.0"
+rust-version = "1.84.0"
 
 [workspace.dependencies]
 spacetimedb = { path = "crates/bindings", version = "1.0.0-rc4" }
@@ -194,7 +194,7 @@ pretty_assertions = { version = "1.4", features = ["unstable"] }
 proc-macro2 = "1.0"
 prometheus = "0.13.0"
 proptest = "1.4"
-proptest-derive = "0.4"
+proptest-derive = "0.5"
 quick-junit = { version = "0.3.2" }
 quote = "1.0.8"
 rand = "0.8.5"

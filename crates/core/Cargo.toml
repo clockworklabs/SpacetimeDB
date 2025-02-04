@@ -116,8 +116,10 @@ faststr = "0.2.23"
 unindexed_iter_by_col_range_warn = []
 # Optional storage engines.
 default = ["unindexed_iter_by_col_range_warn"]
+# Enable timing for wasm ABI calls
+spacetimedb-wasm-instance-env-times = []
 # Enable test helpers and utils
-test = []
+test = ["spacetimedb-commitlog/test"]
 
 [dev-dependencies]
 spacetimedb-lib = { path = "../lib", features = ["proptest"] }

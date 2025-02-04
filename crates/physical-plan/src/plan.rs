@@ -6,7 +6,7 @@ use std::{
 
 use derive_more::From;
 use spacetimedb_expr::StatementSource;
-use spacetimedb_lib::{query::Delta, AlgebraicValue, ProductValue};
+use spacetimedb_lib::{query::Delta, sats::size_of::SizeOf, AlgebraicValue, ProductValue};
 use spacetimedb_primitives::{ColId, ColSet, IndexId};
 use spacetimedb_schema::schema::{IndexSchema, TableSchema};
 use spacetimedb_sql_parser::ast::{BinOp, LogOp};
@@ -99,7 +99,18 @@ impl ProjectPlan {
 #[derive(Debug)]
 pub enum ProjectListPlan {
     Name(ProjectPlan),
-    List(PhysicalPlan, Vec<(Box<str>, TupleField)>),
+    List(PhysicalPlan, Vec<TupleField>),
+}
+
+impl Deref for ProjectListPlan {
+    type Target = PhysicalPlan;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            Self::Name(plan) => plan,
+            Self::List(plan, ..) => plan,
+        }
+    }
 }
 
 impl ProjectListPlan {
@@ -107,13 +118,7 @@ impl ProjectListPlan {
         match self {
             Self::Name(plan) => Self::Name(plan.optimize()),
             Self::List(plan, fields) => Self::List(
-                plan.optimize(
-                    fields
-                        .iter()
-                        .map(|(_, TupleField { label, .. })| label)
-                        .copied()
-                        .collect(),
-                ),
+                plan.optimize(fields.iter().map(|TupleField { label, .. }| label).copied().collect()),
                 fields,
             ),
         }
@@ -466,13 +471,11 @@ impl PhysicalPlan {
     /// join c on b.id = c.id
     /// ```
     fn introduce_semijoins(self, mut reqs: Vec<Label>) -> Self {
-        impl PhysicalPlan {
-            fn append_required_label(&self, reqs: &mut Vec<Label>, label: Label) {
-                if !reqs.contains(&label) && self.has_label(&label) {
-                    reqs.push(label);
-                }
+        let append_required_label = |plan: &PhysicalPlan, reqs: &mut Vec<Label>, label: Label| {
+            if !reqs.contains(&label) && plan.has_label(&label) {
+                reqs.push(label);
             }
-        }
+        };
         match self {
             Self::Filter(input, expr) => {
                 expr.visit(&mut |expr| {
@@ -489,8 +492,8 @@ impl PhysicalPlan {
                 let mut rhs_reqs = vec![];
 
                 for var in reqs {
-                    lhs.append_required_label(&mut lhs_reqs, var);
-                    rhs.append_required_label(&mut rhs_reqs, var);
+                    append_required_label(&lhs, &mut lhs_reqs, var);
+                    append_required_label(&rhs, &mut rhs_reqs, var);
                 }
                 let lhs = lhs.introduce_semijoins(lhs_reqs);
                 let rhs = rhs.introduce_semijoins(rhs_reqs);
@@ -517,8 +520,8 @@ impl PhysicalPlan {
                 let mut lhs_reqs = vec![u];
                 let mut rhs_reqs = vec![v];
                 for var in reqs {
-                    lhs.append_required_label(&mut lhs_reqs, var);
-                    rhs.append_required_label(&mut rhs_reqs, var);
+                    append_required_label(&lhs, &mut lhs_reqs, var);
+                    append_required_label(&rhs, &mut rhs_reqs, var);
                 }
                 let lhs = lhs.introduce_semijoins(lhs_reqs);
                 let rhs = rhs.introduce_semijoins(rhs_reqs);
@@ -562,7 +565,7 @@ impl PhysicalPlan {
     pub(crate) fn returns_distinct_values(&self, label: &Label, cols: &ColSet) -> bool {
         match self {
             // Is there a unique constraint for these cols?
-            Self::TableScan(schema, var, _) => var == label && schema.is_unique(cols),
+            Self::TableScan(schema, var, _) => var == label && schema.as_ref().is_unique(cols),
             // Is there a unique constraint for these cols + the index cols?
             Self::IxScan(
                 IxScan {
@@ -574,7 +577,7 @@ impl PhysicalPlan {
                 var,
             ) => {
                 var == label
-                    && schema.is_unique(&ColSet::from_iter(
+                    && schema.as_ref().is_unique(&ColSet::from_iter(
                         cols.iter()
                             .chain(prefix.iter().map(|(col_id, _)| *col_id))
                             .chain(vec![*col]),
@@ -607,7 +610,7 @@ impl PhysicalPlan {
                 _,
             ) => {
                 lhs.returns_distinct_values(lhs_label, &ColSet::from(ColId(*lhs_field_pos as u16)))
-                    && rhs.is_unique(cols)
+                    && rhs.as_ref().is_unique(cols)
             }
             // If the table in question is on the lhs,
             // and if the lhs returns distinct values,
@@ -904,8 +907,21 @@ impl PhysicalExpr {
         self.eval(row).as_bool().copied().unwrap_or(false)
     }
 
+    /// Evaluate this boolean expression over `row`
+    pub fn eval_bool_with_metrics(&self, row: &impl ProjectField, bytes_scanned: &mut usize) -> bool {
+        self.eval_with_metrics(row, bytes_scanned)
+            .as_bool()
+            .copied()
+            .unwrap_or(false)
+    }
+
     /// Evaluate this expression over `row`
     fn eval(&self, row: &impl ProjectField) -> Cow<'_, AlgebraicValue> {
+        self.eval_with_metrics(row, &mut 0)
+    }
+
+    /// Evaluate this expression over `row`
+    fn eval_with_metrics(&self, row: &impl ProjectField, bytes_scanned: &mut usize) -> Cow<'_, AlgebraicValue> {
         fn eval_bin_op(op: BinOp, a: &AlgebraicValue, b: &AlgebraicValue) -> bool {
             match op {
                 BinOp::Eq => a == b,
@@ -918,20 +934,28 @@ impl PhysicalExpr {
         }
         let into = |b| Cow::Owned(AlgebraicValue::Bool(b));
         match self {
-            Self::BinOp(op, a, b) => into(eval_bin_op(*op, &a.eval(row), &b.eval(row))),
+            Self::BinOp(op, a, b) => into(eval_bin_op(
+                *op,
+                &a.eval_with_metrics(row, bytes_scanned),
+                &b.eval_with_metrics(row, bytes_scanned),
+            )),
             Self::LogOp(LogOp::And, exprs) => into(
                 exprs
                     .iter()
                     // ALL is equivalent to AND
-                    .all(|expr| expr.eval_bool(row)),
+                    .all(|expr| expr.eval_bool_with_metrics(row, bytes_scanned)),
             ),
             Self::LogOp(LogOp::Or, exprs) => into(
                 exprs
                     .iter()
                     // ANY is equivalent to OR
-                    .any(|expr| expr.eval_bool(row)),
+                    .any(|expr| expr.eval_bool_with_metrics(row, bytes_scanned)),
             ),
-            Self::Field(field) => Cow::Owned(row.project(field)),
+            Self::Field(field) => {
+                let value = row.project(field);
+                *bytes_scanned += value.size_of();
+                Cow::Owned(value)
+            }
             Self::Value(v) => Cow::Borrowed(v),
         }
     }
@@ -981,7 +1005,7 @@ mod tests {
     use spacetimedb_sql_parser::ast::BinOp;
 
     use crate::{
-        compile::compile_project_plan,
+        compile::compile_select,
         plan::{HashJoin, IxJoin, IxScan, PhysicalPlan, Sarg, Semi, TupleField},
     };
 
@@ -1078,7 +1102,7 @@ mod tests {
         let sql = "select * from t";
 
         let lp = parse_and_type_sub(sql, &db).unwrap();
-        let pp = compile_project_plan(lp).optimize();
+        let pp = compile_select(lp).optimize();
 
         match pp {
             ProjectPlan::None(PhysicalPlan::TableScan(schema, _, _)) => {
@@ -1109,7 +1133,7 @@ mod tests {
         let sql = "select * from t where x = 5";
 
         let lp = parse_and_type_sub(sql, &db).unwrap();
-        let pp = compile_project_plan(lp).optimize();
+        let pp = compile_select(lp).optimize();
 
         match pp {
             ProjectPlan::None(PhysicalPlan::Filter(input, PhysicalExpr::BinOp(BinOp::Eq, field, value))) => {
@@ -1208,7 +1232,7 @@ mod tests {
             where u.identity = 5
         ";
         let lp = parse_and_type_sub(sql, &db).unwrap();
-        let pp = compile_project_plan(lp).optimize();
+        let pp = compile_select(lp).optimize();
 
         // Plan:
         //         rx
@@ -1400,7 +1424,7 @@ mod tests {
             where 5 = m.employee and 5 = v.employee
         ";
         let lp = parse_and_type_sub(sql, &db).unwrap();
-        let pp = compile_project_plan(lp).optimize();
+        let pp = compile_select(lp).optimize();
 
         // Plan:
         //           rx
@@ -1573,7 +1597,7 @@ mod tests {
 
         let sql = "select * from t where x = 3 and y = 4 and z = 5";
         let lp = parse_and_type_sub(sql, &db).unwrap();
-        let pp = compile_project_plan(lp).optimize();
+        let pp = compile_select(lp).optimize();
 
         // Select index on (x, y, z)
         match pp {
@@ -1595,7 +1619,7 @@ mod tests {
 
         let sql = "select * from t where x = 3 and y = 4";
         let lp = parse_and_type_sub(sql, &db).unwrap();
-        let pp = compile_project_plan(lp).optimize();
+        let pp = compile_select(lp).optimize();
 
         // Select index on x
         let plan = match pp {
@@ -1623,7 +1647,7 @@ mod tests {
 
         let sql = "select * from t where w = 5 and x = 4";
         let lp = parse_and_type_sub(sql, &db).unwrap();
-        let pp = compile_project_plan(lp).optimize();
+        let pp = compile_select(lp).optimize();
 
         // Select index on x
         let plan = match pp {
@@ -1651,7 +1675,7 @@ mod tests {
 
         let sql = "select * from t where y = 1";
         let lp = parse_and_type_sub(sql, &db).unwrap();
-        let pp = compile_project_plan(lp).optimize();
+        let pp = compile_select(lp).optimize();
 
         // Do not select index on (y, z)
         match pp {

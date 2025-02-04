@@ -9,19 +9,12 @@ pub mod lending_pool;
 pub mod notify_once;
 pub mod slow;
 
+// TODO: use String::from_utf8_lossy_owned once stabilized
 pub(crate) fn string_from_utf8_lossy_owned(v: Vec<u8>) -> String {
     match String::from_utf8_lossy(&v) {
         // SAFETY: from_utf8_lossy() returned Borrowed, which means the original buffer is valid utf8
         Cow::Borrowed(_) => unsafe { String::from_utf8_unchecked(v) },
         Cow::Owned(s) => s,
-    }
-}
-
-#[track_caller]
-pub const fn const_unwrap<T: Copy>(o: Option<T>) -> T {
-    match o {
-        Some(x) => x,
-        None => panic!("called `const_unwrap()` on a `None` value"),
     }
 }
 
