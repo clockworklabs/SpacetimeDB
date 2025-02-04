@@ -4,8 +4,6 @@ using System.Collections.Generic;
 using System.Data;
 using System.Diagnostics;
 using System.Linq;
-using System.Runtime.CompilerServices;
-using System.Text.RegularExpressions;
 
 namespace SpacetimeDB
 {
@@ -128,6 +126,11 @@ namespace SpacetimeDB
 #endif
         }
 
+        /// <summary>
+        /// Create a subscription for a query.
+        /// The query should not have an existing subscription open.
+        /// </summary>
+        /// <param name="query"></param>
         private void CreateSubscription(string query)
         {
             lock (this)
@@ -276,6 +279,10 @@ namespace SpacetimeDB
             }
         }
 
+        /// <summary>
+        /// Set the requested subscriptions.
+        /// </summary>
+        /// <param name="queries"></param>
         public void SetSubscriptions(List<string> queries)
         {
             lock (this)
