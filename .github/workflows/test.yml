@@ -45,6 +45,7 @@ jobs:
 
       - name: Checkout SpacetimeDB
         uses: actions/checkout@v4
+        id: checkout-stdb
         with:
           repository: clockworklabs/SpacetimeDB
           ref: ${{ steps.extract-branch.outputs.branch }}
@@ -83,19 +84,23 @@ jobs:
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
+        id: cache-rust-deps
         with:
           workspaces: unity-tests~/server-rust
-          shared-key: UnityTestServer
+          key: ${{ steps.checkout-stdb.outputs.commit }}
+          # Cache Rust deps even if unit tests have failed.
+          cache-on-failure: true
+          # Cache the CLI as well.
+          cache-all-crates: true
 
       - name: Install SpacetimeDB CLI from the local checkout
+        # Rebuild only if we didn't get a precise cache hit.
+        if: steps.cache-rust-deps.outputs.cache-hit == 'false'
         run: |
           cargo install --force --path SpacetimeDB~/crates/cli --locked --message-format=short
           cargo install --force --path SpacetimeDB~/crates/standalone --locked --message-format=short
           # Add a handy alias using the old binary name, so that we don't have to rewrite all scripts (incl. in submodules).
-          rm $HOME/.cargo/bin/spacetime || echo "haven't run on this host before"
-          ln -s $HOME/.cargo/bin/spacetimedb-cli $HOME/.cargo/bin/spacetime
-          # Clear any existing information
-          spacetime server clear -y
+          ln -sf $HOME/.cargo/bin/spacetimedb-cli $HOME/.cargo/bin/spacetime
         env:
           # Share the target directory with our local project to avoid rebuilding same SpacetimeDB crates twice.
           CARGO_TARGET_DIR: unity-tests~/server-rust/target
@@ -129,14 +134,6 @@ jobs:
           spacetime logout && spacetime login --server-issued-login local
           bash ./publish.sh
 
-      - uses: actions/cache@v3
-        with:
-          path: unity-tests~/client/Library
-          key: Library-SpacetimeDBUnityTestsuite-Linux-x86
-          restore-keys: |
-            Library-SpacetimeDBUnityTestsuite-
-            Library-
-
       - name: Patch com.clockworklabs.spacetimedbsdk dependency in manifest.json
         working-directory: unity-tests~/client/Packages
         run: |
@@ -144,6 +141,12 @@ jobs:
           # TODO: find out why pointing to a local directory doesn't work - is it because Unity CI action uses Docker?
           yq e -i '.dependencies["com.clockworklabs.spacetimedbsdk"] = "https://github.com/clockworklabs/com.clockworklabs.spacetimedbsdk.git#${{ github.head_ref }}"' manifest.json
           cat manifest.json
+
+      - uses: actions/cache@v3
+        with:
+          path: unity-tests~/client/Library
+          key: Unity-${{ github.head_ref }}
+          restore-keys: Unity-
 
       - name: Run Unity tests
         uses: game-ci/unity-test-runner@v4
