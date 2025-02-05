@@ -26,6 +26,6 @@ pub fn say_hello(ctx: &ReducerContext) {
     def test_describe(self):
         """Check describing a module"""
 
-        self.spacetime("describe", self.database_identity)
-        self.spacetime("describe", self.database_identity, "reducer", "say_hello")
-        self.spacetime("describe", self.database_identity, "table", "person")
+        self.spacetime("describe", "--json", self.database_identity)
+        self.spacetime("describe", "--json", self.database_identity, "reducer", "say_hello")
+        self.spacetime("describe", "--json", self.database_identity, "table", "person")

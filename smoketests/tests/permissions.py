@@ -36,7 +36,7 @@ class Permissions(Smoketest):
 
         self.reset_config()
         self.new_identity()
-        self.spacetime("describe", self.database_identity)
+        self.spacetime("describe", "--json", self.database_identity)
 
     def test_logs(self):
         """Ensure that we are not able to view the logs of a module that we don't have permission to view"""
