@@ -16,7 +16,7 @@ use spacetimedb_lib::{Address, Identity};
 use std::time::SystemTime;
 
 #[non_exhaustive]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 /// A change in the state of a [`crate::DbContext`] which causes callbacks to run.
 pub enum Event<R> {
     /// Event when we are notified that a reducer ran in the remote module.
@@ -47,7 +47,7 @@ pub enum Event<R> {
     ///
     /// Payload should describe the error in a human-readable format.
     /// No requirement is imposed that it be programmatically inspectable.
-    SubscribeError(anyhow::Error),
+    SubscribeError(crate::Error),
 
     /// Event when we are notified of a transaction in the remote module which we cannot associate with a known reducer.
     ///
@@ -58,7 +58,7 @@ pub enum Event<R> {
 }
 
 #[non_exhaustive]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 /// A state change due to a reducer, which may or may not have committed successfully.
 pub struct ReducerEvent<R> {
     /// The time at which the reducer was invoked.
@@ -103,7 +103,7 @@ pub enum Status {
 impl Status {
     pub(crate) fn parse_status_and_update<M: SpacetimeModule>(
         status: ws::UpdateStatus<ws::BsatnFormat>,
-    ) -> anyhow::Result<(Self, Option<M::DbUpdate>)> {
+    ) -> crate::Result<(Self, Option<M::DbUpdate>)> {
         Ok(match status {
             ws::UpdateStatus::Committed(update) => (Self::Committed, Some(M::DbUpdate::parse_update(update)?)),
             ws::UpdateStatus::Failed(errmsg) => (Self::Failed(errmsg), None),

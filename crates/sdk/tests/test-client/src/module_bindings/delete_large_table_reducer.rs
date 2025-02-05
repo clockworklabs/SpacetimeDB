@@ -2,10 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-    self as __sdk, __lib, __sats, __ws,
-    anyhow::{self as __anyhow, Context as _},
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::byte_struct_type::ByteStruct;
 use super::enum_with_payload_type::EnumWithPayload;
@@ -110,13 +107,10 @@ pub trait delete_large_table {
         t: ByteStruct,
         u: EveryPrimitiveStruct,
         v: EveryVecStruct,
-    ) -> __anyhow::Result<()>;
+    ) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `delete_large_table`.
     ///
-    /// The [`super::EventContext`] passed to the `callback`
-    /// will always have [`__sdk::Event::Reducer`] as its `event`,
-    /// but it may or may not have terminated successfully and been committed.
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::EventContext`]
+    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
     /// to determine the reducer's status.
     ///
     /// The returned [`DeleteLargeTableCallbackId`] can be passed to [`Self::remove_on_delete_large_table`]
@@ -124,7 +118,7 @@ pub trait delete_large_table {
     fn on_delete_large_table(
         &self,
         callback: impl FnMut(
-                &super::EventContext,
+                &super::ReducerEventContext,
                 &u8,
                 &u16,
                 &u32,
@@ -180,7 +174,7 @@ impl delete_large_table for super::RemoteReducers {
         t: ByteStruct,
         u: EveryPrimitiveStruct,
         v: EveryVecStruct,
-    ) -> __anyhow::Result<()> {
+    ) -> __sdk::Result<()> {
         self.imp.call_reducer(
             "delete_large_table",
             DeleteLargeTableArgs {
@@ -212,7 +206,7 @@ impl delete_large_table for super::RemoteReducers {
     fn on_delete_large_table(
         &self,
         mut callback: impl FnMut(
-                &super::EventContext,
+                &super::ReducerEventContext,
                 &u8,
                 &u16,
                 &u32,
@@ -240,10 +234,10 @@ impl delete_large_table for super::RemoteReducers {
     ) -> DeleteLargeTableCallbackId {
         DeleteLargeTableCallbackId(self.imp.on_reducer(
             "delete_large_table",
-            Box::new(move |ctx: &super::EventContext| {
-                let super::EventContext {
+            Box::new(move |ctx: &super::ReducerEventContext| {
+                let super::ReducerEventContext {
                     event:
-                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                        __sdk::ReducerEvent {
                             reducer:
                                 super::Reducer::DeleteLargeTable {
                                     a,
@@ -270,7 +264,7 @@ impl delete_large_table for super::RemoteReducers {
                                     v,
                                 },
                             ..
-                        }),
+                        },
                     ..
                 } = ctx
                 else {

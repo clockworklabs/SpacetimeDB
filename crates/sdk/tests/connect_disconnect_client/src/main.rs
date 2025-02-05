@@ -2,7 +2,7 @@ mod module_bindings;
 
 use module_bindings::*;
 
-use spacetimedb_sdk::{DbContext, Event, Table};
+use spacetimedb_sdk::{DbContext, Error, Table};
 
 use test_counter::TestCounter;
 
@@ -24,12 +24,12 @@ fn main() {
     let connection = DbConnection::builder()
         .with_module_name(db_name_or_panic())
         .with_uri(LOCALHOST)
-        .on_connect_error(|e| panic!("on_connect_error: {e:?}"))
+        .on_connect_error(|ctx| panic!("on_connect_error: {:?}", ctx.event))
         .on_connect(move |ctx, _, _| {
             connected_result(Ok(()));
             ctx.subscription_builder()
                 .on_error(|ctx| {
-                    if !matches!(ctx.event, Event::Disconnected) {
+                    if !matches!(ctx.event, Error::Disconnected) {
                         panic!("Subscription failed: {:?}", ctx.event)
                     }
                     on_error_result(Ok(()));
@@ -48,15 +48,14 @@ fn main() {
                 })
                 .subscribe("SELECT * FROM connected");
         })
-        .on_disconnect(move |ctx, err| {
+        .on_disconnect(move |ctx| {
             assert!(
                 !ctx.is_active(),
                 "on_disconnect callback, but `ctx.is_active()` is true"
             );
-            if let Some(err) = err {
-                disconnect_result(Err(anyhow::anyhow!("{err:?}")));
-            } else {
-                disconnect_result(Ok(()));
+            match &ctx.event {
+                Error::Disconnected => disconnect_result(Ok(())),
+                err => disconnect_result(Err(anyhow::anyhow!("{err:?}"))),
             }
         })
         .build()
@@ -76,7 +75,7 @@ fn main() {
     let sub_applied_one_row_result = reconnect_test_counter.add_test("disconnected_row");
 
     let new_connection = DbConnection::builder()
-        .on_connect_error(|e| panic!("on_connect_error: {e:?}"))
+        .on_connect_error(|ctx| panic!("on_connect_error: {:?}", ctx.event))
         .on_connect(move |_ctx, _, _| {
             reconnected_result(Ok(()));
         })
