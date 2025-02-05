@@ -1640,6 +1640,10 @@ mod tests {
     use spacetimedb_table::table::RowRef;
     use tests::tests_utils::TestHistory;
 
+    fn btree(cols: impl Into<ColList>) -> RawIndexAlgorithm {
+        RawIndexAlgorithm::BTree { columns: cols.into() }
+    }
+
     fn my_table(col_type: AlgebraicType) -> TableSchema {
         table("MyTable", ProductType::from([("my_col", col_type)]), |builder| builder)
     }
@@ -1666,6 +1670,7 @@ mod tests {
                     .with_primary_key(0)
                     .with_column_sequence(0)
                     .with_unique_constraint(0)
+                    .with_index_no_accessor_name(btree(0))
             },
         )
     }
@@ -1675,10 +1680,7 @@ mod tests {
             "MyTable",
             ProductType::from([("my_col", AlgebraicType::I64), ("other_col", AlgebraicType::I64)]),
             |builder| {
-                let builder = builder.with_index(
-                    RawIndexAlgorithm::BTree { columns: 0.into() },
-                    "accessor_name_doesnt_matter",
-                );
+                let builder = builder.with_index_no_accessor_name(btree(0));
 
                 if is_unique {
                     builder.with_unique_constraint(col_list![0])
@@ -2068,7 +2070,12 @@ mod tests {
         let schema = table(
             "MyTable",
             ProductType::from([("my_col", AlgebraicType::I64)]),
-            |builder| builder.with_column_sequence(0).with_unique_constraint(0),
+            |builder| {
+                builder
+                    .with_column_sequence(0)
+                    .with_unique_constraint(0)
+                    .with_index_no_accessor_name(btree(0))
+            },
         );
 
         let table_id = stdb.create_table(&mut tx, schema)?;
@@ -2104,9 +2111,10 @@ mod tests {
             ]),
             |builder| {
                 builder
-                    .with_index(RawIndexAlgorithm::BTree { columns: col_list![0] }, "MyTable_col1_idx")
-                    .with_index(RawIndexAlgorithm::BTree { columns: col_list![2] }, "MyTable_col3_idx")
-                    .with_index(RawIndexAlgorithm::BTree { columns: col_list![3] }, "MyTable_col4_idx")
+                    .with_index_no_accessor_name(btree(0))
+                    .with_index_no_accessor_name(btree(1))
+                    .with_index_no_accessor_name(btree(2))
+                    .with_index_no_accessor_name(btree(3))
                     .with_unique_constraint(0)
                     .with_unique_constraint(1)
                     .with_unique_constraint(3)
