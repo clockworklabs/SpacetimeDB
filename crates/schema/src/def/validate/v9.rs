@@ -219,9 +219,10 @@ impl ModuleValidator<'_> {
                     // together with indices. We would need some unique constraints
                     // to merely use indices rather than be part of them for this to work.
                     .filter(|(_, unique_cols)| !indexes.values().any(|i| i.algorithm.columns() == ***unique_cols))
-                    .map(|(c, _)| {
+                    .map(|(c, cols)| {
                         let constraint = c.name.clone();
-                        Err(ValidationError::UniqueConstraintWithoutIndex { constraint }.into())
+                        let columns = cols.clone();
+                        Err(ValidationError::UniqueConstraintWithoutIndex { constraint, columns }.into())
                     })
                     .collect_all_errors()
             } else {
@@ -885,14 +886,17 @@ mod tests {
         check_product_type, expect_identifier, expect_raw_type_name, expect_resolve, expect_type_name,
     };
     use crate::def::{validate::Result, ModuleDef};
-    use crate::def::{BTreeAlgorithm, ConstraintData, ConstraintDef, IndexDef, SequenceDef, UniqueConstraintData};
+    use crate::def::{
+        BTreeAlgorithm, ConstraintData, ConstraintDef, DirectAlgorithm, IndexDef, SequenceDef, UniqueConstraintData,
+    };
     use crate::error::*;
     use crate::type_for_generate::ClientCodegenError;
 
+    use itertools::Itertools;
     use spacetimedb_data_structures::expect_error_matching;
     use spacetimedb_lib::db::raw_def::*;
     use spacetimedb_lib::ScheduleAt;
-    use spacetimedb_primitives::{col_list, ColId, ColList};
+    use spacetimedb_primitives::{col_list, ColId, ColList, ColSet};
     use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, ProductType};
     use v9::{Lifecycle, RawIndexAlgorithm, RawModuleDefV9Builder, TableAccess, TableType};
 
@@ -931,6 +935,9 @@ mod tests {
                 },
                 "apples_id",
             )
+            .with_index(RawIndexAlgorithm::Direct { column: 2.into() }, "Apples_count_direct")
+            .with_unique_constraint(2)
+            .with_index(RawIndexAlgorithm::BTree { columns: 3.into() }, "Apples_type_btree")
             .with_unique_constraint(3)
             .finish();
 
@@ -972,6 +979,7 @@ mod tests {
                 true,
             )
             .with_auto_inc_primary_key(2)
+            .with_index(RawIndexAlgorithm::BTree { columns: 2.into() }, "scheduled_id_index")
             .with_schedule("check_deliveries", 1)
             .with_type(TableType::System)
             .finish();
@@ -1013,7 +1021,7 @@ mod tests {
 
         assert_eq!(apples_def.primary_key, None);
 
-        assert_eq!(apples_def.constraints.len(), 1);
+        assert_eq!(apples_def.constraints.len(), 2);
         let apples_unique_constraint = "Apples_type_key";
         assert_eq!(
             apples_def.constraints[apples_unique_constraint].data,
@@ -1026,27 +1034,31 @@ mod tests {
             apples_unique_constraint
         );
 
-        assert_eq!(apples_def.indexes.len(), 2);
-        for index in apples_def.indexes.values() {
-            match &index.name[..] {
-                // manually added
-                "Apples_name_count_idx_btree" => {
-                    assert_eq!(
-                        index.algorithm,
-                        BTreeAlgorithm {
-                            columns: ColList::from_iter([1, 2])
-                        }
-                        .into()
-                    );
-                    assert_eq!(index.accessor_name, Some(expect_identifier("apples_id")));
+        assert_eq!(apples_def.indexes.len(), 3);
+        assert_eq!(
+            apples_def
+                .indexes
+                .values()
+                .sorted_by_key(|id| &id.name)
+                .collect::<Vec<_>>(),
+            [
+                &IndexDef {
+                    name: "Apples_count_idx_direct".into(),
+                    accessor_name: Some(expect_identifier("Apples_count_direct")),
+                    algorithm: DirectAlgorithm { column: 2.into() }.into(),
+                },
+                &IndexDef {
+                    name: "Apples_name_count_idx_btree".into(),
+                    accessor_name: Some(expect_identifier("apples_id")),
+                    algorithm: BTreeAlgorithm { columns: [1, 2].into() }.into(),
+                },
+                &IndexDef {
+                    name: "Apples_type_idx_btree".into(),
+                    accessor_name: Some(expect_identifier("Apples_type_btree")),
+                    algorithm: BTreeAlgorithm { columns: 3.into() }.into(),
                 }
-                // auto-generated for the unique constraint
-                _ => {
-                    assert_eq!(index.algorithm, BTreeAlgorithm { columns: 3.into() }.into());
-                    assert_eq!(index.accessor_name, None);
-                }
-            }
-        }
+            ]
+        );
 
         let bananas_def = &def.tables[&bananas];
 
@@ -1415,9 +1427,12 @@ mod tests {
             .finish();
         let result: Result<ModuleDef> = builder.finish().try_into();
 
-        expect_error_matching!(result, ValidationError::UniqueConstraintWithoutIndex { constraint } => {
-            &**constraint == "Bananas_a_key"
-        });
+        expect_error_matching!(
+            result,
+            ValidationError::UniqueConstraintWithoutIndex { constraint, columns } => {
+                &**constraint == "Bananas_a_key" && *columns == ColSet::from(1)
+            }
+        );
     }
 
     #[test]
@@ -1544,6 +1559,7 @@ mod tests {
                 true,
             )
             .with_auto_inc_primary_key(2)
+            .with_index(RawIndexAlgorithm::BTree { columns: 2.into() }, "scheduled_id_index")
             .with_schedule("check_deliveries", 1)
             .with_type(TableType::System)
             .finish();
@@ -1570,6 +1586,7 @@ mod tests {
                 true,
             )
             .with_auto_inc_primary_key(2)
+            .with_index(RawIndexAlgorithm::Direct { column: 2.into() }, "scheduled_id_idx")
             .with_schedule("check_deliveries", 1)
             .with_type(TableType::System)
             .finish();
@@ -1600,6 +1617,7 @@ mod tests {
                 true,
             )
             .with_auto_inc_primary_key(2)
+            .with_index(RawIndexAlgorithm::Direct { column: 2.into() }, "scheduled_id_index")
             .with_index(
                 RawIndexAlgorithm::BTree {
                     columns: col_list![0, 2],
