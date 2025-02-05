@@ -1006,7 +1006,7 @@ pub(crate) fn compile_to_ast<T: TableSchemaView + StateView>(
 ) -> Result<Vec<SqlAst>, DBError> {
     // NOTE: The following ensures compliance with the 1.0 sql api.
     // Come 1.0, it will have replaced the current compilation stack.
-    compile_sql_stmt(sql_text, &SchemaViewer::new(tx, auth), auth)?;
+    compile_sql_stmt(sql_text, &SchemaViewer::new(tx, auth), auth, false)?;
 
     let dialect = PostgreSqlDialect {};
     let ast = Parser::parse_sql(&dialect, sql_text).map_err(|error| DBError::SqlParser {
