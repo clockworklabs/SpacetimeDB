@@ -209,16 +209,27 @@ impl ModuleValidator<'_> {
                     .filter_map(|c| c.data.unique_columns().map(|cols| (c, cols)))
                     // TODO(centril): this check is actually too strict
                     // and ends up unnecessarily inducing extra indices.
-                    // All that is required is for `unique_cols` to have all columns
-                    // present in `index`'s columns.
-                    // That is, we can pair a unique constraint `a b`
-                    // with both an index `a b` and an index `b a`.
-                    // Because `ColSet`s are sorted, all we need to do is check that
-                    // `unique_cols.is_prefix_of(i.algorithm.columns())`.
-                    // However, currently, the datastore is represents unique constraints
-                    // together with indices. We would need some unique constraints
-                    // to merely use indices rather than be part of them for this to work.
-                    .filter(|(_, unique_cols)| !indexes.values().any(|i| i.algorithm.columns() == ***unique_cols))
+                    //
+                    // It is sufficient for `unique_cols` to:
+                    // a) be a permutation of `index`'s columns,
+                    //    as a permutation of a set is still the same set,
+                    //    so when we use the index to check the constraint,
+                    //    the order in the index does not matter for the purposes of the constraint.
+                    //
+                    // b) for `unique_cols` to form a prefix of `index`'s columns,
+                    //    if the index provides efficient prefix scans.
+                    //
+                    // Currently, b) is unsupported,
+                    // as we cannot decouple unique constraints from indices in the datastore today,
+                    // and we cannot mark the entire index unique,
+                    // as that would not be a sound representation of what the user wanted.
+                    // If we wanted to, we could make the constraints merely use indices,
+                    // rather than be indices.
+                    .filter(|(_, unique_cols)| {
+                        !indexes
+                            .values()
+                            .any(|i| ColSet::from(i.algorithm.columns()) == **unique_cols)
+                    })
                     .map(|(c, cols)| {
                         let constraint = c.name.clone();
                         let columns = cols.clone();
@@ -894,9 +905,10 @@ mod tests {
 
     use itertools::Itertools;
     use spacetimedb_data_structures::expect_error_matching;
+    use spacetimedb_lib::db::raw_def::v9::{btree, direct};
     use spacetimedb_lib::db::raw_def::*;
     use spacetimedb_lib::ScheduleAt;
-    use spacetimedb_primitives::{col_list, ColId, ColList, ColSet};
+    use spacetimedb_primitives::{ColId, ColList, ColSet};
     use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, ProductType};
     use v9::{Lifecycle, RawIndexAlgorithm, RawModuleDefV9Builder, TableAccess, TableType};
 
@@ -929,15 +941,10 @@ mod tests {
                 ]),
                 true,
             )
-            .with_index(
-                RawIndexAlgorithm::BTree {
-                    columns: ColList::from_iter([1, 2]),
-                },
-                "apples_id",
-            )
-            .with_index(RawIndexAlgorithm::Direct { column: 2.into() }, "Apples_count_direct")
+            .with_index(btree([1, 2]), "apples_id")
+            .with_index(direct(2), "Apples_count_direct")
             .with_unique_constraint(2)
-            .with_index(RawIndexAlgorithm::BTree { columns: 3.into() }, "Apples_type_btree")
+            .with_index(btree(3), "Apples_type_btree")
             .with_unique_constraint(3)
             .finish();
 
@@ -959,13 +966,8 @@ mod tests {
             .with_unique_constraint(ColId(0))
             .with_primary_key(0)
             .with_access(TableAccess::Private)
-            .with_index(RawIndexAlgorithm::BTree { columns: 0.into() }, "bananas_count")
-            .with_index(
-                RawIndexAlgorithm::BTree {
-                    columns: ColList::from_iter([0, 1, 2]),
-                },
-                "bananas_count_id_name",
-            )
+            .with_index(btree(0), "bananas_count")
+            .with_index(btree([0, 1, 2]), "bananas_count_id_name")
             .finish();
 
         let deliveries_product_type = builder
@@ -979,7 +981,7 @@ mod tests {
                 true,
             )
             .with_auto_inc_primary_key(2)
-            .with_index(RawIndexAlgorithm::BTree { columns: 2.into() }, "scheduled_id_index")
+            .with_index(btree(2), "scheduled_id_index")
             .with_schedule("check_deliveries", 1)
             .with_type(TableType::System)
             .finish();
@@ -1234,12 +1236,7 @@ mod tests {
                 ProductType::from([("b", AlgebraicType::U16), ("a", AlgebraicType::U64)]),
                 false,
             )
-            .with_index(
-                RawIndexAlgorithm::BTree {
-                    columns: ColList::from_iter([0, 55]),
-                },
-                "bananas_a_b",
-            )
+            .with_index(btree([0, 55]), "bananas_a_b")
             .finish();
         let result: Result<ModuleDef> = builder.finish().try_into();
 
@@ -1318,12 +1315,7 @@ mod tests {
                 ProductType::from([("b", AlgebraicType::U16), ("a", AlgebraicType::U64)]),
                 false,
             )
-            .with_index(
-                RawIndexAlgorithm::BTree {
-                    columns: ColList::from_iter([0, 0]),
-                },
-                "bananas_b_b",
-            )
+            .with_index(btree([0, 0]), "bananas_b_b")
             .finish();
         let result: Result<ModuleDef> = builder.finish().try_into();
 
@@ -1444,7 +1436,7 @@ mod tests {
                 ProductType::from([("b", AlgebraicType::I32), ("a", AlgebraicType::U64)]),
                 false,
             )
-            .with_index(RawIndexAlgorithm::Direct { column: 0.into() }, "bananas_b")
+            .with_index(direct(0), "bananas_b")
             .finish();
         let result: Result<ModuleDef> = builder.finish().try_into();
 
@@ -1559,7 +1551,7 @@ mod tests {
                 true,
             )
             .with_auto_inc_primary_key(2)
-            .with_index(RawIndexAlgorithm::BTree { columns: 2.into() }, "scheduled_id_index")
+            .with_index(btree(2), "scheduled_id_index")
             .with_schedule("check_deliveries", 1)
             .with_type(TableType::System)
             .finish();
@@ -1586,7 +1578,7 @@ mod tests {
                 true,
             )
             .with_auto_inc_primary_key(2)
-            .with_index(RawIndexAlgorithm::Direct { column: 2.into() }, "scheduled_id_idx")
+            .with_index(direct(2), "scheduled_id_idx")
             .with_schedule("check_deliveries", 1)
             .with_type(TableType::System)
             .finish();
@@ -1617,13 +1609,8 @@ mod tests {
                 true,
             )
             .with_auto_inc_primary_key(2)
-            .with_index(RawIndexAlgorithm::Direct { column: 2.into() }, "scheduled_id_index")
-            .with_index(
-                RawIndexAlgorithm::BTree {
-                    columns: col_list![0, 2],
-                },
-                "nice_index_name",
-            )
+            .with_index(direct(2), "scheduled_id_index")
+            .with_index(btree([0, 2]), "nice_index_name")
             .with_schedule("check_deliveries", 1)
             .with_type(TableType::System)
             .finish();

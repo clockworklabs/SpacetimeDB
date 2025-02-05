@@ -14,7 +14,7 @@
 use crate::db::relational_db::RelationalDB;
 use crate::error::DBError;
 use spacetimedb_lib::db::auth::{StAccess, StTableType};
-use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, RawSql};
+use spacetimedb_lib::db::raw_def::v9::{btree, RawSql};
 use spacetimedb_lib::db::raw_def::*;
 use spacetimedb_lib::de::{Deserialize, DeserializeOwned, Error};
 use spacetimedb_lib::ser::Serialize;
@@ -287,10 +287,6 @@ fn validate_system_table<T: StFields + 'static>(def: &ModuleDef, table_name: &st
 /// See the comment on [`SYSTEM_MODULE_DEF`].
 fn system_module_def() -> ModuleDef {
     let mut builder = RawModuleDefV9Builder::new();
-
-    fn btree(cols: impl Into<ColList>) -> RawIndexAlgorithm {
-        RawIndexAlgorithm::BTree { columns: cols.into() }
-    }
 
     let st_table_type = builder.add_type::<StTableRow>();
     builder

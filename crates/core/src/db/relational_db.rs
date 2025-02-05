@@ -30,7 +30,7 @@ pub use spacetimedb_durability::Durability;
 use spacetimedb_durability::{self as durability, TxOffset};
 use spacetimedb_lib::address::Address;
 use spacetimedb_lib::db::auth::StAccess;
-use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, RawModuleDefV9Builder, RawSql};
+use spacetimedb_lib::db::raw_def::v9::{btree, RawModuleDefV9Builder, RawSql};
 use spacetimedb_lib::Identity;
 use spacetimedb_paths::server::{CommitLogDir, ReplicaDir, SnapshotsPath};
 use spacetimedb_primitives::*;
@@ -854,12 +854,7 @@ impl RelationalDB {
             .with_access(access.into());
 
         for columns in indexes {
-            table_builder = table_builder.with_index(
-                RawIndexAlgorithm::BTree {
-                    columns: columns.clone(),
-                },
-                "accessor_name_doesnt_matter",
-            );
+            table_builder = table_builder.with_index(btree(columns.clone()), "accessor_name_doesnt_matter");
         }
         table_builder.finish();
         let module_def: ModuleDef = module_def_builder.finish().try_into()?;
@@ -1630,7 +1625,7 @@ mod tests {
     use pretty_assertions::assert_eq;
     use spacetimedb_client_api_messages::timestamp::Timestamp;
     use spacetimedb_data_structures::map::IntMap;
-    use spacetimedb_lib::db::raw_def::v9::RawTableDefBuilder;
+    use spacetimedb_lib::db::raw_def::v9::{btree, RawTableDefBuilder};
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::Identity;
     use spacetimedb_sats::buffer::BufReader;
@@ -1639,10 +1634,6 @@ mod tests {
     use spacetimedb_table::read_column::ReadColumn;
     use spacetimedb_table::table::RowRef;
     use tests::tests_utils::TestHistory;
-
-    fn btree(cols: impl Into<ColList>) -> RawIndexAlgorithm {
-        RawIndexAlgorithm::BTree { columns: cols.into() }
-    }
 
     fn my_table(col_type: AlgebraicType) -> TableSchema {
         table("MyTable", ProductType::from([("my_col", col_type)]), |builder| builder)
@@ -2206,12 +2197,7 @@ mod tests {
         ]);
 
         let schema = table("t", columns, |builder| {
-            builder.with_index(
-                RawIndexAlgorithm::BTree {
-                    columns: col_list![0, 1],
-                },
-                "accessor_name_doesnt_matter",
-            )
+            builder.with_index(btree([0, 1]), "accessor_name_doesnt_matter")
         });
 
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);

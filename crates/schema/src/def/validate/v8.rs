@@ -72,6 +72,7 @@ fn upgrade_table(
     // This is the hairiest part of v8.
     let generated_constraints = table.schema.generated_constraints().collect::<Vec<_>>();
     let generated_sequences = table.schema.generated_sequences().collect::<Vec<_>>();
+    let generated_indexes = table.schema.generated_indexes().collect::<Vec<_>>();
 
     let RawTableDescV8 {
         schema:
@@ -96,7 +97,7 @@ fn upgrade_table(
     check_all_column_defs(product_type_ref, columns, &table_name, typespace, extra_errors);
 
     // Now we're ready to go through the various definitions and upgrade them.
-    let indexes = convert_all(indexes, upgrade_index);
+    let indexes = convert_all(indexes.into_iter().chain(generated_indexes), upgrade_index);
     let sequences = convert_all(sequences.into_iter().chain(generated_sequences), upgrade_sequence);
     let schedule = upgrade_schedule(scheduled, scheduled_at_col);
 
@@ -390,7 +391,7 @@ mod tests {
                 ]),
             )
             .with_column_constraint(Constraints::primary_key_auto(), 0)
-            .with_column_index(ColList::from_iter([0, 1, 2]), false),
+            .with_column_index([0, 1, 2], false),
         );
 
         let deliveries_product_type = builder.add_table_for_tests(

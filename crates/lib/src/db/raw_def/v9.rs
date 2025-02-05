@@ -283,6 +283,16 @@ pub enum RawIndexAlgorithm {
     },
 }
 
+/// Returns a btree index algorithm for the columns `cols`.
+pub fn btree(cols: impl Into<ColList>) -> RawIndexAlgorithm {
+    RawIndexAlgorithm::BTree { columns: cols.into() }
+}
+
+/// Returns a direct index algorithm for the column `col`.
+pub fn direct(col: impl Into<ColId>) -> RawIndexAlgorithm {
+    RawIndexAlgorithm::Direct { column: col.into() }
+}
+
 /// Marks a table as a timer table for a scheduled reducer.
 ///
 /// The table must have columns:

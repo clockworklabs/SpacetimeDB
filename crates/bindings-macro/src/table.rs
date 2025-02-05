@@ -596,17 +596,6 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
     // For all the unpaired unique columns, create a unique index.
     for unique_col in &unique_columns {
         if args.indices.iter_mut().any(|index| {
-            // TODO(centril): this check is actually too strict
-            // and ends up unnecessarily inducing extra indices.
-            // All that is required is for `unique_cols` to have all columns
-            // present in `index`'s columns.
-            // That is, we can pair a unique constraint `a b`
-            // with both an index `a b` and an index `b a`.
-            // Because `ColSet`s are sorted, all we need to do is check that
-            // `[unique_col].is_prefix_of(index_algorithm.columns())`.
-            // However, currently, the datastore is represents unique constraints
-            // together with indices. We would need some unique constraints
-            // to merely use indices rather than be part of them for this to work.
             index.is_unique = match &index.kind {
                 IndexType::BTree { columns } => &**columns == slice::from_ref(unique_col.ident),
                 IndexType::Direct { column } => column == unique_col.ident,

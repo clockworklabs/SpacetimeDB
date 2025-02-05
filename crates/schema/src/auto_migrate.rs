@@ -458,9 +458,12 @@ fn auto_migrate_row_level_security(plan: &mut AutoMigratePlan) -> Result<()> {
 mod tests {
     use super::*;
     use spacetimedb_data_structures::expect_error_matching;
-    use spacetimedb_lib::{db::raw_def::*, AlgebraicType, ProductType, ScheduleAt};
-    use spacetimedb_primitives::{ColId, ColList};
-    use v9::{RawIndexAlgorithm, RawModuleDefV9Builder, TableAccess};
+    use spacetimedb_lib::{
+        db::raw_def::{v9::btree, *},
+        AlgebraicType, ProductType, ScheduleAt,
+    };
+    use spacetimedb_primitives::ColId;
+    use v9::{RawModuleDefV9Builder, TableAccess};
     use validate::tests::expect_identifier;
 
     #[test]
@@ -479,18 +482,8 @@ mod tests {
             )
             .with_column_sequence(0)
             .with_unique_constraint(ColId(0))
-            .with_index(
-                RawIndexAlgorithm::BTree {
-                    columns: ColList::from([0]),
-                },
-                "id_index",
-            )
-            .with_index(
-                RawIndexAlgorithm::BTree {
-                    columns: ColList::from([0, 1]),
-                },
-                "id_name_index",
-            )
+            .with_index(btree(0), "id_index")
+            .with_index(btree([0, 1]), "id_name_index")
             .finish();
 
         old_builder
@@ -516,6 +509,7 @@ mod tests {
                 true,
             )
             .with_auto_inc_primary_key(0)
+            .with_index_no_accessor_name(btree(0))
             .with_schedule("check_deliveries", 1)
             .finish();
         old_builder.add_reducer(
@@ -534,6 +528,7 @@ mod tests {
                 true,
             )
             .with_auto_inc_primary_key(0)
+            .with_index_no_accessor_name(btree(0))
             .finish();
 
         old_builder.add_row_level_security("SELECT * FROM Apples");
@@ -558,20 +553,10 @@ mod tests {
             )
             // remove sequence
             // remove unique constraint
-            .with_index(
-                RawIndexAlgorithm::BTree {
-                    columns: ColList::from([0]),
-                },
-                "id_index",
-            )
+            .with_index(btree(0), "id_index")
             // remove ["id", "name"] index
             // add ["id", "count"] index
-            .with_index(
-                RawIndexAlgorithm::BTree {
-                    columns: ColList::from([0, 2]),
-                },
-                "id_count_index",
-            )
+            .with_index(btree([0, 2]), "id_count_index")
             .finish();
 
         new_builder
@@ -600,6 +585,7 @@ mod tests {
                 true,
             )
             .with_auto_inc_primary_key(0)
+            .with_index_no_accessor_name(btree(0))
             // remove schedule def
             .finish();
 
@@ -619,6 +605,7 @@ mod tests {
                 true,
             )
             .with_auto_inc_primary_key(0)
+            .with_index_no_accessor_name(btree(0))
             // add schedule def
             .with_schedule("perform_inspection", 1)
             .finish();
@@ -633,12 +620,7 @@ mod tests {
         // Add new table
         new_builder
             .build_table_with_new_type("Oranges", ProductType::from([("id", AlgebraicType::U32)]), true)
-            .with_index(
-                RawIndexAlgorithm::BTree {
-                    columns: ColList::from([0]),
-                },
-                "id_index",
-            )
+            .with_index(btree(0), "id_index")
             .with_column_sequence(0)
             .with_unique_constraint(0)
             .with_primary_key(0)
@@ -741,13 +723,9 @@ mod tests {
                 ]),
                 true,
             )
-            .with_index(
-                RawIndexAlgorithm::BTree {
-                    columns: ColList::from([0]),
-                },
-                "id_index",
-            )
-            .with_unique_constraint(ColList::from_iter([1, 2]))
+            .with_index(btree(0), "id_index")
+            .with_unique_constraint([1, 2])
+            .with_index_no_accessor_name(btree([1, 2]))
             .with_type(TableType::User)
             .finish();
 
@@ -782,13 +760,13 @@ mod tests {
                 true,
             )
             .with_index(
-                RawIndexAlgorithm::BTree {
-                    columns: ColList::from([1]),
-                },
+                btree(1),
                 "id_index_new_accessor", // change accessor name
             )
-            .with_unique_constraint(ColList::from_iter([1, 0]))
-            .with_unique_constraint(ColId(0)) // add unique constraint
+            .with_unique_constraint([1, 0])
+            .with_index_no_accessor_name(btree([1, 0]))
+            .with_unique_constraint(0)
+            .with_index_no_accessor_name(btree(0)) // add unique constraint
             .with_type(TableType::System) // change type
             .finish();
 
