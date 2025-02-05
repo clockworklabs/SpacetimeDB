@@ -625,6 +625,12 @@ impl IndexAlgorithm {
             IndexAlgorithm::BTree(btree) => &btree.columns,
         }
     }
+    /// Find the column index for a given field.
+    ///
+    /// *NOTE*: This take in account the possibility of permutations.
+    pub fn find_col_index(&self, pos: usize) -> Option<ColId> {
+        self.columns().iter().find(|col_id| col_id.idx() == pos)
+    }
 }
 
 impl From<IndexAlgorithm> for RawIndexAlgorithm {

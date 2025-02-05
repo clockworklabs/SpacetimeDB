@@ -28,7 +28,6 @@
 //!     Mark hash join as unique
 use anyhow::{bail, Result};
 use spacetimedb_primitives::{ColId, ColSet, IndexId};
-use spacetimedb_schema::def::IndexAlgorithm;
 use spacetimedb_schema::schema::IndexSchema;
 use spacetimedb_sql_parser::ast::{BinOp, LogOp};
 
@@ -327,13 +326,6 @@ impl RewriteRule for PushConstAnd {
     }
 }
 
-/// Find the column index for a given field.
-///
-/// *NOTE*: This take in account the possibility of permutations.
-fn find_col_index(index_algorithm: &IndexAlgorithm, pos: usize) -> Option<ColId> {
-    index_algorithm.columns().iter().find(|col_id| col_id.idx() == pos)
-}
-
 /// Match single field equality predicates such as:
 ///
 /// ```sql
@@ -368,7 +360,7 @@ impl RewriteRule for IxScanEq {
                          }| {
                             // TODO: Support prefix scans
                             if index_algorithm.columns().len() == 1 {
-                                Some((*index_id, find_col_index(index_algorithm, *pos)?))
+                                Some((*index_id, index_algorithm.find_col_index(*pos)?))
                             } else {
                                 None
                             }
@@ -490,46 +482,45 @@ impl RewriteRule for IxScanEq2Col {
     type Info = IxScanInfo;
 
     fn matches(plan: &PhysicalPlan) -> Option<Self::Info> {
-        if let PhysicalPlan::Filter(input, PhysicalExpr::LogOp(LogOp::And, exprs)) = plan {
-            if let PhysicalPlan::TableScan(schema, _, None) = &**input {
-                for (i, a) in exprs.iter().enumerate() {
-                    for (j, b) in exprs.iter().enumerate().filter(|(j, _)| i != *j) {
-                        if let (PhysicalExpr::BinOp(BinOp::Eq, a, u), PhysicalExpr::BinOp(BinOp::Eq, b, v)) = (a, b) {
-                            if let (
-                                PhysicalExpr::Field(u),
-                                PhysicalExpr::Value(_),
-                                PhysicalExpr::Field(v),
-                                PhysicalExpr::Value(_),
-                            ) = (&**a, &**u, &**b, &**v)
-                            {
-                                return schema
-                                    .indexes
-                                    .iter()
-                                    .filter(|IndexSchema { index_algorithm, .. }| {
-                                        // TODO: Support prefix scans
-                                        index_algorithm.columns().len() == 2
-                                    })
-                                    .find_map(
-                                        |IndexSchema {
-                                             index_id,
-                                             index_algorithm,
-                                             ..
-                                         }| {
-                                            Some(IxScanInfo {
-                                                index_id: *index_id,
-                                                cols: vec![
-                                                    (i, find_col_index(index_algorithm, u.field_pos)?),
-                                                    (j, find_col_index(index_algorithm, v.field_pos)?),
-                                                ],
-                                            })
-                                        },
-                                    );
-                            }
-                        }
-                    }
+        let PhysicalPlan::Filter(input, PhysicalExpr::LogOp(LogOp::And, exprs)) = plan else {
+            return None;
+        };
+
+        let PhysicalPlan::TableScan(schema, _, None) = &**input else {
+            return None;
+        };
+
+        for (i, a) in exprs.iter().enumerate() {
+            for (j, b) in exprs.iter().enumerate().filter(|(j, _)| i != *j) {
+                let (PhysicalExpr::BinOp(BinOp::Eq, a, u), PhysicalExpr::BinOp(BinOp::Eq, b, v)) = (a, b) else {
+                    continue;
+                };
+
+                let (PhysicalExpr::Field(u), PhysicalExpr::Value(_), PhysicalExpr::Field(v), PhysicalExpr::Value(_)) =
+                    (&**a, &**u, &**b, &**v)
+                else {
+                    continue;
+                };
+
+                if let Some(scan) = schema
+                    .indexes
+                    .iter()
+                    .filter(|idx| idx.index_algorithm.columns().len() == 2) // TODO: Support prefix scans
+                    .find_map(|idx| {
+                        Some(IxScanInfo {
+                            index_id: idx.index_id,
+                            cols: vec![
+                                (i, idx.index_algorithm.find_col_index(u.field_pos)?),
+                                (j, idx.index_algorithm.find_col_index(v.field_pos)?),
+                            ],
+                        })
+                    })
+                {
+                    return Some(scan);
                 }
             }
         }
+
         None
     }
 
@@ -632,56 +623,60 @@ impl RewriteRule for IxScanEq3Col {
     type Info = IxScanInfo;
 
     fn matches(plan: &PhysicalPlan) -> Option<Self::Info> {
-        if let PhysicalPlan::Filter(input, PhysicalExpr::LogOp(LogOp::And, exprs)) = plan {
-            if let PhysicalPlan::TableScan(schema, _, None) = &**input {
-                for (i, a) in exprs.iter().enumerate() {
-                    for (j, b) in exprs.iter().enumerate().filter(|(j, _)| i != *j) {
-                        for (k, c) in exprs.iter().enumerate().filter(|(k, _)| i != *k && j != *k) {
-                            if let (
-                                PhysicalExpr::BinOp(BinOp::Eq, a, u),
-                                PhysicalExpr::BinOp(BinOp::Eq, b, v),
-                                PhysicalExpr::BinOp(BinOp::Eq, c, w),
-                            ) = (a, b, c)
-                            {
-                                if let (
-                                    PhysicalExpr::Field(u),
-                                    PhysicalExpr::Value(_),
-                                    PhysicalExpr::Field(v),
-                                    PhysicalExpr::Value(_),
-                                    PhysicalExpr::Field(w),
-                                    PhysicalExpr::Value(_),
-                                ) = (&**a, &**u, &**b, &**v, &**c, &**w)
-                                {
-                                    return schema
-                                        .indexes
-                                        .iter()
-                                        .filter(|IndexSchema { index_algorithm, .. }| {
-                                            // TODO: Support prefix scans
-                                            index_algorithm.columns().len() == 3
-                                        })
-                                        .find_map(
-                                            |IndexSchema {
-                                                 index_id,
-                                                 index_algorithm,
-                                                 ..
-                                             }| {
-                                                Some(IxScanInfo {
-                                                    index_id: *index_id,
-                                                    cols: vec![
-                                                        (i, find_col_index(index_algorithm, u.field_pos)?),
-                                                        (j, find_col_index(index_algorithm, v.field_pos)?),
-                                                        (k, find_col_index(index_algorithm, w.field_pos)?),
-                                                    ],
-                                                })
-                                            },
-                                        );
-                                }
-                            }
-                        }
+        // Match outer plan structure
+        let PhysicalPlan::Filter(input, PhysicalExpr::LogOp(LogOp::And, exprs)) = plan else {
+            return None;
+        };
+
+        let PhysicalPlan::TableScan(schema, _, None) = &**input else {
+            return None;
+        };
+
+        for (i, a) in exprs.iter().enumerate() {
+            for (j, b) in exprs.iter().enumerate().filter(|(j, _)| i != *j) {
+                for (k, c) in exprs.iter().enumerate().filter(|(k, _)| i != *k && j != *k) {
+                    let (
+                        PhysicalExpr::BinOp(BinOp::Eq, a, u),
+                        PhysicalExpr::BinOp(BinOp::Eq, b, v),
+                        PhysicalExpr::BinOp(BinOp::Eq, c, w),
+                    ) = (a, b, c)
+                    else {
+                        continue;
+                    };
+
+                    let (
+                        PhysicalExpr::Field(u),
+                        PhysicalExpr::Value(_),
+                        PhysicalExpr::Field(v),
+                        PhysicalExpr::Value(_),
+                        PhysicalExpr::Field(w),
+                        PhysicalExpr::Value(_),
+                    ) = (&**a, &**u, &**b, &**v, &**c, &**w)
+                    else {
+                        continue;
+                    };
+
+                    if let Some(scan) = schema
+                        .indexes
+                        .iter()
+                        .filter(|idx| idx.index_algorithm.columns().len() == 3)
+                        .find_map(|idx| {
+                            Some(IxScanInfo {
+                                index_id: idx.index_id,
+                                cols: vec![
+                                    (i, idx.index_algorithm.find_col_index(u.field_pos)?),
+                                    (j, idx.index_algorithm.find_col_index(v.field_pos)?),
+                                    (k, idx.index_algorithm.find_col_index(w.field_pos)?),
+                                ],
+                            })
+                        })
+                    {
+                        return Some(scan);
                     }
                 }
             }
         }
+
         None
     }
 
