@@ -1,7 +1,7 @@
 use crate::sats;
 use crate::sym;
 use crate::util::{check_duplicate, check_duplicate_msg, ident_to_litstr, match_meta};
-use core::slice::from_ref;
+use core::slice;
 use heck::ToSnakeCase;
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote, quote_spanned, ToTokens};
@@ -315,7 +315,7 @@ impl ValidatedIndex<'_> {
     fn accessor(&self, vis: &syn::Visibility, row_type_ident: &Ident) -> TokenStream {
         let cols = match &self.kind {
             ValidatedIndexType::BTree { cols } => &**cols,
-            ValidatedIndexType::Direct { col } => from_ref(col),
+            ValidatedIndexType::Direct { col } => slice::from_ref(col),
         };
         if self.is_unique {
             assert_eq!(cols.len(), 1);
@@ -384,7 +384,7 @@ impl ValidatedIndex<'_> {
                         spacetimedb::rt::assert_column_type_valid_for_direct_index::<#col_ty>();
                     };
                 );
-                (from_ref(col), Some(typeck))
+                (slice::from_ref(col), Some(typeck))
             }
         };
         let vis = if self.is_unique {
@@ -608,7 +608,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
             // together with indices. We would need some unique constraints
             // to merely use indices rather than be part of them for this to work.
             index.is_unique = match &index.kind {
-                IndexType::BTree { columns } => &**columns == from_ref(unique_col.ident),
+                IndexType::BTree { columns } => &**columns == slice::from_ref(unique_col.ident),
                 IndexType::Direct { column } => column == unique_col.ident,
             };
             index.is_unique
