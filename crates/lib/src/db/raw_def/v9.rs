@@ -716,7 +716,7 @@ impl RawTableDefBuilder<'_> {
     }
 
     /// Adds a primary key to the table, with corresponding unique constraint and sequence definitions.
-    /// This will also result in an index being created for the unique constraint.
+    /// You will also need to call [`Self::with_index`] to create an index on `column`.
     pub fn with_auto_inc_primary_key(self, column: impl Into<ColId>) -> Self {
         let column = column.into();
         self.with_primary_key(column)
@@ -731,6 +731,16 @@ impl RawTableDefBuilder<'_> {
         self.table.indexes.push(RawIndexDefV9 {
             name: None,
             accessor_name: Some(accessor_name),
+            algorithm,
+        });
+        self
+    }
+
+    /// Generates a [RawIndexDef] using the supplied `columns` but with no `accessor_name`.
+    pub fn with_index_no_accessor_name(mut self, algorithm: RawIndexAlgorithm) -> Self {
+        self.table.indexes.push(RawIndexDefV9 {
+            name: None,
+            accessor_name: None,
             algorithm,
         });
         self
