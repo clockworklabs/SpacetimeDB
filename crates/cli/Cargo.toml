@@ -40,6 +40,7 @@ duct.workspace = true
 email_address.workspace = true
 futures.workspace = true
 flate2.workspace = true
+fs-err.workspace = true
 http.workspace = true
 is-terminal.workspace = true
 itertools.workspace = true

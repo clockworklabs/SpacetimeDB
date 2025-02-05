@@ -1,25 +1,25 @@
 use super::code_indenter::{CodeIndenter, Indenter};
-use super::util::{collect_case, is_type_filterable, print_lines, type_ref_name};
+use super::util::{collect_case, iter_reducers, print_lines, type_ref_name};
 use super::Lang;
-use crate::generate::util::{namespace_is_empty_or_default, print_auto_generated_file_comment};
+use crate::detect::{has_rust_fmt, has_rust_up};
+use crate::generate::util::{iter_tables, iter_types, iter_unique_cols, print_auto_generated_file_comment};
+use anyhow::Context;
 use convert_case::{Case, Casing};
-use itertools::Itertools;
+use duct::cmd;
 use spacetimedb_lib::sats::AlgebraicTypeRef;
-use spacetimedb_primitives::ColList;
 use spacetimedb_schema::def::{ModuleDef, ReducerDef, ScopedTypeName, TableDef, TypeDef};
 use spacetimedb_schema::identifier::Identifier;
 use spacetimedb_schema::schema::{Schema, TableSchema};
-use spacetimedb_schema::type_for_generate::{AlgebraicTypeDef, AlgebraicTypeUse, PrimitiveType, ProductTypeDef};
+use spacetimedb_schema::type_for_generate::{AlgebraicTypeDef, AlgebraicTypeUse, PrimitiveType};
 use std::collections::BTreeSet;
 use std::fmt::{self, Write};
 use std::ops::Deref;
+use std::path::PathBuf;
 
 /// Pairs of (module_name, TypeName).
 type Imports = BTreeSet<AlgebraicTypeRef>;
 
-// TODO(cloutiertyler): Rust should probably use four spaces instead of tabs
-// but I'm keeping this so as to not explode the diff.
-const INDENT: &str = "\t";
+const INDENT: &str = "    ";
 
 pub struct Rust;
 
@@ -40,13 +40,26 @@ impl Lang for Rust {
         reducer_module_name(reducer_name) + ".rs"
     }
 
-    fn generate_type(&self, module: &ModuleDef, namespace: &str, typ: &TypeDef) -> String {
-        assert!(
-            namespace_is_empty_or_default(namespace),
-            "Rust codegen does not support namespaces, as Rust equates namespaces with `mod`s.
+    fn format_files(&self, generated_files: BTreeSet<PathBuf>) -> anyhow::Result<()> {
+        if !has_rust_fmt() {
+            if has_rust_up() {
+                cmd!("rustup", "component", "add", "rustfmt")
+                    .run()
+                    .context("Failed to install rustfmt with Rustup")?;
+            } else {
+                anyhow::bail!("rustfmt is not installed. Please install it.");
+            }
+        }
+        cmd!("rustfmt", "--edition", "2021")
+            .before_spawn(move |cmd| {
+                cmd.args(&generated_files);
+                Ok(())
+            })
+            .run()?;
+        Ok(())
+    }
 
-Requested namespace: {namespace}",
-        );
+    fn generate_type(&self, module: &ModuleDef, typ: &TypeDef) -> String {
         let type_name = collect_case(Case::Pascal, typ.name.name_segments());
 
         let mut output = CodeIndenter::new(String::new(), INDENT);
@@ -89,14 +102,7 @@ impl __sdk::InModule for {type_name} {{
 
         output.into_inner()
     }
-    fn generate_table(&self, module: &ModuleDef, namespace: &str, table: &TableDef) -> String {
-        assert!(
-            namespace_is_empty_or_default(namespace),
-            "Rust codegen does not support namespaces, as Rust equates namespaces with `mod`s.
-
-Requested namespace: {namespace}",
-        );
-
+    fn generate_table(&self, module: &ModuleDef, table: &TableDef) -> String {
         let schema = TableSchema::from_module_def(module, table, (), 0.into())
             .validated()
             .expect("Failed to generate table due to validation errors");
@@ -337,14 +343,7 @@ pub(super) fn parse_table_update(
 
         output.into_inner()
     }
-    fn generate_reducer(&self, module: &ModuleDef, namespace: &str, reducer: &ReducerDef) -> String {
-        assert!(
-            namespace_is_empty_or_default(namespace),
-            "Rust codegen does not support namespaces, as Rust equates namespaces with `mod`s.
-
-Requested namespace: {namespace}",
-        );
-
+    fn generate_reducer(&self, module: &ModuleDef, reducer: &ReducerDef) -> String {
         let mut output = CodeIndenter::new(String::new(), INDENT);
         let out = &mut output;
 
@@ -532,14 +531,7 @@ impl {set_reducer_flags_trait} for super::SetReducerFlags {{
         output.into_inner()
     }
 
-    fn generate_globals(&self, module: &ModuleDef, namespace: &str) -> Vec<(String, String)> {
-        assert!(
-            namespace_is_empty_or_default(namespace),
-            "Rust codegen does not support namespaces, as Rust equates namespaces with `mod`s.
-
-Requested namespace: {namespace}",
-        );
-
+    fn generate_globals(&self, module: &ModuleDef) -> Vec<(String, String)> {
         let mut output = CodeIndenter::new(String::new(), INDENT);
         let out = &mut output;
 
@@ -578,6 +570,10 @@ Requested namespace: {namespace}",
         print_impl_spacetime_module(module, out);
 
         vec![("mod.rs".to_string(), (output.into_inner()))]
+    }
+
+    fn clap_value() -> clap::builder::PossibleValue {
+        clap::builder::PossibleValue::new("rust").aliases(["rs", "RS"])
     }
 }
 
@@ -835,9 +831,9 @@ fn reducer_flags_trait_name(reducer: &ReducerDef) -> String {
 /// Iterate over all of the Rust `mod`s for types, reducers and tables in the `module`.
 fn iter_module_names(module: &ModuleDef) -> impl Iterator<Item = String> + '_ {
     itertools::chain!(
-        module.types().map(|ty| type_module_name(&ty.name)).sorted(),
-        module.reducers().map(|r| reducer_module_name(&r.name)).sorted(),
-        module.tables().map(|tbl| table_module_name(&tbl.name)).sorted(),
+        iter_types(module).map(|ty| type_module_name(&ty.name)),
+        iter_reducers(module).map(|r| reducer_module_name(&r.name)),
+        iter_tables(module).map(|tbl| table_module_name(&tbl.name)),
     )
 }
 
@@ -850,7 +846,7 @@ fn print_module_decls(module: &ModuleDef, out: &mut Indenter) {
 
 /// Print appropriate reexports for all the files that will be generated for `items`.
 fn print_module_reexports(module: &ModuleDef, out: &mut Indenter) {
-    for ty in module.types().sorted_by_key(|ty| &ty.name) {
+    for ty in iter_types(module) {
         let mod_name = type_module_name(&ty.name);
         let type_name = collect_case(Case::Pascal, ty.name.name_segments());
         writeln!(out, "pub use {mod_name}::{type_name};")
@@ -874,36 +870,6 @@ fn print_module_reexports(module: &ModuleDef, out: &mut Indenter) {
             "pub use {mod_name}::{{{reducer_trait_name}, {flags_trait_name}, {callback_id_name}}};"
         );
     }
-}
-
-/// Iterate over all the [`ReducerDef`]s defined by the module, in alphabetical order by name.
-///
-/// Sorting is necessary to have deterministic reproducable codegen.
-fn iter_reducers(module: &ModuleDef) -> impl Iterator<Item = &ReducerDef> {
-    module.reducers().sorted_by_key(|reducer| &reducer.name)
-}
-
-/// Iterate over all the [`TableDef`]s defined by the module, in alphabetical order by name.
-///
-/// Sorting is necessary to have deterministic reproducable codegen.
-fn iter_tables(module: &ModuleDef) -> impl Iterator<Item = &TableDef> {
-    module.tables().sorted_by_key(|table| &table.name)
-}
-
-fn iter_unique_cols<'a>(
-    schema: &'a TableSchema,
-    product_def: &'a ProductTypeDef,
-) -> impl Iterator<Item = &'a (Identifier, AlgebraicTypeUse)> + 'a {
-    let constraints = schema.backcompat_column_constraints();
-    schema.columns().iter().filter_map(move |field| {
-        constraints[&ColList::from(field.col_pos)]
-            .has_unique()
-            .then(|| {
-                let res @ (_, ref ty) = &product_def.elements[field.col_pos.idx()];
-                is_type_filterable(ty).then_some(res)
-            })
-            .flatten()
-    })
 }
 
 fn print_reducer_enum_defn(module: &ModuleDef, out: &mut Indenter) {

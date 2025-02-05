@@ -291,11 +291,11 @@ impl TableSchema {
     }
 
     /// Is there a unique constraint for this set of columns?
-    pub fn is_unique(&self, cols: &ColSet) -> bool {
+    pub fn is_unique(&self, cols: &ColList) -> bool {
         self.constraints
             .iter()
             .filter_map(|cs| cs.data.unique_columns())
-            .any(|unique_cols| unique_cols == cols)
+            .any(|unique_cols| **unique_cols == *cols)
     }
 
     /// Project the fields from the supplied `indexes`.
@@ -357,7 +357,7 @@ impl TableSchema {
     /// Resolves the constraints per each column. If the column don't have one, auto-generate [Constraints::unset()].
     /// This guarantee all columns can be queried for it constraints.
     pub fn backcompat_column_constraints(&self) -> BTreeMap<ColList, Constraints> {
-        let mut result = combine_constraints(self.backcompat_constraints_iter());
+        let mut result = self.backcompat_constraints();
         for col in &self.columns {
             result.entry(col_list![col.col_pos]).or_insert(Constraints::unset());
         }
