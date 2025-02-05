@@ -671,7 +671,7 @@ impl Table {
     /// - `target_table` and `needle_table` must have the same `row_layout`.
     /// - `target_table.is_row_present(target_ptr)`.
     /// - `needle_table.is_row_present(needle_ptr)`.
-    unsafe fn eq_row_in_page(
+    pub unsafe fn eq_row_in_page(
         target_table: &Table,
         target_ptr: RowPointer,
         needle_table: &Table,
