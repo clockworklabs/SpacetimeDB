@@ -142,7 +142,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: clockworklabs/spacetimedb-csharp-sdk
-          ref: ingvar/csharp-codegen-rewrite # TODO: revert to `staging` before merging
+          ref: staging
           path: spacetimedb-csharp-sdk
 
       - name: Setup NuGet override for C# SDK
