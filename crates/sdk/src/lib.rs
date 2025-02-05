@@ -19,11 +19,13 @@ mod websocket;
 
 pub mod credentials;
 pub mod db_context;
+pub mod error;
 pub mod event;
 pub mod table;
 
-pub use db_connection::{DbConnectionBuilder, DisconnectedError};
+pub use db_connection::DbConnectionBuilder;
 pub use db_context::DbContext;
+pub use error::{Error, Result};
 pub use event::{Event, ReducerEvent, Status};
 pub use table::{Table, TableWithPrimaryKey};
 
@@ -37,7 +39,6 @@ pub mod __codegen {
     //!
     //! Necessarily public, but should not be considered part of this library's public interface.
     //! These may change incompatibly without a major version bump.
-    pub use anyhow;
     pub use http;
     pub use log;
     pub use spacetimedb_client_api_messages::websocket as __ws;
@@ -47,14 +48,14 @@ pub mod __codegen {
     pub use crate::callbacks::{CallbackId, DbCallbacks};
     pub use crate::client_cache::{ClientCache, TableHandle, UniqueConstraintHandle};
     pub use crate::db_connection::DbContextImpl;
+    pub use crate::error::{Error, InternalError, Result};
     pub use crate::spacetime_module::{
         parse_reducer_args, DbConnection, DbUpdate, EventContext, InModule, Reducer, SpacetimeModule,
         SubscriptionHandle, TableUpdate,
     };
     pub use crate::subscription::{OnEndedCallback, SubscriptionBuilder, SubscriptionHandleImpl};
     pub use crate::{
-        Address, DbConnectionBuilder, DbContext, DisconnectedError, Event, Identity, ReducerEvent, ScheduleAt, Table,
-        TableWithPrimaryKey,
+        Address, DbConnectionBuilder, DbContext, Event, Identity, ReducerEvent, ScheduleAt, Table, TableWithPrimaryKey,
     };
 }
 

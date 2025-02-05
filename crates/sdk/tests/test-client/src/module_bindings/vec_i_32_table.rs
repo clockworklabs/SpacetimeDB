@@ -3,10 +3,7 @@
 
 #![allow(unused, clippy::all)]
 use super::vec_i_32_type::VecI32;
-use spacetimedb_sdk::__codegen::{
-    self as __sdk, __lib, __sats, __ws,
-    anyhow::{self as __anyhow, Context as _},
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `vec_i32`.
 ///
@@ -88,7 +85,10 @@ pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::Remote
 #[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __anyhow::Result<__sdk::TableUpdate<VecI32>> {
-    __sdk::TableUpdate::parse_table_update_no_primary_key(raw_updates)
-        .context("Failed to parse table update for table \"vec_i32\"")
+) -> __sdk::Result<__sdk::TableUpdate<VecI32>> {
+    __sdk::TableUpdate::parse_table_update_no_primary_key(raw_updates).map_err(|e| {
+        __sdk::InternalError::failed_parse("TableUpdate<VecI32>", "TableUpdate")
+            .with_cause(e)
+            .into()
+    })
 }

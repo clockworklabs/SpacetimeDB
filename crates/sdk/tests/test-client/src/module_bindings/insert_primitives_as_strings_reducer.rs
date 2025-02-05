@@ -2,10 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-    self as __sdk, __lib, __sats, __ws,
-    anyhow::{self as __anyhow, Context as _},
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::every_primitive_struct_type::EveryPrimitiveStruct;
 
@@ -37,7 +34,7 @@ pub trait insert_primitives_as_strings {
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed by listening for [`Self::on_insert_primitives_as_strings`] callbacks.
-    fn insert_primitives_as_strings(&self, s: EveryPrimitiveStruct) -> __anyhow::Result<()>;
+    fn insert_primitives_as_strings(&self, s: EveryPrimitiveStruct) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `insert_primitives_as_strings`.
     ///
     /// The [`super::EventContext`] passed to the `callback`
@@ -58,7 +55,7 @@ pub trait insert_primitives_as_strings {
 }
 
 impl insert_primitives_as_strings for super::RemoteReducers {
-    fn insert_primitives_as_strings(&self, s: EveryPrimitiveStruct) -> __anyhow::Result<()> {
+    fn insert_primitives_as_strings(&self, s: EveryPrimitiveStruct) -> __sdk::Result<()> {
         self.imp
             .call_reducer("insert_primitives_as_strings", InsertPrimitivesAsStringsArgs { s })
     }

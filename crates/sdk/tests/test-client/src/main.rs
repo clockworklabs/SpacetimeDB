@@ -1339,7 +1339,9 @@ fn exec_insert_delete_large_table() {
                             large_table.t,
                             large_table.u,
                             large_table.v,
-                        )
+                        )?;
+
+                        Ok(())
                     };
                     insert_result(run_tests());
                 }
@@ -1579,7 +1581,7 @@ fn exec_reauth_part_1() {
 
     DbConnection::builder()
         .on_connect(|_, _identity, token| {
-            save_result(creds_store().save(token));
+            save_result(creds_store().save(token).map_err(Into::into));
         })
         .on_connect_error(|e| panic!("Connect failed: {e:?}"))
         .with_module_name(name)

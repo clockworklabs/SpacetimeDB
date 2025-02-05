@@ -2,10 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-    self as __sdk, __lib, __sats, __ws,
-    anyhow::{self as __anyhow, Context as _},
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 pub mod connected_table;
 pub mod connected_type;
@@ -50,8 +47,8 @@ impl __sdk::Reducer for Reducer {
     }
 }
 impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
-    type Error = __anyhow::Error;
-    fn try_from(value: __ws::ReducerCallInfo<__ws::BsatnFormat>) -> __anyhow::Result<Self> {
+    type Error = __sdk::Error;
+    fn try_from(value: __ws::ReducerCallInfo<__ws::BsatnFormat>) -> __sdk::Result<Self> {
         match &value.reducer_name[..] {
             "identity_connected" => Ok(
                 __sdk::parse_reducer_args::<identity_connected_reducer::IdentityConnectedArgs>(
@@ -64,7 +61,7 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
                 identity_disconnected_reducer::IdentityDisconnectedArgs,
             >("identity_disconnected", &value.args)?
             .into()),
-            _ => Err(__anyhow::anyhow!("Unknown reducer {:?}", value.reducer_name)),
+            unknown => Err(__sdk::InternalError::unknown_name("reducer", unknown, "ReducerCallInfo").into()),
         }
     }
 }
@@ -78,7 +75,7 @@ pub struct DbUpdate {
 }
 
 impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
-    type Error = __anyhow::Error;
+    type Error = __sdk::Error;
     fn try_from(raw: __ws::DatabaseUpdate<__ws::BsatnFormat>) -> Result<Self, Self::Error> {
         let mut db_update = DbUpdate::default();
         for table_update in raw.tables {
@@ -86,7 +83,9 @@ impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
                 "connected" => db_update.connected = connected_table::parse_table_update(table_update)?,
                 "disconnected" => db_update.disconnected = disconnected_table::parse_table_update(table_update)?,
 
-                unknown => __anyhow::bail!("Unknown table {unknown:?} in DatabaseUpdate"),
+                unknown => {
+                    return Err(__sdk::InternalError::unknown_name("table", unknown, "DatabaseUpdate").into());
+                }
             }
         }
         Ok(db_update)
@@ -203,7 +202,7 @@ impl __sdk::DbContext for DbConnection {
         self.imp.is_active()
     }
 
-    fn disconnect(&self) -> __anyhow::Result<()> {
+    fn disconnect(&self) -> __sdk::Result<()> {
         self.imp.disconnect()
     }
 
@@ -243,7 +242,7 @@ impl DbConnection {
     /// This is a low-level primitive exposed for power users who need significant control over scheduling.
     /// Most applications should call [`Self::frame_tick`] each frame
     /// to fully exhaust the queue whenever time is available.
-    pub fn advance_one_message(&self) -> __anyhow::Result<bool> {
+    pub fn advance_one_message(&self) -> __sdk::Result<bool> {
         self.imp.advance_one_message()
     }
 
@@ -257,7 +256,7 @@ impl DbConnection {
     /// This is a low-level primitive exposed for power users who need significant control over scheduling.
     /// Most applications should call [`Self::run_threaded`] to spawn a thread
     /// which advances the connection automatically.
-    pub fn advance_one_message_blocking(&self) -> __anyhow::Result<()> {
+    pub fn advance_one_message_blocking(&self) -> __sdk::Result<()> {
         self.imp.advance_one_message_blocking()
     }
 
@@ -271,13 +270,13 @@ impl DbConnection {
     /// This is a low-level primitive exposed for power users who need significant control over scheduling.
     /// Most applications should call [`Self::run_async`] to run an `async` loop
     /// which advances the connection when polled.
-    pub async fn advance_one_message_async(&self) -> __anyhow::Result<()> {
+    pub async fn advance_one_message_async(&self) -> __sdk::Result<()> {
         self.imp.advance_one_message_async().await
     }
 
     /// Process all WebSocket messages waiting in the queue,
     /// then return without `await`ing or blocking the current thread.
-    pub fn frame_tick(&self) -> __anyhow::Result<()> {
+    pub fn frame_tick(&self) -> __sdk::Result<()> {
         self.imp.frame_tick()
     }
 
@@ -287,7 +286,7 @@ impl DbConnection {
     }
 
     /// Run an `async` loop which processes WebSocket messages when polled.
-    pub async fn run_async(&self) -> __anyhow::Result<()> {
+    pub async fn run_async(&self) -> __sdk::Result<()> {
         self.imp.run_async().await
     }
 }
@@ -343,7 +342,7 @@ impl __sdk::DbContext for EventContext {
         self.imp.is_active()
     }
 
-    fn disconnect(&self) -> __anyhow::Result<()> {
+    fn disconnect(&self) -> __sdk::Result<()> {
         self.imp.disconnect()
     }
 
@@ -404,11 +403,11 @@ impl __sdk::SubscriptionHandle for SubscriptionHandle {
 
     /// Unsubscribe from the query controlled by this `SubscriptionHandle`,
     /// then run `on_end` when its rows are removed from the client cache.
-    fn unsubscribe_then(self, on_end: __sdk::OnEndedCallback<RemoteModule>) -> __anyhow::Result<()> {
+    fn unsubscribe_then(self, on_end: __sdk::OnEndedCallback<RemoteModule>) -> __sdk::Result<()> {
         self.imp.unsubscribe_then(Some(on_end))
     }
 
-    fn unsubscribe(self) -> __anyhow::Result<()> {
+    fn unsubscribe(self) -> __sdk::Result<()> {
         self.imp.unsubscribe_then(None)
     }
 }

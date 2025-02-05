@@ -2,10 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-    self as __sdk, __lib, __sats, __ws,
-    anyhow::{self as __anyhow, Context as _},
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -35,7 +32,7 @@ pub trait delete_unique_u_64 {
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed by listening for [`Self::on_delete_unique_u_64`] callbacks.
-    fn delete_unique_u_64(&self, n: u64) -> __anyhow::Result<()>;
+    fn delete_unique_u_64(&self, n: u64) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `delete_unique_u64`.
     ///
     /// The [`super::EventContext`] passed to the `callback`
@@ -56,7 +53,7 @@ pub trait delete_unique_u_64 {
 }
 
 impl delete_unique_u_64 for super::RemoteReducers {
-    fn delete_unique_u_64(&self, n: u64) -> __anyhow::Result<()> {
+    fn delete_unique_u_64(&self, n: u64) -> __sdk::Result<()> {
         self.imp.call_reducer("delete_unique_u64", DeleteUniqueU64Args { n })
     }
     fn on_delete_unique_u_64(
