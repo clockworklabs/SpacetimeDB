@@ -7,7 +7,7 @@ use std::{
 use anyhow::{bail, Result};
 use derive_more::From;
 use either::Either;
-use spacetimedb_expr::{expr::AggType, StatementSource};
+use spacetimedb_expr::expr::AggType;
 use spacetimedb_lib::{query::Delta, sats::size_of::SizeOf, AlgebraicValue, ProductValue};
 use spacetimedb_primitives::{ColId, ColSet, IndexId};
 use spacetimedb_schema::schema::{IndexSchema, TableSchema};
@@ -1140,44 +1140,99 @@ impl PhysicalExpr {
     }
 }
 
-/// A physical context for the result of a query compilation.
-pub struct PhysicalCtx<'a> {
-    pub plan: ProjectListPlan,
-    pub sql: &'a str,
-    pub source: StatementSource,
+pub mod tests_utils {
+    use crate::compile::compile;
+    use crate::printer::{Explain, ExplainOptions};
+    use crate::PhysicalCtx;
+    use expect_test::Expect;
+    use spacetimedb_expr::check::{compile_sql_sub, SchemaView};
+    use spacetimedb_expr::statement::compile_sql_stmt;
+    use spacetimedb_lib::identity::AuthCtx;
+
+    fn sub<'a>(db: &'a impl SchemaView, sql: &'a str) -> PhysicalCtx<'a> {
+        let plan = compile_sql_sub(sql, db, &AuthCtx::for_testing(), true).unwrap();
+        compile(plan)
+    }
+
+    fn query<'a>(db: &'a impl SchemaView, sql: &'a str) -> PhysicalCtx<'a> {
+        let plan = compile_sql_stmt(sql, db, &AuthCtx::for_testing(), true).unwrap();
+        compile(plan)
+    }
+
+    fn check(plan: PhysicalCtx, options: ExplainOptions, expect: Expect) {
+        let plan = if options.optimize {
+            plan.optimize().unwrap()
+        } else {
+            plan
+        };
+
+        let explain = Explain::new(&plan).with_options(options);
+
+        let explain = explain.build();
+        expect.assert_eq(&explain.to_string());
+    }
+
+    pub fn check_sub(db: &impl SchemaView, options: ExplainOptions, sql: &str, expect: Expect) {
+        let plan = sub(db, sql);
+        check(plan, options, expect);
+    }
+
+    pub fn check_query(db: &impl SchemaView, options: ExplainOptions, sql: &str, expect: Expect) {
+        let plan = query(db, sql);
+        check(plan, options, expect);
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
+    use crate::printer::ExplainOptions;
+    use expect_test::{expect, Expect};
     use pretty_assertions::assert_eq;
     use spacetimedb_expr::{
-        check::{SchemaView, TypingResult},
-        expr::ProjectName,
+        check::SchemaView,
         statement::{parse_and_type_sql, Statement},
     };
     use spacetimedb_lib::{
         db::auth::{StAccess, StTableType},
         identity::AuthCtx,
-        AlgebraicType, AlgebraicValue,
+        AlgebraicType,
     };
     use spacetimedb_primitives::{ColId, ColList, ColSet, TableId};
     use spacetimedb_schema::{
         def::{BTreeAlgorithm, ConstraintData, IndexAlgorithm, UniqueConstraintData},
         schema::{ColumnSchema, ConstraintSchema, IndexSchema, TableSchema},
     };
-    use spacetimedb_sql_parser::ast::BinOp;
+    use std::sync::Arc;
 
     use crate::{
-        compile::{compile_select, compile_select_list},
-        plan::{HashJoin, IxJoin, IxScan, PhysicalPlan, ProjectListPlan, Sarg, Semi, TupleField},
+        compile::compile_select_list,
+        plan::{IxScan, PhysicalPlan, ProjectListPlan},
     };
 
-    use super::{PhysicalExpr, ProjectPlan, TableScan};
+    use super::{tests_utils, ProjectPlan, TableScan};
 
     struct SchemaViewer {
         schemas: Vec<Arc<TableSchema>>,
+        options: ExplainOptions,
+    }
+
+    impl SchemaViewer {
+        fn new(schemas: Vec<Arc<TableSchema>>) -> Self {
+            Self {
+                schemas,
+                options: ExplainOptions::default(),
+            }
+        }
+
+        fn with_options(mut self, options: ExplainOptions) -> Self {
+            self.options = options;
+            self
+        }
+
+        fn optimize(mut self, optimize: bool) -> Self {
+            self.options = self.options.optimize(optimize);
+            self
+        }
     }
 
     impl SchemaView for SchemaViewer {
@@ -1250,9 +1305,12 @@ mod tests {
         )
     }
 
-    /// A wrapper around [spacetimedb_expr::check::parse_and_type_sub] that takes a dummy [AuthCtx]
-    fn parse_and_type_sub(sql: &str, tx: &impl SchemaView) -> TypingResult<ProjectName> {
-        spacetimedb_expr::check::parse_and_type_sub(sql, tx, &AuthCtx::for_testing()).map(|(plan, _)| plan)
+    fn check_sub(db: &SchemaViewer, sql: &str, expect: Expect) {
+        tests_utils::check_sub(db, db.options, sql, expect);
+    }
+
+    fn check_query(db: &SchemaViewer, sql: &str, expect: Expect) {
+        tests_utils::check_query(db, db.options, sql, expect);
     }
 
     /// No rewrites applied to a simple table scan
@@ -1269,30 +1327,21 @@ mod tests {
             Some(0),
         ));
 
-        let db = SchemaViewer {
-            schemas: vec![t.clone()],
-        };
-
-        let sql = "select * from t";
-
-        let lp = parse_and_type_sub(sql, &db).unwrap();
-        let pp = compile_select(lp).optimize().unwrap();
-
-        match pp {
-            ProjectPlan::None(PhysicalPlan::TableScan(TableScan { schema, .. }, _)) => {
-                assert_eq!(schema.table_id, t_id);
-            }
-            proj => panic!("unexpected project: {:#?}", proj),
-        };
+        let db = SchemaViewer::new(vec![t.clone()]);
+        check_sub(
+            &db,
+            "select * from t",
+            expect![[r#"
+Seq Scan on t
+  Output: t.id, t.x"#]],
+        );
     }
 
     /// No rewrites applied to a table scan + filter
     #[test]
     fn filter_noop() {
-        let t_id = TableId(1);
-
         let t = Arc::new(schema(
-            t_id,
+            TableId(1),
             "t",
             &[("id", AlgebraicType::U64), ("x", AlgebraicType::U64)],
             &[&[0]],
@@ -1300,38 +1349,25 @@ mod tests {
             Some(0),
         ));
 
-        let db = SchemaViewer {
-            schemas: vec![t.clone()],
-        };
+        let db = SchemaViewer::new(vec![t]);
 
-        let sql = "select * from t where x = 5";
-
-        let lp = parse_and_type_sub(sql, &db).unwrap();
-        let pp = compile_select(lp).optimize().unwrap();
-
-        match pp {
-            ProjectPlan::None(PhysicalPlan::Filter(input, PhysicalExpr::BinOp(BinOp::Eq, field, value))) => {
-                assert!(matches!(*field, PhysicalExpr::Field(TupleField { field_pos: 1, .. })));
-                assert!(matches!(*value, PhysicalExpr::Value(AlgebraicValue::U64(5))));
-
-                match *input {
-                    PhysicalPlan::TableScan(TableScan { schema, .. }, _) => {
-                        assert_eq!(schema.table_id, t_id);
-                    }
-                    plan => panic!("unexpected plan: {:#?}", plan),
-                }
-            }
-            proj => panic!("unexpected project: {:#?}", proj),
-        };
+        check_sub(
+            &db,
+            "select * from t where x = 5",
+            expect![[r#"
+Seq Scan on t
+  Filter: (t.x = U64(5))
+  Output: t.id, t.x"#]],
+        );
     }
 
     /// Given the following operator notation:
     ///
-    /// x:  join  
-    /// p:  project  
-    /// s:  select  
-    /// ix: index scan  
-    /// rx: right index semijoin  
+    /// x:  join
+    /// p:  project
+    /// s:  select
+    /// ix: index scan
+    /// rx: right index semijoin
     ///
     /// This test takes the following logical plan:
     ///
@@ -1393,132 +1429,41 @@ mod tests {
             Some(0),
         ));
 
-        let db = SchemaViewer {
-            schemas: vec![u.clone(), l.clone(), b.clone()],
-        };
+        let db = SchemaViewer::new(vec![u.clone(), l.clone(), b.clone()]).optimize(true);
 
-        let sql = "
+        check_sub(
+            &db,
+            "
             select b.*
             from u
             join l as p on u.entity_id = p.entity_id
             join l as q on p.chunk = q.chunk
             join b on q.entity_id = b.entity_id
-            where u.identity = 5
-        ";
-        let lp = parse_and_type_sub(sql, &db).unwrap();
-        let pp = compile_select(lp).optimize().unwrap();
-
-        // Plan:
-        //         rx
-        //        /  \
-        //       rx   b
-        //      /  \
-        //     rx   l
-        //    /  \
-        // ix(u)  l
-        let plan = match pp {
-            ProjectPlan::None(plan) => plan,
-            proj => panic!("unexpected project: {:#?}", proj),
-        };
-
-        // Plan:
-        //         rx
-        //        /  \
-        //       rx   b
-        //      /  \
-        //     rx   l
-        //    /  \
-        // ix(u)  l
-        let plan = match plan {
-            PhysicalPlan::IxJoin(
-                IxJoin {
-                    lhs,
-                    rhs,
-                    rhs_field: ColId(0),
-                    unique: true,
-                    lhs_field: TupleField { field_pos: 0, .. },
-                    ..
-                },
-                Semi::Rhs,
-            ) => {
-                assert_eq!(rhs.table_id, b_id);
-                *lhs
-            }
-            plan => panic!("unexpected plan: {:#?}", plan),
-        };
-
-        // Plan:
-        //       rx
-        //      /  \
-        //     rx   l
-        //    /  \
-        // ix(u)  l
-        let plan = match plan {
-            PhysicalPlan::IxJoin(
-                IxJoin {
-                    lhs,
-                    rhs,
-                    rhs_field: ColId(1),
-                    unique: false,
-                    lhs_field: TupleField { field_pos: 1, .. },
-                    ..
-                },
-                Semi::Rhs,
-            ) => {
-                assert_eq!(rhs.table_id, l_id);
-                *lhs
-            }
-            plan => panic!("unexpected plan: {:#?}", plan),
-        };
-
-        // Plan:
-        //     rx
-        //    /  \
-        // ix(u)  l
-        let plan = match plan {
-            PhysicalPlan::IxJoin(
-                IxJoin {
-                    lhs,
-                    rhs,
-                    rhs_field: ColId(0),
-                    unique: true,
-                    lhs_field: TupleField { field_pos: 1, .. },
-                    ..
-                },
-                Semi::Rhs,
-            ) => {
-                assert_eq!(rhs.table_id, l_id);
-                *lhs
-            }
-            plan => panic!("unexpected plan: {:#?}", plan),
-        };
-
-        // Plan: ix(u)
-        match plan {
-            PhysicalPlan::IxScan(
-                IxScan {
-                    schema,
-                    prefix,
-                    arg: Sarg::Eq(ColId(0), AlgebraicValue::U64(5)),
-                    ..
-                },
-                _,
-            ) => {
-                assert!(prefix.is_empty());
-                assert_eq!(schema.table_id, u_id);
-            }
-            plan => panic!("unexpected plan: {:#?}", plan),
-        }
+            where u.identity = 5",
+            expect![[r#"
+Index Join: Rhs on b
+  -> Index Join: Rhs on q
+    -> Index Join: Rhs on p
+      -> Index Scan using Index id 0 on u
+          Index Cond: (u.identity = U64(5))
+      Inner Unique: true
+      Join Cond: (u.entity_id = p.entity_id)
+    Inner Unique: false
+    Join Cond: (p.chunk = q.chunk)
+  Inner Unique: true
+  Join Cond: (q.entity_id = b.entity_id)
+  Output: b.entity_id, b.misc"#]],
+        );
     }
 
     /// Given the following operator notation:
     ///
-    /// x:  join  
-    /// p:  project  
-    /// s:  select  
-    /// ix: index scan  
-    /// rx: right index semijoin  
-    /// rj: right hash semijoin  
+    /// x:  join
+    /// p:  project
+    /// s:  select
+    /// ix: index scan
+    /// rx: right index semijoin
+    /// rj: right hash semijoin
     ///
     /// This test takes the following logical plan:
     ///
@@ -1584,166 +1529,39 @@ mod tests {
             Some(0),
         ));
 
-        let db = SchemaViewer {
-            schemas: vec![m.clone(), w.clone(), p.clone()],
-        };
+        let db = SchemaViewer::new(vec![m.clone(), w.clone(), p.clone()]).optimize(false);
 
-        let sql = "
+        check_sub(
+            &db,
+            "
             select p.*
             from m
             join m as n on m.manager = n.manager
             join w as u on n.employee = u.employee
             join w as v on u.project = v.project
             join p on p.id = v.project
-            where 5 = m.employee and 5 = v.employee
-        ";
-        let lp = parse_and_type_sub(sql, &db).unwrap();
-        let pp = compile_select(lp).optimize().unwrap();
-
-        // Plan:
-        //           rx
-        //          /  \
-        //         rj   p
-        //        /  \
-        //       rx  ix(w)
-        //      /  \
-        //     rx   w
-        //    /  \
-        // ix(m)  m
-        let plan = match pp {
-            ProjectPlan::None(plan) => plan,
-            proj => panic!("unexpected project: {:#?}", proj),
-        };
-
-        // Plan:
-        //           rx
-        //          /  \
-        //         rj   p
-        //        /  \
-        //       rx  ix(w)
-        //      /  \
-        //     rx   w
-        //    /  \
-        // ix(m)  m
-        let plan = match plan {
-            PhysicalPlan::IxJoin(
-                IxJoin {
-                    lhs,
-                    rhs,
-                    rhs_field: ColId(0),
-                    unique: true,
-                    lhs_field: TupleField { field_pos: 1, .. },
-                    ..
-                },
-                Semi::Rhs,
-            ) => {
-                assert_eq!(rhs.table_id, p_id);
-                *lhs
-            }
-            plan => panic!("unexpected plan: {:#?}", plan),
-        };
-
-        // Plan:
-        //         rj
-        //        /  \
-        //       rx  ix(w)
-        //      /  \
-        //     rx   w
-        //    /  \
-        // ix(m)  m
-        let (rhs, lhs) = match plan {
-            PhysicalPlan::HashJoin(
-                HashJoin {
-                    lhs,
-                    rhs,
-                    lhs_field: TupleField { field_pos: 1, .. },
-                    rhs_field: TupleField { field_pos: 1, .. },
-                    unique: true,
-                },
-                Semi::Rhs,
-            ) => (*rhs, *lhs),
-            plan => panic!("unexpected plan: {:#?}", plan),
-        };
-
-        // Plan: ix(w)
-        match rhs {
-            PhysicalPlan::IxScan(
-                IxScan {
-                    schema,
-                    prefix,
-                    arg: Sarg::Eq(ColId(0), AlgebraicValue::U64(5)),
-                    ..
-                },
-                _,
-            ) => {
-                assert!(prefix.is_empty());
-                assert_eq!(schema.table_id, w_id);
-            }
-            plan => panic!("unexpected plan: {:#?}", plan),
-        }
-
-        // Plan:
-        //       rx
-        //      /  \
-        //     rx   w
-        //    /  \
-        // ix(m)  m
-        let plan = match lhs {
-            PhysicalPlan::IxJoin(
-                IxJoin {
-                    lhs,
-                    rhs,
-                    rhs_field: ColId(0),
-                    unique: false,
-                    lhs_field: TupleField { field_pos: 0, .. },
-                    ..
-                },
-                Semi::Rhs,
-            ) => {
-                assert_eq!(rhs.table_id, w_id);
-                *lhs
-            }
-            plan => panic!("unexpected plan: {:#?}", plan),
-        };
-
-        // Plan:
-        //     rx
-        //    /  \
-        // ix(m)  m
-        let plan = match plan {
-            PhysicalPlan::IxJoin(
-                IxJoin {
-                    lhs,
-                    rhs,
-                    rhs_field: ColId(1),
-                    unique: false,
-                    lhs_field: TupleField { field_pos: 1, .. },
-                    ..
-                },
-                Semi::Rhs,
-            ) => {
-                assert_eq!(rhs.table_id, m_id);
-                *lhs
-            }
-            plan => panic!("unexpected plan: {:#?}", plan),
-        };
-
-        // Plan: ix(m)
-        match plan {
-            PhysicalPlan::IxScan(
-                IxScan {
-                    schema,
-                    prefix,
-                    arg: Sarg::Eq(ColId(0), AlgebraicValue::U64(5)),
-                    ..
-                },
-                _,
-            ) => {
-                assert!(prefix.is_empty());
-                assert_eq!(schema.table_id, m_id);
-            }
-            plan => panic!("unexpected plan: {:#?}", plan),
-        }
+            where 5 = m.employee and 5 = v.employee",
+            expect![[r#"
+Hash Join
+  -> Hash Join
+    -> Hash Join
+      -> Hash Join
+        -> Seq Scan on m
+        -> Seq Scan on n
+        Inner Unique: false
+        Join Cond: (m.manager = n.manager)
+      -> Seq Scan on u
+      Inner Unique: false
+      Join Cond: (n.employee = u.employee)
+    -> Seq Scan on v
+    Inner Unique: false
+    Join Cond: (u.project = v.project)
+  -> Seq Scan on p
+  Inner Unique: false
+  Join Cond: (p.id = v.project)
+  Filter: (m.employee = U64(5) AND v.employee = U64(5))
+  Output: p.id, p.name"#]],
+        );
     }
 
     /// Test single and multi-column index selections
@@ -1765,189 +1583,309 @@ mod tests {
             None,
         ));
 
-        let db = SchemaViewer {
-            schemas: vec![t.clone()],
-        };
-
-        let sql = "select * from t where x = 3 and y = 4 and z = 5";
-        let lp = parse_and_type_sub(sql, &db).unwrap();
-        let pp = compile_select(lp).optimize().unwrap();
-
+        let db = SchemaViewer::new(vec![t.clone()]).optimize(true);
         // Select index on (x, y, z)
-        match pp {
-            ProjectPlan::None(PhysicalPlan::IxScan(
-                IxScan {
-                    schema, prefix, arg, ..
-                },
-                _,
-            )) => {
-                assert_eq!(schema.table_id, t_id);
-                assert_eq!(arg, Sarg::Eq(ColId(3), AlgebraicValue::U8(5)));
-                assert_eq!(
-                    prefix,
-                    vec![(ColId(1), AlgebraicValue::U8(3)), (ColId(2), AlgebraicValue::U8(4))]
-                );
-            }
-            proj => panic!("unexpected plan: {:#?}", proj),
-        };
+        check_sub(
+            &db,
+            "select * from t where x = 3 and y = 4 and z = 5",
+            expect![
+                r#"
+Index Scan using Index id 2 on t
+    Index Cond: (t.z = U8(5), t.x = U8(3), t.y = U8(4))
+  Output: t.w, t.x, t.y, t.z"#
+            ],
+        );
 
         // Test permutations of the same query
-        let sql = "select * from t where z = 5 and y = 4 and x = 3";
-        let lp = parse_and_type_sub(sql, &db).unwrap();
-        let pp = compile_select(lp).optimize().unwrap();
-
-        match pp {
-            ProjectPlan::None(PhysicalPlan::IxScan(
-                IxScan {
-                    schema, prefix, arg, ..
-                },
-                _,
-            )) => {
-                assert_eq!(schema.table_id, t_id);
-                assert_eq!(arg, Sarg::Eq(ColId(1), AlgebraicValue::U8(3)));
-                assert_eq!(
-                    prefix,
-                    vec![(ColId(3), AlgebraicValue::U8(5)), (ColId(2), AlgebraicValue::U8(4))]
-                );
-            }
-            proj => panic!("unexpected plan: {:#?}", proj),
-        };
-
-        let sql = "select * from t where x = 3 and y = 4";
-        let lp = parse_and_type_sub(sql, &db).unwrap();
-        let pp = compile_select(lp).optimize().unwrap();
-
+        check_sub(
+            &db,
+            "select * from t where z = 5 and y = 4 and x = 3",
+            expect![
+                r#"
+Index Scan using Index id 2 on t
+    Index Cond: (t.x = U8(3), t.z = U8(5), t.y = U8(4))
+  Output: t.w, t.x, t.y, t.z"#
+            ],
+        );
         // Select index on x
-        let plan = match pp {
-            ProjectPlan::None(PhysicalPlan::Filter(input, PhysicalExpr::BinOp(BinOp::Eq, field, value))) => {
-                assert!(matches!(*field, PhysicalExpr::Field(TupleField { field_pos: 2, .. })));
-                assert!(matches!(*value, PhysicalExpr::Value(AlgebraicValue::U8(4))));
-                *input
-            }
-            proj => panic!("unexpected plan: {:#?}", proj),
-        };
-
-        match plan {
-            PhysicalPlan::IxScan(
-                IxScan {
-                    schema, prefix, arg, ..
-                },
-                _,
-            ) => {
-                assert_eq!(schema.table_id, t_id);
-                assert_eq!(arg, Sarg::Eq(ColId(1), AlgebraicValue::U8(3)));
-                assert!(prefix.is_empty());
-            }
-            plan => panic!("unexpected plan: {:#?}", plan),
-        };
-
-        let sql = "select * from t where w = 5 and x = 4";
-        let lp = parse_and_type_sub(sql, &db).unwrap();
-        let pp = compile_select(lp).optimize().unwrap();
-
+        check_sub(
+            &db,
+            "select * from t where x = 3 and y = 4",
+            expect![
+                r#"
+Index Scan using Index id 0 on t
+    Index Cond: (t.x = U8(3))
+  Filter: (t.y = U8(4))
+  Output: t.w, t.x, t.y, t.z"#
+            ],
+        );
         // Select index on x
-        let plan = match pp {
-            ProjectPlan::None(PhysicalPlan::Filter(input, PhysicalExpr::BinOp(BinOp::Eq, field, value))) => {
-                assert!(matches!(*field, PhysicalExpr::Field(TupleField { field_pos: 0, .. })));
-                assert!(matches!(*value, PhysicalExpr::Value(AlgebraicValue::U8(5))));
-                *input
-            }
-            proj => panic!("unexpected plan: {:#?}", proj),
-        };
-
-        match plan {
-            PhysicalPlan::IxScan(
-                IxScan {
-                    schema, prefix, arg, ..
-                },
-                _,
-            ) => {
-                assert_eq!(schema.table_id, t_id);
-                assert_eq!(arg, Sarg::Eq(ColId(1), AlgebraicValue::U8(4)));
-                assert!(prefix.is_empty());
-            }
-            plan => panic!("unexpected plan: {:#?}", plan),
-        };
-
-        let sql = "select * from t where y = 1";
-        let lp = parse_and_type_sub(sql, &db).unwrap();
-        let pp = compile_select(lp).optimize().unwrap();
-
+        check_query(
+            &db,
+            "select * from t where w = 5 and x = 4",
+            expect![
+                r#"
+Index Scan using Index id 0 on t
+    Index Cond: (t.x = U8(4))
+  Filter: (t.w = U8(5))
+  Output: t.w, t.x, t.y, t.z"#
+            ],
+        );
         // Do not select index on (y, z)
-        match pp {
-            ProjectPlan::None(PhysicalPlan::Filter(input, PhysicalExpr::BinOp(BinOp::Eq, field, value))) => {
-                assert!(matches!(*input, PhysicalPlan::TableScan(..)));
-                assert!(matches!(*field, PhysicalExpr::Field(TupleField { field_pos: 2, .. })));
-                assert!(matches!(*value, PhysicalExpr::Value(AlgebraicValue::U8(1))));
-            }
-            proj => panic!("unexpected plan: {:#?}", proj),
-        };
+        check_query(
+            &db,
+            "select * from t where y = 4",
+            expect![
+                r#"
+Seq Scan on t
+  Filter: (t.y = U8(4))
+  Output: t.w, t.x, t.y, t.z"#
+            ],
+        );
 
         // Select index on [y, z]
-        let sql = "select * from t where y = 1 and z = 2";
-        let lp = parse_and_type_sub(sql, &db).unwrap();
-        let pp = compile_select(lp).optimize().unwrap();
-
-        match pp {
-            ProjectPlan::None(PhysicalPlan::IxScan(
-                IxScan {
-                    schema, prefix, arg, ..
-                },
-                _,
-            )) => {
-                assert_eq!(schema.table_id, t_id);
-                assert_eq!(arg, Sarg::Eq(ColId(3), AlgebraicValue::U8(2)));
-                assert_eq!(prefix, vec![(ColId(2), AlgebraicValue::U8(1))]);
-            }
-            proj => panic!("unexpected plan: {:#?}", proj),
-        };
+        check_query(
+            &db,
+            "select * from t where y = 1 and z = 2",
+            expect![
+                r#"
+Index Scan using Index id 1 on t
+    Index Cond: (t.z = U8(2), t.y = U8(1))
+  Output: t.w, t.x, t.y, t.z"#
+            ],
+        );
 
         // Check permutations of the same query
-        let sql = "select * from t where z = 2 and y = 1";
-        let lp = parse_and_type_sub(sql, &db).unwrap();
-        let pp = compile_select(lp).optimize().unwrap();
-
-        match pp {
-            ProjectPlan::None(PhysicalPlan::IxScan(
-                IxScan {
-                    schema, prefix, arg, ..
-                },
-                _,
-            )) => {
-                assert_eq!(schema.table_id, t_id);
-                assert_eq!(arg, Sarg::Eq(ColId(2), AlgebraicValue::U8(1)));
-                assert_eq!(prefix, vec![(ColId(3), AlgebraicValue::U8(2))]);
-            }
-            proj => panic!("unexpected plan: {:#?}", proj),
-        };
-
+        check_query(
+            &db,
+            "select * from t where z = 2 and y = 1",
+            expect![
+                r#"
+Index Scan using Index id 1 on t
+    Index Cond: (t.y = U8(1), t.z = U8(2))
+  Output: t.w, t.x, t.y, t.z"#
+            ],
+        );
         // Select index on (y, z) and filter on (w)
-        let sql = "select * from t where w = 1 and y = 2 and z = 3";
-        let lp = parse_and_type_sub(sql, &db).unwrap();
-        let pp = compile_select(lp).optimize().unwrap();
+        check_query(
+            &db,
+            "select * from t where w = 1 and y = 2 and z = 3",
+            expect![
+                r#"
+Index Scan using Index id 1 on t
+    Index Cond: (t.z = U8(3), t.y = U8(2))
+  Filter: (t.w = U8(1))
+  Output: t.w, t.x, t.y, t.z"#
+            ],
+        );
+    }
 
-        let plan = match pp {
-            ProjectPlan::None(PhysicalPlan::Filter(input, PhysicalExpr::BinOp(BinOp::Eq, field, value))) => {
-                assert!(matches!(*field, PhysicalExpr::Field(TupleField { field_pos: 0, .. })));
-                assert!(matches!(*value, PhysicalExpr::Value(AlgebraicValue::U8(1))));
-                *input
-            }
-            proj => panic!("unexpected plan: {:#?}", proj),
-        };
+    fn data() -> SchemaViewer {
+        let m_id = TableId(1);
+        let w_id = TableId(2);
+        let p_id = TableId(3);
 
-        match plan {
-            PhysicalPlan::IxScan(
-                IxScan {
-                    schema, prefix, arg, ..
-                },
-                _,
-            ) => {
-                assert_eq!(schema.table_id, t_id);
-                assert_eq!(arg, Sarg::Eq(ColId(3), AlgebraicValue::U8(3)));
-                assert_eq!(prefix, vec![(ColId(2), AlgebraicValue::U8(2))]);
-            }
-            plan => panic!("unexpected plan: {:#?}", plan),
-        };
+        let m = Arc::new(schema(
+            m_id,
+            "m",
+            &[("employee", AlgebraicType::U64), ("manager", AlgebraicType::U64)],
+            &[&[0], &[1]],
+            &[&[0]],
+            Some(0),
+        ));
+
+        let w = Arc::new(schema(
+            w_id,
+            "w",
+            &[("employee", AlgebraicType::U64), ("project", AlgebraicType::U64)],
+            &[&[0], &[1], &[0, 1]],
+            &[&[0, 1]],
+            None,
+        ));
+
+        let p = Arc::new(schema(
+            p_id,
+            "p",
+            &[("id", AlgebraicType::U64), ("name", AlgebraicType::String)],
+            &[&[0]],
+            &[&[0]],
+            Some(0),
+        ));
+
+        SchemaViewer::new(vec![m.clone(), w.clone(), p.clone()]).with_options(ExplainOptions::default().optimize(false))
+    }
+
+    #[test]
+    fn plan_metadata() {
+        let db = data().with_options(ExplainOptions::new().with_schema().with_source().optimize(true));
+        check_query(
+            &db,
+            "SELECT m.* FROM m CROSS JOIN p WHERE m.employee = 1",
+            expect![
+                r#"
+Query: SELECT m.* FROM m CROSS JOIN p WHERE m.employee = 1
+Nested Loop
+  -> Index Scan using Index id 0 on m
+      Index Cond: (m.employee = U64(1))
+  -> Seq Scan on p:2
+  Output: m.employee, m.manager
+-------
+Schema:
+
+Label: m, TableId:1
+  Columns: employee, manager
+  Indexes: Index id 0: (m.employee), Index id 1: (m.manager)
+  Constraints: Constraint id 0: Unique(m.employee)
+Label: p, TableId:3
+  Columns: id, name
+  Indexes: Index id 0: (p.id)
+  Constraints: Constraint id 0: Unique(p.id)"#
+            ],
+        );
+    }
+
+    #[test]
+    fn table_scan() {
+        let db = data();
+        check_sub(
+            &db,
+            "SELECT * FROM p",
+            expect![
+                r#"
+                Seq Scan on p
+                  Output: p.id, p.name"#
+            ],
+        );
+    }
+
+    #[test]
+    fn table_alias() {
+        let db = data();
+        check_sub(
+            &db,
+            "SELECT * FROM p as b",
+            expect![
+                r#"
+                Seq Scan on b
+                  Output: b.id, b.name"#
+            ],
+        );
+        check_sub(
+            &db,
+            "select p.*
+            from w
+            join m as p",
+            expect![
+                r#"
+                Nested Loop
+                  -> Seq Scan on w
+                  -> Seq Scan on p
+                  Output: p.employee, p.manager"#
+            ],
+        );
+    }
+
+    #[test]
+    fn table_project() {
+        let db = data();
+        check_query(
+            &db,
+            "SELECT id FROM p",
+            expect![
+                r#"
+                Seq Scan on p
+                  Output: p.id"#
+            ],
+        );
+
+        check_query(
+            &db,
+            "SELECT p.id,m.employee FROM m CROSS JOIN p",
+            expect![
+                r#"
+                Nested Loop
+                  -> Seq Scan on m
+                  -> Seq Scan on p
+                  Output: p.id, m.employee"#
+            ],
+        );
+    }
+
+    #[test]
+    fn table_scan_filter() {
+        let db = data();
+
+        check_sub(
+            &db,
+            "SELECT * FROM p WHERE id > 1",
+            expect![[r#"
+                Seq Scan on p
+                  Filter: (p.id > U64(1))
+                  Output: p.id, p.name"#]],
+        );
+    }
+
+    #[test]
+    fn index_scan_filter() {
+        let db = data().optimize(true);
+
+        check_sub(
+            &db,
+            "SELECT m.* FROM m WHERE employee = 1",
+            expect![[r#"
+Index Scan using Index id 0 on m
+    Index Cond: (m.employee = U64(1))
+  Output: m.employee, m.manager"#]],
+        );
+    }
+
+    #[test]
+    fn cross_join() {
+        let db = data();
+
+        check_sub(
+            &db,
+            "SELECT p.* FROM m JOIN p",
+            expect![[r#"
+                Nested Loop
+                  -> Seq Scan on m
+                  -> Seq Scan on p
+                  Output: p.id, p.name"#]],
+        );
+    }
+
+    #[test]
+    fn hash_join() {
+        let db = data();
+
+        check_sub(
+            &db,
+            "SELECT p.* FROM m JOIN p ON m.employee = p.id where m.employee = 1",
+            expect![[r#"
+                Hash Join
+                  -> Seq Scan on m
+                  -> Seq Scan on p
+                  Inner Unique: false
+                  Join Cond: (m.employee = p.id)
+                  Filter: (m.employee = U64(1))
+                  Output: p.id, p.name"#]],
+        );
+    }
+
+    #[test]
+    fn semi_join() {
+        let db = data().optimize(true);
+
+        check_sub(
+            &db,
+            "SELECT p.* FROM m JOIN p ON m.employee = p.id",
+            expect![[r#"
+Index Join: Rhs on p
+  -> Seq Scan on m
+  Inner Unique: true
+  Join Cond: (m.employee = p.id)
+  Output: p.id, p.name"#]],
+        );
     }
 
     #[test]
@@ -1963,9 +1901,7 @@ mod tests {
             None,
         ));
 
-        let db = SchemaViewer {
-            schemas: vec![t.clone()],
-        };
+        let db = SchemaViewer::new(vec![t.clone()]);
 
         let compile = |sql| {
             let stmt = parse_and_type_sql(sql, &db, &AuthCtx::for_testing()).unwrap();
