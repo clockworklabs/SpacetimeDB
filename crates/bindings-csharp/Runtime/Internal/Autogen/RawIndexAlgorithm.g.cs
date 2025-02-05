@@ -10,6 +10,7 @@ namespace SpacetimeDB.Internal
     [SpacetimeDB.Type]
     public partial record RawIndexAlgorithm : SpacetimeDB.TaggedEnum<(
         System.Collections.Generic.List<ushort> BTree,
-        System.Collections.Generic.List<ushort> Hash
+        System.Collections.Generic.List<ushort> Hash,
+        ushort Direct
     )>;
 }
