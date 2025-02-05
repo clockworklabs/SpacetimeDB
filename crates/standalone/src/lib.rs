@@ -10,7 +10,6 @@ use anyhow::{ensure, Context};
 use async_trait::async_trait;
 use clap::{ArgMatches, Command};
 use energy_monitor::StandaloneEnergyMonitor;
-use prometheus::PullingGauge;
 use spacetimedb::client::ClientActorIndex;
 use spacetimedb::config::{CertificateAuthority, MetadataFile};
 use spacetimedb::db::relational_db::{self, Durability, Txdata};
@@ -26,7 +25,6 @@ use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, Regi
 use spacetimedb_paths::server::{ModuleLogsDir, PidFile, ServerDataDir};
 use spacetimedb_paths::standalone::StandaloneDataDirExt;
 use std::sync::Arc;
-use std::thread::available_parallelism;
 
 pub use spacetimedb_client_api::routes::subscribe::{BIN_PROTOCOL, TEXT_PROTOCOL};
 

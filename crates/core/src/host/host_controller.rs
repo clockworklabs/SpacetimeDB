@@ -730,7 +730,8 @@ impl Host {
                     history,
                     Some(durability),
                     Some(snapshot_repo),
-                ).with_context(|| format!("Error opening relational db for {}", db_identity))?
+                )
+                .with_context(|| format!("Error opening relational db for {}", db_identity))?
             }
         };
         let (program, program_needs_init) = match db.program()? {

@@ -190,7 +190,8 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         // note that ReducerBudget being a u64 is load-bearing here - although we convert budget right back into
         // EnergyQuanta at the end of this function, from_energy_quanta clamps it to a u64 range.
         // otherwise, we'd return something like `used: i128::MAX - u64::MAX`, which is inaccurate.
-        set_store_fuel(store, budget.into());
+        let starting_fuel: WasmtimeFuel = budget.into();
+        set_store_fuel(store, starting_fuel);
 
         // Prepare sender identity and address, as LITTLE-ENDIAN byte arrays.
         let [sender_0, sender_1, sender_2, sender_3] = bytemuck::must_cast(op.caller_identity.to_byte_array());
@@ -222,10 +223,12 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
 
         let call_result = call_result.map(|code| handle_error_sink_code(code, error));
 
-        let remaining: ReducerBudget = get_store_fuel(store).into();
+        let remaining_fuel: WasmtimeFuel = get_store_fuel(store);
+        let fuel_used: WasmtimeFuel = starting_fuel - remaining_fuel;
         let energy = module_host_actor::EnergyStats {
-            used: (budget - remaining).into(),
-            remaining,
+            used: fuel_used.into(),
+            wasm_fuel_used: fuel_used.0,
+            remaining: remaining_fuel.into(),
         };
         let memory_allocation = store.data().get_mem().memory.data_size(&store);
 

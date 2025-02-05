@@ -43,7 +43,7 @@ impl MessageTableAccess for super::RemoteTables {
 pub struct MessageInsertCallbackId(__sdk::CallbackId);
 pub struct MessageDeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::Table for MessageTableHandle<'ctx> {
+impl __sdk::Table for MessageTableHandle<'_> {
     type Row = Message;
     type EventContext = super::EventContext;
 

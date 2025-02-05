@@ -98,6 +98,10 @@ impl CallTimes {
         Self { times }
     }
 
+    pub fn sum(&self) -> Duration {
+        self.times.values().sum()
+    }
+
     /// Track a particular `CallSpan` by adding its duration to the
     /// associated `AbiCall`'s timing information.
     pub fn span(&mut self, span: op::CallSpan) {

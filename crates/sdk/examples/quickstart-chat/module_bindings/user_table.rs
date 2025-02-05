@@ -43,7 +43,7 @@ impl UserTableAccess for super::RemoteTables {
 pub struct UserInsertCallbackId(__sdk::CallbackId);
 pub struct UserDeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::Table for UserTableHandle<'ctx> {
+impl __sdk::Table for UserTableHandle<'_> {
     type Row = User;
     type EventContext = super::EventContext;
 
@@ -88,7 +88,7 @@ pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::Remote
 }
 pub struct UserUpdateCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::TableWithPrimaryKey for UserTableHandle<'ctx> {
+impl __sdk::TableWithPrimaryKey for UserTableHandle<'_> {
     type UpdateCallbackId = UserUpdateCallbackId;
 
     fn on_update(
@@ -133,7 +133,7 @@ impl<'ctx> UserTableHandle<'ctx> {
     }
 }
 
-impl<'ctx> UserIdentityUnique<'ctx> {
+impl UserIdentityUnique<'_> {
     /// Find the subscribed row whose `identity` column value is equal to `col_val`,
     /// if such a row is present in the client cache.
     pub fn find(&self, col_val: &__sdk::Identity) -> Option<User> {

@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 
 use anyhow::Context;
+use derive_more::{Add, Sub};
 use spacetimedb_paths::server::{ServerDataDir, WasmtimeCacheDir};
 use wasmtime::{Engine, Linker, Module, StoreContext, StoreContextMut};
 
@@ -87,7 +88,7 @@ pub enum WasmError {
     Wasm(anyhow::Error),
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Add, Sub)]
 struct WasmtimeFuel(u64);
 
 impl WasmtimeFuel {

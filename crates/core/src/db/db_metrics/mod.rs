@@ -50,6 +50,21 @@ metrics_group!(
         #[labels(txn_type: WorkloadType, db: Identity, reducer: str, committed: bool)]
         pub rdb_num_txns: IntCounterVec,
 
+        #[name = reducer_wasmtime_fuel_used]
+        #[help = "The total wasmtime fuel used"]
+        #[labels(db: Identity, reducer: str)]
+        pub reducer_wasmtime_fuel_used: IntCounterVec,
+
+        #[name = reducer_wasm_time_usec]
+        #[help = "The total wasmtime fuel used"]
+        #[labels(db: Identity)]
+        pub reducer_duration_usec: IntCounterVec,
+
+        #[name = reducer_abi_time_usec]
+        #[help = "The total wasmtime fuel used"]
+        #[labels(db: Identity)]
+        pub reducer_abi_time_usec: IntCounterVec,
+
         #[name = spacetime_txn_elapsed_time_sec]
         #[help = "The total elapsed (wall) time of a transaction (in seconds)"]
         #[labels(txn_type: WorkloadType, db: Identity, reducer: str)]
