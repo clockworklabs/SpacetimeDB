@@ -359,6 +359,7 @@ pub(crate) fn parse(value: &str, ty: &AlgebraicType) -> anyhow::Result<Algebraic
 }
 
 /// The source of a statement
+#[derive(Debug, Clone, Copy)]
 pub enum StatementSource {
     Subscription,
     Query,
@@ -371,4 +372,5 @@ pub struct StatementCtx<'a> {
     pub statement: Statement,
     pub sql: &'a str,
     pub source: StatementSource,
+    pub planning_time: Option<std::time::Duration>,
 }
