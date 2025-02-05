@@ -35,17 +35,14 @@ pub trait insert_vec_u_128 {
     fn insert_vec_u_128(&self, n: Vec<u128>) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `insert_vec_u128`.
     ///
-    /// The [`super::EventContext`] passed to the `callback`
-    /// will always have [`__sdk::Event::Reducer`] as its `event`,
-    /// but it may or may not have terminated successfully and been committed.
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::EventContext`]
+    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
     /// to determine the reducer's status.
     ///
     /// The returned [`InsertVecU128CallbackId`] can be passed to [`Self::remove_on_insert_vec_u_128`]
     /// to cancel the callback.
     fn on_insert_vec_u_128(
         &self,
-        callback: impl FnMut(&super::EventContext, &Vec<u128>) + Send + 'static,
+        callback: impl FnMut(&super::ReducerEventContext, &Vec<u128>) + Send + 'static,
     ) -> InsertVecU128CallbackId;
     /// Cancel a callback previously registered by [`Self::on_insert_vec_u_128`],
     /// causing it not to run in the future.
@@ -58,17 +55,17 @@ impl insert_vec_u_128 for super::RemoteReducers {
     }
     fn on_insert_vec_u_128(
         &self,
-        mut callback: impl FnMut(&super::EventContext, &Vec<u128>) + Send + 'static,
+        mut callback: impl FnMut(&super::ReducerEventContext, &Vec<u128>) + Send + 'static,
     ) -> InsertVecU128CallbackId {
         InsertVecU128CallbackId(self.imp.on_reducer(
             "insert_vec_u128",
-            Box::new(move |ctx: &super::EventContext| {
-                let super::EventContext {
+            Box::new(move |ctx: &super::ReducerEventContext| {
+                let super::ReducerEventContext {
                     event:
-                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                        __sdk::ReducerEvent {
                             reducer: super::Reducer::InsertVecU128 { n },
                             ..
-                        }),
+                        },
                     ..
                 } = ctx
                 else {

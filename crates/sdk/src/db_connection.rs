@@ -21,7 +21,7 @@
 use crate::{
     callbacks::{CallbackId, DbCallbacks, ReducerCallback, ReducerCallbacks, RowCallback, UpdateCallback},
     client_cache::{ClientCache, TableHandle},
-    spacetime_module::{DbConnection, DbUpdate, EventContext, InModule, SpacetimeModule},
+    spacetime_module::{AbstractEventContext, DbConnection, DbUpdate, InModule, SpacetimeModule},
     subscription::{
         OnAppliedCallback, OnErrorCallback, PendingUnsubscribeResult, SubscriptionHandleImpl, SubscriptionManager,
     },
@@ -111,7 +111,8 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
         let res = match msg {
             // Error: treat this as an erroneous disconnect.
             ParsedMessage::Error(e) => {
-                self.invoke_disconnected(Some(&e));
+                let disconnect_ctx = self.make_event_ctx(e.clone());
+                self.invoke_disconnected(&disconnect_ctx);
                 Err(e)
             }
 
@@ -150,10 +151,13 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                     let mut cache = self.cache.lock().unwrap();
                     db_update.apply_to_client_cache(&mut *cache);
                 }
-                let event_ctx = self.make_event_ctx(Event::SubscribeApplied);
                 let mut inner = self.inner.lock().unwrap();
-                inner.subscriptions.legacy_subscription_applied(&event_ctx, sub_id);
-                db_update.invoke_row_callbacks(&event_ctx, &mut inner.db_callbacks);
+
+                let sub_event_ctx = self.make_event_ctx(());
+                inner.subscriptions.legacy_subscription_applied(&sub_event_ctx, sub_id);
+
+                let row_event_ctx = self.make_event_ctx(Event::SubscribeApplied);
+                db_update.invoke_row_callbacks(&row_event_ctx, &mut inner.db_callbacks);
                 Ok(())
             }
 
@@ -167,26 +171,24 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                     let mut cache = self.cache.lock().unwrap();
                     update.apply_to_client_cache(&mut *cache);
                 }
-                let event_ctx = self.make_event_ctx(event);
                 let mut inner = self.inner.lock().unwrap();
-                if let Event::Reducer(reducer_event) = event_ctx.event() {
-                    inner
-                        .reducer_callbacks
-                        .invoke_on_reducer(&event_ctx, &reducer_event.reducer);
+                if let Event::Reducer(reducer_event) = &event {
+                    let reducer_event_ctx = self.make_event_ctx(reducer_event.clone());
+                    inner.reducer_callbacks.invoke_on_reducer(&reducer_event_ctx);
                 }
-                update.invoke_row_callbacks(&event_ctx, &mut inner.db_callbacks);
+
+                let row_event_ctx = self.make_event_ctx(event);
+                update.invoke_row_callbacks(&row_event_ctx, &mut inner.db_callbacks);
                 Ok(())
             }
 
             // Failed transaction update:
             // invoke on-reducer callbacks.
             ParsedMessage::TransactionUpdate(event, None) => {
-                let event_ctx = self.make_event_ctx(event);
-                if let Event::Reducer(reducer_event) = event_ctx.event() {
+                if let Event::Reducer(reducer_event) = event {
+                    let reducer_event_ctx = self.make_event_ctx(reducer_event);
                     let mut inner = self.inner.lock().unwrap();
-                    inner
-                        .reducer_callbacks
-                        .invoke_on_reducer(&event_ctx, &reducer_event.reducer);
+                    inner.reducer_callbacks.invoke_on_reducer(&reducer_event_ctx);
                 }
                 Ok(())
             }
@@ -200,11 +202,14 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                     let mut cache = self.cache.lock().unwrap();
                     initial_update.apply_to_client_cache(&mut *cache);
                 }
-                let event_ctx = self.make_event_ctx(Event::SubscribeApplied);
                 let mut inner = self.inner.lock().unwrap();
-                inner.subscriptions.subscription_applied(&event_ctx, query_id);
+
+                let sub_event_ctx = self.make_event_ctx(());
+                inner.subscriptions.subscription_applied(&sub_event_ctx, query_id);
+
                 // FIXME: implement ref counting of rows to handle queries with overlapping results.
-                initial_update.invoke_row_callbacks(&event_ctx, &mut inner.db_callbacks);
+                let row_event_ctx = self.make_event_ctx(Event::SubscribeApplied);
+                initial_update.invoke_row_callbacks(&row_event_ctx, &mut inner.db_callbacks);
                 Ok(())
             }
             ParsedMessage::UnsubscribeApplied {
@@ -217,23 +222,26 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                     let mut cache = self.cache.lock().unwrap();
                     initial_update.apply_to_client_cache(&mut *cache);
                 }
-                let event_ctx = self.make_event_ctx(Event::UnsubscribeApplied);
                 let mut inner = self.inner.lock().unwrap();
-                inner.subscriptions.unsubscribe_applied(&event_ctx, query_id);
+
+                let sub_event_ctx = self.make_event_ctx(());
+                inner.subscriptions.unsubscribe_applied(&sub_event_ctx, query_id);
                 // FIXME: implement ref counting of rows to handle queries with overlapping results.
-                initial_update.invoke_row_callbacks(&event_ctx, &mut inner.db_callbacks);
+
+                let row_event_ctx = self.make_event_ctx(Event::UnsubscribeApplied);
+                initial_update.invoke_row_callbacks(&row_event_ctx, &mut inner.db_callbacks);
                 Ok(())
             }
             ParsedMessage::SubscriptionError { query_id, error } => {
                 let error = crate::Error::SubscriptionError { error };
+                let ctx = self.make_event_ctx(error);
                 let Some(query_id) = query_id else {
                     // A subscription error that isn't specific to a query is a fatal error.
-                    self.invoke_disconnected(Some(&error));
+                    self.invoke_disconnected(&ctx);
                     return Ok(());
                 };
                 let mut inner = self.inner.lock().unwrap();
-                let event_ctx = self.make_event_ctx(Event::SubscribeError(error));
-                inner.subscriptions.subscription_error(&event_ctx, query_id);
+                inner.subscriptions.subscription_error(&ctx, query_id);
                 Ok(())
             }
         };
@@ -242,7 +250,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
     }
 
     /// Invoke the on-disconnect callback, and mark [`Self::is_active`] false.
-    fn invoke_disconnected(&self, err: Option<&crate::Error>) {
+    fn invoke_disconnected(&self, ctx: &M::ErrorContext) {
         let mut inner = self.inner.lock().unwrap();
         // When we disconnect, we first call the on_disconnect method,
         // then we call the `on_error` method for all subscriptions.
@@ -253,19 +261,16 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
 
         // Grap the `on_disconnect` callback and invoke it.
         if let Some(disconnect_callback) = inner.on_disconnect.take() {
-            let ctx = <M::DbConnection as DbConnection>::new(self.clone());
-            disconnect_callback(&ctx, err);
+            disconnect_callback(ctx);
         }
 
         // Call the `on_disconnect` method for all subscriptions.
-        inner
-            .subscriptions
-            .on_disconnect(&self.make_event_ctx(Event::Disconnected));
+        inner.subscriptions.on_disconnect(ctx);
     }
 
-    fn make_event_ctx(&self, event: Event<M::Reducer>) -> M::EventContext {
+    fn make_event_ctx<E, Ctx: AbstractEventContext<Module = M, Event = E>>(&self, event: E) -> Ctx {
         let imp = self.clone();
-        <M::EventContext as EventContext>::new(imp, event)
+        Ctx::new(imp, event)
     }
 
     /// Apply all queued [`PendingMutation`]s.
@@ -330,7 +335,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                     }
 
                     PendingUnsubscribeResult::RunCallback(callback) => {
-                        callback(&self.make_event_ctx(Event::UnsubscribeApplied));
+                        callback(&self.make_event_ctx(()));
                     }
                     PendingUnsubscribeResult::SendUnsubscribe(m) => {
                         self.send_chan
@@ -479,7 +484,8 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
         // and `Err(_)` when the channel is open and waiting. This seems exactly backwards.
         let res = match self.recv.blocking_lock().try_next() {
             Ok(None) => {
-                self.invoke_disconnected(None);
+                let disconnect_ctx = self.make_event_ctx(crate::Error::Disconnected);
+                self.invoke_disconnected(&disconnect_ctx);
                 Err(crate::Error::Disconnected)
             }
             Err(_) => Ok(false),
@@ -524,7 +530,8 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
         match self.runtime.block_on(self.get_message()) {
             Message::Local(pending) => self.apply_mutation(pending),
             Message::Ws(None) => {
-                self.invoke_disconnected(None);
+                let disconnect_ctx = self.make_event_ctx(crate::Error::Disconnected);
+                self.invoke_disconnected(&disconnect_ctx);
                 Err(crate::Error::Disconnected)
             }
             Message::Ws(Some(msg)) => self.process_message(msg),
@@ -538,7 +545,8 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
         match self.get_message().await {
             Message::Local(pending) => self.apply_mutation(pending),
             Message::Ws(None) => {
-                self.invoke_disconnected(None);
+                let disconnect_ctx = self.make_event_ctx(crate::Error::Disconnected);
+                self.invoke_disconnected(&disconnect_ctx);
                 Err(crate::Error::Disconnected)
             }
             Message::Ws(Some(msg)) => self.process_message(msg),
@@ -680,10 +688,9 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
 
 type OnConnectCallback<M> = Box<dyn FnOnce(&<M as SpacetimeModule>::DbConnection, Identity, &str) + Send + 'static>;
 
-type OnConnectErrorCallback = Box<dyn FnOnce(&crate::Error) + Send + 'static>;
+type OnConnectErrorCallback<M> = Box<dyn FnOnce(&<M as SpacetimeModule>::ErrorContext) + Send + 'static>;
 
-type OnDisconnectCallback<M> =
-    Box<dyn FnOnce(&<M as SpacetimeModule>::DbConnection, Option<&crate::Error>) + Send + 'static>;
+type OnDisconnectCallback<M> = Box<dyn FnOnce(&<M as SpacetimeModule>::ErrorContext) + Send + 'static>;
 
 /// All the stuff in a [`DbContextImpl`] which can safely be locked while invoking callbacks.
 pub(crate) struct DbContextImplInner<M: SpacetimeModule> {
@@ -699,7 +706,7 @@ pub(crate) struct DbContextImplInner<M: SpacetimeModule> {
     on_connect: Option<OnConnectCallback<M>>,
     #[allow(unused)]
     // TODO: Make use of this to handle `ParsedMessage::Error` before receiving `IdentityToken`.
-    on_connect_error: Option<OnConnectErrorCallback>,
+    on_connect_error: Option<OnConnectErrorCallback<M>>,
     on_disconnect: Option<OnDisconnectCallback<M>>,
 
     call_reducer_flags: CallReducerFlagsMap,
@@ -743,7 +750,7 @@ pub struct DbConnectionBuilder<M: SpacetimeModule> {
     token: Option<String>,
 
     on_connect: Option<OnConnectCallback<M>>,
-    on_connect_error: Option<OnConnectErrorCallback>,
+    on_connect_error: Option<OnConnectErrorCallback<M>>,
     on_disconnect: Option<OnDisconnectCallback<M>>,
 
     params: WsParams,
@@ -957,7 +964,7 @@ Instead of registering multiple `on_connect` callbacks, register a single callba
     /// Register a callback to run when the connection fails asynchronously,
     /// e.g. due to invalid credentials.
     // FIXME: currently never called; `on_disconnect` is called instead.
-    pub fn on_connect_error(mut self, callback: impl FnOnce(&crate::Error) + Send + 'static) -> Self {
+    pub fn on_connect_error(mut self, callback: impl FnOnce(&M::ErrorContext) + Send + 'static) -> Self {
         if self.on_connect_error.is_some() {
             panic!(
                 "DbConnectionBuilder can only register a single `on_connect_error` callback.
@@ -972,10 +979,7 @@ Instead of registering multiple `on_connect_error` callbacks, register a single 
 
     /// Register a callback to run when the connection is closed.
     // FIXME: currently also called when the connection fails asynchronously, instead of `on_connect_error`.
-    pub fn on_disconnect(
-        mut self,
-        callback: impl FnOnce(&M::DbConnection, Option<&crate::Error>) + Send + 'static,
-    ) -> Self {
+    pub fn on_disconnect(mut self, callback: impl FnOnce(&M::ErrorContext) + Send + 'static) -> Self {
         if self.on_disconnect.is_some() {
             panic!(
                 "DbConnectionBuilder can only register a single `on_disconnect` callback.

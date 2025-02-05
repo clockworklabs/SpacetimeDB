@@ -110,10 +110,7 @@ pub trait insert_large_table {
     ) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `insert_large_table`.
     ///
-    /// The [`super::EventContext`] passed to the `callback`
-    /// will always have [`__sdk::Event::Reducer`] as its `event`,
-    /// but it may or may not have terminated successfully and been committed.
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::EventContext`]
+    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
     /// to determine the reducer's status.
     ///
     /// The returned [`InsertLargeTableCallbackId`] can be passed to [`Self::remove_on_insert_large_table`]
@@ -121,7 +118,7 @@ pub trait insert_large_table {
     fn on_insert_large_table(
         &self,
         callback: impl FnMut(
-                &super::EventContext,
+                &super::ReducerEventContext,
                 &u8,
                 &u16,
                 &u32,
@@ -209,7 +206,7 @@ impl insert_large_table for super::RemoteReducers {
     fn on_insert_large_table(
         &self,
         mut callback: impl FnMut(
-                &super::EventContext,
+                &super::ReducerEventContext,
                 &u8,
                 &u16,
                 &u32,
@@ -237,10 +234,10 @@ impl insert_large_table for super::RemoteReducers {
     ) -> InsertLargeTableCallbackId {
         InsertLargeTableCallbackId(self.imp.on_reducer(
             "insert_large_table",
-            Box::new(move |ctx: &super::EventContext| {
-                let super::EventContext {
+            Box::new(move |ctx: &super::ReducerEventContext| {
+                let super::ReducerEventContext {
                     event:
-                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                        __sdk::ReducerEvent {
                             reducer:
                                 super::Reducer::InsertLargeTable {
                                     a,
@@ -267,7 +264,7 @@ impl insert_large_table for super::RemoteReducers {
                                     v,
                                 },
                             ..
-                        }),
+                        },
                     ..
                 } = ctx
                 else {

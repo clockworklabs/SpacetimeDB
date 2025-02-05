@@ -5,7 +5,7 @@ use std::sync::{atomic::AtomicU8, Arc};
 use module_bindings::*;
 
 use spacetimedb_client_api_messages::websocket::Compression;
-use spacetimedb_sdk::{credentials, DbContext, Event, Identity, ReducerEvent, Status, Table, TableWithPrimaryKey};
+use spacetimedb_sdk::{credentials, DbContext, Error, Event, Identity, Status, Table, TableWithPrimaryKey};
 
 // # Our main function
 
@@ -95,9 +95,9 @@ fn on_message_inserted(ctx: &EventContext, message: &Message) {
     }
 }
 
-fn print_message(ctx: &EventContext, message: &Message) {
+fn print_message(ctx: &impl RemoteDbContext, message: &Message) {
     let sender = ctx
-        .db
+        .db()
         .user()
         .identity()
         .find(&message.sender)
@@ -111,7 +111,7 @@ fn print_message(ctx: &EventContext, message: &Message) {
 /// Our `on_subscription_applied` callback:
 /// sort all past messages and print them in timestamp order.
 #[allow(unused)]
-fn on_sub_applied(ctx: &EventContext) {
+fn on_sub_applied(ctx: &SubscriptionEventContext) {
     let mut messages = ctx.db.message().iter().collect::<Vec<_>>();
     messages.sort_by_key(|m| m.sent);
     for message in messages {
@@ -121,12 +121,8 @@ fn on_sub_applied(ctx: &EventContext) {
 // ## Warn if set_name failed
 
 /// Our `on_set_name` callback: print a warning if the reducer failed.
-fn on_name_set(ctx: &EventContext, name: &String) {
-    if let Event::Reducer(ReducerEvent {
-        status: Status::Failed(err),
-        ..
-    }) = &ctx.event
-    {
+fn on_name_set(ctx: &ReducerEventContext, name: &String) {
+    if let Status::Failed(err) = &ctx.event.status {
         eprintln!("Failed to change name to {:?}: {}", name, err);
     }
 }
@@ -134,12 +130,8 @@ fn on_name_set(ctx: &EventContext, name: &String) {
 // ## Warn if a message was rejected
 
 /// Our `on_send_message` callback: print a warning if the reducer failed.
-fn on_message_sent(ctx: &EventContext, text: &String) {
-    if let Event::Reducer(ReducerEvent {
-        status: Status::Failed(err),
-        ..
-    }) = &ctx.event
-    {
+fn on_message_sent(ctx: &ReducerEventContext, text: &String) {
+    if let Status::Failed(err) = &ctx.event.status {
         eprintln!("Failed to send message {:?}: {}", text, err);
     }
 }
@@ -147,12 +139,13 @@ fn on_message_sent(ctx: &EventContext, text: &String) {
 // ## Exit when disconnected
 
 /// Our `on_disconnect` callback: print a note, then exit the process.
-fn on_disconnected(_ctx: &DbConnection, err: Option<&spacetimedb_sdk::Error>) {
-    if let Some(err) = err {
-        panic!("Disconnected abnormally: {err}")
-    } else {
-        println!("Disconnected normally.");
-        std::process::exit(0)
+fn on_disconnected(ctx: &ErrorContext) {
+    match &ctx.event {
+        Error::Disconnected => {
+            println!("Disconnected normally.");
+            std::process::exit(0)
+        }
+        err => panic!("Disconnected abnormally: {err}"),
     }
 }
 
@@ -168,7 +161,7 @@ const DB_NAME: &str = "quickstart-chat";
 fn connect_to_db() -> DbConnection {
     DbConnection::builder()
         .on_connect(on_connected)
-        .on_connect_error(|err| panic!("Error while connecting: {err}"))
+        .on_connect_error(|ctx| panic!("Error while connecting: {}", ctx.event))
         .on_disconnect(on_disconnected)
         .with_token(creds_store().load().expect("Error loading credentials"))
         .with_module_name(DB_NAME)
@@ -179,7 +172,7 @@ fn connect_to_db() -> DbConnection {
 }
 
 // # Subscribe to queries
-fn subscribe_to_queries(ctx: &DbConnection, queries: &[&str], callback: fn(&EventContext)) {
+fn subscribe_to_queries(ctx: &DbConnection, queries: &[&str], callback: fn(&SubscriptionEventContext)) {
     if queries.is_empty() {
         panic!("No queries to subscribe to.");
     }

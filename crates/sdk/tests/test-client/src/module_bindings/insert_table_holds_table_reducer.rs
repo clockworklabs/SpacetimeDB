@@ -39,17 +39,14 @@ pub trait insert_table_holds_table {
     fn insert_table_holds_table(&self, a: OneU8, b: VecU8) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `insert_table_holds_table`.
     ///
-    /// The [`super::EventContext`] passed to the `callback`
-    /// will always have [`__sdk::Event::Reducer`] as its `event`,
-    /// but it may or may not have terminated successfully and been committed.
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::EventContext`]
+    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
     /// to determine the reducer's status.
     ///
     /// The returned [`InsertTableHoldsTableCallbackId`] can be passed to [`Self::remove_on_insert_table_holds_table`]
     /// to cancel the callback.
     fn on_insert_table_holds_table(
         &self,
-        callback: impl FnMut(&super::EventContext, &OneU8, &VecU8) + Send + 'static,
+        callback: impl FnMut(&super::ReducerEventContext, &OneU8, &VecU8) + Send + 'static,
     ) -> InsertTableHoldsTableCallbackId;
     /// Cancel a callback previously registered by [`Self::on_insert_table_holds_table`],
     /// causing it not to run in the future.
@@ -63,17 +60,17 @@ impl insert_table_holds_table for super::RemoteReducers {
     }
     fn on_insert_table_holds_table(
         &self,
-        mut callback: impl FnMut(&super::EventContext, &OneU8, &VecU8) + Send + 'static,
+        mut callback: impl FnMut(&super::ReducerEventContext, &OneU8, &VecU8) + Send + 'static,
     ) -> InsertTableHoldsTableCallbackId {
         InsertTableHoldsTableCallbackId(self.imp.on_reducer(
             "insert_table_holds_table",
-            Box::new(move |ctx: &super::EventContext| {
-                let super::EventContext {
+            Box::new(move |ctx: &super::ReducerEventContext| {
+                let super::ReducerEventContext {
                     event:
-                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                        __sdk::ReducerEvent {
                             reducer: super::Reducer::InsertTableHoldsTable { a, b },
                             ..
-                        }),
+                        },
                     ..
                 } = ctx
                 else {

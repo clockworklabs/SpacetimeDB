@@ -35,17 +35,14 @@ pub trait insert_vec_bool {
     fn insert_vec_bool(&self, b: Vec<bool>) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `insert_vec_bool`.
     ///
-    /// The [`super::EventContext`] passed to the `callback`
-    /// will always have [`__sdk::Event::Reducer`] as its `event`,
-    /// but it may or may not have terminated successfully and been committed.
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::EventContext`]
+    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
     /// to determine the reducer's status.
     ///
     /// The returned [`InsertVecBoolCallbackId`] can be passed to [`Self::remove_on_insert_vec_bool`]
     /// to cancel the callback.
     fn on_insert_vec_bool(
         &self,
-        callback: impl FnMut(&super::EventContext, &Vec<bool>) + Send + 'static,
+        callback: impl FnMut(&super::ReducerEventContext, &Vec<bool>) + Send + 'static,
     ) -> InsertVecBoolCallbackId;
     /// Cancel a callback previously registered by [`Self::on_insert_vec_bool`],
     /// causing it not to run in the future.
@@ -58,17 +55,17 @@ impl insert_vec_bool for super::RemoteReducers {
     }
     fn on_insert_vec_bool(
         &self,
-        mut callback: impl FnMut(&super::EventContext, &Vec<bool>) + Send + 'static,
+        mut callback: impl FnMut(&super::ReducerEventContext, &Vec<bool>) + Send + 'static,
     ) -> InsertVecBoolCallbackId {
         InsertVecBoolCallbackId(self.imp.on_reducer(
             "insert_vec_bool",
-            Box::new(move |ctx: &super::EventContext| {
-                let super::EventContext {
+            Box::new(move |ctx: &super::ReducerEventContext| {
+                let super::ReducerEventContext {
                     event:
-                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                        __sdk::ReducerEvent {
                             reducer: super::Reducer::InsertVecBool { b },
                             ..
-                        }),
+                        },
                     ..
                 } = ctx
                 else {

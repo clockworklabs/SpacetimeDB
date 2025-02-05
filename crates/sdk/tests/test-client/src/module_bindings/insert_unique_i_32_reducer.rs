@@ -39,17 +39,14 @@ pub trait insert_unique_i_32 {
     fn insert_unique_i_32(&self, n: i32, data: i32) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `insert_unique_i32`.
     ///
-    /// The [`super::EventContext`] passed to the `callback`
-    /// will always have [`__sdk::Event::Reducer`] as its `event`,
-    /// but it may or may not have terminated successfully and been committed.
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::EventContext`]
+    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
     /// to determine the reducer's status.
     ///
     /// The returned [`InsertUniqueI32CallbackId`] can be passed to [`Self::remove_on_insert_unique_i_32`]
     /// to cancel the callback.
     fn on_insert_unique_i_32(
         &self,
-        callback: impl FnMut(&super::EventContext, &i32, &i32) + Send + 'static,
+        callback: impl FnMut(&super::ReducerEventContext, &i32, &i32) + Send + 'static,
     ) -> InsertUniqueI32CallbackId;
     /// Cancel a callback previously registered by [`Self::on_insert_unique_i_32`],
     /// causing it not to run in the future.
@@ -63,17 +60,17 @@ impl insert_unique_i_32 for super::RemoteReducers {
     }
     fn on_insert_unique_i_32(
         &self,
-        mut callback: impl FnMut(&super::EventContext, &i32, &i32) + Send + 'static,
+        mut callback: impl FnMut(&super::ReducerEventContext, &i32, &i32) + Send + 'static,
     ) -> InsertUniqueI32CallbackId {
         InsertUniqueI32CallbackId(self.imp.on_reducer(
             "insert_unique_i32",
-            Box::new(move |ctx: &super::EventContext| {
-                let super::EventContext {
+            Box::new(move |ctx: &super::ReducerEventContext| {
+                let super::ReducerEventContext {
                     event:
-                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                        __sdk::ReducerEvent {
                             reducer: super::Reducer::InsertUniqueI32 { n, data },
                             ..
-                        }),
+                        },
                     ..
                 } = ctx
                 else {

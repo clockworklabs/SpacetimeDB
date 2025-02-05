@@ -16,7 +16,7 @@ use spacetimedb_lib::{Address, Identity};
 use std::time::SystemTime;
 
 #[non_exhaustive]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 /// A change in the state of a [`crate::DbContext`] which causes callbacks to run.
 pub enum Event<R> {
     /// Event when we are notified that a reducer ran in the remote module.
@@ -58,7 +58,7 @@ pub enum Event<R> {
 }
 
 #[non_exhaustive]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 /// A state change due to a reducer, which may or may not have committed successfully.
 pub struct ReducerEvent<R> {
     /// The time at which the reducer was invoked.

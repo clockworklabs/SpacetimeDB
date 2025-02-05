@@ -33,15 +33,12 @@ pub trait init {
     fn init(&self) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `init`.
     ///
-    /// The [`super::EventContext`] passed to the `callback`
-    /// will always have [`__sdk::Event::Reducer`] as its `event`,
-    /// but it may or may not have terminated successfully and been committed.
-    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::EventContext`]
+    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
     /// to determine the reducer's status.
     ///
     /// The returned [`InitCallbackId`] can be passed to [`Self::remove_on_init`]
     /// to cancel the callback.
-    fn on_init(&self, callback: impl FnMut(&super::EventContext) + Send + 'static) -> InitCallbackId;
+    fn on_init(&self, callback: impl FnMut(&super::ReducerEventContext) + Send + 'static) -> InitCallbackId;
     /// Cancel a callback previously registered by [`Self::on_init`],
     /// causing it not to run in the future.
     fn remove_on_init(&self, callback: InitCallbackId);
@@ -51,16 +48,16 @@ impl init for super::RemoteReducers {
     fn init(&self) -> __sdk::Result<()> {
         self.imp.call_reducer("init", InitArgs {})
     }
-    fn on_init(&self, mut callback: impl FnMut(&super::EventContext) + Send + 'static) -> InitCallbackId {
+    fn on_init(&self, mut callback: impl FnMut(&super::ReducerEventContext) + Send + 'static) -> InitCallbackId {
         InitCallbackId(self.imp.on_reducer(
             "init",
-            Box::new(move |ctx: &super::EventContext| {
-                let super::EventContext {
+            Box::new(move |ctx: &super::ReducerEventContext| {
+                let super::ReducerEventContext {
                     event:
-                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                        __sdk::ReducerEvent {
                             reducer: super::Reducer::Init {},
                             ..
-                        }),
+                        },
                     ..
                 } = ctx
                 else {
