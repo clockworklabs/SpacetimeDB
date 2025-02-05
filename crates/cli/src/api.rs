@@ -7,6 +7,8 @@ use spacetimedb_lib::de::serde::DeserializeWrapper;
 use spacetimedb_lib::sats::ProductType;
 use spacetimedb_lib::Identity;
 
+use crate::util::AuthHeader;
+
 static APP_USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"),);
 
 #[derive(Debug, Clone)]
@@ -14,7 +16,7 @@ pub struct Connection {
     pub(crate) host: String,
     pub(crate) database_identity: Identity,
     pub(crate) database: String,
-    pub(crate) auth_header: Option<String>,
+    pub(crate) auth_header: AuthHeader,
 }
 
 impl Connection {
@@ -33,8 +35,8 @@ impl Connection {
 pub fn build_client(con: &Connection) -> Client {
     let mut builder = Client::builder().user_agent(APP_USER_AGENT);
 
-    if let Some(auth_header) = &con.auth_header {
-        let headers = http::HeaderMap::from_iter([(header::AUTHORIZATION, auth_header.try_into().unwrap())]);
+    if let Some(auth_header) = con.auth_header.to_header() {
+        let headers = http::HeaderMap::from_iter([(header::AUTHORIZATION, auth_header)]);
 
         builder = builder.default_headers(headers);
     }

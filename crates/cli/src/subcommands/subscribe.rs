@@ -155,8 +155,8 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
         http::HeaderValue::from_static(ws::TEXT_PROTOCOL),
     );
     //  Add the authorization header, if any.
-    if let Some(auth_header) = &api.con.auth_header {
-        req.headers_mut().insert(header::AUTHORIZATION, auth_header.try_into()?);
+    if let Some(auth_header) = api.con.auth_header.to_header() {
+        req.headers_mut().insert(header::AUTHORIZATION, auth_header);
     }
     let (mut ws, _) = tokio_tungstenite::connect_async(req).await?;
 

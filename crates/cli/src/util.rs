@@ -1,8 +1,5 @@
 use anyhow::Context;
-use base64::{
-    engine::general_purpose::STANDARD as BASE_64_STD, engine::general_purpose::STANDARD_NO_PAD as BASE_64_STD_NO_PAD,
-    Engine as _,
-};
+use base64::{engine::general_purpose::STANDARD_NO_PAD as BASE_64_STD_NO_PAD, Engine as _};
 use reqwest::{RequestBuilder, Url};
 use spacetimedb::auth::identity::{IncomingClaims, SpacetimeIdentityClaims};
 use spacetimedb_client_api_messages::name::{DnsLookupResponse, RegisterTldResult, ReverseDNSResponse};
@@ -85,9 +82,9 @@ pub async fn spacetime_reverse_dns(
 }
 
 /// Add an authorization header, if provided, to the request `builder`.
-pub fn add_auth_header_opt(mut builder: RequestBuilder, auth_header: &Option<String>) -> RequestBuilder {
-    if let Some(auth_header) = auth_header {
-        builder = builder.header("Authorization", auth_header);
+pub fn add_auth_header_opt(mut builder: RequestBuilder, auth_header: &AuthHeader) -> RequestBuilder {
+    if let Some(token) = &auth_header.token {
+        builder = builder.bearer_auth(token);
     }
     builder
 }
@@ -109,15 +106,26 @@ pub async fn get_auth_header(
     anon_identity: bool,
     target_server: Option<&str>,
     interactive: bool,
-) -> anyhow::Result<Option<String>> {
-    if anon_identity {
-        Ok(None)
+) -> anyhow::Result<AuthHeader> {
+    let token = if anon_identity {
+        None
     } else {
-        let token = get_login_token_or_log_in(config, target_server, interactive).await?;
-        // The current form is: Authorization: Basic base64("token:<token>")
-        let mut auth_header = String::new();
-        auth_header.push_str(format!("Basic {}", BASE_64_STD.encode(format!("token:{}", token))).as_str());
-        Ok(Some(auth_header))
+        Some(get_login_token_or_log_in(config, target_server, interactive).await?)
+    };
+    Ok(AuthHeader { token })
+}
+
+#[derive(Debug, Clone)]
+pub struct AuthHeader {
+    token: Option<String>,
+}
+impl AuthHeader {
+    pub fn to_header(&self) -> Option<http::HeaderValue> {
+        self.token.as_ref().map(|token| {
+            let mut val = http::HeaderValue::try_from(["Bearer ", token].concat()).unwrap();
+            val.set_sensitive(true);
+            val
+        })
     }
 }
 

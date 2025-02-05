@@ -9,7 +9,7 @@ use futures::{SinkExt, StreamExt as _, TryStreamExt};
 use futures_channel::mpsc;
 use http::uri::{InvalidUri, Scheme, Uri};
 use spacetimedb_client_api_messages::websocket::{
-    brotli_decompress, gzip_decompress, BsatnFormat, Compression, SERVER_MSG_COMPRESSION_TAG_BROTLI,
+    brotli_decompress, gzip_decompress, BsatnFormat, Compression, BIN_PROTOCOL, SERVER_MSG_COMPRESSION_TAG_BROTLI,
     SERVER_MSG_COMPRESSION_TAG_GZIP, SERVER_MSG_COMPRESSION_TAG_NONE,
 };
 use spacetimedb_client_api_messages::websocket::{ClientMessage, ServerMessage};
@@ -178,40 +178,18 @@ fn make_request(
     Ok(req)
 }
 
-fn request_add_header(req: &mut http::Request<()>, key: &'static str, val: http::header::HeaderValue) {
-    let _prev = req.headers_mut().insert(key, val);
-    debug_assert!(_prev.is_none(), "HttpRequest already had {:?} header {:?}", key, _prev,);
-}
-
-const PROTOCOL_HEADER_KEY: &str = "Sec-WebSocket-Protocol";
-const PROTOCOL_HEADER_VALUE: &str = "v1.bsatn.spacetimedb";
-
 fn request_insert_protocol_header(req: &mut http::Request<()>) {
-    request_add_header(
-        req,
-        PROTOCOL_HEADER_KEY,
-        http::header::HeaderValue::from_static(PROTOCOL_HEADER_VALUE),
+    req.headers_mut().insert(
+        http::header::SEC_WEBSOCKET_PROTOCOL,
+        const { http::HeaderValue::from_static(BIN_PROTOCOL) },
     );
 }
 
-const AUTH_HEADER_KEY: &str = "Authorization";
-
 fn request_insert_auth_header(req: &mut http::Request<()>, token: Option<&str>) {
-    // TODO: figure out how the token is supposed to be encoded in the request
     if let Some(token) = token {
-        use base64::Engine;
-
-        let auth_bytes = format!("token:{}", token);
-        let encoded = base64::prelude::BASE64_STANDARD.encode(auth_bytes);
-        let auth_header_val = format!("Basic {}", encoded);
-        request_add_header(
-            req,
-            AUTH_HEADER_KEY,
-            auth_header_val
-                .try_into()
-                .expect("Failed to convert token to http HeaderValue"),
-        )
-    };
+        let auth = ["Bearer ", token].concat().try_into().unwrap();
+        req.headers_mut().insert(http::header::AUTHORIZATION, auth);
+    }
 }
 
 impl WsConnection {
