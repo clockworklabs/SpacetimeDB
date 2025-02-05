@@ -1,11 +1,11 @@
 {
   "dependencies": {
     "com.clockworklabs.spacetimedbsdk": {
-      "version": "https://github.com/clockworklabs/com.clockworklabs.spacetimedbsdk.git#jgilles/emergency_subscribe",
+      "version": "git@github.com:clockworklabs/com.clockworklabs.spacetimedbsdk.git#ingvar/csharp-codegen-rewrite",
       "depth": 0,
       "source": "git",
       "dependencies": {},
-      "hash": "12e5e577dd66fd9682d2f5b34723448431232f51"
+      "hash": "812e7c3e014005d31a5af41097b9c64a04c8c7df"
     },
     "com.unity.2d.animation": {
       "version": "9.1.1",

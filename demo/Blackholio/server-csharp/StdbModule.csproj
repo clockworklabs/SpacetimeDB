@@ -1,32 +1,20 @@
 <Project Sdk="Microsoft.NET.Sdk">
-
-<!-- TODO: reinstate the following once we release rc4.
-     For now, this project assumes it is building against a local copy of SpacetimeDB at ../../../SpacetimeDB
-     on branch jsdt/subscribe-sdk-3 -->
-<!--
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
-    <!- If you encounter:
+    <!-- If you encounter:
     "error NETSDK1084: There is no application host available for the specified RuntimeIdentifier 'wasi-wasm'."
     Try:
-    `dotnet workload install wasi-experimental` ->
+    `dotnet workload install wasi-experimental` -->
     <RuntimeIdentifier>wasi-wasm</RuntimeIdentifier>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <!- ignore naming conventions, we're trying to match Rust 1:1 ->
+    <!-- ignore naming conventions, we're trying to match Rust 1:1 -->
     <NoWarn>$(NoWarn);CS8981;IDE1006</NoWarn>
+    <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
   </PropertyGroup>
 
--->
-
-  <!--
-    Use local package sources instead of published ones.
-    This makes integration test somewhat differ from production configuration, but
-    at least it simplifies workflow for editing and testing C# code itself.
-  -->
   <ItemGroup>
-    <ProjectReference Include="../../../SpacetimeDB/crates/bindings-csharp/Codegen/Codegen.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
-    <ProjectReference Include="../../../SpacetimeDB/crates/bindings-csharp/Runtime/Runtime.csproj" />
+    <PackageReference Include="SpacetimeDB.Runtime" Version="1.0.0-rc3" />
   </ItemGroup>
 
 </Project>
