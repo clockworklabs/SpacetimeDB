@@ -111,7 +111,7 @@ jobs:
 
       - name: Check for changes
         run: |
-          git diff --exit-code unity-tests~/client/Assets/Scripts/autogen || {
+          git diff --exit-code unity-tests~/client-unity/Assets/Scripts/autogen || {
               echo "Error: Bindings are dirty. Please generate bindings again and commit them to this branch."
               exit 1
           }
@@ -135,7 +135,7 @@ jobs:
           bash ./publish.sh
 
       - name: Patch com.clockworklabs.spacetimedbsdk dependency in manifest.json
-        working-directory: unity-tests~/client/Packages
+        working-directory: unity-tests~/client-unity/Packages
         run: |
           # Replace the com.clockworklabs.spacetimedbsdk dependency with the current branch.
           # TODO: find out why pointing to a local directory doesn't work - is it because Unity CI action uses Docker?
@@ -144,7 +144,7 @@ jobs:
 
       - uses: actions/cache@v3
         with:
-          path: unity-tests~/client/Library
+          path: unity-tests~/client-unity/Library
           key: Unity-${{ github.head_ref }}
           restore-keys: Unity-
 
@@ -152,7 +152,7 @@ jobs:
         uses: game-ci/unity-test-runner@v4
         with:
           unityVersion: 2022.3.32f1  # Adjust Unity version to a valid tag
-          projectPath: unity-tests~/client  # Path to the Unity project subdirectory
+          projectPath: unity-tests~/client-unity  # Path to the Unity project subdirectory
           githubToken: ${{ secrets.GITHUB_TOKEN }}
           testMode: playmode
           useHostNetwork: true
