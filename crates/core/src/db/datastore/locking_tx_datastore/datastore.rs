@@ -2468,11 +2468,31 @@ mod tests {
         // Seek the index on the first u32 field.
         let index_id = extract_index_id(&datastore, &tx, &basic_indices()[0])?;
 
-        test_under_tx_and_commit(&datastore, tx, |tx| {
-            let (_, new_row) = update(&datastore, tx, table_id, index_id, row).expect("update should have succeeded");
-            assert_eq!(row, &new_row.to_product_value());
-            Ok(())
-        })
+        // Test before commit:
+        let (_, new_row) = update(&datastore, &mut tx, table_id, index_id, row).expect("update should have succeeded");
+        assert_eq!(row, &new_row.to_product_value());
+        // Commit.
+        let tx_data_1 = commit(&datastore, tx)?;
+        let mut tx = begin_mut_tx(&datastore);
+        // Test after commit:
+        let (_, new_row) = update(&datastore, &mut tx, table_id, index_id, row).expect("update should have succeeded");
+        assert_eq!(row, &new_row.to_product_value());
+        let tx_data_2 = commit(&datastore, tx)?;
+        // Ensure that none of the commits deleted rows in our table.
+        for tx_data in [&tx_data_1, &tx_data_2] {
+            assert_eq!(tx_data.deletes().find(|(tid, _)| **tid == table_id), None);
+        }
+        // Ensure that the first commit added the row but that the second didn't.
+        for (tx_data, expected_rows) in [(&tx_data_1, vec![row.clone()]), (&tx_data_2, vec![])] {
+            let inserted_rows = tx_data
+                .inserts()
+                .find(|(tid, _)| **tid == table_id)
+                .map(|(_, pvs)| pvs.to_vec())
+                .unwrap_or_default();
+            assert_eq!(inserted_rows, expected_rows);
+        }
+
+        Ok(())
     }
 
     /// Checks that update successfully uses sequences.
