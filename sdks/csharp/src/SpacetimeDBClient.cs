@@ -14,8 +14,8 @@ using Thread = System.Threading.Thread;
 
 namespace SpacetimeDB
 {
-    public sealed class DbConnectionBuilder<DbConnection, Reducer>
-        where DbConnection : DbConnectionBase<DbConnection, Reducer>, new()
+    public sealed class DbConnectionBuilder<DbConnection>
+        where DbConnection : IDbConnection, new()
     {
         readonly DbConnection conn = new();
 
@@ -45,31 +45,31 @@ namespace SpacetimeDB
             return conn;
         }
 
-        public DbConnectionBuilder<DbConnection, Reducer> WithUri(string uri)
+        public DbConnectionBuilder<DbConnection> WithUri(string uri)
         {
             this.uri = uri;
             return this;
         }
 
-        public DbConnectionBuilder<DbConnection, Reducer> WithModuleName(string nameOrAddress)
+        public DbConnectionBuilder<DbConnection> WithModuleName(string nameOrAddress)
         {
             this.nameOrAddress = nameOrAddress;
             return this;
         }
 
-        public DbConnectionBuilder<DbConnection, Reducer> WithToken(string? token)
+        public DbConnectionBuilder<DbConnection> WithToken(string? token)
         {
             this.token = token;
             return this;
         }
 
-        public DbConnectionBuilder<DbConnection, Reducer> WithCompression(Compression compression)
+        public DbConnectionBuilder<DbConnection> WithCompression(Compression compression)
         {
             this.compression = compression;
             return this;
         }
 
-        public DbConnectionBuilder<DbConnection, Reducer> WithLightMode(bool light)
+        public DbConnectionBuilder<DbConnection> WithLightMode(bool light)
         {
             this.light = light;
             return this;
@@ -77,51 +77,60 @@ namespace SpacetimeDB
 
         public delegate void ConnectCallback(DbConnection conn, Identity identity, string token);
 
-        public DbConnectionBuilder<DbConnection, Reducer> OnConnect(ConnectCallback cb)
+        public DbConnectionBuilder<DbConnection> OnConnect(ConnectCallback cb)
         {
-            conn.onConnect += (identity, token) => cb.Invoke(conn, identity, token);
+            conn.AddOnConnect((identity, token) => cb(conn, identity, token));
             return this;
         }
 
         public delegate void ConnectErrorCallback(Exception e);
 
-        public DbConnectionBuilder<DbConnection, Reducer> OnConnectError(ConnectErrorCallback cb)
+        public DbConnectionBuilder<DbConnection> OnConnectError(ConnectErrorCallback cb)
         {
-            conn.webSocket.OnConnectError += (e) => cb.Invoke(e);
+            conn.AddOnConnectError(e => cb(e));
             return this;
         }
 
         public delegate void DisconnectCallback(DbConnection conn, Exception? e);
 
-        public DbConnectionBuilder<DbConnection, Reducer> OnDisconnect(DisconnectCallback cb)
+        public DbConnectionBuilder<DbConnection> OnDisconnect(DisconnectCallback cb)
         {
-            conn.webSocket.OnClose += (e) => cb.Invoke(conn, e);
+            conn.AddOnDisconnect(e => cb(conn, e));
             return this;
         }
     }
 
     public interface IDbConnection
     {
+        internal void Connect(string? token, string uri, string addressOrName, Compression compression, bool light);
+
+        internal void AddOnConnect(Action<Identity, string> cb);
+        internal void AddOnConnectError(WebSocket.ConnectErrorEventHandler cb);
+        internal void AddOnDisconnect(WebSocket.CloseEventHandler cb);
+
         internal void LegacySubscribe(ISubscriptionHandle handle, string[] querySqls);
         internal void Subscribe(ISubscriptionHandle handle, string querySql);
         internal void Unsubscribe(QueryId queryId);
         void FrameTick();
         void Disconnect();
 
-        internal Task<T[]> RemoteQuery<T>(string query) where T : IDatabaseRow, new();
+        internal Task<T[]> RemoteQuery<T>(string query) where T : IStructuralReadWrite, new();
+        void InternalCallReducer<T>(T args, CallReducerFlags flags)
+            where T : IReducerArgs, new();
     }
 
-    public abstract class DbConnectionBase<DbConnection, Reducer> : IDbConnection
-        where DbConnection : DbConnectionBase<DbConnection, Reducer>, new()
+    public abstract class DbConnectionBase<DbConnection, Tables, Reducer> : IDbConnection
+        where DbConnection : DbConnectionBase<DbConnection, Tables, Reducer>, new()
+        where Tables : RemoteTablesBase
     {
-        public static DbConnectionBuilder<DbConnection, Reducer> Builder() => new();
+        public static DbConnectionBuilder<DbConnection> Builder() => new();
 
         readonly struct DbValue
         {
-            public readonly IDatabaseRow value;
+            public readonly IStructuralReadWrite value;
             public readonly byte[] bytes;
 
-            public DbValue(IDatabaseRow value, byte[] bytes)
+            public DbValue(IStructuralReadWrite value, byte[] bytes)
             {
                 this.value = value;
                 this.bytes = bytes;
@@ -170,7 +179,7 @@ namespace SpacetimeDB
 
         internal WebSocket webSocket;
         private bool connectionClosed;
-        protected readonly ClientCache clientDB;
+        public abstract Tables Db { get; }
 
         protected abstract Reducer ToReducer(TransactionUpdate update);
         protected abstract IEventContext ToEventContext(Event<Reducer> reducerEvent);
@@ -183,8 +192,6 @@ namespace SpacetimeDB
 
         protected DbConnectionBase()
         {
-            clientDB = new(this);
-
             var options = new WebSocket.ConnectOptions
             {
                 //v1.bin.spacetimedb
@@ -349,7 +356,7 @@ namespace SpacetimeDB
                 foreach (var update in updates.Tables)
                 {
                     var tableName = update.TableName;
-                    var table = clientDB.GetTable(tableName);
+                    var table = Db.GetTable(tableName);
                     if (table == null)
                     {
                         Log.Error($"Unknown table name: {tableName}");
@@ -393,7 +400,7 @@ namespace SpacetimeDB
             /// </summary>
             (List<DbOp>, Dictionary<System.Type, HashSet<byte[]>>) PreProcessSubscribeApplied(SubscribeApplied subscribeApplied)
             {
-                var table = clientDB.GetTable(subscribeApplied.Rows.TableName) ?? throw new Exception($"Unknown table name: {subscribeApplied.Rows.TableName}");
+                var table = Db.GetTable(subscribeApplied.Rows.TableName) ?? throw new Exception($"Unknown table name: {subscribeApplied.Rows.TableName}");
                 var dbOps = new List<DbOp>();
                 HashSet<byte[]> inserts = new();
 
@@ -440,7 +447,7 @@ namespace SpacetimeDB
             /// </summary>
             List<DbOp> PreProcessUnsubscribeApplied(UnsubscribeApplied unsubApplied)
             {
-                var table = clientDB.GetTable(unsubApplied.Rows.TableName) ?? throw new Exception($"Unknown table name: {unsubApplied.Rows.TableName}");
+                var table = Db.GetTable(unsubApplied.Rows.TableName) ?? throw new Exception($"Unknown table name: {unsubApplied.Rows.TableName}");
                 var dbOps = new List<DbOp>();
 
                 // First apply all of the state
@@ -652,7 +659,7 @@ namespace SpacetimeDB
             // the client cache.
             if (preProcessedMessage.subscriptionInserts is { } subscriptionInserts)
             {
-                foreach (var table in clientDB.GetTables())
+                foreach (var table in Db.GetTables())
                 {
                     if (!subscriptionInserts.TryGetValue(table.ClientTableType, out var hashSet))
                     {
@@ -691,7 +698,7 @@ namespace SpacetimeDB
         /// </summary>
         /// <param name="uri"> URI of the SpacetimeDB server (ex: https://testnet.spacetimedb.com)
         /// <param name="addressOrName">The name or address of the database to connect to</param>
-        internal void Connect(string? token, string uri, string addressOrName, Compression compression, bool light)
+        void IDbConnection.Connect(string? token, string uri, string addressOrName, Compression compression, bool light)
         {
             isClosing = false;
 
@@ -751,11 +758,7 @@ namespace SpacetimeDB
 
                 if (update.delete is { } delete)
                 {
-                    if (update.table.DeleteEntry(delete.bytes))
-                    {
-                        update.table.InternalInvokeValueDeleted(delete.value);
-                    }
-                    else
+                    if (!update.table.DeleteEntry(delete.bytes))
                     {
                         update.delete = null;
                         dbOps[i] = update;
@@ -764,11 +767,7 @@ namespace SpacetimeDB
 
                 if (update.insert is { } insert)
                 {
-                    if (update.table.InsertEntry(insert.bytes, insert.value))
-                    {
-                        update.table.InternalInvokeValueInserted(insert.value);
-                    }
-                    else
+                    if (!update.table.InsertEntry(insert.bytes, insert.value))
                     {
                         update.insert = null;
                         dbOps[i] = update;
@@ -994,8 +993,7 @@ namespace SpacetimeDB
             _messageQueue.Add(new UnprocessedMessage { bytes = bytes, timestamp = timestamp });
 
         // TODO: this should become [Obsolete] but for now is used by autogenerated code.
-        public void InternalCallReducer<T>(T args, CallReducerFlags flags)
-            where T : IReducerArgs, new()
+        void IDbConnection.InternalCallReducer<T>(T args, CallReducerFlags flags)
         {
             if (!webSocket.IsConnected)
             {
@@ -1055,7 +1053,7 @@ namespace SpacetimeDB
 
         /// Usage: SpacetimeDBClientBase.instance.OneOffQuery<Message>("SELECT * FROM table WHERE sender = \"bob\"");
         [Obsolete("This is replaced by ctx.Db.TableName.RemoteQuery(\"WHERE ...\")", false)]
-        public Task<T[]> OneOffQuery<T>(string query) where T : IDatabaseRow, new() =>
+        public Task<T[]> OneOffQuery<T>(string query) where T : IStructuralReadWrite, new() =>
             ((IDbConnection)this).RemoteQuery<T>(query);
 
         async Task<T[]> IDbConnection.RemoteQuery<T>(string query)
@@ -1101,7 +1099,7 @@ namespace SpacetimeDB
             }
 
             var resultTable = result.Tables[0];
-            var cacheTable = clientDB.GetTable(resultTable.TableName);
+            var cacheTable = Db.GetTable(resultTable.TableName);
 
             if (cacheTable?.ClientTableType != typeof(T))
             {
@@ -1140,6 +1138,12 @@ namespace SpacetimeDB
             }));
 
         }
+
+        void IDbConnection.AddOnConnect(Action<Identity, string> cb) => onConnect += cb;
+
+        void IDbConnection.AddOnConnectError(WebSocket.ConnectErrorEventHandler cb) => webSocket.OnConnectError += cb;
+
+        void IDbConnection.AddOnDisconnect(WebSocket.CloseEventHandler cb) => webSocket.OnClose += cb;
     }
 
     internal struct UintAllocator
