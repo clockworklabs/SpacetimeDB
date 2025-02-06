@@ -1643,6 +1643,9 @@ Seq Scan on t
             ],
         );
 
+        // TODO: The `Index Cond` should be `y, z` ie: match the index columns
+        // This is not to be fixed on the printer side, but on the planner side
+
         // Select index on [y, z]
         check_query(
             &db,
@@ -1943,5 +1946,76 @@ Index Join: Rhs on p
 
         assert!(plan.plan_iter().any(|plan| plan.has_filter()));
         assert!(plan.plan_iter().any(|plan| plan.has_table_scan(None)));
+    }
+
+    #[test]
+    fn insert() {
+        let db = data();
+
+        check_query(
+            &db,
+            "INSERT INTO p (id, name) VALUES (1, 'foo')",
+            expect![[r#"
+Insert on p
+  Output: void"#]],
+        );
+    }
+
+    #[test]
+    fn update() {
+        let db = data().with_options(ExplainOptions::default().optimize(true));
+
+        check_query(
+            &db,
+            "UPDATE p SET name = 'bar'",
+            expect![[r#"
+Update on p SET (p.name = String("bar"))
+  -> Seq Scan on p
+  Output: void"#]],
+        );
+
+        check_query(
+            &db,
+            "UPDATE p SET name = 'bar' WHERE id = 1",
+            expect![[r#"
+Update on p SET (p.name = String("bar"))
+  -> Index Scan using Index id 0 on p
+      Index Cond: (p.id = U64(1))
+  Output: void"#]],
+        );
+
+        check_query(
+            &db,
+            "UPDATE p SET id = 2 WHERE name = 'bar'",
+            expect![[r#"
+Update on p SET (p.id = U64(2))
+  -> Seq Scan on p
+    Filter: (p.name = String("bar"))
+  Output: void"#]],
+        );
+    }
+
+    #[test]
+    fn delete() {
+        let db = data();
+
+        check_query(
+            &db,
+            "DELETE FROM p",
+            expect![[r#"
+Delete on p
+  -> Seq Scan on p
+  Output: void"#]],
+        );
+
+        check_query(
+            &db,
+            "DELETE FROM p WHERE id = 1",
+            expect![[r#"
+Delete on p
+  -> Seq Scan on p
+    Filter: (p.id = U64(1))
+  Output: void"#]],
+        );
     }
 }
