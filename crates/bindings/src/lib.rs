@@ -40,7 +40,7 @@ pub use spacetimedb_lib::Identity;
 pub use spacetimedb_lib::ScheduleAt;
 pub use spacetimedb_primitives::TableId;
 pub use sys::Errno;
-pub use table::{AutoIncOverflow, BTreeIndex, Table, TryInsertError, UniqueColumn, UniqueConstraintViolation};
+pub use table::{AutoIncOverflow, RangedIndex, Table, TryInsertError, UniqueColumn, UniqueConstraintViolation};
 pub use timestamp::Timestamp;
 
 pub type ReducerResult = core::result::Result<(), Box<str>>;

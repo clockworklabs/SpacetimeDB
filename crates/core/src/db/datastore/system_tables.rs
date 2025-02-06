@@ -14,7 +14,7 @@
 use crate::db::relational_db::RelationalDB;
 use crate::error::DBError;
 use spacetimedb_lib::db::auth::{StAccess, StTableType};
-use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, RawSql};
+use spacetimedb_lib::db::raw_def::v9::{btree, RawSql};
 use spacetimedb_lib::db::raw_def::*;
 use spacetimedb_lib::de::{Deserialize, DeserializeOwned, Error};
 use spacetimedb_lib::ser::Serialize;
@@ -26,7 +26,9 @@ use spacetimedb_sats::algebraic_value::ser::value_serialize;
 use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::product_value::InvalidFieldError;
 use spacetimedb_sats::{impl_deserialize, impl_serialize, impl_st, u256, AlgebraicType, AlgebraicValue, ArrayValue};
-use spacetimedb_schema::def::{BTreeAlgorithm, ConstraintData, IndexAlgorithm, ModuleDef, UniqueConstraintData};
+use spacetimedb_schema::def::{
+    BTreeAlgorithm, ConstraintData, DirectAlgorithm, IndexAlgorithm, ModuleDef, UniqueConstraintData,
+};
 use spacetimedb_schema::schema::{
     ColumnSchema, ConstraintSchema, IndexSchema, RowLevelSecuritySchema, ScheduleSchema, Schema, SequenceSchema,
     TableSchema,
@@ -291,36 +293,40 @@ fn system_module_def() -> ModuleDef {
         .build_table(ST_TABLE_NAME, *st_table_type.as_ref().expect("should be ref"))
         .with_type(TableType::System)
         .with_auto_inc_primary_key(StTableFields::TableId)
-        .with_unique_constraint(StTableFields::TableName);
+        .with_index_no_accessor_name(btree(StTableFields::TableId))
+        .with_unique_constraint(StTableFields::TableName)
+        .with_index_no_accessor_name(btree(StTableFields::TableName));
 
     let st_raw_column_type = builder.add_type::<StColumnRow>();
+    let st_col_row_unique_cols = [StColumnFields::TableId.col_id(), StColumnFields::ColPos.col_id()];
     builder
         .build_table(ST_COLUMN_NAME, *st_raw_column_type.as_ref().expect("should be ref"))
         .with_type(TableType::System)
-        .with_unique_constraint(col_list![
-            StColumnFields::TableId.col_id(),
-            StColumnFields::ColPos.col_id()
-        ]);
+        .with_unique_constraint(st_col_row_unique_cols)
+        .with_index_no_accessor_name(btree(st_col_row_unique_cols));
 
     let st_index_type = builder.add_type::<StIndexRow>();
     builder
         .build_table(ST_INDEX_NAME, *st_index_type.as_ref().expect("should be ref"))
         .with_type(TableType::System)
-        .with_auto_inc_primary_key(StIndexFields::IndexId);
+        .with_auto_inc_primary_key(StIndexFields::IndexId)
+        .with_index_no_accessor_name(btree(StIndexFields::IndexId));
     // TODO(1.0): unique constraint on name?
 
     let st_sequence_type = builder.add_type::<StSequenceRow>();
     builder
         .build_table(ST_SEQUENCE_NAME, *st_sequence_type.as_ref().expect("should be ref"))
         .with_type(TableType::System)
-        .with_auto_inc_primary_key(StSequenceFields::SequenceId);
+        .with_auto_inc_primary_key(StSequenceFields::SequenceId)
+        .with_index_no_accessor_name(btree(StSequenceFields::SequenceId));
     // TODO(1.0): unique constraint on name?
 
     let st_constraint_type = builder.add_type::<StConstraintRow>();
     builder
         .build_table(ST_CONSTRAINT_NAME, *st_constraint_type.as_ref().expect("should be ref"))
         .with_type(TableType::System)
-        .with_auto_inc_primary_key(StConstraintFields::ConstraintId);
+        .with_auto_inc_primary_key(StConstraintFields::ConstraintId)
+        .with_index_no_accessor_name(btree(StConstraintFields::ConstraintId));
     // TODO(1.0): unique constraint on name?
 
     let st_row_level_security_type = builder.add_type::<StRowLevelSecurityRow>();
@@ -332,12 +338,8 @@ fn system_module_def() -> ModuleDef {
         .with_type(TableType::System)
         .with_primary_key(StRowLevelSecurityFields::Sql)
         .with_unique_constraint(StRowLevelSecurityFields::Sql)
-        .with_index(
-            RawIndexAlgorithm::BTree {
-                columns: StRowLevelSecurityFields::TableId.into(),
-            },
-            "accessor_name_doesnt_matter",
-        );
+        .with_index_no_accessor_name(btree(StRowLevelSecurityFields::Sql))
+        .with_index_no_accessor_name(btree(StRowLevelSecurityFields::TableId));
 
     let st_module_type = builder.add_type::<StModuleRow>();
     builder
@@ -346,24 +348,29 @@ fn system_module_def() -> ModuleDef {
     // TODO: add empty unique constraint here, once we've implemented those.
 
     let st_client_type = builder.add_type::<StClientRow>();
+    let st_client_unique_cols = [StClientFields::Identity, StClientFields::Address];
     builder
         .build_table(ST_CLIENT_NAME, *st_client_type.as_ref().expect("should be ref"))
         .with_type(TableType::System)
-        .with_unique_constraint(col_list![StClientFields::Identity, StClientFields::Address]); // FIXME: this is a noop?
+        .with_unique_constraint(st_client_unique_cols) // FIXME: this is a noop?
+        .with_index_no_accessor_name(btree(st_client_unique_cols));
 
     let st_schedule_type = builder.add_type::<StScheduledRow>();
     builder
         .build_table(ST_SCHEDULED_NAME, *st_schedule_type.as_ref().expect("should be ref"))
         .with_type(TableType::System)
-        .with_unique_constraint(StScheduledFields::TableId)
-        .with_auto_inc_primary_key(StScheduledFields::ScheduleId);
+        .with_unique_constraint(StScheduledFields::TableId) // FIXME: this is a noop?
+        .with_index_no_accessor_name(btree(StScheduledFields::TableId))
+        .with_auto_inc_primary_key(StScheduledFields::ScheduleId) // FIXME: this is a noop?
+        .with_index_no_accessor_name(btree(StScheduledFields::ScheduleId));
     // TODO(1.0): unique constraint on name?
 
     let st_var_type = builder.add_type::<StVarRow>();
     builder
         .build_table(ST_VAR_NAME, *st_var_type.as_ref().expect("should be ref"))
         .with_type(TableType::System)
-        .with_unique_constraint(StVarFields::Name)
+        .with_unique_constraint(StVarFields::Name) // FIXME: this is a noop?
+        .with_index_no_accessor_name(btree(StVarFields::Name))
         .with_primary_key(StVarFields::Name);
 
     let result = builder
@@ -596,12 +603,16 @@ pub enum StIndexAlgorithm {
 
     /// A BTree index.
     BTree { columns: ColList },
+
+    /// A Direct index.
+    Direct { column: ColId },
 }
 
 impl From<IndexAlgorithm> for StIndexAlgorithm {
     fn from(algorithm: IndexAlgorithm) -> Self {
         match algorithm {
-            IndexAlgorithm::BTree(BTreeAlgorithm { columns }) => StIndexAlgorithm::BTree { columns },
+            IndexAlgorithm::BTree(BTreeAlgorithm { columns }) => Self::BTree { columns },
+            IndexAlgorithm::Direct(DirectAlgorithm { column }) => Self::Direct { column },
             _ => unimplemented!(),
         }
     }
@@ -628,6 +639,7 @@ impl From<StIndexRow> for IndexSchema {
             index_name: x.index_name,
             index_algorithm: match x.index_algorithm {
                 StIndexAlgorithm::BTree { columns } => BTreeAlgorithm { columns }.into(),
+                StIndexAlgorithm::Direct { column } => DirectAlgorithm { column }.into(),
                 StIndexAlgorithm::Unused(_) => panic!("Someone put a forbidden variant in the system table!"),
             },
         }

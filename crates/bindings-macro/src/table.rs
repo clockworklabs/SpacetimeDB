@@ -1,12 +1,14 @@
 use crate::sats;
 use crate::sym;
 use crate::util::{check_duplicate, check_duplicate_msg, ident_to_litstr, match_meta};
+use core::slice;
 use heck::ToSnakeCase;
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote, quote_spanned, ToTokens};
 use std::borrow::Cow;
 use syn::ext::IdentExt;
 use syn::meta::ParseNestedMeta;
+use syn::parse::Parse;
 use syn::parse::Parser as _;
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
@@ -44,12 +46,22 @@ struct ScheduledArg {
 
 struct IndexArg {
     name: Ident,
+    is_unique: bool,
     kind: IndexType,
+}
+
+impl IndexArg {
+    fn new(name: Ident, kind: IndexType) -> Self {
+        // We don't know if its unique yet.
+        // We'll discover this once we have collected constraints.
+        let is_unique = false;
+        Self { name, is_unique, kind }
+    }
 }
 
 enum IndexType {
     BTree { columns: Vec<Ident> },
-    UniqueBTree { column: Ident },
+    Direct { column: Ident },
 }
 
 impl TableArgs {
@@ -142,13 +154,19 @@ impl IndexArg {
                     check_duplicate_msg(&algo, &meta, "index algorithm specified twice")?;
                     algo = Some(Self::parse_btree(meta)?);
                 }
+                sym::direct => {
+                    check_duplicate_msg(&algo, &meta, "index algorithm specified twice")?;
+                    algo = Some(Self::parse_direct(meta)?);
+                }
             });
             Ok(())
         })?;
         let name = name.ok_or_else(|| meta.error("missing index name, e.g. name = my_index"))?;
-        let kind = algo.ok_or_else(|| meta.error("missing index algorithm, e.g., `btree(columns = [col1, col2])`"))?;
+        let kind = algo.ok_or_else(|| {
+            meta.error("missing index algorithm, e.g., `btree(columns = [col1, col2])` or `direct(column = col1)`")
+        })?;
 
-        Ok(IndexArg { name, kind })
+        Ok(IndexArg::new(name, kind))
     }
 
     fn parse_btree(meta: ParseNestedMeta) -> syn::Result<IndexType> {
@@ -174,7 +192,26 @@ impl IndexArg {
         Ok(IndexType::BTree { columns })
     }
 
-    /// Parses an inline `#[index(btree)]` attribute on a field.
+    fn parse_direct(meta: ParseNestedMeta) -> syn::Result<IndexType> {
+        let mut column = None;
+        meta.parse_nested_meta(|meta| {
+            match_meta!(match meta {
+                sym::column => {
+                    check_duplicate(&column, &meta)?;
+                    let value = meta.value()?;
+                    let inner;
+                    syn::bracketed!(inner in value);
+                    column = Some(Ident::parse(&inner)?);
+                }
+            });
+            Ok(())
+        })?;
+        let column = column
+            .ok_or_else(|| meta.error("must specify the column for direct index, e.g. `direct(column = col1)`"))?;
+        Ok(IndexType::Direct { column })
+    }
+
+    /// Parses an inline `#[index(btree)]` or `#[index(direct)]` attribute on a field.
     fn parse_index_attr(field: &Ident, attr: &syn::Attribute) -> syn::Result<Self> {
         let mut kind = None;
         attr.parse_nested_meta(|meta| {
@@ -185,12 +222,17 @@ impl IndexArg {
                         columns: vec![field.clone()],
                     });
                 }
+                sym::direct => {
+                    check_duplicate_msg(&kind, &meta, "index type specified twice")?;
+                    kind = Some(IndexType::Direct { column: field.clone() })
+                }
             });
             Ok(())
         })?;
-        let kind = kind.ok_or_else(|| syn::Error::new_spanned(&attr.meta, "must specify kind of index (`btree`)"))?;
+        let kind = kind
+            .ok_or_else(|| syn::Error::new_spanned(&attr.meta, "must specify kind of index (`btree` or `direct`)"))?;
         let name = field.clone();
-        Ok(IndexArg { kind, name })
+        Ok(IndexArg::new(name, kind))
     }
 
     fn validate<'a>(&'a self, table_name: &str, cols: &'a [Column<'a>]) -> syn::Result<ValidatedIndex<'a>> {
@@ -200,29 +242,32 @@ impl IndexArg {
                 let cols = columns.iter().map(find_column).collect::<syn::Result<Vec<_>>>()?;
                 ValidatedIndexType::BTree { cols }
             }
-            IndexType::UniqueBTree { column } => {
+            IndexType::Direct { column } => {
                 let col = find_column(column)?;
-                ValidatedIndexType::UniqueBTree { col }
+
+                if !self.is_unique {
+                    return Err(syn::Error::new(
+                        column.span(),
+                        "a direct index must be paired with a `#[unique] constraint",
+                    ));
+                }
+
+                ValidatedIndexType::Direct { col }
             }
         };
         // See crates/schema/src/validate/v9.rs for the format of index names.
         // It's slightly unnerving that we just trust that component to generate this format correctly,
         // but what can you do.
-        let index_name = match &kind {
-            ValidatedIndexType::BTree { cols } => {
-                let cols = cols
-                    .iter()
-                    .map(|col| col.field.ident.unwrap().to_string())
-                    .collect::<Vec<_>>();
-                let cols = cols.join("_");
-                format!("{table_name}_{cols}_idx_btree")
-            }
-            ValidatedIndexType::UniqueBTree { col } => {
-                let col = col.field.ident.unwrap().to_string();
-                format!("{table_name}_{col}_idx_btree")
-            }
+        let (cols, kind_str) = match &kind {
+            ValidatedIndexType::BTree { cols } => (&**cols, "btree"),
+            ValidatedIndexType::Direct { col } => (&[*col] as &[_], "direct"),
         };
+        let cols = cols.iter().map(|col| col.ident.to_string()).collect::<Vec<_>>();
+        let cols = cols.join("_");
+        let index_name = format!("{table_name}_{cols}_idx_{kind_str}");
+
         Ok(ValidatedIndex {
+            is_unique: self.is_unique,
             index_name,
             accessor_name: &self.name,
             kind,
@@ -233,12 +278,13 @@ impl IndexArg {
 struct ValidatedIndex<'a> {
     index_name: String,
     accessor_name: &'a Ident,
+    is_unique: bool,
     kind: ValidatedIndexType<'a>,
 }
 
 enum ValidatedIndexType<'a> {
     BTree { cols: Vec<&'a Column<'a>> },
-    UniqueBTree { col: &'a Column<'a> },
+    Direct { col: &'a Column<'a> },
 }
 
 impl ValidatedIndex<'_> {
@@ -250,10 +296,10 @@ impl ValidatedIndex<'_> {
                     columns: &[#(#col_ids),*]
                 })
             }
-            ValidatedIndexType::UniqueBTree { col } => {
+            ValidatedIndexType::Direct { col } => {
                 let col_id = col.index;
-                quote!(spacetimedb::table::IndexAlgo::BTree {
-                    columns: &[#col_id]
+                quote!(spacetimedb::table::IndexAlgo::Direct {
+                    column: #col_id
                 })
             }
         };
@@ -267,48 +313,60 @@ impl ValidatedIndex<'_> {
     }
 
     fn accessor(&self, vis: &syn::Visibility, row_type_ident: &Ident) -> TokenStream {
-        let index_ident = self.accessor_name;
-        match &self.kind {
-            ValidatedIndexType::BTree { cols } => {
-                let col_tys = cols.iter().map(|col| col.ty);
-                let mut doc = format!(
-                    "Gets the `{index_ident}` [`BTreeIndex`][spacetimedb::BTreeIndex] as defined \
-                     on this table. \n\
-                     \n\
-                     This B-tree index is defined on the following columns, in order:\n"
-                );
-                for col in cols {
-                    use std::fmt::Write;
-                    writeln!(
-                        doc,
-                        "- [`{ident}`][{row_type_ident}#structfield.{ident}]: [`{ty}`]",
-                        ident = col.field.ident.unwrap(),
-                        ty = col.ty.to_token_stream()
-                    )
-                    .unwrap();
-                }
-                quote! {
-                    #[doc = #doc]
-                    #vis fn #index_ident(&self) -> spacetimedb::BTreeIndex<Self, (#(#col_tys,)*), __indices::#index_ident> {
-                        spacetimedb::BTreeIndex::__NEW
-                    }
-                }
-            }
-            ValidatedIndexType::UniqueBTree { col } => {
-                let vis = col.field.vis;
-                let col_ty = col.field.ty;
-                let column_ident = col.field.ident.unwrap();
+        let cols = match &self.kind {
+            ValidatedIndexType::BTree { cols } => &**cols,
+            ValidatedIndexType::Direct { col } => slice::from_ref(col),
+        };
+        if self.is_unique {
+            assert_eq!(cols.len(), 1);
+            let col = cols[0];
+            self.accessor_unique(col, row_type_ident)
+        } else {
+            self.accessor_general(vis, row_type_ident, cols)
+        }
+    }
 
-                let doc = format!(
-                    "Gets the [`UniqueColumn`][spacetimedb::UniqueColumn] for the \
-                     [`{column_ident}`][{row_type_ident}::{column_ident}] column."
-                );
-                quote! {
-                    #[doc = #doc]
-                    #vis fn #column_ident(&self) -> spacetimedb::UniqueColumn<Self, #col_ty, __indices::#index_ident> {
-                        spacetimedb::UniqueColumn::__NEW
-                    }
-                }
+    fn accessor_unique(&self, col: &Column<'_>, row_type_ident: &Ident) -> TokenStream {
+        let index_ident = self.accessor_name;
+        let vis = col.vis;
+        let col_ty = col.ty;
+        let column_ident = col.ident;
+
+        let doc = format!(
+            "Gets the [`UniqueColumn`][spacetimedb::UniqueColumn] for the \
+             [`{column_ident}`][{row_type_ident}::{column_ident}] column."
+        );
+        quote! {
+            #[doc = #doc]
+            #vis fn #column_ident(&self) -> spacetimedb::UniqueColumn<Self, #col_ty, __indices::#index_ident> {
+                spacetimedb::UniqueColumn::__NEW
+            }
+        }
+    }
+
+    fn accessor_general(&self, vis: &syn::Visibility, row_type_ident: &Ident, cols: &[&Column<'_>]) -> TokenStream {
+        let index_ident = self.accessor_name;
+        let col_tys = cols.iter().map(|col| col.ty);
+        let mut doc = format!(
+            "Gets the `{index_ident}` [`RangedIndex`][spacetimedb::RangedIndex] as defined \
+             on this table. \n\
+             \n\
+             This B-tree index is defined on the following columns, in order:\n"
+        );
+        for col in cols {
+            use std::fmt::Write;
+            writeln!(
+                doc,
+                "- [`{ident}`][{row_type_ident}#structfield.{ident}]: [`{ty}`]",
+                ident = col.ident,
+                ty = col.ty.to_token_stream()
+            )
+            .unwrap();
+        }
+        quote! {
+            #[doc = #doc]
+            #vis fn #index_ident(&self) -> spacetimedb::RangedIndex<Self, (#(#col_tys,)*), __indices::#index_ident> {
+                spacetimedb::RangedIndex::__NEW
             }
         }
     }
@@ -316,13 +374,30 @@ impl ValidatedIndex<'_> {
     fn marker_type(&self, vis: &syn::Visibility, tablehandle_ident: &Ident) -> TokenStream {
         let index_ident = self.accessor_name;
         let index_name = &self.index_name;
-        let vis = if let ValidatedIndexType::UniqueBTree { col } = self.kind {
-            col.field.vis
+
+        let (cols, typeck_direct_index) = match &self.kind {
+            ValidatedIndexType::BTree { cols } => (&**cols, None),
+            ValidatedIndexType::Direct { col } => {
+                let col_ty = col.ty;
+                let typeck = quote_spanned!(col_ty.span()=>
+                    const _: () {
+                        spacetimedb::rt::assert_column_type_valid_for_direct_index::<#col_ty>();
+                    };
+                );
+                (slice::from_ref(col), Some(typeck))
+            }
+        };
+        let vis = if self.is_unique {
+            assert_eq!(cols.len(), 1);
+            cols[0].vis
         } else {
             vis
         };
         let vis = superize_vis(vis);
+
         let mut decl = quote! {
+            #typeck_direct_index
+
             #vis struct #index_ident;
             impl spacetimedb::table::Index for #index_ident {
                 fn index_id() -> spacetimedb::table::IndexId {
@@ -333,10 +408,11 @@ impl ValidatedIndex<'_> {
                 }
             }
         };
-        if let ValidatedIndexType::UniqueBTree { col } = self.kind {
+        if self.is_unique {
+            let col = cols[0];
             let col_ty = col.ty;
-            let col_name = col.field.name.as_deref().unwrap();
-            let field_ident = col.field.ident.unwrap();
+            let col_name = col.ident.to_string();
+            let field_ident = col.ident;
             decl.extend(quote! {
                 impl spacetimedb::table::Column for #index_ident {
                     type Table = #tablehandle_ident;
@@ -378,7 +454,8 @@ fn superize_vis(vis: &syn::Visibility) -> Cow<'_, syn::Visibility> {
 #[derive(Copy, Clone)]
 struct Column<'a> {
     index: u16,
-    field: &'a sats::SatsField<'a>,
+    vis: &'a syn::Visibility,
+    ident: &'a syn::Ident,
     ty: &'a syn::Type,
 }
 
@@ -386,8 +463,7 @@ fn try_find_column<'a, 'b, T: ?Sized>(cols: &'a [Column<'b>], name: &T) -> Optio
 where
     Ident: PartialEq<T>,
 {
-    cols.iter()
-        .find(|col| col.field.ident.is_some_and(|ident| ident == name))
+    cols.iter().find(|col| col.ident == name)
 }
 
 fn find_column<'a, 'b>(cols: &'a [Column<'b>], name: &Ident) -> syn::Result<&'a Column<'b>> {
@@ -495,18 +571,13 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
 
         let column = Column {
             index: col_num,
-            field,
+            ident: field_ident,
+            vis: field.vis,
             ty: field.ty,
         };
 
         if unique.is_some() || primary_key.is_some() {
             unique_columns.push(column);
-            args.indices.push(IndexArg {
-                name: field_ident.clone(),
-                kind: IndexType::UniqueBTree {
-                    column: field_ident.clone(),
-                },
-            });
         }
         if auto_inc.is_some() {
             sequenced_columns.push(column);
@@ -521,19 +592,38 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
 
     let row_type = quote!(#original_struct_ident);
 
+    // Mark all indices with a single column matching a unique constraint as unique.
+    // For all the unpaired unique columns, create a unique index.
+    for unique_col in &unique_columns {
+        if args.indices.iter_mut().any(|index| {
+            let covered_by_index = match &index.kind {
+                IndexType::BTree { columns } => &**columns == slice::from_ref(unique_col.ident),
+                IndexType::Direct { column } => column == unique_col.ident,
+            };
+            index.is_unique |= covered_by_index;
+            covered_by_index
+        }) {
+            continue;
+        }
+        // NOTE(centril): We pick `btree` here if the user does not specify otherwise,
+        // as it's the safest choice of index for the general case,
+        // even if isn't optimal in specific cases.
+        let name = unique_col.ident.clone();
+        let columns = vec![name.clone()];
+        args.indices.push(IndexArg {
+            name,
+            is_unique: true,
+            kind: IndexType::BTree { columns },
+        })
+    }
+
     let mut indices = args
         .indices
         .iter()
         .map(|index| index.validate(&table_name, &columns))
         .collect::<syn::Result<Vec<_>>>()?;
-
-    // order unique accessors before index accessors
-    indices.sort_by(|a, b| match (&a.kind, &b.kind) {
-        (ValidatedIndexType::UniqueBTree { .. }, ValidatedIndexType::UniqueBTree { .. }) => std::cmp::Ordering::Equal,
-        (_, ValidatedIndexType::UniqueBTree { .. }) => std::cmp::Ordering::Greater,
-        (ValidatedIndexType::UniqueBTree { .. }, _) => std::cmp::Ordering::Less,
-        _ => std::cmp::Ordering::Equal,
-    });
+    // Order unique accessors before index accessors.
+    indices.sort_by_key(|index| !index.is_unique);
 
     let tablehandle_ident = format_ident!("{}__TableHandle", table_ident);
 
@@ -544,7 +634,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
     // Generate `integrate_generated_columns`
     // which will integrate all generated auto-inc col values into `_row`.
     let integrate_gen_col = sequenced_columns.iter().map(|col| {
-        let field = col.field.ident.unwrap();
+        let field = col.ident;
         quote_spanned!(field.span()=>
             spacetimedb::table::SequenceTrigger::maybe_decode_into(&mut __row.#field, &mut __generated_cols);
         )

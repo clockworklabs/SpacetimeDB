@@ -47,7 +47,7 @@ use spacetimedb_sats::{
     AlgebraicType, AlgebraicValue, ProductType, ProductValue, WithTypespace,
 };
 use spacetimedb_schema::{
-    def::{BTreeAlgorithm, IndexAlgorithm},
+    def::{BTreeAlgorithm, DirectAlgorithm, IndexAlgorithm},
     schema::{ConstraintSchema, IndexSchema, RowLevelSecuritySchema, SequenceSchema, TableSchema},
 };
 use spacetimedb_table::{
@@ -442,6 +442,7 @@ impl MutTxId {
 
         let columns = match &index.index_algorithm {
             IndexAlgorithm::BTree(BTreeAlgorithm { columns }) => columns.clone(),
+            IndexAlgorithm::Direct(DirectAlgorithm { column: _ }) => todo!("todo_direct_index"),
             _ => unimplemented!(),
         };
         // Create and build the index.

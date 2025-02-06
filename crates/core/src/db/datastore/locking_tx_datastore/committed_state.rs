@@ -389,7 +389,8 @@ impl CommittedState {
             };
             let columns = match index_row.index_algorithm {
                 StIndexAlgorithm::BTree { columns } => columns,
-                _ => unimplemented!("Only BTree indexes are supported"),
+                StIndexAlgorithm::Direct { column: _ } => todo!("todo_direct_index"),
+                _ => unimplemented!("Only btree and direct indexes are supported"),
             };
             let is_unique = unique_constraints.contains(&(table_id, (&columns).into()));
             let index = table.new_index(columns.clone(), is_unique)?;
