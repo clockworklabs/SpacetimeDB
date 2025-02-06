@@ -1019,7 +1019,7 @@ impl RelationalDB {
         self.inner.create_index_mut_tx(tx, schema, is_unique)
     }
 
-    /// Removes the [index::BTreeIndex] from the database by their `index_id`
+    /// Removes the [`TableIndex`] from the database by their `index_id`
     pub fn drop_index(&self, tx: &mut MutTx, index_id: IndexId) -> Result<(), DBError> {
         self.inner.drop_index_mut_tx(tx, index_id)
     }

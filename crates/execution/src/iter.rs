@@ -7,7 +7,7 @@ use spacetimedb_physical_plan::plan::{
 };
 use spacetimedb_table::{
     blob_store::BlobStore,
-    btree_index::{BTreeIndex, BTreeIndexPointIter},
+    btree_index::{TableIndex, TableIndexPointIter},
     table::{IndexScanPointIter, IndexScanRangeIter, Table, TableScanIter},
 };
 
@@ -365,7 +365,7 @@ pub struct UniqueIxJoin<'a> {
     /// The lhs of the join
     lhs: Box<Iter<'a>>,
     /// The rhs index
-    rhs_index: &'a BTreeIndex,
+    rhs_index: &'a TableIndex,
     /// A handle to the datastore
     rhs_table: &'a Table,
     /// A handle to the blobstore
@@ -414,7 +414,7 @@ pub struct UniqueIxJoinLhs<'a> {
     /// The lhs of the join
     lhs: Box<Iter<'a>>,
     /// The rhs index
-    rhs: &'a BTreeIndex,
+    rhs: &'a TableIndex,
     /// The lhs probe field
     lhs_field: &'a TupleField,
 }
@@ -450,7 +450,7 @@ pub struct UniqueIxJoinRhs<'a> {
     /// The lhs of the join
     lhs: Box<Iter<'a>>,
     /// The rhs index
-    rhs_index: &'a BTreeIndex,
+    rhs_index: &'a TableIndex,
     /// A handle to the datastore
     rhs_table: &'a Table,
     /// A handle to the blobstore
@@ -500,9 +500,9 @@ pub struct IxJoinIter<'a> {
     /// The current lhs tuple
     lhs_tuple: Option<Tuple<'a>>,
     /// The rhs index
-    rhs_index: &'a BTreeIndex,
+    rhs_index: &'a TableIndex,
     /// The current rhs index cursor
-    rhs_index_cursor: Option<BTreeIndexPointIter<'a>>,
+    rhs_index_cursor: Option<TableIndexPointIter<'a>>,
     /// A handle to the datastore
     rhs_table: &'a Table,
     /// A handle to the blobstore
@@ -572,7 +572,7 @@ pub struct IxJoinLhs<'a> {
     /// The lhs of the join
     lhs: Box<Iter<'a>>,
     /// The rhs index
-    rhs_index: &'a BTreeIndex,
+    rhs_index: &'a TableIndex,
     /// The current lhs tuple
     lhs_tuple: Option<Tuple<'a>>,
     /// The matching rhs row count
@@ -627,9 +627,9 @@ pub struct IxJoinRhs<'a> {
     /// The lhs of the join
     lhs: Box<Iter<'a>>,
     /// The rhs index
-    rhs_index: &'a BTreeIndex,
+    rhs_index: &'a TableIndex,
     /// The current rhs index cursor
-    rhs_index_cursor: Option<BTreeIndexPointIter<'a>>,
+    rhs_index_cursor: Option<TableIndexPointIter<'a>>,
     /// A handle to the datastore
     rhs_table: &'a Table,
     /// A handle to the blobstore

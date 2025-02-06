@@ -1,6 +1,6 @@
 use crate::{
     bflatn_to::write_row_to_pages_bsatn,
-    btree_index::BTreeIndexPointIter,
+    btree_index::TableIndexPointIter,
     layout::AlgebraicTypeLayout,
     static_bsatn_validator::{static_bsatn_validator, validate_bsatn, StaticBsatnValidator},
 };
@@ -9,7 +9,7 @@ use super::{
     bflatn_from::serialize_row_from_page,
     bflatn_to::{write_row_to_pages, Error},
     blob_store::BlobStore,
-    btree_index::{BTreeIndex, BTreeIndexRangeIter},
+    btree_index::{TableIndex, TableIndexRangeIter},
     eq::eq_row_in_page,
     eq_to_pv::eq_row_in_page_to_pv,
     indexes::{Bytes, PageIndex, PageOffset, RowHash, RowPointer, Size, SquashedOffset, PAGE_DATA_SIZE},
@@ -79,7 +79,7 @@ pub struct Table {
     /// duplicate rows are impossible regardless, so this will be `None`.
     pointer_map: Option<PointerMap>,
     /// The indices associated with a set of columns of the table.
-    pub indexes: BTreeMap<IndexId, BTreeIndex>,
+    pub indexes: BTreeMap<IndexId, TableIndex>,
     /// The schema of the table, from which the type, and other details are derived.
     pub schema: Arc<TableSchema>,
     /// `SquashedOffset::TX_STATE` or `SquashedOffset::COMMITTED_STATE`
@@ -256,10 +256,10 @@ impl Table {
     /// # Safety
     ///
     /// `row.row_layout() == self.row_layout()` must hold.
-    pub unsafe fn check_unique_constraints<'a, I: Iterator<Item = (&'a IndexId, &'a BTreeIndex)>>(
+    pub unsafe fn check_unique_constraints<'a, I: Iterator<Item = (&'a IndexId, &'a TableIndex)>>(
         &'a self,
         row: RowRef<'_>,
-        adapt: impl FnOnce(btree_map::Iter<'a, IndexId, BTreeIndex>) -> I,
+        adapt: impl FnOnce(btree_map::Iter<'a, IndexId, TableIndex>) -> I,
         mut is_deleted: impl FnMut(RowPointer) -> bool,
     ) -> Result<(), UniqueConstraintViolation> {
         for (&index_id, index) in adapt(self.indexes.iter()).filter(|(_, index)| index.is_unique()) {
@@ -1019,9 +1019,9 @@ impl Table {
         with(Arc::make_mut(&mut self.schema));
     }
 
-    /// Returns a new [`BTreeIndex`] for `table`.
-    pub fn new_index(&self, algo: &IndexAlgorithm, is_unique: bool) -> Result<BTreeIndex, InvalidFieldError> {
-        BTreeIndex::new(self.get_schema().get_row_type(), algo, is_unique)
+    /// Returns a new [`TableIndex`] for `table`.
+    pub fn new_index(&self, algo: &IndexAlgorithm, is_unique: bool) -> Result<TableIndex, InvalidFieldError> {
+        TableIndex::new(self.get_schema().get_row_type(), algo, is_unique)
     }
 
     /// Inserts a new `index` into the table.
@@ -1035,7 +1035,7 @@ impl Table {
     /// # Safety
     ///
     /// Caller must promise that `index` was constructed with the same row type/layout as this table.
-    pub unsafe fn insert_index(&mut self, blob_store: &dyn BlobStore, index_id: IndexId, mut index: BTreeIndex) {
+    pub unsafe fn insert_index(&mut self, blob_store: &dyn BlobStore, index_id: IndexId, mut index: TableIndex) {
         let rows = self.scan_rows(blob_store);
         // SAFETY: Caller promised that table's row type/layout
         // matches that which `index` was constructed with.
@@ -1053,7 +1053,7 @@ impl Table {
     /// # Safety
     ///
     /// Caller must promise that `index` was constructed with the same row type/layout as this table.
-    pub unsafe fn add_index(&mut self, index_id: IndexId, index: BTreeIndex) {
+    pub unsafe fn add_index(&mut self, index_id: IndexId, index: TableIndex) {
         let is_unique = index.is_unique();
         self.indexes.insert(index_id, index);
 
@@ -1107,8 +1107,8 @@ impl Table {
         })
     }
 
-    /// Returns the [`BTreeIndex`] for this [`IndexId`].
-    pub fn get_index_by_id(&self, index_id: IndexId) -> Option<&BTreeIndex> {
+    /// Returns the [`TableIndex`] for this [`IndexId`].
+    pub fn get_index_by_id(&self, index_id: IndexId) -> Option<&TableIndex> {
         self.indexes.get(&index_id)
     }
 
@@ -1126,8 +1126,8 @@ impl Table {
         })
     }
 
-    /// Returns the first [`BTreeIndex`] with the given [`ColList`].
-    pub fn get_index_by_cols(&self, cols: &ColList) -> Option<(IndexId, &BTreeIndex)> {
+    /// Returns the first [`TableIndex`] with the given [`ColList`].
+    pub fn get_index_by_cols(&self, cols: &ColList) -> Option<(IndexId, &TableIndex)> {
         self.indexes
             .iter()
             .find(|(_, index)| &index.indexed_columns == cols)
@@ -1616,7 +1616,7 @@ impl<'a> Iterator for TableScanIter<'a> {
 pub struct TableAndIndex<'a> {
     table: &'a Table,
     blob_store: &'a dyn BlobStore,
-    index: &'a BTreeIndex,
+    index: &'a TableIndex,
 }
 
 impl<'a> TableAndIndex<'a> {
@@ -1624,7 +1624,7 @@ impl<'a> TableAndIndex<'a> {
         self.table
     }
 
-    pub fn index(&self) -> &'a BTreeIndex {
+    pub fn index(&self) -> &'a TableIndex {
         self.index
     }
 
@@ -1651,7 +1651,7 @@ impl<'a> TableAndIndex<'a> {
     }
 }
 
-/// An iterator using a [`BTreeIndex`] to scan a `table`
+/// An iterator using a [`TableIndex`] to scan a `table`
 /// for all the [`RowRef`]s matching the specified `key` in the indexed column(s).
 ///
 /// Matching is defined by `Ord for AlgebraicValue`.
@@ -1661,7 +1661,7 @@ pub struct IndexScanPointIter<'a> {
     /// The blob store; passed on to the [`RowRef`]s in case they need it.
     blob_store: &'a dyn BlobStore,
     /// The iterator performing the index scan yielding row pointers.
-    btree_index_iter: BTreeIndexPointIter<'a>,
+    btree_index_iter: TableIndexPointIter<'a>,
 }
 
 impl<'a> Iterator for IndexScanPointIter<'a> {
@@ -1681,7 +1681,7 @@ impl<'a> Iterator for IndexScanPointIter<'a> {
     }
 }
 
-/// An iterator using a [`BTreeIndex`] to scan a `table`
+/// An iterator using a [`TableIndex`] to scan a `table`
 /// for all the [`RowRef`]s matching the specified `range` in the indexed column(s).
 ///
 /// Matching is defined by `Ord for AlgebraicValue`.
@@ -1691,7 +1691,7 @@ pub struct IndexScanRangeIter<'a> {
     /// The blob store; passed on to the [`RowRef`]s in case they need it.
     blob_store: &'a dyn BlobStore,
     /// The iterator performing the index scan yielding row pointers.
-    btree_index_iter: BTreeIndexRangeIter<'a>,
+    btree_index_iter: TableIndexRangeIter<'a>,
 }
 
 impl<'a> Iterator for IndexScanRangeIter<'a> {
@@ -1724,7 +1724,7 @@ impl UniqueConstraintViolation {
     /// Returns a unique constraint violation error for the given `index`
     /// and the `value` that would have been duplicated.
     #[cold]
-    fn build(schema: &TableSchema, index: &BTreeIndex, index_id: IndexId, value: AlgebraicValue) -> Self {
+    fn build(schema: &TableSchema, index: &TableIndex, index_id: IndexId, value: AlgebraicValue) -> Self {
         // Fetch the table name.
         let table_name = schema.table_name.clone();
 
@@ -1760,7 +1760,7 @@ impl Table {
     #[cold]
     pub fn build_error_unique(
         &self,
-        index: &BTreeIndex,
+        index: &TableIndex,
         index_id: IndexId,
         value: AlgebraicValue,
     ) -> UniqueConstraintViolation {
@@ -2059,7 +2059,7 @@ pub(crate) mod test {
             columns: indexed_columns.clone(),
         }
         .into();
-        let index = BTreeIndex::new(&ty, &algo, false).unwrap();
+        let index = TableIndex::new(&ty, &algo, false).unwrap();
         // Add an index on column 0.
         // Safety:
         // We're using `ty` as the row type for both `table` and the new index.
@@ -2094,7 +2094,7 @@ pub(crate) mod test {
             columns: indexed_columns,
         }
         .into();
-        let index = BTreeIndex::new(&ty, &algo, false).unwrap();
+        let index = TableIndex::new(&ty, &algo, false).unwrap();
         // Add a duplicate of the same index, so we can check that all above quantities double.
         // Safety:
         // As above, we're using `ty` as the row type for both `table` and the new index.
