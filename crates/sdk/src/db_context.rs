@@ -66,7 +66,7 @@ pub trait DbContext {
     fn try_identity(&self) -> Option<Identity>;
 
     /// Get this connection's [`ConnectionId`].
-    // Currently, all connections opened by the same process will have the same [`Address`],
+    // Currently, all connections opened by the same process will have the same [`ConnectionId`],
     // including connections to different modules.
     // TODO: fix this.
     // TODO: add `Self::try_connection_id`, for the same reason as `Self::try_identity`.

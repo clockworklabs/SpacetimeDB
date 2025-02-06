@@ -22,7 +22,7 @@ use spacetimedb_sats::{impl_deserialize, impl_serialize, impl_st, AlgebraicType,
 // ->
 // [0xb0, 0xb1, 0xb2, ...]
 // ```
-// Make sure you call `Address::from_be_byte_array` and NOT `Address::from_byte_array`.
+// Make sure you call `ConnectionId::from_be_byte_array` and NOT `ConnectionId::from_le_byte_array`.
 // The standard way of writing hexadecimal numbers follows a big-endian convention, if you
 // index the characters in written text in increasing order from left to right.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]

@@ -25,7 +25,7 @@ pub fn cli() -> clap::Command {
         .arg(
             Arg::new("database")
                 .required(true)
-                .help("The domain or address of the database you would like to query"),
+                .help("The domain or identity of the database you would like to query"),
         )
         .arg(
             Arg::new("query")

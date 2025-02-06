@@ -117,7 +117,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
             }
 
             // Initial `IdentityToken` message:
-            // confirm that the received identity and address are what we expect,
+            // confirm that the received identity and connection ID are what we expect,
             // store them,
             // then invoke the on_connect callback.
             ParsedMessage::IdentityToken(identity, token, conn_id) => {

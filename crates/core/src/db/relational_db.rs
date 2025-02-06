@@ -245,7 +245,7 @@ impl RelationalDB {
     ///
     ///   An error is returned if the database already exists, but has a
     ///   different identity.
-    ///   If it is a new database, the address is stored in the database's
+    ///   If it is a new database, the identity is stored in the database's
     ///   system tables upon calling [`Self::set_initialized`].
     ///
     /// - `owner_identity`

@@ -80,11 +80,11 @@ where
     if connection_id == ConnectionId::ZERO {
         Err((
             StatusCode::BAD_REQUEST,
-            "Invalid client address: the all-zeros ConnectionId is reserved.",
+            "Invalid connection ID: the all-zeros ConnectionId is reserved.",
         ))?;
     }
 
-    let db_address = name_or_identity.resolve(&ctx).await?.into();
+    let db_identity = name_or_identity.resolve(&ctx).await?.into();
 
     let (res, ws_upgrade, protocol) =
         ws.select_protocol([(BIN_PROTOCOL, Protocol::Binary), (TEXT_PROTOCOL, Protocol::Text)]);
@@ -100,7 +100,7 @@ where
     // to connect to multiple modules
 
     let database = ctx
-        .get_database_by_identity(&db_address)
+        .get_database_by_identity(&db_identity)
         .unwrap()
         .ok_or(StatusCode::NOT_FOUND)?;
 

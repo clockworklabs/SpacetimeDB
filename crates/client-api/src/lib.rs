@@ -133,8 +133,6 @@ impl Host {
 /// See [`ControlStateDelegate::publish_database`].
 pub struct DatabaseDef {
     /// The [`Identity`] the database shall have.
-    ///
-    /// Addresses are allocated via [`ControlStateDelegate::create_address`].
     pub database_identity: Identity,
     /// The compiled program of the database module.
     pub program_bytes: Vec<u8>,
@@ -196,7 +194,7 @@ pub trait ControlStateReadAccess {
 pub trait ControlStateWriteAccess: Send + Sync {
     /// Publish a database acc. to [`DatabaseDef`].
     ///
-    /// If the database with the given address was successfully published before,
+    /// If the database with the given identity was successfully published before,
     /// it is updated acc. to the module lifecycle conventions. `Some` result is
     /// returned in that case.
     ///

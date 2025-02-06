@@ -1,7 +1,7 @@
 //! Allocation-free hex formatting.
 //!
 //! Given that most, if not all, of the types that we hex-format are of constant byte size (Hash,
-//! Address, Identity), this hex implementation lets you format to hex without needing to allocate
+//! ConnectionId, Identity), this hex implementation lets you format to hex without needing to allocate
 //! a `String` on the heap.
 
 use core::{fmt, ops, str};

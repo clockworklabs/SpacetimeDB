@@ -235,7 +235,7 @@ fn generate_type_valid_for_client_use() -> impl Strategy<Value = AlgebraicType> 
     let leaf = prop_oneof![
         generate_non_compound_algebraic_type(),
         Just(AlgebraicType::identity()),
-        Just(AlgebraicType::address()),
+        Just(AlgebraicType::connection_id()),
     ];
 
     let size = 3;

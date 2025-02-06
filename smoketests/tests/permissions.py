@@ -54,7 +54,7 @@ class Permissions(Smoketest):
             self.spacetime("logs", self.database_identity, "-n", "10000")
 
     def test_publish(self):
-        """This test checks to make sure that you cannot publish to an address that you do not own."""
+        """This test checks to make sure that you cannot publish to an identity that you do not own."""
 
         self.new_identity()
         self.publish_module()

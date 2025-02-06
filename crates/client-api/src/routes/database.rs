@@ -73,7 +73,7 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
         .ok_or(StatusCode::NOT_FOUND)?;
     let module = leader.module().await.map_err(log_and_500)?;
 
-    // HTTP callers always need an address to provide to connect/disconnect,
+    // HTTP callers always need a connection ID to provide to connect/disconnect,
     // so generate one.
     let connection_id = generate_random_connection_id();
 
@@ -249,8 +249,8 @@ pub async fn describe<S>(
 where
     S: ControlStateDelegate + NodeDelegate,
 {
-    let address = name_or_identity.resolve(&worker_ctx).await?.into();
-    let database = worker_ctx_find_database(&worker_ctx, &address)
+    let db_identity = name_or_identity.resolve(&worker_ctx).await?.into();
+    let database = worker_ctx_find_database(&worker_ctx, &db_identity)
         .await?
         .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
 
@@ -324,8 +324,8 @@ pub async fn catalog<S>(
 where
     S: ControlStateDelegate + NodeDelegate,
 {
-    let address = name_or_identity.resolve(&worker_ctx).await?.into();
-    let database = worker_ctx_find_database(&worker_ctx, &address)
+    let db_identity = name_or_identity.resolve(&worker_ctx).await?.into();
+    let database = worker_ctx_find_database(&worker_ctx, &db_identity)
         .await?
         .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
 
@@ -390,7 +390,7 @@ pub async fn info<S: ControlStateDelegate>(
     let database = worker_ctx_find_database(&worker_ctx, &database_identity)
         .await?
         .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
-    log::trace!("Fetched database from the worker db for address: {database_identity:?}");
+    log::trace!("Fetched database from the worker db for database identity: {database_identity:?}");
 
     let response = InfoResponse::from(database);
     Ok(axum::Json(response))
@@ -522,8 +522,8 @@ where
     // Anyone is authorized to execute SQL queries. The SQL engine will determine
     // which queries this identity is allowed to execute against the database.
 
-    let address = name_or_identity.resolve(&worker_ctx).await?.into();
-    let database = worker_ctx_find_database(&worker_ctx, &address)
+    let db_identity = name_or_identity.resolve(&worker_ctx).await?.into();
+    let database = worker_ctx_find_database(&worker_ctx, &db_identity)
         .await?
         .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
 
@@ -576,9 +576,9 @@ pub async fn reverse_dns<S: ControlStateDelegate>(
     State(ctx): State<S>,
     Path(ReverseDNSParams { database_identity }): Path<ReverseDNSParams>,
 ) -> axum::response::Result<impl IntoResponse> {
-    let database_address = Identity::from(database_identity);
+    let database_identity = Identity::from(database_identity);
 
-    let names = ctx.reverse_lookup(&database_address).map_err(log_and_500)?;
+    let names = ctx.reverse_lookup(&database_identity).map_err(log_and_500)?;
 
     let response = name::ReverseDNSResponse { names };
     Ok(axum::Json(response))
@@ -613,7 +613,7 @@ pub struct PublishDatabaseQueryParams {
 }
 
 impl PublishDatabaseQueryParams {
-    pub fn name_or_address(&self) -> Option<&NameOrIdentity> {
+    pub fn name_or_identity(&self) -> Option<&NameOrIdentity> {
         self.name_or_identity.as_ref()
     }
 }
@@ -637,8 +637,8 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
         Some(noa) => match noa.try_resolve(&ctx).await? {
             Ok(resolved) => resolved.into(),
             Err(domain) => {
-                // `name_or_address` was a `NameOrAddress::Name`, but no record
-                // exists yet. Create it now with a fresh address.
+                // `name_or_identity` was a `NameOrIdentity::Name`, but no record
+                // exists yet. Create it now with a fresh identity.
                 let database_auth = SpacetimeAuth::alloc(&ctx).await?;
                 let database_identity = database_auth.identity;
                 ctx.create_dns_record(&auth.identity, &domain, &database_identity)
@@ -654,7 +654,7 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
         }
     };
 
-    log::trace!("Publishing to the address: {}", database_identity.to_hex());
+    log::trace!("Publishing to the identity: {}", database_identity.to_hex());
 
     let op = {
         let exists = ctx
@@ -718,14 +718,12 @@ pub struct DeleteDatabaseParams {
 
 pub async fn delete_database<S: ControlStateDelegate>(
     State(ctx): State<S>,
-    Path(DeleteDatabaseParams {
-        database_identity: address,
-    }): Path<DeleteDatabaseParams>,
+    Path(DeleteDatabaseParams { database_identity }): Path<DeleteDatabaseParams>,
     Extension(auth): Extension<SpacetimeAuth>,
 ) -> axum::response::Result<impl IntoResponse> {
-    let address = Identity::from(address);
+    let database_identity = Identity::from(database_identity);
 
-    ctx.delete_database(&auth.identity, &address)
+    ctx.delete_database(&auth.identity, &database_identity)
         .await
         .map_err(log_and_500)?;
 

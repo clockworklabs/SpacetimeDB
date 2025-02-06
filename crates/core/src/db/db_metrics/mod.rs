@@ -95,7 +95,7 @@ metrics_group!(
 
 pub static DB_METRICS: Lazy<DbMetrics> = Lazy::new(DbMetrics::new);
 
-/// Returns the number of committed rows in the table named by `table_name` and identified by `table_id` in the database `db_address`.
+/// Returns the number of committed rows in the table named by `table_name` and identified by `table_id` in the database `db_identity`.
 pub fn table_num_rows(db_identity: Identity, table_id: TableId, table_name: &str) -> u64 {
     DB_METRICS
         .rdb_num_table_rows
