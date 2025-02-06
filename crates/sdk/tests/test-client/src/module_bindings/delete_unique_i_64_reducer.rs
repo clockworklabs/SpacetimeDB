@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -12,8 +18,10 @@ pub(super) struct DeleteUniqueI64Args {
 
 impl From<DeleteUniqueI64Args> for super::Reducer {
     fn from(args: DeleteUniqueI64Args) -> Self {
-        Self::DeleteUniqueI64 { n: args.n }
-    }
+        Self::DeleteUniqueI64 {
+            n: args.n,
+}
+}
 }
 
 impl __sdk::InModule for DeleteUniqueI64Args {
@@ -32,7 +40,8 @@ pub trait delete_unique_i_64 {
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed by listening for [`Self::on_delete_unique_i_64`] callbacks.
-    fn delete_unique_i_64(&self, n: i64) -> __sdk::Result<()>;
+    fn delete_unique_i_64(&self, n: i64,
+) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `delete_unique_i64`.
     ///
     /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
@@ -40,38 +49,34 @@ pub trait delete_unique_i_64 {
     ///
     /// The returned [`DeleteUniqueI64CallbackId`] can be passed to [`Self::remove_on_delete_unique_i_64`]
     /// to cancel the callback.
-    fn on_delete_unique_i_64(
-        &self,
-        callback: impl FnMut(&super::ReducerEventContext, &i64) + Send + 'static,
-    ) -> DeleteUniqueI64CallbackId;
+    fn on_delete_unique_i_64(&self, callback: impl FnMut(&super::ReducerEventContext, &i64, ) + Send + 'static) -> DeleteUniqueI64CallbackId;
     /// Cancel a callback previously registered by [`Self::on_delete_unique_i_64`],
     /// causing it not to run in the future.
     fn remove_on_delete_unique_i_64(&self, callback: DeleteUniqueI64CallbackId);
 }
 
 impl delete_unique_i_64 for super::RemoteReducers {
-    fn delete_unique_i_64(&self, n: i64) -> __sdk::Result<()> {
-        self.imp.call_reducer("delete_unique_i64", DeleteUniqueI64Args { n })
+    fn delete_unique_i_64(&self, n: i64,
+) -> __sdk::Result<()> {
+        self.imp.call_reducer("delete_unique_i64", DeleteUniqueI64Args { n,  })
     }
     fn on_delete_unique_i_64(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &i64) + Send + 'static,
+        mut callback: impl FnMut(&super::ReducerEventContext, &i64, ) + Send + 'static,
     ) -> DeleteUniqueI64CallbackId {
         DeleteUniqueI64CallbackId(self.imp.on_reducer(
             "delete_unique_i64",
             Box::new(move |ctx: &super::ReducerEventContext| {
                 let super::ReducerEventContext {
-                    event:
-                        __sdk::ReducerEvent {
-                            reducer: super::Reducer::DeleteUniqueI64 { n },
-                            ..
+                    event: __sdk::ReducerEvent {
+                        reducer: super::Reducer::DeleteUniqueI64 {
+                            n, 
                         },
+                        ..
+                    },
                     ..
-                } = ctx
-                else {
-                    unreachable!()
-                };
-                callback(ctx, n)
+                } = ctx else { unreachable!() };
+                callback(ctx, n, )
             }),
         ))
     }
@@ -99,3 +104,4 @@ impl set_flags_for_delete_unique_i_64 for super::SetReducerFlags {
         self.imp.set_call_reducer_flags("delete_unique_i64", flags);
     }
 }
+

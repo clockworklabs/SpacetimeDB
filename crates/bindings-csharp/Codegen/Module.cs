@@ -103,7 +103,7 @@ record ColumnDeclaration : MemberDeclaration
                 {
                     SpecialType.System_String or SpecialType.System_Boolean => true,
                     SpecialType.None => type.ToString()
-                        is "SpacetimeDB.Address"
+                        is "SpacetimeDB.ConnectionId"
                             or "SpacetimeDB.Identity",
                     _ => false,
                 }
@@ -818,17 +818,17 @@ public class Module : IIncrementalGenerator
 
                     namespace SpacetimeDB {
                         public sealed record ReducerContext : DbContext<Local>, Internal.IReducerContext {
-                            public readonly Identity CallerIdentity;
-                            public readonly Address? CallerAddress;
+                            public readonly Identity Sender;
+                            public readonly ConnectionId? ConnectionId;
                             public readonly Random Rng;
                             public readonly DateTimeOffset Timestamp;
 
                             // We need this property to be non-static for parity with client SDK.
                             public Identity Identity => Internal.IReducerContext.GetIdentity();
 
-                            internal ReducerContext(Identity identity, Address? address, Random random, DateTimeOffset time) {
-                                CallerIdentity = identity;
-                                CallerAddress = address;
+                            internal ReducerContext(Identity identity, ConnectionId? connectionId, Random random, DateTimeOffset time) {
+                                Sender= identity;
+                                ConnectionId = connectionId;
                                 Rng = random;
                                 Timestamp = time;
                             }
@@ -855,7 +855,7 @@ public class Module : IIncrementalGenerator
                         [DynamicDependency(DynamicallyAccessedMemberTypes.PublicMethods, typeof(SpacetimeDB.Internal.Module))]
                     #endif
                         public static void Main() {
-                            SpacetimeDB.Internal.Module.SetReducerContextConstructor((identity, address, random, time) => new SpacetimeDB.ReducerContext(identity, address, random, time));
+                          SpacetimeDB.Internal.Module.SetReducerContextConstructor((identity, connectionId, random, time) => new SpacetimeDB.ReducerContext(identity, connectionId, random, time));
 
                             {{string.Join(
                                 "\n",
@@ -881,8 +881,8 @@ public class Module : IIncrementalGenerator
                             ulong sender_1,
                             ulong sender_2,
                             ulong sender_3,
-                            ulong address_0,
-                            ulong address_1,
+                            ulong conn_id_0,
+                            ulong conn_id_1,
                             SpacetimeDB.Internal.DateTimeOffsetRepr timestamp,
                             SpacetimeDB.Internal.BytesSource args,
                             SpacetimeDB.Internal.BytesSink error
@@ -892,8 +892,8 @@ public class Module : IIncrementalGenerator
                             sender_1,
                             sender_2,
                             sender_3,
-                            address_0,
-                            address_1,
+                            conn_id_0,
+                            conn_id_1,
                             timestamp,
                             args,
                             error

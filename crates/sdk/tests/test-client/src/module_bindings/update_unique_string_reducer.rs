@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -16,8 +22,8 @@ impl From<UpdateUniqueStringArgs> for super::Reducer {
         Self::UpdateUniqueString {
             s: args.s,
             data: args.data,
-        }
-    }
+}
+}
 }
 
 impl __sdk::InModule for UpdateUniqueStringArgs {
@@ -36,7 +42,9 @@ pub trait update_unique_string {
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed by listening for [`Self::on_update_unique_string`] callbacks.
-    fn update_unique_string(&self, s: String, data: i32) -> __sdk::Result<()>;
+    fn update_unique_string(&self, s: String,
+data: i32,
+) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `update_unique_string`.
     ///
     /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
@@ -44,39 +52,35 @@ pub trait update_unique_string {
     ///
     /// The returned [`UpdateUniqueStringCallbackId`] can be passed to [`Self::remove_on_update_unique_string`]
     /// to cancel the callback.
-    fn on_update_unique_string(
-        &self,
-        callback: impl FnMut(&super::ReducerEventContext, &String, &i32) + Send + 'static,
-    ) -> UpdateUniqueStringCallbackId;
+    fn on_update_unique_string(&self, callback: impl FnMut(&super::ReducerEventContext, &String, &i32, ) + Send + 'static) -> UpdateUniqueStringCallbackId;
     /// Cancel a callback previously registered by [`Self::on_update_unique_string`],
     /// causing it not to run in the future.
     fn remove_on_update_unique_string(&self, callback: UpdateUniqueStringCallbackId);
 }
 
 impl update_unique_string for super::RemoteReducers {
-    fn update_unique_string(&self, s: String, data: i32) -> __sdk::Result<()> {
-        self.imp
-            .call_reducer("update_unique_string", UpdateUniqueStringArgs { s, data })
+    fn update_unique_string(&self, s: String,
+data: i32,
+) -> __sdk::Result<()> {
+        self.imp.call_reducer("update_unique_string", UpdateUniqueStringArgs { s, data,  })
     }
     fn on_update_unique_string(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &String, &i32) + Send + 'static,
+        mut callback: impl FnMut(&super::ReducerEventContext, &String, &i32, ) + Send + 'static,
     ) -> UpdateUniqueStringCallbackId {
         UpdateUniqueStringCallbackId(self.imp.on_reducer(
             "update_unique_string",
             Box::new(move |ctx: &super::ReducerEventContext| {
                 let super::ReducerEventContext {
-                    event:
-                        __sdk::ReducerEvent {
-                            reducer: super::Reducer::UpdateUniqueString { s, data },
-                            ..
+                    event: __sdk::ReducerEvent {
+                        reducer: super::Reducer::UpdateUniqueString {
+                            s, data, 
                         },
+                        ..
+                    },
                     ..
-                } = ctx
-                else {
-                    unreachable!()
-                };
-                callback(ctx, s, data)
+                } = ctx else { unreachable!() };
+                callback(ctx, s, data, )
             }),
         ))
     }
@@ -104,3 +108,4 @@ impl set_flags_for_update_unique_string for super::SetReducerFlags {
         self.imp.set_call_reducer_flags("update_unique_string", flags);
     }
 }
+

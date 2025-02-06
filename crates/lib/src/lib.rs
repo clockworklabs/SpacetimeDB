@@ -6,7 +6,7 @@ use spacetimedb_sats::{impl_serialize, WithTypespace};
 use std::any::TypeId;
 use std::collections::{btree_map, BTreeMap};
 
-pub mod address;
+pub mod connection_id;
 pub mod db;
 pub mod error;
 pub mod identity;
@@ -25,7 +25,7 @@ pub mod type_value {
     pub use spacetimedb_sats::{AlgebraicValue, ProductValue};
 }
 
-pub use address::Address;
+pub use connection_id::ConnectionId;
 pub use identity::Identity;
 pub use scheduler::ScheduleAt;
 pub use spacetimedb_sats::hash::{self, hash_bytes, Hash};

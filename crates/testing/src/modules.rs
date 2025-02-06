@@ -9,7 +9,7 @@ use spacetimedb::config::CertificateAuthority;
 use spacetimedb::messages::control_db::HostType;
 use spacetimedb::Identity;
 use spacetimedb_client_api::auth::SpacetimeAuth;
-use spacetimedb_client_api::routes::subscribe::generate_random_address;
+use spacetimedb_client_api::routes::subscribe::generate_random_connection_id;
 use spacetimedb_paths::{RootDir, SpacetimePaths};
 use tokio::runtime::{Builder, Runtime};
 
@@ -169,7 +169,7 @@ impl CompiledModule {
         // TODO: Fix this when we update identity generation.
         let identity = Identity::ZERO;
         let db_identity = SpacetimeAuth::alloc(&env).await.unwrap().identity;
-        let client_address = generate_random_address();
+        let connection_id = generate_random_connection_id();
 
         let program_bytes = self
             .program_bytes
@@ -193,7 +193,7 @@ impl CompiledModule {
 
         let client_id = ClientActorId {
             identity,
-            address: client_address,
+            connection_id,
             name: env.client_actor_index().next_client_name(),
         };
 

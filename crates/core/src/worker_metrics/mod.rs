@@ -2,7 +2,7 @@ use crate::execution_context::WorkloadType;
 use crate::hash::Hash;
 use once_cell::sync::Lazy;
 use prometheus::{HistogramVec, IntCounterVec, IntGaugeVec};
-use spacetimedb_lib::{Address, Identity};
+use spacetimedb_lib::{ConnectionId, Identity};
 use spacetimedb_metrics::metrics_group;
 
 metrics_group!(
@@ -82,7 +82,7 @@ metrics_group!(
 
         #[name = spacetime_worker_wasm_instance_errors_total]
         #[help = "The number of fatal WASM instance errors, such as reducer panics."]
-        #[labels(caller_identity: Identity, module_hash: Hash, caller_address: Address, reducer_symbol: str)]
+        #[labels(caller_identity: Identity, module_hash: Hash, caller_connection_id: ConnectionId, reducer_symbol: str)]
         pub wasm_instance_errors: IntCounterVec,
 
         #[name = spacetime_worker_wasm_memory_bytes]

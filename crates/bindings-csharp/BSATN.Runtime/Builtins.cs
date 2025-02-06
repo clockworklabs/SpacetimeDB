@@ -112,71 +112,71 @@ public readonly partial struct Unit
 }
 
 [StructLayout(LayoutKind.Sequential)]
-public readonly record struct Address
+public readonly record struct ConnectionId
 {
     private readonly U128 value;
 
-    internal Address(U128 v) => value = v;
+    internal ConnectionId(U128 v) => value = v;
 
     /// <summary>
-    /// Create an Address from a LITTLE-ENDIAN byte array.
+    /// Create a ConnectionId from a LITTLE-ENDIAN byte array.
     ///
-    /// If you are parsing an Address from a string, you probably want FromHexString instead,
+    /// If you are parsing a ConnectionId from a string, you probably want FromHexString instead,
     /// or, failing that, FromBigEndian.
     ///
-    /// Returns null if the resulting address is the default.
+    /// Returns null if the resulting ConnectionId is the default.
     /// </summary>
     /// <param name="bytes"></param>
-    public static Address? From(ReadOnlySpan<byte> bytes)
+    public static ConnectionId? From(ReadOnlySpan<byte> bytes)
     {
-        var addr = Util.Read<Address>(bytes, littleEndian: true);
-        return addr == default ? null : addr;
+        var id = Util.Read<ConnectionId>(bytes, littleEndian: true);
+        return id == default ? null : id;
     }
 
     /// <summary>
-    /// Create an Address from a BIG-ENDIAN byte array.
+    /// Create a ConnectionId from a BIG-ENDIAN byte array.
     ///
-    /// This method is the correct choice if you have converted the bytes of a hexadecimal-formatted Address
+    /// This method is the correct choice if you have converted the bytes of a hexadecimal-formatted ConnectionId
     /// to a byte array in the following way:
     ///
     /// "0xb0b1b2..."
     /// ->
     /// [0xb0, 0xb1, 0xb2, ...]
     ///
-    /// Returns null if the resulting address is the default.
+    /// Returns null if the resulting ConnectionId is the default.
     /// </summary>
     /// <param name="bytes"></param>
-    public static Address? FromBigEndian(ReadOnlySpan<byte> bytes)
+    public static ConnectionId? FromBigEndian(ReadOnlySpan<byte> bytes)
     {
-        var addr = Util.Read<Address>(bytes, littleEndian: false);
-        return addr == default ? null : addr;
+        var id = Util.Read<ConnectionId>(bytes, littleEndian: false);
+        return id == default ? null : id;
     }
 
     /// <summary>
-    /// Create an Address from a hex string.
+    /// Create a ConnectionId from a hex string.
     /// </summary>
     /// <param name="hex"></param>
     /// <returns></returns>
-    public static Address? FromHexString(string hex) => FromBigEndian(Util.StringToByteArray(hex));
+    public static ConnectionId? FromHexString(string hex) => FromBigEndian(Util.StringToByteArray(hex));
 
-    public static Address Random()
+    public static ConnectionId Random()
     {
         var random = new Random();
-        var addr = new Address();
-        random.NextBytes(Util.AsBytes(ref addr));
+        var id = new ConnectionId();
+        random.NextBytes(Util.AsBytes(ref id));
         return addr;
     }
 
-    public readonly struct BSATN : IReadWrite<Address>
+  public readonly struct BSATN : IReadWrite<ConnectionId>
     {
-        public Address Read(BinaryReader reader) =>
+        public ConnectionId Read(BinaryReader reader) =>
             new(new SpacetimeDB.BSATN.U128Stdb().Read(reader));
 
-        public void Write(BinaryWriter writer, Address value) =>
+        public void Write(BinaryWriter writer, ConnectionId value) =>
             new SpacetimeDB.BSATN.U128Stdb().Write(writer, value.value);
 
         public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) =>
-            new AlgebraicType.Product([new("__address__", new AlgebraicType.U128(default))]);
+            new AlgebraicType.Product([new("__connection_id__", new AlgebraicType.U128(default))]);
     }
 
     public override string ToString() => Util.ToHexBigEndian(value);

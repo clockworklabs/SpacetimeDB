@@ -195,7 +195,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
 
         // Prepare sender identity and address, as LITTLE-ENDIAN byte arrays.
         let [sender_0, sender_1, sender_2, sender_3] = bytemuck::must_cast(op.caller_identity.to_byte_array());
-        let [address_0, address_1] = bytemuck::must_cast(op.caller_address.as_byte_array());
+        let [conn_id_0, conn_id_1] = bytemuck::must_cast(op.caller_connection_id.as_le_byte_array());
 
         // Prepare arguments to the reducer + the error sink & start timings.
         let (args_source, errors_sink) = store.data_mut().start_reducer(op.name, op.arg_bytes);
@@ -208,8 +208,8 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
                 sender_1,
                 sender_2,
                 sender_3,
-                address_0,
-                address_1,
+                conn_id_0,
+                conn_id_1,
                 op.timestamp.microseconds,
                 args_source,
                 errors_sink,

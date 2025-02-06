@@ -129,7 +129,7 @@ pub fn execute_sql(
             let event = ModuleEvent {
                 timestamp: Timestamp::now(),
                 caller_identity: auth.caller,
-                caller_address: None,
+                caller_connection_id: None,
                 function_call: ModuleFunctionCall {
                     reducer: String::new(),
                     reducer_id: u32::MAX.into(),
@@ -242,7 +242,7 @@ pub fn run(
                     ModuleEvent {
                         timestamp: Timestamp::now(),
                         caller_identity: auth.caller,
-                        caller_address: None,
+                        caller_connection_id: None,
                         function_call: ModuleFunctionCall {
                             reducer: String::new(),
                             reducer_id: u32::MAX.into(),

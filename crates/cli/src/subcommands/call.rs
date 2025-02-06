@@ -329,7 +329,7 @@ mod write_type {
     ) -> fmt::Result {
         match ty {
             p if p.is_identity() => write!(out, "Identity")?,
-            p if p.is_address() => write!(out, "Address")?,
+            p if p.is_connection_id() => write!(out, "ConnectionId")?,
             p if p.is_schedule_at() => write!(out, "ScheduleAt")?,
             AlgebraicType::Sum(sum_type) => {
                 if let Some(inner_ty) = sum_type.as_option() {

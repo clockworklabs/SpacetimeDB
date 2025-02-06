@@ -2,9 +2,14 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use super::enum_with_payload_type::EnumWithPayload;
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 use super::vec_enum_with_payload_type::VecEnumWithPayload;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use super::enum_with_payload_type::EnumWithPayload;
 
 /// Table handle for the table `vec_enum_with_payload`.
 ///
@@ -45,12 +50,8 @@ impl<'ctx> __sdk::Table for VecEnumWithPayloadTableHandle<'ctx> {
     type Row = VecEnumWithPayload;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 {
-        self.imp.count()
-    }
-    fn iter(&self) -> impl Iterator<Item = VecEnumWithPayload> + '_ {
-        self.imp.iter()
-    }
+    fn count(&self) -> u64 { self.imp.count() }
+    fn iter(&self) -> impl Iterator<Item = VecEnumWithPayload> + '_ { self.imp.iter() }
 
     type InsertCallbackId = VecEnumWithPayloadInsertCallbackId;
 
@@ -81,15 +82,18 @@ impl<'ctx> __sdk::Table for VecEnumWithPayloadTableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<VecEnumWithPayload>("vec_enum_with_payload");
+
+        let _table = client_cache.get_or_make_table::<VecEnumWithPayload>("vec_enum_with_payload");
 }
 #[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
 ) -> __sdk::Result<__sdk::TableUpdate<VecEnumWithPayload>> {
-    __sdk::TableUpdate::parse_table_update_no_primary_key(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse("TableUpdate<VecEnumWithPayload>", "TableUpdate")
-            .with_cause(e)
-            .into()
-    })
+    __sdk::TableUpdate::parse_table_update_no_primary_key(raw_updates)
+        .map_err(|e| {
+             __sdk::InternalError::failed_parse(
+                "TableUpdate<VecEnumWithPayload>",
+                "TableUpdate",
+            ).with_cause(e).into()
+        })
 }

@@ -2,8 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 use super::pk_i_64_type::PkI64;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `pk_i64`.
 ///
@@ -44,12 +49,8 @@ impl<'ctx> __sdk::Table for PkI64TableHandle<'ctx> {
     type Row = PkI64;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 {
-        self.imp.count()
-    }
-    fn iter(&self) -> impl Iterator<Item = PkI64> + '_ {
-        self.imp.iter()
-    }
+    fn count(&self) -> u64 { self.imp.count() }
+    fn iter(&self) -> impl Iterator<Item = PkI64> + '_ { self.imp.iter() }
 
     type InsertCallbackId = PkI64InsertCallbackId;
 
@@ -80,7 +81,8 @@ impl<'ctx> __sdk::Table for PkI64TableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<PkI64>("pk_i64");
+
+        let _table = client_cache.get_or_make_table::<PkI64>("pk_i64");
     _table.add_unique_constraint::<i64>("n", |row| &row.n);
 }
 pub struct PkI64UpdateCallbackId(__sdk::CallbackId);
@@ -104,39 +106,45 @@ impl<'ctx> __sdk::TableWithPrimaryKey for PkI64TableHandle<'ctx> {
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
 ) -> __sdk::Result<__sdk::TableUpdate<PkI64>> {
-    __sdk::TableUpdate::parse_table_update_with_primary_key::<i64>(raw_updates, |row: &PkI64| &row.n).map_err(|e| {
-        __sdk::InternalError::failed_parse("TableUpdate<PkI64>", "TableUpdate")
-            .with_cause(e)
-            .into()
-    })
+    __sdk::TableUpdate::parse_table_update_with_primary_key::<i64>(
+        raw_updates,
+        |row: &PkI64| &row.n,
+    )
+        .map_err(|e| {
+             __sdk::InternalError::failed_parse(
+                "TableUpdate<PkI64>",
+                "TableUpdate",
+            ).with_cause(e).into()
+        })
 }
 
-/// Access to the `n` unique index on the table `pk_i64`,
-/// which allows point queries on the field of the same name
-/// via the [`PkI64NUnique::find`] method.
-///
-/// Users are encouraged not to explicitly reference this type,
-/// but to directly chain method calls,
-/// like `ctx.db.pk_i_64().n().find(...)`.
-pub struct PkI64NUnique<'ctx> {
-    imp: __sdk::UniqueConstraintHandle<PkI64, i64>,
-    phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
-}
-
-impl<'ctx> PkI64TableHandle<'ctx> {
-    /// Get a handle on the `n` unique index on the table `pk_i64`.
-    pub fn n(&self) -> PkI64NUnique<'ctx> {
-        PkI64NUnique {
-            imp: self.imp.get_unique_constraint::<i64>("n"),
-            phantom: std::marker::PhantomData,
+        /// Access to the `n` unique index on the table `pk_i64`,
+        /// which allows point queries on the field of the same name
+        /// via the [`PkI64NUnique::find`] method.
+        ///
+        /// Users are encouraged not to explicitly reference this type,
+        /// but to directly chain method calls,
+        /// like `ctx.db.pk_i_64().n().find(...)`.
+        pub struct PkI64NUnique<'ctx> {
+            imp: __sdk::UniqueConstraintHandle<PkI64, i64>,
+            phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
         }
-    }
-}
 
-impl<'ctx> PkI64NUnique<'ctx> {
-    /// Find the subscribed row whose `n` column value is equal to `col_val`,
-    /// if such a row is present in the client cache.
-    pub fn find(&self, col_val: &i64) -> Option<PkI64> {
-        self.imp.find(col_val)
-    }
-}
+        impl<'ctx> PkI64TableHandle<'ctx> {
+            /// Get a handle on the `n` unique index on the table `pk_i64`.
+            pub fn n(&self) -> PkI64NUnique<'ctx> {
+                PkI64NUnique {
+                    imp: self.imp.get_unique_constraint::<i64>("n"),
+                    phantom: std::marker::PhantomData,
+                }
+            }
+        }
+
+        impl<'ctx> PkI64NUnique<'ctx> {
+            /// Find the subscribed row whose `n` column value is equal to `col_val`,
+            /// if such a row is present in the client cache.
+            pub fn find(&self, col_val: &i64) -> Option<PkI64> {
+                self.imp.find(col_val)
+            }
+        }
+        

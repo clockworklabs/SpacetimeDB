@@ -2,14 +2,19 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use super::byte_struct_type::ByteStruct;
-use super::enum_with_payload_type::EnumWithPayload;
-use super::every_primitive_struct_type::EveryPrimitiveStruct;
-use super::every_vec_struct_type::EveryVecStruct;
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 use super::large_table_type::LargeTable;
 use super::simple_enum_type::SimpleEnum;
+use super::enum_with_payload_type::EnumWithPayload;
 use super::unit_struct_type::UnitStruct;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use super::byte_struct_type::ByteStruct;
+use super::every_primitive_struct_type::EveryPrimitiveStruct;
+use super::every_vec_struct_type::EveryVecStruct;
 
 /// Table handle for the table `large_table`.
 ///
@@ -50,12 +55,8 @@ impl<'ctx> __sdk::Table for LargeTableTableHandle<'ctx> {
     type Row = LargeTable;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 {
-        self.imp.count()
-    }
-    fn iter(&self) -> impl Iterator<Item = LargeTable> + '_ {
-        self.imp.iter()
-    }
+    fn count(&self) -> u64 { self.imp.count() }
+    fn iter(&self) -> impl Iterator<Item = LargeTable> + '_ { self.imp.iter() }
 
     type InsertCallbackId = LargeTableInsertCallbackId;
 
@@ -86,15 +87,18 @@ impl<'ctx> __sdk::Table for LargeTableTableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<LargeTable>("large_table");
+
+        let _table = client_cache.get_or_make_table::<LargeTable>("large_table");
 }
 #[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
 ) -> __sdk::Result<__sdk::TableUpdate<LargeTable>> {
-    __sdk::TableUpdate::parse_table_update_no_primary_key(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse("TableUpdate<LargeTable>", "TableUpdate")
-            .with_cause(e)
-            .into()
-    })
+    __sdk::TableUpdate::parse_table_update_no_primary_key(raw_updates)
+        .map_err(|e| {
+             __sdk::InternalError::failed_parse(
+                "TableUpdate<LargeTable>",
+                "TableUpdate",
+            ).with_cause(e).into()
+        })
 }

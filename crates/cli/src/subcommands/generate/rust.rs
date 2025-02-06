@@ -582,7 +582,7 @@ pub fn write_type<W: Write>(module: &ModuleDef, out: &mut W, ty: &AlgebraicTypeU
         AlgebraicTypeUse::Unit => write!(out, "()")?,
         AlgebraicTypeUse::Never => write!(out, "std::convert::Infallible")?,
         AlgebraicTypeUse::Identity => write!(out, "__sdk::Identity")?,
-        AlgebraicTypeUse::Address => write!(out, "__sdk::Address")?,
+        AlgebraicTypeUse::ConnectionId => write!(out, "__sdk::ConnectionId")?,
         AlgebraicTypeUse::ScheduleAt => write!(out, "__sdk::ScheduleAt")?,
         AlgebraicTypeUse::Option(inner_ty) => {
             write!(out, "Option::<")?;
@@ -1246,8 +1246,8 @@ impl __sdk::DbContext for DbConnection {{
     fn try_identity(&self) -> Option<__sdk::Identity> {{
         self.imp.try_identity()
     }}
-    fn address(&self) -> __sdk::Address {{
-        self.imp.address()
+    fn connection_id(&self) -> __sdk::ConnectionId {{
+        self.imp.connection_id()
     }}
 }}
 
@@ -1562,8 +1562,8 @@ impl __sdk::DbContext for {struct_and_trait_name} {{
     fn try_identity(&self) -> Option<__sdk::Identity> {{
         self.imp.try_identity()
     }}
-    fn address(&self) -> __sdk::Address {{
-        self.imp.address()
+    fn connection_id(&self) -> __sdk::ConnectionId {{
+        self.imp.connection_id()
     }}
 }}
 

@@ -2,20 +2,27 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 
 use super::simple_enum_type::SimpleEnum;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct InsertOptionSimpleEnumArgs {
-    pub e: Option<SimpleEnum>,
+    pub e: Option::<SimpleEnum>,
 }
 
 impl From<InsertOptionSimpleEnumArgs> for super::Reducer {
     fn from(args: InsertOptionSimpleEnumArgs) -> Self {
-        Self::InsertOptionSimpleEnum { e: args.e }
-    }
+        Self::InsertOptionSimpleEnum {
+            e: args.e,
+}
+}
 }
 
 impl __sdk::InModule for InsertOptionSimpleEnumArgs {
@@ -34,7 +41,8 @@ pub trait insert_option_simple_enum {
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed by listening for [`Self::on_insert_option_simple_enum`] callbacks.
-    fn insert_option_simple_enum(&self, e: Option<SimpleEnum>) -> __sdk::Result<()>;
+    fn insert_option_simple_enum(&self, e: Option::<SimpleEnum>,
+) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `insert_option_simple_enum`.
     ///
     /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
@@ -42,39 +50,34 @@ pub trait insert_option_simple_enum {
     ///
     /// The returned [`InsertOptionSimpleEnumCallbackId`] can be passed to [`Self::remove_on_insert_option_simple_enum`]
     /// to cancel the callback.
-    fn on_insert_option_simple_enum(
-        &self,
-        callback: impl FnMut(&super::ReducerEventContext, &Option<SimpleEnum>) + Send + 'static,
-    ) -> InsertOptionSimpleEnumCallbackId;
+    fn on_insert_option_simple_enum(&self, callback: impl FnMut(&super::ReducerEventContext, &Option::<SimpleEnum>, ) + Send + 'static) -> InsertOptionSimpleEnumCallbackId;
     /// Cancel a callback previously registered by [`Self::on_insert_option_simple_enum`],
     /// causing it not to run in the future.
     fn remove_on_insert_option_simple_enum(&self, callback: InsertOptionSimpleEnumCallbackId);
 }
 
 impl insert_option_simple_enum for super::RemoteReducers {
-    fn insert_option_simple_enum(&self, e: Option<SimpleEnum>) -> __sdk::Result<()> {
-        self.imp
-            .call_reducer("insert_option_simple_enum", InsertOptionSimpleEnumArgs { e })
+    fn insert_option_simple_enum(&self, e: Option::<SimpleEnum>,
+) -> __sdk::Result<()> {
+        self.imp.call_reducer("insert_option_simple_enum", InsertOptionSimpleEnumArgs { e,  })
     }
     fn on_insert_option_simple_enum(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &Option<SimpleEnum>) + Send + 'static,
+        mut callback: impl FnMut(&super::ReducerEventContext, &Option::<SimpleEnum>, ) + Send + 'static,
     ) -> InsertOptionSimpleEnumCallbackId {
         InsertOptionSimpleEnumCallbackId(self.imp.on_reducer(
             "insert_option_simple_enum",
             Box::new(move |ctx: &super::ReducerEventContext| {
                 let super::ReducerEventContext {
-                    event:
-                        __sdk::ReducerEvent {
-                            reducer: super::Reducer::InsertOptionSimpleEnum { e },
-                            ..
+                    event: __sdk::ReducerEvent {
+                        reducer: super::Reducer::InsertOptionSimpleEnum {
+                            e, 
                         },
+                        ..
+                    },
                     ..
-                } = ctx
-                else {
-                    unreachable!()
-                };
-                callback(ctx, e)
+                } = ctx else { unreachable!() };
+                callback(ctx, e, )
             }),
         ))
     }
@@ -102,3 +105,4 @@ impl set_flags_for_insert_option_simple_enum for super::SetReducerFlags {
         self.imp.set_call_reducer_flags("insert_option_simple_enum", flags);
     }
 }
+

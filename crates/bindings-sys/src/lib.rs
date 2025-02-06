@@ -672,8 +672,8 @@ pub mod raw {
                 sender_1: u64,
                 sender_2: u64,
                 sender_3: u64,
-                address_0: u64,
-                address_1: u64,
+                conn_id_0: u64,
+                conn_id_1: u64,
                 timestamp: u64,
                 args: Buffer,
             ) -> Result;

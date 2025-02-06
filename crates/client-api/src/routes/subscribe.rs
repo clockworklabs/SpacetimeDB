@@ -18,8 +18,7 @@ use spacetimedb::host::NoSuchModule;
 use spacetimedb::util::also_poll;
 use spacetimedb::worker_metrics::WORKER_METRICS;
 use spacetimedb_client_api_messages::websocket::{self as ws_api, Compression};
-use spacetimedb_lib::address::AddressForUrl;
-use spacetimedb_lib::Address;
+use spacetimedb_lib::connection_id::{ConnectionId, ConnectionIdForUrl};
 use std::time::Instant;
 use tokio::sync::mpsc;
 
@@ -42,7 +41,7 @@ pub struct SubscribeParams {
 
 #[derive(Deserialize)]
 pub struct SubscribeQueryParams {
-    pub client_address: Option<AddressForUrl>,
+    pub connection_id: Option<ConnectionIdForUrl>,
     #[serde(default)]
     pub compression: Compression,
     /// Whether we want "light" responses, tailored to network bandwidth constrained clients.
@@ -51,19 +50,15 @@ pub struct SubscribeQueryParams {
     pub light: bool,
 }
 
-// TODO: is this a reasonable way to generate client addresses?
-//       For DB addresses, [`ControlDb::alloc_spacetime_address`]
-//       maintains a global counter, and hashes the next value from that counter
-//       with some constant salt.
-pub fn generate_random_address() -> Address {
-    Address::from_byte_array(rand::random())
+pub fn generate_random_connection_id() -> ConnectionId {
+    ConnectionId::from_le_byte_array(rand::random())
 }
 
 pub async fn handle_websocket<S>(
     State(ctx): State<S>,
     Path(SubscribeParams { name_or_identity }): Path<SubscribeParams>,
     Query(SubscribeQueryParams {
-        client_address,
+        connection_id,
         compression,
         light,
     }): Query<SubscribeQueryParams>,
@@ -74,14 +69,18 @@ pub async fn handle_websocket<S>(
 where
     S: NodeDelegate + ControlStateDelegate,
 {
-    let client_address = client_address
-        .map(Address::from)
-        .unwrap_or_else(generate_random_address);
+    if connection_id.is_some() {
+        log::warn!("The connection_id query parameter to the subscribe HTTP endpoint is internal and will be removed in a future version of SpacetimeDB.");
+    }
 
-    if client_address == Address::__DUMMY {
+    let connection_id = connection_id
+        .map(ConnectionId::from)
+        .unwrap_or_else(generate_random_connection_id);
+
+    if connection_id == ConnectionId::ZERO {
         Err((
             StatusCode::BAD_REQUEST,
-            "Invalid client address: the all-zeros Address is reserved.",
+            "Invalid client address: the all-zeros ConnectionId is reserved.",
         ))?;
     }
 
@@ -117,7 +116,7 @@ where
 
     let client_id = ClientActorId {
         identity: auth.identity,
-        address: client_address,
+        connection_id,
         name: ctx.client_actor_index().next_client_name(),
     };
 
@@ -162,7 +161,7 @@ where
         let message = IdentityTokenMessage {
             identity: auth.identity,
             token: identity_token,
-            address: client_address,
+            connection_id,
         };
         if let Err(e) = client.send_message(message) {
             log::warn!("{e}, before identity token was sent")

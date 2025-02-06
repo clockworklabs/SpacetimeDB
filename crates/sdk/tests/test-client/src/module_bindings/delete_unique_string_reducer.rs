@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -12,8 +18,10 @@ pub(super) struct DeleteUniqueStringArgs {
 
 impl From<DeleteUniqueStringArgs> for super::Reducer {
     fn from(args: DeleteUniqueStringArgs) -> Self {
-        Self::DeleteUniqueString { s: args.s }
-    }
+        Self::DeleteUniqueString {
+            s: args.s,
+}
+}
 }
 
 impl __sdk::InModule for DeleteUniqueStringArgs {
@@ -32,7 +40,8 @@ pub trait delete_unique_string {
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed by listening for [`Self::on_delete_unique_string`] callbacks.
-    fn delete_unique_string(&self, s: String) -> __sdk::Result<()>;
+    fn delete_unique_string(&self, s: String,
+) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `delete_unique_string`.
     ///
     /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
@@ -40,39 +49,34 @@ pub trait delete_unique_string {
     ///
     /// The returned [`DeleteUniqueStringCallbackId`] can be passed to [`Self::remove_on_delete_unique_string`]
     /// to cancel the callback.
-    fn on_delete_unique_string(
-        &self,
-        callback: impl FnMut(&super::ReducerEventContext, &String) + Send + 'static,
-    ) -> DeleteUniqueStringCallbackId;
+    fn on_delete_unique_string(&self, callback: impl FnMut(&super::ReducerEventContext, &String, ) + Send + 'static) -> DeleteUniqueStringCallbackId;
     /// Cancel a callback previously registered by [`Self::on_delete_unique_string`],
     /// causing it not to run in the future.
     fn remove_on_delete_unique_string(&self, callback: DeleteUniqueStringCallbackId);
 }
 
 impl delete_unique_string for super::RemoteReducers {
-    fn delete_unique_string(&self, s: String) -> __sdk::Result<()> {
-        self.imp
-            .call_reducer("delete_unique_string", DeleteUniqueStringArgs { s })
+    fn delete_unique_string(&self, s: String,
+) -> __sdk::Result<()> {
+        self.imp.call_reducer("delete_unique_string", DeleteUniqueStringArgs { s,  })
     }
     fn on_delete_unique_string(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &String) + Send + 'static,
+        mut callback: impl FnMut(&super::ReducerEventContext, &String, ) + Send + 'static,
     ) -> DeleteUniqueStringCallbackId {
         DeleteUniqueStringCallbackId(self.imp.on_reducer(
             "delete_unique_string",
             Box::new(move |ctx: &super::ReducerEventContext| {
                 let super::ReducerEventContext {
-                    event:
-                        __sdk::ReducerEvent {
-                            reducer: super::Reducer::DeleteUniqueString { s },
-                            ..
+                    event: __sdk::ReducerEvent {
+                        reducer: super::Reducer::DeleteUniqueString {
+                            s, 
                         },
+                        ..
+                    },
                     ..
-                } = ctx
-                else {
-                    unreachable!()
-                };
-                callback(ctx, s)
+                } = ctx else { unreachable!() };
+                callback(ctx, s, )
             }),
         ))
     }
@@ -100,3 +104,4 @@ impl set_flags_for_delete_unique_string for super::SetReducerFlags {
         self.imp.set_call_reducer_flags("delete_unique_string", flags);
     }
 }
+

@@ -2,7 +2,12 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 
 use super::scheduled_table_type::ScheduledTable;
 
@@ -14,8 +19,10 @@ pub(super) struct SendScheduledMessageArgs {
 
 impl From<SendScheduledMessageArgs> for super::Reducer {
     fn from(args: SendScheduledMessageArgs) -> Self {
-        Self::SendScheduledMessage { arg: args.arg }
-    }
+        Self::SendScheduledMessage {
+            arg: args.arg,
+}
+}
 }
 
 impl __sdk::InModule for SendScheduledMessageArgs {
@@ -34,7 +41,8 @@ pub trait send_scheduled_message {
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed by listening for [`Self::on_send_scheduled_message`] callbacks.
-    fn send_scheduled_message(&self, arg: ScheduledTable) -> __sdk::Result<()>;
+    fn send_scheduled_message(&self, arg: ScheduledTable,
+) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `send_scheduled_message`.
     ///
     /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
@@ -42,39 +50,34 @@ pub trait send_scheduled_message {
     ///
     /// The returned [`SendScheduledMessageCallbackId`] can be passed to [`Self::remove_on_send_scheduled_message`]
     /// to cancel the callback.
-    fn on_send_scheduled_message(
-        &self,
-        callback: impl FnMut(&super::ReducerEventContext, &ScheduledTable) + Send + 'static,
-    ) -> SendScheduledMessageCallbackId;
+    fn on_send_scheduled_message(&self, callback: impl FnMut(&super::ReducerEventContext, &ScheduledTable, ) + Send + 'static) -> SendScheduledMessageCallbackId;
     /// Cancel a callback previously registered by [`Self::on_send_scheduled_message`],
     /// causing it not to run in the future.
     fn remove_on_send_scheduled_message(&self, callback: SendScheduledMessageCallbackId);
 }
 
 impl send_scheduled_message for super::RemoteReducers {
-    fn send_scheduled_message(&self, arg: ScheduledTable) -> __sdk::Result<()> {
-        self.imp
-            .call_reducer("send_scheduled_message", SendScheduledMessageArgs { arg })
+    fn send_scheduled_message(&self, arg: ScheduledTable,
+) -> __sdk::Result<()> {
+        self.imp.call_reducer("send_scheduled_message", SendScheduledMessageArgs { arg,  })
     }
     fn on_send_scheduled_message(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &ScheduledTable) + Send + 'static,
+        mut callback: impl FnMut(&super::ReducerEventContext, &ScheduledTable, ) + Send + 'static,
     ) -> SendScheduledMessageCallbackId {
         SendScheduledMessageCallbackId(self.imp.on_reducer(
             "send_scheduled_message",
             Box::new(move |ctx: &super::ReducerEventContext| {
                 let super::ReducerEventContext {
-                    event:
-                        __sdk::ReducerEvent {
-                            reducer: super::Reducer::SendScheduledMessage { arg },
-                            ..
+                    event: __sdk::ReducerEvent {
+                        reducer: super::Reducer::SendScheduledMessage {
+                            arg, 
                         },
+                        ..
+                    },
                     ..
-                } = ctx
-                else {
-                    unreachable!()
-                };
-                callback(ctx, arg)
+                } = ctx else { unreachable!() };
+                callback(ctx, arg, )
             }),
         ))
     }
@@ -102,3 +105,4 @@ impl set_flags_for_send_scheduled_message for super::SetReducerFlags {
         self.imp.set_call_reducer_flags("send_scheduled_message", flags);
     }
 }
+

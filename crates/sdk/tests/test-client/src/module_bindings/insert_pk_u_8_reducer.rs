@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -16,8 +22,8 @@ impl From<InsertPkU8Args> for super::Reducer {
         Self::InsertPkU8 {
             n: args.n,
             data: args.data,
-        }
-    }
+}
+}
 }
 
 impl __sdk::InModule for InsertPkU8Args {
@@ -36,7 +42,9 @@ pub trait insert_pk_u_8 {
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed by listening for [`Self::on_insert_pk_u_8`] callbacks.
-    fn insert_pk_u_8(&self, n: u8, data: i32) -> __sdk::Result<()>;
+    fn insert_pk_u_8(&self, n: u8,
+data: i32,
+) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `insert_pk_u8`.
     ///
     /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
@@ -44,38 +52,35 @@ pub trait insert_pk_u_8 {
     ///
     /// The returned [`InsertPkU8CallbackId`] can be passed to [`Self::remove_on_insert_pk_u_8`]
     /// to cancel the callback.
-    fn on_insert_pk_u_8(
-        &self,
-        callback: impl FnMut(&super::ReducerEventContext, &u8, &i32) + Send + 'static,
-    ) -> InsertPkU8CallbackId;
+    fn on_insert_pk_u_8(&self, callback: impl FnMut(&super::ReducerEventContext, &u8, &i32, ) + Send + 'static) -> InsertPkU8CallbackId;
     /// Cancel a callback previously registered by [`Self::on_insert_pk_u_8`],
     /// causing it not to run in the future.
     fn remove_on_insert_pk_u_8(&self, callback: InsertPkU8CallbackId);
 }
 
 impl insert_pk_u_8 for super::RemoteReducers {
-    fn insert_pk_u_8(&self, n: u8, data: i32) -> __sdk::Result<()> {
-        self.imp.call_reducer("insert_pk_u8", InsertPkU8Args { n, data })
+    fn insert_pk_u_8(&self, n: u8,
+data: i32,
+) -> __sdk::Result<()> {
+        self.imp.call_reducer("insert_pk_u8", InsertPkU8Args { n, data,  })
     }
     fn on_insert_pk_u_8(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &u8, &i32) + Send + 'static,
+        mut callback: impl FnMut(&super::ReducerEventContext, &u8, &i32, ) + Send + 'static,
     ) -> InsertPkU8CallbackId {
         InsertPkU8CallbackId(self.imp.on_reducer(
             "insert_pk_u8",
             Box::new(move |ctx: &super::ReducerEventContext| {
                 let super::ReducerEventContext {
-                    event:
-                        __sdk::ReducerEvent {
-                            reducer: super::Reducer::InsertPkU8 { n, data },
-                            ..
+                    event: __sdk::ReducerEvent {
+                        reducer: super::Reducer::InsertPkU8 {
+                            n, data, 
                         },
+                        ..
+                    },
                     ..
-                } = ctx
-                else {
-                    unreachable!()
-                };
-                callback(ctx, n, data)
+                } = ctx else { unreachable!() };
+                callback(ctx, n, data, )
             }),
         ))
     }
@@ -103,3 +108,4 @@ impl set_flags_for_insert_pk_u_8 for super::SetReducerFlags {
         self.imp.set_call_reducer_flags("insert_pk_u8", flags);
     }
 }
+

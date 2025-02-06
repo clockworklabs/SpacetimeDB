@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -12,8 +18,10 @@ pub(super) struct DeleteUniqueI16Args {
 
 impl From<DeleteUniqueI16Args> for super::Reducer {
     fn from(args: DeleteUniqueI16Args) -> Self {
-        Self::DeleteUniqueI16 { n: args.n }
-    }
+        Self::DeleteUniqueI16 {
+            n: args.n,
+}
+}
 }
 
 impl __sdk::InModule for DeleteUniqueI16Args {
@@ -32,7 +40,8 @@ pub trait delete_unique_i_16 {
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed by listening for [`Self::on_delete_unique_i_16`] callbacks.
-    fn delete_unique_i_16(&self, n: i16) -> __sdk::Result<()>;
+    fn delete_unique_i_16(&self, n: i16,
+) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `delete_unique_i16`.
     ///
     /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
@@ -40,38 +49,34 @@ pub trait delete_unique_i_16 {
     ///
     /// The returned [`DeleteUniqueI16CallbackId`] can be passed to [`Self::remove_on_delete_unique_i_16`]
     /// to cancel the callback.
-    fn on_delete_unique_i_16(
-        &self,
-        callback: impl FnMut(&super::ReducerEventContext, &i16) + Send + 'static,
-    ) -> DeleteUniqueI16CallbackId;
+    fn on_delete_unique_i_16(&self, callback: impl FnMut(&super::ReducerEventContext, &i16, ) + Send + 'static) -> DeleteUniqueI16CallbackId;
     /// Cancel a callback previously registered by [`Self::on_delete_unique_i_16`],
     /// causing it not to run in the future.
     fn remove_on_delete_unique_i_16(&self, callback: DeleteUniqueI16CallbackId);
 }
 
 impl delete_unique_i_16 for super::RemoteReducers {
-    fn delete_unique_i_16(&self, n: i16) -> __sdk::Result<()> {
-        self.imp.call_reducer("delete_unique_i16", DeleteUniqueI16Args { n })
+    fn delete_unique_i_16(&self, n: i16,
+) -> __sdk::Result<()> {
+        self.imp.call_reducer("delete_unique_i16", DeleteUniqueI16Args { n,  })
     }
     fn on_delete_unique_i_16(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &i16) + Send + 'static,
+        mut callback: impl FnMut(&super::ReducerEventContext, &i16, ) + Send + 'static,
     ) -> DeleteUniqueI16CallbackId {
         DeleteUniqueI16CallbackId(self.imp.on_reducer(
             "delete_unique_i16",
             Box::new(move |ctx: &super::ReducerEventContext| {
                 let super::ReducerEventContext {
-                    event:
-                        __sdk::ReducerEvent {
-                            reducer: super::Reducer::DeleteUniqueI16 { n },
-                            ..
+                    event: __sdk::ReducerEvent {
+                        reducer: super::Reducer::DeleteUniqueI16 {
+                            n, 
                         },
+                        ..
+                    },
                     ..
-                } = ctx
-                else {
-                    unreachable!()
-                };
-                callback(ctx, n)
+                } = ctx else { unreachable!() };
+                callback(ctx, n, )
             }),
         ))
     }
@@ -99,3 +104,4 @@ impl set_flags_for_delete_unique_i_16 for super::SetReducerFlags {
         self.imp.set_call_reducer_flags("delete_unique_i16", flags);
     }
 }
+

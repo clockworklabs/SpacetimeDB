@@ -579,7 +579,7 @@ fn print_spacetimedb_imports(out: &mut Indenter) {
         "SumTypeVariant",
         "AlgebraicValue",
         "Identity",
-        "Address",
+        "ConnectionId",
         "DBConnectionBuilder",
         "TableCache",
         "BinaryWriter",
@@ -914,7 +914,7 @@ pub fn write_type<W: Write>(
         AlgebraicTypeUse::Unit => write!(out, "void")?,
         AlgebraicTypeUse::Never => write!(out, "never")?,
         AlgebraicTypeUse::Identity => write!(out, "Identity")?,
-        AlgebraicTypeUse::Address => write!(out, "Address")?,
+        AlgebraicTypeUse::ConnectionId => write!(out, "ConnectionId")?,
         AlgebraicTypeUse::ScheduleAt => write!(
             out,
             "{{ tag: \"Interval\", value: bigint }} | {{ tag: \"Time\", value: bigint }}"
@@ -967,7 +967,7 @@ fn convert_algebraic_type<'a>(
     match ty {
         AlgebraicTypeUse::ScheduleAt => write!(out, "AlgebraicType.createScheduleAtType()"),
         AlgebraicTypeUse::Identity => write!(out, "AlgebraicType.createIdentityType()"),
-        AlgebraicTypeUse::Address => write!(out, "AlgebraicType.createAddressType()"),
+        AlgebraicTypeUse::ConnectionId => write!(out, "AlgebraicType.createConnectionIdType()"),
         AlgebraicTypeUse::Option(inner_ty) => {
             write!(out, "AlgebraicType.createOptionType(");
             convert_algebraic_type(module, out, inner_ty, ref_prefix);

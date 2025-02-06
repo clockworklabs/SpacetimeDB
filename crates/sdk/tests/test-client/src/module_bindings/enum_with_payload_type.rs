@@ -2,7 +2,12 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 
 use super::simple_enum_type::SimpleEnum;
 
@@ -43,17 +48,21 @@ pub enum EnumWithPayload {
 
     Identity(__sdk::Identity),
 
-    Address(__sdk::Address),
+    ConnectionId(__sdk::ConnectionId),
 
-    Bytes(Vec<u8>),
+    Bytes(Vec::<u8>),
 
-    Ints(Vec<i32>),
+    Ints(Vec::<i32>),
 
-    Strings(Vec<String>),
+    Strings(Vec::<String>),
 
-    SimpleEnums(Vec<SimpleEnum>),
+    SimpleEnums(Vec::<SimpleEnum>),
+
 }
+
+
 
 impl __sdk::InModule for EnumWithPayload {
     type Module = super::RemoteModule;
 }
+

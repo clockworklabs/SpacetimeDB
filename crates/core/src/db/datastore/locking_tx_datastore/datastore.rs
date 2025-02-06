@@ -18,9 +18,8 @@ use crate::{
     db::{
         datastore::{
             system_tables::{
-                read_addr_from_col, read_bytes_from_col, read_hash_from_col, read_identity_from_col,
-                system_table_schema, ModuleKind, StClientRow, StModuleFields, StModuleRow, StTableFields, ST_CLIENT_ID,
-                ST_MODULE_ID, ST_TABLE_ID,
+                read_bytes_from_col, read_hash_from_col, read_identity_from_col, system_table_schema, ModuleKind,
+                StClientRow, StModuleFields, StModuleRow, StTableFields, ST_CLIENT_ID, ST_MODULE_ID, ST_TABLE_ID,
             },
             traits::{
                 DataRow, IsolationLevel, Metadata, MutTx, MutTxDatastore, Program, RowTypeForTable, Tx, TxData,
@@ -38,7 +37,7 @@ use parking_lot::{Mutex, RwLock};
 use spacetimedb_commitlog::payload::{txdata, Txdata};
 use spacetimedb_durability::TxOffset;
 use spacetimedb_lib::{db::auth::StAccess, metrics::ExecutionMetrics};
-use spacetimedb_lib::{Address, Identity};
+use spacetimedb_lib::{ConnectionId, Identity};
 use spacetimedb_paths::server::SnapshotDirPath;
 use spacetimedb_primitives::{ColList, ConstraintId, IndexId, SequenceId, TableId};
 use spacetimedb_sats::{bsatn, buffer::BufReader, AlgebraicValue, ProductValue};
@@ -72,7 +71,7 @@ pub struct Locking {
     pub(crate) committed_state: Arc<RwLock<CommittedState>>,
     /// The state of sequence generation in this database.
     sequence_state: Arc<Mutex<SequencesState>>,
-    /// The address of this database.
+    /// The identity of this database.
     pub(crate) database_identity: Identity,
 }
 
@@ -282,10 +281,10 @@ impl Locking {
     pub fn connected_clients<'a>(
         &'a self,
         tx: &'a TxId,
-    ) -> Result<impl Iterator<Item = Result<(Identity, Address)>> + 'a> {
+    ) -> Result<impl Iterator<Item = Result<(Identity, ConnectionId)>> + 'a> {
         let iter = self.iter_tx(tx, ST_CLIENT_ID)?.map(|row_ref| {
             let row = StClientRow::try_from(row_ref)?;
-            Ok((row.identity.0, row.address.0))
+            Ok((row.identity.0, row.connection_id.0))
         });
 
         Ok(iter)
@@ -998,7 +997,7 @@ impl<F: FnMut(u64)> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVi
 /// reading only the columns necessary to construct the value.
 fn metadata_from_row(row: RowRef<'_>) -> Result<Metadata> {
     Ok(Metadata {
-        database_identity: read_addr_from_col(row, StModuleFields::DatabaseIdentity)?,
+        database_identity: read_identity_from_col(row, StModuleFields::DatabaseIdentity)?,
         owner_identity: read_identity_from_col(row, StModuleFields::OwnerIdentity)?,
         program_hash: read_hash_from_col(row, StModuleFields::ProgramHash)?,
     })

@@ -15,16 +15,16 @@ use spacetimedb_client_api_messages::websocket::{
 };
 use spacetimedb_data_structures::map::{Entry, HashCollectionExt, HashMap, HashSet, IntMap};
 use spacetimedb_lib::metrics::ExecutionMetrics;
-use spacetimedb_lib::{Address, Identity};
+use spacetimedb_lib::{ConnectionId, Identity};
 use spacetimedb_primitives::TableId;
 use spacetimedb_query::delta::DeltaPlan;
 use std::ops::Deref;
 use std::sync::Arc;
 
-/// Clients are uniquely identified by their Identity and Address.
-/// Identity is insufficient because different Addresses can use the same Identity.
-/// TODO: Determine if Address is sufficient for uniquely identifying a client.
-type ClientId = (Identity, Address);
+/// Clients are uniquely identified by their Identity and ConnectionId.
+/// Identity is insufficient because different ConnectionIds can use the same Identity.
+/// TODO: Determine if ConnectionId is sufficient for uniquely identifying a client.
+type ClientId = (Identity, ConnectionId);
 type Query = Arc<Plan>;
 type Client = Arc<ClientConnectionSender>;
 type SwitchedDbUpdate = FormatSwitch<ws::DatabaseUpdate<BsatnFormat>, ws::DatabaseUpdate<JsonFormat>>;
@@ -208,7 +208,7 @@ impl SubscriptionManager {
 
     /// Adds a single subscription for a client.
     pub fn add_subscription(&mut self, client: Client, query: Query, query_id: ClientQueryId) -> Result<(), DBError> {
-        let client_id = (client.id.identity, client.id.address);
+        let client_id = (client.id.identity, client.id.connection_id);
         let ci = self
             .clients
             .entry(client_id)
@@ -249,7 +249,7 @@ impl SubscriptionManager {
     /// its table ids added to the inverted index.
     // #[tracing::instrument(level = "trace", skip_all)]
     pub fn set_legacy_subscription(&mut self, client: Client, queries: impl IntoIterator<Item = Query>) {
-        let client_id = (client.id.identity, client.id.address);
+        let client_id = (client.id.identity, client.id.connection_id);
         // First, remove any existing legacy subscriptions.
         self.remove_legacy_subscriptions(&client_id);
 
@@ -500,9 +500,9 @@ impl SubscriptionManager {
             // Regardless, the update that we send to the caller, if we send any,
             // is a full tx update, rather than a light one.
             // That is, in the case of the caller, we don't respect the light setting.
-            if let Some((caller, addr)) = caller.zip(event.caller_address) {
+            if let Some((caller, conn_id)) = caller.zip(event.caller_connection_id) {
                 let update = eval
-                    .remove(&(event.caller_identity, addr))
+                    .remove(&(event.caller_identity, conn_id))
                     .map(|update| SubscriptionUpdateMessage::from_event_and_update(&event, update))
                     .unwrap_or_else(|| {
                         SubscriptionUpdateMessage::default_for_protocol(caller.config.protocol, event.request_id)
@@ -538,7 +538,7 @@ mod tests {
 
     use spacetimedb_client_api_messages::timestamp::Timestamp;
     use spacetimedb_client_api_messages::websocket::QueryId;
-    use spacetimedb_lib::{error::ResultTest, identity::AuthCtx, Address, AlgebraicType, Identity};
+    use spacetimedb_lib::{error::ResultTest, identity::AuthCtx, AlgebraicType, ConnectionId, Identity};
     use spacetimedb_primitives::TableId;
     use spacetimedb_query::delta::DeltaPlan;
 
@@ -571,16 +571,16 @@ mod tests {
         })
     }
 
-    fn id(address: u128) -> (Identity, Address) {
-        (Identity::ZERO, Address::from_u128(address))
+    fn id(connection_id: u128) -> (Identity, ConnectionId) {
+        (Identity::ZERO, ConnectionId::from_u128(connection_id))
     }
 
-    fn client(address: u128) -> ClientConnectionSender {
-        let (identity, address) = id(address);
+    fn client(connection_id: u128) -> ClientConnectionSender {
+        let (identity, connection_id) = id(connection_id);
         ClientConnectionSender::dummy(
             ClientActorId {
                 identity,
-                address,
+                connection_id,
                 name: ClientName(0),
             },
             ClientConfig::for_test(),
@@ -644,7 +644,7 @@ mod tests {
         subscriptions.add_subscription(client.clone(), plan.clone(), query_id)?;
         assert!(subscriptions.query_reads_from_table(&hash, &table_id));
 
-        let client_id = (client.id.identity, client.id.address);
+        let client_id = (client.id.identity, client.id.connection_id);
         subscriptions.remove_subscription(client_id, query_id)?;
         assert!(!subscriptions.query_reads_from_table(&hash, &table_id));
 
@@ -665,7 +665,7 @@ mod tests {
         let mut subscriptions = SubscriptionManager::default();
         subscriptions.add_subscription(client.clone(), plan.clone(), query_id)?;
 
-        let client_id = (client.id.identity, client.id.address);
+        let client_id = (client.id.identity, client.id.connection_id);
         assert!(subscriptions.remove_subscription(client_id, QueryId::new(2)).is_err());
 
         Ok(())
@@ -687,7 +687,7 @@ mod tests {
         subscriptions.add_subscription(client.clone(), plan.clone(), query_id)?;
         subscriptions.add_subscription(client.clone(), plan.clone(), QueryId::new(2))?;
 
-        let client_id = (client.id.identity, client.id.address);
+        let client_id = (client.id.identity, client.id.connection_id);
         subscriptions.remove_subscription(client_id, query_id)?;
 
         assert!(subscriptions.query_reads_from_table(&hash, &table_id));
@@ -717,7 +717,7 @@ mod tests {
 
         let client_ids = clients
             .iter()
-            .map(|client| (client.id.identity, client.id.address))
+            .map(|client| (client.id.identity, client.id.connection_id))
             .collect::<Vec<_>>();
         subscriptions.remove_subscription(client_ids[0], query_id)?;
         // There are still two left.
@@ -754,7 +754,7 @@ mod tests {
 
         let client_ids = clients
             .iter()
-            .map(|client| (client.id.identity, client.id.address))
+            .map(|client| (client.id.identity, client.id.connection_id))
             .collect::<Vec<_>>();
         subscriptions.remove_all_subscriptions(&client_ids[0]);
         assert!(!subscriptions.contains_client(&client_ids[0]));
@@ -797,7 +797,7 @@ mod tests {
             assert!(subscriptions.query_reads_from_table(&queries[i].hash(), &table_ids[i]));
         }
 
-        let client_id = (client.id.identity, client.id.address);
+        let client_id = (client.id.identity, client.id.connection_id);
         subscriptions.remove_subscription(client_id, QueryId::new(1))?;
         assert!(!subscriptions.query_reads_from_table(&queries[0].hash(), &table_ids[0]));
         // Assert that the rest are there.
@@ -1006,7 +1006,7 @@ mod tests {
         let event = Arc::new(ModuleEvent {
             timestamp: Timestamp::now(),
             caller_identity: id0,
-            caller_address: Some(client0.id.address),
+            caller_connection_id: Some(client0.id.connection_id),
             function_call: ModuleFunctionCall {
                 reducer: "DummyReducer".into(),
                 reducer_id: u32::MAX.into(),

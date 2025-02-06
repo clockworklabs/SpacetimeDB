@@ -13,7 +13,7 @@ use spacetimedb_client_api_messages::websocket::{
     SERVER_MSG_COMPRESSION_TAG_GZIP, SERVER_MSG_COMPRESSION_TAG_NONE,
 };
 use spacetimedb_client_api_messages::websocket::{ClientMessage, ServerMessage};
-use spacetimedb_lib::{bsatn, Address};
+use spacetimedb_lib::{bsatn, ConnectionId};
 use thiserror::Error;
 use tokio::task::JoinHandle;
 use tokio::{net::TcpStream, runtime};
@@ -105,7 +105,7 @@ pub(crate) struct WsParams {
     pub light: bool,
 }
 
-fn make_uri(host: Uri, db_name: &str, client_address: Address, params: WsParams) -> Result<Uri, UriError> {
+fn make_uri(host: Uri, db_name: &str, connection_id: ConnectionId, params: WsParams) -> Result<Uri, UriError> {
     let mut parts = host.into_parts();
     let scheme = parse_scheme(parts.scheme.take())?;
     parts.scheme = Some(scheme);
@@ -126,9 +126,9 @@ fn make_uri(host: Uri, db_name: &str, client_address: Address, params: WsParams)
     path.push_str("database/subscribe/");
     path.push_str(db_name);
 
-    // Provide the client address.
-    path.push_str("?client_address=");
-    path.push_str(&client_address.to_hex());
+    // Provide the connection ID.
+    path.push_str("?connection_id=");
+    path.push_str(&connection_id.to_hex());
 
     // Specify the desired compression for host->client replies.
     match params.compression {
@@ -165,10 +165,10 @@ fn make_request(
     host: Uri,
     db_name: &str,
     token: Option<&str>,
-    client_address: Address,
+    connection_id: ConnectionId,
     params: WsParams,
 ) -> Result<http::Request<()>, WsError> {
-    let uri = make_uri(host, db_name, client_address, params)?;
+    let uri = make_uri(host, db_name, connection_id, params)?;
     let mut req = IntoClientRequest::into_client_request(uri.clone()).map_err(|source| WsError::Tungstenite {
         uri,
         source: Arc::new(source),
@@ -219,10 +219,10 @@ impl WsConnection {
         host: Uri,
         db_name: &str,
         token: Option<&str>,
-        client_address: Address,
+        connection_id: ConnectionId,
         params: WsParams,
     ) -> Result<Self, WsError> {
-        let req = make_request(host, db_name, token, client_address, params)?;
+        let req = make_request(host, db_name, token, connection_id, params)?;
 
         // Grab the URI for error-reporting.
         let uri = req.uri().clone();

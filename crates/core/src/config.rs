@@ -4,7 +4,6 @@ use std::{fmt, io};
 use toml;
 use toml_edit;
 
-use spacetimedb_lib::Address;
 use spacetimedb_paths::cli::{ConfigDir, PrivKeyPath, PubKeyPath};
 use spacetimedb_paths::server::{ConfigToml, MetadataTomlPath};
 
@@ -27,8 +26,6 @@ pub fn parse_config<T: serde::de::DeserializeOwned>(path: &Path) -> anyhow::Resu
 pub struct MetadataFile {
     pub version: semver::Version,
     pub edition: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub client_address: Option<Address>,
 }
 
 impl MetadataFile {

@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -16,8 +22,8 @@ impl From<UpdateUniqueI16Args> for super::Reducer {
         Self::UpdateUniqueI16 {
             n: args.n,
             data: args.data,
-        }
-    }
+}
+}
 }
 
 impl __sdk::InModule for UpdateUniqueI16Args {
@@ -36,7 +42,9 @@ pub trait update_unique_i_16 {
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed by listening for [`Self::on_update_unique_i_16`] callbacks.
-    fn update_unique_i_16(&self, n: i16, data: i32) -> __sdk::Result<()>;
+    fn update_unique_i_16(&self, n: i16,
+data: i32,
+) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `update_unique_i16`.
     ///
     /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
@@ -44,39 +52,35 @@ pub trait update_unique_i_16 {
     ///
     /// The returned [`UpdateUniqueI16CallbackId`] can be passed to [`Self::remove_on_update_unique_i_16`]
     /// to cancel the callback.
-    fn on_update_unique_i_16(
-        &self,
-        callback: impl FnMut(&super::ReducerEventContext, &i16, &i32) + Send + 'static,
-    ) -> UpdateUniqueI16CallbackId;
+    fn on_update_unique_i_16(&self, callback: impl FnMut(&super::ReducerEventContext, &i16, &i32, ) + Send + 'static) -> UpdateUniqueI16CallbackId;
     /// Cancel a callback previously registered by [`Self::on_update_unique_i_16`],
     /// causing it not to run in the future.
     fn remove_on_update_unique_i_16(&self, callback: UpdateUniqueI16CallbackId);
 }
 
 impl update_unique_i_16 for super::RemoteReducers {
-    fn update_unique_i_16(&self, n: i16, data: i32) -> __sdk::Result<()> {
-        self.imp
-            .call_reducer("update_unique_i16", UpdateUniqueI16Args { n, data })
+    fn update_unique_i_16(&self, n: i16,
+data: i32,
+) -> __sdk::Result<()> {
+        self.imp.call_reducer("update_unique_i16", UpdateUniqueI16Args { n, data,  })
     }
     fn on_update_unique_i_16(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &i16, &i32) + Send + 'static,
+        mut callback: impl FnMut(&super::ReducerEventContext, &i16, &i32, ) + Send + 'static,
     ) -> UpdateUniqueI16CallbackId {
         UpdateUniqueI16CallbackId(self.imp.on_reducer(
             "update_unique_i16",
             Box::new(move |ctx: &super::ReducerEventContext| {
                 let super::ReducerEventContext {
-                    event:
-                        __sdk::ReducerEvent {
-                            reducer: super::Reducer::UpdateUniqueI16 { n, data },
-                            ..
+                    event: __sdk::ReducerEvent {
+                        reducer: super::Reducer::UpdateUniqueI16 {
+                            n, data, 
                         },
+                        ..
+                    },
                     ..
-                } = ctx
-                else {
-                    unreachable!()
-                };
-                callback(ctx, n, data)
+                } = ctx else { unreachable!() };
+                callback(ctx, n, data, )
             }),
         ))
     }
@@ -104,3 +108,4 @@ impl set_flags_for_update_unique_i_16 for super::SetReducerFlags {
         self.imp.set_call_reducer_flags("update_unique_i16", flags);
     }
 }
+

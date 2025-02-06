@@ -475,7 +475,7 @@ impl Lang for Csharp<'_> {
 fn ty_fmt<'a>(module: &'a ModuleDef, ty: &'a AlgebraicTypeUse) -> impl fmt::Display + 'a {
     fmt_fn(move |f| match ty {
         AlgebraicTypeUse::Identity => f.write_str("SpacetimeDB.Identity"),
-        AlgebraicTypeUse::Address => f.write_str("SpacetimeDB.Address"),
+        AlgebraicTypeUse::ConnectionId => f.write_str("SpacetimeDB.ConnectionId"),
         AlgebraicTypeUse::ScheduleAt => f.write_str("SpacetimeDB.ScheduleAt"),
         AlgebraicTypeUse::Unit => f.write_str("SpacetimeDB.Unit"),
         AlgebraicTypeUse::Option(inner_ty) => write!(f, "{}?", ty_fmt(module, inner_ty)),
@@ -522,7 +522,7 @@ fn default_init(ctx: &TypespaceForGenerate, ty: &AlgebraicTypeUse) -> Option<&'s
         // Primitives are initialized to zero automatically.
         AlgebraicTypeUse::Primitive(_) => None,
         // these are structs, they are initialized to zero-filled automatically
-        AlgebraicTypeUse::Unit | AlgebraicTypeUse::Identity | AlgebraicTypeUse::Address => None,
+        AlgebraicTypeUse::Unit | AlgebraicTypeUse::Identity | AlgebraicTypeUse::ConnectionId => None,
         AlgebraicTypeUse::Never => unimplemented!("never types are not yet supported in C# output"),
     }
 }
