@@ -1,0 +1,558 @@
+﻿{
+  Events: {
+    Log: SpacetimeDBClient: Connecting to wss://spacetimedb.com example,
+    OnConnect: {
+      identity: Identity_1,
+      token: eyJ0eXAiOiJKV1QiLCJhbGciOiJFUzI1NiJ9.eyJoZXhfaWRlbnRpdHkiOiJjMjAwNDgzMTUyZDY0MmM3ZDQwMmRlMDZjYWNjMzZkY2IwYzJhMWYyYmJlYjhlN2Q1YTY3M2YyNDM1Y2NhOTc1Iiwic3ViIjoiNmQ0YjU0MzAtMDBjZi00YTk5LTkzMmMtYWQyZDA3YmFiODQxIiwiaXNzIjoibG9jYWxob3N0IiwiYXVkIjpbInNwYWNldGltZWRiIl0sImlhdCI6MTczNzY2NTc2OSwiZXhwIjpudWxsfQ.GaKhvswWYW6wpPpK70_-Tw8DKjKJ2qnidwwj1fTUf3mctcsm_UusPYSws_pSW3qGnMNnGjEXt7rRNvGvuWf9ow
+    },
+    OnInsertUser: {
+      eventContext: {
+        Event: {
+          $type: Event<Reducer>.SubscribeApplied
+        },
+        Db: {Scrubbed},
+        Reducers: {Scrubbed},
+        SetReducerFlags: {}
+      },
+      user: {
+        identity: Identity_1,
+        online: true
+      }
+    },
+    LogException: Unknown reducer unknown-reducer (Parameter 'Reducer'),
+    OnInsertUser: {
+      eventContext: {
+        Event: {
+          $type: Event<Reducer>.Reducer,
+          ReducerEvent: {
+            Timestamp: DateTimeOffset_1,
+            Status: {
+              $type: Status.Committed
+            },
+            CallerIdentity: Identity_2,
+            CallerAddress: Guid_1,
+            EnergyConsumed: {},
+            Reducer: {
+              $type: Reducer.IdentityConnected
+            }
+          }
+        },
+        Db: {Scrubbed},
+        Reducers: {Scrubbed},
+        SetReducerFlags: {}
+      },
+      user: {
+        identity: Identity_2,
+        online: true
+      }
+    },
+    OnUpdateUser: {
+      eventContext: {
+        Event: {
+          $type: Event<Reducer>.Reducer,
+          ReducerEvent: {
+            Timestamp: DateTimeOffset_2,
+            Status: {
+              $type: Status.Committed
+            },
+            CallerIdentity: Identity_1,
+            CallerAddress: Guid_2,
+            EnergyConsumed: {},
+            Reducer: {
+              $type: Reducer.SetName,
+              name: A
+            }
+          }
+        },
+        Db: {Scrubbed},
+        Reducers: {Scrubbed},
+        SetReducerFlags: {}
+      },
+      oldUser: {
+        identity: Identity_1,
+        online: true
+      },
+      newUser: {
+        identity: Identity_1,
+        name: A,
+        online: true
+      }
+    },
+    OnSetName: {
+      Event: {
+        $type: Event<Reducer>.Reducer,
+        ReducerEvent: {
+          Timestamp: DateTimeOffset_2,
+          Status: {
+            $type: Status.Committed
+          },
+          CallerIdentity: Identity_1,
+          CallerAddress: Guid_2,
+          EnergyConsumed: {},
+          Reducer: {
+            $type: Reducer.SetName,
+            name: A
+          }
+        }
+      },
+      Db: {Scrubbed},
+      Reducers: {Scrubbed},
+      SetReducerFlags: {}
+    },
+    OnInsertMessage: {
+      eventContext: {
+        Event: {
+          $type: Event<Reducer>.Reducer,
+          ReducerEvent: {
+            Timestamp: DateTimeOffset_3,
+            Status: {
+              $type: Status.Committed
+            },
+            CallerIdentity: Identity_2,
+            CallerAddress: Guid_1,
+            EnergyConsumed: {},
+            Reducer: {
+              $type: Reducer.SendMessage,
+              text: Hello, A!
+            }
+          }
+        },
+        Db: {Scrubbed},
+        Reducers: {Scrubbed},
+        SetReducerFlags: {}
+      },
+      message: {
+        sender: Identity_2,
+        sent: 1718487775346381,
+        text: Hello, A!
+      }
+    },
+    OnSendMessage: {
+      Event: {
+        $type: Event<Reducer>.Reducer,
+        ReducerEvent: {
+          Timestamp: DateTimeOffset_3,
+          Status: {
+            $type: Status.Committed
+          },
+          CallerIdentity: Identity_2,
+          CallerAddress: Guid_1,
+          EnergyConsumed: {},
+          Reducer: {
+            $type: Reducer.SendMessage,
+            text: Hello, A!
+          }
+        }
+      },
+      Db: {Scrubbed},
+      Reducers: {Scrubbed},
+      SetReducerFlags: {}
+    },
+    OnUpdateUser: {
+      eventContext: {
+        Event: {
+          $type: Event<Reducer>.Reducer,
+          ReducerEvent: {
+            Timestamp: DateTimeOffset_4,
+            Status: {
+              $type: Status.Committed
+            },
+            CallerIdentity: Identity_2,
+            CallerAddress: Guid_1,
+            EnergyConsumed: {},
+            Reducer: {
+              $type: Reducer.SetName,
+              name: B
+            }
+          }
+        },
+        Db: {Scrubbed},
+        Reducers: {Scrubbed},
+        SetReducerFlags: {}
+      },
+      oldUser: {
+        identity: Identity_2,
+        online: true
+      },
+      newUser: {
+        identity: Identity_2,
+        name: B,
+        online: true
+      }
+    },
+    OnSetName: {
+      Event: {
+        $type: Event<Reducer>.Reducer,
+        ReducerEvent: {
+          Timestamp: DateTimeOffset_4,
+          Status: {
+            $type: Status.Committed
+          },
+          CallerIdentity: Identity_2,
+          CallerAddress: Guid_1,
+          EnergyConsumed: {},
+          Reducer: {
+            $type: Reducer.SetName,
+            name: B
+          }
+        }
+      },
+      Db: {Scrubbed},
+      Reducers: {Scrubbed},
+      SetReducerFlags: {}
+    },
+    OnInsertMessage: {
+      eventContext: {
+        Event: {
+          $type: Event<Reducer>.Reducer,
+          ReducerEvent: {
+            Timestamp: DateTimeOffset_5,
+            Status: {
+              $type: Status.Committed
+            },
+            CallerIdentity: Identity_1,
+            CallerAddress: Guid_2,
+            EnergyConsumed: {},
+            Reducer: {
+              $type: Reducer.SendMessage,
+              text: Hello, B!
+            }
+          }
+        },
+        Db: {Scrubbed},
+        Reducers: {Scrubbed},
+        SetReducerFlags: {}
+      },
+      message: {
+        sender: Identity_1,
+        sent: 1718487783175083,
+        text: Hello, B!
+      }
+    },
+    OnSendMessage: {
+      Event: {
+        $type: Event<Reducer>.Reducer,
+        ReducerEvent: {
+          Timestamp: DateTimeOffset_5,
+          Status: {
+            $type: Status.Committed
+          },
+          CallerIdentity: Identity_1,
+          CallerAddress: Guid_2,
+          EnergyConsumed: {},
+          Reducer: {
+            $type: Reducer.SendMessage,
+            text: Hello, B!
+          }
+        }
+      },
+      Db: {Scrubbed},
+      Reducers: {Scrubbed},
+      SetReducerFlags: {}
+    },
+    OnInsertMessage: {
+      eventContext: {
+        Event: {
+          $type: Event<Reducer>.Reducer,
+          ReducerEvent: {
+            Timestamp: DateTimeOffset_6,
+            Status: {
+              $type: Status.Committed
+            },
+            CallerIdentity: Identity_2,
+            CallerAddress: Guid_1,
+            EnergyConsumed: {},
+            Reducer: {
+              $type: Reducer.SendMessage,
+              text: Goodbye!
+            }
+          }
+        },
+        Db: {Scrubbed},
+        Reducers: {Scrubbed},
+        SetReducerFlags: {}
+      },
+      message: {
+        sender: Identity_2,
+        sent: 1718487787645364,
+        text: Goodbye!
+      }
+    },
+    OnSendMessage: {
+      Event: {
+        $type: Event<Reducer>.Reducer,
+        ReducerEvent: {
+          Timestamp: DateTimeOffset_6,
+          Status: {
+            $type: Status.Committed
+          },
+          CallerIdentity: Identity_2,
+          CallerAddress: Guid_1,
+          EnergyConsumed: {},
+          Reducer: {
+            $type: Reducer.SendMessage,
+            text: Goodbye!
+          }
+        }
+      },
+      Db: {Scrubbed},
+      Reducers: {Scrubbed},
+      SetReducerFlags: {}
+    },
+    OnUpdateUser: {
+      eventContext: {
+        Event: {
+          $type: Event<Reducer>.Reducer,
+          ReducerEvent: {
+            Timestamp: DateTimeOffset_7,
+            Status: {
+              $type: Status.Committed
+            },
+            CallerIdentity: Identity_2,
+            CallerAddress: Guid_1,
+            EnergyConsumed: {},
+            Reducer: {
+              $type: Reducer.IdentityDisconnected
+            }
+          }
+        },
+        Db: {Scrubbed},
+        Reducers: {Scrubbed},
+        SetReducerFlags: {}
+      },
+      oldUser: {
+        identity: Identity_2,
+        name: B,
+        online: true
+      },
+      newUser: {
+        identity: Identity_2,
+        name: B,
+        online: false
+      }
+    },
+    OnInsertMessage: {
+      eventContext: {
+        Event: {
+          $type: Event<Reducer>.Reducer,
+          ReducerEvent: {
+            Timestamp: DateTimeOffset_8,
+            Status: {
+              $type: Status.Committed
+            },
+            CallerIdentity: Identity_1,
+            CallerAddress: Guid_2,
+            EnergyConsumed: {},
+            Reducer: {
+              $type: Reducer.SendMessage,
+              text: Goodbye!
+            }
+          }
+        },
+        Db: {Scrubbed},
+        Reducers: {Scrubbed},
+        SetReducerFlags: {}
+      },
+      message: {
+        sender: Identity_1,
+        sent: 1718487794937841,
+        text: Goodbye!
+      }
+    },
+    OnSendMessage: {
+      Event: {
+        $type: Event<Reducer>.Reducer,
+        ReducerEvent: {
+          Timestamp: DateTimeOffset_8,
+          Status: {
+            $type: Status.Committed
+          },
+          CallerIdentity: Identity_1,
+          CallerAddress: Guid_2,
+          EnergyConsumed: {},
+          Reducer: {
+            $type: Reducer.SendMessage,
+            text: Goodbye!
+          }
+        }
+      },
+      Db: {Scrubbed},
+      Reducers: {Scrubbed},
+      SetReducerFlags: {}
+    },
+    OnDeleteMessage: {
+      eventContext: {
+        Event: {
+          $type: Event<Reducer>.UnsubscribeApplied
+        },
+        Db: {Scrubbed},
+        Reducers: {Scrubbed},
+        SetReducerFlags: {}
+      },
+      message: {
+        sender: Identity_2,
+        sent: 1718487775346381,
+        text: Hello, A!
+      }
+    },
+    OnDeleteMessage: {
+      eventContext: {
+        Event: {
+          $type: Event<Reducer>.UnsubscribeApplied
+        },
+        Db: {Scrubbed},
+        Reducers: {Scrubbed},
+        SetReducerFlags: {}
+      },
+      message: {
+        sender: Identity_1,
+        sent: 1718487783175083,
+        text: Hello, B!
+      }
+    },
+    OnDeleteMessage: {
+      eventContext: {
+        Event: {
+          $type: Event<Reducer>.UnsubscribeApplied
+        },
+        Db: {Scrubbed},
+        Reducers: {Scrubbed},
+        SetReducerFlags: {}
+      },
+      message: {
+        sender: Identity_2,
+        sent: 1718487787645364,
+        text: Goodbye!
+      }
+    },
+    OnDeleteMessage: {
+      eventContext: {
+        Event: {
+          $type: Event<Reducer>.UnsubscribeApplied
+        },
+        Db: {Scrubbed},
+        Reducers: {Scrubbed},
+        SetReducerFlags: {}
+      },
+      message: {
+        sender: Identity_1,
+        sent: 1718487794937841,
+        text: Goodbye!
+      }
+    },
+    LogWarning: Subscription Error: $bad query dude,
+    OnInsertMessage: {
+      eventContext: {
+        Event: {
+          $type: Event<Reducer>.SubscribeApplied
+        },
+        Db: {Scrubbed},
+        Reducers: {Scrubbed},
+        SetReducerFlags: {}
+      },
+      message: {
+        sender: Identity_2,
+        sent: 1718487775346381,
+        text: Hello, A!
+      }
+    },
+    OnInsertMessage: {
+      eventContext: {
+        Event: {
+          $type: Event<Reducer>.SubscribeApplied
+        },
+        Db: {Scrubbed},
+        Reducers: {Scrubbed},
+        SetReducerFlags: {}
+      },
+      message: {
+        sender: Identity_1,
+        sent: 1718487783175083,
+        text: Hello, B!
+      }
+    },
+    OnInsertMessage: {
+      eventContext: {
+        Event: {
+          $type: Event<Reducer>.SubscribeApplied
+        },
+        Db: {Scrubbed},
+        Reducers: {Scrubbed},
+        SetReducerFlags: {}
+      },
+      message: {
+        sender: Identity_2,
+        sent: 1718487787645364,
+        text: Goodbye!
+      }
+    },
+    OnInsertMessage: {
+      eventContext: {
+        Event: {
+          $type: Event<Reducer>.SubscribeApplied
+        },
+        Db: {Scrubbed},
+        Reducers: {Scrubbed},
+        SetReducerFlags: {}
+      },
+      message: {
+        sender: Identity_1,
+        sent: 1718487794937841,
+        text: Goodbye!
+      }
+    }
+  },
+  FinalSnapshot: {
+    User: [
+      {
+        identity: Identity_1,
+        name: A,
+        online: true
+      },
+      {
+        identity: Identity_2,
+        name: B,
+        online: false
+      }
+    ],
+    Message: [
+      {
+        sender: Identity_1,
+        sent: 1718487794937841,
+        text: Goodbye!
+      },
+      {
+        sender: Identity_2,
+        sent: 1718487787645364,
+        text: Goodbye!
+      },
+      {
+        sender: Identity_1,
+        sent: 1718487783175083,
+        text: Hello, B!
+      },
+      {
+        sender: Identity_2,
+        sent: 1718487775346381,
+        text: Hello, A!
+      }
+    ]
+  },
+  Stats: {
+    ReducerRequestTracker: {
+      sampleCount: 3,
+      requestsAwaitingResponse: 6
+    },
+    OneOffRequestTracker: {},
+    SubscriptionRequestTracker: {
+      sampleCount: 1,
+      requestsAwaitingResponse: 2
+    },
+    AllReducersTracker: {
+      sampleCount: 9
+    },
+    ParseMessageTracker: {
+      sampleCount: 14
+    }
+  }
+}

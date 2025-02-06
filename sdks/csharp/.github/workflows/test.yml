@@ -1,0 +1,162 @@
+name: Test Suite
+
+on:
+  push:
+    branches:
+      - staging
+  pull_request:
+
+jobs:
+  unity-testsuite:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      # Grab the SpacetimeDB branch name from the PR description. If it's not found, master will be used instead.
+      # We'll use this branch name for any integration tests with SpacetimeDB.
+
+      - name: Extract SpacetimeDB branch name or PR link from PR description
+        id: extract-branch
+        if: github.event_name == 'pull_request'
+        env:
+          description: ${{ github.event.pull_request.body }}
+        run: |
+          # Check if description contains a branch name or a PR link
+          branch_or_pr=$(echo "$description" | grep -oP '(?<=SpacetimeDB branch name:\s).+')
+          echo "Branch or PR found: $branch_or_pr"
+
+          if [[ -z "$branch_or_pr" ]]; then
+            branch="master"
+          elif [[ "$branch_or_pr" =~ ^https://github.com/.*/pull/[0-9]+$ ]]; then
+            # If it's a PR link, extract the branch name from the PR
+            pr_number=$(echo "$branch_or_pr" | grep -oP '[0-9]+$')
+            branch=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            https://api.github.com/repos/clockworklabs/SpacetimeDB/pulls/$pr_number | jq -r '.head.ref')
+          else
+            # It's already a branch name
+            branch="$branch_or_pr"
+          fi
+
+          echo "branch=$branch" >> $GITHUB_OUTPUT
+          echo "Final branch name: $branch"
+
+      - name: Checkout SpacetimeDB
+        uses: actions/checkout@v4
+        id: checkout-stdb
+        with:
+          repository: clockworklabs/SpacetimeDB
+          ref: ${{ steps.extract-branch.outputs.branch }}
+          path: SpacetimeDB~
+
+      # Run cheap .NET tests first. If those fail, no need to run expensive Unity tests.
+
+      - name: Override NuGet packages
+        run: |
+          dotnet pack SpacetimeDB~/crates/bindings-csharp/BSATN.Runtime
+
+          # Write out the nuget config file to `nuget.config`. This causes the spacetimedb-csharp-sdk repository
+          # to be aware of the local versions of the `bindings-csharp` packages in SpacetimeDB, and use them if
+          # available. Otherwise, `spacetimedb-csharp-sdk` will use the NuGet versions of the packages.
+          # This means that (if version numbers match) we will test the local versions of the C# packages, even
+          # if they're not pushed to NuGet.
+          # See https://learn.microsoft.com/en-us/nuget/reference/nuget-config-file for more info on the config file.
+          ./tools~/write-nuget-config.sh SpacetimeDB~
+
+      - name: Run .NET tests
+        run: dotnet test -warnaserror
+
+      - name: Verify C# formatting
+        run: dotnet format --no-restore --verify-no-changes SpacetimeDB.ClientSDK.sln
+
+      # Now, setup the Unity tests.
+
+      - name: Patch spacetimedb dependency in Cargo.toml
+        working-directory: unity-tests~/server-rust
+        run: |
+          sed -i "s|spacetimedb *=.*|spacetimedb = \{ path = \"../../SpacetimeDB~/crates/bindings\" \}|" Cargo.toml
+          cat Cargo.toml
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        id: cache-rust-deps
+        with:
+          workspaces: unity-tests~/server-rust
+          key: ${{ steps.checkout-stdb.outputs.commit }}
+          # Cache Rust deps even if unit tests have failed.
+          cache-on-failure: true
+          # Cache the CLI as well.
+          cache-all-crates: true
+
+      - name: Install SpacetimeDB CLI from the local checkout
+        # Rebuild only if we didn't get a precise cache hit.
+        if: steps.cache-rust-deps.outputs.cache-hit == 'false'
+        run: |
+          cargo install --force --path SpacetimeDB~/crates/cli --locked --message-format=short
+          cargo install --force --path SpacetimeDB~/crates/standalone --locked --message-format=short
+          # Add a handy alias using the old binary name, so that we don't have to rewrite all scripts (incl. in submodules).
+          ln -sf $HOME/.cargo/bin/spacetimedb-cli $HOME/.cargo/bin/spacetime
+        env:
+          # Share the target directory with our local project to avoid rebuilding same SpacetimeDB crates twice.
+          CARGO_TARGET_DIR: unity-tests~/server-rust/target
+
+      - name: Generate client bindings
+        working-directory: unity-tests~/server-rust
+        run: bash ./generate.sh -y
+
+      - name: Check for changes
+        run: |
+          git diff --exit-code unity-tests~/client-unity/Assets/Scripts/autogen || {
+              echo "Error: Bindings are dirty. Please generate bindings again and commit them to this branch."
+              exit 1
+          }
+
+      - name: Check Unity meta files
+        uses: DeNA/unity-meta-check@v3
+        with:
+          enable_pr_comment: ${{ github.event_name == 'pull_request' }}
+        env:
+          GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+
+      - name: Start SpacetimeDB
+        run: |
+          spacetime start &
+          disown
+
+      - name: Publish module to SpacetimeDB
+        working-directory: unity-tests~/server-rust
+        run: |
+          spacetime logout && spacetime login --server-issued-login local
+          bash ./publish.sh
+
+      - name: Patch com.clockworklabs.spacetimedbsdk dependency in manifest.json
+        working-directory: unity-tests~/client-unity/Packages
+        run: |
+          # Replace the com.clockworklabs.spacetimedbsdk dependency with the current branch.
+          # TODO: find out why pointing to a local directory doesn't work - is it because Unity CI action uses Docker?
+          yq e -i '.dependencies["com.clockworklabs.spacetimedbsdk"] = "https://github.com/clockworklabs/com.clockworklabs.spacetimedbsdk.git#${{ github.head_ref }}"' manifest.json
+          cat manifest.json
+
+      - uses: actions/cache@v3
+        with:
+          path: unity-tests~/client-unity/Library
+          key: Unity-${{ github.head_ref }}
+          restore-keys: Unity-
+
+      - name: Run Unity tests
+        uses: game-ci/unity-test-runner@v4
+        with:
+          unityVersion: 2022.3.32f1  # Adjust Unity version to a valid tag
+          projectPath: unity-tests~/client-unity  # Path to the Unity project subdirectory
+          githubToken: ${{ secrets.GITHUB_TOKEN }}
+          testMode: playmode
+          useHostNetwork: true
+        env:
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
