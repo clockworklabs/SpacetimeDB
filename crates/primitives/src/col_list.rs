@@ -347,6 +347,68 @@ impl From<ColSet> for ColList {
     }
 }
 
+/// A borrowed list of columns or a single one.
+pub enum ColOrCols<'a> {
+    /// A single column.
+    Col(ColId),
+    /// A list of columns.
+    ColList(&'a ColList),
+}
+
+impl ColOrCols<'_> {
+    /// Returns `Some(col)` iff `self` is singleton.
+    pub fn as_singleton(&self) -> Option<ColId> {
+        match self {
+            Self::Col(col) => Some(*col),
+            Self::ColList(cols) => cols.as_singleton(),
+        }
+    }
+
+    /// Returns an iterator over all the columns in this list.
+    pub fn iter(&self) -> impl '_ + Iterator<Item = ColId> {
+        match self {
+            Self::Col(col) => Either::Left(iter::once(*col)),
+            Self::ColList(cols) => Either::Right(cols.iter()),
+        }
+    }
+
+    /// Returns the length of this list.
+    pub fn len(&self) -> u16 {
+        match self {
+            Self::Col(_) => 1,
+            Self::ColList(cols) => cols.len(),
+        }
+    }
+
+    /// Returns whether the list is empty.
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
+
+impl PartialEq<ColList> for ColOrCols<'_> {
+    fn eq(&self, other: &ColList) -> bool {
+        self.iter().eq(other.iter())
+    }
+}
+impl PartialEq for ColOrCols<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        self.iter().eq(other.iter())
+    }
+}
+
+impl Eq for ColOrCols<'_> {}
+impl Ord for ColOrCols<'_> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.iter().cmp(other.iter())
+    }
+}
+impl PartialOrd for ColOrCols<'_> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 /// A compressed set of columns. Like a `ColList`, but guaranteed to be sorted and to contain no duplicate entries.
 /// Dereferences to a `ColList` for convenience.
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -384,6 +446,15 @@ impl From<ColList> for ColSet {
 impl From<&ColList> for ColSet {
     fn from(value: &ColList) -> Self {
         value.iter().collect()
+    }
+}
+
+impl From<ColOrCols<'_>> for ColSet {
+    fn from(value: ColOrCols<'_>) -> Self {
+        match value {
+            ColOrCols::Col(col) => ColSet(col.into()),
+            ColOrCols::ColList(cols) => cols.into(),
+        }
     }
 }
 

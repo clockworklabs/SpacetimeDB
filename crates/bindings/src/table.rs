@@ -142,6 +142,7 @@ pub struct IndexDesc<'a> {
 #[derive(Clone, Copy)]
 pub enum IndexAlgo<'a> {
     BTree { columns: &'a [u16] },
+    Direct { column: u16 },
 }
 
 pub struct ScheduleDesc<'a> {
@@ -272,8 +273,8 @@ impl<Tbl: Table, Col: Index + Column<Table = Tbl>> UniqueColumn<Tbl, Col::ColTyp
     pub const __NEW: Self = Self { _marker: PhantomData };
 
     #[inline]
-    fn get_args(&self, col_val: &Col::ColType) -> BTreeScanArgs {
-        BTreeScanArgs {
+    fn get_args(&self, col_val: &Col::ColType) -> IndexScanRangeArgs {
+        IndexScanRangeArgs {
             data: IterBuf::serialize(&std::ops::Bound::Included(col_val)).unwrap(),
             prefix_elems: 0,
             rstart_idx: 0,
@@ -358,11 +359,11 @@ pub trait Index {
     fn index_id() -> IndexId;
 }
 
-pub struct BTreeIndex<Tbl: Table, IndexType, Idx: Index> {
+pub struct RangedIndex<Tbl: Table, IndexType, Idx: Index> {
     _marker: PhantomData<(Tbl, IndexType, Idx)>,
 }
 
-impl<Tbl: Table, IndexType, Idx: Index> BTreeIndex<Tbl, IndexType, Idx> {
+impl<Tbl: Table, IndexType, Idx: Index> RangedIndex<Tbl, IndexType, Idx> {
     #[doc(hidden)]
     pub const __NEW: Self = Self { _marker: PhantomData };
 
@@ -374,7 +375,7 @@ impl<Tbl: Table, IndexType, Idx: Index> BTreeIndex<Tbl, IndexType, Idx> {
     /// - A tuple of values for any prefix of the indexed columns, optionally terminated by a range for the next.
     pub fn filter<B, K>(&self, b: B) -> impl Iterator<Item = Tbl::Row>
     where
-        B: BTreeIndexBounds<IndexType, K>,
+        B: IndexScanRangeBounds<IndexType, K>,
     {
         let index_id = Idx::index_id();
         let args = b.get_args();
@@ -395,7 +396,7 @@ impl<Tbl: Table, IndexType, Idx: Index> BTreeIndex<Tbl, IndexType, Idx> {
     /// though as of proposing no such constraints exist.
     pub fn delete<B, K>(&self, b: B) -> u64
     where
-        B: BTreeIndexBounds<IndexType, K>,
+        B: IndexScanRangeBounds<IndexType, K>,
     {
         let index_id = Idx::index_id();
         let args = b.get_args();
@@ -410,7 +411,7 @@ impl<Tbl: Table, IndexType, Idx: Index> BTreeIndex<Tbl, IndexType, Idx> {
 /// for a column of type `Column`.
 ///
 /// Types which can appear specifically as a terminating bound in a BTree index,
-/// which may be a range, instead use [`BTreeIndexBoundsTerminator`].
+/// which may be a range, instead use [`IndexRangeScanBoundsTerminator`].
 ///
 /// General rules for implementors of this type:
 /// - It should only be implemented for types that have
@@ -475,17 +476,17 @@ impl_filterable_value! {
     // &[u8] => Vec<u8>,
 }
 
-pub trait BTreeIndexBounds<T, K = ()> {
+pub trait IndexScanRangeBounds<T, K = ()> {
     #[doc(hidden)]
-    fn get_args(&self) -> BTreeScanArgs;
+    fn get_args(&self) -> IndexScanRangeArgs;
 }
 
 #[doc(hidden)]
-/// Arguments to one of the BTree-related host-/sys-calls.
+/// Arguments to one of the ranged-index-scan-related host-/sys-calls.
 ///
 /// All pointers passed into the syscall are packed into a single buffer, `data`,
 /// with slices taken at the appropriate offsets, to save allocatons in WASM.
-pub struct BTreeScanArgs {
+pub struct IndexScanRangeArgs {
     data: IterBuf,
     prefix_elems: usize,
     rstart_idx: usize,
@@ -493,7 +494,7 @@ pub struct BTreeScanArgs {
     rend_idx: Option<usize>,
 }
 
-impl BTreeScanArgs {
+impl IndexScanRangeArgs {
     /// Get slices into `self.data` for the prefix, range start and range end.
     pub(crate) fn args_for_syscall(&self) -> (&[u8], ColId, &[u8], &[u8]) {
         let prefix = &self.data[..self.rstart_idx];
@@ -507,7 +508,7 @@ impl BTreeScanArgs {
     }
 }
 
-// Implement `BTreeIndexBounds` for all the different index column types
+// Implement `IndexScanRangeBounds` for all the different index column types
 // and filter argument types we support.
 macro_rules! impl_btree_index_bounds {
     // In the first pattern, we accept two Prolog-style lists of type variables,
@@ -559,24 +560,24 @@ macro_rules! impl_btree_index_bounds {
         impl<
             $($ColUnused,)*
             $ColTerminator,
-            Term: BTreeIndexBoundsTerminator<Arg = $ArgTerminator>,
+            Term: IndexScanRangeBoundsTerminator<Arg = $ArgTerminator>,
             $ArgTerminator: FilterableValue<Column = $ColTerminator>,
-        > BTreeIndexBounds<($ColTerminator, $($ColUnused,)*)> for (Term,) {
-            fn get_args(&self) -> BTreeScanArgs {
-                BTreeIndexBounds::<($ColTerminator, $($ColUnused,)*), SingleBound>::get_args(&self.0)
+        > IndexScanRangeBounds<($ColTerminator, $($ColUnused,)*)> for (Term,) {
+            fn get_args(&self) -> IndexScanRangeArgs {
+                IndexScanRangeBounds::<($ColTerminator, $($ColUnused,)*), SingleBound>::get_args(&self.0)
             }
         }
         // Implementation for bare values: serialize the value as the terminating bounds.
         impl<
             $($ColUnused,)*
             $ColTerminator,
-            Term: BTreeIndexBoundsTerminator<Arg = $ArgTerminator>,
+            Term: IndexScanRangeBoundsTerminator<Arg = $ArgTerminator>,
             $ArgTerminator: FilterableValue<Column = $ColTerminator>,
-        > BTreeIndexBounds<($ColTerminator, $($ColUnused,)*), SingleBound> for Term {
-            fn get_args(&self) -> BTreeScanArgs {
+        > IndexScanRangeBounds<($ColTerminator, $($ColUnused,)*), SingleBound> for Term {
+            fn get_args(&self) -> IndexScanRangeArgs {
                 let mut data = IterBuf::take();
                 let rend_idx = self.bounds().serialize_into(&mut data);
-                BTreeScanArgs { data, prefix_elems: 0, rstart_idx: 0, rend_idx }
+                IndexScanRangeArgs { data, prefix_elems: 0, rstart_idx: 0, rend_idx }
             }
         }
     };
@@ -596,15 +597,15 @@ macro_rules! impl_btree_index_bounds {
             $($ColUnused,)*
             $ColTerminator,
             $($ColPrefix,)*
-            Term: BTreeIndexBoundsTerminator<Arg = $ArgTerminator>,
+            Term: IndexScanRangeBoundsTerminator<Arg = $ArgTerminator>,
             $ArgTerminator: FilterableValue<Column = $ColTerminator>,
             $($ArgPrefix: FilterableValue<Column = $ColPrefix>,)+
-        > BTreeIndexBounds<
+        > IndexScanRangeBounds<
             ($($ColPrefix,)+
              $ColTerminator,
              $($ColUnused,)*)
           > for ($($ArgPrefix,)+ Term,) {
-            fn get_args(&self) -> BTreeScanArgs {
+            fn get_args(&self) -> IndexScanRangeArgs {
                 let mut data = IterBuf::take();
 
                 // Get the number of prefix elements.
@@ -627,7 +628,7 @@ macro_rules! impl_btree_index_bounds {
                 // and get the info required to separately slice the lower and upper bounds of that range
                 // since the host call takes those as separate slices.
                 let rend_idx = term.bounds().serialize_into(&mut data);
-                BTreeScanArgs { data, prefix_elems, rstart_idx, rend_idx }
+                IndexScanRangeArgs { data, prefix_elems, rstart_idx, rend_idx }
             }
         }
     };
@@ -667,12 +668,12 @@ impl<Bound: FilterableValue> TermBound<&Bound> {
         })
     }
 }
-pub trait BTreeIndexBoundsTerminator {
+pub trait IndexScanRangeBoundsTerminator {
     type Arg;
     fn bounds(&self) -> TermBound<&Self::Arg>;
 }
 
-impl<Col, Arg: FilterableValue<Column = Col>> BTreeIndexBoundsTerminator for Arg {
+impl<Col, Arg: FilterableValue<Column = Col>> IndexScanRangeBoundsTerminator for Arg {
     type Arg = Arg;
     fn bounds(&self) -> TermBound<&Arg> {
         TermBound::Single(ops::Bound::Included(self))
@@ -681,7 +682,7 @@ impl<Col, Arg: FilterableValue<Column = Col>> BTreeIndexBoundsTerminator for Arg
 
 macro_rules! impl_terminator {
     ($($range:ty),* $(,)?) => {
-        $(impl<T: FilterableValue> BTreeIndexBoundsTerminator for $range {
+        $(impl<T: FilterableValue> IndexScanRangeBoundsTerminator for $range {
             type Arg = T;
             fn bounds(&self) -> TermBound<&T> {
                 TermBound::Range(

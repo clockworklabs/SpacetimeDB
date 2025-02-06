@@ -40,6 +40,7 @@ duct.workspace = true
 email_address.workspace = true
 futures.workspace = true
 flate2.workspace = true
+fs-err.workspace = true
 http.workspace = true
 is-terminal.workspace = true
 itertools.workspace = true
@@ -68,6 +69,9 @@ walkdir.workspace = true
 wasmbin.workspace = true
 wasmtime.workspace = true
 webbrowser.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, features = ["Win32_System_Console"] }
 
 [dev-dependencies]
 insta.workspace = true

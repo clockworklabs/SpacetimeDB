@@ -242,7 +242,7 @@ pub fn delete_players_by_name(ctx: &ReducerContext, name: String) -> Result<(), 
 }
 
 #[spacetimedb::reducer(client_connected)]
-fn on_connect(_ctx: &ReducerContext) {}
+fn client_connected(_ctx: &ReducerContext) {}
 
 // We can derive `Deserialize` for lifetime generic types:
 
@@ -373,5 +373,6 @@ pub struct Player {
     #[auto_inc]
     #[unique]
     player_id: u64,
+    #[unique] // fields called "name" previously caused name collisions in generated table handles
     name: String,
 }

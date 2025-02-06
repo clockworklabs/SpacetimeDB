@@ -1,5 +1,6 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
+use crate::table::IndexAlgo;
 use crate::{sys, IterBuf, ReducerContext, ReducerResult, SpacetimeType, Table};
 pub use spacetimedb_lib::db::raw_def::v9::Lifecycle as LifecycleReducer;
 use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, RawModuleDefV9Builder, TableType};
@@ -345,12 +346,33 @@ pub fn register_table<T: Table>() {
     })
 }
 
-impl From<crate::table::IndexAlgo<'_>> for RawIndexAlgorithm {
-    fn from(algo: crate::table::IndexAlgo<'_>) -> RawIndexAlgorithm {
+mod sealed_direct_index {
+    pub trait Sealed {}
+}
+#[diagnostic::on_unimplemented(
+    message = "column type must be a one of: `u8`, `u16`, `u32`, or `u64`",
+    label = "should be `u8`, `u16`, `u32`, or `u64`, not `{Self}`"
+)]
+pub trait DirectIndexKey: sealed_direct_index::Sealed {}
+impl sealed_direct_index::Sealed for u8 {}
+impl DirectIndexKey for u8 {}
+impl sealed_direct_index::Sealed for u16 {}
+impl DirectIndexKey for u16 {}
+impl sealed_direct_index::Sealed for u32 {}
+impl DirectIndexKey for u32 {}
+impl sealed_direct_index::Sealed for u64 {}
+impl DirectIndexKey for u64 {}
+
+/// Assert that `T` is a valid column to use direct index on.
+pub const fn assert_column_type_valid_for_direct_index<T: DirectIndexKey>() {}
+
+impl From<IndexAlgo<'_>> for RawIndexAlgorithm {
+    fn from(algo: IndexAlgo<'_>) -> RawIndexAlgorithm {
         match algo {
-            crate::table::IndexAlgo::BTree { columns } => RawIndexAlgorithm::BTree {
+            IndexAlgo::BTree { columns } => RawIndexAlgorithm::BTree {
                 columns: columns.iter().copied().collect(),
             },
+            IndexAlgo::Direct { column } => RawIndexAlgorithm::Direct { column: column.into() },
         }
     }
 }

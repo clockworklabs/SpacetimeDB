@@ -1,4 +1,4 @@
-use crate::generate::util::namespace_is_empty_or_default;
+use crate::generate::util::{is_reducer_invokable, iter_reducers, iter_tables, iter_types, iter_unique_cols};
 use crate::indent_scope;
 
 use super::util::{collect_case, print_auto_generated_file_comment, type_ref_name};
@@ -8,9 +8,7 @@ use std::fmt::{self, Write};
 use std::ops::Deref;
 
 use convert_case::{Case, Casing};
-use itertools::Itertools;
 use spacetimedb_lib::sats::AlgebraicTypeRef;
-use spacetimedb_primitives::ColList;
 use spacetimedb_schema::def::{ModuleDef, ReducerDef, ScopedTypeName, TableDef, TypeDef};
 use spacetimedb_schema::identifier::Identifier;
 use spacetimedb_schema::schema::{Schema, TableSchema};
@@ -18,6 +16,7 @@ use spacetimedb_schema::type_for_generate::{AlgebraicTypeDef, AlgebraicTypeUse, 
 
 use super::code_indenter::{CodeIndenter, Indenter};
 use super::Lang;
+use std::path::PathBuf;
 
 type Imports = BTreeSet<AlgebraicTypeRef>;
 
@@ -42,15 +41,14 @@ impl Lang for TypeScript {
         reducer_module_name(reducer_name) + ".ts"
     }
 
-    fn generate_type(&self, module: &ModuleDef, namespace: &str, typ: &TypeDef) -> String {
+    fn format_files(&self, _generated_files: BTreeSet<PathBuf>) -> anyhow::Result<()> {
+        // TODO: implement formatting.
+        Ok(())
+    }
+
+    fn generate_type(&self, module: &ModuleDef, typ: &TypeDef) -> String {
         // TODO(cloutiertyler): I do think TypeScript does support namespaces:
         // https://www.typescriptlang.org/docs/handbook/namespaces.html
-        assert!(
-            namespace_is_empty_or_default(namespace),
-            "TypeScript codegen does not support namespaces, as TypeScript equates namespaces with files.
-
-Requested namespace: {namespace}",
-        );
         let type_name = collect_case(Case::Pascal, typ.name.name_segments());
 
         let mut output = CodeIndenter::new(String::new(), INDENT);
@@ -82,14 +80,7 @@ Requested namespace: {namespace}",
         output.into_inner()
     }
 
-    fn generate_table(&self, module: &ModuleDef, namespace: &str, table: &TableDef) -> String {
-        assert!(
-            namespace_is_empty_or_default(namespace),
-            "TypeScript codegen does not support namespaces, as TypeScript equates namespaces with files.
-
-Requested namespace: {namespace}",
-        );
-
+    fn generate_table(&self, module: &ModuleDef, table: &TableDef) -> String {
         let schema = TableSchema::from_module_def(module, table, (), 0.into())
             .validated()
             .expect("Failed to generate table due to validation errors");
@@ -164,20 +155,16 @@ export class {table_handle} {{
         });
         writeln!(out, "}}");
 
-        let constraints = schema.backcompat_column_constraints();
+        for (unique_field_ident, unique_field_type_use) in iter_unique_cols(&schema, product_def) {
+            let unique_field_name = unique_field_ident.deref().to_case(Case::Snake);
+            let unique_field_name_pascalcase = unique_field_name.to_case(Case::Pascal);
 
-        for field in schema.columns() {
-            if constraints[&ColList::from(field.col_pos)].has_unique() {
-                let (unique_field_ident, unique_field_type_use) = &product_def.elements[field.col_pos.idx()];
-                let unique_field_name = unique_field_ident.deref().to_case(Case::Snake);
-                let unique_field_name_pascalcase = unique_field_name.to_case(Case::Pascal);
+            let unique_constraint = table_name_pascalcase.clone() + &unique_field_name_pascalcase + "Unique";
+            let unique_field_type = type_name(module, unique_field_type_use);
 
-                let unique_constraint = table_name_pascalcase.clone() + &unique_field_name_pascalcase + "Unique";
-                let unique_field_type = type_name(module, unique_field_type_use);
-
-                writeln!(
-                    out,
-                    "/**
+            writeln!(
+                out,
+                "/**
  * Access to the `{unique_field_name}` unique index on the table `{table_name}`,
  * which allows point queries on the field of the same name
  * via the [`{unique_constraint}.find`] method.
@@ -188,33 +175,32 @@ export class {table_handle} {{
  *
  * Get a handle on the `{unique_field_name}` unique index on the table `{table_name}`.
  */"
+            );
+            writeln!(out, "{unique_field_name} = {{");
+            out.with_indent(|out| {
+                writeln!(
+                    out,
+                    "// Find the subscribed row whose `{unique_field_name}` column value is equal to `col_val`,"
                 );
-                writeln!(out, "{unique_field_name} = {{");
+                writeln!(out, "// if such a row is present in the client cache.");
+                writeln!(
+                    out,
+                    "find: (col_val: {unique_field_type}): {row_type} | undefined => {{"
+                );
                 out.with_indent(|out| {
-                    writeln!(
-                        out,
-                        "// Find the subscribed row whose `{unique_field_name}` column value is equal to `col_val`,"
-                    );
-                    writeln!(out, "// if such a row is present in the client cache.");
-                    writeln!(
-                        out,
-                        "find: (col_val: {unique_field_type}): {row_type} | undefined => {{"
-                    );
+                    writeln!(out, "for (let row of this.tableCache.iter()) {{");
                     out.with_indent(|out| {
-                        writeln!(out, "for (let row of this.tableCache.iter()) {{");
+                        writeln!(out, "if (deepEqual(row.{unique_field_name}, col_val)) {{");
                         out.with_indent(|out| {
-                            writeln!(out, "if (deepEqual(row.{unique_field_name}, col_val)) {{");
-                            out.with_indent(|out| {
-                                writeln!(out, "return row;");
-                            });
-                            writeln!(out, "}}");
+                            writeln!(out, "return row;");
                         });
                         writeln!(out, "}}");
                     });
-                    writeln!(out, "}},");
+                    writeln!(out, "}}");
                 });
-                writeln!(out, "}};");
-            }
+                writeln!(out, "}},");
+            });
+            writeln!(out, "}};");
         }
 
         writeln!(out);
@@ -260,14 +246,7 @@ removeOnUpdate = (cb: (ctx: EventContext, onRow: {row_type}, newRow: {row_type})
         output.into_inner()
     }
 
-    fn generate_reducer(&self, module: &ModuleDef, namespace: &str, reducer: &ReducerDef) -> String {
-        assert!(
-            namespace_is_empty_or_default(namespace),
-            "TypeScript codegen does not support namespaces, as TypeScript equates namespaces with files.
-
-Requested namespace: {namespace}",
-        );
-
+    fn generate_reducer(&self, module: &ModuleDef, reducer: &ReducerDef) -> String {
         let mut output = CodeIndenter::new(String::new(), INDENT);
         let out = &mut output;
 
@@ -290,14 +269,7 @@ Requested namespace: {namespace}",
         output.into_inner()
     }
 
-    fn generate_globals(&self, module: &ModuleDef, namespace: &str) -> Vec<(String, String)> {
-        assert!(
-            namespace_is_empty_or_default(namespace),
-            "TypeScript codegen does not support namespaces, as TypeScript equates namespaces with files.
-
-Requested namespace: {namespace}",
-        );
-
+    fn generate_globals(&self, module: &ModuleDef) -> Vec<(String, String)> {
         let mut output = CodeIndenter::new(String::new(), INDENT);
         let out = &mut output;
 
@@ -427,6 +399,10 @@ setReducerFlagsConstructor: () => {{
 
         vec![("index.ts".to_string(), (output.into_inner()))]
     }
+
+    fn clap_value() -> clap::builder::PossibleValue {
+        clap::builder::PossibleValue::new("typescript").aliases(["ts", "TS"])
+    }
 }
 
 fn print_remote_reducers(module: &ModuleDef, out: &mut Indenter) {
@@ -457,38 +433,41 @@ fn print_remote_reducers(module: &ModuleDef, out: &mut Indenter) {
         let arg_name_list = arg_name_list.trim_end_matches(", ");
 
         let reducer_name = &reducer.name;
-        let reducer_name_pascal = reducer_name.deref().to_case(Case::Pascal);
-        let reducer_function_name = reducer_function_name(reducer);
-        let reducer_variant = reducer_variant_name(&reducer.name);
-        if reducer.params_for_generate.elements.is_empty() {
-            writeln!(out, "{reducer_function_name}() {{");
-            out.with_indent(|out| {
-                writeln!(
-                    out,
-                    "this.connection.callReducer(\"{reducer_name}\", new Uint8Array(0), this.setCallReducerFlags.{reducer_function_name}Flags);"
-                );
-            });
-        } else {
-            writeln!(out, "{reducer_function_name}({arg_list}) {{");
-            out.with_indent(|out| {
-                writeln!(out, "const __args = {{ {arg_name_list} }};");
-                writeln!(out, "let __writer = new BinaryWriter(1024);");
-                writeln!(
-                    out,
-                    "{reducer_variant}.getTypeScriptAlgebraicType().serialize(__writer, __args);"
-                );
-                writeln!(out, "let __argsBuffer = __writer.getBuffer();");
-                writeln!(out, "this.connection.callReducer(\"{reducer_name}\", __argsBuffer, this.setCallReducerFlags.{reducer_function_name}Flags);");
-            });
+
+        if is_reducer_invokable(reducer) {
+            let reducer_function_name = reducer_function_name(reducer);
+            let reducer_variant = reducer_variant_name(&reducer.name);
+            if reducer.params_for_generate.elements.is_empty() {
+                writeln!(out, "{reducer_function_name}() {{");
+                out.with_indent(|out| {
+                    writeln!(
+                        out,
+                        "this.connection.callReducer(\"{reducer_name}\", new Uint8Array(0), this.setCallReducerFlags.{reducer_function_name}Flags);"
+                    );
+                });
+            } else {
+                writeln!(out, "{reducer_function_name}({arg_list}) {{");
+                out.with_indent(|out| {
+                    writeln!(out, "const __args = {{ {arg_name_list} }};");
+                    writeln!(out, "let __writer = new BinaryWriter(1024);");
+                    writeln!(
+                        out,
+                        "{reducer_variant}.getTypeScriptAlgebraicType().serialize(__writer, __args);"
+                    );
+                    writeln!(out, "let __argsBuffer = __writer.getBuffer();");
+                    writeln!(out, "this.connection.callReducer(\"{reducer_name}\", __argsBuffer, this.setCallReducerFlags.{reducer_function_name}Flags);");
+                });
+            }
+            writeln!(out, "}}");
+            out.newline();
         }
-        writeln!(out, "}}");
-        out.newline();
 
         let arg_list_padded = if arg_list.is_empty() {
             String::new()
         } else {
             format!(", {arg_list}")
         };
+        let reducer_name_pascal = reducer_name.deref().to_case(Case::Pascal);
         writeln!(
             out,
             "on{reducer_name_pascal}(callback: (ctx: EventContext{arg_list_padded}) => void) {{"
@@ -517,7 +496,7 @@ fn print_set_reducer_flags(module: &ModuleDef, out: &mut Indenter) {
     writeln!(out, "export class SetReducerFlags {{");
     out.indent(1);
 
-    for reducer in iter_reducers(module) {
+    for reducer in iter_reducers(module).filter(|r| is_reducer_invokable(r)) {
         let reducer_function_name = reducer_function_name(reducer);
         writeln!(out, "{reducer_function_name}Flags: CallReducerFlags = 'FullUpdate';");
         writeln!(out, "{reducer_function_name}(flags: CallReducerFlags) {{");
@@ -1068,27 +1047,6 @@ fn print_imports(module: &ModuleDef, out: &mut Indenter, imports: Imports) {
             "import {{ {type_name} as __{type_name} }} from \"./{module_name}\";"
         );
     }
-}
-
-/// Iterate over all the [`ReducerDef`]s defined by the module, in alphabetical order by name.
-///
-/// Sorting is necessary to have deterministic reproducable codegen.
-fn iter_reducers(module: &ModuleDef) -> impl Iterator<Item = &ReducerDef> {
-    module.reducers().sorted_by_key(|reducer| &reducer.name)
-}
-
-/// Iterate over all the [`TableDef`]s defined by the module, in alphabetical order by name.
-///
-/// Sorting is necessary to have deterministic reproducable codegen.
-fn iter_tables(module: &ModuleDef) -> impl Iterator<Item = &TableDef> {
-    module.tables().sorted_by_key(|table| &table.name)
-}
-
-/// Iterate over all the [`TypeDef`]s defined by the module, in alphabetical order by name.
-///
-/// Sorting is necessary to have deterministic reproducable codegen.
-fn iter_types(module: &ModuleDef) -> impl Iterator<Item = &TypeDef> {
-    module.types().sorted_by_key(|table| &table.name)
 }
 
 /// Use `search_function` on `roots` to detect required imports, then print them with `print_imports`.

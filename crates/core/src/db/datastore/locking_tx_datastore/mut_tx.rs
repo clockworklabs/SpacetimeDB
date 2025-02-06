@@ -47,7 +47,7 @@ use spacetimedb_sats::{
     AlgebraicType, AlgebraicValue, ProductType, ProductValue, WithTypespace,
 };
 use spacetimedb_schema::{
-    def::{BTreeAlgorithm, IndexAlgorithm},
+    def::{BTreeAlgorithm, DirectAlgorithm, IndexAlgorithm},
     schema::{ConstraintSchema, IndexSchema, RowLevelSecuritySchema, SequenceSchema, TableSchema},
 };
 use spacetimedb_table::{
@@ -442,6 +442,7 @@ impl MutTxId {
 
         let columns = match &index.index_algorithm {
             IndexAlgorithm::BTree(BTreeAlgorithm { columns }) => columns.clone(),
+            IndexAlgorithm::Direct(DirectAlgorithm { column: _ }) => todo!("todo_direct_index"),
             _ => unimplemented!(),
         };
         // Create and build the index.
@@ -1582,10 +1583,26 @@ impl MutTxId {
             {
                 // 1. Ensure the index is unique.
                 // 2. Ensure the new row doesn't violate any other committed state unique indices.
+                let commit_table = commit_index.table();
                 if let Err(e) = ensure_unique(index_id, commit_index).and_then(|_| {
-                    check_commit_unique_constraints(commit_index.table(), del_table, index_id, tx_row_ref, old_ptr)
+                    check_commit_unique_constraints(commit_table, del_table, index_id, tx_row_ref, old_ptr)
                 }) {
                     break 'failed_rev_ins e;
+                }
+
+                // If the new row is the same as the old,
+                // skip the update altogether to match the semantics of `Self::insert`.
+                // SAFETY:
+                // 1. `tx_table` is derived from `commit_table` so they have the same layouts.
+                // 2. `old_ptr` was found in an index of `commit_table`, so we know it is valid.
+                // 3. we just inserted `tx_row_ptr` into `tx_table`, so we know it is valid.
+                if unsafe { Table::eq_row_in_page(commit_table, old_ptr, tx_table, tx_row_ptr) } {
+                    // SAFETY: `self.is_row_present(tx_row_ptr)` holds, as noted in 3.
+                    unsafe { tx_table.delete_internal_skip_pointer_map(tx_blob_store, tx_row_ptr) };
+                    let commit_blob_store = &self.committed_state_write_lock.blob_store;
+                    // SAFETY: `commit_table.is_row_present(old_ptr)` holds, as noted in 2.
+                    let old_row_ref = unsafe { commit_table.get_row_ref_unchecked(commit_blob_store, old_ptr) };
+                    return Ok((cols_to_gen, old_row_ref, update_flags));
                 }
 
                 // Check constraints and confirm the insertion of the new row.
@@ -1608,13 +1625,14 @@ impl MutTxId {
                 // 1. Ensure the index is unique.
                 // 2. Ensure the new row doesn't violate any other committed state unique indices.
                 let (old_ptr, needle) = find_old_row(tx_row_ref, tx_index);
+                let commit_table = self.committed_state_write_lock.get_table(table_id);
                 let res = old_ptr
                     // If we have an old committed state row, ensure it hasn't been deleted in our tx.
                     .filter(|ptr| ptr.squashed_offset() == SquashedOffset::TX_STATE || !del_table.contains(*ptr))
                     .ok_or_else(|| IndexError::KeyNotFound(index_id, needle).into())
                     .and_then(|old_ptr| {
                         ensure_unique(index_id, tx_index)?;
-                        if let Some(commit_table) = self.committed_state_write_lock.get_table(table_id) {
+                        if let Some(commit_table) = commit_table {
                             check_commit_unique_constraints(commit_table, del_table, index_id, tx_row_ref, old_ptr)?;
                         }
                         Ok(old_ptr)
@@ -1626,6 +1644,26 @@ impl MutTxId {
 
                 match old_ptr.squashed_offset() {
                     SquashedOffset::COMMITTED_STATE => {
+                        if let Some(commit_table) = commit_table {
+                            // If the new row is the same as the old,
+                            // skip the update altogether to match the semantics of `Self::insert`.
+                            // SAFETY:
+                            // 1. `tx_table` is derived from `commit_table` so they have the same layouts.
+                            // 2. `old_ptr` was found in an index of `tx_table`,
+                            //     but we had `SquashedOffset::COMMITTED_STATE`,
+                            //     so we know it is valid for `commit_table`.
+                            // 3. we just inserted `tx_row_ptr` into `tx_table`, so we know it is valid.
+                            if unsafe { Table::eq_row_in_page(commit_table, old_ptr, tx_table, tx_row_ptr) } {
+                                // SAFETY: `self.is_row_present(tx_row_ptr)` holds, as noted in 3.
+                                unsafe { tx_table.delete_internal_skip_pointer_map(tx_blob_store, tx_row_ptr) };
+                                let commit_blob_store = &self.committed_state_write_lock.blob_store;
+                                // SAFETY: `commit_table.is_row_present(old_ptr)` holds, as noted in 2.
+                                let old_row_ref =
+                                    unsafe { commit_table.get_row_ref_unchecked(commit_blob_store, old_ptr) };
+                                return Ok((cols_to_gen, old_row_ref, update_flags));
+                            }
+                        }
+
                         // Check constraints and confirm the insertion of the new row.
                         //
                         // SAFETY: `self.is_row_present(row)` holds as we still haven't deleted the row,
@@ -1662,7 +1700,8 @@ impl MutTxId {
         };
 
         // When we reach here, we had an error and we need to revert the insertion of `tx_row_ref`.
-        // SAFETY: `self.is_row_present(tx_row_ptr)` holds as we still haven't deleted the row physically.
+        // SAFETY: `self.is_row_present(tx_row_ptr)` holds,
+        // as we still haven't deleted the row physically.
         unsafe { tx_table.delete_internal_skip_pointer_map(tx_blob_store, tx_row_ptr) };
         Err(err)
     }

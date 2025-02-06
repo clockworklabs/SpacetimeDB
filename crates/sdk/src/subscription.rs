@@ -6,7 +6,6 @@ use crate::{
     db_connection::{next_request_id, next_subscription_id, DbContextImpl, PendingMutation},
     spacetime_module::{SpacetimeModule, SubscriptionHandle},
 };
-use anyhow::bail;
 use futures_channel::mpsc;
 use spacetimedb_client_api_messages::websocket::{self as ws};
 use spacetimedb_data_structures::map::HashMap;
@@ -30,9 +29,10 @@ impl<M: SpacetimeModule> Default for SubscriptionManager<M> {
     }
 }
 
-pub(crate) type OnAppliedCallback<M> = Box<dyn FnOnce(&<M as SpacetimeModule>::EventContext) + Send + 'static>;
-pub(crate) type OnErrorCallback<M> = Box<dyn FnOnce(&<M as SpacetimeModule>::EventContext) + Send + 'static>;
-pub type OnEndedCallback<M> = Box<dyn FnOnce(&<M as SpacetimeModule>::EventContext) + Send + 'static>;
+pub(crate) type OnAppliedCallback<M> =
+    Box<dyn FnOnce(&<M as SpacetimeModule>::SubscriptionEventContext) + Send + 'static>;
+pub(crate) type OnErrorCallback<M> = Box<dyn FnOnce(&<M as SpacetimeModule>::ErrorContext) + Send + 'static>;
+pub type OnEndedCallback<M> = Box<dyn FnOnce(&<M as SpacetimeModule>::SubscriptionEventContext) + Send + 'static>;
 
 /// When handling a pending unsubscribe, there are three cases the caller must handle.
 pub(crate) enum PendingUnsubscribeResult<M: SpacetimeModule> {
@@ -45,9 +45,13 @@ pub(crate) enum PendingUnsubscribeResult<M: SpacetimeModule> {
 }
 
 impl<M: SpacetimeModule> SubscriptionManager<M> {
-    pub(crate) fn on_disconnect(&mut self, ctx: &M::EventContext) {
+    pub(crate) fn on_disconnect(&mut self, ctx: &M::ErrorContext) {
         // We need to clear all the subscriptions.
-        // We should run the on_ended callbacks for all of them.
+        // We should run the on_error callbacks for all of them.
+        // TODO: is this correct? We don't remove them from the client cache,
+        // we may want to resume them in the future if we impl reconnecting,
+        // and users can already register on-disconnect callbacks which will run in this case.
+
         for (_, mut sub) in self.new_subscriptions.drain() {
             if let Some(callback) = sub.on_error() {
                 callback(ctx);
@@ -80,7 +84,7 @@ impl<M: SpacetimeModule> SubscriptionManager<M> {
             .unwrap_or_else(|_| unreachable!("Duplicate subscription id {sub_id}"));
     }
 
-    pub(crate) fn legacy_subscription_applied(&mut self, ctx: &M::EventContext, sub_id: u32) {
+    pub(crate) fn legacy_subscription_applied(&mut self, ctx: &M::SubscriptionEventContext, sub_id: u32) {
         let sub = self.legacy_subscriptions.get_mut(&sub_id).unwrap();
         sub.is_applied = true;
         if let Some(callback) = sub.on_applied.take() {
@@ -97,7 +101,7 @@ impl<M: SpacetimeModule> SubscriptionManager<M> {
     }
 
     /// This should be called when we get a subscription applied message from the server.
-    pub(crate) fn subscription_applied(&mut self, ctx: &M::EventContext, sub_id: u32) {
+    pub(crate) fn subscription_applied(&mut self, ctx: &M::SubscriptionEventContext, sub_id: u32) {
         let Some(sub) = self.new_subscriptions.get_mut(&sub_id) else {
             // TODO: log or double check error handling.
             return;
@@ -137,7 +141,7 @@ impl<M: SpacetimeModule> SubscriptionManager<M> {
     }
 
     /// This should be called when we get an unsubscribe applied message from the server.
-    pub(crate) fn unsubscribe_applied(&mut self, ctx: &M::EventContext, sub_id: u32) {
+    pub(crate) fn unsubscribe_applied(&mut self, ctx: &M::SubscriptionEventContext, sub_id: u32) {
         let Some(mut sub) = self.new_subscriptions.remove(&sub_id) else {
             // TODO: double check error handling.
             log::debug!("Unsubscribe applied called for missing query {:?}", sub_id);
@@ -149,7 +153,7 @@ impl<M: SpacetimeModule> SubscriptionManager<M> {
     }
 
     /// This should be called when we get an unsubscribe applied message from the server.
-    pub(crate) fn subscription_error(&mut self, ctx: &M::EventContext, sub_id: u32) {
+    pub(crate) fn subscription_error(&mut self, ctx: &M::ErrorContext, sub_id: u32) {
         let Some(mut sub) = self.new_subscriptions.remove(&sub_id) else {
             // TODO: double check error handling.
             log::warn!("Unsubscribe applied called for missing query {:?}", sub_id);
@@ -191,7 +195,7 @@ impl<M: SpacetimeModule> SubscriptionBuilder<M> {
     }
 
     /// Register a callback to run when the subscription is applied.
-    pub fn on_applied(mut self, callback: impl FnOnce(&M::EventContext) + Send + 'static) -> Self {
+    pub fn on_applied(mut self, callback: impl FnOnce(&M::SubscriptionEventContext) + Send + 'static) -> Self {
         self.on_applied = Some(Box::new(callback));
         self
     }
@@ -203,7 +207,7 @@ impl<M: SpacetimeModule> SubscriptionBuilder<M> {
     /// or later during the subscription's lifetime if the module's interface changes,
     /// in which case [`Self::on_applied`] may have already run.
     // Currently unused. Hooking this up requires the new subscription interface and WS protocol.
-    pub fn on_error(mut self, callback: impl FnOnce(&M::EventContext) + Send + 'static) -> Self {
+    pub fn on_error(mut self, callback: impl FnOnce(&M::ErrorContext) + Send + 'static) -> Self {
         self.on_error = Some(Box::new(callback));
         self
     }
@@ -357,14 +361,13 @@ impl<M: SpacetimeModule> SubscriptionState<M> {
         })
     }
 
-    pub fn unsubscribe_then(&mut self, on_end: Option<OnEndedCallback<M>>) -> anyhow::Result<()> {
-        // pub fn unsubscribe_then(&mut self, on_end: impl FnOnce(&M::EventContext) + Send + 'static) -> anyhow::Result<()> {
+    pub fn unsubscribe_then(&mut self, on_end: Option<OnEndedCallback<M>>) -> crate::Result<()> {
         if self.is_ended() {
-            bail!("Subscription has already ended");
+            return Err(crate::Error::AlreadyEnded);
         }
         // Check if it has already been called.
         if self.unsubscribe_called {
-            bail!("Unsubscribe already called");
+            return Err(crate::Error::AlreadyUnsubscribed);
         }
 
         self.unsubscribe_called = true;
@@ -471,7 +474,7 @@ impl<M: SpacetimeModule> SubscriptionHandleImpl<M> {
     }
 
     /// Called by the `SubscriptionHandle` method of the same name.
-    pub fn unsubscribe_then(self, on_end: Option<OnEndedCallback<M>>) -> anyhow::Result<()> {
+    pub fn unsubscribe_then(self, on_end: Option<OnEndedCallback<M>>) -> crate::Result<()> {
         let mut inner = self.inner.lock().unwrap();
         inner.unsubscribe_then(on_end)
     }

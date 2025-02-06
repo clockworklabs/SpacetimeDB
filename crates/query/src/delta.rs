@@ -122,7 +122,7 @@ impl DeltaPlan {
     }
 
     /// Return an evaluator for this delta plan
-    pub fn evaluator<Tx: Datastore + DeltaStore>(&self, tx: &Tx) -> DeltaPlanEvaluator {
+    pub fn evaluator<Tx: Datastore + DeltaStore>(&self, tx: &Tx) -> Result<DeltaPlanEvaluator> {
         match self {
             Self::Select(plan) => plan.evaluator(tx),
             Self::Join(plan) => plan.evaluator(tx),
@@ -213,7 +213,7 @@ impl SelectPlan {
     }
 
     /// Returns an evaluator for computing the view delta
-    pub fn evaluator<Tx: Datastore + DeltaStore>(&self, tx: &Tx) -> DeltaPlanEvaluator {
+    pub fn evaluator<Tx: Datastore + DeltaStore>(&self, tx: &Tx) -> Result<DeltaPlanEvaluator> {
         /// Mutate a query plan by adding delta scans
         fn delta_plan(plan: &ProjectPlan, table_id: TableId, delta: Delta) -> Vec<ProjectPlan> {
             let mut plan = plan.clone();
@@ -225,7 +225,7 @@ impl SelectPlan {
             });
             vec![plan]
         }
-        DeltaPlanEvaluator {
+        Ok(DeltaPlanEvaluator {
             is_join: false,
             insert_plans: tx
                 .has_inserts(self.table_id)
@@ -235,7 +235,7 @@ impl SelectPlan {
                 .has_deletes(self.table_id)
                 .map(|delta| delta_plan(&self.plan, self.table_id, delta))
                 .unwrap_or_default(),
-        }
+        })
     }
 }
 
@@ -342,7 +342,7 @@ impl JoinPlan {
     }
 
     /// Returns an evaluator for computing the view delta
-    pub fn evaluator<Tx: Datastore + DeltaStore>(&self, tx: &Tx) -> DeltaPlanEvaluator {
+    pub fn evaluator<Tx: Datastore + DeltaStore>(&self, tx: &Tx) -> Result<DeltaPlanEvaluator> {
         /// Mutate a query plan by adding delta scans
         fn delta_plan(plan: &mut ProjectPlan, label: Label, delta: Delta) {
             plan.visit_mut(&mut |plan| match plan {
@@ -354,14 +354,14 @@ impl JoinPlan {
         }
 
         /// Instantiate and optimize a delta plan
-        fn delta_plan_opt1(plan: &ProjectPlan, label: Label, delta: Delta) -> ProjectPlan {
+        fn delta_plan_opt1(plan: &ProjectPlan, label: Label, delta: Delta) -> Result<ProjectPlan> {
             let mut plan = plan.clone();
             delta_plan(&mut plan, label, delta);
             plan.optimize()
         }
 
         /// Instantiate and optimize a delta plan
-        fn delta_plan_opt2(plan: &ProjectPlan, lhs: Label, n: Delta, rhs: Label, m: Delta) -> ProjectPlan {
+        fn delta_plan_opt2(plan: &ProjectPlan, lhs: Label, n: Delta, rhs: Label, m: Delta) -> Result<ProjectPlan> {
             let mut plan = plan.clone();
             delta_plan(&mut plan, lhs, n);
             delta_plan(&mut plan, rhs, m);
@@ -372,6 +372,7 @@ impl JoinPlan {
         let dr_ins = tx
             .has_inserts(self.lhs_table)
             .map(|delta| delta_plan_opt1(&self.plan, self.lhs_label, delta))
+            .transpose()?
             .map(std::iter::once)
             .map(Either::Left)
             .unwrap_or_else(|| Either::Right(std::iter::empty()));
@@ -380,6 +381,7 @@ impl JoinPlan {
         let dr_del = tx
             .has_deletes(self.lhs_table)
             .map(|delta| delta_plan_opt1(&self.plan, self.lhs_label, delta))
+            .transpose()?
             .map(std::iter::once)
             .map(Either::Left)
             .unwrap_or_else(|| Either::Right(std::iter::empty()));
@@ -388,6 +390,7 @@ impl JoinPlan {
         let ds_ins = tx
             .has_inserts(self.rhs_table)
             .map(|delta| delta_plan_opt1(&self.plan, self.rhs_label, delta))
+            .transpose()?
             .map(std::iter::once)
             .map(Either::Left)
             .unwrap_or_else(|| Either::Right(std::iter::empty()));
@@ -396,6 +399,7 @@ impl JoinPlan {
         let ds_del = tx
             .has_deletes(self.rhs_table)
             .map(|delta| delta_plan_opt1(&self.plan, self.rhs_label, delta))
+            .transpose()?
             .map(std::iter::once)
             .map(Either::Left)
             .unwrap_or_else(|| Either::Right(std::iter::empty()));
@@ -405,6 +409,7 @@ impl JoinPlan {
             .has_inserts(self.lhs_table)
             .zip(tx.has_inserts(self.rhs_table))
             .map(|(n, m)| delta_plan_opt2(&self.plan, self.lhs_label, n, self.rhs_label, m))
+            .transpose()?
             .map(std::iter::once)
             .map(Either::Left)
             .unwrap_or_else(|| Either::Right(std::iter::empty()));
@@ -414,6 +419,7 @@ impl JoinPlan {
             .has_inserts(self.lhs_table)
             .zip(tx.has_deletes(self.rhs_table))
             .map(|(n, m)| delta_plan_opt2(&self.plan, self.lhs_label, n, self.rhs_label, m))
+            .transpose()?
             .map(std::iter::once)
             .map(Either::Left)
             .unwrap_or_else(|| Either::Right(std::iter::empty()));
@@ -423,6 +429,7 @@ impl JoinPlan {
             .has_deletes(self.lhs_table)
             .zip(tx.has_inserts(self.rhs_table))
             .map(|(n, m)| delta_plan_opt2(&self.plan, self.lhs_label, n, self.rhs_label, m))
+            .transpose()?
             .map(std::iter::once)
             .map(Either::Left)
             .unwrap_or_else(|| Either::Right(std::iter::empty()));
@@ -432,11 +439,12 @@ impl JoinPlan {
             .has_deletes(self.lhs_table)
             .zip(tx.has_deletes(self.rhs_table))
             .map(|(n, m)| delta_plan_opt2(&self.plan, self.lhs_label, n, self.rhs_label, m))
+            .transpose()?
             .map(std::iter::once)
             .map(Either::Left)
             .unwrap_or_else(|| Either::Right(std::iter::empty()));
 
-        DeltaPlanEvaluator {
+        Ok(DeltaPlanEvaluator {
             is_join: true,
             insert_plans: ds_ins
                 // R'ds(+) U dr(+)S' U dr(+)dr(-) U dr(-)ds(+)
@@ -450,6 +458,6 @@ impl JoinPlan {
                 .chain(dr_ins_ds_ins)
                 .chain(dr_del_ds_del)
                 .collect(),
-        }
+        })
     }
 }

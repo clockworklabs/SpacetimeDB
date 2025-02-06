@@ -59,7 +59,7 @@ impl ModuleSubscriptions {
         auth: &AuthCtx,
     ) -> Result<(SubscriptionUpdate, ExecutionMetrics), DBError> {
         let comp = sender.config.compression;
-        let plan = SubscribePlan::from_delta_plan(&query);
+        let plan = SubscribePlan::from_delta_plan(&query)?;
 
         check_row_limit(
             &plan,
@@ -264,7 +264,7 @@ impl ModuleSubscriptions {
             .iter()
             .map(|plan| &***plan)
             .map(SubscribePlan::from_delta_plan)
-            .collect::<Vec<_>>();
+            .collect::<Result<Vec<_>, _>>()?;
 
         fn rows_scanned(tx: &TxId, plans: &[SubscribePlan]) -> u64 {
             plans

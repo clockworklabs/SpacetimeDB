@@ -8,8 +8,8 @@ use std::sync::{atomic::AtomicUsize, Arc, Mutex};
 use module_bindings::*;
 
 use spacetimedb_sdk::{
-    credentials, i256, u256, unstable::CallReducerFlags, Address, DbConnectionBuilder, DbContext, Event, Identity,
-    ReducerEvent, Status, SubscriptionHandle, Table, TimeDuration, Timestamp,
+    credentials, i256, u256, unstable::CallReducerFlags, Address, DbConnectionBuilder, DbContext, Error, Event,
+    Identity, ReducerEvent, Status, SubscriptionHandle, Table, TimeDuration, Timestamp,
 };
 use test_counter::TestCounter;
 
@@ -366,7 +366,7 @@ fn connect_with_then(
             callback(ctx);
             connected_result(Ok(()));
         })
-        .on_connect_error(|e| panic!("Connect errored: {e:?}"));
+        .on_connect_error(|ctx| panic!("Connect errored: {:?}", ctx.event));
     let conn = with_builder(builder).build().unwrap();
     conn.run_threaded();
     conn
@@ -383,14 +383,14 @@ fn connect(test_counter: &std::sync::Arc<TestCounter>) -> DbConnection {
     connect_then(test_counter, |_| {})
 }
 
-fn subscribe_all_then(ctx: &impl RemoteDbContext, callback: impl FnOnce(&EventContext) + Send + 'static) {
+fn subscribe_all_then(ctx: &impl RemoteDbContext, callback: impl FnOnce(&SubscriptionEventContext) + Send + 'static) {
     let remaining_queries = Arc::new(AtomicUsize::new(SUBSCRIBE_ALL.len()));
     let callback = Arc::new(Mutex::new(Some(callback)));
     for query in SUBSCRIBE_ALL {
         let atomic = remaining_queries.clone();
         let callback = callback.clone();
 
-        let on_applied = move |ctx: &EventContext| {
+        let on_applied = move |ctx: &SubscriptionEventContext| {
             let count = atomic.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
             if count == 1 {
                 // Only execute callback when the last subscription completes
@@ -414,7 +414,7 @@ fn exec_subscribe_and_cancel() {
         move |ctx| {
             let handle = ctx
                 .subscription_builder()
-                .on_applied(move |_ctx: &EventContext| {
+                .on_applied(move |_ctx: &SubscriptionEventContext| {
                     panic!("Subscription should never be applied");
                 })
                 .on_error(|ctx| panic!("Subscription errored: {:?}", ctx.event))
@@ -443,7 +443,7 @@ fn exec_subscribe_and_unsubscribe() {
             let hc_clone = handle_cell.clone();
             let handle = ctx
                 .subscription_builder()
-                .on_applied(move |ctx: &EventContext| {
+                .on_applied(move |ctx: &SubscriptionEventContext| {
                     let handle = { hc_clone.lock().unwrap().as_ref().unwrap().clone() };
                     assert!(ctx.is_active());
                     assert!(handle.is_active());
@@ -474,7 +474,7 @@ fn exec_subscription_error_smoke_test() {
         move |ctx| {
             let handle = ctx
                 .subscription_builder()
-                .on_applied(move |_ctx: &EventContext| {
+                .on_applied(move |_ctx: &SubscriptionEventContext| {
                     panic!("Subscription should never be applied");
                 })
                 .on_error(|_| cb(Ok(())))
@@ -870,34 +870,28 @@ fn exec_on_reducer() {
             if *arg != value {
                 anyhow::bail!("Unexpected reducer argument. Expected {} but found {}", value, *arg);
             }
-            let Event::Reducer(reducer_event) = &ctx.event else {
-                anyhow::bail!("Expected Reducer event but found {:?}", ctx.event);
-            };
-            if reducer_event.caller_identity != ctx.identity() {
+            if ctx.event.caller_identity != ctx.identity() {
                 anyhow::bail!(
                     "Expected caller_identity to be my own identity {:?}, but found {:?}",
                     ctx.identity(),
-                    reducer_event.caller_identity,
+                    ctx.event.caller_identity,
                 );
             }
-            if reducer_event.caller_address != Some(ctx.address()) {
+            if ctx.event.caller_address != Some(ctx.address()) {
                 anyhow::bail!(
                     "Expected caller_address to be my own address {:?}, but found {:?}",
                     ctx.address(),
-                    reducer_event.caller_address,
+                    ctx.event.caller_address,
                 )
             }
-            if !matches!(reducer_event.status, Status::Committed) {
-                anyhow::bail!(
-                    "Unexpected status. Expected Committed but found {:?}",
-                    reducer_event.status
-                );
+            if !matches!(ctx.event.status, Status::Committed) {
+                anyhow::bail!("Unexpected status. Expected Committed but found {:?}", ctx.event.status);
             }
             let expected_reducer = Reducer::InsertOneU8 { n: value };
-            if reducer_event.reducer != expected_reducer {
+            if ctx.event.reducer != expected_reducer {
                 anyhow::bail!(
                     "Unexpected Reducer in ReducerEvent: expected {expected_reducer:?} but found {:?}",
-                    reducer_event.reducer
+                    ctx.event.reducer
                 );
             }
 
@@ -953,37 +947,31 @@ fn exec_fail_reducer() {
                         *arg_val,
                     );
                 }
-                let Event::Reducer(reducer_event) = &ctx.event else {
-                    anyhow::bail!("Expected Reducer event but found {:?}", ctx.event);
-                };
-                if reducer_event.caller_identity != ctx.identity() {
+                if ctx.event.caller_identity != ctx.identity() {
                     anyhow::bail!(
                         "Expected caller_identity to be my own identity {:?}, but found {:?}",
                         ctx.identity(),
-                        reducer_event.caller_identity,
+                        ctx.event.caller_identity,
                     );
                 }
-                if reducer_event.caller_address != Some(ctx.address()) {
+                if ctx.event.caller_address != Some(ctx.address()) {
                     anyhow::bail!(
                         "Expected caller_address to be my own address {:?}, but found {:?}",
                         ctx.address(),
-                        reducer_event.caller_address,
+                        ctx.event.caller_address,
                     )
                 }
-                if !matches!(reducer_event.status, Status::Committed) {
-                    anyhow::bail!(
-                        "Unexpected status. Expected Committed but found {:?}",
-                        reducer_event.status
-                    );
+                if !matches!(ctx.event.status, Status::Committed) {
+                    anyhow::bail!("Unexpected status. Expected Committed but found {:?}", ctx.event.status);
                 }
                 let expected_reducer = Reducer::InsertPkU8 {
                     n: key,
                     data: initial_data,
                 };
-                if reducer_event.reducer != expected_reducer {
+                if ctx.event.reducer != expected_reducer {
                     anyhow::bail!(
                         "Unexpected Reducer in ReducerEvent: expected {expected_reducer:?} but found {:?}",
-                        reducer_event.reducer
+                        ctx.event.reducer
                     );
                 }
 
@@ -1019,37 +1007,31 @@ fn exec_fail_reducer() {
                         *arg_val
                     );
                 }
-                let Event::Reducer(reducer_event) = &ctx.event else {
-                    anyhow::bail!("Expected Reducer event but found {:?}", ctx.event);
-                };
-                if reducer_event.caller_identity != ctx.identity() {
+                if ctx.event.caller_identity != ctx.identity() {
                     anyhow::bail!(
                         "Expected caller_identity to be my own identity {:?}, but found {:?}",
                         ctx.identity(),
-                        reducer_event.caller_identity,
+                        ctx.event.caller_identity,
                     );
                 }
-                if reducer_event.caller_address != Some(ctx.address()) {
+                if ctx.event.caller_address != Some(ctx.address()) {
                     anyhow::bail!(
                         "Expected caller_address to be my own address {:?}, but found {:?}",
                         ctx.address(),
-                        reducer_event.caller_address,
+                        ctx.event.caller_address,
                     )
                 }
-                if !matches!(reducer_event.status, Status::Failed(_)) {
-                    anyhow::bail!(
-                        "Unexpected status. Expected Committed but found {:?}",
-                        reducer_event.status
-                    );
+                if !matches!(ctx.event.status, Status::Failed(_)) {
+                    anyhow::bail!("Unexpected status. Expected Committed but found {:?}", ctx.event.status);
                 }
                 let expected_reducer = Reducer::InsertPkU8 {
                     n: key,
                     data: fail_data,
                 };
-                if reducer_event.reducer != expected_reducer {
+                if ctx.event.reducer != expected_reducer {
                     anyhow::bail!(
                         "Unexpected Reducer in ReducerEvent: expected {expected_reducer:?} but found {:?}",
-                        reducer_event.reducer
+                        ctx.event.reducer
                     );
                 }
 
@@ -1426,7 +1408,9 @@ fn exec_insert_delete_large_table() {
                             large_table.t,
                             large_table.u,
                             large_table.v,
-                        )
+                        )?;
+
+                        Ok(())
                     };
                     insert_result(run_tests());
                 }
@@ -1668,9 +1652,9 @@ fn exec_reauth_part_1() {
 
     DbConnection::builder()
         .on_connect(|_, _identity, token| {
-            save_result(creds_store().save(token));
+            save_result(creds_store().save(token).map_err(Into::into));
         })
-        .on_connect_error(|e| panic!("Connect failed: {e:?}"))
+        .on_connect_error(|ctx| panic!("Connect failed: {:?}", ctx.event))
         .with_module_name(name)
         .with_uri(LOCALHOST)
         .build()
@@ -1704,7 +1688,7 @@ fn exec_reauth_part_2() {
                 creds_match_result(run_checks());
             }
         })
-        .on_connect_error(|e| panic!("Connect failed: {e:?}"))
+        .on_connect_error(|ctx| panic!("Connect failed: {:?}", ctx.event))
         .with_module_name(name)
         .with_token(Some(token))
         .with_uri(LOCALHOST)
@@ -1725,16 +1709,13 @@ fn exec_reconnect_same_address() {
     let initial_connection = DbConnection::builder()
         .with_module_name(db_name_or_panic())
         .with_uri(LOCALHOST)
-        .on_connect_error(|e| panic!("on_connect_error: {e:?}"))
+        .on_connect_error(|ctx| panic!("on_connect_error: {:?}", ctx.event))
         .on_connect(move |_, _, _| {
             initial_connect_result(Ok(()));
         })
-        .on_disconnect(|_, err| {
-            if let Some(err) = err {
-                disconnect_result(Err(anyhow::anyhow!("{err:?}")));
-            } else {
-                disconnect_result(Ok(()))
-            }
+        .on_disconnect(|ctx| match &ctx.event {
+            Error::Disconnected => disconnect_result(Ok(())),
+            err => disconnect_result(Err(anyhow::anyhow!("{err:?}"))),
         })
         .build()
         .unwrap();
@@ -1756,7 +1737,7 @@ fn exec_reconnect_same_address() {
     let re_connection = DbConnection::builder()
         .with_module_name(db_name_or_panic())
         .with_uri(LOCALHOST)
-        .on_connect_error(|e| panic!("on_connect_error: {e:?}"))
+        .on_connect_error(|ctx| panic!("on_connect_error: {:?}", ctx.event))
         .on_connect(move |ctx, _, _| {
             reconnect_result(Ok(()));
             let run_checks = || {
@@ -1781,11 +1762,11 @@ fn exec_caller_always_notified() {
 
     connection.reducers.on_no_op_succeeds(move |ctx| {
         (no_op_result.take().unwrap())(match ctx.event {
-            Event::Reducer(ReducerEvent {
+            ReducerEvent {
                 status: Status::Committed,
                 reducer: Reducer::NoOpSucceeds,
                 ..
-            }) => Ok(()),
+            } => Ok(()),
             _ => Err(anyhow::anyhow!(
                 "Unexpected event from no_op_succeeds reducer: {:?}",
                 ctx.event,
