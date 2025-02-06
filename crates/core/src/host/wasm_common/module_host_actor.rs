@@ -72,7 +72,6 @@ pub struct EnergyStats {
 
 pub struct ExecutionTimings {
     pub total_duration: Duration,
-    #[expect(unused)] // TODO: do we want to do something with this?
     pub wasm_instance_env_call_times: CallTimes,
 }
 
@@ -488,6 +487,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             .reducer_abi_time_usec
             .with_label_values(&database_identity, reducer_name)
             .inc_by(timings.wasm_instance_env_call_times.sum().as_micros() as u64);
+
         self.energy_monitor
             .record_reducer(&energy_fingerprint, energy.used, timings.total_duration);
         if self.allocated_memory != memory_allocation {
