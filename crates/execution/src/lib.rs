@@ -4,7 +4,6 @@ use anyhow::{anyhow, Result};
 use iter::PlanIter;
 use spacetimedb_lib::{
     bsatn::{EncodeError, ToBsatn},
-    query::Delta,
     sats::impl_serialize,
     AlgebraicValue, ProductValue,
 };
@@ -54,8 +53,16 @@ pub trait Datastore {
 }
 
 pub trait DeltaStore {
-    fn has_inserts(&self, table_id: TableId) -> Option<Delta>;
-    fn has_deletes(&self, table_id: TableId) -> Option<Delta>;
+    fn num_inserts(&self, table_id: TableId) -> Option<usize>;
+    fn num_deletes(&self, table_id: TableId) -> Option<usize>;
+
+    fn has_inserts(&self, table_id: TableId) -> bool {
+        self.num_inserts(table_id).is_some_and(|n| n != 0)
+    }
+
+    fn has_deletes(&self, table_id: TableId) -> bool {
+        self.num_deletes(table_id).is_some_and(|n| n != 0)
+    }
 
     fn inserts_for_table(&self, table_id: TableId) -> Option<std::slice::Iter<'_, ProductValue>>;
     fn deletes_for_table(&self, table_id: TableId) -> Option<std::slice::Iter<'_, ProductValue>>;

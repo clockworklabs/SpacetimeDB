@@ -230,10 +230,10 @@ impl<'a> RowRefIter<'a> {
         };
         match plan {
             PhysicalPlan::TableScan(schema, _, None) => tx.table_scan(schema.table_id).map(Self::TableScan),
-            PhysicalPlan::TableScan(schema, _, Some(Delta::Inserts(..))) => {
+            PhysicalPlan::TableScan(schema, _, Some(Delta::Inserts)) => {
                 tx.delta_scan(schema.table_id, true).map(Self::DeltaScan)
             }
-            PhysicalPlan::TableScan(schema, _, Some(Delta::Deletes(..))) => {
+            PhysicalPlan::TableScan(schema, _, Some(Delta::Deletes)) => {
                 tx.delta_scan(schema.table_id, false).map(Self::DeltaScan)
             }
             PhysicalPlan::IxScan(

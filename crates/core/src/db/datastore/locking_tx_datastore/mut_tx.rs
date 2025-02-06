@@ -34,11 +34,8 @@ use core::ops::RangeBounds;
 use core::{iter, ops::Bound};
 use smallvec::SmallVec;
 use spacetimedb_execution::{dml::MutDatastore, Datastore, DeltaStore};
+use spacetimedb_lib::db::{auth::StAccess, raw_def::SEQUENCE_ALLOCATION_STEP};
 use spacetimedb_lib::{db::raw_def::v9::RawSql, metrics::ExecutionMetrics};
-use spacetimedb_lib::{
-    db::{auth::StAccess, raw_def::SEQUENCE_ALLOCATION_STEP},
-    query::Delta,
-};
 use spacetimedb_primitives::{ColId, ColList, ColSet, ConstraintId, IndexId, ScheduleId, SequenceId, TableId};
 use spacetimedb_sats::{
     bsatn::{self, to_writer, DecodeError, Deserializer},
@@ -90,11 +87,11 @@ impl Datastore for MutTxId {
 /// Note, deltas are evaluated using read-only transactions, not mutable ones.
 /// Nevertheless this contract is still required for query evaluation.
 impl DeltaStore for MutTxId {
-    fn has_inserts(&self, _: TableId) -> Option<Delta> {
+    fn num_inserts(&self, _: TableId) -> Option<usize> {
         None
     }
 
-    fn has_deletes(&self, _: TableId) -> Option<Delta> {
+    fn num_deletes(&self, _: TableId) -> Option<usize> {
         None
     }
 
