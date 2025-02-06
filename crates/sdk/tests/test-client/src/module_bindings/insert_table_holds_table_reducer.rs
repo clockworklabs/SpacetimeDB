@@ -2,12 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::one_u_8_type::OneU8;
 use super::vec_u_8_type::VecU8;
@@ -21,11 +16,8 @@ pub(super) struct InsertTableHoldsTableArgs {
 
 impl From<InsertTableHoldsTableArgs> for super::Reducer {
     fn from(args: InsertTableHoldsTableArgs) -> Self {
-        Self::InsertTableHoldsTable {
-            a: args.a,
-            b: args.b,
-}
-}
+        Self::InsertTableHoldsTable { a: args.a, b: args.b }
+    }
 }
 
 impl __sdk::InModule for InsertTableHoldsTableArgs {
@@ -44,9 +36,7 @@ pub trait insert_table_holds_table {
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed by listening for [`Self::on_insert_table_holds_table`] callbacks.
-    fn insert_table_holds_table(&self, a: OneU8,
-b: VecU8,
-) -> __sdk::Result<()>;
+    fn insert_table_holds_table(&self, a: OneU8, b: VecU8) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `insert_table_holds_table`.
     ///
     /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
@@ -54,35 +44,39 @@ b: VecU8,
     ///
     /// The returned [`InsertTableHoldsTableCallbackId`] can be passed to [`Self::remove_on_insert_table_holds_table`]
     /// to cancel the callback.
-    fn on_insert_table_holds_table(&self, callback: impl FnMut(&super::ReducerEventContext, &OneU8, &VecU8, ) + Send + 'static) -> InsertTableHoldsTableCallbackId;
+    fn on_insert_table_holds_table(
+        &self,
+        callback: impl FnMut(&super::ReducerEventContext, &OneU8, &VecU8) + Send + 'static,
+    ) -> InsertTableHoldsTableCallbackId;
     /// Cancel a callback previously registered by [`Self::on_insert_table_holds_table`],
     /// causing it not to run in the future.
     fn remove_on_insert_table_holds_table(&self, callback: InsertTableHoldsTableCallbackId);
 }
 
 impl insert_table_holds_table for super::RemoteReducers {
-    fn insert_table_holds_table(&self, a: OneU8,
-b: VecU8,
-) -> __sdk::Result<()> {
-        self.imp.call_reducer("insert_table_holds_table", InsertTableHoldsTableArgs { a, b,  })
+    fn insert_table_holds_table(&self, a: OneU8, b: VecU8) -> __sdk::Result<()> {
+        self.imp
+            .call_reducer("insert_table_holds_table", InsertTableHoldsTableArgs { a, b })
     }
     fn on_insert_table_holds_table(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &OneU8, &VecU8, ) + Send + 'static,
+        mut callback: impl FnMut(&super::ReducerEventContext, &OneU8, &VecU8) + Send + 'static,
     ) -> InsertTableHoldsTableCallbackId {
         InsertTableHoldsTableCallbackId(self.imp.on_reducer(
             "insert_table_holds_table",
             Box::new(move |ctx: &super::ReducerEventContext| {
                 let super::ReducerEventContext {
-                    event: __sdk::ReducerEvent {
-                        reducer: super::Reducer::InsertTableHoldsTable {
-                            a, b, 
+                    event:
+                        __sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertTableHoldsTable { a, b },
+                            ..
                         },
-                        ..
-                    },
                     ..
-                } = ctx else { unreachable!() };
-                callback(ctx, a, b, )
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, a, b)
             }),
         ))
     }
@@ -110,4 +104,3 @@ impl set_flags_for_insert_table_holds_table for super::SetReducerFlags {
         self.imp.set_call_reducer_flags("insert_table_holds_table", flags);
     }
 }
-

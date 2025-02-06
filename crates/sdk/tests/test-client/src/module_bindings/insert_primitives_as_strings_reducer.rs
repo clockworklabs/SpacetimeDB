@@ -2,12 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::every_primitive_struct_type::EveryPrimitiveStruct;
 
@@ -19,10 +14,8 @@ pub(super) struct InsertPrimitivesAsStringsArgs {
 
 impl From<InsertPrimitivesAsStringsArgs> for super::Reducer {
     fn from(args: InsertPrimitivesAsStringsArgs) -> Self {
-        Self::InsertPrimitivesAsStrings {
-            s: args.s,
-}
-}
+        Self::InsertPrimitivesAsStrings { s: args.s }
+    }
 }
 
 impl __sdk::InModule for InsertPrimitivesAsStringsArgs {
@@ -41,8 +34,7 @@ pub trait insert_primitives_as_strings {
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed by listening for [`Self::on_insert_primitives_as_strings`] callbacks.
-    fn insert_primitives_as_strings(&self, s: EveryPrimitiveStruct,
-) -> __sdk::Result<()>;
+    fn insert_primitives_as_strings(&self, s: EveryPrimitiveStruct) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `insert_primitives_as_strings`.
     ///
     /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
@@ -50,34 +42,39 @@ pub trait insert_primitives_as_strings {
     ///
     /// The returned [`InsertPrimitivesAsStringsCallbackId`] can be passed to [`Self::remove_on_insert_primitives_as_strings`]
     /// to cancel the callback.
-    fn on_insert_primitives_as_strings(&self, callback: impl FnMut(&super::ReducerEventContext, &EveryPrimitiveStruct, ) + Send + 'static) -> InsertPrimitivesAsStringsCallbackId;
+    fn on_insert_primitives_as_strings(
+        &self,
+        callback: impl FnMut(&super::ReducerEventContext, &EveryPrimitiveStruct) + Send + 'static,
+    ) -> InsertPrimitivesAsStringsCallbackId;
     /// Cancel a callback previously registered by [`Self::on_insert_primitives_as_strings`],
     /// causing it not to run in the future.
     fn remove_on_insert_primitives_as_strings(&self, callback: InsertPrimitivesAsStringsCallbackId);
 }
 
 impl insert_primitives_as_strings for super::RemoteReducers {
-    fn insert_primitives_as_strings(&self, s: EveryPrimitiveStruct,
-) -> __sdk::Result<()> {
-        self.imp.call_reducer("insert_primitives_as_strings", InsertPrimitivesAsStringsArgs { s,  })
+    fn insert_primitives_as_strings(&self, s: EveryPrimitiveStruct) -> __sdk::Result<()> {
+        self.imp
+            .call_reducer("insert_primitives_as_strings", InsertPrimitivesAsStringsArgs { s })
     }
     fn on_insert_primitives_as_strings(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &EveryPrimitiveStruct, ) + Send + 'static,
+        mut callback: impl FnMut(&super::ReducerEventContext, &EveryPrimitiveStruct) + Send + 'static,
     ) -> InsertPrimitivesAsStringsCallbackId {
         InsertPrimitivesAsStringsCallbackId(self.imp.on_reducer(
             "insert_primitives_as_strings",
             Box::new(move |ctx: &super::ReducerEventContext| {
                 let super::ReducerEventContext {
-                    event: __sdk::ReducerEvent {
-                        reducer: super::Reducer::InsertPrimitivesAsStrings {
-                            s, 
+                    event:
+                        __sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertPrimitivesAsStrings { s },
+                            ..
                         },
-                        ..
-                    },
                     ..
-                } = ctx else { unreachable!() };
-                callback(ctx, s, )
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, s)
             }),
         ))
     }
@@ -105,4 +102,3 @@ impl set_flags_for_insert_primitives_as_strings for super::SetReducerFlags {
         self.imp.set_call_reducer_flags("insert_primitives_as_strings", flags);
     }
 }
-

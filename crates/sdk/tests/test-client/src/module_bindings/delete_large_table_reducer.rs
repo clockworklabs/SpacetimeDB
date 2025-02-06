@@ -2,19 +2,14 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-use super::simple_enum_type::SimpleEnum;
-use super::enum_with_payload_type::EnumWithPayload;
-use super::unit_struct_type::UnitStruct;
 use super::byte_struct_type::ByteStruct;
+use super::enum_with_payload_type::EnumWithPayload;
 use super::every_primitive_struct_type::EveryPrimitiveStruct;
 use super::every_vec_struct_type::EveryVecStruct;
+use super::simple_enum_type::SimpleEnum;
+use super::unit_struct_type::UnitStruct;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -68,8 +63,8 @@ impl From<DeleteLargeTableArgs> for super::Reducer {
             t: args.t,
             u: args.u,
             v: args.v,
-}
-}
+        }
+    }
 }
 
 impl __sdk::InModule for DeleteLargeTableArgs {
@@ -88,29 +83,31 @@ pub trait delete_large_table {
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed by listening for [`Self::on_delete_large_table`] callbacks.
-    fn delete_large_table(&self, a: u8,
-b: u16,
-c: u32,
-d: u64,
-e: u128,
-f: __sats::u256,
-g: i8,
-h: i16,
-i: i32,
-j: i64,
-k: i128,
-l: __sats::i256,
-m: bool,
-n: f32,
-o: f64,
-p: String,
-q: SimpleEnum,
-r: EnumWithPayload,
-s: UnitStruct,
-t: ByteStruct,
-u: EveryPrimitiveStruct,
-v: EveryVecStruct,
-) -> __sdk::Result<()>;
+    fn delete_large_table(
+        &self,
+        a: u8,
+        b: u16,
+        c: u32,
+        d: u64,
+        e: u128,
+        f: __sats::u256,
+        g: i8,
+        h: i16,
+        i: i32,
+        j: i64,
+        k: i128,
+        l: __sats::i256,
+        m: bool,
+        n: f32,
+        o: f64,
+        p: String,
+        q: SimpleEnum,
+        r: EnumWithPayload,
+        s: UnitStruct,
+        t: ByteStruct,
+        u: EveryPrimitiveStruct,
+        v: EveryVecStruct,
+    ) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `delete_large_table`.
     ///
     /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
@@ -118,55 +115,162 @@ v: EveryVecStruct,
     ///
     /// The returned [`DeleteLargeTableCallbackId`] can be passed to [`Self::remove_on_delete_large_table`]
     /// to cancel the callback.
-    fn on_delete_large_table(&self, callback: impl FnMut(&super::ReducerEventContext, &u8, &u16, &u32, &u64, &u128, &__sats::u256, &i8, &i16, &i32, &i64, &i128, &__sats::i256, &bool, &f32, &f64, &String, &SimpleEnum, &EnumWithPayload, &UnitStruct, &ByteStruct, &EveryPrimitiveStruct, &EveryVecStruct, ) + Send + 'static) -> DeleteLargeTableCallbackId;
+    fn on_delete_large_table(
+        &self,
+        callback: impl FnMut(
+                &super::ReducerEventContext,
+                &u8,
+                &u16,
+                &u32,
+                &u64,
+                &u128,
+                &__sats::u256,
+                &i8,
+                &i16,
+                &i32,
+                &i64,
+                &i128,
+                &__sats::i256,
+                &bool,
+                &f32,
+                &f64,
+                &String,
+                &SimpleEnum,
+                &EnumWithPayload,
+                &UnitStruct,
+                &ByteStruct,
+                &EveryPrimitiveStruct,
+                &EveryVecStruct,
+            ) + Send
+            + 'static,
+    ) -> DeleteLargeTableCallbackId;
     /// Cancel a callback previously registered by [`Self::on_delete_large_table`],
     /// causing it not to run in the future.
     fn remove_on_delete_large_table(&self, callback: DeleteLargeTableCallbackId);
 }
 
 impl delete_large_table for super::RemoteReducers {
-    fn delete_large_table(&self, a: u8,
-b: u16,
-c: u32,
-d: u64,
-e: u128,
-f: __sats::u256,
-g: i8,
-h: i16,
-i: i32,
-j: i64,
-k: i128,
-l: __sats::i256,
-m: bool,
-n: f32,
-o: f64,
-p: String,
-q: SimpleEnum,
-r: EnumWithPayload,
-s: UnitStruct,
-t: ByteStruct,
-u: EveryPrimitiveStruct,
-v: EveryVecStruct,
-) -> __sdk::Result<()> {
-        self.imp.call_reducer("delete_large_table", DeleteLargeTableArgs { a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v,  })
+    fn delete_large_table(
+        &self,
+        a: u8,
+        b: u16,
+        c: u32,
+        d: u64,
+        e: u128,
+        f: __sats::u256,
+        g: i8,
+        h: i16,
+        i: i32,
+        j: i64,
+        k: i128,
+        l: __sats::i256,
+        m: bool,
+        n: f32,
+        o: f64,
+        p: String,
+        q: SimpleEnum,
+        r: EnumWithPayload,
+        s: UnitStruct,
+        t: ByteStruct,
+        u: EveryPrimitiveStruct,
+        v: EveryVecStruct,
+    ) -> __sdk::Result<()> {
+        self.imp.call_reducer(
+            "delete_large_table",
+            DeleteLargeTableArgs {
+                a,
+                b,
+                c,
+                d,
+                e,
+                f,
+                g,
+                h,
+                i,
+                j,
+                k,
+                l,
+                m,
+                n,
+                o,
+                p,
+                q,
+                r,
+                s,
+                t,
+                u,
+                v,
+            },
+        )
     }
     fn on_delete_large_table(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &u8, &u16, &u32, &u64, &u128, &__sats::u256, &i8, &i16, &i32, &i64, &i128, &__sats::i256, &bool, &f32, &f64, &String, &SimpleEnum, &EnumWithPayload, &UnitStruct, &ByteStruct, &EveryPrimitiveStruct, &EveryVecStruct, ) + Send + 'static,
+        mut callback: impl FnMut(
+                &super::ReducerEventContext,
+                &u8,
+                &u16,
+                &u32,
+                &u64,
+                &u128,
+                &__sats::u256,
+                &i8,
+                &i16,
+                &i32,
+                &i64,
+                &i128,
+                &__sats::i256,
+                &bool,
+                &f32,
+                &f64,
+                &String,
+                &SimpleEnum,
+                &EnumWithPayload,
+                &UnitStruct,
+                &ByteStruct,
+                &EveryPrimitiveStruct,
+                &EveryVecStruct,
+            ) + Send
+            + 'static,
     ) -> DeleteLargeTableCallbackId {
         DeleteLargeTableCallbackId(self.imp.on_reducer(
             "delete_large_table",
             Box::new(move |ctx: &super::ReducerEventContext| {
                 let super::ReducerEventContext {
-                    event: __sdk::ReducerEvent {
-                        reducer: super::Reducer::DeleteLargeTable {
-                            a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, 
+                    event:
+                        __sdk::ReducerEvent {
+                            reducer:
+                                super::Reducer::DeleteLargeTable {
+                                    a,
+                                    b,
+                                    c,
+                                    d,
+                                    e,
+                                    f,
+                                    g,
+                                    h,
+                                    i,
+                                    j,
+                                    k,
+                                    l,
+                                    m,
+                                    n,
+                                    o,
+                                    p,
+                                    q,
+                                    r,
+                                    s,
+                                    t,
+                                    u,
+                                    v,
+                                },
+                            ..
                         },
-                        ..
-                    },
                     ..
-                } = ctx else { unreachable!() };
-                callback(ctx, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, )
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v)
             }),
         ))
     }
@@ -194,4 +298,3 @@ impl set_flags_for_delete_large_table for super::SetReducerFlags {
         self.imp.set_call_reducer_flags("delete_large_table", flags);
     }
 }
-

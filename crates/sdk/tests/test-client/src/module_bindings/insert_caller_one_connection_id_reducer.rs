@@ -2,23 +2,16 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub(super) struct InsertCallerOneConnectionIdArgs {
-    }
+pub(super) struct InsertCallerOneConnectionIdArgs {}
 
 impl From<InsertCallerOneConnectionIdArgs> for super::Reducer {
     fn from(args: InsertCallerOneConnectionIdArgs) -> Self {
         Self::InsertCallerOneConnectionId
-}
+    }
 }
 
 impl __sdk::InModule for InsertCallerOneConnectionIdArgs {
@@ -37,7 +30,7 @@ pub trait insert_caller_one_connection_id {
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed by listening for [`Self::on_insert_caller_one_connection_id`] callbacks.
-    fn insert_caller_one_connection_id(&self, ) -> __sdk::Result<()>;
+    fn insert_caller_one_connection_id(&self) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `insert_caller_one_connection_id`.
     ///
     /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
@@ -45,38 +38,45 @@ pub trait insert_caller_one_connection_id {
     ///
     /// The returned [`InsertCallerOneConnectionIdCallbackId`] can be passed to [`Self::remove_on_insert_caller_one_connection_id`]
     /// to cancel the callback.
-    fn on_insert_caller_one_connection_id(&self, callback: impl FnMut(&super::ReducerEventContext, ) + Send + 'static) -> InsertCallerOneConnectionIdCallbackId;
+    fn on_insert_caller_one_connection_id(
+        &self,
+        callback: impl FnMut(&super::ReducerEventContext) + Send + 'static,
+    ) -> InsertCallerOneConnectionIdCallbackId;
     /// Cancel a callback previously registered by [`Self::on_insert_caller_one_connection_id`],
     /// causing it not to run in the future.
     fn remove_on_insert_caller_one_connection_id(&self, callback: InsertCallerOneConnectionIdCallbackId);
 }
 
 impl insert_caller_one_connection_id for super::RemoteReducers {
-    fn insert_caller_one_connection_id(&self, ) -> __sdk::Result<()> {
-        self.imp.call_reducer("insert_caller_one_connection_id", InsertCallerOneConnectionIdArgs {  })
+    fn insert_caller_one_connection_id(&self) -> __sdk::Result<()> {
+        self.imp
+            .call_reducer("insert_caller_one_connection_id", InsertCallerOneConnectionIdArgs {})
     }
     fn on_insert_caller_one_connection_id(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, ) + Send + 'static,
+        mut callback: impl FnMut(&super::ReducerEventContext) + Send + 'static,
     ) -> InsertCallerOneConnectionIdCallbackId {
         InsertCallerOneConnectionIdCallbackId(self.imp.on_reducer(
             "insert_caller_one_connection_id",
             Box::new(move |ctx: &super::ReducerEventContext| {
                 let super::ReducerEventContext {
-                    event: __sdk::ReducerEvent {
-                        reducer: super::Reducer::InsertCallerOneConnectionId {
-                            
+                    event:
+                        __sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertCallerOneConnectionId {},
+                            ..
                         },
-                        ..
-                    },
                     ..
-                } = ctx else { unreachable!() };
-                callback(ctx, )
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx)
             }),
         ))
     }
     fn remove_on_insert_caller_one_connection_id(&self, callback: InsertCallerOneConnectionIdCallbackId) {
-        self.imp.remove_on_reducer("insert_caller_one_connection_id", callback.0)
+        self.imp
+            .remove_on_reducer("insert_caller_one_connection_id", callback.0)
     }
 }
 
@@ -96,7 +96,7 @@ pub trait set_flags_for_insert_caller_one_connection_id {
 
 impl set_flags_for_insert_caller_one_connection_id for super::SetReducerFlags {
     fn insert_caller_one_connection_id(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("insert_caller_one_connection_id", flags);
+        self.imp
+            .set_call_reducer_flags("insert_caller_one_connection_id", flags);
     }
 }
-

@@ -68,23 +68,23 @@ macro_rules! declare_tests_with_suffix {
             }
 
             #[test]
-            fn insert_address() {
-                make_test("insert_address").run();
+            fn insert_connection_id() {
+                make_test("insert_connection_id").run();
             }
 
             #[test]
-            fn insert_caller_address() {
-                make_test("insert_caller_address").run();
+            fn insert_caller_connection_id() {
+                make_test("insert_caller_connection_id").run();
             }
 
             #[test]
-            fn delete_address() {
-                make_test("delete_address").run();
+            fn delete_connection_id() {
+                make_test("delete_connection_id").run();
             }
 
             #[test]
-            fn update_address() {
-                make_test("delete_address").run();
+            fn update_connection_id() {
+                make_test("delete_connection_id").run();
             }
 
             #[test]
@@ -155,8 +155,8 @@ macro_rules! declare_tests_with_suffix {
             }
 
             #[test]
-            fn reconnect_same_address() {
-                make_test("reconnect_same_address").run();
+            fn reconnect_same_connection_id() {
+                make_test("reconnect_same_connection_id").run();
             }
 
             #[test]

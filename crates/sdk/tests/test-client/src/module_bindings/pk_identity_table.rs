@@ -2,13 +2,8 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
 use super::pk_identity_type::PkIdentity;
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `pk_identity`.
 ///
@@ -49,8 +44,12 @@ impl<'ctx> __sdk::Table for PkIdentityTableHandle<'ctx> {
     type Row = PkIdentity;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 { self.imp.count() }
-    fn iter(&self) -> impl Iterator<Item = PkIdentity> + '_ { self.imp.iter() }
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = PkIdentity> + '_ {
+        self.imp.iter()
+    }
 
     type InsertCallbackId = PkIdentityInsertCallbackId;
 
@@ -81,8 +80,7 @@ impl<'ctx> __sdk::Table for PkIdentityTableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-
-        let _table = client_cache.get_or_make_table::<PkIdentity>("pk_identity");
+    let _table = client_cache.get_or_make_table::<PkIdentity>("pk_identity");
     _table.add_unique_constraint::<__sdk::Identity>("i", |row| &row.i);
 }
 pub struct PkIdentityUpdateCallbackId(__sdk::CallbackId);
@@ -106,45 +104,40 @@ impl<'ctx> __sdk::TableWithPrimaryKey for PkIdentityTableHandle<'ctx> {
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
 ) -> __sdk::Result<__sdk::TableUpdate<PkIdentity>> {
-    __sdk::TableUpdate::parse_table_update_with_primary_key::<__sdk::Identity>(
-        raw_updates,
-        |row: &PkIdentity| &row.i,
-    )
+    __sdk::TableUpdate::parse_table_update_with_primary_key::<__sdk::Identity>(raw_updates, |row: &PkIdentity| &row.i)
         .map_err(|e| {
-             __sdk::InternalError::failed_parse(
-                "TableUpdate<PkIdentity>",
-                "TableUpdate",
-            ).with_cause(e).into()
+            __sdk::InternalError::failed_parse("TableUpdate<PkIdentity>", "TableUpdate")
+                .with_cause(e)
+                .into()
         })
 }
 
-        /// Access to the `i` unique index on the table `pk_identity`,
-        /// which allows point queries on the field of the same name
-        /// via the [`PkIdentityIUnique::find`] method.
-        ///
-        /// Users are encouraged not to explicitly reference this type,
-        /// but to directly chain method calls,
-        /// like `ctx.db.pk_identity().i().find(...)`.
-        pub struct PkIdentityIUnique<'ctx> {
-            imp: __sdk::UniqueConstraintHandle<PkIdentity, __sdk::Identity>,
-            phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
-        }
+/// Access to the `i` unique index on the table `pk_identity`,
+/// which allows point queries on the field of the same name
+/// via the [`PkIdentityIUnique::find`] method.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.pk_identity().i().find(...)`.
+pub struct PkIdentityIUnique<'ctx> {
+    imp: __sdk::UniqueConstraintHandle<PkIdentity, __sdk::Identity>,
+    phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
+}
 
-        impl<'ctx> PkIdentityTableHandle<'ctx> {
-            /// Get a handle on the `i` unique index on the table `pk_identity`.
-            pub fn i(&self) -> PkIdentityIUnique<'ctx> {
-                PkIdentityIUnique {
-                    imp: self.imp.get_unique_constraint::<__sdk::Identity>("i"),
-                    phantom: std::marker::PhantomData,
-                }
-            }
+impl<'ctx> PkIdentityTableHandle<'ctx> {
+    /// Get a handle on the `i` unique index on the table `pk_identity`.
+    pub fn i(&self) -> PkIdentityIUnique<'ctx> {
+        PkIdentityIUnique {
+            imp: self.imp.get_unique_constraint::<__sdk::Identity>("i"),
+            phantom: std::marker::PhantomData,
         }
+    }
+}
 
-        impl<'ctx> PkIdentityIUnique<'ctx> {
-            /// Find the subscribed row whose `i` column value is equal to `col_val`,
-            /// if such a row is present in the client cache.
-            pub fn find(&self, col_val: &__sdk::Identity) -> Option<PkIdentity> {
-                self.imp.find(col_val)
-            }
-        }
-        
+impl<'ctx> PkIdentityIUnique<'ctx> {
+    /// Find the subscribed row whose `i` column value is equal to `col_val`,
+    /// if such a row is present in the client cache.
+    pub fn find(&self, col_val: &__sdk::Identity) -> Option<PkIdentity> {
+        self.imp.find(col_val)
+    }
+}

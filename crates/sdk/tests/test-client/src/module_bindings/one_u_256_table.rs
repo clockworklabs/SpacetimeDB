@@ -2,13 +2,8 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
 use super::one_u_256_type::OneU256;
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `one_u256`.
 ///
@@ -49,8 +44,12 @@ impl<'ctx> __sdk::Table for OneU256TableHandle<'ctx> {
     type Row = OneU256;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 { self.imp.count() }
-    fn iter(&self) -> impl Iterator<Item = OneU256> + '_ { self.imp.iter() }
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = OneU256> + '_ {
+        self.imp.iter()
+    }
 
     type InsertCallbackId = OneU256InsertCallbackId;
 
@@ -81,18 +80,15 @@ impl<'ctx> __sdk::Table for OneU256TableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-
-        let _table = client_cache.get_or_make_table::<OneU256>("one_u256");
+    let _table = client_cache.get_or_make_table::<OneU256>("one_u256");
 }
 #[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
 ) -> __sdk::Result<__sdk::TableUpdate<OneU256>> {
-    __sdk::TableUpdate::parse_table_update_no_primary_key(raw_updates)
-        .map_err(|e| {
-             __sdk::InternalError::failed_parse(
-                "TableUpdate<OneU256>",
-                "TableUpdate",
-            ).with_cause(e).into()
-        })
+    __sdk::TableUpdate::parse_table_update_no_primary_key(raw_updates).map_err(|e| {
+        __sdk::InternalError::failed_parse("TableUpdate<OneU256>", "TableUpdate")
+            .with_cause(e)
+            .into()
+    })
 }

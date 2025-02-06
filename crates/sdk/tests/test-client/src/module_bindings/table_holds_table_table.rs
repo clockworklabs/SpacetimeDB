@@ -2,15 +2,10 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-use super::table_holds_table_type::TableHoldsTable;
 use super::one_u_8_type::OneU8;
+use super::table_holds_table_type::TableHoldsTable;
 use super::vec_u_8_type::VecU8;
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `table_holds_table`.
 ///
@@ -51,8 +46,12 @@ impl<'ctx> __sdk::Table for TableHoldsTableTableHandle<'ctx> {
     type Row = TableHoldsTable;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 { self.imp.count() }
-    fn iter(&self) -> impl Iterator<Item = TableHoldsTable> + '_ { self.imp.iter() }
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = TableHoldsTable> + '_ {
+        self.imp.iter()
+    }
 
     type InsertCallbackId = TableHoldsTableInsertCallbackId;
 
@@ -83,18 +82,15 @@ impl<'ctx> __sdk::Table for TableHoldsTableTableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-
-        let _table = client_cache.get_or_make_table::<TableHoldsTable>("table_holds_table");
+    let _table = client_cache.get_or_make_table::<TableHoldsTable>("table_holds_table");
 }
 #[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
 ) -> __sdk::Result<__sdk::TableUpdate<TableHoldsTable>> {
-    __sdk::TableUpdate::parse_table_update_no_primary_key(raw_updates)
-        .map_err(|e| {
-             __sdk::InternalError::failed_parse(
-                "TableUpdate<TableHoldsTable>",
-                "TableUpdate",
-            ).with_cause(e).into()
-        })
+    __sdk::TableUpdate::parse_table_update_no_primary_key(raw_updates).map_err(|e| {
+        __sdk::InternalError::failed_parse("TableUpdate<TableHoldsTable>", "TableUpdate")
+            .with_cause(e)
+            .into()
+    })
 }

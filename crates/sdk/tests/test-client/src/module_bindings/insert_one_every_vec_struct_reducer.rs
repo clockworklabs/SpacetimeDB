@@ -2,12 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::every_vec_struct_type::EveryVecStruct;
 
@@ -19,10 +14,8 @@ pub(super) struct InsertOneEveryVecStructArgs {
 
 impl From<InsertOneEveryVecStructArgs> for super::Reducer {
     fn from(args: InsertOneEveryVecStructArgs) -> Self {
-        Self::InsertOneEveryVecStruct {
-            s: args.s,
-}
-}
+        Self::InsertOneEveryVecStruct { s: args.s }
+    }
 }
 
 impl __sdk::InModule for InsertOneEveryVecStructArgs {
@@ -41,8 +34,7 @@ pub trait insert_one_every_vec_struct {
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed by listening for [`Self::on_insert_one_every_vec_struct`] callbacks.
-    fn insert_one_every_vec_struct(&self, s: EveryVecStruct,
-) -> __sdk::Result<()>;
+    fn insert_one_every_vec_struct(&self, s: EveryVecStruct) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `insert_one_every_vec_struct`.
     ///
     /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
@@ -50,34 +42,39 @@ pub trait insert_one_every_vec_struct {
     ///
     /// The returned [`InsertOneEveryVecStructCallbackId`] can be passed to [`Self::remove_on_insert_one_every_vec_struct`]
     /// to cancel the callback.
-    fn on_insert_one_every_vec_struct(&self, callback: impl FnMut(&super::ReducerEventContext, &EveryVecStruct, ) + Send + 'static) -> InsertOneEveryVecStructCallbackId;
+    fn on_insert_one_every_vec_struct(
+        &self,
+        callback: impl FnMut(&super::ReducerEventContext, &EveryVecStruct) + Send + 'static,
+    ) -> InsertOneEveryVecStructCallbackId;
     /// Cancel a callback previously registered by [`Self::on_insert_one_every_vec_struct`],
     /// causing it not to run in the future.
     fn remove_on_insert_one_every_vec_struct(&self, callback: InsertOneEveryVecStructCallbackId);
 }
 
 impl insert_one_every_vec_struct for super::RemoteReducers {
-    fn insert_one_every_vec_struct(&self, s: EveryVecStruct,
-) -> __sdk::Result<()> {
-        self.imp.call_reducer("insert_one_every_vec_struct", InsertOneEveryVecStructArgs { s,  })
+    fn insert_one_every_vec_struct(&self, s: EveryVecStruct) -> __sdk::Result<()> {
+        self.imp
+            .call_reducer("insert_one_every_vec_struct", InsertOneEveryVecStructArgs { s })
     }
     fn on_insert_one_every_vec_struct(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &EveryVecStruct, ) + Send + 'static,
+        mut callback: impl FnMut(&super::ReducerEventContext, &EveryVecStruct) + Send + 'static,
     ) -> InsertOneEveryVecStructCallbackId {
         InsertOneEveryVecStructCallbackId(self.imp.on_reducer(
             "insert_one_every_vec_struct",
             Box::new(move |ctx: &super::ReducerEventContext| {
                 let super::ReducerEventContext {
-                    event: __sdk::ReducerEvent {
-                        reducer: super::Reducer::InsertOneEveryVecStruct {
-                            s, 
+                    event:
+                        __sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertOneEveryVecStruct { s },
+                            ..
                         },
-                        ..
-                    },
                     ..
-                } = ctx else { unreachable!() };
-                callback(ctx, s, )
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, s)
             }),
         ))
     }
@@ -105,4 +102,3 @@ impl set_flags_for_insert_one_every_vec_struct for super::SetReducerFlags {
         self.imp.set_call_reducer_flags("insert_one_every_vec_struct", flags);
     }
 }
-

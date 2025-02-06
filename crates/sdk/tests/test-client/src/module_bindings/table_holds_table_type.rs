@@ -2,12 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::one_u_8_type::OneU8;
 use super::vec_u_8_type::VecU8;
@@ -19,8 +14,6 @@ pub struct TableHoldsTable {
     pub b: VecU8,
 }
 
-
 impl __sdk::InModule for TableHoldsTable {
     type Module = super::RemoteModule;
 }
-

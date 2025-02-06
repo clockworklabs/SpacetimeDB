@@ -2,13 +2,8 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
 use super::scheduled_table_type::ScheduledTable;
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `scheduled_table`.
 ///
@@ -49,8 +44,12 @@ impl<'ctx> __sdk::Table for ScheduledTableTableHandle<'ctx> {
     type Row = ScheduledTable;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 { self.imp.count() }
-    fn iter(&self) -> impl Iterator<Item = ScheduledTable> + '_ { self.imp.iter() }
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = ScheduledTable> + '_ {
+        self.imp.iter()
+    }
 
     type InsertCallbackId = ScheduledTableInsertCallbackId;
 
@@ -81,8 +80,7 @@ impl<'ctx> __sdk::Table for ScheduledTableTableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-
-        let _table = client_cache.get_or_make_table::<ScheduledTable>("scheduled_table");
+    let _table = client_cache.get_or_make_table::<ScheduledTable>("scheduled_table");
     _table.add_unique_constraint::<u64>("scheduled_id", |row| &row.scheduled_id);
 }
 pub struct ScheduledTableUpdateCallbackId(__sdk::CallbackId);
@@ -106,45 +104,42 @@ impl<'ctx> __sdk::TableWithPrimaryKey for ScheduledTableTableHandle<'ctx> {
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
 ) -> __sdk::Result<__sdk::TableUpdate<ScheduledTable>> {
-    __sdk::TableUpdate::parse_table_update_with_primary_key::<u64>(
-        raw_updates,
-        |row: &ScheduledTable| &row.scheduled_id,
-    )
-        .map_err(|e| {
-             __sdk::InternalError::failed_parse(
-                "TableUpdate<ScheduledTable>",
-                "TableUpdate",
-            ).with_cause(e).into()
-        })
+    __sdk::TableUpdate::parse_table_update_with_primary_key::<u64>(raw_updates, |row: &ScheduledTable| {
+        &row.scheduled_id
+    })
+    .map_err(|e| {
+        __sdk::InternalError::failed_parse("TableUpdate<ScheduledTable>", "TableUpdate")
+            .with_cause(e)
+            .into()
+    })
 }
 
-        /// Access to the `scheduled_id` unique index on the table `scheduled_table`,
-        /// which allows point queries on the field of the same name
-        /// via the [`ScheduledTableScheduledIdUnique::find`] method.
-        ///
-        /// Users are encouraged not to explicitly reference this type,
-        /// but to directly chain method calls,
-        /// like `ctx.db.scheduled_table().scheduled_id().find(...)`.
-        pub struct ScheduledTableScheduledIdUnique<'ctx> {
-            imp: __sdk::UniqueConstraintHandle<ScheduledTable, u64>,
-            phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
-        }
+/// Access to the `scheduled_id` unique index on the table `scheduled_table`,
+/// which allows point queries on the field of the same name
+/// via the [`ScheduledTableScheduledIdUnique::find`] method.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.scheduled_table().scheduled_id().find(...)`.
+pub struct ScheduledTableScheduledIdUnique<'ctx> {
+    imp: __sdk::UniqueConstraintHandle<ScheduledTable, u64>,
+    phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
+}
 
-        impl<'ctx> ScheduledTableTableHandle<'ctx> {
-            /// Get a handle on the `scheduled_id` unique index on the table `scheduled_table`.
-            pub fn scheduled_id(&self) -> ScheduledTableScheduledIdUnique<'ctx> {
-                ScheduledTableScheduledIdUnique {
-                    imp: self.imp.get_unique_constraint::<u64>("scheduled_id"),
-                    phantom: std::marker::PhantomData,
-                }
-            }
+impl<'ctx> ScheduledTableTableHandle<'ctx> {
+    /// Get a handle on the `scheduled_id` unique index on the table `scheduled_table`.
+    pub fn scheduled_id(&self) -> ScheduledTableScheduledIdUnique<'ctx> {
+        ScheduledTableScheduledIdUnique {
+            imp: self.imp.get_unique_constraint::<u64>("scheduled_id"),
+            phantom: std::marker::PhantomData,
         }
+    }
+}
 
-        impl<'ctx> ScheduledTableScheduledIdUnique<'ctx> {
-            /// Find the subscribed row whose `scheduled_id` column value is equal to `col_val`,
-            /// if such a row is present in the client cache.
-            pub fn find(&self, col_val: &u64) -> Option<ScheduledTable> {
-                self.imp.find(col_val)
-            }
-        }
-        
+impl<'ctx> ScheduledTableScheduledIdUnique<'ctx> {
+    /// Find the subscribed row whose `scheduled_id` column value is equal to `col_val`,
+    /// if such a row is present in the client cache.
+    pub fn find(&self, col_val: &u64) -> Option<ScheduledTable> {
+        self.imp.find(col_val)
+    }
+}
