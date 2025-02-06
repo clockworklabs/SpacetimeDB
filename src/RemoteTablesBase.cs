@@ -22,7 +22,5 @@ namespace SpacetimeDB
             Log.Error($"We don't know that this table is: {name}");
             return null;
         }
-
-        internal IEnumerable<IRemoteTableHandle> GetTables() => tables.Values;
     }
 }
