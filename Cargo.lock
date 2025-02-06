@@ -4964,6 +4964,7 @@ dependencies = [
  "tempfile",
  "thin-vec",
  "thiserror",
+ "tikv-jemalloc-ctl",
  "tokio",
  "tokio-stream",
  "tokio-util",

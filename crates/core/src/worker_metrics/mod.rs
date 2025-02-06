@@ -1,4 +1,4 @@
-use std::thread::available_parallelism;
+use std::{thread::available_parallelism, time::Duration};
 
 use crate::execution_context::WorkloadType;
 use crate::hash::Hash;
@@ -112,10 +112,46 @@ metrics_group!(
         #[help = "The cumulative number of bytes sent to clients"]
         #[labels(txn_type: WorkloadType, db: Identity)]
         pub bytes_sent_to_clients: IntCounterVec,
+
+        #[name = jemalloc_active_bytes]
+        #[help = "Number of bytes in jemallocs heap"]
+        #[labels(db: Identity)]
+        pub jemalloc_active_bytes: IntGaugeVec,
+
+        #[name = jemalloc_allocated_bytes]
+        #[help = "Number of bytes in use"]
+        #[labels(db: Identity)]
+        pub jemalloc_allocated_bytes: IntGaugeVec,
+
+        #[name = jemalloc_resident_bytes]
+        #[help = "Total memory used by jemalloc"]
+        #[labels(db: Identity)]
+        pub jemalloc_resident_bytes: IntGaugeVec,
     }
 );
 
 pub static WORKER_METRICS: Lazy<WorkerMetrics> = Lazy::new(WorkerMetrics::new);
+use tikv_jemalloc_ctl::{epoch, stats};
+use tokio::{spawn, time::sleep};
+pub fn spawn_jemalloc_stats() {
+
+    spawn(async {
+        let e = epoch::mib().unwrap();
+        loop {
+            e.advance().unwrap();
+            let allocated = stats::allocated::read().unwrap();
+            WORKER_METRICS.jemalloc_active_bytes.with_label_values(&Identity::ZERO).set(allocated as i64);
+            let resident = stats::resident::read().unwrap();
+            WORKER_METRICS.jemalloc_resident_bytes.with_label_values(&Identity::ZERO).set(resident as i64);
+            let active = stats::active::read().unwrap();
+            WORKER_METRICS.jemalloc_active_bytes.with_label_values(&Identity::ZERO).set(active as i64);
+
+            // Make a gauge for each of these.
+
+            sleep(Duration::from_secs(10)).await;
+        }
+    });
+}
 
 fn build_global_metrics() -> Vec<Box<dyn Collector>> {
     let mut metrics: Vec<Box<dyn Collector>> = Vec::new();
@@ -127,7 +163,6 @@ fn build_global_metrics() -> Vec<Box<dyn Collector>> {
         )
         .unwrap(),
     ));
-
     metrics.push(Box::new(
         PullingGauge::new(
             "physical_memory_bytes",
