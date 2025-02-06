@@ -1,15 +1,14 @@
 use crate::{
     bflatn_to::write_row_to_pages_bsatn,
-    btree_index::TableIndexPointIter,
     layout::AlgebraicTypeLayout,
     static_bsatn_validator::{static_bsatn_validator, validate_bsatn, StaticBsatnValidator},
+    table_index::TableIndexPointIter,
 };
 
 use super::{
     bflatn_from::serialize_row_from_page,
     bflatn_to::{write_row_to_pages, Error},
     blob_store::BlobStore,
-    btree_index::{TableIndex, TableIndexRangeIter},
     eq::eq_row_in_page,
     eq_to_pv::eq_row_in_page_to_pv,
     indexes::{Bytes, PageIndex, PageOffset, RowHash, RowPointer, Size, SquashedOffset, PAGE_DATA_SIZE},
@@ -22,6 +21,7 @@ use super::{
     row_type_visitor::{row_type_visitor, VarLenVisitorProgram},
     static_assert_size,
     static_layout::StaticLayout,
+    table_index::{TableIndex, TableIndexRangeIter},
     var_len::VarLenMembers,
     MemoryUsage,
 };
@@ -2029,7 +2029,7 @@ pub(crate) mod test {
             .map(|row_ptr| {
                 let row_ref = table.get_row_ref(blob_store, row_ptr).unwrap();
                 let key = row_ref.project(&index.indexed_columns).unwrap();
-                crate::btree_index::KeySize::key_size_in_bytes(&key) as u64
+                crate::table_index::KeySize::key_size_in_bytes(&key) as u64
             })
             .sum()
     }
@@ -2086,7 +2086,7 @@ pub(crate) mod test {
         // and assert it matches the `index.num_key_bytes()`
         let key_size_in_pvs = vals
             .iter()
-            .map(|row| crate::btree_index::KeySize::key_size_in_bytes(&row.project(&indexed_columns).unwrap()) as u64)
+            .map(|row| crate::table_index::KeySize::key_size_in_bytes(&row.project(&indexed_columns).unwrap()) as u64)
             .sum();
         prop_assert_eq!(index.num_key_bytes(), key_size_in_pvs);
 

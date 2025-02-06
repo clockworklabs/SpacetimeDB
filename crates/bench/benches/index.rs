@@ -8,9 +8,9 @@ use foldhash::{HashSet, HashSetExt};
 use itertools::Itertools as _;
 use rand::{distributions::Standard, rngs::ThreadRng, Rng};
 use spacetimedb_data_structures::map::{Entry, HashMap};
-use spacetimedb_table::btree_index::unique_direct_index::UniqueDirectIndex;
-use spacetimedb_table::btree_index::uniquemap::UniqueMap;
 use spacetimedb_table::indexes::{PageIndex, PageOffset, RowPointer, Size, SquashedOffset};
+use spacetimedb_table::table_index::unique_direct_index::UniqueDirectIndex;
+use spacetimedb_table::table_index::uniquemap::UniqueMap;
 
 fn time<R>(body: impl FnOnce() -> R) -> Duration {
     let start = WallTime.start();

@@ -7,8 +7,8 @@ use spacetimedb_physical_plan::plan::{
 };
 use spacetimedb_table::{
     blob_store::BlobStore,
-    btree_index::{TableIndex, TableIndexPointIter},
     table::{IndexScanPointIter, IndexScanRangeIter, Table, TableScanIter},
+    table_index::{TableIndex, TableIndexPointIter},
 };
 
 use crate::{Datastore, DeltaScanIter, DeltaStore, Row, Tuple};
