@@ -87,12 +87,12 @@ impl Datastore for MutTxId {
 /// Note, deltas are evaluated using read-only transactions, not mutable ones.
 /// Nevertheless this contract is still required for query evaluation.
 impl DeltaStore for MutTxId {
-    fn num_inserts(&self, _: TableId) -> Option<usize> {
-        None
+    fn num_inserts(&self, _: TableId) -> usize {
+        0
     }
 
-    fn num_deletes(&self, _: TableId) -> Option<usize> {
-        None
+    fn num_deletes(&self, _: TableId) -> usize {
+        0
     }
 
     fn inserts_for_table(&self, _: TableId) -> Option<std::slice::Iter<'_, ProductValue>> {

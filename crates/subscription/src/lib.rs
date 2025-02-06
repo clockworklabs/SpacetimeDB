@@ -193,7 +193,7 @@ impl Fragments {
                     new_plan(
                         // dr(-)ds(-)
                         plan,
-                        &[(*dr, Delta::Deletes), (*ds, Delta::Inserts)],
+                        &[(*dr, Delta::Deletes), (*ds, Delta::Deletes)],
                     )?,
                 ],
             }),

@@ -235,8 +235,8 @@ impl PipelinedScan {
     /// Is this an empty delta scan?
     pub fn is_empty(&self, tx: &impl DeltaStore) -> bool {
         match self.delta {
-            Some(Delta::Inserts) => tx.has_inserts(self.table),
-            Some(Delta::Deletes) => tx.has_deletes(self.table),
+            Some(Delta::Inserts) => !tx.has_inserts(self.table),
+            Some(Delta::Deletes) => !tx.has_deletes(self.table),
             None => false,
         }
     }
@@ -266,7 +266,7 @@ impl PipelinedScan {
             Some(Delta::Inserts) => {
                 for tuple in tx
                     // Open a product value iterator
-                    .delta_scan(self.table, true)?
+                    .delta_scan(self.table, true)
                     .map(Row::Ref)
                     .map(Tuple::Row)
                 {
@@ -276,7 +276,7 @@ impl PipelinedScan {
             Some(Delta::Deletes) => {
                 for tuple in tx
                     // Open a product value iterator
-                    .delta_scan(self.table, false)?
+                    .delta_scan(self.table, false)
                     .map(Row::Ref)
                     .map(Tuple::Row)
                 {

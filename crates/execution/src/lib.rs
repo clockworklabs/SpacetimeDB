@@ -53,30 +53,28 @@ pub trait Datastore {
 }
 
 pub trait DeltaStore {
-    fn num_inserts(&self, table_id: TableId) -> Option<usize>;
-    fn num_deletes(&self, table_id: TableId) -> Option<usize>;
+    fn num_inserts(&self, table_id: TableId) -> usize;
+    fn num_deletes(&self, table_id: TableId) -> usize;
 
     fn has_inserts(&self, table_id: TableId) -> bool {
-        self.num_inserts(table_id).is_some_and(|n| n != 0)
+        self.num_inserts(table_id) != 0
     }
 
     fn has_deletes(&self, table_id: TableId) -> bool {
-        self.num_deletes(table_id).is_some_and(|n| n != 0)
+        self.num_deletes(table_id) != 0
     }
 
     fn inserts_for_table(&self, table_id: TableId) -> Option<std::slice::Iter<'_, ProductValue>>;
     fn deletes_for_table(&self, table_id: TableId) -> Option<std::slice::Iter<'_, ProductValue>>;
 
-    fn delta_scan(&self, table_id: TableId, inserts: bool) -> Result<DeltaScanIter> {
+    fn delta_scan(&self, table_id: TableId, inserts: bool) -> DeltaScanIter {
         match inserts {
-            true => self
-                .inserts_for_table(table_id)
-                .ok_or_else(|| anyhow!("TableId `{table_id}` does not exist"))
-                .map(|iter| DeltaScanIter { iter }),
-            false => self
-                .deletes_for_table(table_id)
-                .ok_or_else(|| anyhow!("TableId `{table_id}` does not exist"))
-                .map(|iter| DeltaScanIter { iter }),
+            true => DeltaScanIter {
+                iter: self.inserts_for_table(table_id),
+            },
+            false => DeltaScanIter {
+                iter: self.deletes_for_table(table_id),
+            },
         }
     }
 }
@@ -186,14 +184,14 @@ impl<'a> Tuple<'a> {
 }
 
 pub struct DeltaScanIter<'a> {
-    iter: std::slice::Iter<'a, ProductValue>,
+    iter: Option<std::slice::Iter<'a, ProductValue>>,
 }
 
 impl<'a> Iterator for DeltaScanIter<'a> {
     type Item = &'a ProductValue;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next()
+        self.iter.as_mut().and_then(|iter| iter.next())
     }
 }
 
