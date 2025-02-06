@@ -596,11 +596,12 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
     // For all the unpaired unique columns, create a unique index.
     for unique_col in &unique_columns {
         if args.indices.iter_mut().any(|index| {
-            index.is_unique = match &index.kind {
+            let covered_by_index = match &index.kind {
                 IndexType::BTree { columns } => &**columns == slice::from_ref(unique_col.ident),
                 IndexType::Direct { column } => column == unique_col.ident,
             };
-            index.is_unique
+            index.is_unique |= covered_by_index;
+            covered_by_index
         }) {
             continue;
         }
