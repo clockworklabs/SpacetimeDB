@@ -14,6 +14,7 @@ use crate::database_logger::{self, SystemLogger};
 use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::db::datastore::system_tables::{StClientRow, ST_CLIENT_ID};
 use crate::db::datastore::traits::{IsolationLevel, Program};
+use crate::db::db_metrics::DB_METRICS;
 use crate::energy::{EnergyMonitor, EnergyQuanta, ReducerBudget, ReducerFingerprint};
 use crate::execution_context::{self, ReducerContext, Workload};
 use crate::host::instance_env::InstanceEnv;
@@ -65,6 +66,7 @@ pub trait WasmInstance: Send + Sync + 'static {
 
 pub struct EnergyStats {
     pub used: EnergyQuanta,
+    pub wasmtime_fuel_used: u64,
     pub remaining: ReducerBudget,
 }
 
@@ -474,6 +476,18 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             call_result,
         } = result;
 
+        DB_METRICS
+            .reducer_wasmtime_fuel_used
+            .with_label_values(&database_identity, reducer_name)
+            .inc_by(energy.wasmtime_fuel_used);
+        DB_METRICS
+            .reducer_duration_usec
+            .with_label_values(&database_identity, reducer_name)
+            .inc_by(timings.total_duration.as_micros() as u64);
+        DB_METRICS
+            .reducer_abi_time_usec
+            .with_label_values(&database_identity, reducer_name)
+            .inc_by(timings.wasm_instance_env_call_times.sum().as_micros() as u64);
         self.energy_monitor
             .record_reducer(&energy_fingerprint, energy.used, timings.total_duration);
         if self.allocated_memory != memory_allocation {
