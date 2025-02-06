@@ -79,7 +79,7 @@ pub async fn exec(paths: &SpacetimePaths, args: &ArgMatches) -> anyhow::Result<E
 /// include our child process. If the child terminates then we'll reap them in Cargo
 /// pretty quickly, and if the child handles the signal then we won't terminate
 /// (and we shouldn't!) until the process itself later exits.
-fn exec_replace(cmd: &mut Command) -> io::Result<ExitCode> {
+pub(crate) fn exec_replace(cmd: &mut Command) -> io::Result<ExitCode> {
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;

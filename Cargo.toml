@@ -44,7 +44,7 @@ members = [
   "crates/sdk/tests/connect_disconnect_client",
   "tools/upgrade-version",
 ]
-default-members = ["crates/cli"]
+default-members = ["crates/cli", "crates/standalone", "crates/update"]
 # cargo feature graph resolver. v3 is default in edition2024 but workspace
 # manifests don't have editions.
 resolver = "3"
@@ -149,6 +149,7 @@ crossbeam-channel = "0.5"
 cursive = { version = "0.20", default-features = false, features = ["crossterm-backend"] }
 decorum = { version = "0.3.1", default-features = false, features = ["std"] }
 derive_more = "0.99"
+dialoguer = { version = "0.11", default-features = false }
 dirs = "5.0.1"
 duct = "0.13.5"
 either = "1.9"
@@ -176,12 +177,13 @@ hyper = "1.0"
 hyper-util = { version = "0.1", features = ["tokio"] }
 imara-diff = "0.1.3"
 indexmap = "2.0.0"
-indicatif = "0.16"
+indicatif = "0.17"
 insta = { version = "1.21.0", features = ["toml"] }
 is-terminal = "0.4"
 itertools = "0.12"
 itoa = "1"
 jsonwebtoken = { package = "spacetimedb-jsonwebtoken", version = "9.3.0" }
+junction = "1"
 lazy_static = "1.4.0"
 log = "0.4.17"
 memchr = "2"
