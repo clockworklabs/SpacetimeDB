@@ -1,3 +1,4 @@
+use crate::dml::MutationPlan;
 use crate::plan::{IxScan, Label, PhysicalExpr, PhysicalPlan, ProjectListPlan, ProjectPlan, Sarg, Semi, TupleField};
 use crate::{PhysicalCtx, PlanCtx};
 use itertools::Itertools;
@@ -235,6 +236,19 @@ pub enum Line<'a> {
         rhs: Field<'a>,
         ident: u16,
     },
+    Insert {
+        table_name: &'a str,
+        ident: u16,
+    },
+    Update {
+        table_name: &'a str,
+        columns: Vec<(Field<'a>, &'a AlgebraicValue)>,
+        ident: u16,
+    },
+    Delete {
+        table_name: &'a str,
+        ident: u16,
+    },
 }
 
 impl Line<'_> {
@@ -248,6 +262,9 @@ impl Line<'_> {
             Line::HashJoin { ident, .. } => *ident,
             Line::NlJoin { ident, .. } => *ident,
             Line::JoinExpr { ident, .. } => *ident,
+            Line::Insert { ident, .. } => *ident,
+            Line::Update { ident, .. } => *ident,
+            Line::Delete { ident, .. } => *ident,
         };
         ident as usize
     }
@@ -265,6 +282,7 @@ enum Output<'a> {
     Unknown,
     Star(Vec<Field<'a>>),
     Fields(Vec<Field<'a>>),
+    Empty,
 }
 
 impl<'a> Output<'a> {
@@ -280,6 +298,22 @@ impl<'a> Output<'a> {
             .map(|x| Field {
                 table: schema.name,
                 field: &x.col_name,
+            })
+            .collect()
+    }
+
+    fn fields_update(
+        schema: &'a TableSchema,
+        fields: &'a [(ColId, AlgebraicValue)],
+    ) -> Vec<(Field<'a>, &'a AlgebraicValue)> {
+        fields
+            .iter()
+            .map(|(col, value)| {
+                let field = Field {
+                    table: schema.table_name.as_ref(),
+                    field: &schema.get_column(col.idx()).unwrap().col_name,
+                };
+                (field, value)
             })
             .collect()
     }
@@ -430,6 +464,39 @@ fn eval_plan<'a>(lines: &mut Lines<'a>, plan: &'a PhysicalPlan, ident: u16) {
     }
 }
 
+fn eval_dml_plan<'a>(lines: &mut Lines<'a>, plan: &'a MutationPlan, ident: u16) {
+    match plan {
+        MutationPlan::Insert(plan) => {
+            let schema = &plan.table;
+
+            lines.add(Line::Insert {
+                table_name: &schema.table_name,
+                ident,
+            });
+        }
+
+        MutationPlan::Delete(plan) => {
+            let schema = &plan.table;
+
+            lines.add(Line::Delete {
+                table_name: &schema.table_name,
+                ident,
+            });
+            eval_plan(lines, &plan.filter, ident + 2);
+        }
+        MutationPlan::Update(plan) => {
+            let schema = &plan.table;
+
+            lines.add(Line::Update {
+                table_name: &schema.table_name,
+                columns: Output::fields_update(schema, &plan.columns),
+                ident,
+            });
+            eval_plan(lines, &plan.filter, ident + 2);
+        }
+    }
+    lines.output = Output::Empty;
+}
 /// A pretty printer for physical plans
 ///
 /// The printer will format the plan in a human-readable format, suitable for the `EXPLAIN` command.
@@ -485,8 +552,8 @@ impl<'a> Explain<'a> {
                 }
                 &ProjectListPlan::Limit(_, _) | &ProjectListPlan::Agg(_, _) => todo!(),
             },
-            PlanCtx::DML(_plan) => {
-                todo!()
+            PlanCtx::DML(plan) => {
+                eval_dml_plan(&mut lines, plan, 0);
             }
         }
 
@@ -669,6 +736,23 @@ impl fmt::Display for Explain<'_> {
                     writeln!(f, "{:ident$}Inner Unique: {unique}", "")?;
                     write!(f, "{:ident$}Join Cond: ({} = {})", "", lhs, rhs)?;
                 }
+                Line::Insert { table_name, ident: _ } => {
+                    write!(f, "{:ident$}{arrow}Insert on {table_name}", "")?;
+                }
+                Line::Update {
+                    table_name,
+                    columns,
+                    ident: _,
+                } => {
+                    let columns = columns
+                        .iter()
+                        .map(|(field, value)| format!("{} = {:?}", field, value))
+                        .join(", ");
+                    write!(f, "{:ident$}{arrow}Update on {table_name} SET ({columns })", "")?;
+                }
+                Line::Delete { table_name, ident: _ } => {
+                    write!(f, "{:ident$}{arrow}Delete on {table_name}", "")?;
+                }
             }
             writeln!(f)?;
         }
@@ -683,6 +767,7 @@ impl fmt::Display for Explain<'_> {
                 let columns = fields.iter().map(|x| format!("{}", x)).join(", ");
                 Some(columns)
             }
+            Output::Empty => Some("void".to_string()),
         };
         let end = if self.options.show_timings || self.options.show_schema {
             "\n"
