@@ -27,6 +27,7 @@ members = [
   "crates/sqltest",
   "crates/sql-parser",
   "crates/standalone",
+  "crates/subscription",
   "crates/table",
   "crates/testing",
   "crates/update",
@@ -117,6 +118,7 @@ spacetimedb-table = { path = "crates/table", version = "1.0.0-rc4" }
 spacetimedb-vm = { path = "crates/vm", version = "1.0.0-rc4" }
 spacetimedb-fs-utils = { path = "crates/fs-utils", version = "1.0.0-rc4" }
 spacetimedb-snapshot = { path = "crates/snapshot", version = "1.0.0-rc4" }
+spacetimedb-subscription = { path = "crates/subscription", version = "1.0.0-rc4" }
 
 ahash = "0.8"
 anyhow = "1.0.68"

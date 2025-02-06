@@ -62,6 +62,7 @@ impl ProjectListExecutor {
 }
 
 /// Implements a projection on top of a pipelined executor
+#[derive(Debug)]
 pub enum PipelinedProject {
     None(PipelinedExecutor),
     Some(PipelinedExecutor, usize),
@@ -78,6 +79,13 @@ impl From<ProjectPlan> for PipelinedProject {
 }
 
 impl PipelinedProject {
+    /// Does this operation contain an empty delta scan?
+    pub fn is_empty(&self, tx: &impl DeltaStore) -> bool {
+        match self {
+            Self::None(plan) | Self::Some(plan, _) => plan.is_empty(tx),
+        }
+    }
+
     pub fn execute<'a, Tx: Datastore + DeltaStore>(
         &self,
         tx: &'a Tx,
@@ -119,6 +127,7 @@ impl PipelinedProject {
 /// Avoids materializing intermediate results when possible.
 /// Note that unlike a tuple at a time iterator,
 /// the caller has no way to interrupt its forward progress.
+#[derive(Debug)]
 pub enum PipelinedExecutor {
     TableScan(PipelinedScan),
     IxScan(PipelinedIxScan),
@@ -186,6 +195,18 @@ impl From<PhysicalPlan> for PipelinedExecutor {
 }
 
 impl PipelinedExecutor {
+    /// Does this operation contain an empty delta scan?
+    pub fn is_empty(&self, tx: &impl DeltaStore) -> bool {
+        match self {
+            Self::TableScan(scan) => scan.is_empty(tx),
+            Self::IxScan(scan) => scan.is_empty(tx),
+            Self::IxJoin(join) => join.is_empty(tx),
+            Self::HashJoin(join) => join.is_empty(tx),
+            Self::NLJoin(join) => join.is_empty(tx),
+            Self::Filter(filter) => filter.is_empty(tx),
+        }
+    }
+
     pub fn execute<'a, Tx: Datastore + DeltaStore>(
         &self,
         tx: &'a Tx,
@@ -204,12 +225,22 @@ impl PipelinedExecutor {
 }
 
 /// A pipelined executor for scanning both physical and delta tables
+#[derive(Debug)]
 pub struct PipelinedScan {
     pub table: TableId,
     pub delta: Option<Delta>,
 }
 
 impl PipelinedScan {
+    /// Is this an empty delta scan?
+    pub fn is_empty(&self, tx: &impl DeltaStore) -> bool {
+        match self.delta {
+            Some(Delta::Inserts) => !tx.has_inserts(self.table),
+            Some(Delta::Deletes) => !tx.has_deletes(self.table),
+            None => false,
+        }
+    }
+
     pub fn execute<'a, Tx: Datastore + DeltaStore>(
         &self,
         tx: &'a Tx,
@@ -232,20 +263,20 @@ impl PipelinedScan {
                     f(tuple)?;
                 }
             }
-            Some(Delta::Inserts(_)) => {
+            Some(Delta::Inserts) => {
                 for tuple in tx
                     // Open a product value iterator
-                    .delta_scan(self.table, true)?
+                    .delta_scan(self.table, true)
                     .map(Row::Ref)
                     .map(Tuple::Row)
                 {
                     f(tuple)?;
                 }
             }
-            Some(Delta::Deletes(_)) => {
+            Some(Delta::Deletes) => {
                 for tuple in tx
                     // Open a product value iterator
-                    .delta_scan(self.table, false)?
+                    .delta_scan(self.table, false)
                     .map(Row::Ref)
                     .map(Tuple::Row)
                 {
@@ -259,6 +290,7 @@ impl PipelinedScan {
 }
 
 /// A pipelined executor for scanning an index
+#[derive(Debug)]
 pub struct PipelinedIxScan {
     /// The table id
     pub table_id: TableId,
@@ -304,6 +336,11 @@ impl From<IxScan> for PipelinedIxScan {
 }
 
 impl PipelinedIxScan {
+    /// We don't know statically if an index scan will return rows
+    pub fn is_empty(&self, _: &impl DeltaStore) -> bool {
+        false
+    }
+
     pub fn execute<'a, Tx: Datastore + DeltaStore>(
         &self,
         tx: &'a Tx,
@@ -365,6 +402,7 @@ impl PipelinedIxScan {
 }
 
 /// A pipelined index join executor
+#[derive(Debug)]
 pub struct PipelinedIxJoin {
     /// The executor for the lhs of the join
     pub lhs: Box<PipelinedExecutor>,
@@ -383,6 +421,11 @@ pub struct PipelinedIxJoin {
 }
 
 impl PipelinedIxJoin {
+    /// Does this operation contain an empty delta scan?
+    pub fn is_empty(&self, tx: &impl DeltaStore) -> bool {
+        self.lhs.is_empty(tx)
+    }
+
     pub fn execute<'a, Tx: Datastore + DeltaStore>(
         &self,
         tx: &'a Tx,
@@ -539,6 +582,7 @@ impl PipelinedIxJoin {
 /// An executor for a hash join.
 /// Note, this executor is a pipeline breaker,
 /// because it must fully materialize the rhs.
+#[derive(Debug)]
 pub struct BlockingHashJoin {
     pub lhs: Box<PipelinedExecutor>,
     pub rhs: Box<PipelinedExecutor>,
@@ -549,6 +593,11 @@ pub struct BlockingHashJoin {
 }
 
 impl BlockingHashJoin {
+    /// Does this operation contain an empty delta scan?
+    pub fn is_empty(&self, tx: &impl DeltaStore) -> bool {
+        self.lhs.is_empty(tx) || self.rhs.is_empty(tx)
+    }
+
     pub fn execute<'a, Tx: Datastore + DeltaStore>(
         &self,
         tx: &'a Tx,
@@ -728,12 +777,18 @@ impl BlockingHashJoin {
 /// An executor for a nested loop join.
 /// Note, this is a pipeline breaker,
 /// because it fully materializes the rhs.
+#[derive(Debug)]
 pub struct BlockingNLJoin {
     pub lhs: Box<PipelinedExecutor>,
     pub rhs: Box<PipelinedExecutor>,
 }
 
 impl BlockingNLJoin {
+    /// Does this operation contain an empty delta scan?
+    pub fn is_empty(&self, tx: &impl DeltaStore) -> bool {
+        self.lhs.is_empty(tx) || self.rhs.is_empty(tx)
+    }
+
     pub fn execute<'a, Tx: Datastore + DeltaStore>(
         &self,
         tx: &'a Tx,
@@ -763,12 +818,18 @@ impl BlockingNLJoin {
 }
 
 /// A pipelined filter executor
+#[derive(Debug)]
 pub struct PipelinedFilter {
     pub input: Box<PipelinedExecutor>,
     pub expr: PhysicalExpr,
 }
 
 impl PipelinedFilter {
+    /// Does this operation contain an empty delta scan?
+    pub fn is_empty(&self, tx: &impl DeltaStore) -> bool {
+        self.input.is_empty(tx)
+    }
+
     pub fn execute<'a, Tx: Datastore + DeltaStore>(
         &self,
         tx: &'a Tx,

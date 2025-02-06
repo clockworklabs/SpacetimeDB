@@ -4941,6 +4941,7 @@ dependencies = [
  "spacetimedb-sats",
  "spacetimedb-schema",
  "spacetimedb-snapshot",
+ "spacetimedb-subscription",
  "spacetimedb-table",
  "spacetimedb-vm",
  "sqlparser",
@@ -5308,6 +5309,19 @@ dependencies = [
  "toml 0.8.19",
  "tower-http",
  "tracing",
+]
+
+[[package]]
+name = "spacetimedb-subscription"
+version = "1.0.0-rc4"
+dependencies = [
+ "anyhow",
+ "spacetimedb-execution",
+ "spacetimedb-expr",
+ "spacetimedb-lib",
+ "spacetimedb-physical-plan",
+ "spacetimedb-primitives",
+ "spacetimedb-query",
 ]
 
 [[package]]
