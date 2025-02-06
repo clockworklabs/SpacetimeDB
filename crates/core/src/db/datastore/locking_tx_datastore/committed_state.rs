@@ -14,12 +14,12 @@ use crate::{
     db::{
         datastore::{
             system_tables::{
-                system_tables, StColumnRow, StConstraintData, StConstraintRow, StIndexAlgorithm, StIndexRow,
-                StSequenceRow, StTableFields, StTableRow, SystemTable, ST_CLIENT_ID, ST_CLIENT_IDX, ST_COLUMN_ID,
-                ST_COLUMN_IDX, ST_COLUMN_NAME, ST_CONSTRAINT_ID, ST_CONSTRAINT_IDX, ST_CONSTRAINT_NAME, ST_INDEX_ID,
-                ST_INDEX_IDX, ST_INDEX_NAME, ST_MODULE_ID, ST_MODULE_IDX, ST_RESERVED_SEQUENCE_RANGE,
-                ST_ROW_LEVEL_SECURITY_ID, ST_ROW_LEVEL_SECURITY_IDX, ST_SCHEDULED_ID, ST_SCHEDULED_IDX, ST_SEQUENCE_ID,
-                ST_SEQUENCE_IDX, ST_SEQUENCE_NAME, ST_TABLE_ID, ST_TABLE_IDX, ST_VAR_ID, ST_VAR_IDX,
+                system_tables, StColumnRow, StConstraintData, StConstraintRow, StIndexRow, StSequenceRow,
+                StTableFields, StTableRow, SystemTable, ST_CLIENT_ID, ST_CLIENT_IDX, ST_COLUMN_ID, ST_COLUMN_IDX,
+                ST_COLUMN_NAME, ST_CONSTRAINT_ID, ST_CONSTRAINT_IDX, ST_CONSTRAINT_NAME, ST_INDEX_ID, ST_INDEX_IDX,
+                ST_INDEX_NAME, ST_MODULE_ID, ST_MODULE_IDX, ST_RESERVED_SEQUENCE_RANGE, ST_ROW_LEVEL_SECURITY_ID,
+                ST_ROW_LEVEL_SECURITY_IDX, ST_SCHEDULED_ID, ST_SCHEDULED_IDX, ST_SEQUENCE_ID, ST_SEQUENCE_IDX,
+                ST_SEQUENCE_NAME, ST_TABLE_ID, ST_TABLE_IDX, ST_VAR_ID, ST_VAR_IDX,
             },
             traits::TxData,
         },
@@ -38,7 +38,7 @@ use spacetimedb_lib::{
 };
 use spacetimedb_primitives::{ColList, ColSet, IndexId, TableId};
 use spacetimedb_sats::{AlgebraicValue, ProductValue};
-use spacetimedb_schema::schema::TableSchema;
+use spacetimedb_schema::{def::IndexAlgorithm, schema::TableSchema};
 use spacetimedb_table::{
     blob_store::{BlobStore, HashMapBlobStore},
     indexes::{RowPointer, SquashedOffset},
@@ -226,7 +226,7 @@ impl CommittedState {
 
         // Insert the indexes into `st_indexes`
         let (st_indexes, blob_store) = self.get_table_and_blob_store_or_create(ST_INDEX_ID, &schemas[ST_INDEX_IDX]);
-        for (i, index) in ref_schemas
+        for (i, mut index) in ref_schemas
             .iter()
             .flat_map(|x| &x.indexes)
             .sorted_by_key(|x| (x.table_id, x.index_algorithm.columns()))
@@ -235,13 +235,8 @@ impl CommittedState {
         {
             // Start sequence from 1,
             // to avoid any confusion with 0 as the autoinc sentinel value.
-            let index_id = (i + 1).into();
-            let row = StIndexRow {
-                index_id,
-                table_id: index.table_id,
-                index_name: index.index_name,
-                index_algorithm: index.index_algorithm.into(),
-            };
+            index.index_id = (i + 1).into();
+            let row: StIndexRow = index.into();
             let row = ProductValue::from(row);
             // Insert the meta-row into the in-memory ST_INDEXES.
             // If the row is already there, no-op.
@@ -387,13 +382,11 @@ impl CommittedState {
             let Some((table, blob_store)) = self.get_table_and_blob_store(table_id) else {
                 panic!("Cannot create index for table which doesn't exist in committed state");
             };
-            let columns = match index_row.index_algorithm {
-                StIndexAlgorithm::BTree { columns } => columns,
-                StIndexAlgorithm::Direct { column: _ } => todo!("todo_direct_index"),
-                _ => unimplemented!("Only btree and direct indexes are supported"),
-            };
-            let is_unique = unique_constraints.contains(&(table_id, (&columns).into()));
-            let index = table.new_index(columns.clone(), is_unique)?;
+            let algo: IndexAlgorithm = index_row.index_algorithm.into();
+            let columns: ColSet = algo.columns().into();
+            let is_unique = unique_constraints.contains(&(table_id, columns));
+
+            let index = table.new_index(&algo, is_unique)?;
             // SAFETY: `index` was derived from `table`.
             unsafe { table.insert_index(blob_store, index_id, index) };
             self.index_id_map.insert(index_id, table_id);

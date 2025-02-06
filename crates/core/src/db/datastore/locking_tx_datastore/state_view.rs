@@ -111,10 +111,7 @@ pub trait StateView {
         // Look up the indexes for the table in question.
         let indexes = self
             .iter_by_col_eq(ST_INDEX_ID, StIndexFields::TableId, value_eq)?
-            .map(|row| {
-                let row = StIndexRow::try_from(row)?;
-                Ok(row.into())
-            })
+            .map(|row| StIndexRow::try_from(row).map(Into::into))
             .collect::<Result<Vec<_>>>()?;
 
         let schedule = self

@@ -44,7 +44,7 @@ use spacetimedb_sats::{
     ser::{Serialize, Serializer},
     u256, AlgebraicValue, ProductType, ProductValue,
 };
-use spacetimedb_schema::{schema::TableSchema, type_for_generate::PrimitiveType};
+use spacetimedb_schema::{def::IndexAlgorithm, schema::TableSchema, type_for_generate::PrimitiveType};
 use std::{
     collections::{btree_map, BTreeMap},
     sync::Arc,
@@ -1019,8 +1019,8 @@ impl Table {
     }
 
     /// Returns a new [`BTreeIndex`] for `table`.
-    pub fn new_index(&self, cols: ColList, is_unique: bool) -> Result<BTreeIndex, InvalidFieldError> {
-        BTreeIndex::new(self.get_schema().get_row_type(), cols, is_unique)
+    pub fn new_index(&self, algo: &IndexAlgorithm, is_unique: bool) -> Result<BTreeIndex, InvalidFieldError> {
+        BTreeIndex::new(self.get_schema().get_row_type(), algo, is_unique)
     }
 
     /// Inserts a new `index` into the table.
@@ -1861,7 +1861,7 @@ pub(crate) mod test {
     use spacetimedb_sats::bsatn::to_vec;
     use spacetimedb_sats::proptest::{generate_typed_row, generate_typed_row_vec};
     use spacetimedb_sats::{product, AlgebraicType, ArrayValue};
-    use spacetimedb_schema::def::ModuleDef;
+    use spacetimedb_schema::def::{BTreeAlgorithm, ModuleDef};
     use spacetimedb_schema::schema::Schema as _;
 
     /// Create a `Table` from a `ProductType` without validation.
@@ -1897,8 +1897,9 @@ pub(crate) mod test {
 
         let mut table = Table::new(schema.into(), SquashedOffset::COMMITTED_STATE);
         let cols = ColList::new(0.into());
+        let algo = BTreeAlgorithm { columns: cols.clone() }.into();
 
-        let index = table.new_index(cols.clone(), true).unwrap();
+        let index = table.new_index(&algo, true).unwrap();
         // SAFETY: Index was derived from `table`.
         unsafe { table.insert_index(&NullBlobStore, index_schema.index_id, index) };
 
@@ -2012,16 +2013,15 @@ pub(crate) mod test {
 
         let index_id = IndexId(0);
 
+        let algo = BTreeAlgorithm {
+            columns: indexed_columns.clone(),
+        }
+        .into();
+        let index = BTreeIndex::new(&ty, &algo, false).unwrap();
         // Add an index on column 0.
         // Safety:
         // We're using `ty` as the row type for both `table` and the new index.
-        unsafe {
-            table.insert_index(
-                &blob_store,
-                index_id,
-                BTreeIndex::new(&ty, indexed_columns.clone(), false).unwrap(),
-            );
-        }
+        unsafe { table.insert_index(&blob_store, index_id, index) };
 
         // We have one index, which should be fully populated,
         // so in total we should have the same number of rows in indexes as we have rows.
@@ -2048,16 +2048,15 @@ pub(crate) mod test {
             .sum();
         prop_assert_eq!(index.num_key_bytes(), key_size_in_pvs);
 
+        let algo = BTreeAlgorithm {
+            columns: indexed_columns,
+        }
+        .into();
+        let index = BTreeIndex::new(&ty, &algo, false).unwrap();
         // Add a duplicate of the same index, so we can check that all above quantities double.
         // Safety:
         // As above, we're using `ty` as the row type for both `table` and the new index.
-        unsafe {
-            table.insert_index(
-                &blob_store,
-                IndexId(1),
-                BTreeIndex::new(&ty, indexed_columns, false).unwrap(),
-            );
-        }
+        unsafe { table.insert_index(&blob_store, IndexId(1), index) };
 
         prop_assert_eq!(table.num_rows_in_indexes(), table.num_rows() * 2);
         prop_assert_eq!(table.bytes_used_by_index_keys(), key_size_in_pvs * 2);

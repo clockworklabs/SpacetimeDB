@@ -24,10 +24,8 @@
 /// We also represent unique indices more compactly than non-unique ones, avoiding the multi-map.
 /// Additionally, beyond our btree indices,
 /// we support direct unique indices, where key are indices into `Vec`s.
-
 // TODO(centril): the `BTreeIndex` naming makes no sense now.
 // Rename to `TableIndex`.
-
 use super::indexes::RowPointer;
 use super::table::RowRef;
 use crate::{read_column::ReadColumn, static_assert_size, MemoryUsage};
@@ -39,9 +37,12 @@ use spacetimedb_sats::{
 
 mod key_size;
 mod multimap;
-mod uniquemap;
+pub mod unique_direct_index;
+pub mod uniquemap;
 
 pub use key_size::KeySize;
+use spacetimedb_schema::def::IndexAlgorithm;
+use unique_direct_index::{UniqueDirectIndex, UniqueDirectIndexRangeIter};
 
 type Index<K> = multimap::MultiMap<K, RowPointer>;
 type IndexIter<'a, K> = multimap::MultiMapRangeIter<'a, K, RowPointer>;
@@ -85,45 +86,48 @@ enum TypedIndexRangeIter<'a> {
     UniqueI256(UniqueIndexIter<'a, i256>),
     UniqueString(UniqueIndexIter<'a, Box<str>>),
     UniqueAV(UniqueIndexIter<'a, AlgebraicValue>),
+
+    UniqueDirect(UniqueDirectIndexRangeIter<'a>),
 }
 
 impl Iterator for TypedIndexRangeIter<'_> {
     type Item = RowPointer;
     fn next(&mut self) -> Option<Self::Item> {
         match self {
-            Self::Bool(this) => this.next(),
-            Self::U8(this) => this.next(),
-            Self::I8(this) => this.next(),
-            Self::U16(this) => this.next(),
-            Self::I16(this) => this.next(),
-            Self::U32(this) => this.next(),
-            Self::I32(this) => this.next(),
-            Self::U64(this) => this.next(),
-            Self::I64(this) => this.next(),
-            Self::U128(this) => this.next(),
-            Self::I128(this) => this.next(),
-            Self::U256(this) => this.next(),
-            Self::I256(this) => this.next(),
-            Self::String(this) => this.next(),
-            Self::AV(this) => this.next(),
+            Self::Bool(this) => this.next().copied(),
+            Self::U8(this) => this.next().copied(),
+            Self::I8(this) => this.next().copied(),
+            Self::U16(this) => this.next().copied(),
+            Self::I16(this) => this.next().copied(),
+            Self::U32(this) => this.next().copied(),
+            Self::I32(this) => this.next().copied(),
+            Self::U64(this) => this.next().copied(),
+            Self::I64(this) => this.next().copied(),
+            Self::U128(this) => this.next().copied(),
+            Self::I128(this) => this.next().copied(),
+            Self::U256(this) => this.next().copied(),
+            Self::I256(this) => this.next().copied(),
+            Self::String(this) => this.next().copied(),
+            Self::AV(this) => this.next().copied(),
 
-            Self::UniqueBool(this) => this.next(),
-            Self::UniqueU8(this) => this.next(),
-            Self::UniqueI8(this) => this.next(),
-            Self::UniqueU16(this) => this.next(),
-            Self::UniqueI16(this) => this.next(),
-            Self::UniqueU32(this) => this.next(),
-            Self::UniqueI32(this) => this.next(),
-            Self::UniqueU64(this) => this.next(),
-            Self::UniqueI64(this) => this.next(),
-            Self::UniqueU128(this) => this.next(),
-            Self::UniqueI128(this) => this.next(),
-            Self::UniqueU256(this) => this.next(),
-            Self::UniqueI256(this) => this.next(),
-            Self::UniqueString(this) => this.next(),
-            Self::UniqueAV(this) => this.next(),
+            Self::UniqueBool(this) => this.next().copied(),
+            Self::UniqueU8(this) => this.next().copied(),
+            Self::UniqueI8(this) => this.next().copied(),
+            Self::UniqueU16(this) => this.next().copied(),
+            Self::UniqueI16(this) => this.next().copied(),
+            Self::UniqueU32(this) => this.next().copied(),
+            Self::UniqueI32(this) => this.next().copied(),
+            Self::UniqueU64(this) => this.next().copied(),
+            Self::UniqueI64(this) => this.next().copied(),
+            Self::UniqueU128(this) => this.next().copied(),
+            Self::UniqueI128(this) => this.next().copied(),
+            Self::UniqueU256(this) => this.next().copied(),
+            Self::UniqueI256(this) => this.next().copied(),
+            Self::UniqueString(this) => this.next().copied(),
+            Self::UniqueAV(this) => this.next().copied(),
+
+            Self::UniqueDirect(this) => this.next(),
         }
-        .copied()
     }
 }
 
@@ -146,7 +150,7 @@ impl Iterator for BTreeIndexRangeIter<'_> {
 /// See module docs for info about specialization.
 #[derive(Debug, PartialEq, Eq)]
 enum TypedIndex {
-    // All the non-unique index types.
+    // All the non-unique btree index types.
     Bool(Index<bool>),
     U8(Index<u8>),
     I8(Index<i8>),
@@ -163,7 +167,7 @@ enum TypedIndex {
     String(Index<Box<str>>),
     AV(Index<AlgebraicValue>),
 
-    // All the unique index types.
+    // All the unique btree index types.
     UniqueBool(UniqueIndex<bool>),
     UniqueU8(UniqueIndex<u8>),
     UniqueI8(UniqueIndex<i8>),
@@ -179,6 +183,12 @@ enum TypedIndex {
     UniqueI256(UniqueIndex<i256>),
     UniqueString(UniqueIndex<Box<str>>),
     UniqueAV(UniqueIndex<AlgebraicValue>),
+
+    // All the unique direct index types.
+    UniqueDirectU8(UniqueDirectIndex),
+    UniqueDirectU16(UniqueDirectIndex),
+    UniqueDirectU32(UniqueDirectIndex),
+    UniqueDirectU64(UniqueDirectIndex),
 }
 
 impl MemoryUsage for TypedIndex {
@@ -215,16 +225,33 @@ impl MemoryUsage for TypedIndex {
             TypedIndex::UniqueI256(this) => this.heap_usage(),
             TypedIndex::UniqueString(this) => this.heap_usage(),
             TypedIndex::UniqueAV(this) => this.heap_usage(),
+
+            TypedIndex::UniqueDirectU8(this)
+            | TypedIndex::UniqueDirectU16(this)
+            | TypedIndex::UniqueDirectU32(this)
+            | TypedIndex::UniqueDirectU64(this) => this.heap_usage(),
         }
     }
 }
 
 impl TypedIndex {
     /// Returns a new index with keys being of `key_type` and the index possibly `is_unique`.
-    fn new(key_type: &AlgebraicType, is_unique: bool) -> Self {
+    fn new(key_type: &AlgebraicType, index_algo: &IndexAlgorithm, is_unique: bool) -> Self {
+        use TypedIndex::*;
+
+        if let IndexAlgorithm::Direct(_) = index_algo {
+            assert!(is_unique);
+            return match key_type {
+                AlgebraicType::U8 => Self::UniqueDirectU8(<_>::default()),
+                AlgebraicType::U16 => Self::UniqueDirectU16(<_>::default()),
+                AlgebraicType::U32 => Self::UniqueDirectU32(<_>::default()),
+                AlgebraicType::U64 => Self::UniqueDirectU64(<_>::default()),
+                _ => unreachable!("unexpected key type {key_type:?} for direct index"),
+            };
+        }
+
         // If the index is on a single column of a primitive type,
         // use a homogeneous map with a native key type.
-        use TypedIndex::*;
         if is_unique {
             match key_type {
                 AlgebraicType::Bool => UniqueBool(<_>::default()),
@@ -307,6 +334,10 @@ impl TypedIndex {
             UniqueI256(_) => UniqueI256(<_>::default()),
             UniqueString(_) => UniqueString(<_>::default()),
             UniqueAV(_) => UniqueAV(<_>::default()),
+            UniqueDirectU8(_) => UniqueDirectU8(<_>::default()),
+            UniqueDirectU16(_) => UniqueDirectU16(<_>::default()),
+            UniqueDirectU32(_) => UniqueDirectU32(<_>::default()),
+            UniqueDirectU64(_) => UniqueDirectU64(<_>::default()),
         }
     }
 
@@ -318,7 +349,8 @@ impl TypedIndex {
             | U256(_) | I256(_) | String(_) | AV(_) => false,
             UniqueBool(_) | UniqueU8(_) | UniqueI8(_) | UniqueU16(_) | UniqueI16(_) | UniqueU32(_) | UniqueI32(_)
             | UniqueU64(_) | UniqueI64(_) | UniqueU128(_) | UniqueI128(_) | UniqueU256(_) | UniqueI256(_)
-            | UniqueString(_) | UniqueAV(_) => true,
+            | UniqueString(_) | UniqueAV(_) | UniqueDirectU8(_) | UniqueDirectU16(_) | UniqueDirectU32(_)
+            | UniqueDirectU64(_) => true,
         }
     }
 
@@ -389,6 +421,17 @@ impl TypedIndex {
                 .map_err(|ptr| *ptr)
                 .map(|_| key_size)
         }
+        fn direct_insert_at_type<T: ReadColumn>(
+            this: &mut UniqueDirectIndex,
+            cols: &ColList,
+            row_ref: RowRef<'_>,
+            to_usize: impl FnOnce(T) -> usize,
+        ) -> Result<usize, RowPointer> {
+            let key: T = project_to_singleton_key(cols, row_ref);
+            let key = to_usize(key);
+            let key_size = key.key_size_in_bytes();
+            this.insert(key, row_ref.pointer()).map(|_| key_size)
+        }
         match self {
             Self::Bool(idx) => mm_insert_at_type(idx, cols, row_ref),
             Self::U8(idx) => mm_insert_at_type(idx, cols, row_ref),
@@ -433,6 +476,10 @@ impl TypedIndex {
                     .map_err(|ptr| *ptr)
                     .map(|_| key_size)
             }
+            Self::UniqueDirectU8(idx) => direct_insert_at_type(idx, cols, row_ref, |k: u8| k as usize),
+            Self::UniqueDirectU16(idx) => direct_insert_at_type(idx, cols, row_ref, |k: u16| k as usize),
+            Self::UniqueDirectU32(idx) => direct_insert_at_type(idx, cols, row_ref, |k: u32| k as usize),
+            Self::UniqueDirectU64(idx) => direct_insert_at_type(idx, cols, row_ref, |k: u64| k as usize),
         }
     }
 
@@ -472,6 +519,18 @@ impl TypedIndex {
             let key: T = row_ref.read_col(col_pos).map_err(|_| col_pos)?;
             let key_size = key.key_size_in_bytes();
             Ok(this.delete(&key).then_some(key_size))
+        }
+        fn direct_delete_at_type<T: ReadColumn>(
+            this: &mut UniqueDirectIndex,
+            cols: &ColList,
+            row_ref: RowRef<'_>,
+            to_usize: impl FnOnce(T) -> usize,
+        ) -> Result<Option<usize>, InvalidFieldError> {
+            let col_pos = cols.as_singleton().unwrap();
+            let key: T = row_ref.read_col(col_pos).map_err(|_| col_pos)?;
+            let key = to_usize(key);
+            let key_size = key.key_size_in_bytes();
+            Ok(this.delete(key).then_some(key_size))
         }
 
         match self {
@@ -513,6 +572,10 @@ impl TypedIndex {
                 let key_size = key.key_size_in_bytes();
                 Ok(this.delete(&key).then_some(key_size))
             }
+            Self::UniqueDirectU8(this) => direct_delete_at_type(this, cols, row_ref, |k: u8| k as usize),
+            Self::UniqueDirectU16(this) => direct_delete_at_type(this, cols, row_ref, |k: u16| k as usize),
+            Self::UniqueDirectU32(this) => direct_delete_at_type(this, cols, row_ref, |k: u32| k as usize),
+            Self::UniqueDirectU64(this) => direct_delete_at_type(this, cols, row_ref, |k: u64| k as usize),
         }
     }
 
@@ -536,6 +599,17 @@ impl TypedIndex {
             let start = range.start_bound().map(av_as_t);
             let end = range.end_bound().map(av_as_t);
             this.values_in_range(&(start, end))
+        }
+        fn direct_iter_at_type<'a, T>(
+            this: &'a UniqueDirectIndex,
+            range: &impl RangeBounds<AlgebraicValue>,
+            av_as_t: impl Fn(&AlgebraicValue) -> Option<&T>,
+            to_usize: impl Copy + FnOnce(&T) -> usize,
+        ) -> UniqueDirectIndexRangeIter<'a> {
+            let av_as_t = |v| av_as_t(v).expect("bound does not conform to key type of index");
+            let start = range.start_bound().map(av_as_t).map(to_usize);
+            let end = range.end_bound().map(av_as_t).map(to_usize);
+            this.seek_range(&(start, end))
         }
 
         use TypedIndexRangeIter::*;
@@ -571,6 +645,25 @@ impl TypedIndex {
             Self::UniqueI256(this) => UniqueI256(um_iter_at_type(this, range, |av| av.as_i256().map(|x| &**x))),
             Self::UniqueString(this) => UniqueString(um_iter_at_type(this, range, AlgebraicValue::as_string)),
             Self::UniqueAV(this) => UniqueAV(this.values_in_range(range)),
+
+            Self::UniqueDirectU8(this) => {
+                UniqueDirect(direct_iter_at_type(this, range, AlgebraicValue::as_u8, |k| *k as usize))
+            }
+            Self::UniqueDirectU16(this) => {
+                UniqueDirect(direct_iter_at_type(this, range, AlgebraicValue::as_u16, |k| {
+                    *k as usize
+                }))
+            }
+            Self::UniqueDirectU32(this) => {
+                UniqueDirect(direct_iter_at_type(this, range, AlgebraicValue::as_u32, |k| {
+                    *k as usize
+                }))
+            }
+            Self::UniqueDirectU64(this) => {
+                UniqueDirect(direct_iter_at_type(this, range, AlgebraicValue::as_u64, |k| {
+                    *k as usize
+                }))
+            }
         }
     }
 
@@ -607,6 +700,11 @@ impl TypedIndex {
             Self::UniqueI256(this) => this.clear(),
             Self::UniqueString(this) => this.clear(),
             Self::UniqueAV(this) => this.clear(),
+
+            Self::UniqueDirectU8(this)
+            | Self::UniqueDirectU16(this)
+            | Self::UniqueDirectU32(this)
+            | Self::UniqueDirectU64(this) => this.clear(),
         }
     }
 
@@ -649,6 +747,11 @@ impl TypedIndex {
             Self::UniqueI256(this) => this.len(),
             Self::UniqueString(this) => this.len(),
             Self::UniqueAV(this) => this.len(),
+
+            Self::UniqueDirectU8(this)
+            | Self::UniqueDirectU16(this)
+            | Self::UniqueDirectU32(this)
+            | Self::UniqueDirectU64(this) => this.len(),
         }
     }
 
@@ -685,6 +788,11 @@ impl TypedIndex {
             Self::UniqueI256(this) => this.num_keys(),
             Self::UniqueString(this) => this.num_keys(),
             Self::UniqueAV(this) => this.num_keys(),
+
+            Self::UniqueDirectU8(this)
+            | Self::UniqueDirectU16(this)
+            | Self::UniqueDirectU32(this)
+            | Self::UniqueDirectU64(this) => this.num_keys(),
         }
     }
 }
@@ -696,7 +804,7 @@ pub struct BTreeIndex {
     idx: TypedIndex,
     /// The key type of this index.
     /// This is the projection of the row type to the types of the columns indexed.
-    // TODO(perf, bikeshedding): Could trim `sizeof(BTreeIndex)` to 64 if this was `Box<AlgebraicType>`.
+    // NOTE(centril): This is accessed in index scan ABIs for decoding, so don't `Box<_>` it.
     pub key_type: AlgebraicType,
 
     /// The number of rows in this index.
@@ -733,13 +841,18 @@ impl MemoryUsage for BTreeIndex {
     }
 }
 
-static_assert_size!(BTreeIndex, 80);
+static_assert_size!(BTreeIndex, 88);
 
 impl BTreeIndex {
-    /// Returns a new possibly unique index, with `index_id` for a set of columns.
-    pub fn new(row_type: &ProductType, indexed_columns: ColList, is_unique: bool) -> Result<Self, InvalidFieldError> {
+    /// Returns a new possibly unique index, with `index_id` for a choice of indexing algorithm.
+    pub fn new(
+        row_type: &ProductType,
+        index_algo: &IndexAlgorithm,
+        is_unique: bool,
+    ) -> Result<Self, InvalidFieldError> {
+        let indexed_columns = index_algo.columns().to_owned();
         let key_type = row_type.project(&indexed_columns)?;
-        let typed_index = TypedIndex::new(&key_type, is_unique);
+        let typed_index = TypedIndex::new(&key_type, index_algo, is_unique);
         Ok(Self {
             idx: typed_index,
             key_type,
@@ -909,6 +1022,7 @@ mod test {
         proptest::{generate_product_value, generate_row_type},
         AlgebraicType, ProductType, ProductValue,
     };
+    use spacetimedb_schema::def::BTreeAlgorithm;
 
     fn gen_cols(ty_len: usize) -> impl Strategy<Value = ColList> {
         vec((0..ty_len as u16).prop_map_into::<ColId>(), 1..=ty_len)
@@ -926,7 +1040,8 @@ mod test {
     }
 
     fn new_index(row_type: &ProductType, cols: &ColList, is_unique: bool) -> BTreeIndex {
-        BTreeIndex::new(row_type, cols.clone(), is_unique).unwrap()
+        let algo = BTreeAlgorithm { columns: cols.clone() }.into();
+        BTreeIndex::new(row_type, &algo, is_unique).unwrap()
     }
 
     /// Extracts from `row` the relevant column values according to what columns are indexed.

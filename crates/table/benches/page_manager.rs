@@ -11,6 +11,7 @@ use spacetimedb_lib::db::raw_def::v9::RawIndexAlgorithm;
 use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9Builder;
 use spacetimedb_primitives::{ColList, IndexId, TableId};
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
+use spacetimedb_schema::def::BTreeAlgorithm;
 use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_schema::schema::TableSchema;
 use spacetimedb_table::blob_store::NullBlobStore;
@@ -727,7 +728,8 @@ fn make_table_with_index<R: IndexedRow>(unique: bool) -> (Table, IndexId) {
 
     let cols = R::indexed_columns();
     let index_id = IndexId::SENTINEL;
-    let idx = tbl.new_index(cols, unique).unwrap();
+    let algo = BTreeAlgorithm { columns: cols }.into();
+    let idx = tbl.new_index(&algo, unique).unwrap();
     // SAFETY: index was derived from the table.
     unsafe { tbl.insert_index(&NullBlobStore, index_id, idx) };
 
