@@ -368,7 +368,7 @@ mod tests {
         let sql = &format!(
             "INSERT INTO test (identity, identity_mix, connection_id) VALUES ({}, x'91DDA09DB9A56D8FA6C024D843E805D8262191DB3B4BA84C5EFCD1AD451FED4E', {})",
             Identity::__dummy(),
-            ConnectionId::ZERO,,
+            ConnectionId::ZERO,
         );
         run_for_testing(&db, sql)?;
 

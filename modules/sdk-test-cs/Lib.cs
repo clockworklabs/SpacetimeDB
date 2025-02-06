@@ -301,7 +301,7 @@ public static partial class Module
     [SpacetimeDB.Table(Name = "one_connection_id", Public = true)]
     public partial struct OneConnectionId
     {
-      public ConnectionId a;
+        public ConnectionId a;
     }
 
     [SpacetimeDB.Reducer]
@@ -1622,26 +1622,26 @@ public static partial class Module
     public static void insert_caller_vec_identity(ReducerContext ctx)
     {
         ctx.Db.vec_identity.Insert(
-                                   new VecIdentity { i = new List<Identity> { ctx.Sender} }
+                                   new VecIdentity { i = new List<Identity> { ctx.Sender } }
         );
     }
 
     [SpacetimeDB.Reducer]
     public static void insert_caller_unique_identity(ReducerContext ctx, int data)
     {
-      ctx.Db.unique_identity.Insert(new UniqueIdentity { i = ctx.Sender, data = data });
+        ctx.Db.unique_identity.Insert(new UniqueIdentity { i = ctx.Sender, data = data });
     }
 
     [SpacetimeDB.Reducer]
     public static void insert_caller_pk_identity(ReducerContext ctx, int data)
     {
-      ctx.Db.pk_identity.Insert(new PkIdentity { i = ctx.Sender, data = data });
+        ctx.Db.pk_identity.Insert(new PkIdentity { i = ctx.Sender, data = data });
     }
 
     [SpacetimeDB.Reducer]
     public static void insert_caller_one_connection_id(ReducerContext ctx)
     {
-      ctx.Db.one_connection_id.Insert(new OneConnectionId { a = (ConnectionId)ctx.ConnectionId! });
+        ctx.Db.one_connection_id.Insert(new OneConnectionId { a = (ConnectionId)ctx.ConnectionId! });
     }
 
     [SpacetimeDB.Reducer]
@@ -1666,7 +1666,7 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_caller_pk_connection_id(ReducerContext ctx, int data)
     {
-      ctx.Db.pk_connection_id.Insert(new PkConnectionId { a = (ConnectionId)ctx.ConnectionId!, data = data });
+        ctx.Db.pk_connection_id.Insert(new PkConnectionId { a = (ConnectionId)ctx.ConnectionId!, data = data });
     }
 
     [SpacetimeDB.Table(Name = "large_table", Public = true)]

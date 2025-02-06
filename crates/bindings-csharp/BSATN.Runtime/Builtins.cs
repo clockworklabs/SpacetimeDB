@@ -167,7 +167,7 @@ public readonly record struct ConnectionId
         return id;
     }
 
-  public readonly struct BSATN : IReadWrite<ConnectionId>
+    public readonly struct BSATN : IReadWrite<ConnectionId>
     {
         public ConnectionId Read(BinaryReader reader) =>
             new(new SpacetimeDB.BSATN.U128Stdb().Read(reader));
