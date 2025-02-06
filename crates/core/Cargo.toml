@@ -85,6 +85,7 @@ sha1.workspace = true
 similar.workspace = true
 slab.workspace = true
 sled.workspace = true
+tikv-jemalloc-ctl.workspace = true
 smallvec.workspace = true
 sqlparser.workspace = true
 strum.workspace = true

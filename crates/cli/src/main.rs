@@ -1,13 +1,19 @@
 use std::process::ExitCode;
 
 use clap::{Arg, Command};
-use mimalloc::MiMalloc;
 use spacetimedb_cli::*;
 use spacetimedb_paths::cli::CliTomlPath;
 use spacetimedb_paths::{RootDir, SpacetimePaths};
 
+// use mimalloc::MiMalloc;
+// #[global_allocator]
+// static GLOBAL: MiMalloc = MiMalloc;
+
+// Using so we can view better memory usage stats.
+use tikv_jemallocator::Jemalloc;
+
 #[global_allocator]
-static GLOBAL: MiMalloc = MiMalloc;
+static GLOBAL: Jemalloc = Jemalloc;
 
 #[cfg(not(feature = "markdown-docs"))]
 #[tokio::main]
