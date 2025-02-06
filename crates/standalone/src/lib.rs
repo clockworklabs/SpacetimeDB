@@ -12,6 +12,7 @@ use clap::{ArgMatches, Command};
 use energy_monitor::StandaloneEnergyMonitor;
 use spacetimedb::client::ClientActorIndex;
 use spacetimedb::config::{CertificateAuthority, MetadataFile};
+use spacetimedb::db::db_metrics::data_size::DATA_SIZE_METRICS;
 use spacetimedb::db::relational_db::{self, Durability, Txdata};
 use spacetimedb::db::{db_metrics::DB_METRICS, Config};
 use spacetimedb::energy::{EnergyBalance, EnergyQuanta};
@@ -82,6 +83,7 @@ impl StandaloneEnv {
         let metrics_registry = prometheus::Registry::new();
         metrics_registry.register(Box::new(&*WORKER_METRICS)).unwrap();
         metrics_registry.register(Box::new(&*DB_METRICS)).unwrap();
+        metrics_registry.register(Box::new(&*DATA_SIZE_METRICS)).unwrap();
 
         Ok(Arc::new(Self {
             control_db,
