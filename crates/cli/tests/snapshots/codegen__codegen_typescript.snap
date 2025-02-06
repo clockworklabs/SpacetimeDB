@@ -8,8 +8,6 @@ expression: outfiles
 
 import {
   // @ts-ignore
-  Address,
-  // @ts-ignore
   AlgebraicType,
   // @ts-ignore
   AlgebraicValue,
@@ -19,6 +17,8 @@ import {
   BinaryWriter,
   // @ts-ignore
   CallReducerFlags,
+  // @ts-ignore
+  ConnectionId,
   // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
@@ -80,8 +80,6 @@ export namespace AddPlayer {
 
 import {
   // @ts-ignore
-  Address,
-  // @ts-ignore
   AlgebraicType,
   // @ts-ignore
   AlgebraicValue,
@@ -91,6 +89,8 @@ import {
   BinaryWriter,
   // @ts-ignore
   CallReducerFlags,
+  // @ts-ignore
+  ConnectionId,
   // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
@@ -152,8 +152,6 @@ export namespace AddPrivate {
 
 import {
   // @ts-ignore
-  Address,
-  // @ts-ignore
   AlgebraicType,
   // @ts-ignore
   AlgebraicValue,
@@ -163,6 +161,8 @@ import {
   BinaryWriter,
   // @ts-ignore
   CallReducerFlags,
+  // @ts-ignore
+  ConnectionId,
   // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
@@ -221,8 +221,6 @@ export namespace AssertCallerIdentityIsModuleIdentity {
 
 import {
   // @ts-ignore
-  Address,
-  // @ts-ignore
   AlgebraicType,
   // @ts-ignore
   AlgebraicValue,
@@ -232,6 +230,8 @@ import {
   BinaryWriter,
   // @ts-ignore
   CallReducerFlags,
+  // @ts-ignore
+  ConnectionId,
   // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
@@ -293,8 +293,6 @@ export namespace Baz {
 
 import {
   // @ts-ignore
-  Address,
-  // @ts-ignore
   AlgebraicType,
   // @ts-ignore
   AlgebraicValue,
@@ -304,6 +302,8 @@ import {
   BinaryWriter,
   // @ts-ignore
   CallReducerFlags,
+  // @ts-ignore
+  ConnectionId,
   // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
@@ -362,8 +362,6 @@ export namespace ClientConnected {
 
 import {
   // @ts-ignore
-  Address,
-  // @ts-ignore
   AlgebraicType,
   // @ts-ignore
   AlgebraicValue,
@@ -373,6 +371,8 @@ import {
   BinaryWriter,
   // @ts-ignore
   CallReducerFlags,
+  // @ts-ignore
+  ConnectionId,
   // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
@@ -434,8 +434,6 @@ export namespace DeletePlayer {
 
 import {
   // @ts-ignore
-  Address,
-  // @ts-ignore
   AlgebraicType,
   // @ts-ignore
   AlgebraicValue,
@@ -445,6 +443,8 @@ import {
   BinaryWriter,
   // @ts-ignore
   CallReducerFlags,
+  // @ts-ignore
+  ConnectionId,
   // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
@@ -506,8 +506,6 @@ export namespace DeletePlayersByName {
 
 import {
   // @ts-ignore
-  Address,
-  // @ts-ignore
   AlgebraicType,
   // @ts-ignore
   AlgebraicValue,
@@ -517,6 +515,8 @@ import {
   BinaryWriter,
   // @ts-ignore
   CallReducerFlags,
+  // @ts-ignore
+  ConnectionId,
   // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
@@ -594,8 +594,6 @@ export default Foobar;
 
 import {
   // @ts-ignore
-  Address,
-  // @ts-ignore
   AlgebraicType,
   // @ts-ignore
   AlgebraicValue,
@@ -605,6 +603,8 @@ import {
   BinaryWriter,
   // @ts-ignore
   CallReducerFlags,
+  // @ts-ignore
+  ConnectionId,
   // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
@@ -682,8 +682,6 @@ export class HasSpecialStuffTableHandle {
 
 import {
   // @ts-ignore
-  Address,
-  // @ts-ignore
   AlgebraicType,
   // @ts-ignore
   AlgebraicValue,
@@ -693,6 +691,8 @@ import {
   BinaryWriter,
   // @ts-ignore
   CallReducerFlags,
+  // @ts-ignore
+  ConnectionId,
   // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
@@ -720,7 +720,7 @@ import {
 } from "@clockworklabs/spacetimedb-sdk";
 export type HasSpecialStuff = {
   identity: Identity,
-  address: Address,
+  connectionId: ConnectionId,
 };
 
 /**
@@ -734,7 +734,7 @@ export namespace HasSpecialStuff {
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
       new ProductTypeElement("identity", AlgebraicType.createIdentityType()),
-      new ProductTypeElement("address", AlgebraicType.createAddressType()),
+      new ProductTypeElement("connectionId", AlgebraicType.createConnectionIdType()),
     ]);
   }
 
@@ -756,8 +756,6 @@ export namespace HasSpecialStuff {
 
 import {
   // @ts-ignore
-  Address,
-  // @ts-ignore
   AlgebraicType,
   // @ts-ignore
   AlgebraicValue,
@@ -767,6 +765,8 @@ import {
   BinaryWriter,
   // @ts-ignore
   CallReducerFlags,
+  // @ts-ignore
+  ConnectionId,
   // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
@@ -1253,8 +1253,6 @@ export type EventContext = EventContextInterface<RemoteTables, RemoteReducers, S
 
 import {
   // @ts-ignore
-  Address,
-  // @ts-ignore
   AlgebraicType,
   // @ts-ignore
   AlgebraicValue,
@@ -1264,6 +1262,8 @@ import {
   BinaryWriter,
   // @ts-ignore
   CallReducerFlags,
+  // @ts-ignore
+  ConnectionId,
   // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
@@ -1415,8 +1415,6 @@ export class LoggedOutPlayerTableHandle {
 
 import {
   // @ts-ignore
-  Address,
-  // @ts-ignore
   AlgebraicType,
   // @ts-ignore
   AlgebraicValue,
@@ -1426,6 +1424,8 @@ import {
   BinaryWriter,
   // @ts-ignore
   CallReducerFlags,
+  // @ts-ignore
+  ConnectionId,
   // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
@@ -1497,8 +1497,6 @@ export default NamespaceTestC;
 
 import {
   // @ts-ignore
-  Address,
-  // @ts-ignore
   AlgebraicType,
   // @ts-ignore
   AlgebraicValue,
@@ -1508,6 +1506,8 @@ import {
   BinaryWriter,
   // @ts-ignore
   CallReducerFlags,
+  // @ts-ignore
+  ConnectionId,
   // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
@@ -1582,8 +1582,6 @@ export default NamespaceTestF;
 
 import {
   // @ts-ignore
-  Address,
-  // @ts-ignore
   AlgebraicType,
   // @ts-ignore
   AlgebraicValue,
@@ -1593,6 +1591,8 @@ import {
   BinaryWriter,
   // @ts-ignore
   CallReducerFlags,
+  // @ts-ignore
+  ConnectionId,
   // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
@@ -1722,8 +1722,6 @@ export class PkMultiIdentityTableHandle {
 
 import {
   // @ts-ignore
-  Address,
-  // @ts-ignore
   AlgebraicType,
   // @ts-ignore
   AlgebraicValue,
@@ -1733,6 +1731,8 @@ import {
   BinaryWriter,
   // @ts-ignore
   CallReducerFlags,
+  // @ts-ignore
+  ConnectionId,
   // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
@@ -1796,8 +1796,6 @@ export namespace PkMultiIdentity {
 
 import {
   // @ts-ignore
-  Address,
-  // @ts-ignore
   AlgebraicType,
   // @ts-ignore
   AlgebraicValue,
@@ -1807,6 +1805,8 @@ import {
   BinaryWriter,
   // @ts-ignore
   CallReducerFlags,
+  // @ts-ignore
+  ConnectionId,
   // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
@@ -1958,8 +1958,6 @@ export class PlayerTableHandle {
 
 import {
   // @ts-ignore
-  Address,
-  // @ts-ignore
   AlgebraicType,
   // @ts-ignore
   AlgebraicValue,
@@ -1969,6 +1967,8 @@ import {
   BinaryWriter,
   // @ts-ignore
   CallReducerFlags,
+  // @ts-ignore
+  ConnectionId,
   // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
@@ -2034,8 +2034,6 @@ export namespace Player {
 
 import {
   // @ts-ignore
-  Address,
-  // @ts-ignore
   AlgebraicType,
   // @ts-ignore
   AlgebraicValue,
@@ -2045,6 +2043,8 @@ import {
   BinaryWriter,
   // @ts-ignore
   CallReducerFlags,
+  // @ts-ignore
+  ConnectionId,
   // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
@@ -2108,8 +2108,6 @@ export namespace Point {
 
 import {
   // @ts-ignore
-  Address,
-  // @ts-ignore
   AlgebraicType,
   // @ts-ignore
   AlgebraicValue,
@@ -2119,6 +2117,8 @@ import {
   BinaryWriter,
   // @ts-ignore
   CallReducerFlags,
+  // @ts-ignore
+  ConnectionId,
   // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
@@ -2196,8 +2196,6 @@ export class PointsTableHandle {
 
 import {
   // @ts-ignore
-  Address,
-  // @ts-ignore
   AlgebraicType,
   // @ts-ignore
   AlgebraicValue,
@@ -2207,6 +2205,8 @@ import {
   BinaryWriter,
   // @ts-ignore
   CallReducerFlags,
+  // @ts-ignore
+  ConnectionId,
   // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
@@ -2284,8 +2284,6 @@ export class PrivateTableHandle {
 
 import {
   // @ts-ignore
-  Address,
-  // @ts-ignore
   AlgebraicType,
   // @ts-ignore
   AlgebraicValue,
@@ -2295,6 +2293,8 @@ import {
   BinaryWriter,
   // @ts-ignore
   CallReducerFlags,
+  // @ts-ignore
+  ConnectionId,
   // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
@@ -2356,8 +2356,6 @@ export namespace Private {
 
 import {
   // @ts-ignore
-  Address,
-  // @ts-ignore
   AlgebraicType,
   // @ts-ignore
   AlgebraicValue,
@@ -2367,6 +2365,8 @@ import {
   BinaryWriter,
   // @ts-ignore
   CallReducerFlags,
+  // @ts-ignore
+  ConnectionId,
   // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
@@ -2425,8 +2425,6 @@ export namespace QueryPrivate {
 
 import {
   // @ts-ignore
-  Address,
-  // @ts-ignore
   AlgebraicType,
   // @ts-ignore
   AlgebraicValue,
@@ -2436,6 +2434,8 @@ import {
   BinaryWriter,
   // @ts-ignore
   CallReducerFlags,
+  // @ts-ignore
+  ConnectionId,
   // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
@@ -2543,8 +2543,6 @@ export class RepeatingTestArgTableHandle {
 
 import {
   // @ts-ignore
-  Address,
-  // @ts-ignore
   AlgebraicType,
   // @ts-ignore
   AlgebraicValue,
@@ -2554,6 +2552,8 @@ import {
   BinaryWriter,
   // @ts-ignore
   CallReducerFlags,
+  // @ts-ignore
+  ConnectionId,
   // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
@@ -2619,8 +2619,6 @@ export namespace RepeatingTestArg {
 
 import {
   // @ts-ignore
-  Address,
-  // @ts-ignore
   AlgebraicType,
   // @ts-ignore
   AlgebraicValue,
@@ -2630,6 +2628,8 @@ import {
   BinaryWriter,
   // @ts-ignore
   CallReducerFlags,
+  // @ts-ignore
+  ConnectionId,
   // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
@@ -2694,8 +2694,6 @@ export namespace RepeatingTest {
 
 import {
   // @ts-ignore
-  Address,
-  // @ts-ignore
   AlgebraicType,
   // @ts-ignore
   AlgebraicValue,
@@ -2705,6 +2703,8 @@ import {
   BinaryWriter,
   // @ts-ignore
   CallReducerFlags,
+  // @ts-ignore
+  ConnectionId,
   // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
@@ -2782,8 +2782,6 @@ export class TestATableHandle {
 
 import {
   // @ts-ignore
-  Address,
-  // @ts-ignore
   AlgebraicType,
   // @ts-ignore
   AlgebraicValue,
@@ -2793,6 +2791,8 @@ import {
   BinaryWriter,
   // @ts-ignore
   CallReducerFlags,
+  // @ts-ignore
+  ConnectionId,
   // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
@@ -2858,8 +2858,6 @@ export namespace TestA {
 
 import {
   // @ts-ignore
-  Address,
-  // @ts-ignore
   AlgebraicType,
   // @ts-ignore
   AlgebraicValue,
@@ -2869,6 +2867,8 @@ import {
   BinaryWriter,
   // @ts-ignore
   CallReducerFlags,
+  // @ts-ignore
+  ConnectionId,
   // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
@@ -2930,8 +2930,6 @@ export namespace TestB {
 
 import {
   // @ts-ignore
-  Address,
-  // @ts-ignore
   AlgebraicType,
   // @ts-ignore
   AlgebraicValue,
@@ -2941,6 +2939,8 @@ import {
   BinaryWriter,
   // @ts-ignore
   CallReducerFlags,
+  // @ts-ignore
+  ConnectionId,
   // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
@@ -2999,8 +2999,6 @@ export namespace TestBtreeIndexArgs {
 
 import {
   // @ts-ignore
-  Address,
-  // @ts-ignore
   AlgebraicType,
   // @ts-ignore
   AlgebraicValue,
@@ -3010,6 +3008,8 @@ import {
   BinaryWriter,
   // @ts-ignore
   CallReducerFlags,
+  // @ts-ignore
+  ConnectionId,
   // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
@@ -3090,8 +3090,6 @@ export class TestDTableHandle {
 
 import {
   // @ts-ignore
-  Address,
-  // @ts-ignore
   AlgebraicType,
   // @ts-ignore
   AlgebraicValue,
@@ -3101,6 +3099,8 @@ import {
   BinaryWriter,
   // @ts-ignore
   CallReducerFlags,
+  // @ts-ignore
+  ConnectionId,
   // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
@@ -3165,8 +3165,6 @@ export namespace TestD {
 
 import {
   // @ts-ignore
-  Address,
-  // @ts-ignore
   AlgebraicType,
   // @ts-ignore
   AlgebraicValue,
@@ -3176,6 +3174,8 @@ import {
   BinaryWriter,
   // @ts-ignore
   CallReducerFlags,
+  // @ts-ignore
+  ConnectionId,
   // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
@@ -3283,8 +3283,6 @@ export class TestETableHandle {
 
 import {
   // @ts-ignore
-  Address,
-  // @ts-ignore
   AlgebraicType,
   // @ts-ignore
   AlgebraicValue,
@@ -3294,6 +3292,8 @@ import {
   BinaryWriter,
   // @ts-ignore
   CallReducerFlags,
+  // @ts-ignore
+  ConnectionId,
   // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
@@ -3357,8 +3357,6 @@ export namespace TestE {
 
 import {
   // @ts-ignore
-  Address,
-  // @ts-ignore
   AlgebraicType,
   // @ts-ignore
   AlgebraicValue,
@@ -3368,6 +3366,8 @@ import {
   BinaryWriter,
   // @ts-ignore
   CallReducerFlags,
+  // @ts-ignore
+  ConnectionId,
   // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
@@ -3448,8 +3448,6 @@ export class TestFTableHandle {
 
 import {
   // @ts-ignore
-  Address,
-  // @ts-ignore
   AlgebraicType,
   // @ts-ignore
   AlgebraicValue,
@@ -3459,6 +3457,8 @@ import {
   BinaryWriter,
   // @ts-ignore
   CallReducerFlags,
+  // @ts-ignore
+  ConnectionId,
   // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
@@ -3523,8 +3523,6 @@ export namespace TestFoobar {
 
 import {
   // @ts-ignore
-  Address,
-  // @ts-ignore
   AlgebraicType,
   // @ts-ignore
   AlgebraicValue,
@@ -3534,6 +3532,8 @@ import {
   BinaryWriter,
   // @ts-ignore
   CallReducerFlags,
+  // @ts-ignore
+  ConnectionId,
   // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
