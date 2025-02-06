@@ -42,11 +42,11 @@ public static class Module
     private static readonly RawModuleDefV9 moduleDef = new();
     private static readonly List<IReducer> reducers = [];
 
-    private static Func<Identity, Address?, Random, DateTimeOffset, IReducerContext>? newContext =
+    private static Func<Identity, Address?, Random, Timestamp, IReducerContext>? newContext =
         null;
 
     public static void SetReducerContextConstructor(
-        Func<Identity, Address?, Random, DateTimeOffset, IReducerContext> ctor
+        Func<Identity, Address?, Random, Timestamp, IReducerContext> ctor
     ) => newContext = ctor;
 
     readonly struct TypeRegistrar() : ITypeRegistrar

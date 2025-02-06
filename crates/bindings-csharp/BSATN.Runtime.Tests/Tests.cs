@@ -151,14 +151,21 @@ public static class BSATNRuntimeTests
         var interval = ScheduleAt.TimeSpanFromMicroseconds(us);
         Assert.Equal(ScheduleAt.ToMicroseconds(interval), us);
 
-        var stamp = new SpacetimeDB.Timestamp(us);
+        var stamp = new Timestamp(us);
         var dto = (DateTimeOffset)stamp;
-        var stamp_ = (SpacetimeDB.Timestamp)dto;
+        var stamp_ = (Timestamp)dto;
         Assert.Equal(stamp, stamp_);
 
-        var duration = new SpacetimeDB.TimeDuration(us);
+        var duration = new TimeDuration(us);
         var timespan = (TimeSpan)duration;
-        var duration_ = (SpacetimeDB.TimeDuration)timespan;
+        var duration_ = (TimeDuration)timespan;
         Assert.Equal(duration, duration_);
+
+        var newIntervalUs = 333L;
+        var newInterval = new TimeDuration(newIntervalUs);
+        var laterStamp = stamp + newInterval;
+        Assert.Equal(laterStamp.MicrosecondsSinceUnixEpoch, us + newIntervalUs);
+        Assert.Equal(laterStamp.TimeDurationSince(stamp), newInterval);
+
     }
 }

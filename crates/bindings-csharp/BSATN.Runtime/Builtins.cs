@@ -300,6 +300,22 @@ public record struct Timestamp(long MicrosecondsSinceUnixEpoch) : IStructuralRea
         return $"{sign}{secs}.{microsRemaining:D6}";
     }
 
+    public static readonly Timestamp UNIX_EPOCH = new(0);
+
+    public static Timestamp FromTimeDurationSinceUnixEpoch(TimeDuration timeDuration) => new Timestamp(timeDuration.Microseconds);
+
+    public readonly TimeDuration ToTimeDurationSinceUnixEpoch() => TimeDurationSince(UNIX_EPOCH);
+
+    public static Timestamp FromTimeSpanSinceUnixEpoch(TimeSpan timeSpan) => FromTimeDurationSinceUnixEpoch((TimeDuration)timeSpan);
+
+    public readonly TimeSpan ToTimeSpanSinceUnixEpoch() => (TimeSpan)ToTimeDurationSinceUnixEpoch();
+
+    public readonly TimeDuration TimeDurationSince(Timestamp earlier) =>
+        new TimeDuration(MicrosecondsSinceUnixEpoch - earlier.MicrosecondsSinceUnixEpoch);
+
+    public static Timestamp operator +(Timestamp point, TimeDuration interval) =>
+        new Timestamp(point.MicrosecondsSinceUnixEpoch + interval.Microseconds);
+
     // --- auto-generated ---
 
     public void ReadFields(BinaryReader reader)
@@ -345,6 +361,8 @@ public record struct Timestamp(long MicrosecondsSinceUnixEpoch) : IStructuralRea
 [StructLayout(LayoutKind.Sequential)]
 public record struct TimeDuration(long Microseconds) : IStructuralReadWrite
 {
+    public static readonly TimeDuration ZERO = new(0);
+
     public static implicit operator TimeSpan(TimeDuration d) =>
         new(d.Microseconds * Util.TicksPerMicrosecond);
 

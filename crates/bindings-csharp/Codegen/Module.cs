@@ -204,7 +204,8 @@ record ViewIndex
             ImmutableArray.Create(col),
             null,
             ViewIndexType.BTree // this might become hash in the future
-        ) { }
+        )
+    { }
 
     private ViewIndex(Index.BTreeAttribute attr, ImmutableArray<ColumnRef> columns)
         : this(attr.Name, columns, attr.Table, ViewIndexType.BTree) { }
@@ -492,7 +493,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                     Constraints: {{GenConstraintList(v, ColumnAttrs.Unique, $"{iTable}.MakeUniqueConstraint")}},
                     Sequences: {{GenConstraintList(v, ColumnAttrs.AutoInc, $"{iTable}.MakeSequence")}},
                     Schedule: {{(
-                        v.Scheduled is {} scheduled
+                        v.Scheduled is { } scheduled
                         ? $"{iTable}.MakeSchedule(\"{scheduled.ReducerName}\", {scheduled.ScheduledAtColumn})"
                         : "null"
                     )}},
@@ -620,12 +621,13 @@ record ReducerDeclaration
                 public SpacetimeDB.Internal.RawReducerDefV9 MakeReducerDef(SpacetimeDB.BSATN.ITypeRegistrar registrar) => new (
                     nameof({{Name}}),
                     [{{MemberDeclaration.GenerateDefs(Args)}}],
-                    {{Kind switch {
-                        ReducerKind.Init => "SpacetimeDB.Internal.Lifecycle.Init",
-                        ReducerKind.ClientConnected => "SpacetimeDB.Internal.Lifecycle.OnConnect",
-                        ReducerKind.ClientDisconnected => "SpacetimeDB.Internal.Lifecycle.OnDisconnect",
-                        _ => "null"
-                    }}}
+                    {{Kind switch
+        {
+            ReducerKind.Init => "SpacetimeDB.Internal.Lifecycle.Init",
+            ReducerKind.ClientConnected => "SpacetimeDB.Internal.Lifecycle.OnConnect",
+            ReducerKind.ClientDisconnected => "SpacetimeDB.Internal.Lifecycle.OnDisconnect",
+            _ => "null"
+        }}}
                 );
 
                 public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx) {
@@ -821,12 +823,12 @@ public class Module : IIncrementalGenerator
                             public readonly Identity CallerIdentity;
                             public readonly Address? CallerAddress;
                             public readonly Random Rng;
-                            public readonly DateTimeOffset Timestamp;
+                            public readonly Timestamp Timestamp;
 
                             // We need this property to be non-static for parity with client SDK.
                             public Identity Identity => Internal.IReducerContext.GetIdentity();
 
-                            internal ReducerContext(Identity identity, Address? address, Random random, DateTimeOffset time) {
+                            internal ReducerContext(Identity identity, Address? address, Random random, Timestamp time) {
                                 CallerIdentity = identity;
                                 CallerAddress = address;
                                 Rng = random;
@@ -883,7 +885,7 @@ public class Module : IIncrementalGenerator
                             ulong sender_3,
                             ulong address_0,
                             ulong address_1,
-                            SpacetimeDB.Internal.DateTimeOffsetRepr timestamp,
+                            SpacetimeDB.Timestamp timestamp,
                             SpacetimeDB.Internal.BytesSource args,
                             SpacetimeDB.Internal.BytesSink error
                         ) => SpacetimeDB.Internal.Module.__call_reducer__(
