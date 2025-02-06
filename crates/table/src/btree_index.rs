@@ -1,4 +1,4 @@
-//! BTree indexes with specialized key types.
+//! Table indexes with specialized key types.
 //!
 //! Indexes could be implemented as `MultiMap<AlgebraicValue, RowPointer>` (and once were),
 //! but that results in wasted memory and spurious comparisons and branches
@@ -20,6 +20,13 @@
 // for `ProductValue`-keyed indexes which take advantage of type information,
 // since we know when creating the index the number and type of all the indexed columns.
 // This may involve a bytecode compiler, a tree of closures, or a native JIT.
+///
+/// We also represent unique indices more compactly than non-unique ones, avoiding the multi-map.
+/// Additionally, beyond our btree indices,
+/// we support direct unique indices, where key are indices into `Vec`s.
+
+// TODO(centril): the `BTreeIndex` naming makes no sense now.
+// Rename to `TableIndex`.
 
 use super::indexes::RowPointer;
 use super::table::RowRef;
