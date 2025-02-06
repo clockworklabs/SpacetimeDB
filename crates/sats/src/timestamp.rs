@@ -1,5 +1,6 @@
 use crate::{de::Deserialize, impl_st, ser::Serialize, time_duration::TimeDuration, AlgebraicType};
 use std::fmt;
+use std::ops::Add;
 use std::time::{Duration, SystemTime};
 
 #[derive(Eq, PartialEq, Ord, PartialOrd, Copy, Clone, Hash, Serialize, Deserialize, Debug)]
@@ -128,6 +129,14 @@ impl Timestamp {
     }
 }
 
+impl Add<TimeDuration> for Timestamp {
+    type Output = Self;
+
+    fn add(self, other: TimeDuration) -> Self::Output {
+        Timestamp::from_micros_since_unix_epoch(self.to_micros_since_unix_epoch() + other.to_micros())
+    }
+}
+
 pub(crate) const MICROSECONDS_PER_SECOND: i64 = 1_000_000;
 
 impl std::fmt::Display for Timestamp {
@@ -189,6 +198,16 @@ mod test {
             let timestamp_prime = Timestamp::from(system_time);
             prop_assert_eq!(timestamp_prime, timestamp);
             prop_assert_eq!(timestamp_prime.to_micros_since_unix_epoch(), micros);
+        }
+
+        #[test]
+        fn add_duration(since_epoch in any::<i64>().prop_map(|n| n.abs()), duration in any::<i64>()) {
+            prop_assume!(since_epoch.checked_add(duration).is_some());
+
+            let timestamp = Timestamp::from_micros_since_unix_epoch(since_epoch);
+            let time_duration = TimeDuration::from_micros(duration);
+            let result = timestamp + time_duration;
+            prop_assert_eq!(result.to_micros_since_unix_epoch(), since_epoch + duration);
         }
     }
 }
