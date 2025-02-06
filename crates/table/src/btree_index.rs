@@ -44,48 +44,48 @@ pub use key_size::KeySize;
 use spacetimedb_schema::def::IndexAlgorithm;
 use unique_direct_index::{UniqueDirectIndex, UniqueDirectIndexRangeIter};
 
-type Index<K> = multimap::MultiMap<K, RowPointer>;
-type IndexIter<'a, K> = multimap::MultiMapRangeIter<'a, K, RowPointer>;
-type UniqueIndex<K> = uniquemap::UniqueMap<K, RowPointer>;
-type UniqueIndexIter<'a, K> = uniquemap::UniqueMapRangeIter<'a, K, RowPointer>;
+type BtreeIndex<K> = multimap::MultiMap<K, RowPointer>;
+type BtreeIndexRangeIter<'a, K> = multimap::MultiMapRangeIter<'a, K, RowPointer>;
+type BtreeUniqueIndex<K> = uniquemap::UniqueMap<K, RowPointer>;
+type BtreeUniqueIndexRangeIter<'a, K> = uniquemap::UniqueMapRangeIter<'a, K, RowPointer>;
 
-/// An iterator over a [`TypedIndex`], with a specialized key type.
+/// A ranged iterator over a [`TypedIndex`], with a specialized key type.
 ///
 /// See module docs for info about specialization.
 enum TypedIndexRangeIter<'a> {
     // All the non-unique index iterators.
-    Bool(IndexIter<'a, bool>),
-    U8(IndexIter<'a, u8>),
-    I8(IndexIter<'a, i8>),
-    U16(IndexIter<'a, u16>),
-    I16(IndexIter<'a, i16>),
-    U32(IndexIter<'a, u32>),
-    I32(IndexIter<'a, i32>),
-    U64(IndexIter<'a, u64>),
-    I64(IndexIter<'a, i64>),
-    U128(IndexIter<'a, Packed<u128>>),
-    I128(IndexIter<'a, Packed<i128>>),
-    U256(IndexIter<'a, u256>),
-    I256(IndexIter<'a, i256>),
-    String(IndexIter<'a, Box<str>>),
-    AV(IndexIter<'a, AlgebraicValue>),
+    Bool(BtreeIndexRangeIter<'a, bool>),
+    U8(BtreeIndexRangeIter<'a, u8>),
+    I8(BtreeIndexRangeIter<'a, i8>),
+    U16(BtreeIndexRangeIter<'a, u16>),
+    I16(BtreeIndexRangeIter<'a, i16>),
+    U32(BtreeIndexRangeIter<'a, u32>),
+    I32(BtreeIndexRangeIter<'a, i32>),
+    U64(BtreeIndexRangeIter<'a, u64>),
+    I64(BtreeIndexRangeIter<'a, i64>),
+    U128(BtreeIndexRangeIter<'a, Packed<u128>>),
+    I128(BtreeIndexRangeIter<'a, Packed<i128>>),
+    U256(BtreeIndexRangeIter<'a, u256>),
+    I256(BtreeIndexRangeIter<'a, i256>),
+    String(BtreeIndexRangeIter<'a, Box<str>>),
+    AV(BtreeIndexRangeIter<'a, AlgebraicValue>),
 
     // All the unique index iterators.
-    UniqueBool(UniqueIndexIter<'a, bool>),
-    UniqueU8(UniqueIndexIter<'a, u8>),
-    UniqueI8(UniqueIndexIter<'a, i8>),
-    UniqueU16(UniqueIndexIter<'a, u16>),
-    UniqueI16(UniqueIndexIter<'a, i16>),
-    UniqueU32(UniqueIndexIter<'a, u32>),
-    UniqueI32(UniqueIndexIter<'a, i32>),
-    UniqueU64(UniqueIndexIter<'a, u64>),
-    UniqueI64(UniqueIndexIter<'a, i64>),
-    UniqueU128(UniqueIndexIter<'a, Packed<u128>>),
-    UniqueI128(UniqueIndexIter<'a, Packed<i128>>),
-    UniqueU256(UniqueIndexIter<'a, u256>),
-    UniqueI256(UniqueIndexIter<'a, i256>),
-    UniqueString(UniqueIndexIter<'a, Box<str>>),
-    UniqueAV(UniqueIndexIter<'a, AlgebraicValue>),
+    UniqueBool(BtreeUniqueIndexRangeIter<'a, bool>),
+    UniqueU8(BtreeUniqueIndexRangeIter<'a, u8>),
+    UniqueI8(BtreeUniqueIndexRangeIter<'a, i8>),
+    UniqueU16(BtreeUniqueIndexRangeIter<'a, u16>),
+    UniqueI16(BtreeUniqueIndexRangeIter<'a, i16>),
+    UniqueU32(BtreeUniqueIndexRangeIter<'a, u32>),
+    UniqueI32(BtreeUniqueIndexRangeIter<'a, i32>),
+    UniqueU64(BtreeUniqueIndexRangeIter<'a, u64>),
+    UniqueI64(BtreeUniqueIndexRangeIter<'a, i64>),
+    UniqueU128(BtreeUniqueIndexRangeIter<'a, Packed<u128>>),
+    UniqueI128(BtreeUniqueIndexRangeIter<'a, Packed<i128>>),
+    UniqueU256(BtreeUniqueIndexRangeIter<'a, u256>),
+    UniqueI256(BtreeUniqueIndexRangeIter<'a, i256>),
+    UniqueString(BtreeUniqueIndexRangeIter<'a, Box<str>>),
+    UniqueAV(BtreeUniqueIndexRangeIter<'a, AlgebraicValue>),
 
     UniqueDirect(UniqueDirectIndexRangeIter<'a>),
 }
@@ -151,38 +151,38 @@ impl Iterator for BTreeIndexRangeIter<'_> {
 #[derive(Debug, PartialEq, Eq)]
 enum TypedIndex {
     // All the non-unique btree index types.
-    Bool(Index<bool>),
-    U8(Index<u8>),
-    I8(Index<i8>),
-    U16(Index<u16>),
-    I16(Index<i16>),
-    U32(Index<u32>),
-    I32(Index<i32>),
-    U64(Index<u64>),
-    I64(Index<i64>),
-    U128(Index<Packed<u128>>),
-    I128(Index<Packed<i128>>),
-    U256(Index<u256>),
-    I256(Index<i256>),
-    String(Index<Box<str>>),
-    AV(Index<AlgebraicValue>),
+    Bool(BtreeIndex<bool>),
+    U8(BtreeIndex<u8>),
+    I8(BtreeIndex<i8>),
+    U16(BtreeIndex<u16>),
+    I16(BtreeIndex<i16>),
+    U32(BtreeIndex<u32>),
+    I32(BtreeIndex<i32>),
+    U64(BtreeIndex<u64>),
+    I64(BtreeIndex<i64>),
+    U128(BtreeIndex<Packed<u128>>),
+    I128(BtreeIndex<Packed<i128>>),
+    U256(BtreeIndex<u256>),
+    I256(BtreeIndex<i256>),
+    String(BtreeIndex<Box<str>>),
+    AV(BtreeIndex<AlgebraicValue>),
 
     // All the unique btree index types.
-    UniqueBool(UniqueIndex<bool>),
-    UniqueU8(UniqueIndex<u8>),
-    UniqueI8(UniqueIndex<i8>),
-    UniqueU16(UniqueIndex<u16>),
-    UniqueI16(UniqueIndex<i16>),
-    UniqueU32(UniqueIndex<u32>),
-    UniqueI32(UniqueIndex<i32>),
-    UniqueU64(UniqueIndex<u64>),
-    UniqueI64(UniqueIndex<i64>),
-    UniqueU128(UniqueIndex<Packed<u128>>),
-    UniqueI128(UniqueIndex<Packed<i128>>),
-    UniqueU256(UniqueIndex<u256>),
-    UniqueI256(UniqueIndex<i256>),
-    UniqueString(UniqueIndex<Box<str>>),
-    UniqueAV(UniqueIndex<AlgebraicValue>),
+    UniqueBool(BtreeUniqueIndex<bool>),
+    UniqueU8(BtreeUniqueIndex<u8>),
+    UniqueI8(BtreeUniqueIndex<i8>),
+    UniqueU16(BtreeUniqueIndex<u16>),
+    UniqueI16(BtreeUniqueIndex<i16>),
+    UniqueU32(BtreeUniqueIndex<u32>),
+    UniqueI32(BtreeUniqueIndex<i32>),
+    UniqueU64(BtreeUniqueIndex<u64>),
+    UniqueI64(BtreeUniqueIndex<i64>),
+    UniqueU128(BtreeUniqueIndex<Packed<u128>>),
+    UniqueI128(BtreeUniqueIndex<Packed<i128>>),
+    UniqueU256(BtreeUniqueIndex<u256>),
+    UniqueI256(BtreeUniqueIndex<i256>),
+    UniqueString(BtreeUniqueIndex<Box<str>>),
+    UniqueAV(BtreeUniqueIndex<AlgebraicValue>),
 
     // All the unique direct index types.
     UniqueDirectU8(UniqueDirectIndex),
@@ -401,7 +401,7 @@ impl TypedIndex {
         }
 
         fn mm_insert_at_type<T: Ord + ReadColumn + KeySize>(
-            this: &mut Index<T>,
+            this: &mut BtreeIndex<T>,
             cols: &ColList,
             row_ref: RowRef<'_>,
         ) -> Result<usize, RowPointer> {
@@ -411,7 +411,7 @@ impl TypedIndex {
             Ok(key_size)
         }
         fn um_insert_at_type<T: Ord + ReadColumn + KeySize>(
-            this: &mut UniqueIndex<T>,
+            this: &mut BtreeUniqueIndex<T>,
             cols: &ColList,
             row_ref: RowRef<'_>,
         ) -> Result<usize, RowPointer> {
@@ -501,7 +501,7 @@ impl TypedIndex {
     /// so we have to return the size across this boundary.
     fn delete(&mut self, cols: &ColList, row_ref: RowRef<'_>) -> Result<Option<usize>, InvalidFieldError> {
         fn mm_delete_at_type<T: Ord + ReadColumn + KeySize>(
-            this: &mut Index<T>,
+            this: &mut BtreeIndex<T>,
             cols: &ColList,
             row_ref: RowRef<'_>,
         ) -> Result<Option<usize>, InvalidFieldError> {
@@ -511,7 +511,7 @@ impl TypedIndex {
             Ok(this.delete(&key, &row_ref.pointer()).then_some(key_size))
         }
         fn um_delete_at_type<T: Ord + ReadColumn + KeySize>(
-            this: &mut UniqueIndex<T>,
+            this: &mut BtreeUniqueIndex<T>,
             cols: &ColList,
             row_ref: RowRef<'_>,
         ) -> Result<Option<usize>, InvalidFieldError> {
@@ -579,22 +579,22 @@ impl TypedIndex {
         }
     }
 
-    fn values_in_range(&self, range: &impl RangeBounds<AlgebraicValue>) -> TypedIndexRangeIter<'_> {
+    fn seek_range(&self, range: &impl RangeBounds<AlgebraicValue>) -> TypedIndexRangeIter<'_> {
         fn mm_iter_at_type<'a, T: Ord>(
-            this: &'a Index<T>,
+            this: &'a BtreeIndex<T>,
             range: &impl RangeBounds<AlgebraicValue>,
             av_as_t: impl Fn(&AlgebraicValue) -> Option<&T>,
-        ) -> IndexIter<'a, T> {
+        ) -> BtreeIndexRangeIter<'a, T> {
             let av_as_t = |v| av_as_t(v).expect("bound does not conform to key type of index");
             let start = range.start_bound().map(av_as_t);
             let end = range.end_bound().map(av_as_t);
             this.values_in_range(&(start, end))
         }
         fn um_iter_at_type<'a, T: Ord>(
-            this: &'a UniqueIndex<T>,
+            this: &'a BtreeUniqueIndex<T>,
             range: &impl RangeBounds<AlgebraicValue>,
             av_as_t: impl Fn(&AlgebraicValue) -> Option<&T>,
-        ) -> UniqueIndexIter<'a, T> {
+        ) -> BtreeUniqueIndexRangeIter<'a, T> {
             let av_as_t = |v| av_as_t(v).expect("bound does not conform to key type of index");
             let start = range.start_bound().map(av_as_t);
             let end = range.end_bound().map(av_as_t);
@@ -929,14 +929,14 @@ impl BTreeIndex {
 
     /// Returns whether `value` is in this index.
     pub fn contains_any(&self, value: &AlgebraicValue) -> bool {
-        self.seek(value).next().is_some()
+        self.seek_range(value).next().is_some()
     }
 
     /// Returns the number of rows associated with this `value`.
     /// Returns `None` if 0.
     /// Returns `Some(1)` if the index is unique.
     pub fn count(&self, value: &AlgebraicValue) -> Option<usize> {
-        match self.seek(value).count() {
+        match self.seek_range(value).count() {
             0 => None,
             n => Some(n),
         }
@@ -944,9 +944,9 @@ impl BTreeIndex {
 
     /// Returns an iterator over the [BTreeIndex] that yields all the `RowPointer`s
     /// that fall within the specified `range`.
-    pub fn seek(&self, range: &impl RangeBounds<AlgebraicValue>) -> BTreeIndexRangeIter<'_> {
+    pub fn seek_range(&self, range: &impl RangeBounds<AlgebraicValue>) -> BTreeIndexRangeIter<'_> {
         BTreeIndexRangeIter {
-            iter: self.idx.values_in_range(range),
+            iter: self.idx.seek_range(range),
         }
     }
 
@@ -1061,7 +1061,7 @@ mod test {
         index: &'a BTreeIndex,
         row: &'a AlgebraicValue,
     ) -> Option<BTreeIndexRangeIter<'a>> {
-        index.is_unique().then(|| index.seek(row))
+        index.is_unique().then(|| index.seek_range(row))
     }
 
     proptest! {
@@ -1153,7 +1153,7 @@ mod test {
             }
 
             fn test_seek(index: &BTreeIndex, val_to_ptr: &HashMap<u64, RowPointer>, range: impl RangeBounds<AlgebraicValue>, expect: impl IntoIterator<Item = u64>) -> TestCaseResult {
-                let mut ptrs_in_index = index.seek(&range).collect::<Vec<_>>();
+                let mut ptrs_in_index = index.seek_range(&range).collect::<Vec<_>>();
                 ptrs_in_index.sort();
                 let mut expected_ptrs = expect.into_iter().map(|expected| val_to_ptr.get(&expected).unwrap()).copied().collect::<Vec<_>>();
                 expected_ptrs.sort();

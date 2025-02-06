@@ -473,7 +473,7 @@ impl PipelinedIxJoin {
                     n += 1;
                     index_seeks += 1;
                     if let Some(v) = rhs_index
-                        .seek(&project(&u, lhs_field, &mut bytes_scanned))
+                        .seek_range(&project(&u, lhs_field, &mut bytes_scanned))
                         .next()
                         .and_then(|ptr| rhs_table.get_row_ref(blob_store, ptr))
                         .map(Row::Ptr)
@@ -496,7 +496,7 @@ impl PipelinedIxJoin {
                     n += 1;
                     index_seeks += 1;
                     if let Some(v) = rhs_index
-                        .seek(&project(&u, lhs_field, &mut bytes_scanned))
+                        .seek_range(&project(&u, lhs_field, &mut bytes_scanned))
                         .next()
                         .and_then(|ptr| rhs_table.get_row_ref(blob_store, ptr))
                         .map(Row::Ptr)
@@ -539,7 +539,7 @@ impl PipelinedIxJoin {
                     n += 1;
                     index_seeks += 1;
                     for v in rhs_index
-                        .seek(&project(&u, lhs_field, &mut bytes_scanned))
+                        .seek_range(&project(&u, lhs_field, &mut bytes_scanned))
                         .filter_map(|ptr| rhs_table.get_row_ref(blob_store, ptr))
                         .map(Row::Ptr)
                         .map(Tuple::Row)
@@ -561,7 +561,7 @@ impl PipelinedIxJoin {
                     n += 1;
                     index_seeks += 1;
                     for v in rhs_index
-                        .seek(&project(&u, lhs_field, &mut bytes_scanned))
+                        .seek_range(&project(&u, lhs_field, &mut bytes_scanned))
                         .filter_map(|ptr| rhs_table.get_row_ref(blob_store, ptr))
                         .map(Row::Ptr)
                         .map(Tuple::Row)

@@ -398,7 +398,7 @@ impl<'a> Iterator for UniqueIxJoin<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         self.lhs.find_map(|tuple| {
             self.rhs_index
-                .seek(&tuple.project(self.lhs_field))
+                .seek_range(&tuple.project(self.lhs_field))
                 .next()
                 .and_then(|ptr| self.rhs_table.get_row_ref(self.blob_store, ptr))
                 .map(Row::Ptr)
@@ -483,7 +483,7 @@ impl<'a> Iterator for UniqueIxJoinRhs<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         self.lhs.find_map(|tuple| {
             self.rhs_index
-                .seek(&tuple.project(self.lhs_field))
+                .seek_range(&tuple.project(self.lhs_field))
                 .next()
                 .and_then(|ptr| self.rhs_table.get_row_ref(self.blob_store, ptr))
                 .map(Row::Ptr)
@@ -549,7 +549,7 @@ impl<'a> Iterator for IxJoinIter<'a> {
             })
             .or_else(|| {
                 self.lhs.find_map(|tuple| {
-                    let mut cursor = self.rhs_index.seek(&tuple.project(self.lhs_field));
+                    let mut cursor = self.rhs_index.seek_range(&tuple.project(self.lhs_field));
                     cursor.next().and_then(|ptr| {
                         self.rhs_table
                             .get_row_ref(self.blob_store, ptr)
@@ -671,7 +671,7 @@ impl<'a> Iterator for IxJoinRhs<'a> {
             })
             .or_else(|| {
                 self.lhs.find_map(|tuple| {
-                    let mut cursor = self.rhs_index.seek(&tuple.project(self.lhs_field));
+                    let mut cursor = self.rhs_index.seek_range(&tuple.project(self.lhs_field));
                     cursor.next().and_then(|ptr| {
                         self.rhs_table
                             .get_row_ref(self.blob_store, ptr)

@@ -266,7 +266,7 @@ impl Table {
             // Thus, as `index.indexed_columns` is in-bounds of `self`'s layout,
             // it's also in-bounds of `row`'s layout.
             let value = unsafe { row.project_unchecked(&index.indexed_columns) };
-            if index.seek(&value).next().is_some_and(|ptr| !is_deleted(ptr)) {
+            if index.seek_range(&value).next().is_some_and(|ptr| !is_deleted(ptr)) {
                 return Err(self.build_error_unique(index, index_id, value));
             }
         }
@@ -627,7 +627,7 @@ impl Table {
         let key = needle_row
             .project(&target_index.indexed_columns)
             .expect("needle row should be valid");
-        target_index.seek(&key).next().filter(|&target_ptr| {
+        target_index.seek_range(&key).next().filter(|&target_ptr| {
             // SAFETY:
             // - Caller promised that the row layouts were the same.
             // - We know `target_ptr` exists, as it was in `target_index`, belonging to `target_table`.
@@ -1634,7 +1634,7 @@ impl<'a> TableAndIndex<'a> {
         IndexScanIter {
             table: self.table,
             blob_store: self.blob_store,
-            btree_index_iter: self.index.seek(range),
+            btree_index_iter: self.index.seek_range(range),
         }
     }
 }
@@ -1983,7 +1983,7 @@ pub(crate) mod test {
         let index = table.get_index_by_id(index_id).unwrap();
 
         index
-            .seek(&(..))
+            .seek_range(&(..))
             .map(|row_ptr| {
                 let row_ref = table.get_row_ref(blob_store, row_ptr).unwrap();
                 let key = row_ref.project(&index.indexed_columns).unwrap();

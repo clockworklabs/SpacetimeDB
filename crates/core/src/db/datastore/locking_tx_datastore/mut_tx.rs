@@ -1539,7 +1539,7 @@ impl MutTxId {
             // so all `index.indexed_columns` will be in-bounds of the row layout.
             let needle = unsafe { new_row.project_unchecked(&index.indexed_columns) };
             // Find the old row.
-            (index.seek(&needle).next(), needle)
+            (index.seek_range(&needle).next(), needle)
         }
 
         // The index we've been directed to use must exist
