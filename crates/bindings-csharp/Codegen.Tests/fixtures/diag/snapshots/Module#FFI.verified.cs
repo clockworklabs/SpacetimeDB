@@ -10,8 +10,8 @@ namespace SpacetimeDB
 {
     public sealed record ReducerContext : DbContext<Local>, Internal.IReducerContext
     {
-        public readonly Identity CallerIdentity;
-        public readonly Address? CallerAddress;
+        public readonly Identity Sender;
+        public readonly ConnectionId? ConnectionId;
         public readonly Random Rng;
         public readonly DateTimeOffset Timestamp;
 
@@ -20,13 +20,13 @@ namespace SpacetimeDB
 
         internal ReducerContext(
             Identity identity,
-            Address? address,
+            ConnectionId? connectionId,
             Random random,
             DateTimeOffset time
         )
         {
-            CallerIdentity = identity;
-            CallerAddress = address;
+            Sender = identity;
+            ConnectionId = connectionId;
             Rng = random;
             Timestamp = time;
         }
@@ -943,8 +943,8 @@ static class ModuleRegistration
     public static void Main()
     {
         SpacetimeDB.Internal.Module.SetReducerContextConstructor(
-            (identity, address, random, time) =>
-                new SpacetimeDB.ReducerContext(identity, address, random, time)
+            (identity, connectionId, random, time) =>
+                new SpacetimeDB.ReducerContext(identity, connectionId, random, time)
         );
 
         SpacetimeDB.Internal.Module.RegisterReducer<__ReducerWithReservedPrefix>();
@@ -1006,8 +1006,8 @@ static class ModuleRegistration
         ulong sender_1,
         ulong sender_2,
         ulong sender_3,
-        ulong address_0,
-        ulong address_1,
+        ulong conn_id_0,
+        ulong conn_id_1,
         SpacetimeDB.Internal.DateTimeOffsetRepr timestamp,
         SpacetimeDB.Internal.BytesSource args,
         SpacetimeDB.Internal.BytesSink error
@@ -1018,8 +1018,8 @@ static class ModuleRegistration
             sender_1,
             sender_2,
             sender_3,
-            address_0,
-            address_1,
+            conn_id_0,
+            conn_id_1,
             timestamp,
             args,
             error

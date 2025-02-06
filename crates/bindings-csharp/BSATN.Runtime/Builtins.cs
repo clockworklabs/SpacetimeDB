@@ -164,7 +164,7 @@ public readonly record struct ConnectionId
         var random = new Random();
         var id = new ConnectionId();
         random.NextBytes(Util.AsBytes(ref id));
-        return addr;
+        return id;
     }
 
   public readonly struct BSATN : IReadWrite<ConnectionId>
