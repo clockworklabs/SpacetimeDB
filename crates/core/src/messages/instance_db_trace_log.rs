@@ -64,7 +64,7 @@ pub struct CreateIndex {
 }
 #[derive(Clone, Serialize, Deserialize)]
 pub struct InstanceEvent {
-    pub event_start_epoch_nanos: Timestamp,
+    pub event_start: Timestamp,
     pub duration_micros: u64,
     pub r#type: InstanceEventType,
 }
