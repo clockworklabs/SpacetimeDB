@@ -1,5 +1,5 @@
 use crate::MemoryUsage;
-use core::ops::RangeBounds;
+use core::{ops::RangeBounds, option::IntoIter};
 use std::collections::btree_map::{BTreeMap, Entry, Range};
 
 /// A "unique map" that relates a `K` to a `V`.
@@ -54,6 +54,12 @@ impl<K: Ord, V: Ord> UniqueMap<K, V> {
         }
     }
 
+    /// Returns an iterator over the map that yields the potential `V` of the `key: &K`.
+    pub fn values_in_point(&self, key: &K) -> UniqueMapPointIter<'_, V> {
+        let iter = self.map.get(key).into_iter();
+        UniqueMapPointIter { iter }
+    }
+
     /// Returns the number of unique keys in the map.
     pub fn num_keys(&self) -> usize {
         self.len()
@@ -77,7 +83,21 @@ impl<K: Ord, V: Ord> UniqueMap<K, V> {
     }
 }
 
-/// An iterator over values in a [`MultiMap`] where the keys are in a certain range.
+/// An iterator over the potential value in a [`UniqueMap`] for a given key.
+pub struct UniqueMapPointIter<'a, V> {
+    /// The iterator seeking for matching keys in the range.
+    iter: IntoIter<&'a V>,
+}
+
+impl<'a, V> Iterator for UniqueMapPointIter<'a, V> {
+    type Item = &'a V;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next()
+    }
+}
+
+/// An iterator over values in a [`UniqueMap`] where the keys are in a certain range.
 pub struct UniqueMapRangeIter<'a, K, V> {
     /// The iterator seeking for matching keys in the range.
     iter: Range<'a, K, V>,

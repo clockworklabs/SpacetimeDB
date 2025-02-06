@@ -1,5 +1,6 @@
 use crate::{
     bflatn_to::write_row_to_pages_bsatn,
+    btree_index::BTreeIndexPointIter,
     layout::AlgebraicTypeLayout,
     static_bsatn_validator::{static_bsatn_validator, validate_bsatn, StaticBsatnValidator},
 };
@@ -266,7 +267,7 @@ impl Table {
             // Thus, as `index.indexed_columns` is in-bounds of `self`'s layout,
             // it's also in-bounds of `row`'s layout.
             let value = unsafe { row.project_unchecked(&index.indexed_columns) };
-            if index.seek_range(&value).next().is_some_and(|ptr| !is_deleted(ptr)) {
+            if index.seek_point(&value).next().is_some_and(|ptr| !is_deleted(ptr)) {
                 return Err(self.build_error_unique(index, index_id, value));
             }
         }
@@ -627,7 +628,7 @@ impl Table {
         let key = needle_row
             .project(&target_index.indexed_columns)
             .expect("needle row should be valid");
-        target_index.seek_range(&key).next().filter(|&target_ptr| {
+        target_index.seek_point(&key).next().filter(|&target_ptr| {
             // SAFETY:
             // - Caller promised that the row layouts were the same.
             // - We know `target_ptr` exists, as it was in `target_index`, belonging to `target_table`.
@@ -1627,11 +1628,22 @@ impl<'a> TableAndIndex<'a> {
         self.index
     }
 
+    /// Returns an iterator yielding all rows in this index for `key`.
+    ///
+    /// Matching is defined by `Ord for AlgebraicValue`.
+    pub fn seek_point(&self, key: &AlgebraicValue) -> IndexScanPointIter<'a> {
+        IndexScanPointIter {
+            table: self.table,
+            blob_store: self.blob_store,
+            btree_index_iter: self.index.seek_point(key),
+        }
+    }
+
     /// Returns an iterator yielding all rows in this index that fall within `range`.
     ///
     /// Matching is defined by `Ord for AlgebraicValue`.
-    pub fn seek(&self, range: &impl RangeBounds<AlgebraicValue>) -> IndexScanIter<'a> {
-        IndexScanIter {
+    pub fn seek_range(&self, range: &impl RangeBounds<AlgebraicValue>) -> IndexScanRangeIter<'a> {
+        IndexScanRangeIter {
             table: self.table,
             blob_store: self.blob_store,
             btree_index_iter: self.index.seek_range(range),
@@ -1640,10 +1652,40 @@ impl<'a> TableAndIndex<'a> {
 }
 
 /// An iterator using a [`BTreeIndex`] to scan a `table`
+/// for all the [`RowRef`]s matching the specified `key` in the indexed column(s).
+///
+/// Matching is defined by `Ord for AlgebraicValue`.
+pub struct IndexScanPointIter<'a> {
+    /// The table being scanned for rows.
+    table: &'a Table,
+    /// The blob store; passed on to the [`RowRef`]s in case they need it.
+    blob_store: &'a dyn BlobStore,
+    /// The iterator performing the index scan yielding row pointers.
+    btree_index_iter: BTreeIndexPointIter<'a>,
+}
+
+impl<'a> Iterator for IndexScanPointIter<'a> {
+    type Item = RowRef<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let ptr = self.btree_index_iter.next()?;
+        // FIXME: Determine if this is correct and if so use `_unchecked`.
+        // Will a table's index necessarily hold only pointers into that index?
+        // Edge case: if an index is added during a transaction which then scans that index,
+        // it appears that the newly-created `TxState` index
+        // will also hold pointers into the `CommittedState`.
+        //
+        // SAFETY: Assuming this is correct,
+        // `ptr` came from the index, which always holds pointers to valid rows.
+        self.table.get_row_ref(self.blob_store, ptr)
+    }
+}
+
+/// An iterator using a [`BTreeIndex`] to scan a `table`
 /// for all the [`RowRef`]s matching the specified `range` in the indexed column(s).
 ///
 /// Matching is defined by `Ord for AlgebraicValue`.
-pub struct IndexScanIter<'a> {
+pub struct IndexScanRangeIter<'a> {
     /// The table being scanned for rows.
     table: &'a Table,
     /// The blob store; passed on to the [`RowRef`]s in case they need it.
@@ -1652,7 +1694,7 @@ pub struct IndexScanIter<'a> {
     btree_index_iter: BTreeIndexRangeIter<'a>,
 }
 
-impl<'a> Iterator for IndexScanIter<'a> {
+impl<'a> Iterator for IndexScanRangeIter<'a> {
     type Item = RowRef<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {

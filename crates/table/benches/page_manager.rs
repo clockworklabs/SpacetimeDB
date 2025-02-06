@@ -767,7 +767,7 @@ fn clear_all_same<R: IndexedRow>(tbl: &mut Table, index_id: IndexId, val_same: u
     let ptrs = tbl
         .get_index_by_id(index_id)
         .unwrap()
-        .seek_range(&R::column_value_from_u64(val_same))
+        .seek_point(&R::column_value_from_u64(val_same))
         .collect::<Vec<_>>();
     for ptr in ptrs {
         tbl.delete(&mut NullBlobStore, ptr, |_| ()).unwrap();
@@ -882,7 +882,7 @@ fn index_seek(c: &mut Criterion) {
                     let mut elapsed = WallTime.zero();
                     for _ in 0..num_iters {
                         let (row, none) = time(&mut elapsed, || {
-                            let mut iter = index.seek(&col_to_seek);
+                            let mut iter = index.seek_range(&col_to_seek);
                             (iter.next(), iter.next())
                         });
                         assert!(

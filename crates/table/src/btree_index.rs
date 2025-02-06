@@ -42,12 +42,48 @@ pub mod uniquemap;
 
 pub use key_size::KeySize;
 use spacetimedb_schema::def::IndexAlgorithm;
-use unique_direct_index::{UniqueDirectIndex, UniqueDirectIndexRangeIter};
+use unique_direct_index::{UniqueDirectIndex, UniqueDirectIndexPointIter, UniqueDirectIndexRangeIter};
 
 type BtreeIndex<K> = multimap::MultiMap<K, RowPointer>;
+type BtreeIndexPointIter<'a> = multimap::MultiMapPointIter<'a, RowPointer>;
 type BtreeIndexRangeIter<'a, K> = multimap::MultiMapRangeIter<'a, K, RowPointer>;
 type BtreeUniqueIndex<K> = uniquemap::UniqueMap<K, RowPointer>;
+type BtreeUniqueIndexPointIter<'a> = uniquemap::UniqueMapPointIter<'a, RowPointer>;
 type BtreeUniqueIndexRangeIter<'a, K> = uniquemap::UniqueMapRangeIter<'a, K, RowPointer>;
+
+/// A point iterator over a [`TypedIndex`], with a specialized key type.
+///
+/// See module docs for info about specialization.
+enum TypedIndexPointIter<'a> {
+    BTree(BtreeIndexPointIter<'a>),
+    UniqueBTree(BtreeUniqueIndexPointIter<'a>),
+    UniqueDirect(UniqueDirectIndexPointIter),
+}
+
+impl Iterator for TypedIndexPointIter<'_> {
+    type Item = RowPointer;
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::BTree(this) => this.next().copied(),
+            Self::UniqueBTree(this) => this.next().copied(),
+            Self::UniqueDirect(this) => this.next(),
+        }
+    }
+}
+
+/// An iterator over rows matching a certain [`AlgebraicValue`] on the [`BTreeIndex`].
+pub struct BTreeIndexPointIter<'a> {
+    /// The iterator seeking for matching values.
+    iter: TypedIndexPointIter<'a>,
+}
+
+impl Iterator for BTreeIndexPointIter<'_> {
+    type Item = RowPointer;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next()
+    }
+}
 
 /// A ranged iterator over a [`TypedIndex`], with a specialized key type.
 ///
@@ -131,7 +167,7 @@ impl Iterator for TypedIndexRangeIter<'_> {
     }
 }
 
-/// An iterator over rows matching a certain [`AlgebraicValue`] on the [`BTreeIndex`].
+/// An iterator over rows matching a range of [`AlgebraicValue`]s on the [`BTreeIndex`].
 pub struct BTreeIndexRangeIter<'a> {
     /// The iterator seeking for matching values.
     iter: TypedIndexRangeIter<'a>,
@@ -579,6 +615,80 @@ impl TypedIndex {
         }
     }
 
+    fn seek_point(&self, key: &AlgebraicValue) -> TypedIndexPointIter<'_> {
+        fn mm_iter_at_type<'a, T: Ord>(
+            this: &'a BtreeIndex<T>,
+            key: &AlgebraicValue,
+            av_as_t: impl Fn(&AlgebraicValue) -> Option<&T>,
+        ) -> BtreeIndexPointIter<'a> {
+            this.values_in_point(av_as_t(key).expect("key does not conform to key type of index"))
+        }
+        fn um_iter_at_type<'a, T: Ord>(
+            this: &'a BtreeUniqueIndex<T>,
+            key: &AlgebraicValue,
+            av_as_t: impl Fn(&AlgebraicValue) -> Option<&T>,
+        ) -> BtreeUniqueIndexPointIter<'a> {
+            this.values_in_point(av_as_t(key).expect("key does not conform to key type of index"))
+        }
+        fn direct_iter_at_type<T>(
+            this: &UniqueDirectIndex,
+            key: &AlgebraicValue,
+            av_as_t: impl Fn(&AlgebraicValue) -> Option<&T>,
+            to_usize: impl Copy + FnOnce(&T) -> usize,
+        ) -> UniqueDirectIndexPointIter {
+            let av_as_t = |v| av_as_t(v).expect("key does not conform to key type of index");
+            this.seek_point(to_usize(av_as_t(key)))
+        }
+
+        use TypedIndexPointIter::*;
+        match self {
+            Self::Bool(this) => BTree(mm_iter_at_type(this, key, AlgebraicValue::as_bool)),
+            Self::U8(this) => BTree(mm_iter_at_type(this, key, AlgebraicValue::as_u8)),
+            Self::I8(this) => BTree(mm_iter_at_type(this, key, AlgebraicValue::as_i8)),
+            Self::U16(this) => BTree(mm_iter_at_type(this, key, AlgebraicValue::as_u16)),
+            Self::I16(this) => BTree(mm_iter_at_type(this, key, AlgebraicValue::as_i16)),
+            Self::U32(this) => BTree(mm_iter_at_type(this, key, AlgebraicValue::as_u32)),
+            Self::I32(this) => BTree(mm_iter_at_type(this, key, AlgebraicValue::as_i32)),
+            Self::U64(this) => BTree(mm_iter_at_type(this, key, AlgebraicValue::as_u64)),
+            Self::I64(this) => BTree(mm_iter_at_type(this, key, AlgebraicValue::as_i64)),
+            Self::U128(this) => BTree(mm_iter_at_type(this, key, AlgebraicValue::as_u128)),
+            Self::I128(this) => BTree(mm_iter_at_type(this, key, AlgebraicValue::as_i128)),
+            Self::U256(this) => BTree(mm_iter_at_type(this, key, |av| av.as_u256().map(|x| &**x))),
+            Self::I256(this) => BTree(mm_iter_at_type(this, key, |av| av.as_i256().map(|x| &**x))),
+            Self::String(this) => BTree(mm_iter_at_type(this, key, AlgebraicValue::as_string)),
+            Self::AV(this) => BTree(this.values_in_point(key)),
+
+            Self::UniqueBool(this) => UniqueBTree(um_iter_at_type(this, key, AlgebraicValue::as_bool)),
+            Self::UniqueU8(this) => UniqueBTree(um_iter_at_type(this, key, AlgebraicValue::as_u8)),
+            Self::UniqueI8(this) => UniqueBTree(um_iter_at_type(this, key, AlgebraicValue::as_i8)),
+            Self::UniqueU16(this) => UniqueBTree(um_iter_at_type(this, key, AlgebraicValue::as_u16)),
+            Self::UniqueI16(this) => UniqueBTree(um_iter_at_type(this, key, AlgebraicValue::as_i16)),
+            Self::UniqueU32(this) => UniqueBTree(um_iter_at_type(this, key, AlgebraicValue::as_u32)),
+            Self::UniqueI32(this) => UniqueBTree(um_iter_at_type(this, key, AlgebraicValue::as_i32)),
+            Self::UniqueU64(this) => UniqueBTree(um_iter_at_type(this, key, AlgebraicValue::as_u64)),
+            Self::UniqueI64(this) => UniqueBTree(um_iter_at_type(this, key, AlgebraicValue::as_i64)),
+            Self::UniqueU128(this) => UniqueBTree(um_iter_at_type(this, key, AlgebraicValue::as_u128)),
+            Self::UniqueI128(this) => UniqueBTree(um_iter_at_type(this, key, AlgebraicValue::as_i128)),
+            Self::UniqueU256(this) => UniqueBTree(um_iter_at_type(this, key, |av| av.as_u256().map(|x| &**x))),
+            Self::UniqueI256(this) => UniqueBTree(um_iter_at_type(this, key, |av| av.as_i256().map(|x| &**x))),
+            Self::UniqueString(this) => UniqueBTree(um_iter_at_type(this, key, AlgebraicValue::as_string)),
+            Self::UniqueAV(this) => UniqueBTree(this.values_in_point(key)),
+
+            Self::UniqueDirectU8(this) => {
+                UniqueDirect(direct_iter_at_type(this, key, AlgebraicValue::as_u8, |k| *k as usize))
+            }
+            Self::UniqueDirectU16(this) => {
+                UniqueDirect(direct_iter_at_type(this, key, AlgebraicValue::as_u16, |k| *k as usize))
+            }
+            Self::UniqueDirectU32(this) => {
+                UniqueDirect(direct_iter_at_type(this, key, AlgebraicValue::as_u32, |k| *k as usize))
+            }
+            Self::UniqueDirectU64(this) => {
+                UniqueDirect(direct_iter_at_type(this, key, AlgebraicValue::as_u64, |k| *k as usize))
+            }
+        }
+    }
+
     fn seek_range(&self, range: &impl RangeBounds<AlgebraicValue>) -> TypedIndexRangeIter<'_> {
         fn mm_iter_at_type<'a, T: Ord>(
             this: &'a BtreeIndex<T>,
@@ -929,16 +1039,23 @@ impl BTreeIndex {
 
     /// Returns whether `value` is in this index.
     pub fn contains_any(&self, value: &AlgebraicValue) -> bool {
-        self.seek_range(value).next().is_some()
+        self.seek_point(value).next().is_some()
     }
 
     /// Returns the number of rows associated with this `value`.
     /// Returns `None` if 0.
     /// Returns `Some(1)` if the index is unique.
     pub fn count(&self, value: &AlgebraicValue) -> Option<usize> {
-        match self.seek_range(value).count() {
+        match self.seek_point(value).count() {
             0 => None,
             n => Some(n),
+        }
+    }
+
+    /// Returns an iterator that yields all the `RowPointer`s for the given `key`.
+    pub fn seek_point(&self, key: &AlgebraicValue) -> BTreeIndexPointIter<'_> {
+        BTreeIndexPointIter {
+            iter: self.idx.seek_point(key),
         }
     }
 
@@ -1060,8 +1177,8 @@ mod test {
     fn get_rows_that_violate_unique_constraint<'a>(
         index: &'a BTreeIndex,
         row: &'a AlgebraicValue,
-    ) -> Option<BTreeIndexRangeIter<'a>> {
-        index.is_unique().then(|| index.seek_range(row))
+    ) -> Option<BTreeIndexPointIter<'a>> {
+        index.is_unique().then(|| index.seek_point(row))
     }
 
     proptest! {

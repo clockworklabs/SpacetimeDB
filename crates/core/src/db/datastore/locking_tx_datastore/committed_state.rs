@@ -42,7 +42,7 @@ use spacetimedb_schema::{def::IndexAlgorithm, schema::TableSchema};
 use spacetimedb_table::{
     blob_store::{BlobStore, HashMapBlobStore},
     indexes::{RowPointer, SquashedOffset},
-    table::{IndexScanIter, InsertError, RowRef, Table, TableAndIndex},
+    table::{IndexScanRangeIter, InsertError, RowRef, Table, TableAndIndex},
     MemoryUsage,
 };
 use std::collections::BTreeMap;
@@ -444,11 +444,11 @@ impl CommittedState {
         table_id: TableId,
         cols: &ColList,
         range: &impl RangeBounds<AlgebraicValue>,
-    ) -> Option<IndexScanIter<'a>> {
+    ) -> Option<IndexScanRangeIter<'a>> {
         self.tables
             .get(&table_id)?
             .get_index_by_cols_with_table(&self.blob_store, cols)
-            .map(|i| i.seek(range))
+            .map(|i| i.seek_range(range))
     }
 
     /// Returns the table associated with the given `index_id`, if any.
@@ -714,12 +714,12 @@ impl CommittedState {
 }
 
 pub struct CommittedIndexIterWithDeletedMutTx<'a> {
-    committed_rows: IndexScanIter<'a>,
+    committed_rows: IndexScanRangeIter<'a>,
     del_table: &'a DeleteTable,
 }
 
 impl<'a> CommittedIndexIterWithDeletedMutTx<'a> {
-    pub(super) fn new(committed_rows: IndexScanIter<'a>, del_table: &'a DeleteTable) -> Self {
+    pub(super) fn new(committed_rows: IndexScanRangeIter<'a>, del_table: &'a DeleteTable) -> Self {
         Self {
             committed_rows,
             del_table,

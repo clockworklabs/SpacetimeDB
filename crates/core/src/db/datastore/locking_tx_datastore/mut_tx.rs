@@ -47,7 +47,7 @@ use spacetimedb_schema::schema::{ConstraintSchema, IndexSchema, RowLevelSecurity
 use spacetimedb_table::{
     blob_store::{BlobStore, HashMapBlobStore},
     indexes::{RowPointer, SquashedOffset},
-    table::{DuplicateError, IndexScanIter, InsertError, RowRef, Table, TableAndIndex},
+    table::{DuplicateError, IndexScanRangeIter, InsertError, RowRef, Table, TableAndIndex},
 };
 use std::{
     sync::Arc,
@@ -548,8 +548,8 @@ impl MutTxId {
             Self::range_scan_decode_bounds(index_ty, prefix, prefix_elems, rstart, rend).map_err(IndexError::Decode)?;
 
         // Get an index seek iterator for the tx and committed state.
-        let tx_iter = tx_index.map(|i| i.seek(&bounds));
-        let commit_iter = commit_index.map(|i| i.seek(&bounds));
+        let tx_iter = tx_index.map(|i| i.seek_range(&bounds));
+        let commit_iter = commit_index.map(|i| i.seek_range(&bounds));
 
         // Chain together the indexed rows in the tx and committed state,
         // but don't yield rows deleted in the tx state.
@@ -1194,15 +1194,15 @@ pub struct IndexScanRanged<'a> {
 
 enum IndexScanRangedInner<'a> {
     Empty(iter::Empty<RowRef<'a>>),
-    TxOnly(IndexScanIter<'a>),
-    CommitOnly(IndexScanIter<'a>),
+    TxOnly(IndexScanRangeIter<'a>),
+    CommitOnly(IndexScanRangeIter<'a>),
     CommitOnlyWithDeletes(IndexScanFilterDeleted<'a>),
-    Both(iter::Chain<IndexScanIter<'a>, IndexScanIter<'a>>),
-    BothWithDeletes(iter::Chain<IndexScanIter<'a>, IndexScanFilterDeleted<'a>>),
+    Both(iter::Chain<IndexScanRangeIter<'a>, IndexScanRangeIter<'a>>),
+    BothWithDeletes(iter::Chain<IndexScanRangeIter<'a>, IndexScanFilterDeleted<'a>>),
 }
 
 struct IndexScanFilterDeleted<'a> {
-    iter: IndexScanIter<'a>,
+    iter: IndexScanRangeIter<'a>,
     deletes: &'a DeleteTable,
 }
 
@@ -1539,7 +1539,7 @@ impl MutTxId {
             // so all `index.indexed_columns` will be in-bounds of the row layout.
             let needle = unsafe { new_row.project_unchecked(&index.indexed_columns) };
             // Find the old row.
-            (index.seek_range(&needle).next(), needle)
+            (index.seek_point(&needle).next(), needle)
         }
 
         // The index we've been directed to use must exist
