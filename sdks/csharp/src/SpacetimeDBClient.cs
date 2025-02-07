@@ -601,7 +601,7 @@ namespace SpacetimeDB
                         try
                         {
                             reducerEvent = new(
-                                DateTimeOffset.FromUnixTimeMilliseconds((long)transactionUpdate.Timestamp.Microseconds / 1000),
+                                (DateTimeOffset)transactionUpdate.Timestamp,
                                 transactionUpdate.Status switch
                                 {
                                     UpdateStatus.Committed => Committed,
@@ -908,7 +908,7 @@ namespace SpacetimeDB
                     {
                         var reducer = transactionUpdate.ReducerCall.ReducerName;
                         stats.ParseMessageTracker.InsertRequest(timestamp, $"type={nameof(ServerMessage.TransactionUpdate)},reducer={reducer}");
-                        var hostDuration = TimeSpan.FromMilliseconds(transactionUpdate.HostExecutionDurationMicros / 1000.0d);
+                        var hostDuration = (TimeSpan)transactionUpdate.TotalHostExecutionDuration;
                         stats.AllReducersTracker.InsertRequest(hostDuration, $"reducer={reducer}");
                         var callerIdentity = transactionUpdate.CallerIdentity;
                         if (callerIdentity == Identity)

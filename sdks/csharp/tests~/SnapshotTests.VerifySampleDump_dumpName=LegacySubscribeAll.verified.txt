@@ -25,7 +25,7 @@
         Event: {
           $type: Event<Reducer>.Reducer,
           ReducerEvent: {
-            Timestamp: DateTimeOffset_1,
+            Timestamp: 1718487763059031,
             Status: {
               $type: Status.Committed
             },
@@ -51,7 +51,7 @@
         Event: {
           $type: Event<Reducer>.Reducer,
           ReducerEvent: {
-            Timestamp: DateTimeOffset_2,
+            Timestamp: 1718487768057579,
             Status: {
               $type: Status.Committed
             },
@@ -82,7 +82,7 @@
       Event: {
         $type: Event<Reducer>.Reducer,
         ReducerEvent: {
-          Timestamp: DateTimeOffset_2,
+          Timestamp: 1718487768057579,
           Status: {
             $type: Status.Committed
           },
@@ -104,7 +104,7 @@
         Event: {
           $type: Event<Reducer>.Reducer,
           ReducerEvent: {
-            Timestamp: DateTimeOffset_3,
+            Timestamp: 1718487775346381,
             Status: {
               $type: Status.Committed
             },
@@ -131,7 +131,7 @@
       Event: {
         $type: Event<Reducer>.Reducer,
         ReducerEvent: {
-          Timestamp: DateTimeOffset_3,
+          Timestamp: 1718487775346381,
           Status: {
             $type: Status.Committed
           },
@@ -153,7 +153,7 @@
         Event: {
           $type: Event<Reducer>.Reducer,
           ReducerEvent: {
-            Timestamp: DateTimeOffset_4,
+            Timestamp: 1718487777307855,
             Status: {
               $type: Status.Committed
             },
@@ -184,7 +184,7 @@
       Event: {
         $type: Event<Reducer>.Reducer,
         ReducerEvent: {
-          Timestamp: DateTimeOffset_4,
+          Timestamp: 1718487777307855,
           Status: {
             $type: Status.Committed
           },
@@ -206,7 +206,7 @@
         Event: {
           $type: Event<Reducer>.Reducer,
           ReducerEvent: {
-            Timestamp: DateTimeOffset_5,
+            Timestamp: 1718487783175083,
             Status: {
               $type: Status.Committed
             },
@@ -233,7 +233,7 @@
       Event: {
         $type: Event<Reducer>.Reducer,
         ReducerEvent: {
-          Timestamp: DateTimeOffset_5,
+          Timestamp: 1718487783175083,
           Status: {
             $type: Status.Committed
           },
@@ -255,7 +255,7 @@
         Event: {
           $type: Event<Reducer>.Reducer,
           ReducerEvent: {
-            Timestamp: DateTimeOffset_6,
+            Timestamp: 1718487787645364,
             Status: {
               $type: Status.Committed
             },
@@ -282,7 +282,7 @@
       Event: {
         $type: Event<Reducer>.Reducer,
         ReducerEvent: {
-          Timestamp: DateTimeOffset_6,
+          Timestamp: 1718487787645364,
           Status: {
             $type: Status.Committed
           },
@@ -304,7 +304,7 @@
         Event: {
           $type: Event<Reducer>.Reducer,
           ReducerEvent: {
-            Timestamp: DateTimeOffset_7,
+            Timestamp: 1718487791901504,
             Status: {
               $type: Status.Committed
             },
@@ -336,7 +336,7 @@
         Event: {
           $type: Event<Reducer>.Reducer,
           ReducerEvent: {
-            Timestamp: DateTimeOffset_8,
+            Timestamp: 1718487794937841,
             Status: {
               $type: Status.Committed
             },
@@ -363,7 +363,7 @@
       Event: {
         $type: Event<Reducer>.Reducer,
         ReducerEvent: {
-          Timestamp: DateTimeOffset_8,
+          Timestamp: 1718487794937841,
           Status: {
             $type: Status.Committed
           },

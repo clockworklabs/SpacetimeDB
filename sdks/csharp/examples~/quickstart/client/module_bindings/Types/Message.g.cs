@@ -16,13 +16,13 @@ namespace SpacetimeDB.Types
         [DataMember(Name = "sender")]
         public SpacetimeDB.Identity Sender;
         [DataMember(Name = "sent")]
-        public ulong Sent;
+        public SpacetimeDB.Timestamp Sent;
         [DataMember(Name = "text")]
         public string Text;
 
         public Message(
             SpacetimeDB.Identity Sender,
-            ulong Sent,
+            SpacetimeDB.Timestamp Sent,
             string Text
         )
         {

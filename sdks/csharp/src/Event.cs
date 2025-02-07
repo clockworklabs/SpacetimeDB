@@ -18,7 +18,7 @@ namespace SpacetimeDB
     )>;
 
     public record ReducerEvent<R>(
-        DateTimeOffset Timestamp,
+        Timestamp Timestamp,
         Status Status,
         Identity CallerIdentity,
         Address? CallerAddress,

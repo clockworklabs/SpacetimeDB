@@ -19,20 +19,20 @@ namespace SpacetimeDB.ClientApi
         public string? Error;
         [DataMember(Name = "tables")]
         public System.Collections.Generic.List<OneOffTable> Tables;
-        [DataMember(Name = "total_host_execution_duration_micros")]
-        public ulong TotalHostExecutionDurationMicros;
+        [DataMember(Name = "total_host_execution_duration")]
+        public SpacetimeDB.TimeDuration TotalHostExecutionDuration;
 
         public OneOffQueryResponse(
             System.Collections.Generic.List<byte> MessageId,
             string? Error,
             System.Collections.Generic.List<OneOffTable> Tables,
-            ulong TotalHostExecutionDurationMicros
+            SpacetimeDB.TimeDuration TotalHostExecutionDuration
         )
         {
             this.MessageId = MessageId;
             this.Error = Error;
             this.Tables = Tables;
-            this.TotalHostExecutionDurationMicros = TotalHostExecutionDurationMicros;
+            this.TotalHostExecutionDuration = TotalHostExecutionDuration;
         }
 
         public OneOffQueryResponse()
