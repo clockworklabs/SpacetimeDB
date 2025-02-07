@@ -45,6 +45,8 @@ pub enum EnumWithPayload {
 
     ConnectionId(__sdk::ConnectionId),
 
+    Timestamp(__sdk::Timestamp),
+
     Bytes(Vec<u8>),
 
     Ints(Vec<i32>),

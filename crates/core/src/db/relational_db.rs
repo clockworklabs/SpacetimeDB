@@ -1019,7 +1019,7 @@ impl RelationalDB {
         self.inner.create_index_mut_tx(tx, schema, is_unique)
     }
 
-    /// Removes the [index::BTreeIndex] from the database by their `index_id`
+    /// Removes the [`TableIndex`] from the database by their `index_id`
     pub fn drop_index(&self, tx: &mut MutTx, index_id: IndexId) -> Result<(), DBError> {
         self.inner.drop_index_mut_tx(tx, index_id)
     }
@@ -1623,11 +1623,11 @@ mod tests {
     use commitlog::Commitlog;
     use durability::EmptyHistory;
     use pretty_assertions::assert_eq;
-    use spacetimedb_client_api_messages::timestamp::Timestamp;
     use spacetimedb_data_structures::map::IntMap;
     use spacetimedb_lib::db::raw_def::v9::{btree, RawTableDefBuilder};
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::Identity;
+    use spacetimedb_lib::Timestamp;
     use spacetimedb_sats::buffer::BufReader;
     use spacetimedb_sats::product;
     use spacetimedb_schema::schema::RowLevelSecuritySchema;

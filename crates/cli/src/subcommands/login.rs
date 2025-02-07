@@ -31,7 +31,7 @@ pub fn cli() -> Command {
                 .group("login-method")
                 .help("Bypass the login flow and use a login token directly"),
         )
-        .about("Log the CLI in to SpacetimeDB")
+        .about("Manage your login to the SpacetimeDB CLI")
 }
 
 fn get_subcommands() -> Vec<Command> {

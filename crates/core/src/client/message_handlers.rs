@@ -3,7 +3,7 @@ use super::{ClientConnection, DataMessage, Protocol};
 use crate::energy::EnergyQuanta;
 use crate::execution_context::WorkloadType;
 use crate::host::module_host::{EventStatus, ModuleEvent, ModuleFunctionCall};
-use crate::host::{ReducerArgs, ReducerId, Timestamp};
+use crate::host::{ReducerArgs, ReducerId};
 use crate::identity::Identity;
 use crate::messages::websocket::{CallReducer, ClientMessage, OneOffQuery};
 use crate::worker_metrics::WORKER_METRICS;
@@ -11,7 +11,7 @@ use bytes::Bytes;
 use bytestring::ByteString;
 use spacetimedb_lib::de::serde::DeserializeWrapper;
 use spacetimedb_lib::identity::RequestId;
-use spacetimedb_lib::{bsatn, ConnectionId};
+use spacetimedb_lib::{bsatn, ConnectionId, Timestamp};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 

@@ -583,6 +583,8 @@ pub fn write_type<W: Write>(module: &ModuleDef, out: &mut W, ty: &AlgebraicTypeU
         AlgebraicTypeUse::Never => write!(out, "std::convert::Infallible")?,
         AlgebraicTypeUse::Identity => write!(out, "__sdk::Identity")?,
         AlgebraicTypeUse::ConnectionId => write!(out, "__sdk::ConnectionId")?,
+        AlgebraicTypeUse::Timestamp => write!(out, "__sdk::Timestamp")?,
+        AlgebraicTypeUse::TimeDuration => write!(out, "__sdk::TimeDuration")?,
         AlgebraicTypeUse::ScheduleAt => write!(out, "__sdk::ScheduleAt")?,
         AlgebraicTypeUse::Option(inner_ty) => {
             write!(out, "Option::<")?;

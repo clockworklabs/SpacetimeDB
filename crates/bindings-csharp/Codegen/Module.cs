@@ -822,13 +822,13 @@ public class Module : IIncrementalGenerator
                             public readonly Identity Sender;
                             public readonly ConnectionId? ConnectionId;
                             public readonly Random Rng;
-                            public readonly DateTimeOffset Timestamp;
+                            public readonly Timestamp Timestamp;
 
                             // We need this property to be non-static for parity with client SDK.
                             public Identity Identity => Internal.IReducerContext.GetIdentity();
 
-                            internal ReducerContext(Identity identity, ConnectionId? connectionId, Random random, DateTimeOffset time) {
-                                Sender= identity;
+                    internal ReducerContext(Identity identity, ConnectionId? connectionId, Random random, Timestamp time) {
+                                Sender = identity;
                                 ConnectionId = connectionId;
                                 Rng = random;
                                 Timestamp = time;
@@ -884,7 +884,7 @@ public class Module : IIncrementalGenerator
                             ulong sender_3,
                             ulong conn_id_0,
                             ulong conn_id_1,
-                            SpacetimeDB.Internal.DateTimeOffsetRepr timestamp,
+                            SpacetimeDB.Timestamp timestamp,
                             SpacetimeDB.Internal.BytesSource args,
                             SpacetimeDB.Internal.BytesSink error
                         ) => SpacetimeDB.Internal.Module.__call_reducer__(

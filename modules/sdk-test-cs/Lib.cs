@@ -33,6 +33,7 @@ public static partial class Module
             string Str,
             Identity Identity,
             ConnectionId ConnectionId,
+            Timestamp Timestamp,
             List<byte> Bytes,
             List<int> Ints,
             List<string> Strings,
@@ -69,6 +70,8 @@ public static partial class Module
         public string p;
         public Identity q;
         public ConnectionId r;
+        public Timestamp s;
+        public TimeDuration t;
     }
 
     [SpacetimeDB.Type]
@@ -92,6 +95,8 @@ public static partial class Module
         public List<string> p;
         public List<Identity> q;
         public List<ConnectionId> r;
+        public List<Timestamp> s;
+        public List<TimeDuration> t;
     }
 
     [SpacetimeDB.Table(Name = "one_u8", Public = true)]
@@ -308,6 +313,18 @@ public static partial class Module
     public static void insert_one_connection_id(ReducerContext ctx, ConnectionId a)
     {
         ctx.Db.one_connection_id.Insert(new OneConnectionId { a = a });
+    }
+
+    [SpacetimeDB.Table(Name = "one_timestamp", Public = true)]
+    public partial struct OneTimestamp
+    {
+        public Timestamp t;
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void insert_one_timestamp(ReducerContext ctx, Timestamp t)
+    {
+        ctx.Db.one_timestamp.Insert(new OneTimestamp { t = t });
     }
 
     [SpacetimeDB.Table(Name = "one_simple_enum", Public = true)]
@@ -596,6 +613,18 @@ public static partial class Module
     public static void insert_vec_connection_id(ReducerContext ctx, List<ConnectionId> a)
     {
         ctx.Db.vec_connection_id.Insert(new VecConnectionId { a = a });
+    }
+
+    [SpacetimeDB.Table(Name = "vec_timestamp", Public = true)]
+    public partial struct VecTimestamp
+    {
+        public List<Timestamp> t;
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void insert_vec_timestamp(ReducerContext ctx, List<Timestamp> t)
+    {
+        ctx.Db.vec_timestamp.Insert(new VecTimestamp { t = t });
     }
 
     [SpacetimeDB.Table(Name = "vec_simple_enum", Public = true)]
@@ -1820,6 +1849,12 @@ public static partial class Module
                     .ToList(),
             }
         );
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void insert_call_timestamp(ReducerContext ctx)
+    {
+        ctx.Db.one_timestamp.Insert(new OneTimestamp { t = ctx.Timestamp });
     }
 
     [SpacetimeDB.Table(Name = "table_holds_table", Public = true)]

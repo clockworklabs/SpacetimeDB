@@ -8,7 +8,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[sats(crate = __lib)]
 pub struct Message {
     pub sender: __sdk::Identity,
-    pub sent: u64,
+    pub sent: __sdk::Timestamp,
     pub text: String,
 }
 

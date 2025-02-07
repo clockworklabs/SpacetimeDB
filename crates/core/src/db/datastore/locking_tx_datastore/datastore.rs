@@ -1024,7 +1024,7 @@ mod tests {
     use spacetimedb_lib::db::auth::{StAccess, StTableType};
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::st_var::StVarValue;
-    use spacetimedb_lib::{resolved_type_via_v9, ScheduleAt};
+    use spacetimedb_lib::{resolved_type_via_v9, ScheduleAt, TimeDuration};
     use spacetimedb_primitives::{col_list, ColId, ScheduleId};
     use spacetimedb_sats::algebraic_value::ser::value_serialize;
     use spacetimedb_sats::{product, AlgebraicType, GroundSpacetimeType};
@@ -2596,7 +2596,10 @@ mod tests {
             .expect("there should be an index with this name");
 
         // Make us a row and insert + identity update.
-        let row = &product![24u64, value_serialize(&ScheduleAt::Interval(42))];
+        let row = &product![
+            24u64,
+            value_serialize(&ScheduleAt::Interval(TimeDuration::from_micros(42)))
+        ];
         let row = &to_vec(row).unwrap();
         let (_, _, insert_flags) = datastore.insert_mut_tx(&mut tx, table_id, row)?;
         let (_, _, update_flags) = datastore.update_mut_tx(&mut tx, table_id, index_id, row)?;

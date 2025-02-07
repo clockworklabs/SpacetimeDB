@@ -39,7 +39,6 @@ use spacetimedb_lib::{bsatn, ser::Serialize, ConnectionId, Identity};
 use std::{
     collections::HashMap,
     sync::{atomic::AtomicU32, Arc, Mutex as StdMutex, OnceLock},
-    time::{Duration, SystemTime},
 };
 use tokio::{
     runtime::{self, Runtime},
@@ -1078,9 +1077,7 @@ async fn parse_loop<M: SpacetimeModule>(
                                 caller_connection_id: caller_connection_id.none_if_zero(),
                                 caller_identity,
                                 energy_consumed: Some(energy_quanta_used.quanta),
-                                timestamp: SystemTime::UNIX_EPOCH
-                                    .checked_add(Duration::from_micros(timestamp.microseconds))
-                                    .unwrap(),
+                                timestamp,
                                 reducer,
                                 status,
                             })

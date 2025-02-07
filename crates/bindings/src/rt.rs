@@ -1,20 +1,18 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
 use crate::table::IndexAlgo;
-use crate::timestamp::with_timestamp_set;
-use crate::{sys, IterBuf, ReducerContext, ReducerResult, SpacetimeType, Table, Timestamp};
+use crate::{sys, IterBuf, ReducerContext, ReducerResult, SpacetimeType, Table};
 pub use spacetimedb_lib::db::raw_def::v9::Lifecycle as LifecycleReducer;
 use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, RawModuleDefV9Builder, TableType};
 use spacetimedb_lib::de::{self, Deserialize, SeqProductAccess};
 use spacetimedb_lib::sats::typespace::TypespaceBuilder;
 use spacetimedb_lib::sats::{impl_deserialize, impl_serialize, ProductTypeElement};
 use spacetimedb_lib::ser::{Serialize, SerializeSeqProduct};
-use spacetimedb_lib::{bsatn, ConnectionId, Identity, ProductType, RawModuleDef};
+use spacetimedb_lib::{bsatn, ConnectionId, Identity, ProductType, RawModuleDef, Timestamp};
 use spacetimedb_primitives::*;
 use std::fmt;
 use std::marker::PhantomData;
 use std::sync::{Mutex, OnceLock};
-use std::time::Duration;
 use sys::raw::{BytesSink, BytesSource};
 
 /// The `sender` invokes `reducer` at `timestamp` and provides it with the given `args`.
@@ -29,8 +27,7 @@ pub fn invoke_reducer<'a, A: Args<'a>>(
     // Deserialize the arguments from a bsatn encoding.
     let SerDeArgs(args) = bsatn::from_slice(args).expect("unable to decode args");
 
-    // Run the reducer with the environment all set up.
-    with_timestamp_set(ctx.timestamp, || reducer.invoke(&ctx, args))
+    reducer.invoke(&ctx, args)
 }
 /// A trait for types representing the *execution logic* of a reducer.
 #[diagnostic::on_unimplemented(
@@ -289,22 +286,6 @@ impl_serialize!(['de, A: Args<'de>] SerDeArgs<A>, (self, ser) => {
     prod.end()
 });
 
-/// A trait for types representing repeater arguments.
-pub trait RepeaterArgs: for<'de> Args<'de> {
-    /// Returns a notion of now in time.
-    fn get_now() -> Self;
-}
-
-impl RepeaterArgs for () {
-    fn get_now() -> Self {}
-}
-
-impl RepeaterArgs for (Timestamp,) {
-    fn get_now() -> Self {
-        (Timestamp::now(),)
-    }
-}
-
 /// A trait for types that can *describe* a row-level security policy.
 pub trait RowLevelSecurityInfo {
     /// The SQL expression for the row-level security policy.
@@ -424,7 +405,7 @@ struct ModuleBuilder {
 // Not actually a mutex; because WASM is single-threaded this basically just turns into a refcell.
 static DESCRIBERS: Mutex<Vec<Box<dyn DescriberFn>>> = Mutex::new(Vec::new());
 
-/// A reducer function takes in `(Sender, Timestamp, Args)`
+/// A reducer function takes in `(ReducerContext, Args)`
 /// and returns a result with a possible error message.
 pub type ReducerFn = fn(ReducerContext, &[u8]) -> ReducerResult;
 static REDUCERS: OnceLock<Vec<ReducerFn>> = OnceLock::new();
@@ -522,7 +503,7 @@ extern "C" fn __call_reducer__(
     let conn_id = (conn_id != ConnectionId::ZERO).then_some(conn_id);
 
     // Assemble the `ReducerContext`.
-    let timestamp = Timestamp::UNIX_EPOCH + Duration::from_micros(timestamp);
+    let timestamp = Timestamp::from_micros_since_unix_epoch(timestamp as i64);
     let ctx = ReducerContext {
         db: crate::Local {},
         sender,

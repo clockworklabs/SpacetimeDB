@@ -17,7 +17,7 @@ use spacetimedb_data_structures::map::{Entry, HashCollectionExt, HashMap, HashSe
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::{ConnectionId, Identity};
 use spacetimedb_primitives::TableId;
-use spacetimedb_query::delta::DeltaPlan;
+use spacetimedb_subscription::SubscriptionPlan;
 use std::ops::Deref;
 use std::sync::Arc;
 
@@ -38,11 +38,11 @@ type SubscriptionId = (ClientId, ClientQueryId);
 pub struct Plan {
     hash: QueryHash,
     sql: String,
-    plan: DeltaPlan,
+    plan: SubscriptionPlan,
 }
 
 impl Deref for Plan {
-    type Target = DeltaPlan;
+    type Target = SubscriptionPlan;
 
     fn deref(&self) -> &Self::Target {
         &self.plan
@@ -50,7 +50,7 @@ impl Deref for Plan {
 }
 
 impl Plan {
-    pub fn new(plan: DeltaPlan, hash: QueryHash, text: String) -> Self {
+    pub fn new(plan: SubscriptionPlan, hash: QueryHash, text: String) -> Self {
         Self { plan, hash, sql: text }
     }
 
@@ -341,25 +341,17 @@ impl SubscriptionManager {
                 .flatten()
                 .collect::<HashSet<_>>()
                 .par_iter()
-                .filter_map(|&hash| self.queries.get(hash).map(|state| (hash, &state.query)))
-                .filter_map(|(hash, plan)| match plan.evaluator(tx) {
-                    Ok(evaluator) => Some((hash, plan, evaluator, ExecutionMetrics::default())),
-                    Err(err) => {
-                        // TODO: Handle errors instead of just logging them
-                        tracing::error!(
-                            message = "Query errored during tx update",
-                            sql = plan.sql,
-                            reason = ?err,
-                        );
-                        None
-                    }
+                .filter_map(|&hash| {
+                    self.queries
+                        .get(hash)
+                        .map(|state| (hash, &state.query, ExecutionMetrics::default()))
                 })
                 // If N clients are subscribed to a query,
                 // we copy the DatabaseTableUpdate N times,
                 // which involves cloning BSATN (binary) or product values (json).
-                .map(|(hash, plan, evaluator, mut metrics)| {
-                    let table_id = plan.table_id();
-                    let table_name = plan.table_name();
+                .map(|(hash, plan, mut metrics)| {
+                    let table_id = plan.subscribed_table_id();
+                    let table_name: Box<str> = plan.subscribed_table_name().into();
                     // Store at most one copy of the serialization to BSATN
                     // and ditto for the "serialization" for JSON.
                     // Each subscriber gets to pick which of these they want,
@@ -393,7 +385,7 @@ impl SubscriptionManager {
                         (update, num_rows)
                     }
 
-                    let delta_updates_opt = match eval_delta(tx, &mut metrics, &evaluator) {
+                    let delta_updates_opt = match eval_delta(tx, &mut metrics, plan) {
                         Ok(delta_updates) => Some(delta_updates),
                         Err(err) => {
                             // TODO: Handle errors instead of just logging them
@@ -536,11 +528,10 @@ fn send_to_client(
 mod tests {
     use std::{sync::Arc, time::Duration};
 
-    use spacetimedb_client_api_messages::timestamp::Timestamp;
     use spacetimedb_client_api_messages::websocket::QueryId;
-    use spacetimedb_lib::{error::ResultTest, identity::AuthCtx, AlgebraicType, ConnectionId, Identity};
+    use spacetimedb_lib::{error::ResultTest, identity::AuthCtx, AlgebraicType, ConnectionId, Identity, Timestamp};
     use spacetimedb_primitives::TableId;
-    use spacetimedb_query::delta::DeltaPlan;
+    use spacetimedb_subscription::SubscriptionPlan;
 
     use super::{Plan, SubscriptionManager};
     use crate::execution_context::Workload;
@@ -566,7 +557,7 @@ mod tests {
             let auth = AuthCtx::for_testing();
             let tx = SchemaViewer::new(&*tx, &auth);
             let hash = QueryHash::from_string(sql);
-            let plan = DeltaPlan::compile(sql, &tx).unwrap();
+            let plan = SubscriptionPlan::compile(sql, &tx).unwrap();
             Ok(Arc::new(Plan::new(plan, hash, sql.into())))
         })
     }

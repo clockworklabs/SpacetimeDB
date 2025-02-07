@@ -14,8 +14,8 @@ use crate::messages::control_db::Database;
 use crate::replica_context::ReplicaContext;
 use crate::sql::ast::SchemaViewer;
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
-use crate::subscription::record_exec_metrics;
 use crate::subscription::tx::DeltaTx;
+use crate::subscription::{execute_plan, record_exec_metrics};
 use crate::util::lending_pool::{Closed, LendingPool, LentResource, PoolClosed};
 use crate::vm::check_row_limit;
 use crate::worker_metrics::WORKER_METRICS;
@@ -26,15 +26,15 @@ use futures::{Future, FutureExt};
 use indexmap::IndexSet;
 use itertools::Itertools;
 use smallvec::SmallVec;
-use spacetimedb_client_api_messages::timestamp::Timestamp;
 use spacetimedb_client_api_messages::websocket::{ByteListLen, Compression, OneOffTable, QueryUpdate, WebsocketFormat};
 use spacetimedb_data_structures::error_stream::ErrorStream;
 use spacetimedb_data_structures::map::{HashCollectionExt as _, IntMap};
 use spacetimedb_lib::db::raw_def::v9::Lifecycle;
 use spacetimedb_lib::identity::{AuthCtx, RequestId};
 use spacetimedb_lib::ConnectionId;
+use spacetimedb_lib::Timestamp;
 use spacetimedb_primitives::{col_list, TableId};
-use spacetimedb_query::SubscribePlan;
+use spacetimedb_query::compile_subscription;
 use spacetimedb_sats::{algebraic_value, ProductValue};
 use spacetimedb_schema::auto_migrate::AutoMigrateError;
 use spacetimedb_schema::def::deserialize::ReducerArgsDeserializeSeed;
@@ -828,18 +828,11 @@ impl ModuleHost {
 
         let (rows, metrics) = db.with_read_only(Workload::Sql, |tx| {
             let tx = SchemaViewer::new(tx, &auth);
-            let plan = SubscribePlan::compile(&query, &tx)?;
+            let (plan, _, table_name) = compile_subscription(&query, &tx)?;
+            let plan = plan.optimize()?;
             check_row_limit(&plan, db, &tx, |plan, tx| estimate_rows_scanned(tx, plan), &auth)?;
-            plan.execute::<_, F>(&DeltaTx::from(&*tx))
-                .map(|(rows, _, metrics)| {
-                    (
-                        OneOffTable {
-                            table_name: plan.table_name().to_owned().into_boxed_str(),
-                            rows,
-                        },
-                        metrics,
-                    )
-                })
+            execute_plan::<_, F>(&plan.into(), &DeltaTx::from(&*tx))
+                .map(|(rows, _, metrics)| (OneOffTable { table_name, rows }, metrics))
                 .context("One-off queries are not allowed to modify the database")
         })?;
 

@@ -90,6 +90,21 @@ metrics_group!(
         #[help = "The number of bytes in a table with the precision of a page size"]
         #[labels(db: Identity, table_id: u32, table_name: str)]
         pub rdb_table_size: IntGaugeVec,
+
+        #[name = reducer_wasmtime_fuel_used]
+        #[help = "The total wasmtime fuel used"]
+        #[labels(db: Identity, reducer: str)]
+        pub reducer_wasmtime_fuel_used: IntCounterVec,
+
+        #[name = reducer_wasm_time_usec]
+        #[help = "The total runtime of reducer calls"]
+        #[labels(db: Identity, reducer: str)]
+        pub reducer_duration_usec: IntCounterVec,
+
+        #[name = reducer_abi_time_usec]
+        #[help = "The total time spent in reducer ABI calls"]
+        #[labels(db: Identity, reducer: str)]
+        pub reducer_abi_time_usec: IntCounterVec,
     }
 );
 
