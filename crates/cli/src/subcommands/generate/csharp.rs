@@ -26,6 +26,76 @@ use std::path::PathBuf;
 
 const INDENT: &str = "    ";
 
+const REDUCER_EVENTS: &str = r#"
+    public sealed class EventContext : IEventContext
+    {
+        private readonly DbConnection conn;
+        public readonly Event<Reducer> Event;
+
+        public RemoteTables Db => conn.Db;
+        public RemoteReducers Reducers => conn.Reducers;
+        public SetReducerFlags SetReducerFlags => conn.SetReducerFlags;
+
+        internal EventContext(DbConnection conn, Event<Reducer> Event)
+        {
+            this.conn = conn;
+            this.Event = Event;
+        }
+    }
+
+    public sealed class ReducerEventContext : IReducerEventContext
+    {
+        private readonly DbConnection conn;
+        public readonly ReducerEvent<Reducer> Event;
+
+        public RemoteTables Db => conn.Db;
+        public RemoteReducers Reducers => conn.Reducers;
+        public SetReducerFlags SetReducerFlags => conn.SetReducerFlags;
+
+        internal ReducerEventContext(DbConnection conn, ReducerEvent<Reducer> reducerEvent)
+        {
+            this.conn = conn;
+            Event = reducerEvent;
+        }
+    }
+
+    public sealed class ErrorContext : IErrorContext
+    {
+        private readonly DbConnection conn;
+        public readonly Exception Event;
+        Exception IErrorContext.Event {
+            get {
+                return Event;
+            }
+        }
+
+        public RemoteTables Db => conn.Db;
+        public RemoteReducers Reducers => conn.Reducers;
+        public SetReducerFlags SetReducerFlags => conn.SetReducerFlags;
+        public Exception Error => Event;
+
+        internal ErrorContext(DbConnection conn, Exception error)
+        {
+            this.conn = conn;
+            Event = error;
+        }
+    }
+
+    public sealed class SubscriptionEventContext : ISubscriptionEventContext
+    {
+        private readonly DbConnection conn;
+
+        public RemoteTables Db => conn.Db;
+        public RemoteReducers Reducers => conn.Reducers;
+        public SetReducerFlags SetReducerFlags => conn.SetReducerFlags;
+
+        internal SubscriptionEventContext(DbConnection conn)
+        {
+            this.conn = conn;
+        }
+    }
+"#;
+
 pub struct Csharp<'opts> {
     pub namespace: &'opts str,
 }
@@ -239,7 +309,7 @@ impl Lang for Csharp<'_> {
 
             writeln!(
                 output,
-                "public delegate void {func_name_pascal_case}Handler(EventContext ctx{delegate_separator}{func_params});"
+                "public delegate void {func_name_pascal_case}Handler(ReducerEventContext ctx{delegate_separator}{func_params});"
             );
             writeln!(
                 output,
@@ -260,7 +330,7 @@ impl Lang for Csharp<'_> {
 
             writeln!(
                 output,
-                "public bool Invoke{func_name_pascal_case}(EventContext ctx, Reducer.{func_name_pascal_case} args)"
+                "public bool Invoke{func_name_pascal_case}(ReducerEventContext ctx, Reducer.{func_name_pascal_case} args)"
             );
             indented_block(output, |output| {
                 writeln!(output, "if (On{func_name_pascal_case} == null) return false;");
@@ -350,30 +420,7 @@ impl Lang for Csharp<'_> {
 
         writeln!(output, "public sealed partial class SetReducerFlags {{ }}");
 
-        writeln!(output, "public sealed class EventContext: IEventContext");
-        indented_block(&mut output, |output| {
-            writeln!(output, "private readonly DbConnection conn;");
-            writeln!(output, "public readonly Event<Reducer> Event;");
-            writeln!(output);
-
-            writeln!(output, "public RemoteTables Db => conn.Db;");
-            writeln!(output, "public RemoteReducers Reducers => conn.Reducers;");
-            writeln!(
-                output,
-                "public SetReducerFlags SetReducerFlags => conn.SetReducerFlags;"
-            );
-            writeln!(output);
-
-            writeln!(
-                output,
-                "internal EventContext(DbConnection conn, Event<Reducer> reducerEvent)"
-            );
-            indented_block(output, |output| {
-                writeln!(output, "this.conn = conn;");
-                writeln!(output, "Event = reducerEvent;");
-            });
-        });
-        writeln!(output);
+        writeln!(output, "{REDUCER_EVENTS}");
 
         writeln!(output, "public abstract partial class Reducer");
         indented_block(&mut output, |output| {
@@ -428,17 +475,38 @@ impl Lang for Csharp<'_> {
 
             writeln!(
                 output,
-                "protected override IEventContext ToEventContext(Event<Reducer> reducerEvent) =>"
+                "protected override IEventContext ToEventContext(Event<Reducer> Event) =>"
             );
-            writeln!(output, "new EventContext(this, reducerEvent);");
+            writeln!(output, "new EventContext(this, Event);");
             writeln!(output);
 
             writeln!(
                 output,
-                "protected override bool Dispatch(IEventContext context, Reducer reducer)"
+                "protected override IReducerEventContext ToReducerEventContext(ReducerEvent<Reducer> reducerEvent) =>"
+            );
+            writeln!(output, "new ReducerEventContext(this, reducerEvent);");
+            writeln!(output);
+
+            writeln!(
+                output,
+                "protected override ISubscriptionEventContext MakeSubscriptionEventContext() =>"
+            );
+            writeln!(output, "new SubscriptionEventContext(this);");
+            writeln!(output);
+
+            writeln!(
+                output,
+                "protected override IErrorContext ToErrorContext(Exception exception) =>"
+            );
+            writeln!(output, "new ErrorContext(this, exception);");
+            writeln!(output);
+
+            writeln!(
+                output,
+                "protected override bool Dispatch(IReducerEventContext context, Reducer reducer)"
             );
             indented_block(output, |output| {
-                writeln!(output, "var eventContext = (EventContext)context;");
+                writeln!(output, "var eventContext = (ReducerEventContext)context;");
                 writeln!(output, "return reducer switch {{");
                 {
                     indent_scope!(output);
@@ -460,7 +528,7 @@ impl Lang for Csharp<'_> {
 
             writeln!(
                 output,
-                "public SubscriptionBuilder<EventContext> SubscriptionBuilder() => new(this);"
+                "public SubscriptionBuilder<SubscriptionEventContext, ErrorContext> SubscriptionBuilder() => new(this);"
             );
         });
 
