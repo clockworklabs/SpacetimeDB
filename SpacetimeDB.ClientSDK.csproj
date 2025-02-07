@@ -21,6 +21,7 @@
     <DefaultItemExcludes>$(DefaultItemExcludes);*~/**</DefaultItemExcludes>
     <!-- We want to save DLLs for Unity which doesn't support NuGet. -->
     <RestorePackagesPath>packages</RestorePackagesPath>
+    <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
   </PropertyGroup>
 
   <ItemGroup>
@@ -28,6 +29,8 @@
 
     <InternalsVisibleTo Include="SpacetimeDB.Tests" />
   </ItemGroup>
+
+
 
   <ItemGroup>
     <None Update="logo.png" Pack="true" PackagePath="" />
