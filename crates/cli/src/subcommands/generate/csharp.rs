@@ -43,7 +43,7 @@ const REDUCER_EVENTS: &str = r#"
         }
     }
 
-    public sealed class ReducerEventContext : IEventContext
+    public sealed class ReducerEventContext : IReducerEventContext
     {
         private readonly DbConnection conn;
         public readonly ReducerEvent<Reducer> Event;
@@ -59,7 +59,7 @@ const REDUCER_EVENTS: &str = r#"
         }
     }
 
-    public sealed class ErrorContext : IEventContext
+    public sealed class ErrorContext : IErrorContext
     {
         private readonly DbConnection conn;
         public readonly Exception Event;
@@ -76,7 +76,7 @@ const REDUCER_EVENTS: &str = r#"
         }
     }
 
-    public sealed class SubscriptionEventContext : IEventContext
+    public sealed class SubscriptionEventContext : ISubscriptionEventContext
     {
         private readonly DbConnection conn;
 
@@ -477,21 +477,21 @@ impl Lang for Csharp<'_> {
 
             writeln!(
                 output,
-                "protected override IEventContext ToReducerEventContext(ReducerEvent<Reducer> reducerEvent) =>"
+                "protected override IReducerEventContext ToReducerEventContext(ReducerEvent<Reducer> reducerEvent) =>"
             );
             writeln!(output, "new ReducerEventContext(this, reducerEvent);");
             writeln!(output);
 
             writeln!(
                 output,
-                "protected override IEventContext MakeSubscriptionEventContext() =>"
+                "protected override ISubscriptionEventContext MakeSubscriptionEventContext() =>"
             );
             writeln!(output, "new SubscriptionEventContext(this);");
             writeln!(output);
 
             writeln!(
                 output,
-                "protected override IEventContext ToErrorContext(Exception exception) =>"
+                "protected override IErrorContext ToErrorContext(Exception exception) =>"
             );
             writeln!(output, "new ErrorContext(this, exception);");
             writeln!(output);
