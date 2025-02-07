@@ -691,8 +691,8 @@ mod tests {
     fn special_types_are_special() {
         assert!(AlgebraicType::identity().is_identity());
         assert!(AlgebraicType::identity().is_special());
-        assert!(AlgebraicType::address().is_address());
-        assert!(AlgebraicType::address().is_special());
+        assert!(AlgebraicType::connection_id().is_connection_id());
+        assert!(AlgebraicType::connection_id().is_special());
         assert!(AlgebraicType::timestamp().is_timestamp());
         assert!(AlgebraicType::timestamp().is_special());
         assert!(AlgebraicType::time_duration().is_special());
