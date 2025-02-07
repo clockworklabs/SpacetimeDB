@@ -104,23 +104,41 @@ impl ModuleSubscriptions {
             let compiled = compile_read_only_query(&auth, &tx, sql)?;
             Ok(Arc::new(compiled))
         });
+
+        // Send an error message to the client
+        let send_err_msg = |message| {
+            sender.send_message(SubscriptionMessage {
+                request_id: Some(request.request_id),
+                query_id: Some(request.query_id),
+                timer: Some(timer),
+                result: SubscriptionResult::Error(SubscriptionError {
+                    table_id: None,
+                    message,
+                }),
+            })
+        };
+
+        // If compile error, send to client
         let query = match query {
             Ok(query) => query,
             Err(e) => {
-                let _ = sender.send_message(SubscriptionMessage {
-                    request_id: Some(request.request_id),
-                    query_id: Some(request.query_id),
-                    timer: Some(timer),
-                    result: SubscriptionResult::Error(SubscriptionError {
-                        table_id: None,
-                        message: e.to_string().into(),
-                    }),
-                });
+                // Apparently we ignore errors sending messages.
+                let _ = send_err_msg(e.to_string().into());
                 return Ok(());
             }
         };
 
-        let (table_rows, metrics) = self.evaluate_initial_subscription(sender.clone(), query.clone(), &tx, &auth)?;
+        let eval_result = self.evaluate_initial_subscription(sender.clone(), query.clone(), &tx, &auth);
+
+        // If execution error, send to client
+        let (table_rows, metrics) = match eval_result {
+            Ok(ok) => ok,
+            Err(e) => {
+                // Apparently we ignore errors sending messages.
+                let _ = send_err_msg(e.to_string().into());
+                return Ok(());
+            }
+        };
 
         record_exec_metrics(
             &WorkloadType::Subscribe,
@@ -167,20 +185,25 @@ impl ModuleSubscriptions {
         request: Unsubscribe,
         timer: Instant,
     ) -> Result<(), DBError> {
+        // Send an error message to the client
+        let send_err_msg = |message| {
+            sender.send_message(SubscriptionMessage {
+                request_id: Some(request.request_id),
+                query_id: Some(request.query_id),
+                timer: Some(timer),
+                result: SubscriptionResult::Error(SubscriptionError {
+                    table_id: None,
+                    message,
+                }),
+            })
+        };
+
         let mut subscriptions = self.subscriptions.write();
         let query = match subscriptions.remove_subscription((sender.id.identity, sender.id.address), request.query_id) {
             Ok(query) => query,
             Err(error) => {
                 // Apparently we ignore errors sending messages.
-                let _ = sender.send_message(SubscriptionMessage {
-                    request_id: Some(request.request_id),
-                    query_id: None,
-                    timer: Some(timer),
-                    result: SubscriptionResult::Error(SubscriptionError {
-                        table_id: None,
-                        message: error.to_string().into(),
-                    }),
-                });
+                let _ = send_err_msg(error.to_string().into());
                 return Ok(());
             }
         };
@@ -189,7 +212,17 @@ impl ModuleSubscriptions {
             self.relational_db.release_tx(tx);
         });
         let auth = AuthCtx::new(self.owner_identity, sender.id.identity);
-        let (table_rows, metrics) = self.evaluate_initial_subscription(sender.clone(), query.clone(), &tx, &auth)?;
+        let eval_result = self.evaluate_initial_subscription(sender.clone(), query.clone(), &tx, &auth);
+
+        // If execution error, send to client
+        let (table_rows, metrics) = match eval_result {
+            Ok(ok) => ok,
+            Err(e) => {
+                // Apparently we ignore errors sending messages.
+                let _ = send_err_msg(e.to_string().into());
+                return Ok(());
+            }
+        };
 
         record_exec_metrics(
             &WorkloadType::Subscribe,
