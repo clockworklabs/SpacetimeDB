@@ -84,6 +84,18 @@ pub struct BacktraceFrame<'a> {
     pub module_name: Option<Cow<'a, str>>,
     #[serde(borrow)]
     pub func_name: Option<Cow<'a, str>>,
+    #[serde(default)]
+    pub symbols: Vec<BacktraceFrameSymbol<'a>>,
+}
+
+#[derive(serde::Deserialize)]
+pub struct BacktraceFrameSymbol<'a> {
+    #[serde(borrow)]
+    pub name: Option<Cow<'a, str>>,
+    #[serde(borrow)]
+    pub file: Option<Cow<'a, str>>,
+    pub line: Option<u32>,
+    pub column: Option<u32>,
 }
 
 #[derive(serde::Serialize)]
@@ -209,24 +221,99 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         }
         writeln!(out, ": {}", record.message)?;
         if let Some(trace) = &record.trace {
-            for frame in trace {
-                write!(out, "    in ")?;
-                if let Some(module) = &frame.module_name {
-                    out.set_color(&dimmed)?;
-                    write!(out, "{module}")?;
-                    out.reset()?;
-                    write!(out, " :: ")?;
-                }
-                if let Some(function) = &frame.func_name {
-                    out.set_color(&dimmed)?;
-                    writeln!(out, "{function}")?;
-                    out.reset()?;
-                }
-            }
+            writeln!(out, "backtrace:")?;
+            fmt_backtrace(&mut out, trace)?;
         }
 
         line.clear();
     }
 
+    Ok(())
+}
+
+// based on fmt::Display impl for wasmtime::WasmBacktrace
+// modified to print in color and to skip irrelevant frames
+fn fmt_backtrace<W: WriteColor>(out: &mut W, trace: &[BacktraceFrame<'_>]) -> anyhow::Result<()> {
+    let is_begin_short_backtrace = |func_name: &str| func_name.contains("__rust_begin_short_backtrace");
+    let is_end_short_backtrace = |func_name: &str| func_name.contains("__rust_end_short_backtrace");
+
+    let mut frame_i = 0;
+    // the backtrace fmt in rust's panic implementation always starts in skipping mode, but in case
+    // this backtrace wasn't collected in a panic handler, we check for an end_short_backtrace.
+    // if there isn't one we'd just skip every frame, which would never be a useful behavior.
+    let mut skipping = trace
+        .iter()
+        .any(|f| f.func_name.as_deref().is_some_and(is_end_short_backtrace));
+    let mut frames_omitted = 0;
+    for frame in trace {
+        let func_name = frame.func_name.as_deref().unwrap_or("<unknown>");
+
+        if is_begin_short_backtrace(func_name) {
+            skipping = true;
+        }
+
+        if skipping {
+            frames_omitted += 1;
+
+            if is_end_short_backtrace(func_name) {
+                skipping = false;
+                out.set_color(ColorSpec::new().set_dimmed(true))?;
+                let plural = if frames_omitted == 1 { "" } else { "s" };
+                writeln!(out, "       [... omitted {frames_omitted} frame{plural} ...]")?;
+                out.reset()?;
+            }
+
+            continue;
+        }
+
+        let name = frame.module_name.as_deref().unwrap_or("<unknown>");
+        write!(out, "  {:>3}: ", frame_i)?;
+        frame_i += 1;
+
+        let write_func_name = |out: &mut W, name: &str| {
+            let has_hash_suffix = name.len() > 19
+                && &name[name.len() - 19..name.len() - 16] == "::h"
+                && name[name.len() - 16..].chars().all(|x| x.is_ascii_hexdigit());
+            let (name_no_suffix, suffix) = has_hash_suffix.then(|| name.split_at(name.len() - 19)).unzip();
+            let name = name_no_suffix.unwrap_or(name);
+            out.set_color(ColorSpec::new().set_fg(Some(Color::Red)).set_bold(true))?;
+            write!(out, "{name}")?;
+            if let Some(suffix) = suffix {
+                out.set_color(ColorSpec::new().set_fg(Some(Color::Red)).set_dimmed(true))?;
+                write!(out, "{suffix}")?;
+            }
+            out.reset()
+        };
+        if frame.symbols.is_empty() {
+            write!(out, "{name}!")?;
+            write_func_name(out, func_name)?;
+            writeln!(out)?;
+        } else {
+            for (i, symbol) in frame.symbols.iter().enumerate() {
+                if i > 0 {
+                    write!(out, "       ")?;
+                } else {
+                    // ...
+                }
+                let symbol_name = match &symbol.name {
+                    Some(name) => name,
+                    None if i == 0 => func_name,
+                    None => "<inlined function>",
+                };
+                write_func_name(out, symbol_name)?;
+                if let Some(file) = &symbol.file {
+                    writeln!(out)?;
+                    write!(out, "         at {}", file)?;
+                    if let Some(line) = symbol.line {
+                        write!(out, ":{}", line)?;
+                        if let Some(col) = symbol.column {
+                            write!(out, ":{}", col)?;
+                        }
+                    }
+                }
+                writeln!(out)?;
+            }
+        }
+    }
     Ok(())
 }

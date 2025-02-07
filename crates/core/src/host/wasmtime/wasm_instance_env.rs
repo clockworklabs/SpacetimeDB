@@ -2,7 +2,7 @@
 
 use std::time::Instant;
 
-use crate::database_logger::{BacktraceFrame, BacktraceProvider, ModuleBacktrace, Record};
+use crate::database_logger::{BacktraceFrame, BacktraceFrameSymbol, BacktraceProvider, ModuleBacktrace, Record};
 use crate::host::instance_env::{ChunkPool, InstanceEnv};
 use crate::host::wasm_common::instrumentation;
 use crate::host::wasm_common::module_host_actor::ExecutionTimings;
@@ -1230,9 +1230,21 @@ impl ModuleBacktrace for wasmtime::WasmBacktrace {
         self.frames()
             .iter()
             .map(|f| BacktraceFrame {
-                module_name: None,
+                module_name: f.module().name(),
                 func_name: f.func_name(),
+                symbols: f.symbols().iter().map(BacktraceFrameSymbol::from).collect(),
             })
             .collect()
+    }
+}
+
+impl<'a> From<&'a wasmtime::FrameSymbol> for BacktraceFrameSymbol<'a> {
+    fn from(sym: &'a wasmtime::FrameSymbol) -> Self {
+        Self {
+            name: sym.name(),
+            file: sym.file(),
+            line: sym.line(),
+            column: sym.column(),
+        }
     }
 }
