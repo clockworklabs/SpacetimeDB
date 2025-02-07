@@ -80,23 +80,28 @@
     },
     OnSetName: {
       Event: {
-        $type: Event<Reducer>.Reducer,
-        ReducerEvent: {
-          Timestamp: 1718487768057579,
-          Status: {
-            $type: Status.Committed
-          },
-          CallerIdentity: Identity_1,
-          CallerAddress: Guid_2,
-          EnergyConsumed: {},
-          Reducer: {
-            $type: Reducer.SetName,
-            name: A
-          }
+        Timestamp: 1718487768057579,
+        Status: {
+          $type: Status.Committed
+        },
+        CallerIdentity: Identity_1,
+        CallerAddress: Guid_2,
+        EnergyConsumed: {},
+        Reducer: {
+          $type: Reducer.SetName,
+          name: A
         }
       },
-      Db: {Scrubbed},
-      Reducers: {Scrubbed},
+      Db: {
+        Message: {
+          Count: 4
+        },
+        User: {
+          Identity: {},
+          Count: 2
+        }
+      },
+      Reducers: {},
       SetReducerFlags: {}
     },
     OnInsertMessage: {
@@ -129,23 +134,28 @@
     },
     OnSendMessage: {
       Event: {
-        $type: Event<Reducer>.Reducer,
-        ReducerEvent: {
-          Timestamp: 1718487775346381,
-          Status: {
-            $type: Status.Committed
-          },
-          CallerIdentity: Identity_2,
-          CallerAddress: Guid_1,
-          EnergyConsumed: {},
-          Reducer: {
-            $type: Reducer.SendMessage,
-            text: Hello, A!
-          }
+        Timestamp: 1718487775346381,
+        Status: {
+          $type: Status.Committed
+        },
+        CallerIdentity: Identity_2,
+        CallerAddress: Guid_1,
+        EnergyConsumed: {},
+        Reducer: {
+          $type: Reducer.SendMessage,
+          text: Hello, A!
         }
       },
-      Db: {Scrubbed},
-      Reducers: {Scrubbed},
+      Db: {
+        Message: {
+          Count: 4
+        },
+        User: {
+          Identity: {},
+          Count: 2
+        }
+      },
+      Reducers: {},
       SetReducerFlags: {}
     },
     OnUpdateUser: {
@@ -182,23 +192,28 @@
     },
     OnSetName: {
       Event: {
-        $type: Event<Reducer>.Reducer,
-        ReducerEvent: {
-          Timestamp: 1718487777307855,
-          Status: {
-            $type: Status.Committed
-          },
-          CallerIdentity: Identity_2,
-          CallerAddress: Guid_1,
-          EnergyConsumed: {},
-          Reducer: {
-            $type: Reducer.SetName,
-            name: B
-          }
+        Timestamp: 1718487777307855,
+        Status: {
+          $type: Status.Committed
+        },
+        CallerIdentity: Identity_2,
+        CallerAddress: Guid_1,
+        EnergyConsumed: {},
+        Reducer: {
+          $type: Reducer.SetName,
+          name: B
         }
       },
-      Db: {Scrubbed},
-      Reducers: {Scrubbed},
+      Db: {
+        Message: {
+          Count: 4
+        },
+        User: {
+          Identity: {},
+          Count: 2
+        }
+      },
+      Reducers: {},
       SetReducerFlags: {}
     },
     OnInsertMessage: {
@@ -231,23 +246,28 @@
     },
     OnSendMessage: {
       Event: {
-        $type: Event<Reducer>.Reducer,
-        ReducerEvent: {
-          Timestamp: 1718487783175083,
-          Status: {
-            $type: Status.Committed
-          },
-          CallerIdentity: Identity_1,
-          CallerAddress: Guid_2,
-          EnergyConsumed: {},
-          Reducer: {
-            $type: Reducer.SendMessage,
-            text: Hello, B!
-          }
+        Timestamp: 1718487783175083,
+        Status: {
+          $type: Status.Committed
+        },
+        CallerIdentity: Identity_1,
+        CallerAddress: Guid_2,
+        EnergyConsumed: {},
+        Reducer: {
+          $type: Reducer.SendMessage,
+          text: Hello, B!
         }
       },
-      Db: {Scrubbed},
-      Reducers: {Scrubbed},
+      Db: {
+        Message: {
+          Count: 4
+        },
+        User: {
+          Identity: {},
+          Count: 2
+        }
+      },
+      Reducers: {},
       SetReducerFlags: {}
     },
     OnInsertMessage: {
@@ -280,23 +300,28 @@
     },
     OnSendMessage: {
       Event: {
-        $type: Event<Reducer>.Reducer,
-        ReducerEvent: {
-          Timestamp: 1718487787645364,
-          Status: {
-            $type: Status.Committed
-          },
-          CallerIdentity: Identity_2,
-          CallerAddress: Guid_1,
-          EnergyConsumed: {},
-          Reducer: {
-            $type: Reducer.SendMessage,
-            text: Goodbye!
-          }
+        Timestamp: 1718487787645364,
+        Status: {
+          $type: Status.Committed
+        },
+        CallerIdentity: Identity_2,
+        CallerAddress: Guid_1,
+        EnergyConsumed: {},
+        Reducer: {
+          $type: Reducer.SendMessage,
+          text: Goodbye!
         }
       },
-      Db: {Scrubbed},
-      Reducers: {Scrubbed},
+      Db: {
+        Message: {
+          Count: 4
+        },
+        User: {
+          Identity: {},
+          Count: 2
+        }
+      },
+      Reducers: {},
       SetReducerFlags: {}
     },
     OnUpdateUser: {
@@ -361,23 +386,28 @@
     },
     OnSendMessage: {
       Event: {
-        $type: Event<Reducer>.Reducer,
-        ReducerEvent: {
-          Timestamp: 1718487794937841,
-          Status: {
-            $type: Status.Committed
-          },
-          CallerIdentity: Identity_1,
-          CallerAddress: Guid_2,
-          EnergyConsumed: {},
-          Reducer: {
-            $type: Reducer.SendMessage,
-            text: Goodbye!
-          }
+        Timestamp: 1718487794937841,
+        Status: {
+          $type: Status.Committed
+        },
+        CallerIdentity: Identity_1,
+        CallerAddress: Guid_2,
+        EnergyConsumed: {},
+        Reducer: {
+          $type: Reducer.SendMessage,
+          text: Goodbye!
         }
       },
-      Db: {Scrubbed},
-      Reducers: {Scrubbed},
+      Db: {
+        Message: {
+          Count: 4
+        },
+        User: {
+          Identity: {},
+          Count: 2
+        }
+      },
+      Reducers: {},
       SetReducerFlags: {}
     },
     OnDeleteMessage: {
