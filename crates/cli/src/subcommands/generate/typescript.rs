@@ -100,7 +100,7 @@ impl Lang for TypeScript {
 
         // Import the types of all fields.
         // We only need to import fields which have indices or unique constraints,
-        // but it's easier to just import all of 'em, since we have `// @ts-ignore` anyway.
+        // but it's easier to just import all of 'em, since we have `// @ts-nocheck` anyway.
         gen_and_print_imports(
             module,
             out,
@@ -108,7 +108,6 @@ impl Lang for TypeScript {
             &[], // No need to skip any imports; we're not defining a type, so there's no chance of circular imports.
         );
 
-        writeln!(out, "// @ts-ignore");
         writeln!(
             out,
             "import {{ EventContext, Reducer, RemoteReducers, RemoteTables }} from \".\";"
@@ -351,6 +350,11 @@ removeOnUpdate = (cb: (ctx: EventContext, onRow: {row_type}, newRow: {row_type})
             out,
             "// Constructors which are used by the DBConnectionImpl to
 // extract type information from the generated RemoteModule.
+//
+// NOTE: This is not strictly necessary for `eventContextConstructor` because
+// all we do is build a TypeScript object which we could have done inside the
+// SDK, but if in the future we wanted to create a class this would be
+// necessary because classes have methods, so we'll keep it.
 eventContextConstructor: (imp: DBConnectionImpl, event: Event<Reducer>) => {{
   return {{
     ...(imp as DBConnection),
@@ -388,6 +392,10 @@ setReducerFlagsConstructor: () => {{
 
         out.newline();
 
+        print_subscription_builder(module, out);
+
+        out.newline();
+
         print_db_connection(module, out);
 
         out.newline();
@@ -395,6 +403,21 @@ setReducerFlagsConstructor: () => {{
         writeln!(
             out,
             "export type EventContext = EventContextInterface<RemoteTables, RemoteReducers, SetReducerFlags, Reducer>;"
+        );
+
+        writeln!(
+            out,
+            "export type ReducerEventContext = ReducerEventContextInterface<RemoteTables, RemoteReducers, SetReducerFlags, Reducer>;"
+        );
+
+        writeln!(
+            out,
+            "export type SubscriptionEventContext = SubscriptionEventContextInterface<RemoteTables, RemoteReducers, SetReducerFlags>;"
+        );
+
+        writeln!(
+            out,
+            "export type ErrorContext = ErrorContextInterface<RemoteTables, RemoteReducers, SetReducerFlags>;"
         );
 
         vec![("index.ts".to_string(), (output.into_inner()))]
@@ -470,7 +493,7 @@ fn print_remote_reducers(module: &ModuleDef, out: &mut Indenter) {
         let reducer_name_pascal = reducer_name.deref().to_case(Case::Pascal);
         writeln!(
             out,
-            "on{reducer_name_pascal}(callback: (ctx: EventContext{arg_list_padded}) => void) {{"
+            "on{reducer_name_pascal}(callback: (ctx: ReducerEventContext{arg_list_padded}) => void) {{"
         );
         out.indent(1);
         writeln!(out, "this.connection.onReducer(\"{reducer_name}\", callback);");
@@ -479,7 +502,7 @@ fn print_remote_reducers(module: &ModuleDef, out: &mut Indenter) {
         out.newline();
         writeln!(
             out,
-            "removeOn{reducer_name_pascal}(callback: (ctx: EventContext{arg_list_padded}) => void) {{"
+            "removeOn{reducer_name_pascal}(callback: (ctx: ReducerEventContext{arg_list_padded}) => void) {{"
         );
         out.indent(1);
         writeln!(out, "this.connection.offReducer(\"{reducer_name}\", callback);");
@@ -538,10 +561,17 @@ fn print_remote_tables(module: &ModuleDef, out: &mut Indenter) {
     writeln!(out, "}}");
 }
 
+fn print_subscription_builder(_module: &ModuleDef, out: &mut Indenter) {
+    writeln!(
+        out,
+        "export class SubscriptionBuilder extends SubscriptionBuilderImpl<RemoteTables, RemoteReducers, SetReducerFlags> {{ }}"
+    );
+}
+
 fn print_db_connection(_module: &ModuleDef, out: &mut Indenter) {
     writeln!(
         out,
-        "export class DBConnection extends DBConnectionImpl<RemoteTables, RemoteReducers, SetReducerFlags>  {{"
+        "export class DBConnection extends DBConnectionImpl<RemoteTables, RemoteReducers, SetReducerFlags> {{"
     );
     out.indent(1);
     writeln!(out, "static builder = (): DBConnectionBuilder<DBConnection>  => {{");
@@ -549,6 +579,14 @@ fn print_db_connection(_module: &ModuleDef, out: &mut Indenter) {
     writeln!(
         out,
         "return new DBConnectionBuilder<DBConnection>(REMOTE_MODULE, (imp: DBConnectionImpl) => imp as DBConnection);"
+    );
+    out.dedent(1);
+    writeln!(out, "}}");
+    writeln!(out, "subscriptionBuilder = (): SubscriptionBuilder => {{");
+    out.indent(1);
+    writeln!(
+        out,
+        "return new SubscriptionBuilder(this);"
     );
     out.dedent(1);
     writeln!(out, "}}");
@@ -585,6 +623,10 @@ fn print_spacetimedb_imports(out: &mut Indenter) {
         "BinaryWriter",
         "CallReducerFlags",
         "EventContextInterface",
+        "ReducerEventContextInterface",
+        "SubscriptionEventContextInterface",
+        "ErrorContextInterface",
+        "SubscriptionBuilderImpl",
         "BinaryReader",
         "DBConnectionImpl",
         "DBContext",
@@ -595,7 +637,6 @@ fn print_spacetimedb_imports(out: &mut Indenter) {
     writeln!(out, "import {{");
     out.indent(1);
     for ty in &types {
-        writeln!(out, "// @ts-ignore");
         writeln!(out, "{ty},");
     }
     out.dedent(1);
@@ -604,7 +645,14 @@ fn print_spacetimedb_imports(out: &mut Indenter) {
 
 fn print_file_header(output: &mut Indenter) {
     print_auto_generated_file_comment(output);
+    print_lint_suppression(output);
     print_spacetimedb_imports(output);
+}
+
+fn print_lint_suppression(output: &mut Indenter) {
+    writeln!(output, "/* eslint-disable */");
+    writeln!(output, "/* tslint:disable */");
+    writeln!(output, "// @ts-nocheck");
 }
 
 fn write_get_algebraic_type_for_product(
@@ -1035,7 +1083,6 @@ fn print_imports(module: &ModuleDef, out: &mut Indenter, imports: Imports) {
     for typeref in imports {
         let module_name = type_ref_module_name(module, typeref);
         let type_name = type_ref_name(module, typeref);
-        writeln!(out, "// @ts-ignore");
         writeln!(
             out,
             "import {{ {type_name} as __{type_name} }} from \"./{module_name}\";"
