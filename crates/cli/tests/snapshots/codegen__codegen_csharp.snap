@@ -17,7 +17,7 @@ namespace SpacetimeDB
 {
     public sealed partial class RemoteReducers : RemoteBase
     {
-        public delegate void AddPlayerHandler(EventContext ctx, string name);
+        public delegate void AddPlayerHandler(ReducerEventContext ctx, string name);
         public event AddPlayerHandler? OnAddPlayer;
 
         public void AddPlayer(string name)
@@ -25,7 +25,7 @@ namespace SpacetimeDB
             conn.InternalCallReducer(new Reducer.AddPlayer(name), this.SetCallReducerFlags.AddPlayerFlags);
         }
 
-        public bool InvokeAddPlayer(EventContext ctx, Reducer.AddPlayer args)
+        public bool InvokeAddPlayer(ReducerEventContext ctx, Reducer.AddPlayer args)
         {
             if (OnAddPlayer == null) return false;
             OnAddPlayer(
@@ -81,7 +81,7 @@ namespace SpacetimeDB
 {
     public sealed partial class RemoteReducers : RemoteBase
     {
-        public delegate void AddPrivateHandler(EventContext ctx, string name);
+        public delegate void AddPrivateHandler(ReducerEventContext ctx, string name);
         public event AddPrivateHandler? OnAddPrivate;
 
         public void AddPrivate(string name)
@@ -89,7 +89,7 @@ namespace SpacetimeDB
             conn.InternalCallReducer(new Reducer.AddPrivate(name), this.SetCallReducerFlags.AddPrivateFlags);
         }
 
-        public bool InvokeAddPrivate(EventContext ctx, Reducer.AddPrivate args)
+        public bool InvokeAddPrivate(ReducerEventContext ctx, Reducer.AddPrivate args)
         {
             if (OnAddPrivate == null) return false;
             OnAddPrivate(
@@ -145,7 +145,7 @@ namespace SpacetimeDB
 {
     public sealed partial class RemoteReducers : RemoteBase
     {
-        public delegate void AssertCallerIdentityIsModuleIdentityHandler(EventContext ctx);
+        public delegate void AssertCallerIdentityIsModuleIdentityHandler(ReducerEventContext ctx);
         public event AssertCallerIdentityIsModuleIdentityHandler? OnAssertCallerIdentityIsModuleIdentity;
 
         public void AssertCallerIdentityIsModuleIdentity()
@@ -153,7 +153,7 @@ namespace SpacetimeDB
             conn.InternalCallReducer(new Reducer.AssertCallerIdentityIsModuleIdentity(), this.SetCallReducerFlags.AssertCallerIdentityIsModuleIdentityFlags);
         }
 
-        public bool InvokeAssertCallerIdentityIsModuleIdentity(EventContext ctx, Reducer.AssertCallerIdentityIsModuleIdentity args)
+        public bool InvokeAssertCallerIdentityIsModuleIdentity(ReducerEventContext ctx, Reducer.AssertCallerIdentityIsModuleIdentity args)
         {
             if (OnAssertCallerIdentityIsModuleIdentity == null) return false;
             OnAssertCallerIdentityIsModuleIdentity(
@@ -195,10 +195,10 @@ namespace SpacetimeDB
 {
     public sealed partial class RemoteReducers : RemoteBase
     {
-        public delegate void ClientConnectedHandler(EventContext ctx);
+        public delegate void ClientConnectedHandler(ReducerEventContext ctx);
         public event ClientConnectedHandler? OnClientConnected;
 
-        public bool InvokeClientConnected(EventContext ctx, Reducer.ClientConnected args)
+        public bool InvokeClientConnected(ReducerEventContext ctx, Reducer.ClientConnected args)
         {
             if (OnClientConnected == null) return false;
             OnClientConnected(
@@ -234,7 +234,7 @@ namespace SpacetimeDB
 {
     public sealed partial class RemoteReducers : RemoteBase
     {
-        public delegate void DeletePlayerHandler(EventContext ctx, ulong id);
+        public delegate void DeletePlayerHandler(ReducerEventContext ctx, ulong id);
         public event DeletePlayerHandler? OnDeletePlayer;
 
         public void DeletePlayer(ulong id)
@@ -242,7 +242,7 @@ namespace SpacetimeDB
             conn.InternalCallReducer(new Reducer.DeletePlayer(id), this.SetCallReducerFlags.DeletePlayerFlags);
         }
 
-        public bool InvokeDeletePlayer(EventContext ctx, Reducer.DeletePlayer args)
+        public bool InvokeDeletePlayer(ReducerEventContext ctx, Reducer.DeletePlayer args)
         {
             if (OnDeletePlayer == null) return false;
             OnDeletePlayer(
@@ -297,7 +297,7 @@ namespace SpacetimeDB
 {
     public sealed partial class RemoteReducers : RemoteBase
     {
-        public delegate void DeletePlayersByNameHandler(EventContext ctx, string name);
+        public delegate void DeletePlayersByNameHandler(ReducerEventContext ctx, string name);
         public event DeletePlayersByNameHandler? OnDeletePlayersByName;
 
         public void DeletePlayersByName(string name)
@@ -305,7 +305,7 @@ namespace SpacetimeDB
             conn.InternalCallReducer(new Reducer.DeletePlayersByName(name), this.SetCallReducerFlags.DeletePlayersByNameFlags);
         }
 
-        public bool InvokeDeletePlayersByName(EventContext ctx, Reducer.DeletePlayersByName args)
+        public bool InvokeDeletePlayersByName(ReducerEventContext ctx, Reducer.DeletePlayersByName args)
         {
             if (OnDeletePlayersByName == null) return false;
             OnDeletePlayersByName(
@@ -361,7 +361,7 @@ namespace SpacetimeDB
 {
     public sealed partial class RemoteReducers : RemoteBase
     {
-        public delegate void QueryPrivateHandler(EventContext ctx);
+        public delegate void QueryPrivateHandler(ReducerEventContext ctx);
         public event QueryPrivateHandler? OnQueryPrivate;
 
         public void QueryPrivate()
@@ -369,7 +369,7 @@ namespace SpacetimeDB
             conn.InternalCallReducer(new Reducer.QueryPrivate(), this.SetCallReducerFlags.QueryPrivateFlags);
         }
 
-        public bool InvokeQueryPrivate(EventContext ctx, Reducer.QueryPrivate args)
+        public bool InvokeQueryPrivate(ReducerEventContext ctx, Reducer.QueryPrivate args)
         {
             if (OnQueryPrivate == null) return false;
             OnQueryPrivate(
@@ -411,7 +411,7 @@ namespace SpacetimeDB
 {
     public sealed partial class RemoteReducers : RemoteBase
     {
-        public delegate void RepeatingTestHandler(EventContext ctx, RepeatingTestArg arg);
+        public delegate void RepeatingTestHandler(ReducerEventContext ctx, RepeatingTestArg arg);
         public event RepeatingTestHandler? OnRepeatingTest;
 
         public void RepeatingTest(RepeatingTestArg arg)
@@ -419,7 +419,7 @@ namespace SpacetimeDB
             conn.InternalCallReducer(new Reducer.RepeatingTest(arg), this.SetCallReducerFlags.RepeatingTestFlags);
         }
 
-        public bool InvokeRepeatingTest(EventContext ctx, Reducer.RepeatingTest args)
+        public bool InvokeRepeatingTest(ReducerEventContext ctx, Reducer.RepeatingTest args)
         {
             if (OnRepeatingTest == null) return false;
             OnRepeatingTest(
@@ -475,7 +475,7 @@ namespace SpacetimeDB
 {
     public sealed partial class RemoteReducers : RemoteBase
     {
-        public delegate void TestHandler(EventContext ctx, TestA arg, TestB arg2, NamespaceTestC arg3, NamespaceTestF arg4);
+        public delegate void TestHandler(ReducerEventContext ctx, TestA arg, TestB arg2, NamespaceTestC arg3, NamespaceTestF arg4);
         public event TestHandler? OnTest;
 
         public void Test(TestA arg, TestB arg2, NamespaceTestC arg3, NamespaceTestF arg4)
@@ -483,7 +483,7 @@ namespace SpacetimeDB
             conn.InternalCallReducer(new Reducer.Test(arg, arg2, arg3, arg4), this.SetCallReducerFlags.TestFlags);
         }
 
-        public bool InvokeTest(EventContext ctx, Reducer.Test args)
+        public bool InvokeTest(ReducerEventContext ctx, Reducer.Test args)
         {
             if (OnTest == null) return false;
             OnTest(
@@ -558,7 +558,7 @@ namespace SpacetimeDB
 {
     public sealed partial class RemoteReducers : RemoteBase
     {
-        public delegate void TestBtreeIndexArgsHandler(EventContext ctx);
+        public delegate void TestBtreeIndexArgsHandler(ReducerEventContext ctx);
         public event TestBtreeIndexArgsHandler? OnTestBtreeIndexArgs;
 
         public void TestBtreeIndexArgs()
@@ -566,7 +566,7 @@ namespace SpacetimeDB
             conn.InternalCallReducer(new Reducer.TestBtreeIndexArgs(), this.SetCallReducerFlags.TestBtreeIndexArgsFlags);
         }
 
-        public bool InvokeTestBtreeIndexArgs(EventContext ctx, Reducer.TestBtreeIndexArgs args)
+        public bool InvokeTestBtreeIndexArgs(ReducerEventContext ctx, Reducer.TestBtreeIndexArgs args)
         {
             if (OnTestBtreeIndexArgs == null) return false;
             OnTestBtreeIndexArgs(
@@ -631,21 +631,69 @@ namespace SpacetimeDB
     }
 
     public sealed partial class SetReducerFlags { }
-    public sealed class EventContext: IEventContext
-    {
-        private readonly DbConnection conn;
-        public readonly Event<Reducer> Event;
 
-        public RemoteTables Db => conn.Db;
-        public RemoteReducers Reducers => conn.Reducers;
-        public SetReducerFlags SetReducerFlags => conn.SetReducerFlags;
-
-        internal EventContext(DbConnection conn, Event<Reducer> reducerEvent)
+        public sealed class EventContext : IEventContext
         {
-            this.conn = conn;
-            Event = reducerEvent;
+            private readonly DbConnection conn;
+            public readonly Event<Reducer> Event;
+
+            public RemoteTables Db => conn.Db;
+            public RemoteReducers Reducers => conn.Reducers;
+            public SetReducerFlags SetReducerFlags => conn.SetReducerFlags;
+
+            internal EventContext(DbConnection conn, Event<Reducer> Event)
+            {
+                this.conn = conn;
+                this.Event = Event;
+            }
         }
-    }
+
+        public sealed class ReducerEventContext : IReducerEventContext
+        {
+            private readonly DbConnection conn;
+            public readonly ReducerEvent<Reducer> Event;
+
+            public RemoteTables Db => conn.Db;
+            public RemoteReducers Reducers => conn.Reducers;
+            public SetReducerFlags SetReducerFlags => conn.SetReducerFlags;
+
+            internal ReducerEventContext(DbConnection conn, ReducerEvent<Reducer> reducerEvent)
+            {
+                this.conn = conn;
+                Event = reducerEvent;
+            }
+        }
+
+        public sealed class ErrorContext : IErrorContext
+        {
+            private readonly DbConnection conn;
+            public readonly Exception Event;
+
+            public RemoteTables Db => conn.Db;
+            public RemoteReducers Reducers => conn.Reducers;
+            public SetReducerFlags SetReducerFlags => conn.SetReducerFlags;
+            public Exception Error => Event;
+
+            internal ErrorContext(DbConnection conn, Exception error)
+            {
+                this.conn = conn;
+                Event = error;
+            }
+        }
+
+        public sealed class SubscriptionEventContext : ISubscriptionEventContext
+        {
+            private readonly DbConnection conn;
+
+            public RemoteTables Db => conn.Db;
+            public RemoteReducers Reducers => conn.Reducers;
+            public SetReducerFlags SetReducerFlags => conn.SetReducerFlags;
+
+            internal SubscriptionEventContext(DbConnection conn)
+            {
+                this.conn = conn;
+            }
+        }
 
     public abstract partial class Reducer
     {
@@ -685,12 +733,21 @@ namespace SpacetimeDB
             };
         }
 
-        protected override IEventContext ToEventContext(Event<Reducer> reducerEvent) =>
-        new EventContext(this, reducerEvent);
+        protected override IEventContext ToEventContext(Event<Reducer> Event) =>
+        new EventContext(this, Event);
 
-        protected override bool Dispatch(IEventContext context, Reducer reducer)
+        protected override IReducerEventContext ToReducerEventContext(ReducerEvent<Reducer> reducerEvent) =>
+        new ReducerEventContext(this, reducerEvent);
+
+        protected override ISubscriptionEventContext MakeSubscriptionEventContext() =>
+        new SubscriptionEventContext(this);
+
+        protected override IErrorContext ToErrorContext(Exception exception) =>
+        new ErrorContext(this, exception);
+
+        protected override bool Dispatch(IReducerEventContext context, Reducer reducer)
         {
-            var eventContext = (EventContext)context;
+            var eventContext = (ReducerEventContext)context;
             return reducer switch {
                 Reducer.AddPlayer args => Reducers.InvokeAddPlayer(eventContext, args),
                 Reducer.AddPrivate args => Reducers.InvokeAddPrivate(eventContext, args),
@@ -707,7 +764,7 @@ namespace SpacetimeDB
             };
         }
 
-        public SubscriptionBuilder<EventContext> SubscriptionBuilder() => new(this);
+        public SubscriptionBuilder<SubscriptionEventContext, ErrorContext> SubscriptionBuilder() => new(this);
     }
 }
 '''
