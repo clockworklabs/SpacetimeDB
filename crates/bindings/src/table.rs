@@ -286,7 +286,7 @@ impl<Tbl: Table, Col: Index + Column<Table = Tbl>> UniqueColumn<Tbl, Col::ColTyp
     /// or `None` if no such row is present in the database state.
     //
     // TODO: consider whether we should accept the sought value by ref or by value.
-    // Should be consistent with the implementors of `BTreeIndexBounds` (see below).
+    // Should be consistent with the implementors of `IndexScanRangeBounds` (see below).
     // By-value makes passing `Copy` fields more convenient,
     // whereas by-ref makes passing `!Copy` fields more performant.
     // Can we do something smart with `std::borrow::Borrow`?
@@ -510,7 +510,7 @@ impl IndexScanRangeArgs {
 
 // Implement `IndexScanRangeBounds` for all the different index column types
 // and filter argument types we support.
-macro_rules! impl_btree_index_bounds {
+macro_rules! impl_index_scan_range_bounds {
     // In the first pattern, we accept two Prolog-style lists of type variables,
     // the first of which we use for the column types in the index,
     // and the second for the arguments supplied to the filter function.
@@ -522,10 +522,10 @@ macro_rules! impl_btree_index_bounds {
     (($ColTerminator:ident $(, $ColPrefix:ident)*), ($ArgTerminator:ident $(, $ArgPrefix:ident)*)) => {
         // Implement the trait for all arguments N-column indices.
         // The "inner recursion" described above happens in here.
-        impl_btree_index_bounds!(@inner_recursion (), ($ColTerminator $(, $ColPrefix)*), ($ArgTerminator $(, $ArgPrefix)*));
+        impl_index_scan_range_bounds!(@inner_recursion (), ($ColTerminator $(, $ColPrefix)*), ($ArgTerminator $(, $ArgPrefix)*));
 
         // Recurse on the suffix of the two lists, to implement the trait for all arguments to (N - 1)-column indices.
-        impl_btree_index_bounds!(($($ColPrefix),*), ($($ArgPrefix),*));
+        impl_index_scan_range_bounds!(($($ColPrefix),*), ($($ArgPrefix),*));
     };
     // Base case for the previous "outer recursion."
     ((), ()) => {};
@@ -538,10 +538,10 @@ macro_rules! impl_btree_index_bounds {
     // so we'll implement (N - 1)-element queries on N-column indices.
     // And so on.
     (@inner_recursion ($($ColUnused:ident),*), ($ColTerminator:ident $(, $ColPrefix:ident)+), ($ArgTerminator:ident $(, $ArgPrefix:ident)+)) => {
-        // Emit the actual `impl BTreeIndexBounds` form for M-element queries on N-column indices.
-        impl_btree_index_bounds!(@emit_impl ($($ColUnused),*), ($ColTerminator $(,$ColPrefix)*), ($ArgTerminator $(, $ArgPrefix)*));
+        // Emit the actual `impl IndexScanRangeBounds` form for M-element queries on N-column indices.
+        impl_index_scan_range_bounds!(@emit_impl ($($ColUnused),*), ($ColTerminator $(,$ColPrefix)*), ($ArgTerminator $(, $ArgPrefix)*));
         // Recurse, to implement for (M - 1)-element queries on N-column indices.
-        impl_btree_index_bounds!(@inner_recursion ($($ColUnused,)* $ColTerminator), ($($ColPrefix),*), ($($ArgPrefix),*));
+        impl_index_scan_range_bounds!(@inner_recursion ($($ColUnused,)* $ColTerminator), ($($ColPrefix),*), ($($ArgPrefix),*));
     };
     // Base case for the inner recursive loop, when there is only one column remaining.
     // Implement the trait for both single-element tuples of arguments,
@@ -609,7 +609,7 @@ macro_rules! impl_btree_index_bounds {
                 let mut data = IterBuf::take();
 
                 // Get the number of prefix elements.
-                let prefix_elems = impl_btree_index_bounds!(@count $($ColPrefix)+);
+                let prefix_elems = impl_index_scan_range_bounds!(@count $($ColPrefix)+);
 
                 // Destructure the argument tuple into variables with the same names as their types.
                 #[allow(non_snake_case)]
@@ -635,14 +635,14 @@ macro_rules! impl_btree_index_bounds {
 
     // Counts the number of elements in the tuple.
     (@count $($T:ident)*) => {
-        0 $(+ impl_btree_index_bounds!(@drop $T 1))*
+        0 $(+ impl_index_scan_range_bounds!(@drop $T 1))*
     };
     (@drop $a:tt $b:tt) => { $b };
 }
 
 pub struct SingleBound;
 
-impl_btree_index_bounds!(
+impl_index_scan_range_bounds!(
     (ColA, ColB, ColC, ColD, ColE, ColF),
     (ArgA, ArgB, ArgC, ArgD, ArgE, ArgF)
 );
@@ -704,22 +704,22 @@ impl_terminator!(
 );
 
 // Single-column indices
-// impl<T> BTreeIndexBounds<(T,)> for Range<T> {}
-// impl<T> BTreeIndexBounds<(T,)> for T {}
+// impl<T> IndexScanRangeBounds<(T,)> for Range<T> {}
+// impl<T> IndexScanRangeBounds<(T,)> for T {}
 
 // // Two-column indices
-// impl<T, U> BTreeIndexBounds<(T, U)> for Range<T> {}
-// impl<T, U> BTreeIndexBounds<(T, U)> for T {}
-// impl<T, U> BTreeIndexBounds<(T, U)> for (T, Range<U>) {}
-// impl<T, U> BTreeIndexBounds<(T, U)> for (T, U) {}
+// impl<T, U> IndexScanRangeBounds<(T, U)> for Range<T> {}
+// impl<T, U> IndexScanRangeBounds<(T, U)> for T {}
+// impl<T, U> IndexScanRangeBounds<(T, U)> for (T, Range<U>) {}
+// impl<T, U> IndexScanRangeBounds<(T, U)> for (T, U) {}
 
 // // Three-column indices
-// impl<T, U, V> BTreeIndexBounds<(T, U, V)> for Range<T> {}
-// impl<T, U, V> BTreeIndexBounds<(T, U, V)> for T {}
-// impl<T, U, V> BTreeIndexBounds<(T, U, V)> for (T, Range<U>) {}
-// impl<T, U, V> BTreeIndexBounds<(T, U, V)> for (T, U) {}
-// impl<T, U, V> BTreeIndexBounds<(T, U, V)> for (T, U, Range<V>) {}
-// impl<T, U, V> BTreeIndexBounds<(T, U, V)> for (T, U, V) {}
+// impl<T, U, V> IndexScanRangeBounds<(T, U, V)> for Range<T> {}
+// impl<T, U, V> IndexScanRangeBounds<(T, U, V)> for T {}
+// impl<T, U, V> IndexScanRangeBounds<(T, U, V)> for (T, Range<U>) {}
+// impl<T, U, V> IndexScanRangeBounds<(T, U, V)> for (T, U) {}
+// impl<T, U, V> IndexScanRangeBounds<(T, U, V)> for (T, U, Range<V>) {}
+// impl<T, U, V> IndexScanRangeBounds<(T, U, V)> for (T, U, V) {}
 
 /// A trait for types that can have a sequence based on them.
 /// This is used for auto-inc columns to determine if an insertion of a row
