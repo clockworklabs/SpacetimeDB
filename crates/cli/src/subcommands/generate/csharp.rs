@@ -415,7 +415,7 @@ impl Lang for Csharp<'_> {
 
         writeln!(output, "public sealed partial class SetReducerFlags {{ }}");
 
-        writeln!(output, "{}", REDUCER_EVENTS);
+        writeln!(output, "{REDUCER_EVENTS}");
 
         writeln!(output, "public abstract partial class Reducer");
         indented_block(&mut output, |output| {
