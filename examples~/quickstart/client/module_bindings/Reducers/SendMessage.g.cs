@@ -12,7 +12,7 @@ namespace SpacetimeDB.Types
 {
     public sealed partial class RemoteReducers : RemoteBase
     {
-        public delegate void SendMessageHandler(EventContext ctx, string text);
+        public delegate void SendMessageHandler(ReducerEventContext ctx, string text);
         public event SendMessageHandler? OnSendMessage;
 
         public void SendMessage(string text)
@@ -20,7 +20,7 @@ namespace SpacetimeDB.Types
             conn.InternalCallReducer(new Reducer.SendMessage(text), this.SetCallReducerFlags.SendMessageFlags);
         }
 
-        public bool InvokeSendMessage(EventContext ctx, Reducer.SendMessage args)
+        public bool InvokeSendMessage(ReducerEventContext ctx, Reducer.SendMessage args)
         {
             if (OnSendMessage == null) return false;
             OnSendMessage(
