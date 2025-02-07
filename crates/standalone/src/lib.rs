@@ -49,6 +49,7 @@ impl StandaloneEnv {
         let meta = MetadataFile {
             version: spacetimedb::config::current_version(),
             edition: "standalone".to_owned(),
+            client_connection_id: None,
         };
         if let Some(existing_meta) = MetadataFile::read(&meta_path).context("failed reading metadata.toml")? {
             anyhow::ensure!(
