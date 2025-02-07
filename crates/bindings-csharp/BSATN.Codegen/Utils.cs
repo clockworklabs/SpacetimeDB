@@ -73,7 +73,8 @@ public static class Utils
     public static string MakeRwTypeParam(string typeParam) => typeParam + "RW";
 
     public class UnresolvedTypeException(INamedTypeSymbol type)
-        : InvalidOperationException($"Could not resolve type {type}") { }
+        : InvalidOperationException($"Could not resolve type {type}")
+    { }
 
     public static string GetTypeInfo(ITypeSymbol type)
     {
