@@ -7,9 +7,9 @@ use core::option::IntoIter;
 /// A direct index for relating unsigned integer keys [`u8`..`u64`] to [`RowPointer`].
 ///
 /// This index is efficient when given keys that are used in non-random insert patterns
-/// where keys are dense and not far apart.
+/// where keys are dense and not far apart as well as starting near zero.
 /// Conversely, it performs worse than a btree index in the case of highly random inserts
-/// and with sparse keys.
+/// and with sparse keys and where the first key inserted is large.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct UniqueDirectIndex {
     /// The outer index.
