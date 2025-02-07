@@ -304,7 +304,7 @@ impl Lang for Csharp<'_> {
 
             writeln!(
                 output,
-                "public delegate void {func_name_pascal_case}Handler(EventContext ctx{delegate_separator}{func_params});"
+                "public delegate void {func_name_pascal_case}Handler(ReducerEventContext ctx{delegate_separator}{func_params});"
             );
             writeln!(
                 output,
@@ -325,7 +325,7 @@ impl Lang for Csharp<'_> {
 
             writeln!(
                 output,
-                "public bool Invoke{func_name_pascal_case}(EventContext ctx, Reducer.{func_name_pascal_case} args)"
+                "public bool Invoke{func_name_pascal_case}(ReducerEventContext ctx, Reducer.{func_name_pascal_case} args)"
             );
             indented_block(output, |output| {
                 writeln!(output, "if (On{func_name_pascal_case} == null) return false;");
@@ -498,10 +498,10 @@ impl Lang for Csharp<'_> {
 
             writeln!(
                 output,
-                "protected override bool Dispatch(IEventContext context, Reducer reducer)"
+                "protected override bool Dispatch(IReducerEventContext context, Reducer reducer)"
             );
             indented_block(output, |output| {
-                writeln!(output, "var eventContext = (EventContext)context;");
+                writeln!(output, "var eventContext = (ReducerEventContext)context;");
                 writeln!(output, "return reducer switch {{");
                 {
                     indent_scope!(output);
