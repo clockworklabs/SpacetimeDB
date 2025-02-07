@@ -266,7 +266,7 @@ impl Iterator for UniqueDirectIndexRangeIter<'_> {
 
 #[cfg(test)]
 mod test {
-    use core::{hint::black_box, iter::repeat_with};
+    use core::iter::repeat_with;
 
     use super::*;
     use crate::indexes::Size;
@@ -285,12 +285,7 @@ mod test {
                 page_offset += FIXED_ROW_SIZE;
             }
 
-            black_box(RowPointer::new(
-                false,
-                page_index,
-                page_offset,
-                SquashedOffset::COMMITTED_STATE,
-            ))
+            RowPointer::new(false, page_index, page_offset, SquashedOffset::COMMITTED_STATE)
         })
     }
 
