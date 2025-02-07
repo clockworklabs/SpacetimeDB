@@ -29,7 +29,7 @@ def ping():
         tries += 1
         try:
             print(f"Ping Server at {host}")
-            urlopen(f"http://{host}/database/ping")
+            urlopen(f"http://{host}/v1/ping")
             print("Server up")
             break
         except Exception:

@@ -135,7 +135,7 @@ pub async fn get_public_key<S: NodeDelegate>(State(ctx): State<S>) -> axum::resp
     ))
 }
 
-pub fn router<S>(_: S) -> axum::Router<S>
+pub fn router<S>() -> axum::Router<S>
 where
     S: NodeDelegate + ControlStateDelegate + Clone + 'static,
 {

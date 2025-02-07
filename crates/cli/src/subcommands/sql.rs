@@ -2,6 +2,7 @@ use std::time::Instant;
 
 use crate::api::{from_json_seed, ClientApi, Connection, StmtResultJson};
 use crate::common_args;
+use anyhow::Context;
 use clap::{Arg, ArgAction, ArgMatches};
 use itertools::Itertools;
 use reqwest::RequestBuilder;
@@ -10,8 +11,7 @@ use spacetimedb_lib::sats::{satn, Typespace};
 use tabled::settings::Style;
 
 use crate::config::Config;
-use crate::errors::error_for_status;
-use crate::util::{database_identity, get_auth_header, UNSTABLE_WARNING};
+use crate::util::{database_identity, get_auth_header, ResponseExt, UNSTABLE_WARNING};
 
 pub fn cli() -> clap::Command {
     clap::Command::new("sql")
@@ -67,12 +67,16 @@ fn print_timings(now: Instant) {
 pub(crate) async fn run_sql(builder: RequestBuilder, sql: &str, with_stats: bool) -> Result<(), anyhow::Error> {
     let now = Instant::now();
 
-    let json = error_for_status(builder.body(sql.to_owned()).send().await?)
+    let json = builder
+        .body(sql.to_owned())
+        .send()
+        .await?
+        .ensure_content_type("application/json")
         .await?
         .text()
         .await?;
 
-    let stmt_result_json: Vec<StmtResultJson> = serde_json::from_str(&json)?;
+    let stmt_result_json: Vec<StmtResultJson> = serde_json::from_str(&json).context("malformed sql response")?;
 
     // Print only `OK for empty tables as it's likely a command like `INSERT`.
     if stmt_result_json.is_empty() {

@@ -317,6 +317,12 @@ impl AsRef<str> for DomainName {
     }
 }
 
+impl From<DomainName> for String {
+    fn from(name: DomainName) -> Self {
+        name.domain_name
+    }
+}
+
 impl fmt::Display for DomainName {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_str(&self.domain_name)

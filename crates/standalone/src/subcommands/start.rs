@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use crate::routes::router;
 use crate::StandaloneEnv;
 use anyhow::Context;
 use clap::ArgAction::SetTrue;
@@ -8,6 +7,7 @@ use clap::{Arg, ArgMatches};
 use spacetimedb::config::{CertificateAuthority, ConfigFile};
 use spacetimedb::db::{Config, Storage};
 use spacetimedb::startup::{self, TracingOptions};
+use spacetimedb_client_api::routes::router;
 use spacetimedb_paths::cli::{PrivKeyPath, PubKeyPath};
 use spacetimedb_paths::server::ServerDataDir;
 use tokio::net::TcpListener;
@@ -132,7 +132,7 @@ pub async fn exec(args: &ArgMatches) -> anyhow::Result<()> {
     let data_dir = Arc::new(data_dir.clone());
     let ctx = StandaloneEnv::init(db_config, &certs, data_dir).await?;
 
-    let service = router(ctx);
+    let service = router(ctx, ());
 
     let tcp = TcpListener::bind(listen_addr).await?;
     socket2::SockRef::from(&tcp).set_nodelay(true)?;
