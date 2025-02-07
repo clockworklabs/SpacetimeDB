@@ -16,7 +16,7 @@ pub fn cli() -> clap::Command {
     clap::Command::new("start")
         .about("Starts a standalone SpacetimeDB instance")
         .args_override_self(true)
-        .override_usage("spacetimedb start [OPTIONS]")
+        .override_usage("spacetime start [OPTIONS]")
         .arg(
             Arg::new("listen_addr")
                 .long("listen-addr")

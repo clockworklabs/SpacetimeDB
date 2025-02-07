@@ -5,14 +5,16 @@ use spacetimedb::host::module_host::DatabaseTableUpdate;
 use spacetimedb::identity::AuthCtx;
 use spacetimedb::messages::websocket::BsatnFormat;
 use spacetimedb::sql::ast::SchemaViewer;
+use spacetimedb::subscription::collect_table_update;
 use spacetimedb::subscription::query::compile_read_only_queryset;
 use spacetimedb::subscription::subscription::ExecutionSet;
 use spacetimedb::subscription::tx::DeltaTx;
 use spacetimedb::{db::relational_db::RelationalDB, messages::websocket::Compression};
 use spacetimedb_bench::database::BenchDatabase as _;
 use spacetimedb_bench::spacetime_raw::SpacetimeRaw;
+use spacetimedb_execution::pipelined::PipelinedProject;
 use spacetimedb_primitives::{col_list, TableId};
-use spacetimedb_query::SubscribePlan;
+use spacetimedb_query::compile_subscription;
 use spacetimedb_sats::{bsatn, product, AlgebraicType, AlgebraicValue, ProductValue};
 
 fn create_table_location(db: &RelationalDB) -> Result<TableId, DBError> {
@@ -116,13 +118,18 @@ fn eval(c: &mut Criterion) {
             let tx = raw.db.begin_tx(Workload::Subscribe);
             let auth = AuthCtx::for_testing();
             let schema_viewer = &SchemaViewer::new(&tx, &auth);
-            let plan = SubscribePlan::compile(sql, schema_viewer).unwrap();
+            let (plan, table_id, table_name) = compile_subscription(sql, schema_viewer).unwrap();
+            let plan = plan.optimize().map(PipelinedProject::from).unwrap();
             let tx = DeltaTx::from(&tx);
 
             b.iter(|| {
-                drop(black_box(
-                    plan.collect_table_update::<_, BsatnFormat>(Compression::None, &tx),
-                ))
+                drop(black_box(collect_table_update::<_, BsatnFormat>(
+                    &plan,
+                    table_id,
+                    table_name.clone(),
+                    Compression::None,
+                    &tx,
+                )))
             })
         });
     };

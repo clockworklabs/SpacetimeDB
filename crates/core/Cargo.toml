@@ -30,6 +30,7 @@ spacetimedb-schema.workspace = true
 spacetimedb-table.workspace = true
 spacetimedb-vm.workspace = true
 spacetimedb-snapshot.workspace = true
+spacetimedb-subscription.workspace = true
 spacetimedb-expr.workspace = true
 spacetimedb-execution.workspace = true
 

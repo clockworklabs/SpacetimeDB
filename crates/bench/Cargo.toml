@@ -25,6 +25,10 @@ harness = false
 name = "delete_table"
 harness = false
 
+[[bench]]
+name = "index"
+harness = false
+
 [[bin]]
 name = "summarize"
 
@@ -52,6 +56,7 @@ byte-unit.workspace = true
 clap.workspace = true
 criterion.workspace = true
 futures.workspace = true
+foldhash.workspace = true
 lazy_static.workspace = true
 log.workspace = true
 mimalloc.workspace = true
@@ -67,7 +72,6 @@ tokio.workspace = true
 tracing-subscriber.workspace = true
 walkdir.workspace = true
 itertools.workspace = true
-foldhash = "0.1.4"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 # only try to build these on linux

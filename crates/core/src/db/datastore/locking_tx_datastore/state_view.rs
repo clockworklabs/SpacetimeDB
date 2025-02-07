@@ -14,7 +14,7 @@ use spacetimedb_sats::AlgebraicValue;
 use spacetimedb_schema::schema::{ColumnSchema, TableSchema};
 use spacetimedb_table::{
     blob_store::HashMapBlobStore,
-    table::{IndexScanIter, RowRef, Table, TableScanIter},
+    table::{IndexScanRangeIter, RowRef, Table, TableScanIter},
 };
 use std::sync::Arc;
 
@@ -111,10 +111,7 @@ pub trait StateView {
         // Look up the indexes for the table in question.
         let indexes = self
             .iter_by_col_eq(ST_INDEX_ID, StIndexFields::TableId, value_eq)?
-            .map(|row| {
-                let row = StIndexRow::try_from(row)?;
-                Ok(row.into())
-            })
+            .map(|row| StIndexRow::try_from(row).map(Into::into))
             .collect::<Result<Vec<_>>>()?;
 
         let schedule = self
@@ -302,8 +299,8 @@ impl<'a> Iterator for IterTx<'a> {
 }
 
 pub struct IndexSeekIterIdMutTx<'a> {
-    pub(super) inserted_rows: IndexScanIter<'a>,
-    pub(super) committed_rows: Option<IndexScanIter<'a>>,
+    pub(super) inserted_rows: IndexScanRangeIter<'a>,
+    pub(super) committed_rows: Option<IndexScanRangeIter<'a>>,
 }
 
 impl<'a> Iterator for IndexSeekIterIdMutTx<'a> {
@@ -318,8 +315,8 @@ impl<'a> Iterator for IndexSeekIterIdMutTx<'a> {
 }
 
 pub struct IndexSeekIterIdWithDeletedMutTx<'a> {
-    pub(super) inserted_rows: IndexScanIter<'a>,
-    pub(super) committed_rows: Option<IndexScanIter<'a>>,
+    pub(super) inserted_rows: IndexScanRangeIter<'a>,
+    pub(super) committed_rows: Option<IndexScanRangeIter<'a>>,
     pub(super) del_table: &'a DeleteTable,
 }
 
@@ -381,7 +378,7 @@ pub enum IterByColRangeTx<'a, R: RangeBounds<AlgebraicValue>> {
 
     /// When the column has an index, and the table
     /// has not been modified in this transaction.
-    CommittedIndex(IndexScanIter<'a>),
+    CommittedIndex(IndexScanRangeIter<'a>),
 }
 
 impl<'a, R: RangeBounds<AlgebraicValue>> Iterator for IterByColRangeTx<'a, R> {
@@ -411,7 +408,7 @@ pub enum IterByColRangeMutTx<'a, R: RangeBounds<AlgebraicValue>> {
 
     /// When the column has an index, and the table
     /// has not been modified in this transaction.
-    CommittedIndex(IndexScanIter<'a>),
+    CommittedIndex(IndexScanRangeIter<'a>),
 
     /// When the column has an index, and the table
     /// has not been modified in this transaction.

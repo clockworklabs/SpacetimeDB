@@ -7,7 +7,7 @@ use spacetimedb_table::{
     blob_store::{BlobStore, HashMapBlobStore},
     indexes::{RowPointer, SquashedOffset},
     static_assert_size,
-    table::{IndexScanIter, RowRef, Table, TableAndIndex},
+    table::{IndexScanRangeIter, RowRef, Table, TableAndIndex},
 };
 use std::collections::{btree_map, BTreeMap};
 
@@ -88,7 +88,7 @@ impl TxState {
     }
 
     /// When there's an index on `cols`,
-    /// returns an iterator over the [BTreeIndex] that yields all the [`RowRef`]s
+    /// returns an iterator over the `TableIndex` that yields all the [`RowRef`]s
     /// that match the specified `range` in the indexed column.
     ///
     /// Matching is defined by `Ord for AlgebraicValue`.
@@ -100,11 +100,11 @@ impl TxState {
         table_id: TableId,
         cols: &ColList,
         range: &impl RangeBounds<AlgebraicValue>,
-    ) -> Option<IndexScanIter<'a>> {
+    ) -> Option<IndexScanRangeIter<'a>> {
         self.insert_tables
             .get(&table_id)?
             .get_index_by_cols_with_table(&self.blob_store, cols)
-            .map(|i| i.seek(range))
+            .map(|i| i.seek_range(range))
     }
 
     /// Returns the table associated with the given `index_id`, if any.

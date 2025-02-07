@@ -209,13 +209,19 @@ impl clap::ValueEnum for ModuleLanguage {
     }
 }
 
-pub fn detect_module_language(path_to_project: &Path) -> ModuleLanguage {
+pub fn detect_module_language(path_to_project: &Path) -> anyhow::Result<ModuleLanguage> {
     // TODO: Possible add a config file durlng spacetime init with the language
     // check for Cargo.toml
     if path_to_project.join("Cargo.toml").exists() {
-        ModuleLanguage::Rust
+        Ok(ModuleLanguage::Rust)
+    } else if path_to_project
+        .read_dir()
+        .unwrap()
+        .any(|entry| entry.unwrap().path().extension() == Some("csproj".as_ref()))
+    {
+        Ok(ModuleLanguage::Csharp)
     } else {
-        ModuleLanguage::Csharp
+        anyhow::bail!("Could not detect the language of the module. Are you in a SpacetimeDB project directory?")
     }
 }
 

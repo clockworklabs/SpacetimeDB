@@ -48,6 +48,7 @@ impl_key_size_primitive!(
     u32,
     i32,
     u64,
+    usize,
     i64,
     u128,
     i128,

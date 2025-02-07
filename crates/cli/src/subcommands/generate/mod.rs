@@ -126,7 +126,7 @@ pub async fn exec(config: Config, args: &clap::ArgMatches) -> anyhow::Result<()>
             build::exec_with_argstring(config.clone(), project_path, build_options).await?
         };
         let spinner = indicatif::ProgressBar::new_spinner();
-        spinner.enable_steady_tick(60);
+        spinner.enable_steady_tick(std::time::Duration::from_millis(60));
         spinner.set_message("Compiling wasm...");
         let module = compile_wasm(&wasm_path)?;
         spinner.set_message("Extracting schema from wasm...");

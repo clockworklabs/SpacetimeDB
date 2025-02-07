@@ -8,7 +8,7 @@ use crate::tasks::rust::build_rust;
 use duct::cmd;
 
 pub fn build(project_path: &Path, lint_dir: Option<&Path>, build_debug: bool) -> anyhow::Result<PathBuf> {
-    let lang = util::detect_module_language(project_path);
+    let lang = util::detect_module_language(project_path)?;
     let mut wasm_path = match lang {
         ModuleLanguage::Rust => build_rust(project_path, lint_dir, build_debug),
         ModuleLanguage::Csharp => build_csharp(project_path, build_debug),

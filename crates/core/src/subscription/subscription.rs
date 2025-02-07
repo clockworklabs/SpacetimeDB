@@ -41,7 +41,7 @@ use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::relation::DbTable;
 use spacetimedb_lib::{Identity, ProductValue};
 use spacetimedb_primitives::TableId;
-use spacetimedb_query::delta::DeltaPlan;
+use spacetimedb_subscription::SubscriptionPlan;
 use spacetimedb_vm::expr::{self, AuthAccess, IndexJoin, Query, QueryExpr, SourceExpr, SourceProvider, SourceSet};
 use spacetimedb_vm::rel_ops::RelOps;
 use spacetimedb_vm::relation::{MemTable, RelValue};
@@ -621,7 +621,7 @@ pub(crate) fn get_all(relational_db: &RelationalDB, tx: &Tx, auth: &AuthCtx) -> 
         .map(|schema| {
             let sql = format!("SELECT * FROM {}", schema.table_name);
             let hash = QueryHash::from_string(&sql);
-            DeltaPlan::compile(&sql, &SchemaViewer::new(tx, auth)).map(|plan| Plan::new(plan, hash, sql))
+            SubscriptionPlan::compile(&sql, &SchemaViewer::new(tx, auth)).map(|plan| Plan::new(plan, hash, sql))
         })
         .collect::<Result<_, _>>()?)
 }
@@ -653,9 +653,10 @@ pub(crate) fn legacy_get_all(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::relational_db::tests_utils::TestDB;
+    use crate::db::relational_db::tests_utils::{expect_sub, TestDB};
     use crate::execution_context::Workload;
     use crate::sql::compiler::compile_sql;
+    use expect_test::expect;
     use spacetimedb_lib::relation::DbTable;
     use spacetimedb_lib::{error::ResultTest, identity::AuthCtx};
     use spacetimedb_sats::{product, AlgebraicType};
@@ -698,6 +699,21 @@ mod tests {
         let Query::IndexJoin(join) = join else {
             panic!("expected an index join, but got {:#?}", join);
         };
+
+        //TODO(sql): Remove manual checks to just `EXPLAIN` the query.
+        expect_sub(
+            &tx,
+            sql,
+            expect![
+                r#"
+Index Join: Rhs on lhs
+  -> Seq Scan on rhs
+    Filter: (rhs.c > U64(2) AND rhs.c < U64(4) AND rhs.d = U64(3))
+  Inner Unique: false
+  Join Cond: (rhs.b = lhs.b)
+  Output: lhs.a, lhs.b"#
+            ],
+        );
 
         // Create an insert for an incremental update.
         let delta = vec![product![0u64, 0u64]];
@@ -778,6 +794,22 @@ mod tests {
         let Query::IndexJoin(join) = join else {
             panic!("expected an index join, but got {:#?}", join);
         };
+
+        //TODO(sql): Remove manual checks to just `EXPLAIN` the query.
+        // Why this generate same plan than the previous test? 'compile_incremental_index_join_index_side'
+        expect_sub(
+            &tx,
+            sql,
+            expect![
+                r#"
+Index Join: Rhs on lhs
+  -> Seq Scan on rhs
+    Filter: (rhs.c > U64(2) AND rhs.c < U64(4) AND rhs.d = U64(3))
+  Inner Unique: false
+  Join Cond: (rhs.b = lhs.b)
+  Output: lhs.a, lhs.b"#
+            ],
+        );
 
         // Create an insert for an incremental update.
         let delta = vec![product![0u64, 0u64, 0u64]];
@@ -866,6 +898,22 @@ mod tests {
             matches!(src_join, Query::IndexJoin(_)),
             "expected an index join, but got {:#?}",
             src_join
+        );
+
+        //TODO(sql): Remove manual checks to just `EXPLAIN` the query.
+        // Why this generate same plan than the previous test? 'compile_incremental_index_join_index_side'
+        expect_sub(
+            &tx,
+            sql,
+            expect![
+                r#"
+Index Join: Rhs on lhs
+  -> Seq Scan on rhs
+    Filter: (rhs.c > U64(2) AND rhs.c < U64(4) AND rhs.d = U64(3))
+  Inner Unique: false
+  Join Cond: (rhs.b = lhs.b)
+  Output: lhs.a, lhs.b"#
+            ],
         );
 
         let incr = IncrementalJoin::new(&expr).expect("Failed to construct IncrementalJoin");

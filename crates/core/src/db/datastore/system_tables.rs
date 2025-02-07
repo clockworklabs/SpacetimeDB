@@ -613,7 +613,17 @@ impl From<IndexAlgorithm> for StIndexAlgorithm {
         match algorithm {
             IndexAlgorithm::BTree(BTreeAlgorithm { columns }) => Self::BTree { columns },
             IndexAlgorithm::Direct(DirectAlgorithm { column }) => Self::Direct { column },
-            _ => unimplemented!(),
+            algo => unreachable!("unexpected `{algo:?}`, did you add a new one?"),
+        }
+    }
+}
+
+impl From<StIndexAlgorithm> for IndexAlgorithm {
+    fn from(algorithm: StIndexAlgorithm) -> Self {
+        match algorithm {
+            StIndexAlgorithm::BTree { columns } => Self::BTree(BTreeAlgorithm { columns }),
+            StIndexAlgorithm::Direct { column } => Self::Direct(DirectAlgorithm { column }),
+            algo => unreachable!("unexpected `{algo:?}` in system table `st_indexes`"),
         }
     }
 }
@@ -637,11 +647,18 @@ impl From<StIndexRow> for IndexSchema {
             index_id: x.index_id,
             table_id: x.table_id,
             index_name: x.index_name,
-            index_algorithm: match x.index_algorithm {
-                StIndexAlgorithm::BTree { columns } => BTreeAlgorithm { columns }.into(),
-                StIndexAlgorithm::Direct { column } => DirectAlgorithm { column }.into(),
-                StIndexAlgorithm::Unused(_) => panic!("Someone put a forbidden variant in the system table!"),
-            },
+            index_algorithm: x.index_algorithm.into(),
+        }
+    }
+}
+
+impl From<IndexSchema> for StIndexRow {
+    fn from(x: IndexSchema) -> Self {
+        Self {
+            index_id: x.index_id,
+            table_id: x.table_id,
+            index_name: x.index_name,
+            index_algorithm: x.index_algorithm.into(),
         }
     }
 }

@@ -11,12 +11,12 @@ anyhow.workspace = true
 chrono = { workspace = true, features = ["now"] }
 fs2.workspace = true
 itoa.workspace = true
-semver.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 dirs.workspace = true
+junction.workspace = true
 
 [target.'cfg(not(windows))'.dependencies]
 xdg.workspace = true

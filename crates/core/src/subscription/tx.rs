@@ -1,7 +1,7 @@
 use std::ops::Deref;
 
 use spacetimedb_execution::{Datastore, DeltaStore};
-use spacetimedb_lib::{query::Delta, ProductValue};
+use spacetimedb_lib::ProductValue;
 use spacetimedb_primitives::TableId;
 use spacetimedb_table::{blob_store::BlobStore, table::Table};
 
@@ -44,26 +44,30 @@ impl Datastore for DeltaTx<'_> {
 }
 
 impl DeltaStore for DeltaTx<'_> {
-    fn has_inserts(&self, table_id: TableId) -> Option<Delta> {
-        self.data.and_then(|data| {
-            data.inserts()
-                .find(|(id, rows)| **id == table_id && !rows.is_empty())
-                .map(|(_, rows)| Delta::Inserts(rows.len()))
-        })
+    fn num_inserts(&self, table_id: TableId) -> usize {
+        self.data
+            .and_then(|data| {
+                data.inserts()
+                    .find(|(id, _)| **id == table_id)
+                    .map(|(_, rows)| rows.len())
+            })
+            .unwrap_or_default()
     }
 
-    fn has_deletes(&self, table_id: TableId) -> Option<Delta> {
-        self.data.and_then(|data| {
-            data.deletes()
-                .find(|(id, rows)| **id == table_id && !rows.is_empty())
-                .map(|(_, rows)| Delta::Deletes(rows.len()))
-        })
+    fn num_deletes(&self, table_id: TableId) -> usize {
+        self.data
+            .and_then(|data| {
+                data.deletes()
+                    .find(|(id, _)| **id == table_id)
+                    .map(|(_, rows)| rows.len())
+            })
+            .unwrap_or_default()
     }
 
     fn inserts_for_table(&self, table_id: TableId) -> Option<std::slice::Iter<'_, ProductValue>> {
         self.data.and_then(|data| {
             data.inserts()
-                .find(|(id, rows)| **id == table_id && !rows.is_empty())
+                .find(|(id, _)| **id == table_id)
                 .map(|(_, rows)| rows.iter())
         })
     }
@@ -71,7 +75,7 @@ impl DeltaStore for DeltaTx<'_> {
     fn deletes_for_table(&self, table_id: TableId) -> Option<std::slice::Iter<'_, ProductValue>> {
         self.data.and_then(|data| {
             data.deletes()
-                .find(|(id, rows)| **id == table_id && !rows.is_empty())
+                .find(|(id, _)| **id == table_id)
                 .map(|(_, rows)| rows.iter())
         })
     }

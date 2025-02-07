@@ -1,4 +1,14 @@
+use std::sync::Arc;
+
+use anyhow::Result;
+use module_subscription_manager::Plan;
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use spacetimedb_client_api_messages::websocket::{
+    ByteListLen, Compression, DatabaseUpdate, QueryUpdate, TableUpdate, WebsocketFormat,
+};
+use spacetimedb_execution::{pipelined::PipelinedProject, Datastore, DeltaStore};
 use spacetimedb_lib::{metrics::ExecutionMetrics, Identity};
+use spacetimedb_primitives::TableId;
 
 use crate::{db::db_metrics::DB_METRICS, execution_context::WorkloadType, worker_metrics::WORKER_METRICS};
 
@@ -33,4 +43,75 @@ pub(crate) fn record_exec_metrics(workload: &WorkloadType, db: &Identity, metric
         .bytes_sent_to_clients
         .with_label_values(workload, db)
         .inc_by(metrics.bytes_sent_to_clients as u64);
+}
+
+/// Execute a subscription query
+pub fn execute_plan<Tx, F>(plan: &PipelinedProject, tx: &Tx) -> Result<(F::List, u64, ExecutionMetrics)>
+where
+    Tx: Datastore + DeltaStore,
+    F: WebsocketFormat,
+{
+    let mut rows = vec![];
+    let mut metrics = ExecutionMetrics::default();
+    plan.execute(tx, &mut metrics, &mut |row| {
+        rows.push(row);
+        Ok(())
+    })?;
+    let (list, n) = F::encode_list(rows.into_iter());
+    metrics.bytes_scanned += list.num_bytes();
+    metrics.bytes_sent_to_clients += list.num_bytes();
+    Ok((list, n, metrics))
+}
+
+/// Execute a subscription query and collect the results in a [TableUpdate]
+pub fn collect_table_update<Tx, F>(
+    plan: &PipelinedProject,
+    table_id: TableId,
+    table_name: Box<str>,
+    comp: Compression,
+    tx: &Tx,
+) -> Result<(TableUpdate<F>, ExecutionMetrics)>
+where
+    Tx: Datastore + DeltaStore,
+    F: WebsocketFormat,
+{
+    execute_plan::<Tx, F>(plan, tx).map(|(inserts, num_rows, metrics)| {
+        let deletes = F::List::default();
+        let qu = QueryUpdate { deletes, inserts };
+        let update = F::into_query_update(qu, comp);
+        (TableUpdate::new(table_id, table_name, (update, num_rows)), metrics)
+    })
+}
+
+/// Execute a collection of subscription queries in parallel
+pub fn execute_plans<Tx, F>(
+    plans: &[Arc<Plan>],
+    comp: Compression,
+    tx: &Tx,
+) -> Result<(DatabaseUpdate<F>, ExecutionMetrics)>
+where
+    Tx: Datastore + DeltaStore + Sync,
+    F: WebsocketFormat,
+{
+    plans
+        .par_iter()
+        .map(|plan| (plan, plan.subscribed_table_id(), plan.subscribed_table_name()))
+        .map(|(plan, table_id, table_name)| {
+            plan.physical_plan()
+                .clone()
+                .optimize()
+                .map(PipelinedProject::from)
+                .and_then(|plan| collect_table_update(&plan, table_id, table_name.into(), comp, tx))
+        })
+        .collect::<Result<Vec<_>>>()
+        .map(|table_updates_with_metrics| {
+            let n = table_updates_with_metrics.len();
+            let mut tables = Vec::with_capacity(n);
+            let mut aggregated_metrics = ExecutionMetrics::default();
+            for (update, metrics) in table_updates_with_metrics {
+                tables.push(update);
+                aggregated_metrics.merge(metrics);
+            }
+            (DatabaseUpdate { tables }, aggregated_metrics)
+        })
 }

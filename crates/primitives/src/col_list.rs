@@ -384,6 +384,14 @@ impl ColOrCols<'_> {
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
+
+    /// Converts to a [`ColList`].
+    pub fn to_owned(self) -> ColList {
+        match self {
+            Self::Col(col) => [col].into(),
+            Self::ColList(list) => list.clone(),
+        }
+    }
 }
 
 impl PartialEq<ColList> for ColOrCols<'_> {
