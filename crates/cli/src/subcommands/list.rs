@@ -1,10 +1,11 @@
 use crate::common_args;
 use crate::util;
 use crate::util::get_login_token_or_log_in;
+use crate::util::ResponseExt;
 use crate::util::UNSTABLE_WARNING;
 use crate::Config;
+use anyhow::Context;
 use clap::{ArgMatches, Command};
-use reqwest::StatusCode;
 use serde::Deserialize;
 use spacetimedb::Identity;
 use tabled::{
@@ -44,7 +45,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let client = reqwest::Client::new();
     let res = client
         .get(format!(
-            "{}/identity/{}/databases",
+            "{}/v1/identity/{}/databases",
             config.get_host_url(server)?,
             identity
         ))
@@ -52,14 +53,10 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         .send()
         .await?;
 
-    if res.status() != StatusCode::OK {
-        return Err(anyhow::anyhow!(format!(
-            "Unable to retrieve databases for identity: {}",
-            res.status()
-        )));
-    }
-
-    let result: DatabasesResult = res.json().await?;
+    let result: DatabasesResult = res
+        .json_or_error()
+        .await
+        .context("unable to retrieve databases for identity")?;
 
     if !result.identities.is_empty() {
         let mut table = Table::new(result.identities);

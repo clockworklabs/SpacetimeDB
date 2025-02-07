@@ -1,6 +1,5 @@
 mod control_db;
 mod energy_monitor;
-pub mod routes;
 pub mod subcommands;
 pub mod util;
 pub mod version;

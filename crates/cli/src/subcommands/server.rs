@@ -292,7 +292,7 @@ pub async fn exec_ping(config: Config, args: &ArgMatches) -> Result<(), anyhow::
     let server = args.get_one::<String>("server").unwrap().as_str();
     let url = config.get_host_url(Some(server))?;
 
-    let builder = reqwest::Client::new().get(format!("{}/database/ping", url).as_str());
+    let builder = reqwest::Client::new().get(format!("{}/v1/ping", url).as_str());
     let response = builder.send().await?;
 
     match response.status() {

@@ -1,4 +1,3 @@
-use anyhow::bail;
 use clap::Arg;
 use clap::ArgAction::{Set, SetTrue};
 use clap::ArgMatches;
@@ -9,7 +8,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use crate::config::Config;
-use crate::util::{add_auth_header_opt, get_auth_header};
+use crate::util::{add_auth_header_opt, get_auth_header, ResponseExt};
 use crate::util::{decode_identity, unauth_error_context, y_or_n};
 use crate::{build, common_args};
 
@@ -82,18 +81,19 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     //  easily create a new identity with an email
     let auth_header = get_auth_header(&mut config, anon_identity, server, !force).await?;
 
-    let mut query_params = Vec::<(&str, &str)>::new();
-    query_params.push(("host_type", "wasm"));
-    query_params.push(("register_tld", "true"));
+    let client = reqwest::Client::new();
 
     // If a domain or identity was provided, we should locally make sure it looks correct and
-    // append it as a query parameter
-    if let Some(name_or_identity) = name_or_identity {
+    let mut builder = if let Some(name_or_identity) = name_or_identity {
         if !is_identity(name_or_identity) {
             parse_domain_name(name_or_identity)?;
         }
-        query_params.push(("name_or_identity", name_or_identity.as_str()));
-    }
+        let encode_set = const { &percent_encoding::NON_ALPHANUMERIC.remove(b'_').remove(b'-') };
+        let domain = percent_encoding::percent_encode(name_or_identity.as_bytes(), encode_set);
+        client.put(format!("{database_host}/v1/database/{domain}"))
+    } else {
+        client.post(format!("{database_host}/v1/database"))
+    };
 
     if !path_to_project.exists() {
         return Err(anyhow::anyhow!(
@@ -145,15 +145,10 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             println!("Aborting");
             return Ok(());
         }
-        query_params.push(("clear", "true"));
+        builder = builder.query(&[("clear", true)]);
     }
 
     println!("Publishing module...");
-
-    let mut builder = reqwest::Client::new().post(Url::parse_with_params(
-        format!("{}/database/publish", database_host).as_str(),
-        query_params,
-    )?);
 
     builder = add_auth_header_opt(builder, &auth_header);
 
@@ -169,13 +164,8 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             config.server_nick_or_host(server)?,
         );
     }
-    if res.status().is_client_error() || res.status().is_server_error() {
-        let err = res.text().await?;
-        bail!(err)
-    }
-    let bytes = res.bytes().await.unwrap();
 
-    let response: PublishResult = serde_json::from_slice(&bytes[..]).unwrap();
+    let response: PublishResult = res.json_or_error().await?;
     match response {
         PublishResult::Success {
             domain,

@@ -8,12 +8,14 @@ use axum::body::Bytes;
 use axum::extract::{FromRequest, Request};
 use axum::response::IntoResponse;
 use bytestring::ByteString;
+use futures::TryStreamExt;
 use http::{HeaderName, HeaderValue, StatusCode};
 
+use hyper::body::Body;
 use spacetimedb::Identity;
 use spacetimedb_client_api_messages::name::DomainName;
 
-use crate::routes::database::DomainParsingRejection;
+use crate::routes::domain::DomainParsingRejection;
 use crate::routes::identity::IdentityForUrl;
 use crate::{log_and_500, ControlStateReadAccess};
 
@@ -171,5 +173,28 @@ impl From<ResolvedIdentity> for Identity {
 impl From<ResolvedIdentity> for (Identity, Option<DomainName>) {
     fn from(ResolvedIdentity { identity, domain }: ResolvedIdentity) -> Self {
         (identity, domain)
+    }
+}
+
+pub struct EmptyBody;
+
+#[async_trait::async_trait]
+impl<S> FromRequest<S> for EmptyBody {
+    type Rejection = axum::response::Response;
+    async fn from_request(req: Request, _state: &S) -> Result<Self, Self::Rejection> {
+        let body = req.into_body();
+        if body.is_end_stream() {
+            return Ok(Self);
+        }
+
+        if body
+            .into_data_stream()
+            .try_any(|data| futures::future::ready(!data.is_empty()))
+            .await
+            .map_err(|_| (StatusCode::BAD_REQUEST, "Failed to buffer the request body").into_response())?
+        {
+            return Err((StatusCode::BAD_REQUEST, "body must be empty").into_response());
+        }
+        Ok(Self)
     }
 }

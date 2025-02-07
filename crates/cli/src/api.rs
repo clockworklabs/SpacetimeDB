@@ -7,7 +7,7 @@ use spacetimedb_lib::de::serde::DeserializeWrapper;
 use spacetimedb_lib::sats::ProductType;
 use spacetimedb_lib::Identity;
 
-use crate::util::AuthHeader;
+use crate::util::{AuthHeader, ResponseExt};
 
 static APP_USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"),);
 
@@ -23,10 +23,10 @@ impl Connection {
     pub fn db_uri(&self, endpoint: &str) -> String {
         [
             &self.host,
-            "/database/",
-            endpoint,
-            "/",
+            "/v1/database/",
             &self.database_identity.to_hex(),
+            "/",
+            endpoint,
         ]
         .concat()
     }
@@ -66,9 +66,8 @@ impl ClientApi {
             .get(self.con.db_uri("schema"))
             .query(&[("version", "9")])
             .send()
-            .await?
-            .error_for_status()?;
-        let DeserializeWrapper(module_def) = res.json().await?;
+            .await?;
+        let DeserializeWrapper(module_def) = res.json_or_error().await?;
         Ok(module_def)
     }
 

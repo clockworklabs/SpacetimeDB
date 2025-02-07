@@ -1,12 +1,13 @@
 use crate::auth::{
-    anon_auth_middleware, SpacetimeAuth, SpacetimeAuthHeader, SpacetimeEnergyUsed, SpacetimeExecutionDurationMicros,
-    SpacetimeIdentity, SpacetimeIdentityToken,
+    anon_auth_middleware, SpacetimeAuth, SpacetimeEnergyUsed, SpacetimeExecutionDurationMicros, SpacetimeIdentity,
+    SpacetimeIdentityToken,
 };
 use crate::routes::subscribe::generate_random_connection_id;
 use crate::util::{ByteStringBody, NameOrIdentity};
 use crate::{log_and_500, ControlStateDelegate, DatabaseDef, NodeDelegate};
 use axum::body::{Body, Bytes};
 use axum::extract::{DefaultBodyLimit, Path, Query, State};
+use axum::handler::Handler;
 use axum::response::{ErrorResponse, IntoResponse};
 use axum::Extension;
 use axum_extra::TypedHeader;
@@ -20,20 +21,14 @@ use spacetimedb::host::ReducerOutcome;
 use spacetimedb::host::UpdateDatabaseResult;
 use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, HostType};
-use spacetimedb_client_api_messages::name::{self, DnsLookupResponse, DomainName, PublishOp, PublishResult};
+use spacetimedb_client_api_messages::name::{self, PublishOp, PublishResult};
 use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::sats;
 
+use super::domain::DomainParsingRejection;
 use super::identity::IdentityForUrl;
-
-pub(crate) struct DomainParsingRejection;
-
-impl IntoResponse for DomainParsingRejection {
-    fn into_response(self) -> axum::response::Response {
-        (StatusCode::BAD_REQUEST, "Unable to parse domain name").into_response()
-    }
-}
+use super::subscribe::handle_websocket;
 
 #[derive(Deserialize)]
 pub struct CallParams {
@@ -48,8 +43,12 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
         name_or_identity,
         reducer,
     }): Path<CallParams>,
+    TypedHeader(content_type): TypedHeader<headers::ContentType>,
     ByteStringBody(body): ByteStringBody,
 ) -> axum::response::Result<impl IntoResponse> {
+    if content_type != headers::ContentType::json() {
+        return Err(axum::extract::rejection::MissingJsonContentType::default().into());
+    }
     let caller_identity = auth.identity;
 
     let args = ReducerArgs::Json(body);
@@ -393,94 +392,62 @@ where
 
 #[derive(Deserialize)]
 pub struct DNSParams {
-    database_name: String,
+    name_or_identity: NameOrIdentity,
 }
 
 #[derive(Deserialize)]
 pub struct ReverseDNSParams {
-    database_identity: IdentityForUrl,
+    name_or_identity: NameOrIdentity,
 }
 
 #[derive(Deserialize)]
 pub struct DNSQueryParams {}
 
-pub async fn dns<S: ControlStateDelegate>(
+pub async fn get_identity<S: ControlStateDelegate>(
     State(ctx): State<S>,
-    Path(DNSParams { database_name }): Path<DNSParams>,
+    Path(DNSParams { name_or_identity }): Path<DNSParams>,
     Query(DNSQueryParams {}): Query<DNSQueryParams>,
 ) -> axum::response::Result<impl IntoResponse> {
-    let domain = database_name.parse().map_err(|_| DomainParsingRejection)?;
-    let db_identity = ctx.lookup_identity(&domain).map_err(log_and_500)?;
-    let response = if let Some(db_identity) = db_identity {
-        DnsLookupResponse::Success {
-            domain,
-            identity: db_identity,
-        }
-    } else {
-        DnsLookupResponse::Failure { domain }
-    };
-
-    Ok(axum::Json(response))
+    let identity = name_or_identity.resolve(&ctx).await?;
+    Ok(identity.identity().to_string())
 }
 
-pub async fn reverse_dns<S: ControlStateDelegate>(
+pub async fn get_name<S: ControlStateDelegate>(
     State(ctx): State<S>,
-    Path(ReverseDNSParams { database_identity }): Path<ReverseDNSParams>,
+    Path(ReverseDNSParams { name_or_identity }): Path<ReverseDNSParams>,
 ) -> axum::response::Result<impl IntoResponse> {
-    let database_identity = Identity::from(database_identity);
-
-    let names = ctx.reverse_lookup(&database_identity).map_err(log_and_500)?;
+    let names = match name_or_identity {
+        NameOrIdentity::Identity(database_identity) => {
+            let database_identity = Identity::from(database_identity);
+            ctx.reverse_lookup(&database_identity).map_err(log_and_500)?
+        }
+        NameOrIdentity::Name(name) => {
+            vec![name.parse().map_err(|_| DomainParsingRejection)?]
+        }
+    };
 
     let response = name::ReverseDNSResponse { names };
     Ok(axum::Json(response))
 }
 
 #[derive(Deserialize)]
-pub struct RegisterTldParams {
-    tld: String,
+pub struct PublishDatabaseParams {
+    name_or_identity: Option<NameOrIdentity>,
 }
-
-pub async fn register_tld<S: ControlStateDelegate>(
-    State(ctx): State<S>,
-    Query(RegisterTldParams { tld }): Query<RegisterTldParams>,
-    Extension(auth): Extension<SpacetimeAuth>,
-) -> axum::response::Result<impl IntoResponse> {
-    // You should not be able to publish to a database that you do not own
-    // so, unless you are the owner, this will fail, hence not using get_or_create
-
-    let tld = tld.parse::<DomainName>().map_err(|_| DomainParsingRejection)?.into();
-    let result = ctx.register_tld(&auth.identity, tld).await.map_err(log_and_500)?;
-    Ok(axum::Json(result))
-}
-
-#[derive(Deserialize)]
-pub struct PublishDatabaseParams {}
 
 #[derive(Deserialize)]
 pub struct PublishDatabaseQueryParams {
     #[serde(default)]
     clear: bool,
-    name_or_identity: Option<NameOrIdentity>,
-}
-
-impl PublishDatabaseQueryParams {
-    pub fn name_or_identity(&self) -> Option<&NameOrIdentity> {
-        self.name_or_identity.as_ref()
-    }
 }
 
 pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
     State(ctx): State<S>,
-    Path(PublishDatabaseParams {}): Path<PublishDatabaseParams>,
-    Query(query_params): Query<PublishDatabaseQueryParams>,
+    Path(PublishDatabaseParams { name_or_identity }): Path<PublishDatabaseParams>,
+    Query(PublishDatabaseQueryParams { clear }): Query<PublishDatabaseQueryParams>,
     Extension(auth): Extension<SpacetimeAuth>,
     body: Bytes,
 ) -> axum::response::Result<axum::Json<PublishResult>> {
-    let PublishDatabaseQueryParams {
-        name_or_identity,
-        clear,
-    } = query_params;
-
     // You should not be able to publish to a database that you do not own
     // so, unless you are the owner, this will fail.
 
@@ -564,12 +531,16 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
 
 #[derive(Deserialize)]
 pub struct DeleteDatabaseParams {
-    database_identity: IdentityForUrl,
+    // this field is named such because that's what the route is under.
+    // TODO: find out if there's a reason this can't be specified as a domain name
+    name_or_identity: IdentityForUrl,
 }
 
 pub async fn delete_database<S: ControlStateDelegate>(
     State(ctx): State<S>,
-    Path(DeleteDatabaseParams { database_identity }): Path<DeleteDatabaseParams>,
+    Path(DeleteDatabaseParams {
+        name_or_identity: database_identity,
+    }): Path<DeleteDatabaseParams>,
     Extension(auth): Extension<SpacetimeAuth>,
 ) -> axum::response::Result<impl IntoResponse> {
     let database_identity = Identity::from(database_identity);
@@ -582,26 +553,26 @@ pub async fn delete_database<S: ControlStateDelegate>(
 }
 
 #[derive(Deserialize)]
-pub struct SetNameQueryParams {
-    domain: String,
-    database_identity: IdentityForUrl,
+pub struct AddNameParams {
+    // this field is named such because that's what the route is under.
+    // TODO: find out if there's a reason this can't be specified as a domain name
+    name_or_identity: IdentityForUrl,
 }
 
-pub async fn set_name<S: ControlStateDelegate>(
+pub async fn add_name<S: ControlStateDelegate>(
     State(ctx): State<S>,
-    Query(SetNameQueryParams {
-        domain,
-        database_identity,
-    }): Query<SetNameQueryParams>,
+    Path(AddNameParams { name_or_identity }): Path<AddNameParams>,
     Extension(auth): Extension<SpacetimeAuth>,
+    domain: String,
 ) -> axum::response::Result<impl IntoResponse> {
-    let database_identity = Identity::from(database_identity);
+    let database_identity = Identity::from(name_or_identity);
 
     let database = ctx
         .get_database_by_identity(&database_identity)
         .map_err(log_and_500)?
         .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
 
+    // FIXME: fairly sure this check is redundant
     if database.owner_identity != auth.identity {
         return Err((StatusCode::UNAUTHORIZED, "Identity does not own database.").into());
     }
@@ -613,45 +584,62 @@ pub async fn set_name<S: ControlStateDelegate>(
         // TODO: better error code handling
         .map_err(log_and_500)?;
 
-    Ok(axum::Json(response))
+    let code = match response {
+        name::InsertDomainResult::Success { .. } => StatusCode::OK,
+        name::InsertDomainResult::TldNotRegistered { .. } => StatusCode::BAD_REQUEST,
+        name::InsertDomainResult::PermissionDenied { .. } => StatusCode::UNAUTHORIZED,
+        name::InsertDomainResult::OtherError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+    };
+
+    Ok((code, axum::Json(response)))
 }
 
-/// This API call is just designed to allow clients to determine whether or not they can
-/// establish a connection to SpacetimeDB. This API call doesn't actually do anything.
-pub async fn ping<S>(State(_ctx): State<S>, _auth: SpacetimeAuthHeader) -> axum::response::Result<impl IntoResponse> {
-    Ok(())
-}
-
-pub fn control_routes<S>(ctx: S) -> axum::Router<S>
+pub fn routes<S>(ctx: S, proxy: impl ControlProxy<S>) -> axum::Router<S>
 where
     S: NodeDelegate + ControlStateDelegate + Clone + 'static,
 {
-    use axum::routing::{get, post};
+    use axum::routing::{delete, get, post, put};
+    let publish = publish::<S>.layer(DefaultBodyLimit::disable());
+    let db_router = axum::Router::<S>::new()
+        .route("/", put(publish.clone()))
+        .route("/", get(db_info::<S>))
+        .route("/", delete(delete_database::<S>))
+        .route("/names", get(get_name::<S>))
+        .route("/names", post(add_name::<S>))
+        .route("/identity", get(get_identity::<S>))
+        .route("/subscribe", get(handle_websocket::<S>.layer(proxy.get())))
+        .route("/call/:reducer", post(call::<S>.layer(proxy.get())))
+        .route("/schema", get(schema::<S>.layer(proxy.get())))
+        .route("/logs", get(logs::<S>.layer(proxy.get())))
+        .route("/sql", post(sql::<S>.layer(proxy.get())));
+
     axum::Router::new()
-        .route("/dns/:database_name", get(dns::<S>))
-        .route("/reverse_dns/:database_identity", get(reverse_dns::<S>))
-        .route("/set_name", get(set_name::<S>))
-        .route("/ping", get(ping::<S>))
-        .route("/register_tld", get(register_tld::<S>))
-        .route("/publish", post(publish::<S>).layer(DefaultBodyLimit::disable()))
-        .route("/delete/:database_identity", post(delete_database::<S>))
+        .route("/", post(publish))
+        .nest("/:name_or_identity", db_router)
         .route_layer(axum::middleware::from_fn_with_state(ctx, anon_auth_middleware::<S>))
 }
 
-pub fn worker_routes<S>(ctx: S) -> axum::Router<S>
-where
-    S: NodeDelegate + ControlStateDelegate + Clone + 'static,
-{
-    use axum::routing::{get, post};
-    axum::Router::new()
-        .route("/:name_or_identity", get(db_info::<S>))
-        .route(
-            "/subscribe/:name_or_identity",
-            get(super::subscribe::handle_websocket::<S>),
-        )
-        .route("/call/:name_or_identity/:reducer", post(call::<S>))
-        .route("/schema/:name_or_identity", get(schema::<S>))
-        .route("/logs/:name_or_identity", get(logs::<S>))
-        .route("/sql/:name_or_identity", post(sql::<S>))
-        .route_layer(axum::middleware::from_fn_with_state(ctx, anon_auth_middleware::<S>))
+pub trait ControlProxy<S: Clone + Send + 'static> {
+    type Layer<H: Handler<T, S>, T: 'static>: tower_layer::Layer<
+            axum::handler::HandlerService<H, T, S>,
+            Service: Clone
+                         + Send
+                         + 'static
+                         + tower_service::Service<
+                axum::extract::Request,
+                Response: IntoResponse,
+                Future: Send,
+                Error = std::convert::Infallible,
+            >,
+        > + Clone
+        + Send
+        + 'static;
+    fn get<H: Handler<T, S>, T: 'static>(&self) -> Self::Layer<H, T>;
+}
+
+impl<S: Clone + Send + Sync + 'static> ControlProxy<S> for () {
+    type Layer<H: Handler<T, S>, T: 'static> = tower_layer::Identity;
+    fn get<H: Handler<T, S>, T: 'static>(&self) -> Self::Layer<H, T> {
+        tower_layer::Identity::new()
+    }
 }

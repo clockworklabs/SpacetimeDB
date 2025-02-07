@@ -123,8 +123,9 @@ fn make_uri(host: Uri, db_name: &str, connection_id: ConnectionId, params: WsPar
         path.push('/');
     }
 
-    path.push_str("database/subscribe/");
+    path.push_str("v1/database/");
     path.push_str(db_name);
+    path.push_str("/subscribe");
 
     // Provide the connection ID.
     path.push_str("?connection_id=");

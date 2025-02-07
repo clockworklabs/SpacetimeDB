@@ -4884,6 +4884,7 @@ dependencies = [
  "is-terminal",
  "itertools 0.12.1",
  "mimalloc",
+ "percent-encoding",
  "regex",
  "reqwest 0.12.9",
  "rustyline",
@@ -4959,6 +4960,9 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tokio-tungstenite",
+ "tower-http",
+ "tower-layer",
+ "tower-service",
  "tracing",
  "uuid",
 ]
