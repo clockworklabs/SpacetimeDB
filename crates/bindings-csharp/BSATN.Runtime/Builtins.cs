@@ -302,11 +302,13 @@ public record struct Timestamp(long MicrosecondsSinceUnixEpoch) : IStructuralRea
 
     public static readonly Timestamp UNIX_EPOCH = new(0);
 
-    public static Timestamp FromTimeDurationSinceUnixEpoch(TimeDuration timeDuration) => new Timestamp(timeDuration.Microseconds);
+    public static Timestamp FromTimeDurationSinceUnixEpoch(TimeDuration timeDuration) =>
+        new Timestamp(timeDuration.Microseconds);
 
     public readonly TimeDuration ToTimeDurationSinceUnixEpoch() => TimeDurationSince(UNIX_EPOCH);
 
-    public static Timestamp FromTimeSpanSinceUnixEpoch(TimeSpan timeSpan) => FromTimeDurationSinceUnixEpoch((TimeDuration)timeSpan);
+    public static Timestamp FromTimeSpanSinceUnixEpoch(TimeSpan timeSpan) =>
+        FromTimeDurationSinceUnixEpoch((TimeDuration)timeSpan);
 
     public readonly TimeSpan ToTimeSpanSinceUnixEpoch() => (TimeSpan)ToTimeDurationSinceUnixEpoch();
 

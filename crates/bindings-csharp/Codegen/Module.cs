@@ -204,8 +204,7 @@ record ViewIndex
             ImmutableArray.Create(col),
             null,
             ViewIndexType.BTree // this might become hash in the future
-        )
-    { }
+        ) { }
 
     private ViewIndex(Index.BTreeAttribute attr, ImmutableArray<ColumnRef> columns)
         : this(attr.Name, columns, attr.Table, ViewIndexType.BTree) { }
