@@ -43,14 +43,11 @@ use spacetimedb_sats::{
     ser::Serialize,
     AlgebraicType, AlgebraicValue, ProductType, ProductValue, WithTypespace,
 };
-use spacetimedb_schema::{
-    def::{BTreeAlgorithm, DirectAlgorithm, IndexAlgorithm},
-    schema::{ConstraintSchema, IndexSchema, RowLevelSecuritySchema, SequenceSchema, TableSchema},
-};
+use spacetimedb_schema::schema::{ConstraintSchema, IndexSchema, RowLevelSecuritySchema, SequenceSchema, TableSchema};
 use spacetimedb_table::{
     blob_store::{BlobStore, HashMapBlobStore},
     indexes::{RowPointer, SquashedOffset},
-    table::{DuplicateError, IndexScanIter, InsertError, RowRef, Table, TableAndIndex},
+    table::{DuplicateError, IndexScanRangeIter, InsertError, RowRef, Table, TableAndIndex},
 };
 use std::{
     sync::Arc,
@@ -400,11 +397,11 @@ impl MutTxId {
         if index.index_id != IndexId::SENTINEL {
             return Err(anyhow::anyhow!("`index_id` must be `IndexId::SENTINEL` in `{:#?}`", index).into());
         }
-        if index.table_id == TableId::SENTINEL {
+        let table_id = index.table_id;
+        if table_id == TableId::SENTINEL {
             return Err(anyhow::anyhow!("`table_id` must not be `TableId::SENTINEL` in `{:#?}`", index).into());
         }
 
-        let table_id = index.table_id;
         log::trace!(
             "INDEX CREATING: {} for table: {} and algorithm: {:?}",
             index.index_name,
@@ -415,38 +412,26 @@ impl MutTxId {
             return Err(TableError::IdNotFoundState(table_id).into());
         }
 
-        // Insert the index row into st_indexes
-        // NOTE: Because st_indexes has a unique index on index_name, this will
-        // fail if the index already exists.
-        let row = StIndexRow {
-            index_id: IndexId::SENTINEL,
-            table_id,
-            index_name: index.index_name.clone(),
-            index_algorithm: index.index_algorithm.clone().into(),
-        };
+        // Insert the index row into `st_indexes` and write back the `IndexId`.
+        // NOTE: Because `st_indexes` has a unique index on `index_name`,
+        // this will fail if the index already exists.
+        let row: StIndexRow = index.clone().into();
         let index_id = self
             .insert_via_serialize_bsatn(ST_INDEX_ID, &row)?
             .1
             .collapse()
             .read_col(StIndexFields::IndexId)?;
-
-        // Construct the index schema.
         index.index_id = index_id;
 
         // Add the index to the transaction's insert table.
         let (table, blob_store, idx_map, commit_table, commit_blob_store) =
             self.get_or_create_insert_table_mut(table_id)?;
 
-        let columns = match &index.index_algorithm {
-            IndexAlgorithm::BTree(BTreeAlgorithm { columns }) => columns.clone(),
-            IndexAlgorithm::Direct(DirectAlgorithm { column: _ }) => todo!("todo_direct_index"),
-            _ => unimplemented!(),
-        };
         // Create and build the index.
         //
         // Ensure adding the index does not cause a unique constraint violation due to
         // the existing rows having the same value for some column(s).
-        let mut insert_index = table.new_index(columns.clone(), is_unique)?;
+        let mut insert_index = table.new_index(&index.index_algorithm, is_unique)?;
         let mut build_from_rows = |table: &Table, bs: &dyn BlobStore| -> Result<()> {
             let rows = table.scan_rows(bs);
             // SAFETY: (1) `insert_index` was derived from `table`
@@ -456,7 +441,7 @@ impl MutTxId {
                 let violation = table
                     .get_row_ref(bs, violation)
                     .expect("row came from scanning the table")
-                    .project(&columns)
+                    .project(&insert_index.indexed_columns)
                     .expect("`cols` should consist of valid columns for this table");
                 return Err(IndexError::from(table.build_error_unique(&insert_index, index_id, violation)).into());
             }
@@ -477,10 +462,10 @@ impl MutTxId {
         }
 
         log::trace!(
-            "INDEX CREATED: {} for table: {} and col(s): {:?}",
+            "INDEX CREATED: {} for table: {} and algorithm: {:?}",
             index_id,
             table_id,
-            columns
+            index.index_algorithm
         );
 
         // SAFETY: same as (1).
@@ -563,8 +548,8 @@ impl MutTxId {
             Self::range_scan_decode_bounds(index_ty, prefix, prefix_elems, rstart, rend).map_err(IndexError::Decode)?;
 
         // Get an index seek iterator for the tx and committed state.
-        let tx_iter = tx_index.map(|i| i.seek(&bounds));
-        let commit_iter = commit_index.map(|i| i.seek(&bounds));
+        let tx_iter = tx_index.map(|i| i.seek_range(&bounds));
+        let commit_iter = commit_index.map(|i| i.seek_range(&bounds));
 
         // Chain together the indexed rows in the tx and committed state,
         // but don't yield rows deleted in the tx state.
@@ -1209,15 +1194,15 @@ pub struct IndexScanRanged<'a> {
 
 enum IndexScanRangedInner<'a> {
     Empty(iter::Empty<RowRef<'a>>),
-    TxOnly(IndexScanIter<'a>),
-    CommitOnly(IndexScanIter<'a>),
+    TxOnly(IndexScanRangeIter<'a>),
+    CommitOnly(IndexScanRangeIter<'a>),
     CommitOnlyWithDeletes(IndexScanFilterDeleted<'a>),
-    Both(iter::Chain<IndexScanIter<'a>, IndexScanIter<'a>>),
-    BothWithDeletes(iter::Chain<IndexScanIter<'a>, IndexScanFilterDeleted<'a>>),
+    Both(iter::Chain<IndexScanRangeIter<'a>, IndexScanRangeIter<'a>>),
+    BothWithDeletes(iter::Chain<IndexScanRangeIter<'a>, IndexScanFilterDeleted<'a>>),
 }
 
 struct IndexScanFilterDeleted<'a> {
-    iter: IndexScanIter<'a>,
+    iter: IndexScanRangeIter<'a>,
     deletes: &'a DeleteTable,
 }
 
@@ -1554,7 +1539,7 @@ impl MutTxId {
             // so all `index.indexed_columns` will be in-bounds of the row layout.
             let needle = unsafe { new_row.project_unchecked(&index.indexed_columns) };
             // Find the old row.
-            (index.seek(&needle).next(), needle)
+            (index.seek_point(&needle).next(), needle)
         }
 
         // The index we've been directed to use must exist

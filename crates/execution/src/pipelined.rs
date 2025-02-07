@@ -355,7 +355,7 @@ impl PipelinedIxScan {
         match self.prefix.as_slice() {
             [] => {
                 for ptr in tx
-                    .index_scan(
+                    .index_scan_range(
                         self.table_id,
                         self.index_id,
                         &(self.lower.as_ref(), self.upper.as_ref()),
@@ -368,7 +368,7 @@ impl PipelinedIxScan {
             }
             prefix => {
                 for ptr in tx
-                    .index_scan(
+                    .index_scan_range(
                         self.table_id,
                         self.index_id,
                         &(
@@ -473,7 +473,7 @@ impl PipelinedIxJoin {
                     n += 1;
                     index_seeks += 1;
                     if let Some(v) = rhs_index
-                        .seek(&project(&u, lhs_field, &mut bytes_scanned))
+                        .seek_point(&project(&u, lhs_field, &mut bytes_scanned))
                         .next()
                         .and_then(|ptr| rhs_table.get_row_ref(blob_store, ptr))
                         .map(Row::Ptr)
@@ -496,7 +496,7 @@ impl PipelinedIxJoin {
                     n += 1;
                     index_seeks += 1;
                     if let Some(v) = rhs_index
-                        .seek(&project(&u, lhs_field, &mut bytes_scanned))
+                        .seek_point(&project(&u, lhs_field, &mut bytes_scanned))
                         .next()
                         .and_then(|ptr| rhs_table.get_row_ref(blob_store, ptr))
                         .map(Row::Ptr)
@@ -539,7 +539,7 @@ impl PipelinedIxJoin {
                     n += 1;
                     index_seeks += 1;
                     for v in rhs_index
-                        .seek(&project(&u, lhs_field, &mut bytes_scanned))
+                        .seek_point(&project(&u, lhs_field, &mut bytes_scanned))
                         .filter_map(|ptr| rhs_table.get_row_ref(blob_store, ptr))
                         .map(Row::Ptr)
                         .map(Tuple::Row)
@@ -561,7 +561,7 @@ impl PipelinedIxJoin {
                     n += 1;
                     index_seeks += 1;
                     for v in rhs_index
-                        .seek(&project(&u, lhs_field, &mut bytes_scanned))
+                        .seek_point(&project(&u, lhs_field, &mut bytes_scanned))
                         .filter_map(|ptr| rhs_table.get_row_ref(blob_store, ptr))
                         .map(Row::Ptr)
                         .map(Tuple::Row)

@@ -12,7 +12,7 @@ use spacetimedb_primitives::{IndexId, TableId};
 use spacetimedb_table::{
     blob_store::BlobStore,
     static_assert_size,
-    table::{IndexScanIter, RowRef, Table, TableScanIter},
+    table::{IndexScanPointIter, IndexScanRangeIter, RowRef, Table, TableScanIter},
 };
 
 pub mod dml;
@@ -35,18 +35,34 @@ pub trait Datastore {
             .ok_or_else(|| anyhow!("TableId `{table_id}` does not exist"))
     }
 
-    fn index_scan(
+    fn index_scan_point(
         &self,
         table_id: TableId,
         index_id: IndexId,
-        range: &impl RangeBounds<AlgebraicValue>,
-    ) -> Result<IndexScanIter> {
+        key: &AlgebraicValue,
+    ) -> Result<IndexScanPointIter> {
         self.table(table_id)
             .ok_or_else(|| anyhow!("TableId `{table_id}` does not exist"))
             .and_then(|table| {
                 table
                     .get_index_by_id_with_table(self.blob_store(), index_id)
-                    .map(|i| i.seek(range))
+                    .map(|i| i.seek_point(key))
+                    .ok_or_else(|| anyhow!("IndexId `{index_id}` does not exist"))
+            })
+    }
+
+    fn index_scan_range(
+        &self,
+        table_id: TableId,
+        index_id: IndexId,
+        range: &impl RangeBounds<AlgebraicValue>,
+    ) -> Result<IndexScanRangeIter> {
+        self.table(table_id)
+            .ok_or_else(|| anyhow!("TableId `{table_id}` does not exist"))
+            .and_then(|table| {
+                table
+                    .get_index_by_id_with_table(self.blob_store(), index_id)
+                    .map(|i| i.seek_range(range))
                     .ok_or_else(|| anyhow!("IndexId `{index_id}` does not exist"))
             })
     }

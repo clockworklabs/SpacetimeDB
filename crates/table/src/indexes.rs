@@ -272,6 +272,7 @@ impl SquashedOffset {
 /// to the index of a specific page
 /// and the offset within the page.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(transparent)]
 pub struct RowPointer(pub u64);
 
 impl MemoryUsage for RowPointer {}

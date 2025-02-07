@@ -7,8 +7,8 @@ use spacetimedb_physical_plan::plan::{
 };
 use spacetimedb_table::{
     blob_store::BlobStore,
-    btree_index::{BTreeIndex, BTreeIndexRangeIter},
-    table::{IndexScanIter, Table, TableScanIter},
+    table::{IndexScanPointIter, IndexScanRangeIter, Table, TableScanIter},
+    table_index::{TableIndex, TableIndexPointIter},
 };
 
 use crate::{Datastore, DeltaScanIter, DeltaStore, Row, Tuple};
@@ -16,7 +16,7 @@ use crate::{Datastore, DeltaScanIter, DeltaStore, Row, Tuple};
 /// The different iterators for evaluating query plans
 pub enum PlanIter<'a> {
     Table(TableScanIter<'a>),
-    Index(IndexScanIter<'a>),
+    Index(IndexScanRangeIter<'a>),
     Delta(DeltaScanIter<'a>),
     RowId(RowRefIter<'a>),
     Tuple(ProjectIter<'a>),
@@ -29,7 +29,7 @@ impl<'a> PlanIter<'a> {
     {
         ProjectIter::build(plan, tx).map(|iter| match iter {
             ProjectIter::None(Iter::Row(RowRefIter::TableScan(iter))) => Self::Table(iter),
-            ProjectIter::None(Iter::Row(RowRefIter::IndexScan(iter))) => Self::Index(iter),
+            ProjectIter::None(Iter::Row(RowRefIter::IndexScanRange(iter))) => Self::Index(iter),
             ProjectIter::None(Iter::Row(iter)) => Self::RowId(iter),
             _ => Self::Tuple(iter),
         })
@@ -200,7 +200,8 @@ impl<'a> Iter<'a> {
 /// An iterator that always returns [RowRef]s
 pub enum RowRefIter<'a> {
     TableScan(TableScanIter<'a>),
-    IndexScan(IndexScanIter<'a>),
+    IndexScanPoint(IndexScanPointIter<'a>),
+    IndexScanRange(IndexScanRangeIter<'a>),
     DeltaScan(DeltaScanIter<'a>),
     RowFilter(Filter<'a, RowRefIter<'a>>),
 }
@@ -211,7 +212,8 @@ impl<'a> Iterator for RowRefIter<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         match self {
             Self::TableScan(iter) => iter.next().map(Row::Ptr),
-            Self::IndexScan(iter) => iter.next().map(Row::Ptr),
+            Self::IndexScanPoint(iter) => iter.next().map(Row::Ptr),
+            Self::IndexScanRange(iter) => iter.next().map(Row::Ptr),
             Self::DeltaScan(iter) => iter.next().map(Row::Ref),
             Self::RowFilter(iter) => iter.next(),
         }
@@ -242,20 +244,20 @@ impl<'a> RowRefIter<'a> {
                 },
                 _,
             ) if scan.prefix.is_empty() => tx
-                .index_scan(scan.schema.table_id, scan.index_id, v)
-                .map(Self::IndexScan),
+                .index_scan_point(scan.schema.table_id, scan.index_id, v)
+                .map(Self::IndexScanPoint),
             PhysicalPlan::IxScan(
                 scan @ IxScan {
                     arg: Sarg::Eq(_, v), ..
                 },
                 _,
             ) => tx
-                .index_scan(
+                .index_scan_point(
                     scan.schema.table_id,
                     scan.index_id,
                     &AlgebraicValue::product(concat(&scan.prefix, v)),
                 )
-                .map(Self::IndexScan),
+                .map(Self::IndexScanPoint),
             PhysicalPlan::IxScan(
                 scan @ IxScan {
                     arg: Sarg::Range(_, lower, upper),
@@ -263,8 +265,8 @@ impl<'a> RowRefIter<'a> {
                 },
                 _,
             ) if scan.prefix.is_empty() => tx
-                .index_scan(scan.schema.table_id, scan.index_id, &(lower.as_ref(), upper.as_ref()))
-                .map(Self::IndexScan),
+                .index_scan_range(scan.schema.table_id, scan.index_id, &(lower.as_ref(), upper.as_ref()))
+                .map(Self::IndexScanRange),
             PhysicalPlan::IxScan(
                 scan @ IxScan {
                     arg: Sarg::Range(_, lower, upper),
@@ -272,7 +274,7 @@ impl<'a> RowRefIter<'a> {
                 },
                 _,
             ) => tx
-                .index_scan(
+                .index_scan_range(
                     scan.schema.table_id,
                     scan.index_id,
                     &(
@@ -286,7 +288,7 @@ impl<'a> RowRefIter<'a> {
                             .map(AlgebraicValue::Product),
                     ),
                 )
-                .map(Self::IndexScan),
+                .map(Self::IndexScanRange),
             PhysicalPlan::Filter(input, expr) => Self::build(input, tx)
                 .map(Box::new)
                 .map(|input| Filter { input, expr })
@@ -363,7 +365,7 @@ pub struct UniqueIxJoin<'a> {
     /// The lhs of the join
     lhs: Box<Iter<'a>>,
     /// The rhs index
-    rhs_index: &'a BTreeIndex,
+    rhs_index: &'a TableIndex,
     /// A handle to the datastore
     rhs_table: &'a Table,
     /// A handle to the blobstore
@@ -398,7 +400,7 @@ impl<'a> Iterator for UniqueIxJoin<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         self.lhs.find_map(|tuple| {
             self.rhs_index
-                .seek(&tuple.project(self.lhs_field))
+                .seek_point(&tuple.project(self.lhs_field))
                 .next()
                 .and_then(|ptr| self.rhs_table.get_row_ref(self.blob_store, ptr))
                 .map(Row::Ptr)
@@ -412,7 +414,7 @@ pub struct UniqueIxJoinLhs<'a> {
     /// The lhs of the join
     lhs: Box<Iter<'a>>,
     /// The rhs index
-    rhs: &'a BTreeIndex,
+    rhs: &'a TableIndex,
     /// The lhs probe field
     lhs_field: &'a TupleField,
 }
@@ -448,7 +450,7 @@ pub struct UniqueIxJoinRhs<'a> {
     /// The lhs of the join
     lhs: Box<Iter<'a>>,
     /// The rhs index
-    rhs_index: &'a BTreeIndex,
+    rhs_index: &'a TableIndex,
     /// A handle to the datastore
     rhs_table: &'a Table,
     /// A handle to the blobstore
@@ -483,7 +485,7 @@ impl<'a> Iterator for UniqueIxJoinRhs<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         self.lhs.find_map(|tuple| {
             self.rhs_index
-                .seek(&tuple.project(self.lhs_field))
+                .seek_point(&tuple.project(self.lhs_field))
                 .next()
                 .and_then(|ptr| self.rhs_table.get_row_ref(self.blob_store, ptr))
                 .map(Row::Ptr)
@@ -498,9 +500,9 @@ pub struct IxJoinIter<'a> {
     /// The current lhs tuple
     lhs_tuple: Option<Tuple<'a>>,
     /// The rhs index
-    rhs_index: &'a BTreeIndex,
+    rhs_index: &'a TableIndex,
     /// The current rhs index cursor
-    rhs_index_cursor: Option<BTreeIndexRangeIter<'a>>,
+    rhs_index_cursor: Option<TableIndexPointIter<'a>>,
     /// A handle to the datastore
     rhs_table: &'a Table,
     /// A handle to the blobstore
@@ -549,7 +551,7 @@ impl<'a> Iterator for IxJoinIter<'a> {
             })
             .or_else(|| {
                 self.lhs.find_map(|tuple| {
-                    let mut cursor = self.rhs_index.seek(&tuple.project(self.lhs_field));
+                    let mut cursor = self.rhs_index.seek_point(&tuple.project(self.lhs_field));
                     cursor.next().and_then(|ptr| {
                         self.rhs_table
                             .get_row_ref(self.blob_store, ptr)
@@ -570,7 +572,7 @@ pub struct IxJoinLhs<'a> {
     /// The lhs of the join
     lhs: Box<Iter<'a>>,
     /// The rhs index
-    rhs_index: &'a BTreeIndex,
+    rhs_index: &'a TableIndex,
     /// The current lhs tuple
     lhs_tuple: Option<Tuple<'a>>,
     /// The matching rhs row count
@@ -625,9 +627,9 @@ pub struct IxJoinRhs<'a> {
     /// The lhs of the join
     lhs: Box<Iter<'a>>,
     /// The rhs index
-    rhs_index: &'a BTreeIndex,
+    rhs_index: &'a TableIndex,
     /// The current rhs index cursor
-    rhs_index_cursor: Option<BTreeIndexRangeIter<'a>>,
+    rhs_index_cursor: Option<TableIndexPointIter<'a>>,
     /// A handle to the datastore
     rhs_table: &'a Table,
     /// A handle to the blobstore
@@ -671,7 +673,7 @@ impl<'a> Iterator for IxJoinRhs<'a> {
             })
             .or_else(|| {
                 self.lhs.find_map(|tuple| {
-                    let mut cursor = self.rhs_index.seek(&tuple.project(self.lhs_field));
+                    let mut cursor = self.rhs_index.seek_point(&tuple.project(self.lhs_field));
                     cursor.next().and_then(|ptr| {
                         self.rhs_table
                             .get_row_ref(self.blob_store, ptr)

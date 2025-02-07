@@ -61,6 +61,13 @@ impl<K: Ord, V: Ord> MultiMap<K, V> {
         }
     }
 
+    /// Returns an iterator over the multimap that yields all the `V`s of the `key: &K`.
+    pub fn values_in_point(&self, key: &K) -> MultiMapPointIter<'_, V> {
+        let vals = self.map.get(key).map(|vs| &**vs).unwrap_or_default();
+        let iter = vals.iter();
+        MultiMapPointIter { iter }
+    }
+
     /// Returns the number of unique keys in the multimap.
     pub fn num_keys(&self) -> usize {
         self.map.len()
@@ -82,6 +89,20 @@ impl<K: Ord, V: Ord> MultiMap<K, V> {
     /// This will not deallocate the outer map.
     pub fn clear(&mut self) {
         self.map.clear();
+    }
+}
+
+/// An iterator over values in a [`MultiMap`] where the key is a point.
+pub struct MultiMapPointIter<'a, V> {
+    /// The inner iterator for the value set for a found key.
+    iter: slice::Iter<'a, V>,
+}
+
+impl<'a, V> Iterator for MultiMapPointIter<'a, V> {
+    type Item = &'a V;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next()
     }
 }
 
