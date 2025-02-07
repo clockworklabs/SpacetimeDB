@@ -41,7 +41,7 @@ use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::relation::DbTable;
 use spacetimedb_lib::{Identity, ProductValue};
 use spacetimedb_primitives::TableId;
-use spacetimedb_query::delta::DeltaPlan;
+use spacetimedb_subscription::SubscriptionPlan;
 use spacetimedb_vm::expr::{self, AuthAccess, IndexJoin, Query, QueryExpr, SourceExpr, SourceProvider, SourceSet};
 use spacetimedb_vm::rel_ops::RelOps;
 use spacetimedb_vm::relation::{MemTable, RelValue};
@@ -621,7 +621,7 @@ pub(crate) fn get_all(relational_db: &RelationalDB, tx: &Tx, auth: &AuthCtx) -> 
         .map(|schema| {
             let sql = format!("SELECT * FROM {}", schema.table_name);
             let hash = QueryHash::from_string(&sql);
-            DeltaPlan::compile(&sql, &SchemaViewer::new(tx, auth)).map(|plan| Plan::new(plan, hash))
+            SubscriptionPlan::compile(&sql, &SchemaViewer::new(tx, auth)).map(|plan| Plan::new(plan, hash, sql))
         })
         .collect::<Result<_, _>>()?)
 }

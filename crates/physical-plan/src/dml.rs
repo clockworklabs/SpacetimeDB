@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use anyhow::Result;
 use spacetimedb_expr::{
     expr::{ProjectName, RelExpr, Relvar},
     statement::{TableDelete, TableInsert, TableUpdate},
@@ -19,11 +20,11 @@ pub enum MutationPlan {
 
 impl MutationPlan {
     /// Optimizes the filters in updates and deletes
-    pub fn optimize(self) -> Self {
+    pub fn optimize(self) -> Result<Self> {
         match self {
-            Self::Insert(..) => self,
-            Self::Delete(plan) => Self::Delete(plan.optimize()),
-            Self::Update(plan) => Self::Update(plan.optimize()),
+            Self::Insert(..) => Ok(self),
+            Self::Delete(plan) => Ok(Self::Delete(plan.optimize()?)),
+            Self::Update(plan) => Ok(Self::Update(plan.optimize()?)),
         }
     }
 }
@@ -50,10 +51,10 @@ pub struct DeletePlan {
 
 impl DeletePlan {
     /// Optimize the filter part of the delete
-    fn optimize(self) -> Self {
+    fn optimize(self) -> Result<Self> {
         let Self { table, filter } = self;
-        let filter = filter.optimize();
-        Self { table, filter }
+        let filter = filter.optimize()?;
+        Ok(Self { table, filter })
     }
 
     /// Logical to physical conversion
@@ -84,10 +85,10 @@ pub struct UpdatePlan {
 
 impl UpdatePlan {
     /// Optimize the filter part of the update
-    fn optimize(self) -> Self {
+    fn optimize(self) -> Result<Self> {
         let Self { table, columns, filter } = self;
-        let filter = filter.optimize();
-        Self { columns, table, filter }
+        let filter = filter.optimize()?;
+        Ok(Self { columns, table, filter })
     }
 
     /// Logical to physical conversion

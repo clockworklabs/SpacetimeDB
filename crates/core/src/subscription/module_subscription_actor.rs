@@ -1,8 +1,8 @@
 use super::execution_unit::QueryHash;
 use super::module_subscription_manager::{Plan, SubscriptionManager};
 use super::query::compile_read_only_query;
-use super::record_exec_metrics;
 use super::tx::DeltaTx;
+use super::{collect_table_update, record_exec_metrics};
 use crate::client::messages::{
     SubscriptionError, SubscriptionMessage, SubscriptionResult, SubscriptionRows, SubscriptionUpdateMessage,
     TransactionUpdateMessage,
@@ -15,16 +15,17 @@ use crate::estimation::estimate_rows_scanned;
 use crate::execution_context::{Workload, WorkloadType};
 use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent};
 use crate::messages::websocket::Subscribe;
+use crate::subscription::execute_plans;
 use crate::vm::check_row_limit;
 use crate::worker_metrics::WORKER_METRICS;
 use parking_lot::RwLock;
 use spacetimedb_client_api_messages::websocket::{
     BsatnFormat, FormatSwitch, JsonFormat, SubscribeSingle, TableUpdate, Unsubscribe,
 };
+use spacetimedb_execution::pipelined::PipelinedProject;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::Identity;
-use spacetimedb_query::{execute_plans, SubscribePlan};
 use std::{sync::Arc, time::Instant};
 
 type Subscriptions = Arc<RwLock<SubscriptionManager>>;
@@ -58,24 +59,24 @@ impl ModuleSubscriptions {
         tx: &TxId,
         auth: &AuthCtx,
     ) -> Result<(SubscriptionUpdate, ExecutionMetrics), DBError> {
-        let comp = sender.config.compression;
-        let plan = SubscribePlan::from_delta_plan(&query);
-
         check_row_limit(
-            &plan,
+            query.physical_plan(),
             &self.relational_db,
             tx,
             |plan, tx| estimate_rows_scanned(tx, plan),
             auth,
         )?;
 
+        let comp = sender.config.compression;
+        let table_id = query.subscribed_table_id();
+        let table_name = query.subscribed_table_name();
+        let plan = query.physical_plan().clone().optimize().map(PipelinedProject::from)?;
         let tx = DeltaTx::from(tx);
+
         Ok(match sender.config.protocol {
-            Protocol::Binary => plan
-                .collect_table_update(comp, &tx)
+            Protocol::Binary => collect_table_update(&plan, table_id, table_name.into(), comp, &tx)
                 .map(|(table_update, metrics)| (FormatSwitch::Bsatn(table_update), metrics))?,
-            Protocol::Text => plan
-                .collect_table_update(comp, &tx)
+            Protocol::Text => collect_table_update(&plan, table_id, table_name.into(), comp, &tx)
                 .map(|(table_update, metrics)| (FormatSwitch::Json(table_update), metrics))?,
         })
     }
@@ -100,8 +101,6 @@ impl ModuleSubscriptions {
             guard.query(&hash)
         };
         let query: Result<Arc<Plan>, DBError> = existing_query.map(Ok).unwrap_or_else(|| {
-            // NOTE: The following ensures compliance with the 1.0 sql api.
-            // Come 1.0, it will have replaced the current compilation stack.
             let compiled = compile_read_only_query(&auth, &tx, sql)?;
             Ok(Arc::new(compiled))
         });
@@ -154,8 +153,8 @@ impl ModuleSubscriptions {
             query_id: Some(request.query_id),
             timer: Some(timer),
             result: SubscriptionResult::Subscribe(SubscriptionRows {
-                table_id: query.table_id(),
-                table_name: query.table_name(),
+                table_id: query.subscribed_table_id(),
+                table_name: query.subscribed_table_name().into(),
                 table_rows,
             }),
         });
@@ -207,8 +206,8 @@ impl ModuleSubscriptions {
             query_id: Some(request.query_id),
             timer: Some(timer),
             result: SubscriptionResult::Unsubscribe(SubscriptionRows {
-                table_id: query.table_id(),
-                table_name: query.table_name(),
+                table_id: query.subscribed_table_id(),
+                table_name: query.subscribed_table_name().into(),
                 table_rows,
             }),
         });
@@ -260,21 +259,16 @@ impl ModuleSubscriptions {
         drop(guard);
 
         let comp = sender.config.compression;
-        let plans = queries
-            .iter()
-            .map(|plan| &***plan)
-            .map(SubscribePlan::from_delta_plan)
-            .collect::<Vec<_>>();
 
-        fn rows_scanned(tx: &TxId, plans: &[SubscribePlan]) -> u64 {
+        fn rows_scanned(tx: &TxId, plans: &[Arc<Plan>]) -> u64 {
             plans
                 .iter()
-                .map(|plan| estimate_rows_scanned(tx, plan))
+                .map(|plan| estimate_rows_scanned(tx, plan.physical_plan()))
                 .fold(0, |acc, n| acc.saturating_add(n))
         }
 
         check_row_limit(
-            &plans,
+            &queries,
             &self.relational_db,
             &tx,
             |plan, tx| rows_scanned(tx, plan),
@@ -283,9 +277,9 @@ impl ModuleSubscriptions {
 
         let tx = DeltaTx::from(&*tx);
         let (database_update, metrics) = match sender.config.protocol {
-            Protocol::Binary => execute_plans(plans, comp, &tx)
+            Protocol::Binary => execute_plans(&queries, comp, &tx)
                 .map(|(table_update, metrics)| (FormatSwitch::Bsatn(table_update), metrics))?,
-            Protocol::Text => execute_plans(plans, comp, &tx)
+            Protocol::Text => execute_plans(&queries, comp, &tx)
                 .map(|(table_update, metrics)| (FormatSwitch::Json(table_update), metrics))?,
         };
 

@@ -30,7 +30,7 @@ pub use spacetimedb_durability::Durability;
 use spacetimedb_durability::{self as durability, TxOffset};
 use spacetimedb_lib::address::Address;
 use spacetimedb_lib::db::auth::StAccess;
-use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, RawModuleDefV9Builder, RawSql};
+use spacetimedb_lib::db::raw_def::v9::{btree, RawModuleDefV9Builder, RawSql};
 use spacetimedb_lib::Identity;
 use spacetimedb_paths::server::{CommitLogDir, ReplicaDir, SnapshotsPath};
 use spacetimedb_primitives::*;
@@ -854,12 +854,7 @@ impl RelationalDB {
             .with_access(access.into());
 
         for columns in indexes {
-            table_builder = table_builder.with_index(
-                RawIndexAlgorithm::BTree {
-                    columns: columns.clone(),
-                },
-                "accessor_name_doesnt_matter",
-            );
+            table_builder = table_builder.with_index(btree(columns.clone()), "accessor_name_doesnt_matter");
         }
         table_builder.finish();
         let module_def: ModuleDef = module_def_builder.finish().try_into()?;
@@ -989,7 +984,7 @@ impl RelationalDB {
     ) -> Result<Constraints, DBError> {
         let table = self.inner.schema_for_table_mut_tx(tx, table_id)?;
 
-        let index = table.indexes.iter().find(|i| i.index_algorithm.columns() == cols);
+        let index = table.indexes.iter().find(|i| i.index_algorithm.columns() == *cols);
         let cols_set = ColSet::from(cols);
         let unique_constraint = table
             .constraints
@@ -1024,7 +1019,7 @@ impl RelationalDB {
         self.inner.create_index_mut_tx(tx, schema, is_unique)
     }
 
-    /// Removes the [index::BTreeIndex] from the database by their `index_id`
+    /// Removes the [`TableIndex`] from the database by their `index_id`
     pub fn drop_index(&self, tx: &mut MutTx, index_id: IndexId) -> Result<(), DBError> {
         self.inner.drop_index_mut_tx(tx, index_id)
     }
@@ -1630,7 +1625,7 @@ mod tests {
     use pretty_assertions::assert_eq;
     use spacetimedb_client_api_messages::timestamp::Timestamp;
     use spacetimedb_data_structures::map::IntMap;
-    use spacetimedb_lib::db::raw_def::v9::RawTableDefBuilder;
+    use spacetimedb_lib::db::raw_def::v9::{btree, RawTableDefBuilder};
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::Identity;
     use spacetimedb_sats::buffer::BufReader;
@@ -1666,6 +1661,7 @@ mod tests {
                     .with_primary_key(0)
                     .with_column_sequence(0)
                     .with_unique_constraint(0)
+                    .with_index_no_accessor_name(btree(0))
             },
         )
     }
@@ -1675,10 +1671,7 @@ mod tests {
             "MyTable",
             ProductType::from([("my_col", AlgebraicType::I64), ("other_col", AlgebraicType::I64)]),
             |builder| {
-                let builder = builder.with_index(
-                    RawIndexAlgorithm::BTree { columns: 0.into() },
-                    "accessor_name_doesnt_matter",
-                );
+                let builder = builder.with_index_no_accessor_name(btree(0));
 
                 if is_unique {
                     builder.with_unique_constraint(col_list![0])
@@ -2068,7 +2061,12 @@ mod tests {
         let schema = table(
             "MyTable",
             ProductType::from([("my_col", AlgebraicType::I64)]),
-            |builder| builder.with_column_sequence(0).with_unique_constraint(0),
+            |builder| {
+                builder
+                    .with_column_sequence(0)
+                    .with_unique_constraint(0)
+                    .with_index_no_accessor_name(btree(0))
+            },
         );
 
         let table_id = stdb.create_table(&mut tx, schema)?;
@@ -2104,9 +2102,10 @@ mod tests {
             ]),
             |builder| {
                 builder
-                    .with_index(RawIndexAlgorithm::BTree { columns: col_list![0] }, "MyTable_col1_idx")
-                    .with_index(RawIndexAlgorithm::BTree { columns: col_list![2] }, "MyTable_col3_idx")
-                    .with_index(RawIndexAlgorithm::BTree { columns: col_list![3] }, "MyTable_col4_idx")
+                    .with_index_no_accessor_name(btree(0))
+                    .with_index_no_accessor_name(btree(1))
+                    .with_index_no_accessor_name(btree(2))
+                    .with_index_no_accessor_name(btree(3))
                     .with_unique_constraint(0)
                     .with_unique_constraint(1)
                     .with_unique_constraint(3)
@@ -2198,12 +2197,7 @@ mod tests {
         ]);
 
         let schema = table("t", columns, |builder| {
-            builder.with_index(
-                RawIndexAlgorithm::BTree {
-                    columns: col_list![0, 1],
-                },
-                "accessor_name_doesnt_matter",
-            )
+            builder.with_index(btree([0, 1]), "accessor_name_doesnt_matter")
         });
 
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);

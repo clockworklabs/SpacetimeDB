@@ -26,18 +26,24 @@
 //!     Mark index join as unique
 //! * [UniqueHashJoinRule]  
 //!     Mark hash join as unique
+use anyhow::{bail, Result};
 use spacetimedb_primitives::{ColId, ColSet, IndexId};
 use spacetimedb_schema::schema::IndexSchema;
 use spacetimedb_sql_parser::ast::{BinOp, LogOp};
 
 use crate::plan::{HashJoin, IxJoin, IxScan, Label, PhysicalExpr, PhysicalPlan, Sarg, Semi, TupleField};
 
+/// A rewrite will only fail due to an internal logic bug.
+/// However we don't want to panic in such a situation.
+/// Instead we leave it to the caller to determine how to proceed.
+const INVARIANT_VIOLATION: &str = "Invariant violation during query planning";
+
 pub trait RewriteRule {
     type Plan;
     type Info;
 
     fn matches(plan: &Self::Plan) -> Option<Self::Info>;
-    fn rewrite(plan: Self::Plan, info: Self::Info) -> Self::Plan;
+    fn rewrite(plan: Self::Plan, info: Self::Info) -> Result<Self::Plan>;
 }
 
 /// To preserve semantics while reordering operations,
@@ -86,7 +92,7 @@ impl RewriteRule for ComputePositions {
         }
     }
 
-    fn rewrite(mut plan: Self::Plan, label: Self::Info) -> Self::Plan {
+    fn rewrite(mut plan: Self::Plan, label: Self::Info) -> Result<Self::Plan> {
         match &mut plan {
             PhysicalPlan::Filter(input, expr) => {
                 if let Some(i) = input.position(&label) {
@@ -128,7 +134,7 @@ impl RewriteRule for ComputePositions {
             }
             _ => {}
         }
-        plan
+        Ok(plan)
     }
 }
 
@@ -190,17 +196,17 @@ impl RewriteRule for PushConstEq {
         None
     }
 
-    fn rewrite(plan: PhysicalPlan, relvar: Self::Info) -> PhysicalPlan {
-        if let PhysicalPlan::Filter(input, expr) = plan {
-            return input.map_if(
-                |scan, _| PhysicalPlan::Filter(Box::new(scan), expr),
+    fn rewrite(plan: PhysicalPlan, relvar: Self::Info) -> Result<PhysicalPlan> {
+        match plan {
+            PhysicalPlan::Filter(input, expr) => input.map_if(
+                |scan, _| Ok(PhysicalPlan::Filter(Box::new(scan), expr)),
                 |plan| match plan {
                     PhysicalPlan::TableScan(_, var, _) if var == &relvar => Some(()),
                     _ => None,
                 },
-            );
+            ),
+            _ => Ok(plan),
         }
-        unreachable!()
     }
 }
 
@@ -269,52 +275,54 @@ impl RewriteRule for PushConstAnd {
         None
     }
 
-    fn rewrite(plan: PhysicalPlan, relvar: Self::Info) -> PhysicalPlan {
-        if let PhysicalPlan::Filter(input, PhysicalExpr::LogOp(LogOp::And, exprs)) = plan {
-            let mut leaf_exprs = vec![];
-            let mut root_exprs = vec![];
-            for expr in exprs {
-                if let PhysicalExpr::BinOp(_, lhs, value) = &expr {
-                    if let (PhysicalExpr::Field(TupleField { label: var, .. }), PhysicalExpr::Value(_)) =
-                        (&**lhs, &**value)
-                    {
-                        if var == &relvar {
-                            leaf_exprs.push(expr);
-                            continue;
+    fn rewrite(plan: PhysicalPlan, relvar: Self::Info) -> Result<PhysicalPlan> {
+        match plan {
+            PhysicalPlan::Filter(input, PhysicalExpr::LogOp(LogOp::And, exprs)) => {
+                let mut leaf_exprs = vec![];
+                let mut root_exprs = vec![];
+                for expr in exprs {
+                    if let PhysicalExpr::BinOp(_, lhs, value) = &expr {
+                        if let (PhysicalExpr::Field(TupleField { label: var, .. }), PhysicalExpr::Value(_)) =
+                            (&**lhs, &**value)
+                        {
+                            if var == &relvar {
+                                leaf_exprs.push(expr);
+                                continue;
+                            }
                         }
                     }
+                    root_exprs.push(expr);
                 }
-                root_exprs.push(expr);
-            }
-            // Match on table or delta scan
-            let ok = |plan: &PhysicalPlan| match plan {
-                PhysicalPlan::TableScan(_, var, _) if var == &relvar => Some(()),
-                _ => None,
-            };
-            // Map scan to scan + filter
-            let f = |scan, _| {
-                PhysicalPlan::Filter(
-                    Box::new(scan),
-                    match leaf_exprs.len() {
-                        1 => leaf_exprs.swap_remove(0),
-                        _ => PhysicalExpr::LogOp(LogOp::And, leaf_exprs),
+                // Match on table or delta scan
+                let ok = |plan: &PhysicalPlan| match plan {
+                    PhysicalPlan::TableScan(_, var, _) if var == &relvar => Some(()),
+                    _ => None,
+                };
+                // Map scan to scan + filter
+                let f = |scan, _| {
+                    Ok(PhysicalPlan::Filter(
+                        Box::new(scan),
+                        match leaf_exprs.len() {
+                            1 => leaf_exprs.swap_remove(0),
+                            _ => PhysicalExpr::LogOp(LogOp::And, leaf_exprs),
+                        },
+                    ))
+                };
+                // Remove top level filter if all conditions were pushable
+                if root_exprs.is_empty() {
+                    return input.map_if(f, ok);
+                }
+                // Otherwise remove exprs from top level filter and push
+                Ok(PhysicalPlan::Filter(
+                    Box::new(input.map_if(f, ok)?),
+                    match root_exprs.len() {
+                        1 => root_exprs.swap_remove(0),
+                        _ => PhysicalExpr::LogOp(LogOp::And, root_exprs),
                     },
-                )
-            };
-            // Remove top level filter if all conditions were pushable
-            if root_exprs.is_empty() {
-                return input.map_if(f, ok);
+                ))
             }
-            // Otherwise remove exprs from top level filter and push
-            return PhysicalPlan::Filter(
-                Box::new(input.map_if(f, ok)),
-                match root_exprs.len() {
-                    1 => root_exprs.swap_remove(0),
-                    _ => PhysicalExpr::LogOp(LogOp::And, root_exprs),
-                },
-            );
+            _ => Ok(plan),
         }
-        unreachable!()
     }
 }
 
@@ -350,12 +358,12 @@ impl RewriteRule for IxScanEq {
                              index_algorithm,
                              ..
                          }| {
-                            index_algorithm
-                                .columns()
-                                // TODO: Support prefix scans
-                                .as_singleton()
-                                .filter(|col_id| col_id.idx() == *pos)
-                                .map(|col_id| (*index_id, col_id))
+                            // TODO: Support prefix scans
+                            if index_algorithm.columns().len() == 1 {
+                                Some((*index_id, index_algorithm.find_col_index(*pos)?))
+                            } else {
+                                None
+                            }
                         },
                     );
                 }
@@ -364,11 +372,11 @@ impl RewriteRule for IxScanEq {
         None
     }
 
-    fn rewrite(plan: PhysicalPlan, (index_id, col_id): Self::Info) -> PhysicalPlan {
+    fn rewrite(plan: PhysicalPlan, (index_id, col_id): Self::Info) -> Result<PhysicalPlan> {
         if let PhysicalPlan::Filter(input, PhysicalExpr::BinOp(BinOp::Eq, _, value)) = plan {
             if let PhysicalPlan::TableScan(schema, var, None) = *input {
                 if let PhysicalExpr::Value(v) = *value {
-                    return PhysicalPlan::IxScan(
+                    return Ok(PhysicalPlan::IxScan(
                         IxScan {
                             schema,
                             index_id,
@@ -376,11 +384,11 @@ impl RewriteRule for IxScanEq {
                             arg: Sarg::Eq(col_id, v),
                         },
                         var,
-                    );
+                    ));
                 }
             }
         }
-        unreachable!()
+        bail!("{INVARIANT_VIOLATION}: Failed to create single column index scan from equality condition")
     }
 }
 
@@ -430,12 +438,12 @@ impl RewriteRule for IxScanAnd {
         None
     }
 
-    fn rewrite(plan: PhysicalPlan, (index_id, i, col_id): Self::Info) -> PhysicalPlan {
+    fn rewrite(plan: PhysicalPlan, (index_id, i, col_id): Self::Info) -> Result<PhysicalPlan> {
         if let PhysicalPlan::Filter(input, PhysicalExpr::LogOp(LogOp::And, mut exprs)) = plan {
             if let PhysicalPlan::TableScan(schema, label, None) = *input {
                 if let PhysicalExpr::BinOp(BinOp::Eq, _, value) = exprs.swap_remove(i) {
                     if let PhysicalExpr::Value(v) = *value {
-                        return PhysicalPlan::Filter(
+                        return Ok(PhysicalPlan::Filter(
                             Box::new(PhysicalPlan::IxScan(
                                 IxScan {
                                     schema,
@@ -449,12 +457,12 @@ impl RewriteRule for IxScanAnd {
                                 1 => exprs.swap_remove(0),
                                 _ => PhysicalExpr::LogOp(LogOp::And, exprs),
                             },
-                        );
+                        ));
                     }
                 }
             }
         }
-        unreachable!()
+        bail!("{INVARIANT_VIOLATION}: Failed to create single column index scan from conjunction")
     }
 }
 
@@ -474,64 +482,49 @@ impl RewriteRule for IxScanEq2Col {
     type Info = IxScanInfo;
 
     fn matches(plan: &PhysicalPlan) -> Option<Self::Info> {
-        if let PhysicalPlan::Filter(input, PhysicalExpr::LogOp(LogOp::And, exprs)) = plan {
-            if let PhysicalPlan::TableScan(schema, _, None) = &**input {
-                for (i, a) in exprs.iter().enumerate() {
-                    for (j, b) in exprs.iter().enumerate().filter(|(j, _)| i != *j) {
-                        if let (PhysicalExpr::BinOp(BinOp::Eq, a, u), PhysicalExpr::BinOp(BinOp::Eq, b, v)) = (a, b) {
-                            if let (
-                                PhysicalExpr::Field(u),
-                                PhysicalExpr::Value(_),
-                                PhysicalExpr::Field(v),
-                                PhysicalExpr::Value(_),
-                            ) = (&**a, &**u, &**b, &**v)
-                            {
-                                return schema
-                                    .indexes
-                                    .iter()
-                                    .filter(|IndexSchema { index_algorithm, .. }| {
-                                        // TODO: Support prefix scans
-                                        index_algorithm.columns().len() == 2
-                                    })
-                                    .find_map(
-                                        |IndexSchema {
-                                             index_id,
-                                             index_algorithm,
-                                             ..
-                                         }| {
-                                            Some(IxScanInfo {
-                                                index_id: *index_id,
-                                                cols: vec![
-                                                    (
-                                                        i,
-                                                        index_algorithm
-                                                            .columns()
-                                                            .iter()
-                                                            .next()
-                                                            .filter(|col_id| col_id.idx() == u.field_pos)?,
-                                                    ),
-                                                    (
-                                                        j,
-                                                        index_algorithm
-                                                            .columns()
-                                                            .iter()
-                                                            .nth(1)
-                                                            .filter(|col_id| col_id.idx() == v.field_pos)?,
-                                                    ),
-                                                ],
-                                            })
-                                        },
-                                    );
-                            }
-                        }
-                    }
+        let PhysicalPlan::Filter(input, PhysicalExpr::LogOp(LogOp::And, exprs)) = plan else {
+            return None;
+        };
+
+        let PhysicalPlan::TableScan(schema, _, None) = &**input else {
+            return None;
+        };
+
+        for (i, a) in exprs.iter().enumerate() {
+            for (j, b) in exprs.iter().enumerate().filter(|(j, _)| i != *j) {
+                let (PhysicalExpr::BinOp(BinOp::Eq, a, u), PhysicalExpr::BinOp(BinOp::Eq, b, v)) = (a, b) else {
+                    continue;
+                };
+
+                let (PhysicalExpr::Field(u), PhysicalExpr::Value(_), PhysicalExpr::Field(v), PhysicalExpr::Value(_)) =
+                    (&**a, &**u, &**b, &**v)
+                else {
+                    continue;
+                };
+
+                if let Some(scan) = schema
+                    .indexes
+                    .iter()
+                    .filter(|idx| idx.index_algorithm.columns().len() == 2) // TODO: Support prefix scans
+                    .find_map(|idx| {
+                        Some(IxScanInfo {
+                            index_id: idx.index_id,
+                            cols: vec![
+                                (i, idx.index_algorithm.find_col_index(u.field_pos)?),
+                                (j, idx.index_algorithm.find_col_index(v.field_pos)?),
+                            ],
+                        })
+                    })
+                {
+                    return Some(scan);
                 }
             }
         }
+
         None
     }
 
-    fn rewrite(plan: PhysicalPlan, info: Self::Info) -> PhysicalPlan {
+    fn rewrite(plan: PhysicalPlan, info: Self::Info) -> Result<PhysicalPlan> {
         match info.cols.as_slice() {
             [(i, a), (j, b)] => {
                 if let PhysicalPlan::Filter(input, PhysicalExpr::LogOp(LogOp::And, exprs)) = plan {
@@ -542,7 +535,10 @@ impl RewriteRule for IxScanEq2Col {
                         ) = (exprs.get(*i), exprs.get(*j))
                         {
                             if let (PhysicalExpr::Value(u), PhysicalExpr::Value(v)) = (&**u, &**v) {
-                                return match exprs.len() {
+                                return Ok(match exprs.len() {
+                                    n @ 0 | n @ 1 => {
+                                        bail!("{INVARIANT_VIOLATION}: Cannot create 2-column index scan from {n} conditions")
+                                    }
                                     // If there are only 2 conditions in this filter,
                                     // we replace the filter with an index scan.
                                     2 => PhysicalPlan::IxScan(
@@ -599,14 +595,14 @@ impl RewriteRule for IxScanEq2Col {
                                                 .collect(),
                                         ),
                                     ),
-                                };
+                                });
                             }
                         }
                     }
                 }
-                unreachable!()
+                bail!("{INVARIANT_VIOLATION}: Failed to create 2-column index scan")
             }
-            _ => plan,
+            _ => Ok(plan),
         }
     }
 }
@@ -627,81 +623,64 @@ impl RewriteRule for IxScanEq3Col {
     type Info = IxScanInfo;
 
     fn matches(plan: &PhysicalPlan) -> Option<Self::Info> {
-        if let PhysicalPlan::Filter(input, PhysicalExpr::LogOp(LogOp::And, exprs)) = plan {
-            if let PhysicalPlan::TableScan(schema, _, None) = &**input {
-                for (i, a) in exprs.iter().enumerate() {
-                    for (j, b) in exprs.iter().enumerate().filter(|(j, _)| i != *j) {
-                        for (k, c) in exprs.iter().enumerate().filter(|(k, _)| i != *k && j != *k) {
-                            if let (
-                                PhysicalExpr::BinOp(BinOp::Eq, a, u),
-                                PhysicalExpr::BinOp(BinOp::Eq, b, v),
-                                PhysicalExpr::BinOp(BinOp::Eq, c, w),
-                            ) = (a, b, c)
-                            {
-                                if let (
-                                    PhysicalExpr::Field(u),
-                                    PhysicalExpr::Value(_),
-                                    PhysicalExpr::Field(v),
-                                    PhysicalExpr::Value(_),
-                                    PhysicalExpr::Field(w),
-                                    PhysicalExpr::Value(_),
-                                ) = (&**a, &**u, &**b, &**v, &**c, &**w)
-                                {
-                                    return schema
-                                        .indexes
-                                        .iter()
-                                        .filter(|IndexSchema { index_algorithm, .. }| {
-                                            // TODO: Support prefix scans
-                                            index_algorithm.columns().len() == 3
-                                        })
-                                        .find_map(
-                                            |IndexSchema {
-                                                 index_id,
-                                                 index_algorithm,
-                                                 ..
-                                             }| {
-                                                Some(IxScanInfo {
-                                                    index_id: *index_id,
-                                                    cols: vec![
-                                                        (
-                                                            i,
-                                                            index_algorithm
-                                                                .columns()
-                                                                .iter()
-                                                                .next()
-                                                                .filter(|col_id| col_id.idx() == u.field_pos)?,
-                                                        ),
-                                                        (
-                                                            j,
-                                                            index_algorithm
-                                                                .columns()
-                                                                .iter()
-                                                                .nth(1)
-                                                                .filter(|col_id| col_id.idx() == v.field_pos)?,
-                                                        ),
-                                                        (
-                                                            k,
-                                                            index_algorithm
-                                                                .columns()
-                                                                .iter()
-                                                                .nth(2)
-                                                                .filter(|col_id| col_id.idx() == w.field_pos)?,
-                                                        ),
-                                                    ],
-                                                })
-                                            },
-                                        );
-                                }
-                            }
-                        }
+        // Match outer plan structure
+        let PhysicalPlan::Filter(input, PhysicalExpr::LogOp(LogOp::And, exprs)) = plan else {
+            return None;
+        };
+
+        let PhysicalPlan::TableScan(schema, _, None) = &**input else {
+            return None;
+        };
+
+        for (i, a) in exprs.iter().enumerate() {
+            for (j, b) in exprs.iter().enumerate().filter(|(j, _)| i != *j) {
+                for (k, c) in exprs.iter().enumerate().filter(|(k, _)| i != *k && j != *k) {
+                    let (
+                        PhysicalExpr::BinOp(BinOp::Eq, a, u),
+                        PhysicalExpr::BinOp(BinOp::Eq, b, v),
+                        PhysicalExpr::BinOp(BinOp::Eq, c, w),
+                    ) = (a, b, c)
+                    else {
+                        continue;
+                    };
+
+                    let (
+                        PhysicalExpr::Field(u),
+                        PhysicalExpr::Value(_),
+                        PhysicalExpr::Field(v),
+                        PhysicalExpr::Value(_),
+                        PhysicalExpr::Field(w),
+                        PhysicalExpr::Value(_),
+                    ) = (&**a, &**u, &**b, &**v, &**c, &**w)
+                    else {
+                        continue;
+                    };
+
+                    if let Some(scan) = schema
+                        .indexes
+                        .iter()
+                        .filter(|idx| idx.index_algorithm.columns().len() == 3)
+                        .find_map(|idx| {
+                            Some(IxScanInfo {
+                                index_id: idx.index_id,
+                                cols: vec![
+                                    (i, idx.index_algorithm.find_col_index(u.field_pos)?),
+                                    (j, idx.index_algorithm.find_col_index(v.field_pos)?),
+                                    (k, idx.index_algorithm.find_col_index(w.field_pos)?),
+                                ],
+                            })
+                        })
+                    {
+                        return Some(scan);
                     }
                 }
             }
         }
+
         None
     }
 
-    fn rewrite(plan: PhysicalPlan, info: Self::Info) -> PhysicalPlan {
+    fn rewrite(plan: PhysicalPlan, info: Self::Info) -> Result<PhysicalPlan> {
         match info.cols.as_slice() {
             [(i, a), (j, b), (k, c)] => {
                 if let PhysicalPlan::Filter(input, PhysicalExpr::LogOp(LogOp::And, exprs)) = plan {
@@ -715,7 +694,10 @@ impl RewriteRule for IxScanEq3Col {
                             if let (PhysicalExpr::Value(u), PhysicalExpr::Value(v), PhysicalExpr::Value(w)) =
                                 (&**u, &**v, &**w)
                             {
-                                return match exprs.len() {
+                                return Ok(match exprs.len() {
+                                    n @ 0 | n @ 1 | n @ 2 => {
+                                        bail!("{INVARIANT_VIOLATION}: Cannot create 3-column index scan from {n} conditions")
+                                    }
                                     // If there are only 3 conditions in this filter,
                                     // we replace the filter with an index scan.
                                     3 => PhysicalPlan::IxScan(
@@ -772,14 +754,14 @@ impl RewriteRule for IxScanEq3Col {
                                                 .collect(),
                                         ),
                                     ),
-                                };
+                                });
                             }
                         }
                     }
                 }
-                unreachable!()
+                bail!("{INVARIANT_VIOLATION}: Failed to create 3-column index scan")
             }
-            _ => plan,
+            _ => Ok(plan),
         }
     }
 }
@@ -817,9 +799,9 @@ impl RewriteRule for ReorderHashJoin {
         }
     }
 
-    fn rewrite(plan: Self::Plan, _: Self::Info) -> Self::Plan {
+    fn rewrite(plan: Self::Plan, _: Self::Info) -> Result<Self::Plan> {
         match plan {
-            PhysicalPlan::HashJoin(join, Semi::All) => PhysicalPlan::HashJoin(
+            PhysicalPlan::HashJoin(join, Semi::All) => Ok(PhysicalPlan::HashJoin(
                 HashJoin {
                     lhs: join.rhs,
                     rhs: join.lhs,
@@ -828,8 +810,8 @@ impl RewriteRule for ReorderHashJoin {
                     unique: false,
                 },
                 Semi::All,
-            ),
-            _ => plan,
+            )),
+            _ => Ok(plan),
         }
     }
 }
@@ -868,17 +850,17 @@ impl RewriteRule for ReorderDeltaJoinRhs {
         None
     }
 
-    fn rewrite(plan: Self::Plan, _: Self::Info) -> Self::Plan {
+    fn rewrite(plan: Self::Plan, _: Self::Info) -> Result<Self::Plan> {
         match plan {
-            PhysicalPlan::HashJoin(join, Semi::All) => PhysicalPlan::HashJoin(
+            PhysicalPlan::HashJoin(join, Semi::All) => Ok(PhysicalPlan::HashJoin(
                 HashJoin {
                     lhs: join.rhs,
                     rhs: join.lhs,
                     ..join
                 },
                 Semi::All,
-            ),
-            _ => plan,
+            )),
+            _ => Ok(plan),
         }
     }
 }
@@ -934,10 +916,10 @@ impl RewriteRule for PullFilterAboveHashJoin {
         None
     }
 
-    fn rewrite(plan: Self::Plan, _: Self::Info) -> Self::Plan {
+    fn rewrite(plan: Self::Plan, _: Self::Info) -> Result<Self::Plan> {
         if let PhysicalPlan::HashJoin(join, semi) = plan {
             if let PhysicalPlan::Filter(rhs, expr) = *join.rhs {
-                return PhysicalPlan::Filter(
+                return Ok(PhysicalPlan::Filter(
                     Box::new(PhysicalPlan::HashJoin(
                         HashJoin {
                             lhs: join.lhs,
@@ -947,10 +929,10 @@ impl RewriteRule for PullFilterAboveHashJoin {
                         semi,
                     )),
                     expr,
-                );
+                ));
             }
         }
-        unreachable!()
+        bail!("{INVARIANT_VIOLATION}: Failed to pull filter above hash join")
     }
 }
 
@@ -988,10 +970,10 @@ impl RewriteRule for HashToIxJoin {
         None
     }
 
-    fn rewrite(plan: PhysicalPlan, (rhs_index, rhs_field): Self::Info) -> PhysicalPlan {
+    fn rewrite(plan: PhysicalPlan, (rhs_index, rhs_field): Self::Info) -> Result<PhysicalPlan> {
         if let PhysicalPlan::HashJoin(join, semi) = plan {
             if let PhysicalPlan::TableScan(rhs, rhs_label, None) = *join.rhs {
-                return PhysicalPlan::IxJoin(
+                return Ok(PhysicalPlan::IxJoin(
                     IxJoin {
                         lhs: join.lhs,
                         rhs,
@@ -1002,10 +984,10 @@ impl RewriteRule for HashToIxJoin {
                         lhs_field: join.lhs_field,
                     },
                     semi,
-                );
+                ));
             }
         }
-        unreachable!()
+        bail!("{INVARIANT_VIOLATION}: Failed to rewrite hash join as index join")
     }
 }
 
@@ -1038,11 +1020,11 @@ impl RewriteRule for UniqueIxJoinRule {
         None
     }
 
-    fn rewrite(mut plan: PhysicalPlan, _: Self::Info) -> PhysicalPlan {
+    fn rewrite(mut plan: PhysicalPlan, _: Self::Info) -> Result<PhysicalPlan> {
         if let PhysicalPlan::IxJoin(IxJoin { unique, .. }, _) = &mut plan {
             *unique = true;
         }
-        plan
+        Ok(plan)
     }
 }
 
@@ -1076,10 +1058,10 @@ impl RewriteRule for UniqueHashJoinRule {
         None
     }
 
-    fn rewrite(mut plan: PhysicalPlan, _: Self::Info) -> PhysicalPlan {
+    fn rewrite(mut plan: PhysicalPlan, _: Self::Info) -> Result<PhysicalPlan> {
         if let PhysicalPlan::HashJoin(HashJoin { unique, .. }, _) = &mut plan {
             *unique = true;
         }
-        plan
+        Ok(plan)
     }
 }

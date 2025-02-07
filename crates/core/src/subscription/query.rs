@@ -6,7 +6,7 @@ use crate::subscription::subscription::SupportedQuery;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_query::delta::DeltaPlan;
+use spacetimedb_subscription::SubscriptionPlan;
 use spacetimedb_vm::expr::{self, Crud, CrudExpr, QueryExpr};
 
 use super::execution_unit::QueryHash;
@@ -79,10 +79,10 @@ pub fn compile_read_only_query(auth: &AuthCtx, tx: &Tx, input: &str) -> Result<P
     let input = WHITESPACE.replace_all(input, " ");
 
     let tx = SchemaViewer::new(tx, auth);
-    let plan = DeltaPlan::compile(&input, &tx)?;
+    let plan = SubscriptionPlan::compile(&input, &tx)?;
     let hash = QueryHash::from_string(&input);
 
-    Ok(Plan::new(plan, hash))
+    Ok(Plan::new(plan, hash, input.into_owned()))
 }
 
 /// The kind of [`QueryExpr`] currently supported for incremental evaluation.
@@ -676,13 +676,13 @@ mod tests {
         })
     }
 
-    fn compile_query(db: &RelationalDB) -> ResultTest<DeltaPlan> {
+    fn compile_query(db: &RelationalDB) -> ResultTest<SubscriptionPlan> {
         db.with_read_only(Workload::ForTests, |tx| {
             let auth = AuthCtx::for_testing();
             let tx = SchemaViewer::new(tx, &auth);
             // Should be answered using an index semijion
             let sql = "select lhs.* from lhs join rhs on lhs.id = rhs.id where rhs.y >= 2 and rhs.y <= 4";
-            Ok(DeltaPlan::compile(sql, &tx).unwrap())
+            Ok(SubscriptionPlan::compile(sql, &tx).unwrap())
         })
     }
 
@@ -735,7 +735,7 @@ mod tests {
     fn eval_incr(
         db: &RelationalDB,
         metrics: &mut ExecutionMetrics,
-        plan: &DeltaPlan,
+        plan: &SubscriptionPlan,
         ops: Vec<(TableId, ProductValue, bool)>,
     ) -> ResultTest<DatabaseUpdate> {
         let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
@@ -749,11 +749,10 @@ mod tests {
         }
 
         let (data, tx) = tx.commit_downgrade(Workload::ForTests);
-        let table_id = plan.table_id();
-        let table_name = plan.table_name();
+        let table_id = plan.subscribed_table_id();
+        let table_name = plan.subscribed_table_name().into();
         let tx = DeltaTx::new(&tx, &data);
-        let evaluator = plan.evaluator(&tx);
-        let updates = eval_delta(&tx, metrics, &evaluator).unwrap();
+        let updates = eval_delta(&tx, metrics, plan).unwrap();
 
         let inserts = updates
             .inserts

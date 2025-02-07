@@ -6,7 +6,7 @@ pub mod errno;
 mod ids;
 
 pub use attr::{AttributeKind, ColumnAttribute, ConstraintKind, Constraints};
-pub use col_list::{ColList, ColSet};
+pub use col_list::{ColList, ColOrCols, ColSet};
 pub use ids::{ColId, ConstraintId, IndexId, ReducerId, ScheduleId, SequenceId, TableId};
 
 /// The minimum size of a chunk yielded by a wasm abi RowIter.
