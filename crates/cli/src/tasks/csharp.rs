@@ -74,7 +74,7 @@ pub(crate) fn build_csharp(project_path: &Path, build_debug: bool) -> anyhow::Re
     } else {
         "AppBundle"
     };
-
+    // TODO: This code looks for build outputs in both `bin` and `bin~` as output directories. @bfops feels like we shouldn't have to look for `bin~`, since the `~` suffix is just intended to cause Unity to ignore directories, and that shouldn't be relevant here. We do think we've seen `bin~` appear though, and it's not harmful to do the extra checks, so we're merging for now due to imminent code freeze. At some point, it would be good to figure out if we do actually see `bin~` in module directories, and where that's coming from (which could suggest a bug).
     // check for the old .NET 7 path for projects that haven't migrated yet
     let bad_output_paths = [
         project_path.join(format!("bin/{config_name}/net7.0/StdbModule.wasm")),
