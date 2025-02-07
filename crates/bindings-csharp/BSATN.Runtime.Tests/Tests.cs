@@ -136,7 +136,7 @@ public static class BSATNRuntimeTests
     {
         // n.b. 32 chars long
         Assert.ThrowsAny<Exception>(
-                                    () => ConnectionId.FromHexString("these are not hex characters....")
+            () => ConnectionId.FromHexString("these are not hex characters....")
         );
     }
 

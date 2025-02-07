@@ -157,7 +157,8 @@ public readonly record struct ConnectionId
     /// </summary>
     /// <param name="hex"></param>
     /// <returns></returns>
-    public static ConnectionId? FromHexString(string hex) => FromBigEndian(Util.StringToByteArray(hex));
+    public static ConnectionId? FromHexString(string hex) =>
+        FromBigEndian(Util.StringToByteArray(hex));
 
     public static ConnectionId Random()
     {
