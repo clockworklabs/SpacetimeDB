@@ -1,6 +1,6 @@
 use crate::common_args;
 use crate::config::Config;
-use crate::util::{add_auth_header_opt, database_identity, get_auth_header, print_unstable_warning, UNSTABLE_HELPTEXT};
+use crate::util::{add_auth_header_opt, database_identity, get_auth_header, UNSTABLE_HELPTEXT};
 use clap::{Arg, ArgMatches};
 
 pub fn cli() -> clap::Command {
@@ -31,7 +31,7 @@ pub fn cli() -> clap::Command {
 }
 
 pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    print_unstable_warning();
+    println!("{}", UNSTABLE_HELPTEXT);
 
     let database = args.get_one::<String>("database").unwrap();
     let entity_name = args.get_one::<String>("entity_name");

@@ -1,8 +1,7 @@
 use crate::{
     common_args,
     util::{
-        host_or_url_to_host_and_protocol, print_unstable_warning, spacetime_server_fingerprint, y_or_n,
-        UNSTABLE_HELPTEXT, VALID_PROTOCOLS,
+        host_or_url_to_host_and_protocol, spacetime_server_fingerprint, y_or_n, UNSTABLE_HELPTEXT, VALID_PROTOCOLS,
     },
     Config,
 };
@@ -119,7 +118,7 @@ fn get_subcommands() -> Vec<Command> {
 
 pub async fn exec(config: Config, paths: &SpacetimePaths, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let (cmd, subcommand_args) = args.subcommand().expect("Subcommand required");
-    print_unstable_warning();
+    println!("{}", UNSTABLE_HELPTEXT);
     exec_subcommand(config, paths, cmd, subcommand_args).await
 }
 

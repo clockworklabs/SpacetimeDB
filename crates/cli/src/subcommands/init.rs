@@ -1,4 +1,4 @@
-use crate::util::{print_unstable_warning, ModuleLanguage};
+use crate::util::ModuleLanguage;
 use crate::Config;
 use crate::{detect::find_executable, util::UNSTABLE_HELPTEXT};
 use anyhow::Context;
@@ -114,7 +114,7 @@ fn check_for_git() -> bool {
 }
 
 pub async fn exec(_config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    print_unstable_warning();
+    println!("{}", UNSTABLE_HELPTEXT);
 
     let project_path = args.get_one::<PathBuf>("project-path").unwrap();
     let project_lang = *args.get_one::<ModuleLanguage>("lang").unwrap();

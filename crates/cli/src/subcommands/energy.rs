@@ -3,7 +3,7 @@ use crate::common_args;
 use clap::ArgMatches;
 
 use crate::config::Config;
-use crate::util::{self, get_login_token_or_log_in, print_unstable_warning, UNSTABLE_HELPTEXT};
+use crate::util::{self, get_login_token_or_log_in, UNSTABLE_HELPTEXT};
 
 pub fn cli() -> clap::Command {
     clap::Command::new("energy")
@@ -42,7 +42,7 @@ async fn exec_subcommand(config: Config, cmd: &str, args: &ArgMatches) -> Result
 
 pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let (cmd, subcommand_args) = args.subcommand().expect("Subcommand required");
-    print_unstable_warning();
+    println!("{}", UNSTABLE_HELPTEXT);
     exec_subcommand(config, cmd, subcommand_args).await
 }
 

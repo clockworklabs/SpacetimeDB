@@ -1,7 +1,6 @@
 use crate::common_args;
 use crate::util;
 use crate::util::get_login_token_or_log_in;
-use crate::util::print_unstable_warning;
 use crate::util::UNSTABLE_HELPTEXT;
 use crate::Config;
 use clap::{ArgMatches, Command};
@@ -35,7 +34,7 @@ struct IdentityRow {
 }
 
 pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    print_unstable_warning();
+    println!("{}", UNSTABLE_HELPTEXT);
 
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
     let force = args.get_flag("force");

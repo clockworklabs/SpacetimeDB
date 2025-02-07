@@ -17,11 +17,15 @@ use tokio_tungstenite::tungstenite::Message as WsMessage;
 use crate::api::ClientApi;
 use crate::common_args;
 use crate::sql::parse_req;
+use crate::util::UNSTABLE_HELPTEXT;
 use crate::Config;
 
 pub fn cli() -> clap::Command {
     clap::Command::new("subscribe")
-        .about("Subscribe to SQL queries on the database.")
+        .about(format!(
+            "Subscribe to SQL queries on the database.\n\n{}",
+            UNSTABLE_HELPTEXT
+        ))
         .arg(
             Arg::new("database")
                 .required(true)
@@ -121,6 +125,8 @@ struct SubscriptionTable {
 }
 
 pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+    println!("{}", UNSTABLE_HELPTEXT);
+
     let queries = args.get_many::<String>("query").unwrap();
     let num = args.get_one::<u32>("num-updates").copied();
     let timeout = args.get_one::<u32>("timeout").copied();

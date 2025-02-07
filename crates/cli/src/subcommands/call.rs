@@ -1,7 +1,7 @@
 use crate::common_args;
 use crate::config::Config;
 use crate::edit_distance::{edit_distance, find_best_match_for_name};
-use crate::util::{self, print_unstable_warning, UNSTABLE_HELPTEXT};
+use crate::util::{self, UNSTABLE_HELPTEXT};
 use crate::util::{add_auth_header_opt, database_identity, get_auth_header};
 use anyhow::{bail, Context, Error};
 use clap::{Arg, ArgMatches};
@@ -38,7 +38,7 @@ pub fn cli() -> clap::Command {
 }
 
 pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), Error> {
-    print_unstable_warning();
+    println!("{}", UNSTABLE_HELPTEXT);
     let database = args.get_one::<String>("database").unwrap();
     let reducer_name = args.get_one::<String>("reducer_name").unwrap();
     let arguments = args.get_many::<String>("arguments");

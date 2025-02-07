@@ -15,11 +15,7 @@ use std::path::Path;
 use crate::config::Config;
 use crate::login::{spacetimedb_login_force, DEFAULT_AUTH_HOST};
 
-pub const UNSTABLE_HELPTEXT: &str = "This command is UNSTABLE and subject to breaking changes.";
-
-pub fn print_unstable_warning() {
-    println!("WARNING: {}", UNSTABLE_HELPTEXT);
-}
+pub const UNSTABLE_HELPTEXT: &str = "WARNING: This command is UNSTABLE and subject to breaking changes.";
 
 /// Determine the identity of the `database`.
 pub async fn database_identity(
