@@ -42,7 +42,8 @@ public static class Module
     private static readonly RawModuleDefV9 moduleDef = new();
     private static readonly List<IReducer> reducers = [];
 
-    private static Func<Identity, ConnectionId?, Random, Timestamp, IReducerContext>? newContext = null;
+    private static Func<Identity, ConnectionId?, Random, Timestamp, IReducerContext>? newContext =
+        null;
 
     public static void SetReducerContextConstructor(
         Func<Identity, ConnectionId?, Random, Timestamp, IReducerContext> ctor

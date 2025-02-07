@@ -191,7 +191,7 @@ public readonly record struct ConnectionId
             new AlgebraicType.Product(
                 [
                     // Using this specific name here is important.
-                    new("__connection_id__", new AlgebraicType.U128(default))
+                    new("__connection_id__", new AlgebraicType.U128(default)),
                 ]
             );
         // --- / customized ---
