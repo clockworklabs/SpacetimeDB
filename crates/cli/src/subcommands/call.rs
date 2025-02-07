@@ -1,7 +1,7 @@
 use crate::common_args;
 use crate::config::Config;
 use crate::edit_distance::{edit_distance, find_best_match_for_name};
-use crate::util;
+use crate::util::{self, print_unstable_warning, UNSTABLE_HELPTEXT};
 use crate::util::{add_auth_header_opt, database_identity, get_auth_header};
 use anyhow::{bail, Context, Error};
 use clap::{Arg, ArgMatches};
@@ -16,7 +16,10 @@ use std::iter;
 
 pub fn cli() -> clap::Command {
     clap::Command::new("call")
-        .about("Invokes a reducer function in a database")
+        .about(format!(
+            "Invokes a reducer function in a database.\n\n{}",
+            UNSTABLE_HELPTEXT
+        ))
         .arg(
             Arg::new("database")
                 .required(true)
@@ -35,6 +38,7 @@ pub fn cli() -> clap::Command {
 }
 
 pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), Error> {
+    print_unstable_warning();
     let database = args.get_one::<String>("database").unwrap();
     let reducer_name = args.get_one::<String>("reducer_name").unwrap();
     let arguments = args.get_many::<String>("arguments");
