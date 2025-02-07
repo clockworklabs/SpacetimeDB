@@ -143,6 +143,10 @@ impl SubscriptionManager {
         self.queries.get(hash).map(|state| state.query.clone())
     }
 
+    /// Return all clients that are subscribed to a particular query.
+    /// Note this method filters out clients that have been dropped.
+    /// If you need all clients currently maintained by the manager,
+    /// regardless of drop status, do not use this method.
     pub fn clients_for_query(&self, hash: &QueryHash) -> impl Iterator<Item = &ClientId> {
         self.queries
             .get(hash)
