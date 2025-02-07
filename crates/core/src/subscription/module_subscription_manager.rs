@@ -1,6 +1,9 @@
 use super::execution_unit::QueryHash;
 use super::tx::DeltaTx;
-use crate::client::messages::{SubscriptionUpdateMessage, TransactionUpdateMessage};
+use crate::client::messages::{
+    SerializableMessage, SubscriptionError, SubscriptionMessage, SubscriptionResult, SubscriptionUpdateMessage,
+    TransactionUpdateMessage,
+};
 use crate::client::{ClientConnectionSender, Protocol};
 use crate::error::DBError;
 use crate::execution_context::WorkloadType;
@@ -9,16 +12,18 @@ use crate::messages::websocket::{self as ws, TableUpdate};
 use crate::subscription::delta::eval_delta;
 use crate::subscription::record_exec_metrics;
 use hashbrown::hash_map::OccupiedError;
+use hashbrown::{HashMap, HashSet};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use spacetimedb_client_api_messages::websocket::{
     BsatnFormat, CompressableQueryUpdate, FormatSwitch, JsonFormat, QueryId, QueryUpdate, WebsocketFormat,
 };
-use spacetimedb_data_structures::map::{Entry, HashCollectionExt, HashMap, HashSet, IntMap};
+use spacetimedb_data_structures::map::{Entry, IntMap};
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::{Address, Identity};
 use spacetimedb_primitives::TableId;
 use spacetimedb_subscription::SubscriptionPlan;
 use std::ops::Deref;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 /// Clients are uniquely identified by their Identity and Address.
@@ -66,6 +71,9 @@ struct ClientInfo {
     subscriptions: HashMap<SubscriptionId, QueryHash>,
     // This should be removed when we migrate to SubscribeSingle.
     legacy_subscriptions: HashSet<QueryHash>,
+    // This flag is set if an error occurs during a tx update.
+    // It will be cleaned up async or on resubscribe.
+    dropped: AtomicBool,
 }
 
 impl ClientInfo {
@@ -74,6 +82,7 @@ impl ClientInfo {
             outbound_ref,
             subscriptions: HashMap::default(),
             legacy_subscriptions: HashSet::default(),
+            dropped: AtomicBool::new(false),
         }
     }
 }
@@ -134,6 +143,22 @@ impl SubscriptionManager {
         self.queries.get(hash).map(|state| state.query.clone())
     }
 
+    /// Return all clients that are subscribed to a particular query.
+    /// Note this method filters out clients that have been dropped.
+    /// If you need all clients currently maintained by the manager,
+    /// regardless of drop status, do not use this method.
+    pub fn clients_for_query(&self, hash: &QueryHash) -> impl Iterator<Item = &ClientId> {
+        self.queries
+            .get(hash)
+            .into_iter()
+            .flat_map(|query| query.all_clients())
+            .filter(|id| {
+                self.clients
+                    .get(*id)
+                    .is_some_and(|info| !info.dropped.load(Ordering::Acquire))
+            })
+    }
+
     pub fn num_unique_queries(&self) -> usize {
         self.queries.len()
     }
@@ -182,14 +207,28 @@ impl SubscriptionManager {
         }
     }
 
+    /// Remove any clients that have been marked for removal
+    pub fn remove_dropped_clients(&mut self) {
+        for id in self.clients.keys().copied().collect::<Vec<_>>() {
+            if let Some(client) = self.clients.get(&id) {
+                if client.dropped.load(Ordering::Relaxed) {
+                    self.remove_all_subscriptions(&id);
+                }
+            }
+        }
+    }
+
     /// Remove a single subscription for a client.
     /// This will return an error if the client does not have a subscription with the given query id.
     pub fn remove_subscription(&mut self, client_id: ClientId, query_id: ClientQueryId) -> Result<Query, DBError> {
         let subscription_id = (client_id, query_id);
-        let Some(ci) = self.clients.get_mut(&client_id) else {
+        let Some(ci) = self
+            .clients
+            .get_mut(&client_id)
+            .filter(|ci| !ci.dropped.load(Ordering::Acquire))
+        else {
             return Err(anyhow::anyhow!("Client not found: {:?}", client_id).into());
         };
-
         let Some(query_hash) = ci.subscriptions.remove(&subscription_id) else {
             return Err(anyhow::anyhow!("Subscription not found: {:?}", subscription_id).into());
         };
@@ -209,6 +248,16 @@ impl SubscriptionManager {
     /// Adds a single subscription for a client.
     pub fn add_subscription(&mut self, client: Client, query: Query, query_id: ClientQueryId) -> Result<(), DBError> {
         let client_id = (client.id.identity, client.id.address);
+
+        // Clean up any dropped subscriptions
+        if self
+            .clients
+            .get(&client_id)
+            .is_some_and(|ci| ci.dropped.load(Ordering::Acquire))
+        {
+            self.remove_all_subscriptions(&client_id);
+        }
+
         let ci = self
             .clients
             .entry(client_id)
@@ -333,7 +382,7 @@ impl SubscriptionManager {
         // Put the main work on a rayon compute thread.
         rayon::scope(|_| {
             let span = tracing::info_span!("eval_incr").entered();
-            let (updates, metrics) = tables
+            let (updates, errs, metrics) = tables
                 .iter()
                 .filter(|table| !table.inserts.is_empty() || !table.deletes.is_empty())
                 .map(|DatabaseTableUpdate { table_id, .. }| table_id)
@@ -385,26 +434,19 @@ impl SubscriptionManager {
                         (update, num_rows)
                     }
 
-                    let delta_updates_opt = match eval_delta(tx, &mut metrics, plan) {
-                        Ok(delta_updates) => Some(delta_updates),
-                        Err(err) => {
-                            // TODO: Handle errors instead of just logging them
+                    let updates = eval_delta(tx, &mut metrics, plan)
+                        .map_err(|err| {
                             tracing::error!(
                                 message = "Query errored during tx update",
                                 sql = plan.sql,
                                 reason = ?err,
                             );
-                            None
-                        }
-                    };
-
-                    let updates = delta_updates_opt
-                        .filter(|delta_updates| delta_updates.has_updates())
+                            self.clients_for_query(hash)
+                                .map(|id| (id, err.to_string().into_boxed_str()))
+                                .collect::<Vec<_>>()
+                        })
                         .map(|delta_updates| {
-                            self.queries
-                                .get(hash)
-                                .into_iter()
-                                .flat_map(|query| query.all_clients())
+                            self.clients_for_query(hash)
                                 .map(|id| {
                                     let client = &self.clients[id].outbound_ref;
                                     let update = match client.config.protocol {
@@ -424,24 +466,41 @@ impl SubscriptionManager {
                                     (id, table_id, table_name.clone(), update)
                                 })
                                 .collect::<Vec<_>>()
-                        })
-                        .unwrap_or_default();
+                        });
 
                     (updates, metrics)
                 })
-                .reduce(
-                    || (vec![], ExecutionMetrics::default()),
-                    |(mut updates, mut aggregated_metrics), (table_upates, metrics)| {
-                        updates.extend(table_upates);
-                        aggregated_metrics.merge(metrics);
-                        (updates, aggregated_metrics)
+                .fold(
+                    || (vec![], vec![], ExecutionMetrics::default()),
+                    |(mut rows, mut errs, mut agg_metrics), (result, metrics)| {
+                        match result {
+                            Ok(x) => {
+                                rows.extend(x);
+                            }
+                            Err(x) => {
+                                errs.extend(x);
+                            }
+                        }
+                        agg_metrics.merge(metrics);
+                        (rows, errs, agg_metrics)
                     },
-                );
+                )
+                .reduce_with(|(mut acc_rows, mut acc_errs, mut acc_metrics), (rows, errs, metrics)| {
+                    acc_rows.extend(rows);
+                    acc_errs.extend(errs);
+                    acc_metrics.merge(metrics);
+                    (acc_rows, acc_errs, acc_metrics)
+                })
+                .unwrap_or_default();
 
             record_exec_metrics(&WorkloadType::Update, database_identity, metrics);
 
+            let clients_with_errors = errs.iter().map(|(id, _)| id).collect::<HashSet<_>>();
+
             let mut eval = updates
                 .into_iter()
+                // Filter out clients whose subscriptions failed
+                .filter(|(id, ..)| !clients_with_errors.contains(id))
                 // For each subscriber, aggregate all the updates for the same table.
                 // That is, we build a map `(subscriber_id, table_id) -> updates`.
                 // A particular subscriber uses only one format,
@@ -482,6 +541,8 @@ impl SubscriptionManager {
                         updates
                     },
                 );
+
+            drop(clients_with_errors);
             drop(span);
 
             let _span = tracing::info_span!("eval_send").entered();
@@ -493,33 +554,53 @@ impl SubscriptionManager {
             // is a full tx update, rather than a light one.
             // That is, in the case of the caller, we don't respect the light setting.
             if let Some((caller, addr)) = caller.zip(event.caller_address) {
-                let update = eval
+                let database_update = eval
                     .remove(&(event.caller_identity, addr))
                     .map(|update| SubscriptionUpdateMessage::from_event_and_update(&event, update))
                     .unwrap_or_else(|| {
                         SubscriptionUpdateMessage::default_for_protocol(caller.config.protocol, event.request_id)
                     });
-                send_to_client(caller, Some(event.clone()), update);
+                let message = TransactionUpdateMessage {
+                    event: Some(event.clone()),
+                    database_update,
+                };
+                send_to_client(caller, message);
             }
 
             // Send all the other updates.
             for (id, update) in eval {
-                let message = SubscriptionUpdateMessage::from_event_and_update(&event, update);
+                let database_update = SubscriptionUpdateMessage::from_event_and_update(&event, update);
                 let client = self.client(id);
                 // Conditionally send out a full update or a light one otherwise.
                 let event = client.config.tx_update_full.then(|| event.clone());
-                send_to_client(&client, event, message);
+                let message = TransactionUpdateMessage { event, database_update };
+                send_to_client(&client, message);
+            }
+
+            // Send error messages and mark clients for removal
+            for (id, message) in errs {
+                if let Some(client) = self.clients.get(id) {
+                    client.dropped.store(true, Ordering::Release);
+                    send_to_client(
+                        &client.outbound_ref,
+                        SubscriptionMessage {
+                            request_id: None,
+                            query_id: None,
+                            timer: None,
+                            result: SubscriptionResult::Error(SubscriptionError {
+                                table_id: None,
+                                message,
+                            }),
+                        },
+                    );
+                }
             }
         })
     }
 }
 
-fn send_to_client(
-    client: &ClientConnectionSender,
-    event: Option<Arc<ModuleEvent>>,
-    database_update: SubscriptionUpdateMessage,
-) {
-    if let Err(e) = client.send_message(TransactionUpdateMessage { event, database_update }) {
+fn send_to_client(client: &ClientConnectionSender, message: impl Into<SerializableMessage>) {
+    if let Err(e) = client.send_message(message) {
         tracing::warn!(%client.id, "failed to send update message to client: {e}")
     }
 }

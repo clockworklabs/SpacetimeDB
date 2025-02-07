@@ -43,10 +43,10 @@ type AssertTxFn = Arc<dyn Fn(&Tx)>;
 type SubscriptionUpdate = FormatSwitch<TableUpdate<BsatnFormat>, TableUpdate<JsonFormat>>;
 
 impl ModuleSubscriptions {
-    pub fn new(relational_db: Arc<RelationalDB>, owner_identity: Identity) -> Self {
+    pub fn new(relational_db: Arc<RelationalDB>, subscriptions: Subscriptions, owner_identity: Identity) -> Self {
         Self {
             relational_db,
-            subscriptions: Arc::new(RwLock::new(SubscriptionManager::default())),
+            subscriptions,
             owner_identity,
         }
     }
@@ -104,23 +104,41 @@ impl ModuleSubscriptions {
             let compiled = compile_read_only_query(&auth, &tx, sql)?;
             Ok(Arc::new(compiled))
         });
+
+        // Send an error message to the client
+        let send_err_msg = |message| {
+            sender.send_message(SubscriptionMessage {
+                request_id: Some(request.request_id),
+                query_id: Some(request.query_id),
+                timer: Some(timer),
+                result: SubscriptionResult::Error(SubscriptionError {
+                    table_id: None,
+                    message,
+                }),
+            })
+        };
+
+        // If compile error, send to client
         let query = match query {
             Ok(query) => query,
             Err(e) => {
-                let _ = sender.send_message(SubscriptionMessage {
-                    request_id: Some(request.request_id),
-                    query_id: Some(request.query_id),
-                    timer: Some(timer),
-                    result: SubscriptionResult::Error(SubscriptionError {
-                        table_id: None,
-                        message: e.to_string().into(),
-                    }),
-                });
+                // Apparently we ignore errors sending messages.
+                let _ = send_err_msg(e.to_string().into());
                 return Ok(());
             }
         };
 
-        let (table_rows, metrics) = self.evaluate_initial_subscription(sender.clone(), query.clone(), &tx, &auth)?;
+        let eval_result = self.evaluate_initial_subscription(sender.clone(), query.clone(), &tx, &auth);
+
+        // If execution error, send to client
+        let (table_rows, metrics) = match eval_result {
+            Ok(ok) => ok,
+            Err(e) => {
+                // Apparently we ignore errors sending messages.
+                let _ = send_err_msg(e.to_string().into());
+                return Ok(());
+            }
+        };
 
         record_exec_metrics(
             &WorkloadType::Subscribe,
@@ -167,20 +185,25 @@ impl ModuleSubscriptions {
         request: Unsubscribe,
         timer: Instant,
     ) -> Result<(), DBError> {
+        // Send an error message to the client
+        let send_err_msg = |message| {
+            sender.send_message(SubscriptionMessage {
+                request_id: Some(request.request_id),
+                query_id: Some(request.query_id),
+                timer: Some(timer),
+                result: SubscriptionResult::Error(SubscriptionError {
+                    table_id: None,
+                    message,
+                }),
+            })
+        };
+
         let mut subscriptions = self.subscriptions.write();
         let query = match subscriptions.remove_subscription((sender.id.identity, sender.id.address), request.query_id) {
             Ok(query) => query,
             Err(error) => {
                 // Apparently we ignore errors sending messages.
-                let _ = sender.send_message(SubscriptionMessage {
-                    request_id: Some(request.request_id),
-                    query_id: None,
-                    timer: Some(timer),
-                    result: SubscriptionResult::Error(SubscriptionError {
-                        table_id: None,
-                        message: error.to_string().into(),
-                    }),
-                });
+                let _ = send_err_msg(error.to_string().into());
                 return Ok(());
             }
         };
@@ -189,7 +212,17 @@ impl ModuleSubscriptions {
             self.relational_db.release_tx(tx);
         });
         let auth = AuthCtx::new(self.owner_identity, sender.id.identity);
-        let (table_rows, metrics) = self.evaluate_initial_subscription(sender.clone(), query.clone(), &tx, &auth)?;
+        let eval_result = self.evaluate_initial_subscription(sender.clone(), query.clone(), &tx, &auth);
+
+        // If execution error, send to client
+        let (table_rows, metrics) = match eval_result {
+            Ok(ok) => ok,
+            Err(e) => {
+                // Apparently we ignore errors sending messages.
+                let _ = send_err_msg(e.to_string().into());
+                return Ok(());
+            }
+        };
 
         record_exec_metrics(
             &WorkloadType::Subscribe,
@@ -391,14 +424,22 @@ pub struct WriteConflict;
 #[cfg(test)]
 mod tests {
     use super::{AssertTxFn, ModuleSubscriptions};
+    use crate::client::messages::{SerializableMessage, SubscriptionMessage, SubscriptionResult};
     use crate::client::{ClientActorId, ClientConfig, ClientConnectionSender};
+    use crate::db::datastore::traits::IsolationLevel;
     use crate::db::relational_db::tests_utils::{insert, TestDB};
     use crate::db::relational_db::RelationalDB;
     use crate::error::DBError;
     use crate::execution_context::Workload;
-    use spacetimedb_client_api_messages::websocket::Subscribe;
+    use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall};
+    use crate::subscription::module_subscription_manager::SubscriptionManager;
+    use parking_lot::RwLock;
+    use spacetimedb_client_api_messages::energy::EnergyQuanta;
+    use spacetimedb_client_api_messages::websocket::{QueryId, Subscribe, SubscribeSingle, Unsubscribe};
     use spacetimedb_lib::db::auth::StAccess;
+    use spacetimedb_lib::{bsatn, Timestamp};
     use spacetimedb_lib::{error::ResultTest, AlgebraicType, Identity};
+    use spacetimedb_primitives::{IndexId, TableId};
     use spacetimedb_sats::product;
     use std::time::Instant;
     use std::{sync::Arc, time::Duration};
@@ -409,13 +450,225 @@ mod tests {
         let client = ClientActorId::for_test(Identity::ZERO);
         let config = ClientConfig::for_test();
         let sender = Arc::new(ClientConnectionSender::dummy(client, config));
-        let module_subscriptions = ModuleSubscriptions::new(db.clone(), owner);
+        let module_subscriptions =
+            ModuleSubscriptions::new(db.clone(), Arc::new(RwLock::new(SubscriptionManager::default())), owner);
 
         let subscribe = Subscribe {
             query_strings: [sql.into()].into(),
             request_id: 0,
         };
         module_subscriptions.add_legacy_subscriber(sender, subscribe, Instant::now(), assert)
+    }
+
+    /// An in-memory `RelationalDB` for testing
+    fn relational_db() -> anyhow::Result<Arc<RelationalDB>> {
+        let TestDB { db, .. } = TestDB::in_memory()?;
+        Ok(Arc::new(db))
+    }
+
+    /// Initialize a module [SubscriptionManager]
+    fn module_subscriptions(db: Arc<RelationalDB>) -> ModuleSubscriptions {
+        ModuleSubscriptions::new(
+            db,
+            Arc::new(RwLock::new(SubscriptionManager::default())),
+            Identity::ZERO,
+        )
+    }
+
+    /// Return a client connection for testing
+    fn sender_with_rx() -> (Arc<ClientConnectionSender>, mpsc::Receiver<SerializableMessage>) {
+        let client = ClientActorId::for_test(Identity::ZERO);
+        let config = ClientConfig::for_test();
+        let (sender, rx) = ClientConnectionSender::dummy_with_channel(client, config);
+        (Arc::new(sender), rx)
+    }
+
+    /// A [SubscribeSingle] message for testing
+    fn single_subscribe(sql: &str, query_id: u32) -> SubscribeSingle {
+        SubscribeSingle {
+            query: sql.into(),
+            request_id: 0,
+            query_id: QueryId::new(query_id),
+        }
+    }
+
+    /// An [Unsubscribe] message for testing
+    fn single_unsubscribe(query_id: u32) -> Unsubscribe {
+        Unsubscribe {
+            request_id: 0,
+            query_id: QueryId::new(query_id),
+        }
+    }
+
+    /// A dummy [ModuleEvent] for testing
+    fn module_event() -> ModuleEvent {
+        ModuleEvent {
+            timestamp: Timestamp::now(),
+            caller_identity: Identity::ZERO,
+            caller_address: None,
+            function_call: ModuleFunctionCall::default(),
+            status: EventStatus::Committed(DatabaseUpdate::default()),
+            energy_quanta_used: EnergyQuanta { quanta: 0 },
+            host_execution_duration: Duration::from_millis(0),
+            request_id: None,
+            timer: None,
+        }
+    }
+
+    /// Creates a single row, single column table with an index
+    fn create_table_with_index(db: &RelationalDB, name: &str) -> anyhow::Result<(TableId, IndexId)> {
+        let table_id = db.create_table_for_test(name, &[("id", AlgebraicType::U64)], &[0.into()])?;
+        let index_id = db.with_read_only(Workload::ForTests, |tx| {
+            db.schema_for_table(tx, table_id)?
+                .indexes
+                .iter()
+                .find(|schema| {
+                    schema
+                        .index_algorithm
+                        .columns()
+                        .as_singleton()
+                        .is_some_and(|col_id| col_id.idx() == 0)
+                })
+                .map(|schema| schema.index_id)
+                .ok_or_else(|| anyhow::anyhow!("Index not found for ColId `{}`", 0))
+        })?;
+        db.with_auto_commit(Workload::ForTests, |tx| {
+            db.insert(tx, table_id, &bsatn::to_vec(&product![1_u64])?)?;
+            Ok((table_id, index_id))
+        })
+    }
+
+    #[tokio::test]
+    async fn subscribe_error() -> anyhow::Result<()> {
+        let (sender, mut rx) = sender_with_rx();
+        let db = relational_db()?;
+        let subs = module_subscriptions(db.clone());
+
+        // Create a table `t` with index on `id`
+        create_table_with_index(&db, "t")?;
+
+        let subscribe = || -> anyhow::Result<()> {
+            // Invalid query: t does not have a field x
+            let sql = "select * from t where x = 1";
+            subs.add_subscription(sender.clone(), single_subscribe(sql, 0), Instant::now(), None)?;
+            Ok(())
+        };
+
+        subscribe()?;
+
+        assert!(matches!(
+            rx.recv().await,
+            Some(SerializableMessage::Subscription(SubscriptionMessage {
+                result: SubscriptionResult::Error(..),
+                ..
+            }))
+        ));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn unsubscribe_error() -> anyhow::Result<()> {
+        let (sender, mut rx) = sender_with_rx();
+        let db = relational_db()?;
+        let subs = module_subscriptions(db.clone());
+
+        // Create a table `t` with an index on `id`
+        let (_, index_id) = create_table_with_index(&db, "t")?;
+
+        let subscribe = || -> anyhow::Result<()> {
+            let sql = "select * from t where id = 1";
+            subs.add_subscription(sender.clone(), single_subscribe(sql, 0), Instant::now(), None)?;
+            Ok(())
+        };
+
+        let unsubscribe = || -> anyhow::Result<()> {
+            subs.remove_subscription(sender.clone(), single_unsubscribe(0), Instant::now())?;
+            Ok(())
+        };
+
+        subscribe()?;
+
+        // The initial subscription should succeed
+        assert!(matches!(
+            rx.recv().await,
+            Some(SerializableMessage::Subscription(SubscriptionMessage {
+                result: SubscriptionResult::Subscribe(..),
+                ..
+            }))
+        ));
+
+        // Remove the index from `id`
+        db.with_auto_commit(Workload::ForTests, |tx| db.drop_index(tx, index_id))?;
+
+        unsubscribe()?;
+
+        // Why does the unsubscribe fail?
+        // This relies on some knowledge of the underlying implementation.
+        // Specifically that we do not recompile queries on unsubscribe.
+        // We execute the cached plan which in this case is an index scan.
+        // The index no longer exists, and therefore it fails.
+        assert!(matches!(
+            rx.recv().await,
+            Some(SerializableMessage::Subscription(SubscriptionMessage {
+                result: SubscriptionResult::Error(..),
+                ..
+            }))
+        ));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn tx_update_error() -> anyhow::Result<()> {
+        let (sender, mut rx) = sender_with_rx();
+        let db = relational_db()?;
+        let subs = module_subscriptions(db.clone());
+
+        // Create two tables `t` and `s` with indexes on their `id` columns
+        let (table_id, _index_id) = create_table_with_index(&db, "t")?;
+        let (_table_id, index_id) = create_table_with_index(&db, "s")?;
+
+        let subscribe = || -> anyhow::Result<()> {
+            let sql = "select t.* from t join s on t.id = s.id";
+            subs.add_subscription(sender.clone(), single_subscribe(sql, 0), Instant::now(), None)?;
+            Ok(())
+        };
+
+        subscribe()?;
+
+        // The initial subscription should succeed
+        assert!(matches!(
+            rx.recv().await,
+            Some(SerializableMessage::Subscription(SubscriptionMessage {
+                result: SubscriptionResult::Subscribe(..),
+                ..
+            }))
+        ));
+
+        // Remove the index from `s`
+        db.with_auto_commit(Workload::ForTests, |tx| db.drop_index(tx, index_id))?;
+
+        // Start a new transaction and insert a new row into `t`
+        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        db.insert(&mut tx, table_id, &bsatn::to_vec(&product![2_u64])?)?;
+
+        assert!(matches!(
+            subs.commit_and_broadcast_event(None, module_event(), tx),
+            Ok(Ok(_))
+        ));
+
+        // Why does the update fail?
+        // This relies on some knowledge of the underlying implementation.
+        // Specifically, plans are cached on the initial subscribe.
+        // Hence we execute a cached plan which happens to be an index join.
+        // We've removed the index on `s`, and therefore it fails.
+        assert!(matches!(
+            rx.recv().await,
+            Some(SerializableMessage::Subscription(SubscriptionMessage {
+                result: SubscriptionResult::Error(..),
+                ..
+            }))
+        ));
+        Ok(())
     }
 
     /// Asserts that a subscription holds a tx handle for the entire length of its evaluation.

@@ -12,12 +12,13 @@ use crate::messages::control_db::{Database, HostType};
 use crate::module_host_context::ModuleCreationContext;
 use crate::replica_context::ReplicaContext;
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
+use crate::subscription::module_subscription_manager::SubscriptionManager;
 use crate::util::spawn_rayon;
 use anyhow::{anyhow, ensure, Context};
 use async_trait::async_trait;
 use durability::{Durability, EmptyHistory};
 use log::{info, trace, warn};
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
 use serde::Serialize;
 use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_durability as durability;
@@ -532,7 +533,26 @@ async fn make_replica_ctx(
     relational_db: Arc<RelationalDB>,
 ) -> anyhow::Result<ReplicaContext> {
     let logger = tokio::task::block_in_place(move || Arc::new(DatabaseLogger::open_today(path.module_logs())));
-    let subscriptions = ModuleSubscriptions::new(relational_db.clone(), database.owner_identity);
+    let subscriptions = Arc::new(RwLock::new(SubscriptionManager::default()));
+    let downgraded = Arc::downgrade(&subscriptions);
+    let subscriptions = ModuleSubscriptions::new(relational_db.clone(), subscriptions, database.owner_identity);
+
+    // If an error occurs when evaluating a subscription,
+    // we mark each client that was affected,
+    // and we remove those clients from the manager async.
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_secs(10)).await;
+            let Some(subscriptions) = downgraded.upgrade() else {
+                break;
+            };
+            tokio::task::spawn_blocking(move || {
+                subscriptions.write().remove_dropped_clients();
+            })
+            .await
+            .unwrap();
+        }
+    });
 
     Ok(ReplicaContext {
         database,
