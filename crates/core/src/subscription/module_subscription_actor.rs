@@ -43,10 +43,10 @@ type AssertTxFn = Arc<dyn Fn(&Tx)>;
 type SubscriptionUpdate = FormatSwitch<TableUpdate<BsatnFormat>, TableUpdate<JsonFormat>>;
 
 impl ModuleSubscriptions {
-    pub fn new(relational_db: Arc<RelationalDB>, owner_identity: Identity) -> Self {
+    pub fn new(relational_db: Arc<RelationalDB>, subscriptions: Subscriptions, owner_identity: Identity) -> Self {
         Self {
             relational_db,
-            subscriptions: Arc::new(RwLock::new(SubscriptionManager::default())),
+            subscriptions,
             owner_identity,
         }
     }
@@ -429,6 +429,8 @@ mod tests {
     use crate::db::relational_db::RelationalDB;
     use crate::error::DBError;
     use crate::execution_context::Workload;
+    use crate::subscription::module_subscription_manager::SubscriptionManager;
+    use parking_lot::RwLock;
     use spacetimedb_client_api_messages::websocket::Subscribe;
     use spacetimedb_lib::db::auth::StAccess;
     use spacetimedb_lib::{error::ResultTest, AlgebraicType, Identity};
@@ -442,7 +444,8 @@ mod tests {
         let client = ClientActorId::for_test(Identity::ZERO);
         let config = ClientConfig::for_test();
         let sender = Arc::new(ClientConnectionSender::dummy(client, config));
-        let module_subscriptions = ModuleSubscriptions::new(db.clone(), owner);
+        let module_subscriptions =
+            ModuleSubscriptions::new(db.clone(), Arc::new(RwLock::new(SubscriptionManager::default())), owner);
 
         let subscribe = Subscribe {
             query_strings: [sql.into()].into(),

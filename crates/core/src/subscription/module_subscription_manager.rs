@@ -203,6 +203,17 @@ impl SubscriptionManager {
         }
     }
 
+    /// Remove any clients that have been marked for removal
+    pub fn remove_dropped_clients(&mut self) {
+        for id in self.clients.keys().copied().collect::<Vec<_>>() {
+            if let Some(client) = self.clients.get(&id) {
+                if client.dropped.load(Ordering::Relaxed) {
+                    self.remove_all_subscriptions(&id);
+                }
+            }
+        }
+    }
+
     /// Remove a single subscription for a client.
     /// This will return an error if the client does not have a subscription with the given query id.
     pub fn remove_subscription(&mut self, client_id: ClientId, query_id: ClientQueryId) -> Result<Query, DBError> {

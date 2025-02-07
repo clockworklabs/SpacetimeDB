@@ -437,6 +437,7 @@ mod test {
     use std::{ops::Bound, sync::Arc};
 
     use anyhow::{anyhow, Result};
+    use parking_lot::RwLock;
     use spacetimedb_lib::{bsatn::to_vec, AlgebraicType, AlgebraicValue, Hash, Identity, ProductValue};
     use spacetimedb_paths::{server::ModuleLogsDir, FromPathUnchecked};
     use spacetimedb_primitives::{IndexId, TableId};
@@ -453,7 +454,9 @@ mod test {
         host::Scheduler,
         messages::control_db::{Database, HostType},
         replica_context::ReplicaContext,
-        subscription::module_subscription_actor::ModuleSubscriptions,
+        subscription::{
+            module_subscription_actor::ModuleSubscriptions, module_subscription_manager::SubscriptionManager,
+        },
     };
 
     use super::{ChunkPool, InstanceEnv, TxSlot};
@@ -468,7 +471,11 @@ mod test {
 
     /// An `InstanceEnv` requires `ModuleSubscriptions`
     fn subscription_actor(relational_db: Arc<RelationalDB>) -> ModuleSubscriptions {
-        ModuleSubscriptions::new(relational_db, Identity::ZERO)
+        ModuleSubscriptions::new(
+            relational_db,
+            Arc::new(RwLock::new(SubscriptionManager::default())),
+            Identity::ZERO,
+        )
     }
 
     /// An `InstanceEnv` requires a `ReplicaContext`.
