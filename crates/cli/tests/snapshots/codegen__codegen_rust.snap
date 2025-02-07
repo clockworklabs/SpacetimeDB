@@ -2899,7 +2899,7 @@ use spacetimedb_sdk::__codegen::{
 pub struct RepeatingTestArg {
     pub scheduled_id: u64,
     pub scheduled_at: __sdk::ScheduleAt,
-    pub prev_time: u64,
+    pub prev_time: __sdk::Timestamp,
 }
 
 

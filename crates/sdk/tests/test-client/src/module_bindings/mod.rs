@@ -45,6 +45,7 @@ pub mod indexed_table_2_table;
 pub mod indexed_table_2_type;
 pub mod indexed_table_table;
 pub mod indexed_table_type;
+pub mod insert_call_timestamp_reducer;
 pub mod insert_caller_one_address_reducer;
 pub mod insert_caller_one_identity_reducer;
 pub mod insert_caller_pk_address_reducer;
@@ -71,6 +72,7 @@ pub mod insert_one_i_8_reducer;
 pub mod insert_one_identity_reducer;
 pub mod insert_one_simple_enum_reducer;
 pub mod insert_one_string_reducer;
+pub mod insert_one_timestamp_reducer;
 pub mod insert_one_u_128_reducer;
 pub mod insert_one_u_16_reducer;
 pub mod insert_one_u_256_reducer;
@@ -135,6 +137,7 @@ pub mod insert_vec_i_8_reducer;
 pub mod insert_vec_identity_reducer;
 pub mod insert_vec_simple_enum_reducer;
 pub mod insert_vec_string_reducer;
+pub mod insert_vec_timestamp_reducer;
 pub mod insert_vec_u_128_reducer;
 pub mod insert_vec_u_16_reducer;
 pub mod insert_vec_u_256_reducer;
@@ -179,6 +182,8 @@ pub mod one_simple_enum_table;
 pub mod one_simple_enum_type;
 pub mod one_string_table;
 pub mod one_string_type;
+pub mod one_timestamp_table;
+pub mod one_timestamp_type;
 pub mod one_u_128_table;
 pub mod one_u_128_type;
 pub mod one_u_16_table;
@@ -342,6 +347,8 @@ pub mod vec_simple_enum_table;
 pub mod vec_simple_enum_type;
 pub mod vec_string_table;
 pub mod vec_string_type;
+pub mod vec_timestamp_table;
+pub mod vec_timestamp_type;
 pub mod vec_u_128_table;
 pub mod vec_u_128_type;
 pub mod vec_u_16_table;
@@ -418,6 +425,9 @@ pub use indexed_table_2_table::*;
 pub use indexed_table_2_type::IndexedTable2;
 pub use indexed_table_table::*;
 pub use indexed_table_type::IndexedTable;
+pub use insert_call_timestamp_reducer::{
+    insert_call_timestamp, set_flags_for_insert_call_timestamp, InsertCallTimestampCallbackId,
+};
 pub use insert_caller_one_address_reducer::{
     insert_caller_one_address, set_flags_for_insert_caller_one_address, InsertCallerOneAddressCallbackId,
 };
@@ -477,6 +487,9 @@ pub use insert_one_simple_enum_reducer::{
     insert_one_simple_enum, set_flags_for_insert_one_simple_enum, InsertOneSimpleEnumCallbackId,
 };
 pub use insert_one_string_reducer::{insert_one_string, set_flags_for_insert_one_string, InsertOneStringCallbackId};
+pub use insert_one_timestamp_reducer::{
+    insert_one_timestamp, set_flags_for_insert_one_timestamp, InsertOneTimestampCallbackId,
+};
 pub use insert_one_u_128_reducer::{insert_one_u_128, set_flags_for_insert_one_u_128, InsertOneU128CallbackId};
 pub use insert_one_u_16_reducer::{insert_one_u_16, set_flags_for_insert_one_u_16, InsertOneU16CallbackId};
 pub use insert_one_u_256_reducer::{insert_one_u_256, set_flags_for_insert_one_u_256, InsertOneU256CallbackId};
@@ -591,6 +604,9 @@ pub use insert_vec_simple_enum_reducer::{
     insert_vec_simple_enum, set_flags_for_insert_vec_simple_enum, InsertVecSimpleEnumCallbackId,
 };
 pub use insert_vec_string_reducer::{insert_vec_string, set_flags_for_insert_vec_string, InsertVecStringCallbackId};
+pub use insert_vec_timestamp_reducer::{
+    insert_vec_timestamp, set_flags_for_insert_vec_timestamp, InsertVecTimestampCallbackId,
+};
 pub use insert_vec_u_128_reducer::{insert_vec_u_128, set_flags_for_insert_vec_u_128, InsertVecU128CallbackId};
 pub use insert_vec_u_16_reducer::{insert_vec_u_16, set_flags_for_insert_vec_u_16, InsertVecU16CallbackId};
 pub use insert_vec_u_256_reducer::{insert_vec_u_256, set_flags_for_insert_vec_u_256, InsertVecU256CallbackId};
@@ -637,6 +653,8 @@ pub use one_simple_enum_table::*;
 pub use one_simple_enum_type::OneSimpleEnum;
 pub use one_string_table::*;
 pub use one_string_type::OneString;
+pub use one_timestamp_table::*;
+pub use one_timestamp_type::OneTimestamp;
 pub use one_u_128_table::*;
 pub use one_u_128_type::OneU128;
 pub use one_u_16_table::*;
@@ -820,6 +838,8 @@ pub use vec_simple_enum_table::*;
 pub use vec_simple_enum_type::VecSimpleEnum;
 pub use vec_string_table::*;
 pub use vec_string_type::VecString;
+pub use vec_timestamp_table::*;
+pub use vec_timestamp_type::VecTimestamp;
 pub use vec_u_128_table::*;
 pub use vec_u_128_type::VecU128;
 pub use vec_u_16_table::*;
@@ -963,6 +983,7 @@ pub enum Reducer {
     DeleteUniqueU8 {
         n: u8,
     },
+    InsertCallTimestamp,
     InsertCallerOneAddress,
     InsertCallerOneIdentity,
     InsertCallerPkAddress {
@@ -1053,6 +1074,9 @@ pub enum Reducer {
     },
     InsertOneString {
         s: String,
+    },
+    InsertOneTimestamp {
+        t: __sdk::Timestamp,
     },
     InsertOneU128 {
         n: u128,
@@ -1279,6 +1303,9 @@ pub enum Reducer {
     InsertVecString {
         s: Vec<String>,
     },
+    InsertVecTimestamp {
+        t: Vec<__sdk::Timestamp>,
+    },
     InsertVecU128 {
         n: Vec<u128>,
     },
@@ -1474,6 +1501,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::DeleteUniqueU32 { .. } => "delete_unique_u32",
             Reducer::DeleteUniqueU64 { .. } => "delete_unique_u64",
             Reducer::DeleteUniqueU8 { .. } => "delete_unique_u8",
+            Reducer::InsertCallTimestamp => "insert_call_timestamp",
             Reducer::InsertCallerOneAddress => "insert_caller_one_address",
             Reducer::InsertCallerOneIdentity => "insert_caller_one_identity",
             Reducer::InsertCallerPkAddress { .. } => "insert_caller_pk_address",
@@ -1500,6 +1528,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::InsertOneIdentity { .. } => "insert_one_identity",
             Reducer::InsertOneSimpleEnum { .. } => "insert_one_simple_enum",
             Reducer::InsertOneString { .. } => "insert_one_string",
+            Reducer::InsertOneTimestamp { .. } => "insert_one_timestamp",
             Reducer::InsertOneU128 { .. } => "insert_one_u128",
             Reducer::InsertOneU16 { .. } => "insert_one_u16",
             Reducer::InsertOneU256 { .. } => "insert_one_u256",
@@ -1564,6 +1593,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::InsertVecIdentity { .. } => "insert_vec_identity",
             Reducer::InsertVecSimpleEnum { .. } => "insert_vec_simple_enum",
             Reducer::InsertVecString { .. } => "insert_vec_string",
+            Reducer::InsertVecTimestamp { .. } => "insert_vec_timestamp",
             Reducer::InsertVecU128 { .. } => "insert_vec_u128",
             Reducer::InsertVecU16 { .. } => "insert_vec_u16",
             Reducer::InsertVecU256 { .. } => "insert_vec_u256",
@@ -1808,6 +1838,10 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
                 )?
                 .into(),
             ),
+            "insert_call_timestamp" => Ok(__sdk::parse_reducer_args::<
+                insert_call_timestamp_reducer::InsertCallTimestampArgs,
+            >("insert_call_timestamp", &value.args)?
+            .into()),
             "insert_caller_one_address" => Ok(__sdk::parse_reducer_args::<
                 insert_caller_one_address_reducer::InsertCallerOneAddressArgs,
             >("insert_caller_one_address", &value.args)?
@@ -1937,6 +1971,10 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
                 )?
                 .into(),
             ),
+            "insert_one_timestamp" => Ok(__sdk::parse_reducer_args::<
+                insert_one_timestamp_reducer::InsertOneTimestampArgs,
+            >("insert_one_timestamp", &value.args)?
+            .into()),
             "insert_one_u128" => Ok(
                 __sdk::parse_reducer_args::<insert_one_u_128_reducer::InsertOneU128Args>(
                     "insert_one_u128",
@@ -2291,6 +2329,10 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
                 )?
                 .into(),
             ),
+            "insert_vec_timestamp" => Ok(__sdk::parse_reducer_args::<
+                insert_vec_timestamp_reducer::InsertVecTimestampArgs,
+            >("insert_vec_timestamp", &value.args)?
+            .into()),
             "insert_vec_u128" => Ok(
                 __sdk::parse_reducer_args::<insert_vec_u_128_reducer::InsertVecU128Args>(
                     "insert_vec_u128",
@@ -2556,6 +2598,7 @@ pub struct DbUpdate {
     one_identity: __sdk::TableUpdate<OneIdentity>,
     one_simple_enum: __sdk::TableUpdate<OneSimpleEnum>,
     one_string: __sdk::TableUpdate<OneString>,
+    one_timestamp: __sdk::TableUpdate<OneTimestamp>,
     one_u_128: __sdk::TableUpdate<OneU128>,
     one_u_16: __sdk::TableUpdate<OneU16>,
     one_u_256: __sdk::TableUpdate<OneU256>,
@@ -2620,6 +2663,7 @@ pub struct DbUpdate {
     vec_identity: __sdk::TableUpdate<VecIdentity>,
     vec_simple_enum: __sdk::TableUpdate<VecSimpleEnum>,
     vec_string: __sdk::TableUpdate<VecString>,
+    vec_timestamp: __sdk::TableUpdate<VecTimestamp>,
     vec_u_128: __sdk::TableUpdate<VecU128>,
     vec_u_16: __sdk::TableUpdate<VecU16>,
     vec_u_256: __sdk::TableUpdate<VecU256>,
@@ -2668,6 +2712,7 @@ impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
                     db_update.one_simple_enum = one_simple_enum_table::parse_table_update(table_update)?
                 }
                 "one_string" => db_update.one_string = one_string_table::parse_table_update(table_update)?,
+                "one_timestamp" => db_update.one_timestamp = one_timestamp_table::parse_table_update(table_update)?,
                 "one_u128" => db_update.one_u_128 = one_u_128_table::parse_table_update(table_update)?,
                 "one_u16" => db_update.one_u_16 = one_u_16_table::parse_table_update(table_update)?,
                 "one_u256" => db_update.one_u_256 = one_u_256_table::parse_table_update(table_update)?,
@@ -2760,6 +2805,7 @@ impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
                     db_update.vec_simple_enum = vec_simple_enum_table::parse_table_update(table_update)?
                 }
                 "vec_string" => db_update.vec_string = vec_string_table::parse_table_update(table_update)?,
+                "vec_timestamp" => db_update.vec_timestamp = vec_timestamp_table::parse_table_update(table_update)?,
                 "vec_u128" => db_update.vec_u_128 = vec_u_128_table::parse_table_update(table_update)?,
                 "vec_u16" => db_update.vec_u_16 = vec_u_16_table::parse_table_update(table_update)?,
                 "vec_u256" => db_update.vec_u_256 = vec_u_256_table::parse_table_update(table_update)?,
@@ -2808,6 +2854,7 @@ impl __sdk::DbUpdate for DbUpdate {
         cache.apply_diff_to_table::<OneIdentity>("one_identity", &self.one_identity);
         cache.apply_diff_to_table::<OneSimpleEnum>("one_simple_enum", &self.one_simple_enum);
         cache.apply_diff_to_table::<OneString>("one_string", &self.one_string);
+        cache.apply_diff_to_table::<OneTimestamp>("one_timestamp", &self.one_timestamp);
         cache.apply_diff_to_table::<OneU128>("one_u128", &self.one_u_128);
         cache.apply_diff_to_table::<OneU16>("one_u16", &self.one_u_16);
         cache.apply_diff_to_table::<OneU256>("one_u256", &self.one_u_256);
@@ -2878,6 +2925,7 @@ impl __sdk::DbUpdate for DbUpdate {
         cache.apply_diff_to_table::<VecIdentity>("vec_identity", &self.vec_identity);
         cache.apply_diff_to_table::<VecSimpleEnum>("vec_simple_enum", &self.vec_simple_enum);
         cache.apply_diff_to_table::<VecString>("vec_string", &self.vec_string);
+        cache.apply_diff_to_table::<VecTimestamp>("vec_timestamp", &self.vec_timestamp);
         cache.apply_diff_to_table::<VecU128>("vec_u128", &self.vec_u_128);
         cache.apply_diff_to_table::<VecU16>("vec_u16", &self.vec_u_16);
         cache.apply_diff_to_table::<VecU256>("vec_u256", &self.vec_u_256);
@@ -2919,6 +2967,7 @@ impl __sdk::DbUpdate for DbUpdate {
         callbacks.invoke_table_row_callbacks::<OneIdentity>("one_identity", &self.one_identity, event);
         callbacks.invoke_table_row_callbacks::<OneSimpleEnum>("one_simple_enum", &self.one_simple_enum, event);
         callbacks.invoke_table_row_callbacks::<OneString>("one_string", &self.one_string, event);
+        callbacks.invoke_table_row_callbacks::<OneTimestamp>("one_timestamp", &self.one_timestamp, event);
         callbacks.invoke_table_row_callbacks::<OneU128>("one_u128", &self.one_u_128, event);
         callbacks.invoke_table_row_callbacks::<OneU16>("one_u16", &self.one_u_16, event);
         callbacks.invoke_table_row_callbacks::<OneU256>("one_u256", &self.one_u_256, event);
@@ -3003,6 +3052,7 @@ impl __sdk::DbUpdate for DbUpdate {
         callbacks.invoke_table_row_callbacks::<VecIdentity>("vec_identity", &self.vec_identity, event);
         callbacks.invoke_table_row_callbacks::<VecSimpleEnum>("vec_simple_enum", &self.vec_simple_enum, event);
         callbacks.invoke_table_row_callbacks::<VecString>("vec_string", &self.vec_string, event);
+        callbacks.invoke_table_row_callbacks::<VecTimestamp>("vec_timestamp", &self.vec_timestamp, event);
         callbacks.invoke_table_row_callbacks::<VecU128>("vec_u128", &self.vec_u_128, event);
         callbacks.invoke_table_row_callbacks::<VecU16>("vec_u16", &self.vec_u_16, event);
         callbacks.invoke_table_row_callbacks::<VecU256>("vec_u256", &self.vec_u_256, event);
@@ -3604,6 +3654,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         one_identity_table::register_table(client_cache);
         one_simple_enum_table::register_table(client_cache);
         one_string_table::register_table(client_cache);
+        one_timestamp_table::register_table(client_cache);
         one_u_128_table::register_table(client_cache);
         one_u_16_table::register_table(client_cache);
         one_u_256_table::register_table(client_cache);
@@ -3668,6 +3719,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         vec_identity_table::register_table(client_cache);
         vec_simple_enum_table::register_table(client_cache);
         vec_string_table::register_table(client_cache);
+        vec_timestamp_table::register_table(client_cache);
         vec_u_128_table::register_table(client_cache);
         vec_u_16_table::register_table(client_cache);
         vec_u_256_table::register_table(client_cache);

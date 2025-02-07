@@ -42,6 +42,10 @@ import {
   // @ts-ignore
   TableCache,
   // @ts-ignore
+  TimeDuration,
+  // @ts-ignore
+  Timestamp,
+  // @ts-ignore
   deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
 
@@ -113,6 +117,10 @@ import {
   SumTypeVariant,
   // @ts-ignore
   TableCache,
+  // @ts-ignore
+  TimeDuration,
+  // @ts-ignore
+  Timestamp,
   // @ts-ignore
   deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
@@ -186,6 +194,10 @@ import {
   // @ts-ignore
   TableCache,
   // @ts-ignore
+  TimeDuration,
+  // @ts-ignore
+  Timestamp,
+  // @ts-ignore
   deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
 
@@ -254,6 +266,10 @@ import {
   SumTypeVariant,
   // @ts-ignore
   TableCache,
+  // @ts-ignore
+  TimeDuration,
+  // @ts-ignore
+  Timestamp,
   // @ts-ignore
   deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
@@ -327,6 +343,10 @@ import {
   // @ts-ignore
   TableCache,
   // @ts-ignore
+  TimeDuration,
+  // @ts-ignore
+  Timestamp,
+  // @ts-ignore
   deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
 
@@ -395,6 +415,10 @@ import {
   SumTypeVariant,
   // @ts-ignore
   TableCache,
+  // @ts-ignore
+  TimeDuration,
+  // @ts-ignore
+  Timestamp,
   // @ts-ignore
   deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
@@ -468,6 +492,10 @@ import {
   // @ts-ignore
   TableCache,
   // @ts-ignore
+  TimeDuration,
+  // @ts-ignore
+  Timestamp,
+  // @ts-ignore
   deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
 
@@ -539,6 +567,10 @@ import {
   SumTypeVariant,
   // @ts-ignore
   TableCache,
+  // @ts-ignore
+  TimeDuration,
+  // @ts-ignore
+  Timestamp,
   // @ts-ignore
   deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
@@ -628,6 +660,10 @@ import {
   // @ts-ignore
   TableCache,
   // @ts-ignore
+  TimeDuration,
+  // @ts-ignore
+  Timestamp,
+  // @ts-ignore
   deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
 import { HasSpecialStuff } from "./has_special_stuff_type";
@@ -716,6 +752,10 @@ import {
   // @ts-ignore
   TableCache,
   // @ts-ignore
+  TimeDuration,
+  // @ts-ignore
+  Timestamp,
+  // @ts-ignore
   deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
 export type HasSpecialStuff = {
@@ -789,6 +829,10 @@ import {
   SumTypeVariant,
   // @ts-ignore
   TableCache,
+  // @ts-ignore
+  TimeDuration,
+  // @ts-ignore
+  Timestamp,
   // @ts-ignore
   deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
@@ -1287,6 +1331,10 @@ import {
   // @ts-ignore
   TableCache,
   // @ts-ignore
+  TimeDuration,
+  // @ts-ignore
+  Timestamp,
+  // @ts-ignore
   deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
 import { Player } from "./player_type";
@@ -1449,6 +1497,10 @@ import {
   // @ts-ignore
   TableCache,
   // @ts-ignore
+  TimeDuration,
+  // @ts-ignore
+  Timestamp,
+  // @ts-ignore
   deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
 // A namespace for generated variants and helper functions.
@@ -1530,6 +1582,10 @@ import {
   SumTypeVariant,
   // @ts-ignore
   TableCache,
+  // @ts-ignore
+  TimeDuration,
+  // @ts-ignore
+  Timestamp,
   // @ts-ignore
   deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
@@ -1615,6 +1671,10 @@ import {
   SumTypeVariant,
   // @ts-ignore
   TableCache,
+  // @ts-ignore
+  TimeDuration,
+  // @ts-ignore
+  Timestamp,
   // @ts-ignore
   deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
@@ -1756,6 +1816,10 @@ import {
   // @ts-ignore
   TableCache,
   // @ts-ignore
+  TimeDuration,
+  // @ts-ignore
+  Timestamp,
+  // @ts-ignore
   deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
 export type PkMultiIdentity = {
@@ -1829,6 +1893,10 @@ import {
   SumTypeVariant,
   // @ts-ignore
   TableCache,
+  // @ts-ignore
+  TimeDuration,
+  // @ts-ignore
+  Timestamp,
   // @ts-ignore
   deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
@@ -1992,6 +2060,10 @@ import {
   // @ts-ignore
   TableCache,
   // @ts-ignore
+  TimeDuration,
+  // @ts-ignore
+  Timestamp,
+  // @ts-ignore
   deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
 export type Player = {
@@ -2068,6 +2140,10 @@ import {
   // @ts-ignore
   TableCache,
   // @ts-ignore
+  TimeDuration,
+  // @ts-ignore
+  Timestamp,
+  // @ts-ignore
   deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
 export type Point = {
@@ -2141,6 +2217,10 @@ import {
   SumTypeVariant,
   // @ts-ignore
   TableCache,
+  // @ts-ignore
+  TimeDuration,
+  // @ts-ignore
+  Timestamp,
   // @ts-ignore
   deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
@@ -2230,6 +2310,10 @@ import {
   // @ts-ignore
   TableCache,
   // @ts-ignore
+  TimeDuration,
+  // @ts-ignore
+  Timestamp,
+  // @ts-ignore
   deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
 import { Private } from "./private_type";
@@ -2318,6 +2402,10 @@ import {
   // @ts-ignore
   TableCache,
   // @ts-ignore
+  TimeDuration,
+  // @ts-ignore
+  Timestamp,
+  // @ts-ignore
   deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
 export type Private = {
@@ -2390,6 +2478,10 @@ import {
   // @ts-ignore
   TableCache,
   // @ts-ignore
+  TimeDuration,
+  // @ts-ignore
+  Timestamp,
+  // @ts-ignore
   deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
 
@@ -2458,6 +2550,10 @@ import {
   SumTypeVariant,
   // @ts-ignore
   TableCache,
+  // @ts-ignore
+  TimeDuration,
+  // @ts-ignore
+  Timestamp,
   // @ts-ignore
   deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
@@ -2577,12 +2673,16 @@ import {
   // @ts-ignore
   TableCache,
   // @ts-ignore
+  TimeDuration,
+  // @ts-ignore
+  Timestamp,
+  // @ts-ignore
   deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
 export type RepeatingTestArg = {
   scheduledId: bigint,
-  scheduledAt: { tag: "Interval", value: bigint } | { tag: "Time", value: bigint },
-  prevTime: bigint,
+  scheduledAt: { tag: "Interval", value: TimeDuration } | { tag: "Time", value: Timestamp },
+  prevTime: Timestamp,
 };
 
 /**
@@ -2597,7 +2697,7 @@ export namespace RepeatingTestArg {
     return AlgebraicType.createProductType([
       new ProductTypeElement("scheduledId", AlgebraicType.createU64Type()),
       new ProductTypeElement("scheduledAt", AlgebraicType.createScheduleAtType()),
-      new ProductTypeElement("prevTime", AlgebraicType.createU64Type()),
+      new ProductTypeElement("prevTime", AlgebraicType.createTimestampType()),
     ]);
   }
 
@@ -2652,6 +2752,10 @@ import {
   SumTypeVariant,
   // @ts-ignore
   TableCache,
+  // @ts-ignore
+  TimeDuration,
+  // @ts-ignore
+  Timestamp,
   // @ts-ignore
   deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
@@ -2727,6 +2831,10 @@ import {
   SumTypeVariant,
   // @ts-ignore
   TableCache,
+  // @ts-ignore
+  TimeDuration,
+  // @ts-ignore
+  Timestamp,
   // @ts-ignore
   deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
@@ -2816,6 +2924,10 @@ import {
   // @ts-ignore
   TableCache,
   // @ts-ignore
+  TimeDuration,
+  // @ts-ignore
+  Timestamp,
+  // @ts-ignore
   deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
 export type TestA = {
@@ -2892,6 +3004,10 @@ import {
   // @ts-ignore
   TableCache,
   // @ts-ignore
+  TimeDuration,
+  // @ts-ignore
+  Timestamp,
+  // @ts-ignore
   deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
 export type TestB = {
@@ -2964,6 +3080,10 @@ import {
   // @ts-ignore
   TableCache,
   // @ts-ignore
+  TimeDuration,
+  // @ts-ignore
+  Timestamp,
+  // @ts-ignore
   deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
 
@@ -3032,6 +3152,10 @@ import {
   SumTypeVariant,
   // @ts-ignore
   TableCache,
+  // @ts-ignore
+  TimeDuration,
+  // @ts-ignore
+  Timestamp,
   // @ts-ignore
   deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
@@ -3124,6 +3248,10 @@ import {
   // @ts-ignore
   TableCache,
   // @ts-ignore
+  TimeDuration,
+  // @ts-ignore
+  Timestamp,
+  // @ts-ignore
   deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
 // @ts-ignore
@@ -3198,6 +3326,10 @@ import {
   SumTypeVariant,
   // @ts-ignore
   TableCache,
+  // @ts-ignore
+  TimeDuration,
+  // @ts-ignore
+  Timestamp,
   // @ts-ignore
   deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
@@ -3317,6 +3449,10 @@ import {
   // @ts-ignore
   TableCache,
   // @ts-ignore
+  TimeDuration,
+  // @ts-ignore
+  Timestamp,
+  // @ts-ignore
   deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
 export type TestE = {
@@ -3390,6 +3526,10 @@ import {
   SumTypeVariant,
   // @ts-ignore
   TableCache,
+  // @ts-ignore
+  TimeDuration,
+  // @ts-ignore
+  Timestamp,
   // @ts-ignore
   deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
@@ -3482,6 +3622,10 @@ import {
   // @ts-ignore
   TableCache,
   // @ts-ignore
+  TimeDuration,
+  // @ts-ignore
+  Timestamp,
+  // @ts-ignore
   deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
 // @ts-ignore
@@ -3556,6 +3700,10 @@ import {
   SumTypeVariant,
   // @ts-ignore
   TableCache,
+  // @ts-ignore
+  TimeDuration,
+  // @ts-ignore
+  Timestamp,
   // @ts-ignore
   deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";

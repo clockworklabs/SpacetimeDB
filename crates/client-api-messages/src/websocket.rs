@@ -15,7 +15,6 @@
 //! rather than using an external mirror of this schema.
 
 use crate::energy::EnergyQuanta;
-use crate::timestamp::Timestamp;
 use bytes::Bytes;
 use bytestring::ByteString;
 use core::{
@@ -24,7 +23,7 @@ use core::{
 };
 use enum_as_inner::EnumAsInner;
 use smallvec::SmallVec;
-use spacetimedb_lib::{Address, Identity};
+use spacetimedb_lib::{Address, Identity, TimeDuration, Timestamp};
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::{
     bsatn::{self, ToBsatn},
@@ -405,7 +404,7 @@ pub struct InitialSubscription<F: WebsocketFormat> {
     /// The server will include the same request_id in the response.
     pub request_id: u32,
     /// The overall time between the server receiving a request and sending the response.
-    pub total_host_execution_duration_micros: u64,
+    pub total_host_execution_duration: TimeDuration,
 }
 
 /// Received by database from client to inform of user's identity, token and client address.
@@ -437,7 +436,9 @@ pub struct IdentityToken {
 pub struct TransactionUpdate<F: WebsocketFormat> {
     /// The status of the transaction. Contains the updated rows, if successful.
     pub status: UpdateStatus<F>,
-    /// The time when the reducer started, as microseconds since the Unix epoch.
+    /// The time when the reducer started.
+    ///
+    /// Note that [`Timestamp`] serializes as `i64` nanoseconds since the Unix epoch.
     pub timestamp: Timestamp,
     /// The identity of the user who requested the reducer run. For event-driven and
     /// scheduled reducers, it is the identity of the database owner.
@@ -456,7 +457,7 @@ pub struct TransactionUpdate<F: WebsocketFormat> {
     /// The amount of energy credits consumed by running the reducer.
     pub energy_quanta_used: EnergyQuanta,
     /// How long the reducer took to run.
-    pub host_execution_duration_micros: u64,
+    pub total_host_execution_duration: TimeDuration,
 }
 
 /// Received by client from database upon a reducer run.
@@ -645,7 +646,7 @@ pub struct OneOffQueryResponse<F: WebsocketFormat> {
     pub tables: Box<[OneOffTable<F>]>,
 
     /// The total duration of query compilation and evaluation on the server, in microseconds.
-    pub total_host_execution_duration_micros: u64,
+    pub total_host_execution_duration: TimeDuration,
 }
 
 /// A table included as part of a [`OneOffQueryResponse`].

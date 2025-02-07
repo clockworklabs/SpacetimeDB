@@ -2,9 +2,8 @@ use std::sync::Arc;
 
 use bytes::Bytes;
 use derive_more::Display;
-use spacetimedb_client_api_messages::timestamp::Timestamp;
 use spacetimedb_commitlog::{payload::txdata, Varchar};
-use spacetimedb_lib::{Address, Identity};
+use spacetimedb_lib::{Address, Identity, Timestamp};
 use spacetimedb_sats::bsatn;
 
 /// Represents the context under which a database runtime method is executed.

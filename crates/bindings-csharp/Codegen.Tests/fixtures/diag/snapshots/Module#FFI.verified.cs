@@ -13,17 +13,12 @@ namespace SpacetimeDB
         public readonly Identity CallerIdentity;
         public readonly Address? CallerAddress;
         public readonly Random Rng;
-        public readonly DateTimeOffset Timestamp;
+        public readonly Timestamp Timestamp;
 
         // We need this property to be non-static for parity with client SDK.
         public Identity Identity => Internal.IReducerContext.GetIdentity();
 
-        internal ReducerContext(
-            Identity identity,
-            Address? address,
-            Random random,
-            DateTimeOffset time
-        )
+        internal ReducerContext(Identity identity, Address? address, Random random, Timestamp time)
         {
             CallerIdentity = identity;
             CallerAddress = address;
@@ -1008,7 +1003,7 @@ static class ModuleRegistration
         ulong sender_3,
         ulong address_0,
         ulong address_1,
-        SpacetimeDB.Internal.DateTimeOffsetRepr timestamp,
+        SpacetimeDB.Timestamp timestamp,
         SpacetimeDB.Internal.BytesSource args,
         SpacetimeDB.Internal.BytesSink error
     ) =>

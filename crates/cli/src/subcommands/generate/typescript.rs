@@ -580,6 +580,8 @@ fn print_spacetimedb_imports(out: &mut Indenter) {
         "AlgebraicValue",
         "Identity",
         "Address",
+        "Timestamp",
+        "TimeDuration",
         "DBConnectionBuilder",
         "TableCache",
         "BinaryWriter",
@@ -915,9 +917,11 @@ pub fn write_type<W: Write>(
         AlgebraicTypeUse::Never => write!(out, "never")?,
         AlgebraicTypeUse::Identity => write!(out, "Identity")?,
         AlgebraicTypeUse::Address => write!(out, "Address")?,
+        AlgebraicTypeUse::Timestamp => write!(out, "Timestamp")?,
+        AlgebraicTypeUse::TimeDuration => write!(out, "TimeDuration")?,
         AlgebraicTypeUse::ScheduleAt => write!(
             out,
-            "{{ tag: \"Interval\", value: bigint }} | {{ tag: \"Time\", value: bigint }}"
+            "{{ tag: \"Interval\", value: TimeDuration }} | {{ tag: \"Time\", value: Timestamp }}"
         )?,
         AlgebraicTypeUse::Option(inner_ty) => {
             write_type(module, out, inner_ty, ref_prefix)?;
@@ -968,6 +972,8 @@ fn convert_algebraic_type<'a>(
         AlgebraicTypeUse::ScheduleAt => write!(out, "AlgebraicType.createScheduleAtType()"),
         AlgebraicTypeUse::Identity => write!(out, "AlgebraicType.createIdentityType()"),
         AlgebraicTypeUse::Address => write!(out, "AlgebraicType.createAddressType()"),
+        AlgebraicTypeUse::Timestamp => write!(out, "AlgebraicType.createTimestampType()"),
+        AlgebraicTypeUse::TimeDuration => write!(out, "AlgebraicType.createTimeDurationType()"),
         AlgebraicTypeUse::Option(inner_ty) => {
             write!(out, "AlgebraicType.createOptionType(");
             convert_algebraic_type(module, out, inner_ty, ref_prefix);

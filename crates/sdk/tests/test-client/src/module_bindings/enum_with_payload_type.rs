@@ -45,6 +45,8 @@ pub enum EnumWithPayload {
 
     Address(__sdk::Address),
 
+    Timestamp(__sdk::Timestamp),
+
     Bytes(Vec<u8>),
 
     Ints(Vec<i32>),

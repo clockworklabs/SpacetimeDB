@@ -10,7 +10,6 @@ mod rng;
 pub mod rt;
 #[doc(hidden)]
 pub mod table;
-mod timestamp;
 
 use spacetimedb_lib::bsatn;
 use std::cell::RefCell;
@@ -38,10 +37,11 @@ pub use spacetimedb_lib::Address;
 pub use spacetimedb_lib::AlgebraicValue;
 pub use spacetimedb_lib::Identity;
 pub use spacetimedb_lib::ScheduleAt;
+pub use spacetimedb_lib::TimeDuration;
+pub use spacetimedb_lib::Timestamp;
 pub use spacetimedb_primitives::TableId;
 pub use sys::Errno;
 pub use table::{AutoIncOverflow, RangedIndex, Table, TryInsertError, UniqueColumn, UniqueConstraintViolation};
-pub use timestamp::Timestamp;
 
 pub type ReducerResult = core::result::Result<(), Box<str>>;
 

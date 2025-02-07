@@ -528,8 +528,8 @@ fn send_to_client(
 mod tests {
     use std::{sync::Arc, time::Duration};
 
-    use spacetimedb_client_api_messages::timestamp::Timestamp;
     use spacetimedb_client_api_messages::websocket::QueryId;
+    use spacetimedb_lib::Timestamp;
     use spacetimedb_lib::{error::ResultTest, identity::AuthCtx, Address, AlgebraicType, Identity};
     use spacetimedb_primitives::TableId;
     use spacetimedb_subscription::SubscriptionPlan;
