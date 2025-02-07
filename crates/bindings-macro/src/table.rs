@@ -380,7 +380,7 @@ impl ValidatedIndex<'_> {
             ValidatedIndexType::Direct { col } => {
                 let col_ty = col.ty;
                 let typeck = quote_spanned!(col_ty.span()=>
-                    const _: () {
+                    const _: () = {
                         spacetimedb::rt::assert_column_type_valid_for_direct_index::<#col_ty>();
                     };
                 );
