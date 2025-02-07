@@ -70,7 +70,8 @@ where
     S: NodeDelegate + ControlStateDelegate,
 {
     if connection_id.is_some() {
-        log::warn!("The connection_id query parameter to the subscribe HTTP endpoint is internal and will be removed in a future version of SpacetimeDB.");
+        // TODO: Bump this up to `log::warn!` after removing the client SDKs' uses of that parameter.
+        log::debug!("The connection_id query parameter to the subscribe HTTP endpoint is internal and will be removed in a future version of SpacetimeDB.");
     }
 
     let connection_id = connection_id
