@@ -222,12 +222,13 @@ impl SubscriptionManager {
     /// This will return an error if the client does not have a subscription with the given query id.
     pub fn remove_subscription(&mut self, client_id: ClientId, query_id: ClientQueryId) -> Result<Query, DBError> {
         let subscription_id = (client_id, query_id);
-        let Some(ci) = self.clients.get_mut(&client_id) else {
+        let Some(ci) = self
+            .clients
+            .get_mut(&client_id)
+            .filter(|ci| !ci.dropped.load(Ordering::Acquire))
+        else {
             return Err(anyhow::anyhow!("Client not found: {:?}", client_id).into());
         };
-        if ci.dropped.load(Ordering::Acquire) {
-            return Err(anyhow::anyhow!("Client not found: {:?}", client_id).into());
-        }
         let Some(query_hash) = ci.subscriptions.remove(&subscription_id) else {
             return Err(anyhow::anyhow!("Subscription not found: {:?}", subscription_id).into());
         };

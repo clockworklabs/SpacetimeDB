@@ -534,7 +534,7 @@ async fn make_replica_ctx(
 ) -> anyhow::Result<ReplicaContext> {
     let logger = tokio::task::block_in_place(move || Arc::new(DatabaseLogger::open_today(path.module_logs())));
     let subscriptions = Arc::new(RwLock::new(SubscriptionManager::default()));
-    let manager = subscriptions.clone();
+    let downgraded = Arc::downgrade(&subscriptions);
     let subscriptions = ModuleSubscriptions::new(relational_db.clone(), subscriptions, database.owner_identity);
 
     // If an error occurs when evaluating a subscription,
@@ -543,7 +543,9 @@ async fn make_replica_ctx(
     tokio::spawn(async move {
         loop {
             tokio::time::sleep(Duration::from_secs(10)).await;
-            let subscriptions = manager.clone();
+            let Some(subscriptions) = downgraded.upgrade() else {
+                break;
+            };
             tokio::task::spawn_blocking(move || {
                 subscriptions.write().remove_dropped_clients();
             })
