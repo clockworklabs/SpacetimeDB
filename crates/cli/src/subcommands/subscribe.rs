@@ -125,7 +125,7 @@ struct SubscriptionTable {
 }
 
 pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    println!("{}", UNSTABLE_WARNING);
+    println!("{}\n", UNSTABLE_WARNING);
 
     let queries = args.get_many::<String>("query").unwrap();
     let num = args.get_one::<u32>("num-updates").copied();

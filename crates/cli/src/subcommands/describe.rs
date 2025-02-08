@@ -31,7 +31,7 @@ pub fn cli() -> clap::Command {
 }
 
 pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    println!("{}", UNSTABLE_WARNING);
+    println!("{}\n", UNSTABLE_WARNING);
 
     let database = args.get_one::<String>("database").unwrap();
     let entity_name = args.get_one::<String>("entity_name");
