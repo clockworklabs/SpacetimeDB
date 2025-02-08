@@ -403,6 +403,21 @@ Add the following to your `App` function, just below `const [newMessage, setNewM
   const [conn, setConn] = useState<DbConnection | null>(null);
 
   useEffect(() => {
+    const subscribeToQueries = (conn: DbConnection, queries: string[]) => {
+      let count = 0;
+      for (const query of queries) {
+        conn
+          ?.subscriptionBuilder()
+          .onApplied(() => {
+            count++;
+            if (count === queries.length) {
+              console.log('SDK client cache initialized.');
+            }
+          })
+          .subscribe(query);
+      }
+    };
+
     const onConnect = (
       conn: DbConnection,
       identity: Identity,
@@ -415,12 +430,11 @@ Add the following to your `App` function, just below `const [newMessage, setNewM
         'Connected to SpacetimeDB with identity:',
         identity.toHexString()
       );
-      conn
-        .subscriptionBuilder()
-        .onApplied(() => {
-          console.log('SDK client cache initialized.');
-        })
-        .subscribe(['SELECT * FROM message', 'SELECT * FROM user']);
+      conn.reducers.onSendMessage(() => {
+        console.log('Message sent.');
+      });
+
+      subscribeToQueries(conn, ['SELECT * FROM message', 'SELECT * FROM user']);
     };
 
     const onDisconnect = () => {
