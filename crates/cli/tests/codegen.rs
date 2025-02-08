@@ -1,4 +1,4 @@
-use spacetimedb_cli::generate;
+use spacetimedb_cli::generate::{csharp::Csharp, extract_descriptions, generate, rust::Rust, typescript::TypeScript};
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_testing::modules::{CompilationMode, CompiledModule};
 use std::path::Path;
@@ -12,19 +12,11 @@ fn compiled_module() -> &'static Path {
 }
 
 macro_rules! declare_tests {
-    ($($name:ident => $lang:ident $(in $namespace:literal)?,)*) => {
-        $(
-            declare_tests!(__impl $name => $lang $(in $namespace)?);
-        )*
-    };
-    (__impl $name:ident => $lang:ident) => {
-        declare_tests!(__impl $name => $lang in "");
-    };
-    (__impl $name:ident => $lang:ident in $namespace:literal) => {
+    ($($name:ident => $lang:expr,)*) => ($(
         #[test]
         fn $name() {
-            let module = generate::extract_descriptions(compiled_module()).unwrap();
-            let outfiles: HashMap<_, _> = generate::generate(module, generate::Language::$lang, $namespace)
+            let module = extract_descriptions(compiled_module()).unwrap();
+            let outfiles: HashMap<_, _> = generate(module, &$lang)
                 .unwrap()
                 .into_iter()
                 .collect();
@@ -32,11 +24,11 @@ macro_rules! declare_tests {
                 insta::assert_toml_snapshot!(outfiles);
             });
         }
-    };
+    )*);
 }
 
 declare_tests! {
-    test_codegen_csharp => Csharp in "SpacetimeDB",
+    test_codegen_csharp => Csharp { namespace: "SpacetimeDB" },
     test_codegen_typescript => TypeScript,
     test_codegen_rust => Rust,
 }

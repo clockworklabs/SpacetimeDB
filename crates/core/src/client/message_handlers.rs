@@ -1,9 +1,9 @@
 use super::messages::{SubscriptionUpdateMessage, SwitchedServerMessage, ToProtocol, TransactionUpdateMessage};
-use super::{ClientConnection, DataMessage};
+use super::{ClientConnection, DataMessage, Protocol};
 use crate::energy::EnergyQuanta;
 use crate::execution_context::WorkloadType;
 use crate::host::module_host::{EventStatus, ModuleEvent, ModuleFunctionCall};
-use crate::host::{ReducerArgs, ReducerId, Timestamp};
+use crate::host::{ReducerArgs, ReducerId};
 use crate::identity::Identity;
 use crate::messages::websocket::{CallReducer, ClientMessage, OneOffQuery};
 use crate::worker_metrics::WORKER_METRICS;
@@ -11,6 +11,7 @@ use bytes::Bytes;
 use bytestring::ByteString;
 use spacetimedb_lib::de::serde::DeserializeWrapper;
 use spacetimedb_lib::identity::RequestId;
+use spacetimedb_lib::Timestamp;
 use spacetimedb_lib::{bsatn, Address};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -74,10 +75,31 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
             res.map(drop).map_err(|e| {
                 (
                     Some(reducer),
-                    client.module.info().reducers_map.lookup_id(reducer),
+                    client
+                        .module
+                        .info()
+                        .module_def
+                        .reducer_full(&**reducer)
+                        .map(|(id, _)| id),
                     e.into(),
                 )
             })
+        }
+        ClientMessage::SubscribeSingle(subscription) => {
+            let res = client.subscribe_single(subscription, timer).await;
+            WORKER_METRICS
+                .request_round_trip
+                .with_label_values(&WorkloadType::Subscribe, &address, "")
+                .observe(timer.elapsed().as_secs_f64());
+            res.map_err(|e| (None, None, e.into()))
+        }
+        ClientMessage::Unsubscribe(request) => {
+            let res = client.unsubscribe(request, timer).await;
+            WORKER_METRICS
+                .request_round_trip
+                .with_label_values(&WorkloadType::Unsubscribe, &address, "")
+                .observe(timer.elapsed().as_secs_f64());
+            res.map_err(|e| (None, None, e.into()))
         }
         ClientMessage::Subscribe(subscription) => {
             let res = client.subscribe(subscription, timer).await;
@@ -91,7 +113,10 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
             query_string: query,
             message_id,
         }) => {
-            let res = client.one_off_query(&query, &message_id, timer);
+            let res = match client.config.protocol {
+                Protocol::Binary => client.one_off_query_bsatn(&query, &message_id, timer),
+                Protocol::Text => client.one_off_query_json(&query, &message_id, timer),
+            };
             WORKER_METRICS
                 .request_round_trip
                 .with_label_values(&WorkloadType::Sql, &address, "")

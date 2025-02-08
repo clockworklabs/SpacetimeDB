@@ -1,23 +1,28 @@
 use std::time::Duration;
 
-use super::compiler::compile_sql;
+use super::ast::SchemaViewer;
 use crate::db::datastore::locking_tx_datastore::state_view::StateView;
 use crate::db::datastore::system_tables::StVarTable;
 use crate::db::datastore::traits::IsolationLevel;
 use crate::db::relational_db::{RelationalDB, Tx};
 use crate::energy::EnergyQuanta;
 use crate::error::DBError;
+use crate::estimation::estimate_rows_scanned;
 use crate::execution_context::Workload;
 use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall};
 use crate::host::ArgsTuple;
 use crate::subscription::module_subscription_actor::{ModuleSubscriptions, WriteConflict};
+use crate::subscription::tx::DeltaTx;
 use crate::util::slow::SlowQueryLogger;
-use crate::vm::{DbProgram, TxMode};
-use itertools::Either;
-use spacetimedb_client_api_messages::timestamp::Timestamp;
+use crate::vm::{check_row_limit, DbProgram, TxMode};
+use anyhow::anyhow;
+use spacetimedb_expr::statement::Statement;
 use spacetimedb_lib::identity::AuthCtx;
+use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::relation::FieldName;
-use spacetimedb_lib::{ProductType, ProductValue};
+use spacetimedb_lib::Timestamp;
+use spacetimedb_lib::{AlgebraicType, ProductType, ProductValue};
+use spacetimedb_query::{compile_sql_stmt, execute_dml_stmt, execute_select_stmt};
 use spacetimedb_vm::eval::run_ast;
 use spacetimedb_vm::expr::{CodeResult, CrudExpr, Expr};
 use spacetimedb_vm::relation::MemTable;
@@ -172,30 +177,93 @@ pub fn run(
     sql_text: &str,
     auth: AuthCtx,
     subs: Option<&ModuleSubscriptions>,
-) -> Result<Vec<MemTable>, DBError> {
-    let result = db.with_read_only(Workload::Sql, |tx| {
-        let ast = compile_sql(db, &AuthCtx::for_testing(), tx, sql_text)?;
-        if CrudExpr::is_reads(&ast) {
-            let mut updates = Vec::new();
-            let result = execute(
-                &mut DbProgram::new(db, &mut TxMode::Tx(tx), auth),
-                ast,
-                sql_text,
-                &mut updates,
-            )?;
-            Ok::<_, DBError>(Either::Left(result))
-        } else {
-            // hehe. right. write.
-            Ok(Either::Right(ast))
-        }
+    head: &mut Vec<(Box<str>, AlgebraicType)>,
+) -> Result<Vec<ProductValue>, DBError> {
+    // We parse the sql statement in a mutable transation.
+    // If it turns out to be a query, we downgrade the tx.
+    let (tx, stmt) = db.with_auto_rollback(db.begin_mut_tx(IsolationLevel::Serializable, Workload::Sql), |tx| {
+        compile_sql_stmt(sql_text, &SchemaViewer::new(tx, &auth))
     })?;
-    match result {
-        Either::Left(result) => Ok(result),
-        // TODO: this should perhaps be an upgradable_read upgrade? or we should try
-        //       and figure out if we can detect the mutablility of the query before we take
-        //       the tx? once we have migrations we probably don't want to have stale
-        //       sql queries after a database schema have been updated.
-        Either::Right(ast) => execute_sql(db, sql_text, ast, auth, subs),
+
+    let mut metrics = ExecutionMetrics::default();
+
+    match stmt {
+        Statement::Select(stmt) => {
+            // Up to this point, the tx has been read-only,
+            // and hence there are no deltas to process.
+            let (_, tx) = tx.commit_downgrade(Workload::Sql);
+
+            // Release the tx on drop, so that we record metrics
+            let mut tx = scopeguard::guard(tx, |tx| {
+                db.release_tx(tx);
+            });
+
+            // Compute the header for the result set
+            stmt.for_each_return_field(|col_name, col_type| {
+                head.push((col_name.into(), col_type.clone()));
+            });
+
+            // Evaluate the query
+            let rows = execute_select_stmt(stmt, &DeltaTx::from(&*tx), &mut metrics, |plan| {
+                check_row_limit(&plan, db, &tx, |plan, tx| estimate_rows_scanned(tx, plan), &auth)?;
+                Ok(plan)
+            })?;
+
+            // Update transaction metrics
+            tx.metrics.merge(metrics);
+
+            Ok(rows)
+        }
+        Statement::DML(stmt) => {
+            // An extra layer of auth is required for DML
+            if auth.caller != auth.owner {
+                return Err(anyhow!("Only owners are authorized to run SQL DML statements").into());
+            }
+
+            // Evaluate the mutation
+            let (mut tx, _) = db.with_auto_rollback(tx, |tx| execute_dml_stmt(stmt, tx, &mut metrics))?;
+
+            // Update transaction metrics
+            tx.metrics.merge(metrics);
+
+            // Commit the tx if there are no deltas to process
+            if subs.is_none() {
+                return db.commit_tx(tx).map(|_| vec![]);
+            }
+
+            // Otherwise downgrade the tx and process the deltas.
+            // Note, we get the delta by downgrading the tx.
+            // Hence we just pass a default `DatabaseUpdate` here.
+            // It will ultimately be replaced with the correct one.
+            match subs
+                .unwrap()
+                .commit_and_broadcast_event(
+                    None,
+                    ModuleEvent {
+                        timestamp: Timestamp::now(),
+                        caller_identity: auth.caller,
+                        caller_address: None,
+                        function_call: ModuleFunctionCall {
+                            reducer: String::new(),
+                            reducer_id: u32::MAX.into(),
+                            args: ArgsTuple::default(),
+                        },
+                        status: EventStatus::Committed(DatabaseUpdate::default()),
+                        energy_quanta_used: EnergyQuanta::ZERO,
+                        host_execution_duration: Duration::ZERO,
+                        request_id: None,
+                        timer: None,
+                    },
+                    tx,
+                )
+                .unwrap()
+            {
+                Err(WriteConflict) => {
+                    todo!("See module_host_actor::call_reducer_with_tx")
+                }
+                Ok(_) => Ok(vec![]),
+            }
+        }
     }
 }
 
@@ -213,17 +281,18 @@ pub fn translate_col(tx: &Tx, field: FieldName) -> Option<Box<str>> {
 pub(crate) mod tests {
     use super::*;
     use crate::db::datastore::system_tables::{StTableFields, ST_TABLE_ID, ST_TABLE_NAME};
-    use crate::db::relational_db::tests_utils::TestDB;
+    use crate::db::relational_db::tests_utils::{insert, TestDB};
+    use crate::subscription::module_subscription_manager::SubscriptionManager;
     use crate::vm::tests::create_table_with_rows;
+    use parking_lot::RwLock;
     use pretty_assertions::assert_eq;
     use spacetimedb_lib::db::auth::{StAccess, StTableType};
     use spacetimedb_lib::error::{ResultTest, TestError};
-    use spacetimedb_lib::relation::ColExpr;
     use spacetimedb_lib::relation::Header;
     use spacetimedb_lib::{AlgebraicValue, Identity};
     use spacetimedb_primitives::{col_list, ColId};
     use spacetimedb_sats::{product, AlgebraicType, ArrayValue, ProductType};
-    use spacetimedb_vm::eval::test_helpers::{create_game_data, mem_table, mem_table_without_table_name};
+    use spacetimedb_vm::eval::test_helpers::create_game_data;
     use std::sync::Arc;
 
     pub(crate) fn execute_for_testing(
@@ -231,14 +300,22 @@ pub(crate) mod tests {
         sql_text: &str,
         q: Vec<CrudExpr>,
     ) -> Result<Vec<MemTable>, DBError> {
-        let subs = ModuleSubscriptions::new(Arc::new(db.clone()), Identity::ZERO);
+        let subs = ModuleSubscriptions::new(
+            Arc::new(db.clone()),
+            Arc::new(RwLock::new(SubscriptionManager::default())),
+            Identity::ZERO,
+        );
         execute_sql(db, sql_text, q, AuthCtx::for_testing(), Some(&subs))
     }
 
     /// Short-cut for simplify test execution
-    pub(crate) fn run_for_testing(db: &RelationalDB, sql_text: &str) -> Result<Vec<MemTable>, DBError> {
-        let subs = ModuleSubscriptions::new(Arc::new(db.clone()), Identity::ZERO);
-        run(db, sql_text, AuthCtx::for_testing(), Some(&subs))
+    pub(crate) fn run_for_testing(db: &RelationalDB, sql_text: &str) -> Result<Vec<ProductValue>, DBError> {
+        let subs = ModuleSubscriptions::new(
+            Arc::new(db.clone()),
+            Arc::new(RwLock::new(SubscriptionManager::default())),
+            Identity::ZERO,
+        );
+        run(db, sql_text, AuthCtx::for_testing(), Some(&subs), &mut vec![])
     }
 
     fn create_data(total_rows: u64) -> ResultTest<(TestDB, MemTable)> {
@@ -263,14 +340,7 @@ pub(crate) mod tests {
 
         let result = run_for_testing(&db, "SELECT * FROM inventory")?;
 
-        assert_eq!(result.len(), 1, "Not return results");
-        let result = result.first().unwrap().clone();
-
-        assert_eq!(
-            mem_table_without_table_name(&result),
-            mem_table_without_table_name(&input),
-            "Inventory"
-        );
+        assert_eq!(result, input.data, "Inventory");
         Ok(())
     }
 
@@ -279,31 +349,15 @@ pub(crate) mod tests {
         let (db, input) = create_data(1)?;
 
         let result = run_for_testing(&db, "SELECT inventory.* FROM inventory")?;
-        assert_eq!(result.len(), 1, "Not return results");
-        let result = result.first().unwrap().clone();
 
-        assert_eq!(
-            mem_table_without_table_name(&result),
-            mem_table_without_table_name(&input),
-            "Inventory"
-        );
+        assert_eq!(result, input.data, "Inventory");
 
         let result = run_for_testing(
             &db,
             "SELECT inventory.inventory_id FROM inventory WHERE inventory.inventory_id = 1",
         )?;
-        assert_eq!(result.len(), 1, "Not return results");
-        let result = result.first().unwrap().clone();
 
-        let head = ProductType::from([("inventory_id", AlgebraicType::U64)]);
-        let row = product!(1u64);
-        let input = mem_table(input.head.table_id, head, vec![row]);
-
-        assert_eq!(
-            mem_table_without_table_name(&result),
-            mem_table_without_table_name(&input),
-            "Inventory"
-        );
+        assert_eq!(result, vec![product!(1u64)], "Inventory");
 
         Ok(())
     }
@@ -313,7 +367,6 @@ pub(crate) mod tests {
         let (db, _) = create_data(1)?;
 
         let tx = db.begin_tx(Workload::ForTests);
-        let schema = db.schema_for_table(&tx, ST_TABLE_ID).unwrap();
         db.release_tx(tx);
 
         let result = run_for_testing(
@@ -321,8 +374,6 @@ pub(crate) mod tests {
             &format!("SELECT * FROM {} WHERE table_id = {}", ST_TABLE_NAME, ST_TABLE_ID),
         )?;
 
-        assert_eq!(result.len(), 1, "Not return results");
-        let result = result.first().unwrap().clone();
         let pk_col_id: ColId = StTableFields::TableId.into();
         let row = product![
             ST_TABLE_ID,
@@ -331,108 +382,62 @@ pub(crate) mod tests {
             StAccess::Public.as_str(),
             Some(AlgebraicValue::Array(ArrayValue::U16(vec![pk_col_id.0].into()))),
         ];
-        let input = MemTable::new(Header::from(&*schema).into(), schema.table_access, vec![row]);
 
-        assert_eq!(
-            mem_table_without_table_name(&result),
-            mem_table_without_table_name(&input),
-            "st_table"
-        );
+        assert_eq!(result, vec![row], "st_table");
         Ok(())
     }
 
     #[test]
     fn test_select_column() -> ResultTest<()> {
-        let (db, table) = create_data(1)?;
+        let (db, _) = create_data(1)?;
 
         let result = run_for_testing(&db, "SELECT inventory_id FROM inventory")?;
 
-        assert_eq!(result.len(), 1, "Not return results");
-        let result = result.first().unwrap().clone();
-        // The expected result.
-        let inv = table.head.project(&[ColExpr::Col(0.into())]).unwrap();
-
         let row = product![1u64];
-        let input = MemTable::new(inv.into(), table.table_access, vec![row]);
 
-        assert_eq!(
-            mem_table_without_table_name(&result),
-            mem_table_without_table_name(&input),
-            "Inventory"
-        );
+        assert_eq!(result, vec![row], "Inventory");
         Ok(())
     }
 
     #[test]
     fn test_where() -> ResultTest<()> {
-        let (db, table) = create_data(1)?;
+        let (db, _) = create_data(1)?;
 
         let result = run_for_testing(&db, "SELECT inventory_id FROM inventory WHERE inventory_id = 1")?;
 
-        assert_eq!(result.len(), 1, "Not return results");
-        let result = result.first().unwrap().clone();
-
-        // The expected result.
-        let inv = table.head.project(&[ColExpr::Col(0.into())]).unwrap();
-
         let row = product![1u64];
-        let input = MemTable::new(inv.into(), table.table_access, vec![row]);
 
-        assert_eq!(
-            mem_table_without_table_name(&result),
-            mem_table_without_table_name(&input),
-            "Inventory"
-        );
+        assert_eq!(result, vec![row], "Inventory");
         Ok(())
     }
 
     #[test]
     fn test_or() -> ResultTest<()> {
-        let (db, table) = create_data(2)?;
+        let (db, _) = create_data(2)?;
 
-        let result = run_for_testing(
+        let mut result = run_for_testing(
             &db,
             "SELECT inventory_id FROM inventory WHERE inventory_id = 1 OR inventory_id = 2",
         )?;
 
-        assert_eq!(result.len(), 1, "Not return results");
-        let mut result = result.first().unwrap().clone();
-        result.data.sort();
-        //The expected result
-        let inv = table.head.project(&[ColExpr::Col(0.into())]).unwrap();
+        result.sort();
 
-        let input = MemTable::new(inv.into(), table.table_access, vec![product![1u64], product![2u64]]);
-
-        assert_eq!(
-            mem_table_without_table_name(&result),
-            mem_table_without_table_name(&input),
-            "Inventory"
-        );
+        assert_eq!(result, vec![product![1u64], product![2u64]], "Inventory");
         Ok(())
     }
 
     #[test]
     fn test_nested() -> ResultTest<()> {
-        let (db, table) = create_data(2)?;
+        let (db, _) = create_data(2)?;
 
-        let result = run_for_testing(
+        let mut result = run_for_testing(
             &db,
             "SELECT inventory_id FROM inventory WHERE (inventory_id = 1 OR inventory_id = 2 AND (true))",
         )?;
 
-        assert_eq!(result.len(), 1, "Not return results");
-        let mut result = result.first().unwrap().clone();
-        result.data.sort();
-        // The expected result.
-        let inv = table.head.project(&[ColExpr::Col(0.into())]).unwrap();
+        result.sort();
 
-        let input = MemTable::new(inv.into(), table.table_access, vec![product![1u64], product![2u64]]);
-
-        assert_eq!(
-            mem_table_without_table_name(&result),
-            mem_table_without_table_name(&input),
-            "Inventory"
-        );
+        assert_eq!(result, vec![product![1u64], product![2u64]], "Inventory");
         Ok(())
     }
 
@@ -442,7 +447,7 @@ pub(crate) mod tests {
 
         let db = TestDB::durable()?;
 
-        let (p_schema, inv_schema) = db.with_auto_commit::<_, _, TestError>(Workload::ForTests, |tx| {
+        db.with_auto_commit::<_, _, TestError>(Workload::ForTests, |tx| {
             let i = create_table_with_rows(&db, tx, "Inventory", data.inv_ty, &data.inv.data, StAccess::Public)?;
             let p = create_table_with_rows(&db, tx, "Player", data.player_ty, &data.player.data, StAccess::Public)?;
             create_table_with_rows(
@@ -456,7 +461,7 @@ pub(crate) mod tests {
             Ok((p, i))
         })?;
 
-        let result = &run_for_testing(
+        let result = run_for_testing(
             &db,
             "SELECT
         Player.*
@@ -465,18 +470,13 @@ pub(crate) mod tests {
         JOIN Location
         ON Location.entity_id = Player.entity_id
         WHERE Location.x > 0 AND Location.x <= 32 AND Location.z > 0 AND Location.z <= 32",
-        )?[0];
+        )?;
 
         let row1 = product!(100u64, 1u64);
-        let input = MemTable::new(Header::from(&*p_schema).into(), p_schema.table_access, [row1].into());
 
-        assert_eq!(
-            mem_table_without_table_name(result),
-            mem_table_without_table_name(&input),
-            "Player JOIN Location"
-        );
+        assert_eq!(result, vec![row1], "Player JOIN Location");
 
-        let result = &run_for_testing(
+        let result = run_for_testing(
             &db,
             "SELECT
         Inventory.*
@@ -487,20 +487,11 @@ pub(crate) mod tests {
         JOIN Location
         ON Player.entity_id = Location.entity_id
         WHERE Location.x > 0 AND Location.x <= 32 AND Location.z > 0 AND Location.z <= 32",
-        )?[0];
+        )?;
 
         let row1 = product!(1u64, "health");
-        let input = MemTable::new(
-            Header::from(&*inv_schema).into(),
-            inv_schema.table_access,
-            [row1].into(),
-        );
 
-        assert_eq!(
-            mem_table_without_table_name(result),
-            mem_table_without_table_name(&input),
-            "Inventory JOIN Player JOIN Location"
-        );
+        assert_eq!(result, vec![row1], "Inventory JOIN Player JOIN Location");
         Ok(())
     }
 
@@ -512,20 +503,13 @@ pub(crate) mod tests {
 
         assert_eq!(result.len(), 0, "Return results");
 
-        let result = run_for_testing(&db, "SELECT * FROM inventory")?;
-
-        assert_eq!(result.len(), 1, "Not return results");
-        let mut result = result.first().unwrap().clone();
+        let mut result = run_for_testing(&db, "SELECT * FROM inventory")?;
 
         input.data.push(product![2u64, "test"]);
         input.data.sort();
-        result.data.sort();
+        result.sort();
 
-        assert_eq!(
-            mem_table_without_table_name(&result),
-            mem_table_without_table_name(&input),
-            "Inventory"
-        );
+        assert_eq!(result, input.data, "Inventory");
 
         Ok(())
     }
@@ -538,29 +522,17 @@ pub(crate) mod tests {
         run_for_testing(&db, "INSERT INTO inventory (inventory_id, name) VALUES (3, 't3')")?;
 
         let result = run_for_testing(&db, "SELECT * FROM inventory")?;
-        assert_eq!(
-            result.iter().map(|x| x.data.len()).sum::<usize>(),
-            3,
-            "Not return results"
-        );
+        assert_eq!(result.len(), 3, "Not return results");
 
         run_for_testing(&db, "DELETE FROM inventory WHERE inventory.inventory_id = 3")?;
 
         let result = run_for_testing(&db, "SELECT * FROM inventory")?;
-        assert_eq!(
-            result.iter().map(|x| x.data.len()).sum::<usize>(),
-            2,
-            "Not delete correct row?"
-        );
+        assert_eq!(result.len(), 2, "Not delete correct row?");
 
         run_for_testing(&db, "DELETE FROM inventory")?;
 
         let result = run_for_testing(&db, "SELECT * FROM inventory")?;
-        assert_eq!(
-            result.iter().map(|x| x.data.len()).sum::<usize>(),
-            0,
-            "Not delete all rows"
-        );
+        assert_eq!(result.len(), 0, "Not delete all rows");
 
         Ok(())
     }
@@ -576,17 +548,11 @@ pub(crate) mod tests {
 
         let result = run_for_testing(&db, "SELECT * FROM inventory WHERE inventory_id = 2")?;
 
-        let result = result.first().unwrap().clone();
-
         let mut change = input;
         change.data.clear();
         change.data.push(product![2u64, "c2"]);
 
-        assert_eq!(
-            mem_table_without_table_name(&change),
-            mem_table_without_table_name(&result),
-            "Update Inventory 2"
-        );
+        assert_eq!(result, change.data, "Update Inventory 2");
 
         run_for_testing(&db, "UPDATE inventory SET name = 'c3'")?;
 
@@ -594,14 +560,9 @@ pub(crate) mod tests {
 
         let updated: Vec<_> = result
             .into_iter()
-            .map(|x| {
-                x.data
-                    .into_iter()
-                    .map(|x| x.field_as_str(1, None).unwrap().to_string())
-                    .collect::<Vec<_>>()
-            })
+            .map(|x| x.field_as_str(1, None).unwrap().to_string())
             .collect();
-        assert_eq!(vec![vec!["c3"; 3]], updated);
+        assert_eq!(vec!["c3"; 3], updated);
 
         Ok(())
     }
@@ -619,13 +580,12 @@ pub(crate) mod tests {
         ];
         let table_id = db.create_table_for_test_multi_column("test", schema, col_list![0, 1])?;
         db.with_auto_commit(Workload::ForTests, |tx| {
-            db.insert(tx, table_id, product![1, 1, 1, 1]).map(drop)
+            insert(&db, tx, table_id, &product![1, 1, 1, 1]).map(drop)
         })?;
 
         let result = run_for_testing(&db, "select * from test where b = 1 and a = 1")?;
 
-        let result = result.first().unwrap().clone();
-        assert_eq!(result.data, vec![product![1, 1, 1, 1]]);
+        assert_eq!(result, vec![product![1, 1, 1, 1]]);
 
         Ok(())
     }
@@ -665,27 +625,20 @@ pub(crate) mod tests {
 
         db.with_auto_commit(Workload::ForTests, |tx| {
             for i in 0..1000i32 {
-                db.insert(tx, table_id, product!(i)).unwrap();
+                insert(&db, tx, table_id, &product!(i)).unwrap();
             }
             Ok::<(), DBError>(())
         })
         .unwrap();
 
         let result = run_for_testing(&db, "select * from test where x > 5 and x < 5").unwrap();
-        assert_eq!(result.len(), 1);
-        assert!(result[0].data.is_empty());
+        assert!(result.is_empty());
 
         let result = run_for_testing(&db, "select * from test where x >= 5 and x < 4").unwrap();
-        assert_eq!(result.len(), 1);
-        assert!(
-            result[0].data.is_empty(),
-            "Expected no rows but found {:#?}",
-            result[0].data
-        );
+        assert!(result.is_empty(), "Expected no rows but found {:#?}", result);
 
         let result = run_for_testing(&db, "select * from test where x > 5 and x <= 4").unwrap();
-        assert_eq!(result.len(), 1);
-        assert!(result[0].data.is_empty());
+        assert!(result.is_empty());
         Ok(())
     }
 
@@ -697,12 +650,13 @@ pub(crate) mod tests {
         let schema = &[("a", AlgebraicType::U8), ("b", AlgebraicType::U8)];
         let table_id = db.create_table_for_test_multi_column("test", schema, col_list![0, 1])?;
         let row = product![4u8, 8u8];
-        db.with_auto_commit(Workload::ForTests, |tx| db.insert(tx, table_id, row.clone()).map(drop))?;
+        db.with_auto_commit(Workload::ForTests, |tx| {
+            insert(&db, tx, table_id, &row.clone()).map(drop)
+        })?;
 
         let result = run_for_testing(&db, "select * from test where a >= 3 and a <= 5 and b >= 3 and b <= 5")?;
 
-        let result = result.first().unwrap().clone();
-        assert_eq!(result.data, []);
+        assert!(result.is_empty());
 
         Ok(())
     }
@@ -714,7 +668,7 @@ pub(crate) mod tests {
         let table_id = db.create_table_for_test("T", &[("a", AlgebraicType::U8)], &[])?;
         db.with_auto_commit(Workload::ForTests, |tx| -> Result<_, DBError> {
             for i in 0..5u8 {
-                db.insert(tx, table_id, product!(i))?;
+                insert(&db, tx, table_id, &product!(i))?;
             }
             Ok(())
         })?;
@@ -724,6 +678,8 @@ pub(crate) mod tests {
 
         let internal_auth = AuthCtx::new(server, server);
         let external_auth = AuthCtx::new(server, client);
+
+        let run = |db, sql, auth, subs| run(db, sql, auth, subs, &mut vec![]);
 
         // No row limit, both queries pass.
         assert!(run(&db, "SELECT * FROM T", internal_auth, None).is_ok());

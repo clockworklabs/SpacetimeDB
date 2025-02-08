@@ -20,6 +20,6 @@ pub fn invoke_cli(paths: &SpacetimePaths, args: &[&str]) {
     let (cmd, args) = args.subcommand().expect("Could not split subcommand and args");
 
     RUNTIME
-        .block_on(spacetimedb_cli::exec_subcommand(config, paths, cmd, args))
-        .unwrap()
+        .block_on(spacetimedb_cli::exec_subcommand(config, paths, None, cmd, args))
+        .unwrap();
 }

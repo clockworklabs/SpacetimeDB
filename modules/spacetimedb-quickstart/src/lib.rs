@@ -28,3 +28,8 @@ pub fn list_over_age(ctx: &ReducerContext, age: u8) {
         log::info!("{} has age {} >= {}", person.name, person.age, age);
     }
 }
+
+#[spacetimedb::reducer]
+fn log_module_identity(ctx: &ReducerContext) {
+    log::info!("Module identity: {}", ctx.identity());
+}

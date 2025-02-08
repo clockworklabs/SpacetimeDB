@@ -24,6 +24,20 @@ macro_rules! declare_tests_with_suffix {
             }
 
             #[test]
+            fn subscribe_and_cancel() {
+                make_test("subscribe_and_cancel").run();
+            }
+
+            #[test]
+            fn subscribe_and_unsubscribe() {
+                make_test("subscribe_and_unsubscribe").run();
+            }
+
+            #[test]
+            fn subscription_error_smoke_test() {
+                make_test("subscription_error_smoke_test").run();
+            }
+            #[test]
             fn delete_primitive() {
                 make_test("delete_primitive").run();
             }
@@ -74,6 +88,16 @@ macro_rules! declare_tests_with_suffix {
             }
 
             #[test]
+            fn insert_timestamp() {
+                make_test("insert_timestamp").run();
+            }
+
+            #[test]
+            fn insert_call_timestamp() {
+                make_test("insert_call_timestamp").run();
+            }
+
+            #[test]
             fn on_reducer() {
                 make_test("on_reducer").run();
             }
@@ -114,8 +138,8 @@ macro_rules! declare_tests_with_suffix {
             }
 
             #[test]
-            fn insert_long_table() {
-                make_test("insert_long_table").run();
+            fn insert_delete_large_table() {
+                make_test("insert_delete_large_table").run();
             }
 
             #[test]

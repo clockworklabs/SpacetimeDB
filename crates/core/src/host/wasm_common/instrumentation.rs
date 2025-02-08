@@ -104,6 +104,10 @@ impl CallTimes {
         self.times[span.call] += span.duration;
     }
 
+    pub fn sum(&self) -> Duration {
+        self.times.values().sum()
+    }
+
     /// Taking the record of call times gives a copy of the
     /// current values and resets the values to zero.
     ///

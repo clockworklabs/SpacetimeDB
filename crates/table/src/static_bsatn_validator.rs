@@ -38,7 +38,6 @@ use std::sync::Arc;
 /// so the resulting `StaticBsatnValidator` should be stored and re-used.
 pub(crate) fn static_bsatn_validator(ty: &RowTypeLayout) -> StaticBsatnValidator {
     let tree = row_type_to_tree(ty.product());
-    //dbg!(&tree);
     let insns = tree_to_insns(&tree).into();
     StaticBsatnValidator { insns }
 }
@@ -249,7 +248,7 @@ fn remove_trailing_gotos(program: &mut Vec<Insn>) {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct CheckTag {
     /// The tag to check is stored at `start + tag_offset`.
     tag_offset: u16,
@@ -259,7 +258,7 @@ struct CheckTag {
 }
 
 /// The instruction set of a [`StaticBsatnValidator`].
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Insn {
     /// Visit the byte at offset `start + N`
     /// and assert that it is 0 or 1, i.e., a valid `bool`.
@@ -286,6 +285,7 @@ impl Insn {
 
 impl MemoryUsage for Insn {}
 
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StaticBsatnValidator {
     /// The list of instructions that make up this program.
     insns: Arc<[Insn]>,

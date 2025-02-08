@@ -24,6 +24,7 @@ use crate::identifier::Identifier;
 use crate::schema::{Schema, TableSchema};
 use crate::type_for_generate::{AlgebraicTypeUse, ProductTypeDef, TypespaceForGenerate};
 use deserialize::ReducerArgsDeserializeSeed;
+use enum_map::EnumMap;
 use hashbrown::Equivalent;
 use indexmap::IndexMap;
 use itertools::Itertools;
@@ -36,10 +37,9 @@ use spacetimedb_lib::db::raw_def::v9::{
     RawSql, RawTableDefV9, RawTypeDefV9, RawUniqueConstraintDataV9, TableAccess, TableType,
 };
 use spacetimedb_lib::{ProductType, RawModuleDef};
-use spacetimedb_primitives::{ColId, ColList, ColSet, TableId};
+use spacetimedb_primitives::{ColId, ColList, ColOrCols, ColSet, ReducerId, TableId};
 use spacetimedb_sats::AlgebraicType;
 use spacetimedb_sats::{AlgebraicTypeRef, Typespace};
-use validate::v9::generate_index_name;
 
 pub mod deserialize;
 pub mod validate;
@@ -100,6 +100,9 @@ pub struct ModuleDef {
     /// Note: this is using IndexMap because reducer order is important
     /// and must be preserved for future calls to `__call_reducer__`.
     reducers: IndexMap<Identifier, ReducerDef>,
+
+    /// A map from lifecycle reducer kind to reducer id.
+    lifecycle_reducers: EnumMap<Lifecycle, Option<ReducerId>>,
 
     /// The type definitions of the module definition.
     types: HashMap<ScopedTypeName, TypeDef>,
@@ -219,14 +222,38 @@ impl ModuleDef {
         self.reducers.get(name)
     }
 
+    /// Convenience method to look up a reducer, possibly by a string, returning its id as well.
+    pub fn reducer_full<K: ?Sized + Hash + Equivalent<Identifier>>(
+        &self,
+        name: &K,
+    ) -> Option<(ReducerId, &ReducerDef)> {
+        // If the string IS a valid identifier, we can just look it up.
+        self.reducers.get_full(name).map(|(idx, _, def)| (idx.into(), def))
+    }
+
+    /// Look up a reducer by its id.
+    pub fn reducer_by_id(&self, id: ReducerId) -> &ReducerDef {
+        &self.reducers[id.idx()]
+    }
+
+    /// Look up a reducer by its id.
+    pub fn get_reducer_by_id(&self, id: ReducerId) -> Option<&ReducerDef> {
+        self.reducers.get_index(id.idx()).map(|(_, def)| def)
+    }
+
+    /// Looks up a lifecycle reducer defined in the module.
+    pub fn lifecycle_reducer(&self, lifecycle: Lifecycle) -> Option<(ReducerId, &ReducerDef)> {
+        self.lifecycle_reducers[lifecycle].map(|i| (i, &self.reducers[i.idx()]))
+    }
+
     /// Get a `DeserializeSeed` that can pull data from a `Deserializer` and format it into a `ProductType`
     /// at the parameter type of the reducer named `name`.
     pub fn reducer_arg_deserialize_seed<K: ?Sized + Hash + Equivalent<Identifier>>(
         &self,
         name: &K,
-    ) -> Option<ReducerArgsDeserializeSeed> {
-        let reducer = self.reducer(name)?;
-        Some(ReducerArgsDeserializeSeed(self.typespace.with_type(reducer)))
+    ) -> Option<(ReducerId, ReducerArgsDeserializeSeed)> {
+        let (id, reducer) = self.reducer_full(name)?;
+        Some((id, ReducerArgsDeserializeSeed(self.typespace.with_type(reducer))))
     }
 
     /// Look up the name corresponding to an `AlgebraicTypeRef`.
@@ -250,58 +277,6 @@ impl ModuleDef {
         // If the string IS a valid identifier, we can just look it up.
         let table_def = self.tables.get(name)?;
         Some(TableSchema::from_module_def(self, table_def, (), table_id))
-    }
-
-    /// Generate indexes for the module definition.
-    /// We guarantee that all `unique` constraints have an index generated for them.
-    /// This will be removed once another enforcement mechanism is implemented.
-    /// This is a noop if there are already usable indexes present.
-    fn generate_indexes(&mut self) {
-        for table in self.tables.values_mut() {
-            for constraint in table.constraints.values() {
-                let ConstraintData::Unique(UniqueConstraintData { columns }) = &constraint.data;
-
-                // if we have a constraint for the index, we're fine.
-                if table.indexes.values().any(|index| {
-                    let IndexDef {
-                        algorithm: IndexAlgorithm::BTree(BTreeAlgorithm { columns: index_columns }),
-                        ..
-                    } = index;
-
-                    index_columns == &**columns
-                }) {
-                    continue;
-                }
-
-                let index_name = generate_index_name(
-                    &table.name,
-                    self.typespace
-                        .get(table.product_type_ref)
-                        .unwrap()
-                        .as_product()
-                        .unwrap(),
-                    &RawIndexAlgorithm::BTree {
-                        columns: columns.clone().into(),
-                    },
-                );
-
-                let was_present = table.indexes.insert(
-                    index_name.clone(),
-                    IndexDef {
-                        name: index_name.clone(),
-                        algorithm: IndexAlgorithm::BTree(BTreeAlgorithm {
-                            columns: columns.clone().into(),
-                        }),
-                        accessor_name: None, // this is a generated index.
-                    },
-                );
-                assert!(
-                    was_present.is_none(),
-                    "generated index already present, which should be impossible"
-                );
-                self.stored_in_table_def.insert(index_name, table.name.clone());
-            }
-        }
     }
 
     /// Lookup a definition by its key in `self`, panicking if it is not found.
@@ -351,9 +326,7 @@ impl TryFrom<raw_def::v9::RawModuleDefV9> for ModuleDef {
     type Error = ValidationErrors;
 
     fn try_from(v9_mod: raw_def::v9::RawModuleDefV9) -> Result<Self, Self::Error> {
-        let mut result = validate::v9::validate(v9_mod)?;
-        result.generate_indexes();
-        Ok(result)
+        validate::v9::validate(v9_mod)
     }
 }
 impl From<ModuleDef> for RawModuleDefV9 {
@@ -361,6 +334,7 @@ impl From<ModuleDef> for RawModuleDefV9 {
         let ModuleDef {
             tables,
             reducers,
+            lifecycle_reducers: _,
             types,
             typespace,
             stored_in_table_def: _,
@@ -575,6 +549,7 @@ impl From<IndexDef> for RawIndexDefV9 {
             name: Some(val.name),
             algorithm: match val.algorithm {
                 IndexAlgorithm::BTree(BTreeAlgorithm { columns }) => RawIndexAlgorithm::BTree { columns },
+                IndexAlgorithm::Direct(DirectAlgorithm { column }) => RawIndexAlgorithm::Direct { column },
             },
             accessor_name: val.accessor_name.map(Into::into),
         }
@@ -587,21 +562,31 @@ impl From<IndexDef> for RawIndexDefV9 {
 pub enum IndexAlgorithm {
     /// Implemented using a rust `std::collections::BTreeMap`.
     BTree(BTreeAlgorithm),
+    /// Implemented using `DirectUniqueIndex`.
+    Direct(DirectAlgorithm),
 }
 
 impl IndexAlgorithm {
     /// Get the columns of the index.
-    pub fn columns(&self) -> &ColList {
+    pub fn columns(&self) -> ColOrCols<'_> {
         match self {
-            IndexAlgorithm::BTree(btree) => &btree.columns,
+            Self::BTree(btree) => ColOrCols::ColList(&btree.columns),
+            Self::Direct(direct) => ColOrCols::Col(direct.column),
         }
+    }
+    /// Find the column index for a given field.
+    ///
+    /// *NOTE*: This take in account the possibility of permutations.
+    pub fn find_col_index(&self, pos: usize) -> Option<ColId> {
+        self.columns().iter().find(|col_id| col_id.idx() == pos)
     }
 }
 
 impl From<IndexAlgorithm> for RawIndexAlgorithm {
     fn from(val: IndexAlgorithm) -> Self {
         match val {
-            IndexAlgorithm::BTree(BTreeAlgorithm { columns }) => RawIndexAlgorithm::BTree { columns },
+            IndexAlgorithm::BTree(BTreeAlgorithm { columns }) => Self::BTree { columns },
+            IndexAlgorithm::Direct(DirectAlgorithm { column }) => Self::Direct { column },
         }
     }
 }
@@ -616,6 +601,19 @@ pub struct BTreeAlgorithm {
 impl From<BTreeAlgorithm> for IndexAlgorithm {
     fn from(val: BTreeAlgorithm) -> Self {
         IndexAlgorithm::BTree(val)
+    }
+}
+
+/// Data specifying a Direct index.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct DirectAlgorithm {
+    /// The column to index.
+    pub column: ColId,
+}
+
+impl From<DirectAlgorithm> for IndexAlgorithm {
+    fn from(val: DirectAlgorithm) -> Self {
+        IndexAlgorithm::Direct(val)
     }
 }
 

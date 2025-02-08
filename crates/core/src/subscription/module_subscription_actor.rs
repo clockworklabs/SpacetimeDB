@@ -1,26 +1,31 @@
-use super::execution_unit::{ExecutionUnit, QueryHash};
-use super::module_subscription_manager::SubscriptionManager;
+use super::execution_unit::QueryHash;
+use super::module_subscription_manager::{Plan, SubscriptionManager};
 use super::query::compile_read_only_query;
-use super::subscription::ExecutionSet;
-use crate::client::messages::{SubscriptionUpdateMessage, TransactionUpdateMessage};
+use super::tx::DeltaTx;
+use super::{collect_table_update, record_exec_metrics};
+use crate::client::messages::{
+    SubscriptionError, SubscriptionMessage, SubscriptionResult, SubscriptionRows, SubscriptionUpdateMessage,
+    TransactionUpdateMessage,
+};
 use crate::client::{ClientActorId, ClientConnectionSender, Protocol};
-use crate::db::datastore::system_tables::StVarTable;
+use crate::db::datastore::locking_tx_datastore::tx::TxId;
 use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::error::DBError;
-use crate::execution_context::Workload;
+use crate::estimation::estimate_rows_scanned;
+use crate::execution_context::{Workload, WorkloadType};
 use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent};
 use crate::messages::websocket::Subscribe;
-use crate::sql::ast::SchemaViewer;
+use crate::subscription::execute_plans;
 use crate::vm::check_row_limit;
 use crate::worker_metrics::WORKER_METRICS;
 use parking_lot::RwLock;
-use spacetimedb_client_api_messages::websocket::FormatSwitch;
-use spacetimedb_expr::check::compile_sql_sub;
+use spacetimedb_client_api_messages::websocket::{
+    BsatnFormat, FormatSwitch, JsonFormat, SubscribeSingle, TableUpdate, Unsubscribe,
+};
+use spacetimedb_execution::pipelined::PipelinedProject;
 use spacetimedb_lib::identity::AuthCtx;
+use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::Identity;
-use spacetimedb_vm::errors::ErrorVm;
-use spacetimedb_vm::expr::AuthAccess;
-use std::time::Duration;
 use std::{sync::Arc, time::Instant};
 
 type Subscriptions = Arc<RwLock<SubscriptionManager>>;
@@ -35,19 +40,217 @@ pub struct ModuleSubscriptions {
 }
 
 type AssertTxFn = Arc<dyn Fn(&Tx)>;
+type SubscriptionUpdate = FormatSwitch<TableUpdate<BsatnFormat>, TableUpdate<JsonFormat>>;
 
 impl ModuleSubscriptions {
-    pub fn new(relational_db: Arc<RelationalDB>, owner_identity: Identity) -> Self {
+    pub fn new(relational_db: Arc<RelationalDB>, subscriptions: Subscriptions, owner_identity: Identity) -> Self {
         Self {
             relational_db,
-            subscriptions: Arc::new(RwLock::new(SubscriptionManager::default())),
+            subscriptions,
             owner_identity,
         }
     }
 
+    /// Run auth and row limit checks for a new subscriber, then compute the initial query results.
+    fn evaluate_initial_subscription(
+        &self,
+        sender: Arc<ClientConnectionSender>,
+        query: Arc<Plan>,
+        tx: &TxId,
+        auth: &AuthCtx,
+    ) -> Result<(SubscriptionUpdate, ExecutionMetrics), DBError> {
+        check_row_limit(
+            query.physical_plan(),
+            &self.relational_db,
+            tx,
+            |plan, tx| estimate_rows_scanned(tx, plan),
+            auth,
+        )?;
+
+        let comp = sender.config.compression;
+        let table_id = query.subscribed_table_id();
+        let table_name = query.subscribed_table_name();
+        let plan = query.physical_plan().clone().optimize().map(PipelinedProject::from)?;
+        let tx = DeltaTx::from(tx);
+
+        Ok(match sender.config.protocol {
+            Protocol::Binary => collect_table_update(&plan, table_id, table_name.into(), comp, &tx)
+                .map(|(table_update, metrics)| (FormatSwitch::Bsatn(table_update), metrics))?,
+            Protocol::Text => collect_table_update(&plan, table_id, table_name.into(), comp, &tx)
+                .map(|(table_update, metrics)| (FormatSwitch::Json(table_update), metrics))?,
+        })
+    }
+
+    #[tracing::instrument(level = "trace", skip_all)]
+    pub fn add_subscription(
+        &self,
+        sender: Arc<ClientConnectionSender>,
+        request: SubscribeSingle,
+        timer: Instant,
+        _assert: Option<AssertTxFn>,
+    ) -> Result<(), DBError> {
+        let tx = scopeguard::guard(self.relational_db.begin_tx(Workload::Subscribe), |tx| {
+            self.relational_db.release_tx(tx);
+        });
+        let auth = AuthCtx::new(self.owner_identity, sender.id.identity);
+        let query = super::query::WHITESPACE.replace_all(&request.query, " ");
+        let sql = query.trim();
+        let hash = QueryHash::from_string(sql);
+        let existing_query = {
+            let guard = self.subscriptions.read();
+            guard.query(&hash)
+        };
+        let query: Result<Arc<Plan>, DBError> = existing_query.map(Ok).unwrap_or_else(|| {
+            let compiled = compile_read_only_query(&auth, &tx, sql)?;
+            Ok(Arc::new(compiled))
+        });
+
+        // Send an error message to the client
+        let send_err_msg = |message| {
+            sender.send_message(SubscriptionMessage {
+                request_id: Some(request.request_id),
+                query_id: Some(request.query_id),
+                timer: Some(timer),
+                result: SubscriptionResult::Error(SubscriptionError {
+                    table_id: None,
+                    message,
+                }),
+            })
+        };
+
+        // If compile error, send to client
+        let query = match query {
+            Ok(query) => query,
+            Err(e) => {
+                // Apparently we ignore errors sending messages.
+                let _ = send_err_msg(e.to_string().into());
+                return Ok(());
+            }
+        };
+
+        let eval_result = self.evaluate_initial_subscription(sender.clone(), query.clone(), &tx, &auth);
+
+        // If execution error, send to client
+        let (table_rows, metrics) = match eval_result {
+            Ok(ok) => ok,
+            Err(e) => {
+                // Apparently we ignore errors sending messages.
+                let _ = send_err_msg(e.to_string().into());
+                return Ok(());
+            }
+        };
+
+        record_exec_metrics(
+            &WorkloadType::Subscribe,
+            &self.relational_db.database_identity(),
+            metrics,
+        );
+
+        // It acquires the subscription lock after `eval`, allowing `add_subscription` to run concurrently.
+        // This also makes it possible for `broadcast_event` to get scheduled before the subsequent part here
+        // but that should not pose an issue.
+        let mut subscriptions = self.subscriptions.write();
+        subscriptions.add_subscription(sender.clone(), query.clone(), request.query_id)?;
+
+        WORKER_METRICS
+            .subscription_queries
+            .with_label_values(&self.relational_db.database_identity())
+            .set(subscriptions.num_unique_queries() as i64);
+
+        #[cfg(test)]
+        if let Some(assert) = _assert {
+            assert(&tx);
+        }
+
+        // NOTE: It is important to send the state in this thread because if you spawn a new
+        // thread it's possible for messages to get sent to the client out of order. If you do
+        // spawn in another thread messages will need to be buffered until the state is sent out
+        // on the wire
+        let _ = sender.send_message(SubscriptionMessage {
+            request_id: Some(request.request_id),
+            query_id: Some(request.query_id),
+            timer: Some(timer),
+            result: SubscriptionResult::Subscribe(SubscriptionRows {
+                table_id: query.subscribed_table_id(),
+                table_name: query.subscribed_table_name().into(),
+                table_rows,
+            }),
+        });
+        Ok(())
+    }
+
+    pub fn remove_subscription(
+        &self,
+        sender: Arc<ClientConnectionSender>,
+        request: Unsubscribe,
+        timer: Instant,
+    ) -> Result<(), DBError> {
+        // Send an error message to the client
+        let send_err_msg = |message| {
+            sender.send_message(SubscriptionMessage {
+                request_id: Some(request.request_id),
+                query_id: Some(request.query_id),
+                timer: Some(timer),
+                result: SubscriptionResult::Error(SubscriptionError {
+                    table_id: None,
+                    message,
+                }),
+            })
+        };
+
+        let mut subscriptions = self.subscriptions.write();
+        let query = match subscriptions.remove_subscription((sender.id.identity, sender.id.address), request.query_id) {
+            Ok(query) => query,
+            Err(error) => {
+                // Apparently we ignore errors sending messages.
+                let _ = send_err_msg(error.to_string().into());
+                return Ok(());
+            }
+        };
+
+        let tx = scopeguard::guard(self.relational_db.begin_tx(Workload::Unsubscribe), |tx| {
+            self.relational_db.release_tx(tx);
+        });
+        let auth = AuthCtx::new(self.owner_identity, sender.id.identity);
+        let eval_result = self.evaluate_initial_subscription(sender.clone(), query.clone(), &tx, &auth);
+
+        // If execution error, send to client
+        let (table_rows, metrics) = match eval_result {
+            Ok(ok) => ok,
+            Err(e) => {
+                // Apparently we ignore errors sending messages.
+                let _ = send_err_msg(e.to_string().into());
+                return Ok(());
+            }
+        };
+
+        record_exec_metrics(
+            &WorkloadType::Subscribe,
+            &self.relational_db.database_identity(),
+            metrics,
+        );
+
+        WORKER_METRICS
+            .subscription_queries
+            .with_label_values(&self.relational_db.database_identity())
+            .set(subscriptions.num_unique_queries() as i64);
+        let _ = sender.send_message(SubscriptionMessage {
+            request_id: Some(request.request_id),
+            query_id: Some(request.query_id),
+            timer: Some(timer),
+            result: SubscriptionResult::Unsubscribe(SubscriptionRows {
+                table_id: query.subscribed_table_id(),
+                table_name: query.subscribed_table_name().into(),
+                table_rows,
+            }),
+        });
+        Ok(())
+    }
+
     /// Add a subscriber to the module. NOTE: this function is blocking.
-    #[tracing::instrument(skip_all)]
-    pub fn add_subscriber(
+    /// This is used for the legacy subscription API which uses a set of queries.
+    #[tracing::instrument(level = "trace", skip_all)]
+    pub fn add_legacy_subscriber(
         &self,
         sender: Arc<ClientConnectionSender>,
         subscription: Subscribe,
@@ -73,11 +276,7 @@ impl ModuleSubscriptions {
                 queries.extend(
                     super::subscription::get_all(&self.relational_db, &tx, &auth)?
                         .into_iter()
-                        .map(|query| {
-                            let hash = QueryHash::from_string(&query.sql);
-                            ExecutionUnit::new(query, hash).map(Arc::new)
-                        })
-                        .collect::<Result<Vec<_>, _>>()?,
+                        .map(Arc::new),
                 );
                 continue;
             }
@@ -85,60 +284,50 @@ impl ModuleSubscriptions {
             if let Some(unit) = guard.query(&hash) {
                 queries.push(unit);
             } else {
-                // NOTE: The following ensures compliance with the 1.0 sql api.
-                // Come 1.0, it will have replaced the current compilation stack.
-                compile_sql_sub(sql, &SchemaViewer::new(&self.relational_db, &*tx, &auth))?;
-
-                let mut compiled = compile_read_only_query(&self.relational_db, &auth, &tx, sql)?;
-                // Note that no error path is needed here.
-                // We know this vec only has a single element,
-                // since `parse_and_type_sub` guarantees it.
-                // This check will be removed come 1.0.
-                if compiled.len() == 1 {
-                    queries.push(Arc::new(ExecutionUnit::new(compiled.remove(0), hash)?));
-                }
+                let compiled = compile_read_only_query(&auth, &tx, sql)?;
+                queries.push(Arc::new(compiled));
             }
         }
 
         drop(guard);
 
-        let execution_set: ExecutionSet = queries.into();
+        let comp = sender.config.compression;
 
-        execution_set
-            .check_auth(auth.owner, auth.caller)
-            .map_err(ErrorVm::Auth)?;
+        fn rows_scanned(tx: &TxId, plans: &[Arc<Plan>]) -> u64 {
+            plans
+                .iter()
+                .map(|plan| estimate_rows_scanned(tx, plan.physical_plan()))
+                .fold(0, |acc, n| acc.saturating_add(n))
+        }
 
         check_row_limit(
-            &execution_set,
+            &queries,
             &self.relational_db,
             &tx,
-            |execution_set, tx| execution_set.row_estimate(tx),
+            |plan, tx| rows_scanned(tx, plan),
             &auth,
         )?;
 
-        let slow_query_threshold = StVarTable::sub_limit(&self.relational_db, &tx)?.map(Duration::from_millis);
-        let database_update = match sender.config.protocol {
-            Protocol::Text => FormatSwitch::Json(execution_set.eval(
-                &self.relational_db,
-                &tx,
-                slow_query_threshold,
-                sender.config.compression,
-            )),
-            Protocol::Binary => FormatSwitch::Bsatn(execution_set.eval(
-                &self.relational_db,
-                &tx,
-                slow_query_threshold,
-                sender.config.compression,
-            )),
+        let tx = DeltaTx::from(&*tx);
+        let (database_update, metrics) = match sender.config.protocol {
+            Protocol::Binary => execute_plans(&queries, comp, &tx)
+                .map(|(table_update, metrics)| (FormatSwitch::Bsatn(table_update), metrics))?,
+            Protocol::Text => execute_plans(&queries, comp, &tx)
+                .map(|(table_update, metrics)| (FormatSwitch::Json(table_update), metrics))?,
         };
+
+        record_exec_metrics(
+            &WorkloadType::Subscribe,
+            &self.relational_db.database_identity(),
+            metrics,
+        );
 
         // It acquires the subscription lock after `eval`, allowing `add_subscription` to run concurrently.
         // This also makes it possible for `broadcast_event` to get scheduled before the subsequent part here
         // but that should not pose an issue.
         let mut subscriptions = self.subscriptions.write();
-        subscriptions.remove_subscription(&(sender.id.identity, sender.id.address));
-        subscriptions.add_subscription(sender.clone(), execution_set.into_iter());
-        let num_queries = subscriptions.num_queries();
+        subscriptions.set_legacy_subscription(sender.clone(), queries.into_iter());
+        let num_queries = subscriptions.num_unique_queries();
 
         WORKER_METRICS
             .subscription_queries
@@ -164,11 +353,11 @@ impl ModuleSubscriptions {
 
     pub fn remove_subscriber(&self, client_id: ClientActorId) {
         let mut subscriptions = self.subscriptions.write();
-        subscriptions.remove_subscription(&(client_id.identity, client_id.address));
+        subscriptions.remove_all_subscriptions(&(client_id.identity, client_id.address));
         WORKER_METRICS
             .subscription_queries
             .with_label_values(&self.relational_db.database_identity())
-            .set(subscriptions.num_queries() as i64);
+            .set(subscriptions.num_unique_queries() as i64);
     }
 
     /// Commit a transaction and broadcast its ModuleEvent to all interested subscribers.
@@ -184,29 +373,33 @@ impl ModuleSubscriptions {
         let stdb = &self.relational_db;
         // Downgrade mutable tx.
         // Ensure tx is released/cleaned up once out of scope.
-        let read_tx = scopeguard::guard(
-            match &mut event.status {
-                EventStatus::Committed(db_update) => {
-                    let Some((tx_data, read_tx)) = stdb.commit_tx_downgrade(tx, Workload::Update)? else {
-                        return Ok(Err(WriteConflict));
-                    };
-                    *db_update = DatabaseUpdate::from_writes(&tx_data);
-                    read_tx
-                }
-                EventStatus::Failed(_) | EventStatus::OutOfEnergy => {
-                    stdb.rollback_mut_tx_downgrade(tx, Workload::Update)
-                }
-            },
-            |tx| {
-                self.relational_db.release_tx(tx);
-            },
-        );
+        let (read_tx, tx_data) = match &mut event.status {
+            EventStatus::Committed(db_update) => {
+                let Some((tx_data, read_tx)) = stdb.commit_tx_downgrade(tx, Workload::Update)? else {
+                    return Ok(Err(WriteConflict));
+                };
+                *db_update = DatabaseUpdate::from_writes(&tx_data);
+                (read_tx, Some(tx_data))
+            }
+            EventStatus::Failed(_) | EventStatus::OutOfEnergy => {
+                (stdb.rollback_mut_tx_downgrade(tx, Workload::Update), None)
+            }
+        };
+
+        let read_tx = scopeguard::guard(read_tx, |tx| {
+            self.relational_db.release_tx(tx);
+        });
+
+        let read_tx = tx_data
+            .as_ref()
+            .map(|tx_data| DeltaTx::new(&read_tx, tx_data))
+            .unwrap_or_else(|| DeltaTx::from(&*read_tx));
+
         let event = Arc::new(event);
 
         match &event.status {
             EventStatus::Committed(_) => {
-                let slow_query_threshold = StVarTable::incr_limit(stdb, &read_tx)?.map(Duration::from_millis);
-                subscriptions.eval_updates(stdb, &read_tx, event.clone(), caller, slow_query_threshold)
+                subscriptions.eval_updates(&read_tx, event.clone(), caller, &self.relational_db.database_identity())
             }
             EventStatus::Failed(_) => {
                 if let Some(client) = caller {
@@ -231,15 +424,22 @@ pub struct WriteConflict;
 #[cfg(test)]
 mod tests {
     use super::{AssertTxFn, ModuleSubscriptions};
+    use crate::client::messages::{SerializableMessage, SubscriptionMessage, SubscriptionResult};
     use crate::client::{ClientActorId, ClientConfig, ClientConnectionSender};
-    use crate::db::relational_db::tests_utils::TestDB;
+    use crate::db::datastore::traits::IsolationLevel;
+    use crate::db::relational_db::tests_utils::{insert, TestDB};
     use crate::db::relational_db::RelationalDB;
     use crate::error::DBError;
     use crate::execution_context::Workload;
-    use spacetimedb_client_api_messages::websocket::Subscribe;
-    use spacetimedb_expr::errors::{TypingError, Unresolved};
+    use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall};
+    use crate::subscription::module_subscription_manager::SubscriptionManager;
+    use parking_lot::RwLock;
+    use spacetimedb_client_api_messages::energy::EnergyQuanta;
+    use spacetimedb_client_api_messages::websocket::{QueryId, Subscribe, SubscribeSingle, Unsubscribe};
     use spacetimedb_lib::db::auth::StAccess;
+    use spacetimedb_lib::{bsatn, Timestamp};
     use spacetimedb_lib::{error::ResultTest, AlgebraicType, Identity};
+    use spacetimedb_primitives::{IndexId, TableId};
     use spacetimedb_sats::product;
     use std::time::Instant;
     use std::{sync::Arc, time::Duration};
@@ -250,13 +450,225 @@ mod tests {
         let client = ClientActorId::for_test(Identity::ZERO);
         let config = ClientConfig::for_test();
         let sender = Arc::new(ClientConnectionSender::dummy(client, config));
-        let module_subscriptions = ModuleSubscriptions::new(db.clone(), owner);
+        let module_subscriptions =
+            ModuleSubscriptions::new(db.clone(), Arc::new(RwLock::new(SubscriptionManager::default())), owner);
 
         let subscribe = Subscribe {
             query_strings: [sql.into()].into(),
             request_id: 0,
         };
-        module_subscriptions.add_subscriber(sender, subscribe, Instant::now(), assert)
+        module_subscriptions.add_legacy_subscriber(sender, subscribe, Instant::now(), assert)
+    }
+
+    /// An in-memory `RelationalDB` for testing
+    fn relational_db() -> anyhow::Result<Arc<RelationalDB>> {
+        let TestDB { db, .. } = TestDB::in_memory()?;
+        Ok(Arc::new(db))
+    }
+
+    /// Initialize a module [SubscriptionManager]
+    fn module_subscriptions(db: Arc<RelationalDB>) -> ModuleSubscriptions {
+        ModuleSubscriptions::new(
+            db,
+            Arc::new(RwLock::new(SubscriptionManager::default())),
+            Identity::ZERO,
+        )
+    }
+
+    /// Return a client connection for testing
+    fn sender_with_rx() -> (Arc<ClientConnectionSender>, mpsc::Receiver<SerializableMessage>) {
+        let client = ClientActorId::for_test(Identity::ZERO);
+        let config = ClientConfig::for_test();
+        let (sender, rx) = ClientConnectionSender::dummy_with_channel(client, config);
+        (Arc::new(sender), rx)
+    }
+
+    /// A [SubscribeSingle] message for testing
+    fn single_subscribe(sql: &str, query_id: u32) -> SubscribeSingle {
+        SubscribeSingle {
+            query: sql.into(),
+            request_id: 0,
+            query_id: QueryId::new(query_id),
+        }
+    }
+
+    /// An [Unsubscribe] message for testing
+    fn single_unsubscribe(query_id: u32) -> Unsubscribe {
+        Unsubscribe {
+            request_id: 0,
+            query_id: QueryId::new(query_id),
+        }
+    }
+
+    /// A dummy [ModuleEvent] for testing
+    fn module_event() -> ModuleEvent {
+        ModuleEvent {
+            timestamp: Timestamp::now(),
+            caller_identity: Identity::ZERO,
+            caller_address: None,
+            function_call: ModuleFunctionCall::default(),
+            status: EventStatus::Committed(DatabaseUpdate::default()),
+            energy_quanta_used: EnergyQuanta { quanta: 0 },
+            host_execution_duration: Duration::from_millis(0),
+            request_id: None,
+            timer: None,
+        }
+    }
+
+    /// Creates a single row, single column table with an index
+    fn create_table_with_index(db: &RelationalDB, name: &str) -> anyhow::Result<(TableId, IndexId)> {
+        let table_id = db.create_table_for_test(name, &[("id", AlgebraicType::U64)], &[0.into()])?;
+        let index_id = db.with_read_only(Workload::ForTests, |tx| {
+            db.schema_for_table(tx, table_id)?
+                .indexes
+                .iter()
+                .find(|schema| {
+                    schema
+                        .index_algorithm
+                        .columns()
+                        .as_singleton()
+                        .is_some_and(|col_id| col_id.idx() == 0)
+                })
+                .map(|schema| schema.index_id)
+                .ok_or_else(|| anyhow::anyhow!("Index not found for ColId `{}`", 0))
+        })?;
+        db.with_auto_commit(Workload::ForTests, |tx| {
+            db.insert(tx, table_id, &bsatn::to_vec(&product![1_u64])?)?;
+            Ok((table_id, index_id))
+        })
+    }
+
+    #[tokio::test]
+    async fn subscribe_error() -> anyhow::Result<()> {
+        let (sender, mut rx) = sender_with_rx();
+        let db = relational_db()?;
+        let subs = module_subscriptions(db.clone());
+
+        // Create a table `t` with index on `id`
+        create_table_with_index(&db, "t")?;
+
+        let subscribe = || -> anyhow::Result<()> {
+            // Invalid query: t does not have a field x
+            let sql = "select * from t where x = 1";
+            subs.add_subscription(sender.clone(), single_subscribe(sql, 0), Instant::now(), None)?;
+            Ok(())
+        };
+
+        subscribe()?;
+
+        assert!(matches!(
+            rx.recv().await,
+            Some(SerializableMessage::Subscription(SubscriptionMessage {
+                result: SubscriptionResult::Error(..),
+                ..
+            }))
+        ));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn unsubscribe_error() -> anyhow::Result<()> {
+        let (sender, mut rx) = sender_with_rx();
+        let db = relational_db()?;
+        let subs = module_subscriptions(db.clone());
+
+        // Create a table `t` with an index on `id`
+        let (_, index_id) = create_table_with_index(&db, "t")?;
+
+        let subscribe = || -> anyhow::Result<()> {
+            let sql = "select * from t where id = 1";
+            subs.add_subscription(sender.clone(), single_subscribe(sql, 0), Instant::now(), None)?;
+            Ok(())
+        };
+
+        let unsubscribe = || -> anyhow::Result<()> {
+            subs.remove_subscription(sender.clone(), single_unsubscribe(0), Instant::now())?;
+            Ok(())
+        };
+
+        subscribe()?;
+
+        // The initial subscription should succeed
+        assert!(matches!(
+            rx.recv().await,
+            Some(SerializableMessage::Subscription(SubscriptionMessage {
+                result: SubscriptionResult::Subscribe(..),
+                ..
+            }))
+        ));
+
+        // Remove the index from `id`
+        db.with_auto_commit(Workload::ForTests, |tx| db.drop_index(tx, index_id))?;
+
+        unsubscribe()?;
+
+        // Why does the unsubscribe fail?
+        // This relies on some knowledge of the underlying implementation.
+        // Specifically that we do not recompile queries on unsubscribe.
+        // We execute the cached plan which in this case is an index scan.
+        // The index no longer exists, and therefore it fails.
+        assert!(matches!(
+            rx.recv().await,
+            Some(SerializableMessage::Subscription(SubscriptionMessage {
+                result: SubscriptionResult::Error(..),
+                ..
+            }))
+        ));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn tx_update_error() -> anyhow::Result<()> {
+        let (sender, mut rx) = sender_with_rx();
+        let db = relational_db()?;
+        let subs = module_subscriptions(db.clone());
+
+        // Create two tables `t` and `s` with indexes on their `id` columns
+        let (table_id, _index_id) = create_table_with_index(&db, "t")?;
+        let (_table_id, index_id) = create_table_with_index(&db, "s")?;
+
+        let subscribe = || -> anyhow::Result<()> {
+            let sql = "select t.* from t join s on t.id = s.id";
+            subs.add_subscription(sender.clone(), single_subscribe(sql, 0), Instant::now(), None)?;
+            Ok(())
+        };
+
+        subscribe()?;
+
+        // The initial subscription should succeed
+        assert!(matches!(
+            rx.recv().await,
+            Some(SerializableMessage::Subscription(SubscriptionMessage {
+                result: SubscriptionResult::Subscribe(..),
+                ..
+            }))
+        ));
+
+        // Remove the index from `s`
+        db.with_auto_commit(Workload::ForTests, |tx| db.drop_index(tx, index_id))?;
+
+        // Start a new transaction and insert a new row into `t`
+        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        db.insert(&mut tx, table_id, &bsatn::to_vec(&product![2_u64])?)?;
+
+        assert!(matches!(
+            subs.commit_and_broadcast_event(None, module_event(), tx),
+            Ok(Ok(_))
+        ));
+
+        // Why does the update fail?
+        // This relies on some knowledge of the underlying implementation.
+        // Specifically, plans are cached on the initial subscribe.
+        // Hence we execute a cached plan which happens to be an index join.
+        // We've removed the index on `s`, and therefore it fails.
+        assert!(matches!(
+            rx.recv().await,
+            Some(SerializableMessage::Subscription(SubscriptionMessage {
+                result: SubscriptionResult::Error(..),
+                ..
+            }))
+        ));
+        Ok(())
     }
 
     /// Asserts that a subscription holds a tx handle for the entire length of its evaluation.
@@ -270,7 +682,7 @@ mod tests {
         // Create table with one row
         let table_id = db.create_table_for_test("T", &[("a", AlgebraicType::U8)], &[])?;
         db.with_auto_commit(Workload::ForTests, |tx| {
-            db.insert(tx, table_id, product!(1_u8)).map(drop)
+            insert(&db, tx, table_id, &product!(1_u8)).map(drop)
         })?;
 
         let (send, mut recv) = mpsc::unbounded_channel();
@@ -298,7 +710,7 @@ mod tests {
         let write_handle = runtime.spawn(async move {
             let _ = recv.recv().await;
             db2.with_auto_commit(Workload::ForTests, |tx| {
-                db2.insert(tx, table_id, product!(2_u8)).map(drop)
+                insert(&db2, tx, table_id, &product!(2_u8)).map(drop)
             })
         });
 
@@ -338,10 +750,7 @@ mod tests {
             "SELECT public.* FROM public JOIN private ON public.a = private.a WHERE private.a = 1",
             "SELECT private.* FROM private JOIN public ON private.a = public.a WHERE public.a = 1",
         ] {
-            assert!(matches!(
-                subscribe(sql).unwrap_err(),
-                DBError::TypeError(TypingError::Unresolved(Unresolved::Table(_)))
-            ));
+            assert!(subscribe(sql).is_err(),);
         }
 
         Ok(())

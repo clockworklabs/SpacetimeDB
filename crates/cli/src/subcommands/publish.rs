@@ -65,7 +65,7 @@ pub fn cli() -> clap::Command {
         .after_help("Run `spacetime help publish` for more detailed information.")
 }
 
-pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let server = args.get_one::<String>("server").map(|s| s.as_str());
     let name_or_identity = args.get_one::<String>("name|identity");
     let path_to_project = args.get_one::<PathBuf>("project_path").unwrap();
@@ -80,7 +80,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
     // we want to use the default identity
     // TODO(jdetter): We should maybe have some sort of user prompt here for them to be able to
     //  easily create a new identity with an email
-    let auth_header = get_auth_header(&config, anon_identity)?;
+    let auth_header = get_auth_header(&mut config, anon_identity, server, !force).await?;
 
     let mut query_params = Vec::<(&str, &str)>::new();
     query_params.push(("host_type", "wasm"));
@@ -109,6 +109,19 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
         build::exec_with_argstring(config.clone(), path_to_project, build_options).await?
     };
     let program_bytes = fs::read(path_to_wasm)?;
+
+    let server_address = {
+        let url = Url::parse(&database_host)?;
+        url.host_str().unwrap_or("<default>").to_string()
+    };
+    if server_address != "localhost" && server_address != "127.0.0.1" {
+        println!("You are about to publish to a non-local server: {}", server_address);
+        if !y_or_n(force, "Are you sure you want to proceed?")? {
+            println!("Aborting");
+            return Ok(());
+        }
+    }
+
     println!(
         "Uploading to {} => {}",
         server.unwrap_or(config.default_server_name().unwrap_or("<default>")),
@@ -146,7 +159,9 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
 
     let res = builder.body(program_bytes).send().await?;
     if res.status() == StatusCode::UNAUTHORIZED && !anon_identity {
-        let identity = decode_identity(&config)?;
+        // If we're not in the `anon_identity` case, then we have already forced the user to log in above (using `get_auth_header`), so this should be safe to unwrap.
+        let token = config.spacetimedb_token().unwrap();
+        let identity = decode_identity(token)?;
         let err = res.text().await?;
         return unauth_error_context(
             Err(anyhow::anyhow!(err)),
@@ -180,14 +195,21 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
         PublishResult::TldNotRegistered { domain } => {
             return Err(anyhow::anyhow!(
                 "The top level domain that you provided is not registered.\n\
-            This tld is not yet registered to any identity. You can register this domain with the following command:\n\
-            \n\
-            \tspacetime dns register-tld {}\n",
+            This tld is not yet registered to any identity: {}",
                 domain.tld()
             ));
         }
         PublishResult::PermissionDenied { domain } => {
-            let identity = decode_identity(&config)?;
+            if anon_identity {
+                anyhow::bail!(
+                    "You need to be logged in as the owner of {} to publish to {}",
+                    domain.tld(),
+                    domain.tld()
+                );
+            }
+            // If we're not in the `anon_identity` case, then we have already forced the user to log in above (using `get_auth_header`), so this should be safe to unwrap.
+            let token = config.spacetimedb_token().unwrap();
+            let identity = decode_identity(token)?;
             //TODO(jdetter): Have a nice name generator here, instead of using some abstract characters
             // we should perhaps generate fun names like 'green-fire-dragon' instead
             let suggested_tld: String = identity.chars().take(12).collect();

@@ -8,14 +8,49 @@
 //! }
 //! ```
 
-use anyhow::{Context, Result};
 use home::home_dir;
-use spacetimedb_lib::{bsatn, de::Deserialize, ser::Serialize, Identity};
+use spacetimedb_lib::{bsatn, de::Deserialize, ser::Serialize};
 use std::path::PathBuf;
+use thiserror::Error;
 
 const CREDENTIALS_DIR: &str = ".spacetimedb_client_credentials";
 
-/// A file on disk which stores, or can store, a SpacetimeDB [`Identity`] and its private access token.
+#[derive(Error, Debug)]
+pub enum CredentialFileError {
+    #[error("Failed to determine user home directory as root for credentials storage")]
+    DetermineHomeDir,
+    #[error("Error creating credential storage directory {path}")]
+    CreateDir {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("Error serializing credentials for storage in file")]
+    Serialize {
+        #[source]
+        source: bsatn::EncodeError,
+    },
+    #[error("Error writing BSATN-serialized credentials to file {path}")]
+    Write {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("Error reading BSATN-serialized credentials from file {path}")]
+    Read {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("Error deserializing credentials from bytes stored in file {path}")]
+    Deserialize {
+        path: PathBuf,
+        #[source]
+        source: bsatn::DecodeError,
+    },
+}
+
+/// A file on disk which stores, or can store, a JWT for authenticating with SpacetimeDB.
 ///
 /// The file does not necessarily exist or store credentials.
 /// If the credentials have been stored previously, they can be accessed with [`File::load`].
@@ -26,7 +61,6 @@ pub struct File {
 
 #[derive(Serialize, Deserialize)]
 struct Credentials {
-    identity: Identity,
     token: String,
 }
 
@@ -50,73 +84,72 @@ impl File {
         }
     }
 
-    fn ensure_credentials_dir() -> Result<()> {
-        let mut path = home_dir().context("Error determining user home directory as root for credentials storage")?;
-        path.push(CREDENTIALS_DIR);
-
-        std::fs::create_dir_all(&path).with_context(|| format!("Error creating credential storage directory {path:?}"))
+    fn determine_home_dir() -> Result<PathBuf, CredentialFileError> {
+        home_dir().ok_or(CredentialFileError::DetermineHomeDir)
     }
 
-    fn path(&self) -> Result<PathBuf> {
-        let mut path = home_dir().context("Error determining user home directory as root for credentials storage")?;
+    fn ensure_credentials_dir() -> Result<(), CredentialFileError> {
+        let mut path = Self::determine_home_dir()?;
+        path.push(CREDENTIALS_DIR);
+
+        std::fs::create_dir_all(&path).map_err(|source| CredentialFileError::CreateDir { path, source })
+    }
+
+    fn path(&self) -> Result<PathBuf, CredentialFileError> {
+        let mut path = Self::determine_home_dir()?;
         path.push(CREDENTIALS_DIR);
         path.push(&self.filename);
         Ok(path)
     }
 
-    /// Store the provided `identity`/`token` pair to disk in the file referred to by `self`.
+    /// Store the provided `token` to disk in the file referred to by `self`.
     ///
-    /// Future calls to [`Self::load`] on a `File` with the same key can retrieve the credentials.
+    /// Future calls to [`Self::load`] on a `File` with the same key can retrieve the token.
     ///
     /// Expected usage is to call this from a [`super::DbConnectionBuilder::on_connect`] callback.
     ///
     /// ```ignore
     /// DbConnection::builder()
-    ///   .on_connect(|_ctx, identity, token| {
-    ///       credentials::File::new("my_app").save(identity, token).unwrap();
+    ///   .on_connect(|_ctx, _identity, token| {
+    ///       credentials::File::new("my_app").save(token).unwrap();
     /// })
     /// ```
-    pub fn save(self, identity: Identity, token: impl ToString) -> Result<()> {
+    pub fn save(self, token: impl ToString) -> Result<(), CredentialFileError> {
         Self::ensure_credentials_dir()?;
 
         let creds = bsatn::to_vec(&Credentials {
-            identity,
             token: token.to_string(),
         })
-        .context("Error serializing credentials for storage in file")?;
+        .map_err(|source| CredentialFileError::Serialize { source })?;
         let path = self.path()?;
-        std::fs::write(&path, creds)
-            .with_context(|| format!("Error writing BSATN-serialized credentials to file {path:?}"))?;
+        std::fs::write(&path, creds).map_err(|source| CredentialFileError::Write { path, source })?;
         Ok(())
     }
 
-    /// Load a saved identity/token pair from disk in the file referred to by `self`,
+    /// Load a saved token from disk in the file referred to by `self`,
     /// if they have previously been stored by [`Self::save`].
     ///
     /// Returns `Err` if I/O fails,
     /// `None` if credentials have not previously been stored,
     /// or `Some` if credentials are successfully loaded from disk.
     /// After unwrapping the `Result`, the returned `Option` can be passed to
-    /// [`super::DbConnectionBuilder::with_credentials`].
+    /// [`super::DbConnectionBuilder::with_token`].
     ///
     /// ```ignore
     /// DbConnection::builder()
-    ///   .with_credentials(credentials::File::new("my_app").load().unwrap())
+    ///   .with_token(credentials::File::new("my_app").load().unwrap())
     /// ```
-    pub fn load(self) -> Result<Option<(Identity, String)>> {
+    pub fn load(self) -> Result<Option<String>, CredentialFileError> {
         let path = self.path()?;
 
         let bytes = match std::fs::read(&path) {
             Ok(bytes) => bytes,
             Err(e) if matches!(e.kind(), std::io::ErrorKind::NotFound) => return Ok(None),
-            Err(e) => {
-                return Err(e).with_context(|| format!("Error reading BSATN-serialized credentials from file {path:?}"))
-            }
+            Err(source) => return Err(CredentialFileError::Read { path, source }),
         };
 
-        let creds = bsatn::from_slice::<Credentials>(&bytes).context(format!(
-            "Error deserializing credentials from bytes stored in file {path:?}",
-        ))?;
-        Ok(Some((creds.identity, creds.token)))
+        let creds = bsatn::from_slice::<Credentials>(&bytes)
+            .map_err(|source| CredentialFileError::Deserialize { path, source })?;
+        Ok(Some(creds.token))
     }
 }

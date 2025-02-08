@@ -1,9 +1,11 @@
 #![allow(clippy::disallowed_macros)]
 mod module_bindings;
+use std::sync::{atomic::AtomicU8, Arc};
+
 use module_bindings::*;
 
 use spacetimedb_client_api_messages::websocket::Compression;
-use spacetimedb_sdk::{credentials, DbContext, Event, Identity, ReducerEvent, Status, Table, TableWithPrimaryKey};
+use spacetimedb_sdk::{credentials, DbContext, Error, Event, Identity, Status, Table, TableWithPrimaryKey};
 
 // # Our main function
 
@@ -43,9 +45,9 @@ fn creds_store() -> credentials::File {
 }
 
 /// Our `on_connect` callback: save our credentials to a file.
-fn on_connected(_ctx: &DbConnection, identity: Identity, token: &str) {
-    if let Err(e) = creds_store().save(identity, token) {
-        log::error!("Failed to save credentials: {:?}", e);
+fn on_connected(_ctx: &DbConnection, _identity: Identity, token: &str) {
+    if let Err(e) = creds_store().save(token) {
+        eprintln!("Failed to save credentials: {:?}", e);
     }
 }
 
@@ -54,7 +56,7 @@ fn on_connected(_ctx: &DbConnection, identity: Identity, token: &str) {
 /// Our `User::on_insert` callback: if the user is online, print a notification.
 fn on_user_inserted(_ctx: &EventContext, user: &User) {
     if user.online {
-        log::info!("User {} connected.", user_name_or_identity(user));
+        println!("User {} connected.", user_name_or_identity(user));
     }
 }
 
@@ -70,17 +72,17 @@ fn user_name_or_identity(user: &User) -> String {
 /// print a notification about name and status changes.
 fn on_user_updated(_ctx: &EventContext, old: &User, new: &User) {
     if old.name != new.name {
-        log::info!(
+        println!(
             "User {} renamed to {}.",
             user_name_or_identity(old),
             user_name_or_identity(new)
         );
     }
     if old.online && !new.online {
-        log::info!("User {} disconnected.", user_name_or_identity(new));
+        println!("User {} disconnected.", user_name_or_identity(new));
     }
     if !old.online && new.online {
-        log::info!("User {} connected.", user_name_or_identity(new));
+        println!("User {} connected.", user_name_or_identity(new));
     }
 }
 
@@ -93,15 +95,15 @@ fn on_message_inserted(ctx: &EventContext, message: &Message) {
     }
 }
 
-fn print_message(ctx: &EventContext, message: &Message) {
+fn print_message(ctx: &impl RemoteDbContext, message: &Message) {
     let sender = ctx
-        .db
+        .db()
         .user()
         .identity()
         .find(&message.sender)
         .map(|u| user_name_or_identity(&u))
         .unwrap_or_else(|| "unknown".to_string());
-    log::info!("{}: {}", sender, message.text);
+    println!("{}: {}", sender, message.text);
 }
 
 // ## Print message backlog
@@ -109,49 +111,41 @@ fn print_message(ctx: &EventContext, message: &Message) {
 /// Our `on_subscription_applied` callback:
 /// sort all past messages and print them in timestamp order.
 #[allow(unused)]
-fn on_sub_applied(ctx: &EventContext) {
+fn on_sub_applied(ctx: &SubscriptionEventContext) {
     let mut messages = ctx.db.message().iter().collect::<Vec<_>>();
     messages.sort_by_key(|m| m.sent);
     for message in messages {
         print_message(ctx, &message);
     }
 }
-
 // ## Warn if set_name failed
 
 /// Our `on_set_name` callback: print a warning if the reducer failed.
-fn on_name_set(ctx: &EventContext, name: &String) {
-    if let Event::Reducer(ReducerEvent {
-        status: Status::Failed(err),
-        ..
-    }) = &ctx.event
-    {
-        log::error!("Failed to change name to {:?}: {}", name, err);
+fn on_name_set(ctx: &ReducerEventContext, name: &String) {
+    if let Status::Failed(err) = &ctx.event.status {
+        eprintln!("Failed to change name to {:?}: {}", name, err);
     }
 }
 
 // ## Warn if a message was rejected
 
 /// Our `on_send_message` callback: print a warning if the reducer failed.
-fn on_message_sent(ctx: &EventContext, text: &String) {
-    if let Event::Reducer(ReducerEvent {
-        status: Status::Failed(err),
-        ..
-    }) = &ctx.event
-    {
-        log::error!("Failed to send message {:?}: {}", text, err);
+fn on_message_sent(ctx: &ReducerEventContext, text: &String) {
+    if let Status::Failed(err) = &ctx.event.status {
+        eprintln!("Failed to send message {:?}: {}", text, err);
     }
 }
 
 // ## Exit when disconnected
 
 /// Our `on_disconnect` callback: print a note, then exit the process.
-fn on_disconnected(_ctx: &DbConnection, err: Option<&anyhow::Error>) {
-    if let Some(err) = err {
-        panic!("Disconnected abnormally: {err}")
-    } else {
-        log::info!("Disconnected normally.");
-        std::process::exit(0)
+fn on_disconnected(ctx: &ErrorContext) {
+    match &ctx.event {
+        Error::Disconnected => {
+            println!("Disconnected normally.");
+            std::process::exit(0)
+        }
+        err => panic!("Disconnected abnormally: {err}"),
     }
 }
 
@@ -167,9 +161,9 @@ const DB_NAME: &str = "quickstart-chat";
 fn connect_to_db() -> DbConnection {
     DbConnection::builder()
         .on_connect(on_connected)
-        .on_connect_error(|err| panic!("Error while connecting: {err}"))
+        .on_connect_error(|ctx| panic!("Error while connecting: {}", ctx.event))
         .on_disconnect(on_disconnected)
-        .with_credentials(creds_store().load().expect("Error loading credentials"))
+        .with_token(creds_store().load().expect("Error loading credentials"))
         .with_module_name(DB_NAME)
         .with_uri(HOST)
         .with_compression(Compression::Gzip)
@@ -178,12 +172,26 @@ fn connect_to_db() -> DbConnection {
 }
 
 // # Subscribe to queries
+fn subscribe_to_queries(ctx: &DbConnection, queries: &[&str], callback: fn(&SubscriptionEventContext)) {
+    if queries.is_empty() {
+        panic!("No queries to subscribe to.");
+    }
+    let remaining_queries = Arc::new(AtomicU8::new(queries.len() as u8));
+    for query in queries {
+        let remaining_queries = remaining_queries.clone();
+        ctx.subscription_builder()
+            .on_applied(move |ctx| {
+                if remaining_queries.fetch_sub(1, std::sync::atomic::Ordering::Relaxed) == 1 {
+                    callback(ctx);
+                }
+            })
+            .subscribe(query);
+    }
+}
 
 /// Register subscriptions for all rows of both tables.
 fn subscribe_to_tables(ctx: &DbConnection) {
-    ctx.subscription_builder()
-        .on_applied(on_sub_applied)
-        .subscribe(["SELECT * FROM user;", "SELECT * FROM message;"]);
+    subscribe_to_queries(ctx, &["SELECT * FROM user", "SELECT * FROM message"], on_sub_applied);
 }
 
 // # Handle user input

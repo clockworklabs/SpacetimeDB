@@ -24,7 +24,7 @@ use super::{
 ///
 /// 1. `fixed_offset_a/b` are valid offsets for rows typed at `ty` in `page_a/b`.
 /// 2. for any `vlr_a/b: VarLenRef` in the fixed parts of row `a` and `b`,
-///   `vlr_a/b.first_offset` must either be `NULL` or point to a valid granule in `page_a/b`.
+///    `vlr_a/b.first_offset` must either be `NULL` or point to a valid granule in `page_a/b`.
 /// 3. the `static_bsatn_layout` must be derived from `ty`.
 pub unsafe fn eq_row_in_page(
     page_a: &Page,
@@ -101,7 +101,7 @@ struct EqCtx<'page_a, 'page_b> {
 /// SAFETY:
 /// 1. `value_a/b` must be valid at type `ty` and properly aligned for `ty`.
 /// 2. for any `vlr_a/b: VarLenRef` stored in `value_a/b`,
-///   `vlr_a/b.first_offset` must either be `NULL` or point to a valid granule in `page_a/b`.
+///    `vlr_a/b.first_offset` must either be `NULL` or point to a valid granule in `page_a/b`.
 unsafe fn eq_product(ctx: &mut EqCtx<'_, '_>, ty: &ProductTypeLayout) -> bool {
     let base_offset = ctx.curr_offset;
     ty.elements.iter().all(|elem_ty| {
@@ -122,7 +122,7 @@ unsafe fn eq_product(ctx: &mut EqCtx<'_, '_>, ty: &ProductTypeLayout) -> bool {
 /// SAFETY:
 /// 1. `value_a/b` must both be valid at type `ty` and properly aligned for `ty`.
 /// 2. for any `vlr_a/b: VarLenRef` stored in `value_a/b`,
-///   `vlr_a/b.first_offset` must either be `NULL` or point to a valid granule in `page_a/b`.
+///    `vlr_a/b.first_offset` must either be `NULL` or point to a valid granule in `page_a/b`.
 unsafe fn eq_value(ctx: &mut EqCtx<'_, '_>, ty: &AlgebraicTypeLayout) -> bool {
     debug_assert_eq!(
         ctx.curr_offset,

@@ -9,7 +9,8 @@
 use anyhow::{Context, Result};
 use spacetimedb::{
     sats::{i256, u256},
-    Address, Identity, ReducerContext, SpacetimeType, Table,
+    spacetimedb_lib::TimeDuration,
+    Address, Identity, ReducerContext, SpacetimeType, Table, Timestamp,
 };
 
 #[derive(SpacetimeType)]
@@ -39,6 +40,7 @@ pub enum EnumWithPayload {
     Str(String),
     Identity(Identity),
     Address(Address),
+    Timestamp(Timestamp),
     Bytes(Vec<u8>),
     Ints(Vec<i32>),
     Strings(Vec<String>),
@@ -75,6 +77,8 @@ pub struct EveryPrimitiveStruct {
     p: String,
     q: Identity,
     r: Address,
+    s: Timestamp,
+    t: TimeDuration,
 }
 
 #[derive(SpacetimeType)]
@@ -97,6 +101,8 @@ pub struct EveryVecStruct {
     p: Vec<String>,
     q: Vec<Identity>,
     r: Vec<Address>,
+    s: Vec<Timestamp>,
+    t: Vec<TimeDuration>,
 }
 
 /// Defines one or more tables, and optionally reducers alongside them.
@@ -156,6 +162,22 @@ macro_rules! define_tables {
             #[spacetimedb::reducer]
             pub fn $insert (ctx: &ReducerContext, $($field_name : $ty,)*) {
                 ctx.db.[<$name:snake>]().insert($name { $($field_name,)* });
+            }
+        }
+
+        define_tables!(@impl_ops $name { $($($ops)*)? } $($field_name $ty,)*);
+    };
+
+    // Define a reducer for tables without unique constraints,
+    // which deletes a row.
+    (@impl_ops $name:ident
+     { delete $delete:ident
+       $(, $($ops:tt)* )? }
+     $($field_name:ident $ty:ty),* $(,)*) => {
+        paste::paste! {
+            #[spacetimedb::reducer]
+            pub fn $delete (ctx: &ReducerContext, $($field_name : $ty,)*) {
+                ctx.db.[<$name:snake>]().delete($name { $($field_name,)* });
             }
         }
 
@@ -256,6 +278,8 @@ define_tables! {
     OneIdentity { insert insert_one_identity } i Identity;
     OneAddress { insert insert_one_address } a Address;
 
+    OneTimestamp { insert insert_one_timestamp } t Timestamp;
+
     OneSimpleEnum { insert insert_one_simple_enum } e SimpleEnum;
     OneEnumWithPayload { insert insert_one_enum_with_payload } e EnumWithPayload;
 
@@ -290,6 +314,8 @@ define_tables! {
 
     VecIdentity { insert insert_vec_identity } i Vec<Identity>;
     VecAddress { insert insert_vec_address } a Vec<Address>;
+
+    VecTimestamp { insert insert_vec_timestamp } t Vec<Timestamp>;
 
     VecSimpleEnum { insert insert_vec_simple_enum } e Vec<SimpleEnum>;
     VecEnumWithPayload { insert insert_vec_enum_with_payload } e Vec<EnumWithPayload>;
@@ -572,6 +598,11 @@ fn insert_caller_pk_address(ctx: &ReducerContext, data: i32) -> anyhow::Result<(
 }
 
 #[spacetimedb::reducer]
+fn insert_call_timestamp(ctx: &ReducerContext) {
+    ctx.db.one_timestamp().insert(OneTimestamp { t: ctx.timestamp });
+}
+
+#[spacetimedb::reducer]
 fn insert_primitives_as_strings(ctx: &ReducerContext, s: EveryPrimitiveStruct) {
     ctx.db.vec_string().insert(VecString {
         s: vec![
@@ -593,6 +624,8 @@ fn insert_primitives_as_strings(ctx: &ReducerContext, s: EveryPrimitiveStruct) {
             s.p.to_string(),
             s.q.to_string(),
             s.r.to_string(),
+            s.s.to_string(),
+            s.t.to_string(),
         ],
     });
 }
@@ -602,6 +635,7 @@ define_tables! {
     // A table with many fields, of many different types.
     LargeTable {
         insert insert_large_table,
+        delete delete_large_table,
     }
     a u8,
     b u16,
@@ -640,14 +674,14 @@ define_tables! {
 #[spacetimedb::reducer]
 fn no_op_succeeds(_ctx: &ReducerContext) {}
 
-spacetimedb::filter!("SELECT * FROM one_u8");
+#[spacetimedb::client_visibility_filter]
+const ONE_U8_VISIBLE: spacetimedb::Filter = spacetimedb::Filter::Sql("SELECT * FROM one_u8");
 
 #[spacetimedb::table(name = scheduled_table, scheduled(send_scheduled_message), public)]
 pub struct ScheduledTable {
     #[primary_key]
     #[auto_inc]
     scheduled_id: u64,
-    #[scheduled_at]
     scheduled_at: spacetimedb::ScheduleAt,
     text: String,
 }
@@ -659,8 +693,9 @@ fn send_scheduled_message(_ctx: &ReducerContext, arg: ScheduledTable) {
     let _ = arg.scheduled_id;
 }
 
-#[spacetimedb::table(name = indexed_table, index(name=player_id_index, btree(columns = [player_id])))]
+#[spacetimedb::table(name = indexed_table)]
 struct IndexedTable {
+    #[index(btree)]
     player_id: u32,
 }
 

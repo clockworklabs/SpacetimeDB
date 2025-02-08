@@ -107,3 +107,9 @@ system_id! {
     pub struct ColId(pub u16);
 }
 // ColId works differently from other system IDs and is not auto-incremented.
+
+system_id! {
+    /// The index of a reducer as defined in a module's reducers list.
+    // This is never stored in a system table, but is useful to have defined here.
+    pub struct ReducerId(pub u32);
+}

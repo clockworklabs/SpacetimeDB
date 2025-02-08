@@ -1,20 +1,21 @@
+use std::borrow::BorrowMut;
 use std::path::{Path, PathBuf};
 
-pub(crate) trait PathBufExt {
-    fn joined<P: AsRef<Path>>(self, path: P) -> Self;
-    fn joined_int<I: itoa::Integer>(self, path_seg: I) -> Self;
-}
-
-impl PathBufExt for PathBuf {
+pub(crate) trait PathBufExt: BorrowMut<PathBuf> + Sized {
     fn joined<P: AsRef<Path>>(mut self, path: P) -> Self {
-        self.push(path);
+        self.borrow_mut().push(path);
         self
     }
-
+    fn with_exe_ext(mut self) -> Self {
+        self.borrow_mut().set_extension(std::env::consts::EXE_EXTENSION);
+        self
+    }
     fn joined_int<I: itoa::Integer>(self, path_seg: I) -> Self {
         self.joined(itoa::Buffer::new().format(path_seg))
     }
 }
+
+impl PathBufExt for PathBuf {}
 
 /// Declares a new strongly-typed path newtype.
 ///
@@ -23,22 +24,30 @@ impl PathBufExt for PathBuf {
 /// path_type! {
 ///     /// optional docs
 ///     // optional. if false, makes the type's constructor public.
-///     #[non_exhaustive(FALSE)]
+/// #   // TODO: replace cfg(any()) with cfg(false) once stabilized (rust-lang/rust#131204)
+///     #[non_exhaustive(any())]
 ///     FooPath: dir // or file. adds extra utility methods for manipulating the file/dir
 /// }
 /// ```
 #[macro_export]
 macro_rules! path_type {
-    ($(#[doc = $doc:literal])* $(#[non_exhaustive($non_exhaustive:tt)])? $name:ident) => {
+    ($(#[doc = $doc:literal])* $(#[non_exhaustive($($non_exhaustive:tt)+)])? $name:ident) => {
         $(#[doc = $doc])*
         #[derive(Clone, Debug, $crate::__serde::Serialize, $crate::__serde::Deserialize)]
         #[serde(transparent)]
-        #[cfg_attr(all($($non_exhaustive)?), non_exhaustive)]
+        #[cfg_attr(all($($($non_exhaustive)+)?), non_exhaustive)]
         pub struct $name(pub std::path::PathBuf);
 
         impl AsRef<std::path::Path> for $name {
+            #[inline]
             fn as_ref(&self) -> &std::path::Path {
                 &self.0
+            }
+        }
+        impl AsRef<std::ffi::OsStr> for $name {
+            #[inline]
+            fn as_ref(&self) -> &std::ffi::OsStr {
+                self.0.as_ref()
             }
         }
 

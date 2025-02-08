@@ -19,6 +19,7 @@ members = [
   "crates/paths",
   "crates/physical-plan",
   "crates/primitives",
+  "crates/query",
   "crates/sats",
   "crates/schema",
   "crates/sdk",
@@ -26,8 +27,10 @@ members = [
   "crates/sqltest",
   "crates/sql-parser",
   "crates/standalone",
+  "crates/subscription",
   "crates/table",
   "crates/testing",
+  "crates/update",
   "crates/vm",
   "modules/benchmarks",
   "modules/perf-test",
@@ -41,10 +44,10 @@ members = [
   "crates/sdk/tests/connect_disconnect_client",
   "tools/upgrade-version",
 ]
-default-members = ["crates/cli"]
-# cargo feature graph resolver. v2 is default in edition2021 but workspace
+default-members = ["crates/cli", "crates/standalone", "crates/update"]
+# cargo feature graph resolver. v3 is default in edition2024 but workspace
 # manifests don't have editions.
-resolver = "2"
+resolver = "3"
 
 [profile.release]
 opt-level = 3
@@ -83,37 +86,39 @@ inherits = "release"
 debug = true
 
 [workspace.package]
-version = "1.0.0-rc2"
+version = "1.0.0-rc4"
 edition = "2021"
 # update rust-toolchain.toml too!
-rust-version = "1.78.0"
+rust-version = "1.84.0"
 
 [workspace.dependencies]
-spacetimedb = { path = "crates/bindings", version = "1.0.0-rc2" }
-spacetimedb-bindings-macro = { path = "crates/bindings-macro", version = "1.0.0-rc2" }
-spacetimedb-bindings-sys = { path = "crates/bindings-sys", version = "1.0.0-rc2" }
-spacetimedb-cli = { path = "crates/cli", version = "1.0.0-rc2" }
-spacetimedb-client-api = { path = "crates/client-api", version = "1.0.0-rc2" }
-spacetimedb-client-api-messages = { path = "crates/client-api-messages", version = "1.0.0-rc2" }
-spacetimedb-commitlog = { path = "crates/commitlog", version = "1.0.0-rc2" }
-spacetimedb-core = { path = "crates/core", version = "1.0.0-rc2" }
-spacetimedb-data-structures = { path = "crates/data-structures", version = "1.0.0-rc2" }
-spacetimedb-durability = { path = "crates/durability", version = "1.0.0-rc2" }
-spacetimedb-execution = { path = "crates/execution", version = "1.0.0-rc2" }
-spacetimedb-expr = { path = "crates/expr", version = "1.0.0-rc2" }
-spacetimedb-lib = { path = "crates/lib", default-features = false, version = "1.0.0-rc2" }
-spacetimedb-metrics = { path = "crates/metrics", version = "1.0.0-rc2" }
-spacetimedb-paths = { path = "crates/paths", version = "1.0.0-rc2" }
-spacetimedb-physical-plan = { path = "crates/physical-plan", version = "1.0.0-rc2" }
-spacetimedb-primitives = { path = "crates/primitives", version = "1.0.0-rc2" }
-spacetimedb-sats = { path = "crates/sats", version = "1.0.0-rc2" }
-spacetimedb-schema = { path = "crates/schema", version = "1.0.0-rc2" }
-spacetimedb-standalone = { path = "crates/standalone", version = "1.0.0-rc2" }
-spacetimedb-sql-parser = { path = "crates/sql-parser", version = "1.0.0-rc2" }
-spacetimedb-table = { path = "crates/table", version = "1.0.0-rc2" }
-spacetimedb-vm = { path = "crates/vm", version = "1.0.0-rc2" }
-spacetimedb-fs-utils = { path = "crates/fs-utils", version = "1.0.0-rc2" }
-spacetimedb-snapshot = { path = "crates/snapshot", version = "1.0.0-rc2" }
+spacetimedb = { path = "crates/bindings", version = "1.0.0-rc4" }
+spacetimedb-bindings-macro = { path = "crates/bindings-macro", version = "1.0.0-rc4" }
+spacetimedb-bindings-sys = { path = "crates/bindings-sys", version = "1.0.0-rc4" }
+spacetimedb-cli = { path = "crates/cli", version = "1.0.0-rc4" }
+spacetimedb-client-api = { path = "crates/client-api", version = "1.0.0-rc4" }
+spacetimedb-client-api-messages = { path = "crates/client-api-messages", version = "1.0.0-rc4" }
+spacetimedb-commitlog = { path = "crates/commitlog", version = "1.0.0-rc4" }
+spacetimedb-core = { path = "crates/core", version = "1.0.0-rc4" }
+spacetimedb-data-structures = { path = "crates/data-structures", version = "1.0.0-rc4" }
+spacetimedb-durability = { path = "crates/durability", version = "1.0.0-rc4" }
+spacetimedb-execution = { path = "crates/execution", version = "1.0.0-rc4" }
+spacetimedb-expr = { path = "crates/expr", version = "1.0.0-rc4" }
+spacetimedb-lib = { path = "crates/lib", default-features = false, version = "1.0.0-rc4" }
+spacetimedb-metrics = { path = "crates/metrics", version = "1.0.0-rc4" }
+spacetimedb-paths = { path = "crates/paths", version = "1.0.0-rc4" }
+spacetimedb-physical-plan = { path = "crates/physical-plan", version = "1.0.0-rc4" }
+spacetimedb-primitives = { path = "crates/primitives", version = "1.0.0-rc4" }
+spacetimedb-query = { path = "crates/query", version = "1.0.0-rc4" }
+spacetimedb-sats = { path = "crates/sats", version = "1.0.0-rc4" }
+spacetimedb-schema = { path = "crates/schema", version = "1.0.0-rc4" }
+spacetimedb-standalone = { path = "crates/standalone", version = "1.0.0-rc4" }
+spacetimedb-sql-parser = { path = "crates/sql-parser", version = "1.0.0-rc4" }
+spacetimedb-table = { path = "crates/table", version = "1.0.0-rc4" }
+spacetimedb-vm = { path = "crates/vm", version = "1.0.0-rc4" }
+spacetimedb-fs-utils = { path = "crates/fs-utils", version = "1.0.0-rc4" }
+spacetimedb-snapshot = { path = "crates/snapshot", version = "1.0.0-rc4" }
+spacetimedb-subscription = { path = "crates/subscription", version = "1.0.0-rc4" }
 
 ahash = "0.8"
 anyhow = "1.0.68"
@@ -124,6 +129,7 @@ axum = { version = "0.7", features = ["tracing"] }
 axum-extra = { version = "0.9", features = ["typed-header"] }
 backtrace = "0.3.66"
 base64 = "0.21.2"
+bigdecimal = "0.4.7"
 bitflags = "2.3.3"
 blake3 = "1.5.1"
 brotli = "3.5"
@@ -143,6 +149,7 @@ crossbeam-channel = "0.5"
 cursive = { version = "0.20", default-features = false, features = ["crossterm-backend"] }
 decorum = { version = "0.3.1", default-features = false, features = ["std"] }
 derive_more = "0.99"
+dialoguer = { version = "0.11", default-features = false }
 dirs = "5.0.1"
 duct = "0.13.5"
 either = "1.9"
@@ -152,6 +159,7 @@ enum-map = "2.6.3"
 env_logger = "0.10"
 ethnum = { version = "1.5.0", features = ["serde"] }
 flate2 = "1.0.24"
+foldhash = "0.1.4"
 fs-err = "2.9.0"
 fs2 = "0.4.3"
 futures = "0.3"
@@ -170,12 +178,13 @@ hyper = "1.0"
 hyper-util = { version = "0.1", features = ["tokio"] }
 imara-diff = "0.1.3"
 indexmap = "2.0.0"
-indicatif = "0.16"
+indicatif = "0.17"
 insta = { version = "1.21.0", features = ["toml"] }
 is-terminal = "0.4"
 itertools = "0.12"
 itoa = "1"
 jsonwebtoken = { package = "spacetimedb-jsonwebtoken", version = "9.3.0" }
+junction = "1"
 lazy_static = "1.4.0"
 log = "0.4.17"
 memchr = "2"
@@ -187,11 +196,11 @@ paste = "1.0"
 petgraph = { version = "0.6.5", default-features = false }
 pin-project-lite = "0.2.9"
 postgres-types = "0.2.5"
-pretty_assertions = "1.4"
+pretty_assertions = { version = "1.4", features = ["unstable"] }
 proc-macro2 = "1.0"
 prometheus = "0.13.0"
 proptest = "1.4"
-proptest-derive = "0.4"
+proptest-derive = "0.5"
 quick-junit = { version = "0.3.2" }
 quote = "1.0.8"
 rand = "0.8.5"
@@ -224,7 +233,6 @@ socket2 = "0.5"
 sqllogictest = "0.17"
 sqllogictest-engines = "0.17"
 sqlparser = "0.38.0"
-string-interner = "0.17.0"
 strum = { version = "0.25.0", features = ["derive"] }
 syn = { version = "2", features = ["full", "extra-traits"] }
 syntect = { version = "5.0.0", default-features = false, features = ["default-fancy"] }
@@ -240,8 +248,9 @@ tokio-postgres = { version = "0.7.8", features = ["with-chrono-0_4"] }
 tokio-tungstenite = { version = "0.21", features = ["native-tls"] }
 tokio-util = { version = "0.7.4", features = ["time"] }
 toml = "0.8"
+toml_edit = "0.22.22"
 tower-http = { version = "0.5", features = ["cors"] }
-tracing = { version = "0.1.37", features = ["release_max_level_off"] }
+tracing = "0.1.37"
 tracing-appender = "0.2.2"
 tracing-core = "0.1.31"
 tracing-flame = "0.2.0"
@@ -257,6 +266,7 @@ uuid = { version = "1.2.1", features = ["v4"] }
 walkdir = "2.2.5"
 wasmbin = "0.6"
 webbrowser = "1.0.2"
+windows-sys = "0.59"
 xdg = "2.5"
 
 # Vendor the openssl we rely on, rather than depend on a

@@ -88,7 +88,7 @@ jobs:
       - name: Install .NET toolchain
         uses: actions/setup-dotnet@v3
         with:
-          dotnet-version: "8.x"
+          global-json-file: modules/global.json
         env:
           DOTNET_INSTALL_DIR: ~/.dotnet
 
@@ -183,7 +183,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20 # on a successful run, runs in 8 minutes
     container:
-      image: rust:1.78
+      image: rust:1.83.0
       options: --privileged
     # filter for a comment containing 'benchmarks please'
     if: ${{ github.event_name != 'issue_comment' || (github.event.issue.pull_request && contains(github.event.comment.body, 'benchmarks please')) }}

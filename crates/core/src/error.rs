@@ -3,13 +3,14 @@ use std::num::ParseIntError;
 use std::path::PathBuf;
 use std::sync::{MutexGuard, PoisonError};
 
+use enum_as_inner::EnumAsInner;
 use hex::FromHexError;
 use spacetimedb_expr::errors::TypingError;
 use spacetimedb_sats::AlgebraicType;
 use spacetimedb_schema::error::ValidationErrors;
 use spacetimedb_snapshot::SnapshotError;
-use spacetimedb_table::read_column;
 use spacetimedb_table::table::{self, ReadViaBsatnError, UniqueConstraintViolation};
+use spacetimedb_table::{bflatn_to, read_column};
 use thiserror::Error;
 
 use crate::client::ClientActorId;
@@ -20,15 +21,15 @@ use spacetimedb_lib::db::error::{LibError, RelationError, SchemaErrors};
 use spacetimedb_lib::db::raw_def::v9::RawSql;
 use spacetimedb_lib::db::raw_def::RawIndexDefV8;
 use spacetimedb_lib::relation::FieldName;
-use spacetimedb_lib::ProductValue;
 use spacetimedb_primitives::*;
 use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::product_value::InvalidFieldError;
 use spacetimedb_sats::satn::Satn;
+use spacetimedb_sats::{AlgebraicValue, ProductValue};
 use spacetimedb_vm::errors::{ErrorKind, ErrorLang, ErrorType, ErrorVm};
 use spacetimedb_vm::expr::Crud;
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, EnumAsInner)]
 pub enum TableError {
     #[error("Table with name `{0}` start with 'st_' and that is reserved for internal system tables.")]
     System(Box<str>),
@@ -68,7 +69,9 @@ pub enum TableError {
         found: String,
     },
     #[error(transparent)]
-    Insert(#[from] table::InsertError),
+    Bflatn(#[from] bflatn_to::Error),
+    #[error(transparent)]
+    Duplicate(#[from] table::DuplicateError),
     #[error(transparent)]
     ReadColTypeError(#[from] read_column::TypeError),
 }
@@ -85,6 +88,10 @@ pub enum IndexError {
     OneAutoInc(TableId, Vec<String>),
     #[error("Could not decode arguments to index scan")]
     Decode(DecodeError),
+    #[error("Index was not unique: {0:?}")]
+    NotUnique(IndexId),
+    #[error("Key {1:?} was not found in index {0:?}")]
+    KeyNotFound(IndexId, AlgebraicValue),
 }
 
 #[derive(Error, Debug, PartialEq, Eq)]
@@ -103,6 +110,8 @@ pub enum SubscriptionError {
     SideEffect(Crud),
     #[error("Unsupported query on subscription: {0:?}")]
     Unsupported(String),
+    #[error("Subscribing to queries in one call is not supported")]
+    Multiple,
 }
 
 #[derive(Error, Debug)]
@@ -165,7 +174,7 @@ pub enum SequenceError {
     MultiColumnAutoInc(TableId, ColList),
 }
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, EnumAsInner)]
 pub enum DBError {
     #[error("LibError: {0}")]
     Lib(#[from] LibError),
@@ -221,6 +230,22 @@ pub enum DBError {
     Other(#[from] anyhow::Error),
     #[error(transparent)]
     TypeError(#[from] TypingError),
+}
+
+impl From<bflatn_to::Error> for DBError {
+    fn from(err: bflatn_to::Error) -> Self {
+        Self::Table(err.into())
+    }
+}
+
+impl From<table::InsertError> for DBError {
+    fn from(err: table::InsertError) -> Self {
+        match err {
+            table::InsertError::Duplicate(e) => TableError::from(e).into(),
+            table::InsertError::Bflatn(e) => TableError::from(e).into(),
+            table::InsertError::IndexError(e) => IndexError::from(e).into(),
+        }
+    }
 }
 
 impl From<SnapshotError> for DBError {
@@ -335,6 +360,10 @@ pub enum NodesError {
     TableNotFound,
     #[error("index with provided name or id doesn't exist")]
     IndexNotFound,
+    #[error("index was not unique")]
+    IndexNotUnique,
+    #[error("row was not found in index")]
+    IndexRowNotFound,
     #[error("column is out of bounds")]
     BadColumn,
     #[error("can't perform operation; not inside transaction")]
@@ -362,6 +391,8 @@ impl From<DBError> for NodesError {
             DBError::Table(TableError::ColumnNotFound(_)) => Self::BadColumn,
             DBError::Index(IndexError::NotFound(_)) => Self::IndexNotFound,
             DBError::Index(IndexError::Decode(e)) => Self::DecodeRow(e),
+            DBError::Index(IndexError::NotUnique(_)) => Self::IndexNotUnique,
+            DBError::Index(IndexError::KeyNotFound(..)) => Self::IndexRowNotFound,
             _ => Self::Internal(Box::new(e)),
         }
     }

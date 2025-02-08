@@ -42,11 +42,10 @@ public static class Module
     private static readonly RawModuleDefV9 moduleDef = new();
     private static readonly List<IReducer> reducers = [];
 
-    private static Func<Identity, Address?, Random, DateTimeOffset, IReducerContext>? newContext =
-        null;
+    private static Func<Identity, Address?, Random, Timestamp, IReducerContext>? newContext = null;
 
     public static void SetReducerContextConstructor(
-        Func<Identity, Address?, Random, DateTimeOffset, IReducerContext> ctor
+        Func<Identity, Address?, Random, Timestamp, IReducerContext> ctor
     ) => newContext = ctor;
 
     readonly struct TypeRegistrar() : ITypeRegistrar
@@ -172,7 +171,7 @@ public static class Module
         ulong sender_3,
         ulong address_0,
         ulong address_1,
-        DateTimeOffsetRepr timestamp,
+        Timestamp timestamp,
         BytesSource args,
         BytesSink error
     )
@@ -185,7 +184,7 @@ public static class Module
             var senderAddress = Address.From(
                 MemoryMarshal.AsBytes([address_0, address_1]).ToArray()
             );
-            var random = new Random((int)timestamp.MicrosecondsSinceEpoch);
+            var random = new Random((int)timestamp.MicrosecondsSinceUnixEpoch);
             var time = timestamp.ToStd();
 
             var ctx = newContext!(senderIdentity, senderAddress, random, time);

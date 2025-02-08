@@ -49,14 +49,15 @@ mod tests {
     use super::*;
 
     use crate::db::datastore::system_tables::ST_VARNAME_SLOW_QRY;
-    use crate::db::datastore::system_tables::{StVarName, StVarValue, ST_VARNAME_SLOW_INC, ST_VARNAME_SLOW_SUB};
+    use crate::db::datastore::system_tables::{StVarName, ST_VARNAME_SLOW_INC, ST_VARNAME_SLOW_SUB};
     use crate::sql::compiler::compile_sql;
     use crate::sql::execute::tests::execute_for_testing;
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::identity::AuthCtx;
+    use spacetimedb_lib::st_var::StVarValue;
     use spacetimedb_lib::ProductValue;
 
-    use crate::db::relational_db::tests_utils::TestDB;
+    use crate::db::relational_db::tests_utils::{insert, TestDB};
     use crate::db::relational_db::RelationalDB;
     use crate::execution_context::Workload;
     use spacetimedb_sats::{product, AlgebraicType};
@@ -86,7 +87,7 @@ mod tests {
 
         db.with_auto_commit(Workload::ForTests, |tx| -> ResultTest<_> {
             for i in 0..100_000 {
-                db.insert(tx, table_id, product![i, i * 2])?;
+                insert(&db, tx, table_id, &product![i, i * 2])?;
             }
             Ok(())
         })?;

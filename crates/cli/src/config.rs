@@ -1,11 +1,25 @@
+use crate::errors::CliError;
 use crate::util::{contains_protocol, host_or_url_to_host_and_protocol};
 use anyhow::Context;
 use jsonwebtoken::DecodingKey;
-use serde::{Deserialize, Serialize};
+use spacetimedb::config::{set_opt_value, set_table_opt_value};
 use spacetimedb_fs_utils::atomic_write;
 use spacetimedb_paths::cli::CliTomlPath;
+use std::collections::HashMap;
+use std::io;
+use std::path::Path;
+use toml_edit::ArrayOfTables;
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+const DEFAULT_SERVER_KEY: &str = "default_server";
+const WEB_SESSION_TOKEN_KEY: &str = "web_session_token";
+const SPACETIMEDB_TOKEN_KEY: &str = "spacetimedb_token";
+const SERVER_CONFIGS_KEY: &str = "server_configs";
+const NICKNAME_KEY: &str = "nickname";
+const HOST_KEY: &str = "host";
+const PROTOCOL_KEY: &str = "protocol";
+const ECDSA_PUBLIC_KEY: &str = "ecdsa_public_key";
+
+#[derive(Clone, Debug)]
 pub struct ServerConfig {
     pub nickname: Option<String>,
     pub host: String,
@@ -14,6 +28,21 @@ pub struct ServerConfig {
 }
 
 impl ServerConfig {
+    /// Generate a new [`Table`] representing this [`ServerConfig`].
+    pub fn as_table(&self) -> toml_edit::Table {
+        let mut table = toml_edit::Table::new();
+        Self::update_table(&mut table, self);
+        table
+    }
+
+    /// Update an existing [`Table`] with the values of a [`ServerConfig`].
+    pub fn update_table(edit: &mut toml_edit::Table, from: &ServerConfig) {
+        set_table_opt_value(edit, NICKNAME_KEY, from.nickname.as_deref());
+        set_table_opt_value(edit, HOST_KEY, Some(&from.host));
+        set_table_opt_value(edit, PROTOCOL_KEY, Some(&from.protocol));
+        set_table_opt_value(edit, ECDSA_PUBLIC_KEY, from.ecdsa_public_key.as_deref());
+    }
+
     fn nick_or_host(&self) -> &str {
         if let Some(nick) = &self.nickname {
             nick
@@ -33,10 +62,64 @@ impl ServerConfig {
     }
 }
 
-#[derive(Default, Deserialize, Serialize, Debug, Clone)]
+fn read_table<'a>(table: &'a toml_edit::Table, key: &'a str) -> Result<Option<&'a ArrayOfTables>, CliError> {
+    if let Some(value) = table.get(key) {
+        if value.is_array_of_tables() {
+            Ok(value.as_array_of_tables())
+        } else {
+            Err(CliError::ConfigType {
+                key: key.to_string(),
+                kind: "table array",
+                found: Box::new(value.clone()),
+            })
+        }
+    } else {
+        Ok(None)
+    }
+}
+
+fn read_opt_str(table: &toml_edit::Table, key: &str) -> Result<Option<String>, CliError> {
+    if let Some(value) = table.get(key) {
+        if value.is_str() {
+            Ok(value.as_str().map(String::from))
+        } else {
+            Err(CliError::ConfigType {
+                key: key.to_string(),
+                kind: "string",
+                found: Box::new(value.clone()),
+            })
+        }
+    } else {
+        Ok(None)
+    }
+}
+
+fn read_str(table: &toml_edit::Table, key: &str) -> Result<String, CliError> {
+    read_opt_str(table, key)?.ok_or_else(|| CliError::Config { key: key.to_string() })
+}
+
+impl TryFrom<&toml_edit::Table> for ServerConfig {
+    type Error = CliError;
+
+    fn try_from(table: &toml_edit::Table) -> Result<Self, Self::Error> {
+        let nickname = read_opt_str(table, NICKNAME_KEY)?;
+        let host = read_str(table, HOST_KEY)?;
+        let protocol = read_str(table, PROTOCOL_KEY)?;
+        let ecdsa_public_key = read_opt_str(table, ECDSA_PUBLIC_KEY)?;
+        Ok(ServerConfig {
+            nickname,
+            host,
+            protocol,
+            ecdsa_public_key,
+        })
+    }
+}
+
+// Any change here in the fields definition must be coordinated with Config::doc,
+// because the deserialize and serialize methods are manually implemented.
+#[derive(Default, Debug, Clone)]
 pub struct RawConfig {
     default_server: Option<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     server_configs: Vec<ServerConfig>,
     // TODO: Consider how these tokens should look to be backwards-compatible with the future changes (e.g. we may want to allow users to `login` to switch between multiple accounts - what will we cache and where?)
     // TODO: Move these IDs/tokens out of config so we're no longer storing sensitive tokens in a human-edited file.
@@ -48,6 +131,10 @@ pub struct RawConfig {
 pub struct Config {
     home: RawConfig,
     home_path: CliTomlPath,
+    /// The TOML document that was parsed to create `home`.
+    ///
+    /// We need to keep it to preserve comments and formatting when saving the config.
+    doc: toml_edit::DocumentMut,
 }
 
 const NO_DEFAULT_SERVER_ERROR_MESSAGE: &str = "No default server configuration.
@@ -368,6 +455,30 @@ Fetch the server's fingerprint with:
     }
 }
 
+impl TryFrom<&toml_edit::DocumentMut> for RawConfig {
+    type Error = CliError;
+
+    fn try_from(value: &toml_edit::DocumentMut) -> Result<Self, Self::Error> {
+        let default_server = read_opt_str(value, DEFAULT_SERVER_KEY)?;
+        let web_session_token = read_opt_str(value, WEB_SESSION_TOKEN_KEY)?;
+        let spacetimedb_token = read_opt_str(value, SPACETIMEDB_TOKEN_KEY)?;
+
+        let mut server_configs = Vec::new();
+        if let Some(arr) = read_table(value, SERVER_CONFIGS_KEY)? {
+            for table in arr {
+                server_configs.push(ServerConfig::try_from(table)?);
+            }
+        }
+
+        Ok(RawConfig {
+            default_server,
+            server_configs,
+            web_session_token,
+            spacetimedb_token,
+        })
+    }
+}
+
 impl Config {
     pub fn default_server_name(&self) -> Option<&str> {
         self.home.default_server.as_deref()
@@ -489,15 +600,31 @@ impl Config {
         &self.home.server_configs
     }
 
+    /// Parse [`RawConfig`] from a TOML file at the given path, returning `None` if the file does not exist.
+    ///
+    /// **NOTE**: Comments and formatting in the file will be preserved.
+    fn parse_config(path: &Path) -> anyhow::Result<Option<(toml_edit::DocumentMut, RawConfig)>> {
+        match std::fs::read_to_string(path) {
+            Ok(contents) => {
+                let doc = contents.parse::<toml_edit::DocumentMut>()?;
+                let config = RawConfig::try_from(&doc)?;
+                Ok(Some((doc, config)))
+            }
+            Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(e.into()),
+        }
+    }
+
     pub fn load(home_path: CliTomlPath) -> anyhow::Result<Self> {
-        let home = spacetimedb::config::parse_config::<RawConfig>(home_path.as_ref())
+        let home = Self::parse_config(home_path.as_ref())
             .with_context(|| format!("config file {} is invalid", home_path.display()))?;
         Ok(match home {
-            Some(home) => Self { home, home_path },
+            Some((doc, home)) => Self { home, home_path, doc },
             None => {
                 let config = Self {
                     home: RawConfig::new_with_localhost(),
                     home_path,
+                    doc: Default::default(),
                 };
                 config.save();
                 config
@@ -511,7 +638,77 @@ impl Config {
         Self {
             home: RawConfig::new_with_localhost(),
             home_path,
+            doc: Default::default(),
         }
+    }
+
+    /// Returns a preserving copy of [`Config`].
+    fn doc(&self) -> toml_edit::DocumentMut {
+        let mut doc = self.doc.clone();
+
+        let mut set_value = |key: &str, value: Option<&str>| {
+            set_opt_value(&mut doc, key, value);
+        };
+        // Intentionally use a destructuring assignment in case the fields change...
+        let RawConfig {
+            default_server,
+            server_configs: old_server_configs,
+            web_session_token,
+            spacetimedb_token,
+        } = &self.home;
+
+        set_value(DEFAULT_SERVER_KEY, default_server.as_deref());
+        set_value(WEB_SESSION_TOKEN_KEY, web_session_token.as_deref());
+        set_value(SPACETIMEDB_TOKEN_KEY, spacetimedb_token.as_deref());
+
+        // Short-circuit if there are no servers.
+        if old_server_configs.is_empty() {
+            doc.remove(SERVER_CONFIGS_KEY);
+            return doc;
+        }
+        // ... or if there are no server_configs to edit.
+        let new_server_configs = if let Some(cfg) = doc
+            .get_mut(SERVER_CONFIGS_KEY)
+            .and_then(toml_edit::Item::as_array_of_tables_mut)
+        {
+            cfg
+        } else {
+            doc[SERVER_CONFIGS_KEY] =
+                toml_edit::Item::ArrayOfTables(old_server_configs.iter().map(ServerConfig::as_table).collect());
+            return doc;
+        };
+
+        let mut new_configs = self
+            .home
+            .server_configs
+            .iter()
+            .map(|cfg| (cfg.nick_or_host(), cfg))
+            .collect::<HashMap<_, _>>();
+
+        // Update the existing servers, and remove deleted servers.
+        // We'll add new servers later.
+        // We do this somewhat elaborate dance rather than just overwriting the config
+        // in order to preserve the order and formatting of pre-existing server configs in the file.
+        let mut new_vec = Vec::with_capacity(new_server_configs.len());
+        for old_config in new_server_configs.iter_mut() {
+            let nick_or_host = old_config
+                .get(NICKNAME_KEY)
+                .or_else(|| old_config.get(HOST_KEY))
+                .and_then(|v| v.as_str())
+                .unwrap();
+
+            if let Some(new_config) = new_configs.remove(nick_or_host) {
+                ServerConfig::update_table(old_config, new_config);
+                new_vec.push(old_config.clone());
+            }
+        }
+
+        // Add the new servers. This appends them to the end of the config file,
+        // after the (preserved) existing configs.
+        new_vec.extend(new_configs.values().cloned().map(ServerConfig::as_table));
+        *new_server_configs = toml_edit::ArrayOfTables::from_iter(new_vec);
+
+        doc
     }
 
     pub fn save(&self) {
@@ -519,7 +716,7 @@ impl Config {
         // If the `home_path` is in a directory, ensure it exists.
         home_path.create_parent().unwrap();
 
-        let config = toml::to_string_pretty(&self.home).unwrap();
+        let config = self.doc().to_string();
 
         eprintln!("Saving config to {}.", home_path.display());
         // TODO: We currently have a race condition if multiple processes are modifying the config.
@@ -623,12 +820,299 @@ Update the server's fingerprint with:
     pub fn spacetimedb_token(&self) -> Option<&String> {
         self.home.spacetimedb_token.as_ref()
     }
+}
 
-    pub fn spacetimedb_token_or_error(&self) -> anyhow::Result<&String> {
-        if let Some(token) = self.spacetimedb_token() {
-            Ok(token)
-        } else {
-            Err(anyhow::anyhow!("No login token found. Please run `spacetime login`."))
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use spacetimedb_lib::error::ResultTest;
+    use spacetimedb_paths::cli::CliTomlPath;
+    use spacetimedb_paths::FromPathUnchecked;
+    use std::fs;
+    use std::thread;
+
+    const CONFIG_FULL: &str = r#"default_server = "local"
+web_session_token = "web_session"
+spacetimedb_token = "26ac38857c2bd6c5b60ec557ecd4f9add918fef577dc92c01ca96ff08af5b84d"
+
+# comment on table
+[[server_configs]]
+nickname = "local"
+host = "127.0.0.1:3000"
+protocol = "http"
+
+# comment on table
+[[server_configs]]
+# comment on table
+nickname = "testnet" # Comment nickname
+host = "testnet.spacetimedb.com" # Comment host
+# Comment protocol
+protocol = "https"
+
+# Comment end
+"#;
+    const CONFIG_FULL_NO_COMMENT: &str = r#"default_server = "local"
+web_session_token = "web_session"
+spacetimedb_token = "26ac38857c2bd6c5b60ec557ecd4f9add918fef577dc92c01ca96ff08af5b84d"
+
+[[server_configs]]
+nickname = "local"
+host = "127.0.0.1:3000"
+protocol = "http"
+
+[[server_configs]]
+nickname = "testnet"
+host = "testnet.spacetimedb.com"
+protocol = "https"
+
+# Comment end
+"#;
+    const CONFIG_CHANGE_SERVER: &str = r#"default_server = "local"
+web_session_token = "web_session"
+spacetimedb_token = "26ac38857c2bd6c5b60ec557ecd4f9add918fef577dc92c01ca96ff08af5b84d"
+
+# comment on table
+[[server_configs]]
+# comment on table
+nickname = "testnet" # Comment nickname
+host = "prod.spacetimedb.com" # Comment host
+# Comment protocol
+protocol = "https"
+
+# Comment end
+"#;
+    const CONFIG_EMPTY: &str = r#"
+# Comment end
+"#;
+    const CONFIG_INVALID_START: &str = r#"
+this="not a valid key"
+"#;
+    const CONFIG_INVALID_END: &str = r#"
+this="not a valid key"
+default_server = "local"
+"#;
+
+    fn check_invalid(contents: &str, expect: CliError) -> ResultTest<()> {
+        let doc = contents.parse::<toml_edit::DocumentMut>()?;
+        let err = RawConfig::try_from(&doc);
+        assert_eq!(err.unwrap_err().to_string(), expect.to_string());
+
+        Ok(())
+    }
+
+    fn check_config<F>(input: &str, output: &str, f: F) -> ResultTest<()>
+    where
+        F: FnOnce(&mut Config) -> ResultTest<()>,
+    {
+        let tmp = tempfile::tempdir()?;
+        let config_path = CliTomlPath::from_path_unchecked(tmp.path().join("config.toml"));
+
+        fs::write(&config_path, input)?;
+
+        let mut config = Config::load(config_path.clone()).unwrap();
+        f(&mut config)?;
+        config.save();
+
+        let contents = fs::read_to_string(&config_path)?;
+
+        assert_eq!(contents, output);
+
+        Ok(())
+    }
+
+    // Test editing the config file.
+    #[test]
+    fn test_config_edits() -> ResultTest<()> {
+        check_config(CONFIG_FULL, CONFIG_EMPTY, |config| {
+            config.home.default_server = None;
+            config.home.server_configs.clear();
+            config.home.spacetimedb_token = None;
+            config.home.web_session_token = None;
+
+            Ok(())
+        })?;
+
+        check_config(CONFIG_FULL, CONFIG_CHANGE_SERVER, |config| {
+            config.home.server_configs.remove(0);
+            config.home.server_configs[0].host = "prod.spacetimedb.com".to_string();
+            Ok(())
+        })?;
+
+        Ok(())
+    }
+
+    // Test adding to the config file.
+    #[test]
+    fn test_config_adds() -> ResultTest<()> {
+        check_config(CONFIG_FULL, CONFIG_FULL, |_| Ok(()))?;
+        check_config(CONFIG_EMPTY, CONFIG_EMPTY, |_| Ok(()))?;
+
+        check_config(CONFIG_EMPTY, CONFIG_FULL_NO_COMMENT, |config| {
+            config.home.default_server = Some("local".to_string());
+            config.home.server_configs = vec![
+                ServerConfig {
+                    nickname: Some("local".to_string()),
+                    host: "127.0.0.1:3000".to_string(),
+                    protocol: "http".to_string(),
+                    ecdsa_public_key: None,
+                },
+                ServerConfig {
+                    nickname: Some("testnet".to_string()),
+                    host: "testnet.spacetimedb.com".to_string(),
+                    protocol: "https".to_string(),
+                    ecdsa_public_key: None,
+                },
+            ];
+            config.home.spacetimedb_token =
+                Some("26ac38857c2bd6c5b60ec557ecd4f9add918fef577dc92c01ca96ff08af5b84d".to_string());
+            config.home.web_session_token = Some("web_session".to_string());
+
+            Ok(())
+        })?;
+
+        Ok(())
+    }
+
+    // Test that modify a config file with wrong extra configs is fine
+    #[test]
+    fn test_config_invalid_mut() -> ResultTest<()> {
+        check_config(CONFIG_INVALID_START, CONFIG_INVALID_END, |config| {
+            config.home.default_server = Some("local".to_string());
+            Ok(())
+        })?;
+
+        Ok(())
+    }
+
+    // Test invalid types in the config file.
+    #[test]
+    fn test_config_invalid() -> ResultTest<()> {
+        check_invalid(
+            r#"default_server =1"#,
+            CliError::ConfigType {
+                key: "default_server".to_string(),
+                kind: "string",
+                found: Box::new(toml_edit::value(1)),
+            },
+        )?;
+        check_invalid(
+            r#"web_session_token =1"#,
+            CliError::ConfigType {
+                key: "web_session_token".to_string(),
+                kind: "string",
+                found: Box::new(toml_edit::value(1)),
+            },
+        )?;
+        check_invalid(
+            r#"spacetimedb_token =1"#,
+            CliError::ConfigType {
+                key: "spacetimedb_token".to_string(),
+                kind: "string",
+                found: Box::new(toml_edit::value(1)),
+            },
+        )?;
+        check_invalid(
+            r#"
+[server_configs]
+"#,
+            CliError::ConfigType {
+                key: "server_configs".to_string(),
+                kind: "table array",
+                found: Box::new(toml_edit::table()),
+            },
+        )?;
+        check_invalid(
+            r#"
+[[server_configs]]
+nickname =1
+"#,
+            CliError::ConfigType {
+                key: "nickname".to_string(),
+                kind: "string",
+                found: Box::new(toml_edit::value(1)),
+            },
+        )?;
+        check_invalid(
+            r#"
+[[server_configs]]
+host =1
+"#,
+            CliError::ConfigType {
+                key: "host".to_string(),
+                kind: "string",
+                found: Box::new(toml_edit::value(1)),
+            },
+        )?;
+
+        check_invalid(
+            r#"
+[[server_configs]]
+host = "127.0.0.1:3000"
+protocol =1
+"#,
+            CliError::ConfigType {
+                key: "protocol".to_string(),
+                kind: "string",
+                found: Box::new(toml_edit::value(1)),
+            },
+        )?;
+        Ok(())
+    }
+
+    // Test editing the config file concurrently don't corrupt the file.
+    //
+    // The test only confirms that the file is not corrupted, not that the changes are deterministic.
+    #[test]
+    fn test_config_concurrent() -> ResultTest<()> {
+        let tmp = tempfile::tempdir()?;
+        let config_path = CliTomlPath::from_path_unchecked(tmp.path().join("config.toml"));
+
+        let mut local = Config::load(config_path.clone()).unwrap();
+        let mut testnet = Config::load(config_path.clone()).unwrap();
+
+        local.home.default_server = Some("local".to_string());
+        testnet.home.default_server = Some("testnet".to_string());
+
+        let mut handles = vec![];
+        let total_threads: usize = 8;
+
+        // Writer threads
+        for i in 0..total_threads {
+            let local = local.clone();
+            let testnet = testnet.clone();
+            handles.push(thread::spawn(move || {
+                if i % 2 == 0 {
+                    local.save();
+                    local
+                } else {
+                    testnet.save();
+                    testnet
+                }
+                .doc()
+                .to_string()
+            }));
         }
+
+        // Reader threads
+        for _ in 0..total_threads {
+            let config_path = config_path.clone();
+            handles.push(thread::spawn(move || {
+                let config = Config::load(config_path).unwrap();
+                config.doc().to_string()
+            }));
+        }
+
+        let mut results = vec![];
+        for handle in handles {
+            results.push(handle.join().unwrap());
+        }
+        let local = local.doc().to_string();
+        let testnet = testnet.doc().to_string();
+
+        // As long the results are any valid config, we're good.
+        assert!(results
+            .iter()
+            .all(|r| r.trim() == local.trim() || r.trim() == testnet.trim()));
+        Ok(())
     }
 }

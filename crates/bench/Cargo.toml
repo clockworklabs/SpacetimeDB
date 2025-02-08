@@ -21,6 +21,14 @@ harness = false
 name = "subscription"
 harness = false
 
+[[bench]]
+name = "delete_table"
+harness = false
+
+[[bench]]
+name = "index"
+harness = false
+
 [[bin]]
 name = "summarize"
 
@@ -31,9 +39,11 @@ bench = false
 spacetimedb-client-api = { path = "../client-api" }
 spacetimedb-core = { path = "../core", features = ["test"] }
 spacetimedb-data-structures.workspace = true
+spacetimedb-execution = { path = "../execution" }
 spacetimedb-lib = { path = "../lib" }
 spacetimedb-paths.workspace = true
 spacetimedb-primitives = { path = "../primitives" }
+spacetimedb-query = { path = "../query" }
 spacetimedb-sats = { path = "../sats" }
 spacetimedb-schema = { workspace = true, features = ["test"] }
 spacetimedb-standalone = { path = "../standalone" }
@@ -46,6 +56,7 @@ byte-unit.workspace = true
 clap.workspace = true
 criterion.workspace = true
 futures.workspace = true
+foldhash.workspace = true
 lazy_static.workspace = true
 log.workspace = true
 mimalloc.workspace = true
@@ -55,6 +66,7 @@ rusqlite.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 serial_test.workspace = true
+smallvec.workspace = true
 tempdir.workspace = true
 tokio.workspace = true
 tracing-subscriber.workspace = true

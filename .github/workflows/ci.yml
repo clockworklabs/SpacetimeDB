@@ -16,11 +16,18 @@ name: CI
 jobs:
   docker_smoketests:
     name: Smoketests
-    runs-on: spacetimedb-runner
+    strategy:
+      matrix:
+        include:
+          - { runner: spacetimedb-runner, smoketest_args: --docker }
+          - { runner: windows-latest, smoketest_args: --no-build-cli }
+        runner: [spacetimedb-runner, windows-latest]
+    runs-on: ${{ matrix.runner }}
     steps:
       - name: Find Git ref
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
         run: |
           PR_NUMBER="${{ github.event.inputs.pr_number || null }}"
           if test -n "${PR_NUMBER}"; then
@@ -34,15 +41,25 @@ jobs:
         with:
           ref: ${{ env.GIT_REF }}
       - uses: dsherret/rust-toolchain-file@v1
-      - uses: actions/setup-dotnet@v3
+      - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: "8.x"
-      - name: Start containers
+          global-json-file: modules/global.json
+      - name: Build and start database (Linux)
+        if: runner.os == 'Linux'
         run: docker compose up -d
+      - name: Build and start database (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          cargo build -p spacetimedb-cli -p spacetimedb-standalone -p spacetimedb-update
+          Start-Process target/debug/spacetimedb-cli.exe start
+          cd modules
+          # the sdk-manifests on windows-latest are messed up, so we need to update them
+          dotnet workload config --update-mode workload-set
+          dotnet workload update
       - name: Run smoketests
-        run: python -m smoketests --docker
-      - name: Stop containers
-        if: always()
+        run: python -m smoketests ${{ matrix.smoketest_args }}
+      - name: Stop containers (Linux)
+        if: always() && runner.os == 'Linux'
         run: docker compose down
 
   test:
@@ -70,7 +87,7 @@ jobs:
 
       - uses: actions/setup-dotnet@v3
         with:
-          dotnet-version: "8.x"
+          global-json-file: modules/global.json
 
       - name: Create /stdb dir
         run: |
@@ -114,7 +131,7 @@ jobs:
 
       - uses: actions/setup-dotnet@v3
         with:
-          dotnet-version: "8.x"
+          global-json-file: modules/global.json
 
       - name: Create /stdb dir
         run: |

@@ -153,8 +153,6 @@
 //!                         └── 040a8585e6dc2c579c0c8f6017c7e6a0179a5d0410cd8db4b4affbd7d4d04f
 //! ```
 
-use std::env::consts::EXE_EXTENSION;
-
 use crate::utils::PathBufExt;
 
 pub mod cli;
@@ -175,7 +173,8 @@ pub trait FromPathUnchecked {
 
 path_type! {
     /// The --root-dir for the spacetime installation, if specified.
-    #[non_exhaustive(FALSE)]
+    // TODO: replace cfg(any()) with cfg(false) once stabilized
+    #[non_exhaustive(any())]
     RootDir
 }
 
@@ -185,9 +184,7 @@ impl RootDir {
     }
 
     pub fn cli_bin_file(&self) -> cli::BinFile {
-        let mut path = self.0.join("spacetime");
-        path.set_extension(EXE_EXTENSION);
-        cli::BinFile(path)
+        cli::BinFile(self.0.join("spacetime").with_exe_ext())
     }
 
     pub fn cli_bin_dir(&self) -> cli::BinDir {
@@ -320,10 +317,7 @@ mod tests {
         let root = Path::new("/custom/path");
         let paths = SpacetimePaths::from_root_dir(&RootDir(root.to_owned()));
         assert_eq!(paths.cli_config_dir.0, root.join("config"));
-        assert_eq!(
-            paths.cli_bin_file.0,
-            root.join("spacetime").with_extension(EXE_EXTENSION)
-        );
+        assert_eq!(paths.cli_bin_file.0, root.join("spacetime").with_exe_ext());
         assert_eq!(paths.cli_bin_dir.0, root.join("bin"));
         assert_eq!(paths.data_dir.0, root.join("data"));
     }

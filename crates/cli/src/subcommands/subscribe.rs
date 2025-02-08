@@ -9,7 +9,6 @@ use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
 use spacetimedb_lib::de::serde::{DeserializeWrapper, SeedWrapper};
 use spacetimedb_lib::ser::serde::SerializeWrapper;
-use spacetimedb_standalone::TEXT_PROTOCOL;
 use std::time::Duration;
 use tokio::io::AsyncWriteExt;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
@@ -64,6 +63,7 @@ pub fn cli() -> clap::Command {
                 .help("Print the initial update for the queries."),
         )
         .arg(common_args::anonymous())
+        .arg(common_args::yes())
         .arg(common_args::server().help("The nickname, host name or URL of the server hosting the database"))
 }
 
@@ -144,7 +144,10 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
 
     // Create the websocket request.
     let mut req = http::Uri::from_parts(uri)?.into_client_request()?;
-    req.headers_mut().insert(header::SEC_WEBSOCKET_PROTOCOL, TEXT_PROTOCOL);
+    req.headers_mut().insert(
+        header::SEC_WEBSOCKET_PROTOCOL,
+        http::HeaderValue::from_static(ws::TEXT_PROTOCOL),
+    );
     //  Add the authorization header, if any.
     if let Some(auth_header) = &api.con.auth_header {
         req.headers_mut().insert(header::AUTHORIZATION, auth_header.try_into()?);

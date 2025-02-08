@@ -153,8 +153,19 @@ public interface ITableView<View, T>
 
     protected static bool DoDelete(T row)
     {
-        var bytes = IStructuralReadWrite.ToBytes(row);
-        FFI.datastore_delete_all_by_eq_bsatn(tableId, bytes, (uint)bytes.Length, out var out_);
+        using var stream = new MemoryStream();
+        using var writer = new BinaryWriter(stream);
+        // `datastore_delete_all_by_eq_bsatn` expects an array-like BSATN.
+        // Write a length of 1 without actually wrapping the `row` into array
+        // (annoyingly, that would require passing `TRW` through a bunch of APIs).
+        writer.Write(1U);
+        row.WriteFields(writer);
+        FFI.datastore_delete_all_by_eq_bsatn(
+            tableId,
+            stream.GetBuffer(),
+            (uint)stream.Length,
+            out var out_
+        );
         return out_ > 0;
     }
 

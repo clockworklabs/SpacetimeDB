@@ -2,6 +2,7 @@ use super::Serialize as _;
 use crate::{
     algebraic_value::ser::ValueSerializer,
     ser::{self, Serializer},
+    serde::{SerdeError, SerdeWrapper},
 };
 use crate::{i256, u256};
 use core::fmt;
@@ -20,9 +21,6 @@ impl<S: serde::Serializer> SerdeSerializer<S> {
         Self { ser }
     }
 }
-
-/// An error that occured when serializing SATS to a Serde data format.
-pub struct SerdeError<E>(pub E);
 
 impl<E: serde::Error> ser::Error for SerdeError<E> {
     fn custom<T: fmt::Display>(msg: T) -> Self {
@@ -253,29 +251,9 @@ pub fn serialize_to<T: super::Serialize + ?Sized, S: serde::Serializer>(
         .map_err(|SerdeError(e)| e)
 }
 
-/// Turns a type serializable in SATS into one serializable in serde.
-///
-/// That is, `T: sats::Serialize => SerializeWrapper<T>: serde::Serialize`.
-#[repr(transparent)]
-pub struct SerializeWrapper<T: ?Sized>(T);
+pub use crate::serde::SerdeWrapper as SerializeWrapper;
 
-impl<T: ?Sized> SerializeWrapper<T> {
-    /// Wraps an object serializable in SATS so that it's serializable in Serde.
-    pub fn new(t: T) -> Self
-    where
-        T: Sized,
-    {
-        Self(t)
-    }
-
-    /// Converts `&T` to `&SerializeWrapper<T>`.
-    pub fn from_ref(t: &T) -> &Self {
-        // SAFETY: OK because of `repr(transparent)`.
-        unsafe { &*(t as *const T as *const SerializeWrapper<T>) }
-    }
-}
-
-impl<T: ser::Serialize + ?Sized> serde::Serialize for SerializeWrapper<T> {
+impl<T: ser::Serialize + ?Sized> serde::Serialize for SerdeWrapper<T> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         serialize_to(&self.0, serializer)
     }
