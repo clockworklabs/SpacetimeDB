@@ -1,3 +1,5 @@
+use crate::parser::{errors::SqlUnsupported, SqlParseResult};
+
 use super::{Project, SqlExpr, SqlFrom};
 
 /// A SELECT statement in the SQL subscription language
@@ -17,5 +19,15 @@ impl SqlSelect {
             },
             SqlFrom::Join(..) => self,
         }
+    }
+
+    pub fn find_unqualified_vars(self) -> SqlParseResult<Self> {
+        if self.from.has_unqualified_vars() {
+            return Err(SqlUnsupported::UnqualifiedNames.into());
+        }
+        if self.project.has_unqualified_vars() {
+            return Err(SqlUnsupported::UnqualifiedNames.into());
+        }
+        Ok(self)
     }
 }

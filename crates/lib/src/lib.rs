@@ -10,9 +10,12 @@ pub mod address;
 pub mod db;
 pub mod error;
 pub mod identity;
+pub mod metrics;
 pub mod operator;
+pub mod query;
 pub mod relation;
 pub mod scheduler;
+pub mod st_var;
 pub mod version;
 
 pub mod type_def {
@@ -26,6 +29,8 @@ pub use address::Address;
 pub use identity::Identity;
 pub use scheduler::ScheduleAt;
 pub use spacetimedb_sats::hash::{self, hash_bytes, Hash};
+pub use spacetimedb_sats::time_duration::TimeDuration;
+pub use spacetimedb_sats::timestamp::Timestamp;
 pub use spacetimedb_sats::SpacetimeType;
 pub use spacetimedb_sats::__make_register_reftype;
 pub use spacetimedb_sats::{self as sats, bsatn, buffer, de, ser};

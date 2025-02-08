@@ -12,11 +12,10 @@
 
 use crate::spacetime_module::{DbUpdate as _, SpacetimeModule};
 use spacetimedb_client_api_messages::websocket as ws;
-use spacetimedb_lib::{Address, Identity};
-use std::time::SystemTime;
+use spacetimedb_lib::{Address, Identity, Timestamp};
 
 #[non_exhaustive]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 /// A change in the state of a [`crate::DbContext`] which causes callbacks to run.
 pub enum Event<R> {
     /// Event when we are notified that a reducer ran in the remote module.
@@ -36,6 +35,9 @@ pub enum Event<R> {
     /// and to row delete callbacks resulting from the ended subscription.
     UnsubscribeApplied,
 
+    /// Event when a subscription was ended by a disconnection.
+    Disconnected,
+
     /// Event when an error causes one or more of our subscriptions to end prematurely,
     /// or to never be started.
     ///
@@ -44,7 +46,7 @@ pub enum Event<R> {
     ///
     /// Payload should describe the error in a human-readable format.
     /// No requirement is imposed that it be programmatically inspectable.
-    SubscribeError(anyhow::Error),
+    SubscribeError(crate::Error),
 
     /// Event when we are notified of a transaction in the remote module which we cannot associate with a known reducer.
     ///
@@ -55,11 +57,11 @@ pub enum Event<R> {
 }
 
 #[non_exhaustive]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 /// A state change due to a reducer, which may or may not have committed successfully.
 pub struct ReducerEvent<R> {
     /// The time at which the reducer was invoked.
-    pub timestamp: SystemTime,
+    pub timestamp: Timestamp,
 
     /// Whether the reducer committed, was aborted due to insufficient energy, or failed with an error message.
     pub status: Status,
@@ -100,7 +102,7 @@ pub enum Status {
 impl Status {
     pub(crate) fn parse_status_and_update<M: SpacetimeModule>(
         status: ws::UpdateStatus<ws::BsatnFormat>,
-    ) -> anyhow::Result<(Self, Option<M::DbUpdate>)> {
+    ) -> crate::Result<(Self, Option<M::DbUpdate>)> {
         Ok(match status {
             ws::UpdateStatus::Committed(update) => (Self::Committed, Some(M::DbUpdate::parse_update(update)?)),
             ws::UpdateStatus::Failed(errmsg) => (Self::Failed(errmsg), None),

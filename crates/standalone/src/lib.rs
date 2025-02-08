@@ -3,16 +3,17 @@ mod energy_monitor;
 pub mod routes;
 pub mod subcommands;
 pub mod util;
+pub mod version;
 
 use crate::control_db::ControlDb;
-use crate::subcommands::start::ProgramMode;
-use crate::subcommands::{start, version};
+use crate::subcommands::start;
 use anyhow::{ensure, Context};
 use async_trait::async_trait;
 use clap::{ArgMatches, Command};
 use energy_monitor::StandaloneEnergyMonitor;
 use spacetimedb::client::ClientActorIndex;
 use spacetimedb::config::{CertificateAuthority, MetadataFile};
+use spacetimedb::db::db_metrics::data_size::DATA_SIZE_METRICS;
 use spacetimedb::db::relational_db::{self, Durability, Txdata};
 use spacetimedb::db::{db_metrics::DB_METRICS, Config};
 use spacetimedb::energy::{EnergyBalance, EnergyQuanta};
@@ -83,6 +84,7 @@ impl StandaloneEnv {
         let metrics_registry = prometheus::Registry::new();
         metrics_registry.register(Box::new(&*WORKER_METRICS)).unwrap();
         metrics_registry.register(Box::new(&*DB_METRICS)).unwrap();
+        metrics_registry.register(Box::new(&*DATA_SIZE_METRICS)).unwrap();
 
         Ok(Arc::new(Self {
             control_db,
@@ -438,14 +440,22 @@ fn withdraw_energy(control_db: &ControlDb, identity: &Identity, amount: EnergyQu
 
 pub async fn exec_subcommand(cmd: &str, args: &ArgMatches) -> Result<(), anyhow::Error> {
     match cmd {
-        "start" => start::exec(None, args).await,
-        "version" => version::exec(args).await,
+        "start" => start::exec(args).await,
         unknown => Err(anyhow::anyhow!("Invalid subcommand: {}", unknown)),
     }
 }
 
 pub fn get_subcommands() -> Vec<Command> {
-    vec![start::cli(ProgramMode::Standalone), version::cli()]
+    vec![start::cli()]
+}
+
+pub async fn start_server(data_dir: &ServerDataDir, cert_dir: Option<&std::path::Path>) -> anyhow::Result<()> {
+    let mut args: Vec<&std::ffi::OsStr> = vec!["start".as_ref(), "--data-dir".as_ref(), data_dir.0.as_os_str()];
+    if let Some(cert_dir) = &cert_dir {
+        args.extend(["--jwt-key-dir".as_ref(), cert_dir.as_os_str()])
+    }
+    let args = start::cli().try_get_matches_from(args)?;
+    start::exec(&args).await
 }
 
 #[cfg(test)]

@@ -1,6 +1,7 @@
 //! Provides safe abstractions around `bindings-sys`
 //! and re-exports `#[spacetimedb]` and `#[duration]`.
 
+mod client_visibility_filter;
 pub mod log_stopwatch;
 mod logger;
 #[cfg(feature = "rand")]
@@ -9,7 +10,6 @@ mod rng;
 pub mod rt;
 #[doc(hidden)]
 pub mod table;
-mod timestamp;
 
 use spacetimedb_lib::bsatn;
 use std::cell::RefCell;
@@ -19,12 +19,15 @@ pub use log;
 #[cfg(feature = "rand")]
 pub use rand;
 
+#[doc(hidden)]
+pub use client_visibility_filter::Filter;
 #[cfg(feature = "rand")]
 pub use rng::StdbRng;
 pub use sats::SpacetimeType;
 #[doc(hidden)]
-pub use spacetimedb_bindings_macro::__TableHelper;
-pub use spacetimedb_bindings_macro::{duration, filter, reducer, table};
+// TODO: move `client_visibility_filter` out of `doc(hidden)` once RLS is implemented.
+pub use spacetimedb_bindings_macro::{__TableHelper, client_visibility_filter};
+pub use spacetimedb_bindings_macro::{duration, reducer, table};
 pub use spacetimedb_bindings_sys as sys;
 pub use spacetimedb_lib;
 pub use spacetimedb_lib::de::{Deserialize, DeserializeOwned};
@@ -34,10 +37,11 @@ pub use spacetimedb_lib::Address;
 pub use spacetimedb_lib::AlgebraicValue;
 pub use spacetimedb_lib::Identity;
 pub use spacetimedb_lib::ScheduleAt;
+pub use spacetimedb_lib::TimeDuration;
+pub use spacetimedb_lib::Timestamp;
 pub use spacetimedb_primitives::TableId;
 pub use sys::Errno;
-pub use table::{AutoIncOverflow, BTreeIndex, Table, TryInsertError, UniqueColumn, UniqueConstraintViolation};
-pub use timestamp::Timestamp;
+pub use table::{AutoIncOverflow, RangedIndex, Table, TryInsertError, UniqueColumn, UniqueConstraintViolation};
 
 pub type ReducerResult = core::result::Result<(), Box<str>>;
 
@@ -72,6 +76,19 @@ impl ReducerContext {
             address: None,
             rng: std::cell::OnceCell::new(),
         }
+    }
+
+    /// Read the current module's [`Identity`].
+    pub fn identity(&self) -> Identity {
+        // Hypothetically, we *could* read the module identity out of the system tables.
+        // However, this would be:
+        // - Onerous, because we have no tooling to inspect the system tables from module code.
+        // - Slow (at least relatively),
+        //   because it would involve multiple host calls which hit the datastore,
+        //   as compared to a single host call which does not.
+        // As such, we've just defined a host call
+        // which reads the module identity out of the `InstanceEnv`.
+        Identity::from_byte_array(spacetimedb_bindings_sys::identity())
     }
 }
 

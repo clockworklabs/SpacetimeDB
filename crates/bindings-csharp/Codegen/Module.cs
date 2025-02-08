@@ -1,30 +1,12 @@
 namespace SpacetimeDB.Codegen;
 
 using System.Collections.Immutable;
+using System.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using SpacetimeDB.Internal;
 using static Utils;
-
-static class IndexOfExt
-{
-    // A LINQ helper to find the index of the first element equal to `searchItem`.
-    public static int IndexOf<T>(this IEnumerable<T> source, T searchItem)
-        where T : IEquatable<T>
-    {
-        var i = 0;
-        foreach (var item in source)
-        {
-            if (searchItem.Equals(item))
-            {
-                return i;
-            }
-            i++;
-        }
-        throw new InvalidOperationException($"Item {searchItem} not found.");
-    }
-}
 
 readonly record struct ColumnAttr(ColumnAttrs Mask, string? Table = null)
 {
@@ -46,33 +28,21 @@ readonly record struct ColumnAttr(ColumnAttrs Mask, string? Table = null)
     }
 }
 
+record ColumnRef(int Index, string Name);
+
 record ColumnDeclaration : MemberDeclaration
 {
     public readonly EquatableArray<ColumnAttr> Attrs;
+    public readonly EquatableArray<ViewIndex> Indexes;
     public readonly bool IsEquatable;
     public readonly string FullTableName;
-
-    public ColumnDeclaration(
-        string tableName,
-        string name,
-        string type,
-        string typeInfo,
-        ColumnAttrs attrs,
-        bool isEquatable
-    )
-        : base(name, type, typeInfo)
-    {
-        Attrs = new(ImmutableArray.Create(new ColumnAttr(attrs)));
-        IsEquatable = isEquatable;
-        FullTableName = tableName;
-    }
 
     // A helper to combine multiple column attributes into a single mask.
     // Note: it doesn't check the table names, this is left up to the caller.
     private static ColumnAttrs CombineColumnAttrs(IEnumerable<ColumnAttr> attrs) =>
         attrs.Aggregate(ColumnAttrs.UnSet, (mask, attr) => mask | attr.Mask);
 
-    public ColumnDeclaration(string tableName, IFieldSymbol field, DiagReporter diag)
+    public ColumnDeclaration(string tableName, int index, IFieldSymbol field, DiagReporter diag)
         : base(field, diag)
     {
         FullTableName = tableName;
@@ -86,6 +56,14 @@ record ColumnDeclaration : MemberDeclaration
                     a => a.Table,
                     (key, group) => new ColumnAttr(CombineColumnAttrs(group), key)
                 )
+                .ToImmutableArray()
+        );
+
+        Indexes = new(
+            field
+                .GetAttributes()
+                .Where(ViewIndex.CanParse)
+                .Select(a => new ViewIndex(new ColumnRef(index, field.Name), a, diag))
                 .ToImmutableArray()
         );
 
@@ -160,14 +138,14 @@ record TableView
 
         Name = attr.Name ?? table.ShortName;
         IsPublic = attr.Public;
-        if (attr.Scheduled is { } reducer)
+        if (
+            attr.Scheduled is { } reducer
+            && table.GetColumnIndex(data, attr.ScheduledAt, diag) is { } scheduledAtIndex
+        )
         {
             try
             {
-                Scheduled = new(
-                    reducer,
-                    table.Members.Select(m => m.Name).IndexOf(attr.ScheduledAt)
-                );
+                Scheduled = new(reducer, scheduledAtIndex);
                 if (table.GetPrimaryKey(this) is not { } pk || table.Members[pk].Type != "ulong")
                 {
                     throw new InvalidOperationException(
@@ -196,7 +174,7 @@ enum ViewIndexType
 
 record ViewIndex
 {
-    public readonly EquatableArray<string> Columns;
+    public readonly EquatableArray<ColumnRef> Columns;
     public readonly string? Table;
     public readonly string AccessorName;
     public readonly ViewIndexType Type;
@@ -205,55 +183,96 @@ record ViewIndex
     // Guaranteed not to contain quotes, so does not need to be escaped when embedded in a string.
     private readonly string StandardNameSuffix;
 
-    private ViewIndex(string? accessorName, string[] columns, ViewIndexType type)
+    private ViewIndex(
+        string? accessorName,
+        ImmutableArray<ColumnRef> columns,
+        string? tableName,
+        ViewIndexType type
+    )
     {
-        AccessorName = accessorName ?? string.Join("_", columns);
-        Columns = new(columns.ToImmutableArray());
+        Columns = new(columns);
+        Table = tableName;
+        var columnNames = string.Join("_", columns.Select(c => c.Name));
+        AccessorName = accessorName ?? columnNames;
         Type = type;
-        StandardNameSuffix = $"_{string.Join("_", Columns)}_idx_{Type.ToString().ToLower()}";
+        StandardNameSuffix = $"_{columnNames}_idx_{Type.ToString().ToLower()}";
     }
 
-    public ViewIndex(ColumnDeclaration col)
+    public ViewIndex(ColumnRef col)
         : this(
             null,
-            [col.Name],
+            ImmutableArray.Create(col),
+            null,
             ViewIndexType.BTree // this might become hash in the future
         ) { }
 
-    private ViewIndex(IndexAttribute attr, TypeDeclarationSyntax decl, DiagReporter diag)
+    private ViewIndex(Index.BTreeAttribute attr, ImmutableArray<ColumnRef> columns)
+        : this(attr.Name, columns, attr.Table, ViewIndexType.BTree) { }
+
+    private ViewIndex(
+        TableDeclaration table,
+        Index.BTreeAttribute attr,
+        AttributeData data,
+        DiagReporter diag
+    )
         : this(
-            attr.Name,
-            // TODO: check other properties when we support types other than BTree.
-            // Then make sure we don't allow multiple index types on the same attribute via diagnostics.
-            attr.BTree ?? [],
-            ViewIndexType.BTree
+            attr,
+            attr.Columns.Select(name => new ColumnRef(
+                    table.GetColumnIndex(data, name, diag) ?? -1,
+                    name
+                ))
+                .Where(c => c.Index != -1)
+                .ToImmutableArray()
         )
     {
-        Table = attr.Table;
-        if (Columns.Length == 0)
+        if (attr.Columns.Length == 0)
         {
-            diag.Report(ErrorDescriptor.EmptyIndexColumns, decl);
+            diag.Report(ErrorDescriptor.EmptyIndexColumns, data);
         }
     }
 
-    public ViewIndex(AttributeData data, TypeDeclarationSyntax decl, DiagReporter diag)
-        : this(data.ParseAs<IndexAttribute>(), decl, diag) { }
+    public ViewIndex(TableDeclaration table, AttributeData data, DiagReporter diag)
+        : this(table, data.ParseAs<Index.BTreeAttribute>(), data, diag) { }
 
-    public string GenerateIndexDef(IEnumerable<ColumnDeclaration> allColumns)
+    private ViewIndex(
+        ColumnRef column,
+        Index.BTreeAttribute attr,
+        AttributeData data,
+        DiagReporter diag
+    )
+        : this(attr, ImmutableArray.Create(column))
     {
-        var colIndices = Columns.Select(c => allColumns.Select(cd => cd.Name).IndexOf(c));
+        if (attr.Columns.Length != 0)
+        {
+            diag.Report(ErrorDescriptor.UnexpectedIndexColumns, data);
+        }
+    }
 
-        return $$"""
+    public ViewIndex(ColumnRef col, AttributeData data, DiagReporter diag)
+        : this(col, data.ParseAs<Index.BTreeAttribute>(), data, diag) { }
+
+    // `FullName` and Roslyn have different ways of representing nested types in full names -
+    // one uses a `Parent+Child` syntax, the other uses `Parent.Child`.
+    // Manually fixup one to the other.
+    private static readonly string BTreeAttrName = typeof(Index.BTreeAttribute).FullName.Replace(
+        '+',
+        '.'
+    );
+
+    public static bool CanParse(AttributeData data) =>
+        data.AttributeClass?.ToString() == BTreeAttrName;
+
+    public string GenerateIndexDef() =>
+        $$"""
             new(
                 Name: null,
-                AccessorName: {{(AccessorName is not null ? $"\"{AccessorName}\"" : "null")}},
+                AccessorName: "{{AccessorName}}",
                 Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.{{Type}}([{{string.Join(
                     ", ",
-                    colIndices
+                    Columns.Select(c => c.Index)
                 )}}])
             )
             """;
-    }
 
     public string StandardIndexName(TableView view) => view.Name + StandardNameSuffix;
 }
@@ -263,6 +282,19 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
     public readonly Accessibility Visibility;
     public readonly EquatableArray<TableView> Views;
     public readonly EquatableArray<ViewIndex> Indexes;
+
+    public int? GetColumnIndex(AttributeData attrContext, string name, DiagReporter diag)
+    {
+        var index = Members
+            .Select((col, i) => (col, i))
+            .FirstOrDefault(pair => pair.col.Name == name);
+        if (index.col is null)
+        {
+            diag.Report(ErrorDescriptor.UnknownColumn, (attrContext, name, ShortName));
+            return null;
+        }
+        return index.i;
+    }
 
     public TableDeclaration(GeneratorAttributeSyntaxContext context, DiagReporter diag)
         : base(context, diag)
@@ -305,14 +337,17 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
         Indexes = new(
             context
                 .TargetSymbol.GetAttributes()
-                .Where(a => a.AttributeClass?.ToString() == typeof(IndexAttribute).FullName)
-                .Select(a => new ViewIndex(a, typeSyntax, diag))
+                .Where(ViewIndex.CanParse)
+                .Select(a => new ViewIndex(this, a, diag))
                 .ToImmutableArray()
         );
     }
 
-    protected override ColumnDeclaration ConvertMember(IFieldSymbol field, DiagReporter diag) =>
-        new(FullName, field, diag);
+    protected override ColumnDeclaration ConvertMember(
+        int index,
+        IFieldSymbol field,
+        DiagReporter diag
+    ) => new(FullName, index, field, diag);
 
     public IEnumerable<string> GenerateViewFilters(TableView view)
     {
@@ -321,27 +356,40 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
 
         foreach (var ct in GetConstraints(view, ColumnAttrs.Unique))
         {
-            var f = ct.col;
-            var standardIndexName = new ViewIndex(ct.col).StandardIndexName(view);
+            var f = ct.Col;
+            if (!f.IsEquatable)
+            {
+                // Skip - we already emitted diagnostic for this during parsing, and generated code would
+                // only produce a lot of noisy typechecking errors.
+                continue;
+            }
+            var standardIndexName = ct.ToIndex().StandardIndexName(view);
             yield return $$"""
-                {{vis}} sealed class {{view.Name}}UniqueIndex : UniqueIndex<{{view.Name}}, {{globalName}}, {{f.Type}}, {{f.TypeInfo}}> {
-                    internal {{view.Name}}UniqueIndex({{view.Name}} handle) : base(handle, "{{standardIndexName}}") {}
+                {{vis}} sealed class {{f.Name}}UniqueIndex : UniqueIndex<{{view.Name}}, {{globalName}}, {{f.Type}}, {{f.TypeInfo}}> {
+                    internal {{f.Name}}UniqueIndex({{view.Name}} handle) : base(handle, "{{standardIndexName}}") {}
                     // Important: don't move this to the base class.
                     // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
                     // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
                     public {{globalName}}? Find({{f.Type}} key) => DoFilter(key).Cast<{{globalName}}?>().SingleOrDefault();
                     public bool Update({{globalName}} row) => DoUpdate(row.{{f.Name}}, row);
                 }
-                {{vis}} {{view.Name}}UniqueIndex {{f.Name}} => new(this);
+                {{vis}} {{f.Name}}UniqueIndex {{f.Name}} => new(this);
                 """;
         }
 
         foreach (var index in GetIndexes(view))
         {
-            var members = index.Columns.Select(s => Members.First(x => x.Name == s)).ToArray();
+            var name = index.AccessorName;
 
+            // Skip bad declarations. Empty name means no columns, which we have already reported with a meaningful error.
+            // Emitting this will result in further compilation errors due to missing property name.
+            if (name == "")
+            {
+                continue;
+            }
+
+            var members = index.Columns.Select(c => Members[c.Index]).ToArray();
             var standardIndexName = index.StandardIndexName(view);
-            var name = index.AccessorName ?? standardIndexName;
 
             yield return $$"""
                     {{vis}} sealed class {{name}}Index() : SpacetimeDB.Internal.IndexBase<{{globalName}}>("{{standardIndexName}}") {
@@ -394,6 +442,12 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
 
     public IEnumerable<View> GenerateViews()
     {
+        // Don't try to generate views if this table is a sum type.
+        // We already emitted a diagnostic, and attempting to generate views will only result in more noisy errors.
+        if (Kind is TypeKind.Sum)
+        {
+            yield break;
+        }
         foreach (var v in Views)
         {
             var autoIncFields = Members
@@ -430,15 +484,15 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                         {{string.Join(
                             ",\n",
                             GetConstraints(v, ColumnAttrs.Unique)
-                            .Select(c => new ViewIndex(c.col))
+                            .Select(c => c.ToIndex())
                             .Concat(GetIndexes(v))
-                            .Select(b => b.GenerateIndexDef(Members))
+                            .Select(b => b.GenerateIndexDef())
                         )}}
                     ],
                     Constraints: {{GenConstraintList(v, ColumnAttrs.Unique, $"{iTable}.MakeUniqueConstraint")}},
                     Sequences: {{GenConstraintList(v, ColumnAttrs.AutoInc, $"{iTable}.MakeSequence")}},
                     Schedule: {{(
-                        v.Scheduled is {} scheduled
+                        v.Scheduled is { } scheduled
                         ? $"{iTable}.MakeSchedule(\"{scheduled.ReducerName}\", {scheduled.ScheduledAtColumn})"
                         : "null"
                     )}},
@@ -459,7 +513,10 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
         }
     }
 
-    public record struct Constraint(ColumnDeclaration col, int pos, ColumnAttrs attr);
+    public record Constraint(ColumnDeclaration Col, int Pos, ColumnAttrs Attr)
+    {
+        public ViewIndex ToIndex() => new(new ColumnRef(Pos, Col.Name));
+    }
 
     public IEnumerable<Constraint> GetConstraints(
         TableView view,
@@ -468,10 +525,12 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
         Members
             // Important: the position must be stored here, before filtering.
             .Select((col, pos) => new Constraint(col, pos, col.GetAttrs(view)))
-            .Where(c => c.attr.HasFlag(filterByAttr));
+            .Where(c => c.Attr.HasFlag(filterByAttr));
 
     public IEnumerable<ViewIndex> GetIndexes(TableView view) =>
-        Indexes.Where(i => i.Table == null || i.Table == view.Name);
+        Indexes
+            .Concat(Members.SelectMany(m => m.Indexes))
+            .Where(i => i.Table == null || i.Table == view.Name);
 
     // Reimplementation of V8 -> V9 constraint conversion in Rust.
     // See https://github.com/clockworklabs/SpacetimeDB/blob/13a800e9f88cbe885b98eab9e45b0fcfd3ab7014/crates/schema/src/def/validate/v8.rs#L74-L78
@@ -486,13 +545,13 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             {{string.Join(
                 ",\n",
                 GetConstraints(view, filterByAttr)
-                    .Select(pair => $"{makeConstraintFn}({pair.pos})")
+                    .Select(pair => $"{makeConstraintFn}({pair.Pos})")
             )}}
         ]
         """;
 
     internal int? GetPrimaryKey(TableView view) =>
-        GetConstraints(view, ColumnAttrs.PrimaryKey).Select(c => (int?)c.pos).SingleOrDefault();
+        GetConstraints(view, ColumnAttrs.PrimaryKey).Select(c => (int?)c.Pos).SingleOrDefault();
 }
 
 record ReducerDeclaration
@@ -502,6 +561,7 @@ record ReducerDeclaration
     public readonly string FullName;
     public readonly EquatableArray<MemberDeclaration> Args;
     public readonly Scope Scope;
+    private readonly bool HasWrongSignature;
 
     public ReducerDeclaration(GeneratorAttributeSyntaxContext context, DiagReporter diag)
     {
@@ -520,6 +580,7 @@ record ReducerDeclaration
         )
         {
             diag.Report(ErrorDescriptor.ReducerContextParam, methodSyntax);
+            HasWrongSignature = true;
         }
 
         Name = method.Name;
@@ -545,10 +606,13 @@ record ReducerDeclaration
 
     public string GenerateClass()
     {
-        var args = string.Join(
-            ", ",
-            Args.Select(a => $"{a.Name}.Read(reader)").Prepend("(SpacetimeDB.ReducerContext)ctx")
-        );
+        var invocation = HasWrongSignature
+            ? "throw new System.InvalidOperationException()"
+            : $"{FullName}({string.Join(
+                ", ",
+                Args.Select(a => $"{a.Name}.Read(reader)").Prepend("(SpacetimeDB.ReducerContext)ctx")
+            )})";
+
         return $$"""
             class {{Name}}: SpacetimeDB.Internal.IReducer {
                 {{MemberDeclaration.GenerateBsatnFields(Accessibility.Private, Args)}}
@@ -556,16 +620,17 @@ record ReducerDeclaration
                 public SpacetimeDB.Internal.RawReducerDefV9 MakeReducerDef(SpacetimeDB.BSATN.ITypeRegistrar registrar) => new (
                     nameof({{Name}}),
                     [{{MemberDeclaration.GenerateDefs(Args)}}],
-                    {{Kind switch {
-                        ReducerKind.Init => "SpacetimeDB.Internal.Lifecycle.Init",
-                        ReducerKind.ClientConnected => "SpacetimeDB.Internal.Lifecycle.OnConnect",
-                        ReducerKind.ClientDisconnected => "SpacetimeDB.Internal.Lifecycle.OnDisconnect",
-                        _ => "null"
-                    }}}
+                    {{Kind switch
+        {
+            ReducerKind.Init => "SpacetimeDB.Internal.Lifecycle.Init",
+            ReducerKind.ClientConnected => "SpacetimeDB.Internal.Lifecycle.OnConnect",
+            ReducerKind.ClientDisconnected => "SpacetimeDB.Internal.Lifecycle.OnDisconnect",
+            _ => "null"
+        }}}
                 );
 
                 public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx) {
-                    {{FullName}}({{args}});
+                    {{invocation}};
                 }
             }
             """;
@@ -757,9 +822,12 @@ public class Module : IIncrementalGenerator
                             public readonly Identity CallerIdentity;
                             public readonly Address? CallerAddress;
                             public readonly Random Rng;
-                            public readonly DateTimeOffset Timestamp;
+                            public readonly Timestamp Timestamp;
 
-                            internal ReducerContext(Identity identity, Address? address, Random random, DateTimeOffset time) {
+                            // We need this property to be non-static for parity with client SDK.
+                            public Identity Identity => Internal.IReducerContext.GetIdentity();
+
+                            internal ReducerContext(Identity identity, Address? address, Random random, Timestamp time) {
                                 CallerIdentity = identity;
                                 CallerAddress = address;
                                 Rng = random;
@@ -816,7 +884,7 @@ public class Module : IIncrementalGenerator
                             ulong sender_3,
                             ulong address_0,
                             ulong address_1,
-                            SpacetimeDB.Internal.DateTimeOffsetRepr timestamp,
+                            SpacetimeDB.Timestamp timestamp,
                             SpacetimeDB.Internal.BytesSource args,
                             SpacetimeDB.Internal.BytesSink error
                         ) => SpacetimeDB.Internal.Module.__call_reducer__(

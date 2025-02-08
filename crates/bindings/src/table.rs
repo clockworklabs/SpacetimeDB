@@ -142,16 +142,12 @@ pub struct IndexDesc<'a> {
 #[derive(Clone, Copy)]
 pub enum IndexAlgo<'a> {
     BTree { columns: &'a [u16] },
+    Direct { column: u16 },
 }
 
 pub struct ScheduleDesc<'a> {
     pub reducer_name: &'a str,
     pub scheduled_at_column: u16,
-}
-
-#[doc(hidden)]
-pub trait __MapRowTypeToTable {
-    type Table: Table;
 }
 
 /// A UNIQUE constraint violation on a table was attempted.
@@ -262,31 +258,23 @@ impl MaybeError for AutoIncOverflow {
 }
 
 pub trait Column {
-    type Row;
-    type ColType;
+    type Table: Table;
+    type ColType: SpacetimeType + Serialize + DeserializeOwned;
     const COLUMN_NAME: &'static str;
-    fn get_field(row: &Self::Row) -> &Self::ColType;
+    fn get_field(row: &<Self::Table as Table>::Row) -> &Self::ColType;
 }
 
-pub struct UniqueColumn<Tbl: Table, ColType, Col>
-where
-    ColType: SpacetimeType + Serialize + DeserializeOwned,
-    Col: Index + Column<Row = Tbl::Row, ColType = ColType>,
-{
-    _marker: PhantomData<(Tbl, Col)>,
+pub struct UniqueColumn<Tbl, ColType, Col> {
+    _marker: PhantomData<(Tbl, ColType, Col)>,
 }
 
-impl<Tbl: Table, ColType, Col> UniqueColumn<Tbl, ColType, Col>
-where
-    ColType: SpacetimeType + Serialize + DeserializeOwned,
-    Col: Index + Column<Row = Tbl::Row, ColType = ColType>,
-{
+impl<Tbl: Table, Col: Index + Column<Table = Tbl>> UniqueColumn<Tbl, Col::ColType, Col> {
     #[doc(hidden)]
     pub const __NEW: Self = Self { _marker: PhantomData };
 
     #[inline]
-    fn get_args(&self, col_val: &ColType) -> BTreeScanArgs {
-        BTreeScanArgs {
+    fn get_args(&self, col_val: &Col::ColType) -> IndexScanRangeArgs {
+        IndexScanRangeArgs {
             data: IterBuf::serialize(&std::ops::Bound::Included(col_val)).unwrap(),
             prefix_elems: 0,
             rstart_idx: 0,
@@ -298,30 +286,30 @@ where
     /// or `None` if no such row is present in the database state.
     //
     // TODO: consider whether we should accept the sought value by ref or by value.
-    // Should be consistent with the implementors of `BTreeIndexBounds` (see below).
+    // Should be consistent with the implementors of `IndexScanRangeBounds` (see below).
     // By-value makes passing `Copy` fields more convenient,
     // whereas by-ref makes passing `!Copy` fields more performant.
     // Can we do something smart with `std::borrow::Borrow`?
     #[inline]
-    pub fn find(&self, col_val: impl Borrow<ColType>) -> Option<Tbl::Row> {
+    pub fn find(&self, col_val: impl Borrow<Col::ColType>) -> Option<Tbl::Row> {
         self._find(col_val.borrow())
     }
 
-    fn _find(&self, col_val: &ColType) -> Option<Tbl::Row> {
+    fn _find(&self, col_val: &Col::ColType) -> Option<Tbl::Row> {
         // Find the row with a match.
         let index_id = Col::index_id();
         let args = self.get_args(col_val);
         let (prefix, prefix_elems, rstart, rend) = args.args_for_syscall();
 
-        let iter = sys::datastore_btree_scan_bsatn(index_id, prefix, prefix_elems, rstart, rend)
-            .unwrap_or_else(|e| panic!("unique: unexpected error from datastre_btree_scan_bsatn: {e}"));
+        let iter = sys::datastore_index_scan_range_bsatn(index_id, prefix, prefix_elems, rstart, rend)
+            .unwrap_or_else(|e| panic!("unique: unexpected error from `datastore_index_scan_range_bsatn`: {e}"));
         let mut iter = TableIter::new_with_buf(iter, args.data);
 
         // We will always find either 0 or 1 rows here due to the unique constraint.
         let row = iter.next();
         assert!(
             iter.is_exhausted(),
-            "datastore_btree_scan_bsatn on unique field cannot return >1 rows"
+            "`datastore_index_scan_range_bsatn` on unique field cannot return >1 rows"
         );
         row
     }
@@ -335,17 +323,19 @@ where
     /// May panic if deleting the row would violate a constraint,
     /// though as of proposing no such constraints exist.
     #[inline]
-    pub fn delete(&self, col_val: impl Borrow<ColType>) -> bool {
+    pub fn delete(&self, col_val: impl Borrow<Col::ColType>) -> bool {
         self._delete(col_val.borrow()).0
     }
 
-    fn _delete(&self, col_val: &ColType) -> (bool, IterBuf) {
+    fn _delete(&self, col_val: &Col::ColType) -> (bool, IterBuf) {
         let index_id = Col::index_id();
         let args = self.get_args(col_val);
         let (prefix, prefix_elems, rstart, rend) = args.args_for_syscall();
 
-        let n_del = sys::datastore_delete_by_btree_scan_bsatn(index_id, prefix, prefix_elems, rstart, rend)
-            .unwrap_or_else(|e| panic!("unique: unexpected error from datastore_delete_by_btree_scan_bsatn: {e}"));
+        let n_del = sys::datastore_delete_by_index_scan_range_bsatn(index_id, prefix, prefix_elems, rstart, rend)
+            .unwrap_or_else(|e| {
+                panic!("unique: unexpected error from datastore_delete_by_index_scan_range_bsatn: {e}")
+            });
 
         (n_del > 0, args.data)
     }
@@ -360,30 +350,20 @@ where
     /// or if either the delete or the insertion would violate a constraint.
     #[track_caller]
     pub fn update(&self, new_row: Tbl::Row) -> Tbl::Row {
-        let (deleted, buf) = self._delete(Col::get_field(&new_row));
-        if !deleted {
-            update_row_didnt_exist(Tbl::TABLE_NAME, Col::COLUMN_NAME)
-        }
-        insert::<Tbl>(new_row, buf).unwrap_or_else(|e| panic!("{e}"))
+        let buf = IterBuf::take();
+        update::<Tbl>(Col::index_id(), new_row, buf)
     }
-}
-
-#[cold]
-#[inline(never)]
-#[track_caller]
-fn update_row_didnt_exist(table_name: &str, unique_column: &str) -> ! {
-    panic!("UniqueColumn::update: row in table `{table_name}` being updated by unique column `{unique_column}` did not already exist")
 }
 
 pub trait Index {
     fn index_id() -> IndexId;
 }
 
-pub struct BTreeIndex<Tbl: Table, IndexType, Idx: Index> {
+pub struct RangedIndex<Tbl: Table, IndexType, Idx: Index> {
     _marker: PhantomData<(Tbl, IndexType, Idx)>,
 }
 
-impl<Tbl: Table, IndexType, Idx: Index> BTreeIndex<Tbl, IndexType, Idx> {
+impl<Tbl: Table, IndexType, Idx: Index> RangedIndex<Tbl, IndexType, Idx> {
     #[doc(hidden)]
     pub const __NEW: Self = Self { _marker: PhantomData };
 
@@ -395,13 +375,13 @@ impl<Tbl: Table, IndexType, Idx: Index> BTreeIndex<Tbl, IndexType, Idx> {
     /// - A tuple of values for any prefix of the indexed columns, optionally terminated by a range for the next.
     pub fn filter<B, K>(&self, b: B) -> impl Iterator<Item = Tbl::Row>
     where
-        B: BTreeIndexBounds<IndexType, K>,
+        B: IndexScanRangeBounds<IndexType, K>,
     {
         let index_id = Idx::index_id();
         let args = b.get_args();
         let (prefix, prefix_elems, rstart, rend) = args.args_for_syscall();
-        let iter = sys::datastore_btree_scan_bsatn(index_id, prefix, prefix_elems, rstart, rend)
-            .unwrap_or_else(|e| panic!("unexpected error from datastore_btree_scan_bsatn: {e}"));
+        let iter = sys::datastore_index_scan_range_bsatn(index_id, prefix, prefix_elems, rstart, rend)
+            .unwrap_or_else(|e| panic!("unexpected error from `datastore_index_scan_range_bsatn`: {e}"));
         TableIter::new(iter)
     }
 
@@ -416,13 +396,13 @@ impl<Tbl: Table, IndexType, Idx: Index> BTreeIndex<Tbl, IndexType, Idx> {
     /// though as of proposing no such constraints exist.
     pub fn delete<B, K>(&self, b: B) -> u64
     where
-        B: BTreeIndexBounds<IndexType, K>,
+        B: IndexScanRangeBounds<IndexType, K>,
     {
         let index_id = Idx::index_id();
         let args = b.get_args();
         let (prefix, prefix_elems, rstart, rend) = args.args_for_syscall();
-        sys::datastore_delete_by_btree_scan_bsatn(index_id, prefix, prefix_elems, rstart, rend)
-            .unwrap_or_else(|e| panic!("unexpected error from datastore_delete_by_btree_scan_bsatn: {e}"))
+        sys::datastore_delete_by_index_scan_range_bsatn(index_id, prefix, prefix_elems, rstart, rend)
+            .unwrap_or_else(|e| panic!("unexpected error from `datastore_delete_by_index_scan_range_bsatn`: {e}"))
             .into()
     }
 }
@@ -431,7 +411,7 @@ impl<Tbl: Table, IndexType, Idx: Index> BTreeIndex<Tbl, IndexType, Idx> {
 /// for a column of type `Column`.
 ///
 /// Types which can appear specifically as a terminating bound in a BTree index,
-/// which may be a range, instead use [`BTreeIndexBoundsTerminator`].
+/// which may be a range, instead use [`IndexRangeScanBoundsTerminator`].
 ///
 /// General rules for implementors of this type:
 /// - It should only be implemented for types that have
@@ -496,17 +476,17 @@ impl_filterable_value! {
     // &[u8] => Vec<u8>,
 }
 
-pub trait BTreeIndexBounds<T, K = ()> {
+pub trait IndexScanRangeBounds<T, K = ()> {
     #[doc(hidden)]
-    fn get_args(&self) -> BTreeScanArgs;
+    fn get_args(&self) -> IndexScanRangeArgs;
 }
 
 #[doc(hidden)]
-/// Arguments to one of the BTree-related host-/sys-calls.
+/// Arguments to one of the ranged-index-scan-related host-/sys-calls.
 ///
 /// All pointers passed into the syscall are packed into a single buffer, `data`,
 /// with slices taken at the appropriate offsets, to save allocatons in WASM.
-pub struct BTreeScanArgs {
+pub struct IndexScanRangeArgs {
     data: IterBuf,
     prefix_elems: usize,
     rstart_idx: usize,
@@ -514,7 +494,7 @@ pub struct BTreeScanArgs {
     rend_idx: Option<usize>,
 }
 
-impl BTreeScanArgs {
+impl IndexScanRangeArgs {
     /// Get slices into `self.data` for the prefix, range start and range end.
     pub(crate) fn args_for_syscall(&self) -> (&[u8], ColId, &[u8], &[u8]) {
         let prefix = &self.data[..self.rstart_idx];
@@ -528,9 +508,9 @@ impl BTreeScanArgs {
     }
 }
 
-// Implement `BTreeIndexBounds` for all the different index column types
+// Implement `IndexScanRangeBounds` for all the different index column types
 // and filter argument types we support.
-macro_rules! impl_btree_index_bounds {
+macro_rules! impl_index_scan_range_bounds {
     // In the first pattern, we accept two Prolog-style lists of type variables,
     // the first of which we use for the column types in the index,
     // and the second for the arguments supplied to the filter function.
@@ -542,10 +522,10 @@ macro_rules! impl_btree_index_bounds {
     (($ColTerminator:ident $(, $ColPrefix:ident)*), ($ArgTerminator:ident $(, $ArgPrefix:ident)*)) => {
         // Implement the trait for all arguments N-column indices.
         // The "inner recursion" described above happens in here.
-        impl_btree_index_bounds!(@inner_recursion (), ($ColTerminator $(, $ColPrefix)*), ($ArgTerminator $(, $ArgPrefix)*));
+        impl_index_scan_range_bounds!(@inner_recursion (), ($ColTerminator $(, $ColPrefix)*), ($ArgTerminator $(, $ArgPrefix)*));
 
         // Recurse on the suffix of the two lists, to implement the trait for all arguments to (N - 1)-column indices.
-        impl_btree_index_bounds!(($($ColPrefix),*), ($($ArgPrefix),*));
+        impl_index_scan_range_bounds!(($($ColPrefix),*), ($($ArgPrefix),*));
     };
     // Base case for the previous "outer recursion."
     ((), ()) => {};
@@ -558,10 +538,10 @@ macro_rules! impl_btree_index_bounds {
     // so we'll implement (N - 1)-element queries on N-column indices.
     // And so on.
     (@inner_recursion ($($ColUnused:ident),*), ($ColTerminator:ident $(, $ColPrefix:ident)+), ($ArgTerminator:ident $(, $ArgPrefix:ident)+)) => {
-        // Emit the actual `impl BTreeIndexBounds` form for M-element queries on N-column indices.
-        impl_btree_index_bounds!(@emit_impl ($($ColUnused),*), ($ColTerminator $(,$ColPrefix)*), ($ArgTerminator $(, $ArgPrefix)*));
+        // Emit the actual `impl IndexScanRangeBounds` form for M-element queries on N-column indices.
+        impl_index_scan_range_bounds!(@emit_impl ($($ColUnused),*), ($ColTerminator $(,$ColPrefix)*), ($ArgTerminator $(, $ArgPrefix)*));
         // Recurse, to implement for (M - 1)-element queries on N-column indices.
-        impl_btree_index_bounds!(@inner_recursion ($($ColUnused,)* $ColTerminator), ($($ColPrefix),*), ($($ArgPrefix),*));
+        impl_index_scan_range_bounds!(@inner_recursion ($($ColUnused,)* $ColTerminator), ($($ColPrefix),*), ($($ArgPrefix),*));
     };
     // Base case for the inner recursive loop, when there is only one column remaining.
     // Implement the trait for both single-element tuples of arguments,
@@ -580,24 +560,24 @@ macro_rules! impl_btree_index_bounds {
         impl<
             $($ColUnused,)*
             $ColTerminator,
-            Term: BTreeIndexBoundsTerminator<Arg = $ArgTerminator>,
+            Term: IndexScanRangeBoundsTerminator<Arg = $ArgTerminator>,
             $ArgTerminator: FilterableValue<Column = $ColTerminator>,
-        > BTreeIndexBounds<($ColTerminator, $($ColUnused,)*)> for (Term,) {
-            fn get_args(&self) -> BTreeScanArgs {
-                BTreeIndexBounds::<($ColTerminator, $($ColUnused,)*), SingleBound>::get_args(&self.0)
+        > IndexScanRangeBounds<($ColTerminator, $($ColUnused,)*)> for (Term,) {
+            fn get_args(&self) -> IndexScanRangeArgs {
+                IndexScanRangeBounds::<($ColTerminator, $($ColUnused,)*), SingleBound>::get_args(&self.0)
             }
         }
         // Implementation for bare values: serialize the value as the terminating bounds.
         impl<
             $($ColUnused,)*
             $ColTerminator,
-            Term: BTreeIndexBoundsTerminator<Arg = $ArgTerminator>,
+            Term: IndexScanRangeBoundsTerminator<Arg = $ArgTerminator>,
             $ArgTerminator: FilterableValue<Column = $ColTerminator>,
-        > BTreeIndexBounds<($ColTerminator, $($ColUnused,)*), SingleBound> for Term {
-            fn get_args(&self) -> BTreeScanArgs {
+        > IndexScanRangeBounds<($ColTerminator, $($ColUnused,)*), SingleBound> for Term {
+            fn get_args(&self) -> IndexScanRangeArgs {
                 let mut data = IterBuf::take();
                 let rend_idx = self.bounds().serialize_into(&mut data);
-                BTreeScanArgs { data, prefix_elems: 0, rstart_idx: 0, rend_idx }
+                IndexScanRangeArgs { data, prefix_elems: 0, rstart_idx: 0, rend_idx }
             }
         }
     };
@@ -617,19 +597,19 @@ macro_rules! impl_btree_index_bounds {
             $($ColUnused,)*
             $ColTerminator,
             $($ColPrefix,)*
-            Term: BTreeIndexBoundsTerminator<Arg = $ArgTerminator>,
+            Term: IndexScanRangeBoundsTerminator<Arg = $ArgTerminator>,
             $ArgTerminator: FilterableValue<Column = $ColTerminator>,
             $($ArgPrefix: FilterableValue<Column = $ColPrefix>,)+
-        > BTreeIndexBounds<
+        > IndexScanRangeBounds<
             ($($ColPrefix,)+
              $ColTerminator,
              $($ColUnused,)*)
           > for ($($ArgPrefix,)+ Term,) {
-            fn get_args(&self) -> BTreeScanArgs {
+            fn get_args(&self) -> IndexScanRangeArgs {
                 let mut data = IterBuf::take();
 
                 // Get the number of prefix elements.
-                let prefix_elems = impl_btree_index_bounds!(@count $($ColPrefix)+);
+                let prefix_elems = impl_index_scan_range_bounds!(@count $($ColPrefix)+);
 
                 // Destructure the argument tuple into variables with the same names as their types.
                 #[allow(non_snake_case)]
@@ -648,21 +628,21 @@ macro_rules! impl_btree_index_bounds {
                 // and get the info required to separately slice the lower and upper bounds of that range
                 // since the host call takes those as separate slices.
                 let rend_idx = term.bounds().serialize_into(&mut data);
-                BTreeScanArgs { data, prefix_elems, rstart_idx, rend_idx }
+                IndexScanRangeArgs { data, prefix_elems, rstart_idx, rend_idx }
             }
         }
     };
 
     // Counts the number of elements in the tuple.
     (@count $($T:ident)*) => {
-        0 $(+ impl_btree_index_bounds!(@drop $T 1))*
+        0 $(+ impl_index_scan_range_bounds!(@drop $T 1))*
     };
     (@drop $a:tt $b:tt) => { $b };
 }
 
 pub struct SingleBound;
 
-impl_btree_index_bounds!(
+impl_index_scan_range_bounds!(
     (ColA, ColB, ColC, ColD, ColE, ColF),
     (ArgA, ArgB, ArgC, ArgD, ArgE, ArgF)
 );
@@ -688,12 +668,12 @@ impl<Bound: FilterableValue> TermBound<&Bound> {
         })
     }
 }
-pub trait BTreeIndexBoundsTerminator {
+pub trait IndexScanRangeBoundsTerminator {
     type Arg;
     fn bounds(&self) -> TermBound<&Self::Arg>;
 }
 
-impl<Col, Arg: FilterableValue<Column = Col>> BTreeIndexBoundsTerminator for Arg {
+impl<Col, Arg: FilterableValue<Column = Col>> IndexScanRangeBoundsTerminator for Arg {
     type Arg = Arg;
     fn bounds(&self) -> TermBound<&Arg> {
         TermBound::Single(ops::Bound::Included(self))
@@ -702,7 +682,7 @@ impl<Col, Arg: FilterableValue<Column = Col>> BTreeIndexBoundsTerminator for Arg
 
 macro_rules! impl_terminator {
     ($($range:ty),* $(,)?) => {
-        $(impl<T: FilterableValue> BTreeIndexBoundsTerminator for $range {
+        $(impl<T: FilterableValue> IndexScanRangeBoundsTerminator for $range {
             type Arg = T;
             fn bounds(&self) -> TermBound<&T> {
                 TermBound::Range(
@@ -724,22 +704,22 @@ impl_terminator!(
 );
 
 // Single-column indices
-// impl<T> BTreeIndexBounds<(T,)> for Range<T> {}
-// impl<T> BTreeIndexBounds<(T,)> for T {}
+// impl<T> IndexScanRangeBounds<(T,)> for Range<T> {}
+// impl<T> IndexScanRangeBounds<(T,)> for T {}
 
 // // Two-column indices
-// impl<T, U> BTreeIndexBounds<(T, U)> for Range<T> {}
-// impl<T, U> BTreeIndexBounds<(T, U)> for T {}
-// impl<T, U> BTreeIndexBounds<(T, U)> for (T, Range<U>) {}
-// impl<T, U> BTreeIndexBounds<(T, U)> for (T, U) {}
+// impl<T, U> IndexScanRangeBounds<(T, U)> for Range<T> {}
+// impl<T, U> IndexScanRangeBounds<(T, U)> for T {}
+// impl<T, U> IndexScanRangeBounds<(T, U)> for (T, Range<U>) {}
+// impl<T, U> IndexScanRangeBounds<(T, U)> for (T, U) {}
 
 // // Three-column indices
-// impl<T, U, V> BTreeIndexBounds<(T, U, V)> for Range<T> {}
-// impl<T, U, V> BTreeIndexBounds<(T, U, V)> for T {}
-// impl<T, U, V> BTreeIndexBounds<(T, U, V)> for (T, Range<U>) {}
-// impl<T, U, V> BTreeIndexBounds<(T, U, V)> for (T, U) {}
-// impl<T, U, V> BTreeIndexBounds<(T, U, V)> for (T, U, Range<V>) {}
-// impl<T, U, V> BTreeIndexBounds<(T, U, V)> for (T, U, V) {}
+// impl<T, U, V> IndexScanRangeBounds<(T, U, V)> for Range<T> {}
+// impl<T, U, V> IndexScanRangeBounds<(T, U, V)> for T {}
+// impl<T, U, V> IndexScanRangeBounds<(T, U, V)> for (T, Range<U>) {}
+// impl<T, U, V> IndexScanRangeBounds<(T, U, V)> for (T, U) {}
+// impl<T, U, V> IndexScanRangeBounds<(T, U, V)> for (T, U, Range<V>) {}
+// impl<T, U, V> IndexScanRangeBounds<(T, U, V)> for (T, U, V) {}
 
 /// A trait for types that can have a sequence based on them.
 /// This is used for auto-inc columns to determine if an insertion of a row
@@ -826,7 +806,7 @@ fn insert<T: Table>(mut row: T::Row, mut buf: IterBuf) -> Result<T::Row, TryInse
     // Insert row into table.
     // When table has an auto-incrementing column, we must re-decode the changed `buf`.
     let res = sys::datastore_insert_bsatn(table_id, &mut buf).map(|gen_cols| {
-        // Let the caller handle any generated columns written back by `sys::insert` to `buf`.
+        // Let the caller handle any generated columns written back by `sys::datastore_insert_bsatn` to `buf`.
         T::integrate_generated_columns(&mut row, gen_cols);
         row
     });
@@ -840,6 +820,26 @@ fn insert<T: Table>(mut row: T::Row, mut buf: IterBuf) -> Result<T::Row, TryInse
         };
         err.unwrap_or_else(|| panic!("unexpected insertion error: {e}"))
     })
+}
+
+/// Update a row of type `T` to `row` using the index identified by `index_id`.
+#[track_caller]
+fn update<T: Table>(index_id: IndexId, mut row: T::Row, mut buf: IterBuf) -> T::Row {
+    let table_id = T::table_id();
+    // Encode the row as bsatn into the buffer `buf`.
+    buf.clear();
+    buf.serialize_into(&row).unwrap();
+
+    // Insert row into table.
+    // When table has an auto-incrementing column, we must re-decode the changed `buf`.
+    let res = sys::datastore_update_bsatn(table_id, index_id, &mut buf).map(|gen_cols| {
+        // Let the caller handle any generated columns written back by `sys::datastore_update_bsatn` to `buf`.
+        T::integrate_generated_columns(&mut row, gen_cols);
+        row
+    });
+
+    // TODO(centril): introduce a `TryUpdateError`.
+    res.unwrap_or_else(|e| panic!("unexpected update error: {e}"))
 }
 
 /// A table iterator which yields values of the `TableType` corresponding to the table.

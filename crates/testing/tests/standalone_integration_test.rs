@@ -65,6 +65,11 @@ fn test_calling_a_reducer_in_module(module_name: &'static str) {
                 .to_string();
             module.send(json).await.unwrap();
 
+            let json =
+                r#"{"CallReducer": {"reducer": "log_module_identity", "args": "[]", "request_id": 4, "flags": 0 }}"#
+                    .to_string();
+            module.send(json).await.unwrap();
+
             assert_eq!(
                 read_logs(&module).await,
                 [
@@ -73,7 +78,10 @@ fn test_calling_a_reducer_in_module(module_name: &'static str) {
                     "Hello, World!",
                     "Cersei has age 31 >= 30",
                 ]
+                .into_iter()
                 .map(String::from)
+                .chain(std::iter::once(format!("Module identity: {}", module.db_identity)))
+                .collect::<Vec<_>>()
             );
         },
     );
@@ -257,7 +265,7 @@ fn test_index_scans() {
     );
 }
 
-async fn bench_call<'a>(module: &ModuleHandle, call: &str, count: &u32) -> Duration {
+async fn bench_call(module: &ModuleHandle, call: &str, count: &u32) -> Duration {
     let now = Instant::now();
 
     // Note: using JSON variant because some functions accept u64 instead, so we rely on JSON's dynamic typing.

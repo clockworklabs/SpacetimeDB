@@ -15,7 +15,7 @@
 //!
 //! This module is internal, and may incompatibly change without warning.
 
-use crate::spacetime_module::{Reducer, SpacetimeModule, TableUpdate};
+use crate::spacetime_module::{AbstractEventContext, Reducer, SpacetimeModule, TableUpdate};
 use spacetimedb_data_structures::map::HashMap;
 use std::{
     any::Any,
@@ -204,7 +204,7 @@ impl<M: SpacetimeModule> TableCallbacks<M> {
 /// Reducer arguments are passed to callbacks within the `EventContext`,
 /// and a wrapper inserted by the SDK will destructure the contained `Event`
 /// before invoking the user-supplied function.
-pub(crate) type ReducerCallback<M> = Box<dyn FnMut(&<M as SpacetimeModule>::EventContext) + Send + 'static>;
+pub(crate) type ReducerCallback<M> = Box<dyn FnMut(&<M as SpacetimeModule>::ReducerEventContext) + Send + 'static>;
 
 type ReducerCallbackMap<M> = HashMap<CallbackId, ReducerCallback<M>>;
 
@@ -226,8 +226,9 @@ impl<M: SpacetimeModule> Default for ReducerCallbacks<M> {
 }
 
 impl<M: SpacetimeModule> ReducerCallbacks<M> {
-    pub(crate) fn invoke_on_reducer(&mut self, ctx: &M::EventContext, reducer: &M::Reducer) {
-        let name = reducer.reducer_name();
+    pub(crate) fn invoke_on_reducer(&mut self, ctx: &M::ReducerEventContext) {
+        let reducer = ctx.event();
+        let name = reducer.reducer.reducer_name();
         if let Some(callbacks) = self.callbacks.get_mut(name) {
             for callback in callbacks.values_mut() {
                 callback(ctx);

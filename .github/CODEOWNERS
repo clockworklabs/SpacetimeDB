@@ -7,3 +7,6 @@ LICENSE.txt @cloutiertyler
 /crates/cli/src/ @bfops @cloutiertyler
 /crates/cli/src/subcommands/generate/ # No owners
 /crates/cli/src/subcommands/generate/mod.rs @bfops @cloutiertyler # These codeowners should be the same as the "root" CLI codeowners
+
+/crates/sdk/examples/quickstart-chat/ @gefjon
+/modules/quickstart-chat/ @gefjon

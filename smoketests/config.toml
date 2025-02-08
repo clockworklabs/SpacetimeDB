@@ -1,5 +1,5 @@
 default_server = "127.0.0.1:3000"
-spacetimedb_token = ""
+spacetimedb_token = "eyJ0eXAiOiJKV1QiLCJhbGciOiJFUzI1NiJ9.eyJoZXhfaWRlbnRpdHkiOiJjMjAwODIzOTA3M2M5MDgyNWQxZWY0MWVjNGJlYzg1MmNkNWIzOTdiMzBjZTVhZjUzNmZlZGExOTE3OWM5ZTJjIiwic3ViIjoiMzVmMjQ5ZTYtZjI0NC00ZDE1LWIzYmUtM2Q5NWZjMjA4MTFmIiwiaXNzIjoibG9jYWxob3N0IiwiYXVkIjpbInNwYWNldGltZWRiIl0sImlhdCI6MTczMjYzODI4NywiZXhwIjpudWxsfQ.oVIaYaH7w8ZiuowAflzKo4BrUeGk_1WqlaySMCYqIrkzB96SxVjCQuR0PYM8dOs7WhsiXvYH7dgVxbSbVV4PGg"
 
 [[server_configs]]
 nickname = "localhost"

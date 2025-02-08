@@ -107,7 +107,6 @@ pub struct RepeatingTestArg {
     #[primary_key]
     #[auto_inc]
     scheduled_id: u64,
-    #[scheduled_at]
     scheduled_at: spacetimedb::ScheduleAt,
     prev_time: Timestamp,
 }
@@ -121,7 +120,7 @@ pub struct HasSpecialStuff {
 #[spacetimedb::reducer(init)]
 pub fn init(ctx: &ReducerContext) {
     ctx.db.repeating_test_arg().insert(RepeatingTestArg {
-        prev_time: Timestamp::now(),
+        prev_time: ctx.timestamp,
         scheduled_id: 0,
         scheduled_at: duration!("1000ms").into(),
     });
@@ -129,7 +128,10 @@ pub fn init(ctx: &ReducerContext) {
 
 #[spacetimedb::reducer]
 pub fn repeating_test(ctx: &ReducerContext, arg: RepeatingTestArg) {
-    let delta_time = arg.prev_time.elapsed();
+    let delta_time = ctx
+        .timestamp
+        .duration_since(arg.prev_time)
+        .expect("arg.prev_time is later than ctx.timestamp... huh?");
     log::trace!("Timestamp: {:?}, Delta time: {:?}", ctx.timestamp, delta_time);
 }
 
@@ -240,7 +242,7 @@ pub fn delete_players_by_name(ctx: &ReducerContext, name: String) -> Result<(), 
 }
 
 #[spacetimedb::reducer(client_connected)]
-fn on_connect(_ctx: &ReducerContext) {}
+fn client_connected(_ctx: &ReducerContext) {}
 
 // We can derive `Deserialize` for lifetime generic types:
 
@@ -343,4 +345,34 @@ fn test_btree_index_args(ctx: &ReducerContext) {
     let _ = ctx.db.points().multi_column_index().filter((&0i64, &1i64..&3i64));
 
     // ctx.db.points().multi_column_index().filter((0i64..3i64, 1i64)); // SHOULD FAIL
+}
+
+#[spacetimedb::reducer]
+fn assert_caller_identity_is_module_identity(ctx: &ReducerContext) {
+    let caller = ctx.sender;
+    let owner = ctx.identity();
+    if caller != owner {
+        panic!("Caller {caller} is not the owner {owner}");
+    } else {
+        log::info!("Called by the owner {owner}");
+    }
+}
+
+/// These two tables defined with the same row type
+/// verify that we can define multiple tables with the same type.
+///
+/// In the past, we've had issues where each `#[table]` attribute
+/// would try to emit its own `impl` block for `SpacetimeType` (and some other traits),
+/// resulting in duplicate/conflicting trait definitions.
+/// See e.g. [SpacetimeDB issue #2097](https://github.com/clockworklabs/SpacetimeDB/issues/2097).
+#[spacetimedb::table(public, name = player)]
+#[spacetimedb::table(public, name = logged_out_player)]
+pub struct Player {
+    #[primary_key]
+    identity: Identity,
+    #[auto_inc]
+    #[unique]
+    player_id: u64,
+    #[unique] // fields called "name" previously caused name collisions in generated table handles
+    name: String,
 }

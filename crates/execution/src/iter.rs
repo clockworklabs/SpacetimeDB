@@ -1,243 +1,80 @@
-use std::ops::{Bound, RangeBounds};
+use std::collections::{HashMap, HashSet};
 
-use spacetimedb_lib::{AlgebraicValue, ProductValue};
-use spacetimedb_primitives::{IndexId, TableId};
+use anyhow::{anyhow, bail, Result};
+use spacetimedb_lib::{query::Delta, AlgebraicValue, ProductValue};
+use spacetimedb_physical_plan::plan::{
+    HashJoin, IxJoin, IxScan, PhysicalExpr, PhysicalPlan, ProjectField, ProjectPlan, Sarg, Semi, TupleField,
+};
 use spacetimedb_table::{
     blob_store::BlobStore,
-    btree_index::{BTreeIndex, BTreeIndexRangeIter},
-    static_assert_size,
-    table::{IndexScanIter, RowRef, Table, TableScanIter},
+    table::{IndexScanPointIter, IndexScanRangeIter, Table, TableScanIter},
+    table_index::{TableIndex, TableIndexPointIter},
 };
 
-/// A row from a base table in the form of a pointer or product value
-#[derive(Clone)]
-pub enum Row<'a> {
-    Ptr(RowRef<'a>),
-    Ref(&'a ProductValue),
+use crate::{Datastore, DeltaScanIter, DeltaStore, Row, Tuple};
+
+/// The different iterators for evaluating query plans
+pub enum PlanIter<'a> {
+    Table(TableScanIter<'a>),
+    Index(IndexScanRangeIter<'a>),
+    Delta(DeltaScanIter<'a>),
+    RowId(RowRefIter<'a>),
+    Tuple(ProjectIter<'a>),
 }
 
-impl Row<'_> {
-    /// Expect a pointer value, panic otherwise
-    pub fn expect_ptr(&self) -> &RowRef {
-        match self {
-            Self::Ptr(ptr) => ptr,
-            _ => unreachable!(),
-        }
-    }
-
-    /// Expect a product value, panic otherwise
-    pub fn expect_ref(&self) -> &ProductValue {
-        match self {
-            Self::Ref(r) => r,
-            _ => unreachable!(),
-        }
-    }
-}
-
-static_assert_size!(Row, 32);
-
-/// A tuple returned by a query iterator
-#[derive(Clone)]
-pub enum Tuple<'a> {
-    /// A row from a base table
-    Row(Row<'a>),
-    /// A temporary constructed by a query operator
-    Join(Vec<Row<'a>>),
-}
-
-static_assert_size!(Tuple, 40);
-
-impl Tuple<'_> {
-    /// Expect a row from a base table, panic otherwise
-    pub fn expect_row(&self) -> &Row {
-        match self {
-            Self::Row(row) => row,
-            _ => unreachable!(),
-        }
-    }
-
-    /// Expect a temporary tuple, panic otherwise
-    pub fn expect_join(&self) -> &[Row] {
-        match self {
-            Self::Join(elems) => elems.as_slice(),
-            _ => unreachable!(),
-        }
+impl<'a> PlanIter<'a> {
+    pub(crate) fn build<Tx>(plan: &'a ProjectPlan, tx: &'a Tx) -> Result<Self>
+    where
+        Tx: Datastore + DeltaStore,
+    {
+        ProjectIter::build(plan, tx).map(|iter| match iter {
+            ProjectIter::None(Iter::Row(RowRefIter::TableScan(iter))) => Self::Table(iter),
+            ProjectIter::None(Iter::Row(RowRefIter::IndexScanRange(iter))) => Self::Index(iter),
+            ProjectIter::None(Iter::Row(iter)) => Self::RowId(iter),
+            _ => Self::Tuple(iter),
+        })
     }
 }
 
-/// An execution plan for a tuple-at-a-time iterator.
-/// As the name suggests it is meant to be cached.
-/// Building the iterator should incur minimal overhead.
-pub struct CachedIterPlan {
-    /// The relational ops
-    iter_ops: Box<[IterOp]>,
-    /// The expression ops
-    expr_ops: Box<[OpCode]>,
-    /// The constants referenced by the plan
-    constants: Box<[AlgebraicValue]>,
+/// Implements a tuple projection for a query plan
+pub enum ProjectIter<'a> {
+    None(Iter<'a>),
+    Some(Iter<'a>, usize),
 }
 
-static_assert_size!(CachedIterPlan, 48);
-
-impl CachedIterPlan {
-    /// Returns an interator over the query ops
-    fn ops(&self) -> impl Iterator<Item = IterOp> + '_ {
-        self.iter_ops.iter().copied()
-    }
-
-    /// Lookup a constant in the plan
-    fn constant(&self, i: u16) -> &AlgebraicValue {
-        &self.constants[i as usize]
-    }
-}
-
-/// An opcode for a tuple-at-a-time execution plan
-#[derive(Clone, Copy)]
-pub enum IterOp {
-    /// A table scan opcode takes 1 arg: A [TableId]
-    TableScan(TableId),
-    /// A delta scan opcode takes 1 arg: A [TableId]
-    DeltaScan(TableId),
-    /// An index scan opcode takes 2 args:
-    /// 1. An [IndexId]
-    /// 2. A ptr to an [AlgebraicValue]
-    IxScanEq(IndexId, u16),
-    /// An index range scan opcode takes 3 args:
-    /// 1. An [IndexId]
-    /// 2. A ptr to the lower bound
-    /// 3. A ptr to the upper bound
-    IxScanRange(IndexId, Bound<u16>, Bound<u16>),
-    /// Pops its 2 args from the stack
-    NLJoin,
-    /// An index join opcode takes 2 args:
-    /// 1. An [IndexId]
-    /// 2. An instruction ptr
-    /// 3. A length
-    IxJoin(IndexId, usize, u16),
-    /// An index join opcode takes 2 args:
-    /// 1. An [IndexId]
-    /// 2. An instruction ptr
-    /// 3. A length
-    UniqueIxJoin(IndexId, usize, u16),
-    /// A filter opcode takes 2 args:
-    /// 1. An instruction ptr
-    /// 2. A length
-    Filter(usize, u32),
-}
-
-static_assert_size!(IterOp, 16);
-
-pub trait Datastore {
-    fn delta_scan_iter(&self, table_id: TableId) -> DeltaScanIter;
-    fn table_scan_iter(&self, table_id: TableId) -> TableScanIter;
-    fn index_scan_iter(&self, index_id: IndexId, range: &impl RangeBounds<AlgebraicValue>) -> IndexScanIter;
-    fn get_table_for_index(&self, index_id: &IndexId) -> &Table;
-    fn get_index(&self, index_id: &IndexId) -> &BTreeIndex;
-    fn get_blob_store(&self) -> &dyn BlobStore;
-}
-
-/// An iterator for a delta table
-pub struct DeltaScanIter<'a> {
-    iter: std::slice::Iter<'a, ProductValue>,
-}
-
-impl<'a> Iterator for DeltaScanIter<'a> {
-    type Item = &'a ProductValue;
+impl<'a> Iterator for ProjectIter<'a> {
+    type Item = Row<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next()
-    }
-}
-
-impl CachedIterPlan {
-    pub fn iter<'a>(&'a self, tx: &'a impl Datastore) -> Iter<'a> {
-        let mut stack = vec![];
-        for op in self.ops() {
-            match op {
-                IterOp::TableScan(table_id) => {
-                    // Push table scan
-                    stack.push(Iter::TableScan(tx.table_scan_iter(table_id)));
+        match self {
+            Self::None(iter) => iter.find_map(|tuple| {
+                if let Tuple::Row(ptr) = tuple {
+                    return Some(ptr);
                 }
-                IterOp::DeltaScan(table_id) => {
-                    // Push delta scan
-                    stack.push(Iter::DeltaScan(tx.delta_scan_iter(table_id)));
-                }
-                IterOp::IxScanEq(index_id, ptr) => {
-                    // Push index scan
-                    stack.push(Iter::IndexScan(tx.index_scan_iter(index_id, &self.constant(ptr))));
-                }
-                IterOp::IxScanRange(index_id, lower, upper) => {
-                    // Push range scan
-                    let lower = lower.map(|ptr| self.constant(ptr));
-                    let upper = upper.map(|ptr| self.constant(ptr));
-                    stack.push(Iter::IndexScan(tx.index_scan_iter(index_id, &(lower, upper))));
-                }
-                IterOp::NLJoin => {
-                    // Pop args and push nested loop join
-                    let rhs = stack.pop().unwrap();
-                    let lhs = stack.pop().unwrap();
-                    stack.push(Iter::NLJoin(NestedLoopJoin::new(lhs, rhs)));
-                }
-                IterOp::IxJoin(index_id, i, n) => {
-                    // Pop arg and push index join
-                    let input = stack.pop().unwrap();
-                    let index = tx.get_index(&index_id);
-                    let table = tx.get_table_for_index(&index_id);
-                    let blob_store = tx.get_blob_store();
-                    let ops = &self.expr_ops[i..i + n as usize];
-                    let program = ExprProgram::new(ops, &self.constants);
-                    let projection = ProgramEvaluator::from(program);
-                    stack.push(Iter::IxJoin(LeftDeepJoin::Eq(IndexJoin::new(
-                        input, index, table, blob_store, projection,
-                    ))));
-                }
-                IterOp::UniqueIxJoin(index_id, i, n) => {
-                    // Pop arg and push index join
-                    let input = stack.pop().unwrap();
-                    let index = tx.get_index(&index_id);
-                    let table = tx.get_table_for_index(&index_id);
-                    let blob_store = tx.get_blob_store();
-                    let ops = &self.expr_ops[i..i + n as usize];
-                    let program = ExprProgram::new(ops, &self.constants);
-                    let projection = ProgramEvaluator::from(program);
-                    stack.push(Iter::UniqueIxJoin(LeftDeepJoin::Eq(UniqueIndexJoin::new(
-                        input, index, table, blob_store, projection,
-                    ))));
-                }
-                IterOp::Filter(i, n) => {
-                    // Pop arg and push filter
-                    let input = Box::new(stack.pop().unwrap());
-                    let ops = &self.expr_ops[i..i + n as usize];
-                    let program = ExprProgram::new(ops, &self.constants);
-                    let program = ProgramEvaluator::from(program);
-                    stack.push(Iter::Filter(Filter { input, program }));
-                }
-            }
+                None
+            }),
+            Self::Some(iter, i) => iter.find_map(|tuple| tuple.select(*i)),
         }
-        stack.pop().unwrap()
     }
 }
 
-/// A tuple-at-a-time query iterator.
-/// Notice there is no explicit projection operation.
-/// This is because for applicable plans,
-/// the optimizer can remove intermediate projections,
-/// implementing a form of late materialization.
+impl<'a> ProjectIter<'a> {
+    pub fn build<Tx>(plan: &'a ProjectPlan, tx: &'a Tx) -> Result<Self>
+    where
+        Tx: Datastore + DeltaStore,
+    {
+        match plan {
+            ProjectPlan::None(plan) | ProjectPlan::Name(plan, _, None) => Iter::build(plan, tx).map(Self::None),
+            ProjectPlan::Name(plan, _, Some(i)) => Iter::build(plan, tx).map(|iter| Self::Some(iter, *i)),
+        }
+    }
+}
+
+/// A generic tuple-at-a-time iterator for a query plan
 pub enum Iter<'a> {
-    /// A [RowRef] table iterator
-    TableScan(TableScanIter<'a>),
-    /// A [ProductValue] ref iterator
-    DeltaScan(DeltaScanIter<'a>),
-    /// A [RowRef] index iterator
-    IndexScan(IndexScanIter<'a>),
-    /// A nested loop join iterator
-    NLJoin(NestedLoopJoin<'a>),
-    /// A non-unique (constraint) index join iterator
-    IxJoin(LeftDeepJoin<IndexJoin<'a>>),
-    /// A unique (constraint) index join iterator
-    UniqueIxJoin(LeftDeepJoin<UniqueIndexJoin<'a>>),
-    /// A tuple-at-a-time filter iterator
-    Filter(Filter<'a>),
+    Row(RowRefIter<'a>),
+    Join(LeftDeepJoinIter<'a>),
+    Filter(Filter<'a, Iter<'a>>),
 }
 
 impl<'a> Iterator for Iter<'a> {
@@ -245,297 +82,966 @@ impl<'a> Iterator for Iter<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         match self {
-            Self::TableScan(iter) => {
-                // Returns row ids
-                iter.next().map(Row::Ptr).map(Tuple::Row)
+            Self::Row(iter) => iter.next().map(Tuple::Row),
+            Self::Join(iter) => iter.next(),
+            Self::Filter(iter) => iter.next(),
+        }
+    }
+}
+
+impl<'a> Iter<'a> {
+    fn build<Tx>(plan: &'a PhysicalPlan, tx: &'a Tx) -> Result<Self>
+    where
+        Tx: Datastore + DeltaStore,
+    {
+        match plan {
+            PhysicalPlan::TableScan(..) | PhysicalPlan::IxScan(..) => RowRefIter::build(plan, tx).map(Self::Row),
+            PhysicalPlan::Filter(input, expr) => {
+                // Build a filter iterator
+                Iter::build(input, tx)
+                    .map(Box::new)
+                    .map(|input| Filter { input, expr })
+                    .map(Iter::Filter)
             }
-            Self::DeltaScan(iter) => {
-                // Returns product refs
-                iter.next().map(Row::Ref).map(Tuple::Row)
+            PhysicalPlan::NLJoin(lhs, rhs) => {
+                // Build a nested loop join iterator
+                NLJoin::build_from(lhs, rhs, tx)
+                    .map(LeftDeepJoinIter::NLJoin)
+                    .map(Iter::Join)
             }
-            Self::IndexScan(iter) => {
-                // Returns row ids
-                iter.next().map(Row::Ptr).map(Tuple::Row)
+            PhysicalPlan::IxJoin(join @ IxJoin { unique: false, .. }, Semi::Lhs) => {
+                // Build a left index semijoin iterator
+                IxJoinLhs::build_from(join, tx)
+                    .map(SemiJoin::Lhs)
+                    .map(LeftDeepJoinIter::IxJoin)
+                    .map(Iter::Join)
             }
-            Self::IxJoin(iter) => {
-                // Returns row ids for semijoins, (n+1)-tuples otherwise
-                iter.next()
+            PhysicalPlan::IxJoin(join @ IxJoin { unique: false, .. }, Semi::Rhs) => {
+                // Build a right index semijoin iterator
+                IxJoinRhs::build_from(join, tx)
+                    .map(SemiJoin::Rhs)
+                    .map(LeftDeepJoinIter::IxJoin)
+                    .map(Iter::Join)
             }
-            Self::UniqueIxJoin(iter) => {
-                // Returns row ids for semijoins, (n+1)-tuples otherwise
-                iter.next()
+            PhysicalPlan::IxJoin(join @ IxJoin { unique: false, .. }, Semi::All) => {
+                // Build an index join iterator
+                IxJoinIter::build_from(join, tx)
+                    .map(SemiJoin::All)
+                    .map(LeftDeepJoinIter::IxJoin)
+                    .map(Iter::Join)
             }
-            Self::Filter(iter) => {
-                // Filter is a passthru
-                iter.next()
+            PhysicalPlan::IxJoin(join @ IxJoin { unique: true, .. }, Semi::Lhs) => {
+                // Build a unique left index semijoin iterator
+                UniqueIxJoinLhs::build_from(join, tx)
+                    .map(SemiJoin::Lhs)
+                    .map(LeftDeepJoinIter::UniqueIxJoin)
+                    .map(Iter::Join)
             }
-            Self::NLJoin(iter) => {
-                iter.next().map(|t| {
-                    match t {
-                        // A leaf join
-                        //   x
-                        //  / \
-                        // a   b
-                        (Tuple::Row(u), Tuple::Row(v)) => {
-                            // Returns a 2-tuple
-                            Tuple::Join(vec![u, v])
-                        }
-                        // A right deep join
-                        //   x
-                        //  / \
-                        // a   x
-                        //    / \
-                        //   b   c
-                        (Tuple::Row(r), Tuple::Join(mut rows)) => {
-                            // Returns an (n+1)-tuple
-                            let mut pointers = vec![r];
-                            pointers.append(&mut rows);
-                            Tuple::Join(pointers)
-                        }
-                        // A left deep join
-                        //     x
-                        //    / \
-                        //   x   c
-                        //  / \
-                        // a   b
-                        (Tuple::Join(mut rows), Tuple::Row(r)) => {
-                            // Returns an (n+1)-tuple
-                            rows.push(r);
-                            Tuple::Join(rows)
-                        }
-                        // A bushy join
-                        //      x
-                        //     / \
-                        //    /   \
-                        //   x     x
-                        //  / \   / \
-                        // a   b c   d
-                        (Tuple::Join(mut lhs), Tuple::Join(mut rhs)) => {
-                            // Returns an (n+m)-tuple
-                            lhs.append(&mut rhs);
-                            Tuple::Join(lhs)
-                        }
-                    }
-                })
+            PhysicalPlan::IxJoin(join @ IxJoin { unique: true, .. }, Semi::Rhs) => {
+                // Build a unique right index semijoin iterator
+                UniqueIxJoinRhs::build_from(join, tx)
+                    .map(SemiJoin::Rhs)
+                    .map(LeftDeepJoinIter::UniqueIxJoin)
+                    .map(Iter::Join)
+            }
+            PhysicalPlan::IxJoin(join @ IxJoin { unique: true, .. }, Semi::All) => {
+                // Build a unique index join iterator
+                UniqueIxJoin::build_from(join, tx)
+                    .map(SemiJoin::All)
+                    .map(LeftDeepJoinIter::UniqueIxJoin)
+                    .map(Iter::Join)
+            }
+            PhysicalPlan::HashJoin(join @ HashJoin { unique: false, .. }, Semi::Lhs) => {
+                // Build a left hash semijoin iterator
+                HashJoinLhs::build_from(join, tx)
+                    .map(SemiJoin::Lhs)
+                    .map(LeftDeepJoinIter::HashJoin)
+                    .map(Iter::Join)
+            }
+            PhysicalPlan::HashJoin(join @ HashJoin { unique: false, .. }, Semi::Rhs) => {
+                // Build a right hash semijoin iterator
+                HashJoinRhs::build_from(join, tx)
+                    .map(SemiJoin::Rhs)
+                    .map(LeftDeepJoinIter::HashJoin)
+                    .map(Iter::Join)
+            }
+            PhysicalPlan::HashJoin(join @ HashJoin { unique: false, .. }, Semi::All) => {
+                // Build a hash join iterator
+                HashJoinIter::build_from(join, tx)
+                    .map(SemiJoin::All)
+                    .map(LeftDeepJoinIter::HashJoin)
+                    .map(Iter::Join)
+            }
+            PhysicalPlan::HashJoin(join @ HashJoin { unique: true, .. }, Semi::Lhs) => {
+                // Build a unique left hash semijoin iterator
+                UniqueHashJoinLhs::build_from(join, tx)
+                    .map(SemiJoin::Lhs)
+                    .map(LeftDeepJoinIter::UniqueHashJoin)
+                    .map(Iter::Join)
+            }
+            PhysicalPlan::HashJoin(join @ HashJoin { unique: true, .. }, Semi::Rhs) => {
+                // Build a unique right hash semijoin iterator
+                UniqueHashJoinRhs::build_from(join, tx)
+                    .map(SemiJoin::Rhs)
+                    .map(LeftDeepJoinIter::UniqueHashJoin)
+                    .map(Iter::Join)
+            }
+            PhysicalPlan::HashJoin(join @ HashJoin { unique: true, .. }, Semi::All) => {
+                // Build a unique hash join iterator
+                UniqueHashJoin::build_from(join, tx)
+                    .map(SemiJoin::All)
+                    .map(LeftDeepJoinIter::UniqueHashJoin)
+                    .map(Iter::Join)
             }
         }
     }
 }
 
-/// An iterator for a left deep join tree
-pub enum LeftDeepJoin<Iter> {
-    /// A standard join
-    Eq(Iter),
-    /// A semijoin that returns the lhs
-    SemiLhs(Iter),
-    /// A semijion that returns the rhs
-    SemiRhs(Iter),
+/// An iterator that always returns [RowRef]s
+pub enum RowRefIter<'a> {
+    TableScan(TableScanIter<'a>),
+    IndexScanPoint(IndexScanPointIter<'a>),
+    IndexScanRange(IndexScanRangeIter<'a>),
+    DeltaScan(DeltaScanIter<'a>),
+    RowFilter(Filter<'a, RowRefIter<'a>>),
 }
 
-impl<'a, Iter> Iterator for LeftDeepJoin<Iter>
+impl<'a> Iterator for RowRefIter<'a> {
+    type Item = Row<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::TableScan(iter) => iter.next().map(Row::Ptr),
+            Self::IndexScanPoint(iter) => iter.next().map(Row::Ptr),
+            Self::IndexScanRange(iter) => iter.next().map(Row::Ptr),
+            Self::DeltaScan(iter) => iter.next().map(Row::Ref),
+            Self::RowFilter(iter) => iter.next(),
+        }
+    }
+}
+
+impl<'a> RowRefIter<'a> {
+    /// Instantiate an iterator from a [PhysicalPlan].
+    /// The compiler ensures this isn't called on a join.
+    fn build<Tx>(plan: &'a PhysicalPlan, tx: &'a Tx) -> Result<Self>
+    where
+        Tx: Datastore + DeltaStore,
+    {
+        let concat = |prefix: &[(_, AlgebraicValue)], v| {
+            ProductValue::from_iter(prefix.iter().map(|(_, v)| v).chain([v]).cloned())
+        };
+        match plan {
+            PhysicalPlan::TableScan(schema, _, None) => tx.table_scan(schema.table_id).map(Self::TableScan),
+            PhysicalPlan::TableScan(schema, _, Some(Delta::Inserts)) => {
+                Ok(Self::DeltaScan(tx.delta_scan(schema.table_id, true)))
+            }
+            PhysicalPlan::TableScan(schema, _, Some(Delta::Deletes)) => {
+                Ok(Self::DeltaScan(tx.delta_scan(schema.table_id, false)))
+            }
+            PhysicalPlan::IxScan(
+                scan @ IxScan {
+                    arg: Sarg::Eq(_, v), ..
+                },
+                _,
+            ) if scan.prefix.is_empty() => tx
+                .index_scan_point(scan.schema.table_id, scan.index_id, v)
+                .map(Self::IndexScanPoint),
+            PhysicalPlan::IxScan(
+                scan @ IxScan {
+                    arg: Sarg::Eq(_, v), ..
+                },
+                _,
+            ) => tx
+                .index_scan_point(
+                    scan.schema.table_id,
+                    scan.index_id,
+                    &AlgebraicValue::product(concat(&scan.prefix, v)),
+                )
+                .map(Self::IndexScanPoint),
+            PhysicalPlan::IxScan(
+                scan @ IxScan {
+                    arg: Sarg::Range(_, lower, upper),
+                    ..
+                },
+                _,
+            ) if scan.prefix.is_empty() => tx
+                .index_scan_range(scan.schema.table_id, scan.index_id, &(lower.as_ref(), upper.as_ref()))
+                .map(Self::IndexScanRange),
+            PhysicalPlan::IxScan(
+                scan @ IxScan {
+                    arg: Sarg::Range(_, lower, upper),
+                    ..
+                },
+                _,
+            ) => tx
+                .index_scan_range(
+                    scan.schema.table_id,
+                    scan.index_id,
+                    &(
+                        lower
+                            .as_ref()
+                            .map(|v| concat(&scan.prefix, v))
+                            .map(AlgebraicValue::Product),
+                        upper
+                            .as_ref()
+                            .map(|v| concat(&scan.prefix, v))
+                            .map(AlgebraicValue::Product),
+                    ),
+                )
+                .map(Self::IndexScanRange),
+            PhysicalPlan::Filter(input, expr) => Self::build(input, tx)
+                .map(Box::new)
+                .map(|input| Filter { input, expr })
+                .map(Self::RowFilter),
+            _ => bail!("Plan does not return row ids"),
+        }
+    }
+}
+
+/// An iterator for a left deep join tree.
+///
+/// ```text
+///     x
+///    / \
+///   x   c
+///  / \
+/// a   b
+/// ```
+pub enum LeftDeepJoinIter<'a> {
+    /// A nested loop join
+    NLJoin(NLJoin<'a>),
+    /// An index join
+    IxJoin(SemiJoin<IxJoinIter<'a>, IxJoinLhs<'a>, IxJoinRhs<'a>>),
+    /// An index join for a unique constraint
+    UniqueIxJoin(SemiJoin<UniqueIxJoin<'a>, UniqueIxJoinLhs<'a>, UniqueIxJoinRhs<'a>>),
+    /// A hash join
+    HashJoin(SemiJoin<HashJoinIter<'a>, HashJoinLhs<'a>, HashJoinRhs<'a>>),
+    /// A hash join for a unique constraint
+    UniqueHashJoin(SemiJoin<UniqueHashJoin<'a>, UniqueHashJoinLhs<'a>, UniqueHashJoinRhs<'a>>),
+}
+
+impl<'a> Iterator for LeftDeepJoinIter<'a> {
+    type Item = Tuple<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::NLJoin(iter) => iter.next().map(|(tuple, rhs)| tuple.append(rhs)),
+            Self::IxJoin(iter) => iter.next(),
+            Self::UniqueIxJoin(iter) => iter.next(),
+            Self::HashJoin(iter) => iter.next(),
+            Self::UniqueHashJoin(iter) => iter.next(),
+        }
+    }
+}
+
+/// A semijoin iterator.
+/// Returns [RowRef]s if this is a right semijoin.
+/// Returns [Tuple]s otherwise.
+pub enum SemiJoin<All, Lhs, Rhs> {
+    All(All),
+    Lhs(Lhs),
+    Rhs(Rhs),
+}
+
+impl<'a, All, Lhs, Rhs> Iterator for SemiJoin<All, Lhs, Rhs>
 where
-    Iter: Iterator<Item = (Tuple<'a>, RowRef<'a>)>,
+    All: Iterator<Item = (Tuple<'a>, Row<'a>)>,
+    Lhs: Iterator<Item = Tuple<'a>>,
+    Rhs: Iterator<Item = Row<'a>>,
 {
     type Item = Tuple<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self {
-            Self::SemiLhs(iter) => {
-                // Return the lhs tuple
-                iter.next().map(|(t, _)| t)
-            }
-            Self::SemiRhs(iter) => {
-                // Return the rhs row
-                iter.next().map(|(_, ptr)| ptr).map(Row::Ptr).map(Tuple::Row)
-            }
-            Self::Eq(iter) => {
-                iter.next().map(|(tuple, ptr)| {
-                    match (tuple, ptr) {
-                        // A leaf join
-                        //   x
-                        //  / \
-                        // a   b
-                        (Tuple::Row(u), ptr) => {
-                            // Returns a 2-tuple
-                            Tuple::Join(vec![u, Row::Ptr(ptr)])
-                        }
-                        // A left deep join
-                        //     x
-                        //    / \
-                        //   x   c
-                        //  / \
-                        // a   b
-                        (Tuple::Join(mut rows), ptr) => {
-                            // Returns an (n+1)-tuple
-                            rows.push(Row::Ptr(ptr));
-                            Tuple::Join(rows)
-                        }
-                    }
-                })
-            }
+            Self::All(iter) => iter.next().map(|(tuple, ptr)| tuple.append(ptr)),
+            Self::Lhs(iter) => iter.next(),
+            Self::Rhs(iter) => iter.next().map(Tuple::Row),
         }
     }
 }
 
-/// A unique (constraint) index join iterator
-pub struct UniqueIndexJoin<'a> {
+/// An index join that uses a unique constraint index
+pub struct UniqueIxJoin<'a> {
     /// The lhs of the join
-    input: Box<Iter<'a>>,
+    lhs: Box<Iter<'a>>,
     /// The rhs index
-    index: &'a BTreeIndex,
+    rhs_index: &'a TableIndex,
     /// A handle to the datastore
-    table: &'a Table,
+    rhs_table: &'a Table,
     /// A handle to the blobstore
     blob_store: &'a dyn BlobStore,
-    /// The lhs index key projection
-    projection: ProgramEvaluator<'a>,
+    /// The lhs probe field
+    lhs_field: &'a TupleField,
 }
 
-impl<'a> UniqueIndexJoin<'a> {
-    fn new(
-        input: Iter<'a>,
-        index: &'a BTreeIndex,
-        table: &'a Table,
-        blob_store: &'a dyn BlobStore,
-        projection: ProgramEvaluator<'a>,
-    ) -> Self {
-        Self {
-            input: Box::new(input),
-            index,
-            table,
-            blob_store,
-            projection,
-        }
+impl<'a> UniqueIxJoin<'a> {
+    fn build_from<Tx>(join: &'a IxJoin, tx: &'a Tx) -> Result<Self>
+    where
+        Tx: Datastore + DeltaStore,
+    {
+        let lhs = Iter::build(&join.lhs, tx)?;
+        let rhs_table = tx.table_or_err(join.rhs.table_id)?;
+        let rhs_index = rhs_table
+            .get_index_by_id(join.rhs_index)
+            .ok_or_else(|| anyhow!("IndexId `{}` does not exist", join.rhs_index))?;
+        Ok(Self {
+            lhs: Box::new(lhs),
+            rhs_index,
+            rhs_table,
+            blob_store: tx.blob_store(),
+            lhs_field: &join.lhs_field,
+        })
     }
 }
 
-impl<'a> Iterator for UniqueIndexJoin<'a> {
-    type Item = (Tuple<'a>, RowRef<'a>);
+impl<'a> Iterator for UniqueIxJoin<'a> {
+    type Item = (Tuple<'a>, Row<'a>);
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.input.find_map(|tuple| {
-            self.index
-                .seek(&self.projection.eval(&tuple))
+        self.lhs.find_map(|tuple| {
+            self.rhs_index
+                .seek_point(&tuple.project(self.lhs_field))
                 .next()
-                .and_then(|ptr| self.table.get_row_ref(self.blob_store, ptr))
+                .and_then(|ptr| self.rhs_table.get_row_ref(self.blob_store, ptr))
+                .map(Row::Ptr)
                 .map(|ptr| (tuple, ptr))
         })
     }
 }
 
-/// A non-unique (constraint) index join iterator
-pub struct IndexJoin<'a> {
+/// A left semijoin that uses a unique constraint index
+pub struct UniqueIxJoinLhs<'a> {
     /// The lhs of the join
-    input: Box<Iter<'a>>,
-    /// The current tuple from the lhs
-    tuple: Option<Tuple<'a>>,
+    lhs: Box<Iter<'a>>,
     /// The rhs index
-    index: &'a BTreeIndex,
-    /// The current cursor for the rhs index
-    index_cursor: Option<BTreeIndexRangeIter<'a>>,
-    /// A handle to the datastore
-    table: &'a Table,
-    /// A handle to the blobstore
-    blob_store: &'a dyn BlobStore,
-    /// The lhs index key projection
-    projection: ProgramEvaluator<'a>,
+    rhs: &'a TableIndex,
+    /// The lhs probe field
+    lhs_field: &'a TupleField,
 }
 
-impl<'a> IndexJoin<'a> {
-    fn new(
-        input: Iter<'a>,
-        index: &'a BTreeIndex,
-        table: &'a Table,
-        blob_store: &'a dyn BlobStore,
-        projection: ProgramEvaluator<'a>,
-    ) -> Self {
-        Self {
-            input: Box::new(input),
-            tuple: None,
-            index,
-            index_cursor: None,
-            table,
-            blob_store,
-            projection,
-        }
+impl<'a> UniqueIxJoinLhs<'a> {
+    fn build_from<Tx>(join: &'a IxJoin, tx: &'a Tx) -> Result<Self>
+    where
+        Tx: Datastore + DeltaStore,
+    {
+        let lhs = Iter::build(&join.lhs, tx)?;
+        let rhs_table = tx.table_or_err(join.rhs.table_id)?;
+        let rhs_index = rhs_table
+            .get_index_by_id(join.rhs_index)
+            .ok_or_else(|| anyhow!("IndexId `{}` does not exist", join.rhs_index))?;
+        Ok(Self {
+            lhs: Box::new(lhs),
+            rhs: rhs_index,
+            lhs_field: &join.lhs_field,
+        })
     }
 }
 
-impl<'a> Iterator for IndexJoin<'a> {
-    type Item = (Tuple<'a>, RowRef<'a>);
+impl<'a> Iterator for UniqueIxJoinLhs<'a> {
+    type Item = Tuple<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.tuple
+        self.lhs.find(|t| self.rhs.contains_any(&t.project(self.lhs_field)))
+    }
+}
+
+/// A right semijoin that uses a unique constraint index
+pub struct UniqueIxJoinRhs<'a> {
+    /// The lhs of the join
+    lhs: Box<Iter<'a>>,
+    /// The rhs index
+    rhs_index: &'a TableIndex,
+    /// A handle to the datastore
+    rhs_table: &'a Table,
+    /// A handle to the blobstore
+    blob_store: &'a dyn BlobStore,
+    /// The lhs probe field
+    lhs_field: &'a TupleField,
+}
+
+impl<'a> UniqueIxJoinRhs<'a> {
+    fn build_from<Tx>(join: &'a IxJoin, tx: &'a Tx) -> Result<Self>
+    where
+        Tx: Datastore + DeltaStore,
+    {
+        let lhs = Iter::build(&join.lhs, tx)?;
+        let rhs_table = tx.table_or_err(join.rhs.table_id)?;
+        let rhs_index = rhs_table
+            .get_index_by_id(join.rhs_index)
+            .ok_or_else(|| anyhow!("IndexId `{}` does not exist", join.rhs_index))?;
+        Ok(Self {
+            lhs: Box::new(lhs),
+            rhs_index,
+            rhs_table,
+            blob_store: tx.blob_store(),
+            lhs_field: &join.lhs_field,
+        })
+    }
+}
+
+impl<'a> Iterator for UniqueIxJoinRhs<'a> {
+    type Item = Row<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.lhs.find_map(|tuple| {
+            self.rhs_index
+                .seek_point(&tuple.project(self.lhs_field))
+                .next()
+                .and_then(|ptr| self.rhs_table.get_row_ref(self.blob_store, ptr))
+                .map(Row::Ptr)
+        })
+    }
+}
+
+/// An index join that does not use a unique constraint index
+pub struct IxJoinIter<'a> {
+    /// The lhs of the join
+    lhs: Box<Iter<'a>>,
+    /// The current lhs tuple
+    lhs_tuple: Option<Tuple<'a>>,
+    /// The rhs index
+    rhs_index: &'a TableIndex,
+    /// The current rhs index cursor
+    rhs_index_cursor: Option<TableIndexPointIter<'a>>,
+    /// A handle to the datastore
+    rhs_table: &'a Table,
+    /// A handle to the blobstore
+    blob_store: &'a dyn BlobStore,
+    /// The lhs probe field
+    lhs_field: &'a TupleField,
+}
+
+impl<'a> IxJoinIter<'a> {
+    fn build_from<Tx>(join: &'a IxJoin, tx: &'a Tx) -> Result<Self>
+    where
+        Tx: Datastore + DeltaStore,
+    {
+        let lhs = Iter::build(&join.lhs, tx)?;
+        let rhs_table = tx.table_or_err(join.rhs.table_id)?;
+        let rhs_index = rhs_table
+            .get_index_by_id(join.rhs_index)
+            .ok_or_else(|| anyhow!("IndexId `{}` does not exist", join.rhs_index))?;
+        Ok(Self {
+            lhs: Box::new(lhs),
+            lhs_tuple: None,
+            rhs_index,
+            rhs_index_cursor: None,
+            rhs_table,
+            blob_store: tx.blob_store(),
+            lhs_field: &join.lhs_field,
+        })
+    }
+}
+
+impl<'a> Iterator for IxJoinIter<'a> {
+    type Item = (Tuple<'a>, Row<'a>);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.lhs_tuple
             .as_ref()
             .and_then(|tuple| {
-                self.index_cursor.as_mut().and_then(|cursor| {
+                self.rhs_index_cursor.as_mut().and_then(|cursor| {
                     cursor.next().and_then(|ptr| {
-                        self.table
+                        self.rhs_table
                             .get_row_ref(self.blob_store, ptr)
+                            .map(Row::Ptr)
                             .map(|ptr| (tuple.clone(), ptr))
                     })
                 })
             })
             .or_else(|| {
-                self.input.find_map(|tuple| {
-                    Some(self.index.seek(&self.projection.eval(&tuple))).and_then(|mut cursor| {
-                        cursor.next().and_then(|ptr| {
-                            self.table.get_row_ref(self.blob_store, ptr).map(|ptr| {
-                                self.tuple = Some(tuple.clone());
-                                self.index_cursor = Some(cursor);
+                self.lhs.find_map(|tuple| {
+                    let mut cursor = self.rhs_index.seek_point(&tuple.project(self.lhs_field));
+                    cursor.next().and_then(|ptr| {
+                        self.rhs_table
+                            .get_row_ref(self.blob_store, ptr)
+                            .map(Row::Ptr)
+                            .map(|ptr| {
+                                self.lhs_tuple = Some(tuple.clone());
+                                self.rhs_index_cursor = Some(cursor);
                                 (tuple, ptr)
                             })
-                        })
                     })
                 })
             })
     }
 }
 
-/// A nested loop join returns the cross product of its inputs
-pub struct NestedLoopJoin<'a> {
-    /// The lhs input
+/// A left semijoin that does not use a unique constraint index
+pub struct IxJoinLhs<'a> {
+    /// The lhs of the join
     lhs: Box<Iter<'a>>,
-    /// The rhs input
-    rhs: Box<Iter<'a>>,
-    /// The materialized rhs
-    build: Vec<Tuple<'a>>,
+    /// The rhs index
+    rhs_index: &'a TableIndex,
     /// The current lhs tuple
-    lhs_row: Option<Tuple<'a>>,
-    /// The current rhs tuple
-    rhs_ptr: usize,
+    lhs_tuple: Option<Tuple<'a>>,
+    /// The matching rhs row count
+    rhs_count: usize,
+    /// The lhs probe field
+    lhs_field: &'a TupleField,
 }
 
-impl<'a> NestedLoopJoin<'a> {
-    fn new(lhs: Iter<'a>, rhs: Iter<'a>) -> Self {
-        Self {
+impl<'a> IxJoinLhs<'a> {
+    fn build_from<Tx>(join: &'a IxJoin, tx: &'a Tx) -> Result<Self>
+    where
+        Tx: Datastore + DeltaStore,
+    {
+        let lhs = Iter::build(&join.lhs, tx)?;
+        let rhs_table = tx.table_or_err(join.rhs.table_id)?;
+        let rhs_index = rhs_table
+            .get_index_by_id(join.rhs_index)
+            .ok_or_else(|| anyhow!("IndexId `{}` does not exist", join.rhs_index))?;
+        Ok(Self {
             lhs: Box::new(lhs),
-            rhs: Box::new(rhs),
-            build: vec![],
-            lhs_row: None,
-            rhs_ptr: 0,
+            lhs_tuple: None,
+            rhs_count: 0,
+            rhs_index,
+            lhs_field: &join.lhs_field,
+        })
+    }
+}
+
+impl<'a> Iterator for IxJoinLhs<'a> {
+    type Item = Tuple<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.rhs_count {
+            0 => self
+                .lhs
+                .find_map(|tuple| self.rhs_index.count(&tuple.project(self.lhs_field)).map(|n| (tuple, n)))
+                .map(|(tuple, n)| {
+                    self.rhs_count = n - 1;
+                    self.lhs_tuple = Some(tuple.clone());
+                    tuple
+                }),
+            _ => {
+                self.rhs_count -= 1;
+                self.lhs_tuple.clone()
+            }
         }
     }
 }
 
-impl<'a> Iterator for NestedLoopJoin<'a> {
-    type Item = (Tuple<'a>, Tuple<'a>);
+/// A right semijoin that does not use a unique constraint index
+pub struct IxJoinRhs<'a> {
+    /// The lhs of the join
+    lhs: Box<Iter<'a>>,
+    /// The rhs index
+    rhs_index: &'a TableIndex,
+    /// The current rhs index cursor
+    rhs_index_cursor: Option<TableIndexPointIter<'a>>,
+    /// A handle to the datastore
+    rhs_table: &'a Table,
+    /// A handle to the blobstore
+    blob_store: &'a dyn BlobStore,
+    /// The lhs probe field
+    lhs_field: &'a TupleField,
+}
+
+impl<'a> IxJoinRhs<'a> {
+    fn build_from<Tx>(join: &'a IxJoin, tx: &'a Tx) -> Result<Self>
+    where
+        Tx: Datastore + DeltaStore,
+    {
+        let lhs = Iter::build(&join.lhs, tx)?;
+        let rhs_table = tx.table_or_err(join.rhs.table_id)?;
+        let rhs_index = rhs_table
+            .get_index_by_id(join.rhs_index)
+            .ok_or_else(|| anyhow!("IndexId `{}` does not exist", join.rhs_index))?;
+        Ok(Self {
+            lhs: Box::new(lhs),
+            rhs_index,
+            rhs_index_cursor: None,
+            rhs_table,
+            blob_store: tx.blob_store(),
+            lhs_field: &join.lhs_field,
+        })
+    }
+}
+
+impl<'a> Iterator for IxJoinRhs<'a> {
+    type Item = Row<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        for t in self.rhs.as_mut() {
-            self.build.push(t);
+        self.rhs_index_cursor
+            .as_mut()
+            .and_then(|cursor| {
+                cursor
+                    .next()
+                    .and_then(|ptr| self.rhs_table.get_row_ref(self.blob_store, ptr))
+                    .map(Row::Ptr)
+            })
+            .or_else(|| {
+                self.lhs.find_map(|tuple| {
+                    let mut cursor = self.rhs_index.seek_point(&tuple.project(self.lhs_field));
+                    cursor.next().and_then(|ptr| {
+                        self.rhs_table
+                            .get_row_ref(self.blob_store, ptr)
+                            .map(Row::Ptr)
+                            .inspect(|_| self.rhs_index_cursor = Some(cursor))
+                    })
+                })
+            })
+    }
+}
+
+/// A hash join that on each probe,
+/// returns at most one row from the hash table.
+pub struct UniqueHashJoin<'a> {
+    /// The lhs relation
+    lhs: Box<Iter<'a>>,
+    /// The rhs hash table
+    rhs: HashMap<AlgebraicValue, Row<'a>>,
+    /// The lhs probe field
+    lhs_field: &'a TupleField,
+}
+
+impl<'a> UniqueHashJoin<'a> {
+    /// Builds a hash table over the rhs
+    fn build_from<Tx>(join: &'a HashJoin, tx: &'a Tx) -> Result<Self>
+    where
+        Tx: Datastore + DeltaStore,
+    {
+        let lhs = Iter::build(&join.lhs, tx)?;
+        let rhs = RowRefIter::build(&join.rhs, tx)?;
+        let rhs = rhs.map(|ptr| (ptr.project(&join.rhs_field), ptr)).collect();
+        Ok(Self {
+            lhs: Box::new(lhs),
+            rhs,
+            lhs_field: &join.lhs_field,
+        })
+    }
+}
+
+impl<'a> Iterator for UniqueHashJoin<'a> {
+    type Item = (Tuple<'a>, Row<'a>);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.lhs.find_map(|tuple| {
+            self.rhs
+                .get(&tuple.project(self.lhs_field))
+                .cloned()
+                .map(|ptr| (tuple, ptr))
+        })
+    }
+}
+
+/// A left hash semijoin that on each probe,
+/// returns at most one row from the hash table.
+pub struct UniqueHashJoinLhs<'a> {
+    /// The lhs relation
+    lhs: Box<Iter<'a>>,
+    /// The rhs hash table
+    rhs: HashSet<AlgebraicValue>,
+    /// The lhs probe field
+    lhs_field: &'a TupleField,
+}
+
+impl<'a> UniqueHashJoinLhs<'a> {
+    /// Builds a hash set over the rhs
+    fn build_from<Tx>(join: &'a HashJoin, tx: &'a Tx) -> Result<Self>
+    where
+        Tx: Datastore + DeltaStore,
+    {
+        let lhs = Iter::build(&join.lhs, tx)?;
+        let rhs = RowRefIter::build(&join.rhs, tx)?;
+        let rhs = rhs.map(|ptr| ptr.project(&join.rhs_field)).collect();
+        Ok(Self {
+            lhs: Box::new(lhs),
+            rhs,
+            lhs_field: &join.lhs_field,
+        })
+    }
+}
+
+impl<'a> Iterator for UniqueHashJoinLhs<'a> {
+    type Item = Tuple<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.lhs.find(|t| self.rhs.contains(&t.project(self.lhs_field)))
+    }
+}
+
+/// A right hash join that on each probe,
+/// returns at most one row from the hash table.
+pub struct UniqueHashJoinRhs<'a> {
+    /// The lhs relation
+    lhs: Box<Iter<'a>>,
+    /// The rhs hash table
+    rhs: HashMap<AlgebraicValue, Row<'a>>,
+    /// The lhs probe field
+    lhs_field: &'a TupleField,
+}
+
+impl<'a> UniqueHashJoinRhs<'a> {
+    /// Builds a hash table over the rhs
+    fn build_from<Tx>(join: &'a HashJoin, tx: &'a Tx) -> Result<Self>
+    where
+        Tx: Datastore + DeltaStore,
+    {
+        let lhs = Iter::build(&join.lhs, tx)?;
+        let rhs = RowRefIter::build(&join.rhs, tx)?;
+        let rhs = rhs.map(|ptr| (ptr.project(&join.rhs_field), ptr)).collect();
+        Ok(Self {
+            lhs: Box::new(lhs),
+            rhs,
+            lhs_field: &join.lhs_field,
+        })
+    }
+}
+
+impl<'a> Iterator for UniqueHashJoinRhs<'a> {
+    type Item = Row<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.lhs.find_map(|t| self.rhs.get(&t.project(self.lhs_field)).cloned())
+    }
+}
+
+/// A hash join that on each probe,
+/// may return many rows from the hash table.
+pub struct HashJoinIter<'a> {
+    /// The lhs relation
+    lhs: Box<Iter<'a>>,
+    /// The rhs hash table
+    rhs: HashMap<AlgebraicValue, Vec<Row<'a>>>,
+    /// The current lhs tuple
+    lhs_tuple: Option<Tuple<'a>>,
+    /// The current rhs row pointer
+    rhs_ptr: usize,
+    /// The lhs probe field
+    lhs_field: &'a TupleField,
+}
+
+impl<'a> HashJoinIter<'a> {
+    /// Builds a hash table over the rhs
+    fn build_from<Tx>(join: &'a HashJoin, tx: &'a Tx) -> Result<Self>
+    where
+        Tx: Datastore + DeltaStore,
+    {
+        let lhs = Iter::build(&join.lhs, tx)?;
+        let rhs_iter = RowRefIter::build(&join.rhs, tx)?;
+        let mut rhs = HashMap::new();
+        for ptr in rhs_iter {
+            let val = ptr.project(&join.rhs_field);
+            match rhs.get_mut(&val) {
+                None => {
+                    rhs.insert(val, vec![ptr]);
+                }
+                Some(ptrs) => {
+                    ptrs.push(ptr);
+                }
+            }
         }
-        match self.build.get(self.rhs_ptr) {
+        Ok(Self {
+            lhs: Box::new(lhs),
+            rhs,
+            lhs_tuple: None,
+            rhs_ptr: 0,
+            lhs_field: &join.lhs_field,
+        })
+    }
+}
+
+impl<'a> Iterator for HashJoinIter<'a> {
+    type Item = (Tuple<'a>, Row<'a>);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.lhs_tuple
+            .as_ref()
+            .and_then(|tuple| {
+                self.rhs.get(&tuple.project(self.lhs_field)).and_then(|ptrs| {
+                    let i = self.rhs_ptr;
+                    self.rhs_ptr += 1;
+                    ptrs.get(i).map(|ptr| (tuple.clone(), ptr.clone()))
+                })
+            })
+            .or_else(|| {
+                self.lhs.find_map(|tuple| {
+                    self.rhs.get(&tuple.project(self.lhs_field)).and_then(|ptrs| {
+                        self.rhs_ptr = 1;
+                        self.lhs_tuple = Some(tuple.clone());
+                        ptrs.first().map(|ptr| (tuple, ptr.clone()))
+                    })
+                })
+            })
+    }
+}
+
+/// A left hash semijoin that on each probe,
+/// may return many rows from the hash table.
+pub struct HashJoinLhs<'a> {
+    /// The lhs relation
+    lhs: Box<Iter<'a>>,
+    /// The rhs hash table
+    rhs: HashMap<AlgebraicValue, usize>,
+    /// The current lhs tuple
+    lhs_tuple: Option<Tuple<'a>>,
+    /// The matching number of rhs rows
+    rhs_count: usize,
+    /// The lhs probe field
+    lhs_field: &'a TupleField,
+}
+
+impl<'a> HashJoinLhs<'a> {
+    /// Instantiates the iterator by building a hash table over the rhs
+    fn build_from<Tx>(join: &'a HashJoin, tx: &'a Tx) -> Result<Self>
+    where
+        Tx: Datastore + DeltaStore,
+    {
+        let lhs = Iter::build(&join.lhs, tx)?;
+        let rhs_iter = RowRefIter::build(&join.rhs, tx)?;
+        let mut rhs = HashMap::new();
+        for ptr in rhs_iter {
+            rhs.entry(ptr.project(&join.rhs_field))
+                .and_modify(|n| *n += 1)
+                .or_insert_with(|| 1);
+        }
+        Ok(Self {
+            lhs: Box::new(lhs),
+            rhs,
+            lhs_tuple: None,
+            rhs_count: 0,
+            lhs_field: &join.lhs_field,
+        })
+    }
+}
+
+impl<'a> Iterator for HashJoinLhs<'a> {
+    type Item = Tuple<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.rhs_count {
+            0 => self.lhs.find_map(|tuple| {
+                self.rhs.get(&tuple.project(self.lhs_field)).map(|n| {
+                    self.rhs_count = *n - 1;
+                    self.lhs_tuple = Some(tuple.clone());
+                    tuple
+                })
+            }),
+            _ => {
+                self.rhs_count -= 1;
+                self.lhs_tuple.clone()
+            }
+        }
+    }
+}
+
+/// A right hash semijoin that on each probe,
+/// may return many rows from the hash table.
+pub struct HashJoinRhs<'a> {
+    /// The lhs relation
+    lhs: Box<Iter<'a>>,
+    /// The rhs hash table
+    rhs: HashMap<AlgebraicValue, Vec<Row<'a>>>,
+    /// The current lhs tuple
+    lhs_value: Option<AlgebraicValue>,
+    /// The current rhs row pointer
+    rhs_ptr: usize,
+    /// The lhs probe field
+    lhs_field: &'a TupleField,
+}
+
+impl<'a> HashJoinRhs<'a> {
+    /// Builds a hash table over the rhs
+    fn build_from<Tx>(join: &'a HashJoin, tx: &'a Tx) -> Result<Self>
+    where
+        Tx: Datastore + DeltaStore,
+    {
+        let lhs = Iter::build(&join.lhs, tx)?;
+        let rhs_iter = RowRefIter::build(&join.rhs, tx)?;
+        let mut rhs = HashMap::new();
+        for ptr in rhs_iter {
+            let val = ptr.project(&join.rhs_field);
+            match rhs.get_mut(&val) {
+                None => {
+                    rhs.insert(val, vec![ptr]);
+                }
+                Some(ptrs) => {
+                    ptrs.push(ptr);
+                }
+            }
+        }
+        Ok(Self {
+            lhs: Box::new(lhs),
+            rhs,
+            lhs_value: None,
+            rhs_ptr: 0,
+            lhs_field: &join.lhs_field,
+        })
+    }
+}
+
+impl<'a> Iterator for HashJoinRhs<'a> {
+    type Item = Row<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.lhs_value
+            .as_ref()
+            .and_then(|value| {
+                self.rhs.get(value).and_then(|ptrs| {
+                    let i = self.rhs_ptr;
+                    self.rhs_ptr += 1;
+                    ptrs.get(i).cloned()
+                })
+            })
+            .or_else(|| {
+                self.lhs.find_map(|tuple| {
+                    let value = tuple.project(self.lhs_field);
+                    self.rhs.get(&value).and_then(|ptrs| {
+                        self.rhs_ptr = 1;
+                        self.lhs_value = Some(value.clone());
+                        ptrs.first().cloned()
+                    })
+                })
+            })
+    }
+}
+
+/// A nested loop join iterator
+pub struct NLJoin<'a> {
+    /// The lhs input
+    lhs: Box<Iter<'a>>,
+    /// The materialized rhs
+    rhs: Vec<Row<'a>>,
+    /// The current lhs tuple
+    lhs_tuple: Option<Tuple<'a>>,
+    /// The current rhs row pointer
+    rhs_ptr: usize,
+}
+
+impl<'a> NLJoin<'a> {
+    /// Instantiates the iterator by materializing the rhs
+    fn build_from<Tx>(lhs: &'a PhysicalPlan, rhs: &'a PhysicalPlan, tx: &'a Tx) -> Result<Self>
+    where
+        Tx: Datastore + DeltaStore,
+    {
+        let lhs = Iter::build(lhs, tx)?;
+        let rhs = RowRefIter::build(rhs, tx)?;
+        Ok(Self {
+            lhs: Box::new(lhs),
+            rhs: rhs.collect(),
+            lhs_tuple: None,
+            rhs_ptr: 0,
+        })
+    }
+}
+
+impl<'a> Iterator for NLJoin<'a> {
+    type Item = (Tuple<'a>, Row<'a>);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.rhs.get(self.rhs_ptr) {
             Some(v) => {
                 self.rhs_ptr += 1;
-                self.lhs_row.as_ref().map(|u| (u.clone(), v.clone()))
+                self.lhs_tuple.as_ref().map(|u| (u.clone(), v.clone()))
             }
             None => {
                 self.rhs_ptr = 1;
-                self.lhs_row = self.lhs.next();
-                self.lhs_row
+                self.lhs_tuple = self.lhs.next();
+                self.lhs_tuple
                     .as_ref()
-                    .zip(self.build.first())
+                    .zip(self.rhs.first())
                     .map(|(u, v)| (u.clone(), v.clone()))
             }
         }
@@ -543,205 +1049,23 @@ impl<'a> Iterator for NestedLoopJoin<'a> {
 }
 
 /// A tuple-at-a-time filter iterator
-pub struct Filter<'a> {
-    input: Box<Iter<'a>>,
-    program: ProgramEvaluator<'a>,
+pub struct Filter<'a, I> {
+    input: Box<I>,
+    expr: &'a PhysicalExpr,
 }
 
-impl<'a> Iterator for Filter<'a> {
+impl<'a> Iterator for Filter<'a, RowRefIter<'a>> {
+    type Item = Row<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.input.find(|ptr| self.expr.eval_bool(ptr))
+    }
+}
+
+impl<'a> Iterator for Filter<'a, Iter<'a>> {
     type Item = Tuple<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.input
-            .find(|tuple| self.program.eval(tuple).as_bool().is_some_and(|ok| *ok))
-    }
-}
-
-/// An opcode for a stack-based expression evaluator
-#[derive(Clone, Copy)]
-pub enum OpCode {
-    /// ==
-    Eq,
-    /// <>
-    Ne,
-    /// <
-    Lt,
-    /// >
-    Gt,
-    /// <=
-    Lte,
-    /// <=
-    Gte,
-    /// AND
-    And,
-    /// OR
-    Or,
-    /// 5
-    Const(u16),
-    /// ||
-    Concat(u16),
-    /// r.0 : [Row::Ptr]
-    PtrProj(u16),
-    /// r.0 : [Row::Ref]
-    RefProj(u16),
-    /// r.0.1 : [Row::Ptr]
-    TupPtrProj(u16),
-    /// r.0.1 : [Row::Ref]
-    TupRefProj(u16),
-}
-
-static_assert_size!(OpCode, 4);
-
-/// A program for evaluating a scalar expression
-pub struct ExprProgram<'a> {
-    /// The instructions or opcodes
-    ops: &'a [OpCode],
-    /// The constants in the original expression
-    constants: &'a [AlgebraicValue],
-}
-
-impl<'a> ExprProgram<'a> {
-    fn new(ops: &'a [OpCode], constants: &'a [AlgebraicValue]) -> Self {
-        Self { ops, constants }
-    }
-
-    /// Returns an interator over the opcodes
-    fn ops(&self) -> impl Iterator<Item = OpCode> + '_ {
-        self.ops.iter().copied()
-    }
-
-    /// Lookup a constant in the plan
-    fn constant(&self, i: u16) -> AlgebraicValue {
-        self.constants[i as usize].clone()
-    }
-}
-
-/// An evaluator for an [ExprProgram]
-pub struct ProgramEvaluator<'a> {
-    program: ExprProgram<'a>,
-    stack: Vec<AlgebraicValue>,
-}
-
-impl<'a> From<ExprProgram<'a>> for ProgramEvaluator<'a> {
-    fn from(program: ExprProgram<'a>) -> Self {
-        Self { program, stack: vec![] }
-    }
-}
-
-impl ProgramEvaluator<'_> {
-    pub fn eval(&mut self, tuple: &Tuple) -> AlgebraicValue {
-        for op in self.program.ops() {
-            match op {
-                OpCode::Const(i) => {
-                    self.stack.push(self.program.constant(i));
-                }
-                OpCode::Eq => {
-                    let r = self.stack.pop().unwrap();
-                    let l = self.stack.pop().unwrap();
-                    self.stack.push(AlgebraicValue::Bool(l == r));
-                }
-                OpCode::Ne => {
-                    let r = self.stack.pop().unwrap();
-                    let l = self.stack.pop().unwrap();
-                    self.stack.push(AlgebraicValue::Bool(l != r));
-                }
-                OpCode::Lt => {
-                    let r = self.stack.pop().unwrap();
-                    let l = self.stack.pop().unwrap();
-                    self.stack.push(AlgebraicValue::Bool(l < r));
-                }
-                OpCode::Gt => {
-                    let r = self.stack.pop().unwrap();
-                    let l = self.stack.pop().unwrap();
-                    self.stack.push(AlgebraicValue::Bool(l > r));
-                }
-                OpCode::Lte => {
-                    let r = self.stack.pop().unwrap();
-                    let l = self.stack.pop().unwrap();
-                    self.stack.push(AlgebraicValue::Bool(l <= r));
-                }
-                OpCode::Gte => {
-                    let r = self.stack.pop().unwrap();
-                    let l = self.stack.pop().unwrap();
-                    self.stack.push(AlgebraicValue::Bool(l >= r));
-                }
-                OpCode::And => {
-                    let r = *self.stack.pop().unwrap().as_bool().unwrap();
-                    let l = *self.stack.pop().unwrap().as_bool().unwrap();
-                    self.stack.push(AlgebraicValue::Bool(l && r));
-                }
-                OpCode::Or => {
-                    let r = *self.stack.pop().unwrap().as_bool().unwrap();
-                    let l = *self.stack.pop().unwrap().as_bool().unwrap();
-                    self.stack.push(AlgebraicValue::Bool(l || r));
-                }
-                OpCode::Concat(n) => {
-                    let mut elems = Vec::with_capacity(n as usize);
-                    // Pop args off stack
-                    for _ in 0..n {
-                        elems.push(self.stack.pop().unwrap());
-                    }
-                    // Concat and push on stack
-                    self.stack.push(AlgebraicValue::Product(ProductValue::from_iter(
-                        elems.into_iter().rev(),
-                    )));
-                }
-                OpCode::PtrProj(i) => {
-                    self.stack.push(
-                        tuple
-                            // Read field from row ref
-                            .expect_row()
-                            .expect_ptr()
-                            .read_col(i as usize)
-                            .unwrap(),
-                    );
-                }
-                OpCode::RefProj(i) => {
-                    self.stack.push(
-                        tuple
-                            // Read field from product ref
-                            .expect_row()
-                            .expect_ref()
-                            .elements[i as usize]
-                            .clone(),
-                    );
-                }
-                OpCode::TupPtrProj(i) => {
-                    let idx = *self
-                        // Pop index off stack
-                        .stack
-                        .pop()
-                        .unwrap()
-                        .as_u16()
-                        .unwrap();
-                    self.stack.push(
-                        tuple
-                            // Read field from row ref
-                            .expect_join()[idx as usize]
-                            .expect_ptr()
-                            .read_col(i as usize)
-                            .unwrap(),
-                    );
-                }
-                OpCode::TupRefProj(i) => {
-                    let idx = *self
-                        // Pop index off stack
-                        .stack
-                        .pop()
-                        .unwrap()
-                        .as_u16()
-                        .unwrap();
-                    self.stack.push(
-                        tuple
-                            // Read field from product ref
-                            .expect_join()[idx as usize]
-                            .expect_ptr()
-                            .read_col(i as usize)
-                            .unwrap(),
-                    );
-                }
-            }
-        }
-        self.stack.pop().unwrap()
+        self.input.find(|tuple| self.expr.eval_bool(tuple))
     }
 }

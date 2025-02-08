@@ -24,13 +24,15 @@ public static partial class synthetic
     }
 
     [SpacetimeDB.Table(Name = "btree_each_column_u32_u64_str")]
-    [SpacetimeDB.Index(BTree = [nameof(id)])]
-    [SpacetimeDB.Index(BTree = [nameof(age)])]
-    [SpacetimeDB.Index(BTree = [nameof(name)])]
     public partial struct btree_each_column_u32_u64_str_t
     {
+        [SpacetimeDB.Index.BTree]
         public uint id;
+
+        [SpacetimeDB.Index.BTree]
         public ulong age;
+
+        [SpacetimeDB.Index.BTree]
         public string name;
     }
 
@@ -52,13 +54,15 @@ public static partial class synthetic
     }
 
     [SpacetimeDB.Table(Name = "btree_each_column_u32_u64_u64")]
-    [SpacetimeDB.Index(BTree = [nameof(id)])]
-    [SpacetimeDB.Index(BTree = [nameof(x)])]
-    [SpacetimeDB.Index(BTree = [nameof(y)])]
     public partial struct btree_each_column_u32_u64_u64_t
     {
+        [SpacetimeDB.Index.BTree]
         public uint id;
+
+        [SpacetimeDB.Index.BTree]
         public ulong x;
+
+        [SpacetimeDB.Index.BTree]
         public ulong y;
     }
 
@@ -535,7 +539,8 @@ public static partial class synthetic
         string _arg30,
         string _arg31,
         string _arg32
-    ) { }
+    )
+    { }
 
     [SpacetimeDB.Reducer]
     public static void print_many_things(ReducerContext ctx, uint n)

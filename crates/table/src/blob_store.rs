@@ -104,6 +104,27 @@ pub trait BlobStore: Sync {
     ///
     /// Used when capturing a snapshot.
     fn iter_blobs(&self) -> BlobsIter<'_>;
+
+    /// Returns the amount of memory in bytes used by blobs in this `BlobStore`.
+    ///
+    /// Duplicate blobs are counted a number of times equal to their refcount.
+    /// This is in order to preserve the property that inserting a large blob
+    /// causes this quantity to increase by that blob's size,
+    /// and deleting a large blob causes it to decrease the same amount.
+    fn bytes_used_by_blobs(&self) -> u64 {
+        self.iter_blobs()
+            .map(|(_, uses, data)| data.len() as u64 * uses as u64)
+            .sum()
+    }
+
+    /// Returns the number of blobs, or more precisely, blob-usages, recorded in this `BlobStore`.
+    ///
+    /// Duplicate blobs are counted a number of times equal to their refcount.
+    /// This is in order to preserve the property that inserting a large blob
+    /// causes this quantity to increase by 1, and deleting a large blob causes it to decrease by 1.
+    fn num_blobs(&self) -> u64 {
+        self.iter_blobs().map(|(_, uses, _)| uses as u64).sum()
+    }
 }
 
 /// A blob store that panics on all operations.
@@ -139,7 +160,7 @@ impl BlobStore for NullBlobStore {
 
 /// A blob store that is backed by a hash map with a reference counted value.
 /// Used for tests when you need an actual blob store.
-#[derive(Default)]
+#[derive(Default, PartialEq, Eq, Debug)]
 pub struct HashMapBlobStore {
     /// For testing, we use a hash map with a reference count
     /// to handle freeing and cloning correctly.
@@ -154,6 +175,7 @@ impl MemoryUsage for HashMapBlobStore {
 }
 
 /// A blob object including a reference count and the data.
+#[derive(PartialEq, Eq, Debug)]
 struct BlobObject {
     /// Reference count of the blob.
     uses: usize,

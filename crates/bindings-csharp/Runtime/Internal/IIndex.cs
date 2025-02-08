@@ -47,7 +47,7 @@ public abstract class IndexBase<Row>
         where Bounds : IBTreeIndexBounds
     {
         ToParams(bounds, out var prefixElems, out var prefix, out var rstart, out var rend);
-        FFI.datastore_delete_by_btree_scan_bsatn(
+        FFI.datastore_delete_by_index_scan_range_bsatn(
             indexId,
             prefix,
             (uint)prefix.Length,
@@ -67,7 +67,7 @@ public abstract class IndexBase<Row>
         protected override void IterStart(out FFI.RowIter handle)
         {
             ToParams(bounds, out var prefixElems, out var prefix, out var rstart, out var rend);
-            FFI.datastore_btree_scan_bsatn(
+            FFI.datastore_index_scan_range_bsatn(
                 indexId,
                 prefix,
                 (uint)prefix.Length,

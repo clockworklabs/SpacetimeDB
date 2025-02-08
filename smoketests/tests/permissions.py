@@ -62,11 +62,12 @@ class Permissions(Smoketest):
         self.reset_config()
 
         with self.assertRaises(Exception):
+            # TODO: This raises for the wrong reason - `--clear-database` doesn't exist anymore!
             self.spacetime("publish", self.database_identity, "--project-path", self.project_path, "--clear-database", "--yes")
 
         # Check that this holds without `--clear-database`, too.
         with self.assertRaises(Exception):
-            self.spacetime("publish", self.database_identity, "--project-path", self.project_path)
+            self.spacetime("publish", self.database_identity, "--project-path", self.project_path, "--yes")
 
 
 class PrivateTablePermissions(Smoketest):
@@ -120,13 +121,17 @@ pub fn do_thing(ctx: &ReducerContext) {
 
 
 class LifecycleReducers(Smoketest):
-    def test_lifecycle_reducers_cant_be_called(self):
-        """Ensure that reducers like __init__ can't be called"""
+    lifecycle_kinds = "init", "client_connected", "client_disconnected"
 
-        with self.assertRaises(Exception):
-            self.call("__init__")
-        with self.assertRaises(Exception):
-            self.call("__identity_connected__")
-        with self.assertRaises(Exception):
-            self.call("__identity_disconnected__")
+    MODULE_CODE = "\n".join(f"""
+#[spacetimedb::reducer({kind})]
+fn lifecycle_{kind}(_ctx: &spacetimedb::ReducerContext) {{}}
+""" for kind in lifecycle_kinds)
+
+    def test_lifecycle_reducers_cant_be_called(self):
+        """Ensure that lifecycle reducers (init, on_connect, etc) can't be called"""
+
+        for kind in self.lifecycle_kinds:
+            with self.assertRaises(Exception):
+                self.call(f"lifecycle_{kind}")
 

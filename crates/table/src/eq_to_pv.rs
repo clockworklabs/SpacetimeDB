@@ -30,7 +30,7 @@ use spacetimedb_sats::{AlgebraicValue, ProductValue};
 ///
 /// 1. `fixed_offset` is a valid offset for row `lhs` typed at `ty` in `page`.
 /// 2. for any `vlr: VarLenRef` in the fixed parts of row `lhs`,
-///   `vlr.first_offset` must either be `NULL` or point to a valid granule in `page`.
+///    `vlr.first_offset` must either be `NULL` or point to a valid granule in `page`.
 pub unsafe fn eq_row_in_page_to_pv(
     blob_store: &dyn BlobStore,
     page: &Page,
@@ -74,7 +74,7 @@ struct EqCtx<'page> {
 /// SAFETY:
 /// 1. `lhs` must be valid at type `ty` and properly aligned for `ty`.
 /// 2. for any `vlr: VarLenRef` stored in `lhs`,
-///   `vlr.first_offset` must either be `NULL` or point to a valid granule in `ctx.lhs.page`.
+///    `vlr.first_offset` must either be `NULL` or point to a valid granule in `ctx.lhs.page`.
 unsafe fn eq_product(ctx: &mut EqCtx<'_>, ty: &ProductTypeLayout, rhs: &ProductValue) -> bool {
     let base_offset = ctx.curr_offset;
     ty.elements.len() == rhs.elements.len()
@@ -96,7 +96,7 @@ unsafe fn eq_product(ctx: &mut EqCtx<'_>, ty: &ProductTypeLayout, rhs: &ProductV
 /// SAFETY:
 /// 1. `lhs` must both be valid at type `ty` and properly aligned for `ty`.
 /// 2. for any `vlr: VarLenRef` stored in `lhs`,
-///   `vlr.first_offset` must either be `NULL` or point to a valid granule in `ctx.lhs.page`.
+///    `vlr.first_offset` must either be `NULL` or point to a valid granule in `ctx.lhs.page`.
 unsafe fn eq_value(ctx: &mut EqCtx<'_>, ty: &AlgebraicTypeLayout, rhs: &AlgebraicValue) -> bool {
     debug_assert_eq!(
         ctx.curr_offset,

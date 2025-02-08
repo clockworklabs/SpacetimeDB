@@ -24,6 +24,7 @@ pub trait EnergyMonitor: Send + Sync + 'static {
     fn record_memory_usage(&self, database: &Database, replica_id: u64, mem_usage: u64, period: Duration);
 }
 
+// The null energy monitor records nothing and always returns the default budget.
 #[derive(Default)]
 pub struct NullEnergyMonitor;
 

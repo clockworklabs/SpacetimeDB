@@ -2,9 +2,10 @@ use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
-use crate::expr::{Expr, Project};
+use crate::expr::{Expr, ProjectList, ProjectName, Relvar};
 use crate::{expr::LeftDeepJoin, statement::Statement};
 use spacetimedb_lib::AlgebraicType;
+use spacetimedb_primitives::TableId;
 use spacetimedb_schema::schema::TableSchema;
 use spacetimedb_sql_parser::ast::BinOp;
 use spacetimedb_sql_parser::{
@@ -23,7 +24,12 @@ pub type TypingResult<T> = core::result::Result<T, TypingError>;
 
 /// A view of the database schema
 pub trait SchemaView {
-    fn schema(&self, name: &str) -> Option<Arc<TableSchema>>;
+    fn table_id(&self, name: &str) -> Option<TableId>;
+    fn schema_for_table(&self, table_id: TableId) -> Option<Arc<TableSchema>>;
+
+    fn schema(&self, name: &str) -> Option<Arc<TableSchema>> {
+        self.table_id(name).and_then(|table_id| self.schema_for_table(table_id))
+    }
 }
 
 #[derive(Default)]
@@ -46,21 +52,29 @@ pub trait TypeChecker {
     type Ast;
     type Set;
 
-    fn type_ast(ast: Self::Ast, tx: &impl SchemaView) -> TypingResult<Project>;
+    fn type_ast(ast: Self::Ast, tx: &impl SchemaView) -> TypingResult<ProjectList>;
 
-    fn type_set(ast: Self::Set, vars: &mut Relvars, tx: &impl SchemaView) -> TypingResult<Project>;
+    fn type_set(ast: Self::Set, vars: &mut Relvars, tx: &impl SchemaView) -> TypingResult<ProjectList>;
 
     fn type_from(from: SqlFrom, vars: &mut Relvars, tx: &impl SchemaView) -> TypingResult<RelExpr> {
         match from {
             SqlFrom::Expr(SqlIdent(name), SqlIdent(alias)) => {
                 let schema = Self::type_relvar(tx, &name)?;
                 vars.insert(alias.clone(), schema.clone());
-                Ok(RelExpr::RelVar(schema, alias))
+                Ok(RelExpr::RelVar(Relvar {
+                    schema,
+                    alias,
+                    delta: None,
+                }))
             }
             SqlFrom::Join(SqlIdent(name), SqlIdent(alias), joins) => {
                 let schema = Self::type_relvar(tx, &name)?;
                 vars.insert(alias.clone(), schema.clone());
-                let mut join = RelExpr::RelVar(schema, alias);
+                let mut join = RelExpr::RelVar(Relvar {
+                    schema,
+                    alias,
+                    delta: None,
+                });
 
                 for SqlJoin {
                     var: SqlIdent(name),
@@ -73,23 +87,26 @@ pub trait TypeChecker {
                         return Err(DuplicateName(alias.into_string()).into());
                     }
 
-                    let rhs = Self::type_relvar(tx, &name)?;
                     let lhs = Box::new(join);
-                    let var = alias;
+                    let rhs = Relvar {
+                        schema: Self::type_relvar(tx, &name)?,
+                        alias,
+                        delta: None,
+                    };
 
-                    vars.insert(var.clone(), rhs.clone());
+                    vars.insert(rhs.alias.clone(), rhs.schema.clone());
 
                     if let Some(on) = on {
                         if let Expr::BinOp(BinOp::Eq, a, b) = type_expr(vars, on, Some(&AlgebraicType::Bool))? {
                             if let (Expr::Field(a), Expr::Field(b)) = (*a, *b) {
-                                join = RelExpr::EqJoin(LeftDeepJoin { lhs, rhs, var }, a, b);
+                                join = RelExpr::EqJoin(LeftDeepJoin { lhs, rhs }, a, b);
                                 continue;
                             }
                         }
                         unreachable!("Unreachability guaranteed by parser")
                     }
 
-                    join = RelExpr::LeftDeepJoin(LeftDeepJoin { lhs, rhs, var });
+                    join = RelExpr::LeftDeepJoin(LeftDeepJoin { lhs, rhs });
                 }
 
                 Ok(join)
@@ -111,11 +128,11 @@ impl TypeChecker for SubChecker {
     type Ast = SqlSelect;
     type Set = SqlSelect;
 
-    fn type_ast(ast: Self::Ast, tx: &impl SchemaView) -> TypingResult<Project> {
+    fn type_ast(ast: Self::Ast, tx: &impl SchemaView) -> TypingResult<ProjectList> {
         Self::type_set(ast, &mut Relvars::default(), tx)
     }
 
-    fn type_set(ast: Self::Set, vars: &mut Relvars, tx: &impl SchemaView) -> TypingResult<Project> {
+    fn type_set(ast: Self::Set, vars: &mut Relvars, tx: &impl SchemaView) -> TypingResult<ProjectList> {
         match ast {
             SqlSelect {
                 project,
@@ -138,26 +155,30 @@ impl TypeChecker for SubChecker {
 }
 
 /// Parse and type check a subscription query
-pub fn parse_and_type_sub(sql: &str, tx: &impl SchemaView) -> TypingResult<Project> {
+pub fn parse_and_type_sub(sql: &str, tx: &impl SchemaView) -> TypingResult<ProjectName> {
     expect_table_type(SubChecker::type_ast(parse_subscription(sql)?, tx)?)
+}
+
+/// Type check a subscription query
+pub fn type_subscription(ast: SqlSelect, tx: &impl SchemaView) -> TypingResult<ProjectName> {
+    expect_table_type(SubChecker::type_ast(ast, tx)?)
 }
 
 /// Parse and type check a *subscription* query into a `StatementCtx`
 pub fn compile_sql_sub<'a>(sql: &'a str, tx: &impl SchemaView) -> TypingResult<StatementCtx<'a>> {
-    let expr = parse_and_type_sub(sql, tx)?;
     Ok(StatementCtx {
-        statement: Statement::Select(expr),
+        statement: Statement::Select(ProjectList::Name(parse_and_type_sub(sql, tx)?)),
         sql,
         source: StatementSource::Subscription,
     })
 }
 
 /// Returns an error if the input type is not a table type or relvar
-fn expect_table_type(expr: Project) -> TypingResult<Project> {
-    if let Project::Fields(..) = expr {
-        return Err(Unsupported::ReturnType.into());
+fn expect_table_type(expr: ProjectList) -> TypingResult<ProjectName> {
+    match expr {
+        ProjectList::Name(proj) => Ok(proj),
+        ProjectList::List(..) => Err(Unsupported::ReturnType.into()),
     }
-    Ok(expr)
 }
 
 pub mod test_utils {
@@ -182,14 +203,24 @@ pub mod test_utils {
     pub struct SchemaViewer(pub ModuleDef);
 
     impl SchemaView for SchemaViewer {
-        fn schema(&self, name: &str) -> Option<Arc<TableSchema>> {
-            self.0.table(name).map(|def| {
-                Arc::new(TableSchema::from_module_def(
-                    &self.0,
-                    def,
-                    (),
-                    TableId(if *def.name == *"t" { 0 } else { 1 }),
-                ))
+        fn table_id(&self, name: &str) -> Option<TableId> {
+            match name {
+                "t" => Some(TableId(0)),
+                "s" => Some(TableId(1)),
+                _ => None,
+            }
+        }
+
+        fn schema_for_table(&self, table_id: TableId) -> Option<Arc<TableSchema>> {
+            match table_id.idx() {
+                0 => Some((TableId(0), "t")),
+                1 => Some((TableId(1), "s")),
+                _ => None,
+            }
+            .and_then(|(table_id, name)| {
+                self.0
+                    .table(name)
+                    .map(|def| Arc::new(TableSchema::from_module_def(&self.0, def, (), table_id)))
             })
         }
     }
@@ -208,8 +239,21 @@ mod tests {
             (
                 "t",
                 ProductType::from([
+                    ("i8", AlgebraicType::I8),
+                    ("u8", AlgebraicType::U8),
+                    ("i16", AlgebraicType::I16),
+                    ("u16", AlgebraicType::U16),
+                    ("i32", AlgebraicType::I32),
                     ("u32", AlgebraicType::U32),
+                    ("i64", AlgebraicType::I64),
+                    ("u64", AlgebraicType::U64),
+                    ("int", AlgebraicType::U32),
                     ("f32", AlgebraicType::F32),
+                    ("f64", AlgebraicType::F64),
+                    ("i128", AlgebraicType::I128),
+                    ("u128", AlgebraicType::U128),
+                    ("i256", AlgebraicType::I256),
+                    ("u256", AlgebraicType::U256),
                     ("str", AlgebraicType::String),
                     ("arr", AlgebraicType::array(AlgebraicType::String)),
                 ]),
@@ -227,23 +271,163 @@ mod tests {
     }
 
     #[test]
+    fn valid_literals() {
+        let tx = SchemaViewer(module_def());
+
+        struct TestCase {
+            sql: &'static str,
+            msg: &'static str,
+        }
+
+        for TestCase { sql, msg } in [
+            TestCase {
+                sql: "select * from t where i32 = -1",
+                msg: "Leading `-`",
+            },
+            TestCase {
+                sql: "select * from t where u32 = +1",
+                msg: "Leading `+`",
+            },
+            TestCase {
+                sql: "select * from t where u32 = 1e3",
+                msg: "Scientific notation",
+            },
+            TestCase {
+                sql: "select * from t where u32 = 1E3",
+                msg: "Case insensitive scientific notation",
+            },
+            TestCase {
+                sql: "select * from t where f32 = 1e3",
+                msg: "Integers can parse as floats",
+            },
+            TestCase {
+                sql: "select * from t where f32 = 1e-3",
+                msg: "Negative exponent",
+            },
+            TestCase {
+                sql: "select * from t where f32 = 0.1",
+                msg: "Standard decimal notation",
+            },
+            TestCase {
+                sql: "select * from t where f32 = .1",
+                msg: "Leading `.`",
+            },
+            TestCase {
+                sql: "select * from t where f32 = 1e40",
+                msg: "Infinity",
+            },
+            TestCase {
+                sql: "select * from t where u256 = 1e40",
+                msg: "u256",
+            },
+        ] {
+            let result = parse_and_type_sub(sql, &tx);
+            assert!(result.is_ok(), "{msg}");
+        }
+    }
+
+    #[test]
+    fn valid_literals_for_type() {
+        let tx = SchemaViewer(module_def());
+
+        for ty in [
+            "i8", "u8", "i16", "u16", "i32", "u32", "i64", "u64", "f32", "f64", "i128", "u128", "i256", "u256",
+        ] {
+            let sql = format!("select * from t where {ty} = 127");
+            let result = parse_and_type_sub(&sql, &tx);
+            assert!(result.is_ok(), "Faild to parse {ty}: {}", result.unwrap_err());
+        }
+    }
+
+    #[test]
+    fn invalid_literals() {
+        let tx = SchemaViewer(module_def());
+
+        struct TestCase {
+            sql: &'static str,
+            msg: &'static str,
+        }
+
+        for TestCase { sql, msg } in [
+            TestCase {
+                sql: "select * from t where u8 = -1",
+                msg: "Negative integer for unsigned column",
+            },
+            TestCase {
+                sql: "select * from t where u8 = 1e3",
+                msg: "Out of bounds",
+            },
+            TestCase {
+                sql: "select * from t where u8 = 0.1",
+                msg: "Float as integer",
+            },
+            TestCase {
+                sql: "select * from t where u32 = 1e-3",
+                msg: "Float as integer",
+            },
+            TestCase {
+                sql: "select * from t where i32 = 1e-3",
+                msg: "Float as integer",
+            },
+        ] {
+            let result = parse_and_type_sub(sql, &tx);
+            assert!(result.is_err(), "{msg}");
+        }
+    }
+
+    #[test]
     fn valid() {
         let tx = SchemaViewer(module_def());
 
-        for sql in [
-            "select * from t",
-            "select * from t where true",
-            "select * from t where t.u32 = 1",
-            "select * from t where u32 = 1",
-            "select * from t where t.u32 = 1 or t.str = ''",
-            "select * from s where s.bytes = 0xABCD or bytes = X'ABCD'",
-            "select * from s as r where r.bytes = 0xABCD or bytes = X'ABCD'",
-            "select t.* from t join s",
-            "select t.* from t join s join s as r where t.u32 = s.u32 and s.u32 = r.u32",
-            "select t.* from t join s on t.u32 = s.u32 where t.f32 = 0.1",
+        struct TestCase {
+            sql: &'static str,
+            msg: &'static str,
+        }
+
+        for TestCase { sql, msg } in [
+            TestCase {
+                sql: "select * from t",
+                msg: "Can select * on any table",
+            },
+            TestCase {
+                sql: "select * from t where true",
+                msg: "Boolean literals are valid in WHERE clause",
+            },
+            TestCase {
+                sql: "select * from t where t.u32 = 1",
+                msg: "Can qualify column references with table name",
+            },
+            TestCase {
+                sql: "select * from t where u32 = 1",
+                msg: "Can leave columns unqualified when unambiguous",
+            },
+            TestCase {
+                sql: "select * from t where t.u32 = 1 or t.str = ''",
+                msg: "Type OR with qualified column references",
+            },
+            TestCase {
+                sql: "select * from s where s.bytes = 0xABCD or bytes = X'ABCD'",
+                msg: "Type OR with mixed qualified and unqualified column references",
+            },
+            TestCase {
+                sql: "select * from s as r where r.bytes = 0xABCD or bytes = X'ABCD'",
+                msg: "Type OR with table alias",
+            },
+            TestCase {
+                sql: "select t.* from t join s",
+                msg: "Type cross join + projection",
+            },
+            TestCase {
+                sql: "select t.* from t join s join s as r where t.u32 = s.u32 and s.u32 = r.u32",
+                msg: "Type self join + projection",
+            },
+            TestCase {
+                sql: "select t.* from t join s on t.u32 = s.u32 where t.f32 = 0.1",
+                msg: "Type inner join + projection",
+            },
         ] {
             let result = parse_and_type_sub(sql, &tx);
-            assert!(result.is_ok());
+            assert!(result.is_ok(), "{msg}");
         }
     }
 
@@ -251,32 +435,59 @@ mod tests {
     fn invalid() {
         let tx = SchemaViewer(module_def());
 
-        for sql in [
-            // Table r does not exist
-            "select * from r",
-            // Field a does not exist on table t
-            "select * from t where t.a = 1",
-            // Field a does not exist on table t
-            "select * from t as r where r.a = 1",
-            // Field u32 is not a string
-            "select * from t where u32 = 'str'",
-            // Field u32 is not a float
-            "select * from t where t.u32 = 1.3",
-            // t is not in scope after alias
-            "select * from t as r where t.u32 = 5",
-            // Subscriptions must be typed to a single table
-            "select u32 from t",
-            // Subscriptions must be typed to a single table
-            "select * from t join s",
-            // Self join requires aliases
-            "select t.* from t join t",
-            // Product values are not comparable
-            "select t.* from t join s on t.arr = s.arr",
-            // Alias r is not in scope when it is referenced
-            "select t.* from t join s on t.u32 = r.u32 join s as r",
+        struct TestCase {
+            sql: &'static str,
+            msg: &'static str,
+        }
+
+        for TestCase { sql, msg } in [
+            TestCase {
+                sql: "select * from r",
+                msg: "Table r does not exist",
+            },
+            TestCase {
+                sql: "select * from t where t.a = 1",
+                msg: "Field a does not exist on table t",
+            },
+            TestCase {
+                sql: "select * from t as r where r.a = 1",
+                msg: "Field a does not exist on table t",
+            },
+            TestCase {
+                sql: "select * from t where u32 = 'str'",
+                msg: "Field u32 is not a string",
+            },
+            TestCase {
+                sql: "select * from t where t.u32 = 1.3",
+                msg: "Field u32 is not a float",
+            },
+            TestCase {
+                sql: "select * from t as r where t.u32 = 5",
+                msg: "t is not in scope after alias",
+            },
+            TestCase {
+                sql: "select u32 from t",
+                msg: "Subscriptions must be typed to a single table",
+            },
+            TestCase {
+                sql: "select * from t join s",
+                msg: "Subscriptions must be typed to a single table",
+            },
+            TestCase {
+                sql: "select t.* from t join t",
+                msg: "Self join requires aliases",
+            },
+            TestCase {
+                sql: "select t.* from t join s on t.arr = s.arr",
+                msg: "Product values are not comparable",
+            },
+            TestCase {
+                sql: "select t.* from t join s on t.u32 = r.u32 join s as r",
+                msg: "Alias r is not in scope when it is referenced",
+            },
         ] {
             let result = parse_and_type_sub(sql, &tx);
-            assert!(result.is_err());
+            assert!(result.is_err(), "{msg}");
         }
     }
 }

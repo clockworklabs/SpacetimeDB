@@ -13,6 +13,7 @@ use spacetimedb_lib::db::error::AuthError;
 use spacetimedb_lib::relation::DbTable;
 use spacetimedb_lib::{Identity, ProductValue};
 use spacetimedb_primitives::TableId;
+use spacetimedb_sats::u256;
 use spacetimedb_vm::eval::IterRows;
 use spacetimedb_vm::expr::{AuthAccess, NoInMemUsed, Query, QueryExpr, SourceExpr, SourceId};
 use spacetimedb_vm::rel_ops::RelOps;
@@ -39,6 +40,12 @@ use std::time::Duration;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct QueryHash {
     data: [u8; 32],
+}
+
+impl From<QueryHash> for u256 {
+    fn from(hash: QueryHash) -> Self {
+        u256::from_le_bytes(hash.data)
+    }
 }
 
 impl QueryHash {
@@ -200,7 +207,7 @@ impl ExecutionUnit {
     }
 
     /// Evaluate this execution unit against the database using the specified format.
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "trace", skip_all)]
     pub fn eval<F: WebsocketFormat>(
         &self,
         db: &RelationalDB,

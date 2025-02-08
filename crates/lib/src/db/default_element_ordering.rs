@@ -39,34 +39,19 @@ impl<'a> From<(usize, &'a SumTypeVariant)> for ElementLabel<'a> {
 ///
 /// Not a recursive check.
 pub fn sum_type_has_default_ordering(ty: &SumType) -> bool {
-    is_sorted(ty.variants.iter().enumerate().map(ElementLabel::from))
+    ty.variants.iter().enumerate().map(ElementLabel::from).is_sorted()
 }
 
 /// Checks if a product type has the default ordering.
 ///
 /// Not a recursive check.
 pub fn product_type_has_default_ordering(ty: &ProductType) -> bool {
-    is_sorted(ty.elements.iter().enumerate().map(ElementLabel::from))
-}
-
-/// Check that an iterator is sorted.
-///
-/// TODO: remove this when [`Iterator`::is_sorted`](https://doc.rust-lang.org/std/iter/trait.Iterator.html#method.is_sorted) is stabilized.
-fn is_sorted<T: Ord>(mut it: impl Iterator<Item = T>) -> bool {
-    let Some(mut curr) = it.next() else {
-        return true;
-    };
-    it.all(|next| {
-        let ordered = curr <= next;
-        curr = next;
-        ordered
-    })
+    ty.elements.iter().enumerate().map(ElementLabel::from).is_sorted()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use proptest::proptest;
 
     #[test]
     fn test_element_label_comparison() {
@@ -105,19 +90,5 @@ mod tests {
         assert!(e > c);
         assert!(e > d);
         assert!(e == e);
-    }
-
-    proptest! {
-        #[test]
-        fn test_is_sorted(v in proptest::collection::vec(0..100, 0..100)) {
-            let mut v: Vec<i32> = v;
-            v.sort();
-            assert!(is_sorted(v.iter()));
-        }
-    }
-
-    #[test]
-    fn test_is_not_sorted() {
-        assert!(!is_sorted([1, 2, 4, 3].iter()));
     }
 }
