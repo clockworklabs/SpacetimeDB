@@ -1,8 +1,8 @@
 import { Address } from './address';
-import { ProductValue, SumValue, type ValueAdapter } from './algebraic_value';
 import type BinaryReader from './binary_reader';
 import type BinaryWriter from './binary_writer';
 import { Identity } from './identity';
+import ScheduleAt from './schedule_at';
 
 /**
  * A variant of a sum type.
@@ -353,10 +353,7 @@ export class AlgebraicType {
     ]);
   }
   static createScheduleAtType(): AlgebraicType {
-    return AlgebraicType.createSumType([
-      new SumTypeVariant('Interval', AlgebraicType.createTimeDurationType()),
-      new SumTypeVariant('Time', AlgebraicType.createTimestampType()),
-    ]);
+    return ScheduleAt.getAlgebraicType();
   }
   static createTimestampType(): AlgebraicType {
     return AlgebraicType.createProductType([
@@ -420,6 +417,17 @@ export class AlgebraicType {
 
   isAddress(): boolean {
     return this.#isBytesNewtype('__address__');
+  }
+
+  isScheduleAt(): boolean {
+    return (
+      this.isSumType() &&
+      this.sum.variants.length === 2 &&
+      this.sum.variants[0].name === 'Interval' &&
+      this.sum.variants[0].algebraicType.type === Type.U64 &&
+      this.sum.variants[1].name === 'Time' &&
+      this.sum.variants[1].algebraicType.type === Type.U64
+    );
   }
 
   isTimestamp(): boolean {

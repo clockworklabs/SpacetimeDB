@@ -2,6 +2,7 @@ import { Address } from './address';
 import { AlgebraicType, ProductType, SumType } from './algebraic_type';
 import BinaryReader from './binary_reader';
 import { Identity } from './identity';
+import { ScheduleAt } from './schedule_at';
 
 export interface ReducerArgsAdapter {
   next: () => ValueAdapter;
@@ -313,6 +314,10 @@ export class AlgebraicValue {
 
   asAddress(): Address {
     return new Address(this.asField(0).asBigInt());
+  }
+
+  asScheduleAt(): ScheduleAt {
+    return ScheduleAt.fromValue(this);
   }
 }
 
