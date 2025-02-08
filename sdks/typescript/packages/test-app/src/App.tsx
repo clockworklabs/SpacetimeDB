@@ -1,7 +1,6 @@
 import { DBConnection } from './module_bindings';
 import { useEffect, useState } from 'react';
 import './App.css';
-import { Identity } from '@clockworklabs/spacetimedb-sdk';
 
 function App() {
   const [connection] = useState(() =>

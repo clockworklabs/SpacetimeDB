@@ -28,36 +28,29 @@ import {
   TableCache,
   deepEqual,
 } from '../index';
-import { BsatnRowList as __BsatnRowList } from './bsatn_row_list_type';
-
-export type OneOffTable = {
-  tableName: string;
-  rows: __BsatnRowList;
+export type QueryId = {
+  id: number;
 };
 
 /**
  * A namespace for generated helper functions.
  */
-export namespace OneOffTable {
+export namespace QueryId {
   /**
    * A function which returns this type represented as an AlgebraicType.
    * This function is derived from the AlgebraicType used to generate this type.
    */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
-      new ProductTypeElement('tableName', AlgebraicType.createStringType()),
-      new ProductTypeElement(
-        'rows',
-        __BsatnRowList.getTypeScriptAlgebraicType()
-      ),
+      new ProductTypeElement('id', AlgebraicType.createU32Type()),
     ]);
   }
 
-  export function serialize(writer: BinaryWriter, value: OneOffTable): void {
-    OneOffTable.getTypeScriptAlgebraicType().serialize(writer, value);
+  export function serialize(writer: BinaryWriter, value: QueryId): void {
+    QueryId.getTypeScriptAlgebraicType().serialize(writer, value);
   }
 
-  export function deserialize(reader: BinaryReader): OneOffTable {
-    return OneOffTable.getTypeScriptAlgebraicType().deserialize(reader);
+  export function deserialize(reader: BinaryReader): QueryId {
+    return QueryId.getTypeScriptAlgebraicType().deserialize(reader);
   }
 }
