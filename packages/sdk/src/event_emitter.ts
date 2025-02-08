@@ -1,7 +1,7 @@
-export class EventEmitter {
-  #events: Map<string, Set<Function>> = new Map();
+export class EventEmitter<Callback extends Function = Function> {
+  #events: Map<string, Set<Callback>> = new Map();
 
-  on(event: string, callback: Function): void {
+  on(event: string, callback: Callback): void {
     let callbacks = this.#events.get(event);
     if (!callbacks) {
       callbacks = new Set();
@@ -10,7 +10,7 @@ export class EventEmitter {
     callbacks.add(callback);
   }
 
-  off(event: string, callback: Function): void {
+  off(event: string, callback: Callback): void {
     let callbacks = this.#events.get(event);
     if (!callbacks) {
       return;

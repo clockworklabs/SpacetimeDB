@@ -28,41 +28,52 @@ import {
   TableCache,
   deepEqual,
 } from '../index';
-export type ReducerCallInfo = {
-  reducerName: string;
-  reducerId: number;
-  args: Uint8Array;
-  requestId: number;
+export type SubscriptionError = {
+  totalHostExecutionDurationMicros: bigint;
+  requestId: number | undefined;
+  queryId: number | undefined;
+  tableId: number | undefined;
+  error: string;
 };
 
 /**
  * A namespace for generated helper functions.
  */
-export namespace ReducerCallInfo {
+export namespace SubscriptionError {
   /**
    * A function which returns this type represented as an AlgebraicType.
    * This function is derived from the AlgebraicType used to generate this type.
    */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
-      new ProductTypeElement('reducerName', AlgebraicType.createStringType()),
-      new ProductTypeElement('reducerId', AlgebraicType.createU32Type()),
       new ProductTypeElement(
-        'args',
-        AlgebraicType.createArrayType(AlgebraicType.createU8Type())
+        'totalHostExecutionDurationMicros',
+        AlgebraicType.createU64Type()
       ),
-      new ProductTypeElement('requestId', AlgebraicType.createU32Type()),
+      new ProductTypeElement(
+        'requestId',
+        AlgebraicType.createOptionType(AlgebraicType.createU32Type())
+      ),
+      new ProductTypeElement(
+        'queryId',
+        AlgebraicType.createOptionType(AlgebraicType.createU32Type())
+      ),
+      new ProductTypeElement(
+        'tableId',
+        AlgebraicType.createOptionType(AlgebraicType.createU32Type())
+      ),
+      new ProductTypeElement('error', AlgebraicType.createStringType()),
     ]);
   }
 
   export function serialize(
     writer: BinaryWriter,
-    value: ReducerCallInfo
+    value: SubscriptionError
   ): void {
-    ReducerCallInfo.getTypeScriptAlgebraicType().serialize(writer, value);
+    SubscriptionError.getTypeScriptAlgebraicType().serialize(writer, value);
   }
 
-  export function deserialize(reader: BinaryReader): ReducerCallInfo {
-    return ReducerCallInfo.getTypeScriptAlgebraicType().deserialize(reader);
+  export function deserialize(reader: BinaryReader): SubscriptionError {
+    return SubscriptionError.getTypeScriptAlgebraicType().deserialize(reader);
   }
 }

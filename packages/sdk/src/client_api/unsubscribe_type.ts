@@ -28,36 +28,33 @@ import {
   TableCache,
   deepEqual,
 } from '../index';
-import { BsatnRowList as __BsatnRowList } from './bsatn_row_list_type';
+import { QueryId as __QueryId } from './query_id_type';
 
-export type OneOffTable = {
-  tableName: string;
-  rows: __BsatnRowList;
+export type Unsubscribe = {
+  requestId: number;
+  queryId: __QueryId;
 };
 
 /**
  * A namespace for generated helper functions.
  */
-export namespace OneOffTable {
+export namespace Unsubscribe {
   /**
    * A function which returns this type represented as an AlgebraicType.
    * This function is derived from the AlgebraicType used to generate this type.
    */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
-      new ProductTypeElement('tableName', AlgebraicType.createStringType()),
-      new ProductTypeElement(
-        'rows',
-        __BsatnRowList.getTypeScriptAlgebraicType()
-      ),
+      new ProductTypeElement('requestId', AlgebraicType.createU32Type()),
+      new ProductTypeElement('queryId', __QueryId.getTypeScriptAlgebraicType()),
     ]);
   }
 
-  export function serialize(writer: BinaryWriter, value: OneOffTable): void {
-    OneOffTable.getTypeScriptAlgebraicType().serialize(writer, value);
+  export function serialize(writer: BinaryWriter, value: Unsubscribe): void {
+    Unsubscribe.getTypeScriptAlgebraicType().serialize(writer, value);
   }
 
-  export function deserialize(reader: BinaryReader): OneOffTable {
-    return OneOffTable.getTypeScriptAlgebraicType().deserialize(reader);
+  export function deserialize(reader: BinaryReader): Unsubscribe {
+    return Unsubscribe.getTypeScriptAlgebraicType().deserialize(reader);
   }
 }

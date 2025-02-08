@@ -28,36 +28,47 @@ import {
   TableCache,
   deepEqual,
 } from '../index';
-import { BsatnRowList as __BsatnRowList } from './bsatn_row_list_type';
+import { QueryId as __QueryId } from './query_id_type';
+import { SubscribeRows as __SubscribeRows } from './subscribe_rows_type';
 
-export type OneOffTable = {
-  tableName: string;
-  rows: __BsatnRowList;
+export type SubscribeApplied = {
+  requestId: number;
+  totalHostExecutionDurationMicros: bigint;
+  queryId: __QueryId;
+  rows: __SubscribeRows;
 };
 
 /**
  * A namespace for generated helper functions.
  */
-export namespace OneOffTable {
+export namespace SubscribeApplied {
   /**
    * A function which returns this type represented as an AlgebraicType.
    * This function is derived from the AlgebraicType used to generate this type.
    */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
-      new ProductTypeElement('tableName', AlgebraicType.createStringType()),
+      new ProductTypeElement('requestId', AlgebraicType.createU32Type()),
+      new ProductTypeElement(
+        'totalHostExecutionDurationMicros',
+        AlgebraicType.createU64Type()
+      ),
+      new ProductTypeElement('queryId', __QueryId.getTypeScriptAlgebraicType()),
       new ProductTypeElement(
         'rows',
-        __BsatnRowList.getTypeScriptAlgebraicType()
+        __SubscribeRows.getTypeScriptAlgebraicType()
       ),
     ]);
   }
 
-  export function serialize(writer: BinaryWriter, value: OneOffTable): void {
-    OneOffTable.getTypeScriptAlgebraicType().serialize(writer, value);
+  export function serialize(
+    writer: BinaryWriter,
+    value: SubscribeApplied
+  ): void {
+    SubscribeApplied.getTypeScriptAlgebraicType().serialize(writer, value);
   }
 
-  export function deserialize(reader: BinaryReader): OneOffTable {
-    return OneOffTable.getTypeScriptAlgebraicType().deserialize(reader);
+  export function deserialize(reader: BinaryReader): SubscribeApplied {
+    return SubscribeApplied.getTypeScriptAlgebraicType().deserialize(reader);
   }
 }

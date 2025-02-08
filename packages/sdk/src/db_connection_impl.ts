@@ -18,9 +18,14 @@ import BinaryWriter from './binary_writer.ts';
 import * as ws from './client_api/index.ts';
 import { ClientCache } from './client_cache.ts';
 import { DBConnectionBuilder } from './db_connection_builder.ts';
-import { SubscriptionBuilder, type DBContext } from './db_context.ts';
+import { type DBContext } from './db_context.ts';
 import type { Event } from './event.ts';
-import { type EventContextInterface } from './event_context.ts';
+import {
+  type ErrorContextInterface,
+  type EventContextInterface,
+  type ReducerEventContextInterface,
+  type SubscriptionEventContextInterface,
+} from './event_context.ts';
 import { EventEmitter } from './event_emitter.ts';
 import { decompress } from './decompress.ts';
 import type { Identity } from './identity.ts';
@@ -31,6 +36,7 @@ import { TableCache, type Operation, type TableUpdate } from './table_cache.ts';
 import { deepEqual, toPascalCase } from './utils.ts';
 import { WebsocketDecompressAdapter } from './websocket_decompress_adapter.ts';
 import type { WebsocketTestAdapter } from './websocket_test_adapter.ts';
+import { SubscriptionBuilderImpl } from './subscription_builder_impl.ts';
 
 export {
   AlgebraicType,
@@ -42,7 +48,7 @@ export {
   ProductType,
   ProductTypeElement,
   ProductValue,
-  SubscriptionBuilder,
+  SubscriptionBuilderImpl,
   SumType,
   SumTypeVariant,
   TableCache,
@@ -51,11 +57,27 @@ export {
   type ValueAdapter,
 };
 
-export type { DBContext, EventContextInterface, ReducerEvent };
+export type {
+  DBContext,
+  EventContextInterface,
+  ReducerEventContextInterface,
+  SubscriptionEventContextInterface,
+  ErrorContextInterface,
+  ReducerEvent,
+};
 
 export type ConnectionEvent = 'connect' | 'disconnect' | 'connectError';
 
 export type CallReducerFlags = 'FullUpdate' | 'NoSuccessNotify';
+
+type ReducerEventCallback<ReducerArgs extends any[] = any[]> = (
+  ctx: ReducerEventContextInterface,
+  ...args: ReducerArgs
+) => void;
+type SubscriptionEventCallback = (
+  ctx: SubscriptionEventContextInterface
+) => void;
+type ErrorCallback = (ctx: ErrorContextInterface) => void;
 
 function callReducerFlagsToNumber(flags: CallReducerFlags): number {
   switch (flags) {
@@ -88,8 +110,8 @@ export class DBConnectionImpl<
   clientCache: ClientCache;
   remoteModule: SpacetimeModule;
   #emitter: EventEmitter;
-  #reducerEmitter: EventEmitter = new EventEmitter();
-  #onApplied?: (ctx: EventContextInterface) => void;
+  #reducerEmitter: EventEmitter<ReducerEventCallback> = new EventEmitter();
+  #onApplied?: SubscriptionEventCallback;
 
   wsPromise!: Promise<WebsocketDecompressAdapter | WebsocketTestAdapter>;
   ws?: WebsocketDecompressAdapter | WebsocketTestAdapter;
@@ -112,10 +134,6 @@ export class DBConnectionImpl<
       this.setReducerFlags
     );
   }
-
-  subscriptionBuilder = (): SubscriptionBuilder => {
-    return new SubscriptionBuilder(this);
-  };
 
   /**
    * Close the current connection.
@@ -311,8 +329,8 @@ export class DBConnectionImpl<
   // This is marked private but not # because we need to use it from the builder
   private subscribe(
     queryOrQueries: string | string[],
-    onApplied?: (ctx: EventContextInterface) => void,
-    _onError?: (ctx: EventContextInterface) => void
+    onApplied?: SubscriptionEventCallback,
+    _onError?: ErrorCallback
   ): void {
     this.#onApplied = onApplied;
     const queries =
@@ -385,18 +403,22 @@ export class DBConnectionImpl<
     this.#messageQueue = this.#messageQueue.then(() =>
       this.processMessage(wsMessage.data, message => {
         if (message.tag === 'InitialSubscription') {
-          let event: Event = { tag: 'SubscribeApplied' };
+          let event: Event<never> = { tag: 'SubscribeApplied' };
+
           const eventContext = this.remoteModule.eventContextConstructor(
             this,
             event
           );
+          // Remove the event from the subscription event context
+          // It is not a field in the type narrowed SubscriptionEventContext
+          const { event: _, ...subscriptionEventContext } = eventContext;
           this.#applyTableUpdates(message.tableUpdates, eventContext);
 
           if (this.#emitter) {
-            this.#onApplied?.(eventContext);
+            this.#onApplied?.(subscriptionEventContext);
           }
         } else if (message.tag === 'TransactionUpdateLight') {
-          const event: Event = { tag: 'UnknownTransaction' };
+          const event: Event<never> = { tag: 'UnknownTransaction' };
           const eventContext = this.remoteModule.eventContextConstructor(
             this,
             event
@@ -406,7 +428,9 @@ export class DBConnectionImpl<
           const reducerName = message.originalReducerName;
           const reducerTypeInfo = this.remoteModule.reducers[reducerName]!;
 
-          if (reducerName == '<none>') {
+          // TODO: Can `reducerName` be '<none>'?
+          // See: https://github.com/clockworklabs/SpacetimeDB/blob/a2a1b5d9b2e0ebaaf753d074db056d319952d442/crates/core/src/client/message_handlers.rs#L155
+          if (reducerName === '<none>') {
             let errorMessage = message.message;
             console.error(
               `Received an error from the database: ${errorMessage}`
@@ -425,11 +449,18 @@ export class DBConnectionImpl<
                 args: reducerArgs,
               },
             };
-            const event: Event = { tag: 'Reducer', value: reducerEvent };
+            const event: Event<typeof reducerEvent.reducer> = {
+              tag: 'Reducer',
+              value: reducerEvent,
+            };
             const eventContext = this.remoteModule.eventContextConstructor(
               this,
               event
             );
+            const reducerEventContext = {
+              ...eventContext,
+              event: reducerEvent,
+            };
 
             this.#applyTableUpdates(message.tableUpdates, eventContext);
 
@@ -439,7 +470,11 @@ export class DBConnectionImpl<
                 argsArray.push(reducerArgs[element.name]);
               }
             );
-            this.#reducerEmitter.emit(reducerName, eventContext, ...argsArray);
+            this.#reducerEmitter.emit(
+              reducerName,
+              reducerEventContext,
+              ...argsArray
+            );
           }
         } else if (message.tag === 'IdentityToken') {
           this.identity = message.identity;
@@ -503,17 +538,11 @@ export class DBConnectionImpl<
     this.#emitter.off('connectError', callback);
   }
 
-  onReducer<ReducerArgs extends any[] = any[]>(
-    reducerName: string,
-    callback: (ctx: any, ...args: ReducerArgs) => void
-  ): void {
+  onReducer(reducerName: string, callback: ReducerEventCallback): void {
     this.#reducerEmitter.on(reducerName, callback);
   }
 
-  offReducer<ReducerArgs extends any[] = any[]>(
-    reducerName: string,
-    callback: (ctx: any, ...args: ReducerArgs) => void
-  ): void {
+  offReducer(reducerName: string, callback: ReducerEventCallback): void {
     this.#reducerEmitter.off(reducerName, callback);
   }
 }

@@ -97,6 +97,9 @@ function App() {
         'Connected to SpacetimeDB with identity:',
         identity.toHexString()
       );
+      conn.reducers.onSendMessage(() => {
+        console.log('Message sent.');
+      });
       conn
         .subscriptionBuilder()
         .onApplied(() => {
