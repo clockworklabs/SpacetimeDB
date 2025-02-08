@@ -366,7 +366,7 @@ fn connect_with_then(
             callback(ctx);
             connected_result(Ok(()));
         })
-        .on_connect_error(|ctx| panic!("Connect errored: {:?}", ctx.event));
+        .on_connect_error(|_ctx, error| panic!("Connect errored: {:?}", error));
     let conn = with_builder(builder).build().unwrap();
     conn.run_threaded();
     conn
@@ -402,7 +402,7 @@ fn subscribe_all_then(ctx: &impl RemoteDbContext, callback: impl FnOnce(&Subscri
 
         ctx.subscription_builder()
             .on_applied(on_applied)
-            .on_error(|ctx| panic!("Subscription errored: {:?}", ctx.event))
+            .on_error(|_ctx, error| panic!("Subscription errored: {:?}", error))
             .subscribe(query);
     }
 }
@@ -417,7 +417,7 @@ fn exec_subscribe_and_cancel() {
                 .on_applied(move |_ctx: &SubscriptionEventContext| {
                     panic!("Subscription should never be applied");
                 })
-                .on_error(|ctx| panic!("Subscription errored: {:?}", ctx.event))
+                .on_error(|_ctx, error| panic!("Subscription errored: {:?}", error))
                 .subscribe("SELECT * FROM one_u8;");
             assert!(!handle.is_active());
             assert!(!handle.is_ended());
@@ -457,7 +457,7 @@ fn exec_subscribe_and_unsubscribe() {
                         }))
                         .unwrap();
                 })
-                .on_error(|ctx| panic!("Subscription errored: {:?}", ctx.event))
+                .on_error(|_ctx, error| panic!("Subscription errored: {:?}", error))
                 .subscribe("SELECT * FROM one_u8;");
             handle_cell.lock().unwrap().replace(handle.clone());
             assert!(!handle.is_active());
@@ -477,7 +477,7 @@ fn exec_subscription_error_smoke_test() {
                 .on_applied(move |_ctx: &SubscriptionEventContext| {
                     panic!("Subscription should never be applied");
                 })
-                .on_error(|_| cb(Ok(())))
+                .on_error(|_, _| cb(Ok(())))
                 .subscribe("SELEcCT * FROM one_u8;"); // intentional typo
             assert!(!handle.is_active());
             assert!(!handle.is_ended());
@@ -1654,7 +1654,7 @@ fn exec_reauth_part_1() {
         .on_connect(|_, _identity, token| {
             save_result(creds_store().save(token).map_err(Into::into));
         })
-        .on_connect_error(|ctx| panic!("Connect failed: {:?}", ctx.event))
+        .on_connect_error(|_ctx, error| panic!("Connect failed: {:?}", error))
         .with_module_name(name)
         .with_uri(LOCALHOST)
         .build()
@@ -1688,7 +1688,7 @@ fn exec_reauth_part_2() {
                 creds_match_result(run_checks());
             }
         })
-        .on_connect_error(|ctx| panic!("Connect failed: {:?}", ctx.event))
+        .on_connect_error(|_ctx, error| panic!("Connect failed: {:?}", error))
         .with_module_name(name)
         .with_token(Some(token))
         .with_uri(LOCALHOST)
@@ -1709,13 +1709,13 @@ fn exec_reconnect_same_connection_id() {
     let initial_connection = DbConnection::builder()
         .with_module_name(db_name_or_panic())
         .with_uri(LOCALHOST)
-        .on_connect_error(|ctx| panic!("on_connect_error: {:?}", ctx.event))
+        .on_connect_error(|_ctx, error| panic!("on_connect_error: {:?}", error))
         .on_connect(move |_, _, _| {
             initial_connect_result(Ok(()));
         })
-        .on_disconnect(|ctx| match &ctx.event {
-            Error::Disconnected => disconnect_result(Ok(())),
-            err => disconnect_result(Err(anyhow::anyhow!("{err:?}"))),
+        .on_disconnect(|_, error| match error {
+            None => disconnect_result(Ok(())),
+            Some(err) => disconnect_result(Err(anyhow::anyhow!("{err:?}"))),
         })
         .build()
         .unwrap();
@@ -1737,7 +1737,7 @@ fn exec_reconnect_same_connection_id() {
     let re_connection = DbConnection::builder()
         .with_module_name(db_name_or_panic())
         .with_uri(LOCALHOST)
-        .on_connect_error(|ctx| panic!("on_connect_error: {:?}", ctx.event))
+        .on_connect_error(|_ctx, error| panic!("on_connect_error: {:?}", error))
         .on_connect(move |ctx, _, _| {
             reconnect_result(Ok(()));
             let run_checks = || {
@@ -1817,7 +1817,7 @@ fn exec_subscribe_all_select_star() {
                 sub_applied_nothing_result(assert_all_tables_empty(ctx));
             }
         })
-        .on_error(|_| panic!("Subscription error"))
+        .on_error(|_, _| panic!("Subscription error"))
         .subscribe_to_all_tables();
 
     test_counter.wait_for_all();

@@ -139,13 +139,13 @@ fn on_message_sent(ctx: &ReducerEventContext, text: &String) {
 // ## Exit when disconnected
 
 /// Our `on_disconnect` callback: print a note, then exit the process.
-fn on_disconnected(ctx: &ErrorContext) {
-    match &ctx.event {
-        Error::Disconnected => {
+fn on_disconnected(_ctx: &ErrorContext, error: Option<Error>) {
+    match error {
+        None => {
             println!("Disconnected normally.");
             std::process::exit(0)
         }
-        err => panic!("Disconnected abnormally: {err}"),
+        Some(err) => panic!("Disconnected abnormally: {err}"),
     }
 }
 
@@ -161,7 +161,7 @@ const DB_NAME: &str = "quickstart-chat";
 fn connect_to_db() -> DbConnection {
     DbConnection::builder()
         .on_connect(on_connected)
-        .on_connect_error(|ctx| panic!("Error while connecting: {}", ctx.event))
+        .on_connect_error(|_ctx, error| panic!("Error while connecting: {}", error))
         .on_disconnect(on_disconnected)
         .with_token(creds_store().load().expect("Error loading credentials"))
         .with_module_name(DB_NAME)
