@@ -1,12 +1,8 @@
-import {
-  CreatePlayer,
-  DBConnection,
-  Player,
-  Point,
-  User,
-} from '@clockworklabs/test-app/src/module_bindings';
+import * as module_bindings from '@clockworklabs/test-app/src/module_bindings';
 import { beforeEach, describe, expect, test } from 'vitest';
 import { Address } from '../src/address';
+import { Timestamp } from '../src/timestamp';
+import { TimeDuration } from '../src/time_duration';
 import { AlgebraicType } from '../src/algebraic_type';
 import { parseValue } from '../src/algebraic_value';
 import BinaryWriter from '../src/binary_writer';
@@ -68,29 +64,32 @@ class Deferred<T> {
 
 beforeEach(() => {});
 
-function encodePlayer(value: Player): Uint8Array {
+function encodePlayer(value: module_bindings.Player): Uint8Array {
   const writer = new BinaryWriter(1024);
-  Player.serialize(writer, value);
+  module_bindings.Player.serialize(writer, value);
   return writer.getBuffer();
 }
 
-function encodeUser(value: User): Uint8Array {
+function encodeUser(value: module_bindings.User): Uint8Array {
   const writer = new BinaryWriter(1024);
-  User.serialize(writer, value);
+  module_bindings.User.serialize(writer, value);
   return writer.getBuffer();
 }
 
-function encodeCreatePlayerArgs(name: string, location: Point): Uint8Array {
+function encodeCreatePlayerArgs(
+  name: string,
+  location: module_bindings.Point
+): Uint8Array {
   const writer = new BinaryWriter(1024);
   AlgebraicType.createStringType().serialize(writer, name);
-  Point.serialize(writer, location);
+  module_bindings.Point.serialize(writer, location);
   return writer.getBuffer();
 }
 
 describe('SpacetimeDBClient', () => {
   test('auto subscribe on connect', async () => {
     const wsAdapter = new WebsocketTestAdapter();
-    const client = DBConnection.builder()
+    const client = module_bindings.DBConnection.builder()
       .withUri('ws://127.0.0.1:1234')
       .withModuleName('db')
       .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter))
@@ -133,7 +132,7 @@ describe('SpacetimeDBClient', () => {
     const onConnectPromise = new Deferred<void>();
 
     const wsAdapter = new WebsocketTestAdapter();
-    const client = DBConnection.builder()
+    const client = module_bindings.DBConnection.builder()
       .withUri('ws://127.0.0.1:1234')
       .withModuleName('db')
       .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter))
@@ -161,7 +160,7 @@ describe('SpacetimeDBClient', () => {
 
   test('it calls onInsert callback when a record is added with a subscription update and then with a transaction update', async () => {
     const wsAdapter = new WebsocketTestAdapter();
-    const client = DBConnection.builder()
+    const client = module_bindings.DBConnection.builder()
       .withUri('ws://127.0.0.1:1234')
       .withModuleName('db')
       .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter))
@@ -183,9 +182,12 @@ describe('SpacetimeDBClient', () => {
 
     const inserts: {
       reducerEvent:
-        | ReducerEvent<{ name: 'CreatePlayer'; args: CreatePlayer }>
+        | ReducerEvent<{
+            name: 'CreatePlayer';
+            args: module_bindings.CreatePlayer;
+          }>
         | undefined;
-      player: Player;
+      player: module_bindings.Player;
     }[] = [];
 
     const insert1Promise = new Deferred<void>();
@@ -206,18 +208,23 @@ describe('SpacetimeDBClient', () => {
     });
 
     let reducerCallbackLog: {
-      reducerEvent: ReducerEvent<{ name: 'CreatePlayer'; args: CreatePlayer }>;
+      reducerEvent: ReducerEvent<{
+        name: 'CreatePlayer';
+        args: module_bindings.CreatePlayer;
+      }>;
       reducerArgs: any[];
     }[] = [];
-    client.reducers.onCreatePlayer((ctx, name: string, location: Point) => {
-      if (ctx.event.tag === 'Reducer') {
-        const reducerEvent = ctx.event.value;
-        reducerCallbackLog.push({
-          reducerEvent,
-          reducerArgs: [name, location],
-        });
+    client.reducers.onCreatePlayer(
+      (ctx, name: string, location: module_bindings.Point) => {
+        if (ctx.event.tag === 'Reducer') {
+          const reducerEvent = ctx.event.value;
+          reducerCallbackLog.push({
+            reducerEvent,
+            reducerArgs: [name, location],
+          });
+        }
       }
-    });
+    );
 
     const subscriptionMessage: ws.ServerMessage =
       ws.ServerMessage.InitialSubscription({
@@ -247,7 +254,7 @@ describe('SpacetimeDBClient', () => {
           ],
         },
         requestId: 0,
-        totalHostExecutionDurationMicros: BigInt(0),
+        totalHostExecutionDuration: new TimeDuration(BigInt(0)),
       });
 
     wsAdapter.sendToClient(subscriptionMessage);
@@ -284,7 +291,7 @@ describe('SpacetimeDBClient', () => {
           },
         ],
       }),
-      timestamp: { microseconds: BigInt(1681391805281203) },
+      timestamp: new Timestamp(1681391805281203n),
       callerIdentity: anIdentity,
       callerAddress: Address.random(),
       reducerCall: {
@@ -294,7 +301,7 @@ describe('SpacetimeDBClient', () => {
         requestId: 0,
       },
       energyQuantaUsed: { quanta: BigInt(33841000) },
-      hostExecutionDurationMicros: BigInt(1234567890),
+      totalHostExecutionDuration: new TimeDuration(BigInt(1234567890)),
     });
     wsAdapter.sendToClient(transactionUpdate);
 
@@ -319,7 +326,7 @@ describe('SpacetimeDBClient', () => {
 
   test('it calls onUpdate callback when a record is added with a subscription update and then with a transaction update', async () => {
     const wsAdapter = new WebsocketTestAdapter();
-    const client = DBConnection.builder()
+    const client = module_bindings.DBConnection.builder()
       .withUri('ws://127.0.0.1:1234')
       .withModuleName('db')
       .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter))
@@ -342,7 +349,10 @@ describe('SpacetimeDBClient', () => {
     const update1Promise = new Deferred<void>();
     const update2Promise = new Deferred<void>();
 
-    const updates: { oldPlayer: Player; newPlayer: Player }[] = [];
+    const updates: {
+      oldPlayer: module_bindings.Player;
+      newPlayer: module_bindings.Player;
+    }[] = [];
     client.db.player.onUpdate((_ctx, oldPlayer, newPlayer) => {
       updates.push({
         oldPlayer,
@@ -392,7 +402,7 @@ describe('SpacetimeDBClient', () => {
         ],
       },
       requestId: 0,
-      totalHostExecutionDurationMicros: BigInt(1234567890),
+      totalHostExecutionDuration: new TimeDuration(BigInt(1234567890)),
     });
     wsAdapter.sendToClient(subscriptionMessage);
 
@@ -432,7 +442,7 @@ describe('SpacetimeDBClient', () => {
           },
         ],
       }),
-      timestamp: { microseconds: BigInt(1681391805281203) },
+      timestamp: new Timestamp(1681391805281203n),
       callerIdentity: anIdentity,
       callerAddress: Address.random(),
       reducerCall: {
@@ -442,7 +452,7 @@ describe('SpacetimeDBClient', () => {
         requestId: 0,
       },
       energyQuantaUsed: { quanta: BigInt(33841000) },
-      hostExecutionDurationMicros: BigInt(1234567890),
+      totalHostExecutionDuration: new TimeDuration(BigInt(1234567890)),
     });
     wsAdapter.sendToClient(transactionUpdate);
 
@@ -455,7 +465,7 @@ describe('SpacetimeDBClient', () => {
 
   test('a reducer callback should be called after the database callbacks', async () => {
     const wsAdapter = new WebsocketTestAdapter();
-    const client = DBConnection.builder()
+    const client = module_bindings.DBConnection.builder()
       .withUri('ws://127.0.0.1:1234')
       .withModuleName('db')
       .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter))
@@ -514,7 +524,7 @@ describe('SpacetimeDBClient', () => {
           },
         ],
       }),
-      timestamp: { microseconds: BigInt(1681391805281203) },
+      timestamp: new Timestamp(1681391805281203n),
       callerIdentity: anIdentity,
       callerAddress: Address.random(),
       reducerCall: {
@@ -524,7 +534,7 @@ describe('SpacetimeDBClient', () => {
         requestId: 0,
       },
       energyQuantaUsed: { quanta: BigInt(33841000) },
-      hostExecutionDurationMicros: BigInt(1234567890),
+      totalHostExecutionDuration: new TimeDuration(BigInt(1234567890)),
     });
     wsAdapter.sendToClient(transactionUpdate);
 
@@ -535,7 +545,7 @@ describe('SpacetimeDBClient', () => {
 
   test('it calls onUpdate callback when a record is added with a subscription update and then with a transaction update when the PK is of type Identity', async () => {
     const wsAdapter = new WebsocketTestAdapter();
-    const client = DBConnection.builder()
+    const client = module_bindings.DBConnection.builder()
       .withUri('ws://127.0.0.1:1234')
       .withModuleName('db')
       .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter))
@@ -560,7 +570,10 @@ describe('SpacetimeDBClient', () => {
     const update1Promise = new Deferred<void>();
     const update2Promise = new Deferred<void>();
 
-    const updates: { oldUser: User; newUser: User }[] = [];
+    const updates: {
+      oldUser: module_bindings.User;
+      newUser: module_bindings.User;
+    }[] = [];
     client.db.user.onUpdate((_ctx, oldUser, newUser) => {
       updates.push({
         oldUser,
@@ -613,7 +626,7 @@ describe('SpacetimeDBClient', () => {
         ],
       },
       requestId: 0,
-      totalHostExecutionDurationMicros: BigInt(1234567890),
+      totalHostExecutionDuration: new TimeDuration(BigInt(1234567890)),
     });
 
     wsAdapter.sendToClient(subscriptionMessage);
@@ -661,7 +674,7 @@ describe('SpacetimeDBClient', () => {
           },
         ],
       }),
-      timestamp: { microseconds: BigInt(1681391805281203) },
+      timestamp: new Timestamp(1681391805281203n),
       callerIdentity: anIdentity,
       callerAddress: Address.random(),
       reducerCall: {
@@ -671,7 +684,7 @@ describe('SpacetimeDBClient', () => {
         requestId: 0,
       },
       energyQuantaUsed: { quanta: BigInt(33841000) },
-      hostExecutionDurationMicros: BigInt(1234567890),
+      totalHostExecutionDuration: new TimeDuration(BigInt(1234567890)),
     });
 
     wsAdapter.sendToClient(transactionUpdate);
@@ -685,7 +698,7 @@ describe('SpacetimeDBClient', () => {
 
   test('Filtering works', async () => {
     const wsAdapter = new WebsocketTestAdapter();
-    const client = DBConnection.builder()
+    const client = module_bindings.DBConnection.builder()
       .withUri('ws://127.0.0.1:1234')
       .withModuleName('db')
       .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter))
@@ -697,7 +710,8 @@ describe('SpacetimeDBClient', () => {
       identity: sallyIdentity,
       username: 'sally',
     };
-    const users: Map<string, User> = (db.user.tableCache as any).rows;
+    const users: Map<string, module_bindings.User> = (db.user.tableCache as any)
+      .rows;
     users.set('abc123', user1);
     users.set('def456', user2);
 

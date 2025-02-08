@@ -1,5 +1,6 @@
 import { Address } from './address.ts';
-import type { Reducer, Timestamp, UpdateStatus } from './client_api/index.ts';
+import { Timestamp } from './timestamp.ts';
+import type { UpdateStatus } from './client_api/index.ts';
 import { Identity } from './identity.ts';
 
 export type ReducerInfoType = { name: string; args?: any } | never;

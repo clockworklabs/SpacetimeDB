@@ -26,6 +26,8 @@ import {
   SumType,
   SumTypeVariant,
   TableCache,
+  TimeDuration,
+  Timestamp,
   deepEqual,
 } from '../index';
 import { InitialSubscription as __InitialSubscription } from './initial_subscription_type';

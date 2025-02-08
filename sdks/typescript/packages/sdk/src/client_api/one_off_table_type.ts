@@ -26,6 +26,8 @@ import {
   SumType,
   SumTypeVariant,
   TableCache,
+  TimeDuration,
+  Timestamp,
   deepEqual,
 } from '../index';
 import { BsatnRowList as __BsatnRowList } from './bsatn_row_list_type';

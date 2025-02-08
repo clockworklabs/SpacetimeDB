@@ -26,6 +26,8 @@ import {
   SumType,
   SumTypeVariant,
   TableCache,
+  TimeDuration,
+  Timestamp,
   deepEqual,
 } from '../index';
 import { CallReducer as __CallReducer } from './call_reducer_type';

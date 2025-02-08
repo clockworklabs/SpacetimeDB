@@ -26,6 +26,8 @@ import {
   SumType,
   SumTypeVariant,
   TableCache,
+  TimeDuration,
+  Timestamp,
   deepEqual,
 } from '../index';
 // A namespace for generated variants and helper functions.

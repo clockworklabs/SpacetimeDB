@@ -26,6 +26,8 @@ import {
   SumType,
   SumTypeVariant,
   TableCache,
+  TimeDuration,
+  Timestamp,
   deepEqual,
 } from '../index';
 import { QueryId as __QueryId } from './query_id_type';
