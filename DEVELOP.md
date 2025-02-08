@@ -6,6 +6,7 @@ Whenever the `client-api-messages` crate changes, you'll have to manually re-gen
 See that crate's DEVELOP.md for how to do this.
 
 The generated files must be manually modified to fix their imports from the rest of the SDK.
+
 Within each generated file:
 
 - Change the import from `"@clockworklabs/spacetimedb-sdk"` to `"../index"`.

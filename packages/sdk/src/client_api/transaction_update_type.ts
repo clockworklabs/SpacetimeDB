@@ -26,21 +26,22 @@ import {
   SumType,
   SumTypeVariant,
   TableCache,
+  TimeDuration,
+  Timestamp,
   deepEqual,
 } from '../index';
 import { UpdateStatus as __UpdateStatus } from './update_status_type';
-import { Timestamp as __Timestamp } from './timestamp_type';
 import { ReducerCallInfo as __ReducerCallInfo } from './reducer_call_info_type';
 import { EnergyQuanta as __EnergyQuanta } from './energy_quanta_type';
 
 export type TransactionUpdate = {
   status: __UpdateStatus;
-  timestamp: __Timestamp;
+  timestamp: Timestamp;
   callerIdentity: Identity;
   callerAddress: Address;
   reducerCall: __ReducerCallInfo;
   energyQuantaUsed: __EnergyQuanta;
-  hostExecutionDurationMicros: bigint;
+  totalHostExecutionDuration: TimeDuration;
 };
 
 /**
@@ -57,10 +58,7 @@ export namespace TransactionUpdate {
         'status',
         __UpdateStatus.getTypeScriptAlgebraicType()
       ),
-      new ProductTypeElement(
-        'timestamp',
-        __Timestamp.getTypeScriptAlgebraicType()
-      ),
+      new ProductTypeElement('timestamp', AlgebraicType.createTimestampType()),
       new ProductTypeElement(
         'callerIdentity',
         AlgebraicType.createIdentityType()
@@ -78,8 +76,8 @@ export namespace TransactionUpdate {
         __EnergyQuanta.getTypeScriptAlgebraicType()
       ),
       new ProductTypeElement(
-        'hostExecutionDurationMicros',
-        AlgebraicType.createU64Type()
+        'totalHostExecutionDuration',
+        AlgebraicType.createTimeDurationType()
       ),
     ]);
   }

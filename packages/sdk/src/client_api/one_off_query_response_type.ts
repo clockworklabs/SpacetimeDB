@@ -26,6 +26,8 @@ import {
   SumType,
   SumTypeVariant,
   TableCache,
+  TimeDuration,
+  Timestamp,
   deepEqual,
 } from '../index';
 import { OneOffTable as __OneOffTable } from './one_off_table_type';
@@ -34,7 +36,7 @@ export type OneOffQueryResponse = {
   messageId: Uint8Array;
   error: string | undefined;
   tables: __OneOffTable[];
-  totalHostExecutionDurationMicros: bigint;
+  totalHostExecutionDuration: TimeDuration;
 };
 
 /**
@@ -62,8 +64,8 @@ export namespace OneOffQueryResponse {
         )
       ),
       new ProductTypeElement(
-        'totalHostExecutionDurationMicros',
-        AlgebraicType.createU64Type()
+        'totalHostExecutionDuration',
+        AlgebraicType.createTimeDurationType()
       ),
     ]);
   }
