@@ -2,10 +2,13 @@ name: Tests
 
 on:
   push:
+    branches:
+      - main
+      - master
   pull_request:
 
 jobs:
-  build:
+  compile-and-test:
     runs-on: ubuntu-latest
 
     steps:
@@ -35,8 +38,101 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pnpm-store-
 
-      - name: Build
+      - name: Compile
         run: pnpm compile
 
-      - name: Run tests
+      - name: Extract SpacetimeDB branch name from file
+        id: extract-branch
+        run: |
+          # Define the path to the branch file
+          BRANCH_FILE=".github/spacetimedb-branch.txt"
+
+          # Default to master if file doesn't exist
+          if [ ! -f "$BRANCH_FILE" ]; then
+            echo "::notice::No SpacetimeDB branch file found, using 'master'"
+            echo "branch=master" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Read and trim whitespace from the file
+          branch=$(cat "$BRANCH_FILE" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+
+          # Fallback to master if empty
+          if [ -z "$branch" ]; then
+            echo "::warning::SpacetimeDB branch file is empty, using 'master'"
+            branch="master"
+          fi
+
+          echo "branch=$branch" >> $GITHUB_OUTPUT
+          echo "Using SpacetimeDB branch from file: $branch"
+
+      - name: Checkout SpacetimeDB
+        uses: actions/checkout@v4
+        with:
+          repository: clockworklabs/SpacetimeDB
+          ref: ${{ steps.extract-branch.outputs.branch }}
+          path: SpacetimeDB
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: SpacetimeDB/modules/quickstart-chat
+          shared-key: quickstart-chat-test
+
+      - name: Install SpacetimeDB CLI from the local checkout
+        run: |
+          cargo install --force --path SpacetimeDB/crates/cli --locked --message-format=short
+          cargo install --force --path SpacetimeDB/crates/standalone --locked --message-format=short
+          # Add a handy alias using the old binary name, so that we don't have to rewrite all scripts (incl. in submodules).
+          rm $HOME/.cargo/bin/spacetime || echo "haven't run on this host before"
+          ln -s $HOME/.cargo/bin/spacetimedb-cli $HOME/.cargo/bin/spacetime
+          # Clear any existing information
+          spacetime server clear -y
+        env:
+          # Share the target directory with our local project to avoid rebuilding same SpacetimeDB crates twice.
+          CARGO_TARGET_DIR: SpacetimeDB/modules/quickstart-chat/target
+
+      - name: Generate client bindings
+        working-directory: SpacetimeDB/modules/quickstart-chat
+        run: |
+          spacetime generate --lang typescript --out-dir ../../../examples/quickstart-chat/src/module_bindings
+          pnpm lint --write
+
+      - name: Check for changes
+        run: |
+          git diff --exit-code examples/quickstart-chat/src/module_bindings || {
+              echo "Error: Bindings are dirty. Please generate bindings again and commit them to this branch."
+              exit 1
+          }
+
+      - name: Start SpacetimeDB
+        run: |
+          spacetime start &
+          disown
+
+      - name: Publish module to SpacetimeDB
+        working-directory: SpacetimeDB/modules/quickstart-chat
+        run: |
+          spacetime logout && spacetime login --server-issued-login local
+          spacetime publish -s local quickstart-chat -c -y
+
+      - name: Check if SpacetimeDB process is running
+        run: |
+          echo "Currently running spacetime processes:"
+          pgrep -laf spacetime || echo "No spacetime process found."
+
+      - name: Publish module to SpacetimeDB
+        working-directory: SpacetimeDB/modules/quickstart-chat
+        run: |
+          spacetime logs quickstart-chat
+
+      - name: Run all tests recursively
         run: pnpm test
+
+      # Run this step always, even if the previous steps fail
+      - name: Print rows in the user table
+        if: always()
+        run: spacetime sql quickstart-chat "SELECT * FROM user"

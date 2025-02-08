@@ -1,6 +1,6 @@
 # Notes for maintainers
 
-The directory `src/client_api` is generated from [the SpacetimeDB client-api-messages](https://github.com/clockworklabs/SpacetimeDB/tree/master/crates/client-api-messages).
+The directory `packages/sdk/src/client_api` is generated from [the SpacetimeDB client-api-messages](https://github.com/clockworklabs/SpacetimeDB/tree/master/crates/client-api-messages).
 This is not automated.
 Whenever the `client-api-messages` crate changes, you'll have to manually re-generate the definitions.
 See that crate's DEVELOP.md for how to do this.
@@ -12,7 +12,7 @@ Within each generated file:
 
 ## Releases and publishing
 
-Every Pull Request with public-facing change(Bug fix, perf, feature etc) must be accompanied by a changeset. Any person working on a patch or feature needs to run `pnpm -w changeset` command, which will prompt them to select packages changed. Choose `@clockworklabs/spacetimedb-sdk`
+Every Pull Request with a public-facing change (Bug fix, perf, feature etc) must be accompanied by a changeset. Any person working on a patch or feature needs to run `pnpm -w changeset` command, which will prompt them to select packages changed. Choose `@clockworklabs/spacetimedb-sdk`
 
 ![image](https://github.com/user-attachments/assets/3a69ff1f-c92b-459a-8dcc-d8fea53f77b4)
 
@@ -26,7 +26,7 @@ After selecting the correct tag, it will ask you for a message
 
 Once that is done, hit enter. It will generate a `.md` file which you can then push to github. This all has to be done in the PR with the feature/fix in it.
 
-We can merge it instantly to do a release, or we can merge PRs with their own Changesets. For eg, any new feature or patch we work on for 0.12 now, should have a Changeset in it. All of these will accumulate in the "Version Packages" PR. Once all these are satisfactorily done, we merge this PR, which will
+We can merge it instantly to do a release, or we can merge PRs with their own Changesets. E.g. Any new feature or patch we work on for 1.0 now, should have a Changeset in it. All of these will accumulate in the "Version Packages" PR. Once all these are satisfactorily done, we merge this PR, which will
 
 - Release the package on npm
 - Release on Github tags
