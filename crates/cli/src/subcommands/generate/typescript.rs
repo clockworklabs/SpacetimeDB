@@ -574,11 +574,11 @@ fn print_db_connection(_module: &ModuleDef, out: &mut Indenter) {
         "export class DBConnection extends DBConnectionImpl<RemoteTables, RemoteReducers, SetReducerFlags> {{"
     );
     out.indent(1);
-    writeln!(out, "static builder = (): DBConnectionBuilder<DBConnection>  => {{");
+    writeln!(out, "static builder = (): DBConnectionBuilder<DBConnection, ErrorContext, SubscriptionEventContext>  => {{");
     out.indent(1);
     writeln!(
         out,
-        "return new DBConnectionBuilder<DBConnection>(REMOTE_MODULE, (imp: DBConnectionImpl) => imp as DBConnection);"
+        "return new DBConnectionBuilder<DBConnection, ErrorContext, SubscriptionEventContext>(REMOTE_MODULE, (imp: DBConnectionImpl) => imp as DBConnection);"
     );
     out.dedent(1);
     writeln!(out, "}}");
