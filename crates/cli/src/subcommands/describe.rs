@@ -1,13 +1,13 @@
 use crate::common_args;
 use crate::config::Config;
-use crate::util::{add_auth_header_opt, database_identity, get_auth_header, UNSTABLE_HELPTEXT};
+use crate::util::{add_auth_header_opt, database_identity, get_auth_header, UNSTABLE_WARNING};
 use clap::{Arg, ArgMatches};
 
 pub fn cli() -> clap::Command {
     clap::Command::new("describe")
         .about(format!(
             "Describe the structure of a database or entities within it.\n\n{}",
-            UNSTABLE_HELPTEXT
+            UNSTABLE_WARNING
         ))
         .arg(
             Arg::new("database")
@@ -31,7 +31,7 @@ pub fn cli() -> clap::Command {
 }
 
 pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    println!("{}", UNSTABLE_HELPTEXT);
+    println!("{}", UNSTABLE_WARNING);
 
     let database = args.get_one::<String>("database").unwrap();
     let entity_name = args.get_one::<String>("entity_name");

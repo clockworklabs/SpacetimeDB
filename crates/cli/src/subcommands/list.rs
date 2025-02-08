@@ -1,7 +1,7 @@
 use crate::common_args;
 use crate::util;
 use crate::util::get_login_token_or_log_in;
-use crate::util::UNSTABLE_HELPTEXT;
+use crate::util::UNSTABLE_WARNING;
 use crate::Config;
 use clap::{ArgMatches, Command};
 use reqwest::StatusCode;
@@ -16,7 +16,7 @@ pub fn cli() -> Command {
     Command::new("list")
         .about(format!(
             "Lists the databases attached to an identity.\n\n{}",
-            UNSTABLE_HELPTEXT
+            UNSTABLE_WARNING
         ))
         .arg(common_args::server().help("The nickname, host name or URL of the server from which to list databases"))
         .arg(common_args::yes())
@@ -34,7 +34,7 @@ struct IdentityRow {
 }
 
 pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    println!("{}", UNSTABLE_HELPTEXT);
+    println!("{}", UNSTABLE_WARNING);
 
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
     let force = args.get_flag("force");

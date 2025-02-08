@@ -1,8 +1,6 @@
 use crate::{
     common_args,
-    util::{
-        host_or_url_to_host_and_protocol, spacetime_server_fingerprint, y_or_n, UNSTABLE_HELPTEXT, VALID_PROTOCOLS,
-    },
+    util::{host_or_url_to_host_and_protocol, spacetime_server_fingerprint, y_or_n, UNSTABLE_WARNING, VALID_PROTOCOLS},
     Config,
 };
 use anyhow::Context;
@@ -20,7 +18,7 @@ pub fn cli() -> Command {
         .subcommands(get_subcommands())
         .about(format!(
             "Manage the connection to the SpacetimeDB server.\n\n{}",
-            UNSTABLE_HELPTEXT
+            UNSTABLE_WARNING
         ))
 }
 
@@ -118,7 +116,7 @@ fn get_subcommands() -> Vec<Command> {
 
 pub async fn exec(config: Config, paths: &SpacetimePaths, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let (cmd, subcommand_args) = args.subcommand().expect("Subcommand required");
-    println!("{}", UNSTABLE_HELPTEXT);
+    println!("{}", UNSTABLE_WARNING);
     exec_subcommand(config, paths, cmd, subcommand_args).await
 }
 

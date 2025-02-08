@@ -3,13 +3,13 @@ use crate::common_args;
 use clap::ArgMatches;
 
 use crate::config::Config;
-use crate::util::{self, get_login_token_or_log_in, UNSTABLE_HELPTEXT};
+use crate::util::{self, get_login_token_or_log_in, UNSTABLE_WARNING};
 
 pub fn cli() -> clap::Command {
     clap::Command::new("energy")
         .about(format!(
             "Invokes commands related to database budgets.\n\n{}",
-            UNSTABLE_HELPTEXT
+            UNSTABLE_WARNING
         ))
         .args_conflicts_with_subcommands(true)
         .subcommand_required(true)
@@ -42,7 +42,7 @@ async fn exec_subcommand(config: Config, cmd: &str, args: &ArgMatches) -> Result
 
 pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let (cmd, subcommand_args) = args.subcommand().expect("Subcommand required");
-    println!("{}", UNSTABLE_HELPTEXT);
+    println!("{}", UNSTABLE_WARNING);
     exec_subcommand(config, cmd, subcommand_args).await
 }
 

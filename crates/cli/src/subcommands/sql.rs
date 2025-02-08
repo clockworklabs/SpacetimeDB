@@ -11,11 +11,11 @@ use tabled::settings::Style;
 
 use crate::config::Config;
 use crate::errors::error_for_status;
-use crate::util::{database_identity, get_auth_header, UNSTABLE_HELPTEXT};
+use crate::util::{database_identity, get_auth_header, UNSTABLE_WARNING};
 
 pub fn cli() -> clap::Command {
     clap::Command::new("sql")
-        .about(format!("Runs a SQL query on the database.\n\n{}", UNSTABLE_HELPTEXT))
+        .about(format!("Runs a SQL query on the database.\n\n{}", UNSTABLE_WARNING))
         .arg(
             Arg::new("database")
                 .required(true)
@@ -130,7 +130,7 @@ fn stmt_result_to_table(stmt_result: &StmtResultJson) -> anyhow::Result<tabled::
 }
 
 pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    println!("{}", UNSTABLE_HELPTEXT);
+    println!("{}", UNSTABLE_WARNING);
     let interactive = args.get_one::<bool>("interactive").unwrap_or(&false);
     if *interactive {
         let con = parse_req(config, args).await?;

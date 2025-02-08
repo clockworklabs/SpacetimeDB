@@ -1,6 +1,6 @@
 use crate::util::ModuleLanguage;
 use crate::Config;
-use crate::{detect::find_executable, util::UNSTABLE_HELPTEXT};
+use crate::{detect::find_executable, util::UNSTABLE_WARNING};
 use anyhow::Context;
 use clap::{Arg, ArgMatches};
 use colored::Colorize;
@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 pub fn cli() -> clap::Command {
     clap::Command::new("init")
-        .about(format!("Initializes a new spacetime project.\n\n{}", UNSTABLE_HELPTEXT))
+        .about(format!("Initializes a new spacetime project.\n\n{}", UNSTABLE_WARNING))
         .arg(
             Arg::new("project-path")
                 .value_parser(clap::value_parser!(PathBuf))
@@ -114,7 +114,7 @@ fn check_for_git() -> bool {
 }
 
 pub async fn exec(_config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    println!("{}", UNSTABLE_HELPTEXT);
+    println!("{}", UNSTABLE_WARNING);
 
     let project_path = args.get_one::<PathBuf>("project-path").unwrap();
     let project_lang = *args.get_one::<ModuleLanguage>("lang").unwrap();
