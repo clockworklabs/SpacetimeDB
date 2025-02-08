@@ -38,7 +38,7 @@ pub fn cli() -> clap::Command {
 }
 
 pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), Error> {
-    println!("{}\n", UNSTABLE_WARNING);
+    eprintln!("{}\n", UNSTABLE_WARNING);
     let database = args.get_one::<String>("database").unwrap();
     let reducer_name = args.get_one::<String>("reducer_name").unwrap();
     let arguments = args.get_many::<String>("arguments");

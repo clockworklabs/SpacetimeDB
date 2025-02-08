@@ -130,7 +130,7 @@ fn stmt_result_to_table(stmt_result: &StmtResultJson) -> anyhow::Result<tabled::
 }
 
 pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    println!("{}\n", UNSTABLE_WARNING);
+    eprintln!("{}\n", UNSTABLE_WARNING);
     let interactive = args.get_one::<bool>("interactive").unwrap_or(&false);
     if *interactive {
         let con = parse_req(config, args).await?;

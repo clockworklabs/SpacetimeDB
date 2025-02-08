@@ -34,7 +34,7 @@ struct IdentityRow {
 }
 
 pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    println!("{}\n", UNSTABLE_WARNING);
+    eprintln!("{}\n", UNSTABLE_WARNING);
 
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
     let force = args.get_flag("force");

@@ -42,7 +42,7 @@ async fn exec_subcommand(config: Config, cmd: &str, args: &ArgMatches) -> Result
 
 pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let (cmd, subcommand_args) = args.subcommand().expect("Subcommand required");
-    println!("{}\n", UNSTABLE_WARNING);
+    eprintln!("{}\n", UNSTABLE_WARNING);
     exec_subcommand(config, cmd, subcommand_args).await
 }
 

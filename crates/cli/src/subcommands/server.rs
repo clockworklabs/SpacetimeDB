@@ -116,7 +116,7 @@ fn get_subcommands() -> Vec<Command> {
 
 pub async fn exec(config: Config, paths: &SpacetimePaths, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let (cmd, subcommand_args) = args.subcommand().expect("Subcommand required");
-    println!("{}\n", UNSTABLE_WARNING);
+    eprintln!("{}\n", UNSTABLE_WARNING);
     exec_subcommand(config, paths, cmd, subcommand_args).await
 }
 
