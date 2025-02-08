@@ -576,7 +576,7 @@ fn print_db_connection(_module: &ModuleDef, out: &mut Indenter) {
     out.indent(1);
     writeln!(
         out,
-        "static builder = (): DBConnectionBuilder<DBConnection, ErrorContext, SubscriptionEventContext>  => {{"
+        "static builder = (): DBConnectionBuilder<DBConnection, ErrorContext, SubscriptionEventContext> => {{"
     );
     out.indent(1);
     writeln!(
