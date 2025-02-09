@@ -1,9 +1,25 @@
 #![allow(clippy::disallowed_names)]
+use spacetimedb::log;
 use spacetimedb::spacetimedb_lib::db::raw_def::v9::TableAccess;
 use spacetimedb::spacetimedb_lib::{self, bsatn};
 use spacetimedb::{
     duration, table, ConnectionId, Deserialize, Identity, ReducerContext, SpacetimeType, Table, Timestamp,
 };
+
+pub type TestAlias = TestA;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TABLE DEFINITIONS
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[spacetimedb::table(name = person, public, index(name = age, btree(columns = [age])))]
+pub struct Person {
+    #[primary_key]
+    #[auto_inc]
+    id: u32,
+    name: String,
+    age: u8,
+}
 
 #[spacetimedb::table(name = test_a, index(name = foo, btree(columns = [x])))]
 pub struct TestA {
@@ -76,8 +92,16 @@ pub enum TestF {
 // // All tables are private by default.
 const _: () = assert!(matches!(get_table_access(test_e::test_e), TableAccess::Private));
 
-#[spacetimedb::table(name = private)]
-pub struct Private {
+// FIXME: Table named "private" doesn't compile in C#
+// Must be commented here because the schemas are compared between Rust and C#
+// in the testing.
+// #[spacetimedb::table(name = private)]
+// pub struct Private {
+//     name: String,
+// }
+
+#[spacetimedb::table(name = private_table, private)]
+pub struct PrivateTable {
     name: String,
 }
 
@@ -99,7 +123,6 @@ struct PkMultiIdentity {
     #[auto_inc]
     other: u32,
 }
-pub type TestAlias = TestA;
 
 // #[spacetimedb::migrate]
 // pub fn migrate() {}
@@ -119,6 +142,44 @@ pub struct HasSpecialStuff {
     connection_id: ConnectionId,
 }
 
+/// These two tables defined with the same row type
+/// verify that we can define multiple tables with the same type.
+///
+/// In the past, we've had issues where each `#[table]` attribute
+/// would try to emit its own `impl` block for `SpacetimeType` (and some other traits),
+/// resulting in duplicate/conflicting trait definitions.
+/// See e.g. [SpacetimeDB issue #2097](https://github.com/clockworklabs/SpacetimeDB/issues/2097).
+#[spacetimedb::table(public, name = player)]
+#[spacetimedb::table(public, name = logged_out_player)]
+pub struct Player {
+    #[primary_key]
+    identity: Identity,
+    #[auto_inc]
+    #[unique]
+    player_id: u64,
+    #[unique] // fields called "name" previously caused name collisions in generated table handles
+    name: String,
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SUPPORT TYPES
+// ─────────────────────────────────────────────────────────────────────────────
+
+// We can derive `Deserialize` for lifetime generic types:
+#[derive(Deserialize)]
+pub struct Foo<'a> {
+    pub field: &'a str,
+}
+
+impl Foo<'_> {
+    pub fn baz(data: &[u8]) -> Foo<'_> {
+        bsatn::from_slice(data).unwrap()
+    }
+}
+// ─────────────────────────────────────────────────────────────────────────────
+// REDUCERS
+// ─────────────────────────────────────────────────────────────────────────────
+
 #[spacetimedb::reducer(init)]
 pub fn init(ctx: &ReducerContext) {
     ctx.db.repeating_test_arg().insert(RepeatingTestArg {
@@ -135,6 +196,31 @@ pub fn repeating_test(ctx: &ReducerContext, arg: RepeatingTestArg) {
         .duration_since(arg.prev_time)
         .expect("arg.prev_time is later than ctx.timestamp... huh?");
     log::trace!("Timestamp: {:?}, Delta time: {:?}", ctx.timestamp, delta_time);
+}
+
+#[spacetimedb::reducer]
+pub fn add(ctx: &ReducerContext, name: String, age: u8) {
+    ctx.db.person().insert(Person { id: 0, name, age });
+}
+
+#[spacetimedb::reducer]
+pub fn say_hello(ctx: &ReducerContext) {
+    for person in ctx.db.person().iter() {
+        log::info!("Hello, {}!", person.name);
+    }
+    log::info!("Hello, World!");
+}
+
+#[spacetimedb::reducer]
+pub fn list_over_age(ctx: &ReducerContext, age: u8) {
+    for person in ctx.db.person().age().filter(age..) {
+        log::info!("{} has age {} >= {}", person.name, person.age, age);
+    }
+}
+
+#[spacetimedb::reducer]
+fn log_module_identity(ctx: &ReducerContext) {
+    log::info!("Module identity: {}", ctx.identity());
 }
 
 #[spacetimedb::reducer]
@@ -246,27 +332,14 @@ pub fn delete_players_by_name(ctx: &ReducerContext, name: String) -> Result<(), 
 #[spacetimedb::reducer(client_connected)]
 fn client_connected(_ctx: &ReducerContext) {}
 
-// We can derive `Deserialize` for lifetime generic types:
-
-#[derive(Deserialize)]
-pub struct Foo<'a> {
-    pub field: &'a str,
-}
-
-impl Foo<'_> {
-    pub fn baz(data: &[u8]) -> Foo<'_> {
-        bsatn::from_slice(data).unwrap()
-    }
-}
-
 #[spacetimedb::reducer]
 pub fn add_private(ctx: &ReducerContext, name: String) {
-    ctx.db.private().insert(Private { name });
+    ctx.db.private_table().insert(PrivateTable { name });
 }
 
 #[spacetimedb::reducer]
 pub fn query_private(ctx: &ReducerContext) {
-    for person in ctx.db.private().iter() {
+    for person in ctx.db.private_table().iter() {
         log::info!("Private, {}!", person.name);
     }
     log::info!("Private, World!");
@@ -358,23 +431,4 @@ fn assert_caller_identity_is_module_identity(ctx: &ReducerContext) {
     } else {
         log::info!("Called by the owner {owner}");
     }
-}
-
-/// These two tables defined with the same row type
-/// verify that we can define multiple tables with the same type.
-///
-/// In the past, we've had issues where each `#[table]` attribute
-/// would try to emit its own `impl` block for `SpacetimeType` (and some other traits),
-/// resulting in duplicate/conflicting trait definitions.
-/// See e.g. [SpacetimeDB issue #2097](https://github.com/clockworklabs/SpacetimeDB/issues/2097).
-#[spacetimedb::table(public, name = player)]
-#[spacetimedb::table(public, name = logged_out_player)]
-pub struct Player {
-    #[primary_key]
-    identity: Identity,
-    #[auto_inc]
-    #[unique]
-    player_id: u64,
-    #[unique] // fields called "name" previously caused name collisions in generated table handles
-    name: String,
 }

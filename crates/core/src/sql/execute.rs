@@ -282,7 +282,9 @@ pub(crate) mod tests {
     use super::*;
     use crate::db::datastore::system_tables::{StTableFields, ST_TABLE_ID, ST_TABLE_NAME};
     use crate::db::relational_db::tests_utils::{insert, TestDB};
+    use crate::subscription::module_subscription_manager::SubscriptionManager;
     use crate::vm::tests::create_table_with_rows;
+    use parking_lot::RwLock;
     use pretty_assertions::assert_eq;
     use spacetimedb_lib::db::auth::{StAccess, StTableType};
     use spacetimedb_lib::error::{ResultTest, TestError};
@@ -298,13 +300,21 @@ pub(crate) mod tests {
         sql_text: &str,
         q: Vec<CrudExpr>,
     ) -> Result<Vec<MemTable>, DBError> {
-        let subs = ModuleSubscriptions::new(Arc::new(db.clone()), Identity::ZERO);
+        let subs = ModuleSubscriptions::new(
+            Arc::new(db.clone()),
+            Arc::new(RwLock::new(SubscriptionManager::default())),
+            Identity::ZERO,
+        );
         execute_sql(db, sql_text, q, AuthCtx::for_testing(), Some(&subs))
     }
 
     /// Short-cut for simplify test execution
     pub(crate) fn run_for_testing(db: &RelationalDB, sql_text: &str) -> Result<Vec<ProductValue>, DBError> {
-        let subs = ModuleSubscriptions::new(Arc::new(db.clone()), Identity::ZERO);
+        let subs = ModuleSubscriptions::new(
+            Arc::new(db.clone()),
+            Arc::new(RwLock::new(SubscriptionManager::default())),
+            Identity::ZERO,
+        );
         run(db, sql_text, AuthCtx::for_testing(), Some(&subs), &mut vec![])
     }
 
