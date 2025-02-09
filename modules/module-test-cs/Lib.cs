@@ -251,7 +251,7 @@ static partial class Module
     public static void test(ReducerContext ctx, TestAlias arg, TestB arg2, TestC arg3, TestF arg4)
     {
         Log.Info("BEGIN");
-        Log.Info($"sender: {ctx.CallerIdentity}");
+        Log.Info($"sender: {ctx.Sender}");
         Log.Info($"timestamp: {ctx.Timestamp}");
         Log.Info($"bar: {arg2.foo}");
 
@@ -436,7 +436,7 @@ static partial class Module
     [Reducer]
     public static void assert_caller_identity_is_module_identity(ReducerContext ctx)
     {
-        var caller = ctx.CallerIdentity;
+        var caller = ctx.Sender;
         var owner = ctx.Identity;
         if (!caller.Equals(owner))
         {
