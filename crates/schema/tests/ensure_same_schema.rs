@@ -43,7 +43,7 @@ macro_rules! declare_tests {
 }
 
 declare_tests! {
-    spacetimedb_quickstart => "spacetimedb-quickstart",
+    module_test => "module-test",
     sdk_test_connect_disconnect => "sdk-test-connect-disconnect",
     sdk_test => "sdk-test",
     benchmarks => "benchmarks",

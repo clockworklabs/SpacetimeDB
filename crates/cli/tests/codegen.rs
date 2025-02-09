@@ -7,7 +7,7 @@ use std::sync::OnceLock;
 fn compiled_module() -> &'static Path {
     static COMPILED_MODULE: OnceLock<CompiledModule> = OnceLock::new();
     COMPILED_MODULE
-        .get_or_init(|| CompiledModule::compile("rust-wasm-test", CompilationMode::Debug))
+        .get_or_init(|| CompiledModule::compile("module-test", CompilationMode::Debug))
         .path()
 }
 

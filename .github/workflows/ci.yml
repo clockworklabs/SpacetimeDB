@@ -189,8 +189,8 @@ jobs:
       - uses: dsherret/rust-toolchain-file@v1
       - run: echo ::add-matcher::.github/workflows/rust_matcher.json
 
-      - name: Build rust-wasm-test
-        run: cargo run -p spacetimedb-cli -- build --project-path modules/rust-wasm-test
+      - name: Build module-test
+        run: cargo run -p spacetimedb-cli -- build --project-path modules/module-test
 
       - name: Run bindgen tests
         run: cargo test -p spacetimedb-cli

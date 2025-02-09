@@ -3028,6 +3028,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "module-test"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "log",
+ "spacetimedb",
+]
+
+[[package]]
 name = "native-tls"
 version = "0.2.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4225,15 +4234,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rust-wasm-test-module"
-version = "0.0.0"
-dependencies = [
- "anyhow",
- "log",
- "spacetimedb",
-]
-
-[[package]]
 name = "rust_decimal"
 version = "1.36.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5310,14 +5310,6 @@ dependencies = [
  "spacetimedb-primitives",
  "spacetimedb-sql-parser",
  "spacetimedb-table",
-]
-
-[[package]]
-name = "spacetimedb-quickstart-module"
-version = "0.1.0"
-dependencies = [
- "rand 0.8.5",
- "spacetimedb",
 ]
 
 [[package]]
