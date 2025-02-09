@@ -22,7 +22,7 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "sdk-test-connect-disconnect
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "sdk-test-cs", "..\..\modules\sdk-test-cs\sdk-test-cs.csproj", "{40F1C615-EDD9-463F-A012-B232F6710FA5}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "spacetimedb-quickstart-server-cs", "..\..\modules\spacetimedb-quickstart-cs\spacetimedb-quickstart-server-cs.csproj", "{FDACD960-168E-44F9-B036-2E29EA391BE7}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "module-test-cs", "..\..\modules\module-test-cs\module-test-cs.csproj", "{FDACD960-168E-44F9-B036-2E29EA391BE7}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "sdk-tests", "sdk-tests", "{D39E8203-6C3C-4C4B-9C7D-7911AA19D7CC}"
 EndProject
