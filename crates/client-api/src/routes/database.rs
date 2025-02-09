@@ -6,9 +6,9 @@ use crate::routes::subscribe::generate_random_connection_id;
 use crate::util::{ByteStringBody, NameOrIdentity};
 use crate::{log_and_500, ControlStateDelegate, DatabaseDef, NodeDelegate};
 use axum::body::{Body, Bytes};
-use axum::extract::{DefaultBodyLimit, Path, Query, State};
-use axum::handler::Handler;
+use axum::extract::{Path, Query, State};
 use axum::response::{ErrorResponse, IntoResponse};
+use axum::routing::MethodRouter;
 use axum::Extension;
 use axum_extra::TypedHeader;
 use futures::StreamExt;
@@ -594,52 +594,78 @@ pub async fn add_name<S: ControlStateDelegate>(
     Ok((code, axum::Json(response)))
 }
 
-pub fn routes<S>(ctx: S, proxy: impl ControlProxy<S>) -> axum::Router<S>
+/// This struct allows the edition to customize `/database` routes more meticulously.
+pub struct DatabaseRoutes<S> {
+    /// POST /database
+    pub root_post: MethodRouter<S>,
+    /// PUT: /database/:name_or_identity
+    pub db_put: MethodRouter<S>,
+    /// GET: /database/:name_or_identity
+    pub db_get: MethodRouter<S>,
+    /// DELETE: /database/:name_or_identity
+    pub db_delete: MethodRouter<S>,
+    /// GET: /database/:name_or_identity/names
+    pub names_get: MethodRouter<S>,
+    /// POST: /database/:name_or_identity/names
+    pub names_post: MethodRouter<S>,
+    /// GET: /database/:name_or_identity/identity
+    pub identity_get: MethodRouter<S>,
+    /// GET: /database/:name_or_identity/subscribe
+    pub subscribe_get: MethodRouter<S>,
+    /// POST: /database/:name_or_identity/call/:reducer
+    pub call_reducer_post: MethodRouter<S>,
+    /// GET: /database/:name_or_identity/schema
+    pub schema_get: MethodRouter<S>,
+    /// GET: /database/:name_or_identity/logs
+    pub logs_get: MethodRouter<S>,
+    /// POST: /database/:name_or_identity/sql
+    pub sql_post: MethodRouter<S>,
+}
+
+impl<S> Default for DatabaseRoutes<S>
 where
     S: NodeDelegate + ControlStateDelegate + Clone + 'static,
 {
-    use axum::routing::{delete, get, post, put};
-    let publish = publish::<S>.layer(DefaultBodyLimit::disable());
-    let db_router = axum::Router::<S>::new()
-        .route("/", put(publish.clone()))
-        .route("/", get(db_info::<S>))
-        .route("/", delete(delete_database::<S>))
-        .route("/names", get(get_name::<S>))
-        .route("/names", post(add_name::<S>))
-        .route("/identity", get(get_identity::<S>))
-        .route("/subscribe", get(handle_websocket::<S>.layer(proxy.get())))
-        .route("/call/:reducer", post(call::<S>.layer(proxy.get())))
-        .route("/schema", get(schema::<S>.layer(proxy.get())))
-        .route("/logs", get(logs::<S>.layer(proxy.get())))
-        .route("/sql", post(sql::<S>.layer(proxy.get())));
-
-    axum::Router::new()
-        .route("/", post(publish))
-        .nest("/:name_or_identity", db_router)
-        .route_layer(axum::middleware::from_fn_with_state(ctx, anon_auth_middleware::<S>))
+    fn default() -> Self {
+        use axum::routing::{delete, get, post, put};
+        Self {
+            root_post: post(publish::<S>),
+            db_put: put(publish::<S>),
+            db_get: get(db_info::<S>),
+            db_delete: delete(delete_database::<S>),
+            names_get: get(get_name::<S>),
+            names_post: post(add_name::<S>),
+            identity_get: get(get_identity::<S>),
+            subscribe_get: get(handle_websocket::<S>),
+            call_reducer_post: post(call::<S>),
+            schema_get: get(schema::<S>),
+            logs_get: get(logs::<S>),
+            sql_post: post(sql::<S>),
+        }
+    }
 }
 
-pub trait ControlProxy<S: Clone + Send + 'static> {
-    type Layer<H: Handler<T, S>, T: 'static>: tower_layer::Layer<
-            axum::handler::HandlerService<H, T, S>,
-            Service: Clone
-                         + Send
-                         + 'static
-                         + tower_service::Service<
-                axum::extract::Request,
-                Response: IntoResponse,
-                Future: Send,
-                Error = std::convert::Infallible,
-            >,
-        > + Clone
-        + Send
-        + 'static;
-    fn get<H: Handler<T, S>, T: 'static>(&self) -> Self::Layer<H, T>;
-}
+impl<S> DatabaseRoutes<S>
+where
+    S: NodeDelegate + ControlStateDelegate + Clone + 'static,
+{
+    pub fn into_router(self, ctx: S) -> axum::Router<S> {
+        let db_router = axum::Router::<S>::new()
+            .route("/", self.db_put)
+            .route("/", self.db_get)
+            .route("/", self.db_delete)
+            .route("/names", self.names_get)
+            .route("/names", self.names_post)
+            .route("/identity", self.identity_get)
+            .route("/subscribe", self.subscribe_get)
+            .route("/call/:reducer", self.call_reducer_post)
+            .route("/schema", self.schema_get)
+            .route("/logs", self.logs_get)
+            .route("/sql", self.sql_post);
 
-impl<S: Clone + Send + Sync + 'static> ControlProxy<S> for () {
-    type Layer<H: Handler<T, S>, T: 'static> = tower_layer::Identity;
-    fn get<H: Handler<T, S>, T: 'static>(&self) -> Self::Layer<H, T> {
-        tower_layer::Identity::new()
+        axum::Router::new()
+            .route("/", self.root_post)
+            .nest("/:name_or_identity", db_router)
+            .route_layer(axum::middleware::from_fn_with_state(ctx, anon_auth_middleware::<S>))
     }
 }

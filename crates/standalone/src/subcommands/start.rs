@@ -2,11 +2,13 @@ use std::sync::Arc;
 
 use crate::StandaloneEnv;
 use anyhow::Context;
+use axum::extract::DefaultBodyLimit;
 use clap::ArgAction::SetTrue;
 use clap::{Arg, ArgMatches};
 use spacetimedb::config::{CertificateAuthority, ConfigFile};
 use spacetimedb::db::{Config, Storage};
 use spacetimedb::startup::{self, TracingOptions};
+use spacetimedb_client_api::routes::database::DatabaseRoutes;
 use spacetimedb_client_api::routes::router;
 use spacetimedb_paths::cli::{PrivKeyPath, PubKeyPath};
 use spacetimedb_paths::server::ServerDataDir;
@@ -132,7 +134,11 @@ pub async fn exec(args: &ArgMatches) -> anyhow::Result<()> {
     let data_dir = Arc::new(data_dir.clone());
     let ctx = StandaloneEnv::init(db_config, &certs, data_dir).await?;
 
-    let service = router(ctx, ());
+    let mut db_routes = DatabaseRoutes::default();
+    db_routes.root_post = db_routes.root_post.layer(DefaultBodyLimit::disable());
+    db_routes.db_put = db_routes.db_put.layer(DefaultBodyLimit::disable());
+    let extra = axum::Router::new().nest("/health", spacetimedb_client_api::routes::health::router());
+    let service = router(&ctx, db_routes, extra).with_state(ctx);
 
     let tcp = TcpListener::bind(listen_addr).await?;
     socket2::SockRef::from(&tcp).set_nodelay(true)?;

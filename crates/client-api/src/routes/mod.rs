@@ -1,3 +1,4 @@
+use database::DatabaseRoutes;
 use http::header;
 use tower_http::cors;
 
@@ -17,25 +18,25 @@ pub mod subscribe;
 pub async fn ping(_auth: crate::auth::SpacetimeAuthHeader) {}
 
 #[allow(clippy::let_and_return)]
-pub fn router<S>(ctx: S, proxy: impl database::ControlProxy<S>) -> axum::Router<()>
+pub fn router<S>(ctx: &S, database_routes: DatabaseRoutes<S>, extra: axum::Router<S>) -> axum::Router<S>
 where
     S: NodeDelegate + ControlStateDelegate + Clone + 'static,
 {
     use axum::routing::get;
     let router = axum::Router::new()
-        .nest("/database", database::routes(ctx.clone(), proxy))
+        .nest("/database", database_routes.into_router(ctx.clone()))
         .nest("/domain", domain::router(ctx.clone()))
         .nest("/identity", identity::router())
         .nest("/energy", energy::router())
         .nest("/prometheus", prometheus::router())
         .nest("/metrics", metrics::router())
-        .route("/ping", get(ping));
+        .route("/ping", get(ping))
+        .merge(extra);
 
     let cors = cors::CorsLayer::new()
         .allow_headers([header::AUTHORIZATION, header::ACCEPT, header::CONTENT_TYPE])
         .allow_methods(cors::Any)
         .allow_origin(cors::Any);
 
-    // router.layer(cors).with_state(ctx)
-    axum::Router::new().nest("/v1", router.layer(cors)).with_state(ctx)
+    axum::Router::new().nest("/v1", router.layer(cors))
 }
