@@ -507,7 +507,7 @@ mod tests {
         ModuleEvent {
             timestamp: Timestamp::now(),
             caller_identity: Identity::ZERO,
-            caller_address: None,
+            caller_connection_id: None,
             function_call: ModuleFunctionCall::default(),
             status: EventStatus::Committed(DatabaseUpdate::default()),
             energy_quanta_used: EnergyQuanta { quanta: 0 },
