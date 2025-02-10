@@ -5,12 +5,12 @@
 /* tslint:disable */
 // @ts-nocheck
 import {
-  Address,
   AlgebraicType,
   AlgebraicValue,
   BinaryReader,
   BinaryWriter,
   CallReducerFlags,
+  ConnectionId,
   DBConnectionBuilder,
   DBConnectionImpl,
   DBContext,
@@ -38,7 +38,7 @@ export type TransactionUpdate = {
   status: __UpdateStatus;
   timestamp: Timestamp;
   callerIdentity: Identity;
-  callerAddress: Address;
+  callerConnectionId: ConnectionId;
   reducerCall: __ReducerCallInfo;
   energyQuantaUsed: __EnergyQuanta;
   totalHostExecutionDuration: TimeDuration;
@@ -64,8 +64,8 @@ export namespace TransactionUpdate {
         AlgebraicType.createIdentityType()
       ),
       new ProductTypeElement(
-        'callerAddress',
-        AlgebraicType.createAddressType()
+        'callerConnectionId',
+        AlgebraicType.createConnectionIdType()
       ),
       new ProductTypeElement(
         'reducerCall',

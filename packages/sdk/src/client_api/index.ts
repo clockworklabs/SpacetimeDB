@@ -5,12 +5,12 @@
 /* tslint:disable */
 // @ts-nocheck
 import {
-  Address,
   AlgebraicType,
   AlgebraicValue,
   BinaryReader,
   BinaryWriter,
   CallReducerFlags,
+  ConnectionId,
   DBConnectionBuilder,
   DBConnectionImpl,
   DBContext,
@@ -158,9 +158,6 @@ export class DBConnection extends DBConnectionImpl<
       ErrorContext,
       SubscriptionEventContext
     >(REMOTE_MODULE, (imp: DBConnectionImpl) => imp as DBConnection);
-  };
-  subscriptionBuilder = (): SubscriptionBuilder => {
-    return new SubscriptionBuilder(this);
   };
   subscriptionBuilder = (): SubscriptionBuilder => {
     return new SubscriptionBuilder(this);

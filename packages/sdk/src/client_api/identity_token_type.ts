@@ -5,12 +5,12 @@
 /* tslint:disable */
 // @ts-nocheck
 import {
-  Address,
   AlgebraicType,
   AlgebraicValue,
   BinaryReader,
   BinaryWriter,
   CallReducerFlags,
+  ConnectionId,
   DBConnectionBuilder,
   DBConnectionImpl,
   DBContext,
@@ -33,7 +33,7 @@ import {
 export type IdentityToken = {
   identity: Identity;
   token: string;
-  address: Address;
+  connectionId: ConnectionId;
 };
 
 /**
@@ -48,7 +48,10 @@ export namespace IdentityToken {
     return AlgebraicType.createProductType([
       new ProductTypeElement('identity', AlgebraicType.createIdentityType()),
       new ProductTypeElement('token', AlgebraicType.createStringType()),
-      new ProductTypeElement('address', AlgebraicType.createAddressType()),
+      new ProductTypeElement(
+        'connectionId',
+        AlgebraicType.createConnectionIdType()
+      ),
     ]);
   }
 

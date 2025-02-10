@@ -1,4 +1,4 @@
-import { Address } from './address';
+import { ConnectionId } from './connection_id';
 import { AlgebraicType, ProductType, SumType } from './algebraic_type';
 import BinaryReader from './binary_reader';
 import { Identity } from './identity';
@@ -312,8 +312,8 @@ export class AlgebraicValue {
     return new Identity(this.asField(0).asBigInt());
   }
 
-  asAddress(): Address {
-    return new Address(this.asField(0).asBigInt());
+  asConnectionId(): ConnectionId {
+    return new ConnectionId(this.asField(0).asBigInt());
   }
 
   asScheduleAt(): ScheduleAt {

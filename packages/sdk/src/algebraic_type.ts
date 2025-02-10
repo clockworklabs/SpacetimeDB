@@ -1,4 +1,4 @@
-import { Address } from './address';
+import { ConnectionId } from './connection_id';
 import type BinaryReader from './binary_reader';
 import type BinaryWriter from './binary_writer';
 import { Identity } from './identity';
@@ -169,8 +169,8 @@ export class ProductType {
         return new Identity(reader.readU256());
       }
 
-      if (this.elements[0].name === '__address__') {
-        return new Address(reader.readU128());
+      if (this.elements[0].name === '__connection_id__') {
+        return new ConnectionId(reader.readU128());
       }
     }
 
@@ -347,9 +347,9 @@ export class AlgebraicType {
       new ProductTypeElement('__identity__', this.createU256Type()),
     ]);
   }
-  static createAddressType(): AlgebraicType {
+  static createConnectionIdType(): AlgebraicType {
     return this.createProductType([
-      new ProductTypeElement('__address__', this.createU128Type()),
+      new ProductTypeElement('__connection_id__', this.createU128Type()),
     ]);
   }
   static createScheduleAtType(): AlgebraicType {
@@ -415,8 +415,8 @@ export class AlgebraicType {
     return this.#isBytesNewtype('__identity__');
   }
 
-  isAddress(): boolean {
-    return this.#isBytesNewtype('__address__');
+  isConnectionId(): boolean {
+    return this.#isBytesNewtype('__connection_id__');
   }
 
   isScheduleAt(): boolean {
