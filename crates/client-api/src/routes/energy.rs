@@ -124,11 +124,10 @@ where
     S: NodeDelegate + ControlStateDelegate + Clone + 'static,
 {
     use axum::routing::get;
-    // TODO: rework this. probably no path param.
     axum::Router::new().route(
         "/:identity",
         get(get_energy_balance::<S>)
-            .post(set_energy_balance::<S>)
-            .put(add_energy::<S>),
+            .put(set_energy_balance::<S>)
+            .post(add_energy::<S>),
     )
 }

@@ -143,7 +143,7 @@ where
     axum::Router::new()
         .route("/", post(create_identity::<S>))
         .route("/public-key", get(get_public_key::<S>))
-        .route("/websocket_token", post(create_websocket_token::<S>))
+        .route("/websocket-token", post(create_websocket_token::<S>))
         .route("/:identity/verify", get(validate_token))
         .route("/:identity/databases", get(get_databases::<S>))
 }
