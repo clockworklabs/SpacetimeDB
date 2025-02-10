@@ -121,8 +121,8 @@ export class DBConnectionBuilder<DBConnection> {
     connection.identity = this.#identity;
     connection.token = this.#token;
 
-    let clientAddress = connection.clientAddress.toHexString();
-    url.searchParams.set('client_address', clientAddress);
+    let connectionId = connection.connectionId.toHexString();
+    url.searchParams.set('connection_id', connectionId);
 
     connection.wsPromise = this.#createWSFn({
       url,

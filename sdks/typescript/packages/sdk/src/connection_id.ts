@@ -3,15 +3,15 @@ import { hexStringToU128, u128ToHexString, u128ToUint8Array } from './utils';
 /**
  * A unique identifier for a client connected to a database.
  */
-export class Address {
+export class ConnectionId {
   data: bigint;
 
-  get __address__(): bigint {
+  get __connection_id__(): bigint {
     return this.data;
   }
 
   /**
-   * Creates a new `Address`.
+   * Creates a new `ConnectionId`.
    */
   constructor(data: bigint) {
     this.data = data;
@@ -21,7 +21,7 @@ export class Address {
     return this.data === BigInt(0);
   }
 
-  static nullIfZero(addr: Address): Address | null {
+  static nullIfZero(addr: ConnectionId): ConnectionId | null {
     if (addr.isZero()) {
       return null;
     } else {
@@ -29,7 +29,7 @@ export class Address {
     }
   }
 
-  static random(): Address {
+  static random(): ConnectionId {
     function randomU8(): number {
       return Math.floor(Math.random() * 0xff);
     }
@@ -37,39 +37,39 @@ export class Address {
     for (let i = 0; i < 16; i++) {
       result = (result << BigInt(8)) | BigInt(randomU8());
     }
-    return new Address(result);
+    return new ConnectionId(result);
   }
 
   /**
-   * Compare two addresses for equality.
+   * Compare two connection IDs for equality.
    */
-  isEqual(other: Address): boolean {
+  isEqual(other: ConnectionId): boolean {
     return this.data == other.data;
   }
 
   /**
-   * Print the address as a hexadecimal string.
+   * Print the connection ID as a hexadecimal string.
    */
   toHexString(): string {
     return u128ToHexString(this.data);
   }
 
   /**
-   * Convert the address to a Uint8Array.
+   * Convert the connection ID to a Uint8Array.
    */
   toUint8Array(): Uint8Array {
     return u128ToUint8Array(this.data);
   }
 
   /**
-   * Parse an Address from a hexadecimal string.
+   * Parse a connection ID from a hexadecimal string.
    */
-  static fromString(str: string): Address {
-    return new Address(hexStringToU128(str));
+  static fromString(str: string): ConnectionId {
+    return new ConnectionId(hexStringToU128(str));
   }
 
-  static fromStringOrNull(str: string): Address | null {
-    let addr = Address.fromString(str);
+  static fromStringOrNull(str: string): ConnectionId | null {
+    let addr = ConnectionId.fromString(str);
     if (addr.isZero()) {
       return null;
     } else {

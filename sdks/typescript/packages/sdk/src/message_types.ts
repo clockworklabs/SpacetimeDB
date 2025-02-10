@@ -1,4 +1,4 @@
-import { Address } from './address.ts';
+import { ConnectionId } from './connection_id';
 import type { UpdateStatus } from './client_api/index.ts';
 import { Identity } from './identity.ts';
 import type { TableUpdate } from './table_cache.ts';
@@ -13,7 +13,7 @@ export type TransactionUpdateMessage = {
   tag: 'TransactionUpdate';
   tableUpdates: TableUpdate[];
   identity: Identity;
-  address: Address | null;
+  connectionId: ConnectionId | null;
   originalReducerName: string;
   reducerName: string;
   args: Uint8Array;
@@ -32,7 +32,7 @@ export type IdentityTokenMessage = {
   tag: 'IdentityToken';
   identity: Identity;
   token: string;
-  address: Address;
+  connectionId: ConnectionId;
 };
 
 export type Message =

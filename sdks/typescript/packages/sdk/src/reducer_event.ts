@@ -1,4 +1,4 @@
-import { Address } from './address.ts';
+import { ConnectionId } from './connection_id';
 import { Timestamp } from './timestamp.ts';
 import type { UpdateStatus } from './client_api/index.ts';
 import { Identity } from './identity.ts';
@@ -26,9 +26,11 @@ export type ReducerEvent<Reducer extends ReducerInfoType> = {
   callerIdentity: Identity;
 
   /**
-   * The address of the caller.
+   * The connection ID of the caller.
+   *
+   * May be `null`, e.g. for scheduled reducers.
    */
-  callerAddress?: Address;
+  callerConnectionId?: ConnectionId;
 
   /**
    * The amount of energy consumed by the reducer run, in eV.

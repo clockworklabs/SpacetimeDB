@@ -2,16 +2,16 @@
  * A point in time, represented as a number of microseconds since the Unix epoch.
  */
 export class Timestamp {
-  __timestamp_micros_since_unix_epoch: bigint;
+  __timestamp_micros_since_unix_epoch__: bigint;
 
   private static MICROS_PER_MILLIS: bigint = 1000n;
 
   get microsSinceUnixEpoch(): bigint {
-    return this.__timestamp_micros_since_unix_epoch;
+    return this.__timestamp_micros_since_unix_epoch__;
   }
 
   constructor(micros: bigint) {
-    this.__timestamp_micros_since_unix_epoch = micros;
+    this.__timestamp_micros_since_unix_epoch__ = micros;
   }
 
   /**
@@ -42,7 +42,7 @@ export class Timestamp {
    * and throws `RangeError` if the `Timestamp` is outside the range representable as a `Date`.
    */
   toDate(): Date {
-    const micros = this.__timestamp_micros_since_unix_epoch;
+    const micros = this.__timestamp_micros_since_unix_epoch__;
     const millis = micros / Timestamp.MICROS_PER_MILLIS;
     if (
       millis > BigInt(Number.MAX_SAFE_INTEGER) ||
