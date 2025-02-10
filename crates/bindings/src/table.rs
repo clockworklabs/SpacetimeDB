@@ -10,7 +10,7 @@ pub use spacetimedb_lib::db::raw_def::v9::TableAccess;
 use spacetimedb_lib::Hash;
 pub use spacetimedb_primitives::{ColId, IndexId};
 
-use crate::{bsatn, sys, Address, DeserializeOwned, Identity, IterBuf, Serialize, SpacetimeType, TableId};
+use crate::{bsatn, sys, ConnectionId, DeserializeOwned, Identity, IterBuf, Serialize, SpacetimeType, TableId};
 
 /// Implemented for every `TableHandle` struct generated in the client `module_bindings`
 /// and the module macroexpansion.
@@ -466,7 +466,7 @@ impl_filterable_value! {
     String,
     &str => String,
     Identity: Copy,
-    Address: Copy,
+    ConnectionId: Copy,
     Hash: Copy,
 
     // Some day we will likely also want to support `Vec<u8>` and `[u8]`,

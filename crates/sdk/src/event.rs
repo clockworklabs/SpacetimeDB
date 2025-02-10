@@ -12,8 +12,7 @@
 
 use crate::spacetime_module::{DbUpdate as _, SpacetimeModule};
 use spacetimedb_client_api_messages::websocket as ws;
-use spacetimedb_lib::{Address, Identity};
-use std::time::SystemTime;
+use spacetimedb_lib::{ConnectionId, Identity, Timestamp};
 
 #[non_exhaustive]
 #[derive(Debug, Clone)]
@@ -62,7 +61,7 @@ pub enum Event<R> {
 /// A state change due to a reducer, which may or may not have committed successfully.
 pub struct ReducerEvent<R> {
     /// The time at which the reducer was invoked.
-    pub timestamp: SystemTime,
+    pub timestamp: Timestamp,
 
     /// Whether the reducer committed, was aborted due to insufficient energy, or failed with an error message.
     pub status: Status,
@@ -70,9 +69,9 @@ pub struct ReducerEvent<R> {
     /// The `Identity` of the SpacetimeDB actor which invoked the reducer.
     pub caller_identity: Identity,
 
-    /// The `Address` of the SpacetimeDB actor which invoked the reducer,
-    /// or `None` if the actor did not supply an address.
-    pub caller_address: Option<Address>,
+    /// The [`ConnectionId`] of the SpacetimeDB actor which invoked the reducer,
+    /// or `None` for scheduled reducers.
+    pub caller_connection_id: Option<ConnectionId>,
 
     /// The amount of energy consumed by the reducer run, in eV.
     /// (Not literal eV, but our SpacetimeDB energy unit eV.)

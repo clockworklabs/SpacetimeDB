@@ -70,12 +70,12 @@ error[E0277]: the reducer argument `Test` does not implement `SpacetimeType`
   = help: the following other types implement trait `SpacetimeType`:
             &T
             ()
-            Address
-            AddressForUrl
             AlgebraicTypeRef
             Arc<T>
             ArrayType
             Box<T>
+            ColId
+            ColumnAttribute
           and $N others
   = note: required for `Test` to implement `ReducerArg`
 

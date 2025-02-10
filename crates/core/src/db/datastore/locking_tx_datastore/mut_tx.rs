@@ -1252,7 +1252,7 @@ impl MutTxId {
     /// This method is called with `GENERATE` false when updating the `st_sequence` system table.
     ///
     /// Requires:
-    /// - `table_id` must refer to a valid table for the database at `database_address`.
+    /// - `table_id` must refer to a valid table for the database at `database_identity`.
     /// - `row` must be a valid row for the table at `table_id`.
     ///
     /// Returns:
@@ -1439,7 +1439,7 @@ impl MutTxId {
     /// The old row is found by projecting `row` to the columns of `index_id`.
     ///
     /// Requires:
-    /// - `table_id` must refer to a valid table for the database at `database_address`.
+    /// - `table_id` must refer to a valid table for the database at `database_identity`.
     /// - `index_id` must refer to a valid index in the table.
     /// - `row` must be a valid row for the table at `table_id`.
     ///

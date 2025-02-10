@@ -16,11 +16,11 @@ use crate::subscription::tx::DeltaTx;
 use crate::util::slow::SlowQueryLogger;
 use crate::vm::{check_row_limit, DbProgram, TxMode};
 use anyhow::anyhow;
-use spacetimedb_client_api_messages::timestamp::Timestamp;
 use spacetimedb_expr::statement::Statement;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::relation::FieldName;
+use spacetimedb_lib::Timestamp;
 use spacetimedb_lib::{AlgebraicType, ProductType, ProductValue};
 use spacetimedb_query::{compile_sql_stmt, execute_dml_stmt, execute_select_stmt};
 use spacetimedb_vm::eval::run_ast;
@@ -129,7 +129,7 @@ pub fn execute_sql(
             let event = ModuleEvent {
                 timestamp: Timestamp::now(),
                 caller_identity: auth.caller,
-                caller_address: None,
+                caller_connection_id: None,
                 function_call: ModuleFunctionCall {
                     reducer: String::new(),
                     reducer_id: u32::MAX.into(),
@@ -242,7 +242,7 @@ pub fn run(
                     ModuleEvent {
                         timestamp: Timestamp::now(),
                         caller_identity: auth.caller,
-                        caller_address: None,
+                        caller_connection_id: None,
                         function_call: ModuleFunctionCall {
                             reducer: String::new(),
                             reducer_id: u32::MAX.into(),
@@ -282,7 +282,9 @@ pub(crate) mod tests {
     use super::*;
     use crate::db::datastore::system_tables::{StTableFields, ST_TABLE_ID, ST_TABLE_NAME};
     use crate::db::relational_db::tests_utils::{insert, TestDB};
+    use crate::subscription::module_subscription_manager::SubscriptionManager;
     use crate::vm::tests::create_table_with_rows;
+    use parking_lot::RwLock;
     use pretty_assertions::assert_eq;
     use spacetimedb_lib::db::auth::{StAccess, StTableType};
     use spacetimedb_lib::error::{ResultTest, TestError};
@@ -298,13 +300,21 @@ pub(crate) mod tests {
         sql_text: &str,
         q: Vec<CrudExpr>,
     ) -> Result<Vec<MemTable>, DBError> {
-        let subs = ModuleSubscriptions::new(Arc::new(db.clone()), Identity::ZERO);
+        let subs = ModuleSubscriptions::new(
+            Arc::new(db.clone()),
+            Arc::new(RwLock::new(SubscriptionManager::default())),
+            Identity::ZERO,
+        );
         execute_sql(db, sql_text, q, AuthCtx::for_testing(), Some(&subs))
     }
 
     /// Short-cut for simplify test execution
     pub(crate) fn run_for_testing(db: &RelationalDB, sql_text: &str) -> Result<Vec<ProductValue>, DBError> {
-        let subs = ModuleSubscriptions::new(Arc::new(db.clone()), Identity::ZERO);
+        let subs = ModuleSubscriptions::new(
+            Arc::new(db.clone()),
+            Arc::new(RwLock::new(SubscriptionManager::default())),
+            Identity::ZERO,
+        );
         run(db, sql_text, AuthCtx::for_testing(), Some(&subs), &mut vec![])
     }
 

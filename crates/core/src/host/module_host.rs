@@ -26,13 +26,13 @@ use futures::{Future, FutureExt};
 use indexmap::IndexSet;
 use itertools::Itertools;
 use smallvec::SmallVec;
-use spacetimedb_client_api_messages::timestamp::Timestamp;
 use spacetimedb_client_api_messages::websocket::{ByteListLen, Compression, OneOffTable, QueryUpdate, WebsocketFormat};
 use spacetimedb_data_structures::error_stream::ErrorStream;
 use spacetimedb_data_structures::map::{HashCollectionExt as _, IntMap};
 use spacetimedb_lib::db::raw_def::v9::Lifecycle;
 use spacetimedb_lib::identity::{AuthCtx, RequestId};
-use spacetimedb_lib::Address;
+use spacetimedb_lib::ConnectionId;
+use spacetimedb_lib::Timestamp;
 use spacetimedb_primitives::{col_list, TableId};
 use spacetimedb_query::compile_subscription;
 use spacetimedb_sats::{algebraic_value, ProductValue};
@@ -167,7 +167,7 @@ pub struct ModuleFunctionCall {
 pub struct ModuleEvent {
     pub timestamp: Timestamp,
     pub caller_identity: Identity,
-    pub caller_address: Option<Address>,
+    pub caller_connection_id: Option<ConnectionId>,
     pub function_call: ModuleFunctionCall,
     pub status: EventStatus,
     pub energy_quanta_used: EnergyQuanta,
@@ -275,7 +275,7 @@ pub trait ModuleInstance: Send + 'static {
 pub struct CallReducerParams {
     pub timestamp: Timestamp,
     pub caller_identity: Identity,
-    pub caller_address: Address,
+    pub caller_connection_id: ConnectionId,
     pub client: Option<Arc<ClientConnectionSender>>,
     pub request_id: Option<RequestId>,
     pub timer: Option<Instant>,
@@ -522,7 +522,7 @@ impl ModuleHost {
         .await;
         // ignore NoSuchModule; if the module's already closed, that's fine
         let _ = self
-            .call_identity_connected_disconnected(client_id.identity, client_id.address, false)
+            .call_identity_connected_disconnected(client_id.identity, client_id.connection_id, false)
             .await;
     }
 
@@ -534,7 +534,7 @@ impl ModuleHost {
     pub async fn call_identity_connected_disconnected(
         &self,
         caller_identity: Identity,
-        caller_address: Address,
+        caller_connection_id: ConnectionId,
         connected: bool,
     ) -> Result<(), ReducerCallError> {
         let (lifecycle, fake_name) = if connected {
@@ -551,7 +551,7 @@ impl ModuleHost {
             Workload::Reducer(ReducerContext {
                 name: reducer_name.to_owned(),
                 caller_identity,
-                caller_address,
+                caller_connection_id,
                 timestamp: Timestamp::now(),
                 arg_bsatn: Bytes::new(),
             })
@@ -560,7 +560,7 @@ impl ModuleHost {
         let result = if let Some((reducer_id, reducer_def)) = reducer_lookup {
             self.call_reducer_inner(
                 caller_identity,
-                Some(caller_address),
+                Some(caller_connection_id),
                 None,
                 None,
                 None,
@@ -579,7 +579,7 @@ impl ModuleHost {
             // crash.
             db.with_auto_commit(workload(), |mut_tx| {
                 if connected {
-                    self.update_st_clients(mut_tx, caller_identity, caller_address, connected)
+                    self.update_st_clients(mut_tx, caller_identity, caller_connection_id, connected)
                 } else {
                     Ok(())
                 }
@@ -597,7 +597,7 @@ impl ModuleHost {
         if !connected {
             let _ = db
                 .with_auto_commit(workload(), |mut_tx| {
-                    self.update_st_clients(mut_tx, caller_identity, caller_address, connected)
+                    self.update_st_clients(mut_tx, caller_identity, caller_connection_id, connected)
                 })
                 .map_err(|e| {
                     log::error!("st_clients table update failed with params with error: {:?}", e);
@@ -610,14 +610,14 @@ impl ModuleHost {
         &self,
         mut_tx: &mut MutTxId,
         caller_identity: Identity,
-        caller_address: Address,
+        caller_connection_id: ConnectionId,
         connected: bool,
     ) -> Result<(), DBError> {
         let db = &*self.inner.replica_ctx().relational_db;
 
         let row = &StClientRow {
             identity: caller_identity.into(),
-            address: caller_address.into(),
+            connection_id: caller_connection_id.into(),
         };
 
         if connected {
@@ -627,7 +627,7 @@ impl ModuleHost {
                 .iter_by_col_eq_mut(
                     mut_tx,
                     ST_CLIENT_ID,
-                    col_list![StClientFields::Identity, StClientFields::Address],
+                    col_list![StClientFields::Identity, StClientFields::ConnectionId],
                     &algebraic_value::AlgebraicValue::product(row),
                 )?
                 .map(|row_ref| row_ref.pointer())
@@ -640,7 +640,7 @@ impl ModuleHost {
     async fn call_reducer_inner(
         &self,
         caller_identity: Identity,
-        caller_address: Option<Address>,
+        caller_connection_id: Option<ConnectionId>,
         client: Option<Arc<ClientConnectionSender>>,
         request_id: Option<RequestId>,
         timer: Option<Instant>,
@@ -650,7 +650,7 @@ impl ModuleHost {
     ) -> Result<ReducerCallResult, ReducerCallError> {
         let reducer_seed = ReducerArgsDeserializeSeed(self.info.module_def.typespace().with_type(reducer_def));
         let args = args.into_tuple(reducer_seed)?;
-        let caller_address = caller_address.unwrap_or(Address::__DUMMY);
+        let caller_connection_id = caller_connection_id.unwrap_or(ConnectionId::ZERO);
 
         self.call(&reducer_def.name, move |inst| {
             inst.call_reducer(
@@ -658,7 +658,7 @@ impl ModuleHost {
                 CallReducerParams {
                     timestamp: Timestamp::now(),
                     caller_identity,
-                    caller_address,
+                    caller_connection_id,
                     client,
                     request_id,
                     timer,
@@ -674,7 +674,7 @@ impl ModuleHost {
     pub async fn call_reducer(
         &self,
         caller_identity: Identity,
-        caller_address: Option<Address>,
+        caller_connection_id: Option<ConnectionId>,
         client: Option<Arc<ClientConnectionSender>>,
         request_id: Option<RequestId>,
         timer: Option<Instant>,
@@ -692,7 +692,7 @@ impl ModuleHost {
             }
             self.call_reducer_inner(
                 caller_identity,
-                caller_address,
+                caller_connection_id,
                 client,
                 request_id,
                 timer,
@@ -751,7 +751,7 @@ impl ModuleHost {
                         Workload::Reducer(ReducerContext {
                             name: reducer.into(),
                             caller_identity: params.caller_identity,
-                            caller_address: params.caller_address,
+                            caller_connection_id: params.caller_connection_id,
                             timestamp: Timestamp::now(),
                             arg_bsatn: params.args.get_bsatn().clone(),
                         }),

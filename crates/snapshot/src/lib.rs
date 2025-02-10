@@ -467,7 +467,7 @@ pub struct SnapshotRepository {
     /// The directory which contains all the snapshots.
     root: SnapshotsPath,
 
-    /// The database address of the database instance for which this repository stores snapshots.
+    /// The database identity of the database instance for which this repository stores snapshots.
     database_identity: Identity,
 
     /// The database instance ID of the database instance for which this repository stores snapshots.
@@ -478,7 +478,7 @@ pub struct SnapshotRepository {
 }
 
 impl SnapshotRepository {
-    /// Returns [`Address`] of the database this [`SnapshotRepository`] is configured to snapshot.
+    /// Returns the [`Identity`] of the database this [`SnapshotRepository`] is configured to snapshot.
     pub fn database_identity(&self) -> Identity {
         self.database_identity
     }
@@ -637,12 +637,12 @@ impl SnapshotRepository {
     /// - The snapshot file's version does not match [`CURRENT_SNAPSHOT_VERSION`].
     ///
     /// The following conditions are not detected or considered as errors:
-    /// - The snapshot file's database address or instance ID do not match those in `self`.
+    /// - The snapshot file's database identity or instance ID do not match those in `self`.
     /// - The snapshot file's module ABI version does not match [`CURRENT_MODULE_ABI_VERSION`].
     /// - The snapshot file's recorded transaction offset does not match `tx_offset`.
     ///
     /// This means that callers must inspect the returned [`ReconstructedSnapshot`]
-    /// and verify that they can handle its contained database address, instance ID, module ABI version and transaction offset.
+    /// and verify that they can handle its contained database identity, instance ID, module ABI version and transaction offset.
     pub fn read_snapshot(&self, tx_offset: TxOffset) -> Result<ReconstructedSnapshot, SnapshotError> {
         let snapshot_dir = self.snapshot_dir_path(tx_offset);
         let lockfile = Lockfile::lock_path(&snapshot_dir);
@@ -774,7 +774,7 @@ impl SnapshotRepository {
 }
 
 pub struct ReconstructedSnapshot {
-    /// The address of the snapshotted database.
+    /// The identity of the snapshotted database.
     pub database_identity: Identity,
     /// The instance ID of the snapshotted database.
     pub replica_id: u64,

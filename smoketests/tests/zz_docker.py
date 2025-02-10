@@ -138,28 +138,28 @@ pub fn say_hello(ctx: &ReducerContext) {
 class DockerRestartAutoDisconnect(Smoketest):
     MODULE_CODE = """
 use log::info;
-use spacetimedb::{Address, Identity, ReducerContext, Table};
+use spacetimedb::{ConnectionId, Identity, ReducerContext, Table};
 
 #[spacetimedb::table(name = connected_client)]
 pub struct ConnectedClient {
     identity: Identity,
-    address: Address,
+    connection_id: ConnectionId,
 }
 
 #[spacetimedb::reducer(client_connected)]
 fn on_connect(ctx: &ReducerContext) {
     ctx.db.connected_client().insert(ConnectedClient {
         identity: ctx.sender,
-        address: ctx.address.expect("sender address unset"),
+        connection_id: ctx.connection_id.expect("sender connection id unset"),
     });
 }
 
 #[spacetimedb::reducer(client_disconnected)]
 fn on_disconnect(ctx: &ReducerContext) {
     let sender_identity = &ctx.sender;
-    let sender_address = ctx.address.as_ref().expect("sender address unset");
+    let sender_connection_id = ctx.connection_id.as_ref().expect("sender connection id unset");
     let match_client = |row: &ConnectedClient| {
-        &row.identity == sender_identity && &row.address == sender_address
+        &row.identity == sender_identity && &row.connection_id == sender_connection_id
     };
     if let Some(client) = ctx.db.connected_client().iter().find(match_client) {
         ctx.db.connected_client().delete(client);

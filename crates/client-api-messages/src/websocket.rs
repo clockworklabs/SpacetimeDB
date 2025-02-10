@@ -15,7 +15,6 @@
 //! rather than using an external mirror of this schema.
 
 use crate::energy::EnergyQuanta;
-use crate::timestamp::Timestamp;
 use bytes::Bytes;
 use bytestring::ByteString;
 use core::{
@@ -24,7 +23,7 @@ use core::{
 };
 use enum_as_inner::EnumAsInner;
 use smallvec::SmallVec;
-use spacetimedb_lib::{Address, Identity};
+use spacetimedb_lib::{ConnectionId, Identity, TimeDuration, Timestamp};
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::{
     bsatn::{self, ToBsatn},
@@ -405,10 +404,10 @@ pub struct InitialSubscription<F: WebsocketFormat> {
     /// The server will include the same request_id in the response.
     pub request_id: u32,
     /// The overall time between the server receiving a request and sending the response.
-    pub total_host_execution_duration_micros: u64,
+    pub total_host_execution_duration: TimeDuration,
 }
 
-/// Received by database from client to inform of user's identity, token and client address.
+/// Received by database from client to inform of user's identity, token and client connection id.
 ///
 /// The database will always send an `IdentityToken` message
 /// as the first message for a new WebSocket connection.
@@ -421,11 +420,8 @@ pub struct InitialSubscription<F: WebsocketFormat> {
 pub struct IdentityToken {
     pub identity: Identity,
     pub token: Box<str>,
-    pub address: Address,
+    pub connection_id: ConnectionId,
 }
-
-// TODO: Evaluate if it makes sense for this to also include the
-// address of the database this is calling
 
 /// Received by client from database upon a reducer run.
 ///
@@ -437,26 +433,29 @@ pub struct IdentityToken {
 pub struct TransactionUpdate<F: WebsocketFormat> {
     /// The status of the transaction. Contains the updated rows, if successful.
     pub status: UpdateStatus<F>,
-    /// The time when the reducer started, as microseconds since the Unix epoch.
+    /// The time when the reducer started.
+    ///
+    /// Note that [`Timestamp`] serializes as `i64` nanoseconds since the Unix epoch.
     pub timestamp: Timestamp,
     /// The identity of the user who requested the reducer run. For event-driven and
     /// scheduled reducers, it is the identity of the database owner.
     pub caller_identity: Identity,
-    /// The 16-byte address of the user who requested the reducer run.
-    /// The all-zeros address is a sentinel which denotes no address.
-    /// `init` and `update` reducers will have a `caller_address`
-    /// if and only if one was provided to the `publish` HTTP endpoint.
-    /// Scheduled reducers will never have a `caller_address`.
-    /// Reducers invoked by HTTP will have a `caller_address`
-    /// if and only if one was provided to the `call` HTTP endpoint.
-    /// Reducers invoked by WebSocket will always have a `caller_address`.
-    pub caller_address: Address,
+
+    /// The 16-byte [`ConnectionId`] of the user who requested the reducer run.
+    ///
+    /// The all-zeros id is a sentinel which denotes no meaningful value.
+    /// This can occur in the following situations:
+    /// - `init` and `update` reducers will have a `caller_connection_id`
+    ///   if and only if one was provided to the `publish` HTTP endpoint.
+    /// - Scheduled reducers will never have a `caller_connection_id`.
+    /// - Reducers invoked by WebSocket or the HTTP API will always have a `caller_connection_id`.
+    pub caller_connection_id: ConnectionId,
     /// The original CallReducer request that triggered this reducer.
     pub reducer_call: ReducerCallInfo<F>,
     /// The amount of energy credits consumed by running the reducer.
     pub energy_quanta_used: EnergyQuanta,
     /// How long the reducer took to run.
-    pub host_execution_duration_micros: u64,
+    pub total_host_execution_duration: TimeDuration,
 }
 
 /// Received by client from database upon a reducer run.
@@ -645,7 +644,7 @@ pub struct OneOffQueryResponse<F: WebsocketFormat> {
     pub tables: Box<[OneOffTable<F>]>,
 
     /// The total duration of query compilation and evaluation on the server, in microseconds.
-    pub total_host_execution_duration_micros: u64,
+    pub total_host_execution_duration: TimeDuration,
 }
 
 /// A table included as part of a [`OneOffQueryResponse`].

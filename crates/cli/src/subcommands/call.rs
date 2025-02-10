@@ -1,7 +1,7 @@
 use crate::common_args;
 use crate::config::Config;
 use crate::edit_distance::{edit_distance, find_best_match_for_name};
-use crate::util;
+use crate::util::{self, UNSTABLE_WARNING};
 use crate::util::{add_auth_header_opt, database_identity, get_auth_header};
 use anyhow::{bail, Context, Error};
 use clap::{Arg, ArgMatches};
@@ -16,7 +16,10 @@ use std::iter;
 
 pub fn cli() -> clap::Command {
     clap::Command::new("call")
-        .about("Invokes a reducer function in a database")
+        .about(format!(
+            "Invokes a reducer function in a database.\n\n{}",
+            UNSTABLE_WARNING
+        ))
         .arg(
             Arg::new("database")
                 .required(true)
@@ -35,6 +38,7 @@ pub fn cli() -> clap::Command {
 }
 
 pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), Error> {
+    eprintln!("{}\n", UNSTABLE_WARNING);
     let database = args.get_one::<String>("database").unwrap();
     let reducer_name = args.get_one::<String>("reducer_name").unwrap();
     let arguments = args.get_many::<String>("arguments");
@@ -329,7 +333,7 @@ mod write_type {
     ) -> fmt::Result {
         match ty {
             p if p.is_identity() => write!(out, "Identity")?,
-            p if p.is_address() => write!(out, "Address")?,
+            p if p.is_connection_id() => write!(out, "ConnectionId")?,
             p if p.is_schedule_at() => write!(out, "ScheduleAt")?,
             AlgebraicType::Sum(sum_type) => {
                 if let Some(inner_ty) = sum_type.as_option() {

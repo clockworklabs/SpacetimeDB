@@ -90,12 +90,27 @@ metrics_group!(
         #[help = "The number of bytes in a table with the precision of a page size"]
         #[labels(db: Identity, table_id: u32, table_name: str)]
         pub rdb_table_size: IntGaugeVec,
+
+        #[name = reducer_wasmtime_fuel_used]
+        #[help = "The total wasmtime fuel used"]
+        #[labels(db: Identity, reducer: str)]
+        pub reducer_wasmtime_fuel_used: IntCounterVec,
+
+        #[name = reducer_wasm_time_usec]
+        #[help = "The total runtime of reducer calls"]
+        #[labels(db: Identity, reducer: str)]
+        pub reducer_duration_usec: IntCounterVec,
+
+        #[name = reducer_abi_time_usec]
+        #[help = "The total time spent in reducer ABI calls"]
+        #[labels(db: Identity, reducer: str)]
+        pub reducer_abi_time_usec: IntCounterVec,
     }
 );
 
 pub static DB_METRICS: Lazy<DbMetrics> = Lazy::new(DbMetrics::new);
 
-/// Returns the number of committed rows in the table named by `table_name` and identified by `table_id` in the database `db_address`.
+/// Returns the number of committed rows in the table named by `table_name` and identified by `table_id` in the database `db_identity`.
 pub fn table_num_rows(db_identity: Identity, table_id: TableId, table_name: &str) -> u64 {
     DB_METRICS
         .rdb_num_table_rows

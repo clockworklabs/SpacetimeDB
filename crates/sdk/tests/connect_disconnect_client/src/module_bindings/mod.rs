@@ -215,8 +215,8 @@ impl __sdk::DbContext for DbConnection {
     fn try_identity(&self) -> Option<__sdk::Identity> {
         self.imp.try_identity()
     }
-    fn address(&self) -> __sdk::Address {
-        self.imp.address()
+    fn connection_id(&self) -> __sdk::ConnectionId {
+        self.imp.connection_id()
     }
 }
 
@@ -433,8 +433,8 @@ impl __sdk::DbContext for EventContext {
     fn try_identity(&self) -> Option<__sdk::Identity> {
         self.imp.try_identity()
     }
-    fn address(&self) -> __sdk::Address {
-        self.imp.address()
+    fn connection_id(&self) -> __sdk::ConnectionId {
+        self.imp.connection_id()
     }
 }
 
@@ -509,8 +509,8 @@ impl __sdk::DbContext for ReducerEventContext {
     fn try_identity(&self) -> Option<__sdk::Identity> {
         self.imp.try_identity()
     }
-    fn address(&self) -> __sdk::Address {
-        self.imp.address()
+    fn connection_id(&self) -> __sdk::ConnectionId {
+        self.imp.connection_id()
     }
 }
 
@@ -581,8 +581,8 @@ impl __sdk::DbContext for SubscriptionEventContext {
     fn try_identity(&self) -> Option<__sdk::Identity> {
         self.imp.try_identity()
     }
-    fn address(&self) -> __sdk::Address {
-        self.imp.address()
+    fn connection_id(&self) -> __sdk::ConnectionId {
+        self.imp.connection_id()
     }
 }
 
@@ -657,8 +657,8 @@ impl __sdk::DbContext for ErrorContext {
     fn try_identity(&self) -> Option<__sdk::Identity> {
         self.imp.try_identity()
     }
-    fn address(&self) -> __sdk::Address {
-        self.imp.address()
+    fn connection_id(&self) -> __sdk::ConnectionId {
+        self.imp.connection_id()
     }
 }
 

@@ -42,11 +42,11 @@ public static class Module
     private static readonly RawModuleDefV9 moduleDef = new();
     private static readonly List<IReducer> reducers = [];
 
-    private static Func<Identity, Address?, Random, DateTimeOffset, IReducerContext>? newContext =
+    private static Func<Identity, ConnectionId?, Random, Timestamp, IReducerContext>? newContext =
         null;
 
     public static void SetReducerContextConstructor(
-        Func<Identity, Address?, Random, DateTimeOffset, IReducerContext> ctor
+        Func<Identity, ConnectionId?, Random, Timestamp, IReducerContext> ctor
     ) => newContext = ctor;
 
     readonly struct TypeRegistrar() : ITypeRegistrar
@@ -170,9 +170,9 @@ public static class Module
         ulong sender_1,
         ulong sender_2,
         ulong sender_3,
-        ulong address_0,
-        ulong address_1,
-        DateTimeOffsetRepr timestamp,
+        ulong conn_id_0,
+        ulong conn_id_1,
+        Timestamp timestamp,
         BytesSource args,
         BytesSink error
     )
@@ -182,13 +182,13 @@ public static class Module
             var senderIdentity = Identity.From(
                 MemoryMarshal.AsBytes([sender_0, sender_1, sender_2, sender_3]).ToArray()
             );
-            var senderAddress = Address.From(
-                MemoryMarshal.AsBytes([address_0, address_1]).ToArray()
+            var connectionId = ConnectionId.From(
+                MemoryMarshal.AsBytes([conn_id_0, conn_id_1]).ToArray()
             );
-            var random = new Random((int)timestamp.MicrosecondsSinceEpoch);
+            var random = new Random((int)timestamp.MicrosecondsSinceUnixEpoch);
             var time = timestamp.ToStd();
 
-            var ctx = newContext!(senderIdentity, senderAddress, random, time);
+            var ctx = newContext!(senderIdentity, connectionId, random, time);
 
             using var stream = new MemoryStream(args.Consume());
             using var reader = new BinaryReader(stream);

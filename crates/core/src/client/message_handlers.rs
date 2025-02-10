@@ -3,7 +3,7 @@ use super::{ClientConnection, DataMessage, Protocol};
 use crate::energy::EnergyQuanta;
 use crate::execution_context::WorkloadType;
 use crate::host::module_host::{EventStatus, ModuleEvent, ModuleFunctionCall};
-use crate::host::{ReducerArgs, ReducerId, Timestamp};
+use crate::host::{ReducerArgs, ReducerId};
 use crate::identity::Identity;
 use crate::messages::websocket::{CallReducer, ClientMessage, OneOffQuery};
 use crate::worker_metrics::WORKER_METRICS;
@@ -11,7 +11,7 @@ use bytes::Bytes;
 use bytestring::ByteString;
 use spacetimedb_lib::de::serde::DeserializeWrapper;
 use spacetimedb_lib::identity::RequestId;
-use spacetimedb_lib::{bsatn, Address};
+use spacetimedb_lib::{bsatn, ConnectionId, Timestamp};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -58,7 +58,7 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
         }
     };
 
-    let address = client.module.info().database_identity;
+    let database_identity = client.module.info().database_identity;
     let res = match message {
         ClientMessage::CallReducer(CallReducer {
             ref reducer,
@@ -69,7 +69,7 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
             let res = client.call_reducer(reducer, args, request_id, timer, flags).await;
             WORKER_METRICS
                 .request_round_trip
-                .with_label_values(&WorkloadType::Reducer, &address, reducer)
+                .with_label_values(&WorkloadType::Reducer, &database_identity, reducer)
                 .observe(timer.elapsed().as_secs_f64());
             res.map(drop).map_err(|e| {
                 (
@@ -88,7 +88,7 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
             let res = client.subscribe_single(subscription, timer).await;
             WORKER_METRICS
                 .request_round_trip
-                .with_label_values(&WorkloadType::Subscribe, &address, "")
+                .with_label_values(&WorkloadType::Subscribe, &database_identity, "")
                 .observe(timer.elapsed().as_secs_f64());
             res.map_err(|e| (None, None, e.into()))
         }
@@ -96,7 +96,7 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
             let res = client.unsubscribe(request, timer).await;
             WORKER_METRICS
                 .request_round_trip
-                .with_label_values(&WorkloadType::Unsubscribe, &address, "")
+                .with_label_values(&WorkloadType::Unsubscribe, &database_identity, "")
                 .observe(timer.elapsed().as_secs_f64());
             res.map_err(|e| (None, None, e.into()))
         }
@@ -104,7 +104,7 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
             let res = client.subscribe(subscription, timer).await;
             WORKER_METRICS
                 .request_round_trip
-                .with_label_values(&WorkloadType::Subscribe, &address, "")
+                .with_label_values(&WorkloadType::Subscribe, &database_identity, "")
                 .observe(timer.elapsed().as_secs_f64());
             res.map_err(|e| (None, None, e.into()))
         }
@@ -118,7 +118,7 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
             };
             WORKER_METRICS
                 .request_round_trip
-                .with_label_values(&WorkloadType::Sql, &address, "")
+                .with_label_values(&WorkloadType::Sql, &database_identity, "")
                 .observe(timer.elapsed().as_secs_f64());
             res.map_err(|err| (None, None, err))
         }
@@ -127,7 +127,7 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
         reducer: reducer.cloned(),
         reducer_id,
         caller_identity: client.id.identity,
-        caller_address: Some(client.id.address),
+        caller_connection_id: Some(client.id.connection_id),
         err,
     })?;
 
@@ -140,7 +140,7 @@ pub struct MessageExecutionError {
     pub reducer: Option<Box<str>>,
     pub reducer_id: Option<ReducerId>,
     pub caller_identity: Identity,
-    pub caller_address: Option<Address>,
+    pub caller_connection_id: Option<ConnectionId>,
     #[source]
     pub err: anyhow::Error,
 }
@@ -150,7 +150,7 @@ impl MessageExecutionError {
         ModuleEvent {
             timestamp: Timestamp::now(),
             caller_identity: self.caller_identity,
-            caller_address: self.caller_address,
+            caller_connection_id: self.caller_connection_id,
             function_call: ModuleFunctionCall {
                 reducer: self.reducer.unwrap_or_else(|| "<none>".into()).into(),
                 reducer_id: self.reducer_id.unwrap_or(u32::MAX.into()),

@@ -24,7 +24,9 @@ pub struct EveryVecStruct {
     pub o: Vec<f64>,
     pub p: Vec<String>,
     pub q: Vec<__sdk::Identity>,
-    pub r: Vec<__sdk::Address>,
+    pub r: Vec<__sdk::ConnectionId>,
+    pub s: Vec<__sdk::Timestamp>,
+    pub t: Vec<__sdk::TimeDuration>,
 }
 
 impl __sdk::InModule for EveryVecStruct {

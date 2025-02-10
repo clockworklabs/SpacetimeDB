@@ -6,30 +6,30 @@ using Xunit;
 public static class BSATNRuntimeTests
 {
     [Fact]
-    public static void AddressRoundtrips()
+    public static void ConnectionIdRoundtrips()
     {
         var str = "00112233445566778899AABBCCDDEEFF";
-        var addr = Address.FromHexString(str);
+        var connId = ConnectionId.FromHexString(str);
 
-        Assert.NotNull(addr);
-        Assert.Equal(addr.ToString(), str);
+        Assert.NotNull(connId);
+        Assert.Equal(connId.ToString(), str);
 
         var bytes = Convert.FromHexString(str);
 
-        var addr2 = Address.FromBigEndian(bytes);
-        Assert.Equal(addr2, addr);
+        var connId2 = ConnectionId.FromBigEndian(bytes);
+        Assert.Equal(connId2, connId);
 
         Array.Reverse(bytes);
-        var addr3 = Address.From(bytes);
-        Assert.Equal(addr3, addr);
+        var connId3 = ConnectionId.From(bytes);
+        Assert.Equal(connId3, connId);
 
         var memoryStream = new MemoryStream();
-        var bsatn = new Address.BSATN();
+        var bsatn = new ConnectionId.BSATN();
         using (var writer = new BinaryWriter(memoryStream))
         {
-            if (addr is { } addrNotNull)
+            if (connId is { } connIdNotNull)
             {
-                bsatn.Write(writer, addrNotNull);
+                bsatn.Write(writer, connIdNotNull);
             }
             else
             {
@@ -39,18 +39,18 @@ public static class BSATNRuntimeTests
 
         var littleEndianBytes = memoryStream.ToArray();
         var reader = new BinaryReader(new MemoryStream(littleEndianBytes));
-        var addr4 = bsatn.Read(reader);
-        Assert.Equal(addr4, addr);
+        var connId4 = bsatn.Read(reader);
+        Assert.Equal(connId4, connId);
 
         // Note: From = FromLittleEndian
-        var addr5 = Address.From(littleEndianBytes);
-        Assert.Equal(addr5, addr);
+        var connId5 = ConnectionId.From(littleEndianBytes);
+        Assert.Equal(connId5, connId);
     }
 
     static readonly Gen<string> genHex = Gen.String[Gen.Char["0123456789abcdef"], 0, 128];
 
     [Fact]
-    public static void AddressLengthCheck()
+    public static void ConnectionIdLengthCheck()
     {
         genHex.Sample(s =>
         {
@@ -58,7 +58,7 @@ public static class BSATNRuntimeTests
             {
                 return;
             }
-            Assert.ThrowsAny<Exception>(() => Address.FromHexString(s));
+            Assert.ThrowsAny<Exception>(() => ConnectionId.FromHexString(s));
         });
         Gen.Byte.Array[0, 64]
             .Sample(arr =>
@@ -67,8 +67,8 @@ public static class BSATNRuntimeTests
                 {
                     return;
                 }
-                Assert.ThrowsAny<Exception>(() => Address.FromBigEndian(arr));
-                Assert.ThrowsAny<Exception>(() => Address.From(arr));
+                Assert.ThrowsAny<Exception>(() => ConnectionId.FromBigEndian(arr));
+                Assert.ThrowsAny<Exception>(() => ConnectionId.From(arr));
             });
     }
 
@@ -136,19 +136,35 @@ public static class BSATNRuntimeTests
     {
         // n.b. 32 chars long
         Assert.ThrowsAny<Exception>(
-            () => Address.FromHexString("these are not hex characters....")
+            () => ConnectionId.FromHexString("these are not hex characters....")
         );
     }
 
     [Fact]
     public static void TimestampConversionChecks()
     {
-        ulong us = 1737582793990639;
-        var time = ScheduleAt.DateTimeOffsetFromMicrosSinceUnixEpoch(us);
+        var us = 1737582793990639L;
 
+        var time = ScheduleAt.DateTimeOffsetFromMicrosSinceUnixEpoch(us);
         Assert.Equal(ScheduleAt.ToMicrosecondsSinceUnixEpoch(time), us);
 
         var interval = ScheduleAt.TimeSpanFromMicroseconds(us);
         Assert.Equal(ScheduleAt.ToMicroseconds(interval), us);
+
+        var stamp = new Timestamp(us);
+        var dto = (DateTimeOffset)stamp;
+        var stamp_ = (Timestamp)dto;
+        Assert.Equal(stamp, stamp_);
+
+        var duration = new TimeDuration(us);
+        var timespan = (TimeSpan)duration;
+        var duration_ = (TimeDuration)timespan;
+        Assert.Equal(duration, duration_);
+
+        var newIntervalUs = 333L;
+        var newInterval = new TimeDuration(newIntervalUs);
+        var laterStamp = stamp + newInterval;
+        Assert.Equal(laterStamp.MicrosecondsSinceUnixEpoch, us + newIntervalUs);
+        Assert.Equal(laterStamp.TimeDurationSince(stamp), newInterval);
     }
 }

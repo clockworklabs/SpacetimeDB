@@ -19,7 +19,7 @@ use spacetimedb_lib::db::raw_def::*;
 use spacetimedb_lib::de::{Deserialize, DeserializeOwned, Error};
 use spacetimedb_lib::ser::Serialize;
 use spacetimedb_lib::st_var::StVarValue;
-use spacetimedb_lib::{Address, Identity, ProductValue, SpacetimeType};
+use spacetimedb_lib::{ConnectionId, Identity, ProductValue, SpacetimeType};
 use spacetimedb_primitives::*;
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use spacetimedb_sats::algebraic_value::ser::value_serialize;
@@ -252,7 +252,7 @@ st_fields_enum!(enum StModuleFields {
 // WARNING: For a stable schema, don't change the field names and discriminants.
 st_fields_enum!(enum StClientFields {
     "identity", Identity = 0,
-    "address", Address = 1,
+    "connection_id", ConnectionId = 1,
 });
 // WARNING: For a stable schema, don't change the field names and discriminants.
 st_fields_enum!(enum StVarFields {
@@ -348,7 +348,7 @@ fn system_module_def() -> ModuleDef {
     // TODO: add empty unique constraint here, once we've implemented those.
 
     let st_client_type = builder.add_type::<StClientRow>();
-    let st_client_unique_cols = [StClientFields::Identity, StClientFields::Address];
+    let st_client_unique_cols = [StClientFields::Identity, StClientFields::ConnectionId];
     builder
         .build_table(ST_CLIENT_NAME, *st_client_type.as_ref().expect("should be ref"))
         .with_type(TableType::System)
@@ -828,19 +828,19 @@ impl_serialize!([] ModuleKind, (self, ser) => self.0.serialize(ser));
 impl_deserialize!([] ModuleKind, de => u8::deserialize(de).map(Self));
 impl_st!([] ModuleKind, AlgebraicType::U8);
 
-/// A wrapper for `Address` that acts like `AlgebraicType::bytes()` for serialization purposes.
+/// A wrapper for [`ConnectionId`] that acts like [`AlgebraicType::U128`] for serialization purposes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct AddressViaU128(pub Address);
-impl_serialize!([] AddressViaU128, (self, ser) => self.0.to_u128().serialize(ser));
-impl_deserialize!([] AddressViaU128, de => <u128>::deserialize(de).map(Address::from_u128).map(AddressViaU128));
-impl_st!([] AddressViaU128, AlgebraicType::U128);
-impl From<Address> for AddressViaU128 {
-    fn from(addr: Address) -> Self {
-        Self(addr)
+pub struct ConnectionIdViaU128(pub ConnectionId);
+impl_serialize!([] ConnectionIdViaU128, (self, ser) => self.0.to_u128().serialize(ser));
+impl_deserialize!([] ConnectionIdViaU128, de => <u128>::deserialize(de).map(ConnectionId::from_u128).map(ConnectionIdViaU128));
+impl_st!([] ConnectionIdViaU128, AlgebraicType::U128);
+impl From<ConnectionId> for ConnectionIdViaU128 {
+    fn from(id: ConnectionId) -> Self {
+        Self(id)
     }
 }
 
-/// A wrapper for `Identity` that acts like `AlgebraicType::bytes()` for serialization purposes.
+/// A wrapper for [`Identity`] that acts like [`AlgebraicType::U256`] for serialization purposes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct IdentityViaU256(pub Identity);
 impl_serialize!([] IdentityViaU256, (self, ser) => self.0.to_u256().serialize(ser));
@@ -891,14 +891,6 @@ pub fn read_bytes_from_col(row: RowRef<'_>, col: impl StFields) -> Result<Box<[u
     }
 }
 
-/// Read an [`Address`] directly from the column `col` in `row`.
-///
-/// The [`Address`] is assumed to be stored as an u128.
-pub fn read_addr_from_col(row: RowRef<'_>, col: impl StFields) -> Result<Identity, DBError> {
-    let val: u256 = row.read_col(col.col_id())?;
-    Ok(Identity::from_u256(val))
-}
-
 /// Read an [`Identity`] directly from the column `col` in `row`.
 ///
 /// The [`Identity`] is assumed to be stored as a flat byte array.
@@ -929,14 +921,14 @@ impl From<StModuleRow> for ProductValue {
 
 /// System table [ST_CLIENT_NAME]
 ///
-/// identity                                                                                | address
-/// -----------------------------------------------------------------------------------------+--------------------------------------------------------
-///  (__identity_bytes = 0x7452047061ea2502003412941d85a42f89b0702588b823ab55fc4f12e9ea8363) | (__address_bytes = 0x6bdea3ab517f5857dc9b1b5fe99e1b14)
+/// | identity                                                           | connection_id                      |
+/// |--------------------------------------------------------------------+------------------------------------|
+/// | 0x7452047061ea2502003412941d85a42f89b0702588b823ab55fc4f12e9ea8363 | 0x6bdea3ab517f5857dc9b1b5fe99e1b14 |
 #[derive(Clone, Copy, Debug, Eq, PartialEq, SpacetimeType)]
 #[sats(crate = spacetimedb_lib)]
 pub struct StClientRow {
     pub(crate) identity: IdentityViaU256,
-    pub(crate) address: AddressViaU128,
+    pub(crate) connection_id: ConnectionIdViaU128,
 }
 
 impl From<StClientRow> for ProductValue {

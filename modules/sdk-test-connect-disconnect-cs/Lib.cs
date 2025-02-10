@@ -19,12 +19,12 @@ static partial class Module
     [SpacetimeDB.Reducer(ReducerKind.ClientConnected)]
     public static void identity_connected(ReducerContext ctx)
     {
-        ctx.Db.connected.Insert(new Connected { identity = ctx.CallerIdentity });
+        ctx.Db.connected.Insert(new Connected { identity = ctx.Sender});
     }
 
     [SpacetimeDB.Reducer(ReducerKind.ClientDisconnected)]
     public static void identity_disconnected(ReducerContext ctx)
     {
-        ctx.Db.disconnected.Insert(new Disconnected { identity = ctx.CallerIdentity });
+        ctx.Db.disconnected.Insert(new Disconnected { identity = ctx.Sender});
     }
 }

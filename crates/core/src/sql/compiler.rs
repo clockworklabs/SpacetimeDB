@@ -235,7 +235,7 @@ mod tests {
     use crate::execution_context::Workload;
     use crate::sql::execute::tests::run_for_testing;
     use spacetimedb_lib::error::{ResultTest, TestError};
-    use spacetimedb_lib::{Address, Identity};
+    use spacetimedb_lib::{ConnectionId, Identity};
     use spacetimedb_primitives::{col_list, ColList, TableId};
     use spacetimedb_sats::{
         product, satn, AlgebraicType, AlgebraicValue, GroundSpacetimeType as _, ProductType, Typespace, ValueWithType,
@@ -341,14 +341,14 @@ mod tests {
     }
 
     #[test]
-    fn compile_eq_identity_address() -> ResultTest<()> {
+    fn compile_eq_identity_connection_id() -> ResultTest<()> {
         let db = TestDB::durable()?;
 
         // Create table [test] without any indexes
         let schema = &[
             ("identity", Identity::get_type()),
             ("identity_mix", Identity::get_type()),
-            ("address", Address::get_type()),
+            ("connection_id", ConnectionId::get_type()),
         ];
         let indexes = &[];
         let table_id = db.create_table_for_test("test", schema, indexes)?;
@@ -356,7 +356,7 @@ mod tests {
         let row = product![
             Identity::__dummy(),
             Identity::from_hex("93dda09db9a56d8fa6c024d843e805d8262191db3b4ba84c5efcd1ad451fed4e").unwrap(),
-            Address::__DUMMY
+            ConnectionId::ZERO,
         ];
 
         db.with_auto_commit(Workload::ForTests, |tx| {
@@ -366,18 +366,18 @@ mod tests {
 
         // Check can be used by CRUD ops:
         let sql = &format!(
-            "INSERT INTO test (identity, identity_mix, address) VALUES ({}, x'91DDA09DB9A56D8FA6C024D843E805D8262191DB3B4BA84C5EFCD1AD451FED4E', {})",
+            "INSERT INTO test (identity, identity_mix, connection_id) VALUES ({}, x'91DDA09DB9A56D8FA6C024D843E805D8262191DB3B4BA84C5EFCD1AD451FED4E', {})",
             Identity::__dummy(),
-            Address::__DUMMY,
+            ConnectionId::ZERO,
         );
         run_for_testing(&db, sql)?;
 
         // Compile query, check for both hex formats and it to be case-insensitive...
         let sql = &format!(
-            "select * from test where identity = {} AND identity_mix = x'93dda09db9a56d8fa6c024d843e805D8262191db3b4bA84c5efcd1ad451fed4e' AND address = x'{}' AND address = {}",
+            "select * from test where identity = {} AND identity_mix = x'93dda09db9a56d8fa6c024d843e805D8262191db3b4bA84c5efcd1ad451fed4e' AND connection_id = x'{}' AND connection_id = {}",
             Identity::__dummy(),
-            Address::__DUMMY,
-            Address::__DUMMY,
+            ConnectionId::ZERO,
+            ConnectionId::ZERO,
         );
 
         let rows = run_for_testing(&db, sql)?;
@@ -403,9 +403,9 @@ mod tests {
         Ok(())
     }
 
-    // Verify the output of `sql` matches the inputs for `Identity`, 'Address' & binary data.
+    // Verify the output of `sql` matches the inputs for `Identity`, 'ConnectionId' & binary data.
     #[test]
-    fn output_identity_address() -> ResultTest<()> {
+    fn output_identity_connection_id() -> ResultTest<()> {
         let row = product![AlgebraicValue::from(Identity::__dummy())];
         let kind: ProductType = [("i", Identity::get_type())].into();
         let ty = Typespace::EMPTY.with_type(&kind);
@@ -421,7 +421,7 @@ mod tests {
             ("a", AlgebraicType::String),
             ("b", AlgebraicType::U256),
             ("o", Identity::get_type()),
-            ("p", Address::get_type()),
+            ("p", ConnectionId::get_type()),
         ]
         .into();
 
@@ -429,7 +429,7 @@ mod tests {
             AlgebraicValue::String("a".into()),
             Identity::ZERO.to_u256().into(),
             Identity::ZERO.to_u256().into(),
-            Address::__DUMMY.to_u128().into(),
+            ConnectionId::ZERO.to_u128().into(),
         ]);
 
         assert_eq!(
@@ -444,7 +444,7 @@ mod tests {
             "a",
             Identity::ZERO.to_u256(),
             AlgebraicValue::product([Identity::ZERO.to_u256().into()]),
-            AlgebraicValue::product([Address::__DUMMY.to_u128().into()]),
+            AlgebraicValue::product([ConnectionId::ZERO.to_u128().into()]),
         ];
 
         let value = ValueWithType::new(ty, &value);

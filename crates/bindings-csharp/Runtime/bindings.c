@@ -141,11 +141,11 @@ EXPORT_VOID(__describe_module__, (BytesSink description), &description);
 EXPORT(int16_t, __call_reducer__,
        (uint32_t id,
         uint64_t sender_0, uint64_t sender_1, uint64_t sender_2, uint64_t sender_3,
-        uint64_t address_0, uint64_t address_1,
+        uint64_t conn_id_0, uint64_t conn_id_1,
         uint64_t timestamp, BytesSource args, BytesSink error),
        &id,
        &sender_0, &sender_1, &sender_2, &sender_3,
-       &address_0, &address_1,
+       &conn_id_0, &conn_id_1,
        &timestamp, &args, &error);
 #endif
 

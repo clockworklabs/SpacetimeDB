@@ -109,7 +109,7 @@ impl ClientConnectionSender {
             mpsc::error::TrySendError::Full(_) => {
                 // we've hit CLIENT_CHANNEL_CAPACITY messages backed up in
                 // the channel, so forcibly kick the client
-                tracing::warn!(identity = %self.id.identity, address = %self.id.address, "client channel capacity exceeded");
+                tracing::warn!(identity = %self.id.identity, connection_id = %self.id.connection_id, "client channel capacity exceeded");
                 self.abort_handle.abort();
                 self.cancelled.store(true, Relaxed);
                 ClientSendError::Cancelled
@@ -180,7 +180,7 @@ impl ClientConnection {
         // them and stuff. Not right now though.
         let module = module_rx.borrow_and_update().clone();
         module
-            .call_identity_connected_disconnected(id.identity, id.address, true)
+            .call_identity_connected_disconnected(id.identity, id.connection_id, true)
             .await?;
 
         let (sendtx, sendrx) = mpsc::channel::<SerializableMessage>(CLIENT_CHANNEL_CAPACITY);
@@ -268,14 +268,14 @@ impl ClientConnection {
         let caller = match flags {
             CallReducerFlags::FullUpdate => Some(self.sender()),
             // Setting `sender = None` causes `eval_updates` to skip sending to the caller
-            // as it has no access to the caller other than by id/addr.
+            // as it has no access to the caller other than by id/connection id.
             CallReducerFlags::NoSuccessNotify => None,
         };
 
         self.module
             .call_reducer(
                 self.id.identity,
-                Some(self.id.address),
+                Some(self.id.connection_id),
                 caller,
                 Some(request_id),
                 Some(timer),
@@ -334,7 +334,7 @@ impl ClientConnection {
     ) -> OneOffQueryResponseMessage<F> {
         let result = self.module.one_off_query::<F>(self.id.identity, query.to_owned());
         let message_id = message_id.to_owned();
-        let total_host_execution_duration = timer.elapsed().as_micros() as u64;
+        let total_host_execution_duration = timer.elapsed().into();
         match result {
             Ok(results) => OneOffQueryResponseMessage {
                 message_id,

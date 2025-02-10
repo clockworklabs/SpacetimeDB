@@ -21,6 +21,7 @@ fs-err.workspace = true
 futures.workspace = true
 glob.workspace = true
 itertools.workspace = true
+parking_lot.workspace = true
 postgres-types.workspace = true
 quick-junit.workspace = true
 rusqlite.workspace = true

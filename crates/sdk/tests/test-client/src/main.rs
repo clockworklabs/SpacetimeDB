@@ -8,8 +8,8 @@ use std::sync::{atomic::AtomicUsize, Arc, Mutex};
 use module_bindings::*;
 
 use spacetimedb_sdk::{
-    credentials, i256, u256, unstable::CallReducerFlags, Address, DbConnectionBuilder, DbContext, Error, Event,
-    Identity, ReducerEvent, Status, SubscriptionHandle, Table,
+    credentials, i256, u256, unstable::CallReducerFlags, ConnectionId, DbConnectionBuilder, DbContext, Error, Event,
+    Identity, ReducerEvent, Status, SubscriptionHandle, Table, TimeDuration, Timestamp,
 };
 use test_counter::TestCounter;
 
@@ -44,6 +44,22 @@ fn exit_on_panic() {
     }));
 }
 
+macro_rules! assert_eq_or_bail {
+    ($expected:expr, $found:expr) => {{
+        let expected = &$expected;
+        let found = &$found;
+        if expected != found {
+            anyhow::bail!(
+                "Expected {} => {:?} but found {} => {:?}",
+                stringify!($expected),
+                expected,
+                stringify!($found),
+                found
+            );
+        }
+    }};
+}
+
 fn main() {
     env_logger::init();
     exit_on_panic();
@@ -65,10 +81,13 @@ fn main() {
         "delete_identity" => exec_delete_identity(),
         "update_identity" => exec_update_identity(),
 
-        "insert_address" => exec_insert_address(),
-        "insert_caller_address" => exec_insert_caller_address(),
-        "delete_address" => exec_delete_address(),
-        "update_address" => exec_update_address(),
+        "insert_connection_id" => exec_insert_connection_id(),
+        "insert_caller_connection_id" => exec_insert_caller_connection_id(),
+        "delete_connection_id" => exec_delete_connection_id(),
+        "update_connection_id" => exec_update_connection_id(),
+
+        "insert_timestamp" => exec_insert_timestamp(),
+        "insert_call_timestamp" => exec_insert_call_timestamp(),
 
         "on_reducer" => exec_on_reducer(),
         "fail_reducer" => exec_fail_reducer(),
@@ -91,7 +110,7 @@ fn main() {
 
         "should_fail" => exec_should_fail(),
 
-        "reconnect_same_address" => exec_reconnect_same_address(),
+        "reconnect_same_connection_id" => exec_reconnect_same_connection_id(),
         "caller_always_notified" => exec_caller_always_notified(),
 
         "subscribe_all_select_star" => exec_subscribe_all_select_star(),
@@ -139,7 +158,9 @@ fn assert_all_tables_empty(ctx: &impl RemoteDbContext) -> anyhow::Result<()> {
 
     assert_table_empty(ctx.db().one_string())?;
     assert_table_empty(ctx.db().one_identity())?;
-    assert_table_empty(ctx.db().one_address())?;
+    assert_table_empty(ctx.db().one_connection_id())?;
+
+    assert_table_empty(ctx.db().one_timestamp())?;
 
     assert_table_empty(ctx.db().one_simple_enum())?;
     assert_table_empty(ctx.db().one_enum_with_payload())?;
@@ -170,7 +191,9 @@ fn assert_all_tables_empty(ctx: &impl RemoteDbContext) -> anyhow::Result<()> {
 
     assert_table_empty(ctx.db().vec_string())?;
     assert_table_empty(ctx.db().vec_identity())?;
-    assert_table_empty(ctx.db().vec_address())?;
+    assert_table_empty(ctx.db().vec_connection_id())?;
+
+    assert_table_empty(ctx.db().vec_timestamp())?;
 
     assert_table_empty(ctx.db().vec_simple_enum())?;
     assert_table_empty(ctx.db().vec_enum_with_payload())?;
@@ -205,7 +228,7 @@ fn assert_all_tables_empty(ctx: &impl RemoteDbContext) -> anyhow::Result<()> {
 
     assert_table_empty(ctx.db().unique_string())?;
     assert_table_empty(ctx.db().unique_identity())?;
-    assert_table_empty(ctx.db().unique_address())?;
+    assert_table_empty(ctx.db().unique_connection_id())?;
 
     assert_table_empty(ctx.db().pk_u_8())?;
     assert_table_empty(ctx.db().pk_u_16())?;
@@ -225,7 +248,7 @@ fn assert_all_tables_empty(ctx: &impl RemoteDbContext) -> anyhow::Result<()> {
 
     assert_table_empty(ctx.db().pk_string())?;
     assert_table_empty(ctx.db().pk_identity())?;
-    assert_table_empty(ctx.db().pk_address())?;
+    assert_table_empty(ctx.db().pk_connection_id())?;
 
     assert_table_empty(ctx.db().large_table())?;
 
@@ -253,7 +276,8 @@ const SUBSCRIBE_ALL: &[&str] = &[
     "SELECT * FROM one_f64;",
     "SELECT * FROM one_string;",
     "SELECT * FROM one_identity;",
-    "SELECT * FROM one_address;",
+    "SELECT * FROM one_connection_id;",
+    "SELECT * FROM one_timestamp;",
     "SELECT * FROM one_simple_enum;",
     "SELECT * FROM one_enum_with_payload;",
     "SELECT * FROM one_unit_struct;",
@@ -277,7 +301,8 @@ const SUBSCRIBE_ALL: &[&str] = &[
     "SELECT * FROM vec_f64;",
     "SELECT * FROM vec_string;",
     "SELECT * FROM vec_identity;",
-    "SELECT * FROM vec_address;",
+    "SELECT * FROM vec_connection_id;",
+    "SELECT * FROM vec_timestamp;",
     "SELECT * FROM vec_simple_enum;",
     "SELECT * FROM vec_enum_with_payload;",
     "SELECT * FROM vec_unit_struct;",
@@ -305,7 +330,7 @@ const SUBSCRIBE_ALL: &[&str] = &[
     "SELECT * FROM unique_bool;",
     "SELECT * FROM unique_string;",
     "SELECT * FROM unique_identity;",
-    "SELECT * FROM unique_address;",
+    "SELECT * FROM unique_connection_id;",
     "SELECT * FROM pk_u8;",
     "SELECT * FROM pk_u16;",
     "SELECT * FROM pk_u32;",
@@ -321,7 +346,7 @@ const SUBSCRIBE_ALL: &[&str] = &[
     "SELECT * FROM pk_bool;",
     "SELECT * FROM pk_string;",
     "SELECT * FROM pk_identity;",
-    "SELECT * FROM pk_address;",
+    "SELECT * FROM pk_connection_id;",
     "SELECT * FROM large_table;",
     "SELECT * FROM table_holds_table;",
 ];
@@ -666,8 +691,8 @@ fn exec_update_identity() {
     assert_all_tables_empty(&connection).unwrap();
 }
 
-/// This tests that we can serialize and deserialize `Address` in various contexts.
-fn exec_insert_address() {
+/// This tests that we can serialize and deserialize `ConnectionId` in various contexts.
+fn exec_insert_connection_id() {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
@@ -675,7 +700,7 @@ fn exec_insert_address() {
         let test_counter = test_counter.clone();
         move |ctx| {
             subscribe_all_then(ctx, move |ctx| {
-                insert_one::<OneAddress>(ctx, &test_counter, ctx.address());
+                insert_one::<OneConnectionId>(ctx, &test_counter, ctx.connection_id());
 
                 sub_applied_nothing_result(assert_all_tables_empty(ctx));
             });
@@ -685,8 +710,8 @@ fn exec_insert_address() {
     test_counter.wait_for_all();
 }
 
-/// This tests that we can serialize and deserialize `Address` in various contexts.
-fn exec_insert_caller_address() {
+/// This tests that we can serialize and deserialize `ConnectionId` in various contexts.
+fn exec_insert_caller_connection_id() {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
@@ -694,10 +719,10 @@ fn exec_insert_caller_address() {
         let test_counter = test_counter.clone();
         move |ctx| {
             subscribe_all_then(ctx, move |ctx| {
-                on_insert_one::<OneAddress>(ctx, &test_counter, ctx.address(), |event| {
-                    matches!(event, Reducer::InsertCallerOneAddress)
+                on_insert_one::<OneConnectionId>(ctx, &test_counter, ctx.connection_id(), |event| {
+                    matches!(event, Reducer::InsertCallerOneConnectionId)
                 });
-                ctx.reducers.insert_caller_one_address().unwrap();
+                ctx.reducers.insert_caller_one_connection_id().unwrap();
                 sub_applied_nothing_result(assert_all_tables_empty(ctx));
             });
         }
@@ -706,9 +731,9 @@ fn exec_insert_caller_address() {
     test_counter.wait_for_all();
 }
 
-/// This test doesn't add much alongside `exec_insert_address` and `exec_delete_primitive`,
+/// This test doesn't add much alongside `exec_insert_connection_id` and `exec_delete_primitive`,
 /// but it's here for symmetry.
-fn exec_delete_address() {
+fn exec_delete_connection_id() {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
@@ -716,7 +741,7 @@ fn exec_delete_address() {
         let test_counter = test_counter.clone();
         move |ctx| {
             subscribe_all_then(ctx, move |ctx| {
-                insert_then_delete_one::<UniqueAddress>(ctx, &test_counter, ctx.address(), 0xbeef);
+                insert_then_delete_one::<UniqueConnectionId>(ctx, &test_counter, ctx.connection_id(), 0xbeef);
 
                 sub_applied_nothing_result(assert_all_tables_empty(ctx));
             });
@@ -729,8 +754,8 @@ fn exec_delete_address() {
 }
 
 /// This tests that we can distinguish between `on_delete` and `on_update` events
-/// for tables with `Address` primary keys.
-fn exec_update_address() {
+/// for tables with `ConnectionId` primary keys.
+fn exec_update_connection_id() {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
@@ -739,10 +764,10 @@ fn exec_update_address() {
     subscribe_all_then(&connection, {
         let test_counter = test_counter.clone();
         move |ctx| {
-            insert_update_delete_one::<PkAddress>(
+            insert_update_delete_one::<PkConnectionId>(
                 ctx,
                 &test_counter,
-                Address::default(), // connection.address().unwrap(),
+                ConnectionId::ZERO, // connection.connection_id().unwrap(),
                 0xbeef,
                 0xbabe,
             );
@@ -754,6 +779,79 @@ fn exec_update_address() {
     test_counter.wait_for_all();
 
     assert_all_tables_empty(&connection).unwrap();
+}
+
+fn exec_insert_timestamp() {
+    let test_counter = TestCounter::new();
+    let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
+
+    connect_then(&test_counter, {
+        let test_counter = test_counter.clone();
+        move |ctx| {
+            subscribe_all_then(ctx, move |ctx| {
+                insert_one::<OneTimestamp>(ctx, &test_counter, Timestamp::now());
+
+                sub_applied_nothing_result(assert_all_tables_empty(ctx));
+            })
+        }
+    });
+
+    test_counter.wait_for_all();
+}
+
+fn exec_insert_call_timestamp() {
+    let test_counter = TestCounter::new();
+    let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
+
+    connect_then(&test_counter, {
+        let test_counter = test_counter.clone();
+        move |ctx| {
+            subscribe_all_then(ctx, move |ctx| {
+                let mut on_insert_result = Some(test_counter.add_test("on_insert"));
+                ctx.db.one_timestamp().on_insert(move |ctx, row| {
+                    let run_checks = || {
+                        let Event::Reducer(reducer_event) = &ctx.event else {
+                            anyhow::bail!("Expected Reducer event but found {:?}", ctx.event);
+                        };
+                        if reducer_event.caller_identity != ctx.identity() {
+                            anyhow::bail!(
+                                "Expected caller_identity to be my own identity {:?}, but found {:?}",
+                                ctx.identity(),
+                                reducer_event.caller_identity,
+                            );
+                        }
+                        if reducer_event.caller_connection_id != Some(ctx.connection_id()) {
+                            anyhow::bail!(
+                                "Expected caller_connection_id to be my own connection_id {:?}, but found {:?}",
+                                ctx.connection_id(),
+                                reducer_event.caller_connection_id,
+                            )
+                        }
+                        if !matches!(reducer_event.status, Status::Committed) {
+                            anyhow::bail!(
+                                "Unexpected status. Expected Committed but found {:?}",
+                                reducer_event.status
+                            );
+                        }
+                        let expected_reducer = Reducer::InsertCallTimestamp;
+                        if reducer_event.reducer != expected_reducer {
+                            anyhow::bail!(
+                                "Unexpected Reducer in ReducerEvent: expected {expected_reducer:?} but found {:?}",
+                                reducer_event.reducer,
+                            );
+                        };
+
+                        assert_eq_or_bail!(reducer_event.timestamp, row.t);
+                        Ok(())
+                    };
+                    (on_insert_result.take().unwrap())(run_checks());
+                });
+                ctx.reducers.insert_call_timestamp().unwrap();
+            });
+            sub_applied_nothing_result(assert_all_tables_empty(ctx));
+        }
+    });
+    test_counter.wait_for_all();
 }
 
 /// This tests that we can observe reducer callbacks for successful reducer runs.
@@ -779,11 +877,11 @@ fn exec_on_reducer() {
                     ctx.event.caller_identity,
                 );
             }
-            if ctx.event.caller_address != Some(ctx.address()) {
+            if ctx.event.caller_connection_id != Some(ctx.connection_id()) {
                 anyhow::bail!(
-                    "Expected caller_address to be my own address {:?}, but found {:?}",
-                    ctx.address(),
-                    ctx.event.caller_address,
+                    "Expected caller_connection_id to be my own connection_id {:?}, but found {:?}",
+                    ctx.connection_id(),
+                    ctx.event.caller_connection_id,
                 )
             }
             if !matches!(ctx.event.status, Status::Committed) {
@@ -856,11 +954,11 @@ fn exec_fail_reducer() {
                         ctx.event.caller_identity,
                     );
                 }
-                if ctx.event.caller_address != Some(ctx.address()) {
+                if ctx.event.caller_connection_id != Some(ctx.connection_id()) {
                     anyhow::bail!(
-                        "Expected caller_address to be my own address {:?}, but found {:?}",
-                        ctx.address(),
-                        ctx.event.caller_address,
+                        "Expected caller_connection_id to be my own connection_id {:?}, but found {:?}",
+                        ctx.connection_id(),
+                        ctx.event.caller_connection_id,
                     )
                 }
                 if !matches!(ctx.event.status, Status::Committed) {
@@ -916,11 +1014,11 @@ fn exec_fail_reducer() {
                         ctx.event.caller_identity,
                     );
                 }
-                if ctx.event.caller_address != Some(ctx.address()) {
+                if ctx.event.caller_connection_id != Some(ctx.connection_id()) {
                     anyhow::bail!(
-                        "Expected caller_address to be my own address {:?}, but found {:?}",
-                        ctx.address(),
-                        ctx.event.caller_address,
+                        "Expected caller_connection_id to be my own connection_id {:?}, but found {:?}",
+                        ctx.connection_id(),
+                        ctx.event.caller_connection_id,
                     )
                 }
                 if !matches!(ctx.event.status, Status::Failed(_)) {
@@ -997,7 +1095,9 @@ fn exec_insert_vec() {
             insert_one::<VecString>(ctx, &test_counter, vec!["zero".to_string(), "one".to_string()]);
 
             insert_one::<VecIdentity>(ctx, &test_counter, vec![ctx.identity()]);
-            insert_one::<VecAddress>(ctx, &test_counter, vec![ctx.address()]);
+            insert_one::<VecConnectionId>(ctx, &test_counter, vec![ctx.connection_id()]);
+
+            insert_one::<VecTimestamp>(ctx, &test_counter, vec![Timestamp::now()]);
 
             sub_applied_nothing_result(assert_all_tables_empty(ctx));
         }
@@ -1034,7 +1134,9 @@ fn every_primitive_struct() -> EveryPrimitiveStruct {
         o: -1.0,
         p: "string".to_string(),
         q: Identity::__dummy(),
-        r: Address::default(),
+        r: ConnectionId::ZERO,
+        s: Timestamp::from_micros_since_unix_epoch(9876543210),
+        t: TimeDuration::from_micros(-67_419_000_000_003),
     }
 }
 
@@ -1057,7 +1159,9 @@ fn every_vec_struct() -> EveryVecStruct {
         o: vec![0.0, -0.5, 0.5, -1.5, 1.5],
         p: ["vec", "of", "strings"].into_iter().map(str::to_string).collect(),
         q: vec![Identity::__dummy()],
-        r: vec![Address::default()],
+        r: vec![ConnectionId::ZERO],
+        s: vec![Timestamp::from_micros_since_unix_epoch(9876543210)],
+        t: vec![TimeDuration::from_micros(-67_419_000_000_003)],
     }
 }
 
@@ -1251,22 +1355,6 @@ fn exec_should_fail() {
     test_counter.wait_for_all();
 }
 
-macro_rules! assert_eq_or_bail {
-    ($expected:expr, $found:expr) => {{
-        let expected = &$expected;
-        let found = &$found;
-        if expected != found {
-            anyhow::bail!(
-                "Expected {} => {:?} but found {} => {:?}",
-                stringify!($expected),
-                expected,
-                stringify!($found),
-                found
-            );
-        }
-    }};
-}
-
 /// This test invokes a reducer with many arguments of many types,
 /// and observes a callback for an inserted table with many columns of many types.
 fn exec_insert_delete_large_table() {
@@ -1284,9 +1372,7 @@ fn exec_insert_delete_large_table() {
             table.on_insert(move |ctx, large_table_inserted| {
                 if let Some(insert_result) = insert_result.take() {
                     let run_tests = || {
-                        let large_table = large_table();
-
-                        assert_eq_or_bail!(large_table, *large_table_inserted);
+                        assert_eq_or_bail!(large_table(), *large_table_inserted);
                         if !matches!(
                             ctx.event,
                             Event::Reducer(ReducerEvent {
@@ -1298,6 +1384,7 @@ fn exec_insert_delete_large_table() {
                         }
 
                         // Now we'll delete the row we just inserted and check that the delete callback is called.
+                        let large_table = large_table();
                         ctx.reducers.delete_large_table(
                             large_table.a,
                             large_table.b,
@@ -1412,6 +1499,8 @@ fn exec_insert_primitives_as_strings() {
                 s.p.to_string(),
                 s.q.to_string(),
                 s.r.to_string(),
+                s.s.to_string(),
+                s.t.to_string(),
             ];
 
             ctx.db.vec_string().on_insert(move |ctx, row| {
@@ -1610,7 +1699,7 @@ fn exec_reauth_part_2() {
     test_counter.wait_for_all();
 }
 
-fn exec_reconnect_same_address() {
+fn exec_reconnect_same_connection_id() {
     let initial_test_counter = TestCounter::new();
     let initial_connect_result = initial_test_counter.add_test("connect");
 
@@ -1635,7 +1724,7 @@ fn exec_reconnect_same_address() {
 
     initial_test_counter.wait_for_all();
 
-    let my_address = initial_connection.address();
+    let my_connection_id = initial_connection.connection_id();
 
     initial_connection.disconnect().unwrap();
 
@@ -1652,7 +1741,7 @@ fn exec_reconnect_same_address() {
         .on_connect(move |ctx, _, _| {
             reconnect_result(Ok(()));
             let run_checks = || {
-                anyhow::ensure!(ctx.address() == my_address);
+                anyhow::ensure!(ctx.connection_id() == my_connection_id);
                 Ok(())
             };
             addr_after_reconnect_result(run_checks());
