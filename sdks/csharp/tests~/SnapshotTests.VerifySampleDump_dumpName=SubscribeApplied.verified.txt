@@ -30,7 +30,7 @@
               $type: Status.Committed
             },
             CallerIdentity: Identity_2,
-            CallerAddress: Guid_1,
+            CallerConnectionId: Guid_1,
             EnergyConsumed: {},
             Reducer: {
               $type: Reducer.IdentityConnected
@@ -56,7 +56,7 @@
               $type: Status.Committed
             },
             CallerIdentity: Identity_1,
-            CallerAddress: Guid_2,
+            CallerConnectionId: Guid_2,
             EnergyConsumed: {},
             Reducer: {
               $type: Reducer.SetName,
@@ -85,7 +85,7 @@
           $type: Status.Committed
         },
         CallerIdentity: Identity_1,
-        CallerAddress: Guid_2,
+        CallerConnectionId: Guid_2,
         EnergyConsumed: {},
         Reducer: {
           $type: Reducer.SetName,
@@ -114,7 +114,7 @@
               $type: Status.Committed
             },
             CallerIdentity: Identity_2,
-            CallerAddress: Guid_1,
+            CallerConnectionId: Guid_1,
             EnergyConsumed: {},
             Reducer: {
               $type: Reducer.SendMessage,
@@ -139,7 +139,7 @@
           $type: Status.Committed
         },
         CallerIdentity: Identity_2,
-        CallerAddress: Guid_1,
+        CallerConnectionId: Guid_1,
         EnergyConsumed: {},
         Reducer: {
           $type: Reducer.SendMessage,
@@ -168,7 +168,7 @@
               $type: Status.Committed
             },
             CallerIdentity: Identity_2,
-            CallerAddress: Guid_1,
+            CallerConnectionId: Guid_1,
             EnergyConsumed: {},
             Reducer: {
               $type: Reducer.SetName,
@@ -197,7 +197,7 @@
           $type: Status.Committed
         },
         CallerIdentity: Identity_2,
-        CallerAddress: Guid_1,
+        CallerConnectionId: Guid_1,
         EnergyConsumed: {},
         Reducer: {
           $type: Reducer.SetName,
@@ -226,7 +226,7 @@
               $type: Status.Committed
             },
             CallerIdentity: Identity_1,
-            CallerAddress: Guid_2,
+            CallerConnectionId: Guid_2,
             EnergyConsumed: {},
             Reducer: {
               $type: Reducer.SendMessage,
@@ -251,7 +251,7 @@
           $type: Status.Committed
         },
         CallerIdentity: Identity_1,
-        CallerAddress: Guid_2,
+        CallerConnectionId: Guid_2,
         EnergyConsumed: {},
         Reducer: {
           $type: Reducer.SendMessage,
@@ -280,7 +280,7 @@
               $type: Status.Committed
             },
             CallerIdentity: Identity_2,
-            CallerAddress: Guid_1,
+            CallerConnectionId: Guid_1,
             EnergyConsumed: {},
             Reducer: {
               $type: Reducer.SendMessage,
@@ -305,7 +305,7 @@
           $type: Status.Committed
         },
         CallerIdentity: Identity_2,
-        CallerAddress: Guid_1,
+        CallerConnectionId: Guid_1,
         EnergyConsumed: {},
         Reducer: {
           $type: Reducer.SendMessage,
@@ -334,7 +334,7 @@
               $type: Status.Committed
             },
             CallerIdentity: Identity_2,
-            CallerAddress: Guid_1,
+            CallerConnectionId: Guid_1,
             EnergyConsumed: {},
             Reducer: {
               $type: Reducer.IdentityDisconnected
@@ -366,7 +366,7 @@
               $type: Status.Committed
             },
             CallerIdentity: Identity_1,
-            CallerAddress: Guid_2,
+            CallerConnectionId: Guid_2,
             EnergyConsumed: {},
             Reducer: {
               $type: Reducer.SendMessage,
@@ -391,7 +391,7 @@
           $type: Status.Committed
         },
         CallerIdentity: Identity_1,
-        CallerAddress: Guid_2,
+        CallerConnectionId: Guid_2,
         EnergyConsumed: {},
         Reducer: {
           $type: Reducer.SendMessage,

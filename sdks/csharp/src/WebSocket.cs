@@ -51,9 +51,9 @@ namespace SpacetimeDB
 
         public bool IsConnected { get { return Ws != null && Ws.State == WebSocketState.Open; } }
 
-        public async Task Connect(string? auth, string host, string nameOrAddress, Address clientAddress, Compression compression, bool light)
+        public async Task Connect(string? auth, string host, string nameOrAddress, ConnectionId connectionId, Compression compression, bool light)
         {
-            var uri = $"{host}/database/subscribe/{nameOrAddress}?client_address={clientAddress}&compression={compression}";
+            var uri = $"{host}/database/subscribe/{nameOrAddress}?connection_id={connectionId}&compression={compression}";
             if (light)
             {
                 uri += "&light=true";

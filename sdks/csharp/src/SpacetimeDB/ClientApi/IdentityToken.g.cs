@@ -17,18 +17,18 @@ namespace SpacetimeDB.ClientApi
         public SpacetimeDB.Identity Identity;
         [DataMember(Name = "token")]
         public string Token;
-        [DataMember(Name = "address")]
-        public SpacetimeDB.Address Address;
+        [DataMember(Name = "connection_id")]
+        public SpacetimeDB.ConnectionId ConnectionId;
 
         public IdentityToken(
             SpacetimeDB.Identity Identity,
             string Token,
-            SpacetimeDB.Address Address
+            SpacetimeDB.ConnectionId ConnectionId
         )
         {
             this.Identity = Identity;
             this.Token = Token;
-            this.Address = Address;
+            this.ConnectionId = ConnectionId;
         }
 
         public IdentityToken()

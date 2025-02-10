@@ -174,7 +174,7 @@ namespace SpacetimeDB
         [Obsolete]
         public event Action<ReducerEvent<Reducer>>? onUnhandledReducerError;
 
-        public readonly Address Address = Address.Random();
+        public readonly ConnectionId ConnectionId = ConnectionId.Random();
         public Identity? Identity { get; private set; }
 
         internal WebSocket webSocket;
@@ -613,7 +613,7 @@ namespace SpacetimeDB
                                     _ => throw new InvalidOperationException()
                                 },
                                 transactionUpdate.CallerIdentity,
-                                transactionUpdate.CallerAddress,
+                                transactionUpdate.CallerConnectionId,
                                 transactionUpdate.EnergyQuantaUsed.Quanta,
                                 ToReducer(transactionUpdate));
                         }
@@ -705,7 +705,7 @@ namespace SpacetimeDB
                 {
                     try
                     {
-                        await webSocket.Connect(token, uri, addressOrName, Address, compression, light);
+                        await webSocket.Connect(token, uri, addressOrName, ConnectionId, compression, light);
                     }
                     catch (Exception e)
                     {

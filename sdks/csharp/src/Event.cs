@@ -41,7 +41,7 @@ namespace SpacetimeDB
         Timestamp Timestamp,
         Status Status,
         Identity CallerIdentity,
-        Address? CallerAddress,
+        ConnectionId? CallerConnectionId,
         U128? EnergyConsumed,
         R Reducer
     );
