@@ -140,8 +140,11 @@ public readonly record struct Timestamp
         this.__timestamp_nanos_since_unix_epoch = NanosecondsSinceUnixEpoch;
     }
 
-    public static implicit operator DateTimeOffset(Timestamp t) => DateTimeOffset.UnixEpoch.AddMicroseconds(t.__timestamp_nanos_since_unix_epoch / 1000);
-    public static implicit operator Timestamp(DateTimeOffset offset) => Timestamp(offset.Subtract(DateTimeOffset.UnixEpoch).Ticks * TimeSpan.NanosecondsPerTick);
+    public static implicit operator DateTimeOffset(Timestamp t) =>
+        DateTimeOffset.UnixEpoch.AddMicroseconds(t.__timestamp_nanos_since_unix_epoch / 1000);
+
+    public static implicit operator Timestamp(DateTimeOffset offset) =>
+        Timestamp(offset.Subtract(DateTimeOffset.UnixEpoch).Ticks * TimeSpan.NanosecondsPerTick);
 }
 
 [StructLayout(LayoutKind.Sequential)]
@@ -155,11 +158,12 @@ public readonly record struct TimeDuration
         this.__time_duration_nanoseconds = Nanoseconds;
     }
 
-    public static implicit operator TimeSpan(TimeDuration d) => TimeSpan(d.__time_duration_nanoseconds / TimeSpan.NanosecondsPerTick);
-    public static implicit operator TimeDuration(TimeSpan timeSpan) => TimeDuration(timeSpan.Ticks * TimeSpan.NanosecondsPerTick);
+    public static implicit operator TimeSpan(TimeDuration d) =>
+        TimeSpan(d.__time_duration_nanoseconds / TimeSpan.NanosecondsPerTick);
 
+    public static implicit operator TimeDuration(TimeSpan timeSpan) =>
+        TimeDuration(timeSpan.Ticks * TimeSpan.NanosecondsPerTick);
 }
 
 [SpacetimeDB.Type]
-public partial record ScheduleAt
-    : SpacetimeDB.TaggedEnum<(Timestamp Time, TimeDuration Interval)>;
+public partial record ScheduleAt : SpacetimeDB.TaggedEnum<(Timestamp Time, TimeDuration Interval)>;
