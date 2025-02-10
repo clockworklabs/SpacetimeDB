@@ -460,7 +460,10 @@ impl Lang for Csharp<'_> {
                             "\"{reducer_str_name}\" => BSATNHelpers.Decode<Reducer.{reducer_name}>(encodedArgs),"
                         );
                     }
-                    writeln!(output, r#"var reducer => new Reducer.StdbNone(),"#);
+                    writeln!(
+                        output,
+                        r#"var reducer => throw new ArgumentOutOfRangeException("Reducer", $"Unknown reducer {{reducer}}")"#
+                    );
                 }
                 writeln!(output, "}};");
             });
