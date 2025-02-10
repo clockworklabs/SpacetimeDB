@@ -14,6 +14,7 @@ use expr::{Expr, FieldProject, ProjectList, ProjectName, RelExpr};
 use spacetimedb_lib::{from_hex_pad, AlgebraicType, AlgebraicValue, ConnectionId, Identity};
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use spacetimedb_schema::schema::ColumnSchema;
+use spacetimedb_sql_parser::ast::sql::SqlDistinct;
 use spacetimedb_sql_parser::ast::{self, BinOp, ProjectElem, SqlExpr, SqlIdent, SqlLiteral};
 
 pub mod check;
@@ -30,14 +31,19 @@ pub(crate) fn type_select(input: RelExpr, expr: SqlExpr, vars: &Relvars) -> Typi
 }
 
 /// Type check and lower a [ast::Project]
-pub(crate) fn type_proj(input: RelExpr, proj: ast::Project, vars: &Relvars) -> TypingResult<ProjectList> {
-    match proj {
-        ast::Project::Star(None) if input.nfields() > 1 => Err(InvalidWildcard::Join.into()),
-        ast::Project::Star(None) => Ok(ProjectList::Name(ProjectName::None(input))),
+pub(crate) fn type_proj(
+    input: RelExpr,
+    proj: ast::Project,
+    vars: &Relvars,
+    distinct: SqlDistinct,
+) -> TypingResult<ProjectList> {
+    let project = match proj {
+        ast::Project::Star(None) if input.nfields() > 1 => return Err(InvalidWildcard::Join.into()),
+        ast::Project::Star(None) => ProjectList::Name(ProjectName::None(input)),
         ast::Project::Star(Some(SqlIdent(var))) if input.has_field(&var) => {
-            Ok(ProjectList::Name(ProjectName::Some(input, var)))
+            ProjectList::Name(ProjectName::Some(input, var))
         }
-        ast::Project::Star(Some(SqlIdent(var))) => Err(Unresolved::var(&var).into()),
+        ast::Project::Star(Some(SqlIdent(var))) => return Err(Unresolved::var(&var).into()),
         ast::Project::Exprs(elems) => {
             let mut projections = vec![];
             let mut names = HashSet::new();
@@ -52,8 +58,14 @@ pub(crate) fn type_proj(input: RelExpr, proj: ast::Project, vars: &Relvars) -> T
                 }
             }
 
-            Ok(ProjectList::List(input, projections))
+            ProjectList::List(input, projections)
         }
+    };
+
+    if distinct == SqlDistinct::Yes {
+        Ok(ProjectList::Dedup(Box::new(project)))
+    } else {
+        Ok(project)
     }
 }
 

@@ -74,6 +74,7 @@ impl ProjectName {
 pub enum ProjectList {
     Name(ProjectName),
     List(RelExpr, Vec<(Box<str>, FieldProject)>),
+    Dedup(Box<ProjectList>),
 }
 
 impl ProjectList {
@@ -84,6 +85,7 @@ impl ProjectList {
         match self {
             Self::Name(project) => project.return_table(),
             Self::List(..) => None,
+            Self::Dedup(project) => project.return_table(),
         }
     }
 
@@ -94,6 +96,7 @@ impl ProjectList {
         match self {
             Self::Name(project) => project.return_table_id(),
             Self::List(..) => None,
+            Self::Dedup(project) => project.return_table_id(),
         }
     }
 
@@ -107,6 +110,9 @@ impl ProjectList {
                 for (name, FieldProject { ty, .. }) in fields {
                     f(name, ty);
                 }
+            }
+            Self::Dedup(project) => {
+                project.for_each_return_field(f);
             }
         }
     }

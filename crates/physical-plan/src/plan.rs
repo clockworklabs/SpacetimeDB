@@ -101,6 +101,7 @@ impl ProjectPlan {
 pub enum ProjectListPlan {
     Name(ProjectPlan),
     List(PhysicalPlan, Vec<TupleField>),
+    Dedup(Box<ProjectListPlan>),
 }
 
 impl Deref for ProjectListPlan {
@@ -110,6 +111,7 @@ impl Deref for ProjectListPlan {
         match self {
             Self::Name(plan) => plan,
             Self::List(plan, ..) => plan,
+            Self::Dedup(plan) => plan,
         }
     }
 }
@@ -122,6 +124,7 @@ impl ProjectListPlan {
                 plan.optimize(fields.iter().map(|TupleField { label, .. }| label).copied().collect())?,
                 fields,
             )),
+            Self::Dedup(plan) => Ok(Self::Dedup(Box::new(plan.optimize()?))),
         }
     }
 }
@@ -161,6 +164,8 @@ pub enum PhysicalPlan {
     NLJoin(Box<PhysicalPlan>, Box<PhysicalPlan>),
     /// A tuple-at-a-time filter
     Filter(Box<PhysicalPlan>, PhysicalExpr),
+    /// Deduplicate a relation
+    Dedup(Box<PhysicalPlan>),
 }
 
 impl PhysicalPlan {
@@ -175,6 +180,7 @@ impl PhysicalPlan {
                 lhs.visit(f);
                 rhs.visit(f);
             }
+            Self::Dedup(input) => input.visit(f),
             _ => {}
         }
     }
@@ -190,6 +196,7 @@ impl PhysicalPlan {
                 lhs.visit_mut(f);
                 rhs.visit_mut(f);
             }
+            Self::Dedup(input) => input.visit_mut(f),
             _ => {}
         }
     }
@@ -223,6 +230,7 @@ impl PhysicalPlan {
                 },
                 semi,
             ),
+            Self::Dedup(input) => Self::Dedup(Box::new(input.map(f))),
             plan => plan,
         }
     }
@@ -274,6 +282,10 @@ impl PhysicalPlan {
             Self::Filter(input, expr) if matches(&input) => {
                 // Replace the input only if there is a match
                 Self::Filter(Box::new(input.map_if(f, ok)?), expr)
+            }
+            Self::Dedup(input) if matches(&input) => {
+                // Replace the input only if there is a match
+                Self::Dedup(Box::new(input.map_if(f, ok)?))
             }
             _ => self,
         })
@@ -339,6 +351,10 @@ impl PhysicalPlan {
             .apply_rec::<UniqueHashJoinRule>()?
             .introduce_semijoins(reqs)
             .apply_rec::<ComputePositions>()
+    }
+
+    pub fn dedup(self) -> Self {
+        Self::Dedup(Box::new(self))
     }
 
     /// The rewriter assumes a canonicalized plan.
@@ -415,6 +431,7 @@ impl PhysicalPlan {
                 // Flatten ANDs and ORs, and move values to rhs
                 Self::Filter(input, expr.flatten().map(&move_value_to_rhs))
             }
+            Self::Dedup(input) => Self::Dedup(Box::new(input.canonicalize())),
             _ => self,
         }
     }
@@ -562,6 +579,7 @@ impl PhysicalPlan {
                 let lhs = Box::new(lhs);
                 Self::IxJoin(IxJoin { lhs, ..join }, Semi::All)
             }
+            Self::Dedup(input) => Self::Dedup(Box::new(input.introduce_semijoins(reqs))),
             _ => self,
         }
     }
@@ -676,6 +694,7 @@ impl PhysicalPlan {
                 });
                 input.returns_distinct_values(label, &ColSet::from_iter(cols))
             }
+            Self::Dedup(input) => input.returns_distinct_values(label, cols),
             _ => false,
         }
     }
@@ -697,6 +716,7 @@ impl PhysicalPlan {
                     .as_singleton()
                     .is_some_and(|col_id| col_id.idx() == field)
             }),
+            Self::Dedup(input) => input.index_on_field(label, field),
             _ => false,
         })
     }
@@ -707,6 +727,7 @@ impl PhysicalPlan {
             Self::TableScan(_, var, _) | Self::IxScan(_, var) | Self::IxJoin(IxJoin { rhs_label: var, .. }, _) => {
                 var == label
             }
+            Self::Dedup(input) => input.has_label(label),
             _ => false,
         })
     }
@@ -722,6 +743,7 @@ impl PhysicalPlan {
             Self::HashJoin(join, Semi::Lhs) => join.lhs.nfields(),
             Self::HashJoin(join, Semi::All) => join.lhs.nfields() + join.rhs.nfields(),
             Self::NLJoin(lhs, rhs) => lhs.nfields() + rhs.nfields(),
+            Self::Dedup(input) => input.nfields(),
         }
     }
 
@@ -756,6 +778,9 @@ impl PhysicalPlan {
                 PhysicalPlan::NLJoin(lhs, rhs) | PhysicalPlan::HashJoin(HashJoin { lhs, rhs, .. }, Semi::All) => {
                     find(lhs, labels);
                     find(rhs, labels);
+                }
+                PhysicalPlan::Dedup(input) => {
+                    find(input, labels);
                 }
             }
         }
@@ -998,6 +1023,8 @@ mod tests {
 
     use pretty_assertions::assert_eq;
     use spacetimedb_expr::check::{parse_and_type_sub, SchemaView};
+    use spacetimedb_expr::expr::ProjectList;
+    use spacetimedb_expr::statement::{compile_sql_stmt, Statement};
     use spacetimedb_lib::{
         db::auth::{StAccess, StTableType},
         AlgebraicType, AlgebraicValue,
@@ -1158,11 +1185,11 @@ mod tests {
 
     /// Given the following operator notation:
     ///
-    /// x:  join  
-    /// p:  project  
-    /// s:  select  
-    /// ix: index scan  
-    /// rx: right index semijoin  
+    /// x:  join
+    /// p:  project
+    /// s:  select
+    /// ix: index scan
+    /// rx: right index semijoin
     ///
     /// This test takes the following logical plan:
     ///
@@ -1344,12 +1371,12 @@ mod tests {
 
     /// Given the following operator notation:
     ///
-    /// x:  join  
-    /// p:  project  
-    /// s:  select  
-    /// ix: index scan  
-    /// rx: right index semijoin  
-    /// rj: right hash semijoin  
+    /// x:  join
+    /// p:  project
+    /// s:  select
+    /// ix: index scan
+    /// rx: right index semijoin
+    /// rj: right hash semijoin
     ///
     /// This test takes the following logical plan:
     ///
@@ -1779,5 +1806,63 @@ mod tests {
             }
             plan => panic!("unexpected plan: {:#?}", plan),
         };
+    }
+
+    // Test that we `DISTINCT` is pushed down to the dedup operator
+    #[test]
+    fn distinct() {
+        let t_id = TableId(1);
+
+        let t = Arc::new(schema(
+            t_id,
+            "t",
+            &[("id", AlgebraicType::U64), ("x", AlgebraicType::U64)],
+            &[&[0]],
+            &[&[0]],
+            Some(0),
+        ));
+
+        let db = SchemaViewer {
+            schemas: vec![t.clone()],
+        };
+
+        let sql = "select distinct x from t";
+        let lp = compile_sql_stmt(sql, &db).unwrap();
+
+        match lp.statement {
+            Statement::Select(plan) => {
+                assert!(matches!(plan, ProjectList::Dedup(..)));
+            }
+            Statement::DML(_) => {
+                panic!("unexpected DML");
+            }
+        }
+
+        // Confirm `DISTINCT` is removed if using a `UNIQUE` index
+        let t = Arc::new(schema(
+            t_id,
+            "t",
+            &[("id", AlgebraicType::U64), ("x", AlgebraicType::U64)],
+            &[&[0]],
+            &[&[0]],
+            Some(0),
+        ));
+
+        let db = SchemaViewer {
+            schemas: vec![t.clone()],
+        };
+
+        let sql = "select distinct x from t";
+
+        let lp = compile_sql_stmt(sql, &db).unwrap();
+
+        match lp.statement {
+            Statement::Select(plan) => {
+                assert!(!matches!(plan, ProjectList::Dedup(..)));
+            }
+            Statement::DML(_) => {
+                panic!("unexpected DML");
+            }
+        }
     }
 }

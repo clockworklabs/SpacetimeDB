@@ -41,6 +41,7 @@ pub fn estimate_rows_scanned(tx: &Tx, plan: &PhysicalPlan) -> u64 {
         PhysicalPlan::HashJoin(HashJoin { lhs, rhs, .. }, _) => estimate_rows_scanned(tx, lhs)
             .saturating_add(estimate_rows_scanned(tx, rhs))
             .saturating_add(row_estimate(tx, lhs).saturating_mul(row_estimate(tx, rhs))),
+        PhysicalPlan::Dedup(input) => estimate_rows_scanned(tx, input),
     }
 }
 
@@ -81,6 +82,7 @@ pub fn row_estimate(tx: &Tx, plan: &PhysicalPlan) -> u64 {
         PhysicalPlan::HashJoin(HashJoin { lhs, rhs, .. }, _) => {
             row_estimate(tx, lhs).saturating_mul(row_estimate(tx, rhs))
         }
+        PhysicalPlan::Dedup(input) => row_estimate(tx, input),
     }
 }
 

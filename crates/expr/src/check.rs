@@ -2,21 +2,21 @@ use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
+use super::{
+    errors::{DuplicateName, TypingError, Unresolved, Unsupported},
+    expr::RelExpr,
+    type_expr, type_proj, type_select, StatementCtx, StatementSource,
+};
 use crate::expr::{Expr, ProjectList, ProjectName, Relvar};
 use crate::{expr::LeftDeepJoin, statement::Statement};
 use spacetimedb_lib::AlgebraicType;
 use spacetimedb_primitives::TableId;
 use spacetimedb_schema::schema::TableSchema;
+use spacetimedb_sql_parser::ast::sql::SqlDistinct;
 use spacetimedb_sql_parser::ast::BinOp;
 use spacetimedb_sql_parser::{
     ast::{sub::SqlSelect, SqlFrom, SqlIdent, SqlJoin},
     parser::sub::parse_subscription,
-};
-
-use super::{
-    errors::{DuplicateName, TypingError, Unresolved, Unsupported},
-    expr::RelExpr,
-    type_expr, type_proj, type_select, StatementCtx, StatementSource,
 };
 
 /// The result of type checking and name resolution
@@ -140,7 +140,7 @@ impl TypeChecker for SubChecker {
                 filter: None,
             } => {
                 let input = Self::type_from(from, vars, tx)?;
-                type_proj(input, project, vars)
+                type_proj(input, project, vars, SqlDistinct::No)
             }
             SqlSelect {
                 project,
@@ -148,7 +148,7 @@ impl TypeChecker for SubChecker {
                 filter: Some(expr),
             } => {
                 let input = Self::type_from(from, vars, tx)?;
-                type_proj(type_select(input, expr, vars)?, project, vars)
+                type_proj(type_select(input, expr, vars)?, project, vars, SqlDistinct::No)
             }
         }
     }
@@ -178,6 +178,7 @@ fn expect_table_type(expr: ProjectList) -> TypingResult<ProjectName> {
     match expr {
         ProjectList::Name(proj) => Ok(proj),
         ProjectList::List(..) => Err(Unsupported::ReturnType.into()),
+        ProjectList::Dedup(..) => Err(Unsupported::Dedup.into()),
     }
 }
 
