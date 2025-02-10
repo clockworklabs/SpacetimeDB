@@ -14,9 +14,11 @@ export type TransactionUpdateMessage = {
   tableUpdates: TableUpdate[];
   identity: Identity;
   connectionId: ConnectionId | null;
-  originalReducerName: string;
-  reducerName: string;
-  args: Uint8Array;
+  reducerInfo?: {
+    originalReducerName: string;
+    reducerName: string;
+    args: Uint8Array;
+  };
   status: UpdateStatus;
   message: string;
   timestamp: Timestamp;

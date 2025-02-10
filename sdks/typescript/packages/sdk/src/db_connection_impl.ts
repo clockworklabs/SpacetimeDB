@@ -37,6 +37,7 @@ import { deepEqual, toPascalCase } from './utils.ts';
 import { WebsocketDecompressAdapter } from './websocket_decompress_adapter.ts';
 import type { WebsocketTestAdapter } from './websocket_test_adapter.ts';
 import { SubscriptionBuilderImpl } from './subscription_builder_impl.ts';
+import type { ReducerRuntimeTypeInfo } from './spacetime_module.ts';
 
 export {
   AlgebraicType,
@@ -268,14 +269,36 @@ export class DBConnectionImpl<
             tableUpdates = [];
             break;
         }
+
+        // TODO: Can `reducerName` be '<none>'?
+        // See: https://github.com/clockworklabs/SpacetimeDB/blob/a2a1b5d9b2e0ebaaf753d074db056d319952d442/crates/core/src/client/message_handlers.rs#L155
+        if (originalReducerName === '<none>') {
+          let errorMessage = errMessage;
+          console.error(`Received an error from the database: ${errorMessage}`);
+          break;
+        }
+
+        let reducerInfo:
+          | {
+              originalReducerName: string;
+              reducerName: string;
+              args: Uint8Array;
+            }
+          | undefined;
+        if (originalReducerName !== '') {
+          reducerInfo = {
+            originalReducerName,
+            reducerName,
+            args,
+          };
+        }
+
         const transactionUpdate: Message = {
           tag: 'TransactionUpdate',
           tableUpdates,
           identity,
           connectionId,
-          originalReducerName,
-          reducerName,
-          args,
+          reducerInfo,
           status: txUpdate.status,
           energyConsumed: energyQuantaUsed.quanta,
           message: errMessage,
@@ -427,57 +450,80 @@ export class DBConnectionImpl<
           );
           this.#applyTableUpdates(message.tableUpdates, eventContext);
         } else if (message.tag === 'TransactionUpdate') {
-          const reducerName = message.originalReducerName;
-          const reducerTypeInfo = this.remoteModule.reducers[reducerName]!;
-
-          // TODO: Can `reducerName` be '<none>'?
-          // See: https://github.com/clockworklabs/SpacetimeDB/blob/a2a1b5d9b2e0ebaaf753d074db056d319952d442/crates/core/src/client/message_handlers.rs#L155
-          if (reducerName === '<none>') {
-            let errorMessage = message.message;
-            console.error(
-              `Received an error from the database: ${errorMessage}`
-            );
+          let reducerInfo = message.reducerInfo;
+          let unknownTransaction = false;
+          let reducerArgs: any | undefined;
+          let reducerTypeInfo: ReducerRuntimeTypeInfo | undefined;
+          if (!reducerInfo) {
+            unknownTransaction = true;
           } else {
-            const reader = new BinaryReader(message.args as Uint8Array);
-            const reducerArgs = reducerTypeInfo.argsType.deserialize(reader);
-            const reducerEvent = {
-              callerIdentity: message.identity,
-              status: message.status,
-              callerConnectionId: message.connectionId as ConnectionId,
-              timestamp: message.timestamp,
-              energyConsumed: message.energyConsumed,
-              reducer: {
-                name: reducerName,
-                args: reducerArgs,
-              },
-            };
-            const event: Event<typeof reducerEvent.reducer> = {
-              tag: 'Reducer',
-              value: reducerEvent,
-            };
+            const reducerTypeInfo =
+              this.remoteModule.reducers[reducerInfo.originalReducerName];
+            try {
+              const reader = new BinaryReader(reducerInfo.args as Uint8Array);
+              reducerArgs = reducerTypeInfo.argsType.deserialize(reader);
+            } catch {
+              // This should only be printed in development, since it's
+              // possible for clients to receive new reducers that they don't
+              // know about.
+              console.debug('Failed to deserialize reducer arguments');
+              unknownTransaction = true;
+            }
+          }
+
+          if (unknownTransaction) {
+            const event: Event<never> = { tag: 'UnknownTransaction' };
             const eventContext = this.remoteModule.eventContextConstructor(
               this,
               event
             );
-            const reducerEventContext = {
-              ...eventContext,
-              event: reducerEvent,
-            };
-
             this.#applyTableUpdates(message.tableUpdates, eventContext);
-
-            const argsArray: any[] = [];
-            reducerTypeInfo.argsType.product.elements.forEach(
-              (element, index) => {
-                argsArray.push(reducerArgs[element.name]);
-              }
-            );
-            this.#reducerEmitter.emit(
-              reducerName,
-              reducerEventContext,
-              ...argsArray
-            );
+            return;
           }
+
+          // At this point, we know that `reducerInfo` is not null because
+          // we return if `unknownTransaction` is true.
+          reducerInfo = reducerInfo!;
+          reducerTypeInfo = reducerTypeInfo!;
+
+          // Thus this must be a reducer event create it and emit it.
+          const reducerEvent = {
+            callerIdentity: message.identity,
+            status: message.status,
+            callerConnectionId: message.connectionId as ConnectionId,
+            timestamp: message.timestamp,
+            energyConsumed: message.energyConsumed,
+            reducer: {
+              name: reducerInfo.reducerName,
+              args: reducerArgs,
+            },
+          };
+          const event: Event<typeof reducerEvent.reducer> = {
+            tag: 'Reducer',
+            value: reducerEvent,
+          };
+          const eventContext = this.remoteModule.eventContextConstructor(
+            this,
+            event
+          );
+          const reducerEventContext = {
+            ...eventContext,
+            event: reducerEvent,
+          };
+
+          this.#applyTableUpdates(message.tableUpdates, eventContext);
+
+          const argsArray: any[] = [];
+          reducerTypeInfo.argsType.product.elements.forEach(
+            (element, index) => {
+              argsArray.push(reducerArgs[element.name]);
+            }
+          );
+          this.#reducerEmitter.emit(
+            reducerInfo.reducerName,
+            reducerEventContext,
+            ...argsArray
+          );
         } else if (message.tag === 'IdentityToken') {
           this.identity = message.identity;
           if (!this.token && message.token) {
