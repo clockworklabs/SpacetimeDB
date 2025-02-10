@@ -312,9 +312,9 @@ pub trait MutTx {
 /// Standard metadata associated with a database.
 #[derive(Debug)]
 pub struct Metadata {
-    /// The stable address of the database.
+    /// The stable [`Identity`] of the database.
     pub database_identity: Identity,
-    /// The identity of the database's owner .
+    /// The identity of the database's owner.
     pub owner_identity: Identity,
     /// The hash of the binary module set for the database.
     pub program_hash: Hash,

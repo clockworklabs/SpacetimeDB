@@ -24,7 +24,7 @@ pub struct EveryPrimitiveStruct {
     pub o: f64,
     pub p: String,
     pub q: __sdk::Identity,
-    pub r: __sdk::Address,
+    pub r: __sdk::ConnectionId,
     pub s: __sdk::Timestamp,
     pub t: __sdk::TimeDuration,
 }

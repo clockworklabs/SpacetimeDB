@@ -10,12 +10,12 @@ expression: outfiles
 /* tslint:disable */
 // @ts-nocheck
 import {
-  Address,
   AlgebraicType,
   AlgebraicValue,
   BinaryReader,
   BinaryWriter,
   CallReducerFlags,
+  ConnectionId,
   DBConnectionBuilder,
   DBConnectionImpl,
   DBContext,
@@ -73,12 +73,12 @@ export namespace AddPlayer {
 /* tslint:disable */
 // @ts-nocheck
 import {
-  Address,
   AlgebraicType,
   AlgebraicValue,
   BinaryReader,
   BinaryWriter,
   CallReducerFlags,
+  ConnectionId,
   DBConnectionBuilder,
   DBConnectionImpl,
   DBContext,
@@ -136,12 +136,12 @@ export namespace AddPrivate {
 /* tslint:disable */
 // @ts-nocheck
 import {
-  Address,
   AlgebraicType,
   AlgebraicValue,
   BinaryReader,
   BinaryWriter,
   CallReducerFlags,
+  ConnectionId,
   DBConnectionBuilder,
   DBConnectionImpl,
   DBContext,
@@ -201,12 +201,12 @@ export namespace Add {
 /* tslint:disable */
 // @ts-nocheck
 import {
-  Address,
   AlgebraicType,
   AlgebraicValue,
   BinaryReader,
   BinaryWriter,
   CallReducerFlags,
+  ConnectionId,
   DBConnectionBuilder,
   DBConnectionImpl,
   DBContext,
@@ -261,12 +261,12 @@ export namespace AssertCallerIdentityIsModuleIdentity {
 /* tslint:disable */
 // @ts-nocheck
 import {
-  Address,
   AlgebraicType,
   AlgebraicValue,
   BinaryReader,
   BinaryWriter,
   CallReducerFlags,
+  ConnectionId,
   DBConnectionBuilder,
   DBConnectionImpl,
   DBContext,
@@ -324,12 +324,12 @@ export namespace Baz {
 /* tslint:disable */
 // @ts-nocheck
 import {
-  Address,
   AlgebraicType,
   AlgebraicValue,
   BinaryReader,
   BinaryWriter,
   CallReducerFlags,
+  ConnectionId,
   DBConnectionBuilder,
   DBConnectionImpl,
   DBContext,
@@ -384,12 +384,12 @@ export namespace ClientConnected {
 /* tslint:disable */
 // @ts-nocheck
 import {
-  Address,
   AlgebraicType,
   AlgebraicValue,
   BinaryReader,
   BinaryWriter,
   CallReducerFlags,
+  ConnectionId,
   DBConnectionBuilder,
   DBConnectionImpl,
   DBContext,
@@ -447,12 +447,12 @@ export namespace DeletePlayer {
 /* tslint:disable */
 // @ts-nocheck
 import {
-  Address,
   AlgebraicType,
   AlgebraicValue,
   BinaryReader,
   BinaryWriter,
   CallReducerFlags,
+  ConnectionId,
   DBConnectionBuilder,
   DBConnectionImpl,
   DBContext,
@@ -510,12 +510,12 @@ export namespace DeletePlayersByName {
 /* tslint:disable */
 // @ts-nocheck
 import {
-  Address,
   AlgebraicType,
   AlgebraicValue,
   BinaryReader,
   BinaryWriter,
   CallReducerFlags,
+  ConnectionId,
   DBConnectionBuilder,
   DBConnectionImpl,
   DBContext,
@@ -588,12 +588,12 @@ export default Foobar;
 /* tslint:disable */
 // @ts-nocheck
 import {
-  Address,
   AlgebraicType,
   AlgebraicValue,
   BinaryReader,
   BinaryWriter,
   CallReducerFlags,
+  ConnectionId,
   DBConnectionBuilder,
   DBConnectionImpl,
   DBContext,
@@ -666,12 +666,12 @@ export class HasSpecialStuffTableHandle {
 /* tslint:disable */
 // @ts-nocheck
 import {
-  Address,
   AlgebraicType,
   AlgebraicValue,
   BinaryReader,
   BinaryWriter,
   CallReducerFlags,
+  ConnectionId,
   DBConnectionBuilder,
   DBConnectionImpl,
   DBContext,
@@ -693,7 +693,7 @@ import {
 } from "@clockworklabs/spacetimedb-sdk";
 export type HasSpecialStuff = {
   identity: Identity,
-  address: Address,
+  connectionId: ConnectionId,
 };
 
 /**
@@ -707,7 +707,7 @@ export namespace HasSpecialStuff {
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
       new ProductTypeElement("identity", AlgebraicType.createIdentityType()),
-      new ProductTypeElement("address", AlgebraicType.createAddressType()),
+      new ProductTypeElement("connectionId", AlgebraicType.createConnectionIdType()),
     ]);
   }
 
@@ -731,12 +731,12 @@ export namespace HasSpecialStuff {
 /* tslint:disable */
 // @ts-nocheck
 import {
-  Address,
   AlgebraicType,
   AlgebraicValue,
   BinaryReader,
   BinaryWriter,
   CallReducerFlags,
+  ConnectionId,
   DBConnectionBuilder,
   DBConnectionImpl,
   DBContext,
@@ -1349,12 +1349,12 @@ export type ErrorContext = ErrorContextInterface<RemoteTables, RemoteReducers, S
 /* tslint:disable */
 // @ts-nocheck
 import {
-  Address,
   AlgebraicType,
   AlgebraicValue,
   BinaryReader,
   BinaryWriter,
   CallReducerFlags,
+  ConnectionId,
   DBConnectionBuilder,
   DBConnectionImpl,
   DBContext,
@@ -1412,12 +1412,12 @@ export namespace ListOverAge {
 /* tslint:disable */
 // @ts-nocheck
 import {
-  Address,
   AlgebraicType,
   AlgebraicValue,
   BinaryReader,
   BinaryWriter,
   CallReducerFlags,
+  ConnectionId,
   DBConnectionBuilder,
   DBConnectionImpl,
   DBContext,
@@ -1472,12 +1472,12 @@ export namespace LogModuleIdentity {
 /* tslint:disable */
 // @ts-nocheck
 import {
-  Address,
   AlgebraicType,
   AlgebraicValue,
   BinaryReader,
   BinaryWriter,
   CallReducerFlags,
+  ConnectionId,
   DBConnectionBuilder,
   DBConnectionImpl,
   DBContext,
@@ -1624,12 +1624,12 @@ export class LoggedOutPlayerTableHandle {
 /* tslint:disable */
 // @ts-nocheck
 import {
-  Address,
   AlgebraicType,
   AlgebraicValue,
   BinaryReader,
   BinaryWriter,
   CallReducerFlags,
+  ConnectionId,
   DBConnectionBuilder,
   DBConnectionImpl,
   DBContext,
@@ -1697,12 +1697,12 @@ export default NamespaceTestC;
 /* tslint:disable */
 // @ts-nocheck
 import {
-  Address,
   AlgebraicType,
   AlgebraicValue,
   BinaryReader,
   BinaryWriter,
   CallReducerFlags,
+  ConnectionId,
   DBConnectionBuilder,
   DBConnectionImpl,
   DBContext,
@@ -1773,12 +1773,12 @@ export default NamespaceTestF;
 /* tslint:disable */
 // @ts-nocheck
 import {
-  Address,
   AlgebraicType,
   AlgebraicValue,
   BinaryReader,
   BinaryWriter,
   CallReducerFlags,
+  ConnectionId,
   DBConnectionBuilder,
   DBConnectionImpl,
   DBContext,
@@ -1881,12 +1881,12 @@ export class PersonTableHandle {
 /* tslint:disable */
 // @ts-nocheck
 import {
-  Address,
   AlgebraicType,
   AlgebraicValue,
   BinaryReader,
   BinaryWriter,
   CallReducerFlags,
+  ConnectionId,
   DBConnectionBuilder,
   DBConnectionImpl,
   DBContext,
@@ -1948,12 +1948,12 @@ export namespace Person {
 /* tslint:disable */
 // @ts-nocheck
 import {
-  Address,
   AlgebraicType,
   AlgebraicValue,
   BinaryReader,
   BinaryWriter,
   CallReducerFlags,
+  ConnectionId,
   DBConnectionBuilder,
   DBConnectionImpl,
   DBContext,
@@ -2078,12 +2078,12 @@ export class PkMultiIdentityTableHandle {
 /* tslint:disable */
 // @ts-nocheck
 import {
-  Address,
   AlgebraicType,
   AlgebraicValue,
   BinaryReader,
   BinaryWriter,
   CallReducerFlags,
+  ConnectionId,
   DBConnectionBuilder,
   DBConnectionImpl,
   DBContext,
@@ -2143,12 +2143,12 @@ export namespace PkMultiIdentity {
 /* tslint:disable */
 // @ts-nocheck
 import {
-  Address,
   AlgebraicType,
   AlgebraicValue,
   BinaryReader,
   BinaryWriter,
   CallReducerFlags,
+  ConnectionId,
   DBConnectionBuilder,
   DBConnectionImpl,
   DBContext,
@@ -2295,12 +2295,12 @@ export class PlayerTableHandle {
 /* tslint:disable */
 // @ts-nocheck
 import {
-  Address,
   AlgebraicType,
   AlgebraicValue,
   BinaryReader,
   BinaryWriter,
   CallReducerFlags,
+  ConnectionId,
   DBConnectionBuilder,
   DBConnectionImpl,
   DBContext,
@@ -2362,12 +2362,12 @@ export namespace Player {
 /* tslint:disable */
 // @ts-nocheck
 import {
-  Address,
   AlgebraicType,
   AlgebraicValue,
   BinaryReader,
   BinaryWriter,
   CallReducerFlags,
+  ConnectionId,
   DBConnectionBuilder,
   DBConnectionImpl,
   DBContext,
@@ -2427,12 +2427,12 @@ export namespace Point {
 /* tslint:disable */
 // @ts-nocheck
 import {
-  Address,
   AlgebraicType,
   AlgebraicValue,
   BinaryReader,
   BinaryWriter,
   CallReducerFlags,
+  ConnectionId,
   DBConnectionBuilder,
   DBConnectionImpl,
   DBContext,
@@ -2505,12 +2505,12 @@ export class PointsTableHandle {
 /* tslint:disable */
 // @ts-nocheck
 import {
-  Address,
   AlgebraicType,
   AlgebraicValue,
   BinaryReader,
   BinaryWriter,
   CallReducerFlags,
+  ConnectionId,
   DBConnectionBuilder,
   DBConnectionImpl,
   DBContext,
@@ -2583,12 +2583,12 @@ export class PrivateTableTableHandle {
 /* tslint:disable */
 // @ts-nocheck
 import {
-  Address,
   AlgebraicType,
   AlgebraicValue,
   BinaryReader,
   BinaryWriter,
   CallReducerFlags,
+  ConnectionId,
   DBConnectionBuilder,
   DBConnectionImpl,
   DBContext,
@@ -2646,12 +2646,12 @@ export namespace PrivateTable {
 /* tslint:disable */
 // @ts-nocheck
 import {
-  Address,
   AlgebraicType,
   AlgebraicValue,
   BinaryReader,
   BinaryWriter,
   CallReducerFlags,
+  ConnectionId,
   DBConnectionBuilder,
   DBConnectionImpl,
   DBContext,
@@ -2706,12 +2706,12 @@ export namespace QueryPrivate {
 /* tslint:disable */
 // @ts-nocheck
 import {
-  Address,
   AlgebraicType,
   AlgebraicValue,
   BinaryReader,
   BinaryWriter,
   CallReducerFlags,
+  ConnectionId,
   DBConnectionBuilder,
   DBConnectionImpl,
   DBContext,
@@ -2814,12 +2814,12 @@ export class RepeatingTestArgTableHandle {
 /* tslint:disable */
 // @ts-nocheck
 import {
-  Address,
   AlgebraicType,
   AlgebraicValue,
   BinaryReader,
   BinaryWriter,
   CallReducerFlags,
+  ConnectionId,
   DBConnectionBuilder,
   DBConnectionImpl,
   DBContext,
@@ -2881,12 +2881,12 @@ export namespace RepeatingTestArg {
 /* tslint:disable */
 // @ts-nocheck
 import {
-  Address,
   AlgebraicType,
   AlgebraicValue,
   BinaryReader,
   BinaryWriter,
   CallReducerFlags,
+  ConnectionId,
   DBConnectionBuilder,
   DBConnectionImpl,
   DBContext,
@@ -2946,12 +2946,12 @@ export namespace RepeatingTest {
 /* tslint:disable */
 // @ts-nocheck
 import {
-  Address,
   AlgebraicType,
   AlgebraicValue,
   BinaryReader,
   BinaryWriter,
   CallReducerFlags,
+  ConnectionId,
   DBConnectionBuilder,
   DBConnectionImpl,
   DBContext,
@@ -3006,12 +3006,12 @@ export namespace SayHello {
 /* tslint:disable */
 // @ts-nocheck
 import {
-  Address,
   AlgebraicType,
   AlgebraicValue,
   BinaryReader,
   BinaryWriter,
   CallReducerFlags,
+  ConnectionId,
   DBConnectionBuilder,
   DBConnectionImpl,
   DBContext,
@@ -3084,12 +3084,12 @@ export class TestATableHandle {
 /* tslint:disable */
 // @ts-nocheck
 import {
-  Address,
   AlgebraicType,
   AlgebraicValue,
   BinaryReader,
   BinaryWriter,
   CallReducerFlags,
+  ConnectionId,
   DBConnectionBuilder,
   DBConnectionImpl,
   DBContext,
@@ -3151,12 +3151,12 @@ export namespace TestA {
 /* tslint:disable */
 // @ts-nocheck
 import {
-  Address,
   AlgebraicType,
   AlgebraicValue,
   BinaryReader,
   BinaryWriter,
   CallReducerFlags,
+  ConnectionId,
   DBConnectionBuilder,
   DBConnectionImpl,
   DBContext,
@@ -3214,12 +3214,12 @@ export namespace TestB {
 /* tslint:disable */
 // @ts-nocheck
 import {
-  Address,
   AlgebraicType,
   AlgebraicValue,
   BinaryReader,
   BinaryWriter,
   CallReducerFlags,
+  ConnectionId,
   DBConnectionBuilder,
   DBConnectionImpl,
   DBContext,
@@ -3274,12 +3274,12 @@ export namespace TestBtreeIndexArgs {
 /* tslint:disable */
 // @ts-nocheck
 import {
-  Address,
   AlgebraicType,
   AlgebraicValue,
   BinaryReader,
   BinaryWriter,
   CallReducerFlags,
+  ConnectionId,
   DBConnectionBuilder,
   DBConnectionImpl,
   DBContext,
@@ -3354,12 +3354,12 @@ export class TestDTableHandle {
 /* tslint:disable */
 // @ts-nocheck
 import {
-  Address,
   AlgebraicType,
   AlgebraicValue,
   BinaryReader,
   BinaryWriter,
   CallReducerFlags,
+  ConnectionId,
   DBConnectionBuilder,
   DBConnectionImpl,
   DBContext,
@@ -3419,12 +3419,12 @@ export namespace TestD {
 /* tslint:disable */
 // @ts-nocheck
 import {
-  Address,
   AlgebraicType,
   AlgebraicValue,
   BinaryReader,
   BinaryWriter,
   CallReducerFlags,
+  ConnectionId,
   DBConnectionBuilder,
   DBConnectionImpl,
   DBContext,
@@ -3527,12 +3527,12 @@ export class TestETableHandle {
 /* tslint:disable */
 // @ts-nocheck
 import {
-  Address,
   AlgebraicType,
   AlgebraicValue,
   BinaryReader,
   BinaryWriter,
   CallReducerFlags,
+  ConnectionId,
   DBConnectionBuilder,
   DBConnectionImpl,
   DBContext,
@@ -3592,12 +3592,12 @@ export namespace TestE {
 /* tslint:disable */
 // @ts-nocheck
 import {
-  Address,
   AlgebraicType,
   AlgebraicValue,
   BinaryReader,
   BinaryWriter,
   CallReducerFlags,
+  ConnectionId,
   DBConnectionBuilder,
   DBConnectionImpl,
   DBContext,
@@ -3672,12 +3672,12 @@ export class TestFTableHandle {
 /* tslint:disable */
 // @ts-nocheck
 import {
-  Address,
   AlgebraicType,
   AlgebraicValue,
   BinaryReader,
   BinaryWriter,
   CallReducerFlags,
+  ConnectionId,
   DBConnectionBuilder,
   DBConnectionImpl,
   DBContext,
@@ -3737,12 +3737,12 @@ export namespace TestFoobar {
 /* tslint:disable */
 // @ts-nocheck
 import {
-  Address,
   AlgebraicType,
   AlgebraicValue,
   BinaryReader,
   BinaryWriter,
   CallReducerFlags,
+  ConnectionId,
   DBConnectionBuilder,
   DBConnectionImpl,
   DBContext,

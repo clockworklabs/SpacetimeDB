@@ -33,8 +33,8 @@ pub use spacetimedb_lib;
 pub use spacetimedb_lib::de::{Deserialize, DeserializeOwned};
 pub use spacetimedb_lib::sats;
 pub use spacetimedb_lib::ser::Serialize;
-pub use spacetimedb_lib::Address;
 pub use spacetimedb_lib::AlgebraicValue;
+pub use spacetimedb_lib::ConnectionId;
 pub use spacetimedb_lib::Identity;
 pub use spacetimedb_lib::ScheduleAt;
 pub use spacetimedb_lib::TimeDuration;
@@ -52,14 +52,10 @@ pub struct ReducerContext {
     pub sender: Identity,
     /// The time at which the reducer was started.
     pub timestamp: Timestamp,
-    /// The `Address` of the client that invoked the reducer.
+    /// The `ConnectionId` of the client that invoked the reducer.
     ///
-    /// `None` if no `Address` was supplied to the `/database/call` HTTP endpoint,
-    /// or via the CLI's `spacetime call` subcommand.
-    ///
-    /// For automatic reducers, i.e. `init`, `update` and scheduled reducers,
-    /// this will be the module's `Address`.
-    pub address: Option<Address>,
+    /// Will be `None` for scheduled reducers.
+    pub connection_id: Option<ConnectionId>,
     pub db: Local,
 
     #[cfg(feature = "rand")]
@@ -73,7 +69,7 @@ impl ReducerContext {
             db: Local {},
             sender: Identity::__dummy(),
             timestamp: Timestamp::UNIX_EPOCH,
-            address: None,
+            connection_id: None,
             rng: std::cell::OnceCell::new(),
         }
     }

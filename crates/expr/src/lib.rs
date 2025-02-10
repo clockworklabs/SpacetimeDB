@@ -11,7 +11,7 @@ use errors::{DuplicateName, InvalidLiteral, InvalidOp, InvalidWildcard, Unexpect
 use ethnum::i256;
 use ethnum::u256;
 use expr::{Expr, FieldProject, ProjectList, ProjectName, RelExpr};
-use spacetimedb_lib::{from_hex_pad, Address, AlgebraicType, AlgebraicValue, Identity};
+use spacetimedb_lib::{from_hex_pad, AlgebraicType, AlgebraicValue, ConnectionId, Identity};
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use spacetimedb_schema::schema::ColumnSchema;
 use spacetimedb_sql_parser::ast::{self, BinOp, ProjectElem, SqlExpr, SqlIdent, SqlLiteral};
@@ -117,7 +117,13 @@ pub(crate) fn type_expr(vars: &Relvars, expr: SqlExpr, expected: Option<&Algebra
 
 /// Is this type compatible with this binary operator?
 fn op_supports_type(_op: BinOp, t: &AlgebraicType) -> bool {
-    t.is_bool() || t.is_integer() || t.is_float() || t.is_string() || t.is_bytes() || t.is_identity() || t.is_address()
+    t.is_bool()
+        || t.is_integer()
+        || t.is_float()
+        || t.is_string()
+        || t.is_bytes()
+        || t.is_identity()
+        || t.is_connection_id()
 }
 
 /// Parse an integer literal into an [AlgebraicValue]
@@ -176,10 +182,10 @@ pub(crate) fn parse(value: &str, ty: &AlgebraicType) -> anyhow::Result<Algebraic
             .map(AlgebraicValue::from)
             .with_context(|| "Could not parse identity")
     };
-    let to_address = || {
-        Address::from_hex(value)
+    let to_connection_id = || {
+        ConnectionId::from_hex(value)
             .map(AlgebraicValue::from)
-            .with_context(|| "Could not parse address")
+            .with_context(|| "Could not parse connection id")
     };
     let to_i256 = |decimal: &BigDecimal| {
         i256::from_str_radix(
@@ -299,7 +305,7 @@ pub(crate) fn parse(value: &str, ty: &AlgebraicType) -> anyhow::Result<Algebraic
         AlgebraicType::String => Ok(AlgebraicValue::String(value.into())),
         t if t.is_bytes() => to_bytes(),
         t if t.is_identity() => to_identity(),
-        t if t.is_address() => to_address(),
+        t if t.is_connection_id() => to_connection_id(),
         t => bail!("Literal values for type {} are not supported", fmt_algebraic_type(t)),
     }
 }

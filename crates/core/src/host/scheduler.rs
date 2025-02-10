@@ -6,7 +6,7 @@ use futures::StreamExt;
 use rustc_hash::FxHashMap;
 use spacetimedb_client_api_messages::energy::EnergyQuanta;
 use spacetimedb_lib::scheduler::ScheduleAt;
-use spacetimedb_lib::Address;
+use spacetimedb_lib::ConnectionId;
 use spacetimedb_lib::Timestamp;
 use spacetimedb_primitives::{ColId, TableId};
 use spacetimedb_sats::{bsatn::ToBsatn as _, AlgebraicValue};
@@ -313,7 +313,7 @@ impl SchedulerActor {
                     return Ok(Some(CallReducerParams {
                         timestamp: Timestamp::now(),
                         caller_identity,
-                        caller_address: Address::default(),
+                        caller_connection_id: ConnectionId::ZERO,
                         client: None,
                         request_id: None,
                         timer: None,
@@ -345,7 +345,7 @@ impl SchedulerActor {
             Ok(Some(CallReducerParams {
                 timestamp: Timestamp::now(),
                 caller_identity,
-                caller_address: Address::default(),
+                caller_connection_id: ConnectionId::ZERO,
                 client: None,
                 request_id: None,
                 timer: None,
@@ -435,7 +435,7 @@ fn commit_and_broadcast_deletion_event(tx: MutTxId, module_host: ModuleHost) {
     let event = ModuleEvent {
         timestamp: Timestamp::now(),
         caller_identity,
-        caller_address: None,
+        caller_connection_id: None,
         function_call: ModuleFunctionCall::default(),
         status: EventStatus::Committed(DatabaseUpdate::default()),
         //Keeping them 0 as it is internal transaction, not by reducer

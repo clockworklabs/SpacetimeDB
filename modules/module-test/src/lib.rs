@@ -2,7 +2,9 @@
 use spacetimedb::log;
 use spacetimedb::spacetimedb_lib::db::raw_def::v9::TableAccess;
 use spacetimedb::spacetimedb_lib::{self, bsatn};
-use spacetimedb::{duration, table, Address, Deserialize, Identity, ReducerContext, SpacetimeType, Table, Timestamp};
+use spacetimedb::{
+    duration, table, ConnectionId, Deserialize, Identity, ReducerContext, SpacetimeType, Table, Timestamp,
+};
 
 pub type TestAlias = TestA;
 
@@ -137,7 +139,7 @@ pub struct RepeatingTestArg {
 #[spacetimedb::table(name = has_special_stuff)]
 pub struct HasSpecialStuff {
     identity: Identity,
-    address: Address,
+    connection_id: ConnectionId,
 }
 
 /// These two tables defined with the same row type

@@ -620,7 +620,7 @@ async fn launch_module(
     replica_dir: ReplicaDir,
     runtimes: Arc<HostRuntimes>,
 ) -> anyhow::Result<(Program, LaunchedModule)> {
-    let address = database.database_identity;
+    let db_identity = database.database_identity;
     let host_type = database.host_type;
 
     let replica_ctx = make_replica_ctx(replica_dir, database, replica_id, relational_db)
@@ -638,7 +638,7 @@ async fn launch_module(
     )
     .await?;
 
-    trace!("launched database {} with program {}", address, program.hash);
+    trace!("launched database {} with program {}", db_identity, program.hash);
 
     Ok((
         program,
@@ -788,14 +788,14 @@ impl Host {
         } = launched;
 
         // Disconnect dangling clients.
-        for (identity, address) in connected_clients {
+        for (identity, connection_id) in connected_clients {
             module_host
-                .call_identity_connected_disconnected(identity, address, false)
+                .call_identity_connected_disconnected(identity, connection_id, false)
                 .await
                 .with_context(|| {
                     format!(
                         "Error calling disconnect for {} {} on {}",
-                        identity, address, replica_ctx.database_identity
+                        identity, connection_id, replica_ctx.database_identity
                     )
                 })?;
         }

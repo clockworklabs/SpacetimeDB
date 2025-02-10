@@ -6,8 +6,8 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 pub mod byte_struct_type;
 pub mod delete_large_table_reducer;
-pub mod delete_pk_address_reducer;
 pub mod delete_pk_bool_reducer;
+pub mod delete_pk_connection_id_reducer;
 pub mod delete_pk_i_128_reducer;
 pub mod delete_pk_i_16_reducer;
 pub mod delete_pk_i_256_reducer;
@@ -22,8 +22,8 @@ pub mod delete_pk_u_256_reducer;
 pub mod delete_pk_u_32_reducer;
 pub mod delete_pk_u_64_reducer;
 pub mod delete_pk_u_8_reducer;
-pub mod delete_unique_address_reducer;
 pub mod delete_unique_bool_reducer;
+pub mod delete_unique_connection_id_reducer;
 pub mod delete_unique_i_128_reducer;
 pub mod delete_unique_i_16_reducer;
 pub mod delete_unique_i_256_reducer;
@@ -46,18 +46,18 @@ pub mod indexed_table_2_type;
 pub mod indexed_table_table;
 pub mod indexed_table_type;
 pub mod insert_call_timestamp_reducer;
-pub mod insert_caller_one_address_reducer;
+pub mod insert_caller_one_connection_id_reducer;
 pub mod insert_caller_one_identity_reducer;
-pub mod insert_caller_pk_address_reducer;
+pub mod insert_caller_pk_connection_id_reducer;
 pub mod insert_caller_pk_identity_reducer;
-pub mod insert_caller_unique_address_reducer;
+pub mod insert_caller_unique_connection_id_reducer;
 pub mod insert_caller_unique_identity_reducer;
-pub mod insert_caller_vec_address_reducer;
+pub mod insert_caller_vec_connection_id_reducer;
 pub mod insert_caller_vec_identity_reducer;
 pub mod insert_large_table_reducer;
-pub mod insert_one_address_reducer;
 pub mod insert_one_bool_reducer;
 pub mod insert_one_byte_struct_reducer;
+pub mod insert_one_connection_id_reducer;
 pub mod insert_one_enum_with_payload_reducer;
 pub mod insert_one_every_primitive_struct_reducer;
 pub mod insert_one_every_vec_struct_reducer;
@@ -86,8 +86,8 @@ pub mod insert_option_identity_reducer;
 pub mod insert_option_simple_enum_reducer;
 pub mod insert_option_string_reducer;
 pub mod insert_option_vec_option_i_32_reducer;
-pub mod insert_pk_address_reducer;
 pub mod insert_pk_bool_reducer;
+pub mod insert_pk_connection_id_reducer;
 pub mod insert_pk_i_128_reducer;
 pub mod insert_pk_i_16_reducer;
 pub mod insert_pk_i_256_reducer;
@@ -104,8 +104,8 @@ pub mod insert_pk_u_64_reducer;
 pub mod insert_pk_u_8_reducer;
 pub mod insert_primitives_as_strings_reducer;
 pub mod insert_table_holds_table_reducer;
-pub mod insert_unique_address_reducer;
 pub mod insert_unique_bool_reducer;
+pub mod insert_unique_connection_id_reducer;
 pub mod insert_unique_i_128_reducer;
 pub mod insert_unique_i_16_reducer;
 pub mod insert_unique_i_256_reducer;
@@ -120,9 +120,9 @@ pub mod insert_unique_u_256_reducer;
 pub mod insert_unique_u_32_reducer;
 pub mod insert_unique_u_64_reducer;
 pub mod insert_unique_u_8_reducer;
-pub mod insert_vec_address_reducer;
 pub mod insert_vec_bool_reducer;
 pub mod insert_vec_byte_struct_reducer;
+pub mod insert_vec_connection_id_reducer;
 pub mod insert_vec_enum_with_payload_reducer;
 pub mod insert_vec_every_primitive_struct_reducer;
 pub mod insert_vec_every_vec_struct_reducer;
@@ -148,12 +148,12 @@ pub mod insert_vec_unit_struct_reducer;
 pub mod large_table_table;
 pub mod large_table_type;
 pub mod no_op_succeeds_reducer;
-pub mod one_address_table;
-pub mod one_address_type;
 pub mod one_bool_table;
 pub mod one_bool_type;
 pub mod one_byte_struct_table;
 pub mod one_byte_struct_type;
+pub mod one_connection_id_table;
+pub mod one_connection_id_type;
 pub mod one_enum_with_payload_table;
 pub mod one_enum_with_payload_type;
 pub mod one_every_primitive_struct_table;
@@ -210,10 +210,10 @@ pub mod option_string_table;
 pub mod option_string_type;
 pub mod option_vec_option_i_32_table;
 pub mod option_vec_option_i_32_type;
-pub mod pk_address_table;
-pub mod pk_address_type;
 pub mod pk_bool_table;
 pub mod pk_bool_type;
+pub mod pk_connection_id_table;
+pub mod pk_connection_id_type;
 pub mod pk_i_128_table;
 pub mod pk_i_128_type;
 pub mod pk_i_16_table;
@@ -248,10 +248,10 @@ pub mod send_scheduled_message_reducer;
 pub mod simple_enum_type;
 pub mod table_holds_table_table;
 pub mod table_holds_table_type;
-pub mod unique_address_table;
-pub mod unique_address_type;
 pub mod unique_bool_table;
 pub mod unique_bool_type;
+pub mod unique_connection_id_table;
+pub mod unique_connection_id_type;
 pub mod unique_i_128_table;
 pub mod unique_i_128_type;
 pub mod unique_i_16_table;
@@ -281,8 +281,8 @@ pub mod unique_u_64_type;
 pub mod unique_u_8_table;
 pub mod unique_u_8_type;
 pub mod unit_struct_type;
-pub mod update_pk_address_reducer;
 pub mod update_pk_bool_reducer;
+pub mod update_pk_connection_id_reducer;
 pub mod update_pk_i_128_reducer;
 pub mod update_pk_i_16_reducer;
 pub mod update_pk_i_256_reducer;
@@ -297,8 +297,8 @@ pub mod update_pk_u_256_reducer;
 pub mod update_pk_u_32_reducer;
 pub mod update_pk_u_64_reducer;
 pub mod update_pk_u_8_reducer;
-pub mod update_unique_address_reducer;
 pub mod update_unique_bool_reducer;
+pub mod update_unique_connection_id_reducer;
 pub mod update_unique_i_128_reducer;
 pub mod update_unique_i_16_reducer;
 pub mod update_unique_i_256_reducer;
@@ -313,12 +313,12 @@ pub mod update_unique_u_256_reducer;
 pub mod update_unique_u_32_reducer;
 pub mod update_unique_u_64_reducer;
 pub mod update_unique_u_8_reducer;
-pub mod vec_address_table;
-pub mod vec_address_type;
 pub mod vec_bool_table;
 pub mod vec_bool_type;
 pub mod vec_byte_struct_table;
 pub mod vec_byte_struct_type;
+pub mod vec_connection_id_table;
+pub mod vec_connection_id_type;
 pub mod vec_enum_with_payload_table;
 pub mod vec_enum_with_payload_type;
 pub mod vec_every_primitive_struct_table;
@@ -368,8 +368,10 @@ pub use byte_struct_type::ByteStruct;
 pub use delete_large_table_reducer::{
     delete_large_table, set_flags_for_delete_large_table, DeleteLargeTableCallbackId,
 };
-pub use delete_pk_address_reducer::{delete_pk_address, set_flags_for_delete_pk_address, DeletePkAddressCallbackId};
 pub use delete_pk_bool_reducer::{delete_pk_bool, set_flags_for_delete_pk_bool, DeletePkBoolCallbackId};
+pub use delete_pk_connection_id_reducer::{
+    delete_pk_connection_id, set_flags_for_delete_pk_connection_id, DeletePkConnectionIdCallbackId,
+};
 pub use delete_pk_i_128_reducer::{delete_pk_i_128, set_flags_for_delete_pk_i_128, DeletePkI128CallbackId};
 pub use delete_pk_i_16_reducer::{delete_pk_i_16, set_flags_for_delete_pk_i_16, DeletePkI16CallbackId};
 pub use delete_pk_i_256_reducer::{delete_pk_i_256, set_flags_for_delete_pk_i_256, DeletePkI256CallbackId};
@@ -386,11 +388,11 @@ pub use delete_pk_u_256_reducer::{delete_pk_u_256, set_flags_for_delete_pk_u_256
 pub use delete_pk_u_32_reducer::{delete_pk_u_32, set_flags_for_delete_pk_u_32, DeletePkU32CallbackId};
 pub use delete_pk_u_64_reducer::{delete_pk_u_64, set_flags_for_delete_pk_u_64, DeletePkU64CallbackId};
 pub use delete_pk_u_8_reducer::{delete_pk_u_8, set_flags_for_delete_pk_u_8, DeletePkU8CallbackId};
-pub use delete_unique_address_reducer::{
-    delete_unique_address, set_flags_for_delete_unique_address, DeleteUniqueAddressCallbackId,
-};
 pub use delete_unique_bool_reducer::{
     delete_unique_bool, set_flags_for_delete_unique_bool, DeleteUniqueBoolCallbackId,
+};
+pub use delete_unique_connection_id_reducer::{
+    delete_unique_connection_id, set_flags_for_delete_unique_connection_id, DeleteUniqueConnectionIdCallbackId,
 };
 pub use delete_unique_i_128_reducer::{
     delete_unique_i_128, set_flags_for_delete_unique_i_128, DeleteUniqueI128CallbackId,
@@ -428,26 +430,29 @@ pub use indexed_table_type::IndexedTable;
 pub use insert_call_timestamp_reducer::{
     insert_call_timestamp, set_flags_for_insert_call_timestamp, InsertCallTimestampCallbackId,
 };
-pub use insert_caller_one_address_reducer::{
-    insert_caller_one_address, set_flags_for_insert_caller_one_address, InsertCallerOneAddressCallbackId,
+pub use insert_caller_one_connection_id_reducer::{
+    insert_caller_one_connection_id, set_flags_for_insert_caller_one_connection_id,
+    InsertCallerOneConnectionIdCallbackId,
 };
 pub use insert_caller_one_identity_reducer::{
     insert_caller_one_identity, set_flags_for_insert_caller_one_identity, InsertCallerOneIdentityCallbackId,
 };
-pub use insert_caller_pk_address_reducer::{
-    insert_caller_pk_address, set_flags_for_insert_caller_pk_address, InsertCallerPkAddressCallbackId,
+pub use insert_caller_pk_connection_id_reducer::{
+    insert_caller_pk_connection_id, set_flags_for_insert_caller_pk_connection_id, InsertCallerPkConnectionIdCallbackId,
 };
 pub use insert_caller_pk_identity_reducer::{
     insert_caller_pk_identity, set_flags_for_insert_caller_pk_identity, InsertCallerPkIdentityCallbackId,
 };
-pub use insert_caller_unique_address_reducer::{
-    insert_caller_unique_address, set_flags_for_insert_caller_unique_address, InsertCallerUniqueAddressCallbackId,
+pub use insert_caller_unique_connection_id_reducer::{
+    insert_caller_unique_connection_id, set_flags_for_insert_caller_unique_connection_id,
+    InsertCallerUniqueConnectionIdCallbackId,
 };
 pub use insert_caller_unique_identity_reducer::{
     insert_caller_unique_identity, set_flags_for_insert_caller_unique_identity, InsertCallerUniqueIdentityCallbackId,
 };
-pub use insert_caller_vec_address_reducer::{
-    insert_caller_vec_address, set_flags_for_insert_caller_vec_address, InsertCallerVecAddressCallbackId,
+pub use insert_caller_vec_connection_id_reducer::{
+    insert_caller_vec_connection_id, set_flags_for_insert_caller_vec_connection_id,
+    InsertCallerVecConnectionIdCallbackId,
 };
 pub use insert_caller_vec_identity_reducer::{
     insert_caller_vec_identity, set_flags_for_insert_caller_vec_identity, InsertCallerVecIdentityCallbackId,
@@ -455,12 +460,12 @@ pub use insert_caller_vec_identity_reducer::{
 pub use insert_large_table_reducer::{
     insert_large_table, set_flags_for_insert_large_table, InsertLargeTableCallbackId,
 };
-pub use insert_one_address_reducer::{
-    insert_one_address, set_flags_for_insert_one_address, InsertOneAddressCallbackId,
-};
 pub use insert_one_bool_reducer::{insert_one_bool, set_flags_for_insert_one_bool, InsertOneBoolCallbackId};
 pub use insert_one_byte_struct_reducer::{
     insert_one_byte_struct, set_flags_for_insert_one_byte_struct, InsertOneByteStructCallbackId,
+};
+pub use insert_one_connection_id_reducer::{
+    insert_one_connection_id, set_flags_for_insert_one_connection_id, InsertOneConnectionIdCallbackId,
 };
 pub use insert_one_enum_with_payload_reducer::{
     insert_one_enum_with_payload, set_flags_for_insert_one_enum_with_payload, InsertOneEnumWithPayloadCallbackId,
@@ -516,8 +521,10 @@ pub use insert_option_string_reducer::{
 pub use insert_option_vec_option_i_32_reducer::{
     insert_option_vec_option_i_32, set_flags_for_insert_option_vec_option_i_32, InsertOptionVecOptionI32CallbackId,
 };
-pub use insert_pk_address_reducer::{insert_pk_address, set_flags_for_insert_pk_address, InsertPkAddressCallbackId};
 pub use insert_pk_bool_reducer::{insert_pk_bool, set_flags_for_insert_pk_bool, InsertPkBoolCallbackId};
+pub use insert_pk_connection_id_reducer::{
+    insert_pk_connection_id, set_flags_for_insert_pk_connection_id, InsertPkConnectionIdCallbackId,
+};
 pub use insert_pk_i_128_reducer::{insert_pk_i_128, set_flags_for_insert_pk_i_128, InsertPkI128CallbackId};
 pub use insert_pk_i_16_reducer::{insert_pk_i_16, set_flags_for_insert_pk_i_16, InsertPkI16CallbackId};
 pub use insert_pk_i_256_reducer::{insert_pk_i_256, set_flags_for_insert_pk_i_256, InsertPkI256CallbackId};
@@ -540,11 +547,11 @@ pub use insert_primitives_as_strings_reducer::{
 pub use insert_table_holds_table_reducer::{
     insert_table_holds_table, set_flags_for_insert_table_holds_table, InsertTableHoldsTableCallbackId,
 };
-pub use insert_unique_address_reducer::{
-    insert_unique_address, set_flags_for_insert_unique_address, InsertUniqueAddressCallbackId,
-};
 pub use insert_unique_bool_reducer::{
     insert_unique_bool, set_flags_for_insert_unique_bool, InsertUniqueBoolCallbackId,
+};
+pub use insert_unique_connection_id_reducer::{
+    insert_unique_connection_id, set_flags_for_insert_unique_connection_id, InsertUniqueConnectionIdCallbackId,
 };
 pub use insert_unique_i_128_reducer::{
     insert_unique_i_128, set_flags_for_insert_unique_i_128, InsertUniqueI128CallbackId,
@@ -572,12 +579,12 @@ pub use insert_unique_u_256_reducer::{
 pub use insert_unique_u_32_reducer::{insert_unique_u_32, set_flags_for_insert_unique_u_32, InsertUniqueU32CallbackId};
 pub use insert_unique_u_64_reducer::{insert_unique_u_64, set_flags_for_insert_unique_u_64, InsertUniqueU64CallbackId};
 pub use insert_unique_u_8_reducer::{insert_unique_u_8, set_flags_for_insert_unique_u_8, InsertUniqueU8CallbackId};
-pub use insert_vec_address_reducer::{
-    insert_vec_address, set_flags_for_insert_vec_address, InsertVecAddressCallbackId,
-};
 pub use insert_vec_bool_reducer::{insert_vec_bool, set_flags_for_insert_vec_bool, InsertVecBoolCallbackId};
 pub use insert_vec_byte_struct_reducer::{
     insert_vec_byte_struct, set_flags_for_insert_vec_byte_struct, InsertVecByteStructCallbackId,
+};
+pub use insert_vec_connection_id_reducer::{
+    insert_vec_connection_id, set_flags_for_insert_vec_connection_id, InsertVecConnectionIdCallbackId,
 };
 pub use insert_vec_enum_with_payload_reducer::{
     insert_vec_enum_with_payload, set_flags_for_insert_vec_enum_with_payload, InsertVecEnumWithPayloadCallbackId,
@@ -619,12 +626,12 @@ pub use insert_vec_unit_struct_reducer::{
 pub use large_table_table::*;
 pub use large_table_type::LargeTable;
 pub use no_op_succeeds_reducer::{no_op_succeeds, set_flags_for_no_op_succeeds, NoOpSucceedsCallbackId};
-pub use one_address_table::*;
-pub use one_address_type::OneAddress;
 pub use one_bool_table::*;
 pub use one_bool_type::OneBool;
 pub use one_byte_struct_table::*;
 pub use one_byte_struct_type::OneByteStruct;
+pub use one_connection_id_table::*;
+pub use one_connection_id_type::OneConnectionId;
 pub use one_enum_with_payload_table::*;
 pub use one_enum_with_payload_type::OneEnumWithPayload;
 pub use one_every_primitive_struct_table::*;
@@ -681,10 +688,10 @@ pub use option_string_table::*;
 pub use option_string_type::OptionString;
 pub use option_vec_option_i_32_table::*;
 pub use option_vec_option_i_32_type::OptionVecOptionI32;
-pub use pk_address_table::*;
-pub use pk_address_type::PkAddress;
 pub use pk_bool_table::*;
 pub use pk_bool_type::PkBool;
+pub use pk_connection_id_table::*;
+pub use pk_connection_id_type::PkConnectionId;
 pub use pk_i_128_table::*;
 pub use pk_i_128_type::PkI128;
 pub use pk_i_16_table::*;
@@ -721,10 +728,10 @@ pub use send_scheduled_message_reducer::{
 pub use simple_enum_type::SimpleEnum;
 pub use table_holds_table_table::*;
 pub use table_holds_table_type::TableHoldsTable;
-pub use unique_address_table::*;
-pub use unique_address_type::UniqueAddress;
 pub use unique_bool_table::*;
 pub use unique_bool_type::UniqueBool;
+pub use unique_connection_id_table::*;
+pub use unique_connection_id_type::UniqueConnectionId;
 pub use unique_i_128_table::*;
 pub use unique_i_128_type::UniqueI128;
 pub use unique_i_16_table::*;
@@ -754,8 +761,10 @@ pub use unique_u_64_type::UniqueU64;
 pub use unique_u_8_table::*;
 pub use unique_u_8_type::UniqueU8;
 pub use unit_struct_type::UnitStruct;
-pub use update_pk_address_reducer::{set_flags_for_update_pk_address, update_pk_address, UpdatePkAddressCallbackId};
 pub use update_pk_bool_reducer::{set_flags_for_update_pk_bool, update_pk_bool, UpdatePkBoolCallbackId};
+pub use update_pk_connection_id_reducer::{
+    set_flags_for_update_pk_connection_id, update_pk_connection_id, UpdatePkConnectionIdCallbackId,
+};
 pub use update_pk_i_128_reducer::{set_flags_for_update_pk_i_128, update_pk_i_128, UpdatePkI128CallbackId};
 pub use update_pk_i_16_reducer::{set_flags_for_update_pk_i_16, update_pk_i_16, UpdatePkI16CallbackId};
 pub use update_pk_i_256_reducer::{set_flags_for_update_pk_i_256, update_pk_i_256, UpdatePkI256CallbackId};
@@ -772,11 +781,11 @@ pub use update_pk_u_256_reducer::{set_flags_for_update_pk_u_256, update_pk_u_256
 pub use update_pk_u_32_reducer::{set_flags_for_update_pk_u_32, update_pk_u_32, UpdatePkU32CallbackId};
 pub use update_pk_u_64_reducer::{set_flags_for_update_pk_u_64, update_pk_u_64, UpdatePkU64CallbackId};
 pub use update_pk_u_8_reducer::{set_flags_for_update_pk_u_8, update_pk_u_8, UpdatePkU8CallbackId};
-pub use update_unique_address_reducer::{
-    set_flags_for_update_unique_address, update_unique_address, UpdateUniqueAddressCallbackId,
-};
 pub use update_unique_bool_reducer::{
     set_flags_for_update_unique_bool, update_unique_bool, UpdateUniqueBoolCallbackId,
+};
+pub use update_unique_connection_id_reducer::{
+    set_flags_for_update_unique_connection_id, update_unique_connection_id, UpdateUniqueConnectionIdCallbackId,
 };
 pub use update_unique_i_128_reducer::{
     set_flags_for_update_unique_i_128, update_unique_i_128, UpdateUniqueI128CallbackId,
@@ -804,12 +813,12 @@ pub use update_unique_u_256_reducer::{
 pub use update_unique_u_32_reducer::{set_flags_for_update_unique_u_32, update_unique_u_32, UpdateUniqueU32CallbackId};
 pub use update_unique_u_64_reducer::{set_flags_for_update_unique_u_64, update_unique_u_64, UpdateUniqueU64CallbackId};
 pub use update_unique_u_8_reducer::{set_flags_for_update_unique_u_8, update_unique_u_8, UpdateUniqueU8CallbackId};
-pub use vec_address_table::*;
-pub use vec_address_type::VecAddress;
 pub use vec_bool_table::*;
 pub use vec_bool_type::VecBool;
 pub use vec_byte_struct_table::*;
 pub use vec_byte_struct_type::VecByteStruct;
+pub use vec_connection_id_table::*;
+pub use vec_connection_id_type::VecConnectionId;
 pub use vec_enum_with_payload_table::*;
 pub use vec_enum_with_payload_type::VecEnumWithPayload;
 pub use vec_every_primitive_struct_table::*;
@@ -887,11 +896,11 @@ pub enum Reducer {
         u: EveryPrimitiveStruct,
         v: EveryVecStruct,
     },
-    DeletePkAddress {
-        a: __sdk::Address,
-    },
     DeletePkBool {
         b: bool,
+    },
+    DeletePkConnectionId {
+        a: __sdk::ConnectionId,
     },
     DeletePkI128 {
         n: i128,
@@ -935,11 +944,11 @@ pub enum Reducer {
     DeletePkU8 {
         n: u8,
     },
-    DeleteUniqueAddress {
-        a: __sdk::Address,
-    },
     DeleteUniqueBool {
         b: bool,
+    },
+    DeleteUniqueConnectionId {
+        a: __sdk::ConnectionId,
     },
     DeleteUniqueI128 {
         n: i128,
@@ -984,21 +993,21 @@ pub enum Reducer {
         n: u8,
     },
     InsertCallTimestamp,
-    InsertCallerOneAddress,
+    InsertCallerOneConnectionId,
     InsertCallerOneIdentity,
-    InsertCallerPkAddress {
+    InsertCallerPkConnectionId {
         data: i32,
     },
     InsertCallerPkIdentity {
         data: i32,
     },
-    InsertCallerUniqueAddress {
+    InsertCallerUniqueConnectionId {
         data: i32,
     },
     InsertCallerUniqueIdentity {
         data: i32,
     },
-    InsertCallerVecAddress,
+    InsertCallerVecConnectionId,
     InsertCallerVecIdentity,
     InsertLargeTable {
         a: u8,
@@ -1024,14 +1033,14 @@ pub enum Reducer {
         u: EveryPrimitiveStruct,
         v: EveryVecStruct,
     },
-    InsertOneAddress {
-        a: __sdk::Address,
-    },
     InsertOneBool {
         b: bool,
     },
     InsertOneByteStruct {
         s: ByteStruct,
+    },
+    InsertOneConnectionId {
+        a: __sdk::ConnectionId,
     },
     InsertOneEnumWithPayload {
         e: EnumWithPayload,
@@ -1117,12 +1126,12 @@ pub enum Reducer {
     InsertOptionVecOptionI32 {
         v: Option<Vec<Option<i32>>>,
     },
-    InsertPkAddress {
-        a: __sdk::Address,
-        data: i32,
-    },
     InsertPkBool {
         b: bool,
+        data: i32,
+    },
+    InsertPkConnectionId {
+        a: __sdk::ConnectionId,
         data: i32,
     },
     InsertPkI128 {
@@ -1188,12 +1197,12 @@ pub enum Reducer {
         a: OneU8,
         b: VecU8,
     },
-    InsertUniqueAddress {
-        a: __sdk::Address,
-        data: i32,
-    },
     InsertUniqueBool {
         b: bool,
+        data: i32,
+    },
+    InsertUniqueConnectionId {
+        a: __sdk::ConnectionId,
         data: i32,
     },
     InsertUniqueI128 {
@@ -1252,14 +1261,14 @@ pub enum Reducer {
         n: u8,
         data: i32,
     },
-    InsertVecAddress {
-        a: Vec<__sdk::Address>,
-    },
     InsertVecBool {
         b: Vec<bool>,
     },
     InsertVecByteStruct {
         s: Vec<ByteStruct>,
+    },
+    InsertVecConnectionId {
+        a: Vec<__sdk::ConnectionId>,
     },
     InsertVecEnumWithPayload {
         e: Vec<EnumWithPayload>,
@@ -1331,12 +1340,12 @@ pub enum Reducer {
     SendScheduledMessage {
         arg: ScheduledTable,
     },
-    UpdatePkAddress {
-        a: __sdk::Address,
-        data: i32,
-    },
     UpdatePkBool {
         b: bool,
+        data: i32,
+    },
+    UpdatePkConnectionId {
+        a: __sdk::ConnectionId,
         data: i32,
     },
     UpdatePkI128 {
@@ -1395,12 +1404,12 @@ pub enum Reducer {
         n: u8,
         data: i32,
     },
-    UpdateUniqueAddress {
-        a: __sdk::Address,
-        data: i32,
-    },
     UpdateUniqueBool {
         b: bool,
+        data: i32,
+    },
+    UpdateUniqueConnectionId {
+        a: __sdk::ConnectionId,
         data: i32,
     },
     UpdateUniqueI128 {
@@ -1469,8 +1478,8 @@ impl __sdk::Reducer for Reducer {
     fn reducer_name(&self) -> &'static str {
         match self {
             Reducer::DeleteLargeTable { .. } => "delete_large_table",
-            Reducer::DeletePkAddress { .. } => "delete_pk_address",
             Reducer::DeletePkBool { .. } => "delete_pk_bool",
+            Reducer::DeletePkConnectionId { .. } => "delete_pk_connection_id",
             Reducer::DeletePkI128 { .. } => "delete_pk_i128",
             Reducer::DeletePkI16 { .. } => "delete_pk_i16",
             Reducer::DeletePkI256 { .. } => "delete_pk_i256",
@@ -1485,8 +1494,8 @@ impl __sdk::Reducer for Reducer {
             Reducer::DeletePkU32 { .. } => "delete_pk_u32",
             Reducer::DeletePkU64 { .. } => "delete_pk_u64",
             Reducer::DeletePkU8 { .. } => "delete_pk_u8",
-            Reducer::DeleteUniqueAddress { .. } => "delete_unique_address",
             Reducer::DeleteUniqueBool { .. } => "delete_unique_bool",
+            Reducer::DeleteUniqueConnectionId { .. } => "delete_unique_connection_id",
             Reducer::DeleteUniqueI128 { .. } => "delete_unique_i128",
             Reducer::DeleteUniqueI16 { .. } => "delete_unique_i16",
             Reducer::DeleteUniqueI256 { .. } => "delete_unique_i256",
@@ -1502,18 +1511,18 @@ impl __sdk::Reducer for Reducer {
             Reducer::DeleteUniqueU64 { .. } => "delete_unique_u64",
             Reducer::DeleteUniqueU8 { .. } => "delete_unique_u8",
             Reducer::InsertCallTimestamp => "insert_call_timestamp",
-            Reducer::InsertCallerOneAddress => "insert_caller_one_address",
+            Reducer::InsertCallerOneConnectionId => "insert_caller_one_connection_id",
             Reducer::InsertCallerOneIdentity => "insert_caller_one_identity",
-            Reducer::InsertCallerPkAddress { .. } => "insert_caller_pk_address",
+            Reducer::InsertCallerPkConnectionId { .. } => "insert_caller_pk_connection_id",
             Reducer::InsertCallerPkIdentity { .. } => "insert_caller_pk_identity",
-            Reducer::InsertCallerUniqueAddress { .. } => "insert_caller_unique_address",
+            Reducer::InsertCallerUniqueConnectionId { .. } => "insert_caller_unique_connection_id",
             Reducer::InsertCallerUniqueIdentity { .. } => "insert_caller_unique_identity",
-            Reducer::InsertCallerVecAddress => "insert_caller_vec_address",
+            Reducer::InsertCallerVecConnectionId => "insert_caller_vec_connection_id",
             Reducer::InsertCallerVecIdentity => "insert_caller_vec_identity",
             Reducer::InsertLargeTable { .. } => "insert_large_table",
-            Reducer::InsertOneAddress { .. } => "insert_one_address",
             Reducer::InsertOneBool { .. } => "insert_one_bool",
             Reducer::InsertOneByteStruct { .. } => "insert_one_byte_struct",
+            Reducer::InsertOneConnectionId { .. } => "insert_one_connection_id",
             Reducer::InsertOneEnumWithPayload { .. } => "insert_one_enum_with_payload",
             Reducer::InsertOneEveryPrimitiveStruct { .. } => "insert_one_every_primitive_struct",
             Reducer::InsertOneEveryVecStruct { .. } => "insert_one_every_vec_struct",
@@ -1542,8 +1551,8 @@ impl __sdk::Reducer for Reducer {
             Reducer::InsertOptionSimpleEnum { .. } => "insert_option_simple_enum",
             Reducer::InsertOptionString { .. } => "insert_option_string",
             Reducer::InsertOptionVecOptionI32 { .. } => "insert_option_vec_option_i32",
-            Reducer::InsertPkAddress { .. } => "insert_pk_address",
             Reducer::InsertPkBool { .. } => "insert_pk_bool",
+            Reducer::InsertPkConnectionId { .. } => "insert_pk_connection_id",
             Reducer::InsertPkI128 { .. } => "insert_pk_i128",
             Reducer::InsertPkI16 { .. } => "insert_pk_i16",
             Reducer::InsertPkI256 { .. } => "insert_pk_i256",
@@ -1560,8 +1569,8 @@ impl __sdk::Reducer for Reducer {
             Reducer::InsertPkU8 { .. } => "insert_pk_u8",
             Reducer::InsertPrimitivesAsStrings { .. } => "insert_primitives_as_strings",
             Reducer::InsertTableHoldsTable { .. } => "insert_table_holds_table",
-            Reducer::InsertUniqueAddress { .. } => "insert_unique_address",
             Reducer::InsertUniqueBool { .. } => "insert_unique_bool",
+            Reducer::InsertUniqueConnectionId { .. } => "insert_unique_connection_id",
             Reducer::InsertUniqueI128 { .. } => "insert_unique_i128",
             Reducer::InsertUniqueI16 { .. } => "insert_unique_i16",
             Reducer::InsertUniqueI256 { .. } => "insert_unique_i256",
@@ -1576,9 +1585,9 @@ impl __sdk::Reducer for Reducer {
             Reducer::InsertUniqueU32 { .. } => "insert_unique_u32",
             Reducer::InsertUniqueU64 { .. } => "insert_unique_u64",
             Reducer::InsertUniqueU8 { .. } => "insert_unique_u8",
-            Reducer::InsertVecAddress { .. } => "insert_vec_address",
             Reducer::InsertVecBool { .. } => "insert_vec_bool",
             Reducer::InsertVecByteStruct { .. } => "insert_vec_byte_struct",
+            Reducer::InsertVecConnectionId { .. } => "insert_vec_connection_id",
             Reducer::InsertVecEnumWithPayload { .. } => "insert_vec_enum_with_payload",
             Reducer::InsertVecEveryPrimitiveStruct { .. } => "insert_vec_every_primitive_struct",
             Reducer::InsertVecEveryVecStruct { .. } => "insert_vec_every_vec_struct",
@@ -1603,8 +1612,8 @@ impl __sdk::Reducer for Reducer {
             Reducer::InsertVecUnitStruct { .. } => "insert_vec_unit_struct",
             Reducer::NoOpSucceeds => "no_op_succeeds",
             Reducer::SendScheduledMessage { .. } => "send_scheduled_message",
-            Reducer::UpdatePkAddress { .. } => "update_pk_address",
             Reducer::UpdatePkBool { .. } => "update_pk_bool",
+            Reducer::UpdatePkConnectionId { .. } => "update_pk_connection_id",
             Reducer::UpdatePkI128 { .. } => "update_pk_i128",
             Reducer::UpdatePkI16 { .. } => "update_pk_i16",
             Reducer::UpdatePkI256 { .. } => "update_pk_i256",
@@ -1619,8 +1628,8 @@ impl __sdk::Reducer for Reducer {
             Reducer::UpdatePkU32 { .. } => "update_pk_u32",
             Reducer::UpdatePkU64 { .. } => "update_pk_u64",
             Reducer::UpdatePkU8 { .. } => "update_pk_u8",
-            Reducer::UpdateUniqueAddress { .. } => "update_unique_address",
             Reducer::UpdateUniqueBool { .. } => "update_unique_bool",
+            Reducer::UpdateUniqueConnectionId { .. } => "update_unique_connection_id",
             Reducer::UpdateUniqueI128 { .. } => "update_unique_i128",
             Reducer::UpdateUniqueI16 { .. } => "update_unique_i16",
             Reducer::UpdateUniqueI256 { .. } => "update_unique_i256",
@@ -1649,17 +1658,14 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
                 )?
                 .into(),
             ),
-            "delete_pk_address" => Ok(
-                __sdk::parse_reducer_args::<delete_pk_address_reducer::DeletePkAddressArgs>(
-                    "delete_pk_address",
-                    &value.args,
-                )?
-                .into(),
-            ),
             "delete_pk_bool" => Ok(__sdk::parse_reducer_args::<delete_pk_bool_reducer::DeletePkBoolArgs>(
                 "delete_pk_bool",
                 &value.args,
             )?
+            .into()),
+            "delete_pk_connection_id" => Ok(__sdk::parse_reducer_args::<
+                delete_pk_connection_id_reducer::DeletePkConnectionIdArgs,
+            >("delete_pk_connection_id", &value.args)?
             .into()),
             "delete_pk_i128" => Ok(__sdk::parse_reducer_args::<delete_pk_i_128_reducer::DeletePkI128Args>(
                 "delete_pk_i128",
@@ -1735,10 +1741,6 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
                 &value.args,
             )?
             .into()),
-            "delete_unique_address" => Ok(__sdk::parse_reducer_args::<
-                delete_unique_address_reducer::DeleteUniqueAddressArgs,
-            >("delete_unique_address", &value.args)?
-            .into()),
             "delete_unique_bool" => Ok(
                 __sdk::parse_reducer_args::<delete_unique_bool_reducer::DeleteUniqueBoolArgs>(
                     "delete_unique_bool",
@@ -1746,6 +1748,10 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
                 )?
                 .into(),
             ),
+            "delete_unique_connection_id" => Ok(__sdk::parse_reducer_args::<
+                delete_unique_connection_id_reducer::DeleteUniqueConnectionIdArgs,
+            >("delete_unique_connection_id", &value.args)?
+            .into()),
             "delete_unique_i128" => Ok(
                 __sdk::parse_reducer_args::<delete_unique_i_128_reducer::DeleteUniqueI128Args>(
                     "delete_unique_i128",
@@ -1842,33 +1848,35 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
                 insert_call_timestamp_reducer::InsertCallTimestampArgs,
             >("insert_call_timestamp", &value.args)?
             .into()),
-            "insert_caller_one_address" => Ok(__sdk::parse_reducer_args::<
-                insert_caller_one_address_reducer::InsertCallerOneAddressArgs,
-            >("insert_caller_one_address", &value.args)?
+            "insert_caller_one_connection_id" => Ok(__sdk::parse_reducer_args::<
+                insert_caller_one_connection_id_reducer::InsertCallerOneConnectionIdArgs,
+            >("insert_caller_one_connection_id", &value.args)?
             .into()),
             "insert_caller_one_identity" => Ok(__sdk::parse_reducer_args::<
                 insert_caller_one_identity_reducer::InsertCallerOneIdentityArgs,
             >("insert_caller_one_identity", &value.args)?
             .into()),
-            "insert_caller_pk_address" => Ok(__sdk::parse_reducer_args::<
-                insert_caller_pk_address_reducer::InsertCallerPkAddressArgs,
-            >("insert_caller_pk_address", &value.args)?
+            "insert_caller_pk_connection_id" => Ok(__sdk::parse_reducer_args::<
+                insert_caller_pk_connection_id_reducer::InsertCallerPkConnectionIdArgs,
+            >("insert_caller_pk_connection_id", &value.args)?
             .into()),
             "insert_caller_pk_identity" => Ok(__sdk::parse_reducer_args::<
                 insert_caller_pk_identity_reducer::InsertCallerPkIdentityArgs,
             >("insert_caller_pk_identity", &value.args)?
             .into()),
-            "insert_caller_unique_address" => Ok(__sdk::parse_reducer_args::<
-                insert_caller_unique_address_reducer::InsertCallerUniqueAddressArgs,
-            >("insert_caller_unique_address", &value.args)?
-            .into()),
+            "insert_caller_unique_connection_id" => {
+                Ok(__sdk::parse_reducer_args::<
+                    insert_caller_unique_connection_id_reducer::InsertCallerUniqueConnectionIdArgs,
+                >("insert_caller_unique_connection_id", &value.args)?
+                .into())
+            }
             "insert_caller_unique_identity" => Ok(__sdk::parse_reducer_args::<
                 insert_caller_unique_identity_reducer::InsertCallerUniqueIdentityArgs,
             >("insert_caller_unique_identity", &value.args)?
             .into()),
-            "insert_caller_vec_address" => Ok(__sdk::parse_reducer_args::<
-                insert_caller_vec_address_reducer::InsertCallerVecAddressArgs,
-            >("insert_caller_vec_address", &value.args)?
+            "insert_caller_vec_connection_id" => Ok(__sdk::parse_reducer_args::<
+                insert_caller_vec_connection_id_reducer::InsertCallerVecConnectionIdArgs,
+            >("insert_caller_vec_connection_id", &value.args)?
             .into()),
             "insert_caller_vec_identity" => Ok(__sdk::parse_reducer_args::<
                 insert_caller_vec_identity_reducer::InsertCallerVecIdentityArgs,
@@ -1881,13 +1889,6 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
                 )?
                 .into(),
             ),
-            "insert_one_address" => Ok(
-                __sdk::parse_reducer_args::<insert_one_address_reducer::InsertOneAddressArgs>(
-                    "insert_one_address",
-                    &value.args,
-                )?
-                .into(),
-            ),
             "insert_one_bool" => Ok(__sdk::parse_reducer_args::<insert_one_bool_reducer::InsertOneBoolArgs>(
                 "insert_one_bool",
                 &value.args,
@@ -1896,6 +1897,10 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
             "insert_one_byte_struct" => Ok(__sdk::parse_reducer_args::<
                 insert_one_byte_struct_reducer::InsertOneByteStructArgs,
             >("insert_one_byte_struct", &value.args)?
+            .into()),
+            "insert_one_connection_id" => Ok(__sdk::parse_reducer_args::<
+                insert_one_connection_id_reducer::InsertOneConnectionIdArgs,
+            >("insert_one_connection_id", &value.args)?
             .into()),
             "insert_one_enum_with_payload" => Ok(__sdk::parse_reducer_args::<
                 insert_one_enum_with_payload_reducer::InsertOneEnumWithPayloadArgs,
@@ -2042,17 +2047,14 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
                 insert_option_vec_option_i_32_reducer::InsertOptionVecOptionI32Args,
             >("insert_option_vec_option_i32", &value.args)?
             .into()),
-            "insert_pk_address" => Ok(
-                __sdk::parse_reducer_args::<insert_pk_address_reducer::InsertPkAddressArgs>(
-                    "insert_pk_address",
-                    &value.args,
-                )?
-                .into(),
-            ),
             "insert_pk_bool" => Ok(__sdk::parse_reducer_args::<insert_pk_bool_reducer::InsertPkBoolArgs>(
                 "insert_pk_bool",
                 &value.args,
             )?
+            .into()),
+            "insert_pk_connection_id" => Ok(__sdk::parse_reducer_args::<
+                insert_pk_connection_id_reducer::InsertPkConnectionIdArgs,
+            >("insert_pk_connection_id", &value.args)?
             .into()),
             "insert_pk_i128" => Ok(__sdk::parse_reducer_args::<insert_pk_i_128_reducer::InsertPkI128Args>(
                 "insert_pk_i128",
@@ -2136,10 +2138,6 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
                 insert_table_holds_table_reducer::InsertTableHoldsTableArgs,
             >("insert_table_holds_table", &value.args)?
             .into()),
-            "insert_unique_address" => Ok(__sdk::parse_reducer_args::<
-                insert_unique_address_reducer::InsertUniqueAddressArgs,
-            >("insert_unique_address", &value.args)?
-            .into()),
             "insert_unique_bool" => Ok(
                 __sdk::parse_reducer_args::<insert_unique_bool_reducer::InsertUniqueBoolArgs>(
                     "insert_unique_bool",
@@ -2147,6 +2145,10 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
                 )?
                 .into(),
             ),
+            "insert_unique_connection_id" => Ok(__sdk::parse_reducer_args::<
+                insert_unique_connection_id_reducer::InsertUniqueConnectionIdArgs,
+            >("insert_unique_connection_id", &value.args)?
+            .into()),
             "insert_unique_i128" => Ok(
                 __sdk::parse_reducer_args::<insert_unique_i_128_reducer::InsertUniqueI128Args>(
                     "insert_unique_i128",
@@ -2239,13 +2241,6 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
                 )?
                 .into(),
             ),
-            "insert_vec_address" => Ok(
-                __sdk::parse_reducer_args::<insert_vec_address_reducer::InsertVecAddressArgs>(
-                    "insert_vec_address",
-                    &value.args,
-                )?
-                .into(),
-            ),
             "insert_vec_bool" => Ok(__sdk::parse_reducer_args::<insert_vec_bool_reducer::InsertVecBoolArgs>(
                 "insert_vec_bool",
                 &value.args,
@@ -2254,6 +2249,10 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
             "insert_vec_byte_struct" => Ok(__sdk::parse_reducer_args::<
                 insert_vec_byte_struct_reducer::InsertVecByteStructArgs,
             >("insert_vec_byte_struct", &value.args)?
+            .into()),
+            "insert_vec_connection_id" => Ok(__sdk::parse_reducer_args::<
+                insert_vec_connection_id_reducer::InsertVecConnectionIdArgs,
+            >("insert_vec_connection_id", &value.args)?
             .into()),
             "insert_vec_enum_with_payload" => Ok(__sdk::parse_reducer_args::<
                 insert_vec_enum_with_payload_reducer::InsertVecEnumWithPayloadArgs,
@@ -2380,17 +2379,14 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
                 send_scheduled_message_reducer::SendScheduledMessageArgs,
             >("send_scheduled_message", &value.args)?
             .into()),
-            "update_pk_address" => Ok(
-                __sdk::parse_reducer_args::<update_pk_address_reducer::UpdatePkAddressArgs>(
-                    "update_pk_address",
-                    &value.args,
-                )?
-                .into(),
-            ),
             "update_pk_bool" => Ok(__sdk::parse_reducer_args::<update_pk_bool_reducer::UpdatePkBoolArgs>(
                 "update_pk_bool",
                 &value.args,
             )?
+            .into()),
+            "update_pk_connection_id" => Ok(__sdk::parse_reducer_args::<
+                update_pk_connection_id_reducer::UpdatePkConnectionIdArgs,
+            >("update_pk_connection_id", &value.args)?
             .into()),
             "update_pk_i128" => Ok(__sdk::parse_reducer_args::<update_pk_i_128_reducer::UpdatePkI128Args>(
                 "update_pk_i128",
@@ -2466,10 +2462,6 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
                 &value.args,
             )?
             .into()),
-            "update_unique_address" => Ok(__sdk::parse_reducer_args::<
-                update_unique_address_reducer::UpdateUniqueAddressArgs,
-            >("update_unique_address", &value.args)?
-            .into()),
             "update_unique_bool" => Ok(
                 __sdk::parse_reducer_args::<update_unique_bool_reducer::UpdateUniqueBoolArgs>(
                     "update_unique_bool",
@@ -2477,6 +2469,10 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
                 )?
                 .into(),
             ),
+            "update_unique_connection_id" => Ok(__sdk::parse_reducer_args::<
+                update_unique_connection_id_reducer::UpdateUniqueConnectionIdArgs,
+            >("update_unique_connection_id", &value.args)?
+            .into()),
             "update_unique_i128" => Ok(
                 __sdk::parse_reducer_args::<update_unique_i_128_reducer::UpdateUniqueI128Args>(
                     "update_unique_i128",
@@ -2581,9 +2577,9 @@ pub struct DbUpdate {
     indexed_table: __sdk::TableUpdate<IndexedTable>,
     indexed_table_2: __sdk::TableUpdate<IndexedTable2>,
     large_table: __sdk::TableUpdate<LargeTable>,
-    one_address: __sdk::TableUpdate<OneAddress>,
     one_bool: __sdk::TableUpdate<OneBool>,
     one_byte_struct: __sdk::TableUpdate<OneByteStruct>,
+    one_connection_id: __sdk::TableUpdate<OneConnectionId>,
     one_enum_with_payload: __sdk::TableUpdate<OneEnumWithPayload>,
     one_every_primitive_struct: __sdk::TableUpdate<OneEveryPrimitiveStruct>,
     one_every_vec_struct: __sdk::TableUpdate<OneEveryVecStruct>,
@@ -2612,8 +2608,8 @@ pub struct DbUpdate {
     option_simple_enum: __sdk::TableUpdate<OptionSimpleEnum>,
     option_string: __sdk::TableUpdate<OptionString>,
     option_vec_option_i_32: __sdk::TableUpdate<OptionVecOptionI32>,
-    pk_address: __sdk::TableUpdate<PkAddress>,
     pk_bool: __sdk::TableUpdate<PkBool>,
+    pk_connection_id: __sdk::TableUpdate<PkConnectionId>,
     pk_i_128: __sdk::TableUpdate<PkI128>,
     pk_i_16: __sdk::TableUpdate<PkI16>,
     pk_i_256: __sdk::TableUpdate<PkI256>,
@@ -2630,8 +2626,8 @@ pub struct DbUpdate {
     pk_u_8: __sdk::TableUpdate<PkU8>,
     scheduled_table: __sdk::TableUpdate<ScheduledTable>,
     table_holds_table: __sdk::TableUpdate<TableHoldsTable>,
-    unique_address: __sdk::TableUpdate<UniqueAddress>,
     unique_bool: __sdk::TableUpdate<UniqueBool>,
+    unique_connection_id: __sdk::TableUpdate<UniqueConnectionId>,
     unique_i_128: __sdk::TableUpdate<UniqueI128>,
     unique_i_16: __sdk::TableUpdate<UniqueI16>,
     unique_i_256: __sdk::TableUpdate<UniqueI256>,
@@ -2646,9 +2642,9 @@ pub struct DbUpdate {
     unique_u_32: __sdk::TableUpdate<UniqueU32>,
     unique_u_64: __sdk::TableUpdate<UniqueU64>,
     unique_u_8: __sdk::TableUpdate<UniqueU8>,
-    vec_address: __sdk::TableUpdate<VecAddress>,
     vec_bool: __sdk::TableUpdate<VecBool>,
     vec_byte_struct: __sdk::TableUpdate<VecByteStruct>,
+    vec_connection_id: __sdk::TableUpdate<VecConnectionId>,
     vec_enum_with_payload: __sdk::TableUpdate<VecEnumWithPayload>,
     vec_every_primitive_struct: __sdk::TableUpdate<VecEveryPrimitiveStruct>,
     vec_every_vec_struct: __sdk::TableUpdate<VecEveryVecStruct>,
@@ -2684,10 +2680,12 @@ impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
                     db_update.indexed_table_2 = indexed_table_2_table::parse_table_update(table_update)?
                 }
                 "large_table" => db_update.large_table = large_table_table::parse_table_update(table_update)?,
-                "one_address" => db_update.one_address = one_address_table::parse_table_update(table_update)?,
                 "one_bool" => db_update.one_bool = one_bool_table::parse_table_update(table_update)?,
                 "one_byte_struct" => {
                     db_update.one_byte_struct = one_byte_struct_table::parse_table_update(table_update)?
+                }
+                "one_connection_id" => {
+                    db_update.one_connection_id = one_connection_id_table::parse_table_update(table_update)?
                 }
                 "one_enum_with_payload" => {
                     db_update.one_enum_with_payload = one_enum_with_payload_table::parse_table_update(table_update)?
@@ -2737,8 +2735,10 @@ impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
                 "option_vec_option_i32" => {
                     db_update.option_vec_option_i_32 = option_vec_option_i_32_table::parse_table_update(table_update)?
                 }
-                "pk_address" => db_update.pk_address = pk_address_table::parse_table_update(table_update)?,
                 "pk_bool" => db_update.pk_bool = pk_bool_table::parse_table_update(table_update)?,
+                "pk_connection_id" => {
+                    db_update.pk_connection_id = pk_connection_id_table::parse_table_update(table_update)?
+                }
                 "pk_i128" => db_update.pk_i_128 = pk_i_128_table::parse_table_update(table_update)?,
                 "pk_i16" => db_update.pk_i_16 = pk_i_16_table::parse_table_update(table_update)?,
                 "pk_i256" => db_update.pk_i_256 = pk_i_256_table::parse_table_update(table_update)?,
@@ -2759,8 +2759,10 @@ impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
                 "table_holds_table" => {
                     db_update.table_holds_table = table_holds_table_table::parse_table_update(table_update)?
                 }
-                "unique_address" => db_update.unique_address = unique_address_table::parse_table_update(table_update)?,
                 "unique_bool" => db_update.unique_bool = unique_bool_table::parse_table_update(table_update)?,
+                "unique_connection_id" => {
+                    db_update.unique_connection_id = unique_connection_id_table::parse_table_update(table_update)?
+                }
                 "unique_i128" => db_update.unique_i_128 = unique_i_128_table::parse_table_update(table_update)?,
                 "unique_i16" => db_update.unique_i_16 = unique_i_16_table::parse_table_update(table_update)?,
                 "unique_i256" => db_update.unique_i_256 = unique_i_256_table::parse_table_update(table_update)?,
@@ -2777,10 +2779,12 @@ impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
                 "unique_u32" => db_update.unique_u_32 = unique_u_32_table::parse_table_update(table_update)?,
                 "unique_u64" => db_update.unique_u_64 = unique_u_64_table::parse_table_update(table_update)?,
                 "unique_u8" => db_update.unique_u_8 = unique_u_8_table::parse_table_update(table_update)?,
-                "vec_address" => db_update.vec_address = vec_address_table::parse_table_update(table_update)?,
                 "vec_bool" => db_update.vec_bool = vec_bool_table::parse_table_update(table_update)?,
                 "vec_byte_struct" => {
                     db_update.vec_byte_struct = vec_byte_struct_table::parse_table_update(table_update)?
+                }
+                "vec_connection_id" => {
+                    db_update.vec_connection_id = vec_connection_id_table::parse_table_update(table_update)?
                 }
                 "vec_enum_with_payload" => {
                     db_update.vec_enum_with_payload = vec_enum_with_payload_table::parse_table_update(table_update)?
@@ -2834,9 +2838,9 @@ impl __sdk::DbUpdate for DbUpdate {
         cache.apply_diff_to_table::<IndexedTable>("indexed_table", &self.indexed_table);
         cache.apply_diff_to_table::<IndexedTable2>("indexed_table_2", &self.indexed_table_2);
         cache.apply_diff_to_table::<LargeTable>("large_table", &self.large_table);
-        cache.apply_diff_to_table::<OneAddress>("one_address", &self.one_address);
         cache.apply_diff_to_table::<OneBool>("one_bool", &self.one_bool);
         cache.apply_diff_to_table::<OneByteStruct>("one_byte_struct", &self.one_byte_struct);
+        cache.apply_diff_to_table::<OneConnectionId>("one_connection_id", &self.one_connection_id);
         cache.apply_diff_to_table::<OneEnumWithPayload>("one_enum_with_payload", &self.one_enum_with_payload);
         cache.apply_diff_to_table::<OneEveryPrimitiveStruct>(
             "one_every_primitive_struct",
@@ -2871,8 +2875,8 @@ impl __sdk::DbUpdate for DbUpdate {
         cache.apply_diff_to_table::<OptionSimpleEnum>("option_simple_enum", &self.option_simple_enum);
         cache.apply_diff_to_table::<OptionString>("option_string", &self.option_string);
         cache.apply_diff_to_table::<OptionVecOptionI32>("option_vec_option_i32", &self.option_vec_option_i_32);
-        cache.apply_diff_to_table::<PkAddress>("pk_address", &self.pk_address);
         cache.apply_diff_to_table::<PkBool>("pk_bool", &self.pk_bool);
+        cache.apply_diff_to_table::<PkConnectionId>("pk_connection_id", &self.pk_connection_id);
         cache.apply_diff_to_table::<PkI128>("pk_i128", &self.pk_i_128);
         cache.apply_diff_to_table::<PkI16>("pk_i16", &self.pk_i_16);
         cache.apply_diff_to_table::<PkI256>("pk_i256", &self.pk_i_256);
@@ -2889,8 +2893,8 @@ impl __sdk::DbUpdate for DbUpdate {
         cache.apply_diff_to_table::<PkU8>("pk_u8", &self.pk_u_8);
         cache.apply_diff_to_table::<ScheduledTable>("scheduled_table", &self.scheduled_table);
         cache.apply_diff_to_table::<TableHoldsTable>("table_holds_table", &self.table_holds_table);
-        cache.apply_diff_to_table::<UniqueAddress>("unique_address", &self.unique_address);
         cache.apply_diff_to_table::<UniqueBool>("unique_bool", &self.unique_bool);
+        cache.apply_diff_to_table::<UniqueConnectionId>("unique_connection_id", &self.unique_connection_id);
         cache.apply_diff_to_table::<UniqueI128>("unique_i128", &self.unique_i_128);
         cache.apply_diff_to_table::<UniqueI16>("unique_i16", &self.unique_i_16);
         cache.apply_diff_to_table::<UniqueI256>("unique_i256", &self.unique_i_256);
@@ -2905,9 +2909,9 @@ impl __sdk::DbUpdate for DbUpdate {
         cache.apply_diff_to_table::<UniqueU32>("unique_u32", &self.unique_u_32);
         cache.apply_diff_to_table::<UniqueU64>("unique_u64", &self.unique_u_64);
         cache.apply_diff_to_table::<UniqueU8>("unique_u8", &self.unique_u_8);
-        cache.apply_diff_to_table::<VecAddress>("vec_address", &self.vec_address);
         cache.apply_diff_to_table::<VecBool>("vec_bool", &self.vec_bool);
         cache.apply_diff_to_table::<VecByteStruct>("vec_byte_struct", &self.vec_byte_struct);
+        cache.apply_diff_to_table::<VecConnectionId>("vec_connection_id", &self.vec_connection_id);
         cache.apply_diff_to_table::<VecEnumWithPayload>("vec_enum_with_payload", &self.vec_enum_with_payload);
         cache.apply_diff_to_table::<VecEveryPrimitiveStruct>(
             "vec_every_primitive_struct",
@@ -2938,9 +2942,9 @@ impl __sdk::DbUpdate for DbUpdate {
         callbacks.invoke_table_row_callbacks::<IndexedTable>("indexed_table", &self.indexed_table, event);
         callbacks.invoke_table_row_callbacks::<IndexedTable2>("indexed_table_2", &self.indexed_table_2, event);
         callbacks.invoke_table_row_callbacks::<LargeTable>("large_table", &self.large_table, event);
-        callbacks.invoke_table_row_callbacks::<OneAddress>("one_address", &self.one_address, event);
         callbacks.invoke_table_row_callbacks::<OneBool>("one_bool", &self.one_bool, event);
         callbacks.invoke_table_row_callbacks::<OneByteStruct>("one_byte_struct", &self.one_byte_struct, event);
+        callbacks.invoke_table_row_callbacks::<OneConnectionId>("one_connection_id", &self.one_connection_id, event);
         callbacks.invoke_table_row_callbacks::<OneEnumWithPayload>(
             "one_enum_with_payload",
             &self.one_enum_with_payload,
@@ -2989,8 +2993,8 @@ impl __sdk::DbUpdate for DbUpdate {
             &self.option_vec_option_i_32,
             event,
         );
-        callbacks.invoke_table_row_callbacks::<PkAddress>("pk_address", &self.pk_address, event);
         callbacks.invoke_table_row_callbacks::<PkBool>("pk_bool", &self.pk_bool, event);
+        callbacks.invoke_table_row_callbacks::<PkConnectionId>("pk_connection_id", &self.pk_connection_id, event);
         callbacks.invoke_table_row_callbacks::<PkI128>("pk_i128", &self.pk_i_128, event);
         callbacks.invoke_table_row_callbacks::<PkI16>("pk_i16", &self.pk_i_16, event);
         callbacks.invoke_table_row_callbacks::<PkI256>("pk_i256", &self.pk_i_256, event);
@@ -3007,8 +3011,12 @@ impl __sdk::DbUpdate for DbUpdate {
         callbacks.invoke_table_row_callbacks::<PkU8>("pk_u8", &self.pk_u_8, event);
         callbacks.invoke_table_row_callbacks::<ScheduledTable>("scheduled_table", &self.scheduled_table, event);
         callbacks.invoke_table_row_callbacks::<TableHoldsTable>("table_holds_table", &self.table_holds_table, event);
-        callbacks.invoke_table_row_callbacks::<UniqueAddress>("unique_address", &self.unique_address, event);
         callbacks.invoke_table_row_callbacks::<UniqueBool>("unique_bool", &self.unique_bool, event);
+        callbacks.invoke_table_row_callbacks::<UniqueConnectionId>(
+            "unique_connection_id",
+            &self.unique_connection_id,
+            event,
+        );
         callbacks.invoke_table_row_callbacks::<UniqueI128>("unique_i128", &self.unique_i_128, event);
         callbacks.invoke_table_row_callbacks::<UniqueI16>("unique_i16", &self.unique_i_16, event);
         callbacks.invoke_table_row_callbacks::<UniqueI256>("unique_i256", &self.unique_i_256, event);
@@ -3023,9 +3031,9 @@ impl __sdk::DbUpdate for DbUpdate {
         callbacks.invoke_table_row_callbacks::<UniqueU32>("unique_u32", &self.unique_u_32, event);
         callbacks.invoke_table_row_callbacks::<UniqueU64>("unique_u64", &self.unique_u_64, event);
         callbacks.invoke_table_row_callbacks::<UniqueU8>("unique_u8", &self.unique_u_8, event);
-        callbacks.invoke_table_row_callbacks::<VecAddress>("vec_address", &self.vec_address, event);
         callbacks.invoke_table_row_callbacks::<VecBool>("vec_bool", &self.vec_bool, event);
         callbacks.invoke_table_row_callbacks::<VecByteStruct>("vec_byte_struct", &self.vec_byte_struct, event);
+        callbacks.invoke_table_row_callbacks::<VecConnectionId>("vec_connection_id", &self.vec_connection_id, event);
         callbacks.invoke_table_row_callbacks::<VecEnumWithPayload>(
             "vec_enum_with_payload",
             &self.vec_enum_with_payload,
@@ -3171,8 +3179,8 @@ impl __sdk::DbContext for DbConnection {
     fn try_identity(&self) -> Option<__sdk::Identity> {
         self.imp.try_identity()
     }
-    fn address(&self) -> __sdk::Address {
-        self.imp.address()
+    fn connection_id(&self) -> __sdk::ConnectionId {
+        self.imp.connection_id()
     }
 }
 
@@ -3389,8 +3397,8 @@ impl __sdk::DbContext for EventContext {
     fn try_identity(&self) -> Option<__sdk::Identity> {
         self.imp.try_identity()
     }
-    fn address(&self) -> __sdk::Address {
-        self.imp.address()
+    fn connection_id(&self) -> __sdk::ConnectionId {
+        self.imp.connection_id()
     }
 }
 
@@ -3465,8 +3473,8 @@ impl __sdk::DbContext for ReducerEventContext {
     fn try_identity(&self) -> Option<__sdk::Identity> {
         self.imp.try_identity()
     }
-    fn address(&self) -> __sdk::Address {
-        self.imp.address()
+    fn connection_id(&self) -> __sdk::ConnectionId {
+        self.imp.connection_id()
     }
 }
 
@@ -3537,8 +3545,8 @@ impl __sdk::DbContext for SubscriptionEventContext {
     fn try_identity(&self) -> Option<__sdk::Identity> {
         self.imp.try_identity()
     }
-    fn address(&self) -> __sdk::Address {
-        self.imp.address()
+    fn connection_id(&self) -> __sdk::ConnectionId {
+        self.imp.connection_id()
     }
 }
 
@@ -3613,8 +3621,8 @@ impl __sdk::DbContext for ErrorContext {
     fn try_identity(&self) -> Option<__sdk::Identity> {
         self.imp.try_identity()
     }
-    fn address(&self) -> __sdk::Address {
-        self.imp.address()
+    fn connection_id(&self) -> __sdk::ConnectionId {
+        self.imp.connection_id()
     }
 }
 
@@ -3637,9 +3645,9 @@ impl __sdk::SpacetimeModule for RemoteModule {
         indexed_table_table::register_table(client_cache);
         indexed_table_2_table::register_table(client_cache);
         large_table_table::register_table(client_cache);
-        one_address_table::register_table(client_cache);
         one_bool_table::register_table(client_cache);
         one_byte_struct_table::register_table(client_cache);
+        one_connection_id_table::register_table(client_cache);
         one_enum_with_payload_table::register_table(client_cache);
         one_every_primitive_struct_table::register_table(client_cache);
         one_every_vec_struct_table::register_table(client_cache);
@@ -3668,8 +3676,8 @@ impl __sdk::SpacetimeModule for RemoteModule {
         option_simple_enum_table::register_table(client_cache);
         option_string_table::register_table(client_cache);
         option_vec_option_i_32_table::register_table(client_cache);
-        pk_address_table::register_table(client_cache);
         pk_bool_table::register_table(client_cache);
+        pk_connection_id_table::register_table(client_cache);
         pk_i_128_table::register_table(client_cache);
         pk_i_16_table::register_table(client_cache);
         pk_i_256_table::register_table(client_cache);
@@ -3686,8 +3694,8 @@ impl __sdk::SpacetimeModule for RemoteModule {
         pk_u_8_table::register_table(client_cache);
         scheduled_table_table::register_table(client_cache);
         table_holds_table_table::register_table(client_cache);
-        unique_address_table::register_table(client_cache);
         unique_bool_table::register_table(client_cache);
+        unique_connection_id_table::register_table(client_cache);
         unique_i_128_table::register_table(client_cache);
         unique_i_16_table::register_table(client_cache);
         unique_i_256_table::register_table(client_cache);
@@ -3702,9 +3710,9 @@ impl __sdk::SpacetimeModule for RemoteModule {
         unique_u_32_table::register_table(client_cache);
         unique_u_64_table::register_table(client_cache);
         unique_u_8_table::register_table(client_cache);
-        vec_address_table::register_table(client_cache);
         vec_bool_table::register_table(client_cache);
         vec_byte_struct_table::register_table(client_cache);
+        vec_connection_id_table::register_table(client_cache);
         vec_enum_with_payload_table::register_table(client_cache);
         vec_every_primitive_struct_table::register_table(client_cache);
         vec_every_vec_struct_table::register_table(client_cache);

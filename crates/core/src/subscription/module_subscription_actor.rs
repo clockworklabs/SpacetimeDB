@@ -199,14 +199,16 @@ impl ModuleSubscriptions {
         };
 
         let mut subscriptions = self.subscriptions.write();
-        let query = match subscriptions.remove_subscription((sender.id.identity, sender.id.address), request.query_id) {
-            Ok(query) => query,
-            Err(error) => {
-                // Apparently we ignore errors sending messages.
-                let _ = send_err_msg(error.to_string().into());
-                return Ok(());
-            }
-        };
+
+        let query =
+            match subscriptions.remove_subscription((sender.id.identity, sender.id.connection_id), request.query_id) {
+                Ok(query) => query,
+                Err(error) => {
+                    // Apparently we ignore errors sending messages.
+                    let _ = send_err_msg(error.to_string().into());
+                    return Ok(());
+                }
+            };
 
         let tx = scopeguard::guard(self.relational_db.begin_tx(Workload::Unsubscribe), |tx| {
             self.relational_db.release_tx(tx);
@@ -353,7 +355,7 @@ impl ModuleSubscriptions {
 
     pub fn remove_subscriber(&self, client_id: ClientActorId) {
         let mut subscriptions = self.subscriptions.write();
-        subscriptions.remove_all_subscriptions(&(client_id.identity, client_id.address));
+        subscriptions.remove_all_subscriptions(&(client_id.identity, client_id.connection_id));
         WORKER_METRICS
             .subscription_queries
             .with_label_values(&self.relational_db.database_identity())
@@ -505,7 +507,7 @@ mod tests {
         ModuleEvent {
             timestamp: Timestamp::now(),
             caller_identity: Identity::ZERO,
-            caller_address: None,
+            caller_connection_id: None,
             function_call: ModuleFunctionCall::default(),
             status: EventStatus::Committed(DatabaseUpdate::default()),
             energy_quanta_used: EnergyQuanta { quanta: 0 },

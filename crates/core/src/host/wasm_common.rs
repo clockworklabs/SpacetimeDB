@@ -145,10 +145,10 @@ const CALL_REDUCER_SIG: StaticFuncSig = FuncSig::new(
         WasmType::I64, // `sender_1` contains bytes `[16..24]`.
         WasmType::I64, // `sender_1` contains bytes `[24..32]`.
         // ----------------------------------------------------
-        // Caller's `Address` broken into 2 u64s.
+        // Caller's `ConnectionId` broken into 2 u64s.
         // ----------------------------------------------------
-        WasmType::I64, // `address_0` contains bytes `[0..8 ]`.
-        WasmType::I64, // `address_1` contains bytes `[8..16]`.
+        WasmType::I64, // `conn_id_0` contains bytes `[0..8 ]`.
+        WasmType::I64, // `conn_id_1` contains bytes `[8..16]`.
         // ----------------------------------------------------
         WasmType::I64, // Timestamp
         WasmType::I32, // Args source buffer

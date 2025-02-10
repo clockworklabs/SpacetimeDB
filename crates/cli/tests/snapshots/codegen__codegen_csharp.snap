@@ -1593,16 +1593,16 @@ namespace SpacetimeDB
     {
         [DataMember(Name = "identity")]
         public SpacetimeDB.Identity Identity;
-        [DataMember(Name = "address")]
-        public SpacetimeDB.Address Address;
+        [DataMember(Name = "connection_id")]
+        public SpacetimeDB.ConnectionId ConnectionId;
 
         public HasSpecialStuff(
             SpacetimeDB.Identity Identity,
-            SpacetimeDB.Address Address
+            SpacetimeDB.ConnectionId ConnectionId
         )
         {
             this.Identity = Identity;
-            this.Address = Address;
+            this.ConnectionId = ConnectionId;
         }
 
         public HasSpecialStuff()

@@ -5,7 +5,7 @@ use crate::algebraic_value::de::{ValueDeserializeError, ValueDeserializer};
 use crate::algebraic_value::ser::value_serialize;
 use crate::de::Deserialize;
 use crate::meta_type::MetaType;
-use crate::product_type::{ADDRESS_TAG, IDENTITY_TAG, TIMESTAMP_TAG, TIME_DURATION_TAG};
+use crate::product_type::{CONNECTION_ID_TAG, IDENTITY_TAG, TIMESTAMP_TAG, TIME_DURATION_TAG};
 use crate::sum_type::{OPTION_NONE_TAG, OPTION_SOME_TAG};
 use crate::{i256, u256};
 use crate::{AlgebraicTypeRef, AlgebraicValue, ArrayType, ProductType, SpacetimeType, SumType, SumTypeVariant};
@@ -160,9 +160,11 @@ impl AlgebraicType {
     /// The first type in the typespace.
     pub const ZERO_REF: Self = Self::Ref(AlgebraicTypeRef(0));
 
-    /// Returns whether this type is the conventional address type.
-    pub fn is_address(&self) -> bool {
-        matches!(self, Self::Product(p) if p.is_address())
+    /// Returns whether this type is the `ConnectionId` type.
+    ///
+    /// Construct an instance of this type with [`Self::connection_id`]
+    pub fn is_connection_id(&self) -> bool {
+        matches!(self, Self::Product(p) if p.is_connection_id())
     }
 
     /// Returns whether this type is the conventional identity type.
@@ -304,9 +306,9 @@ impl AlgebraicType {
         AlgebraicType::product([(IDENTITY_TAG, AlgebraicType::U256)])
     }
 
-    /// Construct a copy of the `Address` type.
-    pub fn address() -> Self {
-        AlgebraicType::product([(ADDRESS_TAG, AlgebraicType::U128)])
+    /// Construct a copy of the `ConnectionId` type.
+    pub fn connection_id() -> Self {
+        AlgebraicType::product([(CONNECTION_ID_TAG, AlgebraicType::U128)])
     }
 
     /// Construct a copy of the point-in-time `Timestamp` type.
@@ -689,8 +691,8 @@ mod tests {
     fn special_types_are_special() {
         assert!(AlgebraicType::identity().is_identity());
         assert!(AlgebraicType::identity().is_special());
-        assert!(AlgebraicType::address().is_address());
-        assert!(AlgebraicType::address().is_special());
+        assert!(AlgebraicType::connection_id().is_connection_id());
+        assert!(AlgebraicType::connection_id().is_special());
         assert!(AlgebraicType::timestamp().is_timestamp());
         assert!(AlgebraicType::timestamp().is_special());
         assert!(AlgebraicType::time_duration().is_special());

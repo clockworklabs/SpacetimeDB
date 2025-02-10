@@ -10,18 +10,23 @@ namespace SpacetimeDB
 {
     public sealed record ReducerContext : DbContext<Local>, Internal.IReducerContext
     {
-        public readonly Identity CallerIdentity;
-        public readonly Address? CallerAddress;
+        public readonly Identity Sender;
+        public readonly ConnectionId? ConnectionId;
         public readonly Random Rng;
         public readonly Timestamp Timestamp;
 
         // We need this property to be non-static for parity with client SDK.
         public Identity Identity => Internal.IReducerContext.GetIdentity();
 
-        internal ReducerContext(Identity identity, Address? address, Random random, Timestamp time)
+        internal ReducerContext(
+            Identity identity,
+            ConnectionId? connectionId,
+            Random random,
+            Timestamp time
+        )
         {
-            CallerIdentity = identity;
-            CallerAddress = address;
+            Sender = identity;
+            ConnectionId = connectionId;
             Rng = random;
             Timestamp = time;
         }
@@ -1092,8 +1097,8 @@ static class ModuleRegistration
     public static void Main()
     {
         SpacetimeDB.Internal.Module.SetReducerContextConstructor(
-            (identity, address, random, time) =>
-                new SpacetimeDB.ReducerContext(identity, address, random, time)
+            (identity, connectionId, random, time) =>
+                new SpacetimeDB.ReducerContext(identity, connectionId, random, time)
         );
 
         SpacetimeDB.Internal.Module.RegisterReducer<Init>();
@@ -1149,8 +1154,8 @@ static class ModuleRegistration
         ulong sender_1,
         ulong sender_2,
         ulong sender_3,
-        ulong address_0,
-        ulong address_1,
+        ulong conn_id_0,
+        ulong conn_id_1,
         SpacetimeDB.Timestamp timestamp,
         SpacetimeDB.Internal.BytesSource args,
         SpacetimeDB.Internal.BytesSink error
@@ -1161,8 +1166,8 @@ static class ModuleRegistration
             sender_1,
             sender_2,
             sender_3,
-            address_0,
-            address_1,
+            conn_id_0,
+            conn_id_1,
             timestamp,
             args,
             error

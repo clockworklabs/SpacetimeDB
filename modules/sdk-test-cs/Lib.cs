@@ -32,7 +32,7 @@ public static partial class Module
             double F64,
             string Str,
             Identity Identity,
-            Address Address,
+            ConnectionId ConnectionId,
             Timestamp Timestamp,
             List<byte> Bytes,
             List<int> Ints,
@@ -69,7 +69,7 @@ public static partial class Module
         public double o;
         public string p;
         public Identity q;
-        public Address r;
+        public ConnectionId r;
         public Timestamp s;
         public TimeDuration t;
     }
@@ -94,7 +94,7 @@ public static partial class Module
         public List<double> o;
         public List<string> p;
         public List<Identity> q;
-        public List<Address> r;
+        public List<ConnectionId> r;
         public List<Timestamp> s;
         public List<TimeDuration> t;
     }
@@ -303,16 +303,16 @@ public static partial class Module
         ctx.Db.one_identity.Insert(new OneIdentity { i = i });
     }
 
-    [SpacetimeDB.Table(Name = "one_address", Public = true)]
-    public partial struct OneAddress
+    [SpacetimeDB.Table(Name = "one_connection_id", Public = true)]
+    public partial struct OneConnectionId
     {
-        public Address a;
+        public ConnectionId a;
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_one_address(ReducerContext ctx, Address a)
+    public static void insert_one_connection_id(ReducerContext ctx, ConnectionId a)
     {
-        ctx.Db.one_address.Insert(new OneAddress { a = a });
+        ctx.Db.one_connection_id.Insert(new OneConnectionId { a = a });
     }
 
     [SpacetimeDB.Table(Name = "one_timestamp", Public = true)]
@@ -603,16 +603,16 @@ public static partial class Module
         ctx.Db.vec_identity.Insert(new VecIdentity { i = i });
     }
 
-    [SpacetimeDB.Table(Name = "vec_address", Public = true)]
-    public partial struct VecAddress
+    [SpacetimeDB.Table(Name = "vec_connection_id", Public = true)]
+    public partial struct VecConnectionId
     {
-        public List<Address> a;
+        public List<ConnectionId> a;
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_vec_address(ReducerContext ctx, List<Address> a)
+    public static void insert_vec_connection_id(ReducerContext ctx, List<ConnectionId> a)
     {
-        ctx.Db.vec_address.Insert(new VecAddress { a = a });
+        ctx.Db.vec_connection_id.Insert(new VecConnectionId { a = a });
     }
 
     [SpacetimeDB.Table(Name = "vec_timestamp", Public = true)]
@@ -1182,31 +1182,31 @@ public static partial class Module
         ctx.Db.unique_identity.i.Delete(i);
     }
 
-    [SpacetimeDB.Table(Name = "unique_address", Public = true)]
-    public partial struct UniqueAddress
+    [SpacetimeDB.Table(Name = "unique_connection_id", Public = true)]
+    public partial struct UniqueConnectionId
     {
         [SpacetimeDB.Unique]
-        public Address a;
+        public ConnectionId a;
         public int data;
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_unique_address(ReducerContext ctx, Address a, int data)
+    public static void insert_unique_connection_id(ReducerContext ctx, ConnectionId a, int data)
     {
-        ctx.Db.unique_address.Insert(new UniqueAddress { a = a, data = data });
+        ctx.Db.unique_connection_id.Insert(new UniqueConnectionId { a = a, data = data });
     }
 
     [SpacetimeDB.Reducer]
-    public static void update_unique_address(ReducerContext ctx, Address a, int data)
+    public static void update_unique_connection_id(ReducerContext ctx, ConnectionId a, int data)
     {
         var key = a;
-        ctx.Db.unique_address.a.Update(new UniqueAddress { a = a, data = data });
+        ctx.Db.unique_connection_id.a.Update(new UniqueConnectionId { a = a, data = data });
     }
 
     [SpacetimeDB.Reducer]
-    public static void delete_unique_address(ReducerContext ctx, Address a)
+    public static void delete_unique_connection_id(ReducerContext ctx, ConnectionId a)
     {
-        ctx.Db.unique_address.a.Delete(a);
+        ctx.Db.unique_connection_id.a.Delete(a);
     }
 
     [SpacetimeDB.Table(Name = "pk_u8", Public = true)]
@@ -1614,67 +1614,67 @@ public static partial class Module
         ctx.Db.pk_identity.i.Delete(i);
     }
 
-    [SpacetimeDB.Table(Name = "pk_address", Public = true)]
-    public partial struct PkAddress
+    [SpacetimeDB.Table(Name = "pk_connection_id", Public = true)]
+    public partial struct PkConnectionId
     {
         [SpacetimeDB.PrimaryKey]
-        public Address a;
+        public ConnectionId a;
         public int data;
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_pk_address(ReducerContext ctx, Address a, int data)
+    public static void insert_pk_connection_id(ReducerContext ctx, ConnectionId a, int data)
     {
-        ctx.Db.pk_address.Insert(new PkAddress { a = a, data = data });
+        ctx.Db.pk_connection_id.Insert(new PkConnectionId { a = a, data = data });
     }
 
     [SpacetimeDB.Reducer]
-    public static void update_pk_address(ReducerContext ctx, Address a, int data)
+    public static void update_pk_connection_id(ReducerContext ctx, ConnectionId a, int data)
     {
         var key = a;
-        ctx.Db.pk_address.a.Update(new PkAddress { a = a, data = data });
+        ctx.Db.pk_connection_id.a.Update(new PkConnectionId { a = a, data = data });
     }
 
     [SpacetimeDB.Reducer]
-    public static void delete_pk_address(ReducerContext ctx, Address a)
+    public static void delete_pk_connection_id(ReducerContext ctx, ConnectionId a)
     {
-        ctx.Db.pk_address.a.Delete(a);
+        ctx.Db.pk_connection_id.a.Delete(a);
     }
 
     [SpacetimeDB.Reducer]
     public static void insert_caller_one_identity(ReducerContext ctx)
     {
-        ctx.Db.one_identity.Insert(new OneIdentity { i = ctx.CallerIdentity });
+        ctx.Db.one_identity.Insert(new OneIdentity { i = ctx.Sender });
     }
 
     [SpacetimeDB.Reducer]
     public static void insert_caller_vec_identity(ReducerContext ctx)
     {
         ctx.Db.vec_identity.Insert(
-            new VecIdentity { i = new List<Identity> { ctx.CallerIdentity } }
+                                   new VecIdentity { i = new List<Identity> { ctx.Sender } }
         );
     }
 
     [SpacetimeDB.Reducer]
     public static void insert_caller_unique_identity(ReducerContext ctx, int data)
     {
-        ctx.Db.unique_identity.Insert(new UniqueIdentity { i = ctx.CallerIdentity, data = data });
+        ctx.Db.unique_identity.Insert(new UniqueIdentity { i = ctx.Sender, data = data });
     }
 
     [SpacetimeDB.Reducer]
     public static void insert_caller_pk_identity(ReducerContext ctx, int data)
     {
-        ctx.Db.pk_identity.Insert(new PkIdentity { i = ctx.CallerIdentity, data = data });
+        ctx.Db.pk_identity.Insert(new PkIdentity { i = ctx.Sender, data = data });
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_caller_one_address(ReducerContext ctx)
+    public static void insert_caller_one_connection_id(ReducerContext ctx)
     {
-        ctx.Db.one_address.Insert(new OneAddress { a = (Address)ctx.CallerAddress! });
+        ctx.Db.one_connection_id.Insert(new OneConnectionId { a = (ConnectionId)ctx.ConnectionId! });
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_caller_vec_address(ReducerContext ctx)
+    public static void insert_caller_vec_connection_id(ReducerContext ctx)
     {
         // VecAddress::insert(VecAddress {
         //     < a[_]>::into_vec(
@@ -1685,17 +1685,17 @@ public static partial class Module
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_caller_unique_address(ReducerContext ctx, int data)
+    public static void insert_caller_unique_connection_id(ReducerContext ctx, int data)
     {
-        ctx.Db.unique_address.Insert(
-            new UniqueAddress { a = (Address)ctx.CallerAddress!, data = data }
+        ctx.Db.unique_connection_id.Insert(
+                                     new UniqueConnectionId { a = (ConnectionId)ctx.ConnectionId!, data = data }
         );
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_caller_pk_address(ReducerContext ctx, int data)
+    public static void insert_caller_pk_connection_id(ReducerContext ctx, int data)
     {
-        ctx.Db.pk_address.Insert(new PkAddress { a = (Address)ctx.CallerAddress!, data = data });
+        ctx.Db.pk_connection_id.Insert(new PkConnectionId { a = (ConnectionId)ctx.ConnectionId!, data = data });
     }
 
     [SpacetimeDB.Table(Name = "large_table", Public = true)]

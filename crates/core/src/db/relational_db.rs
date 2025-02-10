@@ -28,9 +28,9 @@ use parking_lot::RwLock;
 use spacetimedb_commitlog as commitlog;
 pub use spacetimedb_durability::Durability;
 use spacetimedb_durability::{self as durability, TxOffset};
-use spacetimedb_lib::address::Address;
 use spacetimedb_lib::db::auth::StAccess;
 use spacetimedb_lib::db::raw_def::v9::{btree, RawModuleDefV9Builder, RawSql};
+use spacetimedb_lib::ConnectionId;
 use spacetimedb_lib::Identity;
 use spacetimedb_paths::server::{CommitLogDir, ReplicaDir, SnapshotsPath};
 use spacetimedb_primitives::*;
@@ -81,7 +81,7 @@ pub const ONLY_MODULE_VERSION: &str = "0.0.1";
 /// not shut down gracefully. Such "dangling" clients should be removed by
 /// calling [`crate::host::ModuleHost::call_identity_connected_disconnected`]
 /// for each entry in [`ConnectedClients`].
-pub type ConnectedClients = HashSet<(Identity, Address)>;
+pub type ConnectedClients = HashSet<(Identity, ConnectionId)>;
 
 #[derive(Clone)]
 pub struct RelationalDB {
@@ -178,7 +178,7 @@ pub const SNAPSHOT_FREQUENCY: u64 = 1_000_000;
 impl std::fmt::Debug for RelationalDB {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("RelationalDB")
-            .field("address", &self.database_identity)
+            .field("identity", &self.database_identity)
             .finish()
     }
 }
@@ -239,13 +239,13 @@ impl RelationalDB {
     ///   Note that, even if no `durability` is supplied, the directory will be
     ///   created and equipped with an advisory lock file.
     ///
-    /// - `address`
+    /// - `database_identity`
     ///
-    ///   The [`Address`] of the database.
+    ///   The [`Identity`] of the database.
     ///
     ///   An error is returned if the database already exists, but has a
-    ///   different address.
-    ///   If it is a new database, the address is stored in the database's
+    ///   different identity.
+    ///   If it is a new database, the identity is stored in the database's
     ///   system tables upon calling [`Self::set_initialized`].
     ///
     /// - `owner_identity`
@@ -348,7 +348,7 @@ impl RelationalDB {
 
     /// Mark the database as initialized with the given module parameters.
     ///
-    /// Records the database's address, owner and module parameters in the
+    /// Records the database's identity, owner and module parameters in the
     /// system tables. The transactional context is supplied by the caller.
     ///
     /// It is an error to call this method on an alread-initialized database.
@@ -446,7 +446,7 @@ impl RelationalDB {
                     if snapshot.database_identity != database_identity {
                         // TODO: return a proper typed error
                         return Err(anyhow::anyhow!(
-                            "Snapshot has incorrect database_address: expected {database_identity} but found {}",
+                            "Snapshot has incorrect database_identity: expected {database_identity} but found {}",
                             snapshot.database_identity,
                         )
                         .into());
@@ -1285,7 +1285,7 @@ pub async fn local_durability(commitlog_dir: CommitLogDir) -> io::Result<(LocalD
 }
 
 /// Open a [`SnapshotRepository`] at `db_path/snapshots`,
-/// configured to store snapshots of the database `database_address`/`replica_id`.
+/// configured to store snapshots of the database `database_identity`/`replica_id`.
 pub fn open_snapshot_repo(
     path: SnapshotsPath,
     database_identity: Identity,
@@ -2288,7 +2288,7 @@ mod tests {
         let ctx = ReducerContext {
             name: "abstract_concrete_proxy_factory_impl".into(),
             caller_identity: Identity::__dummy(),
-            caller_address: Address::__DUMMY,
+            caller_connection_id: ConnectionId::ZERO,
             timestamp,
             arg_bsatn: Bytes::new(),
         };
@@ -2310,7 +2310,7 @@ mod tests {
                 Workload::Reducer(ReducerContext {
                     name: "__identity_connected__".into(),
                     caller_identity: Identity::__dummy(),
-                    caller_address: Address::__DUMMY,
+                    caller_connection_id: ConnectionId::ZERO,
                     timestamp,
                     arg_bsatn: Bytes::new(),
                 }),
@@ -2481,7 +2481,7 @@ mod tests {
             let ReducerContext {
                 name: reducer_name,
                 caller_identity,
-                caller_address,
+                caller_connection_id,
                 timestamp: reducer_timestamp,
                 arg_bsatn,
             } = ReducerContext::try_from(&input).unwrap();
@@ -2495,7 +2495,7 @@ mod tests {
                 "expected args to be exhausted because nullary args were given"
             );
             assert_eq!(caller_identity, Identity::ZERO);
-            assert_eq!(caller_address, Address::ZERO);
+            assert_eq!(caller_connection_id, ConnectionId::ZERO);
             assert_eq!(reducer_timestamp, timestamp);
         }
     }
@@ -2511,11 +2511,11 @@ mod tests {
 
         let row_0 = StClientRow {
             identity: Identity::ZERO.into(),
-            address: Address::ZERO.into(),
+            connection_id: ConnectionId::ZERO.into(),
         };
         let row_1 = StClientRow {
             identity: Identity::ZERO.into(),
-            address: Address::from_u128(1).into(),
+            connection_id: ConnectionId::from_u128(1).into(),
         };
 
         let history = TestHistory::from_txes([

@@ -6,10 +6,11 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct OneAddress {
-    pub a: __sdk::Address,
+pub struct PkConnectionId {
+    pub a: __sdk::ConnectionId,
+    pub data: i32,
 }
 
-impl __sdk::InModule for OneAddress {
+impl __sdk::InModule for PkConnectionId {
     type Module = super::RemoteModule;
 }

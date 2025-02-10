@@ -12,7 +12,7 @@
 
 use crate::spacetime_module::{DbUpdate as _, SpacetimeModule};
 use spacetimedb_client_api_messages::websocket as ws;
-use spacetimedb_lib::{Address, Identity, Timestamp};
+use spacetimedb_lib::{ConnectionId, Identity, Timestamp};
 
 #[non_exhaustive]
 #[derive(Debug, Clone)]
@@ -69,9 +69,9 @@ pub struct ReducerEvent<R> {
     /// The `Identity` of the SpacetimeDB actor which invoked the reducer.
     pub caller_identity: Identity,
 
-    /// The `Address` of the SpacetimeDB actor which invoked the reducer,
-    /// or `None` if the actor did not supply an address.
-    pub caller_address: Option<Address>,
+    /// The [`ConnectionId`] of the SpacetimeDB actor which invoked the reducer,
+    /// or `None` for scheduled reducers.
+    pub caller_connection_id: Option<ConnectionId>,
 
     /// The amount of energy consumed by the reducer run, in eV.
     /// (Not literal eV, but our SpacetimeDB energy unit eV.)

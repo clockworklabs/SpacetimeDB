@@ -23,7 +23,7 @@ partial struct PublicTable : SpacetimeDB.BSATN.IStructuralReadWrite
         DoubleField = BSATN.DoubleField.Read(reader);
         StringField = BSATN.StringField.Read(reader);
         IdentityField = BSATN.IdentityField.Read(reader);
-        AddressField = BSATN.AddressField.Read(reader);
+        ConnectionIdField = BSATN.ConnectionIdField.Read(reader);
         CustomStructField = BSATN.CustomStructField.Read(reader);
         CustomClassField = BSATN.CustomClassField.Read(reader);
         CustomEnumField = BSATN.CustomEnumField.Read(reader);
@@ -52,7 +52,7 @@ partial struct PublicTable : SpacetimeDB.BSATN.IStructuralReadWrite
         BSATN.DoubleField.Write(writer, DoubleField);
         BSATN.StringField.Write(writer, StringField);
         BSATN.IdentityField.Write(writer, IdentityField);
-        BSATN.AddressField.Write(writer, AddressField);
+        BSATN.ConnectionIdField.Write(writer, ConnectionIdField);
         BSATN.CustomStructField.Write(writer, CustomStructField);
         BSATN.CustomClassField.Write(writer, CustomClassField);
         BSATN.CustomEnumField.Write(writer, CustomEnumField);
@@ -81,7 +81,7 @@ partial struct PublicTable : SpacetimeDB.BSATN.IStructuralReadWrite
         internal static readonly SpacetimeDB.BSATN.F64 DoubleField = new();
         internal static readonly SpacetimeDB.BSATN.String StringField = new();
         internal static readonly SpacetimeDB.Identity.BSATN IdentityField = new();
-        internal static readonly SpacetimeDB.Address.BSATN AddressField = new();
+        internal static readonly SpacetimeDB.ConnectionId.BSATN ConnectionIdField = new();
         internal static readonly CustomStruct.BSATN CustomStructField = new();
         internal static readonly CustomClass.BSATN CustomClassField = new();
         internal static readonly SpacetimeDB.BSATN.Enum<CustomEnum> CustomEnumField = new();
@@ -128,7 +128,7 @@ partial struct PublicTable : SpacetimeDB.BSATN.IStructuralReadWrite
                     new(nameof(DoubleField), DoubleField.GetAlgebraicType(registrar)),
                     new(nameof(StringField), StringField.GetAlgebraicType(registrar)),
                     new(nameof(IdentityField), IdentityField.GetAlgebraicType(registrar)),
-                    new(nameof(AddressField), AddressField.GetAlgebraicType(registrar)),
+                    new(nameof(ConnectionIdField), ConnectionIdField.GetAlgebraicType(registrar)),
                     new(nameof(CustomStructField), CustomStructField.GetAlgebraicType(registrar)),
                     new(nameof(CustomClassField), CustomClassField.GetAlgebraicType(registrar)),
                     new(nameof(CustomEnumField), CustomEnumField.GetAlgebraicType(registrar)),

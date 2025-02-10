@@ -4,9 +4,6 @@ pub mod energy;
 pub mod json;
 pub mod sql;
 
-pub mod address {
-    pub use spacetimedb_lib::Address;
-}
 pub mod auth;
 pub mod db;
 pub mod messages;

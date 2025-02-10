@@ -8,7 +8,7 @@ use spacetimedb_lib::de::{self, Deserialize, SeqProductAccess};
 use spacetimedb_lib::sats::typespace::TypespaceBuilder;
 use spacetimedb_lib::sats::{impl_deserialize, impl_serialize, ProductTypeElement};
 use spacetimedb_lib::ser::{Serialize, SerializeSeqProduct};
-use spacetimedb_lib::{bsatn, Address, Identity, ProductType, RawModuleDef, Timestamp};
+use spacetimedb_lib::{bsatn, ConnectionId, Identity, ProductType, RawModuleDef, Timestamp};
 use spacetimedb_primitives::*;
 use std::fmt;
 use std::marker::PhantomData;
@@ -459,10 +459,10 @@ extern "C" fn __describe_module__(description: BytesSink) {
 ///
 /// Note that `to_byte_array` uses LITTLE-ENDIAN order! This matches most host systems.
 ///
-/// The `address_{0-1}` are the pieces of a `[u8; 16]` (`u128`) representing the callers's `Address`.
-/// They are encoded as follows (assuming `address.as_byte_array(): [u8; 16]`):
-/// - `address_0` contains bytes `[0 ..8 ]`.
-/// - `address_1` contains bytes `[8 ..16]`.
+/// The `conn_id_{0-1}` are the pieces of a `[u8; 16]` (`u128`) representing the callers's [`ConnectionId`].
+/// They are encoded as follows (assuming `conn_id.as_le_byte_array(): [u8; 16]`):
+/// - `conn_id_0` contains bytes `[0 ..8 ]`.
+/// - `conn_id_1` contains bytes `[8 ..16]`.
 ///
 /// Again, note that `to_byte_array` uses LITTLE-ENDIAN order! This matches most host systems.
 ///
@@ -484,8 +484,8 @@ extern "C" fn __call_reducer__(
     sender_1: u64,
     sender_2: u64,
     sender_3: u64,
-    address_0: u64,
-    address_1: u64,
+    conn_id_0: u64,
+    conn_id_1: u64,
     timestamp: u64,
     args: BytesSource,
     error: BytesSink,
@@ -495,12 +495,12 @@ extern "C" fn __call_reducer__(
     let sender: [u8; 32] = bytemuck::must_cast(sender);
     let sender = Identity::from_byte_array(sender); // The LITTLE-ENDIAN constructor.
 
-    // Piece together `address_i` into an `Address`.
-    // The all-zeros `address` (`Address::__DUMMY`) is interpreted as `None`.
-    let address = [address_0, address_1];
-    let address: [u8; 16] = bytemuck::must_cast(address);
-    let address = Address::from_byte_array(address); // The LITTLE-ENDIAN constructor.
-    let address = (address != Address::__DUMMY).then_some(address);
+    // Piece together `conn_id_i` into a `ConnectionId`.
+    // The all-zeros `ConnectionId` (`ConnectionId::ZERO`) is interpreted as `None`.
+    let conn_id = [conn_id_0, conn_id_1];
+    let conn_id: [u8; 16] = bytemuck::must_cast(conn_id);
+    let conn_id = ConnectionId::from_le_byte_array(conn_id); // The LITTLE-ENDIAN constructor.
+    let conn_id = (conn_id != ConnectionId::ZERO).then_some(conn_id);
 
     // Assemble the `ReducerContext`.
     let timestamp = Timestamp::from_micros_since_unix_epoch(timestamp as i64);
@@ -508,7 +508,7 @@ extern "C" fn __call_reducer__(
         db: crate::Local {},
         sender,
         timestamp,
-        address,
+        connection_id: conn_id,
         rng: std::cell::OnceCell::new(),
     };
 

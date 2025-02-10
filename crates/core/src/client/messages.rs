@@ -10,7 +10,7 @@ use spacetimedb_client_api_messages::websocket::{
 };
 use spacetimedb_lib::identity::RequestId;
 use spacetimedb_lib::ser::serde::SerializeWrapper;
-use spacetimedb_lib::{Address, TimeDuration};
+use spacetimedb_lib::{ConnectionId, TimeDuration};
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::bsatn;
 use std::sync::Arc;
@@ -171,7 +171,7 @@ impl ToProtocol for TransactionUpdateMessage {
                 },
                 energy_quanta_used: event.energy_quanta_used,
                 total_host_execution_duration: event.host_execution_duration.into(),
-                caller_address: event.caller_address.unwrap_or(Address::ZERO),
+                caller_connection_id: event.caller_connection_id.unwrap_or(ConnectionId::ZERO),
             };
 
             ws::ServerMessage::TransactionUpdate(tx_update)

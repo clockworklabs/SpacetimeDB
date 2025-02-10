@@ -6,10 +6,10 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct VecAddress {
-    pub a: Vec<__sdk::Address>,
+pub struct OneConnectionId {
+    pub a: __sdk::ConnectionId,
 }
 
-impl __sdk::InModule for VecAddress {
+impl __sdk::InModule for OneConnectionId {
     type Module = super::RemoteModule;
 }

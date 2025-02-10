@@ -31,8 +31,7 @@ use crate::util::prometheus_handle::HistogramExt;
 use crate::worker_metrics::WORKER_METRICS;
 use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::Timestamp;
-use spacetimedb_lib::{bsatn, Address, RawModuleDef};
+use spacetimedb_lib::{bsatn, ConnectionId, RawModuleDef, Timestamp};
 
 use super::*;
 
@@ -322,7 +321,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
                     CallReducerParams {
                         timestamp,
                         caller_identity,
-                        caller_address: Address::__DUMMY,
+                        caller_connection_id: ConnectionId::ZERO,
                         client: None,
                         request_id: None,
                         timer: None,
@@ -404,14 +403,14 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         let CallReducerParams {
             timestamp,
             caller_identity,
-            caller_address,
+            caller_connection_id,
             client,
             request_id,
             reducer_id,
             args,
             timer,
         } = params;
-        let caller_address_opt = (caller_address != Address::__DUMMY).then_some(caller_address);
+        let caller_connection_id_opt = (caller_connection_id != ConnectionId::ZERO).then_some(caller_connection_id);
 
         let replica_ctx = self.replica_context();
         let stdb = &*replica_ctx.relational_db.clone();
@@ -422,7 +421,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         let _outer_span = tracing::trace_span!("call_reducer",
             reducer_name,
             %caller_identity,
-            caller_address = caller_address_opt.map(tracing::field::debug),
+            caller_connection_id = caller_connection_id_opt.map(tracing::field::debug),
         )
         .entered();
 
@@ -438,7 +437,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             id: reducer_id,
             name: reducer_name,
             caller_identity: &caller_identity,
-            caller_address: &caller_address,
+            caller_connection_id: &caller_connection_id,
             timestamp,
             arg_bytes: args.get_bsatn().clone(),
         };
@@ -519,7 +518,12 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
 
                 WORKER_METRICS
                     .wasm_instance_errors
-                    .with_label_values(&caller_identity, &self.info.module_hash, &caller_address, reducer_name)
+                    .with_label_values(
+                        &caller_identity,
+                        &self.info.module_hash,
+                        &caller_connection_id,
+                        reducer_name,
+                    )
                     .inc();
 
                 // discard this instance
@@ -553,7 +557,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
                 // Detecing a new client, and inserting it in `st_clients`
                 // Disconnect logic is written in module_host.rs, due to different transacationality requirements.
                 if reducer_def.lifecycle == Some(Lifecycle::OnConnect) {
-                    match self.insert_st_client(&mut tx, caller_identity, caller_address) {
+                    match self.insert_st_client(&mut tx, caller_identity, caller_connection_id) {
                         Ok(_) => EventStatus::Committed(DatabaseUpdate::default()),
                         Err(err) => EventStatus::Failed(err.to_string()),
                     }
@@ -566,7 +570,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         let event = ModuleEvent {
             timestamp,
             caller_identity,
-            caller_address: caller_address_opt,
+            caller_connection_id: caller_connection_id_opt,
             function_call: ModuleFunctionCall {
                 reducer: reducer_name.to_owned(),
                 reducer_id,
@@ -600,10 +604,15 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         self.replica_context().logger.system_logger()
     }
 
-    fn insert_st_client(&self, tx: &mut MutTxId, identity: Identity, address: Address) -> Result<(), DBError> {
+    fn insert_st_client(
+        &self,
+        tx: &mut MutTxId,
+        identity: Identity,
+        connection_id: ConnectionId,
+    ) -> Result<(), DBError> {
         let row = &StClientRow {
             identity: identity.into(),
-            address: address.into(),
+            connection_id: connection_id.into(),
         };
         tx.insert_via_serialize_bsatn(ST_CLIENT_ID, row).map(|_| ())
     }
@@ -615,7 +624,7 @@ pub struct ReducerOp<'a> {
     pub id: ReducerId,
     pub name: &'a str,
     pub caller_identity: &'a Identity,
-    pub caller_address: &'a Address,
+    pub caller_connection_id: &'a ConnectionId,
     pub timestamp: Timestamp,
     /// The BSATN-serialized arguments passed to the reducer.
     pub arg_bytes: Bytes,
@@ -627,7 +636,7 @@ impl From<ReducerOp<'_>> for execution_context::ReducerContext {
             id: _,
             name,
             caller_identity,
-            caller_address,
+            caller_connection_id,
             timestamp,
             arg_bytes,
         }: ReducerOp<'_>,
@@ -635,7 +644,7 @@ impl From<ReducerOp<'_>> for execution_context::ReducerContext {
         Self {
             name: name.to_owned(),
             caller_identity: *caller_identity,
-            caller_address: *caller_address,
+            caller_connection_id: *caller_connection_id,
             timestamp,
             arg_bsatn: arg_bytes.clone(),
         }

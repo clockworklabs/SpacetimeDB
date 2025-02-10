@@ -9,8 +9,7 @@
 use anyhow::{Context, Result};
 use spacetimedb::{
     sats::{i256, u256},
-    spacetimedb_lib::TimeDuration,
-    Address, Identity, ReducerContext, SpacetimeType, Table, Timestamp,
+    ConnectionId, Identity, ReducerContext, SpacetimeType, Table, TimeDuration, Timestamp,
 };
 
 #[derive(SpacetimeType)]
@@ -39,7 +38,7 @@ pub enum EnumWithPayload {
     F64(f64),
     Str(String),
     Identity(Identity),
-    Address(Address),
+    ConnectionId(ConnectionId),
     Timestamp(Timestamp),
     Bytes(Vec<u8>),
     Ints(Vec<i32>),
@@ -76,7 +75,7 @@ pub struct EveryPrimitiveStruct {
     o: f64,
     p: String,
     q: Identity,
-    r: Address,
+    r: ConnectionId,
     s: Timestamp,
     t: TimeDuration,
 }
@@ -100,7 +99,7 @@ pub struct EveryVecStruct {
     o: Vec<f64>,
     p: Vec<String>,
     q: Vec<Identity>,
-    r: Vec<Address>,
+    r: Vec<ConnectionId>,
     s: Vec<Timestamp>,
     t: Vec<TimeDuration>,
 }
@@ -276,7 +275,7 @@ define_tables! {
     OneString { insert insert_one_string } s String;
 
     OneIdentity { insert insert_one_identity } i Identity;
-    OneAddress { insert insert_one_address } a Address;
+    OneConnectionId { insert insert_one_connection_id} a ConnectionId;
 
     OneTimestamp { insert insert_one_timestamp } t Timestamp;
 
@@ -313,7 +312,7 @@ define_tables! {
     VecString { insert insert_vec_string } s Vec<String>;
 
     VecIdentity { insert insert_vec_identity } i Vec<Identity>;
-    VecAddress { insert insert_vec_address } a Vec<Address>;
+    VecConnectionId { insert insert_vec_connection_id} a Vec<ConnectionId>;
 
     VecTimestamp { insert insert_vec_timestamp } t Vec<Timestamp>;
 
@@ -432,11 +431,11 @@ define_tables! {
         delete_by delete_unique_identity = delete_by_i(i: Identity),
     } #[unique] i Identity, data i32;
 
-    UniqueAddress {
-        insert_or_panic insert_unique_address,
-        update_by update_unique_address = update_by_a(a),
-        delete_by delete_unique_address = delete_by_a(a: Address),
-    } #[unique] a Address, data i32;
+    UniqueConnectionId {
+        insert_or_panic insert_unique_connection_id,
+        update_by update_unique_connection_id = update_by_a(a),
+        delete_by delete_unique_connection_id = delete_by_a(a: ConnectionId),
+    } #[unique] a ConnectionId, data i32;
 }
 
 // Tables mapping a primary key to a boring i32 payload.
@@ -532,11 +531,11 @@ define_tables! {
         delete_by delete_pk_identity = delete_by_i(i: Identity),
     } #[primary_key] i Identity, data i32;
 
-    PkAddress {
-        insert_or_panic insert_pk_address,
-        update_by update_pk_address = update_by_a(a),
-        delete_by delete_pk_address = delete_by_a(a: Address),
-    } #[primary_key] a Address, data i32;
+    PkConnectionId {
+        insert_or_panic insert_pk_connection_id,
+        update_by update_pk_connection_id = update_by_a(a),
+        delete_by delete_pk_connection_id = delete_by_a(a: ConnectionId),
+    } #[primary_key] a ConnectionId, data i32;
 }
 
 #[spacetimedb::reducer]
@@ -564,34 +563,34 @@ fn insert_caller_pk_identity(ctx: &ReducerContext, data: i32) -> anyhow::Result<
 }
 
 #[spacetimedb::reducer]
-fn insert_caller_one_address(ctx: &ReducerContext) -> anyhow::Result<()> {
-    ctx.db.one_address().insert(OneAddress {
-        a: ctx.address.context("No address in reducer context")?,
+fn insert_caller_one_connection_id(ctx: &ReducerContext) -> anyhow::Result<()> {
+    ctx.db.one_connection_id().insert(OneConnectionId {
+        a: ctx.connection_id.context("No connection id in reducer context")?,
     });
     Ok(())
 }
 
 #[spacetimedb::reducer]
-fn insert_caller_vec_address(ctx: &ReducerContext) -> anyhow::Result<()> {
-    ctx.db.vec_address().insert(VecAddress {
-        a: vec![ctx.address.context("No address in reducer context")?],
+fn insert_caller_vec_connection_id(ctx: &ReducerContext) -> anyhow::Result<()> {
+    ctx.db.vec_connection_id().insert(VecConnectionId {
+        a: vec![ctx.connection_id.context("No connection id in reducer context")?],
     });
     Ok(())
 }
 
 #[spacetimedb::reducer]
-fn insert_caller_unique_address(ctx: &ReducerContext, data: i32) -> anyhow::Result<()> {
-    ctx.db.unique_address().insert(UniqueAddress {
-        a: ctx.address.context("No address in reducer context")?,
+fn insert_caller_unique_connection_id(ctx: &ReducerContext, data: i32) -> anyhow::Result<()> {
+    ctx.db.unique_connection_id().insert(UniqueConnectionId {
+        a: ctx.connection_id.context("No connection id in reducer context")?,
         data,
     });
     Ok(())
 }
 
 #[spacetimedb::reducer]
-fn insert_caller_pk_address(ctx: &ReducerContext, data: i32) -> anyhow::Result<()> {
-    ctx.db.pk_address().insert(PkAddress {
-        a: ctx.address.context("No address in reducer context")?,
+fn insert_caller_pk_connection_id(ctx: &ReducerContext, data: i32) -> anyhow::Result<()> {
+    ctx.db.pk_connection_id().insert(PkConnectionId {
+        a: ctx.connection_id.context("No connection id in reducer context")?,
         data,
     });
     Ok(())
