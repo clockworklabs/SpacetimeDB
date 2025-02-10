@@ -77,7 +77,7 @@ def requires_docker(item):
     return unittest.skip("docker not available")(item)
 
 def random_string(k=20):
-    return ''.join(random.choices(string.ascii_letters, k=k))
+    return ''.join(random.choices(string.ascii_lowercase, k=k))
 
 def extract_fields(cmd_output, field_name):
     """

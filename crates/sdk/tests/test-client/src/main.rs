@@ -69,52 +69,52 @@ fn main() {
         .expect("Pass a test name as a command-line argument to the test client");
 
     match &*test {
-        "insert_primitive" => exec_insert_primitive(),
-        "subscribe_and_cancel" => exec_subscribe_and_cancel(),
-        "subscribe_and_unsubscribe" => exec_subscribe_and_unsubscribe(),
-        "subscription_error_smoke_test" => exec_subscription_error_smoke_test(),
-        "delete_primitive" => exec_delete_primitive(),
-        "update_primitive" => exec_update_primitive(),
+        "insert-primitive" => exec_insert_primitive(),
+        "subscribe-and-cancel" => exec_subscribe_and_cancel(),
+        "subscribe-and-unsubscribe" => exec_subscribe_and_unsubscribe(),
+        "subscription-error-smoke-test" => exec_subscription_error_smoke_test(),
+        "delete-primitive" => exec_delete_primitive(),
+        "update-primitive" => exec_update_primitive(),
 
-        "insert_identity" => exec_insert_identity(),
-        "insert_caller_identity" => exec_insert_caller_identity(),
-        "delete_identity" => exec_delete_identity(),
-        "update_identity" => exec_update_identity(),
+        "insert-identity" => exec_insert_identity(),
+        "insert-caller-identity" => exec_insert_caller_identity(),
+        "delete-identity" => exec_delete_identity(),
+        "update-identity" => exec_update_identity(),
 
-        "insert_connection_id" => exec_insert_connection_id(),
-        "insert_caller_connection_id" => exec_insert_caller_connection_id(),
-        "delete_connection_id" => exec_delete_connection_id(),
-        "update_connection_id" => exec_update_connection_id(),
+        "insert-connection-id" => exec_insert_connection_id(),
+        "insert-caller-connection-id" => exec_insert_caller_connection_id(),
+        "delete-connection-id" => exec_delete_connection_id(),
+        "update-connection-id" => exec_update_connection_id(),
 
-        "insert_timestamp" => exec_insert_timestamp(),
-        "insert_call_timestamp" => exec_insert_call_timestamp(),
+        "insert-timestamp" => exec_insert_timestamp(),
+        "insert-call-timestamp" => exec_insert_call_timestamp(),
 
-        "on_reducer" => exec_on_reducer(),
-        "fail_reducer" => exec_fail_reducer(),
+        "on-reducer" => exec_on_reducer(),
+        "fail-reducer" => exec_fail_reducer(),
 
-        "insert_vec" => exec_insert_vec(),
-        "insert_option_some" => exec_insert_option_some(),
-        "insert_option_none" => exec_insert_option_none(),
-        "insert_struct" => exec_insert_struct(),
-        "insert_simple_enum" => exec_insert_simple_enum(),
-        "insert_enum_with_payload" => exec_insert_enum_with_payload(),
+        "insert-vec" => exec_insert_vec(),
+        "insert-option-some" => exec_insert_option_some(),
+        "insert-option-none" => exec_insert_option_none(),
+        "insert-struct" => exec_insert_struct(),
+        "insert-simple-enum" => exec_insert_simple_enum(),
+        "insert-enum-with-payload" => exec_insert_enum_with_payload(),
 
-        "insert_delete_large_table" => exec_insert_delete_large_table(),
+        "insert-delete-large-table" => exec_insert_delete_large_table(),
 
-        "insert_primitives_as_strings" => exec_insert_primitives_as_strings(),
+        "insert-primitives-as-strings" => exec_insert_primitives_as_strings(),
 
         // "resubscribe" => exec_resubscribe(),
         //
-        "reauth_part_1" => exec_reauth_part_1(),
-        "reauth_part_2" => exec_reauth_part_2(),
+        "reauth-part-1" => exec_reauth_part_1(),
+        "reauth-part-2" => exec_reauth_part_2(),
 
-        "should_fail" => exec_should_fail(),
+        "should-fail" => exec_should_fail(),
 
-        "reconnect_same_connection_id" => exec_reconnect_same_connection_id(),
-        "caller_always_notified" => exec_caller_always_notified(),
+        "reconnect-same-connection-id" => exec_reconnect_same_connection_id(),
+        "caller-always-notified" => exec_caller_always_notified(),
 
-        "subscribe_all_select_star" => exec_subscribe_all_select_star(),
-        "caller_alice_receives_reducer_callback_but_not_bob" => {
+        "subscribe-all-select-star" => exec_subscribe_all_select_star(),
+        "caller-alice-receives-reducer-callback-but-not-bob" => {
             exec_caller_alice_receives_reducer_callback_but_not_bob()
         }
         _ => panic!("Unknown test: {}", test),

@@ -1,13 +1,10 @@
 use crate::common_args;
 use crate::config::Config;
-use crate::util::{
-    add_auth_header_opt, decode_identity, get_auth_header, get_login_token_or_log_in, spacetime_register_tld,
-    ResponseExt,
-};
+use crate::util::{add_auth_header_opt, decode_identity, get_auth_header, get_login_token_or_log_in, ResponseExt};
 use clap::ArgMatches;
 use clap::{Arg, Command};
 
-use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, RegisterTldResult};
+use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult};
 
 pub fn cli() -> Command {
     Command::new("rename")
@@ -38,18 +35,6 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let auth_header = get_auth_header(&mut config, false, server, !force).await?;
 
     let domain: DomainName = domain.parse()?;
-
-    match spacetime_register_tld(&mut config, domain.tld(), server, !force).await? {
-        RegisterTldResult::Success { domain } => {
-            println!("Registered domain: {}", domain);
-        }
-        RegisterTldResult::Unauthorized { domain } => {
-            return Err(anyhow::anyhow!("Domain is already registered by another: {}", domain));
-        }
-        RegisterTldResult::AlreadyRegistered { domain } => {
-            println!("Domain is already registered by the identity you provided: {}", domain);
-        }
-    }
 
     let builder = reqwest::Client::new()
         .post(format!(
