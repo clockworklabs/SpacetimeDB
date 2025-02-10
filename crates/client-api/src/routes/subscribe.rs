@@ -85,7 +85,7 @@ where
         ))?;
     }
 
-    let db_identity = name_or_identity.resolve(&ctx).await?.into();
+    let db_identity = name_or_identity.resolve(&ctx).await?;
 
     let (res, ws_upgrade, protocol) =
         ws.select_protocol([(BIN_PROTOCOL, Protocol::Binary), (TEXT_PROTOCOL, Protocol::Text)]);

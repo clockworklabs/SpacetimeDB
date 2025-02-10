@@ -2,7 +2,7 @@ use anyhow::Context;
 use base64::{engine::general_purpose::STANDARD_NO_PAD as BASE_64_STD_NO_PAD, Engine as _};
 use reqwest::{RequestBuilder, Url};
 use spacetimedb::auth::identity::{IncomingClaims, SpacetimeIdentityClaims};
-use spacetimedb_client_api_messages::name::{RegisterTldResult, ReverseDNSResponse, TldRef};
+use spacetimedb_client_api_messages::name::GetNamesResponse;
 use spacetimedb_lib::Identity;
 use std::io::Write;
 use std::path::Path;
@@ -123,26 +123,6 @@ pub async fn spacetime_dns(
         .context("identity endpoint did not return an identity")
 }
 
-/// Registers the given top level domain to the given identity. If None is passed in as identity, the default
-/// identity will be looked up in the config and it will be used instead. Returns Ok() if the
-/// domain is successfully registered, returns Err otherwise.
-pub async fn spacetime_register_tld(
-    config: &mut Config,
-    tld: &TldRef,
-    server: Option<&str>,
-    interactive: bool,
-) -> Result<RegisterTldResult, anyhow::Error> {
-    let auth_header = get_auth_header(config, false, server, interactive).await?;
-
-    // TODO(jdetter): Fix URL encoding on specifying this domain
-    let encode_set = const { &percent_encoding::NON_ALPHANUMERIC.remove(b'_').remove(b'-') };
-    let tld = percent_encoding::percent_encode(tld.as_bytes(), encode_set);
-    let builder = reqwest::Client::new().put(format!("{}/v1/domain/{}", config.get_host_url(server)?, tld).as_str());
-    let builder = add_auth_header_opt(builder, &auth_header);
-
-    builder.send().await?.json_or_error().await
-}
-
 pub async fn spacetime_server_fingerprint(url: &str) -> anyhow::Result<String> {
     let builder = reqwest::Client::new().get(format!("{}/v1/identity/public-key", url).as_str());
     let res = builder.send().await?.error_for_status()?;
@@ -155,7 +135,7 @@ pub async fn spacetime_reverse_dns(
     config: &Config,
     identity: &str,
     server: Option<&str>,
-) -> Result<ReverseDNSResponse, anyhow::Error> {
+) -> Result<GetNamesResponse, anyhow::Error> {
     let client = reqwest::Client::new();
     let url = format!("{}/v1/database/{}/names", config.get_host_url(server)?, identity);
     client.get(url).send().await?.json_or_error().await

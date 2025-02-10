@@ -13,9 +13,8 @@ use http::{HeaderName, HeaderValue, StatusCode};
 
 use hyper::body::Body;
 use spacetimedb::Identity;
-use spacetimedb_client_api_messages::name::DomainName;
+use spacetimedb_client_api_messages::name::DatabaseName;
 
-use crate::routes::domain::DomainParsingRejection;
 use crate::routes::identity::IdentityForUrl;
 use crate::{log_and_500, ControlStateReadAccess};
 
@@ -62,62 +61,52 @@ impl headers::Header for XForwardedFor {
 #[derive(Clone, Debug)]
 pub enum NameOrIdentity {
     Identity(IdentityForUrl),
-    Name(String),
+    Name(DatabaseName),
 }
 
 impl NameOrIdentity {
     pub fn into_string(self) -> String {
         match self {
             NameOrIdentity::Identity(addr) => Identity::from(addr).to_hex().to_string(),
-            NameOrIdentity::Name(name) => name,
+            NameOrIdentity::Name(name) => name.into(),
+        }
+    }
+
+    pub fn name(&self) -> Option<&DatabaseName> {
+        if let Self::Name(name) = self {
+            Some(name)
+        } else {
+            None
         }
     }
 
     /// Resolve this [`NameOrIdentity`].
     ///
     /// If `self` is a [`NameOrIdentity::Identity`], the inner [`Identity`] is
-    /// returned in a [`ResolvedIdentity`] without a [`DomainName`].
+    /// returned directly.
     ///
     /// Otherwise, if `self` is a [`NameOrIdentity::Name`], the [`Identity`] is
-    /// looked up by that name in the SpacetimeDB DNS and returned in a
-    /// [`ResolvedIdentity`] alongside `Some` [`DomainName`].
+    /// looked up by that name in the SpacetimeDB DNS and returned.
     ///
-    /// Errors are returned if [`NameOrIdentity::Name`] cannot be parsed into a
-    /// [`DomainName`], or the DNS lookup fails.
+    /// Errors are returned if [`NameOrIdentity::Name`] the DNS lookup fails.
     ///
-    /// An `Ok` result is itself a [`Result`], which is `Err(DomainName)` if the
+    /// An `Ok` result is itself a [`Result`], which is `Err(DatabaseName)` if the
     /// given [`NameOrIdentity::Name`] is not registered in the SpacetimeDB DNS,
     /// i.e. no corresponding [`Identity`] exists.
     pub async fn try_resolve(
         &self,
         ctx: &(impl ControlStateReadAccess + ?Sized),
-    ) -> axum::response::Result<Result<ResolvedIdentity, DomainName>> {
+    ) -> axum::response::Result<Result<Identity, &DatabaseName>> {
         Ok(match self {
-            Self::Identity(identity) => Ok(ResolvedIdentity {
-                identity: Identity::from(*identity),
-                domain: None,
-            }),
-            Self::Name(name) => {
-                let domain = name.parse().map_err(|_| DomainParsingRejection)?;
-                let identity = ctx.lookup_identity(&domain).map_err(log_and_500)?;
-                match identity {
-                    Some(identity) => Ok(ResolvedIdentity {
-                        identity,
-                        domain: Some(domain),
-                    }),
-                    None => Err(domain),
-                }
-            }
+            Self::Identity(identity) => Ok(Identity::from(*identity)),
+            Self::Name(name) => ctx.lookup_identity(name.as_ref()).map_err(log_and_500)?.ok_or(name),
         })
     }
 
     /// A variant of [`Self::try_resolve()`] which maps to a 404 (Not Found)
     /// response if `self` is a [`NameOrIdentity::Name`] for which no
     /// corresponding [`Identity`] is found in the SpacetimeDB DNS.
-    pub async fn resolve(
-        &self,
-        ctx: &(impl ControlStateReadAccess + ?Sized),
-    ) -> axum::response::Result<ResolvedIdentity> {
+    pub async fn resolve(&self, ctx: &(impl ControlStateReadAccess + ?Sized)) -> axum::response::Result<Identity> {
         self.try_resolve(ctx).await?.map_err(|_| StatusCode::NOT_FOUND.into())
     }
 }
@@ -127,13 +116,13 @@ impl<'de> serde::Deserialize<'de> for NameOrIdentity {
     where
         D: serde::Deserializer<'de>,
     {
-        String::deserialize(deserializer).map(|s| {
-            if let Ok(addr) = Identity::from_hex(&s) {
-                NameOrIdentity::Identity(IdentityForUrl::from(addr))
-            } else {
-                NameOrIdentity::Name(s)
-            }
-        })
+        let s = String::deserialize(deserializer)?;
+        if let Ok(addr) = Identity::from_hex(&s) {
+            Ok(NameOrIdentity::Identity(IdentityForUrl::from(addr)))
+        } else {
+            let name: DatabaseName = s.try_into().map_err(serde::de::Error::custom)?;
+            Ok(NameOrIdentity::Name(name))
+        }
     }
 }
 
@@ -141,38 +130,8 @@ impl fmt::Display for NameOrIdentity {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Identity(addr) => f.write_str(addr.into_inner().to_hex().as_str()),
-            Self::Name(name) => f.write_str(name),
+            Self::Name(name) => f.write_str(name.as_ref()),
         }
-    }
-}
-
-/// A resolved [`NameOrIdentity`].
-///
-/// Constructed by [`NameOrIdentity::try_resolve()`].
-pub struct ResolvedIdentity {
-    identity: Identity,
-    domain: Option<DomainName>,
-}
-
-impl ResolvedIdentity {
-    pub fn identity(&self) -> &Identity {
-        &self.identity
-    }
-
-    pub fn domain(&self) -> Option<&DomainName> {
-        self.domain.as_ref()
-    }
-}
-
-impl From<ResolvedIdentity> for Identity {
-    fn from(value: ResolvedIdentity) -> Self {
-        value.identity
-    }
-}
-
-impl From<ResolvedIdentity> for (Identity, Option<DomainName>) {
-    fn from(ResolvedIdentity { identity, domain }: ResolvedIdentity) -> Self {
-        (identity, domain)
     }
 }
 

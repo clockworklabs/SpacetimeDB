@@ -21,13 +21,11 @@ use spacetimedb::host::ReducerOutcome;
 use spacetimedb::host::UpdateDatabaseResult;
 use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, HostType};
-use spacetimedb_client_api_messages::name::{self, PublishOp, PublishResult};
+use spacetimedb_client_api_messages::name::{self, DatabaseName, PublishOp, PublishResult};
 use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::sats;
 
-use super::domain::DomainParsingRejection;
-use super::identity::IdentityForUrl;
 use super::subscribe::handle_websocket;
 
 #[derive(Deserialize)]
@@ -53,7 +51,7 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
 
     let args = ReducerArgs::Json(body);
 
-    let db_identity = name_or_identity.resolve(&worker_ctx).await?.into();
+    let db_identity = name_or_identity.resolve(&worker_ctx).await?;
     let database = worker_ctx_find_database(&worker_ctx, &db_identity)
         .await?
         .ok_or_else(|| {
@@ -179,7 +177,7 @@ pub async fn schema<S>(
 where
     S: ControlStateDelegate + NodeDelegate,
 {
-    let db_identity = name_or_identity.resolve(&worker_ctx).await?.into();
+    let db_identity = name_or_identity.resolve(&worker_ctx).await?;
     let database = worker_ctx_find_database(&worker_ctx, &db_identity)
         .await?
         .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
@@ -235,7 +233,7 @@ pub async fn db_info<S: ControlStateDelegate>(
     Path(DatabaseParam { name_or_identity }): Path<DatabaseParam>,
 ) -> axum::response::Result<impl IntoResponse> {
     log::trace!("Trying to resolve database identity: {:?}", name_or_identity);
-    let database_identity = name_or_identity.resolve(&worker_ctx).await?.into();
+    let database_identity = name_or_identity.resolve(&worker_ctx).await?;
     log::trace!("Resolved identity to: {database_identity:?}");
     let database = worker_ctx_find_database(&worker_ctx, &database_identity)
         .await?
@@ -270,7 +268,7 @@ where
     // You should not be able to read the logs from a database that you do not own
     // so, unless you are the owner, this will fail.
 
-    let database_identity: Identity = name_or_identity.resolve(&worker_ctx).await?.into();
+    let database_identity: Identity = name_or_identity.resolve(&worker_ctx).await?;
     let database = worker_ctx_find_database(&worker_ctx, &database_identity)
         .await?
         .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
@@ -372,7 +370,7 @@ where
     // Anyone is authorized to execute SQL queries. The SQL engine will determine
     // which queries this identity is allowed to execute against the database.
 
-    let db_identity = name_or_identity.resolve(&worker_ctx).await?.into();
+    let db_identity = name_or_identity.resolve(&worker_ctx).await?;
     let database = worker_ctx_find_database(&worker_ctx, &db_identity)
         .await?
         .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
@@ -409,24 +407,23 @@ pub async fn get_identity<S: ControlStateDelegate>(
     Query(DNSQueryParams {}): Query<DNSQueryParams>,
 ) -> axum::response::Result<impl IntoResponse> {
     let identity = name_or_identity.resolve(&ctx).await?;
-    Ok(identity.identity().to_string())
+    Ok(identity.to_string())
 }
 
-pub async fn get_name<S: ControlStateDelegate>(
+pub async fn get_names<S: ControlStateDelegate>(
     State(ctx): State<S>,
     Path(ReverseDNSParams { name_or_identity }): Path<ReverseDNSParams>,
 ) -> axum::response::Result<impl IntoResponse> {
-    let names = match name_or_identity {
-        NameOrIdentity::Identity(database_identity) => {
-            let database_identity = Identity::from(database_identity);
-            ctx.reverse_lookup(&database_identity).map_err(log_and_500)?
-        }
-        NameOrIdentity::Name(name) => {
-            vec![name.parse().map_err(|_| DomainParsingRejection)?]
-        }
-    };
+    let database_identity = name_or_identity.resolve(&ctx).await?;
 
-    let response = name::ReverseDNSResponse { names };
+    let names = ctx
+        .reverse_lookup(&database_identity)
+        .map_err(log_and_500)?
+        .into_iter()
+        .filter_map(|x| String::from(x).try_into().ok())
+        .collect();
+
+    let response = name::GetNamesResponse { names };
     Ok(axum::Json(response))
 }
 
@@ -451,18 +448,39 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
     // You should not be able to publish to a database that you do not own
     // so, unless you are the owner, this will fail.
 
-    let (database_identity, db_name) = match name_or_identity {
+    let (database_identity, db_name) = match &name_or_identity {
         Some(noa) => match noa.try_resolve(&ctx).await? {
-            Ok(resolved) => resolved.into(),
-            Err(domain) => {
+            Ok(resolved) => (resolved, noa.name()),
+            Err(name) => {
                 // `name_or_identity` was a `NameOrIdentity::Name`, but no record
                 // exists yet. Create it now with a fresh identity.
                 let database_auth = SpacetimeAuth::alloc(&ctx).await?;
                 let database_identity = database_auth.identity;
-                ctx.create_dns_record(&auth.identity, &domain, &database_identity)
+                let tld: name::Tld = name.clone().into();
+                let tld = match ctx.register_tld(&auth.identity, tld).await.map_err(log_and_500)? {
+                    name::RegisterTldResult::Success { domain }
+                    | name::RegisterTldResult::AlreadyRegistered { domain } => domain,
+                    name::RegisterTldResult::Unauthorized { .. } => {
+                        return Err((
+                            StatusCode::UNAUTHORIZED,
+                            axum::Json(PublishResult::PermissionDenied { name: name.clone() }),
+                        )
+                            .into())
+                    }
+                };
+                let res = ctx
+                    .create_dns_record(&auth.identity, &tld.into(), &database_identity)
                     .await
                     .map_err(log_and_500)?;
-                (database_identity, Some(domain))
+                match res {
+                    name::InsertDomainResult::Success { .. } => {}
+                    name::InsertDomainResult::TldNotRegistered { .. }
+                    | name::InsertDomainResult::PermissionDenied { .. } => {
+                        return Err(log_and_500("impossible: we just registered the tld"))
+                    }
+                    name::InsertDomainResult::OtherError(e) => return Err(log_and_500(e)),
+                }
+                (database_identity, Some(name))
             }
         },
         None => {
@@ -523,7 +541,7 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
     }
 
     Ok(axum::Json(PublishResult::Success {
-        domain: db_name.as_ref().map(ToString::to_string),
+        domain: db_name.cloned(),
         database_identity,
         op,
     }))
@@ -531,19 +549,15 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
 
 #[derive(Deserialize)]
 pub struct DeleteDatabaseParams {
-    // this field is named such because that's what the route is under.
-    // TODO: find out if there's a reason this can't be specified as a domain name
-    name_or_identity: IdentityForUrl,
+    name_or_identity: NameOrIdentity,
 }
 
 pub async fn delete_database<S: ControlStateDelegate>(
     State(ctx): State<S>,
-    Path(DeleteDatabaseParams {
-        name_or_identity: database_identity,
-    }): Path<DeleteDatabaseParams>,
+    Path(DeleteDatabaseParams { name_or_identity }): Path<DeleteDatabaseParams>,
     Extension(auth): Extension<SpacetimeAuth>,
 ) -> axum::response::Result<impl IntoResponse> {
-    let database_identity = Identity::from(database_identity);
+    let database_identity = name_or_identity.resolve(&ctx).await?;
 
     ctx.delete_database(&auth.identity, &database_identity)
         .await
@@ -554,32 +568,20 @@ pub async fn delete_database<S: ControlStateDelegate>(
 
 #[derive(Deserialize)]
 pub struct AddNameParams {
-    // this field is named such because that's what the route is under.
-    // TODO: find out if there's a reason this can't be specified as a domain name
-    name_or_identity: IdentityForUrl,
+    name_or_identity: NameOrIdentity,
 }
 
 pub async fn add_name<S: ControlStateDelegate>(
     State(ctx): State<S>,
     Path(AddNameParams { name_or_identity }): Path<AddNameParams>,
     Extension(auth): Extension<SpacetimeAuth>,
-    domain: String,
+    name: String,
 ) -> axum::response::Result<impl IntoResponse> {
-    let database_identity = Identity::from(name_or_identity);
+    let name = DatabaseName::try_from(name).map_err(|err| (StatusCode::BAD_REQUEST, err.to_string()))?;
+    let database_identity = name_or_identity.resolve(&ctx).await?;
 
-    let database = ctx
-        .get_database_by_identity(&database_identity)
-        .map_err(log_and_500)?
-        .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
-
-    // FIXME: fairly sure this check is redundant
-    if database.owner_identity != auth.identity {
-        return Err((StatusCode::UNAUTHORIZED, "Identity does not own database.").into());
-    }
-
-    let domain = domain.parse().map_err(|_| DomainParsingRejection)?;
     let response = ctx
-        .create_dns_record(&auth.identity, &domain, &database_identity)
+        .create_dns_record(&auth.identity, &name.into(), &database_identity)
         .await
         // TODO: better error code handling
         .map_err(log_and_500)?;
@@ -633,7 +635,7 @@ where
             db_put: put(publish::<S>),
             db_get: get(db_info::<S>),
             db_delete: delete(delete_database::<S>),
-            names_get: get(get_name::<S>),
+            names_get: get(get_names::<S>),
             names_post: post(add_name::<S>),
             identity_get: get(get_identity::<S>),
             subscribe_get: get(handle_websocket::<S>),

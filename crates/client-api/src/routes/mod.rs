@@ -5,7 +5,6 @@ use tower_http::cors;
 use crate::{ControlStateDelegate, NodeDelegate};
 
 pub mod database;
-pub mod domain;
 pub mod energy;
 pub mod health;
 pub mod identity;
@@ -25,7 +24,6 @@ where
     use axum::routing::get;
     let router = axum::Router::new()
         .nest("/database", database_routes.into_router(ctx.clone()))
-        .nest("/domain", domain::router(ctx.clone()))
         .nest("/identity", identity::router())
         .nest("/energy", energy::router())
         .nest("/prometheus", prometheus::router())
