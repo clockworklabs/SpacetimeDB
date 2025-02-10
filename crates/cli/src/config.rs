@@ -163,15 +163,15 @@ impl RawConfig {
             nickname: Some("local".to_string()),
             ecdsa_public_key: None,
         };
-        let testnet = ServerConfig {
-            host: "testnet.spacetimedb.com".to_string(),
+        let maincloud = ServerConfig {
+            host: "maincloud.spacetimedb.com".to_string(),
             protocol: "https".to_string(),
-            nickname: Some("testnet".to_string()),
+            nickname: Some("maincloud".to_string()),
             ecdsa_public_key: None,
         };
         RawConfig {
             default_server: local.nickname.clone(),
-            server_configs: vec![local, testnet],
+            server_configs: vec![local, maincloud],
             web_session_token: None,
             spacetimedb_token: None,
         }
