@@ -36,8 +36,7 @@ fn main() -> anyhow::Result<()> {
             namespace: "SpacetimeDB.Internal",
         },
     )?
-    .into_iter()
-    .map(|(filename, code)| {
+    .into_iter().try_for_each(|(filename, code)| {
         // Skip anything but raw types (in particular, this will skip top-level SpacetimeDBClient.g.cs which we don't need).
         let Some(filename) = filename.strip_prefix("Types/") else {
             return Ok(());
@@ -64,8 +63,7 @@ fn main() -> anyhow::Result<()> {
         );
 
         fs::write(dir.join(filename), code.as_ref())
-    })
-    .collect::<std::io::Result<()>>()?;
+    })?;
 
     Ok(())
 }
