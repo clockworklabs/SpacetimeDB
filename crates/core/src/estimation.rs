@@ -49,7 +49,8 @@ pub fn row_estimate(tx: &Tx, plan: &PhysicalPlan) -> u64 {
     match plan {
         // Table scans return the number of rows in the table
         PhysicalPlan::TableScan(schema, _, None) => tx.table_row_count(schema.table_id).unwrap_or_default(),
-        PhysicalPlan::TableScan(_, _, Some(Delta::Inserts(n) | Delta::Deletes(n))) => *n as u64,
+        // We don't estimate the cardinality of delta scans currently
+        PhysicalPlan::TableScan(_, _, Some(Delta::Inserts | Delta::Deletes)) => 0,
         // The selectivity of a single column index scan is 1 / NDV,
         // where NDV is the Number of Distinct Values of a column.
         // Note, this assumes a uniform distribution of column values.
@@ -152,7 +153,7 @@ mod tests {
         sql::compiler::compile_sql,
     };
     use spacetimedb_lib::{identity::AuthCtx, AlgebraicType};
-    use spacetimedb_query::SubscribePlan;
+    use spacetimedb_query::compile_subscription;
     use spacetimedb_sats::product;
     use spacetimedb_vm::expr::CrudExpr;
 
@@ -175,7 +176,9 @@ mod tests {
         let auth = AuthCtx::for_testing();
         let tx = db.begin_tx(Workload::ForTests);
         let tx = SchemaViewer::new(&tx, &auth);
-        let plan = SubscribePlan::compile(sql, &tx).expect("failed to compile sql");
+        let plan = compile_subscription(sql, &tx)
+            .and_then(|(plan, ..)| plan.optimize())
+            .expect("failed to compile sql query");
         row_estimate(&tx, &plan)
     }
 

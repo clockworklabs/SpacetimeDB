@@ -1,4 +1,3 @@
-use super::wasm_common::{CLIENT_CONNECTED_DUNDER, CLIENT_DISCONNECTED_DUNDER};
 use super::{ArgsTuple, InvalidReducerArguments, ReducerArgs, ReducerCallResult, ReducerId};
 use crate::client::{ClientActorId, ClientConnectionSender};
 use crate::database_logger::{LogLevel, Record};
@@ -8,7 +7,7 @@ use crate::db::datastore::traits::{IsolationLevel, Program, TxData};
 use crate::energy::EnergyQuanta;
 use crate::error::DBError;
 use crate::estimation::estimate_rows_scanned;
-use crate::execution_context::{ExecutionContext, ReducerContext, Workload};
+use crate::execution_context::{ExecutionContext, ReducerContext, Workload, WorkloadType};
 use crate::hash::Hash;
 use crate::identity::Identity;
 use crate::messages::control_db::Database;
@@ -16,6 +15,7 @@ use crate::replica_context::ReplicaContext;
 use crate::sql::ast::SchemaViewer;
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use crate::subscription::tx::DeltaTx;
+use crate::subscription::{execute_plan, record_exec_metrics};
 use crate::util::lending_pool::{Closed, LendingPool, LentResource, PoolClosed};
 use crate::vm::check_row_limit;
 use crate::worker_metrics::WORKER_METRICS;
@@ -26,14 +26,15 @@ use futures::{Future, FutureExt};
 use indexmap::IndexSet;
 use itertools::Itertools;
 use smallvec::SmallVec;
-use spacetimedb_client_api_messages::timestamp::Timestamp;
-use spacetimedb_client_api_messages::websocket::{Compression, OneOffTable, QueryUpdate, WebsocketFormat};
+use spacetimedb_client_api_messages::websocket::{ByteListLen, Compression, OneOffTable, QueryUpdate, WebsocketFormat};
 use spacetimedb_data_structures::error_stream::ErrorStream;
 use spacetimedb_data_structures::map::{HashCollectionExt as _, IntMap};
+use spacetimedb_lib::db::raw_def::v9::Lifecycle;
 use spacetimedb_lib::identity::{AuthCtx, RequestId};
-use spacetimedb_lib::Address;
+use spacetimedb_lib::ConnectionId;
+use spacetimedb_lib::Timestamp;
 use spacetimedb_primitives::{col_list, TableId};
-use spacetimedb_query::SubscribePlan;
+use spacetimedb_query::compile_subscription;
 use spacetimedb_sats::{algebraic_value, ProductValue};
 use spacetimedb_schema::auto_migrate::AutoMigrateError;
 use spacetimedb_schema::def::deserialize::ReducerArgsDeserializeSeed;
@@ -128,13 +129,14 @@ impl UpdatesRelValue<'_> {
         !(self.deletes.is_empty() && self.inserts.is_empty())
     }
 
-    pub fn encode<F: WebsocketFormat>(&self, compression: Compression) -> (F::QueryUpdate, u64) {
+    pub fn encode<F: WebsocketFormat>(&self, compression: Compression) -> (F::QueryUpdate, u64, usize) {
         let (deletes, nr_del) = F::encode_list(self.deletes.iter());
         let (inserts, nr_ins) = F::encode_list(self.inserts.iter());
         let num_rows = nr_del + nr_ins;
+        let num_bytes = deletes.num_bytes() + inserts.num_bytes();
         let qu = QueryUpdate { deletes, inserts };
         let cqu = F::into_query_update(qu, compression);
-        (cqu, num_rows)
+        (cqu, num_rows, num_bytes)
     }
 }
 
@@ -165,7 +167,7 @@ pub struct ModuleFunctionCall {
 pub struct ModuleEvent {
     pub timestamp: Timestamp,
     pub caller_identity: Identity,
-    pub caller_address: Option<Address>,
+    pub caller_connection_id: Option<ConnectionId>,
     pub function_call: ModuleFunctionCall,
     pub status: EventStatus,
     pub energy_quanta_used: EnergyQuanta,
@@ -181,9 +183,6 @@ pub struct ModuleInfo {
     /// Loaded by loading the module's program from the system tables, extracting its definition,
     /// and validating.
     pub module_def: ModuleDef,
-    /// Map between reducer IDs and reducer names.
-    /// Reducer names are sorted alphabetically.
-    pub reducers_map: ReducersMap,
     /// The identity of the module.
     pub owner_identity: Identity,
     /// The identity of the database.
@@ -207,37 +206,14 @@ impl ModuleInfo {
         log_tx: tokio::sync::broadcast::Sender<bytes::Bytes>,
         subscriptions: ModuleSubscriptions,
     ) -> Arc<Self> {
-        // Note: sorts alphabetically!
-        let reducers_map = module_def.reducers().map(|r| &*r.name).collect();
         Arc::new(ModuleInfo {
             module_def,
-            reducers_map,
             owner_identity,
             database_identity,
             module_hash,
             log_tx,
             subscriptions,
         })
-    }
-
-    /// Get the reducer seed and ID for a reducer name, if any.
-    pub fn reducer_seed_and_id(&self, reducer_name: &str) -> Option<(ReducerArgsDeserializeSeed, ReducerId)> {
-        let seed = self.module_def.reducer_arg_deserialize_seed(reducer_name)?;
-        let reducer_id = self
-            .reducers_map
-            .lookup_id(reducer_name)
-            .expect("seed was present, so ID should be present!");
-        Some((seed, reducer_id))
-    }
-
-    /// Get a reducer by its ID.
-    pub fn get_reducer_by_id(&self, reducer_id: ReducerId) -> Option<&ReducerDef> {
-        let name = self.reducers_map.lookup_name(reducer_id)?;
-        Some(
-            self.module_def
-                .reducer(name)
-                .expect("id was present, so reducer should be present!"),
-        )
     }
 }
 
@@ -278,10 +254,6 @@ pub trait Module: Send + Sync + 'static {
     fn create_instance(&self) -> Self::Instance;
     fn replica_ctx(&self) -> &ReplicaContext;
     fn close(self);
-    #[cfg(feature = "tracelogging")]
-    fn get_trace(&self) -> Option<bytes::Bytes>;
-    #[cfg(feature = "tracelogging")]
-    fn stop_trace(&self) -> anyhow::Result<()>;
 }
 
 pub trait ModuleInstance: Send + 'static {
@@ -303,7 +275,7 @@ pub trait ModuleInstance: Send + 'static {
 pub struct CallReducerParams {
     pub timestamp: Timestamp,
     pub caller_identity: Identity,
-    pub caller_address: Address,
+    pub caller_connection_id: ConnectionId,
     pub client: Option<Arc<ClientConnectionSender>>,
     pub request_id: Option<RequestId>,
     pub timer: Option<Instant>,
@@ -480,6 +452,8 @@ pub enum ReducerCallError {
     NoSuchReducer,
     #[error("no such scheduled reducer")]
     ScheduleReducerNotFound,
+    #[error("can't directly call special {0:?} lifecycle reducer")]
+    LifecycleReducer(Lifecycle),
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -540,6 +514,7 @@ impl ModuleHost {
     }
 
     pub async fn disconnect_client(&self, client_id: ClientActorId) {
+        log::trace!("disconnecting client {}", client_id);
         let this = self.clone();
         let _ = tokio::task::spawn_blocking(move || {
             this.subscriptions().remove_subscriber(client_id);
@@ -547,7 +522,7 @@ impl ModuleHost {
         .await;
         // ignore NoSuchModule; if the module's already closed, that's fine
         let _ = self
-            .call_identity_connected_disconnected(client_id.identity, client_id.address, false)
+            .call_identity_connected_disconnected(client_id.identity, client_id.connection_id, false)
             .await;
     }
 
@@ -559,68 +534,70 @@ impl ModuleHost {
     pub async fn call_identity_connected_disconnected(
         &self,
         caller_identity: Identity,
-        caller_address: Address,
+        caller_connection_id: ConnectionId,
         connected: bool,
     ) -> Result<(), ReducerCallError> {
-        let reducer_name = if connected {
-            CLIENT_CONNECTED_DUNDER
+        let (lifecycle, fake_name) = if connected {
+            (Lifecycle::OnConnect, "__identity_connected__")
         } else {
-            CLIENT_DISCONNECTED_DUNDER
+            (Lifecycle::OnDisconnect, "__identity_disconnected__")
         };
+
+        let reducer_lookup = self.info.module_def.lifecycle_reducer(lifecycle);
+        let reducer_name = reducer_lookup.as_ref().map(|(_, def)| &*def.name).unwrap_or(fake_name);
 
         let db = &self.inner.replica_ctx().relational_db;
         let workload = || {
             Workload::Reducer(ReducerContext {
                 name: reducer_name.to_owned(),
                 caller_identity,
-                caller_address,
+                caller_connection_id,
                 timestamp: Timestamp::now(),
                 arg_bsatn: Bytes::new(),
             })
         };
 
-        let result = self
-            .call_reducer_inner(
+        let result = if let Some((reducer_id, reducer_def)) = reducer_lookup {
+            self.call_reducer_inner(
                 caller_identity,
-                Some(caller_address),
+                Some(caller_connection_id),
                 None,
                 None,
                 None,
-                reducer_name,
+                reducer_id,
+                reducer_def,
                 ReducerArgs::Nullary,
             )
             .await
             .map(drop)
-            .or_else(|e| match e {
-                // If the module doesn't define connected or disconnected, commit
-                // a transaction to update `st_clients` and to ensure we always have those events
-                // paired in the commitlog.
-                //
-                // This is necessary to be able to disconnect clients after a server
-                // crash.
-                ReducerCallError::NoSuchReducer => db
-                    .with_auto_commit(workload(), |mut_tx| {
-                        if connected {
-                            self.update_st_clients(mut_tx, caller_identity, caller_address, connected)
-                        } else {
-                            Ok(())
-                        }
-                    })
-                    .map_err(|err| {
-                        InvalidReducerArguments {
-                            err: err.into(),
-                            reducer: reducer_name.into(),
-                        }
-                        .into()
-                    }),
-                e => Err(e),
-            });
+        } else {
+            // If the module doesn't define connected or disconnected, commit
+            // a transaction to update `st_clients` and to ensure we always have those events
+            // paired in the commitlog.
+            //
+            // This is necessary to be able to disconnect clients after a server
+            // crash.
+            db.with_auto_commit(workload(), |mut_tx| {
+                if connected {
+                    self.update_st_clients(mut_tx, caller_identity, caller_connection_id, connected)
+                } else {
+                    Ok(())
+                }
+            })
+            .map_err(|err| {
+                InvalidReducerArguments {
+                    err: err.into(),
+                    reducer: reducer_name.into(),
+                }
+                .into()
+            })
+        };
 
         // Deleting client from `st_clients`does not depend upon result of disconnect reducer hence done in a separate tx.
         if !connected {
             let _ = db
                 .with_auto_commit(workload(), |mut_tx| {
-                    self.update_st_clients(mut_tx, caller_identity, caller_address, connected)
+                    self.update_st_clients(mut_tx, caller_identity, caller_connection_id, connected)
                 })
                 .map_err(|e| {
                     log::error!("st_clients table update failed with params with error: {:?}", e);
@@ -633,14 +610,14 @@ impl ModuleHost {
         &self,
         mut_tx: &mut MutTxId,
         caller_identity: Identity,
-        caller_address: Address,
+        caller_connection_id: ConnectionId,
         connected: bool,
     ) -> Result<(), DBError> {
         let db = &*self.inner.replica_ctx().relational_db;
 
         let row = &StClientRow {
             identity: caller_identity.into(),
-            address: caller_address.into(),
+            connection_id: caller_connection_id.into(),
         };
 
         if connected {
@@ -650,7 +627,7 @@ impl ModuleHost {
                 .iter_by_col_eq_mut(
                     mut_tx,
                     ST_CLIENT_ID,
-                    col_list![StClientFields::Identity, StClientFields::Address],
+                    col_list![StClientFields::Identity, StClientFields::ConnectionId],
                     &algebraic_value::AlgebraicValue::product(row),
                 )?
                 .map(|row_ref| row_ref.pointer())
@@ -663,35 +640,25 @@ impl ModuleHost {
     async fn call_reducer_inner(
         &self,
         caller_identity: Identity,
-        caller_address: Option<Address>,
+        caller_connection_id: Option<ConnectionId>,
         client: Option<Arc<ClientConnectionSender>>,
         request_id: Option<RequestId>,
         timer: Option<Instant>,
-        reducer_name: &str,
+        reducer_id: ReducerId,
+        reducer_def: &ReducerDef,
         args: ReducerArgs,
     ) -> Result<ReducerCallResult, ReducerCallError> {
-        let reducer_seed = self
-            .info
-            .module_def
-            .reducer_arg_deserialize_seed(reducer_name)
-            .ok_or(ReducerCallError::NoSuchReducer)?;
-
-        let reducer_id = self
-            .info
-            .reducers_map
-            .lookup_id(reducer_name)
-            .expect("if we found the seed, we should find the ID!");
-
+        let reducer_seed = ReducerArgsDeserializeSeed(self.info.module_def.typespace().with_type(reducer_def));
         let args = args.into_tuple(reducer_seed)?;
-        let caller_address = caller_address.unwrap_or(Address::__DUMMY);
+        let caller_connection_id = caller_connection_id.unwrap_or(ConnectionId::ZERO);
 
-        self.call(reducer_name, move |inst| {
+        self.call(&reducer_def.name, move |inst| {
             inst.call_reducer(
                 None,
                 CallReducerParams {
                     timestamp: Timestamp::now(),
                     caller_identity,
-                    caller_address,
+                    caller_connection_id,
                     client,
                     request_id,
                     timer,
@@ -707,27 +674,35 @@ impl ModuleHost {
     pub async fn call_reducer(
         &self,
         caller_identity: Identity,
-        caller_address: Option<Address>,
+        caller_connection_id: Option<ConnectionId>,
         client: Option<Arc<ClientConnectionSender>>,
         request_id: Option<RequestId>,
         timer: Option<Instant>,
         reducer_name: &str,
         args: ReducerArgs,
     ) -> Result<ReducerCallResult, ReducerCallError> {
-        if reducer_name.starts_with("__") && reducer_name.ends_with("__") {
-            return Err(ReducerCallError::NoSuchReducer);
-        }
-        let res = self
-            .call_reducer_inner(
+        let res = async {
+            let (reducer_id, reducer_def) = self
+                .info
+                .module_def
+                .reducer_full(reducer_name)
+                .ok_or(ReducerCallError::NoSuchReducer)?;
+            if let Some(lifecycle) = reducer_def.lifecycle {
+                return Err(ReducerCallError::LifecycleReducer(lifecycle));
+            }
+            self.call_reducer_inner(
                 caller_identity,
-                caller_address,
+                caller_connection_id,
                 client,
                 request_id,
                 timer,
-                reducer_name,
+                reducer_id,
+                reducer_def,
                 args,
             )
-            .await;
+            .await
+        }
+        .await;
 
         let log_message = match &res {
             Err(ReducerCallError::NoSuchReducer) => Some(format!(
@@ -765,17 +740,18 @@ impl ModuleHost {
             match call_reducer_params(&mut tx) {
                 Ok(Some(params)) => {
                     // Is necessary to patch the context with the actual calling reducer
-                    let reducer = module
-                        .reducers_map
-                        .lookup_name(params.reducer_id)
+                    let reducer_def = module
+                        .module_def
+                        .get_reducer_by_id(params.reducer_id)
                         .ok_or(ReducerCallError::ScheduleReducerNotFound)?;
+                    let reducer = &*reducer_def.name;
 
                     tx.ctx = ExecutionContext::with_workload(
                         tx.ctx.database_identity(),
                         Workload::Reducer(ReducerContext {
                             name: reducer.into(),
                             caller_identity: params.caller_identity,
-                            caller_address: params.caller_address,
+                            caller_connection_id: params.caller_connection_id,
                             timestamp: Timestamp::now(),
                             arg_bsatn: params.args.get_bsatn().clone(),
                         }),
@@ -839,7 +815,7 @@ impl ModuleHost {
         )
     }
 
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "trace", skip_all)]
     pub fn one_off_query<F: WebsocketFormat>(
         &self,
         caller_identity: Identity,
@@ -850,17 +826,19 @@ impl ModuleHost {
         let auth = AuthCtx::new(replica_ctx.owner_identity, caller_identity);
         log::debug!("One-off query: {query}");
 
-        db.with_read_only(Workload::Sql, |tx| {
+        let (rows, metrics) = db.with_read_only(Workload::Sql, |tx| {
             let tx = SchemaViewer::new(tx, &auth);
-            let plan = SubscribePlan::compile(&query, &tx)?;
+            let (plan, _, table_name) = compile_subscription(&query, &tx)?;
+            let plan = plan.optimize()?;
             check_row_limit(&plan, db, &tx, |plan, tx| estimate_rows_scanned(tx, plan), &auth)?;
-            plan.execute::<_, F>(&DeltaTx::from(&*tx))
-                .map(|(rows, _)| OneOffTable {
-                    table_name: plan.table_name().to_owned().into_boxed_str(),
-                    rows,
-                })
+            execute_plan::<_, F>(&plan.into(), &DeltaTx::from(&*tx))
+                .map(|(rows, _, metrics)| (OneOffTable { table_name, rows }, metrics))
                 .context("One-off queries are not allowed to modify the database")
-        })
+        })?;
+
+        record_exec_metrics(&WorkloadType::Sql, &db.database_identity(), metrics);
+
+        Ok(rows)
     }
 
     /// FIXME(jgilles): this is a temporary workaround for deleting not currently being supported

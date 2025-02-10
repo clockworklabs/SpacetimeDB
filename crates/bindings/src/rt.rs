@@ -1,19 +1,18 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
-use crate::timestamp::with_timestamp_set;
-use crate::{sys, IterBuf, ReducerContext, ReducerResult, SpacetimeType, Table, Timestamp};
+use crate::table::IndexAlgo;
+use crate::{sys, IterBuf, ReducerContext, ReducerResult, SpacetimeType, Table};
 pub use spacetimedb_lib::db::raw_def::v9::Lifecycle as LifecycleReducer;
 use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, RawModuleDefV9Builder, TableType};
 use spacetimedb_lib::de::{self, Deserialize, SeqProductAccess};
 use spacetimedb_lib::sats::typespace::TypespaceBuilder;
 use spacetimedb_lib::sats::{impl_deserialize, impl_serialize, ProductTypeElement};
 use spacetimedb_lib::ser::{Serialize, SerializeSeqProduct};
-use spacetimedb_lib::{bsatn, Address, Identity, ProductType, RawModuleDef};
+use spacetimedb_lib::{bsatn, ConnectionId, Identity, ProductType, RawModuleDef, Timestamp};
 use spacetimedb_primitives::*;
 use std::fmt;
 use std::marker::PhantomData;
 use std::sync::{Mutex, OnceLock};
-use std::time::Duration;
 use sys::raw::{BytesSink, BytesSource};
 
 /// The `sender` invokes `reducer` at `timestamp` and provides it with the given `args`.
@@ -28,8 +27,7 @@ pub fn invoke_reducer<'a, A: Args<'a>>(
     // Deserialize the arguments from a bsatn encoding.
     let SerDeArgs(args) = bsatn::from_slice(args).expect("unable to decode args");
 
-    // Run the reducer with the environment all set up.
-    with_timestamp_set(ctx.timestamp, || reducer.invoke(&ctx, args))
+    reducer.invoke(&ctx, args)
 }
 /// A trait for types representing the *execution logic* of a reducer.
 #[diagnostic::on_unimplemented(
@@ -100,7 +98,7 @@ impl<E: fmt::Display> IntoReducerResult for Result<(), E> {
 
 #[diagnostic::on_unimplemented(
     message = "the first argument of a reducer must be `&ReducerContext`",
-    note = "all reducers must take `&ReducerContext` as their first argument"
+    label = "first argument must be `&ReducerContext`"
 )]
 pub trait ReducerContextArg {
     // a little hack used in the macro to make error messages nicer. it generates <T as ReducerContextArg>::_ITEM
@@ -288,22 +286,6 @@ impl_serialize!(['de, A: Args<'de>] SerDeArgs<A>, (self, ser) => {
     prod.end()
 });
 
-/// A trait for types representing repeater arguments.
-pub trait RepeaterArgs: for<'de> Args<'de> {
-    /// Returns a notion of now in time.
-    fn get_now() -> Self;
-}
-
-impl RepeaterArgs for () {
-    fn get_now() -> Self {}
-}
-
-impl RepeaterArgs for (Timestamp,) {
-    fn get_now() -> Self {
-        (Timestamp::now(),)
-    }
-}
-
 /// A trait for types that can *describe* a row-level security policy.
 pub trait RowLevelSecurityInfo {
     /// The SQL expression for the row-level security policy.
@@ -364,12 +346,33 @@ pub fn register_table<T: Table>() {
     })
 }
 
-impl From<crate::table::IndexAlgo<'_>> for RawIndexAlgorithm {
-    fn from(algo: crate::table::IndexAlgo<'_>) -> RawIndexAlgorithm {
+mod sealed_direct_index {
+    pub trait Sealed {}
+}
+#[diagnostic::on_unimplemented(
+    message = "column type must be a one of: `u8`, `u16`, `u32`, or `u64`",
+    label = "should be `u8`, `u16`, `u32`, or `u64`, not `{Self}`"
+)]
+pub trait DirectIndexKey: sealed_direct_index::Sealed {}
+impl sealed_direct_index::Sealed for u8 {}
+impl DirectIndexKey for u8 {}
+impl sealed_direct_index::Sealed for u16 {}
+impl DirectIndexKey for u16 {}
+impl sealed_direct_index::Sealed for u32 {}
+impl DirectIndexKey for u32 {}
+impl sealed_direct_index::Sealed for u64 {}
+impl DirectIndexKey for u64 {}
+
+/// Assert that `T` is a valid column to use direct index on.
+pub const fn assert_column_type_valid_for_direct_index<T: DirectIndexKey>() {}
+
+impl From<IndexAlgo<'_>> for RawIndexAlgorithm {
+    fn from(algo: IndexAlgo<'_>) -> RawIndexAlgorithm {
         match algo {
-            crate::table::IndexAlgo::BTree { columns } => RawIndexAlgorithm::BTree {
+            IndexAlgo::BTree { columns } => RawIndexAlgorithm::BTree {
                 columns: columns.iter().copied().collect(),
             },
+            IndexAlgo::Direct { column } => RawIndexAlgorithm::Direct { column: column.into() },
         }
     }
 }
@@ -402,7 +405,7 @@ struct ModuleBuilder {
 // Not actually a mutex; because WASM is single-threaded this basically just turns into a refcell.
 static DESCRIBERS: Mutex<Vec<Box<dyn DescriberFn>>> = Mutex::new(Vec::new());
 
-/// A reducer function takes in `(Sender, Timestamp, Args)`
+/// A reducer function takes in `(ReducerContext, Args)`
 /// and returns a result with a possible error message.
 pub type ReducerFn = fn(ReducerContext, &[u8]) -> ReducerResult;
 static REDUCERS: OnceLock<Vec<ReducerFn>> = OnceLock::new();
@@ -456,10 +459,10 @@ extern "C" fn __describe_module__(description: BytesSink) {
 ///
 /// Note that `to_byte_array` uses LITTLE-ENDIAN order! This matches most host systems.
 ///
-/// The `address_{0-1}` are the pieces of a `[u8; 16]` (`u128`) representing the callers's `Address`.
-/// They are encoded as follows (assuming `address.as_byte_array(): [u8; 16]`):
-/// - `address_0` contains bytes `[0 ..8 ]`.
-/// - `address_1` contains bytes `[8 ..16]`.
+/// The `conn_id_{0-1}` are the pieces of a `[u8; 16]` (`u128`) representing the callers's [`ConnectionId`].
+/// They are encoded as follows (assuming `conn_id.as_le_byte_array(): [u8; 16]`):
+/// - `conn_id_0` contains bytes `[0 ..8 ]`.
+/// - `conn_id_1` contains bytes `[8 ..16]`.
 ///
 /// Again, note that `to_byte_array` uses LITTLE-ENDIAN order! This matches most host systems.
 ///
@@ -481,8 +484,8 @@ extern "C" fn __call_reducer__(
     sender_1: u64,
     sender_2: u64,
     sender_3: u64,
-    address_0: u64,
-    address_1: u64,
+    conn_id_0: u64,
+    conn_id_1: u64,
     timestamp: u64,
     args: BytesSource,
     error: BytesSink,
@@ -492,20 +495,20 @@ extern "C" fn __call_reducer__(
     let sender: [u8; 32] = bytemuck::must_cast(sender);
     let sender = Identity::from_byte_array(sender); // The LITTLE-ENDIAN constructor.
 
-    // Piece together `address_i` into an `Address`.
-    // The all-zeros `address` (`Address::__DUMMY`) is interpreted as `None`.
-    let address = [address_0, address_1];
-    let address: [u8; 16] = bytemuck::must_cast(address);
-    let address = Address::from_byte_array(address); // The LITTLE-ENDIAN constructor.
-    let address = (address != Address::__DUMMY).then_some(address);
+    // Piece together `conn_id_i` into a `ConnectionId`.
+    // The all-zeros `ConnectionId` (`ConnectionId::ZERO`) is interpreted as `None`.
+    let conn_id = [conn_id_0, conn_id_1];
+    let conn_id: [u8; 16] = bytemuck::must_cast(conn_id);
+    let conn_id = ConnectionId::from_le_byte_array(conn_id); // The LITTLE-ENDIAN constructor.
+    let conn_id = (conn_id != ConnectionId::ZERO).then_some(conn_id);
 
     // Assemble the `ReducerContext`.
-    let timestamp = Timestamp::UNIX_EPOCH + Duration::from_micros(timestamp);
+    let timestamp = Timestamp::from_micros_since_unix_epoch(timestamp as i64);
     let ctx = ReducerContext {
         db: crate::Local {},
         sender,
         timestamp,
-        address,
+        connection_id: conn_id,
         rng: std::cell::OnceCell::new(),
     };
 

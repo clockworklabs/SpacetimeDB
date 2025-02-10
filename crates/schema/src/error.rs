@@ -1,7 +1,7 @@
 use spacetimedb_data_structures::error_stream::ErrorStream;
 use spacetimedb_lib::db::raw_def::v9::{Lifecycle, RawIdentifier, RawScopedTypeNameV9};
 use spacetimedb_lib::{ProductType, SumType};
-use spacetimedb_primitives::{ColId, ColList};
+use spacetimedb_primitives::{ColId, ColList, ColSet};
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef};
 use std::borrow::Cow;
@@ -57,8 +57,16 @@ pub enum ValidationError {
     RepeatedPrimaryKey { table: RawIdentifier },
     #[error("Attempt to define {column} with more than 1 auto_inc sequence")]
     OneAutoInc { column: RawColumnName },
-    #[error("Only Btree Indexes are supported: index `{index}` is not a btree")]
-    OnlyBtree { index: RawIdentifier },
+    #[error("Hash indexes are not supported: `{index}` is a hash index")]
+    HashIndexUnsupported { index: RawIdentifier },
+    #[error("No index found to support unique constraint `{constraint}` for columns `{columns:?}`")]
+    UniqueConstraintWithoutIndex { constraint: Box<str>, columns: ColSet },
+    #[error("Direct index does not support type `{ty}` in column `{column}` in index `{index}`")]
+    DirectIndexOnNonUnsignedInt {
+        index: RawIdentifier,
+        column: RawIdentifier,
+        ty: PrettyAlgebraicType,
+    },
     #[error("def `{def}` has duplicate columns: {columns:?}")]
     DuplicateColumns { def: RawIdentifier, columns: ColList },
     #[error("invalid sequence column type: {column} with type `{column_type:?}` in sequence `{sequence}`")]

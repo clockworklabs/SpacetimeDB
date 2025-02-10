@@ -297,7 +297,7 @@ pub struct Entries<'a, K> {
     _key: PhantomData<K>,
 }
 
-impl<'a, K: From<u64>> Iterator for Entries<'a, K> {
+impl<K: From<u64>> Iterator for Entries<'_, K> {
     type Item = Result<(K, u64), IndexError>;
 
     fn next(&mut self) -> Option<Self::Item> {

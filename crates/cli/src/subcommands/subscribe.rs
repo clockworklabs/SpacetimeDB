@@ -9,7 +9,6 @@ use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
 use spacetimedb_lib::de::serde::{DeserializeWrapper, SeedWrapper};
 use spacetimedb_lib::ser::serde::SerializeWrapper;
-use spacetimedb_standalone::TEXT_PROTOCOL;
 use std::time::Duration;
 use tokio::io::AsyncWriteExt;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
@@ -18,15 +17,19 @@ use tokio_tungstenite::tungstenite::Message as WsMessage;
 use crate::api::ClientApi;
 use crate::common_args;
 use crate::sql::parse_req;
+use crate::util::UNSTABLE_WARNING;
 use crate::Config;
 
 pub fn cli() -> clap::Command {
     clap::Command::new("subscribe")
-        .about("Subscribe to SQL queries on the database.")
+        .about(format!(
+            "Subscribe to SQL queries on the database.\n\n{}",
+            UNSTABLE_WARNING
+        ))
         .arg(
             Arg::new("database")
                 .required(true)
-                .help("The domain or address of the database you would like to query"),
+                .help("The name or identity of the database you would like to query"),
         )
         .arg(
             Arg::new("query")
@@ -64,6 +67,7 @@ pub fn cli() -> clap::Command {
                 .help("Print the initial update for the queries."),
         )
         .arg(common_args::anonymous())
+        .arg(common_args::yes())
         .arg(common_args::server().help("The nickname, host name or URL of the server hosting the database"))
 }
 
@@ -121,6 +125,8 @@ struct SubscriptionTable {
 }
 
 pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+    eprintln!("{}\n", UNSTABLE_WARNING);
+
     let queries = args.get_many::<String>("query").unwrap();
     let num = args.get_one::<u32>("num-updates").copied();
     let timeout = args.get_one::<u32>("timeout").copied();
@@ -144,7 +150,10 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
 
     // Create the websocket request.
     let mut req = http::Uri::from_parts(uri)?.into_client_request()?;
-    req.headers_mut().insert(header::SEC_WEBSOCKET_PROTOCOL, TEXT_PROTOCOL);
+    req.headers_mut().insert(
+        header::SEC_WEBSOCKET_PROTOCOL,
+        http::HeaderValue::from_static(ws::TEXT_PROTOCOL),
+    );
     //  Add the authorization header, if any.
     if let Some(auth_header) = &api.con.auth_header {
         req.headers_mut().insert(header::AUTHORIZATION, auth_header.try_into()?);

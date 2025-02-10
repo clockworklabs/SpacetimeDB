@@ -351,11 +351,7 @@ impl<W1: BufWriter, W2: BufWriter> BufWriter for TeeWriter<W1, W2> {
 impl<'de> BufReader<'de> for &'de [u8] {
     #[inline]
     fn get_chunk(&mut self, size: usize) -> Option<&'de [u8]> {
-        // TODO: split_at_checked once our msrv >= 1.80
-        if self.len() < size {
-            return None;
-        }
-        let (ret, rest) = self.split_at(size);
+        let (ret, rest) = self.split_at_checked(size)?;
         *self = rest;
         Some(ret)
     }

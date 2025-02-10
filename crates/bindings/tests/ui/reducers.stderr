@@ -64,9 +64,19 @@ error[E0277]: the reducer argument `Test` does not implement `SpacetimeType`
  --> tests/ui/reducers.rs:6:40
   |
 6 | fn bad_type(_ctx: &ReducerContext, _a: Test) {}
-  |                                        ^^^^ the trait `SpacetimeType` is not implemented for `Test`, which is required by `Test: ReducerArg`
+  |                                        ^^^^ the trait `SpacetimeType` is not implemented for `Test`
   |
   = note: if you own the type, try adding `#[derive(SpacetimeType)]` to its definition
+  = help: the following other types implement trait `SpacetimeType`:
+            &T
+            ()
+            AlgebraicTypeRef
+            Arc<T>
+            ArrayType
+            Box<T>
+            ColId
+            ColumnAttribute
+          and $N others
   = note: required for `Test` to implement `ReducerArg`
 
 error[E0277]: invalid reducer signature
@@ -119,8 +129,8 @@ error[E0277]: `Test` is not a valid reducer return type
   |
   = note: reducers cannot return values -- you can only return `()` or `Result<(), impl Display>`
   = help: the following other types implement trait `IntoReducerResult`:
-            Result<(), E>
             ()
+            Result<(), E>
 
 error[E0277]: invalid reducer signature
  --> tests/ui/reducers.rs:9:4
@@ -168,9 +178,9 @@ error[E0277]: the first argument of a reducer must be `&ReducerContext`
   --> tests/ui/reducers.rs:23:20
    |
 23 | fn missing_ctx(_a: u8) {}
-   |                    ^^ the trait `ReducerContextArg` is not implemented for `u8`
+   |                    ^^ first argument must be `&ReducerContext`
    |
-   = note: all reducers must take `&ReducerContext` as their first argument
+   = help: the trait `ReducerContextArg` is not implemented for `u8`
    = help: the trait `ReducerContextArg` is implemented for `&ReducerContext`
 
 error[E0277]: invalid reducer signature
@@ -219,13 +229,9 @@ error[E0277]: the first argument of a reducer must be `&ReducerContext`
   --> tests/ui/reducers.rs:26:21
    |
 26 | fn ctx_by_val(_ctx: ReducerContext, _a: u8) {}
-   |                     ^^^^^^^^^^^^^^
-   |                     |
-   |                     the trait `ReducerContextArg` is not implemented for `ReducerContext`
-   |                     the trait `ReducerContextArg` is not implemented for `ReducerContext`
+   |                     ^^^^^^^^^^^^^^ first argument must be `&ReducerContext`
    |
-   = note: the trait bound `ReducerContext: ReducerContextArg` is not satisfied
-   = note: all reducers must take `&ReducerContext` as their first argument
+   = help: the trait `ReducerContextArg` is not implemented for `ReducerContext`
    = help: the trait `ReducerContextArg` is implemented for `&ReducerContext`
 
 error[E0277]: invalid reducer signature

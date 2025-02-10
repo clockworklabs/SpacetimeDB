@@ -1,27 +1,35 @@
 use super::execution_unit::QueryHash;
 use super::tx::DeltaTx;
-use crate::client::messages::{SubscriptionUpdateMessage, TransactionUpdateMessage};
+use crate::client::messages::{
+    SerializableMessage, SubscriptionError, SubscriptionMessage, SubscriptionResult, SubscriptionUpdateMessage,
+    TransactionUpdateMessage,
+};
 use crate::client::{ClientConnectionSender, Protocol};
 use crate::error::DBError;
+use crate::execution_context::WorkloadType;
 use crate::host::module_host::{DatabaseTableUpdate, ModuleEvent, UpdatesRelValue};
 use crate::messages::websocket::{self as ws, TableUpdate};
 use crate::subscription::delta::eval_delta;
+use crate::subscription::record_exec_metrics;
 use hashbrown::hash_map::OccupiedError;
+use hashbrown::{HashMap, HashSet};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use spacetimedb_client_api_messages::websocket::{
     BsatnFormat, CompressableQueryUpdate, FormatSwitch, JsonFormat, QueryId, QueryUpdate, WebsocketFormat,
 };
-use spacetimedb_data_structures::map::{Entry, HashCollectionExt, HashMap, HashSet, IntMap};
-use spacetimedb_lib::{Address, Identity};
+use spacetimedb_data_structures::map::{Entry, IntMap};
+use spacetimedb_lib::metrics::ExecutionMetrics;
+use spacetimedb_lib::{ConnectionId, Identity};
 use spacetimedb_primitives::TableId;
-use spacetimedb_query::delta::DeltaPlan;
+use spacetimedb_subscription::SubscriptionPlan;
 use std::ops::Deref;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-/// Clients are uniquely identified by their Identity and Address.
-/// Identity is insufficient because different Addresses can use the same Identity.
-/// TODO: Determine if Address is sufficient for uniquely identifying a client.
-type ClientId = (Identity, Address);
+/// Clients are uniquely identified by their Identity and ConnectionId.
+/// Identity is insufficient because different ConnectionIds can use the same Identity.
+/// TODO: Determine if ConnectionId is sufficient for uniquely identifying a client.
+type ClientId = (Identity, ConnectionId);
 type Query = Arc<Plan>;
 type Client = Arc<ClientConnectionSender>;
 type SwitchedDbUpdate = FormatSwitch<ws::DatabaseUpdate<BsatnFormat>, ws::DatabaseUpdate<JsonFormat>>;
@@ -34,11 +42,12 @@ type SubscriptionId = (ClientId, ClientQueryId);
 #[derive(Debug)]
 pub struct Plan {
     hash: QueryHash,
-    plan: DeltaPlan,
+    sql: String,
+    plan: SubscriptionPlan,
 }
 
 impl Deref for Plan {
-    type Target = DeltaPlan;
+    type Target = SubscriptionPlan;
 
     fn deref(&self) -> &Self::Target {
         &self.plan
@@ -46,8 +55,8 @@ impl Deref for Plan {
 }
 
 impl Plan {
-    pub fn new(plan: DeltaPlan, hash: QueryHash) -> Self {
-        Self { plan, hash }
+    pub fn new(plan: SubscriptionPlan, hash: QueryHash, text: String) -> Self {
+        Self { plan, hash, sql: text }
     }
 
     pub fn hash(&self) -> QueryHash {
@@ -62,6 +71,9 @@ struct ClientInfo {
     subscriptions: HashMap<SubscriptionId, QueryHash>,
     // This should be removed when we migrate to SubscribeSingle.
     legacy_subscriptions: HashSet<QueryHash>,
+    // This flag is set if an error occurs during a tx update.
+    // It will be cleaned up async or on resubscribe.
+    dropped: AtomicBool,
 }
 
 impl ClientInfo {
@@ -70,6 +82,7 @@ impl ClientInfo {
             outbound_ref,
             subscriptions: HashMap::default(),
             legacy_subscriptions: HashSet::default(),
+            dropped: AtomicBool::new(false),
         }
     }
 }
@@ -130,6 +143,22 @@ impl SubscriptionManager {
         self.queries.get(hash).map(|state| state.query.clone())
     }
 
+    /// Return all clients that are subscribed to a particular query.
+    /// Note this method filters out clients that have been dropped.
+    /// If you need all clients currently maintained by the manager,
+    /// regardless of drop status, do not use this method.
+    pub fn clients_for_query(&self, hash: &QueryHash) -> impl Iterator<Item = &ClientId> {
+        self.queries
+            .get(hash)
+            .into_iter()
+            .flat_map(|query| query.all_clients())
+            .filter(|id| {
+                self.clients
+                    .get(*id)
+                    .is_some_and(|info| !info.dropped.load(Ordering::Acquire))
+            })
+    }
+
     pub fn num_unique_queries(&self) -> usize {
         self.queries.len()
     }
@@ -137,6 +166,11 @@ impl SubscriptionManager {
     #[cfg(test)]
     fn contains_query(&self, hash: &QueryHash) -> bool {
         self.queries.contains_key(hash)
+    }
+
+    #[cfg(test)]
+    fn contains_client(&self, subscriber: &ClientId) -> bool {
+        self.clients.contains_key(subscriber)
     }
 
     #[cfg(test)]
@@ -173,14 +207,28 @@ impl SubscriptionManager {
         }
     }
 
+    /// Remove any clients that have been marked for removal
+    pub fn remove_dropped_clients(&mut self) {
+        for id in self.clients.keys().copied().collect::<Vec<_>>() {
+            if let Some(client) = self.clients.get(&id) {
+                if client.dropped.load(Ordering::Relaxed) {
+                    self.remove_all_subscriptions(&id);
+                }
+            }
+        }
+    }
+
     /// Remove a single subscription for a client.
     /// This will return an error if the client does not have a subscription with the given query id.
     pub fn remove_subscription(&mut self, client_id: ClientId, query_id: ClientQueryId) -> Result<Query, DBError> {
         let subscription_id = (client_id, query_id);
-        let Some(ci) = self.clients.get_mut(&client_id) else {
+        let Some(ci) = self
+            .clients
+            .get_mut(&client_id)
+            .filter(|ci| !ci.dropped.load(Ordering::Acquire))
+        else {
             return Err(anyhow::anyhow!("Client not found: {:?}", client_id).into());
         };
-
         let Some(query_hash) = ci.subscriptions.remove(&subscription_id) else {
             return Err(anyhow::anyhow!("Subscription not found: {:?}", subscription_id).into());
         };
@@ -199,7 +247,17 @@ impl SubscriptionManager {
 
     /// Adds a single subscription for a client.
     pub fn add_subscription(&mut self, client: Client, query: Query, query_id: ClientQueryId) -> Result<(), DBError> {
-        let client_id = (client.id.identity, client.id.address);
+        let client_id = (client.id.identity, client.id.connection_id);
+
+        // Clean up any dropped subscriptions
+        if self
+            .clients
+            .get(&client_id)
+            .is_some_and(|ci| ci.dropped.load(Ordering::Acquire))
+        {
+            self.remove_all_subscriptions(&client_id);
+        }
+
         let ci = self
             .clients
             .entry(client_id)
@@ -238,9 +296,9 @@ impl SubscriptionManager {
     ///
     /// If a query is not already indexed,
     /// its table ids added to the inverted index.
-    // #[tracing::instrument(skip_all)]
+    // #[tracing::instrument(level = "trace", skip_all)]
     pub fn set_legacy_subscription(&mut self, client: Client, queries: impl IntoIterator<Item = Query>) {
-        let client_id = (client.id.identity, client.id.address);
+        let client_id = (client.id.identity, client.id.connection_id);
         // First, remove any existing legacy subscriptions.
         self.remove_legacy_subscriptions(&client_id);
 
@@ -281,10 +339,10 @@ impl SubscriptionManager {
     /// Removes a client from the subscriber mapping.
     /// If a query no longer has any subscribers,
     /// it is removed from the index along with its table ids.
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "trace", skip_all)]
     pub fn remove_all_subscriptions(&mut self, client: &ClientId) {
         self.remove_legacy_subscriptions(client);
-        let Some(client_info) = self.clients.get(client) else {
+        let Some(client_info) = self.clients.remove(client) else {
             return;
         };
         debug_assert!(client_info.legacy_subscriptions.is_empty());
@@ -309,8 +367,14 @@ impl SubscriptionManager {
     /// This method takes a set of delta tables,
     /// evaluates only the necessary queries for those delta tables,
     /// and then sends the results to each client.
-    #[tracing::instrument(skip_all)]
-    pub fn eval_updates(&self, tx: &DeltaTx, event: Arc<ModuleEvent>, caller: Option<&ClientConnectionSender>) {
+    #[tracing::instrument(level = "trace", skip_all)]
+    pub fn eval_updates(
+        &self,
+        tx: &DeltaTx,
+        event: Arc<ModuleEvent>,
+        caller: Option<&ClientConnectionSender>,
+        database_identity: &Identity,
+    ) {
         use FormatSwitch::{Bsatn, Json};
 
         let tables = &event.status.database_update().unwrap().tables;
@@ -318,7 +382,7 @@ impl SubscriptionManager {
         // Put the main work on a rayon compute thread.
         rayon::scope(|_| {
             let span = tracing::info_span!("eval_incr").entered();
-            let mut eval = tables
+            let (updates, errs, metrics) = tables
                 .iter()
                 .filter(|table| !table.inserts.is_empty() || !table.deletes.is_empty())
                 .map(|DatabaseTableUpdate { table_id, .. }| table_id)
@@ -326,61 +390,117 @@ impl SubscriptionManager {
                 .flatten()
                 .collect::<HashSet<_>>()
                 .par_iter()
-                .filter_map(|&hash| self.queries.get(hash).map(|state| (hash, &state.query)))
+                .filter_map(|&hash| {
+                    self.queries
+                        .get(hash)
+                        .map(|state| (hash, &state.query, ExecutionMetrics::default()))
+                })
                 // If N clients are subscribed to a query,
                 // we copy the DatabaseTableUpdate N times,
                 // which involves cloning BSATN (binary) or product values (json).
-                .flat_map_iter(|(hash, plan)| {
-                    let table_id = plan.table_id();
-                    let table_name = plan.table_name();
+                .map(|(hash, plan, mut metrics)| {
+                    let table_id = plan.subscribed_table_id();
+                    let table_name: Box<str> = plan.subscribed_table_name().into();
                     // Store at most one copy of the serialization to BSATN
                     // and ditto for the "serialization" for JSON.
                     // Each subscriber gets to pick which of these they want,
                     // but we only fill `ops_bin` and `ops_json` at most once.
                     // The former will be `Some(_)` if some subscriber uses `Protocol::Binary`
                     // and the latter `Some(_)` if some subscriber uses `Protocol::Text`.
-                    let mut ops_bin: Option<(CompressableQueryUpdate<BsatnFormat>, _)> = None;
-                    let mut ops_json: Option<(QueryUpdate<JsonFormat>, _)> = None;
+                    let mut ops_bin: Option<(CompressableQueryUpdate<BsatnFormat>, _, _)> = None;
+                    let mut ops_json: Option<(QueryUpdate<JsonFormat>, _, _)> = None;
 
                     fn memo_encode<F: WebsocketFormat>(
                         updates: &UpdatesRelValue<'_>,
                         client: &ClientConnectionSender,
-                        memory: &mut Option<(F::QueryUpdate, u64)>,
+                        memory: &mut Option<(F::QueryUpdate, u64, usize)>,
+                        metrics: &mut ExecutionMetrics,
                     ) -> (F::QueryUpdate, u64) {
-                        memory
-                            .get_or_insert_with(|| updates.encode::<F>(client.config.compression))
-                            .clone()
+                        let (update, num_rows, num_bytes) = memory
+                            .get_or_insert_with(|| {
+                                let encoded = updates.encode::<F>(client.config.compression);
+                                // The first time we insert into this map, we call encode.
+                                // This is when we serialize the rows to BSATN/JSON.
+                                // Hence this is where we increment `bytes_scanned`.
+                                metrics.bytes_scanned += encoded.2;
+                                encoded
+                            })
+                            .clone();
+                        // We call this function for each query,
+                        // and for each client subscribed to it.
+                        // Therefore every time we call this function,
+                        // we update the `bytes_sent_to_clients` metric.
+                        metrics.bytes_sent_to_clients += num_bytes;
+                        (update, num_rows)
                     }
 
-                    let evaluator = plan.evaluator(tx);
-
-                    // TODO: Handle errors instead of skipping them
-                    eval_delta(tx, &evaluator)
-                        .ok()
-                        .filter(|delta_updates| delta_updates.has_updates())
+                    let updates = eval_delta(tx, &mut metrics, plan)
+                        .map_err(|err| {
+                            tracing::error!(
+                                message = "Query errored during tx update",
+                                sql = plan.sql,
+                                reason = ?err,
+                            );
+                            self.clients_for_query(hash)
+                                .map(|id| (id, err.to_string().into_boxed_str()))
+                                .collect::<Vec<_>>()
+                        })
                         .map(|delta_updates| {
-                            self.queries
-                                .get(hash)
-                                .into_iter()
-                                .flat_map(|query| query.all_clients())
-                                .map(move |id| {
+                            self.clients_for_query(hash)
+                                .map(|id| {
                                     let client = &self.clients[id].outbound_ref;
                                     let update = match client.config.protocol {
-                                        Protocol::Binary => {
-                                            Bsatn(memo_encode::<BsatnFormat>(&delta_updates, client, &mut ops_bin))
-                                        }
-                                        Protocol::Text => {
-                                            Json(memo_encode::<JsonFormat>(&delta_updates, client, &mut ops_json))
-                                        }
+                                        Protocol::Binary => Bsatn(memo_encode::<BsatnFormat>(
+                                            &delta_updates,
+                                            client,
+                                            &mut ops_bin,
+                                            &mut metrics,
+                                        )),
+                                        Protocol::Text => Json(memo_encode::<JsonFormat>(
+                                            &delta_updates,
+                                            client,
+                                            &mut ops_json,
+                                            &mut metrics,
+                                        )),
                                     };
                                     (id, table_id, table_name.clone(), update)
                                 })
                                 .collect::<Vec<_>>()
-                        })
-                        .unwrap_or_default()
+                        });
+
+                    (updates, metrics)
                 })
-                .collect::<Vec<_>>()
+                .fold(
+                    || (vec![], vec![], ExecutionMetrics::default()),
+                    |(mut rows, mut errs, mut agg_metrics), (result, metrics)| {
+                        match result {
+                            Ok(x) => {
+                                rows.extend(x);
+                            }
+                            Err(x) => {
+                                errs.extend(x);
+                            }
+                        }
+                        agg_metrics.merge(metrics);
+                        (rows, errs, agg_metrics)
+                    },
+                )
+                .reduce_with(|(mut acc_rows, mut acc_errs, mut acc_metrics), (rows, errs, metrics)| {
+                    acc_rows.extend(rows);
+                    acc_errs.extend(errs);
+                    acc_metrics.merge(metrics);
+                    (acc_rows, acc_errs, acc_metrics)
+                })
+                .unwrap_or_default();
+
+            record_exec_metrics(&WorkloadType::Update, database_identity, metrics);
+
+            let clients_with_errors = errs.iter().map(|(id, _)| id).collect::<HashSet<_>>();
+
+            let mut eval = updates
                 .into_iter()
+                // Filter out clients whose subscriptions failed
+                .filter(|(id, ..)| !clients_with_errors.contains(id))
                 // For each subscriber, aggregate all the updates for the same table.
                 // That is, we build a map `(subscriber_id, table_id) -> updates`.
                 // A particular subscriber uses only one format,
@@ -421,6 +541,8 @@ impl SubscriptionManager {
                         updates
                     },
                 );
+
+            drop(clients_with_errors);
             drop(span);
 
             let _span = tracing::info_span!("eval_send").entered();
@@ -431,34 +553,54 @@ impl SubscriptionManager {
             // Regardless, the update that we send to the caller, if we send any,
             // is a full tx update, rather than a light one.
             // That is, in the case of the caller, we don't respect the light setting.
-            if let Some((caller, addr)) = caller.zip(event.caller_address) {
-                let update = eval
-                    .remove(&(event.caller_identity, addr))
+            if let Some((caller, conn_id)) = caller.zip(event.caller_connection_id) {
+                let database_update = eval
+                    .remove(&(event.caller_identity, conn_id))
                     .map(|update| SubscriptionUpdateMessage::from_event_and_update(&event, update))
                     .unwrap_or_else(|| {
                         SubscriptionUpdateMessage::default_for_protocol(caller.config.protocol, event.request_id)
                     });
-                send_to_client(caller, Some(event.clone()), update);
+                let message = TransactionUpdateMessage {
+                    event: Some(event.clone()),
+                    database_update,
+                };
+                send_to_client(caller, message);
             }
 
             // Send all the other updates.
             for (id, update) in eval {
-                let message = SubscriptionUpdateMessage::from_event_and_update(&event, update);
+                let database_update = SubscriptionUpdateMessage::from_event_and_update(&event, update);
                 let client = self.client(id);
                 // Conditionally send out a full update or a light one otherwise.
                 let event = client.config.tx_update_full.then(|| event.clone());
-                send_to_client(&client, event, message);
+                let message = TransactionUpdateMessage { event, database_update };
+                send_to_client(&client, message);
+            }
+
+            // Send error messages and mark clients for removal
+            for (id, message) in errs {
+                if let Some(client) = self.clients.get(id) {
+                    client.dropped.store(true, Ordering::Release);
+                    send_to_client(
+                        &client.outbound_ref,
+                        SubscriptionMessage {
+                            request_id: None,
+                            query_id: None,
+                            timer: None,
+                            result: SubscriptionResult::Error(SubscriptionError {
+                                table_id: None,
+                                message,
+                            }),
+                        },
+                    );
+                }
             }
         })
     }
 }
 
-fn send_to_client(
-    client: &ClientConnectionSender,
-    event: Option<Arc<ModuleEvent>>,
-    database_update: SubscriptionUpdateMessage,
-) {
-    if let Err(e) = client.send_message(TransactionUpdateMessage { event, database_update }) {
+fn send_to_client(client: &ClientConnectionSender, message: impl Into<SerializableMessage>) {
+    if let Err(e) = client.send_message(message) {
         tracing::warn!(%client.id, "failed to send update message to client: {e}")
     }
 }
@@ -467,11 +609,10 @@ fn send_to_client(
 mod tests {
     use std::{sync::Arc, time::Duration};
 
-    use spacetimedb_client_api_messages::timestamp::Timestamp;
     use spacetimedb_client_api_messages::websocket::QueryId;
-    use spacetimedb_lib::{error::ResultTest, identity::AuthCtx, Address, AlgebraicType, Identity};
+    use spacetimedb_lib::{error::ResultTest, identity::AuthCtx, AlgebraicType, ConnectionId, Identity, Timestamp};
     use spacetimedb_primitives::TableId;
-    use spacetimedb_query::delta::DeltaPlan;
+    use spacetimedb_subscription::SubscriptionPlan;
 
     use super::{Plan, SubscriptionManager};
     use crate::execution_context::Workload;
@@ -497,21 +638,21 @@ mod tests {
             let auth = AuthCtx::for_testing();
             let tx = SchemaViewer::new(&*tx, &auth);
             let hash = QueryHash::from_string(sql);
-            let plan = DeltaPlan::compile(sql, &tx).unwrap();
-            Ok(Arc::new(Plan::new(plan, hash)))
+            let plan = SubscriptionPlan::compile(sql, &tx).unwrap();
+            Ok(Arc::new(Plan::new(plan, hash, sql.into())))
         })
     }
 
-    fn id(address: u128) -> (Identity, Address) {
-        (Identity::ZERO, Address::from_u128(address))
+    fn id(connection_id: u128) -> (Identity, ConnectionId) {
+        (Identity::ZERO, ConnectionId::from_u128(connection_id))
     }
 
-    fn client(address: u128) -> ClientConnectionSender {
-        let (identity, address) = id(address);
+    fn client(connection_id: u128) -> ClientConnectionSender {
+        let (identity, connection_id) = id(connection_id);
         ClientConnectionSender::dummy(
             ClientActorId {
                 identity,
-                address,
+                connection_id,
                 name: ClientName(0),
             },
             ClientConfig::for_test(),
@@ -575,7 +716,7 @@ mod tests {
         subscriptions.add_subscription(client.clone(), plan.clone(), query_id)?;
         assert!(subscriptions.query_reads_from_table(&hash, &table_id));
 
-        let client_id = (client.id.identity, client.id.address);
+        let client_id = (client.id.identity, client.id.connection_id);
         subscriptions.remove_subscription(client_id, query_id)?;
         assert!(!subscriptions.query_reads_from_table(&hash, &table_id));
 
@@ -596,7 +737,7 @@ mod tests {
         let mut subscriptions = SubscriptionManager::default();
         subscriptions.add_subscription(client.clone(), plan.clone(), query_id)?;
 
-        let client_id = (client.id.identity, client.id.address);
+        let client_id = (client.id.identity, client.id.connection_id);
         assert!(subscriptions.remove_subscription(client_id, QueryId::new(2)).is_err());
 
         Ok(())
@@ -618,7 +759,7 @@ mod tests {
         subscriptions.add_subscription(client.clone(), plan.clone(), query_id)?;
         subscriptions.add_subscription(client.clone(), plan.clone(), QueryId::new(2))?;
 
-        let client_id = (client.id.identity, client.id.address);
+        let client_id = (client.id.identity, client.id.connection_id);
         subscriptions.remove_subscription(client_id, query_id)?;
 
         assert!(subscriptions.query_reads_from_table(&hash, &table_id));
@@ -648,7 +789,7 @@ mod tests {
 
         let client_ids = clients
             .iter()
-            .map(|client| (client.id.identity, client.id.address))
+            .map(|client| (client.id.identity, client.id.connection_id))
             .collect::<Vec<_>>();
         subscriptions.remove_subscription(client_ids[0], query_id)?;
         // There are still two left.
@@ -685,17 +826,20 @@ mod tests {
 
         let client_ids = clients
             .iter()
-            .map(|client| (client.id.identity, client.id.address))
+            .map(|client| (client.id.identity, client.id.connection_id))
             .collect::<Vec<_>>();
         subscriptions.remove_all_subscriptions(&client_ids[0]);
+        assert!(!subscriptions.contains_client(&client_ids[0]));
         // There are still two left.
         assert!(subscriptions.query_reads_from_table(&hash, &table_id));
         subscriptions.remove_all_subscriptions(&client_ids[1]);
         // There is still one left.
         assert!(subscriptions.query_reads_from_table(&hash, &table_id));
+        assert!(!subscriptions.contains_client(&client_ids[1]));
         subscriptions.remove_all_subscriptions(&client_ids[2]);
         // Now there are no subscribers.
         assert!(!subscriptions.query_reads_from_table(&hash, &table_id));
+        assert!(!subscriptions.contains_client(&client_ids[2]));
 
         Ok(())
     }
@@ -725,7 +869,7 @@ mod tests {
             assert!(subscriptions.query_reads_from_table(&queries[i].hash(), &table_ids[i]));
         }
 
-        let client_id = (client.id.identity, client.id.address);
+        let client_id = (client.id.identity, client.id.connection_id);
         subscriptions.remove_subscription(client_id, QueryId::new(1))?;
         assert!(!subscriptions.query_reads_from_table(&queries[0].hash(), &table_ids[0]));
         // Assert that the rest are there.
@@ -934,7 +1078,7 @@ mod tests {
         let event = Arc::new(ModuleEvent {
             timestamp: Timestamp::now(),
             caller_identity: id0,
-            caller_address: Some(client0.id.address),
+            caller_connection_id: Some(client0.id.connection_id),
             function_call: ModuleFunctionCall {
                 reducer: "DummyReducer".into(),
                 reducer_id: u32::MAX.into(),
@@ -948,7 +1092,7 @@ mod tests {
         });
 
         db.with_read_only(Workload::Update, |tx| {
-            subscriptions.eval_updates(&(&*tx).into(), event, Some(&client0))
+            subscriptions.eval_updates(&(&*tx).into(), event, Some(&client0), &db.database_identity())
         });
 
         tokio::runtime::Builder::new_current_thread()

@@ -207,6 +207,18 @@ pub fn generate_typed_row() -> impl Strategy<Value = (ProductType, ProductValue)
     generate_row_type(0..=SIZE).prop_flat_map(|ty| (Just(ty.clone()), generate_product_value(ty)))
 }
 
+pub fn generate_typed_row_vec(
+    num_rows_min: usize,
+    num_rows_max: usize,
+) -> impl Strategy<Value = (ProductType, Vec<ProductValue>)> {
+    generate_row_type(0..=SIZE).prop_flat_map(move |ty| {
+        (
+            Just(ty.clone()),
+            vec(generate_product_value(ty), num_rows_min..num_rows_max),
+        )
+    })
+}
+
 /// Generates a type `ty` and a value typed at `ty`.
 pub fn generate_typed_value() -> impl Strategy<Value = (AlgebraicType, AlgebraicValue)> {
     generate_algebraic_type().prop_flat_map(|ty| (Just(ty.clone()), generate_algebraic_value(ty)))
@@ -223,7 +235,7 @@ fn generate_type_valid_for_client_use() -> impl Strategy<Value = AlgebraicType> 
     let leaf = prop_oneof![
         generate_non_compound_algebraic_type(),
         Just(AlgebraicType::identity()),
-        Just(AlgebraicType::address()),
+        Just(AlgebraicType::connection_id()),
     ];
 
     let size = 3;

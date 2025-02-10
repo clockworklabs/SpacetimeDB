@@ -7,14 +7,14 @@ use std::sync::{Mutex, OnceLock};
 use std::thread::JoinHandle;
 
 use crate::invoke_cli;
-use crate::modules::{CompilationMode, CompiledModule};
+use crate::modules::{start_runtime, CompilationMode, CompiledModule};
 use tempfile::TempDir;
 
 /// Ensure that the server thread we're testing against is still running, starting
 /// it if it hasn't been started yet.
 pub fn ensure_standalone_process() -> &'static SpacetimePaths {
     static PATHS: OnceLock<SpacetimePaths> = OnceLock::new();
-    static JOIN_HANDLE: OnceLock<Mutex<Option<JoinHandle<()>>>> = OnceLock::new();
+    static JOIN_HANDLE: OnceLock<Mutex<Option<JoinHandle<anyhow::Result<()>>>>> = OnceLock::new();
 
     let paths = PATHS.get_or_init(|| {
         let dir = TempDir::with_prefix("stdb-sdk-test")
@@ -26,10 +26,12 @@ pub fn ensure_standalone_process() -> &'static SpacetimePaths {
         SpacetimePaths::from_root_dir(&RootDir(dir))
     });
 
-    let data_dir = paths.data_dir.0.to_str().unwrap();
     let join_handle = JOIN_HANDLE.get_or_init(|| {
         Mutex::new(Some(std::thread::spawn(move || {
-            invoke_cli(paths, &["start", "--data-dir", data_dir])
+            start_runtime().block_on(spacetimedb_standalone::start_server(
+                &paths.data_dir,
+                Some(&paths.cli_config_dir.0),
+            ))
         })))
     });
 
@@ -40,7 +42,20 @@ pub fn ensure_standalone_process() -> &'static SpacetimePaths {
         .expect("Standalone process already finished")
         .is_finished()
     {
-        join_handle.take().unwrap().join().expect("Standalone process failed");
+        match join_handle.take().unwrap().join() {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => panic!("standalone process failed: {e:?}"),
+            Err(e) => {
+                let msg = if let Some(s) = e.downcast_ref::<String>() {
+                    s
+                } else if let Some(s) = e.downcast_ref::<&str>() {
+                    s
+                } else {
+                    "dyn Any"
+                };
+                panic!("standalone process failed by panic: {msg}")
+            }
+        }
     }
 
     paths
@@ -75,7 +90,7 @@ pub struct Test {
     ///
     /// Will run with access to the env vars:
     /// - `SPACETIME_SDK_TEST_CLIENT_PROJECT` bound to the `client_project` path.
-    /// - `SPACETIME_SDK_TEST_DB_ADDR` bound to the database address.
+    /// - `SPACETIME_SDK_TEST_DB_NAME` bound to the database identity or name.
     run_command: String,
 }
 
@@ -131,7 +146,7 @@ macro_rules! memoized {
         MEMOIZED
             .lock()
             .unwrap()
-            .get_or_insert_with(HashMap::default)
+            .get_or_insert_default()
             .entry($key)
             .or_insert_with_key(|$key| -> $value_ty { $body })
             .clone()

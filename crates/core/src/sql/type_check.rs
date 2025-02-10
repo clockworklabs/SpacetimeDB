@@ -145,7 +145,7 @@ fn check_both(op: OpQuery, lhs: &Typed, rhs: &Typed) -> Result<(), PlanError> {
     Ok(())
 }
 
-/// Patch the type of the field if the type is an `Identity`, `Address` or `Enum`
+/// Patch the type of the field if the type is an `Identity`, `ConnectionId` or `Enum`
 fn patch_type(lhs: &FieldOp, ty_lhs: &mut Typed, ty_rhs: &Typed) -> Result<(), PlanError> {
     if let FieldOp::Field(lhs_field) = lhs {
         if let Some(ty) = ty_rhs.ty() {
@@ -178,7 +178,7 @@ fn type_check(of: QueryFragment<FieldOp>) -> Result<Typed, PlanError> {
             let mut ty_lhs = type_check(QueryFragment { from: of.from, q: lhs })?;
             let mut ty_rhs = type_check(QueryFragment { from: of.from, q: rhs })?;
 
-            // TODO: For the cases of `Identity, Address, Enum` we need to resolve the type from the value we are comparing,
+            // TODO: For the cases of `Identity, ConnectionId, Enum` we need to resolve the type from the value we are comparing,
             // because the type is not lifted when we parse the query on `spacetimedb_vm::ops::parse`.
             //
             // This is a temporary solution until we have a better way to resolve the type of the field.

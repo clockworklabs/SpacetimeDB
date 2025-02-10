@@ -10,7 +10,7 @@ rust-version.workspace = true
 bench = false
 
 [[bin]]
-name = "spacetime"
+name = "spacetimedb-cli"
 path = "src/main.rs"
 # Benching off, because of https://bheisler.github.io/criterion.rs/book/faq.html#cargo-bench-gives-unrecognized-option-errors-for-valid-command-line-options
 bench = false
@@ -26,7 +26,6 @@ spacetimedb-lib.workspace = true
 spacetimedb-paths.workspace = true
 spacetimedb-primitives.workspace = true
 spacetimedb-schema.workspace = true
-spacetimedb-standalone = { workspace = true, optional = true }
 
 anyhow.workspace = true
 base64.workspace = true
@@ -41,6 +40,7 @@ duct.workspace = true
 email_address.workspace = true
 futures.workspace = true
 flate2.workspace = true
+fs-err.workspace = true
 http.workspace = true
 is-terminal.workspace = true
 itertools.workspace = true
@@ -64,15 +64,16 @@ tokio.workspace = true
 tokio-tungstenite.workspace = true
 toml.workspace = true
 toml_edit.workspace = true
+tracing = { workspace = true, features = ["release_max_level_off"] }
+walkdir.workspace = true
 wasmbin.workspace = true
 wasmtime.workspace = true
 webbrowser.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, features = ["Win32_System_Console"] }
 
 [dev-dependencies]
 insta.workspace = true
 fs-err.workspace = true
 spacetimedb-testing = { path = "../testing" }
-
-[features]
-standalone = ["spacetimedb-standalone"]
-default = ["standalone"]

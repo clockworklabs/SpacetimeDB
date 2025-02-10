@@ -11,11 +11,11 @@ use tabled::settings::Style;
 
 use crate::config::Config;
 use crate::errors::error_for_status;
-use crate::util::{database_identity, get_auth_header};
+use crate::util::{database_identity, get_auth_header, UNSTABLE_WARNING};
 
 pub fn cli() -> clap::Command {
     clap::Command::new("sql")
-        .about("Runs a SQL query on the database.")
+        .about(format!("Runs a SQL query on the database.\n\n{}", UNSTABLE_WARNING))
         .arg(
             Arg::new("database")
                 .required(true)
@@ -37,16 +37,18 @@ pub fn cli() -> clap::Command {
         )
         .arg(common_args::anonymous())
         .arg(common_args::server().help("The nickname, host name or URL of the server hosting the database"))
+        .arg(common_args::yes())
 }
 
-pub(crate) async fn parse_req(config: Config, args: &ArgMatches) -> Result<Connection, anyhow::Error> {
+pub(crate) async fn parse_req(mut config: Config, args: &ArgMatches) -> Result<Connection, anyhow::Error> {
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
+    let force = args.get_flag("force");
     let database_name_or_identity = args.get_one::<String>("database").unwrap();
     let anon_identity = args.get_flag("anon_identity");
 
     Ok(Connection {
         host: config.get_host_url(server)?,
-        auth_header: get_auth_header(&config, anon_identity)?,
+        auth_header: get_auth_header(&mut config, anon_identity, server, !force).await?,
         database_identity: database_identity(&config, database_name_or_identity, server).await?,
         database: database_name_or_identity.to_string(),
     })
@@ -128,6 +130,7 @@ fn stmt_result_to_table(stmt_result: &StmtResultJson) -> anyhow::Result<tabled::
 }
 
 pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+    eprintln!("{}\n", UNSTABLE_WARNING);
     let interactive = args.get_one::<bool>("interactive").unwrap_or(&false);
     if *interactive {
         let con = parse_req(config, args).await?;

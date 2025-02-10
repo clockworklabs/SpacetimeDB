@@ -70,7 +70,7 @@ impl Identity {
     pub const fn from_byte_array(bytes: [u8; 32]) -> Self {
         // SAFETY: The transmute is an implementation of `u256::from_le_bytes`,
         // but works in a const context.
-        Self::from_u256(u256::from_le(unsafe { mem::transmute(bytes) }))
+        Self::from_u256(u256::from_le(unsafe { mem::transmute::<[u8; 32], u256>(bytes) }))
     }
 
     /// Create an `Identity` from a BIG-ENDIAN byte array.
@@ -83,9 +83,9 @@ impl Identity {
     /// [0xb0, 0xb1, 0xb2, ...]
     /// ```
     pub const fn from_be_byte_array(bytes: [u8; 32]) -> Self {
-        // SAFETY: The transmute is an implementation of `u256::from_le_bytes`,
+        // SAFETY: The transmute is an implementation of `u256::from_be_bytes`,
         // but works in a const context.
-        Self::from_u256(u256::from_be(unsafe { mem::transmute(bytes) }))
+        Self::from_u256(u256::from_be(unsafe { mem::transmute::<[u8; 32], u256>(bytes) }))
     }
 
     /// Converts `__identity__: u256` to `Identity`.

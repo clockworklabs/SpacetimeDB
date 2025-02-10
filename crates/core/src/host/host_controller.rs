@@ -12,12 +12,13 @@ use crate::messages::control_db::{Database, HostType};
 use crate::module_host_context::ModuleCreationContext;
 use crate::replica_context::ReplicaContext;
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
+use crate::subscription::module_subscription_manager::SubscriptionManager;
 use crate::util::spawn_rayon;
 use anyhow::{anyhow, ensure, Context};
 use async_trait::async_trait;
 use durability::{Durability, EmptyHistory};
 use log::{info, trace, warn};
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
 use serde::Serialize;
 use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_durability as durability;
@@ -225,7 +226,7 @@ impl HostController {
     /// database will be marked as initialized.
     ///
     /// See also: [`Self::get_module_host`]
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "trace", skip_all)]
     pub async fn get_or_launch_module_host(&self, database: Database, replica_id: u64) -> anyhow::Result<ModuleHost> {
         let mut rx = self.watch_maybe_launch_module_host(database, replica_id).await?;
         let module = rx.borrow_and_update();
@@ -239,7 +240,7 @@ impl HostController {
     /// gets notified each time the module is updated.
     ///
     /// See also: [`Self::watch_module_host`]
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "trace", skip_all)]
     pub async fn watch_maybe_launch_module_host(
         &self,
         database: Database,
@@ -281,7 +282,7 @@ impl HostController {
     ///
     /// If the computation `F` panics, the host is removed from this controller,
     /// releasing its resources.
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "trace", skip_all)]
     pub async fn using_database<F, T>(&self, database: Database, replica_id: u64, f: F) -> anyhow::Result<T>
     where
         F: FnOnce(&RelationalDB) -> T + Send + 'static,
@@ -308,7 +309,7 @@ impl HostController {
     ///
     /// If the host was running, and the update fails, the previous version of
     /// the host keeps running.
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "trace", skip_all, err)]
     pub async fn update_module_host(
         &self,
         database: Database,
@@ -443,7 +444,7 @@ impl HostController {
 
     /// Release all resources of the [`ModuleHost`] identified by `replica_id`,
     /// and deregister it from the controller.
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "trace", skip_all)]
     pub async fn exit_module_host(&self, replica_id: u64) -> Result<(), anyhow::Error> {
         trace!("exit module host {}", replica_id);
         let lock = self.hosts.lock().remove(&replica_id);
@@ -462,7 +463,7 @@ impl HostController {
     ///
     /// See [`Self::get_or_launch_module_host`] for a variant which launches
     /// the host if it is not running.
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "trace", skip_all)]
     pub async fn get_module_host(&self, replica_id: u64) -> Result<ModuleHost, NoSuchModule> {
         trace!("get module host {}", replica_id);
         let guard = self.acquire_read_lock(replica_id).await;
@@ -477,7 +478,7 @@ impl HostController {
     ///
     /// See [`Self::watch_maybe_launch_module_host`] for a variant which
     /// launches the host if it is not running.
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "trace", skip_all)]
     pub async fn watch_module_host(&self, replica_id: u64) -> Result<watch::Receiver<ModuleHost>, NoSuchModule> {
         trace!("watch module host {}", replica_id);
         let guard = self.acquire_read_lock(replica_id).await;
@@ -532,7 +533,26 @@ async fn make_replica_ctx(
     relational_db: Arc<RelationalDB>,
 ) -> anyhow::Result<ReplicaContext> {
     let logger = tokio::task::block_in_place(move || Arc::new(DatabaseLogger::open_today(path.module_logs())));
-    let subscriptions = ModuleSubscriptions::new(relational_db.clone(), database.owner_identity);
+    let subscriptions = Arc::new(RwLock::new(SubscriptionManager::default()));
+    let downgraded = Arc::downgrade(&subscriptions);
+    let subscriptions = ModuleSubscriptions::new(relational_db.clone(), subscriptions, database.owner_identity);
+
+    // If an error occurs when evaluating a subscription,
+    // we mark each client that was affected,
+    // and we remove those clients from the manager async.
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_secs(10)).await;
+            let Some(subscriptions) = downgraded.upgrade() else {
+                break;
+            };
+            tokio::task::spawn_blocking(move || {
+                subscriptions.write().remove_dropped_clients();
+            })
+            .await
+            .unwrap();
+        }
+    });
 
     Ok(ReplicaContext {
         database,
@@ -600,7 +620,7 @@ async fn launch_module(
     replica_dir: ReplicaDir,
     runtimes: Arc<HostRuntimes>,
 ) -> anyhow::Result<(Program, LaunchedModule)> {
-    let address = database.database_identity;
+    let db_identity = database.database_identity;
     let host_type = database.host_type;
 
     let replica_ctx = make_replica_ctx(replica_dir, database, replica_id, relational_db)
@@ -618,7 +638,7 @@ async fn launch_module(
     )
     .await?;
 
-    trace!("launched database {} with program {}", address, program.hash);
+    trace!("launched database {} with program {}", db_identity, program.hash);
 
     Ok((
         program,
@@ -692,7 +712,7 @@ impl Host {
     /// Note that this does **not** run module initialization routines, but may
     /// create on-disk artifacts if the host / database did not exist.
 
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "debug", skip_all, err)]
     async fn try_init(host_controller: &HostController, database: Database, replica_id: u64) -> anyhow::Result<Self> {
         let HostController {
             data_dir,
@@ -768,14 +788,14 @@ impl Host {
         } = launched;
 
         // Disconnect dangling clients.
-        for (identity, address) in connected_clients {
+        for (identity, connection_id) in connected_clients {
             module_host
-                .call_identity_connected_disconnected(identity, address, false)
+                .call_identity_connected_disconnected(identity, connection_id, false)
                 .await
                 .with_context(|| {
                     format!(
                         "Error calling disconnect for {} {} on {}",
-                        identity, address, replica_ctx.database_identity
+                        identity, connection_id, replica_ctx.database_identity
                     )
                 })?;
         }

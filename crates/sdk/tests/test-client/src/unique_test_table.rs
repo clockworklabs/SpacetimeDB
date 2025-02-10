@@ -1,5 +1,5 @@
 use crate::module_bindings::*;
-use spacetimedb_sdk::{i256, u256, Address, Event, Identity, Table};
+use spacetimedb_sdk::{i256, u256, ConnectionId, Event, Identity, Table};
 use std::sync::Arc;
 use test_counter::TestCounter;
 
@@ -280,13 +280,13 @@ impl_unique_test_table! {
         accessor_method = unique_identity;
     }
 
-    UniqueAddress {
-        Key = Address;
+    UniqueConnectionId {
+        Key = ConnectionId;
         key_field_name = a;
-        insert_reducer = insert_unique_address;
-        insert_reducer_event = InsertUniqueAddress;
-        delete_reducer = delete_unique_address;
-        delete_reducer_event = DeleteUniqueAddress;
-        accessor_method = unique_address;
+        insert_reducer = insert_unique_connection_id;
+        insert_reducer_event = InsertUniqueConnectionId;
+        delete_reducer = delete_unique_connection_id;
+        delete_reducer_event = DeleteUniqueConnectionId;
+        accessor_method = unique_connection_id;
     }
 }

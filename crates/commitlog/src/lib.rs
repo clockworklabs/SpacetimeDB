@@ -24,8 +24,8 @@ pub use crate::{
 pub mod error;
 pub mod payload;
 
-#[cfg(test)]
-mod tests;
+#[cfg(any(test, feature = "test"))]
+pub mod tests;
 
 /// [`Commitlog`] options.
 #[derive(Clone, Copy, Debug)]
@@ -67,8 +67,7 @@ pub struct Options {
     /// Setting it to `true` will update the index when the commitlog is synced,
     /// and `offset_index_interval_bytes` have been written.
     /// This means that the index could contain fewer index entries than
-    //// strictly every `offset_index_interval_bytes`.
-
+    /// strictly every `offset_index_interval_bytes`.
     ///
     /// Default: false
     pub offset_index_require_segment_fsync: bool,

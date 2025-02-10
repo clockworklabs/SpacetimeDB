@@ -24,6 +24,20 @@ macro_rules! declare_tests_with_suffix {
             }
 
             #[test]
+            fn subscribe_and_cancel() {
+                make_test("subscribe_and_cancel").run();
+            }
+
+            #[test]
+            fn subscribe_and_unsubscribe() {
+                make_test("subscribe_and_unsubscribe").run();
+            }
+
+            #[test]
+            fn subscription_error_smoke_test() {
+                make_test("subscription_error_smoke_test").run();
+            }
+            #[test]
             fn delete_primitive() {
                 make_test("delete_primitive").run();
             }
@@ -54,23 +68,33 @@ macro_rules! declare_tests_with_suffix {
             }
 
             #[test]
-            fn insert_address() {
-                make_test("insert_address").run();
+            fn insert_connection_id() {
+                make_test("insert_connection_id").run();
             }
 
             #[test]
-            fn insert_caller_address() {
-                make_test("insert_caller_address").run();
+            fn insert_caller_connection_id() {
+                make_test("insert_caller_connection_id").run();
             }
 
             #[test]
-            fn delete_address() {
-                make_test("delete_address").run();
+            fn delete_connection_id() {
+                make_test("delete_connection_id").run();
             }
 
             #[test]
-            fn update_address() {
-                make_test("delete_address").run();
+            fn update_connection_id() {
+                make_test("delete_connection_id").run();
+            }
+
+            #[test]
+            fn insert_timestamp() {
+                make_test("insert_timestamp").run();
+            }
+
+            #[test]
+            fn insert_call_timestamp() {
+                make_test("insert_call_timestamp").run();
             }
 
             #[test]
@@ -114,8 +138,8 @@ macro_rules! declare_tests_with_suffix {
             }
 
             #[test]
-            fn insert_long_table() {
-                make_test("insert_long_table").run();
+            fn insert_delete_large_table() {
+                make_test("insert_delete_large_table").run();
             }
 
             #[test]
@@ -141,8 +165,8 @@ macro_rules! declare_tests_with_suffix {
             }
 
             #[test]
-            fn reconnect_same_address() {
-                make_test("reconnect_same_address").run();
+            fn reconnect_same_connection_id() {
+                make_test("reconnect_same_connection_id").run();
             }
 
             #[test]

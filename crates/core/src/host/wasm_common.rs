@@ -20,12 +20,6 @@ pub const DESCRIBE_MODULE_DUNDER: &str = "__describe_module__";
 pub const PREINIT_DUNDER: &str = "__preinit__";
 /// initializes the user code in the module. fallible
 pub const SETUP_DUNDER: &str = "__setup__";
-/// the reducer with this name initializes the database
-pub const INIT_DUNDER: &str = "__init__";
-/// The reducer with this name is invoked when a client connects.
-pub const CLIENT_CONNECTED_DUNDER: &str = "__identity_connected__";
-/// The reducer with this name is invoked when a client disconnects.
-pub const CLIENT_DISCONNECTED_DUNDER: &str = "__identity_disconnected__";
 
 #[derive(Debug, Clone)]
 #[allow(unused)]
@@ -117,9 +111,8 @@ impl StaticFuncSig {
 }
 impl<T: AsRef<[WasmType]>> PartialEq<FuncSig<T>> for wasmtime::ExternType {
     fn eq(&self, other: &FuncSig<T>) -> bool {
-        self.func().map_or(false, |f| {
-            f.params().eq(other.params.as_ref()) && f.results().eq(other.results.as_ref())
-        })
+        self.func()
+            .is_some_and(|f| f.params().eq(other.params.as_ref()) && f.results().eq(other.results.as_ref()))
     }
 }
 impl FuncSigLike for wasmtime::ExternType {
@@ -152,10 +145,10 @@ const CALL_REDUCER_SIG: StaticFuncSig = FuncSig::new(
         WasmType::I64, // `sender_1` contains bytes `[16..24]`.
         WasmType::I64, // `sender_1` contains bytes `[24..32]`.
         // ----------------------------------------------------
-        // Caller's `Address` broken into 2 u64s.
+        // Caller's `ConnectionId` broken into 2 u64s.
         // ----------------------------------------------------
-        WasmType::I64, // `address_0` contains bytes `[0..8 ]`.
-        WasmType::I64, // `address_1` contains bytes `[8..16]`.
+        WasmType::I64, // `conn_id_0` contains bytes `[0..8 ]`.
+        WasmType::I64, // `conn_id_1` contains bytes `[8..16]`.
         // ----------------------------------------------------
         WasmType::I64, // Timestamp
         WasmType::I32, // Args source buffer
@@ -351,6 +344,7 @@ pub fn err_to_errno(err: &NodesError) -> Option<NonZeroU16> {
         NodesError::TableNotFound => Some(errno::NO_SUCH_TABLE),
         NodesError::IndexNotFound => Some(errno::NO_SUCH_INDEX),
         NodesError::IndexNotUnique => Some(errno::INDEX_NOT_UNIQUE),
+        NodesError::IndexRowNotFound => Some(errno::NO_SUCH_ROW),
         NodesError::ScheduleError(ScheduleError::DelayTooLong(_)) => Some(errno::SCHEDULE_AT_DELAY_TOO_LONG),
         NodesError::AlreadyExists(_) => Some(errno::UNIQUE_ALREADY_EXISTS),
         NodesError::Internal(internal) => match **internal {
@@ -391,6 +385,8 @@ macro_rules! abi_funcs {
             "spacetime_10.0"::console_timer_start,
             "spacetime_10.0"::console_timer_end,
             "spacetime_10.0"::index_id_from_name,
+            "spacetime_10.0"::datastore_index_scan_range_bsatn,
+            "spacetime_10.0"::datastore_delete_by_index_scan_range_bsatn,
             "spacetime_10.0"::datastore_btree_scan_bsatn,
             "spacetime_10.0"::datastore_delete_by_btree_scan_bsatn,
             "spacetime_10.0"::identity,

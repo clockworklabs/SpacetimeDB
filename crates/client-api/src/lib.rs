@@ -6,13 +6,11 @@ use http::StatusCode;
 
 use spacetimedb::client::ClientActorIndex;
 use spacetimedb::energy::{EnergyBalance, EnergyQuanta};
-use spacetimedb::execution_context::Workload;
 use spacetimedb::host::{HostController, ModuleHost, NoSuchModule, UpdateDatabaseResult};
 use spacetimedb::identity::{AuthCtx, Identity};
 use spacetimedb::json::client_api::StmtResultJson;
 use spacetimedb::messages::control_db::{Database, HostType, Node, Replica};
 use spacetimedb::sql;
-use spacetimedb::sql::execute::translate_col;
 use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, RegisterTldResult, Tld};
 use spacetimedb_lib::ProductTypeElement;
 use spacetimedb_paths::server::ModuleLogsDir;
@@ -82,37 +80,34 @@ impl Host {
                 self.replica_id,
                 move |db| -> axum::response::Result<_, (StatusCode, String)> {
                     tracing::info!(sql = body);
-                    let results =
-                        sql::execute::run(db, &body, auth, Some(&module_host.info().subscriptions)).map_err(|e| {
-                            log::warn!("{}", e);
-                            if let Some(auth_err) = e.get_auth_error() {
-                                (StatusCode::UNAUTHORIZED, auth_err.to_string())
-                            } else {
-                                (StatusCode::BAD_REQUEST, e.to_string())
-                            }
-                        })?;
 
-                    let json = db.with_read_only(Workload::Sql, |tx| {
-                        results
-                            .into_iter()
-                            .map(|result| {
-                                let rows = result.data;
-                                let schema = result
-                                    .head
-                                    .fields
-                                    .iter()
-                                    .map(|x| {
-                                        let ty = x.algebraic_type.clone();
-                                        let name = translate_col(tx, x.field);
-                                        ProductTypeElement::new(ty, name)
-                                    })
-                                    .collect();
-                                StmtResultJson { schema, rows }
-                            })
-                            .collect::<Vec<_>>()
-                    });
+                    // We need a header for query results
+                    let mut header = vec![];
 
-                    Ok(json)
+                    let rows = sql::execute::run(
+                        // Returns an empty result set for mutations
+                        db,
+                        &body,
+                        auth,
+                        Some(&module_host.info().subscriptions),
+                        &mut header,
+                    )
+                    .map_err(|e| {
+                        log::warn!("{}", e);
+                        if let Some(auth_err) = e.get_auth_error() {
+                            (StatusCode::UNAUTHORIZED, auth_err.to_string())
+                        } else {
+                            (StatusCode::BAD_REQUEST, e.to_string())
+                        }
+                    })?;
+
+                    // Turn the header into a `ProductType`
+                    let schema = header
+                        .into_iter()
+                        .map(|(col_name, col_type)| ProductTypeElement::new(col_type, Some(col_name)))
+                        .collect();
+
+                    Ok(vec![StmtResultJson { schema, rows }])
                 },
             )
             .await
@@ -138,8 +133,6 @@ impl Host {
 /// See [`ControlStateDelegate::publish_database`].
 pub struct DatabaseDef {
     /// The [`Identity`] the database shall have.
-    ///
-    /// Addresses are allocated via [`ControlStateDelegate::create_address`].
     pub database_identity: Identity,
     /// The compiled program of the database module.
     pub program_bytes: Vec<u8>,
@@ -201,7 +194,7 @@ pub trait ControlStateReadAccess {
 pub trait ControlStateWriteAccess: Send + Sync {
     /// Publish a database acc. to [`DatabaseDef`].
     ///
-    /// If the database with the given address was successfully published before,
+    /// If the database with the given identity was successfully published before,
     /// it is updated acc. to the module lifecycle conventions. `Some` result is
     /// returned in that case.
     ///

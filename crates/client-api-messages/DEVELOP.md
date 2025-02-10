@@ -7,6 +7,6 @@ In this directory:
 ```sh
 cargo run --example get_ws_schema > ws_schema.json
 spacetime generate --lang <SDK lang> \
-  --out-dir <sdk WebSocket schema bindings dir>
+  --out-dir <sdk WebSocket schema bindings dir> \
   --module-def ws_schema.json
 ```

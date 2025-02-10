@@ -68,7 +68,7 @@ public partial struct PublicTable
     public double DoubleField;
     public string StringField;
     public Identity IdentityField;
-    public Address AddressField;
+    public ConnectionId ConnectionIdField;
     public CustomStruct CustomStructField;
     public CustomClass CustomClassField;
     public CustomEnum CustomEnumField;
@@ -141,7 +141,7 @@ public static partial class Timers
             new SendMessageTimer
             {
                 Text = "bot sending a message",
-                ScheduledAt = ctx.Timestamp.AddSeconds(10),
+                ScheduledAt = ctx.Timestamp + new TimeDuration(10_000_000),
             }
         );
     }

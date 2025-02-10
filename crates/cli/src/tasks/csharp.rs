@@ -69,24 +69,38 @@ pub(crate) fn build_csharp(project_path: &Path, build_debug: bool) -> anyhow::Re
     dotnet!("publish", "-c", config_name, "-v", "quiet").run()?;
 
     // check if file exists
-    let subdir = if std::env::var_os("EXPERIMENTAL_WASM_AOT").map_or(false, |v| v == "1") {
+    let subdir = if std::env::var_os("EXPERIMENTAL_WASM_AOT").is_some_and(|v| v == "1") {
         "publish"
     } else {
         "AppBundle"
     };
-    let mut output_path = project_path.join(format!("bin/{config_name}/net8.0/wasi-wasm/{subdir}/StdbModule.wasm"));
-    if !output_path.exists() {
-        // check for the old .NET 7 path for projects that haven't migrated yet
-        output_path = project_path.join(format!("bin/{config_name}/net7.0/StdbModule.wasm"));
+    // TODO: This code looks for build outputs in both `bin` and `bin~` as output directories. @bfops feels like we shouldn't have to look for `bin~`, since the `~` suffix is just intended to cause Unity to ignore directories, and that shouldn't be relevant here. We do think we've seen `bin~` appear though, and it's not harmful to do the extra checks, so we're merging for now due to imminent code freeze. At some point, it would be good to figure out if we do actually see `bin~` in module directories, and where that's coming from (which could suggest a bug).
+    // check for the old .NET 7 path for projects that haven't migrated yet
+    let bad_output_paths = [
+        project_path.join(format!("bin/{config_name}/net7.0/StdbModule.wasm")),
+        // for some reason there is sometimes a tilde here?
+        project_path.join(format!("bin~/{config_name}/net7.0/StdbModule.wasm")),
+    ];
+    if bad_output_paths.iter().any(|p| p.exists()) {
+        anyhow::bail!(concat!(
+            "Looks like your project is using the deprecated .NET 7.0 WebAssembly bindings.\n",
+            "Please migrate your project to the new .NET 8.0 template and delete the folders: bin, bin~, obj, obj~"
+        ));
+    }
+    let possible_output_paths = [
+        project_path.join(format!("bin/{config_name}/net8.0/wasi-wasm/{subdir}/StdbModule.wasm")),
+        project_path.join(format!("bin~/{config_name}/net8.0/wasi-wasm/{subdir}/StdbModule.wasm")),
+    ];
+    if possible_output_paths.iter().all(|p| p.exists()) {
+        anyhow::bail!(concat!(
+            "For some reason, your project has both a `bin` and a `bin~` folder.\n",
+            "I don't know which to use, so please delete both and rerun this command so that we can see which is up-to-date."
+        ));
+    }
+    for output_path in possible_output_paths {
         if output_path.exists() {
-            anyhow::bail!(concat!(
-                "Looks like your project is using the deprecated .NET 7.0 WebAssembly bindings.\n",
-                "Please migrate your project to the new .NET 8.0 template."
-            ));
-        } else {
-            anyhow::bail!("Built project successfully but couldn't find the output file.");
+            return Ok(output_path);
         }
     }
-
-    Ok(output_path)
+    anyhow::bail!("Built project successfully but couldn't find the output file.");
 }

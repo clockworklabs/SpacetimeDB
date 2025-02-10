@@ -9,8 +9,12 @@ use crate::{AlgebraicType, AlgebraicValue, ProductTypeElement, SpacetimeType, Va
 
 /// The tag used inside the special `Identity` product type.
 pub const IDENTITY_TAG: &str = "__identity__";
-/// The tag used inside the special `Address` product type.
-pub const ADDRESS_TAG: &str = "__address__";
+/// The tag used inside the special `ConnectionId` product type.
+pub const CONNECTION_ID_TAG: &str = "__connection_id__";
+/// The tag used inside the special `Timestamp` product type.
+pub const TIMESTAMP_TAG: &str = "__timestamp_micros_since_unix_epoch__";
+/// The tag used inside the special `TimeDuration` product type.
+pub const TIME_DURATION_TAG: &str = "__time_duration_micros__";
 
 /// A structural product type  of the factors given by `elements`.
 ///
@@ -87,21 +91,44 @@ impl ProductType {
         self.is_newtype(IDENTITY_TAG, |i| i.is_u256())
     }
 
-    /// Returns whether this is the special case of `spacetimedb_lib::Address`.
+    /// Returns whether this is the special case of `spacetimedb_lib::ConnectionId`.
     /// Does not follow `Ref`s.
-    pub fn is_address(&self) -> bool {
-        self.is_newtype(ADDRESS_TAG, |i| i.is_u128())
+    pub fn is_connection_id(&self) -> bool {
+        self.is_newtype(CONNECTION_ID_TAG, |i| i.is_u128())
     }
 
-    /// Returns whether this is a special known `tag`, currently `Address` or `Identity`.
+    fn is_i64_newtype(&self, expected_tag: &str) -> bool {
+        match &*self.elements {
+            [ProductTypeElement {
+                name: Some(name),
+                algebraic_type: AlgebraicType::I64,
+            }] => &**name == expected_tag,
+            _ => false,
+        }
+    }
+
+    /// Returns whether this is the special case of `spacetimedb_lib::Timestamp`.
+    /// Does not follow `Ref`s.
+    pub fn is_timestamp(&self) -> bool {
+        self.is_i64_newtype(TIMESTAMP_TAG)
+    }
+
+    /// Returns whether this is the special case of `spacetimedb_lib::TimeDuration`.
+    /// Does not follow `Ref`s.
+    pub fn is_time_duration(&self) -> bool {
+        self.is_i64_newtype(TIME_DURATION_TAG)
+    }
+
+    /// Returns whether this is a special known `tag`,
+    /// currently `Address`, `Identity`, `Timestamp` or `TimeDuration`.
     pub fn is_special_tag(tag_name: &str) -> bool {
-        tag_name == IDENTITY_TAG || tag_name == ADDRESS_TAG
+        [IDENTITY_TAG, CONNECTION_ID_TAG, TIMESTAMP_TAG, TIME_DURATION_TAG].contains(&tag_name)
     }
 
-    /// Returns whether this is a special known type, currently `Address` or `Identity`.
+    /// Returns whether this is a special known type, currently `ConnectionId` or `Identity`.
     /// Does not follow `Ref`s.
     pub fn is_special(&self) -> bool {
-        self.is_identity() || self.is_address()
+        self.is_identity() || self.is_connection_id() || self.is_timestamp() || self.is_time_duration()
     }
 
     /// Returns whether this is a unit type, that is, has no elements.

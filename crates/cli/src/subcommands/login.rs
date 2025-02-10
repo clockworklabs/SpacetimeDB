@@ -5,6 +5,8 @@ use reqwest::Url;
 use serde::Deserialize;
 use webbrowser;
 
+pub const DEFAULT_AUTH_HOST: &str = "https://spacetimedb.com";
+
 pub fn cli() -> Command {
     Command::new("login")
         .args_conflicts_with_subcommands(true)
@@ -13,7 +15,7 @@ pub fn cli() -> Command {
         .arg(
             Arg::new("auth-host")
                 .long("auth-host")
-                .default_value("https://spacetimedb.com")
+                .default_value(DEFAULT_AUTH_HOST)
                 .group("login-method")
                 .help("Fetch login token from a different host"),
         )
@@ -29,7 +31,7 @@ pub fn cli() -> Command {
                 .group("login-method")
                 .help("Bypass the login flow and use a login token directly"),
         )
-        .about("Log the CLI in to SpacetimeDB")
+        .about("Manage your login to the SpacetimeDB CLI")
 }
 
 fn get_subcommands() -> Vec<Command> {
@@ -79,13 +81,17 @@ async fn exec_subcommand(config: Config, cmd: &str, args: &ArgMatches) -> Result
 async fn exec_show(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let include_token = args.get_flag("token");
 
-    let identity = decode_identity(&config)?;
+    let token = if let Some(token) = config.spacetimedb_token() {
+        token
+    } else {
+        println!("You are not logged in. Run `spacetime login` to log in.");
+        return Ok(());
+    };
+
+    let identity = decode_identity(token)?;
     println!("You are logged in as {}", identity);
 
     if include_token {
-        // We can `unwrap` because `decode_identity` fetches this too.
-        // TODO: maybe decode_identity should take token as a param.
-        let token = config.spacetimedb_token().unwrap();
         println!("Your auth token (don't share this!) is {}", token);
     }
 
@@ -100,16 +106,24 @@ async fn spacetimedb_token_cached(config: &mut Config, host: &Url, direct_login:
         println!("If you want to log out, use spacetime logout.");
         Ok(token.clone())
     } else {
-        let token = if direct_login {
-            spacetimedb_direct_login(host).await?
-        } else {
-            let session_token = web_login_cached(config, host).await?;
-            spacetimedb_login(host, &session_token).await?
-        };
-        config.set_spacetimedb_token(token.clone());
-        config.save();
-        Ok(token)
+        spacetimedb_login_force(config, host, direct_login).await
     }
+}
+
+pub async fn spacetimedb_login_force(config: &mut Config, host: &Url, direct_login: bool) -> anyhow::Result<String> {
+    let token = if direct_login {
+        let token = spacetimedb_direct_login(host).await?;
+        println!("We have logged in directly to your target server.");
+        println!("WARNING: This login will NOT work for any other servers.");
+        token
+    } else {
+        let session_token = web_login_cached(config, host).await?;
+        spacetimedb_login(host, &session_token).await?
+    };
+    config.set_spacetimedb_token(token.clone());
+    config.save();
+
+    Ok(token)
 }
 
 async fn web_login_cached(config: &mut Config, host: &Url) -> anyhow::Result<String> {

@@ -303,7 +303,7 @@ impl WasmInstanceEnv {
     ///
     /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
     /// - `NO_SUCH_TABLE`, when `name` is not the name of a table.
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "trace", skip_all)]
     pub fn table_id_from_name(
         caller: Caller<'_, Self>,
         name: WasmPtr<u8>,
@@ -338,7 +338,7 @@ impl WasmInstanceEnv {
     ///
     /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
     /// - `NO_SUCH_INDEX`, when `name` is not the name of an index.
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "trace", skip_all)]
     pub fn index_id_from_name(
         caller: Caller<'_, Self>,
         name: WasmPtr<u8>,
@@ -368,7 +368,7 @@ impl WasmInstanceEnv {
     ///
     /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
     /// - `NO_SUCH_TABLE`, when `table_id` is not a known ID of a table.
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "trace", skip_all)]
     pub fn datastore_table_row_count(caller: Caller<'_, Self>, table_id: u32, out: WasmPtr<u64>) -> RtResult<u32> {
         Self::cvt_ret::<u64>(caller, AbiCall::DatastoreTableRowCount, out, |caller| {
             let (_, env) = Self::mem_env(caller);
@@ -391,7 +391,7 @@ impl WasmInstanceEnv {
     ///
     /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
     /// - `NO_SUCH_TABLE`, when `table_id` is not a known ID of a table.
-    // #[tracing::instrument(skip_all)]
+    // #[tracing::instrument(level = "trace", skip_all)]
     pub fn datastore_table_scan_bsatn(
         caller: Caller<'_, Self>,
         table_id: u32,
@@ -414,6 +414,7 @@ impl WasmInstanceEnv {
     /// - `prefix = prefix_ptr[..prefix_len]`,
     /// - `rstart = rstart_ptr[..rstart_len]`,
     /// - `rend = rend_ptr[..rend_len]`,
+    ///
     /// in WASM memory.
     ///
     /// The index itself has a schema/type.
@@ -464,14 +465,14 @@ impl WasmInstanceEnv {
     ///
     /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
     /// - `NO_SUCH_INDEX`, when `index_id` is not a known ID of an index.
-    /// - `WRONG_INDEX_ALGO` if the index is not a btree index.
+    /// - `WRONG_INDEX_ALGO` if the index is not a range-scan compatible index.
     /// - `BSATN_DECODE_ERROR`, when `prefix` cannot be decoded to
     ///    a `prefix_elems` number of `AlgebraicValue`
     ///    typed at the initial `prefix_elems` `AlgebraicType`s of the index's key type.
     ///    Or when `rstart` or `rend` cannot be decoded to an `Bound<AlgebraicValue>`
     ///    where the inner `AlgebraicValue`s are
     ///    typed at the `prefix_elems + 1` `AlgebraicType` of the index's key type.
-    pub fn datastore_btree_scan_bsatn(
+    pub fn datastore_index_scan_range_bsatn(
         caller: Caller<'_, Self>,
         index_id: u32,
         prefix_ptr: WasmPtr<u8>,
@@ -483,7 +484,7 @@ impl WasmInstanceEnv {
         rend_len: u32,
         out: WasmPtr<RowIterIdx>,
     ) -> RtResult<u32> {
-        Self::cvt_ret(caller, AbiCall::DatastoreBtreeScanBsatn, out, |caller| {
+        Self::cvt_ret(caller, AbiCall::DatastoreIndexScanRangeBsatn, out, |caller| {
             let prefix_elems = Self::convert_u32_to_col_id(prefix_elems)?;
 
             let (mem, env) = Self::mem_env(caller);
@@ -497,7 +498,7 @@ impl WasmInstanceEnv {
             let rend = mem.deref_slice(rend_ptr, rend_len)?;
 
             // Find the relevant rows.
-            let chunks = env.instance_env.datastore_btree_scan_bsatn_chunks(
+            let chunks = env.instance_env.datastore_index_scan_range_bsatn_chunks(
                 &mut env.chunk_pool,
                 index_id.into(),
                 prefix,
@@ -509,6 +510,34 @@ impl WasmInstanceEnv {
             // Insert the encoded + concatenated rows into a new buffer and return its id.
             Ok(env.iters.insert(chunks.into_iter()))
         })
+    }
+
+    /// Deprecated name for [`Self::datastore_index_scan_range_bsatn`].
+    #[deprecated = "use `datastore_index_scan_range_bsatn` instead"]
+    pub fn datastore_btree_scan_bsatn(
+        caller: Caller<'_, Self>,
+        index_id: u32,
+        prefix_ptr: WasmPtr<u8>,
+        prefix_len: u32,
+        prefix_elems: u32,
+        rstart_ptr: WasmPtr<u8>, // Bound<AlgebraicValue>
+        rstart_len: u32,
+        rend_ptr: WasmPtr<u8>, // Bound<AlgebraicValue>
+        rend_len: u32,
+        out: WasmPtr<RowIterIdx>,
+    ) -> RtResult<u32> {
+        Self::datastore_index_scan_range_bsatn(
+            caller,
+            index_id,
+            prefix_ptr,
+            prefix_len,
+            prefix_elems,
+            rstart_ptr,
+            rstart_len,
+            rend_ptr,
+            rend_len,
+            out,
+        )
     }
 
     /// Reads rows from the given iterator registered under `iter`.
@@ -541,7 +570,7 @@ impl WasmInstanceEnv {
     /// - `BUFFER_TOO_SMALL`, when there are rows left but they cannot fit in `buffer`.
     ///   When this occurs, `buffer_len` is set to the size of the next item in the iterator.
     ///   To make progress, the caller should reallocate the buffer to at least that size and try again.
-    // #[tracing::instrument(skip_all)]
+    // #[tracing::instrument(level = "trace", skip_all)]
     pub fn row_iter_bsatn_advance(
         caller: Caller<'_, Self>,
         iter: u32,
@@ -566,8 +595,7 @@ impl WasmInstanceEnv {
             let mut written = 0;
             // Fill the buffer as much as possible.
             while let Some(chunk) = iter.as_slice().first() {
-                // TODO(Centril): refactor using `split_at_mut_checked`.
-                let Some(buf_chunk) = buffer.get_mut(..chunk.len()) else {
+                let Some((buf_chunk, rest)) = buffer.split_at_mut_checked(chunk.len()) else {
                     // Cannot fit chunk into the buffer,
                     // either because we already filled it too much,
                     // or because it is too small.
@@ -575,7 +603,7 @@ impl WasmInstanceEnv {
                 };
                 buf_chunk.copy_from_slice(chunk);
                 written += chunk.len();
-                buffer = &mut buffer[chunk.len()..];
+                buffer = rest;
 
                 // Advance the iterator, as we used a chunk.
                 // SAFETY: We peeked one `chunk`, so there must be one at least.
@@ -612,7 +640,7 @@ impl WasmInstanceEnv {
     /// Returns an error:
     ///
     /// - `NO_SUCH_ITER`, when `iter` is not a valid iterator.
-    // #[tracing::instrument(skip_all)]
+    // #[tracing::instrument(level = "trace", skip_all)]
     pub fn row_iter_bsatn_close(caller: Caller<'_, Self>, iter: u32) -> RtResult<u32> {
         let row_iter_idx = RowIterIdx(iter);
         Self::cvt_custom(caller, AbiCall::RowIterBsatnClose, |caller| {
@@ -660,7 +688,7 @@ impl WasmInstanceEnv {
     ///   typed at the `ProductType` the table's schema specifies.
     /// - `UNIQUE_ALREADY_EXISTS`, when inserting `row` would violate a unique constraint.
     /// - `SCHEDULE_AT_DELAY_TOO_LONG`, when the delay specified in the row was too long.
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "trace", skip_all)]
     pub fn datastore_insert_bsatn(
         caller: Caller<'_, Self>,
         table_id: u32,
@@ -723,7 +751,7 @@ impl WasmInstanceEnv {
     /// - `NO_SUCH_ROW`, when the row was not found in the unique index.
     /// - `UNIQUE_ALREADY_EXISTS`, when inserting `row` would violate a unique constraint.
     /// - `SCHEDULE_AT_DELAY_TOO_LONG`, when the delay specified in the row was too long.
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "trace", skip_all)]
     pub fn datastore_update_bsatn(
         caller: Caller<'_, Self>,
         table_id: u32,
@@ -751,12 +779,13 @@ impl WasmInstanceEnv {
     /// - `prefix = prefix_ptr[..prefix_len]`,
     /// - `rstart = rstart_ptr[..rstart_len]`,
     /// - `rend = rend_ptr[..rend_len]`,
+    ///
     /// in WASM memory.
     ///
     /// This syscall will delete all the rows found by
-    /// [`datastore_btree_scan_bsatn`] with the same arguments passed,
+    /// [`datastore_index_scan_range_bsatn`] with the same arguments passed,
     /// including `prefix_elems`.
-    /// See `datastore_btree_scan_bsatn` for details.
+    /// See `datastore_index_scan_range_bsatn` for details.
     ///
     /// The number of rows deleted is written to the WASM pointer `out`.
     ///
@@ -775,14 +804,14 @@ impl WasmInstanceEnv {
     ///
     /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
     /// - `NO_SUCH_INDEX`, when `index_id` is not a known ID of an index.
-    /// - `WRONG_INDEX_ALGO` if the index is not a btree index.
+    /// - `WRONG_INDEX_ALGO` if the index is not a range-compatible index.
     /// - `BSATN_DECODE_ERROR`, when `prefix` cannot be decoded to
     ///    a `prefix_elems` number of `AlgebraicValue`
     ///    typed at the initial `prefix_elems` `AlgebraicType`s of the index's key type.
     ///    Or when `rstart` or `rend` cannot be decoded to an `Bound<AlgebraicValue>`
     ///    where the inner `AlgebraicValue`s are
     ///    typed at the `prefix_elems + 1` `AlgebraicType` of the index's key type.
-    pub fn datastore_delete_by_btree_scan_bsatn(
+    pub fn datastore_delete_by_index_scan_range_bsatn(
         caller: Caller<'_, Self>,
         index_id: u32,
         prefix_ptr: WasmPtr<u8>,
@@ -794,7 +823,7 @@ impl WasmInstanceEnv {
         rend_len: u32,
         out: WasmPtr<u32>,
     ) -> RtResult<u32> {
-        Self::cvt_ret(caller, AbiCall::DatastoreDeleteByBtreeScanBsatn, out, |caller| {
+        Self::cvt_ret(caller, AbiCall::DatastoreDeleteByIndexScanRangeBsatn, out, |caller| {
             let prefix_elems = Self::convert_u32_to_col_id(prefix_elems)?;
 
             let (mem, env) = Self::mem_env(caller);
@@ -808,7 +837,7 @@ impl WasmInstanceEnv {
             let rend = mem.deref_slice(rend_ptr, rend_len)?;
 
             // Delete the relevant rows.
-            Ok(env.instance_env.datastore_delete_by_btree_scan_bsatn(
+            Ok(env.instance_env.datastore_delete_by_index_scan_range_bsatn(
                 index_id.into(),
                 prefix,
                 prefix_elems,
@@ -816,6 +845,34 @@ impl WasmInstanceEnv {
                 rend,
             )?)
         })
+    }
+
+    /// Deprecated name for [`Self::datastore_delete_by_index_scan_range_bsatn`].
+    #[deprecated = "use `datastore_delete_by_index_scan_range_bsatn` instead"]
+    pub fn datastore_delete_by_btree_scan_bsatn(
+        caller: Caller<'_, Self>,
+        index_id: u32,
+        prefix_ptr: WasmPtr<u8>,
+        prefix_len: u32,
+        prefix_elems: u32,
+        rstart_ptr: WasmPtr<u8>, // Bound<AlgebraicValue>
+        rstart_len: u32,
+        rend_ptr: WasmPtr<u8>, // Bound<AlgebraicValue>
+        rend_len: u32,
+        out: WasmPtr<u32>,
+    ) -> RtResult<u32> {
+        Self::datastore_delete_by_index_scan_range_bsatn(
+            caller,
+            index_id,
+            prefix_ptr,
+            prefix_len,
+            prefix_elems,
+            rstart_ptr,
+            rstart_len,
+            rend_ptr,
+            rend_len,
+            out,
+        )
     }
 
     /// Deletes those rows, in the table identified by `table_id`,
@@ -844,7 +901,7 @@ impl WasmInstanceEnv {
     /// - `NO_SUCH_TABLE`, when `table_id` is not a known ID of a table.
     /// - `BSATN_DECODE_ERROR`, when `rel` cannot be decoded to `Vec<ProductValue>`
     ///   where each `ProductValue` is typed at the `ProductType` the table's schema specifies.
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "trace", skip_all)]
     pub fn datastore_delete_all_by_eq_bsatn(
         caller: Caller<'_, Self>,
         table_id: u32,
@@ -1052,7 +1109,7 @@ impl WasmInstanceEnv {
     /// - `message` is not NULL and `message_ptr[..message_len]` is not in bounds of WASM memory.
     ///
     /// [target]: https://docs.rs/log/latest/log/struct.Record.html#method.target
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "trace", skip_all)]
     pub fn console_log(
         caller: Caller<'_, Self>,
         level: u32,

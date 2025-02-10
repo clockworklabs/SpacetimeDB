@@ -1,11 +1,14 @@
 use crate::common_args;
 use crate::config::Config;
-use crate::util::{add_auth_header_opt, database_identity, get_auth_header};
+use crate::util::{add_auth_header_opt, database_identity, get_auth_header, UNSTABLE_WARNING};
 use clap::{Arg, ArgMatches};
 
 pub fn cli() -> clap::Command {
     clap::Command::new("describe")
-        .about("Describe the structure of a database or entities within it")
+        .about(format!(
+            "Describe the structure of a database or entities within it.\n\n{}",
+            UNSTABLE_WARNING
+        ))
         .arg(
             Arg::new("database")
                 .required(true)
@@ -23,14 +26,18 @@ pub fn cli() -> clap::Command {
         )
         .arg(common_args::anonymous())
         .arg(common_args::server().help("The nickname, host name or URL of the server hosting the database"))
+        .arg(common_args::yes())
         .after_help("Run `spacetime help describe` for more detailed information.\n")
 }
 
-pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+    eprintln!("{}\n", UNSTABLE_WARNING);
+
     let database = args.get_one::<String>("database").unwrap();
     let entity_name = args.get_one::<String>("entity_name");
     let entity_type = args.get_one::<String>("entity_type");
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
+    let force = args.get_flag("force");
 
     let anon_identity = args.get_flag("anon_identity");
 
@@ -46,7 +53,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
             entity_name
         ),
     });
-    let auth_header = get_auth_header(&config, anon_identity)?;
+    let auth_header = get_auth_header(&mut config, anon_identity, server, !force).await?;
     let builder = add_auth_header_opt(builder, &auth_header);
 
     let descr = builder.send().await?.error_for_status()?.text().await?;

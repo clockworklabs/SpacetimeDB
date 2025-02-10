@@ -2,7 +2,8 @@ use std::collections::HashMap;
 
 use anyhow::Result;
 use spacetimedb_execution::{Datastore, DeltaStore};
-use spacetimedb_query::delta::DeltaPlanEvaluator;
+use spacetimedb_lib::metrics::ExecutionMetrics;
+use spacetimedb_subscription::SubscriptionPlan;
 use spacetimedb_vm::relation::RelValue;
 
 use crate::host::module_host::UpdatesRelValue;
@@ -15,44 +16,44 @@ use crate::host::module_host::UpdatesRelValue;
 /// Hence this may be removed at any time after 1.0.
 pub fn eval_delta<'a, Tx: Datastore + DeltaStore>(
     tx: &'a Tx,
-    delta: &'a DeltaPlanEvaluator,
+    metrics: &mut ExecutionMetrics,
+    plan: &SubscriptionPlan,
 ) -> Result<UpdatesRelValue<'a>> {
-    if !delta.is_join() {
-        return Ok(UpdatesRelValue {
-            inserts: delta.eval_inserts(tx)?.map(RelValue::from).collect(),
-            deletes: delta.eval_deletes(tx)?.map(RelValue::from).collect(),
-        });
-    }
-    if delta.has_inserts() && !delta.has_deletes() {
-        return Ok(UpdatesRelValue {
-            inserts: delta.eval_inserts(tx)?.map(RelValue::from).collect(),
-            deletes: vec![],
-        });
-    }
-    if delta.has_deletes() && !delta.has_inserts() {
-        return Ok(UpdatesRelValue {
-            deletes: delta.eval_deletes(tx)?.map(RelValue::from).collect(),
-            inserts: vec![],
-        });
-    }
+    // Note, we can't determine apriori what capacity to allocate
     let mut inserts = HashMap::new();
+    let mut deletes = vec![];
 
-    for row in delta.eval_inserts(tx)?.map(RelValue::from) {
-        inserts.entry(row).and_modify(|n| *n += 1).or_insert(1);
-    }
+    plan.for_each_insert(tx, metrics, &mut |row| {
+        inserts
+            .entry(RelValue::from(row))
+            // Row already inserted?
+            // Increment its multiplicity.
+            .and_modify(|n| *n += 1)
+            .or_insert(1);
+        Ok(())
+    })?;
 
-    let deletes = delta
-        .eval_deletes(tx)?
-        .map(RelValue::from)
-        .filter(|row| match inserts.get_mut(row) {
-            None => true,
-            Some(1) => inserts.remove(row).is_none(),
+    plan.for_each_delete(tx, metrics, &mut |row| {
+        let row = RelValue::from(row);
+        match inserts.get_mut(&row) {
+            // This row was not inserted.
+            // Add it to the delete set.
+            None => {
+                deletes.push(row);
+            }
+            // This row was inserted.
+            // Decrement the multiplicity.
+            Some(1) => {
+                inserts.remove(&row);
+            }
+            // This row was inserted.
+            // Decrement the multiplicity.
             Some(n) => {
                 *n -= 1;
-                false
             }
-        })
-        .collect();
+        }
+        Ok(())
+    })?;
 
     Ok(UpdatesRelValue {
         inserts: inserts.into_keys().collect(),

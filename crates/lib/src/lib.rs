@@ -6,14 +6,16 @@ use spacetimedb_sats::{impl_serialize, WithTypespace};
 use std::any::TypeId;
 use std::collections::{btree_map, BTreeMap};
 
-pub mod address;
+pub mod connection_id;
 pub mod db;
 pub mod error;
 pub mod identity;
+pub mod metrics;
 pub mod operator;
 pub mod query;
 pub mod relation;
 pub mod scheduler;
+pub mod st_var;
 pub mod version;
 
 pub mod type_def {
@@ -23,10 +25,12 @@ pub mod type_value {
     pub use spacetimedb_sats::{AlgebraicValue, ProductValue};
 }
 
-pub use address::Address;
+pub use connection_id::ConnectionId;
 pub use identity::Identity;
 pub use scheduler::ScheduleAt;
 pub use spacetimedb_sats::hash::{self, hash_bytes, Hash};
+pub use spacetimedb_sats::time_duration::TimeDuration;
+pub use spacetimedb_sats::timestamp::Timestamp;
 pub use spacetimedb_sats::SpacetimeType;
 pub use spacetimedb_sats::__make_register_reftype;
 pub use spacetimedb_sats::{self as sats, bsatn, buffer, de, ser};
@@ -374,18 +378,4 @@ pub fn resolved_type_via_v9<T: SpacetimeType>() -> AlgebraicType {
     WithTypespace::new(&module.typespace, &ty)
         .resolve_refs()
         .expect("recursive types not supported")
-}
-
-/// Check that an iterator is sorted.
-///
-/// TODO: remove this when [`Iterator`::is_sorted`](https://doc.rust-lang.org/std/iter/trait.Iterator.html#method.is_sorted) is stabilized.
-pub fn is_sorted<T: Ord>(mut it: impl Iterator<Item = T>) -> bool {
-    let Some(mut curr) = it.next() else {
-        return true;
-    };
-    it.all(|next| {
-        let ordered = curr <= next;
-        curr = next;
-        ordered
-    })
 }
