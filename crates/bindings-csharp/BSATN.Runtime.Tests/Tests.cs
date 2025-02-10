@@ -166,5 +166,14 @@ public static class BSATNRuntimeTests
         var laterStamp = stamp + newInterval;
         Assert.Equal(laterStamp.MicrosecondsSinceUnixEpoch, us + newIntervalUs);
         Assert.Equal(laterStamp.TimeDurationSince(stamp), newInterval);
+
+#pragma warning disable CS1718
+        Assert.True(stamp == stamp);
+#pragma warning enable CS1718
+        Assert.False(stamp == laterStamp);
+        Assert.True(stamp < laterStamp);
+        Assert.False(laterStamp < stamp);
+        Assert.Equal(-1, stamp.CompareTo(laterStamp));
+        Assert.Equal(+1, laterStamp.CompareTo(stamp));
     }
 }
