@@ -689,20 +689,41 @@ pub(super) fn record_tx_metrics(
 
     if let (Some(tx_data), Some(committed_state)) = (tx_data, committed_state) {
         for (table_id, table_name, inserts) in tx_data.inserts_with_table_name() {
-            update_table_gauges(db, table_id, table_name, committed_state.get_table(*table_id));
+            let table = committed_state.get_table(*table_id);
+            let num_indexes = table.map(|t| t.indexes.len()).unwrap_or(0) as u64;
+
+            update_table_gauges(db, table_id, table_name, table);
             // Increment rows inserted counter
             DB_METRICS
                 .rdb_num_rows_inserted
                 .with_label_values(workload, db, reducer, &table_id.0, table_name)
                 .inc_by(inserts.len() as u64);
+            // We don't have sparse indexes, so we can just multiply by the number of indexes.
+            if num_indexes > 0 {
+                // Increment index rows inserted counter
+                DB_METRICS
+                    .rdb_num_index_entries_inserted
+                    .with_label_values(workload, db, reducer, &table_id.0, table_name)
+                    .inc_by((inserts.len() as u64) * num_indexes);
+            }
         }
         for (table_id, table_name, deletes) in tx_data.deletes_with_table_name() {
-            update_table_gauges(db, table_id, table_name, committed_state.get_table(*table_id));
+            let table = committed_state.get_table(*table_id);
+            let num_indexes = table.map(|t| t.indexes.len()).unwrap_or(0) as u64;
+            update_table_gauges(db, table_id, table_name, table);
             // Increment rows deleted counter
             DB_METRICS
                 .rdb_num_rows_deleted
                 .with_label_values(workload, db, reducer, &table_id.0, table_name)
                 .inc_by(deletes.len() as u64);
+            // We don't have sparse indexes, so we can just multiply by the number of indexes.
+            if num_indexes > 0 {
+                // Increment index rows inserted counter
+                DB_METRICS
+                    .rdb_num_index_entries_deleted
+                    .with_label_values(workload, db, reducer, &table_id.0, table_name)
+                    .inc_by((deletes.len() as u64) * num_indexes);
+            }
         }
     }
 
