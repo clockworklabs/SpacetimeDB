@@ -898,8 +898,8 @@ but you must call one of them, or else the connection will never progress.
     }
 
     /// Set the name or identity of the remote module.
-    pub fn with_module_name(mut self, name_or_identity: impl ToString) -> Self {
-        self.module_name = Some(name_or_identity.to_string());
+    pub fn with_module_name(mut self, name_or_identity: impl Into<String>) -> Self {
+        self.module_name = Some(name_or_identity.into());
         self
     }
 
@@ -913,8 +913,8 @@ but you must call one of them, or else the connection will never progress.
     /// If the passed token is invalid or rejected by the host,
     /// the connection will fail asynchrnonously.
     // FIXME: currently this causes `disconnect` to be called rather than `on_connect_error`.
-    pub fn with_token(mut self, token: Option<impl ToString>) -> Self {
-        self.token = token.map(|token| token.to_string());
+    pub fn with_token(mut self, token: Option<impl Into<String>>) -> Self {
+        self.token = token.map(|token| token.into());
         self
     }
 
