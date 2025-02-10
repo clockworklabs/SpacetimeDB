@@ -466,7 +466,7 @@ impl Lang for Csharp<'_> {
                     writeln!(output, "\"<none>\" or \"\" => new Reducer.StdbNone(),");
                     writeln!(
                         output,
-                        r#"var reducer => throw new ArgumentOutOfRangeException("Reducer", $"Unknown reducer {{reducer}}")"#
+                        r#"var reducer => new Reducer.StdbNone(),"#
                     );
                 }
                 writeln!(output, "}};");
