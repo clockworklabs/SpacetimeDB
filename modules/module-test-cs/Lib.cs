@@ -154,7 +154,7 @@ public partial struct RepeatingTestArg
 public partial struct HasSpecialStuff
 {
     public Identity identity;
-    public ConnectionId connectionId;
+    public ConnectionId connection_id;
 }
 
 // Two tables using the same row type.
