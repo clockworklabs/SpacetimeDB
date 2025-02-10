@@ -280,7 +280,9 @@ public readonly record struct Identity
 /// This type has less precision than DateTimeOffset (units of microseconds rather than units of 100ns).
 /// </summary>
 [StructLayout(LayoutKind.Sequential)] // we should be able to use it in FFI
-public record struct Timestamp(long MicrosecondsSinceUnixEpoch) : IStructuralReadWrite, IComparable<Timestamp>
+public record struct Timestamp(long MicrosecondsSinceUnixEpoch)
+    : IStructuralReadWrite,
+        IComparable<Timestamp>
 {
     public static implicit operator DateTimeOffset(Timestamp t) =>
         DateTimeOffset.UnixEpoch.AddTicks(t.MicrosecondsSinceUnixEpoch * Util.TicksPerMicrosecond);
