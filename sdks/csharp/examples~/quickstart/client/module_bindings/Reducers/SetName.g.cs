@@ -12,7 +12,7 @@ namespace SpacetimeDB.Types
 {
     public sealed partial class RemoteReducers : RemoteBase
     {
-        public delegate void SetNameHandler(EventContext ctx, string name);
+        public delegate void SetNameHandler(ReducerEventContext ctx, string name);
         public event SetNameHandler? OnSetName;
 
         public void SetName(string name)
@@ -20,7 +20,7 @@ namespace SpacetimeDB.Types
             conn.InternalCallReducer(new Reducer.SetName(name), this.SetCallReducerFlags.SetNameFlags);
         }
 
-        public bool InvokeSetName(EventContext ctx, Reducer.SetName args)
+        public bool InvokeSetName(ReducerEventContext ctx, Reducer.SetName args)
         {
             if (OnSetName == null) return false;
             OnSetName(

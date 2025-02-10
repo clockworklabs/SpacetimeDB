@@ -4,13 +4,13 @@ using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
-using System.Net.WebSockets;
 using System.Threading;
 using System.Threading.Tasks;
 using SpacetimeDB.BSATN;
 using SpacetimeDB.Internal;
 using SpacetimeDB.ClientApi;
 using Thread = System.Threading.Thread;
+using System.Diagnostics;
 
 namespace SpacetimeDB
 {
@@ -174,7 +174,7 @@ namespace SpacetimeDB
         [Obsolete]
         public event Action<ReducerEvent<Reducer>>? onUnhandledReducerError;
 
-        public readonly Address Address = Address.Random();
+        public readonly ConnectionId ConnectionId = ConnectionId.Random();
         public Identity? Identity { get; private set; }
 
         internal WebSocket webSocket;
@@ -182,7 +182,10 @@ namespace SpacetimeDB
         public abstract Tables Db { get; }
 
         protected abstract Reducer ToReducer(TransactionUpdate update);
-        protected abstract IEventContext ToEventContext(Event<Reducer> reducerEvent);
+        protected abstract IEventContext ToEventContext(Event<Reducer> Event);
+        protected abstract IReducerEventContext ToReducerEventContext(ReducerEvent<Reducer> reducerEvent);
+        protected abstract ISubscriptionEventContext MakeSubscriptionEventContext();
+        protected abstract IErrorContext ToErrorContext(Exception errorContext);
 
         private readonly Dictionary<Guid, TaskCompletionSource<OneOffQueryResponse>> waitingOneOffQueries = new();
 
@@ -232,7 +235,7 @@ namespace SpacetimeDB
         struct PreProcessedMessage
         {
             public ProcessedMessage processed;
-            public Dictionary<Type, HashSet<byte[]>>? subscriptionInserts;
+            public Dictionary<IRemoteTableHandle, HashSet<byte[]>>? subscriptionInserts;
         }
 
         private readonly BlockingCollection<UnprocessedMessage> _messageQueue =
@@ -366,20 +369,20 @@ namespace SpacetimeDB
                 }
             }
 
-            (List<DbOp>, Dictionary<System.Type, HashSet<byte[]>>) PreProcessLegacySubscription(InitialSubscription initSub)
+            (List<DbOp>, Dictionary<IRemoteTableHandle, HashSet<byte[]>>) PreProcessLegacySubscription(InitialSubscription initSub)
             {
                 var dbOps = new List<DbOp>();
                 // This is all of the inserts
                 int cap = initSub.DatabaseUpdate.Tables.Sum(a => (int)a.NumRows);
                 // FIXME: shouldn't this be `new(initSub.DatabaseUpdate.Tables.Length)` ?
-                Dictionary<System.Type, HashSet<byte[]>> subscriptionInserts = new(capacity: cap);
+                Dictionary<IRemoteTableHandle, HashSet<byte[]>> subscriptionInserts = new(capacity: cap);
 
-                HashSet<byte[]> GetInsertHashSet(System.Type tableType, int tableSize)
+                HashSet<byte[]> GetInsertHashSet(IRemoteTableHandle table, int tableSize)
                 {
-                    if (!subscriptionInserts.TryGetValue(tableType, out var hashSet))
+                    if (!subscriptionInserts.TryGetValue(table, out var hashSet))
                     {
                         hashSet = new HashSet<byte[]>(capacity: tableSize, comparer: ByteArrayComparer.Instance);
-                        subscriptionInserts[tableType] = hashSet;
+                        subscriptionInserts[table] = hashSet;
                     }
                     return hashSet;
                 }
@@ -387,7 +390,7 @@ namespace SpacetimeDB
                 // First apply all of the state
                 foreach (var (table, update) in GetTables(initSub.DatabaseUpdate))
                 {
-                    var hashSet = GetInsertHashSet(table.ClientTableType, (int)update.NumRows);
+                    var hashSet = GetInsertHashSet(table, (int)update.NumRows);
 
                     PreProcessInsertOnlyTable(table, update, dbOps, hashSet);
                 }
@@ -398,22 +401,27 @@ namespace SpacetimeDB
             /// TODO: the dictionary is here for backwards compatibility and can be removed
             /// once we get rid of legacy subscriptions.
             /// </summary>
-            (List<DbOp>, Dictionary<System.Type, HashSet<byte[]>>) PreProcessSubscribeApplied(SubscribeApplied subscribeApplied)
+            (List<DbOp>, Dictionary<IRemoteTableHandle, HashSet<byte[]>>) PreProcessSubscribeApplied(SubscribeApplied subscribeApplied)
             {
                 var table = Db.GetTable(subscribeApplied.Rows.TableName) ?? throw new Exception($"Unknown table name: {subscribeApplied.Rows.TableName}");
                 var dbOps = new List<DbOp>();
-                HashSet<byte[]> inserts = new();
+                HashSet<byte[]> inserts = new(comparer: ByteArrayComparer.Instance);
 
                 PreProcessInsertOnlyTable(table, subscribeApplied.Rows.TableRows, dbOps, inserts);
 
-                var result = new Dictionary<System.Type, HashSet<byte[]>>();
-                result[table.ClientTableType] = inserts;
+                var result = new Dictionary<IRemoteTableHandle, HashSet<byte[]>>
+                {
+                    [table] = inserts
+                };
 
                 return (dbOps, result);
             }
 
             void PreProcessInsertOnlyTable(IRemoteTableHandle table, TableUpdate update, List<DbOp> dbOps, HashSet<byte[]> inserts)
             {
+                // In debug mode, make sure we use a byte array comparer in HashSet and not a reference-equal `byte[]` by accident.
+                Debug.Assert(inserts.Comparer is ByteArrayComparer);
+
                 foreach (var cqu in update.Updates)
                 {
                     var qu = DecompressDecodeQueryUpdate(cqu);
@@ -437,7 +445,6 @@ namespace SpacetimeDB
                         dbOps.Add(op);
                     }
                 }
-
             }
 
 
@@ -479,8 +486,10 @@ namespace SpacetimeDB
             {
                 var dbOps = new List<DbOp>();
 
-                // All row updates that have a primary key, this contains inserts, deletes and updates
-                var primaryKeyChanges = new Dictionary<(System.Type tableType, object primaryKeyValue), DbOp>();
+                // All row updates that have a primary key, this contains inserts, deletes and updates.
+                // TODO: is there any guarantee that transaction update contains each table only once, aka updates are already grouped by table?
+                // If so, we could simplify this and other methods by moving the dictionary inside the main loop and using only the primary key as key.
+                var primaryKeyChanges = new Dictionary<(IRemoteTableHandle table, object primaryKeyValue), DbOp>();
 
                 // First apply all of the state
                 foreach (var (table, update) in GetTables(updates))
@@ -494,12 +503,12 @@ namespace SpacetimeDB
                             if (pk != null)
                             {
                                 // Compound key that we use for lookup.
-                                // Consists of type of the table (for faster comparison that string names) + actual primary key of the row.
-                                var key = (table.ClientTableType, pk);
+                                // Consists of the table handle (for faster comparison that string names) + actual primary key of the row.
+                                var key = (table, pk);
 
                                 if (primaryKeyChanges.TryGetValue(key, out var oldOp))
                                 {
-                                    if ((op.insert is not null && oldOp.insert is not null) || (op.delete is not null && oldOp.delete is not null))
+                                    if (oldOp.insert is not null)
                                     {
                                         Log.Warn($"Update with the same primary key was applied multiple times! tableName={update.TableName}");
                                         // TODO(jdetter): Is this a correctable error? This would be a major error on the
@@ -507,13 +516,7 @@ namespace SpacetimeDB
                                         continue;
                                     }
 
-                                    var (insertOp, deleteOp) = op.insert is not null ? (op, oldOp) : (oldOp, op);
-                                    op = new DbOp
-                                    {
-                                        table = insertOp.table,
-                                        delete = deleteOp.delete,
-                                        insert = insertOp.insert,
-                                    };
+                                    op.delete = oldOp.delete;
                                 }
                                 primaryKeyChanges[key] = op;
                             }
@@ -529,12 +532,12 @@ namespace SpacetimeDB
                             if (pk != null)
                             {
                                 // Compound key that we use for lookup.
-                                // Consists of type of the table (for faster comparison that string names) + actual primary key of the row.
-                                var key = (table.ClientTableType, pk);
+                                // Consists of the table handle (for faster comparison that string names) + actual primary key of the row.
+                                var key = (table, pk);
 
                                 if (primaryKeyChanges.TryGetValue(key, out var oldOp))
                                 {
-                                    if ((op.insert is not null && oldOp.insert is not null) || (op.delete is not null && oldOp.delete is not null))
+                                    if (oldOp.delete is not null)
                                     {
                                         Log.Warn($"Update with the same primary key was applied multiple times! tableName={update.TableName}");
                                         // TODO(jdetter): Is this a correctable error? This would be a major error on the
@@ -542,13 +545,7 @@ namespace SpacetimeDB
                                         continue;
                                     }
 
-                                    var (insertOp, deleteOp) = op.insert is not null ? (op, oldOp) : (oldOp, op);
-                                    op = new DbOp
-                                    {
-                                        table = insertOp.table,
-                                        delete = deleteOp.delete,
-                                        insert = insertOp.insert,
-                                    };
+                                    op.insert = oldOp.insert;
                                 }
                                 primaryKeyChanges[key] = op;
                             }
@@ -587,7 +584,7 @@ namespace SpacetimeDB
                 ReducerEvent<Reducer>? reducerEvent = default;
 
                 // This is all of the inserts, used for updating the stale but un-cleared client cache.
-                Dictionary<System.Type, HashSet<byte[]>>? subscriptionInserts = null;
+                Dictionary<IRemoteTableHandle, HashSet<byte[]>>? subscriptionInserts = null;
 
                 switch (message)
                 {
@@ -607,7 +604,7 @@ namespace SpacetimeDB
                         try
                         {
                             reducerEvent = new(
-                                DateTimeOffset.FromUnixTimeMilliseconds((long)transactionUpdate.Timestamp.Microseconds / 1000),
+                                (DateTimeOffset)transactionUpdate.Timestamp,
                                 transactionUpdate.Status switch
                                 {
                                     UpdateStatus.Committed => Committed,
@@ -616,7 +613,7 @@ namespace SpacetimeDB
                                     _ => throw new InvalidOperationException()
                                 },
                                 transactionUpdate.CallerIdentity,
-                                transactionUpdate.CallerAddress,
+                                transactionUpdate.CallerConnectionId,
                                 transactionUpdate.EnergyQuantaUsed.Quanta,
                                 ToReducer(transactionUpdate));
                         }
@@ -659,16 +656,8 @@ namespace SpacetimeDB
             // the client cache.
             if (preProcessedMessage.subscriptionInserts is { } subscriptionInserts)
             {
-                foreach (var table in Db.GetTables())
+                foreach (var (table, hashSet) in subscriptionInserts)
                 {
-                    if (!subscriptionInserts.TryGetValue(table.ClientTableType, out var hashSet))
-                    {
-                        // We don't know if the user is waiting for subscriptions on other tables.
-                        // Leave the stale data for untouched tables in the cache; this is
-                        // the best we can do.
-                        continue;
-                    }
-
                     foreach (var (rowBytes, oldValue) in table.IterEntries().Where(kv => !hashSet.Contains(kv.Key)))
                     {
                         processed.dbOps.Add(new DbOp
@@ -716,7 +705,7 @@ namespace SpacetimeDB
                 {
                     try
                     {
-                        await webSocket.Connect(token, uri, addressOrName, Address, compression, light);
+                        await webSocket.Connect(token, uri, addressOrName, ConnectionId, compression, light);
                     }
                     catch (Exception e)
                     {
@@ -802,7 +791,7 @@ namespace SpacetimeDB
             }
         }
 
-        protected abstract bool Dispatch(IEventContext context, Reducer reducer);
+        protected abstract bool Dispatch(IReducerEventContext context, Reducer reducer);
 
         private void OnMessageProcessComplete(PreProcessedMessage preProcessed)
         {
@@ -817,8 +806,9 @@ namespace SpacetimeDB
                     {
                         stats.ParseMessageTracker.InsertRequest(timestamp, $"type={nameof(ServerMessage.InitialSubscription)}");
                         stats.SubscriptionRequestTracker.FinishTrackingRequest(initialSubscription.RequestId);
-                        var eventContext = ToEventContext(new Event<Reducer>.SubscribeApplied());
-                        OnMessageProcessCompleteUpdate(eventContext, dbOps);
+                        var eventContext = MakeSubscriptionEventContext();
+                        var legacyEventContext = ToEventContext(new Event<Reducer>.SubscribeApplied());
+                        OnMessageProcessCompleteUpdate(legacyEventContext, dbOps);
                         if (legacySubscriptions.TryGetValue(initialSubscription.RequestId, out var subscription))
                         {
                             try
@@ -837,8 +827,9 @@ namespace SpacetimeDB
                     {
                         stats.ParseMessageTracker.InsertRequest(timestamp, $"type={nameof(ServerMessage.SubscribeApplied)}");
                         stats.SubscriptionRequestTracker.FinishTrackingRequest(subscribeApplied.RequestId);
-                        var eventContext = ToEventContext(new Event<Reducer>.SubscribeApplied());
-                        OnMessageProcessCompleteUpdate(eventContext, dbOps);
+                        var eventContext = MakeSubscriptionEventContext();
+                        var legacyEventContext = ToEventContext(new Event<Reducer>.SubscribeApplied());
+                        OnMessageProcessCompleteUpdate(legacyEventContext, dbOps);
                         if (subscriptions.TryGetValue(subscribeApplied.QueryId.Id, out var subscription))
                         {
                             try
@@ -863,8 +854,10 @@ namespace SpacetimeDB
                             stats.SubscriptionRequestTracker.FinishTrackingRequest(subscriptionError.RequestId.Value);
                         }
                         // TODO: should I use a more specific exception type here?
-                        var eventContext = ToEventContext(new Event<Reducer>.SubscribeError(new Exception(subscriptionError.Error)));
-                        OnMessageProcessCompleteUpdate(eventContext, dbOps);
+                        var exception = new Exception(subscriptionError.Error);
+                        var eventContext = ToErrorContext(exception);
+                        var legacyEventContext = ToEventContext(new Event<Reducer>.SubscribeError(exception));
+                        OnMessageProcessCompleteUpdate(legacyEventContext, dbOps);
                         if (subscriptionError.QueryId.HasValue)
                         {
                             if (subscriptions.TryGetValue(subscriptionError.QueryId.Value, out var subscription))
@@ -892,8 +885,9 @@ namespace SpacetimeDB
                     {
                         stats.ParseMessageTracker.InsertRequest(timestamp, $"type={nameof(ServerMessage.UnsubscribeApplied)}");
                         stats.SubscriptionRequestTracker.FinishTrackingRequest(unsubscribeApplied.RequestId);
-                        var eventContext = ToEventContext(new Event<Reducer>.UnsubscribeApplied());
-                        OnMessageProcessCompleteUpdate(eventContext, dbOps);
+                        var eventContext = MakeSubscriptionEventContext();
+                        var legacyEventContext = ToEventContext(new Event<Reducer>.UnsubscribeApplied());
+                        OnMessageProcessCompleteUpdate(legacyEventContext, dbOps);
                         if (subscriptions.TryGetValue(unsubscribeApplied.QueryId.Id, out var subscription))
                         {
                             try
@@ -922,7 +916,7 @@ namespace SpacetimeDB
                     {
                         var reducer = transactionUpdate.ReducerCall.ReducerName;
                         stats.ParseMessageTracker.InsertRequest(timestamp, $"type={nameof(ServerMessage.TransactionUpdate)},reducer={reducer}");
-                        var hostDuration = TimeSpan.FromMilliseconds(transactionUpdate.HostExecutionDurationMicros / 1000.0d);
+                        var hostDuration = (TimeSpan)transactionUpdate.TotalHostExecutionDuration;
                         stats.AllReducersTracker.InsertRequest(hostDuration, $"reducer={reducer}");
                         var callerIdentity = transactionUpdate.CallerIdentity;
                         if (callerIdentity == Identity)
@@ -941,8 +935,9 @@ namespace SpacetimeDB
                             break;
                         }
 
-                        var eventContext = ToEventContext(new Event<Reducer>.Reducer(reducerEvent));
-                        OnMessageProcessCompleteUpdate(eventContext, dbOps);
+                        var eventContext = ToReducerEventContext(reducerEvent);
+                        var legacyEventContext = ToEventContext(new Event<Reducer>.Reducer(reducerEvent));
+                        OnMessageProcessCompleteUpdate(legacyEventContext, dbOps);
 
                         var reducerFound = false;
                         try

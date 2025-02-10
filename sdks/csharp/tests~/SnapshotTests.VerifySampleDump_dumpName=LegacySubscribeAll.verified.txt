@@ -25,12 +25,12 @@
         Event: {
           $type: Event<Reducer>.Reducer,
           ReducerEvent: {
-            Timestamp: DateTimeOffset_1,
+            Timestamp: 1718487763059031,
             Status: {
               $type: Status.Committed
             },
             CallerIdentity: Identity_2,
-            CallerAddress: Guid_1,
+            CallerConnectionId: Guid_1,
             EnergyConsumed: {},
             Reducer: {
               $type: Reducer.IdentityConnected
@@ -51,12 +51,12 @@
         Event: {
           $type: Event<Reducer>.Reducer,
           ReducerEvent: {
-            Timestamp: DateTimeOffset_2,
+            Timestamp: 1718487768057579,
             Status: {
               $type: Status.Committed
             },
             CallerIdentity: Identity_1,
-            CallerAddress: Guid_2,
+            CallerConnectionId: Guid_2,
             EnergyConsumed: {},
             Reducer: {
               $type: Reducer.SetName,
@@ -80,23 +80,28 @@
     },
     OnSetName: {
       Event: {
-        $type: Event<Reducer>.Reducer,
-        ReducerEvent: {
-          Timestamp: DateTimeOffset_2,
-          Status: {
-            $type: Status.Committed
-          },
-          CallerIdentity: Identity_1,
-          CallerAddress: Guid_2,
-          EnergyConsumed: {},
-          Reducer: {
-            $type: Reducer.SetName,
-            name: A
-          }
+        Timestamp: 1718487768057579,
+        Status: {
+          $type: Status.Committed
+        },
+        CallerIdentity: Identity_1,
+        CallerConnectionId: Guid_2,
+        EnergyConsumed: {},
+        Reducer: {
+          $type: Reducer.SetName,
+          name: A
         }
       },
-      Db: {Scrubbed},
-      Reducers: {Scrubbed},
+      Db: {
+        Message: {
+          Count: 4
+        },
+        User: {
+          Identity: {},
+          Count: 2
+        }
+      },
+      Reducers: {},
       SetReducerFlags: {}
     },
     OnInsertMessage: {
@@ -104,12 +109,12 @@
         Event: {
           $type: Event<Reducer>.Reducer,
           ReducerEvent: {
-            Timestamp: DateTimeOffset_3,
+            Timestamp: 1718487775346381,
             Status: {
               $type: Status.Committed
             },
             CallerIdentity: Identity_2,
-            CallerAddress: Guid_1,
+            CallerConnectionId: Guid_1,
             EnergyConsumed: {},
             Reducer: {
               $type: Reducer.SendMessage,
@@ -129,23 +134,28 @@
     },
     OnSendMessage: {
       Event: {
-        $type: Event<Reducer>.Reducer,
-        ReducerEvent: {
-          Timestamp: DateTimeOffset_3,
-          Status: {
-            $type: Status.Committed
-          },
-          CallerIdentity: Identity_2,
-          CallerAddress: Guid_1,
-          EnergyConsumed: {},
-          Reducer: {
-            $type: Reducer.SendMessage,
-            text: Hello, A!
-          }
+        Timestamp: 1718487775346381,
+        Status: {
+          $type: Status.Committed
+        },
+        CallerIdentity: Identity_2,
+        CallerConnectionId: Guid_1,
+        EnergyConsumed: {},
+        Reducer: {
+          $type: Reducer.SendMessage,
+          text: Hello, A!
         }
       },
-      Db: {Scrubbed},
-      Reducers: {Scrubbed},
+      Db: {
+        Message: {
+          Count: 4
+        },
+        User: {
+          Identity: {},
+          Count: 2
+        }
+      },
+      Reducers: {},
       SetReducerFlags: {}
     },
     OnUpdateUser: {
@@ -153,12 +163,12 @@
         Event: {
           $type: Event<Reducer>.Reducer,
           ReducerEvent: {
-            Timestamp: DateTimeOffset_4,
+            Timestamp: 1718487777307855,
             Status: {
               $type: Status.Committed
             },
             CallerIdentity: Identity_2,
-            CallerAddress: Guid_1,
+            CallerConnectionId: Guid_1,
             EnergyConsumed: {},
             Reducer: {
               $type: Reducer.SetName,
@@ -182,23 +192,28 @@
     },
     OnSetName: {
       Event: {
-        $type: Event<Reducer>.Reducer,
-        ReducerEvent: {
-          Timestamp: DateTimeOffset_4,
-          Status: {
-            $type: Status.Committed
-          },
-          CallerIdentity: Identity_2,
-          CallerAddress: Guid_1,
-          EnergyConsumed: {},
-          Reducer: {
-            $type: Reducer.SetName,
-            name: B
-          }
+        Timestamp: 1718487777307855,
+        Status: {
+          $type: Status.Committed
+        },
+        CallerIdentity: Identity_2,
+        CallerConnectionId: Guid_1,
+        EnergyConsumed: {},
+        Reducer: {
+          $type: Reducer.SetName,
+          name: B
         }
       },
-      Db: {Scrubbed},
-      Reducers: {Scrubbed},
+      Db: {
+        Message: {
+          Count: 4
+        },
+        User: {
+          Identity: {},
+          Count: 2
+        }
+      },
+      Reducers: {},
       SetReducerFlags: {}
     },
     OnInsertMessage: {
@@ -206,12 +221,12 @@
         Event: {
           $type: Event<Reducer>.Reducer,
           ReducerEvent: {
-            Timestamp: DateTimeOffset_5,
+            Timestamp: 1718487783175083,
             Status: {
               $type: Status.Committed
             },
             CallerIdentity: Identity_1,
-            CallerAddress: Guid_2,
+            CallerConnectionId: Guid_2,
             EnergyConsumed: {},
             Reducer: {
               $type: Reducer.SendMessage,
@@ -231,23 +246,28 @@
     },
     OnSendMessage: {
       Event: {
-        $type: Event<Reducer>.Reducer,
-        ReducerEvent: {
-          Timestamp: DateTimeOffset_5,
-          Status: {
-            $type: Status.Committed
-          },
-          CallerIdentity: Identity_1,
-          CallerAddress: Guid_2,
-          EnergyConsumed: {},
-          Reducer: {
-            $type: Reducer.SendMessage,
-            text: Hello, B!
-          }
+        Timestamp: 1718487783175083,
+        Status: {
+          $type: Status.Committed
+        },
+        CallerIdentity: Identity_1,
+        CallerConnectionId: Guid_2,
+        EnergyConsumed: {},
+        Reducer: {
+          $type: Reducer.SendMessage,
+          text: Hello, B!
         }
       },
-      Db: {Scrubbed},
-      Reducers: {Scrubbed},
+      Db: {
+        Message: {
+          Count: 4
+        },
+        User: {
+          Identity: {},
+          Count: 2
+        }
+      },
+      Reducers: {},
       SetReducerFlags: {}
     },
     OnInsertMessage: {
@@ -255,12 +275,12 @@
         Event: {
           $type: Event<Reducer>.Reducer,
           ReducerEvent: {
-            Timestamp: DateTimeOffset_6,
+            Timestamp: 1718487787645364,
             Status: {
               $type: Status.Committed
             },
             CallerIdentity: Identity_2,
-            CallerAddress: Guid_1,
+            CallerConnectionId: Guid_1,
             EnergyConsumed: {},
             Reducer: {
               $type: Reducer.SendMessage,
@@ -280,23 +300,28 @@
     },
     OnSendMessage: {
       Event: {
-        $type: Event<Reducer>.Reducer,
-        ReducerEvent: {
-          Timestamp: DateTimeOffset_6,
-          Status: {
-            $type: Status.Committed
-          },
-          CallerIdentity: Identity_2,
-          CallerAddress: Guid_1,
-          EnergyConsumed: {},
-          Reducer: {
-            $type: Reducer.SendMessage,
-            text: Goodbye!
-          }
+        Timestamp: 1718487787645364,
+        Status: {
+          $type: Status.Committed
+        },
+        CallerIdentity: Identity_2,
+        CallerConnectionId: Guid_1,
+        EnergyConsumed: {},
+        Reducer: {
+          $type: Reducer.SendMessage,
+          text: Goodbye!
         }
       },
-      Db: {Scrubbed},
-      Reducers: {Scrubbed},
+      Db: {
+        Message: {
+          Count: 4
+        },
+        User: {
+          Identity: {},
+          Count: 2
+        }
+      },
+      Reducers: {},
       SetReducerFlags: {}
     },
     OnUpdateUser: {
@@ -304,12 +329,12 @@
         Event: {
           $type: Event<Reducer>.Reducer,
           ReducerEvent: {
-            Timestamp: DateTimeOffset_7,
+            Timestamp: 1718487791901504,
             Status: {
               $type: Status.Committed
             },
             CallerIdentity: Identity_2,
-            CallerAddress: Guid_1,
+            CallerConnectionId: Guid_1,
             EnergyConsumed: {},
             Reducer: {
               $type: Reducer.IdentityDisconnected
@@ -336,12 +361,12 @@
         Event: {
           $type: Event<Reducer>.Reducer,
           ReducerEvent: {
-            Timestamp: DateTimeOffset_8,
+            Timestamp: 1718487794937841,
             Status: {
               $type: Status.Committed
             },
             CallerIdentity: Identity_1,
-            CallerAddress: Guid_2,
+            CallerConnectionId: Guid_2,
             EnergyConsumed: {},
             Reducer: {
               $type: Reducer.SendMessage,
@@ -361,23 +386,28 @@
     },
     OnSendMessage: {
       Event: {
-        $type: Event<Reducer>.Reducer,
-        ReducerEvent: {
-          Timestamp: DateTimeOffset_8,
-          Status: {
-            $type: Status.Committed
-          },
-          CallerIdentity: Identity_1,
-          CallerAddress: Guid_2,
-          EnergyConsumed: {},
-          Reducer: {
-            $type: Reducer.SendMessage,
-            text: Goodbye!
-          }
+        Timestamp: 1718487794937841,
+        Status: {
+          $type: Status.Committed
+        },
+        CallerIdentity: Identity_1,
+        CallerConnectionId: Guid_2,
+        EnergyConsumed: {},
+        Reducer: {
+          $type: Reducer.SendMessage,
+          text: Goodbye!
         }
       },
-      Db: {Scrubbed},
-      Reducers: {Scrubbed},
+      Db: {
+        Message: {
+          Count: 4
+        },
+        User: {
+          Identity: {},
+          Count: 2
+        }
+      },
+      Reducers: {},
       SetReducerFlags: {}
     }
   },

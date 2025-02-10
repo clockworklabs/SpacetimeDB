@@ -17,18 +17,18 @@ namespace SpacetimeDB.ClientApi
         public DatabaseUpdate DatabaseUpdate;
         [DataMember(Name = "request_id")]
         public uint RequestId;
-        [DataMember(Name = "total_host_execution_duration_micros")]
-        public ulong TotalHostExecutionDurationMicros;
+        [DataMember(Name = "total_host_execution_duration")]
+        public SpacetimeDB.TimeDuration TotalHostExecutionDuration;
 
         public InitialSubscription(
             DatabaseUpdate DatabaseUpdate,
             uint RequestId,
-            ulong TotalHostExecutionDurationMicros
+            SpacetimeDB.TimeDuration TotalHostExecutionDuration
         )
         {
             this.DatabaseUpdate = DatabaseUpdate;
             this.RequestId = RequestId;
-            this.TotalHostExecutionDurationMicros = TotalHostExecutionDurationMicros;
+            this.TotalHostExecutionDuration = TotalHostExecutionDuration;
         }
 
         public InitialSubscription()

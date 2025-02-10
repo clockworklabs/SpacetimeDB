@@ -24,11 +24,11 @@ static class VerifyInit
         }
     }
 
-    class AddressConverter : WriteOnlyJsonConverter<Address>
+    class ConnectionIdConverter : WriteOnlyJsonConverter<ConnectionId>
     {
-        public override void Write(VerifyJsonWriter writer, Address value)
+        public override void Write(VerifyJsonWriter writer, ConnectionId value)
         {
-            // Addresses are GUIDs, which Verify scrubs automatically.
+            // ConnectionIdes are GUIDs, which Verify scrubs automatically.
             writer.WriteValue(value.ToString());
         }
     }
@@ -71,7 +71,7 @@ static class VerifyInit
             settings.Converters.AddRange(
                 [
                     new IdentityConverter(),
-                    new AddressConverter(),
+                    new ConnectionIdConverter(),
                     new NetworkRequestTrackerConverter()
                 ]
             );

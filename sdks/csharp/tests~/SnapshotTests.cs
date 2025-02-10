@@ -46,7 +46,7 @@ public class SnapshotTests
     {
         public override void Write(VerifyJsonWriter writer, Timestamp timestamp)
         {
-            writer.WriteValue(timestamp.Microseconds);
+            writer.WriteValue(timestamp.MicrosecondsSinceUnixEpoch);
         }
     }
 
@@ -101,17 +101,17 @@ public class SnapshotTests
         {
             Identity = Identity.From(Convert.FromBase64String(identity)),
             Token = token,
-            Address = Address.From(Convert.FromBase64String(address)) ?? throw new InvalidDataException("address")
+            ConnectionId = ConnectionId.From(Convert.FromBase64String(address)) ?? throw new InvalidDataException("address")
         });
 
     private static ServerMessage.InitialSubscription SampleLegacyInitialSubscription(
         uint requestId,
-        ulong hostExecutionDuration,
+        long hostExecutionDuration,
         List<TableUpdate> updates
     ) => new(new()
     {
         RequestId = requestId,
-        TotalHostExecutionDurationMicros = hostExecutionDuration,
+        TotalHostExecutionDuration = new TimeDuration(hostExecutionDuration),
         DatabaseUpdate = new DatabaseUpdate
         {
             Tables = updates
@@ -174,21 +174,21 @@ public class SnapshotTests
     });
 
     private static ServerMessage.TransactionUpdate SampleTransactionUpdate(
-        ulong timestamp,
+        long microsecondsSinceUnixEpoch,
         string callerIdentity,
-        string callerAddress,
+        string callerConnectionId,
         uint requestId,
         string reducerName,
         ulong energyQuantaUsed,
-        ulong hostExecutionDuration,
+        long hostExecutionDurationMicros,
         List<TableUpdate> updates,
         byte[]? args
     ) => new(new()
     {
-        Timestamp = new Timestamp { Microseconds = timestamp },
+        Timestamp = new Timestamp { MicrosecondsSinceUnixEpoch = microsecondsSinceUnixEpoch },
         CallerIdentity = Identity.From(Convert.FromBase64String(callerIdentity)),
-        CallerAddress = Address.From(Convert.FromBase64String(callerAddress)) ?? throw new InvalidDataException("callerAddress"),
-        HostExecutionDurationMicros = hostExecutionDuration,
+        CallerConnectionId = ConnectionId.From(Convert.FromBase64String(callerConnectionId)) ?? throw new InvalidDataException("callerConnectionId"),
+        TotalHostExecutionDuration = new TimeDuration(hostExecutionDurationMicros),
         EnergyQuantaUsed = new()
         {
             Quanta = new U128(0, energyQuantaUsed),
@@ -272,10 +272,10 @@ public class SnapshotTests
         }]);
 
 
-    private static Message SampleMessage(string identity, ulong sent, string text) => new()
+    private static Message SampleMessage(string identity, long sentMicrosecondsSinceUnixEpoch, string text) => new()
     {
         Sender = Identity.From(Convert.FromBase64String(identity)),
-        Sent = sent,
+        Sent = new Timestamp(sentMicrosecondsSinceUnixEpoch),
         Text = text
     };
 

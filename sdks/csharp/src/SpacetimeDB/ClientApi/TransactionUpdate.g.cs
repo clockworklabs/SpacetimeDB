@@ -16,41 +16,40 @@ namespace SpacetimeDB.ClientApi
         [DataMember(Name = "status")]
         public UpdateStatus Status;
         [DataMember(Name = "timestamp")]
-        public Timestamp Timestamp;
+        public SpacetimeDB.Timestamp Timestamp;
         [DataMember(Name = "caller_identity")]
         public SpacetimeDB.Identity CallerIdentity;
-        [DataMember(Name = "caller_address")]
-        public SpacetimeDB.Address CallerAddress;
+        [DataMember(Name = "caller_connection_id")]
+        public SpacetimeDB.ConnectionId CallerConnectionId;
         [DataMember(Name = "reducer_call")]
         public ReducerCallInfo ReducerCall;
         [DataMember(Name = "energy_quanta_used")]
         public EnergyQuanta EnergyQuantaUsed;
-        [DataMember(Name = "host_execution_duration_micros")]
-        public ulong HostExecutionDurationMicros;
+        [DataMember(Name = "total_host_execution_duration")]
+        public SpacetimeDB.TimeDuration TotalHostExecutionDuration;
 
         public TransactionUpdate(
             UpdateStatus Status,
-            Timestamp Timestamp,
+            SpacetimeDB.Timestamp Timestamp,
             SpacetimeDB.Identity CallerIdentity,
-            SpacetimeDB.Address CallerAddress,
+            SpacetimeDB.ConnectionId CallerConnectionId,
             ReducerCallInfo ReducerCall,
             EnergyQuanta EnergyQuantaUsed,
-            ulong HostExecutionDurationMicros
+            SpacetimeDB.TimeDuration TotalHostExecutionDuration
         )
         {
             this.Status = Status;
             this.Timestamp = Timestamp;
             this.CallerIdentity = CallerIdentity;
-            this.CallerAddress = CallerAddress;
+            this.CallerConnectionId = CallerConnectionId;
             this.ReducerCall = ReducerCall;
             this.EnergyQuantaUsed = EnergyQuantaUsed;
-            this.HostExecutionDurationMicros = HostExecutionDurationMicros;
+            this.TotalHostExecutionDuration = TotalHostExecutionDuration;
         }
 
         public TransactionUpdate()
         {
             this.Status = null!;
-            this.Timestamp = new();
             this.ReducerCall = new();
             this.EnergyQuantaUsed = new();
         }
