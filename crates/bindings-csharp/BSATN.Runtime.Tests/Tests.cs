@@ -169,7 +169,7 @@ public static class BSATNRuntimeTests
 
 #pragma warning disable CS1718
         Assert.True(stamp == stamp);
-#pragma warning enable CS1718
+#pragma warning restore CS1718
         Assert.False(stamp == laterStamp);
         Assert.True(stamp < laterStamp);
         Assert.False(laterStamp < stamp);
