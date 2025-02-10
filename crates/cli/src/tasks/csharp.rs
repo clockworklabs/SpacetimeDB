@@ -43,6 +43,7 @@ pub(crate) fn build_csharp(project_path: &Path, build_debug: bool) -> anyhow::Re
                 "wasi-experimental",
                 "--skip-manifest-update"
             )
+            .stderr_capture()
             .run()
             .context(concat!(
                 "Couldn't install the required wasi-experimental workload.\n",
