@@ -31,7 +31,7 @@ use fake::faker::phone_number::raw::CellNumber;
 use fake::locales::EN;
 use fake::{Fake, Faker};
 use spacetimedb::rand::Rng;
-use spacetimedb::{log, Address, Identity, ReducerContext, SpacetimeType, StdbRng, Table};
+use spacetimedb::{log, ConnectionId, Identity, ReducerContext, SpacetimeType, StdbRng, Table};
 use std::hint::black_box;
 // ---------- schemas ----------
 
@@ -133,7 +133,7 @@ pub struct medium_var_rows_t {
     email: String,
     password: String,
     identity: Identity,
-    address: Address,
+    connection: ConnectionId,
     pos: Vec<u64>,
 }
 
@@ -150,7 +150,7 @@ pub struct medium_var_rows_btree_each_column_t {
     #[index(btree)]
     identity: Identity,
     #[index(btree)]
-    address: Address,
+    connection: ConnectionId,
     #[index(btree)]
     pos: Vec<u64>,
 }
@@ -162,7 +162,7 @@ pub struct large_var_rows_t {
     invoice_code: String,
     status: String,
     customer: Identity,
-    company: Address,
+    company: ConnectionId,
     user_name: String,
 
     price: f64,
@@ -194,7 +194,7 @@ pub struct large_var_rows_btree_each_column_t {
     #[index(btree)]
     customer: Identity,
     #[index(btree)]
-    company: Address,
+    company: ConnectionId,
     #[index(btree)]
     user_name: String,
 
@@ -322,8 +322,8 @@ pub fn insert_bulk_btree_each_column_u32_u64_str(ctx: &ReducerContext, people: V
     }
 }
 
-fn rand_address(rng: &mut &StdbRng) -> Address {
-    Address::from(Faker.fake_with_rng::<u128, _>(rng))
+fn rand_connection_id(rng: &mut &StdbRng) -> ConnectionId {
+    ConnectionId::from(Faker.fake_with_rng::<u128, _>(rng))
 }
 
 fn rand_identity(rng: &mut &StdbRng) -> Identity {
@@ -376,7 +376,7 @@ pub fn insert_bulk_medium_var_rows(ctx: &ReducerContext, rows: u64) {
             email: SafeEmail(EN).fake_with_rng(&mut rng),
             password: Password(EN, 6..10).fake_with_rng(&mut rng),
             identity: rand_identity(&mut rng),
-            address: rand_address(&mut rng),
+            connection: rand_connection_id(&mut rng),
             pos: Faker.fake_with_rng(&mut rng),
         });
     }
@@ -395,7 +395,7 @@ pub fn insert_bulk_medium_var_rows_btree_each_column(ctx: &ReducerContext, rows:
                 email: SafeEmail(EN).fake_with_rng(&mut rng),
                 password: Password(EN, 6..10).fake_with_rng(&mut rng),
                 identity: rand_identity(&mut rng),
-                address: rand_address(&mut rng),
+                connection: rand_connection_id(&mut rng),
                 pos: Faker.fake_with_rng(&mut rng),
             });
     }
@@ -411,7 +411,7 @@ pub fn insert_bulk_large_var_rows(ctx: &ReducerContext, rows: u64) {
             invoice_code: Faker.fake_with_rng(&mut rng),
             status: Faker.fake_with_rng(&mut rng),
             customer: rand_identity(&mut rng),
-            company: rand_address(&mut rng),
+            company: rand_connection_id(&mut rng),
             user_name: Faker.fake_with_rng(&mut rng),
 
             price: Faker.fake_with_rng(&mut rng),
@@ -446,7 +446,7 @@ pub fn insert_bulk_large_var_rows_btree_each_column(ctx: &ReducerContext, rows: 
                 invoice_code: Faker.fake_with_rng(&mut rng),
                 status: Faker.fake_with_rng(&mut rng),
                 customer: rand_identity(&mut rng),
-                company: rand_address(&mut rng),
+                company: rand_connection_id(&mut rng),
                 user_name: Faker.fake_with_rng(&mut rng),
 
                 price: Faker.fake_with_rng(&mut rng),
