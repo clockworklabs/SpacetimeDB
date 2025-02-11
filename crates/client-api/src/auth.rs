@@ -67,15 +67,9 @@ impl SpacetimeCreds {
     fn from_request_parts(parts: &request::Parts) -> Result<Option<Self>, headers::Error> {
         let header = parts
             .headers
-            .typed_try_get::<headers::Authorization<authorization::Bearer>>()
-            .map(|x| x.map(|auth| auth.token().to_owned()))
-            .or_else(|_| {
-                Ok(parts
-                    .headers
-                    .typed_try_get::<headers::Authorization<Self>>()?
-                    .map(|auth| auth.0.token))
-            })?;
-        if let Some(token) = header {
+            .typed_try_get::<headers::Authorization<authorization::Bearer>>()?;
+        if let Some(headers::Authorization(bearer)) = header {
+            let token = bearer.token().to_owned();
             return Ok(Some(SpacetimeCreds { token }));
         }
         if let Ok(Query(creds)) = Query::<Self>::try_from_uri(&parts.uri) {
