@@ -14,8 +14,9 @@ use spacetimedb_sql_parser::ast::{BinOp, LogOp};
 use spacetimedb_table::table::RowRef;
 
 use crate::rules::{
-    ComputePositions, HashToIxJoin, IxScanAnd, IxScanEq, IxScanEq2Col, IxScanEq3Col, PullFilterAboveHashJoin,
-    PushConstAnd, PushConstEq, ReorderDeltaJoinRhs, ReorderHashJoin, RewriteRule, UniqueHashJoinRule, UniqueIxJoinRule,
+    ComputePositions, HashToIxJoin, IxScan2Col, IxScanEq3Col, IxScanFromFilter, IxScanPlusFilter,
+    PullFilterAboveHashJoin, PushSargable, PushSargableAnd, ReorderDeltaJoinRhs, ReorderHashJoin, RewriteRule,
+    SargablePredicates, UniqueHashJoinRule, UniqueIxJoinRule,
 };
 
 /// Table aliases are replaced with labels in the physical plan
@@ -325,14 +326,15 @@ impl PhysicalPlan {
     /// 5. Compute positions for tuple labels
     pub fn optimize(self, reqs: Vec<Label>) -> Result<Self> {
         self.map(&Self::canonicalize)
-            .apply_until::<PushConstAnd>()?
-            .apply_until::<PushConstEq>()?
+            .apply_rec::<SargablePredicates>()?
+            .apply_until::<PushSargableAnd>()?
+            .apply_until::<PushSargable>()?
             .apply_rec::<ReorderDeltaJoinRhs>()?
             .apply_rec::<PullFilterAboveHashJoin>()?
             .apply_rec::<IxScanEq3Col>()?
-            .apply_rec::<IxScanEq2Col>()?
-            .apply_rec::<IxScanEq>()?
-            .apply_rec::<IxScanAnd>()?
+            .apply_rec::<IxScan2Col>()?
+            .apply_rec::<IxScanFromFilter>()?
+            .apply_rec::<IxScanPlusFilter>()?
             .apply_rec::<ReorderHashJoin>()?
             .apply_rec::<HashToIxJoin>()?
             .apply_rec::<UniqueIxJoinRule>()?
@@ -832,6 +834,10 @@ pub enum Semi {
 /// A physical scalar expression
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PhysicalExpr {
+    /// A constant equality predicate
+    Equal(TupleField, AlgebraicValue),
+    /// A constant range predicate
+    Range(TupleField, Bound<AlgebraicValue>, Bound<AlgebraicValue>),
     /// An n-ary logic expression
     LogOp(LogOp, Vec<PhysicalExpr>),
     /// A binary expression
@@ -899,9 +905,9 @@ impl PhysicalExpr {
 
     /// Applies the transformation `f` to all subplans
     pub fn map(self, f: &impl Fn(Self) -> Self) -> Self {
-        match f(self) {
-            value @ Self::Value(..) => value,
-            field @ Self::Field(..) => field,
+        let expr = f(self);
+        match expr {
+            Self::Value(..) | Self::Field(..) | Self::Equal(..) | Self::Range(..) => expr,
             Self::BinOp(op, a, b) => Self::BinOp(op, Box::new(a.map(f)), Box::new(b.map(f))),
             Self::LogOp(op, exprs) => Self::LogOp(op, exprs.into_iter().map(|expr| expr.map(f)).collect()),
         }
@@ -937,6 +943,20 @@ impl PhysicalExpr {
                 BinOp::Gte => a >= b,
             }
         }
+        fn is_value_in_lower_bounded_range(bound: Bound<&AlgebraicValue>, value: &AlgebraicValue) -> bool {
+            match bound {
+                Bound::Unbounded => true,
+                Bound::Excluded(lower) => lower < value,
+                Bound::Included(lower) => lower <= value,
+            }
+        }
+        fn is_value_in_upper_bounded_range(bound: Bound<&AlgebraicValue>, value: &AlgebraicValue) -> bool {
+            match bound {
+                Bound::Unbounded => true,
+                Bound::Excluded(upper) => value < upper,
+                Bound::Included(upper) => value <= upper,
+            }
+        }
         let into = |b| Cow::Owned(AlgebraicValue::Bool(b));
         match self {
             Self::BinOp(op, a, b) => into(eval_bin_op(
@@ -962,6 +982,19 @@ impl PhysicalExpr {
                 Cow::Owned(value)
             }
             Self::Value(v) => Cow::Borrowed(v),
+            Self::Equal(field, value) => {
+                let lhs_value = row.project(field);
+                *bytes_scanned += lhs_value.size_of();
+                into(lhs_value == *value)
+            }
+            Self::Range(field, lower, upper) => {
+                let lhs_value = row.project(field);
+                *bytes_scanned += lhs_value.size_of();
+                into(
+                    is_value_in_lower_bounded_range(lower.as_ref(), &lhs_value)
+                        && is_value_in_upper_bounded_range(upper.as_ref(), &lhs_value),
+                )
+            }
         }
     }
 
@@ -980,7 +1013,7 @@ impl PhysicalExpr {
                     .collect(),
             ),
             Self::BinOp(op, a, b) => Self::BinOp(op, Box::new(a.flatten()), Box::new(b.flatten())),
-            Self::Field(..) | Self::Value(..) => self,
+            Self::Equal(..) | Self::Range(..) | Self::Field(..) | Self::Value(..) => self,
         }
     }
 }

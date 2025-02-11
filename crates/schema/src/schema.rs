@@ -290,6 +290,22 @@ impl TableSchema {
             .map(|x| x.into())
     }
 
+    /// Find a btree [IndexId] by column position
+    pub fn find_btree_index_id_for_col_pos(&self, pos: usize) -> Option<IndexId> {
+        self.find_btree_index_for_cols([ColId(pos as u16)].into())
+    }
+
+    /// Returns the [IndexId] of the btree defined on `cols`, if any
+    pub fn find_btree_index_for_cols(&self, cols: ColList) -> Option<IndexId> {
+        self.indexes
+            .iter()
+            .find(|schema| match &schema.index_algorithm {
+                IndexAlgorithm::BTree(btree) => btree.columns == cols,
+                _ => false,
+            })
+            .map(|schema| schema.index_id)
+    }
+
     /// Is there a unique constraint for this set of columns?
     pub fn is_unique(&self, cols: &ColList) -> bool {
         self.constraints

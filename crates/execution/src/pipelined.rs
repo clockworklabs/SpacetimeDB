@@ -296,8 +296,6 @@ pub struct PipelinedIxScan {
     pub table_id: TableId,
     /// The index id
     pub index_id: IndexId,
-    /// An equality prefix for multi-column scans
-    pub prefix: Vec<AlgebraicValue>,
     /// The lower index bound
     pub lower: Bound<AlgebraicValue>,
     /// The upper index bound
@@ -306,18 +304,35 @@ pub struct PipelinedIxScan {
 
 impl From<IxScan> for PipelinedIxScan {
     fn from(scan: IxScan) -> Self {
+        // Make a new bound from a prefix and suffix
+        let make_bound = |prefix: &[(ColId, AlgebraicValue)], suffix: Bound<AlgebraicValue>| {
+            suffix
+                .map(std::iter::once)
+                .map(|iter| prefix.iter().map(|(_, v)| v).cloned().chain(iter))
+                .map(ProductValue::from_iter)
+                .map(AlgebraicValue::Product)
+        };
+        // Make a closed or inclusive bound
+        let make_close = |prefix, suffix| make_bound(prefix, Bound::Included(suffix));
+        let make_lower = |prefix, suffix| match suffix {
+            Bound::Unbounded => make_close(prefix, AlgebraicValue::Min),
+            _ => make_bound(prefix, suffix),
+        };
+        let make_upper = |prefix, suffix| match suffix {
+            Bound::Unbounded => make_close(prefix, AlgebraicValue::Max),
+            _ => make_bound(prefix, suffix),
+        };
         match scan {
             IxScan {
                 schema,
                 index_id,
                 prefix,
-                arg: Sarg::Eq(_, v),
+                arg: Sarg::Eq(_, value),
             } => Self {
                 table_id: schema.table_id,
                 index_id,
-                prefix: prefix.into_iter().map(|(_, v)| v).collect(),
-                lower: Bound::Included(v.clone()),
-                upper: Bound::Included(v),
+                lower: make_close(&prefix, value.clone()),
+                upper: make_close(&prefix, value),
             },
             IxScan {
                 schema,
@@ -327,9 +342,8 @@ impl From<IxScan> for PipelinedIxScan {
             } => Self {
                 table_id: schema.table_id,
                 index_id,
-                prefix: prefix.into_iter().map(|(_, v)| v).collect(),
-                lower,
-                upper,
+                lower: make_lower(&prefix, lower),
+                upper: make_upper(&prefix, upper),
             },
         }
     }
@@ -352,48 +366,16 @@ impl PipelinedIxScan {
             n += 1;
             f(t)
         };
-        match self.prefix.as_slice() {
-            [] => {
-                for ptr in tx
-                    .index_scan_range(
-                        self.table_id,
-                        self.index_id,
-                        &(self.lower.as_ref(), self.upper.as_ref()),
-                    )?
-                    .map(Row::Ptr)
-                    .map(Tuple::Row)
-                {
-                    f(ptr)?;
-                }
-            }
-            prefix => {
-                for ptr in tx
-                    .index_scan_range(
-                        self.table_id,
-                        self.index_id,
-                        &(
-                            self.lower
-                                .as_ref()
-                                .map(std::iter::once)
-                                .map(|iter| prefix.iter().chain(iter))
-                                .map(|iter| iter.cloned())
-                                .map(ProductValue::from_iter)
-                                .map(AlgebraicValue::Product),
-                            self.upper
-                                .as_ref()
-                                .map(std::iter::once)
-                                .map(|iter| prefix.iter().chain(iter))
-                                .map(|iter| iter.cloned())
-                                .map(ProductValue::from_iter)
-                                .map(AlgebraicValue::Product),
-                        ),
-                    )?
-                    .map(Row::Ptr)
-                    .map(Tuple::Row)
-                {
-                    f(ptr)?;
-                }
-            }
+        for ptr in tx
+            .index_scan_range(
+                self.table_id,
+                self.index_id,
+                &(self.lower.as_ref(), self.upper.as_ref()),
+            )?
+            .map(Row::Ptr)
+            .map(Tuple::Row)
+        {
+            f(ptr)?;
         }
         metrics.index_seeks += 1;
         metrics.rows_scanned += n;
