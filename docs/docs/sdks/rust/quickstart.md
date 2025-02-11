@@ -28,7 +28,7 @@ cargo new client
 Below the `[dependencies]` line in `client/Cargo.toml`, add:
 
 ```toml
-spacetimedb-sdk = "0.12"
+spacetimedb-sdk = "1.0"
 hex = "0.4"
 ```
 
@@ -59,7 +59,9 @@ spacetime generate --lang rust --out-dir client/src/module_bindings --project-pa
 Take a look inside `client/src/module_bindings`. The CLI should have generated a few files:
 
 ```
-module_bindings
+module_bindings/
+├── identity_connected_reducer.rs
+├── identity_disconnected_reducer.rs
 ├── message_table.rs
 ├── message_type.rs
 ├── mod.rs
@@ -85,27 +87,39 @@ We'll need additional imports from `spacetimedb_sdk` for interacting with the da
 To `client/src/main.rs`, add:
 
 ```rust
-use spacetimedb_sdk::{anyhow, DbContext, Event, Identity, Status, Table, TableWithPrimaryKey};
 use spacetimedb_sdk::credentials::File;
+use spacetimedb_sdk::{DbContext, Error, Event, Identity, Status, Table, TableWithPrimaryKey};
 ```
 
 ## Define the main function
 
 Our `main` function will do the following:
-1. Connect to the database. This will also start a new thread for handling network messages.
-2. Handle user input from the command line.
+1. Connect to the database.
+2. Register a number of callbacks to run in response to various database events.
+3. Subscribe to a set of SQL queries, whose results will be replicated and automatically updated in our client.
+4. Spawn a background thread where our connection will process messages and invoke callbacks.
+5. Enter a loop to handle user input from the command line.
 
 We'll see the implementation of these functions a bit later, but for now add to `client/src/main.rs`:
 
 ```rust
 fn main() {
     // Connect to the database
-    let conn = connect_to_db();
+    let ctx = connect_to_db();
+
+    // Register callbacks to run in response to database events.
+    register_callbacks(&ctx);
+
+    // Subscribe to SQL queries in order to construct a local partial replica of the database.
+    subscribe_to_tables(&ctx);
+
+    // Spawn a thread, where the connection will process messages and invoke callbacks.
+    ctx.run_threaded();
+
     // Handle CLI input
-    user_input_loop(&conn);
+    user_input_loop(&ctx);
 }
 ```
-
 
 ## Register callbacks
 
@@ -124,28 +138,30 @@ To `client/src/main.rs`, add:
 
 ```rust
 /// Register all the callbacks our app will use to respond to database events.
-fn register_callbacks(conn: &DbConnection) {
+fn register_callbacks(ctx: &DbConnection) {
     // When a new user joins, print a notification.
-    conn.db.user().on_insert(on_user_inserted);
+    ctx.db.user().on_insert(on_user_inserted);
 
     // When a user's status changes, print a notification.
-    conn.db.user().on_update(on_user_updated);
+    ctx.db.user().on_update(on_user_updated);
 
     // When a new message is received, print it.
-    conn.db.message().on_insert(on_message_inserted);
+    ctx.db.message().on_insert(on_message_inserted);
 
     // When we receive the message backlog, print it in timestamp order.
-    conn.subscription_builder().on_applied(on_sub_applied);
+    ctx.subscription_builder().on_applied(on_sub_applied);
 
     // When we fail to set our name, print a warning.
-    conn.reducers.on_set_name(on_name_set);
+    ctx.reducers.on_set_name(on_name_set);
 
     // When we fail to send a message, print a warning.
-    conn.reducers.on_send_message(on_message_sent);
+    ctx.reducers.on_send_message(on_message_sent);
 }
 ```
 
 ## Save credentials
+
+TODO: Revise this section.
 
 Each user has a `Credentials`, which consists of two parts:
 
@@ -157,24 +173,17 @@ Each user has a `Credentials`, which consists of two parts:
 To `client/src/main.rs`, add:
 
 ```rust
+fn creds_store() -> credentials::File {
+    credentials::File::new("quickstart-chat")
+}
+
 /// Our `on_connect` callback: save our credentials to a file.
-fn on_connected(conn: &DbConnection, ident: Identity, token: &str) {
-    let file = File::new(CREDS_NAME);
-    if let Err(e) = file.save(ident, token) {
+fn on_connected(_ctx: &DbConnection, _identity: Identity, token: &str) {
+    if let Err(e) = creds_store().save(token) {
         eprintln!("Failed to save credentials: {:?}", e);
     }
-
-    println!("Connected to SpacetimeDB.");
-    println!("Use /name to set your username, otherwise enter your message!");
-
-    // Subscribe to the data we care about
-    subscribe_to_tables(&conn);
-    // Register callbacks for reducers
-    register_callbacks(&conn);
 }
 ```
-
-You can see here that when we connect we're going to register our callbacks, which we defined above.
 
 ## Handle errors and disconnections
 
@@ -184,12 +193,12 @@ To `client/src/main.rs`, add:
 
 ```rust
 /// Our `on_connect_error` callback: print the error, then exit the process.
-fn on_connect_error(err: &anyhow::Error) {
+fn on_connect_error(err: &Error) {
     eprintln!("Connection error: {:?}", err);
 }
 
 /// Our `on_disconnect` callback: print a note, then exit the process.
-fn on_disconnected(_conn: &DbConnection, _err: Option<&anyhow::Error>) {
+fn on_disconnected(_ctx: &ErrorContext) {
     eprintln!("Disconnected!");
     std::process::exit(0)
 }
@@ -247,7 +256,7 @@ To `client/src/main.rs`, add:
 ```rust
 /// Our `User::on_update` callback:
 /// print a notification about name and status changes.
-fn on_user_updated(old: &User, new: &User, _: Option<&ReducerEvent>) {
+fn on_user_updated(_ctx: &EventContext, old: &User, new: &User) {
     if old.name != new.name {
         println!(
             "User {} renamed to {}.",
@@ -265,6 +274,8 @@ fn on_user_updated(old: &User, new: &User, _: Option<&ReducerEvent>) {
 ```
 
 ## Print messages
+
+TODO: Describe `RemoteDbContext`.
 
 When we receive a new message, we'll print it to standard output, along with the name of the user who sent it. Keep in mind that we only want to do this for new messages, i.e. those inserted by a `send_message` reducer invocation. We have to handle the backlog we receive when our subscription is initialized separately, to ensure they're printed in the correct order. To that effect, our `on_message_inserted` callback will check if the ctx.event type is an `Event::Reducer`, and only print in that case.
 
@@ -284,8 +295,12 @@ fn on_message_inserted(ctx: &EventContext, message: &Message) {
     }
 }
 
-fn print_message(ctx: &EventContext, message: &Message) {
-    let sender = ctx.db.user().identity().find(&message.sender.clone())
+fn print_message(ctx: &impl RemoteDbContext, message: &Message) {
+    let sender = ctx
+        .db()
+        .user()
+        .identity()
+        .find(&message.sender.clone())
         .map(|u| user_name_or_identity(&u))
         .unwrap_or_else(|| "unknown".to_string());
     println!("{}: {}", sender, message.text);
@@ -304,12 +319,14 @@ To `client/src/main.rs`, add:
 ```rust
 /// Our `on_subscription_applied` callback:
 /// sort all past messages and print them in timestamp order.
-fn on_sub_applied(ctx: &EventContext) {
+fn on_sub_applied(ctx: &SubscriptionEventContext) {
     let mut messages = ctx.db.message().iter().collect::<Vec<_>>();
     messages.sort_by_key(|m| m.sent);
     for message in messages {
         print_message(ctx, &message);
     }
+    println!("Fully connected and all subscriptions applied.");
+    println!("Use /name to set your name, or type a message!");
 }
 ```
 
@@ -333,69 +350,79 @@ To `client/src/main.rs`, add:
 
 ```rust
 /// Our `on_set_name` callback: print a warning if the reducer failed.
-fn on_name_set(ctx: &EventContext, name: &String) {
-    if let Event::Reducer(reducer) = &ctx.event {
-        if let Status::Failed(err) = reducer.status.clone() {
-            eprintln!("Failed to change name to {:?}: {}", name, err);
-        }
+fn on_name_set(ctx: &ReducerEventContext, name: &String) {
+    if let Status::Failed(err) = &ctx.event.status {
+        eprintln!("Failed to change name to {:?}: {}", name, err);
     }
 }
 
 /// Our `on_send_message` callback: print a warning if the reducer failed.
-fn on_message_sent(ctx: &EventContext, text: &String) {
-    if let Event::Reducer(reducer) = &ctx.event {
-        if let Status::Failed(err) = reducer.status.clone() {
-            eprintln!("Failed to send message {:?}: {}", text, err);
-        }
+fn on_message_sent(ctx: &ReducerEventContext, text: &String) {
+    if let Status::Failed(err) = &ctx.event.status {
+        eprintln!("Failed to send message {:?}: {}", text, err);
     }
 }
 ```
 
 ## Connect to the database
 
-Now that our callbacks are all set up, we can connect to the database. We'll store the URI of the SpacetimeDB instance and our module name in constants `SPACETIMEDB_URI` and `DB_NAME`. Replace `<module-name>` with the name you chose when publishing your module during the module quickstart.
+Now that our callbacks are all set up, we can connect to the database. We'll store the URI of the SpacetimeDB instance and our module name in constants `SPACETIMEDB_URI` and `DB_NAME`. Replace `quickstart-chat` with the name you chose when publishing your module during the module quickstart, and `http://localhost:3000` with the URI of the SpacetimeDB server you published to.
 
 To `client/src/main.rs`, add:
 
 ```rust
-/// The URL of the SpacetimeDB instance hosting our chat module.
-const SPACETIMEDB_URI: &str = "http://localhost:3000";
+/// The URI of the SpacetimeDB instance hosting our chat module.
+const HOST: &str = "http://localhost:3000";
 
 /// The module name we chose when we published our module.
-const DB_NAME: &str = "<module-name>";
-
-/// You should change this value to a unique name based on your application.
-const CREDS_NAME: &str = "rust-sdk-quickstart";
+const DB_NAME: &str = "quickstart-chat";
 
 /// Load credentials from a file and connect to the database.
 fn connect_to_db() -> DbConnection {
-    let credentials = File::new(CREDS_NAME);
-    let conn = DbConnection::builder()
+    DbConnection::builder()
         .on_connect(on_connected)
         .on_connect_error(on_connect_error)
         .on_disconnect(on_disconnected)
-        .with_uri(SPACETIMEDB_URI)
+        .with_token(creds_store().load().expect("Error loading credentials"))
         .with_module_name(DB_NAME)
-        .with_token(credentials.load().unwrap())
-        .build().expect("Failed to connect");
-    conn.run_threaded();
-    conn
+        .with_uri(HOST)
+        .with_compression(Compression::Gzip)
+        .build()
+        .expect("Failed to connect")
 }
 ```
 
 ## Subscribe to queries
+
+TODO: Revise this section
 
 SpacetimeDB is set up so that each client subscribes via SQL queries to some subset of the database, and is notified about changes only to that subset. For complex apps with large databases, judicious subscriptions can save each client significant network bandwidth, memory and computation compared. For example, in [BitCraft](https://bitcraftonline.com), each player's client subscribes only to the entities in the "chunk" of the world where that player currently resides, rather than the entire game world. Our app is much simpler than BitCraft, so we'll just subscribe to the whole database.
 
 To `client/src/main.rs`, add:
 
 ```rust
+/// A helper function to subscribe to each of the `queries`,
+/// and run `callback` only when all of the results are ready.
+fn subscribe_to_queries(ctx: &DbConnection, queries: &[&str], callback: fn(&SubscriptionEventContext)) {
+    if queries.is_empty() {
+        panic!("No queries to subscribe to.");
+    }
+    let remaining_queries = std::sync::Arc::new(std::sync::atomic::AtomicU8::new(queries.len() as u8));
+    for query in queries {
+        let remaining_queries = remaining_queries.clone();
+        ctx.subscription_builder()
+            .on_applied(move |ctx| {
+                if remaining_queries.fetch_sub(1, std::sync::atomic::Ordering::Relaxed) == 1 {
+                    callback(ctx);
+                }
+            })
+            .subscribe(query);
+    }
+}
+
 /// Register subscriptions for all rows of both tables.
-fn subscribe_to_tables(conn: &DbConnection) {
-    conn.subscription_builder().subscribe([
-        "SELECT * FROM user;",
-        "SELECT * FROM message;",
-    ]);
+fn subscribe_to_tables(ctx: &DbConnection) {
+    subscribe_to_queries(ctx, &["SELECT * FROM user", "SELECT * FROM message"], on_sub_applied);
 }
 ```
 
@@ -466,9 +493,9 @@ User <my-name> connected.
 
 ## What's next?
 
-You can find the full code for this client [in the Rust SDK's examples](https://github.com/clockworklabs/SpacetimeDB/tree/master/crates/sdk/examples/quickstart-chat).
+You can find the full code for this client [in the Rust client SDK's examples](https://github.com/clockworklabs/SpacetimeDB/tree/master/crates/sdk/examples/quickstart-chat).
 
-Check out the [Rust SDK Reference](/docs/sdks/rust) for a more comprehensive view of the SpacetimeDB Rust SDK.
+Check out the [Rust client SDK Reference](/docs/sdks/rust) for a more comprehensive view of the SpacetimeDB Rust client SDK.
 
 Our basic terminal interface has some limitations. Incoming messages can appear while the user is typing, which is less than ideal. Additionally, the user's input gets mixed with the program's output, making messages the user sends appear twice. You might want to try improving the interface by using [Rustyline](https://crates.io/crates/rustyline), [Cursive](https://crates.io/crates/cursive), or even creating a full-fledged GUI.
 
