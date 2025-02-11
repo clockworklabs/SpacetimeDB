@@ -29,13 +29,12 @@ pub async fn health<S: ControlStateDelegate + NodeDelegate>(
         .map(|n| n.unschedulable)
         .unwrap_or(false);
 
-    Ok(serde_json::json!({
+    Ok(axum::Json(serde_json::json!({
         "package_name": PACKAGE_NAME,
         "version": VERSION,
         "nodes": nodes,
         "schedulable": schedulable,
-    })
-    .to_string())
+    })))
 }
 
 pub fn router<S>() -> axum::Router<S>

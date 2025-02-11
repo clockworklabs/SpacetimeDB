@@ -273,6 +273,12 @@ struct LocalLoginResponse {
 
 async fn spacetimedb_direct_login(host: &Url) -> Result<String, anyhow::Error> {
     let client = reqwest::Client::new();
-    let response: LocalLoginResponse = client.post(host.join("identity")?).send().await?.json().await?;
+    let response: LocalLoginResponse = client
+        .post(host.join("/v1/identity")?)
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
     Ok(response.token)
 }

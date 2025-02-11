@@ -1,6 +1,5 @@
 mod control_db;
 mod energy_monitor;
-pub mod routes;
 pub mod subcommands;
 pub mod util;
 pub mod version;
@@ -208,7 +207,7 @@ impl spacetimedb_client_api::ControlStateReadAccess for StandaloneEnv {
     }
 
     // DNS
-    fn lookup_identity(&self, domain: &DomainName) -> anyhow::Result<Option<Identity>> {
+    fn lookup_identity(&self, domain: &str) -> anyhow::Result<Option<Identity>> {
         Ok(self.control_db.spacetime_dns(domain)?)
     }
 

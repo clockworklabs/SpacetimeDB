@@ -185,7 +185,7 @@ pub trait ControlStateReadAccess {
     fn get_energy_balance(&self, identity: &Identity) -> anyhow::Result<Option<EnergyBalance>>;
 
     // DNS
-    fn lookup_identity(&self, domain: &DomainName) -> anyhow::Result<Option<Identity>>;
+    fn lookup_identity(&self, domain: &str) -> anyhow::Result<Option<Identity>>;
     fn reverse_lookup(&self, database_identity: &Identity) -> anyhow::Result<Vec<DomainName>>;
 }
 
@@ -259,7 +259,7 @@ impl<T: ControlStateReadAccess + ?Sized> ControlStateReadAccess for Arc<T> {
     }
 
     // DNS
-    fn lookup_identity(&self, domain: &DomainName) -> anyhow::Result<Option<Identity>> {
+    fn lookup_identity(&self, domain: &str) -> anyhow::Result<Option<Identity>> {
         (**self).lookup_identity(domain)
     }
 

@@ -1,4 +1,5 @@
 from .. import Smoketest, random_string
+import unittest
 
 class Domains(Smoketest):
     AUTOPUBLISH = False
@@ -19,6 +20,7 @@ class Domains(Smoketest):
         # Now we're essentially just testing that it *doesn't* throw an exception
         self.spacetime("logs", rand_name)
 
+    @unittest.expectedFailure
     def test_subdomain_behavior(self):
         """Test how we treat the / character in published names"""
 

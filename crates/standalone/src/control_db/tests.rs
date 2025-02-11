@@ -67,11 +67,11 @@ fn test_domain() -> anyhow::Result<()> {
     let tld_owner = cdb.spacetime_lookup_tld(domain.tld())?;
     assert_eq!(tld_owner, Some(*ALICE));
 
-    let registered_addr = cdb.spacetime_dns(&domain)?;
+    let registered_addr = cdb.spacetime_dns(domain.as_ref())?;
     assert_eq!(registered_addr, Some(addr));
 
     // Try lowercase, too
-    let registered_addr = cdb.spacetime_dns(&domain_lower)?;
+    let registered_addr = cdb.spacetime_dns(domain_lower.as_ref())?;
     assert_eq!(registered_addr, Some(addr));
 
     // Reverse should yield the original domain (in mixed-case)
