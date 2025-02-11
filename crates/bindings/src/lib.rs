@@ -13,7 +13,6 @@ pub mod table;
 
 use spacetimedb_lib::bsatn;
 use std::cell::RefCell;
-use std::collections::VecDeque;
 
 pub use log;
 #[cfg(feature = "rand")]
@@ -138,7 +137,7 @@ pub fn table_id_from_name(table_name: &str) -> TableId {
 thread_local! {
     /// A global pool of buffers used for iteration.
     // This gets optimized away to a normal global since wasm32 doesn't have threads by default.
-    static ITER_BUFS: RefCell<VecDeque<Vec<u8>>> = const { RefCell::new(VecDeque::new()) };
+    static ITER_BUFS: RefCell<Vec<Vec<u8>>> = const { RefCell::new(Vec::new()) };
 }
 
 struct IterBuf {
@@ -149,7 +148,7 @@ impl IterBuf {
     /// Take a buffer from the pool of buffers for row iterators, if one exists. Otherwise, allocate a new one.
     fn take() -> Self {
         let buf = ITER_BUFS
-            .with_borrow_mut(|v| v.pop_front())
+            .with_borrow_mut(|v| v.pop())
             .unwrap_or_else(|| Vec::with_capacity(DEFAULT_BUFFER_CAPACITY));
         Self { buf }
     }
@@ -170,7 +169,7 @@ impl Drop for IterBuf {
     fn drop(&mut self) {
         self.buf.clear();
         let buf = std::mem::take(&mut self.buf);
-        ITER_BUFS.with_borrow_mut(|v| v.push_back(buf));
+        ITER_BUFS.with_borrow_mut(|v| v.push(buf));
     }
 }
 
