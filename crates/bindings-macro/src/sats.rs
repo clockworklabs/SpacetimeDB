@@ -317,6 +317,7 @@ pub(crate) fn derive_deserialize(ty: &SatsType<'_>) -> TokenStream {
                         const _: () = {
                             #(#spacetimedb_lib::bsatn::assert_is_primitive_type::<#fields>();)*
                         };
+                        // This guarantees that `Self` has no padding.
                         if const { core::mem::size_of::<Self>() == #(core::mem::size_of::<#fields>())+* } {
                             let bytes = deserializer.get_slice(core::mem::size_of::<Self>())?;
                             let ptr = bytes as *const [u8] as *const u8 as *const Self;
@@ -521,6 +522,7 @@ pub(crate) fn derive_serialize(ty: &SatsType) -> TokenStream {
                         const _: () = {
                             #(#spacetimedb_lib::bsatn::assert_is_primitive_type::<#fields>();)*
                         };
+                        // This guarantees that `Self` has no padding.
                         if const { core::mem::size_of::<Self>() == #(core::mem::size_of::<#fields>())+* } {
                             // SAFETY:
                             // - We know `self` is non-null as it's a shared reference
