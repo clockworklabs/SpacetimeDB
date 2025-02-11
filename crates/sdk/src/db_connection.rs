@@ -480,8 +480,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
         self.apply_pending_mutations()?;
 
         // Deranged behavior: mpsc's `try_next` returns `Ok(None)` when the channel is closed,
-        // and `Err(_)` when the channel is open and waiting.
-        // This seems exactly backwards.
+        // and `Err(_)` when the channel is open and waiting. This seems exactly backwards.
         //
         // NOTE(cloutiertyler): A comment on the deranged behavior: the mental
         // model is that of an iterator, but for a stream instead. i.e. you pull
