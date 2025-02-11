@@ -1,10 +1,18 @@
-use std::collections::HashSet;
+use std::{collections::HashSet, ops::Deref, str::FromStr};
 
 use crate::statement::Statement;
+use anyhow::anyhow;
+use anyhow::bail;
+use anyhow::Context;
+use bigdecimal::BigDecimal;
+use bigdecimal::ToPrimitive;
 use check::{Relvars, TypingResult};
 use errors::{DuplicateName, InvalidLiteral, InvalidOp, InvalidWildcard, UnexpectedType, Unresolved};
+use ethnum::i256;
+use ethnum::u256;
 use expr::{Expr, FieldProject, ProjectList, ProjectName, RelExpr};
-use spacetimedb_lib::{from_hex_pad, Address, AlgebraicType, AlgebraicValue, Identity};
+use spacetimedb_lib::{from_hex_pad, AlgebraicType, AlgebraicValue, ConnectionId, Identity};
+use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use spacetimedb_schema::schema::ColumnSchema;
 use spacetimedb_sql_parser::ast::{self, BinOp, ProjectElem, SqlExpr, SqlIdent, SqlLiteral};
 
@@ -57,11 +65,12 @@ pub(crate) fn type_expr(vars: &Relvars, expr: SqlExpr, expected: Option<&Algebra
         (SqlExpr::Lit(SqlLiteral::Str(v)), None | Some(AlgebraicType::String)) => Ok(Expr::str(v)),
         (SqlExpr::Lit(SqlLiteral::Str(_)), Some(ty)) => Err(UnexpectedType::new(&AlgebraicType::String, ty).into()),
         (SqlExpr::Lit(SqlLiteral::Num(_) | SqlLiteral::Hex(_)), None) => Err(Unresolved::Literal.into()),
-        (SqlExpr::Lit(SqlLiteral::Num(v) | SqlLiteral::Hex(v)), Some(ty)) => {
-            Ok(Expr::Value(parse(v.into_string(), ty)?, ty.clone()))
-        }
+        (SqlExpr::Lit(SqlLiteral::Num(v) | SqlLiteral::Hex(v)), Some(ty)) => Ok(Expr::Value(
+            parse(&v, ty).map_err(|_| InvalidLiteral::new(v.into_string(), ty))?,
+            ty.clone(),
+        )),
         (SqlExpr::Field(SqlIdent(table), SqlIdent(field)), None) => {
-            let table_type = vars.get(&table).ok_or_else(|| Unresolved::var(&table))?;
+            let table_type = vars.deref().get(&table).ok_or_else(|| Unresolved::var(&table))?;
             let ColumnSchema { col_pos, col_type, .. } = table_type
                 .get_column_by_name(&field)
                 .ok_or_else(|| Unresolved::var(&field))?;
@@ -72,8 +81,9 @@ pub(crate) fn type_expr(vars: &Relvars, expr: SqlExpr, expected: Option<&Algebra
             }))
         }
         (SqlExpr::Field(SqlIdent(table), SqlIdent(field)), Some(ty)) => {
-            let table_type = vars.get(&table).ok_or_else(|| Unresolved::var(&table))?;
+            let table_type = vars.deref().get(&table).ok_or_else(|| Unresolved::var(&table))?;
             let ColumnSchema { col_pos, col_type, .. } = table_type
+                .as_ref()
                 .get_column_by_name(&field)
                 .ok_or_else(|| Unresolved::var(&field))?;
             if col_type != ty {
@@ -107,70 +117,196 @@ pub(crate) fn type_expr(vars: &Relvars, expr: SqlExpr, expected: Option<&Algebra
 
 /// Is this type compatible with this binary operator?
 fn op_supports_type(_op: BinOp, t: &AlgebraicType) -> bool {
-    t.is_bool() || t.is_integer() || t.is_float() || t.is_string() || t.is_bytes() || t.is_identity() || t.is_address()
+    t.is_bool()
+        || t.is_integer()
+        || t.is_float()
+        || t.is_string()
+        || t.is_bytes()
+        || t.is_identity()
+        || t.is_connection_id()
+}
+
+/// Parse an integer literal into an [AlgebraicValue]
+fn parse_int<Int, Val, ToInt, ToVal>(
+    literal: &str,
+    ty: AlgebraicType,
+    to_int: ToInt,
+    to_val: ToVal,
+) -> anyhow::Result<AlgebraicValue>
+where
+    Int: Into<Val>,
+    ToInt: FnOnce(&BigDecimal) -> Option<Int>,
+    ToVal: FnOnce(Val) -> AlgebraicValue,
+{
+    // Why are we using an arbitrary precision type?
+    // For scientific notation as well as i256 and u256.
+    BigDecimal::from_str(literal)
+        .ok()
+        .filter(|decimal| decimal.is_integer())
+        .ok_or_else(|| anyhow!("{literal} is not an integer"))
+        .map(|decimal| to_int(&decimal).map(|val| val.into()).map(to_val))
+        .transpose()
+        .ok_or_else(|| anyhow!("{literal} is out of bounds for type {}", fmt_algebraic_type(&ty)))?
+}
+
+/// Parse a floating point literal into an [AlgebraicValue]
+fn parse_float<Float, Value, ToFloat, ToValue>(
+    literal: &str,
+    ty: AlgebraicType,
+    to_float: ToFloat,
+    to_value: ToValue,
+) -> anyhow::Result<AlgebraicValue>
+where
+    Float: Into<Value>,
+    ToFloat: FnOnce(&BigDecimal) -> Option<Float>,
+    ToValue: FnOnce(Value) -> AlgebraicValue,
+{
+    BigDecimal::from_str(literal)
+        .ok()
+        .and_then(|decimal| to_float(&decimal))
+        .map(|value| value.into())
+        .map(to_value)
+        .ok_or_else(|| anyhow!("{literal} is not a valid {}", fmt_algebraic_type(&ty)))
 }
 
 /// Parses a source text literal as a particular type
-pub(crate) fn parse(value: String, ty: &AlgebraicType) -> Result<AlgebraicValue, InvalidLiteral> {
+pub(crate) fn parse(value: &str, ty: &AlgebraicType) -> anyhow::Result<AlgebraicValue> {
+    let to_bytes = || {
+        from_hex_pad::<Vec<u8>, _>(value)
+            .map(|v| v.into_boxed_slice())
+            .map(AlgebraicValue::Bytes)
+            .with_context(|| "Could not parse hex value")
+    };
+    let to_identity = || {
+        Identity::from_hex(value)
+            .map(AlgebraicValue::from)
+            .with_context(|| "Could not parse identity")
+    };
+    let to_connection_id = || {
+        ConnectionId::from_hex(value)
+            .map(AlgebraicValue::from)
+            .with_context(|| "Could not parse connection id")
+    };
+    let to_i256 = |decimal: &BigDecimal| {
+        i256::from_str_radix(
+            // Convert to decimal notation
+            &decimal.to_plain_string(),
+            10,
+        )
+        .ok()
+    };
+    let to_u256 = |decimal: &BigDecimal| {
+        u256::from_str_radix(
+            // Convert to decimal notation
+            &decimal.to_plain_string(),
+            10,
+        )
+        .ok()
+    };
     match ty {
-        AlgebraicType::I8 => value
-            .parse::<i8>()
-            .map(AlgebraicValue::I8)
-            .map_err(|_| InvalidLiteral::new(value, ty)),
-        AlgebraicType::U8 => value
-            .parse::<u8>()
-            .map(AlgebraicValue::U8)
-            .map_err(|_| InvalidLiteral::new(value, ty)),
-        AlgebraicType::I16 => value
-            .parse::<i16>()
-            .map(AlgebraicValue::I16)
-            .map_err(|_| InvalidLiteral::new(value, ty)),
-        AlgebraicType::U16 => value
-            .parse::<u16>()
-            .map(AlgebraicValue::U16)
-            .map_err(|_| InvalidLiteral::new(value, ty)),
-        AlgebraicType::I32 => value
-            .parse::<i32>()
-            .map(AlgebraicValue::I32)
-            .map_err(|_| InvalidLiteral::new(value, ty)),
-        AlgebraicType::U32 => value
-            .parse::<u32>()
-            .map(AlgebraicValue::U32)
-            .map_err(|_| InvalidLiteral::new(value, ty)),
-        AlgebraicType::I64 => value
-            .parse::<i64>()
-            .map(AlgebraicValue::I64)
-            .map_err(|_| InvalidLiteral::new(value, ty)),
-        AlgebraicType::U64 => value
-            .parse::<u64>()
-            .map(AlgebraicValue::U64)
-            .map_err(|_| InvalidLiteral::new(value, ty)),
-        AlgebraicType::F32 => value
-            .parse::<f32>()
-            .map(|value| AlgebraicValue::F32(value.into()))
-            .map_err(|_| InvalidLiteral::new(value, ty)),
-        AlgebraicType::F64 => value
-            .parse::<f64>()
-            .map(|value| AlgebraicValue::F64(value.into()))
-            .map_err(|_| InvalidLiteral::new(value, ty)),
-        AlgebraicType::I128 => value
-            .parse::<i128>()
-            .map(|value| AlgebraicValue::I128(value.into()))
-            .map_err(|_| InvalidLiteral::new(value, ty)),
-        AlgebraicType::U128 => value
-            .parse::<u128>()
-            .map(|value| AlgebraicValue::U128(value.into()))
-            .map_err(|_| InvalidLiteral::new(value, ty)),
-        t if t.is_bytes() => from_hex_pad::<Vec<u8>, _>(&value)
-            .map(|value| AlgebraicValue::Bytes(value.into_boxed_slice()))
-            .map_err(|_| InvalidLiteral::new(value, ty)),
-        t if t.is_identity() => Identity::from_hex(&value)
-            .map(AlgebraicValue::from)
-            .map_err(|_| InvalidLiteral::new(value, ty)),
-        t if t.is_address() => Address::from_hex(&value)
-            .map(AlgebraicValue::from)
-            .map_err(|_| InvalidLiteral::new(value, ty)),
-        _ => Err(InvalidLiteral::new(value, ty)),
+        AlgebraicType::I8 => parse_int(
+            // Parse literal as I8
+            value,
+            AlgebraicType::I8,
+            BigDecimal::to_i8,
+            AlgebraicValue::I8,
+        ),
+        AlgebraicType::U8 => parse_int(
+            // Parse literal as U8
+            value,
+            AlgebraicType::U8,
+            BigDecimal::to_u8,
+            AlgebraicValue::U8,
+        ),
+        AlgebraicType::I16 => parse_int(
+            // Parse literal as I16
+            value,
+            AlgebraicType::I16,
+            BigDecimal::to_i16,
+            AlgebraicValue::I16,
+        ),
+        AlgebraicType::U16 => parse_int(
+            // Parse literal as U16
+            value,
+            AlgebraicType::U16,
+            BigDecimal::to_u16,
+            AlgebraicValue::U16,
+        ),
+        AlgebraicType::I32 => parse_int(
+            // Parse literal as I32
+            value,
+            AlgebraicType::I32,
+            BigDecimal::to_i32,
+            AlgebraicValue::I32,
+        ),
+        AlgebraicType::U32 => parse_int(
+            // Parse literal as U32
+            value,
+            AlgebraicType::U32,
+            BigDecimal::to_u32,
+            AlgebraicValue::U32,
+        ),
+        AlgebraicType::I64 => parse_int(
+            // Parse literal as I64
+            value,
+            AlgebraicType::I64,
+            BigDecimal::to_i64,
+            AlgebraicValue::I64,
+        ),
+        AlgebraicType::U64 => parse_int(
+            // Parse literal as U64
+            value,
+            AlgebraicType::U64,
+            BigDecimal::to_u64,
+            AlgebraicValue::U64,
+        ),
+        AlgebraicType::F32 => parse_float(
+            // Parse literal as F32
+            value,
+            AlgebraicType::F32,
+            BigDecimal::to_f32,
+            AlgebraicValue::F32,
+        ),
+        AlgebraicType::F64 => parse_float(
+            // Parse literal as F64
+            value,
+            AlgebraicType::F64,
+            BigDecimal::to_f64,
+            AlgebraicValue::F64,
+        ),
+        AlgebraicType::I128 => parse_int(
+            // Parse literal as I128
+            value,
+            AlgebraicType::I128,
+            BigDecimal::to_i128,
+            AlgebraicValue::I128,
+        ),
+        AlgebraicType::U128 => parse_int(
+            // Parse literal as U128
+            value,
+            AlgebraicType::U128,
+            BigDecimal::to_u128,
+            AlgebraicValue::U128,
+        ),
+        AlgebraicType::I256 => parse_int(
+            // Parse literal as I256
+            value,
+            AlgebraicType::I256,
+            to_i256,
+            AlgebraicValue::I256,
+        ),
+        AlgebraicType::U256 => parse_int(
+            // Parse literal as U256
+            value,
+            AlgebraicType::U256,
+            to_u256,
+            AlgebraicValue::U256,
+        ),
+        AlgebraicType::String => Ok(AlgebraicValue::String(value.into())),
+        t if t.is_bytes() => to_bytes(),
+        t if t.is_identity() => to_identity(),
+        t if t.is_connection_id() => to_connection_id(),
+        t => bail!("Literal values for type {} are not supported", fmt_algebraic_type(t)),
     }
 }
 

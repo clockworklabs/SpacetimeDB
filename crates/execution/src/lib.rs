@@ -4,8 +4,7 @@ use anyhow::{anyhow, Result};
 use iter::PlanIter;
 use spacetimedb_lib::{
     bsatn::{EncodeError, ToBsatn},
-    query::Delta,
-    ser::Serialize,
+    sats::impl_serialize,
     AlgebraicValue, ProductValue,
 };
 use spacetimedb_physical_plan::plan::{ProjectField, ProjectPlan, TupleField};
@@ -13,10 +12,12 @@ use spacetimedb_primitives::{IndexId, TableId};
 use spacetimedb_table::{
     blob_store::BlobStore,
     static_assert_size,
-    table::{IndexScanIter, RowRef, Table, TableScanIter},
+    table::{IndexScanPointIter, IndexScanRangeIter, RowRef, Table, TableScanIter},
 };
 
+pub mod dml;
 pub mod iter;
+pub mod pipelined;
 
 /// The datastore interface required for building an executor
 pub trait Datastore {
@@ -34,48 +35,85 @@ pub trait Datastore {
             .ok_or_else(|| anyhow!("TableId `{table_id}` does not exist"))
     }
 
-    fn index_scan(
+    fn index_scan_point(
         &self,
         table_id: TableId,
         index_id: IndexId,
-        range: &impl RangeBounds<AlgebraicValue>,
-    ) -> Result<IndexScanIter> {
+        key: &AlgebraicValue,
+    ) -> Result<IndexScanPointIter> {
         self.table(table_id)
             .ok_or_else(|| anyhow!("TableId `{table_id}` does not exist"))
             .and_then(|table| {
                 table
-                    .index_seek_by_id(self.blob_store(), index_id, range)
+                    .get_index_by_id_with_table(self.blob_store(), index_id)
+                    .map(|i| i.seek_point(key))
+                    .ok_or_else(|| anyhow!("IndexId `{index_id}` does not exist"))
+            })
+    }
+
+    fn index_scan_range(
+        &self,
+        table_id: TableId,
+        index_id: IndexId,
+        range: &impl RangeBounds<AlgebraicValue>,
+    ) -> Result<IndexScanRangeIter> {
+        self.table(table_id)
+            .ok_or_else(|| anyhow!("TableId `{table_id}` does not exist"))
+            .and_then(|table| {
+                table
+                    .get_index_by_id_with_table(self.blob_store(), index_id)
+                    .map(|i| i.seek_range(range))
                     .ok_or_else(|| anyhow!("IndexId `{index_id}` does not exist"))
             })
     }
 }
 
 pub trait DeltaStore {
-    fn has_inserts(&self, table_id: TableId) -> Option<Delta>;
-    fn has_deletes(&self, table_id: TableId) -> Option<Delta>;
+    fn num_inserts(&self, table_id: TableId) -> usize;
+    fn num_deletes(&self, table_id: TableId) -> usize;
+
+    fn has_inserts(&self, table_id: TableId) -> bool {
+        self.num_inserts(table_id) != 0
+    }
+
+    fn has_deletes(&self, table_id: TableId) -> bool {
+        self.num_deletes(table_id) != 0
+    }
 
     fn inserts_for_table(&self, table_id: TableId) -> Option<std::slice::Iter<'_, ProductValue>>;
     fn deletes_for_table(&self, table_id: TableId) -> Option<std::slice::Iter<'_, ProductValue>>;
 
-    fn delta_scan(&self, table_id: TableId, inserts: bool) -> Result<DeltaScanIter> {
+    fn delta_scan(&self, table_id: TableId, inserts: bool) -> DeltaScanIter {
         match inserts {
-            true => self
-                .inserts_for_table(table_id)
-                .ok_or_else(|| anyhow!("TableId `{table_id}` does not exist"))
-                .map(|iter| DeltaScanIter { iter }),
-            false => self
-                .deletes_for_table(table_id)
-                .ok_or_else(|| anyhow!("TableId `{table_id}` does not exist"))
-                .map(|iter| DeltaScanIter { iter }),
+            true => DeltaScanIter {
+                iter: self.inserts_for_table(table_id),
+            },
+            false => DeltaScanIter {
+                iter: self.deletes_for_table(table_id),
+            },
         }
     }
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone)]
 pub enum Row<'a> {
     Ptr(RowRef<'a>),
     Ref(&'a ProductValue),
 }
+
+impl Row<'_> {
+    pub fn to_product_value(&self) -> ProductValue {
+        match self {
+            Self::Ptr(ptr) => ptr.to_product_value(),
+            Self::Ref(val) => (*val).clone(),
+        }
+    }
+}
+
+impl_serialize!(['a] Row<'a>, (self, ser) => match self {
+    Self::Ptr(row) => row.serialize(ser),
+    Self::Ref(row) => row.serialize(ser),
+});
 
 impl ToBsatn for Row<'_> {
     fn static_bsatn_size(&self) -> Option<u16> {
@@ -103,8 +141,8 @@ impl ToBsatn for Row<'_> {
 impl ProjectField for Row<'_> {
     fn project(&self, field: &TupleField) -> AlgebraicValue {
         match self {
-            Self::Ptr(ptr) => ptr.read_col(field.field_pos).unwrap(),
-            Self::Ref(val) => val.elements.get(field.field_pos).unwrap().clone(),
+            Self::Ptr(ptr) => ptr.project(field),
+            Self::Ref(val) => val.project(field),
         }
     }
 }
@@ -152,17 +190,24 @@ impl<'a> Tuple<'a> {
             }
         }
     }
+
+    fn join(self, with: Self) -> Self {
+        match with {
+            Self::Row(ptr) => self.append(ptr),
+            Self::Join(ptrs) => ptrs.into_iter().fold(self, |tup, ptr| tup.append(ptr)),
+        }
+    }
 }
 
 pub struct DeltaScanIter<'a> {
-    iter: std::slice::Iter<'a, ProductValue>,
+    iter: Option<std::slice::Iter<'a, ProductValue>>,
 }
 
 impl<'a> Iterator for DeltaScanIter<'a> {
     type Item = &'a ProductValue;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next()
+        self.iter.as_mut().and_then(|iter| iter.next())
     }
 }
 

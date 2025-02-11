@@ -2,7 +2,7 @@ use crate::auth::{
     anon_auth_middleware, SpacetimeAuth, SpacetimeAuthHeader, SpacetimeEnergyUsed, SpacetimeExecutionDurationMicros,
     SpacetimeIdentity, SpacetimeIdentityToken,
 };
-use crate::routes::subscribe::generate_random_address;
+use crate::routes::subscribe::generate_random_connection_id;
 use crate::util::{ByteStringBody, NameOrIdentity};
 use crate::{log_and_500, ControlStateDelegate, DatabaseDef, NodeDelegate};
 use axum::body::{Body, Bytes};
@@ -12,9 +12,7 @@ use axum::Extension;
 use axum_extra::TypedHeader;
 use futures::StreamExt;
 use http::StatusCode;
-use serde::Deserialize;
-use serde_json::{json, Value};
-use spacetimedb::address::Address;
+use serde::{Deserialize, Serialize};
 use spacetimedb::database_logger::DatabaseLogger;
 use spacetimedb::host::ReducerCallError;
 use spacetimedb::host::ReducerOutcome;
@@ -24,11 +22,10 @@ use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, HostType};
 use spacetimedb_client_api_messages::name::{self, DnsLookupResponse, DomainName, PublishOp, PublishResult};
 use spacetimedb_data_structures::map::HashMap;
-use spacetimedb_lib::address::AddressForUrl;
 use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::sats::WithTypespace;
-use spacetimedb_lib::ser::serde::SerializeWrapper;
+use spacetimedb_lib::sats::{self, WithTypespace};
+use spacetimedb_lib::{ProductType, ProductTypeElement};
 use spacetimedb_schema::def::{ReducerDef, TableDef};
 
 use super::identity::IdentityForUrl;
@@ -47,30 +44,26 @@ pub struct CallParams {
     reducer: String,
 }
 
-#[derive(Deserialize)]
-pub struct CallQueryParams {
-    client_address: Option<AddressForUrl>,
-}
-
 pub async fn call<S: ControlStateDelegate + NodeDelegate>(
     State(worker_ctx): State<S>,
     Extension(auth): Extension<SpacetimeAuth>,
     Path(CallParams {
-        name_or_identity: name_or_address,
+        name_or_identity,
         reducer,
     }): Path<CallParams>,
-    Query(CallQueryParams { client_address }): Query<CallQueryParams>,
     ByteStringBody(body): ByteStringBody,
 ) -> axum::response::Result<impl IntoResponse> {
     let caller_identity = auth.identity;
 
     let args = ReducerArgs::Json(body);
 
-    let address = name_or_address.resolve(&worker_ctx).await?.into();
-    let database = worker_ctx_find_database(&worker_ctx, &address).await?.ok_or_else(|| {
-        log::error!("Could not find database: {}", address.to_hex());
-        (StatusCode::NOT_FOUND, "No such database.")
-    })?;
+    let db_identity = name_or_identity.resolve(&worker_ctx).await?.into();
+    let database = worker_ctx_find_database(&worker_ctx, &db_identity)
+        .await?
+        .ok_or_else(|| {
+            log::error!("Could not find database: {}", db_identity.to_hex());
+            (StatusCode::NOT_FOUND, "No such database.")
+        })?;
     let identity = database.owner_identity;
 
     let leader = worker_ctx
@@ -80,20 +73,18 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
         .ok_or(StatusCode::NOT_FOUND)?;
     let module = leader.module().await.map_err(log_and_500)?;
 
-    // HTTP callers always need an address to provide to connect/disconnect,
-    // so generate one if none was provided.
-    let client_address = client_address
-        .map(Address::from)
-        .unwrap_or_else(generate_random_address);
+    // HTTP callers always need a connection ID to provide to connect/disconnect,
+    // so generate one.
+    let connection_id = generate_random_connection_id();
 
     if let Err(e) = module
-        .call_identity_connected_disconnected(caller_identity, client_address, true)
+        .call_identity_connected_disconnected(caller_identity, connection_id, true)
         .await
     {
         return Err((StatusCode::NOT_FOUND, format!("{:#}", anyhow::anyhow!(e))).into());
     }
     let result = match module
-        .call_reducer(caller_identity, Some(client_address), None, None, None, &reducer, args)
+        .call_reducer(caller_identity, Some(connection_id), None, None, None, &reducer, args)
         .await
     {
         Ok(rcr) => Ok(rcr),
@@ -108,6 +99,10 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
                     log::debug!("Attempt to call non-existent reducer {}", reducer);
                     StatusCode::NOT_FOUND
                 }
+                ReducerCallError::LifecycleReducer(lifecycle) => {
+                    log::debug!("Attempt to call {lifecycle:?} lifeycle reducer {}", reducer);
+                    StatusCode::BAD_REQUEST
+                }
             };
 
             log::debug!("Error while invoking reducer {:#}", e);
@@ -116,7 +111,7 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
     };
 
     if let Err(e) = module
-        .call_identity_connected_disconnected(caller_identity, client_address, false)
+        .call_identity_connected_disconnected(caller_identity, connection_id, false)
         .await
     {
         return Err((StatusCode::NOT_FOUND, format!("{:#}", anyhow::anyhow!(e))).into());
@@ -176,7 +171,7 @@ impl<'a> EntityDef<'a> {
             EntityDef::Table(_) => DescribedEntityType::Table,
         }
     }
-    fn name(&self) -> &str {
+    fn name(&self) -> &'a str {
         match self {
             EntityDef::Reducer(r) => &r.name[..],
             EntityDef::Table(t) => &t.name[..],
@@ -184,8 +179,24 @@ impl<'a> EntityDef<'a> {
     }
 }
 
-fn entity_description_json(description: WithTypespace<EntityDef>) -> Option<Value> {
-    let typ = description.ty().described_entity_ty().as_str();
+#[serde_with::serde_as]
+#[derive(Serialize)]
+struct EntityDescription<'a> {
+    #[serde_as(as = "serde_with::DisplayFromStr")]
+    r#type: DescribedEntityType,
+    arity: usize,
+    schema: EntityDescriptionSchema<'a>,
+}
+
+#[derive(Serialize)]
+struct EntityDescriptionSchema<'a> {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    name: Option<&'a str>,
+    elements: Box<[ProductTypeElement]>,
+}
+
+fn entity_description_json<'a>(description: WithTypespace<'_, EntityDef<'a>>) -> Option<EntityDescription<'a>> {
+    let typ = description.ty().described_entity_ty();
     let len = match description.ty() {
         EntityDef::Table(t) => description
             .resolve(t.product_type_ref)
@@ -198,22 +209,25 @@ fn entity_description_json(description: WithTypespace<EntityDef>) -> Option<Valu
     // TODO(noa): make this less hacky; needs coordination w/ spacetime-web
     let schema = match description.ty() {
         EntityDef::Table(table) => {
-            json!(description
+            let product_type = description
                 .with(&table.product_type_ref)
                 .resolve_refs()
                 .ok()?
-                .as_product()?)
+                .into_product()
+                .ok()?;
+            let ProductType { elements } = product_type;
+            EntityDescriptionSchema { name: None, elements }
         }
-        EntityDef::Reducer(r) => json!({
-            "name": &r.name[..],
-            "elements": r.params.elements,
-        }),
+        EntityDef::Reducer(r) => EntityDescriptionSchema {
+            name: Some(&r.name),
+            elements: r.params.elements.clone(),
+        },
     };
-    Some(json!({
-        "type": typ,
-        "arity": len,
-        "schema": schema
-    }))
+    Some(EntityDescription {
+        r#type: typ,
+        arity: len,
+        schema,
+    })
 }
 
 #[derive(Deserialize)]
@@ -235,8 +249,8 @@ pub async fn describe<S>(
 where
     S: ControlStateDelegate + NodeDelegate,
 {
-    let address = name_or_identity.resolve(&worker_ctx).await?.into();
-    let database = worker_ctx_find_database(&worker_ctx, &address)
+    let db_identity = name_or_identity.resolve(&worker_ctx).await?.into();
+    let database = worker_ctx_find_database(&worker_ctx, &db_identity)
         .await?
         .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
 
@@ -258,13 +272,12 @@ where
         .ok_or_else(|| (StatusCode::NOT_FOUND, format!("{entity_type} {entity:?} not found")))?;
     let description = WithTypespace::new(module.info().module_def.typespace(), &description);
 
-    let response_json = json!({ entity: entity_description_json(description) });
+    let response_json: SchemaEntities = HashMap::from_iter([(&*entity, entity_description_json(description))]);
 
     Ok((
-        StatusCode::OK,
         TypedHeader(SpacetimeIdentity(auth.identity)),
         TypedHeader(SpacetimeIdentityToken(auth.creds)),
-        axum::Json(response_json),
+        axum::Json(response_json).into_response(),
     ))
 }
 
@@ -292,6 +305,16 @@ pub struct CatalogQueryParams {
     #[serde(default)]
     module_def: bool,
 }
+
+type SchemaEntities<'a> = HashMap<&'a str, Option<EntityDescription<'a>>>;
+
+#[derive(Serialize)]
+struct CatalogResponse<'a> {
+    entities: SchemaEntities<'a>,
+    #[serde(with = "sats::serde")]
+    typespace: &'a sats::Typespace,
+}
+
 pub async fn catalog<S>(
     State(worker_ctx): State<S>,
     Path(CatalogParams { name_or_identity }): Path<CatalogParams>,
@@ -301,8 +324,8 @@ pub async fn catalog<S>(
 where
     S: ControlStateDelegate + NodeDelegate,
 {
-    let address = name_or_identity.resolve(&worker_ctx).await?.into();
-    let database = worker_ctx_find_database(&worker_ctx, &address)
+    let db_identity = name_or_identity.resolve(&worker_ctx).await?.into();
+    let database = worker_ctx_find_database(&worker_ctx, &db_identity)
         .await?
         .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
 
@@ -315,27 +338,19 @@ where
 
     let response_json = if module_def {
         let raw = RawModuleDefV9::from(module.info().module_def.clone());
-        serde_json::to_value(SerializeWrapper::from_ref(&raw)).map_err(log_and_500)?
+        axum::Json(sats::serde::SerdeWrapper(raw)).into_response()
     } else {
-        let response_catalog: HashMap<_, _> = get_catalog(&module)
-            .map(|entity| {
-                (
-                    entity.name().to_string().into_boxed_str(),
-                    entity_description_json(WithTypespace::new(module.info().module_def.typespace(), &entity)),
-                )
-            })
+        let typespace = module.info.module_def.typespace();
+        let entities: HashMap<_, _> = get_catalog(&module)
+            .map(|entity| (entity.name(), entity_description_json(typespace.with_type(&entity))))
             .collect();
-        json!({
-            "entities": response_catalog,
-            "typespace": SerializeWrapper::from_ref(module.info().module_def.typespace()),
-        })
+        axum::Json(CatalogResponse { entities, typespace }).into_response()
     };
 
     Ok((
-        StatusCode::OK,
         TypedHeader(SpacetimeIdentity(auth.identity)),
         TypedHeader(SpacetimeIdentityToken(auth.creds)),
-        axum::Json(response_json),
+        response_json,
     ))
 }
 
@@ -343,6 +358,28 @@ where
 pub struct InfoParams {
     name_or_identity: NameOrIdentity,
 }
+
+#[derive(Serialize)]
+struct InfoResponse {
+    database_identity: Identity,
+    owner_identity: Identity,
+    host_type: &'static str,
+    initial_program: spacetimedb_lib::Hash,
+}
+
+impl From<Database> for InfoResponse {
+    fn from(database: Database) -> Self {
+        InfoResponse {
+            database_identity: database.database_identity,
+            owner_identity: database.owner_identity,
+            host_type: match database.host_type {
+                HostType::Wasm => "wasm",
+            },
+            initial_program: database.initial_program,
+        }
+    }
+}
+
 pub async fn info<S: ControlStateDelegate>(
     State(worker_ctx): State<S>,
     Path(InfoParams { name_or_identity }): Path<InfoParams>,
@@ -353,16 +390,10 @@ pub async fn info<S: ControlStateDelegate>(
     let database = worker_ctx_find_database(&worker_ctx, &database_identity)
         .await?
         .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
-    log::trace!("Fetched database from the worker db for address: {database_identity:?}");
+    log::trace!("Fetched database from the worker db for database identity: {database_identity:?}");
 
-    let host_type: &str = database.host_type.as_ref();
-    let response_json = json!({
-        "database_identity": database.database_identity,
-        "owner_identity": database.owner_identity,
-        "host_type": host_type,
-        "initial_program": database.initial_program,
-    });
-    Ok((StatusCode::OK, axum::Json(response_json)))
+    let response = InfoResponse::from(database);
+    Ok(axum::Json(response))
 }
 
 #[derive(Deserialize)]
@@ -451,7 +482,6 @@ where
     };
 
     Ok((
-        StatusCode::OK,
         TypedHeader(headers::CacheControl::new().with_no_cache()),
         TypedHeader(headers::ContentType::from(mime_ndjson())),
         body,
@@ -492,8 +522,8 @@ where
     // Anyone is authorized to execute SQL queries. The SQL engine will determine
     // which queries this identity is allowed to execute against the database.
 
-    let address = name_or_identity.resolve(&worker_ctx).await?.into();
-    let database = worker_ctx_find_database(&worker_ctx, &address)
+    let db_identity = name_or_identity.resolve(&worker_ctx).await?.into();
+    let database = worker_ctx_find_database(&worker_ctx, &db_identity)
         .await?
         .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
 
@@ -507,7 +537,7 @@ where
         .ok_or(StatusCode::NOT_FOUND)?;
     let json = host.exec_sql(auth, database, body).await?;
 
-    Ok((StatusCode::OK, axum::Json(json)))
+    Ok(axum::Json(json))
 }
 
 #[derive(Deserialize)]
@@ -546,9 +576,9 @@ pub async fn reverse_dns<S: ControlStateDelegate>(
     State(ctx): State<S>,
     Path(ReverseDNSParams { database_identity }): Path<ReverseDNSParams>,
 ) -> axum::response::Result<impl IntoResponse> {
-    let database_address = Identity::from(database_identity);
+    let database_identity = Identity::from(database_identity);
 
-    let names = ctx.reverse_lookup(&database_address).map_err(log_and_500)?;
+    let names = ctx.reverse_lookup(&database_identity).map_err(log_and_500)?;
 
     let response = name::ReverseDNSResponse { names };
     Ok(axum::Json(response))
@@ -583,7 +613,7 @@ pub struct PublishDatabaseQueryParams {
 }
 
 impl PublishDatabaseQueryParams {
-    pub fn name_or_address(&self) -> Option<&NameOrIdentity> {
+    pub fn name_or_identity(&self) -> Option<&NameOrIdentity> {
         self.name_or_identity.as_ref()
     }
 }
@@ -607,8 +637,8 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
         Some(noa) => match noa.try_resolve(&ctx).await? {
             Ok(resolved) => resolved.into(),
             Err(domain) => {
-                // `name_or_address` was a `NameOrAddress::Name`, but no record
-                // exists yet. Create it now with a fresh address.
+                // `name_or_identity` was a `NameOrIdentity::Name`, but no record
+                // exists yet. Create it now with a fresh identity.
                 let database_auth = SpacetimeAuth::alloc(&ctx).await?;
                 let database_identity = database_auth.identity;
                 ctx.create_dns_record(&auth.identity, &domain, &database_identity)
@@ -624,7 +654,7 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
         }
     };
 
-    log::trace!("Publishing to the address: {}", database_identity.to_hex());
+    log::trace!("Publishing to the identity: {}", database_identity.to_hex());
 
     let op = {
         let exists = ctx
@@ -688,14 +718,12 @@ pub struct DeleteDatabaseParams {
 
 pub async fn delete_database<S: ControlStateDelegate>(
     State(ctx): State<S>,
-    Path(DeleteDatabaseParams {
-        database_identity: address,
-    }): Path<DeleteDatabaseParams>,
+    Path(DeleteDatabaseParams { database_identity }): Path<DeleteDatabaseParams>,
     Extension(auth): Extension<SpacetimeAuth>,
 ) -> axum::response::Result<impl IntoResponse> {
-    let address = Identity::from(address);
+    let database_identity = Identity::from(database_identity);
 
-    ctx.delete_database(&auth.identity, &address)
+    ctx.delete_database(&auth.identity, &database_identity)
         .await
         .map_err(log_and_500)?;
 

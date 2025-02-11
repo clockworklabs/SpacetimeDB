@@ -65,7 +65,7 @@ public partial struct PublicTable
     public double DoubleField;
     public string StringField;
     public Identity IdentityField;
-    public Address AddressField;
+    public ConnectionId ConnectionIdField;
     public CustomStruct CustomStructField;
     public CustomClass CustomClassField;
     public CustomEnum CustomEnumField;

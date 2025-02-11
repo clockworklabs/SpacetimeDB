@@ -90,7 +90,7 @@ pub struct Test {
     ///
     /// Will run with access to the env vars:
     /// - `SPACETIME_SDK_TEST_CLIENT_PROJECT` bound to the `client_project` path.
-    /// - `SPACETIME_SDK_TEST_DB_ADDR` bound to the database address.
+    /// - `SPACETIME_SDK_TEST_DB_NAME` bound to the database identity or name.
     run_command: String,
 }
 
@@ -146,7 +146,7 @@ macro_rules! memoized {
         MEMOIZED
             .lock()
             .unwrap()
-            .get_or_insert_with(HashMap::default)
+            .get_or_insert_default()
             .entry($key)
             .or_insert_with_key(|$key| -> $value_ty { $body })
             .clone()

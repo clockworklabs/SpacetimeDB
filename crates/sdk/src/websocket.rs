@@ -2,17 +2,19 @@
 //!
 //! This module is internal, and may incompatibly change without warning.
 
-use anyhow::{anyhow, bail, Context, Result};
+use std::sync::Arc;
+
 use bytes::Bytes;
 use futures::{SinkExt, StreamExt as _, TryStreamExt};
 use futures_channel::mpsc;
-use http::uri::{Scheme, Uri};
+use http::uri::{InvalidUri, Scheme, Uri};
 use spacetimedb_client_api_messages::websocket::{
     brotli_decompress, gzip_decompress, BsatnFormat, Compression, SERVER_MSG_COMPRESSION_TAG_BROTLI,
     SERVER_MSG_COMPRESSION_TAG_GZIP, SERVER_MSG_COMPRESSION_TAG_NONE,
 };
 use spacetimedb_client_api_messages::websocket::{ClientMessage, ServerMessage};
-use spacetimedb_lib::{bsatn, Address};
+use spacetimedb_lib::{bsatn, ConnectionId};
+use thiserror::Error;
 use tokio::task::JoinHandle;
 use tokio::{net::TcpStream, runtime};
 use tokio_tungstenite::{
@@ -22,19 +24,78 @@ use tokio_tungstenite::{
     MaybeTlsStream, WebSocketStream,
 };
 
+#[derive(Error, Debug, Clone)]
+pub enum UriError {
+    #[error("Unknown URI scheme {scheme}, expected http, https, ws or wss")]
+    UnknownUriScheme { scheme: String },
+
+    #[error("Expected a URI without a query part, but found {query}")]
+    UnexpectedQuery { query: String },
+
+    #[error(transparent)]
+    InvalidUri {
+        // `Arc` is required for `Self: Clone`, as `http::uri::InvalidUri: !Clone`.
+        source: Arc<http::uri::InvalidUri>,
+    },
+
+    #[error(transparent)]
+    InvalidUriParts {
+        // `Arc` is required for `Self: Clone`, as `http::uri::InvalidUriParts: !Clone`.
+        source: Arc<http::uri::InvalidUriParts>,
+    },
+}
+
+#[derive(Error, Debug, Clone)]
+pub enum WsError {
+    #[error(transparent)]
+    UriError(#[from] UriError),
+
+    #[error("Error in WebSocket connection with {uri}: {source}")]
+    Tungstenite {
+        uri: Uri,
+        #[source]
+        // `Arc` is required for `Self: Clone`, as `tungstenite::Error: !Clone`.
+        source: Arc<tokio_tungstenite::tungstenite::Error>,
+    },
+
+    #[error("Received empty raw message, but valid messages always start with a one-byte compression flag")]
+    EmptyMessage,
+
+    #[error("Failed to deserialize WebSocket message: {source}")]
+    DeserializeMessage {
+        #[source]
+        source: bsatn::DecodeError,
+    },
+
+    #[error("Failed to decompress WebSocket message with {scheme}: {source}")]
+    Decompress {
+        scheme: &'static str,
+        #[source]
+        // `Arc` is required for `Self: Clone`, as `std::io::Error: !Clone`.
+        source: Arc<std::io::Error>,
+    },
+
+    #[error("Unrecognized compression scheme: {scheme:#x}")]
+    UnknownCompressionScheme { scheme: u8 },
+}
+
 pub(crate) struct WsConnection {
     sock: WebSocketStream<MaybeTlsStream<TcpStream>>,
 }
 
-fn parse_scheme(scheme: Option<Scheme>) -> Result<Scheme> {
+fn parse_scheme(scheme: Option<Scheme>) -> Result<Scheme, UriError> {
     Ok(match scheme {
         Some(s) => match s.as_str() {
             "ws" | "wss" => s,
-            "http" => "ws".parse()?,
-            "https" => "wss".parse()?,
-            unknown_scheme => bail!("Unknown URI scheme {}", unknown_scheme),
+            "http" => "ws".parse().unwrap(),
+            "https" => "wss".parse().unwrap(),
+            unknown_scheme => {
+                return Err(UriError::UnknownUriScheme {
+                    scheme: unknown_scheme.into(),
+                })
+            }
         },
-        None => "ws".parse()?,
+        None => "ws".parse().unwrap(),
     })
 }
 
@@ -44,18 +105,13 @@ pub(crate) struct WsParams {
     pub light: bool,
 }
 
-fn make_uri<Host>(host: Host, db_name: &str, client_address: Address, params: WsParams) -> Result<Uri>
-where
-    Host: TryInto<Uri>,
-    <Host as TryInto<Uri>>::Error: std::error::Error + Send + Sync + 'static,
-{
-    let host: Uri = host.try_into()?;
+fn make_uri(host: Uri, db_name: &str, connection_id: ConnectionId, params: WsParams) -> Result<Uri, UriError> {
     let mut parts = host.into_parts();
     let scheme = parse_scheme(parts.scheme.take())?;
     parts.scheme = Some(scheme);
     let mut path = if let Some(path_and_query) = parts.path_and_query {
         if let Some(query) = path_and_query.query() {
-            bail!("Unexpected query {}", query);
+            return Err(UriError::UnexpectedQuery { query: query.into() });
         }
         path_and_query.path().to_string()
     } else {
@@ -70,9 +126,9 @@ where
     path.push_str("database/subscribe/");
     path.push_str(db_name);
 
-    // Provide the client address.
-    path.push_str("?client_address=");
-    path.push_str(&client_address.to_hex());
+    // Provide the connection ID.
+    path.push_str("?connection_id=");
+    path.push_str(&connection_id.to_hex());
 
     // Specify the desired compression for host->client replies.
     match params.compression {
@@ -88,8 +144,12 @@ where
         path.push_str("&light=true");
     }
 
-    parts.path_and_query = Some(path.parse()?);
-    Ok(Uri::from_parts(parts)?)
+    parts.path_and_query = Some(path.parse().map_err(|source: InvalidUri| UriError::InvalidUri {
+        source: Arc::new(source),
+    })?);
+    Uri::from_parts(parts).map_err(|source| UriError::InvalidUriParts {
+        source: Arc::new(source),
+    })
 }
 
 // Tungstenite doesn't offer an interface to specify a WebSocket protocol, which frankly
@@ -101,19 +161,18 @@ where
 //       rather than having Tungstenite manage its own connections. Should this library do
 //       the same?
 
-fn make_request<Host>(
-    host: Host,
+fn make_request(
+    host: Uri,
     db_name: &str,
     token: Option<&str>,
-    client_address: Address,
+    connection_id: ConnectionId,
     params: WsParams,
-) -> Result<http::Request<()>>
-where
-    Host: TryInto<Uri>,
-    <Host as TryInto<Uri>>::Error: std::error::Error + Send + Sync + 'static,
-{
-    let uri = make_uri(host, db_name, client_address, params)?;
-    let mut req = IntoClientRequest::into_client_request(uri)?;
+) -> Result<http::Request<()>, WsError> {
+    let uri = make_uri(host, db_name, connection_id, params)?;
+    let mut req = IntoClientRequest::into_client_request(uri.clone()).map_err(|source| WsError::Tungstenite {
+        uri,
+        source: Arc::new(source),
+    })?;
     request_insert_protocol_header(&mut req);
     request_insert_auth_header(&mut req, token);
     Ok(req)
@@ -156,18 +215,18 @@ fn request_insert_auth_header(req: &mut http::Request<()>, token: Option<&str>) 
 }
 
 impl WsConnection {
-    pub(crate) async fn connect<Host>(
-        host: Host,
+    pub(crate) async fn connect(
+        host: Uri,
         db_name: &str,
         token: Option<&str>,
-        client_address: Address,
+        connection_id: ConnectionId,
         params: WsParams,
-    ) -> Result<Self>
-    where
-        Host: TryInto<Uri>,
-        <Host as TryInto<Uri>>::Error: std::error::Error + Send + Sync + 'static,
-    {
-        let req = make_request(host, db_name, token, client_address, params)?;
+    ) -> Result<Self, WsError> {
+        let req = make_request(host, db_name, token, connection_id, params)?;
+
+        // Grab the URI for error-reporting.
+        let uri = req.uri().clone();
+
         let (sock, _): (WebSocketStream<MaybeTlsStream<TcpStream>>, _) = connect_async_with_config(
             req,
             // TODO(kim): In order to be able to replicate module WASM blobs,
@@ -180,24 +239,38 @@ impl WsConnection {
             }),
             false,
         )
-        .await?;
+        .await
+        .map_err(|source| WsError::Tungstenite {
+            uri,
+            source: Arc::new(source),
+        })?;
         Ok(WsConnection { sock })
     }
 
-    pub(crate) fn parse_response(bytes: &[u8]) -> Result<ServerMessage<BsatnFormat>> {
-        let (compression, bytes) = bytes
-            .split_first()
-            .ok_or_else(|| anyhow!("Empty raw message. Must have at least a byte for the compression."))?;
+    pub(crate) fn parse_response(bytes: &[u8]) -> Result<ServerMessage<BsatnFormat>, WsError> {
+        let (compression, bytes) = bytes.split_first().ok_or(WsError::EmptyMessage)?;
 
         Ok(match *compression {
-            SERVER_MSG_COMPRESSION_TAG_NONE => bsatn::from_slice(bytes)?,
+            SERVER_MSG_COMPRESSION_TAG_NONE => {
+                bsatn::from_slice(bytes).map_err(|source| WsError::DeserializeMessage { source })?
+            }
             SERVER_MSG_COMPRESSION_TAG_BROTLI => {
-                bsatn::from_slice(&brotli_decompress(bytes).context("Failed to Brotli decompress message")?)?
+                bsatn::from_slice(&brotli_decompress(bytes).map_err(|source| WsError::Decompress {
+                    scheme: "brotli",
+                    source: Arc::new(source),
+                })?)
+                .map_err(|source| WsError::DeserializeMessage { source })?
             }
             SERVER_MSG_COMPRESSION_TAG_GZIP => {
-                bsatn::from_slice(&gzip_decompress(bytes).context("Failed to gzip decompress message")?)?
+                bsatn::from_slice(&gzip_decompress(bytes).map_err(|source| WsError::Decompress {
+                    scheme: "gzip",
+                    source: Arc::new(source),
+                })?)
+                .map_err(|source| WsError::DeserializeMessage { source })?
             }
-            c => bail!("Unknown compression format `{c}`"),
+            c => {
+                return Err(WsError::UnknownCompressionScheme { scheme: c });
+            }
         })
     }
 

@@ -10,6 +10,7 @@ description = "The SpacetimeDB query engine"
 anyhow.workspace = true
 spacetimedb-expr.workspace = true
 spacetimedb-lib.workspace = true
+spacetimedb-sats.workspace = true
 spacetimedb-physical-plan.workspace = true
 spacetimedb-primitives.workspace = true
 spacetimedb-sql-parser.workspace = true

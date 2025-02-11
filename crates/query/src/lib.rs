@@ -1,133 +1,75 @@
-use std::ops::Deref;
-
 use anyhow::{bail, Result};
-use delta::DeltaPlan;
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
-use spacetimedb_client_api_messages::websocket::{
-    Compression, DatabaseUpdate, QueryUpdate, TableUpdate, WebsocketFormat,
+use spacetimedb_execution::{
+    dml::{MutDatastore, MutExecutor},
+    pipelined::ProjectListExecutor,
+    Datastore, DeltaStore,
 };
-use spacetimedb_execution::{execute_plan, iter::PlanIter, Datastore, DeltaStore};
-use spacetimedb_expr::check::{type_subscription, SchemaView};
-use spacetimedb_physical_plan::{compile::compile_project_plan, plan::ProjectPlan};
+use spacetimedb_expr::{
+    check::{parse_and_type_sub, SchemaView},
+    expr::ProjectList,
+    statement::{parse_and_type_sql, Statement, DML},
+};
+use spacetimedb_lib::{metrics::ExecutionMetrics, ProductValue};
+use spacetimedb_physical_plan::{
+    compile::{compile_dml_plan, compile_select, compile_select_list},
+    plan::{ProjectListPlan, ProjectPlan},
+};
 use spacetimedb_primitives::TableId;
-use spacetimedb_sql_parser::parser::sub::parse_subscription;
-
-pub mod delta;
 
 /// DIRTY HACK ALERT: Maximum allowed length, in UTF-8 bytes, of SQL queries.
 /// Any query longer than this will be rejected.
 /// This prevents a stack overflow when compiling queries with deeply-nested `AND` and `OR` conditions.
 const MAX_SQL_LENGTH: usize = 50_000;
 
-/// A subscription query plan that is NOT used for incremental evaluation
-#[derive(Debug)]
-pub struct SubscribePlan {
-    /// The query plan
-    plan: ProjectPlan,
-    /// Table id of the returned rows
-    table_id: TableId,
-    /// Table name of the returned rows
-    table_name: Box<str>,
+pub fn compile_subscription(sql: &str, tx: &impl SchemaView) -> Result<(ProjectPlan, TableId, Box<str>)> {
+    if sql.len() > MAX_SQL_LENGTH {
+        bail!("SQL query exceeds maximum allowed length: \"{sql:.120}...\"")
+    }
+
+    let plan = parse_and_type_sub(sql, tx)?;
+
+    let Some(return_id) = plan.return_table_id() else {
+        bail!("Failed to determine TableId for query")
+    };
+
+    let Some(return_name) = tx.schema_for_table(return_id).map(|schema| schema.table_name.clone()) else {
+        bail!("TableId `{return_id}` does not exist")
+    };
+
+    let plan = compile_select(plan);
+
+    Ok((plan, return_id, return_name))
 }
 
-impl Deref for SubscribePlan {
-    type Target = ProjectPlan;
-
-    fn deref(&self) -> &Self::Target {
-        &self.plan
+/// A utility for parsing and type checking a sql statement
+pub fn compile_sql_stmt(sql: &str, tx: &impl SchemaView) -> Result<Statement> {
+    if sql.len() > MAX_SQL_LENGTH {
+        bail!("SQL query exceeds maximum allowed length: \"{sql:.120}...\"")
     }
+    Ok(parse_and_type_sql(sql, tx)?)
 }
 
-impl SubscribePlan {
-    /// Subscription queries always return rows from a single table
-    pub fn table_id(&self) -> TableId {
-        self.table_id
-    }
-
-    /// Subscription queries always return rows from a single table
-    pub fn table_name(&self) -> &str {
-        self.table_name.as_ref()
-    }
-
-    /// Delta plans are only materialized, and optimized, at runtime.
-    /// Hence we are free to instantiate a non-delta plans from them.
-    pub fn from_delta_plan(plan: &DeltaPlan) -> Self {
-        let table_id = plan.table_id();
-        let table_name = plan.table_name();
-        let plan = &**plan;
-        let plan = plan.clone().optimize();
-        Self {
-            plan,
-            table_id,
-            table_name,
-        }
-    }
-
-    /// Compile a subscription query for standard execution
-    pub fn compile(sql: &str, tx: &impl SchemaView) -> Result<Self> {
-        if sql.len() > MAX_SQL_LENGTH {
-            bail!("SQL query exceeds maximum allowed length: \"{sql:.120}...\"")
-        }
-        let ast = parse_subscription(sql)?;
-        let sub = type_subscription(ast, tx)?;
-
-        let Some(table_id) = sub.table_id() else {
-            bail!("Failed to determine TableId for query")
-        };
-
-        let Some(table_name) = tx.schema_for_table(table_id).map(|schema| schema.table_name.clone()) else {
-            bail!("TableId `{table_id}` does not exist")
-        };
-
-        let plan = compile_project_plan(sub);
-        let plan = plan.optimize();
-
-        Ok(Self {
-            plan,
-            table_id,
-            table_name,
-        })
-    }
-
-    /// Execute a subscription query
-    pub fn execute<Tx, F>(&self, tx: &Tx) -> Result<(F::List, u64)>
-    where
-        Tx: Datastore + DeltaStore,
-        F: WebsocketFormat,
-    {
-        execute_plan(&self.plan, tx, |iter| match iter {
-            PlanIter::Index(iter) => F::encode_list(iter),
-            PlanIter::Table(iter) => F::encode_list(iter),
-            PlanIter::Delta(iter) => F::encode_list(iter),
-            PlanIter::RowId(iter) => F::encode_list(iter),
-            PlanIter::Tuple(iter) => F::encode_list(iter),
-        })
-    }
-
-    /// Execute a subscription query and collect the results in a [TableUpdate]
-    pub fn collect_table_update<Tx, F>(&self, comp: Compression, tx: &Tx) -> Result<TableUpdate<F>>
-    where
-        Tx: Datastore + DeltaStore,
-        F: WebsocketFormat,
-    {
-        self.execute::<Tx, F>(tx).map(|(inserts, num_rows)| {
-            let deletes = F::List::default();
-            let qu = QueryUpdate { deletes, inserts };
-            let update = F::into_query_update(qu, comp);
-            TableUpdate::new(self.table_id, self.table_name.clone(), (update, num_rows))
-        })
-    }
+/// A utility for executing a sql select statement
+pub fn execute_select_stmt<Tx: Datastore + DeltaStore>(
+    stmt: ProjectList,
+    tx: &Tx,
+    metrics: &mut ExecutionMetrics,
+    check_row_limit: impl Fn(ProjectListPlan) -> Result<ProjectListPlan>,
+) -> Result<Vec<ProductValue>> {
+    let plan = compile_select_list(stmt).optimize()?;
+    let plan = check_row_limit(plan)?;
+    let plan = ProjectListExecutor::from(plan);
+    let mut rows = vec![];
+    plan.execute(tx, metrics, &mut |row| {
+        rows.push(row);
+        Ok(())
+    })?;
+    Ok(rows)
 }
 
-/// Execute a collection of subscription queries in parallel
-pub fn execute_plans<Tx, F>(plans: Vec<SubscribePlan>, comp: Compression, tx: &Tx) -> Result<DatabaseUpdate<F>>
-where
-    Tx: Datastore + DeltaStore + Sync,
-    F: WebsocketFormat,
-{
-    plans
-        .par_iter()
-        .map(|plan| plan.collect_table_update(comp, tx))
-        .collect::<Result<_>>()
-        .map(|tables| DatabaseUpdate { tables })
+/// A utility for executing a sql dml statement
+pub fn execute_dml_stmt<Tx: MutDatastore>(stmt: DML, tx: &mut Tx, metrics: &mut ExecutionMetrics) -> Result<()> {
+    let plan = compile_dml_plan(stmt).optimize()?;
+    let plan = MutExecutor::from(plan);
+    plan.execute(tx, metrics)
 }

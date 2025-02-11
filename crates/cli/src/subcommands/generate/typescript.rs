@@ -1,4 +1,4 @@
-use crate::generate::util::namespace_is_empty_or_default;
+use crate::generate::util::{is_reducer_invokable, iter_reducers, iter_tables, iter_types, iter_unique_cols};
 use crate::indent_scope;
 
 use super::util::{collect_case, print_auto_generated_file_comment, type_ref_name};
@@ -8,9 +8,7 @@ use std::fmt::{self, Write};
 use std::ops::Deref;
 
 use convert_case::{Case, Casing};
-use itertools::Itertools;
 use spacetimedb_lib::sats::AlgebraicTypeRef;
-use spacetimedb_primitives::ColList;
 use spacetimedb_schema::def::{ModuleDef, ReducerDef, ScopedTypeName, TableDef, TypeDef};
 use spacetimedb_schema::identifier::Identifier;
 use spacetimedb_schema::schema::{Schema, TableSchema};
@@ -18,6 +16,7 @@ use spacetimedb_schema::type_for_generate::{AlgebraicTypeDef, AlgebraicTypeUse, 
 
 use super::code_indenter::{CodeIndenter, Indenter};
 use super::Lang;
+use std::path::PathBuf;
 
 type Imports = BTreeSet<AlgebraicTypeRef>;
 
@@ -42,15 +41,14 @@ impl Lang for TypeScript {
         reducer_module_name(reducer_name) + ".ts"
     }
 
-    fn generate_type(&self, module: &ModuleDef, namespace: &str, typ: &TypeDef) -> String {
+    fn format_files(&self, _generated_files: BTreeSet<PathBuf>) -> anyhow::Result<()> {
+        // TODO: implement formatting.
+        Ok(())
+    }
+
+    fn generate_type(&self, module: &ModuleDef, typ: &TypeDef) -> String {
         // TODO(cloutiertyler): I do think TypeScript does support namespaces:
         // https://www.typescriptlang.org/docs/handbook/namespaces.html
-        assert!(
-            namespace_is_empty_or_default(namespace),
-            "TypeScript codegen does not support namespaces, as TypeScript equates namespaces with files.
-
-Requested namespace: {namespace}",
-        );
         let type_name = collect_case(Case::Pascal, typ.name.name_segments());
 
         let mut output = CodeIndenter::new(String::new(), INDENT);
@@ -82,14 +80,7 @@ Requested namespace: {namespace}",
         output.into_inner()
     }
 
-    fn generate_table(&self, module: &ModuleDef, namespace: &str, table: &TableDef) -> String {
-        assert!(
-            namespace_is_empty_or_default(namespace),
-            "TypeScript codegen does not support namespaces, as TypeScript equates namespaces with files.
-
-Requested namespace: {namespace}",
-        );
-
+    fn generate_table(&self, module: &ModuleDef, table: &TableDef) -> String {
         let schema = TableSchema::from_module_def(module, table, (), 0.into())
             .validated()
             .expect("Failed to generate table due to validation errors");
@@ -109,7 +100,7 @@ Requested namespace: {namespace}",
 
         // Import the types of all fields.
         // We only need to import fields which have indices or unique constraints,
-        // but it's easier to just import all of 'em, since we have `// @ts-ignore` anyway.
+        // but it's easier to just import all of 'em, since we have `// @ts-nocheck` anyway.
         gen_and_print_imports(
             module,
             out,
@@ -117,7 +108,6 @@ Requested namespace: {namespace}",
             &[], // No need to skip any imports; we're not defining a type, so there's no chance of circular imports.
         );
 
-        writeln!(out, "// @ts-ignore");
         writeln!(
             out,
             "import {{ EventContext, Reducer, RemoteReducers, RemoteTables }} from \".\";"
@@ -164,20 +154,16 @@ export class {table_handle} {{
         });
         writeln!(out, "}}");
 
-        let constraints = schema.backcompat_column_constraints();
+        for (unique_field_ident, unique_field_type_use) in iter_unique_cols(&schema, product_def) {
+            let unique_field_name = unique_field_ident.deref().to_case(Case::Snake);
+            let unique_field_name_pascalcase = unique_field_name.to_case(Case::Pascal);
 
-        for field in schema.columns() {
-            if constraints[&ColList::from(field.col_pos)].has_unique() {
-                let (unique_field_ident, unique_field_type_use) = &product_def.elements[field.col_pos.idx()];
-                let unique_field_name = unique_field_ident.deref().to_case(Case::Snake);
-                let unique_field_name_pascalcase = unique_field_name.to_case(Case::Pascal);
+            let unique_constraint = table_name_pascalcase.clone() + &unique_field_name_pascalcase + "Unique";
+            let unique_field_type = type_name(module, unique_field_type_use);
 
-                let unique_constraint = table_name_pascalcase.clone() + &unique_field_name_pascalcase + "Unique";
-                let unique_field_type = type_name(module, unique_field_type_use);
-
-                writeln!(
-                    out,
-                    "/**
+            writeln!(
+                out,
+                "/**
  * Access to the `{unique_field_name}` unique index on the table `{table_name}`,
  * which allows point queries on the field of the same name
  * via the [`{unique_constraint}.find`] method.
@@ -188,33 +174,32 @@ export class {table_handle} {{
  *
  * Get a handle on the `{unique_field_name}` unique index on the table `{table_name}`.
  */"
+            );
+            writeln!(out, "{unique_field_name} = {{");
+            out.with_indent(|out| {
+                writeln!(
+                    out,
+                    "// Find the subscribed row whose `{unique_field_name}` column value is equal to `col_val`,"
                 );
-                writeln!(out, "{unique_field_name} = {{");
+                writeln!(out, "// if such a row is present in the client cache.");
+                writeln!(
+                    out,
+                    "find: (col_val: {unique_field_type}): {row_type} | undefined => {{"
+                );
                 out.with_indent(|out| {
-                    writeln!(
-                        out,
-                        "// Find the subscribed row whose `{unique_field_name}` column value is equal to `col_val`,"
-                    );
-                    writeln!(out, "// if such a row is present in the client cache.");
-                    writeln!(
-                        out,
-                        "find: (col_val: {unique_field_type}): {row_type} | undefined => {{"
-                    );
+                    writeln!(out, "for (let row of this.tableCache.iter()) {{");
                     out.with_indent(|out| {
-                        writeln!(out, "for (let row of this.tableCache.iter()) {{");
+                        writeln!(out, "if (deepEqual(row.{unique_field_name}, col_val)) {{");
                         out.with_indent(|out| {
-                            writeln!(out, "if (deepEqual(row.{unique_field_name}, col_val)) {{");
-                            out.with_indent(|out| {
-                                writeln!(out, "return row;");
-                            });
-                            writeln!(out, "}}");
+                            writeln!(out, "return row;");
                         });
                         writeln!(out, "}}");
                     });
-                    writeln!(out, "}},");
+                    writeln!(out, "}}");
                 });
-                writeln!(out, "}};");
-            }
+                writeln!(out, "}},");
+            });
+            writeln!(out, "}};");
         }
 
         writeln!(out);
@@ -260,14 +245,7 @@ removeOnUpdate = (cb: (ctx: EventContext, onRow: {row_type}, newRow: {row_type})
         output.into_inner()
     }
 
-    fn generate_reducer(&self, module: &ModuleDef, namespace: &str, reducer: &ReducerDef) -> String {
-        assert!(
-            namespace_is_empty_or_default(namespace),
-            "TypeScript codegen does not support namespaces, as TypeScript equates namespaces with files.
-
-Requested namespace: {namespace}",
-        );
-
+    fn generate_reducer(&self, module: &ModuleDef, reducer: &ReducerDef) -> String {
         let mut output = CodeIndenter::new(String::new(), INDENT);
         let out = &mut output;
 
@@ -290,14 +268,7 @@ Requested namespace: {namespace}",
         output.into_inner()
     }
 
-    fn generate_globals(&self, module: &ModuleDef, namespace: &str) -> Vec<(String, String)> {
-        assert!(
-            namespace_is_empty_or_default(namespace),
-            "TypeScript codegen does not support namespaces, as TypeScript equates namespaces with files.
-
-Requested namespace: {namespace}",
-        );
-
+    fn generate_globals(&self, module: &ModuleDef) -> Vec<(String, String)> {
         let mut output = CodeIndenter::new(String::new(), INDENT);
         let out = &mut output;
 
@@ -379,6 +350,11 @@ Requested namespace: {namespace}",
             out,
             "// Constructors which are used by the DBConnectionImpl to
 // extract type information from the generated RemoteModule.
+//
+// NOTE: This is not strictly necessary for `eventContextConstructor` because
+// all we do is build a TypeScript object which we could have done inside the
+// SDK, but if in the future we wanted to create a class this would be
+// necessary because classes have methods, so we'll keep it.
 eventContextConstructor: (imp: DBConnectionImpl, event: Event<Reducer>) => {{
   return {{
     ...(imp as DBConnection),
@@ -416,6 +392,10 @@ setReducerFlagsConstructor: () => {{
 
         out.newline();
 
+        print_subscription_builder(module, out);
+
+        out.newline();
+
         print_db_connection(module, out);
 
         out.newline();
@@ -425,7 +405,26 @@ setReducerFlagsConstructor: () => {{
             "export type EventContext = EventContextInterface<RemoteTables, RemoteReducers, SetReducerFlags, Reducer>;"
         );
 
+        writeln!(
+            out,
+            "export type ReducerEventContext = ReducerEventContextInterface<RemoteTables, RemoteReducers, SetReducerFlags, Reducer>;"
+        );
+
+        writeln!(
+            out,
+            "export type SubscriptionEventContext = SubscriptionEventContextInterface<RemoteTables, RemoteReducers, SetReducerFlags>;"
+        );
+
+        writeln!(
+            out,
+            "export type ErrorContext = ErrorContextInterface<RemoteTables, RemoteReducers, SetReducerFlags>;"
+        );
+
         vec![("index.ts".to_string(), (output.into_inner()))]
+    }
+
+    fn clap_value() -> clap::builder::PossibleValue {
+        clap::builder::PossibleValue::new("typescript").aliases(["ts", "TS"])
     }
 }
 
@@ -457,41 +456,44 @@ fn print_remote_reducers(module: &ModuleDef, out: &mut Indenter) {
         let arg_name_list = arg_name_list.trim_end_matches(", ");
 
         let reducer_name = &reducer.name;
-        let reducer_name_pascal = reducer_name.deref().to_case(Case::Pascal);
-        let reducer_function_name = reducer_function_name(reducer);
-        let reducer_variant = reducer_variant_name(&reducer.name);
-        if reducer.params_for_generate.elements.is_empty() {
-            writeln!(out, "{reducer_function_name}() {{");
-            out.with_indent(|out| {
-                writeln!(
-                    out,
-                    "this.connection.callReducer(\"{reducer_name}\", new Uint8Array(0), this.setCallReducerFlags.{reducer_function_name}Flags);"
-                );
-            });
-        } else {
-            writeln!(out, "{reducer_function_name}({arg_list}) {{");
-            out.with_indent(|out| {
-                writeln!(out, "const __args = {{ {arg_name_list} }};");
-                writeln!(out, "let __writer = new BinaryWriter(1024);");
-                writeln!(
-                    out,
-                    "{reducer_variant}.getTypeScriptAlgebraicType().serialize(__writer, __args);"
-                );
-                writeln!(out, "let __argsBuffer = __writer.getBuffer();");
-                writeln!(out, "this.connection.callReducer(\"{reducer_name}\", __argsBuffer, this.setCallReducerFlags.{reducer_function_name}Flags);");
-            });
+
+        if is_reducer_invokable(reducer) {
+            let reducer_function_name = reducer_function_name(reducer);
+            let reducer_variant = reducer_variant_name(&reducer.name);
+            if reducer.params_for_generate.elements.is_empty() {
+                writeln!(out, "{reducer_function_name}() {{");
+                out.with_indent(|out| {
+                    writeln!(
+                        out,
+                        "this.connection.callReducer(\"{reducer_name}\", new Uint8Array(0), this.setCallReducerFlags.{reducer_function_name}Flags);"
+                    );
+                });
+            } else {
+                writeln!(out, "{reducer_function_name}({arg_list}) {{");
+                out.with_indent(|out| {
+                    writeln!(out, "const __args = {{ {arg_name_list} }};");
+                    writeln!(out, "let __writer = new BinaryWriter(1024);");
+                    writeln!(
+                        out,
+                        "{reducer_variant}.getTypeScriptAlgebraicType().serialize(__writer, __args);"
+                    );
+                    writeln!(out, "let __argsBuffer = __writer.getBuffer();");
+                    writeln!(out, "this.connection.callReducer(\"{reducer_name}\", __argsBuffer, this.setCallReducerFlags.{reducer_function_name}Flags);");
+                });
+            }
+            writeln!(out, "}}");
+            out.newline();
         }
-        writeln!(out, "}}");
-        out.newline();
 
         let arg_list_padded = if arg_list.is_empty() {
             String::new()
         } else {
             format!(", {arg_list}")
         };
+        let reducer_name_pascal = reducer_name.deref().to_case(Case::Pascal);
         writeln!(
             out,
-            "on{reducer_name_pascal}(callback: (ctx: EventContext{arg_list_padded}) => void) {{"
+            "on{reducer_name_pascal}(callback: (ctx: ReducerEventContext{arg_list_padded}) => void) {{"
         );
         out.indent(1);
         writeln!(out, "this.connection.onReducer(\"{reducer_name}\", callback);");
@@ -500,7 +502,7 @@ fn print_remote_reducers(module: &ModuleDef, out: &mut Indenter) {
         out.newline();
         writeln!(
             out,
-            "removeOn{reducer_name_pascal}(callback: (ctx: EventContext{arg_list_padded}) => void) {{"
+            "removeOn{reducer_name_pascal}(callback: (ctx: ReducerEventContext{arg_list_padded}) => void) {{"
         );
         out.indent(1);
         writeln!(out, "this.connection.offReducer(\"{reducer_name}\", callback);");
@@ -517,7 +519,7 @@ fn print_set_reducer_flags(module: &ModuleDef, out: &mut Indenter) {
     writeln!(out, "export class SetReducerFlags {{");
     out.indent(1);
 
-    for reducer in iter_reducers(module) {
+    for reducer in iter_reducers(module).filter(|r| is_reducer_invokable(r)) {
         let reducer_function_name = reducer_function_name(reducer);
         writeln!(out, "{reducer_function_name}Flags: CallReducerFlags = 'FullUpdate';");
         writeln!(out, "{reducer_function_name}(flags: CallReducerFlags) {{");
@@ -559,18 +561,33 @@ fn print_remote_tables(module: &ModuleDef, out: &mut Indenter) {
     writeln!(out, "}}");
 }
 
+fn print_subscription_builder(_module: &ModuleDef, out: &mut Indenter) {
+    writeln!(
+        out,
+        "export class SubscriptionBuilder extends SubscriptionBuilderImpl<RemoteTables, RemoteReducers, SetReducerFlags> {{ }}"
+    );
+}
+
 fn print_db_connection(_module: &ModuleDef, out: &mut Indenter) {
     writeln!(
         out,
-        "export class DBConnection extends DBConnectionImpl<RemoteTables, RemoteReducers, SetReducerFlags>  {{"
+        "export class DBConnection extends DBConnectionImpl<RemoteTables, RemoteReducers, SetReducerFlags> {{"
     );
-    out.indent(1);
-    writeln!(out, "static builder = (): DBConnectionBuilder<DBConnection>  => {{");
     out.indent(1);
     writeln!(
         out,
-        "return new DBConnectionBuilder<DBConnection>(REMOTE_MODULE, (imp: DBConnectionImpl) => imp as DBConnection);"
+        "static builder = (): DBConnectionBuilder<DBConnection, ErrorContext, SubscriptionEventContext> => {{"
     );
+    out.indent(1);
+    writeln!(
+        out,
+        "return new DBConnectionBuilder<DBConnection, ErrorContext, SubscriptionEventContext>(REMOTE_MODULE, (imp: DBConnectionImpl) => imp as DBConnection);"
+    );
+    out.dedent(1);
+    writeln!(out, "}}");
+    writeln!(out, "subscriptionBuilder = (): SubscriptionBuilder => {{");
+    out.indent(1);
+    writeln!(out, "return new SubscriptionBuilder(this);");
     out.dedent(1);
     writeln!(out, "}}");
     out.dedent(1);
@@ -600,12 +617,18 @@ fn print_spacetimedb_imports(out: &mut Indenter) {
         "SumTypeVariant",
         "AlgebraicValue",
         "Identity",
-        "Address",
+        "ConnectionId",
+        "Timestamp",
+        "TimeDuration",
         "DBConnectionBuilder",
         "TableCache",
         "BinaryWriter",
         "CallReducerFlags",
         "EventContextInterface",
+        "ReducerEventContextInterface",
+        "SubscriptionEventContextInterface",
+        "ErrorContextInterface",
+        "SubscriptionBuilderImpl",
         "BinaryReader",
         "DBConnectionImpl",
         "DBContext",
@@ -616,7 +639,6 @@ fn print_spacetimedb_imports(out: &mut Indenter) {
     writeln!(out, "import {{");
     out.indent(1);
     for ty in &types {
-        writeln!(out, "// @ts-ignore");
         writeln!(out, "{ty},");
     }
     out.dedent(1);
@@ -625,7 +647,14 @@ fn print_spacetimedb_imports(out: &mut Indenter) {
 
 fn print_file_header(output: &mut Indenter) {
     print_auto_generated_file_comment(output);
+    print_lint_suppression(output);
     print_spacetimedb_imports(output);
+}
+
+fn print_lint_suppression(output: &mut Indenter) {
+    writeln!(output, "/* eslint-disable */");
+    writeln!(output, "/* tslint:disable */");
+    writeln!(output, "// @ts-nocheck");
 }
 
 fn write_get_algebraic_type_for_product(
@@ -935,10 +964,12 @@ pub fn write_type<W: Write>(
         AlgebraicTypeUse::Unit => write!(out, "void")?,
         AlgebraicTypeUse::Never => write!(out, "never")?,
         AlgebraicTypeUse::Identity => write!(out, "Identity")?,
-        AlgebraicTypeUse::Address => write!(out, "Address")?,
+        AlgebraicTypeUse::ConnectionId => write!(out, "ConnectionId")?,
+        AlgebraicTypeUse::Timestamp => write!(out, "Timestamp")?,
+        AlgebraicTypeUse::TimeDuration => write!(out, "TimeDuration")?,
         AlgebraicTypeUse::ScheduleAt => write!(
             out,
-            "{{ tag: \"Interval\", value: bigint }} | {{ tag: \"Time\", value: bigint }}"
+            "{{ tag: \"Interval\", value: TimeDuration }} | {{ tag: \"Time\", value: Timestamp }}"
         )?,
         AlgebraicTypeUse::Option(inner_ty) => {
             write_type(module, out, inner_ty, ref_prefix)?;
@@ -988,7 +1019,9 @@ fn convert_algebraic_type<'a>(
     match ty {
         AlgebraicTypeUse::ScheduleAt => write!(out, "AlgebraicType.createScheduleAtType()"),
         AlgebraicTypeUse::Identity => write!(out, "AlgebraicType.createIdentityType()"),
-        AlgebraicTypeUse::Address => write!(out, "AlgebraicType.createAddressType()"),
+        AlgebraicTypeUse::ConnectionId => write!(out, "AlgebraicType.createConnectionIdType()"),
+        AlgebraicTypeUse::Timestamp => write!(out, "AlgebraicType.createTimestampType()"),
+        AlgebraicTypeUse::TimeDuration => write!(out, "AlgebraicType.createTimeDurationType()"),
         AlgebraicTypeUse::Option(inner_ty) => {
             write!(out, "AlgebraicType.createOptionType(");
             convert_algebraic_type(module, out, inner_ty, ref_prefix);
@@ -1056,33 +1089,11 @@ fn print_imports(module: &ModuleDef, out: &mut Indenter, imports: Imports) {
     for typeref in imports {
         let module_name = type_ref_module_name(module, typeref);
         let type_name = type_ref_name(module, typeref);
-        writeln!(out, "// @ts-ignore");
         writeln!(
             out,
             "import {{ {type_name} as __{type_name} }} from \"./{module_name}\";"
         );
     }
-}
-
-/// Iterate over all the [`ReducerDef`]s defined by the module, in alphabetical order by name.
-///
-/// Sorting is necessary to have deterministic reproducable codegen.
-fn iter_reducers(module: &ModuleDef) -> impl Iterator<Item = &ReducerDef> {
-    module.reducers().sorted_by_key(|reducer| &reducer.name)
-}
-
-/// Iterate over all the [`TableDef`]s defined by the module, in alphabetical order by name.
-///
-/// Sorting is necessary to have deterministic reproducable codegen.
-fn iter_tables(module: &ModuleDef) -> impl Iterator<Item = &TableDef> {
-    module.tables().sorted_by_key(|table| &table.name)
-}
-
-/// Iterate over all the [`TypeDef`]s defined by the module, in alphabetical order by name.
-///
-/// Sorting is necessary to have deterministic reproducable codegen.
-fn iter_types(module: &ModuleDef) -> impl Iterator<Item = &TypeDef> {
-    module.types().sorted_by_key(|table| &table.name)
 }
 
 /// Use `search_function` on `roots` to detect required imports, then print them with `print_imports`.

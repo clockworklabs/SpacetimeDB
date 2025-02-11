@@ -18,13 +18,51 @@ pub mod product_value;
 mod resolve_refs;
 pub mod satn;
 pub mod ser;
+pub mod size_of;
 pub mod sum_type;
 pub mod sum_type_variant;
 pub mod sum_value;
+pub mod time_duration;
+pub mod timestamp;
 pub mod typespace;
 
 #[cfg(any(test, feature = "proptest"))]
 pub mod proptest;
+
+#[cfg(feature = "serde")]
+pub mod serde {
+    pub use crate::de::serde::{deserialize_from as deserialize, SerdeDeserializer};
+    pub use crate::ser::serde::{serialize_to as serialize, SerdeSerializer};
+
+    /// A wrapper around a `serde` error which occured while translating SATS <-> serde.
+    #[repr(transparent)]
+    pub struct SerdeError<E>(pub E);
+
+    /// A wrapper type that implements `serde` traits when `T` implements SATS traits.
+    ///
+    /// Specifically:
+    /// - <code>T: [sats::Serialize][crate::ser::Serialize] => `SerializeWrapper<T>`: [serde::Serialize]</code>
+    /// - <code>T: [sats::Deserialize<'de>][crate::de::Deserialize] => `SerializeWrapper<T>`: [serde::Deserialize<'de>]</code>
+    /// - <code>T: [sats::DeserializeSeed<'de>][crate::de::DeserializeSeed] => `SerializeWrapper<T>`: [serde::DeserializeSeed<'de>]</code>
+    #[repr(transparent)]
+    pub struct SerdeWrapper<T: ?Sized>(pub T);
+
+    impl<T: ?Sized> SerdeWrapper<T> {
+        /// Wraps a value in `SerdeWrapper`.
+        pub fn new(t: T) -> Self
+        where
+            T: Sized,
+        {
+            Self(t)
+        }
+
+        /// Converts `&T` to `&SerializeWrapper<T>`.
+        pub fn from_ref(t: &T) -> &Self {
+            // SAFETY: OK because of `repr(transparent)`.
+            unsafe { &*(t as *const T as *const SerdeWrapper<T>) }
+        }
+    }
+}
 
 /// Allows the macros in [`spacetimedb_bindings_macro`] to accept `crate = spacetimedb_sats`,
 /// which will then emit `$krate::sats`.
@@ -111,7 +149,7 @@ impl<'a, T: Value> ValueWithType<'a, T> {
 }
 
 impl<'a, T: Value> ValueWithType<'a, Box<[T]>> {
-    pub fn iter(&self) -> impl Iterator<Item = ValueWithType<'_, T>> {
+    pub fn iter(&self) -> impl Iterator<Item = ValueWithType<'a, T>> + use<'_, 'a, T> {
         self.value().iter().map(|val| ValueWithType { ty: self.ty, val })
     }
 }

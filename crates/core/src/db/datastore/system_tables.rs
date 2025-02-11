@@ -13,22 +13,22 @@
 
 use crate::db::relational_db::RelationalDB;
 use crate::error::DBError;
-use derive_more::From;
 use spacetimedb_lib::db::auth::{StAccess, StTableType};
-use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, RawSql};
+use spacetimedb_lib::db::raw_def::v9::{btree, RawSql};
 use spacetimedb_lib::db::raw_def::*;
 use spacetimedb_lib::de::{Deserialize, DeserializeOwned, Error};
 use spacetimedb_lib::ser::Serialize;
-use spacetimedb_lib::{Address, Identity, ProductValue, SpacetimeType};
+use spacetimedb_lib::st_var::StVarValue;
+use spacetimedb_lib::{ConnectionId, Identity, ProductValue, SpacetimeType};
 use spacetimedb_primitives::*;
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use spacetimedb_sats::algebraic_value::ser::value_serialize;
 use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::product_value::InvalidFieldError;
-use spacetimedb_sats::{
-    impl_deserialize, impl_serialize, impl_st, u256, AlgebraicType, AlgebraicValue, ArrayValue, SumValue,
+use spacetimedb_sats::{impl_deserialize, impl_serialize, impl_st, u256, AlgebraicType, AlgebraicValue, ArrayValue};
+use spacetimedb_schema::def::{
+    BTreeAlgorithm, ConstraintData, DirectAlgorithm, IndexAlgorithm, ModuleDef, UniqueConstraintData,
 };
-use spacetimedb_schema::def::{BTreeAlgorithm, ConstraintData, IndexAlgorithm, ModuleDef, UniqueConstraintData};
 use spacetimedb_schema::schema::{
     ColumnSchema, ConstraintSchema, IndexSchema, RowLevelSecuritySchema, ScheduleSchema, Schema, SequenceSchema,
     TableSchema,
@@ -252,7 +252,7 @@ st_fields_enum!(enum StModuleFields {
 // WARNING: For a stable schema, don't change the field names and discriminants.
 st_fields_enum!(enum StClientFields {
     "identity", Identity = 0,
-    "address", Address = 1,
+    "connection_id", ConnectionId = 1,
 });
 // WARNING: For a stable schema, don't change the field names and discriminants.
 st_fields_enum!(enum StVarFields {
@@ -293,36 +293,40 @@ fn system_module_def() -> ModuleDef {
         .build_table(ST_TABLE_NAME, *st_table_type.as_ref().expect("should be ref"))
         .with_type(TableType::System)
         .with_auto_inc_primary_key(StTableFields::TableId)
-        .with_unique_constraint(StTableFields::TableName);
+        .with_index_no_accessor_name(btree(StTableFields::TableId))
+        .with_unique_constraint(StTableFields::TableName)
+        .with_index_no_accessor_name(btree(StTableFields::TableName));
 
     let st_raw_column_type = builder.add_type::<StColumnRow>();
+    let st_col_row_unique_cols = [StColumnFields::TableId.col_id(), StColumnFields::ColPos.col_id()];
     builder
         .build_table(ST_COLUMN_NAME, *st_raw_column_type.as_ref().expect("should be ref"))
         .with_type(TableType::System)
-        .with_unique_constraint(col_list![
-            StColumnFields::TableId.col_id(),
-            StColumnFields::ColPos.col_id()
-        ]);
+        .with_unique_constraint(st_col_row_unique_cols)
+        .with_index_no_accessor_name(btree(st_col_row_unique_cols));
 
     let st_index_type = builder.add_type::<StIndexRow>();
     builder
         .build_table(ST_INDEX_NAME, *st_index_type.as_ref().expect("should be ref"))
         .with_type(TableType::System)
-        .with_auto_inc_primary_key(StIndexFields::IndexId);
+        .with_auto_inc_primary_key(StIndexFields::IndexId)
+        .with_index_no_accessor_name(btree(StIndexFields::IndexId));
     // TODO(1.0): unique constraint on name?
 
     let st_sequence_type = builder.add_type::<StSequenceRow>();
     builder
         .build_table(ST_SEQUENCE_NAME, *st_sequence_type.as_ref().expect("should be ref"))
         .with_type(TableType::System)
-        .with_auto_inc_primary_key(StSequenceFields::SequenceId);
+        .with_auto_inc_primary_key(StSequenceFields::SequenceId)
+        .with_index_no_accessor_name(btree(StSequenceFields::SequenceId));
     // TODO(1.0): unique constraint on name?
 
     let st_constraint_type = builder.add_type::<StConstraintRow>();
     builder
         .build_table(ST_CONSTRAINT_NAME, *st_constraint_type.as_ref().expect("should be ref"))
         .with_type(TableType::System)
-        .with_auto_inc_primary_key(StConstraintFields::ConstraintId);
+        .with_auto_inc_primary_key(StConstraintFields::ConstraintId)
+        .with_index_no_accessor_name(btree(StConstraintFields::ConstraintId));
     // TODO(1.0): unique constraint on name?
 
     let st_row_level_security_type = builder.add_type::<StRowLevelSecurityRow>();
@@ -334,12 +338,8 @@ fn system_module_def() -> ModuleDef {
         .with_type(TableType::System)
         .with_primary_key(StRowLevelSecurityFields::Sql)
         .with_unique_constraint(StRowLevelSecurityFields::Sql)
-        .with_index(
-            RawIndexAlgorithm::BTree {
-                columns: StRowLevelSecurityFields::TableId.into(),
-            },
-            "accessor_name_doesnt_matter",
-        );
+        .with_index_no_accessor_name(btree(StRowLevelSecurityFields::Sql))
+        .with_index_no_accessor_name(btree(StRowLevelSecurityFields::TableId));
 
     let st_module_type = builder.add_type::<StModuleRow>();
     builder
@@ -348,24 +348,29 @@ fn system_module_def() -> ModuleDef {
     // TODO: add empty unique constraint here, once we've implemented those.
 
     let st_client_type = builder.add_type::<StClientRow>();
+    let st_client_unique_cols = [StClientFields::Identity, StClientFields::ConnectionId];
     builder
         .build_table(ST_CLIENT_NAME, *st_client_type.as_ref().expect("should be ref"))
         .with_type(TableType::System)
-        .with_unique_constraint(col_list![StClientFields::Identity, StClientFields::Address]); // FIXME: this is a noop?
+        .with_unique_constraint(st_client_unique_cols) // FIXME: this is a noop?
+        .with_index_no_accessor_name(btree(st_client_unique_cols));
 
     let st_schedule_type = builder.add_type::<StScheduledRow>();
     builder
         .build_table(ST_SCHEDULED_NAME, *st_schedule_type.as_ref().expect("should be ref"))
         .with_type(TableType::System)
-        .with_unique_constraint(StScheduledFields::TableId)
-        .with_auto_inc_primary_key(StScheduledFields::ScheduleId);
+        .with_unique_constraint(StScheduledFields::TableId) // FIXME: this is a noop?
+        .with_index_no_accessor_name(btree(StScheduledFields::TableId))
+        .with_auto_inc_primary_key(StScheduledFields::ScheduleId) // FIXME: this is a noop?
+        .with_index_no_accessor_name(btree(StScheduledFields::ScheduleId));
     // TODO(1.0): unique constraint on name?
 
     let st_var_type = builder.add_type::<StVarRow>();
     builder
         .build_table(ST_VAR_NAME, *st_var_type.as_ref().expect("should be ref"))
         .with_type(TableType::System)
-        .with_unique_constraint(StVarFields::Name)
+        .with_unique_constraint(StVarFields::Name) // FIXME: this is a noop?
+        .with_index_no_accessor_name(btree(StVarFields::Name))
         .with_primary_key(StVarFields::Name);
 
     let result = builder
@@ -598,13 +603,27 @@ pub enum StIndexAlgorithm {
 
     /// A BTree index.
     BTree { columns: ColList },
+
+    /// A Direct index.
+    Direct { column: ColId },
 }
 
 impl From<IndexAlgorithm> for StIndexAlgorithm {
     fn from(algorithm: IndexAlgorithm) -> Self {
         match algorithm {
-            IndexAlgorithm::BTree(BTreeAlgorithm { columns }) => StIndexAlgorithm::BTree { columns },
-            _ => unimplemented!(),
+            IndexAlgorithm::BTree(BTreeAlgorithm { columns }) => Self::BTree { columns },
+            IndexAlgorithm::Direct(DirectAlgorithm { column }) => Self::Direct { column },
+            algo => unreachable!("unexpected `{algo:?}`, did you add a new one?"),
+        }
+    }
+}
+
+impl From<StIndexAlgorithm> for IndexAlgorithm {
+    fn from(algorithm: StIndexAlgorithm) -> Self {
+        match algorithm {
+            StIndexAlgorithm::BTree { columns } => Self::BTree(BTreeAlgorithm { columns }),
+            StIndexAlgorithm::Direct { column } => Self::Direct(DirectAlgorithm { column }),
+            algo => unreachable!("unexpected `{algo:?}` in system table `st_indexes`"),
         }
     }
 }
@@ -628,10 +647,18 @@ impl From<StIndexRow> for IndexSchema {
             index_id: x.index_id,
             table_id: x.table_id,
             index_name: x.index_name,
-            index_algorithm: match x.index_algorithm {
-                StIndexAlgorithm::BTree { columns } => BTreeAlgorithm { columns }.into(),
-                StIndexAlgorithm::Unused(_) => panic!("Someone put a forbidden variant in the system table!"),
-            },
+            index_algorithm: x.index_algorithm.into(),
+        }
+    }
+}
+
+impl From<IndexSchema> for StIndexRow {
+    fn from(x: IndexSchema) -> Self {
+        Self {
+            index_id: x.index_id,
+            table_id: x.table_id,
+            index_name: x.index_name,
+            index_algorithm: x.index_algorithm.into(),
         }
     }
 }
@@ -801,19 +828,19 @@ impl_serialize!([] ModuleKind, (self, ser) => self.0.serialize(ser));
 impl_deserialize!([] ModuleKind, de => u8::deserialize(de).map(Self));
 impl_st!([] ModuleKind, AlgebraicType::U8);
 
-/// A wrapper for `Address` that acts like `AlgebraicType::bytes()` for serialization purposes.
+/// A wrapper for [`ConnectionId`] that acts like [`AlgebraicType::U128`] for serialization purposes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct AddressViaU128(pub Address);
-impl_serialize!([] AddressViaU128, (self, ser) => self.0.to_u128().serialize(ser));
-impl_deserialize!([] AddressViaU128, de => <u128>::deserialize(de).map(Address::from_u128).map(AddressViaU128));
-impl_st!([] AddressViaU128, AlgebraicType::U128);
-impl From<Address> for AddressViaU128 {
-    fn from(addr: Address) -> Self {
-        Self(addr)
+pub struct ConnectionIdViaU128(pub ConnectionId);
+impl_serialize!([] ConnectionIdViaU128, (self, ser) => self.0.to_u128().serialize(ser));
+impl_deserialize!([] ConnectionIdViaU128, de => <u128>::deserialize(de).map(ConnectionId::from_u128).map(ConnectionIdViaU128));
+impl_st!([] ConnectionIdViaU128, AlgebraicType::U128);
+impl From<ConnectionId> for ConnectionIdViaU128 {
+    fn from(id: ConnectionId) -> Self {
+        Self(id)
     }
 }
 
-/// A wrapper for `Identity` that acts like `AlgebraicType::bytes()` for serialization purposes.
+/// A wrapper for [`Identity`] that acts like [`AlgebraicType::U256`] for serialization purposes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct IdentityViaU256(pub Identity);
 impl_serialize!([] IdentityViaU256, (self, ser) => self.0.to_u256().serialize(ser));
@@ -864,14 +891,6 @@ pub fn read_bytes_from_col(row: RowRef<'_>, col: impl StFields) -> Result<Box<[u
     }
 }
 
-/// Read an [`Address`] directly from the column `col` in `row`.
-///
-/// The [`Address`] is assumed to be stored as an u128.
-pub fn read_addr_from_col(row: RowRef<'_>, col: impl StFields) -> Result<Identity, DBError> {
-    let val: u256 = row.read_col(col.col_id())?;
-    Ok(Identity::from_u256(val))
-}
-
 /// Read an [`Identity`] directly from the column `col` in `row`.
 ///
 /// The [`Identity`] is assumed to be stored as a flat byte array.
@@ -902,14 +921,14 @@ impl From<StModuleRow> for ProductValue {
 
 /// System table [ST_CLIENT_NAME]
 ///
-/// identity                                                                                | address
-/// -----------------------------------------------------------------------------------------+--------------------------------------------------------
-///  (__identity_bytes = 0x7452047061ea2502003412941d85a42f89b0702588b823ab55fc4f12e9ea8363) | (__address_bytes = 0x6bdea3ab517f5857dc9b1b5fe99e1b14)
-#[derive(Clone, Debug, Eq, PartialEq, SpacetimeType)]
+/// | identity                                                           | connection_id                      |
+/// |--------------------------------------------------------------------+------------------------------------|
+/// | 0x7452047061ea2502003412941d85a42f89b0702588b823ab55fc4f12e9ea8363 | 0x6bdea3ab517f5857dc9b1b5fe99e1b14 |
+#[derive(Clone, Copy, Debug, Eq, PartialEq, SpacetimeType)]
 #[sats(crate = spacetimedb_lib)]
 pub struct StClientRow {
     pub(crate) identity: IdentityViaU256,
-    pub(crate) address: AddressViaU128,
+    pub(crate) connection_id: ConnectionIdViaU128,
 }
 
 impl From<StClientRow> for ProductValue {
@@ -1094,146 +1113,6 @@ impl StVarName {
             | StVarName::SlowQryThreshold
             | StVarName::SlowSubThreshold
             | StVarName::SlowIncThreshold => AlgebraicType::U64,
-        }
-    }
-}
-
-/// The value of a system variable in `st_var`
-#[derive(Debug, Clone, From, SpacetimeType)]
-#[sats(crate = spacetimedb_lib)]
-pub enum StVarValue {
-    Bool(bool),
-    I8(i8),
-    U8(u8),
-    I16(i16),
-    U16(u16),
-    I32(i32),
-    U32(u32),
-    I64(i64),
-    U64(u64),
-    I128(i128),
-    U128(u128),
-    // No support for u/i256 added here as it seems unlikely to be useful.
-    F32(f32),
-    F64(f64),
-    String(Box<str>),
-}
-
-impl StVarValue {
-    pub fn try_from_primitive(value: AlgebraicValue) -> Result<Self, AlgebraicValue> {
-        match value {
-            AlgebraicValue::Bool(v) => Ok(StVarValue::Bool(v)),
-            AlgebraicValue::I8(v) => Ok(StVarValue::I8(v)),
-            AlgebraicValue::U8(v) => Ok(StVarValue::U8(v)),
-            AlgebraicValue::I16(v) => Ok(StVarValue::I16(v)),
-            AlgebraicValue::U16(v) => Ok(StVarValue::U16(v)),
-            AlgebraicValue::I32(v) => Ok(StVarValue::I32(v)),
-            AlgebraicValue::U32(v) => Ok(StVarValue::U32(v)),
-            AlgebraicValue::I64(v) => Ok(StVarValue::I64(v)),
-            AlgebraicValue::U64(v) => Ok(StVarValue::U64(v)),
-            AlgebraicValue::I128(v) => Ok(StVarValue::I128(v.0)),
-            AlgebraicValue::U128(v) => Ok(StVarValue::U128(v.0)),
-            AlgebraicValue::F32(v) => Ok(StVarValue::F32(v.into_inner())),
-            AlgebraicValue::F64(v) => Ok(StVarValue::F64(v.into_inner())),
-            AlgebraicValue::String(v) => Ok(StVarValue::String(v)),
-            _ => Err(value),
-        }
-    }
-
-    pub fn try_from_sum(value: AlgebraicValue) -> Result<Self, AlgebraicValue> {
-        value.into_sum()?.try_into()
-    }
-}
-
-impl TryFrom<SumValue> for StVarValue {
-    type Error = AlgebraicValue;
-
-    fn try_from(sum: SumValue) -> Result<Self, Self::Error> {
-        match sum.tag {
-            0 => Ok(StVarValue::Bool(sum.value.into_bool()?)),
-            1 => Ok(StVarValue::I8(sum.value.into_i8()?)),
-            2 => Ok(StVarValue::U8(sum.value.into_u8()?)),
-            3 => Ok(StVarValue::I16(sum.value.into_i16()?)),
-            4 => Ok(StVarValue::U16(sum.value.into_u16()?)),
-            5 => Ok(StVarValue::I32(sum.value.into_i32()?)),
-            6 => Ok(StVarValue::U32(sum.value.into_u32()?)),
-            7 => Ok(StVarValue::I64(sum.value.into_i64()?)),
-            8 => Ok(StVarValue::U64(sum.value.into_u64()?)),
-            9 => Ok(StVarValue::I128(sum.value.into_i128()?.0)),
-            10 => Ok(StVarValue::U128(sum.value.into_u128()?.0)),
-            11 => Ok(StVarValue::F32(sum.value.into_f32()?.into_inner())),
-            12 => Ok(StVarValue::F64(sum.value.into_f64()?.into_inner())),
-            13 => Ok(StVarValue::String(sum.value.into_string()?)),
-            _ => Err(*sum.value),
-        }
-    }
-}
-
-impl From<StVarValue> for AlgebraicValue {
-    fn from(value: StVarValue) -> Self {
-        AlgebraicValue::Sum(value.into())
-    }
-}
-
-impl From<StVarValue> for SumValue {
-    fn from(value: StVarValue) -> Self {
-        match value {
-            StVarValue::Bool(v) => SumValue {
-                tag: 0,
-                value: Box::new(AlgebraicValue::Bool(v)),
-            },
-            StVarValue::I8(v) => SumValue {
-                tag: 1,
-                value: Box::new(AlgebraicValue::I8(v)),
-            },
-            StVarValue::U8(v) => SumValue {
-                tag: 2,
-                value: Box::new(AlgebraicValue::U8(v)),
-            },
-            StVarValue::I16(v) => SumValue {
-                tag: 3,
-                value: Box::new(AlgebraicValue::I16(v)),
-            },
-            StVarValue::U16(v) => SumValue {
-                tag: 4,
-                value: Box::new(AlgebraicValue::U16(v)),
-            },
-            StVarValue::I32(v) => SumValue {
-                tag: 5,
-                value: Box::new(AlgebraicValue::I32(v)),
-            },
-            StVarValue::U32(v) => SumValue {
-                tag: 6,
-                value: Box::new(AlgebraicValue::U32(v)),
-            },
-            StVarValue::I64(v) => SumValue {
-                tag: 7,
-                value: Box::new(AlgebraicValue::I64(v)),
-            },
-            StVarValue::U64(v) => SumValue {
-                tag: 8,
-                value: Box::new(AlgebraicValue::U64(v)),
-            },
-            StVarValue::I128(v) => SumValue {
-                tag: 9,
-                value: Box::new(AlgebraicValue::I128(v.into())),
-            },
-            StVarValue::U128(v) => SumValue {
-                tag: 10,
-                value: Box::new(AlgebraicValue::U128(v.into())),
-            },
-            StVarValue::F32(v) => SumValue {
-                tag: 11,
-                value: Box::new(AlgebraicValue::F32(v.into())),
-            },
-            StVarValue::F64(v) => SumValue {
-                tag: 12,
-                value: Box::new(AlgebraicValue::F64(v.into())),
-            },
-            StVarValue::String(v) => SumValue {
-                tag: 13,
-                value: Box::new(AlgebraicValue::String(v)),
-            },
         }
     }
 }

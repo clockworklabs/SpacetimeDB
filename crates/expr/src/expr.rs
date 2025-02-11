@@ -26,11 +26,32 @@ pub enum ProjectName {
 }
 
 impl ProjectName {
-    /// What is the [TableId] for this projection?
-    pub fn table_id(&self) -> Option<TableId> {
+    /// The [TableSchema] of the returned rows.
+    /// Note this expression returns rows from a relvar.
+    /// Hence it this method should never return [None].
+    pub fn return_table(&self) -> Option<&TableSchema> {
         match self {
-            Self::None(input) => input.table_id(None),
-            Self::Some(input, var) => input.table_id(Some(var.as_ref())),
+            Self::None(input) => input.return_table(),
+            Self::Some(input, alias) => input.find_table_schema(alias),
+        }
+    }
+
+    /// The [TableId] of the returned rows.
+    /// Note this expression returns rows from a relvar.
+    /// Hence it this method should never return [None].
+    pub fn return_table_id(&self) -> Option<TableId> {
+        match self {
+            Self::None(input) => input.return_table_id(),
+            Self::Some(input, alias) => input.find_table_id(alias),
+        }
+    }
+
+    /// Iterate over the returned column names and types
+    pub fn for_each_return_field(&self, mut f: impl FnMut(&str, &AlgebraicType)) {
+        if let Some(schema) = self.return_table() {
+            for schema in schema.columns() {
+                f(&schema.col_name, &schema.col_type);
+            }
         }
     }
 }
@@ -56,11 +77,37 @@ pub enum ProjectList {
 }
 
 impl ProjectList {
-    /// What is the [TableId] for this projection?
-    pub fn table_id(&self) -> Option<TableId> {
+    /// Does this expression project a single relvar?
+    /// If so, we return it's [TableSchema].
+    /// If not, it projects a list of columns, so we return [None].
+    pub fn return_table(&self) -> Option<&TableSchema> {
         match self {
+            Self::Name(project) => project.return_table(),
             Self::List(..) => None,
-            Self::Name(proj) => proj.table_id(),
+        }
+    }
+
+    /// Does this expression project a single relvar?
+    /// If so, we return it's [TableId].
+    /// If not, it projects a list of columns, so we return [None].
+    pub fn return_table_id(&self) -> Option<TableId> {
+        match self {
+            Self::Name(project) => project.return_table_id(),
+            Self::List(..) => None,
+        }
+    }
+
+    /// Iterate over the projected column names and types
+    pub fn for_each_return_field(&self, mut f: impl FnMut(&str, &AlgebraicType)) {
+        match self {
+            Self::Name(project) => {
+                project.for_each_return_field(f);
+            }
+            Self::List(_, fields) => {
+                for (name, FieldProject { ty, .. }) in fields {
+                    f(name, ty);
+                }
+            }
         }
     }
 }
@@ -108,22 +155,38 @@ impl RelExpr {
         }
     }
 
-    /// What is the [TableId] for this expression or relvar?
-    pub fn table_id(&self, var: Option<&str>) -> Option<TableId> {
-        match (self, var) {
-            (Self::RelVar(Relvar { schema, .. }), None) => Some(schema.table_id),
-            (Self::RelVar(Relvar { schema, alias, .. }), Some(var)) if alias.as_ref() == var => Some(schema.table_id),
-            (Self::RelVar(Relvar { schema, .. }), Some(_)) => Some(schema.table_id),
-            (Self::Select(input, _), _) => input.table_id(var),
-            (Self::LeftDeepJoin(..) | Self::EqJoin(..), None) => None,
-            (Self::LeftDeepJoin(join) | Self::EqJoin(join, ..), Some(name)) => {
-                if join.rhs.alias.as_ref() == name {
-                    Some(join.rhs.schema.table_id)
-                } else {
-                    join.lhs.table_id(var)
-                }
-            }
+    /// Return the [TableSchema] for a relvar in the expression
+    pub fn find_table_schema(&self, alias: &str) -> Option<&TableSchema> {
+        match self {
+            Self::RelVar(relvar) if relvar.alias.as_ref() == alias => Some(&relvar.schema),
+            Self::Select(input, _) => input.find_table_schema(alias),
+            Self::EqJoin(LeftDeepJoin { rhs, .. }, ..) if rhs.alias.as_ref() == alias => Some(&rhs.schema),
+            Self::EqJoin(LeftDeepJoin { lhs, .. }, ..) => lhs.find_table_schema(alias),
+            Self::LeftDeepJoin(LeftDeepJoin { rhs, .. }) if rhs.alias.as_ref() == alias => Some(&rhs.schema),
+            Self::LeftDeepJoin(LeftDeepJoin { lhs, .. }) => lhs.find_table_schema(alias),
+            _ => None,
         }
+    }
+
+    /// Return the [TableId] for a relvar in the expression
+    pub fn find_table_id(&self, alias: &str) -> Option<TableId> {
+        self.find_table_schema(alias).map(|schema| schema.table_id)
+    }
+
+    /// Does this expression return a single relvar?
+    /// If so, return it's [TableSchema], otherwise return [None].
+    pub fn return_table(&self) -> Option<&TableSchema> {
+        match self {
+            Self::RelVar(Relvar { schema, .. }) => Some(schema),
+            Self::Select(input, _) => input.return_table(),
+            _ => None,
+        }
+    }
+
+    /// Does this expression return a single relvar?
+    /// If so, return it's [TableId], otherwise return [None].
+    pub fn return_table_id(&self) -> Option<TableId> {
+        self.return_table().map(|schema| schema.table_id)
     }
 }
 

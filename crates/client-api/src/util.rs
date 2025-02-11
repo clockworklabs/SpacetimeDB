@@ -73,19 +73,19 @@ impl NameOrIdentity {
 
     /// Resolve this [`NameOrIdentity`].
     ///
-    /// If `self` is a [`NameOrIdentity::Address`], the inner [`Address`] is
-    /// returned in a [`ResolvedAddress`] without a [`DomainName`].
+    /// If `self` is a [`NameOrIdentity::Identity`], the inner [`Identity`] is
+    /// returned in a [`ResolvedIdentity`] without a [`DomainName`].
     ///
-    /// Otherwise, if `self` is a [`NameOrIdentity::Name`], the [`Address`] is
+    /// Otherwise, if `self` is a [`NameOrIdentity::Name`], the [`Identity`] is
     /// looked up by that name in the SpacetimeDB DNS and returned in a
-    /// [`ResolvedAddress`] alongside `Some` [`DomainName`].
+    /// [`ResolvedIdentity`] alongside `Some` [`DomainName`].
     ///
     /// Errors are returned if [`NameOrIdentity::Name`] cannot be parsed into a
     /// [`DomainName`], or the DNS lookup fails.
     ///
     /// An `Ok` result is itself a [`Result`], which is `Err(DomainName)` if the
     /// given [`NameOrIdentity::Name`] is not registered in the SpacetimeDB DNS,
-    /// i.e. no corresponding [`Address`] exists.
+    /// i.e. no corresponding [`Identity`] exists.
     pub async fn try_resolve(
         &self,
         ctx: &(impl ControlStateReadAccess + ?Sized),
@@ -169,12 +169,7 @@ impl From<ResolvedIdentity> for Identity {
 }
 
 impl From<ResolvedIdentity> for (Identity, Option<DomainName>) {
-    fn from(
-        ResolvedIdentity {
-            identity: address,
-            domain,
-        }: ResolvedIdentity,
-    ) -> Self {
-        (address, domain)
+    fn from(ResolvedIdentity { identity, domain }: ResolvedIdentity) -> Self {
+        (identity, domain)
     }
 }

@@ -37,10 +37,10 @@ impl WasmtimeModule {
     pub const IMPLEMENTED_ABI: abi::VersionTuple = abi::VersionTuple::new(10, 0);
 
     pub(super) fn link_imports(linker: &mut Linker<WasmInstanceEnv>) -> anyhow::Result<()> {
-        #[allow(clippy::assertions_on_constants)]
-        const _: () = assert!(WasmtimeModule::IMPLEMENTED_ABI.major == spacetimedb_lib::MODULE_ABI_MAJOR_VERSION);
+        const { assert!(WasmtimeModule::IMPLEMENTED_ABI.major == spacetimedb_lib::MODULE_ABI_MAJOR_VERSION) };
         macro_rules! link_functions {
             ($($module:literal :: $func:ident,)*) => {
+                #[allow(deprecated)]
                 linker$(.func_wrap($module, stringify!($func), WasmInstanceEnv::$func)?)*;
             }
         }
@@ -181,7 +181,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
 
     type Trap = anyhow::Error;
 
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "trace", skip_all)]
     fn call_reducer(
         &mut self,
         op: ReducerOp<'_>,
@@ -192,10 +192,11 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         // EnergyQuanta at the end of this function, from_energy_quanta clamps it to a u64 range.
         // otherwise, we'd return something like `used: i128::MAX - u64::MAX`, which is inaccurate.
         set_store_fuel(store, budget.into());
+        let original_fuel = get_store_fuel(store);
 
-        // Prepare sender identity and address, as LITTLE-ENDIAN byte arrays.
+        // Prepare sender identity and connection ID, as LITTLE-ENDIAN byte arrays.
         let [sender_0, sender_1, sender_2, sender_3] = bytemuck::must_cast(op.caller_identity.to_byte_array());
-        let [address_0, address_1] = bytemuck::must_cast(op.caller_address.as_byte_array());
+        let [conn_id_0, conn_id_1] = bytemuck::must_cast(op.caller_connection_id.as_le_byte_array());
 
         // Prepare arguments to the reducer + the error sink & start timings.
         let (args_source, errors_sink) = store.data_mut().start_reducer(op.name, op.arg_bytes);
@@ -208,9 +209,9 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
                 sender_1,
                 sender_2,
                 sender_3,
-                address_0,
-                address_1,
-                op.timestamp.microseconds,
+                conn_id_0,
+                conn_id_1,
+                op.timestamp.to_micros_since_unix_epoch() as u64,
                 args_source,
                 errors_sink,
             ),
@@ -223,15 +224,20 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
 
         let call_result = call_result.map(|code| handle_error_sink_code(code, error));
 
-        let remaining: ReducerBudget = get_store_fuel(store).into();
+        let remaining_fuel = get_store_fuel(store);
+
+        let remaining: ReducerBudget = remaining_fuel.into();
         let energy = module_host_actor::EnergyStats {
             used: (budget - remaining).into(),
+            wasmtime_fuel_used: original_fuel.0 - remaining_fuel.0,
             remaining,
         };
+        let memory_allocation = store.data().get_mem().memory.data_size(&store);
 
         module_host_actor::ExecuteResult {
             energy,
             timings,
+            memory_allocation,
             call_result,
         }
     }

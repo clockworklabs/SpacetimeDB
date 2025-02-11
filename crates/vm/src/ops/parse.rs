@@ -1,5 +1,5 @@
 use crate::errors::{ErrorType, ErrorVm};
-use spacetimedb_lib::{Address, Identity};
+use spacetimedb_lib::{ConnectionId, Identity};
 use spacetimedb_sats::satn::Satn;
 use spacetimedb_sats::{i256, u256, AlgebraicType, AlgebraicValue, ProductType, SumType};
 use std::fmt::Display;
@@ -33,15 +33,15 @@ pub fn parse_simple_enum(sum: &SumType, tag_name: &str) -> Result<AlgebraicValue
     }
 }
 
-/// Try to parse `value` as [Identity] or [Address].
+/// Try to parse `value` as [`Identity`] or [`ConnectionId`].
 pub fn parse_product(product: &ProductType, value: &str) -> Result<AlgebraicValue, ErrorVm> {
     if product.is_identity() {
         return Ok(Identity::from_hex(value.trim_start_matches("0x"))
             .map_err(|err| ErrorVm::Other(err.into()))?
             .into());
     }
-    if product.is_address() {
-        return Ok(Address::from_hex(value.trim_start_matches("0x"))
+    if product.is_connection_id() {
+        return Ok(ConnectionId::from_hex(value.trim_start_matches("0x"))
             .map_err(ErrorVm::Other)?
             .into());
     }

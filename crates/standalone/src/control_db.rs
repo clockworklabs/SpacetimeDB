@@ -13,9 +13,9 @@ mod tests;
 
 /// A control database when SpacetimeDB is running standalone.
 ///
-/// Important note: The `Addresses` and `Identities` stored in this database
+/// Important note: The `ConnectionId`s and `Identity`s stored in this database
 /// are stored as *LITTLE-ENDIAN* byte arrays. This means that printing such an array
-/// in hexadecimal will result in the REVERSE of the standard way to print `Addresses` and `Identities`.
+/// in hexadecimal will result in the REVERSE of the standard way to print `ConnectionId`s and `Identity`s.
 #[derive(Clone)]
 pub struct ControlDb {
     db: sled::Db,

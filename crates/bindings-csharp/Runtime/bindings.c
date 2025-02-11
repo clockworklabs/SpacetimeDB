@@ -49,6 +49,10 @@ IMPORT(Status, datastore_table_row_count,
 IMPORT(Status, datastore_table_scan_bsatn,
        (TableId table_id, RowIter* iter),
        (table_id, iter));
+IMPORT(Status, datastore_index_scan_range_bsatn,
+       (IndexId index_id, const uint8_t* prefix, uint32_t prefix_len, ColId prefix_elems,
+        const uint8_t* rstart, uint32_t rstart_len, const uint8_t* rend, uint32_t rend_len, RowIter* iter),
+       (index_id, prefix, prefix_len, prefix_elems, rstart, rstart_len, rend, rend_len, iter));
 IMPORT(Status, datastore_btree_scan_bsatn,
        (IndexId index_id, const uint8_t* prefix, uint32_t prefix_len, ColId prefix_elems,
         const uint8_t* rstart, uint32_t rstart_len, const uint8_t* rend, uint32_t rend_len, RowIter* iter),
@@ -59,6 +63,10 @@ IMPORT(int16_t, row_iter_bsatn_advance,
 IMPORT(uint16_t, row_iter_bsatn_close, (RowIter iter), (iter));
 IMPORT(Status, datastore_insert_bsatn, (TableId table_id, const uint8_t* row_ptr, size_t* row_len_ptr),
        (table_id, row_ptr, row_len_ptr));
+IMPORT(Status, datastore_delete_by_index_scan_range_bsatn,
+       (IndexId index_id, const uint8_t* prefix, uint32_t prefix_len, ColId prefix_elems,
+        const uint8_t* rstart, uint32_t rstart_len, const uint8_t* rend, uint32_t rend_len, uint32_t* num_deleted),
+       (index_id, prefix, prefix_len, prefix_elems, rstart, rstart_len, rend, rend_len, num_deleted));
 IMPORT(Status, datastore_delete_by_btree_scan_bsatn,
        (IndexId index_id, const uint8_t* prefix, uint32_t prefix_len, ColId prefix_elems,
         const uint8_t* rstart, uint32_t rstart_len, const uint8_t* rend, uint32_t rend_len, uint32_t* num_deleted),
@@ -133,11 +141,11 @@ EXPORT_VOID(__describe_module__, (BytesSink description), &description);
 EXPORT(int16_t, __call_reducer__,
        (uint32_t id,
         uint64_t sender_0, uint64_t sender_1, uint64_t sender_2, uint64_t sender_3,
-        uint64_t address_0, uint64_t address_1,
+        uint64_t conn_id_0, uint64_t conn_id_1,
         uint64_t timestamp, BytesSource args, BytesSink error),
        &id,
        &sender_0, &sender_1, &sender_2, &sender_3,
-       &address_0, &address_1,
+       &conn_id_0, &conn_id_1,
        &timestamp, &args, &error);
 #endif
 

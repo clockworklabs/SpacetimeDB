@@ -5,6 +5,8 @@ use spacetimedb_lib::Identity;
 use spacetimedb_metrics::metrics_group;
 use spacetimedb_primitives::TableId;
 
+pub mod data_size;
+
 metrics_group!(
     #[non_exhaustive]
     pub struct DbMetrics {
@@ -18,24 +20,39 @@ metrics_group!(
         #[labels(txn_type: WorkloadType, db: Identity, reducer_or_query: str, table_id: u32, table_name: str)]
         pub rdb_num_rows_inserted: IntCounterVec,
 
+        #[name = spacetime_num_index_rows_inserted_total]
+        #[help = "The cumulative number of index entries inserted. Does not count schema changes."]
+        #[labels(txn_type: WorkloadType, db: Identity, reducer_or_query: str, table_id: u32, table_name: str)]
+        pub rdb_num_index_entries_inserted: IntCounterVec,
+
         #[name = spacetime_num_rows_deleted_total]
         #[help = "The cumulative number of rows deleted from a table"]
         #[labels(txn_type: WorkloadType, db: Identity, reducer_or_query: str, table_id: u32, table_name: str)]
         pub rdb_num_rows_deleted: IntCounterVec,
 
-        #[name = spacetime_num_rows_fetched_total]
-        #[help = "The cumulative number of rows fetched from a table"]
+        #[name = spacetime_num_index_rows_deleted_total]
+        #[help = "The cumulative number of index entries deleted. Does not count schema changes."]
         #[labels(txn_type: WorkloadType, db: Identity, reducer_or_query: str, table_id: u32, table_name: str)]
-        pub rdb_num_rows_fetched: IntCounterVec,
+        pub rdb_num_index_entries_deleted: IntCounterVec,
 
-        #[name = spacetime_num_index_keys_scanned_total]
-        #[help = "The cumulative number of keys scanned from an index"]
-        #[labels(txn_type: WorkloadType, db: Identity, reducer_or_query: str, table_id: u32, table_name: str)]
-        pub rdb_num_keys_scanned: IntCounterVec,
+        #[name = spacetime_num_rows_scanned_total]
+        #[help = "The cumulative number of rows scanned from the database"]
+        #[labels(txn_type: WorkloadType, db: Identity)]
+        pub rdb_num_rows_scanned: IntCounterVec,
+
+        #[name = spacetime_num_bytes_scanned_total]
+        #[help = "The cumulative number of bytes scanned from the database"]
+        #[labels(txn_type: WorkloadType, db: Identity)]
+        pub rdb_num_bytes_scanned: IntCounterVec,
+
+        #[name = spacetime_num_bytes_written_total]
+        #[help = "The cumulative number of bytes written to the database"]
+        #[labels(txn_type: WorkloadType, db: Identity)]
+        pub rdb_num_bytes_written: IntCounterVec,
 
         #[name = spacetime_num_index_seeks_total]
         #[help = "The cumulative number of index seeks"]
-        #[labels(txn_type: WorkloadType, db: Identity, reducer_or_query: str, table_id: u32, table_name: str)]
+        #[labels(txn_type: WorkloadType, db: Identity)]
         pub rdb_num_index_seeks: IntCounterVec,
 
         #[name = spacetime_num_txns_total]
@@ -83,12 +100,27 @@ metrics_group!(
         #[help = "The number of bytes in a table with the precision of a page size"]
         #[labels(db: Identity, table_id: u32, table_name: str)]
         pub rdb_table_size: IntGaugeVec,
+
+        #[name = reducer_wasmtime_fuel_used]
+        #[help = "The total wasmtime fuel used"]
+        #[labels(db: Identity, reducer: str)]
+        pub reducer_wasmtime_fuel_used: IntCounterVec,
+
+        #[name = reducer_wasm_time_usec]
+        #[help = "The total runtime of reducer calls"]
+        #[labels(db: Identity, reducer: str)]
+        pub reducer_duration_usec: IntCounterVec,
+
+        #[name = reducer_abi_time_usec]
+        #[help = "The total time spent in reducer ABI calls"]
+        #[labels(db: Identity, reducer: str)]
+        pub reducer_abi_time_usec: IntCounterVec,
     }
 );
 
 pub static DB_METRICS: Lazy<DbMetrics> = Lazy::new(DbMetrics::new);
 
-/// Returns the number of committed rows in the table named by `table_name` and identified by `table_id` in the database `db_address`.
+/// Returns the number of committed rows in the table named by `table_name` and identified by `table_id` in the database `db_identity`.
 pub fn table_num_rows(db_identity: Identity, table_id: TableId, table_name: &str) -> u64 {
     DB_METRICS
         .rdb_num_table_rows

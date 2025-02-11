@@ -539,7 +539,8 @@ public static partial class synthetic
         string _arg30,
         string _arg31,
         string _arg32
-    ) { }
+    )
+    { }
 
     [SpacetimeDB.Reducer]
     public static void print_many_things(ReducerContext ctx, uint n)

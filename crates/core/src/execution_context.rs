@@ -2,9 +2,8 @@ use std::sync::Arc;
 
 use bytes::Bytes;
 use derive_more::Display;
-use spacetimedb_client_api_messages::timestamp::Timestamp;
 use spacetimedb_commitlog::{payload::txdata, Varchar};
-use spacetimedb_lib::{Address, Identity};
+use spacetimedb_lib::{ConnectionId, Identity, Timestamp};
 use spacetimedb_sats::bsatn;
 
 /// Represents the context under which a database runtime method is executed.
@@ -29,8 +28,8 @@ pub struct ReducerContext {
     pub name: String,
     /// The [`Identity`] of the caller.
     pub caller_identity: Identity,
-    /// The [`Address`] of the caller.
-    pub caller_address: Address,
+    /// The [`ConnectionId`] of the caller.
+    pub caller_connection_id: ConnectionId,
     /// The timestamp of the reducer invocation.
     pub timestamp: Timestamp,
     /// The BSATN-encoded arguments given to the reducer.
@@ -45,7 +44,7 @@ impl From<&ReducerContext> for txdata::Inputs {
         ReducerContext {
             name,
             caller_identity,
-            caller_address,
+            caller_connection_id,
             timestamp,
             arg_bsatn,
         }: &ReducerContext,
@@ -54,13 +53,13 @@ impl From<&ReducerContext> for txdata::Inputs {
         let cap = arg_bsatn.len()
         /* caller_identity */
         + 32
-        /* caller_address */
+        /* caller_connection_id */
         + 16
         /* timestamp */
         + 8;
         let mut buf = Vec::with_capacity(cap);
         bsatn::to_writer(&mut buf, caller_identity).unwrap();
-        bsatn::to_writer(&mut buf, caller_address).unwrap();
+        bsatn::to_writer(&mut buf, caller_connection_id).unwrap();
         bsatn::to_writer(&mut buf, timestamp).unwrap();
         buf.extend_from_slice(arg_bsatn);
 
@@ -77,13 +76,13 @@ impl TryFrom<&txdata::Inputs> for ReducerContext {
     fn try_from(inputs: &txdata::Inputs) -> Result<Self, Self::Error> {
         let args = &mut inputs.reducer_args.as_ref();
         let caller_identity = bsatn::from_reader(args)?;
-        let caller_address = bsatn::from_reader(args)?;
+        let caller_connection_id = bsatn::from_reader(args)?;
         let timestamp = bsatn::from_reader(args)?;
 
         Ok(Self {
             name: inputs.reducer_name.to_string(),
             caller_identity,
-            caller_address,
+            caller_connection_id,
             timestamp,
             arg_bsatn: Bytes::from(args.to_owned()),
         })
@@ -200,7 +199,7 @@ impl ExecutionContext {
         Self::new(database_identity, None, WorkloadType::Internal)
     }
 
-    /// Returns the address of the database on which we are operating.
+    /// Returns the identity of the database on which we are operating.
     #[inline]
     pub fn database_identity(&self) -> Identity {
         self.database_identity

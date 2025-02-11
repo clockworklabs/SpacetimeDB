@@ -1,8 +1,4 @@
-use super::{
-    committed_state::CommittedState,
-    datastore::Result,
-    tx_state::{DeleteTable, TxState},
-};
+use super::{committed_state::CommittedState, datastore::Result, delete_table::DeleteTable, tx_state::TxState};
 use crate::db::datastore::locking_tx_datastore::committed_state::CommittedIndexIterWithDeletedMutTx;
 use crate::{
     db::datastore::system_tables::{
@@ -18,7 +14,7 @@ use spacetimedb_sats::AlgebraicValue;
 use spacetimedb_schema::schema::{ColumnSchema, TableSchema};
 use spacetimedb_table::{
     blob_store::HashMapBlobStore,
-    table::{IndexScanIter, RowRef, Table, TableScanIter},
+    table::{IndexScanRangeIter, RowRef, Table, TableScanIter},
 };
 use std::sync::Arc;
 
@@ -115,10 +111,7 @@ pub trait StateView {
         // Look up the indexes for the table in question.
         let indexes = self
             .iter_by_col_eq(ST_INDEX_ID, StIndexFields::TableId, value_eq)?
-            .map(|row| {
-                let row = StIndexRow::try_from(row)?;
-                Ok(row.into())
-            })
+            .map(|row| StIndexRow::try_from(row).map(Into::into))
             .collect::<Result<Vec<_>>>()?;
 
         let schedule = self
@@ -261,7 +254,7 @@ impl<'a> Iterator for IterMutTx<'a> {
                     //
                     // As a result, in MVCC, this branch will need to check if the `row_ref`
                     // also exists in the `tx_state.insert_tables` and ensure it is yielded only once.
-                    if let next @ Some(_) = iter.find(|row_ref| !del_tables.contains(&row_ref.pointer())) {
+                    if let next @ Some(_) = iter.find(|row_ref| !del_tables.contains(row_ref.pointer())) {
                         return next;
                     }
                 }
@@ -306,8 +299,8 @@ impl<'a> Iterator for IterTx<'a> {
 }
 
 pub struct IndexSeekIterIdMutTx<'a> {
-    pub(super) inserted_rows: IndexScanIter<'a>,
-    pub(super) committed_rows: Option<IndexScanIter<'a>>,
+    pub(super) inserted_rows: IndexScanRangeIter<'a>,
+    pub(super) committed_rows: Option<IndexScanRangeIter<'a>>,
 }
 
 impl<'a> Iterator for IndexSeekIterIdMutTx<'a> {
@@ -322,8 +315,8 @@ impl<'a> Iterator for IndexSeekIterIdMutTx<'a> {
 }
 
 pub struct IndexSeekIterIdWithDeletedMutTx<'a> {
-    pub(super) inserted_rows: IndexScanIter<'a>,
-    pub(super) committed_rows: Option<IndexScanIter<'a>>,
+    pub(super) inserted_rows: IndexScanRangeIter<'a>,
+    pub(super) committed_rows: Option<IndexScanRangeIter<'a>>,
     pub(super) del_table: &'a DeleteTable,
 }
 
@@ -358,7 +351,7 @@ impl<'a> Iterator for IndexSeekIterIdWithDeletedMutTx<'a> {
             //
             // As a result, in MVCC, this branch will need to check if the `row_ref`
             // also exists in the `tx_state.insert_tables` and ensure it is yielded only once.
-            .and_then(|i| i.find(|row_ref| !self.del_table.contains(&row_ref.pointer())))
+            .and_then(|i| i.find(|row_ref| !self.del_table.contains(row_ref.pointer())))
         {
             // TODO(metrics): This doesn't actually fetch a row.
             // Move this counter to `RowRef::read_row`.
@@ -385,7 +378,7 @@ pub enum IterByColRangeTx<'a, R: RangeBounds<AlgebraicValue>> {
 
     /// When the column has an index, and the table
     /// has not been modified in this transaction.
-    CommittedIndex(IndexScanIter<'a>),
+    CommittedIndex(IndexScanRangeIter<'a>),
 }
 
 impl<'a, R: RangeBounds<AlgebraicValue>> Iterator for IterByColRangeTx<'a, R> {
@@ -415,7 +408,7 @@ pub enum IterByColRangeMutTx<'a, R: RangeBounds<AlgebraicValue>> {
 
     /// When the column has an index, and the table
     /// has not been modified in this transaction.
-    CommittedIndex(IndexScanIter<'a>),
+    CommittedIndex(IndexScanRangeIter<'a>),
 
     /// When the column has an index, and the table
     /// has not been modified in this transaction.

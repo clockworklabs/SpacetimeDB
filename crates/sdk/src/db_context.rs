@@ -3,7 +3,7 @@
 //! [`DbContext`] is implemented by `DbConnection` and `EventContext`,
 //! both defined in your module-specific codegen.
 
-use crate::{Address, Identity};
+use crate::{ConnectionId, Identity};
 
 pub trait DbContext {
     type DbView;
@@ -42,7 +42,7 @@ pub trait DbContext {
     /// Close the connection.
     ///
     /// Returns an error if we are already disconnected.
-    fn disconnect(&self) -> anyhow::Result<()>;
+    fn disconnect(&self) -> crate::Result<()>;
 
     type SubscriptionBuilder;
     /// Get a builder-pattern constructor for subscribing to queries,
@@ -65,9 +65,10 @@ pub trait DbContext {
     /// For a panicking version, see [`Self::identity`].
     fn try_identity(&self) -> Option<Identity>;
 
-    /// Get this connection's client [`Address`].
-    ///
-    /// All connections opened by the same process will have the same [`Address`],
-    /// including connections to different modules.
-    fn address(&self) -> Address;
+    /// Get this connection's [`ConnectionId`].
+    // Currently, all connections opened by the same process will have the same [`ConnectionId`],
+    // including connections to different modules.
+    // TODO: fix this.
+    // TODO: add `Self::try_connection_id`, for the same reason as `Self::try_identity`.
+    fn connection_id(&self) -> ConnectionId;
 }

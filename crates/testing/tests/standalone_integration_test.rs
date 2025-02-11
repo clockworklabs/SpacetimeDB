@@ -90,13 +90,13 @@ fn test_calling_a_reducer_in_module(module_name: &'static str) {
 #[test]
 #[serial]
 fn test_calling_a_reducer() {
-    test_calling_a_reducer_in_module("spacetimedb-quickstart");
+    test_calling_a_reducer_in_module("module-test");
 }
 
 #[test]
 #[serial]
 fn test_calling_a_reducer_csharp() {
-    test_calling_a_reducer_in_module("spacetimedb-quickstart-cs");
+    test_calling_a_reducer_in_module("module-test-cs");
 }
 
 #[test]
@@ -104,7 +104,7 @@ fn test_calling_a_reducer_csharp() {
 fn test_calling_a_reducer_with_private_table() {
     init();
 
-    CompiledModule::compile("rust-wasm-test", CompilationMode::Debug).with_module_async(
+    CompiledModule::compile("module-test", CompilationMode::Debug).with_module_async(
         DEFAULT_CONFIG,
         |module| async move {
             module
@@ -124,7 +124,7 @@ fn test_calling_a_reducer_with_private_table() {
     );
 }
 
-/// Invoke the `rust-wasm-test` module,
+/// Invoke the `module-test` module,
 /// use `caller` to invoke its `test` reducer,
 /// and assert that its logs look right.
 ///
@@ -144,7 +144,7 @@ fn test_calling_a_reducer_with_private_table() {
 /// ]
 /// ```
 fn test_call_query_macro_with_caller<F: Future<Output = ()>>(caller: impl FnOnce(ModuleHandle) -> F) {
-    CompiledModule::compile("rust-wasm-test", CompilationMode::Debug).with_module_async(
+    CompiledModule::compile("module-test", CompilationMode::Debug).with_module_async(
         DEFAULT_CONFIG,
         |module| async move {
             caller(module.clone()).await;
@@ -176,7 +176,7 @@ fn test_call_query_macro_with_caller<F: Future<Output = ()>>(caller: impl FnOnce
     );
 }
 
-/// Call the `rust-wasm-test` module's `test` reducer with a variety of ways of passing arguments.
+/// Call the `module-test` module's `test` reducer with a variety of ways of passing arguments.
 #[test]
 #[serial]
 fn test_call_query_macro() {
@@ -265,7 +265,7 @@ fn test_index_scans() {
     );
 }
 
-async fn bench_call<'a>(module: &ModuleHandle, call: &str, count: &u32) -> Duration {
+async fn bench_call(module: &ModuleHandle, call: &str, count: &u32) -> Duration {
     let now = Instant::now();
 
     // Note: using JSON variant because some functions accept u64 instead, so we rely on JSON's dynamic typing.

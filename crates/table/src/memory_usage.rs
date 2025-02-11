@@ -235,5 +235,5 @@ impl<T: MemoryUsage + Copy> MemoryUsage for Packed<T> {
     }
 }
 
-impl MemoryUsage for spacetimedb_lib::Address {}
+impl MemoryUsage for spacetimedb_lib::ConnectionId {}
 impl MemoryUsage for spacetimedb_lib::Identity {}
