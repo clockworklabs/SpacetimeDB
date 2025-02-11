@@ -76,7 +76,7 @@ export class WebsocketDecompressAdapter {
   }): Promise<WebsocketDecompressAdapter> {
     const headers = new Headers();
     if (authToken) {
-      headers.set('Authorization', `Basic ${btoa('token:' + authToken)}`);
+      headers.set('Authorization', `Bearer ${authToken}`);
     }
 
     let WS: typeof WebSocket;
