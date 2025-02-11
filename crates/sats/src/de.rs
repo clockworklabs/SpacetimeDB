@@ -559,7 +559,9 @@ pub trait Deserialize<'de>: Sized {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error>;
 
     /// Deserialize this value from the given the BSATN `deserializer`.
-    fn deserialize_from_bsatn<R: BufReader<'de>>(deserializer: bsatn::Deserializer<'de, R>) -> Result<Self, bsatn::DecodeError> {
+    fn deserialize_from_bsatn<R: BufReader<'de>>(
+        deserializer: bsatn::Deserializer<'de, R>,
+    ) -> Result<Self, bsatn::DecodeError> {
         Self::deserialize(deserializer)
     }
 

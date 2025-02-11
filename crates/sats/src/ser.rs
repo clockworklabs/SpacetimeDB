@@ -217,7 +217,10 @@ pub trait Serialize {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error>;
 
     /// Serialize `self` in the data format BSATN using the provided BSATN `serializer`.
-    fn serialize_into_bsatn<W: BufWriter>(&self, serializer: bsatn::Serializer<'_, W>) -> Result<(), bsatn::EncodeError> {
+    fn serialize_into_bsatn<W: BufWriter>(
+        &self,
+        serializer: bsatn::Serializer<'_, W>,
+    ) -> Result<(), bsatn::EncodeError> {
         self.serialize(serializer)
     }
 
