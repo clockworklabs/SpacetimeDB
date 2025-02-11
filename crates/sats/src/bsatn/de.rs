@@ -26,7 +26,9 @@ impl<'a, 'de, R: BufReader<'de>> Deserializer<'a, R> {
     }
 
     /// Reads a slice of `len` elements.
-    pub(crate) fn get_slice(&mut self, len: usize) -> Result<&'de [u8], DecodeError> {
+    #[inline]
+    #[doc(hidden)]
+    pub fn get_slice(&mut self, len: usize) -> Result<&'de [u8], DecodeError> {
         self.reader.get_slice(len)
     }
 

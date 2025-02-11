@@ -45,10 +45,24 @@ mod sym {
     symbol!(primary_key);
     symbol!(private);
     symbol!(public);
+    symbol!(repr);
     symbol!(sats);
     symbol!(scheduled);
     symbol!(unique);
     symbol!(update);
+
+    symbol!(u8);
+    symbol!(i8);
+    symbol!(u16);
+    symbol!(i16);
+    symbol!(u32);
+    symbol!(i32);
+    symbol!(u64);
+    symbol!(i64);
+    symbol!(u128);
+    symbol!(i128);
+    symbol!(f32);
+    symbol!(f64);
 
     impl PartialEq<Symbol> for syn::Ident {
         fn eq(&self, sym: &Symbol) -> bool {
@@ -350,6 +364,7 @@ pub fn schema_type(input: StdTokenStream) -> StdTokenStream {
     sats_derive(input, true, |ty| {
         let ident = ty.ident;
         let name = &ty.name;
+
         let krate = &ty.krate;
         TokenStream::from_iter([
             sats::derive_satstype(ty),

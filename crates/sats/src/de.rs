@@ -8,7 +8,8 @@ pub mod serde;
 #[doc(hidden)]
 pub use impls::{visit_named_product, visit_seq_product, WithBound};
 
-use crate::{i256, u256};
+use crate::buffer::BufReader;
+use crate::{bsatn, i256, u256};
 use core::fmt;
 use core::marker::PhantomData;
 use smallvec::SmallVec;
@@ -556,6 +557,11 @@ pub use spacetimedb_bindings_macro::Deserialize;
 pub trait Deserialize<'de>: Sized {
     /// Deserialize this value from the given `deserializer`.
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error>;
+
+    /// Deserialize this value from the given the BSATN `deserializer`.
+    fn deserialize_from_bsatn<R: BufReader<'de>>(deserializer: bsatn::Deserializer<'de, R>) -> Result<Self, bsatn::DecodeError> {
+        Self::deserialize(deserializer)
+    }
 
     /// used in the Deserialize for Vec<T> impl to allow specializing deserializing Vec<T> as bytes
     #[doc(hidden)]

@@ -16,8 +16,9 @@ pub use crate::buffer::DecodeError;
 pub use ser::BsatnError as EncodeError;
 
 /// Serialize `value` into the buffered writer `w` in the BSATN format.
+#[inline]
 pub fn to_writer<W: BufWriter, T: Serialize + ?Sized>(w: &mut W, value: &T) -> Result<(), EncodeError> {
-    value.serialize(Serializer::new(w))
+    value.serialize_into_bsatn(Serializer::new(w))
 }
 
 /// Serialize `value` into a `Vec<u8>` in the BSATN format.
@@ -149,6 +150,32 @@ impl ToBsatn for ProductValue {
         None
     }
 }
+
+mod private_is_primitive_type {
+    pub trait Sealed {}
+}
+/// A primitive type.
+/// This is purely intended for use in `crates/bindings-macro`.
+///
+/// # Safety
+///
+/// Implementing this guarantees that the type has no padding, recursively.
+#[doc(hidden)]
+pub unsafe trait IsPrimitiveType: private_is_primitive_type::Sealed {}
+macro_rules! is_primitive_type {
+    ($($prim:ty),*) => {
+        $(
+            impl private_is_primitive_type::Sealed for $prim {}
+            // SAFETY:  the type is primitive and has no padding.
+            unsafe impl IsPrimitiveType for $prim {}
+        )*
+    };
+}
+is_primitive_type!(u8, i8, u16, i16, u32, i32, u64, i64, u128, i128, f32, f64);
+
+/// Enforces that a type is a primitive.
+/// This is purely intended for use in `crates/bindings-macro`.
+pub const fn assert_is_primitive_type<T: IsPrimitiveType>() {}
 
 #[cfg(test)]
 mod tests {
