@@ -5,7 +5,7 @@ use thiserror::Error;
 #[derive(Error, Debug, Clone)]
 #[non_exhaustive]
 pub enum Error {
-    #[error("Connection is disconnected or exhausted")]
+    #[error("Connection is already disconnected or has terminated normally")]
     Disconnected,
 
     #[error("Failed to connect: {source}")]

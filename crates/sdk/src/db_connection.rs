@@ -479,8 +479,8 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
         // so that pending callbacks don't get skipped.
         self.apply_pending_mutations()?;
 
-        // Deranged behavior: mpsc's `try_next` returns `Ok(None)` when the
-        // channel is closed, and `Err(_)` when the channel is open and waiting.
+        // Deranged behavior: mpsc's `try_next` returns `Ok(None)` when the channel is closed,
+        // and `Err(_)` when the channel is open and waiting.
         // This seems exactly backwards.
         //
         // NOTE(cloutiertyler): A comment on the deranged behavior: the mental
