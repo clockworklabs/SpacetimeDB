@@ -100,8 +100,6 @@ namespace SpacetimeDB.Types
     public abstract partial class Reducer
     {
         private Reducer() { }
-
-        public sealed class StdbNone : Reducer { }
     }
 
     public sealed class DbConnection : DbConnectionBase<DbConnection, RemoteTables, Reducer>
@@ -125,7 +123,6 @@ namespace SpacetimeDB.Types
                 "identity_disconnected" => BSATNHelpers.Decode<Reducer.IdentityDisconnected>(encodedArgs),
                 "send_message" => BSATNHelpers.Decode<Reducer.SendMessage>(encodedArgs),
                 "set_name" => BSATNHelpers.Decode<Reducer.SetName>(encodedArgs),
-                "<none>" or "" => new Reducer.StdbNone(),
                 var reducer => throw new ArgumentOutOfRangeException("Reducer", $"Unknown reducer {reducer}")
             };
         }
@@ -151,7 +148,6 @@ namespace SpacetimeDB.Types
                 Reducer.IdentityDisconnected args => Reducers.InvokeIdentityDisconnected(eventContext, args),
                 Reducer.SendMessage args => Reducers.InvokeSendMessage(eventContext, args),
                 Reducer.SetName args => Reducers.InvokeSetName(eventContext, args),
-                Reducer.StdbNone => true,
                 _ => throw new ArgumentOutOfRangeException("Reducer", $"Unknown reducer {reducer}")
             };
         }

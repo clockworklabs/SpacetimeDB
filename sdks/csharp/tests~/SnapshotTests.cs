@@ -303,7 +303,9 @@ public class SnapshotTests
                 1, 366, [SampleUserInsert("j5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", null, true)]
             ),
             SampleTransactionUpdate(0, "l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", "Kwmeu5riP20rvCTNbBipLA==",
-                0, "unknown-reducer", 0, 40, [], null
+                0, "unknown-reducer", 0, 40, [
+SampleUserInsert("k5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", null, true)
+                ], null
             ),
             SampleTransactionUpdate(
                 1718487763059031, "l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", "Kwmeu5riP20rvCTNbBipLA==",
@@ -369,7 +371,9 @@ public class SnapshotTests
                 1, 2, 277, SampleUpdate<Message>(MESSAGE_TABLE_ID, MESSAGE_TABLE_NAME, [], [])
             ),
             SampleTransactionUpdate(0, "l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", "Kwmeu5riP20rvCTNbBipLA==",
-                0, "unknown-reducer", 0, 40, [], null
+                0, "unknown-reducer", 0, 40, [
+                    SampleUserInsert("k5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", null, true)
+                ], null
             ),
             SampleTransactionUpdate(
                 1718487763059031, "l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", "Kwmeu5riP20rvCTNbBipLA==",
@@ -476,10 +480,6 @@ public class SnapshotTests
             }
         );
 
-#pragma warning disable CS0612 // Using obsolete API
-        client.onUnhandledReducerError += (exception) =>
-            events.Add("OnUnhandledReducerError", exception);
-#pragma warning restore CS0612 // Using obsolete API
         client.Reducers.OnSendMessage += (eventContext, _text) =>
             events.Add("OnSendMessage", eventContext);
         client.Reducers.OnSetName += (eventContext, _name) => events.Add("OnSetName", eventContext);
