@@ -50,7 +50,7 @@ pub enum PublishResult {
         /// In other words, this echoes back a domain name if one was given. If
         /// the database name given was in fact a database identity, this will be
         /// `None`.
-        domain: Option<String>,
+        domain: Option<DatabaseName>,
         /// The identity of the published database.
         ///
         /// Always set, regardless of whether publish resolved a domain name first
@@ -58,14 +58,6 @@ pub enum PublishResult {
         database_identity: Identity,
         op: PublishOp,
     },
-
-    // TODO: below variants are obsolete with control db module
-    /// The top level domain for the database name is not registered. For example:
-    ///
-    ///  - `clockworklabs/bitcraft`
-    ///
-    /// if `clockworklabs` is not registered, this error is returned.
-    TldNotRegistered { domain: DomainName },
 
     /// The top level domain for the database name is registered, but the identity that you provided does
     /// not have permission to insert the given database name. For example:
@@ -75,7 +67,7 @@ pub enum PublishResult {
     /// If you were trying to insert this database name, but the tld `clockworklabs` is
     /// owned by an identity other than the identity that you provided, then you will receive
     /// this error.
-    PermissionDenied { domain: DomainName },
+    PermissionDenied { name: DatabaseName },
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -116,6 +108,106 @@ pub enum SetDefaultDomainResult {
     NotRegistered {
         domain: DomainName,
     },
+}
+
+/// A simplified version of [`DomainName`] that allows a limited set of characters.
+///
+/// Must match the regex `^[a-z0-9]+(-[a-z0-9]+)*$`
+#[derive(Clone, Debug, serde_with::DeserializeFromStr, serde_with::SerializeDisplay)]
+pub struct DatabaseName(String);
+
+impl AsRef<str> for DatabaseName {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<DatabaseName> for String {
+    fn from(name: DatabaseName) -> Self {
+        name.0
+    }
+}
+
+impl fmt::Display for DatabaseName {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+#[derive(thiserror::Error, Clone, Copy, Debug)]
+pub enum DatabaseNameError {
+    #[error("database names cannot be identities")]
+    Identity,
+    #[error("database names cannot be empty")]
+    Empty,
+    #[error("invalid hyphen in database name")]
+    Hyphen,
+    #[error("invalid characters in database name")]
+    Invalid,
+}
+
+fn parse_database_name(s: &str) -> Result<&str, DatabaseNameError> {
+    use DatabaseNameError::*;
+
+    if is_identity(s) {
+        return Err(Identity);
+    }
+
+    let mut chrs = s.chars();
+    let mut next = || chrs.next();
+
+    let is_az09 = |c: char| matches!(c, 'a'..='z' | '0'..='9');
+
+    let c = next().ok_or(Empty)?;
+    if c == '-' {
+        return Err(Hyphen);
+    } else if !is_az09(c) {
+        return Err(Invalid);
+    }
+
+    while let Some(c) = next() {
+        if c == '-' {
+            // can't have a hyphen at the end
+            let c = next().ok_or(Hyphen)?;
+            // can't have 2 hyphens in a row
+            if !is_az09(c) {
+                return Err(Hyphen);
+            }
+        } else if !is_az09(c) {
+            return Err(Invalid);
+        }
+    }
+
+    Ok(s)
+}
+
+impl TryFrom<String> for DatabaseName {
+    type Error = DatabaseNameError;
+
+    fn try_from(s: String) -> Result<Self, Self::Error> {
+        parse_database_name(&s)?;
+        Ok(Self(s))
+    }
+}
+
+impl FromStr for DatabaseName {
+    type Err = DatabaseNameError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Self(parse_database_name(s)?.to_owned()))
+    }
+}
+
+impl From<DatabaseName> for Tld {
+    fn from(name: DatabaseName) -> Self {
+        Tld(name.0)
+    }
+}
+
+impl From<DatabaseName> for DomainName {
+    fn from(name: DatabaseName) -> Self {
+        Tld::from(name).into()
+    }
 }
 
 /// The top level domain part of a [`DomainName`].
@@ -317,6 +409,12 @@ impl AsRef<str> for DomainName {
     }
 }
 
+impl From<DomainName> for String {
+    fn from(name: DomainName) -> Self {
+        name.domain_name
+    }
+}
+
 impl fmt::Display for DomainName {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_str(&self.domain_name)
@@ -420,8 +518,8 @@ mod serde_impls {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct ReverseDNSResponse {
-    pub names: Vec<DomainName>,
+pub struct GetNamesResponse {
+    pub names: Vec<DatabaseName>,
 }
 
 /// Returns whether a hex string is a valid identity.

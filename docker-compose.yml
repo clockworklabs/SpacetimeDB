@@ -33,7 +33,7 @@ services:
       --jwt-pub-key-path=/etc/spacetimedb/id_ecdsa.pub
       --jwt-priv-key-path=/etc/spacetimedb/id_ecdsa'
     healthcheck:
-      test: curl -f http://localhost/database/ping || exit 1
+      test: curl -f http://localhost/ping || exit 1
     privileged: true
     environment:
       SPACETIMEDB_FLAMEGRAPH_PATH: ../../../../flamegraphs/flamegraph.folded

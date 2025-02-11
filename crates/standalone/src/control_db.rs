@@ -78,7 +78,7 @@ impl ControlDb {
 }
 
 impl ControlDb {
-    pub fn spacetime_dns(&self, domain: &DomainName) -> Result<Option<Identity>> {
+    pub fn spacetime_dns(&self, domain: &str) -> Result<Option<Identity>> {
         let tree = self.db.open_tree("dns")?;
         let value = tree.get(domain.to_lowercase().as_bytes())?;
         if let Some(value) = value {
@@ -118,7 +118,7 @@ impl ControlDb {
         try_register_tld: bool,
     ) -> Result<InsertDomainResult> {
         let database_identity = *database_identity;
-        if self.spacetime_dns(&domain)?.is_some() {
+        if self.spacetime_dns(domain.as_ref())?.is_some() {
             return Err(Error::RecordAlreadyExists(domain));
         }
         let tld = domain.tld();
