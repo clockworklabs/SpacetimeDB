@@ -187,7 +187,7 @@ export class DbConnectionImpl<
   }: DbConnectionConfig) {
     stdbLogger('info', 'Connecting to SpacetimeDB WS...');
 
-    let url = new URL(`database/subscribe/${nameOrAddress}`, uri);
+    let url = new URL(`database/${nameOrAddress}/subscribe`, uri);
 
     if (!/^wss?:/.test(uri.protocol)) {
       url.protocol = 'ws:';
