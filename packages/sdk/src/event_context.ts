@@ -36,5 +36,5 @@ export interface ErrorContextInterface<
   SetReducerFlags = any,
 > extends DBContext<DBView, Reducers, SetReducerFlags> {
   /** Enum with variants for all possible events. */
-  event: Error;
+  event?: Error;
 }

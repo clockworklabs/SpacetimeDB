@@ -1,6 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import './App.css';
-import { DBConnection, EventContext, Message, User } from './module_bindings';
+import {
+  DBConnection,
+  ErrorContext,
+  EventContext,
+  Message,
+  User,
+} from './module_bindings';
 import { Identity } from '@clockworklabs/spacetimedb-sdk';
 
 export type PrettyMessage = {
@@ -85,6 +91,21 @@ function App() {
   const [conn, setConn] = useState<DBConnection | null>(null);
 
   useEffect(() => {
+    const subscribeToQueries = (conn: DBConnection, queries: string[]) => {
+      let count = 0;
+      for (const query of queries) {
+        conn
+          ?.subscriptionBuilder()
+          .onApplied(() => {
+            count++;
+            if (count === queries.length) {
+              console.log('SDK client cache initialized.');
+            }
+          })
+          .subscribe(query);
+      }
+    };
+
     const onConnect = (
       conn: DBConnection,
       identity: Identity,
@@ -100,12 +121,8 @@ function App() {
       conn.reducers.onSendMessage(() => {
         console.log('Message sent.');
       });
-      conn
-        .subscriptionBuilder()
-        .onApplied(() => {
-          console.log('SDK client cache initialized.');
-        })
-        .subscribe(['SELECT * FROM message', 'SELECT * FROM user']);
+
+      subscribeToQueries(conn, ['SELECT * FROM message', 'SELECT * FROM user']);
     };
 
     const onDisconnect = () => {
@@ -113,7 +130,7 @@ function App() {
       setConnected(false);
     };
 
-    const onConnectError = (_conn: DBConnection, err: Error) => {
+    const onConnectError = (_ctx: ErrorContext, err: Error) => {
       console.log('Error connecting to SpacetimeDB:', err);
     };
 

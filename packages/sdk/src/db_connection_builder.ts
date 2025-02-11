@@ -1,22 +1,25 @@
-import { DBConnectionImpl } from './db_connection_impl';
+import { DBConnectionImpl, type ConnectionEvent } from './db_connection_impl';
 import { EventEmitter } from './event_emitter';
 import type { Identity } from './identity';
-import { stdbLogger } from './logger';
-import type SpacetimeModule from './spacetime_module';
+import type RemoteModule from './spacetime_module';
 import { WebsocketDecompressAdapter } from './websocket_decompress_adapter';
 
 /**
  * The database client connection to a SpacetimeDB server.
  */
-export class DBConnectionBuilder<DBConnection> {
+export class DBConnectionBuilder<
+  DBConnection,
+  ErrorContext,
+  SubscriptionEventContext,
+> {
   #uri?: URL;
   #nameOrAddress?: string;
   #identity?: Identity;
   #token?: string;
-  #emitter: EventEmitter = new EventEmitter();
-  #createWSFn: typeof WebsocketDecompressAdapter.createWebSocketFn;
+  #emitter: EventEmitter<ConnectionEvent> = new EventEmitter();
   #compression: 'gzip' | 'none' = 'gzip';
-  #light_mode: boolean = false;
+  #lightMode: boolean = false;
+  #createWSFn: typeof WebsocketDecompressAdapter.createWebSocketFn;
 
   /**
    * Creates a new `SpacetimeDBClient` database client and set the initial parameters.
@@ -36,23 +39,23 @@ export class DBConnectionBuilder<DBConnection> {
    * ```
    */
   constructor(
-    private spacetimeModule: SpacetimeModule,
+    private remoteModule: RemoteModule,
     private dbConnectionConstructor: (imp: DBConnectionImpl) => DBConnection
   ) {
     this.#createWSFn = WebsocketDecompressAdapter.createWebSocketFn;
   }
 
-  withUri(uri: string | URL): DBConnectionBuilder<DBConnection> {
+  withUri(uri: string | URL): this {
     this.#uri = new URL(uri);
     return this;
   }
 
-  withModuleName(nameOrAddress: string): DBConnectionBuilder<DBConnection> {
+  withModuleName(nameOrAddress: string): this {
     this.#nameOrAddress = nameOrAddress;
     return this;
   }
 
-  withToken(token?: string): DBConnectionBuilder<DBConnection> {
+  withToken(token?: string): this {
     this.#token = token;
     return this;
   }
@@ -63,97 +66,19 @@ export class DBConnectionBuilder<DBConnection> {
       wsProtocol: string;
       authToken?: string;
     }) => Promise<WebsocketDecompressAdapter>
-  ): DBConnectionBuilder<DBConnection> {
+  ): this {
     this.#createWSFn = createWSFn;
     return this;
   }
 
-  withCompression(
-    compression: 'gzip' | 'none'
-  ): DBConnectionBuilder<DBConnection> {
+  withCompression(compression: 'gzip' | 'none'): this {
     this.#compression = compression;
     return this;
   }
 
-  withLightMode(light_mode: boolean): DBConnectionBuilder<DBConnection> {
-    this.#light_mode = light_mode;
+  withLightMode(lightMode: boolean): this {
+    this.#lightMode = lightMode;
     return this;
-  }
-
-  /**
-   * Connect to The SpacetimeDB Websocket For Your Module. By default, this will use a secure websocket connection. The parameters are optional, and if not provided, will use the values provided on construction of the client.
-   *
-   * @param host The hostname of the SpacetimeDB server. Defaults to the value passed to the `constructor`.
-   * @param nameOrAddress The name or address of the SpacetimeDB module. Defaults to the value passed to the `constructor`.
-   * @param authToken The credentials to use to authenticate with SpacetimeDB. Defaults to the value passed to the `constructor`.
-   *
-   * @example
-   *
-   * ```ts
-   * const host = "ws://localhost:3000";
-   * const name_or_address = "database_name"
-   * const auth_token = undefined;
-   *
-   * var spacetimeDBClient = new SpacetimeDBClient(host, name_or_address, auth_token);
-   * // Connect with the initial parameters
-   * spacetimeDBClient.connect();
-   * //Set the `auth_token`
-   * spacetimeDBClient.connect(undefined, undefined, NEW_TOKEN);
-   * ```
-   */
-  build(): DBConnection {
-    stdbLogger('info', 'Connecting to SpacetimeDB WS...');
-
-    let url = new URL(`database/subscribe/${this.#nameOrAddress}`, this.#uri);
-
-    if (!this.#uri) {
-      throw new Error('URI is required to connect to SpacetimeDB');
-    }
-
-    if (!/^wss?:/.test(this.#uri.protocol)) {
-      url.protocol = 'ws:';
-    }
-
-    const connection = new DBConnectionImpl(
-      this.spacetimeModule,
-      this.#emitter
-    );
-    connection.identity = this.#identity;
-    connection.token = this.#token;
-
-    let connectionId = connection.connectionId.toHexString();
-    url.searchParams.set('connection_id', connectionId);
-
-    connection.wsPromise = this.#createWSFn({
-      url,
-      wsProtocol: 'v1.bsatn.spacetimedb',
-      authToken: connection.token,
-      compression: this.#compression,
-      light_mode: this.#light_mode,
-    })
-      .then(v => {
-        connection.ws = v;
-
-        connection.ws.onclose = () => {
-          this.#emitter.emit('disconnect', connection);
-        };
-        connection.ws.onerror = (e: ErrorEvent) => {
-          this.#emitter.emit('connectError', connection, e);
-        };
-        connection.ws.onopen = connection.handleOnOpen.bind(connection);
-        connection.ws.onmessage = connection.handleOnMessage.bind(connection);
-
-        return v;
-      })
-      .catch(e => {
-        stdbLogger('error', 'Error connecting to SpacetimeDB WS');
-        connection.on('connectError', e);
-        // TODO(cloutiertyler): I don't know but this makes it compile and
-        // I don't have time to investigate how to do this properly.
-        throw e;
-      });
-
-    return this.dbConnectionConstructor(connection);
   }
 
   /**
@@ -182,11 +107,11 @@ export class DBConnectionBuilder<DBConnection> {
    */
   onConnect(
     callback: (
-      connection: DBConnection,
+      ctx: SubscriptionEventContext,
       identity: Identity,
       token: string
     ) => void
-  ): DBConnectionBuilder<DBConnection> {
+  ): this {
     this.#emitter.on('connect', callback);
     return this;
   }
@@ -202,9 +127,7 @@ export class DBConnectionBuilder<DBConnection> {
    * });
    * ```
    */
-  onConnectError(
-    callback: (connection: DBConnection, error: Error) => void
-  ): DBConnectionBuilder<DBConnection> {
+  onConnectError(callback: (ctx: ErrorContext, error: Error) => void): this {
     this.#emitter.on('connectError', callback);
     return this;
   }
@@ -236,9 +159,56 @@ export class DBConnectionBuilder<DBConnection> {
    * @throws {Error} Throws an error if called multiple times on the same `DbConnectionBuilder`.
    */
   onDisconnect(
-    callback: (connection: DBConnection, error?: Error | undefined) => void
-  ): DBConnectionBuilder<DBConnection> {
+    callback: (ctx: ErrorContext, error?: Error | undefined) => void
+  ): this {
     this.#emitter.on('disconnect', callback);
     return this;
+  }
+
+  /**
+   * Connect to The SpacetimeDB Websocket For Your Module. By default, this will use a secure websocket connection. The parameters are optional, and if not provided, will use the values provided on construction of the client.
+   *
+   * @param host The hostname of the SpacetimeDB server. Defaults to the value passed to the `constructor`.
+   * @param nameOrAddress The name or address of the SpacetimeDB module. Defaults to the value passed to the `constructor`.
+   * @param authToken The credentials to use to authenticate with SpacetimeDB. Defaults to the value passed to the `constructor`.
+   *
+   * @example
+   *
+   * ```ts
+   * const host = "ws://localhost:3000";
+   * const name_or_address = "database_name"
+   * const auth_token = undefined;
+   *
+   * var spacetimeDBClient = new SpacetimeDBClient(host, name_or_address, auth_token);
+   * // Connect with the initial parameters
+   * spacetimeDBClient.connect();
+   * //Set the `auth_token`
+   * spacetimeDBClient.connect(undefined, undefined, NEW_TOKEN);
+   * ```
+   */
+  build(): DBConnection {
+    if (!this.#uri) {
+      throw new Error('URI is required to connect to SpacetimeDB');
+    }
+
+    if (!this.#nameOrAddress) {
+      throw new Error(
+        'Database name or address is required to connect to SpacetimeDB'
+      );
+    }
+
+    return this.dbConnectionConstructor(
+      new DBConnectionImpl({
+        uri: this.#uri,
+        nameOrAddress: this.#nameOrAddress,
+        identity: this.#identity,
+        token: this.#token,
+        emitter: this.#emitter,
+        compression: this.#compression,
+        lightMode: this.#lightMode,
+        createWSFn: this.#createWSFn,
+        remoteModule: this.remoteModule,
+      })
+    );
   }
 }

@@ -21,7 +21,7 @@ export type TableUpdate = {
 export class TableCache<RowType = any> {
   private rows: Map<string, RowType>;
   private tableTypeInfo: TableRuntimeTypeInfo;
-  private emitter: EventEmitter;
+  private emitter: EventEmitter<'insert' | 'delete' | 'update'>;
 
   /**
    * @param name the table name
