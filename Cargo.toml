@@ -33,6 +33,7 @@ members = [
   "crates/update",
   "crates/vm",
   "modules/benchmarks",
+  "modules/keynote-benchmarks",
   "modules/perf-test",
   "modules/module-test",
   "modules/quickstart-chat",

@@ -1,0 +1,11 @@
+[package]
+name = "keynote-benchmarks"
+version = "0.1.0"
+edition.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+spacetimedb = { path = "../../crates/bindings" }
+log = "0.4"
