@@ -201,7 +201,7 @@ pub trait Serializer: Sized {
 use ethnum::{i256, u256};
 pub use spacetimedb_bindings_macro::Serialize;
 
-use crate::AlgebraicType;
+use crate::{bsatn, buffer::BufWriter, AlgebraicType};
 
 /// A **data structure** that can be serialized into any data format supported by SATS.
 ///
@@ -215,6 +215,15 @@ use crate::AlgebraicType;
 pub trait Serialize {
     /// Serialize `self` in the data format of `S` using the provided `serializer`.
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error>;
+
+    #[doc(hidden)]
+    /// Serialize `self` in the data format BSATN using the provided BSATN `serializer`.
+    fn serialize_into_bsatn<W: BufWriter>(
+        &self,
+        serializer: bsatn::Serializer<'_, W>,
+    ) -> Result<(), bsatn::EncodeError> {
+        self.serialize(serializer)
+    }
 
     /// Used in the `Serialize for Vec<T>` implementation
     /// to allow a specialized serialization of `Vec<T>` as bytes.

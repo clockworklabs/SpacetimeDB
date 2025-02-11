@@ -22,6 +22,16 @@ impl<'a, W> Serializer<'a, W> {
     }
 }
 
+impl<W: BufWriter> Serializer<'_, W> {
+    /// Directly write `bytes` to the writer.
+    /// This is a raw API. Only use this if you know what you are doing.
+    #[inline(always)]
+    #[doc(hidden)]
+    pub fn raw_write_bytes(self, bytes: &[u8]) {
+        self.writer.put_slice(bytes);
+    }
+}
+
 /// An error during BSATN serialization.
 #[derive(Debug, Clone)]
 // TODO: rename to EncodeError
