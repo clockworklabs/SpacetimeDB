@@ -7,7 +7,7 @@ import type { SubscriptionBuilderImpl } from './subscription_builder_impl';
  * @template Reducers - Type representing the reducers.
  * @template SetReducerFlags - Type representing the reducer flags collection.
  */
-export interface DBContext<
+export interface DbContext<
   DBView = any,
   Reducers = any,
   SetReducerFlags = any,

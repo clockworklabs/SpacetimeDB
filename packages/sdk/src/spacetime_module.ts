@@ -1,5 +1,5 @@
 import type { AlgebraicType } from './algebraic_type';
-import type { DBConnectionImpl } from './db_connection_impl';
+import type { DbConnectionImpl } from './db_connection_impl';
 
 export interface TableRuntimeTypeInfo {
   tableName: string;
@@ -15,10 +15,10 @@ export interface ReducerRuntimeTypeInfo {
 export default interface RemoteModule {
   tables: { [name: string]: TableRuntimeTypeInfo };
   reducers: { [name: string]: ReducerRuntimeTypeInfo };
-  eventContextConstructor: (imp: DBConnectionImpl, event: any) => any;
-  dbViewConstructor: (connection: DBConnectionImpl) => any;
+  eventContextConstructor: (imp: DbConnectionImpl, event: any) => any;
+  dbViewConstructor: (connection: DbConnectionImpl) => any;
   reducersConstructor: (
-    connection: DBConnectionImpl,
+    connection: DbConnectionImpl,
     setReducerFlags: any
   ) => any;
   setReducerFlagsConstructor: () => any;

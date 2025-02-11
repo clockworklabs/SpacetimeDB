@@ -1,4 +1,4 @@
-import type { DBConnectionImpl } from './db_connection_impl';
+import type { DbConnectionImpl } from './db_connection_impl';
 import type {
   ErrorContextInterface,
   SubscriptionEventContextInterface,
@@ -17,7 +17,7 @@ export class SubscriptionBuilderImpl<
     ctx: ErrorContextInterface<DBView, Reducers, SetReducerFlags>
   ) => void = undefined;
   constructor(
-    private db: DBConnectionImpl<DBView, Reducers, SetReducerFlags>
+    private db: DbConnectionImpl<DBView, Reducers, SetReducerFlags>
   ) {}
 
   /**
@@ -142,7 +142,7 @@ export class SubscriptionHandleImpl<
     new EventEmitter();
 
   constructor(
-    private db: DBConnectionImpl<DBView, Reducers, SetReducerFlags>,
+    private db: DbConnectionImpl<DBView, Reducers, SetReducerFlags>,
     querySql: string,
     onApplied?: (
       ctx: SubscriptionEventContextInterface<DBView, Reducers, SetReducerFlags>
