@@ -8,7 +8,7 @@ use std::sync::{atomic::AtomicUsize, Arc, Mutex};
 use module_bindings::*;
 
 use spacetimedb_sdk::{
-    credentials, i256, u256, unstable::CallReducerFlags, ConnectionId, DbConnectionBuilder, DbContext, Error, Event,
+    credentials, i256, u256, unstable::CallReducerFlags, ConnectionId, DbConnectionBuilder, DbContext, Event,
     Identity, ReducerEvent, Status, SubscriptionHandle, Table, TimeDuration, Timestamp,
 };
 use test_counter::TestCounter;
