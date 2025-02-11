@@ -47,32 +47,24 @@ pub(crate) enum PendingUnsubscribeResult<M: SpacetimeModule> {
 }
 
 impl<M: SpacetimeModule> SubscriptionManager<M> {
-    pub(crate) fn on_disconnect(&mut self, ctx: &M::ErrorContext) {
+    pub(crate) fn on_disconnect(&mut self, _ctx: &M::ErrorContext) {
         // We need to clear all the subscriptions.
-        // We should run the on_error callbacks for all of them.
         // TODO: is this correct? We don't remove them from the client cache,
         // we may want to resume them in the future if we impl reconnecting,
         // and users can already register on-disconnect callbacks which will run in this case.
 
-        // TODO(cloutiertyler): Is this the right behavior? If my connection
-        // ends, I don't view that as being an error with my subscriptions. IMO
-        // we should be calling `on_end` instead of `on_error` here. That would
-        // thus imply also being able to register an `on_end` callback on the
-        // subscription builder since in principle your subscription could end
-        // without an error if you call `disconnect`. This seems sound since
-        // calling `disconnect` is semantically equivalent to calling
-        // `unsubscribe` on allsubscriptions.
-
-        for (_, mut sub) in self.new_subscriptions.drain() {
-            if let Some(callback) = sub.on_error() {
-                callback(ctx, ctx.event().clone().unwrap());
-            }
-        }
-        for (_, mut s) in self.legacy_subscriptions.drain() {
-            if let Some(callback) = s.on_error.take() {
-                callback(ctx, ctx.event().clone().unwrap());
-            }
-        }
+        // NOTE(cloutiertyler)
+        // This function previously invoke `on_error` for all subscriptions.
+        // However, this is inconsistent behavior given that `on_disconnect` for
+        // connections no longer always has an error argument and that the user
+        // can add an `on_ended` callback when unsubscribing.
+        //
+        // We propose instead that `on_ended` be added to the subscription
+        // builder so that it can be invoked when the subscription is ended
+        // because of a normal disconnect, but without the user calling
+        // `unsubscribe_then`. This can be done in a non-breaking way.
+        //
+        // For now, we will just do nothing when a subscription ends normally.
     }
 
     /// Register a new subscription. This does not send the subscription to the server.
