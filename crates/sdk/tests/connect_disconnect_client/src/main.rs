@@ -2,7 +2,7 @@ mod module_bindings;
 
 use module_bindings::*;
 
-use spacetimedb_sdk::{DbContext, Error, Table};
+use spacetimedb_sdk::{DbContext, Table};
 
 use test_counter::TestCounter;
 
