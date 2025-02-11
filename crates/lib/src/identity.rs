@@ -3,7 +3,7 @@ use blake3;
 use core::mem;
 use spacetimedb_bindings_macro::{Deserialize, Serialize};
 use spacetimedb_sats::hex::HexString;
-use spacetimedb_sats::{hash, impl_st, u256, AlgebraicType, AlgebraicValue};
+use spacetimedb_sats::{impl_st, u256, AlgebraicType, AlgebraicValue};
 use std::{fmt, str::FromStr};
 
 pub type RequestId = u32;
@@ -98,27 +98,6 @@ impl Identity {
         self.__identity__
     }
 
-    /// Returns an `Identity` defined as the given byte `slice`.
-    /// The slice is assumed to be in BIG-ENDIAN format.
-    ///
-    /// This method is the correct choice if you have converted the bytes of a hexadecimal-formatted `Identity`
-    /// to a byte array in the following way:
-    /// ```ignore
-    /// "0xb0b1b2..."
-    /// ->
-    /// [0xb0, 0xb1, 0xb2, ...]
-    /// ```
-    pub fn from_be_slice(slice: &[u8]) -> Self {
-        Self::from_be_byte_array(slice.try_into().unwrap())
-    }
-
-    /// Returns an `Identity` defined as the given byte `slice`.
-    /// The slice is assumed to be in LITTLE-ENDIAN format.
-    /// If you are parsing an `Identity` from a string, you probably want `from_be_slice` instead.
-    pub fn from_slice(slice: &[u8]) -> Self {
-        Self::from_byte_array(slice.try_into().unwrap())
-    }
-
     #[doc(hidden)]
     pub fn __dummy() -> Self {
         Self::ZERO
@@ -175,10 +154,6 @@ impl Identity {
 
     pub fn from_hex(hex: impl AsRef<[u8]>) -> Result<Self, hex::FromHexError> {
         hex::FromHex::from_hex(hex)
-    }
-
-    pub fn from_hashing_bytes(bytes: impl AsRef<[u8]>) -> Self {
-        Self::from_byte_array(hash::hash_bytes(bytes).data)
     }
 }
 
@@ -269,6 +244,17 @@ mod tests {
         );
     }
 
+    /// Make sure the checksum is valid.
+    fn validate_checksum(id: &[u8; 32]) -> bool {
+        let checksum_input = &id[6..];
+        let mut checksum_input_with_prefix = [0u8; 28];
+        checksum_input_with_prefix[2..].copy_from_slice(checksum_input);
+        checksum_input_with_prefix[0] = 0xc2;
+        checksum_input_with_prefix[1] = 0x00;
+        let checksum_hash = &blake3::hash(&checksum_input_with_prefix);
+        checksum_hash.as_bytes()[0..4] == id[2..6]
+    }
+
     proptest! {
         #[test]
         fn identity_conversions(w0: u128, w1: u128) {
@@ -288,6 +274,7 @@ mod tests {
         fn from_claims_formats_correctly(s1 in string_regex(r".{3,5}").unwrap(), s2 in string_regex(r".{3,5}").unwrap()) {
             let id = Identity::from_claims(&s1, &s2);
             prop_assert!(id.to_hex().starts_with("c200"));
+            prop_assert!(validate_checksum(&id.to_be_byte_array()));
         }
     }
 }

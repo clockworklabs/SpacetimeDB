@@ -2,14 +2,15 @@ use std::str::FromStr;
 
 use once_cell::sync::Lazy;
 use spacetimedb::messages::control_db::HostType;
+use spacetimedb_client_api::auth::LOCALHOST;
 use spacetimedb_lib::error::ResultTest;
 use spacetimedb_lib::Hash;
 use tempfile::TempDir;
 
 use super::*;
 
-static ALICE: Lazy<Identity> = Lazy::new(|| Identity::from_hashing_bytes("alice"));
-static BOB: Lazy<Identity> = Lazy::new(|| Identity::from_hashing_bytes("bob"));
+static ALICE: Lazy<Identity> = Lazy::new(|| Identity::from_claims(LOCALHOST, "alice"));
+static BOB: Lazy<Identity> = Lazy::new(|| Identity::from_claims(LOCALHOST, "bob"));
 
 #[test]
 fn test_register_tld() -> anyhow::Result<()> {

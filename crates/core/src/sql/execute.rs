@@ -673,8 +673,8 @@ pub(crate) mod tests {
             Ok(())
         })?;
 
-        let server = Identity::from_hashing_bytes("server");
-        let client = Identity::from_hashing_bytes("client");
+        let server = Identity::from_claims("issuer", "server");
+        let client = Identity::from_claims("issuer", "client");
 
         let internal_auth = AuthCtx::new(server, server);
         let external_auth = AuthCtx::new(server, client);
