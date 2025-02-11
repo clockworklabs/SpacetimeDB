@@ -571,23 +571,12 @@ fn print_subscription_builder(_module: &ModuleDef, out: &mut Indenter) {
 fn print_db_connection(_module: &ModuleDef, out: &mut Indenter) {
     writeln!(
         out,
-<<<<<<< HEAD
-        "export class DBConnection extends DBConnectionImpl<RemoteTables, RemoteReducers, SetReducerFlags> {{"
+        "export class DbConnection extends DbConnectionImpl<RemoteTables, RemoteReducers, SetReducerFlags> {{"
     );
     out.indent(1);
     writeln!(
         out,
-        "static builder = (): DBConnectionBuilder<DBConnection, ErrorContext, SubscriptionEventContext> => {{"
-=======
-        "export class DbConnection extends DbConnectionImpl<RemoteTables, RemoteReducers, SetReducerFlags>  {{"
-    );
-    out.indent(1);
-    writeln!(out, "static builder = (): DbConnectionBuilder<DbConnection>  => {{");
-    out.indent(1);
-    writeln!(
-        out,
-        "return new DbConnectionBuilder<DbConnection>(REMOTE_MODULE, (imp: DbConnectionImpl) => imp as DbConnection);"
->>>>>>> beca27347 (DBConnection -> DbConnection for the TypeScript API)
+        "static builder = (): DbConnectionBuilder<DbConnection, ErrorContext, SubscriptionEventContext> => {{"
     );
     out.indent(1);
     writeln!(
