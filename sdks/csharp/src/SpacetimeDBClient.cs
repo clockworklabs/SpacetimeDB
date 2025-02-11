@@ -693,6 +693,9 @@ namespace SpacetimeDB
             {
                 uri = $"ws://{uri}";
             }
+            // Things fail surprisingly if we have a trailing slash, because we later manually append strings
+            // like `/foo` and then end up with `//` in the URI.
+            uri = uri.TrimEnd('/');
 
             Log.Info($"SpacetimeDBClient: Connecting to {uri} {addressOrName}");
             if (!IsTesting)
