@@ -4806,6 +4806,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "spacetimedb-auth"
+version = "1.0.0-rc4"
+dependencies = [
+ "anyhow",
+ "serde",
+ "serde_with",
+ "spacetimedb-jsonwebtoken",
+ "spacetimedb-lib",
+]
+
+[[package]]
 name = "spacetimedb-bench"
 version = "1.0.0-rc4"
 dependencies = [
@@ -4900,8 +4911,8 @@ dependencies = [
  "serde_json",
  "serde_with",
  "slab",
+ "spacetimedb-auth",
  "spacetimedb-client-api-messages",
- "spacetimedb-core",
  "spacetimedb-data-structures",
  "spacetimedb-fs-utils",
  "spacetimedb-jsonwebtoken",
@@ -5089,6 +5100,7 @@ dependencies = [
  "slab",
  "sled",
  "smallvec",
+ "spacetimedb-auth",
  "spacetimedb-client-api-messages",
  "spacetimedb-commitlog",
  "spacetimedb-data-structures",
@@ -5118,7 +5130,6 @@ dependencies = [
  "tokio-stream",
  "tokio-util",
  "toml 0.8.19",
- "toml_edit",
  "tracing",
  "tracing-appender",
  "tracing-core",
