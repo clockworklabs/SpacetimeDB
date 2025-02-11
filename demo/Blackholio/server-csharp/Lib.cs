@@ -46,7 +46,7 @@ public static partial class Module
 		public uint player_id;
 		public DbVector2 direction;
 		public float speed;
-		public ulong last_split_time;
+		public SpacetimeDB.Timestamp last_split_time;
 	}
 
 	[Table(Name = "player", Public = true)]
@@ -211,7 +211,7 @@ public static partial class Module
 		);
 	}
 
-	public static Entity SpawnCircleAt(ReducerContext ctx, uint player_id, uint mass, DbVector2 position, DateTimeOffset timestamp)
+	public static Entity SpawnCircleAt(ReducerContext ctx, uint player_id, uint mass, DbVector2 position, SpacetimeDB.Timestamp timestamp)
 	{
 		var entity = ctx.Db.entity.Insert(new Entity
 		{
@@ -225,7 +225,7 @@ public static partial class Module
 			player_id = player_id,
 			direction = new DbVector2(0, 1),
 			speed = 0f,
-			last_split_time = (ulong)timestamp.ToUnixTimeMilliseconds(),
+			last_split_time = timestamp,
 		});
 		return entity;
 	}
@@ -285,7 +285,7 @@ public static partial class Module
 			for (int i = 0; i < player_entities.Count; i++)
 			{
 				var circle_i = circles[i];
-				var time_since_split = ((ulong)ctx.Timestamp.ToUnixTimeMilliseconds() - circle_i.last_split_time) / 1000f;
+				var time_since_split = ctx.Timestamp.TimeDurationSince(circle_i.last_split_time).Microseconds / 1_000_000f;
 				var time_before_recombining = MathF.Max(SPLIT_RECOMBINE_DELAY_SEC - time_since_split, 0f);
 				if (time_before_recombining > SPLIT_GRAV_PULL_BEFORE_RECOMBINE_SEC)
 				{
@@ -338,7 +338,7 @@ public static partial class Module
 					if (distance_sqr < radius_sum_multiplied * radius_sum_multiplied)
 					{
 						var vec = diff.Normalized
-							* MathF.Sqrt(radius_sum - distance_sqr)
+							* (radius_sum - MathF.Sqrt(distance_sqr))
 							* SELF_COLLISION_SPEED;
 						circle_directions[entity_i.entity_id] += vec / 2f;
 						circle_directions[entity_j.entity_id] -= vec / 2f;
@@ -453,7 +453,7 @@ public static partial class Module
 					ctx.Timestamp
 				);
 				circle_entity.mass -= half_mass;
-				circle.last_split_time = (ulong)ctx.Timestamp.ToUnixTimeMilliseconds();
+				circle.last_split_time = ctx.Timestamp;
 				ctx.Db.circle.entity_id.Update(circle);
 				ctx.Db.entity.entity_id.Update(circle_entity);
 				circle_count += 1;
@@ -532,7 +532,7 @@ public static partial class Module
 	{
 		List<Circle> circles = ctx.Db.circle.player_id.Filter(timer.player_id).ToList();
 		Entity[] recombining_entities = circles
-			.Where(c => ((ulong)ctx.Timestamp.ToUnixTimeMilliseconds() - c.last_split_time) / 1000 >= SPLIT_RECOMBINE_DELAY_SEC)
+			.Where(c => ctx.Timestamp.TimeDurationSince(c.last_split_time).Microseconds / 1_000_000f >= SPLIT_RECOMBINE_DELAY_SEC)
 			.Select(c => ctx.Db.entity.entity_id.Find(c.entity_id) ?? throw new Exception())
 			.ToArray();
 		if (recombining_entities.Length <= 1)

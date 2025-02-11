@@ -12,7 +12,7 @@ namespace SpacetimeDB.Types
 {
     public sealed partial class RemoteReducers : RemoteBase
     {
-        public delegate void ConsumeEntityHandler(EventContext ctx, ConsumeEntityTimer request);
+        public delegate void ConsumeEntityHandler(ReducerEventContext ctx, ConsumeEntityTimer request);
         public event ConsumeEntityHandler? OnConsumeEntity;
 
         public void ConsumeEntity(ConsumeEntityTimer request)
@@ -20,7 +20,7 @@ namespace SpacetimeDB.Types
             conn.InternalCallReducer(new Reducer.ConsumeEntity(request), this.SetCallReducerFlags.ConsumeEntityFlags);
         }
 
-        public bool InvokeConsumeEntity(EventContext ctx, Reducer.ConsumeEntity args)
+        public bool InvokeConsumeEntity(ReducerEventContext ctx, Reducer.ConsumeEntity args)
         {
             if (OnConsumeEntity == null) return false;
             OnConsumeEntity(

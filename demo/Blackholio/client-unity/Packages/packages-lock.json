@@ -1,7 +1,7 @@
 {
   "dependencies": {
     "com.clockworklabs.spacetimedbsdk": {
-      "version": "git@github.com:clockworklabs/com.clockworklabs.spacetimedbsdk.git#ingvar/csharp-codegen-rewrite",
+      "version": "git@github.com:clockworklabs/com.clockworklabs.spacetimedbsdk.git#staging",
       "depth": 0,
       "source": "git",
       "dependencies": {},

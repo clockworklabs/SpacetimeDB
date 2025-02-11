@@ -12,7 +12,7 @@ namespace SpacetimeDB.Types
 {
     public sealed partial class RemoteReducers : RemoteBase
     {
-        public delegate void PlayerSplitHandler(EventContext ctx);
+        public delegate void PlayerSplitHandler(ReducerEventContext ctx);
         public event PlayerSplitHandler? OnPlayerSplit;
 
         public void PlayerSplit()
@@ -20,7 +20,7 @@ namespace SpacetimeDB.Types
             conn.InternalCallReducer(new Reducer.PlayerSplit(), this.SetCallReducerFlags.PlayerSplitFlags);
         }
 
-        public bool InvokePlayerSplit(EventContext ctx, Reducer.PlayerSplit args)
+        public bool InvokePlayerSplit(ReducerEventContext ctx, Reducer.PlayerSplit args)
         {
             if (OnPlayerSplit == null) return false;
             OnPlayerSplit(

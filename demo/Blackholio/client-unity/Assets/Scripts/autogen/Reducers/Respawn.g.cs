@@ -12,7 +12,7 @@ namespace SpacetimeDB.Types
 {
     public sealed partial class RemoteReducers : RemoteBase
     {
-        public delegate void RespawnHandler(EventContext ctx);
+        public delegate void RespawnHandler(ReducerEventContext ctx);
         public event RespawnHandler? OnRespawn;
 
         public void Respawn()
@@ -20,7 +20,7 @@ namespace SpacetimeDB.Types
             conn.InternalCallReducer(new Reducer.Respawn(), this.SetCallReducerFlags.RespawnFlags);
         }
 
-        public bool InvokeRespawn(EventContext ctx, Reducer.Respawn args)
+        public bool InvokeRespawn(ReducerEventContext ctx, Reducer.Respawn args)
         {
             if (OnRespawn == null) return false;
             OnRespawn(

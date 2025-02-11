@@ -10,11 +10,10 @@
     <Nullable>enable</Nullable>
     <!-- ignore naming conventions, we're trying to match Rust 1:1 -->
     <NoWarn>$(NoWarn);CS8981;IDE1006</NoWarn>
-    <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="SpacetimeDB.Runtime" Version="1.0.0-rc3" />
+    <PackageReference Include="SpacetimeDB.Runtime" Version="1.0.0-rc4" />
   </ItemGroup>
 
 </Project>

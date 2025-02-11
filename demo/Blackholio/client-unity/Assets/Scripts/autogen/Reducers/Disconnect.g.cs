@@ -12,10 +12,10 @@ namespace SpacetimeDB.Types
 {
     public sealed partial class RemoteReducers : RemoteBase
     {
-        public delegate void DisconnectHandler(EventContext ctx);
+        public delegate void DisconnectHandler(ReducerEventContext ctx);
         public event DisconnectHandler? OnDisconnect;
 
-        public bool InvokeDisconnect(EventContext ctx, Reducer.Disconnect args)
+        public bool InvokeDisconnect(ReducerEventContext ctx, Reducer.Disconnect args)
         {
             if (OnDisconnect == null) return false;
             OnDisconnect(

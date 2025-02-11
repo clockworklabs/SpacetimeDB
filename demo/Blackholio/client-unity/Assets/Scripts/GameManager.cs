@@ -48,7 +48,7 @@ public class GameManager : MonoBehaviour
         // Then, you can run the executable multiple times. Since the executable will not check for
         // a saved auth token, each run of will receive a different Identifier,
         // and their circles will be able to eat each other.
-        if (PlayerPrefs.HasKey(AuthToken.GetTokenKey()))
+        if (AuthToken.Token != "")
         {
             builder = builder.WithToken(AuthToken.Token);
         }
@@ -56,12 +56,6 @@ public class GameManager : MonoBehaviour
         // Building the connection will establish a connection to the SpacetimeDB
         // server.
         Conn = builder.Build();
-
-        /* BEGIN: not in tutorial */
-#pragma warning disable CS0612 // Type or member is obsolete
-        Conn.onUnhandledReducerError += InstanceOnUnhandledReducerError;
-#pragma warning restore CS0612 // Type or member is obsolete
-        /* END: not in tutorial */
     }
 
     // Called when we connect to SpacetimeDB and receive our client identity
@@ -100,7 +94,7 @@ public class GameManager : MonoBehaviour
         }
     }
 
-    private void HandleSubscriptionApplied(EventContext ctx)
+    private void HandleSubscriptionApplied(SubscriptionEventContext ctx)
     {
         Debug.Log("Subscription applied!");
         OnSubscriptionApplied?.Invoke();

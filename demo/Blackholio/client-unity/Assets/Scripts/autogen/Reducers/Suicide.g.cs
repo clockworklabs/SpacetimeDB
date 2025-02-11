@@ -12,7 +12,7 @@ namespace SpacetimeDB.Types
 {
     public sealed partial class RemoteReducers : RemoteBase
     {
-        public delegate void SuicideHandler(EventContext ctx);
+        public delegate void SuicideHandler(ReducerEventContext ctx);
         public event SuicideHandler? OnSuicide;
 
         public void Suicide()
@@ -20,7 +20,7 @@ namespace SpacetimeDB.Types
             conn.InternalCallReducer(new Reducer.Suicide(), this.SetCallReducerFlags.SuicideFlags);
         }
 
-        public bool InvokeSuicide(EventContext ctx, Reducer.Suicide args)
+        public bool InvokeSuicide(ReducerEventContext ctx, Reducer.Suicide args)
         {
             if (OnSuicide == null) return false;
             OnSuicide(

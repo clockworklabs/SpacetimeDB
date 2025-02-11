@@ -12,7 +12,7 @@ namespace SpacetimeDB.Types
 {
     public sealed partial class RemoteReducers : RemoteBase
     {
-        public delegate void UpdatePlayerInputHandler(EventContext ctx, DbVector2 direction);
+        public delegate void UpdatePlayerInputHandler(ReducerEventContext ctx, DbVector2 direction);
         public event UpdatePlayerInputHandler? OnUpdatePlayerInput;
 
         public void UpdatePlayerInput(DbVector2 direction)
@@ -20,7 +20,7 @@ namespace SpacetimeDB.Types
             conn.InternalCallReducer(new Reducer.UpdatePlayerInput(direction), this.SetCallReducerFlags.UpdatePlayerInputFlags);
         }
 
-        public bool InvokeUpdatePlayerInput(EventContext ctx, Reducer.UpdatePlayerInput args)
+        public bool InvokeUpdatePlayerInput(ReducerEventContext ctx, Reducer.UpdatePlayerInput args)
         {
             if (OnUpdatePlayerInput == null) return false;
             OnUpdatePlayerInput(

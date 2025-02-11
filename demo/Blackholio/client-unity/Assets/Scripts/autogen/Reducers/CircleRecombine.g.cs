@@ -12,7 +12,7 @@ namespace SpacetimeDB.Types
 {
     public sealed partial class RemoteReducers : RemoteBase
     {
-        public delegate void CircleRecombineHandler(EventContext ctx, CircleRecombineTimer timer);
+        public delegate void CircleRecombineHandler(ReducerEventContext ctx, CircleRecombineTimer timer);
         public event CircleRecombineHandler? OnCircleRecombine;
 
         public void CircleRecombine(CircleRecombineTimer timer)
@@ -20,7 +20,7 @@ namespace SpacetimeDB.Types
             conn.InternalCallReducer(new Reducer.CircleRecombine(timer), this.SetCallReducerFlags.CircleRecombineFlags);
         }
 
-        public bool InvokeCircleRecombine(EventContext ctx, Reducer.CircleRecombine args)
+        public bool InvokeCircleRecombine(ReducerEventContext ctx, Reducer.CircleRecombine args)
         {
             if (OnCircleRecombine == null) return false;
             OnCircleRecombine(

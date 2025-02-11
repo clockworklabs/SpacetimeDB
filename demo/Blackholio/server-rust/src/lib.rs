@@ -2,7 +2,7 @@ pub mod math;
 
 use math::DbVector2;
 use rand::Rng;
-use spacetimedb::{spacetimedb_lib::ScheduleAt, Identity, ReducerContext, Table, Timestamp};
+use spacetimedb::{spacetimedb_lib::ScheduleAt, Identity, ReducerContext, Table, Timestamp, TimeDuration};
 use std::{collections::HashMap, time::Duration};
 
 // TODO:
@@ -125,17 +125,17 @@ pub fn init(ctx: &ReducerContext) -> Result<(), String> {
     })?;
     ctx.db.circle_decay_timer().try_insert(CircleDecayTimer {
         scheduled_id: 0,
-        scheduled_at: ScheduleAt::Interval(Duration::from_secs(5).as_micros() as u64),
+        scheduled_at: ScheduleAt::Interval(Duration::from_secs(5).into()),
     })?;
     ctx.db.spawn_food_timer().try_insert(SpawnFoodTimer {
         scheduled_id: 0,
-        scheduled_at: ScheduleAt::Interval(Duration::from_millis(500).as_micros() as u64),
+        scheduled_at: ScheduleAt::Interval(Duration::from_millis(500).into()),
     })?;
     ctx.db
         .move_all_players_timer()
         .try_insert(MoveAllPlayersTimer {
             scheduled_id: 0,
-            scheduled_at: ScheduleAt::Interval(Duration::from_millis(50).as_micros() as u64),
+            scheduled_at: ScheduleAt::Interval(Duration::from_millis(50).into()),
         })?;
     Ok(())
 }
@@ -456,7 +456,7 @@ pub fn move_all_players(ctx: &ReducerContext, _timer: MoveAllPlayersTimer) -> Re
 fn schedule_consume_entity(ctx: &ReducerContext, consumer_id: u32, consumed_id: u32) {
     ctx.db.consume_entity_timer().insert(ConsumeEntityTimer {
         scheduled_id: 0,
-        scheduled_at: ScheduleAt::Time(Timestamp::now().into_micros_since_epoch()),
+        scheduled_at: ScheduleAt::Time(ctx.timestamp.clone()),
         consumer_entity_id: consumer_id,
         consumed_entity_id: consumed_id,
     });
@@ -549,10 +549,7 @@ pub fn player_split(ctx: &ReducerContext) -> Result<(), String> {
         .insert(CircleRecombineTimer {
             scheduled_id: 0,
             scheduled_at: ScheduleAt::Time(
-                Timestamp::now()
-                    .checked_add(Duration::from_secs_f32(SPLIT_RECOMBINE_DELAY_SEC))
-                    .unwrap()
-                    .into_micros_since_epoch(),
+                ctx.timestamp + TimeDuration::from(Duration::from_secs_f32(SPLIT_RECOMBINE_DELAY_SEC))
             ),
             player_id: player.player_id,
         });

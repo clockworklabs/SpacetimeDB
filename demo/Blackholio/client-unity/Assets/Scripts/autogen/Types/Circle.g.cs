@@ -22,14 +22,14 @@ namespace SpacetimeDB.Types
         [DataMember(Name = "speed")]
         public float Speed;
         [DataMember(Name = "last_split_time")]
-        public ulong LastSplitTime;
+        public SpacetimeDB.Timestamp LastSplitTime;
 
         public Circle(
             uint EntityId,
             uint PlayerId,
             DbVector2 Direction,
             float Speed,
-            ulong LastSplitTime
+            SpacetimeDB.Timestamp LastSplitTime
         )
         {
             this.EntityId = EntityId;

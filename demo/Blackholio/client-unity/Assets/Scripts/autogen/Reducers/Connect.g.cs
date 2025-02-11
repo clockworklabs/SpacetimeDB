@@ -12,10 +12,10 @@ namespace SpacetimeDB.Types
 {
     public sealed partial class RemoteReducers : RemoteBase
     {
-        public delegate void ConnectHandler(EventContext ctx);
+        public delegate void ConnectHandler(ReducerEventContext ctx);
         public event ConnectHandler? OnConnect;
 
-        public bool InvokeConnect(EventContext ctx, Reducer.Connect args)
+        public bool InvokeConnect(ReducerEventContext ctx, Reducer.Connect args)
         {
             if (OnConnect == null) return false;
             OnConnect(

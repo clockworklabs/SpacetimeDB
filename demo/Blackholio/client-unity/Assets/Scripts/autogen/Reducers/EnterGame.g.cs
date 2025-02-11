@@ -12,7 +12,7 @@ namespace SpacetimeDB.Types
 {
     public sealed partial class RemoteReducers : RemoteBase
     {
-        public delegate void EnterGameHandler(EventContext ctx, string name);
+        public delegate void EnterGameHandler(ReducerEventContext ctx, string name);
         public event EnterGameHandler? OnEnterGame;
 
         public void EnterGame(string name)
@@ -20,7 +20,7 @@ namespace SpacetimeDB.Types
             conn.InternalCallReducer(new Reducer.EnterGame(name), this.SetCallReducerFlags.EnterGameFlags);
         }
 
-        public bool InvokeEnterGame(EventContext ctx, Reducer.EnterGame args)
+        public bool InvokeEnterGame(ReducerEventContext ctx, Reducer.EnterGame args)
         {
             if (OnEnterGame == null) return false;
             OnEnterGame(
