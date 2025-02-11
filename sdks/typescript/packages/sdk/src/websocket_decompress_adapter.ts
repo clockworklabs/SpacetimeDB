@@ -91,7 +91,7 @@ export class WebsocketDecompressAdapter {
       WS = WebSocket;
     }
 
-    const tokenUrl = new URL('/identity/websocket_token', url);
+    const tokenUrl = new URL('/identity/websocket-token', url);
     tokenUrl.protocol = url.protocol === 'wss:' ? 'https:' : 'http:';
 
     const response = await fetch(tokenUrl, { method: 'POST', headers });
