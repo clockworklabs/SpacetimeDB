@@ -1,12 +1,13 @@
 use anyhow::Context;
+use spacetimedb::energy;
 use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, EnergyBalance, Node, Replica};
-use spacetimedb::{energy, stdb_path};
 
 use spacetimedb_client_api_messages::name::{
     DomainName, DomainParsingError, InsertDomainResult, RegisterTldResult, Tld, TldRef,
 };
 use spacetimedb_lib::bsatn;
+use spacetimedb_paths::standalone::ControlDbDir;
 
 #[cfg(test)]
 mod tests;
@@ -59,9 +60,9 @@ impl From<sled::Error> for Error {
 }
 
 impl ControlDb {
-    pub fn new() -> Result<Self> {
+    pub fn new(path: &ControlDbDir) -> Result<Self> {
         let config = sled::Config::default()
-            .path(stdb_path("control_node/control_db"))
+            .path(path)
             .flush_every_ms(Some(50))
             .mode(sled::Mode::HighThroughput);
         let db = config.open()?;
@@ -420,7 +421,7 @@ impl ControlDb {
                 }
             };
             let arr = <[u8; 16]>::try_from(balance_entry.1.as_ref()).map_err(|_| bsatn::DecodeError::BufferLength {
-                for_type: "balance_entry".into(),
+                for_type: "balance_entry",
                 expected: 16,
                 given: balance_entry.1.len(),
             })?;
@@ -440,7 +441,7 @@ impl ControlDb {
         let value = tree.get(identity.to_byte_array())?;
         if let Some(value) = value {
             let arr = <[u8; 16]>::try_from(value.as_ref()).map_err(|_| bsatn::DecodeError::BufferLength {
-                for_type: "Identity".into(),
+                for_type: "Identity",
                 expected: 16,
                 given: value.as_ref().len(),
             })?;
