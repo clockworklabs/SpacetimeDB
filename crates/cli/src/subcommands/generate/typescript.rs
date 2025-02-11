@@ -348,23 +348,23 @@ removeOnUpdate = (cb: (ctx: EventContext, onRow: {row_type}, newRow: {row_type})
         writeln!(out, "}},");
         writeln!(
             out,
-            "// Constructors which are used by the DBConnectionImpl to
+            "// Constructors which are used by the DbConnectionImpl to
 // extract type information from the generated RemoteModule.
 //
 // NOTE: This is not strictly necessary for `eventContextConstructor` because
 // all we do is build a TypeScript object which we could have done inside the
 // SDK, but if in the future we wanted to create a class this would be
 // necessary because classes have methods, so we'll keep it.
-eventContextConstructor: (imp: DBConnectionImpl, event: Event<Reducer>) => {{
+eventContextConstructor: (imp: DbConnectionImpl, event: Event<Reducer>) => {{
   return {{
-    ...(imp as DBConnection),
+    ...(imp as DbConnection),
     event
   }}
 }},
-dbViewConstructor: (imp: DBConnectionImpl) => {{
+dbViewConstructor: (imp: DbConnectionImpl) => {{
   return new RemoteTables(imp);
 }},
-reducersConstructor: (imp: DBConnectionImpl, setReducerFlags: SetReducerFlags) => {{
+reducersConstructor: (imp: DbConnectionImpl, setReducerFlags: SetReducerFlags) => {{
   return new RemoteReducers(imp, setReducerFlags);
 }},
 setReducerFlagsConstructor: () => {{
@@ -433,7 +433,7 @@ fn print_remote_reducers(module: &ModuleDef, out: &mut Indenter) {
     out.indent(1);
     writeln!(
         out,
-        "constructor(private connection: DBConnectionImpl, private setCallReducerFlags: SetReducerFlags) {{}}"
+        "constructor(private connection: DbConnectionImpl, private setCallReducerFlags: SetReducerFlags) {{}}"
     );
     out.newline();
 
@@ -537,7 +537,7 @@ fn print_set_reducer_flags(module: &ModuleDef, out: &mut Indenter) {
 fn print_remote_tables(module: &ModuleDef, out: &mut Indenter) {
     writeln!(out, "export class RemoteTables {{");
     out.indent(1);
-    writeln!(out, "constructor(private connection: DBConnectionImpl) {{}}");
+    writeln!(out, "constructor(private connection: DbConnectionImpl) {{}}");
 
     for table in iter_tables(module) {
         writeln!(out);
@@ -571,12 +571,12 @@ fn print_subscription_builder(_module: &ModuleDef, out: &mut Indenter) {
 fn print_db_connection(_module: &ModuleDef, out: &mut Indenter) {
     writeln!(
         out,
-        "export class DBConnection extends DBConnectionImpl<RemoteTables, RemoteReducers, SetReducerFlags> {{"
+        "export class DbConnection extends DbConnectionImpl<RemoteTables, RemoteReducers, SetReducerFlags> {{"
     );
     out.indent(1);
     writeln!(
         out,
-        "static builder = (): DBConnectionBuilder<DBConnection, ErrorContext, SubscriptionEventContext> => {{"
+        "static builder = (): DbConnectionBuilder<DbConnection, ErrorContext, SubscriptionEventContext> => {{"
     );
     out.indent(1);
     writeln!(
@@ -620,7 +620,7 @@ fn print_spacetimedb_imports(out: &mut Indenter) {
         "ConnectionId",
         "Timestamp",
         "TimeDuration",
-        "DBConnectionBuilder",
+        "DbConnectionBuilder",
         "TableCache",
         "BinaryWriter",
         "CallReducerFlags",
@@ -630,8 +630,8 @@ fn print_spacetimedb_imports(out: &mut Indenter) {
         "ErrorContextInterface",
         "SubscriptionBuilderImpl",
         "BinaryReader",
-        "DBConnectionImpl",
-        "DBContext",
+        "DbConnectionImpl",
+        "DbContext",
         "Event",
         "deepEqual",
     ];
