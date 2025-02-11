@@ -12,7 +12,7 @@ export interface ReducerRuntimeTypeInfo {
   argsType: AlgebraicType;
 }
 
-export default interface SpacetimeModule {
+export default interface RemoteModule {
   tables: { [name: string]: TableRuntimeTypeInfo };
   reducers: { [name: string]: ReducerRuntimeTypeInfo };
   eventContextConstructor: (imp: DBConnectionImpl, event: any) => any;

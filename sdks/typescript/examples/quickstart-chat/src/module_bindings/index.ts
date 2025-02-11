@@ -224,11 +224,16 @@ export class DBConnection extends DBConnectionImpl<
   RemoteReducers,
   SetReducerFlags
 > {
-  static builder = (): DBConnectionBuilder<DBConnection> => {
-    return new DBConnectionBuilder<DBConnection>(
-      REMOTE_MODULE,
-      (imp: DBConnectionImpl) => imp as DBConnection
-    );
+  static builder = (): DBConnectionBuilder<
+    DBConnection,
+    ErrorContext,
+    SubscriptionEventContex
+  > => {
+    return new DBConnectionBuilder<
+      DBConnection,
+      ErrorContext,
+      SubscriptionEventContex
+    >(REMOTE_MODULE, (imp: DBConnectionImpl) => imp as DBConnection);
   };
   subscriptionBuilder = (): SubscriptionBuilder => {
     return new SubscriptionBuilder(this);

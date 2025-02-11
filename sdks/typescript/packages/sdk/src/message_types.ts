@@ -37,8 +37,29 @@ export type IdentityTokenMessage = {
   connectionId: ConnectionId;
 };
 
+export type SubscribeAppliedMessage = {
+  tag: 'SubscribeApplied';
+  queryId: number;
+  tableUpdate: TableUpdate;
+};
+
+export type UnsubscribeAppliedMessage = {
+  tag: 'UnsubscribeApplied';
+  queryId: number;
+  tableUpdate: TableUpdate;
+};
+
+export type SubscriptionError = {
+  tag: 'SubscriptionError';
+  queryId?: number;
+  error: string;
+};
+
 export type Message =
   | InitialSubscriptionMessage
   | TransactionUpdateMessage
   | TransactionUpdateLightMessage
-  | IdentityTokenMessage;
+  | IdentityTokenMessage
+  | SubscribeAppliedMessage
+  | UnsubscribeAppliedMessage
+  | SubscriptionError;

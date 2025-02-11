@@ -40,7 +40,7 @@ const connection = DBConnection.builder()
       identity.toHexString()
     );
 
-    connection.subscriptionBuilder().subscribe(['SELECT * FROM player']);
+    connection.subscriptionBuilder().subscribe('SELECT * FROM player');
   })
   .withToken('TOKEN')
   .build();

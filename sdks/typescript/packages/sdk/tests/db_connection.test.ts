@@ -1,4 +1,10 @@
-import * as module_bindings from '@clockworklabs/test-app/src/module_bindings';
+import {
+  CreatePlayer,
+  DbConnection,
+  Player,
+  Point,
+  User,
+} from '@clockworklabs/test-app/src/module_bindings';
 import { beforeEach, describe, expect, test } from 'vitest';
 import { ConnectionId } from '../src/connection_id';
 import { Timestamp } from '../src/timestamp';
@@ -64,86 +70,42 @@ class Deferred<T> {
 
 beforeEach(() => {});
 
-function encodePlayer(value: module_bindings.Player): Uint8Array {
+function encodePlayer(value: Player): Uint8Array {
   const writer = new BinaryWriter(1024);
-  module_bindings.Player.serialize(writer, value);
+  Player.serialize(writer, value);
   return writer.getBuffer();
 }
 
-function encodeUser(value: module_bindings.User): Uint8Array {
+function encodeUser(value: User): Uint8Array {
   const writer = new BinaryWriter(1024);
-  module_bindings.User.serialize(writer, value);
+  User.serialize(writer, value);
   return writer.getBuffer();
 }
 
-function encodeCreatePlayerArgs(
-  name: string,
-  location: module_bindings.Point
-): Uint8Array {
+function encodeCreatePlayerArgs(name: string, location: Point): Uint8Array {
   const writer = new BinaryWriter(1024);
   AlgebraicType.createStringType().serialize(writer, name);
-  module_bindings.Point.serialize(writer, location);
+  Point.serialize(writer, location);
   return writer.getBuffer();
 }
 
-describe('SpacetimeDBClient', () => {
-  test('auto subscribe on connect', async () => {
-    const wsAdapter = new WebsocketTestAdapter();
-    const client = module_bindings.DBConnection.builder()
-      .withUri('ws://127.0.0.1:1234')
-      .withModuleName('db')
-      .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter))
-      .build();
-
-    client.subscriptionBuilder().subscribe(['SELECT * FROM Player']);
-    client
-      .subscriptionBuilder()
-      .subscribe(['SELECT * FROM Position', 'SELECT * FROM Coin']);
-
-    let called = false;
-    client.onConnect(() => {
-      called = true;
-    });
-    await client.wsPromise;
-    wsAdapter.acceptConnection();
-
-    const messages = wsAdapter.messageQueue;
-    expect(messages.length).toBe(2);
-
-    const message: ws.ClientMessage = parseValue(ws.ClientMessage, messages[0]);
-    expect(message).toHaveProperty('tag', 'Subscribe');
-
-    const message2: ws.ClientMessage = parseValue(
-      ws.ClientMessage,
-      messages[1]
-    );
-    expect(message2).toHaveProperty('tag', 'Subscribe');
-
-    const subscribeMessage = message.value as ws.Subscribe;
-    const expected = ['SELECT * FROM Player'];
-    expect(subscribeMessage.queryStrings).toEqual(expected);
-
-    const subscribeMessage2 = message2.value as ws.Subscribe;
-    const expected2 = ['SELECT * FROM Position', 'SELECT * FROM Coin'];
-    expect(subscribeMessage2.queryStrings).toEqual(expected2);
-  });
-
+describe('DBConnection', () => {
   test('call onConnect callback after getting an identity', async () => {
     const onConnectPromise = new Deferred<void>();
 
     const wsAdapter = new WebsocketTestAdapter();
-    const client = module_bindings.DBConnection.builder()
+    let called = false;
+    const client = DbConnection.builder()
       .withUri('ws://127.0.0.1:1234')
       .withModuleName('db')
       .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter))
+      .onConnect(() => {
+        called = true;
+        onConnectPromise.resolve();
+      })
       .build();
 
-    let called = false;
-    client.onConnect(() => {
-      called = true;
-      onConnectPromise.resolve();
-    });
-    await client.wsPromise;
+    await client['wsPromise'];
     wsAdapter.acceptConnection();
 
     const tokenMessage = ws.ServerMessage.IdentityToken({
@@ -160,17 +122,17 @@ describe('SpacetimeDBClient', () => {
 
   test('it calls onInsert callback when a record is added with a subscription update and then with a transaction update', async () => {
     const wsAdapter = new WebsocketTestAdapter();
-    const client = module_bindings.DBConnection.builder()
+    let called = false;
+    const client = DbConnection.builder()
       .withUri('ws://127.0.0.1:1234')
       .withModuleName('db')
       .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter))
+      .onConnect(() => {
+        called = true;
+      })
       .build();
 
-    let called = false;
-    client.onConnect(() => {
-      called = true;
-    });
-    await client.wsPromise;
+    await client['wsPromise'];
     wsAdapter.acceptConnection();
 
     const tokenMessage = ws.ServerMessage.IdentityToken({
@@ -184,10 +146,10 @@ describe('SpacetimeDBClient', () => {
       reducerEvent:
         | ReducerEvent<{
             name: 'CreatePlayer';
-            args: module_bindings.CreatePlayer;
+            args: CreatePlayer;
           }>
         | undefined;
-      player: module_bindings.Player;
+      player: Player;
     }[] = [];
 
     const insert1Promise = new Deferred<void>();
@@ -210,21 +172,17 @@ describe('SpacetimeDBClient', () => {
     let reducerCallbackLog: {
       reducerEvent: ReducerEvent<{
         name: 'CreatePlayer';
-        args: module_bindings.CreatePlayer;
+        args: CreatePlayer;
       }>;
       reducerArgs: any[];
     }[] = [];
-    client.reducers.onCreatePlayer(
-      (ctx, name: string, location: module_bindings.Point) => {
-        if (ctx.event.tag === 'Reducer') {
-          const reducerEvent = ctx.event.value;
-          reducerCallbackLog.push({
-            reducerEvent,
-            reducerArgs: [name, location],
-          });
-        }
-      }
-    );
+    client.reducers.onCreatePlayer((ctx, name: string, location: Point) => {
+      const reducerEvent = ctx.event;
+      reducerCallbackLog.push({
+        reducerEvent,
+        reducerArgs: [name, location],
+      });
+    });
 
     const subscriptionMessage: ws.ServerMessage =
       ws.ServerMessage.InitialSubscription({
@@ -326,17 +284,17 @@ describe('SpacetimeDBClient', () => {
 
   test('it calls onUpdate callback when a record is added with a subscription update and then with a transaction update', async () => {
     const wsAdapter = new WebsocketTestAdapter();
-    const client = module_bindings.DBConnection.builder()
+    let called = false;
+    const client = DbConnection.builder()
       .withUri('ws://127.0.0.1:1234')
       .withModuleName('db')
       .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter))
+      .onConnect(() => {
+        called = true;
+      })
       .build();
 
-    let called = false;
-    client.onConnect(() => {
-      called = true;
-    });
-    await client.wsPromise;
+    await client['wsPromise'];
     wsAdapter.acceptConnection();
 
     const tokenMessage = ws.ServerMessage.IdentityToken({
@@ -350,8 +308,8 @@ describe('SpacetimeDBClient', () => {
     const update2Promise = new Deferred<void>();
 
     const updates: {
-      oldPlayer: module_bindings.Player;
-      newPlayer: module_bindings.Player;
+      oldPlayer: Player;
+      newPlayer: Player;
     }[] = [];
     client.db.player.onUpdate((_ctx, oldPlayer, newPlayer) => {
       updates.push({
@@ -465,17 +423,17 @@ describe('SpacetimeDBClient', () => {
 
   test('a reducer callback should be called after the database callbacks', async () => {
     const wsAdapter = new WebsocketTestAdapter();
-    const client = module_bindings.DBConnection.builder()
+    let called = false;
+    const client = DbConnection.builder()
       .withUri('ws://127.0.0.1:1234')
       .withModuleName('db')
       .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter))
+      .onConnect(() => {
+        called = true;
+      })
       .build();
 
-    let called = false;
-    client.onConnect(() => {
-      called = true;
-    });
-    await client.wsPromise;
+    await client['wsPromise'];
     wsAdapter.acceptConnection();
 
     let callbackLog: string[] = [];
@@ -545,17 +503,17 @@ describe('SpacetimeDBClient', () => {
 
   test('it calls onUpdate callback when a record is added with a subscription update and then with a transaction update when the PK is of type Identity', async () => {
     const wsAdapter = new WebsocketTestAdapter();
-    const client = module_bindings.DBConnection.builder()
+    let called = false;
+    const client = DbConnection.builder()
       .withUri('ws://127.0.0.1:1234')
       .withModuleName('db')
       .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter))
+      .onConnect(() => {
+        called = true;
+      })
       .build();
 
-    let called = false;
-    client.onConnect(() => {
-      called = true;
-    });
-    await client.wsPromise;
+    await client['wsPromise'];
     wsAdapter.acceptConnection();
 
     const tokenMessage = ws.ServerMessage.IdentityToken({
@@ -571,8 +529,8 @@ describe('SpacetimeDBClient', () => {
     const update2Promise = new Deferred<void>();
 
     const updates: {
-      oldUser: module_bindings.User;
-      newUser: module_bindings.User;
+      oldUser: User;
+      newUser: User;
     }[] = [];
     client.db.user.onUpdate((_ctx, oldUser, newUser) => {
       updates.push({
@@ -698,20 +656,19 @@ describe('SpacetimeDBClient', () => {
 
   test('Filtering works', async () => {
     const wsAdapter = new WebsocketTestAdapter();
-    const client = module_bindings.DBConnection.builder()
+    const client = DbConnection.builder()
       .withUri('ws://127.0.0.1:1234')
       .withModuleName('db')
       .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter))
       .build();
-    await client.wsPromise;
+    await client['wsPromise'];
     const db = client.db;
     const user1 = { identity: bobIdentity, username: 'bob' };
     const user2 = {
       identity: sallyIdentity,
       username: 'sally',
     };
-    const users: Map<string, module_bindings.User> = (db.user.tableCache as any)
-      .rows;
+    const users: Map<string, User> = (db.user.tableCache as any).rows;
     users.set('abc123', user1);
     users.set('def456', user2);
 

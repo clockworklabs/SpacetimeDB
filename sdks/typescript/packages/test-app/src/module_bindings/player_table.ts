@@ -26,6 +26,8 @@ import {
   SumType,
   SumTypeVariant,
   TableCache,
+  TimeDuration,
+  Timestamp,
   deepEqual,
 } from '@clockworklabs/spacetimedb-sdk';
 import { Player } from './player_type';

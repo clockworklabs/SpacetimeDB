@@ -26,6 +26,8 @@ import {
   SumType,
   SumTypeVariant,
   TableCache,
+  TimeDuration,
+  Timestamp,
   deepEqual,
 } from '@clockworklabs/spacetimedb-sdk';
 
@@ -165,11 +167,16 @@ export class DBConnection extends DBConnectionImpl<
   RemoteReducers,
   SetReducerFlags
 > {
-  static builder = (): DBConnectionBuilder<DBConnection> => {
-    return new DBConnectionBuilder<DBConnection>(
-      REMOTE_MODULE,
-      (imp: DBConnectionImpl) => imp as DBConnection
-    );
+  static builder = (): DBConnectionBuilder<
+    DBConnection,
+    ErrorContext,
+    SubscriptionEventContext
+  > => {
+    return new DBConnectionBuilder<
+      DBConnection,
+      ErrorContext,
+      SubscriptionEventContext
+    >(REMOTE_MODULE, (imp: DBConnectionImpl) => imp as DBConnection);
   };
   subscriptionBuilder = (): SubscriptionBuilder => {
     return new SubscriptionBuilder(this);
