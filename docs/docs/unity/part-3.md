@@ -491,7 +491,7 @@ public static Entity SpawnPlayerInitialCircle(ReducerContext ctx, uint player_id
     );
 }
 
-public static Entity SpawnCircleAt(ReducerContext ctx, uint player_id, uint mass, DbVector2 position, DateTimeOffset timestamp)
+public static Entity SpawnCircleAt(ReducerContext ctx, uint player_id, uint mass, DbVector2 position, SpacetimeDB.Timestamp timestamp)
 {
     var entity = ctx.Db.entity.Insert(new Entity
     {
@@ -505,7 +505,7 @@ public static Entity SpawnCircleAt(ReducerContext ctx, uint player_id, uint mass
         player_id = player_id,
         direction = new DbVector2(0, 1),
         speed = 0f,
-        last_split_time = (ulong)timestamp.ToUnixTimeMilliseconds(),
+        last_split_time = timestamp,
     });
     return entity;
 }

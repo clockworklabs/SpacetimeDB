@@ -215,7 +215,7 @@ public partial struct Circle
     public uint player_id;
     public DbVector2 direction;
     public float speed;
-    public ulong last_split_time;
+    public SpacetimeDB.Timestamp last_split_time;
 }
 
 [Table(Name = "food", Public = true)]
@@ -509,7 +509,7 @@ public class GameManager : MonoBehaviour
 
         // If the user has a SpacetimeDB auth token stored in the Unity PlayerPrefs,
         // we can use it to authenticate the connection.
-		if (PlayerPrefs.HasKey(AuthToken.GetTokenKey()))
+		if (PlayerPrefs.HasKey(AuthToken.Token != ""))
         {
             builder = builder.WithToken(AuthToken.Token);
         }
@@ -548,7 +548,7 @@ public class GameManager : MonoBehaviour
         }
     }
 
-    private void HandleSubscriptionApplied(EventContext ctx)
+    private void HandleSubscriptionApplied(SubscriptionEventContext ctx)
     {
         Debug.Log("Subscription applied!");
         OnSubscriptionApplied?.Invoke();
