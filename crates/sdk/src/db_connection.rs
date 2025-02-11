@@ -110,7 +110,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
         let res = match msg {
             // Error: treat this as an erroneous disconnect.
             ParsedMessage::Error(e) => {
-                let disconnect_ctx = self.make_event_ctx(e.clone());
+                let disconnect_ctx = self.make_event_ctx(Some(e.clone()));
                 self.invoke_disconnected(&disconnect_ctx);
                 Err(e)
             }
@@ -233,7 +233,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
             }
             ParsedMessage::SubscriptionError { query_id, error } => {
                 let error = crate::Error::SubscriptionError { error };
-                let ctx = self.make_event_ctx(error);
+                let ctx = self.make_event_ctx(Some(error));
                 let Some(query_id) = query_id else {
                     // A subscription error that isn't specific to a query is a fatal error.
                     self.invoke_disconnected(&ctx);
@@ -260,7 +260,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
 
         // Grap the `on_disconnect` callback and invoke it.
         if let Some(disconnect_callback) = inner.on_disconnect.take() {
-            disconnect_callback(ctx);
+            disconnect_callback(ctx, ctx.event().clone());
         }
 
         // Call the `on_disconnect` method for all subscriptions.
@@ -481,9 +481,18 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
 
         // Deranged behavior: mpsc's `try_next` returns `Ok(None)` when the channel is closed,
         // and `Err(_)` when the channel is open and waiting. This seems exactly backwards.
+        //
+        // NOTE(cloutiertyler): A comment on the deranged behavior: the mental
+        // model is that of an iterator, but for a stream instead. i.e. you pull
+        // off of an iterator until it returns `None`, which means that the
+        // iterator is exhausted. If you try to pull off the iterator and
+        // there's nothing there but it's not exhausted, it (arguably sensibly)
+        // returns `Err(_)`. Similar behavior as `Iterator::next` and
+        // `Stream::poll_next`. No comment on whether this is a good mental
+        // model or not.
         let res = match self.recv.blocking_lock().try_next() {
             Ok(None) => {
-                let disconnect_ctx = self.make_event_ctx(crate::Error::Disconnected);
+                let disconnect_ctx = self.make_event_ctx(None);
                 self.invoke_disconnected(&disconnect_ctx);
                 Err(crate::Error::Disconnected)
             }
@@ -529,7 +538,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
         match self.runtime.block_on(self.get_message()) {
             Message::Local(pending) => self.apply_mutation(pending),
             Message::Ws(None) => {
-                let disconnect_ctx = self.make_event_ctx(crate::Error::Disconnected);
+                let disconnect_ctx = self.make_event_ctx(None);
                 self.invoke_disconnected(&disconnect_ctx);
                 Err(crate::Error::Disconnected)
             }
@@ -544,7 +553,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
         match self.get_message().await {
             Message::Local(pending) => self.apply_mutation(pending),
             Message::Ws(None) => {
-                let disconnect_ctx = self.make_event_ctx(crate::Error::Disconnected);
+                let disconnect_ctx = self.make_event_ctx(None);
                 self.invoke_disconnected(&disconnect_ctx);
                 Err(crate::Error::Disconnected)
             }
@@ -687,9 +696,10 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
 
 type OnConnectCallback<M> = Box<dyn FnOnce(&<M as SpacetimeModule>::DbConnection, Identity, &str) + Send + 'static>;
 
-type OnConnectErrorCallback<M> = Box<dyn FnOnce(&<M as SpacetimeModule>::ErrorContext) + Send + 'static>;
+type OnConnectErrorCallback<M> = Box<dyn FnOnce(&<M as SpacetimeModule>::ErrorContext, crate::Error) + Send + 'static>;
 
-type OnDisconnectCallback<M> = Box<dyn FnOnce(&<M as SpacetimeModule>::ErrorContext) + Send + 'static>;
+type OnDisconnectCallback<M> =
+    Box<dyn FnOnce(&<M as SpacetimeModule>::ErrorContext, Option<crate::Error>) + Send + 'static>;
 
 /// All the stuff in a [`DbContextImpl`] which can safely be locked while invoking callbacks.
 pub(crate) struct DbContextImplInner<M: SpacetimeModule> {
@@ -964,7 +974,7 @@ Instead of registering multiple `on_connect` callbacks, register a single callba
     /// Register a callback to run when the connection fails asynchronously,
     /// e.g. due to invalid credentials.
     // FIXME: currently never called; `on_disconnect` is called instead.
-    pub fn on_connect_error(mut self, callback: impl FnOnce(&M::ErrorContext) + Send + 'static) -> Self {
+    pub fn on_connect_error(mut self, callback: impl FnOnce(&M::ErrorContext, crate::Error) + Send + 'static) -> Self {
         if self.on_connect_error.is_some() {
             panic!(
                 "DbConnectionBuilder can only register a single `on_connect_error` callback.
@@ -979,7 +989,10 @@ Instead of registering multiple `on_connect_error` callbacks, register a single 
 
     /// Register a callback to run when the connection is closed.
     // FIXME: currently also called when the connection fails asynchronously, instead of `on_connect_error`.
-    pub fn on_disconnect(mut self, callback: impl FnOnce(&M::ErrorContext) + Send + 'static) -> Self {
+    pub fn on_disconnect(
+        mut self,
+        callback: impl FnOnce(&M::ErrorContext, Option<crate::Error>) + Send + 'static,
+    ) -> Self {
         if self.on_disconnect.is_some() {
             panic!(
                 "DbConnectionBuilder can only register a single `on_disconnect` callback.

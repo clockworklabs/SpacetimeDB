@@ -617,12 +617,12 @@ pub struct ErrorContext {
     /// This type is currently unstable and may be removed without a major version bump.
     pub set_reducer_flags: SetReducerFlags,
     /// The event which caused these callbacks to run.
-    pub event: __sdk::Error,
+    pub event: Option<__sdk::Error>,
     imp: __sdk::DbContextImpl<RemoteModule>,
 }
 
 impl __sdk::AbstractEventContext for ErrorContext {
-    type Event = __sdk::Error;
+    type Event = Option<__sdk::Error>;
     fn event(&self) -> &Self::Event {
         &self.event
     }
