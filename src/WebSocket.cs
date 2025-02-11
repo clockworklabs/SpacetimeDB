@@ -53,7 +53,7 @@ namespace SpacetimeDB
 
         public async Task Connect(string? auth, string host, string nameOrAddress, ConnectionId connectionId, Compression compression, bool light)
         {
-            var uri = $"{host}/database/subscribe/{nameOrAddress}?connection_id={connectionId}&compression={compression}";
+            var uri = $"{host}/v1/database/{nameOrAddress}/subscribe?connection_id={connectionId}&compression={compression}";
             if (light)
             {
                 uri += "&light=true";
