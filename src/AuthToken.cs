@@ -114,7 +114,7 @@ namespace SpacetimeDB
             PlayerPrefs.SetString(GetTokenKey(), token);
         }
 
-        public static string GetTokenKey()
+        private static string GetTokenKey()
         {
             var key = "spacetimedb.identity_token";
 #if UNITY_EDITOR
