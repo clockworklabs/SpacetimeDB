@@ -10,4 +10,10 @@
     <ProjectReference Include="../../crates/bindings-csharp/Runtime/Runtime.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Remove="Bogus" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Bogus" Version="35.6.1" />
+  </ItemGroup>
 </Project>

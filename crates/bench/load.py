@@ -1,7 +1,6 @@
 # Mini-tool for executing load testing and call reducer functions.
 import argparse
 import subprocess
-import sys
 import time
 from datetime import datetime, timedelta
 
@@ -77,7 +76,7 @@ if __name__ == '__main__':
         python load.py -d <database> -i <init_reducers> -l <load_reducers> [--no-cli] [-f <frequency>] [-s <seconds>]
         
     Example:
-        python load.py -d quickstart -f 2 -s 10 -i "insert_bulk_small_rows 100" -l "queries 'small, inserts:10,query:10,deletes:10';"  
+        python load.py -d quickstart -f 2 -s 10 -i "insert_bulk_small_rows 100" -l "queries 'small, inserts:10,queries:10,deletes:10';"  
     """
     parser = argparse.ArgumentParser()
 
@@ -102,7 +101,7 @@ if __name__ == '__main__':
     load = [x.strip() for x in (args['load'] or '').split(';') if x.strip()]
 
     if cli:
-        cli = '/Users/mamcx/.cargo/bin/spacetimedb-cli'
+        cli = 'spacetimedb-cli'
     else:
         cli = 'cargo run -p spacetimedb-cli --bin spacetimedb-cli'
 
