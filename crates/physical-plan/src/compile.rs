@@ -5,8 +5,10 @@ use std::collections::HashMap;
 use crate::dml::{DeletePlan, MutationPlan, UpdatePlan};
 use crate::plan::{HashJoin, Label, PhysicalExpr, PhysicalPlan, ProjectListPlan, ProjectPlan, Semi, TupleField};
 
+use crate::{PhysicalCtx, PlanCtx};
 use spacetimedb_expr::expr::{Expr, FieldProject, LeftDeepJoin, ProjectList, ProjectName, RelExpr, Relvar};
-use spacetimedb_expr::statement::DML;
+use spacetimedb_expr::statement::{Statement, DML};
+use spacetimedb_expr::StatementCtx;
 
 pub trait VarLabel {
     fn label(&mut self, name: &str) -> Label;
@@ -121,6 +123,12 @@ struct NamesToIds {
     map: HashMap<String, usize>,
 }
 
+impl NamesToIds {
+    fn into_map(self) -> HashMap<String, usize> {
+        self.map
+    }
+}
+
 impl VarLabel for NamesToIds {
     fn label(&mut self, name: &str) -> Label {
         if let Some(id) = self.map.get(name) {
@@ -143,7 +151,11 @@ pub fn compile_select(project: ProjectName) -> ProjectPlan {
 /// Note, this utility is applicable to a generic selections.
 /// In particular, it supports explicit column projections.
 pub fn compile_select_list(project: ProjectList) -> ProjectListPlan {
-    compile_project_list(&mut NamesToIds::default(), project)
+    compile_select_list_raw(&mut NamesToIds::default(), project)
+}
+
+pub fn compile_select_list_raw(var: &mut impl VarLabel, project: ProjectList) -> ProjectListPlan {
+    compile_project_list(var, project)
 }
 
 /// Converts a logical DML statement into a physical plan,
@@ -153,5 +165,21 @@ pub fn compile_dml_plan(stmt: DML) -> MutationPlan {
         DML::Insert(insert) => MutationPlan::Insert(insert.into()),
         DML::Delete(delete) => MutationPlan::Delete(DeletePlan::compile(delete)),
         DML::Update(update) => MutationPlan::Update(UpdatePlan::compile(update)),
+    }
+}
+
+pub fn compile(ast: StatementCtx<'_>) -> PhysicalCtx<'_> {
+    let mut vars = NamesToIds::default();
+    let plan = match ast.statement {
+        Statement::Select(project) => PlanCtx::ProjectList(compile_select_list_raw(&mut vars, project)),
+        Statement::DML(stmt) => PlanCtx::DML(compile_dml_plan(stmt)),
+    };
+
+    PhysicalCtx {
+        plan,
+        sql: ast.sql,
+        vars: vars.into_map(),
+        source: ast.source,
+        planning_time: None,
     }
 }
