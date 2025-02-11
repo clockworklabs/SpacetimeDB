@@ -1,0 +1,12 @@
+default_server = "local"
+spacetimedb_token = "eyJ0eXAiOiJKV1QiLCJhbGciOiJFUzI1NiJ9.eyJoZXhfaWRlbnRpdHkiOiJjMjAwZTA0NmQ0YWUxM2M4NzQwMGI3ZDYyMWQyNjA3ZjBiYzYyNTgwZWExNzY0MmU3ZTcwNzg2M2U3ZTk1NmY3Iiwic3ViIjoicGxhY2Vob2xkZXItbm9kZS1pZCIsImlzcyI6ImxvY2FsaG9zdCIsImF1ZCI6W10sImlhdCI6MTczOTQ3MDY0OCwiZXhwIjoxNzM5NDcxMDA4fQ.Xh5zq5MPbdqWUv3Opt_PnuGkg4aCer_gg0mLNDLo5KDCZfdmTE3E9EJvBFcQcwloRcmWr_As9Hjbx2EnPrzItQ"
+
+[[server_configs]]
+nickname = "local"
+host = "127.0.0.1:3000"
+protocol = "http"
+
+[[server_configs]]
+nickname = "testnet"
+host = "testnet.spacetimedb.com"
+protocol = "https"

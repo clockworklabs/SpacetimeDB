@@ -164,10 +164,6 @@ class Smoketest(unittest.TestCase):
     def spacetime(cls, *args, **kwargs):
         return spacetime("--config-path", str(cls.config_path), *args, **kwargs)
 
-    def read_controldb(self, sql):
-        return self.spacetime("sql", "spacetime-control", sql)
-
-
     def _check_published(self):
         if not hasattr(self, "database_identity"):
             raise Exception("Cannot use this function without publishing a module")
@@ -192,6 +188,7 @@ class Smoketest(unittest.TestCase):
         return list(map(json.loads, logs.splitlines()))
 
     def publish_module(self, domain=None, *, clear=True, capture_stderr=True):
+        print("publishing module", self.publish_module)
         publish_output = self.spacetime(
             "publish",
             *[domain] if domain is not None else [],
