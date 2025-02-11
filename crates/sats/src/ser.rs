@@ -216,6 +216,7 @@ pub trait Serialize {
     /// Serialize `self` in the data format of `S` using the provided `serializer`.
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error>;
 
+    #[doc(hidden)]
     /// Serialize `self` in the data format BSATN using the provided BSATN `serializer`.
     fn serialize_into_bsatn<W: BufWriter>(
         &self,
