@@ -20,38 +20,16 @@ use uuid::Uuid;
 use crate::{log_and_500, ControlStateDelegate, NodeDelegate};
 
 /// Credentials for login for a spacetime identity, represented as a JWT.
-// Yes, this is using basic auth. See the below issues.
-// The current form is: Authorization: Basic base64("token:<token>")
-// FOOLS, the lot of them!
-// If/when they fix this issue, this should be changed from
-// basic auth, to a `Authorization: Bearer <token>` header
-// https://github.com/whatwg/websockets/issues/16
-// https://github.com/sta/websocket-sharp/pull/22
-//
-// For now, the basic auth header must be in this form:
-// Basic base64(token:$token_str)
-// where $token_str is the JWT that is acquired from SpacetimeDB when creating a new identity.
+///
+/// This can be passed as a header `Authentication: Bearer $token` or as
+/// a query param `?token=$token`, with the former taking precedence over
+/// the latter.
 #[derive(Clone, Deserialize)]
 pub struct SpacetimeCreds {
     token: String,
 }
 
 pub const LOCALHOST: &str = "localhost";
-const TOKEN_USERNAME: &str = "token";
-impl authorization::Credentials for SpacetimeCreds {
-    const SCHEME: &'static str = authorization::Basic::SCHEME;
-    fn decode(value: &HeaderValue) -> Option<Self> {
-        let basic = authorization::Basic::decode(value)?;
-        if basic.username() != TOKEN_USERNAME {
-            return None;
-        }
-        let token = basic.password().to_owned();
-        Some(Self { token })
-    }
-    fn encode(&self) -> HeaderValue {
-        headers::Authorization::basic(TOKEN_USERNAME, &self.token).0.encode()
-    }
-}
 
 impl SpacetimeCreds {
     /// The JWT token representing these credentials.
@@ -61,6 +39,12 @@ impl SpacetimeCreds {
 
     pub fn from_signed_token(token: String) -> Self {
         Self { token }
+    }
+
+    pub fn to_header_value(&self) -> HeaderValue {
+        let mut val = HeaderValue::try_from(["Bearer ", self.token()].concat()).unwrap();
+        val.set_sensitive(true);
+        val
     }
 
     /// Extract credentials from the headers or else query string of a request.
