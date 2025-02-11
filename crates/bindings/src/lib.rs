@@ -123,8 +123,8 @@ pub use spacetimedb_bindings_macro::client_visibility_filter;
 /// /*
 /// TODO: whoops, use filter, and popularity_and_username.
 ///     // For every named `index`, the table has an extra method
-///     // for getting a corresponding `spacetimedb::BTreeIndex`.
-///     let by_id_and_username: spacetimedb::BTreeIndex<_, (u32, String), _> =
+///     // for getting a corresponding `spacetimedb::RangedIndex`.
+///     let by_id_and_username: spacetimedb::RangedIndex<_, (u32, String), _> =
 ///         users.id_and_username();
 ///     let mut billy: User = by_id_and_username.find((&57, &"Billy".to_string()));
 ///     billy.popularity += 5;
@@ -139,7 +139,7 @@ pub use spacetimedb_bindings_macro::client_visibility_filter;
 /// }
 /// ```
 ///
-/// See [`Table`], [`BTreeIndex`], and [`UniqueColumn`] for more information on the methods available on these types.
+/// See [`Table`], [`RangedIndex`], and [`UniqueColumn`] for more information on the methods available on these types.
 ///
 /// # Browsing generated documentation
 ///
@@ -210,19 +210,19 @@ pub use spacetimedb_bindings_macro::client_visibility_filter;
 ///
 /// Multiple indexes are permitted.
 ///
-/// You can use indexes to efficiently [`filter`](crate::BTreeIndex::filter) and
-/// [`delete`](crate::BTreeIndex::delete) rows. This is encapsulated in the struct [`BTreeIndex`].
+/// You can use indexes to efficiently [`filter`](crate::RangedIndex::filter) and
+/// [`delete`](crate::RangedIndex::delete) rows. This is encapsulated in the struct [`RangedIndex`].
 ///
 /// For a table *table* and an index *index*, use:
 /// ```text
 /// ctx.db.{table}().{index}()
 /// ```
-/// to get a [`BTreeIndex`] for a [`ReducerContext`].
+/// to get a [`RangedIndex`] for a [`ReducerContext`].
 ///
 /// For example:
 /// ```ignore
 ///
-/// let by_id_and_username: spacetimedb::BTreeIndex<_, (u32, String), _> =
+/// let by_id_and_username: spacetimedb::RangedIndex<_, (u32, String), _> =
 ///     ctx.db.users().by_id_and_username();
 /// ```
 ///
@@ -327,7 +327,7 @@ pub use spacetimedb_bindings_macro::client_visibility_filter;
 ///
 /// It is an error to specify this attribute together with `#[unique]`.
 /// Unique constraints implicitly create a unique index, which is accessed using the [`UniqueColumn`] struct instead of the
-/// [`BTreeIndex`] struct.
+/// [`RangedIndex`] struct.
 ///
 /// The created index has the same name as the column. <!-- TODO: this may change if we do the unify-index-names PR. -->
 ///
@@ -335,7 +335,7 @@ pub use spacetimedb_bindings_macro::client_visibility_filter;
 /// ```text
 /// ctx.db.{table}().{column}()
 /// ```
-/// to get a [`BTreeIndex`] from a [`ReducerContext`].
+/// to get a [`RangedIndex`] from a [`ReducerContext`].
 ///
 /// For example:
 ///
@@ -352,7 +352,7 @@ pub use spacetimedb_bindings_macro::client_visibility_filter;
 /// The struct `{name}__TableHandle` is public and lives next to the row struct.
 ///
 /// For each named index declaration, add a method to `{name}__TableHandle` for getting a corresponding
-/// [`BTreeIndex`].
+/// [`RangedIndex`].
 ///
 /// For each field  with a `#[unique]` or `#[primary_key]` annotation,
 /// add a method to `{name}Handle` for getting a corresponding [`UniqueColumn`].
@@ -361,7 +361,7 @@ pub use spacetimedb_bindings_macro::client_visibility_filter;
 /// names.
 ///
 /// ```ignore
-/// use spacetimedb::{BTreeIndex, UniqueColumn, Table, DbView};
+/// use spacetimedb::{RangedIndex, UniqueColumn, Table, DbView};
 ///
 /// // This generated struct is hidden and cannot be directly accessed.
 /// struct {name}__TableHandle { /* ... */ };
@@ -385,7 +385,7 @@ pub use spacetimedb_bindings_macro::client_visibility_filter;
 ///     fn {field}(&self) -> UniqueColumn<_, {F}, _> { /* ... */ };
 ///     
 ///     // For each named index `{index}` on fields of type `{(F1, ..., FN)}`:
-///     fn {index}(&self) -> BTreeIndex<_, {(F1, ..., FN)}, _>;
+///     fn {index}(&self) -> RangedIndex<_, {(F1, ..., FN)}, _>;
 /// }
 /// ```
 ///

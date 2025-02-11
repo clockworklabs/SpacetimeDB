@@ -30,7 +30,7 @@ pub trait Table: TableInternal {
     /// Iterate over all rows of the table.
     ///
     /// For large tables, this can be a very slow operation!
-    /// Prefer [filtering](BTreeIndex::filter) a [`BTreeIndex`] or [finding](UniqueColumn::find) a [`UniqueColumn`] if
+    /// Prefer [filtering](RangedIndex::filter) a [`RangedIndex`] or [finding](UniqueColumn::find) a [`UniqueColumn`] if
     /// possible.
     #[inline]
     fn iter(&self) -> impl Iterator<Item = Self::Row> {
@@ -283,7 +283,7 @@ pub trait Column {
 /// }
 /// ```
 ///
-/// <!-- TODO: do we need integer type suffixes on literal arguments, like for BTreeIndex? -->
+/// <!-- TODO: do we need integer type suffixes on literal arguments, like for RangedIndex? -->
 pub struct UniqueColumn<Tbl, ColType, Col> {
     _marker: PhantomData<(Tbl, ColType, Col)>,
 }
@@ -390,7 +390,7 @@ pub trait Index {
 /// Example:
 ///
 /// ```no_run
-/// use spacetimedb::{table, BTreeIndex, ReducerContext, DbContext};
+/// use spacetimedb::{table, RangedIndex, ReducerContext, DbContext};
 ///
 /// #[table(name = users,
 ///     index(name = dogs_and_name, btree(columns = [dogs, name])))]
@@ -402,14 +402,14 @@ pub trait Index {
 /// }
 ///
 /// fn demo(ctx: &ReducerContext) {
-///     let by_dogs_and_name: BTreeIndex<_, (u64, String), _> = ctx.db.users().dogs_and_name();
+///     let by_dogs_and_name: RangedIndex<_, (u64, String), _> = ctx.db.users().dogs_and_name();
 /// }
 /// ```
 ///
 /// For single-column indices, use the name of the column:
 ///
 /// ```no_run
-/// use spacetimedb::{table, BTreeIndex, ReducerContext, DbContext};
+/// use spacetimedb::{table, RangedIndex, ReducerContext, DbContext};
 ///
 /// #[table(name = users)]
 /// struct User {
@@ -420,7 +420,7 @@ pub trait Index {
 /// }
 ///
 /// fn demo(ctx: &ReducerContext) {
-///     let by_dogs: BTreeIndex<_, (u64,), _> = ctx.db().users().dogs();
+///     let by_dogs: RangedIndex<_, (u64,), _> = ctx.db().users().dogs();
 /// }
 /// ```
 ///
@@ -434,7 +434,7 @@ impl<Tbl: Table, IndexType, Idx: Index> RangedIndex<Tbl, IndexType, Idx> {
 
     /// Returns an iterator over all rows in the database state where the indexed column(s) match the bounds `b`.
     ///
-    /// This method accepts a variable numbers of arguments using the [`BTreeIndexBounds`] trait.
+    /// This method accepts a variable numbers of arguments using the [`IndexScanRangeBounds`] trait.
     /// This depends on the type of the B-Tree index. `b` may be:
     /// - A value for the first indexed column.
     /// - A range of values for the first indexed column.
@@ -452,7 +452,7 @@ impl<Tbl: Table, IndexType, Idx: Index> RangedIndex<Tbl, IndexType, Idx> {
     /// }
     ///
     /// fn demo(ctx: &ReducerContext) {
-    ///     let by_dogs_and_name: BTreeIndex<_, (u64, String), _> = ctx.db.users().dogs_and_name();
+    ///     let by_dogs_and_name: RangedIndex<_, (u64, String), _> = ctx.db.users().dogs_and_name();
     ///     
     ///     // Find users with exactly 25 dogs.
     ///     for user in by_dogs_and_name.filter(25u64) { // The `u64` is required, see below.
@@ -493,14 +493,14 @@ impl<Tbl: Table, IndexType, Idx: Index> RangedIndex<Tbl, IndexType, Idx> {
     /// >     |                                         |
     /// >     |                                         required by a bound introduced by this call
     /// >     |
-    /// >     = note: required for `i32` to implement `BTreeIndexBounds<(u32,), SingleBound>`
-    /// > note: required by a bound in `BTreeIndex::<Tbl, IndexType, Idx>::filter`
+    /// >     = note: required for `i32` to implement `IndexScanRangeBounds<(u32,), SingleBound>`
+    /// > note: required by a bound in `RangedIndex::<Tbl, IndexType, Idx>::filter`
     /// >     |
     /// > 410 |     pub fn filter<B, K>(&self, b: B) -> impl Iterator<Item = Tbl::Row>
     /// >     |            ------ required by a bound in this associated function
     /// > 411 |     where
-    /// > 412 |         B: BTreeIndexBounds<IndexType, K>,
-    /// >     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `BTreeIndex::<Tbl, IndexType, Idx>::filter`
+    /// > 412 |         B: IndexScanRangeBounds<IndexType, K>,
+    /// >     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `RangedIndex::<Tbl, IndexType, Idx>::filter`
     /// > ```
     /// <!-- TODO: check if that error is up to date! -->
     pub fn filter<B, K>(&self, b: B) -> impl Iterator<Item = Tbl::Row>
@@ -517,7 +517,7 @@ impl<Tbl: Table, IndexType, Idx: Index> RangedIndex<Tbl, IndexType, Idx> {
 
     /// Deletes all rows in the database state where the indexed column(s) match the bounds `b`.
     ///
-    /// This method accepts a variable numbers of arguments using the [`BTreeIndexBounds`] trait.
+    /// This method accepts a variable numbers of arguments using the [`IndexScanRangeBounds`] trait.
     /// This depends on the type of the B-Tree index. `b` may be:
     /// - A value for the first indexed column.
     /// - A range of values for the first indexed column.
@@ -535,7 +535,7 @@ impl<Tbl: Table, IndexType, Idx: Index> RangedIndex<Tbl, IndexType, Idx> {
     /// }
     ///
     /// fn demo(ctx: &ReducerContext) {
-    ///     let by_dogs_and_name: BTreeIndex<_, (u64, String), _> = ctx.db.users().dogs_and_name();
+    ///     let by_dogs_and_name: RangedIndex<_, (u64, String), _> = ctx.db.users().dogs_and_name();
     ///     
     ///     // Delete users with exactly 25 dogs.
     ///     by_dogs_and_name.delete(25u64); // The `u64` is required, see below.
@@ -566,14 +566,14 @@ impl<Tbl: Table, IndexType, Idx: Index> RangedIndex<Tbl, IndexType, Idx> {
     /// >     |                                         |
     /// >     |                                         required by a bound introduced by this call
     /// >     |
-    /// >     = note: required for `i32` to implement `BTreeIndexBounds<(u32,), SingleBound>`
-    /// > note: required by a bound in `BTreeIndex::<Tbl, IndexType, Idx>::filter`
+    /// >     = note: required for `i32` to implement `IndexScanRangeBounds<(u32,), SingleBound>`
+    /// > note: required by a bound in `RangedIndex::<Tbl, IndexType, Idx>::filter`
     /// >     |
     /// > 410 |     pub fn filter<B, K>(&self, b: B) -> impl Iterator<Item = Tbl::Row>
     /// >     |            ------ required by a bound in this associated function
     /// > 411 |     where
-    /// > 412 |         B: BTreeIndexBounds<IndexType, K>,
-    /// >     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `BTreeIndex::<Tbl, IndexType, Idx>::filter`
+    /// > 412 |         B: IndexScanRangeBounds<IndexType, K>,
+    /// >     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `RangedIndex::<Tbl, IndexType, Idx>::filter`
     /// ```
     ///
     /// May panic if deleting any one of the rows would violate a constraint,
