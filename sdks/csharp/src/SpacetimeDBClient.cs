@@ -168,12 +168,6 @@ namespace SpacetimeDB
         /// </summary>
         private UintAllocator queryIdAllocator;
 
-        /// <summary>
-        /// Invoked when a reducer is returned with an error and has no client-side handler.
-        /// </summary>
-        [Obsolete]
-        public event Action<ReducerEvent<Reducer>>? onUnhandledReducerError;
-
         public readonly ConnectionId ConnectionId = ConnectionId.Random();
         public Identity? Identity { get; private set; }
 
@@ -617,9 +611,11 @@ namespace SpacetimeDB
                                 transactionUpdate.EnergyQuantaUsed.Quanta,
                                 ToReducer(transactionUpdate));
                         }
-                        catch (Exception e)
+                        catch (Exception)
                         {
-                            Log.Exception(e);
+                            // Failing to parse the ReducerEvent is fine, it just means we should
+                            // call downstream stuff with an UnknownTransaction.
+                            // See OnProcessMessageComplete.
                         }
 
                         if (transactionUpdate.Status is UpdateStatus.Committed(var committed))
@@ -809,6 +805,7 @@ namespace SpacetimeDB
                         var eventContext = MakeSubscriptionEventContext();
                         var legacyEventContext = ToEventContext(new Event<Reducer>.SubscribeApplied());
                         OnMessageProcessCompleteUpdate(legacyEventContext, dbOps);
+
                         if (legacySubscriptions.TryGetValue(initialSubscription.RequestId, out var subscription))
                         {
                             try
@@ -929,36 +926,20 @@ namespace SpacetimeDB
                             }
                         }
 
-                        if (processed.reducerEvent is not { } reducerEvent)
-                        {
-                            // If we are here, an error about unknown reducer should have already been logged, so nothing to do.
-                            break;
-                        }
 
-                        var eventContext = ToReducerEventContext(reducerEvent);
-                        var legacyEventContext = ToEventContext(new Event<Reducer>.Reducer(reducerEvent));
-                        OnMessageProcessCompleteUpdate(legacyEventContext, dbOps);
 
-                        var reducerFound = false;
-                        try
+                        if (processed.reducerEvent is { } reducerEvent)
                         {
-                            reducerFound = Dispatch(eventContext, reducerEvent.Reducer);
+                            var legacyEventContext = ToEventContext(new Event<Reducer>.Reducer(reducerEvent));
+                            OnMessageProcessCompleteUpdate(legacyEventContext, dbOps);
+                            var eventContext = ToReducerEventContext(reducerEvent);
+                            Dispatch(eventContext, reducerEvent.Reducer);
+                            // don't invoke OnUnhandledReducerError, that's [Obsolete].
                         }
-                        catch (Exception e)
+                        else
                         {
-                            Log.Exception(e);
-                        }
-
-                        if (!reducerFound && transactionUpdate.Status is UpdateStatus.Failed(var failed))
-                        {
-                            try
-                            {
-                                onUnhandledReducerError?.Invoke(reducerEvent);
-                            }
-                            catch (Exception e)
-                            {
-                                Log.Exception(e);
-                            }
+                            var legacyEventContext = ToEventContext(new Event<Reducer>.UnknownTransaction());
+                            OnMessageProcessCompleteUpdate(legacyEventContext, dbOps);
                         }
                         break;
                     }
