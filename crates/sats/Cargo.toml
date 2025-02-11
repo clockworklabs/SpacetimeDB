@@ -30,11 +30,13 @@ spacetimedb-bindings-macro.workspace = true
 spacetimedb-primitives.workspace = true
 spacetimedb-metrics = { workspace = true, optional = true }
 
+anyhow.workspace = true
 arrayvec.workspace = true
 bitflags.workspace = true
 bytes.workspace = true
 bytemuck.workspace = true
 bytestring = { workspace = true, optional = true }
+chrono.workspace = true
 decorum.workspace = true
 derive_more.workspace = true
 enum-as-inner.workspace = true
