@@ -17,8 +17,8 @@ import BinaryReader from './binary_reader.ts';
 import BinaryWriter from './binary_writer.ts';
 import * as ws from './client_api/index.ts';
 import { ClientCache } from './client_cache.ts';
-import { DBConnectionBuilder } from './db_connection_builder.ts';
-import { type DBContext } from './db_context.ts';
+import { DbConnectionBuilder } from './db_connection_builder.ts';
+import { type DbContext } from './db_context.ts';
 import type { Event } from './event.ts';
 import {
   type ErrorContextInterface,
@@ -55,7 +55,7 @@ export {
   AlgebraicValue,
   BinaryReader,
   BinaryWriter,
-  DBConnectionBuilder,
+  DbConnectionBuilder,
   deepEqual,
   ProductType,
   ProductTypeElement,
@@ -70,7 +70,7 @@ export {
 };
 
 export type {
-  DBContext,
+  DbContext,
   EventContextInterface,
   ReducerEventContextInterface,
   SubscriptionEventContextInterface,
@@ -99,7 +99,7 @@ function callReducerFlagsToNumber(flags: CallReducerFlags): number {
   }
 }
 
-type DBConnectionConfig = {
+type DbConnectionConfig = {
   uri: URL;
   nameOrAddress: string;
   identity?: Identity;
@@ -111,11 +111,11 @@ type DBConnectionConfig = {
   lightMode: boolean;
 };
 
-export class DBConnectionImpl<
+export class DbConnectionImpl<
   DBView = any,
   Reducers = any,
   SetReducerFlags = any,
-> implements DBContext<DBView, Reducers>
+> implements DbContext<DBView, Reducers>
 {
   /**
    * Whether or not the connection is active.
@@ -184,7 +184,7 @@ export class DBConnectionImpl<
     createWSFn,
     compression,
     lightMode,
-  }: DBConnectionConfig) {
+  }: DbConnectionConfig) {
     stdbLogger('info', 'Connecting to SpacetimeDB WS...');
 
     let url = new URL(`database/subscribe/${nameOrAddress}`, uri);
@@ -736,7 +736,7 @@ export class DBConnectionImpl<
    * @example
    *
    * ```ts
-   * const connection = DBConnection.builder().build();
+   * const connection = DbConnection.builder().build();
    * connection.disconnect()
    * ```
    */
@@ -748,48 +748,48 @@ export class DBConnectionImpl<
 
   #on(
     eventName: ConnectionEvent,
-    callback: (ctx: DBConnectionImpl, ...args: any[]) => void
+    callback: (ctx: DbConnectionImpl, ...args: any[]) => void
   ): void {
     this.#emitter.on(eventName, callback);
   }
 
   #off(
     eventName: ConnectionEvent,
-    callback: (ctx: DBConnectionImpl, ...args: any[]) => void
+    callback: (ctx: DbConnectionImpl, ...args: any[]) => void
   ): void {
     this.#emitter.off(eventName, callback);
   }
 
-  #onConnect(callback: (ctx: DBConnectionImpl, ...args: any[]) => void): void {
+  #onConnect(callback: (ctx: DbConnectionImpl, ...args: any[]) => void): void {
     this.#emitter.on('connect', callback);
   }
 
   #onDisconnect(
-    callback: (ctx: DBConnectionImpl, ...args: any[]) => void
+    callback: (ctx: DbConnectionImpl, ...args: any[]) => void
   ): void {
     this.#emitter.on('disconnect', callback);
   }
 
   #onConnectError(
-    callback: (ctx: DBConnectionImpl, ...args: any[]) => void
+    callback: (ctx: DbConnectionImpl, ...args: any[]) => void
   ): void {
     this.#emitter.on('connectError', callback);
   }
 
   #removeOnConnect(
-    callback: (ctx: DBConnectionImpl, ...args: any[]) => void
+    callback: (ctx: DbConnectionImpl, ...args: any[]) => void
   ): void {
     this.#emitter.off('connect', callback);
   }
 
   #removeOnDisconnect(
-    callback: (ctx: DBConnectionImpl, ...args: any[]) => void
+    callback: (ctx: DbConnectionImpl, ...args: any[]) => void
   ): void {
     this.#emitter.off('disconnect', callback);
   }
 
   #removeOnConnectError(
-    callback: (ctx: DBConnectionImpl, ...args: any[]) => void
+    callback: (ctx: DbConnectionImpl, ...args: any[]) => void
   ): void {
     this.#emitter.off('connectError', callback);
   }

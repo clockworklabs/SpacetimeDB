@@ -89,7 +89,7 @@ function encodeCreatePlayerArgs(name: string, location: Point): Uint8Array {
   return writer.getBuffer();
 }
 
-describe('DBConnection', () => {
+describe('DbConnection', () => {
   test('call onConnect callback after getting an identity', async () => {
     const onConnectPromise = new Deferred<void>();
 

@@ -11,9 +11,9 @@ import {
   BinaryReader,
   BinaryWriter,
   CallReducerFlags,
-  DBConnectionBuilder,
-  DBConnectionImpl,
-  DBContext,
+  DbConnectionBuilder,
+  DbConnectionImpl,
+  DbContext,
   ErrorContextInterface,
   Event,
   EventContextInterface,
@@ -68,24 +68,24 @@ const REMOTE_MODULE = {
       argsType: CreatePlayer.getTypeScriptAlgebraicType(),
     },
   },
-  // Constructors which are used by the DBConnectionImpl to
+  // Constructors which are used by the DbConnectionImpl to
   // extract type information from the generated RemoteModule.
   //
   // NOTE: This is not strictly necessary for `eventContextConstructor` because
   // all we do is build a TypeScript object which we could have done inside the
   // SDK, but if in the future we wanted to create a class this would be
   // necessary because classes have methods, so we'll keep it.
-  eventContextConstructor: (imp: DBConnectionImpl, event: Event<Reducer>) => {
+  eventContextConstructor: (imp: DbConnectionImpl, event: Event<Reducer>) => {
     return {
-      ...(imp as DBConnection),
+      ...(imp as DbConnection),
       event,
     };
   },
-  dbViewConstructor: (imp: DBConnectionImpl) => {
+  dbViewConstructor: (imp: DbConnectionImpl) => {
     return new RemoteTables(imp);
   },
   reducersConstructor: (
-    imp: DBConnectionImpl,
+    imp: DbConnectionImpl,
     setReducerFlags: SetReducerFlags
   ) => {
     return new RemoteReducers(imp, setReducerFlags);
@@ -100,7 +100,7 @@ export type Reducer = never | { name: 'CreatePlayer'; args: CreatePlayer };
 
 export class RemoteReducers {
   constructor(
-    private connection: DBConnectionImpl,
+    private connection: DbConnectionImpl,
     private setCallReducerFlags: SetReducerFlags
   ) {}
 
@@ -137,7 +137,7 @@ export class SetReducerFlags {
 }
 
 export class RemoteTables {
-  constructor(private connection: DBConnectionImpl) {}
+  constructor(private connection: DbConnectionImpl) {}
 
   get player(): PlayerTableHandle {
     return new PlayerTableHandle(
@@ -162,21 +162,21 @@ export class SubscriptionBuilder extends SubscriptionBuilderImpl<
   SetReducerFlags
 > {}
 
-export class DBConnection extends DBConnectionImpl<
+export class DbConnection extends DbConnectionImpl<
   RemoteTables,
   RemoteReducers,
   SetReducerFlags
 > {
-  static builder = (): DBConnectionBuilder<
-    DBConnection,
+  static builder = (): DbConnectionBuilder<
+    DbConnection,
     ErrorContext,
     SubscriptionEventContext
   > => {
-    return new DBConnectionBuilder<
-      DBConnection,
+    return new DbConnectionBuilder<
+      DbConnection,
       ErrorContext,
       SubscriptionEventContext
-    >(REMOTE_MODULE, (imp: DBConnectionImpl) => imp as DBConnection);
+    >(REMOTE_MODULE, (imp: DbConnectionImpl) => imp as DbConnection);
   };
   subscriptionBuilder = (): SubscriptionBuilder => {
     return new SubscriptionBuilder(this);

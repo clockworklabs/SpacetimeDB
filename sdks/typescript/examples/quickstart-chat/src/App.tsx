@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import './App.css';
 import {
-  DBConnection,
+  DbConnection,
   ErrorContext,
   EventContext,
   Message,
@@ -14,7 +14,7 @@ export type PrettyMessage = {
   text: string;
 };
 
-function useMessages(conn: DBConnection | null): Message[] {
+function useMessages(conn: DbConnection | null): Message[] {
   const [messages, setMessages] = useState<Message[]>([]);
 
   useEffect(() => {
@@ -45,7 +45,7 @@ function useMessages(conn: DBConnection | null): Message[] {
   return messages;
 }
 
-function useUsers(conn: DBConnection | null): Map<string, User> {
+function useUsers(conn: DbConnection | null): Map<string, User> {
   const [users, setUsers] = useState<Map<string, User>>(new Map());
 
   useEffect(() => {
@@ -88,10 +88,10 @@ function App() {
   const [newMessage, setNewMessage] = useState('');
   const [connected, setConnected] = useState<boolean>(false);
   const [identity, setIdentity] = useState<Identity | null>(null);
-  const [conn, setConn] = useState<DBConnection | null>(null);
+  const [conn, setConn] = useState<DbConnection | null>(null);
 
   useEffect(() => {
-    const subscribeToQueries = (conn: DBConnection, queries: string[]) => {
+    const subscribeToQueries = (conn: DbConnection, queries: string[]) => {
       let count = 0;
       for (const query of queries) {
         conn
@@ -107,7 +107,7 @@ function App() {
     };
 
     const onConnect = (
-      conn: DBConnection,
+      conn: DbConnection,
       identity: Identity,
       token: string
     ) => {
@@ -135,7 +135,7 @@ function App() {
     };
 
     setConn(
-      DBConnection.builder()
+      DbConnection.builder()
         .withUri('ws://localhost:3000')
         .withModuleName('quickstart-chat')
         .withToken(localStorage.getItem('auth_token') || '')

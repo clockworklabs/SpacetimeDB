@@ -1,10 +1,10 @@
-import { DBConnection } from './module_bindings';
+import { DbConnection } from './module_bindings';
 import { useEffect, useState } from 'react';
 import './App.css';
 
 function App() {
   const [connection] = useState(() =>
-    DBConnection.builder()
+    DbConnection.builder()
       .withUri('ws://localhost:3000')
       .withModuleName('game')
       .withLightMode(true)
