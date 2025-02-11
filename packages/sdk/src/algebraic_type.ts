@@ -1,4 +1,5 @@
-import { TimeDuration, Timestamp } from '.';
+import { TimeDuration } from './time_duration';
+import { Timestamp } from './timestamp';
 import { ConnectionId } from './connection_id';
 import type BinaryReader from './binary_reader';
 import type BinaryWriter from './binary_writer';
