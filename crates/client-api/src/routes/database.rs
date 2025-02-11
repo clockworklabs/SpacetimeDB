@@ -12,21 +12,18 @@ use axum::Extension;
 use axum_extra::TypedHeader;
 use futures::StreamExt;
 use http::StatusCode;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use spacetimedb::database_logger::DatabaseLogger;
+use spacetimedb::host::ReducerArgs;
 use spacetimedb::host::ReducerCallError;
 use spacetimedb::host::ReducerOutcome;
-use spacetimedb::host::{DescribedEntityType, UpdateDatabaseResult};
-use spacetimedb::host::{ModuleHost, ReducerArgs};
+use spacetimedb::host::UpdateDatabaseResult;
 use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, HostType};
 use spacetimedb_client_api_messages::name::{self, DnsLookupResponse, DomainName, PublishOp, PublishResult};
-use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::sats::{self, WithTypespace};
-use spacetimedb_lib::{ProductType, ProductTypeElement};
-use spacetimedb_schema::def::{ReducerDef, TableDef};
+use spacetimedb_lib::sats;
 
 use super::identity::IdentityForUrl;
 
@@ -159,166 +156,25 @@ pub enum DBCallErr {
     InstanceNotScheduled,
 }
 
-pub enum EntityDef<'a> {
-    Reducer(&'a ReducerDef),
-    Table(&'a TableDef),
-}
-
-impl<'a> EntityDef<'a> {
-    fn described_entity_ty(&self) -> DescribedEntityType {
-        match self {
-            EntityDef::Reducer(_) => DescribedEntityType::Reducer,
-            EntityDef::Table(_) => DescribedEntityType::Table,
-        }
-    }
-    fn name(&self) -> &'a str {
-        match self {
-            EntityDef::Reducer(r) => &r.name[..],
-            EntityDef::Table(t) => &t.name[..],
-        }
-    }
-}
-
-#[serde_with::serde_as]
-#[derive(Serialize)]
-struct EntityDescription<'a> {
-    #[serde_as(as = "serde_with::DisplayFromStr")]
-    r#type: DescribedEntityType,
-    arity: usize,
-    schema: EntityDescriptionSchema<'a>,
-}
-
-#[derive(Serialize)]
-struct EntityDescriptionSchema<'a> {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    name: Option<&'a str>,
-    elements: Box<[ProductTypeElement]>,
-}
-
-fn entity_description_json<'a>(description: WithTypespace<'_, EntityDef<'a>>) -> Option<EntityDescription<'a>> {
-    let typ = description.ty().described_entity_ty();
-    let len = match description.ty() {
-        EntityDef::Table(t) => description
-            .resolve(t.product_type_ref)
-            .ty()
-            .as_product()?
-            .elements
-            .len(),
-        EntityDef::Reducer(r) => r.params.elements.len(),
-    };
-    // TODO(noa): make this less hacky; needs coordination w/ spacetime-web
-    let schema = match description.ty() {
-        EntityDef::Table(table) => {
-            let product_type = description
-                .with(&table.product_type_ref)
-                .resolve_refs()
-                .ok()?
-                .into_product()
-                .ok()?;
-            let ProductType { elements } = product_type;
-            EntityDescriptionSchema { name: None, elements }
-        }
-        EntityDef::Reducer(r) => EntityDescriptionSchema {
-            name: Some(&r.name),
-            elements: r.params.elements.clone(),
-        },
-    };
-    Some(EntityDescription {
-        r#type: typ,
-        arity: len,
-        schema,
-    })
-}
-
 #[derive(Deserialize)]
-pub struct DescribeParams {
-    name_or_identity: NameOrIdentity,
-    entity_type: String,
-    entity: String,
-}
-
-pub async fn describe<S>(
-    State(worker_ctx): State<S>,
-    Path(DescribeParams {
-        name_or_identity,
-        entity_type,
-        entity,
-    }): Path<DescribeParams>,
-    Extension(auth): Extension<SpacetimeAuth>,
-) -> axum::response::Result<impl IntoResponse>
-where
-    S: ControlStateDelegate + NodeDelegate,
-{
-    let db_identity = name_or_identity.resolve(&worker_ctx).await?.into();
-    let database = worker_ctx_find_database(&worker_ctx, &db_identity)
-        .await?
-        .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
-
-    let leader = worker_ctx
-        .leader(database.id)
-        .await
-        .map_err(log_and_500)?
-        .ok_or(StatusCode::NOT_FOUND)?;
-
-    let module = leader.module().await.map_err(log_and_500)?;
-    let entity_type = entity_type.as_str().parse().map_err(|()| {
-        log::debug!("Request to describe unhandled entity type: {}", entity_type);
-        (
-            StatusCode::NOT_FOUND,
-            format!("Invalid entity type for description: {}", entity_type),
-        )
-    })?;
-    let description = get_entity(&module, &entity, entity_type)
-        .ok_or_else(|| (StatusCode::NOT_FOUND, format!("{entity_type} {entity:?} not found")))?;
-    let description = WithTypespace::new(module.info().module_def.typespace(), &description);
-
-    let response_json: SchemaEntities = HashMap::from_iter([(&*entity, entity_description_json(description))]);
-
-    Ok((
-        TypedHeader(SpacetimeIdentity(auth.identity)),
-        TypedHeader(SpacetimeIdentityToken(auth.creds)),
-        axum::Json(response_json).into_response(),
-    ))
-}
-
-fn get_catalog(host: &ModuleHost) -> impl Iterator<Item = EntityDef> {
-    let module_def = &host.info().module_def;
-    module_def
-        .reducers()
-        .map(EntityDef::Reducer)
-        .chain(module_def.tables().map(EntityDef::Table))
-}
-
-fn get_entity<'a>(host: &'a ModuleHost, entity: &'_ str, entity_type: DescribedEntityType) -> Option<EntityDef<'a>> {
-    match entity_type {
-        DescribedEntityType::Table => host.info().module_def.table(entity).map(EntityDef::Table),
-        DescribedEntityType::Reducer => host.info().module_def.reducer(entity).map(EntityDef::Reducer),
-    }
-}
-
-#[derive(Deserialize)]
-pub struct CatalogParams {
+pub struct SchemaParams {
     name_or_identity: NameOrIdentity,
 }
 #[derive(Deserialize)]
-pub struct CatalogQueryParams {
-    #[serde(default)]
-    module_def: bool,
+pub struct SchemaQueryParams {
+    version: SchemaVersion,
 }
 
-type SchemaEntities<'a> = HashMap<&'a str, Option<EntityDescription<'a>>>;
-
-#[derive(Serialize)]
-struct CatalogResponse<'a> {
-    entities: SchemaEntities<'a>,
-    #[serde(with = "sats::serde")]
-    typespace: &'a sats::Typespace,
+#[derive(Deserialize)]
+enum SchemaVersion {
+    #[serde(rename = "9")]
+    V9,
 }
 
-pub async fn catalog<S>(
+pub async fn schema<S>(
     State(worker_ctx): State<S>,
-    Path(CatalogParams { name_or_identity }): Path<CatalogParams>,
-    Query(CatalogQueryParams { module_def }): Query<CatalogQueryParams>,
+    Path(SchemaParams { name_or_identity }): Path<SchemaParams>,
+    Query(SchemaQueryParams { version }): Query<SchemaQueryParams>,
     Extension(auth): Extension<SpacetimeAuth>,
 ) -> axum::response::Result<impl IntoResponse>
 where
@@ -336,15 +192,12 @@ where
         .ok_or(StatusCode::NOT_FOUND)?;
     let module = leader.module().await.map_err(log_and_500)?;
 
-    let response_json = if module_def {
-        let raw = RawModuleDefV9::from(module.info().module_def.clone());
-        axum::Json(sats::serde::SerdeWrapper(raw)).into_response()
-    } else {
-        let typespace = module.info.module_def.typespace();
-        let entities: HashMap<_, _> = get_catalog(&module)
-            .map(|entity| (entity.name(), entity_description_json(typespace.with_type(&entity))))
-            .collect();
-        axum::Json(CatalogResponse { entities, typespace }).into_response()
+    let module_def = &module.info.module_def;
+    let response_json = match version {
+        SchemaVersion::V9 => {
+            let raw = RawModuleDefV9::from(module_def.clone());
+            axum::Json(sats::serde::SerdeWrapper(raw)).into_response()
+        }
     };
 
     Ok((
@@ -355,34 +208,32 @@ where
 }
 
 #[derive(Deserialize)]
-pub struct InfoParams {
+pub struct DatabaseParam {
     name_or_identity: NameOrIdentity,
 }
 
-#[derive(Serialize)]
-struct InfoResponse {
+#[derive(sats::Serialize)]
+struct DatabaseResponse {
     database_identity: Identity,
     owner_identity: Identity,
-    host_type: &'static str,
+    host_type: HostType,
     initial_program: spacetimedb_lib::Hash,
 }
 
-impl From<Database> for InfoResponse {
-    fn from(database: Database) -> Self {
-        InfoResponse {
-            database_identity: database.database_identity,
-            owner_identity: database.owner_identity,
-            host_type: match database.host_type {
-                HostType::Wasm => "wasm",
-            },
-            initial_program: database.initial_program,
+impl From<Database> for DatabaseResponse {
+    fn from(db: Database) -> Self {
+        DatabaseResponse {
+            database_identity: db.database_identity,
+            owner_identity: db.owner_identity,
+            host_type: db.host_type,
+            initial_program: db.initial_program,
         }
     }
 }
 
-pub async fn info<S: ControlStateDelegate>(
+pub async fn db_info<S: ControlStateDelegate>(
     State(worker_ctx): State<S>,
-    Path(InfoParams { name_or_identity }): Path<InfoParams>,
+    Path(DatabaseParam { name_or_identity }): Path<DatabaseParam>,
 ) -> axum::response::Result<impl IntoResponse> {
     log::trace!("Trying to resolve database identity: {:?}", name_or_identity);
     let database_identity = name_or_identity.resolve(&worker_ctx).await?.into();
@@ -392,8 +243,8 @@ pub async fn info<S: ControlStateDelegate>(
         .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
     log::trace!("Fetched database from the worker db for database identity: {database_identity:?}");
 
-    let response = InfoResponse::from(database);
-    Ok(axum::Json(response))
+    let response = DatabaseResponse::from(database);
+    Ok(axum::Json(sats::serde::SerdeWrapper(response)))
 }
 
 #[derive(Deserialize)]
@@ -793,14 +644,13 @@ where
 {
     use axum::routing::{get, post};
     axum::Router::new()
+        .route("/:name_or_identity", get(db_info::<S>))
         .route(
             "/subscribe/:name_or_identity",
             get(super::subscribe::handle_websocket::<S>),
         )
         .route("/call/:name_or_identity/:reducer", post(call::<S>))
-        .route("/schema/:name_or_identity/:entity_type/:entity", get(describe::<S>))
-        .route("/schema/:name_or_identity", get(catalog::<S>))
-        .route("/info/:name_or_identity", get(info::<S>))
+        .route("/schema/:name_or_identity", get(schema::<S>))
         .route("/logs/:name_or_identity", get(logs::<S>))
         .route("/sql/:name_or_identity", post(sql::<S>))
         .route_layer(axum::middleware::from_fn_with_state(ctx, anon_auth_middleware::<S>))

@@ -48,7 +48,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             config.get_host_url(server)?,
             identity
         ))
-        .basic_auth("token", Some(token))
+        .bearer_auth(token)
         .send()
         .await?;
 

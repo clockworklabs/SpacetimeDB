@@ -65,21 +65,23 @@ impl SpacetimeCreds {
 
     /// Extract credentials from the headers or else query string of a request.
     fn from_request_parts(parts: &request::Parts) -> Result<Option<Self>, headers::Error> {
-        let res = match parts.headers.typed_try_get::<headers::Authorization<Self>>() {
-            Ok(Some(headers::Authorization(creds))) => return Ok(Some(creds)),
-            Ok(None) => Ok(None),
-            Err(e) => Err(e),
-        };
+        let header = parts
+            .headers
+            .typed_try_get::<headers::Authorization<authorization::Bearer>>()
+            .map(|x| x.map(|auth| auth.token().to_owned()))
+            .or_else(|_| {
+                Ok(parts
+                    .headers
+                    .typed_try_get::<headers::Authorization<Self>>()?
+                    .map(|auth| auth.0.token))
+            })?;
+        if let Some(token) = header {
+            return Ok(Some(SpacetimeCreds { token }));
+        }
         if let Ok(Query(creds)) = Query::<Self>::try_from_uri(&parts.uri) {
-            // TODO STABILITY: do we want to have the `?token=` query param just be the jwt, instead of this?
-            let creds_header: HeaderValue = format!("Basic {}", creds.token)
-                .try_into()
-                .map_err(|_| headers::Error::invalid())?;
-            let creds = <SpacetimeCreds as authorization::Credentials>::decode(&creds_header)
-                .ok_or_else(headers::Error::invalid)?;
             return Ok(Some(creds));
         }
-        res
+        Ok(None)
     }
 }
 

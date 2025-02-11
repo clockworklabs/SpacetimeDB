@@ -1,14 +1,9 @@
 use anyhow::Context;
-use base64::{
-    engine::general_purpose::STANDARD as BASE_64_STD, engine::general_purpose::STANDARD_NO_PAD as BASE_64_STD_NO_PAD,
-    Engine as _,
-};
+use base64::{engine::general_purpose::STANDARD_NO_PAD as BASE_64_STD_NO_PAD, Engine as _};
 use reqwest::{RequestBuilder, Url};
-use serde::Deserialize;
 use spacetimedb::auth::identity::{IncomingClaims, SpacetimeIdentityClaims};
 use spacetimedb_client_api_messages::name::{DnsLookupResponse, RegisterTldResult, ReverseDNSResponse};
-use spacetimedb_data_structures::map::HashMap;
-use spacetimedb_lib::{AlgebraicType, Identity};
+use spacetimedb_lib::Identity;
 use std::io::Write;
 use std::path::Path;
 
@@ -86,79 +81,10 @@ pub async fn spacetime_reverse_dns(
     Ok(serde_json::from_slice(&bytes[..]).unwrap())
 }
 
-#[derive(Deserialize)]
-pub struct IdentityTokenJson {
-    pub identity: Identity,
-    pub token: String,
-}
-
-pub enum InitDefaultResultType {
-    Existing,
-    SavedNew,
-}
-
-pub struct InitDefaultResult {
-    pub result_type: InitDefaultResultType,
-}
-
-#[derive(Debug, Deserialize, Clone)]
-pub struct DescribeReducer {
-    #[serde(rename = "type")]
-    pub type_field: String,
-    pub arity: i32,
-    pub schema: DescribeSchema,
-}
-
-#[derive(Debug, Deserialize, Clone)]
-pub struct DescribeSchema {
-    pub name: String,
-    pub elements: Vec<DescribeElement>,
-}
-
-#[derive(Debug, Deserialize, Clone)]
-pub struct DescribeElement {
-    pub name: Option<DescribeElementName>,
-    pub algebraic_type: AlgebraicType,
-}
-
-#[derive(Debug, Deserialize, Clone)]
-pub struct DescribeElementName {
-    pub some: String,
-}
-
-pub async fn describe_reducer(
-    config: &mut Config,
-    database: Identity,
-    server: Option<String>,
-    reducer_name: String,
-    anon_identity: bool,
-    interactive: bool,
-) -> anyhow::Result<DescribeReducer> {
-    let builder = reqwest::Client::new().get(format!(
-        "{}/database/schema/{}/{}/{}",
-        config.get_host_url(server.as_deref())?,
-        database,
-        "reducer",
-        reducer_name
-    ));
-    let auth_header = get_auth_header(config, anon_identity, server.as_deref(), interactive).await?;
-    let builder = add_auth_header_opt(builder, &auth_header);
-
-    let descr = builder
-        .query(&[("expand", true)])
-        .send()
-        .await?
-        .error_for_status()?
-        .text()
-        .await?;
-    let result: HashMap<String, DescribeReducer> = serde_json::from_str(descr.as_str()).unwrap();
-    Ok(result[&reducer_name].clone())
-}
-
 /// Add an authorization header, if provided, to the request `builder`.
-pub fn add_auth_header_opt(mut builder: RequestBuilder, auth_header: &Option<String>) -> RequestBuilder {
-    if let Some(auth_header) = auth_header {
-        builder = builder.header("Authorization", auth_header);
+pub fn add_auth_header_opt(mut builder: RequestBuilder, auth_header: &AuthHeader) -> RequestBuilder {
+    if let Some(token) = &auth_header.token {
+        builder = builder.bearer_auth(token);
     }
     builder
 }
@@ -180,15 +106,26 @@ pub async fn get_auth_header(
     anon_identity: bool,
     target_server: Option<&str>,
     interactive: bool,
-) -> anyhow::Result<Option<String>> {
-    if anon_identity {
-        Ok(None)
+) -> anyhow::Result<AuthHeader> {
+    let token = if anon_identity {
+        None
     } else {
-        let token = get_login_token_or_log_in(config, target_server, interactive).await?;
-        // The current form is: Authorization: Basic base64("token:<token>")
-        let mut auth_header = String::new();
-        auth_header.push_str(format!("Basic {}", BASE_64_STD.encode(format!("token:{}", token))).as_str());
-        Ok(Some(auth_header))
+        Some(get_login_token_or_log_in(config, target_server, interactive).await?)
+    };
+    Ok(AuthHeader { token })
+}
+
+#[derive(Debug, Clone)]
+pub struct AuthHeader {
+    token: Option<String>,
+}
+impl AuthHeader {
+    pub fn to_header(&self) -> Option<http::HeaderValue> {
+        self.token.as_ref().map(|token| {
+            let mut val = http::HeaderValue::try_from(["Bearer ", token].concat()).unwrap();
+            val.set_sensitive(true);
+            val
+        })
     }
 }
 
