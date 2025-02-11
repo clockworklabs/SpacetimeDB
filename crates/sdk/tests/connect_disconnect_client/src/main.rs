@@ -75,7 +75,7 @@ fn main() {
     let sub_applied_one_row_result = reconnect_test_counter.add_test("disconnected_row");
 
     let new_connection = DbConnection::builder()
-        .on_connect_error(|ctx, error| panic!("on_connect_error: {:?}", error))
+        .on_connect_error(|_ctx, error| panic!("on_connect_error: {:?}", error))
         .on_connect(move |_ctx, _, _| {
             reconnected_result(Ok(()));
         })
