@@ -2,7 +2,7 @@
 
 SpacetimeDB supports two subsets of SQL:
 One for queries issued through the cli or [http] api.
-Another for subscriptions issued via the [sdk] or [websocket] api.
+Another for subscriptions issued via the [sdk] or WebSocket api.
 
 ## Subscriptions
 
@@ -476,7 +476,6 @@ column
 
 [sdk]:       /docs/sdks/rust/index.md#subscribe-to-queries
 [http]:      /docs/http/database#databasesqlname_or_address-post
-[websocket]: /docs/ws/index.md#subscribe
 
 [Identity]: /docs/index.md#identity
 [Address]:  /docs/index.md#address

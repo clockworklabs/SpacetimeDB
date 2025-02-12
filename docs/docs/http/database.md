@@ -13,7 +13,7 @@ The HTTP endpoints in `/database` allow clients to interact with Spacetime datab
 | [`/database/register_tld GET`](#databaseregister_tld-get)                                                           | Register a top-level domain.                                      |
 | [`/database/publish POST`](#databasepublish-post)                                                                   | Publish a database given its module code.                         |
 | [`/database/delete/:address POST`](#databasedeleteaddress-post)                                                     | Delete a database.                                                |
-| [`/database/subscribe/:name_or_address GET`](#databasesubscribename_or_address-get)                                 | Begin a [WebSocket connection](/docs/ws).                         |
+| [`/database/subscribe/:name_or_address GET`](#databasesubscribename_or_address-get)                                 | Begin a WebSocket connection.                         |
 | [`/database/call/:name_or_address/:reducer POST`](#databasecallname_or_addressreducer-post)                         | Invoke a reducer in a database.                                   |
 | [`/database/schema/:name_or_address GET`](#databaseschemaname_or_address-get)                                       | Get the schema for a database.                                    |
 | [`/database/schema/:name_or_address/:entity_type/:entity GET`](#databaseschemaname_or_addressentity_typeentity-get) | Get a schema for a particular table or reducer.                   |
@@ -248,7 +248,7 @@ Accessible through the CLI as `spacetime delete <address>`.
 
 ## `/database/subscribe/:name_or_address GET`
 
-Begin a [WebSocket connection](/docs/ws) with a database.
+Begin a WebSocket connection with a database.
 
 #### Parameters
 
@@ -262,11 +262,16 @@ For more information about WebSocket headers, see [RFC 6455](https://datatracker
 
 | Name                     | Value                                                                                                |
 | ------------------------ | ---------------------------------------------------------------------------------------------------- |
-| `Sec-WebSocket-Protocol` | [`v1.bin.spacetimedb`](/docs/ws#binary-protocol) or [`v1.text.spacetimedb`](/docs/ws#text-protocol). |
+| `Sec-WebSocket-Protocol` | `v1.bin.spacetimedb` or `v1.text.spacetimedb`                                                        |
 | `Connection`             | `Updgrade`                                                                                           |
 | `Upgrade`                | `websocket`                                                                                          |
 | `Sec-WebSocket-Version`  | `13`                                                                                                 |
 | `Sec-WebSocket-Key`      | A 16-byte value, generated randomly by the client, encoded as Base64.                                |
+
+The SpacetimeDB binary WebSocket protocol, `v1.bin.spacetimedb`, encodes messages as well as reducer and row data using [BSATN](/docs/bsatn).
+Its messages are defined [here](https://github.com/clockworklabs/SpacetimeDB/blob/master/crates/client-api-messages/src/websocket.rs).
+
+The SpacetimeDB text WebSocket protocol, `v1.text.spacetimedb`, encodes messages according to the [SATN JSON format](/docs/satn).
 
 #### Optional Headers
 

@@ -87,9 +87,6 @@ const nav: Nav = {
     page('`/database`', 'http/database', 'http/database.md'),
     page('`/energy`', 'http/energy', 'http/energy.md'),
 
-    section('WebSocket API Reference'),
-    page('WebSocket', 'ws', 'ws/index.md'),
-
     section('Data Format'),
     page('SATN', 'satn', 'satn.md'),
     page('BSATN', 'bsatn', 'bsatn.md'),
