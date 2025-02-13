@@ -609,7 +609,7 @@ impl<Tbl: Table, IndexType, Idx: Index> RangedIndex<Tbl, IndexType, Idx> {
 /// for a column of type `Column`.
 ///
 /// Types which can appear specifically as a terminating bound in a BTree index,
-/// which may be a range, instead use [`IndexRangeScanBoundsTerminator`].
+/// which may be a range, instead use [`IndexScanRangeBoundsTerminator`].
 ///
 /// General rules for implementors of this type:
 /// - It should only be implemented for types that have

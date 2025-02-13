@@ -213,7 +213,7 @@ fn hash_bsatn_int_seq<'a, H: Hasher, R: BufReader<'a>>(state: &mut H, mut de: De
     // Extract and hash the bytes.
     // This is consistent with what `<$int_primitive>::hash_slice` will do
     // and for `U/I256` we provide special logic in `impl Hash for ArrayValue` above
-    // and handle it the same way for `RowRef`s.
+    // and handle it the same way for `spacetimedb_table::table::RowRef`s.
     let bytes = de.get_slice(len * width)?;
 
     hash_len_and_bytes(state, len, bytes);

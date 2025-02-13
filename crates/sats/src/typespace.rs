@@ -202,9 +202,9 @@ impl Typespace {
     /// See also the `spacetimedb_schema` crate, which layers additional validation on top
     /// of these checks.
     ///
-    /// All types in the typespace must either be
-    /// [`valid_for_client_type_definition`](AlgebraicType::valid_for_client_type_definition) or
-    /// [`valid_for_client_type_use`](AlgebraicType::valid_for_client_type_use).
+    /// All types in the typespace must either satisfy
+    /// [`is_valid_for_client_type_definition`](AlgebraicType::is_valid_for_client_type_definition) or
+    /// [`is_valid_for_client_type_use`](AlgebraicType::is_valid_for_client_type_use).
     /// (Only the types that are `valid_for_client_type_definition` will have types generated in
     /// the client, but the other types are allowed for the convenience of module binding codegen.)
     pub fn is_valid_for_client_code_generation(&self) -> bool {

@@ -7,12 +7,11 @@ pub mod serde;
 
 use core::fmt;
 
-/// A **data format** that can deserialize any data structure supported by SATs.
+/// A data format that can deserialize any data structure supported by SATs.
 ///
-/// The `Serializer` trait in SATS performs the same function as [`serde::Serializer`] in [`serde`].
-/// See the documentation of [`serde::Serializer`] for more information of the data model.
+/// The `Serializer` trait in SATS performs the same function as `serde::Serializer` in [`serde`].
+/// See the documentation of `serde::Serializer` for more information on the data model.
 ///
-/// [`serde::Serializer`]: ::serde::Serializer
 /// [`serde`]: https://crates.io/crates/serde
 pub trait Serializer: Sized {
     /// The output type produced by this `Serializer` during successful serialization.
@@ -208,13 +207,12 @@ use crate::AlgebraicType;
 ///
 /// In most cases, implementations of `Serialize` may be `#[derive(Serialize)]`d.
 ///
-/// The `Serialize` trait in SATS performs the same function as [`serde::Serialize`] in [`serde`].
-/// See the documentation of [`serde::Serialize`] for more information of the data model.
+/// The `Serialize` trait in SATS performs the same function as `serde::Serialize` in [`serde`].
+/// See the documentation of `serde::Serialize` for more information of the data model.
 ///
 /// Do not manually implement this trait unless you know what you are doing.
 /// Incorrect implementations are safe, but can result in data loss.
 ///
-/// [`serde::Serialize`]: ::serde::Serialize
 /// [`serde`]: https://crates.io/crates/serde
 pub trait Serialize {
     /// Serialize `self` in the data format of `S` using the provided `serializer`.

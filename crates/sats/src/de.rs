@@ -16,8 +16,8 @@ use std::borrow::Borrow;
 
 /// A **data format** that can deserialize any data structure supported by SATS.
 ///
-/// The `Deserializer` trait in SATS performs the same function as [`serde::Deserializer`] in [`serde`].
-/// See the documentation of [`serde::Deserializer`] for more information of the data model.
+/// The `Deserializer` trait in SATS performs the same function as `serde::Deserializer` in [`serde`].
+/// See the documentation of `serde::Deserializer` for more information of the data model.
 ///
 /// Implementations of `Deserialize` map themselves into this data model
 /// by passing to the `Deserializer` a visitor that can receive the necessary types.
@@ -27,7 +27,6 @@ use std::borrow::Borrow;
 ///
 /// The lifetime `'de` allows us to deserialize lifetime-generic types in a zero-copy fashion.
 ///
-/// [`serde::Deserializer`]: ::serde::Deserializer
 /// [`serde`]: https://crates.io/crates/serde
 pub trait Deserializer<'de>: Sized {
     /// The error type that can be returned if some error occurs during deserialization.
@@ -546,15 +545,14 @@ pub use spacetimedb_bindings_macro::Deserialize;
 ///
 /// In most cases, implementations of `Deserialize` may be `#[derive(Deserialize)]`d.
 ///
-/// The `Deserialize` trait in SATS performs the same function as [`serde::Deserialize`] in [`serde`].
-/// See the documentation of [`serde::Deserialize`] for more information of the data model.
+/// The `Deserialize` trait in SATS performs the same function as `serde::Deserialize` in [`serde`].
+/// See the documentation of `serde::Deserialize` for more information of the data model.
 ///
 /// The lifetime `'de` allows us to deserialize lifetime-generic types in a zero-copy fashion.
 ///
 /// Do not manually implement this trait unless you know what you are doing.
 /// Incorrect implementations are safe, but can result in data loss.
 ///
-/// [`serde::Deserialize`]: ::serde::Deserialize
 /// [`serde`]: https://crates.io/crates/serde
 pub trait Deserialize<'de>: Sized {
     /// Deserialize this value from the given `deserializer`.

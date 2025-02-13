@@ -32,11 +32,11 @@
 //!
 //! The following convenience conversion functions are provided:
 //!
-//! - [`slice`] converts `&[T] -> SlimSlice<T>`, panicing on overflow
-//! - [`slice_mut`] converts `&mut [T] -> SlimSliceMut<T>`, panicing on overflow
-//! - [`str`] converts `&str -> SlimStr`, panicing on overflow
-//! - [`str_mut`] converts `&mut str -> SlimStrMut`, panicing on overflow
-//! - [`string`] converts `&str -> SlimStrBox`, panicing on overflow
+//! - [`from_slice`] converts `&[T] -> SlimSlice<T>`, panicing on overflow
+//! - [`from_slice_mut`] converts `&mut [T] -> SlimSliceMut<T>`, panicing on overflow
+//! - [`from_str`] converts `&str -> SlimStr`, panicing on overflow
+//! - [`from_str_mut`] converts `&mut str -> SlimStrMut`, panicing on overflow
+//! - [`from_string`] converts `&str -> SlimStrBox`, panicing on overflow
 //!
 //! These conversions should be reserved for cases where it is known
 //! that the length `<= u32::MAX` and should be used sparingly.

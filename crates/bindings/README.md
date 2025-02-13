@@ -437,12 +437,12 @@ Single-column indices can also be declared using the
 
 column attribute.
 
-Any index supports getting a [`BTreeIndex`] using [`ctx`](crate::ReducerContext)`.db.{table}().{index}()`. For example,
+Any index supports getting a [`RangedIndex`] using [`ctx`](crate::ReducerContext)`.db.{table}().{index}()`. For example,
     `ctx.db.people().name()`.
     
-[`BTreeIndex`] provides:
- - [`BTreeIndex::filter`]
- - [`BTreeIndex::delete`]
+[`RangedIndex`] provides:
+ - [`RangedIndex::filter`]
+ - [`RangedIndex::delete`]
 
 ## Reducers
 
