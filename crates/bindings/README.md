@@ -384,16 +384,17 @@ Notice that updating a row is only possible if a row has a unique column -- ther
 
 The `#[primary_key]` annotation is similar to the `#[unique]` annotation, except that it leads to additional methods being made available in the [client]-side SDKs.
 
+It is not currently possible to mark a group of fields as collectively unique. You can, however, derive `#[SpacetimeType]` on another struct, include that struct as a column, and mark it unique.
 
-It is not currently possible to mark a group of fields as collectively unique. You can, however, derive `#[SpacetimeType]` on a sub-struct and mark that unique.
+Filtering on unique columns is only supported for a limited number of types.
 
 #### Auto-inc columns
 
-Columns can be marked [`#[auto_inc]`](macro@crate::table#autoinc). This can only be used on numeric types.
+Columns can be marked [`#[auto_inc]`](macro@crate::table#auto_inc). This can only be used on integer types (`i32`, `u8`, etc.)
 
-When inserting into a table with an `#[autoinc]` column: if the annotated column is set to `0` (zero), the database will automatically overwrite whatever we give it with an atomically increasing value, starting from 1.
+When inserting into a table with an `#[auto_inc]` column: if the annotated column is set to `0` (zero), the database will automatically overwrite whatever we give it with an atomically increasing value, starting from 1.
 
-The returned row has the `autoinc` column set to the value that was actually written into the database.
+The returned row has the `#[auto_inc]` column set to the value that was actually written into the database.
 
 ```no_run
 # #[cfg(target_arch = "wasm32")] mod demo {
@@ -406,7 +407,7 @@ struct Example {
 }
 
 #[reducer]
-fn insert_autoinc_example(ctx: &ReducerContext) {
+fn insert_auto_inc_example(ctx: &ReducerContext) {
     for i in 1..=10 {
         // These will have values of 1, 2, ..., 10
         // at rest in the database, since they
@@ -515,7 +516,7 @@ The following changes are always allowed and never breaking:
 
 - ✅ **Adding tables**. Non-updated clients will not be able to see the new tables.
 - ✅ **Adding indexes**.
-- ✅ **Adding or removing `#[autoinc]` annotations.**
+- ✅ **Adding or removing `#[auto_inc]` annotations.**
 - ✅ **Changing tables from private to public**.
 - ✅ **Adding reducers**.
 - ✅ **Removing `#[unique]`  annotations.**

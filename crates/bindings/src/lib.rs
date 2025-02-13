@@ -104,7 +104,7 @@ pub use spacetimedb_bindings_macro::client_visibility_filter;
 ///         index(name = popularity_and_username, btree(columns = [popularity, username])),
 /// )]
 /// pub struct User {
-///     #[autoinc]
+///     #[auto_inc]
 ///     #[primary_key]
 ///     pub id: u32,
 ///     #[unique]
@@ -177,7 +177,7 @@ pub use spacetimedb_bindings_macro::client_visibility_filter;
 /// ```ignore
 ///  #[table(name = users)]
 ///  pub struct User {
-///      #[autoinc]
+///      #[auto_inc]
 ///      #[primary_key]
 ///      pub id: u32,
 ///      #[unique]
@@ -240,7 +240,7 @@ pub use spacetimedb_bindings_macro::client_visibility_filter;
 ///
 /// # Column (field) attributes
 ///
-/// ### `#[autoinc]`
+/// ### `#[auto_inc]`
 ///
 /// Creates an auto-increment constraint.
 ///
@@ -251,7 +251,7 @@ pub use spacetimedb_bindings_macro::client_visibility_filter;
 ///
 /// May be combined with indexes or unique constraints.
 ///
-/// Note that using `#[autoinc]` on a field does not also imply `#[primary_key]` or `#[unique]`.
+/// Note that using `#[auto_inc]` on a field does not also imply `#[primary_key]` or `#[unique]`.
 /// If those semantics are desired, those attributes should also be used.
 ///
 /// <!-- TODO: What happens if a reducer tries to insert a row that has an already-existing unique
@@ -649,7 +649,7 @@ pub use spacetimedb_bindings_macro::reducer;
 /// #[spacetimedb::table(name = people)]
 /// struct Person {
 ///    #[unique]
-///    #[autoinc]
+///    #[auto_inc]
 ///    id: u64,
 ///    name: String,
 /// }
