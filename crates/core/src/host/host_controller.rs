@@ -419,7 +419,7 @@ impl HostController {
             if let Some(host) = lock.write_owned().await.take() {
                 let module = host.module.borrow().clone();
                 module.exit().await;
-                db_metrics::data_size::zero_database_gauges(&module.info().database_identity);
+                db_metrics::data_size::remove_database_gauges(&module.info().database_identity);
             }
         }
 

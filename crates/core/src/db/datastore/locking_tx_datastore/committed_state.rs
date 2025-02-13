@@ -686,31 +686,14 @@ impl CommittedState {
         let mut total_row_bytes = 0;
         let mut total_index_rows = 0;
         let mut total_index_bytes = 0;
-        for (table_id, table) in &self.tables {
-            let table_name = &table.schema.table_name;
+        for table in self.tables.values() {
             let num_rows = table.num_rows();
-            DATA_SIZE_METRICS
-                .data_size_table_num_rows
-                .with_label_values(&database_identity, &table_id.0, table_name)
-                .set(num_rows as _);
             total_rows += num_rows;
             let row_bytes = table.bytes_used_by_rows();
-            DATA_SIZE_METRICS
-                .data_size_table_bytes_used_by_rows
-                .with_label_values(&database_identity, &table_id.0, table_name)
-                .set(row_bytes as _);
             total_row_bytes += row_bytes;
             let num_index_rows = table.num_rows_in_indexes();
-            DATA_SIZE_METRICS
-                .data_size_table_num_rows_in_indexes
-                .with_label_values(&database_identity, &table_id.0, table_name)
-                .set(num_index_rows as _);
             total_index_rows += num_index_rows;
             let index_bytes = table.bytes_used_by_index_keys();
-            DATA_SIZE_METRICS
-                .data_size_table_bytes_used_by_index_keys
-                .with_label_values(&database_identity, &table_id.0, table_name)
-                .set(index_bytes as _);
             total_index_bytes += index_bytes;
         }
 
