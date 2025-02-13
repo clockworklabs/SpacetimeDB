@@ -258,8 +258,9 @@ pub trait Column {
 /// Example:
 ///
 /// ```no_run
+/// # #[cfg(target_arch = "wasm32")] mod demo {
 /// use spacetimedb::{table, UniqueColumn, ReducerContext, DbContext};
-///
+/// 
 /// #[table(name = users)]
 /// struct User {
 ///     #[primary_key]
@@ -281,6 +282,7 @@ pub trait Column {
 ///     let by_username: UniqueColumn<_, String, _> = users.username();
 ///     by_username.delete(&"Evil Bob".to_string());
 /// }
+/// # }
 /// ```
 ///
 /// <!-- TODO: do we need integer type suffixes on literal arguments, like for RangedIndex? -->
@@ -390,6 +392,7 @@ pub trait Index {
 /// Example:
 ///
 /// ```no_run
+/// # #[cfg(target_arch = "wasm32")] mod demo {
 /// use spacetimedb::{table, RangedIndex, ReducerContext, DbContext};
 ///
 /// #[table(name = users,
@@ -404,11 +407,13 @@ pub trait Index {
 /// fn demo(ctx: &ReducerContext) {
 ///     let by_dogs_and_name: RangedIndex<_, (u64, String), _> = ctx.db.users().dogs_and_name();
 /// }
+/// # }
 /// ```
 ///
 /// For single-column indices, use the name of the column:
 ///
 /// ```no_run
+/// # #[cfg(target_arch = "wasm32")] mod demo {
 /// use spacetimedb::{table, RangedIndex, ReducerContext, DbContext};
 ///
 /// #[table(name = users)]
@@ -422,6 +427,7 @@ pub trait Index {
 /// fn demo(ctx: &ReducerContext) {
 ///     let by_dogs: RangedIndex<_, (u64,), _> = ctx.db().users().dogs();
 /// }
+/// # }
 /// ```
 ///
 pub struct RangedIndex<Tbl: Table, IndexType, Idx: Index> {
@@ -443,6 +449,9 @@ impl<Tbl: Table, IndexType, Idx: Index> RangedIndex<Tbl, IndexType, Idx> {
     /// For example:
     ///
     /// ```no_run
+    /// # #[cfg(target_arch = "wasm32")] mod demo {
+    /// use spacetimedb::{table, ReducerContext, RangedIndex};
+    ///
     /// #[table(name = users,
     ///     index(name = dogs_and_name, btree(columns = [dogs, name])))]
     /// struct User {
@@ -479,6 +488,7 @@ impl<Tbl: Table, IndexType, Idx: Index> RangedIndex<Tbl, IndexType, Idx> {
     ///         /* ... */
     ///     }
     /// }
+    /// # }
     /// ```
     ///
     /// **NOTE:** An unfortunate interaction between Rust's trait solver and integer literal defaulting rules means that you must specify the types of integer literals passed to `filter` and `find` methods via the suffix syntax, like `21u32`.
@@ -526,6 +536,9 @@ impl<Tbl: Table, IndexType, Idx: Index> RangedIndex<Tbl, IndexType, Idx> {
     /// For example:
     ///
     /// ```no_run
+    /// # #[cfg(target_arch = "wasm32")] mod demo {
+    /// use spacetimedb::{table, ReducerContext, RangedIndex};
+    ///
     /// #[table(name = users,
     ///     index(name = dogs_and_name, btree(columns = [dogs, name])))]
     /// struct User {
@@ -552,6 +565,7 @@ impl<Tbl: Table, IndexType, Idx: Index> RangedIndex<Tbl, IndexType, Idx> {
     ///     // You can also pass arguments by reference if desired.
     ///     by_dogs_and_name.delete((&25u64, &"Joseph".to_string()));
     /// }
+    /// # }
     /// ```
     ///
     /// **NOTE:** An unfortunate interaction between Rust's trait solver and integer literal defaulting rules means that you must specify the types of integer literals passed to `filter` and `find` methods via the suffix syntax, like `21u32`.
@@ -574,7 +588,7 @@ impl<Tbl: Table, IndexType, Idx: Index> RangedIndex<Tbl, IndexType, Idx> {
     /// > 411 |     where
     /// > 412 |         B: IndexScanRangeBounds<IndexType, K>,
     /// >     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `RangedIndex::<Tbl, IndexType, Idx>::filter`
-    /// ```
+    /// > ```
     ///
     /// May panic if deleting any one of the rows would violate a constraint,
     /// though at present no such constraints exist.

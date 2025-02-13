@@ -58,9 +58,12 @@ pub use spacetimedb_bindings_macro::duration;
 ///
 /// ## Example:
 ///
-/// ```rust,ignore
+/// ```no_run
+/// # #[cfg(target_arch = "wasm32")] mod demo {
+/// use spacetimedb::{client_visibility_filter, Filter};
+///
 /// /// Players can only see what's in their chunk
-/// #[spacetimedb::client_visibility_filter]
+/// #[client_visibility_filter]
 /// const PLAYERS_SEE_ENTITIES_IN_SAME_CHUNK: Filter = Filter::Sql("
 ///     SELECT * FROM LocationState WHERE chunk_index IN (
 ///         SELECT chunk_index FROM LocationState WHERE entity_id IN (
@@ -68,6 +71,7 @@ pub use spacetimedb_bindings_macro::duration;
 ///         )
 ///     )
 /// ");
+/// # }
 /// ```
 ///
 /// Queries are not checked for syntactic or semantic validity
@@ -221,7 +225,6 @@ pub use spacetimedb_bindings_macro::client_visibility_filter;
 ///
 /// For example:
 /// ```ignore
-///
 /// let by_id_and_username: spacetimedb::RangedIndex<_, (u32, String), _> =
 ///     ctx.db.users().by_id_and_username();
 /// ```
@@ -278,19 +281,27 @@ pub use spacetimedb_bindings_macro::client_visibility_filter;
 /// This will be via a panic with [`Table::insert`] or via a `Result::Err` with [`Table::try_insert`].
 ///
 /// For example:
-/// ```rust
+/// ```no_run
+/// # #[cfg(target_arch = "wasm32")] mod demo {
+/// use spacetimedb::{
+///     table,
+///     reducer,
+///     ReducerContext,
+///     // Make sure to import the `Table` trait to use `insert` or `try_insert`.
+///     Table
+/// };
+/// 
 /// type CountryCode = String;
-/// type NationalBird = String;
 ///
 /// #[table(name = countries)]
 /// struct Country {
 ///     #[unique]
 ///     code: CountryCode,
-///     national_bird: NationalBird
+///     national_bird: String
 /// }
 ///
 /// #[reducer]
-/// fn insert_unique_demo(ctx: &ReducerContext, value: u64) {
+/// fn insert_unique_demo(ctx: &ReducerContext) {
 ///     let result = ctx.db.countries().try_insert(Country {
 ///         code: "AU".into(), national_bird: "Emu".into()
 ///     });
@@ -310,10 +321,11 @@ pub use spacetimedb_bindings_macro::client_visibility_filter;
 ///
 ///     // If we wanted to *update* the row for Australia, we can use the `update` method of `UniqueIndex`.
 ///     // The following line will succeed:
-///     ctx.db.countries().country_code().update(Country {
+///     ctx.db.countries().code().update(Country {
 ///         code: "AU".into(), national_bird: "Australian Emu".into()
 ///     });
 /// }
+/// # }
 /// ```
 ///
 /// ### `#[primary_key]`
@@ -408,11 +420,13 @@ pub use spacetimedb_bindings_macro::table;
 /// These arguments must implement the [`SpacetimeType`], [`Serialize`], and [`Deserialize`] traits.
 /// All of these traits can be derived at once by marking a type with `#[derive(SpacetimeType)]`.
 ///
-/// Reducers may return either `()` or `Result<(), E>` where `E: Debug`.
+/// Reducers may return either `()` or `Result<(), E>` where [`E: std::fmt::Display`](std::fmt::Display).
 ///
-/// ```rust,ignore
-/// use spacetimedb::reducer;
+/// ```no_run
+/// # #[cfg(target_arch = "wasm32")] mod demo {
+/// use spacetimedb::{reducer, SpacetimeType, ReducerContext};
 /// use log::info;
+/// use std::fmt;
 ///
 /// #[reducer]
 /// pub fn hello_world(context: &ReducerContext) {
@@ -424,16 +438,28 @@ pub use spacetimedb_bindings_macro::table;
 ///     // add a "person" to the database.
 /// }
 ///
-/// #[derive(SpacetimeType)]
+/// #[derive(SpacetimeType, Debug)]
 /// struct Coordinates {
 ///     x: f32,
 ///     y: f32,
 /// }
 ///
-/// #[derive(Debug)]
 /// enum AddPlaceError {
 ///     InvalidCoordinates(Coordinates),
 ///     InvalidName(String),
+/// }
+///
+/// impl fmt::Display for AddPlaceError {
+///     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+///         match self {
+///             AddPlaceError::InvalidCoordinates(coords) => {
+///                 write!(f, "invalid coordinates: {coords:?}")
+///             },
+///             AddPlaceError::InvalidName(name) => {
+///                 write!(f, "invalid name: {name:?}")
+///             },
+///         }
+///     }
 /// }
 ///
 /// #[reducer]
@@ -444,8 +470,10 @@ pub use spacetimedb_bindings_macro::table;
 ///     y: f32,
 ///     area: f32,
 /// ) -> Result<(), AddPlaceError> {
-///     // add a "place" to the database.
+///     // ... add a place to the database...
+///     # Ok(())
 /// }
+/// # }
 /// ```
 ///
 /// Reducers may fail by returning a [`Result::Err`](std::result::Result) or by [panicking](std::panic!).
@@ -477,31 +505,33 @@ pub use spacetimedb_bindings_macro::table;
 /// These reducers cannot be called manually
 /// and may not have any parameters except for `ReducerContext`.
 ///
-/// ### `#[spacetimedb::reducer(init)]`
+/// ### The `init` reducer
 ///
-/// This reducer is run the first time a module is published
-/// and any time the database is cleared.
+/// This reducer is marked with `#[spacetimedb::reducer(init)]`. It is run the first time a module is published
+/// and any time the database is cleared. (It does not have to be named `init`.)
 ///
 /// If an error occurs when initializing, the module will not be published.
 ///
-/// ### `#[spacetimedb::reducer(client_connected)]`
+/// This reducer can be used to configure any static data tables used by your module. It can also be used to start running [scheduled reducers](#scheduled-reducers).
 ///
-/// This reducer is run when a client connects to the SpacetimeDB module.
+/// ### The `client_connected` reducer
+///
+/// This reducer is marked with `#[spacetimedb::reducer(client_connected)]`. It is run when a client connects to the SpacetimeDB module.
 /// Their identity can be found in the sender value of the `ReducerContext`.
 ///
 /// If an error occurs in the reducer, the client will be disconnected.
 ///
-/// ### `#[spacetimedb::reducer(client_disconnected)]`
+/// ### The `client_disconnected` reducer
 ///
-/// This reducer is run when a client disconnects from the SpacetimeDB module.
+/// This reducer is marked with `#[spacetimedb::reducer(client_disconnected)]`. It is run when a client disconnects from the SpacetimeDB module.
 /// Their identity can be found in the sender value of the `ReducerContext`.
 ///
 /// If an error occurs in the disconnect reducer,
 /// the client is still recorded as disconnected.
 ///
-/// ### `#[spacetimedb::reducer(update)]`
+/// ### The `update` reducer
 ///
-/// This reducer is run when the module is updated,
+/// This reducer is marked with `#[spacetimedb::reducer(update)]`. It is run when the module is updated,
 /// i.e., when publishing a module for a database that has already been initialized.
 ///
 /// If an error occurs when updating, the module will not be published,
@@ -522,9 +552,9 @@ pub use spacetimedb_bindings_macro::table;
 /// A [`ScheduleAt`] can be created from a [`spacetimedb::Timestamp`](crate::Timestamp), in which case the reducer will be scheduled once,
 /// or from a [`std::time::Duration`], in which case the reducer will be scheduled in a loop. In either case the conversion can be performed using [`Into::into`].
 ///
-/// ```rust
-/// use spacetime::{table, reducer, Timestamp, ScheduleAt, Table}
-/// use std::time::Duration;
+/// ```no_run
+/// # #[cfg(target_arch = "wasm32")] mod demo {
+/// use spacetimedb::{table, reducer, ReducerContext, Timestamp, TimeDuration, ScheduleAt, Table};
 /// use log::debug;
 ///
 /// // First, we declare the table with scheduling information.
@@ -536,11 +566,10 @@ pub use spacetimedb_bindings_macro::table;
 ///
 ///     /// An identifier for the scheduled reducer call.
 ///     #[primary_key]
-///     #[autoinc]
+///     #[auto_inc]
 ///     scheduled_id: u64,
 ///
 ///     /// Information about when the reducer should be called.
-///     #[scheduled_at]
 ///     scheduled_at: ScheduleAt,
 ///
 ///     // After the mandatory fields, any number of fields can be added.
@@ -561,7 +590,9 @@ pub use spacetimedb_bindings_macro::table;
 /// fn send_message(ctx: &ReducerContext, arg: SendMessageSchedule) -> Result<(), String> {
 ///     let message_to_send = arg.text;
 ///
-///     // ... send the message ..
+///     // ... send the message ...
+///
+///     Ok(())
 /// }
 ///
 /// // Now, we want to actually start scheduling reducers.
@@ -571,8 +602,10 @@ pub use spacetimedb_bindings_macro::table;
 ///
 ///     let current_time = ctx.timestamp;
 ///
-///     let future_timestamp: Timestamp = ctx.timestamp.plus(Duration::from_secs(10)).into();
-///     ctx.db.send_message_timer().insert(SendMessageTimer {
+///     let ten_seconds = TimeDuration::from_micros(10_000_000);
+///
+///     let future_timestamp: Timestamp = ctx.timestamp + ten_seconds;
+///     ctx.db.send_message_schedule().insert(SendMessageSchedule {
 ///         scheduled_id: 1,
 ///         text:"I'm a bot sending a message one time".to_string(),
 ///
@@ -581,8 +614,8 @@ pub use spacetimedb_bindings_macro::table;
 ///         scheduled_at: future_timestamp.into()
 ///     });
 ///
-///     let loop_duration: Duration = Duration::from_secs(10);
-///     ctx.db.send_message_timer().insert(SendMessageTimer {
+///     let loop_duration: TimeDuration = ten_seconds;
+///     ctx.db.send_message_schedule().insert(SendMessageSchedule {
 ///         scheduled_id: 0,
 ///         text:"I'm a bot sending a message every 10 seconds".to_string(),
 ///
@@ -591,6 +624,7 @@ pub use spacetimedb_bindings_macro::table;
 ///         scheduled_at: loop_duration.into()
 ///     });
 /// }
+/// # }
 /// ```
 ///
 /// Scheduled reducers are called on a best-effort basis and may be slightly delayed in their execution
@@ -609,7 +643,8 @@ pub use spacetimedb_bindings_macro::reducer;
 ///
 /// This trait associates a [table handle](crate::Table) type to a table row type. Code like:
 ///
-/// ```rust
+/// ```no_run
+/// # #![cfg(target_arch = "wasm32")]
 /// #[spacetimedb::table(name = people)]
 /// struct Person {
 ///    #[unique]
@@ -664,9 +699,12 @@ pub struct ReducerContext {
     /// For a table named *table*, use `ctx.db.{table}()` to get a handle.
     /// For example:
     /// ```no_run
+    /// # mod demo { // work around doctest+index issue
+    /// # #![cfg(target_arch = "wasm32")]
     /// use spacetimedb::{table, reducer, ReducerContext};
     ///
     /// #[table(name = books)]
+    /// #[derive(Debug)]
     /// struct Book {
     ///     #[primary_key]
     ///     id: u64,
@@ -678,13 +716,14 @@ pub struct ReducerContext {
     ///
     /// #[reducer]
     /// fn find_books_by(ctx: &ReducerContext, author: String) {
-    ///     let books: books__TableHandle = ctx.books();
+    ///     let books: &books__TableHandle = ctx.db.books();
     ///
-    ///     log::debug("looking up books by {author}...");
-    ///     for book in books.author().filter(author) {
-    ///         log::debug("- {book:?}");
+    ///     log::debug!("looking up books by {author}...");
+    ///     for book in books.author().filter(&author) {
+    ///         log::debug!("- {book:?}");
     ///     }
     /// }
+    /// # }
     /// ```
     /// See the [`#[table]`](macro@crate::table) macro for more information.
     pub db: Local,
