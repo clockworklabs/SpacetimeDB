@@ -1,4 +1,5 @@
 #![doc = include_str!("../README.md")]
+// ^ if you are working on docs, go read the top comment of README.md please.
 
 mod client_visibility_filter;
 pub mod log_stopwatch;

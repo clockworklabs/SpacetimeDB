@@ -1,8 +1,22 @@
 # SpacetimeDB Rust Module Library
 
 <!-- n.b. This file is used as the top-level library documentation in `src/lib.rs`.
-            Some of the links in this file are not resolved when previewing on GitHub,
-            but *are* resolved when compiled by Rustdoc.
+          Some of the links in this file are not resolved when previewing on GitHub,
+          but *are* resolved when compiled by Rustdoc.
+
+          To run the doctests, run the `./bindings-doctests.sh` script.
+          This works around some issues related to doctests and wasm, but it requires nightly,
+          so it isn't currently run on CI.
+
+          When you add a doc-tested code sample, make sure to copy the boilerplate around
+          some other code sample, the:
+          ```no_run
+          # #[cfg(target_arch = "wasm32")] mod demo {
+          // code
+          # }
+          ```
+          This makes sure your samples don't break when tested on non-wasm;
+          but you need to use `./bindings-doctests.sh` to actually test them.
 -->
 
 [SpacetimeDB](https://spacetimedb.com/) allows using the Rust language to write server-side applications called **modules**. Modules run inside a relational database. They have direct access to database tables, and expose public functions called **reducers** that can be invoked over the network. Clients connect directly to the database to read data.
