@@ -12,7 +12,7 @@ use spacetimedb_sats::{impl_deserialize, impl_serialize, impl_st, AlgebraicType,
 /// A `ConnectionId` is a 128-bit unsigned integer. This can be serialized in various ways.
 /// - In JSON, an `ConnectionId` is represented as a BARE DECIMAL number.
 ///   This requires some care when deserializing; see
-///   [https://stackoverflow.com/questions/69644298/how-to-make-json-parse-to-treat-all-the-numbers-as-bigint]
+///   <https://stackoverflow.com/questions/69644298/how-to-make-json-parse-to-treat-all-the-numbers-as-bigint>
 /// - In BSATN, a `ConnectionId` is represented as a LITTLE-ENDIAN number 16 bytes long.
 /// - In memory, a `ConnectionId` is stored as a 128-bit number with the endianness of the host system.
 //

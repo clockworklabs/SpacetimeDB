@@ -29,7 +29,7 @@ impl_st!([] ScheduleAt, ScheduleAt::get_type());
 impl ScheduleAt {
     /// Converts the `ScheduleAt` to a `std::time::Duration` from now.
     ///
-    /// Returns [`Duration::ZERO`] if `self` represents a time in the past.
+    /// Returns [`std::time::Duration::ZERO`] if `self` represents a time in the past.
     #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
     pub fn to_duration_from_now(&self) -> std::time::Duration {
         use std::time::{Duration, SystemTime};

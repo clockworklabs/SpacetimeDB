@@ -122,9 +122,7 @@ pub struct RawIndexDefV8 {
 }
 
 impl RawIndexDefV8 {
-    /// Creates a new [IndexDef] with the provided parameters.
-    ///
-    /// WARNING: Only [IndexType::Btree] is supported for now...
+    /// Creates a new [RawIndexDefV8] with the provided parameters.
     ///
     /// # Parameters
     ///
@@ -140,7 +138,7 @@ impl RawIndexDefV8 {
         }
     }
 
-    /// Creates an [IndexDef] of type [IndexType::BTree] for a specific column of a table.
+    /// Creates an [RawIndexDefV8] for a specific column of a table.
     ///
     /// This method generates an index name based on the table name, index name, column positions, and uniqueness constraint.
     ///
@@ -205,7 +203,7 @@ impl RawColumnDefV8 {
 }
 
 impl RawColumnDefV8 {
-    /// Creates a new [ColumnDef] for a system field with the specified data type.
+    /// Creates a new [RawColumnDefV8] for a system field with the specified data type.
     ///
     /// This method is typically used to define system columns with predefined names and data types.
     ///
@@ -237,7 +235,7 @@ pub struct RawConstraintDefV8 {
 }
 
 impl RawConstraintDefV8 {
-    /// Creates a new [ConstraintDef] with the specified parameters.
+    /// Creates a new [RawConstraintDefV8] with the specified parameters.
     ///
     /// # Parameters
     ///
@@ -384,7 +382,7 @@ impl RawTableDefV8 {
         generate_cols_name(columns, |p| self.get_column(p.idx()).map(|c| &*c.col_name))
     }
 
-    /// Generate a [ConstraintDef] using the supplied `columns`.
+    /// Generate a [RawConstraintDefV8] using the supplied `columns`.
     pub fn with_column_constraint(mut self, kind: Constraints, columns: impl Into<ColList>) -> Self {
         self.constraints.push(self.gen_constraint_def(kind, columns));
         self
@@ -402,7 +400,7 @@ impl RawTableDefV8 {
         x
     }
 
-    /// Generate a [IndexDef] using the supplied `columns`.
+    /// Generate a [RawIndexDefV8] using the supplied `columns`.
     pub fn with_column_index(self, columns: impl Into<ColList>, is_unique: bool) -> Self {
         let mut x = self;
         let columns = columns.into();
@@ -457,7 +455,7 @@ impl RawTableDefV8 {
         )
     }
 
-    /// Get an iterator deriving [IndexDef] from the constraints that require them like `UNIQUE`.
+    /// Get an iterator deriving [RawIndexDefV8]s from the constraints that require them like `UNIQUE`.
     ///
     /// It looks into [Self::constraints] for possible duplicates and remove them from the result
     pub fn generated_indexes(&self) -> impl Iterator<Item = RawIndexDefV8> + '_ {
@@ -490,9 +488,9 @@ impl RawTableDefV8 {
             .filter(|seq| self.sequences.iter().all(|x| x.sequence_name != seq.sequence_name))
     }
 
-    /// Get an iterator deriving [ConstraintDef] from the indexes that require them like `UNIQUE`.
+    /// Get an iterator deriving [RawConstraintDefV8] from the indexes that require them like `UNIQUE`.
     ///
-    /// It looks into [Self::constraints] for possible duplicates and remove them from the result
+    /// It looks into Self::constraints for possible duplicates and remove them from the result
     pub fn generated_constraints(&self) -> impl Iterator<Item = RawConstraintDefV8> + '_ {
         // Collect the set of all col-lists with a constraint.
         let cols: HashSet<_> = self
@@ -511,7 +509,7 @@ impl RawTableDefV8 {
             .map(|idx| self.gen_constraint_def(Constraints::from_is_unique(idx.is_unique), idx.columns.clone()))
     }
 
-    /// Check if the `name` of the [FieldName] exist on this [TableDef]
+    /// Check if the `name` of the [FieldName] exist on this [RawTableDefV8]
     ///
     /// Warning: It ignores the `table_id`
     pub fn get_column_by_field(&self, field: FieldName) -> Option<&RawColumnDefV8> {
@@ -523,7 +521,7 @@ impl RawTableDefV8 {
         self.columns.get(pos)
     }
 
-    /// Check if the `col_name` exist on this [TableSchema]
+    /// Check if the `col_name` exist on this [RawTableDefV8]
     ///
     /// Warning: It ignores the `table_name`
     pub fn get_column_by_name(&self, col_name: &str) -> Option<&RawColumnDefV8> {

@@ -217,7 +217,8 @@ pub enum RawModuleDef {
     // but I'm not sure if that can be done via the Deserialize trait.
 }
 
-/// A builder for a [`ModuleDef`].
+/// A builder for a [`RawModuleDefV8`].
+/// Deprecated.
 #[derive(Default)]
 pub struct ModuleDefBuilder {
     /// The module definition.

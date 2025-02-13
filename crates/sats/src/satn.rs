@@ -8,7 +8,7 @@ use core::fmt;
 use core::fmt::Write as _;
 use derive_more::{From, Into};
 
-/// An extension trait for [`Serialize`](ser::Serialize) providing formatting methods.
+/// An extension trait for [`Serialize`] providing formatting methods.
 pub trait Satn: ser::Serialize {
     /// Formats the value using the SATN data format into the formatter `f`.
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {

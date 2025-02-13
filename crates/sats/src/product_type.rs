@@ -26,14 +26,16 @@ pub const TIME_DURATION_TAG: &str = "__time_duration_micros__";
 /// e.g., the names of its fields and their types in the case of a record.
 /// The name "product" comes from category theory.
 ///
-/// See also: https://ncatlab.org/nlab/show/product+type.
+/// See also:
+/// - <https://en.wikipedia.org/wiki/Record_(computer_science)>
+/// - <https://ncatlab.org/nlab/show/product+type>
 ///
 /// These structures are known as product types because the number of possible values in product
-/// ```ignore
+/// ```text
 /// { N_0: T_0, N_1: T_1, ..., N_n: T_n }
 /// ```
 /// is:
-/// ```ignore
+/// ```text
 /// Π (i ∈ 0..n). values(T_i)
 /// ```
 /// so for example, `values({ A: U64, B: Bool }) = values(U64) * values(Bool)`.
