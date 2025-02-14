@@ -4,15 +4,17 @@ use std::ffi::OsString;
 use std::future::Future;
 use std::process::ExitCode;
 
-use anyhow::Context;
 use spacetimedb_paths::{RootDir, SpacetimePaths};
 
 mod install;
 mod link;
 mod list;
+mod self_install;
 mod uninstall;
 mod upgrade;
 mod r#use;
+
+pub use self_install::SelfInstall;
 
 /// Manage installed spacetime versions
 #[derive(clap::Parser)]
@@ -38,26 +40,7 @@ impl Args {
                 crate::proxy::run_cli(Some(&paths), None, cli_args)
             }
             Subcommand::Version(version) => version.exec(&paths).map(|()| ExitCode::SUCCESS),
-            Subcommand::SelfInstall { install_latest } => {
-                let current_exe = std::env::current_exe().context("could not get current exe")?;
-                let suppress_eexists = |r: std::io::Result<()>| {
-                    r.or_else(|e| (e.kind() == std::io::ErrorKind::AlreadyExists).then_some(()).ok_or(e))
-                };
-                suppress_eexists(paths.cli_bin_dir.create()).context("could not create bin dir")?;
-                suppress_eexists(paths.cli_config_dir.create()).context("could not create config dir")?;
-                suppress_eexists(paths.data_dir.create()).context("could not create data dir")?;
-                paths
-                    .cli_bin_file
-                    .create_parent()
-                    .and_then(|()| std::fs::copy(&current_exe, &paths.cli_bin_file))
-                    .context("could not install binary")?;
-
-                if install_latest {
-                    upgrade::Upgrade {}.exec(&paths)?;
-                }
-
-                Ok(ExitCode::SUCCESS)
-            }
+            Subcommand::SelfInstall(self_install) => self_install.exec(),
         }
     }
 }
@@ -70,11 +53,7 @@ enum Subcommand {
         #[clap(allow_hyphen_values = true)]
         args: Vec<OsString>,
     },
-    SelfInstall {
-        /// Download and install the latest CLI version after self-installing.
-        #[arg(long)]
-        install_latest: bool,
-    },
+    SelfInstall(SelfInstall),
 }
 
 #[derive(clap::Args)]
@@ -127,12 +106,15 @@ struct ForceYes {
 }
 
 impl ForceYes {
-    fn confirm(self, prompt: String) -> anyhow::Result<bool> {
+    fn confirm_with_default(self, prompt: String, default: bool) -> anyhow::Result<bool> {
         let yes = self.yes
             || dialoguer::Confirm::new()
                 .with_prompt(prompt)
-                .default(false)
+                .default(default)
                 .interact()?;
         Ok(yes)
+    }
+    fn confirm(self, prompt: String) -> anyhow::Result<bool> {
+        self.confirm_with_default(prompt, false)
     }
 }
