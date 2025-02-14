@@ -194,6 +194,18 @@ impl RootDir {
     pub fn data_dir(&self) -> server::ServerDataDir {
         server::ServerDataDir(self.0.join("data"))
     }
+
+    fn from_paths(paths: &SpacetimePaths) -> Option<Self> {
+        let SpacetimePaths {
+            cli_config_dir,
+            cli_bin_file,
+            cli_bin_dir,
+            data_dir,
+        } = paths;
+        let parent = cli_config_dir.0.parent()?;
+        let parents = [cli_bin_file.0.parent()?, cli_bin_dir.0.parent()?, data_dir.0.parent()?];
+        parents.iter().all(|x| *x == parent).then(|| Self(parent.to_owned()))
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -247,6 +259,10 @@ impl SpacetimePaths {
             cli_bin_dir: dir.cli_bin_dir(),
             data_dir: dir.data_dir(),
         }
+    }
+
+    pub fn to_root_dir(&self) -> Option<RootDir> {
+        RootDir::from_paths(self)
     }
 }
 
