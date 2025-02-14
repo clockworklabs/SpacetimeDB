@@ -7,7 +7,6 @@ on:
     branches:
       - master
       - release/*
-      - noa/package-update-bin-itself
 
 jobs:
   build-cli:
