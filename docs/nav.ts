@@ -34,7 +34,7 @@ const nav: Nav = {
     page('Getting Started', 'getting-started', 'getting-started.md'),
 
     section('Deploying'),
-    page('Maincloud', 'deploying/testnet', 'deploying/testnet.md'),
+    page('Maincloud', 'deploying/maincloud', 'deploying/maincloud.md'),
 
     section('Migration Guides'),
     page('v0.12', 'migration/v0.12', 'migration/v0.12.md'),
