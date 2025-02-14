@@ -4,7 +4,7 @@ The SpacetimeDB Cloud is a managed cloud service that provides developers an eas
 
 ## Deploy via CLI
 
-1. Install the SpacetimeDB CLI and create your module (see [Getting Started](/getting-started))
+1. Install the SpacetimeDB CLI and create your module (see [Getting Started](/docs/getting-started))
 1. Publish to maincloud:
 
 ```bash
