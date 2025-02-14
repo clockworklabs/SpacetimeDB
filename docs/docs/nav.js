@@ -10,7 +10,7 @@ const nav = {
         page('Overview', 'index', 'index.md'), // TODO(BREAKING): For consistency & clarity, 'index' slug should be renamed 'intro'?
         page('Getting Started', 'getting-started', 'getting-started.md'),
         section('Deploying'),
-        page('Testnet', 'deploying/testnet', 'deploying/testnet.md'),
+        page('Maincloud', 'deploying/maincloud', 'deploying/maincloud.md'),
         section('Migration Guides'),
         page('v0.12', 'migration/v0.12', 'migration/v0.12.md'),
         section('Unity Tutorial - Basic Multiplayer'),
