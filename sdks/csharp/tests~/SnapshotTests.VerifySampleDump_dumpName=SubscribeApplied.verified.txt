@@ -591,10 +591,7 @@
       requestsAwaitingResponse: 6
     },
     OneOffRequestTracker: {},
-    SubscriptionRequestTracker: {
-      sampleCount: 1,
-      requestsAwaitingResponse: 2
-    },
+    SubscriptionRequestTracker: {},
     AllReducersTracker: {
       sampleCount: 9
     },

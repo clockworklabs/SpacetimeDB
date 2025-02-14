@@ -16,6 +16,8 @@ namespace SpacetimeDB.ClientApi
         OneOffQueryResponse OneOffQueryResponse,
         SubscribeApplied SubscribeApplied,
         UnsubscribeApplied UnsubscribeApplied,
-        SubscriptionError SubscriptionError
+        SubscriptionError SubscriptionError,
+        SubscribeMultiApplied SubscribeMultiApplied,
+        UnsubscribeMultiApplied UnsubscribeMultiApplied
     )>;
 }

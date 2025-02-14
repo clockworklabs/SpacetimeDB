@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using SpacetimeDB.ClientApi;
 
 namespace SpacetimeDB
@@ -89,8 +90,8 @@ namespace SpacetimeDB
         }
 
         public SubscriptionHandle<SubscriptionEventContext, ErrorContext> Subscribe(
-            string querySql
-        ) => new(conn, Applied, Error, querySql);
+            string[] querySqls
+        ) => new(conn, Applied, Error, querySqls);
 
         public void SubscribeToAllTables()
         {
@@ -224,14 +225,14 @@ namespace SpacetimeDB
             IDbConnection conn,
             Action<SubscriptionEventContext>? onApplied,
             Action<ErrorContext, Exception>? onError,
-            string querySql
+            string[] querySqls
         )
         {
             state = new SubscriptionState.Pending(new());
             this.onApplied = onApplied;
             this.onError = onError;
             this.conn = conn;
-            conn.Subscribe(this, querySql);
+            conn.Subscribe(this, querySqls);
         }
 
         /// <summary>
@@ -254,10 +255,15 @@ namespace SpacetimeDB
             {
                 throw new Exception("Cannot unsubscribe from inactive subscription.");
             }
-            if (onEnded != null)
+            if (this.onEnded != null)
             {
                 // TODO: should we just log here instead? Do we try not to throw exceptions on the main thread?
                 throw new Exception("Unsubscribe already called.");
+            }
+            if (onEnded == null)
+            {
+                // We need to put something in there to use this as a boolean. Shrug emoji
+                onEnded = (ctx) => { };
             }
             this.onEnded = onEnded;
         }

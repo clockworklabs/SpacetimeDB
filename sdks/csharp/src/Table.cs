@@ -1,8 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
-
 using SpacetimeDB.BSATN;
 
 namespace SpacetimeDB
@@ -24,15 +24,30 @@ namespace SpacetimeDB
 
         internal Type ClientTableType { get; }
         internal IEnumerable<KeyValuePair<byte[], IStructuralReadWrite>> IterEntries();
-        internal bool InsertEntry(byte[] rowBytes, IStructuralReadWrite value);
-        internal bool DeleteEntry(byte[] rowBytes);
         internal IStructuralReadWrite DecodeValue(byte[] bytes);
 
-        internal void InvokeInsert(IEventContext context, IStructuralReadWrite row);
-        internal void InvokeDelete(IEventContext context, IStructuralReadWrite row);
-        internal void InvokeBeforeDelete(IEventContext context, IStructuralReadWrite row);
-        internal void InvokeUpdate(IEventContext context, IStructuralReadWrite oldRow, IStructuralReadWrite newRow);
+        /// <summary>
+        /// Start applying a delta to the table.
+        /// This is called for all tables before any updates are actually applied, allowing OnBeforeDelete to be invoked correctly.
+        /// </summary>
+        /// <param name="multiDictionaryDelta"></param>
+        internal void PreApply(IEventContext context, MultiDictionaryDelta<object, DbValue> multiDictionaryDelta);
+
+        /// <summary>
+        /// Apply a delta to the table.
+        /// Should not invoke any user callbacks, since not all tables have been updated yet.
+        /// Should fix up indices, to be ready for PostApply.
+        /// </summary>
+        /// <param name="multiDictionaryDelta"></param>
+        internal void Apply(IEventContext context, MultiDictionaryDelta<object, DbValue> multiDictionaryDelta);
+
+        /// <summary>
+        /// Finish applying a delta to a table.
+        /// This is when row callbacks (besides OnBeforeDelete) actually happen.
+        /// </summary>
+        internal void PostApply(IEventContext context);
     }
+
 
     public abstract class RemoteTableHandle<EventContext, Row> : RemoteBase, IRemoteTableHandle
         where EventContext : class, IEventContext
@@ -105,6 +120,7 @@ namespace SpacetimeDB
         // TODO: figure out if they can be merged into regular OnInsert / OnDelete.
         // I didn't do that because that delays the index updates until after the row is processed.
         // In theory, that shouldn't be the issue, but I didn't want to break it right before leaving :)
+        //          - Ingvar
         private event Action<Row>? OnInternalInsert;
         private event Action<Row>? OnInternalDelete;
 
@@ -114,47 +130,19 @@ namespace SpacetimeDB
         // These are provided by RemoteTableHandle.
         Type IRemoteTableHandle.ClientTableType => typeof(Row);
 
-        private readonly Dictionary<byte[], Row> Entries = new(Internal.ByteArrayComparer.Instance);
+        // THE DATA IN THE TABLE.
+        // The keys of this map are:
+        // - Primary keys, if we have them.
+        // - Byte arrays, if we don't.
+        // But really, the keys are whatever SpacetimeDBClient chooses to give us.
+        //
+        // We store the BSATN encodings of objects next to their runtime representation.
+        // This is memory-inefficient, but allows us to quickly compare objects when seeing if an update is a "real"
+        // update or just a multiplicity change.
+        private readonly MultiDictionary<object, DbValue> Entries = new(GenericEqualityComparer.Instance, DbValueComparer.Instance);
 
         IEnumerable<KeyValuePair<byte[], IStructuralReadWrite>> IRemoteTableHandle.IterEntries() =>
-            Entries.Select(kv => new KeyValuePair<byte[], IStructuralReadWrite>(kv.Key, kv.Value));
-
-        /// <summary>
-        /// Inserts the value into the table. There can be no existing value with the provided BSATN bytes.
-        /// </summary>
-        /// <param name="rowBytes">The BSATN encoded bytes of the row to retrieve.</param>
-        /// <param name="value">The parsed row encoded by the <paramref>rowBytes</paramref>.</param>
-        /// <returns>True if the row was inserted, false if the row wasn't inserted because it was a duplicate.</returns>
-        bool IRemoteTableHandle.InsertEntry(byte[] rowBytes, IStructuralReadWrite value)
-        {
-            var row = (Row)value;
-            if (Entries.TryAdd(rowBytes, row))
-            {
-                OnInternalInsert?.Invoke(row);
-                return true;
-            }
-            else
-            {
-                return false;
-            }
-        }
-
-        /// <summary>
-        /// Deletes a value from the table.
-        /// </summary>
-        /// <param name="rowBytes">The BSATN encoded bytes of the row to remove.</param>
-        /// <returns>True if and only if the value was previously resident and has been deleted.</returns>
-        bool IRemoteTableHandle.DeleteEntry(byte[] rowBytes)
-        {
-            if (Entries.Remove(rowBytes, out var row))
-            {
-                OnInternalDelete?.Invoke(row);
-                return true;
-            }
-
-            Log.Warn("Deleting value that we don't have (no cached value available)");
-            return false;
-        }
+            Entries.Entries.Select(kv => new KeyValuePair<byte[], IStructuralReadWrite>(kv.Value.bytes, kv.Value.value));
 
         // The function to use for decoding a type value.
         IStructuralReadWrite IRemoteTableHandle.DecodeValue(byte[] bytes) => BSATNHelpers.Decode<Row>(bytes);
@@ -167,23 +155,181 @@ namespace SpacetimeDB
         public delegate void UpdateEventHandler(EventContext context, Row oldRow, Row newRow);
         public event UpdateEventHandler? OnUpdate;
 
-        public int Count => Entries.Count;
+        public int Count => (int)Entries.CountDistinct;
 
-        public IEnumerable<Row> Iter() => Entries.Values;
+        public IEnumerable<Row> Iter() => Entries.Entries.Select(entry => (Row)entry.Value.value);
 
         public Task<Row[]> RemoteQuery(string query) =>
             conn.RemoteQuery<Row>($"SELECT {RemoteTableName}.* FROM {RemoteTableName} {query}");
 
-        void IRemoteTableHandle.InvokeInsert(IEventContext context, IStructuralReadWrite row) =>
-            OnInsert?.Invoke((EventContext)context, (Row)row);
+        void InvokeInsert(IEventContext context, IStructuralReadWrite row)
+        {
+            try
+            {
+                OnInsert?.Invoke((EventContext)context, (Row)row);
+            }
+            catch (Exception e)
+            {
+                Log.Exception(e);
+            }
+        }
 
-        void IRemoteTableHandle.InvokeDelete(IEventContext context, IStructuralReadWrite row) =>
-            OnDelete?.Invoke((EventContext)context, (Row)row);
+        void InvokeDelete(IEventContext context, IStructuralReadWrite row)
+        {
+            try
+            {
+                OnDelete?.Invoke((EventContext)context, (Row)row);
+            }
+            catch (Exception e)
+            {
+                Log.Exception(e);
+            }
+        }
 
-        void IRemoteTableHandle.InvokeBeforeDelete(IEventContext context, IStructuralReadWrite row) =>
-            OnBeforeDelete?.Invoke((EventContext)context, (Row)row);
+        void InvokeBeforeDelete(IEventContext context, IStructuralReadWrite row)
+        {
+            try
+            {
+                OnBeforeDelete?.Invoke((EventContext)context, (Row)row);
+            }
+            catch (Exception e)
+            {
+                Log.Exception(e);
+            }
+        }
 
-        void IRemoteTableHandle.InvokeUpdate(IEventContext context, IStructuralReadWrite oldRow, IStructuralReadWrite newRow) =>
-            OnUpdate?.Invoke((EventContext)context, (Row)oldRow, (Row)newRow);
+        void InvokeUpdate(IEventContext context, IStructuralReadWrite oldRow, IStructuralReadWrite newRow)
+        {
+            try
+            {
+                OnUpdate?.Invoke((EventContext)context, (Row)oldRow, (Row)newRow);
+            }
+            catch (Exception e)
+            {
+                Log.Exception(e);
+            }
+        }
+
+        List<KeyValuePair<object, DbValue>> wasInserted = new();
+        List<(object key, DbValue oldValue, DbValue newValue)> wasUpdated = new();
+        List<KeyValuePair<object, DbValue>> wasRemoved = new();
+
+        void IRemoteTableHandle.PreApply(IEventContext context, MultiDictionaryDelta<object, DbValue> multiDictionaryDelta)
+        {
+            Debug.Assert(wasInserted.Count == 0 && wasUpdated.Count == 0 && wasRemoved.Count == 0, "Call Apply and PostApply before calling PreApply again");
+
+            foreach (var (_, value) in Entries.WillRemove(multiDictionaryDelta))
+            {
+                InvokeBeforeDelete(context, value.value);
+            }
+        }
+
+        void IRemoteTableHandle.Apply(IEventContext context, MultiDictionaryDelta<object, DbValue> multiDictionaryDelta)
+        {
+            try
+            {
+                Entries.Apply(multiDictionaryDelta, wasInserted, wasUpdated, wasRemoved);
+            }
+            catch (Exception e)
+            {
+                var deltaString = multiDictionaryDelta.ToString();
+                deltaString = deltaString[..Math.Min(deltaString.Length, 10_000)];
+                var entriesString = Entries.ToString();
+                entriesString = entriesString[..Math.Min(entriesString.Length, 10_000)];
+                throw new Exception($"While table `{RemoteTableName}` was applying:\n{deltaString} \nto:\n{entriesString}", e);
+            }
+
+            // Update indices.
+            // This is a local operation -- it only looks at our indices and doesn't invoke user code.
+            // So we don't need to wait for other tables to be updated to do it.
+            // (And we need to do it before any PostApply is called.)
+            foreach (var (_, value) in wasInserted)
+            {
+                if (value.value is Row newRow)
+                {
+                    OnInternalInsert?.Invoke(newRow);
+                }
+                else
+                {
+                    throw new Exception($"Invalid row type for table {RemoteTableName}: {value.value.GetType().Name}");
+                }
+            }
+            foreach (var (_, oldValue, newValue) in wasUpdated)
+            {
+                if (oldValue.value is Row oldRow)
+                {
+                    OnInternalDelete?.Invoke((Row)oldValue.value);
+                }
+                else
+                {
+                    throw new Exception($"Invalid row type for table {RemoteTableName}: {oldValue.value.GetType().Name}");
+                }
+
+
+                if (newValue.value is Row newRow)
+                {
+                    OnInternalInsert?.Invoke(newRow);
+                }
+                else
+                {
+                    throw new Exception($"Invalid row type for table {RemoteTableName}: {newValue.value.GetType().Name}");
+                }
+            }
+
+            foreach (var (_, value) in wasRemoved)
+            {
+                if (value.value is Row oldRow)
+                {
+                    OnInternalDelete?.Invoke(oldRow);
+                }
+            }
+        }
+
+        void IRemoteTableHandle.PostApply(IEventContext context)
+        {
+            foreach (var (_, value) in wasInserted)
+            {
+                InvokeInsert(context, value.value);
+            }
+            foreach (var (_, oldValue, newValue) in wasUpdated)
+            {
+                InvokeUpdate(context, oldValue.value, newValue.value);
+            }
+            foreach (var (_, value) in wasRemoved)
+            {
+                InvokeDelete(context, value.value);
+            }
+            wasInserted.Clear();
+            wasUpdated.Clear();
+            wasRemoved.Clear();
+
+        }
+    }
+
+    /// <summary>
+    /// Compare objects for equality. If they are byte arrays, use Internal.ByteArrayComparer.
+    /// </summary>
+    internal readonly struct GenericEqualityComparer : IEqualityComparer<object>
+    {
+        public static GenericEqualityComparer Instance = new();
+
+        public new bool Equals(object x, object y)
+        {
+            if (x is byte[] x_ && y is byte[] y_)
+            {
+                return Internal.ByteArrayComparer.Instance.Equals(x_, y_);
+            }
+            return x.Equals(y); // MAKE SURE to use .Equals and not ==... that was a bug.
+        }
+
+        public int GetHashCode(object obj)
+        {
+            if (obj is byte[] obj_)
+            {
+                return Internal.ByteArrayComparer.Instance.GetHashCode(obj_);
+            }
+            return obj.GetHashCode();
+        }
+
     }
 }
