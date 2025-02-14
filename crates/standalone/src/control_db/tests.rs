@@ -2,14 +2,15 @@ use std::str::FromStr;
 
 use once_cell::sync::Lazy;
 use spacetimedb::messages::control_db::HostType;
+use spacetimedb_client_api::auth::LOCALHOST;
 use spacetimedb_lib::error::ResultTest;
 use spacetimedb_lib::Hash;
 use tempfile::TempDir;
 
 use super::*;
 
-static ALICE: Lazy<Identity> = Lazy::new(|| Identity::from_hashing_bytes("alice"));
-static BOB: Lazy<Identity> = Lazy::new(|| Identity::from_hashing_bytes("bob"));
+static ALICE: Lazy<Identity> = Lazy::new(|| Identity::from_claims(LOCALHOST, "alice"));
+static BOB: Lazy<Identity> = Lazy::new(|| Identity::from_claims(LOCALHOST, "bob"));
 
 #[test]
 fn test_register_tld() -> anyhow::Result<()> {
@@ -67,11 +68,11 @@ fn test_domain() -> anyhow::Result<()> {
     let tld_owner = cdb.spacetime_lookup_tld(domain.tld())?;
     assert_eq!(tld_owner, Some(*ALICE));
 
-    let registered_addr = cdb.spacetime_dns(&domain)?;
+    let registered_addr = cdb.spacetime_dns(domain.as_ref())?;
     assert_eq!(registered_addr, Some(addr));
 
     // Try lowercase, too
-    let registered_addr = cdb.spacetime_dns(&domain_lower)?;
+    let registered_addr = cdb.spacetime_dns(domain_lower.as_ref())?;
     assert_eq!(registered_addr, Some(addr));
 
     // Reverse should yield the original domain (in mixed-case)

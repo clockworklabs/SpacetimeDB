@@ -34,6 +34,9 @@ http.workspace = true
 headers.workspace = true
 mime = "0.3.17"
 tokio-stream = { version = "0.1.12", features = ["sync"] }
+tower-layer.workspace = true
+tower-service.workspace = true
+tower-http.workspace = true
 futures = "0.3"
 bytes = "1"
 tracing.workspace = true

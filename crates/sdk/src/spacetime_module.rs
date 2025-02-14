@@ -133,7 +133,7 @@ where
 }
 
 /// [`AbstractEventContext`] subtrait for subscription and connection error callbacks.
-pub trait ErrorContext: AbstractEventContext<Event = crate::Error>
+pub trait ErrorContext: AbstractEventContext<Event = Option<crate::Error>>
 where
     Self::Module: SpacetimeModule<ErrorContext = Self>,
 {

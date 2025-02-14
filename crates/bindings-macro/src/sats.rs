@@ -19,6 +19,8 @@ pub(crate) struct SatsType<'a> {
     #[allow(unused)]
     pub original_attrs: &'a [syn::Attribute],
     pub data: SatsTypeData<'a>,
+    /// Was the type marked as `#[repr(C)]`?
+    pub is_repr_c: bool,
 }
 
 pub(crate) enum SatsTypeData<'a> {
@@ -78,6 +80,17 @@ pub(crate) fn sats_type_from_derive(
     extract_sats_type(&input.ident, &input.generics, &input.attrs, data, crate_fallback)
 }
 
+fn is_repr_c(attrs: &[syn::Attribute]) -> bool {
+    let mut is_repr_c = false;
+    for attr in attrs.iter().filter(|a| a.path() == sym::repr) {
+        let _ = attr.parse_nested_meta(|meta| {
+            is_repr_c |= meta.path.is_ident("C");
+            Ok(())
+        });
+    }
+    is_repr_c
+}
+
 pub(crate) fn extract_sats_type<'a>(
     ident: &'a syn::Ident,
     generics: &'a syn::Generics,
@@ -112,6 +125,8 @@ pub(crate) fn extract_sats_type<'a>(
     let krate = krate.unwrap_or(crate_fallback);
     let name = name.unwrap_or_else(|| crate::util::ident_to_litstr(ident));
 
+    let is_repr_c = is_repr_c(attrs);
+
     Ok(SatsType {
         ident,
         generics,
@@ -119,6 +134,7 @@ pub(crate) fn extract_sats_type<'a>(
         krate,
         original_attrs: attrs,
         data,
+        is_repr_c,
     })
 }
 
@@ -220,6 +236,48 @@ fn add_type_bounds(generics: &mut syn::Generics, trait_bound: &TokenStream) {
     }
 }
 
+/// Returns the list of types if syntactically we see that the `ty`
+/// is `#[repr(C)]` of only primitives.
+///
+/// We later assert semantically in generated code that the list of types
+/// actually are primitives.
+/// We'll also check that `ty` is paddingless.
+fn extract_repr_c_primitive<'a>(ty: &'a SatsType) -> Option<Vec<&'a syn::Ident>> {
+    // Ensure we have a `#[repr(C)]` struct.
+    if !ty.is_repr_c {
+        return None;
+    }
+    let SatsTypeData::Product(fields) = &ty.data else {
+        return None;
+    };
+
+    // Ensure every field is a primitive and collect the idents.
+    const PRIM_TY: &[sym::Symbol] = &[
+        sym::u8,
+        sym::i8,
+        sym::u16,
+        sym::i16,
+        sym::u32,
+        sym::i32,
+        sym::u64,
+        sym::i64,
+        sym::u128,
+        sym::i128,
+        sym::f32,
+        sym::f64,
+    ];
+    let mut field_tys = Vec::with_capacity(fields.len());
+    for field in fields {
+        if let syn::Type::Path(ty) = &field.ty {
+            let ident = ty.path.get_ident().filter(|ident| PRIM_TY.iter().any(|p| ident == p))?;
+            field_tys.push(ident);
+        } else {
+            return None;
+        }
+    }
+    Some(field_tys)
+}
+
 pub(crate) fn derive_deserialize(ty: &SatsType<'_>) -> TokenStream {
     let (name, tuple_name) = (&ty.ident, &ty.name);
     let spacetimedb_lib = &ty.krate;
@@ -249,6 +307,33 @@ pub(crate) fn derive_deserialize(ty: &SatsType<'_>) -> TokenStream {
 
     match &ty.data {
         SatsTypeData::Product(fields) => {
+            let mut fast_body = None;
+            if let Some(fields) = extract_repr_c_primitive(ty) {
+                fast_body = Some(quote! {
+                    #[inline(always)]
+                    fn deserialize_from_bsatn<R: #spacetimedb_lib::buffer::BufReader<'de>>(
+                        mut deserializer: #spacetimedb_lib::bsatn::Deserializer<'de, R>
+                    ) -> Result<Self, #spacetimedb_lib::bsatn::DecodeError> {
+                        const _: () = {
+                            #(#spacetimedb_lib::bsatn::assert_is_primitive_type::<#fields>();)*
+                        };
+                        // This guarantees that `Self` has no padding.
+                        if const { core::mem::size_of::<Self>() == #(core::mem::size_of::<#fields>())+* } {
+                            let bytes = deserializer.get_slice(core::mem::size_of::<Self>())?;
+                            let ptr = bytes as *const [u8] as *const u8 as *const Self;
+                            // SAFETY:
+                            // - `ptr` is valid for reads, `size_of::<T>()`.
+                            // - `ptr` is trivially properly aligned (alignment = 1).
+                            // - `ptr` points to a properly initialized `Foo`
+                            //   as we've guaranteed that there is no padding.
+                            Ok(unsafe { core::ptr::read(ptr) })
+                        } else {
+                            Self::deserialize(deserializer)
+                        }
+                    }
+                });
+            }
+
             let n_fields = fields.len();
 
             let field_names = fields.iter().map(|f| f.ident.unwrap()).collect::<Vec<_>>();
@@ -260,6 +345,8 @@ pub(crate) fn derive_deserialize(ty: &SatsType<'_>) -> TokenStream {
                 #[allow(clippy::all)]
                 const _: () = {
                     impl #de_impl_generics #spacetimedb_lib::de::Deserialize<'de> for #name #ty_generics #de_where_clause {
+                        #fast_body
+
                         fn deserialize<D: #spacetimedb_lib::de::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
                             deserializer.deserialize_product(__ProductVisitor {
                                 _marker: std::marker::PhantomData::<fn() -> #name #ty_generics>,
@@ -422,8 +509,41 @@ pub(crate) fn derive_serialize(ty: &SatsType) -> TokenStream {
 
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
+    let mut fast_body = None;
     let body = match &ty.data {
         SatsTypeData::Product(fields) => {
+            if let Some(fields) = extract_repr_c_primitive(ty) {
+                fast_body = Some(quote! {
+                    #[inline(always)]
+                    fn serialize_into_bsatn<W: #spacetimedb_lib::buffer::BufWriter>(
+                            &self,
+                            serializer: #spacetimedb_lib::bsatn::Serializer<'_, W>
+                    ) -> Result<(), #spacetimedb_lib::bsatn::EncodeError> {
+                        const _: () = {
+                            #(#spacetimedb_lib::bsatn::assert_is_primitive_type::<#fields>();)*
+                        };
+                        // This guarantees that `Self` has no padding.
+                        if const { core::mem::size_of::<Self>() == #(core::mem::size_of::<#fields>())+* } {
+                            // SAFETY:
+                            // - We know `self` is non-null as it's a shared reference
+                            //   and we know it's valid for reads for `core::mem::size_of::<Self>()` bytes.
+                            //   Alignment of `u8` is 1, so it's trivially satisfied.
+                            //   - The slice is all within `self`, so in the same allocated object.
+                            // - `self` does point to `core::mem::size_of::<Self>()` consecutive `u8`s,
+                            //    as per `assert_is_primitive_type` above,
+                            //    we know none of the fields of `Self` have any padding.
+                            // - We're not going to mutate the memory within `bytes`.
+                            // - We know `core::mem::size_of::<Self>() < isize::MAX`.
+                            let bytes = unsafe { core::slice::from_raw_parts(self as *const _ as *const u8, core::mem::size_of::<Self>()) };
+                            serializer.raw_write_bytes(bytes);
+                            Ok(())
+                        } else {
+                            self.serialize(serializer)
+                        }
+                    }
+                });
+            }
+
             let fieldnames = fields.iter().map(|field| field.ident.unwrap());
             let tys = fields.iter().map(|f| &f.ty);
             let fieldnamestrings = fields.iter().map(|field| field.name.as_ref().unwrap());
@@ -456,6 +576,7 @@ pub(crate) fn derive_serialize(ty: &SatsType) -> TokenStream {
     };
     quote! {
         impl #impl_generics #spacetimedb_lib::ser::Serialize for #name #ty_generics #where_clause {
+            #fast_body
             fn serialize<S: #spacetimedb_lib::ser::Serializer>(&self, __serializer: S) -> Result<S::Ok, S::Error> {
                 #body
             }

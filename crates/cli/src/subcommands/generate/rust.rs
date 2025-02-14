@@ -1420,7 +1420,7 @@ impl<Ctx: __sdk::DbContext<
     define_event_context(
         out,
         "ErrorContext",
-        Some("__sdk::Error"),
+        Some("Option<__sdk::Error>"),
         "[`__sdk::DbConnectionBuilder::on_disconnect`], [`__sdk::DbConnectionBuilder::on_connect_error`] and [`__sdk::SubscriptionBuilder::on_error`] callbacks",
         Some("[`__sdk::Error`]"),
     );

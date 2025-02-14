@@ -20,10 +20,20 @@ metrics_group!(
         #[labels(txn_type: WorkloadType, db: Identity, reducer_or_query: str, table_id: u32, table_name: str)]
         pub rdb_num_rows_inserted: IntCounterVec,
 
+        #[name = spacetime_num_index_rows_inserted_total]
+        #[help = "The cumulative number of index entries inserted. Does not count schema changes."]
+        #[labels(txn_type: WorkloadType, db: Identity, reducer_or_query: str, table_id: u32, table_name: str)]
+        pub rdb_num_index_entries_inserted: IntCounterVec,
+
         #[name = spacetime_num_rows_deleted_total]
         #[help = "The cumulative number of rows deleted from a table"]
         #[labels(txn_type: WorkloadType, db: Identity, reducer_or_query: str, table_id: u32, table_name: str)]
         pub rdb_num_rows_deleted: IntCounterVec,
+
+        #[name = spacetime_num_index_rows_deleted_total]
+        #[help = "The cumulative number of index entries deleted. Does not count schema changes."]
+        #[labels(txn_type: WorkloadType, db: Identity, reducer_or_query: str, table_id: u32, table_name: str)]
+        pub rdb_num_index_entries_deleted: IntCounterVec,
 
         #[name = spacetime_num_rows_scanned_total]
         #[help = "The cumulative number of rows scanned from the database"]

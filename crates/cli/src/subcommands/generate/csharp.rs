@@ -426,8 +426,6 @@ impl Lang for Csharp<'_> {
         indented_block(&mut output, |output| {
             // Prevent instantiation of this class from outside.
             writeln!(output, "private Reducer() {{ }}");
-            writeln!(output);
-            writeln!(output, "public sealed class StdbNone : Reducer {{}}");
         });
         writeln!(output);
 
@@ -462,8 +460,6 @@ impl Lang for Csharp<'_> {
                             "\"{reducer_str_name}\" => BSATNHelpers.Decode<Reducer.{reducer_name}>(encodedArgs),"
                         );
                     }
-                    // Note: "" is a special case for transactions from CLI commands.
-                    writeln!(output, "\"<none>\" or \"\" => new Reducer.StdbNone(),");
                     writeln!(
                         output,
                         r#"var reducer => throw new ArgumentOutOfRangeException("Reducer", $"Unknown reducer {{reducer}}")"#
@@ -516,7 +512,6 @@ impl Lang for Csharp<'_> {
                             "Reducer.{reducer_name} args => Reducers.Invoke{reducer_name}(eventContext, args),"
                         );
                     }
-                    writeln!(output, "Reducer.StdbNone => true,");
                     writeln!(
                         output,
                         r#"_ => throw new ArgumentOutOfRangeException("Reducer", $"Unknown reducer {{reducer}}")"#

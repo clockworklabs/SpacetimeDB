@@ -1,13 +1,10 @@
 use crate::common_args;
 use crate::config::Config;
-use crate::util::{
-    add_auth_header_opt, decode_identity, get_auth_header, get_login_token_or_log_in, spacetime_register_tld,
-};
+use crate::util::{add_auth_header_opt, decode_identity, get_auth_header, get_login_token_or_log_in, ResponseExt};
 use clap::ArgMatches;
 use clap::{Arg, Command};
-use reqwest::Url;
 
-use spacetimedb_client_api_messages::name::{InsertDomainResult, RegisterTldResult};
+use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult};
 
 pub fn cli() -> Command {
     Command::new("rename")
@@ -37,32 +34,17 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let identity = decode_identity(&token)?;
     let auth_header = get_auth_header(&mut config, false, server, !force).await?;
 
-    match spacetime_register_tld(&mut config, domain, server, !force).await? {
-        RegisterTldResult::Success { domain } => {
-            println!("Registered domain: {}", domain);
-        }
-        RegisterTldResult::Unauthorized { domain } => {
-            return Err(anyhow::anyhow!("Domain is already registered by another: {}", domain));
-        }
-        RegisterTldResult::AlreadyRegistered { domain } => {
-            println!("Domain is already registered by the identity you provided: {}", domain);
-        }
-    }
+    let domain: DomainName = domain.parse()?;
 
-    let builder = reqwest::Client::new().get(Url::parse_with_params(
-        format!("{}/database/set_name", config.get_host_url(server)?).as_str(),
-        [
-            ("domain", domain.clone()),
-            ("database_identity", database_identity.clone()),
-            ("register_tld", "true".to_string()),
-        ],
-    )?);
+    let builder = reqwest::Client::new()
+        .post(format!(
+            "{}/v1/database/{database_identity}/names",
+            config.get_host_url(server)?
+        ))
+        .body(String::from(domain));
     let builder = add_auth_header_opt(builder, &auth_header);
 
-    let res = builder.send().await?.error_for_status()?;
-    let bytes = res.bytes().await.unwrap();
-    println!("{}", String::from_utf8_lossy(&bytes[..]));
-    let result: InsertDomainResult = serde_json::from_slice(&bytes[..]).unwrap();
+    let result = builder.send().await?.json_or_error().await?;
     match result {
         InsertDomainResult::Success {
             domain,

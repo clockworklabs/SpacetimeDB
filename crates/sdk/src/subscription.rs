@@ -2,6 +2,7 @@
 //!
 //! This module is internal, and may incompatibly change without warning.
 
+use crate::spacetime_module::AbstractEventContext;
 use crate::{
     db_connection::{next_request_id, next_subscription_id, DbContextImpl, PendingMutation},
     spacetime_module::{SpacetimeModule, SubscriptionHandle},
@@ -31,7 +32,8 @@ impl<M: SpacetimeModule> Default for SubscriptionManager<M> {
 
 pub(crate) type OnAppliedCallback<M> =
     Box<dyn FnOnce(&<M as SpacetimeModule>::SubscriptionEventContext) + Send + 'static>;
-pub(crate) type OnErrorCallback<M> = Box<dyn FnOnce(&<M as SpacetimeModule>::ErrorContext) + Send + 'static>;
+pub(crate) type OnErrorCallback<M> =
+    Box<dyn FnOnce(&<M as SpacetimeModule>::ErrorContext, crate::Error) + Send + 'static>;
 pub type OnEndedCallback<M> = Box<dyn FnOnce(&<M as SpacetimeModule>::SubscriptionEventContext) + Send + 'static>;
 
 /// When handling a pending unsubscribe, there are three cases the caller must handle.
@@ -45,23 +47,24 @@ pub(crate) enum PendingUnsubscribeResult<M: SpacetimeModule> {
 }
 
 impl<M: SpacetimeModule> SubscriptionManager<M> {
-    pub(crate) fn on_disconnect(&mut self, ctx: &M::ErrorContext) {
+    pub(crate) fn on_disconnect(&mut self, _ctx: &M::ErrorContext) {
         // We need to clear all the subscriptions.
-        // We should run the on_error callbacks for all of them.
         // TODO: is this correct? We don't remove them from the client cache,
         // we may want to resume them in the future if we impl reconnecting,
         // and users can already register on-disconnect callbacks which will run in this case.
 
-        for (_, mut sub) in self.new_subscriptions.drain() {
-            if let Some(callback) = sub.on_error() {
-                callback(ctx);
-            }
-        }
-        for (_, mut s) in self.legacy_subscriptions.drain() {
-            if let Some(callback) = s.on_error.take() {
-                callback(ctx);
-            }
-        }
+        // NOTE(cloutiertyler)
+        // This function previously invoke `on_error` for all subscriptions.
+        // However, this is inconsistent behavior given that `on_disconnect` for
+        // connections no longer always has an error argument and that the user
+        // can add an `on_ended` callback when unsubscribing.
+        //
+        // We propose instead that `on_ended` be added to the subscription
+        // builder so that it can be invoked when the subscription is ended
+        // because of a normal disconnect, but without the user calling
+        // `unsubscribe_then`. This can be done in a non-breaking way.
+        //
+        // For now, we will just do nothing when a subscription ends normally.
     }
 
     /// Register a new subscription. This does not send the subscription to the server.
@@ -160,7 +163,7 @@ impl<M: SpacetimeModule> SubscriptionManager<M> {
             return;
         };
         if let Some(callback) = sub.on_error() {
-            callback(ctx)
+            callback(ctx, ctx.event().clone().unwrap());
         }
     }
 }
@@ -207,7 +210,7 @@ impl<M: SpacetimeModule> SubscriptionBuilder<M> {
     /// or later during the subscription's lifetime if the module's interface changes,
     /// in which case [`Self::on_applied`] may have already run.
     // Currently unused. Hooking this up requires the new subscription interface and WS protocol.
-    pub fn on_error(mut self, callback: impl FnOnce(&M::ErrorContext) + Send + 'static) -> Self {
+    pub fn on_error(mut self, callback: impl FnOnce(&M::ErrorContext, crate::Error) + Send + 'static) -> Self {
         self.on_error = Some(Box::new(callback));
         self
     }

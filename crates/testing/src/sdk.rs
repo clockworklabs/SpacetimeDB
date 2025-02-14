@@ -1,5 +1,5 @@
 use duct::cmd;
-use rand::distributions::{Alphanumeric, DistString};
+use rand::seq::IteratorRandom;
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_paths::{RootDir, SpacetimePaths};
 use std::fs::create_dir_all;
@@ -136,7 +136,10 @@ fn status_ok_or_panic(output: std::process::Output, command: &str, test_name: &s
 }
 
 fn random_module_name() -> String {
-    Alphanumeric.sample_string(&mut rand::thread_rng(), 16)
+    let mut rng = rand::thread_rng();
+    std::iter::repeat_with(|| ('a'..='z').chain('0'..='9').choose(&mut rng).unwrap())
+        .take(16)
+        .collect()
 }
 
 macro_rules! memoized {

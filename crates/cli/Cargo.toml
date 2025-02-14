@@ -47,6 +47,7 @@ itertools.workspace = true
 indicatif.workspace = true
 jsonwebtoken.workspace = true
 mimalloc.workspace = true
+percent-encoding.workspace = true
 regex.workspace = true
 reqwest.workspace = true
 rustyline.workspace = true

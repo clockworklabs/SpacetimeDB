@@ -2786,6 +2786,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "keynote-benchmarks"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "spacetimedb",
+]
+
+[[package]]
 name = "lazy_static"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4884,6 +4892,7 @@ dependencies = [
  "is-terminal",
  "itertools 0.12.1",
  "mimalloc",
+ "percent-encoding",
  "regex",
  "reqwest 0.12.9",
  "rustyline",
@@ -4959,6 +4968,9 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tokio-tungstenite",
+ "tower-http",
+ "tower-layer",
+ "tower-service",
  "tracing",
  "uuid",
 ]
@@ -4979,6 +4991,7 @@ dependencies = [
  "proptest",
  "serde",
  "serde_json",
+ "serde_with",
  "smallvec",
  "spacetimedb-lib",
  "spacetimedb-primitives",

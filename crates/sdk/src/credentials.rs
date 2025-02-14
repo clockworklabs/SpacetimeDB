@@ -78,10 +78,8 @@ impl File {
     /// to a particular SpacetimeDB instance or cluster.
     /// Users who intend to connect to multiple instances or clusters
     /// should use a distinct `key` per cluster.
-    pub fn new(key: impl ToString) -> Self {
-        Self {
-            filename: key.to_string(),
-        }
+    pub fn new(key: impl Into<String>) -> Self {
+        Self { filename: key.into() }
     }
 
     fn determine_home_dir() -> Result<PathBuf, CredentialFileError> {
@@ -114,13 +112,11 @@ impl File {
     ///       credentials::File::new("my_app").save(token).unwrap();
     /// })
     /// ```
-    pub fn save(self, token: impl ToString) -> Result<(), CredentialFileError> {
+    pub fn save(self, token: impl Into<String>) -> Result<(), CredentialFileError> {
         Self::ensure_credentials_dir()?;
 
-        let creds = bsatn::to_vec(&Credentials {
-            token: token.to_string(),
-        })
-        .map_err(|source| CredentialFileError::Serialize { source })?;
+        let creds = bsatn::to_vec(&Credentials { token: token.into() })
+            .map_err(|source| CredentialFileError::Serialize { source })?;
         let path = self.path()?;
         std::fs::write(&path, creds).map_err(|source| CredentialFileError::Write { path, source })?;
         Ok(())

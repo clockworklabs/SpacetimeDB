@@ -60,7 +60,7 @@ async fn exec_status(mut config: Config, args: &ArgMatches) -> Result<(), anyhow
     };
 
     let status = reqwest::Client::new()
-        .get(format!("{}/energy/{}", config.get_host_url(server)?, identity))
+        .get(format!("{}/v1/energy/{}", config.get_host_url(server)?, identity))
         .send()
         .await?
         .error_for_status()?
