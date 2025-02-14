@@ -7,6 +7,7 @@ on:
     branches:
       - master
       - release/*
+      - noa/package-update-bin-itself
 
 jobs:
   build-cli:
@@ -45,6 +46,7 @@ jobs:
         run: |
           mkdir build
           cd target/${{matrix.target}}/release
+          cp spacetimedb-update ../../../build/spacetimedb-update-${{matrix.target}}
           tar -czf ../../../build/spacetime-${{matrix.target}}.tar.gz spacetimedb-{cli,standalone,update}
 
       - name: Package (windows)
@@ -52,6 +54,7 @@ jobs:
         run: |
           mkdir build
           cd target/${{matrix.target}}/release
+          cp spacetimedb-update.exe ../../../build/spacetimedb-update-${{matrix.target}}.exe
           7z a ../../../build/spacetime-${{matrix.target}}.zip spacetimedb-cli.exe spacetimedb-standalone.exe spacetimedb-update.exe
 
       - name: Extract branch name
