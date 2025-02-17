@@ -391,17 +391,19 @@ impl TypeChecker for SqlChecker {
                 project,
                 from,
                 filter: None,
+                distinct,
             } => {
                 let input = Self::type_from(from, vars, tx)?;
-                type_proj(input, project, vars)
+                type_proj(input, project, vars, distinct)
             }
             SqlSelect {
                 project,
                 from,
                 filter: Some(expr),
+                distinct,
             } => {
                 let input = Self::type_from(from, vars, tx)?;
-                type_proj(type_select(input, expr, vars)?, project, vars)
+                type_proj(type_select(input, expr, vars)?, project, vars, distinct)
             }
         }
     }
@@ -469,6 +471,7 @@ mod tests {
             "select str from t",
             "select str, arr from t",
             "select t.str, arr from t",
+            "select distinct str from t",
         ] {
             let result = parse_and_type_sql(sql, &tx);
             assert!(result.is_ok());

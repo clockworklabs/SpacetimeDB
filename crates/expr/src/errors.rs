@@ -44,6 +44,8 @@ pub enum InvalidWildcard {
 pub enum Unsupported {
     #[error("Column projections are not supported in subscriptions; Subscriptions must return a table type")]
     ReturnType,
+    #[error("Distinct projections are not supported in subscriptions")]
+    Dedup,
     #[error("Unsupported expression in projection")]
     ProjectExpr,
 }

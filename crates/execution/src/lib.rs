@@ -95,7 +95,7 @@ pub trait DeltaStore {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Row<'a> {
     Ptr(RowRef<'a>),
     Ref(&'a ProductValue),
@@ -148,7 +148,7 @@ impl ProjectField for Row<'_> {
 }
 
 /// Each query operator returns a tuple of [RowRef]s
-#[derive(Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Tuple<'a> {
     /// A pointer to a row in a base table
     Row(Row<'a>),
