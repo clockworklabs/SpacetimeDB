@@ -308,24 +308,26 @@ impl ClientConnection {
         .unwrap() // TODO: is unwrapping right here?
     }
 
-    pub async fn subscribe_multi(&self, _subscription: SubscribeMulti, _timer: Instant) -> Result<(), DBError> {
-        todo!()
-        // let me = self.clone();
-        // tokio::task::spawn_blocking(move || {
-        //     me.module
-        //         .subscriptions()
-        //         .add_subscription(me.sender, subscription, timer, None)
-        // })
-        // .await
-        // .unwrap() // TODO: is unwrapping right here?
+    pub async fn subscribe_multi(&self, request: SubscribeMulti, timer: Instant) -> Result<(), DBError> {
+        let me = self.clone();
+        tokio::task::spawn_blocking(move || {
+            me.module
+                .subscriptions()
+                .add_multi_subscription(me.sender, request, timer, None)
+        })
+        .await
+        .unwrap() // TODO: is unwrapping right here?
     }
 
-    pub async fn unsubscribe_multi(&self, _request: UnsubscribeMulti, _timer: Instant) -> Result<(), DBError> {
-        todo!()
-        // let me = self.clone();
-        // tokio::task::spawn_blocking(move || me.module.subscriptions().remove_subscription(me.sender, request, timer))
-        //     .await
-        //     .unwrap() // TODO: is unwrapping right here?
+    pub async fn unsubscribe_multi(&self, request: UnsubscribeMulti, timer: Instant) -> Result<(), DBError> {
+        let me = self.clone();
+        tokio::task::spawn_blocking(move || {
+            me.module
+                .subscriptions()
+                .remove_multi_subscription(me.sender, request, timer)
+        })
+        .await
+        .unwrap() // TODO: is unwrapping right here?
     }
 
     pub async fn subscribe(&self, subscription: Subscribe, timer: Instant) -> Result<(), DBError> {
