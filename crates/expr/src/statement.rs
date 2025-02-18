@@ -16,6 +16,7 @@ use crate::{
     check::Relvars,
     errors::InvalidLiteral,
     expr::{FieldProject, ProjectList, RelExpr, Relvar},
+    type_limit,
 };
 
 use super::{
@@ -391,6 +392,7 @@ impl TypeChecker for SqlChecker {
                 project,
                 from,
                 filter: None,
+                limit: None,
             } => {
                 let input = Self::type_from(from, vars, tx)?;
                 type_proj(input, project, vars)
@@ -398,10 +400,29 @@ impl TypeChecker for SqlChecker {
             SqlSelect {
                 project,
                 from,
+                filter: None,
+                limit: Some(n),
+            } => {
+                let input = Self::type_from(from, vars, tx)?;
+                type_proj(type_limit(input, &n)?, project, vars)
+            }
+            SqlSelect {
+                project,
+                from,
                 filter: Some(expr),
+                limit: None,
             } => {
                 let input = Self::type_from(from, vars, tx)?;
                 type_proj(type_select(input, expr, vars)?, project, vars)
+            }
+            SqlSelect {
+                project,
+                from,
+                filter: Some(expr),
+                limit: Some(n),
+            } => {
+                let input = Self::type_from(from, vars, tx)?;
+                type_proj(type_limit(type_select(input, expr, vars)?, &n)?, project, vars)
             }
         }
     }
@@ -469,6 +490,7 @@ mod tests {
             "select str from t",
             "select str, arr from t",
             "select t.str, arr from t",
+            "select * from t limit 5",
         ] {
             let result = parse_and_type_sql(sql, &tx);
             assert!(result.is_ok());
@@ -479,9 +501,14 @@ mod tests {
     fn invalid() {
         let tx = SchemaViewer(module_def());
 
-        // Unqualified columns in a join
-        let sql = "select id, str from s join t";
-        let result = parse_and_type_sql(sql, &tx);
-        assert!(result.is_err());
+        for sql in [
+            // Unqualified columns in a join
+            "select id, str from s join t",
+            // Wrong type for limit
+            "select * from t limit '5'",
+        ] {
+            let result = parse_and_type_sql(sql, &tx);
+            assert!(result.is_err());
+        }
     }
 }

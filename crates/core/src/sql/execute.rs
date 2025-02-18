@@ -345,6 +345,18 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn test_limit() -> ResultTest<()> {
+        let (db, _) = create_data(5)?;
+
+        let result = run_for_testing(&db, "SELECT * FROM inventory limit 2")?;
+
+        let (_, input) = create_data(2)?;
+
+        assert_eq!(result, input.data, "Inventory");
+        Ok(())
+    }
+
+    #[test]
     fn test_select_star_table() -> ResultTest<()> {
         let (db, input) = create_data(1)?;
 

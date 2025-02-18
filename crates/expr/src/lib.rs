@@ -29,6 +29,19 @@ pub(crate) fn type_select(input: RelExpr, expr: SqlExpr, vars: &Relvars) -> Typi
     ))
 }
 
+/// Type check a LIMIT clause
+pub(crate) fn type_limit(input: RelExpr, limit: &str) -> TypingResult<RelExpr> {
+    Ok(
+        parse_int(limit, AlgebraicType::U64, BigDecimal::to_u64, AlgebraicValue::U64)
+            .map_err(|_| InvalidLiteral::new(limit.to_owned(), &AlgebraicType::U64))
+            .and_then(|n| {
+                n.into_u64()
+                    .map_err(|_| InvalidLiteral::new(limit.to_owned(), &AlgebraicType::U64))
+            })
+            .map(|n| RelExpr::Limit(Box::new(input), n))?,
+    )
+}
+
 /// Type check and lower a [ast::Project]
 pub(crate) fn type_proj(input: RelExpr, proj: ast::Project, vars: &Relvars) -> TypingResult<ProjectList> {
     match proj {

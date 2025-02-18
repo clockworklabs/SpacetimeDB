@@ -38,6 +38,10 @@ pub fn compile_subscription(sql: &str, tx: &impl SchemaView) -> Result<(ProjectP
 
     let plan = compile_select(plan);
 
+    if plan.has_limit() {
+        bail!("LIMIT is not supported in subscriptions")
+    }
+
     Ok((plan, return_id, return_name))
 }
 

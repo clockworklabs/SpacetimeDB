@@ -15,7 +15,8 @@ use spacetimedb_table::table::RowRef;
 
 use crate::rules::{
     ComputePositions, HashToIxJoin, IxScanAnd, IxScanEq, IxScanEq2Col, IxScanEq3Col, PullFilterAboveHashJoin,
-    PushConstAnd, PushConstEq, ReorderDeltaJoinRhs, ReorderHashJoin, RewriteRule, UniqueHashJoinRule, UniqueIxJoinRule,
+    PushConstAnd, PushConstEq, PushLimit, ReorderDeltaJoinRhs, ReorderHashJoin, RewriteRule, UniqueHashJoinRule,
+    UniqueIxJoinRule,
 };
 
 /// Table aliases are replaced with labels in the physical plan
@@ -150,7 +151,7 @@ pub struct TupleField {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PhysicalPlan {
     /// Scan a table row by row, returning row ids
-    TableScan(Arc<TableSchema>, Label, Option<Delta>),
+    TableScan(TableScan, Label),
     /// Fetch row ids from an index
     IxScan(IxScan, Label),
     /// An index join + projection
@@ -161,6 +162,8 @@ pub enum PhysicalPlan {
     NLJoin(Box<PhysicalPlan>, Box<PhysicalPlan>),
     /// A tuple-at-a-time filter
     Filter(Box<PhysicalPlan>, PhysicalExpr),
+    /// A tuple-at-a-time row limit
+    Limit(Box<PhysicalPlan>, u64),
 }
 
 impl PhysicalPlan {
@@ -325,6 +328,7 @@ impl PhysicalPlan {
     /// 5. Compute positions for tuple labels
     pub fn optimize(self, reqs: Vec<Label>) -> Result<Self> {
         self.map(&Self::canonicalize)
+            .apply_rec::<PushLimit>()?
             .apply_until::<PushConstAnd>()?
             .apply_until::<PushConstEq>()?
             .apply_rec::<ReorderDeltaJoinRhs>()?
@@ -570,7 +574,7 @@ impl PhysicalPlan {
     pub(crate) fn returns_distinct_values(&self, label: &Label, cols: &ColSet) -> bool {
         match self {
             // Is there a unique constraint for these cols?
-            Self::TableScan(schema, var, _) => var == label && schema.as_ref().is_unique(cols),
+            Self::TableScan(TableScan { schema, .. }, var) => var == label && schema.as_ref().is_unique(cols),
             // Is there a unique constraint for these cols + the index cols?
             Self::IxScan(
                 IxScan {
@@ -682,7 +686,7 @@ impl PhysicalPlan {
 
     pub fn index_on_field(&self, label: &Label, field: usize) -> bool {
         self.any(&|plan| match plan {
-            Self::TableScan(schema, alias, _)
+            Self::TableScan(TableScan { schema, .. }, alias)
             | Self::IxScan(IxScan { schema, .. }, alias)
             | Self::IxJoin(
                 IxJoin {
@@ -704,7 +708,7 @@ impl PhysicalPlan {
     /// Does this plan introduce this label?
     fn has_label(&self, label: &Label) -> bool {
         self.any(&|plan| match plan {
-            Self::TableScan(_, var, _) | Self::IxScan(_, var) | Self::IxJoin(IxJoin { rhs_label: var, .. }, _) => {
+            Self::TableScan(_, var) | Self::IxScan(_, var) | Self::IxJoin(IxJoin { rhs_label: var, .. }, _) => {
                 var == label
             }
             _ => false,
@@ -715,7 +719,7 @@ impl PhysicalPlan {
     fn nfields(&self) -> usize {
         match self {
             Self::TableScan(..) | Self::IxScan(..) | Self::IxJoin(_, Semi::Rhs) => 1,
-            Self::Filter(input, _) => input.nfields(),
+            Self::Filter(input, _) | Self::Limit(input, _) => input.nfields(),
             Self::IxJoin(join, Semi::Lhs) => join.lhs.nfields(),
             Self::IxJoin(join, Semi::All) => join.lhs.nfields() + 1,
             Self::HashJoin(join, Semi::Rhs) => join.rhs.nfields(),
@@ -738,12 +742,13 @@ impl PhysicalPlan {
     fn labels(&self) -> Vec<Label> {
         fn find(plan: &PhysicalPlan, labels: &mut Vec<Label>) {
             match plan {
-                PhysicalPlan::TableScan(_, alias, _)
+                PhysicalPlan::TableScan(_, alias)
                 | PhysicalPlan::IxScan(_, alias)
                 | PhysicalPlan::IxJoin(IxJoin { rhs_label: alias, .. }, Semi::Rhs) => {
                     labels.push(*alias);
                 }
                 PhysicalPlan::Filter(input, _)
+                | PhysicalPlan::Limit(input, _)
                 | PhysicalPlan::IxJoin(IxJoin { lhs: input, .. }, Semi::Lhs)
                 | PhysicalPlan::HashJoin(HashJoin { lhs: input, .. }, Semi::Lhs)
                 | PhysicalPlan::HashJoin(HashJoin { rhs: input, .. }, Semi::Rhs) => {
@@ -763,6 +768,30 @@ impl PhysicalPlan {
         find(self, &mut labels);
         labels
     }
+
+    /// Is this operator a limit?
+    fn is_limit(&self) -> bool {
+        matches!(
+            self,
+            PhysicalPlan::Limit(..) | PhysicalPlan::TableScan(TableScan { limit: Some(_), .. }, _)
+        )
+    }
+
+    /// Does this plan contain a limit?
+    pub fn has_limit(&self) -> bool {
+        self.any(&|plan| plan.is_limit())
+    }
+}
+
+/// Scan a table row by row, returning row ids
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TableScan {
+    /// The table on which this index is defined
+    pub schema: Arc<TableSchema>,
+    /// Limit the number of rows scanned
+    pub limit: Option<u64>,
+    /// Is this a delta table?
+    pub delta: Option<Delta>,
 }
 
 /// Fetch and return row ids from a btree index
@@ -770,6 +799,8 @@ impl PhysicalPlan {
 pub struct IxScan {
     /// The table on which this index is defined
     pub schema: Arc<TableSchema>,
+    /// Limit the number of rows scanned
+    pub limit: Option<u64>,
     /// The index id
     pub index_id: IndexId,
     /// An equality prefix for multi-column scans
@@ -1014,7 +1045,7 @@ mod tests {
         plan::{HashJoin, IxJoin, IxScan, PhysicalPlan, Sarg, Semi, TupleField},
     };
 
-    use super::{PhysicalExpr, ProjectPlan};
+    use super::{PhysicalExpr, ProjectPlan, TableScan};
 
     struct SchemaViewer {
         schemas: Vec<Arc<TableSchema>>,
@@ -1110,7 +1141,7 @@ mod tests {
         let pp = compile_select(lp).optimize().unwrap();
 
         match pp {
-            ProjectPlan::None(PhysicalPlan::TableScan(schema, _, _)) => {
+            ProjectPlan::None(PhysicalPlan::TableScan(TableScan { schema, .. }, _)) => {
                 assert_eq!(schema.table_id, t_id);
             }
             proj => panic!("unexpected project: {:#?}", proj),
@@ -1146,7 +1177,7 @@ mod tests {
                 assert!(matches!(*value, PhysicalExpr::Value(AlgebraicValue::U64(5))));
 
                 match *input {
-                    PhysicalPlan::TableScan(schema, _, _) => {
+                    PhysicalPlan::TableScan(TableScan { schema, .. }, _) => {
                         assert_eq!(schema.table_id, t_id);
                     }
                     plan => panic!("unexpected plan: {:#?}", plan),

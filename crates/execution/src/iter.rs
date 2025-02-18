@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use anyhow::{anyhow, bail, Result};
 use spacetimedb_lib::{query::Delta, AlgebraicValue, ProductValue};
 use spacetimedb_physical_plan::plan::{
-    HashJoin, IxJoin, IxScan, PhysicalExpr, PhysicalPlan, ProjectField, ProjectPlan, Sarg, Semi, TupleField,
+    HashJoin, IxJoin, IxScan, PhysicalExpr, PhysicalPlan, ProjectField, ProjectPlan, Sarg, Semi, TableScan, TupleField,
 };
 use spacetimedb_table::{
     blob_store::BlobStore,
@@ -75,6 +75,7 @@ pub enum Iter<'a> {
     Row(RowRefIter<'a>),
     Join(LeftDeepJoinIter<'a>),
     Filter(Filter<'a, Iter<'a>>),
+    Limit(Limit<Iter<'a>>),
 }
 
 impl<'a> Iterator for Iter<'a> {
@@ -85,6 +86,7 @@ impl<'a> Iterator for Iter<'a> {
             Self::Row(iter) => iter.next().map(Tuple::Row),
             Self::Join(iter) => iter.next(),
             Self::Filter(iter) => iter.next(),
+            Self::Limit(iter) => iter.next(),
         }
     }
 }
@@ -102,6 +104,13 @@ impl<'a> Iter<'a> {
                     .map(Box::new)
                     .map(|input| Filter { input, expr })
                     .map(Iter::Filter)
+            }
+            PhysicalPlan::Limit(input, n) => {
+                // Build a limit iterator
+                Iter::build(input, tx)
+                    .map(Box::new)
+                    .map(|input| Limit { input, i: 0, n: *n })
+                    .map(Iter::Limit)
             }
             PhysicalPlan::NLJoin(lhs, rhs) => {
                 // Build a nested loop join iterator
@@ -231,13 +240,28 @@ impl<'a> RowRefIter<'a> {
             ProductValue::from_iter(prefix.iter().map(|(_, v)| v).chain([v]).cloned())
         };
         match plan {
-            PhysicalPlan::TableScan(schema, _, None) => tx.table_scan(schema.table_id).map(Self::TableScan),
-            PhysicalPlan::TableScan(schema, _, Some(Delta::Inserts)) => {
-                Ok(Self::DeltaScan(tx.delta_scan(schema.table_id, true)))
-            }
-            PhysicalPlan::TableScan(schema, _, Some(Delta::Deletes)) => {
-                Ok(Self::DeltaScan(tx.delta_scan(schema.table_id, false)))
-            }
+            PhysicalPlan::TableScan(
+                TableScan {
+                    schema, delta: None, ..
+                },
+                _,
+            ) => tx.table_scan(schema.table_id).map(Self::TableScan),
+            PhysicalPlan::TableScan(
+                TableScan {
+                    schema,
+                    delta: Some(Delta::Inserts),
+                    ..
+                },
+                _,
+            ) => Ok(Self::DeltaScan(tx.delta_scan(schema.table_id, true))),
+            PhysicalPlan::TableScan(
+                TableScan {
+                    schema,
+                    delta: Some(Delta::Deletes),
+                    ..
+                },
+                _,
+            ) => Ok(Self::DeltaScan(tx.delta_scan(schema.table_id, false))),
             PhysicalPlan::IxScan(
                 scan @ IxScan {
                     arg: Sarg::Eq(_, v), ..
@@ -1067,5 +1091,20 @@ impl<'a> Iterator for Filter<'a, Iter<'a>> {
 
     fn next(&mut self) -> Option<Self::Item> {
         self.input.find(|tuple| self.expr.eval_bool(tuple))
+    }
+}
+
+/// A tuple-at-a-time filter iterator
+pub struct Limit<I> {
+    input: Box<I>,
+    i: u64,
+    n: u64,
+}
+
+impl<'a> Iterator for Limit<Iter<'a>> {
+    type Item = Tuple<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.input.next().filter(|_| self.i < self.n).inspect(|_| self.i += 1)
     }
 }

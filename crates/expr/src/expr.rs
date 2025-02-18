@@ -123,6 +123,8 @@ pub enum RelExpr {
     LeftDeepJoin(LeftDeepJoin),
     /// A left deep binary equi-join
     EqJoin(LeftDeepJoin, FieldProject, FieldProject),
+    /// A limiting operator for the number of rows
+    Limit(Box<RelExpr>, u64),
 }
 
 /// A table reference
@@ -140,7 +142,7 @@ impl RelExpr {
         match self {
             Self::RelVar(..) => 1,
             Self::LeftDeepJoin(join) | Self::EqJoin(join, ..) => join.lhs.nfields() + 1,
-            Self::Select(input, _) => input.nfields(),
+            Self::Select(input, _) | Self::Limit(input, ..) => input.nfields(),
         }
     }
 
@@ -151,7 +153,7 @@ impl RelExpr {
             Self::LeftDeepJoin(join) | Self::EqJoin(join, ..) => {
                 join.rhs.alias.as_ref() == field || join.lhs.has_field(field)
             }
-            Self::Select(input, _) => input.has_field(field),
+            Self::Select(input, _) | Self::Limit(input, ..) => input.has_field(field),
         }
     }
 
