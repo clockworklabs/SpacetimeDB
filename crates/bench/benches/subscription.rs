@@ -5,10 +5,10 @@ use spacetimedb::host::module_host::DatabaseTableUpdate;
 use spacetimedb::identity::AuthCtx;
 use spacetimedb::messages::websocket::BsatnFormat;
 use spacetimedb::sql::ast::SchemaViewer;
-use spacetimedb::subscription::collect_table_update;
 use spacetimedb::subscription::query::compile_read_only_queryset;
 use spacetimedb::subscription::subscription::ExecutionSet;
 use spacetimedb::subscription::tx::DeltaTx;
+use spacetimedb::subscription::{collect_table_update, TableUpdateType};
 use spacetimedb::{db::relational_db::RelationalDB, messages::websocket::Compression};
 use spacetimedb_bench::database::BenchDatabase as _;
 use spacetimedb_bench::spacetime_raw::SpacetimeRaw;
@@ -129,6 +129,7 @@ fn eval(c: &mut Criterion) {
                     table_name.clone(),
                     Compression::None,
                     &tx,
+                    TableUpdateType::Subscribe,
                 )))
             })
         });
