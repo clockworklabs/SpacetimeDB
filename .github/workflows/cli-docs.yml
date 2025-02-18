@@ -1,6 +1,5 @@
 on:
   pull_request:
-  merge_group:
   workflow_dispatch:
     inputs:
       pr_number:
@@ -36,9 +35,10 @@ jobs:
           global-json-file: modules/global.json
       - name: Checkout docs
         uses: actions/checkout@v4
-        repository: clockworklabs/spacetime-docs
-        ref: master
-        path: spacetime-docs
+        with:
+          repository: clockworklabs/spacetime-docs
+          ref: master
+          path: spacetime-docs
       - name: Check for docs change
         run: |
           cargo run --features markdown-docs -p spacetimedb-cli > spacetime-docs/docs/cli-reference.md
