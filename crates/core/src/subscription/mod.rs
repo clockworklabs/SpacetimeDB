@@ -96,7 +96,6 @@ where
                 inserts: empty,
             },
         };
-        // let qu = QueryUpdate { deletes, inserts };
         let update = F::into_query_update(qu, comp);
         (TableUpdate::new(table_id, table_name, (update, num_rows)), metrics)
     })
