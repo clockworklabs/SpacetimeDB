@@ -2633,6 +2633,43 @@ mod tests {
     }
 
     #[test]
+    fn test_drop_table_is_transactional() -> ResultTest<()> {
+        let (datastore, mut tx, table_id) = setup_table()?;
+
+        let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
+        datastore.insert_mut_tx(&mut tx, table_id, row)?;
+        datastore.commit_mut_tx_for_test(tx)?;
+
+        let mut tx = datastore.begin_mut_tx();
+        let result = datastore.drop_table_mut_tx(&mut tx, table_id);
+        assert!(result.is_ok());
+
+        let ctx = ExecutionContext::default();
+        datastore.rollback_mut_tx(&ctx, tx);
+
+        let tx = datastore.begin_mut_tx();
+        assert!(
+            datastore.table_id_exists_mut_tx(&tx, &table_id),
+            "Table should still exist"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_create_table_is_transactional() -> ResultTest<()> {
+        let (datastore, tx, table_id) = setup_table()?;
+        let ctx = ExecutionContext::default();
+        datastore.rollback_mut_tx(&ctx, tx);
+
+        let tx = datastore.begin_mut_tx();
+        assert!(
+            !datastore.table_id_exists_mut_tx(&tx, &table_id),
+            "Table should not exist"
+        );
+        Ok(())
+    }
+
     fn test_row_level_security() -> ResultTest<()> {
         let (_, mut tx, table_id) = setup_table()?;
 
