@@ -22,11 +22,11 @@ error[E0277]: the column type `Test` does not implement `SpacetimeType`
             &T
             ()
             AlgebraicTypeRef
+            Alpha
             Arc<T>
             ArrayType
             Box<T>
             ColId
-            ColumnAttribute
           and $N others
   = note: required for `Test` to implement `TableColumn`
 
@@ -41,11 +41,11 @@ error[E0277]: the trait bound `Test: SpacetimeType` is not satisfied
             &T
             ()
             AlgebraicTypeRef
+            Alpha
             Arc<T>
             ArrayType
             Box<T>
             ColId
-            ColumnAttribute
           and $N others
 
 error[E0277]: the trait bound `Test: Deserialize<'de>` is not satisfied
@@ -62,10 +62,10 @@ error[E0277]: the trait bound `Test: Deserialize<'de>` is not satisfied
             &'de str
             ()
             AlgebraicTypeRef
+            Alpha
             Arc<[T]>
             ArrayType
             Box<T>
-            Box<[T]>
           and $N others
 note: required by a bound in `spacetimedb::spacetimedb_lib::de::SeqProductAccess::next_element`
  --> $WORKSPACE/crates/sats/src/de.rs
@@ -84,10 +84,10 @@ error[E0277]: the trait bound `Test: Deserialize<'_>` is not satisfied
             &'de str
             ()
             AlgebraicTypeRef
+            Alpha
             Arc<[T]>
             ArrayType
             Box<T>
-            Box<[T]>
           and $N others
 note: required by a bound in `get_field_value`
  --> $WORKSPACE/crates/sats/src/de.rs
@@ -105,14 +105,69 @@ error[E0277]: the trait bound `Test: Serialize` is not satisfied
             &T
             ()
             AlgebraicTypeRef
+            Alpha
             Arc<T>
             ArrayType
             ArrayValue
             Bound<T>
-            Box<T>
           and $N others
 note: required by a bound in `spacetimedb::spacetimedb_lib::ser::SerializeNamedProduct::serialize_element`
  --> $WORKSPACE/crates/sats/src/ser.rs
   |
   |     fn serialize_element<T: Serialize + ?Sized>(&mut self, name: Option<&str>, elem: &T) -> Result<(), Self::Error>;
   |                             ^^^^^^^^^ required by this bound in `SerializeNamedProduct::serialize_element`
+
+error[E0277]: `&'a Alpha` cannot appear as an argument to an index filtering operation
+  --> tests/ui/tables.rs:30:33
+   |
+30 |     ctx.db.delta().compound_a().find(Alpha::Beta);
+   |                                 ^^^^ should be an integer type, `bool`, `String`, `&str`, `Identity`, `ConnectionId`, or `Hash`, not `&'a Alpha`
+   |
+   = help: the trait `for<'a> FilterableValue` is not implemented for `&'a Alpha`
+   = note: The allowed set of types are limited to integers, bool, strings, `Identity`, `ConnectionId`, and `Hash`
+   = help: the following other types implement trait `FilterableValue`:
+             &ConnectionId
+             &Identity
+             &bool
+             &ethnum::int::I256
+             &ethnum::uint::U256
+             &i128
+             &i16
+             &i32
+           and $N others
+note: required by a bound in `UniqueColumn::<Tbl, <Col as spacetimedb::table::Column>::ColType, Col>::find`
+  --> src/table.rs
+   |
+   |     pub fn find(&self, col_val: impl Borrow<Col::ColType>) -> Option<Tbl::Row>
+   |            ---- required by a bound in this associated function
+   |     where
+   |         for<'a> &'a Col::ColType: FilterableValue,
+   |                                   ^^^^^^^^^^^^^^^ required by this bound in `UniqueColumn::<Tbl, <Col as Column>::ColType, Col>::find`
+
+error[E0277]: the trait bound `Alpha: IndexScanRangeBounds<(Alpha,), SingleBound>` is not satisfied
+  --> tests/ui/tables.rs:31:40
+   |
+31 |     ctx.db.delta().compound_b().filter(Alpha::Gamma);
+   |                                 ------ ^^^^^^^^^^^^ the trait `FilterableValue` is not implemented for `Alpha`
+   |                                 |
+   |                                 required by a bound introduced by this call
+   |
+   = help: the following other types implement trait `FilterableValue`:
+             &ConnectionId
+             &Identity
+             &bool
+             &ethnum::int::I256
+             &ethnum::uint::U256
+             &i128
+             &i16
+             &i32
+           and $N others
+   = note: required for `Alpha` to implement `IndexScanRangeBounds<(Alpha,), SingleBound>`
+note: required by a bound in `RangedIndex::<Tbl, IndexType, Idx>::filter`
+  --> src/table.rs
+   |
+   |     pub fn filter<B, K>(&self, b: B) -> impl Iterator<Item = Tbl::Row>
+   |            ------ required by a bound in this associated function
+   |     where
+   |         B: IndexScanRangeBounds<IndexType, K>,
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `RangedIndex::<Tbl, IndexType, Idx>::filter`
