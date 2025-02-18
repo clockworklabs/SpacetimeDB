@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 pub fn cli() -> clap::Command {
     clap::Command::new("init")
-        .about(format!("Initializes a new spacetime project.\n\n{}", UNSTABLE_WARNING))
+        .about(format!("Initializes a new spacetime project. {}", UNSTABLE_WARNING))
         .arg(
             Arg::new("project-path")
                 .value_parser(clap::value_parser!(PathBuf))

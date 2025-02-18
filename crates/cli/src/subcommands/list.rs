@@ -16,7 +16,7 @@ use tabled::{
 pub fn cli() -> Command {
     Command::new("list")
         .about(format!(
-            "Lists the databases attached to an identity.\n\n{}",
+            "Lists the databases attached to an identity. {}",
             UNSTABLE_WARNING
         ))
         .arg(common_args::server().help("The nickname, host name or URL of the server from which to list databases"))
