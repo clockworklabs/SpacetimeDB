@@ -140,6 +140,7 @@ bytestring = { version = "1.2.0", features = ["serde"] }
 cargo_metadata = "0.17.0"
 chrono = { version = "0.4.24", default-features = false }
 clap = { version = "4.2.4", features = ["derive", "wrap_help"] }
+clap-markdown = "0.1.4"
 colored = "2.0.0"
 console = { version = "0.15.6" }
 convert_case = "0.6.0"
