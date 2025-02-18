@@ -7,10 +7,11 @@ on:
         required: false
         default: ''
 
-name: Check CLI Docs
+name: PR-only CI
 
 jobs:
   cli_docs:
+    name: Check CLI docs
     runs-on: ubuntu-latest
     steps:
       - name: Find Git ref
