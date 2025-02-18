@@ -2,7 +2,7 @@ use super::execution_unit::QueryHash;
 use super::module_subscription_manager::{Plan, SubscriptionManager};
 use super::query::compile_read_only_query;
 use super::tx::DeltaTx;
-use super::{collect_table_update, record_exec_metrics};
+use super::{collect_table_update, record_exec_metrics, TableUpdateType};
 use crate::client::messages::{
     SubscriptionError, SubscriptionMessage, SubscriptionResult, SubscriptionRows, SubscriptionUpdateMessage,
     TransactionUpdateMessage,
@@ -58,6 +58,7 @@ impl ModuleSubscriptions {
         query: Arc<Plan>,
         tx: &TxId,
         auth: &AuthCtx,
+        update_type: TableUpdateType,
     ) -> Result<(SubscriptionUpdate, ExecutionMetrics), DBError> {
         check_row_limit(
             query.physical_plan(),
@@ -74,13 +75,14 @@ impl ModuleSubscriptions {
         let tx = DeltaTx::from(tx);
 
         Ok(match sender.config.protocol {
-            Protocol::Binary => collect_table_update(&plan, table_id, table_name.into(), comp, &tx)
+            Protocol::Binary => collect_table_update(&plan, table_id, table_name.into(), comp, &tx, update_type)
                 .map(|(table_update, metrics)| (FormatSwitch::Bsatn(table_update), metrics))?,
-            Protocol::Text => collect_table_update(&plan, table_id, table_name.into(), comp, &tx)
+            Protocol::Text => collect_table_update(&plan, table_id, table_name.into(), comp, &tx, update_type)
                 .map(|(table_update, metrics)| (FormatSwitch::Json(table_update), metrics))?,
         })
     }
 
+    /// Add a subscription to a single query.
     #[tracing::instrument(level = "trace", skip_all)]
     pub fn add_subscription(
         &self,
@@ -128,7 +130,8 @@ impl ModuleSubscriptions {
             }
         };
 
-        let eval_result = self.evaluate_initial_subscription(sender.clone(), query.clone(), &tx, &auth);
+        let eval_result =
+            self.evaluate_initial_subscription(sender.clone(), query.clone(), &tx, &auth, TableUpdateType::Subscribe);
 
         // If execution error, send to client
         let (table_rows, metrics) = match eval_result {
@@ -214,7 +217,8 @@ impl ModuleSubscriptions {
             self.relational_db.release_tx(tx);
         });
         let auth = AuthCtx::new(self.owner_identity, sender.id.identity);
-        let eval_result = self.evaluate_initial_subscription(sender.clone(), query.clone(), &tx, &auth);
+        let eval_result =
+            self.evaluate_initial_subscription(sender.clone(), query.clone(), &tx, &auth, TableUpdateType::Unsubscribe);
 
         // If execution error, send to client
         let (table_rows, metrics) = match eval_result {
@@ -312,9 +316,9 @@ impl ModuleSubscriptions {
 
         let tx = DeltaTx::from(&*tx);
         let (database_update, metrics) = match sender.config.protocol {
-            Protocol::Binary => execute_plans(&queries, comp, &tx)
+            Protocol::Binary => execute_plans(&queries, comp, &tx, TableUpdateType::Subscribe)
                 .map(|(table_update, metrics)| (FormatSwitch::Bsatn(table_update), metrics))?,
-            Protocol::Text => execute_plans(&queries, comp, &tx)
+            Protocol::Text => execute_plans(&queries, comp, &tx, TableUpdateType::Subscribe)
                 .map(|(table_update, metrics)| (FormatSwitch::Json(table_update), metrics))?,
         };
 

@@ -439,6 +439,7 @@ fn exec_subscribe_and_unsubscribe() {
     let cb = test_counter.add_test("unsubscribe_then_called");
     connect_then(&test_counter, {
         move |ctx| {
+            ctx.reducers.insert_one_u_8(1).unwrap();
             let handle_cell: Arc<Mutex<Option<module_bindings::SubscriptionHandle>>> = Arc::new(Mutex::new(None));
             let hc_clone = handle_cell.clone();
             let handle = ctx
@@ -448,11 +449,13 @@ fn exec_subscribe_and_unsubscribe() {
                     assert!(ctx.is_active());
                     assert!(handle.is_active());
                     assert!(!handle.is_ended());
+                    assert!(ctx.db.one_u_8().count() == 1);
                     let handle_clone = handle.clone();
                     handle
-                        .unsubscribe_then(Box::new(move |_| {
+                        .unsubscribe_then(Box::new(move |ectx| {
                             assert!(!handle_clone.is_active());
                             assert!(handle_clone.is_ended());
+                            assert!(ectx.db.one_u_8().count() == 0);
                             cb(Ok(()));
                         }))
                         .unwrap();
