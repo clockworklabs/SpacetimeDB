@@ -293,7 +293,7 @@ impl<Tbl: Table, Col: Index + Column<Table = Tbl>> UniqueColumn<Tbl, Col::ColTyp
     #[inline]
     pub fn find(&self, col_val: impl Borrow<Col::ColType>) -> Option<Tbl::Row>
     where
-        Col::ColType: FilterableValue,
+        for<'a> &'a Col::ColType: FilterableValue,
     {
         self._find(col_val.borrow())
     }
