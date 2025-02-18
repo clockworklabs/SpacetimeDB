@@ -291,7 +291,10 @@ impl<Tbl: Table, Col: Index + Column<Table = Tbl>> UniqueColumn<Tbl, Col::ColTyp
     // whereas by-ref makes passing `!Copy` fields more performant.
     // Can we do something smart with `std::borrow::Borrow`?
     #[inline]
-    pub fn find(&self, col_val: impl Borrow<Col::ColType>) -> Option<Tbl::Row> {
+    pub fn find(&self, col_val: impl Borrow<Col::ColType>) -> Option<Tbl::Row>
+    where
+        for<'a> &'a Col::ColType: FilterableValue,
+    {
         self._find(col_val.borrow())
     }
 
@@ -407,6 +410,10 @@ impl<Tbl: Table, IndexType, Idx: Index> RangedIndex<Tbl, IndexType, Idx> {
     }
 }
 
+mod private_filtrable_value {
+    pub trait Sealed {}
+}
+
 /// Types which can appear as an argument to an index filtering operation
 /// for a column of type `Column`.
 ///
@@ -427,12 +434,18 @@ impl<Tbl: Table, IndexType, Idx: Index> RangedIndex<Tbl, IndexType, Idx> {
 ///   for any pair of types `(Arg, Col)` which meet the above criteria
 ///   is desirable if `Arg` and `Col` have the same BSATN layout.
 ///   E.g. `&str: FilterableValue<Column = String>` is desirable.
-pub trait FilterableValue: Serialize {
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` cannot appear as an argument to an index filtering operation",
+    label = "should be an integer type, `bool`, `String`, `&str`, `Identity`, `ConnectionId`, or `Hash`, not `{Self}`",
+    note = "The allowed set of types are limited to integers, bool, strings, `Identity`, `ConnectionId`, and `Hash`"
+)]
+pub trait FilterableValue: Serialize + private_filtrable_value::Sealed {
     type Column;
 }
 
 macro_rules! impl_filterable_value {
     (@one $arg:ty => $col:ty) => {
+        impl private_filtrable_value::Sealed for $arg {}
         impl FilterableValue for $arg {
             type Column = $col;
         }

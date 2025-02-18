@@ -8,7 +8,7 @@ use crate::util::{self, get_login_token_or_log_in, UNSTABLE_WARNING};
 pub fn cli() -> clap::Command {
     clap::Command::new("energy")
         .about(format!(
-            "Invokes commands related to database budgets.\n\n{}",
+            "Invokes commands related to database budgets. {}",
             UNSTABLE_WARNING
         ))
         .args_conflicts_with_subcommands(true)
