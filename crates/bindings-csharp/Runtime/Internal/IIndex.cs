@@ -21,7 +21,7 @@ public abstract class IndexBase<Row>
         out ReadOnlySpan<byte> rstart,
         out ReadOnlySpan<byte> rend
     )
-        where Bounds : IBTreeIndexBounds
+        where Bounds : IIndexScanRangeBounds
     {
         prefixElems = new FFI.ColId(bounds.PrefixElems);
 
@@ -41,10 +41,10 @@ public abstract class IndexBase<Row>
     }
 
     protected IEnumerable<Row> DoFilter<Bounds>(Bounds bounds)
-        where Bounds : IBTreeIndexBounds => new RawTableIter<Bounds>(indexId, bounds).Parse();
+        where Bounds : IIndexScanRangeBounds => new RawTableIter<Bounds>(indexId, bounds).Parse();
 
     protected uint DoDelete<Bounds>(Bounds bounds)
-        where Bounds : IBTreeIndexBounds
+        where Bounds : IIndexScanRangeBounds
     {
         ToParams(bounds, out var prefixElems, out var prefix, out var rstart, out var rend);
         FFI.datastore_delete_by_index_scan_range_bsatn(
@@ -62,7 +62,7 @@ public abstract class IndexBase<Row>
     }
 
     private class RawTableIter<Bounds>(FFI.IndexId indexId, Bounds bounds) : RawTableIterBase<Row>
-        where Bounds : IBTreeIndexBounds
+        where Bounds : IIndexScanRangeBounds
     {
         protected override void IterStart(out FFI.RowIter handle)
         {
@@ -89,7 +89,7 @@ public abstract class UniqueIndex<Handle, Row, T, RW>(Handle table, string name)
     where T : IEquatable<T>
     where RW : struct, BSATN.IReadWrite<T>
 {
-    private static BTreeIndexBounds<T, RW> ToBounds(T key) => new(key);
+    private static IndexScanRangeBounds<T, RW> ToBounds(T key) => new(key);
 
     protected IEnumerable<Row> DoFilter(T key) => DoFilter(ToBounds(key));
 
