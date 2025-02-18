@@ -10,7 +10,7 @@ use spacetimedb_lib::sats;
 pub fn cli() -> clap::Command {
     clap::Command::new("describe")
         .about(format!(
-            "Describe the structure of a database or entities within it.\n\n{}",
+            "Describe the structure of a database or entities within it. {}",
             UNSTABLE_WARNING
         ))
         .arg(

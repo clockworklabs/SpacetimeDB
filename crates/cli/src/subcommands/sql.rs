@@ -15,7 +15,7 @@ use crate::util::{database_identity, get_auth_header, ResponseExt, UNSTABLE_WARN
 
 pub fn cli() -> clap::Command {
     clap::Command::new("sql")
-        .about(format!("Runs a SQL query on the database.\n\n{}", UNSTABLE_WARNING))
+        .about(format!("Runs a SQL query on the database. {}", UNSTABLE_WARNING))
         .arg(
             Arg::new("database")
                 .required(true)
