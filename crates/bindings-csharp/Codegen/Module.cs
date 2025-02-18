@@ -371,7 +371,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                     // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
                     // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
                     public {{globalName}}? Find({{f.Type}} key) => DoFilter(key).Cast<{{globalName}}?>().SingleOrDefault();
-                    public bool Update({{globalName}} row) => DoUpdate(row.{{f.Name}}, row);
+                    public {{globalName}} Update({{globalName}} row) => DoUpdate(row);
                 }
                 {{vis}} {{f.Name}}UniqueIndex {{f.Name}} => new(this);
                 """;

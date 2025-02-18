@@ -6,7 +6,7 @@ using SpacetimeDB.BSATN;
 public abstract class IndexBase<Row>
     where Row : IStructuralReadWrite, new()
 {
-    private readonly FFI.IndexId indexId;
+    internal readonly FFI.IndexId indexId;
 
     public IndexBase(string name)
     {
@@ -95,13 +95,13 @@ public abstract class UniqueIndex<Handle, Row, T, RW>(Handle table, string name)
 
     public bool Delete(T key) => DoDelete(ToBounds(key)) > 0;
 
-    protected bool DoUpdate(T key, Row row)
+    protected Row DoUpdate(Row row)
     {
-        if (!Delete(key))
-        {
-            return false;
-        }
-        table.Insert(row);
-        return true;
+        // Insert the row.
+        var bytes = IStructuralReadWrite.ToBytes(row);
+        var bytes_len = (uint)bytes.Length;
+        FFI.datastore_update_bsatn(ITableView<Handle, Row>.tableId, indexId, bytes, ref bytes_len);
+
+        return ITableView<Handle, Row>.IntegrateGeneratedColumns(row, bytes, bytes_len);
     }
 }

@@ -180,6 +180,14 @@ internal static partial class FFI
     );
 
     [LibraryImport(StdbNamespace)]
+    public static partial CheckedStatus datastore_update_bsatn(
+        TableId table_id,
+        IndexId index_id,
+        Span<byte> row,
+        ref uint row_len
+    );
+
+    [LibraryImport(StdbNamespace)]
     public static partial CheckedStatus datastore_delete_by_index_scan_range_bsatn(
         IndexId index_id,
         ReadOnlySpan<byte> prefix,

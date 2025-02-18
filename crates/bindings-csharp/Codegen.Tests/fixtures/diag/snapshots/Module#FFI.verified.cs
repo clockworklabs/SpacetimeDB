@@ -138,8 +138,8 @@ namespace SpacetimeDB
                 public global::TestAutoIncNotInteger? Find(string key) =>
                     DoFilter(key).Cast<global::TestAutoIncNotInteger?>().SingleOrDefault();
 
-                public bool Update(global::TestAutoIncNotInteger row) =>
-                    DoUpdate(row.IdentityField, row);
+                public global::TestAutoIncNotInteger Update(global::TestAutoIncNotInteger row) =>
+                    DoUpdate(row);
             }
 
             public IdentityFieldUniqueIndex IdentityField => new(this);
@@ -525,8 +525,8 @@ namespace SpacetimeDB
                 public global::TestScheduleIssues? Find(int key) =>
                     DoFilter(key).Cast<global::TestScheduleIssues?>().SingleOrDefault();
 
-                public bool Update(global::TestScheduleIssues row) =>
-                    DoUpdate(row.IdCorrectType, row);
+                public global::TestScheduleIssues Update(global::TestScheduleIssues row) =>
+                    DoUpdate(row);
             }
 
             public IdCorrectTypeUniqueIndex IdCorrectType => new(this);
@@ -620,8 +620,8 @@ namespace SpacetimeDB
                 public global::TestScheduleIssues? Find(string key) =>
                     DoFilter(key).Cast<global::TestScheduleIssues?>().SingleOrDefault();
 
-                public bool Update(global::TestScheduleIssues row) =>
-                    DoUpdate(row.IdWrongType, row);
+                public global::TestScheduleIssues Update(global::TestScheduleIssues row) =>
+                    DoUpdate(row);
             }
 
             public IdWrongTypeUniqueIndex IdWrongType => new(this);
@@ -716,8 +716,8 @@ namespace SpacetimeDB
                 public global::TestScheduleIssues? Find(int key) =>
                     DoFilter(key).Cast<global::TestScheduleIssues?>().SingleOrDefault();
 
-                public bool Update(global::TestScheduleIssues row) =>
-                    DoUpdate(row.IdCorrectType, row);
+                public global::TestScheduleIssues Update(global::TestScheduleIssues row) =>
+                    DoUpdate(row);
             }
 
             public IdCorrectTypeUniqueIndex IdCorrectType => new(this);

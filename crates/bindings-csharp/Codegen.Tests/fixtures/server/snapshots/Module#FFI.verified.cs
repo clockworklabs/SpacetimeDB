@@ -292,7 +292,7 @@ namespace SpacetimeDB
                 public global::BTreeViews? Find(SpacetimeDB.Identity key) =>
                     DoFilter(key).Cast<global::BTreeViews?>().SingleOrDefault();
 
-                public bool Update(global::BTreeViews row) => DoUpdate(row.Id, row);
+                public global::BTreeViews Update(global::BTreeViews row) => DoUpdate(row);
             }
 
             internal IdUniqueIndex Id => new(this);
@@ -478,7 +478,7 @@ namespace SpacetimeDB
                 public global::MultiTableRow? Find(uint key) =>
                     DoFilter(key).Cast<global::MultiTableRow?>().SingleOrDefault();
 
-                public bool Update(global::MultiTableRow row) => DoUpdate(row.Foo, row);
+                public global::MultiTableRow Update(global::MultiTableRow row) => DoUpdate(row);
             }
 
             public FooUniqueIndex Foo => new(this);
@@ -595,7 +595,7 @@ namespace SpacetimeDB
                 public global::MultiTableRow? Find(uint key) =>
                     DoFilter(key).Cast<global::MultiTableRow?>().SingleOrDefault();
 
-                public bool Update(global::MultiTableRow row) => DoUpdate(row.Bar, row);
+                public global::MultiTableRow Update(global::MultiTableRow row) => DoUpdate(row);
             }
 
             public BarUniqueIndex Bar => new(this);
@@ -717,7 +717,7 @@ namespace SpacetimeDB
                 public global::PublicTable? Find(int key) =>
                     DoFilter(key).Cast<global::PublicTable?>().SingleOrDefault();
 
-                public bool Update(global::PublicTable row) => DoUpdate(row.Id, row);
+                public bool Update(global::PublicTable row) => DoUpdate(row);
             }
 
             public IdUniqueIndex Id => new(this);
@@ -827,8 +827,8 @@ namespace SpacetimeDB
                         .Cast<global::RegressionMultipleUniqueIndexesHadSameName?>()
                         .SingleOrDefault();
 
-                public bool Update(global::RegressionMultipleUniqueIndexesHadSameName row) =>
-                    DoUpdate(row.Unique1, row);
+                public global::RegressionMultipleUniqueIndexesHadSameName Update(global::RegressionMultipleUniqueIndexesHadSameName row) =>
+                    DoUpdate(row);
             }
 
             internal Unique1UniqueIndex Unique1 => new(this);
@@ -853,8 +853,8 @@ namespace SpacetimeDB
                         .Cast<global::RegressionMultipleUniqueIndexesHadSameName?>()
                         .SingleOrDefault();
 
-                public bool Update(global::RegressionMultipleUniqueIndexesHadSameName row) =>
-                    DoUpdate(row.Unique2, row);
+                public global::RegressionMultipleUniqueIndexesHadSameName Update(global::RegressionMultipleUniqueIndexesHadSameName row) =>
+                    DoUpdate(row);
             }
 
             internal Unique2UniqueIndex Unique2 => new(this);
@@ -959,8 +959,7 @@ namespace SpacetimeDB
                 public global::Timers.SendMessageTimer? Find(ulong key) =>
                     DoFilter(key).Cast<global::Timers.SendMessageTimer?>().SingleOrDefault();
 
-                public bool Update(global::Timers.SendMessageTimer row) =>
-                    DoUpdate(row.ScheduledId, row);
+                public global::Timers.SendMessageTimer Update(global::Timers.SendMessageTimer row) => DoUpdate(row);
             }
 
             public ScheduledIdUniqueIndex ScheduledId => new(this);
