@@ -44,6 +44,10 @@ jobs:
         run: |
           cargo run --features markdown-docs -p spacetimedb-cli > spacetime-docs/docs/cli-reference.md
           cd spacetime-docs
+          # This is needed because our website doesn't render markdown quite properly.
+          # See the README in spacetime-docs for more details.
+          sed -i'' -E 's!^(##) `(.*)`$!\1 \2!' docs/cli-reference.md
+          sed -i'' -E 's!^(######) \*\*(.*)\*\*$!\1 <b>\2</b>!' docs/cli-reference.md
           if ! git diff-index --quiet HEAD; then
             echo "It looks like the CLI docs have changed"
             git diff
