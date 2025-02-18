@@ -13,7 +13,8 @@ use crate::worker_metrics::WORKER_METRICS;
 use derive_more::From;
 use futures::prelude::*;
 use spacetimedb_client_api_messages::websocket::{
-    BsatnFormat, CallReducerFlags, Compression, FormatSwitch, JsonFormat, SubscribeSingle, Unsubscribe, WebsocketFormat,
+    BsatnFormat, CallReducerFlags, Compression, FormatSwitch, JsonFormat, SubscribeMulti, SubscribeSingle, Unsubscribe,
+    UnsubscribeMulti, WebsocketFormat,
 };
 use spacetimedb_lib::identity::RequestId;
 use tokio::sync::{mpsc, oneshot, watch};
@@ -290,7 +291,7 @@ impl ClientConnection {
         tokio::task::spawn_blocking(move || {
             me.module
                 .subscriptions()
-                .add_subscription(me.sender, subscription, timer, None)
+                .add_single_subscription(me.sender, subscription, timer, None)
         })
         .await
         .unwrap() // TODO: is unwrapping right here?
@@ -298,9 +299,33 @@ impl ClientConnection {
 
     pub async fn unsubscribe(&self, request: Unsubscribe, timer: Instant) -> Result<(), DBError> {
         let me = self.clone();
-        tokio::task::spawn_blocking(move || me.module.subscriptions().remove_subscription(me.sender, request, timer))
-            .await
-            .unwrap() // TODO: is unwrapping right here?
+        tokio::task::spawn_blocking(move || {
+            me.module
+                .subscriptions()
+                .remove_single_subscription(me.sender, request, timer)
+        })
+        .await
+        .unwrap() // TODO: is unwrapping right here?
+    }
+
+    pub async fn subscribe_multi(&self, _subscription: SubscribeMulti, _timer: Instant) -> Result<(), DBError> {
+        todo!()
+        // let me = self.clone();
+        // tokio::task::spawn_blocking(move || {
+        //     me.module
+        //         .subscriptions()
+        //         .add_subscription(me.sender, subscription, timer, None)
+        // })
+        // .await
+        // .unwrap() // TODO: is unwrapping right here?
+    }
+
+    pub async fn unsubscribe_multi(&self, _request: UnsubscribeMulti, _timer: Instant) -> Result<(), DBError> {
+        todo!()
+        // let me = self.clone();
+        // tokio::task::spawn_blocking(move || me.module.subscriptions().remove_subscription(me.sender, request, timer))
+        //     .await
+        //     .unwrap() // TODO: is unwrapping right here?
     }
 
     pub async fn subscribe(&self, subscription: Subscribe, timer: Instant) -> Result<(), DBError> {

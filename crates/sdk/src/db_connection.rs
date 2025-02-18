@@ -1153,6 +1153,8 @@ async fn parse_loop<M: SpacetimeModule>(
                 query_id: e.query_id,
                 error: e.error.to_string(),
             },
+            ws::ServerMessage::SubscribeMultiApplied(_) => todo!(),
+            ws::ServerMessage::UnsubscribeMultiApplied(_) => todo!(),
         })
         .expect("Failed to send ParsedMessage to main thread");
     }

@@ -91,6 +91,8 @@ impl SerializableMessage {
                 SubscriptionResult::Subscribe(_) => Some(WorkloadType::Subscribe),
                 SubscriptionResult::Unsubscribe(_) => Some(WorkloadType::Unsubscribe),
                 SubscriptionResult::Error(_) => None,
+                SubscriptionResult::SubscribeMulti(_) => Some(WorkloadType::Subscribe),
+                SubscriptionResult::UnsubscribeMulti(_) => Some(WorkloadType::Unsubscribe),
             },
             Self::TxUpdate(_) => Some(WorkloadType::Update),
             Self::Identity(_) => None,
@@ -254,29 +256,15 @@ impl ToProtocol for SubscriptionUpdateMessage {
 }
 
 #[derive(Debug, Clone)]
+pub struct SubscriptionData {
+    pub data: FormatSwitch<ws::DatabaseUpdate<BsatnFormat>, ws::DatabaseUpdate<JsonFormat>>,
+}
+
+#[derive(Debug, Clone)]
 pub struct SubscriptionRows {
     pub table_id: TableId,
     pub table_name: Box<str>,
     pub table_rows: FormatSwitch<ws::TableUpdate<BsatnFormat>, ws::TableUpdate<JsonFormat>>,
-}
-
-impl ToProtocol for SubscriptionRows {
-    type Encoded = FormatSwitch<ws::SubscribeRows<BsatnFormat>, ws::SubscribeRows<JsonFormat>>;
-    fn to_protocol(self, protocol: Protocol) -> Self::Encoded {
-        protocol.assert_matches_format_switch(&self.table_rows);
-        match self.table_rows {
-            FormatSwitch::Bsatn(table_rows) => FormatSwitch::Bsatn(ws::SubscribeRows {
-                table_id: self.table_id,
-                table_name: self.table_name,
-                table_rows,
-            }),
-            FormatSwitch::Json(table_rows) => FormatSwitch::Json(ws::SubscribeRows {
-                table_id: self.table_id,
-                table_name: self.table_name,
-                table_rows,
-            }),
-        }
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -290,6 +278,8 @@ pub enum SubscriptionResult {
     Subscribe(SubscriptionRows),
     Unsubscribe(SubscriptionRows),
     Error(SubscriptionError),
+    SubscribeMulti(SubscriptionData),
+    UnsubscribeMulti(SubscriptionData),
 }
 
 #[derive(Debug, Clone)]
@@ -400,6 +390,30 @@ impl ToProtocol for SubscriptionMessage {
                     Protocol::Text => FormatSwitch::Json(msg.into()),
                 }
             }
+            SubscriptionResult::SubscribeMulti(result) => {
+                protocol.assert_matches_format_switch(&result.data);
+                match result.data {
+                    FormatSwitch::Bsatn(data) => FormatSwitch::Bsatn(
+                        ws::SubscribeMultiApplied {
+                            total_host_execution_duration_micros,
+                            request_id,
+                            query_id,
+                            update: data,
+                        }
+                        .into(),
+                    ),
+                    FormatSwitch::Json(data) => FormatSwitch::Json(
+                        ws::SubscribeMultiApplied {
+                            total_host_execution_duration_micros,
+                            request_id,
+                            query_id,
+                            update: data,
+                        }
+                        .into(),
+                    ),
+                }
+            }
+            SubscriptionResult::UnsubscribeMulti(subscription_data) => todo!(),
         }
     }
 }

@@ -68,7 +68,8 @@ impl Plan {
 #[derive(Debug)]
 struct ClientInfo {
     outbound_ref: Client,
-    subscriptions: HashMap<SubscriptionId, QueryHash>,
+    subscriptions: HashMap<SubscriptionId, HashSet<QueryHash>>,
+    subscription_ref_count: HashMap<QueryHash, usize>,
     // This should be removed when we migrate to SubscribeSingle.
     legacy_subscriptions: HashSet<QueryHash>,
     // This flag is set if an error occurs during a tx update.
@@ -81,6 +82,7 @@ impl ClientInfo {
         Self {
             outbound_ref,
             subscriptions: HashMap::default(),
+            subscription_ref_count: HashMap::default(),
             legacy_subscriptions: HashSet::default(),
             dropped: AtomicBool::new(false),
         }
@@ -94,7 +96,7 @@ struct QueryState {
     // For legacy clients that subscribe to a set of queries, we track them here.
     legacy_subscribers: HashSet<ClientId>,
     // For clients that subscribe to a single query, we track them here.
-    subscriptions: HashSet<SubscriptionId>,
+    subscriptions: HashSet<ClientId>,
 }
 
 impl QueryState {
@@ -112,7 +114,7 @@ impl QueryState {
     // This returns all of the clients listening to a query. If a client has multiple subscriptions for this query, it will appear twice.
     fn all_clients(&self) -> impl Iterator<Item = &ClientId> {
         let legacy_iter = self.legacy_subscribers.iter();
-        let subscriptions_iter = self.subscriptions.iter().map(|(client_id, _)| client_id);
+        let subscriptions_iter = self.subscriptions.iter();
         legacy_iter.chain(subscriptions_iter)
     }
 }
@@ -220,7 +222,7 @@ impl SubscriptionManager {
 
     /// Remove a single subscription for a client.
     /// This will return an error if the client does not have a subscription with the given query id.
-    pub fn remove_subscription(&mut self, client_id: ClientId, query_id: ClientQueryId) -> Result<Query, DBError> {
+    pub fn remove_subscription(&mut self, client_id: ClientId, query_id: ClientQueryId) -> Result<Vec<Query>, DBError> {
         let subscription_id = (client_id, query_id);
         let Some(ci) = self
             .clients
@@ -229,24 +231,48 @@ impl SubscriptionManager {
         else {
             return Err(anyhow::anyhow!("Client not found: {:?}", client_id).into());
         };
-        let Some(query_hash) = ci.subscriptions.remove(&subscription_id) else {
+        let Some(query_hashes) = ci.subscriptions.remove(&subscription_id) else {
             return Err(anyhow::anyhow!("Subscription not found: {:?}", subscription_id).into());
         };
-        let Some(query_state) = self.queries.get_mut(&query_hash) else {
-            return Err(anyhow::anyhow!("Query state not found for query hash: {:?}", query_hash).into());
-        };
-        let query = query_state.query.clone();
-        // Check if the query has any subscribers left.
-        query_state.subscriptions.remove(&subscription_id);
-        if !query_state.has_subscribers() {
-            SubscriptionManager::remove_query_from_tables(&mut self.tables, &query_state.query);
-            self.queries.remove(&query_hash);
+        let mut queries_to_return = Vec::new();
+        for hash in query_hashes {
+            let remaining_refs = {
+                let Some(count) = ci.subscription_ref_count.get_mut(&hash) else {
+                    return Err(anyhow::anyhow!("Query count not found for query hash: {:?}", hash).into());
+                };
+                *count -= 1;
+                *count
+            };
+            if remaining_refs > 0 {
+                // The client is still subscribed to this query, so we are done for now.
+                continue;
+            }
+            // The client is no longer subscribed to this query.
+            ci.subscription_ref_count.remove(&hash);
+            let Some(query_state) = self.queries.get_mut(&hash) else {
+                return Err(anyhow::anyhow!("Query state not found for query hash: {:?}", hash).into());
+            };
+            queries_to_return.push(query_state.query.clone());
+            query_state.subscriptions.remove(&client_id);
+            if !query_state.has_subscribers() {
+                SubscriptionManager::remove_query_from_tables(&mut self.tables, &query_state.query);
+                self.queries.remove(&hash);
+            }
         }
-        Ok(query)
+        Ok(queries_to_return)
     }
 
     /// Adds a single subscription for a client.
     pub fn add_subscription(&mut self, client: Client, query: Query, query_id: ClientQueryId) -> Result<(), DBError> {
+        self.add_subscription_multi(client, vec![query], query_id).map(|_| ())
+    }
+
+    pub fn add_subscription_multi(
+        &mut self,
+        client: Client,
+        queries: Vec<Query>,
+        query_id: ClientQueryId,
+    ) -> Result<Vec<Query>, DBError> {
         let client_id = (client.id.identity, client.id.connection_id);
 
         // Clean up any dropped subscriptions
@@ -263,32 +289,52 @@ impl SubscriptionManager {
             .entry(client_id)
             .or_insert_with(|| ClientInfo::new(client.clone()));
         let subscription_id = (client_id, query_id);
-        let hash = query.hash();
+        let hash_set = match ci.subscriptions.try_insert(subscription_id, HashSet::new()) {
+            Err(OccupiedError { .. }) => {
+                return Err(anyhow::anyhow!(
+                    "Subscription with id {:?} already exists for client: {:?}",
+                    query_id,
+                    client_id
+                )
+                .into());
+            }
+            Ok(hash_set) => hash_set,
+        };
+        // We track the queries that are being added for this client.
+        let mut new_queries = Vec::new();
 
-        if let Err(OccupiedError { .. }) = ci.subscriptions.try_insert(subscription_id, hash) {
-            return Err(anyhow::anyhow!(
-                "Subscription with id {:?} already exists for client: {:?}",
-                query_id,
-                client_id
-            )
-            .into());
-        }
+        for query in &queries {
+            let hash = query.hash();
+            // Deduping queries within this single call.
+            if !hash_set.insert(hash) {
+                continue;
+            }
+            let query_state = self
+                .queries
+                .entry(hash)
+                .or_insert_with(|| QueryState::new(query.clone()));
 
-        let query_state = self
-            .queries
-            .entry(hash)
-            .or_insert_with(|| QueryState::new(query.clone()));
+            // If this is new, we need to update the table to query mapping.
+            if !query_state.has_subscribers() {
+                for table_id in query.table_ids() {
+                    self.tables.entry(table_id).or_default().insert(hash);
+                }
+            }
+            let entry = ci.subscription_ref_count.entry(hash).or_insert(0);
+            *entry += 1;
+            let is_new_entry = *entry == 1;
 
-        // If this is new, we need to update the table to query mapping.
-        if !query_state.has_subscribers() {
-            for table_id in query.table_ids() {
-                self.tables.entry(table_id).or_default().insert(hash);
+            let inserted = query_state.subscriptions.insert(client_id);
+            // This should arguably crash the server, as it indicates a bug.
+            if inserted != is_new_entry {
+                return Err(anyhow::anyhow!("Internal error, ref count and query_state mismatch").into());
+            }
+            if inserted {
+                new_queries.push(query.clone());
             }
         }
 
-        query_state.subscriptions.insert(subscription_id);
-
-        Ok(())
+        Ok(new_queries)
     }
 
     /// Adds a client and its queries to the subscription manager.
@@ -347,18 +393,18 @@ impl SubscriptionManager {
         };
         debug_assert!(client_info.legacy_subscriptions.is_empty());
         let mut queries_to_remove = Vec::new();
-        client_info.subscriptions.iter().for_each(|(sub_id, query_hash)| {
+        for query_hash in client_info.subscription_ref_count.keys() {
             let Some(query_state) = self.queries.get_mut(query_hash) else {
                 tracing::warn!("Query state not found for query hash: {:?}", query_hash);
                 return;
             };
-            query_state.subscriptions.remove(sub_id);
+            query_state.subscriptions.remove(client);
             // This could happen twice for the same hash if a client has a duplicate, but that's fine. It is idepotent.
             if !query_state.has_subscribers() {
                 queries_to_remove.push(*query_hash);
                 SubscriptionManager::remove_query_from_tables(&mut self.tables, &query_state.query);
             }
-        });
+        }
         for query_hash in queries_to_remove {
             self.queries.remove(&query_hash);
         }

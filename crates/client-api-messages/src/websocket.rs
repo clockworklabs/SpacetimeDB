@@ -112,8 +112,10 @@ pub enum ClientMessage<Args> {
     OneOffQuery(OneOffQuery),
     /// Register a SQL query to to subscribe to updates. This does not affect other subscriptions.
     SubscribeSingle(SubscribeSingle),
+    SubscribeMulti(SubscribeMulti),
     /// Remove a subscription to a SQL query that was added with SubscribeSingle.
     Unsubscribe(Unsubscribe),
+    UnsubscribeMulti(UnsubscribeMulti),
 }
 
 impl<Args> ClientMessage<Args> {
@@ -134,6 +136,8 @@ impl<Args> ClientMessage<Args> {
             ClientMessage::SubscribeSingle(x) => ClientMessage::SubscribeSingle(x),
             ClientMessage::Unsubscribe(x) => ClientMessage::Unsubscribe(x),
             ClientMessage::Subscribe(x) => ClientMessage::Subscribe(x),
+            ClientMessage::SubscribeMulti(x) => ClientMessage::SubscribeMulti(x),
+            ClientMessage::UnsubscribeMulti(x) => ClientMessage::UnsubscribeMulti(x),
         }
     }
 }
@@ -248,10 +252,35 @@ pub struct SubscribeSingle {
     pub query_id: QueryId,
 }
 
+#[derive(SpacetimeType)]
+#[sats(crate = spacetimedb_lib)]
+pub struct SubscribeMulti {
+    /// A single SQL `SELECT` query to subscribe to.
+    pub query_strings: Box<[Box<str>]>,
+    /// An identifier for a client request.
+    pub request_id: u32,
+
+    /// An identifier for this subscription, which should not be used for any other subscriptions on the same connection.
+    /// This is used to refer to this subscription in Unsubscribe messages from the client and errors sent from the server.
+    /// These only have meaning given a ConnectionId.
+    pub query_id: QueryId,
+}
+
 /// Client request for removing a query from a subscription.
 #[derive(SpacetimeType)]
 #[sats(crate = spacetimedb_lib)]
 pub struct Unsubscribe {
+    /// An identifier for a client request.
+    pub request_id: u32,
+
+    /// The ID used in the corresponding `SubscribeSingle` message.
+    pub query_id: QueryId,
+}
+
+/// Client request for removing a query from a subscription.
+#[derive(SpacetimeType)]
+#[sats(crate = spacetimedb_lib)]
+pub struct UnsubscribeMulti {
     /// An identifier for a client request.
     pub request_id: u32,
 
@@ -304,6 +333,10 @@ pub enum ServerMessage<F: WebsocketFormat> {
     UnsubscribeApplied(UnsubscribeApplied<F>),
     /// Communicate an error in the subscription lifecycle.
     SubscriptionError(SubscriptionError),
+    /// Sent in response to a `SubscribeSingle` message. This contains the initial matching rows.
+    SubscribeMultiApplied(SubscribeMultiApplied<F>),
+    /// Sent in response to an `Unsubscribe` message. This contains the matching rows.
+    UnsubscribeMultiApplied(UnsubscribeMultiApplied<F>),
 }
 
 /// The matching rows of a subscription query.
@@ -379,6 +412,38 @@ pub struct SubscriptionError {
     /// This is intended for diagnostic purposes.
     /// It need not have a predictable/parseable format.
     pub error: Box<str>,
+}
+
+/// Response to [`Subscribe`] containing the initial matching rows.
+#[derive(SpacetimeType)]
+#[sats(crate = spacetimedb_lib)]
+pub struct SubscribeMultiApplied<F: WebsocketFormat> {
+    /// The request_id of the corresponding `SubscribeSingle` message.
+    pub request_id: u32,
+    /// The overall time between the server receiving a request and sending the response.
+    pub total_host_execution_duration_micros: u64,
+    /// An identifier for the subscribed query sent by the client.
+    pub query_id: QueryId,
+    /// The matching rows for this query.
+    pub update: DatabaseUpdate<F>,
+}
+
+/// Server response to a client [`Unsubscribe`] request.
+#[derive(SpacetimeType)]
+#[sats(crate = spacetimedb_lib)]
+pub struct UnsubscribeMultiApplied<F: WebsocketFormat> {
+    /// Provided by the client via the `Subscribe` message.
+    /// TODO: switch to subscription id?
+    pub request_id: u32,
+    /// The overall time between the server receiving a request and sending the response.
+    pub total_host_execution_duration_micros: u64,
+    /// The ID included in the `SubscribeApplied` and `Unsubscribe` messages.
+    pub query_id: QueryId,
+    /// The matching rows for this query set.
+    /// Note, this makes unsubscribing potentially very expensive.
+    /// To remove this in the future, we would need to send query_ids with rows in transaction updates,
+    /// and we would need clients to track which rows exist in which queries.
+    pub update: DatabaseUpdate<F>,
 }
 
 /// Response to [`Subscribe`] containing the initial matching rows.
