@@ -45,9 +45,9 @@ jobs:
           # See the README in spacetime-docs for more details.
           sed -i'' -E 's!^(##) `(.*)`$!\1 \2!' docs/cli-reference.md
           sed -i'' -E 's!^(######) \*\*(.*)\*\*$!\1 <b>\2</b>!' docs/cli-reference.md
+          git status
           if git diff-index --quiet HEAD; then
             echo "No docs changes detected"
-            git status
           else
             echo "It looks like the CLI docs have changed:"
             git diff
