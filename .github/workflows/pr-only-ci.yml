@@ -49,7 +49,7 @@ jobs:
             echo "No docs changes detected"
             git status
           else
-            echo "It looks like the CLI docs have changed"
+            echo "It looks like the CLI docs have changed:"
             git diff
             exit 1
           fi
