@@ -46,10 +46,9 @@ jobs:
           sed -i'' -E 's!^(##) `(.*)`$!\1 \2!' docs/cli-reference.md
           sed -i'' -E 's!^(######) \*\*(.*)\*\*$!\1 <b>\2</b>!' docs/cli-reference.md
           git status
-          if git diff-index --quiet HEAD; then
+          if git diff --exit-code HEAD; then
             echo "No docs changes detected"
           else
             echo "It looks like the CLI docs have changed:"
-            git diff
             exit 1
           fi
