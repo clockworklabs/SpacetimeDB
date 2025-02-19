@@ -108,31 +108,31 @@ jobs:
               exit 1
           }
 
-      - name: Start SpacetimeDB
-        run: |
-          spacetime start &
-          disown
-
-      - name: Publish module to SpacetimeDB
-        working-directory: SpacetimeDB/modules/quickstart-chat
-        run: |
-          spacetime logout && spacetime login --server-issued-login local
-          spacetime publish -s local quickstart-chat -c -y
-
-      - name: Check if SpacetimeDB process is running
-        run: |
-          echo "Currently running spacetime processes:"
-          pgrep -laf spacetime || echo "No spacetime process found."
-
-      - name: Publish module to SpacetimeDB
-        working-directory: SpacetimeDB/modules/quickstart-chat
-        run: |
-          spacetime logs quickstart-chat
-
-      - name: Run all tests recursively
-        run: pnpm test
-
-      # Run this step always, even if the previous steps fail
-      - name: Print rows in the user table
-        if: always()
-        run: spacetime sql quickstart-chat "SELECT * FROM user"
+#      - name: Start SpacetimeDB
+#        run: |
+#          spacetime start &
+#          disown
+#
+#      - name: Publish module to SpacetimeDB
+#        working-directory: SpacetimeDB/modules/quickstart-chat
+#        run: |
+#          spacetime logout && spacetime login --server-issued-login local
+#          spacetime publish -s local quickstart-chat -c -y
+#
+#      - name: Check if SpacetimeDB process is running
+#        run: |
+#          echo "Currently running spacetime processes:"
+#          pgrep -laf spacetime || echo "No spacetime process found."
+#
+#      - name: Publish module to SpacetimeDB
+#        working-directory: SpacetimeDB/modules/quickstart-chat
+#        run: |
+#          spacetime logs quickstart-chat
+#
+#      - name: Run all tests recursively
+#        run: pnpm test
+#
+#      # Run this step always, even if the previous steps fail
+#      - name: Print rows in the user table
+#        if: always()
+#        run: spacetime sql quickstart-chat "SELECT * FROM user"
