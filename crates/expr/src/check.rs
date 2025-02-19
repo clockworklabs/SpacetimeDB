@@ -485,6 +485,10 @@ mod tests {
                 sql: "select t.* from t join s on t.u32 = r.u32 join s as r",
                 msg: "Alias r is not in scope when it is referenced",
             },
+            TestCase {
+                sql: "select * from t limit 5",
+                msg: "Subscriptions do not support limit",
+            },
         ] {
             let result = parse_and_type_sub(sql, &tx);
             assert!(result.is_err(), "{msg}");

@@ -5173,6 +5173,7 @@ name = "spacetimedb-execution"
 version = "1.0.0-rc4"
 dependencies = [
  "anyhow",
+ "itertools 0.12.1",
  "spacetimedb-expr",
  "spacetimedb-lib",
  "spacetimedb-physical-plan",

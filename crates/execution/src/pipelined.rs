@@ -4,10 +4,11 @@ use std::{
 };
 
 use anyhow::{anyhow, Result};
+use itertools::Either;
 use spacetimedb_lib::{metrics::ExecutionMetrics, query::Delta, sats::size_of::SizeOf, AlgebraicValue, ProductValue};
 use spacetimedb_physical_plan::plan::{
     HashJoin, IxJoin, IxScan, PhysicalExpr, PhysicalPlan, ProjectField, ProjectListPlan, ProjectPlan, Sarg, Semi,
-    TupleField,
+    TableScan, TupleField,
 };
 use spacetimedb_primitives::{ColId, IndexId, TableId};
 
@@ -135,13 +136,15 @@ pub enum PipelinedExecutor {
     HashJoin(BlockingHashJoin),
     NLJoin(BlockingNLJoin),
     Filter(PipelinedFilter),
+    Limit(PipelinedLimit),
 }
 
 impl From<PhysicalPlan> for PipelinedExecutor {
     fn from(plan: PhysicalPlan) -> Self {
         match plan {
-            PhysicalPlan::TableScan(schema, _, delta) => Self::TableScan(PipelinedScan {
+            PhysicalPlan::TableScan(TableScan { schema, limit, delta }, _) => Self::TableScan(PipelinedScan {
                 table: schema.table_id,
+                limit,
                 delta,
             }),
             PhysicalPlan::IxScan(scan, _) => Self::IxScan(scan.into()),
@@ -190,6 +193,10 @@ impl From<PhysicalPlan> for PipelinedExecutor {
                 input: Box::new(PipelinedExecutor::from(*input)),
                 expr,
             }),
+            PhysicalPlan::Limit(input, limit) => Self::Limit(PipelinedLimit {
+                input: Box::new(PipelinedExecutor::from(*input)),
+                limit,
+            }),
         }
     }
 }
@@ -204,6 +211,7 @@ impl PipelinedExecutor {
             Self::HashJoin(join) => join.is_empty(tx),
             Self::NLJoin(join) => join.is_empty(tx),
             Self::Filter(filter) => filter.is_empty(tx),
+            Self::Limit(limit) => limit.is_empty(tx),
         }
     }
 
@@ -220,6 +228,7 @@ impl PipelinedExecutor {
             Self::HashJoin(join) => join.execute(tx, metrics, f),
             Self::NLJoin(join) => join.execute(tx, metrics, f),
             Self::Filter(filter) => filter.execute(tx, metrics, f),
+            Self::Limit(limit) => limit.execute(tx, metrics, f),
         }
     }
 }
@@ -228,6 +237,7 @@ impl PipelinedExecutor {
 #[derive(Debug)]
 pub struct PipelinedScan {
     pub table: TableId,
+    pub limit: Option<u64>,
     pub delta: Option<Delta>,
 }
 
@@ -247,6 +257,20 @@ impl PipelinedScan {
         metrics: &mut ExecutionMetrics,
         f: &mut dyn FnMut(Tuple<'a>) -> Result<()>,
     ) -> Result<()> {
+        // A physical table scan
+        let table_scan = || tx.table_scan(self.table);
+        // A physical table scan with optional row limit
+        let table_limit_scan = |limit| match limit {
+            None => table_scan().map(Either::Left),
+            Some(n) => table_scan().map(|iter| iter.take(n)).map(Either::Right),
+        };
+        // A delta table scan
+        let delta_scan = |inserts| tx.delta_scan(self.table, inserts);
+        // A delta table scan with optional row limit
+        let delta_limit_scan = |limit, inserts| match limit {
+            None => Either::Left(delta_scan(inserts)),
+            Some(n) => Either::Right(delta_scan(inserts).take(n)),
+        };
         let mut n = 0;
         let mut f = |t| {
             n += 1;
@@ -254,9 +278,7 @@ impl PipelinedScan {
         };
         match self.delta {
             None => {
-                for tuple in tx
-                    // Open an row id iterator
-                    .table_scan(self.table)?
+                for tuple in table_limit_scan(self.limit.map(|n| n as usize))?
                     .map(Row::Ptr)
                     .map(Tuple::Row)
                 {
@@ -264,9 +286,7 @@ impl PipelinedScan {
                 }
             }
             Some(Delta::Inserts) => {
-                for tuple in tx
-                    // Open a product value iterator
-                    .delta_scan(self.table, true)
+                for tuple in delta_limit_scan(self.limit.map(|n| n as usize), true)
                     .map(Row::Ref)
                     .map(Tuple::Row)
                 {
@@ -274,9 +294,7 @@ impl PipelinedScan {
                 }
             }
             Some(Delta::Deletes) => {
-                for tuple in tx
-                    // Open a product value iterator
-                    .delta_scan(self.table, false)
+                for tuple in delta_limit_scan(self.limit.map(|n| n as usize), false)
                     .map(Row::Ref)
                     .map(Tuple::Row)
                 {
@@ -296,6 +314,7 @@ pub struct PipelinedIxScan {
     pub table_id: TableId,
     /// The index id
     pub index_id: IndexId,
+    pub limit: Option<u64>,
     /// An equality prefix for multi-column scans
     pub prefix: Vec<AlgebraicValue>,
     /// The lower index bound
@@ -309,24 +328,28 @@ impl From<IxScan> for PipelinedIxScan {
         match scan {
             IxScan {
                 schema,
+                limit,
                 index_id,
                 prefix,
                 arg: Sarg::Eq(_, v),
             } => Self {
                 table_id: schema.table_id,
                 index_id,
+                limit,
                 prefix: prefix.into_iter().map(|(_, v)| v).collect(),
                 lower: Bound::Included(v.clone()),
                 upper: Bound::Included(v),
             },
             IxScan {
                 schema,
+                limit,
                 index_id,
                 prefix,
                 arg: Sarg::Range(_, lower, upper),
             } => Self {
                 table_id: schema.table_id,
                 index_id,
+                limit,
                 prefix: prefix.into_iter().map(|(_, v)| v).collect(),
                 lower,
                 upper,
@@ -347,6 +370,47 @@ impl PipelinedIxScan {
         metrics: &mut ExecutionMetrics,
         f: &mut dyn FnMut(Tuple<'a>) -> Result<()>,
     ) -> Result<()> {
+        // A single column index scan
+        let single_col_scan = || {
+            tx.index_scan_range(
+                self.table_id,
+                self.index_id,
+                &(self.lower.as_ref(), self.upper.as_ref()),
+            )
+        };
+        // A single column index scan with optional row limit
+        let single_col_limit_scan = |limit| match limit {
+            None => single_col_scan().map(Either::Left),
+            Some(n) => single_col_scan().map(|iter| iter.take(n)).map(Either::Right),
+        };
+        // A multi-column index scan
+        let multi_col_scan = |prefix: &[AlgebraicValue]| {
+            tx.index_scan_range(
+                self.table_id,
+                self.index_id,
+                &(
+                    self.lower
+                        .as_ref()
+                        .map(std::iter::once)
+                        .map(|iter| prefix.iter().chain(iter))
+                        .map(|iter| iter.cloned())
+                        .map(ProductValue::from_iter)
+                        .map(AlgebraicValue::Product),
+                    self.upper
+                        .as_ref()
+                        .map(std::iter::once)
+                        .map(|iter| prefix.iter().chain(iter))
+                        .map(|iter| iter.cloned())
+                        .map(ProductValue::from_iter)
+                        .map(AlgebraicValue::Product),
+                ),
+            )
+        };
+        // A multi-column index scan with optional row limit
+        let multi_col_limit_scan = |prefix, limit| match limit {
+            None => multi_col_scan(prefix).map(Either::Left),
+            Some(n) => multi_col_scan(prefix).map(|iter| iter.take(n)).map(Either::Right),
+        };
         let mut n = 0;
         let mut f = |t| {
             n += 1;
@@ -354,12 +418,7 @@ impl PipelinedIxScan {
         };
         match self.prefix.as_slice() {
             [] => {
-                for ptr in tx
-                    .index_scan_range(
-                        self.table_id,
-                        self.index_id,
-                        &(self.lower.as_ref(), self.upper.as_ref()),
-                    )?
+                for ptr in single_col_limit_scan(self.limit.map(|n| n as usize))?
                     .map(Row::Ptr)
                     .map(Tuple::Row)
                 {
@@ -367,27 +426,7 @@ impl PipelinedIxScan {
                 }
             }
             prefix => {
-                for ptr in tx
-                    .index_scan_range(
-                        self.table_id,
-                        self.index_id,
-                        &(
-                            self.lower
-                                .as_ref()
-                                .map(std::iter::once)
-                                .map(|iter| prefix.iter().chain(iter))
-                                .map(|iter| iter.cloned())
-                                .map(ProductValue::from_iter)
-                                .map(AlgebraicValue::Product),
-                            self.upper
-                                .as_ref()
-                                .map(std::iter::once)
-                                .map(|iter| prefix.iter().chain(iter))
-                                .map(|iter| iter.cloned())
-                                .map(ProductValue::from_iter)
-                                .map(AlgebraicValue::Product),
-                        ),
-                    )?
+                for ptr in multi_col_limit_scan(prefix, self.limit.map(|n| n as usize))?
                     .map(Row::Ptr)
                     .map(Tuple::Row)
                 {
@@ -847,6 +886,39 @@ impl PipelinedFilter {
         })?;
         metrics.rows_scanned += n;
         metrics.bytes_scanned += bytes_scanned;
+        Ok(())
+    }
+}
+
+/// A pipelined limit operator that does not short-circuit.
+/// Input rows will be scanned even after the limit has been reached.
+#[derive(Debug)]
+pub struct PipelinedLimit {
+    pub input: Box<PipelinedExecutor>,
+    pub limit: u64,
+}
+
+impl PipelinedLimit {
+    /// Does this operation contain an empty delta scan?
+    pub fn is_empty(&self, tx: &impl DeltaStore) -> bool {
+        self.input.is_empty(tx)
+    }
+
+    pub fn execute<'a, Tx: Datastore + DeltaStore>(
+        &self,
+        tx: &'a Tx,
+        metrics: &mut ExecutionMetrics,
+        f: &mut dyn FnMut(Tuple<'a>) -> Result<()>,
+    ) -> Result<()> {
+        let mut n = 0;
+        self.input.execute(tx, metrics, &mut |t| {
+            n += 1;
+            if n <= self.limit as usize {
+                f(t)?;
+            }
+            Ok(())
+        })?;
+        metrics.rows_scanned += n;
         Ok(())
     }
 }
