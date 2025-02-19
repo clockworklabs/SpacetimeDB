@@ -17,7 +17,7 @@ pub fn cli() -> Command {
         .subcommand_required(true)
         .subcommands(get_subcommands())
         .about(format!(
-            "Manage the connection to the SpacetimeDB server. {}",
+            "Manage the connection to the SpacetimeDB server. FOO. {}",
             UNSTABLE_WARNING
         ))
 }
