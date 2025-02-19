@@ -413,7 +413,29 @@ impl ToProtocol for SubscriptionMessage {
                     ),
                 }
             }
-            SubscriptionResult::UnsubscribeMulti(subscription_data) => todo!(),
+            SubscriptionResult::UnsubscribeMulti(result) => {
+                protocol.assert_matches_format_switch(&result.data);
+                match result.data {
+                    FormatSwitch::Bsatn(data) => FormatSwitch::Bsatn(
+                        ws::UnsubscribeMultiApplied {
+                            total_host_execution_duration_micros,
+                            request_id,
+                            query_id,
+                            update: data,
+                        }
+                        .into(),
+                    ),
+                    FormatSwitch::Json(data) => FormatSwitch::Json(
+                        ws::UnsubscribeMultiApplied {
+                            total_host_execution_duration_micros,
+                            request_id,
+                            query_id,
+                            update: data,
+                        }
+                        .into(),
+                    ),
+                }
+            }
         }
     }
 }

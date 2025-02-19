@@ -87,6 +87,29 @@ impl ClientInfo {
             dropped: AtomicBool::new(false),
         }
     }
+
+    /// Check that the subscription ref count matches the actual number of subscriptions.
+    #[cfg(test)]
+    fn assert_ref_count_consistency(&self) {
+        let mut expected_ref_count = HashMap::new();
+        for query_hashes in self.subscriptions.values() {
+            for query_hash in query_hashes {
+                assert!(
+                    self.subscription_ref_count.contains_key(query_hash),
+                    "Query hash not found: {:?}",
+                    query_hash
+                );
+                expected_ref_count
+                    .entry(*query_hash)
+                    .and_modify(|count| *count += 1)
+                    .or_insert(1);
+            }
+        }
+        assert_eq!(
+            self.subscription_ref_count, expected_ref_count,
+            "Checking the reference totals failed"
+        );
+    }
 }
 
 /// For each query that has subscribers, we track a set of legacy subscribers and individual subscriptions.
@@ -231,6 +254,10 @@ impl SubscriptionManager {
         else {
             return Err(anyhow::anyhow!("Client not found: {:?}", client_id).into());
         };
+
+        #[cfg(test)]
+        ci.assert_ref_count_consistency();
+
         let Some(query_hashes) = ci.subscriptions.remove(&subscription_id) else {
             return Err(anyhow::anyhow!("Subscription not found: {:?}", subscription_id).into());
         };
@@ -259,6 +286,10 @@ impl SubscriptionManager {
                 self.queries.remove(&hash);
             }
         }
+
+        #[cfg(test)]
+        ci.assert_ref_count_consistency();
+
         Ok(queries_to_return)
     }
 
@@ -288,6 +319,8 @@ impl SubscriptionManager {
             .clients
             .entry(client_id)
             .or_insert_with(|| ClientInfo::new(client.clone()));
+        #[cfg(test)]
+        ci.assert_ref_count_consistency();
         let subscription_id = (client_id, query_id);
         let hash_set = match ci.subscriptions.try_insert(subscription_id, HashSet::new()) {
             Err(OccupiedError { .. }) => {
@@ -332,6 +365,11 @@ impl SubscriptionManager {
             if inserted {
                 new_queries.push(query.clone());
             }
+        }
+
+        #[cfg(test)]
+        {
+            ci.assert_ref_count_consistency();
         }
 
         Ok(new_queries)
@@ -809,6 +847,40 @@ mod tests {
         subscriptions.remove_subscription(client_id, query_id)?;
 
         assert!(subscriptions.query_reads_from_table(&hash, &table_id));
+
+        Ok(())
+    }
+
+    /// A very simple test case of a duplicate query.
+    #[test]
+    fn test_subscribe_and_unsubscribe_with_duplicate_queries_multi() -> ResultTest<()> {
+        let db = TestDB::durable()?;
+
+        let table_id = create_table(&db, "T")?;
+        let sql = "select * from T";
+        let plan = compile_plan(&db, sql)?;
+        let hash = plan.hash();
+
+        let client = Arc::new(client(0));
+
+        let query_id: ClientQueryId = QueryId::new(1);
+        let mut subscriptions = SubscriptionManager::default();
+        let added_query = subscriptions.add_subscription_multi(client.clone(), vec![plan.clone()], query_id)?;
+        assert!(added_query.len() == 1);
+        assert_eq!(added_query[0].hash, hash);
+        let second_one = subscriptions.add_subscription_multi(client.clone(), vec![plan.clone()], QueryId::new(2))?;
+        assert!(second_one.is_empty());
+
+        let client_id = (client.id.identity, client.id.connection_id);
+        let removed_queries = subscriptions.remove_subscription(client_id, query_id)?;
+        assert!(removed_queries.is_empty());
+
+        assert!(subscriptions.query_reads_from_table(&hash, &table_id));
+        let removed_queries = subscriptions.remove_subscription(client_id, QueryId::new(2))?;
+        assert!(removed_queries.len() == 1);
+        assert_eq!(removed_queries[0].hash, hash);
+
+        assert!(!subscriptions.query_reads_from_table(&hash, &table_id));
 
         Ok(())
     }

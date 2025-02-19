@@ -406,7 +406,6 @@ impl ModuleSubscriptions {
         let tx = scopeguard::guard(self.relational_db.begin_tx(Workload::Subscribe), |tx| {
             self.relational_db.release_tx(tx);
         });
-        let request_id = request.request_id;
         let auth = AuthCtx::new(self.owner_identity, sender.id.identity);
         let mut queries = vec![];
         let guard = self.subscriptions.read();
