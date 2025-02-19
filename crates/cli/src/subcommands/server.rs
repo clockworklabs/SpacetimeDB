@@ -16,7 +16,10 @@ pub fn cli() -> Command {
         .args_conflicts_with_subcommands(true)
         .subcommand_required(true)
         .subcommands(get_subcommands())
-        .about(format!("ARGLEBARGLE {}", UNSTABLE_WARNING))
+        .about(format!(
+            "Manage the connection to the SpacetimeDB server. {}",
+            UNSTABLE_WARNING
+        ))
 }
 
 fn get_subcommands() -> Vec<Command> {
