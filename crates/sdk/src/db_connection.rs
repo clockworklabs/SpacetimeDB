@@ -308,7 +308,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
             }
             // Subscribe: register the subscription in the [`SubscriptionManager`]
             // and send the `Subscribe` WS message.
-            PendingMutation::SubscribeSingle { query_id, handle } => {
+            PendingMutation::SubscribeMulti { query_id, handle } => {
                 let mut inner = self.inner.lock().unwrap();
                 // Register the subscription, so we can handle related messages from the server.
                 inner.subscriptions.register_subscription(query_id, handle.clone());
@@ -318,7 +318,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                         .unwrap()
                         .as_mut()
                         .ok_or(crate::Error::Disconnected)?
-                        .unbounded_send(ws::ClientMessage::SubscribeSingle(msg))
+                        .unbounded_send(ws::ClientMessage::SubscribeMulti(msg))
                         .expect("Unable to send subscribe message: WS sender loop has dropped its recv channel");
                 }
                 // else, the handle was already cancelled.
@@ -342,7 +342,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                             .unwrap()
                             .as_mut()
                             .ok_or(crate::Error::Disconnected)?
-                            .unbounded_send(ws::ClientMessage::Unsubscribe(m))
+                            .unbounded_send(ws::ClientMessage::UnsubscribeMulti(m))
                             .expect("Unable to send unsubscribe message: WS sender loop has dropped its recv channel");
                     }
                 }
@@ -1117,9 +1117,8 @@ async fn parse_loop<M: SpacetimeModule>(
             ws::ServerMessage::OneOffQueryResponse(_) => {
                 unreachable!("The Rust SDK does not implement one-off queries")
             }
-            ws::ServerMessage::SubscribeApplied(subscribe_applied) => {
-                let table_rows = subscribe_applied.rows.table_rows;
-                let db_update = ws::DatabaseUpdate::from_iter(std::iter::once(table_rows));
+            ws::ServerMessage::SubscribeMultiApplied(subscribe_applied) => {
+                let db_update = subscribe_applied.update;
                 let query_id = subscribe_applied.query_id.id;
                 match M::DbUpdate::parse_update(db_update) {
                     Err(e) => ParsedMessage::Error(
@@ -1133,9 +1132,8 @@ async fn parse_loop<M: SpacetimeModule>(
                     },
                 }
             }
-            ws::ServerMessage::UnsubscribeApplied(unsubscribe_applied) => {
-                let table_rows = unsubscribe_applied.rows.table_rows;
-                let db_update = ws::DatabaseUpdate::from_iter(std::iter::once(table_rows));
+            ws::ServerMessage::UnsubscribeMultiApplied(unsubscribe_applied) => {
+                let db_update = unsubscribe_applied.update;
                 let query_id = unsubscribe_applied.query_id.id;
                 match M::DbUpdate::parse_update(db_update) {
                     Err(e) => ParsedMessage::Error(
@@ -1153,8 +1151,8 @@ async fn parse_loop<M: SpacetimeModule>(
                 query_id: e.query_id,
                 error: e.error.to_string(),
             },
-            ws::ServerMessage::SubscribeMultiApplied(_) => todo!(),
-            ws::ServerMessage::UnsubscribeMultiApplied(_) => todo!(),
+            ws::ServerMessage::SubscribeApplied(_) => unreachable!("Rust client SDK never sends `SubscribeSingle`, but received a `SubscribeApplied` from the host... huh?"),
+            ws::ServerMessage::UnsubscribeApplied(_) => unreachable!("Rust client SDK never sends `UnsubscribeSingle`, but received a `UnsubscribeApplied` from the host... huh?")
         })
         .expect("Failed to send ParsedMessage to main thread");
     }
@@ -1162,17 +1160,17 @@ async fn parse_loop<M: SpacetimeModule>(
 
 /// Operations a user can make to a `DbContext` which must be postponed
 pub(crate) enum PendingMutation<M: SpacetimeModule> {
+    // TODO: Rename to `SubscribeLegacy`, or replace with `SubscribeToAllTables`.
     Subscribe {
         on_applied: Option<OnAppliedCallback<M>>,
         on_error: Option<OnErrorCallback<M>>,
         queries: Box<[Box<str>]>,
-        // TODO: replace `queries` with query_sql: String,
         sub_id: u32,
     },
     Unsubscribe {
         query_id: u32,
     },
-    SubscribeSingle {
+    SubscribeMulti {
         query_id: u32,
         handle: SubscriptionHandleImpl<M>,
     },
@@ -1244,12 +1242,4 @@ static NEXT_SUBSCRIPTION_ID: AtomicU32 = AtomicU32::new(1);
 // Get the next request ID to use for a WebSocket message.
 pub(crate) fn next_subscription_id() -> u32 {
     NEXT_SUBSCRIPTION_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-}
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn dummy() {
-        assert_eq!(1, 1);
-    }
 }

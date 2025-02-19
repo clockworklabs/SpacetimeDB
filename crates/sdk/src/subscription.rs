@@ -39,7 +39,7 @@ pub type OnEndedCallback<M> = Box<dyn FnOnce(&<M as SpacetimeModule>::Subscripti
 /// When handling a pending unsubscribe, there are three cases the caller must handle.
 pub(crate) enum PendingUnsubscribeResult<M: SpacetimeModule> {
     // The unsubscribe message should be sent to the server.
-    SendUnsubscribe(ws::Unsubscribe),
+    SendUnsubscribe(ws::UnsubscribeMulti),
     // The subscription is immediately being cancelled, so the callback should be run.
     RunCallback(OnEndedCallback<M>),
     // No action is required.
@@ -137,7 +137,7 @@ impl<M: SpacetimeModule> SubscriptionManager<M> {
             self.new_subscriptions.remove(&sub_id);
             return PendingUnsubscribeResult::DoNothing;
         }
-        PendingUnsubscribeResult::SendUnsubscribe(ws::Unsubscribe {
+        PendingUnsubscribeResult::SendUnsubscribe(ws::UnsubscribeMulti {
             query_id: ws::QueryId::new(sub_id),
             request_id: next_request_id(),
         })
@@ -215,18 +215,18 @@ impl<M: SpacetimeModule> SubscriptionBuilder<M> {
         self
     }
 
-    pub fn subscribe(self, query_sql: &str) -> M::SubscriptionHandle {
+    pub fn subscribe<Queries: IntoQueries>(self, query_sql: Queries) -> M::SubscriptionHandle {
         let qid = next_subscription_id();
         let handle = SubscriptionHandleImpl::new(SubscriptionState::new(
             qid,
-            query_sql.into(),
+            query_sql.into_queries(),
             self.conn.pending_mutations_send.clone(),
             self.on_applied,
             self.on_error,
         ));
         self.conn
             .pending_mutations_send
-            .unbounded_send(PendingMutation::SubscribeSingle {
+            .unbounded_send(PendingMutation::SubscribeMulti {
                 query_id: qid,
                 handle: handle.clone(),
             })
@@ -271,27 +271,62 @@ impl<M: SpacetimeModule> SubscriptionBuilder<M> {
     }
 }
 
+/// Types which can be converted into a single query.
+//
+// This trait is necessary because of Rust's coherence rules.
+// If you find and replace it with `Into<Box<str>>`,
+// the compiler will complain on the `impl IntoQueries for [T; N]` impl
+// that future updates may add `impl Into<Box<str>> for [T; N]`.
+pub trait IntoQueryString {
+    fn into_query_string(self) -> Box<str>;
+}
+
+macro_rules! impl_into_query_string_via_into {
+    ($ty:ty $(, $tys:ty)* $(,)?) => {
+        impl IntoQueryString for $ty {
+            fn into_query_string(self) -> Box<str> {
+                self.into()
+            }
+        }
+    };
+}
+
+impl_into_query_string_via_into! {
+    &str, String, Box<str>,
+}
+
 /// Types which specify a list of query strings.
 pub trait IntoQueries {
-    /// Convert into the list of queries.
     fn into_queries(self) -> Box<[Box<str>]>;
+}
+
+impl<T: IntoQueryString> IntoQueries for T {
+    fn into_queries(self) -> Box<[Box<str>]> {
+        Box::new([self.into_query_string()])
+    }
+}
+
+impl<T: IntoQueryString, const N: usize> IntoQueries for [T; N] {
+    fn into_queries(self) -> Box<[Box<str>]> {
+        self.into_iter().map(IntoQueryString::into_query_string).collect()
+    }
+}
+
+impl<T: IntoQueryString + Clone> IntoQueries for &[T] {
+    fn into_queries(self) -> Box<[Box<str>]> {
+        self.iter().cloned().map(IntoQueryString::into_query_string).collect()
+    }
+}
+
+impl<T: IntoQueryString> IntoQueries for Vec<T> {
+    fn into_queries(self) -> Box<[Box<str>]> {
+        self.into_iter().map(IntoQueryString::into_query_string).collect()
+    }
 }
 
 impl IntoQueries for Box<[Box<str>]> {
     fn into_queries(self) -> Box<[Box<str>]> {
         self
-    }
-}
-
-impl<S: Copy + Into<Box<str>>> IntoQueries for &[S] {
-    fn into_queries(self) -> Box<[Box<str>]> {
-        self.iter().copied().map(Into::into).collect()
-    }
-}
-
-impl<S: Into<Box<str>>, const N: usize> IntoQueries for [S; N] {
-    fn into_queries(self) -> Box<[Box<str>]> {
-        self.map(Into::into).into()
     }
 }
 
@@ -310,7 +345,7 @@ enum SubscriptionServerState {
 /// and by the `SubscriptionManager` that handles updates from the server.
 pub(crate) struct SubscriptionState<M: SpacetimeModule> {
     query_id: u32,
-    query_sql: Box<str>,
+    query_sql: Box<[Box<str>]>,
     unsubscribe_called: bool,
     status: SubscriptionServerState,
     on_applied: Option<OnAppliedCallback<M>>,
@@ -324,7 +359,7 @@ pub(crate) struct SubscriptionState<M: SpacetimeModule> {
 impl<M: SpacetimeModule> SubscriptionState<M> {
     pub(crate) fn new(
         query_id: u32,
-        query_sql: Box<str>,
+        query_sql: Box<[Box<str>]>,
         pending_mutation_sender: mpsc::UnboundedSender<PendingMutation<M>>,
         on_applied: Option<OnAppliedCallback<M>>,
         on_error: Option<OnErrorCallback<M>>,
@@ -344,7 +379,7 @@ impl<M: SpacetimeModule> SubscriptionState<M> {
     /// Start the subscription.
     /// This updates the state in the handle, and returns the message to be sent to the server.
     /// The caller is responsible for sending the message to the server.
-    pub(crate) fn start(&mut self) -> Option<ws::SubscribeSingle> {
+    pub(crate) fn start(&mut self) -> Option<ws::SubscribeMulti> {
         if self.unsubscribe_called {
             // This means that the subscription was cancelled before it was started.
             // We skip sending the subscription start message.
@@ -357,9 +392,9 @@ impl<M: SpacetimeModule> SubscriptionState<M> {
             unreachable!("Subscription already started");
         }
         self.status = SubscriptionServerState::Sent;
-        Some(ws::SubscribeSingle {
+        Some(ws::SubscribeMulti {
             query_id: ws::QueryId::new(self.query_id),
-            query: self.query_sql.clone(),
+            query_strings: self.query_sql.clone(),
             request_id: next_request_id(),
         })
     }
@@ -460,7 +495,7 @@ impl<M: SpacetimeModule> SubscriptionHandleImpl<M> {
         }
     }
 
-    pub(crate) fn start(&self) -> Option<ws::SubscribeSingle> {
+    pub(crate) fn start(&self) -> Option<ws::SubscribeMulti> {
         let mut inner = self.inner.lock().unwrap();
         inner.start()
     }
