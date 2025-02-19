@@ -98,7 +98,7 @@ fn tokio_block_on<Fut: Future>(fut: Fut) -> anyhow::Result<Fut::Output> {
     Ok(tokio::runtime::Runtime::new()?.block_on(fut))
 }
 
-#[derive(clap::Args)]
+#[derive(clap::Args, Copy, Clone)]
 struct ForceYes {
     /// Skip the confirmation dialog.
     #[arg(long, short)]
