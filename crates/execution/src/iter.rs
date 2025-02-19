@@ -75,7 +75,6 @@ pub enum Iter<'a> {
     Row(RowRefIter<'a>),
     Join(LeftDeepJoinIter<'a>),
     Filter(Filter<'a, Iter<'a>>),
-    Limit(Limit<Iter<'a>>),
 }
 
 impl<'a> Iterator for Iter<'a> {
@@ -86,7 +85,6 @@ impl<'a> Iterator for Iter<'a> {
             Self::Row(iter) => iter.next().map(Tuple::Row),
             Self::Join(iter) => iter.next(),
             Self::Filter(iter) => iter.next(),
-            Self::Limit(iter) => iter.next(),
         }
     }
 }
@@ -105,13 +103,7 @@ impl<'a> Iter<'a> {
                     .map(|input| Filter { input, expr })
                     .map(Iter::Filter)
             }
-            PhysicalPlan::Limit(input, n) => {
-                // Build a limit iterator
-                Iter::build(input, tx)
-                    .map(Box::new)
-                    .map(|input| Limit { input, i: 0, n: *n })
-                    .map(Iter::Limit)
-            }
+            PhysicalPlan::Limit(..) => unimplemented!(),
             PhysicalPlan::NLJoin(lhs, rhs) => {
                 // Build a nested loop join iterator
                 NLJoin::build_from(lhs, rhs, tx)
@@ -240,25 +232,28 @@ impl<'a> RowRefIter<'a> {
             ProductValue::from_iter(prefix.iter().map(|(_, v)| v).chain([v]).cloned())
         };
         match plan {
+            PhysicalPlan::TableScan(TableScan { limit: Some(_), .. }, _) => unimplemented!(),
             PhysicalPlan::TableScan(
                 TableScan {
-                    schema, delta: None, ..
+                    schema,
+                    limit: None,
+                    delta: None,
                 },
                 _,
             ) => tx.table_scan(schema.table_id).map(Self::TableScan),
             PhysicalPlan::TableScan(
                 TableScan {
                     schema,
+                    limit: None,
                     delta: Some(Delta::Inserts),
-                    ..
                 },
                 _,
             ) => Ok(Self::DeltaScan(tx.delta_scan(schema.table_id, true))),
             PhysicalPlan::TableScan(
                 TableScan {
                     schema,
+                    limit: None,
                     delta: Some(Delta::Deletes),
-                    ..
                 },
                 _,
             ) => Ok(Self::DeltaScan(tx.delta_scan(schema.table_id, false))),
@@ -1091,20 +1086,5 @@ impl<'a> Iterator for Filter<'a, Iter<'a>> {
 
     fn next(&mut self) -> Option<Self::Item> {
         self.input.find(|tuple| self.expr.eval_bool(tuple))
-    }
-}
-
-/// A tuple-at-a-time filter iterator
-pub struct Limit<I> {
-    input: Box<I>,
-    i: u64,
-    n: u64,
-}
-
-impl<'a> Iterator for Limit<Iter<'a>> {
-    type Item = Tuple<'a>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.input.next().filter(|_| self.i < self.n).inspect(|_| self.i += 1)
     }
 }

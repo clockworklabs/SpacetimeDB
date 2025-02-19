@@ -48,8 +48,11 @@ pub fn estimate_rows_scanned(tx: &Tx, plan: &PhysicalPlan) -> u64 {
 /// Estimate the cardinality of a physical plan
 pub fn row_estimate(tx: &Tx, plan: &PhysicalPlan) -> u64 {
     match plan {
+        // Use a row limit as the estimate if present
+        PhysicalPlan::Limit(_, n)
+        | PhysicalPlan::TableScan(TableScan { limit: Some(n), .. }, _)
+        | PhysicalPlan::IxScan(IxScan { limit: Some(n), .. }, _) => *n,
         // Table scans return the number of rows in the table
-        PhysicalPlan::TableScan(TableScan { limit: Some(n), .. }, _) => *n,
         PhysicalPlan::TableScan(
             TableScan {
                 schema,
@@ -81,7 +84,6 @@ pub fn row_estimate(tx: &Tx, plan: &PhysicalPlan) -> u64 {
         PhysicalPlan::IxScan(IxScan { schema, .. }, _) => tx.table_row_count(schema.table_id).unwrap_or_default(),
         // Same for filters
         PhysicalPlan::Filter(input, _) => row_estimate(tx, input),
-        PhysicalPlan::Limit(_, n) => *n,
         // Nested loop joins are cross joins
         PhysicalPlan::NLJoin(lhs, rhs) => row_estimate(tx, lhs).saturating_mul(row_estimate(tx, rhs)),
         // Unique joins return a maximal estimation.
