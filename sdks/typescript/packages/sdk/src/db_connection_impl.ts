@@ -261,7 +261,7 @@ export class DbConnectionImpl<
   registerSubscription(
     handle: SubscriptionHandleImpl<DBView, Reducers, SetReducerFlags>,
     handleEmitter: EventEmitter<SubscribeEvent, SubscriptionEventCallback>,
-    querySql: string
+    querySql: string[]
   ): number {
     const queryId = this.#getNextQueryId();
     this.#subscriptionManager.subscriptions.set(queryId, {
@@ -269,8 +269,8 @@ export class DbConnectionImpl<
       emitter: handleEmitter,
     });
     this.#sendMessage(
-      ws.ClientMessage.SubscribeSingle({
-        query: querySql,
+      ws.ClientMessage.SubscribeMulti({
+        queryStrings: querySql,
         queryId: { id: queryId },
         // The TypeScript SDK doesn't currently track `request_id`s,
         // so always use 0.
@@ -282,7 +282,7 @@ export class DbConnectionImpl<
 
   unregisterSubscription(queryId: number): void {
     this.#sendMessage(
-      ws.ClientMessage.Unsubscribe({
+      ws.ClientMessage.UnsubscribeMulti({
         queryId: { id: queryId },
         // The TypeScript SDK doesn't currently track `request_id`s,
         // so always use 0.
@@ -462,26 +462,26 @@ export class DbConnectionImpl<
         );
       }
 
-      case 'SubscribeApplied': {
-        const parsedTableUpdate = await parseTableUpdate(
-          message.value.rows.tableRows
+      case 'SubscribeMultiApplied': {
+        const parsedTableUpdates = await parseDatabaseUpdate(
+          message.value.update
         );
         const subscribeAppliedMessage: SubscribeAppliedMessage = {
           tag: 'SubscribeApplied',
           queryId: message.value.queryId.id,
-          tableUpdate: parsedTableUpdate,
+          tableUpdates: parsedTableUpdates,
         };
         return subscribeAppliedMessage;
       }
 
-      case 'UnsubscribeApplied': {
-        const parsedTableUpdate = await parseTableUpdate(
-          message.value.rows.tableRows
+      case 'UnsubscribeMultiApplied': {
+        const parsedTableUpdates = await parseDatabaseUpdate(
+          message.value.update
         );
         const unsubscribeAppliedMessage: UnsubscribeAppliedMessage = {
           tag: 'UnsubscribeApplied',
           queryId: message.value.queryId.id,
-          tableUpdate: parsedTableUpdate,
+          tableUpdates: parsedTableUpdates,
         };
         return unsubscribeAppliedMessage;
       }
@@ -649,7 +649,7 @@ export class DbConnectionImpl<
           event
         );
         const { event: _, ...subscriptionEventContext } = eventContext;
-        this.#applyTableUpdates([message.tableUpdate], eventContext);
+        this.#applyTableUpdates(message.tableUpdates, eventContext);
         this.#subscriptionManager.subscriptions
           .get(message.queryId)
           ?.emitter.emit('applied', subscriptionEventContext);
@@ -662,7 +662,7 @@ export class DbConnectionImpl<
           event
         );
         const { event: _, ...subscriptionEventContext } = eventContext;
-        this.#applyTableUpdates([message.tableUpdate], eventContext);
+        this.#applyTableUpdates(message.tableUpdates, eventContext);
         this.#subscriptionManager.subscriptions
           .get(message.queryId)
           ?.emitter.emit('end', subscriptionEventContext);
