@@ -391,7 +391,7 @@ impl ModuleSubscriptions {
     ) -> Result<(), DBError> {
         // Send an error message to the client
         let send_err_msg = |message| {
-            sender.send_message(SubscriptionMessage {
+            let _ = sender.send_message(SubscriptionMessage {
                 request_id: Some(request.request_id),
                 query_id: Some(request.query_id),
                 timer: Some(timer),
@@ -399,7 +399,7 @@ impl ModuleSubscriptions {
                     table_id: None,
                     message,
                 }),
-            })
+            });
         };
 
         // We always get the db lock before the subscription lock to avoid deadlocks.
@@ -430,7 +430,7 @@ impl ModuleSubscriptions {
                 let compiled = match compile_read_only_query(&auth, &tx, sql) {
                     Ok(compiled) => compiled,
                     Err(e) => {
-                        let _ = send_err_msg(e.to_string().into());
+                        send_err_msg(e.to_string().into());
                         return Ok(());
                     }
                 };
@@ -455,8 +455,15 @@ impl ModuleSubscriptions {
             new_queries
         };
 
-        let (update, metrics) =
-            self.evaluate_queries(sender.clone(), &queries, &tx, &auth, TableUpdateType::Subscribe)?;
+        let Ok((update, metrics)) =
+            self.evaluate_queries(sender.clone(), &queries, &tx, &auth, TableUpdateType::Subscribe)
+        else {
+            // If we fail the query, we need to remove the subscription.
+            let mut subscriptions = self.subscriptions.write();
+            subscriptions.remove_subscription((sender.id.identity, sender.id.connection_id), request.query_id)?;
+            send_err_msg("Internal error evaluating queries".into());
+            return Ok(());
+        };
 
         record_exec_metrics(
             &WorkloadType::Subscribe,
