@@ -505,12 +505,13 @@ public static void MoveAllPlayers(ReducerContext ctx, MoveAllPlayersTimer timer)
     // Handle player input
     foreach (var circle in ctx.Db.circle.Iter())
     {
-        var circle_entity = ctx.Db.entity.entity_id.Find(circle.entity_id);
-        if (circle_entity == null)
+        var check_entity = ctx.Db.entity.entity_id.Find(circle.entity_id);
+        if (check_entity == null)
         {
-            // This can happen if a circle is eaten by another circle
+            // This can happen if the circle has been eaten by another circle.
             continue;
         }
+        var circle_entity = check_entity.Value;
         var circle_radius = MassToRadius(circle_entity.mass);
         var direction = circle.direction * circle.speed;
         var new_pos = circle_entity.position + direction * MassToMaxMoveSpeed(circle_entity.mass);
