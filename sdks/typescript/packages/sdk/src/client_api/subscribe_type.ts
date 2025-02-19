@@ -29,10 +29,10 @@ import {
   TimeDuration,
   Timestamp,
   deepEqual,
-} from "../index";
+} from '../index';
 export type Subscribe = {
-  queryStrings: string[],
-  requestId: number,
+  queryStrings: string[];
+  requestId: number;
 };
 
 /**
@@ -40,13 +40,16 @@ export type Subscribe = {
  */
 export namespace Subscribe {
   /**
-  * A function which returns this type represented as an AlgebraicType.
-  * This function is derived from the AlgebraicType used to generate this type.
-  */
+   * A function which returns this type represented as an AlgebraicType.
+   * This function is derived from the AlgebraicType used to generate this type.
+   */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
-      new ProductTypeElement("queryStrings", AlgebraicType.createArrayType(AlgebraicType.createStringType())),
-      new ProductTypeElement("requestId", AlgebraicType.createU32Type()),
+      new ProductTypeElement(
+        'queryStrings',
+        AlgebraicType.createArrayType(AlgebraicType.createStringType())
+      ),
+      new ProductTypeElement('requestId', AlgebraicType.createU32Type()),
     ]);
   }
 
@@ -57,7 +60,4 @@ export namespace Subscribe {
   export function deserialize(reader: BinaryReader): Subscribe {
     return Subscribe.getTypeScriptAlgebraicType().deserialize(reader);
   }
-
 }
-
-

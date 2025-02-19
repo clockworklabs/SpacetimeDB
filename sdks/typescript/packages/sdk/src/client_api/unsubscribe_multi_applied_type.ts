@@ -29,15 +29,15 @@ import {
   TimeDuration,
   Timestamp,
   deepEqual,
-} from "../index";
-import { QueryId as __QueryId } from "./query_id_type";
-import { DatabaseUpdate as __DatabaseUpdate } from "./database_update_type";
+} from '../index';
+import { QueryId as __QueryId } from './query_id_type';
+import { DatabaseUpdate as __DatabaseUpdate } from './database_update_type';
 
 export type UnsubscribeMultiApplied = {
-  requestId: number,
-  totalHostExecutionDurationMicros: bigint,
-  queryId: __QueryId,
-  update: __DatabaseUpdate,
+  requestId: number;
+  totalHostExecutionDurationMicros: bigint;
+  queryId: __QueryId;
+  update: __DatabaseUpdate;
 };
 
 /**
@@ -45,26 +45,37 @@ export type UnsubscribeMultiApplied = {
  */
 export namespace UnsubscribeMultiApplied {
   /**
-  * A function which returns this type represented as an AlgebraicType.
-  * This function is derived from the AlgebraicType used to generate this type.
-  */
+   * A function which returns this type represented as an AlgebraicType.
+   * This function is derived from the AlgebraicType used to generate this type.
+   */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
-      new ProductTypeElement("requestId", AlgebraicType.createU32Type()),
-      new ProductTypeElement("totalHostExecutionDurationMicros", AlgebraicType.createU64Type()),
-      new ProductTypeElement("queryId", __QueryId.getTypeScriptAlgebraicType()),
-      new ProductTypeElement("update", __DatabaseUpdate.getTypeScriptAlgebraicType()),
+      new ProductTypeElement('requestId', AlgebraicType.createU32Type()),
+      new ProductTypeElement(
+        'totalHostExecutionDurationMicros',
+        AlgebraicType.createU64Type()
+      ),
+      new ProductTypeElement('queryId', __QueryId.getTypeScriptAlgebraicType()),
+      new ProductTypeElement(
+        'update',
+        __DatabaseUpdate.getTypeScriptAlgebraicType()
+      ),
     ]);
   }
 
-  export function serialize(writer: BinaryWriter, value: UnsubscribeMultiApplied): void {
-    UnsubscribeMultiApplied.getTypeScriptAlgebraicType().serialize(writer, value);
+  export function serialize(
+    writer: BinaryWriter,
+    value: UnsubscribeMultiApplied
+  ): void {
+    UnsubscribeMultiApplied.getTypeScriptAlgebraicType().serialize(
+      writer,
+      value
+    );
   }
 
   export function deserialize(reader: BinaryReader): UnsubscribeMultiApplied {
-    return UnsubscribeMultiApplied.getTypeScriptAlgebraicType().deserialize(reader);
+    return UnsubscribeMultiApplied.getTypeScriptAlgebraicType().deserialize(
+      reader
+    );
   }
-
 }
-
-

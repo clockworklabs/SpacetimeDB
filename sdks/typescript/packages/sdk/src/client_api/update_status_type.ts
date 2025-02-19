@@ -29,17 +29,17 @@ import {
   TimeDuration,
   Timestamp,
   deepEqual,
-} from "../index";
-import { DatabaseUpdate as __DatabaseUpdate } from "./database_update_type";
+} from '../index';
+import { DatabaseUpdate as __DatabaseUpdate } from './database_update_type';
 
 // A namespace for generated variants and helper functions.
 export namespace UpdateStatus {
   // These are the generated variant types for each variant of the tagged union.
   // One type is generated per variant and will be used in the `value` field of
   // the tagged union.
-  export type Committed = { tag: "Committed", value: __DatabaseUpdate };
-  export type Failed = { tag: "Failed", value: string };
-  export type OutOfEnergy = { tag: "OutOfEnergy" };
+  export type Committed = { tag: 'Committed'; value: __DatabaseUpdate };
+  export type Failed = { tag: 'Failed'; value: string };
+  export type OutOfEnergy = { tag: 'OutOfEnergy' };
 
   // Helper functions for constructing each variant of the tagged union.
   // ```
@@ -47,30 +47,40 @@ export namespace UpdateStatus {
   // assert!(foo.tag === "A");
   // assert!(foo.value === 42);
   // ```
-  export const Committed = (value: __DatabaseUpdate): UpdateStatus => ({ tag: "Committed", value });
-  export const Failed = (value: string): UpdateStatus => ({ tag: "Failed", value });
-  export const OutOfEnergy = { tag: "OutOfEnergy" };
+  export const Committed = (value: __DatabaseUpdate): UpdateStatus => ({
+    tag: 'Committed',
+    value,
+  });
+  export const Failed = (value: string): UpdateStatus => ({
+    tag: 'Failed',
+    value,
+  });
+  export const OutOfEnergy = { tag: 'OutOfEnergy' };
 
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createSumType([
-      new SumTypeVariant("Committed", __DatabaseUpdate.getTypeScriptAlgebraicType()),
-      new SumTypeVariant("Failed", AlgebraicType.createStringType()),
-      new SumTypeVariant("OutOfEnergy", AlgebraicType.createProductType([])),
+      new SumTypeVariant(
+        'Committed',
+        __DatabaseUpdate.getTypeScriptAlgebraicType()
+      ),
+      new SumTypeVariant('Failed', AlgebraicType.createStringType()),
+      new SumTypeVariant('OutOfEnergy', AlgebraicType.createProductType([])),
     ]);
   }
 
   export function serialize(writer: BinaryWriter, value: UpdateStatus): void {
-      UpdateStatus.getTypeScriptAlgebraicType().serialize(writer, value);
+    UpdateStatus.getTypeScriptAlgebraicType().serialize(writer, value);
   }
 
   export function deserialize(reader: BinaryReader): UpdateStatus {
-      return UpdateStatus.getTypeScriptAlgebraicType().deserialize(reader);
+    return UpdateStatus.getTypeScriptAlgebraicType().deserialize(reader);
   }
-
 }
 
 // The tagged union or sum type for the algebraic type `UpdateStatus`.
-export type UpdateStatus = UpdateStatus.Committed | UpdateStatus.Failed | UpdateStatus.OutOfEnergy;
+export type UpdateStatus =
+  | UpdateStatus.Committed
+  | UpdateStatus.Failed
+  | UpdateStatus.OutOfEnergy;
 
 export default UpdateStatus;
-

@@ -29,12 +29,12 @@ import {
   TimeDuration,
   Timestamp,
   deepEqual,
-} from "../index";
-import { QueryId as __QueryId } from "./query_id_type";
+} from '../index';
+import { QueryId as __QueryId } from './query_id_type';
 
 export type UnsubscribeMulti = {
-  requestId: number,
-  queryId: __QueryId,
+  requestId: number;
+  queryId: __QueryId;
 };
 
 /**
@@ -42,24 +42,24 @@ export type UnsubscribeMulti = {
  */
 export namespace UnsubscribeMulti {
   /**
-  * A function which returns this type represented as an AlgebraicType.
-  * This function is derived from the AlgebraicType used to generate this type.
-  */
+   * A function which returns this type represented as an AlgebraicType.
+   * This function is derived from the AlgebraicType used to generate this type.
+   */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
-      new ProductTypeElement("requestId", AlgebraicType.createU32Type()),
-      new ProductTypeElement("queryId", __QueryId.getTypeScriptAlgebraicType()),
+      new ProductTypeElement('requestId', AlgebraicType.createU32Type()),
+      new ProductTypeElement('queryId', __QueryId.getTypeScriptAlgebraicType()),
     ]);
   }
 
-  export function serialize(writer: BinaryWriter, value: UnsubscribeMulti): void {
+  export function serialize(
+    writer: BinaryWriter,
+    value: UnsubscribeMulti
+  ): void {
     UnsubscribeMulti.getTypeScriptAlgebraicType().serialize(writer, value);
   }
 
   export function deserialize(reader: BinaryReader): UnsubscribeMulti {
     return UnsubscribeMulti.getTypeScriptAlgebraicType().deserialize(reader);
   }
-
 }
-
-

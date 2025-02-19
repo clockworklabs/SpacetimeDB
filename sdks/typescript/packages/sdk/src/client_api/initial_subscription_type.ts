@@ -29,13 +29,13 @@ import {
   TimeDuration,
   Timestamp,
   deepEqual,
-} from "../index";
-import { DatabaseUpdate as __DatabaseUpdate } from "./database_update_type";
+} from '../index';
+import { DatabaseUpdate as __DatabaseUpdate } from './database_update_type';
 
 export type InitialSubscription = {
-  databaseUpdate: __DatabaseUpdate,
-  requestId: number,
-  totalHostExecutionDuration: TimeDuration,
+  databaseUpdate: __DatabaseUpdate;
+  requestId: number;
+  totalHostExecutionDuration: TimeDuration;
 };
 
 /**
@@ -43,25 +43,31 @@ export type InitialSubscription = {
  */
 export namespace InitialSubscription {
   /**
-  * A function which returns this type represented as an AlgebraicType.
-  * This function is derived from the AlgebraicType used to generate this type.
-  */
+   * A function which returns this type represented as an AlgebraicType.
+   * This function is derived from the AlgebraicType used to generate this type.
+   */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
-      new ProductTypeElement("databaseUpdate", __DatabaseUpdate.getTypeScriptAlgebraicType()),
-      new ProductTypeElement("requestId", AlgebraicType.createU32Type()),
-      new ProductTypeElement("totalHostExecutionDuration", AlgebraicType.createTimeDurationType()),
+      new ProductTypeElement(
+        'databaseUpdate',
+        __DatabaseUpdate.getTypeScriptAlgebraicType()
+      ),
+      new ProductTypeElement('requestId', AlgebraicType.createU32Type()),
+      new ProductTypeElement(
+        'totalHostExecutionDuration',
+        AlgebraicType.createTimeDurationType()
+      ),
     ]);
   }
 
-  export function serialize(writer: BinaryWriter, value: InitialSubscription): void {
+  export function serialize(
+    writer: BinaryWriter,
+    value: InitialSubscription
+  ): void {
     InitialSubscription.getTypeScriptAlgebraicType().serialize(writer, value);
   }
 
   export function deserialize(reader: BinaryReader): InitialSubscription {
     return InitialSubscription.getTypeScriptAlgebraicType().deserialize(reader);
   }
-
 }
-
-

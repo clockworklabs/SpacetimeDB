@@ -29,13 +29,13 @@ import {
   TimeDuration,
   Timestamp,
   deepEqual,
-} from "../index";
-import { QueryId as __QueryId } from "./query_id_type";
+} from '../index';
+import { QueryId as __QueryId } from './query_id_type';
 
 export type SubscribeMulti = {
-  queryStrings: string[],
-  requestId: number,
-  queryId: __QueryId,
+  queryStrings: string[];
+  requestId: number;
+  queryId: __QueryId;
 };
 
 /**
@@ -43,14 +43,17 @@ export type SubscribeMulti = {
  */
 export namespace SubscribeMulti {
   /**
-  * A function which returns this type represented as an AlgebraicType.
-  * This function is derived from the AlgebraicType used to generate this type.
-  */
+   * A function which returns this type represented as an AlgebraicType.
+   * This function is derived from the AlgebraicType used to generate this type.
+   */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
-      new ProductTypeElement("queryStrings", AlgebraicType.createArrayType(AlgebraicType.createStringType())),
-      new ProductTypeElement("requestId", AlgebraicType.createU32Type()),
-      new ProductTypeElement("queryId", __QueryId.getTypeScriptAlgebraicType()),
+      new ProductTypeElement(
+        'queryStrings',
+        AlgebraicType.createArrayType(AlgebraicType.createStringType())
+      ),
+      new ProductTypeElement('requestId', AlgebraicType.createU32Type()),
+      new ProductTypeElement('queryId', __QueryId.getTypeScriptAlgebraicType()),
     ]);
   }
 
@@ -61,7 +64,4 @@ export namespace SubscribeMulti {
   export function deserialize(reader: BinaryReader): SubscribeMulti {
     return SubscribeMulti.getTypeScriptAlgebraicType().deserialize(reader);
   }
-
 }
-
-

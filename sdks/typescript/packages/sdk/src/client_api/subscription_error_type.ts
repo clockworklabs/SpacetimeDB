@@ -29,13 +29,13 @@ import {
   TimeDuration,
   Timestamp,
   deepEqual,
-} from "../index";
+} from '../index';
 export type SubscriptionError = {
-  totalHostExecutionDurationMicros: bigint,
-  requestId: number | undefined,
-  queryId: number | undefined,
-  tableId: number | undefined,
-  error: string,
+  totalHostExecutionDurationMicros: bigint;
+  requestId: number | undefined;
+  queryId: number | undefined;
+  tableId: number | undefined;
+  error: string;
 };
 
 /**
@@ -43,27 +43,39 @@ export type SubscriptionError = {
  */
 export namespace SubscriptionError {
   /**
-  * A function which returns this type represented as an AlgebraicType.
-  * This function is derived from the AlgebraicType used to generate this type.
-  */
+   * A function which returns this type represented as an AlgebraicType.
+   * This function is derived from the AlgebraicType used to generate this type.
+   */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
-      new ProductTypeElement("totalHostExecutionDurationMicros", AlgebraicType.createU64Type()),
-      new ProductTypeElement("requestId", AlgebraicType.createOptionType(AlgebraicType.createU32Type())),
-      new ProductTypeElement("queryId", AlgebraicType.createOptionType(AlgebraicType.createU32Type())),
-      new ProductTypeElement("tableId", AlgebraicType.createOptionType(AlgebraicType.createU32Type())),
-      new ProductTypeElement("error", AlgebraicType.createStringType()),
+      new ProductTypeElement(
+        'totalHostExecutionDurationMicros',
+        AlgebraicType.createU64Type()
+      ),
+      new ProductTypeElement(
+        'requestId',
+        AlgebraicType.createOptionType(AlgebraicType.createU32Type())
+      ),
+      new ProductTypeElement(
+        'queryId',
+        AlgebraicType.createOptionType(AlgebraicType.createU32Type())
+      ),
+      new ProductTypeElement(
+        'tableId',
+        AlgebraicType.createOptionType(AlgebraicType.createU32Type())
+      ),
+      new ProductTypeElement('error', AlgebraicType.createStringType()),
     ]);
   }
 
-  export function serialize(writer: BinaryWriter, value: SubscriptionError): void {
+  export function serialize(
+    writer: BinaryWriter,
+    value: SubscriptionError
+  ): void {
     SubscriptionError.getTypeScriptAlgebraicType().serialize(writer, value);
   }
 
   export function deserialize(reader: BinaryReader): SubscriptionError {
     return SubscriptionError.getTypeScriptAlgebraicType().deserialize(reader);
   }
-
 }
-
-

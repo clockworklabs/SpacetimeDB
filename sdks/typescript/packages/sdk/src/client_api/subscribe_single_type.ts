@@ -29,13 +29,13 @@ import {
   TimeDuration,
   Timestamp,
   deepEqual,
-} from "../index";
-import { QueryId as __QueryId } from "./query_id_type";
+} from '../index';
+import { QueryId as __QueryId } from './query_id_type';
 
 export type SubscribeSingle = {
-  query: string,
-  requestId: number,
-  queryId: __QueryId,
+  query: string;
+  requestId: number;
+  queryId: __QueryId;
 };
 
 /**
@@ -43,25 +43,25 @@ export type SubscribeSingle = {
  */
 export namespace SubscribeSingle {
   /**
-  * A function which returns this type represented as an AlgebraicType.
-  * This function is derived from the AlgebraicType used to generate this type.
-  */
+   * A function which returns this type represented as an AlgebraicType.
+   * This function is derived from the AlgebraicType used to generate this type.
+   */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
-      new ProductTypeElement("query", AlgebraicType.createStringType()),
-      new ProductTypeElement("requestId", AlgebraicType.createU32Type()),
-      new ProductTypeElement("queryId", __QueryId.getTypeScriptAlgebraicType()),
+      new ProductTypeElement('query', AlgebraicType.createStringType()),
+      new ProductTypeElement('requestId', AlgebraicType.createU32Type()),
+      new ProductTypeElement('queryId', __QueryId.getTypeScriptAlgebraicType()),
     ]);
   }
 
-  export function serialize(writer: BinaryWriter, value: SubscribeSingle): void {
+  export function serialize(
+    writer: BinaryWriter,
+    value: SubscribeSingle
+  ): void {
     SubscribeSingle.getTypeScriptAlgebraicType().serialize(writer, value);
   }
 
   export function deserialize(reader: BinaryReader): SubscribeSingle {
     return SubscribeSingle.getTypeScriptAlgebraicType().deserialize(reader);
   }
-
 }
-
-
