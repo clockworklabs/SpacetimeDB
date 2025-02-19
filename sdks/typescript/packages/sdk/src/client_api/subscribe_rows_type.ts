@@ -29,13 +29,13 @@ import {
   TimeDuration,
   Timestamp,
   deepEqual,
-} from '../index';
-import { TableUpdate as __TableUpdate } from './table_update_type';
+} from "../index";
+import { TableUpdate as __TableUpdate } from "./table_update_type";
 
 export type SubscribeRows = {
-  tableId: number;
-  tableName: string;
-  tableRows: __TableUpdate;
+  tableId: number,
+  tableName: string,
+  tableRows: __TableUpdate,
 };
 
 /**
@@ -43,17 +43,14 @@ export type SubscribeRows = {
  */
 export namespace SubscribeRows {
   /**
-   * A function which returns this type represented as an AlgebraicType.
-   * This function is derived from the AlgebraicType used to generate this type.
-   */
+  * A function which returns this type represented as an AlgebraicType.
+  * This function is derived from the AlgebraicType used to generate this type.
+  */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
-      new ProductTypeElement('tableId', AlgebraicType.createU32Type()),
-      new ProductTypeElement('tableName', AlgebraicType.createStringType()),
-      new ProductTypeElement(
-        'tableRows',
-        __TableUpdate.getTypeScriptAlgebraicType()
-      ),
+      new ProductTypeElement("tableId", AlgebraicType.createU32Type()),
+      new ProductTypeElement("tableName", AlgebraicType.createStringType()),
+      new ProductTypeElement("tableRows", __TableUpdate.getTypeScriptAlgebraicType()),
     ]);
   }
 
@@ -64,4 +61,7 @@ export namespace SubscribeRows {
   export function deserialize(reader: BinaryReader): SubscribeRows {
     return SubscribeRows.getTypeScriptAlgebraicType().deserialize(reader);
   }
+
 }
+
+

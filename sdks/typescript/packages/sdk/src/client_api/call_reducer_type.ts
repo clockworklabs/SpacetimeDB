@@ -29,12 +29,12 @@ import {
   TimeDuration,
   Timestamp,
   deepEqual,
-} from '../index';
+} from "../index";
 export type CallReducer = {
-  reducer: string;
-  args: Uint8Array;
-  requestId: number;
-  flags: number;
+  reducer: string,
+  args: Uint8Array,
+  requestId: number,
+  flags: number,
 };
 
 /**
@@ -42,18 +42,15 @@ export type CallReducer = {
  */
 export namespace CallReducer {
   /**
-   * A function which returns this type represented as an AlgebraicType.
-   * This function is derived from the AlgebraicType used to generate this type.
-   */
+  * A function which returns this type represented as an AlgebraicType.
+  * This function is derived from the AlgebraicType used to generate this type.
+  */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
-      new ProductTypeElement('reducer', AlgebraicType.createStringType()),
-      new ProductTypeElement(
-        'args',
-        AlgebraicType.createArrayType(AlgebraicType.createU8Type())
-      ),
-      new ProductTypeElement('requestId', AlgebraicType.createU32Type()),
-      new ProductTypeElement('flags', AlgebraicType.createU8Type()),
+      new ProductTypeElement("reducer", AlgebraicType.createStringType()),
+      new ProductTypeElement("args", AlgebraicType.createArrayType(AlgebraicType.createU8Type())),
+      new ProductTypeElement("requestId", AlgebraicType.createU32Type()),
+      new ProductTypeElement("flags", AlgebraicType.createU8Type()),
     ]);
   }
 
@@ -64,4 +61,7 @@ export namespace CallReducer {
   export function deserialize(reader: BinaryReader): CallReducer {
     return CallReducer.getTypeScriptAlgebraicType().deserialize(reader);
   }
+
 }
+
+

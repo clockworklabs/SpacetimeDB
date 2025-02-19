@@ -29,12 +29,12 @@ import {
   TimeDuration,
   Timestamp,
   deepEqual,
-} from '../index';
-import { DatabaseUpdate as __DatabaseUpdate } from './database_update_type';
+} from "../index";
+import { DatabaseUpdate as __DatabaseUpdate } from "./database_update_type";
 
 export type TransactionUpdateLight = {
-  requestId: number;
-  update: __DatabaseUpdate;
+  requestId: number,
+  update: __DatabaseUpdate,
 };
 
 /**
@@ -42,32 +42,24 @@ export type TransactionUpdateLight = {
  */
 export namespace TransactionUpdateLight {
   /**
-   * A function which returns this type represented as an AlgebraicType.
-   * This function is derived from the AlgebraicType used to generate this type.
-   */
+  * A function which returns this type represented as an AlgebraicType.
+  * This function is derived from the AlgebraicType used to generate this type.
+  */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
-      new ProductTypeElement('requestId', AlgebraicType.createU32Type()),
-      new ProductTypeElement(
-        'update',
-        __DatabaseUpdate.getTypeScriptAlgebraicType()
-      ),
+      new ProductTypeElement("requestId", AlgebraicType.createU32Type()),
+      new ProductTypeElement("update", __DatabaseUpdate.getTypeScriptAlgebraicType()),
     ]);
   }
 
-  export function serialize(
-    writer: BinaryWriter,
-    value: TransactionUpdateLight
-  ): void {
-    TransactionUpdateLight.getTypeScriptAlgebraicType().serialize(
-      writer,
-      value
-    );
+  export function serialize(writer: BinaryWriter, value: TransactionUpdateLight): void {
+    TransactionUpdateLight.getTypeScriptAlgebraicType().serialize(writer, value);
   }
 
   export function deserialize(reader: BinaryReader): TransactionUpdateLight {
-    return TransactionUpdateLight.getTypeScriptAlgebraicType().deserialize(
-      reader
-    );
+    return TransactionUpdateLight.getTypeScriptAlgebraicType().deserialize(reader);
   }
+
 }
+
+

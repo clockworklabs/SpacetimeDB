@@ -29,10 +29,10 @@ import {
   TimeDuration,
   Timestamp,
   deepEqual,
-} from '../index';
+} from "../index";
 export type OneOffQuery = {
-  messageId: Uint8Array;
-  queryString: string;
+  messageId: Uint8Array,
+  queryString: string,
 };
 
 /**
@@ -40,16 +40,13 @@ export type OneOffQuery = {
  */
 export namespace OneOffQuery {
   /**
-   * A function which returns this type represented as an AlgebraicType.
-   * This function is derived from the AlgebraicType used to generate this type.
-   */
+  * A function which returns this type represented as an AlgebraicType.
+  * This function is derived from the AlgebraicType used to generate this type.
+  */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
-      new ProductTypeElement(
-        'messageId',
-        AlgebraicType.createArrayType(AlgebraicType.createU8Type())
-      ),
-      new ProductTypeElement('queryString', AlgebraicType.createStringType()),
+      new ProductTypeElement("messageId", AlgebraicType.createArrayType(AlgebraicType.createU8Type())),
+      new ProductTypeElement("queryString", AlgebraicType.createStringType()),
     ]);
   }
 
@@ -60,4 +57,7 @@ export namespace OneOffQuery {
   export function deserialize(reader: BinaryReader): OneOffQuery {
     return OneOffQuery.getTypeScriptAlgebraicType().deserialize(reader);
   }
+
 }
+
+

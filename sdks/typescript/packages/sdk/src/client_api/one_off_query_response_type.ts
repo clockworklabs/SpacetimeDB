@@ -29,14 +29,14 @@ import {
   TimeDuration,
   Timestamp,
   deepEqual,
-} from '../index';
-import { OneOffTable as __OneOffTable } from './one_off_table_type';
+} from "../index";
+import { OneOffTable as __OneOffTable } from "./one_off_table_type";
 
 export type OneOffQueryResponse = {
-  messageId: Uint8Array;
-  error: string | undefined;
-  tables: __OneOffTable[];
-  totalHostExecutionDuration: TimeDuration;
+  messageId: Uint8Array,
+  error: string | undefined,
+  tables: __OneOffTable[],
+  totalHostExecutionDuration: TimeDuration,
 };
 
 /**
@@ -44,40 +44,26 @@ export type OneOffQueryResponse = {
  */
 export namespace OneOffQueryResponse {
   /**
-   * A function which returns this type represented as an AlgebraicType.
-   * This function is derived from the AlgebraicType used to generate this type.
-   */
+  * A function which returns this type represented as an AlgebraicType.
+  * This function is derived from the AlgebraicType used to generate this type.
+  */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
-      new ProductTypeElement(
-        'messageId',
-        AlgebraicType.createArrayType(AlgebraicType.createU8Type())
-      ),
-      new ProductTypeElement(
-        'error',
-        AlgebraicType.createOptionType(AlgebraicType.createStringType())
-      ),
-      new ProductTypeElement(
-        'tables',
-        AlgebraicType.createArrayType(
-          __OneOffTable.getTypeScriptAlgebraicType()
-        )
-      ),
-      new ProductTypeElement(
-        'totalHostExecutionDuration',
-        AlgebraicType.createTimeDurationType()
-      ),
+      new ProductTypeElement("messageId", AlgebraicType.createArrayType(AlgebraicType.createU8Type())),
+      new ProductTypeElement("error", AlgebraicType.createOptionType(AlgebraicType.createStringType())),
+      new ProductTypeElement("tables", AlgebraicType.createArrayType(__OneOffTable.getTypeScriptAlgebraicType())),
+      new ProductTypeElement("totalHostExecutionDuration", AlgebraicType.createTimeDurationType()),
     ]);
   }
 
-  export function serialize(
-    writer: BinaryWriter,
-    value: OneOffQueryResponse
-  ): void {
+  export function serialize(writer: BinaryWriter, value: OneOffQueryResponse): void {
     OneOffQueryResponse.getTypeScriptAlgebraicType().serialize(writer, value);
   }
 
   export function deserialize(reader: BinaryReader): OneOffQueryResponse {
     return OneOffQueryResponse.getTypeScriptAlgebraicType().deserialize(reader);
   }
+
 }
+
+

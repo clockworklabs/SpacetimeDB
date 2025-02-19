@@ -29,12 +29,12 @@ import {
   TimeDuration,
   Timestamp,
   deepEqual,
-} from '../index';
-import { RowSizeHint as __RowSizeHint } from './row_size_hint_type';
+} from "../index";
+import { RowSizeHint as __RowSizeHint } from "./row_size_hint_type";
 
 export type BsatnRowList = {
-  sizeHint: __RowSizeHint;
-  rowsData: Uint8Array;
+  sizeHint: __RowSizeHint,
+  rowsData: Uint8Array,
 };
 
 /**
@@ -42,19 +42,13 @@ export type BsatnRowList = {
  */
 export namespace BsatnRowList {
   /**
-   * A function which returns this type represented as an AlgebraicType.
-   * This function is derived from the AlgebraicType used to generate this type.
-   */
+  * A function which returns this type represented as an AlgebraicType.
+  * This function is derived from the AlgebraicType used to generate this type.
+  */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
-      new ProductTypeElement(
-        'sizeHint',
-        __RowSizeHint.getTypeScriptAlgebraicType()
-      ),
-      new ProductTypeElement(
-        'rowsData',
-        AlgebraicType.createArrayType(AlgebraicType.createU8Type())
-      ),
+      new ProductTypeElement("sizeHint", __RowSizeHint.getTypeScriptAlgebraicType()),
+      new ProductTypeElement("rowsData", AlgebraicType.createArrayType(AlgebraicType.createU8Type())),
     ]);
   }
 
@@ -65,4 +59,7 @@ export namespace BsatnRowList {
   export function deserialize(reader: BinaryReader): BsatnRowList {
     return BsatnRowList.getTypeScriptAlgebraicType().deserialize(reader);
   }
+
 }
+
+
