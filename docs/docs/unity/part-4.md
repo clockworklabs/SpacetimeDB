@@ -375,6 +375,7 @@ public void Update()
         var centerOfScreen = screenSize / 2;
 
         var direction = (mousePosition - centerOfScreen) / (screenSize.y / 3);
+        if (testInputEnabled) { direction = testInput; }
         GameManager.Conn.Reducers.UpdatePlayerInput(direction);
     }
 }
