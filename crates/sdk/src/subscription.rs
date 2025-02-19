@@ -288,6 +288,7 @@ macro_rules! impl_into_query_string_via_into {
                 self.into()
             }
         }
+        $(impl_into_query_string_via_into!($tys);)*
     };
 }
 
@@ -536,5 +537,55 @@ impl<M: SpacetimeModule> SubscriptionHandleImpl<M> {
     pub(crate) fn on_error(&mut self) -> Option<OnErrorCallback<M>> {
         let mut inner = self.inner.lock().unwrap();
         inner.on_error()
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[allow(unused)]
+    // Here to check that these statements compile.
+    fn into_queries_box_str(query: Box<str>) {
+        let _ = query.clone().into_query_string();
+        let _ = <Box<str> as IntoQueryString>::into_query_string(query.clone());
+        let _ = query.clone().into_queries();
+        let _ = <[Box<str>; 1] as IntoQueries>::into_queries([query.clone()]);
+        let _ = [query.clone()].into_queries();
+        let slice: &[Box<str>] = &[query.clone()];
+        let _ = <&[Box<str>] as IntoQueries>::into_queries(slice);
+        let _ = slice.into_queries();
+        let _ = <Vec<Box<str>> as IntoQueries>::into_queries(vec![query.clone()]);
+        let _ = vec![query.clone()].into_queries();
+    }
+
+    #[allow(unused)]
+    // Here to check that these statements compile.
+    fn into_queries_string(query: String) {
+        let _ = query.clone().into_query_string();
+        let _ = <String as IntoQueryString>::into_query_string(query.clone());
+        let _ = query.clone().into_queries();
+        let _ = <[String; 1] as IntoQueries>::into_queries([query.clone()]);
+        let _ = [query.clone()].into_queries();
+        let slice: &[String] = &[query.clone()];
+        let _ = <&[String] as IntoQueries>::into_queries(slice);
+        let _ = slice.into_queries();
+        let _ = <Vec<String> as IntoQueries>::into_queries(vec![query.clone()]);
+        let _ = vec![query.clone()].into_queries();
+    }
+
+    #[allow(unused)]
+    // Here to check that these statements compile.
+    fn into_queries_str(query: &str) {
+        let _ = query.into_query_string();
+        let _ = <&str as IntoQueryString>::into_query_string(query);
+        let _ = query.into_queries();
+        let _ = <[&str; 1] as IntoQueries>::into_queries([query]);
+        let _ = [query].into_queries();
+        let slice: &[&str] = &[query];
+        let _ = <&[&str] as IntoQueries>::into_queries(slice);
+        let _ = slice.into_queries();
+        let _ = <Vec<&str> as IntoQueries>::into_queries(vec![query]);
+        let _ = vec![query].into_queries();
     }
 }
