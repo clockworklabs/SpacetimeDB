@@ -9,6 +9,7 @@ use spacetimedb_paths::{RootDir, SpacetimePaths};
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
 
+#[cfg(not(feature = "markdown-docs"))]
 #[tokio::main]
 async fn main() -> anyhow::Result<ExitCode> {
     // Compute matches before loading the config, because `Config` has an observable `drop` method
@@ -29,6 +30,14 @@ async fn main() -> anyhow::Result<ExitCode> {
     let config = Config::load(cli_toml)?;
 
     exec_subcommand(config, &paths, root_dir, cmd, subcommand_args).await
+}
+
+#[cfg(feature = "markdown-docs")]
+#[tokio::main]
+async fn main() -> anyhow::Result<ExitCode> {
+    let markdown = clap_markdown::help_markdown_command(&get_command());
+    println!("{}", markdown);
+    Ok(ExitCode::SUCCESS)
 }
 
 fn get_command() -> Command {

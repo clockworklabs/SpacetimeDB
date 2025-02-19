@@ -1,0 +1,54 @@
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'Pull Request Number'
+        required: false
+        default: ''
+
+name: PR-only CI
+
+jobs:
+  cli_docs:
+    name: Check CLI docs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Find Git ref
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          PR_NUMBER="${{ github.event.inputs.pr_number || null }}"
+          if test -n "${PR_NUMBER}"; then
+            GIT_REF="$( gh pr view --repo clockworklabs/SpacetimeDB $PR_NUMBER --json headRefName --jq .headRefName )"
+          else
+            GIT_REF="${{ github.ref }}"
+          fi
+          echo "GIT_REF=${GIT_REF}" >>"$GITHUB_ENV"
+      - name: Checkout sources
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.GIT_REF }}
+      - uses: dsherret/rust-toolchain-file@v1
+      - name: Checkout docs
+        uses: actions/checkout@v4
+        with:
+          repository: clockworklabs/spacetime-docs
+          ref: master
+          path: spacetime-docs
+      - name: Check for docs change
+        run: |
+          cargo run --features markdown-docs -p spacetimedb-cli > spacetime-docs/docs/cli-reference.md
+          cd spacetime-docs
+          # This is needed because our website doesn't render markdown quite properly.
+          # See the README in spacetime-docs for more details.
+          sed -i'' -E 's!^(##) `(.*)`$!\1 \2!' docs/cli-reference.md
+          sed -i'' -E 's!^(######) \*\*(.*)\*\*$!\1 <b>\2</b>!' docs/cli-reference.md
+          git status
+          if git diff --exit-code HEAD; then
+            echo "No docs changes detected"
+          else
+            echo "It looks like the CLI docs have changed:"
+            exit 1
+          fi
