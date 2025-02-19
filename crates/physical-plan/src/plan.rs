@@ -171,14 +171,14 @@ impl PhysicalPlan {
     pub fn visit(&self, f: &mut impl FnMut(&Self)) {
         f(self);
         match self {
-            Self::IxJoin(IxJoin { lhs: input, .. }, _) | Self::Filter(input, _) => {
+            Self::IxJoin(IxJoin { lhs: input, .. }, _) | Self::Filter(input, _) | Self::Limit(input, _) => {
                 input.visit(f);
             }
             Self::NLJoin(lhs, rhs) | Self::HashJoin(HashJoin { lhs, rhs, .. }, _) => {
                 lhs.visit(f);
                 rhs.visit(f);
             }
-            _ => {}
+            Self::TableScan(..) | Self::IxScan(..) => {}
         }
     }
 
@@ -186,14 +186,14 @@ impl PhysicalPlan {
     pub fn visit_mut(&mut self, f: &mut impl FnMut(&mut Self)) {
         f(self);
         match self {
-            Self::IxJoin(IxJoin { lhs: input, .. }, _) | Self::Filter(input, _) => {
+            Self::IxJoin(IxJoin { lhs: input, .. }, _) | Self::Filter(input, _) | Self::Limit(input, _) => {
                 input.visit_mut(f);
             }
             Self::NLJoin(lhs, rhs) | Self::HashJoin(HashJoin { lhs, rhs, .. }, _) => {
                 lhs.visit_mut(f);
                 rhs.visit_mut(f);
             }
-            _ => {}
+            Self::TableScan(..) | Self::IxScan(..) => {}
         }
     }
 
@@ -210,6 +210,7 @@ impl PhysicalPlan {
     pub fn map(self, f: &impl Fn(Self) -> Self) -> Self {
         match f(self) {
             Self::Filter(input, expr) => Self::Filter(Box::new(input.map(f)), expr),
+            Self::Limit(input, n) => Self::Limit(Box::new(input.map(f)), n),
             Self::NLJoin(lhs, rhs) => Self::NLJoin(Box::new(lhs.map(f)), Box::new(rhs.map(f))),
             Self::HashJoin(join, semi) => Self::HashJoin(
                 HashJoin {
@@ -226,7 +227,7 @@ impl PhysicalPlan {
                 },
                 semi,
             ),
-            plan => plan,
+            plan @ Self::TableScan(..) | plan @ Self::IxScan(..) => plan,
         }
     }
 
@@ -245,40 +246,61 @@ impl PhysicalPlan {
             plan.any(&|plan| ok(plan).is_some())
         };
         Ok(match self {
-            Self::NLJoin(lhs, rhs) if matches(&lhs) => {
-                // Replace the lhs subtree
-                Self::NLJoin(Box::new(lhs.map_if(f, ok)?), rhs)
+            Self::TableScan(..) | Self::IxScan(..) => self,
+            Self::NLJoin(lhs, rhs) => {
+                if matches(&lhs) {
+                    return Ok(Self::NLJoin(Box::new(lhs.map_if(f, ok)?), rhs));
+                }
+                if matches(&rhs) {
+                    return Ok(Self::NLJoin(lhs, Box::new(rhs.map_if(f, ok)?)));
+                }
+                Self::NLJoin(lhs, rhs)
             }
-            Self::NLJoin(lhs, rhs) if matches(&rhs) => {
-                // Replace the rhs subtree
-                Self::NLJoin(lhs, Box::new(rhs.map_if(f, ok)?))
+            Self::HashJoin(join, semi) => {
+                if matches(&join.lhs) {
+                    return Ok(Self::HashJoin(
+                        HashJoin {
+                            lhs: Box::new(join.lhs.map_if(f, ok)?),
+                            ..join
+                        },
+                        semi,
+                    ));
+                }
+                if matches(&join.rhs) {
+                    return Ok(Self::HashJoin(
+                        HashJoin {
+                            rhs: Box::new(join.rhs.map_if(f, ok)?),
+                            ..join
+                        },
+                        semi,
+                    ));
+                }
+                Self::HashJoin(join, semi)
             }
-            Self::HashJoin(join, semi) if matches(&join.lhs) => Self::HashJoin(
-                HashJoin {
-                    lhs: Box::new(join.lhs.map_if(f, ok)?),
-                    ..join
-                },
-                semi,
-            ),
-            Self::HashJoin(join, semi) if matches(&join.rhs) => Self::HashJoin(
-                HashJoin {
-                    rhs: Box::new(join.rhs.map_if(f, ok)?),
-                    ..join
-                },
-                semi,
-            ),
-            Self::IxJoin(join, semi) if matches(&join.lhs) => Self::IxJoin(
-                IxJoin {
-                    lhs: Box::new(join.lhs.map_if(f, ok)?),
-                    ..join
-                },
-                semi,
-            ),
-            Self::Filter(input, expr) if matches(&input) => {
-                // Replace the input only if there is a match
-                Self::Filter(Box::new(input.map_if(f, ok)?), expr)
+            Self::IxJoin(join, semi) => {
+                if matches(&join.lhs) {
+                    return Ok(Self::IxJoin(
+                        IxJoin {
+                            lhs: Box::new(join.lhs.map_if(f, ok)?),
+                            ..join
+                        },
+                        semi,
+                    ));
+                }
+                Self::IxJoin(join, semi)
             }
-            _ => self,
+            Self::Filter(input, expr) => {
+                if matches(&input) {
+                    return Ok(Self::Filter(Box::new(input.map_if(f, ok)?), expr));
+                }
+                Self::Filter(input, expr)
+            }
+            Self::Limit(input, n) => {
+                if matches(&input) {
+                    return Ok(Self::Limit(Box::new(input.map_if(f, ok)?), n));
+                }
+                Self::Limit(input, n)
+            }
         })
     }
 
@@ -328,15 +350,15 @@ impl PhysicalPlan {
     /// 5. Compute positions for tuple labels
     pub fn optimize(self, reqs: Vec<Label>) -> Result<Self> {
         self.map(&Self::canonicalize)
-            .apply_rec::<PushLimit>()?
-            .apply_until::<PushConstAnd>()?
-            .apply_until::<PushConstEq>()?
+            .apply_rec::<PushConstAnd>()?
+            .apply_rec::<PushConstEq>()?
             .apply_rec::<ReorderDeltaJoinRhs>()?
             .apply_rec::<PullFilterAboveHashJoin>()?
             .apply_rec::<IxScanEq3Col>()?
             .apply_rec::<IxScanEq2Col>()?
             .apply_rec::<IxScanEq>()?
             .apply_rec::<IxScanAnd>()?
+            .apply_rec::<PushLimit>()?
             .apply_rec::<ReorderHashJoin>()?
             .apply_rec::<HashToIxJoin>()?
             .apply_rec::<UniqueIxJoinRule>()?
@@ -769,17 +791,40 @@ impl PhysicalPlan {
         labels
     }
 
+    /// Is this operator a table scan with optional label?
+    pub fn is_table_scan(&self, label: Option<&Label>) -> bool {
+        match self {
+            Self::TableScan(_, var) => label.map(|label| var == label).unwrap_or(true),
+            _ => false,
+        }
+    }
+
+    /// Does this plan scan a table with optional label?
+    pub fn has_table_scan(&self, label: Option<&Label>) -> bool {
+        self.any(&|plan| match plan {
+            Self::TableScan(_, var) => label.map(|label| var == label).unwrap_or(true),
+            _ => false,
+        })
+    }
+
     /// Is this operator a limit?
     fn is_limit(&self) -> bool {
-        matches!(
-            self,
-            PhysicalPlan::Limit(..) | PhysicalPlan::TableScan(TableScan { limit: Some(_), .. }, _)
-        )
+        matches!(self, Self::Limit(..))
     }
 
     /// Does this plan contain a limit?
     pub fn has_limit(&self) -> bool {
         self.any(&|plan| plan.is_limit())
+    }
+
+    /// Is this operator a filter?
+    fn is_filter(&self) -> bool {
+        matches!(self, Self::Filter(..))
+    }
+
+    /// Does this plan contain a filter?
+    pub fn has_filter(&self) -> bool {
+        self.any(&|plan| plan.is_filter())
     }
 }
 
@@ -1028,7 +1073,10 @@ mod tests {
     use std::sync::Arc;
 
     use pretty_assertions::assert_eq;
-    use spacetimedb_expr::check::{parse_and_type_sub, SchemaView};
+    use spacetimedb_expr::{
+        check::{parse_and_type_sub, SchemaView},
+        statement::{parse_and_type_sql, Statement},
+    };
     use spacetimedb_lib::{
         db::auth::{StAccess, StTableType},
         AlgebraicType, AlgebraicValue,
@@ -1041,11 +1089,11 @@ mod tests {
     use spacetimedb_sql_parser::ast::BinOp;
 
     use crate::{
-        compile::compile_select,
+        compile::{compile_select, compile_select_list},
         plan::{HashJoin, IxJoin, IxScan, PhysicalPlan, Sarg, Semi, TupleField},
     };
 
-    use super::{PhysicalExpr, ProjectPlan, TableScan};
+    use super::{PhysicalExpr, ProjectListPlan, ProjectPlan, TableScan};
 
     struct SchemaViewer {
         schemas: Vec<Arc<TableSchema>>,
@@ -1810,5 +1858,55 @@ mod tests {
             }
             plan => panic!("unexpected plan: {:#?}", plan),
         };
+    }
+
+    #[test]
+    fn limit() {
+        let t_id = TableId(1);
+
+        let t = Arc::new(schema(
+            t_id,
+            "t",
+            &[("x", AlgebraicType::U8), ("y", AlgebraicType::U8)],
+            &[&[0]],
+            &[],
+            None,
+        ));
+
+        let db = SchemaViewer {
+            schemas: vec![t.clone()],
+        };
+
+        let compile = |sql| {
+            let stmt = parse_and_type_sql(sql, &db).unwrap();
+            let Statement::Select(select) = stmt else {
+                unreachable!()
+            };
+            compile_select_list(select).optimize().unwrap()
+        };
+
+        let plan = compile("select * from t limit 5");
+
+        assert!(matches!(
+            plan,
+            ProjectListPlan::Name(ProjectPlan::None(PhysicalPlan::TableScan(
+                TableScan { limit: Some(5), .. },
+                _
+            )))
+        ));
+
+        let plan = compile("select * from t where x = 1 limit 5");
+
+        assert!(matches!(
+            plan,
+            ProjectListPlan::Name(ProjectPlan::None(PhysicalPlan::IxScan(
+                IxScan { limit: Some(5), .. },
+                _
+            )))
+        ));
+
+        let plan = compile("select * from t where y = 1 limit 5");
+
+        assert!(plan.is_limit() && plan.has_filter() && plan.has_table_scan(None));
     }
 }
