@@ -903,17 +903,17 @@ pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::Remote
 
         let _table = client_cache.get_or_make_table::<HasSpecialStuff>("has_special_stuff");
 }
+
 #[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
 ) -> __sdk::Result<__sdk::TableUpdate<HasSpecialStuff>> {
-    __sdk::TableUpdate::parse_table_update_no_primary_key(raw_updates)
-        .map_err(|e| {
-             __sdk::InternalError::failed_parse(
-                "TableUpdate<HasSpecialStuff>",
-                "TableUpdate",
-            ).with_cause(e).into()
-        })
+    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
+        __sdk::InternalError::failed_parse(
+            "TableUpdate<HasSpecialStuff>",
+            "TableUpdate",
+        ).with_cause(e).into()
+    })
 }
 '''
 "has_special_stuff_type.rs" = '''
@@ -1262,20 +1262,17 @@ impl<'ctx> __sdk::TableWithPrimaryKey for LoggedOutPlayerTableHandle<'ctx> {
     }
 }
 
+
 #[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
 ) -> __sdk::Result<__sdk::TableUpdate<Player>> {
-    __sdk::TableUpdate::parse_table_update_with_primary_key::<__sdk::Identity>(
-        raw_updates,
-        |row: &Player| &row.identity,
-    )
-        .map_err(|e| {
-             __sdk::InternalError::failed_parse(
-                "TableUpdate<Player>",
-                "TableUpdate",
-            ).with_cause(e).into()
-        })
+    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
+        __sdk::InternalError::failed_parse(
+            "TableUpdate<Player>",
+            "TableUpdate",
+        ).with_cause(e).into()
+    })
 }
 
         /// Access to the `identity` unique index on the table `logged_out_player`,
@@ -1615,21 +1612,51 @@ impl __sdk::InModule for DbUpdate {
 }
 
 impl __sdk::DbUpdate for DbUpdate {
-    fn apply_to_client_cache(&self, cache: &mut __sdk::ClientCache<RemoteModule>) {
-                cache.apply_diff_to_table::<HasSpecialStuff>("has_special_stuff", &self.has_special_stuff);
-        cache.apply_diff_to_table::<Player>("logged_out_player", &self.logged_out_player);
-        cache.apply_diff_to_table::<Person>("person", &self.person);
-        cache.apply_diff_to_table::<PkMultiIdentity>("pk_multi_identity", &self.pk_multi_identity);
-        cache.apply_diff_to_table::<Player>("player", &self.player);
-        cache.apply_diff_to_table::<Point>("points", &self.points);
-        cache.apply_diff_to_table::<PrivateTable>("private_table", &self.private_table);
-        cache.apply_diff_to_table::<RepeatingTestArg>("repeating_test_arg", &self.repeating_test_arg);
-        cache.apply_diff_to_table::<TestA>("test_a", &self.test_a);
-        cache.apply_diff_to_table::<TestD>("test_d", &self.test_d);
-        cache.apply_diff_to_table::<TestE>("test_e", &self.test_e);
-        cache.apply_diff_to_table::<TestFoobar>("test_f", &self.test_f);
+    fn apply_to_client_cache(&self, cache: &mut __sdk::ClientCache<RemoteModule>) -> AppliedDiff<'_> {
+                    let mut diff = AppliedDiff::default();
+                
+                diff.has_special_stuff = cache.apply_diff_to_table::<HasSpecialStuff>("has_special_stuff", &self.has_special_stuff);
+        diff.logged_out_player = cache.apply_diff_to_table::<Player>("logged_out_player", &self.logged_out_player).with_updates_by_pk(|row| &row.identity);
+        diff.person = cache.apply_diff_to_table::<Person>("person", &self.person).with_updates_by_pk(|row| &row.id);
+        diff.pk_multi_identity = cache.apply_diff_to_table::<PkMultiIdentity>("pk_multi_identity", &self.pk_multi_identity).with_updates_by_pk(|row| &row.id);
+        diff.player = cache.apply_diff_to_table::<Player>("player", &self.player).with_updates_by_pk(|row| &row.identity);
+        diff.points = cache.apply_diff_to_table::<Point>("points", &self.points);
+        diff.private_table = cache.apply_diff_to_table::<PrivateTable>("private_table", &self.private_table);
+        diff.repeating_test_arg = cache.apply_diff_to_table::<RepeatingTestArg>("repeating_test_arg", &self.repeating_test_arg).with_updates_by_pk(|row| &row.scheduled_id);
+        diff.test_a = cache.apply_diff_to_table::<TestA>("test_a", &self.test_a);
+        diff.test_d = cache.apply_diff_to_table::<TestD>("test_d", &self.test_d);
+        diff.test_e = cache.apply_diff_to_table::<TestE>("test_e", &self.test_e).with_updates_by_pk(|row| &row.id);
+        diff.test_f = cache.apply_diff_to_table::<TestFoobar>("test_f", &self.test_f);
+
+                    diff
+                }
 }
-fn invoke_row_callbacks(&self, event: &EventContext, callbacks: &mut __sdk::DbCallbacks<RemoteModule>) {
+
+#[derive(Default)]
+#[allow(non_snake_case)]
+#[doc(hidden)]
+pub struct AppliedDiff<'r> {
+        has_special_stuff: __sdk::TableAppliedDiff<'r, HasSpecialStuff>,
+    logged_out_player: __sdk::TableAppliedDiff<'r, Player>,
+    person: __sdk::TableAppliedDiff<'r, Person>,
+    pk_multi_identity: __sdk::TableAppliedDiff<'r, PkMultiIdentity>,
+    player: __sdk::TableAppliedDiff<'r, Player>,
+    points: __sdk::TableAppliedDiff<'r, Point>,
+    private_table: __sdk::TableAppliedDiff<'r, PrivateTable>,
+    repeating_test_arg: __sdk::TableAppliedDiff<'r, RepeatingTestArg>,
+    test_a: __sdk::TableAppliedDiff<'r, TestA>,
+    test_d: __sdk::TableAppliedDiff<'r, TestD>,
+    test_e: __sdk::TableAppliedDiff<'r, TestE>,
+    test_f: __sdk::TableAppliedDiff<'r, TestFoobar>,
+}
+
+
+impl __sdk::InModule for AppliedDiff<'_> {
+    type Module = RemoteModule;
+}
+
+impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
+    fn invoke_row_callbacks(&self, event: &EventContext, callbacks: &mut __sdk::DbCallbacks<RemoteModule>) {
                 callbacks.invoke_table_row_callbacks::<HasSpecialStuff>("has_special_stuff", &self.has_special_stuff, event);
         callbacks.invoke_table_row_callbacks::<Player>("logged_out_player", &self.logged_out_player, event);
         callbacks.invoke_table_row_callbacks::<Person>("person", &self.person, event);
@@ -2210,6 +2237,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
     type Reducers = RemoteReducers;
     type SetReducerFlags = SetReducerFlags;
     type DbUpdate = DbUpdate;
+    type AppliedDiff<'r> = AppliedDiff<'r>;
     type SubscriptionHandle = SubscriptionHandle;
 
 fn register_tables(client_cache: &mut __sdk::ClientCache<Self>) {
@@ -2392,20 +2420,17 @@ impl<'ctx> __sdk::TableWithPrimaryKey for PersonTableHandle<'ctx> {
     }
 }
 
+
 #[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
 ) -> __sdk::Result<__sdk::TableUpdate<Person>> {
-    __sdk::TableUpdate::parse_table_update_with_primary_key::<u32>(
-        raw_updates,
-        |row: &Person| &row.id,
-    )
-        .map_err(|e| {
-             __sdk::InternalError::failed_parse(
-                "TableUpdate<Person>",
-                "TableUpdate",
-            ).with_cause(e).into()
-        })
+    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
+        __sdk::InternalError::failed_parse(
+            "TableUpdate<Person>",
+            "TableUpdate",
+        ).with_cause(e).into()
+    })
 }
 
         /// Access to the `id` unique index on the table `person`,
@@ -2571,20 +2596,17 @@ impl<'ctx> __sdk::TableWithPrimaryKey for PkMultiIdentityTableHandle<'ctx> {
     }
 }
 
+
 #[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
 ) -> __sdk::Result<__sdk::TableUpdate<PkMultiIdentity>> {
-    __sdk::TableUpdate::parse_table_update_with_primary_key::<u32>(
-        raw_updates,
-        |row: &PkMultiIdentity| &row.id,
-    )
-        .map_err(|e| {
-             __sdk::InternalError::failed_parse(
-                "TableUpdate<PkMultiIdentity>",
-                "TableUpdate",
-            ).with_cause(e).into()
-        })
+    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
+        __sdk::InternalError::failed_parse(
+            "TableUpdate<PkMultiIdentity>",
+            "TableUpdate",
+        ).with_cause(e).into()
+    })
 }
 
         /// Access to the `id` unique index on the table `pk_multi_identity`,
@@ -2780,20 +2802,17 @@ impl<'ctx> __sdk::TableWithPrimaryKey for PlayerTableHandle<'ctx> {
     }
 }
 
+
 #[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
 ) -> __sdk::Result<__sdk::TableUpdate<Player>> {
-    __sdk::TableUpdate::parse_table_update_with_primary_key::<__sdk::Identity>(
-        raw_updates,
-        |row: &Player| &row.identity,
-    )
-        .map_err(|e| {
-             __sdk::InternalError::failed_parse(
-                "TableUpdate<Player>",
-                "TableUpdate",
-            ).with_cause(e).into()
-        })
+    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
+        __sdk::InternalError::failed_parse(
+            "TableUpdate<Player>",
+            "TableUpdate",
+        ).with_cause(e).into()
+    })
 }
 
         /// Access to the `identity` unique index on the table `player`,
@@ -3026,17 +3045,17 @@ pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::Remote
 
         let _table = client_cache.get_or_make_table::<Point>("points");
 }
+
 #[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
 ) -> __sdk::Result<__sdk::TableUpdate<Point>> {
-    __sdk::TableUpdate::parse_table_update_no_primary_key(raw_updates)
-        .map_err(|e| {
-             __sdk::InternalError::failed_parse(
-                "TableUpdate<Point>",
-                "TableUpdate",
-            ).with_cause(e).into()
-        })
+    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
+        __sdk::InternalError::failed_parse(
+            "TableUpdate<Point>",
+            "TableUpdate",
+        ).with_cause(e).into()
+    })
 }
 '''
 "private_table_table.rs" = '''
@@ -3126,17 +3145,17 @@ pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::Remote
 
         let _table = client_cache.get_or_make_table::<PrivateTable>("private_table");
 }
+
 #[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
 ) -> __sdk::Result<__sdk::TableUpdate<PrivateTable>> {
-    __sdk::TableUpdate::parse_table_update_no_primary_key(raw_updates)
-        .map_err(|e| {
-             __sdk::InternalError::failed_parse(
-                "TableUpdate<PrivateTable>",
-                "TableUpdate",
-            ).with_cause(e).into()
-        })
+    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
+        __sdk::InternalError::failed_parse(
+            "TableUpdate<PrivateTable>",
+            "TableUpdate",
+        ).with_cause(e).into()
+    })
 }
 '''
 "private_table_type.rs" = '''
@@ -3373,20 +3392,17 @@ impl<'ctx> __sdk::TableWithPrimaryKey for RepeatingTestArgTableHandle<'ctx> {
     }
 }
 
+
 #[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
 ) -> __sdk::Result<__sdk::TableUpdate<RepeatingTestArg>> {
-    __sdk::TableUpdate::parse_table_update_with_primary_key::<u64>(
-        raw_updates,
-        |row: &RepeatingTestArg| &row.scheduled_id,
-    )
-        .map_err(|e| {
-             __sdk::InternalError::failed_parse(
-                "TableUpdate<RepeatingTestArg>",
-                "TableUpdate",
-            ).with_cause(e).into()
-        })
+    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
+        __sdk::InternalError::failed_parse(
+            "TableUpdate<RepeatingTestArg>",
+            "TableUpdate",
+        ).with_cause(e).into()
+    })
 }
 
         /// Access to the `scheduled_id` unique index on the table `repeating_test_arg`,
@@ -3747,17 +3763,17 @@ pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::Remote
 
         let _table = client_cache.get_or_make_table::<TestA>("test_a");
 }
+
 #[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
 ) -> __sdk::Result<__sdk::TableUpdate<TestA>> {
-    __sdk::TableUpdate::parse_table_update_no_primary_key(raw_updates)
-        .map_err(|e| {
-             __sdk::InternalError::failed_parse(
-                "TableUpdate<TestA>",
-                "TableUpdate",
-            ).with_cause(e).into()
-        })
+    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
+        __sdk::InternalError::failed_parse(
+            "TableUpdate<TestA>",
+            "TableUpdate",
+        ).with_cause(e).into()
+    })
 }
 '''
 "test_a_type.rs" = '''
@@ -4004,17 +4020,17 @@ pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::Remote
 
         let _table = client_cache.get_or_make_table::<TestD>("test_d");
 }
+
 #[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
 ) -> __sdk::Result<__sdk::TableUpdate<TestD>> {
-    __sdk::TableUpdate::parse_table_update_no_primary_key(raw_updates)
-        .map_err(|e| {
-             __sdk::InternalError::failed_parse(
-                "TableUpdate<TestD>",
-                "TableUpdate",
-            ).with_cause(e).into()
-        })
+    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
+        __sdk::InternalError::failed_parse(
+            "TableUpdate<TestD>",
+            "TableUpdate",
+        ).with_cause(e).into()
+    })
 }
 '''
 "test_d_type.rs" = '''
@@ -4148,20 +4164,17 @@ impl<'ctx> __sdk::TableWithPrimaryKey for TestETableHandle<'ctx> {
     }
 }
 
+
 #[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
 ) -> __sdk::Result<__sdk::TableUpdate<TestE>> {
-    __sdk::TableUpdate::parse_table_update_with_primary_key::<u64>(
-        raw_updates,
-        |row: &TestE| &row.id,
-    )
-        .map_err(|e| {
-             __sdk::InternalError::failed_parse(
-                "TableUpdate<TestE>",
-                "TableUpdate",
-            ).with_cause(e).into()
-        })
+    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
+        __sdk::InternalError::failed_parse(
+            "TableUpdate<TestE>",
+            "TableUpdate",
+        ).with_cause(e).into()
+    })
 }
 
         /// Access to the `id` unique index on the table `test_e`,
@@ -4308,17 +4321,17 @@ pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::Remote
 
         let _table = client_cache.get_or_make_table::<TestFoobar>("test_f");
 }
+
 #[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
 ) -> __sdk::Result<__sdk::TableUpdate<TestFoobar>> {
-    __sdk::TableUpdate::parse_table_update_no_primary_key(raw_updates)
-        .map_err(|e| {
-             __sdk::InternalError::failed_parse(
-                "TableUpdate<TestFoobar>",
-                "TableUpdate",
-            ).with_cause(e).into()
-        })
+    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
+        __sdk::InternalError::failed_parse(
+            "TableUpdate<TestFoobar>",
+            "TableUpdate",
+        ).with_cause(e).into()
+    })
 }
 '''
 "test_foobar_type.rs" = '''
