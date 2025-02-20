@@ -344,7 +344,7 @@ pub use spacetimedb_bindings_macro::client_visibility_filter;
 /// Unique constraints implicitly create a unique index, which is accessed using the [`UniqueColumn`] struct instead of the
 /// [`RangedIndex`] struct.
 ///
-/// The created index has the same name as the column. <!-- TODO: this may change if we do the unify-index-names PR. -->
+/// The created index has the same name as the column.
 ///
 /// For a table *table* and an indexed *column*, use:
 /// ```text
