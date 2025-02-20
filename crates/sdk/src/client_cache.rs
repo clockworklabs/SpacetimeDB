@@ -195,7 +195,14 @@ impl<Row: Clone + Send + Sync + 'static> TableCache<Row> {
         debug_assert!(!_deletes.contains_key(&*insert.bsatn));
     }
 
-    /// Apply all the deletes, inserts and updates recorded in `diff`.
+    /// Apply all the deletes and inserts recorded in `diff`.
+    /// Return a [`TableAppliedDiff`] which encodes the actual changes to rows present or deleted
+    /// after taking into account rows' refcounts.
+    ///
+    /// The resulting [`TableAppliedDiff`] will contain only deletes and inserts.
+    /// Its `update_deletes` and `update_inserts` fields will be empty.
+    /// The caller should use [`TableAppliedDiff::with_updates_by_pk`] to merge delete/insert pairs
+    /// and populate the `update_*` fields.
     fn apply_diff<'r>(&mut self, diff: &'r TableUpdate<Row>) -> TableAppliedDiff<'r, Row> {
         // Apply all deletes and collect all `ref_count -> 0` events.
         let mut delete_events = <_>::default();
