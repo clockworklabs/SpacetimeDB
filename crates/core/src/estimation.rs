@@ -1,6 +1,6 @@
 use crate::db::{datastore::locking_tx_datastore::state_view::StateView as _, relational_db::Tx};
 use spacetimedb_lib::query::Delta;
-use spacetimedb_physical_plan::plan::{HashJoin, IxJoin, IxScan, PhysicalPlan, Sarg};
+use spacetimedb_physical_plan::plan::{HashJoin, IxJoin, IxScan, PhysicalPlan, Sarg, TableScan};
 use spacetimedb_primitives::{ColList, TableId};
 use spacetimedb_vm::expr::{Query, QueryExpr, SourceExpr};
 
@@ -47,10 +47,27 @@ pub fn estimate_rows_scanned(tx: &Tx, plan: &PhysicalPlan) -> u64 {
 /// Estimate the cardinality of a physical plan
 pub fn row_estimate(tx: &Tx, plan: &PhysicalPlan) -> u64 {
     match plan {
+        // Use a row limit as the estimate if present
+        PhysicalPlan::TableScan(TableScan { limit: Some(n), .. }, _)
+        | PhysicalPlan::IxScan(IxScan { limit: Some(n), .. }, _) => *n,
         // Table scans return the number of rows in the table
-        PhysicalPlan::TableScan(schema, _, None) => tx.table_row_count(schema.table_id).unwrap_or_default(),
+        PhysicalPlan::TableScan(
+            TableScan {
+                schema,
+                limit: None,
+                delta: None,
+            },
+            _,
+        ) => tx.table_row_count(schema.table_id).unwrap_or_default(),
         // We don't estimate the cardinality of delta scans currently
-        PhysicalPlan::TableScan(_, _, Some(Delta::Inserts | Delta::Deletes)) => 0,
+        PhysicalPlan::TableScan(
+            TableScan {
+                limit: None,
+                delta: Some(Delta::Inserts | Delta::Deletes),
+                ..
+            },
+            _,
+        ) => 0,
         // The selectivity of a single column index scan is 1 / NDV,
         // where NDV is the Number of Distinct Values of a column.
         // Note, this assumes a uniform distribution of column values.

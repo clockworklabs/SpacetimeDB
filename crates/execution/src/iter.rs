@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use anyhow::{anyhow, bail, Result};
 use spacetimedb_lib::{query::Delta, AlgebraicValue, ProductValue};
 use spacetimedb_physical_plan::plan::{
-    HashJoin, IxJoin, IxScan, PhysicalExpr, PhysicalPlan, ProjectField, ProjectPlan, Sarg, Semi, TupleField,
+    HashJoin, IxJoin, IxScan, PhysicalExpr, PhysicalPlan, ProjectField, ProjectPlan, Sarg, Semi, TableScan, TupleField,
 };
 use spacetimedb_table::{
     blob_store::BlobStore,
@@ -231,13 +231,31 @@ impl<'a> RowRefIter<'a> {
             ProductValue::from_iter(prefix.iter().map(|(_, v)| v).chain([v]).cloned())
         };
         match plan {
-            PhysicalPlan::TableScan(schema, _, None) => tx.table_scan(schema.table_id).map(Self::TableScan),
-            PhysicalPlan::TableScan(schema, _, Some(Delta::Inserts)) => {
-                Ok(Self::DeltaScan(tx.delta_scan(schema.table_id, true)))
-            }
-            PhysicalPlan::TableScan(schema, _, Some(Delta::Deletes)) => {
-                Ok(Self::DeltaScan(tx.delta_scan(schema.table_id, false)))
-            }
+            PhysicalPlan::TableScan(TableScan { limit: Some(_), .. }, _) => unimplemented!(),
+            PhysicalPlan::TableScan(
+                TableScan {
+                    schema,
+                    limit: None,
+                    delta: None,
+                },
+                _,
+            ) => tx.table_scan(schema.table_id).map(Self::TableScan),
+            PhysicalPlan::TableScan(
+                TableScan {
+                    schema,
+                    limit: None,
+                    delta: Some(Delta::Inserts),
+                },
+                _,
+            ) => Ok(Self::DeltaScan(tx.delta_scan(schema.table_id, true))),
+            PhysicalPlan::TableScan(
+                TableScan {
+                    schema,
+                    limit: None,
+                    delta: Some(Delta::Deletes),
+                },
+                _,
+            ) => Ok(Self::DeltaScan(tx.delta_scan(schema.table_id, false))),
             PhysicalPlan::IxScan(
                 scan @ IxScan {
                     arg: Sarg::Eq(_, v), ..

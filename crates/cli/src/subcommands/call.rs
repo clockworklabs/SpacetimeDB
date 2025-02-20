@@ -18,7 +18,7 @@ use super::sql::parse_req;
 pub fn cli() -> clap::Command {
     clap::Command::new("call")
         .about(format!(
-            "Invokes a reducer function in a database.\n\n{}",
+            "Invokes a reducer function in a database. {}",
             UNSTABLE_WARNING
         ))
         .arg(

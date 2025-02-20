@@ -10,6 +10,7 @@ use check::{Relvars, TypingResult};
 use errors::{DuplicateName, InvalidLiteral, InvalidOp, InvalidWildcard, UnexpectedType, Unresolved};
 use ethnum::i256;
 use ethnum::u256;
+use expr::AggType;
 use expr::{Expr, FieldProject, ProjectList, ProjectName, RelExpr};
 use spacetimedb_lib::{from_hex_pad, AlgebraicType, AlgebraicValue, ConnectionId, Identity};
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
@@ -29,6 +30,19 @@ pub(crate) fn type_select(input: RelExpr, expr: SqlExpr, vars: &Relvars) -> Typi
     ))
 }
 
+/// Type check a LIMIT clause
+pub(crate) fn type_limit(input: ProjectList, limit: &str) -> TypingResult<ProjectList> {
+    Ok(
+        parse_int(limit, AlgebraicType::U64, BigDecimal::to_u64, AlgebraicValue::U64)
+            .map_err(|_| InvalidLiteral::new(limit.to_owned(), &AlgebraicType::U64))
+            .and_then(|n| {
+                n.into_u64()
+                    .map_err(|_| InvalidLiteral::new(limit.to_owned(), &AlgebraicType::U64))
+            })
+            .map(|n| ProjectList::Limit(Box::new(input), n))?,
+    )
+}
+
 /// Type check and lower a [ast::Project]
 pub(crate) fn type_proj(input: RelExpr, proj: ast::Project, vars: &Relvars) -> TypingResult<ProjectList> {
     match proj {
@@ -38,6 +52,7 @@ pub(crate) fn type_proj(input: RelExpr, proj: ast::Project, vars: &Relvars) -> T
             Ok(ProjectList::Name(ProjectName::Some(input, var)))
         }
         ast::Project::Star(Some(SqlIdent(var))) => Err(Unresolved::var(&var).into()),
+        ast::Project::Count(SqlIdent(alias)) => Ok(ProjectList::Agg(input, AggType::Count, alias, AlgebraicType::U64)),
         ast::Project::Exprs(elems) => {
             let mut projections = vec![];
             let mut names = HashSet::new();

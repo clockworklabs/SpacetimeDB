@@ -177,7 +177,8 @@ pub fn compile_sql_sub<'a>(sql: &'a str, tx: &impl SchemaView) -> TypingResult<S
 fn expect_table_type(expr: ProjectList) -> TypingResult<ProjectName> {
     match expr {
         ProjectList::Name(proj) => Ok(proj),
-        ProjectList::List(..) => Err(Unsupported::ReturnType.into()),
+        ProjectList::Limit(input, _) => expect_table_type(*input),
+        ProjectList::List(..) | ProjectList::Agg(..) => Err(Unsupported::ReturnType.into()),
     }
 }
 
@@ -484,6 +485,10 @@ mod tests {
             TestCase {
                 sql: "select t.* from t join s on t.u32 = r.u32 join s as r",
                 msg: "Alias r is not in scope when it is referenced",
+            },
+            TestCase {
+                sql: "select * from t limit 5",
+                msg: "Subscriptions do not support limit",
             },
         ] {
             let result = parse_and_type_sub(sql, &tx);

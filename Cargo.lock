@@ -776,6 +776,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "clap-markdown"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8ebc67e6266e14f8b31541c2f204724fa2ac7ad5c17d6f5908fbb92a60f42cff"
+dependencies = [
+ "clap 4.5.20",
+]
+
+[[package]]
 name = "clap_builder"
 version = "4.5.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4878,6 +4887,7 @@ dependencies = [
  "cargo_metadata",
  "chrono",
  "clap 4.5.20",
+ "clap-markdown",
  "colored",
  "convert_case 0.6.0",
  "dirs",
@@ -5163,6 +5173,7 @@ name = "spacetimedb-execution"
 version = "1.0.0-rc4"
 dependencies = [
  "anyhow",
+ "itertools 0.12.1",
  "spacetimedb-expr",
  "spacetimedb-lib",
  "spacetimedb-physical-plan",
