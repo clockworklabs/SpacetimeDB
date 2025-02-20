@@ -6,7 +6,7 @@ use std::{
 
 use anyhow::Result;
 use derive_more::From;
-use spacetimedb_expr::StatementSource;
+use spacetimedb_expr::{expr::AggType, StatementSource};
 use spacetimedb_lib::{query::Delta, sats::size_of::SizeOf, AlgebraicValue, ProductValue};
 use spacetimedb_primitives::{ColId, ColSet, IndexId};
 use spacetimedb_schema::schema::{IndexSchema, TableSchema};
@@ -15,7 +15,8 @@ use spacetimedb_table::table::RowRef;
 
 use crate::rules::{
     ComputePositions, HashToIxJoin, IxScanAnd, IxScanEq, IxScanEq2Col, IxScanEq3Col, PullFilterAboveHashJoin,
-    PushConstAnd, PushConstEq, ReorderDeltaJoinRhs, ReorderHashJoin, RewriteRule, UniqueHashJoinRule, UniqueIxJoinRule,
+    PushConstAnd, PushConstEq, PushLimit, ReorderDeltaJoinRhs, ReorderHashJoin, RewriteRule, UniqueHashJoinRule,
+    UniqueIxJoinRule,
 };
 
 /// Table aliases are replaced with labels in the physical plan
@@ -97,10 +98,20 @@ impl ProjectPlan {
 /// ```sql
 /// select t.a, s.b from t join s ...
 /// ```
+///
+/// TODO: LIMIT and COUNT were added rather hastily.
+/// We should rethink having separate plan types for projections and selections,
+/// as it makes optimization more difficult the more they diverge.
 #[derive(Debug)]
 pub enum ProjectListPlan {
+    /// A plan that returns physical rows
     Name(ProjectPlan),
+    /// A plan that returns virtual rows
     List(PhysicalPlan, Vec<TupleField>),
+    /// A plan that limits rows
+    Limit(Box<ProjectListPlan>, u64),
+    /// An aggregate function
+    Agg(PhysicalPlan, AggType),
 }
 
 impl Deref for ProjectListPlan {
@@ -109,7 +120,8 @@ impl Deref for ProjectListPlan {
     fn deref(&self) -> &Self::Target {
         match self {
             Self::Name(plan) => plan,
-            Self::List(plan, ..) => plan,
+            Self::List(plan, ..) | Self::Agg(plan, ..) => plan,
+            Self::Limit(plan, ..) => plan,
         }
     }
 }
@@ -118,6 +130,15 @@ impl ProjectListPlan {
     pub fn optimize(self) -> Result<Self> {
         match self {
             Self::Name(plan) => Ok(Self::Name(plan.optimize()?)),
+            Self::Limit(plan, n) => {
+                let mut limit = Self::Limit(Box::new(plan.optimize()?), n);
+                // Merge a limit with a scan if possible
+                if PushLimit::matches(&limit).is_some() {
+                    limit = PushLimit::rewrite(limit, ())?;
+                }
+                Ok(limit)
+            }
+            Self::Agg(plan, agg_type) => Ok(Self::Agg(plan.optimize(vec![])?, agg_type)),
             Self::List(plan, fields) => Ok(Self::List(
                 plan.optimize(fields.iter().map(|TupleField { label, .. }| label).copied().collect())?,
                 fields,
@@ -150,7 +171,7 @@ pub struct TupleField {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PhysicalPlan {
     /// Scan a table row by row, returning row ids
-    TableScan(Arc<TableSchema>, Label, Option<Delta>),
+    TableScan(TableScan, Label),
     /// Fetch row ids from an index
     IxScan(IxScan, Label),
     /// An index join + projection
@@ -175,7 +196,7 @@ impl PhysicalPlan {
                 lhs.visit(f);
                 rhs.visit(f);
             }
-            _ => {}
+            Self::TableScan(..) | Self::IxScan(..) => {}
         }
     }
 
@@ -190,7 +211,7 @@ impl PhysicalPlan {
                 lhs.visit_mut(f);
                 rhs.visit_mut(f);
             }
-            _ => {}
+            Self::TableScan(..) | Self::IxScan(..) => {}
         }
     }
 
@@ -223,7 +244,7 @@ impl PhysicalPlan {
                 },
                 semi,
             ),
-            plan => plan,
+            plan @ Self::TableScan(..) | plan @ Self::IxScan(..) => plan,
         }
     }
 
@@ -242,40 +263,55 @@ impl PhysicalPlan {
             plan.any(&|plan| ok(plan).is_some())
         };
         Ok(match self {
-            Self::NLJoin(lhs, rhs) if matches(&lhs) => {
-                // Replace the lhs subtree
-                Self::NLJoin(Box::new(lhs.map_if(f, ok)?), rhs)
+            Self::TableScan(..) | Self::IxScan(..) => self,
+            Self::NLJoin(lhs, rhs) => {
+                if matches(&lhs) {
+                    return Ok(Self::NLJoin(Box::new(lhs.map_if(f, ok)?), rhs));
+                }
+                if matches(&rhs) {
+                    return Ok(Self::NLJoin(lhs, Box::new(rhs.map_if(f, ok)?)));
+                }
+                Self::NLJoin(lhs, rhs)
             }
-            Self::NLJoin(lhs, rhs) if matches(&rhs) => {
-                // Replace the rhs subtree
-                Self::NLJoin(lhs, Box::new(rhs.map_if(f, ok)?))
+            Self::HashJoin(join, semi) => {
+                if matches(&join.lhs) {
+                    return Ok(Self::HashJoin(
+                        HashJoin {
+                            lhs: Box::new(join.lhs.map_if(f, ok)?),
+                            ..join
+                        },
+                        semi,
+                    ));
+                }
+                if matches(&join.rhs) {
+                    return Ok(Self::HashJoin(
+                        HashJoin {
+                            rhs: Box::new(join.rhs.map_if(f, ok)?),
+                            ..join
+                        },
+                        semi,
+                    ));
+                }
+                Self::HashJoin(join, semi)
             }
-            Self::HashJoin(join, semi) if matches(&join.lhs) => Self::HashJoin(
-                HashJoin {
-                    lhs: Box::new(join.lhs.map_if(f, ok)?),
-                    ..join
-                },
-                semi,
-            ),
-            Self::HashJoin(join, semi) if matches(&join.rhs) => Self::HashJoin(
-                HashJoin {
-                    rhs: Box::new(join.rhs.map_if(f, ok)?),
-                    ..join
-                },
-                semi,
-            ),
-            Self::IxJoin(join, semi) if matches(&join.lhs) => Self::IxJoin(
-                IxJoin {
-                    lhs: Box::new(join.lhs.map_if(f, ok)?),
-                    ..join
-                },
-                semi,
-            ),
-            Self::Filter(input, expr) if matches(&input) => {
-                // Replace the input only if there is a match
-                Self::Filter(Box::new(input.map_if(f, ok)?), expr)
+            Self::IxJoin(join, semi) => {
+                if matches(&join.lhs) {
+                    return Ok(Self::IxJoin(
+                        IxJoin {
+                            lhs: Box::new(join.lhs.map_if(f, ok)?),
+                            ..join
+                        },
+                        semi,
+                    ));
+                }
+                Self::IxJoin(join, semi)
             }
-            _ => self,
+            Self::Filter(input, expr) => {
+                if matches(&input) {
+                    return Ok(Self::Filter(Box::new(input.map_if(f, ok)?), expr));
+                }
+                Self::Filter(input, expr)
+            }
         })
     }
 
@@ -325,8 +361,8 @@ impl PhysicalPlan {
     /// 5. Compute positions for tuple labels
     pub fn optimize(self, reqs: Vec<Label>) -> Result<Self> {
         self.map(&Self::canonicalize)
-            .apply_until::<PushConstAnd>()?
-            .apply_until::<PushConstEq>()?
+            .apply_rec::<PushConstAnd>()?
+            .apply_rec::<PushConstEq>()?
             .apply_rec::<ReorderDeltaJoinRhs>()?
             .apply_rec::<PullFilterAboveHashJoin>()?
             .apply_rec::<IxScanEq3Col>()?
@@ -570,7 +606,7 @@ impl PhysicalPlan {
     pub(crate) fn returns_distinct_values(&self, label: &Label, cols: &ColSet) -> bool {
         match self {
             // Is there a unique constraint for these cols?
-            Self::TableScan(schema, var, _) => var == label && schema.as_ref().is_unique(cols),
+            Self::TableScan(TableScan { schema, .. }, var) => var == label && schema.as_ref().is_unique(cols),
             // Is there a unique constraint for these cols + the index cols?
             Self::IxScan(
                 IxScan {
@@ -682,7 +718,7 @@ impl PhysicalPlan {
 
     pub fn index_on_field(&self, label: &Label, field: usize) -> bool {
         self.any(&|plan| match plan {
-            Self::TableScan(schema, alias, _)
+            Self::TableScan(TableScan { schema, .. }, alias)
             | Self::IxScan(IxScan { schema, .. }, alias)
             | Self::IxJoin(
                 IxJoin {
@@ -704,7 +740,7 @@ impl PhysicalPlan {
     /// Does this plan introduce this label?
     fn has_label(&self, label: &Label) -> bool {
         self.any(&|plan| match plan {
-            Self::TableScan(_, var, _) | Self::IxScan(_, var) | Self::IxJoin(IxJoin { rhs_label: var, .. }, _) => {
+            Self::TableScan(_, var) | Self::IxScan(_, var) | Self::IxJoin(IxJoin { rhs_label: var, .. }, _) => {
                 var == label
             }
             _ => false,
@@ -738,7 +774,7 @@ impl PhysicalPlan {
     fn labels(&self) -> Vec<Label> {
         fn find(plan: &PhysicalPlan, labels: &mut Vec<Label>) {
             match plan {
-                PhysicalPlan::TableScan(_, alias, _)
+                PhysicalPlan::TableScan(_, alias)
                 | PhysicalPlan::IxScan(_, alias)
                 | PhysicalPlan::IxJoin(IxJoin { rhs_label: alias, .. }, Semi::Rhs) => {
                     labels.push(*alias);
@@ -763,6 +799,43 @@ impl PhysicalPlan {
         find(self, &mut labels);
         labels
     }
+
+    /// Is this operator a table scan with optional label?
+    pub fn is_table_scan(&self, label: Option<&Label>) -> bool {
+        match self {
+            Self::TableScan(_, var) => label.map(|label| var == label).unwrap_or(true),
+            _ => false,
+        }
+    }
+
+    /// Does this plan scan a table with optional label?
+    pub fn has_table_scan(&self, label: Option<&Label>) -> bool {
+        self.any(&|plan| match plan {
+            Self::TableScan(_, var) => label.map(|label| var == label).unwrap_or(true),
+            _ => false,
+        })
+    }
+
+    /// Is this operator a filter?
+    fn is_filter(&self) -> bool {
+        matches!(self, Self::Filter(..))
+    }
+
+    /// Does this plan contain a filter?
+    pub fn has_filter(&self) -> bool {
+        self.any(&|plan| plan.is_filter())
+    }
+}
+
+/// Scan a table row by row, returning row ids
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TableScan {
+    /// The table on which this index is defined
+    pub schema: Arc<TableSchema>,
+    /// Limit the number of rows scanned
+    pub limit: Option<u64>,
+    /// Is this a delta table?
+    pub delta: Option<Delta>,
 }
 
 /// Fetch and return row ids from a btree index
@@ -770,6 +843,8 @@ impl PhysicalPlan {
 pub struct IxScan {
     /// The table on which this index is defined
     pub schema: Arc<TableSchema>,
+    /// Limit the number of rows scanned
+    pub limit: Option<u64>,
     /// The index id
     pub index_id: IndexId,
     /// An equality prefix for multi-column scans
@@ -997,7 +1072,10 @@ mod tests {
     use std::sync::Arc;
 
     use pretty_assertions::assert_eq;
-    use spacetimedb_expr::check::{parse_and_type_sub, SchemaView};
+    use spacetimedb_expr::{
+        check::{parse_and_type_sub, SchemaView},
+        statement::{parse_and_type_sql, Statement},
+    };
     use spacetimedb_lib::{
         db::auth::{StAccess, StTableType},
         AlgebraicType, AlgebraicValue,
@@ -1010,11 +1088,11 @@ mod tests {
     use spacetimedb_sql_parser::ast::BinOp;
 
     use crate::{
-        compile::compile_select,
+        compile::{compile_select, compile_select_list},
         plan::{HashJoin, IxJoin, IxScan, PhysicalPlan, Sarg, Semi, TupleField},
     };
 
-    use super::{PhysicalExpr, ProjectPlan};
+    use super::{PhysicalExpr, ProjectListPlan, ProjectPlan, TableScan};
 
     struct SchemaViewer {
         schemas: Vec<Arc<TableSchema>>,
@@ -1110,7 +1188,7 @@ mod tests {
         let pp = compile_select(lp).optimize().unwrap();
 
         match pp {
-            ProjectPlan::None(PhysicalPlan::TableScan(schema, _, _)) => {
+            ProjectPlan::None(PhysicalPlan::TableScan(TableScan { schema, .. }, _)) => {
                 assert_eq!(schema.table_id, t_id);
             }
             proj => panic!("unexpected project: {:#?}", proj),
@@ -1146,7 +1224,7 @@ mod tests {
                 assert!(matches!(*value, PhysicalExpr::Value(AlgebraicValue::U64(5))));
 
                 match *input {
-                    PhysicalPlan::TableScan(schema, _, _) => {
+                    PhysicalPlan::TableScan(TableScan { schema, .. }, _) => {
                         assert_eq!(schema.table_id, t_id);
                     }
                     plan => panic!("unexpected plan: {:#?}", plan),
@@ -1779,5 +1857,55 @@ mod tests {
             }
             plan => panic!("unexpected plan: {:#?}", plan),
         };
+    }
+
+    #[test]
+    fn limit() {
+        let t_id = TableId(1);
+
+        let t = Arc::new(schema(
+            t_id,
+            "t",
+            &[("x", AlgebraicType::U8), ("y", AlgebraicType::U8)],
+            &[&[0]],
+            &[],
+            None,
+        ));
+
+        let db = SchemaViewer {
+            schemas: vec![t.clone()],
+        };
+
+        let compile = |sql| {
+            let stmt = parse_and_type_sql(sql, &db).unwrap();
+            let Statement::Select(select) = stmt else {
+                unreachable!()
+            };
+            compile_select_list(select).optimize().unwrap()
+        };
+
+        let plan = compile("select * from t limit 5");
+
+        assert!(matches!(
+            plan,
+            ProjectListPlan::Name(ProjectPlan::None(PhysicalPlan::TableScan(
+                TableScan { limit: Some(5), .. },
+                _
+            )))
+        ));
+
+        let plan = compile("select * from t where x = 1 limit 5");
+
+        assert!(matches!(
+            plan,
+            ProjectListPlan::Name(ProjectPlan::None(PhysicalPlan::IxScan(
+                IxScan { limit: Some(5), .. },
+                _
+            )))
+        ));
+
+        let plan = compile("select * from t where y = 1 limit 5");
+
+        assert!(matches!(plan, ProjectListPlan::Limit(_, 5)) && plan.has_filter() && plan.has_table_scan(None));
     }
 }
