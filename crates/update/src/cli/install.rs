@@ -63,48 +63,14 @@ pub(super) async fn download_and_install(
     pb.enable_steady_tick(std::time::Duration::from_millis(60));
 
     pb.set_message("Resolving version...");
-    let releases_url = "https://api.github.com/repos/clockworklabs/SpacetimeDB/releases";
-    let url = match &version {
-        Some(version) => format!("{releases_url}/tags/v{version}"),
-        None => [releases_url, "/latest"].concat(),
-    };
-    let release: Release = client
-        .get(url)
-        .send()
-        .await?
-        .error_for_status()
-        .map_err(|e| {
-            if e.status() == Some(reqwest::StatusCode::NOT_FOUND) {
-                if let Some(version) = &version {
-                    return anyhow::anyhow!(e).context(format!("No release found for version {version}"));
-                }
-            }
-            anyhow::anyhow!(e).context("Could not fetch release info")
-        })?
-        .json()
-        .await?;
-    let release_version = match version {
-        Some(version) => version,
-        None => release.version().context("Could not parse version number")?,
-    };
-
-    let asset = release
-        .assets
-        .iter()
-        .find(|&asset| asset.name == download_name)
-        .ok_or_else(|| {
-            let err = anyhow::anyhow!("artifact named {download_name} not found in version {release_version}");
-            if custom_artifact {
-                err
-            } else {
-                err.context("no prebuilt binaries available for the detected OS and architecture")
-            }
-        })?;
+    let url = "http://localhost";
+    let release_version = "1.0.0".parse::<semver::Version>().unwrap(); 
+    let download_url = format!("http://localhost/{}", download_name);
 
     pb.set_style(ProgressStyle::with_template("{spinner} {prefix}{msg} {bytes}/{total_bytes} ({eta})").unwrap());
-    pb.set_prefix(format!("Installing v{release_version}: "));
+    pb.set_prefix(format!("Installing v1.0.0: "));
     pb.set_message("downloading...");
-    let archive = download_with_progress(&pb, client, &asset.browser_download_url).await?;
+    let archive = download_with_progress(&pb, client, &download_url).await?;
 
     pb.set_style(pb_style);
     pb.set_message("unpacking...");
