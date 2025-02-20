@@ -8,6 +8,7 @@ function Install {
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
     $DownloadUrl = "https://github.com/clockworklabs/SpacetimeDB/releases/latest/download/spacetimedb-update-x86_64-pc-windows-msvc.exe"
+    $DownloadUrl = "http://localhost:8000/spacetimedb-update-x86_64-pc-windows-msvc.exe"
     Write-Output "Downloading installer..."
 
     function UpdatePathIfNotExists {
@@ -25,7 +26,7 @@ function Install {
     & $Executable
 
     # TODO: do this in spacetimedb-update
-    $InstallDir = Join-Path ([Environment]::GetSpecialFolder("LocalApplicationData")) "SpacetimeDB"
+    $InstallDir = Join-Path ([Environment]::GetFolderPath("LocalApplicationData")) "SpacetimeDB"
     UpdatePathIfNotExists $InstallDir
     Write-Output "We have added spacetimedb to your Path. You may have to logout and log back in to reload your environment."
 }
