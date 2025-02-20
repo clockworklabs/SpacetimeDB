@@ -21,7 +21,7 @@
 use crate::{
     callbacks::{CallbackId, DbCallbacks, ReducerCallback, ReducerCallbacks, RowCallback, UpdateCallback},
     client_cache::{ClientCache, TableHandle},
-    spacetime_module::{AbstractEventContext, DbConnection, DbUpdate, InModule, SpacetimeModule},
+    spacetime_module::{AbstractEventContext, AppliedDiff, DbConnection, DbUpdate, InModule, SpacetimeModule},
     subscription::{
         OnAppliedCallback, OnErrorCallback, PendingUnsubscribeResult, SubscriptionHandleImpl, SubscriptionManager,
     },
@@ -146,17 +146,17 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
             ParsedMessage::InitialSubscription { db_update, sub_id } => {
                 // Lock the client cache in a restricted scope,
                 // so that it will be unlocked when callbacks run.
-                {
+                let applied_diff = {
                     let mut cache = self.cache.lock().unwrap();
-                    db_update.apply_to_client_cache(&mut *cache);
-                }
+                    db_update.apply_to_client_cache(&mut *cache)
+                };
                 let mut inner = self.inner.lock().unwrap();
 
                 let sub_event_ctx = self.make_event_ctx(());
                 inner.subscriptions.legacy_subscription_applied(&sub_event_ctx, sub_id);
 
                 let row_event_ctx = self.make_event_ctx(Event::SubscribeApplied);
-                db_update.invoke_row_callbacks(&row_event_ctx, &mut inner.db_callbacks);
+                applied_diff.invoke_row_callbacks(&row_event_ctx, &mut inner.db_callbacks);
                 Ok(())
             }
 
@@ -166,10 +166,10 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
             ParsedMessage::TransactionUpdate(event, Some(update)) => {
                 // Lock the client cache in a restricted scope,
                 // so that it will be unlocked when callbacks run.
-                {
+                let applied_diff = {
                     let mut cache = self.cache.lock().unwrap();
-                    update.apply_to_client_cache(&mut *cache);
-                }
+                    update.apply_to_client_cache(&mut *cache)
+                };
                 let mut inner = self.inner.lock().unwrap();
                 if let Event::Reducer(reducer_event) = &event {
                     let reducer_event_ctx = self.make_event_ctx(reducer_event.clone());
@@ -177,7 +177,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                 }
 
                 let row_event_ctx = self.make_event_ctx(event);
-                update.invoke_row_callbacks(&row_event_ctx, &mut inner.db_callbacks);
+                applied_diff.invoke_row_callbacks(&row_event_ctx, &mut inner.db_callbacks);
                 Ok(())
             }
 
@@ -197,18 +197,17 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
             } => {
                 // Lock the client cache in a restricted scope,
                 // so that it will be unlocked when callbacks run.
-                {
+                let applied_diff = {
                     let mut cache = self.cache.lock().unwrap();
-                    initial_update.apply_to_client_cache(&mut *cache);
-                }
+                    initial_update.apply_to_client_cache(&mut *cache)
+                };
                 let mut inner = self.inner.lock().unwrap();
 
                 let sub_event_ctx = self.make_event_ctx(());
                 inner.subscriptions.subscription_applied(&sub_event_ctx, query_id);
 
-                // FIXME: implement ref counting of rows to handle queries with overlapping results.
                 let row_event_ctx = self.make_event_ctx(Event::SubscribeApplied);
-                initial_update.invoke_row_callbacks(&row_event_ctx, &mut inner.db_callbacks);
+                applied_diff.invoke_row_callbacks(&row_event_ctx, &mut inner.db_callbacks);
                 Ok(())
             }
             ParsedMessage::UnsubscribeApplied {
@@ -217,18 +216,17 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
             } => {
                 // Lock the client cache in a restricted scope,
                 // so that it will be unlocked when callbacks run.
-                {
+                let applied_diff = {
                     let mut cache = self.cache.lock().unwrap();
-                    initial_update.apply_to_client_cache(&mut *cache);
-                }
+                    initial_update.apply_to_client_cache(&mut *cache)
+                };
                 let mut inner = self.inner.lock().unwrap();
 
                 let sub_event_ctx = self.make_event_ctx(());
                 inner.subscriptions.unsubscribe_applied(&sub_event_ctx, query_id);
-                // FIXME: implement ref counting of rows to handle queries with overlapping results.
 
                 let row_event_ctx = self.make_event_ctx(Event::UnsubscribeApplied);
-                initial_update.invoke_row_callbacks(&row_event_ctx, &mut inner.db_callbacks);
+                applied_diff.invoke_row_callbacks(&row_event_ctx, &mut inner.db_callbacks);
                 Ok(())
             }
             ParsedMessage::SubscriptionError { query_id, error } => {

@@ -232,13 +232,8 @@ pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::Remote
             "}",
         );
 
-        if let Some(pk_field) = schema.pk() {
+        if schema.pk().is_some() {
             let update_callback_id = table_name_pascalcase.clone() + "UpdateCallbackId";
-
-            let (pk_field_ident, pk_field_type_use) = &product_def.elements[pk_field.col_pos.idx()];
-            let pk_field_name = pk_field_ident.deref().to_case(Case::Snake);
-            let pk_field_type = type_name(module, pk_field_type_use);
-
             write!(
                 out,
                 "
@@ -258,43 +253,28 @@ impl<'ctx> __sdk::TableWithPrimaryKey for {table_handle}<'ctx> {{
         self.imp.remove_on_update(callback.0)
     }}
 }}
-
-#[doc(hidden)]
-pub(super) fn parse_table_update(
-    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __sdk::Result<__sdk::TableUpdate<{row_type}>> {{
-    __sdk::TableUpdate::parse_table_update_with_primary_key::<{pk_field_type}>(
-        raw_updates,
-        |row: &{row_type}| &row.{pk_field_name},
-    )
-        .map_err(|e| {{
-             __sdk::InternalError::failed_parse(
-                \"TableUpdate<{row_type}>\",
-                \"TableUpdate\",
-            ).with_cause(e).into()
-        }})
-}}
-"
-            );
-        } else {
-            write!(
-                out,
-                "
-#[doc(hidden)]
-pub(super) fn parse_table_update(
-    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __sdk::Result<__sdk::TableUpdate<{row_type}>> {{
-    __sdk::TableUpdate::parse_table_update_no_primary_key(raw_updates)
-        .map_err(|e| {{
-             __sdk::InternalError::failed_parse(
-                \"TableUpdate<{row_type}>\",
-                \"TableUpdate\",
-            ).with_cause(e).into()
-        }})
-}}
 "
             );
         }
+
+        out.newline();
+
+        write!(
+            out,
+            "
+#[doc(hidden)]
+pub(super) fn parse_table_update(
+    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
+) -> __sdk::Result<__sdk::TableUpdate<{row_type}>> {{
+    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {{
+        __sdk::InternalError::failed_parse(
+            \"TableUpdate<{row_type}>\",
+            \"TableUpdate\",
+        ).with_cause(e).into()
+    }})
+}}
+"
+        );
 
         for (unique_field_ident, unique_field_type_use) in iter_unique_cols(&schema, product_def) {
             let unique_field_name = unique_field_ident.deref().to_case(Case::Snake);
@@ -556,6 +536,11 @@ impl {set_reducer_flags_trait} for super::SetReducerFlags {{
 
         // Define `DbUpdate`.
         print_db_update_defn(module, out);
+
+        out.newline();
+
+        // Define `AppliedDiff`.
+        print_applied_diff_defn(module, out);
 
         out.newline();
 
@@ -1067,21 +1052,70 @@ impl __sdk::InModule for DbUpdate {{
         "impl __sdk::DbUpdate for DbUpdate {",
         |out| {
             out.delimited_block(
-                "fn apply_to_client_cache(&self, cache: &mut __sdk::ClientCache<RemoteModule>) {",
+                "fn apply_to_client_cache(&self, cache: &mut __sdk::ClientCache<RemoteModule>) -> AppliedDiff<'_> {
+                    let mut diff = AppliedDiff::default();
+                ",
                 |out| {
                     for table in iter_tables(module) {
+                        let with_updates = table
+                            .primary_key
+                            .map(|col| {
+                                let pk_field = table.get_column(col).unwrap().name.deref().to_case(Case::Snake);
+                                format!(".with_updates_by_pk(|row| &row.{pk_field})")
+                            })
+                            .unwrap_or_default();
+
+                        let field_name = table_method_name(&table.name);
                         writeln!(
                             out,
-                            "cache.apply_diff_to_table::<{}>({:?}, &self.{});",
+                            "diff.{field_name} = cache.apply_diff_to_table::<{}>({:?}, &self.{field_name}){with_updates};",
                             type_ref_name(module, table.product_type_ref),
                             table.name.deref(),
-                            table_method_name(&table.name),
                         );
                     }
                 },
-                "}\n",
+                "
+                    diff
+                }\n",
             );
+        },
+        "}\n",
+    );
+}
 
+fn print_applied_diff_defn(module: &ModuleDef, out: &mut Indenter) {
+    writeln!(out, "#[derive(Default)]");
+    writeln!(out, "#[allow(non_snake_case)]");
+    writeln!(out, "#[doc(hidden)]");
+    out.delimited_block(
+        "pub struct AppliedDiff<'r> {",
+        |out| {
+            for table in iter_tables(module) {
+                writeln!(
+                    out,
+                    "{}: __sdk::TableAppliedDiff<'r, {}>,",
+                    table_method_name(&table.name),
+                    type_ref_name(module, table.product_type_ref),
+                );
+            }
+        },
+        "}\n",
+    );
+
+    out.newline();
+
+    writeln!(
+        out,
+        "
+impl __sdk::InModule for AppliedDiff<'_> {{
+    type Module = RemoteModule;
+}}
+",
+    );
+
+    out.delimited_block(
+        "impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {",
+        |out| {
             out.delimited_block(
                 "fn invoke_row_callbacks(&self, event: &EventContext, callbacks: &mut __sdk::DbCallbacks<RemoteModule>) {",
                 |out| {
@@ -1119,6 +1153,7 @@ type DbView = RemoteTables;
 type Reducers = RemoteReducers;
 type SetReducerFlags = SetReducerFlags;
 type DbUpdate = DbUpdate;
+type AppliedDiff<'r> = AppliedDiff<'r>;
 type SubscriptionHandle = SubscriptionHandle;
 "
             );
