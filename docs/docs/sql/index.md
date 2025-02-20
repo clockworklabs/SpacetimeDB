@@ -1,7 +1,7 @@
 # SQL Support
 
 SpacetimeDB supports two subsets of SQL:
-One for queries issued through the cli or [http] api.
+One for queries issued through the [cli] or [http] api.
 Another for subscriptions issued via the [sdk] or WebSocket api.
 
 ## Subscriptions
@@ -476,6 +476,7 @@ column
 
 [sdk]:       /docs/sdks/rust/index.md#subscribe-to-queries
 [http]:      /docs/http/database#databasesqlname_or_address-post
+[cli]:       /docs/cli-reference.md#spacetime-sql
 
 [Identity]: /docs/index.md#identity
 [Address]:  /docs/index.md#address
