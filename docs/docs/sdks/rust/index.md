@@ -316,7 +316,7 @@ impl SubscriptionBuilder {
 }
 ```
 
-Subscribe to all rows from all tables. This method is provided as a convenience for simple clients. The same connection must not mix `subscribe_to_all_tables` with [`subscribe` to specific queries](#method subscribe). Doing so may cause errors or corrupt the client cache, leading to local queries returning incorrect results. The subscription initiated by `subscribe_to_all_tables` cannot be canceled after it is initiated.
+Subscribe to all rows from all tables. This method is provided as a convenience for simple clients. The same connection must not mix `subscribe_to_all_tables` with [`subscribe` to specific queries](#method-subscribe). Doing so may cause errors or corrupt the client cache, leading to local queries returning incorrect results. The subscription initiated by `subscribe_to_all_tables` cannot be canceled after it is initiated.
 
 #### Type `SubscriptionHandle`
 
@@ -752,7 +752,7 @@ spacetimedb_sdk::TableWithPrimaryKey
 
 Implemented for table handles whose tables have a primary key.
 
-#### Callback `on_delete`
+#### Callback `on_update`
 
 ```rust
 trait spacetimedb_sdk::TableWithPrimaryKey {
