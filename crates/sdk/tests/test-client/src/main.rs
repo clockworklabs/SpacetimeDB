@@ -5,7 +5,6 @@ mod module_bindings;
 use core::fmt::Display;
 use std::sync::{Arc, Mutex};
 
-use anyhow::anyhow;
 use module_bindings::*;
 
 use spacetimedb_sdk::{
@@ -1900,6 +1899,7 @@ fn exec_caller_alice_receives_reducer_callback_but_not_bob() {
 ///
 /// Used in [`exec_row_deduplication`] to determine that row callbacks are invoked only once,
 /// since this will panic if invoked on the same `result` function twice.
+#[allow(clippy::type_complexity)]
 fn put_result(result: &mut Option<Box<dyn Send + FnOnce(Result<(), anyhow::Error>)>>, res: Result<(), anyhow::Error>) {
     (result.take().unwrap())(res);
 }
