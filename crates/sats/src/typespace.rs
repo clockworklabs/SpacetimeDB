@@ -246,12 +246,14 @@ pub trait GroundSpacetimeType {
 /// # use spacetimedb_sats::SpacetimeType;
 ///
 /// #[derive(SpacetimeType)]
+/// # #[sats(krate = crate)]
 /// struct Location {
 ///     x: u64,
 ///     y: u64
 /// }
 ///
 /// #[derive(SpacetimeType)]
+/// # #[sats(krate = crate)]
 /// enum FruitCrate {
 ///     Apples { variety: String, count: u32, freshness: u32 },
 ///     Plastic { count: u32 }
