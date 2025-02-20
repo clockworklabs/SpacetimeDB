@@ -103,7 +103,6 @@ impl<'a> Iter<'a> {
                     .map(|input| Filter { input, expr })
                     .map(Iter::Filter)
             }
-            PhysicalPlan::Limit(..) => unimplemented!(),
             PhysicalPlan::NLJoin(lhs, rhs) => {
                 // Build a nested loop join iterator
                 NLJoin::build_from(lhs, rhs, tx)

@@ -1,7 +1,8 @@
 use errors::{SqlParseError, SqlRequired, SqlUnsupported};
 use sqlparser::ast::{
-    BinaryOperator, Expr, Ident, Join, JoinConstraint, JoinOperator, ObjectName, Query, SelectItem, TableAlias,
-    TableFactor, TableWithJoins, UnaryOperator, Value, WildcardAdditionalOptions,
+    BinaryOperator, Expr, Function, FunctionArg, FunctionArgExpr, Ident, Join, JoinConstraint, JoinOperator,
+    ObjectName, Query, SelectItem, TableAlias, TableFactor, TableWithJoins, UnaryOperator, Value,
+    WildcardAdditionalOptions,
 };
 
 use crate::ast::{BinOp, LogOp, Project, ProjectElem, ProjectExpr, SqlExpr, SqlFrom, SqlIdent, SqlJoin, SqlLiteral};
@@ -104,7 +105,7 @@ trait RelParser {
 /// Parse the items of a SELECT clause
 pub(crate) fn parse_projection(mut items: Vec<SelectItem>) -> SqlParseResult<Project> {
     if items.len() == 1 {
-        return parse_project(items.swap_remove(0));
+        return parse_project_or_agg(items.swap_remove(0));
     }
     Ok(Project::Exprs(
         items
@@ -115,7 +116,7 @@ pub(crate) fn parse_projection(mut items: Vec<SelectItem>) -> SqlParseResult<Pro
 }
 
 /// Parse a SELECT clause with only a single item
-pub(crate) fn parse_project(item: SelectItem) -> SqlParseResult<Project> {
+pub(crate) fn parse_project_or_agg(item: SelectItem) -> SqlParseResult<Project> {
     match item {
         SelectItem::Wildcard(WildcardAdditionalOptions {
             opt_exclude: None,
@@ -132,10 +133,45 @@ pub(crate) fn parse_project(item: SelectItem) -> SqlParseResult<Project> {
                 opt_replace: None,
             },
         ) => Ok(Project::Star(Some(parse_ident(table_name)?))),
+        SelectItem::UnnamedExpr(Expr::Function(_)) => Err(SqlUnsupported::AggregateWithoutAlias.into()),
+        SelectItem::ExprWithAlias {
+            expr: Expr::Function(agg_fn),
+            alias,
+        } => parse_agg_fn(agg_fn, alias.into()),
         SelectItem::UnnamedExpr(_) | SelectItem::ExprWithAlias { .. } => {
             Ok(Project::Exprs(vec![parse_project_elem(item)?]))
         }
         item => Err(SqlUnsupported::Projection(item).into()),
+    }
+}
+
+/// Parse an aggregate function in a select list
+fn parse_agg_fn(agg_fn: Function, alias: SqlIdent) -> SqlParseResult<Project> {
+    fn is_count(name: &ObjectName) -> bool {
+        name.0.len() == 1
+            && name
+                .0
+                .first()
+                .is_some_and(|Ident { value, .. }| value.to_lowercase() == "count")
+    }
+    match agg_fn {
+        Function {
+            name,
+            args,
+            over: None,
+            distinct: false,
+            special: false,
+            order_by,
+        } if is_count(&name)
+            && order_by.is_empty()
+            && args.len() == 1
+            && args
+                .first()
+                .is_some_and(|arg| matches!(arg, FunctionArg::Unnamed(FunctionArgExpr::Wildcard))) =>
+        {
+            Ok(Project::Count(alias))
+        }
+        agg_fn => Err(SqlUnsupported::Aggregate(agg_fn).into()),
     }
 }
 

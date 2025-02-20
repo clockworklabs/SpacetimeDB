@@ -14,7 +14,6 @@ pub fn estimate_rows_scanned(tx: &Tx, plan: &PhysicalPlan) -> u64 {
     match plan {
         PhysicalPlan::TableScan(..) | PhysicalPlan::IxScan(..) => row_estimate(tx, plan),
         PhysicalPlan::Filter(input, _) => estimate_rows_scanned(tx, input).saturating_add(row_estimate(tx, input)),
-        PhysicalPlan::Limit(input, n) => estimate_rows_scanned(tx, input).saturating_add(*n),
         PhysicalPlan::NLJoin(lhs, rhs) => estimate_rows_scanned(tx, lhs)
             .saturating_add(estimate_rows_scanned(tx, rhs))
             .saturating_add(row_estimate(tx, lhs).saturating_mul(row_estimate(tx, rhs))),
@@ -49,8 +48,7 @@ pub fn estimate_rows_scanned(tx: &Tx, plan: &PhysicalPlan) -> u64 {
 pub fn row_estimate(tx: &Tx, plan: &PhysicalPlan) -> u64 {
     match plan {
         // Use a row limit as the estimate if present
-        PhysicalPlan::Limit(_, n)
-        | PhysicalPlan::TableScan(TableScan { limit: Some(n), .. }, _)
+        PhysicalPlan::TableScan(TableScan { limit: Some(n), .. }, _)
         | PhysicalPlan::IxScan(IxScan { limit: Some(n), .. }, _) => *n,
         // Table scans return the number of rows in the table
         PhysicalPlan::TableScan(

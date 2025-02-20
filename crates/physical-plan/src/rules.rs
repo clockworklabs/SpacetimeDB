@@ -31,7 +31,10 @@ use spacetimedb_primitives::{ColId, ColSet, IndexId};
 use spacetimedb_schema::schema::IndexSchema;
 use spacetimedb_sql_parser::ast::{BinOp, LogOp};
 
-use crate::plan::{HashJoin, IxJoin, IxScan, Label, PhysicalExpr, PhysicalPlan, Sarg, Semi, TableScan, TupleField};
+use crate::plan::{
+    HashJoin, IxJoin, IxScan, Label, PhysicalExpr, PhysicalPlan, ProjectListPlan, ProjectPlan, Sarg, Semi, TableScan,
+    TupleField,
+};
 
 /// A rewrite will only fail due to an internal logic bug.
 /// However we don't want to panic in such a situation.
@@ -149,29 +152,50 @@ impl RewriteRule for ComputePositions {
 pub(crate) struct PushLimit;
 
 impl RewriteRule for PushLimit {
-    type Plan = PhysicalPlan;
+    type Plan = ProjectListPlan;
     type Info = ();
 
-    fn matches(plan: &PhysicalPlan) -> Option<Self::Info> {
+    fn matches(plan: &Self::Plan) -> Option<Self::Info> {
         match plan {
-            PhysicalPlan::Limit(scan, _) => matches!(
+            ProjectListPlan::Limit(scan, _) => matches!(
                 **scan,
-                PhysicalPlan::TableScan(TableScan { limit: None, .. }, _)
-                    | PhysicalPlan::IxScan(IxScan { limit: None, .. }, _)
+                ProjectListPlan::Name(ProjectPlan::None(
+                    PhysicalPlan::TableScan(TableScan { limit: None, .. }, _)
+                        | PhysicalPlan::IxScan(IxScan { limit: None, .. }, _)
+                ))
             )
             .then_some(()),
             _ => None,
         }
     }
 
-    fn rewrite(plan: PhysicalPlan, _: ()) -> Result<PhysicalPlan> {
+    fn rewrite(plan: Self::Plan, _: ()) -> Result<Self::Plan> {
+        let select = |plan| ProjectListPlan::Name(ProjectPlan::None(plan));
+        let limit_scan = |scan, n| match scan {
+            PhysicalPlan::TableScan(scan, alias) => {
+                select(PhysicalPlan::TableScan(
+                    TableScan {
+                        // Push limit into table scan
+                        limit: Some(n),
+                        ..scan
+                    },
+                    alias,
+                ))
+            }
+            PhysicalPlan::IxScan(scan, alias) => select(PhysicalPlan::IxScan(
+                IxScan {
+                    // Push limit into index scan
+                    limit: Some(n),
+                    ..scan
+                },
+                alias,
+            )),
+            _ => select(scan),
+        };
         match plan {
-            PhysicalPlan::Limit(scan, n) => match *scan {
-                PhysicalPlan::TableScan(scan, alias) => {
-                    Ok(PhysicalPlan::TableScan(TableScan { limit: Some(n), ..scan }, alias))
-                }
-                PhysicalPlan::IxScan(scan, alias) => Ok(PhysicalPlan::IxScan(IxScan { limit: Some(n), ..scan }, alias)),
-                input => Ok(PhysicalPlan::Limit(Box::new(input), n)),
+            ProjectListPlan::Limit(scan, n) => match *scan {
+                ProjectListPlan::Name(ProjectPlan::None(scan)) => Ok(limit_scan(scan, n)),
+                input => Ok(ProjectListPlan::Limit(Box::new(input), n)),
             },
             _ => Ok(plan),
         }
@@ -222,8 +246,7 @@ impl RewriteRule for PushConstEq {
     fn matches(plan: &PhysicalPlan) -> Option<Self::Info> {
         if let PhysicalPlan::Filter(input, PhysicalExpr::BinOp(_, expr, value)) = plan {
             if let (PhysicalExpr::Field(TupleField { label, .. }), PhysicalExpr::Value(_)) = (&**expr, &**value) {
-                return (input.has_table_scan(Some(label)) && !input.is_table_scan(None) && !input.has_limit())
-                    .then_some(*label);
+                return (input.has_table_scan(Some(label)) && !input.is_table_scan(None)).then_some(*label);
             }
         }
         None
@@ -287,8 +310,7 @@ impl RewriteRule for PushConstAnd {
                 if let PhysicalExpr::BinOp(_, expr, value) = expr {
                     if let (PhysicalExpr::Field(TupleField { label, .. }), PhysicalExpr::Value(_)) = (&**expr, &**value)
                     {
-                        return (input.has_table_scan(Some(label)) && !input.is_table_scan(None) && !input.has_limit())
-                            .then_some(*label);
+                        return (input.has_table_scan(Some(label)) && !input.is_table_scan(None)).then_some(*label);
                     }
                 }
                 None

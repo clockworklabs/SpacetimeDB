@@ -30,6 +30,8 @@ fn compile_expr(expr: Expr, var: &mut impl VarLabel) -> PhysicalExpr {
 fn compile_project_list(var: &mut impl VarLabel, expr: ProjectList) -> ProjectListPlan {
     match expr {
         ProjectList::Name(proj) => ProjectListPlan::Name(compile_project_name(var, proj)),
+        ProjectList::Limit(input, n) => ProjectListPlan::Limit(Box::new(compile_project_list(var, *input)), n),
+        ProjectList::Agg(expr, agg, ..) => ProjectListPlan::Agg(compile_rel_expr(var, expr), agg),
         ProjectList::List(proj, fields) => ProjectListPlan::List(
             compile_rel_expr(var, proj),
             fields
@@ -72,11 +74,6 @@ fn compile_rel_expr(var: &mut impl VarLabel, ast: RelExpr) -> PhysicalPlan {
             let input = compile_rel_expr(var, *input);
             let input = Box::new(input);
             PhysicalPlan::Filter(input, compile_expr(expr, var))
-        }
-        RelExpr::Limit(input, n) => {
-            let input = compile_rel_expr(var, *input);
-            let input = Box::new(input);
-            PhysicalPlan::Limit(input, n)
         }
         RelExpr::EqJoin(
             LeftDeepJoin {

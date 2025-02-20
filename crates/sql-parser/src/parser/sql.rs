@@ -439,6 +439,8 @@ mod tests {
     fn supported() {
         for sql in [
             "select a from t",
+            "select count(*) as n from t",
+            "select count(*) as n from t join s on t.id = s.id where s.x = 1",
             "insert into t values (1, 2)",
             "delete from t",
             "delete from t where a = 1",
@@ -460,6 +462,8 @@ mod tests {
             "select a from t where",
             // Empty GROUP BY
             "select a, count(*) from t group by",
+            // Aggregate without alias
+            "select count(*) from t",
             // Empty statement
             "",
             " ",

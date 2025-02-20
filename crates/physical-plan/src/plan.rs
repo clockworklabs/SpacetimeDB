@@ -6,7 +6,7 @@ use std::{
 
 use anyhow::Result;
 use derive_more::From;
-use spacetimedb_expr::StatementSource;
+use spacetimedb_expr::{expr::AggType, StatementSource};
 use spacetimedb_lib::{query::Delta, sats::size_of::SizeOf, AlgebraicValue, ProductValue};
 use spacetimedb_primitives::{ColId, ColSet, IndexId};
 use spacetimedb_schema::schema::{IndexSchema, TableSchema};
@@ -98,10 +98,20 @@ impl ProjectPlan {
 /// ```sql
 /// select t.a, s.b from t join s ...
 /// ```
+///
+/// TODO: LIMIT and COUNT were added rather hastily.
+/// We should rethink having separate plan types for projections and selections,
+/// as it makes optimization more difficult the more they diverge.
 #[derive(Debug)]
 pub enum ProjectListPlan {
+    /// A plan that returns physical rows
     Name(ProjectPlan),
+    /// A plan that returns virtual rows
     List(PhysicalPlan, Vec<TupleField>),
+    /// A plan that limits rows
+    Limit(Box<ProjectListPlan>, u64),
+    /// An aggregate function
+    Agg(PhysicalPlan, AggType),
 }
 
 impl Deref for ProjectListPlan {
@@ -110,7 +120,8 @@ impl Deref for ProjectListPlan {
     fn deref(&self) -> &Self::Target {
         match self {
             Self::Name(plan) => plan,
-            Self::List(plan, ..) => plan,
+            Self::List(plan, ..) | Self::Agg(plan, ..) => plan,
+            Self::Limit(plan, ..) => plan,
         }
     }
 }
@@ -119,6 +130,15 @@ impl ProjectListPlan {
     pub fn optimize(self) -> Result<Self> {
         match self {
             Self::Name(plan) => Ok(Self::Name(plan.optimize()?)),
+            Self::Limit(plan, n) => {
+                let mut limit = Self::Limit(Box::new(plan.optimize()?), n);
+                // Merge a limit with a scan if possible
+                if PushLimit::matches(&limit).is_some() {
+                    limit = PushLimit::rewrite(limit, ())?;
+                }
+                Ok(limit)
+            }
+            Self::Agg(plan, agg_type) => Ok(Self::Agg(plan.optimize(vec![])?, agg_type)),
             Self::List(plan, fields) => Ok(Self::List(
                 plan.optimize(fields.iter().map(|TupleField { label, .. }| label).copied().collect())?,
                 fields,
@@ -162,8 +182,6 @@ pub enum PhysicalPlan {
     NLJoin(Box<PhysicalPlan>, Box<PhysicalPlan>),
     /// A tuple-at-a-time filter
     Filter(Box<PhysicalPlan>, PhysicalExpr),
-    /// A tuple-at-a-time row limit
-    Limit(Box<PhysicalPlan>, u64),
 }
 
 impl PhysicalPlan {
@@ -171,7 +189,7 @@ impl PhysicalPlan {
     pub fn visit(&self, f: &mut impl FnMut(&Self)) {
         f(self);
         match self {
-            Self::IxJoin(IxJoin { lhs: input, .. }, _) | Self::Filter(input, _) | Self::Limit(input, _) => {
+            Self::IxJoin(IxJoin { lhs: input, .. }, _) | Self::Filter(input, _) => {
                 input.visit(f);
             }
             Self::NLJoin(lhs, rhs) | Self::HashJoin(HashJoin { lhs, rhs, .. }, _) => {
@@ -186,7 +204,7 @@ impl PhysicalPlan {
     pub fn visit_mut(&mut self, f: &mut impl FnMut(&mut Self)) {
         f(self);
         match self {
-            Self::IxJoin(IxJoin { lhs: input, .. }, _) | Self::Filter(input, _) | Self::Limit(input, _) => {
+            Self::IxJoin(IxJoin { lhs: input, .. }, _) | Self::Filter(input, _) => {
                 input.visit_mut(f);
             }
             Self::NLJoin(lhs, rhs) | Self::HashJoin(HashJoin { lhs, rhs, .. }, _) => {
@@ -210,7 +228,6 @@ impl PhysicalPlan {
     pub fn map(self, f: &impl Fn(Self) -> Self) -> Self {
         match f(self) {
             Self::Filter(input, expr) => Self::Filter(Box::new(input.map(f)), expr),
-            Self::Limit(input, n) => Self::Limit(Box::new(input.map(f)), n),
             Self::NLJoin(lhs, rhs) => Self::NLJoin(Box::new(lhs.map(f)), Box::new(rhs.map(f))),
             Self::HashJoin(join, semi) => Self::HashJoin(
                 HashJoin {
@@ -295,12 +312,6 @@ impl PhysicalPlan {
                 }
                 Self::Filter(input, expr)
             }
-            Self::Limit(input, n) => {
-                if matches(&input) {
-                    return Ok(Self::Limit(Box::new(input.map_if(f, ok)?), n));
-                }
-                Self::Limit(input, n)
-            }
         })
     }
 
@@ -358,7 +369,6 @@ impl PhysicalPlan {
             .apply_rec::<IxScanEq2Col>()?
             .apply_rec::<IxScanEq>()?
             .apply_rec::<IxScanAnd>()?
-            .apply_rec::<PushLimit>()?
             .apply_rec::<ReorderHashJoin>()?
             .apply_rec::<HashToIxJoin>()?
             .apply_rec::<UniqueIxJoinRule>()?
@@ -741,7 +751,7 @@ impl PhysicalPlan {
     fn nfields(&self) -> usize {
         match self {
             Self::TableScan(..) | Self::IxScan(..) | Self::IxJoin(_, Semi::Rhs) => 1,
-            Self::Filter(input, _) | Self::Limit(input, _) => input.nfields(),
+            Self::Filter(input, _) => input.nfields(),
             Self::IxJoin(join, Semi::Lhs) => join.lhs.nfields(),
             Self::IxJoin(join, Semi::All) => join.lhs.nfields() + 1,
             Self::HashJoin(join, Semi::Rhs) => join.rhs.nfields(),
@@ -770,7 +780,6 @@ impl PhysicalPlan {
                     labels.push(*alias);
                 }
                 PhysicalPlan::Filter(input, _)
-                | PhysicalPlan::Limit(input, _)
                 | PhysicalPlan::IxJoin(IxJoin { lhs: input, .. }, Semi::Lhs)
                 | PhysicalPlan::HashJoin(HashJoin { lhs: input, .. }, Semi::Lhs)
                 | PhysicalPlan::HashJoin(HashJoin { rhs: input, .. }, Semi::Rhs) => {
@@ -805,16 +814,6 @@ impl PhysicalPlan {
             Self::TableScan(_, var) => label.map(|label| var == label).unwrap_or(true),
             _ => false,
         })
-    }
-
-    /// Is this operator a limit?
-    fn is_limit(&self) -> bool {
-        matches!(self, Self::Limit(..))
-    }
-
-    /// Does this plan contain a limit?
-    pub fn has_limit(&self) -> bool {
-        self.any(&|plan| plan.is_limit())
     }
 
     /// Is this operator a filter?
@@ -1907,6 +1906,6 @@ mod tests {
 
         let plan = compile("select * from t where y = 1 limit 5");
 
-        assert!(plan.is_limit() && plan.has_filter() && plan.has_table_scan(None));
+        assert!(matches!(plan, ProjectListPlan::Limit(_, 5)) && plan.has_filter() && plan.has_table_scan(None));
     }
 }
