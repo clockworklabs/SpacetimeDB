@@ -360,13 +360,17 @@ pub(crate) mod tests {
     fn test_count() -> ResultTest<()> {
         let (db, _) = create_data(5)?;
 
-        let result = run_for_testing(&db, "SELECT count(*) as n FROM inventory")?;
-
+        let sql = "SELECT count(*) as n FROM inventory";
+        let result = run_for_testing(&db, sql)?;
         assert_eq!(result, vec![product![5u64]], "Inventory");
 
-        let result = run_for_testing(&db, "SELECT count(*) as n FROM inventory limit 2")?;
-
+        let sql = "SELECT count(*) as n FROM inventory limit 2";
+        let result = run_for_testing(&db, sql)?;
         assert_eq!(result, vec![product![5u64]], "Inventory");
+
+        let sql = "SELECT count(*) as n FROM inventory WHERE inventory_id = 4 or inventory_id = 5";
+        let result = run_for_testing(&db, sql)?;
+        assert_eq!(result, vec![product![2u64]], "Inventory");
         Ok(())
     }
 
