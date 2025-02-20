@@ -93,6 +93,7 @@ const nav: Nav = {
 
     section('Subscriptions'),
     page('Subscription Reference', 'subscriptions', 'subscriptions/index.md'),
+    page('Appendix', 'appendix', 'appendix.md'),
   ],
 };
 
