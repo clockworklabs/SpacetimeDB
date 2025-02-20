@@ -1896,6 +1896,10 @@ fn exec_caller_alice_receives_reducer_callback_but_not_bob() {
     assert_ne!(conns[0].identity(), conns[1].identity());
 }
 
+/// [`Option::take`] the `result` function, and invoke it with `res`. Panic if `result` is `None`.
+///
+/// Used in [`exec_row_deduplication`] to determine that row callbacks are invoked only once,
+/// since this will panic if invoked on the same `result` function twice.
 fn put_result(result: &mut Option<Box<dyn Send + FnOnce(Result<(), anyhow::Error>)>>, res: Result<(), anyhow::Error>) {
     (result.take().unwrap())(res);
 }
