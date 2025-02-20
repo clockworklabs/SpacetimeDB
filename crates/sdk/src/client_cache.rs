@@ -70,10 +70,25 @@ impl<Row> Default for TableCache<Row> {
 type RowEventMap<'r, Row> = HashMap<&'r [u8], &'r Row>;
 
 /// The diff result of applying [`TableUpdate`] to a [`TableCache`].
+///
+/// Initially on construction via [`ClientCache::apply_diff_to_table`],
+/// the list of updates (`update_deletes.zip(update_inserts)`) is empty
+/// and must be populated by using [`TableAppliedDiff::with_updates_by_pk`]
+/// by passing a projection from rows to the primary key of the table.
+///
+/// The set `deletes` is disjoint with `update_deletes`
+/// and the set `inserts` with `update_inserts`.
+/// When the latter sets are populated, they are *moved* from the former.
 pub struct TableAppliedDiff<'r, Row> {
+    /// The unique set of semantic deletes ("evictions") from the client cache.
     deletes: RowEventMap<'r, Row>,
+    /// The unique set of semantic inserts from the client cache.
     inserts: RowEventMap<'r, Row>,
+    /// The delete part of the unique set of semantic updates from the client cache.
+    /// For every element in this list there is a corresponding one in `update_inserts`.
     update_deletes: Vec<&'r Row>,
+    /// The insert part of the unique set of semantic updates from the client cache.
+    /// For every element in this list there is a corresponding one in `update_deletes`.
     update_inserts: Vec<&'r Row>,
 }
 
