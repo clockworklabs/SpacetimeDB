@@ -1,7 +1,7 @@
 use anyhow::Context;
 use base64::{engine::general_purpose::STANDARD_NO_PAD as BASE_64_STD_NO_PAD, Engine as _};
 use reqwest::{RequestBuilder, Url};
-use spacetimedb::auth::identity::{IncomingClaims, SpacetimeIdentityClaims};
+use spacetimedb_auth::identity::{IncomingClaims, SpacetimeIdentityClaims};
 use spacetimedb_client_api_messages::name::GetNamesResponse;
 use spacetimedb_lib::Identity;
 use std::io::Write;
