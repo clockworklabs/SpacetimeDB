@@ -3,10 +3,10 @@ use super::scheduler::SchedulerStarter;
 use super::wasmtime::WasmtimeRuntime;
 use super::{Scheduler, UpdateDatabaseResult};
 use crate::database_logger::DatabaseLogger;
-use crate::db;
 use crate::db::datastore::traits::Program;
 use crate::db::db_metrics::DB_METRICS;
 use crate::db::relational_db::{self, DiskSizeFn, RelationalDB, Txdata};
+use crate::db::{self, db_metrics};
 use crate::energy::{EnergyMonitor, EnergyQuanta};
 use crate::messages::control_db::{Database, HostType};
 use crate::module_host_context::ModuleCreationContext;
@@ -419,6 +419,7 @@ impl HostController {
             if let Some(host) = lock.write_owned().await.take() {
                 let module = host.module.borrow().clone();
                 module.exit().await;
+                db_metrics::data_size::remove_database_gauges(&module.info().database_identity);
             }
         }
 
