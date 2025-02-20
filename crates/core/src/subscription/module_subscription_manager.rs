@@ -1005,6 +1005,55 @@ mod tests {
     }
 
     #[test]
+    fn test_multiple_query_sets() -> ResultTest<()> {
+        let db = TestDB::durable()?;
+
+        let table_names = ["T", "S", "U"];
+        let table_ids = table_names
+            .iter()
+            .map(|name| create_table(&db, name))
+            .collect::<ResultTest<Vec<_>>>()?;
+        let queries = table_names
+            .iter()
+            .map(|name| format!("select * from {}", name))
+            .map(|sql| compile_plan(&db, &sql))
+            .collect::<ResultTest<Vec<_>>>()?;
+
+        let client = Arc::new(client(0));
+        let mut subscriptions = SubscriptionManager::default();
+        let added = subscriptions.add_subscription_multi(client.clone(), vec![queries[0].clone()], QueryId::new(1))?;
+        assert_eq!(added.len(), 1);
+        assert_eq!(added[0].hash, queries[0].hash());
+        let added = subscriptions.add_subscription_multi(client.clone(), vec![queries[1].clone()], QueryId::new(2))?;
+        assert_eq!(added.len(), 1);
+        assert_eq!(added[0].hash, queries[1].hash());
+        let added = subscriptions.add_subscription_multi(client.clone(), vec![queries[2].clone()], QueryId::new(3))?;
+        assert_eq!(added.len(), 1);
+        assert_eq!(added[0].hash, queries[2].hash());
+        for i in 0..3 {
+            assert!(subscriptions.query_reads_from_table(&queries[i].hash(), &table_ids[i]));
+        }
+
+        let client_id = (client.id.identity, client.id.connection_id);
+        let removed = subscriptions.remove_subscription(client_id, QueryId::new(1))?;
+        assert_eq!(removed.len(), 1);
+        assert_eq!(removed[0].hash, queries[0].hash());
+        assert!(!subscriptions.query_reads_from_table(&queries[0].hash(), &table_ids[0]));
+        // Assert that the rest are there.
+        for i in 1..3 {
+            assert!(subscriptions.query_reads_from_table(&queries[i].hash(), &table_ids[i]));
+        }
+
+        // Now remove the final two at once.
+        subscriptions.remove_all_subscriptions(&client_id);
+        for i in 0..3 {
+            assert!(!subscriptions.query_reads_from_table(&queries[i].hash(), &table_ids[i]));
+        }
+
+        Ok(())
+    }
+
+    #[test]
     fn test_subscribe_fails_with_duplicate_request_id() -> ResultTest<()> {
         let db = TestDB::durable()?;
 
@@ -1020,6 +1069,28 @@ mod tests {
 
         assert!(subscriptions
             .add_subscription(client.clone(), plan.clone(), query_id)
+            .is_err());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_subscribe_multi_fails_with_duplicate_request_id() -> ResultTest<()> {
+        let db = TestDB::durable()?;
+
+        create_table(&db, "T")?;
+        let sql = "select * from T";
+        let plan = compile_plan(&db, sql)?;
+
+        let client = Arc::new(client(0));
+
+        let query_id: ClientQueryId = QueryId::new(1);
+        let mut subscriptions = SubscriptionManager::default();
+        let result = subscriptions.add_subscription_multi(client.clone(), vec![plan.clone()], query_id)?;
+        assert_eq!(result[0].hash, plan.hash);
+
+        assert!(subscriptions
+            .add_subscription_multi(client.clone(), vec![plan.clone()], query_id)
             .is_err());
 
         Ok(())
