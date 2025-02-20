@@ -5,6 +5,7 @@ mod module_bindings;
 use core::fmt::Display;
 use std::sync::{Arc, Mutex};
 
+use anyhow::anyhow;
 use module_bindings::*;
 
 use spacetimedb_sdk::{
@@ -17,7 +18,7 @@ mod simple_test_table;
 use simple_test_table::{insert_one, on_insert_one};
 
 mod pk_test_table;
-use pk_test_table::insert_update_delete_one;
+use pk_test_table::{insert_update_delete_one, PkTestTable};
 
 mod unique_test_table;
 use unique_test_table::insert_then_delete_one;
@@ -117,6 +118,7 @@ fn main() {
         "caller-alice-receives-reducer-callback-but-not-bob" => {
             exec_caller_alice_receives_reducer_callback_but_not_bob()
         }
+        "row-deduplication" => exec_row_deduplication(),
         _ => panic!("Unknown test: {}", test),
     }
 }
@@ -384,10 +386,18 @@ fn connect(test_counter: &std::sync::Arc<TestCounter>) -> DbConnection {
 }
 
 fn subscribe_all_then(ctx: &impl RemoteDbContext, callback: impl FnOnce(&SubscriptionEventContext) + Send + 'static) {
+    subscribe_these_then(ctx, SUBSCRIBE_ALL, callback)
+}
+
+fn subscribe_these_then(
+    ctx: &impl RemoteDbContext,
+    queries: &[&str],
+    callback: impl FnOnce(&SubscriptionEventContext) + Send + 'static,
+) {
     ctx.subscription_builder()
         .on_applied(callback)
         .on_error(|_ctx, error| panic!("Subscription errored: {:?}", error))
-        .subscribe(SUBSCRIBE_ALL);
+        .subscribe(queries);
 }
 
 fn exec_subscribe_and_cancel() {
@@ -1884,4 +1894,73 @@ fn exec_caller_alice_receives_reducer_callback_but_not_bob() {
     // For the integrity of the test, ensure that Alice != Bob.
     // We do this after `run_threaded` so that the ids have been filled.
     assert_ne!(conns[0].identity(), conns[1].identity());
+}
+
+fn put_result(result: &mut Option<Box<dyn Send + FnOnce(Result<(), anyhow::Error>)>>, res: Result<(), anyhow::Error>) {
+    (result.take().unwrap())(res);
+}
+
+fn exec_row_deduplication() {
+    let test_counter = TestCounter::new();
+
+    let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
+
+    let conn = connect_then(&test_counter, {
+        let test_counter = test_counter.clone();
+        move |ctx| {
+            let queries = [
+                "SELECT * FROM pk_u32 WHERE pk_u32.n > 100;",
+                "SELECT * FROM pk_u32 WHERE pk_u32.n > 200;",
+            ];
+            subscribe_these_then(ctx, &queries, move |ctx| {
+                // The general approach in this test is that
+                // we expect at most a single `on_X` callback per row.
+                // If we receive duplicate callbacks,
+                // there's a problem with row deduplication and `put_result` will panic.
+
+                let mut ins_24_result = Some(test_counter.add_test("ins_24"));
+                let mut ins_42_result = Some(test_counter.add_test("ins_42"));
+                PkU32::on_insert(ctx, move |ctx, i| match i.n {
+                    24 => {
+                        put_result(&mut ins_24_result, Ok(()));
+                        // Trigger the delete we expect.
+                        PkU32::delete(ctx, 24);
+                    }
+                    42 => {
+                        put_result(&mut ins_42_result, Ok(()));
+                        // Trigger the update we expect.
+                        PkU32::update(ctx, 24, 0xfeeb);
+                    }
+                    _ => unreachable!("only 24 and 42 were expected insertions"),
+                });
+
+                let mut del_24_result = Some(test_counter.add_test("del_24"));
+                PkU32::on_delete(ctx, move |_, d| match d.n {
+                    24 => put_result(&mut del_24_result, Ok(())),
+                    42 => panic!("should not have received delete for 42, only update"),
+                    x => unreachable!("only 24 and 42 were expected rows, got: {x}"),
+                });
+
+                let mut upd_42_result = Some(test_counter.add_test("upd_42"));
+                PkU32::on_update(ctx, move |_, d, i| match (d.n, i.n, d.data, i.data) {
+                    (24, 24, ..) => panic!("should not have received update for 24, only delete"),
+                    (42, 42, 0xbeef, 0xfeeb) => put_result(&mut upd_42_result, Ok(())),
+                    x => unreachable!("only 24 and 42 were expected rows, got: `{x:?}`"),
+                });
+
+                PkU32::insert(ctx, 24, 0xbeef);
+                PkU32::insert(ctx, 42, 0xbeef);
+
+                sub_applied_nothing_result(assert_all_tables_empty(ctx));
+            });
+        }
+    });
+
+    test_counter.wait_for_all();
+
+    // Ensure we're not double counting anything.
+    let table = conn.db.pk_u_32();
+    assert_eq!(table.count(), 1);
+    assert_eq!(table.n().find(&24), None);
+    assert_eq!(table.n().find(&42), Some(PkU32 { n: 42, data: 0xfeeb }));
 }

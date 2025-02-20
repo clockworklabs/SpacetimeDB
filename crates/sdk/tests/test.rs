@@ -200,6 +200,11 @@ macro_rules! declare_tests_with_suffix {
             fn caller_alice_receives_reducer_callback_but_not_bob() {
                 make_test("caller-alice-receives-reducer-callback-but-not-bob").run();
             }
+
+            #[test]
+            fn row_deduplication() {
+                make_test("row-deduplication").run();
+            }
         }
     };
 }
