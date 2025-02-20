@@ -254,9 +254,23 @@ pub trait GroundSpacetimeType {
 ///
 /// #[derive(SpacetimeType)]
 /// # #[sats(krate = crate)]
+/// struct PlasticCrate {
+///     count: u32,
+/// }
+///
+/// #[derive(SpacetimeType)]
+/// # #[sats(krate = crate)]
+/// struct AppleCrate {
+///     variety: String,
+///     count: u32,
+///     freshness: u32,
+/// }
+///
+/// #[derive(SpacetimeType)]
+/// # #[sats(krate = crate)]
 /// enum FruitCrate {
-///     Apples { variety: String, count: u32, freshness: u32 },
-///     Plastic { count: u32 }
+///     Apples(AppleCrate),
+///     Plastic(PlasticCrate),
 /// }
 /// ```
 ///
