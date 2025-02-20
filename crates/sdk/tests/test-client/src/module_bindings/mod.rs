@@ -2834,110 +2834,264 @@ impl __sdk::InModule for DbUpdate {
 }
 
 impl __sdk::DbUpdate for DbUpdate {
-    fn apply_to_client_cache(&self, cache: &mut __sdk::ClientCache<RemoteModule>) {
-        cache.apply_diff_to_table::<IndexedTable>("indexed_table", &self.indexed_table);
-        cache.apply_diff_to_table::<IndexedTable2>("indexed_table_2", &self.indexed_table_2);
-        cache.apply_diff_to_table::<LargeTable>("large_table", &self.large_table);
-        cache.apply_diff_to_table::<OneBool>("one_bool", &self.one_bool);
-        cache.apply_diff_to_table::<OneByteStruct>("one_byte_struct", &self.one_byte_struct);
-        cache.apply_diff_to_table::<OneConnectionId>("one_connection_id", &self.one_connection_id);
-        cache.apply_diff_to_table::<OneEnumWithPayload>("one_enum_with_payload", &self.one_enum_with_payload);
-        cache.apply_diff_to_table::<OneEveryPrimitiveStruct>(
+    fn apply_to_client_cache(&self, cache: &mut __sdk::ClientCache<RemoteModule>) -> AppliedDiff<'_> {
+        let mut diff = AppliedDiff::default();
+
+        diff.indexed_table = cache.apply_diff_to_table::<IndexedTable>("indexed_table", &self.indexed_table);
+        diff.indexed_table_2 = cache.apply_diff_to_table::<IndexedTable2>("indexed_table_2", &self.indexed_table_2);
+        diff.large_table = cache.apply_diff_to_table::<LargeTable>("large_table", &self.large_table);
+        diff.one_bool = cache.apply_diff_to_table::<OneBool>("one_bool", &self.one_bool);
+        diff.one_byte_struct = cache.apply_diff_to_table::<OneByteStruct>("one_byte_struct", &self.one_byte_struct);
+        diff.one_connection_id =
+            cache.apply_diff_to_table::<OneConnectionId>("one_connection_id", &self.one_connection_id);
+        diff.one_enum_with_payload =
+            cache.apply_diff_to_table::<OneEnumWithPayload>("one_enum_with_payload", &self.one_enum_with_payload);
+        diff.one_every_primitive_struct = cache.apply_diff_to_table::<OneEveryPrimitiveStruct>(
             "one_every_primitive_struct",
             &self.one_every_primitive_struct,
         );
-        cache.apply_diff_to_table::<OneEveryVecStruct>("one_every_vec_struct", &self.one_every_vec_struct);
-        cache.apply_diff_to_table::<OneF32>("one_f32", &self.one_f_32);
-        cache.apply_diff_to_table::<OneF64>("one_f64", &self.one_f_64);
-        cache.apply_diff_to_table::<OneI128>("one_i128", &self.one_i_128);
-        cache.apply_diff_to_table::<OneI16>("one_i16", &self.one_i_16);
-        cache.apply_diff_to_table::<OneI256>("one_i256", &self.one_i_256);
-        cache.apply_diff_to_table::<OneI32>("one_i32", &self.one_i_32);
-        cache.apply_diff_to_table::<OneI64>("one_i64", &self.one_i_64);
-        cache.apply_diff_to_table::<OneI8>("one_i8", &self.one_i_8);
-        cache.apply_diff_to_table::<OneIdentity>("one_identity", &self.one_identity);
-        cache.apply_diff_to_table::<OneSimpleEnum>("one_simple_enum", &self.one_simple_enum);
-        cache.apply_diff_to_table::<OneString>("one_string", &self.one_string);
-        cache.apply_diff_to_table::<OneTimestamp>("one_timestamp", &self.one_timestamp);
-        cache.apply_diff_to_table::<OneU128>("one_u128", &self.one_u_128);
-        cache.apply_diff_to_table::<OneU16>("one_u16", &self.one_u_16);
-        cache.apply_diff_to_table::<OneU256>("one_u256", &self.one_u_256);
-        cache.apply_diff_to_table::<OneU32>("one_u32", &self.one_u_32);
-        cache.apply_diff_to_table::<OneU64>("one_u64", &self.one_u_64);
-        cache.apply_diff_to_table::<OneU8>("one_u8", &self.one_u_8);
-        cache.apply_diff_to_table::<OneUnitStruct>("one_unit_struct", &self.one_unit_struct);
-        cache.apply_diff_to_table::<OptionEveryPrimitiveStruct>(
+        diff.one_every_vec_struct =
+            cache.apply_diff_to_table::<OneEveryVecStruct>("one_every_vec_struct", &self.one_every_vec_struct);
+        diff.one_f_32 = cache.apply_diff_to_table::<OneF32>("one_f32", &self.one_f_32);
+        diff.one_f_64 = cache.apply_diff_to_table::<OneF64>("one_f64", &self.one_f_64);
+        diff.one_i_128 = cache.apply_diff_to_table::<OneI128>("one_i128", &self.one_i_128);
+        diff.one_i_16 = cache.apply_diff_to_table::<OneI16>("one_i16", &self.one_i_16);
+        diff.one_i_256 = cache.apply_diff_to_table::<OneI256>("one_i256", &self.one_i_256);
+        diff.one_i_32 = cache.apply_diff_to_table::<OneI32>("one_i32", &self.one_i_32);
+        diff.one_i_64 = cache.apply_diff_to_table::<OneI64>("one_i64", &self.one_i_64);
+        diff.one_i_8 = cache.apply_diff_to_table::<OneI8>("one_i8", &self.one_i_8);
+        diff.one_identity = cache.apply_diff_to_table::<OneIdentity>("one_identity", &self.one_identity);
+        diff.one_simple_enum = cache.apply_diff_to_table::<OneSimpleEnum>("one_simple_enum", &self.one_simple_enum);
+        diff.one_string = cache.apply_diff_to_table::<OneString>("one_string", &self.one_string);
+        diff.one_timestamp = cache.apply_diff_to_table::<OneTimestamp>("one_timestamp", &self.one_timestamp);
+        diff.one_u_128 = cache.apply_diff_to_table::<OneU128>("one_u128", &self.one_u_128);
+        diff.one_u_16 = cache.apply_diff_to_table::<OneU16>("one_u16", &self.one_u_16);
+        diff.one_u_256 = cache.apply_diff_to_table::<OneU256>("one_u256", &self.one_u_256);
+        diff.one_u_32 = cache.apply_diff_to_table::<OneU32>("one_u32", &self.one_u_32);
+        diff.one_u_64 = cache.apply_diff_to_table::<OneU64>("one_u64", &self.one_u_64);
+        diff.one_u_8 = cache.apply_diff_to_table::<OneU8>("one_u8", &self.one_u_8);
+        diff.one_unit_struct = cache.apply_diff_to_table::<OneUnitStruct>("one_unit_struct", &self.one_unit_struct);
+        diff.option_every_primitive_struct = cache.apply_diff_to_table::<OptionEveryPrimitiveStruct>(
             "option_every_primitive_struct",
             &self.option_every_primitive_struct,
         );
-        cache.apply_diff_to_table::<OptionI32>("option_i32", &self.option_i_32);
-        cache.apply_diff_to_table::<OptionIdentity>("option_identity", &self.option_identity);
-        cache.apply_diff_to_table::<OptionSimpleEnum>("option_simple_enum", &self.option_simple_enum);
-        cache.apply_diff_to_table::<OptionString>("option_string", &self.option_string);
-        cache.apply_diff_to_table::<OptionVecOptionI32>("option_vec_option_i32", &self.option_vec_option_i_32);
-        cache.apply_diff_to_table::<PkBool>("pk_bool", &self.pk_bool);
-        cache.apply_diff_to_table::<PkConnectionId>("pk_connection_id", &self.pk_connection_id);
-        cache.apply_diff_to_table::<PkI128>("pk_i128", &self.pk_i_128);
-        cache.apply_diff_to_table::<PkI16>("pk_i16", &self.pk_i_16);
-        cache.apply_diff_to_table::<PkI256>("pk_i256", &self.pk_i_256);
-        cache.apply_diff_to_table::<PkI32>("pk_i32", &self.pk_i_32);
-        cache.apply_diff_to_table::<PkI64>("pk_i64", &self.pk_i_64);
-        cache.apply_diff_to_table::<PkI8>("pk_i8", &self.pk_i_8);
-        cache.apply_diff_to_table::<PkIdentity>("pk_identity", &self.pk_identity);
-        cache.apply_diff_to_table::<PkString>("pk_string", &self.pk_string);
-        cache.apply_diff_to_table::<PkU128>("pk_u128", &self.pk_u_128);
-        cache.apply_diff_to_table::<PkU16>("pk_u16", &self.pk_u_16);
-        cache.apply_diff_to_table::<PkU256>("pk_u256", &self.pk_u_256);
-        cache.apply_diff_to_table::<PkU32>("pk_u32", &self.pk_u_32);
-        cache.apply_diff_to_table::<PkU64>("pk_u64", &self.pk_u_64);
-        cache.apply_diff_to_table::<PkU8>("pk_u8", &self.pk_u_8);
-        cache.apply_diff_to_table::<ScheduledTable>("scheduled_table", &self.scheduled_table);
-        cache.apply_diff_to_table::<TableHoldsTable>("table_holds_table", &self.table_holds_table);
-        cache.apply_diff_to_table::<UniqueBool>("unique_bool", &self.unique_bool);
-        cache.apply_diff_to_table::<UniqueConnectionId>("unique_connection_id", &self.unique_connection_id);
-        cache.apply_diff_to_table::<UniqueI128>("unique_i128", &self.unique_i_128);
-        cache.apply_diff_to_table::<UniqueI16>("unique_i16", &self.unique_i_16);
-        cache.apply_diff_to_table::<UniqueI256>("unique_i256", &self.unique_i_256);
-        cache.apply_diff_to_table::<UniqueI32>("unique_i32", &self.unique_i_32);
-        cache.apply_diff_to_table::<UniqueI64>("unique_i64", &self.unique_i_64);
-        cache.apply_diff_to_table::<UniqueI8>("unique_i8", &self.unique_i_8);
-        cache.apply_diff_to_table::<UniqueIdentity>("unique_identity", &self.unique_identity);
-        cache.apply_diff_to_table::<UniqueString>("unique_string", &self.unique_string);
-        cache.apply_diff_to_table::<UniqueU128>("unique_u128", &self.unique_u_128);
-        cache.apply_diff_to_table::<UniqueU16>("unique_u16", &self.unique_u_16);
-        cache.apply_diff_to_table::<UniqueU256>("unique_u256", &self.unique_u_256);
-        cache.apply_diff_to_table::<UniqueU32>("unique_u32", &self.unique_u_32);
-        cache.apply_diff_to_table::<UniqueU64>("unique_u64", &self.unique_u_64);
-        cache.apply_diff_to_table::<UniqueU8>("unique_u8", &self.unique_u_8);
-        cache.apply_diff_to_table::<VecBool>("vec_bool", &self.vec_bool);
-        cache.apply_diff_to_table::<VecByteStruct>("vec_byte_struct", &self.vec_byte_struct);
-        cache.apply_diff_to_table::<VecConnectionId>("vec_connection_id", &self.vec_connection_id);
-        cache.apply_diff_to_table::<VecEnumWithPayload>("vec_enum_with_payload", &self.vec_enum_with_payload);
-        cache.apply_diff_to_table::<VecEveryPrimitiveStruct>(
+        diff.option_i_32 = cache.apply_diff_to_table::<OptionI32>("option_i32", &self.option_i_32);
+        diff.option_identity = cache.apply_diff_to_table::<OptionIdentity>("option_identity", &self.option_identity);
+        diff.option_simple_enum =
+            cache.apply_diff_to_table::<OptionSimpleEnum>("option_simple_enum", &self.option_simple_enum);
+        diff.option_string = cache.apply_diff_to_table::<OptionString>("option_string", &self.option_string);
+        diff.option_vec_option_i_32 =
+            cache.apply_diff_to_table::<OptionVecOptionI32>("option_vec_option_i32", &self.option_vec_option_i_32);
+        diff.pk_bool = cache
+            .apply_diff_to_table::<PkBool>("pk_bool", &self.pk_bool)
+            .with_updates_by_pk(|row| &row.b);
+        diff.pk_connection_id = cache
+            .apply_diff_to_table::<PkConnectionId>("pk_connection_id", &self.pk_connection_id)
+            .with_updates_by_pk(|row| &row.a);
+        diff.pk_i_128 = cache
+            .apply_diff_to_table::<PkI128>("pk_i128", &self.pk_i_128)
+            .with_updates_by_pk(|row| &row.n);
+        diff.pk_i_16 = cache
+            .apply_diff_to_table::<PkI16>("pk_i16", &self.pk_i_16)
+            .with_updates_by_pk(|row| &row.n);
+        diff.pk_i_256 = cache
+            .apply_diff_to_table::<PkI256>("pk_i256", &self.pk_i_256)
+            .with_updates_by_pk(|row| &row.n);
+        diff.pk_i_32 = cache
+            .apply_diff_to_table::<PkI32>("pk_i32", &self.pk_i_32)
+            .with_updates_by_pk(|row| &row.n);
+        diff.pk_i_64 = cache
+            .apply_diff_to_table::<PkI64>("pk_i64", &self.pk_i_64)
+            .with_updates_by_pk(|row| &row.n);
+        diff.pk_i_8 = cache
+            .apply_diff_to_table::<PkI8>("pk_i8", &self.pk_i_8)
+            .with_updates_by_pk(|row| &row.n);
+        diff.pk_identity = cache
+            .apply_diff_to_table::<PkIdentity>("pk_identity", &self.pk_identity)
+            .with_updates_by_pk(|row| &row.i);
+        diff.pk_string = cache
+            .apply_diff_to_table::<PkString>("pk_string", &self.pk_string)
+            .with_updates_by_pk(|row| &row.s);
+        diff.pk_u_128 = cache
+            .apply_diff_to_table::<PkU128>("pk_u128", &self.pk_u_128)
+            .with_updates_by_pk(|row| &row.n);
+        diff.pk_u_16 = cache
+            .apply_diff_to_table::<PkU16>("pk_u16", &self.pk_u_16)
+            .with_updates_by_pk(|row| &row.n);
+        diff.pk_u_256 = cache
+            .apply_diff_to_table::<PkU256>("pk_u256", &self.pk_u_256)
+            .with_updates_by_pk(|row| &row.n);
+        diff.pk_u_32 = cache
+            .apply_diff_to_table::<PkU32>("pk_u32", &self.pk_u_32)
+            .with_updates_by_pk(|row| &row.n);
+        diff.pk_u_64 = cache
+            .apply_diff_to_table::<PkU64>("pk_u64", &self.pk_u_64)
+            .with_updates_by_pk(|row| &row.n);
+        diff.pk_u_8 = cache
+            .apply_diff_to_table::<PkU8>("pk_u8", &self.pk_u_8)
+            .with_updates_by_pk(|row| &row.n);
+        diff.scheduled_table = cache
+            .apply_diff_to_table::<ScheduledTable>("scheduled_table", &self.scheduled_table)
+            .with_updates_by_pk(|row| &row.scheduled_id);
+        diff.table_holds_table =
+            cache.apply_diff_to_table::<TableHoldsTable>("table_holds_table", &self.table_holds_table);
+        diff.unique_bool = cache.apply_diff_to_table::<UniqueBool>("unique_bool", &self.unique_bool);
+        diff.unique_connection_id =
+            cache.apply_diff_to_table::<UniqueConnectionId>("unique_connection_id", &self.unique_connection_id);
+        diff.unique_i_128 = cache.apply_diff_to_table::<UniqueI128>("unique_i128", &self.unique_i_128);
+        diff.unique_i_16 = cache.apply_diff_to_table::<UniqueI16>("unique_i16", &self.unique_i_16);
+        diff.unique_i_256 = cache.apply_diff_to_table::<UniqueI256>("unique_i256", &self.unique_i_256);
+        diff.unique_i_32 = cache.apply_diff_to_table::<UniqueI32>("unique_i32", &self.unique_i_32);
+        diff.unique_i_64 = cache.apply_diff_to_table::<UniqueI64>("unique_i64", &self.unique_i_64);
+        diff.unique_i_8 = cache.apply_diff_to_table::<UniqueI8>("unique_i8", &self.unique_i_8);
+        diff.unique_identity = cache.apply_diff_to_table::<UniqueIdentity>("unique_identity", &self.unique_identity);
+        diff.unique_string = cache.apply_diff_to_table::<UniqueString>("unique_string", &self.unique_string);
+        diff.unique_u_128 = cache.apply_diff_to_table::<UniqueU128>("unique_u128", &self.unique_u_128);
+        diff.unique_u_16 = cache.apply_diff_to_table::<UniqueU16>("unique_u16", &self.unique_u_16);
+        diff.unique_u_256 = cache.apply_diff_to_table::<UniqueU256>("unique_u256", &self.unique_u_256);
+        diff.unique_u_32 = cache.apply_diff_to_table::<UniqueU32>("unique_u32", &self.unique_u_32);
+        diff.unique_u_64 = cache.apply_diff_to_table::<UniqueU64>("unique_u64", &self.unique_u_64);
+        diff.unique_u_8 = cache.apply_diff_to_table::<UniqueU8>("unique_u8", &self.unique_u_8);
+        diff.vec_bool = cache.apply_diff_to_table::<VecBool>("vec_bool", &self.vec_bool);
+        diff.vec_byte_struct = cache.apply_diff_to_table::<VecByteStruct>("vec_byte_struct", &self.vec_byte_struct);
+        diff.vec_connection_id =
+            cache.apply_diff_to_table::<VecConnectionId>("vec_connection_id", &self.vec_connection_id);
+        diff.vec_enum_with_payload =
+            cache.apply_diff_to_table::<VecEnumWithPayload>("vec_enum_with_payload", &self.vec_enum_with_payload);
+        diff.vec_every_primitive_struct = cache.apply_diff_to_table::<VecEveryPrimitiveStruct>(
             "vec_every_primitive_struct",
             &self.vec_every_primitive_struct,
         );
-        cache.apply_diff_to_table::<VecEveryVecStruct>("vec_every_vec_struct", &self.vec_every_vec_struct);
-        cache.apply_diff_to_table::<VecF32>("vec_f32", &self.vec_f_32);
-        cache.apply_diff_to_table::<VecF64>("vec_f64", &self.vec_f_64);
-        cache.apply_diff_to_table::<VecI128>("vec_i128", &self.vec_i_128);
-        cache.apply_diff_to_table::<VecI16>("vec_i16", &self.vec_i_16);
-        cache.apply_diff_to_table::<VecI256>("vec_i256", &self.vec_i_256);
-        cache.apply_diff_to_table::<VecI32>("vec_i32", &self.vec_i_32);
-        cache.apply_diff_to_table::<VecI64>("vec_i64", &self.vec_i_64);
-        cache.apply_diff_to_table::<VecI8>("vec_i8", &self.vec_i_8);
-        cache.apply_diff_to_table::<VecIdentity>("vec_identity", &self.vec_identity);
-        cache.apply_diff_to_table::<VecSimpleEnum>("vec_simple_enum", &self.vec_simple_enum);
-        cache.apply_diff_to_table::<VecString>("vec_string", &self.vec_string);
-        cache.apply_diff_to_table::<VecTimestamp>("vec_timestamp", &self.vec_timestamp);
-        cache.apply_diff_to_table::<VecU128>("vec_u128", &self.vec_u_128);
-        cache.apply_diff_to_table::<VecU16>("vec_u16", &self.vec_u_16);
-        cache.apply_diff_to_table::<VecU256>("vec_u256", &self.vec_u_256);
-        cache.apply_diff_to_table::<VecU32>("vec_u32", &self.vec_u_32);
-        cache.apply_diff_to_table::<VecU64>("vec_u64", &self.vec_u_64);
-        cache.apply_diff_to_table::<VecU8>("vec_u8", &self.vec_u_8);
-        cache.apply_diff_to_table::<VecUnitStruct>("vec_unit_struct", &self.vec_unit_struct);
+        diff.vec_every_vec_struct =
+            cache.apply_diff_to_table::<VecEveryVecStruct>("vec_every_vec_struct", &self.vec_every_vec_struct);
+        diff.vec_f_32 = cache.apply_diff_to_table::<VecF32>("vec_f32", &self.vec_f_32);
+        diff.vec_f_64 = cache.apply_diff_to_table::<VecF64>("vec_f64", &self.vec_f_64);
+        diff.vec_i_128 = cache.apply_diff_to_table::<VecI128>("vec_i128", &self.vec_i_128);
+        diff.vec_i_16 = cache.apply_diff_to_table::<VecI16>("vec_i16", &self.vec_i_16);
+        diff.vec_i_256 = cache.apply_diff_to_table::<VecI256>("vec_i256", &self.vec_i_256);
+        diff.vec_i_32 = cache.apply_diff_to_table::<VecI32>("vec_i32", &self.vec_i_32);
+        diff.vec_i_64 = cache.apply_diff_to_table::<VecI64>("vec_i64", &self.vec_i_64);
+        diff.vec_i_8 = cache.apply_diff_to_table::<VecI8>("vec_i8", &self.vec_i_8);
+        diff.vec_identity = cache.apply_diff_to_table::<VecIdentity>("vec_identity", &self.vec_identity);
+        diff.vec_simple_enum = cache.apply_diff_to_table::<VecSimpleEnum>("vec_simple_enum", &self.vec_simple_enum);
+        diff.vec_string = cache.apply_diff_to_table::<VecString>("vec_string", &self.vec_string);
+        diff.vec_timestamp = cache.apply_diff_to_table::<VecTimestamp>("vec_timestamp", &self.vec_timestamp);
+        diff.vec_u_128 = cache.apply_diff_to_table::<VecU128>("vec_u128", &self.vec_u_128);
+        diff.vec_u_16 = cache.apply_diff_to_table::<VecU16>("vec_u16", &self.vec_u_16);
+        diff.vec_u_256 = cache.apply_diff_to_table::<VecU256>("vec_u256", &self.vec_u_256);
+        diff.vec_u_32 = cache.apply_diff_to_table::<VecU32>("vec_u32", &self.vec_u_32);
+        diff.vec_u_64 = cache.apply_diff_to_table::<VecU64>("vec_u64", &self.vec_u_64);
+        diff.vec_u_8 = cache.apply_diff_to_table::<VecU8>("vec_u8", &self.vec_u_8);
+        diff.vec_unit_struct = cache.apply_diff_to_table::<VecUnitStruct>("vec_unit_struct", &self.vec_unit_struct);
+
+        diff
     }
+}
+
+#[derive(Default)]
+#[allow(non_snake_case)]
+#[doc(hidden)]
+pub struct AppliedDiff<'r> {
+    indexed_table: __sdk::TableAppliedDiff<'r, IndexedTable>,
+    indexed_table_2: __sdk::TableAppliedDiff<'r, IndexedTable2>,
+    large_table: __sdk::TableAppliedDiff<'r, LargeTable>,
+    one_bool: __sdk::TableAppliedDiff<'r, OneBool>,
+    one_byte_struct: __sdk::TableAppliedDiff<'r, OneByteStruct>,
+    one_connection_id: __sdk::TableAppliedDiff<'r, OneConnectionId>,
+    one_enum_with_payload: __sdk::TableAppliedDiff<'r, OneEnumWithPayload>,
+    one_every_primitive_struct: __sdk::TableAppliedDiff<'r, OneEveryPrimitiveStruct>,
+    one_every_vec_struct: __sdk::TableAppliedDiff<'r, OneEveryVecStruct>,
+    one_f_32: __sdk::TableAppliedDiff<'r, OneF32>,
+    one_f_64: __sdk::TableAppliedDiff<'r, OneF64>,
+    one_i_128: __sdk::TableAppliedDiff<'r, OneI128>,
+    one_i_16: __sdk::TableAppliedDiff<'r, OneI16>,
+    one_i_256: __sdk::TableAppliedDiff<'r, OneI256>,
+    one_i_32: __sdk::TableAppliedDiff<'r, OneI32>,
+    one_i_64: __sdk::TableAppliedDiff<'r, OneI64>,
+    one_i_8: __sdk::TableAppliedDiff<'r, OneI8>,
+    one_identity: __sdk::TableAppliedDiff<'r, OneIdentity>,
+    one_simple_enum: __sdk::TableAppliedDiff<'r, OneSimpleEnum>,
+    one_string: __sdk::TableAppliedDiff<'r, OneString>,
+    one_timestamp: __sdk::TableAppliedDiff<'r, OneTimestamp>,
+    one_u_128: __sdk::TableAppliedDiff<'r, OneU128>,
+    one_u_16: __sdk::TableAppliedDiff<'r, OneU16>,
+    one_u_256: __sdk::TableAppliedDiff<'r, OneU256>,
+    one_u_32: __sdk::TableAppliedDiff<'r, OneU32>,
+    one_u_64: __sdk::TableAppliedDiff<'r, OneU64>,
+    one_u_8: __sdk::TableAppliedDiff<'r, OneU8>,
+    one_unit_struct: __sdk::TableAppliedDiff<'r, OneUnitStruct>,
+    option_every_primitive_struct: __sdk::TableAppliedDiff<'r, OptionEveryPrimitiveStruct>,
+    option_i_32: __sdk::TableAppliedDiff<'r, OptionI32>,
+    option_identity: __sdk::TableAppliedDiff<'r, OptionIdentity>,
+    option_simple_enum: __sdk::TableAppliedDiff<'r, OptionSimpleEnum>,
+    option_string: __sdk::TableAppliedDiff<'r, OptionString>,
+    option_vec_option_i_32: __sdk::TableAppliedDiff<'r, OptionVecOptionI32>,
+    pk_bool: __sdk::TableAppliedDiff<'r, PkBool>,
+    pk_connection_id: __sdk::TableAppliedDiff<'r, PkConnectionId>,
+    pk_i_128: __sdk::TableAppliedDiff<'r, PkI128>,
+    pk_i_16: __sdk::TableAppliedDiff<'r, PkI16>,
+    pk_i_256: __sdk::TableAppliedDiff<'r, PkI256>,
+    pk_i_32: __sdk::TableAppliedDiff<'r, PkI32>,
+    pk_i_64: __sdk::TableAppliedDiff<'r, PkI64>,
+    pk_i_8: __sdk::TableAppliedDiff<'r, PkI8>,
+    pk_identity: __sdk::TableAppliedDiff<'r, PkIdentity>,
+    pk_string: __sdk::TableAppliedDiff<'r, PkString>,
+    pk_u_128: __sdk::TableAppliedDiff<'r, PkU128>,
+    pk_u_16: __sdk::TableAppliedDiff<'r, PkU16>,
+    pk_u_256: __sdk::TableAppliedDiff<'r, PkU256>,
+    pk_u_32: __sdk::TableAppliedDiff<'r, PkU32>,
+    pk_u_64: __sdk::TableAppliedDiff<'r, PkU64>,
+    pk_u_8: __sdk::TableAppliedDiff<'r, PkU8>,
+    scheduled_table: __sdk::TableAppliedDiff<'r, ScheduledTable>,
+    table_holds_table: __sdk::TableAppliedDiff<'r, TableHoldsTable>,
+    unique_bool: __sdk::TableAppliedDiff<'r, UniqueBool>,
+    unique_connection_id: __sdk::TableAppliedDiff<'r, UniqueConnectionId>,
+    unique_i_128: __sdk::TableAppliedDiff<'r, UniqueI128>,
+    unique_i_16: __sdk::TableAppliedDiff<'r, UniqueI16>,
+    unique_i_256: __sdk::TableAppliedDiff<'r, UniqueI256>,
+    unique_i_32: __sdk::TableAppliedDiff<'r, UniqueI32>,
+    unique_i_64: __sdk::TableAppliedDiff<'r, UniqueI64>,
+    unique_i_8: __sdk::TableAppliedDiff<'r, UniqueI8>,
+    unique_identity: __sdk::TableAppliedDiff<'r, UniqueIdentity>,
+    unique_string: __sdk::TableAppliedDiff<'r, UniqueString>,
+    unique_u_128: __sdk::TableAppliedDiff<'r, UniqueU128>,
+    unique_u_16: __sdk::TableAppliedDiff<'r, UniqueU16>,
+    unique_u_256: __sdk::TableAppliedDiff<'r, UniqueU256>,
+    unique_u_32: __sdk::TableAppliedDiff<'r, UniqueU32>,
+    unique_u_64: __sdk::TableAppliedDiff<'r, UniqueU64>,
+    unique_u_8: __sdk::TableAppliedDiff<'r, UniqueU8>,
+    vec_bool: __sdk::TableAppliedDiff<'r, VecBool>,
+    vec_byte_struct: __sdk::TableAppliedDiff<'r, VecByteStruct>,
+    vec_connection_id: __sdk::TableAppliedDiff<'r, VecConnectionId>,
+    vec_enum_with_payload: __sdk::TableAppliedDiff<'r, VecEnumWithPayload>,
+    vec_every_primitive_struct: __sdk::TableAppliedDiff<'r, VecEveryPrimitiveStruct>,
+    vec_every_vec_struct: __sdk::TableAppliedDiff<'r, VecEveryVecStruct>,
+    vec_f_32: __sdk::TableAppliedDiff<'r, VecF32>,
+    vec_f_64: __sdk::TableAppliedDiff<'r, VecF64>,
+    vec_i_128: __sdk::TableAppliedDiff<'r, VecI128>,
+    vec_i_16: __sdk::TableAppliedDiff<'r, VecI16>,
+    vec_i_256: __sdk::TableAppliedDiff<'r, VecI256>,
+    vec_i_32: __sdk::TableAppliedDiff<'r, VecI32>,
+    vec_i_64: __sdk::TableAppliedDiff<'r, VecI64>,
+    vec_i_8: __sdk::TableAppliedDiff<'r, VecI8>,
+    vec_identity: __sdk::TableAppliedDiff<'r, VecIdentity>,
+    vec_simple_enum: __sdk::TableAppliedDiff<'r, VecSimpleEnum>,
+    vec_string: __sdk::TableAppliedDiff<'r, VecString>,
+    vec_timestamp: __sdk::TableAppliedDiff<'r, VecTimestamp>,
+    vec_u_128: __sdk::TableAppliedDiff<'r, VecU128>,
+    vec_u_16: __sdk::TableAppliedDiff<'r, VecU16>,
+    vec_u_256: __sdk::TableAppliedDiff<'r, VecU256>,
+    vec_u_32: __sdk::TableAppliedDiff<'r, VecU32>,
+    vec_u_64: __sdk::TableAppliedDiff<'r, VecU64>,
+    vec_u_8: __sdk::TableAppliedDiff<'r, VecU8>,
+    vec_unit_struct: __sdk::TableAppliedDiff<'r, VecUnitStruct>,
+}
+
+impl __sdk::InModule for AppliedDiff<'_> {
+    type Module = RemoteModule;
+}
+
+impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
     fn invoke_row_callbacks(&self, event: &EventContext, callbacks: &mut __sdk::DbCallbacks<RemoteModule>) {
         callbacks.invoke_table_row_callbacks::<IndexedTable>("indexed_table", &self.indexed_table, event);
         callbacks.invoke_table_row_callbacks::<IndexedTable2>("indexed_table_2", &self.indexed_table_2, event);
@@ -3639,6 +3793,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
     type Reducers = RemoteReducers;
     type SetReducerFlags = SetReducerFlags;
     type DbUpdate = DbUpdate;
+    type AppliedDiff<'r> = AppliedDiff<'r>;
     type SubscriptionHandle = SubscriptionHandle;
 
     fn register_tables(client_cache: &mut __sdk::ClientCache<Self>) {

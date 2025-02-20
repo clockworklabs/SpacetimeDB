@@ -85,11 +85,12 @@ impl<'ctx> __sdk::Table for OneEveryPrimitiveStructTableHandle<'ctx> {
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
     let _table = client_cache.get_or_make_table::<OneEveryPrimitiveStruct>("one_every_primitive_struct");
 }
+
 #[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
 ) -> __sdk::Result<__sdk::TableUpdate<OneEveryPrimitiveStruct>> {
-    __sdk::TableUpdate::parse_table_update_no_primary_key(raw_updates).map_err(|e| {
+    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
         __sdk::InternalError::failed_parse("TableUpdate<OneEveryPrimitiveStruct>", "TableUpdate")
             .with_cause(e)
             .into()

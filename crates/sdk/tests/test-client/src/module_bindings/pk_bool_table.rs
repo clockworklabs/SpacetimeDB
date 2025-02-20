@@ -104,7 +104,7 @@ impl<'ctx> __sdk::TableWithPrimaryKey for PkBoolTableHandle<'ctx> {
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
 ) -> __sdk::Result<__sdk::TableUpdate<PkBool>> {
-    __sdk::TableUpdate::parse_table_update_with_primary_key::<bool>(raw_updates, |row: &PkBool| &row.b).map_err(|e| {
+    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
         __sdk::InternalError::failed_parse("TableUpdate<PkBool>", "TableUpdate")
             .with_cause(e)
             .into()
