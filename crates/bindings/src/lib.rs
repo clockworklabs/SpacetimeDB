@@ -568,6 +568,7 @@ pub use spacetimedb_bindings_macro::table;
 /// This table has two mandatory fields:
 /// - A primary key that identifies scheduled reducer calls.
 /// - A [`ScheduleAt`] field that says when to call the reducer.
+///
 /// Managing timers with a scheduled table is as simple as inserting or deleting rows from the table.
 ///
 /// A [`ScheduleAt`] can be created from a [`spacetimedb::Timestamp`](crate::Timestamp), in which case the reducer will be scheduled once,
