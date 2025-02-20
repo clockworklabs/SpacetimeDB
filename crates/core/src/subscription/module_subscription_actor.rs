@@ -303,7 +303,7 @@ impl ModuleSubscriptions {
         Ok(())
     }
 
-    /// Remove a subscription for a single query.
+    /// Remove a client's subscription for a set of queries.
     pub fn remove_multi_subscription(
         &self,
         sender: Arc<ClientConnectionSender>,

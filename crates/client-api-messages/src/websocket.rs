@@ -333,9 +333,9 @@ pub enum ServerMessage<F: WebsocketFormat> {
     UnsubscribeApplied(UnsubscribeApplied<F>),
     /// Communicate an error in the subscription lifecycle.
     SubscriptionError(SubscriptionError),
-    /// Sent in response to a `SubscribeSingle` message. This contains the initial matching rows.
+    /// Sent in response to a `SubscribeMulti` message. This contains the initial matching rows.
     SubscribeMultiApplied(SubscribeMultiApplied<F>),
-    /// Sent in response to an `Unsubscribe` message. This contains the matching rows.
+    /// Sent in response to an `UnsubscribeMulti` message. This contains the matching rows.
     UnsubscribeMultiApplied(UnsubscribeMultiApplied<F>),
 }
 
