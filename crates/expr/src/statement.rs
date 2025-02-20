@@ -393,37 +393,36 @@ impl TypeChecker for SqlChecker {
                 from,
                 filter: None,
                 limit: None,
-            } => {
-                let input = Self::type_from(from, vars, tx)?;
-                type_proj(input, project, vars)
-            }
+            } => type_proj(Self::type_from(from, vars, tx)?, project, vars),
             SqlSelect {
                 project,
                 from,
                 filter: None,
                 limit: Some(n),
-            } => {
-                let input = Self::type_from(from, vars, tx)?;
-                type_proj(type_limit(input, &n)?, project, vars)
-            }
+            } => type_limit(type_proj(Self::type_from(from, vars, tx)?, project, vars)?, &n),
             SqlSelect {
                 project,
                 from,
                 filter: Some(expr),
                 limit: None,
-            } => {
-                let input = Self::type_from(from, vars, tx)?;
-                type_proj(type_select(input, expr, vars)?, project, vars)
-            }
+            } => type_proj(
+                type_select(Self::type_from(from, vars, tx)?, expr, vars)?,
+                project,
+                vars,
+            ),
             SqlSelect {
                 project,
                 from,
                 filter: Some(expr),
                 limit: Some(n),
-            } => {
-                let input = Self::type_from(from, vars, tx)?;
-                type_proj(type_limit(type_select(input, expr, vars)?, &n)?, project, vars)
-            }
+            } => type_limit(
+                type_proj(
+                    type_select(Self::type_from(from, vars, tx)?, expr, vars)?,
+                    project,
+                    vars,
+                )?,
+                &n,
+            ),
         }
     }
 }

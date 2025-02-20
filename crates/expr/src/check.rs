@@ -177,7 +177,8 @@ pub fn compile_sql_sub<'a>(sql: &'a str, tx: &impl SchemaView) -> TypingResult<S
 fn expect_table_type(expr: ProjectList) -> TypingResult<ProjectName> {
     match expr {
         ProjectList::Name(proj) => Ok(proj),
-        ProjectList::List(..) => Err(Unsupported::ReturnType.into()),
+        ProjectList::Limit(input, _) => expect_table_type(*input),
+        ProjectList::List(..) | ProjectList::Agg(..) => Err(Unsupported::ReturnType.into()),
     }
 }
 

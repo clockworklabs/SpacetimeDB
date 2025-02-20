@@ -357,6 +357,24 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn test_count() -> ResultTest<()> {
+        let (db, _) = create_data(5)?;
+
+        let sql = "SELECT count(*) as n FROM inventory";
+        let result = run_for_testing(&db, sql)?;
+        assert_eq!(result, vec![product![5u64]], "Inventory");
+
+        let sql = "SELECT count(*) as n FROM inventory limit 2";
+        let result = run_for_testing(&db, sql)?;
+        assert_eq!(result, vec![product![5u64]], "Inventory");
+
+        let sql = "SELECT count(*) as n FROM inventory WHERE inventory_id = 4 or inventory_id = 5";
+        let result = run_for_testing(&db, sql)?;
+        assert_eq!(result, vec![product![2u64]], "Inventory");
+        Ok(())
+    }
+
+    #[test]
     fn test_select_star_table() -> ResultTest<()> {
         let (db, input) = create_data(1)?;
 

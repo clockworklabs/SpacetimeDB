@@ -5,12 +5,14 @@ use std::{
 
 use anyhow::{anyhow, Result};
 use itertools::Either;
+use spacetimedb_expr::expr::AggType;
 use spacetimedb_lib::{metrics::ExecutionMetrics, query::Delta, sats::size_of::SizeOf, AlgebraicValue, ProductValue};
 use spacetimedb_physical_plan::plan::{
     HashJoin, IxJoin, IxScan, PhysicalExpr, PhysicalPlan, ProjectField, ProjectListPlan, ProjectPlan, Sarg, Semi,
     TableScan, TupleField,
 };
 use spacetimedb_primitives::{ColId, IndexId, TableId};
+use spacetimedb_sats::product;
 
 use crate::{Datastore, DeltaStore, Row, Tuple};
 
@@ -21,6 +23,8 @@ use crate::{Datastore, DeltaStore, Row, Tuple};
 pub enum ProjectListExecutor {
     Name(PipelinedProject),
     List(PipelinedExecutor, Vec<TupleField>),
+    Limit(Box<ProjectListExecutor>, u64),
+    Agg(PipelinedExecutor, AggType),
 }
 
 impl From<ProjectListPlan> for ProjectListExecutor {
@@ -28,6 +32,8 @@ impl From<ProjectListPlan> for ProjectListExecutor {
         match plan {
             ProjectListPlan::Name(plan) => Self::Name(plan.into()),
             ProjectListPlan::List(plan, fields) => Self::List(plan.into(), fields),
+            ProjectListPlan::Limit(plan, n) => Self::Limit(Box::new((*plan).into()), n),
+            ProjectListPlan::Agg(plan, AggType::Count) => Self::Agg(plan.into(), AggType::Count),
         }
     }
 }
@@ -41,19 +47,46 @@ impl ProjectListExecutor {
     ) -> Result<()> {
         let mut n = 0;
         let mut bytes_scanned = 0;
-        let mut f = |row: ProductValue| {
-            n += 1;
-            bytes_scanned += row.size_of();
-            f(row)
-        };
         match self {
             Self::Name(plan) => {
-                plan.execute(tx, metrics, &mut |row| f(row.to_product_value()))?;
+                plan.execute(tx, metrics, &mut |row| {
+                    n += 1;
+                    let row = row.to_product_value();
+                    bytes_scanned += row.size_of();
+                    f(row)
+                })?;
             }
             Self::List(plan, fields) => {
                 plan.execute(tx, metrics, &mut |t| {
-                    f(ProductValue::from_iter(fields.iter().map(|field| t.project(field))))
+                    n += 1;
+                    let row = ProductValue::from_iter(fields.iter().map(|field| t.project(field)));
+                    bytes_scanned += row.size_of();
+                    f(row)
                 })?;
+            }
+            Self::Limit(plan, limit) => {
+                plan.execute(tx, metrics, &mut |row| {
+                    n += 1;
+                    if n <= *limit as usize {
+                        f(row)?;
+                    }
+                    Ok(())
+                })?;
+            }
+            // TODO: This is a hack that needs to be removed.
+            // We check if this is a COUNT on a physical table,
+            // and if so, we retrieve the count from table metadata.
+            // It's a valid optimization but one that should be done by the optimizer.
+            // There should be no optimizations performed during execution.
+            Self::Agg(PipelinedExecutor::TableScan(table_scan), AggType::Count) => {
+                f(product![tx.table_or_err(table_scan.table)?.num_rows()])?;
+            }
+            Self::Agg(plan, AggType::Count) => {
+                plan.execute(tx, metrics, &mut |_| {
+                    n += 1;
+                    Ok(())
+                })?;
+                f(product![n as u64])?;
             }
         }
         metrics.rows_scanned += n;
@@ -192,10 +225,6 @@ impl From<PhysicalPlan> for PipelinedExecutor {
             PhysicalPlan::Filter(input, expr) => Self::Filter(PipelinedFilter {
                 input: Box::new(PipelinedExecutor::from(*input)),
                 expr,
-            }),
-            PhysicalPlan::Limit(input, limit) => Self::Limit(PipelinedLimit {
-                input: Box::new(PipelinedExecutor::from(*input)),
-                limit,
             }),
         }
     }

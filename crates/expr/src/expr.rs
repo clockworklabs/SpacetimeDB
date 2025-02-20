@@ -74,6 +74,13 @@ impl ProjectName {
 pub enum ProjectList {
     Name(ProjectName),
     List(RelExpr, Vec<(Box<str>, FieldProject)>),
+    Limit(Box<ProjectList>, u64),
+    Agg(RelExpr, AggType, Box<str>, AlgebraicType),
+}
+
+#[derive(Debug)]
+pub enum AggType {
+    Count,
 }
 
 impl ProjectList {
@@ -83,7 +90,8 @@ impl ProjectList {
     pub fn return_table(&self) -> Option<&TableSchema> {
         match self {
             Self::Name(project) => project.return_table(),
-            Self::List(..) => None,
+            Self::Limit(input, _) => input.return_table(),
+            Self::List(..) | Self::Agg(..) => None,
         }
     }
 
@@ -93,21 +101,26 @@ impl ProjectList {
     pub fn return_table_id(&self) -> Option<TableId> {
         match self {
             Self::Name(project) => project.return_table_id(),
-            Self::List(..) => None,
+            Self::Limit(input, _) => input.return_table_id(),
+            Self::List(..) | Self::Agg(..) => None,
         }
     }
 
     /// Iterate over the projected column names and types
     pub fn for_each_return_field(&self, mut f: impl FnMut(&str, &AlgebraicType)) {
         match self {
-            Self::Name(project) => {
-                project.for_each_return_field(f);
+            Self::Name(input) => {
+                input.for_each_return_field(f);
+            }
+            Self::Limit(input, _) => {
+                input.for_each_return_field(f);
             }
             Self::List(_, fields) => {
                 for (name, FieldProject { ty, .. }) in fields {
                     f(name, ty);
                 }
             }
+            Self::Agg(_, _, name, ty) => f(name, ty),
         }
     }
 }
@@ -123,8 +136,6 @@ pub enum RelExpr {
     LeftDeepJoin(LeftDeepJoin),
     /// A left deep binary equi-join
     EqJoin(LeftDeepJoin, FieldProject, FieldProject),
-    /// A limiting operator for the number of rows
-    Limit(Box<RelExpr>, u64),
 }
 
 /// A table reference
@@ -142,7 +153,7 @@ impl RelExpr {
         match self {
             Self::RelVar(..) => 1,
             Self::LeftDeepJoin(join) | Self::EqJoin(join, ..) => join.lhs.nfields() + 1,
-            Self::Select(input, _) | Self::Limit(input, ..) => input.nfields(),
+            Self::Select(input, _) => input.nfields(),
         }
     }
 
@@ -153,7 +164,7 @@ impl RelExpr {
             Self::LeftDeepJoin(join) | Self::EqJoin(join, ..) => {
                 join.rhs.alias.as_ref() == field || join.lhs.has_field(field)
             }
-            Self::Select(input, _) | Self::Limit(input, ..) => input.has_field(field),
+            Self::Select(input, _) => input.has_field(field),
         }
     }
 
