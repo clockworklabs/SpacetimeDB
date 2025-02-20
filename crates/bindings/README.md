@@ -384,7 +384,7 @@ Notice that updating a row is only possible if a row has a unique column -- ther
 
 The `#[primary_key]` annotation is similar to the `#[unique]` annotation, except that it leads to additional methods being made available in the [client]-side SDKs.
 
-It is not currently possible to mark a group of fields as collectively unique. You can, however, derive `#[SpacetimeType]` on another struct, include that struct as a column, and mark it unique.
+It is not currently possible to mark a group of fields as collectively unique.
 
 Filtering on unique columns is only supported for a limited number of types.
 

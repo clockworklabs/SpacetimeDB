@@ -55,7 +55,9 @@ pub trait Table: TableInternal {
     /// May panic if inserting the row violates any constraints.
     /// Callers which intend to handle constraint violation errors should instead use [`Self::try_insert`].
     ///
-    /// <!-- TODO: semantics of insert duplicate row with no unique constraints -->
+    /// Inserting a duplicate row in a table without a unique constraint is a no-op,
+    /// as SpacetimeDB is a set-semantic database.
+    /// Inserting a duplicate row in a table with a unique constraint will cause a unique constraint violation.
     #[track_caller]
     fn insert(&self, row: Self::Row) -> Self::Row {
         self.try_insert(row).unwrap_or_else(|e| panic!("{e}"))

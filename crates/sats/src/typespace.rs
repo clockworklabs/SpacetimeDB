@@ -243,7 +243,7 @@ pub trait GroundSpacetimeType {
 /// Any Rust type implementing `SpacetimeType` can be used as a table column or reducer argument. A derive macro is provided, and can be used on both structs and enums:
 ///
 /// ```rust
-/// use spacetimedb::SpacetimeType;
+/// # use spacetimedb_sats::SpacetimeType;
 ///
 /// #[derive(SpacetimeType)]
 /// struct Location {

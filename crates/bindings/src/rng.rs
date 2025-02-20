@@ -31,7 +31,7 @@ impl ReducerContext {
     /// # #[cfg(target_arch = "wasm32")] mod demo {
     /// use spacetimedb::{reducer, ReducerContext};
     /// use rand::Rng;
-    /// 
+    ///
     /// #[spacetimedb::reducer]
     /// fn rng_demo(ctx: &spacetimedb::ReducerContext) {
     ///     // Can be used in method chaining style:

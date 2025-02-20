@@ -255,9 +255,10 @@ pub use spacetimedb_bindings_macro::client_visibility_filter;
 /// Note that using `#[auto_inc]` on a field does not also imply `#[primary_key]` or `#[unique]`.
 /// If those semantics are desired, those attributes should also be used.
 ///
-/// <!-- TODO: What happens if a reducer tries to insert a row that has an already-existing unique
-///            auto-inc column? Like, if the user inserts a row ahead of the auto-inc, then
-///            the auto-inc catches up? -->
+/// When `#[auto_inc]` is combined with a unique key,
+/// be wary not to manually insert values larger than the allocated sequence value.
+/// In this case, the sequence will eventually catch up, allocate a value that's already present,
+/// and cause a unique constraint violation.
 ///
 /// ### `#[unique]`
 ///
@@ -364,6 +365,8 @@ pub use spacetimedb_bindings_macro::client_visibility_filter;
 /// `{name}Handle` in a [`ReducerContext`].
 ///
 /// The struct `{name}__TableHandle` is public and lives next to the row struct.
+/// Users are encouraged not to write the name of this table handle struct,
+/// or to store table handles in variables; operate through a `ReducerContext` instead.
 ///
 /// For each named index declaration, add a method to `{name}__TableHandle` for getting a corresponding
 /// [`RangedIndex`].
@@ -544,6 +547,22 @@ pub use spacetimedb_bindings_macro::table;
 /// In addition to life cycle annotations, reducers can be made **scheduled**.
 /// This allows calling the reducers at a particular time, or in a loop.
 /// This can be used for game loops.
+///
+/// Scheduled reducers are normal reducers, and may still be called by clients.
+/// If a scheduled reducer should only be called by the scheduler,
+/// consider beginning it with a check that the caller `Identity` is the module:
+///
+/// ```no_run
+/// # #[cfg(target_arch = "wasm32")] mod demo {
+/// #[reducer]
+/// fn scheduled(ctx: &ReducerContext, args: ScheduledArgs) -> Result<(), String> {
+///     if ctx.sender != ctx.identity() {
+///         return Err("Reducer `scheduled` may not be invoked by clients, only via scheduling.");
+///     }
+///     // Reducer body...
+/// }
+/// # }
+/// ```
 ///
 /// The scheduling information for a reducer is stored in a table.
 /// This table has two mandatory fields:

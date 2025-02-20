@@ -48,7 +48,7 @@ pub enum AlgebraicType {
     /// ```
     /// so for example, `values({ A(U64), B(Bool) }) = values(U64) + values(Bool)`.
     ///
-    /// See also: 
+    /// See also:
     /// - <https://en.wikipedia.org/wiki/Tagged_union>
     /// - <https://ncatlab.org/nlab/show/sum+type>
     ///
