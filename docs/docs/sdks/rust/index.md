@@ -32,7 +32,10 @@ mod module_bindings;
 ## Type `DbConnection`
 
 ```rust
-module_bindings::DbConnection
+module_bindings::DbConnection {
+    db: RemoteTables,
+    /* private members */
+}
 ```
 
 A connection to a remote database is represented by the `module_bindings::DbConnection` type. This type is generated per-module, and contains information about the types, tables and reducers defined by your module.
@@ -45,7 +48,7 @@ impl DbConnection {
 }
 ```
 
-Construct a `DbConnection` by calling `DbConnection::builder()` and chaining configuration methods, then calling `.build()`. You must at least specify `with_uri`, to supply the URI of the SpacetimeDB to which you published your module, and `with_module_name`, to supply the human-readable SpacetimeDB domain name or the raw address which identifies the module.
+Construct a `DbConnection` by calling `DbConnection::builder()` and chaining configuration methods, then calling `.build()`. You must at least specify `with_uri`, to supply the URI of the SpacetimeDB to which you published your module, and `with_module_name`, to supply the human-readable SpacetimeDB domain name or the raw `Identity` which identifies the module.
 
 #### Method `with_uri`
 
@@ -61,11 +64,11 @@ Configure the URI of the SpacetimeDB instance or cluster which hosts the remote 
 
 ```rust
 impl DbConnectionBuilder {
-    fn with_module_name(self, name_or_address: impl ToString) -> Self;
+    fn with_module_name(self, name_or_identity: impl ToString) -> Self;
 }
 ```
 
-Configure the SpacetimeDB domain name or address of the remote module which identifies it within the SpacetimeDB instance or cluster.
+Configure the SpacetimeDB domain name or `Identity` of the remote module which identifies it within the SpacetimeDB instance or cluster.
 
 #### Callback `on_connect`
 
@@ -81,13 +84,27 @@ This interface may change in an upcoming release as we rework SpacetimeDB's auth
 
 #### Callback `on_connect_error`
 
-Currently unused.
+```rust
+impl DbConnectionBuilder {
+    fn on_connect_error(
+        self,
+        callback: impl FnOnce(&ErrorContext, spacetimedb_sdk::Error),
+    ) -> DbConnectionBuilder;
+}
+```
+
+Chain a call to `.on_connect_error(callback)` to your builder to register a callback to run when your connection fails.
+
+A known bug in the SpacetimeDB Rust client SDK currently causes this callback never to be invoked. [`on_disconnect`](#callback-on_disconnect) callbacks are invoked instead.
 
 #### Callback `on_disconnect`
 
 ```rust
 impl DbConnectionBuilder {
-    fn on_disconnect(self, callback: impl FnOnce(&DbConnection, Option<&anyhow::Error>)) -> DbConnectionBuilder;
+    fn on_disconnect(
+        self,
+        callback: impl FnOnce(&ErrorContext, Option<spacetimedb_sdk::Error>),
+    ) -> DbConnectionBuilder;
 }
 ```
 
@@ -109,7 +126,7 @@ This interface may change in an upcoming release as we rework SpacetimeDB's auth
 
 ```rust
 impl DbConnectionBuilder {
-    fn build(self) -> anyhow::Result<DbConnection>;
+    fn build(self) -> Result<DbConnection, spacetimedb_sdk::Error>;
 }
 ```
 
@@ -133,7 +150,7 @@ impl DbConnection {
 
 ```rust
 impl DbConnection {
-    async fn run_async(&self) -> anyhow::Result<()>;
+    async fn run_async(&self) -> Result<(), spacetimedb_sdk::Error>;
 }
 ```
 
@@ -143,31 +160,114 @@ impl DbConnection {
 
 ```rust
 impl DbConnection {
-    fn frame_tick(&self) -> anyhow::Result<()>;
+    fn frame_tick(&self) -> Result<(), spacetimedb_sdk::Error>;
 }
 ```
 
 `frame_tick` will advance the connection until no work remains, then return rather than blocking or `await`-ing. Games might arrange for this message to be called every frame. `frame_tick` returns `Ok` if the connection remains active afterwards, or `Err` if the connection disconnected before or during the call.
 
+### Access tables and reducers
+
+#### Field `db`
+
+```rust
+struct DbConnection {
+    pub db: RemoteTables,
+    /* other members */
+}
+```
+
+The `db` field of the `DbConnection` provides access to the subscribed view of the remote database's tables. See [Access the client cache](#access-the-client-cache).
+
+#### Field `reducers`
+
+```rust
+struct DbConnection {
+    pub reducers: RemoteReducers,
+    /* other members */
+}
+```
+
+The `reducers` field of the `DbConnection` provides access to reducers exposed by the remote module. See [Observe and invoke reducers](#observe-and-invoke-reducers).
+
 ## Trait `DbContext`
 
-[`DbConnection`](#type-dbconnection) and [`EventContext`](#type-eventcontext) both implement `DbContext`, which allows 
+```rust
+trait spacetimedb_sdk::DbContext {
+    /* methods */
+}
+```
+
+[`DbConnection`](#type-dbconnection), [`EventContext`](#type-eventcontext), [`ReducerEventContext`](#type-reducereventcontext), [`SubscriptionEventContext`](#type-subscriptioneventcontext) and [`ErrorContext`](#type-errorcontext) all implement `DbContext`. `DbContext` has methods for inspecting and configuring your connection to the remote database, including [`ctx.db()`](#method-db), a trait-generic alternative to reading the `.db` property on a concrete-typed context object.
+
+The `DbContext` trait is implemented by connections and contexts to *every* module. This means that its [`DbView`](#method-db) and [`Reducers`](#method-reducers) are associated types.
+
+### Trait `RemoteDbContext`
+
+```rust
+trait module_bindings::RemoteDbContext
+    : spacetimedb_sdk::DbContext</* Associated type constraints */> {}
+```
+
+Each module's `module_bindings` exports a trait `RemoteDbContext` which extends `DbContext`, with the associated types `DbView` and `Reducers` bound to the types defined for that module. This can be more convenient when creating functions that can be called from any callback for a specific module, but which access the database or invoke reducers, and so must know the type of the `DbView` or `Reducers`.
+
+### Method `db`
+
+```rust
+trait DbContext {
+    fn db(&self) -> &Self::DbView;
+}
+```
+
+When operating in trait-generic contexts, it is necessary to call the `ctx.db()` method, rather than accessing the `ctx.db` field, as Rust traits cannot expose fields.
+
+#### Example
+
+```rust
+fn print_users(ctx: &impl RemoteDbContext) {
+    for user in ctx.db().user().iter() {
+        println!("{}", user.name);
+    }
+}
+```
+
+### Method `reducers`
+
+```rust
+trait DbContext {
+    fn reducerrs(&self) -> &Self::Reducers;
+}
+```
+
+When operating in trait-generic contexts, it is necessary to call the `ctx.reducers()` method, rather than accessing the `ctx.reducers` field, as Rust traits cannot expose fields.
+
+#### Example
+
+```rust
+fn call_say_hello(ctx: &impl RemoteDbContext) {
+    ctx.reducers.say_hello();
+}
+```
 
 ### Method `disconnect`
 
 ```rust
 trait DbContext {
-    fn disconnect(&self) -> anyhow::Result<()>;
+    fn disconnect(&self) -> spacetimedb_sdk::Result<()>;
 }
 ```
 
 Gracefully close the `DbConnection`. Returns an `Err` if the connection is already disconnected.
 
-### Subscribe to queries - `DbContext::subscription_builder` and `.subscribe()`
+### Subscribe to queries
 
-This interface is subject to change in an upcoming SpacetimeDB release.
+#### Type `SubscriptionBuilder`
 
-A known issue in the SpacetimeDB Rust SDK causes inconsistent behaviors after re-subscribing. This will be fixed in an upcoming SpacetimeDB release. For now, Rust clients should issue only one subscription per `DbConnection`.
+```rust
+spacetimedb_sdk::SubscriptionBuilder
+```
+
+##### Constructor `ctx.subscription_builder()`
 
 ```rust
 trait DbContext {
@@ -177,17 +277,28 @@ trait DbContext {
 
 Subscribe to queries by calling `ctx.subscription_builder()` and chaining configuration methods, then calling `.subscribe(queries)`.
 
-#### Callback `on_applied`
+##### Callback `on_applied`
 
 ```rust
 impl SubscriptionBuilder {
-    fn on_applied(self, callback: impl FnOnce(&EventContext)) -> Self;
+    fn on_applied(self, callback: impl FnOnce(&SubscriptionEventContext)) -> Self;
 }
 ```
 
-Register a callback to run when the subscription is applied and the matching rows are inserted into the client cache. The [`EventContext`](#type-eventcontext) passed to the callback will have `Event::SubscribeApplied` as its `event`.
+Register a callback to run when the subscription is applied and the matching rows are inserted into the client cache.
 
-#### Method `subscribe`
+##### Callback `on_error`
+
+```rust
+impl SubscriptionBuilder {
+    fn on_applied(self, callback: impl FnOnce(&ErrorContext, spacetimedb_sdk::Error)) -> Self;
+}
+```
+
+Register a callback to run if the subscription is rejected or unexpectedly terminated by the server. This is most frequently caused by passing an invalid query to [`subscribe`](#method-subscribe).
+
+
+##### Method `subscribe`
 
 ```rust
 impl SubscriptionBuilder {
@@ -195,11 +306,78 @@ impl SubscriptionBuilder {
 }
 ```
 
-Subscribe to a set of queries. `queries` should be an array or slice of strings.
+Subscribe to a set of queries. `queries` should be a string or an array, vec or slice of strings.
 
-The returned `SubscriptionHandle` is currently not useful, but will become significant in a future version of SpacetimeDB.
+##### Method `subscribe_to_all_tables`
 
-### Identity a client
+```rust
+impl SubscriptionBuilder {
+    fn subscribe_to_all_tables(self);
+}
+```
+
+Subscribe to all rows from all tables. This method is provided as a convenience for simple clients. The same connection must not mix `subscribe_to_all_tables` with [`subscribe` to specific queries](#method subscribe). Doing so may cause errors or corrupt the client cache, leading to local queries returning incorrect results. The subscription initiated by `subscribe_to_all_tables` cannot be canceled after it is initiated.
+
+#### Type `SubscriptionHandle`
+
+```rust
+module_bindings::SubscriptionHandle
+```
+
+A `SubscriptionHandle` represents a subscribed query or a group of subscribed queries.
+
+The `SubscriptionHandle` does not contain or provide access to the subscribed rows. Subscribed rows of all subscriptions by a connection are contained within that connection's [`ctx.db`](#field-db). See [Access the client cache](#access-the-client-cache).
+
+##### Method `is_ended`
+
+```rust
+impl SubscriptionHandle {
+    fn is_ended(&self) -> bool;
+}
+```
+
+Returns true if this subscription has been terminated due to an unsubscribe call or an error.
+
+##### Method `is_active`
+
+```rust
+impl SubscriptionHandle {
+    fn is_active(&self) -> bool;
+}
+```
+
+Returns true if this subscription has been applied and has not yet been unsubscribed.
+
+##### Method `unsubscribe`
+
+```rust
+impl SubscriptionHandle {
+    fn unsubscribe(&self) -> Result<(), spacetimedb_sdk::Error>;
+}
+```
+
+Terminate this subscription, causing matching rows to be removed from the client cache. Any rows removed from the client cache this way will have [`on_delete` callbacks](#callback-on_delete) run for them.
+
+Unsubscribing is an asynchronous operation. Matching rows are not removed from the client cache immediately. Use [`unsubscribe_then`](#method-unsubscribe_then) to run a callback once the unsubscribe operation is completed.
+
+Returns an error if the subscription has already ended, either due to a previous call to `unsubscribe` or [`unsubscribe_then`](#method-unsubscribe_then), or due to an error.
+
+##### Method `unsubscribe_then`
+
+```rust
+impl SubscriptionHandle {
+    fn unsubscribe_then(
+        self,
+        on_end: impl FnOnce(&SubscriptionEventContext),
+    ) -> Result<(), spacetimedb_sdk::Error>;
+}
+```
+
+Terminate this subscription, and run the `on_end` callback when the subscription is ended and its matching rows are removed from the client cache. Any rows removed from the client cache this way will have [`on_delete` callbacks](#callback-on_delete) run for them.
+
+Returns an error if the subscription has already ended, either due to a previous call to `unsubscribe` or [`unsubscribe_then`](#method-unsubscribe_then), or due to an error.
+
+### Identify a client
 
 #### Method `identity`
 
@@ -221,6 +399,16 @@ trait DbContext {
 
 Like [`DbContext::identity`](#method-identity), but returns `None` instead of panicking if the `Identity` is not yet available.
 
+#### Method `connection_id`
+
+```rust
+trait DbContext {
+    fn connection_id(&self) -> ConnectionId;
+}
+```
+
+Get the [`ConnectionId`](#type-connectionid) with which SpacetimeDB identifies the connection.
+
 #### Method `is_active`
 
 ```rust
@@ -237,7 +425,40 @@ trait DbContext {
 module_bindings::EventContext
 ```
 
-An `EventContext` is a [`DbContext`](#trait-dbcontext) augmented with a field `event: Event`.
+An `EventContext` is a [`DbContext`](#trait-dbcontext) augmented with a field [`event: Event`](#enum-event). `EventContext`s are passed as the first argument to row callbacks [`on_insert`](#callback-on_insert), [`on_delete`](#callback-on_delete) and [`on_update`](#callback-on_update).
+
+### Field `event`
+
+```rust
+struct EventContext {
+    pub event: spacetimedb_sdk::Event<module_bindings::Reducer>,
+    /* other fields */
+}
+```
+
+TODO
+
+### Field `db`
+
+```rust
+struct EventContext {
+    pub db: RemoteTables,
+    /* other members */
+}
+```
+
+The `db` field of the context provides access to the subscribed view of the remote database's tables. See [Access the client cache](#access-the-client-cache).
+
+### Field `reducers`
+
+```rust
+struct EventContext {
+    pub reducers: RemoteReducers,
+    /* other members */
+}
+```
+
+The `reducers` field of the context provides access to reducers exposed by the remote module. See [Observe and invoke reducers](#observe-and-invoke-reducers).
 
 ### Enum `Event`
 
@@ -253,7 +474,7 @@ spacetimedb_sdk::Event::Reducer(spacetimedb_sdk::ReducerEvent<module_bindings::R
 
 Event when we are notified that a reducer ran in the remote module. The [`ReducerEvent`](#struct-reducerevent) contains metadata about the reducer run, including its arguments and termination [`Status`](#enum-status).
 
-This event is passed to reducer callbacks, and to row callbacks resulting from modifications by the reducer.
+This event is passed to row callbacks resulting from modifications by the reducer.
 
 #### Variant `SubscribeApplied`
 
@@ -263,15 +484,15 @@ spacetimedb_sdk::Event::SubscribeApplied
 
 Event when our subscription is applied and its rows are inserted into the client cache.
 
-This event is passed to [subscription `on_applied` callbacks](#callback-on_applied), and to [row `on_insert` callbacks](#callback-on_insert) resulting from the new subscription.
+This event is passed to [row `on_insert` callbacks](#callback-on_insert) resulting from the new subscription.
 
 #### Variant `UnsubscribeApplied`
 
-Currently unused.
+TODO
 
 #### Variant `SubscribeError`
 
-Currently unused.
+TODO
 
 #### Variant `UnknownTransaction`
 
@@ -298,9 +519,9 @@ struct spacetimedb_sdk::ReducerEvent<R> {
     /// The `Identity` of the SpacetimeDB actor which invoked the reducer.
     caller_identity: Identity,
 
-    /// The `Address` of the SpacetimeDB actor which invoked the reducer,
-    /// or `None` if the actor did not supply an address.
-    caller_address: Option<Address>,
+    /// The `ConnectionId` of the SpacetimeDB actor which invoked the reducer,
+    /// or `None` for scheduled reducers.
+    caller_connection_id: Option<ConnectionId>,
 
     /// The amount of energy consumed by the reducer run, in eV.
     /// (Not literal eV, but our SpacetimeDB energy unit eV.)
@@ -348,6 +569,106 @@ module_bindings::Reducer
 ```
 
 The module bindings contains an enum `Reducer` with a variant for each reducer defined by the module. Each variant has a payload containing the arguments to the reducer.
+
+## Type `ReducerEventContext`
+
+A `ReducerEventContext` is a [`DbContext`](#trait-dbcontext) augmented with a field [`event: ReducerEvent`](#struct-reducerevent). `ReducerEventContext`s are passed as the first argument to [reducer callbacks](#observe-and-invoke-reducers).
+
+### Field `event`
+
+```rust
+struct ReducerEventContext {
+    pub event: spacetimedb_sdk::ReducerEvent<module_bindings::Reducer>,
+    /* other fields */
+}
+```
+
+TODO
+
+### Field `db`
+
+```rust
+struct ReducerEventContext {
+    pub db: RemoteTables,
+    /* other members */
+}
+```
+
+The `db` field of the context provides access to the subscribed view of the remote database's tables. See [Access the client cache](#access-the-client-cache).
+
+### Field `reducers`
+
+```rust
+struct ReducerEventContext {
+    pub reducers: RemoteReducers,
+    /* other members */
+}
+```
+
+The `reducers` field of the context provides access to reducers exposed by the remote module. See [Observe and invoke reducers](#observe-and-invoke-reducers).
+
+## Type `SubscriptionEventContext`
+
+A `SubscriptionEventContext` is a [`DbContext`](#trait-dbcontext). Unlike the other context types, `SubscriptionEventContext` doesn't have an `event` field. `SubscriptionEventContext`s are passed to subscription [`on_applied`](#callback-on_applied) and [`unsubscribe_then`](#method-unsubscribe_then) callbacks.
+
+### Field `db`
+
+```rust
+struct SubscriptionEventContext {
+    pub db: RemoteTables,
+    /* other members */
+}
+```
+
+The `db` field of the context provides access to the subscribed view of the remote database's tables. See [Access the client cache](#access-the-client-cache).
+
+### Field `reducers`
+
+```rust
+struct SubscriptionEventContext {
+    pub reducers: RemoteReducers,
+    /* other members */
+}
+```
+
+The `reducers` field of the context provides access to reducers exposed by the remote module. See [Observe and invoke reducers](#observe-and-invoke-reducers).
+
+## Type `ErrorContext`
+
+An `ErrorContext` is a [`DbContext`](#trait-dbcontext) augmented with a field `event: spacetimedb_sdk::Error`. `ErrorContext`s are to connections' [`on_disconnect`](#callback-on_disconnect) and [`on_connect_error`](#callback-on_connect_error) callbacks, and to subscriptions' [`on_error`](#callback-on_error) callbacks.
+
+### Field `event`
+
+```rust
+struct ErrorContext {
+    pub event: spacetimedb_sdk::Error,
+    /* other fields */
+}
+```
+
+TODO
+
+### Field `db`
+
+```rust
+struct ErrorContext {
+    pub db: RemoteTables,
+    /* other members */
+}
+```
+
+The `db` field of the context provides access to the subscribed view of the remote database's tables. See [Access the client cache](#access-the-client-cache).
+
+### Field `reducers`
+
+```rust
+struct ErrorContext {
+    pub reducers: RemoteReducers,
+    /* other members */
+}
+```
+
+The `reducers` field of the context provides access to reducers exposed by the remote module. See [Observe and invoke reducers](#observe-and-invoke-reducers).
 
 ## Access the client cache
 
@@ -473,10 +794,10 @@ spacetimedb_sdk::Identity
 
 A unique public identifier for a client connected to a database.
 
-### Type `Address`
+### Type `ConnectionId`
 
 ```rust
-spacetimedb_sdk::Address
+spacetimedb_sdk::ConnectionId
 ```
 
-An opaque identifier for a client connection to a database, intended to differentiate between connections from the same [`Identity`](#type-identity). This will be removed in a future SpacetimeDB version in favor of a connection or session ID.
+An opaque identifier for a client connection to a database, intended to differentiate between connections from the same [`Identity`](#type-identity).
