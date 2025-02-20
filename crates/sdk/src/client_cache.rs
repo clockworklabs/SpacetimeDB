@@ -189,7 +189,7 @@ impl<Row: Clone + Send + Sync + 'static> TableCache<Row> {
 
     fn handle_insert<'r>(
         &mut self,
-        _deletes: &mut RowEventMap<'_, Row>,
+        deletes: &mut RowEventMap<'_, Row>,
         inserts: &mut RowEventMap<'r, Row>,
         insert: &'r WithBsatn<Row>,
     ) {
@@ -204,10 +204,22 @@ impl<Row: Clone + Send + Sync + 'static> TableCache<Row> {
         });
         entry.ref_count += 1;
 
-        // The host never sends us a delete-insert pair for the same row R,
-        // so we don't need to remove it.
-        // However, for tests, we defensively assert this is the case.
-        debug_assert!(!_deletes.contains_key(&*insert.bsatn));
+        // While one might think the host never sends us a delete-insert pair for the same row `r0`,
+        // it actually may, given the right joins.
+        //
+        // For example, consider three tables `r`, `s`, and `t`.
+        // Let's suppose the client has subscribed to `r ⋉ s` and `r ⋉ t`:
+        // ```sql
+        // SELECT r.* FROM r JOIN s ON r.id = s.id;
+        // SELECT r.* FROM r JOIN t ON r.id = t.id;
+        // ```
+        //
+        // A transaction then:
+        // - deletes a row `t0` which results in `delete r0` being sent.
+        // - inserts a row `s0` which results in `insert r0` being sent.
+        //
+        // That is, we end up with `[delete r0, insert r0]`.
+        deletes.remove(&*insert.bsatn);
     }
 
     /// Apply all the deletes and inserts recorded in `diff`.
