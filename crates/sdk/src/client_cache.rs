@@ -183,6 +183,7 @@ impl<Row: Clone + Send + Sync + 'static> TableCache<Row> {
         // Extract the entry and decrement the `ref_count`.
         // Only create a delete event if `ref_count = 0`.
         let Entry::Occupied(mut entry) = self.entries.entry(delete.bsatn.clone()) else {
+            // We're guaranteed to never hit this as long as we apply inserts before deletes.
             unreachable!("a delete update should correspond to an existing row in the table cache");
         };
         let ref_count = &mut entry.get_mut().ref_count;
@@ -233,6 +234,8 @@ impl<Row: Clone + Send + Sync + 'static> TableCache<Row> {
     /// and populate the `update_*` fields.
     fn apply_diff<'r>(&mut self, diff: &'r TableUpdate<Row>) -> TableAppliedDiff<'r, Row> {
         // Apply all inserts and collect all `ref_count: 0 -> 1` events.
+        // Inserts must be applied before deletes to avoid the panic in `handle_delete`
+        // and to avoid duplicate index insertion errors.
         let mut insert_events = <_>::default();
         for insert in &diff.inserts {
             self.handle_insert(&mut insert_events, insert);
