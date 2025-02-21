@@ -209,7 +209,7 @@ namespace SpacetimeDB
             public static ProcessedDatabaseUpdate New()
             {
                 ProcessedDatabaseUpdate result;
-                result.Updates = new(GenericEqualityComparer.Instance);
+                result.Updates = new();
                 return result;
             }
 
