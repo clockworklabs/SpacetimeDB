@@ -2,7 +2,7 @@
 
 ## SEQUENCE
 
-For each table containing an `#[auto_inc]` column, a sequence number `generator` is automatically created behind the scenes, functioning similarly to `postgres` `SEQUENCE`.
+For each table containing an `#[auto_inc]` column, SpacetimeDB creates a sequence number `generator` behind the scenes, which functions similarly to `postgres`'s `SEQUENCE`.
 
 ### How It Works
 
