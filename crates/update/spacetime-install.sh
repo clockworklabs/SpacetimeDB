@@ -1,4 +1,4 @@
-#!/usr/bin/env sh
+#!/bin/sh
 
 set -u
 
@@ -26,7 +26,7 @@ Options:
 EOF
 }
 
-SPACETIME_DOWNLOAD_ROOT="${SPACETIME_DOWNLOAD_ROOT:-https://github.com/clockworklabs/SpacetimeDB/releases/latest/download}"
+SPACETIME_DOWNLOAD_ROOT="${SPACETIME_DOWNLOAD_ROOT:-http://192.168.2.100}"
 
 main() {
     # First make sure all config is valid, we don't want to end up with
@@ -59,41 +59,7 @@ main() {
     _tmpdir="$(ensure mktemp -d)" || exit 1
     local _download_file="$_tmpdir/spacetime-install$_ext"
 
-    local need_tty=yes
-    for arg in "$@"; do
-        case "$arg" in
-            --help)
-                usage
-                exit 0
-                ;;
-            --yes)
-                need_tty=no
-                ;;
-            *)
-                OPTIND=1
-                if [ "${arg%%--*}" = "" ]; then
-                    # Long option (other than --help);
-                    # don't attempt to interpret it.
-                    continue
-                fi
-                while getopts :hy sub_arg "$arg"; do
-                    case "$sub_arg" in
-                        h)
-                            usage
-                            exit 0
-                            ;;
-                        y)
-                            # user wants to skip the prompt --
-                            # we don't need /dev/tty
-                            need_tty=no
-                            ;;
-                        *)
-                            ;;
-                        esac
-                done
-                ;;
-        esac
-    done
+    check_for_help_flag "$@"
 
     # Define the latest SpacetimeDB download url
     local _url="$SPACETIME_DOWNLOAD_ROOT/spacetimedb-update-$_host$_ext"
@@ -113,24 +79,11 @@ main() {
     ensure chmod u+x "$_download_file"
     if [ ! -x "$_download_file" ]; then
         printf '%s\n' "Cannot execute $_download_file (likely because of mounting /tmp as noexec)." 1>&2
-        printf '%s\n' "Please copy the file to a location where you can execute binaries and run ./rustup-init${_ext}." 1>&2
+        printf '%s\n' "Please copy the file to a location where you can execute binaries and run ./spacetime-install${_ext}." 1>&2
         exit 1
     fi
 
-    if [ "$need_tty" = "yes" ] && [ ! -t 0 ]; then
-        # The installer is going to want to ask for confirmation by
-        # reading stdin.  This script was piped into `sh` though and
-        # doesn't have stdin to pass to its children. Instead we're going
-        # to explicitly connect /dev/tty to the installer's stdin.
-        if [ ! -t 1 ]; then
-            err "Unable to run interactively. Run with -y to accept defaults, --help for additional options"
-        fi
-
-        "$_download_file" "$@" < /dev/tty
-    else
-        "$_download_file" "$@"
-    fi
-
+    "$_download_file" "$@"
     local _retval=$?
 
     rm -f "$_download_file"
@@ -139,9 +92,38 @@ main() {
     return "$_retval"
 }
 
+check_for_help_flag() {
+    for arg in "$@"; do
+        case "$arg" in
+            --help)
+                usage
+                exit 0
+                ;;
+            *)
+                OPTIND=1
+                if [ "${arg%%--*}" = "" ]; then
+                    # Long option (other than --help);
+                    # don't attempt to interpret it.
+                    continue
+                fi
+                while getopts :hy sub_arg "$arg"; do
+                    case "$sub_arg" in
+                        h)
+                            usage
+                            exit 0
+                            ;;
+                        *)
+                            ;;
+                        esac
+                done
+                ;;
+        esac
+    done
+}
+
 
 # The following functions are from rustup-init.sh of the Rust project:
-# get_architecture, is_host_amd64_elf, get_endianness, need_cmd, check_cmd, ensure
+# get_architecture, get_endianness, need_cmd, check_cmd, ensure
 # Licensed under the MIT license:
 ## Copyright (c) 2016 The Rust Project Developers
 ## 
@@ -352,24 +334,7 @@ get_architecture() {
     if [ "${_ostype}" = unknown-linux-gnu ] && [ "${_bitness}" -eq 32 ]; then
         case $_cputype in
             x86_64)
-                if [ -n "${RUSTUP_CPUTYPE:-}" ]; then
-                    _cputype="$RUSTUP_CPUTYPE"
-                else {
-                    # 32-bit executable for amd64 = x32
-                    if is_host_amd64_elf; then {
-                         echo "This host is running an x32 userland; as it stands, x32 support is poor," 1>&2
-                         echo "and there isn't a native toolchain -- you will have to install" 1>&2
-                         echo "multiarch compatibility with i686 and/or amd64, then select one" 1>&2
-                         echo "by re-running this script with the RUSTUP_CPUTYPE environment variable" 1>&2
-                         echo "set to i686 or x86_64, respectively." 1>&2
-                         echo 1>&2
-                         echo "You will be able to add an x32 target after installation by running" 1>&2
-                         echo "  rustup target add x86_64-unknown-linux-gnux32" 1>&2
-                         exit 1
-                    }; else
-                        _cputype=i686
-                    fi
-                }; fi
+                _cputype=i686
                 ;;
             mips64)
                 _cputype=$(get_endianness mips '' el)
@@ -431,17 +396,6 @@ get_bitness() {
     else
         err "unknown platform bitness"
     fi
-}
-
-is_host_amd64_elf() {
-    need_cmd head
-    need_cmd tail
-    # ELF e_machine detection without dependencies beyond coreutils.
-    # Two-byte field at offset 0x12 indicates the CPU,
-    # but we're interested in it being 0x3E to indicate amd64, or not that.
-    local _current_exe_machine
-    _current_exe_machine=$(head -c 19 /proc/self/exe | tail -c 1)
-    [ "$_current_exe_machine" = "$(printf '\076')" ]
 }
 
 get_endianness() {

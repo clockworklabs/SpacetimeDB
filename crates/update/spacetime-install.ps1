@@ -25,7 +25,7 @@ function Install {
     & $Executable
 
     # TODO: do this in spacetimedb-update
-    $InstallDir = Join-Path ([Environment]::GetSpecialFolder("LocalApplicationData")) "SpacetimeDB"
+    $InstallDir = Join-Path ([Environment]::GetFolderPath("LocalApplicationData")) "SpacetimeDB"
     UpdatePathIfNotExists $InstallDir
     Write-Output "We have added spacetimedb to your Path. You may have to logout and log back in to reload your environment."
 }
