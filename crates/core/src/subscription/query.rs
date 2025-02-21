@@ -358,9 +358,6 @@ mod tests {
         let schema = &[("n", AlgebraicType::U64), ("data", AlgebraicType::U64)];
         let indexes = &[0.into()];
         db.create_table_for_test("a", schema, indexes)?;
-
-        let schema = &[("n", AlgebraicType::U64), ("data", AlgebraicType::U64)];
-        let indexes = &[0.into()];
         db.create_table_for_test("b", schema, indexes)?;
 
         let tx = db.begin_tx(Workload::ForTests);

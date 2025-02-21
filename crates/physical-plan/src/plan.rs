@@ -4,7 +4,7 @@ use std::{
     sync::Arc,
 };
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use derive_more::From;
 use spacetimedb_expr::{expr::AggType, StatementSource};
 use spacetimedb_lib::{query::Delta, sats::size_of::SizeOf, AlgebraicValue, ProductValue};
@@ -360,7 +360,8 @@ impl PhysicalPlan {
     /// 4. Determine index and semijoins
     /// 5. Compute positions for tuple labels
     pub fn optimize(self, reqs: Vec<Label>) -> Result<Self> {
-        self.map(&Self::canonicalize)
+        let optimized = self
+            .map(&Self::canonicalize)
             .apply_rec::<PushConstAnd>()?
             .apply_rec::<PushConstEq>()?
             .apply_rec::<ReorderDeltaJoinRhs>()?
@@ -374,7 +375,52 @@ impl PhysicalPlan {
             .apply_rec::<UniqueIxJoinRule>()?
             .apply_rec::<UniqueHashJoinRule>()?
             .introduce_semijoins(reqs)
-            .apply_rec::<ComputePositions>()
+            .apply_rec::<ComputePositions>()?;
+
+        let mut unresolved_name = false;
+
+        // Check that we've derived positional values for all named arguments
+        optimized.visit(&mut |plan| {
+            match plan {
+                Self::Filter(_, expr) => {
+                    expr.visit(&mut |expr| {
+                        if let PhysicalExpr::Field(TupleField { label_pos: None, .. }) = expr {
+                            unresolved_name = true;
+                        }
+                    });
+                }
+                Self::IxJoin(
+                    IxJoin {
+                        lhs_field: TupleField { label_pos: None, .. },
+                        ..
+                    },
+                    _,
+                )
+                | Self::HashJoin(
+                    HashJoin {
+                        lhs_field: TupleField { label_pos: None, .. },
+                        ..
+                    },
+                    _,
+                )
+                | Self::HashJoin(
+                    HashJoin {
+                        rhs_field: TupleField { label_pos: None, .. },
+                        ..
+                    },
+                    _,
+                ) => {
+                    unresolved_name = true;
+                }
+                _ => {}
+            };
+        });
+
+        if unresolved_name {
+            bail!("Could not compute positional arguments during query planning")
+        }
+
+        Ok(optimized)
     }
 
     /// The rewriter assumes a canonicalized plan.
