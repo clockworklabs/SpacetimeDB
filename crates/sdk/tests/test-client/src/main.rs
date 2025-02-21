@@ -3,7 +3,7 @@
 mod module_bindings;
 
 use core::fmt::Display;
-use std::sync::{atomic::AtomicUsize, Arc, Mutex};
+use std::sync::{Arc, Mutex};
 
 use module_bindings::*;
 
@@ -384,27 +384,10 @@ fn connect(test_counter: &std::sync::Arc<TestCounter>) -> DbConnection {
 }
 
 fn subscribe_all_then(ctx: &impl RemoteDbContext, callback: impl FnOnce(&SubscriptionEventContext) + Send + 'static) {
-    let remaining_queries = Arc::new(AtomicUsize::new(SUBSCRIBE_ALL.len()));
-    let callback = Arc::new(Mutex::new(Some(callback)));
-    for query in SUBSCRIBE_ALL {
-        let atomic = remaining_queries.clone();
-        let callback = callback.clone();
-
-        let on_applied = move |ctx: &SubscriptionEventContext| {
-            let count = atomic.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
-            if count == 1 {
-                // Only execute callback when the last subscription completes
-                if let Some(cb) = callback.lock().unwrap().take() {
-                    cb(ctx);
-                }
-            }
-        };
-
-        ctx.subscription_builder()
-            .on_applied(on_applied)
-            .on_error(|_ctx, error| panic!("Subscription errored: {:?}", error))
-            .subscribe(query);
-    }
+    ctx.subscription_builder()
+        .on_applied(callback)
+        .on_error(|_ctx, error| panic!("Subscription errored: {:?}", error))
+        .subscribe(SUBSCRIBE_ALL);
 }
 
 fn exec_subscribe_and_cancel() {

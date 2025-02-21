@@ -1,7 +1,6 @@
 #![allow(clippy::disallowed_macros)]
-mod module_bindings;
-use std::sync::{atomic::AtomicU8, Arc};
 
+mod module_bindings;
 use module_bindings::*;
 
 use spacetimedb_client_api_messages::websocket::Compression;
@@ -171,27 +170,11 @@ fn connect_to_db() -> DbConnection {
         .expect("Failed to connect")
 }
 
-// # Subscribe to queries
-fn subscribe_to_queries(ctx: &DbConnection, queries: &[&str], callback: fn(&SubscriptionEventContext)) {
-    if queries.is_empty() {
-        panic!("No queries to subscribe to.");
-    }
-    let remaining_queries = Arc::new(AtomicU8::new(queries.len() as u8));
-    for query in queries {
-        let remaining_queries = remaining_queries.clone();
-        ctx.subscription_builder()
-            .on_applied(move |ctx| {
-                if remaining_queries.fetch_sub(1, std::sync::atomic::Ordering::Relaxed) == 1 {
-                    callback(ctx);
-                }
-            })
-            .subscribe(query);
-    }
-}
-
 /// Register subscriptions for all rows of both tables.
 fn subscribe_to_tables(ctx: &DbConnection) {
-    subscribe_to_queries(ctx, &["SELECT * FROM user", "SELECT * FROM message"], on_sub_applied);
+    ctx.subscription_builder()
+        .on_applied(on_sub_applied)
+        .subscribe(["SELECT * FROM user", "SELECT * FROM message"]);
 }
 
 // # Handle user input
