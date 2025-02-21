@@ -202,7 +202,10 @@ namespace SpacetimeDB
 
         struct ProcessedDatabaseUpdate
         {
-            // the following dictionaries are DISJOINT.
+            // Map: table handles -> (primary key -> DbValue).
+            // If a particular table has no primary key, the "primary key" is just a byte[]
+            // storing the BSATN encoding of the row.
+            // See Decode(...).
             public Dictionary<IRemoteTableHandle, MultiDictionaryDelta<object, DbValue>> Updates;
 
             // Can't override the default constructor. Make sure you use this one!
@@ -217,6 +220,8 @@ namespace SpacetimeDB
             {
                 if (!Updates.TryGetValue(table, out var delta))
                 {
+                    // Make sure we use GenericEqualityComparer here, since it handles byte[]s and arbitrary primary key types
+                    // correctly.
                     delta = new MultiDictionaryDelta<object, DbValue>(GenericEqualityComparer.Instance, DbValueComparer.Instance);
                     Updates[table] = delta;
                 }

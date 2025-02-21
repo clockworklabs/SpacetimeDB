@@ -307,7 +307,12 @@ namespace SpacetimeDB
     }
 
     /// <summary>
-    /// Compare objects for equality. If they are byte arrays, use Internal.ByteArrayComparer.
+    /// EqualityComparer used to compare primary keys.
+    /// 
+    /// If the primary keys are byte arrays (i.e. if the table has no primary key), uses Internal.ByteArrayComparer.
+    /// Otherwise, falls back to .Equals().
+    /// 
+    /// TODO: we should test that this works for all of our supported primary key types.
     /// </summary>
     internal readonly struct GenericEqualityComparer : IEqualityComparer<object>
     {
