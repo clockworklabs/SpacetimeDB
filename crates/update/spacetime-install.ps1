@@ -8,7 +8,6 @@ function Install {
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
     $DownloadUrl = "https://github.com/clockworklabs/SpacetimeDB/releases/latest/download/spacetimedb-update-x86_64-pc-windows-msvc.exe"
-    $DownloadUrl = "http://localhost:8000/spacetimedb-update-x86_64-pc-windows-msvc.exe"
     Write-Output "Downloading installer..."
 
     function UpdatePathIfNotExists {
