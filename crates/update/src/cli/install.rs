@@ -63,9 +63,9 @@ pub(super) async fn download_and_install(
     pb.enable_steady_tick(std::time::Duration::from_millis(60));
 
     pb.set_message("Resolving version...");
-    let url = "http://localhost";
+    let url = "http://192.168.2.100";
     let release_version = "1.0.0".parse::<semver::Version>().unwrap(); 
-    let download_url = format!("http://localhost/{}", download_name);
+    let download_url = format!("http://192.168.2.100/{}", download_name);
 
     pb.set_style(ProgressStyle::with_template("{spinner} {prefix}{msg} {bytes}/{total_bytes} ({eta})").unwrap());
     pb.set_prefix(format!("Installing v1.0.0: "));
