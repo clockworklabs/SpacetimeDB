@@ -5050,7 +5050,6 @@ dependencies = [
  "bytes",
  "bytestring",
  "chrono",
- "clap 4.5.20",
  "criterion",
  "crossbeam-channel",
  "derive_more",
