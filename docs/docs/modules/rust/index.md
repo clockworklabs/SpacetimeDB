@@ -201,7 +201,7 @@ struct Item {
 
 Note that reducers can call non-reducer functions, including standard library functions.
 
-There are several macros which modify the semantics of a column, which are applied to the members of the table struct. `#[primary_key]`, `#[unique]` and `#[autoinc]` are covered below, describing how those attributes affect the semantics of inserting, filtering, and so on.
+There are several macros which modify the semantics of a column, which are applied to the members of the table struct. `#[primary_key]`, `#[unique]` and `#[auto_inc]` are covered below, describing how those attributes affect the semantics of inserting, filtering, and so on.
 
 #[SpacetimeType]
 
@@ -226,7 +226,7 @@ The `scheduled` attribute adds a couple of default fields and expands as follows
  struct SendMessageTimer {
     text: String,   // original field
     #[primary_key]
-    #[autoinc]
+    #[auto_inc]
     scheduled_id: u64, // identifier for internal purpose
     scheduled_at: ScheduleAt, //schedule details
 }
@@ -343,7 +343,7 @@ Only integer types can be `#[unique]`: `u8`, `u16`, `u32`, `u64`, `u128`, `i8`, 
 ```rust
 #[table(name = autoinc, public)]
 struct Autoinc {
-    #[autoinc]
+    #[auto_inc]
     autoinc_field: u64,
 }
 ```
@@ -353,7 +353,7 @@ These attributes can be combined, to create an automatically assigned ID usable 
 ```rust
 #[table(name = identity, public)]
 struct Identity {
-    #[autoinc]
+    #[auto_inc]
     #[unique]
     id_field: u64,
 }
@@ -391,7 +391,7 @@ fn insert_unique(ctx: &ReducerContext, value: u64) {
 }
 ```
 
-When inserting a table with an `#[autoinc]` column, the database will automatically overwrite whatever we give it with an atomically increasing value.
+When inserting a table with an `#[auto_inc]` column, the database will automatically overwrite whatever we give it with an atomically increasing value.
 
 The returned row has the `autoinc` column set to the value that was actually written into the database.
 
