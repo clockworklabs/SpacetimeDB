@@ -846,6 +846,13 @@ public static partial class Module
     }
 
     [SpacetimeDB.Reducer]
+    public static void insert_unique_u32_update_pk_u32(ReducerContext ctx, uint n, int d_unique, int d_pk)
+    {
+        ctx.Db.unique_u32.Insert(new UniqueU32 { n = n, data = d_unique });
+        ctx.Db.pk_u32.n.Update(new PkU32 { n = n, data = d_pk });
+    }
+
+    [SpacetimeDB.Reducer]
     public static void update_unique_u32(ReducerContext ctx, uint n, int data)
     {
         var key = n;
@@ -1288,6 +1295,40 @@ public static partial class Module
     public static void delete_pk_u32(ReducerContext ctx, uint n)
     {
         ctx.Db.pk_u32.n.Delete(n);
+    }
+
+    [SpacetimeDB.Table(Name = "pk_u32_two", Public = true)]
+    public partial struct PkU32Two
+    {
+        [SpacetimeDB.PrimaryKey]
+        public uint n;
+        public int data;
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void delete_pk_u32_insert_pk_u32_two(ReducerContext ctx, uint n, int data)
+    {
+        ctx.Db.pk_u32_two.Insert(new PkU32Two { n = n, data = data });
+        ctx.Db.pk_u32.Delete(new PkU32 { n = n, data = data });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void insert_pk_u32_two(ReducerContext ctx, uint n, int data)
+    {
+        ctx.Db.pk_u32_two.Insert(new PkU32Two { n = n, data = data });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void update_pk_u32_two(ReducerContext ctx, uint n, int data)
+    {
+        var key = n;
+        ctx.Db.pk_u32_two.n.Update(new PkU32Two { n = n, data = data });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void delete_pk_u32_two(ReducerContext ctx, uint n)
+    {
+        ctx.Db.pk_u32_two.n.Delete(n);
     }
 
     [SpacetimeDB.Table(Name = "pk_u64", Public = true)]
