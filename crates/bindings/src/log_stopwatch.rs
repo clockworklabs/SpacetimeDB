@@ -1,3 +1,4 @@
+/// TODO(this PR): docs
 pub struct LogStopwatch {
     stopwatch_id: u32,
 }

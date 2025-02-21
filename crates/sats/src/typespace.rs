@@ -202,9 +202,9 @@ impl Typespace {
     /// See also the `spacetimedb_schema` crate, which layers additional validation on top
     /// of these checks.
     ///
-    /// All types in the typespace must either be
-    /// [`valid_for_client_type_definition`](AlgebraicType::valid_for_client_type_definition) or
-    /// [`valid_for_client_type_use`](AlgebraicType::valid_for_client_type_use).
+    /// All types in the typespace must either satisfy
+    /// [`is_valid_for_client_type_definition`](AlgebraicType::is_valid_for_client_type_definition) or
+    /// [`is_valid_for_client_type_use`](AlgebraicType::is_valid_for_client_type_use).
     /// (Only the types that are `valid_for_client_type_definition` will have types generated in
     /// the client, but the other types are allowed for the convenience of module binding codegen.)
     pub fn is_valid_for_client_code_generation(&self) -> bool {
@@ -232,14 +232,83 @@ pub trait GroundSpacetimeType {
     fn get_type() -> AlgebraicType;
 }
 
-/// A trait for Rust types that can be represented as an [`AlgebraicType`]
-/// provided a typing context `typespace`.
+/// This trait makes types self-describing, allowing them to automatically register their structure
+/// with SpacetimeDB. This is used to tell SpacetimeDB about the structure of a module's tables and
+/// reducers.
+///
+/// Deriving this trait also derives [`Serialize`](crate::ser::Serialize), [`Deserialize`](crate::de::Deserialize),
+/// and [`Debug`](std::fmt::Debug). (There are currently no trait bounds on `SpacetimeType` documenting this fact.)
+/// `Serialize` and `Deserialize` are used to convert Rust data structures to other formats, suitable for storing on disk or passing over the network. `Debug` is simply for debugging convenience.
+///
+/// Any Rust type implementing `SpacetimeType` can be used as a table column or reducer argument. A derive macro is provided, and can be used on both structs and enums:
+///
+/// ```rust
+/// # use spacetimedb_sats::SpacetimeType;
+///
+/// #[derive(SpacetimeType)]
+/// # #[sats(crate = spacetimedb_sats)]
+/// struct Location {
+///     x: u64,
+///     y: u64
+/// }
+///
+/// #[derive(SpacetimeType)]
+/// # #[sats(crate = spacetimedb_sats)]
+/// struct PlasticCrate {
+///     count: u32,
+/// }
+///
+/// #[derive(SpacetimeType)]
+/// # #[sats(crate = spacetimedb_sats)]
+/// struct AppleCrate {
+///     variety: String,
+///     count: u32,
+///     freshness: u32,
+/// }
+///
+/// #[derive(SpacetimeType)]
+/// # #[sats(crate = spacetimedb_sats)]
+/// enum FruitCrate {
+///     Apples(AppleCrate),
+///     Plastic(PlasticCrate),
+/// }
+/// ```
+///
+/// The fields of the struct/enum must also implement `SpacetimeType`.
+///
+/// Any type annotated with `#[table(..)]` automatically derives `SpacetimeType`.
+///
+/// SpacetimeType is implemented for many of the primitive types in the standard library:
+///
+/// - `bool`
+/// - `u8`, `u16`, `u32`, `u64`, `u128`
+/// - `i8`, `i16`, `i32`, `i64`, `i128`
+/// - `f32`, `f64`
+///
+/// And common data structures:
+///
+/// - `String` and `&str`, utf-8 string data
+/// - `()`, the unit type
+/// - `Option<T> where T: SpacetimeType`
+/// - `Vec<T> where T: SpacetimeType`
+///
+/// (Storing collections in rows of a database table is a form of [denormalization](https://en.wikipedia.org/wiki/Denormalization).)
+///
+/// Do not manually implement this trait unless you are VERY sure you know what you're doing.
+/// Implementations must be consistent with `Deerialize<'de> for T`, `Serialize for T` and `Serialize, Deserialize for AlgebraicValue`.
+/// Implementations that are inconsistent across these traits may result in data loss.
+///
+/// N.B.: It's `SpacetimeType`, not `SpaceTimeType`.
 // TODO: we might want to have a note about what to do if you're trying to use a type from another crate in your table.
 // keep this note in sync with the ones on spacetimedb::rt::{ReducerArg, TableColumn}
 #[diagnostic::on_unimplemented(note = "if you own the type, try adding `#[derive(SpacetimeType)]` to its definition")]
 pub trait SpacetimeType {
     /// Returns an `AlgebraicType` representing the type for `Self` in SATS
-    /// and in the typing context in `typespace`.
+    /// and in the typing context in `typespace`. This is used by the
+    /// automatic type registration system in Rust modules.
+    ///
+    /// The resulting `AlgebraicType` may contain `Ref`s that only make sense
+    /// within the context of this particular `typespace`.
     fn make_type<S: TypespaceBuilder>(typespace: &mut S) -> AlgebraicType;
 }
 

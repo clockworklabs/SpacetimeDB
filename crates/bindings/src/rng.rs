@@ -27,17 +27,20 @@ impl ReducerContext {
     ///
     /// # Examples
     ///
-    /// ```
-    /// # #[spacetimedb::reducer]
-    /// # fn rng_demo(ctx: &spacetimedb::ReducerContext) {
+    /// ```no_run
+    /// # #[cfg(target_arch = "wasm32")] mod demo {
+    /// use spacetimedb::{reducer, ReducerContext};
     /// use rand::Rng;
     ///
-    /// // Can be used in method chaining style:
-    /// let digit = ctx.rng().gen_range(0..=9);
+    /// #[spacetimedb::reducer]
+    /// fn rng_demo(ctx: &spacetimedb::ReducerContext) {
+    ///     // Can be used in method chaining style:
+    ///     let digit = ctx.rng().gen_range(0..=9);
     ///
-    /// // Or, cache locally for reuse:
-    /// let mut rng = ctx.rng();
-    /// let floats: Vec<f32> = rng.sample_iter(rand::distributions::Standard).collect();
+    ///     // Or, cache locally for reuse:
+    ///     let mut rng = ctx.rng();
+    ///     let floats: Vec<f32> = rng.sample_iter(rand::distributions::Standard).collect();
+    /// }
     /// # }
     /// ```
     ///
