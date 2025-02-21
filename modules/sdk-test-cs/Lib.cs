@@ -1308,20 +1308,20 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_pk_u32_two(ReducerContext ctx, uint n, int data)
     {
-        ctx.Db.pk_u32.Insert(new PkU32Two { n = n, data = data });
+        ctx.Db.pk_u32_two.Insert(new PkU32Two { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
     public static void update_pk_u32_two(ReducerContext ctx, uint n, int data)
     {
         var key = n;
-        ctx.Db.pk_u32.n.Update(new PkU32Two { n = n, data = data });
+        ctx.Db.pk_u32_two.n.Update(new PkU32Two { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
     public static void delete_pk_u32_two(ReducerContext ctx, uint n)
     {
-        ctx.Db.pk_u32.n.Delete(n);
+        ctx.Db.pk_u32_two.n.Delete(n);
     }
 
     [SpacetimeDB.Table(Name = "pk_u64", Public = true)]
