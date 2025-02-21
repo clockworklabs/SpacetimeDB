@@ -7,6 +7,7 @@ use crate::db_connection::{PendingMutation, SharedCell};
 use crate::spacetime_module::{InModule, SpacetimeModule, TableUpdate, WithBsatn};
 use anymap::{any::Any, Map};
 use bytes::Bytes;
+use core::any::type_name;
 use core::hash::Hash;
 use futures_channel::mpsc;
 use spacetimedb_data_structures::map::{DefaultHashBuilder, Entry, HashCollectionExt, HashMap};
@@ -173,7 +174,12 @@ impl<'r, Row> TableAppliedDiff<'r, Row> {
 }
 
 impl<Row: Clone + Send + Sync + 'static> TableCache<Row> {
-    fn handle_delete<'r>(&mut self, events: &mut RowEventMap<'r, Row>, delete: &'r WithBsatn<Row>) {
+    fn handle_delete<'r>(
+        &mut self,
+        inserts: &mut RowEventMap<'_, Row>,
+        deletes: &mut RowEventMap<'r, Row>,
+        delete: &'r WithBsatn<Row>,
+    ) {
         // Extract the entry and decrement the `ref_count`.
         // Only create a delete event if `ref_count = 0`.
         let Entry::Occupied(mut entry) = self.entries.entry(delete.bsatn.clone()) else {
@@ -183,16 +189,28 @@ impl<Row: Clone + Send + Sync + 'static> TableCache<Row> {
         *ref_count -= 1;
         if *ref_count == 0 {
             entry.remove();
-            events.insert(&delete.bsatn, &delete.row);
+            deletes.insert(&delete.bsatn, &delete.row);
+
+            // While one might think the host never sends us a delete-insert pair for the same row `r0`,
+            // it actually may, given the right joins.
+            //
+            // For example, consider three tables `r`, `s`, and `t`.
+            // Let's suppose the client has subscribed to `r ⋉ s` and `r ⋉ t`:
+            // ```sql
+            // SELECT r.* FROM r JOIN s ON r.id = s.id;
+            // SELECT r.* FROM r JOIN t ON r.id = t.id;
+            // ```
+            //
+            // A transaction then:
+            // - deletes a row `t0` which results in `delete r0` being sent.
+            // - inserts a row `s0` which results in `insert r0` being sent.
+            //
+            // That is, we end up with `[delete r0, insert r0]`.
+            inserts.remove(&*delete.bsatn);
         }
     }
 
-    fn handle_insert<'r>(
-        &mut self,
-        deletes: &mut RowEventMap<'_, Row>,
-        inserts: &mut RowEventMap<'r, Row>,
-        insert: &'r WithBsatn<Row>,
-    ) {
+    fn handle_insert<'r>(&mut self, inserts: &mut RowEventMap<'r, Row>, insert: &'r WithBsatn<Row>) {
         let entry = self.entries.entry(insert.bsatn.clone());
         let entry = entry.or_insert_with(|| {
             // First time inserting this row, so let's add an insertion event.
@@ -203,23 +221,6 @@ impl<Row: Clone + Send + Sync + 'static> TableCache<Row> {
             }
         });
         entry.ref_count += 1;
-
-        // While one might think the host never sends us a delete-insert pair for the same row `r0`,
-        // it actually may, given the right joins.
-        //
-        // For example, consider three tables `r`, `s`, and `t`.
-        // Let's suppose the client has subscribed to `r ⋉ s` and `r ⋉ t`:
-        // ```sql
-        // SELECT r.* FROM r JOIN s ON r.id = s.id;
-        // SELECT r.* FROM r JOIN t ON r.id = t.id;
-        // ```
-        //
-        // A transaction then:
-        // - deletes a row `t0` which results in `delete r0` being sent.
-        // - inserts a row `s0` which results in `insert r0` being sent.
-        //
-        // That is, we end up with `[delete r0, insert r0]`.
-        deletes.remove(&*insert.bsatn);
     }
 
     /// Apply all the deletes and inserts recorded in `diff`.
@@ -231,16 +232,16 @@ impl<Row: Clone + Send + Sync + 'static> TableCache<Row> {
     /// The caller should use [`TableAppliedDiff::with_updates_by_pk`] to merge delete/insert pairs
     /// and populate the `update_*` fields.
     fn apply_diff<'r>(&mut self, diff: &'r TableUpdate<Row>) -> TableAppliedDiff<'r, Row> {
-        // Apply all deletes and collect all `ref_count -> 0` events.
-        let mut delete_events = <_>::default();
-        for delete in &diff.deletes {
-            self.handle_delete(&mut delete_events, delete);
-        }
-
         // Apply all inserts and collect all `ref_count: 0 -> 1` events.
         let mut insert_events = <_>::default();
         for insert in &diff.inserts {
-            self.handle_insert(&mut delete_events, &mut insert_events, insert);
+            self.handle_insert(&mut insert_events, insert);
+        }
+
+        // Apply all deletes and collect all `ref_count -> 0` events.
+        let mut delete_events = <_>::default();
+        for delete in &diff.deletes {
+            self.handle_delete(&mut insert_events, &mut delete_events, delete);
         }
 
         // Update indices.
@@ -575,8 +576,9 @@ where
         let col = (self.get_unique_col)(&row).clone();
         if let Some(prev_row) = self.rows.insert(col, row) {
             panic!(
-                "Duplicated entry in unique index at key {:?}",
-                (self.get_unique_col)(&prev_row)
+                "Duplicated entry in unique index at key {:?}, for type {}",
+                (self.get_unique_col)(&prev_row),
+                type_name::<Row>()
             );
         }
     }

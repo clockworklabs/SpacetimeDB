@@ -1297,6 +1297,33 @@ public static partial class Module
         ctx.Db.pk_u32.n.Delete(n);
     }
 
+    [SpacetimeDB.Table(Name = "pk_u32_two", Public = true)]
+    public partial struct PkU32Two
+    {
+        [SpacetimeDB.PrimaryKey]
+        public uint n;
+        public int data;
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void insert_pk_u32_two(ReducerContext ctx, uint n, int data)
+    {
+        ctx.Db.pk_u32.Insert(new PkU32Two { n = n, data = data });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void update_pk_u32_two(ReducerContext ctx, uint n, int data)
+    {
+        var key = n;
+        ctx.Db.pk_u32.n.Update(new PkU32Two { n = n, data = data });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void delete_pk_u32_two(ReducerContext ctx, uint n)
+    {
+        ctx.Db.pk_u32.n.Delete(n);
+    }
+
     [SpacetimeDB.Table(Name = "pk_u64", Public = true)]
     public partial struct PkU64
     {

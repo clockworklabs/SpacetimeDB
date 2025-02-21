@@ -210,6 +210,11 @@ macro_rules! declare_tests_with_suffix {
             fn row_deduplication_join_r_and_s() {
                 make_test("row-deduplication-join-r-and-s").run();
             }
+
+            #[test]
+            fn row_deduplication_r_join_s_and_r_join_t8() {
+                make_test("row-deduplication-r-join-s-and-r-joint").run();
+            }
         }
     };
 }

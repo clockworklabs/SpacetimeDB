@@ -459,6 +459,12 @@ define_tables! {
         delete_by delete_pk_u32 = delete_by_n(n: u32),
     } #[primary_key] n u32, data i32;
 
+    PkU32Two {
+        insert_or_panic insert_pk_u32_two,
+        update_by update_pk_u32_two = update_by_n(n),
+        delete_by delete_pk_u32_two = delete_by_n(n: u32),
+    } #[primary_key] n u32, data i32;
+
     PkU64 {
         insert_or_panic insert_pk_u64,
         update_by update_pk_u64 = update_by_n(n),
@@ -545,6 +551,18 @@ define_tables! {
 fn insert_unique_u32_update_pk_u32(ctx: &ReducerContext, n: u32, d_unique: i32, d_pk: i32) -> anyhow::Result<()> {
     ctx.db.unique_u32().insert(UniqueU32 { n, data: d_unique });
     ctx.db.pk_u32().n().update(PkU32 { n, data: d_pk });
+    Ok(())
+}
+
+/// The purpose of this reducer is for a test with two separate semijoin queries
+/// - `UniqueU32` to `PkU32`
+/// - `UniqueU32` to `PkU32Two`
+///
+/// for the purposes of behavior testing row-deduplication.
+#[spacetimedb::reducer]
+fn delete_pk_u32_insert_pk_u32_two(ctx: &ReducerContext, n: u32, data: i32) -> anyhow::Result<()> {
+    ctx.db.pk_u32_two().insert(PkU32Two { n, data });
+    ctx.db.pk_u32().delete(PkU32 { n, data });
     Ok(())
 }
 

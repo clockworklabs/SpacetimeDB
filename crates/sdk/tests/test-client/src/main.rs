@@ -3,6 +3,7 @@
 mod module_bindings;
 
 use core::fmt::Display;
+use core::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use module_bindings::*;
@@ -119,6 +120,7 @@ fn main() {
         }
         "row-deduplication" => exec_row_deduplication(),
         "row-deduplication-join-r-and-s" => exec_row_deduplication_join_r_and_s(),
+        "row-deduplication-r-join-s-and-r-joint" => exec_row_deduplication_r_join_s_and_r_join_t(),
         _ => panic!("Unknown test: {}", test),
     }
 }
@@ -2025,4 +2027,61 @@ fn exec_row_deduplication_join_r_and_s() {
     });
 
     test_counter.wait_for_all();
+}
+
+fn exec_row_deduplication_r_join_s_and_r_join_t() {
+    let test_counter: Arc<TestCounter> = TestCounter::new();
+
+    let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
+
+    let mut pk_u32_on_insert_result = Some(test_counter.add_test("pk_u32_on_insert"));
+    let mut pk_u32_on_delete_result = Some(test_counter.add_test("pk_u32_on_delete"));
+    let mut pk_u32_two_on_insert_result = Some(test_counter.add_test("pk_u32_two_on_insert"));
+
+    let count_unique_u32_on_insert = Arc::new(AtomicUsize::new(0));
+    let count_unique_u32_on_insert_dup = count_unique_u32_on_insert.clone();
+
+    connect_then(&test_counter, {
+        move |ctx| {
+            let queries = [
+                "SELECT * FROM pk_u32;",
+                "SELECT * FROM pk_u32_two;",
+                "SELECT unique_u32.* FROM unique_u32 JOIN pk_u32 ON unique_u32.n = pk_u32.n;",
+                "SELECT unique_u32.* FROM unique_u32 JOIN pk_u32_two ON unique_u32.n = pk_u32_two.n;",
+            ];
+
+            const KEY: u32 = 42;
+            const DATA: i32 = 0xbeef;
+
+            UniqueU32::insert(ctx, KEY, DATA);
+
+            subscribe_these_then(ctx, &queries, move |ctx| {
+                PkU32::insert(ctx, KEY, DATA);
+                sub_applied_nothing_result(assert_all_tables_empty(ctx));
+            });
+            PkU32::on_insert(ctx, move |ctx, val| {
+                assert_eq!(val, &PkU32 { n: KEY, data: DATA });
+                put_result(&mut pk_u32_on_insert_result, Ok(()));
+                ctx.reducers.delete_pk_u_32_insert_pk_u_32_two(KEY, DATA).unwrap();
+            });
+            PkU32Two::on_insert(ctx, move |ctx, val| {
+                assert_eq!(val, &PkU32Two { n: KEY, data: DATA });
+                put_result(&mut pk_u32_two_on_insert_result, Ok(()));
+                ctx.reducers.delete_pk_u_32_insert_pk_u_32_two(KEY, DATA).unwrap();
+            });
+            PkU32::on_delete(ctx, move |_, val| {
+                assert_eq!(val, &PkU32 { n: KEY, data: DATA });
+                put_result(&mut pk_u32_on_delete_result, Ok(()));
+            });
+            UniqueU32::on_insert(ctx, move |_, _| {
+                count_unique_u32_on_insert_dup.fetch_add(1, Ordering::SeqCst);
+            });
+            UniqueU32::on_delete(ctx, move |_, _| panic!());
+            PkU32Two::on_delete(ctx, move |_, _| panic!());
+        }
+    });
+
+    test_counter.wait_for_all();
+
+    assert_eq!(count_unique_u32_on_insert.load(Ordering::SeqCst), 1);
 }
