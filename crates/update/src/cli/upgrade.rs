@@ -1,7 +1,6 @@
 use std::io::Write;
 
 use anyhow::Context;
-use bytes::Buf;
 use spacetimedb_paths::SpacetimePaths;
 
 use super::install::{download_and_install, download_with_progress, make_progress_bar};
@@ -26,23 +25,16 @@ impl Upgrade {
                     pb.set_message("installing...");
                     let cli_bin_file = paths.cli_bin_file.clone();
                     tokio::task::spawn_blocking(move || {
+                        // TODO(noa): try and see if `self_replace` could support providing the binary
+                        // in a buffer, instead of an already existing file, since we're doing the same
+                        // work they are right now
                         let mut file = tempfile::NamedTempFile::with_prefix_in(
-                            ".spacetimedb-update-tmp",
+                            ".spacetimedb-self-replace",
                             cli_bin_file.0.parent().unwrap(),
                         )?;
-                        #[cfg(unix)]
-                        file.as_file_mut()
-                            .set_permissions(std::os::unix::fs::PermissionsExt::from_mode(0o755))?;
-                        // TODO(noa): write_all_vectored once stabilized
-                        let mut bin = bin.aggregate();
-                        while bin.has_remaining() {
-                            let chunk = bin.chunk();
-                            file.write_all(chunk)?;
-                            bin.advance(chunk.len());
-                        }
-                        file.persist(cli_bin_file)
-                            .map_err(|e| e.error)
-                            .context("failed to overwrite existing spacetime binary")
+                        file.write_all(&bin.to_bytes())?;
+                        self_replace::self_replace(file.path())
+                            .context("failed to overwrite the original spacetime binary")
                     })
                     .await??;
 
