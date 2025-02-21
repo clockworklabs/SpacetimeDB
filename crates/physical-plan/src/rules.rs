@@ -920,7 +920,7 @@ impl RewriteRule for ReorderHashJoin {
                     rhs: join.lhs,
                     lhs_field: join.rhs_field,
                     rhs_field: join.lhs_field,
-                    unique: false,
+                    unique: join.unique,
                 },
                 Semi::All,
             )),
@@ -969,7 +969,9 @@ impl RewriteRule for ReorderDeltaJoinRhs {
                 HashJoin {
                     lhs: join.rhs,
                     rhs: join.lhs,
-                    ..join
+                    lhs_field: join.rhs_field,
+                    rhs_field: join.lhs_field,
+                    unique: join.unique,
                 },
                 Semi::All,
             )),

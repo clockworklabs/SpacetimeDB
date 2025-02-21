@@ -352,6 +352,25 @@ mod tests {
     }
 
     #[test]
+    fn test_compile_incr_plan() -> ResultTest<()> {
+        let db = TestDB::durable()?;
+
+        let schema = &[("n", AlgebraicType::U64), ("data", AlgebraicType::U64)];
+        let indexes = &[0.into()];
+        db.create_table_for_test("a", schema, indexes)?;
+
+        let schema = &[("n", AlgebraicType::U64), ("data", AlgebraicType::U64)];
+        let indexes = &[0.into()];
+        db.create_table_for_test("b", schema, indexes)?;
+
+        let tx = db.begin_tx(Workload::ForTests);
+        let sql = "SELECT b.* FROM b JOIN a ON b.n = a.n WHERE b.data > 200";
+        let result = compile_read_only_query(&AuthCtx::for_testing(), &tx, sql);
+        assert!(result.is_ok());
+        Ok(())
+    }
+
+    #[test]
     fn test_eval_incr_for_index_scan() -> ResultTest<()> {
         let db = TestDB::durable()?;
 
