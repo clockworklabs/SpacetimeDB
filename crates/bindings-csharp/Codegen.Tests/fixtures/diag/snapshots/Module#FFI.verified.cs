@@ -707,8 +707,7 @@ namespace SpacetimeDB
                 >
             {
                 internal IdCorrectTypeUniqueIndex()
-                    : base("TestScheduleWithWrongScheduleAtType_IdCorrectType_idx_btree")
-                { }
+                    : base("TestScheduleWithWrongScheduleAtType_IdCorrectType_idx_btree") { }
 
                 // Important: don't move this to the base class.
                 // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
