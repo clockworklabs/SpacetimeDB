@@ -43,7 +43,7 @@ const nav = {
         page('`/database`', 'http/database', 'http/database.md'),
         page('`/energy`', 'http/energy', 'http/energy.md'),
         section('Data Format'),
-        page('SATN', 'satn', 'satn.md'),
+        page('SATS-JSON', 'sats-json', 'sats-json.md'),
         page('BSATN', 'bsatn', 'bsatn.md'),
         section('SQL'),
         page('SQL Reference', 'sql', 'sql/index.md'),

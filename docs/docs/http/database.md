@@ -271,7 +271,7 @@ For more information about WebSocket headers, see [RFC 6455](https://datatracker
 The SpacetimeDB binary WebSocket protocol, `v1.bin.spacetimedb`, encodes messages as well as reducer and row data using [BSATN](/docs/bsatn).
 Its messages are defined [here](https://github.com/clockworklabs/SpacetimeDB/blob/master/crates/client-api-messages/src/websocket.rs).
 
-The SpacetimeDB text WebSocket protocol, `v1.text.spacetimedb`, encodes messages according to the [SATN JSON format](/docs/satn).
+The SpacetimeDB text WebSocket protocol, `v1.text.spacetimedb`, encodes messages according to the [SATS-JSON format](/docs/sats-json).
 
 #### Optional Headers
 
@@ -414,9 +414,9 @@ The `"entities"` will be an object whose keys are table and reducer names, and w
 | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `arity`      | For tables, the number of colums; for reducers, the number of arguments.                                                                                    |
 | `type`       | For tables, `"table"`; for reducers, `"reducer"`.                                                                                                           |
-| `schema`     | A [JSON-encoded `ProductType`](/docs/satn); for tables, the table schema; for reducers, the argument schema. Only present if `expand` is supplied and true. |
+| `schema`     | A [JSON-encoded `ProductType`](/docs/sats-json); for tables, the table schema; for reducers, the argument schema. Only present if `expand` is supplied and true. |
 
-The `"typespace"` will be a JSON array of [`AlgebraicType`s](/docs/satn) referenced by the module. This can be used to resolve `Ref` types within the schema; the type `{ "Ref": n }` refers to `response["typespace"][n]`.
+The `"typespace"` will be a JSON array of [`AlgebraicType`s](/docs/sats-json) referenced by the module. This can be used to resolve `Ref` types within the schema; the type `{ "Ref": n }` refers to `response["typespace"][n]`.
 
 ## `/database/schema/:name_or_address/:entity_type/:entity GET`
 
@@ -454,7 +454,7 @@ Returns a single entity in the same format as in the `"entities"` returned by [t
 | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `arity`  | For tables, the number of colums; for reducers, the number of arguments.                                                                                    |
 | `type`   | For tables, `"table"`; for reducers, `"reducer"`.                                                                                                           |
-| `schema` | A [JSON-encoded `ProductType`](/docs/satn); for tables, the table schema; for reducers, the argument schema. Only present if `expand` is supplied and true. |
+| `schema` | A [JSON-encoded `ProductType`](/docs/sats-json); for tables, the table schema; for reducers, the argument schema. Only present if `expand` is supplied and true. |
 
 ## `/database/info/:name_or_address GET`
 
@@ -548,6 +548,6 @@ Returns a JSON array of statement results, each of which takes the form:
 }
 ```
 
-The `schema` will be a [JSON-encoded `ProductType`](/docs/satn) describing the type of the returned rows.
+The `schema` will be a [JSON-encoded `ProductType`](/docs/sats-json) describing the type of the returned rows.
 
-The `rows` will be an array of [JSON-encoded `ProductValue`s](/docs/satn), each of which conforms to the `schema`.
+The `rows` will be an array of [JSON-encoded `ProductValue`s](/docs/sats-json), each of which conforms to the `schema`.

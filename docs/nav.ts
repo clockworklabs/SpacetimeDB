@@ -91,7 +91,7 @@ const nav: Nav = {
     page('`/energy`', 'http/energy', 'http/energy.md'),
 
     section('Data Format'),
-    page('SATN', 'satn', 'satn.md'),
+    page('SATS-JSON', 'sats-json', 'sats-json.md'),
     page('BSATN', 'bsatn', 'bsatn.md'),
 
     section('SQL'),
