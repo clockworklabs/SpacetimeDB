@@ -2064,10 +2064,9 @@ fn exec_row_deduplication_r_join_s_and_r_join_t() {
                 put_result(&mut pk_u32_on_insert_result, Ok(()));
                 ctx.reducers.delete_pk_u_32_insert_pk_u_32_two(KEY, DATA).unwrap();
             });
-            PkU32Two::on_insert(ctx, move |ctx, val| {
+            PkU32Two::on_insert(ctx, move |_, val| {
                 assert_eq!(val, &PkU32Two { n: KEY, data: DATA });
                 put_result(&mut pk_u32_two_on_insert_result, Ok(()));
-                ctx.reducers.delete_pk_u_32_insert_pk_u_32_two(KEY, DATA).unwrap();
             });
             PkU32::on_delete(ctx, move |_, val| {
                 assert_eq!(val, &PkU32 { n: KEY, data: DATA });
