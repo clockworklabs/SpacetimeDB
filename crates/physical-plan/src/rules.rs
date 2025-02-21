@@ -917,6 +917,7 @@ impl RewriteRule for ReorderHashJoin {
         }
     }
 
+    // Swaps both the inputs and the fields
     fn rewrite(plan: Self::Plan, _: Self::Info) -> Result<Self::Plan> {
         match plan {
             PhysicalPlan::HashJoin(join, Semi::All) => Ok(PhysicalPlan::HashJoin(
@@ -968,6 +969,7 @@ impl RewriteRule for ReorderDeltaJoinRhs {
         None
     }
 
+    // Swaps both the inputs and the fields
     fn rewrite(plan: Self::Plan, _: Self::Info) -> Result<Self::Plan> {
         match plan {
             PhysicalPlan::HashJoin(join, Semi::All) => Ok(PhysicalPlan::HashJoin(
