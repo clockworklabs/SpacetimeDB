@@ -103,7 +103,7 @@ mod tests {
 
     #[test]
     fn ensure_script_help_is_up_to_date() {
-        let help_text = SelfInstall::command().render_long_help().to_string();
+        let help_text = SelfInstall::command().term_width(80).render_long_help().to_string();
         let script = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/spacetime-install.sh")).unwrap();
         let (_, heredoc) = script
             .split_once("usage() {\n    cat <<EOF\n")
