@@ -25,16 +25,18 @@ pub const OPTION_NONE_TAG: &str = "none";
 /// Another name is [coproduct (category theory)](https://ncatlab.org/nlab/show/coproduct).
 ///
 /// These structures are known as sum types because the number of possible values a sum
-/// ```ignore
+/// ```text
 /// { N_0(T_0), N_1(T_1), ..., N_n(T_n) }
 /// ```
 /// is:
-/// ```ignore
+/// ```text
 /// Σ (i ∈ 0..n). values(T_i)
 /// ```
 /// so for example, `values({ A(U64), B(Bool) }) = values(U64) + values(Bool)`.
 ///
-/// See also: https://ncatlab.org/nlab/show/sum+type.
+/// See also:
+/// - <https://en.wikipedia.org/wiki/Tagged_union>
+/// - <https://ncatlab.org/nlab/show/sum+type>
 ///
 /// [structural]: https://en.wikipedia.org/wiki/Structural_type_system
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, SpacetimeType)]

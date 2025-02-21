@@ -1,8 +1,5 @@
-//! Operators are implemented as "alias" of functions that are loaded
-//! at the start of the [ProgramVm] creation, ie:
-//!
-//! `+` == std::math::add
-//!
+//! Operator support for the query macro.
+
 use derive_more::From;
 use spacetimedb_lib::de::Deserialize;
 use spacetimedb_lib::ser::Serialize;
