@@ -40,5 +40,5 @@ FROM env-${CARGO_PROFILE}
 EXPOSE 3000
 
 ENV RUST_BACKTRACE=1
-ENTRYPOINT ["spacetimedb-standalone", "--data-dir=/stdb/data", "--jwt-pub-key-path=/etc/spacetimedb/id_ecdsa.pub", "--jwt-priv-key-path=/etc/spacetimedb/id_ecdsa"]
-CMD ["start"]
+ENTRYPOINT ["spacetimedb-standalone"]
+CMD ["start", "--data-dir=/stdb/data", "--jwt-pub-key-path=/etc/spacetimedb/id_ecdsa.pub", "--jwt-priv-key-path=/etc/spacetimedb/id_ecdsa"]
