@@ -846,6 +846,13 @@ public static partial class Module
     }
 
     [SpacetimeDB.Reducer]
+    public static void insert_unique_u32_update_pk_u32(ReducerContext ctx, uint n, int d_unique, int d_pk)
+    {
+        ctx.Db.unique_u32.Insert(new UniqueU32 { n = n, data = d_unique });
+        ctx.Db.pk_u32.n.Update(new PkU32 { n = n, data = d_pk });
+    }
+
+    [SpacetimeDB.Reducer]
     public static void update_unique_u32(ReducerContext ctx, uint n, int data)
     {
         var key = n;

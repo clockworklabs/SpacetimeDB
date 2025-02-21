@@ -118,6 +118,7 @@ pub mod insert_unique_u_128_reducer;
 pub mod insert_unique_u_16_reducer;
 pub mod insert_unique_u_256_reducer;
 pub mod insert_unique_u_32_reducer;
+pub mod insert_unique_u_32_update_pk_u_32_reducer;
 pub mod insert_unique_u_64_reducer;
 pub mod insert_unique_u_8_reducer;
 pub mod insert_vec_bool_reducer;
@@ -577,6 +578,10 @@ pub use insert_unique_u_256_reducer::{
     insert_unique_u_256, set_flags_for_insert_unique_u_256, InsertUniqueU256CallbackId,
 };
 pub use insert_unique_u_32_reducer::{insert_unique_u_32, set_flags_for_insert_unique_u_32, InsertUniqueU32CallbackId};
+pub use insert_unique_u_32_update_pk_u_32_reducer::{
+    insert_unique_u_32_update_pk_u_32, set_flags_for_insert_unique_u_32_update_pk_u_32,
+    InsertUniqueU32UpdatePkU32CallbackId,
+};
 pub use insert_unique_u_64_reducer::{insert_unique_u_64, set_flags_for_insert_unique_u_64, InsertUniqueU64CallbackId};
 pub use insert_unique_u_8_reducer::{insert_unique_u_8, set_flags_for_insert_unique_u_8, InsertUniqueU8CallbackId};
 pub use insert_vec_bool_reducer::{insert_vec_bool, set_flags_for_insert_vec_bool, InsertVecBoolCallbackId};
@@ -1253,6 +1258,11 @@ pub enum Reducer {
         n: u32,
         data: i32,
     },
+    InsertUniqueU32UpdatePkU32 {
+        n: u32,
+        d_unique: i32,
+        d_pk: i32,
+    },
     InsertUniqueU64 {
         n: u64,
         data: i32,
@@ -1583,6 +1593,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::InsertUniqueU16 { .. } => "insert_unique_u16",
             Reducer::InsertUniqueU256 { .. } => "insert_unique_u256",
             Reducer::InsertUniqueU32 { .. } => "insert_unique_u32",
+            Reducer::InsertUniqueU32UpdatePkU32 { .. } => "insert_unique_u32_update_pk_u32",
             Reducer::InsertUniqueU64 { .. } => "insert_unique_u64",
             Reducer::InsertUniqueU8 { .. } => "insert_unique_u8",
             Reducer::InsertVecBool { .. } => "insert_vec_bool",
@@ -2227,6 +2238,10 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
                 )?
                 .into(),
             ),
+            "insert_unique_u32_update_pk_u32" => Ok(__sdk::parse_reducer_args::<
+                insert_unique_u_32_update_pk_u_32_reducer::InsertUniqueU32UpdatePkU32Args,
+            >("insert_unique_u32_update_pk_u32", &value.args)?
+            .into()),
             "insert_unique_u64" => Ok(
                 __sdk::parse_reducer_args::<insert_unique_u_64_reducer::InsertUniqueU64Args>(
                     "insert_unique_u64",

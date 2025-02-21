@@ -20,7 +20,7 @@ mod pk_test_table;
 use pk_test_table::{insert_update_delete_one, PkTestTable};
 
 mod unique_test_table;
-use unique_test_table::insert_then_delete_one;
+use unique_test_table::{insert_then_delete_one, UniqueTestTable};
 
 const LOCALHOST: &str = "http://localhost:3000";
 
@@ -118,6 +118,7 @@ fn main() {
             exec_caller_alice_receives_reducer_callback_but_not_bob()
         }
         "row-deduplication" => exec_row_deduplication(),
+        "row-deduplication-join-r-and-s" => exec_row_deduplication_join_r_and_s(),
         _ => panic!("Unknown test: {}", test),
     }
 }
@@ -1951,7 +1952,6 @@ fn exec_row_deduplication() {
                 x => unreachable!("only 24 and 42 were expected rows, got: `{x:?}`"),
             });
 
-            //ctx.reducers().on_insert_pk_u_32(|_, _, _| panic!());
             subscribe_these_then(ctx, &queries, move |ctx| {
                 PkU32::insert(ctx, 24, 0xbeef);
                 PkU32::insert(ctx, 42, 0xbeef);
@@ -1967,4 +1967,62 @@ fn exec_row_deduplication() {
     assert_eq!(table.count(), 1);
     assert_eq!(table.n().find(&24), None);
     assert_eq!(table.n().find(&42), Some(PkU32 { n: 42, data: 0xfeeb }));
+}
+
+fn exec_row_deduplication_join_r_and_s() {
+    let test_counter = TestCounter::new();
+
+    let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
+
+    let mut pk_u32_on_insert_result = Some(test_counter.add_test("pk_u32_on_insert"));
+    let mut pk_u32_on_update_result = Some(test_counter.add_test("pk_u32_on_update"));
+    let mut unique_u32_on_insert_result = Some(test_counter.add_test("unique_u32_on_insert"));
+
+    connect_then(&test_counter, {
+        move |ctx| {
+            let queries = [
+                "SELECT * FROM pk_u32;",
+                "SELECT unique_u32.* FROM unique_u32 JOIN pk_u32 ON unique_u32.n = pk_u32.n;",
+            ];
+
+            // These never happen. In the case of `PkU32` we get an update instead.
+            UniqueU32::on_delete(ctx, move |_, _| panic!("we never delete a `UniqueU32`"));
+            PkU32::on_delete(ctx, move |_, _| panic!("we never delete a `PkU32`"));
+
+            const KEY: u32 = 42;
+            const DU: i32 = 0xbeef;
+            const D1: i32 = 50;
+            const D2: i32 = 100;
+
+            // Here is where we start.
+            subscribe_these_then(ctx, &queries, move |ctx| {
+                PkU32::insert(ctx, KEY, D1);
+                sub_applied_nothing_result(assert_all_tables_empty(ctx));
+            });
+            // We first get an insert for `PkU32` from ^---
+            // and then update that row and insert into `UniqueU32` in ---------v.
+            PkU32::on_insert(ctx, move |ctx, val| {
+                assert_eq!(val.n, KEY);
+                assert_eq!(val.data, D1);
+                put_result(&mut pk_u32_on_insert_result, Ok(()));
+                ctx.reducers.insert_unique_u_32_update_pk_u_32(KEY, DU, D2).unwrap();
+            });
+            // This is caused by the reducer invocation ^-----
+            PkU32::on_update(ctx, move |_, old, new| {
+                assert_eq!(old.n, KEY);
+                assert_eq!(new.n, KEY);
+                assert_eq!(old.data, D1);
+                assert_eq!(new.data, D2);
+                put_result(&mut pk_u32_on_update_result, Ok(()));
+            });
+            // This is caused by the reducer invocation ^-----
+            UniqueU32::on_insert(ctx, move |_, val| {
+                assert_eq!(val.n, KEY);
+                assert_eq!(val.data, DU);
+                put_result(&mut unique_u32_on_insert_result, Ok(()));
+            });
+        }
+    });
+
+    test_counter.wait_for_all();
 }

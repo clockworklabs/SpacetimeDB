@@ -538,6 +538,16 @@ define_tables! {
     } #[primary_key] a ConnectionId, data i32;
 }
 
+/// The purpose of this reducer is for a test which
+/// left-semijoins `UniqueU32` to `PkU32`
+/// for the purposes of behavior testing row-deduplication.
+#[spacetimedb::reducer]
+fn insert_unique_u32_update_pk_u32(ctx: &ReducerContext, n: u32, d_unique: i32, d_pk: i32) -> anyhow::Result<()> {
+    ctx.db.unique_u32().insert(UniqueU32 { n, data: d_unique });
+    ctx.db.pk_u32().n().update(PkU32 { n, data: d_pk });
+    Ok(())
+}
+
 #[spacetimedb::reducer]
 fn insert_caller_one_identity(ctx: &ReducerContext) -> anyhow::Result<()> {
     ctx.db.one_identity().insert(OneIdentity { i: ctx.sender });
