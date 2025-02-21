@@ -1909,52 +1909,52 @@ fn exec_row_deduplication() {
 
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
+    let mut ins_24_result = Some(test_counter.add_test("ins_24"));
+    let mut ins_42_result = Some(test_counter.add_test("ins_42"));
+    let mut del_24_result = Some(test_counter.add_test("del_24"));
+    let mut upd_42_result = Some(test_counter.add_test("upd_42"));
+
     let conn = connect_then(&test_counter, {
-        let test_counter = test_counter.clone();
         move |ctx| {
             let queries = [
-                "SELECT * FROM pk_u32 WHERE pk_u32.n > 100;",
-                "SELECT * FROM pk_u32 WHERE pk_u32.n > 200;",
+                "SELECT * FROM pk_u32 WHERE pk_u32.n < 100;",
+                "SELECT * FROM pk_u32 WHERE pk_u32.n < 200;",
             ];
+
+            // The general approach in this test is that
+            // we expect at most a single `on_X` callback per row.
+            // If we receive duplicate callbacks,
+            // there's a problem with row deduplication and `put_result` will panic.
+            PkU32::on_insert(ctx, move |ctx, i| match i.n {
+                24 => {
+                    put_result(&mut ins_24_result, Ok(()));
+                    // Trigger the delete we expect.
+                    PkU32::delete(ctx, 24);
+                }
+                42 => {
+                    put_result(&mut ins_42_result, Ok(()));
+                    // Trigger the update we expect.
+                    PkU32::update(ctx, 42, 0xfeeb);
+                }
+                _ => unreachable!("only 24 and 42 were expected insertions"),
+            });
+
+            PkU32::on_delete(ctx, move |_, d| match d.n {
+                24 => put_result(&mut del_24_result, Ok(())),
+                42 => panic!("should not have received delete for 42, only update"),
+                x => unreachable!("only 24 and 42 were expected rows, got: {x}"),
+            });
+
+            PkU32::on_update(ctx, move |_, d, i| match (d.n, i.n, d.data, i.data) {
+                (24, 24, ..) => panic!("should not have received update for 24, only delete"),
+                (42, 42, 0xbeef, 0xfeeb) => put_result(&mut upd_42_result, Ok(())),
+                x => unreachable!("only 24 and 42 were expected rows, got: `{x:?}`"),
+            });
+
+            //ctx.reducers().on_insert_pk_u_32(|_, _, _| panic!());
             subscribe_these_then(ctx, &queries, move |ctx| {
-                // The general approach in this test is that
-                // we expect at most a single `on_X` callback per row.
-                // If we receive duplicate callbacks,
-                // there's a problem with row deduplication and `put_result` will panic.
-
-                let mut ins_24_result = Some(test_counter.add_test("ins_24"));
-                let mut ins_42_result = Some(test_counter.add_test("ins_42"));
-                PkU32::on_insert(ctx, move |ctx, i| match i.n {
-                    24 => {
-                        put_result(&mut ins_24_result, Ok(()));
-                        // Trigger the delete we expect.
-                        PkU32::delete(ctx, 24);
-                    }
-                    42 => {
-                        put_result(&mut ins_42_result, Ok(()));
-                        // Trigger the update we expect.
-                        PkU32::update(ctx, 24, 0xfeeb);
-                    }
-                    _ => unreachable!("only 24 and 42 were expected insertions"),
-                });
-
-                let mut del_24_result = Some(test_counter.add_test("del_24"));
-                PkU32::on_delete(ctx, move |_, d| match d.n {
-                    24 => put_result(&mut del_24_result, Ok(())),
-                    42 => panic!("should not have received delete for 42, only update"),
-                    x => unreachable!("only 24 and 42 were expected rows, got: {x}"),
-                });
-
-                let mut upd_42_result = Some(test_counter.add_test("upd_42"));
-                PkU32::on_update(ctx, move |_, d, i| match (d.n, i.n, d.data, i.data) {
-                    (24, 24, ..) => panic!("should not have received update for 24, only delete"),
-                    (42, 42, 0xbeef, 0xfeeb) => put_result(&mut upd_42_result, Ok(())),
-                    x => unreachable!("only 24 and 42 were expected rows, got: `{x:?}`"),
-                });
-
                 PkU32::insert(ctx, 24, 0xbeef);
                 PkU32::insert(ctx, 42, 0xbeef);
-
                 sub_applied_nothing_result(assert_all_tables_empty(ctx));
             });
         }
