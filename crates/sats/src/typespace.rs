@@ -246,20 +246,20 @@ pub trait GroundSpacetimeType {
 /// # use spacetimedb_sats::SpacetimeType;
 ///
 /// #[derive(SpacetimeType)]
-/// # #[sats(crate = crate)]
+/// # #[sats(crate = spacetimedb_sats)]
 /// struct Location {
 ///     x: u64,
 ///     y: u64
 /// }
 ///
 /// #[derive(SpacetimeType)]
-/// # #[sats(crate = crate)]
+/// # #[sats(crate = spacetimedb_sats)]
 /// struct PlasticCrate {
 ///     count: u32,
 /// }
 ///
 /// #[derive(SpacetimeType)]
-/// # #[sats(crate = crate)]
+/// # #[sats(crate = spacetimedb_sats)]
 /// struct AppleCrate {
 ///     variety: String,
 ///     count: u32,
@@ -267,7 +267,7 @@ pub trait GroundSpacetimeType {
 /// }
 ///
 /// #[derive(SpacetimeType)]
-/// # #[sats(crate = crate)]
+/// # #[sats(crate = spacetimedb_sats)]
 /// enum FruitCrate {
 ///     Apples(AppleCrate),
 ///     Plastic(PlasticCrate),
