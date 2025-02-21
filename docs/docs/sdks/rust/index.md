@@ -2,7 +2,21 @@
 
 The SpacetimeDB client SDK for Rust contains all the tools you need to build native clients for SpacetimeDB modules using Rust.
 
-## Install the SDK
+| Name                                                              | Description                                                                                                                            |
+|-------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------|
+| [Project setup](#project-setup)                                   | Configure a Rust crate to use the SpacetimeDB Rust client SDK.                                                                         |
+| [Generate module bindings](#generate-module-bindings)             | Use the SpacetimeDB CLI to generate module-specific types and interfaces.                                                              |
+| [`DbConnection` type](#type-dbconnection)                         | A connection to a remote database.                                                                                                     |
+| [`DbContext` trait](#trait-dbcontext)                             | Methods for interacting with the remote database. Implemented by [`DbConnection`](#type-dbconnection) and various event context types. |
+| [`EventContext` type](#type-eventcontext)                         | [`DbContext`](#trait-dbcontext) available in [row callbacks](#callback-on_insert).                                                     |
+| [`ReducerEventContext` type](#type-reducereventcontext)           | [`DbContext`](#trait-dbcontext) available in [reducer callbacks](#observe-and-invoke-reducers).                                        |
+| [`SubscriptionEventContext` type](#type-subscriptioneventcontext) | [`DbContext`](#trait-dbcontext) available in [subscription-related callbacks](#subscribe-to-queries).                                  |
+| [`ErrorContext` type](#type-errorcontext)                         | [`DbContext`](#trait-dbcontext) available in error-related callbacks.                                                                  |
+| [Access the client cache](#access-the-client-cache)               | Make local queries against subscribed rows, and register [row callbacks](#callback-on_insert) to run when subscribed rows change.      |
+| [Observe and invoke reducers](#observe-and-invoke-reducers)       | Send requests to the database to run [reducers](/docs/index.md#reducer), and register callbacks to run when notified of reducers.      |
+| [Identify a client](#identify a client)                           | Types for identifying users and client connections.                                                                                    |
+
+## Project setup
 
 First, create a new project using `cargo new` and add the SpacetimeDB SDK to your dependencies:
 
@@ -40,6 +54,12 @@ module_bindings::DbConnection {
 
 A connection to a remote database is represented by the `module_bindings::DbConnection` type. This type is generated per-module, and contains information about the types, tables and reducers defined by your module.
 
+| Name                                                                       | Description                                                                                      |
+|----------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------|
+| [Connect to a module](#connect-to-a-module-dbconnection-builder-and-build) | Construct a `DbConnection`.                                                                      |
+| [Advance the connection](#advance-the-connection-and-process-messages)     | Poll the `DbConnection`, or set up a background worker to run it.                                |
+| [Access tables and reducers](#access-tables-and-reducers)                  | Access subscribed rows in the client cache, request reducer invocations, and register callbacks. |
+
 ### Connect to a module - `DbConnection::builder()` and `.build()`
 
 ```rust
@@ -49,6 +69,16 @@ impl DbConnection {
 ```
 
 Construct a `DbConnection` by calling `DbConnection::builder()` and chaining configuration methods, then calling `.build()`. You must at least specify `with_uri`, to supply the URI of the SpacetimeDB to which you published your module, and `with_module_name`, to supply the human-readable SpacetimeDB domain name or the raw `Identity` which identifies the module.
+
+| Name                                                      | Description                                                                          |
+|-----------------------------------------------------------|--------------------------------------------------------------------------------------|
+| [`with_uri` method](#method-with_uri)                     | Set the URI of the SpacetimeDB instance which hosts the remote database.             |
+| [`with_module_name` method](#method-with_module_name)     | Set the name or [`Identity`](/docs/index.md#identity) of the remote database.        |
+| [`on_connect` callback](#callback-on_connect)             | Register a callback to run when the connection is successfully established.          |
+| [`on_connect_error` callback](#callback-on_connect_error) | Register a callback to run if the connection is rejected or the host is unreachable. |
+| [`on_disconnect` callback](#callback-on_disconnect)       | Register a callback to run when the connection ends.                                 |
+| [`with_token` method](#method-with_token)                 | Supply a token to authenticate with the remote database.                             |
+| [`build` method](#method-build)                           | Finalize configuration and connect.                                                  |
 
 #### Method `with_uri`
 
@@ -120,7 +150,6 @@ impl DbConnectionBuilder {
 
 Chain a call to `.with_token(token)` to your builder to provide an OpenID Connect compliant JSON Web Token to authenticate with, or to explicitly select an anonymous connection. If this method is not called or `None` is passed, SpacetimeDB will generate a new `Identity` and sign a new private access token for the connection.
 
-This interface may change in an upcoming release as we rework SpacetimeDB's authentication model.
 
 #### Method `build`
 
@@ -135,6 +164,12 @@ After configuring the connection and registering callbacks, attempt to open the 
 ### Advance the connection and process messages
 
 In the interest of supporting a wide variety of client applications with different execution strategies, the SpacetimeDB SDK allows you to choose when the `DbConnection` spends compute time and processes messages. If you do not arrange for the connection to advance by calling one of these methods, the `DbConnection` will never advance, and no callbacks will ever be invoked.
+
+| Name                                                                              | Description                                           |
+|-----------------------------------------------------------------------------------|-------------------------------------------------------|
+| [`run_threaded` method](#run-in-the-background-method-run_threaded)               | Spawn a thread to process messages in the background. |
+| [`run_async` method](#run-asyncronously-method-run_async)                         | Process messages in an async task.                    |
+| [`frame_tick` method](#run-on-the-main-thread-without-blocking-method-frame_tick) | Process messages on the main thread without blocking. |
 
 #### Run in the background - method `run_threaded`
 
@@ -202,6 +237,15 @@ trait spacetimedb_sdk::DbContext {
 
 The `DbContext` trait is implemented by connections and contexts to *every* module. This means that its [`DbView`](#method-db) and [`Reducers`](#method-reducers) are associated types.
 
+| Name                                                  | Description                                                                                                     |
+|-------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------|
+| [`RemoteDbContext` trait](#trait-remotedbcontext)     | Module-specific `DbConnection` extension trait with associated types bound.                                     |
+| [`db` method](#method-db)                             | Trait-generic alternative to the `db` field of `DbConnection`.                                                  |
+| [`reducers` method](#method-reducers)                 | Trait-generic alternative to the `reducers` field of `DbConnection`.                                            |
+| [`disconnect` method](#method-disconnect)             | End the connection.                                                                                             |
+| [Subscribe to queries](#subscribe-to-queries)         | Register SQL queries to receive updates about matching rows.                                                    |
+| [Read connection metadata](#read-connection-metadata) | Access the connection's [`Identity`](/docs/index.md#identity) and [`ConnectionId`](/docs/index.md#connectionid) |
+
 ### Trait `RemoteDbContext`
 
 ```rust
@@ -261,11 +305,24 @@ Gracefully close the `DbConnection`. Returns an `Err` if the connection is alrea
 
 ### Subscribe to queries
 
+| Name                                                    | Description                                                 |
+|---------------------------------------------------------|-------------------------------------------------------------|
+| [`SubscriptionBuilder` type](#type-subscriptionbuilder) | Builder-pattern constructor to register subscribed queries. |
+| [`SubscriptionHandle` type](#type-subscriptionhandle)   | Manage an active subscripion.                               |
+
 #### Type `SubscriptionBuilder`
 
 ```rust
 spacetimedb_sdk::SubscriptionBuilder
 ```
+
+| Name                                                                             | Description                                                     |
+|----------------------------------------------------------------------------------|-----------------------------------------------------------------|
+| [`ctx.subscription_builder()` constructor](#constructor-ctxsubscription_builder) | Begin configuring a new subscription.                           |
+| [`on_applied` callback](#callback-on_applied)                                    | Register a callback to run when matching rows become available. |
+| [`on_error` callback](#callback-on_error)                                        | Register a callback to run if the subscription fails.           |
+| [`subscribe` method](#method-subscribe)                                          | Finish configuration and subscribe to one or more SQL queries.  |
+| [`subscribe_to_all_tables` method](#method-subscribe-to-all-tables)              | Convenience method to subscribe to the entire database.         |
 
 ##### Constructor `ctx.subscription_builder()`
 
@@ -328,6 +385,13 @@ A `SubscriptionHandle` represents a subscribed query or a group of subscribed qu
 
 The `SubscriptionHandle` does not contain or provide access to the subscribed rows. Subscribed rows of all subscriptions by a connection are contained within that connection's [`ctx.db`](#field-db). See [Access the client cache](#access-the-client-cache).
 
+| Name                                                  | Description                                                                                                      |
+|-------------------------------------------------------|------------------------------------------------------------------------------------------------------------------|
+| [`is_ended` method](#method-is_ended)                 | Determine whether the subscription has ended.                                                                    |
+| [`is_active` method](#method-is_active)               | Determine whether the subscription is active and its matching rows are present in the client cache.              |
+| [`unsubscribe` method](#method-unsubscribe)           | Discard a subscription.                                                                                          |
+| [`unsubscribe_then` method](#method-unsubscribe_then) | Discard a subscription, and register a callback to run when its matching rows are removed from the client cache. |
+
 ##### Method `is_ended`
 
 ```rust
@@ -377,7 +441,7 @@ Terminate this subscription, and run the `on_end` callback when the subscription
 
 Returns an error if the subscription has already ended, either due to a previous call to `unsubscribe` or [`unsubscribe_then`](#method-unsubscribe_then), or due to an error.
 
-### Identify a client
+### Read connection metadata
 
 #### Method `identity`
 
@@ -427,6 +491,13 @@ module_bindings::EventContext
 
 An `EventContext` is a [`DbContext`](#trait-dbcontext) augmented with a field [`event: Event`](#enum-event). `EventContext`s are passed as the first argument to row callbacks [`on_insert`](#callback-on_insert), [`on_delete`](#callback-on_delete) and [`on_update`](#callback-on_update).
 
+| Name                                | Description                                                   |
+|-------------------------------------|---------------------------------------------------------------|
+| [`event` field](#field-event)       | Enum describing the cause of the current row callback.        |
+| [`db` field](#field-db)             | Provides access to the client cache.                          |
+| [`reducers` field](#field-reducers) | Allows requesting reducers run on the remote database.        |
+| [`Event` enum](#enum-event)         | Possible events which can cause a row callback to be invoked. |
+
 ### Field `event`
 
 ```rust
@@ -436,7 +507,7 @@ struct EventContext {
 }
 ```
 
-TODO
+The [`Event`](#enum-event) contained in the `EventContext` describes what happened to cause the current row callback to be invoked.
 
 ### Field `db`
 
@@ -466,6 +537,17 @@ The `reducers` field of the context provides access to reducers exposed by the r
 spacetimedb_sdk::Event<module_bindings::Reducer>
 ```
 
+| Name                                                        | Description                                                                                                                             |
+|-------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------|
+| [`Reducer` variant](#variant-reducer)                       | A reducer ran in the remote database.                                                                                                   |
+| [`SubscribeApplied` variant](#variant-subscribeapplied)     | A new subscription was applied to the client cache.                                                                                     |
+| [`UnsubscribeApplied` variant](#variant-unsubscribeapplied) | A previous subscription was removed from the client cache after a call to [`unsubscribe`](#method-unsubscribe).                         |
+| [`SubscribeError` variant](#variant-subscribeerror)         | A previous subscription was removed from the client cache due to an error.                                                              |
+| [`UnknownTransaction` variant](#variant-unknowntransaction) | A transaction ran in the remote database, but was not attributed to a known reducer.                                                    |
+| [`ReducerEvent` struct](#struct-reducerevent)               | Metadata about a reducer run. Contained in [`Event::Reducer`](#variant-reducer) and [`ReducerEventContext`](#type-reducereventcontext). |
+| [`Status` enum](#enum-status)                               | Completion status of a reducer run.                                                                                                     |
+| [`Reducer` enum](#enum-reducer)                             | Module-specific generated enum with a variant for each reducer defined by the module.                                                   |
+
 #### Variant `Reducer`
 
 ```rust
@@ -488,17 +570,29 @@ This event is passed to [row `on_insert` callbacks](#callback-on_insert) resulti
 
 #### Variant `UnsubscribeApplied`
 
-TODO
+```rust
+spacetimedb_sdk::Event::UnsubscribeApplied
+```
+
+Event when our subscription is removed after a call to [`SubscriptionHandle::unsubscribe`](#method-unsubscribe) or [`SubscriptionHandle::unsubscribe_then`](#method-unsubscribe_then) and its matching rows are deleted from the client cache.
+
+This event is passed to [row `on_delete` callbacks](#callback-on_delete) resulting from the subscription ending.
 
 #### Variant `SubscribeError`
 
-TODO
+```rust
+spacetimedb_sdk::Event::SubscribeError(spacetimedb_sdk::Error)
+```
+
+Event when a subscription ends unexpectedly due to an error.
+
+This event is passed to [row `on_delete` callbacks](#callback-on_delete) resulting from the subscription ending.
 
 #### Variant `UnknownTransaction`
 
 Event when we are notified of a transaction in the remote module which we cannot associate with a known reducer. This may be an ad-hoc SQL query or a reducer for which we do not have bindings.
 
-This event is passed to row callbacks resulting from modifications by the transaction.
+This event is passed to [row callbacks](#callback-on_insert) resulting from modifications by the transaction.
 
 ### Struct `ReducerEvent`
 
@@ -542,6 +636,12 @@ struct spacetimedb_sdk::ReducerEvent<R> {
 spacetimedb_sdk::Status
 ```
 
+| Name                                          | Description                                         |
+|-----------------------------------------------|-----------------------------------------------------|
+| [`Committed` variant](#variant-committed)     | The reducer ran successfully.                       |
+| [`Failed` variant](#variant-failed)           | The reducer errored.                                |
+| [`OutOfEnergy` variant](#variant-outofenergy) | The reducer was aborted due to insufficient energy. |
+
 #### Variant `Committed`
 
 ```rust
@@ -574,6 +674,12 @@ The module bindings contains an enum `Reducer` with a variant for each reducer d
 
 A `ReducerEventContext` is a [`DbContext`](#trait-dbcontext) augmented with a field [`event: ReducerEvent`](#struct-reducerevent). `ReducerEventContext`s are passed as the first argument to [reducer callbacks](#observe-and-invoke-reducers).
 
+| Name                                | Description                                                |
+|-------------------------------------|------------------------------------------------------------|
+| [`event` field](#field-event)       | Enum describing the cause of the current reducer callback. |
+| [`db` field](#field-db)             | Provides access to the client cache.                       |
+| [`reducers` field](#field-reducers) | Allows requesting reducers run on the remote database.     |
+
 ### Field `event`
 
 ```rust
@@ -583,7 +689,7 @@ struct ReducerEventContext {
 }
 ```
 
-TODO
+The [`ReducerEvent`](#struct-reducerevent) contained in the `ReducerEventContext` has metadata about the reducer which ran.
 
 ### Field `db`
 
@@ -611,6 +717,11 @@ The `reducers` field of the context provides access to reducers exposed by the r
 
 A `SubscriptionEventContext` is a [`DbContext`](#trait-dbcontext). Unlike the other context types, `SubscriptionEventContext` doesn't have an `event` field. `SubscriptionEventContext`s are passed to subscription [`on_applied`](#callback-on_applied) and [`unsubscribe_then`](#method-unsubscribe_then) callbacks.
 
+| Name                                | Description                                                |
+|-------------------------------------|------------------------------------------------------------|
+| [`db` field](#field-db)             | Provides access to the client cache.                       |
+| [`reducers` field](#field-reducers) | Allows requesting reducers run on the remote database.     |
+
 ### Field `db`
 
 ```rust
@@ -637,6 +748,13 @@ The `reducers` field of the context provides access to reducers exposed by the r
 
 An `ErrorContext` is a [`DbContext`](#trait-dbcontext) augmented with a field `event: spacetimedb_sdk::Error`. `ErrorContext`s are to connections' [`on_disconnect`](#callback-on_disconnect) and [`on_connect_error`](#callback-on_connect_error) callbacks, and to subscriptions' [`on_error`](#callback-on_error) callbacks.
 
+| Name                                | Description                                            |
+|-------------------------------------|--------------------------------------------------------|
+| [`event` field](#field-event)       | The error which caused the current error callback.     |
+| [`db` field](#field-db)             | Provides access to the client cache.                   |
+| [`reducers` field](#field-reducers) | Allows requesting reducers run on the remote database. |
+
+
 ### Field `event`
 
 ```rust
@@ -645,8 +763,6 @@ struct ErrorContext {
     /* other fields */
 }
 ```
-
-TODO
 
 ### Field `db`
 
@@ -676,6 +792,13 @@ Both [`DbConnection`](#type-dbconnection) and [`EventContext`](#type-eventcontex
 
 Each table defined by a module has an accessor method, whose name is the table name converted to `snake_case`, on this `.db` field. The methods are defined via extension traits, which `rustc` or your IDE should help you identify and import where necessary. The table accessor methods return table handles, which implement [`Table`](#trait-table), may implement [`TableWithPrimaryKey`](#trait-tablewithprimarykey), and have methods for searching by unique index.
 
+| Name                                                              | Description                                                                     |
+|-------------------------------------------------------------------|---------------------------------------------------------------------------------|
+| [`Table` trait](#trait-table)                                     | Provides access to subscribed rows of a specific table within the client cache. |
+| [`TableWithPrimaryKey` trait](#trait-tablewithprimarykey)         | Extension trait for tables which have a column designated as a primary key.     |
+| [Unique constraint index access](#unique-constraint-index-access) | Seek a subscribed row by the value in its unique or primary key column.         |
+| [BTree index access](#btree-index-access)                         | Not supported.                                                                  |
+
 ### Trait `Table`
 
 ```rust
@@ -683,6 +806,14 @@ spacetimedb_sdk::Table
 ```
 
 Implemented by all table handles.
+
+| Name                                          | Description                                                                  |
+|-----------------------------------------------|------------------------------------------------------------------------------|
+| [`Row` associated type](#associated-type-row) | The type of rows in the table.                                               |
+| [`count` method](#method-count)               | The number of subscribed rows in the table.                                  |
+| [`iter` method](#method-iter)                 | Iterate over all subscribed rows in the table.                               |
+| [`on_insert` callback](#callback-on_insert)   | Register a callback to run whenever a row is inserted into the client cache. |
+| [`on_delete` callback](#callback-on_delete)   | Register a callback to run whenever a row is deleted from the client cache.  |
 
 #### Associated type `Row`
 
@@ -752,6 +883,10 @@ spacetimedb_sdk::TableWithPrimaryKey
 
 Implemented for table handles whose tables have a primary key.
 
+| Name                                        | Description                                                                          |
+|---------------------------------------------|--------------------------------------------------------------------------------------|
+| [`on_update` callback](#callback-on_update) | Register a callback to run whenever a subscribed row is replaced with a new version. |
+
 #### Callback `on_update`
 
 ```rust
@@ -772,7 +907,7 @@ For each unique constraint on a table, its table handle has a method whose name 
 
 ### BTree index access
 
-Not currently implemented in the Rust SDK. Coming soon!
+The SpacetimeDB Rust client SDK does not support non-unique BTree indexes.
 
 ## Observe and invoke reducers
 
@@ -792,7 +927,7 @@ Each reducer defined by the module has three methods on the `.reducers`:
 spacetimedb_sdk::Identity
 ```
 
-A unique public identifier for a client connected to a database.
+A unique public identifier for a client connected to a database. See [`Identity`](/docs/index.md#identity).
 
 ### Type `ConnectionId`
 
@@ -800,4 +935,4 @@ A unique public identifier for a client connected to a database.
 spacetimedb_sdk::ConnectionId
 ```
 
-An opaque identifier for a client connection to a database, intended to differentiate between connections from the same [`Identity`](#type-identity).
+An opaque identifier for a client connection to a database, intended to differentiate between connections from the same [`Identity`](#type-identity). See [`ConnectionId`](/docs/index.md#connectionid).
