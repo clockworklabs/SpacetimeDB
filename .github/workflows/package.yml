@@ -46,7 +46,7 @@ jobs:
           mkdir build
           cd target/${{matrix.target}}/release
           cp spacetimedb-update ../../../build/spacetimedb-update-${{matrix.target}}
-          tar -czf ../../../build/spacetime-${{matrix.target}}.tar.gz spacetimedb-{cli,standalone,update}
+          tar -czf ../../../build/spacetime-${{matrix.target}}.tar.gz spacetimedb-{cli,standalone}
 
       - name: Package (windows)
         if: ${{ runner.os == 'Windows' }}
@@ -54,7 +54,7 @@ jobs:
           mkdir build
           cd target/${{matrix.target}}/release
           cp spacetimedb-update.exe ../../../build/spacetimedb-update-${{matrix.target}}.exe
-          7z a ../../../build/spacetime-${{matrix.target}}.zip spacetimedb-cli.exe spacetimedb-standalone.exe spacetimedb-update.exe
+          7z a ../../../build/spacetime-${{matrix.target}}.zip spacetimedb-cli.exe spacetimedb-standalone.exe
 
       - name: Extract branch name
         shell: bash
