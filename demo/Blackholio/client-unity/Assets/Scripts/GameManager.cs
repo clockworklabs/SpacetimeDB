@@ -27,6 +27,8 @@ public class GameManager : MonoBehaviour
     public static Dictionary<uint, EntityController> Entities = new Dictionary<uint, EntityController>();
     public static Dictionary<uint, PlayerController> Players = new Dictionary<uint, PlayerController>();
 
+    SubscriptionHandle<SubscriptionEventContext, ErrorContext> handle;
+
     private void Start()
     {
         Instance = this;
@@ -75,9 +77,9 @@ public class GameManager : MonoBehaviour
         OnConnected?.Invoke();
 
         // Request all tables
-        Conn.SubscriptionBuilder()
+        handle = Conn.SubscriptionBuilder()
             .OnApplied(HandleSubscriptionApplied)
-            .SubscribeToAllTables();
+            .Subscribe(new string[] { "SELECT * FROM circle", "SELECT * FROM player", "SELECT * FROM food", "SELECT * FROM config", "SELECT * FROM entity", "SELECT * FROM entity WHERE mass > 3" });
     }
 
     void HandleConnectError(Exception ex)
