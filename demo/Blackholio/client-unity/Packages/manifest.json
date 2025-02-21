@@ -1,6 +1,6 @@
 {
   "dependencies": {
-    "com.clockworklabs.spacetimedbsdk": "git@github.com:clockworklabs/com.clockworklabs.spacetimedbsdk.git#staging",
+    "com.clockworklabs.spacetimedbsdk": "git@github.com:clockworklabs/com.clockworklabs.spacetimedbsdk.git#release/latest",
     "com.unity.collab-proxy": "2.3.1",
     "com.unity.feature.2d": "2.0.1",
     "com.unity.ide.rider": "3.0.28",
