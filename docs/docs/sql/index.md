@@ -412,7 +412,7 @@ HEXIT
     ;
 ```
 
-Hex literals can represent [Identity], [Address], or binary types.
+Hex literals can represent [Identity], [ConnectionId], or binary types.
 The type is ultimately inferred from the context.
 
 #### Examples
@@ -478,4 +478,4 @@ column
 [http]:      /docs/http/database#databasesqlname_or_address-post
 
 [Identity]: /docs/index.md#identity
-[Address]:  /docs/index.md#address
+[ConnectionId]:  /docs/index.md#connectionid

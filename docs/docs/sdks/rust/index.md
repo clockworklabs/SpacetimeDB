@@ -13,8 +13,8 @@ The SpacetimeDB client SDK for Rust contains all the tools you need to build nat
 | [`SubscriptionEventContext` type](#type-subscriptioneventcontext) | [`DbContext`](#trait-dbcontext) available in [subscription-related callbacks](#subscribe-to-queries).                                  |
 | [`ErrorContext` type](#type-errorcontext)                         | [`DbContext`](#trait-dbcontext) available in error-related callbacks.                                                                  |
 | [Access the client cache](#access-the-client-cache)               | Make local queries against subscribed rows, and register [row callbacks](#callback-on_insert) to run when subscribed rows change.      |
-| [Observe and invoke reducers](#observe-and-invoke-reducers)       | Send requests to the database to run [reducers](/docs/index.md#reducer), and register callbacks to run when notified of reducers.      |
-| [Identify a client](#identify a client)                           | Types for identifying users and client connections.                                                                                    |
+| [Observe and invoke reducers](#observe-and-invoke-reducers)       | Send requests to the database to run reducers, and register callbacks to run when notified of reducers.      |
+| [Identify a client](#identify-a-client)                           | Types for identifying users and client connections.                                                                                    |
 
 ## Project setup
 
@@ -54,13 +54,13 @@ module_bindings::DbConnection {
 
 A connection to a remote database is represented by the `module_bindings::DbConnection` type. This type is generated per-module, and contains information about the types, tables and reducers defined by your module.
 
-| Name                                                                       | Description                                                                                      |
-|----------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------|
-| [Connect to a module](#connect-to-a-module-dbconnection-builder-and-build) | Construct a `DbConnection`.                                                                      |
-| [Advance the connection](#advance-the-connection-and-process-messages)     | Poll the `DbConnection`, or set up a background worker to run it.                                |
-| [Access tables and reducers](#access-tables-and-reducers)                  | Access subscribed rows in the client cache, request reducer invocations, and register callbacks. |
+| Name                                                                   | Description                                                                                      |
+|------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------|
+| [Connect to a module](#connect-to-a-module)                            | Construct a `DbConnection`.                                                                      |
+| [Advance the connection](#advance-the-connection-and-process-messages) | Poll the `DbConnection`, or set up a background worker to run it.                                |
+| [Access tables and reducers](#access-tables-and-reducers)              | Access subscribed rows in the client cache, request reducer invocations, and register callbacks. |
 
-### Connect to a module - `DbConnection::builder()` and `.build()`
+### Connect to a module
 
 ```rust
 impl DbConnection {
@@ -73,7 +73,7 @@ Construct a `DbConnection` by calling `DbConnection::builder()` and chaining con
 | Name                                                      | Description                                                                          |
 |-----------------------------------------------------------|--------------------------------------------------------------------------------------|
 | [`with_uri` method](#method-with_uri)                     | Set the URI of the SpacetimeDB instance which hosts the remote database.             |
-| [`with_module_name` method](#method-with_module_name)     | Set the name or [`Identity`](/docs/index.md#identity) of the remote database.        |
+| [`with_module_name` method](#method-with_module_name)     | Set the name or `Identity` of the remote database.                                   |
 | [`on_connect` callback](#callback-on_connect)             | Register a callback to run when the connection is successfully established.          |
 | [`on_connect_error` callback](#callback-on_connect_error) | Register a callback to run if the connection is rejected or the host is unreachable. |
 | [`on_disconnect` callback](#callback-on_disconnect)       | Register a callback to run when the connection ends.                                 |
@@ -165,13 +165,13 @@ After configuring the connection and registering callbacks, attempt to open the 
 
 In the interest of supporting a wide variety of client applications with different execution strategies, the SpacetimeDB SDK allows you to choose when the `DbConnection` spends compute time and processes messages. If you do not arrange for the connection to advance by calling one of these methods, the `DbConnection` will never advance, and no callbacks will ever be invoked.
 
-| Name                                                                              | Description                                           |
-|-----------------------------------------------------------------------------------|-------------------------------------------------------|
-| [`run_threaded` method](#run-in-the-background-method-run_threaded)               | Spawn a thread to process messages in the background. |
-| [`run_async` method](#run-asyncronously-method-run_async)                         | Process messages in an async task.                    |
-| [`frame_tick` method](#run-on-the-main-thread-without-blocking-method-frame_tick) | Process messages on the main thread without blocking. |
+| Name                                          | Description                                           |
+|-----------------------------------------------|-------------------------------------------------------|
+| [`run_threaded` method](#method-run_threaded) | Spawn a thread to process messages in the background. |
+| [`run_async` method](#method-run_async)       | Process messages in an async task.                    |
+| [`frame_tick` method](#method-frame_tick)     | Process messages on the main thread without blocking. |
 
-#### Run in the background - method `run_threaded`
+#### Method `run_threaded`
 
 ```rust
 impl DbConnection {
@@ -181,7 +181,7 @@ impl DbConnection {
 
 `run_threaded` spawns a thread which will continuously advance the connection, sleeping when there is no work to do. The thread will panic if the connection disconnects erroneously, or return if it disconnects as a result of a call to [`disconnect`](#method-disconnect).
 
-#### Run asynchronously - method `run_async`
+#### Method `run_async`
 
 ```rust
 impl DbConnection {
@@ -191,7 +191,7 @@ impl DbConnection {
 
 `run_async` will continuously advance the connection, `await`-ing when there is no work to do. The task will return an `Err` if the connection disconnects erroneously, or return `Ok(())` if it disconnects as a result of a call to [`disconnect`](#method-disconnect).
 
-#### Run on the main thread without blocking - method `frame_tick`
+#### Method `frame_tick`
 
 ```rust
 impl DbConnection {
@@ -237,14 +237,14 @@ trait spacetimedb_sdk::DbContext {
 
 The `DbContext` trait is implemented by connections and contexts to *every* module. This means that its [`DbView`](#method-db) and [`Reducers`](#method-reducers) are associated types.
 
-| Name                                                  | Description                                                                                                     |
-|-------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------|
-| [`RemoteDbContext` trait](#trait-remotedbcontext)     | Module-specific `DbConnection` extension trait with associated types bound.                                     |
-| [`db` method](#method-db)                             | Trait-generic alternative to the `db` field of `DbConnection`.                                                  |
-| [`reducers` method](#method-reducers)                 | Trait-generic alternative to the `reducers` field of `DbConnection`.                                            |
-| [`disconnect` method](#method-disconnect)             | End the connection.                                                                                             |
-| [Subscribe to queries](#subscribe-to-queries)         | Register SQL queries to receive updates about matching rows.                                                    |
-| [Read connection metadata](#read-connection-metadata) | Access the connection's [`Identity`](/docs/index.md#identity) and [`ConnectionId`](/docs/index.md#connectionid) |
+| Name                                                  | Description                                                              |
+|-------------------------------------------------------|--------------------------------------------------------------------------|
+| [`RemoteDbContext` trait](#trait-remotedbcontext)     | Module-specific `DbContext` extension trait with associated types bound. |
+| [`db` method](#method-db)                             | Trait-generic alternative to the `db` field of `DbConnection`.           |
+| [`reducers` method](#method-reducers)                 | Trait-generic alternative to the `reducers` field of `DbConnection`.     |
+| [`disconnect` method](#method-disconnect)             | End the connection.                                                      |
+| [Subscribe to queries](#subscribe-to-queries)         | Register SQL queries to receive updates about matching rows.             |
+| [Read connection metadata](#read-connection-metadata) | Access the connection's `Identity` and `ConnectionId`                    |
 
 ### Trait `RemoteDbContext`
 
@@ -322,7 +322,7 @@ spacetimedb_sdk::SubscriptionBuilder
 | [`on_applied` callback](#callback-on_applied)                                    | Register a callback to run when matching rows become available. |
 | [`on_error` callback](#callback-on_error)                                        | Register a callback to run if the subscription fails.           |
 | [`subscribe` method](#method-subscribe)                                          | Finish configuration and subscribe to one or more SQL queries.  |
-| [`subscribe_to_all_tables` method](#method-subscribe-to-all-tables)              | Convenience method to subscribe to the entire database.         |
+| [`subscribe_to_all_tables` method](#method-subscribe_to_all_tables)              | Convenience method to subscribe to the entire database.         |
 
 ##### Constructor `ctx.subscription_builder()`
 
@@ -927,7 +927,7 @@ Each reducer defined by the module has three methods on the `.reducers`:
 spacetimedb_sdk::Identity
 ```
 
-A unique public identifier for a client connected to a database. See [`Identity`](/docs/index.md#identity).
+A unique public identifier for a client connected to a database.
 
 ### Type `ConnectionId`
 
@@ -935,4 +935,4 @@ A unique public identifier for a client connected to a database. See [`Identity`
 spacetimedb_sdk::ConnectionId
 ```
 
-An opaque identifier for a client connection to a database, intended to differentiate between connections from the same [`Identity`](#type-identity). See [`ConnectionId`](/docs/index.md#connectionid).
+An opaque identifier for a client connection to a database, intended to differentiate between connections from the same [`Identity`](#type-identity).
