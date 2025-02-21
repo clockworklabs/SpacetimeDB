@@ -19,7 +19,9 @@ pub mod delete_pk_string_reducer;
 pub mod delete_pk_u_128_reducer;
 pub mod delete_pk_u_16_reducer;
 pub mod delete_pk_u_256_reducer;
+pub mod delete_pk_u_32_insert_pk_u_32_two_reducer;
 pub mod delete_pk_u_32_reducer;
+pub mod delete_pk_u_32_two_reducer;
 pub mod delete_pk_u_64_reducer;
 pub mod delete_pk_u_8_reducer;
 pub mod delete_unique_bool_reducer;
@@ -100,6 +102,7 @@ pub mod insert_pk_u_128_reducer;
 pub mod insert_pk_u_16_reducer;
 pub mod insert_pk_u_256_reducer;
 pub mod insert_pk_u_32_reducer;
+pub mod insert_pk_u_32_two_reducer;
 pub mod insert_pk_u_64_reducer;
 pub mod insert_pk_u_8_reducer;
 pub mod insert_primitives_as_strings_reducer;
@@ -238,6 +241,8 @@ pub mod pk_u_16_type;
 pub mod pk_u_256_table;
 pub mod pk_u_256_type;
 pub mod pk_u_32_table;
+pub mod pk_u_32_two_table;
+pub mod pk_u_32_two_type;
 pub mod pk_u_32_type;
 pub mod pk_u_64_table;
 pub mod pk_u_64_type;
@@ -296,6 +301,7 @@ pub mod update_pk_u_128_reducer;
 pub mod update_pk_u_16_reducer;
 pub mod update_pk_u_256_reducer;
 pub mod update_pk_u_32_reducer;
+pub mod update_pk_u_32_two_reducer;
 pub mod update_pk_u_64_reducer;
 pub mod update_pk_u_8_reducer;
 pub mod update_unique_bool_reducer;
@@ -386,7 +392,12 @@ pub use delete_pk_string_reducer::{delete_pk_string, set_flags_for_delete_pk_str
 pub use delete_pk_u_128_reducer::{delete_pk_u_128, set_flags_for_delete_pk_u_128, DeletePkU128CallbackId};
 pub use delete_pk_u_16_reducer::{delete_pk_u_16, set_flags_for_delete_pk_u_16, DeletePkU16CallbackId};
 pub use delete_pk_u_256_reducer::{delete_pk_u_256, set_flags_for_delete_pk_u_256, DeletePkU256CallbackId};
+pub use delete_pk_u_32_insert_pk_u_32_two_reducer::{
+    delete_pk_u_32_insert_pk_u_32_two, set_flags_for_delete_pk_u_32_insert_pk_u_32_two,
+    DeletePkU32InsertPkU32TwoCallbackId,
+};
 pub use delete_pk_u_32_reducer::{delete_pk_u_32, set_flags_for_delete_pk_u_32, DeletePkU32CallbackId};
+pub use delete_pk_u_32_two_reducer::{delete_pk_u_32_two, set_flags_for_delete_pk_u_32_two, DeletePkU32TwoCallbackId};
 pub use delete_pk_u_64_reducer::{delete_pk_u_64, set_flags_for_delete_pk_u_64, DeletePkU64CallbackId};
 pub use delete_pk_u_8_reducer::{delete_pk_u_8, set_flags_for_delete_pk_u_8, DeletePkU8CallbackId};
 pub use delete_unique_bool_reducer::{
@@ -540,6 +551,7 @@ pub use insert_pk_u_128_reducer::{insert_pk_u_128, set_flags_for_insert_pk_u_128
 pub use insert_pk_u_16_reducer::{insert_pk_u_16, set_flags_for_insert_pk_u_16, InsertPkU16CallbackId};
 pub use insert_pk_u_256_reducer::{insert_pk_u_256, set_flags_for_insert_pk_u_256, InsertPkU256CallbackId};
 pub use insert_pk_u_32_reducer::{insert_pk_u_32, set_flags_for_insert_pk_u_32, InsertPkU32CallbackId};
+pub use insert_pk_u_32_two_reducer::{insert_pk_u_32_two, set_flags_for_insert_pk_u_32_two, InsertPkU32TwoCallbackId};
 pub use insert_pk_u_64_reducer::{insert_pk_u_64, set_flags_for_insert_pk_u_64, InsertPkU64CallbackId};
 pub use insert_pk_u_8_reducer::{insert_pk_u_8, set_flags_for_insert_pk_u_8, InsertPkU8CallbackId};
 pub use insert_primitives_as_strings_reducer::{
@@ -720,6 +732,8 @@ pub use pk_u_16_type::PkU16;
 pub use pk_u_256_table::*;
 pub use pk_u_256_type::PkU256;
 pub use pk_u_32_table::*;
+pub use pk_u_32_two_table::*;
+pub use pk_u_32_two_type::PkU32Two;
 pub use pk_u_32_type::PkU32;
 pub use pk_u_64_table::*;
 pub use pk_u_64_type::PkU64;
@@ -784,6 +798,7 @@ pub use update_pk_u_128_reducer::{set_flags_for_update_pk_u_128, update_pk_u_128
 pub use update_pk_u_16_reducer::{set_flags_for_update_pk_u_16, update_pk_u_16, UpdatePkU16CallbackId};
 pub use update_pk_u_256_reducer::{set_flags_for_update_pk_u_256, update_pk_u_256, UpdatePkU256CallbackId};
 pub use update_pk_u_32_reducer::{set_flags_for_update_pk_u_32, update_pk_u_32, UpdatePkU32CallbackId};
+pub use update_pk_u_32_two_reducer::{set_flags_for_update_pk_u_32_two, update_pk_u_32_two, UpdatePkU32TwoCallbackId};
 pub use update_pk_u_64_reducer::{set_flags_for_update_pk_u_64, update_pk_u_64, UpdatePkU64CallbackId};
 pub use update_pk_u_8_reducer::{set_flags_for_update_pk_u_8, update_pk_u_8, UpdatePkU8CallbackId};
 pub use update_unique_bool_reducer::{
@@ -941,6 +956,13 @@ pub enum Reducer {
         n: __sats::u256,
     },
     DeletePkU32 {
+        n: u32,
+    },
+    DeletePkU32InsertPkU32Two {
+        n: u32,
+        data: i32,
+    },
+    DeletePkU32Two {
         n: u32,
     },
     DeletePkU64 {
@@ -1187,6 +1209,10 @@ pub enum Reducer {
         n: u32,
         data: i32,
     },
+    InsertPkU32Two {
+        n: u32,
+        data: i32,
+    },
     InsertPkU64 {
         n: u64,
         data: i32,
@@ -1406,6 +1432,10 @@ pub enum Reducer {
         n: u32,
         data: i32,
     },
+    UpdatePkU32Two {
+        n: u32,
+        data: i32,
+    },
     UpdatePkU64 {
         n: u64,
         data: i32,
@@ -1502,6 +1532,8 @@ impl __sdk::Reducer for Reducer {
             Reducer::DeletePkU16 { .. } => "delete_pk_u16",
             Reducer::DeletePkU256 { .. } => "delete_pk_u256",
             Reducer::DeletePkU32 { .. } => "delete_pk_u32",
+            Reducer::DeletePkU32InsertPkU32Two { .. } => "delete_pk_u32_insert_pk_u32_two",
+            Reducer::DeletePkU32Two { .. } => "delete_pk_u32_two",
             Reducer::DeletePkU64 { .. } => "delete_pk_u64",
             Reducer::DeletePkU8 { .. } => "delete_pk_u8",
             Reducer::DeleteUniqueBool { .. } => "delete_unique_bool",
@@ -1575,6 +1607,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::InsertPkU16 { .. } => "insert_pk_u16",
             Reducer::InsertPkU256 { .. } => "insert_pk_u256",
             Reducer::InsertPkU32 { .. } => "insert_pk_u32",
+            Reducer::InsertPkU32Two { .. } => "insert_pk_u32_two",
             Reducer::InsertPkU64 { .. } => "insert_pk_u64",
             Reducer::InsertPkU8 { .. } => "insert_pk_u8",
             Reducer::InsertPrimitivesAsStrings { .. } => "insert_primitives_as_strings",
@@ -1637,6 +1670,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::UpdatePkU16 { .. } => "update_pk_u16",
             Reducer::UpdatePkU256 { .. } => "update_pk_u256",
             Reducer::UpdatePkU32 { .. } => "update_pk_u32",
+            Reducer::UpdatePkU32Two { .. } => "update_pk_u32_two",
             Reducer::UpdatePkU64 { .. } => "update_pk_u64",
             Reducer::UpdatePkU8 { .. } => "update_pk_u8",
             Reducer::UpdateUniqueBool { .. } => "update_unique_bool",
@@ -1742,6 +1776,17 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
                 &value.args,
             )?
             .into()),
+            "delete_pk_u32_insert_pk_u32_two" => Ok(__sdk::parse_reducer_args::<
+                delete_pk_u_32_insert_pk_u_32_two_reducer::DeletePkU32InsertPkU32TwoArgs,
+            >("delete_pk_u32_insert_pk_u32_two", &value.args)?
+            .into()),
+            "delete_pk_u32_two" => Ok(
+                __sdk::parse_reducer_args::<delete_pk_u_32_two_reducer::DeletePkU32TwoArgs>(
+                    "delete_pk_u32_two",
+                    &value.args,
+                )?
+                .into(),
+            ),
             "delete_pk_u64" => Ok(__sdk::parse_reducer_args::<delete_pk_u_64_reducer::DeletePkU64Args>(
                 "delete_pk_u64",
                 &value.args,
@@ -2131,6 +2176,13 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
                 &value.args,
             )?
             .into()),
+            "insert_pk_u32_two" => Ok(
+                __sdk::parse_reducer_args::<insert_pk_u_32_two_reducer::InsertPkU32TwoArgs>(
+                    "insert_pk_u32_two",
+                    &value.args,
+                )?
+                .into(),
+            ),
             "insert_pk_u64" => Ok(__sdk::parse_reducer_args::<insert_pk_u_64_reducer::InsertPkU64Args>(
                 "insert_pk_u64",
                 &value.args,
@@ -2467,6 +2519,13 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
                 &value.args,
             )?
             .into()),
+            "update_pk_u32_two" => Ok(
+                __sdk::parse_reducer_args::<update_pk_u_32_two_reducer::UpdatePkU32TwoArgs>(
+                    "update_pk_u32_two",
+                    &value.args,
+                )?
+                .into(),
+            ),
             "update_pk_u64" => Ok(__sdk::parse_reducer_args::<update_pk_u_64_reducer::UpdatePkU64Args>(
                 "update_pk_u64",
                 &value.args,
@@ -2637,6 +2696,7 @@ pub struct DbUpdate {
     pk_u_16: __sdk::TableUpdate<PkU16>,
     pk_u_256: __sdk::TableUpdate<PkU256>,
     pk_u_32: __sdk::TableUpdate<PkU32>,
+    pk_u_32_two: __sdk::TableUpdate<PkU32Two>,
     pk_u_64: __sdk::TableUpdate<PkU64>,
     pk_u_8: __sdk::TableUpdate<PkU8>,
     scheduled_table: __sdk::TableUpdate<ScheduledTable>,
@@ -2766,6 +2826,7 @@ impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
                 "pk_u16" => db_update.pk_u_16 = pk_u_16_table::parse_table_update(table_update)?,
                 "pk_u256" => db_update.pk_u_256 = pk_u_256_table::parse_table_update(table_update)?,
                 "pk_u32" => db_update.pk_u_32 = pk_u_32_table::parse_table_update(table_update)?,
+                "pk_u32_two" => db_update.pk_u_32_two = pk_u_32_two_table::parse_table_update(table_update)?,
                 "pk_u64" => db_update.pk_u_64 = pk_u_64_table::parse_table_update(table_update)?,
                 "pk_u8" => db_update.pk_u_8 = pk_u_8_table::parse_table_update(table_update)?,
                 "scheduled_table" => {
@@ -2939,6 +3000,9 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.pk_u_32 = cache
             .apply_diff_to_table::<PkU32>("pk_u32", &self.pk_u_32)
             .with_updates_by_pk(|row| &row.n);
+        diff.pk_u_32_two = cache
+            .apply_diff_to_table::<PkU32Two>("pk_u32_two", &self.pk_u_32_two)
+            .with_updates_by_pk(|row| &row.n);
         diff.pk_u_64 = cache
             .apply_diff_to_table::<PkU64>("pk_u64", &self.pk_u_64)
             .with_updates_by_pk(|row| &row.n);
@@ -3055,6 +3119,7 @@ pub struct AppliedDiff<'r> {
     pk_u_16: __sdk::TableAppliedDiff<'r, PkU16>,
     pk_u_256: __sdk::TableAppliedDiff<'r, PkU256>,
     pk_u_32: __sdk::TableAppliedDiff<'r, PkU32>,
+    pk_u_32_two: __sdk::TableAppliedDiff<'r, PkU32Two>,
     pk_u_64: __sdk::TableAppliedDiff<'r, PkU64>,
     pk_u_8: __sdk::TableAppliedDiff<'r, PkU8>,
     scheduled_table: __sdk::TableAppliedDiff<'r, ScheduledTable>,
@@ -3176,6 +3241,7 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<PkU16>("pk_u16", &self.pk_u_16, event);
         callbacks.invoke_table_row_callbacks::<PkU256>("pk_u256", &self.pk_u_256, event);
         callbacks.invoke_table_row_callbacks::<PkU32>("pk_u32", &self.pk_u_32, event);
+        callbacks.invoke_table_row_callbacks::<PkU32Two>("pk_u32_two", &self.pk_u_32_two, event);
         callbacks.invoke_table_row_callbacks::<PkU64>("pk_u64", &self.pk_u_64, event);
         callbacks.invoke_table_row_callbacks::<PkU8>("pk_u8", &self.pk_u_8, event);
         callbacks.invoke_table_row_callbacks::<ScheduledTable>("scheduled_table", &self.scheduled_table, event);
@@ -3860,6 +3926,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         pk_u_16_table::register_table(client_cache);
         pk_u_256_table::register_table(client_cache);
         pk_u_32_table::register_table(client_cache);
+        pk_u_32_two_table::register_table(client_cache);
         pk_u_64_table::register_table(client_cache);
         pk_u_8_table::register_table(client_cache);
         scheduled_table_table::register_table(client_cache);
