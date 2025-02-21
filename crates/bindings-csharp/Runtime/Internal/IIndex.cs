@@ -82,8 +82,7 @@ public abstract class IndexBase<Row>
     }
 }
 
-public abstract class UniqueIndex<Handle, Row, T, RW>(Handle table, string name)
-    : IndexBase<Row>(name)
+public abstract class UniqueIndex<Handle, Row, T, RW>(string name) : IndexBase<Row>(name)
     where Handle : ITableView<Handle, Row>
     where Row : IStructuralReadWrite, new()
     where T : IEquatable<T>

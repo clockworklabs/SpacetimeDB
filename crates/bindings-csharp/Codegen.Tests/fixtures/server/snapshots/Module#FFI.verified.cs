@@ -283,8 +283,7 @@ namespace SpacetimeDB
                     SpacetimeDB.Identity.BSATN
                 >
             {
-                internal IdUniqueIndex(BTreeViews handle)
-                    : base(handle, "BTreeViews_Id_idx_btree") { }
+                internal IdUniqueIndex() : base("BTreeViews_Id_idx_btree") { }
 
                 // Important: don't move this to the base class.
                 // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
@@ -295,7 +294,7 @@ namespace SpacetimeDB
                 public global::BTreeViews Update(global::BTreeViews row) => DoUpdate(row);
             }
 
-            internal IdUniqueIndex Id => new(this);
+            internal IdUniqueIndex Id => new();
 
             internal sealed class LocationIndex()
                 : SpacetimeDB.Internal.IndexBase<global::BTreeViews>("BTreeViews_X_Y_idx_btree")
@@ -469,8 +468,7 @@ namespace SpacetimeDB
             public sealed class FooUniqueIndex
                 : UniqueIndex<MultiTable1, global::MultiTableRow, uint, SpacetimeDB.BSATN.U32>
             {
-                internal FooUniqueIndex(MultiTable1 handle)
-                    : base(handle, "MultiTable1_Foo_idx_btree") { }
+                internal FooUniqueIndex() : base("MultiTable1_Foo_idx_btree") { }
 
                 // Important: don't move this to the base class.
                 // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
@@ -481,7 +479,7 @@ namespace SpacetimeDB
                 public global::MultiTableRow Update(global::MultiTableRow row) => DoUpdate(row);
             }
 
-            public FooUniqueIndex Foo => new(this);
+            public FooUniqueIndex Foo => new();
 
             public sealed class NameIndex()
                 : SpacetimeDB.Internal.IndexBase<global::MultiTableRow>(
@@ -586,8 +584,7 @@ namespace SpacetimeDB
             public sealed class BarUniqueIndex
                 : UniqueIndex<MultiTable2, global::MultiTableRow, uint, SpacetimeDB.BSATN.U32>
             {
-                internal BarUniqueIndex(MultiTable2 handle)
-                    : base(handle, "MultiTable2_Bar_idx_btree") { }
+                internal BarUniqueIndex() : base("MultiTable2_Bar_idx_btree") { }
 
                 // Important: don't move this to the base class.
                 // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
@@ -598,7 +595,7 @@ namespace SpacetimeDB
                 public global::MultiTableRow Update(global::MultiTableRow row) => DoUpdate(row);
             }
 
-            public BarUniqueIndex Bar => new(this);
+            public BarUniqueIndex Bar => new();
         }
 
         public readonly struct PrivateTable
@@ -708,8 +705,7 @@ namespace SpacetimeDB
             public sealed class IdUniqueIndex
                 : UniqueIndex<PublicTable, global::PublicTable, int, SpacetimeDB.BSATN.I32>
             {
-                internal IdUniqueIndex(PublicTable handle)
-                    : base(handle, "PublicTable_Id_idx_btree") { }
+                internal IdUniqueIndex() : base("PublicTable_Id_idx_btree") { }
 
                 // Important: don't move this to the base class.
                 // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
@@ -720,7 +716,7 @@ namespace SpacetimeDB
                 public bool Update(global::PublicTable row) => DoUpdate(row);
             }
 
-            public IdUniqueIndex Id => new(this);
+            public IdUniqueIndex Id => new();
         }
 
         internal readonly struct RegressionMultipleUniqueIndexesHadSameName
@@ -815,8 +811,8 @@ namespace SpacetimeDB
                     SpacetimeDB.BSATN.U32
                 >
             {
-                internal Unique1UniqueIndex(RegressionMultipleUniqueIndexesHadSameName handle)
-                    : base(handle, "RegressionMultipleUniqueIndexesHadSameName_Unique1_idx_btree")
+                internal Unique1UniqueIndex()
+                    : base("RegressionMultipleUniqueIndexesHadSameName_Unique1_idx_btree")
                 { }
 
                 // Important: don't move this to the base class.
@@ -831,7 +827,7 @@ namespace SpacetimeDB
                     DoUpdate(row);
             }
 
-            internal Unique1UniqueIndex Unique1 => new(this);
+            internal Unique1UniqueIndex Unique1 => new();
 
             internal sealed class Unique2UniqueIndex
                 : UniqueIndex<
@@ -841,8 +837,8 @@ namespace SpacetimeDB
                     SpacetimeDB.BSATN.U32
                 >
             {
-                internal Unique2UniqueIndex(RegressionMultipleUniqueIndexesHadSameName handle)
-                    : base(handle, "RegressionMultipleUniqueIndexesHadSameName_Unique2_idx_btree")
+                internal Unique2UniqueIndex()
+                    : base("RegressionMultipleUniqueIndexesHadSameName_Unique2_idx_btree")
                 { }
 
                 // Important: don't move this to the base class.
@@ -857,7 +853,7 @@ namespace SpacetimeDB
                     DoUpdate(row);
             }
 
-            internal Unique2UniqueIndex Unique2 => new(this);
+            internal Unique2UniqueIndex Unique2 => new();
         }
 
         public readonly struct SendMessageTimer
@@ -950,8 +946,8 @@ namespace SpacetimeDB
                     SpacetimeDB.BSATN.U64
                 >
             {
-                internal ScheduledIdUniqueIndex(SendMessageTimer handle)
-                    : base(handle, "SendMessageTimer_ScheduledId_idx_btree") { }
+                internal ScheduledIdUniqueIndex()
+                    : base("SendMessageTimer_ScheduledId_idx_btree") { }
 
                 // Important: don't move this to the base class.
                 // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
@@ -962,7 +958,7 @@ namespace SpacetimeDB
                 public global::Timers.SendMessageTimer Update(global::Timers.SendMessageTimer row) => DoUpdate(row);
             }
 
-            public ScheduledIdUniqueIndex ScheduledId => new(this);
+            public ScheduledIdUniqueIndex ScheduledId => new();
         }
     }
 
