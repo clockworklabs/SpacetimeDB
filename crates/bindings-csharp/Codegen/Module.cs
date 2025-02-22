@@ -420,17 +420,17 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
 
                 yield return $$"""
                         public IEnumerable<{{globalName}}> Filter({{argsScalar}}) =>
-                            DoFilter(new SpacetimeDB.Internal.BTreeIndexBounds<{{types}}>({{argName}}));
+                            DoFilter(new SpacetimeDB.Internal.IndexScanRangeBounds<{{types}}>({{argName}}));
 
                         public ulong Delete({{argsScalar}}) =>
-                            DoDelete(new SpacetimeDB.Internal.BTreeIndexBounds<{{types}}>({{argName}}));
+                            DoDelete(new SpacetimeDB.Internal.IndexScanRangeBounds<{{types}}>({{argName}}));
 
                         public IEnumerable<{{globalName}}> Filter({{argsBounds}}) =>
-                            DoFilter(new SpacetimeDB.Internal.BTreeIndexBounds<{{types}}>({{argName}}));
+                            DoFilter(new SpacetimeDB.Internal.IndexScanRangeBounds<{{types}}>({{argName}}));
 
                         public ulong Delete({{argsBounds}}) =>
-                            DoDelete(new SpacetimeDB.Internal.BTreeIndexBounds<{{types}}>({{argName}}));
-                    
+                            DoDelete(new SpacetimeDB.Internal.IndexScanRangeBounds<{{types}}>({{argName}}));
+
                     """;
             }
 

@@ -100,27 +100,27 @@ namespace SpacetimeDB
             {
                 public IEnumerable<global::BTreeMultiColumn> Filter(uint X) =>
                     DoFilter(
-                        new SpacetimeDB.Internal.BTreeIndexBounds<uint, SpacetimeDB.BSATN.U32>(X)
+                        new SpacetimeDB.Internal.IndexScanRangeBounds<uint, SpacetimeDB.BSATN.U32>(X)
                     );
 
                 public ulong Delete(uint X) =>
                     DoDelete(
-                        new SpacetimeDB.Internal.BTreeIndexBounds<uint, SpacetimeDB.BSATN.U32>(X)
+                        new SpacetimeDB.Internal.IndexScanRangeBounds<uint, SpacetimeDB.BSATN.U32>(X)
                     );
 
                 public IEnumerable<global::BTreeMultiColumn> Filter(Bound<uint> X) =>
                     DoFilter(
-                        new SpacetimeDB.Internal.BTreeIndexBounds<uint, SpacetimeDB.BSATN.U32>(X)
+                        new SpacetimeDB.Internal.IndexScanRangeBounds<uint, SpacetimeDB.BSATN.U32>(X)
                     );
 
                 public ulong Delete(Bound<uint> X) =>
                     DoDelete(
-                        new SpacetimeDB.Internal.BTreeIndexBounds<uint, SpacetimeDB.BSATN.U32>(X)
+                        new SpacetimeDB.Internal.IndexScanRangeBounds<uint, SpacetimeDB.BSATN.U32>(X)
                     );
 
                 public IEnumerable<global::BTreeMultiColumn> Filter((uint X, uint Y) f) =>
                     DoFilter(
-                        new SpacetimeDB.Internal.BTreeIndexBounds<
+                        new SpacetimeDB.Internal.IndexScanRangeBounds<
                             uint,
                             SpacetimeDB.BSATN.U32,
                             uint,
@@ -130,7 +130,7 @@ namespace SpacetimeDB
 
                 public ulong Delete((uint X, uint Y) f) =>
                     DoDelete(
-                        new SpacetimeDB.Internal.BTreeIndexBounds<
+                        new SpacetimeDB.Internal.IndexScanRangeBounds<
                             uint,
                             SpacetimeDB.BSATN.U32,
                             uint,
@@ -140,7 +140,7 @@ namespace SpacetimeDB
 
                 public IEnumerable<global::BTreeMultiColumn> Filter((uint X, Bound<uint> Y) f) =>
                     DoFilter(
-                        new SpacetimeDB.Internal.BTreeIndexBounds<
+                        new SpacetimeDB.Internal.IndexScanRangeBounds<
                             uint,
                             SpacetimeDB.BSATN.U32,
                             uint,
@@ -150,7 +150,7 @@ namespace SpacetimeDB
 
                 public ulong Delete((uint X, Bound<uint> Y) f) =>
                     DoDelete(
-                        new SpacetimeDB.Internal.BTreeIndexBounds<
+                        new SpacetimeDB.Internal.IndexScanRangeBounds<
                             uint,
                             SpacetimeDB.BSATN.U32,
                             uint,
@@ -160,7 +160,7 @@ namespace SpacetimeDB
 
                 public IEnumerable<global::BTreeMultiColumn> Filter((uint X, uint Y, uint Z) f) =>
                     DoFilter(
-                        new SpacetimeDB.Internal.BTreeIndexBounds<
+                        new SpacetimeDB.Internal.IndexScanRangeBounds<
                             uint,
                             SpacetimeDB.BSATN.U32,
                             uint,
@@ -172,7 +172,7 @@ namespace SpacetimeDB
 
                 public ulong Delete((uint X, uint Y, uint Z) f) =>
                     DoDelete(
-                        new SpacetimeDB.Internal.BTreeIndexBounds<
+                        new SpacetimeDB.Internal.IndexScanRangeBounds<
                             uint,
                             SpacetimeDB.BSATN.U32,
                             uint,
@@ -186,7 +186,7 @@ namespace SpacetimeDB
                     (uint X, uint Y, Bound<uint> Z) f
                 ) =>
                     DoFilter(
-                        new SpacetimeDB.Internal.BTreeIndexBounds<
+                        new SpacetimeDB.Internal.IndexScanRangeBounds<
                             uint,
                             SpacetimeDB.BSATN.U32,
                             uint,
@@ -198,7 +198,7 @@ namespace SpacetimeDB
 
                 public ulong Delete((uint X, uint Y, Bound<uint> Z) f) =>
                     DoDelete(
-                        new SpacetimeDB.Internal.BTreeIndexBounds<
+                        new SpacetimeDB.Internal.IndexScanRangeBounds<
                             uint,
                             SpacetimeDB.BSATN.U32,
                             uint,
@@ -302,27 +302,27 @@ namespace SpacetimeDB
             {
                 public IEnumerable<global::BTreeViews> Filter(uint X) =>
                     DoFilter(
-                        new SpacetimeDB.Internal.BTreeIndexBounds<uint, SpacetimeDB.BSATN.U32>(X)
+                        new SpacetimeDB.Internal.IndexScanRangeBounds<uint, SpacetimeDB.BSATN.U32>(X)
                     );
 
                 public ulong Delete(uint X) =>
                     DoDelete(
-                        new SpacetimeDB.Internal.BTreeIndexBounds<uint, SpacetimeDB.BSATN.U32>(X)
+                        new SpacetimeDB.Internal.IndexScanRangeBounds<uint, SpacetimeDB.BSATN.U32>(X)
                     );
 
                 public IEnumerable<global::BTreeViews> Filter(Bound<uint> X) =>
                     DoFilter(
-                        new SpacetimeDB.Internal.BTreeIndexBounds<uint, SpacetimeDB.BSATN.U32>(X)
+                        new SpacetimeDB.Internal.IndexScanRangeBounds<uint, SpacetimeDB.BSATN.U32>(X)
                     );
 
                 public ulong Delete(Bound<uint> X) =>
                     DoDelete(
-                        new SpacetimeDB.Internal.BTreeIndexBounds<uint, SpacetimeDB.BSATN.U32>(X)
+                        new SpacetimeDB.Internal.IndexScanRangeBounds<uint, SpacetimeDB.BSATN.U32>(X)
                     );
 
                 public IEnumerable<global::BTreeViews> Filter((uint X, uint Y) f) =>
                     DoFilter(
-                        new SpacetimeDB.Internal.BTreeIndexBounds<
+                        new SpacetimeDB.Internal.IndexScanRangeBounds<
                             uint,
                             SpacetimeDB.BSATN.U32,
                             uint,
@@ -332,7 +332,7 @@ namespace SpacetimeDB
 
                 public ulong Delete((uint X, uint Y) f) =>
                     DoDelete(
-                        new SpacetimeDB.Internal.BTreeIndexBounds<
+                        new SpacetimeDB.Internal.IndexScanRangeBounds<
                             uint,
                             SpacetimeDB.BSATN.U32,
                             uint,
@@ -342,7 +342,7 @@ namespace SpacetimeDB
 
                 public IEnumerable<global::BTreeViews> Filter((uint X, Bound<uint> Y) f) =>
                     DoFilter(
-                        new SpacetimeDB.Internal.BTreeIndexBounds<
+                        new SpacetimeDB.Internal.IndexScanRangeBounds<
                             uint,
                             SpacetimeDB.BSATN.U32,
                             uint,
@@ -352,7 +352,7 @@ namespace SpacetimeDB
 
                 public ulong Delete((uint X, Bound<uint> Y) f) =>
                     DoDelete(
-                        new SpacetimeDB.Internal.BTreeIndexBounds<
+                        new SpacetimeDB.Internal.IndexScanRangeBounds<
                             uint,
                             SpacetimeDB.BSATN.U32,
                             uint,
@@ -368,28 +368,28 @@ namespace SpacetimeDB
             {
                 public IEnumerable<global::BTreeViews> Filter(string Faction) =>
                     DoFilter(
-                        new SpacetimeDB.Internal.BTreeIndexBounds<string, SpacetimeDB.BSATN.String>(
+                        new SpacetimeDB.Internal.IndexScanRangeBounds<string, SpacetimeDB.BSATN.String>(
                             Faction
                         )
                     );
 
                 public ulong Delete(string Faction) =>
                     DoDelete(
-                        new SpacetimeDB.Internal.BTreeIndexBounds<string, SpacetimeDB.BSATN.String>(
+                        new SpacetimeDB.Internal.IndexScanRangeBounds<string, SpacetimeDB.BSATN.String>(
                             Faction
                         )
                     );
 
                 public IEnumerable<global::BTreeViews> Filter(Bound<string> Faction) =>
                     DoFilter(
-                        new SpacetimeDB.Internal.BTreeIndexBounds<string, SpacetimeDB.BSATN.String>(
+                        new SpacetimeDB.Internal.IndexScanRangeBounds<string, SpacetimeDB.BSATN.String>(
                             Faction
                         )
                     );
 
                 public ulong Delete(Bound<string> Faction) =>
                     DoDelete(
-                        new SpacetimeDB.Internal.BTreeIndexBounds<string, SpacetimeDB.BSATN.String>(
+                        new SpacetimeDB.Internal.IndexScanRangeBounds<string, SpacetimeDB.BSATN.String>(
                             Faction
                         )
                     );
@@ -490,28 +490,28 @@ namespace SpacetimeDB
             {
                 public IEnumerable<global::MultiTableRow> Filter(string Name) =>
                     DoFilter(
-                        new SpacetimeDB.Internal.BTreeIndexBounds<string, SpacetimeDB.BSATN.String>(
+                        new SpacetimeDB.Internal.IndexScanRangeBounds<string, SpacetimeDB.BSATN.String>(
                             Name
                         )
                     );
 
                 public ulong Delete(string Name) =>
                     DoDelete(
-                        new SpacetimeDB.Internal.BTreeIndexBounds<string, SpacetimeDB.BSATN.String>(
+                        new SpacetimeDB.Internal.IndexScanRangeBounds<string, SpacetimeDB.BSATN.String>(
                             Name
                         )
                     );
 
                 public IEnumerable<global::MultiTableRow> Filter(Bound<string> Name) =>
                     DoFilter(
-                        new SpacetimeDB.Internal.BTreeIndexBounds<string, SpacetimeDB.BSATN.String>(
+                        new SpacetimeDB.Internal.IndexScanRangeBounds<string, SpacetimeDB.BSATN.String>(
                             Name
                         )
                     );
 
                 public ulong Delete(Bound<string> Name) =>
                     DoDelete(
-                        new SpacetimeDB.Internal.BTreeIndexBounds<string, SpacetimeDB.BSATN.String>(
+                        new SpacetimeDB.Internal.IndexScanRangeBounds<string, SpacetimeDB.BSATN.String>(
                             Name
                         )
                     );
