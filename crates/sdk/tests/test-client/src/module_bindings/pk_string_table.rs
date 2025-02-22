@@ -104,13 +104,11 @@ impl<'ctx> __sdk::TableWithPrimaryKey for PkStringTableHandle<'ctx> {
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
 ) -> __sdk::Result<__sdk::TableUpdate<PkString>> {
-    __sdk::TableUpdate::parse_table_update_with_primary_key::<String>(raw_updates, |row: &PkString| &row.s).map_err(
-        |e| {
-            __sdk::InternalError::failed_parse("TableUpdate<PkString>", "TableUpdate")
-                .with_cause(e)
-                .into()
-        },
-    )
+    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
+        __sdk::InternalError::failed_parse("TableUpdate<PkString>", "TableUpdate")
+            .with_cause(e)
+            .into()
+    })
 }
 
 /// Access to the `s` unique index on the table `pk_string`,

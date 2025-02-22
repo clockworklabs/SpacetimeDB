@@ -57,60 +57,28 @@ pub(crate) struct ComputePositions;
 
 impl RewriteRule for ComputePositions {
     type Plan = PhysicalPlan;
-    type Info = Label;
+    type Info = (Label, usize);
 
     fn matches(plan: &Self::Plan) -> Option<Self::Info> {
         match plan {
-            PhysicalPlan::Filter(_, expr) => {
-                let mut label = None;
+            PhysicalPlan::Filter(input, expr) => {
+                let mut name_and_position = None;
                 expr.visit(&mut |expr| {
-                    if let PhysicalExpr::Field(t @ TupleField { label_pos: None, .. }) = expr {
-                        label = Some(t.label);
+                    if let PhysicalExpr::Field(TupleField {
+                        label, label_pos: None, ..
+                    }) = expr
+                    {
+                        name_and_position = input.position(label).map(|i| (*label, i));
                     }
                 });
-                label
-            }
-            PhysicalPlan::IxJoin(
-                IxJoin {
-                    lhs_field: t @ TupleField { label_pos: None, .. },
-                    ..
-                },
-                _,
-            )
-            | PhysicalPlan::HashJoin(
-                HashJoin {
-                    lhs_field: t @ TupleField { label_pos: None, .. },
-                    ..
-                },
-                _,
-            )
-            | PhysicalPlan::HashJoin(
-                HashJoin {
-                    rhs_field: t @ TupleField { label_pos: None, .. },
-                    ..
-                },
-                _,
-            ) => Some(t.label),
-            _ => None,
-        }
-    }
-
-    fn rewrite(mut plan: Self::Plan, label: Self::Info) -> Result<Self::Plan> {
-        match &mut plan {
-            PhysicalPlan::Filter(input, expr) => {
-                if let Some(i) = input.position(&label) {
-                    expr.visit_mut(&mut |expr| match expr {
-                        PhysicalExpr::Field(t @ TupleField { label_pos: None, .. }) if t.label == label => {
-                            t.label_pos = Some(i);
-                        }
-                        _ => {}
-                    });
-                }
+                name_and_position
             }
             PhysicalPlan::IxJoin(
                 IxJoin {
                     lhs: input,
-                    lhs_field: t @ TupleField { label_pos: None, .. },
+                    lhs_field: TupleField {
+                        label, label_pos: None, ..
+                    },
                     ..
                 },
                 _,
@@ -118,7 +86,9 @@ impl RewriteRule for ComputePositions {
             | PhysicalPlan::HashJoin(
                 HashJoin {
                     lhs: input,
-                    lhs_field: t @ TupleField { label_pos: None, .. },
+                    lhs_field: TupleField {
+                        label, label_pos: None, ..
+                    },
                     ..
                 },
                 _,
@@ -126,14 +96,49 @@ impl RewriteRule for ComputePositions {
             | PhysicalPlan::HashJoin(
                 HashJoin {
                     rhs: input,
+                    rhs_field: TupleField {
+                        label, label_pos: None, ..
+                    },
+                    ..
+                },
+                _,
+            ) => input.position(label).map(|i| (*label, i)),
+            _ => None,
+        }
+    }
+
+    fn rewrite(mut plan: Self::Plan, (name, pos): Self::Info) -> Result<Self::Plan> {
+        match &mut plan {
+            PhysicalPlan::Filter(_, expr) => {
+                expr.visit_mut(&mut |expr| match expr {
+                    PhysicalExpr::Field(t @ TupleField { label_pos: None, .. }) if t.label == name => {
+                        t.label_pos = Some(pos);
+                    }
+                    _ => {}
+                });
+            }
+            PhysicalPlan::IxJoin(
+                IxJoin {
+                    lhs_field: t @ TupleField { label_pos: None, .. },
+                    ..
+                },
+                _,
+            )
+            | PhysicalPlan::HashJoin(
+                HashJoin {
+                    lhs_field: t @ TupleField { label_pos: None, .. },
+                    ..
+                },
+                _,
+            )
+            | PhysicalPlan::HashJoin(
+                HashJoin {
                     rhs_field: t @ TupleField { label_pos: None, .. },
                     ..
                 },
                 _,
             ) => {
-                if let Some(i) = input.position(&label) {
-                    t.label_pos = Some(i);
-                }
+                t.label_pos = Some(pos);
             }
             _ => {}
         }
@@ -912,6 +917,7 @@ impl RewriteRule for ReorderHashJoin {
         }
     }
 
+    // Swaps both the inputs and the fields
     fn rewrite(plan: Self::Plan, _: Self::Info) -> Result<Self::Plan> {
         match plan {
             PhysicalPlan::HashJoin(join, Semi::All) => Ok(PhysicalPlan::HashJoin(
@@ -920,7 +926,7 @@ impl RewriteRule for ReorderHashJoin {
                     rhs: join.lhs,
                     lhs_field: join.rhs_field,
                     rhs_field: join.lhs_field,
-                    unique: false,
+                    unique: join.unique,
                 },
                 Semi::All,
             )),
@@ -963,13 +969,16 @@ impl RewriteRule for ReorderDeltaJoinRhs {
         None
     }
 
+    // Swaps both the inputs and the fields
     fn rewrite(plan: Self::Plan, _: Self::Info) -> Result<Self::Plan> {
         match plan {
             PhysicalPlan::HashJoin(join, Semi::All) => Ok(PhysicalPlan::HashJoin(
                 HashJoin {
                     lhs: join.rhs,
                     rhs: join.lhs,
-                    ..join
+                    lhs_field: join.rhs_field,
+                    rhs_field: join.lhs_field,
+                    unique: join.unique,
                 },
                 Semi::All,
             )),

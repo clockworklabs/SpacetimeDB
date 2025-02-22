@@ -113,10 +113,31 @@ impl __sdk::InModule for DbUpdate {
 }
 
 impl __sdk::DbUpdate for DbUpdate {
-    fn apply_to_client_cache(&self, cache: &mut __sdk::ClientCache<RemoteModule>) {
-        cache.apply_diff_to_table::<Message>("message", &self.message);
-        cache.apply_diff_to_table::<User>("user", &self.user);
+    fn apply_to_client_cache(&self, cache: &mut __sdk::ClientCache<RemoteModule>) -> AppliedDiff<'_> {
+        let mut diff = AppliedDiff::default();
+
+        diff.message = cache.apply_diff_to_table::<Message>("message", &self.message);
+        diff.user = cache
+            .apply_diff_to_table::<User>("user", &self.user)
+            .with_updates_by_pk(|row| &row.identity);
+
+        diff
     }
+}
+
+#[derive(Default)]
+#[allow(non_snake_case)]
+#[doc(hidden)]
+pub struct AppliedDiff<'r> {
+    message: __sdk::TableAppliedDiff<'r, Message>,
+    user: __sdk::TableAppliedDiff<'r, User>,
+}
+
+impl __sdk::InModule for AppliedDiff<'_> {
+    type Module = RemoteModule;
+}
+
+impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
     fn invoke_row_callbacks(&self, event: &EventContext, callbacks: &mut __sdk::DbCallbacks<RemoteModule>) {
         callbacks.invoke_table_row_callbacks::<Message>("message", &self.message, event);
         callbacks.invoke_table_row_callbacks::<User>("user", &self.user, event);
@@ -691,6 +712,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
     type Reducers = RemoteReducers;
     type SetReducerFlags = SetReducerFlags;
     type DbUpdate = DbUpdate;
+    type AppliedDiff<'r> = AppliedDiff<'r>;
     type SubscriptionHandle = SubscriptionHandle;
 
     fn register_tables(client_cache: &mut __sdk::ClientCache<Self>) {

@@ -200,6 +200,21 @@ macro_rules! declare_tests_with_suffix {
             fn caller_alice_receives_reducer_callback_but_not_bob() {
                 make_test("caller-alice-receives-reducer-callback-but-not-bob").run();
             }
+
+            #[test]
+            fn row_deduplication() {
+                make_test("row-deduplication").run();
+            }
+
+            #[test]
+            fn row_deduplication_join_r_and_s() {
+                make_test("row-deduplication-join-r-and-s").run();
+            }
+
+            #[test]
+            fn row_deduplication_r_join_s_and_r_join_t8() {
+                make_test("row-deduplication-r-join-s-and-r-joint").run();
+            }
         }
     };
 }

@@ -104,12 +104,11 @@ impl<'ctx> __sdk::TableWithPrimaryKey for UserTableHandle<'ctx> {
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
 ) -> __sdk::Result<__sdk::TableUpdate<User>> {
-    __sdk::TableUpdate::parse_table_update_with_primary_key::<__sdk::Identity>(raw_updates, |row: &User| &row.identity)
-        .map_err(|e| {
-            __sdk::InternalError::failed_parse("TableUpdate<User>", "TableUpdate")
-                .with_cause(e)
-                .into()
-        })
+    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
+        __sdk::InternalError::failed_parse("TableUpdate<User>", "TableUpdate")
+            .with_cause(e)
+            .into()
+    })
 }
 
 /// Access to the `identity` unique index on the table `user`,

@@ -3,6 +3,7 @@
 mod module_bindings;
 
 use core::fmt::Display;
+use core::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use module_bindings::*;
@@ -17,10 +18,10 @@ mod simple_test_table;
 use simple_test_table::{insert_one, on_insert_one};
 
 mod pk_test_table;
-use pk_test_table::insert_update_delete_one;
+use pk_test_table::{insert_update_delete_one, PkTestTable};
 
 mod unique_test_table;
-use unique_test_table::insert_then_delete_one;
+use unique_test_table::{insert_then_delete_one, UniqueTestTable};
 
 const LOCALHOST: &str = "http://localhost:3000";
 
@@ -117,6 +118,9 @@ fn main() {
         "caller-alice-receives-reducer-callback-but-not-bob" => {
             exec_caller_alice_receives_reducer_callback_but_not_bob()
         }
+        "row-deduplication" => exec_row_deduplication(),
+        "row-deduplication-join-r-and-s" => exec_row_deduplication_join_r_and_s(),
+        "row-deduplication-r-join-s-and-r-joint" => exec_row_deduplication_r_join_s_and_r_join_t(),
         _ => panic!("Unknown test: {}", test),
     }
 }
@@ -384,10 +388,18 @@ fn connect(test_counter: &std::sync::Arc<TestCounter>) -> DbConnection {
 }
 
 fn subscribe_all_then(ctx: &impl RemoteDbContext, callback: impl FnOnce(&SubscriptionEventContext) + Send + 'static) {
+    subscribe_these_then(ctx, SUBSCRIBE_ALL, callback)
+}
+
+fn subscribe_these_then(
+    ctx: &impl RemoteDbContext,
+    queries: &[&str],
+    callback: impl FnOnce(&SubscriptionEventContext) + Send + 'static,
+) {
     ctx.subscription_builder()
         .on_applied(callback)
         .on_error(|_ctx, error| panic!("Subscription errored: {:?}", error))
-        .subscribe(SUBSCRIBE_ALL);
+        .subscribe(queries);
 }
 
 fn exec_subscribe_and_cancel() {
@@ -1884,4 +1896,191 @@ fn exec_caller_alice_receives_reducer_callback_but_not_bob() {
     // For the integrity of the test, ensure that Alice != Bob.
     // We do this after `run_threaded` so that the ids have been filled.
     assert_ne!(conns[0].identity(), conns[1].identity());
+}
+
+/// [`Option::take`] the `result` function, and invoke it with `res`. Panic if `result` is `None`.
+///
+/// Used in [`exec_row_deduplication`] to determine that row callbacks are invoked only once,
+/// since this will panic if invoked on the same `result` function twice.
+#[allow(clippy::type_complexity)]
+fn put_result(result: &mut Option<Box<dyn Send + FnOnce(Result<(), anyhow::Error>)>>, res: Result<(), anyhow::Error>) {
+    (result.take().unwrap())(res);
+}
+
+fn exec_row_deduplication() {
+    let test_counter = TestCounter::new();
+
+    let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
+
+    let mut ins_24_result = Some(test_counter.add_test("ins_24"));
+    let mut ins_42_result = Some(test_counter.add_test("ins_42"));
+    let mut del_24_result = Some(test_counter.add_test("del_24"));
+    let mut upd_42_result = Some(test_counter.add_test("upd_42"));
+
+    let conn = connect_then(&test_counter, {
+        move |ctx| {
+            let queries = [
+                "SELECT * FROM pk_u32 WHERE pk_u32.n < 100;",
+                "SELECT * FROM pk_u32 WHERE pk_u32.n < 200;",
+            ];
+
+            // The general approach in this test is that
+            // we expect at most a single `on_X` callback per row.
+            // If we receive duplicate callbacks,
+            // there's a problem with row deduplication and `put_result` will panic.
+            PkU32::on_insert(ctx, move |ctx, i| match i.n {
+                24 => {
+                    put_result(&mut ins_24_result, Ok(()));
+                    // Trigger the delete we expect.
+                    PkU32::delete(ctx, 24);
+                }
+                42 => {
+                    put_result(&mut ins_42_result, Ok(()));
+                    // Trigger the update we expect.
+                    PkU32::update(ctx, 42, 0xfeeb);
+                }
+                _ => unreachable!("only 24 and 42 were expected insertions"),
+            });
+
+            PkU32::on_delete(ctx, move |_, d| match d.n {
+                24 => put_result(&mut del_24_result, Ok(())),
+                42 => panic!("should not have received delete for 42, only update"),
+                x => unreachable!("only 24 and 42 were expected rows, got: {x}"),
+            });
+
+            PkU32::on_update(ctx, move |_, d, i| match (d.n, i.n, d.data, i.data) {
+                (24, 24, ..) => panic!("should not have received update for 24, only delete"),
+                (42, 42, 0xbeef, 0xfeeb) => put_result(&mut upd_42_result, Ok(())),
+                x => unreachable!("only 24 and 42 were expected rows, got: `{x:?}`"),
+            });
+
+            subscribe_these_then(ctx, &queries, move |ctx| {
+                PkU32::insert(ctx, 24, 0xbeef);
+                PkU32::insert(ctx, 42, 0xbeef);
+                sub_applied_nothing_result(assert_all_tables_empty(ctx));
+            });
+        }
+    });
+
+    test_counter.wait_for_all();
+
+    // Ensure we're not double counting anything.
+    let table = conn.db.pk_u_32();
+    assert_eq!(table.count(), 1);
+    assert_eq!(table.n().find(&24), None);
+    assert_eq!(table.n().find(&42), Some(PkU32 { n: 42, data: 0xfeeb }));
+}
+
+fn exec_row_deduplication_join_r_and_s() {
+    let test_counter = TestCounter::new();
+
+    let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
+
+    let mut pk_u32_on_insert_result = Some(test_counter.add_test("pk_u32_on_insert"));
+    let mut pk_u32_on_update_result = Some(test_counter.add_test("pk_u32_on_update"));
+    let mut unique_u32_on_insert_result = Some(test_counter.add_test("unique_u32_on_insert"));
+
+    connect_then(&test_counter, {
+        move |ctx| {
+            let queries = [
+                "SELECT * FROM pk_u32;",
+                "SELECT unique_u32.* FROM unique_u32 JOIN pk_u32 ON unique_u32.n = pk_u32.n;",
+            ];
+
+            // These never happen. In the case of `PkU32` we get an update instead.
+            UniqueU32::on_delete(ctx, move |_, _| panic!("we never delete a `UniqueU32`"));
+            PkU32::on_delete(ctx, move |_, _| panic!("we never delete a `PkU32`"));
+
+            const KEY: u32 = 42;
+            const DU: i32 = 0xbeef;
+            const D1: i32 = 50;
+            const D2: i32 = 100;
+
+            // Here is where we start.
+            subscribe_these_then(ctx, &queries, move |ctx| {
+                PkU32::insert(ctx, KEY, D1);
+                sub_applied_nothing_result(assert_all_tables_empty(ctx));
+            });
+            // We first get an insert for `PkU32` from ^---
+            // and then update that row and insert into `UniqueU32` in ---------v.
+            PkU32::on_insert(ctx, move |ctx, val| {
+                assert_eq!(val.n, KEY);
+                assert_eq!(val.data, D1);
+                put_result(&mut pk_u32_on_insert_result, Ok(()));
+                ctx.reducers.insert_unique_u_32_update_pk_u_32(KEY, DU, D2).unwrap();
+            });
+            // This is caused by the reducer invocation ^-----
+            PkU32::on_update(ctx, move |_, old, new| {
+                assert_eq!(old.n, KEY);
+                assert_eq!(new.n, KEY);
+                assert_eq!(old.data, D1);
+                assert_eq!(new.data, D2);
+                put_result(&mut pk_u32_on_update_result, Ok(()));
+            });
+            // This is caused by the reducer invocation ^-----
+            UniqueU32::on_insert(ctx, move |_, val| {
+                assert_eq!(val.n, KEY);
+                assert_eq!(val.data, DU);
+                put_result(&mut unique_u32_on_insert_result, Ok(()));
+            });
+        }
+    });
+
+    test_counter.wait_for_all();
+}
+
+fn exec_row_deduplication_r_join_s_and_r_join_t() {
+    let test_counter: Arc<TestCounter> = TestCounter::new();
+
+    let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
+
+    let mut pk_u32_on_insert_result = Some(test_counter.add_test("pk_u32_on_insert"));
+    let mut pk_u32_on_delete_result = Some(test_counter.add_test("pk_u32_on_delete"));
+    let mut pk_u32_two_on_insert_result = Some(test_counter.add_test("pk_u32_two_on_insert"));
+
+    let count_unique_u32_on_insert = Arc::new(AtomicUsize::new(0));
+    let count_unique_u32_on_insert_dup = count_unique_u32_on_insert.clone();
+
+    connect_then(&test_counter, {
+        move |ctx| {
+            let queries = [
+                "SELECT * FROM pk_u32;",
+                "SELECT * FROM pk_u32_two;",
+                "SELECT unique_u32.* FROM unique_u32 JOIN pk_u32 ON unique_u32.n = pk_u32.n;",
+                "SELECT unique_u32.* FROM unique_u32 JOIN pk_u32_two ON unique_u32.n = pk_u32_two.n;",
+            ];
+
+            const KEY: u32 = 42;
+            const DATA: i32 = 0xbeef;
+
+            UniqueU32::insert(ctx, KEY, DATA);
+
+            subscribe_these_then(ctx, &queries, move |ctx| {
+                PkU32::insert(ctx, KEY, DATA);
+                sub_applied_nothing_result(assert_all_tables_empty(ctx));
+            });
+            PkU32::on_insert(ctx, move |ctx, val| {
+                assert_eq!(val, &PkU32 { n: KEY, data: DATA });
+                put_result(&mut pk_u32_on_insert_result, Ok(()));
+                ctx.reducers.delete_pk_u_32_insert_pk_u_32_two(KEY, DATA).unwrap();
+            });
+            PkU32Two::on_insert(ctx, move |_, val| {
+                assert_eq!(val, &PkU32Two { n: KEY, data: DATA });
+                put_result(&mut pk_u32_two_on_insert_result, Ok(()));
+            });
+            PkU32::on_delete(ctx, move |_, val| {
+                assert_eq!(val, &PkU32 { n: KEY, data: DATA });
+                put_result(&mut pk_u32_on_delete_result, Ok(()));
+            });
+            UniqueU32::on_insert(ctx, move |_, _| {
+                count_unique_u32_on_insert_dup.fetch_add(1, Ordering::SeqCst);
+            });
+            UniqueU32::on_delete(ctx, move |_, _| panic!());
+            PkU32Two::on_delete(ctx, move |_, _| panic!());
+        }
+    });
+
+    test_counter.wait_for_all();
+
+    assert_eq!(count_unique_u32_on_insert.load(Ordering::SeqCst), 1);
 }
