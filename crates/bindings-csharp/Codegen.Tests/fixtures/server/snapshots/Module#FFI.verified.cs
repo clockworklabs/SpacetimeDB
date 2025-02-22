@@ -283,7 +283,8 @@ namespace SpacetimeDB
                     SpacetimeDB.Identity.BSATN
                 >
             {
-                internal IdUniqueIndex() : base("BTreeViews_Id_idx_btree") { }
+                internal IdUniqueIndex()
+                    : base("BTreeViews_Id_idx_btree") { }
 
                 // Important: don't move this to the base class.
                 // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
@@ -468,7 +469,8 @@ namespace SpacetimeDB
             public sealed class FooUniqueIndex
                 : UniqueIndex<MultiTable1, global::MultiTableRow, uint, SpacetimeDB.BSATN.U32>
             {
-                internal FooUniqueIndex() : base("MultiTable1_Foo_idx_btree") { }
+                internal FooUniqueIndex()
+                    : base("MultiTable1_Foo_idx_btree") { }
 
                 // Important: don't move this to the base class.
                 // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
@@ -584,7 +586,8 @@ namespace SpacetimeDB
             public sealed class BarUniqueIndex
                 : UniqueIndex<MultiTable2, global::MultiTableRow, uint, SpacetimeDB.BSATN.U32>
             {
-                internal BarUniqueIndex() : base("MultiTable2_Bar_idx_btree") { }
+                internal BarUniqueIndex()
+                    : base("MultiTable2_Bar_idx_btree") { }
 
                 // Important: don't move this to the base class.
                 // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
@@ -705,7 +708,8 @@ namespace SpacetimeDB
             public sealed class IdUniqueIndex
                 : UniqueIndex<PublicTable, global::PublicTable, int, SpacetimeDB.BSATN.I32>
             {
-                internal IdUniqueIndex() : base("PublicTable_Id_idx_btree") { }
+                internal IdUniqueIndex()
+                    : base("PublicTable_Id_idx_btree") { }
 
                 // Important: don't move this to the base class.
                 // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
@@ -713,7 +717,7 @@ namespace SpacetimeDB
                 public global::PublicTable? Find(int key) =>
                     DoFilter(key).Cast<global::PublicTable?>().SingleOrDefault();
 
-                public bool Update(global::PublicTable row) => DoUpdate(row);
+                public global::PublicTable Update(global::PublicTable row) => DoUpdate(row);
             }
 
             public IdUniqueIndex Id => new();
@@ -812,8 +816,7 @@ namespace SpacetimeDB
                 >
             {
                 internal Unique1UniqueIndex()
-                    : base("RegressionMultipleUniqueIndexesHadSameName_Unique1_idx_btree")
-                { }
+                    : base("RegressionMultipleUniqueIndexesHadSameName_Unique1_idx_btree") { }
 
                 // Important: don't move this to the base class.
                 // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
@@ -823,8 +826,9 @@ namespace SpacetimeDB
                         .Cast<global::RegressionMultipleUniqueIndexesHadSameName?>()
                         .SingleOrDefault();
 
-                public global::RegressionMultipleUniqueIndexesHadSameName Update(global::RegressionMultipleUniqueIndexesHadSameName row) =>
-                    DoUpdate(row);
+                public global::RegressionMultipleUniqueIndexesHadSameName Update(
+                    global::RegressionMultipleUniqueIndexesHadSameName row
+                ) => DoUpdate(row);
             }
 
             internal Unique1UniqueIndex Unique1 => new();
@@ -838,8 +842,7 @@ namespace SpacetimeDB
                 >
             {
                 internal Unique2UniqueIndex()
-                    : base("RegressionMultipleUniqueIndexesHadSameName_Unique2_idx_btree")
-                { }
+                    : base("RegressionMultipleUniqueIndexesHadSameName_Unique2_idx_btree") { }
 
                 // Important: don't move this to the base class.
                 // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
@@ -849,8 +852,9 @@ namespace SpacetimeDB
                         .Cast<global::RegressionMultipleUniqueIndexesHadSameName?>()
                         .SingleOrDefault();
 
-                public global::RegressionMultipleUniqueIndexesHadSameName Update(global::RegressionMultipleUniqueIndexesHadSameName row) =>
-                    DoUpdate(row);
+                public global::RegressionMultipleUniqueIndexesHadSameName Update(
+                    global::RegressionMultipleUniqueIndexesHadSameName row
+                ) => DoUpdate(row);
             }
 
             internal Unique2UniqueIndex Unique2 => new();
@@ -955,7 +959,9 @@ namespace SpacetimeDB
                 public global::Timers.SendMessageTimer? Find(ulong key) =>
                     DoFilter(key).Cast<global::Timers.SendMessageTimer?>().SingleOrDefault();
 
-                public global::Timers.SendMessageTimer Update(global::Timers.SendMessageTimer row) => DoUpdate(row);
+                public global::Timers.SendMessageTimer Update(
+                    global::Timers.SendMessageTimer row
+                ) => DoUpdate(row);
             }
 
             public ScheduledIdUniqueIndex ScheduledId => new();
