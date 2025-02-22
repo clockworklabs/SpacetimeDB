@@ -120,7 +120,7 @@ public interface ITableView<View, T>
             return out_;
         });
 
-    private static FFI.TableId tableId => tableId_.Value;
+    internal static FFI.TableId tableId => tableId_.Value;
 
     ulong Count { get; }
 
@@ -145,8 +145,13 @@ public interface ITableView<View, T>
         var bytes_len = (uint)bytes.Length;
         FFI.datastore_insert_bsatn(tableId, bytes, ref bytes_len);
 
-        // Write back any generated column values.
-        using var stream = new MemoryStream(bytes, 0, (int)bytes_len);
+        return IntegrateGeneratedColumns(row, bytes, bytes_len);
+    }
+
+    // Writes back any generated column values.
+    static T IntegrateGeneratedColumns(T row, byte[] bytes, uint gen_len)
+    {
+        using var stream = new MemoryStream(bytes, 0, (int)gen_len);
         using var reader = new BinaryReader(stream);
         return View.ReadGenFields(reader, row);
     }
