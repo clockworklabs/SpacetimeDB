@@ -129,8 +129,8 @@ namespace SpacetimeDB
                     SpacetimeDB.BSATN.String
                 >
             {
-                internal IdentityFieldUniqueIndex(TestAutoIncNotInteger handle)
-                    : base(handle, "TestAutoIncNotInteger_IdentityField_idx_btree") { }
+                internal IdentityFieldUniqueIndex()
+                    : base("TestAutoIncNotInteger_IdentityField_idx_btree") { }
 
                 // Important: don't move this to the base class.
                 // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
@@ -138,11 +138,11 @@ namespace SpacetimeDB
                 public global::TestAutoIncNotInteger? Find(string key) =>
                     DoFilter(key).Cast<global::TestAutoIncNotInteger?>().SingleOrDefault();
 
-                public bool Update(global::TestAutoIncNotInteger row) =>
-                    DoUpdate(row.IdentityField, row);
+                public global::TestAutoIncNotInteger Update(global::TestAutoIncNotInteger row) =>
+                    DoUpdate(row);
             }
 
-            public IdentityFieldUniqueIndex IdentityField => new(this);
+            public IdentityFieldUniqueIndex IdentityField => new();
         }
 
         public readonly struct TestDuplicateTableName
@@ -516,8 +516,8 @@ namespace SpacetimeDB
                     SpacetimeDB.BSATN.I32
                 >
             {
-                internal IdCorrectTypeUniqueIndex(TestScheduleWithoutScheduleAt handle)
-                    : base(handle, "TestScheduleWithoutScheduleAt_IdCorrectType_idx_btree") { }
+                internal IdCorrectTypeUniqueIndex()
+                    : base("TestScheduleWithoutScheduleAt_IdCorrectType_idx_btree") { }
 
                 // Important: don't move this to the base class.
                 // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
@@ -525,11 +525,11 @@ namespace SpacetimeDB
                 public global::TestScheduleIssues? Find(int key) =>
                     DoFilter(key).Cast<global::TestScheduleIssues?>().SingleOrDefault();
 
-                public bool Update(global::TestScheduleIssues row) =>
-                    DoUpdate(row.IdCorrectType, row);
+                public global::TestScheduleIssues Update(global::TestScheduleIssues row) =>
+                    DoUpdate(row);
             }
 
-            public IdCorrectTypeUniqueIndex IdCorrectType => new(this);
+            public IdCorrectTypeUniqueIndex IdCorrectType => new();
         }
 
         public readonly struct TestScheduleWithWrongPrimaryKeyType
@@ -611,8 +611,8 @@ namespace SpacetimeDB
                     SpacetimeDB.BSATN.String
                 >
             {
-                internal IdWrongTypeUniqueIndex(TestScheduleWithWrongPrimaryKeyType handle)
-                    : base(handle, "TestScheduleWithWrongPrimaryKeyType_IdWrongType_idx_btree") { }
+                internal IdWrongTypeUniqueIndex()
+                    : base("TestScheduleWithWrongPrimaryKeyType_IdWrongType_idx_btree") { }
 
                 // Important: don't move this to the base class.
                 // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
@@ -620,11 +620,11 @@ namespace SpacetimeDB
                 public global::TestScheduleIssues? Find(string key) =>
                     DoFilter(key).Cast<global::TestScheduleIssues?>().SingleOrDefault();
 
-                public bool Update(global::TestScheduleIssues row) =>
-                    DoUpdate(row.IdWrongType, row);
+                public global::TestScheduleIssues Update(global::TestScheduleIssues row) =>
+                    DoUpdate(row);
             }
 
-            public IdWrongTypeUniqueIndex IdWrongType => new(this);
+            public IdWrongTypeUniqueIndex IdWrongType => new();
         }
 
         public readonly struct TestScheduleWithWrongScheduleAtType
@@ -706,9 +706,8 @@ namespace SpacetimeDB
                     SpacetimeDB.BSATN.I32
                 >
             {
-                internal IdCorrectTypeUniqueIndex(TestScheduleWithWrongScheduleAtType handle)
-                    : base(handle, "TestScheduleWithWrongScheduleAtType_IdCorrectType_idx_btree")
-                { }
+                internal IdCorrectTypeUniqueIndex()
+                    : base("TestScheduleWithWrongScheduleAtType_IdCorrectType_idx_btree") { }
 
                 // Important: don't move this to the base class.
                 // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
@@ -716,11 +715,11 @@ namespace SpacetimeDB
                 public global::TestScheduleIssues? Find(int key) =>
                     DoFilter(key).Cast<global::TestScheduleIssues?>().SingleOrDefault();
 
-                public bool Update(global::TestScheduleIssues row) =>
-                    DoUpdate(row.IdCorrectType, row);
+                public global::TestScheduleIssues Update(global::TestScheduleIssues row) =>
+                    DoUpdate(row);
             }
 
-            public IdCorrectTypeUniqueIndex IdCorrectType => new(this);
+            public IdCorrectTypeUniqueIndex IdCorrectType => new();
         }
 
         public readonly struct TestUniqueNotEquatable
