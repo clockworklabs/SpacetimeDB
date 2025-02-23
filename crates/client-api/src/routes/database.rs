@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use crate::auth::{
     anon_auth_middleware, SpacetimeAuth, SpacetimeEnergyUsed, SpacetimeExecutionDurationMicros, SpacetimeIdentity,
     SpacetimeIdentityToken,
@@ -385,7 +387,12 @@ where
         .ok_or(StatusCode::NOT_FOUND)?;
     let json = host.exec_sql(auth, database, body).await?;
 
-    Ok(axum::Json(json))
+    let total_duration = json.iter().fold(0, |acc, x| acc + x.total_duration_micros);
+
+    Ok((
+        TypedHeader(SpacetimeExecutionDurationMicros(Duration::from_micros(total_duration))),
+        axum::Json(json),
+    ))
 }
 
 #[derive(Deserialize)]

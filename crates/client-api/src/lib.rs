@@ -84,6 +84,10 @@ impl Host {
                     // We need a header for query results
                     let mut header = vec![];
 
+                    let sql_start = std::time::Instant::now();
+                    let sql_span =
+                        tracing::trace_span!("execute_sql", total_duration = tracing::field::Empty,).entered();
+
                     let rows = sql::execute::run(
                         // Returns an empty result set for mutations
                         db,
@@ -101,13 +105,20 @@ impl Host {
                         }
                     })?;
 
+                    let total_duration = sql_start.elapsed();
+                    sql_span.record("total_duration", tracing::field::debug(total_duration));
+
                     // Turn the header into a `ProductType`
                     let schema = header
                         .into_iter()
                         .map(|(col_name, col_type)| ProductTypeElement::new(col_type, Some(col_name)))
                         .collect();
 
-                    Ok(vec![StmtResultJson { schema, rows }])
+                    Ok(vec![StmtResultJson {
+                        schema,
+                        rows,
+                        total_duration_micros: total_duration.as_micros() as u64,
+                    }])
                 },
             )
             .await
