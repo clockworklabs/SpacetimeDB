@@ -97,10 +97,29 @@ impl __sdk::InModule for DbUpdate {
 }
 
 impl __sdk::DbUpdate for DbUpdate {
-    fn apply_to_client_cache(&self, cache: &mut __sdk::ClientCache<RemoteModule>) {
-        cache.apply_diff_to_table::<Connected>("connected", &self.connected);
-        cache.apply_diff_to_table::<Disconnected>("disconnected", &self.disconnected);
+    fn apply_to_client_cache(&self, cache: &mut __sdk::ClientCache<RemoteModule>) -> AppliedDiff<'_> {
+        let mut diff = AppliedDiff::default();
+
+        diff.connected = cache.apply_diff_to_table::<Connected>("connected", &self.connected);
+        diff.disconnected = cache.apply_diff_to_table::<Disconnected>("disconnected", &self.disconnected);
+
+        diff
     }
+}
+
+#[derive(Default)]
+#[allow(non_snake_case)]
+#[doc(hidden)]
+pub struct AppliedDiff<'r> {
+    connected: __sdk::TableAppliedDiff<'r, Connected>,
+    disconnected: __sdk::TableAppliedDiff<'r, Disconnected>,
+}
+
+impl __sdk::InModule for AppliedDiff<'_> {
+    type Module = RemoteModule;
+}
+
+impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
     fn invoke_row_callbacks(&self, event: &EventContext, callbacks: &mut __sdk::DbCallbacks<RemoteModule>) {
         callbacks.invoke_table_row_callbacks::<Connected>("connected", &self.connected, event);
         callbacks.invoke_table_row_callbacks::<Disconnected>("disconnected", &self.disconnected, event);
@@ -675,6 +694,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
     type Reducers = RemoteReducers;
     type SetReducerFlags = SetReducerFlags;
     type DbUpdate = DbUpdate;
+    type AppliedDiff<'r> = AppliedDiff<'r>;
     type SubscriptionHandle = SubscriptionHandle;
 
     fn register_tables(client_cache: &mut __sdk::ClientCache<Self>) {

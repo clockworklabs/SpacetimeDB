@@ -45,7 +45,6 @@ bytemuck.workspace = true
 bytes.workspace = true
 bytestring.workspace = true
 chrono.workspace = true
-clap.workspace = true
 crossbeam-channel.workspace = true
 derive_more.workspace = true
 dirs.workspace = true

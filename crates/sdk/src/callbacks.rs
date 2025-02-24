@@ -15,7 +15,10 @@
 //!
 //! This module is internal, and may incompatibly change without warning.
 
-use crate::spacetime_module::{AbstractEventContext, Reducer, SpacetimeModule, TableUpdate};
+use crate::{
+    client_cache::TableAppliedDiff,
+    spacetime_module::{AbstractEventContext, Reducer, SpacetimeModule},
+};
 use spacetimedb_data_structures::map::HashMap;
 use std::{
     any::Any,
@@ -68,25 +71,25 @@ impl<M: SpacetimeModule> DbCallbacks<M> {
         self.table_callbacks.entry(table_name).or_default()
     }
 
-    /// Invoke all row callbacks for rows modified by `table_update` for the table `table_name`.
+    /// Invoke all row callbacks for rows modified by `applied_diff` for the table `table_name`.
     pub fn invoke_table_row_callbacks<Row: Any>(
         &mut self,
         table_name: &'static str,
-        table_update: &TableUpdate<Row>,
+        applied_diff: &TableAppliedDiff<Row>,
         event: &M::EventContext,
     ) {
-        if table_update.is_empty() {
+        if applied_diff.is_empty() {
             return;
         }
         let table_callbacks = self.get_table_callbacks(table_name);
-        for insert in &table_update.inserts {
-            table_callbacks.invoke_on_insert(event, &insert.row);
+        for row in applied_diff.inserts() {
+            table_callbacks.invoke_on_insert(event, row);
         }
-        for delete in &table_update.deletes {
-            table_callbacks.invoke_on_delete(event, &delete.row);
+        for row in applied_diff.deletes() {
+            table_callbacks.invoke_on_delete(event, row);
         }
-        for update in &table_update.updates {
-            table_callbacks.invoke_on_update(event, &update.delete.row, &update.insert.row);
+        for (del, ins) in applied_diff.updates() {
+            table_callbacks.invoke_on_update(event, del, ins);
         }
     }
 }

@@ -82,11 +82,12 @@ impl<'ctx> __sdk::Table for ConnectedTableHandle<'ctx> {
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
     let _table = client_cache.get_or_make_table::<Connected>("connected");
 }
+
 #[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
 ) -> __sdk::Result<__sdk::TableUpdate<Connected>> {
-    __sdk::TableUpdate::parse_table_update_no_primary_key(raw_updates).map_err(|e| {
+    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
         __sdk::InternalError::failed_parse("TableUpdate<Connected>", "TableUpdate")
             .with_cause(e)
             .into()

@@ -2,7 +2,7 @@ use anyhow::{bail, Result};
 use spacetimedb_execution::{pipelined::PipelinedProject, Datastore, DeltaStore, Row};
 use spacetimedb_expr::check::SchemaView;
 use spacetimedb_lib::{metrics::ExecutionMetrics, query::Delta};
-use spacetimedb_physical_plan::plan::{HashJoin, IxJoin, Label, PhysicalPlan, ProjectPlan};
+use spacetimedb_physical_plan::plan::{HashJoin, IxJoin, Label, PhysicalPlan, ProjectPlan, TableScan};
 use spacetimedb_primitives::TableId;
 use spacetimedb_query::compile_subscription;
 
@@ -130,8 +130,15 @@ impl Fragments {
         /// Mutate a query plan by turning a table scan into a delta scan
         fn mut_plan(plan: &mut ProjectPlan, relvar: Label, delta: Delta) {
             plan.visit_mut(&mut |plan| match plan {
-                PhysicalPlan::TableScan(_, alias, is_delta @ None) if alias == &relvar => {
-                    *is_delta = Some(delta);
+                PhysicalPlan::TableScan(
+                    scan @ TableScan {
+                        limit: None,
+                        delta: None,
+                        ..
+                    },
+                    alias,
+                ) if alias == &relvar => {
+                    scan.delta = Some(delta);
                 }
                 _ => {}
             });
@@ -300,7 +307,15 @@ impl SubscriptionPlan {
         let mut table_ids = vec![];
 
         plan.visit(&mut |plan| {
-            if let PhysicalPlan::TableScan(schema, alias, None) = plan {
+            if let PhysicalPlan::TableScan(
+                TableScan {
+                    schema,
+                    limit: None,
+                    delta: None,
+                },
+                alias,
+            ) = plan
+            {
                 table_aliases.push(*alias);
                 table_ids.push(schema.table_id);
             }

@@ -104,7 +104,7 @@ impl<'ctx> __sdk::TableWithPrimaryKey for PkU32TableHandle<'ctx> {
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
 ) -> __sdk::Result<__sdk::TableUpdate<PkU32>> {
-    __sdk::TableUpdate::parse_table_update_with_primary_key::<u32>(raw_updates, |row: &PkU32| &row.n).map_err(|e| {
+    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
         __sdk::InternalError::failed_parse("TableUpdate<PkU32>", "TableUpdate")
             .with_cause(e)
             .into()

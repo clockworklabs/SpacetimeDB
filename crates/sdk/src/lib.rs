@@ -13,6 +13,7 @@
 mod callbacks;
 mod client_cache;
 mod db_connection;
+mod metrics;
 mod spacetime_module;
 mod subscription;
 mod websocket;
@@ -46,12 +47,13 @@ pub mod __codegen {
     pub use spacetimedb_sats as __sats;
 
     pub use crate::callbacks::{CallbackId, DbCallbacks};
-    pub use crate::client_cache::{ClientCache, TableHandle, UniqueConstraintHandle};
+    pub use crate::client_cache::{ClientCache, TableAppliedDiff, TableHandle, UniqueConstraintHandle};
     pub use crate::db_connection::DbContextImpl;
     pub use crate::error::{Error, InternalError, Result};
     pub use crate::spacetime_module::{
-        parse_reducer_args, AbstractEventContext, DbConnection, DbUpdate, ErrorContext, EventContext, InModule,
-        Reducer, ReducerEventContext, SpacetimeModule, SubscriptionEventContext, SubscriptionHandle, TableUpdate,
+        parse_reducer_args, AbstractEventContext, AppliedDiff, DbConnection, DbUpdate, ErrorContext, EventContext,
+        InModule, Reducer, ReducerEventContext, SpacetimeModule, SubscriptionEventContext, SubscriptionHandle,
+        TableUpdate,
     };
     pub use crate::subscription::{OnEndedCallback, SubscriptionBuilder, SubscriptionHandleImpl};
     pub use crate::{
@@ -66,5 +68,6 @@ pub mod unstable {
     //!
     //! These may change incompatibly without a major version bump.
     pub use crate::db_connection::set_connection_id;
+    pub use crate::metrics::{ClientMetrics, CLIENT_METRICS};
     pub use spacetimedb_client_api_messages::websocket::CallReducerFlags;
 }

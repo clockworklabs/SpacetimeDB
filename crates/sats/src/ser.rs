@@ -7,12 +7,11 @@ pub mod serde;
 
 use core::fmt;
 
-/// A **data format** that can deserialize any data structure supported by SATs.
+/// A data format that can deserialize any data structure supported by SATs.
 ///
-/// The `Serializer` trait in SATS performs the same function as [`serde::Serializer`] in [`serde`].
-/// See the documentation of [`serde::Serializer`] for more information of the data model.
+/// The `Serializer` trait in SATS performs the same function as `serde::Serializer` in [`serde`].
+/// See the documentation of `serde::Serializer` for more information on the data model.
 ///
-/// [`serde::Serializer`]: ::serde::Serializer
 /// [`serde`]: https://crates.io/crates/serde
 pub trait Serializer: Sized {
     /// The output type produced by this `Serializer` during successful serialization.
@@ -203,14 +202,18 @@ pub use spacetimedb_bindings_macro::Serialize;
 
 use crate::{bsatn, buffer::BufWriter, AlgebraicType};
 
-/// A **data structure** that can be serialized into any data format supported by SATS.
+/// A **data structure** that can be serialized into any data format supported by
+/// the SpacetimeDB Algebraic Type System.
 ///
 /// In most cases, implementations of `Serialize` may be `#[derive(Serialize)]`d.
 ///
-/// The `Serialize` trait in SATS performs the same function as [`serde::Serialize`] in [`serde`].
-/// See the documentation of [`serde::Serialize`] for more information of the data model.
+/// The `Serialize` trait in SATS performs the same function as `serde::Serialize` in [`serde`].
+/// See the documentation of `serde::Serialize` for more information of the data model.
 ///
-/// [`serde::Serialize`]: ::serde::Serialize
+/// Do not manually implement this trait unless you know what you are doing.
+/// Implementations must be consistent with `Deerialize<'de> for T`, `SpacetimeType for T` and `Serialize, Deserialize for AlgebraicValue`.
+/// Implementations that are inconsistent across these traits may result in data loss.
+///
 /// [`serde`]: https://crates.io/crates/serde
 pub trait Serialize {
     /// Serialize `self` in the data format of `S` using the provided `serializer`.

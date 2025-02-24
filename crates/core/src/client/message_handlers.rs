@@ -84,6 +84,22 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
                 )
             })
         }
+        ClientMessage::SubscribeMulti(subscription) => {
+            let res = client.subscribe_multi(subscription, timer).await;
+            WORKER_METRICS
+                .request_round_trip
+                .with_label_values(&WorkloadType::Subscribe, &database_identity, "")
+                .observe(timer.elapsed().as_secs_f64());
+            res.map_err(|e| (None, None, e.into()))
+        }
+        ClientMessage::UnsubscribeMulti(request) => {
+            let res = client.unsubscribe_multi(request, timer).await;
+            WORKER_METRICS
+                .request_round_trip
+                .with_label_values(&WorkloadType::Unsubscribe, &database_identity, "")
+                .observe(timer.elapsed().as_secs_f64());
+            res.map_err(|e| (None, None, e.into()))
+        }
         ClientMessage::SubscribeSingle(subscription) => {
             let res = client.subscribe_single(subscription, timer).await;
             WORKER_METRICS

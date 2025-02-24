@@ -420,7 +420,7 @@ static REDUCERS: OnceLock<Vec<ReducerFn>> = OnceLock::new();
 /// For the time being, the definition of `ModuleDef` is not stabilized,
 /// as it is being changed by the schema proposal.
 ///
-/// The `ModuleDef` is used to define tables, constraints, indices, reducers, etc.
+/// The `ModuleDef` is used to define tables, constraints, indexes, reducers, etc.
 /// This affords the module the opportunity
 /// to define and, to a limited extent, alter the schema at initialization time,
 /// including when modules are updated (re-publishing).

@@ -104,10 +104,7 @@ impl<'ctx> __sdk::TableWithPrimaryKey for ScheduledTableTableHandle<'ctx> {
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
 ) -> __sdk::Result<__sdk::TableUpdate<ScheduledTable>> {
-    __sdk::TableUpdate::parse_table_update_with_primary_key::<u64>(raw_updates, |row: &ScheduledTable| {
-        &row.scheduled_id
-    })
-    .map_err(|e| {
+    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
         __sdk::InternalError::failed_parse("TableUpdate<ScheduledTable>", "TableUpdate")
             .with_cause(e)
             .into()

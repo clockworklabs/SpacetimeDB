@@ -6,6 +6,9 @@ license-file = "LICENSE"
 description = "A command line interface for SpacetimeDB"
 rust-version.workspace = true
 
+[features]
+markdown-docs = []
+
 [lib]
 bench = false
 
@@ -70,6 +73,7 @@ walkdir.workspace = true
 wasmbin.workspace = true
 wasmtime.workspace = true
 webbrowser.workspace = true
+clap-markdown.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { workspace = true, features = ["Win32_System_Console"] }

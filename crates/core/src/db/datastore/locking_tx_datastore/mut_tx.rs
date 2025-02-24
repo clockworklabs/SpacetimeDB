@@ -1347,6 +1347,8 @@ impl MutTxId {
                     if let (_, Some(commit_ptr)) =
                         unsafe { Table::find_same_row(commit_table, tx_table, tx_blob_store, tx_row_ptr, tx_row_hash) }
                     {
+                        // (insert_undelete)
+                        // -----------------------------------------------------
                         // If `row` was already present in the committed state,
                         // either this is a set-semantic duplicate,
                         // or the row is marked as deleted, so we will undelete it
@@ -1547,6 +1549,8 @@ impl MutTxId {
         // In the former case, the index must not have been removed in the transaction.
         // As it's unlikely that an index was added in this transaction,
         // we begin by checking the committed state.
+        let commit_blob_store = &self.committed_state_write_lock.blob_store;
+        let mut old_commit_del_ptr = None;
         let err = 'failed_rev_ins: {
             let tx_row_ptr = if tx_removed_index {
                 break 'failed_rev_ins IndexError::NotFound(index_id).into();
@@ -1561,7 +1565,13 @@ impl MutTxId {
                     .committed_state_write_lock
                     .get_index_by_id_with_table(table_id, index_id)
                     .and_then(|index| find_old_row(tx_row_ref, index).0.map(|ptr| (index, ptr)))
-                    .filter(|(_, ptr)| !del_table.contains(*ptr))
+                    .filter(|&(_, ptr)| {
+                        // Was committed row previously deleted in this TX?
+                        let deleted = del_table.contains(ptr);
+                        // If so, remember it in case it was identical to the new row.
+                        old_commit_del_ptr = deleted.then_some(ptr);
+                        !deleted
+                    })
             {
                 // 1. Ensure the index is unique.
                 // 2. Ensure the new row doesn't violate any other committed state unique indices.
@@ -1581,7 +1591,6 @@ impl MutTxId {
                 if unsafe { Table::eq_row_in_page(commit_table, old_ptr, tx_table, tx_row_ptr) } {
                     // SAFETY: `self.is_row_present(tx_row_ptr)` holds, as noted in 3.
                     unsafe { tx_table.delete_internal_skip_pointer_map(tx_blob_store, tx_row_ptr) };
-                    let commit_blob_store = &self.committed_state_write_lock.blob_store;
                     // SAFETY: `commit_table.is_row_present(old_ptr)` holds, as noted in 2.
                     let old_row_ref = unsafe { commit_table.get_row_ref_unchecked(commit_blob_store, old_ptr) };
                     return Ok((cols_to_gen, old_row_ref, update_flags));
@@ -1638,7 +1647,6 @@ impl MutTxId {
                             if unsafe { Table::eq_row_in_page(commit_table, old_ptr, tx_table, tx_row_ptr) } {
                                 // SAFETY: `self.is_row_present(tx_row_ptr)` holds, as noted in 3.
                                 unsafe { tx_table.delete_internal_skip_pointer_map(tx_blob_store, tx_row_ptr) };
-                                let commit_blob_store = &self.committed_state_write_lock.blob_store;
                                 // SAFETY: `commit_table.is_row_present(old_ptr)` holds, as noted in 2.
                                 let old_row_ref =
                                     unsafe { commit_table.get_row_ref_unchecked(commit_blob_store, old_ptr) };
@@ -1665,8 +1673,42 @@ impl MutTxId {
                         // SAFETY: `self.is_row_present(tx_row_ptr)` and `self.is_row_present(old_ptr)` both hold
                         // as we've deleted neither.
                         // In particular, the `write_gen_val_to_col` call does not remove the row.
-                        unsafe { tx_table.confirm_update(tx_blob_store, tx_row_ptr, old_ptr, blob_bytes) }
-                            .map_err(IndexError::UniqueConstraintViolation)?
+                        let tx_row_ptr =
+                            unsafe { tx_table.confirm_update(tx_blob_store, tx_row_ptr, old_ptr, blob_bytes) }
+                                .map_err(IndexError::UniqueConstraintViolation)?;
+
+                        if let Some(old_commit_del_ptr) = old_commit_del_ptr {
+                            let commit_table =
+                                commit_table.expect("previously found a row in `commit_table`, so there should be one");
+                            // If we have an identical deleted row in the committed state,
+                            // we need to undeleted it, just like in `Self::insert`.
+                            // The same note (`insert_undelete`) there re. MVCC applies here as well.
+                            //
+                            // SAFETY:
+                            // 1. `tx_table` is derived from `commit_table` so they have the same layouts.
+                            // 2. `old_commit_del_ptr` was found in an index of `commit_table`.
+                            // 3. we just inserted `tx_row_ptr` into `tx_table`, so we know it is valid.
+                            if unsafe { Table::eq_row_in_page(commit_table, old_commit_del_ptr, tx_table, tx_row_ptr) }
+                            {
+                                // It is important that we `confirm_update` first,
+                                // as we must ensure that undeleting the row causes no tx state conflict.
+                                tx_table
+                                    .delete(tx_blob_store, tx_row_ptr, |_| ())
+                                    .expect("Failed to delete a row we just inserted");
+
+                                // Undelete.
+                                del_table.remove(old_commit_del_ptr);
+
+                                // Return the undeleted committed state row.
+                                // SAFETY: `commit_table.is_row_present(old_commit_del_ptr)` holds.
+                                let old_row_ref = unsafe {
+                                    commit_table.get_row_ref_unchecked(commit_blob_store, old_commit_del_ptr)
+                                };
+                                return Ok((cols_to_gen, old_row_ref, update_flags));
+                            }
+                        }
+
+                        tx_row_ptr
                     }
                     _ => unreachable!("Invalid SquashedOffset for RowPointer: {:?}", old_ptr),
                 }

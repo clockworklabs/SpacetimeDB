@@ -63,6 +63,14 @@ where
     Ok((list, n, metrics))
 }
 
+/// When collecting a table update are we inserting or deleting rows?
+/// For unsubscribe operations, we need to delete rows.
+#[derive(Debug, Clone, Copy)]
+pub enum TableUpdateType {
+    Subscribe,
+    Unsubscribe,
+}
+
 /// Execute a subscription query and collect the results in a [TableUpdate]
 pub fn collect_table_update<Tx, F>(
     plan: &PipelinedProject,
@@ -70,14 +78,24 @@ pub fn collect_table_update<Tx, F>(
     table_name: Box<str>,
     comp: Compression,
     tx: &Tx,
+    update_type: TableUpdateType,
 ) -> Result<(TableUpdate<F>, ExecutionMetrics)>
 where
     Tx: Datastore + DeltaStore,
     F: WebsocketFormat,
 {
-    execute_plan::<Tx, F>(plan, tx).map(|(inserts, num_rows, metrics)| {
-        let deletes = F::List::default();
-        let qu = QueryUpdate { deletes, inserts };
+    execute_plan::<Tx, F>(plan, tx).map(|(rows, num_rows, metrics)| {
+        let empty = F::List::default();
+        let qu = match update_type {
+            TableUpdateType::Subscribe => QueryUpdate {
+                deletes: empty,
+                inserts: rows,
+            },
+            TableUpdateType::Unsubscribe => QueryUpdate {
+                deletes: rows,
+                inserts: empty,
+            },
+        };
         let update = F::into_query_update(qu, comp);
         (TableUpdate::new(table_id, table_name, (update, num_rows)), metrics)
     })
@@ -88,6 +106,7 @@ pub fn execute_plans<Tx, F>(
     plans: &[Arc<Plan>],
     comp: Compression,
     tx: &Tx,
+    update_type: TableUpdateType,
 ) -> Result<(DatabaseUpdate<F>, ExecutionMetrics)>
 where
     Tx: Datastore + DeltaStore + Sync,
@@ -101,7 +120,7 @@ where
                 .clone()
                 .optimize()
                 .map(PipelinedProject::from)
-                .and_then(|plan| collect_table_update(&plan, table_id, table_name.into(), comp, tx))
+                .and_then(|plan| collect_table_update(&plan, table_id, table_name.into(), comp, tx, update_type))
         })
         .collect::<Result<Vec<_>>>()
         .map(|table_updates_with_metrics| {

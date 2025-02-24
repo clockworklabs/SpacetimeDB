@@ -1,7 +1,10 @@
 use std::fmt::Display;
 
 use sqlparser::{
-    ast::{BinaryOperator, Expr, ObjectName, Query, Select, SelectItem, SetExpr, TableFactor, TableWithJoins, Value},
+    ast::{
+        BinaryOperator, Expr, Function, ObjectName, Query, Select, SelectItem, SetExpr, TableFactor, TableWithJoins,
+        Value,
+    },
     parser::ParserError,
 };
 use thiserror::Error;
@@ -36,6 +39,10 @@ pub enum SqlUnsupported {
     Projection(SelectItem),
     #[error("Unsupported projection expression: {0}")]
     ProjectionExpr(Expr),
+    #[error("Unsupported aggregate function: {0}")]
+    Aggregate(Function),
+    #[error("Aggregate expressions must have column aliases")]
+    AggregateWithoutAlias,
     #[error("Unsupported FROM expression: {0}")]
     From(TableFactor),
     #[error("Unsupported set operation: {0}")]

@@ -520,7 +520,7 @@ pub mod raw {
         pub fn bytes_source_read(source: BytesSource, buffer_ptr: *mut u8, buffer_len_ptr: *mut usize) -> i16;
 
         /// Logs at `level` a `message` message occuring in `filename:line_number`
-        /// with [`target`](target) being the module path at the `log!` invocation site.
+        /// with `target` being the module path at the `log!` invocation site.
         ///
         /// These various pointers are interpreted lossily as UTF-8 strings with a corresponding `_len`.
         ///
@@ -592,7 +592,7 @@ pub mod raw {
 
     /// What strategy does the database index use?
     ///
-    /// See also: https://www.postgresql.org/docs/current/sql-createindex.html
+    /// See also: <https://www.postgresql.org/docs/current/sql-createindex.html>
     #[repr(u8)]
     #[non_exhaustive]
     pub enum IndexType {
@@ -885,7 +885,7 @@ pub fn datastore_delete_all_by_eq_bsatn(table_id: TableId, relation: &[u8]) -> R
 
 /// Starts iteration on each row, as BSATN-encoded, of a table identified by `table_id`.
 /// Returns iterator handle is written to the `out` pointer.
-/// This handle can be advanced by [`row_iter_bsatn_advance`].
+/// This handle can be advanced by [`RowIter::read`].
 ///
 /// # Errors
 ///
@@ -920,7 +920,7 @@ pub fn datastore_table_scan_bsatn(table_id: TableId) -> Result<RowIter, Errno> {
 /// which is unique for the module.
 ///
 /// On success, the iterator handle is written to the `out` pointer.
-/// This handle can be advanced by [`row_iter_bsatn_advance`].
+/// This handle can be advanced by [`RowIter::read`].
 ///
 /// # Non-obvious queries
 ///

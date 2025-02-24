@@ -74,6 +74,13 @@ impl ProjectName {
 pub enum ProjectList {
     Name(ProjectName),
     List(RelExpr, Vec<(Box<str>, FieldProject)>),
+    Limit(Box<ProjectList>, u64),
+    Agg(RelExpr, AggType, Box<str>, AlgebraicType),
+}
+
+#[derive(Debug)]
+pub enum AggType {
+    Count,
 }
 
 impl ProjectList {
@@ -83,7 +90,8 @@ impl ProjectList {
     pub fn return_table(&self) -> Option<&TableSchema> {
         match self {
             Self::Name(project) => project.return_table(),
-            Self::List(..) => None,
+            Self::Limit(input, _) => input.return_table(),
+            Self::List(..) | Self::Agg(..) => None,
         }
     }
 
@@ -93,21 +101,26 @@ impl ProjectList {
     pub fn return_table_id(&self) -> Option<TableId> {
         match self {
             Self::Name(project) => project.return_table_id(),
-            Self::List(..) => None,
+            Self::Limit(input, _) => input.return_table_id(),
+            Self::List(..) | Self::Agg(..) => None,
         }
     }
 
     /// Iterate over the projected column names and types
     pub fn for_each_return_field(&self, mut f: impl FnMut(&str, &AlgebraicType)) {
         match self {
-            Self::Name(project) => {
-                project.for_each_return_field(f);
+            Self::Name(input) => {
+                input.for_each_return_field(f);
+            }
+            Self::Limit(input, _) => {
+                input.for_each_return_field(f);
             }
             Self::List(_, fields) => {
                 for (name, FieldProject { ty, .. }) in fields {
                     f(name, ty);
                 }
             }
+            Self::Agg(_, _, name, ty) => f(name, ty),
         }
     }
 }
