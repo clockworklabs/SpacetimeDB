@@ -682,37 +682,25 @@ impl CommittedState {
     pub(super) fn report_data_size(&self, database_identity: Identity) {
         use crate::db::db_metrics::data_size::DATA_SIZE_METRICS;
 
-        let mut total_rows = 0;
-        let mut total_row_bytes = 0;
-        let mut total_index_rows = 0;
-        let mut total_index_bytes = 0;
-        for table in self.tables.values() {
-            let num_rows = table.num_rows();
-            total_rows += num_rows;
-            let row_bytes = table.bytes_used_by_rows();
-            total_row_bytes += row_bytes;
-            let num_index_rows = table.num_rows_in_indexes();
-            total_index_rows += num_index_rows;
-            let index_bytes = table.bytes_used_by_index_keys();
-            total_index_bytes += index_bytes;
+        for (_, table) in &self.tables {
+            let table_name = &table.schema.table_name;
+            DATA_SIZE_METRICS
+                .data_size_table_num_rows
+                .with_label_values(&database_identity, table_name)
+                .set(table.num_rows() as _);
+            DATA_SIZE_METRICS
+                .data_size_table_bytes_used_by_rows
+                .with_label_values(&database_identity, table_name)
+                .set(table.bytes_used_by_rows() as _);
+            DATA_SIZE_METRICS
+                .data_size_table_num_rows_in_indexes
+                .with_label_values(&database_identity, table_name)
+                .set(table.num_rows_in_indexes() as _);
+            DATA_SIZE_METRICS
+                .data_size_table_bytes_used_by_index_keys
+                .with_label_values(&database_identity, table_name)
+                .set(table.bytes_used_by_index_keys() as _);
         }
-
-        DATA_SIZE_METRICS
-            .total_rows
-            .with_label_values(&database_identity)
-            .set(total_rows as _);
-        DATA_SIZE_METRICS
-            .total_bytes_used_by_rows
-            .with_label_values(&database_identity)
-            .set(total_row_bytes as _);
-        DATA_SIZE_METRICS
-            .total_bytes_used_by_index_keys
-            .with_label_values(&database_identity)
-            .set(total_index_bytes as _);
-        DATA_SIZE_METRICS
-            .total_rows_in_indexes
-            .with_label_values(&database_identity)
-            .set(total_index_rows as _);
 
         DATA_SIZE_METRICS
             .data_size_blob_store_num_blobs
