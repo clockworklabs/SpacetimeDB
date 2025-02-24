@@ -28,7 +28,6 @@ pub use db_connection::DbConnectionBuilder;
 pub use db_context::DbContext;
 pub use error::{Error, Result};
 pub use event::{Event, ReducerEvent, Status};
-pub use metrics::{ClientMetrics, CLIENT_METRICS};
 pub use table::{Table, TableWithPrimaryKey};
 
 pub use spacetime_module::SubscriptionHandle;
@@ -69,5 +68,6 @@ pub mod unstable {
     //!
     //! These may change incompatibly without a major version bump.
     pub use crate::db_connection::set_connection_id;
+    pub use crate::metrics::{ClientMetrics, CLIENT_METRICS};
     pub use spacetimedb_client_api_messages::websocket::CallReducerFlags;
 }
