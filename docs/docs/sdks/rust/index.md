@@ -46,10 +46,7 @@ mod module_bindings;
 ## Type `DbConnection`
 
 ```rust
-module_bindings::DbConnection {
-    db: RemoteTables,
-    /* private members */
-}
+module_bindings::DbConnection
 ```
 
 A connection to a remote database is represented by the `module_bindings::DbConnection` type. This type is generated per-module, and contains information about the types, tables and reducers defined by your module.
@@ -138,7 +135,7 @@ impl DbConnectionBuilder {
 }
 ```
 
-Chain a call to `.on_connect(callback)` to your builder to register a callback to run when your `DbConnection` disconnects from the remote module, either as a result of a call to [`disconnect`](#method-disconnect) or due to an error.
+Chain a call to `.on_disconnect(callback)` to your builder to register a callback to run when your `DbConnection` disconnects from the remote module, either as a result of a call to [`disconnect`](#method-disconnect) or due to an error.
 
 #### Method `with_token`
 
@@ -348,7 +345,7 @@ Register a callback to run when the subscription is applied and the matching row
 
 ```rust
 impl SubscriptionBuilder {
-    fn on_applied(self, callback: impl FnOnce(&ErrorContext, spacetimedb_sdk::Error)) -> Self;
+    fn on_error(self, callback: impl FnOnce(&ErrorContext, spacetimedb_sdk::Error)) -> Self;
 }
 ```
 
@@ -439,7 +436,7 @@ impl SubscriptionHandle {
 
 Terminate this subscription, and run the `on_end` callback when the subscription is ended and its matching rows are removed from the client cache. Any rows removed from the client cache this way will have [`on_delete` callbacks](#callback-on_delete) run for them.
 
-Returns an error if the subscription has already ended, either due to a previous call to `unsubscribe` or [`unsubscribe_then`](#method-unsubscribe_then), or due to an error.
+Returns an error if the subscription has already ended, either due to a previous call to [`unsubscribe`](#method-unsubscribe) or `unsubscribe_then`, or due to an error.
 
 ### Read connection metadata
 
@@ -674,11 +671,11 @@ The module bindings contains an enum `Reducer` with a variant for each reducer d
 
 A `ReducerEventContext` is a [`DbContext`](#trait-dbcontext) augmented with a field [`event: ReducerEvent`](#struct-reducerevent). `ReducerEventContext`s are passed as the first argument to [reducer callbacks](#observe-and-invoke-reducers).
 
-| Name                                | Description                                                |
-|-------------------------------------|------------------------------------------------------------|
-| [`event` field](#field-event)       | Enum describing the cause of the current reducer callback. |
-| [`db` field](#field-db)             | Provides access to the client cache.                       |
-| [`reducers` field](#field-reducers) | Allows requesting reducers run on the remote database.     |
+| Name                                | Description                                                         |
+|-------------------------------------|---------------------------------------------------------------------|
+| [`event` field](#field-event)       | [`ReducerEvent`](#struct-reducerevent) containing reducer metadata. |
+| [`db` field](#field-db)             | Provides access to the client cache.                                |
+| [`reducers` field](#field-reducers) | Allows requesting reducers run on the remote database.              |
 
 ### Field `event`
 
