@@ -13,6 +13,7 @@
 mod callbacks;
 mod client_cache;
 mod db_connection;
+mod metrics;
 mod spacetime_module;
 mod subscription;
 mod websocket;
@@ -67,5 +68,6 @@ pub mod unstable {
     //!
     //! These may change incompatibly without a major version bump.
     pub use crate::db_connection::set_connection_id;
+    pub use crate::metrics::{ClientMetrics, CLIENT_METRICS};
     pub use spacetimedb_client_api_messages::websocket::CallReducerFlags;
 }

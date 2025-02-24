@@ -10,8 +10,9 @@ description = "A Rust SDK for clients to interface with SpacetimeDB"
 [dependencies]
 spacetimedb-data-structures.workspace = true
 spacetimedb-sats.workspace = true
-spacetimedb-lib = { workspace = true, features = ["serde"]}
+spacetimedb-lib = { workspace = true, features = ["serde", "metrics_impls"]}
 spacetimedb-client-api-messages.workspace = true
+spacetimedb-metrics.workspace = true
 
 thiserror.workspace = true
 anymap.workspace = true
@@ -23,6 +24,8 @@ futures-channel.workspace = true
 home.workspace = true
 http.workspace = true
 log.workspace = true
+once_cell.workspace = true
+prometheus.workspace = true
 rand.workspace = true
 tokio.workspace = true
 tokio-tungstenite.workspace = true
