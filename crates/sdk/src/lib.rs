@@ -28,6 +28,7 @@ pub use db_connection::DbConnectionBuilder;
 pub use db_context::DbContext;
 pub use error::{Error, Result};
 pub use event::{Event, ReducerEvent, Status};
+pub use metrics::{ClientMetrics, CLIENT_METRICS};
 pub use table::{Table, TableWithPrimaryKey};
 
 pub use spacetime_module::SubscriptionHandle;
