@@ -157,14 +157,15 @@ SELECT * FROM Inventory WHERE price > {X} AND amount < {Y}
 ### SELECT
 
 ```ebnf
-SELECT projection FROM relation [ WHERE predicate ]
+SELECT projection FROM relation [ WHERE predicate ] [LIMIT NUM]
 ```
 
 The query languge is a strict superset of the subscription language.
 The main differences are seen in column projections and [joins](#from-clause).
 
 The subscription api only supports `*` projections,
-but the query api supports individual column projections.
+but the query api supports both individual column projections,
+as well as aggregations in the form of `COUNT`.
 
 The subscription api limits the number of tables you can join,
 and enforces index constraints on the join columns,
@@ -177,10 +178,15 @@ projection
     = '*'
     | table '.' '*'
     | projExpr { ',' projExpr }
+    | aggExpr
     ;
 
 projExpr
     = column [ [ AS ] alias ]
+    ;
+
+aggExpr
+    = COUNT '(' '*' ')' [AS] alias
     ;
 ```
 
@@ -194,6 +200,16 @@ SELECT * FROM Inventory;
 
 -- Select the names and prices of the items in my inventory
 SELECT item_name, price FROM Inventory
+```
+
+It also allows for counting the number of input rows via the `COUNT` function.
+`COUNT` always returns a single row, even if the input is empty.
+
+##### Example
+
+```sql
+-- Count the items in my inventory
+SELECT COUNT(*) AS n FROM Inventory
 ```
 
 #### FROM Clause
@@ -218,6 +234,19 @@ WHERE product.name = {product_name}
 #### WHERE Clause
 
 See [Subscriptions](#where).
+
+#### LIMIT clause
+
+Limits the number of rows a query returns by specifying an upper bound.
+The `LIMIT` may return fewer rows if the query itself returns fewer rows.
+`LIMIT` does not order or transform its input in any way.
+
+##### Examples
+
+```sql
+-- Fetch an example row from my inventory
+SELECT * FROM Inventory LIMIT 1
+```
 
 ### INSERT
 
