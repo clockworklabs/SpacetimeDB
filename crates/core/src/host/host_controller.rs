@@ -687,7 +687,7 @@ struct Host {
     replica_ctx: Arc<ReplicaContext>,
     /// Scheduler for repeating reducers, operating on the current `module`.
     scheduler: Scheduler,
-    /// Handle to the metrics collection task started via [`disk_monitor`].
+    /// Handle to the metrics collection task started via [`storage_monitor`].
     ///
     /// The task collects metrics from the `replica_ctx`, and so stays alive as long
     /// as the `replica_ctx` is live. The task is aborted when [`Host`] is dropped.

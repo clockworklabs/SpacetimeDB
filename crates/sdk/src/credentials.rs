@@ -65,12 +65,12 @@ struct Credentials {
 }
 
 impl File {
-    /// Get a handle on a file which stores a SpacetimeDB [`Identity`] and its private access token.
+    /// Get a handle on a file which stores a SpacetimeDB [`spacetimedb_lib::Identity`] and its private access token.
     ///
     /// This method does not create the file or check that it exists.
     ///
     /// Distinct applications running as the same user on the same machine
-    /// may share [`Identity`]/token pairs by supplying the same `key`.
+    /// may share [`spacetimedb_lib::Identity`]/token pairs by supplying the same `key`.
     /// Users who desire distinct credentials for their application
     /// should supply a unique `key` per application.
     ///

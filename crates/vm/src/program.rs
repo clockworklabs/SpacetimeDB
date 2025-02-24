@@ -1,6 +1,4 @@
 //! Definition for a `Program` to run code.
-//!
-//! It carries an [EnvDb] with the functions, idents, types.
 
 use crate::errors::ErrorVm;
 use crate::expr::{Code, CrudExpr, SourceSet};

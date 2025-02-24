@@ -198,7 +198,7 @@ fn configure_rayon() {
 ///
 /// Other than entering the `rt`, this spawn handler behaves identitically to the default Rayon spawn handler,
 /// as documented in
-/// https://docs.rs/rustc-rayon-core/0.5.0/rayon_core/struct.ThreadPoolBuilder.html#method.spawn_handler
+/// <https://docs.rs/rustc-rayon-core/0.5.0/rayon_core/struct.ThreadPoolBuilder.html#method.spawn_handler>
 ///
 /// Having Rayon threads block on async operations is a code smell.
 /// We need to be careful that the Rayon threads never actually block,

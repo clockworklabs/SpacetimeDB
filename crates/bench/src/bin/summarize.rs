@@ -1,5 +1,5 @@
 //! Script to pack benchmark results into JSON files.
-//! These are read by the benchmarks-viewer application: https://github.com/clockworklabs/benchmarks-viewer,
+//! These are read by the benchmarks-viewer application: <https://github.com/clockworklabs/benchmarks-viewer>,
 //! which is used to generate reports on the benchmarks.
 //! See also: the github actions scripts that invoke this command, `SpacetimeDB/.github/workflows/benchmarks.yml` and `SpacetimeDB/.github/workflows/callgrind_benchmarks.yml`.
 use clap::{Parser, Subcommand};
@@ -110,7 +110,7 @@ mod criterion {
     ///
     /// Unfortunately, there is no published library for this, so we use the schema
     /// from `critcmp` under the MIT license:
-    /// https://github.com/BurntSushi/critcmp/blob/daaf0383c3981c98a6eaaef47142755e5bddb3c4/src/data.rs
+    /// <https://github.com/BurntSushi/critcmp/blob/daaf0383c3981c98a6eaaef47142755e5bddb3c4/src/data.rs>
     ///
     /// TODO(jgilles): update this if we update our Criterion version past 0.4.
     #[allow(unused)]

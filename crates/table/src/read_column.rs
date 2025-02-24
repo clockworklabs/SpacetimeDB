@@ -98,7 +98,7 @@ pub unsafe trait ReadColumn: Sized {
     /// A few highlights are included here:
     ///
     /// - Variable-length columns, i.e. `AlgebraicType::String`, `AlgebraicType::Array` and `AlgebraicType::Map`
-    ///   are stored within the row as [`crate::var_len::VarLenRef`s],
+    ///   are stored within the row as [`crate::var_len::VarLenRef`]'s,
     ///   which refer to an intrusive linked list of 62-byte "granules",
     ///   allocated separately in a space starting from the end of the page.
     ///   Strings are stored as UTF-8 bytes; all other var-len types are stored as BSATN-encoded bytes.

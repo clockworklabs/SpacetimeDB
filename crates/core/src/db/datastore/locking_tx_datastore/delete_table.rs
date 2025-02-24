@@ -3,7 +3,7 @@ use spacetimedb_table::{
     indexes::{max_rows_in_page, PageIndex, PageOffset, RowPointer, Size, SquashedOffset},
 };
 
-/// A table recording which rows of a table in the [`CommittedState`] that have been deleted.
+/// A table recording which rows of a table in the [`super::committed_state::CommittedState`] that have been deleted.
 pub struct DeleteTable {
     /// Keeps track of all the deleted row pointers.
     deleted: Vec<Option<FixedBitSet>>,
@@ -27,7 +27,7 @@ impl DeleteTable {
         }
     }
 
-    /// Returns whether `ptr`, belonging to a table in [`CommittedState`], is recorded as deleted.
+    /// Returns whether `ptr`, belonging to a table in [`super::committed_state::CommittedState`], is recorded as deleted.
     pub fn contains(&self, ptr: RowPointer) -> bool {
         let page_idx = ptr.page_index().idx();
         match self.deleted.get(page_idx) {
@@ -36,7 +36,7 @@ impl DeleteTable {
         }
     }
 
-    /// Marks `ptr`, belonging to a table in [`CommittedState`], as deleted.
+    /// Marks `ptr`, belonging to a table in [`super::committed_state::CommittedState`], as deleted.
     ///
     /// Returns `true` if `ptr` was not previously marked.
     pub fn insert(&mut self, ptr: RowPointer) -> bool {
@@ -84,7 +84,7 @@ impl DeleteTable {
         }
     }
 
-    /// Un-marks `ptr`, belonging to a table in [`CommittedState`], as deleted.
+    /// Un-marks `ptr`, belonging to a table in [`super::committed_state::CommittedState`], as deleted.
     pub fn remove(&mut self, ptr: RowPointer) -> bool {
         let fixed_row_size = self.fixed_row_size;
         let page_idx = ptr.page_index().idx();

@@ -933,7 +933,7 @@ pub struct IxScan {
     pub arg: Sarg,
 }
 
-/// An index [S]earch [arg]ument
+/// An index \[S\]earch \[arg\]ument
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Sarg {
     Eq(ColId, AlgebraicValue),

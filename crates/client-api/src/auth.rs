@@ -65,7 +65,7 @@ impl SpacetimeCreds {
 
 /// The auth information in a request.
 ///
-/// This is inserted as an extension by [`auth_middleware`]; make sure that's applied if you're making expecting
+/// This is inserted as an extension by [`anon_auth_middleware`]; make sure that's applied if you're making expecting
 /// this to be present.
 #[derive(Clone)]
 pub struct SpacetimeAuth {

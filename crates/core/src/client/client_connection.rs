@@ -44,8 +44,8 @@ pub struct ClientConfig {
     pub protocol: Protocol,
     /// The client's desired (conditional) compression algorithm, if any.
     pub compression: Compression,
-    /// Whether the client prefers full [`TransactionUpdate`]s
-    /// rather than  [`TransactionUpdateLight`]s on a successful update.
+    /// Whether the client prefers full [`spacetimedb_client_api_messages::websocket::TransactionUpdate`]s
+    /// rather than  [`spacetimedb_client_api_messages::websocket::TransactionUpdateLight`]s on a successful update.
     // TODO(centril): As more knobs are added, make this into a bitfield (when there's time).
     pub tx_update_full: bool,
 }

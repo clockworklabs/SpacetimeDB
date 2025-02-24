@@ -142,7 +142,7 @@ impl Host {
 
 /// Parameters for publishing a database.
 ///
-/// See [`ControlStateDelegate::publish_database`].
+/// See [`ControlStateWriteAccess::publish_database`].
 pub struct DatabaseDef {
     /// The [`Identity`] the database shall have.
     pub database_identity: Identity,

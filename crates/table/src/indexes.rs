@@ -96,7 +96,7 @@ impl Mul<usize> for Size {
     }
 }
 
-/// An offset into a [`Page`].
+/// An offset into a [`crate::page::Page`].
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Add, Sub, bytemuck::NoUninit)]
 #[repr(transparent)]
 #[cfg_attr(any(test, feature = "proptest"), derive(proptest_derive::Arbitrary))]
@@ -208,7 +208,7 @@ pub fn max_rows_in_page(fixed_row_size: Size) -> usize {
     PageOffset::PAGE_END.idx().div_ceil(fixed_row_size.len())
 }
 
-/// The index of a [`Page`] within a [`Pages`].
+/// The index of a [`crate::page::Page`] within a [`crate::pages::Pages`].
 #[cfg_attr(any(test, feature = "proptest"), derive(proptest_derive::Arbitrary))]
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct PageIndex(#[cfg_attr(any(test, feature = "proptest"), proptest(strategy = "0..MASK_PI"))] pub u64);

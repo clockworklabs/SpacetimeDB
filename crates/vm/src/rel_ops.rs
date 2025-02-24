@@ -10,9 +10,9 @@ pub trait RelOps<'a> {
     /// Advances the `iterator` and returns the next [RelValue].
     fn next(&mut self) -> Option<RelValue<'a>>;
 
-    /// Creates an `Iterator` which uses a closure to determine if a [RelValueRef] should be yielded.
+    /// Creates an `Iterator` which uses a closure to determine if a [RelValue] should be yielded.
     ///
-    /// Given a [RelValueRef] the closure must return true or false.
+    /// Given a [RelValue] the closure must return true or false.
     /// The returned iterator will yield only the elements for which the closure returns true.
     ///
     /// Note:
@@ -31,7 +31,7 @@ pub trait RelOps<'a> {
     ///
     /// Given a [RelValue] the closure must return a subset of the current one.
     ///
-    /// The [Header] is pre-checked that all the fields exist and return a error if any field is not found.
+    /// The [spacetimedb_lib::relation::Header] is pre-checked that all the fields exist and return an error if any field is not found.
     ///
     /// Note:
     ///

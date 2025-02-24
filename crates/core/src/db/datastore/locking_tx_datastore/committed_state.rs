@@ -432,7 +432,7 @@ impl CommittedState {
     }
 
     /// When there's an index on `cols`,
-    /// returns an iterator over the [TableIndex] that yields all the [`RowRef`]s
+    /// returns an iterator over the [spacetimedb_table::table_index::TableIndex] that yields all the [`RowRef`]s
     /// that match the specified `range` in the indexed column.
     ///
     /// Matching is defined by `Ord for AlgebraicValue`.

@@ -241,7 +241,7 @@ impl Snapshot {
     ///
     /// `hash` must be the content hash of `page`, and must be stored in `page.unmodified_hash()`.
     ///
-    /// Returns the `hash` for convenient use with [`Iter::map`] in [`Self::write_table`].
+    /// Returns the `hash` for convenient use with [`core::slice::Iter::map`] in [`Self::write_table`].
     ///
     /// If the `prev_snapshot` is supplied, this function will attempt to hardlink the page's on-disk object
     /// from that previous snapshot into `object_repo` rather than creating a fresh object.
@@ -680,7 +680,7 @@ impl SnapshotRepository {
 
     /// Given `snapshot_dir` as the result of [`Self::snapshot_dir_path`],
     /// get the [`DirTrie`] which contains serialized objects (pages and large blobs)
-    /// referenced by the [`Snapshot`] contained in the [`Self::snapshot_file_path`].
+    /// referenced by the [`Snapshot`] contained in the [`SnapshotDirPath::snapshot_file`].
     ///
     /// Consequences are unspecified if this method is called from outside this crate
     /// on a non-existent, locked or incomplete `snapshot_dir`.
@@ -760,7 +760,7 @@ impl SnapshotRepository {
 
     /// Open a repository at `root`, failing if the `root` doesn't exist or isn't a directory.
     ///
-    /// Calls [`Path::is_dir`] and requires that the result is `true`.
+    /// Calls [`std::path::Path::is_dir`] and requires that the result is `true`.
     /// See that method for more detailed preconditions on this function.
     pub fn open(root: SnapshotsPath, database_identity: Identity, replica_id: u64) -> Result<Self, SnapshotError> {
         if !root.is_dir() {

@@ -112,11 +112,11 @@ pub fn reducer(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
 }
 
 /// It turns out to be shockingly difficult to construct an [`Attribute`].
-/// That type is not [`Parse`], instead having two distinct methods
+/// That type is not [`syn::parse::Parse`], instead having two distinct methods
 /// for parsing "inner" vs "outer" attributes.
 ///
-/// We need this [`Attribute`] in [`table`] so that we can "pushnew" it
-/// onto the end of a list of attributes. See comments within [`table`].
+/// We need this [`Attribute`] in [`crate::table()`] so that we can "pushnew" it
+/// onto the end of a list of attributes. See comments within [`crate::table()`].
 fn derive_table_helper_attr() -> Attribute {
     let source = quote!(#[derive(spacetimedb::__TableHelper)]);
 

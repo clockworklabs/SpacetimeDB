@@ -88,7 +88,7 @@ enum EvalIncrPlan {
     Semijoin(IncrementalJoin),
 
     /// For single-table selects, store only one version of the plan,
-    /// which has a single source, an in-memory table, produced by [`query::query_to_mem_table`].
+    /// which has a single source, an in-memory table, produced by [`ExecutionUnit`].
     Select(QueryExpr),
 }
 
@@ -107,7 +107,7 @@ pub struct ExecutionUnit {
     /// This is a direct compilation of the source query.
     eval_plan: QueryExpr,
     /// A version of the plan optimized for `eval_incr`,
-    /// whose source is an in-memory table, as if by [`query::to_mem_table`].
+    /// whose source is an in-memory table.
     eval_incr_plan: EvalIncrPlan,
 }
 

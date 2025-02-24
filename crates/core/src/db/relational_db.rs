@@ -250,7 +250,7 @@ impl RelationalDB {
     ///
     /// If, however, a non-empty `history` was supplied, [`Metadata`] will
     /// already be be set. In this case, i.e. if either [`Self::metadata`] or
-    /// [`Self::program_bytes`] return a `Some` value, [`Self::set_initialized`]
+    /// [`StModuleRow::program_bytes`] return a `Some` value, [`Self::set_initialized`]
     /// should _not_ be called.
     ///
     /// Sometimes, one may want to obtain a database without a module (e.g. for
@@ -686,7 +686,7 @@ impl RelationalDB {
     /// If `(tx_data, ctx)` should be appended to the commitlog, do so.
     ///
     /// Note that by this stage,
-    /// [`crate::db::datastore::locking_tx_datastore::committed_state::tx_consumes_offset`]
+    /// [`CommittedState::tx_consumes_offset`]
     /// has already decided based on the reducer and operations whether the transaction should be appended;
     /// this method is responsible only for reading its decision out of the `tx_data`
     /// and calling `durability.append_tx`.
@@ -1051,14 +1051,14 @@ impl RelationalDB {
         self.inner.constraint_id_from_name(tx, constraint_name)
     }
 
-    /// Adds the index into the [ST_INDEXES_NAME] table
+    /// Adds the index into the [super::datastore::system_tables::ST_INDEX_NAME] table
     ///
     /// NOTE: It loads the data from the table into it before returning
     pub fn create_index(&self, tx: &mut MutTx, schema: IndexSchema, is_unique: bool) -> Result<IndexId, DBError> {
         self.inner.create_index_mut_tx(tx, schema, is_unique)
     }
 
-    /// Removes the [`TableIndex`] from the database by their `index_id`
+    /// Removes the [`super::datastore::system_tables::StIndexRow`] from the database by their `index_id`
     pub fn drop_index(&self, tx: &mut MutTx, index_id: IndexId) -> Result<(), DBError> {
         self.inner.drop_index_mut_tx(tx, index_id)
     }
@@ -1206,7 +1206,7 @@ impl RelationalDB {
         self.inner.create_sequence_mut_tx(tx, sequence_schema)
     }
 
-    ///Removes the [Sequence] from database instance
+    ///Removes the [`super::datastore::system_tables::StSequenceRow`] from database instance
     pub fn drop_sequence(&self, tx: &mut MutTx, seq_id: SequenceId) -> Result<(), DBError> {
         self.inner.drop_sequence_mut_tx(tx, seq_id)
     }
@@ -1482,7 +1482,7 @@ pub mod tests_utils {
         /// Create a [`TestDB`] which stores data in a local commitlog,
         /// initialized with pre-existing data from `history`.
         ///
-        /// [`TestHistory::from_txes`] is an easy-ish way to construct a non-empty [`History`].
+        /// [`TestHistory::from_txes`] is an easy-ish way to construct a non-empty [`durability::History`].
         ///
         /// `expected_num_clients` is the expected size of the `connected_clients` return
         /// from [`RelationalDB::open`] after replaying `history`.

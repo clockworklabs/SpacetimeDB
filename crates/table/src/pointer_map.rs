@@ -1,7 +1,7 @@
 //! Provides [`PointerMap`] that deals with the
 //! association of a [`RowHash`] to a [`RowPointer`]
-//! through operations [`insert`](self::PointerMap::insert)
-//! and [`delete`](PointerMap::delete).
+//! through operations [`insert`](PointerMap::insert)
+//! and [`remove`](PointerMap::remove).
 //!
 //! These associations can then be queried through
 //! `map.pointers_for(hash)` and `map.pointers_for_mut(hash)`.

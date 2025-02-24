@@ -198,7 +198,7 @@ where
     ws.send(msg.into()).await
 }
 
-/// Await the initial [`ServerMessage::SubscriptionUpdate`].
+/// Await the initial [`ws::ServerMessage::TransactionUpdateLight`] `|` [`ws::ServerMessage::TransactionUpdate`].
 /// If `module_def` is `Some`, print a JSON representation to stdout.
 async fn await_initial_update<S>(ws: &mut S, module_def: Option<&RawModuleDefV9>) -> anyhow::Result<()>
 where
@@ -232,7 +232,7 @@ where
     Ok(())
 }
 
-/// Print `num` [`ServerMessage::TransactionUpdate`] messages as JSON.
+/// Print `num` [`ws::ServerMessage::TransactionUpdateLight`] `|` [`ws::ServerMessage::TransactionUpdate`] messages as JSON.
 /// If `num` is `None`, keep going indefinitely.
 async fn consume_transaction_updates<S>(
     ws: &mut S,

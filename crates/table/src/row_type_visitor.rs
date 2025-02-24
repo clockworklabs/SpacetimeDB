@@ -1,4 +1,4 @@
-//! A [`VarLenMembers`] visitor for [`AlgebraicType`],
+//! A [`VarLenMembers`] visitor for [`spacetimedb_sats::AlgebraicType`],
 //! supporting any non-recursive `AlgebraicType`,
 //! including sums and products.
 //!
