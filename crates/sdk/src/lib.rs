@@ -13,6 +13,7 @@
 mod callbacks;
 mod client_cache;
 mod db_connection;
+mod metrics;
 mod spacetime_module;
 mod subscription;
 mod websocket;
