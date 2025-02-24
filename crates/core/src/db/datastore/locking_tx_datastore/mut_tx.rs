@@ -1566,7 +1566,7 @@ impl MutTxId {
                     .get_index_by_id_with_table(table_id, index_id)
                     .and_then(|index| find_old_row(tx_row_ref, index).0.map(|ptr| (index, ptr)))
                     .filter(|&(_, ptr)| {
-                        // Was committed row was deleted?
+                        // Was committed row previously deleted in this TX?
                         let deleted = del_table.contains(ptr);
                         // If so, remember it in case it was identical to the new row.
                         old_commit_del_ptr = deleted.then_some(ptr);

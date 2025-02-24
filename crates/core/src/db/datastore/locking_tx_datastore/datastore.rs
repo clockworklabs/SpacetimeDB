@@ -2348,7 +2348,7 @@ mod tests {
         // We should now have a committed row `row` marked as deleted and a row `row_prime`.
         // These share `KEY`.
         insert(&datastore, &mut tx, table_id, row_prime)?;
-        // 3. update `row` -> `row_prime`.
+        // 3. update `row_prime` -> `row`.
         // Because `row` exists in the committed state but was marked as deleted,
         // it should be undeleted, without a new row being added to the tx state.
         let (_, row_ref) = update(&datastore, &mut tx, table_id, index_id, row)?;
