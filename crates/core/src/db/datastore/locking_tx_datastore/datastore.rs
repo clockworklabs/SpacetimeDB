@@ -1042,6 +1042,7 @@ mod tests {
     use core::{fmt, mem};
     use itertools::Itertools;
     use pretty_assertions::{assert_eq, assert_matches};
+    use spacetimedb_execution::Datastore;
     use spacetimedb_lib::db::auth::{StAccess, StTableType};
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::st_var::StVarValue;
@@ -2280,6 +2281,85 @@ mod tests {
         assert_eq!(deleted_2, true);
         assert_eq!(tx_data_2.deletes().count(), 0);
         assert_eq!(tx_data_2.inserts().collect_vec(), []);
+        Ok(())
+    }
+
+    #[test]
+    fn test_update_brings_back_deleted_commit_row_repro_2296() -> ResultTest<()> {
+        // Get us a datastore and tx.
+        let datastore = get_datastore()?;
+        let mut tx = begin_mut_tx(&datastore);
+
+        // Create the table. The minimal repro is a two column table with a unique constraint.
+        let table_id = TableId::SENTINEL;
+        let col = |pos: usize| ColumnSchema {
+            table_id,
+            col_pos: pos.into(),
+            col_name: format!("c{pos}").into(),
+            col_type: AlgebraicType::U32,
+        };
+        let table_schema = TableSchema::new(
+            table_id,
+            "Foo".into(),
+            [col(0), col(1)].into(),
+            vec![IndexSchema {
+                table_id,
+                index_id: IndexId::SENTINEL,
+                index_name: "index".into(),
+                index_algorithm: IndexAlgorithm::BTree(BTreeAlgorithm { columns: 0.into() }),
+            }],
+            vec![ConstraintSchema {
+                table_id,
+                constraint_id: ConstraintId::SENTINEL,
+                constraint_name: "constraint".into(),
+                data: ConstraintData::Unique(UniqueConstraintData { columns: 0.into() }),
+            }],
+            vec![],
+            StTableType::User,
+            StAccess::Public,
+            None,
+            None,
+        );
+        let table_id = datastore.create_table_mut_tx(&mut tx, table_schema)?;
+        let index_id = datastore.index_id_from_name_mut_tx(&tx, "index")?.unwrap();
+        let find_row_by_key = |tx: &MutTxId, key: u32| {
+            tx.index_scan_point(table_id, index_id, &key.into())
+                .unwrap()
+                .map(|row| row.pointer())
+                .collect::<Vec<_>>()
+        };
+
+        // Insert `Foo { c0: 0, c1: 0 }`.
+        const KEY: u32 = 0;
+        const DATA: u32 = 0;
+        let row = &product![KEY, DATA];
+        let row_prime = &product![KEY, DATA + 1];
+        insert(&datastore, &mut tx, table_id, row)?;
+
+        // It's important for the test that the row is committed.
+        commit(&datastore, tx)?;
+
+        // Start a new transaction where we:
+        let mut tx = begin_mut_tx(&datastore);
+        // 1. delete the row.
+        let row_to_del = find_row_by_key(&tx, KEY);
+        datastore.delete_mut_tx(&mut tx, table_id, row_to_del.iter().copied());
+        // 2. insert a new row with the same key as the one we deleted but different extra field.
+        // We should now have a committed row `row` marked as deleted and a row `row_prime`.
+        // These share `KEY`.
+        insert(&datastore, &mut tx, table_id, row_prime)?;
+        // 3. update `row_prime` -> `row`.
+        // Because `row` exists in the committed state but was marked as deleted,
+        // it should be undeleted, without a new row being added to the tx state.
+        let (_, row_ref) = update(&datastore, &mut tx, table_id, index_id, row)?;
+        assert_eq!([row_ref.pointer()], &*row_to_del);
+        assert_eq!(row_to_del, find_row_by_key(&tx, KEY));
+
+        // Commit the transaction.
+        // We expect the transaction to be a noop.
+        let tx_data = commit(&datastore, tx)?;
+        assert_eq!(tx_data.inserts().count(), 0);
+        assert_eq!(tx_data.deletes().count(), 0);
         Ok(())
     }
 
