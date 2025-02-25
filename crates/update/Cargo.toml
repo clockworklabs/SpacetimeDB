@@ -3,6 +3,7 @@ name = "spacetimedb-update"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+publish = false
 
 [dependencies]
 spacetimedb-paths.workspace = true

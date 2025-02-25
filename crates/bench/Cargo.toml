@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 license-file = "LICENSE"
 description = "Bench library/utility for SpacetimeDB"
+publish = false
 
 [[bench]]
 name = "special"
