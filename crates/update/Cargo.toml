@@ -15,6 +15,7 @@ flate2.workspace = true
 http-body-util = "0.1.2"
 indicatif.workspace = true
 reqwest.workspace = true
+self-replace.workspace = true
 semver = { workspace = true, features = ["serde"] }
 serde.workspace = true
 tar.workspace = true

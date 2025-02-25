@@ -219,6 +219,7 @@ rustyline = { version = "12.0.0", features = [] }
 scoped-tls = "1.0.1"
 scopeguard = "1.1.0"
 second-stack = "0.3"
+self-replace = "1.5"
 semver = "1"
 serde = { version = "1.0.136", features = ["derive"] }
 serde_json = { version = "1.0.128", features = ["raw_value", "arbitrary_precision"] }
