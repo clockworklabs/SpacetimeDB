@@ -380,6 +380,7 @@ name = "benchmarks-module"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "fake",
  "spacetimedb",
 ]
 
@@ -1413,6 +1414,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "deunicode"
+version = "1.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "339544cc9e2c4dc3fc7149fd630c5f22263a4fdf18a98afd0075784968b5cf00"
+
+[[package]]
 name = "dialoguer"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1677,6 +1684,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b90ca2580b73ab6a1f724b76ca11ab632df820fd6040c336200d2c1df7b3c82c"
 dependencies = [
  "serde",
+]
+
+[[package]]
+name = "fake"
+version = "3.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aef603df4ba9adbca6a332db7da6f614f21eafefbaf8e087844e452fdec152d0"
+dependencies = [
+ "deunicode",
+ "rand 0.8.5",
 ]
 
 [[package]]
