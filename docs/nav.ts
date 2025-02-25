@@ -46,6 +46,9 @@ const nav: Nav = {
     page('3 - Gameplay', 'unity/part-3', 'unity/part-3.md'),
     page('4 - Moving and Colliding', 'unity/part-4', 'unity/part-4.md'),
 
+    section('CLI Reference'),
+    page('CLI Reference', 'cli-reference', 'cli-reference.md'),
+
     section('Server Module Languages'),
     page('Overview', 'modules', 'modules/index.md'),
     page(
@@ -88,11 +91,14 @@ const nav: Nav = {
     page('`/energy`', 'http/energy', 'http/energy.md'),
 
     section('Data Format'),
-    page('SATN', 'satn', 'satn.md'),
+    page('SATS-JSON', 'sats-json', 'sats-json.md'),
     page('BSATN', 'bsatn', 'bsatn.md'),
 
     section('SQL'),
     page('SQL Reference', 'sql', 'sql/index.md'),
+
+    section('Subscriptions'),
+    page('Subscription Reference', 'subscriptions', 'subscriptions/index.md'),
   ],
 };
 

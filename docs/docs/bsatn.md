@@ -104,6 +104,6 @@ Where
 All SATS types are BSATN-encoded by converting them to an `AlgebraicValue`,
 then BSATN-encoding that meta-value.
 
-See [the SATN JSON Format](/docs/satn)
+See [the SATN JSON Format](/docs/sats-json)
 for more details of the conversion to meta values.
 Note that these meta values are converted to BSATN and _not JSON_.
