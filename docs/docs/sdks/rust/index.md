@@ -787,7 +787,7 @@ The `reducers` field of the context provides access to reducers exposed by the r
 
 ## Access the client cache
 
-Both [`DbConnection`](#type-dbconnection) and [`EventContext`](#type-eventcontext) have fields `.db`, which in turn has methods for accessing tables in the client cache. The trait method `DbContext::db(&self)` can also be used in contexts with an `impl DbContext` rather than a concrete-typed `EventContext` or `DbConnection`.
+All [`DbContext`](#trait-dbcontext) implementors, including [`DbConnection`](#type-dbconnection) and [`EventContext`](#type-eventcontext), have fields `.db`, which in turn has methods for accessing tables in the client cache. The trait method `DbContext::db(&self)` can also be used in contexts with an `impl DbContext` rather than a concrete-typed `EventContext` or `DbConnection`.
 
 Each table defined by a module has an accessor method, whose name is the table name converted to `snake_case`, on this `.db` field. The methods are defined via extension traits, which `rustc` or your IDE should help you identify and import where necessary. The table accessor methods return table handles, which implement [`Table`](#trait-table), may implement [`TableWithPrimaryKey`](#trait-tablewithprimarykey), and have methods for searching by unique index.
 
@@ -910,13 +910,13 @@ The SpacetimeDB Rust client SDK does not support non-unique BTree indexes.
 
 ## Observe and invoke reducers
 
-Both [`DbConnection`](#type-dbconnection) and [`EventContext`](#type-eventcontext) have fields `.reducers`, which in turn has methods for invoking reducers defined by the module and registering callbacks on it. The trait method `DbContext::reducers(&self)` can also be used in contexts with an `impl DbContext` rather than a concrete-typed `EventContext` or `DbConnection`.
+All [`DbContext`](#trait-dbcontext) implementors, including [`DbConnection`](#type-dbconnection) and [`EventContext`](#type-eventcontext), have fields `.reducers`, which in turn has methods for invoking reducers defined by the module and registering callbacks on it. The trait method `DbContext::reducers(&self)` can also be used in contexts with an `impl DbContext` rather than a concrete-typed `EventContext` or `DbConnection`.
 
 Each reducer defined by the module has three methods on the `.reducers`:
 
-- An invoke method, whose name is the reducer's name converted to snake case. This requests that the module run the reducer.
-- A callback registation method, whose name is prefixed with `on_`. This registers a callback to run whenever we are notified that the reducer ran, including successfully committed runs and runs we requested which failed. This method returns a callback id, which can be passed to the callback remove method.
-- A callback remove method, whose name is prefixed with `remove_`. This cancels a callback previously registered via the callback registration method.
+- An invoke method, whose name is the reducer's name converted to snake case, like `set_name`. This requests that the module run the reducer.
+- A callback registation method, whose name is prefixed with `on_`, like `on_set_name`. This registers a callback to run whenever we are notified that the reducer ran, including successfully committed runs and runs we requested which failed. This method returns a callback id, which can be passed to the callback remove method.
+- A callback remove method, whose name is prefixed with `remove_on_`, like `remove_on_set_name`. This cancels a callback previously registered via the callback registration method.
 
 ## Identify a client
 
