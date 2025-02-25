@@ -447,6 +447,7 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
 ) -> axum::response::Result<axum::Json<PublishResult>> {
     // You should not be able to publish to a database that you do not own
     // so, unless you are the owner, this will fail.
+    log::info!("Calling publish");
 
     let (database_identity, db_name) = match &name_or_identity {
         Some(noa) => match noa.try_resolve(&ctx).await? {
