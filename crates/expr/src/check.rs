@@ -240,6 +240,7 @@ mod tests {
             (
                 "t",
                 ProductType::from([
+                    ("ts", AlgebraicType::timestamp()),
                     ("i8", AlgebraicType::I8),
                     ("u8", AlgebraicType::U8),
                     ("i16", AlgebraicType::I16),
@@ -321,9 +322,29 @@ mod tests {
                 sql: "select * from t where u256 = 1e40",
                 msg: "u256",
             },
+            TestCase {
+                sql: "select * from t where ts = '2025-02-10T15:45:30Z'",
+                msg: "timestamp",
+            },
+            TestCase {
+                sql: "select * from t where ts = '2025-02-10T15:45:30.123Z'",
+                msg: "timestamp ms",
+            },
+            TestCase {
+                sql: "select * from t where ts = '2025-02-10T15:45:30.123456789Z'",
+                msg: "timestamp ns",
+            },
+            TestCase {
+                sql: "select * from t where ts = '2025-02-10 15:45:30+02:00'",
+                msg: "timestamp with timezone",
+            },
+            TestCase {
+                sql: "select * from t where ts = '2025-02-10 15:45:30.123+02:00'",
+                msg: "timestamp ms with timezone",
+            },
         ] {
             let result = parse_and_type_sub(sql, &tx);
-            assert!(result.is_ok(), "{msg}");
+            assert!(result.is_ok(), "name: {}, error: {}", msg, result.unwrap_err());
         }
     }
 
