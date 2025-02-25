@@ -13,6 +13,8 @@ namespace SpacetimeDB.ClientApi
         Subscribe Subscribe,
         OneOffQuery OneOffQuery,
         SubscribeSingle SubscribeSingle,
-        Unsubscribe Unsubscribe
+        SubscribeMulti SubscribeMulti,
+        Unsubscribe Unsubscribe,
+        UnsubscribeMulti UnsubscribeMulti
     )>;
 }

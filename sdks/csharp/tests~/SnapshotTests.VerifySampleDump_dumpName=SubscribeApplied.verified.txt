@@ -12,7 +12,10 @@
         },
         Db: {Scrubbed},
         Reducers: {Scrubbed},
-        SetReducerFlags: {}
+        SetReducerFlags: {},
+        IsActive: false,
+        Identity: Identity_1,
+        ConnectionId: Guid_1
       },
       user: {
         identity: Identity_1,
@@ -26,7 +29,10 @@
         },
         Db: {Scrubbed},
         Reducers: {Scrubbed},
-        SetReducerFlags: {}
+        SetReducerFlags: {},
+        IsActive: false,
+        Identity: Identity_1,
+        ConnectionId: Guid_1
       },
       user: {
         identity: Identity_2,
@@ -43,7 +49,7 @@
               $type: Status.Committed
             },
             CallerIdentity: Identity_3,
-            CallerConnectionId: Guid_1,
+            CallerConnectionId: Guid_2,
             EnergyConsumed: {},
             Reducer: {
               $type: Reducer.IdentityConnected
@@ -52,7 +58,10 @@
         },
         Db: {Scrubbed},
         Reducers: {Scrubbed},
-        SetReducerFlags: {}
+        SetReducerFlags: {},
+        IsActive: false,
+        Identity: Identity_1,
+        ConnectionId: Guid_1
       },
       user: {
         identity: Identity_3,
@@ -69,7 +78,7 @@
               $type: Status.Committed
             },
             CallerIdentity: Identity_1,
-            CallerConnectionId: Guid_2,
+            CallerConnectionId: Guid_3,
             EnergyConsumed: {},
             Reducer: {
               $type: Reducer.SetName,
@@ -79,7 +88,10 @@
         },
         Db: {Scrubbed},
         Reducers: {Scrubbed},
-        SetReducerFlags: {}
+        SetReducerFlags: {},
+        IsActive: false,
+        Identity: Identity_1,
+        ConnectionId: Guid_1
       },
       oldUser: {
         identity: Identity_1,
@@ -98,7 +110,7 @@
           $type: Status.Committed
         },
         CallerIdentity: Identity_1,
-        CallerConnectionId: Guid_2,
+        CallerConnectionId: Guid_3,
         EnergyConsumed: {},
         Reducer: {
           $type: Reducer.SetName,
@@ -115,7 +127,10 @@
         }
       },
       Reducers: {},
-      SetReducerFlags: {}
+      SetReducerFlags: {},
+      IsActive: false,
+      Identity: Identity_1,
+      ConnectionId: Guid_1
     },
     OnInsertMessage: {
       eventContext: {
@@ -127,7 +142,7 @@
               $type: Status.Committed
             },
             CallerIdentity: Identity_3,
-            CallerConnectionId: Guid_1,
+            CallerConnectionId: Guid_2,
             EnergyConsumed: {},
             Reducer: {
               $type: Reducer.SendMessage,
@@ -137,7 +152,10 @@
         },
         Db: {Scrubbed},
         Reducers: {Scrubbed},
-        SetReducerFlags: {}
+        SetReducerFlags: {},
+        IsActive: false,
+        Identity: Identity_1,
+        ConnectionId: Guid_1
       },
       message: {
         sender: Identity_3,
@@ -152,7 +170,7 @@
           $type: Status.Committed
         },
         CallerIdentity: Identity_3,
-        CallerConnectionId: Guid_1,
+        CallerConnectionId: Guid_2,
         EnergyConsumed: {},
         Reducer: {
           $type: Reducer.SendMessage,
@@ -169,7 +187,10 @@
         }
       },
       Reducers: {},
-      SetReducerFlags: {}
+      SetReducerFlags: {},
+      IsActive: false,
+      Identity: Identity_1,
+      ConnectionId: Guid_1
     },
     OnUpdateUser: {
       eventContext: {
@@ -181,7 +202,7 @@
               $type: Status.Committed
             },
             CallerIdentity: Identity_3,
-            CallerConnectionId: Guid_1,
+            CallerConnectionId: Guid_2,
             EnergyConsumed: {},
             Reducer: {
               $type: Reducer.SetName,
@@ -191,7 +212,10 @@
         },
         Db: {Scrubbed},
         Reducers: {Scrubbed},
-        SetReducerFlags: {}
+        SetReducerFlags: {},
+        IsActive: false,
+        Identity: Identity_1,
+        ConnectionId: Guid_1
       },
       oldUser: {
         identity: Identity_3,
@@ -210,7 +234,7 @@
           $type: Status.Committed
         },
         CallerIdentity: Identity_3,
-        CallerConnectionId: Guid_1,
+        CallerConnectionId: Guid_2,
         EnergyConsumed: {},
         Reducer: {
           $type: Reducer.SetName,
@@ -227,7 +251,10 @@
         }
       },
       Reducers: {},
-      SetReducerFlags: {}
+      SetReducerFlags: {},
+      IsActive: false,
+      Identity: Identity_1,
+      ConnectionId: Guid_1
     },
     OnInsertMessage: {
       eventContext: {
@@ -239,7 +266,7 @@
               $type: Status.Committed
             },
             CallerIdentity: Identity_1,
-            CallerConnectionId: Guid_2,
+            CallerConnectionId: Guid_3,
             EnergyConsumed: {},
             Reducer: {
               $type: Reducer.SendMessage,
@@ -249,7 +276,10 @@
         },
         Db: {Scrubbed},
         Reducers: {Scrubbed},
-        SetReducerFlags: {}
+        SetReducerFlags: {},
+        IsActive: false,
+        Identity: Identity_1,
+        ConnectionId: Guid_1
       },
       message: {
         sender: Identity_1,
@@ -264,7 +294,7 @@
           $type: Status.Committed
         },
         CallerIdentity: Identity_1,
-        CallerConnectionId: Guid_2,
+        CallerConnectionId: Guid_3,
         EnergyConsumed: {},
         Reducer: {
           $type: Reducer.SendMessage,
@@ -281,7 +311,10 @@
         }
       },
       Reducers: {},
-      SetReducerFlags: {}
+      SetReducerFlags: {},
+      IsActive: false,
+      Identity: Identity_1,
+      ConnectionId: Guid_1
     },
     OnInsertMessage: {
       eventContext: {
@@ -293,7 +326,7 @@
               $type: Status.Committed
             },
             CallerIdentity: Identity_3,
-            CallerConnectionId: Guid_1,
+            CallerConnectionId: Guid_2,
             EnergyConsumed: {},
             Reducer: {
               $type: Reducer.SendMessage,
@@ -303,7 +336,10 @@
         },
         Db: {Scrubbed},
         Reducers: {Scrubbed},
-        SetReducerFlags: {}
+        SetReducerFlags: {},
+        IsActive: false,
+        Identity: Identity_1,
+        ConnectionId: Guid_1
       },
       message: {
         sender: Identity_3,
@@ -318,7 +354,7 @@
           $type: Status.Committed
         },
         CallerIdentity: Identity_3,
-        CallerConnectionId: Guid_1,
+        CallerConnectionId: Guid_2,
         EnergyConsumed: {},
         Reducer: {
           $type: Reducer.SendMessage,
@@ -335,7 +371,10 @@
         }
       },
       Reducers: {},
-      SetReducerFlags: {}
+      SetReducerFlags: {},
+      IsActive: false,
+      Identity: Identity_1,
+      ConnectionId: Guid_1
     },
     OnUpdateUser: {
       eventContext: {
@@ -347,7 +386,7 @@
               $type: Status.Committed
             },
             CallerIdentity: Identity_3,
-            CallerConnectionId: Guid_1,
+            CallerConnectionId: Guid_2,
             EnergyConsumed: {},
             Reducer: {
               $type: Reducer.IdentityDisconnected
@@ -356,7 +395,10 @@
         },
         Db: {Scrubbed},
         Reducers: {Scrubbed},
-        SetReducerFlags: {}
+        SetReducerFlags: {},
+        IsActive: false,
+        Identity: Identity_1,
+        ConnectionId: Guid_1
       },
       oldUser: {
         identity: Identity_3,
@@ -379,7 +421,7 @@
               $type: Status.Committed
             },
             CallerIdentity: Identity_1,
-            CallerConnectionId: Guid_2,
+            CallerConnectionId: Guid_3,
             EnergyConsumed: {},
             Reducer: {
               $type: Reducer.SendMessage,
@@ -389,7 +431,10 @@
         },
         Db: {Scrubbed},
         Reducers: {Scrubbed},
-        SetReducerFlags: {}
+        SetReducerFlags: {},
+        IsActive: false,
+        Identity: Identity_1,
+        ConnectionId: Guid_1
       },
       message: {
         sender: Identity_1,
@@ -404,7 +449,7 @@
           $type: Status.Committed
         },
         CallerIdentity: Identity_1,
-        CallerConnectionId: Guid_2,
+        CallerConnectionId: Guid_3,
         EnergyConsumed: {},
         Reducer: {
           $type: Reducer.SendMessage,
@@ -421,7 +466,10 @@
         }
       },
       Reducers: {},
-      SetReducerFlags: {}
+      SetReducerFlags: {},
+      IsActive: false,
+      Identity: Identity_1,
+      ConnectionId: Guid_1
     },
     OnDeleteMessage: {
       eventContext: {
@@ -430,7 +478,10 @@
         },
         Db: {Scrubbed},
         Reducers: {Scrubbed},
-        SetReducerFlags: {}
+        SetReducerFlags: {},
+        IsActive: false,
+        Identity: Identity_1,
+        ConnectionId: Guid_1
       },
       message: {
         sender: Identity_3,
@@ -445,7 +496,10 @@
         },
         Db: {Scrubbed},
         Reducers: {Scrubbed},
-        SetReducerFlags: {}
+        SetReducerFlags: {},
+        IsActive: false,
+        Identity: Identity_1,
+        ConnectionId: Guid_1
       },
       message: {
         sender: Identity_1,
@@ -460,7 +514,10 @@
         },
         Db: {Scrubbed},
         Reducers: {Scrubbed},
-        SetReducerFlags: {}
+        SetReducerFlags: {},
+        IsActive: false,
+        Identity: Identity_1,
+        ConnectionId: Guid_1
       },
       message: {
         sender: Identity_3,
@@ -475,7 +532,10 @@
         },
         Db: {Scrubbed},
         Reducers: {Scrubbed},
-        SetReducerFlags: {}
+        SetReducerFlags: {},
+        IsActive: false,
+        Identity: Identity_1,
+        ConnectionId: Guid_1
       },
       message: {
         sender: Identity_1,
@@ -491,7 +551,10 @@
         },
         Db: {Scrubbed},
         Reducers: {Scrubbed},
-        SetReducerFlags: {}
+        SetReducerFlags: {},
+        IsActive: false,
+        Identity: Identity_1,
+        ConnectionId: Guid_1
       },
       message: {
         sender: Identity_3,
@@ -506,7 +569,10 @@
         },
         Db: {Scrubbed},
         Reducers: {Scrubbed},
-        SetReducerFlags: {}
+        SetReducerFlags: {},
+        IsActive: false,
+        Identity: Identity_1,
+        ConnectionId: Guid_1
       },
       message: {
         sender: Identity_1,
@@ -521,7 +587,10 @@
         },
         Db: {Scrubbed},
         Reducers: {Scrubbed},
-        SetReducerFlags: {}
+        SetReducerFlags: {},
+        IsActive: false,
+        Identity: Identity_1,
+        ConnectionId: Guid_1
       },
       message: {
         sender: Identity_3,
@@ -536,7 +605,10 @@
         },
         Db: {Scrubbed},
         Reducers: {Scrubbed},
-        SetReducerFlags: {}
+        SetReducerFlags: {},
+        IsActive: false,
+        Identity: Identity_1,
+        ConnectionId: Guid_1
       },
       message: {
         sender: Identity_1,
@@ -591,10 +663,7 @@
       requestsAwaitingResponse: 6
     },
     OneOffRequestTracker: {},
-    SubscriptionRequestTracker: {
-      sampleCount: 1,
-      requestsAwaitingResponse: 2
-    },
+    SubscriptionRequestTracker: {},
     AllReducersTracker: {
       sampleCount: 9
     },

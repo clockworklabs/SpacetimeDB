@@ -2,7 +2,7 @@
 
 ## Overview
 
-This repository contains the [Unity](https://unity.com/) SDK for SpacetimeDB. The SDK allows to interact with the database server and is prepared to work with code generated from a SpacetimeDB backend code.
+This repository contains the C# and [Unity](https://unity.com/) SDKs for SpacetimeDB. The SDK allows to interact with the database server and is prepared to work with code generated from a SpacetimeDB backend code.
 
 ## Documentation
 

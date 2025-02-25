@@ -94,6 +94,7 @@ void PrintMessage(RemoteTables tables, Message message)
 
 void Message_OnInsert(EventContext ctx, Message insertedValue)
 {
+
     if (ctx.Event is not Event<Reducer>.SubscribeApplied)
     {
         PrintMessage(ctx.Db, insertedValue);
@@ -123,25 +124,15 @@ void OnConnect(DbConnection conn, Identity identity, string authToken)
     local_identity = identity;
     AuthToken.SaveToken(authToken);
 
-    var subscriptions = 0;
-    Action<SubscriptionEventContext> waitForSubscriptions = (SubscriptionEventContext ctx) =>
-    {
-        // Note: callbacks are always invoked on the main thread, so you don't need to
-        // worry about thread synchronization or anything like that.
-        subscriptions += 1;
-
-        if (subscriptions == 2)
-        {
-            OnSubscriptionApplied(ctx);
-        }
-    };
-
-    var userSubscription = conn.SubscriptionBuilder()
-        .OnApplied(waitForSubscriptions)
-        .Subscribe("SELECT * FROM user");
-    var messageSubscription = conn.SubscriptionBuilder()
-        .OnApplied(waitForSubscriptions)
-        .Subscribe("SELECT * FROM message");
+    var subscription = conn.SubscriptionBuilder()
+        .OnApplied(OnSubscriptionApplied)
+        .Subscribe(new string[] {
+            "SELECT * FROM user",
+            "SELECT * FROM message",
+            // It is legal to have redundant subscriptions.
+            // However, keep in mind that data will be sent over the wire multiple times,
+            // once for each subscriptions. This can cause slowdowns if you aren't careful.
+            "SELECT * FROM message" });
 
     // You can also use SubscribeToAllTables, but it should be avoided if you have any large tables:
     // conn.SubscriptionBuilder().OnApplied(OnSubscriptionApplied).SubscribeToAllTables();

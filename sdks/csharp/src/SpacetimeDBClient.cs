@@ -10,7 +10,7 @@ using SpacetimeDB.BSATN;
 using SpacetimeDB.Internal;
 using SpacetimeDB.ClientApi;
 using Thread = System.Threading.Thread;
-using System.Diagnostics;
+
 
 namespace SpacetimeDB
 {
@@ -109,7 +109,7 @@ namespace SpacetimeDB
         internal void AddOnDisconnect(WebSocket.CloseEventHandler cb);
 
         internal void LegacySubscribe(ISubscriptionHandle handle, string[] querySqls);
-        internal void Subscribe(ISubscriptionHandle handle, string querySql);
+        internal void Subscribe(ISubscriptionHandle handle, string[] querySqls);
         internal void Unsubscribe(QueryId queryId);
         void FrameTick();
         void Disconnect();
@@ -125,24 +125,6 @@ namespace SpacetimeDB
     {
         public static DbConnectionBuilder<DbConnection> Builder() => new();
 
-        readonly struct DbValue
-        {
-            public readonly IStructuralReadWrite value;
-            public readonly byte[] bytes;
-
-            public DbValue(IStructuralReadWrite value, byte[] bytes)
-            {
-                this.value = value;
-                this.bytes = bytes;
-            }
-        }
-
-        struct DbOp
-        {
-            public IRemoteTableHandle table;
-            public DbValue? delete;
-            public DbValue? insert;
-        }
 
         internal event Action<Identity, string>? onConnect;
 
@@ -218,25 +200,49 @@ namespace SpacetimeDB
             public DateTime timestamp;
         }
 
+        struct ProcessedDatabaseUpdate
+        {
+            // Map: table handles -> (primary key -> DbValue).
+            // If a particular table has no primary key, the "primary key" is just a byte[]
+            // storing the BSATN encoding of the row.
+            // See Decode(...).
+            public Dictionary<IRemoteTableHandle, MultiDictionaryDelta<object, DbValue>> Updates;
+
+            // Can't override the default constructor. Make sure you use this one!
+            public static ProcessedDatabaseUpdate New()
+            {
+                ProcessedDatabaseUpdate result;
+                result.Updates = new();
+                return result;
+            }
+
+            public MultiDictionaryDelta<object, DbValue> DeltaForTable(IRemoteTableHandle table)
+            {
+                if (!Updates.TryGetValue(table, out var delta))
+                {
+                    // Make sure we use GenericEqualityComparer here, since it handles byte[]s and arbitrary primary key types
+                    // correctly.
+                    delta = new MultiDictionaryDelta<object, DbValue>(GenericEqualityComparer.Instance, DbValueComparer.Instance);
+                    Updates[table] = delta;
+                }
+
+                return delta;
+            }
+        }
+
         struct ProcessedMessage
         {
             public ServerMessage message;
-            public List<DbOp> dbOps;
+            public ProcessedDatabaseUpdate dbOps;
             public DateTime timestamp;
             public ReducerEvent<Reducer>? reducerEvent;
-        }
-
-        struct PreProcessedMessage
-        {
-            public ProcessedMessage processed;
-            public Dictionary<IRemoteTableHandle, HashSet<byte[]>>? subscriptionInserts;
         }
 
         private readonly BlockingCollection<UnprocessedMessage> _messageQueue =
             new(new ConcurrentQueue<UnprocessedMessage>());
 
-        private readonly BlockingCollection<PreProcessedMessage> _preProcessedNetworkMessages =
-            new(new ConcurrentQueue<PreProcessedMessage>());
+        private readonly BlockingCollection<ProcessedMessage> _preProcessedNetworkMessages =
+            new(new ConcurrentQueue<ProcessedMessage>());
 
         internal static bool IsTesting;
         internal bool HasPreProcessedMessage => _preProcessedNetworkMessages.Count > 0;
@@ -244,10 +250,23 @@ namespace SpacetimeDB
         private readonly CancellationTokenSource _preProcessCancellationTokenSource = new();
         private CancellationToken _preProcessCancellationToken => _preProcessCancellationTokenSource.Token;
 
-        static DbValue Decode(IRemoteTableHandle table, byte[] bin, out object? primaryKey)
+        /// <summary>
+        /// Decode a row for a table, producing a primary key.
+        /// If the table has a specific column marked `#[primary_key]`, use that.
+        /// If not, the BSATN for the entire row is used instead.
+        /// </summary>
+        /// <param name="table"></param>
+        /// <param name="bin"></param>
+        /// <param name="primaryKey"></param>
+        /// <returns></returns>
+        static DbValue Decode(IRemoteTableHandle table, byte[] bin, out object primaryKey)
         {
             var obj = table.DecodeValue(bin);
-            primaryKey = table.GetPrimaryKey(obj);
+            // TODO(1.1): we should exhaustively check that GenericEqualityComparer works
+            // for all types that are allowed to be primary keys.
+            var primaryKey_ = table.GetPrimaryKey(obj);
+            primaryKey_ ??= bin;
+            primaryKey = primaryKey_;
             return new(obj, bin);
         }
 
@@ -363,58 +382,37 @@ namespace SpacetimeDB
                 }
             }
 
-            (List<DbOp>, Dictionary<IRemoteTableHandle, HashSet<byte[]>>) PreProcessLegacySubscription(InitialSubscription initSub)
+            ProcessedDatabaseUpdate PreProcessLegacySubscription(InitialSubscription initSub)
             {
-                var dbOps = new List<DbOp>();
+                var dbOps = ProcessedDatabaseUpdate.New();
                 // This is all of the inserts
                 int cap = initSub.DatabaseUpdate.Tables.Sum(a => (int)a.NumRows);
-                // FIXME: shouldn't this be `new(initSub.DatabaseUpdate.Tables.Length)` ?
-                Dictionary<IRemoteTableHandle, HashSet<byte[]>> subscriptionInserts = new(capacity: cap);
-
-                HashSet<byte[]> GetInsertHashSet(IRemoteTableHandle table, int tableSize)
-                {
-                    if (!subscriptionInserts.TryGetValue(table, out var hashSet))
-                    {
-                        hashSet = new HashSet<byte[]>(capacity: tableSize, comparer: ByteArrayComparer.Instance);
-                        subscriptionInserts[table] = hashSet;
-                    }
-                    return hashSet;
-                }
 
                 // First apply all of the state
                 foreach (var (table, update) in GetTables(initSub.DatabaseUpdate))
                 {
-                    var hashSet = GetInsertHashSet(table, (int)update.NumRows);
-
-                    PreProcessInsertOnlyTable(table, update, dbOps, hashSet);
+                    PreProcessInsertOnlyTable(table, update, dbOps);
                 }
-                return (dbOps, subscriptionInserts);
+                return dbOps;
             }
 
             /// <summary>
             /// TODO: the dictionary is here for backwards compatibility and can be removed
             /// once we get rid of legacy subscriptions.
             /// </summary>
-            (List<DbOp>, Dictionary<IRemoteTableHandle, HashSet<byte[]>>) PreProcessSubscribeApplied(SubscribeApplied subscribeApplied)
+            ProcessedDatabaseUpdate PreProcessSubscribeMultiApplied(SubscribeMultiApplied subscribeMultiApplied)
             {
-                var table = Db.GetTable(subscribeApplied.Rows.TableName) ?? throw new Exception($"Unknown table name: {subscribeApplied.Rows.TableName}");
-                var dbOps = new List<DbOp>();
-                HashSet<byte[]> inserts = new(comparer: ByteArrayComparer.Instance);
-
-                PreProcessInsertOnlyTable(table, subscribeApplied.Rows.TableRows, dbOps, inserts);
-
-                var result = new Dictionary<IRemoteTableHandle, HashSet<byte[]>>
+                var dbOps = ProcessedDatabaseUpdate.New();
+                foreach (var (table, update) in GetTables(subscribeMultiApplied.Update))
                 {
-                    [table] = inserts
-                };
-
-                return (dbOps, result);
+                    PreProcessInsertOnlyTable(table, update, dbOps);
+                }
+                return dbOps;
             }
 
-            void PreProcessInsertOnlyTable(IRemoteTableHandle table, TableUpdate update, List<DbOp> dbOps, HashSet<byte[]> inserts)
+            void PreProcessInsertOnlyTable(IRemoteTableHandle table, TableUpdate update, ProcessedDatabaseUpdate dbOps)
             {
-                // In debug mode, make sure we use a byte array comparer in HashSet and not a reference-equal `byte[]` by accident.
-                Debug.Assert(inserts.Comparer is ByteArrayComparer);
+                var delta = dbOps.DeltaForTable(table);
 
                 foreach (var cqu in update.Updates)
                 {
@@ -425,133 +423,74 @@ namespace SpacetimeDB
                     }
                     foreach (var bin in BsatnRowListIter(qu.Inserts))
                     {
-                        if (!inserts.Add(bin))
-                        {
-                            // Ignore duplicate inserts in the same subscription update.
-                            continue;
-                        }
-                        var obj = table.DecodeValue(bin);
-                        var op = new DbOp
-                        {
-                            table = table,
-                            insert = new(obj, bin),
-                        };
-                        dbOps.Add(op);
+                        var obj = Decode(table, bin, out var pk);
+                        delta.Add(pk, obj);
                     }
                 }
             }
 
-
-            /// <summary>
-            /// TODO: the dictionary is here for backwards compatibility and can be removed
-            /// once we get rid of legacy subscriptions.
-            /// </summary>
-            List<DbOp> PreProcessUnsubscribeApplied(UnsubscribeApplied unsubApplied)
+            void PreProcessDeleteOnlyTable(IRemoteTableHandle table, TableUpdate update, ProcessedDatabaseUpdate dbOps)
             {
-                var table = Db.GetTable(unsubApplied.Rows.TableName) ?? throw new Exception($"Unknown table name: {unsubApplied.Rows.TableName}");
-                var dbOps = new List<DbOp>();
-
-                // First apply all of the state
-                foreach (var cqu in unsubApplied.Rows.TableRows.Updates)
+                var delta = dbOps.DeltaForTable(table);
+                foreach (var cqu in update.Updates)
                 {
                     var qu = DecompressDecodeQueryUpdate(cqu);
                     if (qu.Inserts.RowsData.Count > 0)
                     {
-                        Log.Warn("Non-insert during an UnsubscribeApplied!");
+                        Log.Warn("Non-delete during a delete-only operation!");
                     }
                     foreach (var bin in BsatnRowListIter(qu.Deletes))
                     {
-                        var obj = table.DecodeValue(bin);
-                        var op = new DbOp
-                        {
-                            table = table,
-                            delete = new(obj, bin),
-                        };
-                        dbOps.Add(op);
+                        var obj = Decode(table, bin, out var pk);
+                        delta.Remove(pk, obj);
                     }
+                }
+            }
+
+            void PreProcessTable(IRemoteTableHandle table, TableUpdate update, ProcessedDatabaseUpdate dbOps)
+            {
+                var delta = dbOps.DeltaForTable(table);
+                foreach (var cqu in update.Updates)
+                {
+                    var qu = DecompressDecodeQueryUpdate(cqu);
+
+                    // Because we are accumulating into a MultiDictionaryDelta that will be applied all-at-once
+                    // to the table, it doesn't matter that we call Add before Remove here.
+
+                    foreach (var bin in BsatnRowListIter(qu.Inserts))
+                    {
+                        var obj = Decode(table, bin, out var pk);
+                        delta.Add(pk, obj);
+                    }
+                    foreach (var bin in BsatnRowListIter(qu.Deletes))
+                    {
+                        var obj = Decode(table, bin, out var pk);
+                        delta.Remove(pk, obj);
+                    }
+                }
+
+            }
+
+            ProcessedDatabaseUpdate PreProcessUnsubscribeMultiApplied(UnsubscribeMultiApplied unsubMultiApplied)
+            {
+                var dbOps = ProcessedDatabaseUpdate.New();
+
+                foreach (var (table, update) in GetTables(unsubMultiApplied.Update))
+                {
+                    PreProcessDeleteOnlyTable(table, update, dbOps);
                 }
 
                 return dbOps;
             }
 
-
-
-            List<DbOp> PreProcessDatabaseUpdate(DatabaseUpdate updates)
+            ProcessedDatabaseUpdate PreProcessDatabaseUpdate(DatabaseUpdate updates)
             {
-                var dbOps = new List<DbOp>();
+                var dbOps = ProcessedDatabaseUpdate.New();
 
-                // All row updates that have a primary key, this contains inserts, deletes and updates.
-                // TODO: is there any guarantee that transaction update contains each table only once, aka updates are already grouped by table?
-                // If so, we could simplify this and other methods by moving the dictionary inside the main loop and using only the primary key as key.
-                var primaryKeyChanges = new Dictionary<(IRemoteTableHandle table, object primaryKeyValue), DbOp>();
-
-                // First apply all of the state
                 foreach (var (table, update) in GetTables(updates))
                 {
-                    foreach (var cqu in update.Updates)
-                    {
-                        var qu = DecompressDecodeQueryUpdate(cqu);
-                        foreach (var row in BsatnRowListIter(qu.Inserts))
-                        {
-                            var op = new DbOp { table = table, insert = Decode(table, row, out var pk) };
-                            if (pk != null)
-                            {
-                                // Compound key that we use for lookup.
-                                // Consists of the table handle (for faster comparison that string names) + actual primary key of the row.
-                                var key = (table, pk);
-
-                                if (primaryKeyChanges.TryGetValue(key, out var oldOp))
-                                {
-                                    if (oldOp.insert is not null)
-                                    {
-                                        Log.Warn($"Update with the same primary key was applied multiple times! tableName={update.TableName}");
-                                        // TODO(jdetter): Is this a correctable error? This would be a major error on the
-                                        // SpacetimeDB side.
-                                        continue;
-                                    }
-
-                                    op.delete = oldOp.delete;
-                                }
-                                primaryKeyChanges[key] = op;
-                            }
-                            else
-                            {
-                                dbOps.Add(op);
-                            }
-                        }
-
-                        foreach (var row in BsatnRowListIter(qu.Deletes))
-                        {
-                            var op = new DbOp { table = table, delete = Decode(table, row, out var pk) };
-                            if (pk != null)
-                            {
-                                // Compound key that we use for lookup.
-                                // Consists of the table handle (for faster comparison that string names) + actual primary key of the row.
-                                var key = (table, pk);
-
-                                if (primaryKeyChanges.TryGetValue(key, out var oldOp))
-                                {
-                                    if (oldOp.delete is not null)
-                                    {
-                                        Log.Warn($"Update with the same primary key was applied multiple times! tableName={update.TableName}");
-                                        // TODO(jdetter): Is this a correctable error? This would be a major error on the
-                                        // SpacetimeDB side.
-                                        continue;
-                                    }
-
-                                    op.insert = oldOp.insert;
-                                }
-                                primaryKeyChanges[key] = op;
-                            }
-                            else
-                            {
-                                dbOps.Add(op);
-                            }
-                        }
-                    }
+                    PreProcessTable(table, update, dbOps);
                 }
-                // Combine primary key updates and non-primary key updates
-                dbOps.AddRange(primaryKeyChanges.Values);
                 return dbOps;
             }
 
@@ -569,29 +508,32 @@ namespace SpacetimeDB
                 resultSource.SetResult(resp);
             }
 
-            PreProcessedMessage PreProcessMessage(UnprocessedMessage unprocessed)
+            ProcessedMessage PreProcessMessage(UnprocessedMessage unprocessed)
             {
-                var dbOps = new List<DbOp>();
+                var dbOps = ProcessedDatabaseUpdate.New();
 
                 var message = DecompressDecodeMessage(unprocessed.bytes);
 
                 ReducerEvent<Reducer>? reducerEvent = default;
 
-                // This is all of the inserts, used for updating the stale but un-cleared client cache.
-                Dictionary<IRemoteTableHandle, HashSet<byte[]>>? subscriptionInserts = null;
-
                 switch (message)
                 {
                     case ServerMessage.InitialSubscription(var initSub):
-                        (dbOps, subscriptionInserts) = PreProcessLegacySubscription(initSub);
+                        dbOps = PreProcessLegacySubscription(initSub);
                         break;
                     case ServerMessage.SubscribeApplied(var subscribeApplied):
-                        (dbOps, subscriptionInserts) = PreProcessSubscribeApplied(subscribeApplied);
+                        break;
+                    case ServerMessage.SubscribeMultiApplied(var subscribeMultiApplied):
+                        dbOps = PreProcessSubscribeMultiApplied(subscribeMultiApplied);
                         break;
                     case ServerMessage.SubscriptionError(var subscriptionError):
+                        // do nothing; main thread will warn.
                         break;
                     case ServerMessage.UnsubscribeApplied(var unsubscribeApplied):
-                        dbOps = PreProcessUnsubscribeApplied(unsubscribeApplied);
+                        // do nothing; main thread will warn.
+                        break;
+                    case ServerMessage.UnsubscribeMultiApplied(var unsubscribeMultiApplied):
+                        dbOps = PreProcessUnsubscribeMultiApplied(unsubscribeMultiApplied);
                         break;
                     case ServerMessage.TransactionUpdate(var transactionUpdate):
                         // Convert the generic event arguments in to a domain specific event object
@@ -636,38 +578,8 @@ namespace SpacetimeDB
                         throw new InvalidOperationException();
                 }
 
-                return new PreProcessedMessage
-                {
-                    processed = new ProcessedMessage { message = message, dbOps = dbOps, timestamp = unprocessed.timestamp, reducerEvent = reducerEvent },
-                    subscriptionInserts = subscriptionInserts,
-                };
+                return new ProcessedMessage { message = message, dbOps = dbOps, timestamp = unprocessed.timestamp, reducerEvent = reducerEvent };
             }
-        }
-
-        ProcessedMessage CalculateStateDiff(PreProcessedMessage preProcessedMessage)
-        {
-            var processed = preProcessedMessage.processed;
-
-            // Perform the state diff, this has to be done on the main thread because we have to touch
-            // the client cache.
-            if (preProcessedMessage.subscriptionInserts is { } subscriptionInserts)
-            {
-                foreach (var (table, hashSet) in subscriptionInserts)
-                {
-                    foreach (var (rowBytes, oldValue) in table.IterEntries().Where(kv => !hashSet.Contains(kv.Key)))
-                    {
-                        processed.dbOps.Add(new DbOp
-                        {
-                            table = table,
-                            // This is a row that we had before, but we do not have it now.
-                            // This must have been a delete.
-                            delete = new(oldValue, rowBytes),
-                        });
-                    }
-                }
-            }
-
-            return processed;
         }
 
         public void Disconnect()
@@ -720,81 +632,30 @@ namespace SpacetimeDB
             }
         }
 
-        private void OnMessageProcessCompleteUpdate(IEventContext eventContext, List<DbOp> dbOps)
+
+        private void OnMessageProcessCompleteUpdate(IEventContext eventContext, ProcessedDatabaseUpdate dbOps)
         {
             // First trigger OnBeforeDelete
-            foreach (var update in dbOps)
+            foreach (var (table, update) in dbOps.Updates)
             {
-                if (update is { delete: { value: var oldValue }, insert: null })
-                {
-                    try
-                    {
-                        update.table.InvokeBeforeDelete(eventContext, oldValue);
-                    }
-                    catch (Exception e)
-                    {
-                        Log.Exception(e);
-                    }
-                }
+                table.PreApply(eventContext, update);
             }
 
-            // Apply all of the state
-            for (var i = 0; i < dbOps.Count; i++)
+            foreach (var (table, update) in dbOps.Updates)
             {
-                // TODO: Reimplement updates when we add support for primary keys
-                var update = dbOps[i];
-
-                if (update.delete is { } delete)
-                {
-                    if (!update.table.DeleteEntry(delete.bytes))
-                    {
-                        update.delete = null;
-                        dbOps[i] = update;
-                    }
-                }
-
-                if (update.insert is { } insert)
-                {
-                    if (!update.table.InsertEntry(insert.bytes, insert.value))
-                    {
-                        update.insert = null;
-                        dbOps[i] = update;
-                    }
-                }
+                table.Apply(eventContext, update);
             }
 
-            // Send out events
-            foreach (var dbOp in dbOps)
+            foreach (var (table, _) in dbOps.Updates)
             {
-                try
-                {
-                    switch (dbOp)
-                    {
-                        case { insert: { value: var newValue }, delete: { value: var oldValue } }:
-                            dbOp.table.InvokeUpdate(eventContext, oldValue, newValue);
-                            break;
-
-                        case { insert: { value: var newValue } }:
-                            dbOp.table.InvokeInsert(eventContext, newValue);
-                            break;
-
-                        case { delete: { value: var oldValue } }:
-                            dbOp.table.InvokeDelete(eventContext, oldValue);
-                            break;
-                    }
-                }
-                catch (Exception e)
-                {
-                    Log.Exception(e);
-                }
+                table.PostApply(eventContext);
             }
         }
 
         protected abstract bool Dispatch(IReducerEventContext context, Reducer reducer);
 
-        private void OnMessageProcessComplete(PreProcessedMessage preProcessed)
+        private void OnMessageProcessComplete(ProcessedMessage processed)
         {
-            var processed = CalculateStateDiff(preProcessed);
             var message = processed.message;
             var dbOps = processed.dbOps;
             var timestamp = processed.timestamp;
@@ -824,17 +685,21 @@ namespace SpacetimeDB
                     }
 
                 case ServerMessage.SubscribeApplied(var subscribeApplied):
+                    Log.Warn($"Unexpected SubscribeApplied (we only expect to get SubscribeMultiApplied): {subscribeApplied}");
+                    break;
+
+                case ServerMessage.SubscribeMultiApplied(var subscribeMultiApplied):
                     {
                         stats.ParseMessageTracker.InsertRequest(timestamp, $"type={nameof(ServerMessage.SubscribeApplied)}");
-                        stats.SubscriptionRequestTracker.FinishTrackingRequest(subscribeApplied.RequestId);
+                        stats.SubscriptionRequestTracker.FinishTrackingRequest(subscribeMultiApplied.RequestId);
                         var eventContext = MakeSubscriptionEventContext();
                         var legacyEventContext = ToEventContext(new Event<Reducer>.SubscribeApplied());
                         OnMessageProcessCompleteUpdate(legacyEventContext, dbOps);
-                        if (subscriptions.TryGetValue(subscribeApplied.QueryId.Id, out var subscription))
+                        if (subscriptions.TryGetValue(subscribeMultiApplied.QueryId.Id, out var subscription))
                         {
                             try
                             {
-                                subscription.OnApplied(eventContext, new SubscriptionAppliedType.Active(subscribeApplied.QueryId));
+                                subscription.OnApplied(eventContext, new SubscriptionAppliedType.Active(subscribeMultiApplied.QueryId));
                             }
                             catch (Exception e)
                             {
@@ -882,13 +747,17 @@ namespace SpacetimeDB
                     }
 
                 case ServerMessage.UnsubscribeApplied(var unsubscribeApplied):
+                    Log.Warn($"Unexpected UnsubscribeApplied (we only expect to get UnsubscribeMultiApplied): {unsubscribeApplied}");
+                    break;
+
+                case ServerMessage.UnsubscribeMultiApplied(var unsubscribeMultiApplied):
                     {
                         stats.ParseMessageTracker.InsertRequest(timestamp, $"type={nameof(ServerMessage.UnsubscribeApplied)}");
-                        stats.SubscriptionRequestTracker.FinishTrackingRequest(unsubscribeApplied.RequestId);
+                        stats.SubscriptionRequestTracker.FinishTrackingRequest(unsubscribeMultiApplied.RequestId);
                         var eventContext = MakeSubscriptionEventContext();
                         var legacyEventContext = ToEventContext(new Event<Reducer>.UnsubscribeApplied());
                         OnMessageProcessCompleteUpdate(legacyEventContext, dbOps);
-                        if (subscriptions.TryGetValue(unsubscribeApplied.QueryId.Id, out var subscription))
+                        if (subscriptions.TryGetValue(unsubscribeMultiApplied.QueryId.Id, out var subscription))
                         {
                             try
                             {
@@ -928,8 +797,6 @@ namespace SpacetimeDB
                                 Log.Warn($"Failed to finish tracking reducer request: {requestId}");
                             }
                         }
-
-
 
                         if (processed.reducerEvent is { } reducerEvent)
                         {
@@ -1007,7 +874,7 @@ namespace SpacetimeDB
             ));
         }
 
-        void IDbConnection.Subscribe(ISubscriptionHandle handle, string querySql)
+        void IDbConnection.Subscribe(ISubscriptionHandle handle, string[] querySqls)
         {
             if (!webSocket.IsConnected)
             {
@@ -1020,11 +887,11 @@ namespace SpacetimeDB
             // casting request IDs to query IDs anywhere in the new code path.
             var queryId = queryIdAllocator.Next();
             subscriptions[queryId] = handle;
-            webSocket.Send(new ClientMessage.SubscribeSingle(
-                new SubscribeSingle
+            webSocket.Send(new ClientMessage.SubscribeMulti(
+                new SubscribeMulti
                 {
                     RequestId = id,
-                    Query = querySql,
+                    QueryStrings = querySqls.ToList(),
                     QueryId = new QueryId(queryId),
                 }
             ));
@@ -1110,7 +977,7 @@ namespace SpacetimeDB
 
             var requestId = stats.SubscriptionRequestTracker.StartTrackingRequest();
 
-            webSocket.Send(new ClientMessage.Unsubscribe(new()
+            webSocket.Send(new ClientMessage.UnsubscribeMulti(new()
             {
                 RequestId = requestId,
                 QueryId = queryId
@@ -1138,5 +1005,33 @@ namespace SpacetimeDB
             lastAllocated++;
             return lastAllocated;
         }
+    }
+    internal readonly struct DbValue
+    {
+        public readonly IStructuralReadWrite value;
+        public readonly byte[] bytes;
+
+        public DbValue(IStructuralReadWrite value, byte[] bytes)
+        {
+            this.value = value;
+            this.bytes = bytes;
+        }
+
+        // TODO: having a nice ToString here would give better way better errors when applying table deltas,
+        // but it's tricky to do that generically.
+    }
+
+    /// <summary>
+    /// DbValue comparer that uses BSATN-encoded records to compare DbValues for equality.
+    /// </summary>
+    internal readonly struct DbValueComparer : IEqualityComparer<DbValue>
+    {
+        public static DbValueComparer Instance = new();
+
+        public bool Equals(DbValue x, DbValue y) =>
+            ByteArrayComparer.Instance.Equals(x.bytes, y.bytes);
+
+        public int GetHashCode(DbValue obj) =>
+            ByteArrayComparer.Instance.GetHashCode(obj.bytes);
     }
 }

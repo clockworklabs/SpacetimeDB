@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using SpacetimeDB.ClientApi;
 
 namespace SpacetimeDB
@@ -23,7 +24,73 @@ namespace SpacetimeDB
         public Exception Event { get; }
     }
 
+    // The following underscores are needed to work around c#'s unified type-and-function
+    // namespace.
 
+    /// <summary>
+    /// The <c>DbContext</c> trait, which mediates access to a remote module.
+    ///
+    /// <c>DbContext</c> is implemented by <c>DbConnection</c> and <c>EventContext</c>,
+    /// both defined in your module-specific codegen.
+    /// </summary>
+    public interface IDbContext<DbView, RemoteReducers, SetReducerFlags_, SubscriptionBuilder_>
+    {
+        /// <summary>
+        /// Access to tables in the client cache, which stores a read-only replica of the remote database state.
+        ///
+        /// The returned <c>DbView</c> will have a method to access each table defined by the module.
+        /// </summary>
+        public DbView Db { get; }
+
+        /// <summary>
+        /// Access to reducers defined by the module.
+        ///
+        /// The returned <c>RemoteReducers</c> will have a method to invoke each reducer defined by the module,
+        /// plus methods for adding and removing callbacks on each of those reducers.
+        /// </summary>
+        public RemoteReducers Reducers { get; }
+
+        /// <summary>
+        /// Access to setters for per-reducer flags.
+        ///
+        /// The returned <c>SetReducerFlags</c> will have a method to invoke,
+        /// for each reducer defined by the module,
+        /// which call-flags for the reducer can be set.
+        /// </summary>
+        public SetReducerFlags_ SetReducerFlags { get; }
+
+        /// <summary>
+        /// Returns <c>true</c> if the connection is active, i.e. has not yet disconnected.
+        /// </summary>
+        public bool IsActive { get; }
+
+        /// <summary>
+        /// Close the connection.
+        ///
+        /// Throws an error if the connection is already closed.
+        /// </summary>
+        public void Disconnect();
+
+        /// <summary>
+        /// Start building a subscription.
+        /// </summary>
+        /// <returns>A builder-pattern constructor for subscribing to queries,
+        /// causing matching rows to be replicated into the client cache.</returns>
+        public SubscriptionBuilder_ SubscriptionBuilder();
+
+        /// <summary>
+        /// Get the <c>Identity</c> of this connection.
+        ///
+        /// This method returns null if the connection was constructed anonymously
+        /// and we have not yet received our newly-generated <c>Identity</c> from the host.
+        /// </summary>
+        public Identity? Identity { get; }
+
+        /// <summary>
+        /// Get this connection's <c>ConnectionId</c>.
+        /// </summary>
+        public ConnectionId ConnectionId { get; }
+    }
 
     public interface IReducerArgs : BSATN.IStructuralReadWrite
     {
@@ -57,52 +124,6 @@ namespace SpacetimeDB
         public record UnknownTransaction : Event<R>;
     }
 
-    // TODO: Move those classes into EventContext, so that we wouldn't need repetitive generics.
-    public sealed class SubscriptionBuilder<SubscriptionEventContext, ErrorContext>
-        where SubscriptionEventContext : ISubscriptionEventContext
-        where ErrorContext : IErrorContext
-    {
-        private readonly IDbConnection conn;
-
-        private event Action<SubscriptionEventContext>? Applied;
-        private event Action<ErrorContext, Exception>? Error;
-
-        public SubscriptionBuilder(IDbConnection conn)
-        {
-            this.conn = conn;
-        }
-
-        public SubscriptionBuilder<SubscriptionEventContext, ErrorContext> OnApplied(
-            Action<SubscriptionEventContext> callback
-        )
-        {
-            Applied += callback;
-            return this;
-        }
-
-        public SubscriptionBuilder<SubscriptionEventContext, ErrorContext> OnError(
-            Action<ErrorContext, Exception> callback
-        )
-        {
-            Error += callback;
-            return this;
-        }
-
-        public SubscriptionHandle<SubscriptionEventContext, ErrorContext> Subscribe(
-            string querySql
-        ) => new(conn, Applied, Error, querySql);
-
-        public void SubscribeToAllTables()
-        {
-            // Make sure we use the legacy handle constructor here, even though there's only 1 query.
-            // We drop the error handler, since it can't be called for legacy subscriptions.
-            new SubscriptionHandle<SubscriptionEventContext, ErrorContext>(
-                conn,
-                Applied,
-                new string[] { "SELECT * FROM *" }
-            );
-        }
-    }
 
     public interface ISubscriptionHandle
     {
@@ -140,7 +161,7 @@ namespace SpacetimeDB
         : TaggedEnum<(Unit Pending, QueryId Active, Unit LegacyActive, Unit Ended)>
     { }
 
-    public class SubscriptionHandle<SubscriptionEventContext, ErrorContext> : ISubscriptionHandle
+    public class SubscriptionHandleBase<SubscriptionEventContext, ErrorContext> : ISubscriptionHandle
         where SubscriptionEventContext : ISubscriptionEventContext
         where ErrorContext : IErrorContext
     {
@@ -199,13 +220,13 @@ namespace SpacetimeDB
         }
 
         /// <summary>
-        /// TODO: remove this constructor once legacy subscriptions are removed.
+        /// Construct a legacy subscription handle.
         /// </summary>
         /// <param name="conn"></param>
         /// <param name="onApplied"></param>
         /// <param name="onError"></param>
         /// <param name="querySqls"></param>
-        internal SubscriptionHandle(IDbConnection conn, Action<SubscriptionEventContext>? onApplied, string[] querySqls)
+        protected SubscriptionHandleBase(IDbConnection conn, Action<SubscriptionEventContext>? onApplied, string[] querySqls)
         {
             state = new SubscriptionState.Pending(new());
             this.conn = conn;
@@ -220,18 +241,18 @@ namespace SpacetimeDB
         /// <param name="onApplied"></param>
         /// <param name="onError"></param>
         /// <param name="querySql"></param>
-        internal SubscriptionHandle(
+        protected SubscriptionHandleBase(
             IDbConnection conn,
             Action<SubscriptionEventContext>? onApplied,
             Action<ErrorContext, Exception>? onError,
-            string querySql
+            string[] querySqls
         )
         {
             state = new SubscriptionState.Pending(new());
             this.onApplied = onApplied;
             this.onError = onError;
             this.conn = conn;
-            conn.Subscribe(this, querySql);
+            conn.Subscribe(this, querySqls);
         }
 
         /// <summary>
@@ -254,10 +275,14 @@ namespace SpacetimeDB
             {
                 throw new Exception("Cannot unsubscribe from inactive subscription.");
             }
-            if (onEnded != null)
+            if (this.onEnded != null)
             {
-                // TODO: should we just log here instead? Do we try not to throw exceptions on the main thread?
                 throw new Exception("Unsubscribe already called.");
+            }
+            if (onEnded == null)
+            {
+                // We need to put something in there to use this as a boolean.
+                onEnded = (ctx) => { };
             }
             this.onEnded = onEnded;
         }
