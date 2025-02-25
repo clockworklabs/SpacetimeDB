@@ -33,9 +33,6 @@ const nav: Nav = {
     page('Overview', 'index', 'index.md'), // TODO(BREAKING): For consistency & clarity, 'index' slug should be renamed 'intro'?
     page('Getting Started', 'getting-started', 'getting-started.md'),
 
-    section('Deploying'),
-    page('Testnet', 'deploying/testnet', 'deploying/testnet.md'),
-
     section('Migration Guides'),
     page('v0.12', 'migration/v0.12', 'migration/v0.12.md'),
 
