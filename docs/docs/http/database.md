@@ -121,8 +121,6 @@ If the top-level domain is registered, but the identity provided in the `Authori
 } }
 ```
 
-> Spacetime top-level domains are an upcoming feature, and are not fully implemented in SpacetimeDB 0.6. For now, database names should not contain slashes.
-
 ## `/database/ping GET`
 
 Does nothing and returns no data. Clients can send requests to this endpoint to determine whether they are able to connect to SpacetimeDB.
@@ -130,8 +128,6 @@ Does nothing and returns no data. Clients can send requests to this endpoint to 
 ## `/database/register_tld GET`
 
 Register a new Spacetime top-level domain. A TLD is the part of a database name before the first `/`. For example, in the name `tyler/bitcraft`, the TLD is `tyler`. Each top-level domain is owned by at most one identity, and only the owner can publish databases with that TLD.
-
-> Spacetime top-level domains are an upcoming feature, and are not fully implemented in SpacetimeDB 0.6. For now, database names should not contain slashes.
 
 Accessible through the CLI as `spacetime dns register-tld <tld>`.
 
@@ -225,8 +221,6 @@ If the top-level domain for the requested name is registered, but the identity p
     "domain": string
 } }
 ```
-
-> Spacetime top-level domains are an upcoming feature, and are not fully implemented in SpacetimeDB 0.6. For now, database names should not contain slashes.
 
 ## `/database/delete/:address POST`
 

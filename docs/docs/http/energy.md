@@ -39,8 +39,6 @@ Returns JSON in the form:
 
 Set the energy balance for an identity.
 
-Note that in the SpacetimeDB 0.6 Testnet, this endpoint always returns code 401, `UNAUTHORIZED`. Testnet energy balances cannot be refilled.
-
 Accessible through the CLI as `spacetime energy set-balance <balance> <identity>`.
 
 #### Parameters
