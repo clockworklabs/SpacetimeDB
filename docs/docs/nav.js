@@ -47,6 +47,8 @@ const nav = {
         page('BSATN', 'bsatn', 'bsatn.md'),
         section('SQL'),
         page('SQL Reference', 'sql', 'sql/index.md'),
+        section('Subscriptions'),
+        page('Subscription Reference', 'subscriptions', 'subscriptions/index.md'),
     ],
 };
 export default nav;
