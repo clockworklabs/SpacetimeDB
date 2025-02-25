@@ -118,7 +118,7 @@ public class SnapshotTests
         }
     });
 
-    private static ServerMessage.SubscribeApplied SampleSubscribeApplied(
+    private static ServerMessage.SubscribeMultiApplied SampleSubscribeApplied(
         uint requestId,
         uint queryId,
         ulong hostExecutionDuration,
@@ -126,19 +126,12 @@ public class SnapshotTests
     ) => new(new()
     {
         RequestId = requestId,
-        TotalHostExecutionDurationMicros = hostExecutionDuration,
         QueryId = new(queryId),
-        Rows = new()
-        {
-            // This message contains redundant data, shrug.
-            // Copy out the redundant fields.
-            TableId = tableUpdate.TableId,
-            TableName = tableUpdate.TableName,
-            TableRows = tableUpdate
-        }
+        TotalHostExecutionDurationMicros = hostExecutionDuration,
+        Update = new(new List<TableUpdate> { tableUpdate })
     });
 
-    private static ServerMessage.UnsubscribeApplied SampleUnsubscribeApplied(
+    private static ServerMessage.UnsubscribeMultiApplied SampleUnsubscribeApplied(
         uint requestId,
         uint queryId,
         ulong hostExecutionDuration,
@@ -148,14 +141,7 @@ public class SnapshotTests
         RequestId = requestId,
         TotalHostExecutionDurationMicros = hostExecutionDuration,
         QueryId = new(queryId),
-        Rows = new()
-        {
-            // This message contains redundant data, shrug.
-            // Copy out the redundant fields.
-            TableId = tableUpdate.TableId,
-            TableName = tableUpdate.TableName,
-            TableRows = tableUpdate
-        }
+        Update = new(new List<TableUpdate> { tableUpdate })
     });
 
     private static ServerMessage.SubscriptionError SampleSubscriptionError(
