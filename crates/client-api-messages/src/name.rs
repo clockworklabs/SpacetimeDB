@@ -59,15 +59,8 @@ pub enum PublishResult {
         op: PublishOp,
     },
 
-    /// The top level domain for the database name is registered, but the identity that you provided does
-    /// not have permission to insert the given database name. For example:
-    ///
-    /// - `clockworklabs/bitcraft`
-    ///
-    /// If you were trying to insert this database name, but the tld `clockworklabs` is
-    /// owned by an identity other than the identity that you provided, then you will receive
-    /// this error.
-    PermissionDenied { name: DatabaseName },
+    /// The user was not allowed to publish for the given reason.
+    PermissionDenied { reason: String },
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

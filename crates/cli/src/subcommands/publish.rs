@@ -182,21 +182,22 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
                 println!("{} database with identity: {}", op, database_identity);
             }
         }
-        PublishResult::PermissionDenied { name } => {
-            if anon_identity {
-                anyhow::bail!("You need to be logged in as the owner of {name} to publish to {name}",);
-            }
-            // If we're not in the `anon_identity` case, then we have already forced the user to log in above (using `get_auth_header`), so this should be safe to unwrap.
-            let token = config.spacetimedb_token().unwrap();
-            let identity = decode_identity(token)?;
-            //TODO(jdetter): Have a nice name generator here, instead of using some abstract characters
-            // we should perhaps generate fun names like 'green-fire-dragon' instead
-            let suggested_tld: String = identity.chars().take(12).collect();
-            return Err(anyhow::anyhow!(
-                "The database {name} is not registered to the identity you provided.\n\
-                We suggest you push to either a domain owned by you, or a new domain like:\n\
-                \tspacetime publish {suggested_tld}\n",
-            ));
+        PublishResult::PermissionDenied { reason } => {
+            anyhow::bail!("Permission denied: {}", reason);
+            // if anon_identity {
+            //     anyhow::bail!("You need to be logged in as the owner of {name} to publish to {name}",);
+            // }
+            // // If we're not in the `anon_identity` case, then we have already forced the user to log in above (using `get_auth_header`), so this should be safe to unwrap.
+            // let token = config.spacetimedb_token().unwrap();
+            // let identity = decode_identity(token)?;
+            // //TODO(jdetter): Have a nice name generator here, instead of using some abstract characters
+            // // we should perhaps generate fun names like 'green-fire-dragon' instead
+            // let suggested_tld: String = identity.chars().take(12).collect();
+            // return Err(anyhow::anyhow!(
+            //     "The database {name} is not registered to the identity you provided.\n\
+            //     We suggest you push to either a domain owned by you, or a new domain like:\n\
+            //     \tspacetime publish {suggested_tld}\n",
+            // ));
         }
     }
 

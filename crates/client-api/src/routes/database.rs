@@ -4,7 +4,7 @@ use crate::auth::{
 };
 use crate::routes::subscribe::generate_random_connection_id;
 use crate::util::{ByteStringBody, NameOrIdentity};
-use crate::{log_and_500, ControlStateDelegate, DatabaseDef, NodeDelegate};
+use crate::{log_and_500, AllowCreationResult, ControlStateDelegate, DatabaseDef, NodeDelegate};
 use axum::body::{Body, Bytes};
 use axum::extract::{Path, Query, State};
 use axum::response::{ErrorResponse, IntoResponse};
@@ -452,6 +452,15 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
         Some(noa) => match noa.try_resolve(&ctx).await? {
             Ok(resolved) => (resolved, noa.name()),
             Err(name) => {
+                if let AllowCreationResult::Unauthorized { error_message } =
+                    ctx.allow_creation(&auth).await.map_err(log_and_500)?
+                {
+                    return Err((
+                        StatusCode::UNAUTHORIZED,
+                        axum::Json(PublishResult::PermissionDenied { reason: error_message }),
+                    )
+                        .into());
+                }
                 // `name_or_identity` was a `NameOrIdentity::Name`, but no record
                 // exists yet. Create it now with a fresh identity.
                 let database_auth = SpacetimeAuth::alloc(&ctx).await?;
@@ -463,7 +472,9 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
                     name::RegisterTldResult::Unauthorized { .. } => {
                         return Err((
                             StatusCode::UNAUTHORIZED,
-                            axum::Json(PublishResult::PermissionDenied { name: name.clone() }),
+                            axum::Json(PublishResult::PermissionDenied {
+                                reason: "Unauthorized".to_string(),
+                            }),
                         )
                             .into())
                     }
@@ -497,6 +508,19 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
             .get_database_by_identity(&database_identity)
             .map_err(log_and_500)?
             .is_some();
+
+        // If this is a new database, we to need to check if the caller is allowed to create databases.
+        if !exists {
+            if let AllowCreationResult::Unauthorized { error_message } =
+                ctx.allow_creation(&auth).await.map_err(log_and_500)?
+            {
+                return Err((
+                    StatusCode::UNAUTHORIZED,
+                    axum::Json(PublishResult::PermissionDenied { reason: error_message }),
+                )
+                    .into());
+            }
+        }
 
         if clear && exists {
             ctx.delete_database(&auth.identity, &database_identity)

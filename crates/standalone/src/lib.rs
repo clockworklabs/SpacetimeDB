@@ -21,7 +21,7 @@ use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, Node, Replica};
 use spacetimedb::worker_metrics::WORKER_METRICS;
 use spacetimedb_client_api::auth::{self, LOCALHOST};
-use spacetimedb_client_api::{Host, NodeDelegate};
+use spacetimedb_client_api::{AllowCreationResult, Host, NodeDelegate};
 use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, RegisterTldResult, Tld};
 use spacetimedb_paths::server::{ModuleLogsDir, PidFile, ServerDataDir};
 use spacetimedb_paths::standalone::StandaloneDataDirExt;
@@ -124,6 +124,10 @@ impl NodeDelegate for StandaloneEnv {
 
     fn client_actor_index(&self) -> &ClientActorIndex {
         &self.client_actor_index
+    }
+
+    async fn allow_creation(&self, _publisher: &auth::SpacetimeAuth) -> anyhow::Result<AllowCreationResult> {
+        Ok(AllowCreationResult::Ok)
     }
 
     type JwtAuthProviderT = auth::DefaultJwtAuthProvider;

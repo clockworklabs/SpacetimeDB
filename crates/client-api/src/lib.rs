@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use auth::SpacetimeAuth;
 use axum::response::ErrorResponse;
 use http::StatusCode;
 
@@ -32,12 +33,24 @@ pub trait NodeDelegate: Send + Sync {
 
     type JwtAuthProviderT: auth::JwtAuthProvider;
     fn jwt_auth_provider(&self) -> &Self::JwtAuthProviderT;
+
+    // Check if the caller is allowed to create new modules.
+    async fn allow_creation(&self, publisher: &SpacetimeAuth) -> anyhow::Result<AllowCreationResult>;
+
     /// Return the leader [`Host`] of `database_id`.
     ///
     /// Returns `None` if the current leader is not hosted by this node.
     /// The [`Host`] is spawned implicitly if not already running.
     async fn leader(&self, database_id: u64) -> anyhow::Result<Option<Host>>;
     fn module_logs_dir(&self, replica_id: u64) -> ModuleLogsDir;
+}
+
+pub enum AllowCreationResult {
+    // If ok, the caller is allowed to create new modules.
+    Ok,
+    // The caller is not allowed to publish anything,
+    // the error message will be sent in the response.
+    Unauthorized { error_message: String },
 }
 
 /// Client view of a running module.
@@ -320,6 +333,10 @@ impl<T: NodeDelegate + ?Sized> NodeDelegate for Arc<T> {
 
     fn jwt_auth_provider(&self) -> &Self::JwtAuthProviderT {
         (**self).jwt_auth_provider()
+    }
+
+    async fn allow_creation(&self, publisher: &SpacetimeAuth) -> anyhow::Result<AllowCreationResult> {
+        (**self).allow_creation(publisher).await
     }
 
     async fn leader(&self, database_id: u64) -> anyhow::Result<Option<Host>> {
