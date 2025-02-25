@@ -24,12 +24,12 @@
 //!    but the value is not required to be logically meaningful,
 //!    and no code may depend on the data within it to uphold any invariants.
 //!    E.g. an unallocated [`VarLenGranule`] within a page stores valid-unconstrained bytes,
-//!    because the bytes are either 0 from the initial [`alloc_zeroed`] of the page,
+//!    because the bytes are either 0 from the initial [`std::alloc::alloc_zeroed`] of the page,
 //!    or contain stale data from a previously freed [`VarLenGranule`].
 //!
 //! - `unused` means that it is safe to overwrite a block of memory without cleaning up its previous value.
 //!
-//!    See the post [Two Kinds of Invariants: Safety and Validity][ralf_safe_valid]
+//!    See the post [Two Kinds of Invariants: Safety and Validity][ralfj_safe_valid]
 //!    for a discussion on safety and validity invariants.
 
 use super::{
@@ -680,7 +680,7 @@ impl<'page> VarView<'page> {
     /// and returns a [`VarLenRef`] pointing to that granule.
     ///
     /// The granule is not initialized by this method, and contains valid-unconstrained bytes.
-    /// It is the caller's responsibility to initialize it with a [`BlobHash`](super::blob_hash::BlobHash).
+    /// It is the caller's responsibility to initialize it with a [`BlobHash`](super::blob_store::BlobHash).
     #[cold]
     fn alloc_blob_hash(&mut self) -> Result<VarLenRef, Error> {
         // Var-len hashes are 32 bytes, which fits within a single granule.
@@ -847,7 +847,7 @@ impl<'page> VarView<'page> {
         unsafe { get_ref(self.var_row_data, self.adjuster()(offset)) }
     }
 
-    /// Frees the blob pointed to by the [`BlobHash`] stored in the granule at `offset`.
+    /// Frees the blob pointed to by the [`crate::blob_store::BlobHash`] stored in the granule at `offset`.
     ///
     /// Panics when `offset` is NULL.
     ///
@@ -993,7 +993,7 @@ fn assert_alignment<T>(ptr: *const Byte) {
     );
 }
 
-/// Returns a reference to the [`T`] pointed to at by `offset`.
+/// Returns a reference to the `T` pointed to at by `offset`.
 ///
 /// # Safety
 ///
@@ -1008,7 +1008,7 @@ pub unsafe fn get_ref<T>(row_data: &Bytes, offset: PageOffset) -> &T {
     unsafe { &*ptr }
 }
 
-/// Returns a mutable reference to the [`T`] pointed to at by `offset`.
+/// Returns a mutable reference to the `T` pointed to at by `offset`.
 ///
 /// # Safety
 ///
@@ -1181,7 +1181,7 @@ impl Page {
     /// - Padding bytes within the fixed-length portion of the rows.
     /// - [`VarLenRef`] pointer-like portions of rows.
     /// - Unused trailing parts of partially-filled [`VarLenGranule`]s.
-    /// - [`VarLenGranule`]s used to store [`BlobHash`]es.
+    /// - [`VarLenGranule`]s used to store [`super::blob_store::BlobHash`]es.
     ///
     /// Note that large blobs themselves are not counted.
     /// The caller should obtain a count of the bytes used by large blobs
@@ -1319,7 +1319,7 @@ impl Page {
     /// so always check `Self::has_space_for_row` before calling.
     ///
     /// This method is provided for testing the page store directly;
-    /// higher-level codepaths are expected to use [`crate::bflatn::ser::write_av_to_page`],
+    /// higher-level codepaths are expected to use [`crate::bflatn_to::write_row_to_page`],
     /// which performs similar operations to this method,
     /// but handles rollback on failure appropriately.
     ///

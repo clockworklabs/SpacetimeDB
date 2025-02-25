@@ -32,7 +32,7 @@
 //! - PRIMARY_KEY_IDENTITY: Make it a `PRIMARY_KEY` + `IDENTITY`
 //!
 //! NOTE: We have [ConstraintKind] and [AttributeKind] intentionally semi-duplicated because
-//! the first is for the [Constrains] that are per-table and the second is for markers of the column.
+//! the first is for the `ConstraintSchema` that are per-table and the second is for markers of the column.
 
 //TODO: This needs a proper refactor, and use types for `column attributes` and `table tributes`
 /// The assigned constraint for a `Table`
