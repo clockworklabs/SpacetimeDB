@@ -367,15 +367,6 @@ namespace SpacetimeDB.Types
         /// Applications where these resources are a constraint
         /// should register more precise queries via <c>Self.Subscribe</c>
         /// in order to replicate only the subset of data which the client needs to function.
-        ///
-        /// This method should not be combined with <c>Self.Subscribe</c> on the same <c>DbConnection</c>.
-        /// A connection may either <c>Self.Subscribe</c> to particular queries,
-        /// or <c>Self.SubscribeToAllTables</c>, but not both.
-        /// Attempting to call <c>Self.Subscribe</c>
-        /// on a <c>DbConnection</c> that has previously used <c>Self.SubscribeToAllTables</c>,
-        /// or vice versa, may misbehave in any number of ways,
-        /// including dropping subscriptions, corrupting the client cache, or panicking.
-        /// </summary>
         public void SubscribeToAllTables()
         {
             // Make sure we use the legacy handle constructor here, even though there's only 1 query.
