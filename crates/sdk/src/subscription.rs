@@ -176,10 +176,6 @@ struct SubscribedQuery<M: SpacetimeModule> {
 }
 
 /// Builder-pattern constructor for subscription queries.
-///
-/// This interface will change in an upcoming SpacetimeDB release
-/// to support adding and removing individual queries to and from a client's subscriptions.
-// TODO: Move into a different module which is not #[doc(hidden)]?
 pub struct SubscriptionBuilder<M: SpacetimeModule> {
     on_applied: Option<OnAppliedCallback<M>>,
     on_error: Option<OnErrorCallback<M>>,
@@ -209,7 +205,6 @@ impl<M: SpacetimeModule> SubscriptionBuilder<M> {
     /// in which case [`Self::on_applied`] will never run,
     /// or later during the subscription's lifetime if the module's interface changes,
     /// in which case [`Self::on_applied`] may have already run.
-    // Currently unused. Hooking this up requires the new subscription interface and WS protocol.
     pub fn on_error(mut self, callback: impl FnOnce(&M::ErrorContext, crate::Error) + Send + 'static) -> Self {
         self.on_error = Some(Box::new(callback));
         self

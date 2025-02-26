@@ -3,10 +3,10 @@ use super::scheduler::SchedulerStarter;
 use super::wasmtime::WasmtimeRuntime;
 use super::{Scheduler, UpdateDatabaseResult};
 use crate::database_logger::DatabaseLogger;
-use crate::db;
 use crate::db::datastore::traits::Program;
 use crate::db::db_metrics::DB_METRICS;
 use crate::db::relational_db::{self, DiskSizeFn, RelationalDB, Txdata};
+use crate::db::{self, db_metrics};
 use crate::energy::{EnergyMonitor, EnergyQuanta};
 use crate::messages::control_db::{Database, HostType};
 use crate::module_host_context::ModuleCreationContext;
@@ -25,6 +25,7 @@ use spacetimedb_lib::hash_bytes;
 use spacetimedb_paths::server::{ReplicaDir, ServerDataDir};
 use spacetimedb_sats::hash::Hash;
 use std::future::Future;
+use std::ops::Deref;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{watch, OwnedRwLockReadGuard, OwnedRwLockWriteGuard, RwLock as AsyncRwLock};
@@ -419,6 +420,8 @@ impl HostController {
             if let Some(host) = lock.write_owned().await.take() {
                 let module = host.module.borrow().clone();
                 module.exit().await;
+                let table_names = module.info().module_def.tables().map(|t| t.name.deref());
+                db_metrics::data_size::remove_database_gauges(&module.info().database_identity, table_names);
             }
         }
 

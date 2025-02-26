@@ -24,6 +24,8 @@ use tokio_tungstenite::{
     MaybeTlsStream, WebSocketStream,
 };
 
+use crate::metrics::CLIENT_METRICS;
+
 #[derive(Error, Debug, Clone)]
 pub enum UriError {
     #[error("Unknown URI scheme {scheme}, expected http, https, ws or wss")]
@@ -80,6 +82,8 @@ pub enum WsError {
 }
 
 pub(crate) struct WsConnection {
+    db_name: Box<str>,
+    connection_id: ConnectionId,
     sock: WebSocketStream<MaybeTlsStream<TcpStream>>,
 }
 
@@ -223,7 +227,11 @@ impl WsConnection {
             uri,
             source: Arc::new(source),
         })?;
-        Ok(WsConnection { sock })
+        Ok(WsConnection {
+            db_name: db_name.into(),
+            connection_id,
+            sock,
+        })
     }
 
     pub(crate) fn parse_response(bytes: &[u8]) -> Result<ServerMessage<BsatnFormat>, WsError> {
@@ -268,6 +276,17 @@ impl WsConnection {
         incoming_messages: mpsc::UnboundedSender<ServerMessage<BsatnFormat>>,
         outgoing_messages: mpsc::UnboundedReceiver<ClientMessage<Bytes>>,
     ) {
+        let record_metrics = |msg_size: usize| {
+            CLIENT_METRICS
+                .websocket_received
+                .with_label_values(&self.db_name, &self.connection_id)
+                .inc();
+            CLIENT_METRICS
+                .websocket_received_msg_size
+                .with_label_values(&self.db_name, &self.connection_id)
+                .observe(msg_size as f64);
+        };
+
         let mut outgoing_messages = Some(outgoing_messages);
         loop {
             tokio::select! {
@@ -280,6 +299,7 @@ impl WsConnection {
                     ),
 
                     Ok(Some(WebSocketMessage::Binary(bytes))) => {
+                        record_metrics(bytes.len());
                         match Self::parse_response(&bytes) {
                             Err(e) => Self::maybe_log_error::<(), _>(
                                 "Error decoding WebSocketMessage::Binary payload",
@@ -292,9 +312,14 @@ impl WsConnection {
                         }
                     }
 
-                    Ok(Some(WebSocketMessage::Ping(_))) => {}
+                    Ok(Some(WebSocketMessage::Ping(payload))) => {
+                        record_metrics(payload.len());
+                    }
 
-                    Ok(Some(other)) => log::warn!("Unexpected WebSocket message {:?}", other),
+                    Ok(Some(other)) => {
+                        log::warn!("Unexpected WebSocket message {:?}", other);
+                        record_metrics(other.len());
+                    },
                 },
 
                 // this is stupid. we want to handle the channel close *once*, and then disable this branch
