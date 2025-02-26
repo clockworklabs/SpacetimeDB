@@ -372,7 +372,7 @@ impl SubscriptionBuilder {
 }
 ```
 
-Subscribe to all rows from all tables. This method is provided as a convenience for simple clients. The same connection must not mix `subscribe_to_all_tables` with [`subscribe` to specific queries](#method-subscribe). Doing so may cause errors or corrupt the client cache, leading to local queries returning incorrect results. The subscription initiated by `subscribe_to_all_tables` cannot be canceled after it is initiated.
+Subscribe to all rows from all public tables. This method is provided as a convenience for simple clients. The subscription initiated by `subscribe_to_all_tables` cannot be canceled after it is initiated. You should [`subscribe` to specific queries](#method-subscribe) if you need fine-grained control over the lifecycle of your subscriptions.
 
 #### Type `SubscriptionHandle`
 
