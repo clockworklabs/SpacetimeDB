@@ -376,17 +376,18 @@ impl WsConnection {
 
                 _ = idle_timeout_interval.tick() => {
                     if mem::replace(&mut idle, true) {
-                        if mem::take(&mut want_pong) {
+                        if want_pong {
                             // Nothing received while we were waiting for a pong.
                             log::warn!("Connection timed out");
                             break;
                         }
 
                         log::trace!("sending client ping");
-                        Self::maybe_log_error(
-                            "Error sending ping",
-                            self.sock.send(WebSocketMessage::Ping(vec![])).await,
-                        );
+                        let ping = WebSocketMessage::Ping(vec![]);
+                        if let Err(e) = self.sock.send(ping).await {
+                            log::warn!("Error sending ping: {e:?}");
+                            break;
+                        }
                         want_pong = true;
                     }
                 },
@@ -395,10 +396,10 @@ impl WsConnection {
                 Some(outgoing) = async { Some(outgoing_messages.as_mut()?.next().await) } => match outgoing {
                     Some(outgoing) => {
                         let msg = Self::encode_message(outgoing);
-                        Self::maybe_log_error(
-                            "Error sending outgoing message",
-                                self.sock.send(msg).await,
-                        );
+                        if let Err(e) = self.sock.send(msg).await {
+                            log::warn!("Error sending outgoing message: {e:?}");
+                            break;
+                        }
                     }
                     None => {
                         Self::maybe_log_error("Error sending close frame", SinkExt::close(&mut self.sock).await);
