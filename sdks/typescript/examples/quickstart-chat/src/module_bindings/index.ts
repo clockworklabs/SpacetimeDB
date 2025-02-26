@@ -5,12 +5,12 @@
 /* tslint:disable */
 // @ts-nocheck
 import {
-  Address,
   AlgebraicType,
   AlgebraicValue,
   BinaryReader,
   BinaryWriter,
   CallReducerFlags,
+  ConnectionId,
   DbConnectionBuilder,
   DbConnectionImpl,
   DbContext,
@@ -26,6 +26,8 @@ import {
   SumType,
   SumTypeVariant,
   TableCache,
+  TimeDuration,
+  Timestamp,
   deepEqual,
 } from '@clockworklabs/spacetimedb-sdk';
 
@@ -227,12 +229,12 @@ export class DbConnection extends DbConnectionImpl<
   static builder = (): DbConnectionBuilder<
     DbConnection,
     ErrorContext,
-    SubscriptionEventContex
+    SubscriptionEventContext
   > => {
     return new DbConnectionBuilder<
       DbConnection,
       ErrorContext,
-      SubscriptionEventContex
+      SubscriptionEventContext
     >(REMOTE_MODULE, (imp: DbConnectionImpl) => imp as DbConnection);
   };
   subscriptionBuilder = (): SubscriptionBuilder => {

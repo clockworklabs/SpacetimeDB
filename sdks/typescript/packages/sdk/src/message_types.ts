@@ -15,7 +15,6 @@ export type TransactionUpdateMessage = {
   identity: Identity;
   connectionId: ConnectionId | null;
   reducerInfo?: {
-    originalReducerName: string;
     reducerName: string;
     args: Uint8Array;
   };
@@ -40,13 +39,13 @@ export type IdentityTokenMessage = {
 export type SubscribeAppliedMessage = {
   tag: 'SubscribeApplied';
   queryId: number;
-  tableUpdate: TableUpdate;
+  tableUpdates: TableUpdate[];
 };
 
 export type UnsubscribeAppliedMessage = {
   tag: 'UnsubscribeApplied';
   queryId: number;
-  tableUpdate: TableUpdate;
+  tableUpdates: TableUpdate[];
 };
 
 export type SubscriptionError = {

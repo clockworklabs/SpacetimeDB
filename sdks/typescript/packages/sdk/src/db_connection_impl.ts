@@ -37,7 +37,12 @@ import type {
 } from './message_types.ts';
 import type { ReducerEvent } from './reducer_event.ts';
 import type RemoteModule from './spacetime_module.ts';
-import { TableCache, type Operation, type TableUpdate } from './table_cache.ts';
+import {
+  TableCache,
+  type Operation,
+  type PendingCallback,
+  type TableUpdate,
+} from './table_cache.ts';
 import { deepEqual, toPascalCase } from './utils.ts';
 import { WebsocketDecompressAdapter } from './websocket_decompress_adapter.ts';
 import type { WebsocketTestAdapter } from './websocket_test_adapter.ts';
@@ -187,7 +192,7 @@ export class DbConnectionImpl<
   }: DbConnectionConfig) {
     stdbLogger('info', 'Connecting to SpacetimeDB WS...');
 
-    let url = new URL(`database/${nameOrAddress}/subscribe`, uri);
+    let url = new URL(`v1/database/${nameOrAddress}/subscribe`, uri);
 
     if (!/^wss?:/.test(uri.protocol)) {
       url.protocol = 'ws:';
@@ -261,7 +266,7 @@ export class DbConnectionImpl<
   registerSubscription(
     handle: SubscriptionHandleImpl<DBView, Reducers, SetReducerFlags>,
     handleEmitter: EventEmitter<SubscribeEvent, SubscriptionEventCallback>,
-    querySql: string
+    querySql: string[]
   ): number {
     const queryId = this.#getNextQueryId();
     this.#subscriptionManager.subscriptions.set(queryId, {
@@ -269,8 +274,8 @@ export class DbConnectionImpl<
       emitter: handleEmitter,
     });
     this.#sendMessage(
-      ws.ClientMessage.SubscribeSingle({
-        query: querySql,
+      ws.ClientMessage.SubscribeMulti({
+        queryStrings: querySql,
         queryId: { id: queryId },
         // The TypeScript SDK doesn't currently track `request_id`s,
         // so always use 0.
@@ -282,7 +287,7 @@ export class DbConnectionImpl<
 
   unregisterSubscription(queryId: number): void {
     this.#sendMessage(
-      ws.ClientMessage.Unsubscribe({
+      ws.ClientMessage.UnsubscribeMulti({
         queryId: { id: queryId },
         // The TypeScript SDK doesn't currently track `request_id`s,
         // so always use 0.
@@ -301,21 +306,22 @@ export class DbConnectionImpl<
       rowList: ws.BsatnRowList
     ): Operation[] => {
       const buffer = rowList.rowsData;
-      const length = buffer.length;
-      let offset = buffer.byteOffset;
-      const endingOffset = offset + length;
       const reader = new BinaryReader(buffer);
       const rows: any[] = [];
       const rowType = this.#remoteModule.tables[tableName]!.rowType;
-      while (offset < endingOffset) {
+      while (reader.offset < buffer.length + buffer.byteOffset) {
+        const initialOffset = reader.offset;
         const row = rowType.deserialize(reader);
-        const rowId = new TextDecoder('utf-8').decode(buffer);
+        // This is super inefficient, but the buffer indexes are weird, so we are doing this for now.
+        // We should just base64 encode the bytes.
+        const rowId = JSON.stringify(row, (_, v) =>
+          typeof v === 'bigint' ? v.toString() : v
+        );
         rows.push({
           type,
           rowId,
           row,
         });
-        offset = reader.offset;
       }
       return rows;
     };
@@ -389,8 +395,7 @@ export class DbConnectionImpl<
         const connectionId = ConnectionId.nullIfZero(
           txUpdate.callerConnectionId
         );
-        const originalReducerName = txUpdate.reducerCall.reducerName;
-        const reducerName: string = toPascalCase(originalReducerName);
+        const reducerName: string = txUpdate.reducerCall.reducerName;
         const args = txUpdate.reducerCall.args;
         const energyQuantaUsed = txUpdate.energyQuantaUsed;
 
@@ -411,7 +416,7 @@ export class DbConnectionImpl<
 
         // TODO: Can `reducerName` be '<none>'?
         // See: https://github.com/clockworklabs/SpacetimeDB/blob/a2a1b5d9b2e0ebaaf753d074db056d319952d442/crates/core/src/client/message_handlers.rs#L155
-        if (originalReducerName === '<none>') {
+        if (reducerName === '<none>') {
           let errorMessage = errMessage;
           console.error(`Received an error from the database: ${errorMessage}`);
           return;
@@ -419,14 +424,12 @@ export class DbConnectionImpl<
 
         let reducerInfo:
           | {
-              originalReducerName: string;
               reducerName: string;
               args: Uint8Array;
             }
           | undefined;
-        if (originalReducerName !== '') {
+        if (reducerName !== '') {
           reducerInfo = {
-            originalReducerName,
             reducerName,
             args,
           };
@@ -462,26 +465,26 @@ export class DbConnectionImpl<
         );
       }
 
-      case 'SubscribeApplied': {
-        const parsedTableUpdate = await parseTableUpdate(
-          message.value.rows.tableRows
+      case 'SubscribeMultiApplied': {
+        const parsedTableUpdates = await parseDatabaseUpdate(
+          message.value.update
         );
         const subscribeAppliedMessage: SubscribeAppliedMessage = {
           tag: 'SubscribeApplied',
           queryId: message.value.queryId.id,
-          tableUpdate: parsedTableUpdate,
+          tableUpdates: parsedTableUpdates,
         };
         return subscribeAppliedMessage;
       }
 
-      case 'UnsubscribeApplied': {
-        const parsedTableUpdate = await parseTableUpdate(
-          message.value.rows.tableRows
+      case 'UnsubscribeMultiApplied': {
+        const parsedTableUpdates = await parseDatabaseUpdate(
+          message.value.update
         );
         const unsubscribeAppliedMessage: UnsubscribeAppliedMessage = {
           tag: 'UnsubscribeApplied',
           queryId: message.value.queryId.id,
-          tableUpdate: parsedTableUpdate,
+          tableUpdates: parsedTableUpdates,
         };
         return unsubscribeAppliedMessage;
       }
@@ -515,14 +518,18 @@ export class DbConnectionImpl<
   #applyTableUpdates(
     tableUpdates: TableUpdate[],
     eventContext: EventContextInterface
-  ): void {
+  ): PendingCallback[] {
+    const pendingCallbacks: PendingCallback[] = [];
     for (let tableUpdate of tableUpdates) {
       // Get table information for the table being updated
       const tableName = tableUpdate.tableName;
       const tableTypeInfo = this.#remoteModule.tables[tableName]!;
       const table = this.clientCache.getOrCreateTable(tableTypeInfo);
-      table.applyOperations(tableUpdate.operations, eventContext);
+      pendingCallbacks.push(
+        ...table.applyOperations(tableUpdate.operations, eventContext)
+      );
     }
+    return pendingCallbacks;
   }
 
   async #processMessage(data: Uint8Array): Promise<void> {
@@ -542,10 +549,16 @@ export class DbConnectionImpl<
         // Remove the event from the subscription event context
         // It is not a field in the type narrowed SubscriptionEventContext
         const { event: _, ...subscriptionEventContext } = eventContext;
-        this.#applyTableUpdates(message.tableUpdates, eventContext);
+        const callbacks = this.#applyTableUpdates(
+          message.tableUpdates,
+          eventContext
+        );
 
         if (this.#emitter) {
           this.#onApplied?.(subscriptionEventContext);
+        }
+        for (const callback of callbacks) {
+          callback.cb();
         }
         break;
       }
@@ -555,7 +568,13 @@ export class DbConnectionImpl<
           this,
           event
         );
-        this.#applyTableUpdates(message.tableUpdates, eventContext);
+        const callbacks = this.#applyTableUpdates(
+          message.tableUpdates,
+          eventContext
+        );
+        for (const callback of callbacks) {
+          callback.cb();
+        }
         break;
       }
       case 'TransactionUpdate': {
@@ -566,8 +585,8 @@ export class DbConnectionImpl<
         if (!reducerInfo) {
           unknownTransaction = true;
         } else {
-          const reducerTypeInfo =
-            this.#remoteModule.reducers[reducerInfo.originalReducerName];
+          reducerTypeInfo =
+            this.#remoteModule.reducers[reducerInfo.reducerName];
           try {
             const reader = new BinaryReader(reducerInfo.args as Uint8Array);
             reducerArgs = reducerTypeInfo.argsType.deserialize(reader);
@@ -586,7 +605,14 @@ export class DbConnectionImpl<
             this,
             event
           );
-          this.#applyTableUpdates(message.tableUpdates, eventContext);
+          const callbacks = this.#applyTableUpdates(
+            message.tableUpdates,
+            eventContext
+          );
+
+          for (const callback of callbacks) {
+            callback.cb();
+          }
           return;
         }
 
@@ -620,7 +646,10 @@ export class DbConnectionImpl<
           event: reducerEvent,
         };
 
-        this.#applyTableUpdates(message.tableUpdates, eventContext);
+        const callbacks = this.#applyTableUpdates(
+          message.tableUpdates,
+          eventContext
+        );
 
         const argsArray: any[] = [];
         reducerTypeInfo.argsType.product.elements.forEach((element, index) => {
@@ -631,6 +660,9 @@ export class DbConnectionImpl<
           reducerEventContext,
           ...argsArray
         );
+        for (const callback of callbacks) {
+          callback.cb();
+        }
         break;
       }
       case 'IdentityToken': {
@@ -649,10 +681,16 @@ export class DbConnectionImpl<
           event
         );
         const { event: _, ...subscriptionEventContext } = eventContext;
-        this.#applyTableUpdates([message.tableUpdate], eventContext);
+        const callbacks = this.#applyTableUpdates(
+          message.tableUpdates,
+          eventContext
+        );
         this.#subscriptionManager.subscriptions
           .get(message.queryId)
           ?.emitter.emit('applied', subscriptionEventContext);
+        for (const callback of callbacks) {
+          callback.cb();
+        }
         break;
       }
       case 'UnsubscribeApplied': {
@@ -662,10 +700,16 @@ export class DbConnectionImpl<
           event
         );
         const { event: _, ...subscriptionEventContext } = eventContext;
-        this.#applyTableUpdates([message.tableUpdate], eventContext);
+        const callbacks = this.#applyTableUpdates(
+          message.tableUpdates,
+          eventContext
+        );
         this.#subscriptionManager.subscriptions
           .get(message.queryId)
           ?.emitter.emit('end', subscriptionEventContext);
+        for (const callback of callbacks) {
+          callback.cb();
+        }
         break;
       }
       case 'SubscriptionError': {
@@ -685,6 +729,10 @@ export class DbConnectionImpl<
             ?.emitter.emit('error', errorContext, error);
         } else {
           console.error('Received an error message without a queryId: ', error);
+          // TODO: This should actually kill the connection.
+          // A subscription error without a specific subscription means we aren't receiving
+          // updates for all of our subscriptions, so our cache is out of sync.
+
           // Send it to all of them:
           this.#subscriptionManager.subscriptions.forEach(({ emitter }) => {
             emitter.emit('error', errorContext, error);

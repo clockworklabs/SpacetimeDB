@@ -75,9 +75,6 @@ export class WebsocketDecompressAdapter {
     lightMode: boolean;
   }): Promise<WebsocketDecompressAdapter> {
     const headers = new Headers();
-    if (authToken) {
-      headers.set('Authorization', `Bearer ${authToken}`);
-    }
 
     let WS: typeof WebSocket;
 
@@ -91,21 +88,25 @@ export class WebsocketDecompressAdapter {
       WS = WebSocket;
     }
 
-    const tokenUrl = new URL('/identity/websocket-token', url);
-    tokenUrl.protocol = url.protocol === 'wss:' ? 'https:' : 'http:';
+    if (authToken) {
+      headers.set('Authorization', `Bearer ${authToken}`);
+      const tokenUrl = new URL('/v1/identity/websocket-token', url);
+      tokenUrl.protocol = url.protocol === 'wss:' ? 'https:' : 'http:';
 
-    const response = await fetch(tokenUrl, { method: 'POST', headers });
-    if (response.ok) {
-      const { token } = await response.json();
-      url.searchParams.set('token', btoa('token:' + token));
-      url.searchParams.set(
-        'compression',
-        compression === 'gzip' ? 'Gzip' : 'None'
-      );
-      if (lightMode) {
-        url.searchParams.set('light', 'true');
+      const response = await fetch(tokenUrl, { method: 'POST', headers });
+      if (response.ok) {
+        const { token } = await response.json();
+        url.searchParams.set('token', token);
+        url.searchParams.set(
+          'compression',
+          compression === 'gzip' ? 'Gzip' : 'None'
+        );
+        if (lightMode) {
+          url.searchParams.set('light', 'true');
+        }
       }
     }
+
     const ws = new WS(url, wsProtocol);
 
     return new WebsocketDecompressAdapter(ws);

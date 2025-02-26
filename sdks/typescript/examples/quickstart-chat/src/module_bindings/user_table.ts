@@ -5,12 +5,12 @@
 /* tslint:disable */
 // @ts-nocheck
 import {
-  Address,
   AlgebraicType,
   AlgebraicValue,
   BinaryReader,
   BinaryWriter,
   CallReducerFlags,
+  ConnectionId,
   DbConnectionBuilder,
   DbConnectionImpl,
   DbContext,
@@ -26,6 +26,8 @@ import {
   SumType,
   SumTypeVariant,
   TableCache,
+  TimeDuration,
+  Timestamp,
   deepEqual,
 } from '@clockworklabs/spacetimedb-sdk';
 import { User } from './user_type';

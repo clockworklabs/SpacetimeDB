@@ -34,7 +34,9 @@ import { CallReducer as __CallReducer } from './call_reducer_type';
 import { Subscribe as __Subscribe } from './subscribe_type';
 import { OneOffQuery as __OneOffQuery } from './one_off_query_type';
 import { SubscribeSingle as __SubscribeSingle } from './subscribe_single_type';
+import { SubscribeMulti as __SubscribeMulti } from './subscribe_multi_type';
 import { Unsubscribe as __Unsubscribe } from './unsubscribe_type';
+import { UnsubscribeMulti as __UnsubscribeMulti } from './unsubscribe_multi_type';
 
 // A namespace for generated variants and helper functions.
 export namespace ClientMessage {
@@ -48,7 +50,15 @@ export namespace ClientMessage {
     tag: 'SubscribeSingle';
     value: __SubscribeSingle;
   };
+  export type SubscribeMulti = {
+    tag: 'SubscribeMulti';
+    value: __SubscribeMulti;
+  };
   export type Unsubscribe = { tag: 'Unsubscribe'; value: __Unsubscribe };
+  export type UnsubscribeMulti = {
+    tag: 'UnsubscribeMulti';
+    value: __UnsubscribeMulti;
+  };
 
   // Helper functions for constructing each variant of the tagged union.
   // ```
@@ -72,10 +82,17 @@ export namespace ClientMessage {
     tag: 'SubscribeSingle',
     value,
   });
+  export const SubscribeMulti = (value: __SubscribeMulti): ClientMessage => ({
+    tag: 'SubscribeMulti',
+    value,
+  });
   export const Unsubscribe = (value: __Unsubscribe): ClientMessage => ({
     tag: 'Unsubscribe',
     value,
   });
+  export const UnsubscribeMulti = (
+    value: __UnsubscribeMulti
+  ): ClientMessage => ({ tag: 'UnsubscribeMulti', value });
 
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createSumType([
@@ -93,8 +110,16 @@ export namespace ClientMessage {
         __SubscribeSingle.getTypeScriptAlgebraicType()
       ),
       new SumTypeVariant(
+        'SubscribeMulti',
+        __SubscribeMulti.getTypeScriptAlgebraicType()
+      ),
+      new SumTypeVariant(
         'Unsubscribe',
         __Unsubscribe.getTypeScriptAlgebraicType()
+      ),
+      new SumTypeVariant(
+        'UnsubscribeMulti',
+        __UnsubscribeMulti.getTypeScriptAlgebraicType()
       ),
     ]);
   }
@@ -114,6 +139,8 @@ export type ClientMessage =
   | ClientMessage.Subscribe
   | ClientMessage.OneOffQuery
   | ClientMessage.SubscribeSingle
-  | ClientMessage.Unsubscribe;
+  | ClientMessage.SubscribeMulti
+  | ClientMessage.Unsubscribe
+  | ClientMessage.UnsubscribeMulti;
 
 export default ClientMessage;

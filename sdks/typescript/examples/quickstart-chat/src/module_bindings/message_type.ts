@@ -5,12 +5,12 @@
 /* tslint:disable */
 // @ts-nocheck
 import {
-  Address,
   AlgebraicType,
   AlgebraicValue,
   BinaryReader,
   BinaryWriter,
   CallReducerFlags,
+  ConnectionId,
   DbConnectionBuilder,
   DbConnectionImpl,
   DbContext,
@@ -26,11 +26,13 @@ import {
   SumType,
   SumTypeVariant,
   TableCache,
+  TimeDuration,
+  Timestamp,
   deepEqual,
 } from '@clockworklabs/spacetimedb-sdk';
 export type Message = {
   sender: Identity;
-  sent: bigint;
+  sent: Timestamp;
   text: string;
 };
 
@@ -45,7 +47,7 @@ export namespace Message {
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
       new ProductTypeElement('sender', AlgebraicType.createIdentityType()),
-      new ProductTypeElement('sent', AlgebraicType.createU64Type()),
+      new ProductTypeElement('sent', AlgebraicType.createTimestampType()),
       new ProductTypeElement('text', AlgebraicType.createStringType()),
     ]);
   }
