@@ -566,6 +566,8 @@ export class AlgebraicType {
         return reader.readI128();
       case Type.U128:
         return reader.readU128();
+      case Type.U256:
+        return reader.readU256();
       case Type.F32:
         return reader.readF32();
       case Type.F64:

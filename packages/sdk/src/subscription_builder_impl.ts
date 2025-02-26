@@ -88,11 +88,15 @@ export class SubscriptionBuilderImpl<
    * ```
    */
   subscribe(
-    query_sql: string
+    query_sql: string | string[]
   ): SubscriptionHandleImpl<DBView, Reducers, SetReducerFlags> {
+    const queries = Array.isArray(query_sql) ? query_sql : [query_sql];
+    if (queries.length === 0) {
+      throw new Error('Subscriptions must have at least one query');
+    }
     return new SubscriptionHandleImpl(
       this.db,
-      query_sql,
+      queries,
       this.#onApplied,
       this.#onError
     );
@@ -143,7 +147,7 @@ export class SubscriptionHandleImpl<
 
   constructor(
     private db: DbConnectionImpl<DBView, Reducers, SetReducerFlags>,
-    querySql: string,
+    querySql: string[],
     onApplied?: (
       ctx: SubscriptionEventContextInterface<DBView, Reducers, SetReducerFlags>
     ) => void,

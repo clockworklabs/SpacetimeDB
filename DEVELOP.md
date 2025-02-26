@@ -11,6 +11,8 @@ Within each generated file:
 
 - Change the import from `"@clockworklabs/spacetimedb-sdk"` to `"../index"`.
 
+On a mac, you can do that by running this in the directory: `find . -type f -exec sed -i '' 's/"@clockworklabs\/spacetimedb-sdk"/"..\/index"/g' {} \;`.
+
 ## Releases and publishing
 
 Every Pull Request with a public-facing change (Bug fix, perf, feature etc) must be accompanied by a changeset. Any person working on a patch or feature needs to run `pnpm -w changeset` command, which will prompt them to select packages changed. Choose `@clockworklabs/spacetimedb-sdk`

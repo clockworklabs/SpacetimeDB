@@ -72,6 +72,10 @@ import { Subscribe } from './subscribe_type.ts';
 export { Subscribe };
 import { SubscribeApplied } from './subscribe_applied_type.ts';
 export { SubscribeApplied };
+import { SubscribeMulti } from './subscribe_multi_type.ts';
+export { SubscribeMulti };
+import { SubscribeMultiApplied } from './subscribe_multi_applied_type.ts';
+export { SubscribeMultiApplied };
 import { SubscribeRows } from './subscribe_rows_type.ts';
 export { SubscribeRows };
 import { SubscribeSingle } from './subscribe_single_type.ts';
@@ -88,8 +92,12 @@ import { Unsubscribe } from './unsubscribe_type.ts';
 export { Unsubscribe };
 import { UnsubscribeApplied } from './unsubscribe_applied_type.ts';
 export { UnsubscribeApplied };
+import { UnsubscribeMulti } from './unsubscribe_multi_type.ts';
+export { UnsubscribeMulti };
+import { UnsubscribeMultiApplied } from './unsubscribe_multi_applied_type.ts';
+export { UnsubscribeMultiApplied };
 import { UpdateStatus } from './update_status_type.ts';
-export { UpdateStatus, Timestamp };
+export { UpdateStatus };
 
 const REMOTE_MODULE = {
   tables: {},

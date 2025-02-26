@@ -132,7 +132,7 @@ export class DbConnectionBuilder<
    */
   onConnect(
     callback: (
-      ctx: SubscriptionEventContext,
+      connection: DbConnection,
       identity: Identity,
       token: string
     ) => void

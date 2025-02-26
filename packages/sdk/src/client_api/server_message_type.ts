@@ -38,6 +38,8 @@ import { OneOffQueryResponse as __OneOffQueryResponse } from './one_off_query_re
 import { SubscribeApplied as __SubscribeApplied } from './subscribe_applied_type';
 import { UnsubscribeApplied as __UnsubscribeApplied } from './unsubscribe_applied_type';
 import { SubscriptionError as __SubscriptionError } from './subscription_error_type';
+import { SubscribeMultiApplied as __SubscribeMultiApplied } from './subscribe_multi_applied_type';
+import { UnsubscribeMultiApplied as __UnsubscribeMultiApplied } from './unsubscribe_multi_applied_type';
 
 // A namespace for generated variants and helper functions.
 export namespace ServerMessage {
@@ -73,6 +75,14 @@ export namespace ServerMessage {
     tag: 'SubscriptionError';
     value: __SubscriptionError;
   };
+  export type SubscribeMultiApplied = {
+    tag: 'SubscribeMultiApplied';
+    value: __SubscribeMultiApplied;
+  };
+  export type UnsubscribeMultiApplied = {
+    tag: 'UnsubscribeMultiApplied';
+    value: __UnsubscribeMultiApplied;
+  };
 
   // Helper functions for constructing each variant of the tagged union.
   // ```
@@ -105,6 +115,12 @@ export namespace ServerMessage {
   export const SubscriptionError = (
     value: __SubscriptionError
   ): ServerMessage => ({ tag: 'SubscriptionError', value });
+  export const SubscribeMultiApplied = (
+    value: __SubscribeMultiApplied
+  ): ServerMessage => ({ tag: 'SubscribeMultiApplied', value });
+  export const UnsubscribeMultiApplied = (
+    value: __UnsubscribeMultiApplied
+  ): ServerMessage => ({ tag: 'UnsubscribeMultiApplied', value });
 
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createSumType([
@@ -140,6 +156,14 @@ export namespace ServerMessage {
         'SubscriptionError',
         __SubscriptionError.getTypeScriptAlgebraicType()
       ),
+      new SumTypeVariant(
+        'SubscribeMultiApplied',
+        __SubscribeMultiApplied.getTypeScriptAlgebraicType()
+      ),
+      new SumTypeVariant(
+        'UnsubscribeMultiApplied',
+        __UnsubscribeMultiApplied.getTypeScriptAlgebraicType()
+      ),
     ]);
   }
 
@@ -161,6 +185,8 @@ export type ServerMessage =
   | ServerMessage.OneOffQueryResponse
   | ServerMessage.SubscribeApplied
   | ServerMessage.UnsubscribeApplied
-  | ServerMessage.SubscriptionError;
+  | ServerMessage.SubscriptionError
+  | ServerMessage.SubscribeMultiApplied
+  | ServerMessage.UnsubscribeMultiApplied;
 
 export default ServerMessage;
