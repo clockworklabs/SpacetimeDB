@@ -432,4 +432,4 @@ dotnet run --project client
 
 ## What's next?
 
-Congratulations! You've built a simple chat app using SpacetimeDB. You can look at the C# SDK Reference for more information about the client SDK. If you are interested in developing in the Unity game engine, check out our Unity3d Comprehensive Tutorial and BitcraftMini game example.
+Congratulations! You've built a simple chat app using SpacetimeDB. You can look at the C# SDK Reference for more information about the client SDK. If you are interested in developing in the Unity game engine, check out our Unity3d Comprehensive Tutorial.
