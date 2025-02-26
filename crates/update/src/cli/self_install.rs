@@ -32,13 +32,6 @@ impl SelfInstall {
             data_dir,
         } = &paths;
 
-        eprintln!("Our EULA for spacetimedb-cli can be found here: <https://spacetimedb.com/eula>");
-        if self.yes.yes {
-            eprintln!("By continuing, you agree to the EULA.");
-        } else if !self.yes.confirm_with_default("Agree to the EULA?".to_owned(), true)? {
-            return Ok(ExitCode::FAILURE);
-        }
-
         let root_dir = self.root_dir.or_else(|| paths.to_root_dir());
         eprint!("The SpacetimeDB command line tool will now be installed");
         if let Some(root_dir) = &root_dir {
