@@ -95,6 +95,7 @@ impl VersionBinDir {
         #[cfg(windows)]
         {
             junction::delete(self).ok();
+            std::fs::remove_dir(self).ok();
             // We won't be able to create a junction if the fs isn't NTFS, so fall back to trying
             // to make a symlink.
             junction::create(path, self)
