@@ -382,7 +382,8 @@ async fn ws_client_actor_inner(
             }
             Item::Message(ClientMessage::Ping(_message)) => {
                 log::trace!("Received ping from client {}", client.id);
-                // TODO: should we respond with a `Pong`?
+                // No need to explicitly respond with a `Pong`, as tungstenite handles this automatically.
+                // See [https://github.com/snapview/tokio-tungstenite/issues/88].
             }
             Item::Message(ClientMessage::Pong(_message)) => {
                 log::trace!("Received heartbeat from client {}", client.id);

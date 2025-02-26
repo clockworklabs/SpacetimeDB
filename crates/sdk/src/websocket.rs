@@ -358,6 +358,9 @@ impl WsConnection {
                         log::trace!("received ping");
                         idle = false;
                         record_metrics(payload.len());
+                        // No need to explicitly respond with a `Pong`,
+                        // as tungstenite handles this automatically.
+                        // See [https://github.com/snapview/tokio-tungstenite/issues/88].
                     },
 
                     Ok(Some(WebSocketMessage::Pong(payload))) => {
