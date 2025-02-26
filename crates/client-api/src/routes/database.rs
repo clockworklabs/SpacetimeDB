@@ -445,6 +445,28 @@ pub struct PublishDatabaseQueryParams {
     clear: bool,
 }
 
+use std::env;
+fn require_spacetime_auth_for_creation() -> bool {
+    env::var("TEMP_REQUIRE_SPACETIME_AUTH").is_ok_and(|v| !v.is_empty())
+}
+
+// A hacky function to let us restrict database creation on maincloud.
+fn allow_creation(auth: &SpacetimeAuth) -> Result<(), ErrorResponse> {
+    if !require_spacetime_auth_for_creation() {
+        return Ok(());
+    }
+    if auth.issuer.trim_end_matches('/') == "https://auth.spacetimedb.com" {
+        Ok(())
+    } else {
+        log::trace!("Rejecting creation request because auth issuer is {}", auth.issuer);
+        Err((
+            StatusCode::UNAUTHORIZED,
+            "To create a database, you must be logged in with a SpacetimeDB account.",
+        )
+            .into())
+    }
+}
+
 pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
     State(ctx): State<S>,
     Path(PublishDatabaseParams { name_or_identity }): Path<PublishDatabaseParams>,
@@ -461,6 +483,7 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
             Err(name) => {
                 // `name_or_identity` was a `NameOrIdentity::Name`, but no record
                 // exists yet. Create it now with a fresh identity.
+                allow_creation(&auth)?;
                 let database_auth = SpacetimeAuth::alloc(&ctx).await?;
                 let database_identity = database_auth.identity;
                 let tld: name::Tld = name.clone().into();
@@ -504,6 +527,9 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
             .get_database_by_identity(&database_identity)
             .map_err(log_and_500)?
             .is_some();
+        if !exists {
+            allow_creation(&auth)?;
+        }
 
         if clear && exists {
             ctx.delete_database(&auth.identity, &database_identity)
