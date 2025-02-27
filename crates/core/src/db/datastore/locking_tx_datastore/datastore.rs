@@ -1043,11 +1043,12 @@ mod tests {
     use itertools::Itertools;
     use pretty_assertions::{assert_eq, assert_matches};
     use spacetimedb_execution::Datastore;
+    use spacetimedb_lib::bsatn::ToBsatn;
     use spacetimedb_lib::db::auth::{StAccess, StTableType};
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::st_var::StVarValue;
     use spacetimedb_lib::{resolved_type_via_v9, ScheduleAt, TimeDuration};
-    use spacetimedb_primitives::{col_list, ColId, ScheduleId};
+    use spacetimedb_primitives::{col_list, ColId, ColSet, ScheduleId};
     use spacetimedb_sats::algebraic_value::ser::value_serialize;
     use spacetimedb_sats::{product, AlgebraicType, GroundSpacetimeType};
     use spacetimedb_schema::def::{BTreeAlgorithm, ConstraintData, IndexAlgorithm, UniqueConstraintData};
@@ -2733,6 +2734,152 @@ mod tests {
 
         tx.drop_row_level_security(rls.sql)?;
         assert_eq!(tx.row_level_security_for_table_id(table_id)?, []);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_set_semantics() -> ResultTest<()> {
+        let col_schema = |col_name, col_pos| ColumnSchema {
+            table_id: TableId::SENTINEL,
+            col_pos,
+            col_name,
+            col_type: AlgebraicType::U8,
+        };
+
+        // Create a table schema for (a: u8, b: u8)
+        let table_schema = |primary_key, constraint: Option<_>| {
+            TableSchema::new(
+                TableId::SENTINEL,
+                "Foo".into(),
+                vec![col_schema("a".into(), 0.into()), col_schema("b".into(), 1.into())],
+                vec![],
+                constraint.map(|cs| vec![cs]).unwrap_or_default(),
+                vec![],
+                StTableType::User,
+                StAccess::Public,
+                None,
+                primary_key,
+            )
+        };
+        let table_schema_no_constraints = || table_schema(None, None);
+        let table_schema_pk = || table_schema(Some(0.into()), None);
+        let table_schema_unique_constraint = || {
+            table_schema(
+                None,
+                Some(ConstraintSchema {
+                    table_id: TableId::SENTINEL,
+                    constraint_id: ConstraintId::SENTINEL,
+                    constraint_name: "a_unique".into(),
+                    data: ConstraintData::Unique(UniqueConstraintData {
+                        columns: ColSet::from_iter([0]),
+                    }),
+                }),
+            )
+        };
+
+        fn create_table(schema: TableSchema) -> ResultTest<(Locking, TableId)> {
+            let datastore = get_datastore()?;
+            let mut tx = begin_mut_tx(&datastore);
+            let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+            datastore.commit_mut_tx(tx)?;
+            Ok((datastore, table_id))
+        }
+
+        fn insert_rows(datastore: &Locking, rows: Vec<ProductValue>, table_id: TableId) -> ResultTest<()> {
+            let mut tx = begin_mut_tx(datastore);
+            for row in rows {
+                datastore.insert_mut_tx(&mut tx, table_id, row.to_bsatn_vec()?.as_slice())?;
+            }
+            datastore.commit_mut_tx(tx)?;
+            Ok(())
+        }
+
+        fn assert_rows(datastore: &Locking, table_id: TableId, rows: Vec<ProductValue>) -> ResultTest<()> {
+            let tx = datastore.begin_tx(Workload::ForTests);
+            for (actual, expected) in datastore.iter_tx(&tx, table_id)?.zip_eq(rows.into_iter()) {
+                assert_eq!(actual.to_bsatn_vec()?, expected.to_bsatn_vec()?);
+            }
+            Ok(())
+        }
+
+        // Assert the datastore implements set semantics when inserting the same row
+        fn assert_set_semantics_for_table(schema: impl Fn() -> TableSchema) -> ResultTest<()> {
+            |(datastore, table_id)| -> ResultTest<()> {
+                insert_rows(
+                    &datastore,
+                    vec![
+                        // Insert one row
+                        product!(1u8, 2u8),
+                    ],
+                    table_id,
+                )?;
+                assert_rows(
+                    &datastore,
+                    table_id,
+                    vec![
+                        // Assert one row
+                        product!(1u8, 2u8),
+                    ],
+                )?;
+                Ok(())
+            }(create_table(schema())?)?;
+
+            |(datastore, table_id)| -> ResultTest<()> {
+                insert_rows(
+                    &datastore,
+                    vec![
+                        // Insert two equal rows in the same tx
+                        product!(1u8, 2u8),
+                        product!(1u8, 2u8),
+                    ],
+                    table_id,
+                )?;
+                assert_rows(
+                    &datastore,
+                    table_id,
+                    vec![
+                        // Assert one row
+                        product!(1u8, 2u8),
+                    ],
+                )?;
+                Ok(())
+            }(create_table(schema())?)?;
+
+            |(datastore, table_id)| -> ResultTest<()> {
+                insert_rows(
+                    &datastore,
+                    vec![
+                        // Insert one row
+                        product!(1u8, 2u8),
+                    ],
+                    table_id,
+                )?;
+                insert_rows(
+                    &datastore,
+                    vec![
+                        // Insert same row in different tx
+                        product!(1u8, 2u8),
+                    ],
+                    table_id,
+                )?;
+                assert_rows(
+                    &datastore,
+                    table_id,
+                    vec![
+                        // Assert one row
+                        product!(1u8, 2u8),
+                    ],
+                )?;
+                Ok(())
+            }(create_table(schema())?)?;
+
+            Ok(())
+        }
+
+        assert_set_semantics_for_table(table_schema_pk)?;
+        assert_set_semantics_for_table(table_schema_unique_constraint)?;
+        assert_set_semantics_for_table(table_schema_no_constraints)?;
 
         Ok(())
     }
