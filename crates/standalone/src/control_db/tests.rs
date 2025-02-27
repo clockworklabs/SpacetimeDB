@@ -85,7 +85,7 @@ fn test_domain() -> anyhow::Result<()> {
 
     // We can remove the domain records for Alice's database
     let deleted = cdb.spacetime_delete_domains(&addr);
-    assert!(matches!(delete, Ok(())));
+    assert!(matches!(deleted, Ok(())));
 
     // The domain records are gone
     let registered_addr = cdb.spacetime_dns(domain.as_ref())?;
