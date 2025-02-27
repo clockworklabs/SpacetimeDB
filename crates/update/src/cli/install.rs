@@ -67,7 +67,7 @@ pub(super) async fn download_and_install(
     let pb = make_progress_bar();
 
     pb.set_message("Resolving version...");
-    let release_version = Version::parse("1.0.0").unwrap();
+    let release_version = Version::parse("1.0.1").unwrap();
 
     pb.set_prefix(format!("Installing v{release_version}: "));
     pb.set_message("downloading...");
