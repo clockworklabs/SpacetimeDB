@@ -4,6 +4,7 @@ use anyhow::Context;
 use bytes::{Buf, Bytes};
 use http_body_util::BodyExt;
 use indicatif::{ProgressBar, ProgressStyle};
+use semver::Version;
 use serde::Deserialize;
 use spacetimedb_paths::SpacetimePaths;
 
@@ -59,55 +60,19 @@ pub(super) async fn download_and_install(
     version: Option<semver::Version>,
     artifact_name: Option<String>,
     paths: &SpacetimePaths,
-) -> anyhow::Result<(semver::Version, Release)> {
-    let custom_artifact = artifact_name.is_some();
+) -> anyhow::Result<(semver::Version, String)> {
     let download_name = artifact_name.as_deref().unwrap_or(DOWNLOAD_NAME);
     let artifact_type = ArtifactType::deduce(download_name).context("Unknown archive type")?;
 
     let pb = make_progress_bar();
 
     pb.set_message("Resolving version...");
-    let releases_url = "https://api.github.com/repos/clockworklabs/SpacetimeDB/releases";
-    let url = match &version {
-        Some(version) => format!("{releases_url}/tags/v{version}"),
-        None => [releases_url, "/latest"].concat(),
-    };
-    let release: Release = client
-        .get(url)
-        .send()
-        .await?
-        .error_for_status()
-        .map_err(|e| {
-            if e.status() == Some(reqwest::StatusCode::NOT_FOUND) {
-                if let Some(version) = &version {
-                    return anyhow::anyhow!(e).context(format!("No release found for version {version}"));
-                }
-            }
-            anyhow::anyhow!(e).context("Could not fetch release info")
-        })?
-        .json()
-        .await?;
-    let release_version = match version {
-        Some(version) => version,
-        None => release.version().context("Could not parse version number")?,
-    };
-
-    let asset = release
-        .assets
-        .iter()
-        .find(|&asset| asset.name == download_name)
-        .ok_or_else(|| {
-            let err = anyhow::anyhow!("artifact named {download_name} not found in version {release_version}");
-            if custom_artifact {
-                err
-            } else {
-                err.context("no prebuilt binaries available for the detected OS and architecture")
-            }
-        })?;
+    let release_version = Version::parse("1.0.0").unwrap();
 
     pb.set_prefix(format!("Installing v{release_version}: "));
     pb.set_message("downloading...");
-    let archive = download_with_progress(&pb, client, &asset.browser_download_url).await?;
+    let url = format!("http://spacetimedb-test/{download_name}");
+    let archive = download_with_progress(&pb, client, &url).await?;
 
     pb.set_message("unpacking...");
 
@@ -126,7 +91,7 @@ pub(super) async fn download_and_install(
 
     pb.finish_with_message("done!");
 
-    Ok((release_version, release))
+    Ok((release_version, url))
 }
 
 enum ArtifactType {
