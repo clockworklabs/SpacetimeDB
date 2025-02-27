@@ -396,6 +396,8 @@ When inserting into a table with an `#[auto_inc]` column, if the annotated colum
 
 [`Table::insert`] and [`Table::try_insert`] return rows with `#[auto_inc]` columns set to the values that were actually written into the database.
 
+**Note**: The `auto_inc` number generator is not transactional. See the [SEQUENCE] section for more details.
+
 ```no_run
 # #[cfg(target_arch = "wasm32")] mod demo {
 use spacetimedb::{table, reducer, ReducerContext, Table};
@@ -568,3 +570,4 @@ Currently, manual migration support is limited. The `spacetime publish --clear-d
 [clients]: https://spacetimedb.com/docs/#client
 [client SDK documentation]: https://spacetimedb.com/docs/#client
 [host]: https://spacetimedb.com/docs/#host
+[SEQUENCE]: https://spacetimedb.com/docs/appendix#sequence
