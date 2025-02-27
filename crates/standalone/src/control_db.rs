@@ -180,6 +180,28 @@ impl ControlDb {
         })
     }
 
+    // NOTE: This does not unregister the TLD it only removes all domain from
+    // the database. The TLD is still owned by the owner_identity who registered
+    // it. This means that once a user has made a database with a name no one
+    // else can use that name again, until they unregister it.
+    pub fn spacetime_delete_domains(&self, database_identity: &Identity) -> Result<()> {
+        let identity_bytes = database_identity.to_byte_array();
+
+        let tree = self.db.open_tree("reverse_dns")?;
+        match tree.get(identity_bytes)? {
+            Some(value) => {
+                let vec: Vec<DomainName> = serde_json::from_slice(&value[..])?;
+                for domain in vec {
+                    let tree = self.db.open_tree("dns")?;
+                    tree.remove(domain.to_lowercase())?;
+                }
+                tree.remove(identity_bytes)?;
+            }
+            None => {}
+        }
+        Ok(())
+    }
+
     /// Inserts a top level domain that will be owned by `owner_identity`.
     ///
     /// # Arguments

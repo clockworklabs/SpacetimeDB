@@ -34,6 +34,41 @@ pub enum InsertDomainResult {
     OtherError(String),
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub enum SetDomainsResult {
+    Success,
+
+    /// The top level domain for the database name is not registered. For example:
+    ///
+    ///  - `clockworklabs/bitcraft`
+    ///
+    /// if `clockworklabs` is not registered, this error is returned.
+    TldNotRegistered {
+        domain: DomainName,
+    },
+
+    /// The top level domain for the database name is registered, but the identity that you provided does
+    /// not have permission to insert the given database name. For example:
+    ///
+    /// - `clockworklabs/bitcraft`
+    ///
+    /// If you were trying to insert this database name, but the tld `clockworklabs` is
+    /// owned by an identity other than the identity that you provided, then you will receive
+    /// this error.
+    PermissionDenied {
+        domain: DomainName,
+    },
+
+    /// In order to set the domains for a database, you must be the owner of that database.
+    PermissionDeniedNotOwner,
+
+    /// The database name or identity you provided does not exist.
+    DatabaseNotFound,
+
+    /// Some unspecified error occurred.
+    OtherError(String),
+}
+
 #[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum PublishOp {

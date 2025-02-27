@@ -364,6 +364,10 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
             .control_db
             .spacetime_insert_domain(database_identity, domain.clone(), *owner_identity, true)?)
     }
+
+    async fn delete_dns_records(&self, database_identity: &Identity) -> anyhow::Result<()> {
+        Ok(self.control_db.spacetime_delete_domains(database_identity)?)
+    }
 }
 
 impl StandaloneEnv {
