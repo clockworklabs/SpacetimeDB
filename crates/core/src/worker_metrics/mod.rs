@@ -139,7 +139,7 @@ pub fn spawn_jemalloc_stats() {
         loop {
             e.advance().unwrap();
             let allocated = stats::allocated::read().unwrap();
-            WORKER_METRICS.jemalloc_active_bytes.with_label_values(&Identity::ZERO).set(allocated as i64);
+            WORKER_METRICS.jemalloc_allocated_bytes.with_label_values(&Identity::ZERO).set(allocated as i64);
             let resident = stats::resident::read().unwrap();
             WORKER_METRICS.jemalloc_resident_bytes.with_label_values(&Identity::ZERO).set(resident as i64);
             let active = stats::active::read().unwrap();
