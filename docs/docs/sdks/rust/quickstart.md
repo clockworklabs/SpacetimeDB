@@ -393,6 +393,7 @@ To `client/src/main.rs`, add:
 fn subscribe_to_tables(ctx: &DbConnection) {
     ctx.subscription_builder()
         .on_applied(on_sub_applied)
+        .on_error(on_sub_error)
         .subscribe(["SELECT * FROM user", "SELECT * FROM message"]);
 }
 ```
@@ -428,7 +429,7 @@ In our case, we're pretty confident that our queries are valid, but if Spacetime
 ```rust
 /// Or `on_error` callback:
 /// print the error, then exit the process.
-fn on_sub_error(ctx: &ErrorContext, err: Error) {
+fn on_sub_error(_ctx: &ErrorContext, err: Error) {
     eprintln!("Subscription failed: {}", err);
     std::process::exit(1);
 }
