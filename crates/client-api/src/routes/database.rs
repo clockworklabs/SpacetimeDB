@@ -662,7 +662,7 @@ pub async fn set_names<S: ControlStateDelegate>(
     if database.owner_identity != auth.identity {
         return Ok((
             StatusCode::UNAUTHORIZED,
-            axum::Json(name::SetDomainsResult::PermissionDeniedNotOwner),
+            axum::Json(name::SetDomainsResult::PermissionDenied),
         ));
     }
 
@@ -686,7 +686,7 @@ pub async fn set_names<S: ControlStateDelegate>(
             name::InsertDomainResult::PermissionDenied { domain } => {
                 return Ok((
                     StatusCode::UNAUTHORIZED,
-                    axum::Json(name::SetDomainsResult::PermissionDenied { domain }),
+                    axum::Json(name::SetDomainsResult::PermissionDenied),
                 ))
             }
             name::InsertDomainResult::OtherError(error) => {
