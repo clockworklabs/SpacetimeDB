@@ -81,7 +81,7 @@ fn test_domain() -> anyhow::Result<()> {
         reverse_lookup.first().map(ToString::to_string),
         Some(domain.to_string())
     );
-    assert_eq!(reverse_lookup, vec![domain]);
+    assert_eq!(reverse_lookup, vec![domain.clone()]);
 
     // We can remove the domain records for Alice's database
     let deleted = cdb.spacetime_delete_domains(&addr);
