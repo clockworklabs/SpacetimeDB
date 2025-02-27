@@ -256,7 +256,7 @@ For more information about WebSocket headers, see [RFC 6455](https://datatracker
 
 | Name                     | Value                                                                                                |
 | ------------------------ | ---------------------------------------------------------------------------------------------------- |
-| `Sec-WebSocket-Protocol` | `v1.bin.spacetimedb` or `v1.text.spacetimedb`                                                        |
+| `Sec-WebSocket-Protocol` | `v1.bsatn.spacetimedb` or `v1.json.spacetimedb`                                                        |
 | `Connection`             | `Updgrade`                                                                                           |
 | `Upgrade`                | `websocket`                                                                                          |
 | `Sec-WebSocket-Version`  | `13`                                                                                                 |
