@@ -4,7 +4,8 @@ RUN curl -sSfLO https://packages.microsoft.com/config/debian/12/packages-microso
       dpkg -i packages-microsoft-prod.deb && \
       rm packages-microsoft-prod.deb && \
       apt-get update && \
-      apt-get install -y dotnet-sdk-9.0 binaryen && \
+      apt-get install -y dotnet-sdk-8.0 binaryen && \
+      rm -rf /var/lib/apt/lists/* && \
       dotnet workload install wasi-experimental
 
 RUN rustup target add wasm32-unknown-unknown
