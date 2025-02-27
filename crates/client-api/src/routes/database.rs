@@ -683,7 +683,7 @@ pub async fn set_names<S: ControlStateDelegate>(
                     axum::Json(name::SetDomainsResult::TldNotRegistered { domain }),
                 ))
             }
-            name::InsertDomainResult::PermissionDenied { domain } => {
+            name::InsertDomainResult::PermissionDenied { .. } => {
                 return Ok((
                     StatusCode::UNAUTHORIZED,
                     axum::Json(name::SetDomainsResult::PermissionDenied),
