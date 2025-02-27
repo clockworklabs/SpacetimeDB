@@ -87,8 +87,7 @@ We'll need additional imports from `spacetimedb_sdk` for interacting with the da
 To `client/src/main.rs`, add:
 
 ```rust
-use spacetimedb_sdk::credentials::File;
-use spacetimedb_sdk::{DbContext, Error, Event, Identity, Status, Table, TableWithPrimaryKey};
+use spacetimedb_sdk::{credentials, DbContext, Error, Event, Identity, Status, Table, TableWithPrimaryKey};
 ```
 
 ## Define the main function
