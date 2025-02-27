@@ -46,7 +46,7 @@ You write SQL queries specifying what information a client is interested in -- f
 
 ### Module Libraries
 
-Every SpacetimeDB database contains a collection of stored procedures called a **module**. Modules can be written in C# or Rust. They specify a database schema and the business logic that responds to client requests. Modules are administered using the `spacetime` CLI tool.
+Every SpacetimeDB database contains a collection of [stored procedures](https://en.wikipedia.org/wiki/Stored_procedure) and schema definitions. Such a collection is called a **module**, which can be written in C# or Rust. They specify a database schema and the business logic that responds to client requests. Modules are administered using the `spacetime` CLI tool.
 
 - [Rust](/docs/modules/rust) - [(Quickstart)](/docs/modules/rust/quickstart)
 - [C#](/docs/modules/c-sharp) - [(Quickstart)](/docs/modules/c-sharp/quickstart)
@@ -111,6 +111,27 @@ Tables marked `public` can also be read by [clients](#client).
 A **reducer** is a function exported by a [database](#database).
 Connected [clients](#client-side-sdks) can call reducers to interact with the database.
 This is a form of [remote procedure call](https://en.wikipedia.org/wiki/Remote_procedure_call).
+
+:::server-rust
+A reducer can be written in Rust like so:
+
+```rust
+#[spacetimedb::reducer]
+pub fn set_player_name(ctx: &spacetimedb::ReducerContext, id: u64, name: String) -> Result<(), String> {
+   // ...
+}
+```
+
+And a Rust [client](#client) can call that reducer:
+
+```rust
+fn main() {
+   // ...setup code, then...
+   ctx.reducers.set_player_name(57, "Marceline".into());
+}
+```
+:::
+:::server-csharp
 A reducer can be written in C# like so:
 
 ```csharp
@@ -120,14 +141,6 @@ public static void SetPlayerName(ReducerContext ctx, uint playerId, string name)
     // ...
 }
 ```
-<!-- TODO: switchable language widget.
-```rust
-#[spacetimedb::reducer]
-pub fn set_player_name(ctx: &spacetimedb::ReducerContext, id: u64, name: String) -> Result<(), String> {
-   // ...
-}
-```
--->
 
 And a C# [client](#client) can call that reducer:
 
@@ -137,10 +150,74 @@ void Main() {
    Connection.Reducer.SetPlayerName(57, "Marceline");
 }
 ```
+:::
 
-These look mostly like regular function calls, but under the hood, the client sends a request over the internet, which the database processes and responds to.
+These look mostly like regular function calls, but under the hood,
+the client sends a request over the internet, which the database processes and responds to.
 
-The `ReducerContext` passed into a reducer includes information about the caller's [identity](#identity) and [address](#address). The database can reject any request it doesn't approve of.
+The `ReducerContext` is a reducer's only mandatory parameter
+and includes information about the caller's [identity](#identity).
+This can be used to authenticate the caller.
+
+Reducers are run in their own separate and atomic [database transactions](https://en.wikipedia.org/wiki/Database_transaction).
+When a reducer completes successfully, the changes the reducer has made,
+such as inserting a table row, are *committed* to the database.
+However, if the reducer instead returns an error, or throws an exception,
+the database will instead reject the request and *revert* all those changes.
+That is, reducers and transactions are all-or-nothing requests.
+It's not possible to keep the first half of a reducer's changes and discard the last.
+
+Transactions are only started by requests from outside the database.
+When a reducer calls another reducer directly, as in the example below,
+the changes in the called reducer does not happen in its own child transaction.
+Instead, when the nested reducer gracefully errors,
+and the overall reducer completes successfully,
+the changes in the nested one are still persisted.
+
+:::server-rust
+```rust
+#[spacetimedb::reducer]
+pub fn hello(ctx: &spacetimedb::ReducerContext) -> Result<(), String> {
+   if world(ctx).is_err() {
+      other_changes(ctx);
+   }
+}
+
+#[spacetimedb::reducer]
+pub fn world(ctx: &spacetimedb::ReducerContext) -> Result<(), String> {
+   clear_all_tables(ctx);
+}
+```
+:::
+:::server-csharp
+```csharp
+[SpacetimeDB.Reducer]
+public static void Hello(ReducerContext ctx)
+{
+   if(!World(ctx))
+   {
+      OtherChanges(ctx);
+   }
+}
+
+[SpacetimeDB.Reducer]
+public static void World(ReducerContext ctx)
+{
+   ClearAllTables(ctx);
+   // ...
+}
+```
+:::
+
+While SpacetimeDB doesn't support nested transactions,
+a reducer can [schedule another reducer] to run at an interval,
+or at a specific time.
+:::server-rust
+[schedule another reducer]: /docs/modules/rust#defining-scheduler-tables
+:::
+:::server-csharp
+[schedule another reducer]: /docs/modules/c-sharp#scheduler-tables
+:::
 
 ### Client
 A **client** is an application that connects to a [database](#database). A client logs in using an [identity](#identity) and receives an [address](#address) to identify the connection. After that, it can call [reducers](#reducer) and query public [tables](#table).
