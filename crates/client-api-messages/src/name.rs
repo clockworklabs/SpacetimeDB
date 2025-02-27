@@ -55,7 +55,7 @@ pub enum SetDomainsResult {
     /// If you were trying to insert this database name, but the tld `clockworklabs` is
     /// owned by an identity other than the identity that you provided, then you will receive
     /// this error.
-    /// 
+    ///
     /// In order to set the domains for a database, you must also be the owner of that database.
     PermissionDenied,
 
