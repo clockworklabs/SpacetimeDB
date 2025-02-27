@@ -629,6 +629,78 @@ pub async fn add_name<S: ControlStateDelegate>(
     Ok((code, axum::Json(response)))
 }
 
+#[derive(Deserialize)]
+pub struct SetNamesParams {
+    name_or_identity: NameOrIdentity,
+}
+
+// TODO(cloutiertyler): This is not atomic and can partially succeed or fail.
+// We should update this eventually to be atomic.
+pub async fn set_names<S: ControlStateDelegate>(
+    State(ctx): State<S>,
+    Path(SetNamesParams { name_or_identity }): Path<SetNamesParams>,
+    Extension(auth): Extension<SpacetimeAuth>,
+    names: axum::Json<Vec<String>>,
+) -> axum::response::Result<impl IntoResponse> {
+    let mut validated_names = vec![];
+
+    for name in names.0 {
+        let validated_name = DatabaseName::try_from(name).map_err(|err| (StatusCode::BAD_REQUEST, err.to_string()))?;
+        validated_names.push(validated_name);
+    }
+
+    let database_identity = name_or_identity.resolve(&ctx).await?;
+
+    let database = ctx.get_database_by_identity(&database_identity).map_err(log_and_500)?;
+    let Some(database) = database else {
+        return Ok((
+            StatusCode::NOT_FOUND,
+            axum::Json(name::SetDomainsResult::DatabaseNotFound),
+        ));
+    };
+
+    if database.owner_identity != auth.identity {
+        return Ok((
+            StatusCode::UNAUTHORIZED,
+            axum::Json(name::SetDomainsResult::PermissionDeniedNotOwner),
+        ));
+    }
+
+    ctx.delete_dns_records(&database_identity).await.map_err(log_and_500)?;
+
+    for name in validated_names {
+        let response = ctx
+            .create_dns_record(&auth.identity, &name.into(), &database_identity)
+            .await
+            // TODO: better error code handling
+            .map_err(log_and_500)?;
+
+        match response {
+            name::InsertDomainResult::Success { .. } => {}
+            name::InsertDomainResult::TldNotRegistered { domain } => {
+                return Ok((
+                    StatusCode::BAD_REQUEST,
+                    axum::Json(name::SetDomainsResult::TldNotRegistered { domain }),
+                ))
+            }
+            name::InsertDomainResult::PermissionDenied { domain } => {
+                return Ok((
+                    StatusCode::UNAUTHORIZED,
+                    axum::Json(name::SetDomainsResult::PermissionDenied { domain }),
+                ))
+            }
+            name::InsertDomainResult::OtherError(error) => {
+                return Ok((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    axum::Json(name::SetDomainsResult::OtherError(error)),
+                ))
+            }
+        };
+    }
+
+    Ok((StatusCode::OK, axum::Json(name::SetDomainsResult::Success)))
+}
+
 /// This struct allows the edition to customize `/database` routes more meticulously.
 pub struct DatabaseRoutes<S> {
     /// POST /database
@@ -643,6 +715,8 @@ pub struct DatabaseRoutes<S> {
     pub names_get: MethodRouter<S>,
     /// POST: /database/:name_or_identity/names
     pub names_post: MethodRouter<S>,
+    /// PUT: /database/:name_or_identity/names
+    pub names_put: MethodRouter<S>,
     /// GET: /database/:name_or_identity/identity
     pub identity_get: MethodRouter<S>,
     /// GET: /database/:name_or_identity/subscribe
@@ -670,6 +744,7 @@ where
             db_delete: delete(delete_database::<S>),
             names_get: get(get_names::<S>),
             names_post: post(add_name::<S>),
+            names_put: put(set_names::<S>),
             identity_get: get(get_identity::<S>),
             subscribe_get: get(handle_websocket::<S>),
             call_reducer_post: post(call::<S>),
@@ -691,6 +766,7 @@ where
             .route("/", self.db_delete)
             .route("/names", self.names_get)
             .route("/names", self.names_post)
+            .route("/names", self.names_put)
             .route("/identity", self.identity_get)
             .route("/subscribe", self.subscribe_get)
             .route("/call/:reducer", self.call_reducer_post)
