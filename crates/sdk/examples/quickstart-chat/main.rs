@@ -3,7 +3,6 @@
 mod module_bindings;
 use module_bindings::*;
 
-use spacetimedb_client_api_messages::websocket::Compression;
 use spacetimedb_sdk::{credentials, DbContext, Error, Event, Identity, Status, Table, TableWithPrimaryKey};
 
 // ## Define the main function
@@ -197,7 +196,7 @@ fn on_sub_applied(ctx: &SubscriptionEventContext) {
 
 /// Or `on_error` callback:
 /// print the error, then exit the process.
-fn on_sub_error(ctx: &ErrorContext, err: Error) {
+fn on_sub_error(_ctx: &ErrorContext, err: Error) {
     eprintln!("Subscription failed: {}", err);
     std::process::exit(1);
 }
