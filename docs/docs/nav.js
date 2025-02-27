@@ -45,6 +45,7 @@ const nav = {
         page('SQL Reference', 'sql', 'sql/index.md'),
         section('Subscriptions'),
         page('Subscription Reference', 'subscriptions', 'subscriptions/index.md'),
+        page('Appendix', 'appendix', 'appendix.md'),
     ],
 };
 export default nav;
