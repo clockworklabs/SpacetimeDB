@@ -166,4 +166,4 @@ SATS array and map types are homogeneous, meaning that each array has a single e
 
 ### `AlgebraicTypeRef`
 
-`AlgebraicTypeRef`s are JSON-encoded as non-negative integers. These are indices into a typespace, like the one returned by the [`/database/schema/:name_or_address GET` HTTP endpoint](/docs/http/database#databaseschemaname_or_address-get).
+`AlgebraicTypeRef`s are JSON-encoded as non-negative integers. These are indices into a typespace, like the one returned by the [`GET /v1/database/:name_or_identity/schema` HTTP endpoint](/docs/http/database#get-v1databasename_or_identityschema).

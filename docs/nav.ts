@@ -87,7 +87,6 @@ const nav: Nav = {
     page('HTTP', 'http', 'http/index.md'),
     page('`/identity`', 'http/identity', 'http/identity.md'),
     page('`/database`', 'http/database', 'http/database.md'),
-    page('`/energy`', 'http/energy', 'http/energy.md'),
 
     section('Data Format'),
     page('SATS-JSON', 'sats-json', 'sats-json.md'),

@@ -1,58 +1,22 @@
-# `/identity` HTTP API
+# `/v1/identity` HTTP API
 
-The HTTP endpoints in `/identity` allow clients to generate and manage Spacetime public identities and private tokens.
+The HTTP endpoints in `/v1/identity` allow clients to generate and manage Spacetime public identities and private tokens.
 
 ## At a glance
 
-| Route                                                                   | Description                                                        |
-| ----------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| [`/identity GET`](#identity-get)                                        | Look up an identity by email.                                      |
-| [`/identity POST`](#identity-post)                                      | Generate a new identity and token.                                 |
-| [`/identity/websocket_token POST`](#identitywebsocket_token-post)       | Generate a short-lived access token for use in untrusted contexts. |
-| [`/identity/:identity/set-email POST`](#identityidentityset-email-post) | Set the email for an identity.                                     |
-| [`/identity/:identity/databases GET`](#identityidentitydatabases-get)   | List databases owned by an identity.                               |
-| [`/identity/:identity/verify GET`](#identityidentityverify-get)         | Verify an identity and token.                                      |
+| Route                                                                      | Description                                                        |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| [`POST /v1/identity`](#post-v1identity)                                    | Generate a new identity and token.                                 |
+| [`POST /v1/identity/websocket-token`](#post-v1identitywebsocket-token)     | Generate a short-lived access token for use in untrusted contexts. |
+| [`GET /v1/identity/public-key`](#get-v1identitypublic-key)                 | Get the public key used for verifying tokens.                      |
+| [`GET /v1/identity/:identity/databases`](#get-v1identityidentitydatabases) | List databases owned by an identity.                               |
+| [`GET /v1/identity/:identity/verify`](#get-v1identityidentityverify)       | Verify an identity and token.                                      |
 
-## `/identity GET`
-
-Look up Spacetime identities associated with an email.
-
-Accessible through the CLI as `spacetime identity find <email>`.
-
-#### Query Parameters
-
-| Name    | Value                           |
-| ------- | ------------------------------- |
-| `email` | An email address to search for. |
-
-#### Returns
-
-Returns JSON in the form:
-
-```typescript
-{
-    "identities": [
-        {
-            "identity": string,
-            "email": string
-        }
-    ]
-}
-```
-
-The `identities` value is an array of zero or more objects, each of which has an `identity` and an `email`. Each `email` will be the same as the email passed as a query parameter.
-
-## `/identity POST`
+## `POST /v1/identity`
 
 Create a new identity.
 
 Accessible through the CLI as `spacetime identity new`.
-
-#### Query Parameters
-
-| Name    | Value                                                                                                                   |
-| ------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `email` | An email address to associate with the new identity. If unsupplied, the new identity will not have an associated email. |
 
 #### Returns
 
@@ -65,7 +29,7 @@ Returns JSON in the form:
 }
 ```
 
-## `/identity/websocket_token POST`
+## `POST /v1/identity/websocket-token`
 
 Generate a short-lived access token which can be used in untrusted contexts, e.g. embedded in URLs.
 
@@ -87,7 +51,15 @@ Returns JSON in the form:
 
 The `token` value is a short-lived [JSON Web Token](https://datatracker.ietf.org/doc/html/rfc7519).
 
-## `/identity/:identity/set-email POST`
+## `GET /v1/identity/public-key`
+
+Fetches the public key used by the database to verify tokens.
+
+#### Returns
+
+Returns a response of content-type `application/pem-certificate-chain`.
+
+## `POST /v1/identity/:identity/set-email`
 
 Associate an email with a Spacetime identity.
 
@@ -111,7 +83,7 @@ Accessible through the CLI as `spacetime identity set-email <identity> <email>`.
 | --------------- | --------------------------------------------------------------- |
 | `Authorization` | A Spacetime token [encoded as Basic authorization](/docs/http). |
 
-## `/identity/:identity/databases GET`
+## `GET /v1/identity/:identity/databases`
 
 List all databases owned by an identity.
 
@@ -133,7 +105,7 @@ Returns JSON in the form:
 
 The `addresses` value is an array of zero or more strings, each of which is the address of a database owned by the identity passed as a parameter.
 
-## `/identity/:identity/verify GET`
+## `GET /v1/identity/:identity/verify`
 
 Verify the validity of an identity/token pair.
 
