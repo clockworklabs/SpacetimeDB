@@ -305,7 +305,7 @@ See [the SpacetimeDB SQL Reference](/docs/sql#subscriptions) for information on 
 ##### Method `subscribeToAllTables`
 
 ```typescript
-SubscriptionBuilder.subscribe_to_all_tables(): void
+SubscriptionBuilder.subscribeToAllTables(): void
 ```
 
 Subscribe to all rows from all tables. This method is provided as a convenience for simple clients. The same connection must not mix `subscribeToAllTables` with [`subscribe` to specific queries](#method-subscribe). Doing so may cause errors or corrupt the client cache, leading to local queries returning incorrect results. The subscription initiated by `subscribeToAllTables` cannot be canceled after it is initiated.
