@@ -54,6 +54,11 @@ pub(super) fn make_progress_bar() -> ProgressBar {
     pb
 }
 
+fn releases_url() -> String {
+    std::env::var("SPACETIME_UPDATE_RELEASES_URL")
+        .unwrap_or_else(|_| "https://api.github.com/repos/clockworklabs/SpacetimeDB/releases".to_owned())
+}
+
 pub(super) async fn download_and_install(
     client: &reqwest::Client,
     version: Option<semver::Version>,
@@ -67,10 +72,10 @@ pub(super) async fn download_and_install(
     let pb = make_progress_bar();
 
     pb.set_message("Resolving version...");
-    let releases_url = "https://api.github.com/repos/clockworklabs/SpacetimeDB/releases";
+    let releases_url = releases_url();
     let url = match &version {
         Some(version) => format!("{releases_url}/tags/v{version}"),
-        None => [releases_url, "/latest"].concat(),
+        None => [&*releases_url, "/latest"].concat(),
     };
     let release: Release = client
         .get(url)
@@ -147,7 +152,7 @@ impl ArtifactType {
 }
 
 pub(super) async fn available_releases(client: &reqwest::Client) -> anyhow::Result<Vec<String>> {
-    let url = "https://api.github.com/repos/clockworklabs/SpacetimeDB/releases";
+    let url = releases_url();
     let releases: Vec<Release> = client.get(url).send().await?.json().await?;
 
     releases
