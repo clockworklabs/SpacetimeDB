@@ -367,6 +367,7 @@ namespace SpacetimeDB.Types
         /// Applications where these resources are a constraint
         /// should register more precise queries via <c>Self.Subscribe</c>
         /// in order to replicate only the subset of data which the client needs to function.
+        /// </summary>
         public void SubscribeToAllTables()
         {
             // Make sure we use the legacy handle constructor here, even though there's only 1 query.
