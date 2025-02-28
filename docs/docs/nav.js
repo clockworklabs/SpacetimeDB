@@ -17,6 +17,7 @@ const nav = {
         page('4 - Moving and Colliding', 'unity/part-4', 'unity/part-4.md'),
         section('CLI Reference'),
         page('CLI Reference', 'cli-reference', 'cli-reference.md'),
+        page('SpacetimeDB Standalone Configuration', 'cli-reference/standalone-config', 'cli-reference/standalone-config.md'),
         section('Server Module Languages'),
         page('Overview', 'modules', 'modules/index.md'),
         page('Rust Quickstart', 'modules/rust/quickstart', 'modules/rust/quickstart.md'),
