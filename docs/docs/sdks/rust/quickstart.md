@@ -290,6 +290,7 @@ fn print_message(ctx: &EventContext, message: &Message) {
         .unwrap_or_else(|| "unknown".to_string());
     println!("{}: {}", sender, message.text);
 }
+```
 
 ### Print past messages in order
 
@@ -375,7 +376,7 @@ fn connect_to_db() -> DbConnection {
         .on_disconnect(on_disconnected)
         .with_uri(SPACETIMEDB_URI)
         .with_module_name(DB_NAME)
-        .with_credentials(credentials.load().unwrap())
+        .with_token(credentials.load().unwrap())
         .build().expect("Failed to connect");
     conn.run_threaded();
     conn

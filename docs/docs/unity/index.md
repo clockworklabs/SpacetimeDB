@@ -1,25 +1,35 @@
-# Unity Tutorial Overview
+# Unity Tutorial - Overview
 
 Need help with the tutorial or CLI commands? [Join our Discord server](https://discord.gg/spacetimedb)!
 
-The objective of this progressive tutorial is to help you become acquainted with the basic features of SpacetimeDB. By the end, you should have a basic understanding of what SpacetimeDB offers for developers making multiplayer games. It assumes that you have a basic understanding of the Unity Editor, using a command line terminal and coding.
+In this tutorial you'll learn how to build a small-scoped MMORPG in Unity, from scratch, using SpacetimeDB. Although, the game we're going to build is small in scope, it'll scale to hundreds of players and will help you get acquanted with all the features and best practices of SpacetimeDB, while building [a fun little game](https://github.com/ClockworkLabs/Blackholio).
 
-We'll give you some CLI commands to execute. If you are using Windows, we recommend using Git Bash or PowerShell. For Mac, we recommend Terminal.
+By the end, you should have a basic understanding of what SpacetimeDB offers for developers making multiplayer games. 
 
-Tested with UnityEngine `2022.3.20f1 LTS` (and may also work on newer versions).
+The game is inspired by [agar.io](https://agar.io), but SpacetimeDB themed with some fun twists. If you're not familiar [agar.io](https://agar.io), it's a web game in which you and hundreds of other players compete to cultivate mass to become the largest cell in the Petri dish.
 
-## Unity Tutorial - Basic Multiplayer
+Our game, called [Blackhol.io](https://github.com/ClockworkLabs/Blackholio), will be similar but space themed. It should give you a great idea of the types of games you can develop easily with SpacetimeDB.
 
-Get started with the core client-server setup. For part 2, you may choose your server module preference of [Rust](/docs/modules/rust) or [C#](/docs/modules/c-sharp):
+This tutorial assumes that you have a basic understanding of the Unity Editor, using a command line terminal and programming. We'll give you some CLI commands to execute. If you are using Windows, we recommend using Git Bash or PowerShell. For Mac, we recommend Terminal.
+
+We recommend using Unity `2022.3.32f1` or later, but the SDK's minimum supported Unity version is `2021.2` as the SDK requires C# 9. This tutorial has been tested with the following Unity versions.
+
+- `2022.3.32f1 LTS`
+- `6000.0.33f1`
+
+Please file an issue [here](https://github.com/clockworklabs/spacetime-docs/issues) if you encounter an issue with a specific Unity version.
+
+## Blackhol.io Tutorial - Basic Multiplayer
+
+First you'll get started with the core client/server setup. For part 2, you'll be able to choose between [Rust](/docs/modules/rust) or [C#](/docs/modules/c-sharp) for your server module language:
 
 - [Part 1 - Setup](/docs/unity/part-1)
-- [Part 2a - Server (Rust)](/docs/unity/part-2a-rust)
-- [Part 2b - Server (C#)](/docs/unity/part-2b-c-sharp)
-- [Part 3 - Client](/docs/unity/part-3)
+- [Part 2 - Connecting to SpacetimeDB](/docs/unity/part-2)
+- [Part 3 - Gameplay](/docs/unity/part-3)
+- [Part 4 - Moving and Colliding](/docs/unity/part-4)
 
-## Unity Tutorial - Advanced
+## Blackhol.io Tutorial - Advanced
 
-By this point, you should already have a basic understanding of SpacetimeDB client, server and CLI:
+If you already have a good understanding of the SpacetimeDB client and server, check out our completed tutorial project!
 
-- [Part 4 - Resources & Scheduling](/docs/unity/part-4)
-- [Part 5 - BitCraft Mini](/docs/unity/part-5)
+https://github.com/ClockworkLabs/Blackholio

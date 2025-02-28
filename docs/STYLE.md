@@ -33,6 +33,9 @@ For meta-variables in code blocks, enclose the meta-variable name in `{}` curly 
 
 Do not use single-backtick code highlighting for words which are not variable, function, method or type names. (Or other sorts of defined symbols that appear in actual code.) Similarly, do not use italics for words which are not meta-variables that the reader is expected to substitute. In particular, do not use code highlighting for emphasis or to introduce vocabulary.
 
+Because this meta-syntax is not valid syntax, it should be followed by an example that shows what the result would look like in a
+concrete situation.
+
 For example:
 
 > To find rows in a table *table* with a given value in a `#[unique]` or `#[primary_key]` column, do:
@@ -41,7 +44,14 @@ For example:
 > ctx.db.{table}().{column}().find({value})
 > ```
 >
-> where *column* is the name of the unique column and *value* is the value you're looking for in that column. This is equivalent to:
+> where *column* is the name of the unique column and *value* is the value you're looking for in that column.
+> For example:
+>
+> ```rust
+> ctx.db.people().name().find("Billy")
+> ```
+>
+> This is equivalent to:
 >
 > ```sql
 > SELECT * FROM {table} WHERE {column} = {value}
@@ -62,6 +72,55 @@ Be up-front about what isn't implemented right now. It's better for our users to
 Don't make promises, even weak ones, about what we plan to do in the future, within tutorials or reference documents. Statements about the future belong in a separate "roadmap" or "future plans" document. Our idea of "soon" is often very different from our users', and our priorities shift rapidly and frequently enough that statements about our future plans rarely end up being accurate. 
 
 If your document needs to describe a feature that isn't implemented yet, either rewrite to not depend on that feature, or just say that it's a "current limitation" without elaborating further. Include a workaround if there is one.
+
+### Menu items and paths
+
+When describing GUI elements and menu items, like the **Unity Registry** tab, use bolded text to draw attention to any phrases that will appear in the actual UI. Readers will see this bolded text in the documentation and look for it on their screen. Where applicable, include a short description of the type or category of element, like "tab" above, or the **File** menu. This category should not be bolded, since it is not a word the reader can expect to find on their screen.
+
+When describing a chain of accesses through menus and submenus, use the **->** thin arrow (that's `->`, a hyphen followed by a greater-than sign) as a separator, like **File -> Quit** or **Window -> Package Manager**. List the top-level menu first, and proceed left-to-right until you reach the option you want the user to interact with. Include all nested submenus, like **Foo -> Bar -> Baz -> Quux**. Bold the whole sequence, including the arrows. 
+
+It's generally not necessary or desirable to tell users where to look for the top-level menu. You may be tempted to write something like, "Open the **File** menu in the upper left, and navigate **File -> Export as -> Export as PDF**." Do not include "in the upper left" unless you are absolutely confident that the menu will be located there on any combination of OS, version, desktop environment, window manager, theming configuration &c. Even within a single system, UI designers are known to move graphical elements around during updates, making statements like "upper left" obsolete and stale. We can generally trust our readers to be familiar with their own systems and the software they use, and none of our documents involve introducing readers to new GUI software. (E.g. the Unity tutorial is targeted at introducing SpacetimeDB to people who already know Unity.) "Open the **File** menu and navigate **File -> Export as -> Export as PDF**" is sufficient.
+
+## Key vocabulary
+
+There are a small number of key terms that we need to use consistently throughout the documentation.
+
+The most important distinction is the following:
+
+- **Database**: This is the active, running entity that lives on a host. It contains a bunch of tables, like a normal database. It also has extra features: clients can connect to it directly and remotely call its stored procedures.
+- **Module**: This is the source code that a developer uses to specify a database. It is a combination of a database schema and a collection of stored procedures. Once built and published, it becomes part of the running database.
+
+A database **has** a module; the module **is part of** the database.
+
+The module does NOT run on a host. The **database** runs on a host.
+
+A client does NOT "connect to the module". A client **connects to the database**.
+
+This distinction is subtle but important. People know what databases are, and we should reinforce that SpacetimeDB is a database. "Module" is a quirky bit of vocabulary we use to refer to collections of stored procedures. A RUNNING APPLICATION IS NOT CALLED A MODULE.
+
+Other key vocabulary:
+- (SpacetimeDB) **Host**: the application that hosts **databases**. It is multi-tenant and can host many **databases** at once.
+- **Client**: any application that connects to a **database**.
+- **End user**: anybody using a **client**.
+- **Database developer**: the person who maintains a **database**.
+    - DO NOT refer to database developers as "users" in documentation.
+      Sometimes we colloquially refer to them as "our users" internally,
+      but it is clearer to use the term "database developers" in public.
+- **Table**: A set of typed, labeled **rows**. Each row stores data for a number of **columns**. Used to store data in a **database**.
+- **Column**: you know what this is.
+- **Row**: you know what this is.
+    - DO NOT refer to rows as "tuples", because the term overlaps confusingly with "tuple types" in module languages.
+      We reserve the word "tuple" to refer to elements of these types.
+- **Reducer**: A stored procedure that can be called remotely in order to update a **database**.
+    - Confusingly, reducers do not actually "reduce" data in the sense of querying and compressing it to return a result.
+      But it is too late to change it. C'est la vie.
+- **Connection**: a connection between a **client** and a **database**. Receives an **Address**. A single connection may open multiple **subscriptions**.
+- **Subscription**: an active query that mirrors data from the database to a **client**.
+- **Address**: identifier for an active connection.
+- **Identity**: A combination of an issuing OpenID Connect provider and an Identity Token issued by that provider. Globally unique and public.
+    - Technically, "Identity" should be called "Identifier", but it is too late to change it.
+    - A particular **end user** may have multiple Identities issued by different providers.
+    - Each **database** also has an **Identity**.
 
 ## Reference pages
 
@@ -340,7 +399,7 @@ If this tutorial is the end of a series, or ends with a reasonably complete app,
 If the tutorial involved writing code, add a link to the complete code. This should be somewhere on GitHub, either as its own repo, or as an example project within an existing repo. Ensure the linked folder has a README.md file which includes:
 
 - The name of the tutorial project.
-- How to run or interact with the tutorial project, whatever that means (e.g. publish to testnet and then `spacetime call`).
+- How to run or interact with the tutorial project, whatever that means (e.g. publish to maincloud and then `spacetime call`).
 - Links to external dependencies (e.g. for client projects, the module which it runs against).
 - A back-link to the tutorial that builds this project.
 

@@ -101,9 +101,7 @@ This is the global instance of a SpacetimeDB client in a particular .NET/Unity p
 
 The Unity SpacetimeDB SDK relies on there being a `NetworkManager` somewhere in the scene. Click on the GameManager object in the scene, and in the inspector, add the `NetworkManager` component.
 
-![Unity-AddNetworkManager](/images/unity-tutorial/Unity-AddNetworkManager.JPG)
-
-This component will handle updating and closing the [`SpacetimeDBClient.instance`](#property-spacetimedbclientinstance) for you, but will not call [`SpacetimeDBClient.Connect`](#method-spacetimedbclientconnect), you still need to handle that yourself. See the [Unity Tutorial](/docs/unity-tutorial) for more information.
+This component will handle updating and closing the [`SpacetimeDBClient.instance`](#property-spacetimedbclientinstance) for you, but will not call [`SpacetimeDBClient.Connect`](#method-spacetimedbclientconnect), you still need to handle that yourself. See the [Unity Tutorial](/docs/unity) for more information.
 
 ### Method `SpacetimeDBClient.Connect`
 

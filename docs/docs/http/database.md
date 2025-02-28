@@ -13,7 +13,7 @@ The HTTP endpoints in `/database` allow clients to interact with Spacetime datab
 | [`/database/register_tld GET`](#databaseregister_tld-get)                                                           | Register a top-level domain.                                      |
 | [`/database/publish POST`](#databasepublish-post)                                                                   | Publish a database given its module code.                         |
 | [`/database/delete/:address POST`](#databasedeleteaddress-post)                                                     | Delete a database.                                                |
-| [`/database/subscribe/:name_or_address GET`](#databasesubscribename_or_address-get)                                 | Begin a [WebSocket connection](/docs/ws).                         |
+| [`/database/subscribe/:name_or_address GET`](#databasesubscribename_or_address-get)                                 | Begin a WebSocket connection.                         |
 | [`/database/call/:name_or_address/:reducer POST`](#databasecallname_or_addressreducer-post)                         | Invoke a reducer in a database.                                   |
 | [`/database/schema/:name_or_address GET`](#databaseschemaname_or_address-get)                                       | Get the schema for a database.                                    |
 | [`/database/schema/:name_or_address/:entity_type/:entity GET`](#databaseschemaname_or_addressentity_typeentity-get) | Get a schema for a particular table or reducer.                   |
@@ -121,8 +121,6 @@ If the top-level domain is registered, but the identity provided in the `Authori
 } }
 ```
 
-> Spacetime top-level domains are an upcoming feature, and are not fully implemented in SpacetimeDB 0.6. For now, database names should not contain slashes.
-
 ## `/database/ping GET`
 
 Does nothing and returns no data. Clients can send requests to this endpoint to determine whether they are able to connect to SpacetimeDB.
@@ -130,8 +128,6 @@ Does nothing and returns no data. Clients can send requests to this endpoint to 
 ## `/database/register_tld GET`
 
 Register a new Spacetime top-level domain. A TLD is the part of a database name before the first `/`. For example, in the name `tyler/bitcraft`, the TLD is `tyler`. Each top-level domain is owned by at most one identity, and only the owner can publish databases with that TLD.
-
-> Spacetime top-level domains are an upcoming feature, and are not fully implemented in SpacetimeDB 0.6. For now, database names should not contain slashes.
 
 Accessible through the CLI as `spacetime dns register-tld <tld>`.
 
@@ -226,8 +222,6 @@ If the top-level domain for the requested name is registered, but the identity p
 } }
 ```
 
-> Spacetime top-level domains are an upcoming feature, and are not fully implemented in SpacetimeDB 0.6. For now, database names should not contain slashes.
-
 ## `/database/delete/:address POST`
 
 Delete a database.
@@ -248,7 +242,7 @@ Accessible through the CLI as `spacetime delete <address>`.
 
 ## `/database/subscribe/:name_or_address GET`
 
-Begin a [WebSocket connection](/docs/ws) with a database.
+Begin a WebSocket connection with a database.
 
 #### Parameters
 
@@ -262,11 +256,16 @@ For more information about WebSocket headers, see [RFC 6455](https://datatracker
 
 | Name                     | Value                                                                                                |
 | ------------------------ | ---------------------------------------------------------------------------------------------------- |
-| `Sec-WebSocket-Protocol` | [`v1.bin.spacetimedb`](/docs/ws#binary-protocol) or [`v1.text.spacetimedb`](/docs/ws#text-protocol). |
+| `Sec-WebSocket-Protocol` | `v1.bin.spacetimedb` or `v1.text.spacetimedb`                                                        |
 | `Connection`             | `Updgrade`                                                                                           |
 | `Upgrade`                | `websocket`                                                                                          |
 | `Sec-WebSocket-Version`  | `13`                                                                                                 |
 | `Sec-WebSocket-Key`      | A 16-byte value, generated randomly by the client, encoded as Base64.                                |
+
+The SpacetimeDB binary WebSocket protocol, `v1.bin.spacetimedb`, encodes messages as well as reducer and row data using [BSATN](/docs/bsatn).
+Its messages are defined [here](https://github.com/clockworklabs/SpacetimeDB/blob/master/crates/client-api-messages/src/websocket.rs).
+
+The SpacetimeDB text WebSocket protocol, `v1.text.spacetimedb`, encodes messages according to the [SATS-JSON format](/docs/sats-json).
 
 #### Optional Headers
 
@@ -409,9 +408,9 @@ The `"entities"` will be an object whose keys are table and reducer names, and w
 | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `arity`      | For tables, the number of colums; for reducers, the number of arguments.                                                                                    |
 | `type`       | For tables, `"table"`; for reducers, `"reducer"`.                                                                                                           |
-| `schema`     | A [JSON-encoded `ProductType`](/docs/satn); for tables, the table schema; for reducers, the argument schema. Only present if `expand` is supplied and true. |
+| `schema`     | A [JSON-encoded `ProductType`](/docs/sats-json); for tables, the table schema; for reducers, the argument schema. Only present if `expand` is supplied and true. |
 
-The `"typespace"` will be a JSON array of [`AlgebraicType`s](/docs/satn) referenced by the module. This can be used to resolve `Ref` types within the schema; the type `{ "Ref": n }` refers to `response["typespace"][n]`.
+The `"typespace"` will be a JSON array of [`AlgebraicType`s](/docs/sats-json) referenced by the module. This can be used to resolve `Ref` types within the schema; the type `{ "Ref": n }` refers to `response["typespace"][n]`.
 
 ## `/database/schema/:name_or_address/:entity_type/:entity GET`
 
@@ -449,7 +448,7 @@ Returns a single entity in the same format as in the `"entities"` returned by [t
 | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `arity`  | For tables, the number of colums; for reducers, the number of arguments.                                                                                    |
 | `type`   | For tables, `"table"`; for reducers, `"reducer"`.                                                                                                           |
-| `schema` | A [JSON-encoded `ProductType`](/docs/satn); for tables, the table schema; for reducers, the argument schema. Only present if `expand` is supplied and true. |
+| `schema` | A [JSON-encoded `ProductType`](/docs/sats-json); for tables, the table schema; for reducers, the argument schema. Only present if `expand` is supplied and true. |
 
 ## `/database/info/:name_or_address GET`
 
@@ -543,6 +542,6 @@ Returns a JSON array of statement results, each of which takes the form:
 }
 ```
 
-The `schema` will be a [JSON-encoded `ProductType`](/docs/satn) describing the type of the returned rows.
+The `schema` will be a [JSON-encoded `ProductType`](/docs/sats-json) describing the type of the returned rows.
 
-The `rows` will be an array of [JSON-encoded `ProductValue`s](/docs/satn), each of which conforms to the `schema`.
+The `rows` will be an array of [JSON-encoded `ProductValue`s](/docs/sats-json), each of which conforms to the `schema`.
