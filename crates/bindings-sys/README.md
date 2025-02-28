@@ -1,3 +1,3 @@
 > ⚠️ **Unstable Crate** ⚠️
 >
-> No provide stability guarantees. It is **not** stable and may change without notice.
+> The interface of this crate is **not** stable and may change without notice.
