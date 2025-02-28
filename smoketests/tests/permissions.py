@@ -117,11 +117,13 @@ pub fn do_thing(ctx: &ReducerContext) {
         """Ensure that a private table can only be queried by the database owner"""
 
         out = self.spacetime("sql", self.database_identity, "select * from secret")
-        self.assertMultiLineEqual(out, """\
- answer
---------
- 42
-""")
+        answer = "\n".join([
+            " answer ",
+            "--------",
+            " 42     ",
+            ""
+        ])
+        self.assertMultiLineEqual(out, answer)
 
         self.reset_config()
         self.new_identity()
