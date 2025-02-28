@@ -1,4 +1,5 @@
-from .. import Smoketest
+from .. import Smoketest, random_string
+import json
 
 class Permissions(Smoketest):
     AUTOPUBLISH = False
@@ -69,6 +70,22 @@ class Permissions(Smoketest):
         with self.assertRaises(Exception):
             self.spacetime("publish", self.database_identity, "--project-path", self.project_path, "--yes")
 
+    def test_replace_names(self):
+        """Test that you can't replace names of a database you don't own"""
+
+        self.new_identity()
+        name = random_string()
+        self.publish_module(name)
+
+        self.reset_config()
+
+        with self.assertRaises(Exception):
+            self.api_call(
+                "PUT",
+                f'/v1/database/{name}/names',
+                json.dumps(["post", "gres"]),
+                {"Content-type": "application/json"}
+            )
 
 class PrivateTablePermissions(Smoketest):
     MODULE_CODE = """
@@ -101,9 +118,9 @@ pub fn do_thing(ctx: &ReducerContext) {
 
         out = self.spacetime("sql", self.database_identity, "select * from secret")
         self.assertMultiLineEqual(out, """\
- answer 
+ answer
 --------
- 42     
+ 42
 """)
 
         self.reset_config()
