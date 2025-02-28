@@ -231,6 +231,7 @@ pub trait ControlStateWriteAccess: Send + Sync {
         domain: &DomainName,
         database_identity: &Identity,
     ) -> anyhow::Result<InsertDomainResult>;
+    async fn delete_dns_records(&self, database_identity: &Identity) -> anyhow::Result<()>;
 }
 
 impl<T: ControlStateReadAccess + ?Sized> ControlStateReadAccess for Arc<T> {
@@ -315,6 +316,10 @@ impl<T: ControlStateWriteAccess + ?Sized> ControlStateWriteAccess for Arc<T> {
         database_identity: &Identity,
     ) -> anyhow::Result<InsertDomainResult> {
         (**self).create_dns_record(identity, domain, database_identity).await
+    }
+
+    async fn delete_dns_records(&self, database_identity: &Identity) -> anyhow::Result<()> {
+        (**self).delete_dns_records(database_identity).await
     }
 }
 
