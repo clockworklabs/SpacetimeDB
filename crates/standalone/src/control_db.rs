@@ -206,9 +206,10 @@ impl ControlDb {
 
         let dns_tree = self.db.open_tree("dns")?;
         let rev_tree = self.db.open_tree("reverse_dns")?;
-        let tld_tree = self.db.open_tree("top_level_domain")?;
+        let tld_tree = self.db.open_tree("top_level_domains")?;
 
         /// Abort transaction with a user error.
+        #[derive(Debug)]
         enum AbortWith {
             Domain(SetDomainsResult),
             Database(Error),
@@ -264,8 +265,8 @@ impl ControlDb {
                             }))?;
                         }
                     }
-                    tld_tree.insert(domain.tld().to_lowercase(), &owner_identity.to_byte_array())?;
-                    dns_tree.insert(domain.to_lowercase(), &database_identity_bytes)?;
+                    tld_tx.insert(domain.tld().to_lowercase().as_bytes(), &owner_identity.to_byte_array())?;
+                    dns_tx.insert(domain.to_lowercase().as_bytes(), &database_identity_bytes)?;
                 }
                 rev_tx.insert(&database_identity_bytes, serde_json::to_vec(domain_names).unwrap())?;
 
