@@ -1,3 +1,4 @@
+use std::str::FromStr;
 use std::time::Duration;
 
 use crate::auth::{
@@ -23,7 +24,7 @@ use spacetimedb::host::ReducerOutcome;
 use spacetimedb::host::UpdateDatabaseResult;
 use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, HostType};
-use spacetimedb_client_api_messages::name::{self, DatabaseName, PublishOp, PublishResult};
+use spacetimedb_client_api_messages::name::{self, DatabaseName, DomainName, PublishOp, PublishResult};
 use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::sats;
@@ -629,6 +630,59 @@ pub async fn add_name<S: ControlStateDelegate>(
     Ok((code, axum::Json(response)))
 }
 
+#[derive(Deserialize)]
+pub struct SetNamesParams {
+    name_or_identity: NameOrIdentity,
+}
+
+pub async fn set_names<S: ControlStateDelegate>(
+    State(ctx): State<S>,
+    Path(SetNamesParams { name_or_identity }): Path<SetNamesParams>,
+    Extension(auth): Extension<SpacetimeAuth>,
+    names: axum::Json<Vec<String>>,
+) -> axum::response::Result<impl IntoResponse> {
+    let validated_names = names
+        .0
+        .into_iter()
+        .map(|s| DatabaseName::from_str(&s).map(DomainName::from).map_err(|e| (s, e)))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|(input, e)| (StatusCode::BAD_REQUEST, format!("Error parsing `{input}`: {e}")))?;
+
+    let database_identity = name_or_identity.resolve(&ctx).await?;
+
+    let database = ctx.get_database_by_identity(&database_identity).map_err(log_and_500)?;
+    let Some(database) = database else {
+        return Ok((
+            StatusCode::NOT_FOUND,
+            axum::Json(name::SetDomainsResult::DatabaseNotFound),
+        ));
+    };
+
+    if database.owner_identity != auth.identity {
+        return Ok((
+            StatusCode::UNAUTHORIZED,
+            axum::Json(name::SetDomainsResult::NotYourDatabase {
+                database: database.database_identity,
+            }),
+        ));
+    }
+
+    let response = ctx
+        .replace_dns_records(&database_identity, &database.owner_identity, &validated_names)
+        .await
+        .map_err(log_and_500)?;
+    let status = match response {
+        name::SetDomainsResult::Success => StatusCode::OK,
+        name::SetDomainsResult::PermissionDenied { .. }
+        | name::SetDomainsResult::PermissionDeniedOnAny { .. }
+        | name::SetDomainsResult::NotYourDatabase { .. } => StatusCode::UNAUTHORIZED,
+        name::SetDomainsResult::DatabaseNotFound => StatusCode::NOT_FOUND,
+        name::SetDomainsResult::OtherError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+    };
+
+    Ok((status, axum::Json(response)))
+}
+
 /// This struct allows the edition to customize `/database` routes more meticulously.
 pub struct DatabaseRoutes<S> {
     /// POST /database
@@ -643,6 +697,8 @@ pub struct DatabaseRoutes<S> {
     pub names_get: MethodRouter<S>,
     /// POST: /database/:name_or_identity/names
     pub names_post: MethodRouter<S>,
+    /// PUT: /database/:name_or_identity/names
+    pub names_put: MethodRouter<S>,
     /// GET: /database/:name_or_identity/identity
     pub identity_get: MethodRouter<S>,
     /// GET: /database/:name_or_identity/subscribe
@@ -670,6 +726,7 @@ where
             db_delete: delete(delete_database::<S>),
             names_get: get(get_names::<S>),
             names_post: post(add_name::<S>),
+            names_put: put(set_names::<S>),
             identity_get: get(get_identity::<S>),
             subscribe_get: get(handle_websocket::<S>),
             call_reducer_post: post(call::<S>),
@@ -691,6 +748,7 @@ where
             .route("/", self.db_delete)
             .route("/names", self.names_get)
             .route("/names", self.names_post)
+            .route("/names", self.names_put)
             .route("/identity", self.identity_get)
             .route("/subscribe", self.subscribe_get)
             .route("/call/:reducer", self.call_reducer_post)

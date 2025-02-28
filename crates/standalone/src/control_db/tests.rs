@@ -81,7 +81,31 @@ fn test_domain() -> anyhow::Result<()> {
         reverse_lookup.first().map(ToString::to_string),
         Some(domain.to_string())
     );
-    assert_eq!(reverse_lookup, vec![domain]);
+    assert_eq!(reverse_lookup, vec![domain.clone()]);
+
+    // We can remove the domain records for Alice's database
+    let deleted = cdb.spacetime_replace_domains(&addr, &ALICE, &[]);
+    assert!(matches!(deleted, Ok(SetDomainsResult::Success)));
+
+    // The domain records are gone
+    let registered_addr = cdb.spacetime_dns(domain.as_ref())?;
+    assert_eq!(registered_addr, None);
+
+    // Reverse DNS should yield empty
+    let reverse_lookup = cdb.spacetime_reverse_dns(&addr)?;
+    assert_eq!(reverse_lookup, vec![]);
+
+    // Bob cannot register the TLD
+    let unauthorized = cdb
+        .spacetime_insert_domain(&addr, "this/is/bob".parse()?, *BOB, true)
+        .unwrap();
+    assert!(matches!(unauthorized, InsertDomainResult::PermissionDenied { .. }));
+
+    // Alice can add the domain back
+    let addr = Identity::ZERO;
+    let res = cdb.spacetime_insert_domain(&addr, domain.clone(), *ALICE, true)?;
+    assert!(matches!(res, InsertDomainResult::Success { .. }));
+
     let _ = tmp.close().ok(); // force tmp to not be dropped until here
 
     Ok(())

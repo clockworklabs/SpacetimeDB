@@ -1,5 +1,6 @@
 from .. import Smoketest, random_string
 import unittest
+import json
 
 class Domains(Smoketest):
     AUTOPUBLISH = False
@@ -48,3 +49,32 @@ class Domains(Smoketest):
         # This should throw an exception because there's a db with this name
         with self.assertRaises(Exception):
             self.spacetime("rename", "--to", rename_to, id_to_rename)
+
+    def test_replace_names(self):
+        """Test that we can rename to a list of names"""
+
+        orig_name = random_string()
+        alt_name1 = random_string()
+        alt_name2 = random_string()
+        self.publish_module(orig_name)
+
+        self.api_call(
+            "PUT",
+            f'/v1/database/{orig_name}/names',
+            json.dumps([alt_name1, alt_name2]),
+            {"Content-type": "application/json"}
+        )
+
+        # Use logs to check that name resolution works
+        self.spacetime("logs", alt_name1)
+        self.spacetime("logs", alt_name2)
+        with self.assertRaises(Exception):
+            self.spacetime("logs", orig_name)
+
+        # Restore orig name so the database gets deleted on clean up
+        self.api_call(
+            "PUT",
+            f'/v1/database/{alt_name1}/names',
+            json.dumps([orig_name]),
+            {"Content-type": "application/json"}
+        )
