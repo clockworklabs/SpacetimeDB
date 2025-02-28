@@ -9,10 +9,6 @@ const nav = {
         section('Intro'),
         page('Overview', 'index', 'index.md'), // TODO(BREAKING): For consistency & clarity, 'index' slug should be renamed 'intro'?
         page('Getting Started', 'getting-started', 'getting-started.md'),
-        section('Deploying'),
-        page('Testnet', 'deploying/testnet', 'deploying/testnet.md'),
-        section('Migration Guides'),
-        page('v0.12', 'migration/v0.12', 'migration/v0.12.md'),
         section('Unity Tutorial - Basic Multiplayer'),
         page('Overview', 'unity', 'unity/index.md'),
         page('1 - Setup', 'unity/part-1', 'unity/part-1.md'),
@@ -43,10 +39,13 @@ const nav = {
         page('`/database`', 'http/database', 'http/database.md'),
         page('`/energy`', 'http/energy', 'http/energy.md'),
         section('Data Format'),
-        page('SATN', 'satn', 'satn.md'),
+        page('SATS-JSON', 'sats-json', 'sats-json.md'),
         page('BSATN', 'bsatn', 'bsatn.md'),
         section('SQL'),
         page('SQL Reference', 'sql', 'sql/index.md'),
+        section('Subscriptions'),
+        page('Subscription Reference', 'subscriptions', 'subscriptions/index.md'),
+        page('Appendix', 'appendix', 'appendix.md'),
     ],
 };
 export default nav;
