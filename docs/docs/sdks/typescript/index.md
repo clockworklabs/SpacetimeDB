@@ -98,7 +98,7 @@ A connection to a remote database is represented by the `module_bindings.DbConne
 DbConnection.builder(): DbConnectionBuilder
 ```
 
-Construct a `DbConnection` by calling `DbConnection.builder()` and chaining configuration methods, then calling `.build()`. You must at least specify `withUri`, to supply the URI of the SpacetimeDB to which you published your module, and `with_module_name`, to supply the human-readable SpacetimeDB domain name or the raw `Identity` which identifies the module.
+Construct a `DbConnection` by calling `DbConnection.builder()` and chaining configuration methods, then calling `.build()`. You must at least specify `withUri`, to supply the URI of the SpacetimeDB to which you published your module, and `withModuleName`, to supply the human-readable SpacetimeDB domain name or the raw `Identity` which identifies the module.
 
 | Name                                                  | Description                                                                          |
 |-------------------------------------------------------|--------------------------------------------------------------------------------------|
