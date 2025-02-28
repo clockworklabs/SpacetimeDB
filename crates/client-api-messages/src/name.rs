@@ -52,6 +52,12 @@ pub enum SetDomainsResult {
         domain: DomainName,
     },
 
+    /// Workaround for cloud, which can't extract the exact failing domain from
+    /// reducer errors.
+    PermissionDeniedOnAny {
+        domains: Box<[DomainName]>,
+    },
+
     /// The database name or identity you provided does not exist.
     DatabaseNotFound,
 

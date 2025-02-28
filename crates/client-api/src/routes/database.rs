@@ -667,12 +667,20 @@ pub async fn set_names<S: ControlStateDelegate>(
         ));
     }
 
-    let result = ctx
+    let response = ctx
         .replace_dns_records(&database_identity, &database.owner_identity, &validated_names)
         .await
         .map_err(log_and_500)?;
+    let status = match response {
+        name::SetDomainsResult::Success => StatusCode::OK,
+        name::SetDomainsResult::PermissionDenied { .. }
+        | name::SetDomainsResult::PermissionDeniedOnAny { .. }
+        | name::SetDomainsResult::NotYourDatabase { .. } => StatusCode::UNAUTHORIZED,
+        name::SetDomainsResult::DatabaseNotFound => StatusCode::NOT_FOUND,
+        name::SetDomainsResult::OtherError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+    };
 
-    Ok((StatusCode::OK, axum::Json(result)))
+    Ok((status, axum::Json(response)))
 }
 
 /// This struct allows the edition to customize `/database` routes more meticulously.
