@@ -38,15 +38,6 @@ pub enum InsertDomainResult {
 pub enum SetDomainsResult {
     Success,
 
-    /// The top level domain for the database name is not registered. For example:
-    ///
-    ///  - `clockworklabs/bitcraft`
-    ///
-    /// if `clockworklabs` is not registered, this error is returned.
-    TldNotRegistered {
-        domain: DomainName,
-    },
-
     /// The top level domain for the database name is registered, but the identity that you provided does
     /// not have permission to insert the given database name. For example:
     ///
@@ -57,10 +48,17 @@ pub enum SetDomainsResult {
     /// this error.
     ///
     /// In order to set the domains for a database, you must also be the owner of that database.
-    PermissionDenied,
+    PermissionDenied {
+        domain: DomainName,
+    },
 
     /// The database name or identity you provided does not exist.
     DatabaseNotFound,
+
+    /// The caller doesn't own the database.
+    NotYourDatabase {
+        database: Identity,
+    },
 
     /// Some unspecified error occurred.
     OtherError(String),

@@ -11,7 +11,7 @@ use spacetimedb::identity::{AuthCtx, Identity};
 use spacetimedb::json::client_api::StmtResultJson;
 use spacetimedb::messages::control_db::{Database, HostType, Node, Replica};
 use spacetimedb::sql;
-use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, RegisterTldResult, Tld};
+use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, RegisterTldResult, SetDomainsResult, Tld};
 use spacetimedb_lib::ProductTypeElement;
 use spacetimedb_paths::server::ModuleLogsDir;
 use tokio::sync::watch;
@@ -231,7 +231,22 @@ pub trait ControlStateWriteAccess: Send + Sync {
         domain: &DomainName,
         database_identity: &Identity,
     ) -> anyhow::Result<InsertDomainResult>;
-    async fn delete_dns_records(&self, database_identity: &Identity) -> anyhow::Result<()>;
+
+    /// Replace all dns records pointing to `database_identity` with `domain_names`.
+    ///
+    /// All existing names in the database and in `domain_names` must be
+    /// owned by `owner_identity` (i.e. their TLD must belong to `owner_identity`).
+    ///
+    /// The `owner_identity` is typically also the owner of the database.
+    ///
+    /// Note that passing an empty slice is legal, and will just remove any
+    /// existing dns records.
+    async fn replace_dns_records(
+        &self,
+        database_identity: &Identity,
+        owner_identity: &Identity,
+        domain_names: &[DomainName],
+    ) -> anyhow::Result<SetDomainsResult>;
 }
 
 impl<T: ControlStateReadAccess + ?Sized> ControlStateReadAccess for Arc<T> {
@@ -318,8 +333,15 @@ impl<T: ControlStateWriteAccess + ?Sized> ControlStateWriteAccess for Arc<T> {
         (**self).create_dns_record(identity, domain, database_identity).await
     }
 
-    async fn delete_dns_records(&self, database_identity: &Identity) -> anyhow::Result<()> {
-        (**self).delete_dns_records(database_identity).await
+    async fn replace_dns_records(
+        &self,
+        database_identity: &Identity,
+        owner_identity: &Identity,
+        domain_names: &[DomainName],
+    ) -> anyhow::Result<SetDomainsResult> {
+        (**self)
+            .replace_dns_records(database_identity, owner_identity, domain_names)
+            .await
     }
 }
 

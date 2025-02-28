@@ -1,3 +1,4 @@
+use std::str::FromStr;
 use std::time::Duration;
 
 use crate::auth::{
@@ -23,7 +24,7 @@ use spacetimedb::host::ReducerOutcome;
 use spacetimedb::host::UpdateDatabaseResult;
 use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, HostType};
-use spacetimedb_client_api_messages::name::{self, DatabaseName, PublishOp, PublishResult};
+use spacetimedb_client_api_messages::name::{self, DatabaseName, DomainName, PublishOp, PublishResult};
 use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::sats;
@@ -634,20 +635,18 @@ pub struct SetNamesParams {
     name_or_identity: NameOrIdentity,
 }
 
-// TODO(cloutiertyler): This is not atomic and can partially succeed or fail.
-// We should update this eventually to be atomic.
 pub async fn set_names<S: ControlStateDelegate>(
     State(ctx): State<S>,
     Path(SetNamesParams { name_or_identity }): Path<SetNamesParams>,
     Extension(auth): Extension<SpacetimeAuth>,
     names: axum::Json<Vec<String>>,
 ) -> axum::response::Result<impl IntoResponse> {
-    let mut validated_names = vec![];
-
-    for name in names.0 {
-        let validated_name = DatabaseName::try_from(name).map_err(|err| (StatusCode::BAD_REQUEST, err.to_string()))?;
-        validated_names.push(validated_name);
-    }
+    let validated_names = names
+        .0
+        .into_iter()
+        .map(|s| DatabaseName::from_str(&s).map(DomainName::from).map_err(|e| (s, e)))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|(input, e)| (StatusCode::BAD_REQUEST, format!("Error parsing `{input}`: {e}")))?;
 
     let database_identity = name_or_identity.resolve(&ctx).await?;
 
@@ -662,43 +661,18 @@ pub async fn set_names<S: ControlStateDelegate>(
     if database.owner_identity != auth.identity {
         return Ok((
             StatusCode::UNAUTHORIZED,
-            axum::Json(name::SetDomainsResult::PermissionDenied),
+            axum::Json(name::SetDomainsResult::NotYourDatabase {
+                database: database.database_identity,
+            }),
         ));
     }
 
-    ctx.delete_dns_records(&database_identity).await.map_err(log_and_500)?;
+    let result = ctx
+        .replace_dns_records(&database_identity, &database.owner_identity, &validated_names)
+        .await
+        .map_err(log_and_500)?;
 
-    for name in validated_names {
-        let response = ctx
-            .create_dns_record(&auth.identity, &name.into(), &database_identity)
-            .await
-            // TODO: better error code handling
-            .map_err(log_and_500)?;
-
-        match response {
-            name::InsertDomainResult::Success { .. } => {}
-            name::InsertDomainResult::TldNotRegistered { domain } => {
-                return Ok((
-                    StatusCode::BAD_REQUEST,
-                    axum::Json(name::SetDomainsResult::TldNotRegistered { domain }),
-                ))
-            }
-            name::InsertDomainResult::PermissionDenied { .. } => {
-                return Ok((
-                    StatusCode::UNAUTHORIZED,
-                    axum::Json(name::SetDomainsResult::PermissionDenied),
-                ))
-            }
-            name::InsertDomainResult::OtherError(error) => {
-                return Ok((
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    axum::Json(name::SetDomainsResult::OtherError(error)),
-                ))
-            }
-        };
-    }
-
-    Ok((StatusCode::OK, axum::Json(name::SetDomainsResult::Success)))
+    Ok((StatusCode::OK, axum::Json(result)))
 }
 
 /// This struct allows the edition to customize `/database` routes more meticulously.

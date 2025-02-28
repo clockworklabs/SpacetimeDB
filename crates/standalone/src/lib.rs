@@ -22,7 +22,7 @@ use spacetimedb::messages::control_db::{Database, Node, Replica};
 use spacetimedb::worker_metrics::WORKER_METRICS;
 use spacetimedb_client_api::auth::{self, LOCALHOST};
 use spacetimedb_client_api::{Host, NodeDelegate};
-use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, RegisterTldResult, Tld};
+use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, RegisterTldResult, SetDomainsResult, Tld};
 use spacetimedb_paths::server::{ModuleLogsDir, PidFile, ServerDataDir};
 use spacetimedb_paths::standalone::StandaloneDataDirExt;
 use std::sync::Arc;
@@ -365,8 +365,15 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
             .spacetime_insert_domain(database_identity, domain.clone(), *owner_identity, true)?)
     }
 
-    async fn delete_dns_records(&self, database_identity: &Identity) -> anyhow::Result<()> {
-        Ok(self.control_db.spacetime_delete_domains(database_identity)?)
+    async fn replace_dns_records(
+        &self,
+        database_identity: &Identity,
+        owner_identity: &Identity,
+        domain_names: &[DomainName],
+    ) -> anyhow::Result<SetDomainsResult> {
+        Ok(self
+            .control_db
+            .spacetime_replace_domains(database_identity, owner_identity, domain_names)?)
     }
 }
 
