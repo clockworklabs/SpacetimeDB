@@ -13,6 +13,8 @@ import tempfile
 import threading
 import unittest
 import logging
+import http.client
+import tomllib
 
 # miscellaneous file paths
 TEST_DIR = Path(__file__).parent
@@ -241,6 +243,23 @@ class Smoketest(unittest.TestCase):
         # If the caller does not invoke this returned value, the thread will just run in the background, not be awaited,
         # and **not raise any exceptions to the caller**.
         return ReturnThread(run).join
+
+    def api_call(self, method, path, body = None, headers = {}):
+        with open(self.config_path, "rb") as f:
+            config = tomllib.load(f)
+            host = config['default_server']
+            token = config['spacetimedb_token']
+            conn = http.client.HTTPConnection(host)
+            auth = {"Authorization": f'Bearer {token}'}
+            headers.update(auth)
+            log_cmd([method, path])
+            conn.request(method, path, body, headers)
+            resp = conn.getresponse()
+            logging.debug(f"{resp.status} {resp.read()}")
+            if resp.status != 200:
+                raise resp
+            resp
+
 
     @classmethod
     def write_module_code(cls, module_code):
