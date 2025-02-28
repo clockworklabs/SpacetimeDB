@@ -55,9 +55,10 @@ pub trait Table: TableInternal {
     /// May panic if inserting the row violates any constraints.
     /// Callers which intend to handle constraint violation errors should instead use [`Self::try_insert`].
     ///
-    /// Inserting a duplicate row in a table without a unique constraint is a no-op,
+    /// Inserting an exact duplicate of a row already present in the table is a no-op,
     /// as SpacetimeDB is a set-semantic database.
-    /// Inserting a duplicate row in a table with a unique constraint will cause a unique constraint violation.
+    /// This is true even for tables with unique constraints;
+    /// inserting an exact duplicate of an already-present row will not panic.
     #[track_caller]
     fn insert(&self, row: Self::Row) -> Self::Row {
         self.try_insert(row).unwrap_or_else(|e| panic!("{e}"))
@@ -78,6 +79,11 @@ pub trait Table: TableInternal {
     /// For tables with constraints, this method returns an `Err` when the insertion fails rather than panicking.
     /// For tables without any constraints, [`Self::UniqueConstraintViolation`] and [`Self::AutoIncOverflow`]
     /// will be [`std::convert::Infallible`], and this will be a more-verbose [`Self::insert`].
+    ///
+    /// Inserting an exact duplicate of a row already present in the table is a no-op and returns `Ok`,
+    /// as SpacetimeDB is a set-semantic database.
+    /// This is true even for tables with unique constraints;
+    /// inserting an exact duplicate of an already-present row will return `Ok`.
     #[track_caller]
     fn try_insert(&self, row: Self::Row) -> Result<Self::Row, TryInsertError<Self>> {
         insert::<Self>(row, IterBuf::take())
@@ -352,9 +358,6 @@ impl<Tbl: Table, Col: Index + Column<Table = Tbl>> UniqueColumn<Tbl, Col::ColTyp
     ///
     /// Returns `true` if a row with the specified `col_val` was previously present and has been deleted,
     /// or `false` if no such row was present.
-    ///
-    /// May panic if deleting the row would violate a constraint,
-    /// though as of proposing no such constraints exist.
     #[inline]
     pub fn delete(&self, col_val: impl Borrow<Col::ColType>) -> bool {
         self._delete(col_val.borrow()).0
