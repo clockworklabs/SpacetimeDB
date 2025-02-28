@@ -1,4 +1,9 @@
 # spacetimedb-bench
+
+> ⚠️ **Internal Crate** ⚠️
+>
+> This crate is intended for internal use only. It is **not** stable and may change without notice.
+
 Benchmarking suite for SpacetimeDB using [Criterion](https://github.com/bheisler/criterion.rs) and [Callgrind](https://valgrind.org/docs/manual/cl-manual.html) (via [iai-callgrind](https://github.com/clockworklabs/iai-callgrind)). Provides comparisons between the underlying spacetime datastore, spacetime modules, and sqlite.
 
 To run the criterion benchmarks:
