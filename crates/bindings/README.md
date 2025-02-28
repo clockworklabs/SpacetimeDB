@@ -101,7 +101,7 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [dependencies]
-spacetimedb = "1.0.0-rc2"
+spacetimedb = "1.0.0"
 log = "0.4"
 ```
 <!-- TODO: update `spacetimedb` version there. -->
