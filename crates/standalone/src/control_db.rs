@@ -1,10 +1,14 @@
 use anyhow::Context;
+use sled::transaction::{
+    self, ConflictableTransactionError, ConflictableTransactionResult, TransactionError, TransactionResult,
+    Transactional, TransactionalTree,
+};
 use spacetimedb::energy;
 use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, EnergyBalance, Node, Replica};
 
 use spacetimedb_client_api_messages::name::{
-    DomainName, DomainParsingError, InsertDomainResult, RegisterTldResult, Tld, TldRef,
+    DomainName, DomainParsingError, InsertDomainResult, RegisterTldResult, SetDomainsResult, Tld, TldRef,
 };
 use spacetimedb_lib::bsatn;
 use spacetimedb_paths::standalone::ControlDbDir;
@@ -180,26 +184,104 @@ impl ControlDb {
         })
     }
 
-    // NOTE: This does not unregister the TLD it only removes all domain from
-    // the database. The TLD is still owned by the owner_identity who registered
-    // it. This means that once a user has made a database with a name no one
-    // else can use that name again, until they unregister it.
-    pub fn spacetime_delete_domains(&self, database_identity: &Identity) -> Result<()> {
-        let identity_bytes = database_identity.to_byte_array();
+    /// Replace all domains pointing to `database_identity` with `domain_names`.
+    ///
+    /// That is, delete all existing names pointing to `database_identity`, then
+    /// create all `domain_names`, pointing to `database_identity`.
+    ///
+    /// All existing names in the database and in `domain_names` must be
+    /// owned by `owner_identity`, i.e. their TLD must belong to `owner_identity`.
+    ///
+    /// The `owner_identity` is typically also the owner of the database.
+    ///
+    /// The operation is atomic -- either all `domain_names` are created and
+    /// existing ones deleted, or none.
+    pub fn spacetime_replace_domains(
+        &self,
+        database_identity: &Identity,
+        owner_identity: &Identity,
+        domain_names: &[DomainName],
+    ) -> Result<SetDomainsResult> {
+        let database_identity_bytes = database_identity.to_byte_array();
 
-        let tree = self.db.open_tree("reverse_dns")?;
-        match tree.get(identity_bytes)? {
-            Some(value) => {
-                let vec: Vec<DomainName> = serde_json::from_slice(&value[..])?;
-                for domain in vec {
-                    let tree = self.db.open_tree("dns")?;
-                    tree.remove(domain.to_lowercase())?;
-                }
-                tree.remove(identity_bytes)?;
-            }
-            None => {}
+        let dns_tree = self.db.open_tree("dns")?;
+        let rev_tree = self.db.open_tree("reverse_dns")?;
+        let tld_tree = self.db.open_tree("top_level_domain")?;
+
+        /// Abort transaction with a user error.
+        enum AbortWith {
+            Domain(SetDomainsResult),
+            Database(Error),
         }
-        Ok(())
+
+        /// Decode the slice into a `Vec<DomainName>`.
+        /// Returns a transaction abort if decoding fails.
+        fn decode_domain_names(ivec: &[u8]) -> ConflictableTransactionResult<Vec<DomainName>, AbortWith> {
+            serde_json::from_slice(ivec).map_err(|e| {
+                log::error!("Control database corruption: invalid domain set in `reverse_dns` tree: {e}");
+                ConflictableTransactionError::Abort(AbortWith::Database(e.into()))
+            })
+        }
+
+        /// Find the owner of the `domain`'s TLD, if there is one.
+        /// Returns a transaction abort if the owner could not be decoded into
+        /// an [`Identity`].
+        fn domain_owner(
+            tlds: &TransactionalTree,
+            domain: &DomainName,
+        ) -> ConflictableTransactionResult<Option<Identity>, AbortWith> {
+            tlds.get(domain.tld().to_lowercase().as_bytes())?
+                .as_ref()
+                .map(identity_from_le_ivec)
+                .transpose()
+                .map_err(|e| ConflictableTransactionError::Abort(AbortWith::Database(e)))
+        }
+
+        let trees = (&dns_tree, &rev_tree, &tld_tree);
+        let result: TransactionResult<(), AbortWith> =
+            Transactional::transaction(&trees, |(dns_tx, rev_tx, tld_tx)| {
+                // Remove all existing names.
+                if let Some(value) = rev_tx.get(database_identity_bytes)? {
+                    for domain in decode_domain_names(&value)? {
+                        if let Some(ref owner) = domain_owner(tld_tx, &domain)? {
+                            if owner != owner_identity {
+                                transaction::abort(AbortWith::Domain(SetDomainsResult::PermissionDenied {
+                                    domain: domain.clone(),
+                                }))?;
+                            }
+                        }
+                        dns_tx.remove(domain.to_lowercase().as_bytes())?;
+                    }
+                    rev_tx.remove(&database_identity_bytes)?;
+                }
+
+                // Insert the new names.
+                for domain in domain_names {
+                    if let Some(ref owner) = domain_owner(tld_tx, domain)? {
+                        if owner != owner_identity {
+                            transaction::abort(AbortWith::Domain(SetDomainsResult::PermissionDenied {
+                                domain: domain.clone(),
+                            }))?;
+                        }
+                    }
+                    tld_tree.insert(domain.tld().to_lowercase(), &owner_identity.to_byte_array())?;
+                    dns_tree.insert(domain.to_lowercase(), &database_identity_bytes)?;
+                }
+                rev_tx.insert(&database_identity_bytes, serde_json::to_vec(domain_names).unwrap())?;
+
+                Ok::<_, ConflictableTransactionError<AbortWith>>(())
+            });
+
+        match result {
+            Ok(()) => Ok(SetDomainsResult::Success),
+            Err(e) => match e {
+                TransactionError::Storage(e) => Err(Error::Database(e)),
+                TransactionError::Abort(abort) => match abort {
+                    AbortWith::Database(e) => Err(e),
+                    AbortWith::Domain(res) => Ok(res),
+                },
+            },
+        }
     }
 
     /// Inserts a top level domain that will be owned by `owner_identity`.
