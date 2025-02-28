@@ -1,3 +1,6 @@
+use anyhow::Context;
+use chrono::DateTime;
+
 use crate::{de::Deserialize, impl_st, ser::Serialize, time_duration::TimeDuration, AlgebraicType};
 use std::fmt;
 use std::ops::Add;
@@ -126,6 +129,15 @@ impl Timestamp {
             .to_micros_since_unix_epoch()
             .checked_sub(earlier.to_micros_since_unix_epoch())?;
         Some(TimeDuration::from_micros(delta))
+    }
+
+    /// Parses an RFC 3339 formated timestamp string
+    pub fn parse_from_str(str: &str) -> anyhow::Result<Timestamp> {
+        DateTime::parse_from_rfc3339(str)
+            .map_err(|err| anyhow::anyhow!(err))
+            .with_context(|| "Invalid timestamp format. Expected RFC 3339 format (e.g. '2025-02-10 15:45:30').")
+            .map(|dt| dt.timestamp_micros())
+            .map(Timestamp::from_micros_since_unix_epoch)
     }
 }
 
