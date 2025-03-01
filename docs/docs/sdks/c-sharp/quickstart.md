@@ -203,7 +203,9 @@ void OnDisconnect(DbConnection conn, Exception? e)
     if (e != null)
     {
         Console.Write($"Disconnected abnormally: {e}");
-    } else {
+    }
+    else
+    {
         Console.Write($"Disconnected normally.");
     }
 }
@@ -551,7 +553,7 @@ dotnet run --project client
 
 Congratulations! You've built a simple chat app using SpacetimeDB.
 
-You can find the full code for this client [in the C# client SDK's examples](https://github.com/clockworklabs/com.clockworklabs.spacetimedbsdk/tree/master/examples~/quickstart/client).
+You can find the full code for this client [in the C# client SDK's examples](https://github.com/clockworklabs/com.clockworklabs.spacetimedbsdk/tree/master/examples~/quickstart-chat/client).
 
 Check out the [C# client SDK Reference](/docs/sdks/c-sharp) for a more comprehensive view of the SpacetimeDB C# client SDK.
 
