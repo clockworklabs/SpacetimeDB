@@ -19,12 +19,3 @@ We have C# support available in experimental status. C# can be a good choice for
 
 - [C# Module Reference](/docs/modules/c-sharp)
 - [C# Module Quickstart Guide](/docs/modules/c-sharp/quickstart)
-
-### Coming Soon
-
-We have plans to support additional languages in the future.
-
-- Python
-- Typescript
-- C++
-- Lua

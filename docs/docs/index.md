@@ -209,14 +209,15 @@ public static void World(ReducerContext ctx)
 ```
 :::
 
-While SpacetimeDB doesn't support nested transactions,
-a reducer can [schedule another reducer] to run at an interval,
-or at a specific time.
 :::server-rust
-[schedule another reducer]: /docs/modules/rust#defining-scheduler-tables
+While SpacetimeDB doesn't support nested transactions,
+a reducer can [schedule another reducer](https://docs.rs/spacetimedb/latest/spacetimedb/attr.reducer.html#scheduled-reducers) to run at an interval,
+or at a specific time.
 :::
 :::server-csharp
-[schedule another reducer]: /docs/modules/c-sharp#scheduler-tables
+While SpacetimeDB doesn't support nested transactions,
+a reducer can [schedule another reducer](/docs/modules/c-sharp#scheduler-tables) to run at an interval,
+or at a specific time.
 :::
 
 ### Client

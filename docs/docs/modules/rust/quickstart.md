@@ -11,8 +11,6 @@ Each table is defined as a Rust struct annotated with `#[table(name = table_name
 By default, tables are **private**. This means that they are only readable by the table owner, and by server module code.
 The `#[table(name = table_name, public)]` macro makes a table public. **Public** tables are readable by all users but can still only be modified by your server module code.
 
-_Coming soon: We plan to add much more robust access controls than just public or private. Stay tuned!_
-
 A reducer is a function that traverses and updates the database. Each reducer call runs in its own transaction, and its updates to the database are only committed if the reducer returns successfully. In Rust, reducers are defined as functions annotated with `#[reducer]`, and may return a `Result<()>`, with an `Err` return aborting the transaction.
 
 ## Install SpacetimeDB
