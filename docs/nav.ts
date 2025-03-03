@@ -80,23 +80,23 @@ const nav: Nav = {
     ),
     page('TypeScript Reference', 'sdks/typescript', 'sdks/typescript/index.md'),
 
-    section('WebAssembly ABI'),
-    page('Module ABI Reference', 'webassembly-abi', 'webassembly-abi/index.md'),
+    section('SQL'),
+    page('SQL Reference', 'sql', 'sql/index.md'),
+
+    section('Subscriptions'),
+    page('Subscription Reference', 'subscriptions', 'subscriptions/index.md'),
 
     section('HTTP API'),
     page('HTTP', 'http', 'http/index.md'),
     page('`/identity`', 'http/identity', 'http/identity.md'),
     page('`/database`', 'http/database', 'http/database.md'),
 
-    section('Data Format'),
-    page('SATS-JSON', 'sats-json', 'sats-json.md'),
-    page('BSATN', 'bsatn', 'bsatn.md'),
+    section('Internals'),
+    page('Module ABI Reference', 'webassembly-abi', 'webassembly-abi/index.md'),
+    page('SATS-JSON Data Format', 'sats-json', 'sats-json.md'),
+    page('BSATN Data Format', 'bsatn', 'bsatn.md'),
 
-    section('SQL'),
-    page('SQL Reference', 'sql', 'sql/index.md'),
-
-    section('Subscriptions'),
-    page('Subscription Reference', 'subscriptions', 'subscriptions/index.md'),
+    section('Appendix'),
     page('Appendix', 'appendix', 'appendix.md'),
   ],
 };
