@@ -6,7 +6,7 @@ Maincloud is a managed cloud service that provides developers an easy way to dep
 
 1. Install the SpacetimeDB CLI for your platform: [Install SpacetimeDB](/install)
 1. Create your module (see [Getting Started](/docs/getting-started))
-1. Publish to maincloud:
+1. Publish to Maincloud:
 
 ```bash
 spacetime publish -s maincloud my-cool-module
