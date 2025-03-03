@@ -59,7 +59,7 @@ jobs:
 
       - name: Merge images
         run: |
-          ./tools/merge-docker-images.sh clockworklabs/spacetimedb $GITHUB_SHA
+          ./tools/merge-docker-images.sh clockworklabs/spacetimedb commit-${GITHUB_SHA:0:7} ${GITHUB_SHA:0:7}-full
 
         # This ugly bit is necessary if you don't want your cache to grow forever
         # until it hits GitHub's limit of 5GB.
@@ -120,7 +120,7 @@ jobs:
 
       - name: Merge images
         run: |
-          ./tools/merge-docker-images.sh clockworklabs/spacetimedb $GITHUB_SHA
+          ./tools/merge-docker-images.sh clockworklabs/spacetimedb "commit-${GITHUB_SHA:0:7}" "${GITHUB_SHA:0:7}-full"
 
         # This ugly bit is necessary if you don't want your cache to grow forever
         # until it hits GitHub's limit of 5GB.

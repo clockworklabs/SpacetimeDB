@@ -6,9 +6,10 @@ sanitize_docker_ref() {
 }
 
 IMAGE_NAME="$1"
-# Shorten the first argument (commit sha) to 7 chars
-SHORT_SHA=${2:0:7}
-TAG="commit-$SHORT_SHA"
+# Docker tag to use for platform-specific images
+TAG="$2"
+# Docker tag to use for the "universal" image
+FULL_TAG="$3"
 
 # Check if images for both amd64 and arm64 exist
 if docker pull "${IMAGE_NAME}":$TAG-amd64 --platform amd64 >/dev/null 2>&1 && docker pull "${IMAGE_NAME}":$TAG-arm64 --platform arm64 >/dev/null 2>&1; then
@@ -21,8 +22,6 @@ fi
 # Extract digests
 AMD64_DIGEST=$(docker manifest inspect "${IMAGE_NAME}":$TAG-amd64 | jq -r '.manifests[0].digest')
 ARM64_DIGEST=$(docker manifest inspect "${IMAGE_NAME}":$TAG-arm64 | jq -r '.manifests[0].digest')
-
-FULL_TAG="$SHORT_SHA-full"
 
 # Create a new manifest using extracted digests
 docker manifest create "${IMAGE_NAME}":$FULL_TAG \
