@@ -82,7 +82,7 @@ For each `User`, we'll store their `Identity`, an optional name they can set to 
 In `server/Lib.cs`, add the definition of the table `User` to the `Module` class:
 
 ```csharp
-[Table(Name = "User", Public = true)]
+[Table(Name = "user", Public = true)]
 public partial class User
 {
     [PrimaryKey]
@@ -97,11 +97,11 @@ For each `Message`, we'll store the `Identity` of the user who sent it, the `Tim
 In `server/Lib.cs`, add the definition of the table `Message` to the `Module` class:
 
 ```csharp
-[Table(Name = "Message", Public = true)]
+[Table(Name = "message", Public = true)]
 public partial class Message
 {
     public Identity Sender;
-    public long Sent;
+    public Timestamp Sent;
     public string Text = "";
 }
 ```
@@ -122,11 +122,11 @@ public static void SetName(ReducerContext ctx, string name)
 {
     name = ValidateName(name);
 
-    var user = ctx.Db.User.Identity.Find(ctx.Sender);
+    var user = ctx.Db.user.Identity.Find(ctx.Sender);
     if (user is not null)
     {
         user.Name = name;
-        ctx.Db.User.Identity.Update(user);
+        ctx.Db.user.Identity.Update(user);
     }
 }
 ```
@@ -165,12 +165,12 @@ public static void SendMessage(ReducerContext ctx, string text)
 {
     text = ValidateMessage(text);
     Log.Info(text);
-    ctx.Db.Message.Insert(
+    ctx.Db.message.Insert(
         new Message
         {
             Sender = ctx.Sender,
             Text = text,
-            Sent = ctx.Timestamp.MicrosecondsSinceUnixEpoch,
+            Sent = ctx.Timestamp,
         }
     );
 }
@@ -210,20 +210,20 @@ In `server/Lib.cs`, add the definition of the connect reducer to the `Module` cl
 public static void ClientConnected(ReducerContext ctx)
 {
     Log.Info($"Connect {ctx.Sender}");
-    var user = ctx.Db.User.Identity.Find(ctx.Sender);
+    var user = ctx.Db.user.Identity.Find(ctx.Sender);
 
     if (user is not null)
     {
         // If this is a returning user, i.e., we already have a `User` with this `Identity`,
         // set `Online: true`, but leave `Name` and `Identity` unchanged.
         user.Online = true;
-        ctx.Db.User.Identity.Update(user);
+        ctx.Db.user.Identity.Update(user);
     }
     else
     {
         // If this is a new user, create a `User` object for the `Identity`,
         // which is online, but hasn't set a name.
-        ctx.Db.User.Insert(
+        ctx.Db.user.Insert(
             new User
             {
                 Name = null,
@@ -243,13 +243,13 @@ Add the following code after the `OnConnect` handler:
 [Reducer(ReducerKind.ClientDisconnected)]
 public static void ClientDisconnected(ReducerContext ctx)
 {
-    var user = ctx.Db.User.Identity.Find(ctx.Sender);
+    var user = ctx.Db.user.Identity.Find(ctx.Sender);
 
     if (user is not null)
     {
         // This user should exist, so set `Online: false`.
         user.Online = false;
-        ctx.Db.User.Identity.Update(user);
+        ctx.Db.user.Identity.Update(user);
     }
     else
     {
@@ -311,6 +311,8 @@ spacetime sql quickstart-chat "SELECT * FROM Message"
 
 ## What's next?
 
-You've just set up your first database in SpacetimeDB! The next step would be to create a client module that interacts with this module. You can use any of SpacetimDB's supported client languages to do this. Take a look at the quick start guide for your client language of choice: [Rust](/docs/sdks/rust/quickstart), [C#](/docs/sdks/c-sharp/quickstart), or [TypeScript](/docs/sdks/typescript/quickstart).
+You've just set up your first database in SpacetimeDB! You can find the full code for this client [in the C# server module example](https://github.com/clockworklabs/com.clockworklabs.spacetimedbsdk/tree/master/examples~/quickstart-chat/server).
+
+The next step would be to create a client module that interacts with this module. You can use any of SpacetimDB's supported client languages to do this. Take a look at the quick start guide for your client language of choice: [Rust](/docs/sdks/rust/quickstart), [C#](/docs/sdks/c-sharp/quickstart), or [TypeScript](/docs/sdks/typescript/quickstart).
 
 If you are planning to use SpacetimeDB with the Unity game engine, you can skip right to the [Unity Comprehensive Tutorial](/docs/unity/part-1).

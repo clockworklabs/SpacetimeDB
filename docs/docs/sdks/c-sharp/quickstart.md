@@ -71,7 +71,7 @@ using SpacetimeDB.Types;
 using System.Collections.Concurrent;
 ```
 
-We will also need to create some global variables that will be explained when we use them later.
+We will also need to create some global variables. We'll cover the `Identity` later in the `Save credentials` section. Later we'll also be setting up a second thread for handling user input. In the `Process thread` section we'll use this in the `ConcurrentQueue` to store the commands for that thread.
 
 To `Program.cs`, add:
 
@@ -153,7 +153,7 @@ DbConnection ConnectToDB()
         .WithToken(AuthToken.Token)
         .OnConnect(OnConnected)
         .OnConnectError(OnConnectError)
-        .OnDisconnect(OnDisconnect)
+        .OnDisconnect(OnDisconnected)
         .Build();
     return conn;
 }
@@ -198,12 +198,14 @@ To `Program.cs`, add:
 
 ```csharp
 /// Our `OnDisconnect` callback: print a note, then exit the process.
-void OnDisconnect(DbConnection conn, Exception? e)
+void OnDisconnected(DbConnection conn, Exception? e)
 {
     if (e != null)
     {
         Console.Write($"Disconnected abnormally: {e}");
-    } else {
+    }
+    else
+    {
         Console.Write($"Disconnected normally.");
     }
 }
@@ -319,6 +321,9 @@ To `Program.cs`, add:
 /// Our `Message.OnInsert` callback: print new messages.
 void Message_OnInsert(EventContext ctx, Message insertedValue)
 {
+    // We are filtering out messages inserted during the subscription being applied,
+    // since we will be printing those in the OnSubscriptionApplied callback,
+    // where we will be able to first sort the messages before printing.
     if (ctx.Event is not Event<Reducer>.SubscribeApplied)
     {
         PrintMessage(ctx.Db, insertedValue);
@@ -551,7 +556,7 @@ dotnet run --project client
 
 Congratulations! You've built a simple chat app using SpacetimeDB.
 
-You can find the full code for this client [in the C# client SDK's examples](https://github.com/clockworklabs/com.clockworklabs.spacetimedbsdk/tree/master/examples~/quickstart/client).
+You can find the full code for this client [in the C# client SDK's examples](https://github.com/clockworklabs/com.clockworklabs.spacetimedbsdk/tree/master/examples~/quickstart-chat/client).
 
 Check out the [C# client SDK Reference](/docs/sdks/c-sharp) for a more comprehensive view of the SpacetimeDB C# client SDK.
 
