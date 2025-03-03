@@ -73,18 +73,24 @@ spacetime generate --lang typescript \
 Import the `module_bindings` in your client's _main_ file:
 
 ```typescript
-import { SpacetimeDBClient, Identity } from '@clockworklabs/spacetimedb-sdk';
+import * as moduleBindings from './module_bindings/index';
+```
 
-import * as module_bindings from './module_bindings/index';
+You may also need to import some definitions from the SDK library:
+
+```typescript
+import {
+  Identity, ConnectionId, Event, ReducerEvent
+} from '@clockworklabs/spacetimedb-sdk';
 ```
 
 ## Type `DbConnection`
 
 ```typescript
-module_bindings.DbConnection
+DbConnection
 ```
 
-A connection to a remote database is represented by the `module_bindings.DbConnection` type. This type is generated per-module, and contains information about the types, tables and reducers defined by your module.
+A connection to a remote database is represented by the `DbConnection` type. This type is generated per-module, and contains information about the types, tables and reducers defined by your module.
 
 | Name                                                      | Description                                                                                      |
 |-----------------------------------------------------------|--------------------------------------------------------------------------------------------------|
@@ -95,7 +101,9 @@ A connection to a remote database is represented by the `module_bindings.DbConne
 ### Connect to a module
 
 ```typescript
-DbConnection.builder(): DbConnectionBuilder
+class DbConnection {
+  public static builder(): DbConnectionBuilder
+}
 ```
 
 Construct a `DbConnection` by calling `DbConnection.builder()` and chaining configuration methods, then calling `.build()`. You must at least specify `withUri`, to supply the URI of the SpacetimeDB to which you published your module, and `withModuleName`, to supply the human-readable SpacetimeDB domain name or the raw `Identity` which identifies the module.
@@ -113,7 +121,9 @@ Construct a `DbConnection` by calling `DbConnection.builder()` and chaining conf
 #### Method `withUri`
 
 ```typescript
-DbConnectionBuilder.withUri(uri: string): DbConnectionBuilder
+class DbConnectionBuilder {
+  public withUri(uri: string): DbConnectionBuilder
+}
 ```
 
 Configure the URI of the SpacetimeDB instance or cluster which hosts the remote module.
@@ -121,30 +131,34 @@ Configure the URI of the SpacetimeDB instance or cluster which hosts the remote 
 #### Method `withModuleName`
 
 ```typescript
-DbConnectionBuilder.withModuleName(name_or_identity: string): DbConnectionBuilder
+class DbConnectionBuilder {
+  public withModuleName(name_or_identity: string): DbConnectionBuilder
+}
 
 ```
 
-Configure the SpacetimeDB domain name or `Identity` of the remote module which identifies it within the SpacetimeDB instance or cluster.
+Configure the SpacetimeDB domain name or hex string encoded `Identity` of the remote module which identifies it within the SpacetimeDB instance or cluster.
 
 #### Callback `onConnect`
 
 ```typescript
-DbConnectionBuilder.onConnect(
+class DbConnectionBuilder {
+  public onConnect(
     callback: (ctx: DbConnection, identity: Identity, token: string) => void
-): DbConnectionBuilder
+  ): DbConnectionBuilder
+}
 ```
 
 Chain a call to `.onConnect(callback)` to your builder to register a callback to run when your new `DbConnection` successfully initiates its connection to the remote module. The callback accepts three arguments: a reference to the `DbConnection`, the `Identity` by which SpacetimeDB identifies this connection, and a private access token which can be saved and later passed to [`withToken`](#method-withtoken) to authenticate the same user in future connections.
 
-This interface may change in an upcoming release as we rework SpacetimeDB's authentication model.
-
 #### Callback `onConnectError`
 
 ```typescript
-DbConnectionBuilder.onConnectError(
+class DbConnectionBuilder {
+  public onConnectError(
     callback: (ctx: ErrorContext, error: Error) => void
-): DbConnectionBuilder
+  ): DbConnectionBuilder
+}
 ```
 
 Chain a call to `.onConnectError(callback)` to your builder to register a callback to run when your connection fails.
@@ -152,10 +166,11 @@ Chain a call to `.onConnectError(callback)` to your builder to register a callba
 #### Callback `onDisconnect`
 
 ```typescript
-DbConnectionBuilder.onDisconnect(
+class DbConnectionBuilder {
+  public onDisconnect(
     callback: (ctx: ErrorContext, error: Error | null) => void
-): DbConnectionBuilder
-
+  ): DbConnectionBuilder
+}
 ```
 
 Chain a call to `.onDisconnect(callback)` to your builder to register a callback to run when your `DbConnection` disconnects from the remote module, either as a result of a call to [`disconnect`](#method-disconnect) or due to an error.
@@ -163,7 +178,9 @@ Chain a call to `.onDisconnect(callback)` to your builder to register a callback
 #### Method `withToken`
 
 ```typescript
-DbConnectionBuilder.withToken(token: string | null): DbConnectionBuilder
+class DbConnectionBuilder {
+  public withToken(token?: string): DbConnectionBuilder
+}
 ```
 
 Chain a call to `.withToken(token)` to your builder to provide an OpenID Connect compliant JSON Web Token to authenticate with, or to explicitly select an anonymous connection. If this method is not called or `null` is passed, SpacetimeDB will generate a new `Identity` and sign a new private access token for the connection.
@@ -172,7 +189,9 @@ Chain a call to `.withToken(token)` to your builder to provide an OpenID Connect
 #### Method `build`
 
 ```typescript
-DbConnectionBuilder.build(): DbConnection
+class DbConnectionBuilder {
+  public build(): DbConnection
+}
 ```
 
 After configuring the connection and registering callbacks, attempt to open the connection.
@@ -181,24 +200,28 @@ After configuring the connection and registering callbacks, attempt to open the 
 
 #### Field `db`
 
-```rust
-DbConnection.db: RemoteTables
+```typescript
+class DbConnection {
+  public db: RemoteTables
+}
 ```
 
 The `db` field of the `DbConnection` provides access to the subscribed view of the remote database's tables. See [Access the client cache](#access-the-client-cache).
 
 #### Field `reducers`
 
-```rust
-DbConnection.reducers: RemoteReducers
+```typescript
+class DbConnection {
+  public reducers: RemoteReducers
+}
 ```
 
 The `reducers` field of the `DbConnection` provides access to reducers exposed by the remote module. See [Observe and invoke reducers](#observe-and-invoke-reducers).
 
 ## Interface `DbContext`
 
-```rust
-interface spacetimedb_sdk.DbContext<
+```typescript
+interface DbContext<
     DbView,
     Reducers,
 >
@@ -219,7 +242,9 @@ The `DbContext` interface is implemented by connections and contexts to *every* 
 #### Field `db`
 
 ```typescript
-DbConnection.db: DbView
+interface DbContext {
+  db: DbView
+}
 ```
 
 The `db` field of a `DbContext` provides access to the subscribed view of the remote database's tables. See [Access the client cache](#access-the-client-cache).
@@ -227,7 +252,9 @@ The `db` field of a `DbContext` provides access to the subscribed view of the re
 #### Field `reducers`
 
 ```typescript
-DbConnection.reducers: Reducers
+interface DbContext {
+  reducers: Reducers
+}
 ```
 
 The `reducers` field of a `DbContext` provides access to reducers exposed by the remote module. See [Observe and invoke reducers](#observe-and-invoke-reducers).
@@ -235,7 +262,9 @@ The `reducers` field of a `DbContext` provides access to reducers exposed by the
 ### Method `disconnect`
 
 ```typescript
-DbContext.disconnect(): void
+interface DbContext {
+  disconnect(): void
+}
 ```
 
 Gracefully close the `DbConnection`. Throws an error if the connection is already disconnected.
@@ -250,7 +279,7 @@ Gracefully close the `DbConnection`. Throws an error if the connection is alread
 #### Type `SubscriptionBuilder`
 
 ```typescript
-spacetimedb_sdk::SubscriptionBuilder
+SubscriptionBuilder
 ```
 
 | Name                                                                           | Description                                                     |
@@ -264,8 +293,9 @@ spacetimedb_sdk::SubscriptionBuilder
 ##### Constructor `ctx.subscriptionBuilder()`
 
 ```typescript
-DbContext.subscriptionBuilder(): SubscriptionBuilder
-
+interface DbContext {
+  subscriptionBuilder(): SubscriptionBuilder
+}
 ```
 
 Subscribe to queries by calling `ctx.subscription_builder()` and chaining configuration methods, then calling `.subscribe(queries)`.
@@ -273,9 +303,11 @@ Subscribe to queries by calling `ctx.subscription_builder()` and chaining config
 ##### Callback `onApplied`
 
 ```typescript
-SubscriptionBuilder.onApplied(
+class SubscriptionBuilder {
+  public onApplied(
     callback: (ctx: SubscriptionEventContext) => void
-): SubscriptionBuilder
+  ): SubscriptionBuilder
+}
 ```
 
 Register a callback to run when the subscription is applied and the matching rows are inserted into the client cache.
@@ -283,10 +315,11 @@ Register a callback to run when the subscription is applied and the matching row
 ##### Callback `onError`
 
 ```typescript
-SubscriptionBuilder.onError(
+class SubscriptionBuilder {
+  public onError(
     callback: (ctx: ErrorContext, error: Error) => void
-): SubscriptionBuilder
-
+  ): SubscriptionBuilder
+}
 ```
 
 Register a callback to run if the subscription is rejected or unexpectedly terminated by the server. This is most frequently caused by passing an invalid query to [`subscribe`](#method-subscribe).
@@ -295,7 +328,9 @@ Register a callback to run if the subscription is rejected or unexpectedly termi
 ##### Method `subscribe`
 
 ```typescript
-SubscriptionBuilder.subscribe(queries: string | string[]): SubscriptionHandle
+class SubscriptionBuilder {
+  subscribe(queries: string | string[]): SubscriptionHandle
+}
 ```
 
 Subscribe to a set of queries.
@@ -305,15 +340,17 @@ See [the SpacetimeDB SQL Reference](/docs/sql#subscriptions) for information on 
 ##### Method `subscribeToAllTables`
 
 ```typescript
-SubscriptionBuilder.subscribeToAllTables(): void
+class SubscriptionBuilder {
+  subscribeToAllTables(): void
+}
 ```
 
-Subscribe to all rows from all public tables. This method is provided as a convenience for simple clients. The subscription initiated by `subscribeToAllTables ` cannot be canceled after it is initiated. You should [`subscribe` to specific queries](#method-subscribe) if you need fine-grained control over the lifecycle of your subscriptions.
+Subscribe to all rows from all public tables. This method is provided as a convenience for simple clients. The subscription initiated by `subscribeToAllTables` cannot be canceled after it is initiated. You should [`subscribe` to specific queries](#method-subscribe) if you need fine-grained control over the lifecycle of your subscriptions.
 
 #### Type `SubscriptionHandle`
 
-```rust
-module_bindings::SubscriptionHandle
+```typescript
+SubscriptionHandle
 ```
 
 A `SubscriptionHandle` represents a subscribed query or a group of subscribed queries.
@@ -330,7 +367,9 @@ The `SubscriptionHandle` does not contain or provide access to the subscribed ro
 ##### Method `isEnded`
 
 ```typescript
-SubscriptionHandle.isEnded(): bool
+class SubscriptionHandle {
+  public isEnded(): bool
+}
 ```
 
 Returns true if this subscription has been terminated due to an unsubscribe call or an error.
@@ -338,7 +377,9 @@ Returns true if this subscription has been terminated due to an unsubscribe call
 ##### Method `isActive`
 
 ```typescript
-SubscriptionHandle.isActive(): bool
+class SubscriptionHandle {
+  public isActive(): bool
+}
 ```
 
 Returns true if this subscription has been applied and has not yet been unsubscribed.
@@ -346,7 +387,9 @@ Returns true if this subscription has been applied and has not yet been unsubscr
 ##### Method `unsubscribe`
 
 ```typescript
-SubscriptionHandle.unsubscribe(): void
+class SubscriptionHandle {
+  public unsubscribe(): void
+}
 ```
 
 Terminate this subscription, causing matching rows to be removed from the client cache. Any rows removed from the client cache this way will have [`onDelete` callbacks](#callback-ondelete) run for them.
@@ -358,22 +401,25 @@ Throws an error if the subscription has already ended, either due to a previous 
 ##### Method `unsubscribeThen`
 
 ```typescript
-SubscriptionHandle.unsubscribe_then(
+class SubscriptionHandle {
+  public unsubscribeThen(
     on_end: (ctx: SubscriptionEventContext) => void
-): void
-
+  ): void
+}
 ```
 
 Terminate this subscription, and run the `onEnd` callback when the subscription is ended and its matching rows are removed from the client cache. Any rows removed from the client cache this way will have [`onDelete` callbacks](#callback-ondelete) run for them.
 
-Returns an error if the subscription has already ended, either due to a previous call to [`unsubscribe`](#method-unsubscribe) or `unsubscribe_then`, or due to an error.
+Returns an error if the subscription has already ended, either due to a previous call to [`unsubscribe`](#method-unsubscribe) or `unsubscribeThen`, or due to an error.
 
 ### Read connection metadata
 
 #### Field `isActive`
 
 ```typescript
-DbContext.isActive: bool
+interface DbContext {
+  isActive: bool
+}
 ```
 
 `true` if the connection has not yet disconnected. Note that a connection `isActive` when it is constructed, before its [`onConnect` callback](#callback-onconnect) is invoked.
@@ -381,7 +427,7 @@ DbContext.isActive: bool
 ## Type `EventContext`
 
 ```typescript
-module_bindings.EventContext
+EventContext
 ```
 
 An `EventContext` is a [`DbContext`](#interface-dbcontext) augmented with a field [`event: Event`](#type-event). `EventContext`s are passed as the first argument to row callbacks [`onInsert`](#callback-oninsert), [`onDelete`](#callback-ondelete) and [`onUpdate`](#callback-onupdate).
@@ -396,7 +442,9 @@ An `EventContext` is a [`DbContext`](#interface-dbcontext) augmented with a fiel
 ### Field `event`
 
 ```typescript
-EventContext.event: spacetimedb_sdk.Event<module_bindings.Reducer>,
+class EventContext {
+  public event: Event<Reducer>
+}
 /* other fields */
 
 ```
@@ -405,16 +453,20 @@ The [`Event`](#type-event) contained in the `EventContext` describes what happen
 
 ### Field `db`
 
-```rust
-EventContext.db: RemoteTables
+```typescript
+class EventContext {
+  public db: RemoteTables
+}
 ```
 
 The `db` field of the context provides access to the subscribed view of the remote database's tables. See [Access the client cache](#access-the-client-cache).
 
 ### Field `reducers`
 
-```rust
-EventContext.reducers: RemoteReducers
+```typescript
+class EventContext {
+  public reducers: RemoteReducers
+}
 ```
 
 The `reducers` field of the context provides access to reducers exposed by the remote module. See [Observe and invoke reducers](#observe-and-invoke-reducers).
@@ -422,7 +474,7 @@ The `reducers` field of the context provides access to reducers exposed by the r
 ### Type `Event`
 
 ```rust
-type spacetimedb_sdk.Event<Reducer> =
+type Event<Reducer> =
   | { tag: 'Reducer'; value: ReducerEvent<Reducer> }
   | { tag: 'SubscribeApplied' }
   | { tag: 'UnsubscribeApplied' }
@@ -444,7 +496,7 @@ type spacetimedb_sdk.Event<Reducer> =
 #### Variant `Reducer`
 
 ```typescript
-{ tag: 'Reducer'; value: spacetimedb_sdk.ReducerEvent<Reducer> }
+{ tag: 'Reducer'; value: ReducerEvent<Reducer> }
 ```
 
 Event when we are notified that a reducer ran in the remote module. The [`ReducerEvent`](#type-reducerevent) contains metadata about the reducer run, including its arguments and termination status(#type-updatestatus).
@@ -497,7 +549,7 @@ This event is passed to [row callbacks](#callback-oninsert) resulting from modif
 A `ReducerEvent` contains metadata about a reducer run.
 
 ```typescript
-type spacetimedb_sdk.ReducerEvent<Reducer> = {
+type ReducerEvent<Reducer> = {
   /**
    * The time when the reducer started running.
    */
@@ -531,7 +583,7 @@ type spacetimedb_sdk.ReducerEvent<Reducer> = {
   energyConsumed?: bigint;
 
   /**
-   * The `Reducer` enum defined by the `module_bindings`, which encodes which reducer ran and its arguments.
+   * The `Reducer` enum defined by the `moduleBindings`, which encodes which reducer ran and its arguments.
    */
   reducer: Reducer;
 };
@@ -540,7 +592,7 @@ type spacetimedb_sdk.ReducerEvent<Reducer> = {
 ### Type `UpdateStatus`
 
 ```typescript
-type spacetimedb_sdk.UpdateStatus =
+type UpdateStatus =
   | { tag: 'Committed'; value: __DatabaseUpdate }
   | { tag: 'Failed'; value: string }
   | { tag: 'OutOfEnergy' };
@@ -579,7 +631,7 @@ The reducer was aborted due to insufficient energy balance of the module owner.
 ### Type `Reducer`
 
 ```rust
-type module_bindings.Reducer =
+type Reducer =
   | { name: 'ReducerA'; args: ReducerA }
   | { name: 'ReducerB'; args: ReducerB }
 ```
@@ -599,7 +651,9 @@ A `ReducerEventContext` is a [`DbContext`](#interface-dbcontext) augmented with 
 ### Field `event`
 
 ```typescript
-ReducerEventContext.event: spacetimedb_sdk.ReducerEvent<module_bindings.Reducer>,
+class ReducerEventContext {
+  public event: ReducerEvent<Reducer>
+}
 ```
 
 The [`ReducerEvent`](#type-reducerevent) contained in the `ReducerEventContext` has metadata about the reducer which ran.
@@ -607,7 +661,9 @@ The [`ReducerEvent`](#type-reducerevent) contained in the `ReducerEventContext` 
 ### Field `db`
 
 ```typescript
-ReducerEventContext.db: RemoteTables
+class ReducerEventContext {
+  public db: RemoteTables
+}
 ```
 
 The `db` field of the context provides access to the subscribed view of the remote database's tables. See [Access the client cache](#access-the-client-cache).
@@ -615,7 +671,9 @@ The `db` field of the context provides access to the subscribed view of the remo
 ### Field `reducers`
 
 ```typescript
-ReducerEventContext.reducers: RemoteReducers
+class ReducerEventContext {
+  public reducers: RemoteReducers
+}
 ```
 
 The `reducers` field of the context provides access to reducers exposed by the remote module. See [Observe and invoke reducers](#observe-and-invoke-reducers).
@@ -632,7 +690,9 @@ A `SubscriptionEventContext` is a [`DbContext`](#interface-dbcontext). Unlike th
 ### Field `db`
 
 ```typescript
-SubscriptionEventContext.db: RemoteTables
+class SubscriptionEventContext {
+  public db: RemoteTables
+}
 ```
 
 The `db` field of the context provides access to the subscribed view of the remote database's tables. See [Access the client cache](#access-the-client-cache).
@@ -640,7 +700,9 @@ The `db` field of the context provides access to the subscribed view of the remo
 ### Field `reducers`
 
 ```typescript
-SubscriptionEventContext.reducers: RemoteReducers
+class SubscriptionEventContext {
+  public reducers: RemoteReducers
+}
 ```
 
 The `reducers` field of the context provides access to reducers exposed by the remote module. See [Observe and invoke reducers](#observe-and-invoke-reducers).
@@ -659,13 +721,17 @@ An `ErrorContext` is a [`DbContext`](#interface-dbcontext) augmented with a fiel
 ### Field `event`
 
 ```typescript
-ErrorContext.event: Error
+class ErrorContext {
+  public event: Error
+}
 ```
 
 ### Field `db`
 
 ```typescript
-ErrorContext.db: RemoteTables
+class ErrorContext {
+  public db: RemoteTables
+}
 ```
 
 The `db` field of the context provides access to the subscribed view of the remote database's tables. See [Access the client cache](#access-the-client-cache).
@@ -673,7 +739,9 @@ The `db` field of the context provides access to the subscribed view of the remo
 ### Field `reducers`
 
 ```typescript
-ErrorContext.reducers: RemoteReducers
+class ErrorContext {
+  public reducers: RemoteReducers
+}
 ```
 
 The `reducers` field of the context provides access to reducers exposed by the remote module. See [Observe and invoke reducers](#observe-and-invoke-reducers).
@@ -698,7 +766,9 @@ Each table defined by a module has an accessor method, whose name is the table n
 #### Method `count`
 
 ```typescript
-TableHandle.count(): number
+class TableHandle {
+  public count(): number
+}
 ```
 
 Returns the number of rows of this table resident in the client cache, i.e. the total number which match any subscribed query.
@@ -706,7 +776,9 @@ Returns the number of rows of this table resident in the client cache, i.e. the 
 #### Method `iter`
 
 ```typescript
-TableHandle.iter(): Iterable<Row>
+class TableHandle {
+  public iter(): Iterable<Row>
+}
 ```
 
 An iterator over all the subscribed rows in the client cache, i.e. those which match any subscribed query.
@@ -716,13 +788,15 @@ The `Row` type will be an autogenerated type which matches the row type defined 
 ### Callback `onInsert`
 
 ```typescript
-TableHandle.onInsert(
+class TableHandle {
+  public onInsert(
     callback: (ctx: EventContext, row: Row) => void
-): void;
+  ): void;
 
-TableHandle.removeOnInsert(
+  public removeOnInsert(
     callback: (ctx: EventContext, row: Row) => void
-): void;
+  ): void;
+}
 ```
 
 The `onInsert` callback runs whenever a new row is inserted into the client cache, either when applying a subscription or being notified of a transaction. The passed [`EventContext`](#type-eventcontext) contains an [`Event`](#type-event) which can identify the change which caused the insertion, and also allows the callback to interact with the connection, inspect the client cache and invoke reducers.
@@ -734,13 +808,15 @@ The `Row` type will be an autogenerated type which matches the row type defined 
 ### Callback `onDelete`
 
 ```typescript
-TableHandle.onDelete(
+class TableHandle {
+  public onDelete(
     callback: (ctx: EventContext, row: Row) => void
-): void;
+  ): void;
 
-TableHandle.removeOnDelete(
+  public removeOnDelete(
     callback: (ctx: EventContext, row: Row) => void
-): void;
+  ): void;
+}
 ```
 
 The `onDelete` callback runs whenever a previously-resident row is deleted from the client cache.
@@ -752,13 +828,15 @@ The `Row` type will be an autogenerated type which matches the row type defined 
 ### Callback `onUpdate`
 
 ```typescript
-TableHandle.onUpdate(
+class TableHandle {
+  public onUpdate(
     callback: (ctx: EventContext, old: Row, new: Row) => void
-): void;
+  ): void;
 
-TableHandle.removeOnUpdate(
+  public removeOnUpdate(
     callback: (ctx: EventContext, old: Row, new: Row) => void
-): void;
+  ): void;
+}
 ```
 
 The `onUpdate` callback runs whenever an already-resident row in the client cache is updated, i.e. replaced with a new row that has the same primary key.
@@ -771,7 +849,7 @@ The `Row` type will be an autogenerated type which matches the row type defined 
 
 ### Unique constraint index access
 
-For each unique constraint on a table, its table handle has a field whose name is the unique column name. This field is a unique index handle. The unique index handle has a method `.find(desired_val: Col) -> Row | undefined`, where `Col` is the type of the column, and `Row` the type of rows. If a row with `desired_val` in the unique column is resident in the client cache, `.find` returns it.
+For each unique constraint on a table, its table handle has a field whose name is the unique column name. This field is a unique index handle. The unique index handle has a method `.find(desiredValue: Col) -> Row | undefined`, where `Col` is the type of the column, and `Row` the type of rows. If a row with `desiredValue` in the unique column is resident in the client cache, `.find` returns it.
 
 ### BTree index access
 
@@ -792,7 +870,7 @@ Each reducer defined by the module has three methods on the `.reducers`:
 ### Type `Identity`
 
 ```rust
-spacetimedb_sdk::Identity
+Identity
 ```
 
 A unique public identifier for a client connected to a database.
@@ -800,7 +878,7 @@ A unique public identifier for a client connected to a database.
 ### Type `ConnectionId`
 
 ```rust
-spacetimedb_sdk::ConnectionId
+ConnectionId
 ```
 
 An opaque identifier for a client connection to a database, intended to differentiate between connections from the same [`Identity`](#type-identity).
