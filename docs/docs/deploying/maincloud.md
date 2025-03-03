@@ -1,4 +1,4 @@
-# SpacetimeDB Cloud Deployment
+# Deploy to Maincloud
 
 The SpacetimeDB Cloud is a managed cloud service that provides developers an easy way to deploy their SpacetimeDB apps to the cloud.
 
