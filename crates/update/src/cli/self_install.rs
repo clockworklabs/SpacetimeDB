@@ -85,12 +85,12 @@ impl SelfInstall {
             let bin_dir = cli_bin_file.0.parent().unwrap();
             if !std::env::split_paths(&path_var).any(|p| p == bin_dir) {
                 eprintln!(
-                    r#"\
+                    "\
 It seems like this directory is not in your `PATH` variable. Please add the
 following line to your shell configuration and open a new shell session:
 
-    export PATH="{}:$PATH"
-"#,
+    export PATH=\"{}:$PATH\"
+",
                     bin_dir.display()
                 )
             }
