@@ -1,6 +1,10 @@
 #!/bin/bash
 set -e
 
+sanitize_docker_ref() {
+  echo "$1" | tr '[:upper:]' '[:lower:]' | sed -e 's/[^a-z0-9._-]/-/g' -e 's/^[.-]//g' -e 's/[.-]$//g'
+}
+
 # Shorten the first argument (commit sha) to 7 chars
 SHORT_SHA=${1:0:7}
 TAG="commit-$SHORT_SHA"
@@ -34,5 +38,6 @@ docker manifest annotate clockworklabs/spacetimedb:$FULL_TAG \
 docker manifest push clockworklabs/spacetimedb:$FULL_TAG
 
 # re-tag the manifeast with a tag
-VERSION=${GITHUB_REF#refs/*/}
+ORIGINAL_VERSION=${GITHUB_REF#refs/*/}
+VERSION=$(sanitize_docker_ref "$ORIGINAL_VERSION")
 docker buildx imagetools create clockworklabs/spacetimedb:$FULL_TAG --tag clockworklabs/spacetimedb:$VERSION
