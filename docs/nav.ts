@@ -86,6 +86,9 @@ const nav: Nav = {
     section('Subscriptions'),
     page('Subscription Reference', 'subscriptions', 'subscriptions/index.md'),
 
+    section('How To'),
+    page('Incremental Migrations', 'how-to/incremental-migrations', 'how-to/incremental-migrations.md'),
+
     section('HTTP API'),
     page('HTTP', 'http', 'http/index.md'),
     page('`/identity`', 'http/identity', 'http/identity.md'),
