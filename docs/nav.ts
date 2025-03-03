@@ -66,19 +66,19 @@ const nav: Nav = {
     section('Client SDK Languages'),
     page('Overview', 'sdks', 'sdks/index.md'),
     page(
-      'Typescript Quickstart',
-      'sdks/typescript/quickstart',
-      'sdks/typescript/quickstart.md'
-    ),
-    page('Typescript Reference', 'sdks/typescript', 'sdks/typescript/index.md'),
-    page('Rust Quickstart', 'sdks/rust/quickstart', 'sdks/rust/quickstart.md'),
-    page('Rust Reference', 'sdks/rust', 'sdks/rust/index.md'),
-    page(
       'C# Quickstart',
       'sdks/c-sharp/quickstart',
       'sdks/c-sharp/quickstart.md'
     ),
     page('C# Reference', 'sdks/c-sharp', 'sdks/c-sharp/index.md'),
+    page('Rust Quickstart', 'sdks/rust/quickstart', 'sdks/rust/quickstart.md'),
+    page('Rust Reference', 'sdks/rust', 'sdks/rust/index.md'),
+    page(
+      'TypeScript Quickstart',
+      'sdks/typescript/quickstart',
+      'sdks/typescript/quickstart.md'
+    ),
+    page('TypeScript Reference', 'sdks/typescript', 'sdks/typescript/index.md'),
 
     section('WebAssembly ABI'),
     page('Module ABI Reference', 'webassembly-abi', 'webassembly-abi/index.md'),
