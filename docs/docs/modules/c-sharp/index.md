@@ -271,6 +271,9 @@ Attribute `[SpacetimeDB.Column]` can be used on any field of a `SpacetimeDB.Tabl
 The supported column attributes are:
 
 - `ColumnAttrs.AutoInc` - this column should be auto-incremented.
+
+**Note**: The `AutoInc` number generator is not transactional. See the [SEQUENCE] section for more details.
+
 - `ColumnAttrs.Unique` - this column should be unique.
 - `ColumnAttrs.PrimaryKey` - this column should be a primary key, it implies `ColumnAttrs.Unique` but also allows clients to subscribe to updates via `OnUpdate` which will use this field to match the old and the new version of the row with each other.
 
@@ -412,3 +415,5 @@ public static void OnDisconnect(DbEventArgs ctx)
     Log($"{ctx.Sender} has disconnected.");
 }```
 ````
+
+[SEQUENCE]: /docs/appendix#sequence

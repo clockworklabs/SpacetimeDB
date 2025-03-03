@@ -36,9 +36,6 @@ const nav: Nav = {
     section('Deploying'),
     page('Maincloud', 'deploying/maincloud', 'deploying/maincloud.md'),
 
-    section('Migration Guides'),
-    page('v0.12', 'migration/v0.12', 'migration/v0.12.md'),
-
     section('Unity Tutorial - Basic Multiplayer'),
     page('Overview', 'unity', 'unity/index.md'),
     page('1 - Setup', 'unity/part-1', 'unity/part-1.md'),
@@ -48,6 +45,11 @@ const nav: Nav = {
 
     section('CLI Reference'),
     page('CLI Reference', 'cli-reference', 'cli-reference.md'),
+    page(
+      'SpacetimeDB Standalone Configuration',
+      'cli-reference/standalone-config',
+      'cli-reference/standalone-config.md'
+    ),
 
     section('Server Module Languages'),
     page('Overview', 'modules', 'modules/index.md'),
@@ -88,7 +90,6 @@ const nav: Nav = {
     page('HTTP', 'http', 'http/index.md'),
     page('`/identity`', 'http/identity', 'http/identity.md'),
     page('`/database`', 'http/database', 'http/database.md'),
-    page('`/energy`', 'http/energy', 'http/energy.md'),
 
     section('Data Format'),
     page('SATS-JSON', 'sats-json', 'sats-json.md'),
@@ -99,6 +100,7 @@ const nav: Nav = {
 
     section('Subscriptions'),
     page('Subscription Reference', 'subscriptions', 'subscriptions/index.md'),
+    page('Appendix', 'appendix', 'appendix.md'),
   ],
 };
 
