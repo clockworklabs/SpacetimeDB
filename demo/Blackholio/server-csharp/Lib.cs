@@ -350,7 +350,13 @@ public static partial class Module
 		//Handle player input
 		foreach (var circle in ctx.Db.circle.Iter())
 		{
-			var circle_entity = ctx.Db.entity.entity_id.Find(circle.entity_id) ?? throw new Exception("Circle has no entity");
+			var check_entity = ctx.Db.entity.entity_id.Find(circle.entity_id);
+			if (check_entity == null)
+			{
+				// This can happen if the circle has been eaten by another circle.
+				continue;
+			}
+			var circle_entity = check_entity.Value;
 			var circle_radius = MassToRadius(circle_entity.mass);
 			var direction = circle_directions[circle.entity_id];
 			var new_pos = circle_entity.position + direction * MassToMaxMoveSpeed(circle_entity.mass);
