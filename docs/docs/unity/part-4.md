@@ -198,7 +198,7 @@ Next, add the following reducer to the `Module` class of your `Lib.cs` file.
 [Reducer]
 public static void UpdatePlayerInput(ReducerContext ctx, DbVector2 direction)
 {
-    var player = ctx.Db.player.identity.Find(ctx.CallerIdentity) ?? throw new Exception("Player not found");				
+    var player = ctx.Db.player.identity.Find(ctx.Sender) ?? throw new Exception("Player not found");				
     foreach (var c in ctx.Db.circle.player_id.Filter(player.player_id))
     {
         var circle = c;
@@ -210,7 +210,7 @@ public static void UpdatePlayerInput(ReducerContext ctx, DbVector2 direction)
 }
 ```
 
-This is a simple reducer that takes the movement input from the client and applies them to all circles that that player controls. Note that it is not possible for a player to move another player's circles using this reducer, because the `ctx.CallerIdentity` value is not set by the client. Instead `ctx.CallerIdentity` is set by SpacetimeDB after it has authenticated that sender. You can rest assured that the caller has been authenticated as that player by the time this reducer is called.
+This is a simple reducer that takes the movement input from the client and applies them to all circles that that player controls. Note that it is not possible for a player to move another player's circles using this reducer, because the `ctx.Sender` value is not set by the client. Instead `ctx.Sender` is set by SpacetimeDB after it has authenticated that sender. You can rest assured that the caller has been authenticated as that player by the time this reducer is called.
 :::
 
 Finally, let's schedule a reducer to run every 50 milliseconds to move the player's circles around based on the most recently set player input.

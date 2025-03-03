@@ -336,12 +336,6 @@ pub fn disconnect(ctx: &ReducerContext) -> Result<(), String> {
     ctx.db.logged_out_player().insert(player);
     ctx.db.player().identity().delete(&ctx.sender);
 
-    // Remove any circles from the arena
-    for circle in ctx.db.circle().player_id().filter(&player_id) {
-        ctx.db.entity().entity_id().delete(&circle.entity_id);
-        ctx.db.circle().entity_id().delete(&circle.entity_id);
-    }
-
     Ok(())
 }
 ```
