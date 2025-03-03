@@ -220,7 +220,7 @@ or at a specific time.
 :::
 
 ### Client
-A **client** is an application that connects to a [database](#database). A client logs in using an [identity](#identity) and receives an [address](#address) to identify the connection. After that, it can call [reducers](#reducer) and query public [tables](#table).
+A **client** is an application that connects to a [database](#database). A client logs in using an [identity](#identity) and receives an [connection id](#connectionid) to identify the connection. After that, it can call [reducers](#reducer) and query public [tables](#table).
 
 Clients are written using the [client-side SDKs](#client-side-sdks). The `spacetime` CLI tool allows automatically generating code that works with the client-side SDKs to talk to a particular database.
 
@@ -238,13 +238,11 @@ Identities are issued using the [OpenID Connect](https://openid.net/developers/h
 
 <!-- TODO(1.0): link to a page on setting up your own identity provider and/or using our turnkey solution. -->
 
-### Address
+### ConnectionId
 
-<!-- TODO(1.0): Rewrite this section after reworking `Address`es into `ConnectionID`s. -->
+A `ConnectionId` identifies client connections to a SpacetimeDB module.
 
-An `Address` identifies client connections to a SpacetimeDB module.
-
-A user has a single [`Identity`](#identity), but may open multiple connections to your module. Each of these will receive a unique `Address`.
+A user has a single [`Identity`](#identity), but may open multiple connections to your module. Each of these will receive a unique `ConnectionId`.
 
 ### Energy
 **Energy** is the currency used to pay for data storage and compute operations in a SpacetimeDB host.

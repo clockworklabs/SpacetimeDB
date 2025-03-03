@@ -100,7 +100,7 @@ pub struct Message {
 
 We want to allow users to set their names, because `Identity` is not a terribly user-friendly identifier. To that effect, we define a reducer `set_name` which clients can invoke to set their `User.name`. It will validate the caller's chosen name, using a function `validate_name` which we'll define next, then look up the `User` record for the caller and update it to store the validated name. If the name fails the validation, the reducer will fail.
 
-Each reducer may accept as its first argument a `ReducerContext`, which includes the `Identity` and `Address` of the client that called the reducer, and the `Timestamp` when it was invoked. It also allows us access to the `db`, which is used to read and manipulate rows in our tables. For now, we only need the `db`, `Identity`, and `ctx.sender`.
+Each reducer must accept as its first argument a `ReducerContext`, which includes the `Identity` and `ConnectionId` of the client that called the reducer, and the `Timestamp` when it was invoked. It also allows us access to the `db`, which is used to read and manipulate rows in our tables. For now, we only need the `db`, `Identity`, and `ctx.sender`.
 
 It's also possible to call `set_name` via the SpacetimeDB CLI's `spacetime call` command without a connection, in which case no `User` record will exist for the caller. We'll return an error in this case, but you could alter the reducer to insert a `User` row for the module owner. You'll have to decide whether the module owner is always online or always offline, though.
 
@@ -227,12 +227,12 @@ pub fn identity_disconnected(ctx: &ReducerContext) {
 
 ## Publish the module
 
-And that's all of our module code! We'll run `spacetime publish` to compile our module and publish it on SpacetimeDB. `spacetime publish` takes an optional name which will map to the database's unique address. Clients can connect either by name or by address, but names are much more user-friendly. Come up with a unique name that contains only URL-safe characters (letters, numbers, hyphens and underscores), and fill it in where we've written `<module-name>`.
+And that's all of our module code! We'll run `spacetime publish` to compile our module and publish it on SpacetimeDB. `spacetime publish` takes an optional name which will map to the database's unique `Identity`. Clients can connect either by name or by `Identity`, but names are much more user-friendly. If you'd like, come up with a unique name that contains only URL-safe characters (letters, numbers, hyphens and underscores), and fill it in where we've written `quickstart-chat`.
 
 From the `quickstart-chat` directory, run:
 
 ```bash
-spacetime publish --project-path server <module-name>
+spacetime publish --project-path server quickstart-chat
 ```
 
 ## Call Reducers
@@ -240,13 +240,13 @@ spacetime publish --project-path server <module-name>
 You can use the CLI (command line interface) to run reducers. The arguments to the reducer are passed in JSON format.
 
 ```bash
-spacetime call <module-name> send_message 'Hello, World!'
+spacetime call quickstart-chat send_message 'Hello, World!'
 ```
 
 Once we've called our `send_message` reducer, we can check to make sure it ran by running the `logs` command.
 
 ```bash
-spacetime logs <module-name>
+spacetime logs quickstart-chat
 ```
 
 You should now see the output that your module printed in the database.
@@ -263,7 +263,7 @@ You should now see the output that your module printed in the database.
 SpacetimeDB supports a subset of the SQL syntax so that you can easily query the data of your database. We can run a query using the `sql` command.
 
 ```bash
-spacetime sql <module-name> "SELECT * FROM message"
+spacetime sql quickstart-chat "SELECT * FROM message"
 ```
 
 ```bash
@@ -278,4 +278,4 @@ You can find the full code for this module [in the SpacetimeDB module examples](
 
 You've just set up your first database in SpacetimeDB! The next step would be to create a client module that interacts with this module. You can use any of SpacetimDB's supported client languages to do this. Take a look at the quickstart guide for your client language of choice: [Rust](/docs/sdks/rust/quickstart), [C#](/docs/sdks/c-sharp/quickstart), or [TypeScript](/docs/sdks/typescript/quickstart).
 
-If you are planning to use SpacetimeDB with the Unity game engine, you can skip right to the [Unity Comprehensive Tutorial](/docs/unity/part-1) or check out our example game, [BitcraftMini](/docs/unity/part-3).
+If you are planning to use SpacetimeDB with the Unity game engine, you can skip right to the [Unity Comprehensive Tutorial](/docs/unity/part-1).
