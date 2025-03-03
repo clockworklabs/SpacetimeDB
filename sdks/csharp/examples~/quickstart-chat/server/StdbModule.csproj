@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <!-- If you encounter:
+    "error NETSDK1084: There is no application host available for the specified RuntimeIdentifier 'wasi-wasm'."
+    Try:
+    `dotnet workload install wasi-experimental` -->
+    <RuntimeIdentifier>wasi-wasm</RuntimeIdentifier>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <!-- ignore naming conventions, we're trying to match Rust 1:1 -->
+    <NoWarn>$(NoWarn);CS8981;IDE1006</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="SpacetimeDB.Runtime" Version="1.0.0-rc4" />
+  </ItemGroup>
+
+</Project>

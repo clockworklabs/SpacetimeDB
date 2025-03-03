@@ -5,30 +5,88 @@ using System.Threading;
 using SpacetimeDB;
 using SpacetimeDB.Types;
 
-const string HOST = "http://localhost:3000";
-const string DBNAME = "chatqs";
 
 // our local client SpacetimeDB identity
 Identity? local_identity = null;
+
 // declare a thread safe queue to store commands
 var input_queue = new ConcurrentQueue<(string Command, string Args)>();
 
 void Main()
 {
+    // Initialize the `AuthToken` module
     AuthToken.Init(".spacetime_csharp_quickstart");
-
-    // TODO: just do `var conn = DbConnection...` when OnConnect signature is fixed.
+    // Builds and connects to the database
     DbConnection? conn = null;
+    conn = ConnectToDB();
+    // Registers callbacks to run in response to database events.
+    RegisterCallbacks(conn);
+    // Declare a threadsafe cancel token to cancel the process loop
+    var cancellationTokenSource = new CancellationTokenSource();
+    // Spawn a thread to call process updates and process commands
+    var thread = new Thread(() => ProcessThread(conn, cancellationTokenSource.Token));
+    thread.Start();
+    // Handles CLI input
+    InputLoop();
+    // This signals the ProcessThread to stop
+    cancellationTokenSource.Cancel();
+    thread.Join();
+}
 
+/// The URI of the SpacetimeDB instance hosting our chat module.
+const string HOST = "http://localhost:3000";
+
+/// The module name we chose when we published our module.
+const string DBNAME = "quickstart-chat";
+
+/// Load credentials from a file and connect to the database.
+DbConnection ConnectToDB()
+{
+    DbConnection? conn = null;
     conn = DbConnection.Builder()
         .WithUri(HOST)
         .WithModuleName(DBNAME)
-        //.WithToken(AuthToken.Token)
-        .OnConnect(OnConnect)
+        .WithToken(AuthToken.Token)
+        .OnConnect(OnConnected)
         .OnConnectError(OnConnectError)
-        .OnDisconnect(OnDisconnect)
+        .OnDisconnect(OnDisconnected)
         .Build();
+    return conn;
+}
 
+/// Our `OnConnect` callback: save our credentials to a file.
+void OnConnected(DbConnection conn, Identity identity, string authToken)
+{
+    local_identity = identity;
+    AuthToken.SaveToken(authToken);
+
+    conn.SubscriptionBuilder()
+        .OnApplied(OnSubscriptionApplied)
+        .SubscribeToAllTables();
+}
+
+/// Our `OnConnectError` callback: print the error, then exit the process.
+void OnConnectError(Exception e)
+{
+    Console.Write($"Error while connecting: {e}");
+}
+
+/// Our `OnDisconnect` callback: print a note, then exit the process.
+void OnDisconnected(DbConnection conn, Exception? e)
+{
+    if (e != null)
+    {
+        Console.Write($"Disconnected abnormally: {e}");
+    }
+    else
+    {
+        Console.Write($"Disconnected normally.");
+    }
+}
+
+/// Register all the callbacks our app will use to respond to database events.
+void RegisterCallbacks(DbConnection conn)
+{
     conn.Db.User.OnInsert += User_OnInsert;
     conn.Db.User.OnUpdate += User_OnUpdate;
 
@@ -36,23 +94,12 @@ void Main()
 
     conn.Reducers.OnSetName += Reducer_OnSetNameEvent;
     conn.Reducers.OnSendMessage += Reducer_OnSendMessageEvent;
-
-    // declare a threadsafe cancel token to cancel the process loop
-    var cancellationTokenSource = new CancellationTokenSource();
-
-    // spawn a thread to call process updates and process commands
-    var thread = new Thread(() => ProcessThread(conn, cancellationTokenSource.Token));
-    thread.Start();
-
-    InputLoop();
-
-    // this signals the ProcessThread to stop
-    cancellationTokenSource.Cancel();
-    thread.Join();
 }
 
+/// If the user has no set name, use the first 8 characters from their identity.
 string UserNameOrIdentity(User user) => user.Name ?? user.Identity.ToString()[..8];
 
+/// Our `User.OnInsert` callback: if the user is online, print a notification.
 void User_OnInsert(EventContext ctx, User insertedValue)
 {
     if (insertedValue.Online)
@@ -61,6 +108,8 @@ void User_OnInsert(EventContext ctx, User insertedValue)
     }
 }
 
+/// Our `User.OnUpdate` callback:
+/// print a notification about name and status changes.
 void User_OnUpdate(EventContext ctx, User oldValue, User newValue)
 {
     if (oldValue.Name != newValue.Name)
@@ -80,6 +129,18 @@ void User_OnUpdate(EventContext ctx, User oldValue, User newValue)
     }
 }
 
+/// Our `Message.OnInsert` callback: print new messages.
+void Message_OnInsert(EventContext ctx, Message insertedValue)
+{
+    // We are filtering out messages inserted during the subscription being applied,
+    // since we will be printing those in the OnSubscriptionApplied callback,
+    // where we will be able to first sort the messages before printing.
+    if (ctx.Event is not Event<Reducer>.SubscribeApplied)
+    {
+        PrintMessage(ctx.Db, insertedValue);
+    }
+}
+
 void PrintMessage(RemoteTables tables, Message message)
 {
     var sender = tables.User.Identity.Find(message.Sender);
@@ -92,15 +153,7 @@ void PrintMessage(RemoteTables tables, Message message)
     Console.WriteLine($"{senderName}: {message.Text}");
 }
 
-void Message_OnInsert(EventContext ctx, Message insertedValue)
-{
-
-    if (ctx.Event is not Event<Reducer>.SubscribeApplied)
-    {
-        PrintMessage(ctx.Db, insertedValue);
-    }
-}
-
+/// Our `OnSetNameEvent` callback: print a warning if the reducer failed.
 void Reducer_OnSetNameEvent(ReducerEventContext ctx, string name)
 {
     var e = ctx.Event;
@@ -110,6 +163,7 @@ void Reducer_OnSetNameEvent(ReducerEventContext ctx, string name)
     }
 }
 
+/// Our `OnSendMessageEvent` callback: print a warning if the reducer failed.
 void Reducer_OnSendMessageEvent(ReducerEventContext ctx, string text)
 {
     var e = ctx.Event;
@@ -119,34 +173,12 @@ void Reducer_OnSendMessageEvent(ReducerEventContext ctx, string text)
     }
 }
 
-void OnConnect(DbConnection conn, Identity identity, string authToken)
+/// Our `OnSubscriptionApplied` callback:
+/// sort all past messages and print them in timestamp order.
+void OnSubscriptionApplied(SubscriptionEventContext ctx)
 {
-    local_identity = identity;
-    AuthToken.SaveToken(authToken);
-
-    var subscription = conn.SubscriptionBuilder()
-        .OnApplied(OnSubscriptionApplied)
-        .Subscribe(new string[] {
-            "SELECT * FROM user",
-            "SELECT * FROM message",
-            // It is legal to have redundant subscriptions.
-            // However, keep in mind that data will be sent over the wire multiple times,
-            // once for each subscriptions. This can cause slowdowns if you aren't careful.
-            "SELECT * FROM message" });
-
-    // You can also use SubscribeToAllTables, but it should be avoided if you have any large tables:
-    // conn.SubscriptionBuilder().OnApplied(OnSubscriptionApplied).SubscribeToAllTables();
-
-}
-
-void OnConnectError(Exception e)
-{
-
-}
-
-void OnDisconnect(DbConnection conn, Exception? e)
-{
-
+    Console.WriteLine("Connected");
+    PrintMessagesInOrder(ctx.Db);
 }
 
 void PrintMessagesInOrder(RemoteTables tables)
@@ -157,12 +189,7 @@ void PrintMessagesInOrder(RemoteTables tables)
     }
 }
 
-void OnSubscriptionApplied(SubscriptionEventContext ctx)
-{
-    Console.WriteLine("Connected");
-    PrintMessagesInOrder(ctx.Db);
-}
-
+/// Our separate thread from main, where we can call process updates and process commands without blocking the main thread. 
 void ProcessThread(DbConnection conn, CancellationToken ct)
 {
     try
@@ -183,6 +210,7 @@ void ProcessThread(DbConnection conn, CancellationToken ct)
     }
 }
 
+/// Read each line of standard input, and either set our name or send a message as appropriate.
 void InputLoop()
 {
     while (true)
