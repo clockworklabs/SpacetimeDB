@@ -114,7 +114,6 @@ public static void SpawnFood(ReducerContext ctx, SpawnFoodTimer timer)
     }
 
     var world_size = (ctx.Db.config.id.Find(0) ?? throw new Exception("Config not found")).world_size;
-
     var rng = ctx.Rng;
     var food_count = ctx.Db.food.Count;
     while (food_count < TARGET_FOOD_COUNT)
