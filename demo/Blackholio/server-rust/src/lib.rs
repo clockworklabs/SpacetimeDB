@@ -406,7 +406,12 @@ pub fn move_all_players(ctx: &ReducerContext, _timer: MoveAllPlayersTimer) -> Re
 
     // Handle player input
     for circle in ctx.db.circle().iter() {
-        let mut circle_entity = ctx.db.entity().entity_id().find(&circle.entity_id).unwrap();
+        let circle_entity = ctx.db.entity().entity_id().find(&circle.entity_id);
+        if !circle_entity.is_some() {
+            // This can happen if a circle is eaten by another circle
+            continue;
+        }
+        let mut circle_entity = circle_entity.unwrap();
         let circle_radius = mass_to_radius(circle_entity.mass);
         let direction = *circle_directions.get(&circle.entity_id).unwrap();
         let new_pos =
