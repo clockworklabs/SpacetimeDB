@@ -40,7 +40,7 @@ docker manifest push "${IMAGE_NAME}":$FULL_TAG
 # if undefined, use the empty string
 GITHUB_REF="${GITHUB_REF-}"
 # re-tag the manifest with the GitHub ref
-echo "${GITHUB_REF} is ${GITHUB_REF}"
+echo "GITHUB_REF is ${GITHUB_REF}"
 if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
   ORIGINAL_VERSION=${GITHUB_REF#refs/*/}
   VERSION=$(sanitize_docker_ref "$ORIGINAL_VERSION")
