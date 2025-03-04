@@ -6,6 +6,7 @@ on:
       - master
       - staging
       - dev
+      - bfops/no-docker-branch-tags
     tags:
       - 'v*'
 
