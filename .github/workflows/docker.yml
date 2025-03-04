@@ -6,7 +6,6 @@ on:
       - master
       - staging
       - dev
-      - bfops/align-merge-script
     tags:
       - 'v*'
 
