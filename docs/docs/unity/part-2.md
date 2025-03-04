@@ -399,9 +399,9 @@ The `client_connected` argument to the `spacetimedb::reducer` macro indicates to
 > - `init` - Called the first time you publish your module and anytime you clear the database with `spacetime publish <name> --delete-data`.
 > - `client_connected` - Called when a user connects to the SpacetimeDB module. Their identity can be found in the `sender` value of the `ReducerContext`.
 > - `client_disconnected` - Called when a user disconnects from the SpacetimeDB module.
-    :::
-    :::server-csharp
-    Next let's connect our client to our module. Let's start by modifying our `Debug` reducer. Rename the reducer to be called `Connect` and add `ReducerKind.ClientConnected` in parentheses after `SpacetimeDB.Reducer`. The end result should look like this:
+:::
+:::server-csharp
+Next let's connect our client to our module. Let's start by modifying our `Debug` reducer. Rename the reducer to be called `Connect` and add `ReducerKind.ClientConnected` in parentheses after `SpacetimeDB.Reducer`. The end result should look like this:
 
 ```csharp
 [Reducer(ReducerKind.ClientConnected)]
@@ -418,7 +418,7 @@ The `ReducerKind.ClientConnected` argument to the `SpacetimeDB.Reducer` attribut
 > - `ReducerKind.Init` - Called the first time you publish your module and anytime you clear the database with `spacetime publish <name> --delete-data`.
 > - `ReducerKind.ClientConnected` - Called when a user connects to the SpacetimeDB module. Their identity can be found in the `Sender` value of the `ReducerContext`.
 > - `ReducerKind.ClientDisconnected` - Called when a user disconnects from the SpacetimeDB module.
-    :::
+:::
 
 Publish your module again by running:
 

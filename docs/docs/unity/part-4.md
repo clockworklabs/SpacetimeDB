@@ -350,43 +350,43 @@ spacetime generate --lang csharp --out-dir ../client-unity/Assets/autogen
 All that's left is to modify our `PlayerController` on the client to call the `update_player_input` reducer. Open `PlayerController.cs` and add an `Update` function:
 
 ```cs
-    public void Update()
+public void Update()
+{
+    if (!IsLocalPlayer || NumberOfOwnedCircles == 0)
     {
-        if (!IsLocalPlayer || NumberOfOwnedCircles == 0)
+        return;
+    }
+
+    if (Input.GetKeyDown(KeyCode.Q))
+    {
+        if (LockInputPosition.HasValue)
         {
-            return;
+            LockInputPosition = null;
         }
-
-        if (Input.GetKeyDown(KeyCode.Q))
+        else
         {
-            if (LockInputPosition.HasValue)
-            {
-                LockInputPosition = null;
-			}
-            else
-            {
-				LockInputPosition = (Vector2)Input.mousePosition;
-            }
+            LockInputPosition = (Vector2)Input.mousePosition;
         }
+    }
 
-        // Throttled input requests
-        if (Time.time - LastMovementSendTimestamp >= SEND_UPDATES_FREQUENCY)
+    // Throttled input requests
+    if (Time.time - LastMovementSendTimestamp >= SEND_UPDATES_FREQUENCY)
+    {
+        LastMovementSendTimestamp = Time.time;
+
+        var mousePosition = LockInputPosition ?? (Vector2)Input.mousePosition;
+        var screenSize = new Vector2
         {
-            LastMovementSendTimestamp = Time.time;
+            x = Screen.width,
+            y = Screen.height,
+        };
+        var centerOfScreen = screenSize / 2;
 
-            var mousePosition = LockInputPosition ?? (Vector2)Input.mousePosition;
-            var screenSize = new Vector2
-            {
-                x = Screen.width,
-                y = Screen.height,
-            };
-            var centerOfScreen = screenSize / 2;
-
-			var direction = (mousePosition - centerOfScreen) / (screenSize.y / 3);
-            if (testInputEnabled) { direction = testInput; }
-            GameManager.Conn.Reducers.UpdatePlayerInput(direction);
-        }
-	}
+        var direction = (mousePosition - centerOfScreen) / (screenSize.y / 3);
+        if (testInputEnabled) { direction = testInput; }
+        GameManager.Conn.Reducers.UpdatePlayerInput(direction);
+    }
+}
 ```
 
 Let's try it out! Press play and roam freely around the arena! Now we're cooking with gas.
@@ -519,7 +519,7 @@ public static void MoveAllPlayers(ReducerContext ctx, MoveAllPlayersTimer timer)
             // This can happen if the circle has been eaten by another circle.
             continue;
         }
-		var circle_entity = check_entity.Value;;
+        var circle_entity = check_entity.Value;;
         var circle_radius = MassToRadius(circle_entity.mass);
         var direction = circle.direction * circle.speed;
         var new_pos = circle_entity.position + direction * MassToMaxMoveSpeed(circle_entity.mass);
