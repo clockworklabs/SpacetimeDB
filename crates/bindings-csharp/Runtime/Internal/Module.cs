@@ -95,13 +95,12 @@ public static class Module
         moduleDef.RegisterTable(View.MakeTableDesc(typeRegistrar));
     }
 
-    private static byte[] Consume(this BytesSource source)
+    private static MemoryStream Consume(this BytesSource source, ref byte[] buffer)
     {
         if (source == BytesSource.INVALID)
         {
-            return [];
+            return new();
         }
-        var buffer = new byte[0x20_000];
         var written = 0U;
         while (true)
         {
@@ -114,8 +113,7 @@ public static class Module
             {
                 // Host side source exhausted, we're done.
                 case Errno.EXHAUSTED:
-                    Array.Resize(ref buffer, (int)written);
-                    return buffer;
+                    return new(buffer, 0, (int)written);
                 // Wrote the entire spare capacity.
                 // Need to reserve more space in the buffer.
                 case Errno.OK when written == buffer.Length:
@@ -126,11 +124,8 @@ public static class Module
                 // The host will likely not trigger this branch (current host doesn't),
                 // but a module should be prepared for it.
                 case Errno.OK:
+                    ret.Check();
                     break;
-                case Errno.NO_SUCH_BYTES:
-                    throw new NoSuchBytesException();
-                default:
-                    throw new UnknownException(ret);
             }
         }
     }
@@ -164,6 +159,13 @@ public static class Module
         }
     }
 
+    // Note: `__call_reducer__` can't be invoked in parallel because we don't support multithreading in Wasm,
+    // nor is it supposed to be invoked recursively.
+    //
+    // This means we can reuse the same argument buffer for all `__call_reducer__` invocations -
+    // unlike in e.g. iterators, where multiple iterators can easily exist at the same time.
+    private static byte[] reducerArgsBuffer = new byte[0x10_000];
+
     public static Errno __call_reducer__(
         uint id,
         ulong sender_0,
@@ -190,7 +192,7 @@ public static class Module
 
             var ctx = newContext!(senderIdentity, connectionId, random, time);
 
-            using var stream = new MemoryStream(args.Consume());
+            using var stream = args.Consume(ref reducerArgsBuffer);
             using var reader = new BinaryReader(stream);
             reducers[(int)id].Invoke(reader, ctx);
             if (stream.Position != stream.Length)
