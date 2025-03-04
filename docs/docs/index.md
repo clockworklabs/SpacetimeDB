@@ -237,6 +237,26 @@ Modules themselves also have Identities. When you `spacetime publish` a module, 
 
 Identities are issued using the [OpenID Connect](https://openid.net/developers/how-connect-works/) specification. Database developers are responsible for issuing Identities to their end users. OpenID Connect lets users log in to these accounts through standard services like Google and Facebook.
 
+Specifically, an identity is derived from the issuer and subject fields of a [JSON Web Token (JWT)](https://jwt.io/) hashed together. The psuedocode for this is as follows:
+
+```python
+def identity_from_claims(issuer: str, subject: str) -> [u8; 32]:
+   hash1: [u8; 32] = blake3_hash(issuer + "|" + subject)
+   id_hash: [u8; 26] = hash1[:26]
+   checksum_hash: [u8; 32] = blake3_hash([
+      0xC2,
+      0x00,
+      *id_hash
+   ])
+   identity_big_endian_bytes: [u8; 32] = [
+      0xC2, 
+      0x00,
+      *checksum_hash[:4],
+      *id_hash
+   ]
+   return identity_big_endian_bytes
+```
+
 <!-- TODO(1.0): link to a page on setting up your own identity provider and/or using our turnkey solution. -->
 
 ### ConnectionId
