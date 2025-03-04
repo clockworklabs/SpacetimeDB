@@ -1,407 +1,648 @@
 # SQL Support
 
-SpacetimeDB supports a subset of SQL as a query language. Developers can evaluate SQL queries against a Spacetime database via the `spacetime sql` command-line tool and the [`/database/sql/:name_or_address POST` HTTP endpoint](/docs/http/database#databasesqlname_or_address-post). Client developers also write SQL queries when subscribing to events in the [WebSocket API](/docs/ws#subscribe) or via an SDK `subscribe` function.
+SpacetimeDB supports two subsets of SQL:
+One for queries issued through the [cli] or [http] api.
+Another for subscriptions issued via the [sdk] or WebSocket api.
 
-SpacetimeDB aims to support much of the [SQL 2016 standard](https://www.iso.org/standard/63555.html), and in particular aims to be compatible with [PostgreSQL](https://www.postgresql.org/).
+## Subscriptions
 
-SpacetimeDB 0.6 implements a relatively small subset of SQL. Future SpacetimeDB versions will implement additional SQL features.
-
-## Types
-
-| Type                                          | Description                            |
-| --------------------------------------------- | -------------------------------------- |
-| [Nullable types](#nullable-types)             | Types which may not hold a value.      |
-| [Logic types](#logic-types)                   | Booleans, i.e. `true` and `false`.     |
-| [Integer types](#integer-types)               | Numbers without fractional components. |
-| [Floating-point types](#floating-point-types) | Numbers with fractional components.    |
-| [Text types](#text-types)                     | UTF-8 encoded text.                    |
-
-### Definition statements
-
-| Statement                     | Description                          |
-| ----------------------------- | ------------------------------------ |
-| [CREATE TABLE](#create-table) | Create a new table.                  |
-| [DROP TABLE](#drop-table)     | Remove a table, discarding all rows. |
-
-### Query statements
-
-| Statement         | Description                                                                                  |
-| ----------------- | -------------------------------------------------------------------------------------------- |
-| [FROM](#from)     | A source of data, like a table or a value.                                                   |
-| [JOIN](#join)     | Combine several data sources.                                                                |
-| [SELECT](#select) | Select specific rows and columns from a data source, and optionally compute a derived value. |
-| [DELETE](#delete) | Delete specific rows from a table.                                                           |
-| [INSERT](#insert) | Insert rows into a table.                                                                    |
-| [UPDATE](#update) | Update specific rows in a table.                                                             |
-
-## Data types
-
-SpacetimeDB is built on the Spacetime Algebraic Type System, or SATS. SATS is a richer, more expressive type system than the one included in the SQL language.
-
-Because SATS is a richer type system than SQL, some SATS types cannot cleanly correspond to SQL types. In particular, the SpacetimeDB SQL interface is unable to construct or compare instances of product and sum types. As such, SpacetimeDB SQL must largely restrict themselves to interacting with columns of builtin types.
-
-Most SATS builtin types map cleanly to SQL types.
-
-### Nullable types
-
-SpacetimeDB types, by default, do not permit `NULL` as a value. Nullable types are encoded in SATS using a sum type which corresponds to [Rust's `Option`](https://doc.rust-lang.org/stable/std/option/enum.Option.html). In SQL, such types can be written by adding the constraint `NULL`, like `INT NULL`.
-
-### Logic types
-
-| SQL       | SATS   | Example         |
-| --------- | ------ | --------------- |
-| `BOOLEAN` | `Bool` | `true`, `false` |
-
-### Numeric types
-
-#### Integer types
-
-An integer is a number without a fractional component.
-
-Adding the `UNSIGNED` constraint to an integer type allows only positive values. This allows representing a larger positive range without increasing the width of the integer.
-
-| SQL                 | SATS  | Example | Min    | Max   |
-| ------------------- | ----- | ------- | ------ | ----- |
-| `TINYINT`           | `I8`  | 1       | -(2⁷)  | 2⁷-1  |
-| `TINYINT UNSIGNED`  | `U8`  | 1       | 0      | 2⁸-1  |
-| `SMALLINT`          | `I16` | 1       | -(2¹⁵) | 2¹⁵-1 |
-| `SMALLINT UNSIGNED` | `U16` | 1       | 0      | 2¹⁶-1 |
-| `INT`, `INTEGER`    | `I32` | 1       | -(2³¹) | 2³¹-1 |
-| `INT UNSIGNED`      | `U32` | 1       | 0      | 2³²-1 |
-| `BIGINT`            | `I64` | 1       | -(2⁶³) | 2⁶³-1 |
-| `BIGINT UNSIGNED`   | `U64` | 1       | 0      | 2⁶⁴-1 |
-
-#### Floating-point types
-
-SpacetimeDB supports single- and double-precision [binary IEEE-754 floats](https://en.wikipedia.org/wiki/IEEE_754).
-
-| SQL               | SATS  | Example | Min                      | Max                     |
-| ----------------- | ----- | ------- | ------------------------ | ----------------------- |
-| `REAL`            | `F32` | 1.0     | -3.40282347E+38          | 3.40282347E+38          |
-| `DOUBLE`, `FLOAT` | `F64` | 1.0     | -1.7976931348623157E+308 | 1.7976931348623157E+308 |
-
-### Text types
-
-SpacetimeDB supports a single string type, `String`. SpacetimeDB strings are UTF-8 encoded.
-
-| SQL                                             | SATS     | Example | Notes                |
-| ----------------------------------------------- | -------- | ------- | -------------------- |
-| `CHAR`, `VARCHAR`, `NVARCHAR`, `TEXT`, `STRING` | `String` | 'hello' | Always UTF-8 encoded |
-
-> SpacetimeDB SQL currently does not support length contraints like `CHAR(10)`.
-
-## Syntax
-
-### Comments
-
-SQL line comments begin with `--`.
-
-```sql
--- This is a comment
+```ebnf
+SELECT projection FROM relation [ WHERE predicate ]
 ```
 
-### Expressions
+The subscription language is strictly a query language.
+Its sole purpose is to replicate a subset of the rows in the database,
+and to **automatically** update them in realtime as the database changes.
 
-We can express different, composable, values that are universally called `expressions`.
+There is no context for manually updating this view.
+Hence data manipulation commands like `INSERT` and `DELETE` are not supported.
 
-An expression is one of the following:
+> NOTE: Because subscriptions are evaluated in realtime,
+> performance is critical, and as a result,
+> additional restrictions are applied over ad hoc queries.
+> These restrictions are highlighted below.
 
-#### Literals
+### SELECT
 
-| Example   | Description |
-| --------- | ----------- |
-| `1`       | An integer. |
-| `1.0`     | A float.    |
-| `'hello'` | A string.   |
-| `true`    | A boolean.  |
+```ebnf
+SELECT ( '*' | table '.' '*' )
+```
 
-#### Binary operators
+The `SELECT` clause determines the table that is being subscribed to.
+Since the subscription api is purely a replication api,
+a query may only return rows from a single table,
+and it must return the entire row.
+Individual column projections are not allowed.
 
-| Example | Description         |
-| ------- | ------------------- |
-| `1 > 2` | Integer comparison. |
-| `1 + 2` | Integer addition.   |
-
-#### Logical expressions
-
-Any expression which returns a boolean, i.e. `true` or `false`, is a logical expression.
-
-| Example          | Description                                                  |
-| ---------------- | ------------------------------------------------------------ |
-| `1 > 2`          | Integer comparison.                                          |
-| `1 + 2 == 3`     | Equality comparison between a constant and a computed value. |
-| `true AND false` | Boolean and.                                                 |
-| `true OR false`  | Boolean or.                                                  |
-| `NOT true`       | Boolean inverse.                                             |
-
-#### Function calls
-
-| Example         | Description                                        |
-| --------------- | -------------------------------------------------- |
-| `lower('JOHN')` | Apply the function `lower` to the string `'JOHN'`. |
-
-#### Table identifiers
-
-| Example       | Description               |
-| ------------- | ------------------------- |
-| `inventory`   | Refers to a table.        |
-| `"inventory"` | Refers to the same table. |
-
-#### Column references
-
-| Example                    | Description                                             |
-| -------------------------- | ------------------------------------------------------- |
-| `inventory_id`             | Refers to a column.                                     |
-| `"inventory_id"`           | Refers to the same column.                              |
-| `"inventory.inventory_id"` | Refers to the same column, explicitly naming its table. |
-
-#### Wildcards
-
-Special "star" expressions which select all the columns of a table.
-
-| Example       | Description                                             |
-| ------------- | ------------------------------------------------------- |
-| `*`           | Refers to all columns of a table identified by context. |
-| `inventory.*` | Refers to all columns of the `inventory` table.         |
-
-#### Parenthesized expressions
-
-Sub-expressions can be enclosed in parentheses for grouping and to override operator precedence.
-
-| Example       | Description             |
-| ------------- | ----------------------- |
-| `1 + (2 / 3)` | One plus a fraction.    |
-| `(1 + 2) / 3` | A sum divided by three. |
-
-### `CREATE TABLE`
-
-A `CREATE TABLE` statement creates a new, initially empty table in the database.
-
-The syntax of the `CREATE TABLE` statement is:
-
-> **CREATE TABLE** _table_name_ (_column_name_ _data_type_, ...);
-
-![create-table](/images/syntax/create_table.svg)
+A `*` projection is allowed when the table is unambiguous,
+otherwise it must be qualified with the appropriate table name.
 
 #### Examples
 
-Create a table `inventory` with two columns, an integer `inventory_id` and a string `name`:
-
 ```sql
-CREATE TABLE inventory (inventory_id INTEGER, name TEXT);
+-- Subscribe to all rows of a table
+SELECT * FROM Inventory
+
+-- Qualify the `*` projection with the table
+SELECT item.* from Inventory item
+
+-- Subscribe to all customers who have orders totaling more than $1000
+SELECT customer.*
+FROM Customers customer JOIN Orders o ON customer.id = o.customer_id
+WHERE o.amount > 1000
+
+-- INVALID: Must return `Customers` or `Orders`, but not both
+SELECT *
+FROM Customers customer JOIN Orders o ON customer.id = o.customer_id
+WHERE o.amount > 1000
 ```
 
-Create a table `player` with two integer columns, an `entity_id` and an `inventory_id`:
+### FROM
 
-```sql
-CREATE TABLE player (entity_id INTEGER, inventory_id INTEGER);
+```ebnf
+FROM table [ [AS] alias ] [ [INNER] JOIN table [ [AS] alias ] ON column '=' column ]
 ```
 
-Create a table `location` with three columns, an integer `entity_id` and floats `x` and `z`:
+While you can only subscribe to rows from a single table,
+you may reference two tables in the `FROM` clause using a `JOIN`.
+A `JOIN` selects all combinations of rows from its input tables,
+and `ON` determines which combinations are considered.
+
+Subscriptions do not support joins of more than two tables.
+
+For any column referenced in `ON` clause of a `JOIN`,
+it must be qualified with the appropriate table name or alias.
+
+In order for a `JOIN` to be evaluated efficiently,
+subscriptions require an index to be defined on both join columns.
+
+#### Example
 
 ```sql
-CREATE TABLE location (entity_id INTEGER, x REAL, z REAL);
+-- Subscribe to all orders of products with less than 10 items in stock.
+-- Must have an index on the `product_id` column of the `Orders` table,
+-- as well as the `id` column of the `Product` table.
+SELECT o.*
+FROM Orders o JOIN Inventory product ON o.product_id = product.id
+WHERE product.quantity < 10
+
+-- Subscribe to all products that have at least one purchase
+SELECT product.*
+FROM Orders o JOIN Inventory product ON o.product_id = product.id
+
+-- INVALID: Must qualify the column names referenced in `ON`
+SELECT product.* FROM Orders JOIN Inventory product ON product_id = id
 ```
 
-### `DROP TABLE`
+### WHERE
 
-A `DROP TABLE` statement removes a table from the database, deleting all its associated rows, indexes, constraints and sequences.
+```ebnf
+predicate
+    = expr
+    | predicate AND predicate
+    | predicate OR  predicate
+    ;
 
-To empty a table of rows without destroying the table, use [`DELETE`](#delete).
+expr
+    = literal
+    | column
+    | expr op expr
+    ;
 
-The syntax of the `DROP TABLE` statement is:
+op
+    = '='
+    | '<'
+    | '>'
+    | '<' '='
+    | '>' '='
+    | '!' '='
+    | '<' '>'
+    ;
 
-> **DROP TABLE** _table_name_;
-
-![drop-table](/images/syntax/drop_table.svg)
-
-Examples:
-
-```sql
-DROP TABLE inventory;
+literal
+    = INTEGER
+    | STRING
+    | HEX
+    | TRUE
+    | FALSE
+    ;
 ```
 
-## Queries
+While the `SELECT` clause determines the table,
+the `WHERE` clause determines the rows in the subscription.
 
-### `FROM`
-
-A `FROM` clause derives a data source from a table name.
-
-The syntax of the `FROM` clause is:
-
-> **FROM** _table_name_ _join_clause_?;
-
-![from](/images/syntax/from.svg)
+Arithmetic expressions are not supported.
 
 #### Examples
 
-Select all rows from the `inventory` table:
-
 ```sql
-SELECT * FROM inventory;
+-- Find products that sell for more than $X
+SELECT * FROM Inventory WHERE price > {X}
+
+-- Find products that sell for more than $X and have fewer than Y items in stock
+SELECT * FROM Inventory WHERE price > {X} AND amount < {Y}
 ```
 
-### `JOIN`
+## Query and DML (Data Manipulation Language)
 
-A `JOIN` clause combines two data sources into a new data source.
+### Statements
 
-Currently, SpacetimeDB SQL supports only inner joins, which return rows from two data sources where the values of two columns match.
+- [SELECT](#select-1)
+- [INSERT](#insert)
+- [DELETE](#delete)
+- [UPDATE](#update)
+- [SET](#set)
+- [SHOW](#show)
 
-The syntax of the `JOIN` clause is:
+### SELECT
 
-> **JOIN** _table_name_ **ON** _expr_ = _expr_;
-
-![join](/images/syntax/join.svg)
-
-### Examples
-
-Select all players rows who have a corresponding location:
-
-```sql
-SELECT player.* FROM player
- JOIN location
- ON location.entity_id = player.entity_id;
+```ebnf
+SELECT projection FROM relation [ WHERE predicate ] [LIMIT NUM]
 ```
 
-Select all inventories which have a corresponding player, and where that player has a corresponding location:
+The query languge is a strict superset of the subscription language.
+The main differences are seen in column projections and [joins](#from-clause).
 
-```sql
-SELECT inventory.* FROM inventory
- JOIN player
- ON inventory.inventory_id = player.inventory_id
- JOIN location
- ON player.entity_id = location.entity_id;
+The subscription api only supports `*` projections,
+but the query api supports both individual column projections,
+as well as aggregations in the form of `COUNT`.
+
+The subscription api limits the number of tables you can join,
+and enforces index constraints on the join columns,
+but the query language has no such constraints or limitations.
+
+#### SELECT Clause
+
+```ebnf
+projection
+    = '*'
+    | table '.' '*'
+    | projExpr { ',' projExpr }
+    | aggExpr
+    ;
+
+projExpr
+    = column [ [ AS ] alias ]
+    ;
+
+aggExpr
+    = COUNT '(' '*' ')' [AS] alias
+    ;
 ```
 
-### `SELECT`
+The `SELECT` clause determines the columns that are returned.
 
-A `SELECT` statement returns values of particular columns from a data source, optionally filtering the data source to include only rows which satisfy a `WHERE` predicate.
+##### Examples
 
-The syntax of the `SELECT` command is:
+```sql
+-- Select the items in my inventory
+SELECT * FROM Inventory;
 
-> **SELECT** _column_expr_ > **FROM** _from_expr_
-> {**WHERE** _expr_}?
+-- Select the names and prices of the items in my inventory
+SELECT item_name, price FROM Inventory
+```
 
-![sql-select](/images/syntax/select.svg)
+It also allows for counting the number of input rows via the `COUNT` function.
+`COUNT` always returns a single row, even if the input is empty.
+
+##### Example
+
+```sql
+-- Count the items in my inventory
+SELECT COUNT(*) AS n FROM Inventory
+```
+
+#### FROM Clause
+
+```ebnf
+FROM table [ [AS] alias ] { [INNER] JOIN table [ [AS] alias ] ON predicate }
+```
+
+Unlike [subscriptions](#from), the query api supports joining more than two tables.
+
+##### Examples
+
+```sql
+-- Find all customers who ordered a particular product and when they ordered it
+SELECT customer.first_name, customer.last_name, o.date
+FROM Customers customer
+JOIN Orders o ON customer.id = o.customer_id
+JOIN Inventory product ON o.product_id = product.id
+WHERE product.name = {product_name}
+```
+
+#### WHERE Clause
+
+See [Subscriptions](#where).
+
+#### LIMIT clause
+
+Limits the number of rows a query returns by specifying an upper bound.
+The `LIMIT` may return fewer rows if the query itself returns fewer rows.
+`LIMIT` does not order or transform its input in any way.
+
+##### Examples
+
+```sql
+-- Fetch an example row from my inventory
+SELECT * FROM Inventory LIMIT 1
+```
+
+### INSERT
+
+```ebnf
+INSERT INTO table [ '(' column { ',' column } ')' ] VALUES '(' literal { ',' literal } ')'
+```
 
 #### Examples
 
-Select all columns of all rows from the `inventory` table:
-
 ```sql
-SELECT * FROM inventory;
-SELECT inventory.* FROM inventory;
-```
+-- Inserting one row
+INSERT INTO Inventory (item_id, item_name) VALUES (1, 'health1');
 
-Select only the `inventory_id` column of all rows from the `inventory` table:
-
-```sql
-SELECT inventory_id FROM inventory;
-SELECT inventory.inventory_id FROM inventory;
-```
-
-An optional `WHERE` clause can be added to filter the data source using a [logical expression](#logical-expressions). The `SELECT` will return only the rows from the data source for which the expression returns `true`.
-
-#### Examples
-
-Select all columns of all rows from the `inventory` table, with a filter that is always true:
-
-```sql
-SELECT * FROM inventory WHERE 1 = 1;
-```
-
-Select all columns of all rows from the `inventory` table with the `inventory_id` 1:
-
-```sql
-SELECT * FROM inventory WHERE inventory_id = 1;
-```
-
-Select only the `name` column of all rows from the `inventory` table with the `inventory_id` 1:
-
-```sql
-SELECT name FROM inventory WHERE inventory_id = 1;
-```
-
-Select all columns of all rows from the `inventory` table where the `inventory_id` is 2 or greater:
-
-```sql
-SELECT * FROM inventory WHERE inventory_id > 1;
-```
-
-### `INSERT`
-
-An `INSERT INTO` statement inserts new rows into a table.
-
-One can insert one or more rows specified by value expressions.
-
-The syntax of the `INSERT INTO` statement is:
-
-> **INSERT INTO** _table_name_ (_column_name_, ...) **VALUES** (_expr_, ...), ...;
-
-![sql-insert](/images/syntax/insert.svg)
-
-#### Examples
-
-Insert a single row:
-
-```sql
-INSERT INTO inventory (inventory_id, name) VALUES (1, 'health1');
-```
-
-Insert two rows:
-
-```sql
-INSERT INTO inventory (inventory_id, name) VALUES (1, 'health1'), (2, 'health2');
-```
-
-### UPDATE
-
-An `UPDATE` statement changes the values of a set of specified columns in all rows of a table, optionally filtering the table to update only rows which satisfy a `WHERE` predicate.
-
-Columns not explicitly modified with the `SET` clause retain their previous values.
-
-If the `WHERE` clause is absent, the effect is to update all rows in the table.
-
-The syntax of the `UPDATE` statement is
-
-> **UPDATE** _table_name_ **SET** > _column_name_ = _expr_, ...
-> {_WHERE expr_}?;
-
-![sql-update](/images/syntax/update.svg)
-
-#### Examples
-
-Set the `name` column of all rows from the `inventory` table with the `inventory_id` 1 to `'new name'`:
-
-```sql
-UPDATE inventory
-  SET name = 'new name'
-  WHERE inventory_id = 1;
+-- Inserting two rows
+INSERT INTO Inventory (item_id, item_name) VALUES (1, 'health1'), (2, 'health2');
 ```
 
 ### DELETE
 
-A `DELETE` statement deletes rows that satisfy the `WHERE` clause from the specified table.
+```ebnf
+DELETE FROM table [ WHERE predicate ]
+```
 
-If the `WHERE` clause is absent, the effect is to delete all rows in the table. In that case, the result is a valid empty table.
+Deletes all rows from a table.
+If `WHERE` is specified, only the matching rows are deleted.
 
-The syntax of the `DELETE` statement is
-
-> **DELETE** _table_name_
-> {**WHERE** _expr_}?;
-
-![sql-delete](/images/syntax/delete.svg)
+`DELETE` does not support joins.
 
 #### Examples
 
-Delete all the rows from the `inventory` table with the `inventory_id` 1:
-
 ```sql
-DELETE FROM inventory WHERE inventory_id = 1;
+-- Delete all rows
+DELETE FROM Inventory;
+
+-- Delete all rows with a specific item_id
+DELETE FROM Inventory WHERE item_id = 1;
 ```
 
-Delete all rows from the `inventory` table, leaving it empty:
+### UPDATE
+
+```ebnf
+UPDATE table SET [ '(' assignment { ',' assignment } ')' ] [ WHERE predicate ]
+```
+
+Updates column values of existing rows in a table.
+The columns are identified by the `assignment` defined as `column '=' literal`.
+The column values are updated for all rows that match the `WHERE` condition.
+The rows are updated after the `WHERE` condition is evaluated for all rows.
+
+`UPDATE` does not support joins.
+
+#### Examples
 
 ```sql
-DELETE FROM inventory;
+-- Update the item_name for all rows with a specific item_id
+UPDATE Inventory SET item_name = 'new name' WHERE item_id = 1;
 ```
+
+### SET
+
+> WARNING: The `SET` statement is experimental.
+> Compatibility with future versions of SpacetimeDB is not guaranteed.
+
+```ebnf
+SET var ( TO | '=' ) literal
+```
+
+Updates the value of a system variable.
+
+### SHOW
+
+> WARNING: The `SHOW` statement is experimental.
+> Compatibility with future versions of SpacetimeDB is not guaranteed.
+
+```ebnf
+SHOW var
+```
+
+Returns the value of a system variable.
+
+## System Variables
+
+> WARNING: System variables are experimental.
+> Compatibility with future versions of SpacetimeDB is not guaranteed.
+
+- `row_limit`
+
+    ```sql
+    -- Reject queries that scan more than 10K rows
+    SET row_limit = 10000
+    ```
+
+## Data types
+
+The set of data types that SpacetimeDB supports is defined by SATS,
+the Spacetime Algebraic Type System.
+
+Spacetime SQL however does not support all of SATS,
+specifically in the way of product and sum types.
+The language itself does not provide a way to construct them,
+nore does it provide any scalar operators for them.
+Nevertheless rows containing them can be returned to clients.
+
+## Literals
+
+```ebnf
+literal = INTEGER | FLOAT | STRING | HEX | TRUE | FALSE ;
+```
+
+The following describes how to construct literal values for SATS data types in Spacetime SQL.
+
+### Booleans
+
+Booleans are represented using the canonical atoms `true` or `false`.
+
+### Integers
+
+```ebnf
+INTEGER
+    = [ '+' | '-' ] NUM
+    | [ '+' | '-' ] NUM 'E' [ '+' ] NUM
+    ;
+
+NUM
+    = DIGIT { DIGIT }
+    ;
+
+DIGIT
+    = 0..9
+    ;
+```
+
+SATS supports multple fixed width integer types.
+The concrete type of a literal is inferred from the context.
+
+#### Examples
+
+```sql
+-- All products that sell for more than $1000
+SELECT * FROM Inventory WHERE price > 1000
+SELECT * FROM Inventory WHERE price > 1e3
+SELECT * FROM Inventory WHERE price > 1E3
+```
+
+### Floats
+
+```ebnf
+FLOAT
+    = [ '+' | '-' ] [ NUM ] '.' NUM
+    | [ '+' | '-' ] [ NUM ] '.' NUM 'E' [ '+' | '-' ] NUM
+    ;
+```
+
+SATS supports both 32 and 64 bit floating point types.
+The concrete type of a literal is inferred from the context.
+
+#### Examples
+
+```sql
+-- All measurements where the temperature is greater than 105.3
+SELECT * FROM Measurements WHERE temperature > 105.3
+SELECT * FROM Measurements WHERE temperature > 1053e-1
+SELECT * FROM Measurements WHERE temperature > 1053E-1
+```
+
+### Strings
+
+```ebnf
+STRING
+    = "'" { "''" | CHAR } "'"
+    ;
+```
+
+`CHAR` is defined as a `utf-8` encoded unicode character.
+
+#### Examples
+
+```sql
+SELECT * FROM Customers WHERE first_name = 'John'
+```
+
+### Hex
+
+```ebnf
+HEX
+    = 'X' "'" { HEXIT } "'"
+    | '0' 'x' { HEXIT }
+    ;
+
+HEXIT
+    = DIGIT | a..f | A..F
+    ;
+```
+
+Hex literals can represent [Identity], [ConnectionId], or binary types.
+The type is ultimately inferred from the context.
+
+#### Examples
+
+```sql
+SELECT * FROM Program WHERE hash_value = 0xABCD1234
+```
+
+## Identifiers
+
+```ebnf
+identifier
+    = LATIN { LATIN | DIGIT | '_' }
+    | '"' { '""' | CHAR } '"'
+    ;
+
+LATIN
+    = a..z | A..Z
+    ;
+```
+
+Identifiers are tokens that identify database objects like tables or columns.
+Spacetime SQL supports both quoted and unquoted identifiers.
+Both types of identifiers are case sensitive.
+Use quoted identifiers to avoid conflict with reserved SQL keywords,
+or if your table or column contains non-alphanumeric characters.
+
+### Example
+
+```sql
+-- `ORDER` is a sql keyword and therefore needs to be quoted
+SELECT * FROM "Order"
+
+-- A table containing `$` needs to be quoted as well
+SELECT * FROM "Balance$"
+```
+
+## Best Practices for Performance and Scalability
+
+When designing your schema or crafting your queries,
+consider the following best practices to ensure optimal performance:
+
+- **Add Primary Key and/or Unique Constraints:**  
+    Constrain columns whose values are guaranteed to be distinct as either unique or primary keys.
+    The query planner can further optimize joins if it knows the join values to be unique.
+
+- **Index Filtered Columns:**  
+    Index columns frequently used in a `WHERE` clause.
+    Indexes reduce the number of rows scanned by the query engine.
+
+- **Index Join Columns:**  
+    Index columns whose values are frequently used as join keys.
+    These are columns that are used in the `ON` condition of a `JOIN`.
+
+    Again, this reduces the number of rows that must be scanned to answer a query.
+    It is also critical for the performance of subscription updates --
+    so much so that it is a compiler-enforced requirement,
+    as mentioned in the [subscription](#from) section.
+
+    If a column that has already been constrained as unique or a primary key,
+    it is not necessary to explicitly index it as well,
+    since these constraints automatically index the column in question.
+
+- **Optimize Join Order:**  
+    Place tables with the most selective filters first in your `FROM` clause.
+    This minimizes intermediate result sizes and improves query efficiency.
+
+### Example
+
+Take the following query that was used in a previous example:
+```sql
+-- Find all customers who ordered a particular product and when they ordered it
+SELECT customer.first_name, customer.last_name, o.date
+FROM Customers customer
+JOIN Orders o ON customer.id = o.customer_id
+JOIN Inventory product ON o.product_id = product.id
+WHERE product.name = {product_name}
+```
+
+In order to conform with the best practices for optimizing performance and scalability:
+
+- An index should be defined on `Inventory.name` because we are filtering on that column.
+- `Inventory.id` and `Customers.id` should be defined as primary keys.
+- Additionally non-unique indexes should be defined on `Orders.product_id` and `Orders.customer_id`.
+- `Inventory` should appear first in the `FROM` clause because it is the only table mentioned in the `WHERE` clause.
+- `Orders` should come next because it joins directly with `Inventory`.
+- `Customers` should come next because it joins directly with `Orders`.
+
+:::server-rust
+```rust
+#[table(
+    name = Inventory,
+    index(name = product_name, btree = [name]),
+    public
+)]
+struct Inventory {
+    #[primary_key]
+    id: u64,
+    name: String,
+    ..
+}
+
+#[table(
+    name = Customers,
+    public
+)]
+struct Customers {
+    #[primary_key]
+    id: u64,
+    first_name: String,
+    last_name: String,
+    ..
+}
+
+#[table(
+    name = Orders,
+    public
+)]
+struct Orders {
+    #[primary_key]
+    id: u64,
+    #[unique]
+    product_id: u64,
+    #[unique]
+    customer_id: u64,
+    ..
+}
+```
+:::
+:::server-csharp
+```cs
+[SpacetimeDB.Table(Name = "Inventory")]
+[SpacetimeDB.Index(Name = "product_name", BTree = ["name"])]
+public partial struct Inventory
+{
+    [SpacetimeDB.PrimaryKey]
+    public long id;
+    public string name;
+    ..
+}
+
+[SpacetimeDB.Table(Name = "Customers")]
+public partial struct Customers
+{
+    [SpacetimeDB.PrimaryKey]
+    public long id;
+    public string first_name;
+    public string last_name;
+    ..
+}
+
+[SpacetimeDB.Table(Name = "Orders")]
+public partial struct Orders
+{
+    [SpacetimeDB.PrimaryKey]
+    public long id;
+    [SpacetimeDB.Unique]
+    public long product_id;
+    [SpacetimeDB.Unique]
+    public long customer_id;
+    ..
+}
+```
+:::
+
+```sql
+-- Find all customers who ordered a particular product and when they ordered it
+SELECT c.first_name, c.last_name, o.date
+FROM Inventory product
+JOIN Orders o ON product.id = o.product_id
+JOIN Customers c ON c.id = o.customer_id
+WHERE product.name = {product_name};
+```
+
+## Appendix
+
+Common production rules that have been used throughout this document.
+
+```ebnf
+table
+    = identifier
+    ;
+
+alias
+    = identifier
+    ;
+
+var
+    = identifier
+    ;
+
+column
+    = identifier
+    | identifier '.' identifier
+    ;
+```
+
+
+[sdk]:       /docs/sdks/rust/index.md#subscribe-to-queries
+[http]:      /docs/http/database#databasesqlname_or_address-post
+[cli]:       /docs/cli-reference.md#spacetime-sql
+
+[Identity]: /docs/index.md#identity
+[ConnectionId]:  /docs/index.md#connectionid

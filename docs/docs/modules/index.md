@@ -8,7 +8,7 @@ In the following sections, we'll cover the basics of server modules and how to c
 
 ### Rust
 
-As of SpacetimeDB 0.6, Rust is the only fully supported language for server modules. Rust is a great option for server modules because it is fast, safe, and has a small runtime.
+Rust is the only fully supported language for server modules. Rust is a great option for server modules because it is fast, safe, and has a small runtime.
 
 - [Rust Module Reference](/docs/modules/rust)
 - [Rust Module Quickstart Guide](/docs/modules/rust/quickstart)
@@ -19,12 +19,3 @@ We have C# support available in experimental status. C# can be a good choice for
 
 - [C# Module Reference](/docs/modules/c-sharp)
 - [C# Module Quickstart Guide](/docs/modules/c-sharp/quickstart)
-
-### Coming Soon
-
-We have plans to support additional languages in the future.
-
-- Python
-- Typescript
-- C++
-- Lua

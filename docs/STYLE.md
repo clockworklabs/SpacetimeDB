@@ -73,6 +73,14 @@ Don't make promises, even weak ones, about what we plan to do in the future, wit
 
 If your document needs to describe a feature that isn't implemented yet, either rewrite to not depend on that feature, or just say that it's a "current limitation" without elaborating further. Include a workaround if there is one.
 
+### Menu items and paths
+
+When describing GUI elements and menu items, like the **Unity Registry** tab, use bolded text to draw attention to any phrases that will appear in the actual UI. Readers will see this bolded text in the documentation and look for it on their screen. Where applicable, include a short description of the type or category of element, like "tab" above, or the **File** menu. This category should not be bolded, since it is not a word the reader can expect to find on their screen.
+
+When describing a chain of accesses through menus and submenus, use the **->** thin arrow (that's `->`, a hyphen followed by a greater-than sign) as a separator, like **File -> Quit** or **Window -> Package Manager**. List the top-level menu first, and proceed left-to-right until you reach the option you want the user to interact with. Include all nested submenus, like **Foo -> Bar -> Baz -> Quux**. Bold the whole sequence, including the arrows. 
+
+It's generally not necessary or desirable to tell users where to look for the top-level menu. You may be tempted to write something like, "Open the **File** menu in the upper left, and navigate **File -> Export as -> Export as PDF**." Do not include "in the upper left" unless you are absolutely confident that the menu will be located there on any combination of OS, version, desktop environment, window manager, theming configuration &c. Even within a single system, UI designers are known to move graphical elements around during updates, making statements like "upper left" obsolete and stale. We can generally trust our readers to be familiar with their own systems and the software they use, and none of our documents involve introducing readers to new GUI software. (E.g. the Unity tutorial is targeted at introducing SpacetimeDB to people who already know Unity.) "Open the **File** menu and navigate **File -> Export as -> Export as PDF**" is sufficient.
+
 ## Key vocabulary
 
 There are a small number of key terms that we need to use consistently throughout the documentation.
@@ -367,7 +375,7 @@ Start the conclusion with a sentence or paragraph that reminds the reader what t
 
 If this tutorial is part of a series, link to the next entry:
 
-> You can use any of SpacetimDB's supported client languages to do this. Take a look at the quickstart guide for your client language of choice: [Rust](/docs/sdks/rust/quickstart), [C#](/docs/sdks/c-sharp/quickstart), or [TypeScript](/docs/sdks/typescript/quickstart). If you are planning to use SpacetimeDB with the Unity game engine, you can skip right to the [Unity Comprehensive Tutorial](/docs/unity/part-1) or check out our example game, [BitcraftMini](/docs/unity/part-3).
+> You can use any of SpacetimDB's supported client languages to do this. Take a look at the quickstart guide for your client language of choice: [Rust](/docs/sdks/rust/quickstart), [C#](/docs/sdks/c-sharp/quickstart), or [TypeScript](/docs/sdks/typescript/quickstart). If you are planning to use SpacetimeDB with the Unity game engine, you can skip right to the [Unity Comprehensive Tutorial](/docs/unity/part-1).
 
 If this tutorial is about a specific component, link to its reference page:
 
@@ -391,7 +399,7 @@ If this tutorial is the end of a series, or ends with a reasonably complete app,
 If the tutorial involved writing code, add a link to the complete code. This should be somewhere on GitHub, either as its own repo, or as an example project within an existing repo. Ensure the linked folder has a README.md file which includes:
 
 - The name of the tutorial project.
-- How to run or interact with the tutorial project, whatever that means (e.g. publish to testnet and then `spacetime call`).
+- How to run or interact with the tutorial project, whatever that means (e.g. publish to maincloud and then `spacetime call`).
 - Links to external dependencies (e.g. for client projects, the module which it runs against).
 - A back-link to the tutorial that builds this project.
 
