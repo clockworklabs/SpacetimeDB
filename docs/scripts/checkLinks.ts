@@ -124,7 +124,7 @@ function checkLinks(): void {
         return; // Skip external links
       }
 
-      const siteLinks = ['/install', '/images'];
+      const siteLinks = ['/install', '/images', '/profile'];
       for (const siteLink of siteLinks) {
         if (link.startsWith(siteLink)) {
           return; // Skip site links
