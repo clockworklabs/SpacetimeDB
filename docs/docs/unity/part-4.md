@@ -293,7 +293,7 @@ public static void MoveAllPlayers(ReducerContext ctx, MoveAllPlayersTimer timer)
             // This can happen if the circle has been eaten by another circle.
             continue;
         }
-		var circle_entity = check_entity.Value;;
+        var circle_entity = check_entity.Value;;
         var circle_radius = MassToRadius(circle_entity.mass);
         var direction = circle_directions[circle.entity_id];
         var new_pos = circle_entity.position + direction * MassToMaxMoveSpeed(circle_entity.mass);
