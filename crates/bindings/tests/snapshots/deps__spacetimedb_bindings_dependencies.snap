@@ -2,7 +2,7 @@
 source: crates/bindings/tests/deps.rs
 expression: "cargo tree -p spacetimedb -f {lib} -e no-dev"
 ---
-total crates: 67
+total crates: 68
 spacetimedb
 ├── bytemuck
 ├── derive_more
@@ -61,6 +61,10 @@ spacetimedb
 │   │   [build-dependencies]
 │   │   └── cc
 │   │       └── shlex
+│   ├── chrono
+│   │   └── num_traits
+│   │       [build-dependencies]
+│   │       └── autocfg
 │   ├── derive_more (*)
 │   ├── enum_as_inner
 │   │   ├── heck
@@ -90,15 +94,15 @@ spacetimedb
 │   │           └── syn (*)
 │   ├── spacetimedb_primitives (*)
 │   ├── spacetimedb_sats
+│   │   ├── anyhow
 │   │   ├── arrayvec
 │   │   ├── bitflags
 │   │   ├── bytemuck
 │   │   ├── bytes
+│   │   ├── chrono (*)
 │   │   ├── decorum
 │   │   │   ├── approx
-│   │   │   │   └── num_traits
-│   │   │   │       [build-dependencies]
-│   │   │   │       └── autocfg
+│   │   │   │   └── num_traits (*)
 │   │   │   └── num_traits (*)
 │   │   ├── derive_more (*)
 │   │   ├── enum_as_inner (*)

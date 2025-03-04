@@ -12,8 +12,11 @@ use ethnum::i256;
 use ethnum::u256;
 use expr::AggType;
 use expr::{Expr, FieldProject, ProjectList, ProjectName, RelExpr};
+use spacetimedb_lib::ser::Serialize;
+use spacetimedb_lib::Timestamp;
 use spacetimedb_lib::{from_hex_pad, AlgebraicType, AlgebraicValue, ConnectionId, Identity};
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
+use spacetimedb_sats::algebraic_value::ser::ValueSerializer;
 use spacetimedb_schema::schema::ColumnSchema;
 use spacetimedb_sql_parser::ast::{self, BinOp, ProjectElem, SqlExpr, SqlIdent, SqlLiteral};
 
@@ -77,10 +80,10 @@ pub(crate) fn type_expr(vars: &Relvars, expr: SqlExpr, expected: Option<&Algebra
     match (expr, expected) {
         (SqlExpr::Lit(SqlLiteral::Bool(v)), None | Some(AlgebraicType::Bool)) => Ok(Expr::bool(v)),
         (SqlExpr::Lit(SqlLiteral::Bool(_)), Some(ty)) => Err(UnexpectedType::new(&AlgebraicType::Bool, ty).into()),
-        (SqlExpr::Lit(SqlLiteral::Str(v)), None | Some(AlgebraicType::String)) => Ok(Expr::str(v)),
-        (SqlExpr::Lit(SqlLiteral::Str(_)), Some(ty)) => Err(UnexpectedType::new(&AlgebraicType::String, ty).into()),
-        (SqlExpr::Lit(SqlLiteral::Num(_) | SqlLiteral::Hex(_)), None) => Err(Unresolved::Literal.into()),
-        (SqlExpr::Lit(SqlLiteral::Num(v) | SqlLiteral::Hex(v)), Some(ty)) => Ok(Expr::Value(
+        (SqlExpr::Lit(SqlLiteral::Str(_) | SqlLiteral::Num(_) | SqlLiteral::Hex(_)), None) => {
+            Err(Unresolved::Literal.into())
+        }
+        (SqlExpr::Lit(SqlLiteral::Str(v) | SqlLiteral::Num(v) | SqlLiteral::Hex(v)), Some(ty)) => Ok(Expr::Value(
             parse(&v, ty).map_err(|_| InvalidLiteral::new(v.into_string(), ty))?,
             ty.clone(),
         )),
@@ -139,6 +142,7 @@ fn op_supports_type(_op: BinOp, t: &AlgebraicType) -> bool {
         || t.is_bytes()
         || t.is_identity()
         || t.is_connection_id()
+        || t.is_timestamp()
 }
 
 /// Parse an integer literal into an [AlgebraicValue]
@@ -186,6 +190,11 @@ where
 
 /// Parses a source text literal as a particular type
 pub(crate) fn parse(value: &str, ty: &AlgebraicType) -> anyhow::Result<AlgebraicValue> {
+    let to_timestamp = || {
+        Timestamp::parse_from_str(value)?
+            .serialize(ValueSerializer)
+            .with_context(|| "Could not parse timestamp")
+    };
     let to_bytes = || {
         from_hex_pad::<Vec<u8>, _>(value)
             .map(|v| v.into_boxed_slice())
@@ -318,6 +327,7 @@ pub(crate) fn parse(value: &str, ty: &AlgebraicType) -> anyhow::Result<Algebraic
             AlgebraicValue::U256,
         ),
         AlgebraicType::String => Ok(AlgebraicValue::String(value.into())),
+        t if t.is_timestamp() => to_timestamp(),
         t if t.is_bytes() => to_bytes(),
         t if t.is_identity() => to_identity(),
         t if t.is_connection_id() => to_connection_id(),

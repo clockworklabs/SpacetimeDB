@@ -5257,6 +5257,7 @@ dependencies = [
  "bitflags 2.6.0",
  "blake3",
  "bytes",
+ "chrono",
  "derive_more",
  "enum-as-inner",
  "enum-map",
@@ -5351,12 +5352,14 @@ name = "spacetimedb-sats"
 version = "1.0.0"
 dependencies = [
  "ahash 0.8.11",
+ "anyhow",
  "arrayvec",
  "bitflags 2.6.0",
  "blake3",
  "bytemuck",
  "bytes",
  "bytestring",
+ "chrono",
  "decorum",
  "derive_more",
  "enum-as-inner",
