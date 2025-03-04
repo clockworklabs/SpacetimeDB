@@ -204,7 +204,7 @@ pub trait FileLike {
 
 impl FileLike for File {
     fn fsync(&mut self) -> io::Result<()> {
-        self.sync_all()
+        self.sync_data()
     }
 
     fn ftruncate(&mut self, _tx_offset: u64, size: u64) -> io::Result<()> {
