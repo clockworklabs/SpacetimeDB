@@ -23,8 +23,8 @@ spacetime login
 ```
 
 1. Open the SpacetimeDB website and log in using your GitHub login.
-1. You should now be able to see your published modules on the web dashboard.
+1. You should now be able to see your published modules [by navigating to your profile on the website](/profile).
 
 ---
 
-With SpacetimeDB Cloud, you benefit from automatic scaling, robust security, and the convenience of not having to manage the hosting environment.
+With SpacetimeDB Maincloud, you benefit from automatic scaling, robust security, and the convenience of not having to manage the hosting environment.
