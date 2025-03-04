@@ -2,9 +2,21 @@
 
 The SpacetimeDB client SDK for TypeScript contains all the tools you need to build clients for SpacetimeDB modules using Typescript, either in the browser or with NodeJS.
 
-> You need a database created before use the client, so make sure to follow the Rust or C# Module Quickstart guides if need one.
+| Name                                                              | Description                                                                                                                            |
+|-------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------|
+| [Project setup](#project-setup)                                   | Configure a Rust crate to use the SpacetimeDB Rust client SDK.                                                                         |
+| [Generate module bindings](#generate-module-bindings)             | Use the SpacetimeDB CLI to generate module-specific types and interfaces.                                                              |
+| [`DbConnection` type](#type-dbconnection)                         | A connection to a remote database.                                                                                                     |
+| [`DbContext` interface](#interface-dbcontext)                     | Methods for interacting with the remote database. Implemented by [`DbConnection`](#type-dbconnection) and various event context types. |
+| [`EventContext` type](#type-eventcontext)                         | [`DbContext`](#interface-dbcontext) available in [row callbacks](#callback-oninsert).                                                 |
+| [`ReducerEventContext` type](#type-reducereventcontext)           | [`DbContext`](#interface-dbcontext) available in [reducer callbacks](#observe-and-invoke-reducers).                                    |
+| [`SubscriptionEventContext` type](#type-subscriptioneventcontext) | [`DbContext`](#interface-dbcontext) available in [subscription-related callbacks](#subscribe-to-queries).                              |
+| [`ErrorContext` type](#type-errorcontext)                         | [`DbContext`](#interface-dbcontext) available in error-related callbacks.                                                              |
+| [Access the client cache](#access-the-client-cache)               | Make local queries against subscribed rows, and register [row callbacks](#callback-oninsert) to run when subscribed rows change.      |
+| [Observe and invoke reducers](#observe-and-invoke-reducers)       | Send requests to the database to run reducers, and register callbacks to run when notified of reducers.                                |
+| [Identify a client](#identify-a-client)                           | Types for identifying users and client connections.                                                                                    |
 
-## Install the SDK
+## Project setup
 
 First, create a new client project, and add the following to your `tsconfig.json` file:
 
@@ -55,927 +67,818 @@ Each SpacetimeDB client depends on some bindings specific to your module. Create
 mkdir -p client/src/module_bindings
 spacetime generate --lang typescript \
     --out-dir client/src/module_bindings \
-    --project-path server
-```
-
-And now you will get the files for the `reducers` & `tables`:
-
-```bash
-quickstart-chat
-├── client
-│   ├── node_modules
-│   ├── public
-│   └── src
-|       └── module_bindings
-|           ├── add_reducer.ts
-|           ├── person.ts
-|           └── say_hello_reducer.ts
-└── server
-    └── src
+    --project-path PATH-TO-MODULE-DIRECTORY
 ```
 
 Import the `module_bindings` in your client's _main_ file:
 
 ```typescript
-import { SpacetimeDBClient, Identity } from '@clockworklabs/spacetimedb-sdk';
-
-import Person from './module_bindings/person';
-import AddReducer from './module_bindings/add_reducer';
-import SayHelloReducer from './module_bindings/say_hello_reducer';
-console.log(Person, AddReducer, SayHelloReducer);
+import * as moduleBindings from './module_bindings/index';
 ```
 
-> There is a known issue where if you do not use every type in your file, it will not pull them into the published build. To fix this, we are using `console.log` to force them to get pulled in.
+You may also need to import some definitions from the SDK library:
 
-## API at a glance
-
-### Classes
-
-| Class                                           | Description                                                                  |
-| ----------------------------------------------- | ---------------------------------------------------------------------------- |
-| [`SpacetimeDBClient`](#class-spacetimedbclient) | The database client connection to a SpacetimeDB server.                      |
-| [`Identity`](#class-identity)                   | The user's public identity.                                                  |
-| [`Address`](#class-address)                     | An opaque identifier for differentiating connections by the same `Identity`. |
-| [`{Table}`](#class-table)                       | `{Table}` is a placeholder for each of the generated tables.                 |
-| [`{Reducer}`](#class-reducer)                   | `{Reducer}` is a placeholder for each of the generated reducers.             |
-
-### Class `SpacetimeDBClient`
-
-The database client connection to a SpacetimeDB server.
-
-Defined in [spacetimedb-sdk.spacetimedb](https://github.com/clockworklabs/spacetimedb-typescript-sdk/blob/main/src/spacetimedb.ts):
-
-| Constructors                                                      | Description                                                              |
-| ----------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| [`SpacetimeDBClient.constructor`](#spacetimedbclient-constructor) | Creates a new `SpacetimeDBClient` database client.                       |
-| Properties                                                        |
-| [`SpacetimeDBClient.identity`](#spacetimedbclient-identity)       | The user's public identity.                                              |
-| [`SpacetimeDBClient.live`](#spacetimedbclient-live)               | Whether the client is connected.                                         |
-| [`SpacetimeDBClient.token`](#spacetimedbclient-token)             | The user's private authentication token.                                 |
-| Methods                                                           |                                                                          |
-| [`SpacetimeDBClient.connect`](#spacetimedbclient-connect)         | Connect to a SpacetimeDB module.                                         |
-| [`SpacetimeDBClient.disconnect`](#spacetimedbclient-disconnect)   | Close the current connection.                                            |
-| [`SpacetimeDBClient.subscribe`](#spacetimedbclient-subscribe)     | Subscribe to a set of queries.                                           |
-| Events                                                            |                                                                          |
-| [`SpacetimeDBClient.onConnect`](#spacetimedbclient-onconnect)     | Register a callback to be invoked upon authentication with the database. |
-| [`SpacetimeDBClient.onError`](#spacetimedbclient-onerror)         | Register a callback to be invoked upon a error.                          |
-
-## Constructors
-
-### `SpacetimeDBClient` constructor
-
-Creates a new `SpacetimeDBClient` database client and set the initial parameters.
-
-```ts
-new SpacetimeDBClient(host: string, name_or_address: string, auth_token?: string, protocol?: "binary" | "json")
+```typescript
+import {
+  Identity, ConnectionId, Event, ReducerEvent
+} from '@clockworklabs/spacetimedb-sdk';
 ```
 
-#### Parameters
+## Type `DbConnection`
 
-| Name              | Type                   | Description                                                                                                                                       |
-| :---------------- | :--------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `host`            | `string`               | The host of the SpacetimeDB server.                                                                                                               |
-| `name_or_address` | `string`               | The name or address of the SpacetimeDB module.                                                                                                    |
-| `auth_token?`     | `string`               | The credentials to use to connect to authenticate with SpacetimeDB.                                                                               |
-| `protocol?`       | `"binary"` \| `"json"` | Define how encode the messages: `"binary"` \| `"json"`. Binary is more efficient and compact, but JSON provides human-readable debug information. |
-
-#### Example
-
-```ts
-const host = 'ws://localhost:3000';
-const name_or_address = 'database_name';
-const auth_token = undefined;
-const protocol = 'binary';
-
-var spacetimeDBClient = new SpacetimeDBClient(
-  host,
-  name_or_address,
-  auth_token,
-  protocol
-);
+```typescript
+DbConnection
 ```
 
-## Class methods
+A connection to a remote database is represented by the `DbConnection` type. This type is generated per-module, and contains information about the types, tables and reducers defined by your module.
 
-### `SpacetimeDBClient.registerReducers`
+| Name                                                      | Description                                                                                      |
+|-----------------------------------------------------------|--------------------------------------------------------------------------------------------------|
+| [Connect to a module](#connect-to-a-module)               | Construct a `DbConnection`.                                                                      |
+| [Access tables and reducers](#access-tables-and-reducers) | Access subscribed rows in the client cache, request reducer invocations, and register callbacks. |
 
-Registers reducer classes for use with a SpacetimeDBClient
 
-```ts
-registerReducers(...reducerClasses: ReducerClass[])
+### Connect to a module
+
+```typescript
+class DbConnection {
+  public static builder(): DbConnectionBuilder
+}
 ```
 
-#### Parameters
+Construct a `DbConnection` by calling `DbConnection.builder()` and chaining configuration methods, then calling `.build()`. You must at least specify `withUri`, to supply the URI of the SpacetimeDB to which you published your module, and `withModuleName`, to supply the human-readable SpacetimeDB domain name or the raw `Identity` which identifies the module.
 
-| Name             | Type           | Description                   |
-| :--------------- | :------------- | :---------------------------- |
-| `reducerClasses` | `ReducerClass` | A list of classes to register |
+| Name                                                  | Description                                                                          |
+|-------------------------------------------------------|--------------------------------------------------------------------------------------|
+| [`withUri` method](#method-withuri)                   | Set the URI of the SpacetimeDB instance which hosts the remote database.             |
+| [`withModuleName` method](#method-withmodulename)     | Set the name or `Identity` of the remote database.                                   |
+| [`onConnect` callback](#callback-onconnect)           | Register a callback to run when the connection is successfully established.          |
+| [`onConnectError` callback](#callback-onconnecterror) | Register a callback to run if the connection is rejected or the host is unreachable. |
+| [`onDisconnect` callback](#callback-ondisconnect)     | Register a callback to run when the connection ends.                                 |
+| [`withToken` method](#method-withtoken)               | Supply a token to authenticate with the remote database.                             |
+| [`build` method](#method-build)                       | Finalize configuration and connect.                                                  |
 
-#### Example
+#### Method `withUri`
 
-```ts
-import SayHelloReducer from './types/say_hello_reducer';
-import AddReducer from './types/add_reducer';
-
-SpacetimeDBClient.registerReducers(SayHelloReducer, AddReducer);
+```typescript
+class DbConnectionBuilder {
+  public withUri(uri: string): DbConnectionBuilder
+}
 ```
 
----
+Configure the URI of the SpacetimeDB instance or cluster which hosts the remote module.
 
-### `SpacetimeDBClient.registerTables`
+#### Method `withModuleName`
 
-Registers table classes for use with a SpacetimeDBClient
-
-```ts
-registerTables(...reducerClasses: TableClass[])
-```
-
-#### Parameters
-
-| Name           | Type         | Description                   |
-| :------------- | :----------- | :---------------------------- |
-| `tableClasses` | `TableClass` | A list of classes to register |
-
-#### Example
-
-```ts
-import User from './types/user';
-import Player from './types/player';
-
-SpacetimeDBClient.registerTables(User, Player);
-```
-
----
-
-## Properties
-
-### `SpacetimeDBClient` identity
-
-The user's public [Identity](#class-identity).
+```typescript
+class DbConnectionBuilder {
+  public withModuleName(name_or_identity: string): DbConnectionBuilder
+}
 
 ```
-identity: Identity | undefined
+
+Configure the SpacetimeDB domain name or hex string encoded `Identity` of the remote module which identifies it within the SpacetimeDB instance or cluster.
+
+#### Callback `onConnect`
+
+```typescript
+class DbConnectionBuilder {
+  public onConnect(
+    callback: (ctx: DbConnection, identity: Identity, token: string) => void
+  ): DbConnectionBuilder
+}
 ```
 
----
+Chain a call to `.onConnect(callback)` to your builder to register a callback to run when your new `DbConnection` successfully initiates its connection to the remote module. The callback accepts three arguments: a reference to the `DbConnection`, the `Identity` by which SpacetimeDB identifies this connection, and a private access token which can be saved and later passed to [`withToken`](#method-withtoken) to authenticate the same user in future connections.
 
-### `SpacetimeDBClient` live
+#### Callback `onConnectError`
 
-Whether the client is connected.
-
-```ts
-live: boolean;
+```typescript
+class DbConnectionBuilder {
+  public onConnectError(
+    callback: (ctx: ErrorContext, error: Error) => void
+  ): DbConnectionBuilder
+}
 ```
 
----
+Chain a call to `.onConnectError(callback)` to your builder to register a callback to run when your connection fails.
 
-### `SpacetimeDBClient` token
+#### Callback `onDisconnect`
 
-The user's private authentication token.
-
-```
-token: string | undefined
-```
-
-#### Parameters
-
-| Name          | Type         | Description                     |
-| :------------ | :----------- | :------------------------------ |
-| `reducerName` | `string`     | The name of the reducer to call |
-| `serializer`  | `Serializer` | -                               |
-
----
-
-### `SpacetimeDBClient` connect
-
-Connect to The SpacetimeDB Websocket For Your Module. By default, this will use a secure websocket connection. The parameters are optional, and if not provided, will use the values provided on construction of the client.
-
-```ts
-connect(host: string?, name_or_address: string?, auth_token: string?): Promise<void>
+```typescript
+class DbConnectionBuilder {
+  public onDisconnect(
+    callback: (ctx: ErrorContext, error: Error | null) => void
+  ): DbConnectionBuilder
+}
 ```
 
-#### Parameters
+Chain a call to `.onDisconnect(callback)` to your builder to register a callback to run when your `DbConnection` disconnects from the remote module, either as a result of a call to [`disconnect`](#method-disconnect) or due to an error.
 
-| Name               | Type     | Description                                                                                                                                 |
-| :----------------- | :------- | :------------------------------------------------------------------------------------------------------------------------------------------ |
-| `host?`            | `string` | The hostname of the SpacetimeDB server. Defaults to the value passed to the [constructor](#spacetimedbclient-constructor).                  |
-| `name_or_address?` | `string` | The name or address of the SpacetimeDB module. Defaults to the value passed to the [constructor](#spacetimedbclient-constructor).           |
-| `auth_token?`      | `string` | The credentials to use to authenticate with SpacetimeDB. Defaults to the value passed to the [constructor](#spacetimedbclient-constructor). |
+#### Method `withToken`
 
-#### Returns
-
-`Promise`<`void`\>
-
-#### Example
-
-```ts
-const host = 'ws://localhost:3000';
-const name_or_address = 'database_name';
-const auth_token = undefined;
-
-var spacetimeDBClient = new SpacetimeDBClient(
-  host,
-  name_or_address,
-  auth_token
-);
-// Connect with the initial parameters
-spacetimeDBClient.connect();
-//Set the `auth_token`
-spacetimeDBClient.connect(undefined, undefined, NEW_TOKEN);
+```typescript
+class DbConnectionBuilder {
+  public withToken(token?: string): DbConnectionBuilder
+}
 ```
 
----
+Chain a call to `.withToken(token)` to your builder to provide an OpenID Connect compliant JSON Web Token to authenticate with, or to explicitly select an anonymous connection. If this method is not called or `null` is passed, SpacetimeDB will generate a new `Identity` and sign a new private access token for the connection.
 
-### `SpacetimeDBClient` disconnect
 
-Close the current connection.
+#### Method `build`
 
-```ts
-disconnect(): void
+```typescript
+class DbConnectionBuilder {
+  public build(): DbConnection
+}
 ```
 
-#### Example
+After configuring the connection and registering callbacks, attempt to open the connection.
 
-```ts
-var spacetimeDBClient = new SpacetimeDBClient(
-  'ws://localhost:3000',
-  'database_name'
-);
+### Access tables and reducers
 
-spacetimeDBClient.disconnect();
+#### Field `db`
+
+```typescript
+class DbConnection {
+  public db: RemoteTables
+}
 ```
 
----
+The `db` field of the `DbConnection` provides access to the subscribed view of the remote database's tables. See [Access the client cache](#access-the-client-cache).
 
-### `SpacetimeDBClient` subscribe
+#### Field `reducers`
 
-Subscribe to a set of queries, to be notified when rows which match those queries are altered.
-
-> A new call to `subscribe` will remove all previous subscriptions and replace them with the new `queries`.
-> If any rows matched the previous subscribed queries but do not match the new queries,
-> those rows will be removed from the client cache, and [`{Table}.on_delete`](#table-ondelete) callbacks will be invoked for them.
-
-```ts
-subscribe(queryOrQueries: string | string[]): void
+```typescript
+class DbConnection {
+  public reducers: RemoteReducers
+}
 ```
 
-#### Parameters
+The `reducers` field of the `DbConnection` provides access to reducers exposed by the remote module. See [Observe and invoke reducers](#observe-and-invoke-reducers).
 
-| Name             | Type                   | Description                      |
-| :--------------- | :--------------------- | :------------------------------- |
-| `queryOrQueries` | `string` \| `string`[] | A `SQL` query or list of queries |
+## Interface `DbContext`
 
-#### Example
-
-```ts
-spacetimeDBClient.subscribe(['SELECT * FROM User', 'SELECT * FROM Message']);
+```typescript
+interface DbContext<
+    DbView,
+    Reducers,
+>
 ```
 
-## Events
+[`DbConnection`](#type-dbconnection), [`EventContext`](#type-eventcontext), [`ReducerEventContext`](#type-reducereventcontext), [`SubscriptionEventContext`](#type-subscriptioneventcontext) and [`ErrorContext`](#type-errorcontext) all implement `DbContext`. `DbContext` has fields and methods for inspecting and configuring your connection to the remote database.
 
-### `SpacetimeDBClient` onConnect
+The `DbContext` interface is implemented by connections and contexts to *every* module. This means that its [`DbView`](#field-db) and [`Reducers`](#field-reducers) are generic types.
 
-Register a callback to be invoked upon authentication with the database.
+| Name                                                  | Description                                                              |
+|-------------------------------------------------------|--------------------------------------------------------------------------|
+| [`db` field](#field-db)                               | Access subscribed rows of tables and register row callbacks.             |
+| [`reducers` field](#field-reducers)                   | Request reducer invocations and register reducer callbacks.              |
+| [`disconnect` method](#method-disconnect)             | End the connection.                                                      |
+| [Subscribe to queries](#subscribe-to-queries)         | Register SQL queries to receive updates about matching rows.             |
+| [Read connection metadata](#read-connection-metadata) | Access the connection's `Identity` and `ConnectionId`                    |
 
-```ts
-onConnect(callback: (token: string, identity: Identity) => void): void
+#### Field `db`
+
+```typescript
+interface DbContext {
+  db: DbView
+}
 ```
 
-The callback will be invoked with the public user [Identity](#class-identity), private authentication token and connection [`Address`](#class-address) provided by the database. If credentials were supplied to [connect](#spacetimedbclient-connect), those passed to the callback will be equivalent to the ones used to connect. If the initial connection was anonymous, a new set of credentials will be generated by the database to identify this user.
+The `db` field of a `DbContext` provides access to the subscribed view of the remote database's tables. See [Access the client cache](#access-the-client-cache).
 
-The credentials passed to the callback can be saved and used to authenticate the same user in future connections.
+#### Field `reducers`
 
-#### Parameters
-
-| Name       | Type                                                                                                             |
-| :--------- | :--------------------------------------------------------------------------------------------------------------- |
-| `callback` | (`token`: `string`, `identity`: [`Identity`](#class-identity), `address`: [`Address`](#class-address)) => `void` |
-
-#### Example
-
-```ts
-spacetimeDBClient.onConnect((token, identity, address) => {
-  console.log('Connected to SpacetimeDB');
-  console.log('Token', token);
-  console.log('Identity', identity);
-  console.log('Address', address);
-});
+```typescript
+interface DbContext {
+  reducers: Reducers
+}
 ```
 
----
+The `reducers` field of a `DbContext` provides access to reducers exposed by the remote module. See [Observe and invoke reducers](#observe-and-invoke-reducers).
 
-### `SpacetimeDBClient` onError
+### Method `disconnect`
 
-Register a callback to be invoked upon an error.
-
-```ts
-onError(callback: (...args: any[]) => void): void
+```typescript
+interface DbContext {
+  disconnect(): void
+}
 ```
 
-#### Parameters
+Gracefully close the `DbConnection`. Throws an error if the connection is already disconnected.
 
-| Name       | Type                           |
-| :--------- | :----------------------------- |
-| `callback` | (...`args`: `any`[]) => `void` |
+### Subscribe to queries
 
-#### Example
+| Name                                                    | Description                                                 |
+|---------------------------------------------------------|-------------------------------------------------------------|
+| [`SubscriptionBuilder` type](#type-subscriptionbuilder) | Builder-pattern constructor to register subscribed queries. |
+| [`SubscriptionHandle` type](#type-subscriptionhandle)   | Manage an active subscripion.                               |
 
-```ts
-spacetimeDBClient.onError((...args: any[]) => {
-  console.error('ERROR', args);
-});
+#### Type `SubscriptionBuilder`
+
+```typescript
+SubscriptionBuilder
 ```
 
-### Class `Identity`
+| Name                                                                           | Description                                                     |
+|--------------------------------------------------------------------------------|-----------------------------------------------------------------|
+| [`ctx.subscriptionBuilder()` constructor](#constructor-ctxsubscriptionbuilder) | Begin configuring a new subscription.                           |
+| [`onApplied` callback](#callback-onapplied)                                    | Register a callback to run when matching rows become available. |
+| [`onError` callback](#callback-onerror)                                        | Register a callback to run if the subscription fails.           |
+| [`subscribe` method](#method-subscribe)                                        | Finish configuration and subscribe to one or more SQL queries.  |
+| [`subscribeToAllTables` method](#method-subscribetoalltables)                  | Convenience method to subscribe to the entire database.         |
 
-A unique public identifier for a user of a database.
+##### Constructor `ctx.subscriptionBuilder()`
 
-Defined in [spacetimedb-sdk.identity](https://github.com/clockworklabs/spacetimedb-typescript-sdk/blob/main/src/identity.ts):
-
-| Constructors                                    | Description                                  |
-| ----------------------------------------------- | -------------------------------------------- |
-| [`Identity.constructor`](#identity-constructor) | Creates a new `Identity`.                    |
-| Methods                                         |                                              |
-| [`Identity.isEqual`](#identity-isequal)         | Compare two identities for equality.         |
-| [`Identity.toHexString`](#identity-tohexstring) | Print the identity as a hexadecimal string.  |
-| Static methods                                  |                                              |
-| [`Identity.fromString`](#identity-fromstring)   | Parse an Identity from a hexadecimal string. |
-
-## Constructors
-
-### `Identity` constructor
-
-```ts
-new Identity(data: Uint8Array)
+```typescript
+interface DbContext {
+  subscriptionBuilder(): SubscriptionBuilder
+}
 ```
 
-#### Parameters
+Subscribe to queries by calling `ctx.subscription_builder()` and chaining configuration methods, then calling `.subscribe(queries)`.
 
-| Name   | Type         |
-| :----- | :----------- |
-| `data` | `Uint8Array` |
+##### Callback `onApplied`
 
-## Methods
-
-### `Identity` isEqual
-
-Compare two identities for equality.
-
-```ts
-isEqual(other: Identity): boolean
+```typescript
+class SubscriptionBuilder {
+  public onApplied(
+    callback: (ctx: SubscriptionEventContext) => void
+  ): SubscriptionBuilder
+}
 ```
 
-#### Parameters
+Register a callback to run when the subscription is applied and the matching rows are inserted into the client cache.
 
-| Name    | Type                          |
-| :------ | :---------------------------- |
-| `other` | [`Identity`](#class-identity) |
+##### Callback `onError`
 
-#### Returns
-
-`boolean`
-
----
-
-### `Identity` toHexString
-
-Print an `Identity` as a hexadecimal string.
-
-```ts
-toHexString(): string
+```typescript
+class SubscriptionBuilder {
+  public onError(
+    callback: (ctx: ErrorContext, error: Error) => void
+  ): SubscriptionBuilder
+}
 ```
 
-#### Returns
+Register a callback to run if the subscription is rejected or unexpectedly terminated by the server. This is most frequently caused by passing an invalid query to [`subscribe`](#method-subscribe).
 
-`string`
 
----
+##### Method `subscribe`
 
-### `Identity` fromString
-
-Static method; parse an Identity from a hexadecimal string.
-
-```ts
-Identity.fromString(str: string): Identity
+```typescript
+class SubscriptionBuilder {
+  subscribe(queries: string | string[]): SubscriptionHandle
+}
 ```
 
-#### Parameters
+Subscribe to a set of queries.
 
-| Name  | Type     |
-| :---- | :------- |
-| `str` | `string` |
+See [the SpacetimeDB SQL Reference](/docs/sql#subscriptions) for information on the queries SpacetimeDB supports as subscriptions.
 
-#### Returns
+##### Method `subscribeToAllTables`
 
-[`Identity`](#class-identity)
-
-### Class `Address`
-
-An opaque identifier for a client connection to a database, intended to differentiate between connections from the same [`Identity`](#class-identity).
-
-Defined in [spacetimedb-sdk.address](https://github.com/clockworklabs/spacetimedb-typescript-sdk/blob/main/src/address.ts):
-
-| Constructors                                  | Description                                 |
-| --------------------------------------------- | ------------------------------------------- |
-| [`Address.constructor`](#address-constructor) | Creates a new `Address`.                    |
-| Methods                                       |                                             |
-| [`Address.isEqual`](#address-isequal)         | Compare two identities for equality.        |
-| [`Address.toHexString`](#address-tohexstring) | Print the address as a hexadecimal string.  |
-| Static methods                                |                                             |
-| [`Address.fromString`](#address-fromstring)   | Parse an Address from a hexadecimal string. |
-
-## Constructors
-
-### `Address` constructor
-
-```ts
-new Address(data: Uint8Array)
+```typescript
+class SubscriptionBuilder {
+  subscribeToAllTables(): void
+}
 ```
 
-#### Parameters
+Subscribe to all rows from all public tables. This method is provided as a convenience for simple clients. The subscription initiated by `subscribeToAllTables` cannot be canceled after it is initiated. You should [`subscribe` to specific queries](#method-subscribe) if you need fine-grained control over the lifecycle of your subscriptions.
 
-| Name   | Type         |
-| :----- | :----------- |
-| `data` | `Uint8Array` |
+#### Type `SubscriptionHandle`
 
-## Methods
-
-### `Address` isEqual
-
-Compare two addresses for equality.
-
-```ts
-isEqual(other: Address): boolean
+```typescript
+SubscriptionHandle
 ```
 
-#### Parameters
+A `SubscriptionHandle` represents a subscribed query or a group of subscribed queries.
 
-| Name    | Type                        |
-| :------ | :-------------------------- |
-| `other` | [`Address`](#class-address) |
+The `SubscriptionHandle` does not contain or provide access to the subscribed rows. Subscribed rows of all subscriptions by a connection are contained within that connection's [`ctx.db`](#field-db). See [Access the client cache](#access-the-client-cache).
 
-#### Returns
+| Name                                                | Description                                                                                                      |
+|-----------------------------------------------------|------------------------------------------------------------------------------------------------------------------|
+| [`isEnded` method](#method-isended)                 | Determine whether the subscription has ended.                                                                    |
+| [`isActive` method](#method-isactive)               | Determine whether the subscription is active and its matching rows are present in the client cache.              |
+| [`unsubscribe` method](#method-unsubscribe)         | Discard a subscription.                                                                                          |
+| [`unsubscribeThen` method](#method-unsubscribethen) | Discard a subscription, and register a callback to run when its matching rows are removed from the client cache. |
 
-`boolean`
+##### Method `isEnded`
 
----
-
-### `Address` toHexString
-
-Print an `Address` as a hexadecimal string.
-
-```ts
-toHexString(): string
+```typescript
+class SubscriptionHandle {
+  public isEnded(): bool
+}
 ```
 
-#### Returns
+Returns true if this subscription has been terminated due to an unsubscribe call or an error.
 
-`string`
+##### Method `isActive`
 
----
-
-### `Address` fromString
-
-Static method; parse an Address from a hexadecimal string.
-
-```ts
-Address.fromString(str: string): Address
+```typescript
+class SubscriptionHandle {
+  public isActive(): bool
+}
 ```
 
-#### Parameters
+Returns true if this subscription has been applied and has not yet been unsubscribed.
 
-| Name  | Type     |
-| :---- | :------- |
-| `str` | `string` |
+##### Method `unsubscribe`
 
-#### Returns
-
-[`Address`](#class-address)
-
-### Class `{Table}`
-
-For each table defined by a module, `spacetime generate` generates a `class` in the `module_bindings` folder whose name is that table's name converted to `PascalCase`.
-
-The generated class has a field for each of the table's columns, whose names are the column names converted to `snake_case`.
-
-| Properties                                        | Description                                                                                                                             |
-| ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| [`Table.name`](#table-name)                       | The name of the class.                                                                                                                  |
-| [`Table.tableName`](#table-tablename)             | The name of the table in the database.                                                                                                  |
-| Methods                                           |                                                                                                                                         |
-| [`Table.all`](#table-all)                         | Return all the subscribed rows in the table.                                                                                            |
-| [`Table.filterBy{COLUMN}`](#table-filterbycolumn) | Autogenerated; return subscribed rows with a given value in a particular column. `{COLUMN}` is a placeholder for a column name.         |
-| [`Table.findBy{COLUMN}`](#table-findbycolumn)     | Autogenerated; return a subscribed row with a given value in a particular unique column. `{COLUMN}` is a placeholder for a column name. |
-| Events                                            |                                                                                                                                         |
-| [`Table.onInsert`](#table-oninsert)               | Register an `onInsert` callback for when a subscribed row is newly inserted into the database.                                          |
-| [`Table.removeOnInsert`](#table-removeoninsert)   | Unregister a previously-registered [`onInsert`](#table-oninsert) callback.                                                              |
-| [`Table.onUpdate`](#table-onupdate)               | Register an `onUpdate` callback for when an existing row is modified.                                                                   |
-| [`Table.removeOnUpdate`](#table-removeonupdate)   | Unregister a previously-registered [`onUpdate`](#table-onupdate) callback.                                                              |
-| [`Table.onDelete`](#table-ondelete)               | Register an `onDelete` callback for when a subscribed row is removed from the database.                                                 |
-| [`Table.removeOnDelete`](#table-removeondelete)   | Unregister a previously-registered [`onDelete`](#table-removeondelete) callback.                                                        |
-
-## Properties
-
-### {Table} name
-
-• **name**: `string`
-
-The name of the `Class`.
-
----
-
-### {Table} tableName
-
-The name of the table in the database.
-
-▪ `Static` **tableName**: `string` = `"Person"`
-
-## Methods
-
-### {Table} all
-
-Return all the subscribed rows in the table.
-
-```ts
-{Table}.all(): {Table}[]
+```typescript
+class SubscriptionHandle {
+  public unsubscribe(): void
+}
 ```
 
-#### Returns
+Terminate this subscription, causing matching rows to be removed from the client cache. Any rows removed from the client cache this way will have [`onDelete` callbacks](#callback-ondelete) run for them.
 
-`{Table}[]`
+Unsubscribing is an asynchronous operation. Matching rows are not removed from the client cache immediately. Use [`unsubscribeThen`](#method-unsubscribethen) to run a callback once the unsubscribe operation is completed.
 
-#### Example
+Throws an error if the subscription has already ended, either due to a previous call to `unsubscribe` or [`unsubscribeThen`](#method-unsubscribethen), or due to an error.
 
-```ts
-var spacetimeDBClient = new SpacetimeDBClient(
-  'ws://localhost:3000',
-  'database_name'
-);
+##### Method `unsubscribeThen`
 
-spacetimeDBClient.onConnect((token, identity, address) => {
-  spacetimeDBClient.subscribe(['SELECT * FROM Person']);
-
-  setTimeout(() => {
-    console.log(Person.all()); // Prints all the `Person` rows in the database.
-  }, 5000);
-});
+```typescript
+class SubscriptionHandle {
+  public unsubscribeThen(
+    on_end: (ctx: SubscriptionEventContext) => void
+  ): void
+}
 ```
 
----
+Terminate this subscription, and run the `onEnd` callback when the subscription is ended and its matching rows are removed from the client cache. Any rows removed from the client cache this way will have [`onDelete` callbacks](#callback-ondelete) run for them.
 
-### {Table} count
+Returns an error if the subscription has already ended, either due to a previous call to [`unsubscribe`](#method-unsubscribe) or `unsubscribeThen`, or due to an error.
 
-Return the number of subscribed rows in the table, or 0 if there is no active connection.
+### Read connection metadata
 
-```ts
-{Table}.count(): number
+#### Field `isActive`
+
+```typescript
+interface DbContext {
+  isActive: bool
+}
 ```
 
-#### Returns
+`true` if the connection has not yet disconnected. Note that a connection `isActive` when it is constructed, before its [`onConnect` callback](#callback-onconnect) is invoked.
 
-`number`
+## Type `EventContext`
 
-#### Example
-
-```ts
-var spacetimeDBClient = new SpacetimeDBClient(
-  'ws://localhost:3000',
-  'database_name'
-);
-
-spacetimeDBClient.onConnect((token, identity, address) => {
-  spacetimeDBClient.subscribe(['SELECT * FROM Person']);
-
-  setTimeout(() => {
-    console.log(Person.count());
-  }, 5000);
-});
+```typescript
+EventContext
 ```
 
----
+An `EventContext` is a [`DbContext`](#interface-dbcontext) augmented with a field [`event: Event`](#type-event). `EventContext`s are passed as the first argument to row callbacks [`onInsert`](#callback-oninsert), [`onDelete`](#callback-ondelete) and [`onUpdate`](#callback-onupdate).
 
-### {Table} filterBy{COLUMN}
+| Name                                | Description                                                   |
+|-------------------------------------|---------------------------------------------------------------|
+| [`event` field](#field-event)       | Enum describing the cause of the current row callback.        |
+| [`db` field](#field-db)             | Provides access to the client cache.                          |
+| [`reducers` field](#field-reducers) | Allows requesting reducers run on the remote database.        |
+| [`Event` type](#type-event)         | Possible events which can cause a row callback to be invoked. |
 
-For each column of a table, `spacetime generate` generates a static method on the `Class` to filter subscribed rows where that column matches a requested value.
+### Field `event`
 
-These methods are named `filterBy{COLUMN}`, where `{COLUMN}` is the column name converted to `camelCase`.
+```typescript
+class EventContext {
+  public event: Event<Reducer>
+}
+/* other fields */
 
-```ts
-{Table}.filterBy{COLUMN}(value): Iterable<{Table}>
 ```
 
-#### Parameters
+The [`Event`](#type-event) contained in the `EventContext` describes what happened to cause the current row callback to be invoked.
 
-| Name    | Type                        |
-| :------ | :-------------------------- |
-| `value` | The type of the `{COLUMN}`. |
+### Field `db`
 
-#### Returns
-
-`Iterable<{Table}>`
-
-#### Example
-
-```ts
-var spacetimeDBClient = new SpacetimeDBClient(
-  'ws://localhost:3000',
-  'database_name'
-);
-
-spacetimeDBClient.onConnect((token, identity, address) => {
-  spacetimeDBClient.subscribe(['SELECT * FROM Person']);
-
-  setTimeout(() => {
-    console.log(...Person.filterByName('John')); // prints all the `Person` rows named John.
-  }, 5000);
-});
+```typescript
+class EventContext {
+  public db: RemoteTables
+}
 ```
 
----
+The `db` field of the context provides access to the subscribed view of the remote database's tables. See [Access the client cache](#access-the-client-cache).
 
-### {Table} findBy{COLUMN}
+### Field `reducers`
 
-For each unique column of a table, `spacetime generate` generates a static method on the `Class` to find the subscribed row where that column matches a requested value.
-
-These methods are named `findBy{COLUMN}`, where `{COLUMN}` is the column name converted to `camelCase`.
-
-```ts
-{Table}.findBy{COLUMN}(value): {Table} | undefined
+```typescript
+class EventContext {
+  public reducers: RemoteReducers
+}
 ```
 
-#### Parameters
+The `reducers` field of the context provides access to reducers exposed by the remote module. See [Observe and invoke reducers](#observe-and-invoke-reducers).
 
-| Name    | Type                        |
-| :------ | :-------------------------- |
-| `value` | The type of the `{COLUMN}`. |
+### Type `Event`
 
-#### Returns
-
-`{Table} | undefined`
-
-#### Example
-
-```ts
-var spacetimeDBClient = new SpacetimeDBClient(
-  'ws://localhost:3000',
-  'database_name'
-);
-
-spacetimeDBClient.onConnect((token, identity, address) => {
-  spacetimeDBClient.subscribe(['SELECT * FROM Person']);
-
-  setTimeout(() => {
-    console.log(Person.findById(0)); // prints a `Person` row with id 0.
-  }, 5000);
-});
+```rust
+type Event<Reducer> =
+  | { tag: 'Reducer'; value: ReducerEvent<Reducer> }
+  | { tag: 'SubscribeApplied' }
+  | { tag: 'UnsubscribeApplied' }
+  | { tag: 'Error'; value: Error }
+  | { tag: 'UnknownTransaction' };
 ```
 
----
+| Name                                                        | Description                                                                                                                             |
+|-------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------|
+| [`Reducer` variant](#variant-reducer)                       | A reducer ran in the remote database.                                                                                                   |
+| [`SubscribeApplied` variant](#variant-subscribeapplied)     | A new subscription was applied to the client cache.                                                                                     |
+| [`UnsubscribeApplied` variant](#variant-unsubscribeapplied) | A previous subscription was removed from the client cache after a call to [`unsubscribe`](#method-unsubscribe).                         |
+| [`Error` variant](#variant-error)                           | A previous subscription was removed from the client cache due to an error.                                                              |
+| [`UnknownTransaction` variant](#variant-unknowntransaction) | A transaction ran in the remote database, but was not attributed to a known reducer.                                                    |
+| [`ReducerEvent` type](#type-reducerevent)                   | Metadata about a reducer run. Contained in [`Event::Reducer`](#variant-reducer) and [`ReducerEventContext`](#type-reducereventcontext). |
+| [`UpdateStatus` type](#type-updatestatus)                   | Completion status of a reducer run.                                                                                                     |
+| [`Reducer` type](#type-reducer)                             | Module-specific generated enum with a variant for each reducer defined by the module.                                                   |
 
-### {Table} fromValue
+#### Variant `Reducer`
 
-Deserialize an `AlgebraicType` into this `{Table}`.
-
-```ts
- {Table}.fromValue(value: AlgebraicValue): {Table}
+```typescript
+{ tag: 'Reducer'; value: ReducerEvent<Reducer> }
 ```
 
-#### Parameters
+Event when we are notified that a reducer ran in the remote module. The [`ReducerEvent`](#type-reducerevent) contains metadata about the reducer run, including its arguments and termination status(#type-updatestatus).
 
-| Name    | Type             |
-| :------ | :--------------- |
-| `value` | `AlgebraicValue` |
+This event is passed to row callbacks resulting from modifications by the reducer.
 
-#### Returns
+#### Variant `SubscribeApplied`
 
-`{Table}`
-
----
-
-### {Table} getAlgebraicType
-
-Serialize `this` into an `AlgebraicType`.
-
-#### Example
-
-```ts
-{Table}.getAlgebraicType(): AlgebraicType
+```typescript
+{ tag: 'SubscribeApplied' }
 ```
 
-#### Returns
+Event when our subscription is applied and its rows are inserted into the client cache.
 
-`AlgebraicType`
+This event is passed to [row `onInsert` callbacks](#callback-oninsert) resulting from the new subscription.
 
----
+#### Variant `UnsubscribeApplied`
 
-### {Table} onInsert
-
-Register an `onInsert` callback for when a subscribed row is newly inserted into the database.
-
-```ts
-{Table}.onInsert(callback: (value: {Table}, reducerEvent: ReducerEvent | undefined) => void): void
+```typescript
+{ tag: 'UnsubscribeApplied' }
 ```
 
-#### Parameters
+Event when our subscription is removed after a call to [`SubscriptionHandle.unsubscribe`](#method-unsubscribe) or [`SubscriptionHandle.unsubscribeThen`](#method-unsubscribethen) and its matching rows are deleted from the client cache.
 
-| Name       | Type                                                                          | Description                                            |
-| :--------- | :---------------------------------------------------------------------------- | :----------------------------------------------------- |
-| `callback` | (`value`: `{Table}`, `reducerEvent`: `undefined` \| `ReducerEvent`) => `void` | Callback to run whenever a subscribed row is inserted. |
+This event is passed to [row `onDelete` callbacks](#callback-ondelete) resulting from the subscription ending.
 
-#### Example
+#### Variant `Error`
 
-```ts
-var spacetimeDBClient = new SpacetimeDBClient(
-  'ws://localhost:3000',
-  'database_name'
-);
-spacetimeDBClient.onConnect((token, identity, address) => {
-  spacetimeDBClient.subscribe(['SELECT * FROM Person']);
-});
+```typescript
+{ tag: 'Error'; value: Error }
 
-Person.onInsert((person, reducerEvent) => {
-  if (reducerEvent) {
-    console.log('New person inserted by reducer', reducerEvent, person);
-  } else {
-    console.log('New person received during subscription update', person);
-  }
-});
 ```
 
----
+Event when a subscription ends unexpectedly due to an error.
 
-### {Table} removeOnInsert
+This event is passed to [row `onDelete` callbacks](#callback-ondelete) resulting from the subscription ending.
 
-Unregister a previously-registered [`onInsert`](#table-oninsert) callback.
+#### Variant `UnknownTransaction`
 
-```ts
-{Table}.removeOnInsert(callback: (value: Person, reducerEvent: ReducerEvent | undefined) => void): void
+```typescript
+{ tag: 'UnknownTransaction' }
 ```
 
-#### Parameters
+Event when we are notified of a transaction in the remote module which we cannot associate with a known reducer. This may be an ad-hoc SQL query or a reducer for which we do not have bindings.
 
-| Name       | Type                                                                          |
-| :--------- | :---------------------------------------------------------------------------- |
-| `callback` | (`value`: `{Table}`, `reducerEvent`: `undefined` \| `ReducerEvent`) => `void` |
+This event is passed to [row callbacks](#callback-oninsert) resulting from modifications by the transaction.
 
----
+### Type `ReducerEvent`
 
-### {Table} onUpdate
+A `ReducerEvent` contains metadata about a reducer run.
 
-Register an `onUpdate` callback to run when an existing row is modified by primary key.
+```typescript
+type ReducerEvent<Reducer> = {
+  /**
+   * The time when the reducer started running.
+   */
+  timestamp: Timestamp;
 
-```ts
-{Table}.onUpdate(callback: (oldValue: {Table}, newValue: {Table}, reducerEvent: ReducerEvent | undefined) => void): void
+  /**
+   * Whether the reducer committed, was aborted due to insufficient energy, or failed with an error message.
+   */
+  status: UpdateStatus;
+
+  /**
+   * The identity of the caller.
+   * TODO: Revise these to reflect the forthcoming Identity proposal.
+   */
+  callerIdentity: Identity;
+
+  /**
+   * The connection ID of the caller.
+   *
+   * May be `null`, e.g. for scheduled reducers.
+   */
+  callerConnectionId?: ConnectionId;
+
+  /**
+   * The amount of energy consumed by the reducer run, in eV.
+   * (Not literal eV, but our SpacetimeDB energy unit eV.)
+   * May be present or undefined at the implementor's discretion;
+   * future work may determine an interface for module developers
+   * to request this value be published or hidden.
+   */
+  energyConsumed?: bigint;
+
+  /**
+   * The `Reducer` enum defined by the `moduleBindings`, which encodes which reducer ran and its arguments.
+   */
+  reducer: Reducer;
+};
 ```
 
-`onUpdate` callbacks are only meaningful for tables with a column declared as a primary key. Tables without primary keys will never fire `onUpdate` callbacks.
+### Type `UpdateStatus`
 
-#### Parameters
-
-| Name       | Type                                                                                                    | Description                                           |
-| :--------- | :------------------------------------------------------------------------------------------------------ | :---------------------------------------------------- |
-| `callback` | (`oldValue`: `{Table}`, `newValue`: `{Table}`, `reducerEvent`: `undefined` \| `ReducerEvent`) => `void` | Callback to run whenever a subscribed row is updated. |
-
-#### Example
-
-```ts
-var spacetimeDBClient = new SpacetimeDBClient(
-  'ws://localhost:3000',
-  'database_name'
-);
-spacetimeDBClient.onConnect((token, identity, address) => {
-  spacetimeDBClient.subscribe(['SELECT * FROM Person']);
-});
-
-Person.onUpdate((oldPerson, newPerson, reducerEvent) => {
-  console.log('Person updated by reducer', reducerEvent, oldPerson, newPerson);
-});
+```typescript
+type UpdateStatus =
+  | { tag: 'Committed'; value: __DatabaseUpdate }
+  | { tag: 'Failed'; value: string }
+  | { tag: 'OutOfEnergy' };
 ```
 
----
+| Name                                          | Description                                         |
+|-----------------------------------------------|-----------------------------------------------------|
+| [`Committed` variant](#variant-committed)     | The reducer ran successfully.                       |
+| [`Failed` variant](#variant-failed)           | The reducer errored.                                |
+| [`OutOfEnergy` variant](#variant-outofenergy) | The reducer was aborted due to insufficient energy. |
 
-### {Table} removeOnUpdate
+#### Variant `Committed`
 
-Unregister a previously-registered [`onUpdate`](#table-onupdate) callback.
-
-```ts
-{Table}.removeOnUpdate(callback: (oldValue: {Table}, newValue: {Table}, reducerEvent: ReducerEvent | undefined) => void): void
+```typescript
+{ tag: 'Committed' }
 ```
 
-#### Parameters
+The reducer returned successfully and its changes were committed into the database state. An [`Event` with `tag: 'Reducer'`](#variant-reducer) passed to a row callback must have this status in its [`ReducerEvent`](#type-reducerevent).
 
-| Name       | Type                                                                                                    |
-| :--------- | :------------------------------------------------------------------------------------------------------ |
-| `callback` | (`oldValue`: `{Table}`, `newValue`: `{Table}`, `reducerEvent`: `undefined` \| `ReducerEvent`) => `void` |
+#### Variant `Failed`
 
----
-
-### {Table} onDelete
-
-Register an `onDelete` callback for when a subscribed row is removed from the database.
-
-```ts
-{Table}.onDelete(callback: (value: {Table}, reducerEvent: ReducerEvent | undefined) => void): void
+```typescript
+{ tag: 'Failed'; value: string }
 ```
 
-#### Parameters
+The reducer returned an error, panicked, or threw an exception. The `value` is the stringified error message. Formatting of the error message is unstable and subject to change, so clients should use it only as a human-readable diagnostic, and in particular should not attempt to parse the message.
 
-| Name       | Type                                                                          | Description                                           |
-| :--------- | :---------------------------------------------------------------------------- | :---------------------------------------------------- |
-| `callback` | (`value`: `{Table}`, `reducerEvent`: `undefined` \| `ReducerEvent`) => `void` | Callback to run whenever a subscribed row is removed. |
+#### Variant `OutOfEnergy`
 
-#### Example
-
-```ts
-var spacetimeDBClient = new SpacetimeDBClient(
-  'ws://localhost:3000',
-  'database_name'
-);
-spacetimeDBClient.onConnect((token, identity, address) => {
-  spacetimeDBClient.subscribe(['SELECT * FROM Person']);
-});
-
-Person.onDelete((person, reducerEvent) => {
-  if (reducerEvent) {
-    console.log('Person deleted by reducer', reducerEvent, person);
-  } else {
-    console.log(
-      'Person no longer subscribed during subscription update',
-      person
-    );
-  }
-});
+```typescript
+{ tag: 'OutOfEnergy' }
 ```
 
----
+The reducer was aborted due to insufficient energy balance of the module owner.
 
-### {Table} removeOnDelete
+### Type `Reducer`
 
-Unregister a previously-registered [`onDelete`](#table-ondelete) callback.
-
-```ts
-{Table}.removeOnDelete(callback: (value: {Table}, reducerEvent: ReducerEvent | undefined) => void): void
+```rust
+type Reducer =
+  | { name: 'ReducerA'; args: ReducerA }
+  | { name: 'ReducerB'; args: ReducerB }
 ```
 
-#### Parameters
+The module bindings contains a type `Reducer` with a variant for each reducer defined by the module. Each variant has a field `args` containing the arguments to the reducer.
 
-| Name       | Type                                                                          |
-| :--------- | :---------------------------------------------------------------------------- |
-| `callback` | (`value`: `{Table}`, `reducerEvent`: `undefined` \| `ReducerEvent`) => `void` |
+## Type `ReducerEventContext`
 
-### Class `{Reducer}`
+A `ReducerEventContext` is a [`DbContext`](#interface-dbcontext) augmented with a field [`event: ReducerEvent`](#type-reducerevent). `ReducerEventContext`s are passed as the first argument to [reducer callbacks](#observe-and-invoke-reducers).
 
-`spacetime generate` defines an `{Reducer}` class in the `module_bindings` folder for each reducer defined by a module.
+| Name                                | Description                                                       |
+|-------------------------------------|-------------------------------------------------------------------|
+| [`event` field](#field-event)       | [`ReducerEvent`](#type-reducerevent) containing reducer metadata. |
+| [`db` field](#field-db)             | Provides access to the client cache.                              |
+| [`reducers` field](#field-reducers) | Allows requesting reducers run on the remote database.            |
 
-The class's name will be the reducer's name converted to `PascalCase`.
+### Field `event`
 
-| Static methods                  | Description                                                  |
-| ------------------------------- | ------------------------------------------------------------ |
-| [`Reducer.call`](#reducer-call) | Executes the reducer.                                        |
-| Events                          |                                                              |
-| [`Reducer.on`](#reducer-on)     | Register a callback to run each time the reducer is invoked. |
-
-## Static methods
-
-### {Reducer} call
-
-Executes the reducer.
-
-```ts
-{Reducer}.call(): void
+```typescript
+class ReducerEventContext {
+  public event: ReducerEvent<Reducer>
+}
 ```
 
-#### Example
+The [`ReducerEvent`](#type-reducerevent) contained in the `ReducerEventContext` has metadata about the reducer which ran.
 
-```ts
-SayHelloReducer.call();
+### Field `db`
+
+```typescript
+class ReducerEventContext {
+  public db: RemoteTables
+}
 ```
 
-## Events
+The `db` field of the context provides access to the subscribed view of the remote database's tables. See [Access the client cache](#access-the-client-cache).
 
-### {Reducer} on
+### Field `reducers`
 
-Register a callback to run each time the reducer is invoked.
-
-```ts
-{Reducer}.on(callback: (reducerEvent: ReducerEvent, ...reducerArgs: any[]) => void): void
+```typescript
+class ReducerEventContext {
+  public reducers: RemoteReducers
+}
 ```
 
-Clients will only be notified of reducer runs if either of two criteria is met:
+The `reducers` field of the context provides access to reducers exposed by the remote module. See [Observe and invoke reducers](#observe-and-invoke-reducers).
 
-- The reducer inserted, deleted or updated at least one row to which the client is subscribed.
-- The reducer invocation was requested by this client, and the run failed.
+## Type `SubscriptionEventContext`
 
-#### Parameters
+A `SubscriptionEventContext` is a [`DbContext`](#interface-dbcontext). Unlike the other context types, `SubscriptionEventContext` doesn't have an `event` field. `SubscriptionEventContext`s are passed to subscription [`onApplied`](#callback-onapplied) and [`unsubscribeThen`](#method-unsubscribethen) callbacks.
 
-| Name       | Type                                                           |
-| :--------- | :------------------------------------------------------------- |
-| `callback` | `(reducerEvent: ReducerEvent, ...reducerArgs: any[]) => void)` |
+| Name                                | Description                                                |
+|-------------------------------------|------------------------------------------------------------|
+| [`db` field](#field-db)             | Provides access to the client cache.                       |
+| [`reducers` field](#field-reducers) | Allows requesting reducers run on the remote database.     |
 
-#### Example
+### Field `db`
 
-```ts
-SayHelloReducer.on((reducerEvent, ...reducerArgs) => {
-  console.log('SayHelloReducer called', reducerEvent, reducerArgs);
-});
+```typescript
+class SubscriptionEventContext {
+  public db: RemoteTables
+}
 ```
+
+The `db` field of the context provides access to the subscribed view of the remote database's tables. See [Access the client cache](#access-the-client-cache).
+
+### Field `reducers`
+
+```typescript
+class SubscriptionEventContext {
+  public reducers: RemoteReducers
+}
+```
+
+The `reducers` field of the context provides access to reducers exposed by the remote module. See [Observe and invoke reducers](#observe-and-invoke-reducers).
+
+## Type `ErrorContext`
+
+An `ErrorContext` is a [`DbContext`](#interface-dbcontext) augmented with a field `event: Error`. `ErrorContext`s are to connections' [`onDisconnect`](#callback-ondisconnect) and [`onConnectError`](#callback-onconnecterror) callbacks, and to subscriptions' [`onError`](#callback-onerror) callbacks.
+
+| Name                                | Description                                            |
+|-------------------------------------|--------------------------------------------------------|
+| [`event` field](#field-event)       | The error which caused the current error callback.     |
+| [`db` field](#field-db)             | Provides access to the client cache.                   |
+| [`reducers` field](#field-reducers) | Allows requesting reducers run on the remote database. |
+
+
+### Field `event`
+
+```typescript
+class ErrorContext {
+  public event: Error
+}
+```
+
+### Field `db`
+
+```typescript
+class ErrorContext {
+  public db: RemoteTables
+}
+```
+
+The `db` field of the context provides access to the subscribed view of the remote database's tables. See [Access the client cache](#access-the-client-cache).
+
+### Field `reducers`
+
+```typescript
+class ErrorContext {
+  public reducers: RemoteReducers
+}
+```
+
+The `reducers` field of the context provides access to reducers exposed by the remote module. See [Observe and invoke reducers](#observe-and-invoke-reducers).
+
+## Access the client cache
+
+All [`DbContext`](#interface-dbcontext) implementors, including [`DbConnection`](#type-dbconnection) and [`EventContext`](#type-eventcontext), have fields `.db`, which in turn has methods for accessing tables in the client cache.
+
+Each table defined by a module has an accessor method, whose name is the table name converted to `camelCase`, on this `.db` field. The table accessor methods return table handles. Table handles have methods for [accessing rows](#accessing-rows) and [registering `onInsert`](#callback-oninsert) and [`onDelete` callbacks](#callback-ondelete). Handles for tables which have a declared primary key field also expose [`onUpdate` callbacks](#callback-onupdate). Table handles also offer the ability to find subscribed rows by unique index.
+
+| Name                                                   | Description                                                                     |
+|--------------------------------------------------------|---------------------------------------------------------------------------------|
+| [Accessing rows](#accessing-rows)                      | Iterate over or count subscribed rows.                                          |
+| [`onInsert` callback](#callback-oninsert)              | Register a function to run when a row is added to the client cache.             |
+| [`onDelete` callback](#callback-ondelete)              | Register a function to run when a row is removed from the client cache.         |
+| [`onUpdate` callback](#callback-onupdate)              | Register a functioNto run when a subscribed row is replaced with a new version. |
+| [Unique index access](#unique-constraint-index-access) | Seek a subscribed row by the value in its unique or primary key column.         |
+| [BTree index access](#btree-index-access)              | Not supported.                                                                  |
+
+### Accessing rows
+
+#### Method `count`
+
+```typescript
+class TableHandle {
+  public count(): number
+}
+```
+
+Returns the number of rows of this table resident in the client cache, i.e. the total number which match any subscribed query.
+
+#### Method `iter`
+
+```typescript
+class TableHandle {
+  public iter(): Iterable<Row>
+}
+```
+
+An iterator over all the subscribed rows in the client cache, i.e. those which match any subscribed query.
+
+The `Row` type will be an autogenerated type which matches the row type defined by the module.
+
+### Callback `onInsert`
+
+```typescript
+class TableHandle {
+  public onInsert(
+    callback: (ctx: EventContext, row: Row) => void
+  ): void;
+
+  public removeOnInsert(
+    callback: (ctx: EventContext, row: Row) => void
+  ): void;
+}
+```
+
+The `onInsert` callback runs whenever a new row is inserted into the client cache, either when applying a subscription or being notified of a transaction. The passed [`EventContext`](#type-eventcontext) contains an [`Event`](#type-event) which can identify the change which caused the insertion, and also allows the callback to interact with the connection, inspect the client cache and invoke reducers.
+
+The `Row` type will be an autogenerated type which matches the row type defined by the module.
+
+`removeOnInsert` may be used to un-register a previously-registered `onInsert` callback.
+
+### Callback `onDelete`
+
+```typescript
+class TableHandle {
+  public onDelete(
+    callback: (ctx: EventContext, row: Row) => void
+  ): void;
+
+  public removeOnDelete(
+    callback: (ctx: EventContext, row: Row) => void
+  ): void;
+}
+```
+
+The `onDelete` callback runs whenever a previously-resident row is deleted from the client cache.
+
+The `Row` type will be an autogenerated type which matches the row type defined by the module.
+
+`removeOnDelete` may be used to un-register a previously-registered `onDelete` callback.
+
+### Callback `onUpdate`
+
+```typescript
+class TableHandle {
+  public onUpdate(
+    callback: (ctx: EventContext, old: Row, new: Row) => void
+  ): void;
+
+  public removeOnUpdate(
+    callback: (ctx: EventContext, old: Row, new: Row) => void
+  ): void;
+}
+```
+
+The `onUpdate` callback runs whenever an already-resident row in the client cache is updated, i.e. replaced with a new row that has the same primary key.
+
+Only tables with a declared primary key expose `onUpdate` callbacks. Handles for tables without a declared primary key will not have `onUpdate` or `removeOnUpdate` methods.
+
+The `Row` type will be an autogenerated type which matches the row type defined by the module.
+
+`removeOnUpdate` may be used to un-register a previously-registered `onUpdate` callback.
+
+### Unique constraint index access
+
+For each unique constraint on a table, its table handle has a field whose name is the unique column name. This field is a unique index handle. The unique index handle has a method `.find(desiredValue: Col) -> Row | undefined`, where `Col` is the type of the column, and `Row` the type of rows. If a row with `desiredValue` in the unique column is resident in the client cache, `.find` returns it.
+
+### BTree index access
+
+The SpacetimeDB TypeScript client SDK does not support non-unique BTree indexes.
+
+## Observe and invoke reducers
+
+All [`DbContext`](#interface-dbcontext) implementors, including [`DbConnection`](#type-dbconnection) and [`EventContext`](#type-eventcontext), have fields `.reducers`, which in turn has methods for invoking reducers defined by the module and registering callbacks on it.
+
+Each reducer defined by the module has three methods on the `.reducers`:
+
+- An invoke method, whose name is the reducer's name converted to camel case, like `setName`. This requests that the module run the reducer.
+- A callback registation method, whose name is prefixed with `on`, like `onSetName`. This registers a callback to run whenever we are notified that the reducer ran, including successfully committed runs and runs we requested which failed. This method returns a callback id, which can be passed to the callback remove method.
+- A callback remove method, whose name is prefixed with `removeOn`, like `removeOnSetName`. This cancels a callback previously registered via the callback registration method.
+
+## Identify a client
+
+### Type `Identity`
+
+```rust
+Identity
+```
+
+A unique public identifier for a client connected to a database.
+
+### Type `ConnectionId`
+
+```rust
+ConnectionId
+```
+
+An opaque identifier for a client connection to a database, intended to differentiate between connections from the same [`Identity`](#type-identity).

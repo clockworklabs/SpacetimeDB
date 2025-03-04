@@ -209,18 +209,19 @@ public static void World(ReducerContext ctx)
 ```
 :::
 
-While SpacetimeDB doesn't support nested transactions,
-a reducer can [schedule another reducer] to run at an interval,
-or at a specific time.
 :::server-rust
-[schedule another reducer]: /docs/modules/rust#defining-scheduler-tables
+While SpacetimeDB doesn't support nested transactions,
+a reducer can [schedule another reducer](https://docs.rs/spacetimedb/latest/spacetimedb/attr.reducer.html#scheduled-reducers) to run at an interval,
+or at a specific time.
 :::
 :::server-csharp
-[schedule another reducer]: /docs/modules/c-sharp#scheduler-tables
+While SpacetimeDB doesn't support nested transactions,
+a reducer can [schedule another reducer](/docs/modules/c-sharp#scheduled-reducers) to run at an interval,
+or at a specific time.
 :::
 
 ### Client
-A **client** is an application that connects to a [database](#database). A client logs in using an [identity](#identity) and receives an [address](#address) to identify the connection. After that, it can call [reducers](#reducer) and query public [tables](#table).
+A **client** is an application that connects to a [database](#database). A client logs in using an [identity](#identity) and receives an [connection id](#connectionid) to identify the connection. After that, it can call [reducers](#reducer) and query public [tables](#table).
 
 Clients are written using the [client-side SDKs](#client-side-sdks). The `spacetime` CLI tool allows automatically generating code that works with the client-side SDKs to talk to a particular database.
 
@@ -236,15 +237,33 @@ Modules themselves also have Identities. When you `spacetime publish` a module, 
 
 Identities are issued using the [OpenID Connect](https://openid.net/developers/how-connect-works/) specification. Database developers are responsible for issuing Identities to their end users. OpenID Connect lets users log in to these accounts through standard services like Google and Facebook.
 
+Specifically, an identity is derived from the issuer and subject fields of a [JSON Web Token (JWT)](https://jwt.io/) hashed together. The psuedocode for this is as follows:
+
+```python
+def identity_from_claims(issuer: str, subject: str) -> [u8; 32]:
+   hash1: [u8; 32] = blake3_hash(issuer + "|" + subject)
+   id_hash: [u8; 26] = hash1[:26]
+   checksum_hash: [u8; 32] = blake3_hash([
+      0xC2,
+      0x00,
+      *id_hash
+   ])
+   identity_big_endian_bytes: [u8; 32] = [
+      0xC2, 
+      0x00,
+      *checksum_hash[:4],
+      *id_hash
+   ]
+   return identity_big_endian_bytes
+```
+
 <!-- TODO(1.0): link to a page on setting up your own identity provider and/or using our turnkey solution. -->
 
-### Address
+### ConnectionId
 
-<!-- TODO(1.0): Rewrite this section after reworking `Address`es into `ConnectionID`s. -->
+A `ConnectionId` identifies client connections to a SpacetimeDB module.
 
-An `Address` identifies client connections to a SpacetimeDB module.
-
-A user has a single [`Identity`](#identity), but may open multiple connections to your module. Each of these will receive a unique `Address`.
+A user has a single [`Identity`](#identity), but may open multiple connections to your module. Each of these will receive a unique `ConnectionId`.
 
 ### Energy
 **Energy** is the currency used to pay for data storage and compute operations in a SpacetimeDB host.
