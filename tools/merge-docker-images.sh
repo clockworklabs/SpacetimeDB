@@ -37,7 +37,7 @@ docker manifest annotate "${IMAGE_NAME}":$FULL_TAG \
 docker manifest push "${IMAGE_NAME}":$FULL_TAG
 
 # re-tag the manifest with the GitHub ref
-echo '${GITHUB_REF}' is "${GITHUB_REF}"
+echo "GITHUB_REF is ${GITHUB_REF}"
 ORIGINAL_VERSION=${GITHUB_REF#refs/*/}
 VERSION=$(sanitize_docker_ref "$ORIGINAL_VERSION")
 echo "Tagging image with sanitized GITHUB_REF: $VERSION (original: $ORIGINAL_VERSION)"
