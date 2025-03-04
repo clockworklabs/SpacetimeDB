@@ -134,7 +134,7 @@ pub struct EveryVecStruct {
 ///
 /// - fields is a comma-separated list of field specifiers, which are optional attribues,
 ///   followed by a field name identifier and a type.
-///   e.g. #[unique] name String
+///   e.g. #\[unique\] name String
 ///
 /// A full table definition might be:
 ///
@@ -142,8 +142,8 @@ pub struct EveryVecStruct {
 ///     insert_or_panic insert_my_table,
 ///     update_by update_my_table = update_by_name(name),
 ///     delete_by delete_my_table = delete_by_name(name: String),
-/// } #[primary_key] name String,
-///   #[auto_inc] #[unique] id u32,
+/// } #\[primary_key\] name String,
+///   #\[auto_inc\] #\[unique\] id u32,
 ///   count i64;
 //
 // Internal rules are prefixed with @.
