@@ -41,9 +41,11 @@ docker manifest push "${IMAGE_NAME}":$FULL_TAG
 GITHUB_REF="${GITHUB_REF-}"
 # re-tag the manifest with the GitHub ref
 echo "GITHUB_REF is ${GITHUB_REF}"
-ORIGINAL_VERSION=${GITHUB_REF#refs/*/}
-VERSION=$(sanitize_docker_ref "$ORIGINAL_VERSION")
-echo "Tagging image with sanitized GITHUB_REF: $VERSION (original: $ORIGINAL_VERSION)"
-docker buildx imagetools create "${IMAGE_NAME}":$FULL_TAG --tag "${IMAGE_NAME}":$VERSION
+if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+  ORIGINAL_VERSION=${GITHUB_REF#refs/*/}
+  VERSION=$(sanitize_docker_ref "$ORIGINAL_VERSION")
+  echo "Tagging image with sanitized GITHUB_REF: $VERSION (original: $ORIGINAL_VERSION)"
+  docker buildx imagetools create "${IMAGE_NAME}":$FULL_TAG --tag "${IMAGE_NAME}":$VERSION
+fi
 
 echo "Image merging and tagging completed successfully."
