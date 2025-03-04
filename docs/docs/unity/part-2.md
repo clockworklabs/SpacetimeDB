@@ -109,7 +109,7 @@ public partial struct Config
 Let's break down this code. This defines a normal C# `struct` with two fields: `id` and `world_size`. We have added the `[Table(Name = "config", Public = true)]` attribute the struct. This attribute signals to SpacetimeDB that it should create a new SpacetimeDB table with the row type defined by the `Config` type's fields.
 
 > Although we're using `lower_snake_case` for our column names to have consistent column names across languages in this tutorial, you can also use `camelCase` or `PascalCase` if you prefer. See [#2168](https://github.com/clockworklabs/SpacetimeDB/issues/2168) for more information.
- 
+
 The `Table` attribute with takes two parameters, a `Name` which is the name of the table and what you will use to query the table in SQL, and a `Public` visibility modifier which ensures that the rows of this table are visible to everyone.
 
 The `[PrimaryKey]` attribute, specifies that the `id` field should be used as the primary key of the table.
@@ -294,7 +294,7 @@ Add this function to the `Module` class in `Lib.cs`:
 [Reducer]
 public static void Debug(ReducerContext ctx)
 {
-    Log.Info($"This reducer was called by {ctx.CallerIdentity}");	  
+    Log.Info($"This reducer was called by {ctx.Sender}");	  
 }
 ```
 :::
@@ -395,7 +395,7 @@ pub fn connect(ctx: &ReducerContext) -> Result<(), String> {
 The `client_connected` argument to the `spacetimedb::reducer` macro indicates to SpacetimeDB that this is a special reducer. This reducer is only every called by SpacetimeDB itself when a client connects to your module.
 
 > SpacetimeDB gives you the ability to define custom reducers that automatically trigger when certain events occur.
-> 
+>
 > - `init` - Called the first time you publish your module and anytime you clear the database with `spacetime publish <name> --delete-data`.
 > - `client_connected` - Called when a user connects to the SpacetimeDB module. Their identity can be found in the `sender` value of the `ReducerContext`.
 > - `client_disconnected` - Called when a user disconnects from the SpacetimeDB module.
@@ -407,16 +407,16 @@ Next let's connect our client to our module. Let's start by modifying our `Debug
 [Reducer(ReducerKind.ClientConnected)]
 public static void Connect(ReducerContext ctx)
 {
-    Log.Info($"{ctx.CallerIdentity} just connected.");
+    Log.Info($"{ctx.Sender} just connected.");
 }
 ```
 
 The `ReducerKind.ClientConnected` argument to the `SpacetimeDB.Reducer` attribute indicates to SpacetimeDB that this is a special reducer. This reducer is only every called by SpacetimeDB itself when a client connects to your module.
 
 > SpacetimeDB gives you the ability to define custom reducers that automatically trigger when certain events occur.
-> 
+>
 > - `ReducerKind.Init` - Called the first time you publish your module and anytime you clear the database with `spacetime publish <name> --delete-data`.
-> - `ReducerKind.ClientConnected` - Called when a user connects to the SpacetimeDB module. Their identity can be found in the `CallerIdentity` value of the `ReducerContext`.
+> - `ReducerKind.ClientConnected` - Called when a user connects to the SpacetimeDB module. Their identity can be found in the `Sender` value of the `ReducerContext`.
 > - `ReducerKind.ClientDisconnected` - Called when a user disconnects from the SpacetimeDB module.
 :::
 
@@ -443,13 +443,26 @@ spacetime generate --lang csharp --out-dir ../client-unity/Assets/autogen # you 
 
 This will generate a set of files in the `client-unity/Assets/autogen` directory which contain the code generated types and reducer functions that are defined in your module, but usable on the client.
 
-```sh
-ls ../client-unity/Assets/autogen/*.cs
-../client-unity/Assets/autogen/Circle.cs	../client-unity/Assets/autogen/DbVector2.cs	../client-unity/Assets/autogen/Food.cs
-../client-unity/Assets/autogen/Config.cs	../client-unity/Assets/autogen/Entity.cs	../client-unity/Assets/autogen/Player.cs
+```
+├── Reducers
+│   └── Connect.g.cs
+├── Tables
+│   ├── Circle.g.cs
+│   ├── Config.g.cs
+│   ├── Entity.g.cs
+│   ├── Food.g.cs
+│   └── Player.g.cs
+├── Types
+│   ├── Circle.g.cs
+│   ├── Config.g.cs
+│   ├── DbVector2.g.cs
+│   ├── Entity.g.cs
+│   ├── Food.g.cs
+│   └── Player.g.cs
+└── SpacetimeDBClient.g.cs
 ```
 
-This will also generate a file in the `client-unity/Assets/autogen/_Globals` directory with a type aware `DbConnection` class. We will use this class to connect to your module from Unity.
+This will also generate a file in the `client-unity/Assets/autogen/SpacetimeDBClient.g.cs` directory with a type aware `DbConnection` class. We will use this class to connect to your module from Unity.
 
 > IMPORTANT! At this point there will be an error in your Unity project. Due to a [known issue](https://docs.unity3d.com/6000.0/Documentation/Manual/csharp-compiler.html) with Unity and C# 9 you need to insert the following code into your Unity project.
 >
@@ -509,7 +522,7 @@ public class GameManager : MonoBehaviour
 
         // If the user has a SpacetimeDB auth token stored in the Unity PlayerPrefs,
         // we can use it to authenticate the connection.
-		if (PlayerPrefs.HasKey(AuthToken.GetTokenKey()))
+        if (AuthToken.Token != "")
         {
             builder = builder.WithToken(AuthToken.Token);
         }
@@ -548,7 +561,7 @@ public class GameManager : MonoBehaviour
         }
     }
 
-    private void HandleSubscriptionApplied(EventContext ctx)
+    private void HandleSubscriptionApplied(SubscriptionEventContext ctx)
     {
         Debug.Log("Subscription applied!");
         OnSubscriptionApplied?.Invoke();
