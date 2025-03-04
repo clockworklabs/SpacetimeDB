@@ -97,14 +97,14 @@ export class WebsocketDecompressAdapter {
       if (response.ok) {
         const { token } = await response.json();
         url.searchParams.set('token', token);
-        url.searchParams.set(
-          'compression',
-          compression === 'gzip' ? 'Gzip' : 'None'
-        );
-        if (lightMode) {
-          url.searchParams.set('light', 'true');
-        }
       }
+    }
+    url.searchParams.set(
+      'compression',
+      compression === 'gzip' ? 'Gzip' : 'None'
+    );
+    if (lightMode) {
+      url.searchParams.set('light', 'true');
     }
 
     const ws = new WS(url, wsProtocol);
