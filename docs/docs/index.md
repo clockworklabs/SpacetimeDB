@@ -216,7 +216,7 @@ or at a specific time.
 :::
 :::server-csharp
 While SpacetimeDB doesn't support nested transactions,
-a reducer can [schedule another reducer](/docs/modules/c-sharp#scheduler-tables) to run at an interval,
+a reducer can [schedule another reducer](/docs/modules/c-sharp#scheduled-reducers) to run at an interval,
 or at a specific time.
 :::
 
