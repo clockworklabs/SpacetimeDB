@@ -106,7 +106,7 @@ const uint TARGET_FOOD_COUNT = 600;
 public static float MassToRadius(uint mass) => MathF.Sqrt(mass);
 
 [Reducer]
-public static void SpawnFood(ReducerContext ctx)
+public static void SpawnFood(ReducerContext ctx, SpawnFoodTimer timer)
 {
     if (ctx.Db.player.Count == 0) //Are there no players yet?
     {
@@ -114,6 +114,7 @@ public static void SpawnFood(ReducerContext ctx)
     }
 
     var world_size = (ctx.Db.config.id.Find(0) ?? throw new Exception("Config not found")).world_size;
+
     var rng = ctx.Rng;
     var food_count = ctx.Db.food.Count;
     while (food_count < TARGET_FOOD_COUNT)
@@ -220,7 +221,7 @@ pub fn init(ctx: &ReducerContext) -> Result<(), String> {
     })?;
     ctx.db.spawn_food_timer().try_insert(SpawnFoodTimer {
         scheduled_id: 0,
-        scheduled_at: ScheduleAt::Interval(Duration::from_millis(500).as_micros() as u64),
+        scheduled_at: ScheduleAt::Interval(Duration::from_millis(500).into()),
     })?;
     Ok(())
 }
@@ -347,7 +348,7 @@ Next, modify your `Connect` reducer and add a new `Disconnect` reducer below it:
 [Reducer(ReducerKind.ClientConnected)]
 public static void Connect(ReducerContext ctx)
 {
-    var player = ctx.Db.logged_out_player.identity.Find(ctx.CallerIdentity);
+    var player = ctx.Db.logged_out_player.identity.Find(ctx.Sender);
     if (player != null)
     {
         ctx.Db.player.Insert(player.Value);
@@ -357,7 +358,7 @@ public static void Connect(ReducerContext ctx)
     {
         ctx.Db.player.Insert(new Player
         {
-            identity = ctx.CallerIdentity,
+            identity = ctx.Sender,
             name = "",
         });
     }
@@ -366,7 +367,7 @@ public static void Connect(ReducerContext ctx)
 [Reducer(ReducerKind.ClientDisconnected)]
 public static void Disconnect(ReducerContext ctx)
 {
-    var player = ctx.Db.player.identity.Find(ctx.CallerIdentity) ?? throw new Exception("Player not found");
+    var player = ctx.Db.player.identity.Find(ctx.Sender) ?? throw new Exception("Player not found");
     ctx.Db.logged_out_player.Insert(player);
     ctx.Db.player.identity.Delete(player.identity);
 }
@@ -463,7 +464,7 @@ const uint START_PLAYER_MASS = 15;
 public static void EnterGame(ReducerContext ctx, string name)
 {
     Log.Info($"Creating player with name {name}");
-    var player = ctx.Db.player.identity.Find(ctx.CallerIdentity) ?? throw new Exception("Player not found");
+    var player = ctx.Db.player.identity.Find(ctx.Sender) ?? throw new Exception("Player not found");
     player.name = name;
     ctx.Db.player.identity.Update(player);
     SpawnPlayerInitialCircle(ctx, player.player_id);
@@ -539,7 +540,7 @@ pub fn disconnect(ctx: &ReducerContext) -> Result<(), String> {
 [Reducer(ReducerKind.ClientDisconnected)]
 public static void Disconnect(ReducerContext ctx)
 {
-    var player = ctx.Db.player.identity.Find(ctx.CallerIdentity) ?? throw new Exception("Player not found");
+    var player = ctx.Db.player.identity.Find(ctx.Sender) ?? throw new Exception("Player not found");
     // Remove any circles from the arena
     foreach (var circle in ctx.Db.circle.player_id.Filter(player.player_id))
     {
@@ -594,7 +595,7 @@ Start by adding `SetupArena` and `CreateBorderCube` methods to your `GameManager
 In your `HandleSubscriptionApplied` let's now call `SetupArea` method. Modify your `HandleSubscriptionApplied` method as in the below.
 
 ```cs
-    private void HandleSubscriptionApplied(EventContext ctx)
+    private void HandleSubscriptionApplied(SubscriptionEventContext ctx)
     {
         Debug.Log("Subscription applied!");
         OnSubscriptionApplied?.Invoke();
@@ -659,61 +660,61 @@ using UnityEngine;
 
 public abstract class EntityController : MonoBehaviour
 {
-	const float LERP_DURATION_SEC = 0.1f;
+    const float LERP_DURATION_SEC = 0.1f;
 
-	private static readonly int ShaderColorProperty = Shader.PropertyToID("_Color");
+    private static readonly int ShaderColorProperty = Shader.PropertyToID("_Color");
 
-	[DoNotSerialize] public uint EntityId;
+    [DoNotSerialize] public uint EntityId;
 
-	protected float LerpTime;
-	protected Vector3 LerpStartPosition;
-	protected Vector3 LerpTargetPositio;
-	protected Vector3 TargetScale;
+    protected float LerpTime;
+    protected Vector3 LerpStartPosition;
+    protected Vector3 LerpTargetPosition;
+    protected Vector3 TargetScale;
 
-	protected virtual void Spawn(uint entityId)
-	{
-		EntityId = entityId;
+    protected virtual void Spawn(uint entityId)
+    {
+        EntityId = entityId;
 
-		var entity = GameManager.Conn.Db.Entity.EntityId.Find(entityId);
-		LerpStartPosition = LerpTargetPositio = transform.position = (Vector2)entity.Position;
-		transform.localScale = Vector3.one;
-		TargetScale = MassToScale(entity.Mass);
-	}
+        var entity = GameManager.Conn.Db.Entity.EntityId.Find(entityId);
+        LerpStartPosition = LerpTargetPosition = transform.position = (Vector2)entity.Position;
+        transform.localScale = Vector3.one;
+        TargetScale = MassToScale(entity.Mass);
+    }
 
-	public void SetColor(Color color)
-	{
-		GetComponent<SpriteRenderer>().material.SetColor(ShaderColorProperty, color);
-	}
+    public void SetColor(Color color)
+    {
+        GetComponent<SpriteRenderer>().material.SetColor(ShaderColorProperty, color);
+    }
 
-	public virtual void OnEntityUpdated(Entity newVal)
-	{
-		LerpTime = 0.0f;
-		LerpStartPosition = transform.position;
-		LerpTargetPositio = (Vector2)newVal.Position;
-		TargetScale = MassToScale(newVal.Mass);
-	}
+    public virtual void OnEntityUpdated(Entity newVal)
+    {
+        LerpTime = 0.0f;
+        LerpStartPosition = transform.position;
+        LerpTargetPosition = (Vector2)newVal.Position;
+        TargetScale = MassToScale(newVal.Mass);
+    }
 
-	public virtual void OnDelete(EventContext context)
-	{
-		Destroy(gameObject);
-	}
+    public virtual void OnDelete(EventContext context)
+    {
+        Destroy(gameObject);
+    }
 
-	public virtual void Update()
-	{
-		// Interpolate position and scale
-		LerpTime = Mathf.Min(LerpTime + Time.deltaTime, LERP_DURATION_SEC);
-		transform.position = Vector3.Lerp(LerpStartPosition, LerpTargetPositio, LerpTime / LERP_DURATION_SEC);
-		transform.localScale = Vector3.Lerp(transform.localScale, TargetScale, Time.deltaTime * 8);
-	}
+    public virtual void Update()
+    {
+        // Interpolate position and scale
+        LerpTime = Mathf.Min(LerpTime + Time.deltaTime, LERP_DURATION_SEC);
+        transform.position = Vector3.Lerp(LerpStartPosition, LerpTargetPosition, LerpTime / LERP_DURATION_SEC);
+        transform.localScale = Vector3.Lerp(transform.localScale, TargetScale, Time.deltaTime * 8);
+    }
 
-	public static Vector3 MassToScale(uint mass)
-	{
-		var diameter = MassToDiameter(mass);
-		return new Vector3(diameter, diameter, 1);
-	}
+    public static Vector3 MassToScale(uint mass)
+    {
+        var diameter = MassToDiameter(mass);
+        return new Vector3(diameter, diameter, 1);
+    }
 
-	public static float MassToRadius(uint mass) => Mathf.Sqrt(mass);
-	public static float MassToDiameter(uint mass) => MassToRadius(mass) * 2;
+    public static float MassToRadius(uint mass) => Mathf.Sqrt(mass);
+    public static float MassToDiameter(uint mass) => MassToRadius(mass) * 2;
 }
 ```
 
@@ -1178,11 +1179,10 @@ At this point, you may need to regenerate your bindings the following command fr
 spacetime generate --lang csharp --out-dir ../client-unity/Assets/autogen
 ```
 
-> **BUG WORKAROUND NOTE**: As of `1.0.0-rc3` you will now have a compilation error in Unity. There is currently a bug in the C# code generation that requires you to delete `autogen/LoggedOutPlayer.cs` after running this command.
 The last step is to call the `enter_game` reducer on the server, passing in a username for our player, which will spawn a circle for our player. For the sake of simplicity, let's call the `enter_game` reducer from the `HandleSubscriptionApplied` callback with the name "3Blave".
 
 ```cs
-    private void HandleSubscriptionApplied(EventContext ctx)
+    private void HandleSubscriptionApplied(SubscriptionEventContext ctx)
     {
         Debug.Log("Subscription applied!");
         OnSubscriptionApplied?.Invoke();

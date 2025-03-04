@@ -206,7 +206,6 @@ public static void UpdatePlayerInput(ReducerContext ctx, DbVector2 direction)
         circle.speed = Math.Clamp(direction.Magnitude, 0f, 1f);
         ctx.Db.circle.entity_id.Update(circle);
     }
-		  
 }
 ```
 
@@ -243,7 +242,12 @@ pub fn move_all_players(ctx: &ReducerContext, _timer: MoveAllPlayersTimer) -> Re
 
     // Handle player input
     for circle in ctx.db.circle().iter() {
-        let mut circle_entity = ctx.db.entity().entity_id().find(&circle.entity_id).unwrap();
+        let circle_entity = ctx.db.entity().entity_id().find(&circle.entity_id);
+        if !circle_entity.is_some() {
+            // This can happen if a circle is eaten by another circle
+            continue;
+        }
+        let mut circle_entity = circle_entity.unwrap();
         let circle_radius = mass_to_radius(circle_entity.mass);
         let direction = circle.direction * circle.speed;
         let new_pos =
@@ -283,7 +287,13 @@ public static void MoveAllPlayers(ReducerContext ctx, MoveAllPlayersTimer timer)
     // Handle player input
     foreach (var circle in ctx.Db.circle.Iter())
     {
-        var circle_entity = ctx.Db.entity.entity_id.Find(circle.entity_id) ?? throw new Exception("Circle has no entity");
+        var check_entity = ctx.Db.entity.entity_id.Find(circle.entity_id);
+        if (check_entity == null)
+        {
+            // This can happen if the circle has been eaten by another circle.
+            continue;
+        }
+		var circle_entity = check_entity.Value;;
         var circle_radius = MassToRadius(circle_entity.mass);
         var direction = circle_directions[circle.entity_id];
         var new_pos = circle_entity.position + direction * MassToMaxMoveSpeed(circle_entity.mass);
@@ -334,8 +344,6 @@ Regenerate your server bindings with:
 ```sh
 spacetime generate --lang csharp --out-dir ../client-unity/Assets/autogen
 ```
-
-> **BUG WORKAROUND NOTE**: You may have to delete LoggedOutPlayer.cs again.
 
 ### Moving on the Client
 
@@ -423,7 +431,12 @@ pub fn move_all_players(ctx: &ReducerContext, _timer: MoveAllPlayersTimer) -> Re
 
     // Handle player input
     for circle in ctx.db.circle().iter() {
-        let mut circle_entity = ctx.db.entity().entity_id().find(&circle.entity_id).unwrap();
+        let circle_entity = ctx.db.entity().entity_id().find(&circle.entity_id);
+        if !circle_entity.is_some() {
+            // This can happen if a circle is eaten by another circle
+            continue;
+        }
+        let mut circle_entity = circle_entity.unwrap();
         let circle_radius = mass_to_radius(circle_entity.mass);
         let direction = circle.direction * circle.speed;
         let new_pos =
@@ -500,7 +513,13 @@ public static void MoveAllPlayers(ReducerContext ctx, MoveAllPlayersTimer timer)
     // Handle player input
     foreach (var circle in ctx.Db.circle.Iter())
     {
-        var circle_entity = ctx.Db.entity.entity_id.Find(circle.entity_id) ?? throw new Exception("Circle has no entity");
+        var check_entity = ctx.Db.entity.entity_id.Find(circle.entity_id);
+        if (check_entity == null)
+        {
+            // This can happen if the circle has been eaten by another circle.
+            continue;
+        }
+		var circle_entity = check_entity.Value;;
         var circle_radius = MassToRadius(circle_entity.mass);
         var direction = circle.direction * circle.speed;
         var new_pos = circle_entity.position + direction * MassToMaxMoveSpeed(circle_entity.mass);
