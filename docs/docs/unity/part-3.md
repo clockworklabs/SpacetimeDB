@@ -802,7 +802,7 @@ public class CircleController : EntityController
 }
 ```
 
-At the top, we're just defining some possible colors for our circle. We've also created a spawn function which takes a `Circle` (same type that's in our `circle` table) and a `PlayerController` which sets the color based on the circle's player ID, as well as setting the text of the Cricle to be the player's username.
+At the top, we're just defining some possible colors for our circle. We've also created a spawn function which takes a `Circle` (same type that's in our `circle` table) and a `PlayerController` which sets the color based on the circle's player ID, as well as setting the text of the `Cricle` to be the player's username.
 
 Note that the `CircleController` inherits from the `EntityController`, not `MonoBehavior`.
 
