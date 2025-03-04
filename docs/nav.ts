@@ -35,6 +35,7 @@ const nav: Nav = {
 
     section('Deploying'),
     page('Maincloud', 'deploying/maincloud', 'deploying/maincloud.md'),
+    page('Self-Hosting SpacetimeDB', 'deploying/spacetimedb-standalone', 'deploying/spacetimedb-standalone.md'),
 
     section('Unity Tutorial - Basic Multiplayer'),
     page('Overview', 'unity', 'unity/index.md'),
