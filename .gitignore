@@ -213,3 +213,9 @@ new.json
 # Keys
 *.pem
 .ok.sql
+
+# direnv/envrc cache
+.direnv
+
+# Nix build output
+result
