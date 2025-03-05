@@ -669,7 +669,7 @@ mod tests {
         // Create table [lhs] with index on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
         let indexes = &[1.into()];
-        let _ = db.create_table_for_test("lhs", schema, indexes)?;
+        db.create_table_for_test("lhs", schema, indexes)?;
 
         // Create table [rhs] with index on [b, c]
         let schema = &[
@@ -705,11 +705,12 @@ mod tests {
             expect![
                 r#"
 Index Join: Rhs on lhs
-  -> Seq Scan on rhs
-    Filter: (rhs.c > U64(2) AND rhs.c < U64(4) AND rhs.d = U64(3))
   Inner Unique: false
   Join Cond: (rhs.b = lhs.b)
-  Output: lhs.a, lhs.b"#
+  Output: lhs.a, lhs.b
+  -> Seq Scan on rhs
+     Output: rhs.b, rhs.c, rhs.d
+     -> Filter: (rhs.c > U64(2) AND rhs.c < U64(4) AND rhs.d = U64(3))"#
             ],
         );
 
@@ -773,7 +774,7 @@ Index Join: Rhs on lhs
             ("d", AlgebraicType::U64),
         ];
         let indexes = &[0.into(), 1.into()];
-        let _ = db.create_table_for_test("rhs", schema, indexes)?;
+        db.create_table_for_test("rhs", schema, indexes)?;
 
         let tx = begin_tx(&db);
         // Should generate an index join since there is an index on `lhs.b`.
@@ -801,11 +802,12 @@ Index Join: Rhs on lhs
             expect![
                 r#"
 Index Join: Rhs on lhs
-  -> Seq Scan on rhs
-    Filter: (rhs.c > U64(2) AND rhs.c < U64(4) AND rhs.d = U64(3))
   Inner Unique: false
   Join Cond: (rhs.b = lhs.b)
-  Output: lhs.a, lhs.b"#
+  Output: lhs.a, lhs.b
+  -> Seq Scan on rhs
+     Output: rhs.b, rhs.c, rhs.d
+     -> Filter: (rhs.c > U64(2) AND rhs.c < U64(4) AND rhs.d = U64(3))"#
             ],
         );
 
@@ -860,8 +862,7 @@ Index Join: Rhs on lhs
         // Create table [lhs] with index on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
         let indexes = &[1.into()];
-        let _lhs_id = db
-            .create_table_for_test("lhs", schema, indexes)
+        db.create_table_for_test("lhs", schema, indexes)
             .expect("Failed to create_table_for_test lhs");
 
         // Create table [rhs] with index on [b, c]
@@ -871,8 +872,7 @@ Index Join: Rhs on lhs
             ("d", AlgebraicType::U64),
         ];
         let indexes = &[0.into(), 1.into()];
-        let _rhs_id = db
-            .create_table_for_test("rhs", schema, indexes)
+        db.create_table_for_test("rhs", schema, indexes)
             .expect("Failed to create_table_for_test rhs");
 
         let tx = begin_tx(&db);
@@ -906,11 +906,12 @@ Index Join: Rhs on lhs
             expect![
                 r#"
 Index Join: Rhs on lhs
-  -> Seq Scan on rhs
-    Filter: (rhs.c > U64(2) AND rhs.c < U64(4) AND rhs.d = U64(3))
   Inner Unique: false
   Join Cond: (rhs.b = lhs.b)
-  Output: lhs.a, lhs.b"#
+  Output: lhs.a, lhs.b
+  -> Seq Scan on rhs
+     Output: rhs.b, rhs.c, rhs.d
+     -> Filter: (rhs.c > U64(2) AND rhs.c < U64(4) AND rhs.d = U64(3))"#
             ],
         );
 
