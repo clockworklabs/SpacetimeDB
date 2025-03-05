@@ -143,7 +143,7 @@ pub enum ProjectList {
 
 #[derive(Debug)]
 pub enum AggType {
-    Count,
+    Count { alias: Box<str> },
 }
 
 impl ProjectList {
