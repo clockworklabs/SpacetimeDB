@@ -675,10 +675,13 @@ mod tests {
     use crate::execution_context::Workload;
     use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall};
     use crate::subscription::module_subscription_manager::SubscriptionManager;
+    use crate::subscription::query::compile_read_only_query;
+    use crate::subscription::TableUpdateType;
     use parking_lot::RwLock;
     use spacetimedb_client_api_messages::energy::EnergyQuanta;
     use spacetimedb_client_api_messages::websocket::{QueryId, Subscribe, SubscribeSingle, Unsubscribe};
     use spacetimedb_lib::db::auth::StAccess;
+    use spacetimedb_lib::identity::AuthCtx;
     use spacetimedb_lib::{bsatn, Timestamp};
     use spacetimedb_lib::{error::ResultTest, AlgebraicType, Identity};
     use spacetimedb_primitives::{IndexId, TableId};
@@ -778,6 +781,39 @@ mod tests {
             db.insert(tx, table_id, &bsatn::to_vec(&product![1_u64])?)?;
             Ok((table_id, index_id))
         })
+    }
+
+    #[test]
+    fn test_subscribe_metrics() -> anyhow::Result<()> {
+        let (sender, _) = sender_with_rx();
+        let db = relational_db()?;
+        let subs = module_subscriptions(db.clone());
+
+        // Create a table `t` with index on `id`
+        create_table_with_index(&db, "t")?;
+
+        let auth = AuthCtx::for_testing();
+        let sql = "select * from t where id = 1";
+        let tx = db.begin_tx(Workload::ForTests);
+        let plan = compile_read_only_query(&auth, &tx, sql)?;
+        let plan = Arc::new(plan);
+
+        let (_, metrics) = subs.evaluate_queries(sender, &vec![plan], &tx, &auth, TableUpdateType::Subscribe)?;
+
+        // We only probe the index once
+        assert_eq!(metrics.index_seeks, 1);
+        // We scan a single u64 when serializing the result
+        assert_eq!(metrics.bytes_scanned, 8);
+        // Subscriptions are read-only
+        assert_eq!(metrics.bytes_written, 0);
+        // Bytes scanned and bytes sent will always be the same for an initial subscription,
+        // because a subscription is initiated by a single client.
+        assert_eq!(metrics.bytes_sent_to_clients, 8);
+
+        // Note, rows scanned may be greater than one.
+        // It depends on the number of operators used to answer the query.
+        assert!(metrics.rows_scanned > 0);
+        Ok(())
     }
 
     #[tokio::test]
