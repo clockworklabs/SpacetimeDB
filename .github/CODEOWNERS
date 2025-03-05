@@ -4,9 +4,9 @@
 LICENSE.txt @cloutiertyler
 /crates/client-api-messages/src/websocket.rs @centril @gefjon
 
-/crates/cli/src/ @bfops @cloutiertyler
+/crates/cli/src/ @bfops @cloutiertyler @jdetter
 /crates/cli/src/subcommands/generate/ # No owners
-/crates/cli/src/subcommands/generate/mod.rs @bfops @cloutiertyler # These codeowners should be the same as the "root" CLI codeowners
+/crates/cli/src/subcommands/generate/mod.rs @bfops @cloutiertyler @jdetter # These codeowners should be the same as the "root" CLI codeowners
 
 /crates/sdk/examples/quickstart-chat/ @gefjon
 /modules/quickstart-chat/ @gefjon
