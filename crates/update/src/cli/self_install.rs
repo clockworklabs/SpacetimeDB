@@ -99,7 +99,7 @@ following line to your shell configuration and open a new shell session:
         eprintln!(
             "\
 The install process is complete; check out our quickstart guide to get started!
-	<https://spacetimedb.com/docs/quick-start>"
+	<https://spacetimedb.com/docs/getting-started>"
         );
 
         Ok(ExitCode::SUCCESS)
