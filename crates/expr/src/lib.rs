@@ -387,6 +387,7 @@ pub fn check_sql_length(sql: &str) -> TypingResult<()> {
     if sql.len() > MAX_SQL_LENGTH {
         return Err(TypingError::SqlMaxLengthExceeded {
             sql: sql[..120].into(),
+            length: sql.len(),
             max_length: MAX_SQL_LENGTH,
         });
     }

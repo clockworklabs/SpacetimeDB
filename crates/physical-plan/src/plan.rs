@@ -1218,18 +1218,18 @@ pub mod tests_utils {
     use crate::printer::{Explain, ExplainOptions};
     use crate::PhysicalCtx;
     use expect_test::Expect;
-    use spacetimedb_expr::check::{compile_sql_sub, SchemaView};
+    use spacetimedb_expr::check::{compile_sql_sub, SchemaView, TypingResult};
     use spacetimedb_expr::statement::compile_sql_stmt_with_ctx;
     use spacetimedb_lib::identity::AuthCtx;
 
-    fn sub<'a>(db: &'a impl SchemaView, auth: &AuthCtx, sql: &'a str) -> PhysicalCtx<'a> {
-        let plan = compile_sql_sub(sql, db, auth, true).unwrap();
-        compile(plan)
+    fn sub<'a>(db: &'a impl SchemaView, auth: &AuthCtx, sql: &'a str) -> TypingResult<PhysicalCtx<'a>> {
+        let plan = compile_sql_sub(sql, db, auth, true)?;
+        Ok(compile(plan))
     }
 
-    fn query<'a>(db: &'a impl SchemaView, auth: &AuthCtx, sql: &'a str) -> PhysicalCtx<'a> {
-        let plan = compile_sql_stmt_with_ctx(sql, db, auth, true).unwrap();
-        compile(plan)
+    fn query<'a>(db: &'a impl SchemaView, auth: &AuthCtx, sql: &'a str) -> TypingResult<PhysicalCtx<'a>> {
+        let plan = compile_sql_stmt_with_ctx(sql, db, auth, true)?;
+        Ok(compile(plan))
     }
 
     fn check(plan: PhysicalCtx, options: ExplainOptions, expect: Expect) {
@@ -1242,14 +1242,28 @@ pub mod tests_utils {
         expect.assert_eq(&explain.to_string());
     }
 
-    pub fn check_sub(db: &impl SchemaView, options: ExplainOptions, auth: &AuthCtx, sql: &str, expect: Expect) {
-        let plan = sub(db, auth, sql);
+    pub fn check_sub(
+        db: &impl SchemaView,
+        options: ExplainOptions,
+        auth: &AuthCtx,
+        sql: &str,
+        expect: Expect,
+    ) -> TypingResult<()> {
+        let plan = sub(db, auth, sql)?;
         check(plan, options, expect);
+        Ok(())
     }
 
-    pub fn check_query(db: &impl SchemaView, options: ExplainOptions, auth: &AuthCtx, sql: &str, expect: Expect) {
-        let plan = query(db, auth, sql);
+    pub fn check_query(
+        db: &impl SchemaView,
+        options: ExplainOptions,
+        auth: &AuthCtx,
+        sql: &str,
+        expect: Expect,
+    ) -> TypingResult<()> {
+        let plan = query(db, auth, sql)?;
         check(plan, options, expect);
+        Ok(())
     }
 }
 
@@ -1367,11 +1381,11 @@ mod tests {
     }
 
     fn check_sub(db: &SchemaViewer, sql: &str, expect: Expect) {
-        tests_utils::check_sub(db, db.options, &AuthCtx::for_testing(), sql, expect);
+        tests_utils::check_sub(db, db.options, &AuthCtx::for_testing(), sql, expect).unwrap();
     }
 
     fn check_query(db: &SchemaViewer, sql: &str, expect: Expect) {
-        tests_utils::check_query(db, db.options, &AuthCtx::for_testing(), sql, expect);
+        tests_utils::check_query(db, db.options, &AuthCtx::for_testing(), sql, expect).unwrap();
     }
 
     fn data() -> SchemaViewer {
@@ -2053,6 +2067,58 @@ Delete on p
   -> Seq Scan on p
      Output: p.id, p.name
      -> Filter: (p.id = U64(1))"#]],
+        );
+    }
+
+    #[test]
+    fn count() {
+        let db = data().with_options(ExplainOptions::default().optimize(true));
+
+        check_query(
+            &db,
+            "SELECT count(*) as n FROM p",
+            expect![[r#"
+Count
+  Output: n
+  -> Seq Scan on p
+     Output: p.id, p.name"#]],
+        );
+
+        check_query(
+            &db,
+            "SELECT count(*) as n FROM p WHERE id = 1",
+            expect![[r#"
+Count
+  Output: n
+  -> Index Scan using Index id 0 Unique(p.id) on p
+     Index Cond: (p.id = U64(1))
+     Output: p.id, p.name"#]],
+        );
+    }
+
+    #[test]
+    fn limit() {
+        let db = data().with_options(ExplainOptions::default().optimize(true));
+
+        check_query(
+            &db,
+            "SELECT * FROM p LIMIT 10",
+            expect![[r#"
+Limit: 10
+  Output: p.id, p.name
+  -> Seq Scan on p
+     Output: p.id, p.name"#]],
+        );
+
+        check_query(
+            &db,
+            "SELECT * FROM p WHERE id = 1 LIMIT 10",
+            expect![[r#"
+Limit: 10
+  Output: p.id, p.name
+  -> Index Scan using Index id 0 Unique(p.id) on p
+     Index Cond: (p.id = U64(1))
+     Output: p.id, p.name"#]],
         );
     }
 }
