@@ -2,6 +2,7 @@ use crate::dml::MutationPlan;
 use crate::plan::{IxScan, Label, PhysicalExpr, PhysicalPlan, ProjectListPlan, ProjectPlan, Sarg, Semi, TupleField};
 use crate::{PhysicalCtx, PlanCtx};
 use itertools::Itertools;
+use spacetimedb_expr::expr::AggType;
 use spacetimedb_expr::StatementSource;
 use spacetimedb_lib::AlgebraicValue;
 use spacetimedb_primitives::{ColId, ConstraintId, IndexId};
@@ -236,6 +237,13 @@ pub enum Line<'a> {
         rhs: Field<'a>,
         ident: u16,
     },
+    Limit {
+        limit: u64,
+        ident: u16,
+    },
+    Count {
+        ident: u16,
+    },
     Insert {
         table_name: &'a str,
         ident: u16,
@@ -262,6 +270,8 @@ impl Line<'_> {
             Line::HashJoin { ident, .. } => *ident,
             Line::NlJoin { ident, .. } => *ident,
             Line::JoinExpr { ident, .. } => *ident,
+            Line::Limit { ident, .. } => *ident,
+            Line::Count { ident, .. } => *ident,
             Line::Insert { ident, .. } => *ident,
             Line::Update { ident, .. } => *ident,
             Line::Delete { ident, .. } => *ident,
@@ -282,6 +292,7 @@ enum Output<'a> {
     Unknown,
     Star(Vec<Field<'a>>),
     Fields(Vec<Field<'a>>),
+    Alias(&'a str),
     Empty,
 }
 
@@ -381,11 +392,18 @@ fn eval_plan<'a>(lines: &mut Lines<'a>, plan: &'a PhysicalPlan, ident: u16) {
             lines.add_table(*label, &scan.schema);
 
             let schema = lines.labels.table_by_label(label).unwrap();
-
+            let table = schema.name;
             lines.output = Output::Star(Output::fields(schema));
 
+            let ident = if let Some(limit) = scan.limit {
+                lines.add(Line::Limit { limit, ident });
+                ident + 2
+            } else {
+                ident
+            };
+
             lines.add(Line::TableScan {
-                table: schema.name,
+                table,
                 label: label.0,
                 ident,
             });
@@ -396,6 +414,13 @@ fn eval_plan<'a>(lines: &mut Lines<'a>, plan: &'a PhysicalPlan, ident: u16) {
             lines.output = Output::Star(Output::fields(schema));
 
             let index = idx.schema.indexes.iter().find(|x| x.index_id == idx.index_id).unwrap();
+
+            let ident = if let Some(limit) = idx.limit {
+                lines.add(Line::Limit { limit, ident });
+                ident + 2
+            } else {
+                ident
+            };
 
             lines.add(Line::IxScan {
                 table_name: &idx.schema.table_name,
@@ -550,7 +575,22 @@ impl<'a> Explain<'a> {
                     // eval_plan(&mut lines, plan, 0);
                     lines.output = Output::Fields(Output::tuples(fields, &lines));
                 }
-                &ProjectListPlan::Limit(_, _) | &ProjectListPlan::Agg(_, _) => todo!(),
+                ProjectListPlan::Limit(plan, limit) => {
+                    lines.add(Line::Limit {
+                        limit: *limit,
+                        ident: 0,
+                    });
+                    eval_plan(&mut lines, plan, 2);
+                }
+                ProjectListPlan::Agg(plan, agg) => {
+                    match agg {
+                        AggType::Count { alias } => {
+                            lines.add(Line::Count { ident: 0 });
+                            lines.output = Output::Alias(alias)
+                        }
+                    }
+                    eval_plan(&mut lines, plan, 2);
+                }
             },
             PlanCtx::DML(plan) => {
                 eval_dml_plan(&mut lines, plan, 0);
@@ -736,6 +776,12 @@ impl fmt::Display for Explain<'_> {
                     writeln!(f, "{:ident$}Inner Unique: {unique}", "")?;
                     write!(f, "{:ident$}Join Cond: ({} = {})", "", lhs, rhs)?;
                 }
+                Line::Limit { limit, ident: _ } => {
+                    write!(f, "{:ident$}{arrow}Limit: {limit}", "")?;
+                }
+                Line::Count { ident: _ } => {
+                    write!(f, "{:ident$}{arrow}Count", "")?;
+                }
                 Line::Insert { table_name, ident: _ } => {
                     write!(f, "{:ident$}{arrow}Insert on {table_name}", "")?;
                 }
@@ -767,6 +813,7 @@ impl fmt::Display for Explain<'_> {
                 let columns = fields.iter().map(|x| format!("{}", x)).join(", ");
                 Some(columns)
             }
+            Output::Alias(alias) => Some(alias.to_string()),
             Output::Empty => Some("void".to_string()),
         };
         let end = if self.options.show_timings || self.options.show_schema {
