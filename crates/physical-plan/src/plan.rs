@@ -2061,4 +2061,56 @@ Delete on p
      -> Filter: (p.id = U64(1))"#]],
         );
     }
+
+    #[test]
+    fn count() {
+        let db = data().with_options(ExplainOptions::default().optimize(true));
+
+        check_query(
+            &db,
+            "SELECT count(*) as n FROM p",
+            expect![[r#"
+Count
+  Output: n
+  -> Seq Scan on p
+     Output: p.id, p.name"#]],
+        );
+
+        check_query(
+            &db,
+            "SELECT count(*) as n FROM p WHERE id = 1",
+            expect![[r#"
+Count
+  Output: n
+  -> Index Scan using Index id 0 Unique(p.id) on p
+     Index Cond: (p.id = U64(1))
+     Output: p.id, p.name"#]],
+        );
+    }
+
+    #[test]
+    fn limit() {
+        let db = data().with_options(ExplainOptions::default().optimize(true));
+
+        check_query(
+            &db,
+            "SELECT * FROM p LIMIT 10",
+            expect![[r#"
+Limit: 10
+  Output: p.id, p.name
+  -> Seq Scan on p
+     Output: p.id, p.name"#]],
+        );
+
+        check_query(
+            &db,
+            "SELECT * FROM p WHERE id = 1 LIMIT 10",
+            expect![[r#"
+Limit: 10
+  Output: p.id, p.name
+  -> Index Scan using Index id 0 Unique(p.id) on p
+     Index Cond: (p.id = U64(1))
+     Output: p.id, p.name"#]],
+        );
+    }
 }
