@@ -75,7 +75,6 @@
           ...
         }:
         let
-          rustToolchainSettings = (pkgs.lib.importTOML ./rust-toolchain.toml).toolchain;
           workspaceManifest = (pkgs.lib.importTOML ./Cargo.toml).workspace.package;
 
           # Build a workspace member, specified by its Cargo.toml
@@ -116,9 +115,9 @@
       );
 
       overlays.default = final: prev: {
-        spacetimedb-cli = self.packages.spacetimedb-cli.${final.system};
-        spacetimedb-standalone = self.packages.spacetimedb-standalone.${final.system};
-        spacetimedb-update = self.packages.spacetimedb-update.${final.system};
+        spacetimedb-cli = self.packages.${final.system}.spacetimedb-cli;
+        spacetimedb-standalone = self.packages.${final.system}.spacetimedb-standalone;
+        spacetimedb-update = self.packages.${final.system}.spacetimedb-update;
       };
 
       nixosModules.spacetimedb =
