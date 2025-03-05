@@ -223,7 +223,9 @@ fn compile_statement(db: &RelationalDB, statement: SqlAst) -> Result<CrudExpr, P
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::relational_db::tests_utils::{begin_tx, expect_query, expect_sub, insert, with_auto_commit, TestDB};
+    use crate::db::relational_db::tests_utils::{
+        begin_tx, expect_query, expect_query_with_auth, expect_sub, insert, with_auto_commit, TestDB,
+    };
     use crate::sql::execute::tests::run_for_testing;
     use expect_test::expect;
     use spacetimedb_datastore::execution_context::Workload;
@@ -232,6 +234,7 @@ mod tests {
     use spacetimedb_lib::{ConnectionId, Identity};
     use spacetimedb_primitives::col_list;
     use spacetimedb_sats::{product, AlgebraicType, GroundSpacetimeType as _};
+    use spacetimedb_schema::schema::RowLevelSecuritySchema;
     use std::convert::From;
 
     #[test]
@@ -447,8 +450,8 @@ Index Scan using Index test_b_idx_btree (test.b) on test
             "select * from test where b = 2 and a = 1",
             expect![
                 r#"
-Index Scan using Index test_a_b_idx_btree (test.b, test.a) on test
-  Index Cond: (test.b = U64(2), test.a = U64(1))
+Index Scan using Index test_a_b_idx_btree (test.a, test.b) on test
+  Index Cond: (test.a = U64(1), test.b = U64(2))
   Output: test.a, test.b, test.c, test.d"#
             ],
         );
@@ -785,8 +788,8 @@ Index Join: Rhs on lhs
   Inner Unique: false
   Join Cond: (rhs.b = lhs.b)
   Output: lhs.a, lhs.b
-  -> Index Scan using Index rhs_b_c_idx_btree (rhs.c, rhs.b) on rhs
-     Index Cond: (rhs.c = U64(2), rhs.b = U64(4))
+  -> Index Scan using Index rhs_b_c_idx_btree (rhs.b, rhs.c) on rhs
+     Index Cond: (rhs.b = U64(4), rhs.c = U64(2))
      Output: rhs.b, rhs.c, rhs.d
      -> Filter: (rhs.d = U64(3))"#
             ],
@@ -866,6 +869,80 @@ Hash Join: Lhs
             compile_sql(&db, &begin_tx(&db), sql).is_err(),
             // Err("SqlError: Type Mismatch: `PlayerState.entity_id: U64` and `PlayerState.entity_id: U64`, both sides must be an `Bool` expression, executing: `SELECT * FROM PlayerState WHERE entity_id AND entity_id`".into())
         );
+        Ok(())
+    }
+
+    #[test]
+    fn compile_limit() -> ResultTest<()> {
+        let db = TestDB::durable()?;
+        db.create_table_for_test("test", &[("a", AlgebraicType::U64)], &[0.into()])?;
+
+        let tx = db.begin_tx(Workload::ForTests);
+        expect_query(
+            &tx,
+            "select * from test limit 1",
+            expect![
+                r#"
+Limit: 1
+  Output: test.a
+  -> Seq Scan on test
+     Output: test.a"#
+            ],
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn compile_count() -> ResultTest<()> {
+        let db = TestDB::durable()?;
+        db.create_table_for_test("test", &[("a", AlgebraicType::U64)], &[0.into()])?;
+
+        let tx = db.begin_tx(Workload::ForTests);
+        expect_query(
+            &tx,
+            "select count(*) as n from test",
+            expect![
+                r#"
+Count
+  Output: n
+  -> Seq Scan on test
+     Output: test.a"#
+            ],
+        );
+
+        // TODO: Currently, we don't support `count` with a `limit` clause.
+        Ok(())
+    }
+
+    #[test]
+    fn compile_rls() -> ResultTest<()> {
+        let db = TestDB::in_memory()?;
+        let table_id = db.create_table_for_test("test", &[("a", AlgebraicType::U64)], &[0.into()])?;
+
+        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+
+        let rls = RowLevelSecuritySchema {
+            sql: "SELECT * FROM test WHERE a = 1".into(),
+            table_id,
+        };
+        tx.create_row_level_security(rls.clone())?;
+
+        let user = Identity::from_be_byte_array([3; 32]);
+        expect_query_with_auth(
+            &tx,
+            "select count(*) as n from test",
+            AuthCtx::new(Identity::ONE, user),
+            expect![
+                r#"
+Count
+  Output: n
+  -> Seq Scan on test
+     Output: test.a"#
+            ],
+        );
+
+        // TODO: Currently, we don't support `count` with a `limit` clause.
         Ok(())
     }
 }
