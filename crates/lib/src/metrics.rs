@@ -43,10 +43,44 @@ pub struct ExecutionMetrics {
 }
 
 impl ExecutionMetrics {
-    pub fn merge(&mut self, with: ExecutionMetrics) {
-        self.index_seeks += with.index_seeks;
-        self.rows_scanned += with.rows_scanned;
-        self.bytes_scanned += with.bytes_scanned;
-        self.bytes_written += with.bytes_written;
+    pub fn merge(
+        &mut self,
+        ExecutionMetrics {
+            index_seeks,
+            rows_scanned,
+            bytes_scanned,
+            bytes_written,
+            bytes_sent_to_clients,
+        }: ExecutionMetrics,
+    ) {
+        self.index_seeks += index_seeks;
+        self.rows_scanned += rows_scanned;
+        self.bytes_scanned += bytes_scanned;
+        self.bytes_written += bytes_written;
+        self.bytes_sent_to_clients += bytes_sent_to_clients;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ExecutionMetrics;
+
+    #[test]
+    fn test_merge() {
+        let mut a = ExecutionMetrics::default();
+
+        a.merge(ExecutionMetrics {
+            index_seeks: 1,
+            rows_scanned: 1,
+            bytes_scanned: 1,
+            bytes_written: 1,
+            bytes_sent_to_clients: 1,
+        });
+
+        assert_eq!(a.index_seeks, 1);
+        assert_eq!(a.rows_scanned, 1);
+        assert_eq!(a.bytes_scanned, 1);
+        assert_eq!(a.bytes_written, 1);
+        assert_eq!(a.bytes_sent_to_clients, 1);
     }
 }
