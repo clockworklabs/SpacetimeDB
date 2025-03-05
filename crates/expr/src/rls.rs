@@ -6,7 +6,7 @@ use spacetimedb_sql_parser::ast::BinOp;
 
 use crate::{
     check::{parse_and_type_sub, SchemaView},
-    expr::{AggType, Expr, FieldProject, LeftDeepJoin, ProjectList, ProjectName, RelExpr, Relvar},
+    expr::{Expr, FieldProject, LeftDeepJoin, ProjectList, ProjectName, RelExpr, Relvar},
 };
 
 /// The main driver of RLS resolution for subscription queries.
@@ -96,7 +96,7 @@ pub fn resolve_views_for_sql(tx: &impl SchemaView, expr: ProjectList, auth: &Aut
                 .collect(),
             fields,
         )),
-        ProjectList::Agg(exprs, AggType::Count, name, ty) => Ok(ProjectList::Agg(
+        ProjectList::Agg(exprs, agg, name, ty) => Ok(ProjectList::Agg(
             exprs
                 .into_iter()
                 .map(resolve_for_sql)
@@ -104,7 +104,7 @@ pub fn resolve_views_for_sql(tx: &impl SchemaView, expr: ProjectList, auth: &Aut
                 .into_iter()
                 .flatten()
                 .collect(),
-            AggType::Count,
+            agg,
             name,
             ty,
         )),
