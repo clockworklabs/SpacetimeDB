@@ -26,6 +26,8 @@ fn main() -> anyhow::Result<ExitCode> {
         } else {
             proxy::run_cli(None, Some(argv0.as_os_str()), args)
         }
+    } else if cmd == "spacetime-install" {
+        cli::SelfInstall::parse().exec()
     } else {
         anyhow::bail!(
             "unknown command name for spacetimedb-update multicall binary: {}",

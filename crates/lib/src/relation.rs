@@ -272,7 +272,6 @@ impl fmt::Display for Header {
     }
 }
 
-/// A stored table from [RelationalDB]
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct DbTable {
     pub head: Arc<Header>,

@@ -15,10 +15,10 @@ use core::marker::PhantomData;
 use smallvec::SmallVec;
 use std::borrow::Borrow;
 
-/// A **data format** that can deserialize any data structure supported by SATS.
+/// A data format that can deserialize any data structure supported by SATS.
 ///
-/// The `Deserializer` trait in SATS performs the same function as [`serde::Deserializer`] in [`serde`].
-/// See the documentation of [`serde::Deserializer`] for more information of the data model.
+/// The `Deserializer` trait in SATS performs the same function as `serde::Deserializer` in [`serde`].
+/// See the documentation of `serde::Deserializer` for more information of the data model.
 ///
 /// Implementations of `Deserialize` map themselves into this data model
 /// by passing to the `Deserializer` a visitor that can receive the necessary types.
@@ -28,7 +28,6 @@ use std::borrow::Borrow;
 ///
 /// The lifetime `'de` allows us to deserialize lifetime-generic types in a zero-copy fashion.
 ///
-/// [`serde::Deserializer`]: ::serde::Deserializer
 /// [`serde`]: https://crates.io/crates/serde
 pub trait Deserializer<'de>: Sized {
     /// The error type that can be returned if some error occurs during deserialization.
@@ -543,16 +542,19 @@ pub trait DeserializeSeed<'de> {
 use crate::de::impls::BorrowedSliceVisitor;
 pub use spacetimedb_bindings_macro::Deserialize;
 
-/// A **datastructure** that can be deserialized from any data format supported by SATS.
+/// A data structure that can be deserialized from any data format supported by the SpacetimeDB Algebraic Type System.
 ///
 /// In most cases, implementations of `Deserialize` may be `#[derive(Deserialize)]`d.
 ///
-/// The `Deserialize` trait in SATS performs the same function as [`serde::Deserialize`] in [`serde`].
-/// See the documentation of [`serde::Deserialize`] for more information of the data model.
+/// The `Deserialize` trait in SATS performs the same function as `serde::Deserialize` in [`serde`].
+/// See the documentation of `serde::Deserialize` for more information of the data model.
 ///
 /// The lifetime `'de` allows us to deserialize lifetime-generic types in a zero-copy fashion.
 ///
-/// [`serde::Deserialize`]: ::serde::Deserialize
+/// Do not manually implement this trait unless you know what you are doing.
+/// Implementations must be consistent with `Serialize for T`, `SpacetimeType for T` and `Serialize, Deserialize for AlgebraicValue`.
+/// Implementations that are inconsistent across these traits may result in data loss.
+///
 /// [`serde`]: https://crates.io/crates/serde
 pub trait Deserialize<'de>: Sized {
     /// Deserialize this value from the given `deserializer`.

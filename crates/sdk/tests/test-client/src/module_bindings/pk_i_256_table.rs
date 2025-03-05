@@ -104,13 +104,11 @@ impl<'ctx> __sdk::TableWithPrimaryKey for PkI256TableHandle<'ctx> {
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
 ) -> __sdk::Result<__sdk::TableUpdate<PkI256>> {
-    __sdk::TableUpdate::parse_table_update_with_primary_key::<__sats::i256>(raw_updates, |row: &PkI256| &row.n).map_err(
-        |e| {
-            __sdk::InternalError::failed_parse("TableUpdate<PkI256>", "TableUpdate")
-                .with_cause(e)
-                .into()
-        },
-    )
+    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
+        __sdk::InternalError::failed_parse("TableUpdate<PkI256>", "TableUpdate")
+            .with_cause(e)
+            .into()
+    })
 }
 
 /// Access to the `n` unique index on the table `pk_i256`,

@@ -11,7 +11,7 @@ use spacetimedb::identity::{AuthCtx, Identity};
 use spacetimedb::json::client_api::StmtResultJson;
 use spacetimedb::messages::control_db::{Database, HostType, Node, Replica};
 use spacetimedb::sql;
-use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, RegisterTldResult, Tld};
+use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, RegisterTldResult, SetDomainsResult, Tld};
 use spacetimedb_lib::ProductTypeElement;
 use spacetimedb_paths::server::ModuleLogsDir;
 use tokio::sync::watch;
@@ -84,6 +84,10 @@ impl Host {
                     // We need a header for query results
                     let mut header = vec![];
 
+                    let sql_start = std::time::Instant::now();
+                    let sql_span =
+                        tracing::trace_span!("execute_sql", total_duration = tracing::field::Empty,).entered();
+
                     let rows = sql::execute::run(
                         // Returns an empty result set for mutations
                         db,
@@ -101,13 +105,20 @@ impl Host {
                         }
                     })?;
 
+                    let total_duration = sql_start.elapsed();
+                    sql_span.record("total_duration", tracing::field::debug(total_duration));
+
                     // Turn the header into a `ProductType`
                     let schema = header
                         .into_iter()
                         .map(|(col_name, col_type)| ProductTypeElement::new(col_type, Some(col_name)))
                         .collect();
 
-                    Ok(vec![StmtResultJson { schema, rows }])
+                    Ok(vec![StmtResultJson {
+                        schema,
+                        rows,
+                        total_duration_micros: total_duration.as_micros() as u64,
+                    }])
                 },
             )
             .await
@@ -220,6 +231,22 @@ pub trait ControlStateWriteAccess: Send + Sync {
         domain: &DomainName,
         database_identity: &Identity,
     ) -> anyhow::Result<InsertDomainResult>;
+
+    /// Replace all dns records pointing to `database_identity` with `domain_names`.
+    ///
+    /// All existing names in the database and in `domain_names` must be
+    /// owned by `owner_identity` (i.e. their TLD must belong to `owner_identity`).
+    ///
+    /// The `owner_identity` is typically also the owner of the database.
+    ///
+    /// Note that passing an empty slice is legal, and will just remove any
+    /// existing dns records.
+    async fn replace_dns_records(
+        &self,
+        database_identity: &Identity,
+        owner_identity: &Identity,
+        domain_names: &[DomainName],
+    ) -> anyhow::Result<SetDomainsResult>;
 }
 
 impl<T: ControlStateReadAccess + ?Sized> ControlStateReadAccess for Arc<T> {
@@ -304,6 +331,17 @@ impl<T: ControlStateWriteAccess + ?Sized> ControlStateWriteAccess for Arc<T> {
         database_identity: &Identity,
     ) -> anyhow::Result<InsertDomainResult> {
         (**self).create_dns_record(identity, domain, database_identity).await
+    }
+
+    async fn replace_dns_records(
+        &self,
+        database_identity: &Identity,
+        owner_identity: &Identity,
+        domain_names: &[DomainName],
+    ) -> anyhow::Result<SetDomainsResult> {
+        (**self)
+            .replace_dns_records(database_identity, owner_identity, domain_names)
+            .await
     }
 }
 

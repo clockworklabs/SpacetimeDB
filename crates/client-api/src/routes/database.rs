@@ -1,3 +1,6 @@
+use std::str::FromStr;
+use std::time::Duration;
+
 use crate::auth::{
     anon_auth_middleware, SpacetimeAuth, SpacetimeEnergyUsed, SpacetimeExecutionDurationMicros, SpacetimeIdentity,
     SpacetimeIdentityToken,
@@ -21,7 +24,7 @@ use spacetimedb::host::ReducerOutcome;
 use spacetimedb::host::UpdateDatabaseResult;
 use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, HostType};
-use spacetimedb_client_api_messages::name::{self, DatabaseName, PublishOp, PublishResult};
+use spacetimedb_client_api_messages::name::{self, DatabaseName, DomainName, PublishOp, PublishResult};
 use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::sats;
@@ -385,7 +388,12 @@ where
         .ok_or(StatusCode::NOT_FOUND)?;
     let json = host.exec_sql(auth, database, body).await?;
 
-    Ok(axum::Json(json))
+    let total_duration = json.iter().fold(0, |acc, x| acc + x.total_duration_micros);
+
+    Ok((
+        TypedHeader(SpacetimeExecutionDurationMicros(Duration::from_micros(total_duration))),
+        axum::Json(json),
+    ))
 }
 
 #[derive(Deserialize)]
@@ -438,6 +446,28 @@ pub struct PublishDatabaseQueryParams {
     clear: bool,
 }
 
+use std::env;
+fn require_spacetime_auth_for_creation() -> bool {
+    env::var("TEMP_REQUIRE_SPACETIME_AUTH").is_ok_and(|v| !v.is_empty())
+}
+
+// A hacky function to let us restrict database creation on maincloud.
+fn allow_creation(auth: &SpacetimeAuth) -> Result<(), ErrorResponse> {
+    if !require_spacetime_auth_for_creation() {
+        return Ok(());
+    }
+    if auth.issuer.trim_end_matches('/') == "https://auth.spacetimedb.com" {
+        Ok(())
+    } else {
+        log::trace!("Rejecting creation request because auth issuer is {}", auth.issuer);
+        Err((
+            StatusCode::UNAUTHORIZED,
+            "To create a database, you must be logged in with a SpacetimeDB account.",
+        )
+            .into())
+    }
+}
+
 pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
     State(ctx): State<S>,
     Path(PublishDatabaseParams { name_or_identity }): Path<PublishDatabaseParams>,
@@ -454,6 +484,7 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
             Err(name) => {
                 // `name_or_identity` was a `NameOrIdentity::Name`, but no record
                 // exists yet. Create it now with a fresh identity.
+                allow_creation(&auth)?;
                 let database_auth = SpacetimeAuth::alloc(&ctx).await?;
                 let database_identity = database_auth.identity;
                 let tld: name::Tld = name.clone().into();
@@ -497,6 +528,9 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
             .get_database_by_identity(&database_identity)
             .map_err(log_and_500)?
             .is_some();
+        if !exists {
+            allow_creation(&auth)?;
+        }
 
         if clear && exists {
             ctx.delete_database(&auth.identity, &database_identity)
@@ -596,6 +630,59 @@ pub async fn add_name<S: ControlStateDelegate>(
     Ok((code, axum::Json(response)))
 }
 
+#[derive(Deserialize)]
+pub struct SetNamesParams {
+    name_or_identity: NameOrIdentity,
+}
+
+pub async fn set_names<S: ControlStateDelegate>(
+    State(ctx): State<S>,
+    Path(SetNamesParams { name_or_identity }): Path<SetNamesParams>,
+    Extension(auth): Extension<SpacetimeAuth>,
+    names: axum::Json<Vec<String>>,
+) -> axum::response::Result<impl IntoResponse> {
+    let validated_names = names
+        .0
+        .into_iter()
+        .map(|s| DatabaseName::from_str(&s).map(DomainName::from).map_err(|e| (s, e)))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|(input, e)| (StatusCode::BAD_REQUEST, format!("Error parsing `{input}`: {e}")))?;
+
+    let database_identity = name_or_identity.resolve(&ctx).await?;
+
+    let database = ctx.get_database_by_identity(&database_identity).map_err(log_and_500)?;
+    let Some(database) = database else {
+        return Ok((
+            StatusCode::NOT_FOUND,
+            axum::Json(name::SetDomainsResult::DatabaseNotFound),
+        ));
+    };
+
+    if database.owner_identity != auth.identity {
+        return Ok((
+            StatusCode::UNAUTHORIZED,
+            axum::Json(name::SetDomainsResult::NotYourDatabase {
+                database: database.database_identity,
+            }),
+        ));
+    }
+
+    let response = ctx
+        .replace_dns_records(&database_identity, &database.owner_identity, &validated_names)
+        .await
+        .map_err(log_and_500)?;
+    let status = match response {
+        name::SetDomainsResult::Success => StatusCode::OK,
+        name::SetDomainsResult::PermissionDenied { .. }
+        | name::SetDomainsResult::PermissionDeniedOnAny { .. }
+        | name::SetDomainsResult::NotYourDatabase { .. } => StatusCode::UNAUTHORIZED,
+        name::SetDomainsResult::DatabaseNotFound => StatusCode::NOT_FOUND,
+        name::SetDomainsResult::OtherError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+    };
+
+    Ok((status, axum::Json(response)))
+}
+
 /// This struct allows the edition to customize `/database` routes more meticulously.
 pub struct DatabaseRoutes<S> {
     /// POST /database
@@ -610,6 +697,8 @@ pub struct DatabaseRoutes<S> {
     pub names_get: MethodRouter<S>,
     /// POST: /database/:name_or_identity/names
     pub names_post: MethodRouter<S>,
+    /// PUT: /database/:name_or_identity/names
+    pub names_put: MethodRouter<S>,
     /// GET: /database/:name_or_identity/identity
     pub identity_get: MethodRouter<S>,
     /// GET: /database/:name_or_identity/subscribe
@@ -637,6 +726,7 @@ where
             db_delete: delete(delete_database::<S>),
             names_get: get(get_names::<S>),
             names_post: post(add_name::<S>),
+            names_put: put(set_names::<S>),
             identity_get: get(get_identity::<S>),
             subscribe_get: get(handle_websocket::<S>),
             call_reducer_post: post(call::<S>),
@@ -658,6 +748,7 @@ where
             .route("/", self.db_delete)
             .route("/names", self.names_get)
             .route("/names", self.names_post)
+            .route("/names", self.names_put)
             .route("/identity", self.identity_get)
             .route("/subscribe", self.subscribe_get)
             .route("/call/:reducer", self.call_reducer_post)

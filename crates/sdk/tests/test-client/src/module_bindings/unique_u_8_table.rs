@@ -83,11 +83,12 @@ pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::Remote
     let _table = client_cache.get_or_make_table::<UniqueU8>("unique_u8");
     _table.add_unique_constraint::<u8>("n", |row| &row.n);
 }
+
 #[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
 ) -> __sdk::Result<__sdk::TableUpdate<UniqueU8>> {
-    __sdk::TableUpdate::parse_table_update_no_primary_key(raw_updates).map_err(|e| {
+    __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
         __sdk::InternalError::failed_parse("TableUpdate<UniqueU8>", "TableUpdate")
             .with_cause(e)
             .into()

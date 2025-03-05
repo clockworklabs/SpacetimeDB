@@ -70,6 +70,13 @@ fn update_positions_by_collect(ctx: &ReducerContext) {
 
 #[reducer]
 fn roundtrip(ctx: &ReducerContext) {
+    // Warmup the index.
+    let id = ctx.db().velocity().id();
+    for x in 0..10_000 {
+        id.find(x);
+    }
+
+    // Measures the hot latency.
     let _stopwatch = LogStopwatch::new("index_roundtrip");
-    ctx.db().velocity().id().find(333_333);
+    id.find(10_001);
 }

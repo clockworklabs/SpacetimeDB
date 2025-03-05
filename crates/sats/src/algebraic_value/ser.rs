@@ -206,8 +206,8 @@ unsafe fn write_byte_chunks<'a>(mut dst: *mut u8, chunks: impl Iterator<Item = &
 
 /// Convert a `[MaybeUninit<T>]` into a `[T]` by asserting all elements are initialized.
 ///
-/// Identitcal copy of the source of `MaybeUninit::slice_assume_init_ref`, but that's not stabilized.
-/// https://doc.rust-lang.org/std/mem/union.MaybeUninit.html#method.slice_assume_init_ref
+/// Identical copy of the source of `MaybeUninit::slice_assume_init_ref`, but that's not stabilized.
+/// <https://doc.rust-lang.org/std/mem/union.MaybeUninit.html#method.slice_assume_init_ref>
 ///
 /// # Safety
 ///

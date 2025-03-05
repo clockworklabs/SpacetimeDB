@@ -3,6 +3,7 @@ name = "spacetimedb-update"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+license-file = "LICENSE"
 
 [dependencies]
 spacetimedb-paths.workspace = true
@@ -15,9 +16,11 @@ flate2.workspace = true
 http-body-util = "0.1.2"
 indicatif.workspace = true
 reqwest.workspace = true
+self-replace.workspace = true
 semver = { workspace = true, features = ["serde"] }
 serde.workspace = true
 tar.workspace = true
+tempfile.workspace = true
 tokio.workspace = true
 toml.workspace = true
 tracing = { workspace = true, features = ["release_max_level_off"] }

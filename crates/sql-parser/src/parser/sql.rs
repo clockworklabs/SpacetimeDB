@@ -130,7 +130,7 @@
 use sqlparser::{
     ast::{
         Assignment, Expr, GroupByExpr, ObjectName, Query, Select, SetExpr, Statement, TableFactor, TableWithJoins,
-        Values,
+        Value, Values,
     },
     dialect::PostgreSqlDialect,
     parser::Parser,
@@ -344,22 +344,31 @@ impl RelParser for SqlParser {
                 offset: None,
                 fetch: None,
                 locks,
-            } if order_by.is_empty() && locks.is_empty() => parse_set_op(*body),
+            } if order_by.is_empty() && locks.is_empty() => parse_set_op(*body, None),
+            Query {
+                with: None,
+                body,
+                order_by,
+                limit: Some(Expr::Value(Value::Number(n, _))),
+                offset: None,
+                fetch: None,
+                locks,
+            } if order_by.is_empty() && locks.is_empty() => parse_set_op(*body, Some(n.into_boxed_str())),
             _ => Err(SqlUnsupported::feature(query).into()),
         }
     }
 }
 
 /// Parse a set operation
-fn parse_set_op(expr: SetExpr) -> SqlParseResult<SqlSelect> {
+fn parse_set_op(expr: SetExpr, limit: Option<Box<str>>) -> SqlParseResult<SqlSelect> {
     match expr {
-        SetExpr::Select(select) => parse_select(*select).map(SqlSelect::qualify_vars),
+        SetExpr::Select(select) => parse_select(*select, limit).map(SqlSelect::qualify_vars),
         _ => Err(SqlUnsupported::feature(expr).into()),
     }
 }
 
 /// Parse a SELECT statement
-fn parse_select(select: Select) -> SqlParseResult<SqlSelect> {
+fn parse_select(select: Select, limit: Option<Box<str>>) -> SqlParseResult<SqlSelect> {
     match select {
         Select {
             distinct: None,
@@ -387,6 +396,7 @@ fn parse_select(select: Select) -> SqlParseResult<SqlSelect> {
                 project: parse_projection(projection)?,
                 from: SqlParser::parse_from(from)?,
                 filter: parse_expr_opt(selection)?,
+                limit,
             })
         }
         _ => Err(SqlUnsupported::feature(select).into()),
@@ -429,6 +439,8 @@ mod tests {
     fn supported() {
         for sql in [
             "select a from t",
+            "select count(*) as n from t",
+            "select count(*) as n from t join s on t.id = s.id where s.x = 1",
             "insert into t values (1, 2)",
             "delete from t",
             "delete from t where a = 1",
@@ -450,6 +462,8 @@ mod tests {
             "select a from t where",
             // Empty GROUP BY
             "select a, count(*) from t group by",
+            // Aggregate without alias
+            "select count(*) from t",
             // Empty statement
             "",
             " ",

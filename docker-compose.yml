@@ -27,17 +27,21 @@ services:
       - "3000:3000"
       # Tracy
       - "8086:8086"
-    entrypoint:
-      cargo watch -i flamegraphs -i log.conf --why -C crates/standalone -x 'run
-      start --data-dir=/stdb/data
-      --jwt-pub-key-path=/etc/spacetimedb/id_ecdsa.pub
-      --jwt-priv-key-path=/etc/spacetimedb/id_ecdsa'
+    entrypoint: cargo watch -i flamegraphs -i log.conf --why -C crates/standalone -x 'run start --data-dir=/stdb/data --jwt-pub-key-path=/etc/spacetimedb/id_ecdsa.pub --jwt-priv-key-path=/etc/spacetimedb/id_ecdsa'
     healthcheck:
       test: curl -f http://localhost/ping || exit 1
     privileged: true
     environment:
       SPACETIMEDB_FLAMEGRAPH_PATH: ../../../../flamegraphs/flamegraph.folded
       SPACETIMEDB_TRACY: 1
+      # Tracy utilizes the Time Stamp Counter (TSC) in CPUs for high-resolution timing.
+      # The invariant TSC is a feature that ensures the TSC runs at a constant rate,
+      # regardless of power-saving modes or frequency changes.
+      #
+      # This flag will instruct Tracy to proceed without verifying the presence of an invariant TSC.
+      # If the CPU lacks this feature, Tracy cannot guarantee accurate timing.
+      # So use this approach with caution, as it may affect profiling accuracy.
+      # TRACY_NO_INVARIANT_CHECK: 1
       RUST_BACKTRACE: 1
       ENV: dev
     networks:

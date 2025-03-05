@@ -23,7 +23,7 @@ use crate::Config;
 pub fn cli() -> clap::Command {
     clap::Command::new("subscribe")
         .about(format!(
-            "Subscribe to SQL queries on the database.\n\n{}",
+            "Subscribe to SQL queries on the database. {}",
             UNSTABLE_WARNING
         ))
         .arg(

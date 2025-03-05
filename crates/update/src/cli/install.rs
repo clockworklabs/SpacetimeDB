@@ -39,7 +39,7 @@ impl Install {
                 "can only install spacetimedb-standalone at the moment"
             );
             let client = super::reqwest_client()?;
-            let version = download_and_install(&client, Some(self.version), self.artifact_name, paths).await?;
+            let (version, _) = download_and_install(&client, Some(self.version), self.artifact_name, paths).await?;
             if self.r#use {
                 paths.cli_bin_dir.set_current_version(&version.to_string())?;
             }
@@ -48,25 +48,34 @@ impl Install {
     }
 }
 
+pub(super) fn make_progress_bar() -> ProgressBar {
+    let pb = ProgressBar::new(0).with_style(ProgressStyle::with_template("{spinner} {prefix}{msg}").unwrap());
+    pb.enable_steady_tick(std::time::Duration::from_millis(60));
+    pb
+}
+
+fn releases_url() -> String {
+    std::env::var("SPACETIME_UPDATE_RELEASES_URL")
+        .unwrap_or_else(|_| "https://api.github.com/repos/clockworklabs/SpacetimeDB/releases".to_owned())
+}
+
 pub(super) async fn download_and_install(
     client: &reqwest::Client,
     version: Option<semver::Version>,
     artifact_name: Option<String>,
     paths: &SpacetimePaths,
-) -> anyhow::Result<semver::Version> {
+) -> anyhow::Result<(semver::Version, Release)> {
     let custom_artifact = artifact_name.is_some();
     let download_name = artifact_name.as_deref().unwrap_or(DOWNLOAD_NAME);
     let artifact_type = ArtifactType::deduce(download_name).context("Unknown archive type")?;
 
-    let pb_style = ProgressStyle::with_template("{spinner} {prefix}{msg}").unwrap();
-    let pb = ProgressBar::new(0).with_style(pb_style.clone());
-    pb.enable_steady_tick(std::time::Duration::from_millis(60));
+    let pb = make_progress_bar();
 
     pb.set_message("Resolving version...");
-    let releases_url = "https://api.github.com/repos/clockworklabs/SpacetimeDB/releases";
+    let releases_url = releases_url();
     let url = match &version {
         Some(version) => format!("{releases_url}/tags/v{version}"),
-        None => [releases_url, "/latest"].concat(),
+        None => [&*releases_url, "/latest"].concat(),
     };
     let release: Release = client
         .get(url)
@@ -101,12 +110,10 @@ pub(super) async fn download_and_install(
             }
         })?;
 
-    pb.set_style(ProgressStyle::with_template("{spinner} {prefix}{msg} {bytes}/{total_bytes} ({eta})").unwrap());
     pb.set_prefix(format!("Installing v{release_version}: "));
     pb.set_message("downloading...");
     let archive = download_with_progress(&pb, client, &asset.browser_download_url).await?;
 
-    pb.set_style(pb_style);
     pb.set_message("unpacking...");
 
     let version_dir = paths.cli_bin_dir.version_dir(&release_version.to_string());
@@ -124,7 +131,7 @@ pub(super) async fn download_and_install(
 
     pb.finish_with_message("done!");
 
-    Ok(release_version)
+    Ok((release_version, release))
 }
 
 enum ArtifactType {
@@ -145,7 +152,7 @@ impl ArtifactType {
 }
 
 pub(super) async fn available_releases(client: &reqwest::Client) -> anyhow::Result<Vec<String>> {
-    let url = "https://api.github.com/repos/clockworklabs/SpacetimeDB/releases";
+    let url = releases_url();
     let releases: Vec<Release> = client.get(url).send().await?.json().await?;
 
     releases
@@ -155,15 +162,15 @@ pub(super) async fn available_releases(client: &reqwest::Client) -> anyhow::Resu
 }
 
 #[derive(Deserialize)]
-struct ReleaseAsset {
-    name: String,
-    browser_download_url: String,
+pub(super) struct ReleaseAsset {
+    pub(super) name: String,
+    pub(super) browser_download_url: String,
 }
 
 #[derive(Deserialize)]
-struct Release {
+pub(super) struct Release {
     tag_name: String,
-    assets: Vec<ReleaseAsset>,
+    pub(super) assets: Vec<ReleaseAsset>,
 }
 
 impl Release {
@@ -173,13 +180,16 @@ impl Release {
     }
 }
 
-async fn download_with_progress(
+pub(super) async fn download_with_progress(
     pb: &ProgressBar,
     client: &reqwest::Client,
     url: &str,
 ) -> Result<http_body_util::Collected<Bytes>, anyhow::Error> {
     let response = client.get(url).send().await?.error_for_status()?;
 
+    let pb_style = pb.style();
+
+    pb.set_style(ProgressStyle::with_template("{spinner} {prefix}{msg} {bytes}/{total_bytes} ({eta})").unwrap());
     pb.set_length(response.content_length().unwrap_or(0));
 
     let body = reqwest::Body::from(response)
@@ -191,6 +201,8 @@ async fn download_with_progress(
         })
         .collect()
         .await?;
+
+    pb.set_style(pb_style);
 
     Ok(body)
 }

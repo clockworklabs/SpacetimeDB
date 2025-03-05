@@ -33,6 +33,8 @@ impl AuthCtx {
 
 /// An `Identity` for something interacting with the database.
 ///
+/// <!-- TODO: docs for OpenID stuff. -->
+///
 /// An `Identity` is a 256-bit unsigned integer. These are encoded in various ways.
 /// - In JSON, an `Identity` is represented as a hexadecimal number wrapped in a string, `"0x[64 hex characters]"`.
 /// - In BSATN, an `Identity` is represented as a LITTLE-ENDIAN number 32 bytes long.

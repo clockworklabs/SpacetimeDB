@@ -8,6 +8,7 @@ description = "The SpacetimeDB query engine"
 
 [dependencies]
 anyhow.workspace = true
+itertools.workspace = true
 spacetimedb-expr.workspace = true
 spacetimedb-lib.workspace = true
 spacetimedb-sats.workspace = true

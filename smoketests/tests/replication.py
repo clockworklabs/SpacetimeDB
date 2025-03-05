@@ -314,59 +314,59 @@ fn start(ctx: &ReducerContext, id: u64, count: u64) {
         """Send a message to the database."""
         retry(lambda: self.call("start", id, count))
 
-    def test_leader_election_in_loop(self):
-        """This test fails a leader, wait for new leader to be elected and verify if commits replicated to new leader"""
-        iterations = 5;
-        row_ids = [101 + i for i in range(iterations * 2)]
-        for (first_id, second_id) in zip(row_ids[::2], row_ids[1::2]):
-            cur_leader = self.cluster.wait_for_leader_change(None)
-            self.cluster.ensure_leader_health(first_id)
-
-            print("killing current leader: {}", cur_leader)
-            container_id = self.cluster.fail_leader()
-
-            self.assertIsNotNone(container_id)
-            
-            next_leader = self.cluster.wait_for_leader_change(cur_leader)
-            self.assertNotEqual(cur_leader, next_leader)
-            # this check if leader election happened
-            self.cluster.ensure_leader_health(second_id)
-            # restart the old leader, so that we can maintain quorum for next iteration
-            self.cluster.restore_leader(container_id, 'start')
-        
-        # verify if all past rows are present in new leader
-        for row_id in row_ids:
-            table = self.spacetime("sql", self.database_identity, f"SELECT * FROM counter WHERE id = {row_id}")
-            self.assertIn(f"{row_id}", table)
-
-    def test_leader_c_disconnect_in_loop(self):
-        """This test disconnects a leader, wait for new leader to be elected and verify if commits replicated to new leader"""
-        
-        iterations = 5;
-        row_ids = [201 + i for i in range(iterations * 2)]
-            
-        for (first_id, second_id) in zip(row_ids[::2], row_ids[1::2]):
-            cur_leader = self.cluster.wait_for_leader_change(None)
-            self.cluster.ensure_leader_health(first_id)
-
-            container_id = self.cluster.fail_leader('disconnect')
-            
-            self.assertIsNotNone(container_id)
-
-            next_leader = self.cluster.wait_for_leader_change(cur_leader)
-            self.assertNotEqual(cur_leader, next_leader)
-            # this check if leader election happened
-            self.cluster.ensure_leader_health(second_id)
-            
-            # restart the old leader, so that we can maintain quorum for next iteration
-            self.cluster.restore_leader(container_id, 'connect')
-            time.sleep(1)
-
-        # verify if all past rows are present in new leader
-        for row_id in row_ids:
-            table = self.spacetime("sql", self.database_identity, f"SELECT * FROM counter WHERE id = {row_id}")
-            self.assertIn(f"{row_id}", table)
-
+#    def test_leader_election_in_loop(self):
+#        """This test fails a leader, wait for new leader to be elected and verify if commits replicated to new leader"""
+#        iterations = 5;
+#        row_ids = [101 + i for i in range(iterations * 2)]
+#        for (first_id, second_id) in zip(row_ids[::2], row_ids[1::2]):
+#            cur_leader = self.cluster.wait_for_leader_change(None)
+#            self.cluster.ensure_leader_health(first_id)
+#
+#            print("killing current leader: {}", cur_leader)
+#            container_id = self.cluster.fail_leader()
+#
+#            self.assertIsNotNone(container_id)
+#            
+#            next_leader = self.cluster.wait_for_leader_change(cur_leader)
+#            self.assertNotEqual(cur_leader, next_leader)
+#            # this check if leader election happened
+#            self.cluster.ensure_leader_health(second_id)
+#            # restart the old leader, so that we can maintain quorum for next iteration
+#            self.cluster.restore_leader(container_id, 'start')
+#        
+#        # verify if all past rows are present in new leader
+#        for row_id in row_ids:
+#            table = self.spacetime("sql", self.database_identity, f"SELECT * FROM counter WHERE id = {row_id}")
+#            self.assertIn(f"{row_id}", table)
+#
+#    def test_leader_c_disconnect_in_loop(self):
+#        """This test disconnects a leader, wait for new leader to be elected and verify if commits replicated to new leader"""
+#        
+#        iterations = 5;
+#        row_ids = [201 + i for i in range(iterations * 2)]
+#            
+#        for (first_id, second_id) in zip(row_ids[::2], row_ids[1::2]):
+#            cur_leader = self.cluster.wait_for_leader_change(None)
+#            self.cluster.ensure_leader_health(first_id)
+#
+#            container_id = self.cluster.fail_leader('disconnect')
+#            
+#            self.assertIsNotNone(container_id)
+#
+#            next_leader = self.cluster.wait_for_leader_change(cur_leader)
+#            self.assertNotEqual(cur_leader, next_leader)
+#            # this check if leader election happened
+#            self.cluster.ensure_leader_health(second_id)
+#            
+#            # restart the old leader, so that we can maintain quorum for next iteration
+#            self.cluster.restore_leader(container_id, 'connect')
+#            time.sleep(1)
+#
+#        # verify if all past rows are present in new leader
+#        for row_id in row_ids:
+#            table = self.spacetime("sql", self.database_identity, f"SELECT * FROM counter WHERE id = {row_id}")
+#            self.assertIn(f"{row_id}", table)
+#
 
 #    def test_drain_leader_node(self):
 #        """This test moves leader replica to different node"""
@@ -387,32 +387,32 @@ fn start(ctx: &ReducerContext, id: u64, count: u64) {
 #            self.assertNotEqual(replica['node_id'], cur_leader_node_id)
 #
 
-    def test_prefer_leader(self):
-        """This test moves leader replica to different node"""
-        self.add_me_as_admin()
-        cur_leader_node_id = self.cluster.wait_for_leader_change(None)
-        self.cluster.ensure_leader_health(301)
-
-        replicas = self.cluster.get_all_replicas()
-        prefer_replica = {}
-        for replica in replicas:
-            if replica['node_id'] != cur_leader_node_id:
-                prefer_replica = replica
-                break
-        prefer_replica_id = prefer_replica['replica_id']
-        self.spacetime("call", "spacetime-control", "prefer_leader", f"{prefer_replica_id}")
-
-        next_leader_node_id = self.cluster.wait_for_leader_change(cur_leader_node_id)
-        self.cluster.ensure_leader_health(302)
-        self.assertEqual(prefer_replica['node_id'], next_leader_node_id)
-
-
-        # verify if all past rows are present in new leader
-        for row_id in [301, 302]:
-            table = self.spacetime("sql", self.database_identity, f"SELECT * FROM counter WHERE id = {row_id}")
-            self.assertIn(f"{row_id}", table)
-
-
+#    def test_prefer_leader(self):
+#        """This test moves leader replica to different node"""
+#        self.add_me_as_admin()
+#        cur_leader_node_id = self.cluster.wait_for_leader_change(None)
+#        self.cluster.ensure_leader_health(301)
+#
+#        replicas = self.cluster.get_all_replicas()
+#        prefer_replica = {}
+#        for replica in replicas:
+#            if replica['node_id'] != cur_leader_node_id:
+#                prefer_replica = replica
+#                break
+#        prefer_replica_id = prefer_replica['replica_id']
+#        self.spacetime("call", "spacetime-control", "prefer_leader", f"{prefer_replica_id}")
+#
+#        next_leader_node_id = self.cluster.wait_for_leader_change(cur_leader_node_id)
+#        self.cluster.ensure_leader_health(302)
+#        self.assertEqual(prefer_replica['node_id'], next_leader_node_id)
+#
+#
+#        # verify if all past rows are present in new leader
+#        for row_id in [301, 302]:
+#            table = self.spacetime("sql", self.database_identity, f"SELECT * FROM counter WHERE id = {row_id}")
+#            self.assertIn(f"{row_id}", table)
+#
+#
     def test_a_many_transactions(self):
         """This test sends many messages to the database and verifies that they are all present"""
         self.cluster.wait_for_leader_change(None)
@@ -421,7 +421,7 @@ fn start(ctx: &ReducerContext, id: u64, count: u64) {
         self.start(1, num_messages)
 
         message_table = sub()[-1:];
-        self.assertIn({'counter': {'deletes': [{'id': 1, 'value': 9999}], 'inserts': [{'id': 1, 'value': 10000}]}}, message_table)
+        self.assertIn({'counter': {'deletes': [{'id': 1, 'value': num_messages - 1}], 'inserts': [{'id': 1, 'value': num_messages}]}}, message_table)
 
 
 

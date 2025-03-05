@@ -581,7 +581,7 @@ fn print_db_connection(_module: &ModuleDef, out: &mut Indenter) {
     out.indent(1);
     writeln!(
         out,
-        "return new DBConnectionBuilder<DBConnection, ErrorContext, SubscriptionEventContext>(REMOTE_MODULE, (imp: DBConnectionImpl) => imp as DBConnection);"
+        "return new DbConnectionBuilder<DbConnection, ErrorContext, SubscriptionEventContext>(REMOTE_MODULE, (imp: DbConnectionImpl) => imp as DbConnection);"
     );
     out.dedent(1);
     writeln!(out, "}}");

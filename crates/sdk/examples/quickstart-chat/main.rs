@@ -1,26 +1,94 @@
 #![allow(clippy::disallowed_macros)]
-mod module_bindings;
-use std::sync::{atomic::AtomicU8, Arc};
 
+mod module_bindings;
 use module_bindings::*;
 
-use spacetimedb_client_api_messages::websocket::Compression;
 use spacetimedb_sdk::{credentials, DbContext, Error, Event, Identity, Status, Table, TableWithPrimaryKey};
 
-// # Our main function
+// ## Define the main function
 
 fn main() {
+    // Connect to the database
     let ctx = connect_to_db();
+
+    // Register callbacks to run in response to database events.
     register_callbacks(&ctx);
+
+    // Subscribe to SQL queries in order to construct a local partial replica of the database.
     subscribe_to_tables(&ctx);
+
+    // Spawn a thread, where the connection will process messages and invoke callbacks.
     ctx.run_threaded();
+
+    // Handle CLI input
     user_input_loop(&ctx);
-    ctx.disconnect().unwrap();
 }
 
-// # Register callbacks
+// ## Connect to the database
 
-/// Register our row and reducer callbacks.
+/// The URI of the SpacetimeDB instance hosting our chat module.
+const HOST: &str = "http://localhost:3000";
+
+/// The module name we chose when we published our module.
+const DB_NAME: &str = "quickstart-chat";
+
+/// Load credentials from a file and connect to the database.
+fn connect_to_db() -> DbConnection {
+    DbConnection::builder()
+        // Register our `on_connect` callback, which will save our auth token.
+        .on_connect(on_connected)
+        // Register our `on_connect_error` callback, which will print a message, then exit the process.
+        .on_connect_error(on_connect_error)
+        // Our `on_disconnect` callback, which will print a message, then exit the process.
+        .on_disconnect(on_disconnected)
+        // If the user has previously connected, we'll have saved a token in the `on_connect` callback.
+        // In that case, we'll load it and pass it to `with_token`,
+        // so we can re-authenticate as the same `Identity`.
+        .with_token(creds_store().load().expect("Error loading credentials"))
+        // Set the database name we chose when we called `spacetime publish`.
+        .with_module_name(DB_NAME)
+        // Set the URI of the SpacetimeDB host that's running our database.
+        .with_uri(HOST)
+        // Finalize configuration and connect!
+        .build()
+        .expect("Failed to connect")
+}
+
+// ### Save credentials
+
+fn creds_store() -> credentials::File {
+    credentials::File::new("quickstart-chat")
+}
+
+/// Our `on_connect` callback: save our credentials to a file.
+fn on_connected(_ctx: &DbConnection, _identity: Identity, token: &str) {
+    if let Err(e) = creds_store().save(token) {
+        eprintln!("Failed to save credentials: {:?}", e);
+    }
+}
+
+// ### Handle errors and disconnections
+
+/// Our `on_connect_error` callback: print the error, then exit the process.
+fn on_connect_error(_ctx: &ErrorContext, err: Error) {
+    eprintln!("Connection error: {}", err);
+    std::process::exit(1);
+}
+
+/// Our `on_disconnect` callback: print a note, then exit the process.
+fn on_disconnected(_ctx: &ErrorContext, err: Option<Error>) {
+    if let Some(err) = err {
+        eprintln!("Disconnected: {}", err);
+        std::process::exit(1);
+    } else {
+        println!("Disconnected.");
+        std::process::exit(0);
+    }
+}
+
+// ## Register callbacks
+
+/// Register all the callbacks our app will use to respond to database events.
 fn register_callbacks(ctx: &DbConnection) {
     // When a new user joins, print a notification.
     ctx.db.user().on_insert(on_user_inserted);
@@ -38,20 +106,7 @@ fn register_callbacks(ctx: &DbConnection) {
     ctx.reducers.on_send_message(on_message_sent);
 }
 
-// ## Save credentials to a file
-
-fn creds_store() -> credentials::File {
-    credentials::File::new("quickstart-chat")
-}
-
-/// Our `on_connect` callback: save our credentials to a file.
-fn on_connected(_ctx: &DbConnection, _identity: Identity, token: &str) {
-    if let Err(e) = creds_store().save(token) {
-        eprintln!("Failed to save credentials: {:?}", e);
-    }
-}
-
-// ## Notify about new users
+// ### Notify about new users
 
 /// Our `User::on_insert` callback: if the user is online, print a notification.
 fn on_user_inserted(_ctx: &EventContext, user: &User) {
@@ -66,7 +121,7 @@ fn user_name_or_identity(user: &User) -> String {
         .unwrap_or_else(|| user.identity.to_abbreviated_hex().to_string())
 }
 
-// ## Notify about updated users
+// ### Notify about updated users
 
 /// Our `User::on_update` callback:
 /// print a notification about name and status changes.
@@ -86,7 +141,7 @@ fn on_user_updated(_ctx: &EventContext, old: &User, new: &User) {
     }
 }
 
-// ## Display incoming messages
+// ### Print messages
 
 /// Our `Message::on_insert` callback: print new messages.
 fn on_message_inserted(ctx: &EventContext, message: &Message) {
@@ -106,19 +161,7 @@ fn print_message(ctx: &impl RemoteDbContext, message: &Message) {
     println!("{}: {}", sender, message.text);
 }
 
-// ## Print message backlog
-
-/// Our `on_subscription_applied` callback:
-/// sort all past messages and print them in timestamp order.
-#[allow(unused)]
-fn on_sub_applied(ctx: &SubscriptionEventContext) {
-    let mut messages = ctx.db.message().iter().collect::<Vec<_>>();
-    messages.sort_by_key(|m| m.sent);
-    for message in messages {
-        print_message(ctx, &message);
-    }
-}
-// ## Warn if set_name failed
+// ### Handle reducer failures
 
 /// Our `on_set_name` callback: print a warning if the reducer failed.
 fn on_name_set(ctx: &ReducerEventContext, name: &String) {
@@ -127,8 +170,6 @@ fn on_name_set(ctx: &ReducerEventContext, name: &String) {
     }
 }
 
-// ## Warn if a message was rejected
-
 /// Our `on_send_message` callback: print a warning if the reducer failed.
 fn on_message_sent(ctx: &ReducerEventContext, text: &String) {
     if let Status::Failed(err) = &ctx.event.status {
@@ -136,65 +177,40 @@ fn on_message_sent(ctx: &ReducerEventContext, text: &String) {
     }
 }
 
-// ## Exit when disconnected
-
-/// Our `on_disconnect` callback: print a note, then exit the process.
-fn on_disconnected(_ctx: &ErrorContext, error: Option<Error>) {
-    match error {
-        None => {
-            println!("Disconnected normally.");
-            std::process::exit(0)
-        }
-        Some(err) => panic!("Disconnected abnormally: {err}"),
-    }
-}
-
-// # Connect to the database
-
-/// The URL of the SpacetimeDB instance hosting our chat module.
-const HOST: &str = "http://localhost:3000";
-
-/// The module name we chose when we published our module.
-const DB_NAME: &str = "quickstart-chat";
-
-/// Load credentials from a file and connect to the database.
-fn connect_to_db() -> DbConnection {
-    DbConnection::builder()
-        .on_connect(on_connected)
-        .on_connect_error(|_ctx, error| panic!("Error while connecting: {}", error))
-        .on_disconnect(on_disconnected)
-        .with_token(creds_store().load().expect("Error loading credentials"))
-        .with_module_name(DB_NAME)
-        .with_uri(HOST)
-        .with_compression(Compression::Gzip)
-        .build()
-        .expect("Failed to connect")
-}
-
-// # Subscribe to queries
-fn subscribe_to_queries(ctx: &DbConnection, queries: &[&str], callback: fn(&SubscriptionEventContext)) {
-    if queries.is_empty() {
-        panic!("No queries to subscribe to.");
-    }
-    let remaining_queries = Arc::new(AtomicU8::new(queries.len() as u8));
-    for query in queries {
-        let remaining_queries = remaining_queries.clone();
-        ctx.subscription_builder()
-            .on_applied(move |ctx| {
-                if remaining_queries.fetch_sub(1, std::sync::atomic::Ordering::Relaxed) == 1 {
-                    callback(ctx);
-                }
-            })
-            .subscribe(query);
-    }
-}
+// ## Subscribe to tables
 
 /// Register subscriptions for all rows of both tables.
 fn subscribe_to_tables(ctx: &DbConnection) {
-    subscribe_to_queries(ctx, &["SELECT * FROM user", "SELECT * FROM message"], on_sub_applied);
+    ctx.subscription_builder()
+        .on_applied(on_sub_applied)
+        .on_error(on_sub_error)
+        .subscribe(["SELECT * FROM user", "SELECT * FROM message"]);
 }
 
-// # Handle user input
+// ### Print past messages in order
+
+/// Our `on_applied` callback:
+/// sort all past messages and print them in timestamp order.
+fn on_sub_applied(ctx: &SubscriptionEventContext) {
+    let mut messages = ctx.db.message().iter().collect::<Vec<_>>();
+    messages.sort_by_key(|m| m.sent);
+    for message in messages {
+        print_message(ctx, &message);
+    }
+    println!("Fully connected and all subscriptions applied.");
+    println!("Use /name to set your name, or type a message!");
+}
+
+// ### Notify about failed subscriptions
+
+/// Or `on_error` callback:
+/// print the error, then exit the process.
+fn on_sub_error(_ctx: &ErrorContext, err: Error) {
+    eprintln!("Subscription failed: {}", err);
+    std::process::exit(1);
+}
+
+// ## Handle user input
 
 /// Read each line of standard input, and either set our name or send a message as appropriate.
 fn user_input_loop(ctx: &DbConnection) {

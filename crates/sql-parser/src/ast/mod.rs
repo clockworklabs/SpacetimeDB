@@ -79,12 +79,14 @@ pub enum Project {
     Star(Option<SqlIdent>),
     /// SELECT a, b
     Exprs(Vec<ProjectElem>),
+    /// SELECT COUNT(*)
+    Count(SqlIdent),
 }
 
 impl Project {
     pub fn qualify_vars(self, with: SqlIdent) -> Self {
         match self {
-            Self::Star(..) => self,
+            Self::Star(..) | Self::Count(..) => self,
             Self::Exprs(elems) => Self::Exprs(elems.into_iter().map(|elem| elem.qualify_vars(with.clone())).collect()),
         }
     }

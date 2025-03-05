@@ -95,7 +95,7 @@ pub struct RawModuleDefV9 {
 /// constraints, sequences, type, and access rights.
 ///
 /// Validation rules:
-/// - The table name must be a valid [`crate::db::identifier::Identifier`].
+/// - The table name must be a valid `spacetimedb_schema::identifier::Identifier`.
 /// - The table's indexes, constraints, and sequences need not be sorted; they will be sorted according to their respective ordering rules.
 /// - The table's column types may refer only to types in the containing `RawModuleDefV9`'s typespace.
 /// - The table's column names must be unique.
@@ -105,7 +105,7 @@ pub struct RawModuleDefV9 {
 pub struct RawTableDefV9 {
     /// The name of the table.
     /// Unique within a module, acts as the table's identifier.
-    /// Must be a valid [crate::db::identifier::Identifier].
+    /// Must be a valid `spacetimedb_schema::identifier::Identifier`.
     pub name: RawIdentifier,
 
     /// A reference to a `ProductType` containing the columns of this table.
@@ -441,7 +441,7 @@ pub enum Lifecycle {
     OnDisconnect,
 }
 
-/// A builder for a [`ModuleDef`].
+/// A builder for a [`RawModuleDefV9`].
 #[derive(Default)]
 pub struct RawModuleDefV9Builder {
     /// The module definition.
@@ -708,7 +708,7 @@ impl RawTableDefBuilder<'_> {
         self
     }
 
-    /// Generates a [UniqueConstraintDef] using the supplied `columns`.
+    /// Generates a [RawConstraintDefV9] using the supplied `columns`.
     pub fn with_unique_constraint(mut self, columns: impl Into<ColList>) -> Self {
         let columns = columns.into();
         self.table.constraints.push(RawConstraintDefV9 {
@@ -734,7 +734,7 @@ impl RawTableDefBuilder<'_> {
             .with_column_sequence(column)
     }
 
-    /// Generates a [RawIndexDef] using the supplied `columns`.
+    /// Generates a [RawIndexDefV9] using the supplied `columns`.
     pub fn with_index(mut self, algorithm: RawIndexAlgorithm, accessor_name: impl Into<RawIdentifier>) -> Self {
         let accessor_name = accessor_name.into();
 
@@ -746,7 +746,7 @@ impl RawTableDefBuilder<'_> {
         self
     }
 
-    /// Generates a [RawIndexDef] using the supplied `columns` but with no `accessor_name`.
+    /// Generates a [RawIndexDefV9] using the supplied `columns` but with no `accessor_name`.
     pub fn with_index_no_accessor_name(mut self, algorithm: RawIndexAlgorithm) -> Self {
         self.table.indexes.push(RawIndexDefV9 {
             name: None,
@@ -756,7 +756,7 @@ impl RawTableDefBuilder<'_> {
         self
     }
 
-    /// Adds a [RawSequenceDef] on the supplied `column`.
+    /// Adds a [RawSequenceDefV9] on the supplied `column`.
     pub fn with_column_sequence(mut self, column: impl Into<ColId>) -> Self {
         let column = column.into();
         self.table.sequences.push(RawSequenceDefV9 {

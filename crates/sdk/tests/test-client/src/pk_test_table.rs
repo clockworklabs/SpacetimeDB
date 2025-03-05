@@ -231,6 +231,17 @@ impl_pk_test_table! {
         update_reducer_event = UpdatePkU32;
         accessor_method = pk_u_32;
     }
+    PkU32Two {
+        Key = u32;
+        key_field_name = n;
+        insert_reducer = insert_pk_u_32_two;
+        insert_reducer_event = InsertPkU32Two;
+        delete_reducer = delete_pk_u_32_two;
+        delete_reducer_event = DeletePkU32Two;
+        update_reducer = update_pk_u_32_two;
+        update_reducer_event = UpdatePkU32Two;
+        accessor_method = pk_u_32_two;
+    }
     PkU64 {
         Key = u64;
         key_field_name = n;

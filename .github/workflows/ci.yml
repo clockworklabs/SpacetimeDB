@@ -56,6 +56,9 @@ jobs:
           # the sdk-manifests on windows-latest are messed up, so we need to update them
           dotnet workload config --update-mode workload-set
           dotnet workload update
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+        if: runner.os == 'Windows'
       - name: Run smoketests
         run: python -m smoketests ${{ matrix.smoketest_args }}
       - name: Stop containers (Linux)
@@ -142,7 +145,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: clockworklabs/spacetimedb-csharp-sdk
-          ref: staging
+          ref: master
           path: spacetimedb-csharp-sdk
 
       - name: Setup NuGet override for C# SDK

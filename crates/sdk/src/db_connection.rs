@@ -21,7 +21,7 @@
 use crate::{
     callbacks::{CallbackId, DbCallbacks, ReducerCallback, ReducerCallbacks, RowCallback, UpdateCallback},
     client_cache::{ClientCache, TableHandle},
-    spacetime_module::{AbstractEventContext, DbConnection, DbUpdate, InModule, SpacetimeModule},
+    spacetime_module::{AbstractEventContext, AppliedDiff, DbConnection, DbUpdate, InModule, SpacetimeModule},
     subscription::{
         OnAppliedCallback, OnErrorCallback, PendingUnsubscribeResult, SubscriptionHandleImpl, SubscriptionManager,
     },
@@ -144,19 +144,11 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
             // then invoke the on-applied and row callbacks.
             // We only use this for `subscribe_from_all_tables`
             ParsedMessage::InitialSubscription { db_update, sub_id } => {
-                // Lock the client cache in a restricted scope,
-                // so that it will be unlocked when callbacks run.
-                {
-                    let mut cache = self.cache.lock().unwrap();
-                    db_update.apply_to_client_cache(&mut *cache);
-                }
-                let mut inner = self.inner.lock().unwrap();
-
-                let sub_event_ctx = self.make_event_ctx(());
-                inner.subscriptions.legacy_subscription_applied(&sub_event_ctx, sub_id);
-
-                let row_event_ctx = self.make_event_ctx(Event::SubscribeApplied);
-                db_update.invoke_row_callbacks(&row_event_ctx, &mut inner.db_callbacks);
+                self.apply_update(db_update, |inner| {
+                    let sub_event_ctx = self.make_event_ctx(());
+                    inner.subscriptions.legacy_subscription_applied(&sub_event_ctx, sub_id);
+                    Event::SubscribeApplied
+                });
                 Ok(())
             }
 
@@ -164,20 +156,13 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
             // apply the received diff to the client cache,
             // then invoke on-reducer and row callbacks.
             ParsedMessage::TransactionUpdate(event, Some(update)) => {
-                // Lock the client cache in a restricted scope,
-                // so that it will be unlocked when callbacks run.
-                {
-                    let mut cache = self.cache.lock().unwrap();
-                    update.apply_to_client_cache(&mut *cache);
-                }
-                let mut inner = self.inner.lock().unwrap();
-                if let Event::Reducer(reducer_event) = &event {
-                    let reducer_event_ctx = self.make_event_ctx(reducer_event.clone());
-                    inner.reducer_callbacks.invoke_on_reducer(&reducer_event_ctx);
-                }
-
-                let row_event_ctx = self.make_event_ctx(event);
-                update.invoke_row_callbacks(&row_event_ctx, &mut inner.db_callbacks);
+                self.apply_update(update, |inner| {
+                    if let Event::Reducer(reducer_event) = &event {
+                        let reducer_event_ctx = self.make_event_ctx(reducer_event.clone());
+                        inner.reducer_callbacks.invoke_on_reducer(&reducer_event_ctx);
+                    }
+                    event
+                });
                 Ok(())
             }
 
@@ -195,40 +180,22 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                 query_id,
                 initial_update,
             } => {
-                // Lock the client cache in a restricted scope,
-                // so that it will be unlocked when callbacks run.
-                {
-                    let mut cache = self.cache.lock().unwrap();
-                    initial_update.apply_to_client_cache(&mut *cache);
-                }
-                let mut inner = self.inner.lock().unwrap();
-
-                let sub_event_ctx = self.make_event_ctx(());
-                inner.subscriptions.subscription_applied(&sub_event_ctx, query_id);
-
-                // FIXME: implement ref counting of rows to handle queries with overlapping results.
-                let row_event_ctx = self.make_event_ctx(Event::SubscribeApplied);
-                initial_update.invoke_row_callbacks(&row_event_ctx, &mut inner.db_callbacks);
+                self.apply_update(initial_update, |inner| {
+                    let sub_event_ctx = self.make_event_ctx(());
+                    inner.subscriptions.subscription_applied(&sub_event_ctx, query_id);
+                    Event::SubscribeApplied
+                });
                 Ok(())
             }
             ParsedMessage::UnsubscribeApplied {
                 query_id,
                 initial_update,
             } => {
-                // Lock the client cache in a restricted scope,
-                // so that it will be unlocked when callbacks run.
-                {
-                    let mut cache = self.cache.lock().unwrap();
-                    initial_update.apply_to_client_cache(&mut *cache);
-                }
-                let mut inner = self.inner.lock().unwrap();
-
-                let sub_event_ctx = self.make_event_ctx(());
-                inner.subscriptions.unsubscribe_applied(&sub_event_ctx, query_id);
-                // FIXME: implement ref counting of rows to handle queries with overlapping results.
-
-                let row_event_ctx = self.make_event_ctx(Event::UnsubscribeApplied);
-                initial_update.invoke_row_callbacks(&row_event_ctx, &mut inner.db_callbacks);
+                self.apply_update(initial_update, |inner| {
+                    let sub_event_ctx = self.make_event_ctx(());
+                    inner.subscriptions.unsubscribe_applied(&sub_event_ctx, query_id);
+                    Event::UnsubscribeApplied
+                });
                 Ok(())
             }
             ParsedMessage::SubscriptionError { query_id, error } => {
@@ -246,6 +213,24 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
         };
 
         res
+    }
+
+    fn apply_update(
+        &self,
+        update: M::DbUpdate,
+        get_event: impl FnOnce(&mut DbContextImplInner<M>) -> Event<M::Reducer>,
+    ) {
+        // Lock the client cache in a restricted scope,
+        // so that it will be unlocked when callbacks run.
+        let applied_diff = {
+            let mut cache = self.cache.lock().unwrap();
+            update.apply_to_client_cache(&mut *cache)
+        };
+        let mut inner = self.inner.lock().unwrap();
+
+        let event = get_event(&mut inner);
+        let row_event_ctx = self.make_event_ctx(event);
+        applied_diff.invoke_row_callbacks(&row_event_ctx, &mut inner.db_callbacks);
     }
 
     /// Invoke the on-disconnect callback, and mark [`Self::is_active`] false.
@@ -308,7 +293,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
             }
             // Subscribe: register the subscription in the [`SubscriptionManager`]
             // and send the `Subscribe` WS message.
-            PendingMutation::SubscribeSingle { query_id, handle } => {
+            PendingMutation::SubscribeMulti { query_id, handle } => {
                 let mut inner = self.inner.lock().unwrap();
                 // Register the subscription, so we can handle related messages from the server.
                 inner.subscriptions.register_subscription(query_id, handle.clone());
@@ -318,7 +303,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                         .unwrap()
                         .as_mut()
                         .ok_or(crate::Error::Disconnected)?
-                        .unbounded_send(ws::ClientMessage::SubscribeSingle(msg))
+                        .unbounded_send(ws::ClientMessage::SubscribeMulti(msg))
                         .expect("Unable to send subscribe message: WS sender loop has dropped its recv channel");
                 }
                 // else, the handle was already cancelled.
@@ -342,7 +327,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                             .unwrap()
                             .as_mut()
                             .ok_or(crate::Error::Disconnected)?
-                            .unbounded_send(ws::ClientMessage::Unsubscribe(m))
+                            .unbounded_send(ws::ClientMessage::UnsubscribeMulti(m))
                             .expect("Unable to send unsubscribe message: WS sender loop has dropped its recv channel");
                     }
                 }
@@ -1117,9 +1102,8 @@ async fn parse_loop<M: SpacetimeModule>(
             ws::ServerMessage::OneOffQueryResponse(_) => {
                 unreachable!("The Rust SDK does not implement one-off queries")
             }
-            ws::ServerMessage::SubscribeApplied(subscribe_applied) => {
-                let table_rows = subscribe_applied.rows.table_rows;
-                let db_update = ws::DatabaseUpdate::from_iter(std::iter::once(table_rows));
+            ws::ServerMessage::SubscribeMultiApplied(subscribe_applied) => {
+                let db_update = subscribe_applied.update;
                 let query_id = subscribe_applied.query_id.id;
                 match M::DbUpdate::parse_update(db_update) {
                     Err(e) => ParsedMessage::Error(
@@ -1133,9 +1117,8 @@ async fn parse_loop<M: SpacetimeModule>(
                     },
                 }
             }
-            ws::ServerMessage::UnsubscribeApplied(unsubscribe_applied) => {
-                let table_rows = unsubscribe_applied.rows.table_rows;
-                let db_update = ws::DatabaseUpdate::from_iter(std::iter::once(table_rows));
+            ws::ServerMessage::UnsubscribeMultiApplied(unsubscribe_applied) => {
+                let db_update = unsubscribe_applied.update;
                 let query_id = unsubscribe_applied.query_id.id;
                 match M::DbUpdate::parse_update(db_update) {
                     Err(e) => ParsedMessage::Error(
@@ -1153,6 +1136,8 @@ async fn parse_loop<M: SpacetimeModule>(
                 query_id: e.query_id,
                 error: e.error.to_string(),
             },
+            ws::ServerMessage::SubscribeApplied(_) => unreachable!("Rust client SDK never sends `SubscribeSingle`, but received a `SubscribeApplied` from the host... huh?"),
+            ws::ServerMessage::UnsubscribeApplied(_) => unreachable!("Rust client SDK never sends `UnsubscribeSingle`, but received a `UnsubscribeApplied` from the host... huh?")
         })
         .expect("Failed to send ParsedMessage to main thread");
     }
@@ -1160,17 +1145,17 @@ async fn parse_loop<M: SpacetimeModule>(
 
 /// Operations a user can make to a `DbContext` which must be postponed
 pub(crate) enum PendingMutation<M: SpacetimeModule> {
+    // TODO: Rename to `SubscribeLegacy`, or replace with `SubscribeToAllTables`.
     Subscribe {
         on_applied: Option<OnAppliedCallback<M>>,
         on_error: Option<OnErrorCallback<M>>,
         queries: Box<[Box<str>]>,
-        // TODO: replace `queries` with query_sql: String,
         sub_id: u32,
     },
     Unsubscribe {
         query_id: u32,
     },
-    SubscribeSingle {
+    SubscribeMulti {
         query_id: u32,
         handle: SubscriptionHandleImpl<M>,
     },
@@ -1242,12 +1227,4 @@ static NEXT_SUBSCRIPTION_ID: AtomicU32 = AtomicU32::new(1);
 // Get the next request ID to use for a WebSocket message.
 pub(crate) fn next_subscription_id() -> u32 {
     NEXT_SUBSCRIPTION_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-}
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn dummy() {
-        assert_eq!(1, 1);
-    }
 }
