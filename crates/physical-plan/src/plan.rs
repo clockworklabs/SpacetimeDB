@@ -1185,16 +1185,13 @@ pub mod tests_utils {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     use crate::printer::ExplainOptions;
     use expect_test::{expect, Expect};
-    use pretty_assertions::assert_eq;
-    use spacetimedb_expr::{
-        check::SchemaView,
-        statement::{parse_and_type_sql, Statement},
-    };
+    use spacetimedb_expr::check::SchemaView;
     use spacetimedb_lib::{
         db::auth::{StAccess, StTableType},
-        identity::AuthCtx,
         AlgebraicType,
     };
     use spacetimedb_primitives::{ColId, ColList, ColSet, TableId};
@@ -1203,13 +1200,6 @@ mod tests {
         schema::{ColumnSchema, ConstraintSchema, IndexSchema, TableSchema},
     };
     use std::sync::Arc;
-
-    use crate::{
-        compile::compile_select_list,
-        plan::{IxScan, PhysicalPlan, ProjectListPlan},
-    };
-
-    use super::{tests_utils, ProjectPlan, TableScan};
 
     struct SchemaViewer {
         schemas: Vec<Arc<TableSchema>>,
@@ -1906,46 +1896,60 @@ Index Join: Rhs on p
 
         let db = SchemaViewer::new(vec![t.clone()]);
 
-        let compile = |sql| {
-            let stmt = parse_and_type_sql(sql, &db, &AuthCtx::for_testing()).unwrap();
-            let Statement::Select(select) = stmt else {
-                unreachable!()
-            };
-            compile_select_list(select).optimize().unwrap()
-        };
+        check_query(
+            &db,
+            "SELECT * FROM t LIMIT 5",
+            expect![[r#"
+Limit: 5
+  -> Seq Scan on t
+  Output: t.x, t.y"#]],
+        );
 
-        let plan = compile("select * from t limit 5");
+        check_query(
+            &db,
+            "SELECT * FROM t WHERE x = 1 LIMIT 5",
+            expect![[r#"
+Limit: 5
+  -> Index Scan using Index id 0 on t
+      Index Cond: (t.x = U8(1))
+  Output: t.x, t.y"#]],
+        );
 
-        let ProjectListPlan::Name(mut plans) = plan else {
-            panic!("expected a qualified wildcard projection {{table_name}}.*")
-        };
+        check_query(
+            &db,
+            "SELECT * FROM t WHERE y = 1 LIMIT 5",
+            expect![[r#"
+Limit: 5
+  -> Seq Scan on t
+    Filter: (t.y = U8(1))
+  Output: t.x, t.y"#]],
+        );
+    }
 
-        assert_eq!(plans.len(), 1);
-        assert!(matches!(
-            plans.pop().unwrap(),
-            ProjectPlan::None(PhysicalPlan::TableScan(TableScan { limit: Some(5), .. }, _))
-        ));
+    #[test]
+    fn count() {
+        let db = data();
 
-        let plan = compile("select * from t where x = 1 limit 5");
+        check_query(
+            &db,
+            "SELECT COUNT(*) AS n FROM p",
+            expect![[r#"
+Count
+  -> Seq Scan on p
+  Output: p.id, p.name"#]],
+        );
 
-        let ProjectListPlan::Name(mut plans) = plan else {
-            panic!("expected a qualified wildcard projection {{table_name}}.*")
-        };
+        check_query(
+            &db,
+            "SELECT COUNT(*) AS n FROM p WHERE id = 1",
+            expect![[r#"
+Count
+  -> Seq Scan on p
+    Filter: (p.id = U64(1))
+  Output: p.id, p.name"#]],
+        );
 
-        assert_eq!(plans.len(), 1);
-        assert!(matches!(
-            plans.pop().unwrap(),
-            ProjectPlan::None(PhysicalPlan::IxScan(IxScan { limit: Some(5), .. }, _))
-        ));
-
-        let plan = compile("select * from t where y = 1 limit 5");
-
-        let ProjectListPlan::Limit(plan, 5) = plan else {
-            panic!("expected an outer LIMIT")
-        };
-
-        assert!(plan.plan_iter().any(|plan| plan.has_filter()));
-        assert!(plan.plan_iter().any(|plan| plan.has_table_scan(None)));
+        // TODO: Is not yet possible to combine correctly `COUNT` with `LIMIT`
     }
 
     #[test]
