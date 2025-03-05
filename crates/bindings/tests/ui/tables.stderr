@@ -118,9 +118,9 @@ note: required by a bound in `spacetimedb::spacetimedb_lib::ser::SerializeNamedP
   |                             ^^^^^^^^^ required by this bound in `SerializeNamedProduct::serialize_element`
 
 error[E0277]: `&'a Alpha` cannot appear as an argument to an index filtering operation
-  --> tests/ui/tables.rs:30:33
+  --> tests/ui/tables.rs:33:33
    |
-30 |     ctx.db.delta().compound_a().find(Alpha::Beta);
+33 |     ctx.db.delta().compound_a().find(Alpha::Beta);
    |                                 ^^^^ should be an integer type, `bool`, `String`, `&str`, `Identity`, `ConnectionId`, or `Hash`, not `&'a Alpha`
    |
    = help: the trait `for<'a> FilterableValue` is not implemented for `&'a Alpha`
@@ -145,9 +145,9 @@ note: required by a bound in `UniqueColumn::<Tbl, <Col as spacetimedb::table::Co
    |                                   ^^^^^^^^^^^^^^^ required by this bound in `UniqueColumn::<Tbl, <Col as Column>::ColType, Col>::find`
 
 error[E0277]: the trait bound `Alpha: IndexScanRangeBounds<(Alpha,), SingleBound>` is not satisfied
-  --> tests/ui/tables.rs:31:40
+  --> tests/ui/tables.rs:34:40
    |
-31 |     ctx.db.delta().compound_b().filter(Alpha::Gamma);
+34 |     ctx.db.delta().compound_b().filter(Alpha::Gamma);
    |                                 ------ ^^^^^^^^^^^^ the trait `FilterableValue` is not implemented for `Alpha`
    |                                 |
    |                                 required by a bound introduced by this call

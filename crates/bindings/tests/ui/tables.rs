@@ -14,7 +14,10 @@ struct TypeParam<T> {
 struct ConstParam<const X: u8> {}
 
 #[derive(spacetimedb::SpacetimeType)]
-enum Alpha { Beta, Gamma }
+enum Alpha {
+    Beta,
+    Gamma,
+}
 
 #[spacetimedb::table(name = delta)]
 struct Delta {
