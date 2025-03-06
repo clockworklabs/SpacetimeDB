@@ -96,7 +96,7 @@ pub fn resolve_views_for_sql(tx: &impl SchemaView, expr: ProjectList, auth: &Aut
                 .collect(),
             fields,
         )),
-        ProjectList::Agg(exprs, agg, name, ty) => Ok(ProjectList::Agg(
+        ProjectList::Agg(exprs, agg, ty) => Ok(ProjectList::Agg(
             exprs
                 .into_iter()
                 .map(resolve_for_sql)
@@ -105,7 +105,6 @@ pub fn resolve_views_for_sql(tx: &impl SchemaView, expr: ProjectList, auth: &Aut
                 .flatten()
                 .collect(),
             agg,
-            name,
             ty,
         )),
     }
