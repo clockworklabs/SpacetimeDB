@@ -37,7 +37,7 @@ namespace SpacetimeDB.Types
         [DataContract]
         public sealed partial class CircleDecay : Reducer, IReducerArgs
         {
-            [DataMember(Name = "_timer")]
+            [DataMember(Name = "timer")]
             public CircleDecayTimer Timer;
 
             public CircleDecay(CircleDecayTimer Timer)
@@ -50,7 +50,7 @@ namespace SpacetimeDB.Types
                 this.Timer = new();
             }
 
-            string IReducerArgs.ReducerName => "circle_decay";
+            string IReducerArgs.ReducerName => "CircleDecay";
         }
     }
 

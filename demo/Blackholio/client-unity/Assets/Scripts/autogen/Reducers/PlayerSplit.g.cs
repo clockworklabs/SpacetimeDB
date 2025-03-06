@@ -36,7 +36,7 @@ namespace SpacetimeDB.Types
         [DataContract]
         public sealed partial class PlayerSplit : Reducer, IReducerArgs
         {
-            string IReducerArgs.ReducerName => "player_split";
+            string IReducerArgs.ReducerName => "PlayerSplit";
         }
     }
 

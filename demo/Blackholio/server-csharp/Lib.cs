@@ -136,7 +136,7 @@ public static partial class Module
 	[Reducer(ReducerKind.ClientConnected)]
 	public static void Connect(ReducerContext ctx)
 	{
-		var player = ctx.Db.logged_out_player.identity.Find(ctx.CallerIdentity);
+		var player = ctx.Db.logged_out_player.identity.Find(ctx.Sender);
 		if (player != null)
 		{
 			ctx.Db.player.Insert(player.Value);
@@ -146,7 +146,7 @@ public static partial class Module
 		{
 			ctx.Db.player.Insert(new Player
 			{
-				identity = ctx.CallerIdentity,
+				identity = ctx.Sender,
 				name = "",
 			});
 		}
@@ -155,7 +155,7 @@ public static partial class Module
 	[Reducer(ReducerKind.ClientDisconnected)]
 	public static void Disconnect(ReducerContext ctx)
 	{
-		var player = ctx.Db.player.identity.Find(ctx.CallerIdentity) ?? throw new Exception("Player not found");
+		var player = ctx.Db.player.identity.Find(ctx.Sender) ?? throw new Exception("Player not found");
 		foreach (var circle in ctx.Db.circle.player_id.Filter(player.player_id))
 		{
 			var entity = ctx.Db.entity.entity_id.Find(circle.entity_id) ?? throw new Exception("Could not find circle");
@@ -170,7 +170,7 @@ public static partial class Module
 	public static void EnterGame(ReducerContext ctx, string name)
 	{
 		Log.Info($"Creating player with name {name}");
-		var player = ctx.Db.player.identity.Find(ctx.CallerIdentity) ?? throw new Exception("Player not found");
+		var player = ctx.Db.player.identity.Find(ctx.Sender) ?? throw new Exception("Player not found");
 		player.name = name;
 		ctx.Db.player.identity.Update(player);
 		SpawnPlayerInitialCircle(ctx, player.player_id);
@@ -179,7 +179,7 @@ public static partial class Module
 	[Reducer]
 	public static void Respawn(ReducerContext ctx)
 	{
-		var player = ctx.Db.player.identity.Find(ctx.CallerIdentity) ?? throw new Exception("No such player found");
+		var player = ctx.Db.player.identity.Find(ctx.Sender) ?? throw new Exception("No such player found");
 
 		SpawnPlayerInitialCircle(ctx, player.player_id);
 	}
@@ -187,7 +187,7 @@ public static partial class Module
 	[Reducer]
 	public static void Suicide(ReducerContext ctx)
 	{
-		var player = ctx.Db.player.identity.Find(ctx.CallerIdentity) ?? throw new Exception("No such player found");
+		var player = ctx.Db.player.identity.Find(ctx.Sender) ?? throw new Exception("No such player found");
 
 		foreach (var circle in ctx.Db.circle.player_id.Filter(player.player_id))
 		{
@@ -233,7 +233,7 @@ public static partial class Module
 	[Reducer]
 	public static void UpdatePlayerInput(ReducerContext ctx, DbVector2 direction)
 	{
-		var player = ctx.Db.player.identity.Find(ctx.CallerIdentity) ?? throw new Exception("Player not found");
+		var player = ctx.Db.player.identity.Find(ctx.Sender) ?? throw new Exception("Player not found");
 		foreach (var c in ctx.Db.circle.player_id.Filter(player.player_id))
 		{
 			var circle = c;
@@ -436,7 +436,7 @@ public static partial class Module
 	[Reducer]
 	public static void PlayerSplit(ReducerContext ctx)
 	{
-		var player = ctx.Db.player.identity.Find(ctx.CallerIdentity) ?? throw new Exception("Sender has no player");
+		var player = ctx.Db.player.identity.Find(ctx.Sender) ?? throw new Exception("Sender has no player");
 		List<Circle> circles = ctx.Db.circle.player_id.Filter(player.player_id).ToList();
 		var circle_count = circles.Count;
 		if (circle_count >= MAX_CIRCLES_PER_PLAYER)

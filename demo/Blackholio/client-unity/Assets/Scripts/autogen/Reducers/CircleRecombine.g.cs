@@ -50,7 +50,7 @@ namespace SpacetimeDB.Types
                 this.Timer = new();
             }
 
-            string IReducerArgs.ReducerName => "circle_recombine";
+            string IReducerArgs.ReducerName => "CircleRecombine";
         }
     }
 

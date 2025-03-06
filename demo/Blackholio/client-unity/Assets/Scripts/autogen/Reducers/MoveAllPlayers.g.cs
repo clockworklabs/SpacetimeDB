@@ -37,7 +37,7 @@ namespace SpacetimeDB.Types
         [DataContract]
         public sealed partial class MoveAllPlayers : Reducer, IReducerArgs
         {
-            [DataMember(Name = "_timer")]
+            [DataMember(Name = "timer")]
             public MoveAllPlayersTimer Timer;
 
             public MoveAllPlayers(MoveAllPlayersTimer Timer)
@@ -50,7 +50,7 @@ namespace SpacetimeDB.Types
                 this.Timer = new();
             }
 
-            string IReducerArgs.ReducerName => "move_all_players";
+            string IReducerArgs.ReducerName => "MoveAllPlayers";
         }
     }
 

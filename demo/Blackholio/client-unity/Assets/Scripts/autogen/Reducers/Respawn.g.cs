@@ -36,7 +36,7 @@ namespace SpacetimeDB.Types
         [DataContract]
         public sealed partial class Respawn : Reducer, IReducerArgs
         {
-            string IReducerArgs.ReducerName => "respawn";
+            string IReducerArgs.ReducerName => "Respawn";
         }
     }
 
