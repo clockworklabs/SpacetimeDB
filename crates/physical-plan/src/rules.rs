@@ -149,7 +149,7 @@ impl RewriteRule for ComputePositions {
 /// Merge a limit with a table or index scan.
 ///
 /// Note that for pull-based, tuple at a time iterators,
-/// a limit is a short circuiting operator,
+/// a limit is a short-circuiting operator,
 /// and therefore this optimization is essentially a no-op.
 ///
 /// However for executors that materialize intermediate results,
@@ -411,7 +411,7 @@ impl RewriteRule for IxScanEq {
     type Info = (IndexId, ColId);
 
     fn matches(plan: &PhysicalPlan) -> Option<Self::Info> {
-        if let PhysicalPlan::Filter(input, PhysicalExpr::BinOp(BinOp::Eq, expr, value)) = plan {
+        if let PhysicalPlan::Filter(input, PhysicalExpr::BinOp(_bin_op, expr, value)) = plan {
             if let PhysicalPlan::TableScan(
                 TableScan {
                     schema,
@@ -445,7 +445,7 @@ impl RewriteRule for IxScanEq {
     }
 
     fn rewrite(plan: PhysicalPlan, (index_id, col_id): Self::Info) -> Result<PhysicalPlan> {
-        if let PhysicalPlan::Filter(input, PhysicalExpr::BinOp(BinOp::Eq, _, value)) = plan {
+        if let PhysicalPlan::Filter(input, PhysicalExpr::BinOp(op, _, value)) = plan {
             if let PhysicalPlan::TableScan(
                 TableScan {
                     schema,
@@ -462,7 +462,7 @@ impl RewriteRule for IxScanEq {
                             limit,
                             index_id,
                             prefix: vec![],
-                            arg: Sarg::Eq(col_id, v),
+                            arg: Sarg::new(col_id, op, v),
                         },
                         var,
                     ));
@@ -500,7 +500,7 @@ impl RewriteRule for IxScanAnd {
             ) = &**input
             {
                 return exprs.iter().enumerate().find_map(|(i, expr)| {
-                    if let PhysicalExpr::BinOp(BinOp::Eq, lhs, value) = expr {
+                    if let PhysicalExpr::BinOp(_, lhs, value) = expr {
                         if let (PhysicalExpr::Field(TupleField { field_pos: pos, .. }), PhysicalExpr::Value(_)) =
                             (&**lhs, &**value)
                         {
@@ -538,7 +538,7 @@ impl RewriteRule for IxScanAnd {
                 label,
             ) = *input
             {
-                if let PhysicalExpr::BinOp(BinOp::Eq, _, value) = exprs.swap_remove(i) {
+                if let PhysicalExpr::BinOp(op, _, value) = exprs.swap_remove(i) {
                     if let PhysicalExpr::Value(v) = *value {
                         return Ok(PhysicalPlan::Filter(
                             Box::new(PhysicalPlan::IxScan(
@@ -547,7 +547,7 @@ impl RewriteRule for IxScanAnd {
                                     limit,
                                     index_id,
                                     prefix: vec![],
-                                    arg: Sarg::Eq(col_id, v),
+                                    arg: Sarg::new(col_id, op, v),
                                 },
                                 label,
                             )),

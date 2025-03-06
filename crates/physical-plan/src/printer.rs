@@ -1,6 +1,6 @@
 use crate::dml::{InsertPlan, MutationPlan, UpdatePlan};
 use crate::plan::{
-    IxJoin, IxScan, Label, PhysicalExpr, PhysicalPlan, ProjectListPlan, ProjectPlan, Sarg, Semi, TableScan, TupleField,
+    IxJoin, IxScan, Label, PhysicalExpr, PhysicalPlan, ProjectListPlan, Sarg, Semi, TableScan, TupleField,
 };
 use crate::{PhysicalCtx, PlanCtx};
 use itertools::Itertools;
@@ -10,25 +10,8 @@ use spacetimedb_lib::AlgebraicValue;
 use spacetimedb_primitives::{ColId, ColList, ConstraintId, IndexId};
 use spacetimedb_schema::def::ConstraintData;
 use spacetimedb_schema::schema::{IndexSchema, TableSchema};
-use spacetimedb_sql_parser::ast::BinOp;
 use std::collections::{BTreeMap, HashMap};
 use std::fmt;
-use std::ops::Bound;
-
-fn range_to_op(lower: &Bound<AlgebraicValue>, upper: &Bound<AlgebraicValue>) -> BinOp {
-    match (lower, upper) {
-        (Bound::Included(_), Bound::Included(_)) => BinOp::Lte,
-        (Bound::Included(_), Bound::Excluded(_)) => BinOp::Lt,
-        (Bound::Excluded(_), Bound::Included(_)) => BinOp::Gt,
-        (Bound::Excluded(_), Bound::Excluded(_)) => BinOp::Gte,
-        (Bound::Unbounded, Bound::Included(_)) => BinOp::Lte,
-        (Bound::Unbounded, Bound::Excluded(_)) => BinOp::Lt,
-        (Bound::Included(_), Bound::Unbounded) => BinOp::Gte,
-        (Bound::Excluded(_), Bound::Unbounded) => BinOp::Gt,
-        (Bound::Unbounded, Bound::Unbounded) => BinOp::Eq,
-    }
-}
-
 /// The options for the printer
 ///
 /// By default:
@@ -250,6 +233,9 @@ pub enum Line<'a> {
         rhs: Field<'a>,
         ident: u16,
     },
+    Union {
+        ident: u16,
+    },
     Project {
         output: Output<'a>,
         ident: u16,
@@ -299,6 +285,7 @@ impl Line<'_> {
             Line::Delete { ident, .. } => *ident,
             Line::Output { ident, .. } => *ident,
             Line::Project { ident, .. } => *ident,
+            Line::Union { ident, .. } => *ident,
         };
         ident as usize
     }
@@ -498,23 +485,28 @@ enum PrinterPlan<'a> {
         filter: Box<PrinterPlan<'a>>,
         output: Output<'a>,
     },
+    Union {
+        plans: Vec<PrinterPlan<'a>>,
+        output: Output<'a>,
+    },
 }
 
 impl<'a> PrinterPlan<'a> {
     fn output(&self) -> Output<'a> {
         match self {
-            PrinterPlan::TableScan { output, .. } => output,
-            PrinterPlan::IxScan { output, .. } => output,
-            PrinterPlan::IxJoin { output, .. } => output,
-            PrinterPlan::HashJoin { output, .. } => output,
-            PrinterPlan::NLJoin { output, .. } => output,
-            PrinterPlan::Filter { output, .. } => output,
-            PrinterPlan::Project { output, .. } => output,
-            PrinterPlan::Limit { output, .. } => output,
-            PrinterPlan::Agg { output, .. } => output,
-            PrinterPlan::Insert { output, .. } => output,
-            PrinterPlan::Update { output, .. } => output,
-            PrinterPlan::Delete { output, .. } => output,
+            Self::TableScan { output, .. } => output,
+            Self::IxScan { output, .. } => output,
+            Self::IxJoin { output, .. } => output,
+            Self::HashJoin { output, .. } => output,
+            Self::NLJoin { output, .. } => output,
+            Self::Filter { output, .. } => output,
+            Self::Project { output, .. } => output,
+            Self::Limit { output, .. } => output,
+            Self::Agg { output, .. } => output,
+            Self::Insert { output, .. } => output,
+            Self::Update { output, .. } => output,
+            Self::Delete { output, .. } => output,
+            Self::Union { output, .. } => output,
         }
         .clone()
     }
@@ -598,6 +590,52 @@ fn scan_tables<'a>(lines: &mut Lines<'a>, plan: &'a PhysicalPlan) -> PrinterPlan
             let plan = Box::new(scan_tables(lines, plan));
             let output = plan.output();
             PrinterPlan::Filter { plan, expr, output }
+        }
+    }
+}
+
+fn scan_tables_project<'a>(lines: &mut Lines<'a>, plan: &'a ProjectListPlan) -> PrinterPlan<'a> {
+    match plan {
+        ProjectListPlan::Name(plans) => {
+            let plans: Vec<_> = plans.iter().map(|plan| scan_tables(lines, plan)).collect();
+            PrinterPlan::Union {
+                output: plans.last().map(|x| x.output()).unwrap_or(Output::Empty),
+                plans,
+            }
+        }
+        ProjectListPlan::List(plans, fields) => {
+            let plans = plans.iter().map(|plan| scan_tables(lines, plan)).collect_vec();
+            let plan = PrinterPlan::Union {
+                output: Output::Fields(Output::tuples(fields, lines)),
+                plans,
+            };
+            PrinterPlan::Project {
+                plan: Box::new(plan),
+                output: Output::Fields(Output::tuples(fields, lines)),
+            }
+        }
+        ProjectListPlan::Limit(plan, limit) => {
+            let plan = scan_tables_project(lines, plan);
+            let output = plan.output();
+            PrinterPlan::Limit {
+                plan: Box::new(plan),
+                limit: *limit,
+                output,
+            }
+        }
+        ProjectListPlan::Agg(plans, agg) => {
+            let plans = plans.iter().map(|plan| scan_tables(lines, plan)).collect_vec();
+
+            let plan = PrinterPlan::Union {
+                output: plans.last().map(|x| x.output()).unwrap_or(Output::Empty),
+                plans,
+            };
+            let output = plan.output();
+            PrinterPlan::Agg {
+                plan: Box::new(plan),
+                agg,
+                output,
+            }
         }
     }
 }
@@ -836,6 +874,24 @@ fn eval_plan<'a>(lines: &mut Lines<'a>, plan: PrinterPlan<'a>, ident: u16) {
 
             eval_plan(lines, *filter, ident + 2);
         }
+        PrinterPlan::Union { mut plans, output } => match plans.len() {
+            1 => {
+                let plan = plans.drain(..).next().unwrap();
+                eval_plan(lines, plan, ident);
+            }
+            _ => {
+                lines.add(Line::Union { ident });
+
+                for plan in plans {
+                    eval_plan(lines, plan, ident + 2);
+                }
+
+                lines.add(Line::Output {
+                    output,
+                    ident: ident + 2,
+                });
+            }
+        },
     }
 }
 
@@ -874,37 +930,8 @@ impl<'a> Explain<'a> {
     /// Evaluate the plan and build the lines to print
     fn lines(&self) -> Lines<'a> {
         let mut lines = Lines::new(self.ctx.vars.iter().map(|(x, y)| (*y, x.as_str())).collect());
-        // Sacn the tables
         let plan = match &self.ctx.plan {
-            PlanCtx::ProjectList(plan) => match plan {
-                ProjectListPlan::Name(ProjectPlan::None(plan)) => scan_tables(&mut lines, plan),
-                ProjectListPlan::Name(ProjectPlan::Name(plan, _label, _count)) => scan_tables(&mut lines, plan),
-                ProjectListPlan::List(plan, fields) => {
-                    let plan = scan_tables(&mut lines, plan);
-                    PrinterPlan::Project {
-                        plan: Box::new(plan),
-                        output: Output::Fields(Output::tuples(fields, &lines)),
-                    }
-                }
-                ProjectListPlan::Limit(plan, limit) => {
-                    let plan = scan_tables(&mut lines, plan);
-                    let output = plan.output();
-                    PrinterPlan::Limit {
-                        plan: Box::new(plan),
-                        limit: *limit,
-                        output,
-                    }
-                }
-                ProjectListPlan::Agg(plan, agg) => {
-                    let plan = scan_tables(&mut lines, plan);
-                    let output = plan.output();
-                    PrinterPlan::Agg {
-                        plan: Box::new(plan),
-                        agg,
-                        output,
-                    }
-                }
-            },
+            PlanCtx::ProjectList(plan) => scan_tables_project(&mut lines, plan),
             PlanCtx::DML(plan) => scan_tables_dml(&mut lines, plan),
         };
         eval_plan(&mut lines, plan, 0);
@@ -966,6 +993,8 @@ impl fmt::Display for PrintExpr<'_> {
 
 impl fmt::Display for PrintSarg<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let op = self.expr.to_op();
+        let value = self.expr.to_value();
         match self.expr {
             Sarg::Eq(lhs, rhs) => {
                 let col = self.labels.label(&self.label, *lhs).unwrap();
@@ -976,10 +1005,9 @@ impl fmt::Display for PrintSarg<'_> {
                 }
                 Ok(())
             }
-            Sarg::Range(col, lower, upper) => {
+            Sarg::Range(col, _, _) => {
                 let col = self.labels.label(&self.label, *col).unwrap();
-                let op = range_to_op(lower, upper);
-                write!(f, "{col} {:?} {op}{:?}", lower, upper)
+                write!(f, "{col} {op} {:?}", value)
             }
         }
     }
@@ -1105,6 +1133,9 @@ impl fmt::Display for Explain<'_> {
                 } => {
                     writeln!(f, "{pad}Inner Unique: {unique}")?;
                     write!(f, "{pad}Join Cond: ({} = {})", lhs, rhs)?;
+                }
+                Line::Union { ident: _ } => {
+                    write!(f, "{arrow}Union")?;
                 }
                 Line::Limit { limit, ident: _ } => {
                     write!(f, "{arrow}Limit: {limit}")?;

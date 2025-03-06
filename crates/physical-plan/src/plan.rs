@@ -940,6 +940,46 @@ pub enum Sarg {
     Range(ColId, Bound<AlgebraicValue>, Bound<AlgebraicValue>),
 }
 
+impl Sarg {
+    pub fn new(col: ColId, op: BinOp, value: AlgebraicValue) -> Self {
+        match op {
+            BinOp::Eq => Sarg::Eq(col, value),
+            BinOp::Ne => Sarg::Range(col, Bound::Excluded(value.clone()), Bound::Excluded(value)),
+            BinOp::Lt => Sarg::Range(col, Bound::Unbounded, Bound::Excluded(value)),
+            BinOp::Lte => Sarg::Range(col, Bound::Unbounded, Bound::Included(value)),
+            BinOp::Gt => Sarg::Range(col, Bound::Excluded(value), Bound::Unbounded),
+            BinOp::Gte => Sarg::Range(col, Bound::Included(value), Bound::Unbounded),
+        }
+    }
+
+    /// Decodes the sarg into a binary operator
+    pub fn to_op(&self) -> BinOp {
+        match self {
+            Sarg::Eq(..) => BinOp::Eq,
+            Sarg::Range(_, lhs, rhs) => match (lhs, rhs) {
+                (Bound::Excluded(_), Bound::Excluded(_)) => BinOp::Ne,
+                (Bound::Unbounded, Bound::Excluded(_)) => BinOp::Lt,
+                (Bound::Unbounded, Bound::Included(_)) => BinOp::Lte,
+                (Bound::Excluded(_), Bound::Unbounded) => BinOp::Gt,
+                (Bound::Included(_), Bound::Unbounded) => BinOp::Gte,
+                (Bound::Included(_), Bound::Included(_)) => BinOp::Eq,
+                _ => unreachable!(),
+            },
+        }
+    }
+
+    pub fn to_value(&self) -> &AlgebraicValue {
+        match self {
+            Sarg::Eq(_, value) => value,
+            Sarg::Range(_, Bound::Included(value), _) => value,
+            Sarg::Range(_, Bound::Excluded(value), _) => value,
+            Sarg::Range(_, _, Bound::Included(value)) => value,
+            Sarg::Range(_, _, Bound::Excluded(value)) => value,
+            _ => unreachable!(),
+        }
+    }
+}
+
 /// A join of two relations on a single equality condition.
 /// It builds a hash table for the rhs and streams the lhs.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1908,7 +1948,7 @@ Hash Join
   -> Hash Build: v.project
      -> Seq Scan on p
         Output: p.id, p.name
-  -> Filter: (m.employee = U64(5) AND v.employee = U64(5))"#]],
+  -> Filter: (U64(5) = m.employee AND U64(5) = v.employee)"#]],
         );
     }
 
