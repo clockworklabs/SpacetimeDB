@@ -104,13 +104,13 @@
           spacetimedb-cli = buildPackage (./crates/cli/Cargo.toml) (with pkgs; [
             git
             perl
-          ]) ({ });
-          spacetimedb-standalone = buildPackage (./crates/standalone/Cargo.toml) (with pkgs; [ perl ]) ({ });
-          spacetimedb-update = buildPackage (./crates/update/Cargo.toml) (with pkgs; [ pkg-config ]) ({
+          ]) { };
+          spacetimedb-standalone = buildPackage (./crates/standalone/Cargo.toml) (with pkgs; [ perl ]) { };
+          spacetimedb-update = buildPackage (./crates/update/Cargo.toml) (with pkgs; [ pkg-config ]) {
             env.OPENSSL_DIR = "${pkgs.openssl.dev}";
             env.OPENSSL_LIB_DIR = "${pkgs.lib.getLib pkgs.openssl}/lib";
             env.OPENSSL_NO_VENDOR = 1;
-          });
+          };
         }
       );
 

@@ -218,4 +218,4 @@ new.json
 .direnv
 
 # Nix build output
-result
+result*
