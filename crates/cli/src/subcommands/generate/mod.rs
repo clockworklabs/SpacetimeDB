@@ -91,7 +91,7 @@ pub fn cli() -> clap::Command {
                 .alias("build-opts")
                 .action(Set)
                 .default_value("")
-                .help("Options to pass to the build command, for example --build-options='--skip-println-checks'"),
+                .help("Options to pass to the build command, for example --build-options='--lint-dir='"),
         )
         .arg(common_args::yes())
         .after_help("Run `spacetime help publish` for more detailed information.")

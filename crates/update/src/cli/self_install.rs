@@ -75,13 +75,31 @@ impl SelfInstall {
         }
 
         eprintln!(
-            "\
-The `spacetime` command has been installed as {cli_bin_file}
-Note: we recommend making sure that this executable is in your PATH variable.
+            "The `spacetime` command has been installed as {}",
+            cli_bin_file.display()
+        );
+        eprintln!();
 
+        if cfg!(unix) {
+            let path_var = std::env::var_os("PATH").unwrap_or_default();
+            let bin_dir = cli_bin_file.0.parent().unwrap();
+            if !std::env::split_paths(&path_var).any(|p| p == bin_dir) {
+                eprintln!(
+                    "\
+It seems like this directory is not in your `PATH` variable. Please add the
+following line to your shell configuration and open a new shell session:
+
+    export PATH=\"{}:$PATH\"
+",
+                    bin_dir.display()
+                )
+            }
+        }
+
+        eprintln!(
+            "\
 The install process is complete; check out our quickstart guide to get started!
-	<https://spacetimedb.com/docs/quick-start>",
-            cli_bin_file = cli_bin_file.display()
+	<https://spacetimedb.com/docs/getting-started>"
         );
 
         Ok(ExitCode::SUCCESS)

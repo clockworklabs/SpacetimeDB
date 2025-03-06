@@ -6,7 +6,8 @@ cd "$(dirname "$0")/.."
 DRY_RUN=0
 ALLOW_DIRTY=0
 SKIP_ALREADY_PUBLISHED=0
-NEW_CRATE_OWNERS=("tyler@clockworklabs.io" "zeke@clockworklabs.io")
+# Use usernames here to help prevent users from getting spam
+NEW_CRATE_OWNERS=("cloutiertyler" "bfops" "jdetter")
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -19,6 +20,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         --skip-already-published)
             SKIP_ALREADY_PUBLISHED=1
+            echo "Skipping already published crates."
             ;;
         *)
             echo "Invalid argument: $1"
@@ -37,7 +39,7 @@ if [ $DRY_RUN -ne 1 ]; then
 fi
 
 BASEDIR=$(pwd)
-declare -a CRATES=("metrics" "primitives" "sql-parser" "bindings-macro" "bindings-sys" "data-structures" "sats" "lib" "schema" "bindings" "table" "vm" "client-api-messages" "paths" "commitlog" "durability" "fs-utils" "snapshot" "expr" "execution" "physical-plan" "query" "core" "client-api" "standalone" "cli" "sdk")
+declare -a CRATES=("metrics" "primitives" "sql-parser" "bindings-macro" "bindings-sys" "data-structures" "sats" "lib" "bindings" "client-api-messages" "schema" "table" "paths" "commitlog" "durability" "fs-utils" "snapshot" "expr" "physical-plan" "execution" "vm" "physical-plan" "query" "subscription" "core" "cli" "client-api" "standalone" "sdk")
 
 for crate in "${CRATES[@]}"; do
     if [ ! -d "${BASEDIR}/crates/${crate}" ]; then
@@ -53,33 +55,32 @@ for crate in "${CRATES[@]}"; do
     [[ $DRY_RUN -eq 1 ]] && PUBLISH_CMD+=" --dry-run"
     [[ $ALLOW_DIRTY -eq 1 ]] && PUBLISH_CMD+=" --allow-dirty"
 
-    # Check if crate exists on crates.io
-    if ! cargo search "$crate" | grep -q "^$crate ="; then
-        IS_NEW_CRATE=1
-        echo "INFO: Detected $crate as a new crate on crates.io!"
-    else
-        IS_NEW_CRATE=0
-    fi
-
     echo "Publishing crate: $crate with command: $PUBLISH_CMD"
     if ! OUTPUT=$($PUBLISH_CMD 2>&1); then
-        if [ $SKIP_ALREADY_PUBLISHED -eq 1 ] && echo "$OUTPUT" | grep -q "crate version .* is already uploaded"; then
+        if [ $SKIP_ALREADY_PUBLISHED -eq 1 ] && echo "$OUTPUT" | grep -q "already exists"; then
             echo "WARNING: Crate $crate version is already published. Skipping..."
         else
             echo "ERROR: Failed to publish $crate. Check logs:"
             echo "$OUTPUT"
             exit 1
         fi
-    else
-        # If this is a new crate, add owners
-        if [ $IS_NEW_CRATE -eq 1 ]; then
-            echo "INFO: Adding owners for new crate $crate..."
-            for owner in "${NEW_CRATE_OWNERS[@]}"; do
-                cargo owner --add "$owner"
-                echo "INFO: Added $owner as an owner of $crate."
-            done
-        fi
     fi
+
+    # Add owners
+    echo "INFO: Adding owners for $crate..."
+    for owner in "${NEW_CRATE_OWNERS[@]}"; do
+        if ! OUTPUT=$(cargo owner --add "$owner" 2>&1); then
+          if echo "$OUTPUT" | grep -q "already" ; then
+	    echo "$owner already is an owner of the crate."
+          else
+	    echo "Unknown error adding owner $owner:"
+	    echo "$OUTPUT"
+	    exit 1
+          fi
+        else
+          echo "INFO: Added $owner as an owner of $crate."
+        fi
+    done
 done
 
 echo "Doing a test install."
