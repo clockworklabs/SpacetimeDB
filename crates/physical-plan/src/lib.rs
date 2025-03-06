@@ -36,7 +36,7 @@ pub struct PhysicalCtx<'a> {
     pub planning_time: Option<std::time::Duration>,
 }
 
-impl PhysicalCtx<'_> {
+impl<'a> PhysicalCtx<'a> {
     pub fn optimize(self) -> Result<Self> {
         Ok(Self {
             plan: self.plan.optimize()?,
