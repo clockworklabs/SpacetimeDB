@@ -16,8 +16,6 @@ The HTTP endpoints in `/v1/identity` allow clients to generate and manage Spacet
 
 Create a new identity.
 
-Accessible through the CLI as `spacetime identity new`.
-
 #### Returns
 
 Returns JSON in the form:
@@ -62,8 +60,6 @@ Returns a response of content-type `application/pem-certificate-chain`.
 ## `POST /v1/identity/:identity/set-email`
 
 Associate an email with a Spacetime identity.
-
-Accessible through the CLI as `spacetime identity set-email <identity> <email>`.
 
 #### Parameters
 

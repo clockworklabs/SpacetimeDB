@@ -129,8 +129,6 @@ Accessible through the CLI as `spacetime delete <identity>`.
 
 Get the names this datbase can be identified by.
 
-Accessible through the CLI as `spacetime dns reverse-lookup <identity>`.
-
 #### Returns
 
 Returns JSON in the form:
@@ -205,8 +203,6 @@ If any of the new names already exist but the identity provided in the `Authoriz
 ## `GET /v1/database/:name_or_identity/identity`
 
 Get the identity of a database.
-
-Accessible through the CLI as `spacetime dns lookup <name>`.
 
 #### Returns
 
