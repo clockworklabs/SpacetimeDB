@@ -1,6 +1,6 @@
 use crate::dml::{InsertPlan, MutationPlan, UpdatePlan};
 use crate::plan::{
-    IxJoin, IxScan, Label, PhysicalExpr, PhysicalPlan, ProjectListPlan, ProjectPlan, Sarg, Semi, TableScan, TupleField,
+    IxJoin, IxScan, Label, PhysicalExpr, PhysicalPlan, ProjectListPlan, Sarg, Semi, TableScan, TupleField,
 };
 use crate::{PhysicalCtx, PlanCtx};
 use itertools::Itertools;
@@ -10,25 +10,8 @@ use spacetimedb_lib::AlgebraicValue;
 use spacetimedb_primitives::{ColId, ColList, ConstraintId, IndexId};
 use spacetimedb_schema::def::ConstraintData;
 use spacetimedb_schema::schema::{IndexSchema, TableSchema};
-use spacetimedb_sql_parser::ast::BinOp;
 use std::collections::{BTreeMap, HashMap};
 use std::fmt;
-use std::ops::Bound;
-
-fn range_to_op(lower: &Bound<AlgebraicValue>, upper: &Bound<AlgebraicValue>) -> BinOp {
-    match (lower, upper) {
-        (Bound::Included(_), Bound::Included(_)) => BinOp::Lte,
-        (Bound::Included(_), Bound::Excluded(_)) => BinOp::Lt,
-        (Bound::Excluded(_), Bound::Included(_)) => BinOp::Gt,
-        (Bound::Excluded(_), Bound::Excluded(_)) => BinOp::Gte,
-        (Bound::Unbounded, Bound::Included(_)) => BinOp::Lte,
-        (Bound::Unbounded, Bound::Excluded(_)) => BinOp::Lt,
-        (Bound::Included(_), Bound::Unbounded) => BinOp::Gte,
-        (Bound::Excluded(_), Bound::Unbounded) => BinOp::Gt,
-        (Bound::Unbounded, Bound::Unbounded) => BinOp::Eq,
-    }
-}
-
 /// The options for the printer
 ///
 /// By default:
@@ -47,7 +30,7 @@ pub struct ExplainOptions {
 }
 
 impl ExplainOptions {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             show_source: false,
             show_schema: false,
@@ -99,7 +82,7 @@ struct Labels<'a> {
 }
 
 impl<'a> Labels<'a> {
-    pub fn new() -> Self {
+    fn new() -> Self {
         Self {
             labels: Default::default(),
         }
@@ -154,7 +137,7 @@ struct PrintSarg<'a> {
 
 /// A pretty printer for objects with their name (if available) or their id
 #[derive(Debug)]
-pub enum PrintName<'a> {
+enum PrintName<'a> {
     Named { object: &'a str, name: &'a str },
     Id { object: &'a str, id: usize },
 }
@@ -179,7 +162,7 @@ impl<'a> PrintName<'a> {
 
 /// A pretty printer for indexes
 #[derive(Debug)]
-pub struct PrintIndex<'a> {
+struct PrintIndex<'a> {
     name: PrintName<'a>,
     cols: Vec<Field<'a>>,
     table: &'a str,
@@ -187,8 +170,7 @@ pub struct PrintIndex<'a> {
 }
 
 impl<'a> PrintIndex<'a> {
-    pub fn new(idx: &'a IndexSchema, table: &'a TableSchema) -> Self {
-        let cols = ColList::from_iter(idx.index_algorithm.columns().iter());
+    fn new(idx: &'a IndexSchema, table: &'a TableSchema, cols: ColList) -> Self {
         let unique = table.is_unique(&cols);
 
         let cols = cols
@@ -206,11 +188,16 @@ impl<'a> PrintIndex<'a> {
             unique,
         }
     }
+
+    fn from_index(idx: &'a IndexSchema, table: &'a TableSchema) -> Self {
+        let cols = ColList::from_iter(idx.index_algorithm.columns().iter());
+        Self::new(idx, table, cols)
+    }
 }
 
 /// A line of output, representing a step in the plan
 #[derive(Debug)]
-pub enum Line<'a> {
+enum Line<'a> {
     TableScan {
         table: &'a str,
         ident: u16,
@@ -250,6 +237,9 @@ pub enum Line<'a> {
         rhs: Field<'a>,
         ident: u16,
     },
+    Union {
+        ident: u16,
+    },
     Project {
         output: Output<'a>,
         ident: u16,
@@ -281,7 +271,7 @@ pub enum Line<'a> {
 }
 
 impl Line<'_> {
-    pub fn ident(&self) -> usize {
+    fn ident(&self) -> usize {
         let ident = match self {
             Line::TableScan { ident, .. } => *ident,
             Line::Filter { ident, .. } => *ident,
@@ -299,6 +289,7 @@ impl Line<'_> {
             Line::Delete { ident, .. } => *ident,
             Line::Output { ident, .. } => *ident,
             Line::Project { ident, .. } => *ident,
+            Line::Union { ident, .. } => *ident,
         };
         ident as usize
     }
@@ -306,14 +297,14 @@ impl Line<'_> {
 
 /// A `field` in a `table`
 #[derive(Debug, Clone)]
-pub struct Field<'a> {
+struct Field<'a> {
     table: &'a str,
     field: &'a str,
 }
 
 /// The output of the plan, aka the projected columns
 #[derive(Debug, Clone)]
-pub enum Output<'a> {
+enum Output<'a> {
     Fields(Vec<Field<'a>>),
     Alias(&'a str),
     Aliases(Vec<&'a str>),
@@ -388,7 +379,7 @@ struct Lines<'a> {
 }
 
 impl<'a> Lines<'a> {
-    pub fn new(vars: HashMap<usize, &'a str>) -> Self {
+    fn new(vars: HashMap<usize, &'a str>) -> Self {
         Self {
             lines: Vec::new(),
             labels: Labels::new(),
@@ -396,12 +387,12 @@ impl<'a> Lines<'a> {
         }
     }
 
-    pub fn add(&mut self, line: Line<'a>) {
+    fn add(&mut self, line: Line<'a>) {
         self.lines.push(line)
     }
 
     /// Resolve the label to the [`TableSchema`], and add it to the list of labels
-    pub fn add_table(&mut self, label: Label, table: &'a TableSchema) {
+    fn add_table(&mut self, label: Label, table: &'a TableSchema) {
         let name = self.vars.get(&label.0).copied().unwrap_or(table.table_name.as_ref());
         self.labels.insert(label, table, name);
     }
@@ -498,23 +489,28 @@ enum PrinterPlan<'a> {
         filter: Box<PrinterPlan<'a>>,
         output: Output<'a>,
     },
+    Union {
+        plans: Vec<PrinterPlan<'a>>,
+        output: Output<'a>,
+    },
 }
 
 impl<'a> PrinterPlan<'a> {
     fn output(&self) -> Output<'a> {
         match self {
-            PrinterPlan::TableScan { output, .. } => output,
-            PrinterPlan::IxScan { output, .. } => output,
-            PrinterPlan::IxJoin { output, .. } => output,
-            PrinterPlan::HashJoin { output, .. } => output,
-            PrinterPlan::NLJoin { output, .. } => output,
-            PrinterPlan::Filter { output, .. } => output,
-            PrinterPlan::Project { output, .. } => output,
-            PrinterPlan::Limit { output, .. } => output,
-            PrinterPlan::Agg { output, .. } => output,
-            PrinterPlan::Insert { output, .. } => output,
-            PrinterPlan::Update { output, .. } => output,
-            PrinterPlan::Delete { output, .. } => output,
+            Self::TableScan { output, .. } => output,
+            Self::IxScan { output, .. } => output,
+            Self::IxJoin { output, .. } => output,
+            Self::HashJoin { output, .. } => output,
+            Self::NLJoin { output, .. } => output,
+            Self::Filter { output, .. } => output,
+            Self::Project { output, .. } => output,
+            Self::Limit { output, .. } => output,
+            Self::Agg { output, .. } => output,
+            Self::Insert { output, .. } => output,
+            Self::Update { output, .. } => output,
+            Self::Delete { output, .. } => output,
+            Self::Union { output, .. } => output,
         }
         .clone()
     }
@@ -602,6 +598,52 @@ fn scan_tables<'a>(lines: &mut Lines<'a>, plan: &'a PhysicalPlan) -> PrinterPlan
     }
 }
 
+fn scan_tables_project<'a>(lines: &mut Lines<'a>, plan: &'a ProjectListPlan) -> PrinterPlan<'a> {
+    match plan {
+        ProjectListPlan::Name(plans) => {
+            let plans: Vec<_> = plans.iter().map(|plan| scan_tables(lines, plan)).collect();
+            PrinterPlan::Union {
+                output: plans.last().map(|x| x.output()).unwrap_or(Output::Empty),
+                plans,
+            }
+        }
+        ProjectListPlan::List(plans, fields) => {
+            let plans = plans.iter().map(|plan| scan_tables(lines, plan)).collect_vec();
+            let plan = PrinterPlan::Union {
+                output: Output::Fields(Output::tuples(fields, lines)),
+                plans,
+            };
+            PrinterPlan::Project {
+                plan: Box::new(plan),
+                output: Output::Fields(Output::tuples(fields, lines)),
+            }
+        }
+        ProjectListPlan::Limit(plan, limit) => {
+            let plan = scan_tables_project(lines, plan);
+            let output = plan.output();
+            PrinterPlan::Limit {
+                plan: Box::new(plan),
+                limit: *limit,
+                output,
+            }
+        }
+        ProjectListPlan::Agg(plans, agg) => {
+            let plans = plans.iter().map(|plan| scan_tables(lines, plan)).collect_vec();
+
+            let plan = PrinterPlan::Union {
+                output: plans.last().map(|x| x.output()).unwrap_or(Output::Empty),
+                plans,
+            };
+            let output = plan.output();
+            PrinterPlan::Agg {
+                plan: Box::new(plan),
+                agg,
+                output,
+            }
+        }
+    }
+}
+
 /// Resolve the schemas and labels of the physical plan, so we can print them before the children
 fn scan_tables_dml<'a>(lines: &mut Lines<'a>, plan: &'a MutationPlan) -> PrinterPlan<'a> {
     match plan {
@@ -666,7 +708,7 @@ fn eval_plan<'a>(lines: &mut Lines<'a>, plan: PrinterPlan<'a>, ident: u16) {
         } => {
             let ident = add_limit(lines, output.clone(), idx.limit, ident);
 
-            let index = PrintIndex::new(index, schema.table);
+            let index = PrintIndex::from_index(index, schema.table);
 
             lines.add(Line::IxScan { index, ident });
 
@@ -836,6 +878,24 @@ fn eval_plan<'a>(lines: &mut Lines<'a>, plan: PrinterPlan<'a>, ident: u16) {
 
             eval_plan(lines, *filter, ident + 2);
         }
+        PrinterPlan::Union { mut plans, output } => match plans.len() {
+            1 => {
+                let plan = plans.drain(..).next().unwrap();
+                eval_plan(lines, plan, ident);
+            }
+            _ => {
+                lines.add(Line::Union { ident });
+
+                for plan in plans {
+                    eval_plan(lines, plan, ident + 2);
+                }
+
+                lines.add(Line::Output {
+                    output,
+                    ident: ident + 2,
+                });
+            }
+        },
     }
 }
 
@@ -874,37 +934,8 @@ impl<'a> Explain<'a> {
     /// Evaluate the plan and build the lines to print
     fn lines(&self) -> Lines<'a> {
         let mut lines = Lines::new(self.ctx.vars.iter().map(|(x, y)| (*y, x.as_str())).collect());
-        // Sacn the tables
         let plan = match &self.ctx.plan {
-            PlanCtx::ProjectList(plan) => match plan {
-                ProjectListPlan::Name(ProjectPlan::None(plan)) => scan_tables(&mut lines, plan),
-                ProjectListPlan::Name(ProjectPlan::Name(plan, _label, _count)) => scan_tables(&mut lines, plan),
-                ProjectListPlan::List(plan, fields) => {
-                    let plan = scan_tables(&mut lines, plan);
-                    PrinterPlan::Project {
-                        plan: Box::new(plan),
-                        output: Output::Fields(Output::tuples(fields, &lines)),
-                    }
-                }
-                ProjectListPlan::Limit(plan, limit) => {
-                    let plan = scan_tables(&mut lines, plan);
-                    let output = plan.output();
-                    PrinterPlan::Limit {
-                        plan: Box::new(plan),
-                        limit: *limit,
-                        output,
-                    }
-                }
-                ProjectListPlan::Agg(plan, agg) => {
-                    let plan = scan_tables(&mut lines, plan);
-                    let output = plan.output();
-                    PrinterPlan::Agg {
-                        plan: Box::new(plan),
-                        agg,
-                        output,
-                    }
-                }
-            },
+            PlanCtx::ProjectList(plan) => scan_tables_project(&mut lines, plan),
             PlanCtx::DML(plan) => scan_tables_dml(&mut lines, plan),
         };
         eval_plan(&mut lines, plan, 0);
@@ -935,7 +966,7 @@ impl fmt::Display for PrintExpr<'_> {
                             expr,
                             labels: self.labels
                         })
-                        .join(&format!(" {} ", op))
+                        .join(&format!(" {op} "))
                 )
             }
             PhysicalExpr::BinOp(op, lhs, rhs) => {
@@ -954,7 +985,7 @@ impl fmt::Display for PrintExpr<'_> {
                 )
             }
             PhysicalExpr::Value(val) => {
-                write!(f, "{:?}", val)
+                write!(f, "{val:?}")
             }
             PhysicalExpr::Field(field) => {
                 let col = self.labels.field(field).unwrap();
@@ -966,20 +997,26 @@ impl fmt::Display for PrintExpr<'_> {
 
 impl fmt::Display for PrintSarg<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for (pos, (col, val)) in self.prefix.iter().enumerate() {
+            let col = self.labels.label(&self.label, *col).unwrap();
+            write!(f, "{col} = {val:?}")?;
+            if pos < self.prefix.len() - 1 {
+                write!(f, ", ")?;
+            }
+        }
+        if !self.prefix.is_empty() {
+            write!(f, ", ")?;
+        }
+        let op = self.expr.to_op();
+        let value = self.expr.to_value();
         match self.expr {
             Sarg::Eq(lhs, rhs) => {
                 let col = self.labels.label(&self.label, *lhs).unwrap();
-                write!(f, "{col} = {:?}", rhs)?;
-                for (col, val) in self.prefix {
-                    let col = self.labels.label(&self.label, *col).unwrap();
-                    write!(f, ", {col} = {:?}", val)?;
-                }
-                Ok(())
+                write!(f, "{col} = {rhs:?}")
             }
-            Sarg::Range(col, lower, upper) => {
+            Sarg::Range(col, _, _) => {
                 let col = self.labels.label(&self.label, *col).unwrap();
-                let op = range_to_op(lower, upper);
-                write!(f, "{col} {:?} {op}{:?}", lower, upper)
+                write!(f, "{col} {op} {value:?}")
             }
         }
     }
@@ -994,8 +1031,8 @@ impl fmt::Display for Field<'_> {
 impl fmt::Display for PrintName<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            PrintName::Named { object, name } => write!(f, "{} {}", object, name),
-            PrintName::Id { object, id } => write!(f, "{} id {}", object, id),
+            PrintName::Named { object, name } => write!(f, "{object} {name}"),
+            PrintName::Id { object, id } => write!(f, "{object} id {id}"),
         }
     }
 }
@@ -1017,7 +1054,7 @@ impl fmt::Display for Output<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Output::Fields(fields) => write!(f, "{}", fields.iter().join(", ")),
-            Output::Alias(alias) => write!(f, "{}", alias),
+            Output::Alias(alias) => write!(f, "{alias}"),
             Output::Aliases(aliases) => write!(f, "{}", aliases.iter().join(", ")),
             Output::Empty => write!(f, "void"),
         }
@@ -1046,7 +1083,7 @@ impl fmt::Display for Explain<'_> {
             let ident = if ident >= 2 { ident - 1 } else { ident };
 
             let pad = " ".repeat(ident);
-            let arrow = if ident >= 2 { format!("{}-> ", pad) } else { pad.clone() };
+            let arrow = if ident >= 2 { format!("{pad}-> ") } else { pad.clone() };
 
             match line {
                 Line::TableScan { table, ident: _ } => {
@@ -1104,7 +1141,10 @@ impl fmt::Display for Explain<'_> {
                     ident: _,
                 } => {
                     writeln!(f, "{pad}Inner Unique: {unique}")?;
-                    write!(f, "{pad}Join Cond: ({} = {})", lhs, rhs)?;
+                    write!(f, "{pad}Join Cond: ({lhs} = {rhs})")?;
+                }
+                Line::Union { ident: _ } => {
+                    write!(f, "{arrow}Union")?;
                 }
                 Line::Limit { limit, ident: _ } => {
                     write!(f, "{arrow}Limit: {limit}")?;
@@ -1122,7 +1162,7 @@ impl fmt::Display for Explain<'_> {
                 } => {
                     let columns = columns
                         .iter()
-                        .map(|(field, value)| format!("{} = {:?}", field, value))
+                        .map(|(field, value)| format!("{field} = {value:?}"))
                         .join(", ");
                     write!(f, "{arrow}Update on {table_name} SET ({columns })")?;
                 }
@@ -1166,7 +1206,7 @@ impl fmt::Display for Explain<'_> {
                         .table
                         .indexes
                         .iter()
-                        .map(|x| PrintIndex::new(x, schema.table))
+                        .map(|x| PrintIndex::from_index(x, schema.table))
                         .join(", ")
                 )?;
 
