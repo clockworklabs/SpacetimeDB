@@ -35,9 +35,7 @@ impl From<ProjectListPlan> for ProjectListExecutor {
                 Self::List(plan.into_iter().map(PipelinedExecutor::from).collect(), fields)
             }
             ProjectListPlan::Limit(plan, n) => Self::Limit(Box::new((*plan).into()), n),
-            ProjectListPlan::Agg(plan, AggType::Count) => {
-                Self::Agg(plan.into_iter().map(PipelinedExecutor::from).collect(), AggType::Count)
-            }
+            ProjectListPlan::Agg(plan, agg) => Self::Agg(plan.into_iter().map(PipelinedExecutor::from).collect(), agg),
         }
     }
 }
@@ -81,7 +79,7 @@ impl ProjectListExecutor {
                     Ok(())
                 })?;
             }
-            Self::Agg(plans, AggType::Count) => {
+            Self::Agg(plans, AggType::Count { alias: _ }) => {
                 for plan in plans {
                     match plan {
                         // TODO: This is a hack that needs to be removed.

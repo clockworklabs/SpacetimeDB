@@ -138,7 +138,7 @@ pub enum ProjectList {
     Name(Vec<ProjectName>),
     List(Vec<RelExpr>, Vec<(Box<str>, FieldProject)>),
     Limit(Box<ProjectList>, u64),
-    Agg(Vec<RelExpr>, AggType, Box<str>, AlgebraicType),
+    Agg(Vec<RelExpr>, AggType, AlgebraicType),
 }
 
 #[derive(Debug)]
@@ -183,7 +183,7 @@ impl ProjectList {
                     f(name, ty);
                 }
             }
-            Self::Agg(_, _, name, ty) => f(name, ty),
+            Self::Agg(_, AggType::Count { alias }, ty) => f(alias, ty),
         }
     }
 }

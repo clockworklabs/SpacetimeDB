@@ -982,6 +982,35 @@ pub enum Sarg {
     Range(ColId, Bound<AlgebraicValue>, Bound<AlgebraicValue>),
 }
 
+impl Sarg {
+    /// Decodes the sarg into a binary operator
+    pub fn to_op(&self) -> BinOp {
+        match self {
+            Sarg::Eq(..) => BinOp::Eq,
+            Sarg::Range(_, lhs, rhs) => match (lhs, rhs) {
+                (Bound::Excluded(_), Bound::Excluded(_)) => BinOp::Ne,
+                (Bound::Unbounded, Bound::Excluded(_)) => BinOp::Lt,
+                (Bound::Unbounded, Bound::Included(_)) => BinOp::Lte,
+                (Bound::Excluded(_), Bound::Unbounded) => BinOp::Gt,
+                (Bound::Included(_), Bound::Unbounded) => BinOp::Gte,
+                (Bound::Included(_), Bound::Included(_)) => BinOp::Eq,
+                _ => unreachable!(),
+            },
+        }
+    }
+
+    pub fn to_value(&self) -> &AlgebraicValue {
+        match self {
+            Sarg::Eq(_, value) => value,
+            Sarg::Range(_, Bound::Included(value), _) => value,
+            Sarg::Range(_, Bound::Excluded(value), _) => value,
+            Sarg::Range(_, _, Bound::Included(value)) => value,
+            Sarg::Range(_, _, Bound::Excluded(value)) => value,
+            _ => unreachable!(),
+        }
+    }
+}
+
 /// A join of two relations on a single equality condition.
 /// It builds a hash table for the rhs and streams the lhs.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1193,13 +1222,13 @@ pub mod tests_utils {
     use spacetimedb_expr::statement::compile_sql_stmt;
     use spacetimedb_lib::identity::AuthCtx;
 
-    fn sub<'a>(db: &'a impl SchemaView, sql: &'a str) -> PhysicalCtx<'a> {
-        let plan = compile_sql_sub(sql, db, &AuthCtx::for_testing(), true).unwrap();
+    fn sub<'a>(db: &'a impl SchemaView, auth: &AuthCtx, sql: &'a str) -> PhysicalCtx<'a> {
+        let plan = compile_sql_sub(sql, db, auth, true).unwrap();
         compile(plan)
     }
 
-    fn query<'a>(db: &'a impl SchemaView, sql: &'a str) -> PhysicalCtx<'a> {
-        let plan = compile_sql_stmt(sql, db, &AuthCtx::for_testing(), true).unwrap();
+    fn query<'a>(db: &'a impl SchemaView, auth: &AuthCtx, sql: &'a str) -> PhysicalCtx<'a> {
+        let plan = compile_sql_stmt(sql, db, auth, true).unwrap();
         compile(plan)
     }
 
@@ -1209,20 +1238,17 @@ pub mod tests_utils {
         } else {
             plan
         };
-
-        let explain = Explain::new(&plan).with_options(options);
-
-        let explain = explain.build();
+        let explain = Explain::new(&plan).with_options(options).build();
         expect.assert_eq(&explain.to_string());
     }
 
-    pub fn check_sub(db: &impl SchemaView, options: ExplainOptions, sql: &str, expect: Expect) {
-        let plan = sub(db, sql);
+    pub fn check_sub(db: &impl SchemaView, options: ExplainOptions, auth: &AuthCtx, sql: &str, expect: Expect) {
+        let plan = sub(db, auth, sql);
         check(plan, options, expect);
     }
 
-    pub fn check_query(db: &impl SchemaView, options: ExplainOptions, sql: &str, expect: Expect) {
-        let plan = query(db, sql);
+    pub fn check_query(db: &impl SchemaView, options: ExplainOptions, auth: &AuthCtx, sql: &str, expect: Expect) {
+        let plan = query(db, auth, sql);
         check(plan, options, expect);
     }
 }
@@ -1341,11 +1367,11 @@ mod tests {
     }
 
     fn check_sub(db: &SchemaViewer, sql: &str, expect: Expect) {
-        tests_utils::check_sub(db, db.options, sql, expect);
+        tests_utils::check_sub(db, db.options, &AuthCtx::for_testing(), sql, expect);
     }
 
     fn check_query(db: &SchemaViewer, sql: &str, expect: Expect) {
-        tests_utils::check_query(db, db.options, sql, expect);
+        tests_utils::check_query(db, db.options, &AuthCtx::for_testing(), sql, expect);
     }
 
     fn data() -> SchemaViewer {
@@ -1577,8 +1603,8 @@ Seq Scan on t
             "select * from t as x where x = 3 and y = 4 and z = 5",
             expect![
                 r#"
-Index Scan using Index id 2 (t.z, t.x, t.y) on t
-  Index Cond: (x.z = U8(5), x.x = U8(3), x.y = U8(4))
+Index Scan using Index id 2 (t.x, t.y, t.z) on t
+  Index Cond: (x.x = U8(3), x.y = U8(4), x.z = U8(5))
   Output: x.w, x.x, x.y, x.z"#
             ],
         );
@@ -1589,8 +1615,8 @@ Index Scan using Index id 2 (t.z, t.x, t.y) on t
             "select * from t where z = 5 and y = 4 and x = 3",
             expect![
                 r#"
-Index Scan using Index id 2 (t.x, t.z, t.y) on t
-  Index Cond: (t.x = U8(3), t.z = U8(5), t.y = U8(4))
+Index Scan using Index id 2 (t.x, t.y, t.z) on t
+  Index Cond: (t.x = U8(3), t.y = U8(4), t.z = U8(5))
   Output: t.w, t.x, t.y, t.z"#
             ],
         );
@@ -1630,17 +1656,14 @@ Seq Scan on t
             ],
         );
 
-        // TODO: The `Index Cond` should be `y, z` ie: match the index columns
-        // This is not to be fixed on the printer side, but on the planner side
-
         // Select index on [y, z]
         check_query(
             &db,
             "select * from t where y = 1 and z = 2",
             expect![
                 r#"
-Index Scan using Index id 1 (t.z, t.y) on t
-  Index Cond: (t.z = U8(2), t.y = U8(1))
+Index Scan using Index id 1 (t.y, t.z) on t
+  Index Cond: (t.y = U8(1), t.z = U8(2))
   Output: t.w, t.x, t.y, t.z"#
             ],
         );
@@ -1662,8 +1685,8 @@ Index Scan using Index id 1 (t.y, t.z) on t
             "select * from t where w = 1 and y = 2 and z = 3",
             expect![
                 r#"
-Index Scan using Index id 1 (t.z, t.y) on t
-  Index Cond: (t.z = U8(3), t.y = U8(2))
+Index Scan using Index id 1 (t.y, t.z) on t
+  Index Cond: (t.y = U8(2), t.z = U8(3))
   Output: t.w, t.x, t.y, t.z
   -> Filter: (t.w = U8(1))"#
             ],
