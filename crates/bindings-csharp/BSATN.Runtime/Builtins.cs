@@ -220,21 +220,7 @@ public readonly record struct ConnectionId
     }
 
     /// <inheritdoc cref="IComparable{T}.CompareTo(T)" />
-    public int CompareTo(ConnectionId connectionId)
-    {
-        if (this.value < connectionId.value)
-        {
-            return -1;
-        }
-        else if (this.value > connectionId.value)
-        {
-            return 1;
-        }
-        else
-        {
-            return 0;
-        }
-    }
+    public int CompareTo(ConnectionId connectionId) => this.value.CompareTo(connectionId.value);
 }
 
 [StructLayout(LayoutKind.Sequential)]
@@ -327,21 +313,7 @@ public readonly record struct Identity : IEquatable<Identity>, IComparable, ICom
     }
 
     /// <inheritdoc cref="IComparable{T}.CompareTo(T)" />
-    public int CompareTo(Identity identity)
-    {
-        if (this.value < identity.value)
-        {
-            return -1;
-        }
-        else if (this.value > identity.value)
-        {
-            return 1;
-        }
-        else
-        {
-            return 0;
-        }
-    }
+    public int CompareTo(Identity identity) => this.value.CompareTo(identity.value);
 }
 
 /// <summary>
