@@ -58,8 +58,7 @@ pub(crate) fn type_proj(input: RelExpr, proj: ast::Project, vars: &Relvars) -> T
         ast::Project::Star(Some(SqlIdent(var))) => Err(Unresolved::var(&var).into()),
         ast::Project::Count(SqlIdent(alias)) => Ok(ProjectList::Agg(
             vec![input],
-            AggType::Count { alias: alias.clone() },
-            alias,
+            AggType::Count { alias },
             AlgebraicType::U64,
         )),
         ast::Project::Exprs(elems) => {
