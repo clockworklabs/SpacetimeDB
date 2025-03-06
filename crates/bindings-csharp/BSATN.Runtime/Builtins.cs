@@ -118,7 +118,10 @@ public readonly partial struct Unit
 }
 
 [StructLayout(LayoutKind.Sequential)]
-public readonly record struct ConnectionId : IEquatable<ConnectionId>, IComparable, IComparable<ConnectionId>
+public readonly record struct ConnectionId
+    : IEquatable<ConnectionId>,
+        IComparable,
+        IComparable<ConnectionId>
 {
     private readonly U128 value;
 
@@ -305,7 +308,7 @@ public readonly record struct Identity : IEquatable<Identity>, IComparable, ICom
 
     // This must be explicitly implemented, otherwise record will generate a new implementation.
     public override string ToString() => Util.ToHexBigEndian(value);
-    
+
     /// <inheritdoc cref="IComparable.CompareTo(object)" />
     public int CompareTo(object? value)
     {
