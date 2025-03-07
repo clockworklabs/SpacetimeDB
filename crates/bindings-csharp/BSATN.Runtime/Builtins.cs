@@ -119,6 +119,9 @@ public readonly partial struct Unit
 
 [StructLayout(LayoutKind.Sequential)]
 public readonly record struct ConnectionId
+    : IEquatable<ConnectionId>,
+        IComparable,
+        IComparable<ConnectionId>
 {
     private readonly U128 value;
 
@@ -198,10 +201,30 @@ public readonly record struct ConnectionId
     }
 
     public override string ToString() => Util.ToHexBigEndian(value);
+
+    /// <inheritdoc cref="IComparable.CompareTo(object)" />
+    public int CompareTo(object? value)
+    {
+        if (value is ConnectionId other)
+        {
+            return CompareTo(other);
+        }
+        else if (value is null)
+        {
+            return 1;
+        }
+        else
+        {
+            throw new ArgumentException("Argument must be a ConnectionId", nameof(value));
+        }
+    }
+
+    /// <inheritdoc cref="IComparable{T}.CompareTo(T)" />
+    public int CompareTo(ConnectionId connectionId) => this.value.CompareTo(connectionId.value);
 }
 
 [StructLayout(LayoutKind.Sequential)]
-public readonly record struct Identity
+public readonly record struct Identity : IEquatable<Identity>, IComparable, IComparable<Identity>
 {
     private readonly U256 value;
 
@@ -271,6 +294,26 @@ public readonly record struct Identity
 
     // This must be explicitly implemented, otherwise record will generate a new implementation.
     public override string ToString() => Util.ToHexBigEndian(value);
+
+    /// <inheritdoc cref="IComparable.CompareTo(object)" />
+    public int CompareTo(object? value)
+    {
+        if (value is Identity other)
+        {
+            return CompareTo(other);
+        }
+        else if (value is null)
+        {
+            return 1;
+        }
+        else
+        {
+            throw new ArgumentException("Argument must be a Identity", nameof(value));
+        }
+    }
+
+    /// <inheritdoc cref="IComparable{T}.CompareTo(T)" />
+    public int CompareTo(Identity identity) => this.value.CompareTo(identity.value);
 }
 
 /// <summary>
