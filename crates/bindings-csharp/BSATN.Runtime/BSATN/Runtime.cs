@@ -452,3 +452,147 @@ public readonly struct Unsupported<T> : IReadWrite<T>
 
     public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) => throw Exception;
 }
+
+/// <summary>
+/// Support methods for converting <c>[SpacetimeDB.Type]</c>s to strings.
+/// </summary>
+public static class StringUtil
+{
+    /// <summary>
+    /// Convert an arbitrary object to a string.
+    /// </summary>
+    /// <param name="obj"></param>
+    /// <returns></returns>
+    public static string GenericToString(object? obj)
+    {
+        if (obj == null)
+        {
+            return "null";
+        }
+
+        var str = obj as string;
+        if (str != null)
+        {
+            return ToStringLiteral(str);
+        }
+
+        // Casting to IList means if a user implements IList for some
+        // [SpacetimeDB.Type], it will get printed as a list.
+        // Shrug.
+        var list = obj as System.Collections.IList;
+        if (list != null)
+        {
+            return GenericListToString(list);
+        }
+
+        return obj.ToString()!;
+    }
+
+    internal static string ToStringLiteral(string input)
+    {
+        var literal = new StringBuilder(input.Length + 2);
+        literal.Append('\"');
+        foreach (var c in input)
+        {
+            switch (c)
+            {
+                case '\"':
+                    literal.Append("\\\"");
+                    break;
+                case '\\':
+                    literal.Append(@"\\");
+                    break;
+                case '\0':
+                    literal.Append(@"\0");
+                    break;
+                case '\a':
+                    literal.Append(@"\a");
+                    break;
+                case '\b':
+                    literal.Append(@"\b");
+                    break;
+                case '\f':
+                    literal.Append(@"\f");
+                    break;
+                case '\n':
+                    literal.Append(@"\n");
+                    break;
+                case '\r':
+                    literal.Append(@"\r");
+                    break;
+                case '\t':
+                    literal.Append(@"\t");
+                    break;
+                case '\v':
+                    literal.Append(@"\v");
+                    break;
+                default:
+                    if (c is >= (char)0x20 and <= (char)0x7e)
+                    {
+                        // ASCII printable character
+                        literal.Append(c);
+                    }
+                    else if (
+                        Char.GetUnicodeCategory(c) == System.Globalization.UnicodeCategory.Control
+                    )
+                    {
+                        // As UTF16 escaped character
+                        literal.Append(@"\u");
+                        literal.Append(((int)c).ToString("x4"));
+                    }
+                    else
+                    {
+                        // Something else
+                        literal.Append(c);
+                    }
+                    break;
+            }
+        }
+        literal.Append('"');
+        return literal.ToString();
+    }
+
+    internal static string GenericListToString(System.Collections.IList list)
+    {
+        StringBuilder result = new();
+        result.Append("[ ");
+
+        // avoid debug-dumping huge lists.
+        if (list.Count <= 16)
+        {
+            for (var i = 0; i < list.Count; i++)
+            {
+                result.Append(GenericToString(list[i]));
+                if (i < list.Count - 1)
+                {
+                    result.Append(", ");
+                }
+            }
+        }
+        else
+        {
+            for (var i = 0; i < 8; i++)
+            {
+                result.Append(GenericToString(list[i]));
+                result.Append(", ");
+            }
+            result.Append("..., ");
+            for (var i = list.Count - 8; i < list.Count; i++)
+            {
+                result.Append(GenericToString(list[i]));
+                if (i < list.Count - 1)
+                {
+                    result.Append(", ");
+                }
+            }
+        }
+
+        if (list.Count > 0)
+        {
+            result.Append(' ');
+        }
+        result.Append(']');
+
+        return result.ToString();
+    }
+}
