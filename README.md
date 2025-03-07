@@ -92,7 +92,7 @@ This speed and latency is achieved by holding all of application state in memory
 
 SpacetimeDB is an embedded database library that you can use to extend your own applications. You can also run SpacetimeDB as a standalone database server via the `spacetime` CLI tool.
 
-You can install and run the `spacetime` CLI tool via Cargo, Docker, or by downloading the binary directly from our website.
+You can install and run the `spacetime` CLI tool via Cargo, Docker, or by running the installation instructions on our website: https://spacetimedb.com/install
 
 #### Install on macOS
 
