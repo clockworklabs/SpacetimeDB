@@ -3,7 +3,7 @@ use clap::ArgAction::{Set, SetTrue};
 use clap::ArgMatches;
 use reqwest::{StatusCode, Url};
 use spacetimedb_client_api_messages::name::PublishOp;
-use spacetimedb_client_api_messages::name::{is_identity, parse_domain_name, PublishResult};
+use spacetimedb_client_api_messages::name::{is_identity, parse_database_name, PublishResult};
 use std::fs;
 use std::path::PathBuf;
 
@@ -53,7 +53,12 @@ pub fn cli() -> clap::Command {
         )
         .arg(
             Arg::new("name|identity")
-                .help("A valid domain or identity for this database"),
+                .help("A valid domain or identity for this database")
+                .long_help(
+"A valid domain or identity for this database.
+
+Database names must match the regex `/^[a-z0-9]+(-[a-z0-9]+)*$/`,
+i.e. only lowercase ASCII letters and numbers, separated by dashes."),
         )
         .arg(common_args::server()
                 .help("The nickname, domain name or URL of the server to host the database."),
@@ -86,7 +91,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     // If a domain or identity was provided, we should locally make sure it looks correct and
     let mut builder = if let Some(name_or_identity) = name_or_identity {
         if !is_identity(name_or_identity) {
-            parse_domain_name(name_or_identity)?;
+            parse_database_name(name_or_identity)?;
         }
         let encode_set = const { &percent_encoding::NON_ALPHANUMERIC.remove(b'_').remove(b'-') };
         let domain = percent_encoding::percent_encode(name_or_identity.as_bytes(), encode_set);
