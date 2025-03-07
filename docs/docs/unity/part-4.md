@@ -317,7 +317,7 @@ ctx.db
     .move_all_players_timer()
     .try_insert(MoveAllPlayersTimer {
         scheduled_id: 0,
-        scheduled_at: ScheduleAt::Interval(Duration::from_millis(50).as_micros() as u64),
+        scheduled_at: ScheduleAt::Interval(Duration::from_millis(50).into()),
     })?;
 ```
 :::
