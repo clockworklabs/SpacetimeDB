@@ -76,7 +76,10 @@ Run `spacetime help publish` for more detailed information.
 
 ###### <b>Arguments:</b>
 
-* `<NAME|IDENTITY>` — A valid domain or identity for this database
+* `<NAME|IDENTITY>` — A valid domain or identity for this database.
+
+   Database names must match the regex `/^[a-z0-9]+(-[a-z0-9]+)*$/`,
+   i.e. only lowercase ASCII letters and numbers, separated by dashes.
 
 ###### <b>Options:</b>
 
