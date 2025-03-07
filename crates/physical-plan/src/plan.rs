@@ -1303,6 +1303,161 @@ mod tests {
         tests_utils::check_query(db, db.options, sql, expect);
     }
 
+    fn data() -> SchemaViewer {
+        let m_id = TableId(1);
+        let w_id = TableId(2);
+        let p_id = TableId(3);
+
+        let m = Arc::new(schema(
+            m_id,
+            "m",
+            &[("employee", AlgebraicType::U64), ("manager", AlgebraicType::U64)],
+            &[&[0], &[1]],
+            &[&[0]],
+            Some(0),
+        ));
+
+        let w = Arc::new(schema(
+            w_id,
+            "w",
+            &[("employee", AlgebraicType::U64), ("project", AlgebraicType::U64)],
+            &[&[0], &[1], &[0, 1]],
+            &[&[0, 1]],
+            None,
+        ));
+
+        let p = Arc::new(schema(
+            p_id,
+            "p",
+            &[("id", AlgebraicType::U64), ("name", AlgebraicType::String)],
+            &[&[0]],
+            &[&[0]],
+            Some(0),
+        ));
+
+        SchemaViewer::new(vec![m.clone(), w.clone(), p.clone()]).with_options(ExplainOptions::default().optimize(false))
+    }
+
+    #[test]
+    fn plan_metadata() {
+        let db = data().with_options(ExplainOptions::new().with_schema().with_source().optimize(true));
+        check_query(
+            &db,
+            "SELECT m.* FROM m CROSS JOIN p WHERE m.employee = 1",
+            expect![
+                r#"
+Query: SELECT m.* FROM m CROSS JOIN p WHERE m.employee = 1
+Nested Loop
+  Output: m.employee, m.manager, p.id, p.name
+  -> Index Scan using Index id 0 Unique(m.employee) on m
+     Index Cond: (m.employee = U64(1))
+     Output: m.employee, m.manager
+  -> Seq Scan on p
+     Output: p.id, p.name
+-------
+Schema:
+
+Label: m, TableId:1
+  Columns: employee, manager
+  Indexes: Index id 0 Unique(m.employee) on m, Index id 1 (m.manager) on m
+  Constraints: Constraint id 0: Unique(m.employee)
+Label: p, TableId:3
+  Columns: id, name
+  Indexes: Index id 0 Unique(p.id) on p
+  Constraints: Constraint id 0: Unique(p.id)"#
+            ],
+        );
+    }
+
+    #[test]
+    fn table_scan() {
+        let db = data();
+        check_sub(
+            &db,
+            "SELECT * FROM p",
+            expect![
+                r#"
+                Seq Scan on p
+                  Output: p.id, p.name"#
+            ],
+        );
+    }
+
+    #[test]
+    fn table_alias() {
+        let db = data();
+        check_sub(
+            &db,
+            "SELECT * FROM p as b",
+            expect![
+                r#"
+                Seq Scan on b
+                  Output: b.id, b.name"#
+            ],
+        );
+        check_sub(
+            &db,
+            "select p.*
+            from w
+            join m as p",
+            expect![
+                r#"
+Nested Loop
+  Output: w.employee, w.project, p.employee, p.manager
+  -> Seq Scan on w
+     Output: w.employee, w.project
+  -> Seq Scan on p
+     Output: p.employee, p.manager"#
+            ],
+        );
+    }
+
+    #[test]
+    fn table_project() {
+        let db = data();
+        check_query(
+            &db,
+            "SELECT id FROM p",
+            expect![
+                r#"
+Project: p.id
+  Output: p.id
+  -> Seq Scan on p
+     Output: p.id, p.name"#
+            ],
+        );
+
+        check_query(
+            &db,
+            "SELECT p.id,m.employee FROM m CROSS JOIN p",
+            expect![
+                r#"
+Project: p.id, m.employee
+  Output: p.id, m.employee
+  -> Nested Loop
+     Output: m.employee, m.manager, p.id, p.name
+     -> Seq Scan on m
+        Output: m.employee, m.manager
+     -> Seq Scan on p
+        Output: p.id, p.name"#
+            ],
+        );
+    }
+
+    #[test]
+    fn table_scan_filter() {
+        let db = data();
+
+        check_sub(
+            &db,
+            "SELECT * FROM p WHERE id > 1",
+            expect![[r#"
+Seq Scan on p
+  Output: p.id, p.name
+  -> Filter: (p.id > U64(1))"#]],
+        );
+    }
+
     /// No rewrites applied to a simple table scan
     #[test]
     fn table_scan_noop() {
@@ -1346,8 +1501,196 @@ Seq Scan on t
             "select * from t where x = 5",
             expect![[r#"
 Seq Scan on t
-  Filter: (t.x = U64(5))
-  Output: t.id, t.x"#]],
+  Output: t.id, t.x
+  -> Filter: (t.x = U64(5))"#]],
+        );
+    }
+
+    /// Test single and multi-column index selections
+    #[test]
+    fn index_scans() {
+        let t_id = TableId(1);
+
+        let t = Arc::new(schema(
+            t_id,
+            "t",
+            &[
+                ("w", AlgebraicType::U8),
+                ("x", AlgebraicType::U8),
+                ("y", AlgebraicType::U8),
+                ("z", AlgebraicType::U8),
+            ],
+            &[&[1], &[2, 3], &[1, 2, 3]],
+            &[],
+            None,
+        ));
+
+        let db = SchemaViewer::new(vec![t.clone()]).optimize(true);
+        // Select index on (x, y, z)
+        check_sub(
+            &db,
+            "select * from t as x where x = 3 and y = 4 and z = 5",
+            expect![
+                r#"
+Index Scan using Index id 2 (t.x, t.y, t.z) on t
+  Index Cond: (x.z = U8(5), x.x = U8(3), x.y = U8(4))
+  Output: x.w, x.x, x.y, x.z"#
+            ],
+        );
+
+        // Test permutations of the same query
+        check_sub(
+            &db,
+            "select * from t where z = 5 and y = 4 and x = 3",
+            expect![
+                r#"
+Index Scan using Index id 2 (t.x, t.y, t.z) on t
+  Index Cond: (t.x = U8(3), t.z = U8(5), t.y = U8(4))
+  Output: t.w, t.x, t.y, t.z"#
+            ],
+        );
+        // Select index on x
+        check_sub(
+            &db,
+            "select * from t where x = 3 and y = 4",
+            expect![
+                r#"
+Index Scan using Index id 0 (t.x) on t
+  Index Cond: (t.x = U8(3))
+  Output: t.w, t.x, t.y, t.z
+  -> Filter: (t.y = U8(4))"#
+            ],
+        );
+        // Select index on x
+        check_query(
+            &db,
+            "select * from t where w = 5 and x = 4",
+            expect![
+                r#"
+Index Scan using Index id 0 (t.x) on t
+  Index Cond: (t.x = U8(4))
+  Output: t.w, t.x, t.y, t.z
+  -> Filter: (t.w = U8(5))"#
+            ],
+        );
+        // Do not select index on (y, z)
+        check_query(
+            &db,
+            "select * from t where y = 4",
+            expect![
+                r#"
+Seq Scan on t
+  Output: t.w, t.x, t.y, t.z
+  -> Filter: (t.y = U8(4))"#
+            ],
+        );
+
+        // TODO: The `Index Cond` should be `y, z` ie: match the index columns
+        // This is not to be fixed on the printer side, but on the planner side
+
+        // Select index on [y, z]
+        check_query(
+            &db,
+            "select * from t where y = 1 and z = 2",
+            expect![
+                r#"
+Index Scan using Index id 1 (t.y, t.z) on t
+  Index Cond: (t.z = U8(2), t.y = U8(1))
+  Output: t.w, t.x, t.y, t.z"#
+            ],
+        );
+
+        // Check permutations of the same query
+        check_query(
+            &db,
+            "select * from t where z = 2 and y = 1",
+            expect![
+                r#"
+Index Scan using Index id 1 (t.y, t.z) on t
+  Index Cond: (t.y = U8(1), t.z = U8(2))
+  Output: t.w, t.x, t.y, t.z"#
+            ],
+        );
+        // Select index on (y, z) and filter on (w)
+        check_query(
+            &db,
+            "select * from t where w = 1 and y = 2 and z = 3",
+            expect![
+                r#"
+Index Scan using Index id 1 (t.y, t.z) on t
+  Index Cond: (t.z = U8(3), t.y = U8(2))
+  Output: t.w, t.x, t.y, t.z
+  -> Filter: (t.w = U8(1))"#
+            ],
+        );
+    }
+
+    #[test]
+    fn index_scan_filter() {
+        let db = data().optimize(true);
+
+        check_sub(
+            &db,
+            "SELECT m.* FROM m WHERE employee = 1",
+            expect![[r#"
+Index Scan using Index id 0 Unique(m.employee) on m
+  Index Cond: (m.employee = U64(1))
+  Output: m.employee, m.manager"#]],
+        );
+    }
+
+    #[test]
+    fn cross_join() {
+        let db = data();
+
+        check_sub(
+            &db,
+            "SELECT p.* FROM m JOIN p",
+            expect![[r#"
+Nested Loop
+  Output: m.employee, m.manager, p.id, p.name
+  -> Seq Scan on m
+     Output: m.employee, m.manager
+  -> Seq Scan on p
+     Output: p.id, p.name"#]],
+        );
+    }
+
+    #[test]
+    fn hash_join() {
+        let db = data();
+
+        check_sub(
+            &db,
+            "SELECT p.* FROM m JOIN p ON m.employee = p.id where m.employee = 1",
+            expect![[r#"
+Hash Join
+  Inner Unique: false
+  Join Cond: (m.employee = p.id)
+  Output: m.employee, m.manager, p.id, p.name
+  -> Seq Scan on m
+     Output: m.employee, m.manager
+  -> Hash Build: p.id
+     -> Seq Scan on p
+        Output: p.id, p.name
+  -> Filter: (m.employee = U64(1))"#]],
+        );
+    }
+
+    #[test]
+    fn semi_join() {
+        let db = data().optimize(true);
+
+        check_sub(
+            &db,
+            "SELECT p.* FROM m JOIN p ON m.employee = p.id",
+            expect![[r#"
+Index Join: Rhs on p
+  Inner Unique: true
+  Join Cond: (m.employee = p.id)
+  Output: p.id, p.name
+  -> Seq Scan on m
+     Output: m.employee, m.manager"#]],
         );
     }
 
@@ -1432,17 +1775,20 @@ Seq Scan on t
             where u.identity = 5",
             expect![[r#"
 Index Join: Rhs on b
-  -> Index Join: Rhs on q
-    -> Index Join: Rhs on p
-      -> Index Scan using Index id 0 on u
-          Index Cond: (u.identity = U64(5))
-      Inner Unique: true
-      Join Cond: (u.entity_id = p.entity_id)
-    Inner Unique: false
-    Join Cond: (p.chunk = q.chunk)
   Inner Unique: true
   Join Cond: (q.entity_id = b.entity_id)
-  Output: b.entity_id, b.misc"#]],
+  Output: b.entity_id, b.misc
+  -> Index Join: Rhs on q
+     Inner Unique: false
+     Join Cond: (p.chunk = q.chunk)
+     Output: q.entity_id, q.chunk
+     -> Index Join: Rhs on p
+        Inner Unique: true
+        Join Cond: (u.entity_id = p.entity_id)
+        Output: p.entity_id, p.chunk
+        -> Index Scan using Index id 0 Unique(u.identity) on u
+           Index Cond: (u.identity = U64(5))
+           Output: u.identity, u.entity_id"#]],
         );
     }
 
@@ -1533,351 +1879,36 @@ Index Join: Rhs on b
             where 5 = m.employee and 5 = v.employee",
             expect![[r#"
 Hash Join
-  -> Hash Join
-    -> Hash Join
-      -> Hash Join
-        -> Seq Scan on m
-        -> Seq Scan on n
-        Inner Unique: false
-        Join Cond: (m.manager = n.manager)
-      -> Seq Scan on u
-      Inner Unique: false
-      Join Cond: (n.employee = u.employee)
-    -> Seq Scan on v
-    Inner Unique: false
-    Join Cond: (u.project = v.project)
-  -> Seq Scan on p
   Inner Unique: false
   Join Cond: (p.id = v.project)
-  Filter: (m.employee = U64(5) AND v.employee = U64(5))
-  Output: p.id, p.name"#]],
-        );
-    }
-
-    /// Test single and multi-column index selections
-    #[test]
-    fn index_scans() {
-        let t_id = TableId(1);
-
-        let t = Arc::new(schema(
-            t_id,
-            "t",
-            &[
-                ("w", AlgebraicType::U8),
-                ("x", AlgebraicType::U8),
-                ("y", AlgebraicType::U8),
-                ("z", AlgebraicType::U8),
-            ],
-            &[&[1], &[2, 3], &[1, 2, 3]],
-            &[],
-            None,
-        ));
-
-        let db = SchemaViewer::new(vec![t.clone()]).optimize(true);
-        // Select index on (x, y, z)
-        check_sub(
-            &db,
-            "select * from t where x = 3 and y = 4 and z = 5",
-            expect![
-                r#"
-Index Scan using Index id 2 on t
-    Index Cond: (t.z = U8(5), t.x = U8(3), t.y = U8(4))
-  Output: t.w, t.x, t.y, t.z"#
-            ],
-        );
-
-        // Test permutations of the same query
-        check_sub(
-            &db,
-            "select * from t where z = 5 and y = 4 and x = 3",
-            expect![
-                r#"
-Index Scan using Index id 2 on t
-    Index Cond: (t.x = U8(3), t.z = U8(5), t.y = U8(4))
-  Output: t.w, t.x, t.y, t.z"#
-            ],
-        );
-        // Select index on x
-        check_sub(
-            &db,
-            "select * from t where x = 3 and y = 4",
-            expect![
-                r#"
-Index Scan using Index id 0 on t
-    Index Cond: (t.x = U8(3))
-  Filter: (t.y = U8(4))
-  Output: t.w, t.x, t.y, t.z"#
-            ],
-        );
-        // Select index on x
-        check_query(
-            &db,
-            "select * from t where w = 5 and x = 4",
-            expect![
-                r#"
-Index Scan using Index id 0 on t
-    Index Cond: (t.x = U8(4))
-  Filter: (t.w = U8(5))
-  Output: t.w, t.x, t.y, t.z"#
-            ],
-        );
-        // Do not select index on (y, z)
-        check_query(
-            &db,
-            "select * from t where y = 4",
-            expect![
-                r#"
-Seq Scan on t
-  Filter: (t.y = U8(4))
-  Output: t.w, t.x, t.y, t.z"#
-            ],
-        );
-
-        // TODO: The `Index Cond` should be `y, z` ie: match the index columns
-        // This is not to be fixed on the printer side, but on the planner side
-
-        // Select index on [y, z]
-        check_query(
-            &db,
-            "select * from t where y = 1 and z = 2",
-            expect![
-                r#"
-Index Scan using Index id 1 on t
-    Index Cond: (t.z = U8(2), t.y = U8(1))
-  Output: t.w, t.x, t.y, t.z"#
-            ],
-        );
-
-        // Check permutations of the same query
-        check_query(
-            &db,
-            "select * from t where z = 2 and y = 1",
-            expect![
-                r#"
-Index Scan using Index id 1 on t
-    Index Cond: (t.y = U8(1), t.z = U8(2))
-  Output: t.w, t.x, t.y, t.z"#
-            ],
-        );
-        // Select index on (y, z) and filter on (w)
-        check_query(
-            &db,
-            "select * from t where w = 1 and y = 2 and z = 3",
-            expect![
-                r#"
-Index Scan using Index id 1 on t
-    Index Cond: (t.z = U8(3), t.y = U8(2))
-  Filter: (t.w = U8(1))
-  Output: t.w, t.x, t.y, t.z"#
-            ],
-        );
-    }
-
-    fn data() -> SchemaViewer {
-        let m_id = TableId(1);
-        let w_id = TableId(2);
-        let p_id = TableId(3);
-
-        let m = Arc::new(schema(
-            m_id,
-            "m",
-            &[("employee", AlgebraicType::U64), ("manager", AlgebraicType::U64)],
-            &[&[0], &[1]],
-            &[&[0]],
-            Some(0),
-        ));
-
-        let w = Arc::new(schema(
-            w_id,
-            "w",
-            &[("employee", AlgebraicType::U64), ("project", AlgebraicType::U64)],
-            &[&[0], &[1], &[0, 1]],
-            &[&[0, 1]],
-            None,
-        ));
-
-        let p = Arc::new(schema(
-            p_id,
-            "p",
-            &[("id", AlgebraicType::U64), ("name", AlgebraicType::String)],
-            &[&[0]],
-            &[&[0]],
-            Some(0),
-        ));
-
-        SchemaViewer::new(vec![m.clone(), w.clone(), p.clone()]).with_options(ExplainOptions::default().optimize(false))
-    }
-
-    #[test]
-    fn plan_metadata() {
-        let db = data().with_options(ExplainOptions::new().with_schema().with_source().optimize(true));
-        check_query(
-            &db,
-            "SELECT m.* FROM m CROSS JOIN p WHERE m.employee = 1",
-            expect![
-                r#"
-Query: SELECT m.* FROM m CROSS JOIN p WHERE m.employee = 1
-Nested Loop
-  -> Index Scan using Index id 0 on m
-      Index Cond: (m.employee = U64(1))
-  -> Seq Scan on p:2
-  Output: m.employee, m.manager
--------
-Schema:
-
-Label: m, TableId:1
-  Columns: employee, manager
-  Indexes: Index id 0: (m.employee), Index id 1: (m.manager)
-  Constraints: Constraint id 0: Unique(m.employee)
-Label: p, TableId:3
-  Columns: id, name
-  Indexes: Index id 0: (p.id)
-  Constraints: Constraint id 0: Unique(p.id)"#
-            ],
-        );
-    }
-
-    #[test]
-    fn table_scan() {
-        let db = data();
-        check_sub(
-            &db,
-            "SELECT * FROM p",
-            expect![
-                r#"
-                Seq Scan on p
-                  Output: p.id, p.name"#
-            ],
-        );
-    }
-
-    #[test]
-    fn table_alias() {
-        let db = data();
-        check_sub(
-            &db,
-            "SELECT * FROM p as b",
-            expect![
-                r#"
-                Seq Scan on b
-                  Output: b.id, b.name"#
-            ],
-        );
-        check_sub(
-            &db,
-            "select p.*
-            from w
-            join m as p",
-            expect![
-                r#"
-                Nested Loop
-                  -> Seq Scan on w
-                  -> Seq Scan on p
-                  Output: p.employee, p.manager"#
-            ],
-        );
-    }
-
-    #[test]
-    fn table_project() {
-        let db = data();
-        check_query(
-            &db,
-            "SELECT id FROM p",
-            expect![
-                r#"
-                Seq Scan on p
-                  Output: p.id"#
-            ],
-        );
-
-        check_query(
-            &db,
-            "SELECT p.id,m.employee FROM m CROSS JOIN p",
-            expect![
-                r#"
-                Nested Loop
-                  -> Seq Scan on m
-                  -> Seq Scan on p
-                  Output: p.id, m.employee"#
-            ],
-        );
-    }
-
-    #[test]
-    fn table_scan_filter() {
-        let db = data();
-
-        check_sub(
-            &db,
-            "SELECT * FROM p WHERE id > 1",
-            expect![[r#"
-                Seq Scan on p
-                  Filter: (p.id > U64(1))
-                  Output: p.id, p.name"#]],
-        );
-    }
-
-    #[test]
-    fn index_scan_filter() {
-        let db = data().optimize(true);
-
-        check_sub(
-            &db,
-            "SELECT m.* FROM m WHERE employee = 1",
-            expect![[r#"
-Index Scan using Index id 0 on m
-    Index Cond: (m.employee = U64(1))
-  Output: m.employee, m.manager"#]],
-        );
-    }
-
-    #[test]
-    fn cross_join() {
-        let db = data();
-
-        check_sub(
-            &db,
-            "SELECT p.* FROM m JOIN p",
-            expect![[r#"
-                Nested Loop
-                  -> Seq Scan on m
-                  -> Seq Scan on p
-                  Output: p.id, p.name"#]],
-        );
-    }
-
-    #[test]
-    fn hash_join() {
-        let db = data();
-
-        check_sub(
-            &db,
-            "SELECT p.* FROM m JOIN p ON m.employee = p.id where m.employee = 1",
-            expect![[r#"
-                Hash Join
-                  -> Seq Scan on m
-                  -> Seq Scan on p
-                  Inner Unique: false
-                  Join Cond: (m.employee = p.id)
-                  Filter: (m.employee = U64(1))
-                  Output: p.id, p.name"#]],
-        );
-    }
-
-    #[test]
-    fn semi_join() {
-        let db = data().optimize(true);
-
-        check_sub(
-            &db,
-            "SELECT p.* FROM m JOIN p ON m.employee = p.id",
-            expect![[r#"
-Index Join: Rhs on p
-  -> Seq Scan on m
-  Inner Unique: true
-  Join Cond: (m.employee = p.id)
-  Output: p.id, p.name"#]],
+  Output: p.id, p.name, v.employee, v.project
+  -> Hash Join
+     Inner Unique: false
+     Join Cond: (u.project = v.project)
+     Output: u.employee, u.project, v.employee, v.project
+     -> Hash Join
+        Inner Unique: false
+        Join Cond: (n.employee = u.employee)
+        Output: n.employee, n.manager, u.employee, u.project
+        -> Hash Join
+           Inner Unique: false
+           Join Cond: (m.manager = n.manager)
+           Output: m.employee, m.manager, n.employee, n.manager
+           -> Seq Scan on m
+              Output: m.employee, m.manager
+           -> Hash Build: n.manager
+              -> Seq Scan on n
+                 Output: n.employee, n.manager
+        -> Hash Build: u.employee
+           -> Seq Scan on u
+              Output: u.employee, u.project
+     -> Hash Build: v.project
+        -> Seq Scan on v
+           Output: v.employee, v.project
+  -> Hash Build: v.project
+     -> Seq Scan on p
+        Output: p.id, p.name
+  -> Filter: (m.employee = U64(5) AND v.employee = U64(5))"#]],
         );
     }
 
@@ -1901,8 +1932,9 @@ Index Join: Rhs on p
             "SELECT * FROM t LIMIT 5",
             expect![[r#"
 Limit: 5
+  Output: t.x, t.y
   -> Seq Scan on t
-  Output: t.x, t.y"#]],
+     Output: t.x, t.y"#]],
         );
 
         check_query(
@@ -1910,9 +1942,10 @@ Limit: 5
             "SELECT * FROM t WHERE x = 1 LIMIT 5",
             expect![[r#"
 Limit: 5
-  -> Index Scan using Index id 0 on t
-      Index Cond: (t.x = U8(1))
-  Output: t.x, t.y"#]],
+  Output: t.x, t.y
+  -> Index Scan using Index id 0 (t.x) on t
+     Index Cond: (t.x = U8(1))
+     Output: t.x, t.y"#]],
         );
 
         check_query(
@@ -1920,9 +1953,10 @@ Limit: 5
             "SELECT * FROM t WHERE y = 1 LIMIT 5",
             expect![[r#"
 Limit: 5
+  Output: t.x, t.y
   -> Seq Scan on t
-    Filter: (t.y = U8(1))
-  Output: t.x, t.y"#]],
+     Output: t.x, t.y
+     -> Filter: (t.y = U8(1))"#]],
         );
     }
 
@@ -1935,8 +1969,9 @@ Limit: 5
             "SELECT COUNT(*) AS n FROM p",
             expect![[r#"
 Count
+  Output: n
   -> Seq Scan on p
-  Output: p.id, p.name"#]],
+     Output: p.id, p.name"#]],
         );
 
         check_query(
@@ -1944,9 +1979,10 @@ Count
             "SELECT COUNT(*) AS n FROM p WHERE id = 1",
             expect![[r#"
 Count
+  Output: n
   -> Seq Scan on p
-    Filter: (p.id = U64(1))
-  Output: p.id, p.name"#]],
+     Output: p.id, p.name
+     -> Filter: (p.id = U64(1))"#]],
         );
 
         // TODO: Is not yet possible to combine correctly `COUNT` with `LIMIT`
@@ -1974,8 +2010,9 @@ Insert on p
             "UPDATE p SET name = 'bar'",
             expect![[r#"
 Update on p SET (p.name = String("bar"))
+  Output: void
   -> Seq Scan on p
-  Output: void"#]],
+     Output: p.id, p.name"#]],
         );
 
         check_query(
@@ -1983,9 +2020,10 @@ Update on p SET (p.name = String("bar"))
             "UPDATE p SET name = 'bar' WHERE id = 1",
             expect![[r#"
 Update on p SET (p.name = String("bar"))
-  -> Index Scan using Index id 0 on p
-      Index Cond: (p.id = U64(1))
-  Output: void"#]],
+  Output: void
+  -> Index Scan using Index id 0 Unique(p.id) on p
+     Index Cond: (p.id = U64(1))
+     Output: p.id, p.name"#]],
         );
 
         check_query(
@@ -1993,9 +2031,10 @@ Update on p SET (p.name = String("bar"))
             "UPDATE p SET id = 2 WHERE name = 'bar'",
             expect![[r#"
 Update on p SET (p.id = U64(2))
+  Output: void
   -> Seq Scan on p
-    Filter: (p.name = String("bar"))
-  Output: void"#]],
+     Output: p.id, p.name
+     -> Filter: (p.name = String("bar"))"#]],
         );
     }
 
@@ -2008,8 +2047,9 @@ Update on p SET (p.id = U64(2))
             "DELETE FROM p",
             expect![[r#"
 Delete on p
+  Output: void
   -> Seq Scan on p
-  Output: void"#]],
+     Output: p.id, p.name"#]],
         );
 
         check_query(
@@ -2017,9 +2057,10 @@ Delete on p
             "DELETE FROM p WHERE id = 1",
             expect![[r#"
 Delete on p
+  Output: void
   -> Seq Scan on p
-    Filter: (p.id = U64(1))
-  Output: void"#]],
+     Output: p.id, p.name
+     -> Filter: (p.id = U64(1))"#]],
         );
     }
 }

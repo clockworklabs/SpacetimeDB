@@ -396,7 +396,6 @@ pub(crate) mod tests {
         let result = run_for_testing(&db, sql)?;
         assert_eq!(result, vec![product![5u64]], "Inventory");
 
-        // TODO: This should return product![2u64]
         let sql = "SELECT count(*) as n FROM inventory limit 2";
         let result = run_for_testing(&db, sql)?;
         assert_eq!(result, vec![product![5u64]], "Inventory");
