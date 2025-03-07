@@ -93,8 +93,12 @@ pub(crate) async fn run_sql(builder: RequestBuilder, sql: &str, with_stats: bool
             let mut table = stmt_result_to_table(stmt_result)?;
             if with_stats {
                 // The `tabled::count_rows` add the header as a row, so subtract it.
-                let row_count = print_row_count(table.count_rows().wrapping_sub(1));
-                table.with(tabled::settings::panel::Footer::new(row_count));
+                let row_count = table.count_rows().wrapping_sub(1);
+                // For some reason, `table.with(...)` crashes if the row count is 0.
+                if row_count > 0 {
+                    let row_count = print_row_count(row_count);
+                    table.with(tabled::settings::panel::Footer::new(row_count));
+                }
             }
             anyhow::Ok(table)
         })
