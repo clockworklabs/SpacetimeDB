@@ -33,6 +33,7 @@ spacetimedb-data-structures.workspace = true
 
 anyhow.workspace = true
 bitflags.workspace = true
+chrono.workspace = true
 derive_more.workspace = true
 enum-as-inner.workspace = true
 hex.workspace = true

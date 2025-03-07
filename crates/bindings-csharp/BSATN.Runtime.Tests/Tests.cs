@@ -176,4 +176,51 @@ public static class BSATNRuntimeTests
         Assert.Equal(-1, stamp.CompareTo(laterStamp));
         Assert.Equal(+1, laterStamp.CompareTo(stamp));
     }
+
+    [Fact]
+    public static void ConnectionIdComparableChecks()
+    {
+        var str = "00112233445566778899AABBCCDDEEFF";
+        var strHigh = "00001111222233334444555566667777";
+        var strLow = "FFFFEEEEDDDDCCCCBBBBAAAA99998888";
+
+        var connIdA = ConnectionId.FromHexString(str);
+        var connIdB = ConnectionId.FromHexString(str);
+        var connIdHigh = ConnectionId.FromHexString(strHigh);
+        var connIdLow = ConnectionId.FromHexString(strLow);
+
+        Assert.NotNull(connIdA);
+        Assert.NotNull(connIdB);
+        Assert.NotNull(connIdHigh);
+        Assert.NotNull(connIdLow);
+
+        Assert.Equal(0, connIdA.Value.CompareTo(connIdB.Value));
+        Assert.Equal(+1, connIdA.Value.CompareTo(connIdHigh.Value));
+        Assert.Equal(-1, connIdA.Value.CompareTo(connIdLow.Value));
+
+        var notAConnId = new uint();
+
+        Assert.ThrowsAny<Exception>(() => connIdA.Value.CompareTo(notAConnId));
+    }
+
+    [Fact]
+    public static void IdentityComparableChecks()
+    {
+        var str = "00112233445566778899AABBCCDDEEFF00112233445566778899AABBCCDDEEFF";
+        var strHigh = "0000111122223333444455556666777788889999AAAABBBBCCCCDDDDEEEEFFFF";
+        var strLow = "FFFFEEEEDDDDCCCCBBBBAAAA9999888877776666555544443333222211110000";
+
+        var identityA = Identity.FromHexString(str);
+        var identityB = Identity.FromHexString(str);
+        var identityHigh = Identity.FromHexString(strHigh);
+        var identityLow = Identity.FromHexString(strLow);
+
+        Assert.Equal(0, identityA.CompareTo(identityB));
+        Assert.Equal(+1, identityA.CompareTo(identityHigh));
+        Assert.Equal(-1, identityA.CompareTo(identityLow));
+
+        var notAnIdentity = new uint();
+
+        Assert.ThrowsAny<Exception>(() => identityA.CompareTo(notAnIdentity));
+    }
 }

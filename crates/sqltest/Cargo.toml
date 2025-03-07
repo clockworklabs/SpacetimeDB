@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 description = "Sql integration test for SpacetimeDB"
 license-file = "LICENSE"
+publish = false
 
 [dependencies]
 spacetimedb-lib.workspace = true
