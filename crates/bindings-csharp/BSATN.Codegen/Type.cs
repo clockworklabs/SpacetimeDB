@@ -142,12 +142,17 @@ public abstract record BaseTypeDeclaration<M>
     public Scope.Extensions ToExtensions()
     {
         string read,
-            write;
+            write,
+            getHashCode,
+            toString;
 
         var extensions = new Scope.Extensions(Scope, FullName);
 
-        var bsatnDecls = Members.Cast<MemberDeclaration>();
+        var bsatnDeclsWithoutTag = Members.Cast<MemberDeclaration>();
+        var bsatnDecls = bsatnDeclsWithoutTag;
         var fieldNames = bsatnDecls.Select(m => m.Name);
+
+        extensions.BaseTypes.Add($"System.IEquatable<{ShortName}>");
 
         if (Kind is TypeKind.Sum)
         {
@@ -203,6 +208,35 @@ public abstract record BaseTypeDeclaration<M>
                     )}}
                 }
                 """;
+
+            getHashCode = $$"""
+                switch (this) {
+                {{string.Join(
+                        "\n",
+                        bsatnDeclsWithoutTag.Select(decl => $"""
+                            case {decl.Name}(var inner):
+                                return inner.GetHashCode();
+                        """)
+                )}}
+                    default:
+                        return 0;
+                }
+                """;
+
+            toString = $$"""
+                switch (this) {
+                {{string.Join(
+                        "\n",
+                        // escaped enough for you?
+                        fieldNames.Select(name => $$$"""
+                            case {{{name}}}(var inner):
+                                return $"{{{name}}}({inner})";
+                        """)
+                )}}
+                    default:
+                        return "UNKNOWN";
+                }
+                """;
         }
         else
         {
@@ -224,11 +258,28 @@ public abstract record BaseTypeDeclaration<M>
                     )}}
                 }
                 """
-            );
+                );
 
             read = $"SpacetimeDB.BSATN.IStructuralReadWrite.Read<{FullName}>(reader)";
 
             write = "value.WriteFields(writer);";
+
+
+            getHashCode = $$"""
+                return {{string.Join(
+                    " ^\n",
+                    fieldNames.Select(name => $"{name}.GetHashCode()")
+                )}};
+                """;
+
+            // Warning:
+            // Looking at the following code too closely will drive you mad.
+            toString = $$"""
+                return $"{{ShortName}}({{string.Join(
+                    ", ",
+                    fieldNames.Select(name => $$"""{{name}} = { {{name}} }""")
+                )}}";
+                """;
         }
 
         extensions.Contents.Append(
@@ -251,8 +302,57 @@ public abstract record BaseTypeDeclaration<M>
                 SpacetimeDB.BSATN.AlgebraicType SpacetimeDB.BSATN.IReadWrite<{{FullName}}>.GetAlgebraicType(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
                     GetAlgebraicType(registrar);
             }
+
+            
+            public override int GetHashCode()
+            {
+                {{getHashCode}}
+            }
+
+            public override string ToString() {
+                {{toString}}
+            }
             """
         );
+
+        if (!Scope.IsRecord)
+        {
+            // If we're not a record, override various equality things.
+
+            var equalsOverride = Scope.IsStruct ? "" : "override";
+
+            extensions.Contents.Append($$"""
+                public {{equalsOverride}} bool Equals({{FullName}} that)
+                {
+                    return {{string.Join(
+                        " &&\n",
+                        fieldNames.Select(name => $"{name}.Equals(that.{name})")
+                    )}};
+                }
+
+                public override bool Equals(object? that) {
+                    if (that == null) {
+                        return false;
+                    }
+                    var that_ = that as {{FullName}}?;
+                    if (that_ == null) {
+                        return false;
+                    }
+                    return Equals(that);
+                }
+
+                public static bool operator == ({{FullName}} this_, {{FullName}} that) {
+                    if (((object)this_) == null || ((object)that) == null) {
+                        return Object.Equals(this_, that);
+                    }
+                    return this_.Equals(that);
+                }
+
+                public static bool operator != ({{FullName}} this_, {{FullName}} that) {
+                    return !(this_ == that);
+                }
+            """);
+        }
 
         return extensions;
     }
