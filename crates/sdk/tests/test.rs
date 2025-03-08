@@ -215,6 +215,11 @@ macro_rules! declare_tests_with_suffix {
             fn row_deduplication_r_join_s_and_r_join_t8() {
                 make_test("row-deduplication-r-join-s-and-r-joint").run();
             }
+
+            #[test]
+            fn test_intra_query_bag_semantics_for_join() {
+                make_test("test-intra-query-bag-semantics-for-join").run()
+            }
         }
     };
 }
