@@ -251,7 +251,7 @@ impl WasmInstanceEnv {
     /// host call, to provide consistent error handling and instrumentation.
     ///
     /// This method should be used as opposed to a manual implementation,
-    /// as it helps with upholding the safety invariants of [`bindings_sys::call`].
+    /// as it helps with upholding the safety invariants of `spacetimedb_bindings_sys::call`.
     ///
     /// Returns an error if writing `T` to `out` errors.
     fn cvt_ret<O: WasmPointee>(
@@ -379,7 +379,7 @@ impl WasmInstanceEnv {
     /// Starts iteration on each row, as BSATN-encoded, of a table identified by `table_id`.
     ///
     /// On success, the iterator handle is written to the `out` pointer.
-    /// This handle can be advanced by [`row_iter_bsatn_advance`].
+    /// This handle can be advanced by [`Self::row_iter_bsatn_advance`].
     ///
     /// # Traps
     ///
@@ -436,7 +436,7 @@ impl WasmInstanceEnv {
     /// which is unique for the module.
     ///
     /// On success, the iterator handle is written to the `out` pointer.
-    /// This handle can be advanced by [`row_iter_bsatn_advance`].
+    /// This handle can be advanced by [`Self::row_iter_bsatn_advance`].
     ///
     /// # Non-obvious queries
     ///
@@ -783,7 +783,7 @@ impl WasmInstanceEnv {
     /// in WASM memory.
     ///
     /// This syscall will delete all the rows found by
-    /// [`datastore_index_scan_range_bsatn`] with the same arguments passed,
+    /// [`Self::datastore_index_scan_range_bsatn`] with the same arguments passed,
     /// including `prefix_elems`.
     /// See `datastore_index_scan_range_bsatn` for details.
     ///
@@ -1089,7 +1089,7 @@ impl WasmInstanceEnv {
     }
 
     /// Logs at `level` a `message` message occuring in `filename:line_number`
-    /// with [`target`](target) being the module path at the `log!` invocation site.
+    /// with [`target`](https://docs.rs/log/latest/log/struct.Record.html#method.target) being the module path at the `log!` invocation site.
     ///
     /// These various pointers are interpreted lossily as UTF-8 strings with a corresponding `_len`.
     ///
@@ -1107,8 +1107,6 @@ impl WasmInstanceEnv {
     /// - `target` is not NULL and `target_ptr[..target_len]` is not in bounds of WASM memory.
     /// - `filename` is not NULL and `filename_ptr[..filename_len]` is not in bounds of WASM memory.
     /// - `message` is not NULL and `message_ptr[..message_len]` is not in bounds of WASM memory.
-    ///
-    /// [target]: https://docs.rs/log/latest/log/struct.Record.html#method.target
     #[tracing::instrument(level = "trace", skip_all)]
     pub fn console_log(
         caller: Caller<'_, Self>,
@@ -1154,7 +1152,7 @@ impl WasmInstanceEnv {
 
     /// Begins a timing span with `name = name_ptr[..name_len]`.
     ///
-    /// When the returned `ConsoleTimerId` is passed to [`console_timer_end`],
+    /// When the returned `ConsoleTimerId` is passed to [`Self::console_timer_end`],
     /// the duration between the calls will be printed to the module's logs.
     ///
     /// The `name` is interpreted lossily as a UTF-8 string.

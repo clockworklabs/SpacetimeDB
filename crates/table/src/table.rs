@@ -90,7 +90,7 @@ pub struct Table {
     pub row_count: u64,
     /// Stores the sum total number of bytes that each blob object in the table occupies.
     ///
-    /// Note that the [`HashMapBlobStore`] does ref-counting and de-duplication,
+    /// Note that the [`crate::blob_store::HashMapBlobStore`] does ref-counting and de-duplication,
     /// but this sum will count an object each time its hash is mentioned, rather than just once.
     blob_store_bytes: BlobNumBytes,
     /// Indicates whether this is a scheduler table or not.
@@ -312,7 +312,7 @@ impl Table {
     /// without inserting it logically into the pointer map.
     ///
     /// This is useful when we need to insert a row temporarily to get back a `RowPointer`.
-    /// A call to this method should be followed by a call to [`delete_internal_skip_pointer_map`].
+    /// A call to this method should be followed by a call to [`Self::delete_internal_skip_pointer_map`].
     pub fn insert_physically_pv<'a>(
         &'a mut self,
         blob_store: &'a mut dyn BlobStore,
@@ -345,7 +345,7 @@ impl Table {
     /// This does not check for set semantic or unique constraints.
     ///
     /// This is also useful when we need to insert a row temporarily to get back a `RowPointer`.
-    /// In this case, A call to this method should be followed by a call to [`delete_internal_skip_pointer_map`].
+    /// In this case, A call to this method should be followed by a call to [`Self::delete_internal_skip_pointer_map`].
     ///
     /// When `row` is not valid BSATN at the table's row type,
     /// an error is returned and there will be nothing for the caller to revert.
@@ -1084,7 +1084,7 @@ impl Table {
         ret
     }
 
-    /// Returns an iterator over all the rows of `self`, yielded as [`RefRef`]s.
+    /// Returns an iterator over all the rows of `self`, yielded as [`RowRef`]s.
     pub fn scan_rows<'a>(&'a self, blob_store: &'a dyn BlobStore) -> TableScanIter<'a> {
         TableScanIter {
             current_page: None, // Will be filled by the iterator.
@@ -1201,7 +1201,7 @@ impl Table {
     ///
     /// - Unallocated space within pages.
     /// - Per-page overhead (e.g. page headers).
-    /// - Table overhead (e.g. the [`RowTypeLayout`], [`PointerMap`], [`Schema`] &c).
+    /// - Table overhead (e.g. the [`RowTypeLayout`], [`PointerMap`], [`TableSchema`] &c).
     /// - Indexes.
     /// - Large blobs in the [`BlobStore`].
     ///
@@ -1245,7 +1245,7 @@ impl Table {
     /// which is intended to capture the number of live user-supplied bytes,
     /// not including representational overhead.
     /// This is distinct from the BFLATN size measured by [`Self::bytes_used_by_rows`].
-    /// See the trait [`crate::btree_index::KeySize`] for specifics on the metric measured.
+    /// See the trait [`crate::table_index::KeySize`] for specifics on the metric measured.
     pub fn bytes_used_by_index_keys(&self) -> u64 {
         self.indexes.values().map(|idx| idx.num_key_bytes()).sum()
     }
@@ -1611,7 +1611,7 @@ impl<'a> Iterator for TableScanIter<'a> {
 }
 
 /// A combined table and index,
-/// allowing direct extraction of a [`IndexScanIter`].
+/// allowing direct extraction of a [`IndexScanPointIter`]/[`IndexScanRangeIter`].
 #[derive(Copy, Clone)]
 pub struct TableAndIndex<'a> {
     table: &'a Table,
