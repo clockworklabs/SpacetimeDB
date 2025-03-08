@@ -19,7 +19,7 @@
           but you need to use `./bindings-doctests.sh` to actually test them.
 -->
 
-[SpacetimeDB](https://spacetimedb.com/) allows using the Rust language to write server-side applications called **modules**. Modules run inside a relational database. They have direct access to database tables, and expose public functions called **reducers** that can be invoked over the network. Clients connect directly to the database to read data.
+[SpacetimeDB](https://spacetimedb.com/) allows using the Rust language to write server-side applications called **modules**. Modules, which run inside a relational database, have direct access to database tables, and expose public functions called **reducers** that can be invoked over the network. Clients connect directly to the database to read data.
 
 ```text
     Client Application                          SpacetimeDB
@@ -40,7 +40,7 @@
 
 Rust modules are written with the the Rust Module Library (this crate). They are built using [cargo](https://doc.rust-lang.org/cargo/) and deployed using the [`spacetime` CLI tool](https://spacetimedb.com/install). Rust modules can import any Rust [crate](https://crates.io/) that supports being compiled to WebAssembly.
 
-(Note: Rust can also be used to write **clients** of SpacetimeDB databases, but this requires using a completely different library, the SpacetimeDB Rust Client SDK. See the documentation on [clients] for more information.)
+(Note: Rust can also be used to write **clients** of SpacetimeDB databases, but this requires using a different library, the SpacetimeDB Rust Client SDK. See the documentation on [clients] for more information.)
 
 This reference assumes you are familiar with the basics of Rust. If you aren't, check out Rust's [excellent documentation](https://www.rust-lang.org/learn). For a guided introduction to Rust Modules, see the [Rust Module Quickstart](https://spacetimedb.com/docs/modules/rust/quickstart).
 
@@ -75,7 +75,7 @@ fn add_person(ctx: &ReducerContext, id: u32, name: String) {
 ```
 
 
-Note that reducers don't return data directly; they can only modify the database. Clients connect directly to the database and use SQL to query [public](#public-and-private-tables) tables. Clients can also open subscriptions to receive streaming updates as the results of a SQL query change.
+Note that reducers don't return data directly; they can only modify the database. Clients connect directly to the database and use SQL to query [public](#public-and-private-tables) tables. Clients can also subscribe to a set of rows using SQL queries and receive streaming updates whenever any of those rows change.
 
 Tables and reducers in Rust modules can use any type that implements the [`SpacetimeType`] trait.
 
@@ -184,7 +184,7 @@ For example:
 spacetime publish silly_demo_app
 ```
 
-When you publish your module, a database named will be created with the requested tables, and the module will be installed inside it.
+When you publish your module, a database named `silly_demo_app` will be created with the requested tables, and the module will be installed inside it.
 
 The output of `spacetime publish` will end with a line:
 ```text
@@ -257,8 +257,8 @@ fn do_nothing() {
     drop(person);
 }
 
-// To interact with the database, you need a `ReducerContext`.
-// The first argument of a reducer is always a `ReducerContext`.
+// To interact with the database, you need a `ReducerContext`,
+// which is provided as the first parameter of any reducer.
 #[reducer]
 fn do_something(ctx: &ReducerContext) {
     // `ctx.db.{table_name}()` gets a handle to a database table.
@@ -382,7 +382,7 @@ ctx.db.person().ssn()
 
 Notice that updating a row is only possible if a row has a unique column -- there is no `update` method in the base [`Table`] trait. SpacetimeDB has no notion of rows having an "identity" aside from their unique / primary keys.
 
-The `#[primary_key]` annotation is similar to the `#[unique]` annotation, except that it leads to additional methods being made available in the [client]-side SDKs.
+The `#[primary_key]` annotation implies `#[unique]` annotation, but avails additional methods in the [client]-side SDKs.
 
 It is not currently possible to mark a group of fields as collectively unique.
 
@@ -435,7 +435,6 @@ For example:
 
 ```no_run
 # #[cfg(target_arch = "wasm32")] mod demo {
-
 use spacetimedb::table;
 
 #[table(name = paper, index(name = url_and_country, btree(columns = [url, country])))]
@@ -455,6 +454,23 @@ Single-column indexes can also be declared using the
 [`#[index(btree)]`](macro@crate::table#indexbtree)
 
 column attribute.
+
+For example:
+
+```no_run
+# #[cfg(target_arch = "wasm32")] mod demo {
+use spacetimedb::table;
+
+#[table(name = paper)]
+struct Paper {
+    url: String,
+    country: String,
+    #[index(btree)]
+    venue: String
+} 
+# }
+```
+
 
 Any index supports getting a [`RangedIndex`] using [`ctx`](crate::ReducerContext)`.db.{table}().{index}()`. For example, `ctx.db.person().name()`.
     
@@ -485,11 +501,11 @@ fn give_player_item(
 # }
 ```
 
-Every reducer runs inside a [database transaction](https://en.wikipedia.org/wiki/Database_transaction). <!-- TODO: specific transaction level guarantees. --> This means that reducers will not observe the effects of other reducers modifying the database while they run. Also, if a reducer fails, all of its changes to the database will automatically be rolled back. Reducers can fail by [panicking](::std::panic!) or by returning an `Err`.
+Every reducer runs inside a [database transaction](https://en.wikipedia.org/wiki/Database_transaction). <!-- TODO: specific transaction level guarantees. --> This means that reducers will not observe the effects of other reducers modifying the database while they run. If a reducer fails, all of its changes to the database will automatically be rolled back. Reducers can fail by [panicking](::std::panic!) or by returning an `Err`.
 
 #### The `ReducerContext` Type
 
-Reducers have access to a special [`ReducerContext`] argument. This argument allows reading and writing the database attached to a module. It also provides some additional functionality, like generating random numbers and scheduling future operations.
+Reducers have access to a special [`ReducerContext`] parameter. This parameter allows reading and writing the database attached to a module. It also provides some additional functionality, like generating random numbers and scheduling future operations.
 
 [`ReducerContext`] provides access to the database tables via [the `.db` field](ReducerContext#structfield.db). The [`#[table]`](macro@crate::table) macro generates traits that add accessor methods to this field.
 
@@ -518,14 +534,13 @@ the database and respond to client connections. See [Lifecycle Reducers](macro@c
 
 #### Scheduled Reducers
 
-Reducers can be scheduled to run repeatedly. This can be used to implement timers, game loops, and
-maintenance tasks. See [Scheduled Reducers](macro@crate::reducer#scheduled-reducers).
+Reducers can schedule other reducers to run asynchronously. This allows calling the reducers at a particular time, or at repeating intervals. This can be used to implement timers, game loops, and maintenance tasks. See [Scheduled Reducers](macro@crate::reducer#scheduled-reducers).
 
 ## Automatic migrations
 
 When you `spacetime publish` a module that has already been published using `spacetime publish <DATABASE_NAME_OR_IDENTITY>`,
 SpacetimeDB attempts to automatically migrate your existing database to the new schema. (The "schema" is just the collection
-of tables and reducers you've declared in your code, together with the types they depend on.) This form of migration is very limited and only supports a few kinds of changes.
+of tables and reducers you've declared in your code, together with the types they depend on.) This form of migration is limited and only supports a few kinds of changes.
 On the plus side, automatic migrations usually don't break clients. The situations that may break clients are documented below.
 
 The following changes are always allowed and never breaking:

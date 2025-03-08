@@ -26,15 +26,18 @@ pub trait Table: TableInternal {
     ///
     /// This takes into account modifications by the current transaction,
     /// even though those modifications have not yet been committed or broadcast to clients.
+    /// This applies generally to insertions, deletions, updates, and iteration as well.
     fn count(&self) -> u64 {
         sys::datastore_table_row_count(Self::table_id()).expect("datastore_table_row_count() call failed")
     }
 
     /// Iterate over all rows of the table.
     ///
-    /// For large tables, this can be a very slow operation!
+    /// For large tables, this can be a slow operation!
     /// Prefer [filtering](RangedIndex::filter) a [`RangedIndex`] or [finding](UniqueColumn::find) a [`UniqueColumn`] if
     /// possible.
+    ///
+    /// (This keeps track of changes made to the table since the start of this reducer invocation. For example, if rows have been deleted since the start of this reducer invocation, those rows will not be returned by `iter`. Similarly, inserted rows WILL be returned.)
     #[inline]
     fn iter(&self) -> impl Iterator<Item = Self::Row> {
         let table_id = Self::table_id();
@@ -376,10 +379,10 @@ impl<Tbl: Table, Col: Index + Column<Table = Tbl>> UniqueColumn<Tbl, Col::ColTyp
         (n_del > 0, args.data)
     }
 
-    /// Deletes the row where the value in the unique column matches that in the corresponding field of `new_row`,
+    /// Deletes the row where the value in the unique column matches that in the corresponding field of `new_row`, and
     /// then inserts the `new_row`.
     ///
-    /// Returns the new row as actually inserted, with any auto-inc placeholders substituted for computed values.
+    /// Returns the new row as actually inserted, with  computed values substituted for any auto-inc placeholders.
     ///
     /// # Panics
     /// Panics if no row was previously present with the matching value in the unique column,
