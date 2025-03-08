@@ -157,7 +157,7 @@ impl TokenValidator for DecodingKey {
 
         let data = decode::<IncomingClaims>(token, self, &validation)?;
         let claims = data.claims;
-        claims.try_into()
+        claims.try_into().map_err(TokenValidationError::Other)
     }
 }
 
