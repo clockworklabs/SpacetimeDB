@@ -884,7 +884,7 @@ const REMOTE_MODULE = {
     repeating_test_arg: {
       tableName: "repeating_test_arg",
       rowType: RepeatingTestArg.getTypeScriptAlgebraicType(),
-      primaryKey: "scheduled_id",
+      primaryKey: "scheduledId",
     },
     test_a: {
       tableName: "test_a",
