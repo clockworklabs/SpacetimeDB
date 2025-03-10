@@ -9,7 +9,7 @@ use crate::subcommands::start;
 use anyhow::{ensure, Context};
 use async_trait::async_trait;
 use clap::{ArgMatches, Command};
-use energy_monitor::StandaloneEnergyMonitor;
+pub use energy_monitor::StandaloneEnergyMonitor;
 use spacetimedb::client::ClientActorIndex;
 use spacetimedb::config::{CertificateAuthority, MetadataFile};
 use spacetimedb::db::db_metrics::data_size::DATA_SIZE_METRICS;
@@ -101,8 +101,8 @@ impl StandaloneEnv {
     }
 }
 
-struct StandaloneDurabilityProvider {
-    data_dir: Arc<ServerDataDir>,
+pub struct StandaloneDurabilityProvider {
+    pub data_dir: Arc<ServerDataDir>,
 }
 
 #[async_trait]

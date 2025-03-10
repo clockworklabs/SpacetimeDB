@@ -4,7 +4,7 @@ use spacetimedb::messages::control_db::Database;
 use spacetimedb_lib::Identity;
 use std::time::Duration;
 
-pub(crate) struct StandaloneEnergyMonitor {
+pub struct StandaloneEnergyMonitor {
     control_db: ControlDb,
 }
 
