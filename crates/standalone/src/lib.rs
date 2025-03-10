@@ -4,7 +4,7 @@ pub mod subcommands;
 pub mod util;
 pub mod version;
 
-use crate::control_db::ControlDb;
+pub use crate::control_db::ControlDb;
 use crate::subcommands::start;
 use anyhow::{ensure, Context};
 use async_trait::async_trait;
@@ -30,13 +30,13 @@ use std::sync::Arc;
 pub use spacetimedb_client_api::routes::subscribe::{BIN_PROTOCOL, TEXT_PROTOCOL};
 
 pub struct StandaloneEnv {
-    control_db: ControlDb,
-    program_store: Arc<DiskStorage>,
-    host_controller: HostController,
-    client_actor_index: ClientActorIndex,
-    metrics_registry: prometheus::Registry,
-    _pid_file: PidFile,
-    auth_provider: auth::DefaultJwtAuthProvider,
+    pub control_db: ControlDb,
+    pub program_store: Arc<DiskStorage>,
+    pub host_controller: HostController,
+    pub client_actor_index: ClientActorIndex,
+    pub metrics_registry: prometheus::Registry,
+    pub _pid_file: PidFile,
+    pub auth_provider: auth::DefaultJwtAuthProvider,
 }
 
 impl StandaloneEnv {
