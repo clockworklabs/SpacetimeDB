@@ -7,6 +7,7 @@ on:
     branches:
       - master
       - release/*
+      - noa/musl-build
 
 jobs:
   build-cli:
@@ -16,6 +17,8 @@ jobs:
         include:
           - { name: x86_64 Linux, target: x86_64-unknown-linux-gnu, runner: bare-metal }
           - { name: aarch64 Linux, target: aarch64-unknown-linux-gnu, runner: arm-runner }
+          - { name: x86_64 Linux musl, target: x86_64-unknown-linux-musl, runner: bare-metal }
+          - { name: aarch64 Linux musl, target: aarch64-unknown-linux-musl, runner: arm-runner }
           - { name: aarch64 macOS, target: aarch64-apple-darwin, runner: macos-latest }
           - { name: x86_64 macOS, target: x86_64-apple-darwin, runner: macos-latest }
           - { name: x86_64 Windows, target: x86_64-pc-windows-msvc, runner: windows-latest }
@@ -35,6 +38,13 @@ jobs:
 
       - name: Install rust target
         run: rustup target add ${{ matrix.target }}
+      
+      - name: Install musl sdk
+        if: endsWith(matrix.target, '-musl')
+        run: |
+          sudo apt-get update && sudo apt-get install musl-tools -y
+          sudo ln -s /usr/bin/g++ /usr/bin/musl-g++
+          sudo ln -s /usr/bin/g++ /usr/bin/aarch64-linux-musl-g++
 
       - name: Compile
         run: |
