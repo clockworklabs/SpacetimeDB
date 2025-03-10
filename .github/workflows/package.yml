@@ -7,6 +7,7 @@ on:
     branches:
       - master
       - release/*
+      - noa/musl-build
 
 jobs:
   build-cli:
