@@ -20,7 +20,7 @@ use spacetimedb::host::{DiskStorage, DurabilityProvider, ExternalDurability, Hos
 use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, Node, Replica};
 use spacetimedb::worker_metrics::WORKER_METRICS;
-use spacetimedb_client_api::auth::{self, LOCALHOST};
+use spacetimedb_client_api::auth::{self, DefaultJwtAuthProvider, JwtAuthProvider, LOCALHOST};
 use spacetimedb_client_api::{Host, NodeDelegate};
 use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, RegisterTldResult, SetDomainsResult, Tld};
 use spacetimedb_paths::server::{ModuleLogsDir, PidFile, ServerDataDir};
@@ -29,17 +29,17 @@ use std::sync::Arc;
 
 pub use spacetimedb_client_api::routes::subscribe::{BIN_PROTOCOL, TEXT_PROTOCOL};
 
-pub struct StandaloneEnv {
+pub struct StandaloneEnv<AuthProvider: JwtAuthProvider> {
     pub control_db: ControlDb,
     pub program_store: Arc<DiskStorage>,
     pub host_controller: HostController,
     pub client_actor_index: ClientActorIndex,
     pub metrics_registry: prometheus::Registry,
     pub _pid_file: PidFile,
-    pub auth_provider: auth::DefaultJwtAuthProvider,
+    pub auth_provider: AuthProvider,
 }
 
-impl StandaloneEnv {
+impl StandaloneEnv<DefaultJwtAuthProvider> {
     pub async fn init(
         config: Config,
         certs: &CertificateAuthority,
@@ -95,7 +95,9 @@ impl StandaloneEnv {
             auth_provider: auth_env,
         }))
     }
+}
 
+impl<AuthProvider: JwtAuthProvider> StandaloneEnv<AuthProvider> {
     pub fn data_dir(&self) -> &Arc<ServerDataDir> {
         &self.host_controller.data_dir
     }
@@ -117,7 +119,7 @@ impl DurabilityProvider for StandaloneDurabilityProvider {
 }
 
 #[async_trait]
-impl NodeDelegate for StandaloneEnv {
+impl<AuthProvider: JwtAuthProvider> NodeDelegate for StandaloneEnv<AuthProvider> {
     fn gather_metrics(&self) -> Vec<prometheus::proto::MetricFamily> {
         self.metrics_registry.gather()
     }
@@ -126,7 +128,7 @@ impl NodeDelegate for StandaloneEnv {
         &self.client_actor_index
     }
 
-    type JwtAuthProviderT = auth::DefaultJwtAuthProvider;
+    type JwtAuthProviderT = AuthProvider;
 
     fn jwt_auth_provider(&self) -> &Self::JwtAuthProviderT {
         &self.auth_provider
@@ -155,7 +157,7 @@ impl NodeDelegate for StandaloneEnv {
     }
 }
 
-impl spacetimedb_client_api::ControlStateReadAccess for StandaloneEnv {
+impl<AuthProvider: JwtAuthProvider> spacetimedb_client_api::ControlStateReadAccess for StandaloneEnv<AuthProvider> {
     // Nodes
     fn get_node_id(&self) -> Option<u64> {
         Some(0)
@@ -217,7 +219,7 @@ impl spacetimedb_client_api::ControlStateReadAccess for StandaloneEnv {
 }
 
 #[async_trait]
-impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
+impl<AuthProvider: JwtAuthProvider> spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv<AuthProvider> {
     async fn publish_database(
         &self,
         publisher: &Identity,
@@ -377,7 +379,7 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
     }
 }
 
-impl StandaloneEnv {
+impl<AuthProvider: JwtAuthProvider> StandaloneEnv<AuthProvider> {
     async fn insert_replica(&self, replica: Replica) -> Result<(), anyhow::Error> {
         let mut new_replica = replica.clone();
         let id = self.control_db.insert_replica(replica)?;
