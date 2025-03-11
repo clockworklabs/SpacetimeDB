@@ -34,10 +34,10 @@ To get started, follow these steps:
    ```
 2. Install [Unity Hub](https://unity.com/download) and Unity **2022.3.32f1 LTS**.
 3. Follow the tutorial parts:
-   - [Part 1: Setup](https://github.com/ClockworkLabs/Blackholio/tree/master/docs/unity/part-1)
-   - [Part 2: Connecting to SpacetimeDB](https://github.com/ClockworkLabs/Blackholio/tree/master/docs/unity/part-2)
-   - [Part 3: Gameplay](https://github.com/ClockworkLabs/Blackholio/tree/master/docs/unity/part-3)
-   - [Part 4: Moving and Colliding](https://github.com/ClockworkLabs/Blackholio/tree/master/docs/unity/part-4)
+   - [Part 1: Setup](https://spacetimedb.com/docs/unity/part-1)
+   - [Part 2: Connecting to SpacetimeDB](https://spacetimedb.com/docs/unity/part-2)
+   - [Part 3: Gameplay](https://spacetimedb.com/docs/unity/part-3)
+   - [Part 4: Moving and Colliding](https://spacetimedb.com/docs/unity/part-4)
 
 4. Run the game using the Unity Editor or build for your platform.
 
@@ -55,7 +55,7 @@ To get started, follow these steps:
 
 ```plaintext
 Blackholio/
-├── client-unity/            # Unity client project
+├── client-unity/      # Unity client project
 ├── server-rust/       # SpacetimeDB server module (Rust implementation)
 ├── server-csharp/     # SpacetimeDB server module (C# implementation)
 ├── docs/              # Tutorial documentation and images
@@ -86,6 +86,6 @@ Feel free to fork, modify, and use **Blackholio** as a starting point for your o
 ---
 
 ### **Feedback**
-We'd love to hear your thoughts on the tutorial or game! Open an issue in the repository or chat with us on [Discord](https://discord.gg/spacetimedb).  
+We'd love to hear your thoughts on the tutorial or game! Open an issue in the repository or chat with us on [Discord](https://discord.gg/spacetimedb).
 
 Happy developing, and enjoy creating the cosmos with **Blackholio**! 🚀
