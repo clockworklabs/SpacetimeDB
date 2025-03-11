@@ -8,8 +8,8 @@ use crate::{pipelined::PipelinedProject, Datastore, DeltaStore};
 
 /// A mutable datastore can read as well as insert and delete rows
 pub trait MutDatastore: Datastore + DeltaStore {
-    fn insert_product_value(&mut self, table_id: TableId, row: &ProductValue) -> Result<()>;
-    fn delete_product_value(&mut self, table_id: TableId, row: &ProductValue) -> Result<()>;
+    fn insert_product_value(&mut self, table_id: TableId, row: &ProductValue) -> Result<bool>;
+    fn delete_product_value(&mut self, table_id: TableId, row: &ProductValue) -> Result<bool>;
 }
 
 /// Executes a physical mutation plan
@@ -57,7 +57,9 @@ impl From<InsertPlan> for InsertExecutor {
 impl InsertExecutor {
     fn execute<Tx: MutDatastore>(&self, tx: &mut Tx, metrics: &mut ExecutionMetrics) -> Result<()> {
         for row in &self.rows {
-            tx.insert_product_value(self.table_id, row)?;
+            if tx.insert_product_value(self.table_id, row)? {
+                metrics.rows_inserted += 1;
+            }
         }
         // TODO: It would be better to get this metric from the bsatn buffer.
         // But we haven't been concerned with optimizing DML up to this point.
@@ -94,7 +96,9 @@ impl DeleteExecutor {
         // because deletes don't actually write out any bytes.
         metrics.bytes_scanned += deletes.iter().map(|row| row.size_of()).sum::<usize>();
         for row in &deletes {
-            tx.delete_product_value(self.table_id, row)?;
+            if tx.delete_product_value(self.table_id, row)? {
+                metrics.rows_deleted += 1;
+            }
         }
         Ok(())
     }
@@ -129,6 +133,7 @@ impl UpdateExecutor {
         }
         // TODO: This metric should be updated inline when we serialize.
         metrics.bytes_scanned = deletes.iter().map(|row| row.size_of()).sum::<usize>();
+        metrics.rows_updated += deletes.len() as u64;
         for row in &deletes {
             let row = ProductValue::from_iter(
                 row

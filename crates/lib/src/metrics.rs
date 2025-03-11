@@ -1,5 +1,5 @@
 /// Metrics collected during the course of a transaction
-#[derive(Default)]
+#[derive(Default, Copy, Clone)]
 pub struct ExecutionMetrics {
     /// How many times is an index probed?
     ///
@@ -40,6 +40,12 @@ pub struct ExecutionMetrics {
     ///
     /// In general, these are BSATN bytes, but JSON is also possible.
     pub bytes_sent_to_clients: usize,
+    /// How many rows were inserted?
+    pub rows_inserted: u64,
+    /// How many rows were deleted?
+    pub rows_deleted: u64,
+    /// How many rows were updated?
+    pub rows_updated: u64,
 }
 
 impl ExecutionMetrics {
@@ -51,6 +57,9 @@ impl ExecutionMetrics {
             bytes_scanned,
             bytes_written,
             bytes_sent_to_clients,
+            rows_inserted,
+            rows_deleted,
+            rows_updated,
         }: ExecutionMetrics,
     ) {
         self.index_seeks += index_seeks;
@@ -58,6 +67,9 @@ impl ExecutionMetrics {
         self.bytes_scanned += bytes_scanned;
         self.bytes_written += bytes_written;
         self.bytes_sent_to_clients += bytes_sent_to_clients;
+        self.rows_inserted += rows_inserted;
+        self.rows_deleted += rows_deleted;
+        self.rows_updated += rows_updated;
     }
 }
 
@@ -75,6 +87,9 @@ mod tests {
             bytes_scanned: 1,
             bytes_written: 1,
             bytes_sent_to_clients: 1,
+            rows_inserted: 1,
+            rows_deleted: 1,
+            rows_updated: 1,
         });
 
         assert_eq!(a.index_seeks, 1);
@@ -82,5 +97,7 @@ mod tests {
         assert_eq!(a.bytes_scanned, 1);
         assert_eq!(a.bytes_written, 1);
         assert_eq!(a.bytes_sent_to_clients, 1);
+        assert_eq!(a.rows_inserted, 1);
+        assert_eq!(a.rows_deleted, 1);
     }
 }

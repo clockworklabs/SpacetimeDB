@@ -1,7 +1,10 @@
+use std::fmt;
 use std::time::Instant;
 
-use crate::api::{from_json_seed, ClientApi, Connection, StmtResultJson};
+use crate::api::{from_json_seed, ClientApi, Connection, StmtResultJson, StmtStats};
 use crate::common_args;
+use crate::config::Config;
+use crate::util::{database_identity, get_auth_header, ResponseExt, UNSTABLE_WARNING};
 use anyhow::Context;
 use clap::{Arg, ArgAction, ArgMatches};
 use itertools::Itertools;
@@ -9,9 +12,6 @@ use reqwest::RequestBuilder;
 use spacetimedb_lib::de::serde::SeedWrapper;
 use spacetimedb_lib::sats::{satn, Typespace};
 use tabled::settings::Style;
-
-use crate::config::Config;
-use crate::util::{database_identity, get_auth_header, ResponseExt, UNSTABLE_WARNING};
 
 pub fn cli() -> clap::Command {
     clap::Command::new("sql")
@@ -54,18 +54,53 @@ pub(crate) async fn parse_req(mut config: Config, args: &ArgMatches) -> Result<C
     })
 }
 
-// Need to report back timings from each query from the backend instead of infer here...
-fn print_row_count(rows: usize) -> String {
-    let txt = if rows == 1 { "row" } else { "rows" };
-    format!("({rows} {txt})")
+struct StmtResult {
+    table: tabled::Table,
+    stats: Option<StmtStats>,
+    time_client: Instant,
 }
 
-fn print_timings(now: Instant) {
-    println!("Time: {:.2?}", now.elapsed());
+impl fmt::Display for StmtResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if !self.table.is_empty() {
+            writeln!(f, "{}", self.table)?;
+        }
+
+        if let Some(stats) = &self.stats {
+            let txt = if stats.total_rows == 1 { "row" } else { "rows" };
+
+            let result = format!("({} {txt})", stats.total_rows);
+            let mut info = Vec::new();
+            if stats.rows_scanned != 0 {
+                info.push(format!("scan: {}", stats.rows_scanned));
+            }
+            if stats.rows_inserted != 0 {
+                info.push(format!("ins: {}", stats.rows_inserted));
+            }
+            if stats.rows_deleted != 0 {
+                info.push(format!("del: {}", stats.rows_deleted));
+            }
+            if stats.rows_updated != 0 {
+                info.push(format!("upd: {}", stats.rows_updated));
+            }
+            info.push(format!(
+                "server: {:.2?}",
+                std::time::Duration::from_micros(stats.total_duration_micros)
+            ));
+            info.push(format!("client: {:.2?}", self.time_client.elapsed()));
+
+            if !info.is_empty() {
+                write!(f, "{result} [{info}]", info = info.join(", "))?;
+            } else {
+                write!(f, "{result}")?;
+            };
+        };
+        writeln!(f)
+    }
 }
 
 pub(crate) async fn run_sql(builder: RequestBuilder, sql: &str, with_stats: bool) -> Result<(), anyhow::Error> {
-    let now = Instant::now();
+    let mut now = Instant::now();
 
     let json = builder
         .body(sql.to_owned())
@@ -77,12 +112,19 @@ pub(crate) async fn run_sql(builder: RequestBuilder, sql: &str, with_stats: bool
         .await?;
 
     let stmt_result_json: Vec<StmtResultJson> = serde_json::from_str(&json).context("malformed sql response")?;
+    let stats = stmt_result_json.iter().map(StmtStats::from).sum::<StmtStats>();
 
     // Print only `OK for empty tables as it's likely a command like `INSERT`.
     if stmt_result_json.is_empty() {
-        if with_stats {
-            print_timings(now);
-        }
+        println!(
+            "{}",
+            StmtResult {
+                stats: if with_stats { Some(stats) } else { None },
+                table: tabled::Table::new([""]),
+                time_client: now,
+            }
+        );
+
         println!("OK");
         return Ok(());
     };
@@ -90,28 +132,24 @@ pub(crate) async fn run_sql(builder: RequestBuilder, sql: &str, with_stats: bool
     stmt_result_json
         .iter()
         .map(|stmt_result| {
-            let mut table = stmt_result_to_table(stmt_result)?;
-            if with_stats {
-                // The `tabled::count_rows` add the header as a row, so subtract it.
-                let row_count = table.count_rows().wrapping_sub(1);
-                // For some reason, `table.with(...)` crashes if the row count is 0.
-                if row_count > 0 {
-                    let row_count = print_row_count(row_count);
-                    table.with(tabled::settings::panel::Footer::new(row_count));
-                }
-            }
-            anyhow::Ok(table)
+            let (stats, table) = stmt_result_to_table(stmt_result)?;
+
+            let time_client = now;
+            now = Instant::now();
+            anyhow::Ok(StmtResult {
+                stats: if with_stats { Some(stats) } else { None },
+                table,
+                time_client,
+            })
         })
         .process_results(|it| println!("{}", it.format("\n\n")))?;
-    if with_stats {
-        print_timings(now);
-    }
 
     Ok(())
 }
 
-fn stmt_result_to_table(stmt_result: &StmtResultJson) -> anyhow::Result<tabled::Table> {
-    let StmtResultJson { schema, rows } = stmt_result;
+fn stmt_result_to_table(stmt_result: &StmtResultJson) -> anyhow::Result<(StmtStats, tabled::Table)> {
+    let stats = StmtStats::from(stmt_result);
+    let StmtResultJson { schema, rows, .. } = stmt_result;
 
     let mut builder = tabled::builder::Builder::default();
     builder.set_header(
@@ -134,7 +172,7 @@ fn stmt_result_to_table(stmt_result: &StmtResultJson) -> anyhow::Result<tabled::
     let mut table = builder.build();
     table.with(Style::psql());
 
-    Ok(table)
+    Ok((stats, table))
 }
 
 pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
