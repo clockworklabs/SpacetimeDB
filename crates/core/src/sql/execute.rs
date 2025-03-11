@@ -171,6 +171,11 @@ pub fn execute_sql_tx<'a>(
     execute(&mut DbProgram::new(db, &mut tx, auth), ast, sql, &mut updates).map(Some)
 }
 
+pub struct SqlResult {
+    pub rows: Vec<ProductValue>,
+    pub metrics: ExecutionMetrics,
+}
+
 /// Run the `SQL` string using the `auth` credentials
 pub fn run(
     db: &RelationalDB,
@@ -178,7 +183,7 @@ pub fn run(
     auth: AuthCtx,
     subs: Option<&ModuleSubscriptions>,
     head: &mut Vec<(Box<str>, AlgebraicType)>,
-) -> Result<Vec<ProductValue>, DBError> {
+) -> Result<SqlResult, DBError> {
     // We parse the sql statement in a mutable transation.
     // If it turns out to be a query, we downgrade the tx.
     let (tx, stmt) = db.with_auto_rollback(db.begin_mut_tx(IsolationLevel::Serializable, Workload::Sql), |tx| {
@@ -212,7 +217,10 @@ pub fn run(
             // Update transaction metrics
             tx.metrics.merge(metrics);
 
-            Ok(rows)
+            Ok(SqlResult {
+                rows,
+                metrics: tx.metrics,
+            })
         }
         Statement::DML(stmt) => {
             // An extra layer of auth is required for DML
@@ -228,7 +236,8 @@ pub fn run(
 
             // Commit the tx if there are no deltas to process
             if subs.is_none() {
-                return db.commit_tx(tx).map(|_| vec![]);
+                let metrics = tx.metrics;
+                return db.commit_tx(tx).map(|_| SqlResult { rows: vec![], metrics });
             }
 
             // Otherwise downgrade the tx and process the deltas.
@@ -261,7 +270,7 @@ pub fn run(
                 Err(WriteConflict) => {
                     todo!("See module_host_actor::call_reducer_with_tx")
                 }
-                Ok(_) => Ok(vec![]),
+                Ok(_) => Ok(SqlResult { rows: vec![], metrics }),
             }
         }
     }
@@ -315,7 +324,7 @@ pub(crate) mod tests {
             Arc::new(RwLock::new(SubscriptionManager::default())),
             Identity::ZERO,
         );
-        run(db, sql_text, AuthCtx::for_testing(), Some(&subs), &mut vec![])
+        run(db, sql_text, AuthCtx::for_testing(), Some(&subs), &mut vec![]).map(|x| x.rows)
     }
 
     fn create_data(total_rows: u64) -> ResultTest<(TestDB, MemTable)> {
@@ -729,6 +738,59 @@ pub(crate) mod tests {
         // Both queries pass.
         assert!(run(&db, "SELECT * FROM T", internal_auth, None).is_ok());
         assert!(run(&db, "SELECT * FROM T", external_auth, None).is_ok());
+
+        Ok(())
+    }
+
+    // Verify we don't return rows on DML
+    #[test]
+    fn test_row_dml() -> ResultTest<()> {
+        let db = TestDB::durable()?;
+
+        let table_id = db.create_table_for_test("T", &[("a", AlgebraicType::U8)], &[])?;
+        db.with_auto_commit(Workload::ForTests, |tx| -> Result<_, DBError> {
+            for i in 0..4u8 {
+                insert(&db, tx, table_id, &product!(i))?;
+            }
+            Ok(())
+        })?;
+
+        let server = Identity::from_claims("issuer", "server");
+
+        let internal_auth = AuthCtx::new(server, server);
+
+        let run = |db, sql, auth, subs| run(db, sql, auth, subs, &mut vec![]);
+
+        let check = |db, sql, auth, metrics: ExecutionMetrics| {
+            let result = run(db, sql, auth, None)?;
+            assert_eq!(result.rows, vec![]);
+            assert_eq!(result.metrics.rows_inserted, metrics.rows_inserted);
+            assert_eq!(result.metrics.rows_deleted, metrics.rows_deleted);
+            assert_eq!(result.metrics.rows_updated, metrics.rows_updated);
+
+            Ok::<(), DBError>(())
+        };
+
+        let ins = ExecutionMetrics {
+            rows_inserted: 1,
+            ..ExecutionMetrics::default()
+        };
+        let upd = ExecutionMetrics {
+            rows_updated: 5,
+            ..ExecutionMetrics::default()
+        };
+        let del = ExecutionMetrics {
+            rows_deleted: 1,
+            ..ExecutionMetrics::default()
+        };
+
+        check(&db, "INSERT INTO T (a) VALUES (5)", internal_auth, ins)?;
+        check(&db, "UPDATE T SET a = 2", internal_auth, upd)?;
+        assert_eq!(
+            run(&db, "SELECT * FROM T", internal_auth, None)?.rows,
+            vec![product!(2u8)]
+        );
+        check(&db, "DELETE FROM T", internal_auth, del)?;
 
         Ok(())
     }
