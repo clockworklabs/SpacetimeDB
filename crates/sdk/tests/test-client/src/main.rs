@@ -4,18 +4,19 @@ mod module_bindings;
 
 use core::fmt::Display;
 use core::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Barrier, Mutex};
 
 use module_bindings::*;
 
+use rand::RngCore;
 use spacetimedb_sdk::{
-    credentials, i256, u256, unstable::CallReducerFlags, ConnectionId, DbConnectionBuilder, DbContext, Event, Identity,
-    ReducerEvent, Status, SubscriptionHandle, Table, TimeDuration, Timestamp,
+    credentials, i256, u256, unstable::CallReducerFlags, Compression, ConnectionId, DbConnectionBuilder, DbContext,
+    Event, Identity, ReducerEvent, Status, SubscriptionHandle, Table, TimeDuration, Timestamp,
 };
 use test_counter::TestCounter;
 
 mod simple_test_table;
-use simple_test_table::{insert_one, on_insert_one};
+use simple_test_table::{insert_one, on_insert_one, SimpleTestTable};
 
 mod pk_test_table;
 use pk_test_table::{insert_update_delete_one, PkTestTable};
@@ -122,6 +123,7 @@ fn main() {
         "row-deduplication-join-r-and-s" => exec_row_deduplication_join_r_and_s(),
         "row-deduplication-r-join-s-and-r-joint" => exec_row_deduplication_r_join_s_and_r_join_t(),
         "test-intra-query-bag-semantics-for-join" => test_intra_query_bag_semantics_for_join(),
+        "two-different-compression-algos" => exec_two_different_compression_algos(),
         _ => panic!("Unknown test: {}", test),
     }
 }
@@ -1899,12 +1901,13 @@ fn exec_caller_alice_receives_reducer_callback_but_not_bob() {
     assert_ne!(conns[0].identity(), conns[1].identity());
 }
 
+type ResultRecorder = Box<dyn Send + FnOnce(Result<(), anyhow::Error>)>;
+
 /// [`Option::take`] the `result` function, and invoke it with `res`. Panic if `result` is `None`.
 ///
 /// Used in [`exec_row_deduplication`] to determine that row callbacks are invoked only once,
 /// since this will panic if invoked on the same `result` function twice.
-#[allow(clippy::type_complexity)]
-fn put_result(result: &mut Option<Box<dyn Send + FnOnce(Result<(), anyhow::Error>)>>, res: Result<(), anyhow::Error>) {
+fn put_result(result: &mut Option<ResultRecorder>, res: Result<(), anyhow::Error>) {
     (result.take().unwrap())(res);
 }
 
@@ -2157,6 +2160,73 @@ fn test_intra_query_bag_semantics_for_join() {
             });
         }
     });
+}
 
+/// Test that several clients subscribing to the same query and using the same protocol (bsatn)
+/// can use different compression algorithms than each other.
+///
+/// This is a regression test.
+fn exec_two_different_compression_algos() {
+    use Compression::*;
+
+    // Create 32 KiB of random bytes to make it very likely that compression is used.
+    // The actual threshold used currently is 1 KiB
+    // but let's use more than that in case we change it and forget to update here.
+    let mut rng = rand::thread_rng();
+    let mut bytes = [0; 1 << 15];
+    rng.fill_bytes(&mut bytes);
+    let bytes: Arc<[u8]> = bytes.into();
+
+    // Connect with brotli, gzip, and no compression.
+    // One of them will insert and all of them will subscribe.
+    // All should get back `bytes`.
+    fn connect_with_compression(
+        test_counter: &Arc<TestCounter>,
+        compression_name: &str,
+        compression: Compression,
+        mut recorder: Option<ResultRecorder>,
+        barrier: &Arc<Barrier>,
+        expected: &Arc<[u8]>,
+    ) {
+        let expected1 = expected.clone();
+        let expected2 = expected1.clone();
+        let barrier = barrier.clone();
+        connect_with_then(
+            test_counter,
+            compression_name,
+            |b| b.with_compression(compression),
+            move |ctx| {
+                subscribe_these_then(ctx, &["SELECT * FROM vec_u8"], move |ctx| {
+                    VecU8::on_insert(ctx, move |_, actual| {
+                        let actual: &[u8] = actual.n.as_slice();
+                        let res = if actual == &*expected1 {
+                            Ok(())
+                        } else {
+                            Err(anyhow::anyhow!(
+                                "got bad row, expected: {expected1:?}, actual: {actual:?}"
+                            ))
+                        };
+                        put_result(&mut recorder, res)
+                    });
+
+                    // All clients must have subscribed and registered the `on_insert` callback
+                    // before we actually insert the row.
+                    barrier.wait();
+
+                    if compression == None {
+                        VecU8::insert(ctx, expected2.to_vec());
+                    }
+                })
+            },
+        );
+    }
+    let test_counter: Arc<TestCounter> = TestCounter::new();
+    let barrier = Arc::new(Barrier::new(3));
+    let got_brotli = Some(test_counter.add_test("got_right_row_brotli"));
+    let got_gzip = Some(test_counter.add_test("got_right_row_gzip"));
+    let got_none = Some(test_counter.add_test("got_right_row_none"));
+    connect_with_compression(&test_counter, "brotli", Brotli, got_brotli, &barrier, &bytes);
+    connect_with_compression(&test_counter, "gzip", Gzip, got_gzip, &barrier, &bytes);
+    connect_with_compression(&test_counter, "none", None, got_none, &barrier, &bytes);
     test_counter.wait_for_all();
 }

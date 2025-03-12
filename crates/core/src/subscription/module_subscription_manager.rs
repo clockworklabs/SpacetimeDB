@@ -15,7 +15,7 @@ use hashbrown::hash_map::OccupiedError;
 use hashbrown::{HashMap, HashSet};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use spacetimedb_client_api_messages::websocket::{
-    BsatnFormat, CompressableQueryUpdate, FormatSwitch, JsonFormat, QueryId, QueryUpdate, WebsocketFormat,
+    BsatnFormat, CompressableQueryUpdate, Compression, FormatSwitch, JsonFormat, QueryId, QueryUpdate, WebsocketFormat,
 };
 use spacetimedb_data_structures::map::{Entry, IntMap};
 use spacetimedb_lib::metrics::ExecutionMetrics;
@@ -485,13 +485,15 @@ impl SubscriptionManager {
                 .map(|(hash, plan, mut metrics)| {
                     let table_id = plan.subscribed_table_id();
                     let table_name: Box<str> = plan.subscribed_table_name().into();
-                    // Store at most one copy of the serialization to BSATN
+                    // Store at most one copy of the serialization to BSATN x Compression
                     // and ditto for the "serialization" for JSON.
                     // Each subscriber gets to pick which of these they want,
-                    // but we only fill `ops_bin` and `ops_json` at most once.
+                    // but we only fill `ops_bin_{compression}` and `ops_json` at most once.
                     // The former will be `Some(_)` if some subscriber uses `Protocol::Binary`
                     // and the latter `Some(_)` if some subscriber uses `Protocol::Text`.
-                    let mut ops_bin: Option<(CompressableQueryUpdate<BsatnFormat>, _, _)> = None;
+                    let mut ops_bin_brotli: Option<(CompressableQueryUpdate<BsatnFormat>, _, _)> = None;
+                    let mut ops_bin_gzip: Option<(CompressableQueryUpdate<BsatnFormat>, _, _)> = None;
+                    let mut ops_bin_none: Option<(CompressableQueryUpdate<BsatnFormat>, _, _)> = None;
                     let mut ops_json: Option<(QueryUpdate<JsonFormat>, _, _)> = None;
 
                     fn memo_encode<F: WebsocketFormat>(
@@ -537,7 +539,11 @@ impl SubscriptionManager {
                                         Protocol::Binary => Bsatn(memo_encode::<BsatnFormat>(
                                             &delta_updates,
                                             client,
-                                            &mut ops_bin,
+                                            match client.config.compression {
+                                                Compression::Brotli => &mut ops_bin_brotli,
+                                                Compression::Gzip => &mut ops_bin_gzip,
+                                                Compression::None => &mut ops_bin_none,
+                                            },
                                             &mut metrics,
                                         )),
                                         Protocol::Text => Json(memo_encode::<JsonFormat>(

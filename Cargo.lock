@@ -6017,6 +6017,7 @@ version = "1.0.1"
 dependencies = [
  "anyhow",
  "env_logger",
+ "rand 0.8.5",
  "spacetimedb-sdk",
  "test-counter",
  "tokio",
