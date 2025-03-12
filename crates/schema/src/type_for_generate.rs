@@ -305,7 +305,7 @@ pub enum AlgebraicTypeUse {
     Ref(AlgebraicTypeRef),
 
     /// The type of array values where elements are of a base type `elem_ty`.
-    /// Values [`AlgebraicValue::Array(array)`](crate::AlgebraicValue::Array) will have this type.
+    /// Values [`AlgebraicValue::Array(array)`](spacetimedb_sats::AlgebraicValue::Array) will have this type.
     Array(Arc<AlgebraicTypeUse>),
 
     /// A standard structural option type.

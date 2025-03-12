@@ -481,9 +481,9 @@ struct PsqlNamedFormatter<'a, 'f> {
     f: EntryWrapper<'a, 'f, ','>,
     /// The index of the element.
     idx: usize,
-    /// If is not [Self::is_bytes_or_special] to control if we start with `(`
+    /// If is not [ProductType::is_special_tag] to control if we start with `(`
     start: bool,
-    /// For checking [Self::is_bytes_or_special]
+    /// For checking [ProductType::is_special_tag]
     ty: &'a ProductType,
     /// If the current element is a special type.
     is_special: bool,
