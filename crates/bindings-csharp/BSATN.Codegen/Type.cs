@@ -144,7 +144,11 @@ public abstract record BaseTypeDeclaration<M>
         );
     }
 
-    public static string JoinOrValue(string join, IEnumerable<String> stringArray, string resultIfArrayEmpty)
+    public static string JoinOrValue(
+        string join,
+        IEnumerable<String> stringArray,
+        string resultIfArrayEmpty
+    )
     {
         if (stringArray.Any())
         {
