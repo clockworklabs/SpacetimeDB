@@ -297,7 +297,7 @@ public abstract record BaseTypeDeclaration<M>
             write = "value.WriteFields(writer);";
 
             getHashCode = $$"""
-                return {{JoinOrElse(
+                return {{JoinOrValue(
                     " ^\n            ",
                     bsatnDecls.Select(decl =>
                     {
@@ -357,7 +357,7 @@ public abstract record BaseTypeDeclaration<M>
             #nullable enable
                 public bool Equals({{fullNameMaybeRef}} that)
                 {
-                    {{(Scope.IsStruct ? "" : "if (((object?)that) == null) { return false; }\n        ")}}return {{JoinOrElse(
+                    {{(Scope.IsStruct ? "" : "if (((object?)that) == null) { return false; }\n        ")}}return {{JoinOrValue(
                         " &&\n        ",
                         bsatnDecls.Select(member =>
                         {

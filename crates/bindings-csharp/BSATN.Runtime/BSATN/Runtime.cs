@@ -460,7 +460,7 @@ public static class StringUtil
 {
     /// <summary>
     /// Convert an arbitrary object to a string:
-    /// - Printing <c>null<c> instead of empty string for null objects
+    /// - Printing <c>null</c> instead of empty string for null objects
     /// - Quoting strings
     /// - Printing list contents as <c>$"[ {list[0].ToString()} {list[1].ToString()} {...} {list[n-1].ToString()} ]"</c>,
     ///     printing at most 16 elements of the list, with an ellipsis in the middle if there
