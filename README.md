@@ -118,6 +118,37 @@ Installing on Windows is as simple as pasting the above snippet into PowerShell.
 iwr https://windows.spacetimedb.com -useb | iex
 ```
 
+### Installing from Source
+
+## MacOS + Linux
+
+Installing on MacOS + Linux is pretty straighforward. First we are going to build all of the binaries that we need:
+
+```bash
+# Install rustup, you can skip this step if you have cargo and the wasm32-unknown-unknown target already installed.
+curl https://sh.rustup.rs -sSf | sh
+# Clone SpacetimeDB
+git clone https://github.com/clockworklabs/SpacetimeDB
+# Build and install the CLI
+cd SpacetimeDB
+cargo build --locked --release -p spacetimedb-standalone -p spacetimedb-update -p spacetimedb-cli
+
+# Create directories
+mkdir -p ~/.local/bin
+export STDB_VERSION="$(./target/release/spacetimedb-cli --version | sed -n 's/.*spacetimedb tool version \([0-9.]*\);.*/\1/p')"
+mkdir -p ~/.local/share/spacetime/bin/$STDB_VERSION
+
+# Install the update binary
+cp target/release/spacetimedb-update ~/.local/bin/spacetime
+cp target/release/spacetimedb-cli ~/.local/share/spacetime/bin/$STDB_VERSION
+cp target/release/spacetimedb-standalone ~/.local/share/spacetime/bin/$STDB_VERSION
+
+# Set the current version
+spacetime version use $STDB_VERSION
+```
+
+You can verify that the correct version has been installed via `spacetime --version`.
+
 #### Running with Docker
 
 If you prefer to run Spacetime in a container, you can use the following command to start a new instance.
