@@ -534,14 +534,6 @@ pub use spacetimedb_bindings_macro::table;
 /// If an error occurs in the disconnect reducer,
 /// the client is still recorded as disconnected.
 ///
-/// ### The `update` reducer
-///
-/// This reducer is marked with `#[spacetimedb::reducer(update)]`. It is run when the module is updated,
-/// i.e., when publishing a module for a database that has already been initialized.
-///
-/// If an error occurs when updating, the module will not be published,
-/// and the previous version of the module attached to the database will continue executing.
-///
 /// # Scheduled reducers
 ///
 /// In addition to life cycle annotations, reducers can be made **scheduled**.
@@ -694,8 +686,8 @@ pub struct ReducerContext {
     /// `None` if no `ConnectionId` was supplied to the `/database/call` HTTP endpoint,
     /// or via the CLI's `spacetime call` subcommand.
     ///
-    /// For automatic reducers, i.e. `init`, `update` and scheduled reducers,
-    /// this will be the module's `Address`.
+    /// For automatic reducers, i.e. `init`, `client_connected`, `client_disconnected`, and scheduled reducers,
+    /// this will be the module's `ConnectionId`.
     pub connection_id: Option<ConnectionId>,
 
     /// Allows accessing the local database attached to a module.
