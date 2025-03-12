@@ -118,9 +118,9 @@ Installing on Windows is as simple as pasting the above snippet into PowerShell.
 iwr https://windows.spacetimedb.com -useb | iex
 ```
 
-### Installing from Source
+#### Installing from Source
 
-## MacOS + Linux
+##### MacOS + Linux
 
 Installing on MacOS + Linux is pretty straighforward. First we are going to build all of the binaries that we need:
 
@@ -149,7 +149,7 @@ spacetime version use $STDB_VERSION
 
 You can verify that the correct version has been installed via `spacetime --version`.
 
-## Windows
+##### Windows
 
 Building on windows is a bit more complicated. You'll need a slighly different version of perl compared to what comes pre-bundled in most windows terminals. We recommend [Strawberry Perl](https://strawberryperl.com/). You may also need access to an `openssl` binary which actually comes pre-installed with [Git for Windows](https://git-scm.com/downloads/win). Also you'll need to install [rustup](https://rustup.rs/) for Windows.
 
