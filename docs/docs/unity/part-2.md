@@ -215,7 +215,7 @@ public partial struct Circle
     public uint player_id;
     public DbVector2 direction;
     public float speed;
-    public ulong last_split_time;
+    public SpacetimeDB.Timestamp last_split_time;
 }
 
 [Table(Name = "food", Public = true)]
