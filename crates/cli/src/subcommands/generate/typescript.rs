@@ -323,7 +323,7 @@ removeOnUpdate = (cb: (ctx: EventContext, onRow: {row_type}, newRow: {row_type})
             writeln!(out, "tableName: \"{}\",", table.name);
             writeln!(out, "rowType: {row_type}.getTypeScriptAlgebraicType(),");
             if let Some(pk) = schema.pk() {
-                writeln!(out, "primaryKey: \"{}\",", pk.col_name);
+                writeln!(out, "primaryKey: \"{}\",", pk.col_name.deref().to_case(Case::Camel));
             }
             out.dedent(1);
             writeln!(out, "}},");
