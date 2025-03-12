@@ -1,56 +1,22 @@
 # The SpacetimeDB C# client SDK
 
-The SpacetimeDB client C# for Rust contains all the tools you need to build native clients for SpacetimeDB modules using C#.
+The SpacetimeDB client for C# contains all the tools you need to build native clients for SpacetimeDB modules using C#.
 
-## Table of Contents
+| Name                                                    | Description                                                               |
+|---------------------------------------------------------|---------------------------------------------------------------------------|
+| [Project setup](#project-setup)                         | Configure a C# project to use the SpacetimeDB C# client SDK.              |
+| [Generate module bindings](#generate-module-bindings)   | Use the SpacetimeDB CLI to generate module-specific types and interfaces. |
+| [`DbConnection` type](#type-dbconnection)               | A connection to a remote database.                                        |
+| [`IDbContext` interface](#interface-idbcontext)         | Methods for interacting with the remote database.                         |
+| [`EventContext` type](#type-eventcontext)               | Implements [`IDbContext`](##interface-idbcontext) for [row callbacks](#callback-oninsert). |
+| [`ReducerEventContext` type](#type-reducereventcontext) | Implements [`IDbContext`](##interface-idbcontext) for [reducer callbacks](#observe-and-invoke-reducers). |
+| [`SubscriptionEventContext` type](#type-subscriptioneventcontext) | Implements [`IDbContext`](##interface-idbcontext) for [subscription callbacks](#subscribe-to-queries). |
+| [`ErrorContext` type](#type-errorcontext)                   | Implements [`IDbContext`](##interface-idbcontext) for error-related callbacks. |
+| [Access the client cache](#access-the-client-cache)         | Access to your local view of the database. |
+| [Observe and invoke reducers](#observe-and-invoke-reducers) | Send requests to the database to run reducers, and register callbacks to run when notified of reducers. |
+| [Identify a client](#identify-a-client)                     | Types for identifying users and client connections. |
 
-- [The SpacetimeDB C# client SDK](#the-spacetimedb-c-client-sdk)
-  - [Table of Contents](#table-of-contents)
-  - [Install the SDK](#install-the-sdk)
-    - [Using the `dotnet` CLI tool](#using-the-dotnet-cli-tool)
-    - [Using Unity](#using-unity)
-  - [Generate module bindings](#generate-module-bindings)
-  - [Initialization](#initialization)
-    - [Property `SpacetimeDBClient.instance`](#property-spacetimedbclientinstance)
-    - [Class `NetworkManager`](#class-networkmanager)
-    - [Method `SpacetimeDBClient.Connect`](#method-spacetimedbclientconnect)
-    - [Event `SpacetimeDBClient.onIdentityReceived`](#event-spacetimedbclientonidentityreceived)
-    - [Event `SpacetimeDBClient.onConnect`](#event-spacetimedbclientonconnect)
-  - [Subscribe to queries](#subscribe-to-queries)
-    - [Method `SpacetimeDBClient.Subscribe`](#method-spacetimedbclientsubscribe)
-    - [Event `SpacetimeDBClient.onSubscriptionApplied`](#event-spacetimedbclientonsubscriptionapplied)
-    - [Method \[`SpacetimeDBClient.OneOffQuery`\]](#method-spacetimedbclientoneoffquery)
-  - [View rows of subscribed tables](#view-rows-of-subscribed-tables)
-    - [Class `{TABLE}`](#class-table)
-      - [Static Method `{TABLE}.Iter`](#static-method-tableiter)
-      - [Static Method `{TABLE}.FilterBy{COLUMN}`](#static-method-tablefilterbycolumn)
-      - [Static Method `{TABLE}.FindBy{COLUMN}`](#static-method-tablefindbycolumn)
-      - [Static Method `{TABLE}.Count`](#static-method-tablecount)
-      - [Static Event `{TABLE}.OnInsert`](#static-event-tableoninsert)
-      - [Static Event `{TABLE}.OnBeforeDelete`](#static-event-tableonbeforedelete)
-      - [Static Event `{TABLE}.OnDelete`](#static-event-tableondelete)
-      - [Static Event `{TABLE}.OnUpdate`](#static-event-tableonupdate)
-  - [Observe and invoke reducers](#observe-and-invoke-reducers)
-    - [Class `Reducer`](#class-reducer)
-      - [Static Method `Reducer.{REDUCER}`](#static-method-reducerreducer)
-      - [Static Event `Reducer.On{REDUCER}`](#static-event-reduceronreducer)
-    - [Class `ReducerEvent`](#class-reducerevent)
-      - [Enum `Status`](#enum-status)
-        - [Variant `Status.Committed`](#variant-statuscommitted)
-        - [Variant `Status.Failed`](#variant-statusfailed)
-        - [Variant `Status.OutOfEnergy`](#variant-statusoutofenergy)
-  - [Identity management](#identity-management)
-    - [Class `AuthToken`](#class-authtoken)
-      - [Static Method `AuthToken.Init`](#static-method-authtokeninit)
-      - [Static Property `AuthToken.Token`](#static-property-authtokentoken)
-      - [Static Method `AuthToken.SaveToken`](#static-method-authtokensavetoken)
-    - [Class `Identity`](#class-identity)
-  - [Customizing logging](#customizing-logging)
-    - [Interface `ISpacetimeDBLogger`](#interface-ispacetimedblogger)
-    - [Class `ConsoleLogger`](#class-consolelogger)
-    - [Class `UnityDebugLogger`](#class-unitydebuglogger)
-
-## Install the SDK
+## Project setup
 
 ### Using the `dotnet` CLI tool
 
@@ -81,853 +47,878 @@ spacetime generate --lang cs --out-dir module_bindings --project-path PATH-TO-MO
 
 Replace `PATH-TO-MODULE-DIRECTORY` with the path to your SpacetimeDB module.
 
-## Initialization
+## Type `DbConnection`
 
-### Property `SpacetimeDBClient.instance`
+A connection to a remote database is represented by the `DbConnection` class. This class is generated per module and contains information about the types, tables, and reducers defined by your module.
 
-```cs
-namespace SpacetimeDB {
+| Name                                                                   | Description                                                                   |
+|------------------------------------------------------------------------|-------------------------------------------------------------------------------|
+| [Connect to a module](#connect-to-a-module)                            | Construct a `DbConnection` instance.                                          |
+| [Advance the connection](#advance-the-connection-and-process-messages) | Poll the `DbConnection` or run it in the background.                          |
+| [Access tables and reducers](#access-tables-and-reducers)              | Access the client cache, request reducer invocations, and register callbacks. |
 
-public class SpacetimeDBClient {
-    public static SpacetimeDBClient instance;
-}
-
-}
-```
-
-This is the global instance of a SpacetimeDB client in a particular .NET/Unity process. Much of the SDK is accessible through this instance.
-
-### Class `NetworkManager`
-
-The Unity SpacetimeDB SDK relies on there being a `NetworkManager` somewhere in the scene. Click on the GameManager object in the scene, and in the inspector, add the `NetworkManager` component.
-
-This component will handle updating and closing the [`SpacetimeDBClient.instance`](#property-spacetimedbclientinstance) for you, but will not call [`SpacetimeDBClient.Connect`](#method-spacetimedbclientconnect), you still need to handle that yourself. See the [Unity Tutorial](/docs/unity) for more information.
-
-### Method `SpacetimeDBClient.Connect`
-
-```cs
-namespace SpacetimeDB {
-
-class SpacetimeDBClient {
-    public void Connect(
-        string? token,
-        string host,
-        string addressOrName,
-        bool sslEnabled = true
-    );
-}
-
-}
-```
-
-<!-- FIXME: `token` is not currently marked as nullable in the API, but it should be. -->
-
-Connect to a database named `addressOrName` accessible over the internet at the URI `host`.
-
-| Argument        | Type      | Meaning                                                                    |
-| --------------- | --------- | -------------------------------------------------------------------------- |
-| `token`         | `string?` | Identity token to use, if one is available.                                |
-| `host`          | `string`  | URI of the SpacetimeDB instance running the module.                        |
-| `addressOrName` | `string`  | Address or name of the module.                                             |
-| `sslEnabled`    | `bool`    | Whether or not to use SSL when connecting to SpacetimeDB. Default: `true`. |
-
-If a `token` is supplied, it will be passed to the new connection to identify and authenticate the user. Otherwise, a new token and [`Identity`](#class-identity) will be generated by the server and returned in [`onConnect`](#event-spacetimedbclientonconnect).
-
-```cs
-using SpacetimeDB;
-using SpacetimeDB.Types;
-
-const string DBNAME = "chat";
-
-// Connect to a local DB with a fresh identity
-SpacetimeDBClient.instance.Connect(null, "localhost:3000", DBNAME, false);
-
-// Connect to cloud with a fresh identity
-SpacetimeDBClient.instance.Connect(null, "dev.spacetimedb.net", DBNAME, true);
-
-// Connect to cloud using a saved identity from the filesystem, or get a new one and save it
-AuthToken.Init();
-Identity localIdentity;
-SpacetimeDBClient.instance.Connect(AuthToken.Token, "dev.spacetimedb.net", DBNAME, true);
-SpacetimeDBClient.instance.onIdentityReceived += (string authToken, Identity identity, Address address) {
-    AuthToken.SaveToken(authToken);
-    localIdentity = identity;
-}
-```
-
-(You should probably also store the returned `Identity` somewhere; see the [`onIdentityReceived`](#event-spacetimedbclientonidentityreceived) event.)
-
-### Event `SpacetimeDBClient.onIdentityReceived`
-
-```cs
-namespace SpacetimeDB {
-
-class SpacetimeDBClient {
-    public event Action<string, Identity, Address> onIdentityReceived;
-}
-
-}
-```
-
-Called when we receive an auth token, [`Identity`](#class-identity) and `Address` from the server. The [`Identity`](#class-identity) serves as a unique public identifier for a user of the database. It can be for several purposes, such as filtering rows in a database for the rows created by a particular user. The auth token is a private access token that allows us to assume an identity. The `Address` is opaque identifier for a client connection to a database, intended to differentiate between connections from the same [`Identity`](#class-identity).
-
-To store the auth token to the filesystem, use the static method [`AuthToken.SaveToken`](#static-method-authtokensavetoken). You may also want to store the returned [`Identity`](#class-identity) in a local variable.
-
-If an existing auth token is used to connect to the database, the same auth token and the identity it came with will be returned verbatim in `onIdentityReceived`.
-
-```cs
-// Connect to cloud using a saved identity from the filesystem, or get a new one and save it
-AuthToken.Init();
-Identity localIdentity;
-SpacetimeDBClient.instance.Connect(AuthToken.Token, "dev.spacetimedb.net", DBNAME, true);
-SpacetimeDBClient.instance.onIdentityReceived += (string authToken, Identity identity, Address address) {
-    AuthToken.SaveToken(authToken);
-    localIdentity = identity;
-}
-```
-
-### Event `SpacetimeDBClient.onConnect`
-
-```cs
-namespace SpacetimeDB {
-
-class SpacetimeDBClient {
-    public event Action onConnect;
-}
-
-}
-```
-
-Allows registering delegates to be invoked upon authentication with the database.
-
-Once this occurs, the SDK is prepared for calls to [`SpacetimeDBClient.Subscribe`](#method-spacetimedbclientsubscribe).
-
-## Subscribe to queries
-
-### Method `SpacetimeDBClient.Subscribe`
-
-```cs
-namespace SpacetimeDB {
-
-class SpacetimeDBClient {
-    public void Subscribe(List<string> queries);
-}
-
-}
-```
-
-| Argument  | Type           | Meaning                      |
-| --------- | -------------- | ---------------------------- |
-| `queries` | `List<string>` | SQL queries to subscribe to. |
-
-Subscribe to a set of queries, to be notified when rows which match those queries are altered.
-
-`Subscribe` will return an error if called before establishing a connection with the [`SpacetimeDBClient.Connect`](#method-spacetimedbclientconnect) function. In that case, the queries are not registered.
-
-The `Subscribe` method does not return data directly. `spacetime generate` will generate classes [`SpacetimeDB.Types.{TABLE}`](#class-table) for each table in your module. These classes are used to reecive information from the database. See the section [View Rows of Subscribed Tables](#view-rows-of-subscribed-tables) for more information.
-
-A new call to `Subscribe` will remove all previous subscriptions and replace them with the new `queries`. If any rows matched the previous subscribed queries but do not match the new queries, those rows will be removed from the client cache, and [`{TABLE}.OnDelete`](#static-event-tableoninsert) callbacks will be invoked for them.
-
-```cs
-using SpacetimeDB;
-using SpacetimeDB.Types;
-
-void Main()
-{
-    AuthToken.Init();
-
-    SpacetimeDBClient.instance.onConnect += OnConnect;
-
-    // Our module contains a table named "Loot"
-    Loot.OnInsert += Loot_OnInsert;
-
-    SpacetimeDBClient.instance.Connect(/* ... */);
-}
-
-void OnConnect()
-{
-    SpacetimeDBClient.instance.Subscribe(new List<string> {
-        "SELECT * FROM Loot"
-    });
-}
-
-void Loot_OnInsert(
-    Loot loot,
-    ReducerEvent? event
-) {
-    Console.Log($"Loaded loot {loot.itemType} at coordinates {loot.position}");
-}
-```
-
-### Event `SpacetimeDBClient.onSubscriptionApplied`
-
-```cs
-namespace SpacetimeDB {
-
-class SpacetimeDBClient {
-    public event Action onSubscriptionApplied;
-}
-
-}
-```
-
-Register a delegate to be invoked when a subscription is registered with the database.
-
-```cs
-using SpacetimeDB;
-
-void OnSubscriptionApplied()
-{
-    Console.WriteLine("Now listening on queries.");
-}
-
-void Main()
-{
-    // ...initialize...
-    SpacetimeDBClient.instance.onSubscriptionApplied += OnSubscriptionApplied;
-}
-```
-
-### Method [`SpacetimeDBClient.OneOffQuery`]
-
-You may not want to subscribe to a query, but instead want to run a query once and receive the results immediately via a `Task` result:
+## Connect to a module
 
 ```csharp
-// Query all Messages from the sender "bob"
-SpacetimeDBClient.instance.OneOffQuery<Message>("WHERE sender = \"bob\"");
-```
-
-## View rows of subscribed tables
-
-The SDK maintains a local view of the database called the "client cache". This cache contains whatever rows are selected via a call to [`SpacetimeDBClient.Subscribe`](#method-spacetimedbclientsubscribe). These rows are represented in the SpacetimeDB .Net SDK as instances of [`SpacetimeDB.Types.{TABLE}`](#class-table).
-
-ONLY the rows selected in a [`SpacetimeDBClient.Subscribe`](#method-spacetimedbclientsubscribe) call will be available in the client cache. All operations in the client sdk operate on these rows exclusively, and have no information about the state of the rest of the database.
-
-In particular, SpacetimeDB does not support foreign key constraints. This means that if you are using a column as a foreign key, SpacetimeDB will not automatically bring in all of the rows that key might reference. You will need to manually subscribe to all tables you need information from.
-
-To optimize network performance, prefer selecting as few rows as possible in your [`Subscribe`](#method-spacetimedbclientsubscribe) query. Processes that need to view the entire state of the database are better run inside the database -- that is, inside modules.
-
-### Class `{TABLE}`
-
-For each table defined by a module, `spacetime generate` will generate a class [`SpacetimeDB.Types.{TABLE}`](#class-table) whose name is that table's name converted to `PascalCase`. The generated class contains a property for each of the table's columns, whose names are the column names converted to `camelCase`. It also contains various static events and methods.
-
-Static Methods:
-
-- [`{TABLE}.Iter()`](#static-method-tableiter) iterates all subscribed rows in the client cache.
-- [`{TABLE}.FilterBy{COLUMN}(value)`](#static-method-tablefilterbycolumn) filters subscribed rows in the client cache by a column value.
-- [`{TABLE}.FindBy{COLUMN}(value)`](#static-method-tablefindbycolumn) finds a subscribed row in the client cache by a unique column value.
-- [`{TABLE}.Count()`](#static-method-tablecount) counts the number of subscribed rows in the client cache.
-
-Static Events:
-
-- [`{TABLE}.OnInsert`](#static-event-tableoninsert) is called when a row is inserted into the client cache.
-- [`{TABLE}.OnBeforeDelete`](#static-event-tableonbeforedelete) is called when a row is about to be removed from the client cache.
-- If the table has a primary key attribute, [`{TABLE}.OnUpdate`](#static-event-tableonupdate) is called when a row is updated.
-- [`{TABLE}.OnDelete`](#static-event-tableondelete) is called while a row is being removed from the client cache. You should almost always use [`{TABLE}.OnBeforeDelete`](#static-event-tableonbeforedelete) instead.
-
-Note that it is not possible to directly insert into the database from the client SDK! All insertion validation should be performed inside serverside modules for security reasons. You can instead [invoke reducers](#observe-and-invoke-reducers), which run code inside the database that can insert rows for you.
-
-#### Static Method `{TABLE}.Iter`
-
-```cs
-namespace SpacetimeDB.Types {
-
-class TABLE {
-    public static IEnumerable<TABLE> Iter();
-}
-
+class DbConnection
+{
+    public static DbConnectionBuilder<DbConnection> Builder();
 }
 ```
 
-Iterate over all the subscribed rows in the table. This method is only available after [`SpacetimeDBClient.onSubscriptionApplied`](#event-spacetimedbclientonsubscriptionapplied) has occurred.
+Construct a `DbConnection` by calling `DbConnection.Builder()`, chaining configuration methods, and finally calling `.Build()`. At a minimum, you must specify `WithUri` to provide the URI of the SpacetimeDB instance, and `WithModuleName` to specify the module's name or identity.
 
-When iterating over rows and filtering for those containing a particular column, [`{TABLE}.FilterBy{COLUMN}`](#static-method-tablefilterbycolumn) and [`{TABLE}.FindBy{COLUMN}`](#static-method-tablefindbycolumn) will be more efficient, so prefer those when possible.
+| Name                                                    | Description                                                                                |
+|---------------------------------------------------------|--------------------------------------------------------------------------------------------|
+| [WithUri method](#method-withuri)                       | Set the URI of the SpacetimeDB instance hosting the remote database.                       |
+| [WithModuleName method](#method-withmodulename)         | Set the name or identity of the remote module.                                             |
+| [OnConnect callback](#callback-onconnect)               | Register a callback to run when the connection is successfully established.                |
+| [OnConnectError callback](#callback-onconnecterror)     | Register a callback to run if the connection is rejected or the host is unreachable.       |
+| [OnDisconnect callback](#callback-ondisconnect)         | Register a callback to run when the connection ends.                                       |
+| [WithToken method](#method-withtoken)                   | Supply a token to authenticate with the remote database.                                   |
+| [Build method](#method-build)                           | Finalize configuration and open the connection.                                            |
 
-```cs
-using SpacetimeDB;
-using SpacetimeDB.Types;
+### Method `WithUri`
 
-SpacetimeDBClient.instance.onConnect += (string authToken, Identity identity) => {
-    SpacetimeDBClient.instance.Subscribe(new List<string> { "SELECT * FROM User" });
-};
-SpacetimeDBClient.instance.onSubscriptionApplied += () => {
-    // Will print a line for each `User` row in the database.
-    foreach (var user in User.Iter()) {
-        Console.WriteLine($"User: {user.Name}");
-    }
-};
-SpacetimeDBClient.instance.connect(/* ... */);
-```
-
-#### Static Method `{TABLE}.FilterBy{COLUMN}`
-
-```cs
-namespace SpacetimeDB.Types {
-
-class TABLE {
-    public static IEnumerable<TABLE> FilterBySender(COLUMNTYPE value);
-}
-
+```csharp
+class DbConnectionBuilder<DbConnection>
+{
+    public DbConnectionBuilder<DbConnection> WithUri(Uri uri);
 }
 ```
 
-For each column of a table, `spacetime generate` generates a static method on the [table class](#class-table) to filter subscribed rows where that column matches a requested value.
+Configure the URI of the SpacetimeDB instance or cluster which hosts the remote module.
 
-These methods are named `filterBy{COLUMN}`, where `{COLUMN}` is the column name converted to `PascalCase`. The method's return type is an `IEnumerable` over the [table class](#class-table).
+### Method `WithModuleName`
 
-#### Static Method `{TABLE}.FindBy{COLUMN}`
-
-```cs
-namespace SpacetimeDB.Types {
-
-class TABLE {
-    // If the column has a #[unique] or #[primarykey] constraint
-    public static TABLE? FindBySender(COLUMNTYPE value);
-}
-
+```csharp
+class DbConnectionBuilder
+{
+    public DbConnectionBuilder<DbConnection> WithModuleName(string nameOrIdentity);
 }
 ```
 
-For each unique column of a table (those annotated `#[unique]` or `#[primarykey]`), `spacetime generate` generates a static method on the [table class](#class-table) to seek a subscribed row where that column matches a requested value.
+Configure the SpacetimeDB domain name or `Identity` of the remote module which identifies it within the SpacetimeDB instance or cluster.
 
-These methods are named `findBy{COLUMN}`, where `{COLUMN}` is the column name converted to `PascalCase`. Those methods return a single instance of the [table class](#class-table) if a row is found, or `null` if no row matches the query.
+### Callback `OnConnect`
 
-#### Static Method `{TABLE}.Count`
-
-```cs
-namespace SpacetimeDB.Types {
-
-class TABLE {
-    public static int Count();
-}
-
+```csharp
+class DbConnectionBuilder<DbConnection>
+{
+    public DbConnectionBuilder<DbConnection> OnConnect(Action<DbConnection, Identity, string> callback);
 }
 ```
 
-Return the number of subscribed rows in the table, or 0 if there is no active connection.
+Chain a call to `.OnConnect(callback)` to your builder to register a callback to run when your new `DbConnection` successfully initiates its connection to the remote module. The callback accepts three arguments: a reference to the `DbConnection`, the `Identity` by which SpacetimeDB identifies this connection, and a private access token which can be saved and later passed to [`WithToken`](#method-withtoken) to authenticate the same user in future connections.
 
-```cs
-using SpacetimeDB;
-using SpacetimeDB.Types;
+### Callback `OnConnectError`
 
-SpacetimeDBClient.instance.onConnect += (string authToken, Identity identity) => {
-    SpacetimeDBClient.instance.Subscribe(new List<string> { "SELECT * FROM User" });
-};
-SpacetimeDBClient.instance.onSubscriptionApplied += () => {
-    Console.WriteLine($"There are {User.Count()} users in the database.");
-};
-SpacetimeDBClient.instance.connect(/* ... */);
-```
-
-#### Static Event `{TABLE}.OnInsert`
-
-```cs
-namespace SpacetimeDB.Types {
-
-class TABLE {
-    public delegate void InsertEventHandler(
-        TABLE insertedValue,
-        ReducerEvent? dbEvent
-    );
-    public static event InsertEventHandler OnInsert;
-}
-
+```csharp
+class DbConnectionBuilder<DbConnection>
+{
+    public DbConnectionBuilder<DbConnection> OnConnectError(Action<ErrorContext, SpacetimeDbException> callback);
 }
 ```
 
-Register a delegate for when a subscribed row is newly inserted into the database.
+Chain a call to `.OnConnectError(callback)` to your builder to register a callback to run when your connection fails.
 
-The delegate takes two arguments:
+A known bug in the SpacetimeDB Rust client SDK currently causes this callback never to be invoked. [`OnDisconnect`](#callback-ondisconnect) callbacks are invoked instead.
 
-- A [`{TABLE}`](#class-table) instance with the data of the inserted row
-- A [`ReducerEvent?`], which contains the data of the reducer that inserted the row, or `null` if the row is being inserted while initializing a subscription.
+### Callback `OnDisconnect`
 
-```cs
-using SpacetimeDB;
-using SpacetimeDB.Types;
-
-/* initialize, subscribe to table User... */
-
-User.OnInsert += (User user, ReducerEvent? reducerEvent) => {
-    if (reducerEvent == null) {
-        Console.WriteLine($"New user '{user.Name}' received during subscription update.");
-    } else {
-        Console.WriteLine($"New user '{user.Name}' inserted by reducer {reducerEvent.Reducer}.");
-    }
-};
-```
-
-#### Static Event `{TABLE}.OnBeforeDelete`
-
-```cs
-namespace SpacetimeDB.Types {
-
-class TABLE {
-    public delegate void DeleteEventHandler(
-        TABLE deletedValue,
-        ReducerEvent dbEvent
-    );
-    public static event DeleteEventHandler OnBeforeDelete;
-}
-
+```csharp
+class DbConnectionBuilder<DbConnection>
+{
+    public DbConnectionBuilder<DbConnection> OnDisconnect(Action<ErrorContext, SpacetimeDbException> callback);
 }
 ```
 
-Register a delegate for when a subscribed row is about to be deleted from the database. If a reducer deletes many rows at once, this delegate will be invoked for each of those rows before any of them is deleted.
+Chain a call to `.OnDisconnect(callback)` to your builder to register a callback to run when your `DbConnection` disconnects from the remote module, either as a result of a call to [`Disconnect`](#method-disconnect) or due to an error.
 
-The delegate takes two arguments:
+### Method `WithToken`
 
-- A [`{TABLE}`](#class-table) instance with the data of the deleted row
-- A [`ReducerEvent`](#class-reducerevent), which contains the data of the reducer that deleted the row.
-
-This event should almost always be used instead of [`OnDelete`](#static-event-tableondelete). This is because often, many rows will be deleted at once, and `OnDelete` can be invoked in an arbitrary order on these rows. This means that data related to a row may already be missing when `OnDelete` is called. `OnBeforeDelete` does not have this problem.
-
-```cs
-using SpacetimeDB;
-using SpacetimeDB.Types;
-
-/* initialize, subscribe to table User... */
-
-User.OnBeforeDelete += (User user, ReducerEvent reducerEvent) => {
-    Console.WriteLine($"User '{user.Name}' deleted by reducer {reducerEvent.Reducer}.");
-};
-```
-
-#### Static Event `{TABLE}.OnDelete`
-
-```cs
-namespace SpacetimeDB.Types {
-
-class TABLE {
-    public delegate void DeleteEventHandler(
-        TABLE deletedValue,
-        SpacetimeDB.ReducerEvent dbEvent
-    );
-    public static event DeleteEventHandler OnDelete;
-}
-
+```csharp
+class DbConnectionBuilder<DbConnection>
+{
+    public DbConnectionBuilder<DbConnection> WithToken(string token = null);
 }
 ```
 
-Register a delegate for when a subscribed row is being deleted from the database. If a reducer deletes many rows at once, this delegate will be invoked on those rows in arbitrary order, and data for some rows may already be missing when it is invoked. For this reason, prefer the event [`{TABLE}.OnBeforeDelete`](#static-event-tableonbeforedelete).
+Chain a call to `.WithToken(token)` to your builder to provide an OpenID Connect compliant JSON Web Token to authenticate with, or to explicitly select an anonymous connection. If this method is not called or `None` is passed, SpacetimeDB will generate a new `Identity` and sign a new private access token for the connection.
 
-The delegate takes two arguments:
+### Method `Build`
 
-- A [`{TABLE}`](#class-table) instance with the data of the deleted row
-- A [`ReducerEvent`](#class-reducerevent), which contains the data of the reducer that deleted the row.
-
-```cs
-using SpacetimeDB;
-using SpacetimeDB.Types;
-
-/* initialize, subscribe to table User... */
-
-User.OnBeforeDelete += (User user, ReducerEvent reducerEvent) => {
-    Console.WriteLine($"User '{user.Name}' deleted by reducer {reducerEvent.Reducer}.");
-};
-```
-
-#### Static Event `{TABLE}.OnUpdate`
-
-```cs
-namespace SpacetimeDB.Types {
-
-class TABLE {
-    public delegate void UpdateEventHandler(
-        TABLE oldValue,
-        TABLE newValue,
-        ReducerEvent dbEvent
-    );
-    public static event UpdateEventHandler OnUpdate;
-}
-
+```csharp
+class DbConnectionBuilder<DbConnection>
+{
+    public DbConnection Build();
 }
 ```
 
-Register a delegate for when a subscribed row is being updated. This event is only available if the row has a column with the `#[primary_key]` attribute.
+After configuring the connection and registering callbacks, attempt to open the connection.
 
-The delegate takes three arguments:
+## Advance the connection and process messages
 
-- A [`{TABLE}`](#class-table) instance with the old data of the updated row
-- A [`{TABLE}`](#class-table) instance with the new data of the updated row
-- A [`ReducerEvent`](#class-reducerevent), which contains the data of the reducer that updated the row.
+In the interest of supporting a wide variety of client applications with different execution strategies, the SpacetimeDB SDK allows you to choose when the `DbConnection` spends compute time and processes messages. If you do not arrange for the connection to advance by calling one of these methods, the `DbConnection` will never advance, and no callbacks will ever be invoked.
 
-```cs
-using SpacetimeDB;
-using SpacetimeDB.Types;
+| Name                                        | Description                                           |
+|---------------------------------------------|-------------------------------------------------------|
+| [`FrameTick` method](#method-frametick)     | Process messages on the main thread without blocking. |
 
-/* initialize, subscribe to table User... */
+#### Method `FrameTick`
 
-User.OnUpdate += (User oldUser, User newUser, ReducerEvent reducerEvent) => {
-    Debug.Assert(oldUser.UserId == newUser.UserId, "Primary key never changes in an update");
+```csharp
+class DbConnection {
+    public void FrameTick();
+}
+```
 
-    Console.WriteLine($"User with ID {oldUser.UserId} had name changed "+
-    $"from '{oldUser.Name}' to '{newUser.Name}' by reducer {reducerEvent.Reducer}.");
-};
+`FrameTick` will advance the connection until no work remains or until it is disconnected, then return rather than blocking. Games might arrange for this message to be called every frame.
+
+It is not advised to run `FrameTick` on a background thread, since it modifies [`dbConnection.Db`](#property-db). If main thread code is also accessing the `Db`, it may observe data races when `FrameTick` runs on another thread.
+
+(Note that the SDK already does most of the work for parsing messages on a background thread. `FrameTick()` does the minimal amount of work needed to apply updates to the `Db`.)
+
+## Access tables and reducers
+
+### Property `Db`
+
+```csharp
+class DbConnection
+{
+    public RemoteTables Db;
+    /* other members */
+}
+```
+
+The `Db` property of the `DbConnection` provides access to the subscribed view of the remote database's tables. See [Access the client cache](#access-the-client-cache).
+
+### Property `Reducers`
+
+```csharp
+class DbConnection
+{
+    public RemoteReducers Reducers;
+    /* other members */
+}
+```
+
+The `Reducers` field of the `DbConnection` provides access to reducers exposed by the remote module. See [Observe and invoke reducers](#observe-and-invoke-reducers).
+
+## Interface `IDbContext`
+
+```csharp
+interface IDbContext<DbView, RemoteReducers, ..>
+{
+    /* methods */
+}
+```
+
+[`DbConnection`](#type-dbconnection), [`EventContext`](#type-eventcontext), [`ReducerEventContext`](#type-reducereventcontext), [`SubscriptionEventContext`](#type-subscriptioneventcontext) and [`ErrorContext`](#type-errorcontext) all implement `IDbContext`. `IDbContext` has methods for inspecting and configuring your connection to the remote database.
+
+The `IDbContext` interface is implemented by connections and contexts to *every* module - hence why it takes [`DbView`](#method-db) and [`RemoteReducers`](#method-reducers) as type parameters.
+
+| Name                                                          | Description                                                              |
+|---------------------------------------------------------------|--------------------------------------------------------------------------|
+| [`IRemoteDbContext` interface](#interface-iremotedbcontext)   | Module-specific `IDbContext`.                                            |
+| [`Db` method](#method-db)                                     | Provides access to the subscribed view of the remote database's tables.  |
+| [`Reducers` method](#method-reducers)                         | Provides access to reducers exposed by the remote module.                |
+| [`Disconnect` method](#method-disconnect)                     | End the connection.                                                      |
+| [Subscribe to queries](#subscribe-to-queries)                 | Register SQL queries to receive updates about matching rows.             |
+| [Read connection metadata](#read-connection-metadata)         | Access the connection's `Identity` and `ConnectionId`                    |
+
+### Interface `IRemoteDbContext`
+
+Each module's `module_bindings` exports an interface `IRemoteDbContext` which inherits from `IDbContext`, with the type parameters `DbView` and `RemoteReducers` bound to the types defined for that module. This can be more convenient when creating functions that can be called from any callback for a specific module, but which access the database or invoke reducers, and so must know the type of the `DbView` or `Reducers`.
+
+### Method `Db`
+
+```csharp
+interface IRemoteDbContext
+{
+    public DbView Db { get; }
+}
+```
+
+`Db` will have methods to access each table defined by the module.
+
+#### Example
+
+```csharp
+var conn = ConnectToDB();
+
+// Get a handle to the User table
+var tableHandle = conn.Db.User;
+```
+
+### Method `Reducers`
+
+```csharp
+interface IRemoteDbContext
+{
+    public RemoteReducers Reducers { get; }
+}
+```
+
+`Reducers` will have methods to invoke each reducer defined by the module,
+plus methods for adding and removing callbacks on each of those reducers.
+
+#### Example
+
+```csharp
+var conn = ConnectToDB();
+
+// Register a callback to be run every time the SendMessage reducer is invoked
+conn.Reducers.OnSendMessage += Reducer_OnSendMessageEvent;
+```
+
+### Method `Disconnect`
+
+```csharp
+interface IRemoteDbContext
+{
+    public void Disconnect();
+}
+```
+
+Gracefully close the `DbConnection`. Throws an error if the connection is already closed.
+
+### Subscribe to queries
+
+| Name                                                    | Description                                                 |
+|---------------------------------------------------------|-------------------------------------------------------------|
+| [`SubscriptionBuilder` type](#type-subscriptionbuilder) | Builder-pattern constructor to register subscribed queries. |
+| [`SubscriptionHandle` type](#type-subscriptionhandle)   | Manage an active subscripion.                               |
+
+#### Type `SubscriptionBuilder`
+
+| Name                                                                             | Description                                                     |
+|----------------------------------------------------------------------------------|-----------------------------------------------------------------|
+| [`ctx.SubscriptionBuilder()` constructor](#constructor-ctxsubscriptionbuilder)   | Begin configuring a new subscription.                           |
+| [`OnApplied` callback](#callback-onapplied)                                      | Register a callback to run when matching rows become available. |
+| [`OnError` callback](#callback-onerror)                                          | Register a callback to run if the subscription fails.           |
+| [`Subscribe` method](#method-subscribe)                                          | Finish configuration and subscribe to one or more SQL queries.  |
+| [`SubscribeToAllTables` method](#method-subscribetoalltables)                    | Convenience method to subscribe to the entire database.         |
+
+##### Constructor `ctx.SubscriptionBuilder()`
+
+```csharp
+interface IRemoteDbContext
+{
+    public SubscriptionBuilder SubscriptionBuilder();
+}
+```
+
+Subscribe to queries by calling `ctx.SubscriptionBuilder()` and chaining configuration methods, then calling `.Subscribe(queries)`.
+
+##### Callback `OnApplied`
+
+```csharp
+class SubscriptionBuilder
+{
+    public SubscriptionBuilder OnApplied(Action<SubscriptionEventContext> callback);
+}
+```
+
+Register a callback to run when the subscription is applied and the matching rows are inserted into the client cache.
+
+##### Callback `OnError`
+
+```csharp
+class SubscriptionBuilder
+{
+    public SubscriptionBuilder OnError(Action<ErrorContext, Exception> callback);
+}
+```
+
+Register a callback to run if the subscription is rejected or unexpectedly terminated by the server. This is most frequently caused by passing an invalid query to [`Subscribe`](#method-subscribe).
+
+
+##### Method `Subscribe`
+
+```csharp
+class SubscriptionBuilder
+{
+    public SubscriptionHandle Subscribe(string[] querySqls);
+}
+```
+
+Subscribe to a set of queries. `queries` should be an array of SQL query strings.
+
+See [the SpacetimeDB SQL Reference](/docs/sql#subscriptions) for information on the queries SpacetimeDB supports as subscriptions.
+
+##### Method `SubscribeToAllTables`
+
+```csharp
+class SubscriptionBuilder
+{
+    public void SubscribeToAllTables();
+}
+```
+
+Subscribe to all rows from all public tables. This method is provided as a convenience for simple clients. The subscription initiated by `SubscribeToAllTables` cannot be canceled after it is initiated. You should [`subscribe` to specific queries](#method-subscribe) if you need fine-grained control over the lifecycle of your subscriptions.
+
+#### Type `SubscriptionHandle`
+
+A `SubscriptionHandle` represents a subscribed query or a group of subscribed queries.
+
+The `SubscriptionHandle` does not contain or provide access to the subscribed rows. Subscribed rows of all subscriptions by a connection are contained within that connection's [`ctx.Db`](#property-db). See [Access the client cache](#access-the-client-cache).
+
+| Name                                                  | Description                                                                                                      |
+|-------------------------------------------------------|------------------------------------------------------------------------------------------------------------------|
+| [`IsEnded` property](#property-isended)               | Determine whether the subscription has ended.                                                                    |
+| [`IsActive` property](#property-isactive)             | Determine whether the subscription is active and its matching rows are present in the client cache.              |
+| [`Unsubscribe` method](#method-unsubscribe)           | Discard a subscription.                                                                                          |
+| [`UnsubscribeThen` method](#method-unsubscribethen)   | Discard a subscription, and register a callback to run when its matching rows are removed from the client cache. |
+
+##### Property `IsEnded`
+
+```csharp
+class SubscriptionHandle
+{
+    public bool IsEnded;
+}
+```
+
+True if this subscription has been terminated due to an unsubscribe call or an error.
+
+##### Property `IsActive`
+
+```csharp
+class SubscriptionHandle
+{
+    public bool IsActive;
+}
+```
+
+True if this subscription has been applied and has not yet been unsubscribed.
+
+##### Method `Unsubscribe`
+
+```csharp
+class SubscriptionHandle
+{
+    public void Unsubscribe();
+}
+```
+
+Terminate this subscription, causing matching rows to be removed from the client cache. Any rows removed from the client cache this way will have [`OnDelete` callbacks](#callback-ondelete) run for them.
+
+Unsubscribing is an asynchronous operation. Matching rows are not removed from the client cache immediately. Use [`UnsubscribeThen`](#method-unsubscribethen) to run a callback once the unsubscribe operation is completed.
+
+Returns an error if the subscription has already ended, either due to a previous call to `Unsubscribe` or [`UnsubscribeThen`](#method-unsubscribethen), or due to an error.
+
+##### Method `UnsubscribeThen`
+
+```csharp
+class SubscriptionHandle
+{
+    public void UnsubscribeThen(Action<SubscriptionEventContext>? onEnded);
+}
+```
+
+Terminate this subscription, and run the `onEnded` callback when the subscription is ended and its matching rows are removed from the client cache. Any rows removed from the client cache this way will have [`OnDelete` callbacks](#callback-ondelete) run for them.
+
+Returns an error if the subscription has already ended, either due to a previous call to [`Unsubscribe`](#method-unsubscribe) or `UnsubscribeThen`, or due to an error.
+
+### Read connection metadata
+
+#### Property `Identity`
+
+```csharp
+interface IDbContext
+{
+    public Identity? Identity { get; }
+}
+```
+
+Get the `Identity` with which SpacetimeDB identifies the connection. This method returns null if the connection was initiated anonymously and the newly-generated `Identity` has not yet been received, i.e. if called before the [`OnConnect` callback](#callback-onconnect) is invoked.
+
+#### Property `ConnectionId`
+
+```csharp
+interface IDbContext
+{
+    public ConnectionId ConnectionId { get; }
+}
+```
+
+Get the [`ConnectionId`](#type-connectionid) with which SpacetimeDB identifies the connection.
+
+#### Property `IsActive`
+
+```csharp
+interface IDbContext
+{
+    public bool IsActive { get; }
+}
+```
+
+`true` if the connection has not yet disconnected. Note that a connection `IsActive` when it is constructed, before its [`OnConnect` callback](#callback-onconnect) is invoked.
+
+## Type `EventContext`
+
+An `EventContext` is an [`IDbContext`](#interface-idbcontext) augmented with an [`Event`](#record-event) property. `EventContext`s are passed as the first argument to row callbacks [`OnInsert`](#callback-oninsert), [`OnDelete`](#callback-ondelete) and [`OnUpdate`](#callback-onupdate).
+
+| Name                                      | Description                                                   |
+|-------------------------------------------|---------------------------------------------------------------|
+| [`Event` property](#property-event)       | Enum describing the cause of the current row callback.        |
+| [`Db` property](#property-db)             | Provides access to the client cache.                          |
+| [`Reducers` property](#property-reducers) | Allows requesting reducers run on the remote database.        |
+| [`Event` record](#record-event)           | Possible events which can cause a row callback to be invoked. |
+
+### Property `Event`
+
+```csharp
+class EventContext {
+    public readonly Event<Reducer> Event;
+    /* other fields */
+}
+```
+
+The [`Event`](#record-event) contained in the `EventContext` describes what happened to cause the current row callback to be invoked.
+
+### Property `Db`
+
+```csharp
+class EventContext {
+    public RemoteTables Db;
+    /* other fields */
+}
+```
+
+The `Db` property of the context provides access to the subscribed view of the remote database's tables. See [Access the client cache](#access-the-client-cache).
+
+### Field `Reducers`
+
+```csharp
+class EventContext {
+    public RemoteReducers Reducers;
+    /* other fields */
+}
+```
+
+The `Reducers` property of the context provides access to reducers exposed by the remote module. See [Observe and invoke reducers](#observe-and-invoke-reducers).
+
+### Record `Event`
+
+| Name                                                        | Description                                                              |
+|-------------------------------------------------------------|--------------------------------------------------------------------------|
+| [`Reducer` variant](#variant-reducer)                       | A reducer ran in the remote database.                                    |
+| [`SubscribeApplied` variant](#variant-subscribeapplied)     | A new subscription was applied to the client cache.                      |
+| [`UnsubscribeApplied` variant](#variant-unsubscribeapplied) | A previous subscription was removed from the client cache after a call to [`Unsubscribe`](#method-unsubscribe). |
+| [`SubscribeError` variant](#variant-subscribeerror)         | A previous subscription was removed from the client cache due to an error. |
+| [`UnknownTransaction` variant](#variant-unknowntransaction) | A transaction ran in the remote database, but was not attributed to a known reducer. |
+| [`ReducerEvent` record](#record-reducerevent)               | Metadata about a reducer run. Contained in a [`Reducer` event](#variant-reducer) and [`ReducerEventContext`](#type-reducereventcontext). |
+| [`Status` record](#record-status)                           | Completion status of a reducer run. |
+| [`Reducer` record](#record-reducer)                         | Module-specific generated record with a variant for each reducer defined by the module. |
+
+#### Variant `Reducer`
+
+```csharp
+record Event<R>
+{
+    public record Reducer(ReducerEvent<R> ReducerEvent) : Event<R>;
+}
+```
+
+Event when we are notified that a reducer ran in the remote module. The [`ReducerEvent`](#record-reducerevent) contains metadata about the reducer run, including its arguments and termination [`Status`](#record-status).
+
+This event is passed to row callbacks resulting from modifications by the reducer.
+
+#### Variant `SubscribeApplied`
+
+```csharp
+record Event<R>
+{
+    public record SubscribeApplied : Event<R>;
+}
+```
+
+Event when our subscription is applied and its rows are inserted into the client cache.
+
+This event is passed to [row `OnInsert` callbacks](#callback-oninsert) resulting from the new subscription.
+
+#### Variant `UnsubscribeApplied`
+
+```csharp
+record Event<R>
+{
+    public record UnsubscribeApplied : Event<R>;
+}
+```
+
+Event when our subscription is removed after a call to [`SubscriptionHandle.Unsubscribe`](#method-unsubscribe) or [`SubscriptionHandle.UnsubscribeTthen`](#method-unsubscribethen) and its matching rows are deleted from the client cache.
+
+This event is passed to [row `OnDelete` callbacks](#callback-ondelete) resulting from the subscription ending.
+
+#### Variant `SubscribeError`
+
+```csharp
+record Event<R>
+{
+    public record SubscribeError(Exception Exception) : Event<R>;
+}
+```
+
+Event when a subscription ends unexpectedly due to an error.
+
+This event is passed to [row `OnDelete` callbacks](#callback-ondelete) resulting from the subscription ending.
+
+#### Variant `UnknownTransaction`
+
+```csharp
+record Event<R>
+{
+    public record UnknownTransaction : Event<R>;
+}
+```
+
+Event when we are notified of a transaction in the remote module which we cannot associate with a known reducer. This may be an ad-hoc SQL query or a reducer for which we do not have bindings.
+
+This event is passed to [row callbacks](#callback-oninsert) resulting from modifications by the transaction.
+
+### Record `ReducerEvent`
+
+```csharp
+record ReducerEvent<R>(
+    Timestamp Timestamp,
+    Status Status,
+    Identity CallerIdentity,
+    ConnectionId? CallerConnectionId,
+    U128? EnergyConsumed,
+    R Reducer
+)
+```
+
+A `ReducerEvent` contains metadata about a reducer run.
+
+### Record `Status`
+
+```csharp
+record Status : TaggedEnum<(
+    Unit Committed,
+    string Failed,
+    Unit OutOfEnergy
+)>;
+```
+
+<!-- TODO: Link to the definition of TaggedEnum in the module docs -->
+
+| Name                                          | Description                                         |
+|-----------------------------------------------|-----------------------------------------------------|
+| [`Committed` variant](#variant-committed)     | The reducer ran successfully.                       |
+| [`Failed` variant](#variant-failed)           | The reducer errored.                                |
+| [`OutOfEnergy` variant](#variant-outofenergy) | The reducer was aborted due to insufficient energy. |
+
+#### Variant `Committed`
+
+The reducer returned successfully and its changes were committed into the database state. An [`Event.Reducer`](#variant-reducer) passed to a row callback must have this status in its [`ReducerEvent`](#record-reducerevent).
+
+#### Variant `Failed`
+
+The reducer returned an error, panicked, or threw an exception. The record payload is the stringified error message. Formatting of the error message is unstable and subject to change, so clients should use it only as a human-readable diagnostic, and in particular should not attempt to parse the message.
+
+#### Variant `OutOfEnergy`
+
+The reducer was aborted due to insufficient energy balance of the module owner.
+
+### Record `Reducer`
+
+The module bindings contains an record `Reducer` with a variant for each reducer defined by the module. Each variant has a payload containing the arguments to the reducer.
+
+## Type `ReducerEventContext`
+
+A `ReducerEventContext` is an [`IDbContext`](#interface-idbcontext) augmented with an [`Event`](#record-reducerevent) property. `ReducerEventContext`s are passed as the first argument to [reducer callbacks](#observe-and-invoke-reducers).
+
+| Name                                      | Description                                                         |
+|-------------------------------------------|---------------------------------------------------------------------|
+| [`Event` property](#property-event)       | [`ReducerEvent`](#record-reducerevent) containing reducer metadata. |
+| [`Db` property](#property-db)             | Provides access to the client cache.                                |
+| [`Reducers` property](#property-reducers) | Allows requesting reducers run on the remote database.              |
+
+### Property `Event`
+
+```csharp
+class ReducerEventContext {
+    public readonly ReducerEvent<Reducer> Event;
+    /* other fields */
+}
+```
+
+The [`ReducerEvent`](#record-reducerevent) contained in the `ReducerEventContext` has metadata about the reducer which ran.
+
+### Property `Db`
+
+```csharp
+class ReducerEventContext {
+    public RemoteTables Db;
+    /* other fields */
+}
+```
+
+The `Db` property of the context provides access to the subscribed view of the remote database's tables. See [Access the client cache](#access-the-client-cache).
+
+### Property `Reducers`
+
+```csharp
+class ReducerEventContext {
+    public RemoteReducers Reducers;
+    /* other fields */
+}
+```
+
+The `Reducers` property of the context provides access to reducers exposed by the remote module. See [Observe and invoke reducers](#observe-and-invoke-reducers).
+
+## Type `SubscriptionEventContext`
+
+A `SubscriptionEventContext` is an [`IDbContext`](#interface-idbcontext). Unlike the other context types, `SubscriptionEventContext` doesn't have an `Event` property. `SubscriptionEventContext`s are passed to subscription [`OnApplied`](#callback-onapplied) and [`UnsubscribeThen`](#method-unsubscribethen) callbacks.
+
+| Name                                      | Description                                                |
+|-------------------------------------------|------------------------------------------------------------|
+| [`Db` property](#property-db)             | Provides access to the client cache.                       |
+| [`Reducers` property](#property-reducers) | Allows requesting reducers run on the remote database.     |
+
+### Property `Db`
+
+```csharp
+class SubscriptionEventContext {
+    public RemoteTables Db;
+    /* other fields */
+}
+```
+
+The `Db` property of the context provides access to the subscribed view of the remote database's tables. See [Access the client cache](#access-the-client-cache).
+
+### Property `Reducers`
+
+```csharp
+class SubscriptionEventContext {
+    public RemoteReducers Reducers;
+    /* other fields */
+}
+```
+
+The `Reducers` property of the context provides access to reducers exposed by the remote module. See [Observe and invoke reducers](#observe-and-invoke-reducers).
+
+## Type `ErrorContext`
+
+An `ErrorContext` is an [`IDbContext`](#interface-idbcontext) augmented with an `Event` property. `ErrorContext`s are to connections' [`OnDisconnect`](#callback-ondisconnect) and [`OnConnectError`](#callback-onconnecterror) callbacks, and to subscriptions' [`OnError`](#callback-onerror) callbacks.
+
+| Name                                      | Description                                            |
+|-------------------------------------------|--------------------------------------------------------|
+| [`Event` property](#property-event)       | The error which caused the current error callback.     |
+| [`Db` property](#property-db)             | Provides access to the client cache.                   |
+| [`Reducers` property](#property-reducers) | Allows requesting reducers run on the remote database. |
+
+
+### Property `Event`
+
+```csharp
+class SubscriptionEventContext {
+    public readonly Exception Event;
+    /* other fields */
+}
+```
+
+### Property `Db`
+
+```csharp
+class ErrorContext {
+    public RemoteTables Db;
+    /* other fields */
+}
+```
+
+The `Db` property of the context provides access to the subscribed view of the remote database's tables. See [Access the client cache](#access-the-client-cache).
+
+### Property `Reducers`
+
+```csharp
+class ErrorContext {
+    public RemoteReducers Reducers;
+    /* other fields */
+}
+```
+
+The `Reducers` property of the context provides access to reducers exposed by the remote module. See [Observe and invoke reducers](#observe-and-invoke-reducers).
+
+## Access the client cache
+
+All [`IDbContext`](#interface-idbcontext) implementors, including [`DbConnection`](#type-dbconnection) and [`EventContext`](#type-eventcontext), have `.Db` properties, which in turn have methods for accessing tables in the client cache.
+
+Each table defined by a module has an accessor method, whose name is the table name converted to `snake_case`, on this `.Db` property. The table accessor methods return table handles which inherit from [`RemoteTableHandle`](#type-remotetablehandle) and have methods for searching by index.
+
+| Name                                                              | Description                                                                     |
+|-------------------------------------------------------------------|---------------------------------------------------------------------------------|
+| [`RemoteTableHandle`](#type-remotetablehandle)                    | Provides access to subscribed rows of a specific table within the client cache. |
+| [Unique constraint index access](#unique-constraint-index-access) | Seek a subscribed row by the value in its unique or primary key column.         |
+| [BTree index access](#btree-index-access)                         | Seek subscribed rows by the value in its indexed column.                        |
+
+### Type `RemoteTableHandle`
+
+Implemented by all table handles.
+
+| Name                                          | Description                                                                  |
+|-----------------------------------------------|------------------------------------------------------------------------------|
+| [`Row` type parameter](#type-row)             | The type of rows in the table.                                               |
+| [`Count` property](#property-count)           | The number of subscribed rows in the table.                                  |
+| [`Iter` method](#method-iter)                 | Iterate over all subscribed rows in the table.                               |
+| [`OnInsert` callback](#callback-oninsert)     | Register a callback to run whenever a row is inserted into the client cache. |
+| [`OnDelete` callback](#callback-ondelete)     | Register a callback to run whenever a row is deleted from the client cache.  |
+| [`OnUpdate` callback](#callback-onupdate)     | Register a callback to run whenever a subscribed row is replaced with a new version.  |
+
+#### Type `Row`
+
+```csharp
+class RemoteTableHandle<EventContext, Row>
+{
+    /* members */
+}
+```
+
+The type of rows in the table.
+
+#### Property `Count`
+
+```csharp
+class RemoteTableHandle
+{
+    public int Count;
+}
+```
+
+The number of rows of this table resident in the client cache, i.e. the total number which match any subscribed query.
+
+#### Method `Iter`
+
+```csharp
+class RemoteTableHandle
+{
+    public IEnumerable<Row> Iter();
+}
+```
+
+An iterator over all the subscribed rows in the client cache, i.e. those which match any subscribed query.
+
+#### Callback `OnInsert`
+
+```csharp
+class RemoteTableHandle
+{
+    public delegate void RowEventHandler(EventContext context, Row row);
+    public event RowEventHandler? OnInsert;
+}
+```
+
+The `OnInsert` callback runs whenever a new row is inserted into the client cache, either when applying a subscription or being notified of a transaction. The passed [`EventContext`](#type-eventcontext) contains an [`Event`](#record-event) which can identify the change which caused the insertion, and also allows the callback to interact with the connection, inspect the client cache and invoke reducers. Newly registered or canceled callbacks do not take effect until the following event.
+
+See [the quickstart](/docs/sdks/c-sharp/quickstart#register-callbacks) for examples of regstering and unregistering row callbacks.
+
+#### Callback `OnDelete`
+
+```csharp
+class RemoteTableHandle
+{
+    public delegate void RowEventHandler(EventContext context, Row row);
+    public event RowEventHandler? OnDelete;
+}
+```
+
+The `OnDelete` callback runs whenever a previously-resident row is deleted from the client cache. Newly registered or canceled callbacks do not take effect until the following event.
+
+See [the quickstart](/docs/sdks/c-sharp/quickstart#register-callbacks) for examples of regstering and unregistering row callbacks.
+
+#### Callback `OnUpdate`
+
+```csharp
+class RemoteTableHandle
+{
+    public delegate void RowEventHandler(EventContext context, Row row);
+    public event RowEventHandler? OnUpdate;
+}
+```
+
+The `OnUpdate` callback runs whenever an already-resident row in the client cache is updated, i.e. replaced with a new row that has the same primary key. The table must have a primary key for callbacks to be triggered. Newly registered or canceled callbacks do not take effect until the following event.
+
+See [the quickstart](/docs/sdks/c-sharp/quickstart#register-callbacks) for examples of regstering and unregistering row callbacks.
+
+### Unique constraint index access
+
+For each unique constraint on a table, its table handle has a property which is a unique index handle and whose name is the unique column name. This unique index handle has a method `.Find(Column value)`. If a `Row` with `value` in the unique column is resident in the client cache, `.Find` returns it. Otherwise it returns null.
+
+
+#### Example
+
+Given the following module-side `User` definition:
+```csharp
+[Table(Name = "User", Public = true)]
+public partial class User
+{
+    [Unique] // Or [PrimaryKey]
+    public Identity Identity;
+    ..
+}
+```
+
+a client would lookup a user as follows:
+```csharp
+User? FindUser(RemoteTables tables, Identity id) => tables.User.Identity.Find(id);
+```
+
+### BTree index access
+
+For each btree index defined on a remote table, its corresponding table handle has a property which is a btree index handle and whose name is the name of the index. This index handle has a method `IEnumerable<Row> Filter(Column value)` which will return `Row`s with `value` in the indexed `Column`, if there are any in the cache.
+
+#### Example
+
+Given the following module-side `Player` definition:
+```csharp
+[Table(Name = "Player", Public = true)]
+public partial class Player
+{
+    [PrimaryKey]
+    public Identity id;
+
+    [Index.BTree(Name = "Level")]
+    public uint level;
+    ..
+}
+```
+
+a client would count the number of `Player`s at a certain level as follows:
+```csharp
+int CountPlayersAtLevel(RemoteTables tables, uint level) => tables.Player.Level.Filter(level).Count();
 ```
 
 ## Observe and invoke reducers
 
-"Reducer" is SpacetimeDB's name for the stored procedures that run in modules inside the database. You can invoke reducers from a connected client SDK, and also receive information about which reducers are running.
+All [`IDbContext`](#interface-idbcontext) implementors, including [`DbConnection`](#type-dbconnection) and [`EventContext`](#type-eventcontext), have a `.Reducers` property, which in turn has methods for invoking reducers defined by the module and registering callbacks on it.
 
-`spacetime generate` generates a class [`SpacetimeDB.Types.Reducer`](#class-reducer) that contains methods and events for each reducer defined in a module. To invoke a reducer, use the method [`Reducer.{REDUCER}`](#static-method-reducerreducer) generated for it. To receive a callback each time a reducer is invoked, use the static event [`Reducer.On{REDUCER}`](#static-event-reduceronreducer).
+Each reducer defined by the module has three methods on the `.Reducers`:
 
-### Class `Reducer`
+- An invoke method, whose name is the reducer's name converted to snake case, like `set_name`. This requests that the module run the reducer.
+- A callback registation method, whose name is prefixed with `on_`, like `on_set_name`. This registers a callback to run whenever we are notified that the reducer ran, including successfully committed runs and runs we requested which failed. This method returns a callback id, which can be passed to the callback remove method.
+- A callback remove method, whose name is prefixed with `remove_on_`, like `remove_on_set_name`. This cancels a callback previously registered via the callback registration method.
 
-```cs
-namespace SpacetimeDB.Types {
+## Identify a client
 
-class Reducer {}
+### Type `Identity`
 
-}
-```
+A unique public identifier for a client connected to a database.
+See the [module docs](/docs/modules/c-sharp#struct-identity) for more details.
 
-This class contains a static method and event for each reducer defined in a module.
+### Type `ConnectionId`
 
-#### Static Method `Reducer.{REDUCER}`
+An opaque identifier for a client connection to a database, intended to differentiate between connections from the same [`Identity`](#type-identity).
+See the [module docs](/docs/modules/c-sharp#struct-connectionid) for more details.
 
-```cs
-namespace SpacetimeDB.Types {
-class Reducer {
+### Type `Timestamp`
 
-/* void {REDUCER_NAME}(...ARGS...) */
+A point in time, measured in microseconds since the Unix epoch.
+See the [module docs](/docs/modules/c-sharp#struct-timestamp) for more details.
 
-}
-}
-```
+### Type `TaggedEnum`
 
-For each reducer defined by a module, `spacetime generate` generates a static method which sends a request to the database to invoke that reducer. The generated function's name is the reducer's name converted to `PascalCase`.
-
-Reducers don't run immediately! They run as soon as the request reaches the database. Don't assume data inserted by a reducer will be available immediately after you call this method.
-
-For reducers which accept a `ReducerContext` as their first argument, the `ReducerContext` is not included in the generated function's argument list.
-
-For example, if we define a reducer in Rust as follows:
-
-```rust
-#[spacetimedb(reducer)]
-pub fn set_name(
-    ctx: ReducerContext,
-    user_id: u64,
-    name: String
-) -> Result<(), Error>;
-```
-
-The following C# static method will be generated:
-
-```cs
-namespace SpacetimeDB.Types {
-class Reducer {
-
-public static void SendMessage(UInt64 userId, string name);
-
-}
-}
-```
-
-#### Static Event `Reducer.On{REDUCER}`
-
-```cs
-namespace SpacetimeDB.Types {
-class Reducer {
-
-public delegate void /*{REDUCER}*/Handler(ReducerEvent reducerEvent, /* {ARGS...} */);
-
-public static event /*{REDUCER}*/Handler On/*{REDUCER}*/Event;
-
-}
-}
-```
-
-For each reducer defined by a module, `spacetime generate` generates an event to run each time the reducer is invoked. The generated functions are named `on{REDUCER}Event`, where `{REDUCER}` is the reducer's name converted to `PascalCase`.
-
-The first argument to the event handler is an instance of [`SpacetimeDB.Types.ReducerEvent`](#class-reducerevent) describing the invocation -- its timestamp, arguments, and whether it succeeded or failed. The remaining arguments are the arguments passed to the reducer. Reducers cannot have return values, so no return value information is included.
-
-For example, if we define a reducer in Rust as follows:
-
-```rust
-#[spacetimedb(reducer)]
-pub fn set_name(
-    ctx: ReducerContext,
-    user_id: u64,
-    name: String
-) -> Result<(), Error>;
-```
-
-The following C# static method will be generated:
-
-```cs
-namespace SpacetimeDB.Types {
-class Reducer {
-
-public delegate void SetNameHandler(
-    ReducerEvent reducerEvent,
-    UInt64 userId,
-    string name
-);
-public static event SetNameHandler OnSetNameEvent;
-
-}
-}
-```
-
-Which can be used as follows:
-
-```cs
-/* initialize, wait for onSubscriptionApplied... */
-
-Reducer.SetNameHandler += (
-    ReducerEvent reducerEvent,
-    UInt64 userId,
-    string name
-) => {
-    if (reducerEvent.Status == ClientApi.Event.Types.Status.Committed) {
-        Console.WriteLine($"User with id {userId} set name to {name}");
-    } else if (reducerEvent.Status == ClientApi.Event.Types.Status.Failed) {
-        Console.WriteLine(
-            $"User with id {userId} failed to set name to {name}:"
-            + reducerEvent.ErrMessage
-        );
-    } else if (reducerEvent.Status == ClientApi.Event.Types.Status.OutOfEnergy) {
-        Console.WriteLine(
-            $"User with id {userId} failed to set name to {name}:"
-            + "Invoker ran out of energy"
-        );
-    }
-};
-Reducer.SetName(USER_ID, NAME);
-```
-
-### Class `ReducerEvent`
-
-`spacetime generate` defines an class `ReducerEvent` containing an enum `ReducerType` with a variant for each reducer defined by a module. The variant's name will be the reducer's name converted to `PascalCase`.
-
-For example, the example project shown in the Rust Module quickstart will generate the following (abridged) code.
-
-```cs
-namespace SpacetimeDB.Types {
-
-public enum ReducerType
-{
-    /* A member for each reducer in the module, with names converted to PascalCase */
-    None,
-    SendMessage,
-    SetName,
-}
-public partial class SendMessageArgsStruct
-{
-    /* A member for each argument of the reducer SendMessage, with names converted to PascalCase. */
-    public string Text;
-}
-public partial class SetNameArgsStruct
-{
-    /* A member for each argument of the reducer SetName, with names converted to PascalCase. */
-    public string Name;
-}
-public partial class ReducerEvent : ReducerEventBase {
-    // Which reducer was invoked
-    public ReducerType Reducer { get; }
-    // If event.Reducer == ReducerType.SendMessage, the arguments
-    // sent to the SendMessage reducer. Otherwise, accesses will
-    // throw a runtime error.
-    public SendMessageArgsStruct SendMessageArgs { get; }
-    // If event.Reducer == ReducerType.SetName, the arguments
-    // passed to the SetName reducer. Otherwise, accesses will
-    // throw a runtime error.
-    public SetNameArgsStruct SetNameArgs { get; }
-
-    /* Additional information, present on any ReducerEvent */
-    // The name of the reducer.
-    public string ReducerName { get; }
-    // The timestamp of the reducer invocation inside the database.
-    public ulong Timestamp { get; }
-    // The identity of the client that invoked the reducer.
-    public SpacetimeDB.Identity Identity { get; }
-    // Whether the reducer succeeded, failed, or ran out of energy.
-    public ClientApi.Event.Types.Status Status { get; }
-    // If event.Status == Status.Failed, the error message returned from inside the module.
-    public string ErrMessage { get; }
-}
-
-}
-```
-
-#### Enum `Status`
-
-```cs
-namespace ClientApi {
-public sealed partial class Event {
-public static partial class Types {
-
-public enum Status {
-    Committed = 0,
-    Failed = 1,
-    OutOfEnergy = 2,
-}
-
-}
-}
-}
-```
-
-An enum whose variants represent possible reducer completion statuses of a reducer invocation.
-
-##### Variant `Status.Committed`
-
-The reducer finished successfully, and its row changes were committed to the database.
-
-##### Variant `Status.Failed`
-
-The reducer failed, either by panicking or returning a `Err`.
-
-##### Variant `Status.OutOfEnergy`
-
-The reducer was canceled because the module owner had insufficient energy to allow it to run to completion.
-
-## Identity management
-
-### Class `AuthToken`
-
-The AuthToken helper class handles creating and saving SpacetimeDB identity tokens in the filesystem.
-
-#### Static Method `AuthToken.Init`
-
-```cs
-namespace SpacetimeDB {
-
-class AuthToken {
-    public static void Init(
-        string configFolder = ".spacetime_csharp_sdk",
-        string configFile = "settings.ini",
-        string? configRoot = null
-    );
-}
-
-}
-```
-
-Creates a file `$"{configRoot}/{configFolder}/{configFile}"` to store tokens.
-If no arguments are passed, the default is `"%HOME%/.spacetime_csharp_sdk/settings.ini"`.
-
-| Argument       | Type     | Meaning                                                                            |
-| -------------- | -------- | ---------------------------------------------------------------------------------- |
-| `configFolder` | `string` | The folder to store the config file in. Default is `"spacetime_csharp_sdk"`.       |
-| `configFile`   | `string` | The name of the config file. Default is `"settings.ini"`.                          |
-| `configRoot`   | `string` | The root folder to store the config file in. Default is the user's home directory. |
-
-#### Static Property `AuthToken.Token`
-
-```cs
-namespace SpacetimeDB {
-
-class AuthToken {
-    public static string? Token { get; }
-}
-
-}
-```
-
-The auth token stored on the filesystem, if one exists.
-
-#### Static Method `AuthToken.SaveToken`
-
-```cs
-namespace SpacetimeDB {
-
-class AuthToken {
-    public static void SaveToken(string token);
-}
-
-}
-```
-
-Save a token to the filesystem.
-
-### Class `Identity`
-
-```cs
-namespace SpacetimeDB
-{
-    public struct Identity : IEquatable<Identity>
-    {
-        public byte[] Bytes { get; }
-        public static Identity From(byte[] bytes);
-        public bool Equals(Identity other);
-        public static bool operator ==(Identity a, Identity b);
-        public static bool operator !=(Identity a, Identity b);
-    }
-}
-```
-
-A unique public identifier for a user of a database.
-
-<!-- FIXME: this is no longer accurate; `Identity` columns are properly `Identity`-type. -->
-
-Columns of type `Identity` inside a module will be represented in the C# SDK as properties of type `byte[]`. `Identity` is essentially just a wrapper around `byte[]`, and you can use the `Bytes` property to get a `byte[]` that can be used to filter tables and so on.
-
-```cs
-namespace SpacetimeDB
-{
-    public struct Address : IEquatable<Address>
-    {
-        public byte[] Bytes { get; }
-        public static Address? From(byte[] bytes);
-        public bool Equals(Address other);
-        public static bool operator ==(Address a, Address b);
-        public static bool operator !=(Address a, Address b);
-    }
-}
-```
-
-An opaque identifier for a client connection to a database, intended to differentiate between connections from the same [`Identity`](#class-identity).
-
-## Customizing logging
-
-The SpacetimeDB C# SDK performs internal logging.
-
-A default logger is set up automatically for you - a [`ConsoleLogger`](#class-consolelogger) for C# projects and [`UnityDebugLogger`](#class-unitydebuglogger) for Unity projects.
-
-If you want to redirect SDK logs elsewhere, you can inherit from the [`ISpacetimeDBLogger`](#interface-ispacetimedblogger) and assign an instance of your class to the `SpacetimeDB.Logger.Current` static property.
-
-### Interface `ISpacetimeDBLogger`
-
-```cs
-namespace SpacetimeDB
-{
-
-public interface ISpacetimeDBLogger
-{
-    void Log(string message);
-    void LogError(string message);
-    void LogWarning(string message);
-    void LogException(Exception e);
-}
-
-}
-```
-
-This interface provides methods that are invoked when the SpacetimeDB C# SDK needs to log at various log levels. You can create custom implementations if needed to integrate with existing logging solutions.
-
-### Class `ConsoleLogger`
-
-```cs
-namespace SpacetimeDB {
-
-public class ConsoleLogger : ISpacetimeDBLogger {}
-
-}
-```
-
-An `ISpacetimeDBLogger` implementation for regular .NET applications, using `Console.Write` when logs are received.
-
-### Class `UnityDebugLogger`
-
-```cs
-namespace SpacetimeDB {
-
-public class UnityDebugLogger : ISpacetimeDBLogger {}
-
-}
-```
-
-An `ISpacetimeDBLogger` implementation for Unity, using the Unity `Debug.Log` api.
+A [tagged union](https://en.wikipedia.org/wiki/Tagged_union) type.
+See the [module docs](/docs/modules/c-sharp#record-taggedenum) for more details.

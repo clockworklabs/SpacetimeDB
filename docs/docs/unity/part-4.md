@@ -198,7 +198,7 @@ Next, add the following reducer to the `Module` class of your `Lib.cs` file.
 [Reducer]
 public static void UpdatePlayerInput(ReducerContext ctx, DbVector2 direction)
 {
-    var player = ctx.Db.player.identity.Find(ctx.CallerIdentity) ?? throw new Exception("Player not found");				
+    var player = ctx.Db.player.identity.Find(ctx.Sender) ?? throw new Exception("Player not found");				
     foreach (var c in ctx.Db.circle.player_id.Filter(player.player_id))
     {
         var circle = c;
@@ -206,11 +206,10 @@ public static void UpdatePlayerInput(ReducerContext ctx, DbVector2 direction)
         circle.speed = Math.Clamp(direction.Magnitude, 0f, 1f);
         ctx.Db.circle.entity_id.Update(circle);
     }
-		  
 }
 ```
 
-This is a simple reducer that takes the movement input from the client and applies them to all circles that that player controls. Note that it is not possible for a player to move another player's circles using this reducer, because the `ctx.CallerIdentity` value is not set by the client. Instead `ctx.CallerIdentity` is set by SpacetimeDB after it has authenticated that sender. You can rest assured that the caller has been authenticated as that player by the time this reducer is called.
+This is a simple reducer that takes the movement input from the client and applies them to all circles that that player controls. Note that it is not possible for a player to move another player's circles using this reducer, because the `ctx.Sender` value is not set by the client. Instead `ctx.Sender` is set by SpacetimeDB after it has authenticated that sender. You can rest assured that the caller has been authenticated as that player by the time this reducer is called.
 :::
 
 Finally, let's schedule a reducer to run every 50 milliseconds to move the player's circles around based on the most recently set player input.
@@ -243,7 +242,12 @@ pub fn move_all_players(ctx: &ReducerContext, _timer: MoveAllPlayersTimer) -> Re
 
     // Handle player input
     for circle in ctx.db.circle().iter() {
-        let mut circle_entity = ctx.db.entity().entity_id().find(&circle.entity_id).unwrap();
+        let circle_entity = ctx.db.entity().entity_id().find(&circle.entity_id);
+        if !circle_entity.is_some() {
+            // This can happen if a circle is eaten by another circle
+            continue;
+        }
+        let mut circle_entity = circle_entity.unwrap();
         let circle_radius = mass_to_radius(circle_entity.mass);
         let direction = circle.direction * circle.speed;
         let new_pos =
@@ -283,7 +287,13 @@ public static void MoveAllPlayers(ReducerContext ctx, MoveAllPlayersTimer timer)
     // Handle player input
     foreach (var circle in ctx.Db.circle.Iter())
     {
-        var circle_entity = ctx.Db.entity.entity_id.Find(circle.entity_id) ?? throw new Exception("Circle has no entity");
+        var check_entity = ctx.Db.entity.entity_id.Find(circle.entity_id);
+        if (check_entity == null)
+        {
+            // This can happen if the circle has been eaten by another circle.
+            continue;
+        }
+        var circle_entity = check_entity.Value;
         var circle_radius = MassToRadius(circle_entity.mass);
         var direction = circle_directions[circle.entity_id];
         var new_pos = circle_entity.position + direction * MassToMaxMoveSpeed(circle_entity.mass);
@@ -307,7 +317,7 @@ ctx.db
     .move_all_players_timer()
     .try_insert(MoveAllPlayersTimer {
         scheduled_id: 0,
-        scheduled_at: ScheduleAt::Interval(Duration::from_millis(50).as_micros() as u64),
+        scheduled_at: ScheduleAt::Interval(Duration::from_millis(50).into()),
     })?;
 ```
 :::
@@ -335,50 +345,48 @@ Regenerate your server bindings with:
 spacetime generate --lang csharp --out-dir ../client-unity/Assets/autogen
 ```
 
-> **BUG WORKAROUND NOTE**: You may have to delete LoggedOutPlayer.cs again.
-
 ### Moving on the Client
 
 All that's left is to modify our `PlayerController` on the client to call the `update_player_input` reducer. Open `PlayerController.cs` and add an `Update` function:
 
 ```cs
-    public void Update()
+public void Update()
+{
+    if (!IsLocalPlayer || NumberOfOwnedCircles == 0)
     {
-        if (!IsLocalPlayer || NumberOfOwnedCircles == 0)
+        return;
+    }
+
+    if (Input.GetKeyDown(KeyCode.Q))
+    {
+        if (LockInputPosition.HasValue)
         {
-            return;
+            LockInputPosition = null;
         }
-
-        if (Input.GetKeyDown(KeyCode.Q))
+        else
         {
-            if (LockInputPosition.HasValue)
-            {
-                LockInputPosition = null;
-			}
-            else
-            {
-				LockInputPosition = (Vector2)Input.mousePosition;
-            }
+            LockInputPosition = (Vector2)Input.mousePosition;
         }
+    }
 
-        // Throttled input requests
-        if (Time.time - LastMovementSendTimestamp >= SEND_UPDATES_FREQUENCY)
+    // Throttled input requests
+    if (Time.time - LastMovementSendTimestamp >= SEND_UPDATES_FREQUENCY)
+    {
+        LastMovementSendTimestamp = Time.time;
+
+        var mousePosition = LockInputPosition ?? (Vector2)Input.mousePosition;
+        var screenSize = new Vector2
         {
-            LastMovementSendTimestamp = Time.time;
+            x = Screen.width,
+            y = Screen.height,
+        };
+        var centerOfScreen = screenSize / 2;
 
-            var mousePosition = LockInputPosition ?? (Vector2)Input.mousePosition;
-            var screenSize = new Vector2
-            {
-                x = Screen.width,
-                y = Screen.height,
-            };
-            var centerOfScreen = screenSize / 2;
-
-			var direction = (mousePosition - centerOfScreen) / (screenSize.y / 3);
-            if (testInputEnabled) { direction = testInput; }
-            GameManager.Conn.Reducers.UpdatePlayerInput(direction);
-        }
-	}
+        var direction = (mousePosition - centerOfScreen) / (screenSize.y / 3);
+        if (testInputEnabled) { direction = testInput; }
+        GameManager.Conn.Reducers.UpdatePlayerInput(direction);
+    }
+}
 ```
 
 Let's try it out! Press play and roam freely around the arena! Now we're cooking with gas.
@@ -423,7 +431,12 @@ pub fn move_all_players(ctx: &ReducerContext, _timer: MoveAllPlayersTimer) -> Re
 
     // Handle player input
     for circle in ctx.db.circle().iter() {
-        let mut circle_entity = ctx.db.entity().entity_id().find(&circle.entity_id).unwrap();
+        let circle_entity = ctx.db.entity().entity_id().find(&circle.entity_id);
+        if !circle_entity.is_some() {
+            // This can happen if a circle is eaten by another circle
+            continue;
+        }
+        let mut circle_entity = circle_entity.unwrap();
         let circle_radius = mass_to_radius(circle_entity.mass);
         let direction = circle.direction * circle.speed;
         let new_pos =
@@ -500,7 +513,13 @@ public static void MoveAllPlayers(ReducerContext ctx, MoveAllPlayersTimer timer)
     // Handle player input
     foreach (var circle in ctx.Db.circle.Iter())
     {
-        var circle_entity = ctx.Db.entity.entity_id.Find(circle.entity_id) ?? throw new Exception("Circle has no entity");
+        var check_entity = ctx.Db.entity.entity_id.Find(circle.entity_id);
+        if (check_entity == null)
+        {
+            // This can happen if the circle has been eaten by another circle.
+            continue;
+        }
+        var circle_entity = check_entity.Value;
         var circle_radius = MassToRadius(circle_entity.mass);
         var direction = circle.direction * circle.speed;
         var new_pos = circle_entity.position + direction * MassToMaxMoveSpeed(circle_entity.mass);

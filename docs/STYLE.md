@@ -375,7 +375,7 @@ Start the conclusion with a sentence or paragraph that reminds the reader what t
 
 If this tutorial is part of a series, link to the next entry:
 
-> You can use any of SpacetimDB's supported client languages to do this. Take a look at the quickstart guide for your client language of choice: [Rust](/docs/sdks/rust/quickstart), [C#](/docs/sdks/c-sharp/quickstart), or [TypeScript](/docs/sdks/typescript/quickstart). If you are planning to use SpacetimeDB with the Unity game engine, you can skip right to the [Unity Comprehensive Tutorial](/docs/unity/part-1) or check out our example game, [BitcraftMini](/docs/unity/part-3).
+> You can use any of SpacetimDB's supported client languages to do this. Take a look at the quickstart guide for your client language of choice: [Rust](/docs/sdks/rust/quickstart), [C#](/docs/sdks/c-sharp/quickstart), or [TypeScript](/docs/sdks/typescript/quickstart). If you are planning to use SpacetimeDB with the Unity game engine, you can skip right to the [Unity Comprehensive Tutorial](/docs/unity/part-1).
 
 If this tutorial is about a specific component, link to its reference page:
 
@@ -399,7 +399,7 @@ If this tutorial is the end of a series, or ends with a reasonably complete app,
 If the tutorial involved writing code, add a link to the complete code. This should be somewhere on GitHub, either as its own repo, or as an example project within an existing repo. Ensure the linked folder has a README.md file which includes:
 
 - The name of the tutorial project.
-- How to run or interact with the tutorial project, whatever that means (e.g. publish to testnet and then `spacetime call`).
+- How to run or interact with the tutorial project, whatever that means (e.g. publish to maincloud and then `spacetime call`).
 - Links to external dependencies (e.g. for client projects, the module which it runs against).
 - A back-link to the tutorial that builds this project.
 

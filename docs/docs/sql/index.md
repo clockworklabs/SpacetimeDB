@@ -1,8 +1,8 @@
 # SQL Support
 
 SpacetimeDB supports two subsets of SQL:
-One for queries issued through the cli or [http] api.
-Another for subscriptions issued via the [sdk] or [websocket] api.
+One for queries issued through the [cli] or [http] api.
+Another for subscriptions issued via the [sdk] or WebSocket api.
 
 ## Subscriptions
 
@@ -157,14 +157,15 @@ SELECT * FROM Inventory WHERE price > {X} AND amount < {Y}
 ### SELECT
 
 ```ebnf
-SELECT projection FROM relation [ WHERE predicate ]
+SELECT projection FROM relation [ WHERE predicate ] [LIMIT NUM]
 ```
 
 The query languge is a strict superset of the subscription language.
 The main differences are seen in column projections and [joins](#from-clause).
 
 The subscription api only supports `*` projections,
-but the query api supports individual column projections.
+but the query api supports both individual column projections,
+as well as aggregations in the form of `COUNT`.
 
 The subscription api limits the number of tables you can join,
 and enforces index constraints on the join columns,
@@ -177,10 +178,15 @@ projection
     = '*'
     | table '.' '*'
     | projExpr { ',' projExpr }
+    | aggExpr
     ;
 
 projExpr
     = column [ [ AS ] alias ]
+    ;
+
+aggExpr
+    = COUNT '(' '*' ')' [AS] alias
     ;
 ```
 
@@ -194,6 +200,16 @@ SELECT * FROM Inventory;
 
 -- Select the names and prices of the items in my inventory
 SELECT item_name, price FROM Inventory
+```
+
+It also allows for counting the number of input rows via the `COUNT` function.
+`COUNT` always returns a single row, even if the input is empty.
+
+##### Example
+
+```sql
+-- Count the items in my inventory
+SELECT COUNT(*) AS n FROM Inventory
 ```
 
 #### FROM Clause
@@ -218,6 +234,19 @@ WHERE product.name = {product_name}
 #### WHERE Clause
 
 See [Subscriptions](#where).
+
+#### LIMIT clause
+
+Limits the number of rows a query returns by specifying an upper bound.
+The `LIMIT` may return fewer rows if the query itself returns fewer rows.
+`LIMIT` does not order or transform its input in any way.
+
+##### Examples
+
+```sql
+-- Fetch an example row from my inventory
+SELECT * FROM Inventory LIMIT 1
+```
 
 ### INSERT
 
@@ -412,7 +441,7 @@ HEXIT
     ;
 ```
 
-Hex literals can represent [Identity], [Address], or binary types.
+Hex literals can represent [Identity], [ConnectionId], or binary types.
 The type is ultimately inferred from the context.
 
 #### Examples
@@ -450,6 +479,143 @@ SELECT * FROM "Order"
 SELECT * FROM "Balance$"
 ```
 
+## Best Practices for Performance and Scalability
+
+When designing your schema or crafting your queries,
+consider the following best practices to ensure optimal performance:
+
+- **Add Primary Key and/or Unique Constraints:**  
+    Constrain columns whose values are guaranteed to be distinct as either unique or primary keys.
+    The query planner can further optimize joins if it knows the join values to be unique.
+
+- **Index Filtered Columns:**  
+    Index columns frequently used in a `WHERE` clause.
+    Indexes reduce the number of rows scanned by the query engine.
+
+- **Index Join Columns:**  
+    Index columns whose values are frequently used as join keys.
+    These are columns that are used in the `ON` condition of a `JOIN`.
+
+    Again, this reduces the number of rows that must be scanned to answer a query.
+    It is also critical for the performance of subscription updates --
+    so much so that it is a compiler-enforced requirement,
+    as mentioned in the [subscription](#from) section.
+
+    If a column that has already been constrained as unique or a primary key,
+    it is not necessary to explicitly index it as well,
+    since these constraints automatically index the column in question.
+
+- **Optimize Join Order:**  
+    Place tables with the most selective filters first in your `FROM` clause.
+    This minimizes intermediate result sizes and improves query efficiency.
+
+### Example
+
+Take the following query that was used in a previous example:
+```sql
+-- Find all customers who ordered a particular product and when they ordered it
+SELECT customer.first_name, customer.last_name, o.date
+FROM Customers customer
+JOIN Orders o ON customer.id = o.customer_id
+JOIN Inventory product ON o.product_id = product.id
+WHERE product.name = {product_name}
+```
+
+In order to conform with the best practices for optimizing performance and scalability:
+
+- An index should be defined on `Inventory.name` because we are filtering on that column.
+- `Inventory.id` and `Customers.id` should be defined as primary keys.
+- Additionally non-unique indexes should be defined on `Orders.product_id` and `Orders.customer_id`.
+- `Inventory` should appear first in the `FROM` clause because it is the only table mentioned in the `WHERE` clause.
+- `Orders` should come next because it joins directly with `Inventory`.
+- `Customers` should come next because it joins directly with `Orders`.
+
+:::server-rust
+```rust
+#[table(
+    name = Inventory,
+    index(name = product_name, btree = [name]),
+    public
+)]
+struct Inventory {
+    #[primary_key]
+    id: u64,
+    name: String,
+    ..
+}
+
+#[table(
+    name = Customers,
+    public
+)]
+struct Customers {
+    #[primary_key]
+    id: u64,
+    first_name: String,
+    last_name: String,
+    ..
+}
+
+#[table(
+    name = Orders,
+    public
+)]
+struct Orders {
+    #[primary_key]
+    id: u64,
+    #[unique]
+    product_id: u64,
+    #[unique]
+    customer_id: u64,
+    ..
+}
+```
+:::
+:::server-csharp
+```cs
+[SpacetimeDB.Table(Name = "Inventory")]
+[SpacetimeDB.Index(Name = "product_name", BTree = ["name"])]
+public partial struct Inventory
+{
+    [SpacetimeDB.PrimaryKey]
+    public long id;
+    public string name;
+    ..
+}
+
+[SpacetimeDB.Table(Name = "Customers")]
+public partial struct Customers
+{
+    [SpacetimeDB.PrimaryKey]
+    public long id;
+    public string first_name;
+    public string last_name;
+    ..
+}
+
+[SpacetimeDB.Table(Name = "Orders")]
+public partial struct Orders
+{
+    [SpacetimeDB.PrimaryKey]
+    public long id;
+    [SpacetimeDB.Unique]
+    public long product_id;
+    [SpacetimeDB.Unique]
+    public long customer_id;
+    ..
+}
+```
+:::
+
+```sql
+-- Find all customers who ordered a particular product and when they ordered it
+SELECT c.first_name, c.last_name, o.date
+FROM Inventory product
+JOIN Orders o ON product.id = o.product_id
+JOIN Customers c ON c.id = o.customer_id
+WHERE product.name = {product_name};
+```
+
 ## Appendix
 
 Common production rules that have been used throughout this document.
@@ -476,7 +642,7 @@ column
 
 [sdk]:       /docs/sdks/rust/index.md#subscribe-to-queries
 [http]:      /docs/http/database#databasesqlname_or_address-post
-[websocket]: /docs/ws/index.md#subscribe
+[cli]:       /docs/cli-reference.md#spacetime-sql
 
 [Identity]: /docs/index.md#identity
-[Address]:  /docs/index.md#address
+[ConnectionId]:  /docs/index.md#connectionid

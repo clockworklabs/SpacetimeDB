@@ -16,7 +16,17 @@ The server listens on port `3000` by default, customized via `--listen-addr`.
 
 ## What's Next?
 
-You are ready to start developing SpacetimeDB modules. See below for a quickstart guide for both client and server (module) languages/frameworks.
+### Log in to SpacetimeDB
+
+SpacetimeDB authenticates users using a GitHub login, to prevent unauthorized access (e.g. somebody else publishing over your module). Log in to SpacetimeDB using:
+
+```bash
+spacetime login
+```
+
+This will open a browser and ask you to log in via GitHub. If you forget this step, any commands that require login (like `spacetime publish`) will ask you to log in when you run them.
+
+You are now ready to start developing SpacetimeDB modules. See below for a quickstart guide for both client and server (module) languages/frameworks.
 
 ### Server (Module)
 

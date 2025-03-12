@@ -28,7 +28,7 @@ pnpm install
 We also need to install the `spacetime-client-sdk` package:
 
 ```bash
-pnpm install @clockworklabs/spacetimedb-sdk@1.0.0-rc1.0
+pnpm install @clockworklabs/spacetimedb-sdk@1.0.2
 ```
 
 > If you are using another package manager like `yarn` or `npm`, the same steps should work with the appropriate commands for those tools.
@@ -384,27 +384,42 @@ module_bindings
 └── user_type.ts
 ```
 
-With `spacetime generate` we have generated TypeScript types derived from the types you specified in your module, which we can conveniently use in our client. We've placed these in the `module_bindings` folder. The main entry to the SpacetimeDB API is the `DBConnection`, a type which manages a connection to a remote database. Let's import it and a few other types into our `client/src/App.tsx`.
+With `spacetime generate` we have generated TypeScript types derived from the types you specified in your module, which we can conveniently use in our client. We've placed these in the `module_bindings` folder. The main entry to the SpacetimeDB API is the `DbConnection`, a type which manages a connection to a remote database. Let's import it and a few other types into our `client/src/App.tsx`.
 
 ```tsx
-import { DBConnection, EventContext, Message, User } from './module_bindings';
+import { DbConnection, EventContext, Message, User } from './module_bindings';
 import { Identity } from '@clockworklabs/spacetimedb-sdk';
 ```
 
 ## Create your SpacetimeDB client
 
-Now that we've imported the `DBConnection` type, we can use it to connect our app to our module.
+Now that we've imported the `DbConnection` type, we can use it to connect our app to our module.
 
 Add the following to your `App` function, just below `const [newMessage, setNewMessage] = useState('');`:
 
 ```tsx
   const [connected, setConnected] = useState<boolean>(false);
   const [identity, setIdentity] = useState<Identity | null>(null);
-  const [conn, setConn] = useState<DBConnection | null>(null);
+  const [conn, setConn] = useState<DbConnection | null>(null);
 
   useEffect(() => {
+    const subscribeToQueries = (conn: DbConnection, queries: string[]) => {
+      let count = 0;
+      for (const query of queries) {
+        conn
+          ?.subscriptionBuilder()
+          .onApplied(() => {
+            count++;
+            if (count === queries.length) {
+              console.log('SDK client cache initialized.');
+            }
+          })
+          .subscribe(query);
+      }
+    };
+
     const onConnect = (
-      conn: DBConnection,
+      conn: DbConnection,
       identity: Identity,
       token: string
     ) => {
@@ -415,12 +430,11 @@ Add the following to your `App` function, just below `const [newMessage, setNewM
         'Connected to SpacetimeDB with identity:',
         identity.toHexString()
       );
-      conn
-        .subscriptionBuilder()
-        .onApplied(() => {
-          console.log('SDK client cache initialized.');
-        })
-        .subscribe(['SELECT * FROM message', 'SELECT * FROM user']);
+      conn.reducers.onSendMessage(() => {
+        console.log('Message sent.');
+      });
+
+      subscribeToQueries(conn, ['SELECT * FROM message', 'SELECT * FROM user']);
     };
 
     const onDisconnect = () => {
@@ -428,12 +442,12 @@ Add the following to your `App` function, just below `const [newMessage, setNewM
       setConnected(false);
     };
 
-    const onConnectError = (_conn: DBConnection, err: Error) => {
+    const onConnectError = (_conn: DbConnection, err: Error) => {
       console.log('Error connecting to SpacetimeDB:', err);
     };
 
     setConn(
-      DBConnection.builder()
+      DbConnection.builder()
         .withUri('ws://localhost:3000')
         .withModuleName('quickstart-chat')
         .withToken(localStorage.getItem('auth_token') || '')
@@ -455,12 +469,12 @@ In the `onConnect` function we are also subscribing to the `message` and `user` 
 
 ### Accessing the Data
 
-Once SpacetimeDB is connected, we can easily access the data in the client cache using our `DBConnection`. The `conn.db` field allows you to access all of the tables of your database. Those tables will contain all data requested by your subscription configuration.
+Once SpacetimeDB is connected, we can easily access the data in the client cache using our `DbConnection`. The `conn.db` field allows you to access all of the tables of your database. Those tables will contain all data requested by your subscription configuration.
 
 Let's create custom React hooks for the `message` and `user` tables. Add the following code above your `App` component:
 
 ```tsx
-function useMessages(conn: DBConnection | null): Message[] {
+function useMessages(conn: DbConnection | null): Message[] {
   const [messages, setMessages] = useState<Message[]>([]);
 
   useEffect(() => {
@@ -491,7 +505,7 @@ function useMessages(conn: DBConnection | null): Message[] {
   return messages;
 }
 
-function useUsers(conn: DBConnection | null): Map<string, User> {
+function useUsers(conn: DbConnection | null): Map<string, User> {
   const [users, setUsers] = useState<Map<string, User>>(new Map());
 
   useEffect(() => {
@@ -648,7 +662,7 @@ Our `user` table includes all users not just online users, so we want to take ca
 
 Here we post a message saying a new user has connected if the user is being added to the `user` table and they're online, or if an existing user's online status is being set to "online".
 
-Note that `onInsert` and `onDelete` callbacks takes two arguments: an `EventContext` and the row. The `EventContext` can be used just like the `DBConnection` and has all the same access functions, in addition to containing information about the event that triggered this callback. For now, we can ignore this argument though, since we have all the info we need in the user rows.
+Note that `onInsert` and `onDelete` callbacks takes two arguments: an `EventContext` and the row. The `EventContext` can be used just like the `DbConnection` and has all the same access functions, in addition to containing information about the event that triggered this callback. For now, we can ignore this argument though, since we have all the info we need in the user rows.
 
 ## Conclusion
 
