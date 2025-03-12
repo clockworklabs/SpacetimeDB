@@ -90,64 +90,40 @@ This speed and latency is achieved by holding all of application state in memory
 
 ## Installation
 
-SpacetimeDB is an embedded database library that you can use to extend your own applications. You can also run SpacetimeDB as a standalone database server via the `spacetime` CLI tool.
-
-You can install and run the `spacetime` CLI tool via Cargo, Docker, or by running the installation instructions on our website: https://spacetimedb.com/install
+You can run SpacetimeDB as a standalone database server via the `spacetime` CLI tool.
+Install instructions for supported platforms are outlined below.
+The same install instructions can be found on our website at https://spacetimedb.com/install.
 
 #### Install on macOS
 
-Installing SpacetimeDB on macOS is as easy as downloading the binary and running it. You can also install on macOS using the Docker instructions below.
+Installing on macOS is as simple as running our install script. After that you can use the spacetime command to manage versions.
 
 ```bash
-curl --proto '=https' --tlsv1.2 -sSf https://install.spacetimedb.com | sh
+curl -sSf https://install.spacetimedb.com | sh
 ```
 
 #### Install on Linux
 
-Installing SpacetimeDB on Linux (or other Unix operating systems) is as easy as downloading the binary and running it. You can also install on Linux using the Docker instructions below.
+Installing on Linux is as simple as running our install script. After that you can use the spacetime command to manage versions.
 
 ```bash
-curl --proto '=https' --tlsv1.2 -sSf https://install.spacetimedb.com | sh
+curl -sSf https://install.spacetimedb.com | sh
 ```
 
 #### Install on Windows
 
-Run the following command in your terminal and follow the on-screen instructions to install the `spacetime` CLI tool and the SpacetimeDB standalone server as a single executable.
+Installing on Windows is as simple as pasting the above snippet into PowerShell. If you would like to use WSL instead, please follow the Linux install instructions.
 
 ```ps1
 iwr https://windows.spacetimedb.com -useb | iex
 ```
 
-#### Install with Cargo
-
-If you'd like to build the `spacetime` CLI tool from source, you can install it using Cargo.
-
-```bash
-cargo install spacetimedb-cli
-```
-
-### Installing from Source
-
-For MacOS and Linux this is straightforward. Just run the following commands in a terminal:
-
-```bash
-# Install rustup, you can skip this step if you have cargo and the wasm32-unknown-unknown target already installed.
-curl https://sh.rustup.rs -sSf | sh
-# Clone SpacetimeDB
-git clone https://github.com/clockworklabs/SpacetimeDB
-# Build and install the CLI
-cd SpacetimeDB
-cargo install --path ./crates/cli --locked
-```
-
-Windows may require some extra dependencies be installed, including openssl and a specific version of perl. A guide for this will be available soon.
-
 #### Running with Docker
 
-You can execute the `spacetime` CLI tool using Docker to run the SpacetimeDB standalone server without needing to install any command-line tools or other dependencies.
+If you prefer to run Spacetime in a container, you can use the following command to start a new instance.
 
 ```bash
-docker run --rm --pull always --name spacetimedb -p 3000:80 clockworklabs/spacetimedb:latest start
+docker run --rm --pull always -p 3000:3000 clockworklabs/spacetime start
 ```
 
 ## Documentation
@@ -169,25 +145,18 @@ You can see a summary of the supported languages below with a link to the gettin
 
 ## Language Support
 
-You can write SpacetimeDB modules in a bunch of popular languages, with many more to come in the future!
+You can write SpacetimeDB modules in several popular languages, with more to come in the future!
 
 #### Serverside Libraries
 
 - [Rust](https://spacetimedb.com/docs/modules/rust/quickstart)
-- [C# (experimental)](https://spacetimedb.com/docs/modules/c-sharp/quickstart)
-- Typescript (planned)
-- Python (planned)
-- C++ (planned)
-- Lua (planned)
+- [C#](https://spacetimedb.com/docs/modules/c-sharp/quickstart)
 
 #### Client Libraries
 
 - [Rust](https://spacetimedb.com/docs/sdks/rust/quickstart)
 - [C#](https://spacetimedb.com/docs/sdks/c-sharp/quickstart)
 - [Typescript](https://spacetimedb.com/docs/sdks/typescript/quickstart)
-- Python (planned)
-- C++ (planned)
-- Lua (planned)
 
 ## License
 
