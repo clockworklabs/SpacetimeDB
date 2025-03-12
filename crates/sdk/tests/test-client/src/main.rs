@@ -2162,6 +2162,10 @@ fn test_intra_query_bag_semantics_for_join() {
     });
 }
 
+/// Test that several clients subscribing to the same query and using the same protocol (bsatn)
+/// can use different compression algorithms than each other.
+///
+/// This is a regression test.
 fn exec_two_different_compression_algos() {
     use Compression::*;
 
