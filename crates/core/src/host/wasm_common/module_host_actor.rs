@@ -11,7 +11,6 @@ use std::time::Duration;
 use super::instrumentation::CallTimes;
 use crate::database_logger::{self, SystemLogger};
 use crate::db::datastore::locking_tx_datastore::MutTxId;
-use crate::db::datastore::system_tables::{StClientRow, ST_CLIENT_ID};
 use crate::db::datastore::traits::{IsolationLevel, Program};
 use crate::db::db_metrics::DB_METRICS;
 use crate::energy::{EnergyMonitor, EnergyQuanta, ReducerBudget, ReducerFingerprint};
@@ -551,18 +550,20 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
                 );
                 EventStatus::Failed(errmsg.into())
             }
-            // we haven't actually comitted yet - `commit_and_broadcast_event` will commit
+            // We haven't actually comitted yet - `commit_and_broadcast_event` will commit
             // for us and replace this with the actual database update.
+            //
+            // Detecting a new client, and inserting it in `st_clients`
+            // and conversely removing from `st_clients` on disconnect.
             Ok(Ok(())) => {
-                // Detecing a new client, and inserting it in `st_clients`
-                // Disconnect logic is written in module_host.rs, due to different transacationality requirements.
-                if reducer_def.lifecycle == Some(Lifecycle::OnConnect) {
-                    match self.insert_st_client(&mut tx, caller_identity, caller_connection_id) {
-                        Ok(_) => EventStatus::Committed(DatabaseUpdate::default()),
-                        Err(err) => EventStatus::Failed(err.to_string()),
-                    }
-                } else {
-                    EventStatus::Committed(DatabaseUpdate::default())
+                let res = match reducer_def.lifecycle {
+                    Some(Lifecycle::OnConnect) => tx.insert_st_client(caller_identity, caller_connection_id),
+                    Some(Lifecycle::OnDisconnect) => tx.delete_st_client(caller_identity, caller_connection_id),
+                    _ => Ok(()),
+                };
+                match res {
+                    Ok(()) => EventStatus::Committed(DatabaseUpdate::default()),
+                    Err(err) => EventStatus::Failed(err.to_string()),
                 }
             }
         };
@@ -602,19 +603,6 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
     // Helpers - NOT API
     fn system_logger(&self) -> &SystemLogger {
         self.replica_context().logger.system_logger()
-    }
-
-    fn insert_st_client(
-        &self,
-        tx: &mut MutTxId,
-        identity: Identity,
-        connection_id: ConnectionId,
-    ) -> Result<(), DBError> {
-        let row = &StClientRow {
-            identity: identity.into(),
-            connection_id: connection_id.into(),
-        };
-        tx.insert_via_serialize_bsatn(ST_CLIENT_ID, row).map(|_| ())
     }
 }
 
