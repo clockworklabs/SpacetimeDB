@@ -120,9 +120,11 @@ iwr https://windows.spacetimedb.com -useb | iex
 
 #### Installing from Source
 
+A quick note on installing from source: we recommend that you don't install from source unless there is a feature that is available in `master` that hasn't been released yet, otherwise follow the official installation instructions.
+
 ##### MacOS + Linux
 
-Installing on MacOS + Linux is pretty straighforward. First we are going to build all of the binaries that we need:
+Installing on macOS + Linux is pretty straightforward. First we are going to build all of the binaries that we need:
 
 ```bash
 # Install rustup, you can skip this step if you have cargo and the wasm32-unknown-unknown target already installed.
@@ -151,7 +153,7 @@ You can verify that the correct version has been installed via `spacetime --vers
 
 ##### Windows
 
-Building on windows is a bit more complicated. You'll need a slighly different version of perl compared to what comes pre-bundled in most windows terminals. We recommend [Strawberry Perl](https://strawberryperl.com/). You may also need access to an `openssl` binary which actually comes pre-installed with [Git for Windows](https://git-scm.com/downloads/win). Also you'll need to install [rustup](https://rustup.rs/) for Windows.
+Building on windows is a bit more complicated. You'll need a slightly different version of perl compared to what comes pre-bundled in most Windows terminals. We recommend [Strawberry Perl](https://strawberryperl.com/). You may also need access to an `openssl` binary which actually comes pre-installed with [Git for Windows](https://git-scm.com/downloads/win). Also, you'll need to install [rustup](https://rustup.rs/) for Windows.
 
 In a Git for Windows shell you should have something that looks like this:
 ```
