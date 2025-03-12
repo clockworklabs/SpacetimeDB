@@ -459,7 +459,16 @@ public readonly struct Unsupported<T> : IReadWrite<T>
 public static class StringUtil
 {
     /// <summary>
-    /// Convert an arbitrary object to a string.
+    /// Convert an arbitrary object to a string:
+    /// - Printing <c>null<c> instead of empty string for null objects
+    /// - Quoting strings
+    /// - Printing list contents as <c>$"[ {list[0].ToString()} {list[1].ToString()} {...} {list[n-1].ToString()} ]"</c>,
+    ///     printing at most 16 elements of the list, with an ellipsis in the middle if there
+    ///     are more. (This is to prevent crashing Unity if you accidentally print a large array, say.)
+    ///
+    /// This is NOT a deep pretty-printer: it only pretty-prints the object given, relying on <c>ToString()</c>
+    /// to print sub-objects. However, objects marked with <c>[SpacetimeDB.Type]</c> use this method as part of
+    /// generated code to implement deep pretty-printing in their <c>ToString()</c> implementations.
     /// </summary>
     /// <param name="obj"></param>
     /// <returns></returns>

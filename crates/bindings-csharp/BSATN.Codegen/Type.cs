@@ -144,13 +144,13 @@ public abstract record BaseTypeDeclaration<M>
         );
     }
 
-    public static string JoinOrElse(string join, IEnumerable<String> joinands, string baseCase)
+    public static string JoinOrValue(string join, IEnumerable<String> stringArray, string resultIfArrayEmpty)
     {
-        if (joinands.Any())
+        if (stringArray.Any())
         {
-            return string.Join(join, joinands);
+            return string.Join(join, stringArray);
         }
-        return baseCase;
+        return resultIfArrayEmpty;
     }
 
     public Scope.Extensions ToExtensions()
