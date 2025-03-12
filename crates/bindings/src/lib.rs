@@ -548,8 +548,6 @@ pub use spacetimedb_bindings_macro::table;
 /// This allows calling the reducers at a particular time, or in a loop.
 /// This can be used for game loops.
 ///
-
-///
 /// The scheduling information for a reducer is stored in a table.
 /// This table has two mandatory fields:
 /// - A primary key that identifies scheduled reducer calls.
