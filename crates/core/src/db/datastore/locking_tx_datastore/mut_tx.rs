@@ -9,10 +9,11 @@ use super::{
     SharedMutexGuard, SharedWriteGuard,
 };
 use crate::db::datastore::system_tables::{
-    with_sys_table_buf, StColumnFields, StColumnRow, StConstraintFields, StConstraintRow, StFields as _, StIndexFields,
-    StIndexRow, StRowLevelSecurityFields, StRowLevelSecurityRow, StScheduledFields, StScheduledRow, StSequenceFields,
-    StSequenceRow, StTableFields, StTableRow, SystemTable, ST_COLUMN_ID, ST_CONSTRAINT_ID, ST_INDEX_ID,
-    ST_ROW_LEVEL_SECURITY_ID, ST_SCHEDULED_ID, ST_SEQUENCE_ID, ST_TABLE_ID,
+    with_sys_table_buf, StClientFields, StClientRow, StColumnFields, StColumnRow, StConstraintFields, StConstraintRow,
+    StFields as _, StIndexFields, StIndexRow, StRowLevelSecurityFields, StRowLevelSecurityRow, StScheduledFields,
+    StScheduledRow, StSequenceFields, StSequenceRow, StTableFields, StTableRow, SystemTable, ST_CLIENT_ID,
+    ST_COLUMN_ID, ST_CONSTRAINT_ID, ST_INDEX_ID, ST_ROW_LEVEL_SECURITY_ID, ST_SCHEDULED_ID, ST_SEQUENCE_ID,
+    ST_TABLE_ID,
 };
 use crate::db::datastore::traits::{RowTypeForTable, TxData};
 use crate::db::datastore::{
@@ -34,9 +35,14 @@ use core::ops::RangeBounds;
 use core::{iter, ops::Bound};
 use smallvec::SmallVec;
 use spacetimedb_execution::{dml::MutDatastore, Datastore, DeltaStore};
-use spacetimedb_lib::db::{auth::StAccess, raw_def::SEQUENCE_ALLOCATION_STEP};
 use spacetimedb_lib::{db::raw_def::v9::RawSql, metrics::ExecutionMetrics};
-use spacetimedb_primitives::{ColId, ColList, ColSet, ConstraintId, IndexId, ScheduleId, SequenceId, TableId};
+use spacetimedb_lib::{
+    db::{auth::StAccess, raw_def::SEQUENCE_ALLOCATION_STEP},
+    ConnectionId, Identity,
+};
+use spacetimedb_primitives::{
+    col_list, ColId, ColList, ColSet, ConstraintId, IndexId, ScheduleId, SequenceId, TableId,
+};
 use spacetimedb_sats::{
     bsatn::{self, to_writer, DecodeError, Deserializer},
     de::{DeserializeSeed, WithBound},
@@ -1230,6 +1236,31 @@ impl<'a> Iterator for IndexScanFilterDeleted<'a> {
 }
 
 impl MutTxId {
+    pub(crate) fn insert_st_client(&mut self, identity: Identity, connection_id: ConnectionId) -> Result<()> {
+        let row = &StClientRow {
+            identity: identity.into(),
+            connection_id: connection_id.into(),
+        };
+        self.insert_via_serialize_bsatn(ST_CLIENT_ID, row).map(|_| ())
+    }
+
+    pub(crate) fn delete_st_client(&mut self, identity: Identity, connection_id: ConnectionId) -> Result<()> {
+        let row = &StClientRow {
+            identity: identity.into(),
+            connection_id: connection_id.into(),
+        };
+        let ptr = self
+            .iter_by_col_eq(
+                ST_CLIENT_ID,
+                col_list![StClientFields::Identity, StClientFields::ConnectionId],
+                &AlgebraicValue::product(row),
+            )?
+            .next()
+            .expect("the client should be connected")
+            .pointer();
+        self.delete(ST_CLIENT_ID, ptr).map(drop)
+    }
+
     pub(crate) fn insert_via_serialize_bsatn<'a, T: Serialize>(
         &'a mut self,
         table_id: TableId,

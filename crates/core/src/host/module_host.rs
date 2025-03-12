@@ -2,10 +2,8 @@ use super::{ArgsTuple, InvalidReducerArguments, ReducerArgs, ReducerCallResult, 
 use crate::client::{ClientActorId, ClientConnectionSender};
 use crate::database_logger::{LogLevel, Record};
 use crate::db::datastore::locking_tx_datastore::MutTxId;
-use crate::db::datastore::system_tables::{StClientFields, StClientRow, ST_CLIENT_ID};
 use crate::db::datastore::traits::{IsolationLevel, Program, TxData};
 use crate::energy::EnergyQuanta;
-use crate::error::DBError;
 use crate::estimation::estimate_rows_scanned;
 use crate::execution_context::{ExecutionContext, ReducerContext, Workload, WorkloadType};
 use crate::hash::Hash;
@@ -25,7 +23,6 @@ use derive_more::From;
 use futures::{Future, FutureExt};
 use indexmap::IndexSet;
 use itertools::Itertools;
-use smallvec::SmallVec;
 use spacetimedb_client_api_messages::websocket::{ByteListLen, Compression, OneOffTable, QueryUpdate, WebsocketFormat};
 use spacetimedb_data_structures::error_stream::ErrorStream;
 use spacetimedb_data_structures::map::{HashCollectionExt as _, IntMap};
@@ -33,9 +30,9 @@ use spacetimedb_lib::db::raw_def::v9::Lifecycle;
 use spacetimedb_lib::identity::{AuthCtx, RequestId};
 use spacetimedb_lib::ConnectionId;
 use spacetimedb_lib::Timestamp;
-use spacetimedb_primitives::{col_list, TableId};
+use spacetimedb_primitives::TableId;
 use spacetimedb_query::compile_subscription;
-use spacetimedb_sats::{algebraic_value, ProductValue};
+use spacetimedb_sats::ProductValue;
 use spacetimedb_schema::auto_migrate::AutoMigrateError;
 use spacetimedb_schema::def::deserialize::ReducerArgsDeserializeSeed;
 use spacetimedb_schema::def::{ModuleDef, ReducerDef};
@@ -548,18 +545,30 @@ impl ModuleHost {
         let reducer_lookup = self.info.module_def.lifecycle_reducer(lifecycle);
         let reducer_name = reducer_lookup.as_ref().map(|(_, def)| &*def.name).unwrap_or(fake_name);
 
-        let db = &self.inner.replica_ctx().relational_db;
-        let workload = || {
-            Workload::Reducer(ReducerContext {
+        // A fallback transaction that either inserts or deletes the connected client from `st_client`.
+        let fallback = || {
+            let workload = Workload::Reducer(ReducerContext {
                 name: reducer_name.to_owned(),
                 caller_identity,
                 caller_connection_id,
                 timestamp: Timestamp::now(),
                 arg_bsatn: Bytes::new(),
-            })
+            });
+            self.inner
+                .replica_ctx()
+                .relational_db
+                .with_auto_commit(workload, |mut_tx| {
+                    if connected {
+                        mut_tx.insert_st_client(caller_identity, caller_connection_id)
+                    } else {
+                        mut_tx.delete_st_client(caller_identity, caller_connection_id)
+                    }
+                })
         };
 
-        let result = if let Some((reducer_id, reducer_def)) = reducer_lookup {
+        if let Some((reducer_id, reducer_def)) = reducer_lookup {
+            // The module defined a lifecycle reducer to handle connect/disconnects.
+            // In the first instance use this reducer...
             self.call_reducer_inner(
                 caller_identity,
                 Some(caller_connection_id),
@@ -572,70 +581,26 @@ impl ModuleHost {
             )
             .await
             .map(drop)
-        } else {
-            // If the module doesn't define connected or disconnected, commit
-            // a transaction to update `st_clients` and to ensure we always have those events
-            // paired in the commitlog.
-            //
-            // This is necessary to be able to disconnect clients after a server
-            // crash.
-            db.with_auto_commit(workload(), |mut_tx| {
-                if connected {
-                    self.update_st_clients(mut_tx, caller_identity, caller_connection_id, connected)
-                } else {
-                    Ok(())
-                }
+            .inspect_err(|_| {
+                // ...but it has failed, so we treat this as if the reducer didn't exist
+                // and commit a separate transaction instead.
+                let _ = fallback().map_err(|e| {
+                    log::error!("st_clients table update failed with params with error: {:?}", e);
+                });
             })
-            .map_err(|err| {
+        } else {
+            // The module doesn't define connected.
+            // Commit a transaction to update `st_clients`
+            // and to ensure we always have those events paired in the commitlog.
+            //
+            // This is necessary to be able to disconnect clients after a server crash.
+            fallback().map_err(|err| {
                 InvalidReducerArguments {
                     err: err.into(),
                     reducer: reducer_name.into(),
                 }
                 .into()
             })
-        };
-
-        // Deleting client from `st_clients`does not depend upon result of disconnect reducer hence done in a separate tx.
-        if !connected {
-            let _ = db
-                .with_auto_commit(workload(), |mut_tx| {
-                    self.update_st_clients(mut_tx, caller_identity, caller_connection_id, connected)
-                })
-                .map_err(|e| {
-                    log::error!("st_clients table update failed with params with error: {:?}", e);
-                });
-        }
-        result
-    }
-
-    fn update_st_clients(
-        &self,
-        mut_tx: &mut MutTxId,
-        caller_identity: Identity,
-        caller_connection_id: ConnectionId,
-        connected: bool,
-    ) -> Result<(), DBError> {
-        let db = &*self.inner.replica_ctx().relational_db;
-
-        let row = &StClientRow {
-            identity: caller_identity.into(),
-            connection_id: caller_connection_id.into(),
-        };
-
-        if connected {
-            mut_tx.insert_via_serialize_bsatn(ST_CLIENT_ID, &row).map(|_| ())
-        } else {
-            let row = db
-                .iter_by_col_eq_mut(
-                    mut_tx,
-                    ST_CLIENT_ID,
-                    col_list![StClientFields::Identity, StClientFields::ConnectionId],
-                    &algebraic_value::AlgebraicValue::product(row),
-                )?
-                .map(|row_ref| row_ref.pointer())
-                .collect::<SmallVec<[_; 1]>>();
-            db.delete(mut_tx, ST_CLIENT_ID, row);
-            Ok::<(), DBError>(())
         }
     }
 
