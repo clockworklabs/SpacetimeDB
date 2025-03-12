@@ -149,6 +149,77 @@ spacetime version use $STDB_VERSION
 
 You can verify that the correct version has been installed via `spacetime --version`.
 
+## Windows
+
+Building on windows is a bit more complicated. You'll need a slighly different version of perl compared to what comes pre-bundled in most windows terminals. We recommend [Strawberry Perl](https://strawberryperl.com/). You may also need access to an `openssl` binary which actually comes pre-installed with [Git for Windows](https://git-scm.com/downloads/win). Also you'll need to install [rustup](https://rustup.rs/) for Windows.
+
+In a Git for Windows shell you should have something that looks like this:
+```
+$ which perl
+/c/Strawberry/perl/bin/perl
+$ which openssl
+/mingw64/bin/openssl
+$ which cargo 
+/c/Users/<user>/.cargo/bin/cargo
+```
+
+If that looks correct then you're ready to proceed!
+
+```powershell
+# Clone SpacetimeDB
+git clone https://github.com/clockworklabs/SpacetimeDB
+
+# Build and install the CLI
+cd SpacetimeDB
+cargo build --locked --release -p spacetimedb-standalone -p spacetimedb-update -p spacetimedb-cli
+
+# Create directories
+$stdbDir = "$HOME\AppData\Local\SpacetimeDB"
+$stdbVersion = & ".\target\release\spacetimedb-cli" --version | Select-String -Pattern 'spacetimedb tool version ([0-9.]+);' | ForEach-Object { $_.Matches.Groups[1].Value }
+New-Item -ItemType Directory -Path "$stdbDir\bin\$stdbVersion" -Force | Out-Null
+
+# Install the update binary
+Copy-Item "target\release\spacetimedb-update.exe" "$stdbDir\spacetime.exe"
+Copy-Item "target\release\spacetimedb-cli.exe" "$stdbDir\bin\$stdbVersion\"
+Copy-Item "target\release\spacetimedb-standalone.exe" "$stdbDir\bin\$stdbVersion\"
+
+# Now add the directory we just created to your path. We recommend adding it to the system path because then it will be available to all of your applications (including Unity3D). After you do this, restart your shell!
+# %USERPROFILE%\AppData\Local\SpacetimeDB
+
+# Set the current version
+spacetime version use $stdbVersion
+```
+
+You can verify that the correct version has been installed via `spacetime --version`.
+
+If you're using Git for Windows you can follow these instructions instead:
+
+```bash
+# Clone SpacetimeDB
+git clone https://github.com/clockworklabs/SpacetimeDB
+# Build and install the CLI
+cd SpacetimeDB
+# Build the CLI binaries - this takes a while on windows so go grab a coffee :)
+cargo build --locked --release -p spacetimedb-standalone -p spacetimedb-update -p spacetimedb-cli
+
+# Create directories
+export STDB_VERSION="$(./target/release/spacetimedb-cli --version | sed -n 's/.*spacetimedb tool version \([0-9.]*\);.*/\1/p')"
+mkdir -p ~/AppData/Local/SpacetimeDB/bin/$STDB_VERSION
+
+# Install the update binary
+cp target/release/spacetimedb-update ~/AppData/Local/SpacetimeDB/spacetime
+cp target/release/spacetimedb-cli ~/AppData/Local/SpacetimeDB/bin/$STDB_VERSION
+cp target/release/spacetimedb-standalone ~/AppData/Local/SpacetimeDB/bin/$STDB_VERSION
+
+# Now add the directory we just created to your path. We recommend adding it to the system path because then it will be available to all of your applications (including Unity3D). After you do this, restart your shell!
+# %USERPROFILE%\AppData\Local\SpacetimeDB
+
+# Set the current version
+spacetime version use $STDB_VERSION
+```
+
+You can verify that the correct version has been installed via `spacetime --version`.
+
 #### Running with Docker
 
 If you prefer to run Spacetime in a container, you can use the following command to start a new instance.
