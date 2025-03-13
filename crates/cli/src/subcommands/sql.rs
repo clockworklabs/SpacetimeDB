@@ -2,16 +2,15 @@ use std::time::Instant;
 
 use crate::api::{from_json_seed, ClientApi, Connection, StmtResultJson};
 use crate::common_args;
+use crate::config::Config;
+use crate::util::{database_identity, get_auth_header, ResponseExt, UNSTABLE_WARNING};
 use anyhow::Context;
 use clap::{Arg, ArgAction, ArgMatches};
 use itertools::Itertools;
 use reqwest::RequestBuilder;
+use spacetimedb::sql::compiler::build_table;
 use spacetimedb_lib::de::serde::SeedWrapper;
-use spacetimedb_lib::sats::{satn, Typespace};
-use tabled::settings::Style;
-
-use crate::config::Config;
-use crate::util::{database_identity, get_auth_header, ResponseExt, UNSTABLE_WARNING};
+use spacetimedb_lib::sats::Typespace;
 
 pub fn cli() -> clap::Command {
     clap::Command::new("sql")
@@ -112,29 +111,12 @@ pub(crate) async fn run_sql(builder: RequestBuilder, sql: &str, with_stats: bool
 
 fn stmt_result_to_table(stmt_result: &StmtResultJson) -> anyhow::Result<tabled::Table> {
     let StmtResultJson { schema, rows } = stmt_result;
-
-    let mut builder = tabled::builder::Builder::default();
-    builder.set_header(
-        schema
-            .elements
-            .iter()
-            .enumerate()
-            .map(|(i, e)| e.name.clone().unwrap_or_else(|| format!("column {i}").into())),
-    );
-
     let ty = Typespace::EMPTY.with_type(schema);
-    for row in rows {
-        let row = from_json_seed(row.get(), SeedWrapper(ty))?;
-        builder.push_record(
-            ty.with_values(&row)
-                .map(|value| satn::PsqlWrapper { ty: ty.ty(), value }.to_string()),
-        );
-    }
 
-    let mut table = builder.build();
-    table.with(Style::psql());
-
-    Ok(table)
+    Ok(build_table(
+        schema,
+        rows.iter().map(|r| from_json_seed(r.get(), SeedWrapper(ty))),
+    )?)
 }
 
 pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
