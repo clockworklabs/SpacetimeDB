@@ -9,9 +9,12 @@ use crate::util::{database_identity, get_auth_header, ResponseExt, UNSTABLE_WARN
 use anyhow::Context;
 use clap::{Arg, ArgAction, ArgMatches};
 use reqwest::RequestBuilder;
+use spacetimedb::sql::compiler::build_table;
 use spacetimedb_lib::de::serde::SeedWrapper;
 use spacetimedb_lib::sats::{satn, Typespace};
 use tabled::settings::Style;
+
+use spacetimedb_lib::sats::Typespace;
 
 pub fn cli() -> clap::Command {
     clap::Command::new("sql")
