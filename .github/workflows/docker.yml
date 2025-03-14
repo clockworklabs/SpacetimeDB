@@ -20,7 +20,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
       - name: Prune stale references
-        run: git remote prune origin
+        run: |
+          id
+          git remote prune origin
       - name: Docker meta
         id: meta
         uses: docker/metadata-action@v4
