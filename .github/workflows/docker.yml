@@ -14,12 +14,9 @@ jobs:
   docker-amd64:
     runs-on: bare-metal
     name: Build DockerHub AMD64 Container
-    container: ubuntu
     steps:
       - name: Install jq
-        run: |
-          apt-get update
-          apt-get install git jq -y
+        run: sudo apt-get install jq -y
       - name: Checkout
         uses: actions/checkout@v3
       - name: Prune stale references
