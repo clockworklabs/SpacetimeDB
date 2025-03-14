@@ -19,7 +19,7 @@ jobs:
       - name: Install jq
         run: |
           apt-get update
-          apt-get install jq -y
+          apt-get install git jq -y
       - name: Checkout
         uses: actions/checkout@v3
       - name: Prune stale references
