@@ -6,7 +6,6 @@ on:
       - master
       - staging
       - dev
-      - bfops/fix-docker-maybe
     tags:
       - 'v*'
 
