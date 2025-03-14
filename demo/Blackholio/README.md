@@ -25,21 +25,30 @@ Need help with the tutorial? [Join our Discord server](https://discord.gg/spacet
 ---
 
 ### **Getting Started**
-To get started, follow these steps:
+If you want to follow a more structured tutorial where it shows you how to set everything up, start with our [Blackholio Tutorial](https://spacetimedb.com/docs/unity/part-1).
 
-1. Clone this repository:
+If you just want to checkout the final project and play around a bit, follow these steps:
+
+1. [Install SpacetimeDB CLI](https://spacetimedb.com/install)
+2. Start SpacetimeDB in a separate terminal with `spacetime start`.
+3. Clone this repository:
    ```bash
    git clone https://github.com/ClockworkLabs/Blackholio.git
    cd Blackholio
    ```
-2. Install [Unity Hub](https://unity.com/download) and Unity **2022.3.32f1 LTS**.
-3. Follow the tutorial parts:
-   - [Part 1: Setup](https://spacetimedb.com/docs/unity/part-1)
-   - [Part 2: Connecting to SpacetimeDB](https://spacetimedb.com/docs/unity/part-2)
-   - [Part 3: Gameplay](https://spacetimedb.com/docs/unity/part-3)
-   - [Part 4: Moving and Colliding](https://spacetimedb.com/docs/unity/part-4)
+4. Publish the server logic. You can either publish the csharp server or the rust server.
+   ```bash
+   cd server-rust/
+   # Upload the module to SpacetimeDB
+   bash ./publish.sh
+   # Update the client bindings in case they are out of date
+   bash ./generate.sh
+   ```
+5. Install [Unity Hub](https://unity.com/download) and Unity version **2021.2** or newer.
+6. Open the scene named `Main.unity`
+7. Hit play!
 
-4. Run the game using the Unity Editor or build for your platform.
+You should be prompted for a username and you should be able to move around, eat food and defeat other players!
 
 ---
 
