@@ -18,6 +18,7 @@ jobs:
     steps:
       - name: Install jq
         run: |
+          apt-get update
           apt-get install jq git
       - name: Checkout
         uses: actions/checkout@v3
