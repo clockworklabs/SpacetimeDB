@@ -151,7 +151,7 @@ export class SubscriptionHandleImpl<
     onApplied?: (
       ctx: SubscriptionEventContextInterface<DBView, Reducers, SetReducerFlags>
     ) => void,
-    private onError?: (
+    onError?: (
       ctx: ErrorContextInterface<DBView, Reducers, SetReducerFlags>,
       error: Error
     ) => void
@@ -177,8 +177,10 @@ export class SubscriptionHandleImpl<
         ctx: ErrorContextInterface<DBView, Reducers, SetReducerFlags>,
         error: Error
       ) => {
-        if (this.onError) {
-          this.onError(ctx, error);
+        this.#activeState = false;
+        this.#endedState = true;
+        if (onError) {
+          onError(ctx, error);
         }
       }
     );
@@ -196,7 +198,19 @@ export class SubscriptionHandleImpl<
     }
     this.#unsubscribeCalled = true;
     this.db.unregisterSubscription(this.#queryId);
-    this.db['unsubscribe'](this.#queryId);
+    this.#emitter.on(
+      'end',
+      (
+        _ctx: SubscriptionEventContextInterface<
+          DBView,
+          Reducers,
+          SetReducerFlags
+        >
+      ) => {
+        this.#endedState = true;
+        this.#activeState = false;
+      }
+    );
   }
 
   /**
@@ -221,6 +235,7 @@ export class SubscriptionHandleImpl<
       throw new Error('Unsubscribe has already been called');
     }
     this.#unsubscribeCalled = true;
+    this.db.unregisterSubscription(this.#queryId);
     this.#emitter.on(
       'end',
       (

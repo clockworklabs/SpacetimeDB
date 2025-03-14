@@ -675,6 +675,17 @@ export class DbConnectionImpl<
         break;
       }
       case 'SubscribeApplied': {
+        const subscription = this.#subscriptionManager.subscriptions.get(
+          message.queryId
+        );
+        if (subscription === undefined) {
+          stdbLogger(
+            'error',
+            `Received SubscribeApplied for unknown queryId ${message.queryId}.`
+          );
+          // If we don't know about the subscription, we won't apply the table updates.
+          break;
+        }
         const event: Event<never> = { tag: 'SubscribeApplied' };
         const eventContext = this.#remoteModule.eventContextConstructor(
           this,
@@ -685,15 +696,24 @@ export class DbConnectionImpl<
           message.tableUpdates,
           eventContext
         );
-        this.#subscriptionManager.subscriptions
-          .get(message.queryId)
-          ?.emitter.emit('applied', subscriptionEventContext);
+        subscription?.emitter.emit('applied', subscriptionEventContext);
         for (const callback of callbacks) {
           callback.cb();
         }
         break;
       }
       case 'UnsubscribeApplied': {
+        const subscription = this.#subscriptionManager.subscriptions.get(
+          message.queryId
+        );
+        if (subscription === undefined) {
+          stdbLogger(
+            'error',
+            `Received UnsubscribeApplied for unknown queryId ${message.queryId}.`
+          );
+          // If we don't know about the subscription, we won't apply the table updates.
+          break;
+        }
         const event: Event<never> = { tag: 'UnsubscribeApplied' };
         const eventContext = this.#remoteModule.eventContextConstructor(
           this,
@@ -704,9 +724,8 @@ export class DbConnectionImpl<
           message.tableUpdates,
           eventContext
         );
-        this.#subscriptionManager.subscriptions
-          .get(message.queryId)
-          ?.emitter.emit('end', subscriptionEventContext);
+        subscription?.emitter.emit('end', subscriptionEventContext);
+        this.#subscriptionManager.subscriptions.delete(message.queryId);
         for (const callback of callbacks) {
           callback.cb();
         }
@@ -723,10 +742,11 @@ export class DbConnectionImpl<
           ...eventContext,
           event: error,
         };
-        if (message.queryId) {
+        if (message.queryId !== undefined) {
           this.#subscriptionManager.subscriptions
             .get(message.queryId)
             ?.emitter.emit('error', errorContext, error);
+          this.#subscriptionManager.subscriptions.delete(message.queryId);
         } else {
           console.error('Received an error message without a queryId: ', error);
           // TODO: This should actually kill the connection.
