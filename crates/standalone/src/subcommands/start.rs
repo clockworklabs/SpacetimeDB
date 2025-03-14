@@ -8,6 +8,7 @@ use clap::{Arg, ArgMatches};
 use spacetimedb::config::{CertificateAuthority, ConfigFile};
 use spacetimedb::db::{Config, Storage};
 use spacetimedb::startup::{self, TracingOptions};
+use spacetimedb::worker_metrics;
 use spacetimedb_client_api::routes::database::DatabaseRoutes;
 use spacetimedb_client_api::routes::router;
 use spacetimedb_paths::cli::{PrivKeyPath, PubKeyPath};
@@ -133,6 +134,7 @@ pub async fn exec(args: &ArgMatches) -> anyhow::Result<()> {
 
     let data_dir = Arc::new(data_dir.clone());
     let ctx = StandaloneEnv::init(db_config, &certs, data_dir).await?;
+    worker_metrics::spawn_jemalloc_stats(listen_addr.clone());
 
     let mut db_routes = DatabaseRoutes::default();
     db_routes.root_post = db_routes.root_post.layer(DefaultBodyLimit::disable());

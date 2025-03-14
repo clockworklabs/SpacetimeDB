@@ -1,11 +1,21 @@
 use std::process::ExitCode;
 
 use clap::{Arg, Command};
-use mimalloc::MiMalloc;
 use spacetimedb_cli::*;
 use spacetimedb_paths::cli::CliTomlPath;
 use spacetimedb_paths::{RootDir, SpacetimePaths};
 
+#[cfg(not(target_env = "msvc"))]
+use tikv_jemallocator::Jemalloc;
+
+#[cfg(not(target_env = "msvc"))]
+#[global_allocator]
+static GLOBAL: Jemalloc = Jemalloc;
+
+#[cfg(target_env = "msvc")]
+use mimalloc::MiMalloc;
+
+#[cfg(target_env = "msvc")]
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
 
