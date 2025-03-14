@@ -17,7 +17,9 @@ jobs:
     container: ubuntu
     steps:
       - name: Install jq
-        run: apt-get install jq -y
+        run: |
+          apt-get update
+          apt-get install jq -y
       - name: Checkout
         uses: actions/checkout@v3
       - name: Prune stale references
