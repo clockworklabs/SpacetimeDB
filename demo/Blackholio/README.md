@@ -74,7 +74,7 @@ Blackholio/
 ---
 
 ### **Requirements**
-- **Unity**: Version `2022.3.32f1 LTS` or later.
+- **Unity**: Version `2021.2` or newer.
 - **Rust**: Version `1.65.0` or later (for the SpacetimeDB server module).
 - **SpacetimeDB CLI**: Installed via [SpacetimeDB installation guide](https://spacetimedb.com/docs/install).
 
