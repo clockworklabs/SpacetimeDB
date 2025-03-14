@@ -90,45 +90,41 @@ This speed and latency is achieved by holding all of application state in memory
 
 ## Installation
 
-SpacetimeDB is an embedded database library that you can use to extend your own applications. You can also run SpacetimeDB as a standalone database server via the `spacetime` CLI tool.
-
-You can install and run the `spacetime` CLI tool via Cargo, Docker, or by running the installation instructions on our website: https://spacetimedb.com/install
+You can run SpacetimeDB as a standalone database server via the `spacetime` CLI tool.
+Install instructions for supported platforms are outlined below.
+The same install instructions can be found on our website at https://spacetimedb.com/install.
 
 #### Install on macOS
 
-Installing SpacetimeDB on macOS is as easy as downloading the binary and running it. You can also install on macOS using the Docker instructions below.
+Installing on macOS is as simple as running our install script. After that you can use the spacetime command to manage versions.
 
 ```bash
-curl --proto '=https' --tlsv1.2 -sSf https://install.spacetimedb.com | sh
+curl -sSf https://install.spacetimedb.com | sh
 ```
 
 #### Install on Linux
 
-Installing SpacetimeDB on Linux (or other Unix operating systems) is as easy as downloading the binary and running it. You can also install on Linux using the Docker instructions below.
+Installing on Linux is as simple as running our install script. After that you can use the spacetime command to manage versions.
 
 ```bash
-curl --proto '=https' --tlsv1.2 -sSf https://install.spacetimedb.com | sh
+curl -sSf https://install.spacetimedb.com | sh
 ```
 
 #### Install on Windows
 
-Run the following command in your terminal and follow the on-screen instructions to install the `spacetime` CLI tool and the SpacetimeDB standalone server as a single executable.
+Installing on Windows is as simple as pasting the above snippet into PowerShell. If you would like to use WSL instead, please follow the Linux install instructions.
 
 ```ps1
 iwr https://windows.spacetimedb.com -useb | iex
 ```
 
-#### Install with Cargo
+#### Installing from Source
 
-If you'd like to build the `spacetime` CLI tool from source, you can install it using Cargo.
+A quick note on installing from source: we recommend that you don't install from source unless there is a feature that is available in `master` that hasn't been released yet, otherwise follow the official installation instructions.
 
-```bash
-cargo install spacetimedb-cli
-```
+##### MacOS + Linux
 
-### Installing from Source
-
-For MacOS and Linux this is straightforward. Just run the following commands in a terminal:
+Installing on macOS + Linux is pretty straightforward. First we are going to build all of the binaries that we need:
 
 ```bash
 # Install rustup, you can skip this step if you have cargo and the wasm32-unknown-unknown target already installed.
@@ -137,17 +133,125 @@ curl https://sh.rustup.rs -sSf | sh
 git clone https://github.com/clockworklabs/SpacetimeDB
 # Build and install the CLI
 cd SpacetimeDB
-cargo install --path ./crates/cli --locked
+cargo build --locked --release -p spacetimedb-standalone -p spacetimedb-update -p spacetimedb-cli
+
+# Create directories
+mkdir -p ~/.local/bin
+export STDB_VERSION="$(./target/release/spacetimedb-cli --version | sed -n 's/.*spacetimedb tool version \([0-9.]*\);.*/\1/p')"
+mkdir -p ~/.local/share/spacetime/bin/$STDB_VERSION
+
+# Install the update binary
+cp target/release/spacetimedb-update ~/.local/bin/spacetime
+cp target/release/spacetimedb-cli ~/.local/share/spacetime/bin/$STDB_VERSION
+cp target/release/spacetimedb-standalone ~/.local/share/spacetime/bin/$STDB_VERSION
 ```
 
-Windows may require some extra dependencies be installed, including openssl and a specific version of perl. A guide for this will be available soon.
+At this stage you'll need to add ~/.local/bin to your path if you haven't already.
+
+```
+# Please add the following line to your shell configuration and open a new shell session:
+export PATH="$HOME/.local/bin:$PATH"
+
+```
+
+Then finally set your SpacetimeDB version:
+```
+
+# Then, in a new shell, set the current version:
+spacetime version use $STDB_VERSION
+
+# If STDB_VERSION is not set anymore then you can use the following command to list your versions:
+spacetime version list
+```
+
+You can verify that the correct version has been installed via `spacetime --version`.
+
+##### Windows
+
+Building on windows is a bit more complicated. You'll need a slightly different version of perl compared to what comes pre-bundled in most Windows terminals. We recommend [Strawberry Perl](https://strawberryperl.com/). You may also need access to an `openssl` binary which actually comes pre-installed with [Git for Windows](https://git-scm.com/downloads/win). Also, you'll need to install [rustup](https://rustup.rs/) for Windows.
+
+In a Git for Windows shell you should have something that looks like this:
+```
+$ which perl
+/c/Strawberry/perl/bin/perl
+$ which openssl
+/mingw64/bin/openssl
+$ which cargo 
+/c/Users/<user>/.cargo/bin/cargo
+```
+
+If that looks correct then you're ready to proceed!
+
+```powershell
+# Clone SpacetimeDB
+git clone https://github.com/clockworklabs/SpacetimeDB
+
+# Build and install the CLI
+cd SpacetimeDB
+cargo build --locked --release -p spacetimedb-standalone -p spacetimedb-update -p spacetimedb-cli
+
+# Create directories
+$stdbDir = "$HOME\AppData\Local\SpacetimeDB"
+$stdbVersion = & ".\target\release\spacetimedb-cli" --version | Select-String -Pattern 'spacetimedb tool version ([0-9.]+);' | ForEach-Object { $_.Matches.Groups[1].Value }
+New-Item -ItemType Directory -Path "$stdbDir\bin\$stdbVersion" -Force | Out-Null
+
+# Install the update binary
+Copy-Item "target\release\spacetimedb-update.exe" "$stdbDir\spacetime.exe"
+Copy-Item "target\release\spacetimedb-cli.exe" "$stdbDir\bin\$stdbVersion\"
+Copy-Item "target\release\spacetimedb-standalone.exe" "$stdbDir\bin\$stdbVersion\"
+
+```
+
+Now add the directory we just created to your path. We recommend adding it to the system path because then it will be available to all of your applications (including Unity3D). After you do this, restart your shell!
+
+```
+%USERPROFILE%\AppData\Local\SpacetimeDB
+```
+
+Then finally, open a new shell and use the installed SpacetimeDB version:
+```
+spacetime version use $stdbVersion
+
+# If stdbVersion is no longer set, list versions using the following command:
+spacetime version list
+```
+
+You can verify that the correct version has been installed via `spacetime --version`.
+
+If you're using Git for Windows you can follow these instructions instead:
+
+```bash
+# Clone SpacetimeDB
+git clone https://github.com/clockworklabs/SpacetimeDB
+# Build and install the CLI
+cd SpacetimeDB
+# Build the CLI binaries - this takes a while on windows so go grab a coffee :)
+cargo build --locked --release -p spacetimedb-standalone -p spacetimedb-update -p spacetimedb-cli
+
+# Create directories
+export STDB_VERSION="$(./target/release/spacetimedb-cli --version | sed -n 's/.*spacetimedb tool version \([0-9.]*\);.*/\1/p')"
+mkdir -p ~/AppData/Local/SpacetimeDB/bin/$STDB_VERSION
+
+# Install the update binary
+cp target/release/spacetimedb-update ~/AppData/Local/SpacetimeDB/spacetime
+cp target/release/spacetimedb-cli ~/AppData/Local/SpacetimeDB/bin/$STDB_VERSION
+cp target/release/spacetimedb-standalone ~/AppData/Local/SpacetimeDB/bin/$STDB_VERSION
+
+# Now add the directory we just created to your path. We recommend adding it to the system path because then it will be available to all of your applications (including Unity3D). After you do this, restart your shell!
+# %USERPROFILE%\AppData\Local\SpacetimeDB
+
+# Set the current version
+spacetime version use $STDB_VERSION
+```
+
+You can verify that the correct version has been installed via `spacetime --version`.
 
 #### Running with Docker
 
-You can execute the `spacetime` CLI tool using Docker to run the SpacetimeDB standalone server without needing to install any command-line tools or other dependencies.
+If you prefer to run Spacetime in a container, you can use the following command to start a new instance.
 
 ```bash
-docker run --rm --pull always --name spacetimedb -p 3000:80 clockworklabs/spacetimedb:latest start
+docker run --rm --pull always -p 3000:3000 clockworklabs/spacetime start
 ```
 
 ## Documentation
@@ -169,25 +273,18 @@ You can see a summary of the supported languages below with a link to the gettin
 
 ## Language Support
 
-You can write SpacetimeDB modules in a bunch of popular languages, with many more to come in the future!
+You can write SpacetimeDB modules in several popular languages, with more to come in the future!
 
 #### Serverside Libraries
 
 - [Rust](https://spacetimedb.com/docs/modules/rust/quickstart)
-- [C# (experimental)](https://spacetimedb.com/docs/modules/c-sharp/quickstart)
-- Typescript (planned)
-- Python (planned)
-- C++ (planned)
-- Lua (planned)
+- [C#](https://spacetimedb.com/docs/modules/c-sharp/quickstart)
 
 #### Client Libraries
 
 - [Rust](https://spacetimedb.com/docs/sdks/rust/quickstart)
 - [C#](https://spacetimedb.com/docs/sdks/c-sharp/quickstart)
 - [Typescript](https://spacetimedb.com/docs/sdks/typescript/quickstart)
-- Python (planned)
-- C++ (planned)
-- Lua (planned)
 
 ## License
 

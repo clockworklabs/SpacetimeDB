@@ -12,3 +12,4 @@ test-counter = { path = "../test-counter" }
 tokio.workspace = true
 anyhow.workspace = true
 env_logger.workspace = true
+rand.workspace = true
