@@ -42,7 +42,7 @@ export function deepEqual(obj1: any, obj2: any): boolean {
 
 export function uint8ArrayToHexString(array: Uint8Array): string {
   return Array.prototype.map
-    .call(array, x => ('00' + x.toString(16)).slice(-2))
+    .call(array.reverse(), x => ('00' + x.toString(16)).slice(-2))
     .join('');
 }
 
@@ -69,7 +69,7 @@ export function hexStringToUint8Array(str: string): Uint8Array {
   if (data.length != 32) {
     return new Uint8Array(0);
   }
-  return data;
+  return data.reverse();
 }
 
 export function hexStringToU128(str: string): bigint {
