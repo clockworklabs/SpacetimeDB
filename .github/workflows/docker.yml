@@ -19,7 +19,7 @@ jobs:
       - name: Install jq
         run: |
           apt-get update
-          apt-get install jq git
+          apt-get install jq git -y
       - name: Checkout
         uses: actions/checkout@v3
       - name: Docker meta
