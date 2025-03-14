@@ -144,9 +144,24 @@ mkdir -p ~/.local/share/spacetime/bin/$STDB_VERSION
 cp target/release/spacetimedb-update ~/.local/bin/spacetime
 cp target/release/spacetimedb-cli ~/.local/share/spacetime/bin/$STDB_VERSION
 cp target/release/spacetimedb-standalone ~/.local/share/spacetime/bin/$STDB_VERSION
+```
 
-# Set the current version
+At this stage you'll need to add ~/.local/bin to your path if you haven't already.
+
+```
+# Please add the following line to your shell configuration and open a new shell session:
+export PATH="$HOME/.local/bin:$PATH"
+
+```
+
+Then finally set your SpacetimeDB version:
+```
+
+# Then, in a new shell, set the current version:
 spacetime version use $STDB_VERSION
+
+# If STDB_VERSION is not set anymore then you can use the following command to list your versions:
+spacetime version list
 ```
 
 You can verify that the correct version has been installed via `spacetime --version`.
@@ -185,11 +200,20 @@ Copy-Item "target\release\spacetimedb-update.exe" "$stdbDir\spacetime.exe"
 Copy-Item "target\release\spacetimedb-cli.exe" "$stdbDir\bin\$stdbVersion\"
 Copy-Item "target\release\spacetimedb-standalone.exe" "$stdbDir\bin\$stdbVersion\"
 
-# Now add the directory we just created to your path. We recommend adding it to the system path because then it will be available to all of your applications (including Unity3D). After you do this, restart your shell!
-# %USERPROFILE%\AppData\Local\SpacetimeDB
+```
 
-# Set the current version
+Now add the directory we just created to your path. We recommend adding it to the system path because then it will be available to all of your applications (including Unity3D). After you do this, restart your shell!
+
+```
+%USERPROFILE%\AppData\Local\SpacetimeDB
+```
+
+Then finally, open a new shell and use the installed SpacetimeDB version:
+```
 spacetime version use $stdbVersion
+
+# If stdbVersion is no longer set, list versions using the following command:
+spacetime version list
 ```
 
 You can verify that the correct version has been installed via `spacetime --version`.
