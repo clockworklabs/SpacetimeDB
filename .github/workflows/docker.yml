@@ -14,12 +14,8 @@ jobs:
     runs-on: ubuntu-latest
     name: Build DockerHub AMD64 Container
     steps:
-      - name: Install jq
-        run: sudo apt-get install jq -y
       - name: Checkout
         uses: actions/checkout@v3
-      - name: Prune stale references
-        run: git remote prune origin
       - name: Docker meta
         id: meta
         uses: docker/metadata-action@v4
