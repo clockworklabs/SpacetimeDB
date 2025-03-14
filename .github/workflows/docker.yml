@@ -12,9 +12,8 @@ on:
 
 jobs:
   docker-amd64:
-    runs-on: bare-metal
+    runs-on: ubuntu-latest
     name: Build DockerHub AMD64 Container
-    container: ubuntu
     steps:
       - name: Install jq
         run: |
