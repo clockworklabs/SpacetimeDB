@@ -18,9 +18,7 @@ jobs:
       - name: Install jq
         run: sudo apt-get install jq -y
       - name: Prune stale references
-        run: |
-          id
-          git remote prune origin
+        run: git remote prune origin
       - name: Checkout
         uses: actions/checkout@v3
       - name: Docker meta
