@@ -341,6 +341,37 @@ impl<R: Repo, T> Drop for Generic<R, T> {
     }
 }
 
+/// Extract the most recently written [`segment::Metadata`] from the commitlog
+/// in `repo`.
+///
+/// Returns `None` if the commitlog is empty.
+///
+/// Note that this function validates the most recent segment, which entails
+/// traversing it from the start.
+///
+/// The function can be used instead of the pattern:
+///
+/// ```ignore
+/// let log = Commitlog::open(..)?;
+/// let max_offset = log.max_committed_offset();
+/// ```
+///
+/// like so:
+///
+/// ```ignore
+/// let max_offset = committed_meta(..)?.map(|meta| meta.tx_range.end);
+/// ```
+///
+/// Unlike `open`, no segment will be created in an empty `repo`.
+pub fn committed_meta(repo: impl Repo) -> Result<Option<segment::Metadata>, error::SegmentMetadata> {
+    let Some(last) = repo.existing_offsets()?.pop() else {
+        return Ok(None);
+    };
+
+    let mut storage = repo.open_segment(last)?;
+    segment::Metadata::extract(last, &mut storage).map(Some)
+}
+
 pub fn commits_from<R: Repo>(repo: R, max_log_format_version: u8, offset: u64) -> io::Result<Commits<R>> {
     let mut offsets = repo.existing_offsets()?;
     if let Some(pos) = offsets.iter().rposition(|&off| off <= offset) {
