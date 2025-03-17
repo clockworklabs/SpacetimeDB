@@ -5,6 +5,8 @@ use spacetimedb_cli::*;
 use spacetimedb_paths::cli::CliTomlPath;
 use spacetimedb_paths::{RootDir, SpacetimePaths};
 
+// Note that the standalone server is invoked through standaline/src/main.rs, so you will
+// also want to set the allocator there.
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemallocator::Jemalloc;
 

@@ -37,6 +37,7 @@ scopeguard.workspace = true
 serde_json.workspace = true
 sled.workspace = true
 socket2.workspace = true
+tikv-jemallocator = { version = "0.6.0", features = ["profiling", "stats"] }
 thiserror.workspace = true
 tokio.workspace = true
 tower-http.workspace = true

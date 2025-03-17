@@ -5493,6 +5493,7 @@ dependencies = [
  "spacetimedb-paths",
  "tempfile",
  "thiserror 1.0.69",
+ "tikv-jemallocator",
  "tokio",
  "toml 0.8.19",
  "tower-http",
