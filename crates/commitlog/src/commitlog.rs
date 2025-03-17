@@ -9,7 +9,7 @@ use crate::{
     payload::Decoder,
     repo::{self, Repo},
     segment::{self, FileLike, Transaction, Writer},
-    Commit, Encode, Options,
+    Commit, Encode, Options, DEFAULT_LOG_FORMAT_VERSION,
 };
 
 pub use crate::segment::Committed;

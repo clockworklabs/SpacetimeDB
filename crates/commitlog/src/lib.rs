@@ -24,6 +24,9 @@ pub use crate::{
 pub mod error;
 pub mod payload;
 
+#[cfg(feature = "streaming")]
+pub mod stream;
+
 #[cfg(any(test, feature = "test"))]
 pub mod tests;
 

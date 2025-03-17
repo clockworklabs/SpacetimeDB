@@ -39,7 +39,7 @@ impl Segment {
     /// Obtain mutable access to the underlying buffer.
     ///
     /// This is intended for tests which deliberately corrupt the segment data.
-    pub fn buf_mut(&mut self) -> RwLockWriteGuard<'_, Vec<u8>> {
+    pub fn buf_mut(&self) -> RwLockWriteGuard<'_, Vec<u8>> {
         self.buf.write().unwrap()
     }
 }
@@ -117,6 +117,60 @@ impl io::Seek for Segment {
                 io::ErrorKind::InvalidInput,
                 "invalid seek to a negative or overflowing position",
             )),
+        }
+    }
+}
+
+#[cfg(feature = "streaming")]
+mod async_impls {
+    use std::{
+        io,
+        pin::Pin,
+        task::{Context, Poll},
+    };
+
+    use tokio::io::{AsyncRead, AsyncSeek, AsyncWrite, ReadBuf};
+
+    use super::Segment;
+
+    impl AsyncRead for Segment {
+        fn poll_read(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut ReadBuf<'_>) -> Poll<io::Result<()>> {
+            let this = self.get_mut();
+            let inner = this.buf.read().unwrap();
+            let pos = this.pos as usize;
+            if pos > inner.len() {
+                // Bad file descriptor
+                return Poll::Ready(Err(io::Error::from_raw_os_error(9)));
+            }
+            let filled = buf.filled().len();
+            AsyncRead::poll_read(Pin::new(&mut &inner[pos..]), cx, buf).map_ok(|()| {
+                this.pos += (buf.filled().len() - filled) as u64;
+            })
+        }
+    }
+
+    impl AsyncSeek for Segment {
+        fn start_seek(self: Pin<&mut Self>, position: io::SeekFrom) -> io::Result<()> {
+            let this = self.get_mut();
+            io::Seek::seek(this, position).map(drop)
+        }
+
+        fn poll_complete(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<u64>> {
+            Poll::Ready(io::Seek::stream_position(&mut self.get_mut()))
+        }
+    }
+
+    impl AsyncWrite for Segment {
+        fn poll_write(self: Pin<&mut Self>, _cx: &mut Context<'_>, buf: &[u8]) -> Poll<Result<usize, io::Error>> {
+            Poll::Ready(io::Write::write(self.get_mut(), buf))
+        }
+
+        fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
+            Poll::Ready(Ok(()))
         }
     }
 }
