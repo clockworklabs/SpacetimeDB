@@ -123,7 +123,7 @@ pub(crate) async fn run_sql(builder: RequestBuilder, sql: &str, with_stats: bool
         println!(
             "{}",
             StmtResult {
-                stats: if with_stats { Some(stats) } else { None },
+                stats: with_stats.then_some(stats),
                 table: tabled::Table::new([""]),
                 time_client: now,
             }
@@ -141,7 +141,7 @@ pub(crate) async fn run_sql(builder: RequestBuilder, sql: &str, with_stats: bool
             let time_client = now;
             now = Instant::now();
             anyhow::Ok(StmtResult {
-                stats: if with_stats { Some(stats) } else { None },
+                stats: with_stats.then_some(stats),
                 table,
                 time_client,
             })
