@@ -76,8 +76,8 @@ webbrowser.workspace = true
 clap-markdown.workspace = true
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
-tikv-jemallocator = { version = "0.6.0", features = ["profiling", "stats"] }
-tikv-jemalloc-ctl = { version = "0.6.0", features = ["stats"]}
+tikv-jemallocator = { workspace = true }
+tikv-jemalloc-ctl = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { workspace = true, features = ["Win32_System_Console"] }
