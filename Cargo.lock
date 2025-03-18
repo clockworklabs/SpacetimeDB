@@ -4864,6 +4864,8 @@ dependencies = [
  "spacetimedb-table",
  "spacetimedb-testing",
  "tempdir",
+ "tikv-jemalloc-ctl",
+ "tikv-jemallocator",
  "tokio",
  "tracing-subscriber",
  "walkdir",
