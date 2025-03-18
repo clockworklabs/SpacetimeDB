@@ -666,6 +666,36 @@ record ReducerDeclaration
     }
 }
 
+record ClientVisibilityFilterDeclaration
+{
+    public readonly string FullName;
+
+    public string GlobalName
+    {
+        get => $"global::{FullName}";
+    }
+
+    public ClientVisibilityFilterDeclaration(
+        GeneratorAttributeSyntaxContext context,
+        DiagReporter diag
+    )
+    {
+        var fieldSymbol = (IFieldSymbol)context.TargetSymbol;
+
+        if (!fieldSymbol.IsStatic || !fieldSymbol.IsReadOnly)
+        {
+            diag.Report(ErrorDescriptor.ClientVisibilityNotStaticReadonly, fieldSymbol);
+        }
+
+        if (fieldSymbol.Type.ToString() is not "SpacetimeDB.Filter")
+        {
+            diag.Report(ErrorDescriptor.ClientVisibilityNotFilter, fieldSymbol);
+        }
+
+        FullName = SymbolToName(fieldSymbol);
+    }
+}
+
 [Generator]
 public class Module : IIncrementalGenerator
 {
@@ -797,11 +827,32 @@ public class Module : IIncrementalGenerator
             v => v.tableName
         );
 
+        var rlsFilters = context
+            .SyntaxProvider.ForAttributeWithMetadataName(
+                fullyQualifiedMetadataName: typeof(ClientVisibilityFilterAttribute).FullName,
+                predicate: (node, ct) => true,
+                transform: (context, ct) =>
+                    context.ParseWithDiags(diag => new ClientVisibilityFilterDeclaration(
+                        context,
+                        diag
+                    ))
+            )
+            .ReportDiagnostics(context)
+            .WithTrackingName("SpacetimeDB.ClientVisibilityFilter.Parse");
+
+        var rlsFiltersArray = CollectDistinct(
+            "ClientVisibilityFilter",
+            context,
+            rlsFilters,
+            (f) => f.FullName,
+            (f) => f.FullName
+        );
+
         context.RegisterSourceOutput(
-            tableViews.Combine(addReducers),
+            tableViews.Combine(addReducers).Combine(rlsFiltersArray),
             (context, tuple) =>
             {
-                var (tableViews, addReducers) = tuple;
+                var ((tableViews, addReducers), rlsFilters) = tuple;
                 // Don't generate the FFI boilerplate if there are no tables or reducers.
                 if (tableViews.Array.IsEmpty && addReducers.Array.IsEmpty)
                 {
@@ -867,6 +918,10 @@ public class Module : IIncrementalGenerator
                             {{string.Join(
                                 "\n",
                                 tableViews.Select(t => $"SpacetimeDB.Internal.Module.RegisterTable<{t.tableName}, SpacetimeDB.Internal.TableHandles.{t.viewName}>();")
+                            )}}
+                            {{string.Join(
+                                "\n",
+                                rlsFilters.Select(f => $"SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter({f.GlobalName});")
                             )}}
                         }
 
