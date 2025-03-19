@@ -138,16 +138,16 @@ internal static class ErrorDescriptor
             group,
             "ClientVisibilityFilters must be Filters",
             field =>
-                $"Field {field.Name} is marked as ClientVisibilityFilter but it has a type {field.Type} which is not a Filter.",
+                $"Field {field.Name} is marked as ClientVisibilityFilter but it has type {field.Type} which is not SpacetimeDB.Filter",
             field => field
         );
 
-    public static readonly ErrorDescriptor<IFieldSymbol> ClientVisibilityNotStaticReadonly =
+    public static readonly ErrorDescriptor<IFieldSymbol> ClientVisibilityNotPublicStaticReadonly =
         new(
             group,
             "ClientVisibilityFilters must be public static readonly",
             field =>
-                $"Field {field.Name} is marked as [ClientVisibilityFilter] but it is not static readonly.",
+                $"Field {field.Name} is marked as [ClientVisibilityFilter] but it is not public static readonly",
             field => field
         );
 }

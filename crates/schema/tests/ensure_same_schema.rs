@@ -15,14 +15,32 @@ fn get_normalized_schema(module_name: &str) -> ModuleDef {
 fn assert_identical_modules(module_name_prefix: &str) {
     let rs = get_normalized_schema(module_name_prefix);
     let cs = get_normalized_schema(&format!("{module_name_prefix}-cs"));
-    let diff = ponder_auto_migrate(&cs, &rs)
+    let mut diff = ponder_auto_migrate(&cs, &rs)
         .expect("could not compute a diff between Rust and C#")
         .steps;
+
+    // There are always AddRowLevelSecurity / RemoveRowLevelSecurity steps,
+    // to ensure the core engine reinitializes the policies.
+    diff.retain(|step| {
+        !matches!(
+            step,
+            AutoMigrateStep::AddRowLevelSecurity(_) | AutoMigrateStep::RemoveRowLevelSecurity(_)
+        )
+    });
 
     assert!(
         diff.is_empty(),
         "Rust and C# modules are not identical. Here are the steps to migrate from C# to Rust: {diff:#?}"
     );
+
+    let mut rls_rs = rs.row_level_security().collect::<Vec<_>>();
+    rls_rs.sort();
+    let mut rls_cs = cs.row_level_security().collect::<Vec<_>>();
+    rls_cs.sort();
+    assert_eq!(
+        rls_rs, rls_cs,
+        "Rust and C# modules are not identical: different row level security policies"
+    )
 }
 
 macro_rules! declare_tests {
