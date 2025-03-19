@@ -241,7 +241,7 @@ pub struct IndexFile<Key> {
 
 impl<Key: Into<u64> + From<u64>> IndexFile<Key> {
     pub fn open_index_file(path: &OffsetIndexFile) -> io::Result<Self> {
-        let file = path.open_file(File::options().read(true).append(true))?;
+        let file = path.open_file(File::options().read(true).write(true))?;
         let mmap = unsafe { MmapMut::map_mut(&file)? };
 
         let mut inner = IndexFileMut {
@@ -330,6 +330,8 @@ fn u64_from_le_bytes(x: &[u8]) -> Result<u64, IndexError> {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use super::*;
     use spacetimedb_paths::server::CommitLogDir;
     use spacetimedb_paths::FromPathUnchecked;
@@ -337,13 +339,16 @@ mod tests {
 
     /// Create and fill index file with key as first `fill_till - 1` even numbers
     fn create_and_fill_index(cap: u64, fill_till: u64) -> Result<IndexFileMut<u64>, IndexError> {
-        // Create a temporary directory for testing
+        // Create a temporary directory for testing.
+        // Dropping this at the end of the function is fine, as we're memory-
+        // mapping the index file.
         let temp_dir = TempDir::new()?;
-        let path = CommitLogDir::from_path_unchecked(temp_dir.path());
-        let index_path = path.index(0);
+        create_and_fill_index_in(temp_dir.path(), cap, fill_till)
+    }
 
+    fn create_and_fill_index_in(dir: &Path, cap: u64, fill_till: u64) -> Result<IndexFileMut<u64>, IndexError> {
         // Create an index file
-        let mut index_file: IndexFileMut<u64> = IndexFileMut::create_index_file(&index_path, cap)?;
+        let mut index_file = create_index_in(dir, cap)?;
 
         // Enter even number keys from 2
         for i in 1..fill_till {
@@ -353,10 +358,38 @@ mod tests {
         Ok(index_file)
     }
 
-    #[test]
-    fn test_key_lookup() -> Result<(), IndexError> {
-        let index = create_and_fill_index(10, 5)?;
+    /// Create an index file in `dir`.
+    ///
+    /// Useful if `dir` is a temporary directory and should not be dropped.
+    fn create_index_in(dir: &Path, cap: u64) -> io::Result<IndexFileMut<u64>> {
+        let index_path = index_path(dir);
+        IndexFileMut::create_index_file(&index_path, cap)
+    }
 
+    fn index_path(dir: &Path) -> OffsetIndexFile {
+        CommitLogDir::from_path_unchecked(dir).index(0)
+    }
+
+    trait KeyLookup {
+        type Key;
+        fn key_lookup(&self, key: Self::Key) -> Result<(Self::Key, u64), IndexError>;
+    }
+
+    impl<K: Into<u64> + From<u64>> KeyLookup for IndexFileMut<K> {
+        type Key = K;
+        fn key_lookup(&self, key: Self::Key) -> Result<(Self::Key, u64), IndexError> {
+            IndexFileMut::key_lookup(self, key)
+        }
+    }
+
+    impl<K: Into<u64> + From<u64>> KeyLookup for IndexFile<K> {
+        type Key = K;
+        fn key_lookup(&self, key: Self::Key) -> Result<(Self::Key, u64), IndexError> {
+            IndexFile::key_lookup(self, key)
+        }
+    }
+
+    fn assert_key_lookup(index: &impl KeyLookup<Key = u64>) -> Result<(), IndexError> {
         // looking for exact match key
         assert_eq!(index.key_lookup(2)?, (2, 200));
 
@@ -368,7 +401,34 @@ mod tests {
 
         // key smaller than 1st entry should return error
         assert!(index.key_lookup(1).is_err());
+
         Ok(())
+    }
+
+    #[test]
+    fn test_key_lookup() -> Result<(), IndexError> {
+        let index = create_and_fill_index(10, 5)?;
+        assert_key_lookup(&index)
+    }
+
+    #[test]
+    fn test_key_lookup_reopen() -> Result<(), IndexError> {
+        let tmp = TempDir::new()?;
+        create_and_fill_index_in(tmp.path(), 10, 5)?;
+
+        // Re-open as mutable index.
+        let index: IndexFileMut<_> = IndexFileMut::open_index_file(&index_path(tmp.path()), 10)?;
+        assert_key_lookup(&index)
+    }
+
+    #[test]
+    fn test_key_lookup_readonly() -> Result<(), IndexError> {
+        let tmp = TempDir::new()?;
+        create_and_fill_index_in(tmp.path(), 10, 5)?;
+
+        // Re-open as read-only index.
+        let index: IndexFile<u64> = IndexFile::open_index_file(&index_path(tmp.path()))?;
+        assert_key_lookup(&index)
     }
 
     #[test]
