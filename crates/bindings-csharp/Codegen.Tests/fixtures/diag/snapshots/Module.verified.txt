@@ -376,6 +376,57 @@ public partial struct TestScheduleIssues
         DefaultSeverity: Error,
         IsEnabledByDefault: true
       }
+    },
+    {/*
+    [SpacetimeDB.ClientVisibilityFilter]
+    private Filter MY_FILTER = new Filter.Sql("SELECT * FROM TestAutoIncNotInteger");
+                   ^^^^^^^^^
+
+*/
+      Message: Field MY_FILTER is marked as [ClientVisibilityFilter] but it is not public static readonly,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0016,
+        Title: ClientVisibilityFilters must be public static readonly,
+        MessageFormat: Field {0} is marked as [ClientVisibilityFilter] but it is not public static readonly,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+    [SpacetimeDB.ClientVisibilityFilter]
+    public static Filter MY_SECOND_FILTER = new Filter.Sql("SELECT * FROM TestAutoIncNotInteger");
+                         ^^^^^^^^^^^^^^^^
+
+*/
+      Message: Field MY_SECOND_FILTER is marked as [ClientVisibilityFilter] but it is not public static readonly,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0016,
+        Title: ClientVisibilityFilters must be public static readonly,
+        MessageFormat: Field {0} is marked as [ClientVisibilityFilter] but it is not public static readonly,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+    [SpacetimeDB.ClientVisibilityFilter]
+    public static readonly string MY_THIRD_FILTER = "SELECT * FROM TestAutoIncNotInteger";
+                                  ^^^^^^^^^^^^^^^
+}
+*/
+      Message: Field MY_THIRD_FILTER is marked as ClientVisibilityFilter but it has type string which is not SpacetimeDB.Filter,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0015,
+        Title: ClientVisibilityFilters must be Filters,
+        MessageFormat: Field {0} is marked as ClientVisibilityFilter but it has type {1} which is not SpacetimeDB.Filter,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
     }
   ]
 }

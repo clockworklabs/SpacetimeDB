@@ -204,7 +204,8 @@ record ViewIndex
             ImmutableArray.Create(col),
             null,
             ViewIndexType.BTree // this might become hash in the future
-        ) { }
+        )
+    { }
 
     private ViewIndex(Index.BTreeAttribute attr, ImmutableArray<ColumnRef> columns)
         : this(attr.Name, columns, attr.Table, ViewIndexType.BTree) { }
@@ -682,9 +683,9 @@ record ClientVisibilityFilterDeclaration
     {
         var fieldSymbol = (IFieldSymbol)context.TargetSymbol;
 
-        if (!fieldSymbol.IsStatic || !fieldSymbol.IsReadOnly)
+        if (!fieldSymbol.IsStatic || !fieldSymbol.IsReadOnly || fieldSymbol.DeclaredAccessibility != Accessibility.Public)
         {
-            diag.Report(ErrorDescriptor.ClientVisibilityNotStaticReadonly, fieldSymbol);
+            diag.Report(ErrorDescriptor.ClientVisibilityNotPublicStaticReadonly, fieldSymbol);
         }
 
         if (fieldSymbol.Type.ToString() is not "SpacetimeDB.Filter")
