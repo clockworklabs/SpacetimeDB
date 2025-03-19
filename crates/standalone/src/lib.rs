@@ -47,17 +47,9 @@ impl StandaloneEnv {
     ) -> anyhow::Result<Arc<Self>> {
         let _pid_file = data_dir.pid_file()?;
         let meta_path = data_dir.metadata_toml();
-        let meta = MetadataFile {
-            version: spacetimedb::config::current_version(),
-            edition: "standalone".to_owned(),
-            client_connection_id: None,
-        };
+        let mut meta = MetadataFile::new("standalone");
         if let Some(existing_meta) = MetadataFile::read(&meta_path).context("failed reading metadata.toml")? {
-            anyhow::ensure!(
-                existing_meta.version_compatible_with(&meta.version) && existing_meta.edition == meta.edition,
-                "metadata.toml indicates that this database is from an incompatible \
-                 version of SpacetimeDB. please run a migration before proceeding."
-            );
+            meta = existing_meta.check_compatibility_and_update(meta)?;
         }
         meta.write(&meta_path).context("failed writing metadata.toml")?;
 
