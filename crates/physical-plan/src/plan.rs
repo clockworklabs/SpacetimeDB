@@ -1214,7 +1214,7 @@ mod tests {
 
     /// A wrapper around [spacetimedb_expr::check::parse_and_type_sub] that takes a dummy [AuthCtx]
     fn parse_and_type_sub(sql: &str, tx: &impl SchemaView) -> TypingResult<ProjectName> {
-        spacetimedb_expr::check::parse_and_type_sub(sql, tx, &AuthCtx::for_testing())
+        spacetimedb_expr::check::parse_and_type_sub(sql, tx, &AuthCtx::for_testing()).map(|(plan, _)| plan)
     }
 
     /// No rewrites applied to a simple table scan

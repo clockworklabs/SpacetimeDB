@@ -60,6 +60,21 @@ impl QueryHash {
     pub fn from_string(str: &str) -> Self {
         Self::from_bytes(str.as_bytes())
     }
+
+    /// If a query is parameterized with `@sender`, we must use the value of `@sender`,
+    /// i.e. the identity of the caller, when hashing the query text,
+    /// so that two identical queries from different clients aren't hashed to the same value.
+    ///
+    /// TODO: Once we have RLS, this hash must computed after name resolution.
+    /// It can no longer be computed from the source text.
+    pub fn from_string_and_identity(str: &str, identity: Identity) -> Self {
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(str.as_bytes());
+        hasher.update(&identity.to_byte_array());
+        Self {
+            data: hasher.finalize().into(),
+        }
+    }
 }
 
 #[derive(Debug)]

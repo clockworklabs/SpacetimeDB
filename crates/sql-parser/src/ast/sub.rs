@@ -34,6 +34,12 @@ impl SqlSelect {
         Ok(self)
     }
 
+    /// Is this AST parameterized?
+    /// We need to know in order to hash subscription queries correctly.
+    pub fn has_parameter(&self) -> bool {
+        self.filter.as_ref().is_some_and(|expr| expr.has_parameter())
+    }
+
     /// Replace the `@sender` parameter with the [Identity] it represents
     pub fn resolve_sender(self, sender_identity: Identity) -> Self {
         Self {

@@ -727,8 +727,15 @@ mod tests {
         db.with_read_only(Workload::ForTests, |tx| {
             let auth = AuthCtx::for_testing();
             let tx = SchemaViewer::new(&*tx, &auth);
-            let hash = QueryHash::from_string(sql);
-            let plan = SubscriptionPlan::compile(sql, &tx, &auth).unwrap();
+            let (plan, has_param) = SubscriptionPlan::compile(sql, &tx, &auth).unwrap();
+            let hash = if has_param {
+                // If the query plan is parameterized,
+                // we must use the value of the parameter to compute the query hash.
+                // See the comment on `from_string_and_identity` for details.
+                QueryHash::from_string_and_identity(sql, auth.caller)
+            } else {
+                QueryHash::from_string(sql)
+            };
             Ok(Arc::new(Plan::new(plan, hash, sql.into())))
         })
     }

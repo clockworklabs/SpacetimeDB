@@ -25,12 +25,12 @@ pub fn compile_subscription(
     sql: &str,
     tx: &impl SchemaView,
     auth: &AuthCtx,
-) -> Result<(ProjectPlan, TableId, Box<str>)> {
+) -> Result<(ProjectPlan, TableId, Box<str>, bool)> {
     if sql.len() > MAX_SQL_LENGTH {
         bail!("SQL query exceeds maximum allowed length: \"{sql:.120}...\"")
     }
 
-    let plan = parse_and_type_sub(sql, tx, auth)?;
+    let (plan, has_param) = parse_and_type_sub(sql, tx, auth)?;
 
     let Some(return_id) = plan.return_table_id() else {
         bail!("Failed to determine TableId for query")
@@ -42,7 +42,7 @@ pub fn compile_subscription(
 
     let plan = compile_select(plan);
 
-    Ok((plan, return_id, return_name))
+    Ok((plan, return_id, return_name, has_param))
 }
 
 /// A utility for parsing and type checking a sql statement

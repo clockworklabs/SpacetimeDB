@@ -79,8 +79,16 @@ pub fn compile_read_only_query(auth: &AuthCtx, tx: &Tx, input: &str) -> Result<P
     let input = WHITESPACE.replace_all(input, " ");
 
     let tx = SchemaViewer::new(tx, auth);
-    let plan = SubscriptionPlan::compile(&input, &tx, auth)?;
-    let hash = QueryHash::from_string(&input);
+    let (plan, has_param) = SubscriptionPlan::compile(&input, &tx, auth)?;
+
+    let hash = if has_param {
+        // If the query plan is parameterized,
+        // we must use the value of the parameter to compute the query hash.
+        // See the comment on `from_string_and_identity` for details.
+        QueryHash::from_string_and_identity(&input, auth.caller)
+    } else {
+        QueryHash::from_string(&input)
+    };
 
     Ok(Plan::new(plan, hash, input.into_owned()))
 }
@@ -698,7 +706,9 @@ mod tests {
             let tx = SchemaViewer::new(tx, &auth);
             // Should be answered using an index semijion
             let sql = "select lhs.* from lhs join rhs on lhs.id = rhs.id where rhs.y >= 2 and rhs.y <= 4";
-            Ok(SubscriptionPlan::compile(sql, &tx, &auth).unwrap())
+            Ok(SubscriptionPlan::compile(sql, &tx, &auth)
+                .map(|(plan, _)| plan)
+                .unwrap())
         })
     }
 
@@ -718,7 +728,9 @@ mod tests {
                 let tx = SchemaViewer::new(tx, &auth);
                 // Should be answered using an index semijion
                 let sql = "select lhs.* from lhs join rhs on lhs.id = rhs.id where lhs.x >= 5 and lhs.x <= 7";
-                Ok(SubscriptionPlan::compile(sql, &tx, &auth).unwrap())
+                Ok(SubscriptionPlan::compile(sql, &tx, &auth)
+                    .map(|(plan, _)| plan)
+                    .unwrap())
             })
         }
 
