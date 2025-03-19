@@ -122,7 +122,6 @@ impl Host {
                             rows_inserted: result.metrics.rows_inserted,
                             rows_deleted: result.metrics.rows_deleted,
                             rows_updated: result.metrics.rows_updated,
-                            rows_scanned: result.metrics.rows_scanned as u64,
                         },
                     }])
                 },

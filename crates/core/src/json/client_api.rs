@@ -6,7 +6,6 @@ pub struct StmtStatsJson {
     pub rows_inserted: u64,
     pub rows_deleted: u64,
     pub rows_updated: u64,
-    pub rows_scanned: u64,
 }
 
 // Sync with spacetimedb_cli::api::StmtResultJson
