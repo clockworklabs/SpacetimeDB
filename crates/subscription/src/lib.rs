@@ -1,7 +1,7 @@
 use anyhow::{bail, Result};
 use spacetimedb_execution::{pipelined::PipelinedProject, Datastore, DeltaStore, Row};
 use spacetimedb_expr::check::SchemaView;
-use spacetimedb_lib::{metrics::ExecutionMetrics, query::Delta};
+use spacetimedb_lib::{identity::AuthCtx, metrics::ExecutionMetrics, query::Delta};
 use spacetimedb_physical_plan::plan::{HashJoin, IxJoin, Label, PhysicalPlan, ProjectPlan, TableScan};
 use spacetimedb_primitives::TableId;
 use spacetimedb_query::compile_subscription;
@@ -279,8 +279,8 @@ impl SubscriptionPlan {
     }
 
     /// Generate a plan for incrementally maintaining a subscription
-    pub fn compile(sql: &str, tx: &impl SchemaView) -> Result<Self> {
-        let (plan, return_id, return_name) = compile_subscription(sql, tx)?;
+    pub fn compile(sql: &str, tx: &impl SchemaView, auth: &AuthCtx) -> Result<Self> {
+        let (plan, return_id, return_name) = compile_subscription(sql, tx, auth)?;
 
         let mut ix_joins = true;
         plan.visit(&mut |plan| match plan {

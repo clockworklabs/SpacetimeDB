@@ -129,7 +129,9 @@ pub(crate) fn type_expr(vars: &Relvars, expr: SqlExpr, expected: Option<&Algebra
             }
         },
         (SqlExpr::Bin(..) | SqlExpr::Log(..), Some(ty)) => Err(UnexpectedType::new(&AlgebraicType::Bool, ty).into()),
-        (SqlExpr::Var(_), _) => unreachable!(),
+        // Both unqualified names as well as parameters are syntactic constructs.
+        // Unqualified names are qualified and parameters are resolved before type checking.
+        (SqlExpr::Var(_) | SqlExpr::Param(_), _) => unreachable!(),
     }
 }
 

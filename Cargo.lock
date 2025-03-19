@@ -5458,6 +5458,7 @@ name = "spacetimedb-sql-parser"
 version = "1.0.1"
 dependencies = [
  "derive_more",
+ "spacetimedb-lib",
  "sqlparser",
  "thiserror 1.0.69",
 ]
