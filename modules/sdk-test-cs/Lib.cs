@@ -1946,7 +1946,7 @@ public static partial class Module
     public static void no_op_succeeds(ReducerContext ctx) { }
 
     [SpacetimeDB.ClientVisibilityFilter]
-    public static readonly Filter ONE_U8_VISIBLE = new Filter.Sql("SELECT * FROM OneU8");
+    public static readonly Filter ONE_U8_VISIBLE = new Filter.Sql("SELECT * FROM one_u8");
 
     [SpacetimeDB.Table(
         Name = "scheduled_table",
