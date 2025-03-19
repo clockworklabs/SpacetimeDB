@@ -55,6 +55,8 @@ pub fn init(ctx: &ReducerContext) {
         self.spacetime("delete", name)
 
         deleted_replicas = self.query_control(f"select id from deleted_replica where database_identity = '0x{self.resolved_identity}'")
+        # Both clear = True and delete should leave a deleted replica
+        self.assertEqual(len(deleted_replicas), 2)
         state_filter = f'replica_id = {" OR replica_id = ".join(deleted_replicas)}'
         states = self.query_control(f"select lifecycle from replica_state where {state_filter}")
         # All replicas should have state 'Deleted'.
