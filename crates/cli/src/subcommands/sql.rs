@@ -75,17 +75,14 @@ impl fmt::Display for StmtResult {
 
             let result = format!("({} {txt})", stats.total_rows);
             let mut info = Vec::new();
-            if stats.rows_scanned != 0 {
-                info.push(format!("scan: {}", stats.rows_scanned));
-            }
             if stats.rows_inserted != 0 {
-                info.push(format!("ins: {}", stats.rows_inserted));
+                info.push(format!("inserted: {}", stats.rows_inserted));
             }
             if stats.rows_deleted != 0 {
-                info.push(format!("del: {}", stats.rows_deleted));
+                info.push(format!("deleted: {}", stats.rows_deleted));
             }
             if stats.rows_updated != 0 {
-                info.push(format!("upd: {}", stats.rows_updated));
+                info.push(format!("updated: {}", stats.rows_updated));
             }
             info.push(format!(
                 "server: {:.2?}",

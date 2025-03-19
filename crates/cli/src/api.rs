@@ -103,7 +103,6 @@ pub struct StmtStats {
     pub rows_inserted: u64,
     pub rows_updated: u64,
     pub rows_deleted: u64,
-    pub rows_scanned: u64,
     pub total_rows: usize,
 }
 
@@ -122,7 +121,6 @@ impl Add for StmtStats {
             rows_inserted: self.rows_inserted + rhs.rows_inserted,
             rows_deleted: self.rows_deleted + rhs.rows_deleted,
             rows_updated: self.rows_updated + rhs.rows_updated,
-            rows_scanned: self.rows_scanned + rhs.rows_scanned,
             total_rows: self.total_rows + rhs.total_rows,
         }
     }
@@ -135,7 +133,6 @@ impl From<&StmtResultJson<'_>> for StmtStats {
             rows_inserted: value.stats.rows_inserted,
             rows_deleted: value.stats.rows_deleted,
             rows_updated: value.stats.rows_updated,
-            rows_scanned: value.stats.rows_scanned,
             total_rows: value.rows.len(),
         }
     }
