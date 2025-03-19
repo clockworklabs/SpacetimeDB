@@ -1,5 +1,4 @@
 from .. import Smoketest, random_string
-import time
 
 class ClearDatabase(Smoketest):
     AUTOPUBLISH = False
@@ -52,9 +51,7 @@ pub fn init(ctx: &ReducerContext) {
 
         name = random_string()
         self.publish_module(name, clear = False)
-        time.sleep(1)
         self.publish_module(name, clear = True)
-        time.sleep(1)
         self.spacetime("delete", name)
 
         deleted_replicas = self.query_control(f"select id from deleted_replica where database_identity = '0x{self.resolved_identity}'")
