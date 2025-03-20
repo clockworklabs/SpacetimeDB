@@ -38,7 +38,7 @@ jobs:
         if: matrix.container == 'ubuntu'
         run: |
           apt-get update -y
-          apt-get install -y gcc g++ bash curl linux-headers perl git make
+          apt-get install -y gcc g++ bash curl perl git make
 
       - name: Install musl dependencies
         # TODO: Should we use `matrix.container == 'alpine'` instead of the `endsWith` check?
