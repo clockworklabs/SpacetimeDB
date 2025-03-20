@@ -14,7 +14,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: x86_64 Linux, target: x86_64-unknown-linux-gnu, runner: bare-metal, container: 'ubuntu' }
+          - { name: x86_64 Linux, target: x86_64-unknown-linux-gnu, runner: bare-metal, container: ubuntu }
           - { name: aarch64 Linux, target: aarch64-unknown-linux-gnu, runner: arm-runner }
           - { name: x86_64 Linux musl, target: x86_64-unknown-linux-musl, runner: bare-metal, container: alpine }
           # FIXME: arm musl build. "JavaScript Actions in Alpine containers are only supported on x64 Linux runners"
@@ -34,7 +34,14 @@ jobs:
       - name: Show arch
         run: uname -a
 
+      - name: Install ubuntu dependencies
+        if: matrix.container == 'ubuntu'
+        run: |
+          apt-get update -y
+          apt-get install curl -y
+
       - name: Install musl dependencies
+        # TODO: Should we use `matrix.container == 'alpine'` instead of the `endsWith` check?
         if: endsWith(matrix.target, '-musl')
         run: apk add gcc g++ bash curl linux-headers perl git make
 
