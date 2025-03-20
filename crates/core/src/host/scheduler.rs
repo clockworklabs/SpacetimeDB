@@ -233,6 +233,10 @@ impl Scheduler {
     pub fn close(&self) {
         let _ = self.tx.send(MsgOrExit::Exit);
     }
+
+    pub async fn closed(&self) {
+        self.tx.closed().await
+    }
 }
 
 struct SchedulerActor {

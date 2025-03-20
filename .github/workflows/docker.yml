@@ -11,13 +11,9 @@ on:
 
 jobs:
   docker-amd64:
-    runs-on: bare-metal
+    runs-on: ubuntu-latest
     name: Build DockerHub AMD64 Container
     steps:
-      - name: Install jq
-        run: sudo apt-get install jq -y
-      - name: Prune stale references
-        run: git remote prune origin
       - name: Checkout
         uses: actions/checkout@v3
       - name: Docker meta
