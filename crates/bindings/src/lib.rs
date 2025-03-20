@@ -534,35 +534,11 @@ pub use spacetimedb_bindings_macro::table;
 /// If an error occurs in the disconnect reducer,
 /// the client is still recorded as disconnected.
 ///
-/// ### The `update` reducer
-///
-/// This reducer is marked with `#[spacetimedb::reducer(update)]`. It is run when the module is updated,
-/// i.e., when publishing a module for a database that has already been initialized.
-///
-/// If an error occurs when updating, the module will not be published,
-/// and the previous version of the module attached to the database will continue executing.
-///
 /// # Scheduled reducers
 ///
 /// In addition to life cycle annotations, reducers can be made **scheduled**.
 /// This allows calling the reducers at a particular time, or in a loop.
 /// This can be used for game loops.
-///
-/// Scheduled reducers are normal reducers, and may still be called by clients.
-/// If a scheduled reducer should only be called by the scheduler,
-/// consider beginning it with a check that the caller `Identity` is the module:
-///
-/// ```no_run
-/// # #[cfg(target_arch = "wasm32")] mod demo {
-/// #[reducer]
-/// fn scheduled(ctx: &ReducerContext, args: ScheduledArgs) -> Result<(), String> {
-///     if ctx.sender != ctx.identity() {
-///         return Err("Reducer `scheduled` may not be invoked by clients, only via scheduling.");
-///     }
-///     // Reducer body...
-/// }
-/// # }
-/// ```
 ///
 /// The scheduling information for a reducer is stored in a table.
 /// This table has two mandatory fields:
@@ -570,6 +546,7 @@ pub use spacetimedb_bindings_macro::table;
 /// - A [`ScheduleAt`] field that says when to call the reducer.
 ///
 /// Managing timers with a scheduled table is as simple as inserting or deleting rows from the table.
+/// This makes scheduling transactional in SpacetimeDB. If a reducer A first schedules B but then errors for some other reason, B will not be scheduled to run.
 ///
 /// A [`ScheduleAt`] can be created from a [`spacetimedb::Timestamp`](crate::Timestamp), in which case the reducer will be scheduled once,
 /// or from a [`std::time::Duration`], in which case the reducer will be scheduled in a loop. In either case the conversion can be performed using [`Into::into`].
@@ -652,6 +629,29 @@ pub use spacetimedb_bindings_macro::table;
 /// Scheduled reducers are called on a best-effort basis and may be slightly delayed in their execution
 /// when a database is under heavy load.
 ///
+/// ### Restricting scheduled reducers
+///
+/// Scheduled reducers are normal reducers, and may still be called by clients.
+/// If a scheduled reducer should only be called by the scheduler,
+/// consider beginning it with a check that the caller `Identity` is the module:
+///
+/// ```no_run
+/// # #[cfg(target_arch = "wasm32")] mod demo {
+/// use spacetimedb::{reducer, ReducerContext};
+///
+/// # #[derive(spacetimedb::SpacetimeType)] struct ScheduledArgs {}
+///
+/// #[reducer]
+/// fn scheduled(ctx: &ReducerContext, args: ScheduledArgs) -> Result<(), String> {
+///     if ctx.sender != ctx.identity() {
+///         return Err("Reducer `scheduled` may not be invoked by clients, only via scheduling.".into());
+///     }
+///     // Reducer body...
+///     # Ok(())
+/// }
+/// # }
+/// ```
+///
 /// <!-- TODO: SLAs? -->
 ///
 /// [`&ReducerContext`]: `ReducerContext`
@@ -686,8 +686,8 @@ pub struct ReducerContext {
     /// `None` if no `ConnectionId` was supplied to the `/database/call` HTTP endpoint,
     /// or via the CLI's `spacetime call` subcommand.
     ///
-    /// For automatic reducers, i.e. `init`, `update` and scheduled reducers,
-    /// this will be the module's `Address`.
+    /// For automatic reducers, i.e. `init`, `client_connected`, `client_disconnected`, and scheduled reducers,
+    /// this will be the module's `ConnectionId`.
     pub connection_id: Option<ConnectionId>,
 
     /// Allows accessing the local database attached to a module.

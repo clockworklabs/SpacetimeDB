@@ -16,7 +16,7 @@ jobs:
         include:
           - { name: x86_64 Linux, target: x86_64-unknown-linux-gnu, runner: bare-metal, container: 'ubuntu' }
           - { name: aarch64 Linux, target: aarch64-unknown-linux-gnu, runner: arm-runner }
-          - { name: x86_64 Linux musl, target: x86_64-unknown-linux-musl, runner: bare-metal, container: 'alpine' }
+          - { name: x86_64 Linux musl, target: x86_64-unknown-linux-musl, runner: bare-metal, container: alpine }
           # FIXME: arm musl build. "JavaScript Actions in Alpine containers are only supported on x64 Linux runners"
           # - { name: aarch64 Linux musl, target: aarch64-unknown-linux-musl, runner: arm-runner }
           - { name: aarch64 macOS, target: aarch64-apple-darwin, runner: macos-latest }
