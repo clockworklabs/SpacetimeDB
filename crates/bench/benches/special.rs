@@ -1,6 +1,5 @@
 use criterion::async_executor::AsyncExecutor;
 use criterion::{criterion_group, criterion_main, Criterion, SamplingMode};
-use mimalloc::MiMalloc;
 use spacetimedb::db::datastore::traits::IsolationLevel;
 use spacetimedb::db::relational_db::tests_utils::{make_snapshot, TestDB};
 use spacetimedb::db::relational_db::{open_snapshot_repo, RelationalDB};
@@ -211,27 +210,22 @@ fn serialize_benchmarks<
 
 fn _snapshot<F>(c: &mut Criterion, name: &str, dir: SnapshotsPath, take: F)
 where
-    F: Fn(&SnapshotRepository),
+    F: Fn(&SnapshotRepository, CompressType),
 {
     let mut disk_size = None;
     let mut size_on_disk = |size: SnapshotSize| {
-        if size.compressed_type == CompressType::None {
+        if size.snapshot.none > 0 {
             // Save the size of the last snapshot to use as throughput
             disk_size = Some(size.clone());
         }
         dbg!(&size);
     };
 
-    let algos = [
-        CompressType::None,
-        CompressType::Zstd,
-        CompressType::Lz4,
-        CompressType::Snap,
-    ];
+    let algos = [CompressType::None, CompressType::Zstd];
     // For show the size of the last snapshot
     for compress in &algos {
         let (_, repo) = make_snapshot(dir.clone(), Identity::ZERO, 0, *compress, true);
-        take(&repo);
+        take(&repo, *compress);
         size_on_disk(repo.size_on_disk_last_snapshot().unwrap());
     }
 
@@ -247,7 +241,7 @@ where
                 || {},
                 |_| {
                     let (_, repo) = make_snapshot(dir.clone(), Identity::ZERO, 0, *compress, true);
-                    take(&repo);
+                    take(&repo, *compress);
                 },
                 criterion::BatchSize::NumIterations(100),
             );
@@ -264,6 +258,17 @@ where
                 criterion::BatchSize::NumIterations(100),
             );
         });
+    }
+}
+
+fn _take_snapshot(repo: &SnapshotRepository, compress_type: CompressType) {
+    let tx_offset = repo.latest_snapshot().unwrap().unwrap();
+    if compress_type != CompressType::None {
+        repo.compress_older_snapshots(tx_offset)
+            .unwrap()
+            .join()
+            .unwrap()
+            .unwrap();
     }
 }
 
@@ -295,8 +300,9 @@ fn snapshot(c: &mut Criterion) {
     }
     db.commit_tx(tx).unwrap();
 
-    _snapshot(c, "synthetic", dir, |repo| {
+    _snapshot(c, "synthetic", dir, |repo, compress_type| {
         db.take_snapshot(repo).unwrap();
+        _take_snapshot(repo, compress_type);
     });
 }
 
@@ -324,8 +330,9 @@ fn snapshot_existing(c: &mut Criterion) {
 
     let dir = SnapshotsPath::from_path_unchecked(out.path());
 
-    _snapshot(c, "existing", dir, |repo| {
+    _snapshot(c, "existing", dir, |repo, compress_type| {
         db.take_snapshot(repo).unwrap();
+        _take_snapshot(repo, compress_type);
     });
 }
 

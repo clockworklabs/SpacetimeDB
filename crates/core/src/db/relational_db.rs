@@ -1620,12 +1620,9 @@ pub mod tests_utils {
         }
         let dir = SnapshotsPath::from_path_unchecked(path);
         dir.create().unwrap();
-        (
-            dir.clone(),
-            SnapshotRepository::open(dir, identity, replica)
-                .unwrap()
-                .with_compression(compress),
-        )
+        let snapshot = SnapshotRepository::open(dir.clone(), identity, replica).unwrap();
+
+        (dir, snapshot)
     }
 }
 
@@ -1652,7 +1649,7 @@ mod tests {
     use durability::EmptyHistory;
     use pretty_assertions::assert_eq;
     use spacetimedb_data_structures::map::IntMap;
-    use spacetimedb_fs_utils::compression::CompressType;
+    use spacetimedb_fs_utils::compression::{CompressCount, CompressType};
     use spacetimedb_lib::db::raw_def::v9::{btree, RawTableDefBuilder};
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::Identity;
@@ -2620,13 +2617,8 @@ mod tests {
         stdb.commit_tx(tx)?;
         let dir = stdb.path().snapshots();
 
-        for compress in [
-            CompressType::None,
-            CompressType::Zstd,
-            CompressType::Lz4,
-            CompressType::Snap,
-        ] {
-            let (dir, repo) = make_snapshot(dir.clone(), Identity::ZERO, 0, compress, false);
+        for compress in [CompressType::None, CompressType::Zstd] {
+            let (dir, repo) = make_snapshot(dir.clone(), Identity::ZERO, 0, compress, true);
             stdb.take_snapshot(&repo)?;
 
             let size = repo.size_on_disk_last_snapshot()?;
@@ -2636,6 +2628,43 @@ mod tests {
             let last = repo.latest_snapshot()?;
             RelationalDB::restore_from_snapshot_or_bootstrap(Identity::ZERO, Some(&repo), last)?;
         }
+
+        Ok(())
+    }
+
+    #[test]
+    fn compress_snapshot_test() -> ResultTest<()> {
+        let stdb = TestDB::durable()?;
+
+        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let schema = my_table(AlgebraicType::I32);
+        let table_id = stdb.create_table(&mut tx, schema)?;
+
+        insert_three_i32s(&stdb, &mut tx, table_id)?;
+        stdb.commit_tx(tx)?;
+        let dir = SnapshotsPath::from_path_unchecked("/Users/mamcx/Downloads/stdb");
+        // let dir = stdb.path().snapshots();
+
+        let (dir, repo) = make_snapshot(dir.clone(), Identity::ZERO, 0, CompressType::None, true);
+        stdb.take_snapshot(&repo)?;
+
+        let last = repo.latest_snapshot()?;
+        let size_compress_off = repo.size_on_disk_last_snapshot()?;
+        dbg!(&size_compress_off);
+        assert!(
+            size_compress_off.total_size > 0,
+            "Snapshot size should be greater than 0"
+        );
+        assert_eq!(
+            repo.compress_older_snapshots(last.unwrap())?.join().unwrap()?,
+            CompressCount { none: 0, zstd: 1 }
+        );
+        let size_compress_on = repo.size_on_disk_last_snapshot()?;
+        dbg!(&size_compress_on);
+
+        let repo = open_snapshot_repo(dir, Identity::ZERO, 0)?;
+
+        RelationalDB::restore_from_snapshot_or_bootstrap(Identity::ZERO, Some(&repo), last)?;
 
         Ok(())
     }

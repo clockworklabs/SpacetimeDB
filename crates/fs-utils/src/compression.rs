@@ -1,6 +1,3 @@
-use lz4_flex::frame::{AutoFinishEncoder as Lz4Encoder, FrameDecoder, FrameEncoder};
-use snap::read::FrameDecoder as SnapDecoder;
-use snap::write::FrameEncoder as SnapEncoder;
 use std::fs::{File, Metadata};
 use std::io;
 use std::io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write};
@@ -8,8 +5,13 @@ use zstd::stream::AutoFinishEncoder;
 use zstd::{Decoder, Encoder};
 
 const ZSTD_MAGIC_BYTES: [u8; 4] = [0x28, 0xB5, 0x2F, 0xFD];
-const LZ4_MAGIC_BYTES: [u8; 4] = [0x04, 0x22, 0x4D, 0x18];
-const SNAP_MAGIC_BYTES: [u8; 4] = [0xFF, 0x06, 0x00, 0x00];
+
+/// Helper struct to keep track of the number of files compressed using each algorithm
+#[derive(Debug, Copy, Clone, PartialEq, Default)]
+pub struct CompressCount {
+    pub none: usize,
+    pub zstd: usize,
+}
 
 /// Compression type
 ///
@@ -18,16 +20,12 @@ const SNAP_MAGIC_BYTES: [u8; 4] = [0xFF, 0x06, 0x00, 0x00];
 pub enum CompressType {
     None,
     Zstd,
-    Lz4,
-    Snap,
 }
 
 /// A reader that can read compressed files
 pub enum CompressReader<'a> {
     None(BufReader<File>),
     Zstd(Decoder<'a, BufReader<File>>),
-    Lz4(FrameDecoder<BufReader<File>>),
-    Snap(SnapDecoder<BufReader<File>>),
 }
 
 impl CompressReader<'_> {
@@ -52,14 +50,6 @@ impl CompressReader<'_> {
                     let decoder = Decoder::new(inner)?;
                     CompressReader::Zstd(decoder)
                 }
-                LZ4_MAGIC_BYTES => {
-                    let decoder = FrameDecoder::new(BufReader::new(inner));
-                    CompressReader::Lz4(decoder)
-                }
-                SNAP_MAGIC_BYTES => {
-                    let decoder = SnapDecoder::new(BufReader::new(inner));
-                    CompressReader::Snap(decoder)
-                }
                 _ => CompressReader::None(BufReader::new(inner)),
             }
         } else {
@@ -69,10 +59,15 @@ impl CompressReader<'_> {
 
     pub fn metadata(&self) -> io::Result<Metadata> {
         match self {
-            CompressReader::None(inner) => inner.get_ref().metadata(),
-            CompressReader::Zstd(inner) => inner.get_ref().get_ref().metadata(),
-            CompressReader::Lz4(inner) => inner.get_ref().get_ref().metadata(),
-            CompressReader::Snap(inner) => inner.get_ref().get_ref().metadata(),
+            Self::None(inner) => inner.get_ref().metadata(),
+            Self::Zstd(inner) => inner.get_ref().get_ref().metadata(),
+        }
+    }
+
+    pub fn compress_type(&self) -> CompressType {
+        match self {
+            CompressReader::None(_) => CompressType::None,
+            CompressReader::Zstd(_) => CompressType::Zstd,
         }
     }
 }
@@ -82,8 +77,6 @@ impl Read for CompressReader<'_> {
         match self {
             CompressReader::None(inner) => inner.read(buf),
             CompressReader::Zstd(inner) => inner.read(buf),
-            CompressReader::Lz4(inner) => inner.read(buf),
-            CompressReader::Snap(inner) => inner.read(buf),
         }
     }
 }
@@ -92,8 +85,6 @@ impl Read for CompressReader<'_> {
 pub enum CompressWriter<'a> {
     None(BufWriter<File>),
     Zstd(AutoFinishEncoder<'a, BufWriter<File>>),
-    Lz4(Lz4Encoder<BufWriter<File>>),
-    Snap(Box<SnapEncoder<File>>),
 }
 
 impl CompressWriter<'_> {
@@ -103,11 +94,13 @@ impl CompressWriter<'_> {
             CompressType::Zstd => Ok(CompressWriter::Zstd(
                 Encoder::new(BufWriter::new(inner), 0)?.auto_finish(),
             )),
-            CompressType::Lz4 => Ok(CompressWriter::Lz4(
-                FrameEncoder::new(BufWriter::new(inner)).auto_finish(),
-            )),
-            // SnapEncoder does buffer internally, so we don't need to wrap it in a BufWriter
-            CompressType::Snap => Ok(CompressWriter::Snap(Box::new(SnapEncoder::new(inner)))),
+        }
+    }
+
+    pub fn metadata(&self) -> io::Result<Metadata> {
+        match self {
+            Self::None(inner) => inner.get_ref().metadata(),
+            Self::Zstd(inner) => inner.get_ref().get_ref().metadata(),
         }
     }
 }
@@ -117,8 +110,6 @@ impl Write for CompressWriter<'_> {
         match self {
             CompressWriter::None(inner) => inner.write(buf),
             CompressWriter::Zstd(inner) => inner.write(buf),
-            CompressWriter::Lz4(inner) => inner.write(buf),
-            CompressWriter::Snap(inner) => inner.write(buf),
         }
     }
 
@@ -126,8 +117,6 @@ impl Write for CompressWriter<'_> {
         match self {
             CompressWriter::None(inner) => inner.flush(),
             CompressWriter::Zstd(inner) => inner.flush(),
-            CompressWriter::Lz4(inner) => inner.flush(),
-            CompressWriter::Snap(inner) => inner.flush(),
         }
     }
 }
