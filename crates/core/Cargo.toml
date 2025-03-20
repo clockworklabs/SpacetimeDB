@@ -111,6 +111,10 @@ jwks = { package = "spacetimedb-jwks", version = "0.1.3" }
 async_cache = "0.3.1"
 faststr = "0.2.23"
 
+[target.'cfg(not(target_env = "msvc"))'.dependencies]
+tikv-jemallocator = {workspace = true}
+tikv-jemalloc-ctl = {workspace = true}
+
 [features]
 # Print a warning when doing an unindexed `iter_by_col_range` on a large table.
 unindexed_iter_by_col_range_warn = []
