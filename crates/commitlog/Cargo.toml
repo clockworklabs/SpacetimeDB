@@ -22,6 +22,7 @@ serde = { workspace = true, optional = true }
 spacetimedb-primitives.workspace = true
 spacetimedb-paths.workspace = true
 spacetimedb-sats.workspace = true
+spacetimedb-fs-utils.workspace = true
 tempfile.workspace = true
 thiserror.workspace = true
 
