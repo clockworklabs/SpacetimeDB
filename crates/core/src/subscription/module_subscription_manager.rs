@@ -728,14 +728,7 @@ mod tests {
             let auth = AuthCtx::for_testing();
             let tx = SchemaViewer::new(&*tx, &auth);
             let (plan, has_param) = SubscriptionPlan::compile(sql, &tx, &auth).unwrap();
-            let hash = if has_param {
-                // If the query plan is parameterized,
-                // we must use the value of the parameter to compute the query hash.
-                // See the comment on `from_string_and_identity` for details.
-                QueryHash::from_string_and_identity(sql, auth.caller)
-            } else {
-                QueryHash::from_string(sql)
-            };
+            let hash = QueryHash::from_string(sql, auth.caller, has_param);
             Ok(Arc::new(Plan::new(plan, hash, sql.into())))
         })
     }

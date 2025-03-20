@@ -57,7 +57,11 @@ impl QueryHash {
         }
     }
 
-    pub fn from_string(str: &str) -> Self {
+    /// Generate a hash from a query string
+    pub fn from_string(str: &str, identity: Identity, has_param: bool) -> Self {
+        if has_param {
+            return Self::from_string_and_identity(str, identity);
+        }
         Self::from_bytes(str.as_bytes())
     }
 

@@ -148,7 +148,11 @@ impl SqlExpr {
     /// Is this AST parameterized?
     /// We need to know in order to hash subscription queries correctly.
     pub fn has_parameter(&self) -> bool {
-        matches!(self, Self::Param(Parameter::Sender))
+        match self {
+            Self::Lit(_) | Self::Var(_) | Self::Field(..) => false,
+            Self::Param(Parameter::Sender) => true,
+            Self::Bin(a, b, _) | Self::Log(a, b, _) => a.has_parameter() || b.has_parameter(),
+        }
     }
 
     /// Replace the `@sender` parameter with the [Identity] it represents

@@ -80,15 +80,7 @@ pub fn compile_read_only_query(auth: &AuthCtx, tx: &Tx, input: &str) -> Result<P
 
     let tx = SchemaViewer::new(tx, auth);
     let (plan, has_param) = SubscriptionPlan::compile(&input, &tx, auth)?;
-
-    let hash = if has_param {
-        // If the query plan is parameterized,
-        // we must use the value of the parameter to compute the query hash.
-        // See the comment on `from_string_and_identity` for details.
-        QueryHash::from_string_and_identity(&input, auth.caller)
-    } else {
-        QueryHash::from_string(&input)
-    };
+    let hash = QueryHash::from_string(&input, auth.caller, has_param);
 
     Ok(Plan::new(plan, hash, input.into_owned()))
 }
