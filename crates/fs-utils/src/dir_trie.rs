@@ -50,8 +50,8 @@ pub struct CountCreated {
 pub struct DirTrie {
     /// The directory name at which the dir trie is stored.
     root: PathBuf,
-    /// The [CompressType] used for files in this trie.
-    compress_type: CompressType,
+    /// The [CompressType] used to write files in this trie.
+    write_compress_type: CompressType,
 }
 
 const FILE_ID_BYTES: usize = 32;
@@ -68,14 +68,17 @@ impl DirTrie {
         &self.root
     }
 
-    /// Open the directory trie at `root`,
+    /// Open the directory trie at `root`, using [`CompressType`] for writing files.
     /// creating the root directory if it doesn't exist.
     ///
     /// Returns an error if the `root` cannot be created as a directory.
     /// See documentation on [`create_dir_all`] for more details.
-    pub fn open(root: PathBuf, compress_type: CompressType) -> Result<Self, io::Error> {
+    pub fn open(root: PathBuf, write_compress_type: CompressType) -> Result<Self, io::Error> {
         create_dir_all(&root)?;
-        Ok(Self { root, compress_type })
+        Ok(Self {
+            root,
+            write_compress_type,
+        })
     }
 
     pub fn file_path(&self, file_id: &FileId) -> PathBuf {
@@ -167,7 +170,7 @@ impl DirTrie {
             }
         }
 
-        let mut file = self.open_entry_writer(file_id, self.compress_type)?;
+        let mut file = self.open_entry_writer(file_id, self.write_compress_type)?;
         let contents = contents();
         file.write_all(contents.as_ref())?;
         counter.objects_written += 1;
@@ -187,7 +190,7 @@ impl DirTrie {
 
     /// Open the file keyed with `file_id` for writing.
     ///
-    /// If `ty` is [`CompressType::None`], the file will be written uncompressed.
+    /// If `compress_type` is [`CompressType::None`], the file will be written uncompressed.
     ///
     /// The file will be opened with [`o_excl`].
     pub fn open_entry_writer(

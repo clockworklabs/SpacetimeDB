@@ -24,7 +24,7 @@
 #![allow(clippy::result_large_err)]
 
 use spacetimedb_durability::TxOffset;
-use spacetimedb_fs_utils::compression::{CompressReader, CompressType, CompressWriter};
+use spacetimedb_fs_utils::compression::{CompressCount, CompressReader, CompressType, CompressWriter};
 use spacetimedb_fs_utils::{
     dir_trie::{o_excl, o_rdonly, CountCreated, DirTrie},
     lockfile::{Lockfile, LockfileError},
@@ -43,7 +43,8 @@ use spacetimedb_table::{
     table::Table,
 };
 use std::io::Write;
-use std::{collections::BTreeMap, ffi::OsStr, fmt, io::Read, path::PathBuf};
+use std::ops::{Add, AddAssign};
+use std::{collections::BTreeMap, ffi::OsStr, fmt, io, io::Read, path::PathBuf};
 
 pub mod remote;
 
@@ -105,6 +106,8 @@ pub enum SnapshotError {
     },
     #[error("Refusing to reconstruct incomplete snapshot {tx_offset}: lockfile {lockfile:?} exists")]
     Incomplete { tx_offset: TxOffset, lockfile: PathBuf },
+    #[error("Unable to compress {tx_offset}: lockfile {lockfile:?} exists")]
+    CompressLocked { tx_offset: TxOffset, lockfile: PathBuf },
     #[error("Refusing to reconstruct snapshot {tx_offset} with bad magic number {magic:x?}")]
     BadMagic { tx_offset: TxOffset, magic: [u8; 4] },
     #[error("Refusing to reconstruct snapshot {tx_offset} with unsupported version {version}")]
@@ -306,7 +309,7 @@ impl Snapshot {
     /// - Fails to check if is compressed or not.
     /// - The file at `path` is corrupted,
     ///   as detected by comparing the hash of its bytes to a hash recorded in the file.
-    pub fn read_from_file(path: &SnapshotFilePath) -> Result<Self, SnapshotError> {
+    pub fn read_from_file(path: &SnapshotFilePath) -> Result<(Self, CompressType), SnapshotError> {
         let err_read_object = |cause| SnapshotError::ReadObject {
             ty: ObjectType::Snapshot,
             source_repo: path.0.clone(),
@@ -344,7 +347,7 @@ impl Snapshot {
             cause,
         })?;
 
-        Ok(snapshot)
+        Ok((snapshot, snapshot_file.compress_type()))
     }
 
     /// Construct a [`HashMapBlobStore`] containing all the blobs referenced in `self`,
@@ -470,9 +473,10 @@ impl Snapshot {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct SnapshotSize {
-    pub compressed_type: CompressType,
+    /// How many snapshots are in the snapshot directory, and what `CompressType` they are.
+    pub snapshot: CompressCount,
     /// The size of the snapshot file in `bytes`.
     pub file_size: u64,
     /// The size of the snapshot's objects in `bytes`.
@@ -483,10 +487,33 @@ pub struct SnapshotSize {
     pub total_size: u64,
 }
 
+impl Add for SnapshotSize {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Self {
+            snapshot: CompressCount {
+                none: self.snapshot.none + rhs.snapshot.none,
+                zstd: self.snapshot.zstd + rhs.snapshot.zstd,
+            },
+            file_size: self.file_size + rhs.file_size,
+            object_size: self.object_size + rhs.object_size,
+            object_count: self.object_count + rhs.object_count,
+            total_size: self.total_size + rhs.total_size,
+        }
+    }
+}
+
+impl AddAssign for SnapshotSize {
+    fn add_assign(&mut self, rhs: Self) {
+        *self = self.clone() + rhs;
+    }
+}
+
 impl fmt::Debug for SnapshotSize {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("SnapshotSize")
-            .field("compressed_type", &self.compressed_type)
+            .field("snapshot       ", &self.snapshot)
             .field("object_count   ", &self.object_count)
             .field("file_size      ", &format_args!("{:>8} bytes", self.file_size))
             .field("object_size    ", &format_args!("{:>8} bytes", self.object_size))
@@ -505,21 +532,12 @@ pub struct SnapshotRepository {
 
     /// The database instance ID of the database instance for which this repository stores snapshots.
     replica_id: u64,
-
-    /// Whether to use compression when *writing* snapshots.
-    compress_type: CompressType,
     // TODO(deduplication): track the most recent successful snapshot
     // (possibly in a file)
     // and hardlink its objects into the next snapshot for deduplication.
 }
 
 impl SnapshotRepository {
-    /// Enabling compression with the specified  [CompressType] algorithm.
-    pub fn with_compression(mut self, compress_type: CompressType) -> Self {
-        self.compress_type = compress_type;
-        self
-    }
-    
     /// Returns the [`Identity`] of the database this [`SnapshotRepository`] is configured to snapshot.
     pub fn database_identity(&self) -> Identity {
         self.database_identity
@@ -530,6 +548,11 @@ impl SnapshotRepository {
     /// and `blobs` is the committed state's blob store.
     ///
     /// Returns the path of the newly-created snapshot directory.
+    ///
+    /// **NOTE**: The current snapshot is uncompressed to avoid the potential slowdown.
+    ///
+    /// After creating the snapshot, the previous snapshots are compressed in the background, but we
+    /// *don't wait* for them to finish.
     pub fn create_snapshot<'db>(
         &self,
         tables: impl Iterator<Item = &'db mut Table>,
@@ -549,15 +572,19 @@ impl SnapshotRepository {
 
         // If a previous snapshot exists in this snapshot repo,
         // get a handle on its object repo in order to hardlink shared objects into the new snapshot.
-        let prev_snapshot = self
-            .latest_snapshot()?
-            .map(|tx_offset| self.snapshot_dir_path(tx_offset));
+        let (old, prev_snapshot) = if let Some(offset) = self.latest_snapshot()? {
+            (Some(offset), Some(self.snapshot_dir_path(tx_offset)))
+        } else {
+            (None, None)
+        };
+
         let prev_snapshot = if let Some(prev_snapshot) = prev_snapshot {
             assert!(
                 prev_snapshot.0.is_dir(),
                 "prev_snapshot {prev_snapshot:?} is not a directory"
             );
-            let object_repo = Self::object_repo(&prev_snapshot, self.compress_type)?;
+            // Assume that the previous snapshot was compressed.
+            let object_repo = Self::object_repo(&prev_snapshot, CompressType::Zstd)?;
             Some(object_repo)
         } else {
             None
@@ -569,14 +596,14 @@ impl SnapshotRepository {
 
         // Before performing any observable operations,
         // acquire a lockfile on the snapshot you want to create.
-        // TODO(noa): is this lockfile still necessary now that we have data-dir?
+        // Because we could be compressing the snapshot.
         let _lock = Lockfile::for_file(&snapshot_dir)?;
 
         // Create the snapshot directory.
         snapshot_dir.create()?;
 
         // Create a new `DirTrie` to hold all the content-addressed objects in the snapshot.
-        let object_repo = Self::object_repo(&snapshot_dir, self.compress_type)?;
+        let object_repo = Self::object_repo(&snapshot_dir, CompressType::None)?;
 
         // Build the in-memory `Snapshot` object.
         let mut snapshot = self.empty_snapshot(tx_offset);
@@ -596,7 +623,7 @@ impl SnapshotRepository {
         // Create the snapshot file, containing first the hash, then the `Snapshot`.
         {
             let snapshot_file = snapshot_dir.snapshot_file(tx_offset).open_file(&o_excl())?;
-            let mut compress = CompressWriter::new(snapshot_file, self.compress_type)?;
+            let mut compress = CompressWriter::new(snapshot_file, CompressType::None)?;
             compress.write_all(hash.as_bytes())?;
             compress.write_all(&snapshot_bsatn)?;
         }
@@ -609,6 +636,13 @@ impl SnapshotRepository {
             counter.objects_written,
         );
 
+        // Compress the old snapshots if they exist.
+        // This launches a background thread.
+        //
+        // *TODO*: We should wait for the compression to finish before returning, errors will be ignored.
+        if let Some(prev_snapshot) = old {
+            self.compress_older_snapshots(prev_snapshot)?;
+        }
         // Success! return the directory of the newly-created snapshot.
         // The lockfile will be dropped here.
         Ok(snapshot_dir)
@@ -657,8 +691,11 @@ impl SnapshotRepository {
     /// Any mutations to the returned [`DirTrie`] or its contents
     /// will likely render the snapshot corrupted,
     /// causing future attempts to reconstruct it to fail.
-    pub fn object_repo(snapshot_dir: &SnapshotDirPath, compress_type: CompressType) -> Result<DirTrie, std::io::Error> {
-        DirTrie::open(snapshot_dir.objects().0, compress_type)
+    pub fn object_repo(
+        snapshot_dir: &SnapshotDirPath,
+        write_compress_type: CompressType,
+    ) -> Result<DirTrie, std::io::Error> {
+        DirTrie::open(snapshot_dir.objects().0, write_compress_type)
     }
 
     /// Read a snapshot contained in self referring to `tx_offset`,
@@ -694,7 +731,7 @@ impl SnapshotRepository {
         }
 
         let snapshot_file_path = snapshot_dir.snapshot_file(tx_offset);
-        let snapshot = Snapshot::read_from_file(&snapshot_file_path)?;
+        let (snapshot, compress_type) = Snapshot::read_from_file(&snapshot_file_path)?;
 
         if snapshot.magic != MAGIC {
             return Err(SnapshotError::BadMagic {
@@ -710,7 +747,7 @@ impl SnapshotRepository {
             });
         }
 
-        let object_repo = Self::object_repo(&snapshot_dir, self.compress_type)?;
+        let object_repo = Self::object_repo(&snapshot_dir, compress_type)?;
 
         let blob_store = snapshot.reconstruct_blob_store(&object_repo)?;
 
@@ -723,6 +760,7 @@ impl SnapshotRepository {
             module_abi_version: snapshot.module_abi_version,
             blob_store,
             tables,
+            compress_type,
         })
     }
 
@@ -738,7 +776,6 @@ impl SnapshotRepository {
             root,
             database_identity,
             replica_id,
-            compress_type: CompressType::None,
         })
     }
 
@@ -816,40 +853,143 @@ impl SnapshotRepository {
         Ok(())
     }
 
+    /// Compress the snapshot of the replica with the given `tx_offset`.
+    ///
+    /// If the snapshot is already compressed, it will return the compress type.
+    ///
+    /// If the snapshot is not compressed, it will compress it and return the compress type.
+    ///
+    /// If the snapshot is locked, it will return an [`SnapshotError::CompressLocked`].
+    pub fn compress_snapshot(
+        snapshot_dir: &SnapshotDirPath,
+        tx_offset: TxOffset,
+    ) -> Result<CompressType, SnapshotError> {
+        let snapshot_file = snapshot_dir.snapshot_file(tx_offset);
+        let (snapshot, compress_type) = Snapshot::read_from_file(&snapshot_file)?;
+
+        if compress_type != CompressType::None {
+            log::info!(
+                "Snapshot {snapshot_dir:?} of replica {} is already compressed: {compress_type:?}",
+                snapshot.replica_id
+            );
+            return Ok(compress_type);
+        }
+
+        let lockfile = Lockfile::lock_path(snapshot_dir);
+        if lockfile.try_exists()? {
+            let err = SnapshotError::CompressLocked { tx_offset, lockfile };
+            log::error!("{err}");
+            return Err(err);
+        }
+
+        let _lock = Lockfile::for_file(snapshot_dir)?;
+
+        log::info!(
+            "Compressing snapshot {snapshot_dir:?} of replica {}",
+            snapshot.replica_id
+        );
+
+        // Replace the original file with the compressed one.
+        fn compress(src: &PathBuf) -> io::Result<()> {
+            let mut read = CompressReader::new(o_rdonly().open(src)?)?;
+            if read.compress_type() != CompressType::None {
+                return Ok(()); // Already compressed
+            }
+            let dst = src.with_extension("_tmp");
+            let mut write = CompressWriter::new(o_excl().open(&dst)?, CompressType::Zstd)?;
+            std::io::copy(&mut read, &mut write)?;
+            std::fs::rename(dst, src)?;
+            Ok(())
+        }
+        let objects = snapshot_dir.objects().read_dir()?;
+        //Search the subdirectories
+        for object in objects {
+            let object = object?;
+            // now the files in the subdirectories
+            let object_files = object.path().read_dir()?;
+            for object_file in object_files {
+                let object_file = object_file?;
+                compress(&object_file.path()).inspect_err(|err| {
+                    log::error!("Failed to compress object file {object_file:?}: {err}");
+                })?;
+            }
+        }
+        // Compress the snapshot file last, so it marks the snapshot as compressed.
+        compress(&snapshot_file.0).inspect_err(|err| {
+            log::error!("Failed to compress snapshot file {snapshot_file:?}: {err}");
+        })?;
+
+        log::info!(
+            "Compressed snapshot {snapshot_dir:?} of replica {} with Zstd",
+            snapshot.replica_id
+        );
+        Ok(CompressType::Zstd)
+    }
+
+    /// Compress the snapshots older than the given `tx_offset`.
+    ///
+    /// Returns the background thread that is compressing the snapshots.
+    pub fn compress_older_snapshots(
+        &self,
+        upper_bound: TxOffset,
+    ) -> Result<std::thread::JoinHandle<Result<CompressCount, SnapshotError>>, SnapshotError> {
+        let snapshots: Vec<_> = self
+            .all_snapshots()?
+            // Ignore `tx_offset`s greater than the current upper bound.
+            .filter_map(|tx_offset| {
+                if tx_offset <= upper_bound {
+                    let path = self.snapshot_dir_path(tx_offset);
+                    Some((tx_offset, path))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        let background = std::thread::spawn(move || {
+            let mut count = CompressCount::default();
+            for (tx_offset, path) in snapshots {
+                match Self::compress_snapshot(&path, tx_offset).inspect_err(|err| {
+                    log::error!("Failed to compress snapshot {path:?}: {err}");
+                })? {
+                    CompressType::None => count.none += 1,
+                    CompressType::Zstd => count.zstd += 1,
+                }
+            }
+
+            Ok(count)
+        });
+
+        Ok(background)
+    }
+
     /// Calculate the size of the snapshot repository in bytes.
     pub fn size_on_disk(&self) -> Result<SnapshotSize, SnapshotError> {
-        let mut size = SnapshotSize {
-            compressed_type: self.compress_type,
-            file_size: 0,
-            object_size: 0,
-            object_count: 0,
-            total_size: 0,
-        };
+        let mut size = SnapshotSize::default();
 
         for snapshot in self.all_snapshots()? {
-            let snap = self.size_on_disk_snapshot(snapshot)?;
-            size.file_size += snap.file_size;
-            size.object_size += snap.object_size;
-            size.object_count += snap.object_count;
-            size.total_size += snap.total_size;
+            size += self.size_on_disk_snapshot(snapshot)?;
         }
         Ok(size)
     }
 
     pub fn size_on_disk_snapshot(&self, offset: TxOffset) -> Result<SnapshotSize, SnapshotError> {
-        let mut size = SnapshotSize {
-            compressed_type: self.compress_type,
-            file_size: 0,
-            object_size: 0,
-            object_count: 0,
-            total_size: 0,
-        };
+        let mut size = SnapshotSize::default();
 
         let snapshot_dir = self.snapshot_dir_path(offset);
         let snapshot_file = snapshot_dir.snapshot_file(offset);
         let snapshot_file_size = snapshot_file.metadata()?.len();
+
+        let (_, compress_type) = Snapshot::read_from_file(&snapshot_file)?;
+
+        size.snapshot = match compress_type {
+            CompressType::None => CompressCount { none: 1, zstd: 0 },
+            CompressType::Zstd => CompressCount { none: 0, zstd: 1 },
+        };
+
         size.file_size += snapshot_file_size;
         size.total_size += snapshot_file_size;
+
         let objects = snapshot_dir.objects().read_dir()?;
         //Search the subdirectories
         for object in objects {
@@ -870,22 +1010,11 @@ impl SnapshotRepository {
 
     /// Calculate the size of the snapshot repository in bytes.
     pub fn size_on_disk_last_snapshot(&self) -> Result<SnapshotSize, SnapshotError> {
-        let mut size = SnapshotSize {
-            compressed_type: self.compress_type,
-            file_size: 0,
-            object_size: 0,
-            object_count: 0,
-            total_size: 0,
-        };
-
         if let Some(snapshot) = self.latest_snapshot()? {
-            let snap = self.size_on_disk_snapshot(snapshot)?;
-            size.file_size += snap.file_size;
-            size.object_size += snap.object_size;
-            size.object_count += snap.object_count;
-            size.total_size += snap.total_size;
+            self.size_on_disk_snapshot(snapshot)
+        } else {
+            Ok(SnapshotSize::default())
         }
-        Ok(size)
     }
 }
 
@@ -908,4 +1037,6 @@ pub struct ReconstructedSnapshot {
     /// so the schema of user-defined tables can be recovered
     /// given knowledge of the schema of `st_table` and `st_column`.
     pub tables: BTreeMap<TableId, Vec<Box<Page>>>,
+    /// If the snapshot was compressed or not.
+    pub compress_type: CompressType,
 }
