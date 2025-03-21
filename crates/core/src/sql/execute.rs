@@ -387,18 +387,18 @@ pub(crate) mod tests {
         Ok(())
     }
 
-    /// Test the evaluation of SELECT, UPDATE, and DELETE parameterized with `@sender`
+    /// Test the evaluation of SELECT, UPDATE, and DELETE parameterized with `:sender`
     #[test]
     fn test_sender_param() -> ResultTest<()> {
         let (db, _) = create_identity_table("user")?;
 
         const SELECT_ALL: &str = "SELECT * FROM user";
 
-        let sql = "SELECT * FROM user WHERE identity = @sender";
+        let sql = "SELECT * FROM user WHERE identity = :sender";
         let result = run_for_testing(&db, sql)?;
         assert_eq!(result, vec![product![Identity::ZERO]]);
 
-        let sql = "DELETE FROM user WHERE identity = @sender";
+        let sql = "DELETE FROM user WHERE identity = :sender";
         run_for_testing(&db, sql)?;
         let result = run_for_testing(&db, SELECT_ALL)?;
         assert_eq!(result, vec![product![Identity::ONE]]);
@@ -408,7 +408,7 @@ pub(crate) mod tests {
 
         let sql = format!("UPDATE user SET identity = 0x{zero}");
         run_for_testing(&db, &sql)?;
-        let sql = format!("UPDATE user SET identity = 0x{one} WHERE identity = @sender");
+        let sql = format!("UPDATE user SET identity = 0x{one} WHERE identity = :sender");
         run_for_testing(&db, &sql)?;
         let result = run_for_testing(&db, SELECT_ALL)?;
         assert_eq!(result, vec![product![Identity::ONE]]);

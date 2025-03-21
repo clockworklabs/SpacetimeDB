@@ -977,7 +977,7 @@ mod tests {
 
     /// In this test we have two clients issue parameterized subscriptions.
     /// These subscriptions are identical syntactically but not semantically,
-    /// because they are parameterized by `@sender` - the caller's identity.
+    /// because they are parameterized by `:sender` - the caller's identity.
     #[tokio::test]
     async fn test_parameterized_subscription() -> anyhow::Result<()> {
         let client_0_identity = Identity::from_u256(u256::MAX);
@@ -1011,7 +1011,7 @@ mod tests {
         let table_id = db.create_table_for_test("t", &[("identity", AlgebraicType::identity())], &[])?;
 
         let subscribe = |sender, query_id| -> anyhow::Result<()> {
-            let sql = "select * from t where identity = @sender";
+            let sql = "select * from t where identity = :sender";
             subs.add_multi_subscription(sender, multi_subscribe(&[sql], query_id), Instant::now(), None)?;
             Ok(())
         };

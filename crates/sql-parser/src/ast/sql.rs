@@ -49,7 +49,7 @@ impl SqlAst {
         }
     }
 
-    /// Replace the `@sender` parameter with the [Identity] it represents
+    /// Replace the `:sender` parameter with the [Identity] it represents
     pub fn resolve_sender(self, sender_identity: Identity) -> Self {
         match self {
             Self::Select(select) => Self::Select(select.resolve_sender(sender_identity)),
@@ -91,7 +91,7 @@ impl SqlSelect {
         Ok(self)
     }
 
-    /// Replace the `@sender` parameter with the [Identity] it represents
+    /// Replace the `:sender` parameter with the [Identity] it represents
     pub fn resolve_sender(self, sender_identity: Identity) -> Self {
         Self {
             filter: self.filter.map(|expr| expr.resolve_sender(sender_identity)),
@@ -121,7 +121,7 @@ pub struct SqlUpdate {
 }
 
 impl SqlUpdate {
-    /// Replace the `@sender` parameter with the [Identity] it represents
+    /// Replace the `:sender` parameter with the [Identity] it represents
     fn resolve_sender(self, sender_identity: Identity) -> Self {
         Self {
             filter: self.filter.map(|expr| expr.resolve_sender(sender_identity)),
@@ -138,7 +138,7 @@ pub struct SqlDelete {
 }
 
 impl SqlDelete {
-    /// Replace the `@sender` parameter with the [Identity] it represents
+    /// Replace the `:sender` parameter with the [Identity] it represents
     fn resolve_sender(self, sender_identity: Identity) -> Self {
         Self {
             filter: self.filter.map(|expr| expr.resolve_sender(sender_identity)),

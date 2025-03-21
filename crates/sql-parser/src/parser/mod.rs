@@ -213,7 +213,7 @@ pub(crate) fn parse_expr(expr: Expr) -> SqlParseResult<SqlExpr> {
     }
     match expr {
         Expr::Nested(expr) => parse_expr(*expr),
-        Expr::Value(Value::Placeholder(param)) if &param == "@sender" => Ok(SqlExpr::Param(Parameter::Sender)),
+        Expr::Value(Value::Placeholder(param)) if &param == ":sender" => Ok(SqlExpr::Param(Parameter::Sender)),
         Expr::Value(v) => Ok(SqlExpr::Lit(parse_literal(v)?)),
         Expr::UnaryOp {
             op: UnaryOperator::Plus,

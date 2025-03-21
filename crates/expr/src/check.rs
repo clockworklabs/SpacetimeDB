@@ -437,12 +437,12 @@ mod tests {
                 msg: "Can leave columns unqualified when unambiguous",
             },
             TestCase {
-                sql: "select * from s where id = @sender",
-                msg: "Can use @sender as an Identity",
+                sql: "select * from s where id = :sender",
+                msg: "Can use :sender as an Identity",
             },
             TestCase {
-                sql: "select * from s where bytes = @sender",
-                msg: "Can use @sender as a byte array",
+                sql: "select * from s where bytes = :sender",
+                msg: "Can use :sender as a byte array",
             },
             TestCase {
                 sql: "select * from t where t.u32 = 1 or t.str = ''",
@@ -489,8 +489,8 @@ mod tests {
                 msg: "Table r does not exist",
             },
             TestCase {
-                sql: "select * from t where arr = @sender",
-                msg: "The @sender param is an identity",
+                sql: "select * from t where arr = :sender",
+                msg: "The :sender param is an identity",
             },
             TestCase {
                 sql: "select * from t where t.a = 1",

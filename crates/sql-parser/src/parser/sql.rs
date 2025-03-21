@@ -132,7 +132,7 @@ use sqlparser::{
         Assignment, Expr, GroupByExpr, ObjectName, Query, Select, SetExpr, Statement, TableFactor, TableWithJoins,
         Value, Values,
     },
-    dialect::AnsiDialect,
+    dialect::PostgreSqlDialect,
     parser::Parser,
 };
 
@@ -148,7 +148,7 @@ use super::{
 
 /// Parse a SQL string
 pub fn parse_sql(sql: &str) -> SqlParseResult<SqlAst> {
-    let mut stmts = Parser::parse_sql(&AnsiDialect {}, sql)?;
+    let mut stmts = Parser::parse_sql(&PostgreSqlDialect {}, sql)?;
     if stmts.len() > 1 {
         return Err(SqlUnsupported::MultiStatement.into());
     }
@@ -439,16 +439,16 @@ mod tests {
     fn supported() {
         for sql in [
             "select a from t",
-            "select a from t where x = @sender",
+            "select a from t where x = :sender",
             "select count(*) as n from t",
             "select count(*) as n from t join s on t.id = s.id where s.x = 1",
             "insert into t values (1, 2)",
             "delete from t",
             "delete from t where a = 1",
-            "delete from t where x = @sender",
+            "delete from t where x = :sender",
             "update t set a = 1, b = 2",
             "update t set a = 1, b = 2 where c = 3",
-            "update t set a = 1, b = 2 where x = @sender",
+            "update t set a = 1, b = 2 where x = :sender",
         ] {
             assert!(parse_sql(sql).is_ok());
         }

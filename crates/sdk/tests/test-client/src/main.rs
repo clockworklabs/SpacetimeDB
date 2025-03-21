@@ -2234,7 +2234,7 @@ fn exec_two_different_compression_algos() {
 
 /// In this test we have two clients issue parameterized subscriptions.
 /// These subscriptions are identical syntactically but not semantically,
-/// because they are parameterized by `@sender` - the caller's identity.
+/// because they are parameterized by `:sender` - the caller's identity.
 fn test_parameterized_subscription() {
     let ctr_for_test = TestCounter::new();
     let ctr_for_subs = TestCounter::new();
@@ -2257,7 +2257,7 @@ fn test_parameterized_subscription() {
         connect_with_then(&ctr_for_test, test_name, |builder| builder, {
             move |ctx| {
                 let sender = ctx.identity();
-                subscribe_these_then(ctx, &["SELECT * FROM pk_identity WHERE i = @sender"], move |ctx| {
+                subscribe_these_then(ctx, &["SELECT * FROM pk_identity WHERE i = :sender"], move |ctx| {
                     put_result(&mut record_sub, Ok(()));
                     // Wait to insert until both client connections have been made
                     ctr_for_subs.wait_for_all();

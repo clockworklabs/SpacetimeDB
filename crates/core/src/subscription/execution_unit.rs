@@ -65,7 +65,7 @@ impl QueryHash {
         Self::from_bytes(str.as_bytes())
     }
 
-    /// If a query is parameterized with `@sender`, we must use the value of `@sender`,
+    /// If a query is parameterized with `:sender`, we must use the value of `:sender`,
     /// i.e. the identity of the caller, when hashing the query text,
     /// so that two identical queries from different clients aren't hashed to the same value.
     ///

@@ -40,7 +40,7 @@ impl SqlSelect {
         self.filter.as_ref().is_some_and(|expr| expr.has_parameter())
     }
 
-    /// Replace the `@sender` parameter with the [Identity] it represents
+    /// Replace the `:sender` parameter with the [Identity] it represents
     pub fn resolve_sender(self, sender_identity: Identity) -> Self {
         Self {
             filter: self.filter.map(|expr| expr.resolve_sender(sender_identity)),

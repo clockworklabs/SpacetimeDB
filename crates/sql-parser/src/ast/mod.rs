@@ -109,7 +109,7 @@ pub enum SqlExpr {
     Lit(SqlLiteral),
     /// Unqualified column ref
     Var(SqlIdent),
-    /// A parameter prefixed with `@`
+    /// A parameter prefixed with `:`
     Param(Parameter),
     /// Qualified column ref
     Field(SqlIdent, SqlIdent),
@@ -155,7 +155,7 @@ impl SqlExpr {
         }
     }
 
-    /// Replace the `@sender` parameter with the [Identity] it represents
+    /// Replace the `:sender` parameter with the [Identity] it represents
     pub fn resolve_sender(self, sender_identity: Identity) -> Self {
         match self {
             Self::Lit(_) | Self::Var(_) | Self::Field(..) => self,
@@ -177,10 +177,10 @@ impl SqlExpr {
     }
 }
 
-/// A named parameter prefixed with `@`
+/// A named parameter prefixed with `:`
 #[derive(Debug)]
 pub enum Parameter {
-    /// @sender
+    /// :sender
     Sender,
 }
 
