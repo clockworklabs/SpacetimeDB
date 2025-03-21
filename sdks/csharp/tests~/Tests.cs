@@ -81,4 +81,56 @@ public class Tests
         Assert.False(GenericEqualityComparer.Instance.Equals(statusFailed, statusFailedUnequalValue));
         Assert.False(GenericEqualityComparer.Instance.Equals(statusCommitted, statusOutOfEnergy));
     }
+    
+    public class BTreeIndexBaseColumnImplementsIComparableTest
+    {
+
+        public sealed class UserHandle : RemoteTableHandle<EventContext, User>
+        {
+            protected override string RemoteTableName => "user";
+
+            public sealed class IdentityIndex : BTreeIndexBase<SpacetimeDB.Identity>
+            {
+                protected override SpacetimeDB.Identity GetKey(User row) => row.Identity;
+
+                public IdentityIndex(UserHandle table) : base(table) { }
+            }
+
+            public readonly IdentityIndex Identity;
+
+            internal UserHandle(DbConnection conn) : base(conn)
+            {
+                Identity = new(this);
+            }
+        }
+        
+        [Fact]
+        public void Identity_ShouldImplementIComparable()
+        {
+            // Arrange
+            var identityType = typeof(SpacetimeDB.Identity);
+
+            // Act
+            bool implementsIComparable =
+                typeof(IComparable<>).MakeGenericType(identityType).IsAssignableFrom(identityType);
+
+            // Assert
+            Assert.True(implementsIComparable, $"{identityType} does not implement IComparable<{identityType}>");
+        }
+
+        [Fact]
+        public void IdentityIndex_ShouldInheritFrom_BTreeIndexBase()
+        {
+            // Arrange
+            var identityIndexType = typeof(UserHandle.IdentityIndex);
+            var expectedBaseType = typeof(RemoteTableHandle<EventContext, User>.BTreeIndexBase<SpacetimeDB.Identity>);
+
+            // Act
+            bool isCorrectBaseType = expectedBaseType.IsAssignableFrom(identityIndexType.BaseType);
+
+            // Assert
+            Assert.True(isCorrectBaseType,
+                "IdentityIndex does not correctly inherit from BTreeIndexBase<SpacetimeDB.Identity>");
+        }
+    }
 }
