@@ -41,7 +41,7 @@ use spacetimedb_table::table::RowRef;
 /// nuanced example of how postgres deals with consistency guarantees at lower
 /// isolation levels.
 ///
-/// - https://stackoverflow.com/questions/55254236/do-i-need-higher-transaction-isolation-to-make-constraints-work-reliably-in-post
+/// - <https://stackoverflow.com/questions/55254236/do-i-need-higher-transaction-isolation-to-make-constraints-work-reliably-in-post>
 ///
 /// Thus from an application perspective, isolation anomalies may cause the data
 /// to be inconsistent or incorrect but will **not** cause it to violate the
@@ -79,13 +79,13 @@ use spacetimedb_table::table::RowRef;
 /// However since then database researchers have identified and cataloged many
 /// more. See:
 ///
-/// - https://www.microsoft.com/en-us/research/wp-content/uploads/2016/02/tr-95-51.pdf
-/// - https://pmg.csail.mit.edu/papers/adya-phd.pdf
+/// - <https://www.microsoft.com/en-us/research/wp-content/uploads/2016/02/tr-95-51.pdf>
+/// - <https://pmg.csail.mit.edu/papers/adya-phd.pdf>
 ///
 /// See the following table of anomalies for a more complete list used as a
 /// reference for database implementers:
 ///
-/// - https://github.com/ept/hermitage?tab=readme-ov-file#summary-of-test-results
+/// - <https://github.com/ept/hermitage?tab=readme-ov-file#summary-of-test-results>
 ///
 /// The following anomalies are not part of the SQL standard, but are important:
 ///
@@ -101,7 +101,7 @@ use spacetimedb_table::table::RowRef;
 /// PostgreSQL's documentation provides a good summary of the anomalies and
 /// isolation levels that it supports:
 ///
-/// - https://www.postgresql.org/docs/current/transaction-iso.html
+/// - <https://www.postgresql.org/docs/current/transaction-iso.html>
 ///
 /// IMPORTANT!!! The order of these isolation levels in the enum is significant
 /// because we often must check if one isolation level is higher (offers more

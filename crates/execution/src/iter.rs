@@ -197,7 +197,7 @@ impl<'a> Iter<'a> {
     }
 }
 
-/// An iterator that always returns [RowRef]s
+/// An iterator that always returns [Row]s
 pub enum RowRefIter<'a> {
     TableScan(TableScanIter<'a>),
     IndexScanPoint(IndexScanPointIter<'a>),
@@ -353,7 +353,7 @@ impl<'a> Iterator for LeftDeepJoinIter<'a> {
 }
 
 /// A semijoin iterator.
-/// Returns [RowRef]s if this is a right semijoin.
+/// Returns [Row]s if this is a right semijoin.
 /// Returns [Tuple]s otherwise.
 pub enum SemiJoin<All, Lhs, Rhs> {
     All(All),
