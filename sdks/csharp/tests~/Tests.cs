@@ -81,7 +81,7 @@ public class Tests
         Assert.False(GenericEqualityComparer.Instance.Equals(statusFailed, statusFailedUnequalValue));
         Assert.False(GenericEqualityComparer.Instance.Equals(statusCommitted, statusOutOfEnergy));
     }
-    
+
     public class BTreeIndexBaseColumnImplementsIComparableTest
     {
 
@@ -103,7 +103,7 @@ public class Tests
                 Identity = new(this);
             }
         }
-        
+
         [Fact]
         public void Identity_ShouldImplementIComparable()
         {
