@@ -8,7 +8,7 @@ use spacetimedb::client::ClientActorIndex;
 use spacetimedb::energy::{EnergyBalance, EnergyQuanta};
 use spacetimedb::host::{HostController, ModuleHost, NoSuchModule, UpdateDatabaseResult};
 use spacetimedb::identity::{AuthCtx, Identity};
-use spacetimedb::json::client_api::StmtResultJson;
+use spacetimedb::json::client_api::{StmtResultJson, StmtStatsJson};
 use spacetimedb::messages::control_db::{Database, HostType, Node, Replica};
 use spacetimedb::sql;
 use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, RegisterTldResult, SetDomainsResult, Tld};
@@ -88,7 +88,7 @@ impl Host {
                     let sql_span =
                         tracing::trace_span!("execute_sql", total_duration = tracing::field::Empty,).entered();
 
-                    let rows = sql::execute::run(
+                    let result = sql::execute::run(
                         // Returns an empty result set for mutations
                         db,
                         &body,
@@ -116,8 +116,13 @@ impl Host {
 
                     Ok(vec![StmtResultJson {
                         schema,
-                        rows,
+                        rows: result.rows,
                         total_duration_micros: total_duration.as_micros() as u64,
+                        stats: StmtStatsJson {
+                            rows_inserted: result.metrics.rows_inserted,
+                            rows_deleted: result.metrics.rows_deleted,
+                            rows_updated: result.metrics.rows_updated,
+                        },
                     }])
                 },
             )

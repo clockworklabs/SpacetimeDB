@@ -102,14 +102,15 @@ impl DeltaStore for MutTxId {
 }
 
 impl MutDatastore for MutTxId {
-    fn insert_product_value(&mut self, table_id: TableId, row: &ProductValue) -> anyhow::Result<()> {
-        self.insert_via_serialize_bsatn(table_id, row)?;
-        Ok(())
+    fn insert_product_value(&mut self, table_id: TableId, row: &ProductValue) -> anyhow::Result<bool> {
+        Ok(match self.insert_via_serialize_bsatn(table_id, row)?.1 {
+            RowRefInsertion::Inserted(_) => true,
+            RowRefInsertion::Existed(_) => false,
+        })
     }
 
-    fn delete_product_value(&mut self, table_id: TableId, row: &ProductValue) -> anyhow::Result<()> {
-        self.delete_by_row_value(table_id, row)?;
-        Ok(())
+    fn delete_product_value(&mut self, table_id: TableId, row: &ProductValue) -> anyhow::Result<bool> {
+        Ok(self.delete_by_row_value(table_id, row)?)
     }
 }
 
