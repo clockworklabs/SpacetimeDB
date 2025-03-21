@@ -33,7 +33,7 @@ impl From<ProjectListPlan> for ProjectListExecutor {
             ProjectListPlan::Name(plan) => Self::Name(plan.into()),
             ProjectListPlan::List(plan, fields) => Self::List(plan.into(), fields),
             ProjectListPlan::Limit(plan, n) => Self::Limit(Box::new((*plan).into()), n),
-            ProjectListPlan::Agg(plan, AggType::Count) => Self::Agg(plan.into(), AggType::Count),
+            ProjectListPlan::Agg(plan, agg) => Self::Agg(plan.into(), agg),
         }
     }
 }
@@ -78,10 +78,10 @@ impl ProjectListExecutor {
             // and if so, we retrieve the count from table metadata.
             // It's a valid optimization but one that should be done by the optimizer.
             // There should be no optimizations performed during execution.
-            Self::Agg(PipelinedExecutor::TableScan(table_scan), AggType::Count) => {
+            Self::Agg(PipelinedExecutor::TableScan(table_scan), AggType::Count { alias: _ }) => {
                 f(product![tx.table_or_err(table_scan.table)?.num_rows()])?;
             }
-            Self::Agg(plan, AggType::Count) => {
+            Self::Agg(plan, AggType::Count { alias: _ }) => {
                 plan.execute(tx, metrics, &mut |_| {
                     n += 1;
                     Ok(())

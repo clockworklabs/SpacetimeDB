@@ -55,7 +55,9 @@ pub(crate) fn type_proj(input: RelExpr, proj: ast::Project, vars: &Relvars) -> T
             Ok(ProjectList::Name(ProjectName::Some(input, var)))
         }
         ast::Project::Star(Some(SqlIdent(var))) => Err(Unresolved::var(&var).into()),
-        ast::Project::Count(SqlIdent(alias)) => Ok(ProjectList::Agg(input, AggType::Count, alias, AlgebraicType::U64)),
+        ast::Project::Count(SqlIdent(alias)) => {
+            Ok(ProjectList::Agg(input, AggType::Count { alias }, AlgebraicType::U64))
+        }
         ast::Project::Exprs(elems) => {
             let mut projections = vec![];
             let mut names = HashSet::new();
@@ -336,6 +338,7 @@ pub(crate) fn parse(value: &str, ty: &AlgebraicType) -> anyhow::Result<Algebraic
 }
 
 /// The source of a statement
+#[derive(Debug, Clone, Copy)]
 pub enum StatementSource {
     Subscription,
     Query,
@@ -348,4 +351,5 @@ pub struct StatementCtx<'a> {
     pub statement: Statement,
     pub sql: &'a str,
     pub source: StatementSource,
+    pub planning_time: Option<std::time::Duration>,
 }
