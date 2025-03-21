@@ -830,7 +830,7 @@ impl ModuleHost {
 
         let (rows, metrics) = db.with_read_only(Workload::Sql, |tx| {
             let tx = SchemaViewer::new(tx, &auth);
-            let (plan, _, table_name) = compile_subscription(&query, &tx)?;
+            let (plan, _, table_name, _) = compile_subscription(&query, &tx, &auth)?;
             let plan = plan.optimize()?;
             check_row_limit(&plan, db, &tx, |plan, tx| estimate_rows_scanned(tx, plan), &auth)?;
             execute_plan::<_, F>(&plan.into(), &DeltaTx::from(&*tx))

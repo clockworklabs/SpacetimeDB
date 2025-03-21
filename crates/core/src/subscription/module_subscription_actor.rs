@@ -15,6 +15,7 @@ use crate::estimation::estimate_rows_scanned;
 use crate::execution_context::{Workload, WorkloadType};
 use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent};
 use crate::messages::websocket::Subscribe;
+use crate::sql::ast::SchemaViewer;
 use crate::subscription::execute_plans;
 use crate::vm::check_row_limit;
 use crate::worker_metrics::WORKER_METRICS;
@@ -24,6 +25,7 @@ use spacetimedb_client_api_messages::websocket::{
     UnsubscribeMulti,
 };
 use spacetimedb_execution::pipelined::PipelinedProject;
+use spacetimedb_expr::check::parse_and_type_sub;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::Identity;
@@ -43,6 +45,27 @@ pub struct ModuleSubscriptions {
 type AssertTxFn = Arc<dyn Fn(&Tx)>;
 type SubscriptionUpdate = FormatSwitch<TableUpdate<BsatnFormat>, TableUpdate<JsonFormat>>;
 type FullSubscriptionUpdate = FormatSwitch<ws::DatabaseUpdate<BsatnFormat>, ws::DatabaseUpdate<JsonFormat>>;
+
+/// A utility for sending an error message to a client and returning early
+macro_rules! return_on_err {
+    ($expr:expr, $handler:expr) => {
+        match $expr {
+            Ok(val) => val,
+            Err(e) => {
+                // TODO: Handle errors sending messages.
+                let _ = $handler(e.to_string().into());
+                return Ok(());
+            }
+        }
+    };
+}
+
+/// Hash a sql query, using the caller's identity if necessary
+fn hash_query(sql: &str, tx: &TxId, auth: &AuthCtx) -> Result<QueryHash, DBError> {
+    parse_and_type_sub(sql, &SchemaViewer::new(tx, auth), auth)
+        .map_err(DBError::from)
+        .map(|(_, has_param)| QueryHash::from_string(sql, auth.caller, has_param))
+}
 
 impl ModuleSubscriptions {
     pub fn new(relational_db: Arc<RelationalDB>, subscriptions: Subscriptions, owner_identity: Identity) -> Self {
@@ -130,22 +153,6 @@ impl ModuleSubscriptions {
         timer: Instant,
         _assert: Option<AssertTxFn>,
     ) -> Result<(), DBError> {
-        let tx = scopeguard::guard(self.relational_db.begin_tx(Workload::Subscribe), |tx| {
-            self.relational_db.release_tx(tx);
-        });
-        let auth = AuthCtx::new(self.owner_identity, sender.id.identity);
-        let query = super::query::WHITESPACE.replace_all(&request.query, " ");
-        let sql = query.trim();
-        let hash = QueryHash::from_string(sql);
-        let existing_query = {
-            let guard = self.subscriptions.read();
-            guard.query(&hash)
-        };
-        let query: Result<Arc<Plan>, DBError> = existing_query.map(Ok).unwrap_or_else(|| {
-            let compiled = compile_read_only_query(&auth, &tx, sql)?;
-            Ok(Arc::new(compiled))
-        });
-
         // Send an error message to the client
         let send_err_msg = |message| {
             sender.send_message(SubscriptionMessage {
@@ -159,28 +166,31 @@ impl ModuleSubscriptions {
             })
         };
 
-        // If compile error, send to client
-        let query = match query {
-            Ok(query) => query,
-            Err(e) => {
-                // Apparently we ignore errors sending messages.
-                let _ = send_err_msg(e.to_string().into());
-                return Ok(());
-            }
+        let tx = scopeguard::guard(self.relational_db.begin_tx(Workload::Subscribe), |tx| {
+            self.relational_db.release_tx(tx);
+        });
+        let auth = AuthCtx::new(self.owner_identity, sender.id.identity);
+        let query = super::query::WHITESPACE.replace_all(&request.query, " ");
+        let sql = query.trim();
+
+        let hash = return_on_err!(hash_query(sql, &tx, &auth), send_err_msg);
+
+        let existing_query = {
+            let guard = self.subscriptions.read();
+            guard.query(&hash)
         };
 
-        let eval_result =
-            self.evaluate_initial_subscription(sender.clone(), query.clone(), &tx, &auth, TableUpdateType::Subscribe);
+        let query = return_on_err!(
+            existing_query
+                .map(Ok)
+                .unwrap_or_else(|| compile_read_only_query(&auth, &tx, sql).map(Arc::new)),
+            send_err_msg
+        );
 
-        // If execution error, send to client
-        let (table_rows, metrics) = match eval_result {
-            Ok(ok) => ok,
-            Err(e) => {
-                // Apparently we ignore errors sending messages.
-                let _ = send_err_msg(e.to_string().into());
-                return Ok(());
-            }
-        };
+        let (table_rows, metrics) = return_on_err!(
+            self.evaluate_initial_subscription(sender.clone(), query.clone(), &tx, &auth, TableUpdateType::Subscribe),
+            send_err_msg
+        );
 
         record_exec_metrics(
             &WorkloadType::Subscribe,
@@ -423,17 +433,13 @@ impl ModuleSubscriptions {
                 );
                 continue;
             }
-            let hash = QueryHash::from_string(sql);
+
+            let hash = return_on_err!(hash_query(sql, &tx, &auth), send_err_msg);
+
             if let Some(unit) = guard.query(&hash) {
                 queries.push(unit);
             } else {
-                let compiled = match compile_read_only_query(&auth, &tx, sql) {
-                    Ok(compiled) => compiled,
-                    Err(e) => {
-                        send_err_msg(e.to_string().into());
-                        return Ok(());
-                    }
-                };
+                let compiled = return_on_err!(compile_read_only_query(&auth, &tx, sql), send_err_msg);
                 queries.push(Arc::new(compiled));
             }
         }
@@ -522,7 +528,8 @@ impl ModuleSubscriptions {
                 );
                 continue;
             }
-            let hash = QueryHash::from_string(sql);
+
+            let hash = hash_query(sql, &tx, &auth)?;
             if let Some(unit) = guard.query(&hash) {
                 queries.push(unit);
             } else {
@@ -666,29 +673,36 @@ pub struct WriteConflict;
 #[cfg(test)]
 mod tests {
     use super::{AssertTxFn, ModuleSubscriptions};
-    use crate::client::messages::{SerializableMessage, SubscriptionMessage, SubscriptionResult};
-    use crate::client::{ClientActorId, ClientConfig, ClientConnectionSender};
+    use crate::client::messages::{
+        SerializableMessage, SubscriptionMessage, SubscriptionResult, SubscriptionUpdateMessage,
+        TransactionUpdateMessage,
+    };
+    use crate::client::{ClientActorId, ClientConfig, ClientConnectionSender, ClientName, Protocol};
     use crate::db::datastore::traits::IsolationLevel;
     use crate::db::relational_db::tests_utils::{insert, TestDB};
     use crate::db::relational_db::RelationalDB;
     use crate::error::DBError;
     use crate::execution_context::Workload;
     use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall};
+    use crate::messages::websocket as ws;
     use crate::subscription::module_subscription_manager::SubscriptionManager;
     use crate::subscription::query::compile_read_only_query;
     use crate::subscription::TableUpdateType;
     use parking_lot::RwLock;
     use spacetimedb_client_api_messages::energy::EnergyQuanta;
-    use spacetimedb_client_api_messages::websocket::{QueryId, Subscribe, SubscribeSingle, Unsubscribe};
+    use spacetimedb_client_api_messages::websocket::{
+        CompressableQueryUpdate, Compression, FormatSwitch, QueryId, RowListLen, Subscribe, SubscribeMulti,
+        SubscribeSingle, Unsubscribe,
+    };
     use spacetimedb_lib::db::auth::StAccess;
     use spacetimedb_lib::identity::AuthCtx;
-    use spacetimedb_lib::{bsatn, Timestamp};
+    use spacetimedb_lib::{bsatn, ConnectionId, ProductType, ProductValue, Timestamp};
     use spacetimedb_lib::{error::ResultTest, AlgebraicType, Identity};
     use spacetimedb_primitives::{IndexId, TableId};
-    use spacetimedb_sats::product;
+    use spacetimedb_sats::{product, u256};
     use std::time::Instant;
     use std::{sync::Arc, time::Duration};
-    use tokio::sync::mpsc;
+    use tokio::sync::mpsc::{self, Receiver};
 
     fn add_subscriber(db: Arc<RelationalDB>, sql: &str, assert: Option<AssertTxFn>) -> Result<(), DBError> {
         let owner = Identity::from_byte_array([1; 32]);
@@ -732,6 +746,18 @@ mod tests {
     fn single_subscribe(sql: &str, query_id: u32) -> SubscribeSingle {
         SubscribeSingle {
             query: sql.into(),
+            request_id: 0,
+            query_id: QueryId::new(query_id),
+        }
+    }
+
+    /// A [SubscribeMulti] message for testing
+    fn multi_subscribe(query_strings: &[&'static str], query_id: u32) -> SubscribeMulti {
+        SubscribeMulti {
+            query_strings: query_strings
+                .iter()
+                .map(|sql| String::from(*sql).into_boxed_str())
+                .collect(),
             request_id: 0,
             query_id: QueryId::new(query_id),
         }
@@ -946,6 +972,114 @@ mod tests {
                 ..
             }))
         ));
+        Ok(())
+    }
+
+    /// In this test we have two clients issue parameterized subscriptions.
+    /// These subscriptions are identical syntactically but not semantically,
+    /// because they are parameterized by `:sender` - the caller's identity.
+    #[tokio::test]
+    async fn test_parameterized_subscription() -> anyhow::Result<()> {
+        let client_0_identity = Identity::from_u256(u256::MAX);
+        let client_1_identity = Identity::from_u256(u256::ONE);
+        let client_0_config = ClientConfig {
+            protocol: Protocol::Binary,
+            compression: Compression::None,
+            tx_update_full: true,
+        };
+        let client_1_config = ClientConfig {
+            protocol: Protocol::Binary,
+            compression: Compression::None,
+            tx_update_full: true,
+        };
+        let client_0 = ClientActorId {
+            identity: client_0_identity,
+            connection_id: ConnectionId::from_u128(0),
+            name: ClientName(0),
+        };
+        let client_1 = ClientActorId {
+            identity: client_1_identity,
+            connection_id: ConnectionId::from_u128(1),
+            name: ClientName(1),
+        };
+        let (sender_0, mut rx_0) = ClientConnectionSender::dummy_with_channel(client_0, client_0_config);
+        let (sender_1, mut rx_1) = ClientConnectionSender::dummy_with_channel(client_1, client_1_config);
+        let db = relational_db()?;
+        let subs = module_subscriptions(db.clone());
+
+        // Create an empty table with an `Identity` column
+        let table_id = db.create_table_for_test("t", &[("identity", AlgebraicType::identity())], &[])?;
+
+        let subscribe = |sender, query_id| -> anyhow::Result<()> {
+            let sql = "select * from t where identity = :sender";
+            subs.add_multi_subscription(sender, multi_subscribe(&[sql], query_id), Instant::now(), None)?;
+            Ok(())
+        };
+
+        let client_0_query_id = 1;
+        let client_1_query_id = 2;
+
+        subscribe(Arc::new(sender_0), client_0_query_id)?;
+        subscribe(Arc::new(sender_1), client_1_query_id)?;
+
+        /// Wait for the initial subscription
+        async fn wait(rx: &mut Receiver<SerializableMessage>) {
+            assert!(matches!(rx.recv().await, Some(SerializableMessage::Subscription(_))))
+        }
+
+        // Wait for both subscriptions
+        wait(&mut rx_0).await;
+        wait(&mut rx_1).await;
+
+        // Insert two identities - one for each caller - into the table
+        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        db.insert(&mut tx, table_id, &bsatn::to_vec(&product![client_0_identity])?)?;
+        db.insert(&mut tx, table_id, &bsatn::to_vec(&product![client_1_identity])?)?;
+
+        assert!(matches!(
+            subs.commit_and_broadcast_event(None, module_event(), tx),
+            Ok(Ok(_))
+        ));
+
+        /// Assert that we get the expected identity from the receiver
+        async fn assert_identity(table_id: TableId, identity: Identity, rx: &mut Receiver<SerializableMessage>) {
+            match rx.recv().await {
+                Some(SerializableMessage::TxUpdate(TransactionUpdateMessage {
+                    database_update:
+                        SubscriptionUpdateMessage {
+                            database_update: FormatSwitch::Bsatn(ws::DatabaseUpdate { mut tables }),
+                            ..
+                        },
+                    ..
+                })) => {
+                    assert_eq!(tables.len(), 1);
+                    let mut table_update = tables.pop().unwrap();
+
+                    assert_eq!(table_update.table_id, table_id);
+                    assert_eq!(table_update.num_rows, 1);
+                    assert_eq!(table_update.updates.len(), 1);
+
+                    let CompressableQueryUpdate::Uncompressed(table_update) = table_update.updates.pop().unwrap()
+                    else {
+                        panic!("expected an uncompressed table update")
+                    };
+
+                    assert!(table_update.deletes.is_empty());
+                    assert_eq!(table_update.inserts.len(), 1);
+
+                    let typ = ProductType::from([AlgebraicType::identity()]);
+                    let raw = table_update.inserts.into_iter().next().unwrap();
+                    let row = ProductValue::decode(&typ, &mut &*raw).unwrap();
+
+                    assert_eq!(row, product![identity]);
+                }
+                _ => panic!("expected a transaction update"),
+            }
+        }
+
+        // Assert that each connection receives the correct update
+        assert_identity(table_id, client_0_identity, &mut rx_0).await;
+        assert_identity(table_id, client_1_identity, &mut rx_1).await;
         Ok(())
     }
 
