@@ -407,3 +407,15 @@ public partial struct TestScheduleIssues
     [SpacetimeDB.Reducer]
     public static void DummyScheduledReducer(ReducerContext ctx, TestScheduleIssues table) { }
 }
+
+public partial class Module
+{
+    [SpacetimeDB.ClientVisibilityFilter]
+    private Filter MY_FILTER = new Filter.Sql("SELECT * FROM TestAutoIncNotInteger");
+
+    [SpacetimeDB.ClientVisibilityFilter]
+    public static Filter MY_SECOND_FILTER = new Filter.Sql("SELECT * FROM TestAutoIncNotInteger");
+
+    [SpacetimeDB.ClientVisibilityFilter]
+    public static readonly string MY_THIRD_FILTER = "SELECT * FROM TestAutoIncNotInteger";
+}

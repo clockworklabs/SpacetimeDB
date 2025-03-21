@@ -157,5 +157,51 @@ partial struct TestTypeParams<T>  : System.IEquatable<TestTypeParams>, Spacetime
         NotConfigurable
       ]
     }
+  },
+  {/*
+SpacetimeDB.Internal.Module.RegisterTable<global::TestUniqueNotEquatable, SpacetimeDB.Internal.TableHandles.TestUniqueNotEquatable>();
+        SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_FILTER);
+                                                                                  ^^^^^^^^^
+SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_SECOND_FILTER);
+*/
+    Message: 'Module.MY_FILTER' is inaccessible due to its protection level,
+    Severity: Error,
+    Descriptor: {
+      Id: CS0122,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0122),
+      MessageFormat: '{0}' is inaccessible due to its protection level,
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_SECOND_FILTER);
+SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_THIRD_FILTER);
+                                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    }
+*/
+    Message: Argument 1: cannot convert from 'string' to 'SpacetimeDB.Filter',
+    Severity: Error,
+    Descriptor: {
+      Id: CS1503,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS1503),
+      MessageFormat: Argument {0}: cannot convert from '{1}' to '{2}',
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
   }
 ]

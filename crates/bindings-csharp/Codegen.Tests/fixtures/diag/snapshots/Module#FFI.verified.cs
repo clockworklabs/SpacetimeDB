@@ -990,6 +990,9 @@ static class ModuleRegistration
             global::TestUniqueNotEquatable,
             SpacetimeDB.Internal.TableHandles.TestUniqueNotEquatable
         >();
+        SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_FILTER);
+        SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_SECOND_FILTER);
+        SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_THIRD_FILTER);
     }
 
     // Exports only work from the main assembly, so we need to generate forwarding methods.
