@@ -3496,7 +3496,7 @@ impl DbConnection {
     /// Returns an error if the connection is disconnected.
     /// If the disconnection in question was normal,
     ///  i.e. the result of a call to [`__sdk::DbContext::disconnect`],
-    /// the returned error will be downcastable to [`__sdk::DisconnectedError`].
+    /// the returned error will be downcastable to [`__sdk::Error::Disconnected`].
     ///
     /// This is a low-level primitive exposed for power users who need significant control over scheduling.
     /// Most applications should call [`Self::frame_tick`] each frame
@@ -3510,7 +3510,7 @@ impl DbConnection {
     /// Returns an error if the connection is disconnected.
     /// If the disconnection in question was normal,
     ///  i.e. the result of a call to [`__sdk::DbContext::disconnect`],
-    /// the returned error will be downcastable to [`__sdk::DisconnectedError`].
+    /// the returned error will be downcastable to [`__sdk::Error::Disconnected`].
     ///
     /// This is a low-level primitive exposed for power users who need significant control over scheduling.
     /// Most applications should call [`Self::run_threaded`] to spawn a thread
@@ -3524,7 +3524,7 @@ impl DbConnection {
     /// Returns an error if the connection is disconnected.
     /// If the disconnection in question was normal,
     ///  i.e. the result of a call to [`__sdk::DbContext::disconnect`],
-    /// the returned error will be downcastable to [`__sdk::DisconnectedError`].
+    /// the returned error will be downcastable to [`__sdk::Error::Disconnected`].
     ///
     /// This is a low-level primitive exposed for power users who need significant control over scheduling.
     /// Most applications should call [`Self::run_async`] to run an `async` loop
@@ -3775,7 +3775,7 @@ impl __sdk::DbContext for ReducerEventContext {
 
 impl __sdk::ReducerEventContext for ReducerEventContext {}
 
-/// An [`__sdk::DbContext`] passed to [`__sdk::SubscriptionBuilder::on_applied`] and [`SubscriptionHandle::unsubscribe_then`] callbacks.
+/// An [`__sdk::DbContext`] passed to [`__sdk::SubscriptionBuilder::on_applied`] callback.
 pub struct SubscriptionEventContext {
     /// Access to tables defined by the module via extension traits implemented for [`RemoteTables`].
     pub db: RemoteTables,

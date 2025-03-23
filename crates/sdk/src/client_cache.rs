@@ -411,7 +411,7 @@ impl<Row: InModule + Send + Sync + Clone + 'static> TableHandle<Row> {
             .into_iter()
     }
 
-    /// See [`DbContextImpl::queue_mutation`].
+    /// See [`super::db_connection::DbContextImpl::queue_mutation`].
     fn queue_mutation(&self, mutation: PendingMutation<Row::Module>) {
         self.pending_mutations.unbounded_send(mutation).unwrap();
     }

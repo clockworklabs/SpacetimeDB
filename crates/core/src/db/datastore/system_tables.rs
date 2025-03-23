@@ -8,7 +8,7 @@
 //!     - You will probably need to add a new ID type in `spacetimedb_primitives`,
 //!       with trait implementations in `spacetimedb_sats::{typespace, de::impl, ser::impl}`.
 //! - Add it to [`system_tables`], and define a constant for its index there.
-//! - Use [`st_fields_enum`] to define its column enum.
+//! - Use `st_fields_enum` to define its column enum.
 //! - Register its schema in [`system_module_def`], making sure to call `validate_system_table` at the end of the function.
 
 use crate::db::relational_db::RelationalDB;
@@ -216,7 +216,7 @@ st_fields_enum!(enum StIndexFields {
 });
 // WARNING: For a stable schema, don't change the field names and discriminants.
 st_fields_enum!(
-    /// The fields that define the internal table [crate::db::relational_db::ST_SEQUENCES_NAME].
+    /// The fields that define the internal table [ST_SEQUENCE_NAME].
     enum StSequenceFields {
     "sequence_id", SequenceId = 0,
     "sequence_name", SequenceName = 1,
@@ -859,13 +859,13 @@ impl From<Identity> for IdentityViaU256 {
 /// * `database_identity` is the [`Identity`] of the database.
 /// * `owner_identity` is the [`Identity`] of the owner of the database.
 /// * `program_kind` is the [`ModuleKind`] (currently always [`WASM_MODULE`]).
-/// * `program_hash` is the [`Hash`] of the raw bytes of the (compiled) module.
+/// * `program_hash` is the [`struct@Hash`] of the raw bytes of the (compiled) module.
 /// * `program_bytes` are the raw bytes of the (compiled) module.
 /// * `module_version` is the version of the module.
 ///
 /// | identity | owner_identity |  program_kind | program_bytes | program_hash        | module_version |
 /// |------------------|----------------|---------------|---------------|---------------------|----------------|
-/// | <bytes>          | <bytes>        |  0            | <bytes>       | <bytes>             | <string>       |
+/// | `<bytes>`        | `<bytes>`      |  0            | `<bytes>`     | `<bytes>`           | `<string>`     |
 #[derive(Clone, Debug, Eq, PartialEq, SpacetimeType)]
 #[sats(crate = spacetimedb_lib)]
 pub struct StModuleRow {
@@ -898,9 +898,9 @@ pub fn read_identity_from_col(row: RowRef<'_>, col: impl StFields) -> Result<Ide
     Ok(Identity::from_u256(row.read_col(col.col_id())?))
 }
 
-/// Read a [`Hash`] directly from the column `col` in `row`.
+/// Read a [`struct@Hash`] directly from the column `col` in `row`.
 ///
-/// The [`Hash`] is assumed to be stored as a flat byte array.
+/// The [`struct@Hash`] is assumed to be stored as a flat byte array.
 pub fn read_hash_from_col(row: RowRef<'_>, col: impl StFields) -> Result<Hash, DBError> {
     Ok(Hash::from_u256(row.read_col(col.col_id())?))
 }
