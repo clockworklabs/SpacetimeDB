@@ -4864,6 +4864,8 @@ dependencies = [
  "spacetimedb-table",
  "spacetimedb-testing",
  "tempdir",
+ "tikv-jemalloc-ctl",
+ "tikv-jemallocator",
  "tokio",
  "tracing-subscriber",
  "walkdir",
@@ -4937,6 +4939,8 @@ dependencies = [
  "tempfile",
  "termcolor",
  "thiserror 1.0.69",
+ "tikv-jemalloc-ctl",
+ "tikv-jemallocator",
  "tokio",
  "tokio-tungstenite",
  "toml 0.8.19",
@@ -5134,6 +5138,8 @@ dependencies = [
  "tempfile",
  "thin-vec",
  "thiserror 1.0.69",
+ "tikv-jemalloc-ctl",
+ "tikv-jemallocator",
  "tokio",
  "tokio-stream",
  "tokio-util",
@@ -5458,6 +5464,7 @@ name = "spacetimedb-sql-parser"
 version = "1.0.1"
 dependencies = [
  "derive_more",
+ "spacetimedb-lib",
  "sqlparser",
  "thiserror 1.0.69",
 ]
@@ -5489,6 +5496,8 @@ dependencies = [
  "spacetimedb-paths",
  "tempfile",
  "thiserror 1.0.69",
+ "tikv-jemalloc-ctl",
+ "tikv-jemallocator",
  "tokio",
  "toml 0.8.19",
  "tower-http",
@@ -6100,6 +6109,37 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d050e60b33d41c19108b32cea32164033a9013fe3b46cbd4457559bfbf77afaa"
 dependencies = [
  "num_cpus",
+]
+
+[[package]]
+name = "tikv-jemalloc-ctl"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f21f216790c8df74ce3ab25b534e0718da5a1916719771d3fec23315c99e468b"
+dependencies = [
+ "libc",
+ "paste",
+ "tikv-jemalloc-sys",
+]
+
+[[package]]
+name = "tikv-jemalloc-sys"
+version = "0.6.0+5.3.0-1-ge13ca993e8ccb9ba9847cc330696e02839f328f7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cd3c60906412afa9c2b5b5a48ca6a5abe5736aec9eb48ad05037a677e52e4e2d"
+dependencies = [
+ "cc",
+ "libc",
+]
+
+[[package]]
+name = "tikv-jemallocator"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4cec5ff18518d81584f477e9bfdf957f5bb0979b0bac3af4ca30b5b3ae2d2865"
+dependencies = [
+ "libc",
+ "tikv-jemalloc-sys",
 ]
 
 [[package]]

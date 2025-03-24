@@ -1119,11 +1119,13 @@ mod tests {
 
     use pretty_assertions::assert_eq;
     use spacetimedb_expr::{
-        check::{parse_and_type_sub, SchemaView},
+        check::{SchemaView, TypingResult},
+        expr::ProjectName,
         statement::{parse_and_type_sql, Statement},
     };
     use spacetimedb_lib::{
         db::auth::{StAccess, StTableType},
+        identity::AuthCtx,
         AlgebraicType, AlgebraicValue,
     };
     use spacetimedb_primitives::{ColId, ColList, ColSet, TableId};
@@ -1208,6 +1210,11 @@ mod tests {
             None,
             primary_key.map(ColId::from),
         )
+    }
+
+    /// A wrapper around [spacetimedb_expr::check::parse_and_type_sub] that takes a dummy [AuthCtx]
+    fn parse_and_type_sub(sql: &str, tx: &impl SchemaView) -> TypingResult<ProjectName> {
+        spacetimedb_expr::check::parse_and_type_sub(sql, tx, &AuthCtx::for_testing()).map(|(plan, _)| plan)
     }
 
     /// No rewrites applied to a simple table scan
@@ -1923,7 +1930,7 @@ mod tests {
         };
 
         let compile = |sql| {
-            let stmt = parse_and_type_sql(sql, &db).unwrap();
+            let stmt = parse_and_type_sql(sql, &db, &AuthCtx::for_testing()).unwrap();
             let Statement::Select(select) = stmt else {
                 unreachable!()
             };

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use spacetimedb_lib::{st_var::StVarValue, AlgebraicType, AlgebraicValue, ProductValue};
+use spacetimedb_lib::{identity::AuthCtx, st_var::StVarValue, AlgebraicType, AlgebraicValue, ProductValue};
 use spacetimedb_primitives::{ColId, TableId};
 use spacetimedb_schema::schema::{ColumnSchema, TableSchema};
 use spacetimedb_sql_parser::{
@@ -427,8 +427,8 @@ impl TypeChecker for SqlChecker {
     }
 }
 
-pub fn parse_and_type_sql(sql: &str, tx: &impl SchemaView) -> TypingResult<Statement> {
-    match parse_sql(sql)? {
+pub fn parse_and_type_sql(sql: &str, tx: &impl SchemaView, auth: &AuthCtx) -> TypingResult<Statement> {
+    match parse_sql(sql)?.resolve_sender(auth.caller) {
         SqlAst::Select(ast) => Ok(Statement::Select(SqlChecker::type_ast(ast, tx)?)),
         SqlAst::Insert(insert) => Ok(Statement::DML(DML::Insert(type_insert(insert, tx)?))),
         SqlAst::Delete(delete) => Ok(Statement::DML(DML::Delete(type_delete(delete, tx)?))),
@@ -439,8 +439,8 @@ pub fn parse_and_type_sql(sql: &str, tx: &impl SchemaView) -> TypingResult<State
 }
 
 /// Parse and type check a *general* query into a [StatementCtx].
-pub fn compile_sql_stmt<'a>(sql: &'a str, tx: &impl SchemaView) -> TypingResult<StatementCtx<'a>> {
-    let statement = parse_and_type_sql(sql, tx)?;
+pub fn compile_sql_stmt<'a>(sql: &'a str, tx: &impl SchemaView, auth: &AuthCtx) -> TypingResult<StatementCtx<'a>> {
+    let statement = parse_and_type_sql(sql, tx, auth)?;
     Ok(StatementCtx {
         statement,
         sql,
@@ -450,13 +450,15 @@ pub fn compile_sql_stmt<'a>(sql: &'a str, tx: &impl SchemaView) -> TypingResult<
 
 #[cfg(test)]
 mod tests {
-    use spacetimedb_lib::{AlgebraicType, ProductType};
+    use spacetimedb_lib::{identity::AuthCtx, AlgebraicType, ProductType};
     use spacetimedb_schema::def::ModuleDef;
 
-    use crate::{
-        check::test_utils::{build_module_def, SchemaViewer},
-        statement::parse_and_type_sql,
+    use crate::check::{
+        test_utils::{build_module_def, SchemaViewer},
+        SchemaView, TypingResult,
     };
+
+    use super::Statement;
 
     fn module_def() -> ModuleDef {
         build_module_def(vec![
@@ -479,6 +481,11 @@ mod tests {
                 ]),
             ),
         ])
+    }
+
+    /// A wrapper around [super::parse_and_type_sql] that takes a dummy [AuthCtx]
+    fn parse_and_type_sql(sql: &str, tx: &impl SchemaView) -> TypingResult<Statement> {
+        super::parse_and_type_sql(sql, tx, &AuthCtx::for_testing())
     }
 
     #[test]

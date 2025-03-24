@@ -16,12 +16,16 @@ jobs:
         include:
           - { name: x86_64 Linux, target: x86_64-unknown-linux-gnu, runner: bare-metal }
           - { name: aarch64 Linux, target: aarch64-unknown-linux-gnu, runner: arm-runner }
+          - { name: x86_64 Linux musl, target: x86_64-unknown-linux-musl, runner: bare-metal }
+          # FIXME: arm musl build. "JavaScript Actions in Alpine containers are only supported on x64 Linux runners"
+          # - { name: aarch64 Linux musl, target: aarch64-unknown-linux-musl, runner: arm-runner }
           - { name: aarch64 macOS, target: aarch64-apple-darwin, runner: macos-latest }
           - { name: x86_64 macOS, target: x86_64-apple-darwin, runner: macos-latest }
           - { name: x86_64 Windows, target: x86_64-pc-windows-msvc, runner: windows-latest }
 
     name: Build CLI for ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
+    container: ${{ endsWith(matrix.target, '-musl') && 'alpine' || '' }}
 
     steps:
       - name: Checkout
@@ -29,6 +33,10 @@ jobs:
 
       - name: Show arch
         run: uname -a
+
+      - name: Install musl dependencies
+        if: endsWith(matrix.target, '-musl')
+        run: apk add gcc g++ bash curl linux-headers perl git make
 
       - name: Install Rust
         uses: dsherret/rust-toolchain-file@v1
@@ -42,6 +50,7 @@ jobs:
 
       - name: Package (unix)
         if: ${{ runner.os != 'Windows' }}
+        shell: bash
         run: |
           mkdir build
           cd target/${{matrix.target}}/release

@@ -75,6 +75,10 @@ wasmtime.workspace = true
 webbrowser.workspace = true
 clap-markdown.workspace = true
 
+[target.'cfg(not(target_env = "msvc"))'.dependencies]
+tikv-jemallocator = { workspace = true }
+tikv-jemalloc-ctl = { workspace = true }
+
 [target.'cfg(windows)'.dependencies]
 windows-sys = { workspace = true, features = ["Win32_System_Console"] }
 

@@ -39,6 +39,13 @@ Example usage:
         )
 }
 
+#[cfg(not(target_env = "msvc"))]
+use tikv_jemallocator::Jemalloc;
+
+#[cfg(not(target_env = "msvc"))]
+#[global_allocator]
+static GLOBAL: Jemalloc = Jemalloc;
+
 fn main() -> anyhow::Result<()> {
     // take_hook() returns the default hook in case when a custom one is not set
     let orig_hook = panic::take_hook();

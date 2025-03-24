@@ -67,7 +67,7 @@ pub use spacetimedb_bindings_macro::duration;
 /// const PLAYERS_SEE_ENTITIES_IN_SAME_CHUNK: Filter = Filter::Sql("
 ///     SELECT * FROM LocationState WHERE chunk_index IN (
 ///         SELECT chunk_index FROM LocationState WHERE entity_id IN (
-///             SELECT entity_id FROM UserState WHERE identity = @sender
+///             SELECT entity_id FROM UserState WHERE identity = :sender
 ///         )
 ///     )
 /// ");

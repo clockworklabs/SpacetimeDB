@@ -273,6 +273,8 @@ wasmbin = "0.6"
 webbrowser = "1.0.2"
 windows-sys = "0.59"
 xdg = "2.5"
+tikv-jemallocator = { version = "0.6.0", features = ["profiling", "stats"] }
+tikv-jemalloc-ctl = { version = "0.6.0", features = ["stats"]}
 
 # Vendor the openssl we rely on, rather than depend on a
 # potentially very old system version.
