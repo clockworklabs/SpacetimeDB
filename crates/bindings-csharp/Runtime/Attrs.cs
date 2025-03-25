@@ -31,9 +31,8 @@
     /// they will be unioned together as if by SQL <c>OR</c>,
     /// so that any row permitted by at least one filter is visible.
     ///
-    /// The <c>const</c> binding's identifier must be unique within the module.
-    ///
     /// The query follows the same syntax as a subscription query.
+    /// See the <see href="https://spacetimedb.com/docs/sql">SQL reference</see> for more information.
     /// </summary>
     [AttributeUsage(AttributeTargets.Field)]
     public sealed class ClientVisibilityFilterAttribute : Attribute { }
