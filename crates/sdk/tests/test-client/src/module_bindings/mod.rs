@@ -46,6 +46,8 @@ pub mod delete_unique_u_8_reducer;
 pub mod enum_with_payload_type;
 pub mod every_primitive_struct_type;
 pub mod every_vec_struct_type;
+pub mod indexed_simple_enum_table;
+pub mod indexed_simple_enum_type;
 pub mod indexed_table_2_table;
 pub mod indexed_table_2_type;
 pub mod indexed_table_table;
@@ -60,6 +62,7 @@ pub mod insert_caller_unique_identity_reducer;
 pub mod insert_caller_vec_connection_id_reducer;
 pub mod insert_caller_vec_identity_reducer;
 pub mod insert_into_btree_u_32_reducer;
+pub mod insert_into_indexed_simple_enum_reducer;
 pub mod insert_into_pk_btree_u_32_reducer;
 pub mod insert_large_table_reducer;
 pub mod insert_one_bool_reducer;
@@ -102,6 +105,7 @@ pub mod insert_pk_i_32_reducer;
 pub mod insert_pk_i_64_reducer;
 pub mod insert_pk_i_8_reducer;
 pub mod insert_pk_identity_reducer;
+pub mod insert_pk_simple_enum_reducer;
 pub mod insert_pk_string_reducer;
 pub mod insert_pk_u_128_reducer;
 pub mod insert_pk_u_16_reducer;
@@ -237,6 +241,8 @@ pub mod pk_i_8_table;
 pub mod pk_i_8_type;
 pub mod pk_identity_table;
 pub mod pk_identity_type;
+pub mod pk_simple_enum_table;
+pub mod pk_simple_enum_type;
 pub mod pk_string_table;
 pub mod pk_string_type;
 pub mod pk_u_128_table;
@@ -292,6 +298,7 @@ pub mod unique_u_64_type;
 pub mod unique_u_8_table;
 pub mod unique_u_8_type;
 pub mod unit_struct_type;
+pub mod update_indexed_simple_enum_reducer;
 pub mod update_pk_bool_reducer;
 pub mod update_pk_connection_id_reducer;
 pub mod update_pk_i_128_reducer;
@@ -301,6 +308,7 @@ pub mod update_pk_i_32_reducer;
 pub mod update_pk_i_64_reducer;
 pub mod update_pk_i_8_reducer;
 pub mod update_pk_identity_reducer;
+pub mod update_pk_simple_enum_reducer;
 pub mod update_pk_string_reducer;
 pub mod update_pk_u_128_reducer;
 pub mod update_pk_u_16_reducer;
@@ -445,6 +453,8 @@ pub use delete_unique_u_8_reducer::{delete_unique_u_8, set_flags_for_delete_uniq
 pub use enum_with_payload_type::EnumWithPayload;
 pub use every_primitive_struct_type::EveryPrimitiveStruct;
 pub use every_vec_struct_type::EveryVecStruct;
+pub use indexed_simple_enum_table::*;
+pub use indexed_simple_enum_type::IndexedSimpleEnum;
 pub use indexed_table_2_table::*;
 pub use indexed_table_2_type::IndexedTable2;
 pub use indexed_table_table::*;
@@ -481,6 +491,10 @@ pub use insert_caller_vec_identity_reducer::{
 };
 pub use insert_into_btree_u_32_reducer::{
     insert_into_btree_u_32, set_flags_for_insert_into_btree_u_32, InsertIntoBtreeU32CallbackId,
+};
+pub use insert_into_indexed_simple_enum_reducer::{
+    insert_into_indexed_simple_enum, set_flags_for_insert_into_indexed_simple_enum,
+    InsertIntoIndexedSimpleEnumCallbackId,
 };
 pub use insert_into_pk_btree_u_32_reducer::{
     insert_into_pk_btree_u_32, set_flags_for_insert_into_pk_btree_u_32, InsertIntoPkBtreeU32CallbackId,
@@ -561,6 +575,9 @@ pub use insert_pk_i_64_reducer::{insert_pk_i_64, set_flags_for_insert_pk_i_64, I
 pub use insert_pk_i_8_reducer::{insert_pk_i_8, set_flags_for_insert_pk_i_8, InsertPkI8CallbackId};
 pub use insert_pk_identity_reducer::{
     insert_pk_identity, set_flags_for_insert_pk_identity, InsertPkIdentityCallbackId,
+};
+pub use insert_pk_simple_enum_reducer::{
+    insert_pk_simple_enum, set_flags_for_insert_pk_simple_enum, InsertPkSimpleEnumCallbackId,
 };
 pub use insert_pk_string_reducer::{insert_pk_string, set_flags_for_insert_pk_string, InsertPkStringCallbackId};
 pub use insert_pk_u_128_reducer::{insert_pk_u_128, set_flags_for_insert_pk_u_128, InsertPkU128CallbackId};
@@ -739,6 +756,8 @@ pub use pk_i_8_table::*;
 pub use pk_i_8_type::PkI8;
 pub use pk_identity_table::*;
 pub use pk_identity_type::PkIdentity;
+pub use pk_simple_enum_table::*;
+pub use pk_simple_enum_type::PkSimpleEnum;
 pub use pk_string_table::*;
 pub use pk_string_type::PkString;
 pub use pk_u_128_table::*;
@@ -796,6 +815,9 @@ pub use unique_u_64_type::UniqueU64;
 pub use unique_u_8_table::*;
 pub use unique_u_8_type::UniqueU8;
 pub use unit_struct_type::UnitStruct;
+pub use update_indexed_simple_enum_reducer::{
+    set_flags_for_update_indexed_simple_enum, update_indexed_simple_enum, UpdateIndexedSimpleEnumCallbackId,
+};
 pub use update_pk_bool_reducer::{set_flags_for_update_pk_bool, update_pk_bool, UpdatePkBoolCallbackId};
 pub use update_pk_connection_id_reducer::{
     set_flags_for_update_pk_connection_id, update_pk_connection_id, UpdatePkConnectionIdCallbackId,
@@ -808,6 +830,9 @@ pub use update_pk_i_64_reducer::{set_flags_for_update_pk_i_64, update_pk_i_64, U
 pub use update_pk_i_8_reducer::{set_flags_for_update_pk_i_8, update_pk_i_8, UpdatePkI8CallbackId};
 pub use update_pk_identity_reducer::{
     set_flags_for_update_pk_identity, update_pk_identity, UpdatePkIdentityCallbackId,
+};
+pub use update_pk_simple_enum_reducer::{
+    set_flags_for_update_pk_simple_enum, update_pk_simple_enum, UpdatePkSimpleEnumCallbackId,
 };
 pub use update_pk_string_reducer::{set_flags_for_update_pk_string, update_pk_string, UpdatePkStringCallbackId};
 pub use update_pk_u_128_reducer::{set_flags_for_update_pk_u_128, update_pk_u_128, UpdatePkU128CallbackId};
@@ -1058,6 +1083,9 @@ pub enum Reducer {
     InsertIntoBtreeU32 {
         rows: Vec<BTreeU32>,
     },
+    InsertIntoIndexedSimpleEnum {
+        n: SimpleEnum,
+    },
     InsertIntoPkBtreeU32 {
         pk_u_32: Vec<PkU32>,
         bt_u_32: Vec<BTreeU32>,
@@ -1213,6 +1241,10 @@ pub enum Reducer {
     },
     InsertPkIdentity {
         i: __sdk::Identity,
+        data: i32,
+    },
+    InsertPkSimpleEnum {
+        a: SimpleEnum,
         data: i32,
     },
     InsertPkString {
@@ -1402,6 +1434,10 @@ pub enum Reducer {
     SendScheduledMessage {
         arg: ScheduledTable,
     },
+    UpdateIndexedSimpleEnum {
+        a: SimpleEnum,
+        b: SimpleEnum,
+    },
     UpdatePkBool {
         b: bool,
         data: i32,
@@ -1436,6 +1472,10 @@ pub enum Reducer {
     },
     UpdatePkIdentity {
         i: __sdk::Identity,
+        data: i32,
+    },
+    UpdatePkSimpleEnum {
+        a: SimpleEnum,
         data: i32,
     },
     UpdatePkString {
@@ -1589,6 +1629,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::InsertCallerVecConnectionId => "insert_caller_vec_connection_id",
             Reducer::InsertCallerVecIdentity => "insert_caller_vec_identity",
             Reducer::InsertIntoBtreeU32 { .. } => "insert_into_btree_u32",
+            Reducer::InsertIntoIndexedSimpleEnum { .. } => "insert_into_indexed_simple_enum",
             Reducer::InsertIntoPkBtreeU32 { .. } => "insert_into_pk_btree_u32",
             Reducer::InsertLargeTable { .. } => "insert_large_table",
             Reducer::InsertOneBool { .. } => "insert_one_bool",
@@ -1631,6 +1672,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::InsertPkI64 { .. } => "insert_pk_i64",
             Reducer::InsertPkI8 { .. } => "insert_pk_i8",
             Reducer::InsertPkIdentity { .. } => "insert_pk_identity",
+            Reducer::InsertPkSimpleEnum { .. } => "insert_pk_simple_enum",
             Reducer::InsertPkString { .. } => "insert_pk_string",
             Reducer::InsertPkU128 { .. } => "insert_pk_u128",
             Reducer::InsertPkU16 { .. } => "insert_pk_u16",
@@ -1685,6 +1727,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::InsertVecUnitStruct { .. } => "insert_vec_unit_struct",
             Reducer::NoOpSucceeds => "no_op_succeeds",
             Reducer::SendScheduledMessage { .. } => "send_scheduled_message",
+            Reducer::UpdateIndexedSimpleEnum { .. } => "update_indexed_simple_enum",
             Reducer::UpdatePkBool { .. } => "update_pk_bool",
             Reducer::UpdatePkConnectionId { .. } => "update_pk_connection_id",
             Reducer::UpdatePkI128 { .. } => "update_pk_i128",
@@ -1694,6 +1737,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::UpdatePkI64 { .. } => "update_pk_i64",
             Reducer::UpdatePkI8 { .. } => "update_pk_i8",
             Reducer::UpdatePkIdentity { .. } => "update_pk_identity",
+            Reducer::UpdatePkSimpleEnum { .. } => "update_pk_simple_enum",
             Reducer::UpdatePkString { .. } => "update_pk_string",
             Reducer::UpdatePkU128 { .. } => "update_pk_u128",
             Reducer::UpdatePkU16 { .. } => "update_pk_u16",
@@ -1975,6 +2019,10 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
                 insert_into_btree_u_32_reducer::InsertIntoBtreeU32Args,
             >("insert_into_btree_u32", &value.args)?
             .into()),
+            "insert_into_indexed_simple_enum" => Ok(__sdk::parse_reducer_args::<
+                insert_into_indexed_simple_enum_reducer::InsertIntoIndexedSimpleEnumArgs,
+            >("insert_into_indexed_simple_enum", &value.args)?
+            .into()),
             "insert_into_pk_btree_u32" => Ok(__sdk::parse_reducer_args::<
                 insert_into_pk_btree_u_32_reducer::InsertIntoPkBtreeU32Args,
             >("insert_into_pk_btree_u32", &value.args)?
@@ -2190,6 +2238,10 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
                 )?
                 .into(),
             ),
+            "insert_pk_simple_enum" => Ok(__sdk::parse_reducer_args::<
+                insert_pk_simple_enum_reducer::InsertPkSimpleEnumArgs,
+            >("insert_pk_simple_enum", &value.args)?
+            .into()),
             "insert_pk_string" => Ok(
                 __sdk::parse_reducer_args::<insert_pk_string_reducer::InsertPkStringArgs>(
                     "insert_pk_string",
@@ -2487,6 +2539,10 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
                 send_scheduled_message_reducer::SendScheduledMessageArgs,
             >("send_scheduled_message", &value.args)?
             .into()),
+            "update_indexed_simple_enum" => Ok(__sdk::parse_reducer_args::<
+                update_indexed_simple_enum_reducer::UpdateIndexedSimpleEnumArgs,
+            >("update_indexed_simple_enum", &value.args)?
+            .into()),
             "update_pk_bool" => Ok(__sdk::parse_reducer_args::<update_pk_bool_reducer::UpdatePkBoolArgs>(
                 "update_pk_bool",
                 &value.args,
@@ -2533,6 +2589,10 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
                 )?
                 .into(),
             ),
+            "update_pk_simple_enum" => Ok(__sdk::parse_reducer_args::<
+                update_pk_simple_enum_reducer::UpdatePkSimpleEnumArgs,
+            >("update_pk_simple_enum", &value.args)?
+            .into()),
             "update_pk_string" => Ok(
                 __sdk::parse_reducer_args::<update_pk_string_reducer::UpdatePkStringArgs>(
                     "update_pk_string",
@@ -2690,6 +2750,7 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
 #[doc(hidden)]
 pub struct DbUpdate {
     btree_u_32: __sdk::TableUpdate<BTreeU32>,
+    indexed_simple_enum: __sdk::TableUpdate<IndexedSimpleEnum>,
     indexed_table: __sdk::TableUpdate<IndexedTable>,
     indexed_table_2: __sdk::TableUpdate<IndexedTable2>,
     large_table: __sdk::TableUpdate<LargeTable>,
@@ -2733,6 +2794,7 @@ pub struct DbUpdate {
     pk_i_64: __sdk::TableUpdate<PkI64>,
     pk_i_8: __sdk::TableUpdate<PkI8>,
     pk_identity: __sdk::TableUpdate<PkIdentity>,
+    pk_simple_enum: __sdk::TableUpdate<PkSimpleEnum>,
     pk_string: __sdk::TableUpdate<PkString>,
     pk_u_128: __sdk::TableUpdate<PkU128>,
     pk_u_16: __sdk::TableUpdate<PkU16>,
@@ -2793,6 +2855,9 @@ impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
         for table_update in raw.tables {
             match &table_update.table_name[..] {
                 "btree_u32" => db_update.btree_u_32 = btree_u_32_table::parse_table_update(table_update)?,
+                "indexed_simple_enum" => {
+                    db_update.indexed_simple_enum = indexed_simple_enum_table::parse_table_update(table_update)?
+                }
                 "indexed_table" => db_update.indexed_table = indexed_table_table::parse_table_update(table_update)?,
                 "indexed_table_2" => {
                     db_update.indexed_table_2 = indexed_table_2_table::parse_table_update(table_update)?
@@ -2864,6 +2929,7 @@ impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
                 "pk_i64" => db_update.pk_i_64 = pk_i_64_table::parse_table_update(table_update)?,
                 "pk_i8" => db_update.pk_i_8 = pk_i_8_table::parse_table_update(table_update)?,
                 "pk_identity" => db_update.pk_identity = pk_identity_table::parse_table_update(table_update)?,
+                "pk_simple_enum" => db_update.pk_simple_enum = pk_simple_enum_table::parse_table_update(table_update)?,
                 "pk_string" => db_update.pk_string = pk_string_table::parse_table_update(table_update)?,
                 "pk_u128" => db_update.pk_u_128 = pk_u_128_table::parse_table_update(table_update)?,
                 "pk_u16" => db_update.pk_u_16 = pk_u_16_table::parse_table_update(table_update)?,
@@ -2957,6 +3023,8 @@ impl __sdk::DbUpdate for DbUpdate {
         let mut diff = AppliedDiff::default();
 
         diff.btree_u_32 = cache.apply_diff_to_table::<BTreeU32>("btree_u32", &self.btree_u_32);
+        diff.indexed_simple_enum =
+            cache.apply_diff_to_table::<IndexedSimpleEnum>("indexed_simple_enum", &self.indexed_simple_enum);
         diff.indexed_table = cache.apply_diff_to_table::<IndexedTable>("indexed_table", &self.indexed_table);
         diff.indexed_table_2 = cache.apply_diff_to_table::<IndexedTable2>("indexed_table_2", &self.indexed_table_2);
         diff.large_table = cache.apply_diff_to_table::<LargeTable>("large_table", &self.large_table);
@@ -3029,6 +3097,9 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.pk_identity = cache
             .apply_diff_to_table::<PkIdentity>("pk_identity", &self.pk_identity)
             .with_updates_by_pk(|row| &row.i);
+        diff.pk_simple_enum = cache
+            .apply_diff_to_table::<PkSimpleEnum>("pk_simple_enum", &self.pk_simple_enum)
+            .with_updates_by_pk(|row| &row.a);
         diff.pk_string = cache
             .apply_diff_to_table::<PkString>("pk_string", &self.pk_string)
             .with_updates_by_pk(|row| &row.s);
@@ -3116,6 +3187,7 @@ impl __sdk::DbUpdate for DbUpdate {
 #[doc(hidden)]
 pub struct AppliedDiff<'r> {
     btree_u_32: __sdk::TableAppliedDiff<'r, BTreeU32>,
+    indexed_simple_enum: __sdk::TableAppliedDiff<'r, IndexedSimpleEnum>,
     indexed_table: __sdk::TableAppliedDiff<'r, IndexedTable>,
     indexed_table_2: __sdk::TableAppliedDiff<'r, IndexedTable2>,
     large_table: __sdk::TableAppliedDiff<'r, LargeTable>,
@@ -3159,6 +3231,7 @@ pub struct AppliedDiff<'r> {
     pk_i_64: __sdk::TableAppliedDiff<'r, PkI64>,
     pk_i_8: __sdk::TableAppliedDiff<'r, PkI8>,
     pk_identity: __sdk::TableAppliedDiff<'r, PkIdentity>,
+    pk_simple_enum: __sdk::TableAppliedDiff<'r, PkSimpleEnum>,
     pk_string: __sdk::TableAppliedDiff<'r, PkString>,
     pk_u_128: __sdk::TableAppliedDiff<'r, PkU128>,
     pk_u_16: __sdk::TableAppliedDiff<'r, PkU16>,
@@ -3219,6 +3292,11 @@ impl __sdk::InModule for AppliedDiff<'_> {
 impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
     fn invoke_row_callbacks(&self, event: &EventContext, callbacks: &mut __sdk::DbCallbacks<RemoteModule>) {
         callbacks.invoke_table_row_callbacks::<BTreeU32>("btree_u32", &self.btree_u_32, event);
+        callbacks.invoke_table_row_callbacks::<IndexedSimpleEnum>(
+            "indexed_simple_enum",
+            &self.indexed_simple_enum,
+            event,
+        );
         callbacks.invoke_table_row_callbacks::<IndexedTable>("indexed_table", &self.indexed_table, event);
         callbacks.invoke_table_row_callbacks::<IndexedTable2>("indexed_table_2", &self.indexed_table_2, event);
         callbacks.invoke_table_row_callbacks::<LargeTable>("large_table", &self.large_table, event);
@@ -3282,6 +3360,7 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<PkI64>("pk_i64", &self.pk_i_64, event);
         callbacks.invoke_table_row_callbacks::<PkI8>("pk_i8", &self.pk_i_8, event);
         callbacks.invoke_table_row_callbacks::<PkIdentity>("pk_identity", &self.pk_identity, event);
+        callbacks.invoke_table_row_callbacks::<PkSimpleEnum>("pk_simple_enum", &self.pk_simple_enum, event);
         callbacks.invoke_table_row_callbacks::<PkString>("pk_string", &self.pk_string, event);
         callbacks.invoke_table_row_callbacks::<PkU128>("pk_u128", &self.pk_u_128, event);
         callbacks.invoke_table_row_callbacks::<PkU16>("pk_u16", &self.pk_u_16, event);
@@ -3925,6 +4004,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
 
     fn register_tables(client_cache: &mut __sdk::ClientCache<Self>) {
         btree_u_32_table::register_table(client_cache);
+        indexed_simple_enum_table::register_table(client_cache);
         indexed_table_table::register_table(client_cache);
         indexed_table_2_table::register_table(client_cache);
         large_table_table::register_table(client_cache);
@@ -3968,6 +4048,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         pk_i_64_table::register_table(client_cache);
         pk_i_8_table::register_table(client_cache);
         pk_identity_table::register_table(client_cache);
+        pk_simple_enum_table::register_table(client_cache);
         pk_string_table::register_table(client_cache);
         pk_u_128_table::register_table(client_cache);
         pk_u_16_table::register_table(client_cache);

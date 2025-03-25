@@ -138,7 +138,7 @@ pub use spacetimedb_bindings_macro::client_visibility_filter;
 ///     for popular_user in by_popularity.filter((100, "a"..)) {
 ///         log::debug!("Popular user whose name starts with 'a': {:?}", popular_user);
 ///     }
-///     
+///
 ///     // For every `#[unique]` or `#[primary_key]` field,
 ///     // the table has an extra method that allows getting a
 ///     // corresponding `spacetimedb::UniqueColumn`.
@@ -358,7 +358,7 @@ pub use spacetimedb_bindings_macro::client_visibility_filter;
 /// ```ignore
 /// ctx.db.cities().latitude()
 /// ```
-///    
+///
 /// # Generated code
 ///
 /// For each `[table(name = {name})]` annotation on a type `{T}`, generates a struct
@@ -401,7 +401,7 @@ pub use spacetimedb_bindings_macro::client_visibility_filter;
 /// impl {name}Handle {
 ///     // For each `#[unique]` or `#[primary_key]` field `{field}` of type `{F}`:
 ///     fn {field}(&self) -> UniqueColumn<_, {F}, _> { /* ... */ };
-///     
+///
 ///     // For each named index `{index}` on fields of type `{(F1, ..., FN)}`:
 ///     fn {index}(&self) -> RangedIndex<_, {(F1, ..., FN)}, _>;
 /// }

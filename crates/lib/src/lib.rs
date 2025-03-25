@@ -9,6 +9,7 @@ use std::collections::{btree_map, BTreeMap};
 pub mod connection_id;
 pub mod db;
 pub mod error;
+mod filterable_value;
 pub mod identity;
 pub mod metrics;
 pub mod operator;
@@ -26,6 +27,7 @@ pub mod type_value {
 }
 
 pub use connection_id::ConnectionId;
+pub use filterable_value::{FilterableValue, IndexScanRangeBoundsTerminator, TermBound};
 pub use identity::Identity;
 pub use scheduler::ScheduleAt;
 pub use spacetimedb_sats::hash::{self, hash_bytes, Hash};
