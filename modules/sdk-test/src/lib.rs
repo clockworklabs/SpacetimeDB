@@ -6,13 +6,13 @@
 // and clippy misunderstands `#[allow]` attributes in macro-expansions.
 #![allow(clippy::too_many_arguments)]
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use spacetimedb::{
     sats::{i256, u256},
     ConnectionId, Identity, ReducerContext, SpacetimeType, Table, TimeDuration, Timestamp,
 };
 
-#[derive(SpacetimeType)]
+#[derive(PartialEq, Eq, Hash, SpacetimeType)]
 pub enum SimpleEnum {
     Zero,
     One,
@@ -542,6 +542,20 @@ define_tables! {
         update_by update_pk_connection_id = update_by_a(a),
         delete_by delete_pk_connection_id = delete_by_a(a: ConnectionId),
     } #[primary_key] a ConnectionId, data i32;
+
+    PkSimpleEnum {
+        insert_or_panic insert_pk_simple_enum,
+    } #[primary_key] a SimpleEnum, data i32;
+}
+
+#[spacetimedb::reducer]
+fn update_pk_simple_enum(ctx: &ReducerContext, a: SimpleEnum, data: i32) -> anyhow::Result<()> {
+    let Some(mut o) = ctx.db.pk_simple_enum().a().find(&a) else {
+        return Err(anyhow!("row not found"));
+    };
+    o.data = data;
+    ctx.db.pk_simple_enum().a().update(o);
+    Ok(())
 }
 
 #[spacetimedb::reducer]
@@ -779,5 +793,26 @@ struct Users {
 #[spacetimedb::reducer]
 fn insert_user(ctx: &ReducerContext, name: String, identity: Identity) -> anyhow::Result<()> {
     ctx.db.users().insert(Users { name, identity });
+    Ok(())
+}
+
+#[spacetimedb::table(name = indexed_simple_enum, public)]
+struct IndexedSimpleEnum {
+    #[index(btree)]
+    n: SimpleEnum,
+}
+
+#[spacetimedb::reducer]
+fn insert_into_indexed_simple_enum(ctx: &ReducerContext, n: SimpleEnum) -> anyhow::Result<()> {
+    ctx.db.indexed_simple_enum().insert(IndexedSimpleEnum { n });
+    Ok(())
+}
+
+#[spacetimedb::reducer]
+fn update_indexed_simple_enum(ctx: &ReducerContext, a: SimpleEnum, b: SimpleEnum) -> anyhow::Result<()> {
+    if ctx.db.indexed_simple_enum().n().filter(&a).next().is_some() {
+        ctx.db.indexed_simple_enum().n().delete(&a);
+        ctx.db.indexed_simple_enum().insert(IndexedSimpleEnum { n: b });
+    }
     Ok(())
 }

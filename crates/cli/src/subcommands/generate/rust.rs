@@ -77,7 +77,7 @@ impl Lang for Rust {
             AlgebraicTypeDef::Sum(sum) => {
                 gen_and_print_imports(module, out, &sum.variants, &[typ.ty]);
                 out.newline();
-                define_enum_for_sum(module, out, &type_name, &sum.variants);
+                define_enum_for_sum(module, out, &type_name, &sum.variants, false);
             }
             AlgebraicTypeDef::PlainEnum(plain_enum) => {
                 let variants = plain_enum
@@ -86,7 +86,7 @@ impl Lang for Rust {
                     .cloned()
                     .map(|var| (var, AlgebraicTypeUse::Unit))
                     .collect::<Vec<_>>();
-                define_enum_for_sum(module, out, &type_name, &variants);
+                define_enum_for_sum(module, out, &type_name, &variants, true);
             }
         }
         out.newline();
@@ -220,7 +220,7 @@ pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::Remote
 ",
             |out| {
                 writeln!(out, "let _table = client_cache.get_or_make_table::<{row_type}>({table_name:?});");
-                for (unique_field_ident, unique_field_type_use) in iter_unique_cols(&schema, product_def) {
+                for (unique_field_ident, unique_field_type_use) in iter_unique_cols(module.typespace_for_generate(), &schema, product_def) {
                     let unique_field_name = unique_field_ident.deref().to_case(Case::Snake);
                     let unique_field_type = type_name(module, unique_field_type_use);
                     writeln!(
@@ -276,7 +276,9 @@ pub(super) fn parse_table_update(
 "
         );
 
-        for (unique_field_ident, unique_field_type_use) in iter_unique_cols(&schema, product_def) {
+        for (unique_field_ident, unique_field_type_use) in
+            iter_unique_cols(module.typespace_for_generate(), &schema, product_def)
+        {
             let unique_field_name = unique_field_ident.deref().to_case(Case::Snake);
             let unique_field_name_pascalcase = unique_field_name.to_case(Case::Pascal);
 
@@ -651,14 +653,24 @@ fn print_enum_derives(output: &mut Indenter) {
     print_lines(output, ENUM_DERIVES);
 }
 
+const PLAIN_ENUM_EXTRA_DERIVES: &[&str] = &["#[derive(Copy, Eq, Hash)]"];
+
+fn print_plain_enum_extra_derives(output: &mut Indenter) {
+    print_lines(output, PLAIN_ENUM_EXTRA_DERIVES);
+}
+
 /// Generate a file which defines an `enum` corresponding to the `sum_type`.
 pub fn define_enum_for_sum(
     module: &ModuleDef,
     out: &mut Indenter,
     name: &str,
     variants: &[(Identifier, AlgebraicTypeUse)],
+    is_plain: bool,
 ) {
     print_enum_derives(out);
+    if is_plain {
+        print_plain_enum_extra_derives(out);
+    }
     write!(out, "pub enum {name} ");
 
     out.delimited_block(
