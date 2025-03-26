@@ -1157,6 +1157,10 @@ mod tests {
         fn schema_for_table(&self, table_id: TableId) -> Option<Arc<TableSchema>> {
             self.schemas.iter().find(|schema| schema.table_id == table_id).cloned()
         }
+
+        fn rls_rules_for_table(&self, _: TableId) -> anyhow::Result<Vec<Box<str>>> {
+            Ok(vec![])
+        }
     }
 
     fn schema(
