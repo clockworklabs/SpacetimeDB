@@ -46,7 +46,7 @@ impl MemoryUsage for InnerIndex {
 
 /// The sentinel used to represent an empty slot in the index.
 /// The reserved bit set to `false` is used to indicate absence.
-const NONE_PTR: RowPointer = RowPointer::new(false, PageIndex(0), PageOffset(0), SquashedOffset::TX_STATE);
+pub(super) const NONE_PTR: RowPointer = RowPointer::new(false, PageIndex(0), PageOffset(0), SquashedOffset::TX_STATE);
 
 struct InnerIndexKey(usize);
 
@@ -141,19 +141,22 @@ impl UniqueDirectIndex {
     /// Returns an iterator yielding the potential [`RowPointer`] for `key`.
     pub fn seek_point(&self, key: usize) -> UniqueDirectIndexPointIter {
         let (outer_key, inner_key) = split_key(key);
-        let iter = self
+        let point = self
             .outer
             .get(outer_key)
             .and_then(|x| x.as_ref())
             .map(|inner| inner.get(inner_key))
-            .filter(|slot| *slot != NONE_PTR)
-            .map(|ptr| ptr.with_reserved_bit(false))
-            .into_iter();
-        UniqueDirectIndexPointIter { iter }
+            .filter(|slot| *slot != NONE_PTR);
+        UniqueDirectIndexPointIter::new(point)
     }
 
     /// Returns an iterator yielding all the [`RowPointer`] that correspond to the provided `range`.
     pub fn seek_range(&self, range: &impl RangeBounds<usize>) -> UniqueDirectIndexRangeIter {
+        // The upper bound of possible key.
+        // This isn't necessarily the real max key actually present in the index,
+        // due to possible deletions.
+        let max_key = self.outer.len() * KEYS_PER_INNER;
+
         // Translate `range` to `start..end`.
         let start = match range.start_bound() {
             Bound::Included(&s) => s,
@@ -163,13 +166,8 @@ impl UniqueDirectIndex {
         let end = match range.end_bound() {
             Bound::Included(&e) => e + 1, // If this wraps, we will clamp to `max_key` later.
             Bound::Excluded(&e) => e,
-            Bound::Unbounded => self.len,
+            Bound::Unbounded => max_key,
         };
-
-        // The upper bound of possible key.
-        // This isn't necessarily the real max key actually present in the index,
-        // due to possible deletions.
-        let max_key = self.outer.len() * KEYS_PER_INNER;
 
         // Clamp `end` to max possible key in index.
         let end = end.min(max_key);
@@ -211,6 +209,13 @@ impl UniqueDirectIndex {
 /// An iterator over the potential value in a [`UniqueDirectMap`] for a given key.
 pub struct UniqueDirectIndexPointIter {
     iter: IntoIter<RowPointer>,
+}
+
+impl UniqueDirectIndexPointIter {
+    pub(super) fn new(point: Option<RowPointer>) -> Self {
+        let iter = point.map(|ptr| ptr.with_reserved_bit(false)).into_iter();
+        Self { iter }
+    }
 }
 
 impl Iterator for UniqueDirectIndexPointIter {
@@ -265,7 +270,7 @@ impl Iterator for UniqueDirectIndexRangeIter<'_> {
 }
 
 #[cfg(test)]
-mod test {
+pub(super) mod test {
     use core::iter::repeat_with;
 
     use super::*;
@@ -273,7 +278,7 @@ mod test {
 
     const FIXED_ROW_SIZE: Size = Size(4 * 4);
 
-    fn gen_row_pointers() -> impl Iterator<Item = RowPointer> {
+    pub(crate) fn gen_row_pointers() -> impl Iterator<Item = RowPointer> {
         let mut page_index = PageIndex(0);
         let mut page_offset = PageOffset(0);
         repeat_with(move || {

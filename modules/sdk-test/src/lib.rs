@@ -545,7 +545,7 @@ define_tables! {
 
     PkSimpleEnum {
         insert_or_panic insert_pk_simple_enum,
-    } #[primary_key] a SimpleEnum, data i32;
+    } #[primary_key] #[index(direct)] a SimpleEnum, data i32;
 }
 
 #[spacetimedb::reducer]
