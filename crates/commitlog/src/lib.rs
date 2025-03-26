@@ -24,6 +24,9 @@ pub use crate::{
 pub mod error;
 pub mod payload;
 
+#[cfg(feature = "streaming")]
+pub mod stream;
+
 #[cfg(any(test, feature = "test"))]
 pub mod tests;
 
@@ -431,6 +434,32 @@ impl<T: Encode> Commitlog<T> {
     {
         self.inner.read().unwrap().fold_transactions_from(offset, de)
     }
+}
+
+/// Extract the most recently written [`segment::Metadata`] from the commitlog
+/// in `repo`.
+///
+/// Returns `None` if the commitlog is empty.
+///
+/// Note that this function validates the most recent segment, which entails
+/// traversing it from the start.
+///
+/// The function can be used instead of the pattern:
+///
+/// ```ignore
+/// let log = Commitlog::open(..)?;
+/// let max_offset = log.max_committed_offset();
+/// ```
+///
+/// like so:
+///
+/// ```ignore
+/// let max_offset = committed_meta(..)?.map(|meta| meta.tx_range.end);
+/// ```
+///
+/// Unlike `open`, no segment will be created in an empty `repo`.
+pub fn committed_meta(root: CommitLogDir) -> Result<Option<segment::Metadata>, error::SegmentMetadata> {
+    commitlog::committed_meta(repo::Fs::new(root)?)
 }
 
 /// Obtain an iterator which traverses the commitlog located at the `root`

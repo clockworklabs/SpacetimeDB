@@ -124,6 +124,7 @@ ahash = "0.8"
 anyhow = "1.0.68"
 anymap = "0.12"
 arrayvec = "0.7.2"
+async-stream = "0.3.6"
 async-trait = "0.1.68"
 axum = { version = "0.7", features = ["tracing"] }
 axum-extra = { version = "0.9", features = ["typed-header"] }
@@ -135,7 +136,7 @@ blake3 = "1.5.1"
 brotli = "3.5"
 byte-unit = "4.0.18"
 bytemuck = { version = "1.16.2", features = ["must_cast"] }
-bytes = "1.2.1"
+bytes = "1.10.1"
 bytestring = { version = "1.2.0", features = ["serde"] }
 cargo_metadata = "0.17.0"
 chrono = { version = "0.4.24", default-features = false }

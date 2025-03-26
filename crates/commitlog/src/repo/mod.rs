@@ -91,7 +91,27 @@ pub trait Repo: Clone {
     }
 }
 
-fn create_offset_index_writer<R: Repo>(repo: &R, offset: u64, opts: Options) -> Option<OffsetIndexWriter> {
+impl<T: Repo> Repo for &T {
+    type Segment = T::Segment;
+
+    fn create_segment(&self, offset: u64) -> io::Result<Self::Segment> {
+        T::create_segment(self, offset)
+    }
+
+    fn open_segment(&self, offset: u64) -> io::Result<Self::Segment> {
+        T::open_segment(self, offset)
+    }
+
+    fn remove_segment(&self, offset: u64) -> io::Result<()> {
+        T::remove_segment(self, offset)
+    }
+
+    fn existing_offsets(&self) -> io::Result<Vec<u64>> {
+        T::existing_offsets(self)
+    }
+}
+
+pub(crate) fn create_offset_index_writer<R: Repo>(repo: &R, offset: u64, opts: Options) -> Option<OffsetIndexWriter> {
     repo.create_offset_index(offset, opts.offset_index_len())
         .map(|index| OffsetIndexWriter::new(index, opts))
         .map_err(|e| {

@@ -6,7 +6,7 @@ use spacetimedb_paths::server::CommitLogDir;
 use spacetimedb_paths::FromPathUnchecked;
 use tempfile::tempdir;
 
-fn gen_payload() -> [u8; 256] {
+pub fn gen_payload() -> [u8; 256] {
     let mut rng = rand::thread_rng();
     let mut buf = [0u8; 256];
     rng.fill(&mut buf);
