@@ -2,8 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 use super::b_tree_u_32_type::BTreeU32;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `btree_u32`.
 ///
@@ -44,12 +49,8 @@ impl<'ctx> __sdk::Table for BtreeU32TableHandle<'ctx> {
     type Row = BTreeU32;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 {
-        self.imp.count()
-    }
-    fn iter(&self) -> impl Iterator<Item = BTreeU32> + '_ {
-        self.imp.iter()
-    }
+    fn count(&self) -> u64 { self.imp.count() }
+    fn iter(&self) -> impl Iterator<Item = BTreeU32> + '_ { self.imp.iter() }
 
     type InsertCallbackId = BtreeU32InsertCallbackId;
 
@@ -80,7 +81,8 @@ impl<'ctx> __sdk::Table for BtreeU32TableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<BTreeU32>("btree_u32");
+
+        let _table = client_cache.get_or_make_table::<BTreeU32>("btree_u32");
 }
 
 #[doc(hidden)]
@@ -88,8 +90,9 @@ pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
 ) -> __sdk::Result<__sdk::TableUpdate<BTreeU32>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse("TableUpdate<BTreeU32>", "TableUpdate")
-            .with_cause(e)
-            .into()
+        __sdk::InternalError::failed_parse(
+            "TableUpdate<BTreeU32>",
+            "TableUpdate",
+        ).with_cause(e).into()
     })
 }

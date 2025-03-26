@@ -2,8 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 use super::pk_string_type::PkString;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `pk_string`.
 ///
@@ -44,12 +49,8 @@ impl<'ctx> __sdk::Table for PkStringTableHandle<'ctx> {
     type Row = PkString;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 {
-        self.imp.count()
-    }
-    fn iter(&self) -> impl Iterator<Item = PkString> + '_ {
-        self.imp.iter()
-    }
+    fn count(&self) -> u64 { self.imp.count() }
+    fn iter(&self) -> impl Iterator<Item = PkString> + '_ { self.imp.iter() }
 
     type InsertCallbackId = PkStringInsertCallbackId;
 
@@ -80,7 +81,8 @@ impl<'ctx> __sdk::Table for PkStringTableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<PkString>("pk_string");
+
+        let _table = client_cache.get_or_make_table::<PkString>("pk_string");
     _table.add_unique_constraint::<String>("s", |row| &row.s);
 }
 pub struct PkStringUpdateCallbackId(__sdk::CallbackId);
@@ -100,43 +102,46 @@ impl<'ctx> __sdk::TableWithPrimaryKey for PkStringTableHandle<'ctx> {
     }
 }
 
+
 #[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
 ) -> __sdk::Result<__sdk::TableUpdate<PkString>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse("TableUpdate<PkString>", "TableUpdate")
-            .with_cause(e)
-            .into()
+        __sdk::InternalError::failed_parse(
+            "TableUpdate<PkString>",
+            "TableUpdate",
+        ).with_cause(e).into()
     })
 }
 
-/// Access to the `s` unique index on the table `pk_string`,
-/// which allows point queries on the field of the same name
-/// via the [`PkStringSUnique::find`] method.
-///
-/// Users are encouraged not to explicitly reference this type,
-/// but to directly chain method calls,
-/// like `ctx.db.pk_string().s().find(...)`.
-pub struct PkStringSUnique<'ctx> {
-    imp: __sdk::UniqueConstraintHandle<PkString, String>,
-    phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
-}
-
-impl<'ctx> PkStringTableHandle<'ctx> {
-    /// Get a handle on the `s` unique index on the table `pk_string`.
-    pub fn s(&self) -> PkStringSUnique<'ctx> {
-        PkStringSUnique {
-            imp: self.imp.get_unique_constraint::<String>("s"),
-            phantom: std::marker::PhantomData,
+        /// Access to the `s` unique index on the table `pk_string`,
+        /// which allows point queries on the field of the same name
+        /// via the [`PkStringSUnique::find`] method.
+        ///
+        /// Users are encouraged not to explicitly reference this type,
+        /// but to directly chain method calls,
+        /// like `ctx.db.pk_string().s().find(...)`.
+        pub struct PkStringSUnique<'ctx> {
+            imp: __sdk::UniqueConstraintHandle<PkString, String>,
+            phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
         }
-    }
-}
 
-impl<'ctx> PkStringSUnique<'ctx> {
-    /// Find the subscribed row whose `s` column value is equal to `col_val`,
-    /// if such a row is present in the client cache.
-    pub fn find(&self, col_val: &String) -> Option<PkString> {
-        self.imp.find(col_val)
-    }
-}
+        impl<'ctx> PkStringTableHandle<'ctx> {
+            /// Get a handle on the `s` unique index on the table `pk_string`.
+            pub fn s(&self) -> PkStringSUnique<'ctx> {
+                PkStringSUnique {
+                    imp: self.imp.get_unique_constraint::<String>("s"),
+                    phantom: std::marker::PhantomData,
+                }
+            }
+        }
+
+        impl<'ctx> PkStringSUnique<'ctx> {
+            /// Find the subscribed row whose `s` column value is equal to `col_val`,
+            /// if such a row is present in the client cache.
+            pub fn find(&self, col_val: &String) -> Option<PkString> {
+                self.imp.find(col_val)
+            }
+        }
+        

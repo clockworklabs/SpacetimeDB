@@ -48,6 +48,7 @@ uuid.workspace = true
 jsonwebtoken.workspace = true
 scopeguard.workspace = true
 serde_with.workspace = true
+jemalloc_pprof.workspace = true
 
 [dev-dependencies]
 jsonwebtoken.workspace = true

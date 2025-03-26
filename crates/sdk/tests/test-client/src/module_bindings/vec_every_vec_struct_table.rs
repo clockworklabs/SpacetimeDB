@@ -2,9 +2,14 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use super::every_vec_struct_type::EveryVecStruct;
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 use super::vec_every_vec_struct_type::VecEveryVecStruct;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use super::every_vec_struct_type::EveryVecStruct;
 
 /// Table handle for the table `vec_every_vec_struct`.
 ///
@@ -45,12 +50,8 @@ impl<'ctx> __sdk::Table for VecEveryVecStructTableHandle<'ctx> {
     type Row = VecEveryVecStruct;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 {
-        self.imp.count()
-    }
-    fn iter(&self) -> impl Iterator<Item = VecEveryVecStruct> + '_ {
-        self.imp.iter()
-    }
+    fn count(&self) -> u64 { self.imp.count() }
+    fn iter(&self) -> impl Iterator<Item = VecEveryVecStruct> + '_ { self.imp.iter() }
 
     type InsertCallbackId = VecEveryVecStructInsertCallbackId;
 
@@ -81,7 +82,8 @@ impl<'ctx> __sdk::Table for VecEveryVecStructTableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<VecEveryVecStruct>("vec_every_vec_struct");
+
+        let _table = client_cache.get_or_make_table::<VecEveryVecStruct>("vec_every_vec_struct");
 }
 
 #[doc(hidden)]
@@ -89,8 +91,9 @@ pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
 ) -> __sdk::Result<__sdk::TableUpdate<VecEveryVecStruct>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse("TableUpdate<VecEveryVecStruct>", "TableUpdate")
-            .with_cause(e)
-            .into()
+        __sdk::InternalError::failed_parse(
+            "TableUpdate<VecEveryVecStruct>",
+            "TableUpdate",
+        ).with_cause(e).into()
     })
 }

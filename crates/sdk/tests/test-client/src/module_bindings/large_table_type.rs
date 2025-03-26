@@ -2,14 +2,19 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 
-use super::byte_struct_type::ByteStruct;
+use super::simple_enum_type::SimpleEnum;
 use super::enum_with_payload_type::EnumWithPayload;
+use super::unit_struct_type::UnitStruct;
+use super::byte_struct_type::ByteStruct;
 use super::every_primitive_struct_type::EveryPrimitiveStruct;
 use super::every_vec_struct_type::EveryVecStruct;
-use super::simple_enum_type::SimpleEnum;
-use super::unit_struct_type::UnitStruct;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -38,6 +43,8 @@ pub struct LargeTable {
     pub v: EveryVecStruct,
 }
 
+
 impl __sdk::InModule for LargeTable {
     type Module = super::RemoteModule;
 }
+

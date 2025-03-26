@@ -2,8 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 use super::pk_u_256_type::PkU256;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `pk_u256`.
 ///
@@ -44,12 +49,8 @@ impl<'ctx> __sdk::Table for PkU256TableHandle<'ctx> {
     type Row = PkU256;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 {
-        self.imp.count()
-    }
-    fn iter(&self) -> impl Iterator<Item = PkU256> + '_ {
-        self.imp.iter()
-    }
+    fn count(&self) -> u64 { self.imp.count() }
+    fn iter(&self) -> impl Iterator<Item = PkU256> + '_ { self.imp.iter() }
 
     type InsertCallbackId = PkU256InsertCallbackId;
 
@@ -80,7 +81,8 @@ impl<'ctx> __sdk::Table for PkU256TableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<PkU256>("pk_u256");
+
+        let _table = client_cache.get_or_make_table::<PkU256>("pk_u256");
     _table.add_unique_constraint::<__sats::u256>("n", |row| &row.n);
 }
 pub struct PkU256UpdateCallbackId(__sdk::CallbackId);
@@ -100,43 +102,46 @@ impl<'ctx> __sdk::TableWithPrimaryKey for PkU256TableHandle<'ctx> {
     }
 }
 
+
 #[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
 ) -> __sdk::Result<__sdk::TableUpdate<PkU256>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse("TableUpdate<PkU256>", "TableUpdate")
-            .with_cause(e)
-            .into()
+        __sdk::InternalError::failed_parse(
+            "TableUpdate<PkU256>",
+            "TableUpdate",
+        ).with_cause(e).into()
     })
 }
 
-/// Access to the `n` unique index on the table `pk_u256`,
-/// which allows point queries on the field of the same name
-/// via the [`PkU256NUnique::find`] method.
-///
-/// Users are encouraged not to explicitly reference this type,
-/// but to directly chain method calls,
-/// like `ctx.db.pk_u_256().n().find(...)`.
-pub struct PkU256NUnique<'ctx> {
-    imp: __sdk::UniqueConstraintHandle<PkU256, __sats::u256>,
-    phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
-}
-
-impl<'ctx> PkU256TableHandle<'ctx> {
-    /// Get a handle on the `n` unique index on the table `pk_u256`.
-    pub fn n(&self) -> PkU256NUnique<'ctx> {
-        PkU256NUnique {
-            imp: self.imp.get_unique_constraint::<__sats::u256>("n"),
-            phantom: std::marker::PhantomData,
+        /// Access to the `n` unique index on the table `pk_u256`,
+        /// which allows point queries on the field of the same name
+        /// via the [`PkU256NUnique::find`] method.
+        ///
+        /// Users are encouraged not to explicitly reference this type,
+        /// but to directly chain method calls,
+        /// like `ctx.db.pk_u_256().n().find(...)`.
+        pub struct PkU256NUnique<'ctx> {
+            imp: __sdk::UniqueConstraintHandle<PkU256, __sats::u256>,
+            phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
         }
-    }
-}
 
-impl<'ctx> PkU256NUnique<'ctx> {
-    /// Find the subscribed row whose `n` column value is equal to `col_val`,
-    /// if such a row is present in the client cache.
-    pub fn find(&self, col_val: &__sats::u256) -> Option<PkU256> {
-        self.imp.find(col_val)
-    }
-}
+        impl<'ctx> PkU256TableHandle<'ctx> {
+            /// Get a handle on the `n` unique index on the table `pk_u256`.
+            pub fn n(&self) -> PkU256NUnique<'ctx> {
+                PkU256NUnique {
+                    imp: self.imp.get_unique_constraint::<__sats::u256>("n"),
+                    phantom: std::marker::PhantomData,
+                }
+            }
+        }
+
+        impl<'ctx> PkU256NUnique<'ctx> {
+            /// Find the subscribed row whose `n` column value is equal to `col_val`,
+            /// if such a row is present in the client cache.
+            pub fn find(&self, col_val: &__sats::u256) -> Option<PkU256> {
+                self.imp.find(col_val)
+            }
+        }
+        

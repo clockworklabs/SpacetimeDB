@@ -2,8 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 use super::unique_bool_type::UniqueBool;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `unique_bool`.
 ///
@@ -44,12 +49,8 @@ impl<'ctx> __sdk::Table for UniqueBoolTableHandle<'ctx> {
     type Row = UniqueBool;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 {
-        self.imp.count()
-    }
-    fn iter(&self) -> impl Iterator<Item = UniqueBool> + '_ {
-        self.imp.iter()
-    }
+    fn count(&self) -> u64 { self.imp.count() }
+    fn iter(&self) -> impl Iterator<Item = UniqueBool> + '_ { self.imp.iter() }
 
     type InsertCallbackId = UniqueBoolInsertCallbackId;
 
@@ -80,7 +81,8 @@ impl<'ctx> __sdk::Table for UniqueBoolTableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<UniqueBool>("unique_bool");
+
+        let _table = client_cache.get_or_make_table::<UniqueBool>("unique_bool");
     _table.add_unique_constraint::<bool>("b", |row| &row.b);
 }
 
@@ -89,38 +91,40 @@ pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
 ) -> __sdk::Result<__sdk::TableUpdate<UniqueBool>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse("TableUpdate<UniqueBool>", "TableUpdate")
-            .with_cause(e)
-            .into()
+        __sdk::InternalError::failed_parse(
+            "TableUpdate<UniqueBool>",
+            "TableUpdate",
+        ).with_cause(e).into()
     })
 }
 
-/// Access to the `b` unique index on the table `unique_bool`,
-/// which allows point queries on the field of the same name
-/// via the [`UniqueBoolBUnique::find`] method.
-///
-/// Users are encouraged not to explicitly reference this type,
-/// but to directly chain method calls,
-/// like `ctx.db.unique_bool().b().find(...)`.
-pub struct UniqueBoolBUnique<'ctx> {
-    imp: __sdk::UniqueConstraintHandle<UniqueBool, bool>,
-    phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
-}
-
-impl<'ctx> UniqueBoolTableHandle<'ctx> {
-    /// Get a handle on the `b` unique index on the table `unique_bool`.
-    pub fn b(&self) -> UniqueBoolBUnique<'ctx> {
-        UniqueBoolBUnique {
-            imp: self.imp.get_unique_constraint::<bool>("b"),
-            phantom: std::marker::PhantomData,
+        /// Access to the `b` unique index on the table `unique_bool`,
+        /// which allows point queries on the field of the same name
+        /// via the [`UniqueBoolBUnique::find`] method.
+        ///
+        /// Users are encouraged not to explicitly reference this type,
+        /// but to directly chain method calls,
+        /// like `ctx.db.unique_bool().b().find(...)`.
+        pub struct UniqueBoolBUnique<'ctx> {
+            imp: __sdk::UniqueConstraintHandle<UniqueBool, bool>,
+            phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
         }
-    }
-}
 
-impl<'ctx> UniqueBoolBUnique<'ctx> {
-    /// Find the subscribed row whose `b` column value is equal to `col_val`,
-    /// if such a row is present in the client cache.
-    pub fn find(&self, col_val: &bool) -> Option<UniqueBool> {
-        self.imp.find(col_val)
-    }
-}
+        impl<'ctx> UniqueBoolTableHandle<'ctx> {
+            /// Get a handle on the `b` unique index on the table `unique_bool`.
+            pub fn b(&self) -> UniqueBoolBUnique<'ctx> {
+                UniqueBoolBUnique {
+                    imp: self.imp.get_unique_constraint::<bool>("b"),
+                    phantom: std::marker::PhantomData,
+                }
+            }
+        }
+
+        impl<'ctx> UniqueBoolBUnique<'ctx> {
+            /// Find the subscribed row whose `b` column value is equal to `col_val`,
+            /// if such a row is present in the client cache.
+            pub fn find(&self, col_val: &bool) -> Option<UniqueBool> {
+                self.imp.find(col_val)
+            }
+        }
+        

@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -16,8 +22,8 @@ impl From<UpdatePkU32TwoArgs> for super::Reducer {
         Self::UpdatePkU32Two {
             n: args.n,
             data: args.data,
-        }
-    }
+}
+}
 }
 
 impl __sdk::InModule for UpdatePkU32TwoArgs {
@@ -36,7 +42,9 @@ pub trait update_pk_u_32_two {
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed by listening for [`Self::on_update_pk_u_32_two`] callbacks.
-    fn update_pk_u_32_two(&self, n: u32, data: i32) -> __sdk::Result<()>;
+    fn update_pk_u_32_two(&self, n: u32,
+data: i32,
+) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `update_pk_u32_two`.
     ///
     /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
@@ -44,39 +52,35 @@ pub trait update_pk_u_32_two {
     ///
     /// The returned [`UpdatePkU32TwoCallbackId`] can be passed to [`Self::remove_on_update_pk_u_32_two`]
     /// to cancel the callback.
-    fn on_update_pk_u_32_two(
-        &self,
-        callback: impl FnMut(&super::ReducerEventContext, &u32, &i32) + Send + 'static,
-    ) -> UpdatePkU32TwoCallbackId;
+    fn on_update_pk_u_32_two(&self, callback: impl FnMut(&super::ReducerEventContext, &u32, &i32, ) + Send + 'static) -> UpdatePkU32TwoCallbackId;
     /// Cancel a callback previously registered by [`Self::on_update_pk_u_32_two`],
     /// causing it not to run in the future.
     fn remove_on_update_pk_u_32_two(&self, callback: UpdatePkU32TwoCallbackId);
 }
 
 impl update_pk_u_32_two for super::RemoteReducers {
-    fn update_pk_u_32_two(&self, n: u32, data: i32) -> __sdk::Result<()> {
-        self.imp
-            .call_reducer("update_pk_u32_two", UpdatePkU32TwoArgs { n, data })
+    fn update_pk_u_32_two(&self, n: u32,
+data: i32,
+) -> __sdk::Result<()> {
+        self.imp.call_reducer("update_pk_u32_two", UpdatePkU32TwoArgs { n, data,  })
     }
     fn on_update_pk_u_32_two(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &u32, &i32) + Send + 'static,
+        mut callback: impl FnMut(&super::ReducerEventContext, &u32, &i32, ) + Send + 'static,
     ) -> UpdatePkU32TwoCallbackId {
         UpdatePkU32TwoCallbackId(self.imp.on_reducer(
             "update_pk_u32_two",
             Box::new(move |ctx: &super::ReducerEventContext| {
                 let super::ReducerEventContext {
-                    event:
-                        __sdk::ReducerEvent {
-                            reducer: super::Reducer::UpdatePkU32Two { n, data },
-                            ..
+                    event: __sdk::ReducerEvent {
+                        reducer: super::Reducer::UpdatePkU32Two {
+                            n, data, 
                         },
+                        ..
+                    },
                     ..
-                } = ctx
-                else {
-                    unreachable!()
-                };
-                callback(ctx, n, data)
+                } = ctx else { unreachable!() };
+                callback(ctx, n, data, )
             }),
         ))
     }
@@ -104,3 +108,4 @@ impl set_flags_for_update_pk_u_32_two for super::SetReducerFlags {
         self.imp.set_call_reducer_flags("update_pk_u32_two", flags);
     }
 }
+

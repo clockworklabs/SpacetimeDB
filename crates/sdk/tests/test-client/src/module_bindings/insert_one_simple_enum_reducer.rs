@@ -2,7 +2,12 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 
 use super::simple_enum_type::SimpleEnum;
 
@@ -14,8 +19,10 @@ pub(super) struct InsertOneSimpleEnumArgs {
 
 impl From<InsertOneSimpleEnumArgs> for super::Reducer {
     fn from(args: InsertOneSimpleEnumArgs) -> Self {
-        Self::InsertOneSimpleEnum { e: args.e }
-    }
+        Self::InsertOneSimpleEnum {
+            e: args.e,
+}
+}
 }
 
 impl __sdk::InModule for InsertOneSimpleEnumArgs {
@@ -34,7 +41,8 @@ pub trait insert_one_simple_enum {
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed by listening for [`Self::on_insert_one_simple_enum`] callbacks.
-    fn insert_one_simple_enum(&self, e: SimpleEnum) -> __sdk::Result<()>;
+    fn insert_one_simple_enum(&self, e: SimpleEnum,
+) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `insert_one_simple_enum`.
     ///
     /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
@@ -42,39 +50,34 @@ pub trait insert_one_simple_enum {
     ///
     /// The returned [`InsertOneSimpleEnumCallbackId`] can be passed to [`Self::remove_on_insert_one_simple_enum`]
     /// to cancel the callback.
-    fn on_insert_one_simple_enum(
-        &self,
-        callback: impl FnMut(&super::ReducerEventContext, &SimpleEnum) + Send + 'static,
-    ) -> InsertOneSimpleEnumCallbackId;
+    fn on_insert_one_simple_enum(&self, callback: impl FnMut(&super::ReducerEventContext, &SimpleEnum, ) + Send + 'static) -> InsertOneSimpleEnumCallbackId;
     /// Cancel a callback previously registered by [`Self::on_insert_one_simple_enum`],
     /// causing it not to run in the future.
     fn remove_on_insert_one_simple_enum(&self, callback: InsertOneSimpleEnumCallbackId);
 }
 
 impl insert_one_simple_enum for super::RemoteReducers {
-    fn insert_one_simple_enum(&self, e: SimpleEnum) -> __sdk::Result<()> {
-        self.imp
-            .call_reducer("insert_one_simple_enum", InsertOneSimpleEnumArgs { e })
+    fn insert_one_simple_enum(&self, e: SimpleEnum,
+) -> __sdk::Result<()> {
+        self.imp.call_reducer("insert_one_simple_enum", InsertOneSimpleEnumArgs { e,  })
     }
     fn on_insert_one_simple_enum(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &SimpleEnum) + Send + 'static,
+        mut callback: impl FnMut(&super::ReducerEventContext, &SimpleEnum, ) + Send + 'static,
     ) -> InsertOneSimpleEnumCallbackId {
         InsertOneSimpleEnumCallbackId(self.imp.on_reducer(
             "insert_one_simple_enum",
             Box::new(move |ctx: &super::ReducerEventContext| {
                 let super::ReducerEventContext {
-                    event:
-                        __sdk::ReducerEvent {
-                            reducer: super::Reducer::InsertOneSimpleEnum { e },
-                            ..
+                    event: __sdk::ReducerEvent {
+                        reducer: super::Reducer::InsertOneSimpleEnum {
+                            e, 
                         },
+                        ..
+                    },
                     ..
-                } = ctx
-                else {
-                    unreachable!()
-                };
-                callback(ctx, e)
+                } = ctx else { unreachable!() };
+                callback(ctx, e, )
             }),
         ))
     }
@@ -102,3 +105,4 @@ impl set_flags_for_insert_one_simple_enum for super::SetReducerFlags {
         self.imp.set_call_reducer_flags("insert_one_simple_enum", flags);
     }
 }
+

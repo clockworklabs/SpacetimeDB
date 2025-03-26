@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -16,8 +22,8 @@ impl From<DeletePkU32InsertPkU32TwoArgs> for super::Reducer {
         Self::DeletePkU32InsertPkU32Two {
             n: args.n,
             data: args.data,
-        }
-    }
+}
+}
 }
 
 impl __sdk::InModule for DeletePkU32InsertPkU32TwoArgs {
@@ -36,7 +42,9 @@ pub trait delete_pk_u_32_insert_pk_u_32_two {
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed by listening for [`Self::on_delete_pk_u_32_insert_pk_u_32_two`] callbacks.
-    fn delete_pk_u_32_insert_pk_u_32_two(&self, n: u32, data: i32) -> __sdk::Result<()>;
+    fn delete_pk_u_32_insert_pk_u_32_two(&self, n: u32,
+data: i32,
+) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `delete_pk_u32_insert_pk_u32_two`.
     ///
     /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
@@ -44,47 +52,40 @@ pub trait delete_pk_u_32_insert_pk_u_32_two {
     ///
     /// The returned [`DeletePkU32InsertPkU32TwoCallbackId`] can be passed to [`Self::remove_on_delete_pk_u_32_insert_pk_u_32_two`]
     /// to cancel the callback.
-    fn on_delete_pk_u_32_insert_pk_u_32_two(
-        &self,
-        callback: impl FnMut(&super::ReducerEventContext, &u32, &i32) + Send + 'static,
-    ) -> DeletePkU32InsertPkU32TwoCallbackId;
+    fn on_delete_pk_u_32_insert_pk_u_32_two(&self, callback: impl FnMut(&super::ReducerEventContext, &u32, &i32, ) + Send + 'static) -> DeletePkU32InsertPkU32TwoCallbackId;
     /// Cancel a callback previously registered by [`Self::on_delete_pk_u_32_insert_pk_u_32_two`],
     /// causing it not to run in the future.
     fn remove_on_delete_pk_u_32_insert_pk_u_32_two(&self, callback: DeletePkU32InsertPkU32TwoCallbackId);
 }
 
 impl delete_pk_u_32_insert_pk_u_32_two for super::RemoteReducers {
-    fn delete_pk_u_32_insert_pk_u_32_two(&self, n: u32, data: i32) -> __sdk::Result<()> {
-        self.imp.call_reducer(
-            "delete_pk_u32_insert_pk_u32_two",
-            DeletePkU32InsertPkU32TwoArgs { n, data },
-        )
+    fn delete_pk_u_32_insert_pk_u_32_two(&self, n: u32,
+data: i32,
+) -> __sdk::Result<()> {
+        self.imp.call_reducer("delete_pk_u32_insert_pk_u32_two", DeletePkU32InsertPkU32TwoArgs { n, data,  })
     }
     fn on_delete_pk_u_32_insert_pk_u_32_two(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &u32, &i32) + Send + 'static,
+        mut callback: impl FnMut(&super::ReducerEventContext, &u32, &i32, ) + Send + 'static,
     ) -> DeletePkU32InsertPkU32TwoCallbackId {
         DeletePkU32InsertPkU32TwoCallbackId(self.imp.on_reducer(
             "delete_pk_u32_insert_pk_u32_two",
             Box::new(move |ctx: &super::ReducerEventContext| {
                 let super::ReducerEventContext {
-                    event:
-                        __sdk::ReducerEvent {
-                            reducer: super::Reducer::DeletePkU32InsertPkU32Two { n, data },
-                            ..
+                    event: __sdk::ReducerEvent {
+                        reducer: super::Reducer::DeletePkU32InsertPkU32Two {
+                            n, data, 
                         },
+                        ..
+                    },
                     ..
-                } = ctx
-                else {
-                    unreachable!()
-                };
-                callback(ctx, n, data)
+                } = ctx else { unreachable!() };
+                callback(ctx, n, data, )
             }),
         ))
     }
     fn remove_on_delete_pk_u_32_insert_pk_u_32_two(&self, callback: DeletePkU32InsertPkU32TwoCallbackId) {
-        self.imp
-            .remove_on_reducer("delete_pk_u32_insert_pk_u32_two", callback.0)
+        self.imp.remove_on_reducer("delete_pk_u32_insert_pk_u32_two", callback.0)
     }
 }
 
@@ -104,7 +105,7 @@ pub trait set_flags_for_delete_pk_u_32_insert_pk_u_32_two {
 
 impl set_flags_for_delete_pk_u_32_insert_pk_u_32_two for super::SetReducerFlags {
     fn delete_pk_u_32_insert_pk_u_32_two(&self, flags: __ws::CallReducerFlags) {
-        self.imp
-            .set_call_reducer_flags("delete_pk_u32_insert_pk_u32_two", flags);
+        self.imp.set_call_reducer_flags("delete_pk_u32_insert_pk_u32_two", flags);
     }
 }
+
