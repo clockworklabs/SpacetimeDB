@@ -1,8 +1,8 @@
-use std::fs::{File, Metadata};
+use std::fs::File;
 use std::io;
 use std::io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write};
-use zstd::stream::AutoFinishEncoder;
-use zstd::{Decoder, Encoder};
+use zstd_framed;
+use zstd_framed::{ZstdReader, ZstdWriter};
 
 const ZSTD_MAGIC_BYTES: [u8; 4] = [0x28, 0xB5, 0x2F, 0xFD];
 
@@ -25,7 +25,7 @@ pub enum CompressType {
 /// A reader that can read compressed files
 pub enum CompressReader<'a> {
     None(BufReader<File>),
-    Zstd(Decoder<'a, BufReader<File>>),
+    Zstd(ZstdReader<'a, BufReader<File>>),
 }
 
 impl CompressReader<'_> {
@@ -46,10 +46,7 @@ impl CompressReader<'_> {
         // Determine compression type
         Ok(if bytes_read == 4 {
             match magic_bytes {
-                ZSTD_MAGIC_BYTES => {
-                    let decoder = Decoder::new(inner)?;
-                    CompressReader::Zstd(decoder)
-                }
+                ZSTD_MAGIC_BYTES => CompressReader::Zstd(ZstdReader::builder(inner).build()?),
                 _ => CompressReader::None(BufReader::new(inner)),
             }
         } else {
@@ -57,11 +54,12 @@ impl CompressReader<'_> {
         })
     }
 
-    pub fn metadata(&self) -> io::Result<Metadata> {
-        match self {
-            Self::None(inner) => inner.get_ref().metadata(),
-            Self::Zstd(inner) => inner.get_ref().get_ref().metadata(),
-        }
+    pub fn file_size(&self) -> io::Result<usize> {
+        Ok(match self {
+            Self::None(inner) => inner.get_ref().metadata()?.len() as usize,
+            //TODO: Can't see how to get the file size from ZstdReader
+            Self::Zstd(_inner) => 0,
+        })
     }
 
     pub fn compress_type(&self) -> CompressType {
@@ -84,7 +82,7 @@ impl Read for CompressReader<'_> {
 /// A writer that can write compressed files
 pub enum CompressWriter<'a> {
     None(BufWriter<File>),
-    Zstd(AutoFinishEncoder<'a, BufWriter<File>>),
+    Zstd(ZstdWriter<'a, BufWriter<File>>),
 }
 
 impl CompressWriter<'_> {
@@ -92,15 +90,17 @@ impl CompressWriter<'_> {
         match compress_type {
             CompressType::None => Ok(CompressWriter::None(BufWriter::new(inner))),
             CompressType::Zstd => Ok(CompressWriter::Zstd(
-                Encoder::new(BufWriter::new(inner), 0)?.auto_finish(),
+                ZstdWriter::builder(BufWriter::new(inner))
+                    .with_compression_level(0)
+                    .build()?,
             )),
         }
     }
 
-    pub fn metadata(&self) -> io::Result<Metadata> {
+    pub fn finish(self) -> io::Result<()> {
         match self {
-            Self::None(inner) => inner.get_ref().metadata(),
-            Self::Zstd(inner) => inner.get_ref().get_ref().metadata(),
+            CompressWriter::None(mut inner) => inner.flush(),
+            CompressWriter::Zstd(mut inner) => inner.shutdown(),
         }
     }
 }

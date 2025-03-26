@@ -11,7 +11,7 @@ anyhow.workspace = true
 thiserror.workspace = true
 hex.workspace = true
 rand.workspace = true
-zstd.workspace = true
+zstd-framed.workspace = true
 
 [dev-dependencies]
 tempdir.workspace = true
