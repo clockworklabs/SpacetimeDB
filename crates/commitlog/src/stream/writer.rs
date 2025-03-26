@@ -3,6 +3,7 @@ use std::{
     ops::Range,
 };
 
+use futures::TryFutureExt;
 use log::{debug, error, trace, warn};
 use tokio::{
     io::{AsyncBufRead, AsyncBufReadExt as _, AsyncReadExt as _, AsyncWriteExt},
@@ -57,7 +58,7 @@ impl<T: FnMut(Range<u64>)> Progress for T {
 /// [commits]: crate::commit::StoredCommit
 pub struct StreamWriter<R>
 where
-    R: Repo,
+    R: Repo + Send + 'static,
     R::Segment: IntoAsyncSegment,
 {
     repo: R,
@@ -160,6 +161,12 @@ where
     /// method consumes `self`, and returns it back if the input `stream` was
     /// consumed successfully. In case of errors, the caller must re-open the
     /// writer via [`Self::create`] in order to perform consistency checks.
+    ///
+    /// Segments and their offset indexes are synced to disk when a new
+    /// segment is created while processing the input stream.
+    ///
+    /// The caller should use [`Self::sync_all`] to ensure that if a segment
+    /// remains open after `append_all`, it is synced to disk.
     pub async fn append_all(
         mut self,
         mut stream: impl AsyncBufRead + Unpin,
@@ -216,13 +223,9 @@ where
                 .append_all_inner(&mut stream, &mut current_segment, &mut progress)
                 .await;
             // Ensure we flush application buffers (BufWriter).
-            // `fsync` can be delayed until we either open a new segment,
-            // or the stream is exhausted and we break the loop.
-            // If there are errors writing to the segment, there's no point in
-            // syncing.
             current_segment.segment.flush().await?;
             let maybe_eof = res?;
-            // Put back segment, so it gets closed if we break the loop.
+            // Put back segment, so it is available for syncing or closing.
             self.current_segment = Some(current_segment);
             match maybe_eof {
                 AppendInnerResult::StreamExhausted => break,
@@ -230,11 +233,19 @@ where
             }
         }
 
-        if let Some(current_segment) = self.current_segment.as_mut() {
-            current_segment.flush_and_sync().await?;
-        }
-
         Ok(self)
+    }
+
+    /// Flush and sync the currently written-to segment (if any) to disk.
+    ///
+    /// Dropping a [`StreamWriter`] will attempt to invoke this, but any errors
+    /// will not be visible. Also, if the async runtime is already shutting down,
+    /// the task spawned by the [`Drop`] impl may not get a chance to run.
+    pub async fn sync_all(&mut self) -> io::Result<()> {
+        let Some(current_segment) = self.current_segment.as_mut() else {
+            return Ok(());
+        };
+        current_segment.flush_and_sync().await
     }
 
     async fn append_all_inner(
@@ -339,6 +350,23 @@ where
         }
 
         Ok(())
+    }
+}
+
+impl<R> Drop for StreamWriter<R>
+where
+    R: Repo + Send + 'static,
+    R::Segment: IntoAsyncSegment,
+{
+    fn drop(&mut self) {
+        if let Some(current_segment) = self.current_segment.take() {
+            trace!("closing current segment on writer drop");
+            tokio::spawn(
+                current_segment
+                    .close()
+                    .inspect_err(|e| warn!("error closing segment on drop: {e}")),
+            );
+        }
     }
 }
 

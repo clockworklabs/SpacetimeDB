@@ -39,7 +39,13 @@ async fn copy_all() {
         .expect("failed to create stream writer");
     let reader = create_reader(&src, ..);
     pin!(reader);
-    writer.append_all(reader, |_| ()).await.unwrap();
+    writer
+        .append_all(reader, |_| ())
+        .await
+        .unwrap()
+        .sync_all()
+        .await
+        .unwrap();
 
     assert_equal_dirs(&src, &dst).await
 }
@@ -62,6 +68,7 @@ async fn copy_ranges() {
         pin!(reader);
         writer = writer.append_all(reader, |_| ()).await.unwrap();
     }
+    writer.sync_all().await.unwrap();
 
     assert_equal_dirs(&src, &dst).await
 }
@@ -81,6 +88,7 @@ async fn copy_invalid_range() {
         let reader = create_reader(&src, ..50);
         pin!(reader);
         writer = writer.append_all(reader, |_| ()).await.unwrap();
+        writer.sync_all().await.unwrap();
     }
     {
         info!("appending `75..`");
@@ -139,7 +147,13 @@ async fn trim_garbage() {
     .expect("failed to create stream writer");
     let reader = create_reader(&src, 99..);
     pin!(reader);
-    writer.append_all(reader, |_| ()).await.unwrap();
+    writer
+        .append_all(reader, |_| ())
+        .await
+        .unwrap()
+        .sync_all()
+        .await
+        .unwrap();
 
     assert_equal_dirs(&src, &dst).await
 }
