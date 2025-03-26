@@ -86,23 +86,37 @@ impl ModuleSubscriptions {
         update_type: TableUpdateType,
     ) -> Result<(SubscriptionUpdate, ExecutionMetrics), DBError> {
         check_row_limit(
-            query.physical_plan(),
+            &[&query],
             &self.relational_db,
             tx,
-            |plan, tx| estimate_rows_scanned(tx, plan),
+            |plan, tx| {
+                plan.plans_fragments()
+                    .map(|plan_fragment| estimate_rows_scanned(tx, plan_fragment.physical_plan()))
+                    .fold(0, |acc, rows_scanned| acc.saturating_add(rows_scanned))
+            },
             auth,
         )?;
 
         let comp = sender.config.compression;
         let table_id = query.subscribed_table_id();
         let table_name = query.subscribed_table_name();
-        let plan = query.physical_plan().clone().optimize().map(PipelinedProject::from)?;
+
+        let plans = query
+            .plans_fragments()
+            .map(|fragment| fragment.physical_plan())
+            .cloned()
+            .map(|plan| plan.optimize())
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .map(PipelinedProject::from)
+            .collect::<Vec<_>>();
+
         let tx = DeltaTx::from(tx);
 
         Ok(match sender.config.protocol {
-            Protocol::Binary => collect_table_update(&plan, table_id, table_name.into(), comp, &tx, update_type)
+            Protocol::Binary => collect_table_update(&plans, table_id, table_name.into(), comp, &tx, update_type)
                 .map(|(table_update, metrics)| (FormatSwitch::Bsatn(table_update), metrics))?,
-            Protocol::Text => collect_table_update(&plan, table_id, table_name.into(), comp, &tx, update_type)
+            Protocol::Text => collect_table_update(&plans, table_id, table_name.into(), comp, &tx, update_type)
                 .map(|(table_update, metrics)| (FormatSwitch::Json(table_update), metrics))?,
         })
     }
@@ -110,23 +124,20 @@ impl ModuleSubscriptions {
     fn evaluate_queries(
         &self,
         sender: Arc<ClientConnectionSender>,
-        queries: &Vec<Arc<Plan>>,
+        queries: &[Arc<Plan>],
         tx: &TxId,
         auth: &AuthCtx,
         update_type: TableUpdateType,
     ) -> Result<(FullSubscriptionUpdate, ExecutionMetrics), DBError> {
-        fn rows_scanned(tx: &TxId, plans: &[Arc<Plan>]) -> u64 {
-            plans
-                .iter()
-                .map(|plan| estimate_rows_scanned(tx, plan.physical_plan()))
-                .fold(0, |acc, n| acc.saturating_add(n))
-        }
-
         check_row_limit(
-            &queries,
+            queries,
             &self.relational_db,
             tx,
-            |plan, tx| rows_scanned(tx, plan),
+            |plan, tx| {
+                plan.plans_fragments()
+                    .map(|plan_fragment| estimate_rows_scanned(tx, plan_fragment.physical_plan()))
+                    .fold(0, |acc, rows_scanned| acc.saturating_add(rows_scanned))
+            },
             auth,
         )?;
         let comp = sender.config.compression;
@@ -542,18 +553,15 @@ impl ModuleSubscriptions {
 
         let comp = sender.config.compression;
 
-        fn rows_scanned(tx: &TxId, plans: &[Arc<Plan>]) -> u64 {
-            plans
-                .iter()
-                .map(|plan| estimate_rows_scanned(tx, plan.physical_plan()))
-                .fold(0, |acc, n| acc.saturating_add(n))
-        }
-
         check_row_limit(
             &queries,
             &self.relational_db,
             &tx,
-            |plan, tx| rows_scanned(tx, plan),
+            |plan, tx| {
+                plan.plans_fragments()
+                    .map(|plan_fragment| estimate_rows_scanned(tx, plan_fragment.physical_plan()))
+                    .fold(0, |acc, rows_scanned| acc.saturating_add(rows_scanned))
+            },
             &auth,
         )?;
 
@@ -824,7 +832,7 @@ mod tests {
         let plan = compile_read_only_query(&auth, &tx, sql)?;
         let plan = Arc::new(plan);
 
-        let (_, metrics) = subs.evaluate_queries(sender, &vec![plan], &tx, &auth, TableUpdateType::Subscribe)?;
+        let (_, metrics) = subs.evaluate_queries(sender, &[plan], &tx, &auth, TableUpdateType::Subscribe)?;
 
         // We only probe the index once
         assert_eq!(metrics.index_seeks, 1);

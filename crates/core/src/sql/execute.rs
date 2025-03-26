@@ -211,7 +211,7 @@ pub fn run(
             // Evaluate the query
             let rows = execute_select_stmt(stmt, &DeltaTx::from(&*tx), &mut metrics, |plan| {
                 check_row_limit(
-                    &plan,
+                    &[&plan],
                     db,
                     &tx,
                     |plan, tx| plan.plan_iter().map(|plan| estimate_rows_scanned(tx, plan)).sum(),
