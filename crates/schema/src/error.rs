@@ -62,7 +62,7 @@ pub enum ValidationError {
     #[error("No index found to support unique constraint `{constraint}` for columns `{columns:?}`")]
     UniqueConstraintWithoutIndex { constraint: Box<str>, columns: ColSet },
     #[error("Direct index does not support type `{ty}` in column `{column}` in index `{index}`")]
-    DirectIndexOnNonUnsignedInt {
+    DirectIndexOnBadType {
         index: RawIdentifier,
         column: RawIdentifier,
         ty: PrettyAlgebraicType,
