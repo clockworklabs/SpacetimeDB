@@ -173,6 +173,7 @@ impl DirTrie {
         let mut file = self.open_entry_writer(file_id, self.write_compress_type)?;
         let contents = contents();
         file.write_all(contents.as_ref())?;
+        file.finish()?;
         counter.objects_written += 1;
         Ok(())
     }
@@ -206,7 +207,7 @@ impl DirTrie {
     /// Open the entry keyed with `file_id` and read it into a `Vec<u8>`.
     pub fn read_entry(&self, file_id: &FileId) -> Result<Vec<u8>, io::Error> {
         let mut file = self.open_entry_reader(file_id)?;
-        let mut buf = Vec::with_capacity(file.metadata()?.len() as usize);
+        let mut buf = Vec::with_capacity(file.file_size()?);
         // TODO(perf): Async IO?
         file.read_to_end(&mut buf)?;
         Ok(buf)

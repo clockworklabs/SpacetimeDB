@@ -278,10 +278,9 @@ walkdir = "2.2.5"
 wasmbin = "0.6"
 webbrowser = "1.0.2"
 windows-sys = "0.59"
-zstd = { version = "0.13.2", features = ["arrays", "zdict_builder"] }
 xdg = "2.5"
 tikv-jemallocator = { version = "0.6.0", features = ["profiling", "stats"] }
-tikv-jemalloc-ctl = { version = "0.6.0", features = ["stats"]}
+tikv-jemalloc-ctl = { version = "0.6.0", features = ["stats"] }
 jemalloc_pprof = { version = "0.7", features = ["symbolize", "flamegraph"] }
 zstd-framed = { version = "0.1.1", features = ["tokio"] }
 

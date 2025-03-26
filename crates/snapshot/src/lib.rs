@@ -626,6 +626,7 @@ impl SnapshotRepository {
             let mut compress = CompressWriter::new(snapshot_file, CompressType::None)?;
             compress.write_all(hash.as_bytes())?;
             compress.write_all(&snapshot_bsatn)?;
+            compress.finish()?;
         }
 
         log::info!(
