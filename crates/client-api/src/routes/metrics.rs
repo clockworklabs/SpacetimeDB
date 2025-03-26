@@ -56,6 +56,28 @@ pub async fn handle_get_heap() -> Result<impl IntoResponse, (StatusCode, String)
     Ok(pprof)
 }
 
+pub async fn handle_get_flame() -> Result<impl IntoResponse, (StatusCode, String)> {
+    let Some(ctl) = jemalloc_pprof::PROF_CTL.as_ref() else {
+        return Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "jemalloc profiling is disabled and cannot be activated".into(),
+        ));
+    };
+    let mut prof_ctl = ctl.lock().await;
+    require_profiling_activated(&prof_ctl)?;
+    // let pprof = prof_ctl
+    //     .dump_pprof()
+    //     .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
+    let svg = prof_ctl
+        .dump_flamegraph()
+        .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
+    Response::builder()
+        .header(CONTENT_TYPE, "image/svg+xml")
+        .body(Body::from(svg))
+        .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))
+    // Ok(pprof)
+}
+
 /// Checks whether jemalloc profiling is activated an returns an error response if not.
 fn require_profiling_activated(prof_ctl: &jemalloc_pprof::JemallocProfCtl) -> Result<(), (StatusCode, String)> {
     if prof_ctl.activated() {
@@ -73,6 +95,7 @@ where
     axum::Router::new()
         .route("/", get(metrics::<S>))
         .route("/heap", get(handle_get_heap))
+        .route("/flame", get(handle_get_flame))
     // TODO:
     // .layer(MetricsAuthMiddleware)
 }
