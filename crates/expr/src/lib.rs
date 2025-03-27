@@ -51,12 +51,14 @@ pub(crate) fn type_limit(input: ProjectList, limit: &str) -> TypingResult<Projec
 pub(crate) fn type_proj(input: RelExpr, proj: ast::Project, vars: &Relvars) -> TypingResult<ProjectList> {
     match proj {
         ast::Project::Star(None) if input.nfields() > 1 => Err(InvalidWildcard::Join.into()),
-        ast::Project::Star(None) => Ok(ProjectList::Name(ProjectName::None(input))),
+        ast::Project::Star(None) => Ok(ProjectList::Name(vec![ProjectName::None(input)])),
         ast::Project::Star(Some(SqlIdent(var))) if input.has_field(&var) => {
-            Ok(ProjectList::Name(ProjectName::Some(input, var)))
+            Ok(ProjectList::Name(vec![ProjectName::Some(input, var)]))
         }
         ast::Project::Star(Some(SqlIdent(var))) => Err(Unresolved::var(&var).into()),
-        ast::Project::Count(SqlIdent(alias)) => Ok(ProjectList::Agg(input, AggType::Count, alias, AlgebraicType::U64)),
+        ast::Project::Count(SqlIdent(alias)) => {
+            Ok(ProjectList::Agg(vec![input], AggType::Count, alias, AlgebraicType::U64))
+        }
         ast::Project::Exprs(elems) => {
             let mut projections = vec![];
             let mut names = HashSet::new();
@@ -71,7 +73,7 @@ pub(crate) fn type_proj(input: RelExpr, proj: ast::Project, vars: &Relvars) -> T
                 }
             }
 
-            Ok(ProjectList::List(input, projections))
+            Ok(ProjectList::List(vec![input], projections))
         }
     }
 }
