@@ -20,7 +20,7 @@ use durability::{Durability, EmptyHistory};
 use log::{info, trace, warn};
 use parking_lot::{Mutex, RwLock};
 use spacetimedb_data_structures::map::IntMap;
-use spacetimedb_durability as durability;
+use spacetimedb_durability::{self as durability, TxOffset};
 use spacetimedb_lib::hash_bytes;
 use spacetimedb_paths::server::{ReplicaDir, ServerDataDir};
 use spacetimedb_sats::hash::Hash;
@@ -43,9 +43,11 @@ type Hosts = Arc<Mutex<IntMap<u64, HostCell>>>;
 
 pub type ExternalDurability = (Arc<dyn Durability<TxData = Txdata>>, DiskSizeFn);
 
+pub type StartSnapshotWatcher = Box<dyn FnOnce(watch::Receiver<TxOffset>)>;
+
 #[async_trait]
 pub trait DurabilityProvider: Send + Sync + 'static {
-    async fn durability(&self, replica_id: u64) -> anyhow::Result<ExternalDurability>;
+    async fn durability(&self, replica_id: u64) -> anyhow::Result<(ExternalDurability, Option<StartSnapshotWatcher>)>;
 }
 
 #[async_trait]
@@ -709,16 +711,21 @@ impl Host {
                 let snapshot_repo =
                     relational_db::open_snapshot_repo(replica_dir.snapshots(), database.database_identity, replica_id)?;
                 let (history, _) = relational_db::local_durability(replica_dir.commit_log()).await?;
-                let durability = durability.durability(replica_id).await?;
+                let (durability, start_snapshot_watcher) = durability.durability(replica_id).await?;
 
-                RelationalDB::open(
+                let (db, clients) = RelationalDB::open(
                     &replica_dir,
                     database.database_identity,
                     database.owner_identity,
                     history,
                     Some(durability),
                     Some(snapshot_repo),
-                )?
+                )?;
+                if let Some(start_snapshot_watcher) = start_snapshot_watcher {
+                    let watcher = db.subscribe_to_snapshots().expect("we passed snapshot_repo");
+                    start_snapshot_watcher(watcher)
+                }
+                (db, clients)
             }
         };
         let (program, program_needs_init) = match db.program()? {

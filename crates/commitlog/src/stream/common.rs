@@ -8,42 +8,31 @@ use tokio::io::{
     AsyncBufRead, AsyncBufReadExt as _, AsyncRead, AsyncReadExt as _, AsyncSeek, AsyncSeekExt, AsyncWrite,
 };
 
-use crate::commit;
+use crate::{commit, repo::Repo};
 
-/// How to convert [`crate::repo::Segment`]s into async I/O types.
-pub trait IntoAsyncSegment {
-    type AsyncSegmentReader: AsyncBufRead + AsyncSeek + Unpin + Send;
-    type AsyncSegmentWriter: AsyncWrite + AsyncFsync + AsyncLen + Unpin + Send;
+/// How to convert [`crate::repo::SegmentWriter`]s into async I/O types.
+pub trait IntoAsyncWriter {
+    type AsyncWriter: AsyncWrite + AsyncFsync + AsyncLen + Unpin + Send;
 
-    fn into_async_reader(self) -> Self::AsyncSegmentReader;
-    fn into_async_writer(self) -> Self::AsyncSegmentWriter;
+    fn into_async_writer(self) -> Self::AsyncWriter;
 }
 
-impl IntoAsyncSegment for std::fs::File {
-    type AsyncSegmentReader = tokio::io::BufReader<tokio::fs::File>;
-    type AsyncSegmentWriter = tokio::io::BufWriter<tokio::fs::File>;
+impl IntoAsyncWriter for std::fs::File {
+    type AsyncWriter = tokio::io::BufWriter<tokio::fs::File>;
 
-    fn into_async_reader(self) -> Self::AsyncSegmentReader {
-        tokio::io::BufReader::new(tokio::fs::File::from_std(self))
-    }
-
-    fn into_async_writer(self) -> Self::AsyncSegmentWriter {
+    fn into_async_writer(self) -> Self::AsyncWriter {
         tokio::io::BufWriter::new(tokio::fs::File::from_std(self))
     }
 }
 
-#[cfg(any(test, feature = "test"))]
-impl IntoAsyncSegment for crate::repo::mem::Segment {
-    type AsyncSegmentReader = tokio::io::BufReader<crate::repo::mem::Segment>;
-    type AsyncSegmentWriter = tokio::io::BufWriter<crate::repo::mem::Segment>;
+pub trait AsyncRepo: Repo<SegmentWriter: IntoAsyncWriter<AsyncWriter = Self::AsyncSegmentWriter>> {
+    type AsyncSegmentWriter: AsyncWrite + AsyncSeek + AsyncFsync + AsyncLen + Unpin + Send;
+    type AsyncSegmentReader: AsyncBufRead + AsyncSeek + Unpin + Send;
 
-    fn into_async_reader(self) -> Self::AsyncSegmentReader {
-        tokio::io::BufReader::new(self)
-    }
-
-    fn into_async_writer(self) -> Self::AsyncSegmentWriter {
-        tokio::io::BufWriter::new(self)
-    }
+    fn open_segment_reader_async(
+        &self,
+        offset: u64,
+    ) -> impl Future<Output = io::Result<Self::AsyncSegmentReader>> + Send;
 }
 
 pub trait AsyncFsync {
@@ -60,11 +49,6 @@ impl AsyncFsync for tokio::fs::File {
     async fn fsync(&self) {
         self.sync_data().await.expect("fsync failed")
     }
-}
-
-#[cfg(any(test, feature = "test"))]
-impl AsyncFsync for crate::repo::mem::Segment {
-    async fn fsync(&self) {}
 }
 
 pub trait AsyncLen {
@@ -93,13 +77,6 @@ impl AsyncLen for tokio::fs::File {
         }
 
         Ok(len)
-    }
-}
-
-#[cfg(any(test, feature = "test"))]
-impl AsyncLen for crate::repo::mem::Segment {
-    async fn segment_len(&mut self) -> io::Result<u64> {
-        crate::repo::Segment::segment_len(self)
     }
 }
 

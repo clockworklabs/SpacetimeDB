@@ -10,7 +10,7 @@ use log::debug;
 
 use crate::{
     commitlog, error, payload,
-    repo::{self, Repo, Segment},
+    repo::{self, Repo, SegmentLen},
     segment::FileLike,
     tests::helpers::enable_logging,
     Commit, Encode, Options, DEFAULT_LOG_FORMAT_VERSION,
@@ -99,7 +99,7 @@ fn overwrite_reopen() {
     debug!("last commit: {last_commit:?}");
 
     {
-        let mut last_segment = repo.open_segment(last_segment_offset).unwrap();
+        let mut last_segment = repo.open_segment_writer(last_segment_offset).unwrap();
         let mut data = last_segment.buf_mut();
         let pos = data.len() - last_commit.encoded_len() + 1;
         data[pos] = 255;
@@ -169,7 +169,7 @@ impl ShortSegment {
     }
 }
 
-impl Segment for ShortSegment {
+impl SegmentLen for ShortSegment {
     fn segment_len(&mut self) -> io::Result<u64> {
         self.inner.segment_len()
     }
@@ -232,24 +232,33 @@ impl ShortMem {
 }
 
 impl Repo for ShortMem {
-    type Segment = ShortSegment;
+    type SegmentWriter = ShortSegment;
+    type SegmentReader = io::BufReader<repo::mem::Segment>;
 
-    fn create_segment(&self, offset: u64) -> io::Result<Self::Segment> {
+    fn create_segment(&self, offset: u64) -> io::Result<Self::SegmentWriter> {
         self.inner.create_segment(offset).map(|inner| ShortSegment {
             inner,
             max_len: self.max_len,
         })
     }
 
-    fn open_segment(&self, offset: u64) -> io::Result<Self::Segment> {
-        self.inner.open_segment(offset).map(|inner| ShortSegment {
+    fn open_segment_writer(&self, offset: u64) -> io::Result<Self::SegmentWriter> {
+        self.inner.open_segment_writer(offset).map(|inner| ShortSegment {
             inner,
             max_len: self.max_len,
         })
     }
 
+    fn open_segment_reader(&self, offset: u64) -> io::Result<Self::SegmentReader> {
+        self.inner.open_segment_reader(offset)
+    }
+
     fn remove_segment(&self, offset: u64) -> io::Result<()> {
         self.inner.remove_segment(offset)
+    }
+
+    fn compress_segment(&self, offset: u64) -> io::Result<()> {
+        self.inner.compress_segment(offset)
     }
 
     fn existing_offsets(&self) -> io::Result<Vec<u64>> {
