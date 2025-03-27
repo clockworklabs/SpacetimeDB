@@ -134,6 +134,7 @@ mod jemalloc_profiling {
 
 #[cfg(target_env = "msvc")]
 mod jemalloc_profiling {
+    use axum::response::IntoResponse;
     use http::StatusCode;
 
     async fn jemalloc_unsupported() -> impl IntoResponse {
@@ -146,9 +147,9 @@ mod jemalloc_profiling {
 
     pub fn jemalloc_router<S: Clone + Send + Sync + 'static>() -> axum::Router<S> {
         use axum::routing::get;
-        return axum::Router::new()
+        axum::Router::new()
             .route("/", get(jemalloc_unsupported))
-            .route("/settings", get(jemalloc_unsupported).post(jemalloc_unsupported));
+            .route("/settings", get(jemalloc_unsupported).post(jemalloc_unsupported))
     }
 }
 
