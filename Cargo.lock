@@ -5430,6 +5430,7 @@ dependencies = [
  "serde_json",
  "serial_test",
  "smallvec",
+ "spacetimedb-cli",
  "spacetimedb-data-structures",
  "spacetimedb-lib",
  "spacetimedb-primitives",
