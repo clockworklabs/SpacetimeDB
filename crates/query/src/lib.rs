@@ -7,6 +7,7 @@ use spacetimedb_execution::{
 use spacetimedb_expr::{
     check::{parse_and_type_sub, SchemaView},
     expr::ProjectList,
+    rls::resolve_views_for_sql,
     statement::{parse_and_type_sql, Statement, DML},
 };
 use spacetimedb_lib::{identity::AuthCtx, metrics::ExecutionMetrics, ProductValue};
@@ -50,7 +51,11 @@ pub fn compile_sql_stmt(sql: &str, tx: &impl SchemaView, auth: &AuthCtx) -> Resu
     if sql.len() > MAX_SQL_LENGTH {
         bail!("SQL query exceeds maximum allowed length: \"{sql:.120}...\"")
     }
-    Ok(parse_and_type_sql(sql, tx, auth)?)
+
+    match parse_and_type_sql(sql, tx, auth)? {
+        stmt @ Statement::DML(_) => Ok(stmt),
+        Statement::Select(expr) => Ok(Statement::Select(resolve_views_for_sql(tx, expr, auth)?)),
+    }
 }
 
 /// A utility for executing a sql select statement
