@@ -1,9 +1,10 @@
-use super::{ArgsTuple, InvalidReducerArguments, ReducerArgs, ReducerCallResult, ReducerId};
+use super::{ArgsTuple, InvalidReducerArguments, ReducerArgs, ReducerCallResult, ReducerId, ReducerOutcome};
 use crate::client::{ClientActorId, ClientConnectionSender};
 use crate::database_logger::{LogLevel, Record};
 use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::db::datastore::traits::{IsolationLevel, Program, TxData};
 use crate::energy::EnergyQuanta;
+use crate::error::DBError;
 use crate::estimation::estimate_rows_scanned;
 use crate::execution_context::{ExecutionContext, ReducerContext, Workload, WorkloadType};
 use crate::hash::Hash;
@@ -463,6 +464,18 @@ pub enum InitDatabaseError {
     Other(anyhow::Error),
 }
 
+#[derive(thiserror::Error, Debug)]
+pub enum ClientConnectedError {
+    #[error(transparent)]
+    ReducerCall(#[from] ReducerCallError),
+    #[error("Failed to insert st_client row for module without client_connected reducer: {0}")]
+    DBError(#[from] DBError),
+    #[error("Connection rejected by client_connected reducer: {0}")]
+    Rejected(String),
+    #[error("Insufficient energy balance to run client_connected reducer")]
+    OutOfEnergy,
+}
+
 impl ModuleHost {
     pub fn new(mut module: impl Module, on_panic: impl Fn() + Send + Sync + 'static) -> Self {
         let info = module.info();
@@ -518,33 +531,81 @@ impl ModuleHost {
         })
         .await;
         // ignore NoSuchModule; if the module's already closed, that's fine
-        let _ = self
-            .call_identity_connected_disconnected(client_id.identity, client_id.connection_id, false)
-            .await;
+        if let Err(e) = self
+            .call_identity_disconnected(client_id.identity, client_id.connection_id)
+            .await
+        {
+            log::error!("Error from client_disconnected transaction: {e}");
+        }
     }
 
-    /// Method is responsible for handling connect/disconnect events.
+    /// Invoke the module's `client_connected` reducer, if it has one,
+    /// and insert a new row into `st_client` for `(caller_identity, caller_connection_id)`.
     ///
-    /// It ensures pairing up those event in commitlogs
-    /// Though It can also create two entries `__identity_disconnect__`.
-    /// One is to actually run the reducer and another one to delete client from `st_clients`
-    pub async fn call_identity_connected_disconnected(
+    /// The host inspects `st_client` when restarting in order to run `client_disconnected` reducers
+    /// for clients that were connected at the time when the host went down.
+    /// This ensures that every client connection eventually has `client_disconnected` invoked.
+    ///
+    /// If this method returns `Ok`, then the client connection has been approved,
+    /// and the new row has been inserted into `st_client`.
+    ///
+    /// If this method returns `Err`, then the client connection has either failed or been rejected,
+    /// and `st_client` has not been modified.
+    /// In this case, the caller should terminate the connection.
+    pub async fn call_identity_connected(
         &self,
         caller_identity: Identity,
         caller_connection_id: ConnectionId,
-        connected: bool,
-    ) -> Result<(), ReducerCallError> {
-        let (lifecycle, fake_name) = if connected {
-            (Lifecycle::OnConnect, "__identity_connected__")
+    ) -> Result<(), ClientConnectedError> {
+        let reducer_lookup = self.info.module_def.lifecycle_reducer(Lifecycle::OnConnect);
+
+        if let Some((reducer_id, reducer_def)) = reducer_lookup {
+            // The module defined a lifecycle reducer to handle new connections.
+            // Call this reducer.
+            // If the call fails (as in, something unexpectedly goes wrong with WASM execution),
+            // abort the connection: we can't really recover.
+            let reducer_outcome = self
+                .call_reducer_inner(
+                    caller_identity,
+                    Some(caller_connection_id),
+                    None,
+                    None,
+                    None,
+                    reducer_id,
+                    reducer_def,
+                    ReducerArgs::Nullary,
+                )
+                .await?;
+
+            match reducer_outcome.outcome {
+                // If the reducer committed successfully, we're done.
+                // `WasmModuleInstance::call_reducer_with_tx` has already ensured
+                // that `st_client` is updated appropriately.
+                //
+                // It's necessary to spread out the responsibility for updating `st_client` in this way
+                // because it's important that `call_identity_connected` commit at most one transaction.
+                // A naive implementation of this method would just run the reducer first,
+                // then insert into `st_client`,
+                // but if we crashed in between, we'd be left in an inconsistent state
+                // where the reducer had run but `st_client` was not yet updated.
+                ReducerOutcome::Committed => Ok(()),
+
+                // If the reducer returned an error or couldn't run due to insufficient energy,
+                // abort the connection: the module code has decided it doesn't want this client.
+                ReducerOutcome::Failed(message) => Err(ClientConnectedError::Rejected(message)),
+                ReducerOutcome::BudgetExceeded => Err(ClientConnectedError::OutOfEnergy),
+            }
         } else {
-            (Lifecycle::OnDisconnect, "__identity_disconnected__")
-        };
+            // The module doesn't define a client_connected reducer.
+            // Commit a transaction to update `st_clients`
+            // and to ensure we always have those events paired in the commitlog.
+            //
+            // This is necessary to be able to disconnect clients after a server crash.
+            let reducer_name = reducer_lookup
+                .as_ref()
+                .map(|(_, def)| &*def.name)
+                .unwrap_or("__identity_connected__");
 
-        let reducer_lookup = self.info.module_def.lifecycle_reducer(lifecycle);
-        let reducer_name = reducer_lookup.as_ref().map(|(_, def)| &*def.name).unwrap_or(fake_name);
-
-        // A fallback transaction that either inserts or deletes the connected client from `st_client`.
-        let fallback = || {
             let workload = Workload::Reducer(ReducerContext {
                 name: reducer_name.to_owned(),
                 caller_identity,
@@ -556,17 +617,67 @@ impl ModuleHost {
                 .replica_ctx()
                 .relational_db
                 .with_auto_commit(workload, |mut_tx| {
-                    if connected {
-                        mut_tx.insert_st_client(caller_identity, caller_connection_id)
-                    } else {
-                        mut_tx.delete_st_client(caller_identity, caller_connection_id)
+                    mut_tx.insert_st_client(caller_identity, caller_connection_id)
+                })
+                .map_err(Into::into)
+        }
+    }
+
+    /// Invoke the module's `client_disconnected` reducer, if it has one,
+    /// and delete the client's row from `st_client`, if any.
+    ///
+    /// The host inspects `st_client` when restarting in order to run `client_disconnected` reducers
+    /// for clients that were connected at the time when the host went down.
+    /// This ensures that every client connection eventually has `client_disconnected` invoked.
+    ///
+    /// Unlike [`Self::call_identity_connected`],
+    /// this method swallows errors returned by the `client_disconnected` reducer.
+    /// The database can't reject a disconnection - the client's gone, whether the database likes it or not.
+    ///
+    /// If this method returns an error, the database is likely to wind up in a bad state,
+    /// as that means we've somehow failed to delete from `st_client`.
+    /// We cannot meaningfully handle this.
+    /// Sometimes it just means that the database no longer exists, though, which is fine.
+    pub async fn call_identity_disconnected(
+        &self,
+        caller_identity: Identity,
+        caller_connection_id: ConnectionId,
+    ) -> Result<(), ReducerCallError> {
+        let reducer_lookup = self.info.module_def.lifecycle_reducer(Lifecycle::OnDisconnect);
+
+        // A fallback transaction that either deletes the client from `st_client`.
+        let fallback = || {
+            let reducer_name = reducer_lookup
+                .as_ref()
+                .map(|(_, def)| &*def.name)
+                .unwrap_or("__identity_disconnected__");
+
+            let workload = Workload::Reducer(ReducerContext {
+                name: reducer_name.to_owned(),
+                caller_identity,
+                caller_connection_id,
+                timestamp: Timestamp::now(),
+                arg_bsatn: Bytes::new(),
+            });
+            self.inner
+                .replica_ctx()
+                .relational_db
+                .with_auto_commit(workload, |mut_tx| {
+                    mut_tx.delete_st_client(caller_identity, caller_connection_id)
+                })
+                .map_err(|err| {
+                    InvalidReducerArguments {
+                        err: err.into(),
+                        reducer: reducer_name.into(),
                     }
+                    .into()
                 })
         };
 
         if let Some((reducer_id, reducer_def)) = reducer_lookup {
-            // The module defined a lifecycle reducer to handle connect/disconnects.
-            // In the first instance use this reducer...
+            // The module defined a lifecycle reducer to handle disconnects. Call it.
+            // If it succeeds, `WasmModuleInstance::call_reducer_with_tx` has already ensured
+            // that `st_client` is updated appropriately.
             self.call_reducer_inner(
                 caller_identity,
                 Some(caller_connection_id),
@@ -579,26 +690,20 @@ impl ModuleHost {
             )
             .await
             .map(drop)
-            .inspect_err(|_| {
-                // ...but it has failed, so we treat this as if the reducer didn't exist
-                // and commit a separate transaction instead.
-                let _ = fallback().map_err(|e| {
-                    log::error!("st_clients table update failed with params with error: {:?}", e);
-                });
+            .or_else(|_| {
+                // If it failed, we still need to update `st_client`: the client's not coming back.
+                // Commit a separate transaction that just updates `st_client`.
+                //
+                // It's OK for this to not be atomic with the previous transaction,
+                // since that transaction didn't commit. If we crash before committing this one,
+                // we'll run the `client_disconnected` reducer again unnecessarily,
+                // but the commitlog won't contain two invocations of it, which is what we care about.
+                fallback()
             })
         } else {
-            // The module doesn't define connected.
-            // Commit a transaction to update `st_clients`
-            // and to ensure we always have those events paired in the commitlog.
-            //
-            // This is necessary to be able to disconnect clients after a server crash.
-            fallback().map_err(|err| {
-                InvalidReducerArguments {
-                    err: err.into(),
-                    reducer: reducer_name.into(),
-                }
-                .into()
-            })
+            // The module doesn't define a `client_disconnected` reducer.
+            // Commit a transaction to update `st_clients`.
+            fallback()
         }
     }
 
