@@ -2,26 +2,18 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct InsertOptionStringArgs {
-    pub s: Option::<String>,
+    pub s: Option<String>,
 }
 
 impl From<InsertOptionStringArgs> for super::Reducer {
     fn from(args: InsertOptionStringArgs) -> Self {
-        Self::InsertOptionString {
-            s: args.s,
-}
-}
+        Self::InsertOptionString { s: args.s }
+    }
 }
 
 impl __sdk::InModule for InsertOptionStringArgs {
@@ -40,8 +32,7 @@ pub trait insert_option_string {
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed by listening for [`Self::on_insert_option_string`] callbacks.
-    fn insert_option_string(&self, s: Option::<String>,
-) -> __sdk::Result<()>;
+    fn insert_option_string(&self, s: Option<String>) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `insert_option_string`.
     ///
     /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
@@ -49,34 +40,39 @@ pub trait insert_option_string {
     ///
     /// The returned [`InsertOptionStringCallbackId`] can be passed to [`Self::remove_on_insert_option_string`]
     /// to cancel the callback.
-    fn on_insert_option_string(&self, callback: impl FnMut(&super::ReducerEventContext, &Option::<String>, ) + Send + 'static) -> InsertOptionStringCallbackId;
+    fn on_insert_option_string(
+        &self,
+        callback: impl FnMut(&super::ReducerEventContext, &Option<String>) + Send + 'static,
+    ) -> InsertOptionStringCallbackId;
     /// Cancel a callback previously registered by [`Self::on_insert_option_string`],
     /// causing it not to run in the future.
     fn remove_on_insert_option_string(&self, callback: InsertOptionStringCallbackId);
 }
 
 impl insert_option_string for super::RemoteReducers {
-    fn insert_option_string(&self, s: Option::<String>,
-) -> __sdk::Result<()> {
-        self.imp.call_reducer("insert_option_string", InsertOptionStringArgs { s,  })
+    fn insert_option_string(&self, s: Option<String>) -> __sdk::Result<()> {
+        self.imp
+            .call_reducer("insert_option_string", InsertOptionStringArgs { s })
     }
     fn on_insert_option_string(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &Option::<String>, ) + Send + 'static,
+        mut callback: impl FnMut(&super::ReducerEventContext, &Option<String>) + Send + 'static,
     ) -> InsertOptionStringCallbackId {
         InsertOptionStringCallbackId(self.imp.on_reducer(
             "insert_option_string",
             Box::new(move |ctx: &super::ReducerEventContext| {
                 let super::ReducerEventContext {
-                    event: __sdk::ReducerEvent {
-                        reducer: super::Reducer::InsertOptionString {
-                            s, 
+                    event:
+                        __sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertOptionString { s },
+                            ..
                         },
-                        ..
-                    },
                     ..
-                } = ctx else { unreachable!() };
-                callback(ctx, s, )
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, s)
             }),
         ))
     }
@@ -104,4 +100,3 @@ impl set_flags_for_insert_option_string for super::SetReducerFlags {
         self.imp.set_call_reducer_flags("insert_option_string", flags);
     }
 }
-

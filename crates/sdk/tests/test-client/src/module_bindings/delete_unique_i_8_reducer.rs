@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -18,10 +12,8 @@ pub(super) struct DeleteUniqueI8Args {
 
 impl From<DeleteUniqueI8Args> for super::Reducer {
     fn from(args: DeleteUniqueI8Args) -> Self {
-        Self::DeleteUniqueI8 {
-            n: args.n,
-}
-}
+        Self::DeleteUniqueI8 { n: args.n }
+    }
 }
 
 impl __sdk::InModule for DeleteUniqueI8Args {
@@ -40,8 +32,7 @@ pub trait delete_unique_i_8 {
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed by listening for [`Self::on_delete_unique_i_8`] callbacks.
-    fn delete_unique_i_8(&self, n: i8,
-) -> __sdk::Result<()>;
+    fn delete_unique_i_8(&self, n: i8) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `delete_unique_i8`.
     ///
     /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
@@ -49,34 +40,38 @@ pub trait delete_unique_i_8 {
     ///
     /// The returned [`DeleteUniqueI8CallbackId`] can be passed to [`Self::remove_on_delete_unique_i_8`]
     /// to cancel the callback.
-    fn on_delete_unique_i_8(&self, callback: impl FnMut(&super::ReducerEventContext, &i8, ) + Send + 'static) -> DeleteUniqueI8CallbackId;
+    fn on_delete_unique_i_8(
+        &self,
+        callback: impl FnMut(&super::ReducerEventContext, &i8) + Send + 'static,
+    ) -> DeleteUniqueI8CallbackId;
     /// Cancel a callback previously registered by [`Self::on_delete_unique_i_8`],
     /// causing it not to run in the future.
     fn remove_on_delete_unique_i_8(&self, callback: DeleteUniqueI8CallbackId);
 }
 
 impl delete_unique_i_8 for super::RemoteReducers {
-    fn delete_unique_i_8(&self, n: i8,
-) -> __sdk::Result<()> {
-        self.imp.call_reducer("delete_unique_i8", DeleteUniqueI8Args { n,  })
+    fn delete_unique_i_8(&self, n: i8) -> __sdk::Result<()> {
+        self.imp.call_reducer("delete_unique_i8", DeleteUniqueI8Args { n })
     }
     fn on_delete_unique_i_8(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &i8, ) + Send + 'static,
+        mut callback: impl FnMut(&super::ReducerEventContext, &i8) + Send + 'static,
     ) -> DeleteUniqueI8CallbackId {
         DeleteUniqueI8CallbackId(self.imp.on_reducer(
             "delete_unique_i8",
             Box::new(move |ctx: &super::ReducerEventContext| {
                 let super::ReducerEventContext {
-                    event: __sdk::ReducerEvent {
-                        reducer: super::Reducer::DeleteUniqueI8 {
-                            n, 
+                    event:
+                        __sdk::ReducerEvent {
+                            reducer: super::Reducer::DeleteUniqueI8 { n },
+                            ..
                         },
-                        ..
-                    },
                     ..
-                } = ctx else { unreachable!() };
-                callback(ctx, n, )
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, n)
             }),
         ))
     }
@@ -104,4 +99,3 @@ impl set_flags_for_delete_unique_i_8 for super::SetReducerFlags {
         self.imp.set_call_reducer_flags("delete_unique_i8", flags);
     }
 }
-

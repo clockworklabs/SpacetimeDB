@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -18,10 +12,8 @@ pub(super) struct InsertOneBoolArgs {
 
 impl From<InsertOneBoolArgs> for super::Reducer {
     fn from(args: InsertOneBoolArgs) -> Self {
-        Self::InsertOneBool {
-            b: args.b,
-}
-}
+        Self::InsertOneBool { b: args.b }
+    }
 }
 
 impl __sdk::InModule for InsertOneBoolArgs {
@@ -40,8 +32,7 @@ pub trait insert_one_bool {
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed by listening for [`Self::on_insert_one_bool`] callbacks.
-    fn insert_one_bool(&self, b: bool,
-) -> __sdk::Result<()>;
+    fn insert_one_bool(&self, b: bool) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `insert_one_bool`.
     ///
     /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
@@ -49,34 +40,38 @@ pub trait insert_one_bool {
     ///
     /// The returned [`InsertOneBoolCallbackId`] can be passed to [`Self::remove_on_insert_one_bool`]
     /// to cancel the callback.
-    fn on_insert_one_bool(&self, callback: impl FnMut(&super::ReducerEventContext, &bool, ) + Send + 'static) -> InsertOneBoolCallbackId;
+    fn on_insert_one_bool(
+        &self,
+        callback: impl FnMut(&super::ReducerEventContext, &bool) + Send + 'static,
+    ) -> InsertOneBoolCallbackId;
     /// Cancel a callback previously registered by [`Self::on_insert_one_bool`],
     /// causing it not to run in the future.
     fn remove_on_insert_one_bool(&self, callback: InsertOneBoolCallbackId);
 }
 
 impl insert_one_bool for super::RemoteReducers {
-    fn insert_one_bool(&self, b: bool,
-) -> __sdk::Result<()> {
-        self.imp.call_reducer("insert_one_bool", InsertOneBoolArgs { b,  })
+    fn insert_one_bool(&self, b: bool) -> __sdk::Result<()> {
+        self.imp.call_reducer("insert_one_bool", InsertOneBoolArgs { b })
     }
     fn on_insert_one_bool(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &bool, ) + Send + 'static,
+        mut callback: impl FnMut(&super::ReducerEventContext, &bool) + Send + 'static,
     ) -> InsertOneBoolCallbackId {
         InsertOneBoolCallbackId(self.imp.on_reducer(
             "insert_one_bool",
             Box::new(move |ctx: &super::ReducerEventContext| {
                 let super::ReducerEventContext {
-                    event: __sdk::ReducerEvent {
-                        reducer: super::Reducer::InsertOneBool {
-                            b, 
+                    event:
+                        __sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertOneBool { b },
+                            ..
                         },
-                        ..
-                    },
                     ..
-                } = ctx else { unreachable!() };
-                callback(ctx, b, )
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, b)
             }),
         ))
     }
@@ -104,4 +99,3 @@ impl set_flags_for_insert_one_bool for super::SetReducerFlags {
         self.imp.set_call_reducer_flags("insert_one_bool", flags);
     }
 }
-

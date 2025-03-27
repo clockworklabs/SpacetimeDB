@@ -2,23 +2,16 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub(super) struct InsertCallerOneIdentityArgs {
-    }
+pub(super) struct InsertCallerOneIdentityArgs {}
 
 impl From<InsertCallerOneIdentityArgs> for super::Reducer {
     fn from(args: InsertCallerOneIdentityArgs) -> Self {
         Self::InsertCallerOneIdentity
-}
+    }
 }
 
 impl __sdk::InModule for InsertCallerOneIdentityArgs {
@@ -37,7 +30,7 @@ pub trait insert_caller_one_identity {
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed by listening for [`Self::on_insert_caller_one_identity`] callbacks.
-    fn insert_caller_one_identity(&self, ) -> __sdk::Result<()>;
+    fn insert_caller_one_identity(&self) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `insert_caller_one_identity`.
     ///
     /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
@@ -45,33 +38,39 @@ pub trait insert_caller_one_identity {
     ///
     /// The returned [`InsertCallerOneIdentityCallbackId`] can be passed to [`Self::remove_on_insert_caller_one_identity`]
     /// to cancel the callback.
-    fn on_insert_caller_one_identity(&self, callback: impl FnMut(&super::ReducerEventContext, ) + Send + 'static) -> InsertCallerOneIdentityCallbackId;
+    fn on_insert_caller_one_identity(
+        &self,
+        callback: impl FnMut(&super::ReducerEventContext) + Send + 'static,
+    ) -> InsertCallerOneIdentityCallbackId;
     /// Cancel a callback previously registered by [`Self::on_insert_caller_one_identity`],
     /// causing it not to run in the future.
     fn remove_on_insert_caller_one_identity(&self, callback: InsertCallerOneIdentityCallbackId);
 }
 
 impl insert_caller_one_identity for super::RemoteReducers {
-    fn insert_caller_one_identity(&self, ) -> __sdk::Result<()> {
-        self.imp.call_reducer("insert_caller_one_identity", InsertCallerOneIdentityArgs {  })
+    fn insert_caller_one_identity(&self) -> __sdk::Result<()> {
+        self.imp
+            .call_reducer("insert_caller_one_identity", InsertCallerOneIdentityArgs {})
     }
     fn on_insert_caller_one_identity(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, ) + Send + 'static,
+        mut callback: impl FnMut(&super::ReducerEventContext) + Send + 'static,
     ) -> InsertCallerOneIdentityCallbackId {
         InsertCallerOneIdentityCallbackId(self.imp.on_reducer(
             "insert_caller_one_identity",
             Box::new(move |ctx: &super::ReducerEventContext| {
                 let super::ReducerEventContext {
-                    event: __sdk::ReducerEvent {
-                        reducer: super::Reducer::InsertCallerOneIdentity {
-                            
+                    event:
+                        __sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertCallerOneIdentity {},
+                            ..
                         },
-                        ..
-                    },
                     ..
-                } = ctx else { unreachable!() };
-                callback(ctx, )
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx)
             }),
         ))
     }
@@ -99,4 +98,3 @@ impl set_flags_for_insert_caller_one_identity for super::SetReducerFlags {
         self.imp.set_call_reducer_flags("insert_caller_one_identity", flags);
     }
 }
-

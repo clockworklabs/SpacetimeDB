@@ -2,13 +2,8 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
 use super::unique_u_16_type::UniqueU16;
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `unique_u16`.
 ///
@@ -49,8 +44,12 @@ impl<'ctx> __sdk::Table for UniqueU16TableHandle<'ctx> {
     type Row = UniqueU16;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 { self.imp.count() }
-    fn iter(&self) -> impl Iterator<Item = UniqueU16> + '_ { self.imp.iter() }
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = UniqueU16> + '_ {
+        self.imp.iter()
+    }
 
     type InsertCallbackId = UniqueU16InsertCallbackId;
 
@@ -81,8 +80,7 @@ impl<'ctx> __sdk::Table for UniqueU16TableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-
-        let _table = client_cache.get_or_make_table::<UniqueU16>("unique_u16");
+    let _table = client_cache.get_or_make_table::<UniqueU16>("unique_u16");
     _table.add_unique_constraint::<u16>("n", |row| &row.n);
 }
 
@@ -91,40 +89,38 @@ pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
 ) -> __sdk::Result<__sdk::TableUpdate<UniqueU16>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse(
-            "TableUpdate<UniqueU16>",
-            "TableUpdate",
-        ).with_cause(e).into()
+        __sdk::InternalError::failed_parse("TableUpdate<UniqueU16>", "TableUpdate")
+            .with_cause(e)
+            .into()
     })
 }
 
-        /// Access to the `n` unique index on the table `unique_u16`,
-        /// which allows point queries on the field of the same name
-        /// via the [`UniqueU16NUnique::find`] method.
-        ///
-        /// Users are encouraged not to explicitly reference this type,
-        /// but to directly chain method calls,
-        /// like `ctx.db.unique_u_16().n().find(...)`.
-        pub struct UniqueU16NUnique<'ctx> {
-            imp: __sdk::UniqueConstraintHandle<UniqueU16, u16>,
-            phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
-        }
+/// Access to the `n` unique index on the table `unique_u16`,
+/// which allows point queries on the field of the same name
+/// via the [`UniqueU16NUnique::find`] method.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.unique_u_16().n().find(...)`.
+pub struct UniqueU16NUnique<'ctx> {
+    imp: __sdk::UniqueConstraintHandle<UniqueU16, u16>,
+    phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
+}
 
-        impl<'ctx> UniqueU16TableHandle<'ctx> {
-            /// Get a handle on the `n` unique index on the table `unique_u16`.
-            pub fn n(&self) -> UniqueU16NUnique<'ctx> {
-                UniqueU16NUnique {
-                    imp: self.imp.get_unique_constraint::<u16>("n"),
-                    phantom: std::marker::PhantomData,
-                }
-            }
+impl<'ctx> UniqueU16TableHandle<'ctx> {
+    /// Get a handle on the `n` unique index on the table `unique_u16`.
+    pub fn n(&self) -> UniqueU16NUnique<'ctx> {
+        UniqueU16NUnique {
+            imp: self.imp.get_unique_constraint::<u16>("n"),
+            phantom: std::marker::PhantomData,
         }
+    }
+}
 
-        impl<'ctx> UniqueU16NUnique<'ctx> {
-            /// Find the subscribed row whose `n` column value is equal to `col_val`,
-            /// if such a row is present in the client cache.
-            pub fn find(&self, col_val: &u16) -> Option<UniqueU16> {
-                self.imp.find(col_val)
-            }
-        }
-        
+impl<'ctx> UniqueU16NUnique<'ctx> {
+    /// Find the subscribed row whose `n` column value is equal to `col_val`,
+    /// if such a row is present in the client cache.
+    pub fn find(&self, col_val: &u16) -> Option<UniqueU16> {
+        self.imp.find(col_val)
+    }
+}

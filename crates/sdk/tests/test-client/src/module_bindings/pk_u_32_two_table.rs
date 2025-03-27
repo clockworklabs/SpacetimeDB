@@ -2,13 +2,8 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
 use super::pk_u_32_two_type::PkU32Two;
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `pk_u32_two`.
 ///
@@ -49,8 +44,12 @@ impl<'ctx> __sdk::Table for PkU32TwoTableHandle<'ctx> {
     type Row = PkU32Two;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 { self.imp.count() }
-    fn iter(&self) -> impl Iterator<Item = PkU32Two> + '_ { self.imp.iter() }
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = PkU32Two> + '_ {
+        self.imp.iter()
+    }
 
     type InsertCallbackId = PkU32TwoInsertCallbackId;
 
@@ -81,8 +80,7 @@ impl<'ctx> __sdk::Table for PkU32TwoTableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-
-        let _table = client_cache.get_or_make_table::<PkU32Two>("pk_u32_two");
+    let _table = client_cache.get_or_make_table::<PkU32Two>("pk_u32_two");
     _table.add_unique_constraint::<u32>("n", |row| &row.n);
 }
 pub struct PkU32TwoUpdateCallbackId(__sdk::CallbackId);
@@ -102,46 +100,43 @@ impl<'ctx> __sdk::TableWithPrimaryKey for PkU32TwoTableHandle<'ctx> {
     }
 }
 
-
 #[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
 ) -> __sdk::Result<__sdk::TableUpdate<PkU32Two>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse(
-            "TableUpdate<PkU32Two>",
-            "TableUpdate",
-        ).with_cause(e).into()
+        __sdk::InternalError::failed_parse("TableUpdate<PkU32Two>", "TableUpdate")
+            .with_cause(e)
+            .into()
     })
 }
 
-        /// Access to the `n` unique index on the table `pk_u32_two`,
-        /// which allows point queries on the field of the same name
-        /// via the [`PkU32TwoNUnique::find`] method.
-        ///
-        /// Users are encouraged not to explicitly reference this type,
-        /// but to directly chain method calls,
-        /// like `ctx.db.pk_u_32_two().n().find(...)`.
-        pub struct PkU32TwoNUnique<'ctx> {
-            imp: __sdk::UniqueConstraintHandle<PkU32Two, u32>,
-            phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
-        }
+/// Access to the `n` unique index on the table `pk_u32_two`,
+/// which allows point queries on the field of the same name
+/// via the [`PkU32TwoNUnique::find`] method.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.pk_u_32_two().n().find(...)`.
+pub struct PkU32TwoNUnique<'ctx> {
+    imp: __sdk::UniqueConstraintHandle<PkU32Two, u32>,
+    phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
+}
 
-        impl<'ctx> PkU32TwoTableHandle<'ctx> {
-            /// Get a handle on the `n` unique index on the table `pk_u32_two`.
-            pub fn n(&self) -> PkU32TwoNUnique<'ctx> {
-                PkU32TwoNUnique {
-                    imp: self.imp.get_unique_constraint::<u32>("n"),
-                    phantom: std::marker::PhantomData,
-                }
-            }
+impl<'ctx> PkU32TwoTableHandle<'ctx> {
+    /// Get a handle on the `n` unique index on the table `pk_u32_two`.
+    pub fn n(&self) -> PkU32TwoNUnique<'ctx> {
+        PkU32TwoNUnique {
+            imp: self.imp.get_unique_constraint::<u32>("n"),
+            phantom: std::marker::PhantomData,
         }
+    }
+}
 
-        impl<'ctx> PkU32TwoNUnique<'ctx> {
-            /// Find the subscribed row whose `n` column value is equal to `col_val`,
-            /// if such a row is present in the client cache.
-            pub fn find(&self, col_val: &u32) -> Option<PkU32Two> {
-                self.imp.find(col_val)
-            }
-        }
-        
+impl<'ctx> PkU32TwoNUnique<'ctx> {
+    /// Find the subscribed row whose `n` column value is equal to `col_val`,
+    /// if such a row is present in the client cache.
+    pub fn find(&self, col_val: &u32) -> Option<PkU32Two> {
+        self.imp.find(col_val)
+    }
+}

@@ -2,13 +2,8 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
 use super::indexed_table_type::IndexedTable;
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `indexed_table`.
 ///
@@ -49,8 +44,12 @@ impl<'ctx> __sdk::Table for IndexedTableTableHandle<'ctx> {
     type Row = IndexedTable;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 { self.imp.count() }
-    fn iter(&self) -> impl Iterator<Item = IndexedTable> + '_ { self.imp.iter() }
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = IndexedTable> + '_ {
+        self.imp.iter()
+    }
 
     type InsertCallbackId = IndexedTableInsertCallbackId;
 
@@ -81,8 +80,7 @@ impl<'ctx> __sdk::Table for IndexedTableTableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-
-        let _table = client_cache.get_or_make_table::<IndexedTable>("indexed_table");
+    let _table = client_cache.get_or_make_table::<IndexedTable>("indexed_table");
 }
 
 #[doc(hidden)]
@@ -90,9 +88,8 @@ pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
 ) -> __sdk::Result<__sdk::TableUpdate<IndexedTable>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse(
-            "TableUpdate<IndexedTable>",
-            "TableUpdate",
-        ).with_cause(e).into()
+        __sdk::InternalError::failed_parse("TableUpdate<IndexedTable>", "TableUpdate")
+            .with_cause(e)
+            .into()
     })
 }

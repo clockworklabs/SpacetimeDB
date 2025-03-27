@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -22,8 +16,8 @@ impl From<UpdatePkConnectionIdArgs> for super::Reducer {
         Self::UpdatePkConnectionId {
             a: args.a,
             data: args.data,
-}
-}
+        }
+    }
 }
 
 impl __sdk::InModule for UpdatePkConnectionIdArgs {
@@ -42,9 +36,7 @@ pub trait update_pk_connection_id {
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed by listening for [`Self::on_update_pk_connection_id`] callbacks.
-    fn update_pk_connection_id(&self, a: __sdk::ConnectionId,
-data: i32,
-) -> __sdk::Result<()>;
+    fn update_pk_connection_id(&self, a: __sdk::ConnectionId, data: i32) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `update_pk_connection_id`.
     ///
     /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
@@ -52,35 +44,39 @@ data: i32,
     ///
     /// The returned [`UpdatePkConnectionIdCallbackId`] can be passed to [`Self::remove_on_update_pk_connection_id`]
     /// to cancel the callback.
-    fn on_update_pk_connection_id(&self, callback: impl FnMut(&super::ReducerEventContext, &__sdk::ConnectionId, &i32, ) + Send + 'static) -> UpdatePkConnectionIdCallbackId;
+    fn on_update_pk_connection_id(
+        &self,
+        callback: impl FnMut(&super::ReducerEventContext, &__sdk::ConnectionId, &i32) + Send + 'static,
+    ) -> UpdatePkConnectionIdCallbackId;
     /// Cancel a callback previously registered by [`Self::on_update_pk_connection_id`],
     /// causing it not to run in the future.
     fn remove_on_update_pk_connection_id(&self, callback: UpdatePkConnectionIdCallbackId);
 }
 
 impl update_pk_connection_id for super::RemoteReducers {
-    fn update_pk_connection_id(&self, a: __sdk::ConnectionId,
-data: i32,
-) -> __sdk::Result<()> {
-        self.imp.call_reducer("update_pk_connection_id", UpdatePkConnectionIdArgs { a, data,  })
+    fn update_pk_connection_id(&self, a: __sdk::ConnectionId, data: i32) -> __sdk::Result<()> {
+        self.imp
+            .call_reducer("update_pk_connection_id", UpdatePkConnectionIdArgs { a, data })
     }
     fn on_update_pk_connection_id(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &__sdk::ConnectionId, &i32, ) + Send + 'static,
+        mut callback: impl FnMut(&super::ReducerEventContext, &__sdk::ConnectionId, &i32) + Send + 'static,
     ) -> UpdatePkConnectionIdCallbackId {
         UpdatePkConnectionIdCallbackId(self.imp.on_reducer(
             "update_pk_connection_id",
             Box::new(move |ctx: &super::ReducerEventContext| {
                 let super::ReducerEventContext {
-                    event: __sdk::ReducerEvent {
-                        reducer: super::Reducer::UpdatePkConnectionId {
-                            a, data, 
+                    event:
+                        __sdk::ReducerEvent {
+                            reducer: super::Reducer::UpdatePkConnectionId { a, data },
+                            ..
                         },
-                        ..
-                    },
                     ..
-                } = ctx else { unreachable!() };
-                callback(ctx, a, data, )
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, a, data)
             }),
         ))
     }
@@ -108,4 +104,3 @@ impl set_flags_for_update_pk_connection_id for super::SetReducerFlags {
         self.imp.set_call_reducer_flags("update_pk_connection_id", flags);
     }
 }
-

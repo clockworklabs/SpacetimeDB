@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -18,10 +12,8 @@ pub(super) struct InsertOneU256Args {
 
 impl From<InsertOneU256Args> for super::Reducer {
     fn from(args: InsertOneU256Args) -> Self {
-        Self::InsertOneU256 {
-            n: args.n,
-}
-}
+        Self::InsertOneU256 { n: args.n }
+    }
 }
 
 impl __sdk::InModule for InsertOneU256Args {
@@ -40,8 +32,7 @@ pub trait insert_one_u_256 {
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed by listening for [`Self::on_insert_one_u_256`] callbacks.
-    fn insert_one_u_256(&self, n: __sats::u256,
-) -> __sdk::Result<()>;
+    fn insert_one_u_256(&self, n: __sats::u256) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `insert_one_u256`.
     ///
     /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
@@ -49,34 +40,38 @@ pub trait insert_one_u_256 {
     ///
     /// The returned [`InsertOneU256CallbackId`] can be passed to [`Self::remove_on_insert_one_u_256`]
     /// to cancel the callback.
-    fn on_insert_one_u_256(&self, callback: impl FnMut(&super::ReducerEventContext, &__sats::u256, ) + Send + 'static) -> InsertOneU256CallbackId;
+    fn on_insert_one_u_256(
+        &self,
+        callback: impl FnMut(&super::ReducerEventContext, &__sats::u256) + Send + 'static,
+    ) -> InsertOneU256CallbackId;
     /// Cancel a callback previously registered by [`Self::on_insert_one_u_256`],
     /// causing it not to run in the future.
     fn remove_on_insert_one_u_256(&self, callback: InsertOneU256CallbackId);
 }
 
 impl insert_one_u_256 for super::RemoteReducers {
-    fn insert_one_u_256(&self, n: __sats::u256,
-) -> __sdk::Result<()> {
-        self.imp.call_reducer("insert_one_u256", InsertOneU256Args { n,  })
+    fn insert_one_u_256(&self, n: __sats::u256) -> __sdk::Result<()> {
+        self.imp.call_reducer("insert_one_u256", InsertOneU256Args { n })
     }
     fn on_insert_one_u_256(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &__sats::u256, ) + Send + 'static,
+        mut callback: impl FnMut(&super::ReducerEventContext, &__sats::u256) + Send + 'static,
     ) -> InsertOneU256CallbackId {
         InsertOneU256CallbackId(self.imp.on_reducer(
             "insert_one_u256",
             Box::new(move |ctx: &super::ReducerEventContext| {
                 let super::ReducerEventContext {
-                    event: __sdk::ReducerEvent {
-                        reducer: super::Reducer::InsertOneU256 {
-                            n, 
+                    event:
+                        __sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertOneU256 { n },
+                            ..
                         },
-                        ..
-                    },
                     ..
-                } = ctx else { unreachable!() };
-                callback(ctx, n, )
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, n)
             }),
         ))
     }
@@ -104,4 +99,3 @@ impl set_flags_for_insert_one_u_256 for super::SetReducerFlags {
         self.imp.set_call_reducer_flags("insert_one_u256", flags);
     }
 }
-

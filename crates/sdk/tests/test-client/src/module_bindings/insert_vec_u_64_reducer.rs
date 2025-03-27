@@ -2,26 +2,18 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct InsertVecU64Args {
-    pub n: Vec::<u64>,
+    pub n: Vec<u64>,
 }
 
 impl From<InsertVecU64Args> for super::Reducer {
     fn from(args: InsertVecU64Args) -> Self {
-        Self::InsertVecU64 {
-            n: args.n,
-}
-}
+        Self::InsertVecU64 { n: args.n }
+    }
 }
 
 impl __sdk::InModule for InsertVecU64Args {
@@ -40,8 +32,7 @@ pub trait insert_vec_u_64 {
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed by listening for [`Self::on_insert_vec_u_64`] callbacks.
-    fn insert_vec_u_64(&self, n: Vec::<u64>,
-) -> __sdk::Result<()>;
+    fn insert_vec_u_64(&self, n: Vec<u64>) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `insert_vec_u64`.
     ///
     /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
@@ -49,34 +40,38 @@ pub trait insert_vec_u_64 {
     ///
     /// The returned [`InsertVecU64CallbackId`] can be passed to [`Self::remove_on_insert_vec_u_64`]
     /// to cancel the callback.
-    fn on_insert_vec_u_64(&self, callback: impl FnMut(&super::ReducerEventContext, &Vec::<u64>, ) + Send + 'static) -> InsertVecU64CallbackId;
+    fn on_insert_vec_u_64(
+        &self,
+        callback: impl FnMut(&super::ReducerEventContext, &Vec<u64>) + Send + 'static,
+    ) -> InsertVecU64CallbackId;
     /// Cancel a callback previously registered by [`Self::on_insert_vec_u_64`],
     /// causing it not to run in the future.
     fn remove_on_insert_vec_u_64(&self, callback: InsertVecU64CallbackId);
 }
 
 impl insert_vec_u_64 for super::RemoteReducers {
-    fn insert_vec_u_64(&self, n: Vec::<u64>,
-) -> __sdk::Result<()> {
-        self.imp.call_reducer("insert_vec_u64", InsertVecU64Args { n,  })
+    fn insert_vec_u_64(&self, n: Vec<u64>) -> __sdk::Result<()> {
+        self.imp.call_reducer("insert_vec_u64", InsertVecU64Args { n })
     }
     fn on_insert_vec_u_64(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &Vec::<u64>, ) + Send + 'static,
+        mut callback: impl FnMut(&super::ReducerEventContext, &Vec<u64>) + Send + 'static,
     ) -> InsertVecU64CallbackId {
         InsertVecU64CallbackId(self.imp.on_reducer(
             "insert_vec_u64",
             Box::new(move |ctx: &super::ReducerEventContext| {
                 let super::ReducerEventContext {
-                    event: __sdk::ReducerEvent {
-                        reducer: super::Reducer::InsertVecU64 {
-                            n, 
+                    event:
+                        __sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertVecU64 { n },
+                            ..
                         },
-                        ..
-                    },
                     ..
-                } = ctx else { unreachable!() };
-                callback(ctx, n, )
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, n)
             }),
         ))
     }
@@ -104,4 +99,3 @@ impl set_flags_for_insert_vec_u_64 for super::SetReducerFlags {
         self.imp.set_call_reducer_flags("insert_vec_u64", flags);
     }
 }
-

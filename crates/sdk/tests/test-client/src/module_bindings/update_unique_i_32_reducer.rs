@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -22,8 +16,8 @@ impl From<UpdateUniqueI32Args> for super::Reducer {
         Self::UpdateUniqueI32 {
             n: args.n,
             data: args.data,
-}
-}
+        }
+    }
 }
 
 impl __sdk::InModule for UpdateUniqueI32Args {
@@ -42,9 +36,7 @@ pub trait update_unique_i_32 {
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed by listening for [`Self::on_update_unique_i_32`] callbacks.
-    fn update_unique_i_32(&self, n: i32,
-data: i32,
-) -> __sdk::Result<()>;
+    fn update_unique_i_32(&self, n: i32, data: i32) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `update_unique_i32`.
     ///
     /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
@@ -52,35 +44,39 @@ data: i32,
     ///
     /// The returned [`UpdateUniqueI32CallbackId`] can be passed to [`Self::remove_on_update_unique_i_32`]
     /// to cancel the callback.
-    fn on_update_unique_i_32(&self, callback: impl FnMut(&super::ReducerEventContext, &i32, &i32, ) + Send + 'static) -> UpdateUniqueI32CallbackId;
+    fn on_update_unique_i_32(
+        &self,
+        callback: impl FnMut(&super::ReducerEventContext, &i32, &i32) + Send + 'static,
+    ) -> UpdateUniqueI32CallbackId;
     /// Cancel a callback previously registered by [`Self::on_update_unique_i_32`],
     /// causing it not to run in the future.
     fn remove_on_update_unique_i_32(&self, callback: UpdateUniqueI32CallbackId);
 }
 
 impl update_unique_i_32 for super::RemoteReducers {
-    fn update_unique_i_32(&self, n: i32,
-data: i32,
-) -> __sdk::Result<()> {
-        self.imp.call_reducer("update_unique_i32", UpdateUniqueI32Args { n, data,  })
+    fn update_unique_i_32(&self, n: i32, data: i32) -> __sdk::Result<()> {
+        self.imp
+            .call_reducer("update_unique_i32", UpdateUniqueI32Args { n, data })
     }
     fn on_update_unique_i_32(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &i32, &i32, ) + Send + 'static,
+        mut callback: impl FnMut(&super::ReducerEventContext, &i32, &i32) + Send + 'static,
     ) -> UpdateUniqueI32CallbackId {
         UpdateUniqueI32CallbackId(self.imp.on_reducer(
             "update_unique_i32",
             Box::new(move |ctx: &super::ReducerEventContext| {
                 let super::ReducerEventContext {
-                    event: __sdk::ReducerEvent {
-                        reducer: super::Reducer::UpdateUniqueI32 {
-                            n, data, 
+                    event:
+                        __sdk::ReducerEvent {
+                            reducer: super::Reducer::UpdateUniqueI32 { n, data },
+                            ..
                         },
-                        ..
-                    },
                     ..
-                } = ctx else { unreachable!() };
-                callback(ctx, n, data, )
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, n, data)
             }),
         ))
     }
@@ -108,4 +104,3 @@ impl set_flags_for_update_unique_i_32 for super::SetReducerFlags {
         self.imp.set_call_reducer_flags("update_unique_i32", flags);
     }
 }
-

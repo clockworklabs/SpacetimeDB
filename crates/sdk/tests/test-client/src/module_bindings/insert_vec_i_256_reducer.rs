@@ -2,26 +2,18 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct InsertVecI256Args {
-    pub n: Vec::<__sats::i256>,
+    pub n: Vec<__sats::i256>,
 }
 
 impl From<InsertVecI256Args> for super::Reducer {
     fn from(args: InsertVecI256Args) -> Self {
-        Self::InsertVecI256 {
-            n: args.n,
-}
-}
+        Self::InsertVecI256 { n: args.n }
+    }
 }
 
 impl __sdk::InModule for InsertVecI256Args {
@@ -40,8 +32,7 @@ pub trait insert_vec_i_256 {
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed by listening for [`Self::on_insert_vec_i_256`] callbacks.
-    fn insert_vec_i_256(&self, n: Vec::<__sats::i256>,
-) -> __sdk::Result<()>;
+    fn insert_vec_i_256(&self, n: Vec<__sats::i256>) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `insert_vec_i256`.
     ///
     /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
@@ -49,34 +40,38 @@ pub trait insert_vec_i_256 {
     ///
     /// The returned [`InsertVecI256CallbackId`] can be passed to [`Self::remove_on_insert_vec_i_256`]
     /// to cancel the callback.
-    fn on_insert_vec_i_256(&self, callback: impl FnMut(&super::ReducerEventContext, &Vec::<__sats::i256>, ) + Send + 'static) -> InsertVecI256CallbackId;
+    fn on_insert_vec_i_256(
+        &self,
+        callback: impl FnMut(&super::ReducerEventContext, &Vec<__sats::i256>) + Send + 'static,
+    ) -> InsertVecI256CallbackId;
     /// Cancel a callback previously registered by [`Self::on_insert_vec_i_256`],
     /// causing it not to run in the future.
     fn remove_on_insert_vec_i_256(&self, callback: InsertVecI256CallbackId);
 }
 
 impl insert_vec_i_256 for super::RemoteReducers {
-    fn insert_vec_i_256(&self, n: Vec::<__sats::i256>,
-) -> __sdk::Result<()> {
-        self.imp.call_reducer("insert_vec_i256", InsertVecI256Args { n,  })
+    fn insert_vec_i_256(&self, n: Vec<__sats::i256>) -> __sdk::Result<()> {
+        self.imp.call_reducer("insert_vec_i256", InsertVecI256Args { n })
     }
     fn on_insert_vec_i_256(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &Vec::<__sats::i256>, ) + Send + 'static,
+        mut callback: impl FnMut(&super::ReducerEventContext, &Vec<__sats::i256>) + Send + 'static,
     ) -> InsertVecI256CallbackId {
         InsertVecI256CallbackId(self.imp.on_reducer(
             "insert_vec_i256",
             Box::new(move |ctx: &super::ReducerEventContext| {
                 let super::ReducerEventContext {
-                    event: __sdk::ReducerEvent {
-                        reducer: super::Reducer::InsertVecI256 {
-                            n, 
+                    event:
+                        __sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertVecI256 { n },
+                            ..
                         },
-                        ..
-                    },
                     ..
-                } = ctx else { unreachable!() };
-                callback(ctx, n, )
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, n)
             }),
         ))
     }
@@ -104,4 +99,3 @@ impl set_flags_for_insert_vec_i_256 for super::SetReducerFlags {
         self.imp.set_call_reducer_flags("insert_vec_i256", flags);
     }
 }
-

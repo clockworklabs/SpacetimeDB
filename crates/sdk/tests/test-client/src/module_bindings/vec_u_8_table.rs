@@ -2,13 +2,8 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
 use super::vec_u_8_type::VecU8;
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `vec_u8`.
 ///
@@ -49,8 +44,12 @@ impl<'ctx> __sdk::Table for VecU8TableHandle<'ctx> {
     type Row = VecU8;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 { self.imp.count() }
-    fn iter(&self) -> impl Iterator<Item = VecU8> + '_ { self.imp.iter() }
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = VecU8> + '_ {
+        self.imp.iter()
+    }
 
     type InsertCallbackId = VecU8InsertCallbackId;
 
@@ -81,8 +80,7 @@ impl<'ctx> __sdk::Table for VecU8TableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-
-        let _table = client_cache.get_or_make_table::<VecU8>("vec_u8");
+    let _table = client_cache.get_or_make_table::<VecU8>("vec_u8");
 }
 
 #[doc(hidden)]
@@ -90,9 +88,8 @@ pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
 ) -> __sdk::Result<__sdk::TableUpdate<VecU8>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse(
-            "TableUpdate<VecU8>",
-            "TableUpdate",
-        ).with_cause(e).into()
+        __sdk::InternalError::failed_parse("TableUpdate<VecU8>", "TableUpdate")
+            .with_cause(e)
+            .into()
     })
 }

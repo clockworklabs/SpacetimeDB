@@ -2,23 +2,16 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub(super) struct InsertCallTimestampArgs {
-    }
+pub(super) struct InsertCallTimestampArgs {}
 
 impl From<InsertCallTimestampArgs> for super::Reducer {
     fn from(args: InsertCallTimestampArgs) -> Self {
         Self::InsertCallTimestamp
-}
+    }
 }
 
 impl __sdk::InModule for InsertCallTimestampArgs {
@@ -37,7 +30,7 @@ pub trait insert_call_timestamp {
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed by listening for [`Self::on_insert_call_timestamp`] callbacks.
-    fn insert_call_timestamp(&self, ) -> __sdk::Result<()>;
+    fn insert_call_timestamp(&self) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `insert_call_timestamp`.
     ///
     /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
@@ -45,33 +38,39 @@ pub trait insert_call_timestamp {
     ///
     /// The returned [`InsertCallTimestampCallbackId`] can be passed to [`Self::remove_on_insert_call_timestamp`]
     /// to cancel the callback.
-    fn on_insert_call_timestamp(&self, callback: impl FnMut(&super::ReducerEventContext, ) + Send + 'static) -> InsertCallTimestampCallbackId;
+    fn on_insert_call_timestamp(
+        &self,
+        callback: impl FnMut(&super::ReducerEventContext) + Send + 'static,
+    ) -> InsertCallTimestampCallbackId;
     /// Cancel a callback previously registered by [`Self::on_insert_call_timestamp`],
     /// causing it not to run in the future.
     fn remove_on_insert_call_timestamp(&self, callback: InsertCallTimestampCallbackId);
 }
 
 impl insert_call_timestamp for super::RemoteReducers {
-    fn insert_call_timestamp(&self, ) -> __sdk::Result<()> {
-        self.imp.call_reducer("insert_call_timestamp", InsertCallTimestampArgs {  })
+    fn insert_call_timestamp(&self) -> __sdk::Result<()> {
+        self.imp
+            .call_reducer("insert_call_timestamp", InsertCallTimestampArgs {})
     }
     fn on_insert_call_timestamp(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, ) + Send + 'static,
+        mut callback: impl FnMut(&super::ReducerEventContext) + Send + 'static,
     ) -> InsertCallTimestampCallbackId {
         InsertCallTimestampCallbackId(self.imp.on_reducer(
             "insert_call_timestamp",
             Box::new(move |ctx: &super::ReducerEventContext| {
                 let super::ReducerEventContext {
-                    event: __sdk::ReducerEvent {
-                        reducer: super::Reducer::InsertCallTimestamp {
-                            
+                    event:
+                        __sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertCallTimestamp {},
+                            ..
                         },
-                        ..
-                    },
                     ..
-                } = ctx else { unreachable!() };
-                callback(ctx, )
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx)
             }),
         ))
     }
@@ -99,4 +98,3 @@ impl set_flags_for_insert_call_timestamp for super::SetReducerFlags {
         self.imp.set_call_reducer_flags("insert_call_timestamp", flags);
     }
 }
-
