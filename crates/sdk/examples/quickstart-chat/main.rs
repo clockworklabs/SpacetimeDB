@@ -29,7 +29,7 @@ fn main() {
 /// The URI of the SpacetimeDB instance hosting our chat module.
 const HOST: &str = "http://localhost:3000";
 
-/// The module name we chose when we published our module.
+/// The database name we chose when we published our module.
 const DB_NAME: &str = "quickstart-chat";
 
 /// Load credentials from a file and connect to the database.
@@ -46,7 +46,7 @@ fn connect_to_db() -> DbConnection {
         // so we can re-authenticate as the same `Identity`.
         .with_token(creds_store().load().expect("Error loading credentials"))
         // Set the database name we chose when we called `spacetime publish`.
-        .with_module_name(DB_NAME)
+        .with_database_name(DB_NAME)
         // Set the URI of the SpacetimeDB host that's running our database.
         .with_uri(HOST)
         // Finalize configuration and connect!
