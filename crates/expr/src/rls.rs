@@ -6,20 +6,155 @@ use spacetimedb_sql_parser::ast::BinOp;
 
 use crate::{
     check::{parse_and_type_sub, SchemaView},
-    expr::{Expr, FieldProject, LeftDeepJoin, ProjectName, RelExpr, Relvar},
+    expr::{AggType, Expr, FieldProject, LeftDeepJoin, ProjectList, ProjectName, RelExpr, Relvar},
 };
 
-/// This utility is responsible for implementing view resolution.
+/// The main driver of RLS resolution for subscription queries.
+/// Mainly a wrapper around [resolve_views_for_expr].
+pub fn resolve_views_for_sub(
+    tx: &impl SchemaView,
+    expr: ProjectName,
+    auth: &AuthCtx,
+    has_param: &mut bool,
+) -> anyhow::Result<Vec<ProjectName>> {
+    // RLS does not apply to the database owner
+    if auth.caller == auth.owner {
+        return Ok(vec![expr]);
+    }
+
+    let Some(return_name) = expr.return_name().map(|name| name.to_owned().into_boxed_str()) else {
+        anyhow::bail!("Could not determine return type during RLS resolution")
+    };
+
+    // Unwrap the underlying `RelExpr`
+    let expr = match expr {
+        ProjectName::None(expr) | ProjectName::Some(expr, _) => expr,
+    };
+
+    resolve_views_for_expr(
+        tx,
+        expr,
+        // Do not ignore the return table when checking for RLS rules
+        None,
+        // Resolve list is empty as we are not yet resolving any RLS rules
+        Rc::new(ResolveList::None),
+        has_param,
+        &mut 0,
+        auth,
+    )
+    .map(|fragments| {
+        fragments
+            .into_iter()
+            // The expanded fragments could be join trees,
+            // so wrap each of them in an outer project.
+            .map(|expr| ProjectName::Some(expr, return_name.clone()))
+            .collect()
+    })
+}
+
+/// The main driver of RLS resolution for sql queries.
+/// Mainly a wrapper around [resolve_views_for_expr].
+pub fn resolve_views_for_sql(tx: &impl SchemaView, expr: ProjectList, auth: &AuthCtx) -> anyhow::Result<ProjectList> {
+    // RLS does not apply to the database owner
+    if auth.caller == auth.owner {
+        return Ok(expr);
+    }
+    // The subscription language is a subset of the sql language.
+    // Use the subscription helper if this is a compliant expression.
+    // Use the generic resolver otherwise.
+    let resolve_for_sub = |expr| resolve_views_for_sub(tx, expr, auth, &mut false);
+    let resolve_for_sql = |expr| {
+        resolve_views_for_expr(
+            // Use all default values
+            tx,
+            expr,
+            None,
+            Rc::new(ResolveList::None),
+            &mut false,
+            &mut 0,
+            auth,
+        )
+    };
+    match expr {
+        ProjectList::Limit(expr, n) => Ok(ProjectList::Limit(Box::new(resolve_views_for_sql(tx, *expr, auth)?), n)),
+        ProjectList::Name(exprs) => Ok(ProjectList::Name(
+            exprs
+                .into_iter()
+                .map(resolve_for_sub)
+                .collect::<Result<Vec<_>, _>>()?
+                .into_iter()
+                .flatten()
+                .collect(),
+        )),
+        ProjectList::List(exprs, fields) => Ok(ProjectList::List(
+            exprs
+                .into_iter()
+                .map(resolve_for_sql)
+                .collect::<Result<Vec<_>, _>>()?
+                .into_iter()
+                .flatten()
+                .collect(),
+            fields,
+        )),
+        ProjectList::Agg(exprs, AggType::Count, name, ty) => Ok(ProjectList::Agg(
+            exprs
+                .into_iter()
+                .map(resolve_for_sql)
+                .collect::<Result<Vec<_>, _>>()?
+                .into_iter()
+                .flatten()
+                .collect(),
+            AggType::Count,
+            name,
+            ty,
+        )),
+    }
+}
+
+/// A list for detecting cycles during RLS resolution.
+enum ResolveList {
+    None,
+    Some(TableId, Rc<ResolveList>),
+}
+
+impl ResolveList {
+    fn new(table_id: TableId, list: Rc<Self>) -> Rc<Self> {
+        Rc::new(Self::Some(table_id, list))
+    }
+
+    fn contains(&self, table_id: &TableId) -> bool {
+        match self {
+            Self::None => false,
+            Self::Some(id, suffix) if id != table_id => suffix.contains(table_id),
+            Self::Some(..) => true,
+        }
+    }
+}
+
+/// The main utility responsible for view resolution.
 ///
-/// What is view resolution and why do we need it?
+/// But what is view resolution and why do we need it?
 ///
 /// A view is a named query that can be referenced as though it were just a regular table.
 /// In SpacetimeDB, Row Level Security (RLS) is implemented using views.
 /// We must resolve/expand these views in order to guarantee the correct access controls.
 ///
-/// How is it implemented?
+/// Before we discuss the implementation, a quick word on `return_table_id`.
 ///
-/// Take the following join tree for example:
+/// Why do we care about it?
+/// What does it mean for it to be `None`?
+///
+/// If this IS NOT a user query, it must be a view definition.
+/// In SpacetimeDB this means we're expanding an RLS filter.
+/// RLS filters cannot be self-referential, meaning that within a filter,
+/// we cannot recursively expand references to its return table.
+///
+/// However, a `None` value implies that this expression is a user query,
+/// and so we should attempt to expand references to the return table.
+///
+/// Now back to the implementation.
+///
+/// Take the following join tree as an example:
 /// ```text
 ///     x
 ///    / \
@@ -67,81 +202,6 @@ use crate::{
 /// That is, the subtree whose root is the left sibling of the node being expanded,
 /// i.e. the subtree rooted at `a` in the above example,
 /// must be pushed below the leftmost leaf node of the view expansion.
-pub fn resolve_views(
-    tx: &impl SchemaView,
-    expr: ProjectName,
-    auth: &AuthCtx,
-    has_param: &mut bool,
-) -> anyhow::Result<Vec<ProjectName>> {
-    // RLS does not apply to the database owner
-    if auth.caller == auth.owner {
-        return Ok(vec![expr]);
-    }
-
-    let Some(return_name) = expr.return_name().map(|name| name.to_owned().into_boxed_str()) else {
-        anyhow::bail!("Could not determine return type during RLS resolution")
-    };
-
-    // Unwrap the underlying `RelExpr`
-    let expr = match expr {
-        ProjectName::None(expr) | ProjectName::Some(expr, _) => expr,
-    };
-
-    resolve_views_for_expr(
-        tx,
-        expr,
-        // Do not ignore the return table when checking for RLS rules
-        None,
-        // Resolve list is empty as we are not yet resolving any RLS rules
-        Rc::new(ResolveList::None),
-        has_param,
-        &mut 0,
-        auth,
-    )
-    .map(|fragments| {
-        fragments
-            .into_iter()
-            // The expanded fragments could be join trees,
-            // so wrap each of them in an outer project.
-            .map(|expr| ProjectName::Some(expr, return_name.clone()))
-            .collect()
-    })
-}
-
-/// A list for detecting cycles during RLS resolution.
-enum ResolveList {
-    None,
-    Some(TableId, Rc<ResolveList>),
-}
-
-impl ResolveList {
-    fn new(table_id: TableId, list: Rc<Self>) -> Rc<Self> {
-        Rc::new(Self::Some(table_id, list))
-    }
-
-    fn contains(&self, table_id: &TableId) -> bool {
-        match self {
-            Self::None => false,
-            Self::Some(id, suffix) if id != table_id => suffix.contains(table_id),
-            Self::Some(..) => true,
-        }
-    }
-}
-
-/// The main driver for view resolution. See [resolve_views] for details.
-///
-/// But first, a word on the `return_table_id` parameter.
-///
-/// Why do we care about it?
-/// What does it mean for it to be `None`?
-///
-/// If this IS NOT a user query, it must be a view definition.
-/// In SpacetimeDB this means we're expanding an RLS filter.
-/// RLS filters cannot be self-referential, meaning that within a filter,
-/// we cannot recursively expand references to its return table.
-///
-/// However, a `None` value implies that this expression is a user query,
-/// and so we should attempt to expand references to the return table.
 fn resolve_views_for_expr(
     tx: &impl SchemaView,
     view: RelExpr,
@@ -425,7 +485,7 @@ mod tests {
         expr::{Expr, FieldProject, LeftDeepJoin, ProjectName, RelExpr, Relvar},
     };
 
-    use super::resolve_views;
+    use super::resolve_views_for_sub;
 
     pub struct SchemaViewer(pub ModuleDef);
 
@@ -486,7 +546,7 @@ mod tests {
     /// Parse, type check, and resolve RLS rules
     fn resolve(sql: &str, tx: &impl SchemaView, auth: &AuthCtx) -> anyhow::Result<Vec<ProjectName>> {
         let (expr, _) = parse_and_type_sub(sql, tx, auth)?;
-        resolve_views(tx, expr, auth, &mut false)
+        resolve_views_for_sub(tx, expr, auth, &mut false)
     }
 
     #[test]
