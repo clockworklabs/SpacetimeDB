@@ -204,8 +204,7 @@ record ViewIndex
             ImmutableArray.Create(col),
             null,
             ViewIndexType.BTree // this might become hash in the future
-        )
-    { }
+        ) { }
 
     private ViewIndex(Index.BTreeAttribute attr, ImmutableArray<ColumnRef> columns)
         : this(attr.Name, columns, attr.Table, ViewIndexType.BTree) { }
@@ -451,8 +450,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
         }
         foreach (var v in Views)
         {
-            var autoIncFields = Members
-                .Where(m => m.GetAttrs(v).HasFlag(ColumnAttrs.AutoInc));
+            var autoIncFields = Members.Where(m => m.GetAttrs(v).HasFlag(ColumnAttrs.AutoInc));
 
             var globalName = $"global::{FullName}";
             var iTable = $"SpacetimeDB.Internal.ITableView<{v.Name}, {globalName}>";

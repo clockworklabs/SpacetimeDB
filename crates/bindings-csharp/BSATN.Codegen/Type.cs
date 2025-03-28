@@ -25,7 +25,7 @@ public record MemberDeclaration(
     internal static string BSATN_FIELD_SUFFIX = "RW";
 
     /// <summary>
-    /// The name of the static field containing an IReadWrite in the struct BSATN associated with this type.  
+    /// The name of the static field containing an IReadWrite in the struct BSATN associated with this type.
     /// </summary>
     public string BsatnFieldName
     {
@@ -65,7 +65,9 @@ public record MemberDeclaration(
         var visStr = SyntaxFacts.GetText(visibility);
         return string.Join(
             "\n        ",
-            members.Select(m => $"{visStr} static readonly {m.TypeInfo} {m.BsatnFieldName} = new();")
+            members.Select(m =>
+                $"{visStr} static readonly {m.TypeInfo} {m.BsatnFieldName} = new();"
+            )
         );
     }
 
@@ -74,7 +76,9 @@ public record MemberDeclaration(
             ",\n                ",
             // we can't use nameof(m.BsatnFieldName) because the bsatn field name differs from the logical name
             // assigned in the type.
-            members.Select(m => $"new(\"{m.Name}\", {m.BsatnFieldName}.GetAlgebraicType(registrar))")
+            members.Select(m =>
+                $"new(\"{m.Name}\", {m.BsatnFieldName}.GetAlgebraicType(registrar))"
+            )
         );
 }
 
@@ -192,7 +196,12 @@ public abstract record BaseTypeDeclaration<M>
 
         if (Kind is TypeKind.Sum)
         {
-            var enumTag = new MemberDeclaration("__enumTag", "@enum", "SpacetimeDB.BSATN.Enum<@enum>", false);
+            var enumTag = new MemberDeclaration(
+                "__enumTag",
+                "@enum",
+                "SpacetimeDB.BSATN.Enum<@enum>",
+                false
+            );
 
             extensions.Contents.Append(
                 $$"""
@@ -279,9 +288,7 @@ public abstract record BaseTypeDeclaration<M>
 
             // It's important that this happen here; only the stuff later in this method
             // needs to see the enum tag as one of the bsatn declarations.
-            bsatnDecls = bsatnDecls.Prepend(
-                enumTag
-            );
+            bsatnDecls = bsatnDecls.Prepend(enumTag);
         }
         else
         {
