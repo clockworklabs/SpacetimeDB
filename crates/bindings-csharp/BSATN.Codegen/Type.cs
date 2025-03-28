@@ -1,6 +1,13 @@
 namespace SpacetimeDB.Codegen;
 
-///
+// Generate code to implement serialization to the BSATN format (https://spacetimedb.com/docs/bsatn).
+// C# doesn't support static methods in interfaces, so instead we declare a zero-sized `struct` type that implements
+// the serialization interface (IReadWrite) for us.
+//
+// See BSATN.Runtime for the support code referenced by code generation,
+// and see Codegen.Tests/fixtures/*/snapshots for examples of generated code.
+// Also, if you set <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles> in a csproj,
+// you can find the generated code in obj/Debug/*/generated/SpacetimeDB.BSATN.Codegen.
 
 using System.Collections.Immutable;
 using Microsoft.CodeAnalysis;
