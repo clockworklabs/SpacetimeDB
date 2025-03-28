@@ -19,4 +19,5 @@ spacetimedb-schema.workspace = true
 spacetimedb-sql-parser.workspace = true
 
 [dev-dependencies]
+pretty_assertions.workspace = true
 spacetimedb-lib.workspace = true

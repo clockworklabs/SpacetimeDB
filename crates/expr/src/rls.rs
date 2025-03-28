@@ -405,3 +405,252 @@ fn expand_leaf(expr: RelExpr, table_id: TableId, alias: &str, with: &RelExpr) ->
         ),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use pretty_assertions as pretty;
+
+    use spacetimedb_lib::{identity::AuthCtx, AlgebraicType, AlgebraicValue, Identity, ProductType};
+    use spacetimedb_primitives::TableId;
+    use spacetimedb_schema::{
+        def::ModuleDef,
+        schema::{Schema, TableSchema},
+    };
+    use spacetimedb_sql_parser::ast::BinOp;
+
+    use crate::{
+        check::{parse_and_type_sub, test_utils::build_module_def, SchemaView},
+        expr::{Expr, FieldProject, LeftDeepJoin, ProjectName, RelExpr, Relvar},
+    };
+
+    use super::resolve_views;
+
+    pub struct SchemaViewer(pub ModuleDef);
+
+    impl SchemaView for SchemaViewer {
+        fn table_id(&self, name: &str) -> Option<TableId> {
+            match name {
+                "users" => Some(TableId(0)),
+                "admins" => Some(TableId(1)),
+                "player" => Some(TableId(2)),
+                _ => None,
+            }
+        }
+
+        fn schema_for_table(&self, table_id: TableId) -> Option<Arc<TableSchema>> {
+            match table_id.idx() {
+                0 => Some((TableId(0), "users")),
+                1 => Some((TableId(1), "admins")),
+                2 => Some((TableId(2), "player")),
+                _ => None,
+            }
+            .and_then(|(table_id, name)| {
+                self.0
+                    .table(name)
+                    .map(|def| Arc::new(TableSchema::from_module_def(&self.0, def, (), table_id)))
+            })
+        }
+
+        fn rls_rules_for_table(&self, table_id: TableId) -> anyhow::Result<Vec<Box<str>>> {
+            match table_id {
+                TableId(0) => Ok(vec!["select * from users where identity = :sender".into()]),
+                TableId(1) => Ok(vec!["select * from admins where identity = :sender".into()]),
+                TableId(2) => Ok(vec![
+                    "select player.* from player join users u on player.id = u.id".into(),
+                    "select player.* from player join admins".into(),
+                ]),
+                _ => Ok(vec![]),
+            }
+        }
+    }
+
+    fn module_def() -> ModuleDef {
+        build_module_def(vec![
+            (
+                "users",
+                ProductType::from([("identity", AlgebraicType::identity()), ("id", AlgebraicType::U64)]),
+            ),
+            (
+                "admins",
+                ProductType::from([("identity", AlgebraicType::identity()), ("id", AlgebraicType::U64)]),
+            ),
+            (
+                "player",
+                ProductType::from([("id", AlgebraicType::U64), ("level_num", AlgebraicType::U64)]),
+            ),
+        ])
+    }
+
+    /// Parse, type check, and resolve RLS rules
+    fn resolve(sql: &str, tx: &impl SchemaView, auth: &AuthCtx) -> anyhow::Result<Vec<ProjectName>> {
+        let (expr, _) = parse_and_type_sub(sql, tx, auth)?;
+        resolve_views(tx, expr, auth, &mut false)
+    }
+
+    #[test]
+    fn test_rls_for_owner() -> anyhow::Result<()> {
+        let tx = SchemaViewer(module_def());
+        let auth = AuthCtx::new(Identity::ONE, Identity::ONE);
+        let sql = "select * from users";
+        let resolved = resolve(sql, &tx, &auth)?;
+
+        let users_schema = tx.schema("users").unwrap();
+
+        pretty::assert_eq!(
+            resolved,
+            vec![ProjectName::None(RelExpr::RelVar(Relvar {
+                schema: users_schema,
+                alias: "users".into(),
+                delta: None,
+            }))]
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_rls_for_non_owner() -> anyhow::Result<()> {
+        let tx = SchemaViewer(module_def());
+        let auth = AuthCtx::new(Identity::ZERO, Identity::ONE);
+        let sql = "select * from users";
+        let resolved = resolve(sql, &tx, &auth)?;
+
+        let users_schema = tx.schema("users").unwrap();
+
+        pretty::assert_eq!(
+            resolved,
+            vec![ProjectName::Some(
+                RelExpr::Select(
+                    Box::new(RelExpr::RelVar(Relvar {
+                        schema: users_schema,
+                        alias: "users".into(),
+                        delta: None,
+                    })),
+                    Expr::BinOp(
+                        BinOp::Eq,
+                        Box::new(Expr::Field(FieldProject {
+                            table: "users".into(),
+                            field: 0,
+                            ty: AlgebraicType::identity(),
+                        })),
+                        Box::new(Expr::Value(Identity::ONE.into(), AlgebraicType::identity()))
+                    )
+                ),
+                "users".into()
+            )]
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_multiple_rls_rules_for_table() -> anyhow::Result<()> {
+        let tx = SchemaViewer(module_def());
+        let auth = AuthCtx::new(Identity::ZERO, Identity::ONE);
+        let sql = "select * from player where level_num = 5";
+        let resolved = resolve(sql, &tx, &auth)?;
+
+        let users_schema = tx.schema("users").unwrap();
+        let admins_schema = tx.schema("admins").unwrap();
+        let player_schema = tx.schema("player").unwrap();
+
+        pretty::assert_eq!(
+            resolved,
+            vec![
+                ProjectName::Some(
+                    RelExpr::Select(
+                        Box::new(RelExpr::Select(
+                            Box::new(RelExpr::Select(
+                                Box::new(RelExpr::LeftDeepJoin(LeftDeepJoin {
+                                    lhs: Box::new(RelExpr::RelVar(Relvar {
+                                        schema: player_schema.clone(),
+                                        alias: "player".into(),
+                                        delta: None,
+                                    })),
+                                    rhs: Relvar {
+                                        schema: users_schema.clone(),
+                                        alias: "u_2".into(),
+                                        delta: None,
+                                    },
+                                })),
+                                Expr::BinOp(
+                                    BinOp::Eq,
+                                    Box::new(Expr::Field(FieldProject {
+                                        table: "u_2".into(),
+                                        field: 0,
+                                        ty: AlgebraicType::identity(),
+                                    })),
+                                    Box::new(Expr::Value(Identity::ONE.into(), AlgebraicType::identity())),
+                                ),
+                            )),
+                            Expr::BinOp(
+                                BinOp::Eq,
+                                Box::new(Expr::Field(FieldProject {
+                                    table: "player".into(),
+                                    field: 0,
+                                    ty: AlgebraicType::U64,
+                                })),
+                                Box::new(Expr::Field(FieldProject {
+                                    table: "u_2".into(),
+                                    field: 1,
+                                    ty: AlgebraicType::U64,
+                                })),
+                            ),
+                        )),
+                        Expr::BinOp(
+                            BinOp::Eq,
+                            Box::new(Expr::Field(FieldProject {
+                                table: "player".into(),
+                                field: 1,
+                                ty: AlgebraicType::U64,
+                            })),
+                            Box::new(Expr::Value(AlgebraicValue::U64(5), AlgebraicType::U64)),
+                        ),
+                    ),
+                    "player".into(),
+                ),
+                ProjectName::Some(
+                    RelExpr::Select(
+                        Box::new(RelExpr::Select(
+                            Box::new(RelExpr::LeftDeepJoin(LeftDeepJoin {
+                                lhs: Box::new(RelExpr::RelVar(Relvar {
+                                    schema: player_schema.clone(),
+                                    alias: "player".into(),
+                                    delta: None,
+                                })),
+                                rhs: Relvar {
+                                    schema: admins_schema.clone(),
+                                    alias: "admins_4".into(),
+                                    delta: None,
+                                },
+                            })),
+                            Expr::BinOp(
+                                BinOp::Eq,
+                                Box::new(Expr::Field(FieldProject {
+                                    table: "admins_4".into(),
+                                    field: 0,
+                                    ty: AlgebraicType::identity(),
+                                })),
+                                Box::new(Expr::Value(Identity::ONE.into(), AlgebraicType::identity())),
+                            ),
+                        )),
+                        Expr::BinOp(
+                            BinOp::Eq,
+                            Box::new(Expr::Field(FieldProject {
+                                table: "player".into(),
+                                field: 1,
+                                ty: AlgebraicType::U64,
+                            })),
+                            Box::new(Expr::Value(AlgebraicValue::U64(5), AlgebraicType::U64)),
+                        ),
+                    ),
+                    "player".into(),
+                ),
+            ]
+        );
+
+        Ok(())
+    }
+}

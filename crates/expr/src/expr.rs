@@ -19,7 +19,7 @@ use spacetimedb_sql_parser::ast::{BinOp, LogOp};
 /// ```sql
 /// select t.* from t join s ...
 /// ```
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum ProjectName {
     None(RelExpr),
     Some(RelExpr, Box<str>),
@@ -142,7 +142,7 @@ impl ProjectList {
 }
 
 /// A logical relational expression
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RelExpr {
     /// A relvar or table reference
     RelVar(Relvar),
@@ -155,7 +155,7 @@ pub enum RelExpr {
 }
 
 /// A table reference
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Relvar {
     /// The table schema of this relvar
     pub schema: Arc<TableSchema>,
@@ -258,7 +258,7 @@ impl RelExpr {
 }
 
 /// A left deep binary cross product
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LeftDeepJoin {
     /// The lhs is recursive
     pub lhs: Box<RelExpr>,
@@ -267,7 +267,7 @@ pub struct LeftDeepJoin {
 }
 
 /// A typed scalar expression
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Expr {
     /// A binary expression
     BinOp(BinOp, Box<Expr>, Box<Expr>),
@@ -324,7 +324,7 @@ impl Expr {
 }
 
 /// A typed qualified field projection
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FieldProject {
     pub table: Box<str>,
     pub field: usize,
