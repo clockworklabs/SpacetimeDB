@@ -170,6 +170,8 @@ namespace SpacetimeDB
         private readonly Action<ErrorContext, Exception>? onError;
         private Action<SubscriptionEventContext>? onEnded;
 
+        private QueryId? queryId;
+
         private SubscriptionState state;
 
         /// <summary>
@@ -231,6 +233,7 @@ namespace SpacetimeDB
             state = new SubscriptionState.Pending(new());
             this.conn = conn;
             this.onApplied = onApplied;
+            queryId = null;
             conn.LegacySubscribe(this, querySqls);
         }
 
@@ -252,7 +255,7 @@ namespace SpacetimeDB
             this.onApplied = onApplied;
             this.onError = onError;
             this.conn = conn;
-            conn.Subscribe(this, querySqls);
+            queryId = conn.Subscribe(this, querySqls);
         }
 
         /// <summary>
@@ -285,6 +288,14 @@ namespace SpacetimeDB
                 onEnded = (ctx) => { };
             }
             this.onEnded = onEnded;
+            if (queryId == null)
+            {
+                Log.Warn("Unsubscribing from a query that was never submitted to the server does nothing.");
+            }
+            else
+            {
+                conn.Unsubscribe(queryId);
+            }
         }
     }
 }

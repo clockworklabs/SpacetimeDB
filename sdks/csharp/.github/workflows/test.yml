@@ -53,9 +53,15 @@ jobs:
 
       # Run cheap .NET tests first. If those fail, no need to run expensive Unity tests.
 
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@v3
+        with:
+          global-json-file: SpacetimeDB~/modules/global.json
+
       - name: Override NuGet packages
         run: |
           dotnet pack SpacetimeDB~/crates/bindings-csharp/BSATN.Runtime
+          dotnet pack SpacetimeDB~/crates/bindings-csharp/Runtime
 
           # Write out the nuget config file to `nuget.config`. This causes the spacetimedb-csharp-sdk repository
           # to be aware of the local versions of the `bindings-csharp` packages in SpacetimeDB, and use them if
@@ -81,6 +87,7 @@ jobs:
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+      
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
@@ -128,7 +135,10 @@ jobs:
           spacetime start &
           disown
 
-      - name: Publish module to SpacetimeDB
+      - name: Run regression tests
+        run: bash tools~/run-regression-tests.sh SpacetimeDB~
+
+      - name: Publish unity-tests module to SpacetimeDB
         working-directory: unity-tests~/server-rust
         run: |
           spacetime logout && spacetime login --server-issued-login local
