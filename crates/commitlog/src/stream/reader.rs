@@ -6,7 +6,7 @@ use std::{
 use async_stream::try_stream;
 use bytes::{Buf as _, Bytes};
 use futures::Stream;
-use log::{debug, info, trace, warn};
+use log::{debug, trace, warn};
 use tokio::{
     io::{AsyncBufRead, AsyncReadExt as _, AsyncSeek, AsyncSeekExt as _},
     task::spawn_blocking,
@@ -76,7 +76,7 @@ fn read_segment(
     range: RangeFromMaybeToInclusive,
 ) -> impl Stream<Item = io::Result<Bytes>> {
     try_stream! {
-        info!("reading segment {segment_start}");
+        trace!("reading segment {segment_start}");
         let (segment_header, segment_header_bytes) = {
             let mut buf = [0u8; segment::Header::LEN];
             segment.read_exact(&mut buf).await?;

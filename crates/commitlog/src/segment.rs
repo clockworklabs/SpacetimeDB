@@ -332,7 +332,12 @@ impl FileLike for OffsetIndexWriter {
 
     fn ftruncate(&mut self, tx_offset: u64, _size: u64) -> io::Result<()> {
         self.reset();
-        let _ = self.head.truncate(tx_offset);
+        self.head
+            .truncate(tx_offset)
+            .inspect_err(|e| {
+                warn!("failed to truncate offset index at {tx_offset}: {e:?}");
+            })
+            .ok();
         Ok(())
     }
 }
