@@ -25,7 +25,8 @@ public record MemberDeclaration(
     internal static string BSATN_FIELD_SUFFIX = "RW";
 
     /// <summary>
-    /// The name of the static field containing an IReadWrite in the struct BSATN associated with this type.
+    /// The name of the static field containing an IReadWrite in the IReadWrite struct associated with this type.
+    /// We make sure this is different from the field name so that collisions cannot occur.
     /// </summary>
     public string BsatnFieldName
     {
