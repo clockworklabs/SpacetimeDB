@@ -17,6 +17,7 @@ bench = false
 default = ["rand"]
 rand = ["dep:rand", "dep:getrandom"]
 unstable = ["spacetimedb-bindings-sys/unstable"]
+rls = []
 
 [dependencies]
 spacetimedb-bindings-sys.workspace = true
