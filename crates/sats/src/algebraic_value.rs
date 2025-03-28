@@ -178,15 +178,13 @@ impl AlgebraicValue {
 
     /// Returns an [`AlgebraicValue`] representing a sum value with `tag` and `value`.
     pub fn sum(tag: u8, value: Self) -> Self {
-        let value = Box::new(value);
-        Self::Sum(SumValue { tag, value })
+        Self::Sum(SumValue::new(tag, value))
     }
 
     /// Returns an [`AlgebraicValue`] representing a sum value with `tag` and empty [AlgebraicValue::product], that is
     /// valid for simple enums without payload.
     pub fn enum_simple(tag: u8) -> Self {
-        let value = Box::new(AlgebraicValue::product(vec![]));
-        Self::Sum(SumValue { tag, value })
+        Self::Sum(SumValue::new_simple(tag))
     }
 
     /// Returns an [`AlgebraicValue`] representing a product value with the given `elements`.
