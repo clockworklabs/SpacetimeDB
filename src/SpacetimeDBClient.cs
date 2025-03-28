@@ -109,7 +109,7 @@ namespace SpacetimeDB
         internal void AddOnDisconnect(WebSocket.CloseEventHandler cb);
 
         internal void LegacySubscribe(ISubscriptionHandle handle, string[] querySqls);
-        internal void Subscribe(ISubscriptionHandle handle, string[] querySqls);
+        internal QueryId? Subscribe(ISubscriptionHandle handle, string[] querySqls);
         internal void Unsubscribe(QueryId queryId);
         void FrameTick();
         void Disconnect();
@@ -874,12 +874,12 @@ namespace SpacetimeDB
             ));
         }
 
-        void IDbConnection.Subscribe(ISubscriptionHandle handle, string[] querySqls)
+        QueryId? IDbConnection.Subscribe(ISubscriptionHandle handle, string[] querySqls)
         {
             if (!webSocket.IsConnected)
             {
                 Log.Error("Cannot subscribe, not connected to server!");
-                return;
+                return null;
             }
 
             var id = stats.SubscriptionRequestTracker.StartTrackingRequest();
@@ -895,6 +895,7 @@ namespace SpacetimeDB
                     QueryId = new QueryId(queryId),
                 }
             ));
+            return new QueryId(queryId);
         }
 
         /// Usage: SpacetimeDBClientBase.instance.OneOffQuery<Message>("SELECT * FROM table WHERE sender = \"bob\"");
