@@ -276,6 +276,7 @@ windows-sys = "0.59"
 xdg = "2.5"
 tikv-jemallocator = { version = "0.6.0", features = ["profiling", "stats"] }
 tikv-jemalloc-ctl = { version = "0.6.0", features = ["stats"]}
+jemalloc_pprof = { version = "0.7", features = ["symbolize", "flamegraph"] }
 
 # Vendor the openssl we rely on, rather than depend on a
 # potentially very old system version.

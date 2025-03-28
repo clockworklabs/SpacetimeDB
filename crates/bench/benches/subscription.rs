@@ -17,6 +17,13 @@ use spacetimedb_primitives::{col_list, TableId};
 use spacetimedb_query::compile_subscription;
 use spacetimedb_sats::{bsatn, product, AlgebraicType, AlgebraicValue, ProductValue};
 
+#[cfg(not(target_env = "msvc"))]
+use tikv_jemallocator::Jemalloc;
+
+#[cfg(not(target_env = "msvc"))]
+#[global_allocator]
+static GLOBAL: Jemalloc = Jemalloc;
+
 fn create_table_location(db: &RelationalDB) -> Result<TableId, DBError> {
     let schema = &[
         ("entity_id", AlgebraicType::U64),
