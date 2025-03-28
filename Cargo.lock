@@ -5164,6 +5164,7 @@ dependencies = [
  "spacetimedb-vm",
  "sqlparser",
  "strum",
+ "tabled",
  "tempfile",
  "thin-vec",
  "thiserror 1.0.69",
