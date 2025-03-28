@@ -19,13 +19,29 @@ use spacetimedb_sql_parser::ast::{BinOp, LogOp};
 /// ```sql
 /// select t.* from t join s ...
 /// ```
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum ProjectName {
     None(RelExpr),
     Some(RelExpr, Box<str>),
 }
 
 impl ProjectName {
+    /// Unwrap the outer projection, returning the inner expression
+    pub fn unwrap(self) -> RelExpr {
+        match self {
+            Self::None(expr) | Self::Some(expr, _) => expr,
+        }
+    }
+
+    /// What is the name of the return table?
+    /// This is either the table name itself or its alias.
+    pub fn return_name(&self) -> Option<&str> {
+        match self {
+            Self::None(input) => input.return_name(),
+            Self::Some(_, name) => Some(name.as_ref()),
+        }
+    }
+
     /// The [TableSchema] of the returned rows.
     /// Note this expression returns rows from a relvar.
     /// Hence it this method should never return [None].
@@ -126,7 +142,7 @@ impl ProjectList {
 }
 
 /// A logical relational expression
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RelExpr {
     /// A relvar or table reference
     RelVar(Relvar),
@@ -139,15 +155,43 @@ pub enum RelExpr {
 }
 
 /// A table reference
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Relvar {
+    /// The table schema of this relvar
     pub schema: Arc<TableSchema>,
+    /// The name of this relvar
     pub alias: Box<str>,
     /// Does this relvar represent a delta table?
     pub delta: Option<Delta>,
 }
 
 impl RelExpr {
+    /// Walk the expression tree and call `f` on each node
+    pub fn visit(&self, f: &mut impl FnMut(&Self)) {
+        f(self);
+        match self {
+            Self::Select(lhs, _)
+            | Self::LeftDeepJoin(LeftDeepJoin { lhs, .. })
+            | Self::EqJoin(LeftDeepJoin { lhs, .. }, ..) => {
+                lhs.visit(f);
+            }
+            Self::RelVar(..) => {}
+        }
+    }
+
+    /// Walk the expression tree and call `f` on each node
+    pub fn visit_mut(&mut self, f: &mut impl FnMut(&mut Self)) {
+        f(self);
+        match self {
+            Self::Select(lhs, _)
+            | Self::LeftDeepJoin(LeftDeepJoin { lhs, .. })
+            | Self::EqJoin(LeftDeepJoin { lhs, .. }, ..) => {
+                lhs.visit_mut(f);
+            }
+            Self::RelVar(..) => {}
+        }
+    }
+
     /// The number of fields this expression returns
     pub fn nfields(&self) -> usize {
         match self {
@@ -201,10 +245,20 @@ impl RelExpr {
     pub fn return_table_id(&self) -> Option<TableId> {
         self.return_table().map(|schema| schema.table_id)
     }
+
+    /// Does this expression return a single relvar?
+    /// If so, return its name or equivalently its alias.
+    pub fn return_name(&self) -> Option<&str> {
+        match self {
+            Self::RelVar(Relvar { alias, .. }) => Some(alias.as_ref()),
+            Self::Select(input, _) => input.return_name(),
+            _ => None,
+        }
+    }
 }
 
 /// A left deep binary cross product
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LeftDeepJoin {
     /// The lhs is recursive
     pub lhs: Box<RelExpr>,
@@ -213,7 +267,7 @@ pub struct LeftDeepJoin {
 }
 
 /// A typed scalar expression
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Expr {
     /// A binary expression
     BinOp(BinOp, Box<Expr>, Box<Expr>),
@@ -226,6 +280,30 @@ pub enum Expr {
 }
 
 impl Expr {
+    /// Walk the expression tree and call `f` on each node
+    pub fn visit(&self, f: &impl Fn(&Self)) {
+        f(self);
+        match self {
+            Self::BinOp(_, a, b) | Self::LogOp(_, a, b) => {
+                a.visit(f);
+                b.visit(f);
+            }
+            Self::Value(..) | Self::Field(..) => {}
+        }
+    }
+
+    /// Walk the expression tree and call `f` on each node
+    pub fn visit_mut(&mut self, f: &mut impl FnMut(&mut Self)) {
+        f(self);
+        match self {
+            Self::BinOp(_, a, b) | Self::LogOp(_, a, b) => {
+                a.visit_mut(f);
+                b.visit_mut(f);
+            }
+            Self::Value(..) | Self::Field(..) => {}
+        }
+    }
+
     /// A literal boolean value
     pub const fn bool(v: bool) -> Self {
         Self::Value(AlgebraicValue::Bool(v), AlgebraicType::Bool)
@@ -246,7 +324,7 @@ impl Expr {
 }
 
 /// A typed qualified field projection
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FieldProject {
     pub table: Box<str>,
     pub field: usize,
