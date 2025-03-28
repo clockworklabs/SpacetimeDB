@@ -26,15 +26,15 @@ partial record TestTableTaggedEnum : System.IEquatable<TestTableTaggedEnum>
 
     public readonly partial struct BSATN : SpacetimeDB.BSATN.IReadWrite<TestTableTaggedEnum>
     {
-        internal static readonly SpacetimeDB.BSATN.Enum<@enum> __enumTag = new();
-        internal static readonly SpacetimeDB.BSATN.I32 X = new();
-        internal static readonly SpacetimeDB.BSATN.I32 Y = new();
+        internal static readonly SpacetimeDB.BSATN.Enum<@enum> __enumTagRW = new();
+        internal static readonly SpacetimeDB.BSATN.I32 XRW = new();
+        internal static readonly SpacetimeDB.BSATN.I32 YRW = new();
 
         public TestTableTaggedEnum Read(System.IO.BinaryReader reader) =>
-            __enumTag.Read(reader) switch
+            __enumTagRW.Read(reader) switch
             {
-                @enum.X => new X(X.Read(reader)),
-                @enum.Y => new Y(Y.Read(reader)),
+                @enum.X => new X(XRW.Read(reader)),
+                @enum.Y => new Y(YRW.Read(reader)),
                 _
                     => throw new System.InvalidOperationException(
                         "Invalid tag value, this state should be unreachable."
@@ -46,12 +46,12 @@ partial record TestTableTaggedEnum : System.IEquatable<TestTableTaggedEnum>
             switch (value)
             {
                 case X(var inner):
-                    __enumTag.Write(writer, @enum.X);
-                    X.Write(writer, inner);
+                    __enumTagRW.Write(writer, @enum.X);
+                    XRW.Write(writer, inner);
                     break;
                 case Y(var inner):
-                    __enumTag.Write(writer, @enum.Y);
-                    Y.Write(writer, inner);
+                    __enumTagRW.Write(writer, @enum.Y);
+                    YRW.Write(writer, inner);
                     break;
             }
         }
@@ -63,8 +63,8 @@ partial record TestTableTaggedEnum : System.IEquatable<TestTableTaggedEnum>
                 _ => new SpacetimeDB.BSATN.AlgebraicType.Sum(
                     new SpacetimeDB.BSATN.AggregateElement[]
                     {
-                        new(nameof(X), X.GetAlgebraicType(registrar)),
-                        new(nameof(Y), Y.GetAlgebraicType(registrar))
+                        new("X", XRW.GetAlgebraicType(registrar)),
+                        new("Y", YRW.GetAlgebraicType(registrar))
                     }
                 )
             );

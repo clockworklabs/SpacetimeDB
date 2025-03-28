@@ -8,12 +8,12 @@ partial struct TestTypeParams<T>
 {
     public void ReadFields(System.IO.BinaryReader reader)
     {
-        Field = BSATN.Field.Read(reader);
+        Field = BSATN.FieldRW.Read(reader);
     }
 
     public void WriteFields(System.IO.BinaryWriter writer)
     {
-        BSATN.Field.Write(writer, Field);
+        BSATN.FieldRW.Write(writer, Field);
     }
 
     public override string ToString() =>
@@ -21,7 +21,7 @@ partial struct TestTypeParams<T>
 
     public readonly partial struct BSATN : SpacetimeDB.BSATN.IReadWrite<TestTypeParams<T>>
     {
-        internal static readonly TRW Field = new();
+        internal static readonly TRW FieldRW = new();
 
         public TestTypeParams<T> Read(System.IO.BinaryReader reader) =>
             SpacetimeDB.BSATN.IStructuralReadWrite.Read<TestTypeParams<T>>(reader);
@@ -38,7 +38,7 @@ partial struct TestTypeParams<T>
                 _ => new SpacetimeDB.BSATN.AlgebraicType.Product(
                     new SpacetimeDB.BSATN.AggregateElement[]
                     {
-                        new(nameof(Field), Field.GetAlgebraicType(registrar))
+                        new("Field", FieldRW.GetAlgebraicType(registrar))
                     }
                 )
             );

@@ -8,14 +8,14 @@ partial struct TestAutoIncNotInteger
 {
     public void ReadFields(System.IO.BinaryReader reader)
     {
-        AutoIncField = BSATN.AutoIncField.Read(reader);
-        IdentityField = BSATN.IdentityField.Read(reader);
+        AutoIncField = BSATN.AutoIncFieldRW.Read(reader);
+        IdentityField = BSATN.IdentityFieldRW.Read(reader);
     }
 
     public void WriteFields(System.IO.BinaryWriter writer)
     {
-        BSATN.AutoIncField.Write(writer, AutoIncField);
-        BSATN.IdentityField.Write(writer, IdentityField);
+        BSATN.AutoIncFieldRW.Write(writer, AutoIncField);
+        BSATN.IdentityFieldRW.Write(writer, IdentityField);
     }
 
     public override string ToString() =>
@@ -23,8 +23,8 @@ partial struct TestAutoIncNotInteger
 
     public readonly partial struct BSATN : SpacetimeDB.BSATN.IReadWrite<TestAutoIncNotInteger>
     {
-        internal static readonly SpacetimeDB.BSATN.F32 AutoIncField = new();
-        internal static readonly SpacetimeDB.BSATN.String IdentityField = new();
+        internal static readonly SpacetimeDB.BSATN.F32 AutoIncFieldRW = new();
+        internal static readonly SpacetimeDB.BSATN.String IdentityFieldRW = new();
 
         public TestAutoIncNotInteger Read(System.IO.BinaryReader reader) =>
             SpacetimeDB.BSATN.IStructuralReadWrite.Read<TestAutoIncNotInteger>(reader);
@@ -41,8 +41,8 @@ partial struct TestAutoIncNotInteger
                 _ => new SpacetimeDB.BSATN.AlgebraicType.Product(
                     new SpacetimeDB.BSATN.AggregateElement[]
                     {
-                        new(nameof(AutoIncField), AutoIncField.GetAlgebraicType(registrar)),
-                        new(nameof(IdentityField), IdentityField.GetAlgebraicType(registrar))
+                        new("AutoIncField", AutoIncFieldRW.GetAlgebraicType(registrar)),
+                        new("IdentityField", IdentityFieldRW.GetAlgebraicType(registrar))
                     }
                 )
             );

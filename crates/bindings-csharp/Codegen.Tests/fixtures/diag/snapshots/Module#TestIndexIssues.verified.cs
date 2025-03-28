@@ -8,12 +8,12 @@ partial struct TestIndexIssues
 {
     public void ReadFields(System.IO.BinaryReader reader)
     {
-        SelfIndexingColumn = BSATN.SelfIndexingColumn.Read(reader);
+        SelfIndexingColumn = BSATN.SelfIndexingColumnRW.Read(reader);
     }
 
     public void WriteFields(System.IO.BinaryWriter writer)
     {
-        BSATN.SelfIndexingColumn.Write(writer, SelfIndexingColumn);
+        BSATN.SelfIndexingColumnRW.Write(writer, SelfIndexingColumn);
     }
 
     public override string ToString() =>
@@ -21,7 +21,7 @@ partial struct TestIndexIssues
 
     public readonly partial struct BSATN : SpacetimeDB.BSATN.IReadWrite<TestIndexIssues>
     {
-        internal static readonly SpacetimeDB.BSATN.I32 SelfIndexingColumn = new();
+        internal static readonly SpacetimeDB.BSATN.I32 SelfIndexingColumnRW = new();
 
         public TestIndexIssues Read(System.IO.BinaryReader reader) =>
             SpacetimeDB.BSATN.IStructuralReadWrite.Read<TestIndexIssues>(reader);
@@ -38,10 +38,7 @@ partial struct TestIndexIssues
                 _ => new SpacetimeDB.BSATN.AlgebraicType.Product(
                     new SpacetimeDB.BSATN.AggregateElement[]
                     {
-                        new(
-                            nameof(SelfIndexingColumn),
-                            SelfIndexingColumn.GetAlgebraicType(registrar)
-                        )
+                        new("SelfIndexingColumn", SelfIndexingColumnRW.GetAlgebraicType(registrar))
                     }
                 )
             );

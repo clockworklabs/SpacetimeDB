@@ -19,13 +19,13 @@ partial record TestTaggedEnumInlineTuple : System.IEquatable<TestTaggedEnumInlin
 
     public readonly partial struct BSATN : SpacetimeDB.BSATN.IReadWrite<TestTaggedEnumInlineTuple>
     {
-        internal static readonly SpacetimeDB.BSATN.Enum<@enum> __enumTag = new();
-        internal static readonly SpacetimeDB.BSATN.I32 Item1 = new();
+        internal static readonly SpacetimeDB.BSATN.Enum<@enum> __enumTagRW = new();
+        internal static readonly SpacetimeDB.BSATN.I32 Item1RW = new();
 
         public TestTaggedEnumInlineTuple Read(System.IO.BinaryReader reader) =>
-            __enumTag.Read(reader) switch
+            __enumTagRW.Read(reader) switch
             {
-                @enum.Item1 => new Item1(Item1.Read(reader)),
+                @enum.Item1 => new Item1(Item1RW.Read(reader)),
                 _
                     => throw new System.InvalidOperationException(
                         "Invalid tag value, this state should be unreachable."
@@ -37,8 +37,8 @@ partial record TestTaggedEnumInlineTuple : System.IEquatable<TestTaggedEnumInlin
             switch (value)
             {
                 case Item1(var inner):
-                    __enumTag.Write(writer, @enum.Item1);
-                    Item1.Write(writer, inner);
+                    __enumTagRW.Write(writer, @enum.Item1);
+                    Item1RW.Write(writer, inner);
                     break;
             }
         }
@@ -50,7 +50,7 @@ partial record TestTaggedEnumInlineTuple : System.IEquatable<TestTaggedEnumInlin
                 _ => new SpacetimeDB.BSATN.AlgebraicType.Sum(
                     new SpacetimeDB.BSATN.AggregateElement[]
                     {
-                        new(nameof(Item1), Item1.GetAlgebraicType(registrar))
+                        new("Item1", Item1RW.GetAlgebraicType(registrar))
                     }
                 )
             );

@@ -6,18 +6,18 @@ partial class CustomClass : System.IEquatable<CustomClass>, SpacetimeDB.BSATN.IS
 {
     public void ReadFields(System.IO.BinaryReader reader)
     {
-        IntField = BSATN.IntField.Read(reader);
-        StringField = BSATN.StringField.Read(reader);
-        NullableIntField = BSATN.NullableIntField.Read(reader);
-        NullableStringField = BSATN.NullableStringField.Read(reader);
+        IntField = BSATN.IntFieldRW.Read(reader);
+        StringField = BSATN.StringFieldRW.Read(reader);
+        NullableIntField = BSATN.NullableIntFieldRW.Read(reader);
+        NullableStringField = BSATN.NullableStringFieldRW.Read(reader);
     }
 
     public void WriteFields(System.IO.BinaryWriter writer)
     {
-        BSATN.IntField.Write(writer, IntField);
-        BSATN.StringField.Write(writer, StringField);
-        BSATN.NullableIntField.Write(writer, NullableIntField);
-        BSATN.NullableStringField.Write(writer, NullableStringField);
+        BSATN.IntFieldRW.Write(writer, IntField);
+        BSATN.StringFieldRW.Write(writer, StringField);
+        BSATN.NullableIntFieldRW.Write(writer, NullableIntField);
+        BSATN.NullableStringFieldRW.Write(writer, NullableStringField);
     }
 
     public override string ToString() =>
@@ -25,16 +25,16 @@ partial class CustomClass : System.IEquatable<CustomClass>, SpacetimeDB.BSATN.IS
 
     public readonly partial struct BSATN : SpacetimeDB.BSATN.IReadWrite<CustomClass>
     {
-        internal static readonly SpacetimeDB.BSATN.I32 IntField = new();
-        internal static readonly SpacetimeDB.BSATN.String StringField = new();
+        internal static readonly SpacetimeDB.BSATN.I32 IntFieldRW = new();
+        internal static readonly SpacetimeDB.BSATN.String StringFieldRW = new();
         internal static readonly SpacetimeDB.BSATN.ValueOption<
             int,
             SpacetimeDB.BSATN.I32
-        > NullableIntField = new();
+        > NullableIntFieldRW = new();
         internal static readonly SpacetimeDB.BSATN.RefOption<
             string,
             SpacetimeDB.BSATN.String
-        > NullableStringField = new();
+        > NullableStringFieldRW = new();
 
         public CustomClass Read(System.IO.BinaryReader reader) =>
             SpacetimeDB.BSATN.IStructuralReadWrite.Read<CustomClass>(reader);
@@ -50,13 +50,10 @@ partial class CustomClass : System.IEquatable<CustomClass>, SpacetimeDB.BSATN.IS
             registrar.RegisterType<CustomClass>(_ => new SpacetimeDB.BSATN.AlgebraicType.Product(
                 new SpacetimeDB.BSATN.AggregateElement[]
                 {
-                    new(nameof(IntField), IntField.GetAlgebraicType(registrar)),
-                    new(nameof(StringField), StringField.GetAlgebraicType(registrar)),
-                    new(nameof(NullableIntField), NullableIntField.GetAlgebraicType(registrar)),
-                    new(
-                        nameof(NullableStringField),
-                        NullableStringField.GetAlgebraicType(registrar)
-                    )
+                    new("IntField", IntFieldRW.GetAlgebraicType(registrar)),
+                    new("StringField", StringFieldRW.GetAlgebraicType(registrar)),
+                    new("NullableIntField", NullableIntFieldRW.GetAlgebraicType(registrar)),
+                    new("NullableStringField", NullableStringFieldRW.GetAlgebraicType(registrar))
                 }
             ));
 
