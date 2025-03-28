@@ -79,8 +79,8 @@ pub fn compile_read_only_query(auth: &AuthCtx, tx: &Tx, input: &str) -> Result<P
     let input = WHITESPACE.replace_all(input, " ");
 
     let tx = SchemaViewer::new(tx, auth);
-    let plan = SubscriptionPlan::compile(&input, &tx)?;
-    let hash = QueryHash::from_string(&input);
+    let (plan, has_param) = SubscriptionPlan::compile(&input, &tx, auth)?;
+    let hash = QueryHash::from_string(&input, auth.caller, has_param);
 
     Ok(Plan::new(plan, hash, input.into_owned()))
 }
@@ -698,7 +698,9 @@ mod tests {
             let tx = SchemaViewer::new(tx, &auth);
             // Should be answered using an index semijion
             let sql = "select lhs.* from lhs join rhs on lhs.id = rhs.id where rhs.y >= 2 and rhs.y <= 4";
-            Ok(SubscriptionPlan::compile(sql, &tx).unwrap())
+            Ok(SubscriptionPlan::compile(sql, &tx, &auth)
+                .map(|(plan, _)| plan)
+                .unwrap())
         })
     }
 
@@ -718,7 +720,9 @@ mod tests {
                 let tx = SchemaViewer::new(tx, &auth);
                 // Should be answered using an index semijion
                 let sql = "select lhs.* from lhs join rhs on lhs.id = rhs.id where lhs.x >= 5 and lhs.x <= 7";
-                Ok(SubscriptionPlan::compile(sql, &tx).unwrap())
+                Ok(SubscriptionPlan::compile(sql, &tx, &auth)
+                    .map(|(plan, _)| plan)
+                    .unwrap())
             })
         }
 

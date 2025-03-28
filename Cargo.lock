@@ -207,6 +207,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7c02d123df017efcdfbd739ef81735b36c5ba83ec3c59c80a9d7ecc718f92e50"
 
 [[package]]
+name = "async-stream"
+version = "0.3.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0b5a71a6f37880a80d1d7f19efd781e4b5de42c88f0722cc13bcb6cc2cfe8476"
+dependencies = [
+ "async-stream-impl",
+ "futures-core",
+ "pin-project-lite",
+]
+
+[[package]]
+name = "async-stream-impl"
+version = "0.3.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c7c24de15d275a1ecfd47a380fb4d5ec9bfe0933f309ed5e705b775596a3574d"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.87",
+]
+
+[[package]]
 name = "async-trait"
 version = "0.1.83"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -594,9 +616,9 @@ checksum = "1fd0f2584146f6f2ef48085050886acf353beff7305ebd1ae69500e27c67f64b"
 
 [[package]]
 name = "bytes"
-version = "1.8.0"
+version = "1.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9ac0150caa2ae65ca5bd83f25c7de183dea78d4d366469f148435e2acfbad0da"
+checksum = "d71b6127be86fdcfddb610f7182ac57211d4b18a3e9c82eb2d17662f2227ad6a"
 
 [[package]]
 name = "bytestring"
@@ -882,7 +904,7 @@ dependencies = [
 
 [[package]]
 name = "connect_disconnect_client"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "anyhow",
  "spacetimedb-sdk",
@@ -4809,7 +4831,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "bytemuck",
  "derive_more",
@@ -4827,7 +4849,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-bench"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "anyhow",
  "anymap",
@@ -4864,6 +4886,8 @@ dependencies = [
  "spacetimedb-table",
  "spacetimedb-testing",
  "tempdir",
+ "tikv-jemalloc-ctl",
+ "tikv-jemallocator",
  "tokio",
  "tracing-subscriber",
  "walkdir",
@@ -4871,7 +4895,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-bindings-macro"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "heck 0.4.1",
  "humantime",
@@ -4883,14 +4907,14 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-bindings-sys"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "spacetimedb-primitives",
 ]
 
 [[package]]
 name = "spacetimedb-cli"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "anyhow",
  "base64 0.21.7",
@@ -4937,6 +4961,8 @@ dependencies = [
  "tempfile",
  "termcolor",
  "thiserror 1.0.69",
+ "tikv-jemalloc-ctl",
+ "tikv-jemallocator",
  "tokio",
  "tokio-tungstenite",
  "toml 0.8.19",
@@ -4951,7 +4977,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-client-api"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4998,7 +5024,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-client-api-messages"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "brotli",
  "bytes",
@@ -5023,11 +5049,14 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-commitlog"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
+ "async-stream",
  "bitflags 2.6.0",
+ "bytes",
  "crc32c",
  "env_logger",
+ "futures",
  "itertools 0.12.1",
  "log",
  "memmap2",
@@ -5037,16 +5066,20 @@ dependencies = [
  "proptest-derive",
  "rand 0.8.5",
  "serde",
+ "spacetimedb-commitlog",
  "spacetimedb-paths",
  "spacetimedb-primitives",
  "spacetimedb-sats",
  "tempfile",
  "thiserror 1.0.69",
+ "tokio",
+ "tokio-stream",
+ "tokio-util",
 ]
 
 [[package]]
 name = "spacetimedb-core"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "anyhow",
  "arrayvec",
@@ -5134,6 +5167,8 @@ dependencies = [
  "tempfile",
  "thin-vec",
  "thiserror 1.0.69",
+ "tikv-jemalloc-ctl",
+ "tikv-jemallocator",
  "tokio",
  "tokio-stream",
  "tokio-util",
@@ -5154,7 +5189,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-data-structures"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "ahash 0.8.11",
  "hashbrown 0.15.1",
@@ -5166,7 +5201,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-durability"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "anyhow",
  "itertools 0.12.1",
@@ -5180,7 +5215,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-execution"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "anyhow",
  "itertools 0.12.1",
@@ -5195,7 +5230,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-expr"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "anyhow",
  "bigdecimal",
@@ -5211,7 +5246,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-fs-utils"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "anyhow",
  "hex",
@@ -5251,7 +5286,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-lib"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "anyhow",
  "bitflags 2.6.0",
@@ -5280,7 +5315,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-metrics"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "arrayvec",
  "itertools 0.12.1",
@@ -5290,7 +5325,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-paths"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -5306,7 +5341,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-physical-plan"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "anyhow",
  "derive_more",
@@ -5321,7 +5356,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-primitives"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "bitflags 2.6.0",
  "either",
@@ -5332,7 +5367,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-query"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "anyhow",
  "itertools 0.12.1",
@@ -5349,7 +5384,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-sats"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "ahash 0.8.11",
  "anyhow",
@@ -5381,7 +5416,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-schema"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "anyhow",
  "enum-as-inner",
@@ -5409,7 +5444,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-sdk"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "anymap",
  "base64 0.21.7",
@@ -5438,7 +5473,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-snapshot"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "blake3",
  "hex",
@@ -5455,16 +5490,17 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-sql-parser"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "derive_more",
+ "spacetimedb-lib",
  "sqlparser",
  "thiserror 1.0.69",
 ]
 
 [[package]]
 name = "spacetimedb-standalone"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5489,6 +5525,8 @@ dependencies = [
  "spacetimedb-paths",
  "tempfile",
  "thiserror 1.0.69",
+ "tikv-jemalloc-ctl",
+ "tikv-jemallocator",
  "tokio",
  "toml 0.8.19",
  "tower-http",
@@ -5497,7 +5535,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-subscription"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "anyhow",
  "spacetimedb-execution",
@@ -5510,7 +5548,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-table"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "ahash 0.8.11",
  "blake3",
@@ -5534,7 +5572,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-testing"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "anyhow",
  "clap 4.5.20",
@@ -5560,7 +5598,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-update"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "anyhow",
  "bytes",
@@ -5585,7 +5623,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-vm"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "anyhow",
  "arrayvec",
@@ -5676,7 +5714,7 @@ dependencies = [
 
 [[package]]
 name = "sqltest"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -6013,7 +6051,7 @@ dependencies = [
 
 [[package]]
 name = "test-client"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "anyhow",
  "env_logger",
@@ -6025,7 +6063,7 @@ dependencies = [
 
 [[package]]
 name = "test-counter"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "anyhow",
  "spacetimedb-data-structures",
@@ -6100,6 +6138,37 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d050e60b33d41c19108b32cea32164033a9013fe3b46cbd4457559bfbf77afaa"
 dependencies = [
  "num_cpus",
+]
+
+[[package]]
+name = "tikv-jemalloc-ctl"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f21f216790c8df74ce3ab25b534e0718da5a1916719771d3fec23315c99e468b"
+dependencies = [
+ "libc",
+ "paste",
+ "tikv-jemalloc-sys",
+]
+
+[[package]]
+name = "tikv-jemalloc-sys"
+version = "0.6.0+5.3.0-1-ge13ca993e8ccb9ba9847cc330696e02839f328f7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cd3c60906412afa9c2b5b5a48ca6a5abe5736aec9eb48ad05037a677e52e4e2d"
+dependencies = [
+ "cc",
+ "libc",
+]
+
+[[package]]
+name = "tikv-jemallocator"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4cec5ff18518d81584f477e9bfdf957f5bb0979b0bac3af4ca30b5b3ae2d2865"
+dependencies = [
+ "libc",
+ "tikv-jemalloc-sys",
 ]
 
 [[package]]
@@ -6248,9 +6317,9 @@ dependencies = [
 
 [[package]]
 name = "tokio-stream"
-version = "0.1.16"
+version = "0.1.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4f4e6ce100d0eb49a2734f8c0812bcd324cf357d21810932c5df6b96ef2b86f1"
+checksum = "eca58d7bba4a75707817a2c44174253f9236b2d5fbd055602e9d5c07c139a047"
 dependencies = [
  "futures-core",
  "pin-project-lite",

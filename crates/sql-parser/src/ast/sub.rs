@@ -1,8 +1,11 @@
+use spacetimedb_lib::Identity;
+
 use crate::parser::{errors::SqlUnsupported, SqlParseResult};
 
 use super::{Project, SqlExpr, SqlFrom};
 
 /// A SELECT statement in the SQL subscription language
+#[derive(Debug)]
 pub struct SqlSelect {
     pub project: Project,
     pub from: SqlFrom,
@@ -29,5 +32,19 @@ impl SqlSelect {
             return Err(SqlUnsupported::UnqualifiedNames.into());
         }
         Ok(self)
+    }
+
+    /// Is this AST parameterized?
+    /// We need to know in order to hash subscription queries correctly.
+    pub fn has_parameter(&self) -> bool {
+        self.filter.as_ref().is_some_and(|expr| expr.has_parameter())
+    }
+
+    /// Replace the `:sender` parameter with the [Identity] it represents
+    pub fn resolve_sender(self, sender_identity: Identity) -> Self {
+        Self {
+            filter: self.filter.map(|expr| expr.resolve_sender(sender_identity)),
+            ..self
+        }
     }
 }

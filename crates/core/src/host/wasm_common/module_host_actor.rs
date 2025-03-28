@@ -229,8 +229,8 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
         &self.replica_context
     }
 
-    fn close(self) {
-        self.scheduler.close()
+    fn scheduler(&self) -> &Scheduler {
+        &self.scheduler
     }
 }
 

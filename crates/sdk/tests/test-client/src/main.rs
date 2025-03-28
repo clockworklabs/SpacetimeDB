@@ -124,6 +124,7 @@ fn main() {
         "row-deduplication-r-join-s-and-r-joint" => exec_row_deduplication_r_join_s_and_r_join_t(),
         "test-intra-query-bag-semantics-for-join" => test_intra_query_bag_semantics_for_join(),
         "two-different-compression-algos" => exec_two_different_compression_algos(),
+        "test-parameterized-subscription" => test_parameterized_subscription(),
         _ => panic!("Unknown test: {}", test),
     }
 }
@@ -2229,4 +2230,69 @@ fn exec_two_different_compression_algos() {
     connect_with_compression(&test_counter, "gzip", Gzip, got_gzip, &barrier, &bytes);
     connect_with_compression(&test_counter, "none", None, got_none, &barrier, &bytes);
     test_counter.wait_for_all();
+}
+
+/// In this test we have two clients issue parameterized subscriptions.
+/// These subscriptions are identical syntactically but not semantically,
+/// because they are parameterized by `:sender` - the caller's identity.
+fn test_parameterized_subscription() {
+    let ctr_for_test = TestCounter::new();
+    let ctr_for_subs = TestCounter::new();
+    let sub_0 = Some(ctr_for_subs.add_test("sub_0"));
+    let sub_1 = Some(ctr_for_subs.add_test("sub_1"));
+    let insert_0 = Some(ctr_for_test.add_test("insert_0"));
+    let insert_1 = Some(ctr_for_test.add_test("insert_1"));
+    let update_0 = Some(ctr_for_test.add_test("update_0"));
+    let update_1 = Some(ctr_for_test.add_test("update_1"));
+
+    fn subscribe_and_update(
+        test_name: &str,
+        old: i32,
+        new: i32,
+        waiters: [Arc<TestCounter>; 2],
+        senders: [Option<ResultRecorder>; 3],
+    ) {
+        let [ctr_for_test, ctr_for_subs] = waiters;
+        let [mut record_sub, mut record_ins, mut record_upd] = senders;
+        connect_with_then(&ctr_for_test, test_name, |builder| builder, {
+            move |ctx| {
+                let sender = ctx.identity();
+                subscribe_these_then(ctx, &["SELECT * FROM pk_identity WHERE i = :sender"], move |ctx| {
+                    put_result(&mut record_sub, Ok(()));
+                    // Wait to insert until both client connections have been made
+                    ctr_for_subs.wait_for_all();
+                    PkIdentity::insert(ctx, sender, old);
+                    PkIdentity::update(ctx, sender, new);
+                });
+                PkIdentity::on_insert(ctx, move |_, row| {
+                    assert_eq!(row.i, sender);
+                    assert_eq!(row.data, old);
+                    put_result(&mut record_ins, Ok(()));
+                });
+                PkIdentity::on_update(ctx, move |_, old_row, new_row| {
+                    assert_eq!(old_row.i, sender);
+                    assert_eq!(new_row.i, sender);
+                    assert_eq!(old_row.data, old);
+                    assert_eq!(new_row.data, new);
+                    put_result(&mut record_upd, Ok(()));
+                });
+            }
+        });
+    }
+
+    subscribe_and_update(
+        "client_0",
+        1,
+        2,
+        [ctr_for_test.clone(), ctr_for_subs.clone()],
+        [sub_0, insert_0, update_0],
+    );
+    subscribe_and_update(
+        "client_1",
+        3,
+        4,
+        [ctr_for_test.clone(), ctr_for_subs.clone()],
+        [sub_1, insert_1, update_1],
+    );
+    ctr_for_test.wait_for_all();
 }

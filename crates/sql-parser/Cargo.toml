@@ -10,3 +10,4 @@ description = "The SpacetimeDB SQL AST and Parser"
 derive_more.workspace = true
 sqlparser.workspace = true
 thiserror.workspace = true
+spacetimedb-lib.workspace = true

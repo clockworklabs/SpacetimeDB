@@ -1,4 +1,4 @@
-use super::{ArgsTuple, InvalidReducerArguments, ReducerArgs, ReducerCallResult, ReducerId, ReducerOutcome};
+use super::{ArgsTuple, InvalidReducerArguments, ReducerArgs, ReducerCallResult, ReducerId, ReducerOutcome, Scheduler};
 use crate::client::{ClientActorId, ClientConnectionSender};
 use crate::database_logger::{LogLevel, Record};
 use crate::db::datastore::locking_tx_datastore::MutTxId;
@@ -15,7 +15,7 @@ use crate::sql::ast::SchemaViewer;
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use crate::subscription::tx::DeltaTx;
 use crate::subscription::{execute_plan, record_exec_metrics};
-use crate::util::lending_pool::{Closed, LendingPool, LentResource, PoolClosed};
+use crate::util::lending_pool::{LendingPool, LentResource, PoolClosed};
 use crate::vm::check_row_limit;
 use crate::worker_metrics::WORKER_METRICS;
 use anyhow::Context;
@@ -251,7 +251,7 @@ pub trait Module: Send + Sync + 'static {
     fn info(&self) -> Arc<ModuleInfo>;
     fn create_instance(&self) -> Self::Instance;
     fn replica_ctx(&self) -> &ReplicaContext;
-    fn close(self);
+    fn scheduler(&self) -> &Scheduler;
 }
 
 pub trait ModuleInstance: Send + 'static {
@@ -342,8 +342,8 @@ impl fmt::Debug for ModuleHost {
 trait DynModuleHost: Send + Sync + 'static {
     async fn get_instance(&self, db: Identity) -> Result<Box<dyn ModuleInstance>, NoSuchModule>;
     fn replica_ctx(&self) -> &ReplicaContext;
-    fn exit(&self) -> Closed<'_>;
-    fn exited(&self) -> Closed<'_>;
+    async fn exit(&self);
+    async fn exited(&self);
 }
 
 struct HostControllerActor<T: Module> {
@@ -404,12 +404,14 @@ impl<T: Module> DynModuleHost for HostControllerActor<T> {
         self.module.replica_ctx()
     }
 
-    fn exit(&self) -> Closed<'_> {
-        self.instance_pool.close()
+    async fn exit(&self) {
+        self.module.scheduler().close();
+        self.instance_pool.close();
+        self.exited().await
     }
 
-    fn exited(&self) -> Closed<'_> {
-        self.instance_pool.closed()
+    async fn exited(&self) {
+        tokio::join!(self.module.scheduler().closed(), self.instance_pool.closed());
     }
 }
 
@@ -898,7 +900,7 @@ impl ModuleHost {
 
         let (rows, metrics) = db.with_read_only(Workload::Sql, |tx| {
             let tx = SchemaViewer::new(tx, &auth);
-            let (plan, _, table_name) = compile_subscription(&query, &tx)?;
+            let (plan, _, table_name, _) = compile_subscription(&query, &tx, &auth)?;
             let plan = plan.optimize()?;
             check_row_limit(&plan, db, &tx, |plan, tx| estimate_rows_scanned(tx, plan), &auth)?;
             execute_plan::<_, F>(&plan.into(), &DeltaTx::from(&*tx))

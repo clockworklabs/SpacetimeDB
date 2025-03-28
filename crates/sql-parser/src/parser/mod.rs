@@ -5,7 +5,9 @@ use sqlparser::ast::{
     WildcardAdditionalOptions,
 };
 
-use crate::ast::{BinOp, LogOp, Project, ProjectElem, ProjectExpr, SqlExpr, SqlFrom, SqlIdent, SqlJoin, SqlLiteral};
+use crate::ast::{
+    BinOp, LogOp, Parameter, Project, ProjectElem, ProjectExpr, SqlExpr, SqlFrom, SqlIdent, SqlJoin, SqlLiteral,
+};
 
 pub mod errors;
 pub mod sql;
@@ -211,6 +213,7 @@ pub(crate) fn parse_expr(expr: Expr) -> SqlParseResult<SqlExpr> {
     }
     match expr {
         Expr::Nested(expr) => parse_expr(*expr),
+        Expr::Value(Value::Placeholder(param)) if &param == ":sender" => Ok(SqlExpr::Param(Parameter::Sender)),
         Expr::Value(v) => Ok(SqlExpr::Lit(parse_literal(v)?)),
         Expr::UnaryOp {
             op: UnaryOperator::Plus,

@@ -22,6 +22,11 @@ pub const DEFAULT_LOG_FORMAT_VERSION: u8 = 1;
 pub const DEFAULT_CHECKSUM_ALGORITHM: u8 = CHECKSUM_ALGORITHM_CRC32C;
 
 pub const CHECKSUM_ALGORITHM_CRC32C: u8 = 0;
+pub const CHECKSUM_CRC32C_LEN: usize = 4;
+
+/// Lookup table for checksum length, index is [`Header::checksum_algorithm`].
+// Supported algorithms must be numbered consecutively!
+pub const CHECKSUM_LEN: [usize; 1] = [CHECKSUM_CRC32C_LEN];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Header {
@@ -137,6 +142,10 @@ impl<W: io::Write> Writer<W> {
 
         let commit_len = self.commit.encoded_len() as u64;
         self.offset_index_head.as_mut().map(|index| {
+            debug!(
+                "append_after commit min_tx_offset={} bytes_written={} commit_len={}",
+                self.commit.min_tx_offset, self.bytes_written, commit_len
+            );
             index
                 .append_after_commit(self.commit.min_tx_offset, self.bytes_written, commit_len)
                 .map_err(|e| {
@@ -534,7 +543,7 @@ impl Metadata {
             sofar: &Metadata,
         ) -> Result<Option<commit::Metadata>, error::SegmentMetadata> {
             commit::Metadata::extract(reader).map_err(|e| {
-                if e.kind() == io::ErrorKind::InvalidData {
+                if matches!(e.kind(), io::ErrorKind::InvalidData | io::ErrorKind::UnexpectedEof) {
                     error::SegmentMetadata::InvalidCommit {
                         sofar: sofar.clone(),
                         source: e,

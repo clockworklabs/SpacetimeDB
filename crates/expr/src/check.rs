@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use crate::expr::{Expr, ProjectList, ProjectName, Relvar};
 use crate::{expr::LeftDeepJoin, statement::Statement};
+use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::AlgebraicType;
 use spacetimedb_primitives::TableId;
 use spacetimedb_schema::schema::TableSchema;
@@ -155,8 +156,11 @@ impl TypeChecker for SubChecker {
 }
 
 /// Parse and type check a subscription query
-pub fn parse_and_type_sub(sql: &str, tx: &impl SchemaView) -> TypingResult<ProjectName> {
-    expect_table_type(SubChecker::type_ast(parse_subscription(sql)?, tx)?)
+pub fn parse_and_type_sub(sql: &str, tx: &impl SchemaView, auth: &AuthCtx) -> TypingResult<(ProjectName, bool)> {
+    let ast = parse_subscription(sql)?;
+    let has_param = ast.has_parameter();
+    let ast = ast.resolve_sender(auth.caller);
+    expect_table_type(SubChecker::type_ast(ast, tx)?).map(|plan| (plan, has_param))
 }
 
 /// Type check a subscription query
@@ -165,9 +169,10 @@ pub fn type_subscription(ast: SqlSelect, tx: &impl SchemaView) -> TypingResult<P
 }
 
 /// Parse and type check a *subscription* query into a `StatementCtx`
-pub fn compile_sql_sub<'a>(sql: &'a str, tx: &impl SchemaView) -> TypingResult<StatementCtx<'a>> {
+pub fn compile_sql_sub<'a>(sql: &'a str, tx: &impl SchemaView, auth: &AuthCtx) -> TypingResult<StatementCtx<'a>> {
+    let (plan, _) = parse_and_type_sub(sql, tx, auth)?;
     Ok(StatementCtx {
-        statement: Statement::Select(ProjectList::Name(parse_and_type_sub(sql, tx)?)),
+        statement: Statement::Select(ProjectList::Name(plan)),
         sql,
         source: StatementSource::Subscription,
     })
@@ -229,11 +234,14 @@ pub mod test_utils {
 
 #[cfg(test)]
 mod tests {
-    use crate::check::test_utils::{build_module_def, SchemaViewer};
-    use spacetimedb_lib::{AlgebraicType, ProductType};
+    use crate::{
+        check::test_utils::{build_module_def, SchemaViewer},
+        expr::ProjectName,
+    };
+    use spacetimedb_lib::{identity::AuthCtx, AlgebraicType, ProductType};
     use spacetimedb_schema::def::ModuleDef;
 
-    use super::parse_and_type_sub;
+    use super::{SchemaView, TypingResult};
 
     fn module_def() -> ModuleDef {
         build_module_def(vec![
@@ -270,6 +278,11 @@ mod tests {
                 ]),
             ),
         ])
+    }
+
+    /// A wrapper around [super::parse_and_type_sub] that takes a dummy [AuthCtx]
+    fn parse_and_type_sub(sql: &str, tx: &impl SchemaView) -> TypingResult<ProjectName> {
+        super::parse_and_type_sub(sql, tx, &AuthCtx::for_testing()).map(|(plan, _)| plan)
     }
 
     #[test]
@@ -424,6 +437,14 @@ mod tests {
                 msg: "Can leave columns unqualified when unambiguous",
             },
             TestCase {
+                sql: "select * from s where id = :sender",
+                msg: "Can use :sender as an Identity",
+            },
+            TestCase {
+                sql: "select * from s where bytes = :sender",
+                msg: "Can use :sender as a byte array",
+            },
+            TestCase {
                 sql: "select * from t where t.u32 = 1 or t.str = ''",
                 msg: "Type OR with qualified column references",
             },
@@ -466,6 +487,10 @@ mod tests {
             TestCase {
                 sql: "select * from r",
                 msg: "Table r does not exist",
+            },
+            TestCase {
+                sql: "select * from t where arr = :sender",
+                msg: "The :sender param is an identity",
             },
             TestCase {
                 sql: "select * from t where t.a = 1",

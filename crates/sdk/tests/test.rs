@@ -225,6 +225,11 @@ macro_rules! declare_tests_with_suffix {
             fn two_different_compression_algos() {
                 make_test("two-different-compression-algos").run();
             }
+
+            #[test]
+            fn test_parameterized_subscription() {
+                make_test("test-parameterized-subscription").run();
+            }
         }
     };
 }
