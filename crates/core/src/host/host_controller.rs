@@ -760,7 +760,7 @@ impl Host {
         // Disconnect dangling clients.
         for (identity, connection_id) in connected_clients {
             module_host
-                .call_identity_connected_disconnected(identity, connection_id, false)
+                .call_identity_disconnected(identity, connection_id)
                 .await
                 .with_context(|| {
                     format!(
