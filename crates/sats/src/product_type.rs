@@ -121,6 +121,25 @@ impl ProductType {
         self.is_i64_newtype(TIME_DURATION_TAG)
     }
 
+    pub fn is_identity_tag(tag_name: &str) -> bool {
+        tag_name == IDENTITY_TAG
+    }
+
+    /// Returns whether this is the special tag of [`ConnectionId`].
+    pub fn is_connection_id_tag(tag_name: &str) -> bool {
+        tag_name == CONNECTION_ID_TAG
+    }
+
+    /// Returns whether this is the special tag of [`Timestamp`].
+    pub fn is_timestamp_tag(tag_name: &str) -> bool {
+        tag_name == TIMESTAMP_TAG
+    }
+
+    /// Returns whether this is the special tag of [`TimeDuration`].
+    pub fn is_time_duration_tag(tag_name: &str) -> bool {
+        tag_name == TIME_DURATION_TAG
+    }
+
     /// Returns whether this is a special known `tag`,
     /// currently `Address`, `Identity`, `Timestamp` or `TimeDuration`.
     pub fn is_special_tag(tag_name: &str) -> bool {

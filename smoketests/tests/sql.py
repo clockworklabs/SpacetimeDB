@@ -1,9 +1,10 @@
 from .. import Smoketest
 
+
 class SqlFormat(Smoketest):
     MODULE_CODE = """
 use spacetimedb::sats::{i256, u256};
-use spacetimedb::{table, ConnectionId, Identity, ReducerContext, Table};
+use spacetimedb::{table, ConnectionId, Identity, ReducerContext, Table, Timestamp, TimeDuration};
 
 #[derive(Copy, Clone)]
 #[spacetimedb::table(name = t_ints)]
@@ -46,7 +47,9 @@ pub struct TOthers {
     str: String,
     bytes: Vec<u8>,
     identity: Identity,
-    connection_id: ConnectionId,    
+    connection_id: ConnectionId,
+    timestamp: Timestamp,
+    duration:  TimeDuration,
 }
 
 #[spacetimedb::table(name = t_others_tuple)]
@@ -84,8 +87,10 @@ pub fn test(ctx: &ReducerContext) {
         f64: -3454353.345389043278459,
         str: "This is spacetimedb".to_string(),
         bytes: vec!(1, 2, 3, 4, 5, 6, 7),
-        identity: Identity::ZERO,
+        identity: Identity::ONE,
         connection_id: ConnectionId::ZERO,      
+        timestamp: Timestamp::UNIX_EPOCH,
+        duration: TimeDuration::ZERO,
     };
     ctx.db.t_others().insert(tuple.clone());
     ctx.db.t_others_tuple().insert(TOthersTuple { tuple });
@@ -125,12 +130,12 @@ pub fn test(ctx: &ReducerContext) {
  (u8 = 105, u16 = 1050, u32 = 83892, u64 = 48937498, u128 = 4378528978889, u256 = 4378528978889) 
 """)
         self.assertSql("SELECT * FROM t_others", """\
- bool | f32       | f64                | str                   | bytes            | identity                                                           | connection_id
-------+-----------+--------------------+-----------------------+------------------+--------------------------------------------------------------------+------------------------------------
- true | 594806.56 | -3454353.345389043 | "This is spacetimedb" | 0x01020304050607 | 0x0000000000000000000000000000000000000000000000000000000000000000 | 0x00000000000000000000000000000000
+ bool | f32       | f64                | str                   | bytes            | identity                                                           | connection_id                      | timestamp | duration
+------+-----------+--------------------+-----------------------+------------------+--------------------------------------------------------------------+------------------------------------+-----------+-----------
+ true | 594806.56 | -3454353.345389043 | "This is spacetimedb" | 0x01020304050607 | 0x0000000000000000000000000000000000000000000000000000000000000001 | 0x00000000000000000000000000000000 | 0.000000  | +0.000000
 """)
         self.assertSql("SELECT * FROM t_others_tuple", """\
  tuple                                                                                                                                                         
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- (bool = true, f32 = 594806.56, f64 = -3454353.345389043, str = "This is spacetimedb", bytes = 0x01020304050607, identity = 0x0000000000000000000000000000000000000000000000000000000000000000, connection_id = 0x00000000000000000000000000000000)
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ (bool = true, f32 = 594806.56, f64 = -3454353.345389043, str = "This is spacetimedb", bytes = 0x01020304050607, identity = 0x0000000000000000000000000000000000000000000000000000000000000001, connection_id = 0x00000000000000000000000000000000, timestamp = 0.000000, duration = +0.000000)
 """)

@@ -273,6 +273,8 @@ mod tests {
     use spacetimedb_lib::error::{ResultTest, TestError};
     use spacetimedb_lib::{ConnectionId, Identity};
     use spacetimedb_primitives::{col_list, ColList, TableId};
+    use spacetimedb_sats::time_duration::TimeDuration;
+    use spacetimedb_sats::timestamp::Timestamp;
     use spacetimedb_sats::{
         product, AlgebraicType, AlgebraicValue, GroundSpacetimeType as _, ProductType, ProductValue,
     };
@@ -441,30 +443,40 @@ mod tests {
 
     fn expect_psql_table(ty: &ProductType, rows: Vec<ProductValue>, expected: &str) {
         let table = build_table(ty, rows.into_iter().map(Ok::<_, ()>)).unwrap().to_string();
-        let table = table.split('\n').map(|x| x.trim_end()).join("\n");
+        let mut table = table.split('\n').map(|x| x.trim_end()).join("\n");
+        table.insert(0, '\n');
         assert_eq!(expected, table);
     }
 
-    // Verify the output of `sql` matches the inputs for `Identity`, 'ConnectionId' & binary data.
+    // Verify the output of `sql` matches the inputs that return true for [`AlgebraicType::is_special()`]
     #[test]
-    fn output_identity_connection_id() -> ResultTest<()> {
+    fn output_special_types() -> ResultTest<()> {
         // Check tuples
         let kind: ProductType = [
             AlgebraicType::String,
             AlgebraicType::U256,
             Identity::get_type(),
             ConnectionId::get_type(),
+            Timestamp::get_type(),
+            TimeDuration::get_type(),
         ]
         .into();
-
-        let value = product!["a", Identity::ZERO.to_u256(), Identity::ZERO, ConnectionId::ZERO,];
+        let value = product![
+            "a",
+            Identity::ZERO.to_u256(),
+            Identity::ZERO,
+            ConnectionId::ZERO,
+            Timestamp::UNIX_EPOCH,
+            TimeDuration::ZERO
+        ];
 
         expect_psql_table(
             &kind,
             vec![value],
-            r#" column 0 | column 1 | column 2                                                           | column 3
-----------+----------+--------------------------------------------------------------------+------------------------------------
- "a"      | 0        | 0x0000000000000000000000000000000000000000000000000000000000000000 | 0x00000000000000000000000000000000"#,
+            r#"
+ column 0 | column 1 | column 2                                                           | column 3                           | column 4 | column 5
+----------+----------+--------------------------------------------------------------------+------------------------------------+----------+-----------
+ "a"      | 0        | 0x0000000000000000000000000000000000000000000000000000000000000000 | 0x00000000000000000000000000000000 | 0.000000 | +0.000000"#,
         );
 
         // Check struct
@@ -474,6 +486,8 @@ mod tests {
             ("bytes", AlgebraicType::bytes()),
             ("identity", Identity::get_type()),
             ("connection_id", ConnectionId::get_type()),
+            ("timestamp", Timestamp::get_type()),
+            ("duration", TimeDuration::get_type()),
         ]
         .into();
 
@@ -483,14 +497,17 @@ mod tests {
             AlgebraicValue::Bytes([1, 2, 3, 4, 5, 6, 7].into()),
             Identity::ZERO,
             ConnectionId::ZERO,
+            Timestamp::UNIX_EPOCH,
+            TimeDuration::ZERO
         ];
 
         expect_psql_table(
             &kind,
             vec![value.clone()],
-            r#" bool | str                   | bytes            | identity                                                           | connection_id
-------+-----------------------+------------------+--------------------------------------------------------------------+------------------------------------
- true | "This is spacetimedb" | 0x01020304050607 | 0x0000000000000000000000000000000000000000000000000000000000000000 | 0x00000000000000000000000000000000"#,
+            r#"
+ bool | str                   | bytes            | identity                                                           | connection_id                      | timestamp | duration
+------+-----------------------+------------------+--------------------------------------------------------------------+------------------------------------+-----------+-----------
+ true | "This is spacetimedb" | 0x01020304050607 | 0x0000000000000000000000000000000000000000000000000000000000000000 | 0x00000000000000000000000000000000 | 0.000000  | +0.000000"#,
         );
 
         // Check nested struct, tuple...
@@ -501,9 +518,10 @@ mod tests {
         expect_psql_table(
             &kind,
             vec![value.clone()],
-            r#" column 0
----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- (bool = true, str = "This is spacetimedb", bytes = 0x01020304050607, identity = 0x0000000000000000000000000000000000000000000000000000000000000000, connection_id = 0x00000000000000000000000000000000)"#,
+            r#"
+ column 0
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ (bool = true, str = "This is spacetimedb", bytes = 0x01020304050607, identity = 0x0000000000000000000000000000000000000000000000000000000000000000, connection_id = 0x00000000000000000000000000000000, timestamp = 0.000000, duration = +0.000000)"#,
         );
 
         let kind: ProductType = [("tuple", AlgebraicType::product(kind))].into();
@@ -513,9 +531,10 @@ mod tests {
         expect_psql_table(
             &kind,
             vec![value],
-            r#" tuple
----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- (0 = (bool = true, str = "This is spacetimedb", bytes = 0x01020304050607, identity = 0x0000000000000000000000000000000000000000000000000000000000000000, connection_id = 0x00000000000000000000000000000000))"#,
+            r#"
+ tuple
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ (0 = (bool = true, str = "This is spacetimedb", bytes = 0x01020304050607, identity = 0x0000000000000000000000000000000000000000000000000000000000000000, connection_id = 0x00000000000000000000000000000000, timestamp = 0.000000, duration = +0.000000))"#,
         );
 
         Ok(())

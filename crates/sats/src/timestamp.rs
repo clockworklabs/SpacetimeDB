@@ -1,7 +1,7 @@
 use anyhow::Context;
 use chrono::DateTime;
 
-use crate::{de::Deserialize, impl_st, ser::Serialize, time_duration::TimeDuration, AlgebraicType};
+use crate::{de::Deserialize, impl_st, ser::Serialize, time_duration::TimeDuration, AlgebraicType, AlgebraicValue};
 use std::fmt;
 use std::ops::Add;
 use std::time::{Duration, SystemTime};
@@ -172,6 +172,12 @@ impl From<SystemTime> for Timestamp {
 impl From<Timestamp> for SystemTime {
     fn from(timestamp: Timestamp) -> Self {
         timestamp.to_system_time()
+    }
+}
+
+impl From<Timestamp> for AlgebraicValue {
+    fn from(value: Timestamp) -> Self {
+        AlgebraicValue::product([value.to_micros_since_unix_epoch().into()])
     }
 }
 
