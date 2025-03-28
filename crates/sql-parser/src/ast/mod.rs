@@ -1,5 +1,6 @@
 use std::fmt::{Display, Formatter};
 
+use spacetimedb_lib::Identity;
 use sqlparser::ast::Ident;
 
 pub mod sql;
@@ -108,6 +109,8 @@ pub enum SqlExpr {
     Lit(SqlLiteral),
     /// Unqualified column ref
     Var(SqlIdent),
+    /// A parameter prefixed with `:`
+    Param(Parameter),
     /// Qualified column ref
     Field(SqlIdent, SqlIdent),
     /// A binary infix expression
@@ -120,7 +123,7 @@ impl SqlExpr {
     pub fn qualify_vars(self, with: SqlIdent) -> Self {
         match self {
             Self::Var(name) => Self::Field(with, name),
-            Self::Lit(..) | Self::Field(..) => self,
+            Self::Lit(..) | Self::Field(..) | Self::Param(..) => self,
             Self::Bin(a, b, op) => Self::Bin(
                 Box::new(a.qualify_vars(with.clone())),
                 Box::new(b.qualify_vars(with)),
@@ -141,6 +144,44 @@ impl SqlExpr {
             _ => false,
         }
     }
+
+    /// Is this AST parameterized?
+    /// We need to know in order to hash subscription queries correctly.
+    pub fn has_parameter(&self) -> bool {
+        match self {
+            Self::Lit(_) | Self::Var(_) | Self::Field(..) => false,
+            Self::Param(Parameter::Sender) => true,
+            Self::Bin(a, b, _) | Self::Log(a, b, _) => a.has_parameter() || b.has_parameter(),
+        }
+    }
+
+    /// Replace the `:sender` parameter with the [Identity] it represents
+    pub fn resolve_sender(self, sender_identity: Identity) -> Self {
+        match self {
+            Self::Lit(_) | Self::Var(_) | Self::Field(..) => self,
+            Self::Param(Parameter::Sender) => {
+                Self::Lit(SqlLiteral::Hex(String::from(sender_identity.to_hex()).into_boxed_str()))
+            }
+
+            Self::Bin(a, b, op) => Self::Bin(
+                Box::new(a.resolve_sender(sender_identity)),
+                Box::new(b.resolve_sender(sender_identity)),
+                op,
+            ),
+            Self::Log(a, b, op) => Self::Log(
+                Box::new(a.resolve_sender(sender_identity)),
+                Box::new(b.resolve_sender(sender_identity)),
+                op,
+            ),
+        }
+    }
+}
+
+/// A named parameter prefixed with `:`
+#[derive(Debug)]
+pub enum Parameter {
+    /// :sender
+    Sender,
 }
 
 /// A SQL identifier or named reference.

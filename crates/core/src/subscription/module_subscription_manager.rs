@@ -727,8 +727,8 @@ mod tests {
         db.with_read_only(Workload::ForTests, |tx| {
             let auth = AuthCtx::for_testing();
             let tx = SchemaViewer::new(&*tx, &auth);
-            let hash = QueryHash::from_string(sql);
-            let plan = SubscriptionPlan::compile(sql, &tx).unwrap();
+            let (plan, has_param) = SubscriptionPlan::compile(sql, &tx, &auth).unwrap();
+            let hash = QueryHash::from_string(sql, auth.caller, has_param);
             Ok(Arc::new(Plan::new(plan, hash, sql.into())))
         })
     }

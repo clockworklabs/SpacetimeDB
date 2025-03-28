@@ -2,6 +2,7 @@ use crate::identity::Identity;
 pub use jsonwebtoken::errors::Error as JwtError;
 pub use jsonwebtoken::errors::ErrorKind as JwtErrorKind;
 pub use jsonwebtoken::{DecodingKey, EncodingKey};
+use serde::Deserializer;
 use serde::{Deserialize, Serialize};
 use std::time::SystemTime;
 
@@ -27,6 +28,28 @@ pub struct SpacetimeIdentityClaims {
     pub exp: Option<SystemTime>,
 }
 
+fn deserialize_audience<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    // By using `untagged`, it will try the different options.
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Audience {
+        Single(String),
+        Multiple(Vec<String>),
+    }
+
+    // Deserialize into the enum
+    let audience = Audience::deserialize(deserializer)?;
+
+    // Convert the enum into a Vec<String>
+    Ok(match audience {
+        Audience::Single(s) => vec![s],
+        Audience::Multiple(v) => v,
+    })
+}
+
 // IncomingClaims are from the token we receive from the client.
 // The signature should be verified already, but further validation is needed to have a SpacetimeIdentityClaims2.
 #[serde_with::serde_as]
@@ -38,7 +61,7 @@ pub struct IncomingClaims {
     pub subject: String,
     #[serde(rename = "iss")]
     pub issuer: String,
-    #[serde(rename = "aud", default)]
+    #[serde(rename = "aud", default, deserialize_with = "deserialize_audience")]
     pub audience: Vec<String>,
 
     /// The unix timestamp the token was issued at
@@ -93,5 +116,77 @@ impl TryInto<SpacetimeIdentityClaims> for IncomingClaims {
             iat: self.iat,
             exp: self.exp,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    use std::time::UNIX_EPOCH;
+
+    #[test]
+    fn test_deserialize_audience_single_string() {
+        let json_data = json!({
+            "sub": "123",
+            "iss": "example.com",
+            "aud": "audience1",
+            "iat": 1693425600,
+            "exp": 1693512000
+        });
+
+        let claims: IncomingClaims = serde_json::from_value(json_data).unwrap();
+
+        assert_eq!(claims.audience, vec!["audience1"]);
+        assert_eq!(claims.subject, "123");
+        assert_eq!(claims.issuer, "example.com");
+        assert_eq!(claims.iat, UNIX_EPOCH + std::time::Duration::from_secs(1693425600));
+        assert_eq!(
+            claims.exp,
+            Some(UNIX_EPOCH + std::time::Duration::from_secs(1693512000))
+        );
+    }
+
+    #[test]
+    fn test_deserialize_audience_multiple_strings() {
+        let json_data = json!({
+            "sub": "123",
+            "iss": "example.com",
+            "aud": ["audience1", "audience2"],
+            "iat": 1693425600,
+            "exp": 1693512000
+        });
+
+        let claims: IncomingClaims = serde_json::from_value(json_data).unwrap();
+
+        assert_eq!(claims.audience, vec!["audience1", "audience2"]);
+        assert_eq!(claims.subject, "123");
+        assert_eq!(claims.issuer, "example.com");
+        assert_eq!(claims.iat, UNIX_EPOCH + std::time::Duration::from_secs(1693425600));
+        assert_eq!(
+            claims.exp,
+            Some(UNIX_EPOCH + std::time::Duration::from_secs(1693512000))
+        );
+    }
+
+    #[test]
+    fn test_deserialize_audience_missing_field() {
+        let json_data = json!({
+            "sub": "123",
+            "iss": "example.com",
+            "iat": 1693425600,
+            "exp": 1693512000
+        });
+
+        let claims: IncomingClaims = serde_json::from_value(json_data).unwrap();
+
+        assert!(claims.audience.is_empty()); // Since `default` is used, it should be an empty vector
+        assert_eq!(claims.subject, "123");
+        assert_eq!(claims.issuer, "example.com");
+        assert_eq!(claims.iat, UNIX_EPOCH + std::time::Duration::from_secs(1693425600));
+        assert_eq!(
+            claims.exp,
+            Some(UNIX_EPOCH + std::time::Duration::from_secs(1693512000))
+        );
     }
 }

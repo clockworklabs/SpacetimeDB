@@ -1,3 +1,5 @@
+use spacetimedb_lib::Identity;
+
 use crate::parser::{errors::SqlUnsupported, SqlParseResult};
 
 use super::{Project, SqlExpr, SqlFrom, SqlIdent, SqlLiteral};
@@ -46,6 +48,16 @@ impl SqlAst {
             _ => Ok(self),
         }
     }
+
+    /// Replace the `:sender` parameter with the [Identity] it represents
+    pub fn resolve_sender(self, sender_identity: Identity) -> Self {
+        match self {
+            Self::Select(select) => Self::Select(select.resolve_sender(sender_identity)),
+            Self::Update(update) => Self::Update(update.resolve_sender(sender_identity)),
+            Self::Delete(delete) => Self::Delete(delete.resolve_sender(sender_identity)),
+            _ => self,
+        }
+    }
 }
 
 /// A SELECT statement in the SQL query language
@@ -78,6 +90,14 @@ impl SqlSelect {
         }
         Ok(self)
     }
+
+    /// Replace the `:sender` parameter with the [Identity] it represents
+    pub fn resolve_sender(self, sender_identity: Identity) -> Self {
+        Self {
+            filter: self.filter.map(|expr| expr.resolve_sender(sender_identity)),
+            ..self
+        }
+    }
 }
 
 /// INSERT INTO table cols VALUES literals
@@ -100,11 +120,31 @@ pub struct SqlUpdate {
     pub filter: Option<SqlExpr>,
 }
 
+impl SqlUpdate {
+    /// Replace the `:sender` parameter with the [Identity] it represents
+    fn resolve_sender(self, sender_identity: Identity) -> Self {
+        Self {
+            filter: self.filter.map(|expr| expr.resolve_sender(sender_identity)),
+            ..self
+        }
+    }
+}
+
 /// DELETE FROM table [ WHERE predicate ]
 #[derive(Debug)]
 pub struct SqlDelete {
     pub table: SqlIdent,
     pub filter: Option<SqlExpr>,
+}
+
+impl SqlDelete {
+    /// Replace the `:sender` parameter with the [Identity] it represents
+    fn resolve_sender(self, sender_identity: Identity) -> Self {
+        Self {
+            filter: self.filter.map(|expr| expr.resolve_sender(sender_identity)),
+            ..self
+        }
+    }
 }
 
 /// SET var '=' literal

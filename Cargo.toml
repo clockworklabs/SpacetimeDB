@@ -86,44 +86,45 @@ inherits = "release"
 debug = true
 
 [workspace.package]
-version = "1.0.1"
+version = "1.1.0"
 edition = "2021"
 # update rust-toolchain.toml too!
 rust-version = "1.84.0"
 
 [workspace.dependencies]
-spacetimedb = { path = "crates/bindings", version = "1.0.1" }
-spacetimedb-bindings-macro = { path = "crates/bindings-macro", version = "1.0.1" }
-spacetimedb-bindings-sys = { path = "crates/bindings-sys", version = "1.0.1" }
-spacetimedb-cli = { path = "crates/cli", version = "1.0.1" }
-spacetimedb-client-api = { path = "crates/client-api", version = "1.0.1" }
-spacetimedb-client-api-messages = { path = "crates/client-api-messages", version = "1.0.1" }
-spacetimedb-commitlog = { path = "crates/commitlog", version = "1.0.1" }
-spacetimedb-core = { path = "crates/core", version = "1.0.1" }
-spacetimedb-data-structures = { path = "crates/data-structures", version = "1.0.1" }
-spacetimedb-durability = { path = "crates/durability", version = "1.0.1" }
-spacetimedb-execution = { path = "crates/execution", version = "1.0.1" }
-spacetimedb-expr = { path = "crates/expr", version = "1.0.1" }
-spacetimedb-lib = { path = "crates/lib", default-features = false, version = "1.0.1" }
-spacetimedb-metrics = { path = "crates/metrics", version = "1.0.1" }
-spacetimedb-paths = { path = "crates/paths", version = "1.0.1" }
-spacetimedb-physical-plan = { path = "crates/physical-plan", version = "1.0.1" }
-spacetimedb-primitives = { path = "crates/primitives", version = "1.0.1" }
-spacetimedb-query = { path = "crates/query", version = "1.0.1" }
-spacetimedb-sats = { path = "crates/sats", version = "1.0.1" }
-spacetimedb-schema = { path = "crates/schema", version = "1.0.1" }
-spacetimedb-standalone = { path = "crates/standalone", version = "1.0.1" }
-spacetimedb-sql-parser = { path = "crates/sql-parser", version = "1.0.1" }
-spacetimedb-table = { path = "crates/table", version = "1.0.1" }
-spacetimedb-vm = { path = "crates/vm", version = "1.0.1" }
-spacetimedb-fs-utils = { path = "crates/fs-utils", version = "1.0.1" }
-spacetimedb-snapshot = { path = "crates/snapshot", version = "1.0.1" }
-spacetimedb-subscription = { path = "crates/subscription", version = "1.0.1" }
+spacetimedb = { path = "crates/bindings", version = "1.1.0" }
+spacetimedb-bindings-macro = { path = "crates/bindings-macro", version = "1.1.0" }
+spacetimedb-bindings-sys = { path = "crates/bindings-sys", version = "1.1.0" }
+spacetimedb-cli = { path = "crates/cli", version = "1.1.0" }
+spacetimedb-client-api = { path = "crates/client-api", version = "1.1.0" }
+spacetimedb-client-api-messages = { path = "crates/client-api-messages", version = "1.1.0" }
+spacetimedb-commitlog = { path = "crates/commitlog", version = "1.1.0" }
+spacetimedb-core = { path = "crates/core", version = "1.1.0" }
+spacetimedb-data-structures = { path = "crates/data-structures", version = "1.1.0" }
+spacetimedb-durability = { path = "crates/durability", version = "1.1.0" }
+spacetimedb-execution = { path = "crates/execution", version = "1.1.0" }
+spacetimedb-expr = { path = "crates/expr", version = "1.1.0" }
+spacetimedb-lib = { path = "crates/lib", default-features = false, version = "1.1.0" }
+spacetimedb-metrics = { path = "crates/metrics", version = "1.1.0" }
+spacetimedb-paths = { path = "crates/paths", version = "1.1.0" }
+spacetimedb-physical-plan = { path = "crates/physical-plan", version = "1.1.0" }
+spacetimedb-primitives = { path = "crates/primitives", version = "1.1.0" }
+spacetimedb-query = { path = "crates/query", version = "1.1.0" }
+spacetimedb-sats = { path = "crates/sats", version = "1.1.0" }
+spacetimedb-schema = { path = "crates/schema", version = "1.1.0" }
+spacetimedb-standalone = { path = "crates/standalone", version = "1.1.0" }
+spacetimedb-sql-parser = { path = "crates/sql-parser", version = "1.1.0" }
+spacetimedb-table = { path = "crates/table", version = "1.1.0" }
+spacetimedb-vm = { path = "crates/vm", version = "1.1.0" }
+spacetimedb-fs-utils = { path = "crates/fs-utils", version = "1.1.0" }
+spacetimedb-snapshot = { path = "crates/snapshot", version = "1.1.0" }
+spacetimedb-subscription = { path = "crates/subscription", version = "1.1.0" }
 
 ahash = "0.8"
 anyhow = "1.0.68"
 anymap = "0.12"
 arrayvec = "0.7.2"
+async-stream = "0.3.6"
 async-trait = "0.1.68"
 axum = { version = "0.7", features = ["tracing"] }
 axum-extra = { version = "0.9", features = ["typed-header"] }
@@ -135,7 +136,7 @@ blake3 = "1.5.1"
 brotli = "3.5"
 byte-unit = "4.0.18"
 bytemuck = { version = "1.16.2", features = ["must_cast"] }
-bytes = "1.2.1"
+bytes = "1.10.1"
 bytestring = { version = "1.2.0", features = ["serde"] }
 cargo_metadata = "0.17.0"
 chrono = { version = "0.4.24", default-features = false }
@@ -273,6 +274,8 @@ wasmbin = "0.6"
 webbrowser = "1.0.2"
 windows-sys = "0.59"
 xdg = "2.5"
+tikv-jemallocator = { version = "0.6.0", features = ["profiling", "stats"] }
+tikv-jemalloc-ctl = { version = "0.6.0", features = ["stats"]}
 
 # Vendor the openssl we rely on, rather than depend on a
 # potentially very old system version.

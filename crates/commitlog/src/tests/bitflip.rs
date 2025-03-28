@@ -118,7 +118,7 @@ proptest! {
 
         let Inputs {
             log,
-            mut segment,
+            segment,
             byte_pos,
             bit_mask,
 

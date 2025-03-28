@@ -182,7 +182,7 @@ pub fn run(
     // We parse the sql statement in a mutable transation.
     // If it turns out to be a query, we downgrade the tx.
     let (tx, stmt) = db.with_auto_rollback(db.begin_mut_tx(IsolationLevel::Serializable, Workload::Sql), |tx| {
-        compile_sql_stmt(sql_text, &SchemaViewer::new(tx, &auth))
+        compile_sql_stmt(sql_text, &SchemaViewer::new(tx, &auth), &auth)
     })?;
 
     let mut metrics = ExecutionMetrics::default();
@@ -334,6 +334,19 @@ pub(crate) mod tests {
         Ok((stdb, MemTable::new(header, schema.table_access, rows)))
     }
 
+    fn create_identity_table(table_name: &str) -> ResultTest<(TestDB, MemTable)> {
+        let stdb = TestDB::durable()?;
+        let head = ProductType::from([("identity", AlgebraicType::identity())]);
+        let rows = vec![product!(Identity::ZERO), product!(Identity::ONE)];
+
+        let schema = stdb.with_auto_commit(Workload::ForTests, |tx| {
+            create_table_with_rows(&stdb, tx, table_name, head.clone(), &rows, StAccess::Public)
+        })?;
+        let header = Header::from(&*schema).into();
+
+        Ok((stdb, MemTable::new(header, schema.table_access, rows)))
+    }
+
     #[test]
     fn test_select_star() -> ResultTest<()> {
         let (db, input) = create_data(1)?;
@@ -371,6 +384,35 @@ pub(crate) mod tests {
         let sql = "SELECT count(*) as n FROM inventory WHERE inventory_id = 4 or inventory_id = 5";
         let result = run_for_testing(&db, sql)?;
         assert_eq!(result, vec![product![2u64]], "Inventory");
+        Ok(())
+    }
+
+    /// Test the evaluation of SELECT, UPDATE, and DELETE parameterized with `:sender`
+    #[test]
+    fn test_sender_param() -> ResultTest<()> {
+        let (db, _) = create_identity_table("user")?;
+
+        const SELECT_ALL: &str = "SELECT * FROM user";
+
+        let sql = "SELECT * FROM user WHERE identity = :sender";
+        let result = run_for_testing(&db, sql)?;
+        assert_eq!(result, vec![product![Identity::ZERO]]);
+
+        let sql = "DELETE FROM user WHERE identity = :sender";
+        run_for_testing(&db, sql)?;
+        let result = run_for_testing(&db, SELECT_ALL)?;
+        assert_eq!(result, vec![product![Identity::ONE]]);
+
+        let zero = "0".repeat(64);
+        let one = "0".repeat(63) + "1";
+
+        let sql = format!("UPDATE user SET identity = 0x{zero}");
+        run_for_testing(&db, &sql)?;
+        let sql = format!("UPDATE user SET identity = 0x{one} WHERE identity = :sender");
+        run_for_testing(&db, &sql)?;
+        let result = run_for_testing(&db, SELECT_ALL)?;
+        assert_eq!(result, vec![product![Identity::ONE]]);
+
         Ok(())
     }
 

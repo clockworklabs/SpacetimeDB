@@ -64,7 +64,11 @@ impl spacetimedb_metrics::typed_prometheus::AsPrometheusLabel for Identity {
 }
 
 impl Identity {
+    /// The 0x0 `Identity`
     pub const ZERO: Self = Self::from_u256(u256::ZERO);
+
+    /// The 0x1 `Identity`
+    pub const ONE: Self = Self::from_u256(u256::ONE);
 
     /// Create an `Identity` from a LITTLE-ENDIAN byte array.
     ///
