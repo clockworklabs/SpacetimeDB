@@ -5357,6 +5357,7 @@ dependencies = [
  "bigdecimal",
  "derive_more",
  "ethnum",
+ "pretty_assertions",
  "spacetimedb-lib",
  "spacetimedb-primitives",
  "spacetimedb-sats",
