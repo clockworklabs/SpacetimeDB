@@ -1,0 +1,161 @@
+﻿[
+  {/*
+    public Exception UnsupportedSystemType;
+    public UnresolvedType UnresolvedType;
+           ^^^^^^^^^^^^^^
+    public LocalEnum UnsupportedEnum;
+*/
+    Message: The type or namespace name 'UnresolvedType' could not be found (are you missing a using directive or an assembly reference?),
+    Severity: Error,
+    Descriptor: {
+      Id: CS0246,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0246),
+      MessageFormat: The type or namespace name '{0}' could not be found (are you missing a using directive or an assembly reference?),
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+    {
+        return Field.GetHashCode();
+               ^^^^^
+    }
+*/
+    Message: Dereference of a possibly null reference.,
+    Severity: Warning,
+    Descriptor: {
+      Id: CS8602,
+      Title: Dereference of a possibly null reference.,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS8602),
+      MessageFormat: Dereference of a possibly null reference.,
+      Category: Compiler,
+      DefaultSeverity: Warning,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry
+      ]
+    }
+  },
+  {/*
+    {
+        return Field.Equals(that.Field);
+               ^^^^^
+    }
+*/
+    Message: Dereference of a possibly null reference.,
+    Severity: Warning,
+    Descriptor: {
+      Id: CS8602,
+      Title: Dereference of a possibly null reference.,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS8602),
+      MessageFormat: Dereference of a possibly null reference.,
+      Category: Compiler,
+      DefaultSeverity: Warning,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry
+      ]
+    }
+  },
+  {/*
+    {
+        internal static readonly TRW Field = new();
+                                 ^^^
+
+*/
+    Message: The type or namespace name 'TRW' could not be found (are you missing a using directive or an assembly reference?),
+    Severity: Error,
+    Descriptor: {
+      Id: CS0246,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0246),
+      MessageFormat: The type or namespace name '{0}' could not be found (are you missing a using directive or an assembly reference?),
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+
+partial struct TestTypeParams<T>  : System.IEquatable<TestTypeParams>, SpacetimeDB.BSATN.IStructuralReadWrite {
+                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+*/
+    Message: 'TestTypeParams<T>' does not implement interface member 'IEquatable<TestTypeParams>.Equals(TestTypeParams?)',
+    Severity: Error,
+    Descriptor: {
+      Id: CS0535,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0535),
+      MessageFormat: '{0}' does not implement interface member '{1}',
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+
+partial struct TestTypeParams<T>  : System.IEquatable<TestTypeParams>, SpacetimeDB.BSATN.IStructuralReadWrite {
+                                                      ^^^^^^^^^^^^^^
+
+*/
+    Message: Using the generic type 'TestTypeParams<T>' requires 1 type arguments,
+    Severity: Error,
+    Descriptor: {
+      Id: CS0305,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0305),
+      MessageFormat: Using the generic {1} '{0}' requires {2} type arguments,
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+            UnsupportedSystemType.GetHashCode() ^
+            UnresolvedType.GetHashCode() ^
+                           ^^^^^^^^^^^
+            UnsupportedEnum.GetHashCode();
+*/
+    Message: 'UnresolvedType' does not contain a definition for 'GetHashCode' and no accessible extension method 'GetHashCode' accepting a first argument of type 'UnresolvedType' could be found (are you missing a using directive or an assembly reference?),
+    Severity: Error,
+    Descriptor: {
+      Id: CS1061,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS1061),
+      MessageFormat: '{0}' does not contain a definition for '{1}' and no accessible extension method '{1}' accepting a first argument of type '{0}' could be found (are you missing a using directive or an assembly reference?),
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  }
+]

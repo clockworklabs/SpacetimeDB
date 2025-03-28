@@ -1,4 +1,4 @@
-use spacetimedb::control_db::ControlDb;
+use crate::control_db::ControlDb;
 use spacetimedb::energy::{EnergyBalance, EnergyMonitor, EnergyQuanta, ReducerBudget, ReducerFingerprint};
 use spacetimedb::messages::control_db::Database;
 use spacetimedb_lib::Identity;
@@ -36,9 +36,14 @@ impl EnergyMonitor for StandaloneEnergyMonitor {
         self.withdraw_energy(fingerprint.module_identity, energy_used)
     }
 
-    fn record_disk_usage(&self, database: &Database, _instance_id: u64, disk_usage: u64, period: Duration) {
+    fn record_disk_usage(&self, database: &Database, _replica_id: u64, disk_usage: u64, period: Duration) {
         let amount = EnergyQuanta::from_disk_usage(disk_usage, period);
-        self.withdraw_energy(database.identity, amount)
+        self.withdraw_energy(database.owner_identity, amount)
+    }
+
+    fn record_memory_usage(&self, database: &Database, _instance_id: u64, mem_usage: u64, period: Duration) {
+        let amount = EnergyQuanta::from_memory_usage(mem_usage, period);
+        self.withdraw_energy(database.owner_identity, amount)
     }
 }
 

@@ -3,8 +3,6 @@ use spacetimedb_sats::de::Deserialize;
 use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::ser::Serialize;
 
-use crate::address::Address;
-
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct IdentityEmail {
     pub identity: Identity,
@@ -21,15 +19,23 @@ pub struct EnergyBalance {
     pub balance: i128,
 }
 
+/// Description of a database.
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct Database {
+    /// Internal id of the database, assigned by the control database.
     pub id: u64,
-    pub address: Address,
-    pub identity: Identity,
+    /// Public identity (i.e. [`Identity`]) of the database.
+    pub database_identity: Identity,
+    /// [`Identity`] of the database's owner.
+    pub owner_identity: Identity,
+    /// [`HostType`] of the module associated with the database.
+    ///
+    /// Valid only for as long as `initial_program` is valid.
     pub host_type: HostType,
-    pub num_replicas: u32,
-    pub program_bytes_address: Hash,
-    pub publisher_address: Option<Address>,
+    /// [`Hash`] of the compiled module to initialize the database with.
+    ///
+    /// Updating the database's module will **not** change this value.
+    pub initial_program: Hash,
 }
 
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
@@ -37,14 +43,14 @@ pub struct DatabaseStatus {
     pub state: String,
 }
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
-pub struct DatabaseInstance {
+pub struct Replica {
     pub id: u64,
     pub database_id: u64,
     pub node_id: u64,
     pub leader: bool,
 }
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
-pub struct DatabaseInstanceStatus {
+pub struct ReplicaStatus {
     pub state: String,
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -64,10 +70,7 @@ pub struct NodeStatus {
     /// SEE: <https://kubernetes.io/docs/reference/kubernetes-api/cluster-resources/node-v1/#NodeStatus>
     pub state: String,
 }
-#[derive(
-    Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, strum::EnumString, strum::AsRefStr,
-)]
-#[strum(serialize_all = "lowercase")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[repr(i32)]
 pub enum HostType {
     Wasm = 0,

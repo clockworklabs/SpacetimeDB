@@ -1,9 +1,13 @@
+use crate::common_args;
+use crate::util;
+use crate::util::get_login_token_or_log_in;
+use crate::util::ResponseExt;
+use crate::util::UNSTABLE_WARNING;
 use crate::Config;
 use anyhow::Context;
-use clap::{Arg, ArgMatches, Command};
-use reqwest::StatusCode;
+use clap::{ArgMatches, Command};
 use serde::Deserialize;
-use spacetimedb_lib::Address;
+use spacetimedb::Identity;
 use tabled::{
     settings::{object::Columns, Alignment, Modify, Style},
     Table, Tabled,
@@ -11,69 +15,55 @@ use tabled::{
 
 pub fn cli() -> Command {
     Command::new("list")
-        .about("Lists the databases attached to an identity")
-        .arg(
-            Arg::new("identity")
-                .required(true)
-                .help("The identity to list databases for"),
-        )
-        .arg(
-            Arg::new("server")
-                .long("server")
-                .short('s')
-                .help("The nickname, host name or URL of the server from which to list databases"),
-        )
+        .about(format!(
+            "Lists the databases attached to an identity. {}",
+            UNSTABLE_WARNING
+        ))
+        .arg(common_args::server().help("The nickname, host name or URL of the server from which to list databases"))
+        .arg(common_args::yes())
 }
 
 #[derive(Deserialize)]
 struct DatabasesResult {
-    pub addresses: Vec<AddressRow>,
+    pub identities: Vec<IdentityRow>,
 }
 
 #[derive(Tabled, Deserialize)]
 #[serde(transparent)]
-struct AddressRow {
-    pub db_address: Address,
+struct IdentityRow {
+    pub db_identity: Identity,
 }
 
-pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+    eprintln!("{}\n", UNSTABLE_WARNING);
+
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
-    let identity_config = match args.get_one::<String>("identity") {
-        Some(identity_or_name) => config
-            .get_identity_config(identity_or_name)
-            .ok_or_else(|| anyhow::anyhow!("Missing identity credentials for identity: {identity_or_name}"))?,
-        None => config
-            .get_default_identity_config(server)
-            .context("No default identity, and no identity provided!")?,
-    };
+    let force = args.get_flag("force");
+    let token = get_login_token_or_log_in(&mut config, server, !force).await?;
+    let identity = util::decode_identity(&token)?;
 
     let client = reqwest::Client::new();
     let res = client
         .get(format!(
-            "{}/identity/{}/databases",
+            "{}/v1/identity/{}/databases",
             config.get_host_url(server)?,
-            identity_config.identity
+            identity
         ))
-        .basic_auth("token", Some(&identity_config.token))
+        .bearer_auth(token)
         .send()
         .await?;
 
-    if res.status() != StatusCode::OK {
-        return Err(anyhow::anyhow!(format!(
-            "Unable to retrieve databases for identity: {}",
-            res.status()
-        )));
-    }
+    let result: DatabasesResult = res
+        .json_or_error()
+        .await
+        .context("unable to retrieve databases for identity")?;
 
-    let result: DatabasesResult = res.json().await?;
-
-    let identity = identity_config.nick_or_identity();
-    if !result.addresses.is_empty() {
-        let mut table = Table::new(result.addresses);
+    if !result.identities.is_empty() {
+        let mut table = Table::new(result.identities);
         table
             .with(Style::psql())
             .with(Modify::new(Columns::first()).with(Alignment::left()));
-        println!("Associated database addresses for {}:\n", identity);
+        println!("Associated database identities for {}:\n", identity);
         println!("{}", table);
     } else {
         println!("No databases found for {}.", identity);

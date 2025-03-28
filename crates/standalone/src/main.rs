@@ -2,20 +2,23 @@ use clap::Command;
 
 use tokio::runtime::Builder;
 
-use spacetimedb_lib::util;
 use spacetimedb_standalone::*;
 use std::panic;
 use std::process;
 
 async fn async_main() -> anyhow::Result<()> {
-    let (cmd, subcommand_args) = util::match_subcommand_or_exit(get_command());
-    exec_subcommand(&cmd, &subcommand_args).await?;
+    let matches = get_command().get_matches();
+    let (cmd, subcommand_args) = matches.subcommand().unwrap();
+    exec_subcommand(cmd, subcommand_args).await?;
     Ok(())
 }
 
 fn get_command() -> Command {
     Command::new("spacetimedb")
         .args_conflicts_with_subcommands(true)
+        .arg_required_else_help(true)
+        .version(version::CLI_VERSION)
+        .long_version(version::long_version())
         .subcommand_required(true)
         .subcommands(get_subcommands())
         .help_expected(true)
@@ -35,6 +38,13 @@ Example usage:
 "#,
         )
 }
+
+#[cfg(not(target_env = "msvc"))]
+use tikv_jemallocator::Jemalloc;
+
+#[cfg(not(target_env = "msvc"))]
+#[global_allocator]
+static GLOBAL: Jemalloc = Jemalloc;
 
 fn main() -> anyhow::Result<()> {
     // take_hook() returns the default hook in case when a custom one is not set

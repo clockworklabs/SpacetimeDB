@@ -1,46 +1,21 @@
-use crate::errors::ErrorVm;
 use crate::rel_ops::RelOps;
-use spacetimedb_sats::product_value::ProductValue;
-use spacetimedb_sats::relation::{Header, MemTable, RelIter, RelValue, RowCount};
+use crate::relation::RelValue;
 
-impl RelOps for RelIter<ProductValue> {
-    fn head(&self) -> &Header {
-        &self.head
-    }
+/// Turns an iterator over [`RelValue<'_>`]s into a `RelOps`.
+#[derive(Debug)]
+pub struct RelIter<I> {
+    pub iter: I,
+}
 
-    fn row_count(&self) -> RowCount {
-        self.row_count
-    }
-
-    #[tracing::instrument(skip_all)]
-    fn next(&mut self) -> Result<Option<RelValue>, ErrorVm> {
-        Ok(if self.pos == 0 {
-            self.pos += 1;
-            Some(RelValue::new(self.of.clone(), None))
-        } else {
-            None
-        })
+impl<I> RelIter<I> {
+    pub fn new(iter: impl IntoIterator<IntoIter = I>) -> Self {
+        let iter = iter.into_iter();
+        Self { iter }
     }
 }
 
-impl RelOps for RelIter<MemTable> {
-    fn head(&self) -> &Header {
-        &self.head
-    }
-
-    fn row_count(&self) -> RowCount {
-        self.row_count
-    }
-
-    #[tracing::instrument(skip_all)]
-    fn next(&mut self) -> Result<Option<RelValue>, ErrorVm> {
-        if self.pos < self.of.data.len() {
-            let row = &self.of.data[self.pos];
-            self.pos += 1;
-
-            Ok(Some(row.clone()))
-        } else {
-            Ok(None)
-        }
+impl<'a, I: Iterator<Item = RelValue<'a>>> RelOps<'a> for RelIter<I> {
+    fn next(&mut self) -> Option<RelValue<'a>> {
+        self.iter.next()
     }
 }

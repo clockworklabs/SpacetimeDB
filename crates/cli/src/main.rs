@@ -1,27 +1,75 @@
-use clap::Command;
-use mimalloc::MiMalloc;
-use spacetimedb_cli::*;
-use spacetimedb_lib::util;
+use std::process::ExitCode;
 
+use clap::{Arg, Command};
+use spacetimedb_cli::*;
+use spacetimedb_paths::cli::CliTomlPath;
+use spacetimedb_paths::{RootDir, SpacetimePaths};
+
+// Note that the standalone server is invoked through standaline/src/main.rs, so you will
+// also want to set the allocator there.
+#[cfg(not(target_env = "msvc"))]
+use tikv_jemallocator::Jemalloc;
+
+#[cfg(not(target_env = "msvc"))]
+#[global_allocator]
+static GLOBAL: Jemalloc = Jemalloc;
+
+#[cfg(target_env = "msvc")]
+use mimalloc::MiMalloc;
+
+#[cfg(target_env = "msvc")]
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
 
+#[cfg(not(feature = "markdown-docs"))]
 #[tokio::main]
-async fn main() -> Result<(), anyhow::Error> {
-    let config = Config::load();
-    // Save a default version to disk
-    config.save();
+async fn main() -> anyhow::Result<ExitCode> {
+    // Compute matches before loading the config, because `Config` has an observable `drop` method
+    // (which deletes a lockfile),
+    // and Clap calls `exit` on parse failure rather than panicing, so destructors never run.
+    let matches = get_command().get_matches();
+    let (cmd, subcommand_args) = matches.subcommand().unwrap();
 
-    let (cmd, subcommand_args) = util::match_subcommand_or_exit(get_command());
-    exec_subcommand(config, &cmd, &subcommand_args).await?;
+    let root_dir = matches.get_one::<RootDir>("root_dir");
+    let paths = match root_dir {
+        Some(dir) => SpacetimePaths::from_root_dir(dir),
+        None => SpacetimePaths::platform_defaults()?,
+    };
+    let cli_toml = matches
+        .get_one::<CliTomlPath>("config_path")
+        .cloned()
+        .unwrap_or_else(|| paths.cli_config_dir.cli_toml());
+    let config = Config::load(cli_toml)?;
 
-    Ok(())
+    exec_subcommand(config, &paths, root_dir, cmd, subcommand_args).await
+}
+
+#[cfg(feature = "markdown-docs")]
+#[tokio::main]
+async fn main() -> anyhow::Result<ExitCode> {
+    let markdown = clap_markdown::help_markdown_command(&get_command());
+    println!("{}", markdown);
+    Ok(ExitCode::SUCCESS)
 }
 
 fn get_command() -> Command {
     Command::new("spacetime")
-        .args_conflicts_with_subcommands(true)
+        .version(version::CLI_VERSION)
+        .long_version(version::long_version())
+        .arg_required_else_help(true)
         .subcommand_required(true)
+        .arg(
+            Arg::new("root_dir")
+                .long("root-dir")
+                .help("The root directory to store all spacetime files in.")
+                .value_parser(clap::value_parser!(RootDir)),
+        )
+        .arg(
+            Arg::new("config_path")
+                .long("config-path")
+                .help("The path to the cli.toml config file")
+                .value_parser(clap::value_parser!(CliTomlPath)),
+        )
         .subcommands(get_subcommands())
         .help_expected(true)
         .help_template(

@@ -4,40 +4,94 @@ on:
     branches:
       - master
   merge_group:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'Pull Request Number'
+        required: false
+        default: ''
 
 name: CI
 
 jobs:
   docker_smoketests:
     name: Smoketests
-    runs-on: spacetimedb-runner
+    strategy:
+      matrix:
+        include:
+          - { runner: spacetimedb-runner, smoketest_args: --docker }
+          - { runner: windows-latest, smoketest_args: --no-build-cli }
+        runner: [spacetimedb-runner, windows-latest]
+    runs-on: ${{ matrix.runner }}
     steps:
+      - name: Find Git ref
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          PR_NUMBER="${{ github.event.inputs.pr_number || null }}"
+          if test -n "${PR_NUMBER}"; then
+            GIT_REF="$( gh pr view --repo clockworklabs/SpacetimeDB $PR_NUMBER --json headRefName --jq .headRefName )"
+          else
+            GIT_REF="${{ github.ref }}"
+          fi
+          echo "GIT_REF=${GIT_REF}" >>"$GITHUB_ENV"
       - name: Checkout sources
-        uses: actions/checkout@v3
-      - name: Start containers
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.GIT_REF }}
+      - uses: dsherret/rust-toolchain-file@v1
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: modules/global.json
+      - name: Build and start database (Linux)
+        if: runner.os == 'Linux'
         run: docker compose up -d
+      - name: Build and start database (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          cargo build -p spacetimedb-cli -p spacetimedb-standalone -p spacetimedb-update
+          Start-Process target/debug/spacetimedb-cli.exe start
+          cd modules
+          # the sdk-manifests on windows-latest are messed up, so we need to update them
+          dotnet workload config --update-mode workload-set
+          dotnet workload update
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+        if: runner.os == 'Windows'
       - name: Run smoketests
-        run: test/run-smoke-tests.sh --parallel -x bitcraftmini-pretest zz_docker-restart-module zz_docker-restart-repeating-reducer zz_docker-restart-sql
-      # These cannot run in parallel, even though the script tries to handle it
-      # TODO: Fix flaky tests https://github.com/clockworklabs/SpacetimeDB/issues/630
-      # - name: Run restarting smoketests
-      #   run: test/run-smoke-tests.sh zz_docker-restart-module zz_docker-restart-repeating-reducer zz_docker-restart-sql
-      - name: Stop containers
-        if: always()
+        # Note: clear_database only works in private
+        run: python -m smoketests ${{ matrix.smoketest_args }} -x clear_database
+      - name: Stop containers (Linux)
+        if: always() && runner.os == 'Linux'
         run: docker compose down
 
   test:
     name: Test Suite
     runs-on: spacetimedb-runner
     steps:
+      - name: Find Git ref
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_NUMBER="${{ github.event.inputs.pr_number || null }}"
+          if test -n "${PR_NUMBER}"; then
+            GIT_REF="$( gh pr view --repo clockworklabs/SpacetimeDB $PR_NUMBER --json headRefName --jq .headRefName )"
+          else
+            GIT_REF="${{ github.ref }}"
+          fi
+          echo "GIT_REF=${GIT_REF}" >>"$GITHUB_ENV"
+
       - name: Checkout sources
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.GIT_REF }}
 
       - uses: dsherret/rust-toolchain-file@v1
 
       - uses: actions/setup-dotnet@v3
         with:
-          dotnet-version: '8.x'
+          global-json-file: modules/global.json
 
       - name: Create /stdb dir
         run: |
@@ -45,7 +99,68 @@ jobs:
           sudo chmod 777 /stdb
 
       - name: Run cargo test
-        run: cargo test --all --features odb_rocksdb,odb_sled
+        run: cargo test --all
+
+      - name: Ensure C# autogen bindings are up-to-date
+        run: |
+          cargo run --example regen-csharp-moduledef
+          git diff --exit-code -- crates/bindings-csharp
+
+      - name: C# bindings tests
+        working-directory: crates/bindings-csharp
+        run: dotnet test -warnaserror
+
+  sdk_test:
+    name: SDK Tests
+    runs-on: spacetimedb-runner
+    steps:
+      - name: Find Git ref
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_NUMBER="${{ github.event.inputs.pr_number || null }}"
+          if test -n "${PR_NUMBER}"; then
+            GIT_REF="$( gh pr view --repo clockworklabs/SpacetimeDB $PR_NUMBER --json headRefName --jq .headRefName )"
+          else
+            GIT_REF="${{ github.ref }}"
+          fi
+          echo "GIT_REF=${GIT_REF}" >>"$GITHUB_ENV"
+
+      - name: Checkout sources
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.GIT_REF }}
+
+      - uses: dsherret/rust-toolchain-file@v1
+
+      - uses: actions/setup-dotnet@v3
+        with:
+          global-json-file: modules/global.json
+
+      - name: Create /stdb dir
+        run: |
+          sudo mkdir /stdb
+          sudo chmod 777 /stdb
+
+      - name: Checkout C# SDK
+        uses: actions/checkout@v4
+        with:
+          repository: clockworklabs/spacetimedb-csharp-sdk
+          ref: master
+          path: spacetimedb-csharp-sdk
+
+      - name: Setup NuGet override for C# SDK
+        working-directory: spacetimedb-csharp-sdk
+        run: |
+          dotnet pack ../crates/bindings-csharp/BSATN.Runtime
+          ./tools~/write-nuget-config.sh ..
+
+          # clear package caches, so we get fresh ones even if version numbers haven't changed
+          dotnet nuget locals all --clear
+
+      - name: Run C# SDK tests
+        working-directory: spacetimedb-csharp-sdk
+        run: dotnet test
 
   lints:
     name: Lints
@@ -61,7 +176,13 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Run cargo clippy
-        run: cargo clippy --all --tests --features odb_rocksdb,odb_sled -- -D warnings
+        run: cargo clippy --all --tests --benches -- -D warnings
+
+      - name: Run C# formatting check
+        working-directory: crates/bindings-csharp
+        run: |
+          dotnet tool restore
+          dotnet csharpier --check .
 
   wasm_bindings:
     name: Build and test wasm bindings
@@ -72,8 +193,8 @@ jobs:
       - uses: dsherret/rust-toolchain-file@v1
       - run: echo ::add-matcher::.github/workflows/rust_matcher.json
 
-      - name: Build rust-wasm-test
-        run: cargo run -p spacetimedb-cli -- build modules/rust-wasm-test
+      - name: Build module-test
+        run: cargo run -p spacetimedb-cli -- build --project-path modules/module-test
 
       - name: Run bindgen tests
         run: cargo test -p spacetimedb-cli

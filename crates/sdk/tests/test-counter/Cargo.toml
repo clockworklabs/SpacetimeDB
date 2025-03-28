@@ -1,9 +1,11 @@
 [package]
 name = "test-counter"
-version = "0.8.1"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
+license-file = "LICENSE"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+spacetimedb-data-structures.workspace = true
 anyhow.workspace = true

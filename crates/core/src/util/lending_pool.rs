@@ -9,10 +9,10 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use parking_lot::Mutex;
-use spacetimedb_lib::Address;
+use spacetimedb_lib::Identity;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
-use crate::worker_metrics::{MAX_QUEUE_LEN, WORKER_METRICS};
+use crate::worker_metrics::WORKER_METRICS;
 
 use super::notify_once::{NotifiedOnce, NotifyOnce};
 
@@ -49,41 +49,47 @@ struct PoolVec<T> {
 #[derive(Debug)]
 pub struct PoolClosed;
 
+/// A scope guard for the reducer queue length metric,
+/// ensuring an increment is always be paired with one and only one decrement.
+struct QueueMetric {
+    db: Identity,
+}
+
+impl Drop for QueueMetric {
+    fn drop(&mut self) {
+        WORKER_METRICS.instance_queue_length.with_label_values(&self.db).dec();
+        let queue_length = WORKER_METRICS.instance_queue_length.with_label_values(&self.db).get();
+        WORKER_METRICS
+            .instance_queue_length_histogram
+            .with_label_values(&self.db)
+            .observe(queue_length as f64);
+    }
+}
+
+impl QueueMetric {
+    fn inc(db: Identity) -> Self {
+        WORKER_METRICS.instance_queue_length.with_label_values(&db).inc();
+        let queue_length = WORKER_METRICS.instance_queue_length.with_label_values(&db).get();
+        WORKER_METRICS
+            .instance_queue_length_histogram
+            .with_label_values(&db)
+            .observe(queue_length as f64);
+        Self { db }
+    }
+}
+
 impl<T> LendingPool<T> {
     pub fn new() -> Self {
         Self::from_iter(std::iter::empty())
     }
 
-    pub fn request_with_context(&self, db: Address) -> impl Future<Output = Result<LentResource<T>, PoolClosed>> {
+    pub fn request_with_context(&self, db: Identity) -> impl Future<Output = Result<LentResource<T>, PoolClosed>> {
         let acq = self.sem.clone().acquire_owned();
         let pool_inner = self.inner.clone();
 
-        let queue_len = WORKER_METRICS.instance_queue_length.with_label_values(&db);
-        let queue_len_max = WORKER_METRICS.instance_queue_length_max.with_label_values(&db);
-        let queue_len_histogram = WORKER_METRICS.instance_queue_length_histogram.with_label_values(&db);
-
-        queue_len.inc();
-        let new_queue_len = queue_len.get();
-        queue_len_histogram.observe(new_queue_len as f64);
-
-        let mut guard = MAX_QUEUE_LEN.lock().unwrap();
-        let max_queue_len = *guard
-            .entry(db)
-            .and_modify(|max| {
-                if new_queue_len > *max {
-                    *max = new_queue_len;
-                }
-            })
-            .or_insert_with(|| new_queue_len);
-
-        drop(guard);
-        queue_len_max.set(max_queue_len);
-
         async move {
-            let permit_result = acq.await.map_err(|_| PoolClosed);
-            queue_len.dec();
-            queue_len_histogram.observe(queue_len.get() as f64);
-            let permit = permit_result?;
+            let _guard = QueueMetric::inc(db);
+            let permit = acq.await.map_err(|_| PoolClosed)?;
             let resource = pool_inner
                 .vec
                 .lock()
@@ -123,7 +129,7 @@ impl<T> LendingPool<T> {
         self.sem.available_permits()
     }
 
-    pub fn close(&self) -> Closed<'_> {
+    pub fn close(&self) {
         let mut vec = self.inner.vec.lock();
         self.sem.close();
         if let Some(deque) = vec.deque.take() {
@@ -132,7 +138,6 @@ impl<T> LendingPool<T> {
         if vec.total_count == 0 {
             self.inner.closed_notify.notify();
         }
-        self.closed()
     }
 
     pub fn closed(&self) -> Closed<'_> {

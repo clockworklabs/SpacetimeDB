@@ -1,7 +1,8 @@
 [package]
 name = "spacetime-module"
 version = "0.1.0"
-edition = "2021"
+edition.workspace = true
+license-file = "LICENSE"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -9,5 +10,5 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [dependencies]
-spacetimedb = { path = "../../crates/bindings", version = "0.8.1" }
+spacetimedb.workspace = true
 log = "0.4"

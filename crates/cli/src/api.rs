@@ -1,40 +1,42 @@
-use reqwest::header::IntoHeaderName;
 use reqwest::{header, Client, RequestBuilder};
 use serde::Deserialize;
 use serde_json::value::RawValue;
 
+use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
+use spacetimedb_lib::de::serde::DeserializeWrapper;
 use spacetimedb_lib::sats::ProductType;
-use spacetimedb_lib::Address;
+use spacetimedb_lib::Identity;
+
+use crate::util::{AuthHeader, ResponseExt};
 
 static APP_USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"),);
 
 #[derive(Debug, Clone)]
 pub struct Connection {
     pub(crate) host: String,
-    pub(crate) address: Address,
+    pub(crate) database_identity: Identity,
     pub(crate) database: String,
-    pub(crate) auth_header: Option<String>,
+    pub(crate) auth_header: AuthHeader,
 }
 
-pub fn build_headers<'a, K, I>(iter: I) -> header::HeaderMap
-where
-    K: IntoHeaderName,
-    I: IntoIterator<Item = (K, &'a str)>,
-{
-    let mut headers = header::HeaderMap::new();
-
-    for (k, v) in iter.into_iter() {
-        headers.insert(k, header::HeaderValue::from_str(v).unwrap());
+impl Connection {
+    pub fn db_uri(&self, endpoint: &str) -> String {
+        [
+            &self.host,
+            "/v1/database/",
+            &self.database_identity.to_hex(),
+            "/",
+            endpoint,
+        ]
+        .concat()
     }
-
-    headers
 }
 
 pub fn build_client(con: &Connection) -> Client {
     let mut builder = Client::builder().user_agent(APP_USER_AGENT);
 
-    if let Some(auth_header) = &con.auth_header {
-        let headers = build_headers([("Authorization", auth_header.as_str())]);
+    if let Some(auth_header) = con.auth_header.to_header() {
+        let headers = http::HeaderMap::from_iter([(header::AUTHORIZATION, auth_header)]);
 
         builder = builder.default_headers(headers);
     }
@@ -43,7 +45,7 @@ pub fn build_client(con: &Connection) -> Client {
 }
 
 pub struct ClientApi {
-    con: Connection,
+    pub con: Connection,
     client: Client,
 }
 
@@ -54,8 +56,29 @@ impl ClientApi {
     }
 
     pub fn sql(&self) -> RequestBuilder {
-        self.client
-            .post(format!("{}/database/sql/{}", self.con.host, self.con.address))
+        self.client.post(self.con.db_uri("sql"))
+    }
+
+    /// Reads the `ModuleDef` from the `schema` endpoint.
+    pub async fn module_def(&self) -> anyhow::Result<RawModuleDefV9> {
+        let res = self
+            .client
+            .get(self.con.db_uri("schema"))
+            .query(&[("version", "9")])
+            .send()
+            .await?;
+        let DeserializeWrapper(module_def) = res.json_or_error().await?;
+        Ok(module_def)
+    }
+
+    pub async fn call(&self, reducer_name: &str, arg_json: String) -> anyhow::Result<reqwest::Response> {
+        Ok(self
+            .client
+            .post(self.con.db_uri("call") + "/" + reducer_name)
+            .header(http::header::CONTENT_TYPE, "application/json")
+            .body(arg_json)
+            .send()
+            .await?)
     }
 }
 

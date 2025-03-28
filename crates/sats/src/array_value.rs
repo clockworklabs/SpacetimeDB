@@ -1,5 +1,6 @@
-use crate::{AlgebraicType, AlgebraicValue, ArrayType, MapValue, ProductValue, SumValue, F32, F64};
-use std::fmt;
+use crate::{i256, u256};
+use crate::{AlgebraicType, AlgebraicValue, ArrayType, ProductValue, SumValue, F32, F64};
+use core::fmt;
 
 /// An array value in "monomorphized form".
 ///
@@ -7,44 +8,46 @@ use std::fmt;
 /// rather than unnecessary indirections and tags of `AlgebraicValue`.
 /// We can do this as we know statically that the type of each element is the same
 /// as arrays are homogenous dynamically sized product types.
-#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub enum ArrayValue {
-    /// An array of [`SumValue`](crate::SumValue)s.
-    Sum(Vec<SumValue>),
-    /// An array of [`ProductValue`](crate::ProductValue)s.
-    Product(Vec<ProductValue>),
+    /// An array of [`SumValue`]s.
+    Sum(Box<[SumValue]>),
+    /// An array of [`ProductValue`]s.
+    Product(Box<[ProductValue]>),
     /// An array of [`bool`]s.
-    Bool(Vec<bool>),
+    Bool(Box<[bool]>),
     /// An array of [`i8`]s.
-    I8(Vec<i8>),
+    I8(Box<[i8]>),
     /// An array of [`u8`]s.
-    U8(Vec<u8>),
+    U8(Box<[u8]>),
     /// An array of [`i16`]s.
-    I16(Vec<i16>),
+    I16(Box<[i16]>),
     /// An array of [`u16`]s.
-    U16(Vec<u16>),
+    U16(Box<[u16]>),
     /// An array of [`i32`]s.
-    I32(Vec<i32>),
+    I32(Box<[i32]>),
     /// An array of [`u32`]s.
-    U32(Vec<u32>),
+    U32(Box<[u32]>),
     /// An array of [`i64`]s.
-    I64(Vec<i64>),
+    I64(Box<[i64]>),
     /// An array of [`u64`]s.
-    U64(Vec<u64>),
+    U64(Box<[u64]>),
     /// An array of [`i128`]s.
-    I128(Vec<i128>),
+    I128(Box<[i128]>),
     /// An array of [`u128`]s.
-    U128(Vec<u128>),
+    U128(Box<[u128]>),
+    /// An array of [`i256`]s.
+    I256(Box<[i256]>),
+    /// An array of [`u256`]s.
+    U256(Box<[u256]>),
     /// An array of totally ordered [`F32`]s.
-    F32(Vec<F32>),
+    F32(Box<[F32]>),
     /// An array of totally ordered [`F64`]s.
-    F64(Vec<F64>),
+    F64(Box<[F64]>),
     /// An array of UTF-8 strings.
-    String(Vec<String>),
+    String(Box<[Box<str>]>),
     /// An array of arrays.
-    Array(Vec<ArrayValue>),
-    /// An array of maps.
-    Map(Vec<MapValue>),
+    Array(Box<[ArrayValue]>),
 }
 
 impl crate::Value for ArrayValue {
@@ -53,40 +56,29 @@ impl crate::Value for ArrayValue {
 
 impl ArrayValue {
     /// Determines (infers / synthesises) the type of the value.
-    pub(crate) fn type_of(&self) -> ArrayType {
+    pub(crate) fn type_of(&self) -> Option<ArrayType> {
         let elem_ty = Box::new(match self {
-            Self::Sum(v) => Self::first_type_of(v, AlgebraicValue::type_of_sum),
-            Self::Product(v) => Self::first_type_of(v, AlgebraicValue::type_of_product),
-            Self::Bool(_) => AlgebraicType::Bool,
-            Self::I8(_) => AlgebraicType::I8,
-            Self::U8(_) => AlgebraicType::U8,
-            Self::I16(_) => AlgebraicType::I16,
-            Self::U16(_) => AlgebraicType::U16,
-            Self::I32(_) => AlgebraicType::I32,
-            Self::U32(_) => AlgebraicType::U32,
-            Self::I64(_) => AlgebraicType::I64,
-            Self::U64(_) => AlgebraicType::U64,
-            Self::I128(_) => AlgebraicType::I128,
-            Self::U128(_) => AlgebraicType::U128,
-            Self::F32(_) => AlgebraicType::F32,
-            Self::F64(_) => AlgebraicType::F64,
-            Self::String(_) => AlgebraicType::String,
-            Self::Array(v) => Self::first_type_of(v, |a| a.type_of().into()),
-            Self::Map(v) => Self::first_type_of(v, AlgebraicValue::type_of_map),
-        });
-        ArrayType { elem_ty }
-    }
-
-    /// Helper for `type_of` above.
-    /// Infers the `AlgebraicType` from the first element by running `then` on it.
-    ///
-    /// The result of `first_type_of(&[])` is an empty sum type ("never"),
-    /// that is, a type that has no values.
-    /// This leads to e.g., an empty array of products having the type "never".
-    /// This is the most conservative choice
-    /// and has the consequence that no values can be added to such an array.
-    fn first_type_of<T>(arr: &[T], then: impl FnOnce(&T) -> AlgebraicType) -> AlgebraicType {
-        arr.first().map(then).unwrap_or_else(AlgebraicType::never)
+            Self::Sum(_) => None,
+            Self::Product(v) => AlgebraicValue::type_of_product(v.first()?),
+            Self::Bool(_) => Some(AlgebraicType::Bool),
+            Self::I8(_) => Some(AlgebraicType::I8),
+            Self::U8(_) => Some(AlgebraicType::U8),
+            Self::I16(_) => Some(AlgebraicType::I16),
+            Self::U16(_) => Some(AlgebraicType::U16),
+            Self::I32(_) => Some(AlgebraicType::I32),
+            Self::U32(_) => Some(AlgebraicType::U32),
+            Self::I64(_) => Some(AlgebraicType::I64),
+            Self::U64(_) => Some(AlgebraicType::U64),
+            Self::I128(_) => Some(AlgebraicType::I128),
+            Self::U128(_) => Some(AlgebraicType::U128),
+            Self::I256(_) => Some(AlgebraicType::I256),
+            Self::U256(_) => Some(AlgebraicType::U256),
+            Self::F32(_) => Some(AlgebraicType::F32),
+            Self::F64(_) => Some(AlgebraicType::F64),
+            Self::String(_) => Some(AlgebraicType::String),
+            Self::Array(v) => Some(v.first()?.type_of()?.into()),
+        }?);
+        Some(ArrayType { elem_ty })
     }
 
     /// Returns the length of the array.
@@ -105,11 +97,12 @@ impl ArrayValue {
             Self::U64(v) => v.len(),
             Self::I128(v) => v.len(),
             Self::U128(v) => v.len(),
+            Self::I256(v) => v.len(),
+            Self::U256(v) => v.len(),
             Self::F32(v) => v.len(),
             Self::F64(v) => v.len(),
             Self::String(v) => v.len(),
             Self::Array(v) => v.len(),
-            Self::Map(v) => v.len(),
         }
     }
 
@@ -135,11 +128,12 @@ impl ArrayValue {
             ArrayValue::U64(v) => ArrayValueIterCloned::U64(v.iter()),
             ArrayValue::I128(v) => ArrayValueIterCloned::I128(v.iter()),
             ArrayValue::U128(v) => ArrayValueIterCloned::U128(v.iter()),
+            ArrayValue::I256(v) => ArrayValueIterCloned::I256(v.iter()),
+            ArrayValue::U256(v) => ArrayValueIterCloned::U256(v.iter()),
             ArrayValue::F32(v) => ArrayValueIterCloned::F32(v.iter()),
             ArrayValue::F64(v) => ArrayValueIterCloned::F64(v.iter()),
             ArrayValue::String(v) => ArrayValueIterCloned::String(v.iter()),
             ArrayValue::Array(v) => ArrayValueIterCloned::Array(v.iter()),
-            ArrayValue::Map(v) => ArrayValueIterCloned::Map(v.iter()),
         }
     }
 }
@@ -155,14 +149,14 @@ macro_rules! impl_from_array {
     ($el:ty, $var:ident) => {
         impl<const N: usize> From<[$el; N]> for ArrayValue {
             fn from(v: [$el; N]) -> Self {
-                let vec: Vec<_> = v.into();
+                let vec: Box<[_]> = v.into();
                 vec.into()
             }
         }
 
         // Exists for convenience.
-        impl From<Vec<$el>> for ArrayValue {
-            fn from(v: Vec<$el>) -> Self {
+        impl From<Box<[$el]>> for ArrayValue {
+            fn from(v: Box<[$el]>) -> Self {
                 Self::$var(v)
             }
         }
@@ -182,11 +176,12 @@ impl_from_array!(i64, I64);
 impl_from_array!(u64, U64);
 impl_from_array!(i128, I128);
 impl_from_array!(u128, U128);
+impl_from_array!(i256, I256);
+impl_from_array!(u256, U256);
 impl_from_array!(F32, F32);
 impl_from_array!(F64, F64);
-impl_from_array!(String, String);
+impl_from_array!(Box<str>, String);
 impl_from_array!(ArrayValue, Array);
-impl_from_array!(MapValue, Map);
 
 impl ArrayValue {
     /// Returns `self` as `&dyn Debug`.
@@ -205,11 +200,12 @@ impl ArrayValue {
             Self::U64(v) => v,
             Self::I128(v) => v,
             Self::U128(v) => v,
+            Self::I256(v) => v,
+            Self::U256(v) => v,
             Self::F32(v) => v,
             Self::F64(v) => v,
             Self::String(v) => v,
             Self::Array(v) => v,
-            Self::Map(v) => v,
         }
     }
 }
@@ -226,24 +222,25 @@ impl IntoIterator for ArrayValue {
 
     fn into_iter(self) -> Self::IntoIter {
         match self {
-            ArrayValue::Sum(v) => ArrayValueIntoIter::Sum(v.into_iter()),
-            ArrayValue::Product(v) => ArrayValueIntoIter::Product(v.into_iter()),
-            ArrayValue::Bool(v) => ArrayValueIntoIter::Bool(v.into_iter()),
-            ArrayValue::I8(v) => ArrayValueIntoIter::I8(v.into_iter()),
-            ArrayValue::U8(v) => ArrayValueIntoIter::U8(v.into_iter()),
-            ArrayValue::I16(v) => ArrayValueIntoIter::I16(v.into_iter()),
-            ArrayValue::U16(v) => ArrayValueIntoIter::U16(v.into_iter()),
-            ArrayValue::I32(v) => ArrayValueIntoIter::I32(v.into_iter()),
-            ArrayValue::U32(v) => ArrayValueIntoIter::U32(v.into_iter()),
-            ArrayValue::I64(v) => ArrayValueIntoIter::I64(v.into_iter()),
-            ArrayValue::U64(v) => ArrayValueIntoIter::U64(v.into_iter()),
-            ArrayValue::I128(v) => ArrayValueIntoIter::I128(v.into_iter()),
-            ArrayValue::U128(v) => ArrayValueIntoIter::U128(v.into_iter()),
-            ArrayValue::F32(v) => ArrayValueIntoIter::F32(v.into_iter()),
-            ArrayValue::F64(v) => ArrayValueIntoIter::F64(v.into_iter()),
-            ArrayValue::String(v) => ArrayValueIntoIter::String(v.into_iter()),
-            ArrayValue::Array(v) => ArrayValueIntoIter::Array(v.into_iter()),
-            ArrayValue::Map(v) => ArrayValueIntoIter::Map(v.into_iter()),
+            ArrayValue::Sum(v) => ArrayValueIntoIter::Sum(Vec::from(v).into_iter()),
+            ArrayValue::Product(v) => ArrayValueIntoIter::Product(Vec::from(v).into_iter()),
+            ArrayValue::Bool(v) => ArrayValueIntoIter::Bool(Vec::from(v).into_iter()),
+            ArrayValue::I8(v) => ArrayValueIntoIter::I8(Vec::from(v).into_iter()),
+            ArrayValue::U8(v) => ArrayValueIntoIter::U8(Vec::from(v).into_iter()),
+            ArrayValue::I16(v) => ArrayValueIntoIter::I16(Vec::from(v).into_iter()),
+            ArrayValue::U16(v) => ArrayValueIntoIter::U16(Vec::from(v).into_iter()),
+            ArrayValue::I32(v) => ArrayValueIntoIter::I32(Vec::from(v).into_iter()),
+            ArrayValue::U32(v) => ArrayValueIntoIter::U32(Vec::from(v).into_iter()),
+            ArrayValue::I64(v) => ArrayValueIntoIter::I64(Vec::from(v).into_iter()),
+            ArrayValue::U64(v) => ArrayValueIntoIter::U64(Vec::from(v).into_iter()),
+            ArrayValue::I128(v) => ArrayValueIntoIter::I128(Vec::from(v).into_iter()),
+            ArrayValue::U128(v) => ArrayValueIntoIter::U128(Vec::from(v).into_iter()),
+            ArrayValue::I256(v) => ArrayValueIntoIter::I256(Vec::from(v).into_iter()),
+            ArrayValue::U256(v) => ArrayValueIntoIter::U256(Vec::from(v).into_iter()),
+            ArrayValue::F32(v) => ArrayValueIntoIter::F32(Vec::from(v).into_iter()),
+            ArrayValue::F64(v) => ArrayValueIntoIter::F64(Vec::from(v).into_iter()),
+            ArrayValue::String(v) => ArrayValueIntoIter::String(Vec::from(v).into_iter()),
+            ArrayValue::Array(v) => ArrayValueIntoIter::Array(Vec::from(v).into_iter()),
         }
     }
 }
@@ -276,16 +273,18 @@ pub enum ArrayValueIntoIter {
     I128(std::vec::IntoIter<i128>),
     /// An iterator on a [`u128`] array.
     U128(std::vec::IntoIter<u128>),
+    /// An iterator on an [`i256`] array.
+    I256(std::vec::IntoIter<i256>),
+    /// An iterator on a [`u256`] array.
+    U256(std::vec::IntoIter<u256>),
     /// An iterator on a [`F32`] array.
     F32(std::vec::IntoIter<F32>),
     /// An iterator on a [`F64`] array.
     F64(std::vec::IntoIter<F64>),
     /// An iterator on an array of UTF-8 strings.
-    String(std::vec::IntoIter<String>),
+    String(std::vec::IntoIter<Box<str>>),
     /// An iterator on an array of arrays.
     Array(std::vec::IntoIter<ArrayValue>),
-    /// An iterator on an array of maps.
-    Map(std::vec::IntoIter<MapValue>),
 }
 
 impl Iterator for ArrayValueIntoIter {
@@ -306,11 +305,12 @@ impl Iterator for ArrayValueIntoIter {
             ArrayValueIntoIter::U64(it) => it.next().map(Into::into),
             ArrayValueIntoIter::I128(it) => it.next().map(Into::into),
             ArrayValueIntoIter::U128(it) => it.next().map(Into::into),
+            ArrayValueIntoIter::I256(it) => it.next().map(Into::into),
+            ArrayValueIntoIter::U256(it) => it.next().map(Into::into),
             ArrayValueIntoIter::F32(it) => it.next().map(Into::into),
             ArrayValueIntoIter::F64(it) => it.next().map(Into::into),
             ArrayValueIntoIter::String(it) => it.next().map(Into::into),
             ArrayValueIntoIter::Array(it) => it.next().map(Into::into),
-            ArrayValueIntoIter::Map(it) => it.next().map(Into::into),
         }
     }
 }
@@ -329,11 +329,12 @@ pub enum ArrayValueIterCloned<'a> {
     U64(std::slice::Iter<'a, u64>),
     I128(std::slice::Iter<'a, i128>),
     U128(std::slice::Iter<'a, u128>),
+    I256(std::slice::Iter<'a, i256>),
+    U256(std::slice::Iter<'a, u256>),
     F32(std::slice::Iter<'a, F32>),
     F64(std::slice::Iter<'a, F64>),
-    String(std::slice::Iter<'a, String>),
+    String(std::slice::Iter<'a, Box<str>>),
     Array(std::slice::Iter<'a, ArrayValue>),
-    Map(std::slice::Iter<'a, MapValue>),
 }
 
 impl Iterator for ArrayValueIterCloned<'_> {
@@ -354,11 +355,12 @@ impl Iterator for ArrayValueIterCloned<'_> {
             ArrayValueIterCloned::U64(it) => it.next().cloned().map(Into::into),
             ArrayValueIterCloned::I128(it) => it.next().cloned().map(Into::into),
             ArrayValueIterCloned::U128(it) => it.next().cloned().map(Into::into),
+            ArrayValueIterCloned::I256(it) => it.next().cloned().map(Into::into),
+            ArrayValueIterCloned::U256(it) => it.next().cloned().map(Into::into),
             ArrayValueIterCloned::F32(it) => it.next().cloned().map(Into::into),
             ArrayValueIterCloned::F64(it) => it.next().cloned().map(Into::into),
             ArrayValueIterCloned::String(it) => it.next().cloned().map(Into::into),
             ArrayValueIterCloned::Array(it) => it.next().cloned().map(Into::into),
-            ArrayValueIterCloned::Map(it) => it.next().cloned().map(Into::into),
         }
     }
 }

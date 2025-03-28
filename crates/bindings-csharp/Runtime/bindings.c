@@ -4,7 +4,9 @@
 #include <stdint.h>
 #include <unistd.h>
 
+#ifndef EXPERIMENTAL_WASM_AOT
 #include "driver.h"
+#endif
 
 #define OPAQUE_TYPEDEF(name, T) \
   typedef struct name {         \
@@ -13,66 +15,90 @@
 
 OPAQUE_TYPEDEF(Status, uint16_t);
 OPAQUE_TYPEDEF(TableId, uint32_t);
-OPAQUE_TYPEDEF(ColId, uint32_t);
+OPAQUE_TYPEDEF(IndexId, uint32_t);
+OPAQUE_TYPEDEF(ColId, uint16_t);
 OPAQUE_TYPEDEF(IndexType, uint8_t);
 OPAQUE_TYPEDEF(LogLevel, uint8_t);
-OPAQUE_TYPEDEF(ScheduleToken, uint64_t);
-OPAQUE_TYPEDEF(Buffer, uint32_t);
-OPAQUE_TYPEDEF(BufferIter, uint32_t);
+OPAQUE_TYPEDEF(BytesSink, uint32_t);
+OPAQUE_TYPEDEF(BytesSource, uint32_t);
+OPAQUE_TYPEDEF(RowIter, uint32_t);
+OPAQUE_TYPEDEF(ConsoleTimerId, uint32_t);
 
 #define CSTR(s) (uint8_t*)s, sizeof(s) - 1
 
-#define IMPORT(ret, name, params, args)                             \
-  __attribute__((import_module("spacetime_7.0"),                    \
-                 import_name(#name))) extern ret name##_imp params; \
+#define STDB_EXTERN(name) \
+  __attribute__((import_module("spacetime_10.0"), import_name(#name))) extern
+
+#ifndef EXPERIMENTAL_WASM_AOT
+#define IMPORT(ret, name, params, args)    \
+  STDB_EXTERN(name) ret name##_imp params; \
   ret name params { return name##_imp args; }
+#else
+#define IMPORT(ret, name, params, args) STDB_EXTERN(name) ret name params;
+#endif
 
-IMPORT(void, _console_log,
-       (LogLevel level, const uint8_t* target, uint32_t target_len,
-        const uint8_t* filename, uint32_t filename_len, uint32_t line_number,
-        const uint8_t* message, uint32_t message_len),
-       (level, target, target_len, filename, filename_len, line_number, message,
-        message_len));
-
-IMPORT(Status, _get_table_id,
+IMPORT(Status, table_id_from_name,
        (const uint8_t* name, uint32_t name_len, TableId* id),
        (name, name_len, id));
-IMPORT(Status, _create_index,
-       (const uint8_t* index_name, uint32_t index_name_len, TableId table_id,
-        const ColId* col_ids, uint32_t col_ids_len, IndexType type),
-       (index_name, index_name_len, table_id, col_ids, col_ids_len, type));
-IMPORT(Status, _iter_by_col_eq,
-       (TableId table_id, ColId col_id, const uint8_t* value,
-        uint32_t value_len, BufferIter* iter),
-       (table_id, col_id, value, value_len, iter));
-IMPORT(Status, _insert, (TableId table_id, const uint8_t* row, uint32_t len),
-       (table_id, row, len));
-IMPORT(Status, _delete_by_col_eq,
-       (TableId table_id, ColId col_id, const uint8_t* value,
-        uint32_t value_len, uint32_t* num_deleted),
-       (table_id, col_id, value, value_len, num_deleted));
-IMPORT(Status, _delete_by_rel,
-       (TableId table_id, const uint8_t* relation, uint32_t relation_len,
-        uint32_t* num_deleted),
-       (table_id, relation, relation_len, num_deleted));
-IMPORT(Status, _iter_start, (TableId table_id, BufferIter* iter),
+IMPORT(Status, index_id_from_name,
+       (const uint8_t* name, uint32_t name_len, IndexId* id),
+       (name, name_len, id));
+IMPORT(Status, datastore_table_row_count,
+       (TableId table_id, uint64_t* count),
+       (table_id, count));
+IMPORT(Status, datastore_table_scan_bsatn,
+       (TableId table_id, RowIter* iter),
        (table_id, iter));
-IMPORT(Status, _iter_start_filtered,
-       (TableId table_id, const uint8_t* filter, uint32_t filter_len,
-        BufferIter* iter),
-       (table_id, filter, filter_len, iter));
-IMPORT(Status, _iter_next, (BufferIter iter, Buffer* row), (iter, row));
-IMPORT(Status, _iter_drop, (BufferIter iter), (iter));
-IMPORT(void, _schedule_reducer,
-       (const uint8_t* name, uint32_t name_len, const uint8_t* args,
-        uint32_t args_len, uint64_t timestamp, ScheduleToken* token),
-       (name, name_len, args, args_len, timestamp, token));
-IMPORT(void, _cancel_reducer, (ScheduleToken token), (token));
-IMPORT(uint32_t, _buffer_len, (Buffer buf), (buf));
-IMPORT(void, _buffer_consume, (Buffer buf, uint8_t* dst, uint32_t dst_len),
-       (buf, dst, dst_len));
-IMPORT(Buffer, _buffer_alloc, (const uint8_t* data, uint32_t len), (data, len));
+IMPORT(Status, datastore_index_scan_range_bsatn,
+       (IndexId index_id, const uint8_t* prefix, uint32_t prefix_len, ColId prefix_elems,
+        const uint8_t* rstart, uint32_t rstart_len, const uint8_t* rend, uint32_t rend_len, RowIter* iter),
+       (index_id, prefix, prefix_len, prefix_elems, rstart, rstart_len, rend, rend_len, iter));
+IMPORT(Status, datastore_btree_scan_bsatn,
+       (IndexId index_id, const uint8_t* prefix, uint32_t prefix_len, ColId prefix_elems,
+        const uint8_t* rstart, uint32_t rstart_len, const uint8_t* rend, uint32_t rend_len, RowIter* iter),
+       (index_id, prefix, prefix_len, prefix_elems, rstart, rstart_len, rend, rend_len, iter));
+IMPORT(int16_t, row_iter_bsatn_advance,
+       (RowIter iter, uint8_t* buffer_ptr, size_t* buffer_len_ptr),
+       (iter, buffer_ptr, buffer_len_ptr));
+IMPORT(uint16_t, row_iter_bsatn_close, (RowIter iter), (iter));
+IMPORT(Status, datastore_insert_bsatn, (TableId table_id, const uint8_t* row_ptr, size_t* row_len_ptr),
+       (table_id, row_ptr, row_len_ptr));
+IMPORT(Status, datastore_update_bsatn, (TableId table_id, IndexId index_id, const uint8_t* row_ptr, size_t* row_len_ptr),
+       (table_id, index_id, row_ptr, row_len_ptr));
+IMPORT(Status, datastore_delete_by_index_scan_range_bsatn,
+       (IndexId index_id, const uint8_t* prefix, uint32_t prefix_len, ColId prefix_elems,
+        const uint8_t* rstart, uint32_t rstart_len, const uint8_t* rend, uint32_t rend_len, uint32_t* num_deleted),
+       (index_id, prefix, prefix_len, prefix_elems, rstart, rstart_len, rend, rend_len, num_deleted));
+IMPORT(Status, datastore_delete_by_btree_scan_bsatn,
+       (IndexId index_id, const uint8_t* prefix, uint32_t prefix_len, ColId prefix_elems,
+        const uint8_t* rstart, uint32_t rstart_len, const uint8_t* rend, uint32_t rend_len, uint32_t* num_deleted),
+       (index_id, prefix, prefix_len, prefix_elems, rstart, rstart_len, rend, rend_len, num_deleted));
+IMPORT(Status, datastore_delete_all_by_eq_bsatn,
+       (TableId table_id, const uint8_t* rel_ptr, uint32_t rel_len,
+        uint32_t* num_deleted),
+       (table_id, rel_ptr, rel_len, num_deleted));
+IMPORT(int16_t, bytes_source_read, (BytesSource source, uint8_t* buffer_ptr, size_t* buffer_len_ptr),
+       (source, buffer_ptr, buffer_len_ptr));
+IMPORT(uint16_t, bytes_sink_write, (BytesSink sink, const uint8_t* buffer_ptr, size_t* buffer_len_ptr),
+       (sink, buffer_ptr, buffer_len_ptr));
+IMPORT(void, console_log,
+       (LogLevel level, const uint8_t* target_ptr, uint32_t target_len,
+        const uint8_t* filename_ptr, uint32_t filename_len, uint32_t line_number,
+        const uint8_t* message_ptr, uint32_t message_len),
+       (level, target_ptr, target_len, filename_ptr, filename_len, line_number,
+        message_ptr, message_len));
+IMPORT(ConsoleTimerId, console_timer_start,
+       (const uint8_t* name, size_t name_len),
+       (name, name_len));
+IMPORT(Status, console_timer_end,
+       (ConsoleTimerId stopwatch_id),
+       (stopwatch_id));
+IMPORT(void, volatile_nonatomic_schedule_immediate,
+       (const uint8_t* name, size_t name_len, const uint8_t* args, size_t args_len),
+       (name, name_len, args, args_len));
+IMPORT(void, identity, (void* id_ptr), (id_ptr));
 
+#ifndef EXPERIMENTAL_WASM_AOT
 static MonoClass* ffi_class;
 
 #define CEXPORT(name) __attribute__((export_name(#name))) name
@@ -87,30 +113,43 @@ PREINIT(10, startup) {
   _start();
 
   ffi_class = mono_wasm_assembly_find_class(
-      mono_wasm_assembly_load("SpacetimeDB.Runtime.dll"), "SpacetimeDB.Module",
-      "FFI");
-  assert(ffi_class && "FFI class not found");
+      mono_wasm_assembly_load("SpacetimeDB.Runtime.dll"),
+      "SpacetimeDB.Internal", "Module");
+  assert(ffi_class &&
+         "FFI export class (SpacetimeDB.Internal.Module) not found");
 }
 
-#define EXPORT(ret, name, params, args...)                                    \
+#define EXPORT_WITH_MONO_RES(ret, res_code, name, params, args...)            \
   static MonoMethod* ffi_method_##name;                                       \
   PREINIT(20, find_##name) {                                                  \
     ffi_method_##name = mono_wasm_assembly_find_method(ffi_class, #name, -1); \
-    assert(ffi_method_##name && "FFI method not found");                      \
+    assert(ffi_method_##name && "FFI export method not found");               \
   }                                                                           \
   ret CEXPORT(name) params {                                                  \
     MonoObject* res;                                                          \
     mono_wasm_invoke_method_ref(ffi_method_##name, NULL, (void*[]){args},     \
                                 NULL, &res);                                  \
-    return *(ret*)mono_object_unbox(res);                                     \
+    res_code                                                                  \
   }
 
-EXPORT(Buffer, __describe_module__, ());
+#define EXPORT(ret, name, params, args...)                                             \
+  EXPORT_WITH_MONO_RES(ret, return *(ret*)mono_object_unbox(res);, name, params, args) \
 
-EXPORT(Buffer, __call_reducer__,
-       (uint32_t id, Buffer caller_identity, Buffer caller_address,
-        uint64_t timestamp, Buffer args),
-       &id, &caller_identity, &caller_address, &timestamp, &args);
+#define EXPORT_VOID(name, params, args...)                                    \
+  EXPORT_WITH_MONO_RES(void, return;, name, params, args)                      \
+
+EXPORT_VOID(__describe_module__, (BytesSink description), &description);
+
+EXPORT(int16_t, __call_reducer__,
+       (uint32_t id,
+        uint64_t sender_0, uint64_t sender_1, uint64_t sender_2, uint64_t sender_3,
+        uint64_t conn_id_0, uint64_t conn_id_1,
+        uint64_t timestamp, BytesSource args, BytesSink error),
+       &id,
+       &sender_0, &sender_1, &sender_2, &sender_3,
+       &conn_id_0, &conn_id_1,
+       &timestamp, &args, &error);
+#endif
 
 // Shims to avoid dependency on WASI in the generated Wasm file.
 
@@ -208,9 +247,10 @@ int32_t WASI_NAME(fd_write)(__wasi_fd_t fd, const __wasi_ciovec_t* iovs,
     // Note: this will produce ugly broken output, but there's not much we can
     // do about it until we have proper line-buffered WASI writer in the core.
     // It's better than nothing though.
-    _console_log_imp((LogLevel){fd == STDERR_FILENO ? /*WARN*/ 1 : /*INFO*/ 2},
-                     CSTR("wasi"), CSTR(__FILE__), __LINE__, iovs[i].buf,
-                     iovs[i].buf_len);
+    console_log((LogLevel){fd == STDERR_FILENO ? /*WARN*/ 1 : /*INFO*/
+                                2},
+                 CSTR("wasi"), CSTR(__FILE__), __LINE__, iovs[i].buf,
+                 iovs[i].buf_len);
     *retptr0 += iovs[i].buf_len;
   }
   return 0;

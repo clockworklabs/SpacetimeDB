@@ -1,0 +1,55 @@
+name: Discord notifications
+
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  discordNotification:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.merged == true &&
+      github.event.pull_request.base.ref == 'master'
+    env:
+      CHECK_NAME: Internal Tests
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Set up GitHub CLI
+        run: |
+          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo tee /usr/share/keyrings/githubcli-archive-keyring.gpg > /dev/null
+          sudo apt-get install -y apt-transport-https
+          echo "deb [arch=amd64 signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list
+          sudo apt-get update
+          sudo apt-get install gh
+
+      - name: Fetch Check Run Results
+        run: |
+          RESULT="$(gh pr checks "${{github.event.pull_request.html_url}}" --json 'name,state' |
+            jq -r ".[] | select(.name==\"${CHECK_NAME}\").state")"
+
+          if [ -z "$RESULT" ]; then
+            RESULT="The check did not run!"
+          fi
+
+          echo "CHECK_RESULT=${RESULT}" >> $GITHUB_ENV
+
+      - name: Send Discord notification
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          CHECK_RESULT: ${{ env.CHECK_RESULT }}
+          MENTION_ON_FAILURE: ${{ secrets.DEV_OPS_ROLE_ID }}
+        run: |
+          message="PR merged: [(#${PR_NUMBER}) ${PR_TITLE}](${PR_URL})"
+          message+=$'\n'
+          message+="${CHECK_NAME} result: ${CHECK_RESULT}"
+          # Note that anything besides success is treated as a failure (e.g. if the check did not run at all, or if it is still pending).
+          if [[ "${CHECK_RESULT}" != "SUCCESS" ]]; then
+            # This uses special Discord syntax for pinging a particular role.
+            # Note the '&' - this is the difference between pinging a *role* and pinging a *person*.
+            message+=" (cc <@&${MENTION_ON_FAILURE}>)"
+          fi
+          # Use `jq` to construct the json data blob in the format required by the webhook.
+          data="$(jq --null-input --arg msg "$message" '.content=$msg')"
+          curl -X POST -H 'Content-Type: application/json' -d "$data" "${DISCORD_WEBHOOK_URL}"

@@ -1,46 +1,59 @@
 [package]
 name = "spacetimedb-core"
-version = "0.8.1"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 license-file = "LICENSE"
 description = "The core library for SpacetimeDB"
+rust-version.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [lib]
-name = "spacetimedb"   # The name of the target.
-path = "src/lib.rs"    # The source file of the target.
+name = "spacetimedb" # The name of the target.
+path = "src/lib.rs"  # The source file of the target.
 
 # Benching off, because of https://bheisler.github.io/criterion.rs/book/faq.html#cargo-bench-gives-unrecognized-option-errors-for-valid-command-line-options
 bench = false
 
-[[bench]]
-name = "odb_flavor_bench"
-harness = false
-
 [dependencies]
-spacetimedb-lib = { path = "../lib", version = "0.8.1" }
-spacetimedb-sats = { path = "../sats", version = "0.8.1" }
-spacetimedb-vm = { path = "../vm", version = "0.8.1" }
-spacetimedb-client-api-messages = { path = "../client-api-messages", version = "0.8.1" }
-spacetimedb-primitives = { path = "../primitives", version = "0.8.1" }
-spacetimedb-metrics = { path = "../metrics", version = "0.8.1" }
+spacetimedb-data-structures.workspace = true
+spacetimedb-lib = { workspace = true, features = ["serde", "metrics_impls"] }
+spacetimedb-client-api-messages.workspace = true
+spacetimedb-commitlog.workspace = true
+spacetimedb-durability.workspace = true
+spacetimedb-metrics.workspace = true
+spacetimedb-primitives.workspace = true
+spacetimedb-paths.workspace = true
+spacetimedb-physical-plan.workspace = true
+spacetimedb-query.workspace = true
+spacetimedb-sats = { workspace = true, features = ["serde"] }
+spacetimedb-schema.workspace = true
+spacetimedb-table.workspace = true
+spacetimedb-vm.workspace = true
+spacetimedb-snapshot.workspace = true
+spacetimedb-subscription.workspace = true
+spacetimedb-expr.workspace = true
+spacetimedb-execution.workspace = true
 
-anyhow.workspace = true
+anyhow = { workspace = true, features = ["backtrace"] }
+arrayvec.workspace = true
 async-trait.workspace = true
 backtrace.workspace = true
 base64.workspace = true
+blake3.workspace = true
+brotli.workspace = true
+bytemuck.workspace = true
 bytes.workspace = true
 bytestring.workspace = true
 chrono.workspace = true
-clap.workspace = true
 crossbeam-channel.workspace = true
 derive_more.workspace = true
 dirs.workspace = true
-email_address.workspace = true
+enum-as-inner.workspace = true
 enum-map.workspace = true
 flate2.workspace = true
 fs2.workspace = true
 futures.workspace = true
+hashbrown = { workspace = true, features = ["rayon", "serde"] }
 hex.workspace = true
 hostname.workspace = true
 hyper.workspace = true
@@ -50,34 +63,39 @@ itertools.workspace = true
 jsonwebtoken.workspace = true
 lazy_static.workspace = true
 log.workspace = true
+memchr.workspace = true
 once_cell.workspace = true
 openssl.workspace = true
 parking_lot.workspace = true
 paste.workspace = true
 pin-project-lite.workspace = true
 prometheus.workspace = true
-prost.workspace = true
+rayon.workspace = true
 rayon-core.workspace = true
 regex.workspace = true
 rustc-demangle.workspace = true
 rustc-hash.workspace = true
-smallvec.workspace = true
 scopeguard.workspace = true
-sendgrid.workspace = true
+semver = { workspace = true, features = ["serde"] }
 serde.workspace = true
 serde_json.workspace = true
 serde_path_to_error.workspace = true
 serde_with = { workspace = true, features = ["chrono_0_4"] }
 sha1.workspace = true
+similar.workspace = true
 slab.workspace = true
 sled.workspace = true
+smallvec.workspace = true
 sqlparser.workspace = true
 strum.workspace = true
 tempfile.workspace = true
 thiserror.workspace = true
+thin-vec.workspace = true
 tokio-util.workspace = true
 tokio.workspace = true
+tokio-stream = "0.1"
 toml.workspace = true
+toml_edit.workspace = true
 tracing-appender.workspace = true
 tracing-core.workspace = true
 tracing-flame.workspace = true
@@ -89,27 +107,37 @@ url.workspace = true
 urlencoding.workspace = true
 uuid.workspace = true
 wasmtime.workspace = true
-# Rocksdb ostorage backend, linked only if "rocksdb" feature enabled.
-rocksdb = {workspace = true, optional = true}
+jwks = { package = "spacetimedb-jwks", version = "0.1.3" }
+async_cache = "0.3.1"
+faststr = "0.2.23"
+
+[target.'cfg(not(target_env = "msvc"))'.dependencies]
+tikv-jemallocator = {workspace = true}
+tikv-jemalloc-ctl = {workspace = true}
 
 [features]
-# Optional storage engines.
-odb_rocksdb = ["dep:rocksdb"]
-odb_sled = []
-default = ["odb_sled"]
+# Print a warning when doing an unindexed `iter_by_col_range` on a large table.
+unindexed_iter_by_col_range_warn = []
+default = ["unindexed_iter_by_col_range_warn"]
+# Enable timing for wasm ABI calls
+spacetimedb-wasm-instance-env-times = []
+# Enable test helpers and utils
+test = ["spacetimedb-commitlog/test"]
 # Perfmaps for profiling modules
 perfmap = []
 
 [dev-dependencies]
 spacetimedb-lib = { path = "../lib", features = ["proptest"] }
 spacetimedb-sats = { path = "../sats", features = ["proptest"] }
+spacetimedb-commitlog = { workspace = true, features = ["test"] }
 
-rusqlite.workspace = true
 criterion.workspace = true
 # Also as dev-dependencies for use in _this_ crate's tests.
 proptest.workspace = true
 proptest-derive.workspace = true
 rand.workspace = true
-
-[build-dependencies]
-prost-build.workspace = true
+env_logger.workspace = true
+pretty_assertions.workspace = true
+jsonwebtoken.workspace = true
+axum.workspace = true
+reqwest.workspace = true

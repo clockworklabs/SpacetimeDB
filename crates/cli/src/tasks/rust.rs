@@ -1,6 +1,8 @@
+use std::io::BufRead;
 use std::path::{Path, PathBuf};
 use std::{fs, io};
 
+use crate::detect::{has_rust_up, has_wasm32_target};
 use anyhow::Context;
 use cargo_metadata::Message;
 use duct::cmd;
@@ -19,26 +21,56 @@ fn cargo_cmd(subcommand: &str, build_debug: bool, args: &[&str]) -> duct::Expres
     )
 }
 
-pub(crate) fn build_rust(project_path: &Path, skip_clippy: bool, build_debug: bool) -> anyhow::Result<PathBuf> {
-    // Make sure that we have the wasm target installed (ok to run if its already installed)
-    cmd!("rustup", "target", "add", "wasm32-unknown-unknown").run()?;
+pub(crate) fn build_rust(project_path: &Path, lint_dir: Option<&Path>, build_debug: bool) -> anyhow::Result<PathBuf> {
+    // Make sure that we have the wasm target installed
+    if !has_wasm32_target() {
+        if has_rust_up() {
+            cmd!("rustup", "target", "add", "wasm32-unknown-unknown")
+                .run()
+                .context("Failed to install wasm32-unknown-unknown target with rustup")?;
+        } else {
+            anyhow::bail!("wasm32-unknown-unknown target is not installed. Please install it.");
+        }
+    }
 
-    // Note: Clippy has to run first so that it can build & cache deps for actual build while checking in parallel.
-    if !skip_clippy {
-        let clippy_conf_dir = tempfile::tempdir()?;
-        fs::write(clippy_conf_dir.path().join("clippy.toml"), CLIPPY_TOML)?;
-        println!("checking crate with spacetimedb's clippy configuration");
-        let out = cargo_cmd(
-            "clippy",
-            build_debug,
-            &["--", "--no-deps", "-Aclippy::all", "-Dclippy::disallowed-macros"],
-        )
-        .dir(project_path)
-        .env("CLIPPY_DISABLE_DOCS_LINKS", "1")
-        .env("CLIPPY_CONF_DIR", clippy_conf_dir.path())
-        .unchecked()
-        .run()?;
-        anyhow::ensure!(out.status.success(), "clippy found a lint error");
+    if let Some(lint_dir) = lint_dir {
+        let mut err_count: u32 = 0;
+        let lint_dir = project_path.join(lint_dir);
+        for file in walkdir::WalkDir::new(lint_dir).into_iter() {
+            let file = file?;
+            let printable_path = file.path().to_str().ok_or(anyhow::anyhow!("path not utf-8"))?;
+            if file.file_type().is_file() && file.path().extension().is_some_and(|ext| ext == "rs") {
+                let file = fs::File::open(file.path())?;
+                for (idx, line) in io::BufReader::new(file).lines().enumerate() {
+                    let line = line?;
+                    let line_number = idx + 1;
+                    for disallowed in &["println!", "print!", "eprintln!", "eprint!", "dbg!"] {
+                        if line.contains(disallowed) {
+                            if err_count == 0 {
+                                eprintln!("\nDetected nonfunctional print statements:\n");
+                            }
+                            eprintln!("{printable_path}:{line_number}: {line}");
+                            err_count += 1;
+                        }
+                    }
+                }
+            }
+        }
+        if err_count > 0 {
+            eprintln!();
+            anyhow::bail!(
+                "Found {err_count} disallowed print statement(s).\n\
+                These will not be printed from SpacetimeDB modules.\n\
+                If you need to print something, use the `log` crate\n\
+                and the `log::info!` macro instead."
+            );
+        }
+    } else {
+        println!(
+            "Warning: Skipping checks for nonfunctional print statements.\n\
+            If you have used builtin macros for printing, such as println!,\n\
+            your logs will not show up."
+        );
     }
 
     let reader = cargo_cmd("build", build_debug, &["--message-format=json-render-diagnostics"])
@@ -56,22 +88,12 @@ pub(crate) fn build_rust(project_path: &Path, skip_clippy: bool, build_debug: bo
     let artifact = artifact.context("no artifact found?")?;
     let artifact = artifact.filenames.into_iter().next().context("no wasm?")?;
 
-    check_for_wasm_bindgen(artifact.as_ref())?;
+    check_for_issues(artifact.as_ref())?;
 
     Ok(artifact.into())
 }
 
-const CLIPPY_TOML: &str = r#"
-disallowed-macros = [
-    { path = "std::print",       reason = "print!() has no effect inside a spacetimedb module; use log::info!() instead" },
-    { path = "std::println",   reason = "println!() has no effect inside a spacetimedb module; use log::info!() instead" },
-    { path = "std::eprint",     reason = "eprint!() has no effect inside a spacetimedb module; use log::warn!() instead" },
-    { path = "std::eprintln", reason = "eprintln!() has no effect inside a spacetimedb module; use log::warn!() instead" },
-    { path = "std::dbg",      reason = "std::dbg!() has no effect inside a spacetimedb module; import spacetime's dbg!() macro instead" },
-]
-"#;
-
-fn check_for_wasm_bindgen(artifact: &Path) -> anyhow::Result<()> {
+fn check_for_issues(artifact: &Path) -> anyhow::Result<()> {
     // if this fails for some reason, just let it fail elsewhere
     let Ok(file) = fs::File::open(artifact) else {
         return Ok(());
@@ -92,6 +114,19 @@ fn check_for_wasm_bindgen(artifact: &Path) -> anyhow::Result<()> {
              to disable it."
         )
     }
+    if has_getrandom(&module) {
+        anyhow::bail!(
+            "getrandom usage detected.\n\
+             \n\
+             It seems like either you or a crate in your dependency tree is depending on\n\
+             the `getrandom` crate for random number generation. getrandom is the default\n\
+             randomness source for the `rand` crate, and is used when you call\n\
+             `rand::random()` or `rand::thread_rng()`. If this is you, you should instead\n\
+             use `ctx.rng()` on a `ReducerContext`. If this is a crate in your\n\
+             tree, you should try to see if the crate provides a way to pass in a custom\n\
+             `Rng` type, and pass it the rng returned from `ctx.rng()`."
+        )
+    }
     Ok(())
 }
 
@@ -105,11 +140,16 @@ fn has_wasm_bindgen(module: &wasmbin::Module) -> bool {
     module
         .find_std_section::<wasmbin::sections::payload::Import>()
         .and_then(|imports| imports.try_contents().ok())
-        .map(|imports| imports.iter().any(check_import))
-        .unwrap_or(false)
+        .is_some_and(|imports| imports.iter().any(check_import))
         || module
             .find_std_section::<wasmbin::sections::payload::Export>()
             .and_then(|exports| exports.try_contents().ok())
-            .map(|exports| exports.iter().any(check_export))
-            .unwrap_or(false)
+            .is_some_and(|exports| exports.iter().any(check_export))
+}
+
+fn has_getrandom(module: &wasmbin::Module) -> bool {
+    module
+        .find_std_section::<wasmbin::sections::payload::Import>()
+        .and_then(|imports| imports.try_contents().ok())
+        .is_some_and(|imports| imports.iter().any(|import| import.path.name == "__getrandom_custom"))
 }

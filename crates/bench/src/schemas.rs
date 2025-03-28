@@ -1,38 +1,60 @@
+#![allow(non_camel_case_types)]
+
 use serde::Deserialize;
+use spacetimedb_lib::de::Deserialize as SatsDeserializer;
 use spacetimedb_lib::sats;
 use std::fmt::Debug;
 use std::hash::Hash;
 
 pub const BENCH_PKEY_INDEX: u32 = 0;
 
-// the following piece of code must remain synced with `modules/bencmarks/src/lib.rs`
+// the following piece of code must remain synced with `modules/benchmarks/src/synthetic.rs`
 // These are the schemas used for these database tables outside of the benchmark module.
-// It needs to match the schemas used inside the benchmark .
+// It needs to match the schemas used inside the benchmark.
 
 // ---------- SYNCED CODE ----------
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Person {
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize, SatsDeserializer)]
+pub struct u32_u64_str {
+    // column 0
     id: u32,
-    name: String,
+    // column 1
     age: u64,
+    // column 2
+    name: Box<str>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Location {
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize, SatsDeserializer)]
+pub struct u32_u64_u64 {
+    // column 0
     id: u32,
+    // column 1
     x: u64,
+    // column 2
     y: u64,
 }
 // ---------- END SYNCED CODE ----------
 
+/// This is a duplicate of [`u32_u64_u64`] with the fields shuffled to minimize interior padding,
+/// used to compare the effects of interior padding on BFLATN -> BSATN serialization.
+///
+/// This type *should not* be used for any benchmarks except `special::serialize_benchmarks`,
+/// as it doesn't have proper implementations in modules or Sqlite.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize, SatsDeserializer)]
+pub struct u64_u64_u32 {
+    x: u64,
+    y: u64,
+    id: u32,
+}
+
+/// A schema used in the benchmarks.
+/// Schemas should convert to a `ProductType` / `ProductValue` in a canonical way.
+/// We require that, when converted, to a ProductValue:
+/// - column 0 is a u32 (used in many places)
+/// - and column 1 is a u64 (used in `update_bulk`).
 pub trait BenchTable: Debug + Clone + PartialEq + Eq + Hash {
     /// PascalCase name. This is used to name tables.
-    fn name_pascal_case() -> &'static str;
-    /// snake_case name. This is used to look up reducers.
-    fn name_snake_case() -> &'static str;
+    fn name() -> &'static str;
 
-    /// Note: the first field will be used as the primary key, when using
-    /// `TableStyle::Unique`. It should be a u32.
     fn product_type() -> sats::ProductType;
     /// MUST match product_type.
     fn into_product_value(self) -> sats::ProductValue;
@@ -44,38 +66,32 @@ pub trait BenchTable: Debug + Clone + PartialEq + Eq + Hash {
     fn into_sqlite_params(self) -> Self::SqliteParams;
 }
 
-impl BenchTable for Person {
-    fn name_pascal_case() -> &'static str {
-        "Person"
-    }
-    fn name_snake_case() -> &'static str {
-        "person"
+impl BenchTable for u32_u64_str {
+    fn name() -> &'static str {
+        "u32_u64_str"
     }
 
     fn product_type() -> sats::ProductType {
         [
             ("id", sats::AlgebraicType::U32),
-            ("name", sats::AlgebraicType::String),
             ("age", sats::AlgebraicType::U64),
+            ("name", sats::AlgebraicType::String),
         ]
         .into()
     }
     fn into_product_value(self) -> sats::ProductValue {
-        sats::product![self.id, self.name, self.age]
+        sats::product![self.id, self.age, self.name,]
     }
 
-    type SqliteParams = (u32, String, u64);
+    type SqliteParams = (u32, u64, Box<str>);
     fn into_sqlite_params(self) -> Self::SqliteParams {
-        (self.id, self.name, self.age)
+        (self.id, self.age, self.name)
     }
 }
 
-impl BenchTable for Location {
-    fn name_pascal_case() -> &'static str {
-        "Location"
-    }
-    fn name_snake_case() -> &'static str {
-        "location"
+impl BenchTable for u32_u64_u64 {
+    fn name() -> &'static str {
+        "u32_u64_u64"
     }
 
     fn product_type() -> sats::ProductType {
@@ -92,47 +108,60 @@ impl BenchTable for Location {
 
     type SqliteParams = (u32, u64, u64);
     fn into_sqlite_params(self) -> Self::SqliteParams {
-        (self.id, self.x, self.x)
+        (self.id, self.x, self.y)
+    }
+}
+
+impl BenchTable for u64_u64_u32 {
+    fn name() -> &'static str {
+        "u64_u64_u32"
+    }
+    fn product_type() -> sats::ProductType {
+        [
+            ("x", sats::AlgebraicType::U64),
+            ("y", sats::AlgebraicType::U64),
+            ("id", sats::AlgebraicType::U32),
+        ]
+        .into()
+    }
+    fn into_product_value(self) -> sats::ProductValue {
+        sats::product![self.x, self.y, self.id]
+    }
+
+    type SqliteParams = ();
+    fn into_sqlite_params(self) -> Self::SqliteParams {
+        unimplemented!()
     }
 }
 
 /// How we configure the indexes for a table used in benchmarks.
+/// TODO(jgilles): this should be more general, but for that we'll need to dynamically generate the modules...
 #[derive(PartialEq, Copy, Clone, Debug, Deserialize)]
 pub enum IndexStrategy {
     /// Unique "id" field at index 0
-    #[serde(alias = "unique")]
-    Unique,
+    #[serde(alias = "unique_0")]
+    Unique0,
     /// No unique field or indexes
-    #[serde(alias = "non_unique")]
-    NonUnique,
+    #[serde(alias = "no_index")]
+    NoIndex,
     /// Non-unique index on all fields
-    #[serde(alias = "multi_index")]
-    MultiIndex,
+    #[serde(alias = "btree_each_column")]
+    BTreeEachColumn,
 }
 
 impl IndexStrategy {
-    pub fn snake_case(&self) -> &'static str {
+    pub fn name(&self) -> &'static str {
         match self {
-            IndexStrategy::Unique => "unique",
-            IndexStrategy::NonUnique => "non_unique",
-            IndexStrategy::MultiIndex => "multi_index",
+            IndexStrategy::Unique0 => "unique_0",
+            IndexStrategy::NoIndex => "no_index",
+            IndexStrategy::BTreeEachColumn => "btree_each_column",
         }
     }
 }
 
 pub fn table_name<T: BenchTable>(style: IndexStrategy) -> String {
-    let prefix = match style {
-        IndexStrategy::Unique => "Unique",
-        IndexStrategy::NonUnique => "NonUnique",
-        IndexStrategy::MultiIndex => "MultiIndex",
-    };
-    let name = T::name_pascal_case();
-
-    format!("{prefix}{name}")
-}
-pub fn snake_case_table_name<T: BenchTable>(style: IndexStrategy) -> String {
-    let prefix = style.snake_case();
-    let name = T::name_snake_case();
+    let prefix = style.name();
+    let name = T::name();
 
     format!("{prefix}_{name}")
 }
@@ -162,19 +191,27 @@ pub trait RandomTable {
     fn gen(id: u32, rng: &mut XorShiftLite, buckets: u64) -> Self;
 }
 
-impl RandomTable for Person {
+impl RandomTable for u32_u64_str {
     fn gen(id: u32, rng: &mut XorShiftLite, buckets: u64) -> Self {
-        let name = nth_name(rng.gen() % buckets);
+        let name = nth_name(rng.gen() % buckets).into();
         let age = rng.gen() % buckets;
-        Person { id, name, age }
+        u32_u64_str { id, name, age }
     }
 }
 
-impl RandomTable for Location {
+impl RandomTable for u32_u64_u64 {
     fn gen(id: u32, rng: &mut XorShiftLite, buckets: u64) -> Self {
         let x = rng.gen() % buckets;
         let y = rng.gen() % buckets;
-        Location { id, x, y }
+        u32_u64_u64 { id, x, y }
+    }
+}
+
+impl RandomTable for u64_u64_u32 {
+    fn gen(id: u32, rng: &mut XorShiftLite, buckets: u64) -> Self {
+        let x = rng.gen() % buckets;
+        let y = rng.gen() % buckets;
+        u64_u64_u32 { x, y, id }
     }
 }
 
@@ -339,12 +376,12 @@ mod tests {
 
     #[test]
     fn test_partly_identical() {
-        use crate::schemas::Person;
+        use crate::schemas::u32_u64_str;
 
         let identical = 100;
         let total = 2000;
 
-        let data = create_partly_identical::<Person>(0xdeadbeef, identical, total);
+        let data = create_partly_identical::<u32_u64_str>(0xdeadbeef, identical, total);
         let p1 = data[0].clone();
 
         for item in data.iter().take(identical as usize).skip(1) {

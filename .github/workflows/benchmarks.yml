@@ -2,6 +2,7 @@ on:
   push:
     branches:
       - master
+      - jgilles/fix-callgrind-again
 
   workflow_dispatch:
     inputs:
@@ -21,13 +22,18 @@ env:
 
 jobs:
   benchmark:
-    name: run benchmarks
+    name: run criterion benchmarks
     runs-on: benchmarks-runner
     # filter for a comment containing 'benchmarks please'
     if: ${{ github.event_name != 'issue_comment' || (github.event.issue.pull_request && contains(github.event.comment.body, 'benchmarks please')) }}
     env:
       PR_NUMBER: ${{ github.event.inputs.pr_number || github.event.issue.number || null }}
     steps:
+      - name: Clear stdb dir
+        if: always()
+        run: |
+          rm -fr /stdb/*
+
       - name: Enable CPU boost
         run: echo "1" | sudo tee /sys/devices/system/cpu/cpufreq/boost
 
@@ -70,7 +76,7 @@ jobs:
           # summary PR" step). otherwise, we can use a fully shallow checkout
           fetch-depth: ${{ env.PR_NUMBER && 1 || 2 }}
 
-      - name: Install stable toolchain
+      - name: Install Rust toolchain
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
@@ -78,6 +84,13 @@ jobs:
           toolchain: stable
           target: wasm32-unknown-unknown
           override: true
+
+      - name: Install .NET toolchain
+        uses: actions/setup-dotnet@v3
+        with:
+          global-json-file: modules/global.json
+        env:
+          DOTNET_INSTALL_DIR: ~/.dotnet
 
       - name: Build
         working-directory: crates/bench/
@@ -96,36 +109,25 @@ jobs:
           if [[ $PR_NUMBER ]]; then
             BASELINE_NAME=branch
             RESULTS_NAME=pr-$PR_NUMBER
-            BENCH_FILTER='(special|stdb_module|stdb_raw)'
+            BENCH_FILTER='stdb_raw'
             echo "Running benchmarks without sqlite"
           else
             BASELINE_NAME=master
             RESULTS_NAME=$GITHUB_SHA
-            BENCH_FILTER='.*'
+            BENCH_FILTER='(stdb_raw|sqlite)'
             echo "Running benchmarks with sqlite"
           fi
           pushd crates/bench
-          cargo bench --bench generic --bench special -- --save-baseline "$BASELINE_NAME" "$BENCH_FILTER"
+          rm -rf .spacetime
+          cargo bench --bench generic -- --save-baseline "$BASELINE_NAME" "$BENCH_FILTER"
+          # sticker price benchmark
+          cargo bench --bench generic -- --save-baseline "$BASELINE_NAME" 'stdb_module/.*/disk/update_bulk'
+          cargo bench --bench special -- --save-baseline "$BASELINE_NAME"
           cargo run --bin summarize pack "$BASELINE_NAME"
           popd
           mkdir criterion-results
           [[ ! $PR_NUMBER ]] && cp target/criterion/$BASELINE_NAME.json criterion-results/
           cp target/criterion/$BASELINE_NAME.json criterion-results/$RESULTS_NAME.json
-
-      # TODO: can we optionally download if it only might fail?
-      #- name: PR; download bench results for compare
-      #  if: env.PR_NUMBER
-      #  uses: actions/github-script@v6  
-      #  with:
-      #    github-token: ${{secrets.GITHUB_TOKEN}}
-      #    script: |
-      #      try {
-      #        let artifact = github.rest.actions.getArtifact({
-      #          owner: "clockwork",
-      #          repo: "SpacetimeDB",
-      #          
-      #        })
-      #      }
 
       # this will work for both PR and master
       - name: Upload criterion results to DO spaces
@@ -147,11 +149,12 @@ jobs:
             OLD=$(git rev-parse HEAD~1)
             NEW=$GITHUB_SHA
           fi
+          echo "fetching https://benchmarks.spacetimedb.com/compare/$OLD/$NEW"
           curl -sS https://benchmarks.spacetimedb.com/compare/$OLD/$NEW > report.md
 
       - name: Post comment
         run: |
-          BODY="<details><summary>Benchmark results</summary>
+          BODY="<details><summary>Criterion benchmark results</summary>
 
           $(cat report.md)
 
@@ -169,3 +172,181 @@ jobs:
         if: always()
         run: |
           rm -fr /stdb/*
+
+  callgrind_benchmark:
+    name: run callgrind benchmarks
+    # DON'T run on benchmarks-runner, using docker on a self-hosted runner has
+    # been broken for 4 years: https://github.com/actions/runner/issues/434 .
+    # Fortunately, we can run on standard Github Actions infra because we don't care
+    # about other stuff running on the machine!
+    # runs-on: benchmarks-runner
+    runs-on: ubuntu-latest
+    timeout-minutes: 20 # on a successful run, runs in 8 minutes
+    container:
+      image: rust:1.83.0
+      options: --privileged
+    # filter for a comment containing 'benchmarks please'
+    if: ${{ github.event_name != 'issue_comment' || (github.event.issue.pull_request && contains(github.event.comment.body, 'benchmarks please')) }}
+    env:
+      PR_NUMBER: ${{ github.event.inputs.pr_number || github.event.issue.number || null }}
+    steps:
+      - name: Clear stdb dir
+        if: always()
+        shell: bash
+        run: |
+          rm -fr /stdb/*
+
+      - name: Install valgrind & iai-callgrind-runner
+        run: |
+          apt-get update
+          apt-get install -y valgrind protobuf-compiler bash sudo curl gh
+          cargo install --git https://github.com/clockworklabs/iai-callgrind.git --branch main iai-callgrind-runner
+          git config --global --add safe.directory /__w/SpacetimeDB/SpacetimeDB
+
+      # can't do this off self hosted:
+      # - name: Enable CPU boost
+      #   shell: bash
+      #   run: echo "1" | sudo tee /sys/devices/system/cpu/cpufreq/boost
+
+      - name: Check membership
+        if: ${{ github.event_name == 'issue_comment' }}
+        env:
+          CONTRIB_ORG: clockworklabs
+          COMMENT_AUTHOR: ${{ github.event.comment.user.login }}
+          ORG_READ_TOKEN: ${{ secrets.ORG_READ_TOKEN }}
+        shell: bash
+        run: |
+          curl -OL https://github.com/cli/cli/releases/download/v2.37.0/gh_2.37.0_linux_amd64.deb && sudo dpkg -i gh_2.37.0_linux_amd64.deb
+          if [[ $(GH_TOKEN=$ORG_READ_TOKEN gh api --paginate /orgs/{owner}/members --jq 'any(.login == env.COMMENT_AUTHOR)') != true ]]; then
+            gh pr comment $PR_NUMBER -b "Sorry, you don't have permission to run benchmarks."
+            exit 1
+          fi
+
+      - name: find PR branch
+        if: ${{ env.PR_NUMBER }}
+        shell: bash
+        run: echo "PR_REF=$(gh pr view $PR_NUMBER --json headRefName --jq .headRefName)" >>"$GITHUB_ENV"
+
+      - name: Checkout sources
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ env.PR_REF || github.ref }}
+          # if we're on master we want to know what the sha of HEAD~1 is so
+          # that we can compare results from it to HEAD (in the "Fetch markdown
+          # summary PR" step). otherwise, we can use a fully shallow checkout
+          fetch-depth: ${{ env.PR_NUMBER && 1 || 2 }}
+
+      - name: Unbork Github Actions state
+        shell: bash
+        run: |
+          echo "Letting anybody touch our git repo, in order to avoid breaking other jobs"
+          echo "This is necessary because we are running as root inside a docker image"
+          chmod -R a+rw .
+
+      - name: Post initial comment
+        shell: bash
+        run: |
+          set -exo pipefail
+          if [[ $PR_NUMBER ]]; then
+            comment_parent=issues/$PR_NUMBER
+            comment_update=issues/comments
+          else
+            comment_parent=commits/$GITHUB_SHA
+            comment_update=comments
+          fi
+          comment_body="Callgrind benchmark in progress..."
+          comment_id=$(gh api "/repos/{owner}/{repo}/$comment_parent/comments" -f body="$comment_body" --jq .id)
+          echo "COMMENT_UPDATE_URL=/repos/{owner}/{repo}/$comment_update/$comment_id" >>$GITHUB_ENV
+
+      - name: Install stable toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          components: clippy
+          toolchain: stable
+          target: wasm32-unknown-unknown
+          override: true
+
+      - name: Build
+        working-directory: crates/bench/
+        shell: bash
+        run: |
+          cargo build --release
+
+      - name: Install latest wasm-opt for module optimisations
+        shell: bash
+        run: |
+          curl https://github.com/WebAssembly/binaryen/releases/download/version_116/binaryen-version_116-x86_64-linux.tar.gz -L | sudo tar xz -C /usr/local --strip-components=1
+
+      # leave CPU boost on, doesn't affect callgrind!
+
+      - name: Branch; run bench
+        shell: bash
+        run: |
+          if [[ $PR_NUMBER ]]; then
+            BASELINE_NAME=branch
+            RESULTS_NAME=pr-$PR_NUMBER
+            BENCH_FILTER='(special|stdb_module|stdb_raw)'
+            echo "Running branch callgrind benchmarks"
+          else
+            BASELINE_NAME=master
+            RESULTS_NAME=$GITHUB_SHA
+            BENCH_FILTER='.*'
+            echo "Running master callgrind benchmarks"
+          fi
+          pushd crates/bench
+          rm -rf .spacetime
+          cargo bench --bench callgrind -- --save-summary pretty-json
+          cargo run --bin summarize pack-callgrind "$BASELINE_NAME"
+          popd
+          mkdir callgrind-results
+          [[ ! $PR_NUMBER ]] && cp target/iai/$BASELINE_NAME.json callgrind-results/
+          cp target/iai/$BASELINE_NAME.json callgrind-results/$RESULTS_NAME.json
+
+      # this will work for both PR and master
+      - name: Upload callgrind results to DO spaces
+        uses: shallwefootball/s3-upload-action@master
+        with:
+          aws_key_id: ${{ secrets.AWS_KEY_ID }}
+          aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY}}
+          aws_bucket: "spacetimedb-ci-benchmarks"
+          source_dir: callgrind-results
+          endpoint: https://nyc3.digitaloceanspaces.com
+          destination_dir: callgrind-benchmarks
+
+      - name: Fetch markdown summary PR
+        shell: bash
+        run: |
+          if [[ $PR_NUMBER ]]; then
+            OLD=master
+            NEW=pr-$PR_NUMBER
+          else
+            OLD=$(git rev-parse HEAD~1)
+            NEW=$GITHUB_SHA
+          fi
+          echo "fetching https://benchmarks.spacetimedb.com/compare_callgrind/$OLD/$NEW"
+          curl -sS https://benchmarks.spacetimedb.com/compare_callgrind/$OLD/$NEW > report.md
+
+      - name: Post comment
+        shell: bash
+        run: |
+          BODY="<details><summary>Callgrind benchmark results</summary>
+          $(cat report.md)
+          </details>"
+          gh api "$COMMENT_UPDATE_URL" -X PATCH -f body="$BODY"
+
+      - name: Post failure comment
+        if: ${{ failure() && env.COMMENT_UPDATE_URL }}
+        shell: bash
+        run: |
+          BODY="Benchmarking failed. Please check [the workflow run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details."
+          gh api "$COMMENT_UPDATE_URL" -X PATCH -f body="$BODY"
+
+      - name: Clean up
+        if: always()
+        shell: bash
+        run: |
+          rm -fr /stdb/*
+          echo "Letting anybody touch our git repo, in order to avoid breaking other jobs"
+          echo "This is necessary because we are running as root inside a docker image"
+          chmod -R a+rw .

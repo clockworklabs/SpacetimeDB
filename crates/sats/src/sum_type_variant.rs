@@ -1,16 +1,16 @@
 use crate::algebraic_type::AlgebraicType;
 use crate::meta_type::MetaType;
-use crate::{de::Deserialize, ser::Serialize};
+use crate::SpacetimeType;
 
 /// A variant of a sum type.
 ///
 /// NOTE: Each element has an implicit element tag based on its order.
 /// Uniquely identifies an element similarly to protobuf tags.
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, SpacetimeType)]
 #[sats(crate = crate)]
 pub struct SumTypeVariant {
     /// The name of the variant, if any.
-    pub name: Option<String>,
+    pub name: Option<Box<str>>,
     /// The type of the variant.
     ///
     /// Unlike a language like Rust,
@@ -23,7 +23,7 @@ pub struct SumTypeVariant {
 
 impl SumTypeVariant {
     /// Returns a sum type variant with an optional `name` and `algebraic_type`.
-    pub const fn new(algebraic_type: AlgebraicType, name: Option<String>) -> Self {
+    pub const fn new(algebraic_type: AlgebraicType, name: Option<Box<str>>) -> Self {
         Self { algebraic_type, name }
     }
 
@@ -31,7 +31,7 @@ impl SumTypeVariant {
     pub fn new_named(algebraic_type: AlgebraicType, name: impl AsRef<str>) -> Self {
         Self {
             algebraic_type,
-            name: Some(name.as_ref().to_owned()),
+            name: Some(name.as_ref().into()),
         }
     }
 

@@ -22,7 +22,6 @@
 
 #![allow(clippy::all)]
 
-use std::iter::FromIterator;
 use std::marker::PhantomData;
 
 use bytes::BytesMut;
@@ -48,6 +47,7 @@ impl Separator for Comma {
     const CHAR: char = ',';
 }
 
+#[allow(unused)]
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum SemiColon {}
 

@@ -192,6 +192,9 @@ linux-target/
 /target
 #Cargo.lock
 
+__pycache__/
+.test_out
+
 ## JetBrains
 .idea/
 
@@ -199,6 +202,7 @@ linux-target/
 cs-src/
 crates/bench/spacetime.svg
 crates/bench/sqlite.svg
+.vs/
 
 # benchmark files
 out.json

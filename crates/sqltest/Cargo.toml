@@ -1,13 +1,16 @@
 [package]
 name = "sqltest"
-version = "0.8.1"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 description = "Sql integration test for SpacetimeDB"
+license-file = "LICENSE"
+publish = false
 
 [dependencies]
-spacetimedb-lib = { path = "../lib" }
-spacetimedb-core = { path = "../core" }
-spacetimedb-sats = { path = "../sats" }
+spacetimedb-lib.workspace = true
+spacetimedb-core.workspace = true
+spacetimedb-sats.workspace = true
+spacetimedb-vm.workspace = true
 
 anyhow.workspace = true
 async-trait.workspace = true
@@ -19,6 +22,7 @@ fs-err.workspace = true
 futures.workspace = true
 glob.workspace = true
 itertools.workspace = true
+parking_lot.workspace = true
 postgres-types.workspace = true
 quick-junit.workspace = true
 rusqlite.workspace = true

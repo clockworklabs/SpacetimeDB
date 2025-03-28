@@ -1,26 +1,30 @@
+use crate::api::ClientApi;
+use crate::common_args;
 use crate::config::Config;
 use crate::edit_distance::{edit_distance, find_best_match_for_name};
-use crate::generate::rust::{write_arglist_no_delimiters, write_type};
-use crate::util;
-use crate::util::{add_auth_header_opt, database_address, get_auth_header_only};
+use crate::util::UNSTABLE_WARNING;
 use anyhow::{bail, Context, Error};
-use clap::{Arg, ArgAction, ArgMatches};
-use itertools::Either;
-use serde_json::Value;
-use spacetimedb::db::AlgebraicType;
-use spacetimedb_lib::de::serde::deserialize_from;
-use spacetimedb_lib::sats::{AlgebraicTypeRef, BuiltinType, Typespace};
-use spacetimedb_lib::{Address, ProductTypeElement};
+use clap::{Arg, ArgMatches};
+use convert_case::{Case, Casing};
+use itertools::Itertools;
+use spacetimedb::Identity;
+use spacetimedb_lib::sats::{self, AlgebraicType, Typespace};
+use spacetimedb_lib::ProductTypeElement;
+use spacetimedb_schema::def::{ModuleDef, ReducerDef};
 use std::fmt::Write;
-use std::iter;
+
+use super::sql::parse_req;
 
 pub fn cli() -> clap::Command {
     clap::Command::new("call")
-        .about("Invokes a reducer function in a database")
+        .about(format!(
+            "Invokes a reducer function in a database. {}",
+            UNSTABLE_WARNING
+        ))
         .arg(
             Arg::new("database")
                 .required(true)
-                .help("The database domain or address to use to invoke the call"),
+                .help("The database name or identity to use to invoke the call"),
         )
         .arg(
             Arg::new("reducer_name")
@@ -28,73 +32,42 @@ pub fn cli() -> clap::Command {
                 .help("The name of the reducer to call"),
         )
         .arg(Arg::new("arguments").help("arguments formatted as JSON").num_args(1..))
-        .arg(
-            Arg::new("server")
-                .long("server")
-                .short('s')
-                .help("The nickname, host name or URL of the server hosting the database"),
-        )
-        .arg(
-            Arg::new("as_identity")
-                .long("as-identity")
-                .short('i')
-                .conflicts_with("anon_identity")
-                .help("The identity to use for the call"),
-        )
-        .arg(
-            Arg::new("anon_identity")
-                .long("anon-identity")
-                .short('a')
-                .conflicts_with("as_identity")
-                .action(ArgAction::SetTrue)
-                .help("If this flag is present, the call will be executed with no identity provided"),
-        )
+        .arg(common_args::server().help("The nickname, host name or URL of the server hosting the database"))
+        .arg(common_args::anonymous())
+        .arg(common_args::yes())
         .after_help("Run `spacetime help call` for more detailed information.\n")
 }
 
-pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), Error> {
-    let database = args.get_one::<String>("database").unwrap();
+pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), Error> {
+    eprintln!("{}\n", UNSTABLE_WARNING);
     let reducer_name = args.get_one::<String>("reducer_name").unwrap();
     let arguments = args.get_many::<String>("arguments");
-    let server = args.get_one::<String>("server").map(|s| s.as_ref());
 
-    let as_identity = args.get_one::<String>("as_identity");
-    let anon_identity = args.get_flag("anon_identity");
+    let conn = parse_req(config, args).await?;
+    let api = ClientApi::new(conn);
 
-    let address = database_address(&config, database, server).await?;
+    let database_identity = api.con.database_identity;
+    let database = &api.con.database;
 
-    let builder = reqwest::Client::new().post(format!(
-        "{}/database/call/{}/{}",
-        config.get_host_url(server)?,
-        address.clone(),
-        reducer_name
-    ));
-    let auth_header = get_auth_header_only(&mut config, anon_identity, as_identity, server).await?;
-    let builder = add_auth_header_opt(builder, &auth_header);
-    let describe_reducer = util::describe_reducer(
-        &mut config,
-        address,
-        server.map(|x| x.to_string()),
-        reducer_name.clone(),
-        anon_identity,
-        as_identity.cloned(),
-    )
-    .await?;
+    let module_def: ModuleDef = api.module_def().await?.try_into()?;
+
+    let reducer_def = module_def
+        .reducer(&**reducer_name)
+        .ok_or_else(|| anyhow::Error::msg(no_such_reducer(&database_identity, database, reducer_name, &module_def)))?;
 
     // String quote any arguments that should be quoted
     let arguments = arguments
         .unwrap_or_default()
-        .zip(describe_reducer.schema.elements.iter())
+        .zip(&*reducer_def.params.elements)
         .map(|(argument, element)| match &element.algebraic_type {
-            AlgebraicType::Builtin(BuiltinType::String) if !argument.starts_with('\"') || !argument.ends_with('\"') => {
+            AlgebraicType::String if !argument.starts_with('\"') || !argument.ends_with('\"') => {
                 format!("\"{}\"", argument)
             }
             _ => argument.to_string(),
-        })
-        .collect::<Vec<_>>();
+        });
 
-    let arg_json = format!("[{}]", arguments.join(", "));
-    let res = builder.body(arg_json.to_owned()).send().await?;
+    let arg_json = format!("[{}]", arguments.format(", "));
+    let res = api.call(reducer_name, arg_json).await?;
 
     if let Err(e) = res.error_for_status_ref() {
         let Ok(response_text) = res.text().await else {
@@ -105,18 +78,9 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), Error> {
         let error = Err(e).context(format!("Response text: {}", response_text));
 
         let error_msg = if response_text.starts_with("no such reducer") {
-            no_such_reducer(config, &address, database, &auth_header, reducer_name, server).await
+            no_such_reducer(&database_identity, database, reducer_name, &module_def)
         } else if response_text.starts_with("invalid arguments") {
-            invalid_arguments(
-                config,
-                &address,
-                database,
-                &auth_header,
-                reducer_name,
-                &response_text,
-                server,
-            )
-            .await
+            invalid_arguments(&database_identity, database, &response_text, &module_def, reducer_def)
         } else {
             return error;
         };
@@ -128,18 +92,16 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), Error> {
 }
 
 /// Returns an error message for when `reducer` is called with wrong arguments.
-async fn invalid_arguments(
-    config: Config,
-    addr: &Address,
+fn invalid_arguments(
+    identity: &Identity,
     db: &str,
-    auth_header: &Option<String>,
-    reducer: &str,
     text: &str,
-    server: Option<&str>,
+    module_def: &ModuleDef,
+    reducer_def: &ReducerDef,
 ) -> String {
     let mut error = format!(
-        "Invalid arguments provided for reducer `{}` for database `{}` resolving to address `{}`.",
-        reducer, db, addr
+        "Invalid arguments provided for reducer `{}` for database `{}` resolving to identity `{}`.",
+        reducer_def.name, db, identity
     );
 
     if let Some((actual, expected)) = find_actual_expected(text).filter(|(a, e)| a != e) {
@@ -151,12 +113,12 @@ async fn invalid_arguments(
         .unwrap();
     }
 
-    if let Some(sig) = schema_json(config, addr, auth_header, true, server)
-        .await
-        .and_then(|schema| reducer_signature(schema, reducer))
-    {
-        write!(error, "\n\nThe reducer has the following signature:\n\t{}", sig).unwrap();
-    }
+    write!(
+        error,
+        "\n\nThe reducer has the following signature:\n\t{}",
+        ReducerSignature(module_def.typespace().with_type(reducer_def))
+    )
+    .unwrap();
 
     error
 }
@@ -182,51 +144,39 @@ fn split_at_first_substring<'t>(text: &'t str, substring: &str) -> Option<(&'t s
 
 /// Provided the `schema_json` for the database,
 /// returns the signature for a reducer with `reducer_name`.
-fn reducer_signature(schema_json: Value, reducer_name: &str) -> Option<String> {
-    let typespace = typespace(&schema_json)?;
+struct ReducerSignature<'a>(sats::WithTypespace<'a, ReducerDef>);
+impl std::fmt::Display for ReducerSignature<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let reducer_def = self.0.ty();
+        let typespace = self.0.typespace();
 
-    // Fetch the matching reducer.
-    let elements = find_of_type_in_schema(&schema_json, "reducer")
-        .find(|(name, _)| *name == reducer_name)?
-        .1
-        .get("schema")?
-        .get("elements")?;
-    let params = deserialize_from::<Vec<ProductTypeElement>, _>(elements).ok()?;
+        write!(f, "{}(", reducer_def.name)?;
 
-    // Print the arguments to `args`.
-    let mut args = String::new();
-    fn ctx(typespace: &Typespace, r: AlgebraicTypeRef) -> String {
-        let ty = &typespace[r];
-        let mut ty_str = String::new();
-        write_type(&|r| ctx(typespace, r), &mut ty_str, ty);
-        ty_str
+        // Print the arguments to `args`.
+        let mut comma = false;
+        for arg in &*reducer_def.params.elements {
+            if comma {
+                write!(f, ", ")?;
+            }
+            comma = true;
+            if let Some(name) = arg.name() {
+                write!(f, "{}: ", name.to_case(Case::Snake))?;
+            }
+            write_type::write_type(typespace, f, &arg.algebraic_type)?;
+        }
+
+        write!(f, ")")
     }
-    write_arglist_no_delimiters(&|r| ctx(&typespace, r), &mut args, &params, None);
-    let args = args.trim().trim_end_matches(',').replace('\n', " ");
-
-    // Print the full signature to `reducer_fmt`.
-    let mut reducer_fmt = String::new();
-    write!(&mut reducer_fmt, "{}({})", reducer_name, args).unwrap();
-    Some(reducer_fmt)
 }
 
 /// Returns an error message for when `reducer` does not exist in `db`.
-async fn no_such_reducer(
-    config: Config,
-    addr: &Address,
-    db: &str,
-    auth_header: &Option<String>,
-    reducer: &str,
-    server: Option<&str>,
-) -> String {
+fn no_such_reducer(database_identity: &Identity, db: &str, reducer: &str, module_def: &ModuleDef) -> String {
     let mut error = format!(
-        "No such reducer `{}` for database `{}` resolving to address `{}`.",
-        reducer, db, addr
+        "No such reducer `{}` for database `{}` resolving to identity `{}`.",
+        reducer, db, database_identity
     );
 
-    if let Some(schema) = schema_json(config, addr, auth_header, false, server).await {
-        add_reducer_ctx_to_err(&mut error, schema, reducer);
-    }
+    add_reducer_ctx_to_err(&mut error, module_def, reducer);
 
     error
 }
@@ -235,13 +185,12 @@ const REDUCER_PRINT_LIMIT: usize = 10;
 
 /// Provided the schema for the database,
 /// decorate `error` with more helpful info about reducers.
-fn add_reducer_ctx_to_err(error: &mut String, schema_json: Value, reducer_name: &str) {
-    let mut reducers = find_of_type_in_schema(&schema_json, "reducer")
-        .map(|kv| kv.0)
+fn add_reducer_ctx_to_err(error: &mut String, module_def: &ModuleDef, reducer_name: &str) {
+    let mut reducers = module_def
+        .reducers()
+        .filter(|reducer| reducer.lifecycle.is_none())
+        .map(|reducer| &*reducer.name)
         .collect::<Vec<_>>();
-
-    // Hide pseudo-reducers (assume that any `__XXX__` are such); they shouldn't be callable.
-    reducers.retain(|&c| !(c.starts_with("__") && c.ends_with("__")));
 
     if let Some(best) = find_best_match_for_name(&reducers, reducer_name, None) {
         write!(error, "\n\nA reducer with a similar name exists: `{}`", best).unwrap();
@@ -270,62 +219,97 @@ fn add_reducer_ctx_to_err(error: &mut String, schema_json: Value, reducer_name: 
     }
 }
 
-/// Fetch the schema as JSON for the database at `address`.
-///
-/// The value of `expand` determines how detailed information to fetch.
-async fn schema_json(
-    config: Config,
-    address: &Address,
-    auth_header: &Option<String>,
-    expand: bool,
-    server: Option<&str>,
-) -> Option<Value> {
-    let builder = reqwest::Client::new().get(format!(
-        "{}/database/schema/{}",
-        config.get_host_url(server).ok()?,
-        address
-    ));
-    let builder = add_auth_header_opt(builder, auth_header);
+// this is an old version of code in generate::rust that got
+// refactored, but reducer_signature() was using it
+// TODO: port reducer_signature() to use AlgebraicTypeUse et al, somehow.
+mod write_type {
+    use super::*;
+    use sats::ArrayType;
+    use spacetimedb_lib::ProductType;
+    use std::fmt;
 
-    builder
-        .query(&[("expand", expand)])
-        .send()
-        .await
-        .ok()?
-        .json::<serde_json::Value>()
-        .await
-        .ok()
-}
+    pub fn write_type<W: fmt::Write>(typespace: &Typespace, out: &mut W, ty: &AlgebraicType) -> fmt::Result {
+        match ty {
+            p if p.is_identity() => write!(out, "Identity")?,
+            p if p.is_connection_id() => write!(out, "ConnectionId")?,
+            p if p.is_schedule_at() => write!(out, "ScheduleAt")?,
+            AlgebraicType::Sum(sum_type) => {
+                if let Some(inner_ty) = sum_type.as_option() {
+                    write!(out, "Option<")?;
+                    write_type(typespace, out, inner_ty)?;
+                    write!(out, ">")?;
+                } else {
+                    write!(out, "enum ")?;
+                    print_comma_sep_braced(out, &sum_type.variants, |out: &mut W, elem: &_| {
+                        if let Some(name) = &elem.name {
+                            write!(out, "{name}: ")?;
+                        }
+                        write_type(typespace, out, &elem.algebraic_type)
+                    })?;
+                }
+            }
+            AlgebraicType::Product(ProductType { elements }) => {
+                print_comma_sep_braced(out, elements, |out: &mut W, elem: &ProductTypeElement| {
+                    if let Some(name) = &elem.name {
+                        write!(out, "{name}: ")?;
+                    }
+                    write_type(typespace, out, &elem.algebraic_type)
+                })?;
+            }
+            AlgebraicType::Bool => write!(out, "bool")?,
+            AlgebraicType::I8 => write!(out, "i8")?,
+            AlgebraicType::U8 => write!(out, "u8")?,
+            AlgebraicType::I16 => write!(out, "i16")?,
+            AlgebraicType::U16 => write!(out, "u16")?,
+            AlgebraicType::I32 => write!(out, "i32")?,
+            AlgebraicType::U32 => write!(out, "u32")?,
+            AlgebraicType::I64 => write!(out, "i64")?,
+            AlgebraicType::U64 => write!(out, "u64")?,
+            AlgebraicType::I128 => write!(out, "i128")?,
+            AlgebraicType::U128 => write!(out, "u128")?,
+            AlgebraicType::I256 => write!(out, "i256")?,
+            AlgebraicType::U256 => write!(out, "u256")?,
+            AlgebraicType::F32 => write!(out, "f32")?,
+            AlgebraicType::F64 => write!(out, "f64")?,
+            AlgebraicType::String => write!(out, "String")?,
+            AlgebraicType::Array(ArrayType { elem_ty }) => {
+                write!(out, "Vec<")?;
+                write_type(typespace, out, elem_ty)?;
+                write!(out, ">")?;
+            }
+            AlgebraicType::Ref(r) => {
+                write_type(typespace, out, &typespace[*r])?;
+            }
+        }
+        Ok(())
+    }
 
-/// Returns all the names of items in `value` that match `type`.
-///
-/// For example, `type` can be `"reducer"`.
-fn find_of_type_in_schema<'v, 't: 'v>(
-    value: &'v serde_json::Value,
-    ty: &'t str,
-) -> impl Iterator<Item = (&'v str, &'v Value)> {
-    let Some(entities) = value
-        .as_object()
-        .and_then(|o| o.get("entities"))
-        .and_then(|e| e.as_object())
-    else {
-        return Either::Left(iter::empty());
-    };
+    fn print_comma_sep_braced<W: fmt::Write, T>(
+        out: &mut W,
+        elems: &[T],
+        on: impl Fn(&mut W, &T) -> fmt::Result,
+    ) -> fmt::Result {
+        write!(out, "{{")?;
 
-    let iter = entities
-        .into_iter()
-        .filter(move |(_, value)| {
-            let Some(obj) = value.as_object() else {
-                return false;
-            };
-            obj.get("type").filter(|x| x.as_str() == Some(ty)).is_some()
-        })
-        .map(|(key, value)| (key.as_str(), value));
-    Either::Right(iter)
-}
+        let mut iter = elems.iter();
 
-/// Returns the `Typespace` in the provided json schema.
-fn typespace(value: &serde_json::Value) -> Option<Typespace> {
-    let types = value.as_object()?.get("typespace")?;
-    deserialize_from(types).map(Typespace::new).ok()
+        // First factor.
+        if let Some(elem) = iter.next() {
+            write!(out, " ")?;
+            on(out, elem)?;
+        }
+        // Other factors.
+        for elem in iter {
+            write!(out, ", ")?;
+            on(out, elem)?;
+        }
+
+        if !elems.is_empty() {
+            write!(out, " ")?;
+        }
+
+        write!(out, "}}")?;
+
+        Ok(())
+    }
 }

@@ -3,14 +3,14 @@ use crate::product_type::ProductType;
 use crate::{ArrayValue, SumValue, ValueWithType};
 use spacetimedb_primitives::{ColId, ColList};
 
-/// A product value is made of a a list of
+/// A product value is made of a list of
 /// "elements" / "fields" / "factors" of other `AlgebraicValue`s.
 ///
 /// The type of a product value is a [product type](`ProductType`).
-#[derive(Debug, Clone, Ord, PartialOrd, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Ord, PartialOrd, PartialEq, Eq, Default)]
 pub struct ProductValue {
     /// The values that make up this product value.
-    pub elements: Vec<AlgebraicValue>,
+    pub elements: Box<[AlgebraicValue]>,
 }
 
 /// Constructs a product value from a list of fields with syntax `product![v1, v2, ...]`.
@@ -20,16 +20,7 @@ pub struct ProductValue {
 macro_rules! product {
     [$($elems:expr),*$(,)?] => {
         $crate::ProductValue {
-            elements: vec![$($crate::AlgebraicValue::from($elems)),*],
-        }
-    }
-}
-
-impl ProductValue {
-    /// Returns a product value constructed from the given values in `elements`.
-    pub fn new(elements: &[AlgebraicValue]) -> Self {
-        Self {
-            elements: elements.into(),
+            elements: [$($crate::AlgebraicValue::from($elems)),*].into(),
         }
     }
 }
@@ -45,7 +36,7 @@ impl IntoIterator for ProductValue {
     type Item = AlgebraicValue;
     type IntoIter = std::vec::IntoIter<AlgebraicValue>;
     fn into_iter(self) -> Self::IntoIter {
-        self.elements.into_iter()
+        Vec::from(self.elements).into_iter()
     }
 }
 
@@ -71,6 +62,12 @@ pub struct InvalidFieldError {
     pub name: Option<&'static str>,
 }
 
+impl From<ColId> for InvalidFieldError {
+    fn from(col_pos: ColId) -> Self {
+        Self { col_pos, name: None }
+    }
+}
+
 impl ProductValue {
     /// Borrow the value at field of `self` identified by `col_pos`.
     ///
@@ -82,49 +79,20 @@ impl ProductValue {
         })
     }
 
-    /// This function is used to project fields based on the provided `indexes`.
-    ///
-    /// It will raise an [InvalidFieldError] if any of the supplied `indexes` cannot be found.
-    ///
-    /// The optional parameter `name: Option<&'static str>` serves a non-functional role and is
-    /// solely utilized for generating error messages.
-    ///
-    /// **Important:**
-    ///
-    /// The resulting [AlgebraicValue] will wrap into a [ProductValue] when projecting multiple
-    /// fields, otherwise it will consist of a single [AlgebraicValue].
-    ///
-    pub fn project(&self, indexes: &[(ColId, Option<&'static str>)]) -> Result<AlgebraicValue, InvalidFieldError> {
-        let fields = match indexes {
-            [(index, name)] => self.get_field((*index).into(), *name)?.clone(),
-            indexes => {
-                let fields: Result<Vec<_>, _> = indexes
-                    .iter()
-                    .map(|(index, name)| self.get_field((*index).into(), *name).cloned())
-                    .collect();
-                AlgebraicValue::Product(ProductValue::new(&fields?))
-            }
-        };
-
-        Ok(fields)
-    }
-
     /// This utility function is designed to project fields based on the supplied `indexes`.
     ///
     /// **Important:**
     ///
     /// The resulting [AlgebraicValue] will wrap into a [ProductValue] when projecting multiple
-    /// fields, otherwise it will consist of a single [AlgebraicValue].
+    /// (including zero) fields, otherwise it will consist of a single [AlgebraicValue].
     ///
     /// **Parameters:**
-    /// - `cols`: A [ColList] containing the indexes of fields to be projected.
-    ///
-    pub fn project_not_empty(&self, cols: &ColList) -> Result<AlgebraicValue, InvalidFieldError> {
-        let proj_len = cols.len();
-        if proj_len == 1 {
-            self.get_field(cols.head().idx(), None).cloned()
+    /// - `cols`: A [ColList] containing the indexes of fields to be projected.s
+    pub fn project(&self, cols: &ColList) -> Result<AlgebraicValue, InvalidFieldError> {
+        if let Some(head) = cols.as_singleton() {
+            self.get_field(head.idx(), None).cloned()
         } else {
-            let mut fields = Vec::with_capacity(proj_len as usize);
+            let mut fields = Vec::with_capacity(cols.len() as usize);
             for col in cols.iter() {
                 fields.push(self.get_field(col.idx(), None)?.clone());
             }
@@ -173,12 +141,12 @@ impl ProductValue {
 
     /// Interprets the value at field of `self` identified by `index` as a `i128`.
     pub fn field_as_i128(&self, index: usize, named: Option<&'static str>) -> Result<i128, InvalidFieldError> {
-        self.extract_field(index, named, |f| f.as_i128().copied())
+        self.extract_field(index, named, |f| f.as_i128().copied().map(|x| x.0))
     }
 
     /// Interprets the value at field of `self` identified by `index` as a `u128`.
     pub fn field_as_u128(&self, index: usize, named: Option<&'static str>) -> Result<u128, InvalidFieldError> {
-        self.extract_field(index, named, |f| f.as_u128().copied())
+        self.extract_field(index, named, |f| f.as_u128().copied().map(|x| x.0))
     }
 
     /// Interprets the value at field of `self` identified by `index` as a string slice.

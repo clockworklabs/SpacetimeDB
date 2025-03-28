@@ -1,9 +1,10 @@
 [package]
 name = "spacetimedb-bindings-macro"
-version = "0.8.1"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 license-file = "LICENSE"
 description = "Easy support for interacting between SpacetimeDB and Rust."
+rust-version.workspace = true
 
 [lib]
 proc-macro = true
@@ -11,10 +12,10 @@ proc-macro = true
 bench = false
 
 [dependencies]
-spacetimedb-primitives = { path = "../primitives", version = "0.8.1" }
+spacetimedb-primitives.workspace = true
 
-bitflags.workspace = true
 humantime.workspace = true
 proc-macro2.workspace = true
 quote.workspace = true
 syn.workspace = true
+heck.workspace = true

@@ -76,7 +76,7 @@ pub enum AttributeKind {
 }
 
 bitflags::bitflags! {
-    #[derive(Debug, Clone, Copy, Eq, PartialEq, PartialOrd, Ord)]
+    #[derive(Debug, Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash)]
     pub struct ColumnAttribute: u8 {
         const UNSET = Self::empty().bits();
         ///  Index no unique
@@ -139,8 +139,8 @@ impl ColumnAttribute {
     }
 }
 
-/// Represents `constraints` for a database `table`.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, PartialOrd, Ord)]
+/// Represents constraints for a database table. May apply to multiple columns.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash)]
 pub struct Constraints {
     attr: ColumnAttribute,
 }
@@ -150,6 +150,16 @@ impl Constraints {
     #[inline(always)]
     const fn new(attr: ColumnAttribute) -> Self {
         Self { attr }
+    }
+
+    /// Creates a new `Constraints` instance that is [`Self::unique`] if `is_unique`
+    /// and [`Self::indexed`] otherwise.
+    pub const fn from_is_unique(is_unique: bool) -> Self {
+        if is_unique {
+            Self::unique()
+        } else {
+            Self::indexed()
+        }
     }
 
     /// Creates a new `Constraints` instance with no constraints set.
@@ -187,6 +197,11 @@ impl Constraints {
         Self::new(ColumnAttribute::PRIMARY_KEY_IDENTITY)
     }
 
+    /// Creates a new `Constraints` instance with [ColumnAttribute::AUTO_INC] set.
+    pub const fn auto_inc() -> Self {
+        Self::new(ColumnAttribute::AUTO_INC)
+    }
+
     /// Adds a constraint to the existing constraints.
     ///
     /// # Example
@@ -199,6 +214,13 @@ impl Constraints {
     /// ```
     pub fn push(self, other: Constraints) -> Self {
         Self::new(self.attr | other.attr)
+    }
+
+    /// Add auto-increment constraint to the existing constraints.
+    /// Returns Err if the result would not be valid.
+    #[allow(clippy::result_unit_err)]
+    pub fn push_auto_inc(self) -> Result<Self, ()> {
+        Self::try_from(self.attr | ColumnAttribute::AUTO_INC)
     }
 
     /// Returns the bits representing the constraints.

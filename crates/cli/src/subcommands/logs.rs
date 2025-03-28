@@ -1,12 +1,14 @@
 use std::borrow::Cow;
 use std::io::{self, Write};
 
+use crate::common_args;
 use crate::config::Config;
-use crate::util::{add_auth_header_opt, database_address, get_auth_header_only};
+use crate::util::{add_auth_header_opt, database_identity, get_auth_header};
 use clap::{Arg, ArgAction, ArgMatches};
 use futures::{AsyncBufReadExt, TryStreamExt};
 use is_terminal::IsTerminal;
 use termcolor::{Color, ColorSpec, WriteColor};
+use tokio::io::AsyncWriteExt;
 
 pub fn cli() -> clap::Command {
     clap::Command::new("logs")
@@ -14,22 +16,16 @@ pub fn cli() -> clap::Command {
         .arg(
             Arg::new("database")
                 .required(true)
-                .help("The domain or address of the database to print logs from"),
+                .help("The name or identity of the database to print logs from"),
         )
         .arg(
-            Arg::new("server")
-                .long("server")
-                .short('s')
+            common_args::server()
                 .help("The nickname, host name or URL of the server hosting the database"),
         )
         .arg(
-            Arg::new("identity")
-                .long("identity")
-                .short('i')
-                .help("The identity to use for printing logs from this database"),
-        )
-        .arg(
             Arg::new("num_lines")
+                .long("num-lines")
+                .short('n')
                 .value_parser(clap::value_parser!(u32))
                 .help("The number of lines to print from the start of the log of this database")
                 .long_help("The number of lines to print from the start of the log of this database. If no num lines is provided, all lines will be returned."),
@@ -43,6 +39,15 @@ pub fn cli() -> clap::Command {
                 .help("A flag indicating whether or not to follow the logs")
                 .long_help("A flag that causes logs to not stop when end of the log file is reached, but rather to wait for additional data to be appended to the input."),
         )
+        .arg(
+            Arg::new("format")
+                .long("format")
+                .default_value("text")
+                .required(false)
+                .value_parser(clap::value_parser!(Format))
+                .help("Output format for the logs")
+        )
+        .arg(common_args::yes())
         .after_help("Run `spacetime help logs` for more detailed information.\n")
 }
 
@@ -87,23 +92,47 @@ struct LogsParams {
     follow: bool,
 }
 
+#[derive(Clone, Copy, PartialEq)]
+pub enum Format {
+    Text,
+    Json,
+}
+
+impl clap::ValueEnum for Format {
+    fn value_variants<'a>() -> &'a [Self] {
+        &[Self::Text, Self::Json]
+    }
+    fn to_possible_value(&self) -> Option<clap::builder::PossibleValue> {
+        match self {
+            Self::Text => Some(clap::builder::PossibleValue::new("text").aliases(["default", "txt"])),
+            Self::Json => Some(clap::builder::PossibleValue::new("json")),
+        }
+    }
+}
+
 pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
-    let identity = args.get_one::<String>("identity");
-    let num_lines = args.get_one::<u32>("num_lines").copied();
+    let force = args.get_flag("force");
+    let mut num_lines = args.get_one::<u32>("num_lines").copied();
     let database = args.get_one::<String>("database").unwrap();
     let follow = args.get_flag("follow");
+    let format = *args.get_one::<Format>("format").unwrap();
 
-    let auth_header = get_auth_header_only(&mut config, false, identity, server).await?;
+    let auth_header = get_auth_header(&mut config, false, server, !force).await?;
 
-    let address = database_address(&config, database, server).await?;
+    let database_identity = database_identity(&config, database, server).await?;
 
-    // TODO: num_lines should default to like 10 if follow is specified?
+    if follow && num_lines.is_none() {
+        // We typically don't want logs from the very beginning if we're also following.
+        num_lines = Some(10);
+    }
     let query_parms = LogsParams { num_lines, follow };
 
-    let builder = reqwest::Client::new().get(format!("{}/database/logs/{}", config.get_host_url(server)?, address));
+    let host_url = config.get_host_url(server)?;
+
+    let builder = reqwest::Client::new().get(format!("{}/v1/database/{}/logs", host_url, database_identity));
     let builder = add_auth_header_opt(builder, &auth_header);
-    let res = builder.query(&query_parms).send().await?;
+    let mut res = builder.query(&query_parms).send().await?;
     let status = res.status();
 
     if status.is_client_error() || status.is_server_error() {
@@ -111,7 +140,15 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         anyhow::bail!(err)
     }
 
-    let term_color = if std::io::stderr().is_terminal() {
+    if format == Format::Json {
+        let mut stdout = tokio::io::stdout();
+        while let Some(chunk) = res.chunk().await? {
+            stdout.write_all(&chunk).await?;
+        }
+        return Ok(());
+    }
+
+    let term_color = if std::io::stdout().is_terminal() {
         termcolor::ColorChoice::Auto
     } else {
         termcolor::ColorChoice::Never

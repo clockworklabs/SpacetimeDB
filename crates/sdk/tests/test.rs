@@ -20,105 +20,159 @@ macro_rules! declare_tests_with_suffix {
 
             #[test]
             fn insert_primitive() {
-                make_test("insert_primitive").run();
+                make_test("insert-primitive").run();
             }
 
             #[test]
+            fn subscribe_and_cancel() {
+                make_test("subscribe-and-cancel").run();
+            }
+
+            #[test]
+            fn subscribe_and_unsubscribe() {
+                make_test("subscribe-and-unsubscribe").run();
+            }
+
+            #[test]
+            fn subscription_error_smoke_test() {
+                make_test("subscription-error-smoke-test").run();
+            }
+            #[test]
             fn delete_primitive() {
-                make_test("delete_primitive").run();
+                make_test("delete-primitive").run();
             }
 
             #[test]
             fn update_primitive() {
-                make_test("update_primitive").run();
+                make_test("update-primitive").run();
             }
 
             #[test]
             fn insert_identity() {
-                make_test("insert_identity").run();
+                make_test("insert-identity").run();
+            }
+
+            #[test]
+            fn insert_caller_identity() {
+                make_test("insert-caller-identity").run();
             }
 
             #[test]
             fn delete_identity() {
-                make_test("delete_identity").run();
+                make_test("delete-identity").run();
             }
 
             #[test]
             fn update_identity() {
-                make_test("delete_identity").run();
+                make_test("delete-identity").run();
             }
 
             #[test]
-            fn insert_address() {
-                make_test("insert_address").run();
+            fn insert_connection_id() {
+                make_test("insert-connection-id").run();
             }
 
             #[test]
-            fn delete_address() {
-                make_test("delete_address").run();
+            fn insert_caller_connection_id() {
+                make_test("insert-caller-connection-id").run();
             }
 
             #[test]
-            fn update_address() {
-                make_test("delete_address").run();
+            fn delete_connection_id() {
+                make_test("delete-connection-id").run();
+            }
+
+            #[test]
+            fn update_connection_id() {
+                make_test("delete-connection-id").run();
+            }
+
+            #[test]
+            fn insert_timestamp() {
+                make_test("insert-timestamp").run();
+            }
+
+            #[test]
+            fn insert_call_timestamp() {
+                make_test("insert-call-timestamp").run();
             }
 
             #[test]
             fn on_reducer() {
-                make_test("on_reducer").run();
+                make_test("on-reducer").run();
             }
 
             #[test]
             fn fail_reducer() {
-                make_test("fail_reducer").run();
+                make_test("fail-reducer").run();
             }
 
             #[test]
             fn insert_vec() {
-                make_test("insert_vec").run();
+                make_test("insert-vec").run();
+            }
+
+            #[test]
+            fn insert_option_some() {
+                make_test("insert-option-some").run();
+            }
+
+            #[test]
+            fn insert_option_none() {
+                make_test("insert-option-none").run();
+            }
+
+            #[test]
+            fn insert_struct() {
+                make_test("insert-struct").run();
             }
 
             #[test]
             fn insert_simple_enum() {
-                make_test("insert_simple_enum").run();
+                make_test("insert-simple-enum").run();
             }
 
             #[test]
             fn insert_enum_with_payload() {
-                make_test("insert_enum_with_payload").run();
+                make_test("insert-enum-with-payload").run();
             }
 
             #[test]
-            fn insert_long_table() {
-                make_test("insert_long_table").run();
+            fn insert_delete_large_table() {
+                make_test("insert-delete-large-table").run();
             }
 
             #[test]
-            fn resubscribe() {
-                make_test("resubscribe").run();
+            fn insert_primitives_as_strings() {
+                make_test("insert-primitives-as-strings").run();
             }
+
+            // #[test]
+            // fn resubscribe() {
+            //     make_test("resubscribe").run();
+            // }
 
             #[test]
             #[should_panic]
             fn should_fail() {
-                make_test("should_fail").run();
+                make_test("should-fail").run();
             }
 
             #[test]
             fn reauth() {
-                make_test("reauth_part_1").run();
-                make_test("reauth_part_2").run();
+                make_test("reauth-part-1").run();
+                make_test("reauth-part-2").run();
             }
 
             #[test]
-            fn reconnect_same_address() {
-                make_test("reconnect_same_address").run();
+            fn reconnect_same_connection_id() {
+                make_test("reconnect-same-connection-id").run();
             }
 
             #[test]
             fn connect_disconnect_callbacks() {
                 Test::builder()
-                    .with_name(concat!("connect_disconnect_callback_", stringify!($lang)))
+                    .with_name(concat!("connect-disconnect-callback-", stringify!($lang)))
                     .with_module(concat!("sdk-test-connect-disconnect", $suffix))
                     .with_client(concat!(
                         env!("CARGO_MANIFEST_DIR"),
@@ -131,9 +185,55 @@ macro_rules! declare_tests_with_suffix {
                     .build()
                     .run();
             }
+
+            #[test]
+            fn caller_always_notified() {
+                make_test("caller-always-notified").run();
+            }
+
+            #[test]
+            fn subscribe_all_select_star() {
+                make_test("subscribe-all-select-star").run();
+            }
+
+            #[test]
+            fn caller_alice_receives_reducer_callback_but_not_bob() {
+                make_test("caller-alice-receives-reducer-callback-but-not-bob").run();
+            }
+
+            #[test]
+            fn row_deduplication() {
+                make_test("row-deduplication").run();
+            }
+
+            #[test]
+            fn row_deduplication_join_r_and_s() {
+                make_test("row-deduplication-join-r-and-s").run();
+            }
+
+            #[test]
+            fn row_deduplication_r_join_s_and_r_join_t8() {
+                make_test("row-deduplication-r-join-s-and-r-joint").run();
+            }
+
+            #[test]
+            fn test_intra_query_bag_semantics_for_join() {
+                make_test("test-intra-query-bag-semantics-for-join").run()
+            }
+
+            #[test]
+            fn two_different_compression_algos() {
+                make_test("two-different-compression-algos").run();
+            }
+
+            #[test]
+            fn test_parameterized_subscription() {
+                make_test("test-parameterized-subscription").run();
+            }
         }
     };
 }
 
 declare_tests_with_suffix!(rust, "");
+// TODO: migrate csharp to snake_case table names
 declare_tests_with_suffix!(csharp, "-cs");

@@ -1,7 +1,7 @@
 [package]
 name = "spacetimedb-sats"
-version = "0.8.1"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 license-file = "LICENSE"
 description = "Spacetime Algebraic Type Notation"
 
@@ -11,29 +11,52 @@ description = "Spacetime Algebraic Type Notation"
 serde = ["dep:serde"]
 # Allows using `Arbitrary` impls defined in this crate.
 proptest = ["dep:proptest", "dep:proptest-derive"]
+# Allows using additional test-only methods defined in this crate.
+test = ["proptest"]
+# Impls `Serialize` and `Deserialize` for `blake3::Hash`.
+# Used by `spacetimedb_table`,
+# which serializes and deserializes Blake3 hashes during snapshotting.
+blake3 = ["dep:blake3"]
+# Impls `Serialize`, `Deserialize` and `SpacetimeType` for `ByteString`.
+# Used by `spacetimedb_client_api_messages`,
+# which encodes rows and reducer arguments as `ByteString`s containing JSON.
+# Feature-gated because `bytestring` depends on `serde`,
+# which we don't want in `spacetimedb_bindings`.
+bytestring = ["dep:bytestring"]
+metrics_impls = ["dep:spacetimedb-metrics"]
 
 [dependencies]
-spacetimedb-bindings-macro = { path = "../bindings-macro", version = "0.8.1" }
-spacetimedb-primitives = { path = "../primitives", version = "0.8.1" }
-spacetimedb-metrics = { path = "../metrics", version = "0.8.1" }
+spacetimedb-bindings-macro.workspace = true
+spacetimedb-primitives.workspace = true
+spacetimedb-metrics = { workspace = true, optional = true }
 
+anyhow.workspace = true
 arrayvec.workspace = true
 bitflags.workspace = true
+bytes.workspace = true
+bytemuck.workspace = true
+bytestring = { workspace = true, optional = true }
+chrono.workspace = true
 decorum.workspace = true
 derive_more.workspace = true
 enum-as-inner.workspace = true
+ethnum.workspace = true
 hex.workspace = true
 itertools.workspace = true
 # For the 'proptest' feature.
 proptest = { workspace = true, optional = true }
 proptest-derive = { workspace = true, optional = true }
 sha3.workspace = true
+second-stack.workspace = true
 serde = { workspace = true, optional = true }
 smallvec.workspace = true
 thiserror.workspace = true
-tracing.workspace = true
+
+# For the `blake3` feature.
+blake3 = { workspace = true, optional = true }
 
 [dev-dependencies]
+ahash.workspace = true
 bytes.workspace = true
 rand.workspace = true
 # Also as dev-dependencies for use in _this_ crate's tests.

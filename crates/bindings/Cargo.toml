@@ -1,9 +1,10 @@
 [package]
 name = "spacetimedb"
-version = "0.8.1"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 license-file = "LICENSE"
 description = "Easy support for interacting between SpacetimeDB and Rust."
+rust-version.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [lib]
@@ -13,19 +14,27 @@ path = "src/lib.rs"    # The source file of the target.
 bench = false
 
 [features]
-getrandom = ["spacetimedb-bindings-sys/getrandom"]
+default = ["rand"]
+rand = ["dep:rand", "dep:getrandom"]
+unstable = ["spacetimedb-bindings-sys/unstable"]
 
 [dependencies]
-spacetimedb-bindings-sys = { path = "../bindings-sys", version = "0.8.1" }
-spacetimedb-lib = { path = "../lib", default-features = false, version = "0.8.1"}
-spacetimedb-bindings-macro = { path = "../bindings-macro", version = "0.8.1"}
-spacetimedb-primitives = { path = "../primitives", version = "0.8.1" }
+spacetimedb-bindings-sys.workspace = true
+spacetimedb-lib.workspace = true
+spacetimedb-bindings-macro.workspace = true
+spacetimedb-primitives.workspace = true
 
+bytemuck.workspace = true
 derive_more.workspace = true
 log.workspace = true
-once_cell.workspace = true
 scoped-tls.workspace = true
 
+rand = { workspace = true, optional = true }
+# we depend on getrandom and enable the `custom` feature, so that
+# if someone tries to use rand's ThreadRng, it will fail to link
+# because no one defined __getrandom_custom
+getrandom = { workspace = true, optional = true, features = ["custom"] }
+
 [dev-dependencies]
-rand.workspace = true
-bytes.workspace = true
+insta.workspace = true
+trybuild.workspace = true

@@ -1,14 +1,17 @@
 [package]
 name = "spacetimedb-bindings-sys"
-version = "0.8.1"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 license-file = "LICENSE"
 description = "Easy support for interacting between SpacetimeDB and Rust."
+rust-version.workspace = true
 
 [lib]
 # Benching off, because of https://bheisler.github.io/criterion.rs/book/faq.html#cargo-bench-gives-unrecognized-option-errors-for-valid-command-line-options
 bench = false
 
+[features]
+unstable = []
+
 [dependencies]
-getrandom = {workspace = true, optional = true}
-spacetimedb-primitives = { path = "../primitives", version = "0.8.1" }
+spacetimedb-primitives.workspace = true

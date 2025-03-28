@@ -8,13 +8,14 @@ use axum::body::Bytes;
 use axum::extract::{FromRequest, Request};
 use axum::response::IntoResponse;
 use bytestring::ByteString;
+use futures::TryStreamExt;
 use http::{HeaderName, HeaderValue, StatusCode};
 
-use spacetimedb::address::Address;
-use spacetimedb_lib::address::AddressForUrl;
-use spacetimedb_lib::name::DomainName;
+use hyper::body::Body;
+use spacetimedb::Identity;
+use spacetimedb_client_api_messages::name::DatabaseName;
 
-use crate::routes::database::DomainParsingRejection;
+use crate::routes::identity::IdentityForUrl;
 use crate::{log_and_500, ControlStateReadAccess};
 
 pub struct ByteStringBody(pub ByteString);
@@ -58,118 +59,101 @@ impl headers::Header for XForwardedFor {
 }
 
 #[derive(Clone, Debug)]
-pub enum NameOrAddress {
-    Address(AddressForUrl),
-    Name(String),
+pub enum NameOrIdentity {
+    Identity(IdentityForUrl),
+    Name(DatabaseName),
 }
 
-impl NameOrAddress {
+impl NameOrIdentity {
     pub fn into_string(self) -> String {
         match self {
-            NameOrAddress::Address(addr) => Address::from(addr).to_hex().to_string(),
-            NameOrAddress::Name(name) => name,
+            NameOrIdentity::Identity(addr) => Identity::from(addr).to_hex().to_string(),
+            NameOrIdentity::Name(name) => name.into(),
         }
     }
 
-    /// Resolve this [`NameOrAddress`].
+    pub fn name(&self) -> Option<&DatabaseName> {
+        if let Self::Name(name) = self {
+            Some(name)
+        } else {
+            None
+        }
+    }
+
+    /// Resolve this [`NameOrIdentity`].
     ///
-    /// If `self` is a [`NameOrAddress::Address`], the inner [`Address`] is
-    /// returned in a [`ResolvedAddress`] without a [`DomainName`].
+    /// If `self` is a [`NameOrIdentity::Identity`], the inner [`Identity`] is
+    /// returned directly.
     ///
-    /// Otherwise, if `self` is a [`NameOrAddress::Name`], the [`Address`] is
-    /// looked up by that name in the SpacetimeDB DNS and returned in a
-    /// [`ResolvedAddress`] alongside `Some` [`DomainName`].
+    /// Otherwise, if `self` is a [`NameOrIdentity::Name`], the [`Identity`] is
+    /// looked up by that name in the SpacetimeDB DNS and returned.
     ///
-    /// Errors are returned if [`NameOrAddress::Name`] cannot be parsed into a
-    /// [`DomainName`], or the DNS lookup fails.
+    /// Errors are returned if [`NameOrIdentity::Name`] the DNS lookup fails.
     ///
-    /// An `Ok` result is itself a [`Result`], which is `Err(DomainName)` if the
-    /// given [`NameOrAddress::Name`] is not registered in the SpacetimeDB DNS,
-    /// i.e. no corresponding [`Address`] exists.
+    /// An `Ok` result is itself a [`Result`], which is `Err(DatabaseName)` if the
+    /// given [`NameOrIdentity::Name`] is not registered in the SpacetimeDB DNS,
+    /// i.e. no corresponding [`Identity`] exists.
     pub async fn try_resolve(
         &self,
         ctx: &(impl ControlStateReadAccess + ?Sized),
-    ) -> axum::response::Result<Result<ResolvedAddress, DomainName>> {
+    ) -> axum::response::Result<Result<Identity, &DatabaseName>> {
         Ok(match self {
-            Self::Address(addr) => Ok(ResolvedAddress {
-                address: Address::from(*addr),
-                domain: None,
-            }),
-            Self::Name(name) => {
-                let domain = name.parse().map_err(DomainParsingRejection)?;
-                let address = ctx.lookup_address(&domain).map_err(log_and_500)?;
-                match address {
-                    Some(address) => Ok(ResolvedAddress {
-                        address,
-                        domain: Some(domain),
-                    }),
-                    None => Err(domain),
-                }
-            }
+            Self::Identity(identity) => Ok(Identity::from(*identity)),
+            Self::Name(name) => ctx.lookup_identity(name.as_ref()).map_err(log_and_500)?.ok_or(name),
         })
     }
 
-    /// A variant of [`Self::try_resolve()`] which maps to a 400 (Bad Request)
-    /// response if `self` is a [`NameOrAddress::Name`] for which no
-    /// corresponding [`Address`] is found in the SpacetimeDB DNS.
-    pub async fn resolve(
-        &self,
-        ctx: &(impl ControlStateReadAccess + ?Sized),
-    ) -> axum::response::Result<ResolvedAddress> {
-        self.try_resolve(ctx).await?.map_err(|_| StatusCode::BAD_REQUEST.into())
+    /// A variant of [`Self::try_resolve()`] which maps to a 404 (Not Found)
+    /// response if `self` is a [`NameOrIdentity::Name`] for which no
+    /// corresponding [`Identity`] is found in the SpacetimeDB DNS.
+    pub async fn resolve(&self, ctx: &(impl ControlStateReadAccess + ?Sized)) -> axum::response::Result<Identity> {
+        self.try_resolve(ctx).await?.map_err(|_| StatusCode::NOT_FOUND.into())
     }
 }
 
-impl<'de> serde::Deserialize<'de> for NameOrAddress {
+impl<'de> serde::Deserialize<'de> for NameOrIdentity {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
-        String::deserialize(deserializer).map(|s| {
-            if let Ok(addr) = Address::from_hex(&s) {
-                NameOrAddress::Address(AddressForUrl::from(addr))
-            } else {
-                NameOrAddress::Name(s)
-            }
-        })
-    }
-}
-
-impl fmt::Display for NameOrAddress {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Address(addr) => f.write_str(&Address::from(*addr).to_hex()),
-            Self::Name(name) => f.write_str(name),
+        let s = String::deserialize(deserializer)?;
+        if let Ok(addr) = Identity::from_hex(&s) {
+            Ok(NameOrIdentity::Identity(IdentityForUrl::from(addr)))
+        } else {
+            let name: DatabaseName = s.try_into().map_err(serde::de::Error::custom)?;
+            Ok(NameOrIdentity::Name(name))
         }
     }
 }
 
-/// A resolved [`NameOrAddress`].
-///
-/// Constructed by [`NameOrAddress::try_resolve()`].
-pub struct ResolvedAddress {
-    address: Address,
-    domain: Option<DomainName>,
-}
-
-impl ResolvedAddress {
-    pub fn address(&self) -> &Address {
-        &self.address
-    }
-
-    pub fn domain(&self) -> Option<&DomainName> {
-        self.domain.as_ref()
+impl fmt::Display for NameOrIdentity {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Identity(addr) => f.write_str(addr.into_inner().to_hex().as_str()),
+            Self::Name(name) => f.write_str(name.as_ref()),
+        }
     }
 }
 
-impl From<ResolvedAddress> for Address {
-    fn from(value: ResolvedAddress) -> Self {
-        value.address
-    }
-}
+pub struct EmptyBody;
 
-impl From<ResolvedAddress> for (Address, Option<DomainName>) {
-    fn from(ResolvedAddress { address, domain }: ResolvedAddress) -> Self {
-        (address, domain)
+#[async_trait::async_trait]
+impl<S> FromRequest<S> for EmptyBody {
+    type Rejection = axum::response::Response;
+    async fn from_request(req: Request, _state: &S) -> Result<Self, Self::Rejection> {
+        let body = req.into_body();
+        if body.is_end_stream() {
+            return Ok(Self);
+        }
+
+        if body
+            .into_data_stream()
+            .try_any(|data| futures::future::ready(!data.is_empty()))
+            .await
+            .map_err(|_| (StatusCode::BAD_REQUEST, "Failed to buffer the request body").into_response())?
+        {
+            return Err((StatusCode::BAD_REQUEST, "body must be empty").into_response());
+        }
+        Ok(Self)
     }
 }

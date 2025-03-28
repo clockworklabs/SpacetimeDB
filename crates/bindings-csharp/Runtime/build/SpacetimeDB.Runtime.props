@@ -4,10 +4,26 @@
     <WasmSingleFileBundle>true</WasmSingleFileBundle>
     <TrimMode>full</TrimMode>
     <InvariantGlobalization>true</InvariantGlobalization>
-    <DebuggerSupport>false</DebuggerSupport>
     <EventSourceSupport>false</EventSourceSupport>
     <UseSystemResourceKeys>true</UseSystemResourceKeys>
     <EnableUnsafeBinaryFormatterSerialization>false</EnableUnsafeBinaryFormatterSerialization>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(EXPERIMENTAL_WASM_AOT)' == '1'">
+    <OutputType>Library</OutputType>
+    <NativeLib>Shared</NativeLib>
+    <DefineConstants>$(DefineConstants);EXPERIMENTAL_WASM_AOT</DefineConstants>
+    <MSBuildEnableWorkloadResolver>false</MSBuildEnableWorkloadResolver>
+    <UseAppHost>false</UseAppHost>
+    <SpacetimeNamespace>spacetime_10.0</SpacetimeNamespace>
+    <RestoreAdditionalProjectSources>https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-experimental/nuget/v3/index.json</RestoreAdditionalProjectSources>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(EXPERIMENTAL_WASM_AOT)' != '1'">
+    <!-- needs to be exe for initializers to be embedded correctly -->
+    <OutputType>Exe</OutputType>
+    <!-- conditional due to https://github.com/dotnet/runtime/issues/86186 which is not fixed in NAOT-LLVM -->
+    <DebuggerSupport>false</DebuggerSupport>
   </PropertyGroup>
 
 </Project>

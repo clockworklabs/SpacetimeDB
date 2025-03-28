@@ -1,15 +1,19 @@
 [package]
 name = "spacetimedb-cli"
-version = "0.8.1"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 license-file = "LICENSE"
 description = "A command line interface for SpacetimeDB"
+rust-version.workspace = true
+
+[features]
+markdown-docs = []
 
 [lib]
 bench = false
 
 [[bin]]
-name = "spacetime"
+name = "spacetimedb-cli"
 path = "src/main.rs"
 # Benching off, because of https://bheisler.github.io/criterion.rs/book/faq.html#cargo-bench-gives-unrecognized-option-errors-for-valid-command-line-options
 bench = false
@@ -17,16 +21,21 @@ bench = false
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-spacetimedb-primitives = { path = "../primitives", version = "0.8.1" }
-spacetimedb-core = { path = "../core", version = "0.8.1" }
-spacetimedb-lib = { path = "../lib", version = "0.8.1", features = ["cli"] }
-spacetimedb-standalone = { path = "../standalone", version = "0.8.1", optional = true }
+spacetimedb-client-api-messages.workspace = true
+spacetimedb-core.workspace = true
+spacetimedb-data-structures.workspace = true
+spacetimedb-fs-utils.workspace = true
+spacetimedb-lib.workspace = true
+spacetimedb-paths.workspace = true
+spacetimedb-primitives.workspace = true
+spacetimedb-schema.workspace = true
 
 anyhow.workspace = true
 base64.workspace = true
+bytes.workspace = true
 cargo_metadata.workspace = true
 chrono.workspace = true
-clap = {workspace = true, features = ["derive", "env", "string"]}
+clap = { workspace = true, features = ["derive", "env", "string"] }
 colored.workspace = true
 convert_case.workspace = true
 dirs.workspace = true
@@ -34,11 +43,14 @@ duct.workspace = true
 email_address.workspace = true
 futures.workspace = true
 flate2.workspace = true
+fs-err.workspace = true
+http.workspace = true
 is-terminal.workspace = true
 itertools.workspace = true
 indicatif.workspace = true
 jsonwebtoken.workspace = true
 mimalloc.workspace = true
+percent-encoding.workspace = true
 regex.workspace = true
 reqwest.workspace = true
 rustyline.workspace = true
@@ -51,18 +63,26 @@ tabled.workspace = true
 tar.workspace = true
 tempfile.workspace = true
 termcolor.workspace = true
+thiserror.workspace = true
 tokio.workspace = true
+tokio-tungstenite.workspace = true
 toml.workspace = true
+toml_edit.workspace = true
+tracing = { workspace = true, features = ["release_max_level_off"] }
+walkdir.workspace = true
 wasmbin.workspace = true
 wasmtime.workspace = true
+webbrowser.workspace = true
+clap-markdown.workspace = true
+
+[target.'cfg(not(target_env = "msvc"))'.dependencies]
+tikv-jemallocator = { workspace = true }
+tikv-jemalloc-ctl = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, features = ["Win32_System_Console"] }
 
 [dev-dependencies]
 insta.workspace = true
-
-[features]
-standalone = ["spacetimedb-standalone"]
-default = ["standalone"]
-# Perfmaps for profiling modules
-perfmap = ["spacetimedb-core/perfmap", "spacetimedb-standalone/perfmap"]
-
-
+fs-err.workspace = true
+spacetimedb-testing = { path = "../testing" }

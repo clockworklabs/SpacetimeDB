@@ -1,16 +1,31 @@
-use spacetimedb_sats::db::def::SequenceSchema;
+use spacetimedb_data_structures::map::IntMap;
+use spacetimedb_primitives::SequenceId;
+use spacetimedb_schema::schema::SequenceSchema;
+use spacetimedb_table::MemoryUsage;
 
-pub struct Sequence {
+pub(super) struct Sequence {
     schema: SequenceSchema,
-    pub(crate) value: i128,
+    pub(super) value: i128,
+}
+
+impl MemoryUsage for Sequence {
+    fn heap_usage(&self) -> usize {
+        // MEMUSE: intentionally ignoring schema
+        let Self { schema: _, value } = self;
+        value.heap_usage()
+    }
 }
 
 impl Sequence {
-    pub fn new(schema: SequenceSchema) -> Self {
+    pub(super) fn new(schema: SequenceSchema) -> Self {
         Self {
             value: schema.start,
             schema,
         }
+    }
+
+    pub(super) fn id(&self) -> SequenceId {
+        self.schema.sequence_id
     }
 
     /// Returns the next value in the sequence given the params.
@@ -37,7 +52,7 @@ impl Sequence {
     }
 
     /// Returns the next value iff no allocation is needed.
-    pub fn gen_next_value(&mut self) -> Option<i128> {
+    pub(super) fn gen_next_value(&mut self) -> Option<i128> {
         if self.needs_allocation() {
             return None;
         }
@@ -46,15 +61,15 @@ impl Sequence {
         Some(value)
     }
 
-    pub fn allocated(&self) -> i128 {
+    pub(super) fn allocated(&self) -> i128 {
         self.schema.allocated
     }
 
-    pub fn next_value(&self) -> i128 {
+    fn next_value(&self) -> i128 {
         self.nth_value(1)
     }
 
-    pub fn nth_value(&self, n: usize) -> i128 {
+    pub(super) fn nth_value(&self, n: usize) -> i128 {
         let mut value = self.value;
         for _ in 0..n {
             value = Self::next_in_sequence(
@@ -79,11 +94,40 @@ impl Sequence {
     /// 5. restart
     /// 6. incr = 1 allocated = 10, value = 10
     /// 7. next_value() -> 11
-    pub fn needs_allocation(&self) -> bool {
-        self.value == self.schema.allocated
+    fn needs_allocation(&self) -> bool {
+        // In order to yield a value, it must be strictly less than the allocation amount,
+        // because on restart we will begin at the allocation amount.
+        self.value >= self.schema.allocated
     }
 
-    pub fn set_allocation(&mut self, allocated: i128) {
+    pub(super) fn set_allocation(&mut self, allocated: i128) {
         self.schema.allocated = allocated;
+    }
+}
+
+/// A map of [`SequenceId`] -> [`Sequence`].
+#[derive(Default)]
+pub(super) struct SequencesState {
+    sequences: IntMap<SequenceId, Sequence>,
+}
+
+impl MemoryUsage for SequencesState {
+    fn heap_usage(&self) -> usize {
+        let Self { sequences } = self;
+        sequences.heap_usage()
+    }
+}
+
+impl SequencesState {
+    pub(super) fn get_sequence_mut(&mut self, seq_id: SequenceId) -> Option<&mut Sequence> {
+        self.sequences.get_mut(&seq_id)
+    }
+
+    pub(super) fn insert(&mut self, seq_id: SequenceId, seq: Sequence) {
+        self.sequences.insert(seq_id, seq);
+    }
+
+    pub(super) fn remove(&mut self, seq_id: SequenceId) -> Option<Sequence> {
+        self.sequences.remove(&seq_id)
     }
 }

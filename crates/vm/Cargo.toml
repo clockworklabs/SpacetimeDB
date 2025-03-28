@@ -1,19 +1,28 @@
 [package]
 name = "spacetimedb-vm"
-version = "0.8.1"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 license-file = "LICENSE"
 description = "A VM for SpacetimeDB"
 
 [dependencies]
-spacetimedb-sats= { path = "../sats", version = "0.8.1" }
-spacetimedb-lib = { path = "../lib", version = "0.8.1" }
-spacetimedb-primitives = { path = "../primitives", version = "0.8.1" }
+spacetimedb-data-structures.workspace = true
+spacetimedb-execution.workspace = true
+spacetimedb-sats.workspace = true
+spacetimedb-lib.workspace = true
+spacetimedb-primitives.workspace = true
+spacetimedb-table.workspace = true
+spacetimedb-schema.workspace = true
 
 anyhow.workspace = true
+arrayvec.workspace = true
 derive_more.workspace = true
+itertools.workspace = true
+log.workspace = true
+smallvec.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+typed-arena.workspace = true

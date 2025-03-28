@@ -1,0 +1,88 @@
+name: Package SpacetimeDB CLI
+
+on:
+  push:
+    tags:
+      - '**'
+    branches:
+      - master
+      - release/*
+
+jobs:
+  build-cli:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: x86_64 Linux, target: x86_64-unknown-linux-gnu, runner: bare-metal, container: debian:bookworm }
+          - { name: aarch64 Linux, target: aarch64-unknown-linux-gnu, runner: arm-runner }
+          - { name: x86_64 Linux musl, target: x86_64-unknown-linux-musl, runner: bare-metal, container: alpine }
+          # FIXME: arm musl build. "JavaScript Actions in Alpine containers are only supported on x64 Linux runners"
+          # - { name: aarch64 Linux musl, target: aarch64-unknown-linux-musl, runner: arm-runner }
+          - { name: aarch64 macOS, target: aarch64-apple-darwin, runner: macos-latest }
+          - { name: x86_64 macOS, target: x86_64-apple-darwin, runner: macos-latest }
+          - { name: x86_64 Windows, target: x86_64-pc-windows-msvc, runner: windows-latest }
+
+    name: Build CLI for ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    container: ${{ matrix.container || '' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Show arch
+        run: uname -a
+
+      - name: Install ubuntu dependencies
+        if: matrix.container == 'debian:bookworm'
+        run: |
+          apt-get update -y
+          apt-get install -y gcc g++ bash curl perl git make
+
+      - name: Install musl dependencies
+        # TODO: Should we use `matrix.container == 'alpine'` instead of the `endsWith` check?
+        if: endsWith(matrix.target, '-musl')
+        run: apk add gcc g++ bash curl linux-headers perl git make
+
+      - name: Install Rust
+        uses: dsherret/rust-toolchain-file@v1
+
+      - name: Install rust target
+        run: rustup target add ${{ matrix.target }}
+
+      - name: Compile
+        run: |
+          cargo build --release --target ${{ matrix.target }} -p spacetimedb-cli -p spacetimedb-standalone -p spacetimedb-update
+
+      - name: Package (unix)
+        if: ${{ runner.os != 'Windows' }}
+        shell: bash
+        run: |
+          mkdir build
+          cd target/${{matrix.target}}/release
+          cp spacetimedb-update ../../../build/spacetimedb-update-${{matrix.target}}
+          tar -czf ../../../build/spacetime-${{matrix.target}}.tar.gz spacetimedb-{cli,standalone}
+
+      - name: Package (windows)
+        if: ${{ runner.os == 'Windows' }}
+        run: |
+          mkdir build
+          cd target/${{matrix.target}}/release
+          cp spacetimedb-update.exe ../../../build/spacetimedb-update-${{matrix.target}}.exe
+          7z a ../../../build/spacetime-${{matrix.target}}.zip spacetimedb-cli.exe spacetimedb-standalone.exe
+
+      - name: Extract branch name
+        shell: bash
+        run: echo "branch=${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}" >> $GITHUB_OUTPUT
+        id: extract_branch
+
+      - name: Upload to DO Spaces
+        uses: shallwefootball/s3-upload-action@master
+        with:
+          aws_key_id: ${{ secrets.AWS_KEY_ID }}
+          aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY}}
+          aws_bucket: ${{ vars.AWS_BUCKET }}
+          source_dir: build
+          endpoint: https://nyc3.digitaloceanspaces.com
+          destination_dir: ${{ steps.extract_branch.outputs.branch }}

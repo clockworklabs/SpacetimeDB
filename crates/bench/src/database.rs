@@ -1,4 +1,5 @@
 use spacetimedb_lib::AlgebraicValue;
+use spacetimedb_primitives::ColId;
 
 use crate::schemas::{BenchTable, IndexStrategy};
 use crate::ResultBench;
@@ -9,11 +10,11 @@ use crate::ResultBench;
 ///
 /// Not all benchmarks have to go through this trait.
 pub trait BenchDatabase: Sized {
-    fn name() -> &'static str;
+    fn name() -> String;
 
     type TableId: Clone + 'static;
 
-    fn build(in_memory: bool, fsync: bool) -> ResultBench<Self>
+    fn build(in_memory: bool) -> ResultBench<Self>
     where
         Self: Sized;
 
@@ -28,21 +29,25 @@ pub trait BenchDatabase: Sized {
     /// Perform an empty transaction.
     fn empty_transaction(&mut self) -> ResultBench<()>;
 
-    /// Perform a transaction that commits a single row.
-    fn insert<T: BenchTable>(&mut self, table_id: &Self::TableId, row: T) -> ResultBench<()>;
-
     /// Perform a transaction that commits many rows.
     fn insert_bulk<T: BenchTable>(&mut self, table_id: &Self::TableId, rows: Vec<T>) -> ResultBench<()>;
+
+    /// Perform a transaction that updates many rows, without
+    /// sending updated rows across a serialization boundary.
+    /// (e.g. in a module, the updates are generated *inside* the reducer).
+    /// Update logic should be fast, e.g. wrapping integer increment.
+    /// Requires that the table was created with `IndexStrategy::Unique`
+    fn update_bulk<T: BenchTable>(&mut self, table_id: &Self::TableId, row_count: u32) -> ResultBench<()>;
 
     /// Perform a transaction that iterates an entire database table.
     /// Note: this can be non-generic because none of the implementations use the relevant generic argument.
     fn iterate(&mut self, table_id: &Self::TableId) -> ResultBench<()>;
 
-    /// Filter the table on the specified column index for the specified value.
+    /// Filter the table on the specified column id for the specified value.
     fn filter<T: BenchTable>(
         &mut self,
         table_id: &Self::TableId,
-        column_index: u32,
+        col_id: impl Into<ColId>,
         value: AlgebraicValue,
     ) -> ResultBench<()>;
 }

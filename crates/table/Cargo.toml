@@ -1,0 +1,58 @@
+[package]
+name = "spacetimedb-table"
+version.workspace = true
+edition.workspace = true
+license-file = "LICENSE"
+description = "A database Table implementation and friends"
+
+[[bench]]
+name = "pointer_map"
+harness = false
+
+[[bench]]
+name = "page"
+harness = false
+
+[[bench]]
+name = "var_len_visitor"
+harness = false
+
+[[bench]]
+name = "page_manager"
+harness = false
+
+[features]
+# Allows using `Arbitrary` impls defined in this crate.
+proptest = ["dep:proptest", "dep:proptest-derive", "spacetimedb-sats/proptest"]
+
+# Needed for miri
+blake3_pure = ["blake3/pure"]
+
+[dependencies]
+spacetimedb-data-structures.workspace = true
+spacetimedb-primitives.workspace = true
+spacetimedb-sats = { workspace = true, features = ["blake3"] }
+spacetimedb-lib.workspace = true
+spacetimedb-schema.workspace = true
+
+ahash.workspace = true
+blake3.workspace = true
+bytemuck = { workspace = true, features = ["derive"] }
+decorum.workspace = true
+derive_more.workspace = true
+enum-as-inner.workspace = true
+itertools.workspace = true
+smallvec.workspace = true
+thiserror.workspace = true
+
+# For the 'proptest' feature.
+proptest = { workspace = true, optional = true }
+proptest-derive = { workspace = true, optional = true }
+
+[dev-dependencies]
+spacetimedb-schema = { workspace = true, features = ["test"] }
+spacetimedb-sats = { workspace = true, features = ["proptest"] }
+criterion.workspace = true
+proptest.workspace = true
+proptest-derive.workspace = true
+rand.workspace = true

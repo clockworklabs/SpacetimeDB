@@ -1,44 +1,67 @@
-use std::fs;
-use std::io::Write;
-use std::path::{Path, PathBuf};
+#![warn(clippy::uninlined_format_args)]
 
+use clap::parser::ValueSource;
 use clap::Arg;
-use clap::ArgAction::SetTrue;
-use convert_case::{Case, Casing};
-use duct::cmd;
-use spacetimedb_lib::sats::{AlgebraicType, Typespace};
-use spacetimedb_lib::MODULE_ABI_MAJOR_VERSION;
-use spacetimedb_lib::{bsatn, MiscModuleExport, ModuleDef, ReducerDef, TableDesc, TypeAlias};
-use wasmtime::{AsContext, Caller};
+use clap::ArgAction::Set;
+use core::mem;
+use fs_err as fs;
+use spacetimedb::host::wasmtime::{Mem, MemView, WasmPointee as _};
+use spacetimedb_lib::de::serde::DeserializeWrapper;
+use spacetimedb_lib::{bsatn, RawModuleDefV8};
+use spacetimedb_lib::{RawModuleDef, MODULE_ABI_MAJOR_VERSION};
+use spacetimedb_primitives::errno;
+use spacetimedb_schema;
+use spacetimedb_schema::def::{ModuleDef, ReducerDef, ScopedTypeName, TableDef, TypeDef};
+use spacetimedb_schema::identifier::Identifier;
+use std::path::{Path, PathBuf};
+use wasmtime::{Caller, StoreContextMut};
+
+use crate::generate::util::iter_reducers;
+use crate::util::y_or_n;
+use crate::Config;
+use crate::{build, common_args};
+use clap::builder::PossibleValue;
+use std::collections::BTreeSet;
+use std::io::Read;
+use util::AUTO_GENERATED_PREFIX;
 
 mod code_indenter;
 pub mod csharp;
-pub mod python;
 pub mod rust;
 pub mod typescript;
 mod util;
 
-const INDENT: &str = "\t";
-
 pub fn cli() -> clap::Command {
     clap::Command::new("generate")
         .about("Generate client files for a spacetime module.")
+        .override_usage("spacetime generate --lang <LANG> --out-dir <DIR> [--project-path <DIR> | --bin-path <PATH>]")
         .arg(
             Arg::new("wasm_file")
                 .value_parser(clap::value_parser!(PathBuf))
-                .long("wasm-file")
-                .short('w')
+                .long("bin-path")
+                .short('b')
+                .group("source")
                 .conflicts_with("project_path")
-                .help("The system path (absolute or relative) to the wasm file we should inspect"),
+                .conflicts_with("build_options")
+                .help("The system path (absolute or relative) to the compiled wasm binary we should inspect"),
         )
         .arg(
             Arg::new("project_path")
                 .value_parser(clap::value_parser!(PathBuf))
+                .default_value(".")
                 .long("project-path")
                 .short('p')
-                .default_value(".")
-                .conflicts_with("wasm_file")
-                .help("The path to the wasm project"),
+                .group("source")
+                .help("The system path (absolute or relative) to the project you would like to inspect"),
+        )
+        .arg(
+            Arg::new("json_module")
+                .hide(true)
+                .num_args(0..=1)
+                .value_parser(clap::value_parser!(PathBuf))
+                .long("module-def")
+                .group("source")
+                .help("Generate from a ModuleDef encoded as json"),
         )
         .arg(
             Arg::new("out_dir")
@@ -52,8 +75,7 @@ pub fn cli() -> clap::Command {
             Arg::new("namespace")
                 .default_value("SpacetimeDB.Types")
                 .long("namespace")
-                .short('n')
-                .help("The namespace that should be used (default is 'SpacetimeDB.Types')"),
+                .help("The namespace that should be used"),
         )
         .arg(
             Arg::new("lang")
@@ -64,122 +86,124 @@ pub fn cli() -> clap::Command {
                 .help("The language to generate"),
         )
         .arg(
-            Arg::new("skip_clippy")
-                .long("skip_clippy")
-                .short('s')
-                .short('S')
-                .action(SetTrue)
-                .env("SPACETIME_SKIP_CLIPPY")
-                .value_parser(clap::builder::FalseyValueParser::new())
-                .help("Skips running clippy on the module before generating (intended to speed up local iteration, not recommended for CI)"),
+            Arg::new("build_options")
+                .long("build-options")
+                .alias("build-opts")
+                .action(Set)
+                .default_value("")
+                .help("Options to pass to the build command, for example --build-options='--lint-dir='"),
         )
-        .arg(
-            Arg::new("delete_files")
-                .long("delete-files")
-                .action(SetTrue)
-                .help("Delete outdated generated files whose definitions have been removed from the module. Prompts before deleting unless --force is supplied."),
-        )
-        .arg(
-            Arg::new("force")
-                .long("force")
-                .action(SetTrue)
-                .requires("delete_files")
-                .help("delete-files without prompting first. Useful for scripts."),
-        )
-        .arg(
-            Arg::new("debug")
-                .long("debug")
-                .short('d')
-                .action(SetTrue)
-                .help("Builds the module using debug instead of release (intended to speed up local iteration, not recommended for CI)"),
-        )
+        .arg(common_args::yes())
         .after_help("Run `spacetime help publish` for more detailed information.")
 }
 
-pub fn exec(args: &clap::ArgMatches) -> anyhow::Result<()> {
+pub async fn exec(config: Config, args: &clap::ArgMatches) -> anyhow::Result<()> {
     let project_path = args.get_one::<PathBuf>("project_path").unwrap();
     let wasm_file = args.get_one::<PathBuf>("wasm_file").cloned();
+    let json_module = args.get_many::<PathBuf>("json_module");
     let out_dir = args.get_one::<PathBuf>("out_dir").unwrap();
     let lang = *args.get_one::<Language>("lang").unwrap();
     let namespace = args.get_one::<String>("namespace").unwrap();
-    let skip_clippy = args.get_flag("skip_clippy");
-    let build_debug = args.get_flag("debug");
-    let delete_files = args.get_flag("delete_files");
     let force = args.get_flag("force");
+    let build_options = args.get_one::<String>("build_options").unwrap();
 
-    let wasm_file = match wasm_file {
-        Some(x) => x,
-        None => match crate::tasks::build(project_path, skip_clippy, build_debug) {
-            Ok(wasm_file) => wasm_file,
-            Err(e) => {
-                return Err(anyhow::anyhow!(
-                    "{:?}
+    if args.value_source("namespace") == Some(ValueSource::CommandLine) && lang != Language::Csharp {
+        return Err(anyhow::anyhow!("--namespace is only supported with --lang csharp"));
+    }
 
-Failed to compile module {:?}. See cargo errors above for more details.",
-                    e,
-                    project_path,
-                ));
-            }
-        },
+    let module = if let Some(mut json_module) = json_module {
+        let DeserializeWrapper(module) = if let Some(path) = json_module.next() {
+            serde_json::from_slice(&fs::read(path)?)?
+        } else {
+            serde_json::from_reader(std::io::stdin().lock())?
+        };
+        module
+    } else {
+        let wasm_path = if let Some(path) = wasm_file {
+            println!("Skipping build. Instead we are inspecting {}", path.display());
+            path.clone()
+        } else {
+            build::exec_with_argstring(config.clone(), project_path, build_options).await?
+        };
+        let spinner = indicatif::ProgressBar::new_spinner();
+        spinner.enable_steady_tick(std::time::Duration::from_millis(60));
+        spinner.set_message("Compiling wasm...");
+        let module = compile_wasm(&wasm_path)?;
+        spinner.set_message("Extracting schema from wasm...");
+        extract_descriptions_from_module(module)?
     };
 
     fs::create_dir_all(out_dir)?;
 
-    let mut paths = vec![];
-    for (fname, code) in generate(&wasm_file, lang, namespace.as_str())?.into_iter() {
+    let mut paths = BTreeSet::new();
+
+    let csharp_lang;
+    let lang = match lang {
+        Language::Csharp => {
+            csharp_lang = csharp::Csharp { namespace };
+            &csharp_lang as &dyn Lang
+        }
+        Language::Rust => &rust::Rust,
+        Language::TypeScript => &typescript::TypeScript,
+    };
+
+    for (fname, code) in generate(module, lang)? {
+        let fname = Path::new(&fname);
+        // If a generator asks for a file in a subdirectory, create the subdirectory first.
+        if let Some(parent) = fname.parent().filter(|p| !p.as_os_str().is_empty()) {
+            fs::create_dir_all(out_dir.join(parent))?;
+        }
         let path = out_dir.join(fname);
-        paths.push(path.clone());
-        fs::write(path, code)?;
+        fs::write(&path, code)?;
+        paths.insert(path);
     }
 
-    format_files(paths.clone(), lang)?;
-
-    if delete_files {
-        let mut files_to_delete = vec![];
-        for entry in fs::read_dir(out_dir)? {
-            let entry = entry?;
-            let path = entry.path();
-            if path.is_file() {
-                if let Ok(contents) = fs::read_to_string(&path) {
-                    if !contents.starts_with("// THIS FILE IS AUTOMATICALLY GENERATED BY SPACETIMEDB.") {
-                        continue;
-                    }
-                }
-
-                if paths
-                    .iter()
-                    .any(|x| x.file_name().unwrap() == path.file_name().unwrap())
-                {
-                    continue;
-                }
-                files_to_delete.push(path);
+    // TODO: We should probably just delete all generated files before we generate any, rather than selectively deleting some afterward.
+    let mut auto_generated_buf: [u8; AUTO_GENERATED_PREFIX.len()] = [0; AUTO_GENERATED_PREFIX.len()];
+    let files_to_delete = walkdir::WalkDir::new(out_dir)
+        .into_iter()
+        .map(|entry_result| {
+            let entry = entry_result?;
+            // Only delete files.
+            if !entry.file_type().is_file() {
+                return Ok(None);
             }
+            let path = entry.into_path();
+            // Don't delete regenerated files.
+            if paths.contains(&path) {
+                return Ok(None);
+            }
+            // Only delete files that start with the auto-generated prefix.
+            let mut file = fs::File::open(&path)?;
+            Ok(match file.read_exact(&mut auto_generated_buf) {
+                Ok(()) => (auto_generated_buf == AUTO_GENERATED_PREFIX.as_bytes()).then_some(path),
+                Err(err) if err.kind() == std::io::ErrorKind::UnexpectedEof => None,
+                Err(err) => return Err(err.into()),
+            })
+        })
+        .filter_map(Result::transpose)
+        .collect::<anyhow::Result<Vec<_>>>()?;
+
+    if !files_to_delete.is_empty() {
+        println!("The following files were not generated by this command and will be deleted:");
+        for path in &files_to_delete {
+            println!("  {}", path.to_str().unwrap());
         }
-        if !files_to_delete.is_empty() {
-            let mut input = "y".to_string();
-            println!("The following files were not generated by this command and will be deleted:");
-            for path in &files_to_delete {
-                println!("  {}", path.to_str().unwrap());
-            }
 
-            if !force {
-                print!("Are you sure you want to delete these files? [y/N] ");
-                input = "".to_string();
-                std::io::stdout().flush()?;
-                std::io::stdin().read_line(&mut input)?;
-            } else {
-                println!("Force flag present, deleting files without prompting.");
+        if y_or_n(force, "Are you sure you want to delete these files?")? {
+            for path in files_to_delete {
+                fs::remove_file(path)?;
             }
-
-            if input.trim().to_lowercase() == "y" || input.trim().to_lowercase() == "yes" {
-                for path in files_to_delete {
-                    fs::remove_file(path)?;
-                }
-                println!("Files deleted successfully.");
-            } else {
-                println!("Files not deleted.");
-            }
+            println!("Files deleted successfully.");
+        } else {
+            println!("Files not deleted.");
         }
+    }
+
+    if let Err(err) = lang.format_files(paths) {
+        // If we couldn't format the files, print a warning but don't fail the entire
+        // task as the output should still be usable, just less pretty.
+        eprintln!("Could not format generated files: {err}");
     }
 
     println!("Generate finished successfully.");
@@ -190,259 +214,97 @@ Failed to compile module {:?}. See cargo errors above for more details.",
 pub enum Language {
     Csharp,
     TypeScript,
-    Python,
     Rust,
 }
 
 impl clap::ValueEnum for Language {
     fn value_variants<'a>() -> &'a [Self] {
-        &[Self::Csharp, Self::TypeScript, Self::Python, Self::Rust]
+        &[Self::Csharp, Self::TypeScript, Self::Rust]
     }
-    fn to_possible_value(&self) -> Option<clap::builder::PossibleValue> {
-        match self {
-            Self::Csharp => Some(clap::builder::PossibleValue::new("csharp").aliases(["c#", "cs"])),
-            Self::TypeScript => Some(clap::builder::PossibleValue::new("typescript").aliases(["ts", "TS"])),
-            Self::Python => Some(clap::builder::PossibleValue::new("python").aliases(["py", "PY"])),
-            Self::Rust => Some(clap::builder::PossibleValue::new("rust").aliases(["rs", "RS"])),
-        }
-    }
-}
-
-pub struct GenCtx {
-    typespace: Typespace,
-    names: Vec<Option<String>>,
-}
-
-pub fn generate<'a>(wasm_file: &'a Path, lang: Language, namespace: &'a str) -> anyhow::Result<Vec<(String, String)>> {
-    let module = extract_descriptions(wasm_file)?;
-    let (ctx, items) = extract_from_moduledef(module);
-    let items: Vec<GenItem> = items.collect();
-    let mut files: Vec<(String, String)> = items
-        .iter()
-        .filter_map(|item| item.generate(&ctx, lang, namespace))
-        .collect();
-    files.extend(generate_globals(&ctx, lang, namespace, &items).into_iter().flatten());
-
-    Ok(files)
-}
-
-fn generate_globals(ctx: &GenCtx, lang: Language, namespace: &str, items: &[GenItem]) -> Vec<Vec<(String, String)>> {
-    match lang {
-        Language::Csharp => csharp::autogen_csharp_globals(items, namespace),
-        Language::TypeScript => typescript::autogen_typescript_globals(ctx, items),
-        Language::Python => python::autogen_python_globals(ctx, items),
-        Language::Rust => rust::autogen_rust_globals(ctx, items),
-    }
-}
-
-pub fn extract_from_moduledef(module: ModuleDef) -> (GenCtx, impl Iterator<Item = GenItem>) {
-    let ModuleDef {
-        typespace,
-        tables,
-        reducers,
-        misc_exports,
-    } = module;
-    // HACK: Patch the fields to have the types that point to `AlgebraicTypeRef` because all generators depend on that
-    // `register_table` in rt.rs resolve the types early, but the generators do it late. This impact enums where
-    // the enum name is not preserved in the `AlgebraicType`.
-    let tables: Vec<_> = tables
-        .into_iter()
-        .map(|mut x| {
-            x.schema.columns = typespace[x.data].as_product().unwrap().clone().into();
-            x
+    fn to_possible_value(&self) -> Option<PossibleValue> {
+        Some(match self {
+            Self::Csharp => csharp::Csharp::clap_value(),
+            Self::TypeScript => typescript::TypeScript::clap_value(),
+            Self::Rust => rust::Rust::clap_value(),
         })
-        .collect();
-
-    let mut names = vec![None; typespace.types.len()];
-    let name_info = itertools::chain!(
-        tables.iter().map(|t| (t.data, &t.schema.table_name)),
-        misc_exports
-            .iter()
-            .map(|MiscModuleExport::TypeAlias(a)| (a.ty, &a.name)),
-    );
-    for (typeref, name) in name_info {
-        names[typeref.idx()] = Some(name.clone())
-    }
-    let ctx = GenCtx { typespace, names };
-    let iter = itertools::chain!(
-        misc_exports.into_iter().map(GenItem::from_misc_export),
-        tables.into_iter().map(GenItem::Table),
-        reducers
-            .into_iter()
-            .filter(|r| !(r.name.starts_with("__") && r.name.ends_with("__")))
-            .map(GenItem::Reducer),
-    );
-    (ctx, iter)
-}
-
-pub enum GenItem {
-    Table(TableDesc),
-    TypeAlias(TypeAlias),
-    Reducer(ReducerDef),
-}
-
-impl GenItem {
-    fn from_misc_export(exp: MiscModuleExport) -> Self {
-        match exp {
-            MiscModuleExport::TypeAlias(a) => Self::TypeAlias(a),
-        }
-    }
-
-    fn generate(&self, ctx: &GenCtx, lang: Language, namespace: &str) -> Option<(String, String)> {
-        match lang {
-            Language::Csharp => self.generate_csharp(ctx, namespace),
-            Language::TypeScript => self.generate_typescript(ctx),
-            Language::Python => self.generate_python(ctx),
-            Language::Rust => self.generate_rust(ctx),
-        }
-    }
-
-    fn generate_rust(&self, ctx: &GenCtx) -> Option<(String, String)> {
-        match self {
-            GenItem::Table(table) => {
-                let code = rust::autogen_rust_table(ctx, table);
-                Some((rust::rust_type_file_name(&table.schema.table_name), code))
-            }
-            GenItem::TypeAlias(TypeAlias { name, ty }) => {
-                let code = match &ctx.typespace[*ty] {
-                    AlgebraicType::Sum(sum) => rust::autogen_rust_sum(ctx, name, sum),
-                    AlgebraicType::Product(prod) => rust::autogen_rust_tuple(ctx, name, prod),
-                    _ => todo!(),
-                };
-                Some((rust::rust_type_file_name(name), code))
-            }
-            GenItem::Reducer(reducer) => {
-                let code = rust::autogen_rust_reducer(ctx, reducer);
-                Some((rust::rust_reducer_file_name(&reducer.name), code))
-            }
-        }
-    }
-
-    fn generate_python(&self, ctx: &GenCtx) -> Option<(String, String)> {
-        match self {
-            GenItem::Table(table) => {
-                let code = python::autogen_python_table(ctx, table);
-                let name = table.schema.table_name.to_case(Case::Snake);
-                Some((name + ".py", code))
-            }
-            GenItem::TypeAlias(TypeAlias { name, ty }) => match &ctx.typespace[*ty] {
-                AlgebraicType::Sum(sum) => {
-                    let filename = name.replace('.', "").to_case(Case::Snake);
-                    let code = python::autogen_python_sum(ctx, name, sum);
-                    Some((filename + ".py", code))
-                }
-                AlgebraicType::Product(prod) => {
-                    let code = python::autogen_python_tuple(ctx, name, prod);
-                    let name = name.to_case(Case::Snake);
-                    Some((name + ".py", code))
-                }
-                AlgebraicType::Builtin(_) => todo!(),
-                AlgebraicType::Ref(_) => todo!(),
-            },
-            GenItem::Reducer(reducer) => {
-                let code = python::autogen_python_reducer(ctx, reducer);
-                let name = reducer.name.to_case(Case::Snake);
-                Some((name + "_reducer.py", code))
-            }
-        }
-    }
-
-    fn generate_typescript(&self, ctx: &GenCtx) -> Option<(String, String)> {
-        match self {
-            GenItem::Table(table) => {
-                let code = typescript::autogen_typescript_table(ctx, table);
-                let name = table.schema.table_name.to_case(Case::Snake);
-                Some((name + ".ts", code))
-            }
-            GenItem::TypeAlias(TypeAlias { name, ty }) => match &ctx.typespace[*ty] {
-                AlgebraicType::Sum(sum) => {
-                    let filename = name.replace('.', "").to_case(Case::Snake);
-                    let code = typescript::autogen_typescript_sum(ctx, name, sum);
-                    Some((filename + ".ts", code))
-                }
-                AlgebraicType::Product(prod) => {
-                    let code = typescript::autogen_typescript_tuple(ctx, name, prod);
-                    let name = name.to_case(Case::Snake);
-                    Some((name + ".ts", code))
-                }
-                AlgebraicType::Builtin(_) => todo!(),
-                AlgebraicType::Ref(_) => todo!(),
-            },
-            GenItem::Reducer(reducer) => {
-                let code = typescript::autogen_typescript_reducer(ctx, reducer);
-                let name = reducer.name.to_case(Case::Snake);
-                Some((name + "_reducer.ts", code))
-            }
-        }
-    }
-
-    fn generate_csharp(&self, ctx: &GenCtx, namespace: &str) -> Option<(String, String)> {
-        match self {
-            GenItem::Table(table) => {
-                let code = csharp::autogen_csharp_table(ctx, table, namespace);
-                Some((table.schema.table_name.clone() + ".cs", code))
-            }
-            GenItem::TypeAlias(TypeAlias { name, ty }) => match &ctx.typespace[*ty] {
-                AlgebraicType::Sum(sum) => {
-                    let filename = name.replace('.', "");
-                    let code = csharp::autogen_csharp_sum(ctx, name, sum, namespace);
-                    Some((filename + ".cs", code))
-                }
-                AlgebraicType::Product(prod) => {
-                    let code = csharp::autogen_csharp_tuple(ctx, name, prod, namespace);
-                    Some((name.clone() + ".cs", code))
-                }
-                AlgebraicType::Builtin(_) => todo!(),
-                AlgebraicType::Ref(_) => todo!(),
-            },
-            GenItem::Reducer(reducer) => {
-                let code = csharp::autogen_csharp_reducer(ctx, reducer, namespace);
-                let pascalcase = reducer.name.to_case(Case::Pascal);
-                Some((pascalcase + "Reducer.cs", code))
-            }
-        }
     }
 }
 
-fn extract_descriptions(wasm_file: &Path) -> anyhow::Result<ModuleDef> {
-    let engine = wasmtime::Engine::default();
-    let t = std::time::Instant::now();
-    let module = wasmtime::Module::from_file(&engine, wasm_file)?;
-    println!("compilation took {:?}", t.elapsed());
+pub fn generate(module: RawModuleDef, lang: &dyn Lang) -> anyhow::Result<Vec<(String, String)>> {
+    let module = &ModuleDef::try_from(module)?;
+    Ok(itertools::chain!(
+        module
+            .tables()
+            .map(|tbl| { (lang.table_filename(module, tbl), lang.generate_table(module, tbl),) }),
+        module
+            .types()
+            .map(|typ| { (lang.type_filename(&typ.name), lang.generate_type(module, typ),) }),
+        iter_reducers(module).map(|reducer| {
+            (
+                lang.reducer_filename(&reducer.name),
+                lang.generate_reducer(module, reducer),
+            )
+        }),
+        lang.generate_globals(module),
+    )
+    .collect())
+}
+
+pub trait Lang {
+    fn table_filename(&self, module: &ModuleDef, table: &TableDef) -> String;
+    fn type_filename(&self, type_name: &ScopedTypeName) -> String;
+    fn reducer_filename(&self, reducer_name: &Identifier) -> String;
+
+    fn generate_table(&self, module: &ModuleDef, tbl: &TableDef) -> String;
+    fn generate_type(&self, module: &ModuleDef, typ: &TypeDef) -> String;
+    fn generate_reducer(&self, module: &ModuleDef, reducer: &ReducerDef) -> String;
+    fn generate_globals(&self, module: &ModuleDef) -> Vec<(String, String)>;
+
+    fn format_files(&self, generated_files: BTreeSet<PathBuf>) -> anyhow::Result<()>;
+    fn clap_value() -> PossibleValue
+    where
+        Self: Sized;
+}
+
+pub fn extract_descriptions(wasm_file: &Path) -> anyhow::Result<RawModuleDef> {
+    let module = compile_wasm(wasm_file)?;
+    extract_descriptions_from_module(module)
+}
+
+fn compile_wasm(wasm_file: &Path) -> anyhow::Result<wasmtime::Module> {
+    wasmtime::Module::from_file(&wasmtime::Engine::default(), wasm_file)
+}
+
+fn extract_descriptions_from_module(module: wasmtime::Module) -> anyhow::Result<RawModuleDef> {
+    let engine = module.engine();
     let ctx = WasmCtx {
         mem: None,
-        buffers: slab::Slab::new(),
+        sink: Vec::new(),
     };
-    let mut store = wasmtime::Store::new(&engine, ctx);
-    let mut linker = wasmtime::Linker::new(&engine);
+    let mut store = wasmtime::Store::new(engine, ctx);
+    let mut linker = wasmtime::Linker::new(engine);
     linker.allow_shadowing(true).define_unknown_imports_as_traps(&module)?;
     let module_name = &*format!("spacetime_{MODULE_ABI_MAJOR_VERSION}.0");
     linker.func_wrap(
         module_name,
-        "_console_log",
-        |caller: Caller<'_, WasmCtx>,
+        "console_log",
+        |mut caller: Caller<'_, WasmCtx>,
          _level: u32,
-         _target: u32,
+         _target_ptr: u32,
          _target_len: u32,
-         _filename: u32,
+         _filename_ptr: u32,
          _filename_len: u32,
          _line_number: u32,
-         message: u32,
+         message_ptr: u32,
          message_len: u32| {
-            let mem = caller.data().mem.unwrap();
-            let slice = mem.deref_slice(&caller, message, message_len);
-            if let Some(slice) = slice {
-                println!("from wasm: {}", String::from_utf8_lossy(slice));
-            } else {
-                println!("tried to print from wasm but out of bounds")
-            }
+            let (mem, _) = WasmCtx::mem_env(&mut caller);
+            let slice = mem.deref_slice(message_ptr, message_len).unwrap();
+            println!("from wasm: {}", String::from_utf8_lossy(slice));
         },
     )?;
-    linker.func_wrap(module_name, "_buffer_alloc", WasmCtx::buffer_alloc)?;
+    linker.func_wrap(module_name, "bytes_sink_write", WasmCtx::bytes_sink_write)?;
     let instance = linker.instantiate(&mut store, &module)?;
-    let memory = Memory {
-        mem: instance.get_memory(&mut store, "memory").unwrap(),
-    };
+    let memory = Mem::extract(&instance, &mut store)?;
     store.data_mut().mem = Some(memory);
 
     let mut preinits = instance
@@ -453,63 +315,53 @@ fn extract_descriptions(wasm_file: &Path) -> anyhow::Result<ModuleDef> {
     for (_, func) in preinits {
         func.typed(&store)?.call(&mut store, ())?
     }
-    let module = match instance.get_func(&mut store, "__describe_module__") {
+    let module: RawModuleDef = match instance.get_func(&mut store, "__describe_module__") {
         Some(f) => {
-            let buf: u32 = f.typed(&store)?.call(&mut store, ()).unwrap();
-            let slice = store.data_mut().buffers.remove(buf as usize);
-            bsatn::from_slice(&slice)?
+            store.data_mut().sink = Vec::new();
+            f.typed::<u32, ()>(&store)?.call(&mut store, 1)?;
+            let buf = mem::take(&mut store.data_mut().sink);
+            bsatn::from_slice(&buf)?
         }
-        None => ModuleDef::default(),
+        // TODO: shouldn't we return an error here?
+        None => RawModuleDef::V8BackCompat(RawModuleDefV8::default()),
     };
     Ok(module)
 }
 
 struct WasmCtx {
-    mem: Option<Memory>,
-    buffers: slab::Slab<Vec<u8>>,
+    mem: Option<Mem>,
+    sink: Vec<u8>,
 }
 
 impl WasmCtx {
-    fn mem(&self) -> Memory {
-        self.mem.unwrap()
+    pub fn get_mem(&self) -> Mem {
+        self.mem.expect("Initialized memory")
     }
-    fn buffer_alloc(mut caller: Caller<'_, Self>, data: u32, data_len: u32) -> u32 {
-        let buf = caller
-            .data()
-            .mem()
-            .deref_slice(&caller, data, data_len)
-            .unwrap()
-            .to_vec();
-        caller.data_mut().buffers.insert(buf) as u32
+
+    fn mem_env<'a>(ctx: impl Into<StoreContextMut<'a, Self>>) -> (&'a mut MemView, &'a mut Self) {
+        let ctx = ctx.into();
+        let mem = ctx.data().get_mem();
+        mem.view_and_store_mut(ctx)
     }
-}
 
-#[derive(Copy, Clone)]
-struct Memory {
-    mem: wasmtime::Memory,
-}
-
-impl Memory {
-    fn deref_slice<'a>(&self, store: &'a impl AsContext, offset: u32, len: u32) -> Option<&'a [u8]> {
-        self.mem
-            .data(store.as_context())
-            .get(offset as usize..)?
-            .get(..len as usize)
-    }
-}
-
-fn format_files(generated_files: Vec<PathBuf>, lang: Language) -> anyhow::Result<()> {
-    match lang {
-        Language::Rust => {
-            cmd!("rustup", "component", "add", "rustfmt").run()?;
-            for path in generated_files {
-                cmd!("rustfmt", path.to_str().unwrap()).run()?;
-            }
+    pub fn bytes_sink_write(
+        mut caller: Caller<'_, Self>,
+        sink_handle: u32,
+        buffer_ptr: u32,
+        buffer_len_ptr: u32,
+    ) -> anyhow::Result<u32> {
+        if sink_handle != 1 {
+            return Ok(errno::NO_SUCH_BYTES.get().into());
         }
-        Language::Csharp => {}
-        Language::TypeScript => {}
-        Language::Python => {}
-    }
 
-    Ok(())
+        let (mem, env) = Self::mem_env(&mut caller);
+
+        // Read `buffer_len`, i.e., the capacity of `buffer` pointed to by `buffer_ptr`.
+        let buffer_len = u32::read_from(mem, buffer_len_ptr)?;
+        // Write `buffer` to `sink`.
+        let buffer = mem.deref_slice(buffer_ptr, buffer_len)?;
+        env.sink.extend(buffer);
+
+        Ok(0)
+    }
 }

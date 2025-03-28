@@ -1,8 +1,12 @@
-use std::fmt;
-
-use ::serde::ser as serde;
-
-use crate::ser::{self, Serializer};
+use super::Serialize as _;
+use crate::{
+    algebraic_value::ser::ValueSerializer,
+    ser::{self, Serializer},
+    serde::{SerdeError, SerdeWrapper},
+};
+use crate::{i256, u256};
+use core::fmt;
+use serde::ser as serde;
 
 /// Converts any [`serde::Serializer`] to a SATS [`Serializer`]
 /// so that Serde's data formats can be reused.
@@ -18,9 +22,6 @@ impl<S: serde::Serializer> SerdeSerializer<S> {
     }
 }
 
-/// An error that occured when serializing SATS to a Serde data format.
-pub struct SerdeError<E>(pub E);
-
 impl<E: serde::Error> ser::Error for SerdeError<E> {
     fn custom<T: fmt::Display>(msg: T) -> Self {
         Self(E::custom(msg))
@@ -31,7 +32,6 @@ impl<S: serde::Serializer> Serializer for SerdeSerializer<S> {
     type Ok = S::Ok;
     type Error = SerdeError<S::Error>;
     type SerializeArray = SerializeArray<S::SerializeSeq>;
-    type SerializeMap = SerializeMap<S::SerializeMap>;
     type SerializeSeqProduct = SerializeSeqProduct<S::SerializeTuple>;
     type SerializeNamedProduct = SerializeNamedProduct<S::SerializeMap>;
 
@@ -53,6 +53,9 @@ impl<S: serde::Serializer> Serializer for SerdeSerializer<S> {
     fn serialize_u128(self, v: u128) -> Result<Self::Ok, Self::Error> {
         self.ser.serialize_u128(v).map_err(SerdeError)
     }
+    fn serialize_u256(self, v: u256) -> Result<Self::Ok, Self::Error> {
+        serde::Serialize::serialize(&v, self.ser).map_err(SerdeError)
+    }
     fn serialize_i8(self, v: i8) -> Result<Self::Ok, Self::Error> {
         self.ser.serialize_i8(v).map_err(SerdeError)
     }
@@ -67,6 +70,9 @@ impl<S: serde::Serializer> Serializer for SerdeSerializer<S> {
     }
     fn serialize_i128(self, v: i128) -> Result<Self::Ok, Self::Error> {
         self.ser.serialize_i128(v).map_err(SerdeError)
+    }
+    fn serialize_i256(self, v: i256) -> Result<Self::Ok, Self::Error> {
+        serde::Serialize::serialize(&v, self.ser).map_err(SerdeError)
     }
     fn serialize_f32(self, v: f32) -> Result<Self::Ok, Self::Error> {
         self.ser.serialize_f32(v).map_err(SerdeError)
@@ -87,11 +93,6 @@ impl<S: serde::Serializer> Serializer for SerdeSerializer<S> {
         Ok(SerializeArray { seq })
     }
 
-    fn serialize_map(self, len: usize) -> Result<Self::SerializeMap, Self::Error> {
-        let map = self.ser.serialize_map(Some(len)).map_err(SerdeError)?;
-        Ok(SerializeMap { map })
-    }
-
     fn serialize_seq_product(self, len: usize) -> Result<Self::SerializeSeqProduct, Self::Error> {
         let tup = self.ser.serialize_tuple(len).map_err(SerdeError)?;
         Ok(SerializeSeqProduct { tup })
@@ -109,16 +110,65 @@ impl<S: serde::Serializer> Serializer for SerdeSerializer<S> {
         value: &T,
     ) -> Result<Self::Ok, Self::Error> {
         // can't use serialize_variant cause we're too dynamic :(
-        use ::serde::ser::SerializeMap;
-        let mut map = self.ser.serialize_map(Some(1)).map_err(SerdeError)?;
+        use serde::{SerializeMap, SerializeTuple};
         let value = SerializeWrapper::from_ref(value);
         if let Some(name) = name {
+            let mut map = self.ser.serialize_map(Some(1)).map_err(SerdeError)?;
             map.serialize_entry(name, value).map_err(SerdeError)?;
+            map.end().map_err(SerdeError)
         } else {
-            // FIXME: this probably wouldn't decode if you ran it back through
-            map.serialize_entry(&tag, value).map_err(SerdeError)?;
+            let mut seq = self.ser.serialize_tuple(2).map_err(SerdeError)?;
+            seq.serialize_element(&tag).map_err(SerdeError)?;
+            seq.serialize_element(value).map_err(SerdeError)?;
+            seq.end().map_err(SerdeError)
         }
-        map.end().map_err(SerdeError)
+    }
+
+    unsafe fn serialize_bsatn(self, ty: &crate::AlgebraicType, bsatn: &[u8]) -> Result<Self::Ok, Self::Error> {
+        // TODO(Centril): Consider instead deserializing the `bsatn` through a
+        // deserializer that serializes into `self` directly.
+
+        // First convert the BSATN to an `AlgebraicValue`.
+        // SAFETY: Forward caller requirements of this method to that we are calling.
+        let res = unsafe { ValueSerializer.serialize_bsatn(ty, bsatn) };
+        let value = res.unwrap_or_else(|x| match x {});
+
+        // Then serialize that.
+        value.serialize(self)
+    }
+
+    unsafe fn serialize_bsatn_in_chunks<'a, I: Clone + Iterator<Item = &'a [u8]>>(
+        self,
+        ty: &crate::AlgebraicType,
+        total_bsatn_len: usize,
+        bsatn: I,
+    ) -> Result<Self::Ok, Self::Error> {
+        // TODO(Centril): Unlike above, in this case we must at minimum concatenate `bsatn`
+        // before we can do the piping mentioned above, but that's better than
+        // serializing to `AlgebraicValue` first, so consider that.
+
+        // First convert the BSATN to an `AlgebraicValue`.
+        // SAFETY: Forward caller requirements of this method to that we are calling.
+        let res = unsafe { ValueSerializer.serialize_bsatn_in_chunks(ty, total_bsatn_len, bsatn) };
+        let value = res.unwrap_or_else(|x| match x {});
+
+        // Then serialize that.
+        value.serialize(self)
+    }
+
+    unsafe fn serialize_str_in_chunks<'a, I: Clone + Iterator<Item = &'a [u8]>>(
+        self,
+        total_len: usize,
+        string: I,
+    ) -> Result<Self::Ok, Self::Error> {
+        // First convert the `string` to an `AlgebraicValue`.
+        // SAFETY: Forward caller requirements of this method to that we are calling.
+        let res = unsafe { ValueSerializer.serialize_str_in_chunks(total_len, string) };
+        let value = res.unwrap_or_else(|x| match x {});
+
+        // Then serialize that.
+        // This incurs a very minor cost of branching on `AlgebraicValue::String`.
+        value.serialize(self)
     }
 }
 
@@ -140,31 +190,6 @@ impl<S: serde::SerializeSeq> ser::SerializeArray for SerializeArray<S> {
 
     fn end(self) -> Result<Self::Ok, Self::Error> {
         self.seq.end().map_err(SerdeError)
-    }
-}
-
-/// Serializes map entries by forwarding to `S: serde::SerializeMap`.
-pub struct SerializeMap<S> {
-    /// An implementation of `serde::SerializeMap`.
-    map: S,
-}
-
-impl<S: serde::SerializeMap> ser::SerializeMap for SerializeMap<S> {
-    type Ok = S::Ok;
-    type Error = SerdeError<S::Error>;
-
-    fn serialize_entry<K: ser::Serialize + ?Sized, V: ser::Serialize + ?Sized>(
-        &mut self,
-        key: &K,
-        value: &V,
-    ) -> Result<(), Self::Error> {
-        self.map
-            .serialize_entry(SerializeWrapper::from_ref(key), SerializeWrapper::from_ref(value))
-            .map_err(SerdeError)
-    }
-
-    fn end(self) -> Result<Self::Ok, Self::Error> {
-        self.map.end().map_err(SerdeError)
     }
 }
 
@@ -226,29 +251,9 @@ pub fn serialize_to<T: super::Serialize + ?Sized, S: serde::Serializer>(
         .map_err(|SerdeError(e)| e)
 }
 
-/// Turns a type serializable in SATS into one serializable in serde.
-///
-/// That is, `T: sats::Serialize => SerializeWrapper<T>: serde::Serialize`.
-#[repr(transparent)]
-pub struct SerializeWrapper<T: ?Sized>(T);
+pub use crate::serde::SerdeWrapper as SerializeWrapper;
 
-impl<T: ?Sized> SerializeWrapper<T> {
-    /// Wraps an object serializable in SATS so that it's serializable in Serde.
-    pub fn new(t: T) -> Self
-    where
-        T: Sized,
-    {
-        Self(t)
-    }
-
-    /// Converts `&T` to `&SerializeWrapper<T>`.
-    pub fn from_ref(t: &T) -> &Self {
-        // SAFETY: OK because of `repr(transparent)`.
-        unsafe { &*(t as *const T as *const SerializeWrapper<T>) }
-    }
-}
-
-impl<T: ser::Serialize + ?Sized> serde::Serialize for SerializeWrapper<T> {
+impl<T: ser::Serialize + ?Sized> serde::Serialize for SerdeWrapper<T> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         serialize_to(&self.0, serializer)
     }

@@ -1,44 +1,34 @@
-use std::collections::HashMap;
+use spacetimedb_cli::generate::{csharp::Csharp, extract_descriptions, generate, rust::Rust, typescript::TypeScript};
+use spacetimedb_data_structures::map::HashMap;
+use spacetimedb_testing::modules::{CompilationMode, CompiledModule};
 use std::path::Path;
+use std::sync::OnceLock;
 
-#[test]
-fn test_codegen_output() {
-    let path = Path::new(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../target/wasm32-unknown-unknown/release/rust_wasm_test.wasm"
-    ));
-    if !path.exists() {
-        eprintln!("rust_wasm_test isn't built, skipping");
-        return;
-    }
-    use spacetimedb_cli::generate;
-    println!("{}", path.to_str().unwrap());
-    let outfiles: HashMap<_, _> = generate::generate(path, generate::Language::Csharp, "SpacetimeDB")
-        .unwrap()
-        .into_iter()
-        .collect();
-    insta::with_settings!({ sort_maps => true }, {
-        insta::assert_toml_snapshot!(outfiles);
-    });
+fn compiled_module() -> &'static Path {
+    static COMPILED_MODULE: OnceLock<CompiledModule> = OnceLock::new();
+    COMPILED_MODULE
+        .get_or_init(|| CompiledModule::compile("module-test", CompilationMode::Debug))
+        .path()
 }
 
-#[test]
-fn test_typescript_codegen_output() {
-    let path = Path::new(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../target/wasm32-unknown-unknown/release/rust_wasm_test.wasm"
-    ));
-    if !path.exists() {
-        eprintln!("rust_wasm_test isn't built, skipping");
-        return;
-    }
-    use spacetimedb_cli::generate;
-    println!("{}", path.to_str().unwrap());
-    let outfiles: HashMap<_, _> = generate::generate(path, generate::Language::TypeScript, "SpacetimeDB")
-        .unwrap()
-        .into_iter()
-        .collect();
-    insta::with_settings!({ sort_maps => true }, {
-        insta::assert_toml_snapshot!(outfiles);
-    });
+macro_rules! declare_tests {
+    ($($name:ident => $lang:expr,)*) => ($(
+        #[test]
+        fn $name() {
+            let module = extract_descriptions(compiled_module()).unwrap();
+            let outfiles: HashMap<_, _> = generate(module, &$lang)
+                .unwrap()
+                .into_iter()
+                .collect();
+            insta::with_settings!({ sort_maps => true }, {
+                insta::assert_toml_snapshot!(outfiles);
+            });
+        }
+    )*);
+}
+
+declare_tests! {
+    test_codegen_csharp => Csharp { namespace: "SpacetimeDB" },
+    test_codegen_typescript => TypeScript,
+    test_codegen_rust => Rust,
 }

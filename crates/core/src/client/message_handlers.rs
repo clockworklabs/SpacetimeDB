@@ -1,26 +1,24 @@
-use std::time::Duration;
-
+use super::messages::{SubscriptionUpdateMessage, SwitchedServerMessage, ToProtocol, TransactionUpdateMessage};
+use super::{ClientConnection, DataMessage, Protocol};
 use crate::energy::EnergyQuanta;
+use crate::execution_context::WorkloadType;
 use crate::host::module_host::{EventStatus, ModuleEvent, ModuleFunctionCall};
-use crate::host::{ReducerArgs, Timestamp};
+use crate::host::{ReducerArgs, ReducerId};
 use crate::identity::Identity;
-use crate::protobuf::client_api::{message, FunctionCall, Message, Subscribe};
+use crate::messages::websocket::{CallReducer, ClientMessage, OneOffQuery};
 use crate::worker_metrics::WORKER_METRICS;
-use base64::Engine;
 use bytes::Bytes;
 use bytestring::ByteString;
-use prost::Message as _;
-use spacetimedb_lib::Address;
-
-use super::messages::{ServerMessage, TransactionUpdateMessage};
-use super::{ClientConnection, DataMessage};
+use spacetimedb_lib::de::serde::DeserializeWrapper;
+use spacetimedb_lib::identity::RequestId;
+use spacetimedb_lib::{bsatn, ConnectionId, Timestamp};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 #[derive(thiserror::Error, Debug)]
 pub enum MessageHandleError {
     #[error(transparent)]
-    BinaryDecode(#[from] prost::DecodeError),
-    #[error("unexepected protobuf message type")]
-    InvalidMessage,
+    BinaryDecode(#[from] bsatn::DecodeError),
     #[error(transparent)]
     TextDecode(#[from] serde_json::Error),
     #[error(transparent)]
@@ -30,7 +28,7 @@ pub enum MessageHandleError {
     Execution(#[from] MessageExecutionError),
 }
 
-pub async fn handle(client: &ClientConnection, message: DataMessage) -> Result<(), MessageHandleError> {
+pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Instant) -> Result<(), MessageHandleError> {
     let message_kind = match message {
         DataMessage::Text(_) => "text",
         DataMessage::Binary(_) => "binary",
@@ -38,132 +36,127 @@ pub async fn handle(client: &ClientConnection, message: DataMessage) -> Result<(
 
     WORKER_METRICS
         .websocket_request_msg_size
-        .with_label_values(&client.database_instance_id, message_kind)
+        .with_label_values(&client.replica_id, message_kind)
         .observe(message.len() as f64);
 
     WORKER_METRICS
         .websocket_requests
-        .with_label_values(&client.database_instance_id, message_kind)
+        .with_label_values(&client.replica_id, message_kind)
         .inc();
 
-    match message {
-        DataMessage::Text(message) => handle_text(client, message).await,
-        DataMessage::Binary(message_buf) => handle_binary(client, message_buf).await,
-    }
-}
-
-async fn handle_binary(client: &ClientConnection, message_buf: Vec<u8>) -> Result<(), MessageHandleError> {
-    let message = Message::decode(Bytes::from(message_buf))?;
-    let message = match message.r#type {
-        Some(message::Type::FunctionCall(FunctionCall { ref reducer, arg_bytes })) => {
-            let args = ReducerArgs::Bsatn(arg_bytes.into());
-            DecodedMessage::Call { reducer, args }
+    let message = match message {
+        DataMessage::Text(message) => {
+            let message = ByteString::from(message);
+            // TODO: update json clients and use the ws version
+            serde_json::from_str::<DeserializeWrapper<ClientMessage<ByteString>>>(&message)?
+                .0
+                .map_args(ReducerArgs::Json)
         }
-        Some(message::Type::Subscribe(subscription)) => DecodedMessage::Subscribe(subscription),
-        Some(message::Type::OneOffQuery(ref oneoff)) => DecodedMessage::OneOffQuery {
-            query_string: &oneoff.query_string[..],
-            message_id: &oneoff.message_id[..],
-        },
-        _ => return Err(MessageHandleError::InvalidMessage),
+        DataMessage::Binary(message_buf) => {
+            let message_buf = Bytes::from(message_buf);
+            bsatn::from_slice::<ClientMessage<Bytes>>(&message_buf)?.map_args(ReducerArgs::Bsatn)
+        }
     };
 
-    message.handle(client).await?;
-
-    Ok(())
-}
-
-#[derive(serde::Deserialize)]
-enum RawJsonMessage<'a> {
-    #[serde(rename = "call")]
-    Call {
-        #[serde(borrow, rename = "fn")]
-        func: std::borrow::Cow<'a, str>,
-        args: &'a serde_json::value::RawValue,
-    },
-    #[serde(rename = "subscribe")]
-    Subscribe { query_strings: Vec<String> },
-    #[serde(rename = "one_off_query")]
-    OneOffQuery {
-        #[serde(borrow)]
-        query_string: std::borrow::Cow<'a, str>,
-
-        /// A base64-encoded string of bytes.
-        #[serde(borrow)]
-        message_id: std::borrow::Cow<'a, str>,
-    },
-}
-
-async fn handle_text(client: &ClientConnection, message: String) -> Result<(), MessageHandleError> {
-    let message = ByteString::from(message);
-    let msg = serde_json::from_str::<RawJsonMessage>(&message)?;
-    let mut message_id_ = Vec::new();
-    let msg = match msg {
-        RawJsonMessage::Call { ref func, args } => {
-            let args = ReducerArgs::Json(message.slice_ref(args.get()));
-            DecodedMessage::Call { reducer: func, args }
+    let database_identity = client.module.info().database_identity;
+    let res = match message {
+        ClientMessage::CallReducer(CallReducer {
+            ref reducer,
+            args,
+            request_id,
+            flags,
+        }) => {
+            let res = client.call_reducer(reducer, args, request_id, timer, flags).await;
+            WORKER_METRICS
+                .request_round_trip
+                .with_label_values(&WorkloadType::Reducer, &database_identity, reducer)
+                .observe(timer.elapsed().as_secs_f64());
+            res.map(drop).map_err(|e| {
+                (
+                    Some(reducer),
+                    client
+                        .module
+                        .info()
+                        .module_def
+                        .reducer_full(&**reducer)
+                        .map(|(id, _)| id),
+                    e.into(),
+                )
+            })
         }
-        RawJsonMessage::Subscribe { query_strings } => DecodedMessage::Subscribe(Subscribe { query_strings }),
-        RawJsonMessage::OneOffQuery {
-            query_string: ref query,
+        ClientMessage::SubscribeMulti(subscription) => {
+            let res = client.subscribe_multi(subscription, timer).await;
+            WORKER_METRICS
+                .request_round_trip
+                .with_label_values(&WorkloadType::Subscribe, &database_identity, "")
+                .observe(timer.elapsed().as_secs_f64());
+            res.map_err(|e| (None, None, e.into()))
+        }
+        ClientMessage::UnsubscribeMulti(request) => {
+            let res = client.unsubscribe_multi(request, timer).await;
+            WORKER_METRICS
+                .request_round_trip
+                .with_label_values(&WorkloadType::Unsubscribe, &database_identity, "")
+                .observe(timer.elapsed().as_secs_f64());
+            res.map_err(|e| (None, None, e.into()))
+        }
+        ClientMessage::SubscribeSingle(subscription) => {
+            let res = client.subscribe_single(subscription, timer).await;
+            WORKER_METRICS
+                .request_round_trip
+                .with_label_values(&WorkloadType::Subscribe, &database_identity, "")
+                .observe(timer.elapsed().as_secs_f64());
+            res.map_err(|e| (None, None, e.into()))
+        }
+        ClientMessage::Unsubscribe(request) => {
+            let res = client.unsubscribe(request, timer).await;
+            WORKER_METRICS
+                .request_round_trip
+                .with_label_values(&WorkloadType::Unsubscribe, &database_identity, "")
+                .observe(timer.elapsed().as_secs_f64());
+            res.map_err(|e| (None, None, e.into()))
+        }
+        ClientMessage::Subscribe(subscription) => {
+            let res = client.subscribe(subscription, timer).await;
+            WORKER_METRICS
+                .request_round_trip
+                .with_label_values(&WorkloadType::Subscribe, &database_identity, "")
+                .observe(timer.elapsed().as_secs_f64());
+            res.map_err(|e| (None, None, e.into()))
+        }
+        ClientMessage::OneOffQuery(OneOffQuery {
+            query_string: query,
             message_id,
-        } => {
-            let _ = std::mem::replace(
-                &mut message_id_,
-                base64::engine::general_purpose::STANDARD.decode(&message_id[..])?,
-            );
-            DecodedMessage::OneOffQuery {
-                query_string: &query[..],
-                message_id: &message_id_[..],
-            }
+        }) => {
+            let res = match client.config.protocol {
+                Protocol::Binary => client.one_off_query_bsatn(&query, &message_id, timer),
+                Protocol::Text => client.one_off_query_json(&query, &message_id, timer),
+            };
+            WORKER_METRICS
+                .request_round_trip
+                .with_label_values(&WorkloadType::Sql, &database_identity, "")
+                .observe(timer.elapsed().as_secs_f64());
+            res.map_err(|err| (None, None, err))
         }
     };
-
-    msg.handle(client).await?;
+    res.map_err(|(reducer, reducer_id, err)| MessageExecutionError {
+        reducer: reducer.cloned(),
+        reducer_id,
+        caller_identity: client.id.identity,
+        caller_connection_id: Some(client.id.connection_id),
+        err,
+    })?;
 
     Ok(())
 }
 
-enum DecodedMessage<'a> {
-    Call {
-        reducer: &'a str,
-        args: ReducerArgs,
-    },
-    Subscribe(Subscribe),
-    OneOffQuery {
-        query_string: &'a str,
-        message_id: &'a [u8],
-    },
-}
-
-impl DecodedMessage<'_> {
-    async fn handle(self, client: &ClientConnection) -> Result<(), MessageExecutionError> {
-        let res = match self {
-            DecodedMessage::Call { reducer, args } => {
-                let res = client.call_reducer(reducer, args).await;
-                res.map(drop).map_err(|e| (Some(reducer), e.into()))
-            }
-            DecodedMessage::Subscribe(subscription) => client.subscribe(subscription).map_err(|e| (None, e.into())),
-            DecodedMessage::OneOffQuery {
-                query_string: query,
-                message_id,
-            } => client.one_off_query(query, message_id).await.map_err(|err| (None, err)),
-        };
-        res.map_err(|(reducer, err)| MessageExecutionError {
-            reducer: reducer.map(str::to_owned),
-            caller_identity: client.id.identity,
-            caller_address: Some(client.id.address),
-            err,
-        })
-    }
-}
-
-/// An error that arises from executing a message.  
 #[derive(thiserror::Error, Debug)]
 #[error("error executing message (reducer: {reducer:?}) (err: {err:?})")]
 pub struct MessageExecutionError {
-    pub reducer: Option<String>,
+    pub reducer: Option<Box<str>>,
+    pub reducer_id: Option<ReducerId>,
     pub caller_identity: Identity,
-    pub caller_address: Option<Address>,
+    pub caller_connection_id: Option<ConnectionId>,
     #[source]
     pub err: anyhow::Error,
 }
@@ -173,54 +166,28 @@ impl MessageExecutionError {
         ModuleEvent {
             timestamp: Timestamp::now(),
             caller_identity: self.caller_identity,
-            caller_address: self.caller_address,
+            caller_connection_id: self.caller_connection_id,
             function_call: ModuleFunctionCall {
-                reducer: self.reducer.unwrap_or_else(|| "<none>".to_owned()),
+                reducer: self.reducer.unwrap_or_else(|| "<none>".into()).into(),
+                reducer_id: self.reducer_id.unwrap_or(u32::MAX.into()),
                 args: Default::default(),
             },
             status: EventStatus::Failed(format!("{:#}", self.err)),
             energy_quanta_used: EnergyQuanta::ZERO,
             host_execution_duration: Duration::ZERO,
+            request_id: Some(RequestId::default()),
+            timer: None,
         }
     }
 }
 
-impl ServerMessage for MessageExecutionError {
-    fn serialize_text(self) -> crate::json::client_api::MessageJson {
+impl ToProtocol for MessageExecutionError {
+    type Encoded = SwitchedServerMessage;
+    fn to_protocol(self, protocol: super::Protocol) -> Self::Encoded {
         TransactionUpdateMessage {
-            event: &mut self.into_event(),
-            database_update: Default::default(),
+            event: Some(Arc::new(self.into_event())),
+            database_update: SubscriptionUpdateMessage::default_for_protocol(protocol, None),
         }
-        .serialize_text()
-    }
-
-    fn serialize_binary(self) -> Message {
-        TransactionUpdateMessage {
-            event: &mut self.into_event(),
-            database_update: Default::default(),
-        }
-        .serialize_binary()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::RawJsonMessage;
-
-    #[test]
-    fn parse_one_off_query() {
-        let message = r#"{ "one_off_query": { "message_id": "ywS3WFquDECZQ0UdLZN1IA==", "query_string": "SELECT * FROM User WHERE name != 'bananas'" } }"#;
-        let parsed = serde_json::from_str::<RawJsonMessage>(message).unwrap();
-
-        if let RawJsonMessage::OneOffQuery {
-            query_string: query,
-            message_id,
-        } = parsed
-        {
-            assert_eq!(query, "SELECT * FROM User WHERE name != 'bananas'");
-            assert_eq!(message_id, "ywS3WFquDECZQ0UdLZN1IA==");
-        } else {
-            panic!("wrong variant")
-        }
+        .to_protocol(protocol)
     }
 }

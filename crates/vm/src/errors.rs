@@ -1,25 +1,35 @@
-use crate::operator::{Op, OpLogic};
-use crate::types::Ty;
-use spacetimedb_sats::db::error::{AuthError, RelationError};
-use spacetimedb_sats::AlgebraicValue;
+use spacetimedb_lib::db::error::{AuthError, RelationError};
+use spacetimedb_lib::operator::OpLogic;
+use spacetimedb_sats::{AlgebraicType, AlgebraicValue};
 use std::fmt;
 use thiserror::Error;
+
+use crate::expr::SourceId;
+
+#[derive(Error, Debug)]
+pub enum ConfigError {
+    #[error("Config parameter `{0}` not found.")]
+    NotFound(String),
+    #[error("Value for config parameter `{0}` is invalid: `{1:?}`. Expected: `{2:?}`")]
+    TypeError(String, AlgebraicValue, AlgebraicType),
+}
 
 /// Typing Errors
 #[derive(Error, Debug)]
 pub enum ErrorType {
-    #[error("Expect {0}, but got {1}")]
-    Expect(Ty, Ty),
-    #[error("Function {0} not found")]
-    NotFoundFun(String),
-    #[error("Binary op {0:?} expect {1} arguments, but got {2}")]
-    OpMiss(Op, usize, usize),
-    #[error("Logic op {0:?} expect arguments that resolve to `bool`, but it got the value `{{1.to_satn()}}`")]
-    OpLogic(OpLogic, AlgebraicValue),
-    #[error("Field should resolve to `bool`, but it got the value `{{0.to_satn()}}`")]
-    FieldBool(AlgebraicValue),
     #[error("Error Parsing `{value}` into type [{ty}]: {err}")]
     Parse { value: String, ty: String, err: String },
+    #[error("Type Mismatch Join: `{lhs}` != `{rhs}`")]
+    TypeMismatchJoin { lhs: String, rhs: String },
+    #[error("Type Mismatch: `{lhs}` != `{rhs}`")]
+    TypeMismatch { lhs: String, rhs: String },
+    #[error("Type Mismatch: `{lhs}` {op} `{rhs}`, both sides must be an `{expected}` expression")]
+    TypeMismatchLogic {
+        op: OpLogic,
+        lhs: String,
+        rhs: String,
+        expected: String,
+    },
 }
 
 /// Vm Errors
@@ -35,6 +45,10 @@ pub enum ErrorVm {
     Auth(#[from] AuthError),
     #[error("Unsupported: {0}")]
     Unsupported(String),
+    #[error("No source table with index {0:?}")]
+    NoSuchSource(SourceId),
+    #[error("ConfigError: {0}")]
+    Config(#[from] ConfigError),
     #[error("{0}")]
     Other(#[from] anyhow::Error),
 }
@@ -130,6 +144,12 @@ impl From<ErrorVm> for ErrorLang {
             ErrorVm::Unsupported(err) => ErrorLang::new(ErrorKind::Compiler, Some(&err)),
             ErrorVm::Lang(err) => err,
             ErrorVm::Auth(err) => ErrorLang::new(ErrorKind::Unauthorized, Some(&err.to_string())),
+            ErrorVm::Config(err) => ErrorLang::new(ErrorKind::Db, Some(&err.to_string())),
+            err @ ErrorVm::NoSuchSource(_) => ErrorLang {
+                kind: ErrorKind::Invalid,
+                msg: Some(format!("{err:?}")),
+                context: None,
+            },
         }
     }
 }

@@ -1,9 +1,10 @@
 [package]
 name = "spacetimedb-lib"
-version = "0.8.1"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 license-file = "LICENSE"
 description = "A common library for SpacetimeDB"
+rust-version.workspace = true
 
 [lib]
 # Benching off, because of https://bheisler.github.io/criterion.rs/book/faq.html#cargo-bench-gives-unrecognized-option-errors-for-valid-command-line-options
@@ -14,42 +15,46 @@ name = "serde"
 required-features = ["serde"]
 
 [features]
-default = ["serde"]
-serde = ["dep:serde", "spacetimedb-sats/serde", "dep:serde_with", "chrono/serde"]
-cli = ["clap"]
+default = ["serde", "metrics_impls"]
+serde = ["dep:serde", "spacetimedb-sats/serde"]
 # Allows using `Arbitrary` impls defined in this crate.
 proptest = ["dep:proptest", "dep:proptest-derive"]
+# Allows using additional test methods.
+test = ["proptest", "spacetimedb-sats/test"]
+metrics_impls = ["dep:spacetimedb-metrics", "spacetimedb-sats/metrics_impls"]
+enum-map = ["dep:enum-map"]
 
 [dependencies]
-spacetimedb-bindings-macro = { path = "../bindings-macro", version = "0.8.1" }
-spacetimedb-sats = { path = "../sats", version = "0.8.1" }
-spacetimedb-primitives = { path = "../primitives", version = "0.8.1" }
-spacetimedb-metrics = { path = "../metrics", version = "0.8.1" }
+spacetimedb-bindings-macro.workspace = true
+spacetimedb-sats.workspace = true
+spacetimedb-primitives.workspace = true
+spacetimedb-metrics = { workspace = true, optional = true }
+spacetimedb-data-structures.workspace = true
 
 anyhow.workspace = true
 bitflags.workspace = true
-chrono = { workspace = true, optional = true }
-clap = {workspace = true, optional = true }
+chrono.workspace = true
 derive_more.workspace = true
 enum-as-inner.workspace = true
 hex.workspace = true
 itertools.workspace = true
-once_cell.workspace = true
-prometheus.workspace = true
 serde = { workspace = true, optional = true }
-serde_with = {workspace = true, optional = true }
 thiserror.workspace = true
-tracing.workspace = true
+blake3.workspace = true
+enum-map = { workspace = true, optional = true }
 
 # For the 'proptest' feature.
 proptest = { workspace = true, optional = true }
 proptest-derive = { workspace = true, optional = true }
+rand.workspace = true
 
 [dev-dependencies]
+spacetimedb-sats = { workspace = true, features = ["test"] }
 rand.workspace = true
 bytes.workspace = true
 serde_json.workspace = true
 insta.workspace = true
+ron.workspace = true
 
 # Also as dev-dependencies for use in _this_ crate's tests.
 proptest.workspace = true

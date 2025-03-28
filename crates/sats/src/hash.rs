@@ -1,9 +1,7 @@
 use crate::hex::HexString;
-use crate::{impl_deserialize, impl_serialize, impl_st, AlgebraicType};
+use crate::{impl_deserialize, impl_serialize, impl_st, u256, AlgebraicType};
 use core::fmt;
 use sha3::{Digest, Keccak256};
-use spacetimedb_metrics::impl_prometheusvalue_string;
-use spacetimedb_metrics::typed_prometheus::AsPrometheusLabel;
 
 pub const HASH_SIZE: usize = 32;
 
@@ -13,25 +11,30 @@ pub struct Hash {
     pub data: [u8; HASH_SIZE],
 }
 
-impl_st!([] Hash, _ts => AlgebraicType::bytes());
-impl_serialize!([] Hash, (self, ser) => self.data.serialize(ser));
-impl_deserialize!([] Hash, de => Ok(Self { data: <_>::deserialize(de)? }));
-impl_prometheusvalue_string!(Hash);
+impl_st!([] Hash, AlgebraicType::U256);
+impl_serialize!([] Hash, (self, ser) => u256::from_le_bytes(self.data).serialize(ser));
+impl_deserialize!([] Hash, de => Ok(Self { data: <_>::deserialize(de).map(u256::to_le_bytes)? }));
+
+#[cfg(feature = "metrics_impls")]
+impl spacetimedb_metrics::typed_prometheus::AsPrometheusLabel for Hash {
+    fn as_prometheus_str(&self) -> impl AsRef<str> + '_ {
+        self.to_hex()
+    }
+}
 
 impl Hash {
-    pub const ZERO: Self = Self { data: [0; HASH_SIZE] };
+    pub const ZERO: Self = Self::from_byte_array([0; HASH_SIZE]);
 
-    pub fn from_arr(arr: &[u8; HASH_SIZE]) -> Self {
-        Self { data: *arr }
+    pub const fn from_byte_array(data: [u8; HASH_SIZE]) -> Self {
+        Self { data }
     }
 
-    pub fn from_slice(slice: &[u8]) -> Self {
-        Self {
-            data: slice.try_into().unwrap(),
-        }
+    pub fn from_u256(val: u256) -> Self {
+        Self::from_byte_array(val.to_le_bytes())
     }
-    pub fn to_vec(&self) -> Vec<u8> {
-        self.data.to_vec()
+
+    pub fn to_u256(self) -> u256 {
+        u256::from_le_bytes(self.data)
     }
 
     pub fn to_hex(&self) -> HexString<32> {
@@ -42,23 +45,13 @@ impl Hash {
         self.data[..16].try_into().unwrap()
     }
 
-    pub fn to_abbreviated_hex(&self) -> HexString<16> {
-        crate::hex::encode(self.abbreviate())
-    }
-
-    pub fn as_slice(&self) -> &[u8] {
-        self.data.as_slice()
-    }
-
     pub fn from_hex(hex: impl AsRef<[u8]>) -> Result<Self, hex::FromHexError> {
         hex::FromHex::from_hex(hex)
     }
 }
 
-#[tracing::instrument(skip_all)]
 pub fn hash_bytes(bytes: impl AsRef<[u8]>) -> Hash {
-    let data: [u8; HASH_SIZE] = Keccak256::digest(bytes).into();
-    Hash { data }
+    Hash::from_byte_array(Keccak256::digest(bytes).into())
 }
 
 impl fmt::Display for Hash {
@@ -72,8 +65,6 @@ impl fmt::Debug for Hash {
         f.debug_tuple("Hash").field(&format_args!("{self}")).finish()
     }
 }
-
-pub struct HashFromHexError(usize);
 
 impl hex::FromHex for Hash {
     type Error = hex::FromHexError;

@@ -3,30 +3,46 @@ use criterion::{
     measurement::{Measurement, WallTime},
     Bencher, BenchmarkGroup, Criterion,
 };
-use mimalloc::MiMalloc;
+use lazy_static::lazy_static;
 use spacetimedb_bench::{
     database::BenchDatabase,
-    schemas::{create_sequential, BenchTable, IndexStrategy, Location, Person, RandomTable, BENCH_PKEY_INDEX},
+    schemas::{create_sequential, u32_u64_str, u32_u64_u64, BenchTable, IndexStrategy, RandomTable},
     spacetime_module, spacetime_raw, sqlite, ResultBench,
 };
 use spacetimedb_lib::sats::AlgebraicType;
+use spacetimedb_primitives::ColId;
+use spacetimedb_testing::modules::{Csharp, Rust};
 
+#[cfg(target_env = "msvc")]
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
+
+#[cfg(not(target_env = "msvc"))]
+use tikv_jemallocator::Jemalloc;
+
+#[cfg(not(target_env = "msvc"))]
+#[global_allocator]
+static GLOBAL: Jemalloc = Jemalloc;
+
+lazy_static! {
+    static ref RUN_ONE_MILLION: bool = std::env::var("RUN_ONE_MILLION").is_ok();
+}
 
 fn criterion_benchmark(c: &mut Criterion) {
     bench_suite::<sqlite::SQLite>(c, true).unwrap();
     bench_suite::<spacetime_raw::SpacetimeRaw>(c, true).unwrap();
-    bench_suite::<spacetime_module::SpacetimeModule>(c, true).unwrap();
+    bench_suite::<spacetime_module::SpacetimeModule<Rust>>(c, true).unwrap();
+    bench_suite::<spacetime_module::SpacetimeModule<Csharp>>(c, true).unwrap();
 
     bench_suite::<sqlite::SQLite>(c, false).unwrap();
     bench_suite::<spacetime_raw::SpacetimeRaw>(c, false).unwrap();
-    bench_suite::<spacetime_module::SpacetimeModule>(c, false).unwrap();
+    bench_suite::<spacetime_module::SpacetimeModule<Rust>>(c, false).unwrap();
+    bench_suite::<spacetime_module::SpacetimeModule<Csharp>>(c, false).unwrap();
 }
 
 #[inline(never)]
 fn bench_suite<DB: BenchDatabase>(c: &mut Criterion, in_memory: bool) -> ResultBench<()> {
-    let mut db = DB::build(in_memory, false)?; // don't need fsync benchmarks anymore
+    let mut db = DB::build(in_memory)?;
     let param_db_name = DB::name();
     let param_in_memory = if in_memory { "mem" } else { "disk" };
     let db_params = format!("{param_db_name}/{param_in_memory}");
@@ -35,8 +51,8 @@ fn bench_suite<DB: BenchDatabase>(c: &mut Criterion, in_memory: bool) -> ResultB
 
     empty(&mut g, &mut db)?;
 
-    table_suite::<DB, Person>(&mut g, &mut db)?;
-    table_suite::<DB, Location>(&mut g, &mut db)?;
+    table_suite::<DB, u32_u64_str>(&mut g, &mut db)?;
+    table_suite::<DB, u32_u64_u64>(&mut g, &mut db)?;
 
     Ok(())
 }
@@ -50,38 +66,37 @@ fn table_suite<DB: BenchDatabase, T: BenchTable + RandomTable>(g: &mut Group, db
 
     type TableData<TableId> = (IndexStrategy, TableId, String);
     let mut prep_table = |index_strategy: IndexStrategy| -> ResultBench<TableData<DB::TableId>> {
-        let table_name = T::name_snake_case();
-        let style_name = index_strategy.snake_case();
+        let table_name = T::name();
+        let style_name = index_strategy.name();
         let table_params = format!("{table_name}/{style_name}");
         let table_id = db.create_table::<T>(index_strategy)?;
 
         Ok((index_strategy, table_id, table_params))
     };
-    let tables: [TableData<DB::TableId>; 3] = [
-        prep_table(IndexStrategy::Unique)?,
-        prep_table(IndexStrategy::NonUnique)?,
-        prep_table(IndexStrategy::MultiIndex)?,
+    let tables: [TableData<DB::TableId>; 2] = [
+        prep_table(IndexStrategy::Unique0)?,
+        //prep_table(IndexStrategy::NoIndex)?,
+        prep_table(IndexStrategy::BTreeEachColumn)?,
     ];
 
     for (_, table_id, table_params) in &tables {
-        insert_1::<DB, T>(g, table_params, db, table_id, 0)?;
-        insert_1::<DB, T>(g, table_params, db, table_id, 1000)?;
-    }
-    for (_, table_id, table_params) in &tables {
-        insert_bulk::<DB, T>(g, table_params, db, table_id, 0, 100)?;
-        insert_bulk::<DB, T>(g, table_params, db, table_id, 1000, 100)?;
+        insert_bulk::<DB, T>(g, table_params, db, table_id, 2048, 256)?;
+        if *RUN_ONE_MILLION {
+            insert_bulk::<DB, T>(g, table_params, db, table_id, 0, 1_000_000)?;
+        }
     }
     for (index_strategy, table_id, table_params) in &tables {
-        if *index_strategy == IndexStrategy::Unique {
-            iterate::<DB, T>(g, table_params, db, table_id, 100)?;
-
-            if table_params.contains("person") {
-                // perform "find" benchmarks
-                find::<DB, T>(g, db, table_id, index_strategy, BENCH_PKEY_INDEX, 1000, 100)?;
+        if *index_strategy == IndexStrategy::Unique0 {
+            // Iterate is unaffected by index strategy, so only run it here
+            iterate::<DB, T>(g, table_params, db, table_id, 256)?;
+            // Update can only be performed with a unique key
+            update_bulk::<DB, T>(g, table_params, db, table_id, 2048, 256)?;
+            if *RUN_ONE_MILLION {
+                update_bulk::<DB, T>(g, table_params, db, table_id, 1_000_000, 1_000_000)?;
             }
         } else {
             // perform "filter" benchmarks
-            filter::<DB, T>(g, db, table_id, index_strategy, 1, 1000, 100)?;
+            filter::<DB, T>(g, db, table_id, index_strategy, 2, 2048, 8)?;
         }
     }
 
@@ -143,41 +158,6 @@ fn empty<DB: BenchDatabase>(g: &mut Group, db: &mut DB) -> ResultBench<()> {
 }
 
 #[inline(never)]
-fn insert_1<DB: BenchDatabase, T: BenchTable + RandomTable>(
-    g: &mut Group,
-    table_params: &str,
-    db: &mut DB,
-    table_id: &DB::TableId,
-    load: u32,
-) -> ResultBench<()> {
-    let id = format!("insert_1/{table_params}/load={load}");
-    let data = create_sequential::<T>(0xdeadbeef, load + 1, 1000);
-
-    // Each iteration performs one transaction.
-    g.throughput(criterion::Throughput::Elements(1));
-
-    g.bench_function(&id, |b| {
-        bench_harness(
-            b,
-            db,
-            |db| {
-                let mut data = data.clone();
-                db.clear_table(table_id)?;
-                let row = data.pop().unwrap();
-                db.insert_bulk(table_id, data)?;
-                Ok(row)
-            },
-            |db, row| {
-                db.insert(table_id, row)?;
-                Ok(())
-            },
-        )
-    });
-    db.clear_table(table_id)?;
-    Ok(())
-}
-
-#[inline(never)]
 fn insert_bulk<DB: BenchDatabase, T: BenchTable + RandomTable>(
     g: &mut Group,
     table_params: &str,
@@ -191,6 +171,8 @@ fn insert_bulk<DB: BenchDatabase, T: BenchTable + RandomTable>(
 
     // Each iteration performs one transaction, though it inserts many rows.
     g.throughput(criterion::Throughput::Elements(1));
+    // FIXME: only for 1_000_000 inserts
+    g.sample_size(10);
 
     g.bench_function(&id, |b| {
         bench_harness(
@@ -207,6 +189,44 @@ fn insert_bulk<DB: BenchDatabase, T: BenchTable + RandomTable>(
             },
             |db, to_insert| {
                 db.insert_bulk(table_id, to_insert)?;
+                Ok(())
+            },
+        )
+    });
+    db.clear_table(table_id)?;
+    Ok(())
+}
+
+#[inline(never)]
+fn update_bulk<DB: BenchDatabase, T: BenchTable + RandomTable>(
+    g: &mut Group,
+    table_params: &str,
+    db: &mut DB,
+    table_id: &DB::TableId,
+    load: u32,
+    count: u32,
+) -> ResultBench<()> {
+    let id = format!("update_bulk/{table_params}/load={load}/count={count}");
+    let data = create_sequential::<T>(0xdeadbeef, load, 1000);
+
+    // Each iteration performs one transaction, though it inserts many rows.
+    g.throughput(criterion::Throughput::Elements(1));
+
+    // running a big guy
+    g.sample_size(10);
+
+    g.bench_function(&id, |b| {
+        bench_harness(
+            b,
+            db,
+            |db| {
+                let data = data.clone();
+                db.clear_table(table_id)?;
+                db.insert_bulk(table_id, data)?;
+                Ok(())
+            },
+            |db, _| {
+                db.update_bulk::<T>(table_id, count)?;
                 Ok(())
             },
         )
@@ -253,11 +273,13 @@ fn filter<DB: BenchDatabase, T: BenchTable + RandomTable>(
     db: &mut DB,
     table_id: &DB::TableId,
     index_strategy: &IndexStrategy,
-    column_index: u32,
+    col_id: impl Into<ColId>,
     load: u32,
     buckets: u32,
 ) -> ResultBench<()> {
-    let filter_column_type = match T::product_type().elements[column_index as usize].algebraic_type {
+    let col_id = col_id.into();
+
+    let filter_column_type = match T::product_type().elements[col_id.idx()].algebraic_type {
         AlgebraicType::String => "string",
         AlgebraicType::U32 => "u32",
         AlgebraicType::U64 => "u64",
@@ -265,8 +287,8 @@ fn filter<DB: BenchDatabase, T: BenchTable + RandomTable>(
     };
     let mean_result_count = load / buckets;
     let indexed = match index_strategy {
-        IndexStrategy::MultiIndex => "indexed",
-        IndexStrategy::NonUnique => "non_indexed",
+        IndexStrategy::BTreeEachColumn => "index",
+        IndexStrategy::NoIndex => "no_index",
         _ => unimplemented!(),
     };
     let id = format!("filter/{filter_column_type}/{indexed}/load={load}/count={mean_result_count}");
@@ -289,60 +311,12 @@ fn filter<DB: BenchDatabase, T: BenchTable + RandomTable>(
             db,
             |_| {
                 // pick something to look for
-                let value = data[i].clone().into_product_value().elements[column_index as usize].clone();
+                let value = data[i].clone().into_product_value().elements[col_id.idx()].clone();
                 i = (i + 1) % load as usize;
                 Ok(value)
             },
             |db, value| {
-                db.filter::<T>(table_id, column_index, value)?;
-                Ok(())
-            },
-        )
-    });
-    db.clear_table(table_id)?;
-    Ok(())
-}
-
-#[inline(never)]
-fn find<DB: BenchDatabase, T: BenchTable + RandomTable>(
-    g: &mut Group,
-    db: &mut DB,
-    table_id: &DB::TableId,
-    index_strategy: &IndexStrategy,
-    column_id: u32,
-    load: u32,
-    buckets: u32,
-) -> ResultBench<()> {
-    assert_eq!(
-        *index_strategy,
-        IndexStrategy::Unique,
-        "find benchmarks require unique key"
-    );
-    let id = format!("find_unique/u32/load={load}");
-
-    let data = create_sequential::<T>(0xdeadbeef, load, buckets as u64);
-
-    db.insert_bulk(table_id, data.clone())?;
-
-    // Each iteration performs a single transaction.
-    g.throughput(criterion::Throughput::Elements(1));
-
-    // We loop through all buckets found in the sample data.
-    // This mildly increases variance on the benchmark, but makes "mean_result_count" more accurate.
-    // Note that all benchmarks use exactly the same sample data.
-    let mut i = 0;
-
-    g.bench_function(&id, |b| {
-        bench_harness(
-            b,
-            db,
-            |_| {
-                let value = data[i].clone().into_product_value().elements[column_id as usize].clone();
-                i = (i + 1) % load as usize;
-                Ok(value)
-            },
-            |db, value| {
-                db.filter::<T>(table_id, column_id, value)?;
+                db.filter::<T>(table_id, col_id, value)?;
                 Ok(())
             },
         )

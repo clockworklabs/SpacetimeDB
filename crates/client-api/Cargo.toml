@@ -1,15 +1,20 @@
 [package]
 name = "spacetimedb-client-api"
-version = "0.8.1"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 license-file = "LICENSE"
 description = "The HTTP API for SpacetimeDB"
 
 [dependencies]
-spacetimedb-core = { path = "../core", version = "0.8.1" }
+spacetimedb-client-api-messages.workspace = true
+spacetimedb-core.workspace = true
+spacetimedb-data-structures.workspace = true
+spacetimedb-lib = { workspace = true, features = ["serde"] }
+spacetimedb-paths.workspace = true
+spacetimedb-schema.workspace = true
+
 tokio = { version = "1.2", features = ["full"] }
 lazy_static = "1.4.0"
-spacetimedb-lib = { path = "../lib", version = "0.8.1" }
 log = "0.4.4"
 serde = "1.0.136"
 serde_json = { version = "1.0", features = ["raw_value"] }
@@ -19,7 +24,7 @@ prometheus = "0.13.0"
 email_address = "0.2.3"
 tempfile.workspace = true
 async-trait = "0.1.60"
-chrono = { version = "0.4.23", features = ["serde"]}
+chrono = { workspace = true, features = ["serde"] }
 rand = "0.8.5"
 axum.workspace = true
 axum-extra.workspace = true
@@ -29,9 +34,20 @@ http.workspace = true
 headers.workspace = true
 mime = "0.3.17"
 tokio-stream = { version = "0.1.12", features = ["sync"] }
+tower-layer.workspace = true
+tower-service.workspace = true
+tower-http.workspace = true
 futures = "0.3"
 bytes = "1"
+tracing.workspace = true
 bytestring = "1"
 tokio-tungstenite.workspace = true
-itoa = "1.0.9"
+itoa.workspace = true
 derive_more = "0.99.17"
+uuid.workspace = true
+jsonwebtoken.workspace = true
+scopeguard.workspace = true
+serde_with.workspace = true
+
+[dev-dependencies]
+jsonwebtoken.workspace = true

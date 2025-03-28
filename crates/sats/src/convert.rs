@@ -1,37 +1,27 @@
-use crate::{AlgebraicType, AlgebraicValue, ArrayType, BuiltinType, MapType, ProductType, ProductValue};
-use spacetimedb_primitives::{ColId, ConstraintId, IndexId, SequenceId, TableId};
+use crate::{i256, u256};
+use crate::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
+use spacetimedb_primitives::{ColId, ConstraintId, IndexId, ScheduleId, SequenceId, TableId};
 
 impl crate::Value for AlgebraicValue {
     type Type = AlgebraicType;
 }
 
-impl From<AlgebraicValue> for ProductValue {
-    fn from(x: AlgebraicValue) -> Self {
-        Self { elements: [x].into() }
+impl<X: Into<Box<[AlgebraicValue]>>> From<X> for ProductValue {
+    fn from(elements: X) -> Self {
+        let elements = elements.into();
+        ProductValue { elements }
     }
 }
 
-impl From<&AlgebraicValue> for ProductValue {
-    fn from(x: &AlgebraicValue) -> Self {
-        x.clone().into()
+impl From<AlgebraicValue> for ProductValue {
+    fn from(x: AlgebraicValue) -> Self {
+        [x].into()
     }
 }
 
 impl From<AlgebraicType> for ProductType {
     fn from(x: AlgebraicType) -> Self {
         Self::new([x.into()].into())
-    }
-}
-
-impl From<ArrayType> for AlgebraicType {
-    fn from(x: ArrayType) -> Self {
-        BuiltinType::Array(x).into()
-    }
-}
-
-impl From<MapType> for AlgebraicType {
-    fn from(x: MapType) -> Self {
-        BuiltinType::Map(Box::new(x)).into()
     }
 }
 
@@ -45,10 +35,16 @@ macro_rules! built_in_into {
     };
 }
 
+built_in_into!(u128, U128);
+built_in_into!(i128, I128);
+built_in_into!(u256, U256);
+built_in_into!(i256, I256);
 built_in_into!(f32, F32);
 built_in_into!(f64, F64);
 built_in_into!(&str, String);
+built_in_into!(String, String);
 built_in_into!(&[u8], Bytes);
+built_in_into!(Box<[u8]>, Bytes);
 
 macro_rules! system_id {
     ($name:ident) => {
@@ -64,3 +60,4 @@ system_id!(ColId);
 system_id!(SequenceId);
 system_id!(IndexId);
 system_id!(ConstraintId);
+system_id!(ScheduleId);

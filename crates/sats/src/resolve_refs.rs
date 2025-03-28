@@ -1,5 +1,5 @@
 use crate::{
-    AlgebraicType, AlgebraicTypeRef, ArrayType, BuiltinType, MapType, ProductType, ProductTypeElement, SumType,
+    typespace::TypeRefError, AlgebraicType, AlgebraicTypeRef, ArrayType, ProductType, ProductTypeElement, SumType,
     SumTypeVariant, WithTypespace,
 };
 
@@ -22,8 +22,8 @@ pub trait ResolveRefs {
     /// within `this` (typing context carried) resolved
     /// using the provided resolver `state`.
     ///
-    /// `None` is only returned if there were cycles in the precense of recursive μ-types.
-    fn resolve_refs(this: WithTypespace<'_, Self>, state: &mut ResolveRefState) -> Option<Self::Output>;
+    /// `Err` is returned if a cycle was detected, or if any `AlgebraicTypeRef` touched was invalid.
+    fn resolve_refs(this: WithTypespace<'_, Self>, state: &mut ResolveRefState) -> Result<Self::Output, TypeRefError>;
 }
 
 // -----------------------------------------------------------------------------
@@ -32,14 +32,14 @@ pub trait ResolveRefs {
 
 impl ResolveRefs for AlgebraicTypeRef {
     type Output = AlgebraicType;
-    fn resolve_refs(this: WithTypespace<'_, Self>, state: &mut ResolveRefState) -> Option<Self::Output> {
+    fn resolve_refs(this: WithTypespace<'_, Self>, state: &mut ResolveRefState) -> Result<Self::Output, TypeRefError> {
         // Suppose we have `&0 = { Nil, Cons({ elem: U8, tail: &0 }) }`.
         // This is our standard cons-list type.
         // In this setup, when getting to `tail`,
         // we would recurse back to expanding `tail` again, and so or...
         // So we will never halt. This check breaks that cycle.
         if state.stack.contains(this.ty()) {
-            return None;
+            return Err(TypeRefError::RecursiveTypeRef(*this.ty()));
         }
 
         // Push ourselves to the stack.
@@ -49,6 +49,7 @@ impl ResolveRefs for AlgebraicTypeRef {
         let ret = this
             .typespace()
             .get(*this.ty())
+            .ok_or(TypeRefError::InvalidTypeRef(*this.ty()))
             .and_then(|at| this.with(at)._resolve_refs(state));
 
         // Remove ourselves.
@@ -63,55 +64,44 @@ impl ResolveRefs for AlgebraicTypeRef {
 
 impl ResolveRefs for AlgebraicType {
     type Output = Self;
-    fn resolve_refs(this: WithTypespace<'_, Self>, state: &mut ResolveRefState) -> Option<Self::Output> {
+    fn resolve_refs(this: WithTypespace<'_, Self>, state: &mut ResolveRefState) -> Result<Self::Output, TypeRefError> {
         match this.ty() {
             Self::Ref(r) => this.with(r)._resolve_refs(state),
             Self::Sum(sum) => this.with(sum)._resolve_refs(state).map(Into::into),
             Self::Product(prod) => this.with(prod)._resolve_refs(state).map(Into::into),
-            Self::Builtin(BuiltinType::Array(ty)) => this.with(ty)._resolve_refs(state).map(Into::into),
-            Self::Builtin(BuiltinType::Map(m)) => this.with(&**m)._resolve_refs(state).map(Into::into),
+            Self::Array(ty) => this.with(ty)._resolve_refs(state).map(Into::into),
             // These types are plain and cannot have refs in them.
-            x => Some(x.clone()),
+            x => Ok(x.clone()),
         }
     }
 }
 
 impl ResolveRefs for ArrayType {
     type Output = Self;
-    fn resolve_refs(this: WithTypespace<'_, Self>, state: &mut ResolveRefState) -> Option<Self::Output> {
-        Some(Self {
+    fn resolve_refs(this: WithTypespace<'_, Self>, state: &mut ResolveRefState) -> Result<Self::Output, TypeRefError> {
+        Ok(Self {
             elem_ty: Box::new(this.map(|m| &*m.elem_ty)._resolve_refs(state)?),
-        })
-    }
-}
-
-impl ResolveRefs for MapType {
-    type Output = Self;
-    fn resolve_refs(this: WithTypespace<'_, Self>, state: &mut ResolveRefState) -> Option<Self::Output> {
-        Some(Self {
-            key_ty: this.map(|m| &m.key_ty)._resolve_refs(state)?,
-            ty: this.map(|m| &m.ty)._resolve_refs(state)?,
         })
     }
 }
 
 impl ResolveRefs for ProductType {
     type Output = Self;
-    fn resolve_refs(this: WithTypespace<'_, Self>, state: &mut ResolveRefState) -> Option<Self::Output> {
+    fn resolve_refs(this: WithTypespace<'_, Self>, state: &mut ResolveRefState) -> Result<Self::Output, TypeRefError> {
         let elements = this
             .ty()
             .elements
             .iter()
             .map(|el| this.with(el)._resolve_refs(state))
-            .collect::<Option<_>>()?;
-        Some(ProductType { elements })
+            .collect::<Result<_, _>>()?;
+        Ok(ProductType { elements })
     }
 }
 
 impl ResolveRefs for ProductTypeElement {
     type Output = Self;
-    fn resolve_refs(this: WithTypespace<'_, Self>, state: &mut ResolveRefState) -> Option<Self::Output> {
-        Some(Self {
+    fn resolve_refs(this: WithTypespace<'_, Self>, state: &mut ResolveRefState) -> Result<Self::Output, TypeRefError> {
+        Ok(Self {
             algebraic_type: this.map(|e| &e.algebraic_type)._resolve_refs(state)?,
             name: this.ty().name.clone(),
         })
@@ -120,21 +110,21 @@ impl ResolveRefs for ProductTypeElement {
 
 impl ResolveRefs for SumType {
     type Output = Self;
-    fn resolve_refs(this: WithTypespace<'_, Self>, state: &mut ResolveRefState) -> Option<Self::Output> {
+    fn resolve_refs(this: WithTypespace<'_, Self>, state: &mut ResolveRefState) -> Result<Self::Output, TypeRefError> {
         let variants = this
             .ty()
             .variants
             .iter()
             .map(|v| this.with(v)._resolve_refs(state))
-            .collect::<Option<Vec<_>>>()?;
-        Some(Self { variants })
+            .collect::<Result<_, _>>()?;
+        Ok(Self { variants })
     }
 }
 
 impl ResolveRefs for SumTypeVariant {
     type Output = Self;
-    fn resolve_refs(this: WithTypespace<'_, Self>, state: &mut ResolveRefState) -> Option<Self::Output> {
-        Some(Self {
+    fn resolve_refs(this: WithTypespace<'_, Self>, state: &mut ResolveRefState) -> Result<Self::Output, TypeRefError> {
+        Ok(Self {
             algebraic_type: this.map(|v| &v.algebraic_type)._resolve_refs(state)?,
             name: this.ty().name.clone(),
         })
@@ -142,10 +132,10 @@ impl ResolveRefs for SumTypeVariant {
 }
 
 impl<T: ResolveRefs> WithTypespace<'_, T> {
-    pub fn resolve_refs(self) -> Option<T::Output> {
+    pub fn resolve_refs(self) -> Result<T::Output, TypeRefError> {
         T::resolve_refs(self, &mut ResolveRefState::default())
     }
-    fn _resolve_refs(self, state: &mut ResolveRefState) -> Option<T::Output> {
+    fn _resolve_refs(self, state: &mut ResolveRefState) -> Result<T::Output, TypeRefError> {
         T::resolve_refs(self, state)
     }
 }

@@ -6,16 +6,29 @@ mod client_connection_index;
 mod message_handlers;
 pub mod messages;
 
-pub use client_connection::{ClientClosed, ClientConnection, ClientConnectionSender, DataMessage, Protocol};
+pub use client_connection::{
+    ClientConfig, ClientConnection, ClientConnectionSender, ClientSendError, DataMessage, Protocol,
+};
 pub use client_connection_index::ClientActorIndex;
 pub use message_handlers::MessageHandleError;
-use spacetimedb_lib::Address;
+use spacetimedb_lib::ConnectionId;
 
 #[derive(PartialEq, Eq, Clone, Copy, Hash, Debug)]
 pub struct ClientActorId {
     pub identity: Identity,
-    pub address: Address,
+    pub connection_id: ConnectionId,
     pub name: ClientName,
+}
+
+impl ClientActorId {
+    #[cfg(test)]
+    pub fn for_test(identity: Identity) -> Self {
+        ClientActorId {
+            identity,
+            connection_id: ConnectionId::ZERO,
+            name: ClientName(0),
+        }
+    }
 }
 
 #[derive(PartialEq, Eq, Clone, Copy, Hash, Debug)]
@@ -27,7 +40,7 @@ impl fmt::Display for ClientActorId {
             f,
             "ClientActorId({}@{}/{})",
             self.identity.to_hex(),
-            self.address.to_hex(),
+            self.connection_id.to_hex(),
             self.name.0
         )
     }

@@ -1,0 +1,7 @@
+default_server = "127.0.0.1:3000"
+spacetimedb_token = "eyJ0eXAiOiJKV1QiLCJhbGciOiJFUzI1NiJ9.eyJoZXhfaWRlbnRpdHkiOiJjMjAwZTJlMWRlNTY0YmU2YzAyMDU4YzQwYzg0ZDdhNjg4OWE3MzA4ZTRjYjA5OGU1NTRjZDhlZWE1MDNhN2E3Iiwic3ViIjoiMGFmOTM0OTUtZGY1Yy00Y2ViLTllNjktNmVhZDVlMDVmMGUzIiwiaXNzIjoibG9jYWxob3N0IiwiYXVkIjpbInNwYWNldGltZWRiIl0sImlhdCI6MTc0MDczODI4OSwiZXhwIjpudWxsfQ.yF-glntsyd5xusUDFFtSWkPtONB70H4lLeDrd84m6ZCJ67W_1RegIqIpCDMaAJFmY5euDAO7UWUFiicJ86vSrA"
+
+[[server_configs]]
+nickname = "localhost"
+host = "127.0.0.1:3000"
+protocol = "http"

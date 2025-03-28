@@ -10,13 +10,15 @@ pub type ResultBench<T> = Result<T, anyhow::Error>;
 mod tests {
     use crate::{
         database::BenchDatabase,
-        schemas::{create_sequential, BenchTable, IndexStrategy, Location, Person, RandomTable},
+        schemas::{create_sequential, u32_u64_str, u32_u64_u64, BenchTable, IndexStrategy, RandomTable},
         spacetime_module::SpacetimeModule,
         spacetime_raw::SpacetimeRaw,
         sqlite::SQLite,
         ResultBench,
     };
-    use std::{io, sync::Once};
+    use serial_test::serial;
+    use spacetimedb_testing::modules::{Csharp, Rust};
+    use std::{io, path::Path, sync::Once};
     use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
     static INIT: Once = Once::new();
@@ -39,6 +41,15 @@ mod tests {
                 .with(fmt_layer)
                 .with(env_filter_layer)
                 .init();
+
+            // Remove cached data from previous runs.
+            // This directory is only reused to speed up runs with Callgrind. In tests, it's fine to wipe it.
+            let mut bench_dot_spacetime = Path::new(env!("CARGO_MANIFEST_DIR")).to_path_buf();
+            bench_dot_spacetime.push(".spacetime");
+            if std::fs::metadata(&bench_dot_spacetime).is_ok() {
+                std::fs::remove_dir_all(bench_dot_spacetime)
+                    .expect("failed to wipe Spacetimedb/crates/bench/.spacetime");
+            }
         });
     }
 
@@ -48,7 +59,7 @@ mod tests {
     ) -> ResultBench<()> {
         prepare_tests();
 
-        let mut db = DB::build(in_memory, false)?;
+        let mut db = DB::build(in_memory)?;
         let table_id = db.create_table::<T>(index_strategy)?;
         assert_eq!(db.count_table(&table_id)?, 0, "tables should begin empty");
 
@@ -57,9 +68,7 @@ mod tests {
 
         let sample_data = create_sequential::<T>(0xdeadbeef, count, 100);
 
-        for row in sample_data.clone() {
-            db.insert::<T>(&table_id, row)?;
-        }
+        db.insert_bulk(&table_id, sample_data.clone())?;
         assert_eq!(db.count_table(&table_id)?, count, "inserted rows should be inserted");
 
         db.clear_table(&table_id)?;
@@ -76,6 +85,15 @@ mod tests {
             "bulk inserted rows should be bulk inserted"
         );
 
+        if index_strategy == IndexStrategy::Unique0 {
+            db.update_bulk::<T>(&table_id, count)?;
+            assert_eq!(
+                db.count_table(&table_id)?,
+                count,
+                "bulk updated rows should be bulk updated"
+            );
+        }
+
         db.clear_table(&table_id)?;
         assert_eq!(
             db.count_table(&table_id)?,
@@ -85,30 +103,37 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_basic_invariants_sqlite() {
-        basic_invariants::<SQLite, Person>(IndexStrategy::Unique, true).unwrap();
-        basic_invariants::<SQLite, Location>(IndexStrategy::Unique, true).unwrap();
+    fn test_basic_invariants<DB: BenchDatabase>() -> ResultBench<()> {
+        basic_invariants::<DB, u32_u64_str>(IndexStrategy::Unique0, true)?;
+        basic_invariants::<DB, u32_u64_u64>(IndexStrategy::Unique0, true)?;
+        basic_invariants::<DB, u32_u64_str>(IndexStrategy::BTreeEachColumn, true)?;
+        basic_invariants::<DB, u32_u64_u64>(IndexStrategy::BTreeEachColumn, true)?;
+        Ok(())
     }
 
     #[test]
-    fn test_basic_invariants_sqlite_multi_index() {
-        basic_invariants::<SQLite, Person>(IndexStrategy::MultiIndex, true).unwrap();
-        basic_invariants::<SQLite, Location>(IndexStrategy::MultiIndex, true).unwrap();
+    fn test_basic_invariants_sqlite() -> ResultBench<()> {
+        test_basic_invariants::<SQLite>()
     }
 
     #[test]
-    fn test_basic_invariants_spacetime_raw() {
-        basic_invariants::<SpacetimeRaw, Person>(IndexStrategy::Unique, true).unwrap();
-        basic_invariants::<SpacetimeRaw, Location>(IndexStrategy::Unique, true).unwrap();
+    fn test_basic_invariants_spacetime_raw() -> ResultBench<()> {
+        test_basic_invariants::<SpacetimeRaw>()
+    }
+
+    // note: there can only be one #[test] invoking spacetime module stuff.
+    // #[test]s run concurrently and they fight over lockfiles.
+    // so, run the sub-tests here in sequence.
+
+    #[test]
+    #[serial]
+    fn test_basic_invariants_spacetime_module_rust() -> ResultBench<()> {
+        test_basic_invariants::<SpacetimeModule<Rust>>()
     }
 
     #[test]
-    fn test_basic_invariants_spacetime_module() {
-        // note: there can only be one #[test] invoking spacetime module stuff.
-        // #[test]s run concurrently and they fight over lockfiles.
-        // so, run the sub-tests here in sequence.
-        basic_invariants::<SpacetimeModule, Person>(IndexStrategy::Unique, true).unwrap();
-        basic_invariants::<SpacetimeModule, Location>(IndexStrategy::Unique, true).unwrap();
+    #[serial]
+    fn test_basic_invariants_spacetime_module_csharp() -> ResultBench<()> {
+        test_basic_invariants::<SpacetimeModule<Csharp>>()
     }
 }

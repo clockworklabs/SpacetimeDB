@@ -1,13 +1,12 @@
-use crate::database_instance_context::DatabaseInstanceContext;
-use crate::host::scheduler::{Scheduler, SchedulerStarter};
-use crate::messages::control_db::HostType;
-use crate::util::AnyBytes;
+use crate::db::datastore::traits::Program;
+use crate::energy::EnergyMonitor;
+use crate::host::scheduler::Scheduler;
+use crate::replica_context::ReplicaContext;
 use std::sync::Arc;
 
-pub struct ModuleHostContext {
-    pub dbic: Arc<DatabaseInstanceContext>,
+pub struct ModuleCreationContext<'a> {
+    pub replica_ctx: Arc<ReplicaContext>,
     pub scheduler: Scheduler,
-    pub scheduler_starter: SchedulerStarter,
-    pub host_type: HostType,
-    pub program_bytes: AnyBytes,
+    pub program: &'a Program,
+    pub energy_monitor: Arc<dyn EnergyMonitor>,
 }

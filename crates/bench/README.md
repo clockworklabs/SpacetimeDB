@@ -1,4 +1,9 @@
 # spacetimedb-bench
+
+> ⚠️ **Internal Crate** ⚠️
+>
+> This crate is intended for internal use only. It is **not** stable and may change without notice.
+
 Benchmarking suite for SpacetimeDB using [Criterion](https://github.com/bheisler/criterion.rs) and [Callgrind](https://valgrind.org/docs/manual/cl-manual.html) (via [iai-callgrind](https://github.com/clockworklabs/iai-callgrind)). Provides comparisons between the underlying spacetime datastore, spacetime modules, and sqlite.
 
 To run the criterion benchmarks:
@@ -7,25 +12,21 @@ To run the criterion benchmarks:
 cargo bench --bench generic --bench special
 ```
 
+To enable the criterion benchmarks that do one million inserts or updates, set the RUN_ONE_MILLION environment variable:
+
+```bash
+RUN_ONE_MILLION=true cargo bench --bench generic --bench special
+```
+
 To run the callgrind benchmarks, you need valgrind installed.
 The easiest way to get it is to use the docker image in this folder. 
 There's a handy bash script:
 ```bash
-# enter a prepared docker image with valgrind & a rust toolchain available.
-# mounts the host SpacetimeDB folder to `/projects/SpacetimeDB`.
-# this works on at least Linux and MinGW, but if you're on windows you're probably better off running it from WSL, because windows-docker filesystem sharing is slow.
 bash callgrind-docker.sh 
 ```
-Then, in the docker image:
-```bash
-cd /projects/SpacetimeDB/crates/bench
-cargo bench --bench callgrind
-```
-To avoid fighting with the host system, the docker image uses a separate CARGO_TARGET_DIR.
-This will be visible on the host system as `SpacetimeDB/linux-target`.
-Callgrind benchmark outputs will be placed in the folder `SpacetimeDB/linux-target/iai`. 
+Which will build the docker image and run the callgrind benchmarks inside of it.
 
-You can also comment "benchmarks please" or "callgrind please" on a pull request in the SpacetimeDB repository to run the criterion/callgrind benchmarks on that PR. The results will be posted in a comment on the most recent *commit* in that PR. Note: not a PR comment, a *commit* comment! You'll see a comment symbol next to the commit, click on that to see the benchmark report.
+You can also comment "benchmarks please" or "callgrind please" on a pull request in the SpacetimeDB repository to run the criterion/callgrind benchmarks on that PR. The results will be posted in a comment on the PR.
 
 This is coordinated using the benchmarks Github Actions: see [`../../.github/workflows/benchmarks.yml`](../../.github/workflows/benchmarks.yml), and
 [`../../.github/workflows/callgrind_benchmarks.yml`](../../.github/workflows/callgrind_benchmarks.yml). 
@@ -79,9 +80,13 @@ deserialize/
 stdb_module/
     print_bulk/[count]
     large_arguments/64KiB/
+
+db_game/
+    circles/load=[num rows]
+    ia_loop/load=[num rows]
 ```
 
-Typically you don't want to run all benchmarks at once, there are a lot of them and it will take many minutes.
+Typically, you don't want to run all benchmarks at once, there are a lot of them and it will take many minutes.
 You can pass regexes to the bench script to select what slice of benchmarks you'd like. For example,
 
 ```sh
@@ -95,7 +100,43 @@ cargo bench -- 'mem/.*/unique'
 ```
 Will run benchmarks involving unique primary keys against all databases, without writing to disc.
 
-### Adding more
+## Workload Benches
+
+The workload benches within the `db_game` module are designed to simulate realistic workloads commonly found in games. 
+
+Instead of testing for a small set of values, these benches generate a larger number of rows to more effectively stress the database engine. As consequence, they take more time when run inside `criterion`. 
+
+This approach reduces interference caused by noise and provides the potential for better detection of display improvements or regressions in performance.
+
+To run the workload benches directly outside `criterion`, you can use the following commands:
+
+```bash
+cargo test --release --package spacetimedb-testing --test standalone_integration_test test_calling_bench_db_ia_loop -- --exact --nocapture
+cargo test --release --package spacetimedb-testing --test standalone_integration_test test_calling_bench_db_circles -- --exact --nocapture
+```
+
+## Pretty report
+To generate a nicely formatted markdown report, you can use the "summarize" binary.
+This is used on CI (see [`../../.github/workflows/benchmarks.yml`](../../.github/workflows/benchmarks.yml)).
+
+To generate a report without comparisons, use:
+```bash
+cargo bench --bench generic --bench special -- --save-baseline current
+cargo run --bin summarize markdown-report current
+```
+
+To compare to another branch, do:
+```bash
+git checkout master
+cargo bench --bench generic --bench special -- --save-baseline base
+git checkout high-octane-feature-branch
+cargo bench --bench generic --bench special -- --save-baseline current
+cargo run --bin summarize markdown-report current base
+```
+
+Of course, this will take about an hour, so it might be better to let the CI do it for you.
+
+## Adding more
 
 There are two ways to write benchmarks:
 
@@ -130,6 +171,21 @@ See that f
 ## Install tools
 
 There are also some scripts that rely on external tools to extract data from the benchmarks.
+
+### OSX + Linux
+
+- [samply](https://github.com/mstange/samply/)
+
+```bash
+cargo install samply
+```
+Run *any* command to see perf data on Firefox:
+
+```bash
+# Note if the `cargo` command triggers compilation, it will also be captured in the profile.
+# Therefore it is useful to run this after the artifact has already been cached.
+samply record -r 10000000 cargo bench --bench=subscription --profile=profiling -- full-scan --exact --profile-time=30
+```
 
 ### OSX Only
 

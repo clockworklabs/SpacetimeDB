@@ -7,16 +7,16 @@ use crate::tasks::rust::build_rust;
 
 use duct::cmd;
 
-pub fn build(project_path: &Path, skip_clippy: bool, build_debug: bool) -> anyhow::Result<PathBuf> {
-    let lang = util::detect_module_language(project_path);
+pub fn build(project_path: &Path, lint_dir: Option<&Path>, build_debug: bool) -> anyhow::Result<PathBuf> {
+    let lang = util::detect_module_language(project_path)?;
     let mut wasm_path = match lang {
-        ModuleLanguage::Rust => build_rust(project_path, skip_clippy, build_debug),
+        ModuleLanguage::Rust => build_rust(project_path, lint_dir, build_debug),
         ModuleLanguage::Csharp => build_csharp(project_path, build_debug),
     }?;
     if !build_debug {
         eprintln!("Optimising module with wasm-opt...");
         let wasm_path_opt = wasm_path.with_extension("opt.wasm");
-        match cmd!("wasm-opt", "-all", "-O2", &wasm_path, "-o", &wasm_path_opt).run() {
+        match cmd!("wasm-opt", "-all", "-g", "-O2", &wasm_path, "-o", &wasm_path_opt).run() {
             Ok(_) => wasm_path = wasm_path_opt,
             // Non-critical error for backward compatibility with users who don't have wasm-opt.
             Err(err) => {

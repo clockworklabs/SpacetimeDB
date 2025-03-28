@@ -17,23 +17,20 @@
 //! Calling [eval::optimize] verify the code has the correct semantics (ie: It checks types, schemas, functions are valid, etc.),
 //! and "desugar" the code in a more optimal form for later execution.
 //!
-//! This build [expr::ExprOpt] that is what could be stored in the database, ie: Is like bytecode.
+//! This build [expr::Expr] that is what could be stored in the database, ie: Is like bytecode.
 //!
 //! 3-  Execution
 //!
-//! Run the AST build from [expr::ExprOpt]. It assumes is correct.
+//! Run the AST build from [expr::Expr]. It assumes is correct.
 //!
+
 pub use spacetimedb_lib::operator;
 
-pub mod dsl;
-pub mod env;
 pub mod errors;
 pub mod eval;
 pub mod expr;
-pub mod functions;
 pub mod iterators;
 pub mod ops;
 pub mod program;
 pub mod rel_ops;
-mod typecheck;
-pub mod types;
+pub mod relation;

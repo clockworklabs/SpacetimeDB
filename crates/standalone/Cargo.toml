@@ -1,17 +1,16 @@
 [package]
 name = "spacetimedb-standalone"
-version = "0.8.1"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 license-file = "LICENSE"
 description = "An executable for running a single SpacetimeDB standalone instance"
 
 [[bin]]
-name = "spacetimedb"   # The name of the target.
+name = "spacetimedb-standalone"   # The name of the target.
 path = "src/main.rs"   # The source file of the target.
 test = true            # Is tested by default.
 bench = false          # Benching off, because of https://bheisler.github.io/criterion.rs/book/faq.html#cargo-bench-gives-unrecognized-option-errors-for-valid-command-line-options
 doc = false            # Is documented by default.
-plugin = false         # Used as a compiler plugin (deprecated).
 proc-macro = false     # Set to `true` for a proc-macro library.
 harness = true         # Use libtest harness.
 required-features = [] # Features required to build this target (N/A for lib)
@@ -21,24 +20,37 @@ required-features = [] # Features required to build this target (N/A for lib)
 perfmap = ["spacetimedb-core/perfmap"]
 
 [dependencies]
-spacetimedb-core = { path = "../core", version = "0.8.1" }
-spacetimedb-lib = { path = "../lib", version = "0.8.1", features = ["cli"] }
-spacetimedb-client-api = { path = "../client-api", version = "0.8.1" }
+spacetimedb-client-api-messages.workspace = true
+spacetimedb-client-api.workspace = true
+spacetimedb-core.workspace = true
+spacetimedb-lib.workspace = true
+spacetimedb-paths.workspace = true
 
 anyhow.workspace = true
 async-trait.workspace = true
 axum.workspace = true
 clap = { workspace = true, features = ["derive", "string"] }
 dirs.workspace = true
+futures.workspace = true
 hostname.workspace = true
 http.workspace = true
 log.workspace = true
 openssl.workspace = true
 prometheus.workspace = true
 scopeguard.workspace = true
+serde_json.workspace = true
 sled.workspace = true
+socket2.workspace = true
+thiserror.workspace = true
 tokio.workspace = true
 tower-http.workspace = true
+toml.workspace = true
+tracing = { workspace = true, features = ["release_max_level_debug"] }
+
+[target.'cfg(not(target_env = "msvc"))'.dependencies]
+tikv-jemallocator = {workspace = true}
+tikv-jemalloc-ctl = {workspace = true}
 
 [dev-dependencies]
-serde_json.workspace = true
+once_cell.workspace = true
+tempfile.workspace = true

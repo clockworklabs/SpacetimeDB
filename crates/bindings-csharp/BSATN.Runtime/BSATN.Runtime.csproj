@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <AssemblyName>SpacetimeDB.BSATN.Runtime</AssemblyName>
+    <Version>1.1.0</Version>
+    <Title>SpacetimeDB BSATN Runtime</Title>
+    <Description>The SpacetimeDB BSATN Runtime implements APIs for BSATN serialization/deserialization in C#.</Description>
+    <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <!-- Note: the binary produced by this package is used in Unity too, which is limited to .NET Standard 2.1. -->
+    <TargetFrameworks>netstandard2.1;net8.0</TargetFrameworks>
+    <RootNamespace>SpacetimeDB</RootNamespace>
+    <!-- You can enable this when debugging codegen problems. Outputs in obj/debug/[version]/generated. -->
+    <!-- <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles> -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- We want to build BSATN.Codegen both to include it in our NuGet package but also we want it to transform [SpacetimeDB.Type] usages in BSATN.Runtime code itself. -->
+    <ProjectReference Include="../BSATN.Codegen/BSATN.Codegen.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="../Runtime/README.md" Pack="true" PackagePath="" />
+    <!-- We want all users who depends on BSATN.Runtime to automatically get the Roslyn codegen component as well. -->
+    <None Include="../BSATN.Codegen/bin/$(Configuration)/netstandard2.0/SpacetimeDB.BSATN.Codegen.dll" Pack="true" PackagePath="analyzers/dotnet/cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- dev-dependency to add internal C# classes and attributes not included in .NET Standard -->
+    <PackageReference Include="PolySharp" Version="1.14.1" PrivateAssets="all" />
+  </ItemGroup>
+
+</Project>

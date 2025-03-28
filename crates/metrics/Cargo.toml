@@ -1,7 +1,7 @@
 [package]
 name = "spacetimedb-metrics"
-version = "0.8.1"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 license-file = "LICENSE"
 description = "Prometheus utilities for SpacetimeDB"
 
@@ -11,3 +11,4 @@ description = "Prometheus utilities for SpacetimeDB"
 itertools.workspace = true
 paste.workspace = true
 prometheus.workspace = true
+arrayvec.workspace = true

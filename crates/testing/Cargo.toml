@@ -1,14 +1,18 @@
 [package]
 name = "spacetimedb-testing"
-version = "0.8.1"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
+license-file = "LICENSE"
+publish = false
 
 [dependencies]
-spacetimedb-cli = { path = "../cli", version = "0.8.1" }
-spacetimedb-lib = { path = "../lib", version = "0.8.1" }
-spacetimedb-core = { path = "../core", version = "0.8.1" }
-spacetimedb-standalone = { path = "../standalone", version = "0.8.1" }
-spacetimedb-client-api = { path = "../client-api", version = "0.8.1" }
+spacetimedb-cli.workspace = true
+spacetimedb-data-structures.workspace = true
+spacetimedb-lib.workspace = true
+spacetimedb-core.workspace = true
+spacetimedb-standalone.workspace = true
+spacetimedb-client-api.workspace = true
+spacetimedb-paths.workspace = true
 
 anyhow.workspace = true
 env_logger.workspace = true
@@ -20,7 +24,6 @@ wasmbin.workspace = true
 duct.workspace = true
 lazy_static.workspace = true
 rand.workspace = true
-prost.workspace = true
 tempfile.workspace = true
 serde.workspace = true
 
