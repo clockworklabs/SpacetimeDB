@@ -60,7 +60,6 @@ pub fn identity_disconnected(_ctx: &ReducerContext) {
 
         sql_out = self.spacetime("sql", self.database_identity, "select * from st_client")
 
-        self.assertMultiLineEqual(sql_out, """
- identity | connection_id 
+        self.assertMultiLineEqual(sql_out, """ identity | connection_id 
 ----------+---------------
 """)

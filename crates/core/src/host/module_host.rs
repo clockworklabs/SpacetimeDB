@@ -680,28 +680,42 @@ impl ModuleHost {
             // The module defined a lifecycle reducer to handle disconnects. Call it.
             // If it succeeds, `WasmModuleInstance::call_reducer_with_tx` has already ensured
             // that `st_client` is updated appropriately.
-            self.call_reducer_inner(
-                caller_identity,
-                Some(caller_connection_id),
-                None,
-                None,
-                None,
-                reducer_id,
-                reducer_def,
-                ReducerArgs::Nullary,
-            )
-            .await
-            .map(drop)
-            .or_else(|_| {
-                // If it failed, we still need to update `st_client`: the client's not coming back.
-                // Commit a separate transaction that just updates `st_client`.
-                //
-                // It's OK for this to not be atomic with the previous transaction,
-                // since that transaction didn't commit. If we crash before committing this one,
-                // we'll run the `client_disconnected` reducer again unnecessarily,
-                // but the commitlog won't contain two invocations of it, which is what we care about.
-                fallback()
-            })
+            let result = self
+                .call_reducer_inner(
+                    caller_identity,
+                    Some(caller_connection_id),
+                    None,
+                    None,
+                    None,
+                    reducer_id,
+                    reducer_def,
+                    ReducerArgs::Nullary,
+                )
+                .await;
+
+            // If it failed, we still need to update `st_client`: the client's not coming back.
+            // Commit a separate transaction that just updates `st_client`.
+            //
+            // It's OK for this to not be atomic with the previous transaction,
+            // since that transaction didn't commit. If we crash before committing this one,
+            // we'll run the `client_disconnected` reducer again unnecessarily,
+            // but the commitlog won't contain two invocations of it, which is what we care about.
+            match result {
+                Err(e) => {
+                    log::error!("call_reducer_inner of client_disconnected failed: {e:#?}");
+                    fallback()
+                }
+                Ok(ReducerCallResult {
+                    outcome: ReducerOutcome::Failed(_) | ReducerOutcome::BudgetExceeded,
+                    ..
+                }) => fallback(),
+
+                // If it succeeded, as mentioend above, `st_client` is already updated.
+                Ok(ReducerCallResult {
+                    outcome: ReducerOutcome::Committed,
+                    ..
+                }) => Ok(()),
+            }
         } else {
             // The module doesn't define a `client_disconnected` reducer.
             // Commit a transaction to update `st_clients`.
