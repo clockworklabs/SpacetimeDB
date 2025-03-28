@@ -8,16 +8,16 @@ partial struct MultiTableRow
 {
     public void ReadFields(System.IO.BinaryReader reader)
     {
-        Name = BSATN.Name.Read(reader);
-        Foo = BSATN.Foo.Read(reader);
-        Bar = BSATN.Bar.Read(reader);
+        Name = BSATN.NameRW.Read(reader);
+        Foo = BSATN.FooRW.Read(reader);
+        Bar = BSATN.BarRW.Read(reader);
     }
 
     public void WriteFields(System.IO.BinaryWriter writer)
     {
-        BSATN.Name.Write(writer, Name);
-        BSATN.Foo.Write(writer, Foo);
-        BSATN.Bar.Write(writer, Bar);
+        BSATN.NameRW.Write(writer, Name);
+        BSATN.FooRW.Write(writer, Foo);
+        BSATN.BarRW.Write(writer, Bar);
     }
 
     public override string ToString() =>
@@ -25,9 +25,9 @@ partial struct MultiTableRow
 
     public readonly partial struct BSATN : SpacetimeDB.BSATN.IReadWrite<MultiTableRow>
     {
-        internal static readonly SpacetimeDB.BSATN.String Name = new();
-        internal static readonly SpacetimeDB.BSATN.U32 Foo = new();
-        internal static readonly SpacetimeDB.BSATN.U32 Bar = new();
+        internal static readonly SpacetimeDB.BSATN.String NameRW = new();
+        internal static readonly SpacetimeDB.BSATN.U32 FooRW = new();
+        internal static readonly SpacetimeDB.BSATN.U32 BarRW = new();
 
         public MultiTableRow Read(System.IO.BinaryReader reader) =>
             SpacetimeDB.BSATN.IStructuralReadWrite.Read<MultiTableRow>(reader);
@@ -43,9 +43,9 @@ partial struct MultiTableRow
             registrar.RegisterType<MultiTableRow>(_ => new SpacetimeDB.BSATN.AlgebraicType.Product(
                 new SpacetimeDB.BSATN.AggregateElement[]
                 {
-                    new(nameof(Name), Name.GetAlgebraicType(registrar)),
-                    new(nameof(Foo), Foo.GetAlgebraicType(registrar)),
-                    new(nameof(Bar), Bar.GetAlgebraicType(registrar))
+                    new("Name", NameRW.GetAlgebraicType(registrar)),
+                    new("Foo", FooRW.GetAlgebraicType(registrar)),
+                    new("Bar", BarRW.GetAlgebraicType(registrar))
                 }
             ));
 

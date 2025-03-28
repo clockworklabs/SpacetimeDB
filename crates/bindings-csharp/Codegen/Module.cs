@@ -121,7 +121,7 @@ record ColumnDeclaration : MemberDeclaration
 
     // For the `TableDesc` constructor.
     public string GenerateColumnDef() =>
-        $"new (nameof({Name}), BSATN.{Name}.GetAlgebraicType(registrar))";
+        $"new (nameof({Name}), BSATN.{BsatnFieldName}.GetAlgebraicType(registrar))";
 }
 
 record Scheduled(string ReducerName, int ScheduledAtColumn);
@@ -204,7 +204,8 @@ record ViewIndex
             ImmutableArray.Create(col),
             null,
             ViewIndexType.BTree // this might become hash in the future
-        ) { }
+        )
+    { }
 
     private ViewIndex(Index.BTreeAttribute attr, ImmutableArray<ColumnRef> columns)
         : this(attr.Name, columns, attr.Table, ViewIndexType.BTree) { }
@@ -451,8 +452,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
         foreach (var v in Views)
         {
             var autoIncFields = Members
-                .Where(f => f.GetAttrs(v).HasFlag(ColumnAttrs.AutoInc))
-                .Select(f => f.Name);
+                .Where(m => m.GetAttrs(v).HasFlag(ColumnAttrs.AutoInc));
 
             var globalName = $"global::{FullName}";
             var iTable = $"SpacetimeDB.Internal.ITableView<{v.Name}, {globalName}>";
@@ -464,11 +464,11 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 static {{globalName}} {{iTable}}.ReadGenFields(System.IO.BinaryReader reader, {{globalName}} row) {
                     {{string.Join(
                         "\n",
-                        autoIncFields.Select(name =>
+                        autoIncFields.Select(m =>
                             $$"""
-                            if (row.{{name}} == default)
+                            if (row.{{m.Name}} == default)
                             {
-                                row.{{name}} = {{globalName}}.BSATN.{{name}}.Read(reader);
+                                row.{{m.Name}} = {{globalName}}.BSATN.{{m.BsatnFieldName}}.Read(reader);
                             }
                             """
                         )
@@ -610,7 +610,7 @@ record ReducerDeclaration
             ? "throw new System.InvalidOperationException()"
             : $"{FullName}({string.Join(
                 ", ",
-                Args.Select(a => $"{a.Name}.Read(reader)").Prepend("(SpacetimeDB.ReducerContext)ctx")
+                Args.Select(a => $"{a.BsatnFieldName}.Read(reader)").Prepend("(SpacetimeDB.ReducerContext)ctx")
             )})";
 
         return $$"""
