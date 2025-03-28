@@ -11,6 +11,7 @@ SDK_PATH="$(realpath "$SDK_PATH")"
 "$SDK_PATH/tools~/write-nuget-config.sh" "$STDB_PATH"
 "$SDK_PATH/tools~/gen-client-api.sh" "$STDB_PATH"
 "$SDK_PATH/tools~/gen-quickstart.sh" "$STDB_PATH"
+"$SDK_PATH/tools~/gen-btree-repro.sh" "$STDB_PATH"
 dotnet nuget locals all --clear
 dotnet pack "$STDB_PATH/crates/bindings-csharp"
 rm -rf "$SDK_PATH/packages"
