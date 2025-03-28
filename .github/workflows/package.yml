@@ -14,7 +14,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: x86_64 Linux, target: x86_64-unknown-linux-gnu, runner: bare-metal, container: ubuntu }
+          - { name: x86_64 Linux, target: x86_64-unknown-linux-gnu, runner: bare-metal, container: debian:bookworm }
           - { name: aarch64 Linux, target: aarch64-unknown-linux-gnu, runner: arm-runner }
           - { name: x86_64 Linux musl, target: x86_64-unknown-linux-musl, runner: bare-metal, container: alpine }
           # FIXME: arm musl build. "JavaScript Actions in Alpine containers are only supported on x64 Linux runners"
@@ -35,7 +35,7 @@ jobs:
         run: uname -a
 
       - name: Install ubuntu dependencies
-        if: matrix.container == 'ubuntu'
+        if: matrix.container == 'debian:bookworm'
         run: |
           apt-get update -y
           apt-get install -y gcc g++ bash curl perl git make
