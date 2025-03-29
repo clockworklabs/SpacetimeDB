@@ -2,6 +2,7 @@ use rand::Rng;
 use std::io::Write;
 use std::path::Path;
 
+pub mod compression;
 pub mod dir_trie;
 pub mod lockfile;
 

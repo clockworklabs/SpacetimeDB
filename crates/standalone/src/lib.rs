@@ -13,10 +13,12 @@ use energy_monitor::StandaloneEnergyMonitor;
 use spacetimedb::client::ClientActorIndex;
 use spacetimedb::config::{CertificateAuthority, MetadataFile};
 use spacetimedb::db::db_metrics::data_size::DATA_SIZE_METRICS;
-use spacetimedb::db::relational_db::{self, Durability, Txdata};
+use spacetimedb::db::relational_db;
 use spacetimedb::db::{db_metrics::DB_METRICS, Config};
 use spacetimedb::energy::{EnergyBalance, EnergyQuanta};
-use spacetimedb::host::{DiskStorage, DurabilityProvider, ExternalDurability, HostController, UpdateDatabaseResult};
+use spacetimedb::host::{
+    DiskStorage, DurabilityProvider, ExternalDurability, HostController, StartSnapshotWatcher, UpdateDatabaseResult,
+};
 use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, Node, Replica};
 use spacetimedb::worker_metrics::WORKER_METRICS;
@@ -26,6 +28,7 @@ use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, Regi
 use spacetimedb_paths::server::{ModuleLogsDir, PidFile, ServerDataDir};
 use spacetimedb_paths::standalone::StandaloneDataDirExt;
 use std::sync::Arc;
+use tokio::sync::watch;
 
 pub use spacetimedb_client_api::routes::subscribe::{BIN_PROTOCOL, TEXT_PROTOCOL};
 
@@ -99,12 +102,46 @@ struct StandaloneDurabilityProvider {
 
 #[async_trait]
 impl DurabilityProvider for StandaloneDurabilityProvider {
-    async fn durability(&self, replica_id: u64) -> anyhow::Result<ExternalDurability> {
+    async fn durability(&self, replica_id: u64) -> anyhow::Result<(ExternalDurability, Option<StartSnapshotWatcher>)> {
         let commitlog_dir = self.data_dir.replica(replica_id).commit_log();
-        relational_db::local_durability(commitlog_dir)
-            .await
-            .map(|(durability, disk_size)| (durability as Arc<dyn Durability<TxData = Txdata>>, disk_size))
-            .map_err(Into::into)
+        let (durability, disk_size) = relational_db::local_durability(commitlog_dir).await?;
+        let start_snapshot_watcher = {
+            let durability = durability.clone();
+            |snapshot_rx| {
+                tokio::spawn(snapshot_watcher(snapshot_rx, durability));
+            }
+        };
+        Ok(((durability, disk_size), Some(Box::new(start_snapshot_watcher))))
+    }
+}
+
+async fn snapshot_watcher(mut snapshot_rx: watch::Receiver<u64>, durability: relational_db::LocalDurability) {
+    let mut prev_snapshot_offset = *snapshot_rx.borrow_and_update();
+    while snapshot_rx.changed().await.is_ok() {
+        let snapshot_offset = *snapshot_rx.borrow_and_update();
+        let Ok(segment_offsets) = durability
+            .existing_segment_offsets()
+            .inspect_err(|e| tracing::warn!("failed to find offsets: {e}"))
+        else {
+            continue;
+        };
+        let start_idx = segment_offsets
+            .binary_search(&prev_snapshot_offset)
+            // if the snapshot is in the middle of a segment, we want to round down.
+            // [0, 2].binary_search(1) will return Err(1), so we subtract 1.
+            .unwrap_or_else(|i| i.saturating_sub(1));
+        let segment_offsets = &segment_offsets[start_idx..];
+        let end_idx = segment_offsets
+            .binary_search(&snapshot_offset)
+            .unwrap_or_else(|i| i.saturating_sub(1));
+        // in this case, segment_offsets[end_idx] is the segment that contains the snapshot,
+        // which we don't want to compress, so an exclusive range is correct.
+        let segment_offsets = &segment_offsets[..end_idx];
+        if let Err(e) = durability.compress_segments(segment_offsets) {
+            tracing::warn!("failed to compress segments: {e}");
+            continue;
+        }
+        prev_snapshot_offset = snapshot_offset;
     }
 }
 

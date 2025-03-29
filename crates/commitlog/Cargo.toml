@@ -23,6 +23,7 @@ itertools.workspace = true
 log.workspace = true
 memmap2 = "0.9.4"
 serde = { workspace = true, optional = true }
+spacetimedb-fs-utils.workspace = true
 spacetimedb-paths.workspace = true
 spacetimedb-primitives.workspace = true
 spacetimedb-sats.workspace = true
@@ -30,6 +31,7 @@ tempfile.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, optional = true }
 tokio-util = { workspace = true, optional = true, features = ["io-util"] }
+zstd-framed.workspace = true
 
 # For the 'test' feature
 env_logger = { workspace = true, optional = true }
