@@ -109,6 +109,20 @@ impl<T: Repo> Repo for &T {
     fn existing_offsets(&self) -> io::Result<Vec<u64>> {
         T::existing_offsets(self)
     }
+
+    fn create_offset_index(&self, offset: TxOffset, cap: u64) -> io::Result<TxOffsetIndexMut> {
+        T::create_offset_index(self, offset, cap)
+    }
+
+    /// Remove [`TxOffsetIndexMut`] named with `offset`.
+    fn remove_offset_index(&self, offset: TxOffset) -> io::Result<()> {
+        T::remove_offset_index(self, offset)
+    }
+
+    /// Get [`TxOffsetIndex`] for the given `offset`.
+    fn get_offset_index(&self, offset: TxOffset) -> io::Result<TxOffsetIndex> {
+        T::get_offset_index(self, offset)
+    }
 }
 
 pub(crate) fn create_offset_index_writer<R: Repo>(repo: &R, offset: u64, opts: Options) -> Option<OffsetIndexWriter> {

@@ -1,4 +1,4 @@
-use std::{io, marker::PhantomData, mem, ops::Range, vec};
+use std::{fmt::Debug, io, marker::PhantomData, mem, ops::Range, vec};
 
 use itertools::Itertools;
 use log::{debug, info, trace, warn};
@@ -464,10 +464,31 @@ fn reset_to_internal(repo: &impl Repo, segments: &[u64], offset: u64) -> io::Res
             repo.remove_segment(segment)?;
         } else {
             // Read commit-wise until we find the byte offset.
-            let reader = repo::open_segment_reader(repo, DEFAULT_LOG_FORMAT_VERSION, segment)?;
+            let mut reader = repo::open_segment_reader(repo, DEFAULT_LOG_FORMAT_VERSION, segment)?;
+
+            let mut bytes_read = repo
+                .get_offset_index(segment)
+                .and_then(|index_file| {
+                    let (key, byte_offset) = index_file.key_lookup(offset).map_err(|e| {
+                        io::Error::new(io::ErrorKind::NotFound, format!("Offset index cannot be used: {e:?}"))
+                    })?;
+
+                    reader.seek_to_offset(&index_file, key).map_err(|e| {
+                        io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            format!("Offset index is not used at offset {key}: {e}"),
+                        )
+                    })?;
+
+                    Ok(byte_offset)
+                })
+                .inspect_err(|e| {
+                    warn!("commitlog offset index is not used: {e:?}");
+                })
+                .unwrap_or(segment::Header::LEN as u64);
+
             let commits = reader.commits();
 
-            let mut bytes_read = 0;
             for commit in commits {
                 let commit = commit?;
                 if commit.min_tx_offset > offset {
@@ -476,12 +497,12 @@ fn reset_to_internal(repo: &impl Repo, segments: &[u64], offset: u64) -> io::Res
                 bytes_read += Commit::from(commit).encoded_len() as u64;
             }
 
-            if bytes_read == 0 {
+            if bytes_read == segment::Header::LEN as u64 {
                 // Segment is empty, just remove it.
                 repo.remove_segment(segment)?;
             } else {
-                let byte_offset = segment::Header::LEN as u64 + bytes_read;
-                debug!("truncating segment {segment} to {offset} at {byte_offset}");
+                let byte_offset = bytes_read;
+                info!("truncating segment {segment} to {offset} at {byte_offset}");
                 let mut file = repo.open_segment(segment)?;
                 // Note: The offset index truncates equal or greater,
                 // inclusive. We'd like to retain `offset` in the index, as

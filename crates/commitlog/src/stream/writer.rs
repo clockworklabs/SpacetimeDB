@@ -173,7 +173,10 @@ where
         mut progress: impl Progress,
     ) -> io::Result<Self> {
         loop {
-            let Some(buf) = peek_buf(&mut stream).await? else {
+            let Some(buf) = peek_buf(&mut stream)
+                .await
+                .inspect_err(|e| warn!("failed to peek stream: {e}"))?
+            else {
                 break;
             };
 
@@ -263,7 +266,10 @@ where
             .max(segment::Header::LEN as _);
 
         loop {
-            let Some(buf) = peek_buf(stream).await? else {
+            let Some(buf) = peek_buf(stream).await.inspect_err(|e| {
+                warn!("failed to peek stream: {e}");
+            })?
+            else {
                 // The stream is exhausted, break the outer loop.
                 trace!("eof");
                 return Ok(AppendInnerResult::StreamExhausted);
@@ -275,7 +281,11 @@ where
             }
 
             // Read the header, so we can determine the size of the commit.
-            if read_exact(stream, &mut self.commit_buf.header).await?.is_eof() {
+            if read_exact(stream, &mut self.commit_buf.header)
+                .await
+                .inspect_err(|e| warn!("failed to read commit header: {e}"))?
+                .is_eof()
+            {
                 return Ok(AppendInnerResult::StreamExhausted);
             }
             let Some(commit_header) = commit::Header::decode(&self.commit_buf.header[..])
