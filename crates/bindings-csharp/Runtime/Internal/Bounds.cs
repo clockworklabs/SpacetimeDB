@@ -9,7 +9,7 @@ enum BoundVariant : byte
     Unbounded,
 }
 
-public interface IBTreeIndexBounds
+public interface IIndexScanRangeBounds
 {
     ushort PrefixElems { get; }
     void Prefix(BinaryWriter w);
@@ -28,7 +28,7 @@ public readonly struct Bound<T>(T min, T max)
     public static implicit operator Bound<T>((T min, T max) span) => new(span.min, span.max);
 }
 
-public readonly struct BTreeIndexBounds<T, TRW>(Bound<T> t) : IBTreeIndexBounds
+public readonly struct IndexScanRangeBounds<T, TRW>(Bound<T> t) : IIndexScanRangeBounds
     where T : IEquatable<T>
     where TRW : struct, IReadWrite<T>
 {
@@ -49,7 +49,7 @@ public readonly struct BTreeIndexBounds<T, TRW>(Bound<T> t) : IBTreeIndexBounds
     }
 }
 
-public readonly struct BTreeIndexBounds<T, TRW, U, URW>((T t, Bound<U> u) b) : IBTreeIndexBounds
+public readonly struct IndexScanRangeBounds<T, TRW, U, URW>((T t, Bound<U> u) b) : IIndexScanRangeBounds
     where U : IEquatable<U>
     where TRW : struct, IReadWrite<T>
     where URW : struct, IReadWrite<U>
@@ -74,8 +74,8 @@ public readonly struct BTreeIndexBounds<T, TRW, U, URW>((T t, Bound<U> u) b) : I
     }
 }
 
-public readonly struct BTreeIndexBounds<T, TRW, U, URW, V, VRW>((T t, U u, Bound<V> v) b)
-    : IBTreeIndexBounds
+public readonly struct IndexScanRangeBounds<T, TRW, U, URW, V, VRW>((T t, U u, Bound<V> v) b)
+    : IIndexScanRangeBounds
     where V : IEquatable<V>
     where TRW : struct, IReadWrite<T>
     where URW : struct, IReadWrite<U>
@@ -102,9 +102,9 @@ public readonly struct BTreeIndexBounds<T, TRW, U, URW, V, VRW>((T t, U u, Bound
     }
 }
 
-public readonly struct BTreeIndexBounds<T, TRW, U, URW, V, VRW, W, WRW>(
+public readonly struct IndexScanRangeBounds<T, TRW, U, URW, V, VRW, W, WRW>(
     (T t, U u, V v, Bound<W> w) b
-) : IBTreeIndexBounds
+) : IIndexScanRangeBounds
     where W : IEquatable<W>
     where TRW : struct, IReadWrite<T>
     where URW : struct, IReadWrite<U>
@@ -133,9 +133,9 @@ public readonly struct BTreeIndexBounds<T, TRW, U, URW, V, VRW, W, WRW>(
     }
 }
 
-public readonly struct BTreeIndexBounds<T, TRW, U, URW, V, VRW, W, WRW, X, XRW>(
+public readonly struct IndexScanRangeBounds<T, TRW, U, URW, V, VRW, W, WRW, X, XRW>(
     (T t, U u, V v, W w, Bound<X> x) b
-) : IBTreeIndexBounds
+) : IIndexScanRangeBounds
     where X : IEquatable<X>
     where TRW : struct, IReadWrite<T>
     where URW : struct, IReadWrite<U>
@@ -166,9 +166,9 @@ public readonly struct BTreeIndexBounds<T, TRW, U, URW, V, VRW, W, WRW, X, XRW>(
     }
 }
 
-public readonly struct BTreeIndexBounds<T, TRW, U, URW, V, VRW, W, WRW, X, XRW, Y, YRW>(
+public readonly struct IndexScanRangeBounds<T, TRW, U, URW, V, VRW, W, WRW, X, XRW, Y, YRW>(
     (T t, U u, V v, W w, X x, Bound<Y> y) b
-) : IBTreeIndexBounds
+) : IIndexScanRangeBounds
     where Y : IEquatable<Y>
     where TRW : struct, IReadWrite<T>
     where URW : struct, IReadWrite<U>
@@ -201,9 +201,9 @@ public readonly struct BTreeIndexBounds<T, TRW, U, URW, V, VRW, W, WRW, X, XRW, 
     }
 }
 
-public readonly struct BTreeIndexBounds<T, TRW, U, URW, V, VRW, W, WRW, X, XRW, Y, YRW, Z, ZRW>(
+public readonly struct IndexScanRangeBounds<T, TRW, U, URW, V, VRW, W, WRW, X, XRW, Y, YRW, Z, ZRW>(
     (T t, U u, V v, W w, X x, Y y, Bound<Z> z) b
-) : IBTreeIndexBounds
+) : IIndexScanRangeBounds
     where Z : IEquatable<Z>
     where TRW : struct, IReadWrite<T>
     where URW : struct, IReadWrite<U>
@@ -238,7 +238,7 @@ public readonly struct BTreeIndexBounds<T, TRW, U, URW, V, VRW, W, WRW, X, XRW, 
     }
 }
 
-public readonly struct BTreeIndexBounds<
+public readonly struct IndexScanRangeBounds<
     T,
     TRW,
     U,
@@ -255,7 +255,7 @@ public readonly struct BTreeIndexBounds<
     ZRW,
     A,
     ARW
->((T t, U u, V v, W w, X x, Y y, Z z, Bound<A> a) b) : IBTreeIndexBounds
+>((T t, U u, V v, W w, X x, Y y, Z z, Bound<A> a) b) : IIndexScanRangeBounds
     where A : IEquatable<A>
     where TRW : struct, IReadWrite<T>
     where URW : struct, IReadWrite<U>
@@ -292,7 +292,7 @@ public readonly struct BTreeIndexBounds<
     }
 }
 
-public readonly struct BTreeIndexBounds<
+public readonly struct IndexScanRangeBounds<
     T,
     TRW,
     U,
@@ -311,7 +311,7 @@ public readonly struct BTreeIndexBounds<
     ARW,
     B,
     BRW
->((T t, U u, V v, W w, X x, Y y, Z z, A a, Bound<B> b) b) : IBTreeIndexBounds
+>((T t, U u, V v, W w, X x, Y y, Z z, A a, Bound<B> b) b) : IIndexScanRangeBounds
     where B : IEquatable<B>
     where TRW : struct, IReadWrite<T>
     where URW : struct, IReadWrite<U>
@@ -350,7 +350,7 @@ public readonly struct BTreeIndexBounds<
     }
 }
 
-public readonly struct BTreeIndexBounds<
+public readonly struct IndexScanRangeBounds<
     T,
     TRW,
     U,
@@ -371,7 +371,7 @@ public readonly struct BTreeIndexBounds<
     BRW,
     C,
     CRW
->((T t, U u, V v, W w, X x, Y y, Z z, A a, B b, Bound<C> c) b) : IBTreeIndexBounds
+>((T t, U u, V v, W w, X x, Y y, Z z, A a, B b, Bound<C> c) b) : IIndexScanRangeBounds
     where C : IEquatable<C>
     where TRW : struct, IReadWrite<T>
     where URW : struct, IReadWrite<U>
