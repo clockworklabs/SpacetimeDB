@@ -509,6 +509,13 @@ impl RelationalDB {
         self.inner.heap_usage()
     }
 
+    /// Update data size metrics.
+    pub fn update_data_size_metrics(&self) {
+        let cs = self.inner.committed_state.read();
+
+        cs.report_data_size(self.database_identity)
+    }
+
     pub fn encode_row(row: &ProductValue, bytes: &mut Vec<u8>) {
         // TODO: large file storage of the row elements
         row.encode(bytes);
