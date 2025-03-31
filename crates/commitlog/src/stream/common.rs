@@ -26,8 +26,8 @@ impl IntoAsyncWriter for std::fs::File {
 }
 
 pub trait AsyncRepo: Repo<SegmentWriter: IntoAsyncWriter<AsyncWriter = Self::AsyncSegmentWriter>> {
-    type AsyncSegmentWriter: AsyncWrite + AsyncSeek + AsyncFsync + AsyncLen + Unpin + Send;
-    type AsyncSegmentReader: AsyncBufRead + AsyncSeek + Unpin + Send;
+    type AsyncSegmentWriter: AsyncWrite + AsyncLen + AsyncFsync + AsyncLen + Unpin + Send;
+    type AsyncSegmentReader: AsyncBufRead + AsyncLen + Unpin + Send;
 
     fn open_segment_reader_async(
         &self,
@@ -51,8 +51,19 @@ impl AsyncFsync for tokio::fs::File {
     }
 }
 
-pub trait AsyncLen {
-    fn segment_len(&mut self) -> impl Future<Output = io::Result<u64>> + Send;
+pub trait AsyncLen: AsyncSeek + Unpin + Send {
+    fn segment_len(&mut self) -> impl Future<Output = io::Result<u64>> + Send {
+        async {
+            let old_pos = self.stream_position().await?;
+            let len = self.seek(io::SeekFrom::End(0)).await?;
+            // If we're already at the end of the file, avoid seeking.
+            if old_pos != len {
+                self.seek(io::SeekFrom::Start(old_pos)).await?;
+            }
+
+            Ok(len)
+        }
+    }
 }
 
 impl<T: AsyncWrite + AsyncLen + Send> AsyncLen for tokio::io::BufWriter<T> {
@@ -67,18 +78,7 @@ impl<T: AsyncRead + AsyncLen + Send> AsyncLen for tokio::io::BufReader<T> {
     }
 }
 
-impl AsyncLen for tokio::fs::File {
-    async fn segment_len(&mut self) -> io::Result<u64> {
-        let old_pos = self.stream_position().await?;
-        let len = self.seek(io::SeekFrom::End(0)).await?;
-        // If we're already at the end of the file, avoid seeking.
-        if old_pos != len {
-            self.seek(io::SeekFrom::Start(old_pos)).await?;
-        }
-
-        Ok(len)
-    }
-}
+impl AsyncLen for tokio::fs::File {}
 
 /// An optionally half-open range.
 ///

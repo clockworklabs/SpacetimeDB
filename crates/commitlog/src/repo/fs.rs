@@ -181,3 +181,9 @@ impl crate::stream::AsyncRepo for Fs {
         spacetimedb_fs_utils::compression::AsyncCompressReader::new(file).await
     }
 }
+
+#[cfg(feature = "streaming")]
+impl<T> crate::stream::AsyncLen for spacetimedb_fs_utils::compression::AsyncCompressReader<T> where
+    T: tokio::io::AsyncSeek + tokio::io::AsyncRead + Unpin + Send
+{
+}
