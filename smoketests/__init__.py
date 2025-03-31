@@ -150,7 +150,7 @@ def new_identity(config_path):
 class Smoketest(unittest.TestCase):
     MODULE_CODE = TEMPLATE_LIB_RS
     AUTOPUBLISH = True
-    BINDINGS_FEATURES = ["rls"]
+    BINDINGS_FEATURES = ["unstable"]
     EXTRA_DEPS = ""
 
     @classmethod

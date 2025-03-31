@@ -16,4 +16,4 @@ paste.workspace = true
 
 [dependencies.spacetimedb]
 workspace = true
-features = ["rls"]
+features = ["unstable"]

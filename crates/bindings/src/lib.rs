@@ -78,7 +78,7 @@ pub use spacetimedb_bindings_macro::duration;
 /// until they are processed by the SpacetimeDB host.
 /// This means that errors in queries, such as syntax errors, type errors or unknown tables,
 /// will be reported during `spacetime publish`, not at compile time.
-#[cfg(feature = "rls")]
+#[cfg(feature = "unstable")]
 #[doc(inline, hidden)] // TODO: RLS filters are currently unimplemented, and are not enforced.
 pub use spacetimedb_bindings_macro::client_visibility_filter;
 
