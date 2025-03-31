@@ -27,6 +27,7 @@ pub type TypingResult<T> = core::result::Result<T, TypingError>;
 pub trait SchemaView {
     fn table_id(&self, name: &str) -> Option<TableId>;
     fn schema_for_table(&self, table_id: TableId) -> Option<Arc<TableSchema>>;
+    fn rls_rules_for_table(&self, table_id: TableId) -> anyhow::Result<Vec<Box<str>>>;
 
     fn schema(&self, name: &str) -> Option<Arc<TableSchema>> {
         self.table_id(name).and_then(|table_id| self.schema_for_table(table_id))
@@ -228,6 +229,10 @@ pub mod test_utils {
                     .table(name)
                     .map(|def| Arc::new(TableSchema::from_module_def(&self.0, def, (), table_id)))
             })
+        }
+
+        fn rls_rules_for_table(&self, _: TableId) -> anyhow::Result<Vec<Box<str>>> {
+            Ok(vec![])
         }
     }
 }

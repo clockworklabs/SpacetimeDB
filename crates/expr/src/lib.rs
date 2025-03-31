@@ -23,6 +23,7 @@ use spacetimedb_sql_parser::ast::{self, BinOp, ProjectElem, SqlExpr, SqlIdent, S
 pub mod check;
 pub mod errors;
 pub mod expr;
+pub mod rls;
 pub mod statement;
 
 /// Type check and lower a [SqlExpr]
