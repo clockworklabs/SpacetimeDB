@@ -5188,6 +5188,7 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "spacetimedb-commitlog",
+ "spacetimedb-fs-utils",
  "spacetimedb-paths",
  "spacetimedb-primitives",
  "spacetimedb-sats",
@@ -5196,6 +5197,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tokio-util",
+ "zstd-framed",
 ]
 
 [[package]]
@@ -5374,6 +5376,8 @@ dependencies = [
  "rand 0.8.5",
  "tempdir",
  "thiserror 1.0.69",
+ "tokio",
+ "zstd-framed",
 ]
 
 [[package]]
@@ -7940,6 +7944,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fcf2b778a664581e31e389454a7072dab1647606d44f7feea22cd5abb9c9f3f9"
 dependencies = [
  "zstd-safe",
+]
+
+[[package]]
+name = "zstd-framed"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c62b9e3ab74fc13257dfb915a4410efab52f336b52ee99b7c11a89d76dc80ca4"
+dependencies = [
+ "pin-project-lite",
+ "thiserror 1.0.69",
+ "tokio",
+ "zstd",
 ]
 
 [[package]]
