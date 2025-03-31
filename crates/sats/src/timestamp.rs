@@ -153,13 +153,9 @@ pub(crate) const MICROSECONDS_PER_SECOND: i64 = 1_000_000;
 
 impl std::fmt::Display for Timestamp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let micros = self.to_micros_since_unix_epoch();
-        let sign = if micros < 0 { "-" } else { "" };
-        let pos = micros.abs();
-        let secs = pos / MICROSECONDS_PER_SECOND;
-        let micros_remaining = pos % MICROSECONDS_PER_SECOND;
-
-        write!(f, "{sign}{secs}.{micros_remaining:06}",)
+        let date = DateTime::from_timestamp_micros(self.to_micros_since_unix_epoch())
+            .expect("Timestamp with i64 microseconds since Unix epoch overflows DateTime");
+        write!(f, "{}", date.to_rfc3339())
     }
 }
 
