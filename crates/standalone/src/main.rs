@@ -51,6 +51,8 @@ static GLOBAL: Jemalloc = Jemalloc;
 // When enabled, it will sample once per 2^19 bytes (512 KB) of memory allocated.
 
 // This can be overridden by setting the `_RJEM_MALLOC_CONF` environment variable.
+// We export this symbol so that the jemalloc library can find it.
+// See https://github.com/polarsignals/rust-jemalloc-pprof?tab=readme-ov-file#usage
 #[allow(non_upper_case_globals)]
 #[export_name = "_rjem_malloc_conf"]
 pub static _rjem_malloc_conf: &[u8] = b"prof:true,prof_active:false,lg_prof_sample:19\0";
