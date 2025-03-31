@@ -85,24 +85,32 @@ where
     /// commits. The `on_trailing` parameter an be used to trim the segment if
     /// it contains trailing invalid data (i.e. due to a partial write).
     pub fn create(repo: R, commitlog_options: Options, on_trailing: OnTrailingData) -> io::Result<Self> {
+        Self::create_and_metadata(repo, commitlog_options, on_trailing).map(|(this, _)| this)
+    }
+
+    /// Like [`Self::create`], create a new [`StreamWriter`]. Additionally
+    /// return the [`segment::Metadata`] of the most recent segment.
+    ///
+    /// The metadata is `None` if the commitlog is empty.
+    pub fn create_and_metadata(
+        repo: R,
+        commitlog_options: Options,
+        on_trailing: OnTrailingData,
+    ) -> io::Result<(Self, Option<segment::Metadata>)> {
         let Some(last) = repo.existing_offsets()?.pop() else {
-            return Ok(Self {
+            let this = Self {
                 repo,
                 commitlog_options,
                 last_written_tx_range: None,
                 current_segment: None,
                 commit_buf: <_>::default(),
-            });
+            };
+            return Ok((this, None));
         };
 
         let mut segment = repo.open_segment(last)?;
         let mut offset_index = repo::create_offset_index_writer(&repo, last, commitlog_options);
-        let segment::Metadata {
-            header,
-            tx_range,
-            size_in_bytes: _,
-            max_epoch: _,
-        } = segment::Metadata::extract(last, &mut segment).or_else(|e| match e {
+        let meta = segment::Metadata::extract(last, &mut segment).or_else(|e| match e {
             error::SegmentMetadata::InvalidCommit { sofar, source } => match on_trailing {
                 OnTrailingData::Error => Err(io::Error::new(io::ErrorKind::InvalidData, source)),
                 OnTrailingData::Trim => {
@@ -123,23 +131,25 @@ where
             },
             error::SegmentMetadata::Io(err) => Err(err),
         })?;
-        header
+        meta.header
             .ensure_compatible(DEFAULT_LOG_FORMAT_VERSION, DEFAULT_CHECKSUM_ALGORITHM)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
 
         let current_segment = CurrentSegment {
-            header,
+            header: meta.header,
             segment: segment.into_async_writer(),
             offset_index,
         };
 
-        Ok(Self {
+        let this = Self {
             repo,
             commitlog_options,
-            last_written_tx_range: Some(tx_range),
+            last_written_tx_range: Some(meta.tx_range.clone()),
             current_segment: Some(current_segment),
             commit_buf: <_>::default(),
-        })
+        };
+
+        Ok((this, Some(meta)))
     }
 
     /// Consume `stream` and append it to the local commitog.
