@@ -470,11 +470,11 @@ pub enum InitDatabaseError {
 pub enum ClientConnectedError {
     #[error(transparent)]
     ReducerCall(#[from] ReducerCallError),
-    #[error("Failed to insert st_client row for module without client_connected reducer: {0}")]
+    #[error("Failed to insert `st_client` row for module without client_connected reducer: {0}")]
     DBError(#[from] DBError),
-    #[error("Connection rejected by client_connected reducer: {0}")]
+    #[error("Connection rejected by `client_connected` reducer: {0}")]
     Rejected(String),
-    #[error("Insufficient energy balance to run client_connected reducer")]
+    #[error("Insufficient energy balance to run `client_connected` reducer")]
     OutOfEnergy,
 }
 
@@ -621,6 +621,11 @@ impl ModuleHost {
                 .with_auto_commit(workload, |mut_tx| {
                     mut_tx.insert_st_client(caller_identity, caller_connection_id)
                 })
+                .inspect_err(|e| {
+                    log::error!(
+                        "`call_identity_connected`: fallback transaction to insert into `st_client` failed: {e:#?}"
+                    );
+                })
                 .map_err(Into::into)
         }
     }
@@ -647,7 +652,7 @@ impl ModuleHost {
     ) -> Result<(), ReducerCallError> {
         let reducer_lookup = self.info.module_def.lifecycle_reducer(Lifecycle::OnDisconnect);
 
-        // A fallback transaction that either deletes the client from `st_client`.
+        // A fallback transaction that deletes the client from `st_client`.
         let fallback = || {
             let reducer_name = reducer_lookup
                 .as_ref()
@@ -666,6 +671,11 @@ impl ModuleHost {
                 .relational_db
                 .with_auto_commit(workload, |mut_tx| {
                     mut_tx.delete_st_client(caller_identity, caller_connection_id)
+                })
+                .inspect_err(|e| {
+                    log::error!(
+                        "`call_identity_disconnected`: fallback transaction to delete from `st_client` failed: {e}"
+                    );
                 })
                 .map_err(|err| {
                     InvalidReducerArguments {
