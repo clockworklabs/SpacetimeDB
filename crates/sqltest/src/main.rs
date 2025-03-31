@@ -327,7 +327,7 @@ async fn update_test_files(files: Vec<PathBuf>, engine: DbType, format: bool) ->
     Ok(())
 }
 
-/// Different from [`sqllogictest::update_test_file`], we re-implement it here to print some
+/// Different from [`sqllogictest`], we re-implement logic here to print some
 /// progress information.
 async fn update_test_file<T: std::io::Write, D: AsyncDB, M: MakeConnection<Conn = D>>(
     out: &mut T,

@@ -378,7 +378,7 @@ pub trait ModuleDefLookup: Sized + Debug + 'static {
 ///
 /// Validation rules:
 /// - The table name must be a valid identifier.
-/// - The table's columns must be sorted according to [crate::db::ordering::canonical_ordering].
+/// - The table's columns must be sorted according to the [default element ordering](spacetimedb_lib::db::default_element_ordering).
 /// - The table's indexes, constraints, and sequences must be sorted by their keys.
 /// - The table's column types may refer only to types in the containing DatabaseDef's typespace.
 /// - The table's column names must be unique.
@@ -387,14 +387,14 @@ pub trait ModuleDefLookup: Sized + Debug + 'static {
 pub struct TableDef {
     /// The name of the table.
     /// Unique within a module, acts as the table's identifier.
-    /// Must be a valid [crate::db::identifier::Identifier].
+    /// Must be a valid [Identifier].
     pub name: Identifier,
 
     /// A reference to a `ProductType` containing the columns of this table.
     /// This is the single source of truth for the table's columns.
     /// All elements of the `ProductType` must have names.
     ///
-    /// Like all types in the module, this must have the [default element ordering](crate::db::default_element_ordering), UNLESS a custom ordering is declared via `ModuleDef.misc_exports` for this type.
+    /// Like all types in the module, this must have the [default element ordering](spacetimedb_lib::db::default_element_ordering), UNLESS a custom ordering is declared via `ModuleDef.misc_exports` for this type.
     pub product_type_ref: AlgebraicTypeRef,
 
     /// The primary key of the table, if present. Must refer to a valid column.

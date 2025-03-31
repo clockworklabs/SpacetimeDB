@@ -16,7 +16,7 @@
 //! which both traverse a [`RowTypeLayout`] and dispatch on the type of each column.
 //!
 //! For example, to serialize a row of type `(u64, u64, u32, u64)`,
-//! [`bflatn_from`] will do four dispatches, three calls to `serialize_u64` and one to `serialize_u32`.
+//! [`crate::bflatn_from`] will do four dispatches, three calls to `serialize_u64` and one to `serialize_u32`.
 //! This module will make 2 `memcpy`s (or actually, `<[u8]>::copy_from_slice`s):
 //! one of 20 bytes to copy the leading `(u64, u64, u32)`, which contains no padding,
 //! and then one of 8 bytes to copy the trailing `u64`, skipping over 4 bytes of padding in between.
@@ -168,7 +168,7 @@ impl StaticLayout {
     /// Construct a `StaticLayout` for converting BFLATN rows of `row_type` <-> BSATN.
     ///
     /// Returns `None` if `row_type` contains a column which does not have a constant length in BSATN,
-    /// either a [`VarLenType`]
+    /// either a [`crate::layout::VarLenType`]
     /// or a [`SumTypeLayout`] whose variants do not have the same "live" unpadded length.
     pub fn for_row_type(row_type: &RowTypeLayout) -> Option<Self> {
         if !row_type.layout().fixed {
