@@ -35,6 +35,9 @@ partial class RawModuleDefV9
     internal void RegisterReducer(RawReducerDefV9 reducer) => Reducers.Add(reducer);
 
     internal void RegisterTable(RawTableDefV9 table) => Tables.Add(table);
+
+    internal void RegisterRowLevelSecurity(RawRowLevelSecurityDefV9 rls) =>
+        RowLevelSecurity.Add(rls);
 }
 
 public static class Module
@@ -93,6 +96,18 @@ public static class Module
         where View : ITableView<View, T>, new()
     {
         moduleDef.RegisterTable(View.MakeTableDesc(typeRegistrar));
+    }
+
+    public static void RegisterClientVisibilityFilter(Filter rlsFilter)
+    {
+        if (rlsFilter is Filter.Sql(var rlsSql))
+        {
+            moduleDef.RegisterRowLevelSecurity(new RawRowLevelSecurityDefV9 { Sql = rlsSql });
+        }
+        else
+        {
+            throw new Exception($"Unimplemented row level security type: {rlsFilter}");
+        }
     }
 
     private static byte[] Consume(this BytesSource source)

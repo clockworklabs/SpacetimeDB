@@ -101,6 +101,9 @@ jobs:
       - name: Run cargo test
         run: cargo test --all
 
+      - name: Check that the test outputs are up-to-date
+        run: git diff --exit-code
+
       - name: Ensure C# autogen bindings are up-to-date
         run: |
           cargo run --example regen-csharp-moduledef
