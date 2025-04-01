@@ -1140,6 +1140,9 @@ static class ModuleRegistration
             global::Timers.SendMessageTimer,
             SpacetimeDB.Internal.TableHandles.SendMessageTimer
         >();
+        SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(
+            global::Module.ALL_PUBLIC_TABLES
+        );
     }
 
     // Exports only work from the main assembly, so we need to generate forwarding methods.

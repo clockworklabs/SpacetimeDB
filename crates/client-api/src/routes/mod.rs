@@ -8,6 +8,7 @@ pub mod database;
 pub mod energy;
 pub mod health;
 pub mod identity;
+mod internal;
 pub mod metrics;
 pub mod prometheus;
 pub mod subscribe;
@@ -36,5 +37,7 @@ where
         .allow_methods(cors::Any)
         .allow_origin(cors::Any);
 
-    axum::Router::new().nest("/v1", router.layer(cors))
+    axum::Router::new()
+        .nest("/v1", router.layer(cors))
+        .nest("/internal", internal::router())
 }

@@ -22,6 +22,11 @@ pub const DEFAULT_LOG_FORMAT_VERSION: u8 = 1;
 pub const DEFAULT_CHECKSUM_ALGORITHM: u8 = CHECKSUM_ALGORITHM_CRC32C;
 
 pub const CHECKSUM_ALGORITHM_CRC32C: u8 = 0;
+pub const CHECKSUM_CRC32C_LEN: usize = 4;
+
+/// Lookup table for checksum length, index is [`Header::checksum_algorithm`].
+// Supported algorithms must be numbered consecutively!
+pub const CHECKSUM_LEN: [usize; 1] = [CHECKSUM_CRC32C_LEN];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Header {
@@ -137,6 +142,10 @@ impl<W: io::Write> Writer<W> {
 
         let commit_len = self.commit.encoded_len() as u64;
         self.offset_index_head.as_mut().map(|index| {
+            debug!(
+                "append_after commit min_tx_offset={} bytes_written={} commit_len={}",
+                self.commit.min_tx_offset, self.bytes_written, commit_len
+            );
             index
                 .append_after_commit(self.commit.min_tx_offset, self.bytes_written, commit_len)
                 .map_err(|e| {
@@ -350,11 +359,11 @@ impl<R: io::Read + io::Seek> Reader<R> {
     }
 }
 
-impl<R: io::Read + io::Seek> Reader<R> {
+impl<R: io::BufRead + io::Seek> Reader<R> {
     pub fn commits(self) -> Commits<R> {
         Commits {
             header: self.header,
-            reader: io::BufReader::new(self.inner),
+            reader: self.inner,
         }
     }
 
@@ -384,7 +393,7 @@ impl<R: io::Read + io::Seek> Reader<R> {
 
     #[cfg(test)]
     pub(crate) fn metadata(self) -> Result<Metadata, error::SegmentMetadata> {
-        Metadata::with_header(self.min_tx_offset, self.header, io::BufReader::new(self.inner))
+        Metadata::with_header(self.min_tx_offset, self.header, self.inner)
     }
 }
 
@@ -456,10 +465,10 @@ pub struct Transaction<T> {
 
 pub struct Commits<R> {
     pub header: Header,
-    reader: io::BufReader<R>,
+    reader: R,
 }
 
-impl<R: io::Read> Iterator for Commits<R> {
+impl<R: io::BufRead> Iterator for Commits<R> {
     type Item = io::Result<StoredCommit>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -468,7 +477,7 @@ impl<R: io::Read> Iterator for Commits<R> {
 }
 
 #[cfg(test)]
-impl<R: io::Read> Commits<R> {
+impl<R: io::BufRead> Commits<R> {
     pub fn with_log_format_version(self) -> impl Iterator<Item = io::Result<(u8, StoredCommit)>> {
         CommitsWithVersion { inner: self }
     }
@@ -480,7 +489,7 @@ struct CommitsWithVersion<R> {
 }
 
 #[cfg(test)]
-impl<R: io::Read> Iterator for CommitsWithVersion<R> {
+impl<R: io::BufRead> Iterator for CommitsWithVersion<R> {
     type Item = io::Result<(u8, StoredCommit)>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -534,7 +543,7 @@ impl Metadata {
             sofar: &Metadata,
         ) -> Result<Option<commit::Metadata>, error::SegmentMetadata> {
             commit::Metadata::extract(reader).map_err(|e| {
-                if e.kind() == io::ErrorKind::InvalidData {
+                if matches!(e.kind(), io::ErrorKind::InvalidData | io::ErrorKind::UnexpectedEof) {
                     error::SegmentMetadata::InvalidCommit {
                         sofar: sofar.clone(),
                         source: e,

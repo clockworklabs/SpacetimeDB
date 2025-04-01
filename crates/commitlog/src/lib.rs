@@ -5,6 +5,7 @@ use std::{
 };
 
 use log::trace;
+use repo::Repo;
 use spacetimedb_paths::server::CommitLogDir;
 
 pub mod commit;
@@ -23,6 +24,9 @@ pub use crate::{
 };
 pub mod error;
 pub mod payload;
+
+#[cfg(feature = "streaming")]
+pub mod stream;
 
 #[cfg(any(test, feature = "test"))]
 pub mod tests;
@@ -252,6 +256,24 @@ impl<T> Commitlog<T> {
         self.inner.read().unwrap().commits_from(offset)
     }
 
+    /// Get a list of segment offsets, sorted in ascending order.
+    pub fn existing_segment_offsets(&self) -> io::Result<Vec<u64>> {
+        self.inner.read().unwrap().repo.existing_offsets()
+    }
+
+    /// Compress the segments at the offsets provded, marking them as immutable.
+    pub fn compress_segments(&self, offsets: &[u64]) -> io::Result<()> {
+        // even though `compress_segment` takes &self, we take an
+        // exclusive lock to avoid any weirdness happening.
+        #[allow(clippy::readonly_write_lock)]
+        let inner = self.inner.write().unwrap();
+        assert!(!offsets.contains(&inner.head.min_tx_offset()));
+        // TODO: parallelize, maybe
+        offsets
+            .iter()
+            .try_for_each(|&offset| inner.repo.compress_segment(offset))
+    }
+
     /// Remove all data from the log and reopen it.
     ///
     /// Log segments are deleted starting from the newest. As multiple segments
@@ -431,6 +453,32 @@ impl<T: Encode> Commitlog<T> {
     {
         self.inner.read().unwrap().fold_transactions_from(offset, de)
     }
+}
+
+/// Extract the most recently written [`segment::Metadata`] from the commitlog
+/// in `repo`.
+///
+/// Returns `None` if the commitlog is empty.
+///
+/// Note that this function validates the most recent segment, which entails
+/// traversing it from the start.
+///
+/// The function can be used instead of the pattern:
+///
+/// ```ignore
+/// let log = Commitlog::open(..)?;
+/// let max_offset = log.max_committed_offset();
+/// ```
+///
+/// like so:
+///
+/// ```ignore
+/// let max_offset = committed_meta(..)?.map(|meta| meta.tx_range.end);
+/// ```
+///
+/// Unlike `open`, no segment will be created in an empty `repo`.
+pub fn committed_meta(root: CommitLogDir) -> Result<Option<segment::Metadata>, error::SegmentMetadata> {
+    commitlog::committed_meta(repo::Fs::new(root)?)
 }
 
 /// Obtain an iterator which traverses the commitlog located at the `root`

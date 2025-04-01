@@ -1,17 +1,17 @@
-use std::time::Instant;
+use std::fmt;
+use std::fmt::Write;
+use std::time::{Duration, Instant};
 
-use crate::api::{from_json_seed, ClientApi, Connection, StmtResultJson};
+use crate::api::{from_json_seed, ClientApi, Connection, StmtResultJson, StmtStats};
 use crate::common_args;
+use crate::config::Config;
+use crate::util::{database_identity, get_auth_header, ResponseExt, UNSTABLE_WARNING};
 use anyhow::Context;
 use clap::{Arg, ArgAction, ArgMatches};
-use itertools::Itertools;
 use reqwest::RequestBuilder;
 use spacetimedb_lib::de::serde::SeedWrapper;
 use spacetimedb_lib::sats::{satn, Typespace};
 use tabled::settings::Style;
-
-use crate::config::Config;
-use crate::util::{database_identity, get_auth_header, ResponseExt, UNSTABLE_WARNING};
 
 pub fn cli() -> clap::Command {
     clap::Command::new("sql")
@@ -54,14 +54,86 @@ pub(crate) async fn parse_req(mut config: Config, args: &ArgMatches) -> Result<C
     })
 }
 
-// Need to report back timings from each query from the backend instead of infer here...
-fn print_row_count(rows: usize) -> String {
-    let txt = if rows == 1 { "row" } else { "rows" };
-    format!("({rows} {txt})")
+struct StmtResult {
+    table: tabled::Table,
+    stats: Option<StmtStats>,
 }
 
-fn print_timings(now: Instant) {
-    println!("Time: {:.2?}", now.elapsed());
+impl fmt::Display for StmtResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let has_table = !self.table.is_empty();
+        if has_table {
+            write!(f, "{}", self.table)?;
+        }
+
+        if let Some(stats) = &self.stats {
+            if has_table {
+                writeln!(f)?;
+            }
+            let txt = if stats.total_rows == 1 { "row" } else { "rows" };
+
+            let result = format!("({} {txt})", stats.total_rows);
+            let mut info = Vec::new();
+            if stats.rows_inserted != 0 {
+                info.push(format!("inserted: {}", stats.rows_inserted));
+            }
+            if stats.rows_deleted != 0 {
+                info.push(format!("deleted: {}", stats.rows_deleted));
+            }
+            if stats.rows_updated != 0 {
+                info.push(format!("updated: {}", stats.rows_updated));
+            }
+            info.push(format!(
+                "server: {:.2?}",
+                std::time::Duration::from_micros(stats.total_duration_micros)
+            ));
+
+            if !info.is_empty() {
+                write!(f, "{result} [{info}]", info = info.join(", "))?;
+            } else {
+                write!(f, "{result}")?;
+            };
+        };
+        Ok(())
+    }
+}
+
+fn print_stmt_result(
+    stmt_results: &[StmtResultJson],
+    with_stats: Option<Duration>,
+    f: &mut String,
+) -> anyhow::Result<()> {
+    let if_empty: Option<anyhow::Result<StmtResult>> = stmt_results.is_empty().then_some(anyhow::Ok(StmtResult {
+        stats: with_stats.is_some().then_some(StmtStats::default()),
+        table: tabled::Table::new([""]),
+    }));
+    let total = stmt_results.len();
+    for (pos, result) in if_empty
+        .into_iter()
+        .chain(stmt_results.iter().map(|stmt_result| {
+            let (stats, table) = stmt_result_to_table(stmt_result)?;
+
+            anyhow::Ok(StmtResult {
+                stats: with_stats.is_some().then_some(stats),
+                table,
+            })
+        }))
+        .enumerate()
+    {
+        let result = result?;
+        f.write_str(&format!("{result}"))?;
+        if pos + 1 < total {
+            f.write_char('\n')?;
+            f.write_char('\n')?;
+        }
+    }
+
+    if let Some(with_stats) = with_stats {
+        f.write_char('\n')?;
+        f.write_str(&format!("Roundtrip time: {:.2?}", with_stats))?;
+        f.write_char('\n')?;
+    }
+    Ok(())
 }
 
 pub(crate) async fn run_sql(builder: RequestBuilder, sql: &str, with_stats: bool) -> Result<(), anyhow::Error> {
@@ -78,40 +150,16 @@ pub(crate) async fn run_sql(builder: RequestBuilder, sql: &str, with_stats: bool
 
     let stmt_result_json: Vec<StmtResultJson> = serde_json::from_str(&json).context("malformed sql response")?;
 
-    // Print only `OK for empty tables as it's likely a command like `INSERT`.
-    if stmt_result_json.is_empty() {
-        if with_stats {
-            print_timings(now);
-        }
-        println!("OK");
-        return Ok(());
-    };
-
-    stmt_result_json
-        .iter()
-        .map(|stmt_result| {
-            let mut table = stmt_result_to_table(stmt_result)?;
-            if with_stats {
-                // The `tabled::count_rows` add the header as a row, so subtract it.
-                let row_count = table.count_rows().wrapping_sub(1);
-                // For some reason, `table.with(...)` crashes if the row count is 0.
-                if row_count > 0 {
-                    let row_count = print_row_count(row_count);
-                    table.with(tabled::settings::panel::Footer::new(row_count));
-                }
-            }
-            anyhow::Ok(table)
-        })
-        .process_results(|it| println!("{}", it.format("\n\n")))?;
-    if with_stats {
-        print_timings(now);
-    }
+    let mut out = String::new();
+    print_stmt_result(&stmt_result_json, with_stats.then_some(now.elapsed()), &mut out)?;
+    println!("{}", out);
 
     Ok(())
 }
 
-fn stmt_result_to_table(stmt_result: &StmtResultJson) -> anyhow::Result<tabled::Table> {
-    let StmtResultJson { schema, rows } = stmt_result;
+fn stmt_result_to_table(stmt_result: &StmtResultJson) -> anyhow::Result<(StmtStats, tabled::Table)> {
+    let stats = StmtStats::from(stmt_result);
+    let StmtResultJson { schema, rows, .. } = stmt_result;
 
     let mut builder = tabled::builder::Builder::default();
     builder.set_header(
@@ -134,7 +182,7 @@ fn stmt_result_to_table(stmt_result: &StmtResultJson) -> anyhow::Result<tabled::
     let mut table = builder.build();
     table.with(Style::psql());
 
-    Ok(table)
+    Ok((stats, table))
 }
 
 pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
@@ -153,4 +201,222 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
         run_sql(api.sql(), query, false).await?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use itertools::Itertools;
+    use serde_json::value::RawValue;
+    use spacetimedb::json::client_api::StmtStatsJson;
+    use spacetimedb_lib::sats::ProductType;
+    use spacetimedb_lib::{AlgebraicType, AlgebraicValue};
+
+    fn make_row(row: &[AlgebraicValue]) -> Result<Box<RawValue>, serde_json::Error> {
+        let json = serde_json::json!(row);
+        RawValue::from_string(json.to_string())
+    }
+
+    fn check_outputs(
+        result: &[StmtResultJson],
+        duration: Option<Duration>,
+        expect: &str,
+    ) -> Result<String, anyhow::Error> {
+        let mut out = String::new();
+        print_stmt_result(result, duration, &mut out)?;
+
+        // Need to trim the output to because rustfmt remove the `expect` spaces
+        let out = out.lines().map(|line| line.trim_end()).join("\n");
+        assert_eq!(out, expect,);
+
+        Ok(out)
+    }
+
+    fn check_output(
+        schema: ProductType,
+        rows: Vec<&RawValue>,
+        stats: StmtStatsJson,
+        duration: Option<Duration>,
+        expect: &str,
+    ) -> Result<String, anyhow::Error> {
+        let table = StmtResultJson {
+            schema: schema.clone(),
+            rows,
+            total_duration_micros: 1000,
+            stats: stats.clone(),
+        };
+
+        let mut out = String::new();
+        print_stmt_result(&[table], duration, &mut out)?;
+
+        // Need to trim the output to because rustfmt remove the `expect` spaces
+        let out = out.lines().map(|line| line.trim_end()).join("\n");
+        assert_eq!(out, expect,);
+
+        Ok(out)
+    }
+
+    #[test]
+    fn test_output() -> Result<(), anyhow::Error> {
+        let duration = Duration::from_micros(1000);
+        let schema = ProductType::from([("a", AlgebraicType::I32), ("b", AlgebraicType::I64)]);
+        let row = make_row(&[AlgebraicValue::I32(1), AlgebraicValue::I64(2)])?;
+        // Verify with and without stats
+        check_output(
+            schema.clone(),
+            vec![&row],
+            StmtStatsJson {
+                rows_inserted: 1,
+                rows_deleted: 1,
+                rows_updated: 1,
+            },
+            None,
+            r#" a | b
+---+---
+ 1 | 2"#,
+        )?;
+
+        check_output(
+            schema.clone(),
+            vec![&row],
+            StmtStatsJson {
+                rows_inserted: 1,
+                rows_deleted: 1,
+                rows_updated: 1,
+            },
+            Some(duration),
+            r#" a | b
+---+---
+ 1 | 2
+(1 row) [inserted: 1, deleted: 1, updated: 1, server: 1.00ms]
+Roundtrip time: 1.00ms"#,
+        )?;
+
+        // Only a query result
+        check_output(
+            schema.clone(),
+            vec![&row],
+            StmtStatsJson {
+                rows_inserted: 0,
+                rows_deleted: 0,
+                rows_updated: 0,
+            },
+            Some(duration),
+            r#" a | b
+---+---
+ 1 | 2
+(1 row) [server: 1.00ms]
+Roundtrip time: 1.00ms"#,
+        )?;
+
+        // Empty table
+        check_output(
+            schema.clone(),
+            vec![],
+            StmtStatsJson {
+                rows_inserted: 0,
+                rows_deleted: 0,
+                rows_updated: 0,
+            },
+            Some(duration),
+            r#" a | b
+---+---
+(0 rows) [server: 1.00ms]
+Roundtrip time: 1.00ms"#,
+        )?;
+
+        // DML
+        check_output(
+            schema.clone(),
+            vec![],
+            StmtStatsJson {
+                rows_inserted: 1,
+                rows_deleted: 0,
+                rows_updated: 0,
+            },
+            Some(duration),
+            r#" a | b
+---+---
+(0 rows) [inserted: 1, server: 1.00ms]
+Roundtrip time: 1.00ms"#,
+        )?;
+
+        check_output(
+            schema.clone(),
+            vec![],
+            StmtStatsJson {
+                rows_inserted: 0,
+                rows_deleted: 1,
+                rows_updated: 0,
+            },
+            Some(duration),
+            r#" a | b
+---+---
+(0 rows) [deleted: 1, server: 1.00ms]
+Roundtrip time: 1.00ms"#,
+        )?;
+
+        check_output(
+            schema.clone(),
+            vec![],
+            StmtStatsJson {
+                rows_inserted: 0,
+                rows_deleted: 0,
+                rows_updated: 1,
+            },
+            Some(duration),
+            r#" a | b
+---+---
+(0 rows) [updated: 1, server: 1.00ms]
+Roundtrip time: 1.00ms"#,
+        )?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_multiple_output() -> Result<(), anyhow::Error> {
+        let duration = Duration::from_micros(1000);
+        let schema = ProductType::from([("a", AlgebraicType::I32), ("b", AlgebraicType::I64)]);
+        let row = make_row(&[AlgebraicValue::I32(1), AlgebraicValue::I64(2)])?;
+
+        // Verify with and without stats
+        check_outputs(
+            &[
+                StmtResultJson {
+                    schema: schema.clone(),
+                    rows: vec![&row],
+                    total_duration_micros: 1000,
+                    stats: StmtStatsJson {
+                        rows_inserted: 1,
+                        rows_deleted: 1,
+                        rows_updated: 1,
+                    },
+                },
+                StmtResultJson {
+                    schema: schema.clone(),
+                    rows: vec![&row],
+                    total_duration_micros: 1000,
+                    stats: StmtStatsJson {
+                        rows_inserted: 1,
+                        rows_deleted: 1,
+                        rows_updated: 1,
+                    },
+                },
+            ],
+            Some(duration),
+            r#" a | b
+---+---
+ 1 | 2
+(1 row) [inserted: 1, deleted: 1, updated: 1, server: 1.00ms]
+
+ a | b
+---+---
+ 1 | 2
+(1 row) [inserted: 1, deleted: 1, updated: 1, server: 1.00ms]
+Roundtrip time: 1.00ms"#,
+        )?;
+
+        Ok(())
+    }
 }

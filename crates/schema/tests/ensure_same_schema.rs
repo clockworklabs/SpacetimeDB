@@ -15,19 +15,34 @@ fn get_normalized_schema(module_name: &str) -> ModuleDef {
 fn assert_identical_modules(module_name_prefix: &str) {
     let rs = get_normalized_schema(module_name_prefix);
     let cs = get_normalized_schema(&format!("{module_name_prefix}-cs"));
-    let diff = ponder_auto_migrate(&cs, &rs)
+    let mut diff = ponder_auto_migrate(&cs, &rs)
         .expect("could not compute a diff between Rust and C#")
         .steps;
 
-    // Ignore RLS steps for now, as they are not yet implemented in C#.
-    // TODO: remove this when C#-friendly RLS is implemented.
-    let mut diff = diff;
-    diff.retain(|step| !matches!(step, AutoMigrateStep::AddRowLevelSecurity(_)));
+    // In any migration plan, all `RowLevelSecurityDef`s are ALWAYS removed and
+    // re-added to ensure the core engine reinintializes the policies.
+    // This is slightly silly (and arguably should be hidden inside `core`),
+    // but for now, we just ignore these steps and manually compare the `RowLevelSecurityDef`s.
+    diff.retain(|step| {
+        !matches!(
+            step,
+            AutoMigrateStep::AddRowLevelSecurity(_) | AutoMigrateStep::RemoveRowLevelSecurity(_)
+        )
+    });
 
     assert!(
         diff.is_empty(),
         "Rust and C# modules are not identical. Here are the steps to migrate from C# to Rust: {diff:#?}"
     );
+
+    let mut rls_rs = rs.row_level_security().collect::<Vec<_>>();
+    rls_rs.sort();
+    let mut rls_cs = cs.row_level_security().collect::<Vec<_>>();
+    rls_cs.sort();
+    assert_eq!(
+        rls_rs, rls_cs,
+        "Rust and C# modules are not identical: different row level security policies"
+    )
 }
 
 macro_rules! declare_tests {
