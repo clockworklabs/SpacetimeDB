@@ -50,8 +50,6 @@ pub struct CountCreated {
 pub struct DirTrie {
     /// The directory name at which the dir trie is stored.
     root: PathBuf,
-    /// The [CompressType] used to write files in this trie.
-    write_compress_type: CompressType,
 }
 
 const FILE_ID_BYTES: usize = 32;
@@ -68,17 +66,14 @@ impl DirTrie {
         &self.root
     }
 
-    /// Open the directory trie at `root`, using [`CompressType`] for writing files.
+    /// Open the directory trie at `root`, using [`CompressType`] for writing files,
     /// creating the root directory if it doesn't exist.
     ///
     /// Returns an error if the `root` cannot be created as a directory.
     /// See documentation on [`create_dir_all`] for more details.
-    pub fn open(root: PathBuf, write_compress_type: CompressType) -> Result<Self, io::Error> {
+    pub fn open(root: PathBuf) -> Result<Self, io::Error> {
         create_dir_all(&root)?;
-        Ok(Self {
-            root,
-            write_compress_type,
-        })
+        Ok(Self { root })
     }
 
     pub fn file_path(&self, file_id: &FileId) -> PathBuf {
@@ -156,6 +151,7 @@ impl DirTrie {
         &self,
         src_repo: Option<&DirTrie>,
         file_id: &FileId,
+        write_compress_type: CompressType,
         contents: impl FnOnce() -> Bytes,
         counter: &mut CountCreated,
     ) -> Result<(), io::Error> {
@@ -170,7 +166,7 @@ impl DirTrie {
             }
         }
 
-        let mut file = self.open_entry_writer(file_id, self.write_compress_type)?;
+        let mut file = self.open_entry_writer(file_id, write_compress_type)?;
         let contents = contents();
         file.write_all(contents.as_ref())?;
         file.finish()?;
@@ -224,7 +220,7 @@ mod test {
 
     fn with_test_dir_trie(f: impl FnOnce(DirTrie)) {
         let root = tempdir::TempDir::new("test_dir_trie").unwrap();
-        let trie = DirTrie::open(root.path().to_path_buf(), CompressType::None).unwrap();
+        let trie = DirTrie::open(root.path().to_path_buf()).unwrap();
         f(trie)
     }
 

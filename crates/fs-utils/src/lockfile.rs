@@ -46,18 +46,20 @@ impl Lockfile {
         // See https://github.com/clockworklabs/SpacetimeDB/issues/1339.
         let path = Self::lock_path(file_path);
 
-        let fail = |cause| LockfileError::Acquire {
-            lock_path: path.clone(),
-            file_path: file_path.to_path_buf(),
-            cause,
+        let fail = |cause| {
+            dbg!(LockfileError::Acquire {
+                lock_path: path.clone(),
+                file_path: file_path.to_path_buf(),
+                cause,
+            })
         };
-
+        dbg!("create lockfile at {path:?}");
         // Ensure the directory exists before attempting to create the lockfile.
         create_parent_dir(file_path).map_err(fail)?;
-
+        dbg!("created lockfile at {path:?}");
         // Open with `create_new`, which fails if the file already exists.
         std::fs::File::create_new(&path).map_err(fail)?;
-
+        dbg!("done lockfile at {path:?}");
         Ok(Lockfile { path })
     }
 

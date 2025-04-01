@@ -750,6 +750,7 @@ impl RelationalDB {
         if let Some(snapshot_worker) = &self.snapshot_worker {
             if let Some(tx_offset) = tx_data.tx_offset() {
                 if tx_offset % SNAPSHOT_FREQUENCY == 0 {
+                    dbg!("MAYBE", tx_offset);
                     snapshot_worker.request_snapshot.unbounded_send(()).unwrap();
                 }
             }
@@ -2681,62 +2682,46 @@ mod tests {
     }
 
     #[test]
-    fn snapshot_test() -> ResultTest<()> {
-        let stdb = TestDB::durable()?;
-
-        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
-        let schema = my_table(AlgebraicType::I32);
-        let table_id = stdb.create_table(&mut tx, schema)?;
-
-        insert_three_i32s(&stdb, &mut tx, table_id)?;
-        stdb.commit_tx(tx)?;
-        let dir = stdb.path().snapshots();
-
-        for compress in [CompressType::None, CompressType::Zstd] {
-            let (dir, repo) = make_snapshot(dir.clone(), Identity::ZERO, 0, compress, true);
-            stdb.take_snapshot(&repo)?;
-
-            let size = repo.size_on_disk_last_snapshot()?;
-            dbg!(&size);
-            assert!(size.total_size > 0, "Snapshot size should be greater than 0");
-            let repo = open_snapshot_repo(dir, Identity::ZERO, 0)?;
-            let last = repo.latest_snapshot()?;
-            RelationalDB::restore_from_snapshot_or_bootstrap(Identity::ZERO, Some(&repo), last)?;
-        }
-
-        Ok(())
-    }
-
-    #[test]
     fn compress_snapshot_test() -> ResultTest<()> {
-        let stdb = TestDB::durable()?;
+        let stdb = TestDB::in_memory()?;
 
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
         let schema = my_table(AlgebraicType::I32);
         let table_id = stdb.create_table(&mut tx, schema)?;
-
-        insert_three_i32s(&stdb, &mut tx, table_id)?;
+        for v in 0..3 {
+            insert(&stdb, &mut tx, table_id, &product![v])?;
+        }
         stdb.commit_tx(tx)?;
-        let dir = SnapshotsPath::from_path_unchecked("/Users/mamcx/Downloads/stdb");
-        // let dir = stdb.path().snapshots();
 
-        let (dir, repo) = make_snapshot(dir.clone(), Identity::ZERO, 0, CompressType::None, true);
+        let root = stdb.path().snapshots();
+        let root = SnapshotsPath::from_path_unchecked("/Users/mamcx/Downloads/stdb");
+        let (dir, repo) = make_snapshot(root.clone(), Identity::ZERO, 0, CompressType::None, true);
         stdb.take_snapshot(&repo)?;
+        dbg!(repo.size_on_disk()?);
 
-        let last = repo.latest_snapshot()?;
+        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        for v in 0..10 {
+            insert(&stdb, &mut tx, table_id, &product![v])?;
+        }
+        stdb.commit_tx(tx)?;
+
+        stdb.take_snapshot(&repo)?;
+        dbg!(repo.size_on_disk()?);
+
         let size_compress_off = repo.size_on_disk_last_snapshot()?;
         dbg!(&size_compress_off);
         assert!(
             size_compress_off.total_size > 0,
             "Snapshot size should be greater than 0"
         );
+        let last = dbg!(repo.latest_snapshot()?);
+
         assert_eq!(
             repo.compress_older_snapshots(last.unwrap())?.join().unwrap()?,
             CompressCount { none: 0, zstd: 1 }
         );
         let size_compress_on = repo.size_on_disk_last_snapshot()?;
-        dbg!(&size_compress_on);
-
+        dbg!(repo.size_on_disk()?);
         let repo = open_snapshot_repo(dir, Identity::ZERO, 0)?;
 
         RelationalDB::restore_from_snapshot_or_bootstrap(Identity::ZERO, Some(&repo), last)?;
