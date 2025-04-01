@@ -49,7 +49,7 @@ metrics_group!(
         #[labels(node_id: str)]
         pub tokio_num_blocking_threads: IntGaugeVec,
 
-        #[name = tokio_num_blocking_threads]
+        #[name = tokio_num_idle_blocking_threads]
         #[help = "Number of tokio blocking threads that are idle"]
         #[labels(node_id: str)]
         pub tokio_num_idle_blocking_threads: IntGaugeVec,
