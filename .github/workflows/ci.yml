@@ -101,6 +101,9 @@ jobs:
       - name: Run cargo test
         run: cargo test --all
 
+      - name: Check that the test outputs are up-to-date
+        run: git diff --exit-code
+
       - name: Ensure C# autogen bindings are up-to-date
         run: |
           cargo run --example regen-csharp-moduledef
@@ -153,6 +156,10 @@ jobs:
         working-directory: spacetimedb-csharp-sdk
         run: |
           dotnet pack ../crates/bindings-csharp/BSATN.Runtime
+          # The SDK package overrides the following crate for use in their tests.
+          # Even though it doesn't actually depend on it, we still need to pack it
+          # so dotnet doesn't complain.
+          dotnet pack ../crates/bindings-csharp/Runtime
           ./tools~/write-nuget-config.sh ..
 
           # clear package caches, so we get fresh ones even if version numbers haven't changed

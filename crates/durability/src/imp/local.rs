@@ -144,6 +144,16 @@ impl<T: Encode + Send + Sync + 'static> Local<T> {
         self.clog.commits_from(offset).map_ok(Commit::from)
     }
 
+    /// Get a list of segment offsets, sorted in ascending order.
+    pub fn existing_segment_offsets(&self) -> io::Result<Vec<TxOffset>> {
+        self.clog.existing_segment_offsets()
+    }
+
+    /// Compress the segments at the offsets provded, marking them as immutable.
+    pub fn compress_segments(&self, offsets: &[TxOffset]) -> io::Result<()> {
+        self.clog.compress_segments(offsets)
+    }
+
     /// Apply all outstanding transactions to the [`Commitlog`] and flush it
     /// to disk.
     ///

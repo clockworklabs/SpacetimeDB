@@ -14,6 +14,7 @@ use scopeguard::ScopeGuard;
 use serde::Deserialize;
 use spacetimedb::client::messages::{serialize, IdentityTokenMessage, SerializableMessage};
 use spacetimedb::client::{ClientActorId, ClientConfig, ClientConnection, DataMessage, MessageHandleError, Protocol};
+use spacetimedb::host::module_host::ClientConnectedError;
 use spacetimedb::host::NoSuchModule;
 use spacetimedb::util::also_poll;
 use spacetimedb::worker_metrics::WORKER_METRICS;
@@ -148,7 +149,11 @@ where
         let client = match ClientConnection::spawn(client_id, client_config, leader.replica_id, module_rx, actor).await
         {
             Ok(s) => s,
-            Err(e) => {
+            Err(e @ (ClientConnectedError::Rejected(_) | ClientConnectedError::OutOfEnergy)) => {
+                log::info!("{e}");
+                return;
+            }
+            Err(e @ (ClientConnectedError::DBError(_) | ClientConnectedError::ReducerCall(_))) => {
                 log::warn!("ModuleHost died while we were connecting: {e:#}");
                 return;
             }

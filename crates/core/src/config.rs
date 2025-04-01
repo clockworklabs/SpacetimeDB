@@ -235,30 +235,4 @@ mod tests {
             .check_compatibility_and_update(mkmeta(1, 3, 5))
             .unwrap_err();
     }
-
-    // this will start failing once we bump to v1.1.0 - that's fine, it can just be removed.
-    #[test]
-    fn check_v1_0_0_compatibility() {
-        // this is the function v1.0.0 uses to check compatibility
-        let version_compatible_with = |this: &MetadataFile, version: &semver::Version| {
-            semver::Comparator {
-                op: semver::Op::Caret,
-                major: this.version.major,
-                minor: Some(this.version.minor),
-                patch: Some(this.version.minor),
-                pre: Default::default(),
-            }
-            .matches(version)
-        };
-        let default_v1_0_0_meta_file = MetadataFile {
-            version: mkver(1, 0, 0),
-            edition: "standalone".to_owned(),
-            client_connection_id: None,
-        };
-        let meta_file_from_v1_0_x = MetadataFile::new("standalone");
-        assert!(version_compatible_with(
-            &meta_file_from_v1_0_x,
-            &default_v1_0_0_meta_file.version,
-        ));
-    }
 }
