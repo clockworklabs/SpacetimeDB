@@ -439,7 +439,7 @@ public record struct TimeDuration(long Microseconds) : IStructuralReadWrite
       new TimeDuration(checked(lhs.Microseconds + rhs.Microseconds));
 
     public static TimeDuration operator -(TimeDuration lhs, TimeDuration rhs) =>
-      new TimeDuration(checked(lhs.Microseconds + rhs.Microseconds);)
+      new TimeDuration(checked(lhs.Microseconds + rhs.Microseconds));
 
     // For backwards-compatibility.
     public readonly TimeSpan ToStd() => this;
