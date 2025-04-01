@@ -777,6 +777,9 @@ impl ModuleHost {
         reducer_name: &str,
         args: ReducerArgs,
     ) -> Result<ReducerCallResult, ReducerCallError> {
+        #[cfg(feature = "coz")]
+        coz::begin!("ModuleHost::call_reducer");
+
         let res = async {
             let (reducer_id, reducer_def) = self
                 .info
@@ -815,6 +818,9 @@ impl ModuleHost {
         if let Some(log_message) = log_message {
             self.inject_logs(LogLevel::Error, &log_message)
         }
+
+        #[cfg(feature = "coz")]
+        coz::end!("ModuleHost::call_reducer");
 
         res
     }

@@ -111,6 +111,8 @@ jwks = { package = "spacetimedb-jwks", version = "0.1.3" }
 async_cache = "0.3.1"
 faststr = "0.2.23"
 
+coz = { workspace = true, optional = true }
+
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = {workspace = true}
 tikv-jemalloc-ctl = {workspace = true}
@@ -124,6 +126,9 @@ default = ["unindexed_iter_by_col_range_warn"]
 spacetimedb-wasm-instance-env-times = []
 # Enable test helpers and utils
 test = ["spacetimedb-commitlog/test"]
+# Causal profiling markers with `coz`
+# See https://github.com/plasma-umass/coz
+coz = ["dep:coz"]
 
 [dev-dependencies]
 spacetimedb-lib = { path = "../lib", features = ["proptest"] }

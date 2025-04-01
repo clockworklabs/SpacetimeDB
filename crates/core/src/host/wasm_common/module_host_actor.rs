@@ -464,7 +464,16 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
 
         // run the call_reducer call in rayon. it's important that we don't acquire a lock inside a rayon task,
         // as that can lead to deadlock.
-        let (mut tx, result) = rayon::scope(|_| tx_slot.set(tx, || self.instance.call_reducer(op, budget)));
+        let (mut tx, result) = rayon::scope(|_| {
+            tx_slot.set(tx, || {
+                // #[cfg(feature = "coz")]
+                // coz::begin!("instance.call_reducer");
+                let res = self.instance.call_reducer(op, budget);
+                // #[cfg(feature = "coz")]
+                // coz::end!("instance.call_reducer");
+                res
+            })
+        });
 
         let ExecuteResult {
             energy,
@@ -583,6 +592,10 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             request_id,
             timer,
         };
+
+        // #[cfg(feature = "coz")]
+        // coz::begin!("commit_and_broadcast_event");
+
         let event = match self
             .info
             .subscriptions
@@ -592,6 +605,9 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             Ok(ev) => ev,
             Err(WriteConflict) => todo!("Write skew, you need to implement retries my man, T-dawg."),
         };
+
+        // #[cfg(feature = "coz")]
+        // coz::end!("commit_and_broadcast_event");
 
         ReducerCallResult {
             outcome: ReducerOutcome::from(&event.status),

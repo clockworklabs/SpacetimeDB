@@ -50,3 +50,8 @@ tikv-jemalloc-ctl = {workspace = true}
 [dev-dependencies]
 once_cell.workspace = true
 tempfile.workspace = true
+
+[features]
+# Causal profiling markers with `coz`
+# See https://github.com/plasma-umass/coz
+coz = ["spacetimedb-core/coz"]
