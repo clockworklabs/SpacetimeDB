@@ -72,12 +72,12 @@ metrics_group!(
         #[name = tokio_spawned_tasks_count]
         #[help = "Number of tokio tasks spawned"]
         #[labels(node_id: str)]
-        pub tokio_spawned_tasks_count: IntGaugeVec,
+        pub tokio_spawned_tasks_count: IntCounterVec,
 
         #[name = tokio_remote_schedule_count]
         #[help = "Number of tasks spawned from outside the tokio runtime"]
         #[labels(node_id: str)]
-        pub tokio_remote_schedule_count: IntGaugeVec,
+        pub tokio_remote_schedule_count: IntCounterVec,
 
         #[name = spacetime_websocket_sent_msg_size_bytes]
         #[help = "The size of messages sent to connected sessions"]
@@ -230,8 +230,25 @@ pub fn spawn_tokio_stats(node_id: String) {
                 global_queue_depth_metric.set(metrics.global_queue_depth() as i64);
                 num_idle_blocking_threads_metric.set(metrics.num_idle_blocking_threads() as i64);
                 blocking_queue_depth_metric.set(metrics.blocking_queue_depth() as i64);
-                spawned_tasks_count_metric.set(metrics.spawned_tasks_count() as i64);
-                remote_schedule_count_metric.set(metrics.remote_schedule_count() as i64);
+
+                // The spawned tasks count and remote schedule count are cumulative,
+                // so we need to increment them by the difference from the last value.
+                {
+                    let current_count = metrics.spawned_tasks_count();
+                    let previous_value = spawned_tasks_count_metric.get();
+                    // The tokio metric should be monotonically increasing, but we are checking just in case.
+                    if current_count > previous_value {
+                        spawned_tasks_count_metric.inc_by(current_count - previous_value);
+                    }
+                }
+                {
+                    let current_count = metrics.remote_schedule_count();
+                    let previous_value = remote_schedule_count_metric.get();
+                    // The tokio metric should be monotonically increasing, but we are checking just in case.
+                    if current_count > previous_value {
+                        remote_schedule_count_metric.inc_by(current_count - previous_value);
+                    }
+                }
 
                 // TODO: Consider adding some of the worker metrics as well, like overflows, steals, etc.
 
