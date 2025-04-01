@@ -121,6 +121,7 @@ impl ProductType {
         self.is_i64_newtype(TIME_DURATION_TAG)
     }
 
+    /// Returns whether this is the special tag of [`Identity`].
     pub fn is_identity_tag(tag_name: &str) -> bool {
         tag_name == IDENTITY_TAG
     }

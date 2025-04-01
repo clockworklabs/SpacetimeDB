@@ -194,7 +194,7 @@ where
 /// Parses a source text literal as a particular type
 pub(crate) fn parse(value: &str, ty: &AlgebraicType) -> anyhow::Result<AlgebraicValue> {
     let to_timestamp = || {
-        Timestamp::parse_from_str(value)?
+        Timestamp::parse_from_rfc3339(value)?
             .serialize(ValueSerializer)
             .with_context(|| "Could not parse timestamp")
     };

@@ -132,12 +132,20 @@ impl Timestamp {
     }
 
     /// Parses an RFC 3339 formated timestamp string
-    pub fn parse_from_str(str: &str) -> anyhow::Result<Timestamp> {
+    pub fn parse_from_rfc3339(str: &str) -> anyhow::Result<Timestamp> {
         DateTime::parse_from_rfc3339(str)
             .map_err(|err| anyhow::anyhow!(err))
             .with_context(|| "Invalid timestamp format. Expected RFC 3339 format (e.g. '2025-02-10 15:45:30').")
             .map(|dt| dt.timestamp_micros())
             .map(Timestamp::from_micros_since_unix_epoch)
+    }
+
+    /// Returns an RFC 3339 and ISO 8601 date and time string such as `1996-12-19T16:39:57-08:00`.
+    pub fn to_rfc3339(&self) -> anyhow::Result<String> {
+        DateTime::from_timestamp_micros(self.to_micros_since_unix_epoch())
+            .map(|t| t.to_rfc3339())
+            .ok_or_else(|| anyhow::anyhow!("Timestamp with i64 microseconds since Unix epoch overflows DateTime"))
+            .with_context(|| self.to_micros_since_unix_epoch())
     }
 }
 
@@ -151,11 +159,9 @@ impl Add<TimeDuration> for Timestamp {
 
 pub(crate) const MICROSECONDS_PER_SECOND: i64 = 1_000_000;
 
-impl std::fmt::Display for Timestamp {
+impl fmt::Display for Timestamp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let date = DateTime::from_timestamp_micros(self.to_micros_since_unix_epoch())
-            .expect("Timestamp with i64 microseconds since Unix epoch overflows DateTime");
-        write!(f, "{}", date.to_rfc3339())
+        write!(f, "{}", self.to_rfc3339().unwrap())
     }
 }
 
