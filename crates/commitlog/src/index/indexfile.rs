@@ -159,8 +159,9 @@ impl<Key: Into<u64> + From<u64>> IndexFileMut<Key> {
     /// - `IndexError::OutOfMemory`: Append after index file is already full.
     pub fn append(&mut self, key: Key, value: u64) -> Result<(), IndexError> {
         let key = key.into();
-        if self.last_key()? >= key {
-            return Err(IndexError::InvalidInput(key));
+        let last_key = self.last_key()?;
+        if last_key >= key {
+            return Err(IndexError::InvalidInput(last_key, key));
         }
 
         let start = self.num_entries * ENTRY_SIZE;

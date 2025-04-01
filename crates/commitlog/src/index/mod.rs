@@ -16,8 +16,8 @@ pub enum IndexError {
     #[error("Asked key is smaller than the first entry in the index")]
     KeyNotFound,
 
-    #[error("Key should be monotnously increasing: {0}")]
-    InvalidInput(u64),
+    #[error("Key should be monotnously increasing: input: {1}, last: {0}")]
+    InvalidInput(u64, u64),
 
     #[error("index file is not readable")]
     InvalidFormat,
