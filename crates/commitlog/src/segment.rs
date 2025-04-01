@@ -583,7 +583,6 @@ mod tests {
     use crate::{payload::ArrayDecoder, repo, Options};
     use itertools::Itertools;
     use proptest::prelude::*;
-    use rand::thread_rng;
     use spacetimedb_paths::server::CommitLogDir;
     use tempfile::tempdir;
 
@@ -807,16 +806,14 @@ mod tests {
             assert_eq!(writer.head.key_lookup(i).unwrap(), (i, i * 128));
         }
 
-        let mut rng = thread_rng();
-
         // Truncating to any offset in the written range or larger
         // retains that offset - 1, or the max offset written.
-        let truncate_to: TxOffset = rng.gen_range(1..=32);
+        let truncate_to: TxOffset = rand::random_range(1..=32);
         let retained_key = truncate_to.saturating_sub(1).min(10);
         let retained_val = retained_key * 128;
         let retained = (retained_key, retained_val);
 
-        writer.ftruncate(truncate_to, rng.gen()).unwrap();
+        writer.ftruncate(truncate_to, rand::random()).unwrap();
         assert_eq!(writer.head.key_lookup(truncate_to).unwrap(), retained);
         // Make sure this also holds after reopen.
         drop(writer);

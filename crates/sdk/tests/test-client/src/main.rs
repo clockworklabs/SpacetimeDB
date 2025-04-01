@@ -2174,7 +2174,7 @@ fn exec_two_different_compression_algos() {
     // Create 32 KiB of random bytes to make it very likely that compression is used.
     // The actual threshold used currently is 1 KiB
     // but let's use more than that in case we change it and forget to update here.
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     let mut bytes = [0; 1 << 15];
     rng.fill_bytes(&mut bytes);
     let bytes: Arc<[u8]> = bytes.into();
