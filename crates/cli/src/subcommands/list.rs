@@ -7,7 +7,7 @@ use crate::Config;
 use anyhow::Context;
 use clap::{ArgMatches, Command};
 use serde::Deserialize;
-use spacetimedb::Identity;
+use spacetimedb_lib::Identity;
 use tabled::{
     settings::{object::Columns, Alignment, Modify, Style},
     Table, Tabled,

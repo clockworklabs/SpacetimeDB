@@ -1,5 +1,6 @@
 [workspace]
 members = [
+  "crates/auth",
   "crates/bench",
   "crates/bindings-sys",
   "crates/bindings",
@@ -93,6 +94,7 @@ rust-version = "1.84.0"
 
 [workspace.dependencies]
 spacetimedb = { path = "crates/bindings", version = "1.1.0" }
+spacetimedb-auth = { path = "crates/auth", version = "1.1.0" }
 spacetimedb-bindings-macro = { path = "crates/bindings-macro", version = "1.1.0" }
 spacetimedb-bindings-sys = { path = "crates/bindings-sys", version = "1.1.0" }
 spacetimedb-cli = { path = "crates/cli", version = "1.1.0" }
@@ -187,6 +189,7 @@ itertools = "0.12"
 itoa = "1"
 jsonwebtoken = { package = "spacetimedb-jsonwebtoken", version = "9.3.0" }
 junction = "1"
+jwks = { package = "spacetimedb-jwks", version = "0.1.3" }
 lazy_static = "1.4.0"
 log = "0.4.17"
 memchr = "2"

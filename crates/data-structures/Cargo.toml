@@ -6,7 +6,7 @@ license-file = "LICENSE"
 description = "Assorted data structures used in spacetimedb"
 
 [features]
-serde = ["dep:serde"]
+serde = ["dep:serde", "hashbrown/serde"]
 
 [dependencies]
 ahash.workspace = true

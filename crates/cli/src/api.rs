@@ -5,7 +5,6 @@ use reqwest::{header, Client, RequestBuilder};
 use serde::Deserialize;
 use serde_json::value::RawValue;
 
-use spacetimedb::json::client_api::StmtStatsJson;
 use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
 use spacetimedb_lib::de::serde::DeserializeWrapper;
 use spacetimedb_lib::sats::ProductType;
@@ -95,6 +94,13 @@ pub struct StmtResultJson<'a> {
     pub total_duration_micros: u64,
     #[serde(default)]
     pub stats: StmtStatsJson,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct StmtStatsJson {
+    pub rows_inserted: u64,
+    pub rows_deleted: u64,
+    pub rows_updated: u64,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]

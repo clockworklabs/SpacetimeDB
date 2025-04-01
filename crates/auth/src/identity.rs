@@ -1,12 +1,10 @@
-use crate::identity::Identity;
 pub use jsonwebtoken::errors::Error as JwtError;
 pub use jsonwebtoken::errors::ErrorKind as JwtErrorKind;
 pub use jsonwebtoken::{DecodingKey, EncodingKey};
 use serde::Deserializer;
 use serde::{Deserialize, Serialize};
+use spacetimedb_lib::Identity;
 use std::time::SystemTime;
-
-use super::token_validation::TokenValidationError;
 
 // These are the claims that can be attached to a request/connection.
 #[serde_with::serde_as]
@@ -72,39 +70,33 @@ pub struct IncomingClaims {
 }
 
 impl TryInto<SpacetimeIdentityClaims> for IncomingClaims {
-    type Error = TokenValidationError;
+    type Error = anyhow::Error;
 
-    fn try_into(self) -> Result<SpacetimeIdentityClaims, TokenValidationError> {
+    fn try_into(self) -> anyhow::Result<SpacetimeIdentityClaims> {
         // The issuer and subject must be less than 128 bytes.
         if self.issuer.len() > 128 {
-            return Err(TokenValidationError::Other(anyhow::anyhow!(
-                "Issuer too long: {:?}",
-                self.issuer
-            )));
+            return Err(anyhow::anyhow!("Issuer too long: {:?}", self.issuer));
         }
         if self.subject.len() > 128 {
-            return Err(TokenValidationError::Other(anyhow::anyhow!(
-                "Subject too long: {:?}",
-                self.subject
-            )));
+            return Err(anyhow::anyhow!("Subject too long: {:?}", self.subject));
         }
         // The issuer and subject must be non-empty.
         if self.issuer.is_empty() {
-            return Err(TokenValidationError::Other(anyhow::anyhow!("Issuer empty")));
+            return Err(anyhow::anyhow!("Issuer empty"));
         }
         if self.subject.is_empty() {
-            return Err(TokenValidationError::Other(anyhow::anyhow!("Subject empty")));
+            return Err(anyhow::anyhow!("Subject empty"));
         }
 
         let computed_identity = Identity::from_claims(&self.issuer, &self.subject);
         // If an identity is provided, it must match the computed identity.
         if let Some(token_identity) = self.identity {
             if token_identity != computed_identity {
-                return Err(TokenValidationError::Other(anyhow::anyhow!(
+                return Err(anyhow::anyhow!(
                     "Identity mismatch: token identity {:?} does not match computed identity {:?}",
                     token_identity,
-                    computed_identity
-                )));
+                    computed_identity,
+                ));
             }
         }
 
