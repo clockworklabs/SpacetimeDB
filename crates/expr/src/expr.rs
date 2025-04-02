@@ -89,6 +89,50 @@ impl ProjectName {
 ///
 /// Note that RLS takes a single expression and produces a list of expressions.
 /// Hence why these variants take lists rather than single expressions.
+///
+/// Why does RLS take an expression and produce a list?
+///
+/// There may be multiple RLS rules associated to a single table.
+/// Semantically these rules represent a UNION over that table,
+/// and this corresponds to a UNION in the original expression.
+///
+/// TODO: We should model the UNION explicitly in the physical plan.
+///
+/// Ex.
+///
+/// Let's say we have the following rules for the `users` table:
+/// ```rust
+/// use spacetimedb::client_visibility_filter;
+/// use spacetimedb::Filter;
+///
+/// #[client_visibility_filter]
+/// const USER_FILTER: Filter = Filter::Sql(
+///     "SELECT users.* FROM users WHERE identity = :sender"
+/// );
+///
+/// #[client_visibility_filter]
+/// const ADMIN_FILTER: Filter = Filter::Sql(
+///     "SELECT users.* FROM users JOIN admins"
+/// );
+/// ```
+///
+/// The user query
+/// ```sql
+/// SELECT * FROM users WHERE level > 5
+/// ```
+///
+/// essentially resolves to
+/// ```sql
+/// SELECT users.*
+/// FROM users
+/// WHERE identity = :sender AND level > 5
+///
+/// UNION ALL
+///
+/// SELECT users.*
+/// FROM users JOIN admins
+/// WHERE users.level > 5
+/// ```
 #[derive(Debug)]
 pub enum ProjectList {
     Name(Vec<ProjectName>),

@@ -110,6 +110,10 @@ impl ProjectPlan {
 /// TODO: LIMIT and COUNT were added rather hastily.
 /// We should rethink having separate plan types for projections and selections,
 /// as it makes optimization more difficult the more they diverge.
+///
+/// Note that RLS takes a single expression and produces a list of expressions.
+/// Hence why these variants take lists rather than single expressions.
+/// See [spacetimedb_expr::ProjectList] for details.
 #[derive(Debug)]
 pub enum ProjectListPlan {
     /// A plan that returns physical rows
