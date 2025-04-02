@@ -893,6 +893,16 @@ but you must call one of them, or else the connection will never progress.
     }
 
     /// Set the name or identity of the remote database.
+    #[deprecated(
+        since = "1.0.2",
+        note = "You should instead use [`DbConnectionBuilder::with_module_name`]."
+    )]
+    pub fn with_module_name(mut self, name_or_identity: impl Into<String>) -> Self {
+        self.database_name = Some(name_or_identity.into());
+        self
+    }
+
+    /// Set the name or identity of the remote database.
     pub fn with_database_name(mut self, name_or_identity: impl Into<String>) -> Self {
         self.database_name = Some(name_or_identity.into());
         self
