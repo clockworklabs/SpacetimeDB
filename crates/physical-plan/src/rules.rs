@@ -162,20 +162,27 @@ impl RewriteRule for PushLimit {
 
     fn matches(plan: &Self::Plan) -> Option<Self::Info> {
         match plan {
-            ProjectListPlan::Limit(scan, _) => matches!(
-                **scan,
-                ProjectListPlan::Name(ProjectPlan::None(
-                    PhysicalPlan::TableScan(TableScan { limit: None, .. }, _)
-                        | PhysicalPlan::IxScan(IxScan { limit: None, .. }, _)
-                ))
-            )
+            ProjectListPlan::Limit(scan, _) => {
+                match &**scan {
+                    ProjectListPlan::Name(plans) => plans.iter().any(|plan| {
+                        matches!(
+                            plan,
+                            ProjectPlan::None(
+                                PhysicalPlan::TableScan(TableScan { limit: None, .. }, _)
+                                    | PhysicalPlan::IxScan(IxScan { limit: None, .. }, _)
+                            )
+                        )
+                    }),
+                    _ => false,
+                }
+            }
             .then_some(()),
             _ => None,
         }
     }
 
     fn rewrite(plan: Self::Plan, _: ()) -> Result<Self::Plan> {
-        let select = |plan| ProjectListPlan::Name(ProjectPlan::None(plan));
+        let select = |plan| ProjectPlan::None(plan);
         let limit_scan = |scan, n| match scan {
             PhysicalPlan::TableScan(scan, alias) => {
                 select(PhysicalPlan::TableScan(
@@ -199,7 +206,18 @@ impl RewriteRule for PushLimit {
         };
         match plan {
             ProjectListPlan::Limit(scan, n) => match *scan {
-                ProjectListPlan::Name(ProjectPlan::None(scan)) => Ok(limit_scan(scan, n)),
+                ProjectListPlan::Name(plans) => Ok(ProjectListPlan::Name(
+                    plans
+                        .into_iter()
+                        .map(|plan| match plan {
+                            ProjectPlan::None(
+                                scan @ PhysicalPlan::TableScan(TableScan { limit: None, .. }, _)
+                                | scan @ PhysicalPlan::IxScan(IxScan { limit: None, .. }, _),
+                            ) => limit_scan(scan, n),
+                            _ => plan,
+                        })
+                        .collect(),
+                )),
                 input => Ok(ProjectListPlan::Limit(Box::new(input), n)),
             },
             _ => Ok(plan),

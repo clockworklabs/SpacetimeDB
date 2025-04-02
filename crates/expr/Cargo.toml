@@ -20,4 +20,5 @@ spacetimedb-sql-parser.workspace = true
 
 [dev-dependencies]
 pretty_assertions.workspace = true
+spacetimedb = { workspace = true, features = ["unstable"] }
 spacetimedb-lib.workspace = true
