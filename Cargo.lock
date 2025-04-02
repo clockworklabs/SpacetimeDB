@@ -5361,6 +5361,7 @@ dependencies = [
  "derive_more",
  "ethnum",
  "pretty_assertions",
+ "spacetimedb",
  "spacetimedb-lib",
  "spacetimedb-primitives",
  "spacetimedb-sats",
@@ -5472,6 +5473,7 @@ version = "1.1.0"
 dependencies = [
  "anyhow",
  "derive_more",
+ "either",
  "pretty_assertions",
  "spacetimedb-expr",
  "spacetimedb-lib",
