@@ -343,10 +343,13 @@ where
                     "append_after_commit min_tx_offset={} bytes_written={} commit_len={}",
                     commit.min_tx_offset, bytes_written, commit_len
                 );
-                offset_index
+
+                if let Err(_) = offset_index
                     .append_after_commit(commit.min_tx_offset, bytes_written, commit_len)
                     .inspect_err(|e| warn!("failed to append to offset index: {e}"))
-                    .ok();
+                {
+                    panic!("failed to append to offset index");
+                }
             }
 
             bytes_written += commit_len;
