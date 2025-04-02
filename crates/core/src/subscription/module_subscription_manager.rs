@@ -13,7 +13,7 @@ use crate::subscription::delta::eval_delta;
 use crate::subscription::record_exec_metrics;
 use hashbrown::hash_map::OccupiedError;
 use hashbrown::{HashMap, HashSet};
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use spacetimedb_client_api_messages::websocket::{
     BsatnFormat, CompressableQueryUpdate, Compression, FormatSwitch, JsonFormat, QueryId, QueryUpdate, WebsocketFormat,
 };
@@ -22,6 +22,7 @@ use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::{ConnectionId, Identity};
 use spacetimedb_primitives::TableId;
 use spacetimedb_subscription::SubscriptionPlan;
+use std::collections::LinkedList;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -31,6 +32,7 @@ use std::sync::Arc;
 type ClientId = (Identity, ConnectionId);
 type Query = Arc<Plan>;
 type Client = Arc<ClientConnectionSender>;
+type SwitchedTableUpdate = FormatSwitch<TableUpdate<BsatnFormat>, TableUpdate<JsonFormat>>;
 type SwitchedDbUpdate = FormatSwitch<ws::DatabaseUpdate<BsatnFormat>, ws::DatabaseUpdate<JsonFormat>>;
 
 /// ClientQueryId is an identifier for a query set by the client.
@@ -520,25 +522,63 @@ impl SubscriptionManager {
         // Put the main work on a rayon compute thread.
         rayon::scope(|_| {
             let span = tracing::info_span!("eval_incr").entered();
-            let (updates, errs, metrics) = tables
+
+            type ClientUpdate<'a> = (
+                &'a ClientId,
+                TableId,
+                &'a str,
+                FormatSwitch<(CompressableQueryUpdate<BsatnFormat>, u64), (QueryUpdate<JsonFormat>, u64)>,
+            );
+
+            #[derive(Default)]
+            struct FoldState<'a> {
+                updates: Vec<ClientUpdate<'a>>,
+                errs: Vec<(&'a ClientId, Box<str>)>,
+                metrics: ExecutionMetrics,
+            }
+
+            #[derive(Default)]
+            struct ReduceState<'a> {
+                updates: VecList<ClientUpdate<'a>>,
+                errs: VecList<(&'a ClientId, Box<str>)>,
+                metrics: ExecutionMetrics,
+            }
+            impl<'a> ReduceState<'a> {
+                fn from_fold(acc: FoldState<'a>) -> Self {
+                    Self {
+                        updates: acc.updates.into(),
+                        errs: acc.errs.into(),
+                        metrics: acc.metrics,
+                    }
+                }
+                fn append(mut self, rhs: Self) -> Self {
+                    self.updates.append(rhs.updates);
+                    self.errs.append(rhs.errs);
+                    self.metrics.merge(rhs.metrics);
+                    self
+                }
+            }
+
+            let queries = tables
                 .iter()
                 .filter(|table| !table.inserts.is_empty() || !table.deletes.is_empty())
-                .map(|DatabaseTableUpdate { table_id, .. }| table_id)
-                .filter_map(|table_id| self.tables.get(table_id))
+                .filter_map(|DatabaseTableUpdate { table_id, .. }| self.tables.get(table_id))
                 .flatten()
-                .collect::<HashSet<_>>()
-                .par_iter()
-                .filter_map(|&hash| self.queries.get(hash).map(|state| (hash, &state.query)))
+                .collect::<HashSet<_>>();
+
+            let ReduceState { updates, errs, metrics } = queries
+                .into_par_iter()
+                .filter_map(|hash| self.queries.get(hash).map(|state| (hash, &state.query)))
                 .flat_map_iter(|(hash, plan)| {
                     plan.plans_fragments()
-                        .map(move |plan_fragment| (&plan.sql, hash, plan_fragment, ExecutionMetrics::default()))
+                        .map(move |plan_fragment| (&plan.sql, hash, plan_fragment))
                 })
                 // If N clients are subscribed to a query,
                 // we copy the DatabaseTableUpdate N times,
                 // which involves cloning BSATN (binary) or product values (json).
-                .map(|(sql, hash, plan, mut metrics)| {
+                .fold(FoldState::default, |mut acc, (sql, hash, plan)| {
                     let table_id = plan.subscribed_table_id();
-                    let table_name: Box<str> = plan.subscribed_table_name().into();
+                    let table_name = plan.subscribed_table_name();
                     // Store at most one copy of the serialization to BSATN x Compression
                     // and ditto for the "serialization" for JSON.
                     // Each subscriber gets to pick which of these they want,
@@ -574,23 +614,23 @@ impl SubscriptionManager {
                         (update, num_rows)
                     }
 
-                    let updates = match eval_delta(tx, &mut metrics, plan) {
+                    match eval_delta(tx, &mut acc.metrics, plan) {
                         Err(err) => {
                             tracing::error!(
                                 message = "Query errored during tx update",
                                 sql = sql,
                                 reason = ?err,
                             );
-                            Err(self
-                                .clients_for_query(hash)
-                                .map(|id| (id, err.to_string().into_boxed_str()))
-                                .collect::<Vec<_>>())
+                            acc.errs.extend(
+                                self.clients_for_query(hash)
+                                    .map(|id| (id, err.to_string().into_boxed_str())),
+                            )
                         }
                         // The query didn't return any rows to update
-                        Ok(None) => Ok(vec![]),
-                        Ok(Some(delta_updates)) => Ok(self
-                            .clients_for_query(hash)
-                            .map(|id| {
+                        Ok(None) => {}
+                        // The query did return updates - process them and add them to the accumulator
+                        Ok(Some(delta_updates)) => {
+                            let row_iter = self.clients_for_query(hash).map(|id| {
                                 let client = &self.clients[id].outbound_ref;
                                 let update = match client.config.protocol {
                                     Protocol::Binary => Bsatn(memo_encode::<BsatnFormat>(
@@ -601,44 +641,25 @@ impl SubscriptionManager {
                                             Compression::Gzip => &mut ops_bin_gzip,
                                             Compression::None => &mut ops_bin_none,
                                         },
-                                        &mut metrics,
+                                        &mut acc.metrics,
                                     )),
                                     Protocol::Text => Json(memo_encode::<JsonFormat>(
                                         &delta_updates,
                                         client,
                                         &mut ops_json,
-                                        &mut metrics,
+                                        &mut acc.metrics,
                                     )),
                                 };
-                                (id, table_id, table_name.clone(), update)
-                            })
-                            .collect::<Vec<_>>()),
-                    };
-
-                    (updates, metrics)
-                })
-                .fold(
-                    || (vec![], vec![], ExecutionMetrics::default()),
-                    |(mut rows, mut errs, mut agg_metrics), (result, metrics)| {
-                        match result {
-                            Ok(x) => {
-                                rows.extend(x);
-                            }
-                            Err(x) => {
-                                errs.extend(x);
-                            }
+                                (id, table_id, table_name, update)
+                            });
+                            acc.updates.extend(row_iter);
                         }
-                        agg_metrics.merge(metrics);
-                        (rows, errs, agg_metrics)
-                    },
-                )
-                .reduce_with(|(mut acc_rows, mut acc_errs, mut acc_metrics), (rows, errs, metrics)| {
-                    acc_rows.extend(rows);
-                    acc_errs.extend(errs);
-                    acc_metrics.merge(metrics);
-                    (acc_rows, acc_errs, acc_metrics)
+                    }
+
+                    acc
                 })
-                .unwrap_or_default();
+                .map(ReduceState::from_fold)
+                .reduce(ReduceState::default, ReduceState::append);
 
             record_exec_metrics(&WorkloadType::Update, database_identity, metrics);
 
@@ -654,7 +675,7 @@ impl SubscriptionManager {
                 // so their `TableUpdate` will contain either JSON (`Protocol::Text`)
                 // or BSATN (`Protocol::Binary`).
                 .fold(
-                    HashMap::<(&ClientId, TableId), FormatSwitch<TableUpdate<_>, TableUpdate<_>>>::new(),
+                    HashMap::<(&ClientId, TableId), SwitchedTableUpdate>::new(),
                     |mut tables, (id, table_id, table_name, update)| {
                         match tables.entry((id, table_id)) {
                             Entry::Occupied(mut entry) => match entry.get_mut().zip_mut(update) {
@@ -662,8 +683,8 @@ impl SubscriptionManager {
                                 Json((tbl_upd, update)) => tbl_upd.push(update),
                             },
                             Entry::Vacant(entry) => drop(entry.insert(match update {
-                                Bsatn(update) => Bsatn(TableUpdate::new(table_id, table_name, update)),
-                                Json(update) => Json(TableUpdate::new(table_id, table_name, update)),
+                                Bsatn(update) => Bsatn(TableUpdate::new(table_id, table_name.into(), update)),
+                                Json(update) => Json(TableUpdate::new(table_id, table_name.into(), update)),
                             })),
                         }
                         tables
@@ -749,6 +770,38 @@ impl SubscriptionManager {
 fn send_to_client(client: &ClientConnectionSender, message: impl Into<SerializableMessage>) {
     if let Err(e) = client.send_message(message) {
         tracing::warn!(%client.id, "failed to send update message to client: {e}")
+    }
+}
+
+struct VecList<T>(LinkedList<Vec<T>>);
+
+impl<T> Default for VecList<T> {
+    fn default() -> Self {
+        Self(Default::default())
+    }
+}
+impl<T> From<Vec<T>> for VecList<T> {
+    fn from(vec: Vec<T>) -> Self {
+        let mut list = LinkedList::new();
+        if !vec.is_empty() {
+            list.push_back(vec);
+        }
+        Self(list)
+    }
+}
+impl<T> VecList<T> {
+    fn append(&mut self, mut other: Self) {
+        self.0.append(&mut other.0)
+    }
+    fn iter(&self) -> impl Iterator<Item = &T> {
+        self.0.iter().flatten()
+    }
+}
+impl<T> IntoIterator for VecList<T> {
+    type Item = T;
+    type IntoIter = std::iter::Flatten<std::collections::linked_list::IntoIter<Vec<T>>>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter().flatten()
     }
 }
 
