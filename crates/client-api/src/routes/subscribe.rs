@@ -424,11 +424,7 @@ enum ClientMessage {
 impl ClientMessage {
     fn from_message(msg: WsMessage) -> Self {
         match msg {
-            WsMessage::Text(s) => {
-                // SAFETY: Utf8Bytes and ByteString have the same invariant of utf8-validity
-                let s = unsafe { ByteString::from_bytes_unchecked(Bytes::from(s)) };
-                Self::Message(DataMessage::Text(s))
-            }
+            WsMessage::Text(s) => Self::Message(DataMessage::Text(utf8bytes_to_bytestring(s))),
             WsMessage::Binary(b) => Self::Message(DataMessage::Binary(b)),
             WsMessage::Ping(b) => Self::Ping(b),
             WsMessage::Pong(b) => Self::Pong(b),
@@ -441,11 +437,16 @@ impl ClientMessage {
 
 fn datamsg_to_wsmsg(msg: DataMessage) -> WsMessage {
     match msg {
-        DataMessage::Text(text) => {
-            // SAFETY: Utf8Bytes and ByteString have the same invariant of utf8-validity
-            let text = unsafe { Utf8Bytes::from_bytes_unchecked(text.into_bytes()) };
-            WsMessage::Text(text)
-        }
+        DataMessage::Text(text) => WsMessage::Text(bytestring_to_utf8bytes(text)),
         DataMessage::Binary(bin) => WsMessage::Binary(bin),
     }
+}
+
+fn utf8bytes_to_bytestring(s: Utf8Bytes) -> ByteString {
+    // SAFETY: `Utf8Bytes` and `ByteString` have the same invariant of UTF-8 validity
+    unsafe { ByteString::from_bytes_unchecked(Bytes::from(s)) }
+}
+fn bytestring_to_utf8bytes(s: ByteString) -> Utf8Bytes {
+    // SAFETY: `Utf8Bytes` and `ByteString` have the same invariant of UTF-8 validity
+    unsafe { Utf8Bytes::from_bytes_unchecked(s.into_bytes()) }
 }
