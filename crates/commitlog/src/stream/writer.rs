@@ -12,15 +12,15 @@ use tokio::{
 
 use crate::{
     commit, error,
-    repo::{self, Repo, Segment},
+    repo::{self, Repo, SegmentLen},
     segment::{self, FileLike as _, OffsetIndexWriter, CHECKSUM_LEN, DEFAULT_CHECKSUM_ALGORITHM},
     stream::common::{read_exact, AsyncFsync},
     Options, StoredCommit, DEFAULT_LOG_FORMAT_VERSION,
 };
 
 use super::{
-    common::{peek_buf, AsyncLen as _, CommitBuf},
-    IntoAsyncSegment,
+    common::{peek_buf, AsyncLen as _, AsyncRepo, CommitBuf},
+    IntoAsyncWriter,
 };
 
 /// Progress reporting for [`StreamWriter::write_all`].
@@ -58,21 +58,19 @@ impl<T: FnMut(Range<u64>)> Progress for T {
 /// [commits]: crate::commit::StoredCommit
 pub struct StreamWriter<R>
 where
-    R: Repo + Send + 'static,
-    R::Segment: IntoAsyncSegment,
+    R: AsyncRepo + Send + 'static,
 {
     repo: R,
     commitlog_options: Options,
 
     last_written_tx_range: Option<Range<u64>>,
-    current_segment: Option<CurrentSegment<<R::Segment as IntoAsyncSegment>::AsyncSegmentWriter>>,
+    current_segment: Option<CurrentSegment<R::AsyncSegmentWriter>>,
     commit_buf: CommitBuf,
 }
 
 impl<R> StreamWriter<R>
 where
-    R: Repo + Send + 'static,
-    R::Segment: IntoAsyncSegment,
+    R: AsyncRepo + Send + 'static,
 {
     /// Create a new [`StreamWriter`] from the commitlog in `repo`.
     ///
@@ -85,24 +83,32 @@ where
     /// commits. The `on_trailing` parameter an be used to trim the segment if
     /// it contains trailing invalid data (i.e. due to a partial write).
     pub fn create(repo: R, commitlog_options: Options, on_trailing: OnTrailingData) -> io::Result<Self> {
+        Self::create_and_metadata(repo, commitlog_options, on_trailing).map(|(this, _)| this)
+    }
+
+    /// Like [`Self::create`], create a new [`StreamWriter`]. Additionally
+    /// return the [`segment::Metadata`] of the most recent segment.
+    ///
+    /// The metadata is `None` if the commitlog is empty.
+    pub fn create_and_metadata(
+        repo: R,
+        commitlog_options: Options,
+        on_trailing: OnTrailingData,
+    ) -> io::Result<(Self, Option<segment::Metadata>)> {
         let Some(last) = repo.existing_offsets()?.pop() else {
-            return Ok(Self {
+            let this = Self {
                 repo,
                 commitlog_options,
                 last_written_tx_range: None,
                 current_segment: None,
                 commit_buf: <_>::default(),
-            });
+            };
+            return Ok((this, None));
         };
 
-        let mut segment = repo.open_segment(last)?;
+        let mut segment = repo.open_segment_writer(last)?;
         let mut offset_index = repo::create_offset_index_writer(&repo, last, commitlog_options);
-        let segment::Metadata {
-            header,
-            tx_range,
-            size_in_bytes: _,
-            max_epoch: _,
-        } = segment::Metadata::extract(last, &mut segment).or_else(|e| match e {
+        let meta = segment::Metadata::extract(last, &mut segment).or_else(|e| match e {
             error::SegmentMetadata::InvalidCommit { sofar, source } => match on_trailing {
                 OnTrailingData::Error => Err(io::Error::new(io::ErrorKind::InvalidData, source)),
                 OnTrailingData::Trim => {
@@ -123,23 +129,25 @@ where
             },
             error::SegmentMetadata::Io(err) => Err(err),
         })?;
-        header
+        meta.header
             .ensure_compatible(DEFAULT_LOG_FORMAT_VERSION, DEFAULT_CHECKSUM_ALGORITHM)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
 
         let current_segment = CurrentSegment {
-            header,
+            header: meta.header,
             segment: segment.into_async_writer(),
             offset_index,
         };
 
-        Ok(Self {
+        let this = Self {
             repo,
             commitlog_options,
-            last_written_tx_range: Some(tx_range),
+            last_written_tx_range: Some(meta.tx_range.clone()),
             current_segment: Some(current_segment),
             commit_buf: <_>::default(),
-        })
+        };
+
+        Ok((this, Some(meta)))
     }
 
     /// Consume `stream` and append it to the local commitog.
@@ -251,7 +259,7 @@ where
     async fn append_all_inner(
         &mut self,
         stream: &mut (impl AsyncBufRead + Unpin),
-        current_segment: &mut CurrentSegment<<R::Segment as IntoAsyncSegment>::AsyncSegmentWriter>,
+        current_segment: &mut CurrentSegment<R::AsyncSegmentWriter>,
         progress: &mut impl Progress,
     ) -> io::Result<AppendInnerResult> {
         let mut bytes_written = current_segment
@@ -355,8 +363,7 @@ where
 
 impl<R> Drop for StreamWriter<R>
 where
-    R: Repo + Send + 'static,
-    R::Segment: IntoAsyncSegment,
+    R: AsyncRepo + Send + 'static,
 {
     fn drop(&mut self) {
         if let Some(current_segment) = self.current_segment.take() {
@@ -426,7 +433,7 @@ fn create_segment<R: Repo>(
     repo: R,
     last_written_tx_range: Option<Range<u64>>,
     commitlog_options: Options,
-) -> io::Result<(R::Segment, Option<OffsetIndexWriter>)> {
+) -> io::Result<(R::SegmentWriter, Option<OffsetIndexWriter>)> {
     let segment_offset = last_written_tx_range
         .as_ref()
         .map(|range| range.end)
@@ -434,7 +441,7 @@ fn create_segment<R: Repo>(
     let segment = repo.create_segment(segment_offset).or_else(|e| {
         if e.kind() == io::ErrorKind::AlreadyExists {
             trace!("segment already exists");
-            let mut s = repo.open_segment(segment_offset)?;
+            let mut s = repo.open_segment_writer(segment_offset)?;
             let len = s.segment_len()?;
             trace!("segment len: {len}");
             if len <= segment::Header::LEN as _ {

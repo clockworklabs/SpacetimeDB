@@ -5,6 +5,7 @@ use std::{
 };
 
 use log::trace;
+use repo::Repo;
 use spacetimedb_paths::server::CommitLogDir;
 
 pub mod commit;
@@ -253,6 +254,24 @@ impl<T> Commitlog<T> {
     /// smaller than `offset`.
     pub fn commits_from(&self, offset: u64) -> impl Iterator<Item = Result<StoredCommit, error::Traversal>> {
         self.inner.read().unwrap().commits_from(offset)
+    }
+
+    /// Get a list of segment offsets, sorted in ascending order.
+    pub fn existing_segment_offsets(&self) -> io::Result<Vec<u64>> {
+        self.inner.read().unwrap().repo.existing_offsets()
+    }
+
+    /// Compress the segments at the offsets provded, marking them as immutable.
+    pub fn compress_segments(&self, offsets: &[u64]) -> io::Result<()> {
+        // even though `compress_segment` takes &self, we take an
+        // exclusive lock to avoid any weirdness happening.
+        #[allow(clippy::readonly_write_lock)]
+        let inner = self.inner.write().unwrap();
+        assert!(!offsets.contains(&inner.head.min_tx_offset()));
+        // TODO: parallelize, maybe
+        offsets
+            .iter()
+            .try_for_each(|&offset| inner.repo.compress_segment(offset))
     }
 
     /// Remove all data from the log and reopen it.

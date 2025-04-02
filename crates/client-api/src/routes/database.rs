@@ -18,6 +18,7 @@ use futures::StreamExt;
 use http::StatusCode;
 use serde::Deserialize;
 use spacetimedb::database_logger::DatabaseLogger;
+use spacetimedb::host::module_host::ClientConnectedError;
 use spacetimedb::host::ReducerArgs;
 use spacetimedb::host::ReducerCallError;
 use spacetimedb::host::ReducerOutcome;
@@ -74,11 +75,34 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
     // so generate one.
     let connection_id = generate_random_connection_id();
 
-    if let Err(e) = module
-        .call_identity_connected_disconnected(caller_identity, connection_id, true)
-        .await
-    {
-        return Err((StatusCode::NOT_FOUND, format!("{:#}", anyhow::anyhow!(e))).into());
+    match module.call_identity_connected(caller_identity, connection_id).await {
+        // If `call_identity_connected` returns `Err(Rejected)`, then the `client_connected` reducer errored,
+        // meaning the connection was refused. Return 403 forbidden.
+        Err(ClientConnectedError::Rejected(msg)) => return Err((StatusCode::FORBIDDEN, msg).into()),
+        // If `call_identity_connected` returns `Err(OutOfEnergy)`,
+        // then, well, the database is out of energy.
+        // Return 503 service unavailable.
+        Err(err @ ClientConnectedError::OutOfEnergy) => {
+            return Err((StatusCode::SERVICE_UNAVAILABLE, err.to_string()).into())
+        }
+        // If `call_identity_connected` returns `Err(ReducerCall)`,
+        // something went wrong while invoking the `client_connected` reducer.
+        // I (pgoldman 2025-03-27) am not really sure how this would happen,
+        // but we returned 404 not found in this case prior to my editing this code,
+        // so I guess let's keep doing that.
+        Err(ClientConnectedError::ReducerCall(e)) => {
+            return Err((StatusCode::NOT_FOUND, format!("{:#}", anyhow::anyhow!(e))).into())
+        }
+        // If `call_identity_connected` returns `Err(DBError)`,
+        // then the module didn't define `client_connected`,
+        // but something went wrong when we tried to insert into `st_client`.
+        // That's weird and scary, so return 500 internal error.
+        Err(e @ ClientConnectedError::DBError(_)) => {
+            return Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into())
+        }
+
+        // If `call_identity_connected` returns `Ok`, then we can actually call the reducer we want.
+        Ok(()) => (),
     }
     let result = match module
         .call_reducer(caller_identity, Some(connection_id), None, None, None, &reducer, args)
@@ -107,11 +131,12 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
         }
     };
 
-    if let Err(e) = module
-        .call_identity_connected_disconnected(caller_identity, connection_id, false)
-        .await
-    {
-        return Err((StatusCode::NOT_FOUND, format!("{:#}", anyhow::anyhow!(e))).into());
+    if let Err(e) = module.call_identity_disconnected(caller_identity, connection_id).await {
+        // If `call_identity_disconnected` errors, something is very wrong:
+        // it means we tried to delete the `st_client` row but failed.
+        // Note that `call_identity_disconnected` swallows errors from the `client_disconnected` reducer.
+        // Slap a 500 on it and pray.
+        return Err((StatusCode::INTERNAL_SERVER_ERROR, format!("{:#}", anyhow::anyhow!(e))).into());
     }
 
     match result {

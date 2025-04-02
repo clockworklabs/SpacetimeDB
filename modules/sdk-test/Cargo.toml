@@ -10,7 +10,10 @@ license-file = "LICENSE"
 crate-type = ["cdylib"]
 
 [dependencies]
-spacetimedb.workspace = true
 log.workspace = true
 anyhow.workspace = true
 paste.workspace = true
+
+[dependencies.spacetimedb]
+workspace = true
+features = ["unstable"]

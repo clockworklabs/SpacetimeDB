@@ -132,4 +132,22 @@ internal static class ErrorDescriptor
             ctx => $"Could not find the specified column {ctx.columnName} in {ctx.typeName}.",
             ctx => ctx.attr
         );
+
+    public static readonly ErrorDescriptor<IFieldSymbol> ClientVisibilityNotFilter =
+        new(
+            group,
+            "ClientVisibilityFilters must be Filters",
+            field =>
+                $"Field {field.Name} is marked as ClientVisibilityFilter but it has type {field.Type} which is not SpacetimeDB.Filter",
+            field => field
+        );
+
+    public static readonly ErrorDescriptor<IFieldSymbol> ClientVisibilityNotPublicStaticReadonly =
+        new(
+            group,
+            "ClientVisibilityFilters must be public static readonly",
+            field =>
+                $"Field {field.Name} is marked as [ClientVisibilityFilter] but it is not public static readonly",
+            field => field
+        );
 }

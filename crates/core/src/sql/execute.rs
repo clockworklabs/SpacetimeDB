@@ -171,6 +171,11 @@ pub fn execute_sql_tx<'a>(
     execute(&mut DbProgram::new(db, &mut tx, auth), ast, sql, &mut updates).map(Some)
 }
 
+pub struct SqlResult {
+    pub rows: Vec<ProductValue>,
+    pub metrics: ExecutionMetrics,
+}
+
 /// Run the `SQL` string using the `auth` credentials
 pub fn run(
     db: &RelationalDB,
@@ -178,7 +183,7 @@ pub fn run(
     auth: AuthCtx,
     subs: Option<&ModuleSubscriptions>,
     head: &mut Vec<(Box<str>, AlgebraicType)>,
-) -> Result<Vec<ProductValue>, DBError> {
+) -> Result<SqlResult, DBError> {
     // We parse the sql statement in a mutable transation.
     // If it turns out to be a query, we downgrade the tx.
     let (tx, stmt) = db.with_auto_rollback(db.begin_mut_tx(IsolationLevel::Serializable, Workload::Sql), |tx| {
@@ -205,14 +210,23 @@ pub fn run(
 
             // Evaluate the query
             let rows = execute_select_stmt(stmt, &DeltaTx::from(&*tx), &mut metrics, |plan| {
-                check_row_limit(&plan, db, &tx, |plan, tx| estimate_rows_scanned(tx, plan), &auth)?;
+                check_row_limit(
+                    &plan,
+                    db,
+                    &tx,
+                    |plan, tx| plan.plan_iter().map(|plan| estimate_rows_scanned(tx, plan)).sum(),
+                    &auth,
+                )?;
                 Ok(plan)
             })?;
 
             // Update transaction metrics
             tx.metrics.merge(metrics);
 
-            Ok(rows)
+            Ok(SqlResult {
+                rows,
+                metrics: tx.metrics,
+            })
         }
         Statement::DML(stmt) => {
             // An extra layer of auth is required for DML
@@ -228,7 +242,8 @@ pub fn run(
 
             // Commit the tx if there are no deltas to process
             if subs.is_none() {
-                return db.commit_tx(tx).map(|_| vec![]);
+                let metrics = tx.metrics;
+                return db.commit_tx(tx).map(|_| SqlResult { rows: vec![], metrics });
             }
 
             // Otherwise downgrade the tx and process the deltas.
@@ -261,7 +276,7 @@ pub fn run(
                 Err(WriteConflict) => {
                     todo!("See module_host_actor::call_reducer_with_tx")
                 }
-                Ok(_) => Ok(vec![]),
+                Ok(_) => Ok(SqlResult { rows: vec![], metrics }),
             }
         }
     }
@@ -280,18 +295,22 @@ pub fn translate_col(tx: &Tx, field: FieldName) -> Option<Box<str>> {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use crate::db::datastore::system_tables::{StTableFields, ST_TABLE_ID, ST_TABLE_NAME};
+    use crate::db::datastore::system_tables::{
+        StRowLevelSecurityRow, StTableFields, ST_ROW_LEVEL_SECURITY_ID, ST_TABLE_ID, ST_TABLE_NAME,
+    };
     use crate::db::relational_db::tests_utils::{insert, TestDB};
     use crate::subscription::module_subscription_manager::SubscriptionManager;
     use crate::vm::tests::create_table_with_rows;
     use parking_lot::RwLock;
     use pretty_assertions::assert_eq;
+    use spacetimedb_lib::bsatn::ToBsatn;
     use spacetimedb_lib::db::auth::{StAccess, StTableType};
     use spacetimedb_lib::error::{ResultTest, TestError};
     use spacetimedb_lib::relation::Header;
     use spacetimedb_lib::{AlgebraicValue, Identity};
-    use spacetimedb_primitives::{col_list, ColId};
-    use spacetimedb_sats::{product, AlgebraicType, ArrayValue, ProductType};
+    use spacetimedb_primitives::{col_list, ColId, TableId};
+    use spacetimedb_sats::{product, u256, AlgebraicType, ArrayValue, ProductType};
+    use spacetimedb_schema::schema::{ColumnSchema, TableSchema};
     use spacetimedb_vm::eval::test_helpers::create_game_data;
     use std::sync::Arc;
 
@@ -315,7 +334,7 @@ pub(crate) mod tests {
             Arc::new(RwLock::new(SubscriptionManager::default())),
             Identity::ZERO,
         );
-        run(db, sql_text, AuthCtx::for_testing(), Some(&subs), &mut vec![])
+        run(db, sql_text, AuthCtx::for_testing(), Some(&subs), &mut vec![]).map(|x| x.rows)
     }
 
     fn create_data(total_rows: u64) -> ResultTest<(TestDB, MemTable)> {
@@ -345,6 +364,17 @@ pub(crate) mod tests {
         let header = Header::from(&*schema).into();
 
         Ok((stdb, MemTable::new(header, schema.table_access, rows)))
+    }
+
+    /// Manually insert RLS rules into the RLS system table
+    fn insert_rls_rules(db: &RelationalDB, rules: impl IntoIterator<Item = (TableId, &'static str)>) -> ResultTest<()> {
+        db.with_auto_commit(Workload::ForTests, |tx| {
+            for (table_id, sql) in rules.into_iter().map(|(table_id, sql)| (table_id, sql.into())) {
+                let row = ProductValue::from(StRowLevelSecurityRow { table_id, sql });
+                db.insert(tx, ST_ROW_LEVEL_SECURITY_ID, &row.to_bsatn_vec()?)?;
+            }
+            Ok(())
+        })
     }
 
     #[test]
@@ -412,6 +442,103 @@ pub(crate) mod tests {
         run_for_testing(&db, &sql)?;
         let result = run_for_testing(&db, SELECT_ALL)?;
         assert_eq!(result, vec![product![Identity::ONE]]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_rls_rules() -> ResultTest<()> {
+        let db = TestDB::in_memory()?;
+
+        let create_table = |table_name: &str, column_names_and_types: Vec<(&str, AlgebraicType)>| {
+            db.with_auto_commit(Workload::ForTests, |tx| {
+                db.create_table(
+                    tx,
+                    TableSchema::new(
+                        TableId::SENTINEL,
+                        table_name.into(),
+                        column_names_and_types
+                            .into_iter()
+                            .enumerate()
+                            .map(|(i, (name, col_type))| ColumnSchema {
+                                table_id: TableId::SENTINEL,
+                                col_pos: i.into(),
+                                col_name: name.into(),
+                                col_type,
+                            })
+                            .collect(),
+                        vec![],
+                        vec![],
+                        vec![],
+                        StTableType::User,
+                        StAccess::Public,
+                        None,
+                        None,
+                    ),
+                )
+            })
+        };
+
+        let insert_into = |table_id, rows: Vec<ProductValue>| {
+            db.with_auto_commit(Workload::ForTests, |tx| -> ResultTest<()> {
+                for row in rows {
+                    db.insert(tx, table_id, &row.to_bsatn_vec()?)?;
+                }
+                Ok(())
+            })
+        };
+
+        let users_table_id = create_table("users", vec![("identity", AlgebraicType::identity())])?;
+        let sales_table_id = create_table(
+            "sales",
+            vec![
+                ("order_id", AlgebraicType::U64),
+                ("product_id", AlgebraicType::U64),
+                ("date", AlgebraicType::U64),
+                ("customer", AlgebraicType::identity()),
+            ],
+        )?;
+
+        let id_1 = Identity::from_u256(u256::new(1));
+        let id_2 = Identity::from_u256(u256::new(2));
+
+        insert_into(users_table_id, vec![product![id_1], product![id_2]])?;
+        insert_into(
+            sales_table_id,
+            vec![
+                product![1u64, 1u64, 1u64, id_1],
+                product![2u64, 1u64, 2u64, id_2],
+                product![3u64, 2u64, 3u64, id_1],
+                product![4u64, 2u64, 4u64, id_2],
+            ],
+        )?;
+
+        insert_rls_rules(
+            &db,
+            [
+                (users_table_id, "select * from users where identity = :sender"),
+                (
+                    sales_table_id,
+                    "select s.* from users u join sales s on u.identity = s.customer",
+                ),
+            ],
+        )?;
+
+        let auth_for_id_1 = AuthCtx::new(Identity::ZERO, id_1);
+        let auth_for_id_2 = AuthCtx::new(Identity::ZERO, id_2);
+
+        let run = |sql, user| run(&db, sql, user, None, &mut vec![]).map(|sql_result| sql_result.rows);
+
+        assert_eq!(run("select * from users", auth_for_id_1)?, vec![product![id_1]]);
+        assert_eq!(run("select * from users", auth_for_id_2)?, vec![product![id_2]]);
+        assert_eq!(
+            run("select * from sales", auth_for_id_1)?,
+            vec![product![1u64, 1u64, 1u64, id_1], product![3u64, 2u64, 3u64, id_1]]
+        );
+        assert_eq!(
+            run("select * from sales", auth_for_id_2)?,
+            vec![product![2u64, 1u64, 2u64, id_2], product![4u64, 2u64, 4u64, id_2]]
+        );
 
         Ok(())
     }
@@ -771,6 +898,59 @@ pub(crate) mod tests {
         // Both queries pass.
         assert!(run(&db, "SELECT * FROM T", internal_auth, None).is_ok());
         assert!(run(&db, "SELECT * FROM T", external_auth, None).is_ok());
+
+        Ok(())
+    }
+
+    // Verify we don't return rows on DML
+    #[test]
+    fn test_row_dml() -> ResultTest<()> {
+        let db = TestDB::durable()?;
+
+        let table_id = db.create_table_for_test("T", &[("a", AlgebraicType::U8)], &[])?;
+        db.with_auto_commit(Workload::ForTests, |tx| -> Result<_, DBError> {
+            for i in 0..4u8 {
+                insert(&db, tx, table_id, &product!(i))?;
+            }
+            Ok(())
+        })?;
+
+        let server = Identity::from_claims("issuer", "server");
+
+        let internal_auth = AuthCtx::new(server, server);
+
+        let run = |db, sql, auth, subs| run(db, sql, auth, subs, &mut vec![]);
+
+        let check = |db, sql, auth, metrics: ExecutionMetrics| {
+            let result = run(db, sql, auth, None)?;
+            assert_eq!(result.rows, vec![]);
+            assert_eq!(result.metrics.rows_inserted, metrics.rows_inserted);
+            assert_eq!(result.metrics.rows_deleted, metrics.rows_deleted);
+            assert_eq!(result.metrics.rows_updated, metrics.rows_updated);
+
+            Ok::<(), DBError>(())
+        };
+
+        let ins = ExecutionMetrics {
+            rows_inserted: 1,
+            ..ExecutionMetrics::default()
+        };
+        let upd = ExecutionMetrics {
+            rows_updated: 5,
+            ..ExecutionMetrics::default()
+        };
+        let del = ExecutionMetrics {
+            rows_deleted: 1,
+            ..ExecutionMetrics::default()
+        };
+
+        check(&db, "INSERT INTO T (a) VALUES (5)", internal_auth, ins)?;
+        check(&db, "UPDATE T SET a = 2", internal_auth, upd)?;
+        assert_eq!(
+            run(&db, "SELECT * FROM T", internal_auth, None)?.rows,
+            vec![product!(2u8)]
+        );
+        check(&db, "DELETE FROM T", internal_auth, del)?;
 
         Ok(())
     }

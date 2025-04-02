@@ -24,7 +24,7 @@ pub struct Generic<R: Repo, T> {
     ///
     /// If we squint, all segments in a log are a non-empty linked list, the
     /// head of which is the segment open for writing.
-    pub(crate) head: Writer<R::Segment>,
+    pub(crate) head: Writer<R::SegmentWriter>,
     /// The tail of the non-empty list of segments.
     ///
     /// We only retain the min transaction offset of each, from which the
@@ -252,7 +252,7 @@ impl<R: Repo, T> Generic<R, T> {
     /// appropriate. It is not appropriate to sync after a write error, as that
     /// is likely to return an error as well: the `Commit` will be written to
     /// the new segment anyway.
-    fn start_new_segment(&mut self) -> io::Result<&mut Writer<R::Segment>> {
+    fn start_new_segment(&mut self) -> io::Result<&mut Writer<R::SegmentWriter>> {
         debug!(
             "starting new segment offset={} prev-offset={}",
             self.head.next_tx_offset(),
@@ -332,7 +332,7 @@ pub fn committed_meta(repo: impl Repo) -> Result<Option<segment::Metadata>, erro
         return Ok(None);
     };
 
-    let mut storage = repo.open_segment(last)?;
+    let mut storage = repo.open_segment_reader(last)?;
     segment::Metadata::extract(last, &mut storage).map(Some)
 }
 
@@ -482,7 +482,7 @@ fn reset_to_internal(repo: &impl Repo, segments: &[u64], offset: u64) -> io::Res
             } else {
                 let byte_offset = segment::Header::LEN as u64 + bytes_read;
                 debug!("truncating segment {segment} to {offset} at {byte_offset}");
-                let mut file = repo.open_segment(segment)?;
+                let mut file = repo.open_segment_writer(segment)?;
                 // Note: The offset index truncates equal or greater,
                 // inclusive. We'd like to retain `offset` in the index, as
                 // the commit is also retained in the log.
@@ -504,7 +504,7 @@ pub struct Segments<R> {
 }
 
 impl<R: Repo> Iterator for Segments<R> {
-    type Item = io::Result<segment::Reader<R::Segment>>;
+    type Item = io::Result<segment::Reader<R::SegmentReader>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let off = self.offs.next()?;
@@ -579,7 +579,7 @@ impl CommitInfo {
 }
 
 pub struct Commits<R: Repo> {
-    inner: Option<segment::Commits<R::Segment>>,
+    inner: Option<segment::Commits<R::SegmentReader>>,
     segments: Segments<R>,
     last_commit: CommitInfo,
     last_error: Option<error::Traversal>,
@@ -688,7 +688,7 @@ impl<R: Repo> Commits<R> {
 
     /// If we're still looking for the initial commit, try to use the offset
     /// index to advance the segment reader.
-    fn try_seek_to_initial_offset(&self, segment: &mut segment::Reader<R::Segment>) {
+    fn try_seek_to_initial_offset(&self, segment: &mut segment::Reader<R::SegmentReader>) {
         if let CommitInfo::Initial { next_offset } = &self.last_commit {
             let _ = self
                 .segments
