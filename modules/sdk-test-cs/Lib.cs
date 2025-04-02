@@ -1917,7 +1917,17 @@ public static partial class Module
             {
                 s = typeof(EveryPrimitiveStruct)
                     .GetFields()
-                    .Select(f => f.GetValue(s)!.ToString()!.ToLowerInvariant())
+                    .Select(f =>
+                    {
+                        var value = f.GetValue(s)!;
+                        // To match Rust `false` output
+                        if (f.FieldType == typeof(bool))
+                        {
+                            return value.ToString()!.ToLowerInvariant();
+                        }
+                        return value.ToString()!;
+
+                    })
                     .ToList(),
             }
         );

@@ -36,7 +36,7 @@ bitflags.workspace = true
 bytes.workspace = true
 bytemuck.workspace = true
 bytestring = { workspace = true, optional = true }
-chrono.workspace = true
+chrono = { workspace = true, features = ["alloc"] }
 decorum.workspace = true
 derive_more.workspace = true
 enum-as-inner.workspace = true

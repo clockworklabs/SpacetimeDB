@@ -111,6 +111,7 @@ impl Header {
 
 /// Entry type of a [`crate::Commitlog`].
 #[derive(Clone, Debug, Default, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Commit {
     /// The offset of the first record in this commit.
     ///
