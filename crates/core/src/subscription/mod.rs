@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use module_subscription_manager::Plan;
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use spacetimedb_client_api_messages::websocket::{
     ByteListLen, Compression, DatabaseUpdate, QueryUpdate, TableUpdate, WebsocketFormat,
 };
@@ -112,8 +111,9 @@ where
     Tx: Datastore + DeltaStore + Sync,
     F: WebsocketFormat,
 {
+    // FOR TESTING: Just evaluate sequentially.
     plans
-        .par_iter()
+        .iter()
         .map(|plan| (plan, plan.subscribed_table_id(), plan.subscribed_table_name()))
         .map(|(plan, table_id, table_name)| {
             plan.physical_plan()

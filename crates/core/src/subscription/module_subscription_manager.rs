@@ -13,7 +13,6 @@ use crate::subscription::delta::eval_delta;
 use crate::subscription::record_exec_metrics;
 use hashbrown::hash_map::OccupiedError;
 use hashbrown::{HashMap, HashSet};
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use spacetimedb_client_api_messages::websocket::{
     BsatnFormat, CompressableQueryUpdate, Compression, FormatSwitch, JsonFormat, QueryId, QueryUpdate, WebsocketFormat,
 };
@@ -463,8 +462,8 @@ impl SubscriptionManager {
 
         let tables = &event.status.database_update().unwrap().tables;
 
-        // Put the main work on a rayon compute thread.
-        rayon::scope(|_| {
+        // FOR TESTING: Just do all this work on whatever the calling thread is.
+        {
             let span = tracing::info_span!("eval_incr").entered();
             let (updates, errs, metrics) = tables
                 .iter()
@@ -473,15 +472,16 @@ impl SubscriptionManager {
                 .filter_map(|table_id| self.tables.get(table_id))
                 .flatten()
                 .collect::<HashSet<_>>()
-                .par_iter()
+            // FOR TESTING: Sequential execution, rather than parallel.
+                .iter()
                 .filter_map(|&hash| {
                     self.queries
                         .get(hash)
                         .map(|state| (hash, &state.query, ExecutionMetrics::default()))
                 })
-                // If N clients are subscribed to a query,
-                // we copy the DatabaseTableUpdate N times,
-                // which involves cloning BSATN (binary) or product values (json).
+            // If N clients are subscribed to a query,
+            // we copy the DatabaseTableUpdate N times,
+            // which involves cloning BSATN (binary) or product values (json).
                 .map(|(hash, plan, mut metrics)| {
                     let table_id = plan.subscribed_table_id();
                     let table_name: Box<str> = plan.subscribed_table_name().into();
@@ -561,7 +561,7 @@ impl SubscriptionManager {
                     (updates, metrics)
                 })
                 .fold(
-                    || (vec![], vec![], ExecutionMetrics::default()),
+                    (vec![], vec![], ExecutionMetrics::default()),
                     |(mut rows, mut errs, mut agg_metrics), (result, metrics)| {
                         match result {
                             Ok(x) => {
@@ -575,13 +575,14 @@ impl SubscriptionManager {
                         (rows, errs, agg_metrics)
                     },
                 )
-                .reduce_with(|(mut acc_rows, mut acc_errs, mut acc_metrics), (rows, errs, metrics)| {
-                    acc_rows.extend(rows);
-                    acc_errs.extend(errs);
-                    acc_metrics.merge(metrics);
-                    (acc_rows, acc_errs, acc_metrics)
-                })
-                .unwrap_or_default();
+            // .reduce_with(|(mut acc_rows, mut acc_errs, mut acc_metrics), (rows, errs, metrics)| {
+            //     acc_rows.extend(rows);
+            //     acc_errs.extend(errs);
+            //     acc_metrics.merge(metrics);
+            //     (acc_rows, acc_errs, acc_metrics)
+            // })
+            // .unwrap_or_default()
+                ;
 
             record_exec_metrics(&WorkloadType::Update, database_identity, metrics);
 
@@ -685,7 +686,7 @@ impl SubscriptionManager {
                     );
                 }
             }
-        })
+        }
     }
 }
 
