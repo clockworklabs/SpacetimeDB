@@ -28,7 +28,7 @@ pnpm install
 We also need to install the `spacetime-client-sdk` package:
 
 ```bash
-pnpm install @clockworklabs/spacetimedb-sdk@1.0.2
+pnpm install @clockworklabs/spacetimedb-sdk
 ```
 
 > If you are using another package manager like `yarn` or `npm`, the same steps should work with the appropriate commands for those tools.
