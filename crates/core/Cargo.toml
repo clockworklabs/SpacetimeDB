@@ -140,3 +140,6 @@ pretty_assertions.workspace = true
 jsonwebtoken.workspace = true
 axum.workspace = true
 reqwest.workspace = true
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tokio_unstable)'] }

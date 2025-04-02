@@ -206,6 +206,8 @@ pub fn spawn_jemalloc_stats(node_id: String) {
     });
 }
 
+// How frequently to update the tokio stats.
+const TOKIO_STATS_INTERVAL: Duration = Duration::from_secs(10);
 static SPAWN_TOKIO_STATS_GUARD: Once = Once::new();
 pub fn spawn_tokio_stats(node_id: String) {
     SPAWN_TOKIO_STATS_GUARD.call_once(|| {
@@ -225,35 +227,41 @@ pub fn spawn_tokio_stats(node_id: String) {
                 let metrics = tokio::runtime::Handle::current().metrics();
 
                 num_worker_metric.set(metrics.num_workers() as i64);
-                num_blocking_threads_metric.set(metrics.num_blocking_threads() as i64);
                 num_alive_tasks_metric.set(metrics.num_alive_tasks() as i64);
                 global_queue_depth_metric.set(metrics.global_queue_depth() as i64);
-                num_idle_blocking_threads_metric.set(metrics.num_idle_blocking_threads() as i64);
-                blocking_queue_depth_metric.set(metrics.blocking_queue_depth() as i64);
+                #[cfg(tokio_unstable)]
+                {
+                    log::info!("Has unstable metrics");
+                    num_blocking_threads_metric.set(metrics.num_blocking_threads() as i64);
+                    num_idle_blocking_threads_metric.set(metrics.num_idle_blocking_threads() as i64);
+                    blocking_queue_depth_metric.set(metrics.blocking_queue_depth() as i64);
+                }
 
+                log::info!("after unstable metrics");
                 // The spawned tasks count and remote schedule count are cumulative,
                 // so we need to increment them by the difference from the last value.
+                #[cfg(all(target_has_atomic = "64", tokio_unstable))]
                 {
-                    let current_count = metrics.spawned_tasks_count();
-                    let previous_value = spawned_tasks_count_metric.get();
-                    // The tokio metric should be monotonically increasing, but we are checking just in case.
-                    if current_count > previous_value {
-                        spawned_tasks_count_metric.inc_by(current_count - previous_value);
+                    {
+                        let current_count = metrics.spawned_tasks_count();
+                        let previous_value = spawned_tasks_count_metric.get();
+                        // The tokio metric should be monotonically increasing, but we are checking just in case.
+                        if let Some(diff) = current_count.checked_sub(previous_value) {
+                            spawned_tasks_count_metric.inc_by(diff);
+                        }
+                    }
+                    {
+                        let current_count = metrics.remote_schedule_count();
+                        let previous_value = remote_schedule_count_metric.get();
+                        // The tokio metric should be monotonically increasing, but we are checking just in case.
+                        if let Some(diff) = current_count.checked_sub(previous_value) {
+                            remote_schedule_count_metric.inc_by(diff);
+                        }
                     }
                 }
-                {
-                    let current_count = metrics.remote_schedule_count();
-                    let previous_value = remote_schedule_count_metric.get();
-                    // The tokio metric should be monotonically increasing, but we are checking just in case.
-                    if current_count > previous_value {
-                        remote_schedule_count_metric.inc_by(current_count - previous_value);
-                    }
-                }
-
+                #[cfg(target_has_atomic = "64")]
                 // TODO: Consider adding some of the worker metrics as well, like overflows, steals, etc.
-
-                // Sleep for 10 seconds before checking again.
-                sleep(Duration::from_secs(10)).await;
+                sleep(TOKIO_STATS_INTERVAL).await;
             }
         });
     });
