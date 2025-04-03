@@ -33,6 +33,8 @@ pub use spacetimedb_lib::sats;
 pub use spacetimedb_lib::ser::Serialize;
 pub use spacetimedb_lib::AlgebraicValue;
 pub use spacetimedb_lib::ConnectionId;
+// `FilterableValue` re-exported purely for rustdoc.
+pub use spacetimedb_lib::FilterableValue;
 pub use spacetimedb_lib::Identity;
 pub use spacetimedb_lib::ScheduleAt;
 pub use spacetimedb_lib::TimeDuration;
