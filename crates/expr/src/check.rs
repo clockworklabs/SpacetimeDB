@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
+use crate::expr::LeftDeepJoin;
 use crate::expr::{Expr, ProjectList, ProjectName, Relvar};
-use crate::{expr::LeftDeepJoin, statement::Statement};
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::AlgebraicType;
 use spacetimedb_primitives::TableId;
@@ -17,7 +17,7 @@ use spacetimedb_sql_parser::{
 use super::{
     errors::{DuplicateName, TypingError, Unresolved, Unsupported},
     expr::RelExpr,
-    type_expr, type_proj, type_select, StatementCtx, StatementSource,
+    type_expr, type_proj, type_select,
 };
 
 /// The result of type checking and name resolution
@@ -27,6 +27,7 @@ pub type TypingResult<T> = core::result::Result<T, TypingError>;
 pub trait SchemaView {
     fn table_id(&self, name: &str) -> Option<TableId>;
     fn schema_for_table(&self, table_id: TableId) -> Option<Arc<TableSchema>>;
+    fn rls_rules_for_table(&self, table_id: TableId) -> anyhow::Result<Vec<Box<str>>>;
 
     fn schema(&self, name: &str) -> Option<Arc<TableSchema>> {
         self.table_id(name).and_then(|table_id| self.schema_for_table(table_id))
@@ -163,27 +164,14 @@ pub fn parse_and_type_sub(sql: &str, tx: &impl SchemaView, auth: &AuthCtx) -> Ty
     expect_table_type(SubChecker::type_ast(ast, tx)?).map(|plan| (plan, has_param))
 }
 
-/// Type check a subscription query
-pub fn type_subscription(ast: SqlSelect, tx: &impl SchemaView) -> TypingResult<ProjectName> {
-    expect_table_type(SubChecker::type_ast(ast, tx)?)
-}
-
-/// Parse and type check a *subscription* query into a `StatementCtx`
-pub fn compile_sql_sub<'a>(sql: &'a str, tx: &impl SchemaView, auth: &AuthCtx) -> TypingResult<StatementCtx<'a>> {
-    let (plan, _) = parse_and_type_sub(sql, tx, auth)?;
-    Ok(StatementCtx {
-        statement: Statement::Select(ProjectList::Name(plan)),
-        sql,
-        source: StatementSource::Subscription,
-    })
-}
-
 /// Returns an error if the input type is not a table type or relvar
 fn expect_table_type(expr: ProjectList) -> TypingResult<ProjectName> {
     match expr {
-        ProjectList::Name(proj) => Ok(proj),
+        // Note, this is called before we do any RLS resolution.
+        // Hence this length should always be 1.
+        ProjectList::Name(mut proj) if proj.len() == 1 => Ok(proj.pop().unwrap()),
         ProjectList::Limit(input, _) => expect_table_type(*input),
-        ProjectList::List(..) | ProjectList::Agg(..) => Err(Unsupported::ReturnType.into()),
+        ProjectList::Name(..) | ProjectList::List(..) | ProjectList::Agg(..) => Err(Unsupported::ReturnType.into()),
     }
 }
 
@@ -228,6 +216,10 @@ pub mod test_utils {
                     .table(name)
                     .map(|def| Arc::new(TableSchema::from_module_def(&self.0, def, (), table_id)))
             })
+        }
+
+        fn rls_rules_for_table(&self, _: TableId) -> anyhow::Result<Vec<Box<str>>> {
+            Ok(vec![])
         }
     }
 }

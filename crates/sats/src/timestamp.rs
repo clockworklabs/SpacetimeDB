@@ -1,7 +1,7 @@
 use anyhow::Context;
 use chrono::DateTime;
 
-use crate::{de::Deserialize, impl_st, ser::Serialize, time_duration::TimeDuration, AlgebraicType};
+use crate::{de::Deserialize, impl_st, ser::Serialize, time_duration::TimeDuration, AlgebraicType, AlgebraicValue};
 use std::fmt;
 use std::ops::Add;
 use std::time::{Duration, SystemTime};
@@ -132,12 +132,20 @@ impl Timestamp {
     }
 
     /// Parses an RFC 3339 formated timestamp string
-    pub fn parse_from_str(str: &str) -> anyhow::Result<Timestamp> {
+    pub fn parse_from_rfc3339(str: &str) -> anyhow::Result<Timestamp> {
         DateTime::parse_from_rfc3339(str)
             .map_err(|err| anyhow::anyhow!(err))
             .with_context(|| "Invalid timestamp format. Expected RFC 3339 format (e.g. '2025-02-10 15:45:30').")
             .map(|dt| dt.timestamp_micros())
             .map(Timestamp::from_micros_since_unix_epoch)
+    }
+
+    /// Returns an RFC 3339 and ISO 8601 date and time string such as `1996-12-19T16:39:57-08:00`.
+    pub fn to_rfc3339(&self) -> anyhow::Result<String> {
+        DateTime::from_timestamp_micros(self.to_micros_since_unix_epoch())
+            .map(|t| t.to_rfc3339())
+            .ok_or_else(|| anyhow::anyhow!("Timestamp with i64 microseconds since Unix epoch overflows DateTime"))
+            .with_context(|| self.to_micros_since_unix_epoch())
     }
 }
 
@@ -151,15 +159,9 @@ impl Add<TimeDuration> for Timestamp {
 
 pub(crate) const MICROSECONDS_PER_SECOND: i64 = 1_000_000;
 
-impl std::fmt::Display for Timestamp {
+impl fmt::Display for Timestamp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let micros = self.to_micros_since_unix_epoch();
-        let sign = if micros < 0 { "-" } else { "" };
-        let pos = micros.abs();
-        let secs = pos / MICROSECONDS_PER_SECOND;
-        let micros_remaining = pos % MICROSECONDS_PER_SECOND;
-
-        write!(f, "{sign}{secs}.{micros_remaining:06}",)
+        write!(f, "{}", self.to_rfc3339().unwrap())
     }
 }
 
@@ -172,6 +174,12 @@ impl From<SystemTime> for Timestamp {
 impl From<Timestamp> for SystemTime {
     fn from(timestamp: Timestamp) -> Self {
         timestamp.to_system_time()
+    }
+}
+
+impl From<Timestamp> for AlgebraicValue {
+    fn from(value: Timestamp) -> Self {
+        AlgebraicValue::product([value.to_micros_since_unix_epoch().into()])
     }
 }
 

@@ -1,6 +1,7 @@
 #![doc = include_str!("../README.md")]
 // ^ if you are working on docs, go read the top comment of README.md please.
 
+#[cfg(feature = "unstable")]
 mod client_visibility_filter;
 pub mod log_stopwatch;
 mod logger;
@@ -18,7 +19,7 @@ pub use log;
 #[cfg(feature = "rand")]
 pub use rand;
 
-#[doc(hidden)]
+#[cfg(feature = "unstable")]
 pub use client_visibility_filter::Filter;
 #[cfg(feature = "rand")]
 pub use rng::StdbRng;
@@ -78,6 +79,7 @@ pub use spacetimedb_bindings_macro::duration;
 /// until they are processed by the SpacetimeDB host.
 /// This means that errors in queries, such as syntax errors, type errors or unknown tables,
 /// will be reported during `spacetime publish`, not at compile time.
+#[cfg(feature = "unstable")]
 #[doc(inline, hidden)] // TODO: RLS filters are currently unimplemented, and are not enforced.
 pub use spacetimedb_bindings_macro::client_visibility_filter;
 

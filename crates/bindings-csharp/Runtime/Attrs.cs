@@ -23,6 +23,21 @@
     }
 
     /// <summary>
+    /// Generates code for registering a row-level security rule.
+    ///
+    /// This attribute must be applied to a <c>static</c> field of type <c>Filter</c>.
+    /// It will be interpreted as a filter on the table to which it applies, for all client queries.
+    /// If a module contains multiple <c>client_visibility_filter</c>s for the same table,
+    /// they will be unioned together as if by SQL <c>OR</c>,
+    /// so that any row permitted by at least one filter is visible.
+    ///
+    /// The query follows the same syntax as a subscription query.
+    /// See the <see href="https://spacetimedb.com/docs/sql">SQL reference</see> for more information.
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Field)]
+    public sealed class ClientVisibilityFilterAttribute : Attribute { }
+
+    /// <summary>
     /// Registers a type as the row structure of a SpacetimeDB table, enabling codegen for it.
     ///
     /// <para>

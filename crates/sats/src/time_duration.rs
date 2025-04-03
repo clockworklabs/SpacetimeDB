@@ -1,5 +1,5 @@
 use crate::timestamp::MICROSECONDS_PER_SECOND;
-use crate::{de::Deserialize, impl_st, ser::Serialize, AlgebraicType};
+use crate::{de::Deserialize, impl_st, ser::Serialize, AlgebraicType, AlgebraicValue};
 use std::fmt;
 use std::time::Duration;
 
@@ -93,6 +93,12 @@ impl fmt::Display for TimeDuration {
         let secs = pos / MICROSECONDS_PER_SECOND;
         let micros_remaining = pos % MICROSECONDS_PER_SECOND;
         write!(f, "{sign}{secs}.{micros_remaining:06}")
+    }
+}
+
+impl From<TimeDuration> for AlgebraicValue {
+    fn from(value: TimeDuration) -> Self {
+        AlgebraicValue::product([value.to_micros().into()])
     }
 }
 

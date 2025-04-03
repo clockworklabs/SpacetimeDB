@@ -218,11 +218,7 @@ impl WsConnection {
             // TODO(kim): In order to be able to replicate module WASM blobs,
             // `cloud-next` cannot have message / frame size limits. That's
             // obviously a bad default for all other clients, though.
-            Some(WebSocketConfig {
-                max_frame_size: None,
-                max_message_size: None,
-                ..WebSocketConfig::default()
-            }),
+            Some(WebSocketConfig::default().max_frame_size(None).max_message_size(None)),
             false,
         )
         .await
@@ -265,7 +261,7 @@ impl WsConnection {
     }
 
     pub(crate) fn encode_message(msg: ClientMessage<Bytes>) -> WebSocketMessage {
-        WebSocketMessage::Binary(bsatn::to_vec(&msg).unwrap())
+        WebSocketMessage::Binary(bsatn::to_vec(&msg).unwrap().into())
     }
 
     fn maybe_log_error<T, U: std::fmt::Debug>(cause: &str, res: std::result::Result<T, U>) {
@@ -386,7 +382,7 @@ impl WsConnection {
                         }
 
                         log::trace!("sending client ping");
-                        let ping = WebSocketMessage::Ping(vec![]);
+                        let ping = WebSocketMessage::Ping(Bytes::new());
                         if let Err(e) = self.sock.send(ping).await {
                             log::warn!("Error sending ping: {e:?}");
                             break;

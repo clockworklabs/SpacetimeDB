@@ -1,14 +1,11 @@
-use std::{
-    io::{self, SeekFrom},
-    ops::RangeBounds,
-};
+use std::{io::SeekFrom, ops::RangeBounds};
 
 use async_stream::try_stream;
 use bytes::{Buf as _, Bytes};
 use futures::Stream;
 use log::{debug, trace, warn};
 use tokio::{
-    io::{AsyncBufRead, AsyncReadExt as _, AsyncSeek, AsyncSeekExt as _},
+    io::{self, AsyncBufRead, AsyncReadExt as _, AsyncSeek, AsyncSeekExt as _},
     task::spawn_blocking,
 };
 use tokio_util::io::SyncIoBridge;
@@ -20,8 +17,8 @@ use crate::{
 };
 
 use super::{
-    common::{read_exact, CommitBuf},
-    IntoAsyncSegment, RangeFromMaybeToInclusive,
+    common::{read_exact, AsyncRepo, CommitBuf},
+    RangeFromMaybeToInclusive,
 };
 
 /// Stream the `range` of transaction offsets from the commitlog in `repo` as
@@ -41,8 +38,7 @@ use super::{
 /// returned stream yields nothing.
 pub fn commits<R>(repo: R, range: impl RangeBounds<u64>) -> impl Stream<Item = io::Result<Bytes>>
 where
-    R: Repo + Send + 'static,
-    R::Segment: IntoAsyncSegment,
+    R: AsyncRepo + Send + 'static,
 {
     let mut range = RangeFromMaybeToInclusive::from_range_bounds(range);
     let retain = move |segments: Vec<_>| retain_range(&segments, range);
@@ -54,13 +50,7 @@ where
             }
             trace!("segment: segment={} start={}", segment_offset, range.start);
 
-            let segment = spawn_blocking({
-                let repo = repo.clone();
-                move || repo.open_segment(segment_offset)
-            })
-            .await
-            .unwrap()?
-            .into_async_reader();
+            let segment = repo.open_segment_reader_async(segment_offset).await?;
 
             for await chunk in read_segment(repo.clone(), segment, segment_offset, range) {
                 yield chunk.inspect_err(|e| warn!("error reading segment {}: {}", segment_offset, e))?;

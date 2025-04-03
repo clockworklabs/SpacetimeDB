@@ -7,11 +7,10 @@ use crate::host::{ReducerArgs, ReducerId};
 use crate::identity::Identity;
 use crate::messages::websocket::{CallReducer, ClientMessage, OneOffQuery};
 use crate::worker_metrics::WORKER_METRICS;
-use bytes::Bytes;
-use bytestring::ByteString;
 use spacetimedb_lib::de::serde::DeserializeWrapper;
 use spacetimedb_lib::identity::RequestId;
 use spacetimedb_lib::{bsatn, ConnectionId, Timestamp};
+use std::borrow::Cow;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -45,17 +44,19 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
         .inc();
 
     let message = match message {
-        DataMessage::Text(message) => {
-            let message = ByteString::from(message);
-            // TODO: update json clients and use the ws version
-            serde_json::from_str::<DeserializeWrapper<ClientMessage<ByteString>>>(&message)?
-                .0
-                .map_args(ReducerArgs::Json)
+        DataMessage::Text(text) => {
+            // TODO(breaking): this should ideally be &serde_json::RawValue, not json-nested-in-string
+            let DeserializeWrapper(message) =
+                serde_json::from_str::<DeserializeWrapper<ClientMessage<Cow<str>>>>(&text)?;
+            message.map_args(|s| {
+                ReducerArgs::Json(match s {
+                    Cow::Borrowed(s) => text.slice_ref(s),
+                    Cow::Owned(string) => string.into(),
+                })
+            })
         }
-        DataMessage::Binary(message_buf) => {
-            let message_buf = Bytes::from(message_buf);
-            bsatn::from_slice::<ClientMessage<Bytes>>(&message_buf)?.map_args(ReducerArgs::Bsatn)
-        }
+        DataMessage::Binary(message_buf) => bsatn::from_slice::<ClientMessage<&[u8]>>(&message_buf)?
+            .map_args(|b| ReducerArgs::Bsatn(message_buf.slice_ref(b))),
     };
 
     let database_identity = client.module.info().database_identity;

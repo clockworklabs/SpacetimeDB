@@ -370,7 +370,7 @@ pub fn type_and_rewrite_show(show: SqlShow, tx: &impl SchemaView) -> TypingResul
     );
 
     Ok(ProjectList::List(
-        RelExpr::Select(Box::new(relvar), filter),
+        vec![RelExpr::Select(Box::new(relvar), filter)],
         column_list,
     ))
 }

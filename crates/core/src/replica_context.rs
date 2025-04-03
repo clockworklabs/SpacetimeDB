@@ -46,6 +46,11 @@ impl ReplicaContext {
     pub fn mem_usage(&self) -> usize {
         self.relational_db.size_in_memory()
     }
+
+    /// Update data size stats.
+    pub fn update_data_size_metrics(&self) {
+        self.relational_db.update_data_size_metrics();
+    }
 }
 
 impl Deref for ReplicaContext {

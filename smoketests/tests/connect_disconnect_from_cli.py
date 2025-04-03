@@ -8,13 +8,11 @@ use spacetimedb::{log, ReducerContext};
 #[spacetimedb::reducer(client_connected)]
 pub fn connected(_ctx: &ReducerContext) {
     log::info!("_connect called");
-    panic!("Panic on connect");
 }
 
 #[spacetimedb::reducer(client_disconnected)]
 pub fn disconnected(_ctx: &ReducerContext) {
     log::info!("disconnect called");
-    panic!("Panic on disconnect");
 }
 
 #[spacetimedb::reducer]

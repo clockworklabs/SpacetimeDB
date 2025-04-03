@@ -1,7 +1,9 @@
+use crate::time_duration::TimeDuration;
+use crate::timestamp::Timestamp;
 use crate::{
     algebraic_value::ser::ValueSerializer,
     ser::{self, Serialize},
-    ProductType,
+    ProductType, ProductTypeElement,
 };
 use crate::{i256, u256};
 use core::fmt;
@@ -16,8 +18,8 @@ pub trait Satn: ser::Serialize {
         Ok(())
     }
 
-    /// Formats the value using the postgres SATN(SatnFormatter { f }, /* AlgebraicType */) formatter `f`.
-    fn fmt_psql(&self, f: &mut fmt::Formatter, ty: &ProductType) -> fmt::Result {
+    /// Formats the value using the postgres SATN(PsqlFormatter { f }, /* PsqlType */) formatter `f`.
+    fn fmt_psql(&self, f: &mut fmt::Formatter, ty: &PsqlType<'_>) -> fmt::Result {
         Writer::with(f, |f| {
             self.serialize(PsqlFormatter {
                 fmt: SatnFormatter { f },
@@ -71,7 +73,7 @@ impl<T: Satn + ?Sized> fmt::Debug for Wrapper<T> {
 /// providing `Display` and `Debug` implementations
 /// that uses postgres SATN formatting for `T`.
 pub struct PsqlWrapper<'a, T: ?Sized> {
-    pub ty: &'a ProductType,
+    pub ty: PsqlType<'a>,
     pub value: T,
 }
 
@@ -86,13 +88,13 @@ impl<T: ?Sized> PsqlWrapper<'_, T> {
 
 impl<T: Satn + ?Sized> fmt::Display for PsqlWrapper<'_, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.value.fmt_psql(f, self.ty)
+        self.value.fmt_psql(f, &self.ty)
     }
 }
 
 impl<T: Satn + ?Sized> fmt::Debug for PsqlWrapper<'_, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.value.fmt_psql(f, self.ty)
+        self.value.fmt_psql(f, &self.ty)
     }
 }
 
@@ -475,18 +477,36 @@ impl ser::SerializeNamedProduct for NamedFormatter<'_, '_> {
     }
 }
 
+struct PsqlEntryWrapper<'a, 'f, const SEP: char> {
+    entry: EntryWrapper<'a, 'f, SEP>,
+    /// The index of the element.
+    idx: usize,
+    ty: &'a PsqlType<'a>,
+}
+
 /// Provides the data format for named products for `SQL`.
 struct PsqlNamedFormatter<'a, 'f> {
     /// The formatter for each element separating elements by a `,`.
-    f: EntryWrapper<'a, 'f, ','>,
-    /// The index of the element.
-    idx: usize,
-    /// If is not [Self::is_bytes_or_special] to control if we start with `(`
+    f: PsqlEntryWrapper<'a, 'f, ','>,
+    /// If is not [Self::is_special] to control if we start with `(`
     start: bool,
-    /// For checking [Self::is_bytes_or_special]
-    ty: &'a ProductType,
-    /// If the current element is a special type.
-    is_special: bool,
+    /// Remember what format we are using
+    use_fmt: PsqlPrintFmt,
+}
+
+impl<'a, 'f> PsqlNamedFormatter<'a, 'f> {
+    pub fn new(ty: &'a PsqlType<'a>, f: Writer<'a, 'f>) -> Self {
+        Self {
+            start: true,
+            f: PsqlEntryWrapper {
+                entry: EntryWrapper::new(f),
+                idx: 0,
+                ty,
+            },
+            // Will set later
+            use_fmt: PsqlPrintFmt::Satn,
+        }
+    }
 }
 
 impl ser::SerializeNamedProduct for PsqlNamedFormatter<'_, '_> {
@@ -498,40 +518,52 @@ impl ser::SerializeNamedProduct for PsqlNamedFormatter<'_, '_> {
         name: Option<&str>,
         elem: &T,
     ) -> Result<(), Self::Error> {
-        // For binary data, output in `hex` format and skip the tagging of each value
-        self.is_special = ProductType::is_special_tag(name.unwrap_or_default());
-        self.f.entry(|mut f| {
-            if !self.is_special {
+        // For binary data & special types, output in `hex` format and skip the tagging of each value
+        // We need to check for both the  enclosing(`self.f.ty`) type and the inner element(`name`) type.
+        self.use_fmt = self.f.ty.use_fmt(name);
+        let res = self.f.entry.entry(|mut f| {
+            let PsqlType { tuple, field, idx } = self.f.ty;
+            if !self.use_fmt.is_special() {
                 if self.start {
-                    write!(f, "(")?; // Closed v
+                    write!(f, "(")?;
                     self.start = false;
                 }
                 // Format the name or use the index if unnamed.
                 if let Some(name) = name {
                     write!(f, "{}", name)?;
                 } else {
-                    write!(f, "{}", self.idx)?;
+                    write!(f, "{}", idx)?;
                 }
                 write!(f, " = ")?;
             }
+            //Is a nested product type?
+            let (tuple, field, idx) = if let Some(product) = field.algebraic_type.as_product() {
+                (product, &product.elements[self.f.idx], self.f.idx)
+            } else {
+                (*tuple, *field, *idx)
+            };
 
             elem.serialize(PsqlFormatter {
                 fmt: SatnFormatter { f },
-                ty: self.ty,
+                ty: &PsqlType { tuple, field, idx },
             })?;
 
-            if !self.is_special {
-                self.idx += 1;
-            }
             Ok(())
-        })?;
+        });
+
+        // Advance to the next field.
+        if !self.use_fmt.is_special() {
+            self.f.idx += 1;
+        }
+
+        res?;
 
         Ok(())
     }
 
     fn end(mut self) -> Result<Self::Ok, Self::Error> {
-        if !self.is_special {
-            write!(self.f.fmt, ")")?;
+        if !self.use_fmt.is_special() {
+            write!(self.f.entry.fmt, ")")?;
         }
         Ok(())
     }
@@ -556,10 +588,73 @@ impl ser::SerializeSeqProduct for PsqlSeqFormatter<'_, '_> {
     }
 }
 
+/// How format of the `SQL` output?
+#[derive(PartialEq)]
+pub enum PsqlPrintFmt {
+    /// Print as `hex` format
+    Hex,
+    /// Print as [`Timestamp`] format
+    Timestamp,
+    /// Print as [`TimeDuration`] format
+    Duration,
+    /// Print as `Satn` format
+    Satn,
+}
+
+impl PsqlPrintFmt {
+    fn is_special(&self) -> bool {
+        self != &PsqlPrintFmt::Satn
+    }
+}
+
+/// A wrapper that remember the `header` of the tuple/struct and the current field
+#[derive(Debug, Clone)]
+pub struct PsqlType<'a> {
+    /// The header of the tuple/struct
+    pub tuple: &'a ProductType,
+    /// The current field
+    pub field: &'a ProductTypeElement,
+    /// The index of the field in the tuple/struct
+    pub idx: usize,
+}
+
+impl PsqlType<'_> {
+    /// Returns if the type is a special type
+    ///
+    /// Is required to check both the enclosing type and the inner element type
+    fn use_fmt(&self, name: Option<&str>) -> PsqlPrintFmt {
+        if self.tuple.is_identity()
+            || self.tuple.is_connection_id()
+            || self.field.algebraic_type.is_identity()
+            || self.field.algebraic_type.is_connection_id()
+            || name.map(ProductType::is_identity_tag).unwrap_or_default()
+            || name.map(ProductType::is_connection_id_tag).unwrap_or_default()
+        {
+            return PsqlPrintFmt::Hex;
+        };
+
+        if self.tuple.is_timestamp()
+            || self.field.algebraic_type.is_timestamp()
+            || name.map(ProductType::is_timestamp_tag).unwrap_or_default()
+        {
+            return PsqlPrintFmt::Timestamp;
+        };
+
+        if self.tuple.is_time_duration()
+            || self.field.algebraic_type.is_time_duration()
+            || name.map(ProductType::is_time_duration_tag).unwrap_or_default()
+        {
+            return PsqlPrintFmt::Duration;
+        };
+
+        PsqlPrintFmt::Satn
+    }
+}
+
 /// An implementation of [`Serializer`](ser::Serializer) for `SQL` output.
 struct PsqlFormatter<'a, 'f> {
     fmt: SatnFormatter<'a, 'f>,
-    ty: &'a ProductType,
+    ty: &'a PsqlType<'a>,
 }
 
 impl<'a, 'f> ser::Serializer for PsqlFormatter<'a, 'f> {
@@ -585,10 +680,16 @@ impl<'a, 'f> ser::Serializer for PsqlFormatter<'a, 'f> {
         self.fmt.serialize_u64(v)
     }
     fn serialize_u128(self, v: u128) -> Result<Self::Ok, Self::Error> {
-        self.fmt.serialize_u128(v)
+        match self.ty.use_fmt(None) {
+            PsqlPrintFmt::Hex => self.serialize_bytes(&v.to_be_bytes()),
+            _ => self.fmt.serialize_u128(v),
+        }
     }
     fn serialize_u256(self, v: u256) -> Result<Self::Ok, Self::Error> {
-        self.fmt.serialize_u256(v)
+        match self.ty.use_fmt(None) {
+            PsqlPrintFmt::Hex => self.serialize_bytes(&v.to_be_bytes()),
+            _ => self.fmt.serialize_u256(v),
+        }
     }
     fn serialize_i8(self, v: i8) -> Result<Self::Ok, Self::Error> {
         self.fmt.serialize_i8(v)
@@ -599,8 +700,18 @@ impl<'a, 'f> ser::Serializer for PsqlFormatter<'a, 'f> {
     fn serialize_i32(self, v: i32) -> Result<Self::Ok, Self::Error> {
         self.fmt.serialize_i32(v)
     }
-    fn serialize_i64(self, v: i64) -> Result<Self::Ok, Self::Error> {
-        self.fmt.serialize_i64(v)
+    fn serialize_i64(mut self, v: i64) -> Result<Self::Ok, Self::Error> {
+        match self.ty.use_fmt(None) {
+            PsqlPrintFmt::Duration => {
+                write!(self.fmt, "{}", TimeDuration::from_micros(v))?;
+                Ok(())
+            }
+            PsqlPrintFmt::Timestamp => {
+                write!(self.fmt, "{}", Timestamp::from_micros_since_unix_epoch(v))?;
+                Ok(())
+            }
+            _ => self.fmt.serialize_i64(v),
+        }
     }
     fn serialize_i128(self, v: i128) -> Result<Self::Ok, Self::Error> {
         self.fmt.serialize_i128(v)
@@ -634,13 +745,7 @@ impl<'a, 'f> ser::Serializer for PsqlFormatter<'a, 'f> {
     }
 
     fn serialize_named_product(self, _len: usize) -> Result<Self::SerializeNamedProduct, Self::Error> {
-        Ok(PsqlNamedFormatter {
-            f: EntryWrapper::new(self.fmt.f),
-            idx: 0,
-            start: true,
-            ty: self.ty,
-            is_special: false,
-        })
+        Ok(PsqlNamedFormatter::new(self.ty, self.fmt.f))
     }
 
     fn serialize_variant<T: ser::Serialize + ?Sized>(

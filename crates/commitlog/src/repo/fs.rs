@@ -1,10 +1,14 @@
 use std::fs::{self, File};
-use std::io::{self, Seek};
+use std::io;
 
 use log::{debug, warn};
+use spacetimedb_fs_utils::compression::{new_zstd_writer, CompressReader};
 use spacetimedb_paths::server::{CommitLogDir, SegmentFile};
+use tempfile::NamedTempFile;
 
-use super::{Repo, Segment, TxOffset, TxOffsetIndex, TxOffsetIndexMut};
+use crate::segment::FileLike;
+
+use super::{Repo, SegmentLen, TxOffset, TxOffsetIndex, TxOffsetIndexMut};
 
 const SEGMENT_FILE_EXT: &str = ".stdb.log";
 
@@ -57,23 +61,23 @@ impl Fs {
     }
 }
 
-impl Segment for File {
-    fn segment_len(&mut self) -> io::Result<u64> {
-        let old_pos = self.stream_position()?;
-        let len = self.seek(io::SeekFrom::End(0))?;
-        // If we're already at the end of the file, avoid seeking.
-        if old_pos != len {
-            self.seek(io::SeekFrom::Start(old_pos))?;
-        }
+impl SegmentLen for File {}
 
-        Ok(len)
+impl FileLike for NamedTempFile {
+    fn fsync(&mut self) -> io::Result<()> {
+        self.as_file_mut().fsync()
+    }
+
+    fn ftruncate(&mut self, tx_offset: u64, size: u64) -> io::Result<()> {
+        self.as_file_mut().ftruncate(tx_offset, size)
     }
 }
 
 impl Repo for Fs {
-    type Segment = File;
+    type SegmentWriter = File;
+    type SegmentReader = CompressReader;
 
-    fn create_segment(&self, offset: u64) -> io::Result<Self::Segment> {
+    fn create_segment(&self, offset: u64) -> io::Result<Self::SegmentWriter> {
         File::options()
             .read(true)
             .append(true)
@@ -82,7 +86,7 @@ impl Repo for Fs {
             .or_else(|e| {
                 if e.kind() == io::ErrorKind::AlreadyExists {
                     debug!("segment {offset} already exists");
-                    let file = self.open_segment(offset)?;
+                    let file = self.open_segment_writer(offset)?;
                     if file.metadata()?.len() == 0 {
                         debug!("segment {offset} is empty");
                         return Ok(file);
@@ -93,8 +97,13 @@ impl Repo for Fs {
             })
     }
 
-    fn open_segment(&self, offset: u64) -> io::Result<Self::Segment> {
+    fn open_segment_writer(&self, offset: u64) -> io::Result<Self::SegmentWriter> {
         File::options().read(true).append(true).open(self.segment_path(offset))
+    }
+
+    fn open_segment_reader(&self, offset: u64) -> io::Result<Self::SegmentReader> {
+        let file = File::open(self.segment_path(offset))?;
+        CompressReader::new(file)
     }
 
     fn remove_segment(&self, offset: u64) -> io::Result<()> {
@@ -102,6 +111,25 @@ impl Repo for Fs {
             warn!("failed to remove offset index for segment {offset}, error: {e}");
         });
         fs::remove_file(self.segment_path(offset))
+    }
+
+    fn compress_segment(&self, offset: u64) -> io::Result<()> {
+        let src = self.open_segment_reader(offset)?;
+        // if it's already compressed, leave it be
+        let CompressReader::None(mut src) = src else {
+            return Ok(());
+        };
+
+        let mut dst = NamedTempFile::new_in(&self.root)?;
+        // bytes per frame. in the future, it might be worth looking into putting
+        // every commit into its own frame, to make seeking more efficient.
+        let max_frame_size = 0x1000;
+        let mut writer = new_zstd_writer(&mut dst, max_frame_size)?;
+        io::copy(&mut src, &mut writer)?;
+        writer.shutdown()?;
+        drop(writer);
+        dst.persist(self.segment_path(offset))?;
+        Ok(())
     }
 
     fn existing_offsets(&self) -> io::Result<Vec<u64>> {
@@ -139,4 +167,23 @@ impl Repo for Fs {
     fn get_offset_index(&self, offset: TxOffset) -> io::Result<TxOffsetIndex> {
         TxOffsetIndex::open_index_file(&self.root.index(offset))
     }
+}
+
+impl SegmentLen for CompressReader {}
+
+#[cfg(feature = "streaming")]
+impl crate::stream::AsyncRepo for Fs {
+    type AsyncSegmentWriter = tokio::io::BufWriter<tokio::fs::File>;
+    type AsyncSegmentReader = spacetimedb_fs_utils::compression::AsyncCompressReader<tokio::fs::File>;
+
+    async fn open_segment_reader_async(&self, offset: u64) -> io::Result<Self::AsyncSegmentReader> {
+        let file = tokio::fs::File::open(self.segment_path(offset)).await?;
+        spacetimedb_fs_utils::compression::AsyncCompressReader::new(file).await
+    }
+}
+
+#[cfg(feature = "streaming")]
+impl<T> crate::stream::AsyncLen for spacetimedb_fs_utils::compression::AsyncCompressReader<T> where
+    T: tokio::io::AsyncSeek + tokio::io::AsyncRead + Unpin + Send
+{
 }

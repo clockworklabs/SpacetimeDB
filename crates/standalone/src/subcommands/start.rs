@@ -135,6 +135,7 @@ pub async fn exec(args: &ArgMatches) -> anyhow::Result<()> {
     let data_dir = Arc::new(data_dir.clone());
     let ctx = StandaloneEnv::init(db_config, &certs, data_dir).await?;
     worker_metrics::spawn_jemalloc_stats(listen_addr.clone());
+    worker_metrics::spawn_tokio_stats(listen_addr.clone());
 
     let mut db_routes = DatabaseRoutes::default();
     db_routes.root_post = db_routes.root_post.layer(DefaultBodyLimit::disable());

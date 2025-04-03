@@ -13,10 +13,12 @@ use energy_monitor::StandaloneEnergyMonitor;
 use spacetimedb::client::ClientActorIndex;
 use spacetimedb::config::{CertificateAuthority, MetadataFile};
 use spacetimedb::db::db_metrics::data_size::DATA_SIZE_METRICS;
-use spacetimedb::db::relational_db::{self, Durability, Txdata};
+use spacetimedb::db::relational_db;
 use spacetimedb::db::{db_metrics::DB_METRICS, Config};
 use spacetimedb::energy::{EnergyBalance, EnergyQuanta};
-use spacetimedb::host::{DiskStorage, DurabilityProvider, ExternalDurability, HostController, UpdateDatabaseResult};
+use spacetimedb::host::{
+    DiskStorage, DurabilityProvider, ExternalDurability, HostController, StartSnapshotWatcher, UpdateDatabaseResult,
+};
 use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, Node, Replica};
 use spacetimedb::worker_metrics::WORKER_METRICS;
@@ -99,12 +101,19 @@ struct StandaloneDurabilityProvider {
 
 #[async_trait]
 impl DurabilityProvider for StandaloneDurabilityProvider {
-    async fn durability(&self, replica_id: u64) -> anyhow::Result<ExternalDurability> {
+    async fn durability(&self, replica_id: u64) -> anyhow::Result<(ExternalDurability, Option<StartSnapshotWatcher>)> {
         let commitlog_dir = self.data_dir.replica(replica_id).commit_log();
-        relational_db::local_durability(commitlog_dir)
-            .await
-            .map(|(durability, disk_size)| (durability as Arc<dyn Durability<TxData = Txdata>>, disk_size))
-            .map_err(Into::into)
+        let (durability, disk_size) = relational_db::local_durability(commitlog_dir).await?;
+        let start_snapshot_watcher = {
+            let durability = durability.clone();
+            |snapshot_rx| {
+                tokio::spawn(relational_db::snapshot_watching_commitlog_compressor(
+                    snapshot_rx,
+                    durability,
+                ));
+            }
+        };
+        Ok(((durability, disk_size), Some(Box::new(start_snapshot_watcher))))
     }
 }
 
