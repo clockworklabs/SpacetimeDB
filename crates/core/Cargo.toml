@@ -119,12 +119,13 @@ tikv-jemalloc-ctl = {workspace = true}
 [features]
 # Print a warning when doing an unindexed `iter_by_col_range` on a large table.
 unindexed_iter_by_col_range_warn = []
-# Optional storage engines.
 default = ["unindexed_iter_by_col_range_warn"]
 # Enable timing for wasm ABI calls
 spacetimedb-wasm-instance-env-times = []
 # Enable test helpers and utils
 test = ["spacetimedb-commitlog/test"]
+# Perfmaps for profiling modules
+perfmap = []
 
 [dev-dependencies]
 spacetimedb-lib = { path = "../lib", features = ["proptest"] }

@@ -15,6 +15,10 @@ proc-macro = false     # Set to `true` for a proc-macro library.
 harness = true         # Use libtest harness.
 required-features = [] # Features required to build this target (N/A for lib)
 
+[features]
+# Perfmaps for profiling modules
+perfmap = ["spacetimedb-core/perfmap"]
+
 [dependencies]
 spacetimedb-client-api-messages.workspace = true
 spacetimedb-client-api.workspace = true
