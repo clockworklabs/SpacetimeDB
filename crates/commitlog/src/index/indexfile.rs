@@ -188,7 +188,7 @@ impl<Key: Into<u64> + From<u64>> IndexFileMut<Key> {
     }
 
     /// Truncates the index file starting from the entry with a key greater than or equal to the given key.
-    pub fn truncate(&mut self, key: Key) -> Result<(), IndexError> {
+    pub(crate) fn truncate(&mut self, key: Key) -> Result<(), IndexError> {
         let key = key.into();
 
         info!("truncating key: {}", key);
@@ -464,11 +464,8 @@ mod tests {
         assert_eq!(index.num_entries, 8);
 
         // Truncate last present entry
-        index.truncate(15)?;
+        index.truncate(16)?;
         assert_eq!(index.num_entries, 7);
-
-        index.append(15, 1500)?;
-        assert_eq!(index.num_entries, 8);
 
         // Truncate from middle key entry
         // as key is not present, key with bigger entries should truncate

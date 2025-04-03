@@ -116,6 +116,7 @@ async fn trim_garbage() {
         let reader = create_reader(&src, ..);
         pin!(reader);
         writer.append_all(reader, |_| ()).await.unwrap();
+        info!("read all");
         assert_equal_dirs(&src, &dst).await
     }
 

@@ -12,7 +12,7 @@ use tokio::{
 
 use crate::{
     commit, error,
-    repo::{self, Repo, Segment},
+    repo::{Repo, Segment, TxOffsetIndexMut},
     segment::{self, FileLike as _, OffsetIndexWriter, CHECKSUM_LEN, DEFAULT_CHECKSUM_ALGORITHM},
     stream::common::{read_exact, AsyncFsync},
     Options, StoredCommit, DEFAULT_LOG_FORMAT_VERSION,
@@ -96,33 +96,50 @@ where
         };
 
         let mut segment = repo.open_segment(last)?;
-        let mut offset_index = repo::create_offset_index_writer(&repo, last, commitlog_options);
+        let offset_index = repo
+            .get_offset_index(last)
+            .inspect_err(|e| {
+                warn!("unable to open offset index for segment {last}: {e}");
+            })
+            .ok();
+
+        let (segment_metadata, offset_index) =
+            match segment::Metadata::extract(last, &mut segment, offset_index.as_ref()) {
+                Ok(sofar) => (sofar, offset_index.map(|idx| idx.into())),
+                Err(error::SegmentMetadata::InvalidCommit { sofar, source }) => match on_trailing {
+                    OnTrailingData::Error => {
+                        return Err(io::Error::new(io::ErrorKind::InvalidData, source));
+                    }
+                    OnTrailingData::Trim => {
+                        warn!("trimming segment {last} after invalid commit: {sofar:?}");
+                        let mut offset_index_mut: Option<TxOffsetIndexMut> = offset_index.map(|idx| idx.into());
+                        if let Some(mut idx) = offset_index_mut.take() {
+                            idx.ftruncate(sofar.tx_range.end, sofar.size_in_bytes)
+                                .inspect_err(|e| {
+                                    error!(
+                                        "failed to truncate offset index for segment {} containing trailing data: {}",
+                                        last, e
+                                    )
+                                })?;
+                            offset_index_mut = Some(idx);
+
+                            segment.ftruncate(sofar.tx_range.end, sofar.size_in_bytes)?;
+                            segment.seek(io::SeekFrom::End(0))?;
+                            warn!("trimming segment {last} to {} bytes", sofar.tx_range.end);
+                        }
+                        (sofar, offset_index_mut)
+                    }
+                },
+                Err(error::SegmentMetadata::Io(e)) => Err(e)?,
+            };
+
         let segment::Metadata {
             header,
             tx_range,
             size_in_bytes: _,
             max_epoch: _,
-        } = segment::Metadata::extract(last, &mut segment).or_else(|e| match e {
-            error::SegmentMetadata::InvalidCommit { sofar, source } => match on_trailing {
-                OnTrailingData::Error => Err(io::Error::new(io::ErrorKind::InvalidData, source)),
-                OnTrailingData::Trim => {
-                    if let Some(idx) = offset_index.as_mut() {
-                        idx.ftruncate(sofar.tx_range.end, sofar.size_in_bytes)
-                            .inspect_err(|e| {
-                                error!(
-                                    "failed to truncate offset index for segment {} containing trailing data: {}",
-                                    last, e
-                                )
-                            })?;
-                    }
-                    segment.ftruncate(sofar.tx_range.end, sofar.size_in_bytes)?;
-                    segment.seek(io::SeekFrom::End(0))?;
+        } = segment_metadata;
 
-                    Ok(sofar)
-                }
-            },
-            error::SegmentMetadata::Io(err) => Err(err),
-        })?;
         header
             .ensure_compatible(DEFAULT_LOG_FORMAT_VERSION, DEFAULT_CHECKSUM_ALGORITHM)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
@@ -130,7 +147,7 @@ where
         let current_segment = CurrentSegment {
             header,
             segment: segment.into_async_writer(),
-            offset_index,
+            offset_index: offset_index.map(|index| OffsetIndexWriter::new(index, commitlog_options)),
         };
 
         Ok(Self {

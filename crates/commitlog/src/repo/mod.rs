@@ -193,12 +193,13 @@ pub fn resume_segment_writer<R: Repo>(
     offset: u64,
 ) -> io::Result<Result<Writer<R::Segment>, Metadata>> {
     let mut storage = repo.open_segment(offset)?;
+    let offset_index = repo.get_offset_index(offset).ok();
     let Metadata {
         header,
         tx_range,
         size_in_bytes,
         max_epoch,
-    } = match Metadata::extract(offset, &mut storage) {
+    } = match Metadata::extract(offset, &mut storage, offset_index.as_ref()) {
         Err(error::SegmentMetadata::InvalidCommit { sofar, source }) => {
             warn!("invalid commit in segment {offset}: {source}");
             debug!("sofar={sofar:?}");

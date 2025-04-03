@@ -333,7 +333,8 @@ pub fn committed_meta(repo: impl Repo) -> Result<Option<segment::Metadata>, erro
     };
 
     let mut storage = repo.open_segment(last)?;
-    segment::Metadata::extract(last, &mut storage).map(Some)
+    let offset_index = repo.get_offset_index(last).ok();
+    segment::Metadata::extract(last, &mut storage, offset_index.as_ref()).map(Some)
 }
 
 pub fn commits_from<R: Repo>(repo: R, max_log_format_version: u8, offset: u64) -> io::Result<Commits<R>> {
@@ -466,7 +467,7 @@ fn reset_to_internal(repo: &impl Repo, segments: &[u64], offset: u64) -> io::Res
             // Read commit-wise until we find the byte offset.
             let mut reader = repo::open_segment_reader(repo, DEFAULT_LOG_FORMAT_VERSION, segment)?;
 
-            let mut bytes_read = repo
+            let (index_file, mut bytes_read) = repo
                 .get_offset_index(segment)
                 .and_then(|index_file| {
                     let (key, byte_offset) = index_file.key_lookup(offset).map_err(|e| {
@@ -480,12 +481,12 @@ fn reset_to_internal(repo: &impl Repo, segments: &[u64], offset: u64) -> io::Res
                         )
                     })?;
 
-                    Ok(byte_offset)
+                    Ok((Some(index_file), byte_offset))
                 })
                 .inspect_err(|e| {
                     warn!("commitlog offset index is not used: {e:?}");
                 })
-                .unwrap_or(segment::Header::LEN as u64);
+                .unwrap_or((None, segment::Header::LEN as u64));
 
             let commits = reader.commits();
 
@@ -504,10 +505,19 @@ fn reset_to_internal(repo: &impl Repo, segments: &[u64], offset: u64) -> io::Res
                 let byte_offset = bytes_read;
                 info!("truncating segment {segment} to {offset} at {byte_offset}");
                 let mut file = repo.open_segment(segment)?;
-                // Note: The offset index truncates equal or greater,
-                // inclusive. We'd like to retain `offset` in the index, as
-                // the commit is also retained in the log.
-                file.ftruncate(offset + 1, byte_offset)?;
+
+                if let Some(mut index_file) = index_file {
+                    let index_file = index_file.as_mut();
+                    index_file.ftruncate(offset + 1, byte_offset).map_err(|e| {
+                        io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            format!("Failed to truncate offset index: {e}"),
+                        )
+                    })?;
+                    index_file.async_flush()?;
+                }
+
+                file.ftruncate(offset, byte_offset)?;
                 // Some filesystems require fsync after ftruncate.
                 file.fsync()?;
                 break;
