@@ -10,16 +10,16 @@ partial class Timers
     {
         public void ReadFields(System.IO.BinaryReader reader)
         {
-            ScheduledId = BSATN.ScheduledId.Read(reader);
-            ScheduledAt = BSATN.ScheduledAt.Read(reader);
-            Text = BSATN.Text.Read(reader);
+            ScheduledId = BSATN.ScheduledIdRW.Read(reader);
+            ScheduledAt = BSATN.ScheduledAtRW.Read(reader);
+            Text = BSATN.TextRW.Read(reader);
         }
 
         public void WriteFields(System.IO.BinaryWriter writer)
         {
-            BSATN.ScheduledId.Write(writer, ScheduledId);
-            BSATN.ScheduledAt.Write(writer, ScheduledAt);
-            BSATN.Text.Write(writer, Text);
+            BSATN.ScheduledIdRW.Write(writer, ScheduledId);
+            BSATN.ScheduledAtRW.Write(writer, ScheduledAt);
+            BSATN.TextRW.Write(writer, Text);
         }
 
         public override string ToString() =>
@@ -27,9 +27,9 @@ partial class Timers
 
         public readonly partial struct BSATN : SpacetimeDB.BSATN.IReadWrite<Timers.SendMessageTimer>
         {
-            internal static readonly SpacetimeDB.BSATN.U64 ScheduledId = new();
-            internal static readonly SpacetimeDB.ScheduleAt.BSATN ScheduledAt = new();
-            internal static readonly SpacetimeDB.BSATN.String Text = new();
+            internal static readonly SpacetimeDB.BSATN.U64 ScheduledIdRW = new();
+            internal static readonly SpacetimeDB.ScheduleAt.BSATN ScheduledAtRW = new();
+            internal static readonly SpacetimeDB.BSATN.String TextRW = new();
 
             public Timers.SendMessageTimer Read(System.IO.BinaryReader reader) =>
                 SpacetimeDB.BSATN.IStructuralReadWrite.Read<Timers.SendMessageTimer>(reader);
@@ -46,9 +46,9 @@ partial class Timers
                     _ => new SpacetimeDB.BSATN.AlgebraicType.Product(
                         new SpacetimeDB.BSATN.AggregateElement[]
                         {
-                            new(nameof(ScheduledId), ScheduledId.GetAlgebraicType(registrar)),
-                            new(nameof(ScheduledAt), ScheduledAt.GetAlgebraicType(registrar)),
-                            new(nameof(Text), Text.GetAlgebraicType(registrar))
+                            new("ScheduledId", ScheduledIdRW.GetAlgebraicType(registrar)),
+                            new("ScheduledAt", ScheduledAtRW.GetAlgebraicType(registrar)),
+                            new("Text", TextRW.GetAlgebraicType(registrar))
                         }
                     )
                 );
