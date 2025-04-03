@@ -11,6 +11,8 @@ use crate::host::{ModuleHost, NoSuchModule, ReducerArgs, ReducerCallError, Reduc
 use crate::messages::websocket::Subscribe;
 use crate::util::prometheus_handle::IntGaugeExt;
 use crate::worker_metrics::WORKER_METRICS;
+use bytes::Bytes;
+use bytestring::ByteString;
 use derive_more::From;
 use futures::prelude::*;
 use spacetimedb_client_api_messages::websocket::{
@@ -141,8 +143,20 @@ impl Deref for ClientConnection {
 
 #[derive(Debug, From)]
 pub enum DataMessage {
-    Text(String),
-    Binary(Vec<u8>),
+    Text(ByteString),
+    Binary(Bytes),
+}
+
+impl From<String> for DataMessage {
+    fn from(value: String) -> Self {
+        ByteString::from(value).into()
+    }
+}
+
+impl From<Vec<u8>> for DataMessage {
+    fn from(value: Vec<u8>) -> Self {
+        Bytes::from(value).into()
+    }
 }
 
 impl DataMessage {

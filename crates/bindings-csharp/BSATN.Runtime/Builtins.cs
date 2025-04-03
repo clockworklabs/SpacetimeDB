@@ -339,11 +339,9 @@ public record struct Timestamp(long MicrosecondsSinceUnixEpoch)
     // Should be consistent with Rust implementation of Display.
     public override readonly string ToString()
     {
-        var sign = MicrosecondsSinceUnixEpoch < 0 ? "-" : "";
-        var pos = Math.Abs(MicrosecondsSinceUnixEpoch);
-        var secs = pos / Util.MicrosecondsPerSecond;
-        var microsRemaining = pos % Util.MicrosecondsPerSecond;
-        return $"{sign}{secs}.{microsRemaining:D6}";
+        var date = ToStd();
+
+        return date.ToString("yyyy-MM-dd'T'HH:mm:ss.ffffffK");
     }
 
     public static readonly Timestamp UNIX_EPOCH = new(0);

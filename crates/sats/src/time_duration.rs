@@ -1,5 +1,5 @@
 use crate::timestamp::MICROSECONDS_PER_SECOND;
-use crate::{de::Deserialize, impl_st, ser::Serialize, AlgebraicType};
+use crate::{de::Deserialize, impl_st, ser::Serialize, AlgebraicType, AlgebraicValue};
 use std::fmt;
 use std::ops::{Add, AddAssign, Sub, SubAssign};
 use std::time::Duration;
@@ -140,6 +140,12 @@ impl SubAssign for TimeDuration {
 // It also has methods for division with floats,
 // both `Duration -> Duration -> float` and `Duration -> float -> Duration`.
 // We could provide some or all of these, but so far have not seen the need to.
+
+impl From<TimeDuration> for AlgebraicValue {
+    fn from(value: TimeDuration) -> Self {
+        AlgebraicValue::product([value.to_micros().into()])
+    }
+}
 
 #[cfg(test)]
 mod test {

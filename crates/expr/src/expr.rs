@@ -86,12 +86,59 @@ impl ProjectName {
 /// ```sql
 /// select t.a as x from t join s ...
 /// ```
+///
+/// Note that RLS takes a single expression and produces a list of expressions.
+/// Hence why these variants take lists rather than single expressions.
+///
+/// Why does RLS take an expression and produce a list?
+///
+/// There may be multiple RLS rules associated to a single table.
+/// Semantically these rules represent a UNION over that table,
+/// and this corresponds to a UNION in the original expression.
+///
+/// TODO: We should model the UNION explicitly in the physical plan.
+///
+/// Ex.
+///
+/// Let's say we have the following rules for the `users` table:
+/// ```rust
+/// use spacetimedb::client_visibility_filter;
+/// use spacetimedb::Filter;
+///
+/// #[client_visibility_filter]
+/// const USER_FILTER: Filter = Filter::Sql(
+///     "SELECT users.* FROM users WHERE identity = :sender"
+/// );
+///
+/// #[client_visibility_filter]
+/// const ADMIN_FILTER: Filter = Filter::Sql(
+///     "SELECT users.* FROM users JOIN admins"
+/// );
+/// ```
+///
+/// The user query
+/// ```sql
+/// SELECT * FROM users WHERE level > 5
+/// ```
+///
+/// essentially resolves to
+/// ```sql
+/// SELECT users.*
+/// FROM users
+/// WHERE identity = :sender AND level > 5
+///
+/// UNION ALL
+///
+/// SELECT users.*
+/// FROM users JOIN admins
+/// WHERE users.level > 5
+/// ```
 #[derive(Debug)]
 pub enum ProjectList {
-    Name(ProjectName),
-    List(RelExpr, Vec<(Box<str>, FieldProject)>),
+    Name(Vec<ProjectName>),
+    List(Vec<RelExpr>, Vec<(Box<str>, FieldProject)>),
     Limit(Box<ProjectList>, u64),
-    Agg(RelExpr, AggType, Box<str>, AlgebraicType),
+    Agg(Vec<RelExpr>, AggType, Box<str>, AlgebraicType),
 }
 
 #[derive(Debug)]
@@ -105,7 +152,7 @@ impl ProjectList {
     /// If not, it projects a list of columns, so we return [None].
     pub fn return_table(&self) -> Option<&TableSchema> {
         match self {
-            Self::Name(project) => project.return_table(),
+            Self::Name(project) => project.first().and_then(|expr| expr.return_table()),
             Self::Limit(input, _) => input.return_table(),
             Self::List(..) | Self::Agg(..) => None,
         }
@@ -116,7 +163,7 @@ impl ProjectList {
     /// If not, it projects a list of columns, so we return [None].
     pub fn return_table_id(&self) -> Option<TableId> {
         match self {
-            Self::Name(project) => project.return_table_id(),
+            Self::Name(project) => project.first().and_then(|expr| expr.return_table_id()),
             Self::Limit(input, _) => input.return_table_id(),
             Self::List(..) | Self::Agg(..) => None,
         }
@@ -126,7 +173,7 @@ impl ProjectList {
     pub fn for_each_return_field(&self, mut f: impl FnMut(&str, &AlgebraicType)) {
         match self {
             Self::Name(input) => {
-                input.for_each_return_field(f);
+                input.first().inspect(|expr| expr.for_each_return_field(f));
             }
             Self::Limit(input, _) => {
                 input.for_each_return_field(f);
