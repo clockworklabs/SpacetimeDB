@@ -4,7 +4,7 @@ use std::{
 };
 
 use futures::TryFutureExt;
-use log::{debug, error, trace, warn};
+use log::{debug, error, info, trace, warn};
 use tokio::{
     io::{AsyncBufRead, AsyncBufReadExt as _, AsyncReadExt as _, AsyncWriteExt},
     task::spawn_blocking,
@@ -12,15 +12,15 @@ use tokio::{
 
 use crate::{
     commit, error,
-    repo::{Repo, Segment, TxOffsetIndexMut},
+    repo::{Repo, SegmentLen as _, TxOffsetIndexMut},
     segment::{self, FileLike as _, OffsetIndexWriter, CHECKSUM_LEN, DEFAULT_CHECKSUM_ALGORITHM},
     stream::common::{read_exact, AsyncFsync},
     Options, StoredCommit, DEFAULT_LOG_FORMAT_VERSION,
 };
 
 use super::{
-    common::{peek_buf, AsyncLen as _, CommitBuf},
-    IntoAsyncSegment,
+    common::{peek_buf, AsyncLen as _, AsyncRepo, CommitBuf},
+    IntoAsyncWriter,
 };
 
 /// Progress reporting for [`StreamWriter::write_all`].
@@ -58,21 +58,19 @@ impl<T: FnMut(Range<u64>)> Progress for T {
 /// [commits]: crate::commit::StoredCommit
 pub struct StreamWriter<R>
 where
-    R: Repo + Send + 'static,
-    R::Segment: IntoAsyncSegment,
+    R: AsyncRepo + Send + 'static,
 {
     repo: R,
     commitlog_options: Options,
 
     last_written_tx_range: Option<Range<u64>>,
-    current_segment: Option<CurrentSegment<<R::Segment as IntoAsyncSegment>::AsyncSegmentWriter>>,
+    current_segment: Option<CurrentSegment<R::AsyncSegmentWriter>>,
     commit_buf: CommitBuf,
 }
 
 impl<R> StreamWriter<R>
 where
-    R: Repo + Send + 'static,
-    R::Segment: IntoAsyncSegment,
+    R: AsyncRepo + Send + 'static,
 {
     /// Create a new [`StreamWriter`] from the commitlog in `repo`.
     ///
@@ -85,17 +83,30 @@ where
     /// commits. The `on_trailing` parameter an be used to trim the segment if
     /// it contains trailing invalid data (i.e. due to a partial write).
     pub fn create(repo: R, commitlog_options: Options, on_trailing: OnTrailingData) -> io::Result<Self> {
+        Self::create_and_metadata(repo, commitlog_options, on_trailing).map(|(this, _)| this)
+    }
+
+    /// Like [`Self::create`], create a new [`StreamWriter`]. Additionally
+    /// return the [`segment::Metadata`] of the most recent segment.
+    ///
+    /// The metadata is `None` if the commitlog is empty.
+    pub fn create_and_metadata(
+        repo: R,
+        commitlog_options: Options,
+        on_trailing: OnTrailingData,
+    ) -> io::Result<(Self, Option<segment::Metadata>)> {
         let Some(last) = repo.existing_offsets()?.pop() else {
-            return Ok(Self {
+            let this = Self {
                 repo,
                 commitlog_options,
                 last_written_tx_range: None,
                 current_segment: None,
                 commit_buf: <_>::default(),
-            });
+            };
+            return Ok((this, None));
         };
 
-        let mut segment = repo.open_segment(last)?;
+        let mut segment = repo.open_segment_writer(last)?;
         let offset_index = repo
             .get_offset_index(last)
             .inspect_err(|e| {
@@ -103,60 +114,53 @@ where
             })
             .ok();
 
-        let (segment_metadata, offset_index) =
-            match segment::Metadata::extract(last, &mut segment, offset_index.as_ref()) {
-                Ok(sofar) => (sofar, offset_index.map(|idx| idx.into())),
-                Err(error::SegmentMetadata::InvalidCommit { sofar, source }) => match on_trailing {
-                    OnTrailingData::Error => {
-                        return Err(io::Error::new(io::ErrorKind::InvalidData, source));
+        let (meta, offset_index) = match segment::Metadata::extract(last, &mut segment, offset_index.as_ref()) {
+            Ok(sofar) => (sofar, offset_index.map(|idx| idx.into())),
+            Err(error::SegmentMetadata::InvalidCommit { sofar, source }) => match on_trailing {
+                OnTrailingData::Error => {
+                    return Err(io::Error::new(io::ErrorKind::InvalidData, source));
+                }
+                OnTrailingData::Trim => {
+                    info!("trimming segment {last} after invalid commit: {sofar:?}");
+                    let mut offset_index_mut: Option<TxOffsetIndexMut> = offset_index.map(|idx| idx.into());
+                    if let Some(mut idx) = offset_index_mut.take() {
+                        idx.ftruncate(sofar.tx_range.end, sofar.size_in_bytes)
+                            .inspect_err(|e| {
+                                error!(
+                                    "failed to truncate offset index for segment {} containing trailing data: {}",
+                                    last, e
+                                )
+                            })?;
+                        offset_index_mut = Some(idx);
+
+                        segment.ftruncate(sofar.tx_range.end, sofar.size_in_bytes)?;
+                        segment.seek(io::SeekFrom::End(0))?;
                     }
-                    OnTrailingData::Trim => {
-                        warn!("trimming segment {last} after invalid commit: {sofar:?}");
-                        let mut offset_index_mut: Option<TxOffsetIndexMut> = offset_index.map(|idx| idx.into());
-                        if let Some(mut idx) = offset_index_mut.take() {
-                            idx.ftruncate(sofar.tx_range.end, sofar.size_in_bytes)
-                                .inspect_err(|e| {
-                                    error!(
-                                        "failed to truncate offset index for segment {} containing trailing data: {}",
-                                        last, e
-                                    )
-                                })?;
-                            offset_index_mut = Some(idx);
+                    (sofar, offset_index_mut)
+                }
+            },
+            Err(error::SegmentMetadata::Io(e)) => Err(e)?,
+        };
 
-                            segment.ftruncate(sofar.tx_range.end, sofar.size_in_bytes)?;
-                            segment.seek(io::SeekFrom::End(0))?;
-                            warn!("trimming segment {last} to {} bytes", sofar.tx_range.end);
-                        }
-                        (sofar, offset_index_mut)
-                    }
-                },
-                Err(error::SegmentMetadata::Io(e)) => Err(e)?,
-            };
-
-        let segment::Metadata {
-            header,
-            tx_range,
-            size_in_bytes: _,
-            max_epoch: _,
-        } = segment_metadata;
-
-        header
+        meta.header
             .ensure_compatible(DEFAULT_LOG_FORMAT_VERSION, DEFAULT_CHECKSUM_ALGORITHM)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
 
         let current_segment = CurrentSegment {
-            header,
+            header: meta.header,
             segment: segment.into_async_writer(),
             offset_index: offset_index.map(|index| OffsetIndexWriter::new(index, commitlog_options)),
         };
 
-        Ok(Self {
+        let this = Self {
             repo,
             commitlog_options,
-            last_written_tx_range: Some(tx_range),
+            last_written_tx_range: Some(meta.tx_range.clone()),
             current_segment: Some(current_segment),
             commit_buf: <_>::default(),
-        })
+        };
+
+        Ok((this, Some(meta)))
     }
 
     /// Consume `stream` and append it to the local commitog.
@@ -190,10 +194,7 @@ where
         mut progress: impl Progress,
     ) -> io::Result<Self> {
         loop {
-            let Some(buf) = peek_buf(&mut stream)
-                .await
-                .inspect_err(|e| warn!("failed to peek stream: {e}"))?
-            else {
+            let Some(buf) = peek_buf(&mut stream).await? else {
                 break;
             };
 
@@ -271,7 +272,7 @@ where
     async fn append_all_inner(
         &mut self,
         stream: &mut (impl AsyncBufRead + Unpin),
-        current_segment: &mut CurrentSegment<<R::Segment as IntoAsyncSegment>::AsyncSegmentWriter>,
+        current_segment: &mut CurrentSegment<R::AsyncSegmentWriter>,
         progress: &mut impl Progress,
     ) -> io::Result<AppendInnerResult> {
         let mut bytes_written = current_segment
@@ -283,10 +284,7 @@ where
             .max(segment::Header::LEN as _);
 
         loop {
-            let Some(buf) = peek_buf(stream).await.inspect_err(|e| {
-                warn!("failed to peek stream: {e}");
-            })?
-            else {
+            let Some(buf) = peek_buf(stream).await? else {
                 // The stream is exhausted, break the outer loop.
                 trace!("eof");
                 return Ok(AppendInnerResult::StreamExhausted);
@@ -298,11 +296,7 @@ where
             }
 
             // Read the header, so we can determine the size of the commit.
-            if read_exact(stream, &mut self.commit_buf.header)
-                .await
-                .inspect_err(|e| warn!("failed to read commit header: {e}"))?
-                .is_eof()
-            {
+            if read_exact(stream, &mut self.commit_buf.header).await?.is_eof() {
                 return Ok(AppendInnerResult::StreamExhausted);
             }
             let Some(commit_header) = commit::Header::decode(&self.commit_buf.header[..])
@@ -317,10 +311,7 @@ where
                 commit_header.len as usize + CHECKSUM_LEN[current_segment.header.checksum_algorithm as usize],
                 0,
             );
-            stream
-                .read_exact(&mut self.commit_buf.body)
-                .await
-                .inspect_err(|e| warn!("failed to read commit body: {e}"))?;
+            stream.read_exact(&mut self.commit_buf.body).await?;
             // Decode the commit and verify its checksum.
             let commit = StoredCommit::decode(self.commit_buf.as_reader())
                 .inspect_err(|e| warn!("failed to decode commit: {e}"))?
@@ -360,13 +351,10 @@ where
                     "append_after_commit min_tx_offset={} bytes_written={} commit_len={}",
                     commit.min_tx_offset, bytes_written, commit_len
                 );
-
-                if let Err(_) = offset_index
+                offset_index
                     .append_after_commit(commit.min_tx_offset, bytes_written, commit_len)
                     .inspect_err(|e| warn!("failed to append to offset index: {e}"))
-                {
-                    panic!("failed to append to offset index");
-                }
+                    .ok();
             }
 
             bytes_written += commit_len;
@@ -385,8 +373,7 @@ where
 
 impl<R> Drop for StreamWriter<R>
 where
-    R: Repo + Send + 'static,
-    R::Segment: IntoAsyncSegment,
+    R: AsyncRepo + Send + 'static,
 {
     fn drop(&mut self) {
         if let Some(current_segment) = self.current_segment.take() {
@@ -456,7 +443,7 @@ fn create_segment<R: Repo>(
     repo: R,
     last_written_tx_range: Option<Range<u64>>,
     commitlog_options: Options,
-) -> io::Result<(R::Segment, Option<OffsetIndexWriter>)> {
+) -> io::Result<(R::SegmentWriter, Option<OffsetIndexWriter>)> {
     let segment_offset = last_written_tx_range
         .as_ref()
         .map(|range| range.end)
@@ -464,7 +451,7 @@ fn create_segment<R: Repo>(
     let segment = repo.create_segment(segment_offset).or_else(|e| {
         if e.kind() == io::ErrorKind::AlreadyExists {
             trace!("segment already exists");
-            let mut s = repo.open_segment(segment_offset)?;
+            let mut s = repo.open_segment_writer(segment_offset)?;
             let len = s.segment_len()?;
             trace!("segment len: {len}");
             if len <= segment::Header::LEN as _ {

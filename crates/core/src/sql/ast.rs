@@ -1,6 +1,8 @@
 use crate::db::datastore::locking_tx_datastore::state_view::StateView;
+use crate::db::datastore::system_tables::{StRowLevelSecurityFields, ST_ROW_LEVEL_SECURITY_ID};
 use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::error::{DBError, PlanError};
+use anyhow::Context;
 use spacetimedb_data_structures::map::{HashCollectionExt as _, IntMap};
 use spacetimedb_expr::check::SchemaView;
 use spacetimedb_expr::statement::compile_sql_stmt;
@@ -507,6 +509,33 @@ impl<T: StateView> SchemaView for SchemaViewer<'_, T> {
             .get_schema(table_id)
             .filter(|schema| schema.table_access == StAccess::Public || caller == owner)
             .cloned()
+    }
+
+    fn rls_rules_for_table(&self, table_id: TableId) -> anyhow::Result<Vec<Box<str>>> {
+        self.tx
+            .iter_by_col_eq(
+                ST_ROW_LEVEL_SECURITY_ID,
+                StRowLevelSecurityFields::TableId,
+                &AlgebraicValue::from(table_id),
+            )?
+            .map(|row| {
+                row.read_col::<AlgebraicValue>(StRowLevelSecurityFields::Sql)
+                    .with_context(|| {
+                        format!(
+                            "Failed to read value from the `{}` column of `{}` for table_id `{}`",
+                            "sql", "st_row_level_security", table_id
+                        )
+                    })
+                    .and_then(|sql| {
+                        sql.into_string().map_err(|_| {
+                            anyhow::anyhow!(format!(
+                                "Failed to read value from the `{}` column of `{}` for table_id `{}`",
+                                "sql", "st_row_level_security", table_id
+                            ))
+                        })
+                    })
+            })
+            .collect::<anyhow::Result<_>>()
     }
 }
 

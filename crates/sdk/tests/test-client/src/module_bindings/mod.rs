@@ -292,7 +292,6 @@ pub mod unique_u_64_type;
 pub mod unique_u_8_table;
 pub mod unique_u_8_type;
 pub mod unit_struct_type;
-pub mod update_btree_u_32_reducer;
 pub mod update_pk_bool_reducer;
 pub mod update_pk_connection_id_reducer;
 pub mod update_pk_i_128_reducer;
@@ -797,7 +796,6 @@ pub use unique_u_64_type::UniqueU64;
 pub use unique_u_8_table::*;
 pub use unique_u_8_type::UniqueU8;
 pub use unit_struct_type::UnitStruct;
-pub use update_btree_u_32_reducer::{set_flags_for_update_btree_u_32, update_btree_u_32, UpdateBtreeU32CallbackId};
 pub use update_pk_bool_reducer::{set_flags_for_update_pk_bool, update_pk_bool, UpdatePkBoolCallbackId};
 pub use update_pk_connection_id_reducer::{
     set_flags_for_update_pk_connection_id, update_pk_connection_id, UpdatePkConnectionIdCallbackId,
@@ -1404,10 +1402,6 @@ pub enum Reducer {
     SendScheduledMessage {
         arg: ScheduledTable,
     },
-    UpdateBtreeU32 {
-        inserts: Vec<BTreeU32>,
-        deletes: Vec<BTreeU32>,
-    },
     UpdatePkBool {
         b: bool,
         data: i32,
@@ -1691,7 +1685,6 @@ impl __sdk::Reducer for Reducer {
             Reducer::InsertVecUnitStruct { .. } => "insert_vec_unit_struct",
             Reducer::NoOpSucceeds => "no_op_succeeds",
             Reducer::SendScheduledMessage { .. } => "send_scheduled_message",
-            Reducer::UpdateBtreeU32 { .. } => "update_btree_u32",
             Reducer::UpdatePkBool { .. } => "update_pk_bool",
             Reducer::UpdatePkConnectionId { .. } => "update_pk_connection_id",
             Reducer::UpdatePkI128 { .. } => "update_pk_i128",
@@ -2494,13 +2487,6 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
                 send_scheduled_message_reducer::SendScheduledMessageArgs,
             >("send_scheduled_message", &value.args)?
             .into()),
-            "update_btree_u32" => Ok(
-                __sdk::parse_reducer_args::<update_btree_u_32_reducer::UpdateBtreeU32Args>(
-                    "update_btree_u32",
-                    &value.args,
-                )?
-                .into(),
-            ),
             "update_pk_bool" => Ok(__sdk::parse_reducer_args::<update_pk_bool_reducer::UpdatePkBoolArgs>(
                 "update_pk_bool",
                 &value.args,

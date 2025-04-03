@@ -379,11 +379,11 @@ impl<R: io::Read + io::Seek> Reader<R> {
     }
 }
 
-impl<R: io::Read + io::Seek> Reader<R> {
+impl<R: io::BufRead + io::Seek> Reader<R> {
     pub fn commits(self) -> Commits<R> {
         Commits {
             header: self.header,
-            reader: io::BufReader::new(self.inner),
+            reader: self.inner,
         }
     }
 
@@ -413,7 +413,7 @@ impl<R: io::Read + io::Seek> Reader<R> {
 
     #[cfg(test)]
     pub(crate) fn metadata(self) -> Result<Metadata, error::SegmentMetadata> {
-        Metadata::with_header(self.min_tx_offset, self.header, io::BufReader::new(self.inner), None)
+        Metadata::with_header(self.min_tx_offset, self.header, self.inner, None)
     }
 }
 
@@ -485,10 +485,10 @@ pub struct Transaction<T> {
 
 pub struct Commits<R> {
     pub header: Header,
-    reader: io::BufReader<R>,
+    reader: R,
 }
 
-impl<R: io::Read> Iterator for Commits<R> {
+impl<R: io::BufRead> Iterator for Commits<R> {
     type Item = io::Result<StoredCommit>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -497,7 +497,7 @@ impl<R: io::Read> Iterator for Commits<R> {
 }
 
 #[cfg(test)]
-impl<R: io::Read> Commits<R> {
+impl<R: io::BufRead> Commits<R> {
     pub fn with_log_format_version(self) -> impl Iterator<Item = io::Result<(u8, StoredCommit)>> {
         CommitsWithVersion { inner: self }
     }
@@ -509,7 +509,7 @@ struct CommitsWithVersion<R> {
 }
 
 #[cfg(test)]
-impl<R: io::Read> Iterator for CommitsWithVersion<R> {
+impl<R: io::BufRead> Iterator for CommitsWithVersion<R> {
     type Item = io::Result<(u8, StoredCommit)>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -607,7 +607,7 @@ impl Metadata {
     ///
     /// Returns
     /// * `Ok((Metadata)` - If a valid commit is found containing the commit, It adds a default
-    /// header, which should be replaced with the actual header.
+    ///     header, which should be replaced with the actual header.
     /// * `Err` - If no valid commit is found or if the index is empty
     fn find_valid_indexed_commit<R: io::Read + io::Seek>(
         min_tx_offset: u64,
@@ -633,8 +633,8 @@ impl Metadata {
 
                 // `TxOffset` at `byte_offset` is not valid, so try with previous entry
                 Err(_) => {
-                    candidate_last_key = key - 1;
-                    if candidate_last_key < 1 {
+                    candidate_last_key = key.saturating_sub(1);
+                    if candidate_last_key == 0 {
                         break;
                     }
                 }

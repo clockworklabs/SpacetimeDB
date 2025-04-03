@@ -22,7 +22,7 @@ pub type TxOffset = u64;
 pub type TxOffsetIndexMut = IndexFileMut<TxOffset>;
 pub type TxOffsetIndex = IndexFile<TxOffset>;
 
-pub trait Segment: FileLike + io::Read + io::Write + io::Seek + Send + Sync {
+pub trait SegmentLen: io::Seek {
     /// Determine the length in bytes of the segment.
     ///
     /// This method does not rely on metadata `fsync`, and may use up to three
@@ -32,10 +32,27 @@ pub trait Segment: FileLike + io::Read + io::Write + io::Seek + Send + Sync {
     /// restored. However, if it returns an error, the seek position is
     /// unspecified.
     //
-    // TODO: Replace with `Seek::stream_len` if / when stabilized:
+    // TODO: Remove trait and replace with `Seek::stream_len` if / when stabilized:
     // https://github.com/rust-lang/rust/issues/59359
-    fn segment_len(&mut self) -> io::Result<u64>;
+    fn segment_len(&mut self) -> io::Result<u64> {
+        let old_pos = self.stream_position()?;
+        let len = self.seek(io::SeekFrom::End(0))?;
+
+        // Avoid seeking a third time when we were already at the end of the
+        // stream. The branch is usually way cheaper than a seek operation.
+        if old_pos != len {
+            self.seek(io::SeekFrom::Start(old_pos))?;
+        }
+
+        Ok(len)
+    }
 }
+
+pub trait SegmentReader: io::BufRead + SegmentLen + Send + Sync {}
+impl<T: io::BufRead + SegmentLen + Send + Sync> SegmentReader for T {}
+
+pub trait SegmentWriter: FileLike + io::Read + io::Write + SegmentLen + Send + Sync {}
+impl<T: FileLike + io::Read + io::Write + SegmentLen + Send + Sync> SegmentWriter for T {}
 
 /// A repository of log segments.
 ///
@@ -43,7 +60,8 @@ pub trait Segment: FileLike + io::Read + io::Write + io::Seek + Send + Sync {
 /// representation.
 pub trait Repo: Clone {
     /// The type of log segments managed by this repo, which must behave like a file.
-    type Segment: Segment + 'static;
+    type SegmentWriter: SegmentWriter + 'static;
+    type SegmentReader: SegmentReader + 'static;
 
     /// Create a new segment with the minimum transaction offset `offset`.
     ///
@@ -53,7 +71,7 @@ pub trait Repo: Clone {
     /// It is permissible, however, to successfully return the new segment if
     /// it is completely empty (i.e. [`create_segment_writer`] did not previously
     /// succeed in writing the segment header).
-    fn create_segment(&self, offset: u64) -> io::Result<Self::Segment>;
+    fn create_segment(&self, offset: u64) -> io::Result<Self::SegmentWriter>;
 
     /// Open an existing segment at the minimum transaction offset `offset`.
     ///
@@ -61,14 +79,25 @@ pub trait Repo: Clone {
     /// `offset` does not exist.
     ///
     /// The method does not guarantee that the segment is non-empty -- this case
-    /// will be caught by [`resume_segment_writer`] and [`open_segment_reader`]
-    /// respectively.
-    fn open_segment(&self, offset: u64) -> io::Result<Self::Segment>;
+    /// will be caught by [`open_segment_reader`].
+    fn open_segment_reader(&self, offset: u64) -> io::Result<Self::SegmentReader>;
+
+    /// Open an existing segment at the minimum transaction offset `offset`.
+    ///
+    /// Must return [`io::ErrorKind::NotFound`] if a segment with the given
+    /// `offset` does not exist.
+    ///
+    /// The method does not guarantee that the segment is non-empty -- this case
+    /// will be caught by [`resume_segment_writer`].
+    fn open_segment_writer(&self, offset: u64) -> io::Result<Self::SegmentWriter>;
 
     /// Remove the segment at the minimum transaction offset `offset`.
     ///
     /// Return [`io::ErrorKind::NotFound`] if no such segment exists.
     fn remove_segment(&self, offset: u64) -> io::Result<()>;
+
+    /// Compress a segment in storage, marking it as immutable.
+    fn compress_segment(&self, offset: u64) -> io::Result<()>;
 
     /// Traverse all segments in this repository and return list of their
     /// offsets, sorted in ascending order.
@@ -92,18 +121,27 @@ pub trait Repo: Clone {
 }
 
 impl<T: Repo> Repo for &T {
-    type Segment = T::Segment;
+    type SegmentWriter = T::SegmentWriter;
+    type SegmentReader = T::SegmentReader;
 
-    fn create_segment(&self, offset: u64) -> io::Result<Self::Segment> {
+    fn create_segment(&self, offset: u64) -> io::Result<Self::SegmentWriter> {
         T::create_segment(self, offset)
     }
 
-    fn open_segment(&self, offset: u64) -> io::Result<Self::Segment> {
-        T::open_segment(self, offset)
+    fn open_segment_reader(&self, offset: u64) -> io::Result<Self::SegmentReader> {
+        T::open_segment_reader(self, offset)
+    }
+
+    fn open_segment_writer(&self, offset: u64) -> io::Result<Self::SegmentWriter> {
+        T::open_segment_writer(self, offset)
     }
 
     fn remove_segment(&self, offset: u64) -> io::Result<()> {
         T::remove_segment(self, offset)
+    }
+
+    fn compress_segment(&self, offset: u64) -> io::Result<()> {
+        T::compress_segment(self, offset)
     }
 
     fn existing_offsets(&self) -> io::Result<Vec<u64>> {
@@ -122,6 +160,12 @@ impl<T: Repo> Repo for &T {
     /// Get [`TxOffsetIndex`] for the given `offset`.
     fn get_offset_index(&self, offset: TxOffset) -> io::Result<TxOffsetIndex> {
         T::get_offset_index(self, offset)
+    }
+}
+
+impl<T: SegmentLen> SegmentLen for io::BufReader<T> {
+    fn segment_len(&mut self) -> io::Result<u64> {
+        SegmentLen::segment_len(self.get_mut())
     }
 }
 
@@ -145,7 +189,7 @@ pub fn create_segment_writer<R: Repo>(
     opts: Options,
     epoch: u64,
     offset: u64,
-) -> io::Result<Writer<R::Segment>> {
+) -> io::Result<Writer<R::SegmentWriter>> {
     let mut storage = repo.create_segment(offset)?;
     Header {
         log_format_version: opts.log_format_version,
@@ -191,8 +235,8 @@ pub fn resume_segment_writer<R: Repo>(
     repo: &R,
     opts: Options,
     offset: u64,
-) -> io::Result<Result<Writer<R::Segment>, Metadata>> {
-    let mut storage = repo.open_segment(offset)?;
+) -> io::Result<Result<Writer<R::SegmentWriter>, Metadata>> {
+    let mut storage = repo.open_segment_writer(offset)?;
     let offset_index = repo.get_offset_index(offset).ok();
     let Metadata {
         header,
@@ -249,8 +293,8 @@ pub fn open_segment_reader<R: Repo>(
     repo: &R,
     max_log_format_version: u8,
     offset: u64,
-) -> io::Result<Reader<R::Segment>> {
+) -> io::Result<Reader<R::SegmentReader>> {
     debug!("open segment reader at {offset}");
-    let storage = repo.open_segment(offset)?;
+    let storage = repo.open_segment_reader(offset)?;
     Reader::new(max_log_format_version, offset, storage)
 }

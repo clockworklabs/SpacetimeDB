@@ -249,7 +249,7 @@ thin-vec = "0.2.13"
 thiserror = "1.0.37"
 tokio = { version = "1.37", features = ["full"] }
 tokio-postgres = { version = "0.7.8", features = ["with-chrono-0_4"] }
-tokio-tungstenite = { version = "0.21", features = ["native-tls"] }
+tokio-tungstenite = { version = "0.26.2", features = ["native-tls"] }
 tokio-util = { version = "0.7.4", features = ["time"] }
 toml = "0.8"
 toml_edit = "0.22.22"
@@ -276,6 +276,8 @@ windows-sys = "0.59"
 xdg = "2.5"
 tikv-jemallocator = { version = "0.6.0", features = ["profiling", "stats"] }
 tikv-jemalloc-ctl = { version = "0.6.0", features = ["stats"]}
+jemalloc_pprof = { version = "0.7", features = ["symbolize", "flamegraph"] }
+zstd-framed = { version = "0.1.1", features = ["tokio"] }
 
 # Vendor the openssl we rely on, rather than depend on a
 # potentially very old system version.
@@ -308,3 +310,4 @@ features = [
   "broadcast",
   "ondemand",
 ]
+

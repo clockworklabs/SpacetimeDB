@@ -5,7 +5,7 @@ use std::{
     mem,
 };
 
-use log::{debug, info};
+use log::debug;
 use memmap2::MmapMut;
 use spacetimedb_paths::server::OffsetIndexFile;
 
@@ -159,7 +159,6 @@ impl<Key: Into<u64> + From<u64>> IndexFileMut<Key> {
     /// - `IndexError::OutOfMemory`: Append after index file is already full.
     pub fn append(&mut self, key: Key, value: u64) -> Result<(), IndexError> {
         let key = key.into();
-        info!("Appending key: {}, value: {}", key, value);
         let last_key = self.last_key()?;
         if last_key >= key {
             return Err(IndexError::InvalidInput(last_key, key));
@@ -190,8 +189,6 @@ impl<Key: Into<u64> + From<u64>> IndexFileMut<Key> {
     /// Truncates the index file starting from the entry with a key greater than or equal to the given key.
     pub(crate) fn truncate(&mut self, key: Key) -> Result<(), IndexError> {
         let key = key.into();
-
-        info!("truncating key: {}", key);
         let (found_key, index) = self.find_index(Key::from(key))?;
 
         // If returned key is smalled than asked key, truncate from next entry

@@ -679,7 +679,7 @@ impl CommittedState {
         (table, blob_store)
     }
 
-    pub(super) fn report_data_size(&self, database_identity: Identity) {
+    pub fn report_data_size(&self, database_identity: Identity) {
         use crate::db::db_metrics::data_size::DATA_SIZE_METRICS;
 
         for (_, table) in &self.tables {

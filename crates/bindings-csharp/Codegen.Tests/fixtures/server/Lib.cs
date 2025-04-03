@@ -244,3 +244,9 @@ partial struct RegressionMultipleUniqueIndexesHadSameName
     [SpacetimeDB.Unique]
     public uint Unique2;
 }
+
+public class Module
+{
+    [SpacetimeDB.ClientVisibilityFilter]
+    public static readonly Filter ALL_PUBLIC_TABLES = new Filter.Sql("SELECT * FROM PublicTable");
+}
