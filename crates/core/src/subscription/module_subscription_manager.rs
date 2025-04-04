@@ -483,8 +483,9 @@ impl SubscriptionManager {
 
         let tables = &event.status.database_update().unwrap().tables;
 
-        // Put the main work on a rayon compute thread.
-        rayon::scope(|_| {
+        // FOR TESTING: Don't put the main work on a rayon compute thread.
+        // Do still use `par_iter` to parallelize.
+        {
             let span = tracing::info_span!("eval_incr").entered();
             let (updates, errs, metrics) = tables
                 .iter()
@@ -705,7 +706,7 @@ impl SubscriptionManager {
                     );
                 }
             }
-        })
+        }
     }
 }
 
