@@ -106,7 +106,7 @@ const uint TARGET_FOOD_COUNT = 600;
 public static float MassToRadius(uint mass) => MathF.Sqrt(mass);
 
 [Reducer]
-public static void SpawnFood(ReducerContext ctx, SpawnFoodTimer timer)
+public static void SpawnFood(ReducerContext ctx)
 {
     if (ctx.Db.player.Count == 0) //Are there no players yet?
     {
