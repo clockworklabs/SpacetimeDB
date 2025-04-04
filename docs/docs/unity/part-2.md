@@ -96,7 +96,7 @@ Let's start by defining the `Config` table. This is a simple table which will st
 
 ```csharp
 // We're using this table as a singleton, so in this table
-// there only be one element where the `id` is 0.
+// there will only be one element where the `id` is 0.
 [Table(Name = "config", Public = true)]
 public partial struct Config
 {
@@ -110,7 +110,7 @@ Let's break down this code. This defines a normal C# `struct` with two fields: `
 
 > Although we're using `lower_snake_case` for our column names to have consistent column names across languages in this tutorial, you can also use `camelCase` or `PascalCase` if you prefer. See [#2168](https://github.com/clockworklabs/SpacetimeDB/issues/2168) for more information.
 
-The `Table` attribute with takes two parameters, a `Name` which is the name of the table and what you will use to query the table in SQL, and a `Public` visibility modifier which ensures that the rows of this table are visible to everyone.
+The `Table` attribute takes two parameters, a `Name` which is the name of the table and what you will use to query the table in SQL, and a `Public` visibility modifier which ensures that the rows of this table are visible to everyone.
 
 The `[PrimaryKey]` attribute, specifies that the `id` field should be used as the primary key of the table.
 :::
@@ -229,7 +229,7 @@ public partial struct Food
 
 The first table we defined is the `entity` table. An entity represents an object in our game world. We have decided, for convenience, that all entities in our game should share some common fields, namely `position` and `mass`.
 
-We can create different types of entities with additional data by creating a new tables with additional fields that have an `entity_id` which references a row in the `entity` table.
+We can create different types of entities with additional data by creating new tables with additional fields that have an `entity_id` which references a row in the `entity` table.
 
 We've created two types of entities in our game world: `Food`s and `Circle`s. `Food` does not have any additional fields beyond the attributes in the `entity` table, so the `food` table simply represents the set of `entity_id`s that we want to recognize as food.
 
@@ -268,10 +268,10 @@ public partial struct Player
 }
 ```
 
-There's a few new concepts we should touch on. First of all, we are using the `[Unique]` attribute on the `player_id` field. This attribute adds a constraint to the table that ensures that only one row in the player table has a particular `player_id`. We are also using the `[AutoInc]` attribute on the `player_id` field, which indicates "this field should get automatically assigned an auto-incremented value".
+There are a few new concepts we should touch on. First of all, we are using the `[Unique]` attribute on the `player_id` field. This attribute adds a constraint to the table that ensures that only one row in the player table has a particular `player_id`. We are also using the `[AutoInc]` attribute on the `player_id` field, which indicates "this field should get automatically assigned an auto-incremented value".
 :::
 
-We also have an `identity` field which uses the `Identity` type. The `Identity` type is a identifier that SpacetimeDB uses to uniquely assign and authenticate SpacetimeDB users.
+We also have an `identity` field which uses the `Identity` type. The `Identity` type is an identifier that SpacetimeDB uses to uniquely assign and authenticate SpacetimeDB users.
 
 ### Writing a Reducer
 
@@ -334,7 +334,7 @@ Now that SpacetimeDB is running we can publish our module to the SpacetimeDB hos
 Now that SpacetimeDB is running we can publish our module to the SpacetimeDB host. In a separate terminal window, navigate to the `blackholio/server-csharp` directory.
 :::
 
-If you are not already logged in to the `spacetime` CLI, run the `spacetime login` command log in to your SpacetimeDB website account. Once you are logged in, run `spacetime publish --server local blackholio`. This will publish our Blackholio server logic to SpacetimeDB.
+If you are not already logged in to the `spacetime` CLI, run the `spacetime login` command to log in to your SpacetimeDB website account. Once you are logged in, run `spacetime publish --server local blackholio`. This will publish our Blackholio server logic to SpacetimeDB.
 
 If the publish completed successfully, you will see something like the following in the logs:
 
@@ -582,7 +582,7 @@ public class GameManager : MonoBehaviour
 
 Here we configure the connection to the database, by passing it some callbacks in addition to providing the `SERVER_URI` and `MODULE_NAME` to the connection. When the client connects, the SpacetimeDB SDK will call the `HandleConnect` method, allowing us to start up the game.
 
-In our `HandleConnect` callback we building a subscription and are calling `Subscribe` and subscribing to all data in the database. This will cause SpacetimeDB to synchronize the state of all your tables with your Unity client's SpacetimeDB SDK's "client cache". You can also subscribe to specific tables using SQL syntax, e.g. `SELECT * FROM my_table`. Our [SQL documentation](/docs/sql) enumerates the operations that are accepted in our SQL syntax.
+In our `HandleConnect` callback we build a subscription and are calling `Subscribe` and subscribing to all data in the database. This will cause SpacetimeDB to synchronize the state of all your tables with your Unity client's SpacetimeDB SDK's "client cache". You can also subscribe to specific tables using SQL syntax, e.g. `SELECT * FROM my_table`. Our [SQL documentation](/docs/sql) enumerates the operations that are accepted in our SQL syntax.
 
 ---
 
