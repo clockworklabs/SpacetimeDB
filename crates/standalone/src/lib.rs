@@ -1,21 +1,19 @@
 mod control_db;
-mod energy_monitor;
 pub mod subcommands;
 pub mod util;
 pub mod version;
 
 use crate::control_db::ControlDb;
 use crate::subcommands::start;
-use anyhow::{ensure, Context};
+use anyhow::{ensure, Context, Ok};
 use async_trait::async_trait;
 use clap::{ArgMatches, Command};
-use energy_monitor::StandaloneEnergyMonitor;
 use spacetimedb::client::ClientActorIndex;
 use spacetimedb::config::{CertificateAuthority, MetadataFile};
 use spacetimedb::db::db_metrics::data_size::DATA_SIZE_METRICS;
 use spacetimedb::db::relational_db;
 use spacetimedb::db::{db_metrics::DB_METRICS, Config};
-use spacetimedb::energy::{EnergyBalance, EnergyQuanta};
+use spacetimedb::energy::{EnergyBalance, EnergyQuanta, NullEnergyMonitor};
 use spacetimedb::host::{
     DiskStorage, DurabilityProvider, ExternalDurability, HostController, StartSnapshotWatcher, UpdateDatabaseResult,
 };
@@ -28,7 +26,6 @@ use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, Regi
 use spacetimedb_paths::server::{ModuleLogsDir, PidFile, ServerDataDir};
 use spacetimedb_paths::standalone::StandaloneDataDirExt;
 use std::sync::Arc;
-use tokio::sync::watch;
 
 pub use spacetimedb_client_api::routes::subscribe::{BIN_PROTOCOL, TEXT_PROTOCOL};
 
@@ -57,7 +54,7 @@ impl StandaloneEnv {
         meta.write(&meta_path).context("failed writing metadata.toml")?;
 
         let control_db = ControlDb::new(&data_dir.control_db()).context("failed to initialize control db")?;
-        let energy_monitor = Arc::new(StandaloneEnergyMonitor::new(control_db.clone()));
+        let energy_monitor = Arc::new(NullEnergyMonitor);
         let program_store = Arc::new(DiskStorage::new(data_dir.program_bytes().0).await?);
 
         let durability_provider = Arc::new(StandaloneDurabilityProvider {
@@ -108,40 +105,13 @@ impl DurabilityProvider for StandaloneDurabilityProvider {
         let start_snapshot_watcher = {
             let durability = durability.clone();
             |snapshot_rx| {
-                tokio::spawn(snapshot_watcher(snapshot_rx, durability));
+                tokio::spawn(relational_db::snapshot_watching_commitlog_compressor(
+                    snapshot_rx,
+                    durability,
+                ));
             }
         };
         Ok(((durability, disk_size), Some(Box::new(start_snapshot_watcher))))
-    }
-}
-
-async fn snapshot_watcher(mut snapshot_rx: watch::Receiver<u64>, durability: relational_db::LocalDurability) {
-    let mut prev_snapshot_offset = *snapshot_rx.borrow_and_update();
-    while snapshot_rx.changed().await.is_ok() {
-        let snapshot_offset = *snapshot_rx.borrow_and_update();
-        let Ok(segment_offsets) = durability
-            .existing_segment_offsets()
-            .inspect_err(|e| tracing::warn!("failed to find offsets: {e}"))
-        else {
-            continue;
-        };
-        let start_idx = segment_offsets
-            .binary_search(&prev_snapshot_offset)
-            // if the snapshot is in the middle of a segment, we want to round down.
-            // [0, 2].binary_search(1) will return Err(1), so we subtract 1.
-            .unwrap_or_else(|i| i.saturating_sub(1));
-        let segment_offsets = &segment_offsets[start_idx..];
-        let end_idx = segment_offsets
-            .binary_search(&snapshot_offset)
-            .unwrap_or_else(|i| i.saturating_sub(1));
-        // in this case, segment_offsets[end_idx] is the segment that contains the snapshot,
-        // which we don't want to compress, so an exclusive range is correct.
-        let segment_offsets = &segment_offsets[..end_idx];
-        if let Err(e) = durability.compress_segments(segment_offsets) {
-            tracing::warn!("failed to compress segments: {e}");
-            continue;
-        }
-        prev_snapshot_offset = snapshot_offset;
     }
 }
 
@@ -375,8 +345,9 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
         self.control_db.set_energy_balance(*identity, balance)?;
         Ok(())
     }
-    async fn withdraw_energy(&self, identity: &Identity, amount: EnergyQuanta) -> anyhow::Result<()> {
-        withdraw_energy(&self.control_db, identity, amount)
+    async fn withdraw_energy(&self, _identity: &Identity, _amount: EnergyQuanta) -> anyhow::Result<()> {
+        // The energy balance code is obsolete.
+        Ok(())
     }
 
     async fn register_tld(&self, identity: &Identity, tld: Tld) -> anyhow::Result<RegisterTldResult> {
@@ -465,16 +436,6 @@ impl StandaloneEnv {
 
         Ok(())
     }
-}
-
-fn withdraw_energy(control_db: &ControlDb, identity: &Identity, amount: EnergyQuanta) -> anyhow::Result<()> {
-    let energy_balance = control_db.get_energy_balance(identity)?;
-    let energy_balance = energy_balance.unwrap_or(EnergyBalance::ZERO);
-    log::trace!("Withdrawing {} from {}", amount, identity);
-    log::trace!("Old balance: {}", energy_balance);
-    let new_balance = energy_balance.saturating_sub_energy(amount);
-    control_db.set_energy_balance(*identity, new_balance)?;
-    Ok(())
 }
 
 pub async fn exec_subcommand(cmd: &str, args: &ArgMatches) -> Result<(), anyhow::Error> {

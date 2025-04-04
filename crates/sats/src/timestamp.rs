@@ -1,9 +1,9 @@
 use anyhow::Context;
 use chrono::DateTime;
 
-use crate::{de::Deserialize, impl_st, ser::Serialize, time_duration::TimeDuration, AlgebraicType};
+use crate::{de::Deserialize, impl_st, ser::Serialize, time_duration::TimeDuration, AlgebraicType, AlgebraicValue};
 use std::fmt;
-use std::ops::Add;
+use std::ops::{Add, AddAssign, Sub, SubAssign};
 use std::time::{Duration, SystemTime};
 
 #[derive(Eq, PartialEq, Ord, PartialOrd, Copy, Clone, Hash, Serialize, Deserialize, Debug)]
@@ -132,12 +132,51 @@ impl Timestamp {
     }
 
     /// Parses an RFC 3339 formated timestamp string
-    pub fn parse_from_str(str: &str) -> anyhow::Result<Timestamp> {
+    pub fn parse_from_rfc3339(str: &str) -> anyhow::Result<Timestamp> {
         DateTime::parse_from_rfc3339(str)
             .map_err(|err| anyhow::anyhow!(err))
             .with_context(|| "Invalid timestamp format. Expected RFC 3339 format (e.g. '2025-02-10 15:45:30').")
             .map(|dt| dt.timestamp_micros())
             .map(Timestamp::from_micros_since_unix_epoch)
+    }
+
+    /// Returns `Some(t)` where `t` is the time `self + duration` if `t` can be represented as a `Timestamp`,
+    /// i.e. a 64-bit signed number of microseconds before or after the Unix epoch.
+    pub fn checked_add(&self, duration: TimeDuration) -> Option<Self> {
+        self.__timestamp_micros_since_unix_epoch__
+            .checked_add(duration.to_micros())
+            .map(Timestamp::from_micros_since_unix_epoch)
+    }
+
+    /// Returns `Some(t)` where `t` is the time `self - duration` if `t` can be represented as a `Timestamp`,
+    /// i.e. a 64-bit signed number of microseconds before or after the Unix epoch.
+    pub fn checked_sub(&self, duration: TimeDuration) -> Option<Self> {
+        self.__timestamp_micros_since_unix_epoch__
+            .checked_sub(duration.to_micros())
+            .map(Timestamp::from_micros_since_unix_epoch)
+    }
+
+    /// Returns `Some(self + duration)`, or `None` if that value would be out-of-bounds for `Timestamp`.
+    ///
+    /// Converts `duration` into a [`TimeDuration`] before the arithmetic.
+    /// Depending on the target platform's representation of [`Duration`], this may lose precision.
+    pub fn checked_add_duration(&self, duration: Duration) -> Option<Self> {
+        self.checked_add(TimeDuration::from_duration(duration))
+    }
+
+    /// Returns `Some(self - duration)`, or `None` if that value would be out-of-bounds for `Timestamp`.
+    ///
+    /// Converts `duration` into a [`TimeDuration`] before the arithmetic.
+    /// Depending on the target platform's representation of [`Duration`], this may lose precision.
+    pub fn checked_sub_duration(&self, duration: Duration) -> Option<Self> {
+        self.checked_sub(TimeDuration::from_duration(duration))
+    }
+    /// Returns an RFC 3339 and ISO 8601 date and time string such as `1996-12-19T16:39:57-08:00`.
+    pub fn to_rfc3339(&self) -> anyhow::Result<String> {
+        DateTime::from_timestamp_micros(self.to_micros_since_unix_epoch())
+            .map(|t| t.to_rfc3339())
+            .ok_or_else(|| anyhow::anyhow!("Timestamp with i64 microseconds since Unix epoch overflows DateTime"))
+            .with_context(|| self.to_micros_since_unix_epoch())
     }
 }
 
@@ -145,21 +184,63 @@ impl Add<TimeDuration> for Timestamp {
     type Output = Self;
 
     fn add(self, other: TimeDuration) -> Self::Output {
-        Timestamp::from_micros_since_unix_epoch(self.to_micros_since_unix_epoch() + other.to_micros())
+        self.checked_add(other).unwrap()
+    }
+}
+
+impl Add<Duration> for Timestamp {
+    type Output = Self;
+
+    fn add(self, other: Duration) -> Self::Output {
+        self.checked_add_duration(other).unwrap()
+    }
+}
+
+impl Sub<TimeDuration> for Timestamp {
+    type Output = Self;
+
+    fn sub(self, other: TimeDuration) -> Self::Output {
+        self.checked_sub(other).unwrap()
+    }
+}
+
+impl Sub<Duration> for Timestamp {
+    type Output = Self;
+
+    fn sub(self, other: Duration) -> Self::Output {
+        self.checked_sub_duration(other).unwrap()
+    }
+}
+
+impl AddAssign<TimeDuration> for Timestamp {
+    fn add_assign(&mut self, other: TimeDuration) {
+        *self = *self + other;
+    }
+}
+
+impl AddAssign<Duration> for Timestamp {
+    fn add_assign(&mut self, other: Duration) {
+        *self = *self + other;
+    }
+}
+
+impl SubAssign<TimeDuration> for Timestamp {
+    fn sub_assign(&mut self, rhs: TimeDuration) {
+        *self = *self - rhs;
+    }
+}
+
+impl SubAssign<Duration> for Timestamp {
+    fn sub_assign(&mut self, rhs: Duration) {
+        *self = *self - rhs;
     }
 }
 
 pub(crate) const MICROSECONDS_PER_SECOND: i64 = 1_000_000;
 
-impl std::fmt::Display for Timestamp {
+impl fmt::Display for Timestamp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let micros = self.to_micros_since_unix_epoch();
-        let sign = if micros < 0 { "-" } else { "" };
-        let pos = micros.abs();
-        let secs = pos / MICROSECONDS_PER_SECOND;
-        let micros_remaining = pos % MICROSECONDS_PER_SECOND;
-
-        write!(f, "{sign}{secs}.{micros_remaining:06}",)
+        write!(f, "{}", self.to_rfc3339().unwrap())
     }
 }
 
@@ -172,6 +253,12 @@ impl From<SystemTime> for Timestamp {
 impl From<Timestamp> for SystemTime {
     fn from(timestamp: Timestamp) -> Self {
         timestamp.to_system_time()
+    }
+}
+
+impl From<Timestamp> for AlgebraicValue {
+    fn from(value: Timestamp) -> Self {
+        AlgebraicValue::product([value.to_micros_since_unix_epoch().into()])
     }
 }
 
@@ -213,13 +300,40 @@ mod test {
         }
 
         #[test]
-        fn add_duration(since_epoch in any::<i64>().prop_map(|n| n.abs()), duration in any::<i64>()) {
-            prop_assume!(since_epoch.checked_add(duration).is_some());
+        fn arithmetic_with_timeduration(lhs in any::<i64>(), rhs in any::<i64>()) {
+            let lhs_timestamp = Timestamp::from_micros_since_unix_epoch(lhs);
+            let rhs_time_duration = TimeDuration::from_micros(rhs);
 
-            let timestamp = Timestamp::from_micros_since_unix_epoch(since_epoch);
-            let time_duration = TimeDuration::from_micros(duration);
-            let result = timestamp + time_duration;
-            prop_assert_eq!(result.to_micros_since_unix_epoch(), since_epoch + duration);
+            if let Some(sum) = lhs.checked_add(rhs) {
+                let sum_timestamp = lhs_timestamp.checked_add(rhs_time_duration);
+                prop_assert!(sum_timestamp.is_some());
+                prop_assert_eq!(sum_timestamp.unwrap().to_micros_since_unix_epoch(), sum);
+
+                prop_assert_eq!((lhs_timestamp + rhs_time_duration).to_micros_since_unix_epoch(), sum);
+
+                let mut sum_assign = lhs_timestamp;
+                sum_assign += rhs_time_duration;
+                prop_assert_eq!(sum_assign.to_micros_since_unix_epoch(), sum);
+            } else {
+                prop_assert!(lhs_timestamp.checked_add(rhs_time_duration).is_none());
+            }
+
+            if let Some(diff) = lhs.checked_sub(rhs) {
+                let diff_timestamp = lhs_timestamp.checked_sub(rhs_time_duration);
+                prop_assert!(diff_timestamp.is_some());
+                prop_assert_eq!(diff_timestamp.unwrap().to_micros_since_unix_epoch(), diff);
+
+                prop_assert_eq!((lhs_timestamp - rhs_time_duration).to_micros_since_unix_epoch(), diff);
+
+                let mut diff_assign = lhs_timestamp;
+                diff_assign -= rhs_time_duration;
+                prop_assert_eq!(diff_assign.to_micros_since_unix_epoch(), diff);
+            } else {
+                prop_assert!(lhs_timestamp.checked_sub(rhs_time_duration).is_none());
+            }
         }
+
+        // TODO: determine what guarantees we provide for arithmetic with `Duration`,
+        // then write tests that we uphold said guarantees.
     }
 }

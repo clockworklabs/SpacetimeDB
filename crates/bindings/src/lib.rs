@@ -1,6 +1,7 @@
 #![doc = include_str!("../README.md")]
 // ^ if you are working on docs, go read the top comment of README.md please.
 
+#[cfg(feature = "unstable")]
 mod client_visibility_filter;
 pub mod log_stopwatch;
 mod logger;
@@ -18,7 +19,7 @@ pub use log;
 #[cfg(feature = "rand")]
 pub use rand;
 
-#[doc(hidden)]
+#[cfg(feature = "unstable")]
 pub use client_visibility_filter::Filter;
 #[cfg(feature = "rand")]
 pub use rng::StdbRng;

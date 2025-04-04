@@ -21,19 +21,23 @@ use crate::{Datastore, DeltaStore, Row, Tuple};
 /// which is not considered performance critical.
 /// Hence this operator is not particularly optimized.
 pub enum ProjectListExecutor {
-    Name(PipelinedProject),
-    List(PipelinedExecutor, Vec<TupleField>),
+    Name(Vec<PipelinedProject>),
+    List(Vec<PipelinedExecutor>, Vec<TupleField>),
     Limit(Box<ProjectListExecutor>, u64),
-    Agg(PipelinedExecutor, AggType),
+    Agg(Vec<PipelinedExecutor>, AggType),
 }
 
 impl From<ProjectListPlan> for ProjectListExecutor {
     fn from(plan: ProjectListPlan) -> Self {
         match plan {
-            ProjectListPlan::Name(plan) => Self::Name(plan.into()),
-            ProjectListPlan::List(plan, fields) => Self::List(plan.into(), fields),
+            ProjectListPlan::Name(plan) => Self::Name(plan.into_iter().map(PipelinedProject::from).collect()),
+            ProjectListPlan::List(plan, fields) => {
+                Self::List(plan.into_iter().map(PipelinedExecutor::from).collect(), fields)
+            }
             ProjectListPlan::Limit(plan, n) => Self::Limit(Box::new((*plan).into()), n),
-            ProjectListPlan::Agg(plan, AggType::Count) => Self::Agg(plan.into(), AggType::Count),
+            ProjectListPlan::Agg(plan, AggType::Count) => {
+                Self::Agg(plan.into_iter().map(PipelinedExecutor::from).collect(), AggType::Count)
+            }
         }
     }
 }
@@ -48,21 +52,25 @@ impl ProjectListExecutor {
         let mut n = 0;
         let mut bytes_scanned = 0;
         match self {
-            Self::Name(plan) => {
-                plan.execute(tx, metrics, &mut |row| {
-                    n += 1;
-                    let row = row.to_product_value();
-                    bytes_scanned += row.size_of();
-                    f(row)
-                })?;
+            Self::Name(plans) => {
+                for plan in plans {
+                    plan.execute(tx, metrics, &mut |row| {
+                        n += 1;
+                        let row = row.to_product_value();
+                        bytes_scanned += row.size_of();
+                        f(row)
+                    })?;
+                }
             }
-            Self::List(plan, fields) => {
-                plan.execute(tx, metrics, &mut |t| {
-                    n += 1;
-                    let row = ProductValue::from_iter(fields.iter().map(|field| t.project(field)));
-                    bytes_scanned += row.size_of();
-                    f(row)
-                })?;
+            Self::List(plans, fields) => {
+                for plan in plans {
+                    plan.execute(tx, metrics, &mut |t| {
+                        n += 1;
+                        let row = ProductValue::from_iter(fields.iter().map(|field| t.project(field)));
+                        bytes_scanned += row.size_of();
+                        f(row)
+                    })?;
+                }
             }
             Self::Limit(plan, limit) => {
                 plan.execute(tx, metrics, &mut |row| {
@@ -73,19 +81,25 @@ impl ProjectListExecutor {
                     Ok(())
                 })?;
             }
-            // TODO: This is a hack that needs to be removed.
-            // We check if this is a COUNT on a physical table,
-            // and if so, we retrieve the count from table metadata.
-            // It's a valid optimization but one that should be done by the optimizer.
-            // There should be no optimizations performed during execution.
-            Self::Agg(PipelinedExecutor::TableScan(table_scan), AggType::Count) => {
-                f(product![tx.table_or_err(table_scan.table)?.num_rows()])?;
-            }
-            Self::Agg(plan, AggType::Count) => {
-                plan.execute(tx, metrics, &mut |_| {
-                    n += 1;
-                    Ok(())
-                })?;
+            Self::Agg(plans, AggType::Count) => {
+                for plan in plans {
+                    match plan {
+                        // TODO: This is a hack that needs to be removed.
+                        // We check if this is a COUNT on a physical table,
+                        // and if so, we retrieve the count from table metadata.
+                        // It's a valid optimization but one that should be done by the optimizer.
+                        // There should be no optimizations performed during execution.
+                        PipelinedExecutor::TableScan(table_scan) => {
+                            n += tx.table_or_err(table_scan.table)?.num_rows() as usize;
+                        }
+                        _ => {
+                            plan.execute(tx, metrics, &mut |_| {
+                                n += 1;
+                                Ok(())
+                            })?;
+                        }
+                    }
+                }
                 f(product![n as u64])?;
             }
         }
