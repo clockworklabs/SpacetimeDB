@@ -798,6 +798,29 @@ namespace SpacetimeDB
                     TestUniqueNotEquatable,
                     global::TestUniqueNotEquatable
                 >.DoDelete(row);
+
+            public sealed class PrimaryKeyFieldUniqueIndex
+                : UniqueIndex<
+                    TestUniqueNotEquatable,
+                    global::TestUniqueNotEquatable,
+                    TestEnumWithExplicitValues,
+                    SpacetimeDB.BSATN.Enum<TestEnumWithExplicitValues>
+                >
+            {
+                internal PrimaryKeyFieldUniqueIndex()
+                    : base("TestUniqueNotEquatable_PrimaryKeyField_idx_btree") { }
+
+                // Important: don't move this to the base class.
+                // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
+                // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
+                public global::TestUniqueNotEquatable? Find(TestEnumWithExplicitValues key) =>
+                    DoFilter(key).Cast<global::TestUniqueNotEquatable?>().SingleOrDefault();
+
+                public global::TestUniqueNotEquatable Update(global::TestUniqueNotEquatable row) =>
+                    DoUpdate(row);
+            }
+
+            public PrimaryKeyFieldUniqueIndex PrimaryKeyField => new();
         }
     }
 

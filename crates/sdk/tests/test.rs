@@ -230,6 +230,16 @@ macro_rules! declare_tests_with_suffix {
             fn test_parameterized_subscription() {
                 make_test("test-parameterized-subscription").run();
             }
+
+            #[test]
+            fn pk_simple_enum() {
+                make_test("pk-simple-enum").run();
+            }
+
+            #[test]
+            fn indexed_simple_enum() {
+                make_test("indexed-simple-enum").run();
+            }
         }
     };
 }

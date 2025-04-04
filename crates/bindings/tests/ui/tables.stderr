@@ -118,9 +118,9 @@ note: required by a bound in `spacetimedb::spacetimedb_lib::ser::SerializeNamedP
   |                             ^^^^^^^^^ required by this bound in `SerializeNamedProduct::serialize_element`
 
 error[E0277]: `&'a Alpha` cannot appear as an argument to an index filtering operation
-  --> tests/ui/tables.rs:30:33
+  --> tests/ui/tables.rs:32:33
    |
-30 |     ctx.db.delta().compound_a().find(Alpha::Beta);
+32 |     ctx.db.delta().compound_a().find(Alpha { beta: 0 });
    |                                 ^^^^ should be an integer type, `bool`, `String`, `&str`, `Identity`, `ConnectionId`, or `Hash`, not `&'a Alpha`
    |
    = help: the trait `for<'a> FilterableValue` is not implemented for `&'a Alpha`
@@ -128,12 +128,12 @@ error[E0277]: `&'a Alpha` cannot appear as an argument to an index filtering ope
    = help: the following other types implement trait `FilterableValue`:
              &ConnectionId
              &Identity
+             &Lifecycle
+             &RawMiscModuleExportV9
+             &TableAccess
+             &TableType
              &bool
              &ethnum::int::I256
-             &ethnum::uint::U256
-             &i128
-             &i16
-             &i32
            and $N others
 note: required by a bound in `UniqueColumn::<Tbl, <Col as spacetimedb::table::Column>::ColType, Col>::find`
   --> src/table.rs
@@ -145,22 +145,22 @@ note: required by a bound in `UniqueColumn::<Tbl, <Col as spacetimedb::table::Co
    |                                   ^^^^^^^^^^^^^^^ required by this bound in `UniqueColumn::<Tbl, <Col as Column>::ColType, Col>::find`
 
 error[E0277]: the trait bound `Alpha: IndexScanRangeBounds<(Alpha,), SingleBound>` is not satisfied
-  --> tests/ui/tables.rs:31:40
+  --> tests/ui/tables.rs:33:40
    |
-31 |     ctx.db.delta().compound_b().filter(Alpha::Gamma);
-   |                                 ------ ^^^^^^^^^^^^ the trait `FilterableValue` is not implemented for `Alpha`
+33 |     ctx.db.delta().compound_b().filter(Alpha { beta: 1 });
+   |                                 ------ ^^^^^^^^^^^^^^^^^ the trait `FilterableValue` is not implemented for `Alpha`
    |                                 |
    |                                 required by a bound introduced by this call
    |
    = help: the following other types implement trait `FilterableValue`:
              &ConnectionId
              &Identity
+             &Lifecycle
+             &RawMiscModuleExportV9
+             &TableAccess
+             &TableType
              &bool
              &ethnum::int::I256
-             &ethnum::uint::U256
-             &i128
-             &i16
-             &i32
            and $N others
    = note: required for `Alpha` to implement `IndexScanRangeBounds<(Alpha,), SingleBound>`
 note: required by a bound in `RangedIndex::<Tbl, IndexType, Idx>::filter`

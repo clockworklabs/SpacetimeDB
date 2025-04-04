@@ -85,7 +85,6 @@ public abstract class IndexBase<Row>
 public abstract class UniqueIndex<Handle, Row, T, RW>(string name) : IndexBase<Row>(name)
     where Handle : ITableView<Handle, Row>
     where Row : IStructuralReadWrite, new()
-    where T : IEquatable<T>
     where RW : struct, BSATN.IReadWrite<T>
 {
     private static BTreeIndexBounds<T, RW> ToBounds(T key) => new(key);
