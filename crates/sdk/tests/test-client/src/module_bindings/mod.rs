@@ -129,6 +129,7 @@ pub mod insert_unique_u_32_reducer;
 pub mod insert_unique_u_32_update_pk_u_32_reducer;
 pub mod insert_unique_u_64_reducer;
 pub mod insert_unique_u_8_reducer;
+pub mod insert_user_reducer;
 pub mod insert_vec_bool_reducer;
 pub mod insert_vec_byte_struct_reducer;
 pub mod insert_vec_connection_id_reducer;
@@ -325,6 +326,8 @@ pub mod update_unique_u_256_reducer;
 pub mod update_unique_u_32_reducer;
 pub mod update_unique_u_64_reducer;
 pub mod update_unique_u_8_reducer;
+pub mod users_table;
+pub mod users_type;
 pub mod vec_bool_table;
 pub mod vec_bool_type;
 pub mod vec_byte_struct_table;
@@ -612,6 +615,7 @@ pub use insert_unique_u_32_update_pk_u_32_reducer::{
 };
 pub use insert_unique_u_64_reducer::{insert_unique_u_64, set_flags_for_insert_unique_u_64, InsertUniqueU64CallbackId};
 pub use insert_unique_u_8_reducer::{insert_unique_u_8, set_flags_for_insert_unique_u_8, InsertUniqueU8CallbackId};
+pub use insert_user_reducer::{insert_user, set_flags_for_insert_user, InsertUserCallbackId};
 pub use insert_vec_bool_reducer::{insert_vec_bool, set_flags_for_insert_vec_bool, InsertVecBoolCallbackId};
 pub use insert_vec_byte_struct_reducer::{
     insert_vec_byte_struct, set_flags_for_insert_vec_byte_struct, InsertVecByteStructCallbackId,
@@ -849,6 +853,8 @@ pub use update_unique_u_256_reducer::{
 pub use update_unique_u_32_reducer::{set_flags_for_update_unique_u_32, update_unique_u_32, UpdateUniqueU32CallbackId};
 pub use update_unique_u_64_reducer::{set_flags_for_update_unique_u_64, update_unique_u_64, UpdateUniqueU64CallbackId};
 pub use update_unique_u_8_reducer::{set_flags_for_update_unique_u_8, update_unique_u_8, UpdateUniqueU8CallbackId};
+pub use users_table::*;
+pub use users_type::Users;
 pub use vec_bool_table::*;
 pub use vec_bool_type::VecBool;
 pub use vec_byte_struct_table::*;
@@ -1323,6 +1329,10 @@ pub enum Reducer {
         n: u8,
         data: i32,
     },
+    InsertUser {
+        name: String,
+        identity: __sdk::Identity,
+    },
     InsertVecBool {
         b: Vec<bool>,
     },
@@ -1658,6 +1668,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::InsertUniqueU32UpdatePkU32 { .. } => "insert_unique_u32_update_pk_u32",
             Reducer::InsertUniqueU64 { .. } => "insert_unique_u64",
             Reducer::InsertUniqueU8 { .. } => "insert_unique_u8",
+            Reducer::InsertUser { .. } => "insert_user",
             Reducer::InsertVecBool { .. } => "insert_vec_bool",
             Reducer::InsertVecByteStruct { .. } => "insert_vec_byte_struct",
             Reducer::InsertVecConnectionId { .. } => "insert_vec_connection_id",
@@ -2349,6 +2360,11 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
                 )?
                 .into(),
             ),
+            "insert_user" => Ok(__sdk::parse_reducer_args::<insert_user_reducer::InsertUserArgs>(
+                "insert_user",
+                &value.args,
+            )?
+            .into()),
             "insert_vec_bool" => Ok(__sdk::parse_reducer_args::<insert_vec_bool_reducer::InsertVecBoolArgs>(
                 "insert_vec_bool",
                 &value.args,
@@ -2759,6 +2775,7 @@ pub struct DbUpdate {
     unique_u_32: __sdk::TableUpdate<UniqueU32>,
     unique_u_64: __sdk::TableUpdate<UniqueU64>,
     unique_u_8: __sdk::TableUpdate<UniqueU8>,
+    users: __sdk::TableUpdate<Users>,
     vec_bool: __sdk::TableUpdate<VecBool>,
     vec_byte_struct: __sdk::TableUpdate<VecByteStruct>,
     vec_connection_id: __sdk::TableUpdate<VecConnectionId>,
@@ -2898,6 +2915,7 @@ impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
                 "unique_u32" => db_update.unique_u_32 = unique_u_32_table::parse_table_update(table_update)?,
                 "unique_u64" => db_update.unique_u_64 = unique_u_64_table::parse_table_update(table_update)?,
                 "unique_u8" => db_update.unique_u_8 = unique_u_8_table::parse_table_update(table_update)?,
+                "users" => db_update.users = users_table::parse_table_update(table_update)?,
                 "vec_bool" => db_update.vec_bool = vec_bool_table::parse_table_update(table_update)?,
                 "vec_byte_struct" => {
                     db_update.vec_byte_struct = vec_byte_struct_table::parse_table_update(table_update)?
@@ -3075,6 +3093,9 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.unique_u_32 = cache.apply_diff_to_table::<UniqueU32>("unique_u32", &self.unique_u_32);
         diff.unique_u_64 = cache.apply_diff_to_table::<UniqueU64>("unique_u64", &self.unique_u_64);
         diff.unique_u_8 = cache.apply_diff_to_table::<UniqueU8>("unique_u8", &self.unique_u_8);
+        diff.users = cache
+            .apply_diff_to_table::<Users>("users", &self.users)
+            .with_updates_by_pk(|row| &row.identity);
         diff.vec_bool = cache.apply_diff_to_table::<VecBool>("vec_bool", &self.vec_bool);
         diff.vec_byte_struct = cache.apply_diff_to_table::<VecByteStruct>("vec_byte_struct", &self.vec_byte_struct);
         diff.vec_connection_id =
@@ -3185,6 +3206,7 @@ pub struct AppliedDiff<'r> {
     unique_u_32: __sdk::TableAppliedDiff<'r, UniqueU32>,
     unique_u_64: __sdk::TableAppliedDiff<'r, UniqueU64>,
     unique_u_8: __sdk::TableAppliedDiff<'r, UniqueU8>,
+    users: __sdk::TableAppliedDiff<'r, Users>,
     vec_bool: __sdk::TableAppliedDiff<'r, VecBool>,
     vec_byte_struct: __sdk::TableAppliedDiff<'r, VecByteStruct>,
     vec_connection_id: __sdk::TableAppliedDiff<'r, VecConnectionId>,
@@ -3312,6 +3334,7 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<UniqueU32>("unique_u32", &self.unique_u_32, event);
         callbacks.invoke_table_row_callbacks::<UniqueU64>("unique_u64", &self.unique_u_64, event);
         callbacks.invoke_table_row_callbacks::<UniqueU8>("unique_u8", &self.unique_u_8, event);
+        callbacks.invoke_table_row_callbacks::<Users>("users", &self.users, event);
         callbacks.invoke_table_row_callbacks::<VecBool>("vec_bool", &self.vec_bool, event);
         callbacks.invoke_table_row_callbacks::<VecByteStruct>("vec_byte_struct", &self.vec_byte_struct, event);
         callbacks.invoke_table_row_callbacks::<VecConnectionId>("vec_connection_id", &self.vec_connection_id, event);
@@ -3994,6 +4017,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         unique_u_32_table::register_table(client_cache);
         unique_u_64_table::register_table(client_cache);
         unique_u_8_table::register_table(client_cache);
+        users_table::register_table(client_cache);
         vec_bool_table::register_table(client_cache);
         vec_byte_struct_table::register_table(client_cache);
         vec_connection_id_table::register_table(client_cache);
