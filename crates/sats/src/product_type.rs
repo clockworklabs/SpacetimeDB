@@ -121,22 +121,22 @@ impl ProductType {
         self.is_i64_newtype(TIME_DURATION_TAG)
     }
 
-    /// Returns whether this is the special tag of [`Identity`].
+    /// Returns whether this is the special tag of `Identity`.
     pub fn is_identity_tag(tag_name: &str) -> bool {
         tag_name == IDENTITY_TAG
     }
 
-    /// Returns whether this is the special tag of [`ConnectionId`].
+    /// Returns whether this is the special tag of `ConnectionId`.
     pub fn is_connection_id_tag(tag_name: &str) -> bool {
         tag_name == CONNECTION_ID_TAG
     }
 
-    /// Returns whether this is the special tag of [`Timestamp`].
+    /// Returns whether this is the special tag of [`crate::timestamp::Timestamp`].
     pub fn is_timestamp_tag(tag_name: &str) -> bool {
         tag_name == TIMESTAMP_TAG
     }
 
-    /// Returns whether this is the special tag of [`TimeDuration`].
+    /// Returns whether this is the special tag of [`crate::time_duration::TimeDuration`].
     pub fn is_time_duration_tag(tag_name: &str) -> bool {
         tag_name == TIME_DURATION_TAG
     }
