@@ -220,6 +220,8 @@ pub(crate) fn derive_satstype(ty: &SatsType<'_>) -> TokenStream {
         // so we won't impl for the owned type.
         let filterable_impl = quote! {
             #[automatically_derived]
+            impl #impl_generics #krate::Private for &#name #ty_generics #where_clause {}
+            #[automatically_derived]
             impl #impl_generics #krate::FilterableValue for &#name #ty_generics #where_clause {
                 type Column = #name #ty_generics;
             }
