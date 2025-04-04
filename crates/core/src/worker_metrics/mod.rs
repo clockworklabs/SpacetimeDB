@@ -231,13 +231,11 @@ pub fn spawn_tokio_stats(node_id: String) {
                 global_queue_depth_metric.set(metrics.global_queue_depth() as i64);
                 #[cfg(tokio_unstable)]
                 {
-                    log::info!("Has unstable metrics");
                     num_blocking_threads_metric.set(metrics.num_blocking_threads() as i64);
                     num_idle_blocking_threads_metric.set(metrics.num_idle_blocking_threads() as i64);
                     blocking_queue_depth_metric.set(metrics.blocking_queue_depth() as i64);
                 }
 
-                log::info!("after unstable metrics");
                 // The spawned tasks count and remote schedule count are cumulative,
                 // so we need to increment them by the difference from the last value.
                 #[cfg(all(target_has_atomic = "64", tokio_unstable))]
