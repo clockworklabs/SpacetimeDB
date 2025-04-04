@@ -1,5 +1,7 @@
 using SpacetimeDB;
 
+#pragma warning disable STDB_UNSTABLE // Enable experimental SpacetimeDB features
+
 public enum LocalEnum { }
 
 [SpacetimeDB.Type]
