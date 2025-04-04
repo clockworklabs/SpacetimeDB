@@ -298,7 +298,7 @@ info: Hello, World!
 SpacetimeDB supports a subset of the SQL syntax so that you can easily query the data of your database. We can run a query using the `sql` command.
 
 ```bash
-spacetime sql quickstart-chat "SELECT * FROM Message"
+spacetime sql quickstart-chat "SELECT * FROM message"
 ```
 
 ```bash
