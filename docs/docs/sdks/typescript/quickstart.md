@@ -387,7 +387,7 @@ module_bindings
 With `spacetime generate` we have generated TypeScript types derived from the types you specified in your module, which we can conveniently use in our client. We've placed these in the `module_bindings` folder. The main entry to the SpacetimeDB API is the `DbConnection`, a type which manages a connection to a remote database. Let's import it and a few other types into our `client/src/App.tsx`.
 
 ```tsx
-import { DbConnection, EventContext, Message, User } from './module_bindings';
+import { DbConnection, ErrorContext, EventContext, Message, User } from './module_bindings';
 import { Identity } from '@clockworklabs/spacetimedb-sdk';
 ```
 
@@ -442,7 +442,7 @@ Add the following to your `App` function, just below `const [newMessage, setNewM
       setConnected(false);
     };
 
-    const onConnectError = (_conn: DbConnection, err: Error) => {
+    const onConnectError = (_ctx: ErrorContext, err: Error) => {
       console.log('Error connecting to SpacetimeDB:', err);
     };
 
