@@ -147,6 +147,20 @@ impl<T: Repo> Repo for &T {
     fn existing_offsets(&self) -> io::Result<Vec<u64>> {
         T::existing_offsets(self)
     }
+
+    fn create_offset_index(&self, offset: TxOffset, cap: u64) -> io::Result<TxOffsetIndexMut> {
+        T::create_offset_index(self, offset, cap)
+    }
+
+    /// Remove [`TxOffsetIndexMut`] named with `offset`.
+    fn remove_offset_index(&self, offset: TxOffset) -> io::Result<()> {
+        T::remove_offset_index(self, offset)
+    }
+
+    /// Get [`TxOffsetIndex`] for the given `offset`.
+    fn get_offset_index(&self, offset: TxOffset) -> io::Result<TxOffsetIndex> {
+        T::get_offset_index(self, offset)
+    }
 }
 
 impl<T: SegmentLen> SegmentLen for io::BufReader<T> {
@@ -223,12 +237,13 @@ pub fn resume_segment_writer<R: Repo>(
     offset: u64,
 ) -> io::Result<Result<Writer<R::SegmentWriter>, Metadata>> {
     let mut storage = repo.open_segment_writer(offset)?;
+    let offset_index = repo.get_offset_index(offset).ok();
     let Metadata {
         header,
         tx_range,
         size_in_bytes,
         max_epoch,
-    } = match Metadata::extract(offset, &mut storage) {
+    } = match Metadata::extract(offset, &mut storage, offset_index.as_ref()) {
         Err(error::SegmentMetadata::InvalidCommit { sofar, source }) => {
             warn!("invalid commit in segment {offset}: {source}");
             debug!("sofar={sofar:?}");

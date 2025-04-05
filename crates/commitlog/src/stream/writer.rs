@@ -4,7 +4,7 @@ use std::{
 };
 
 use futures::TryFutureExt;
-use log::{debug, error, trace, warn};
+use log::{debug, error, info, trace, warn};
 use tokio::{
     io::{AsyncBufRead, AsyncBufReadExt as _, AsyncReadExt as _, AsyncWriteExt},
     task::spawn_blocking,
@@ -12,7 +12,7 @@ use tokio::{
 
 use crate::{
     commit, error,
-    repo::{self, Repo, SegmentLen},
+    repo::{Repo, SegmentLen as _, TxOffsetIndexMut},
     segment::{self, FileLike as _, OffsetIndexWriter, CHECKSUM_LEN, DEFAULT_CHECKSUM_ALGORITHM},
     stream::common::{read_exact, AsyncFsync},
     Options, StoredCommit, DEFAULT_LOG_FORMAT_VERSION,
@@ -107,12 +107,23 @@ where
         };
 
         let mut segment = repo.open_segment_writer(last)?;
-        let mut offset_index = repo::create_offset_index_writer(&repo, last, commitlog_options);
-        let meta = segment::Metadata::extract(last, &mut segment).or_else(|e| match e {
-            error::SegmentMetadata::InvalidCommit { sofar, source } => match on_trailing {
-                OnTrailingData::Error => Err(io::Error::new(io::ErrorKind::InvalidData, source)),
+        let offset_index = repo
+            .get_offset_index(last)
+            .inspect_err(|e| {
+                warn!("unable to open offset index for segment {last}: {e}");
+            })
+            .ok();
+
+        let (meta, offset_index) = match segment::Metadata::extract(last, &mut segment, offset_index.as_ref()) {
+            Ok(sofar) => (sofar, offset_index.map(|idx| idx.into())),
+            Err(error::SegmentMetadata::InvalidCommit { sofar, source }) => match on_trailing {
+                OnTrailingData::Error => {
+                    return Err(io::Error::new(io::ErrorKind::InvalidData, source));
+                }
                 OnTrailingData::Trim => {
-                    if let Some(idx) = offset_index.as_mut() {
+                    info!("trimming segment {last} after invalid commit: {sofar:?}");
+                    let mut offset_index_mut: Option<TxOffsetIndexMut> = offset_index.map(|idx| idx.into());
+                    if let Some(mut idx) = offset_index_mut.take() {
                         idx.ftruncate(sofar.tx_range.end, sofar.size_in_bytes)
                             .inspect_err(|e| {
                                 error!(
@@ -120,15 +131,17 @@ where
                                     last, e
                                 )
                             })?;
-                    }
-                    segment.ftruncate(sofar.tx_range.end, sofar.size_in_bytes)?;
-                    segment.seek(io::SeekFrom::End(0))?;
+                        offset_index_mut = Some(idx);
 
-                    Ok(sofar)
+                        segment.ftruncate(sofar.tx_range.end, sofar.size_in_bytes)?;
+                        segment.seek(io::SeekFrom::End(0))?;
+                    }
+                    (sofar, offset_index_mut)
                 }
             },
-            error::SegmentMetadata::Io(err) => Err(err),
-        })?;
+            Err(error::SegmentMetadata::Io(e)) => Err(e)?,
+        };
+
         meta.header
             .ensure_compatible(DEFAULT_LOG_FORMAT_VERSION, DEFAULT_CHECKSUM_ALGORITHM)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
@@ -136,7 +149,7 @@ where
         let current_segment = CurrentSegment {
             header: meta.header,
             segment: segment.into_async_writer(),
-            offset_index,
+            offset_index: offset_index.map(|index| OffsetIndexWriter::new(index, commitlog_options)),
         };
 
         let this = Self {
@@ -181,7 +194,10 @@ where
         mut progress: impl Progress,
     ) -> io::Result<Self> {
         loop {
-            let Some(buf) = peek_buf(&mut stream).await? else {
+            let Some(buf) = peek_buf(&mut stream)
+                .await
+                .inspect_err(|e| warn!("failed to peek stream: {e}"))?
+            else {
                 break;
             };
 
@@ -271,7 +287,10 @@ where
             .max(segment::Header::LEN as _);
 
         loop {
-            let Some(buf) = peek_buf(stream).await? else {
+            let Some(buf) = peek_buf(stream).await.inspect_err(|e| {
+                warn!("failed to peek stream: {e}");
+            })?
+            else {
                 // The stream is exhausted, break the outer loop.
                 trace!("eof");
                 return Ok(AppendInnerResult::StreamExhausted);
@@ -283,7 +302,11 @@ where
             }
 
             // Read the header, so we can determine the size of the commit.
-            if read_exact(stream, &mut self.commit_buf.header).await?.is_eof() {
+            if read_exact(stream, &mut self.commit_buf.header)
+                .await
+                .inspect_err(|e| warn!("failed to read commit header: {e}"))?
+                .is_eof()
+            {
                 return Ok(AppendInnerResult::StreamExhausted);
             }
             let Some(commit_header) = commit::Header::decode(&self.commit_buf.header[..])
@@ -341,10 +364,13 @@ where
                     "append_after_commit min_tx_offset={} bytes_written={} commit_len={}",
                     commit.min_tx_offset, bytes_written, commit_len
                 );
-                offset_index
+
+                if let Err(_) = offset_index
                     .append_after_commit(commit.min_tx_offset, bytes_written, commit_len)
                     .inspect_err(|e| warn!("failed to append to offset index: {e}"))
-                    .ok();
+                {
+                    panic!("failed to append to offset index");
+                }
             }
 
             bytes_written += commit_len;
