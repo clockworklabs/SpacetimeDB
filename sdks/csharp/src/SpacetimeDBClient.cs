@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
@@ -188,10 +189,16 @@ namespace SpacetimeDB
                     SpacetimeDBNetworkManager._instance.RemoveConnection(this);
                 }
             };
+            
+#if UNITY_WEBGL && !UNITY_EDITOR
+            if (SpacetimeDBNetworkManager._instance != null)
+                SpacetimeDBNetworkManager._instance.StartCoroutine(PreProcessMessages());
 #endif
-
+#endif
+#if !(UNITY_WEBGL && !UNITY_EDITOR)
             networkMessageProcessThread = new Thread(PreProcessMessages);
             networkMessageProcessThread.Start();
+#endif
         }
 
         struct UnprocessedMessage
@@ -351,20 +358,36 @@ namespace SpacetimeDB
             };
         }
 
+#if UNITY_WEBGL && !UNITY_EDITOR
+        IEnumerator PreProcessMessages()
+#else
         void PreProcessMessages()
+#endif
         {
             while (!isClosing)
             {
+                
+#if UNITY_WEBGL && !UNITY_EDITOR
+                if (_messageQueue.Count > 0)
+#else
                 try
+#endif
                 {
                     var message = _messageQueue.Take(_preProcessCancellationToken);
                     var preprocessedMessage = PreProcessMessage(message);
                     _preProcessedNetworkMessages.Add(preprocessedMessage, _preProcessCancellationToken);
                 }
+#if UNITY_WEBGL && !UNITY_EDITOR
+                else
+                {
+                    yield return new UnityEngine.WaitForSeconds(0.1f);
+                }
+#else
                 catch (OperationCanceledException)
                 {
                     return; // Normal shutdown
                 }
+#endif
             }
 
             IEnumerable<(IRemoteTableHandle, TableUpdate)> GetTables(DatabaseUpdate updates)
@@ -612,7 +635,11 @@ namespace SpacetimeDB
             Log.Info($"SpacetimeDBClient: Connecting to {uri} {addressOrName}");
             if (!IsTesting)
             {
+#if UNITY_WEBGL && !UNITY_EDITOR
+                async Task Function()
+#else
                 Task.Run(async () =>
+#endif
                 {
                     try
                     {
@@ -628,7 +655,12 @@ namespace SpacetimeDB
 
                         Log.Exception(e);
                     }
+#if UNITY_WEBGL && !UNITY_EDITOR
+                }
+                _ = Function();
+#else
                 });
+#endif
             }
         }
 
