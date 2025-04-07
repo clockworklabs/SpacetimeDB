@@ -75,7 +75,7 @@ impl DirTrie {
         Ok(Self { root })
     }
 
-    fn file_path(&self, file_id: &FileId) -> PathBuf {
+    pub fn file_path(&self, file_id: &FileId) -> PathBuf {
         // TODO(perf, bikeshedding): avoid allocating a `String`.
         let file_id_hex = hex::encode(file_id);
 

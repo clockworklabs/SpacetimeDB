@@ -5652,17 +5652,29 @@ dependencies = [
 name = "spacetimedb-snapshot"
 version = "1.1.0"
 dependencies = [
+ "anyhow",
  "blake3",
+ "bytes",
+ "env_logger 0.10.2",
+ "futures",
  "hex",
  "log",
+ "pretty_assertions",
+ "spacetimedb-core",
  "spacetimedb-durability",
  "spacetimedb-fs-utils",
  "spacetimedb-lib",
  "spacetimedb-paths",
  "spacetimedb-primitives",
  "spacetimedb-sats",
+ "spacetimedb-schema",
  "spacetimedb-table",
+ "tempfile",
  "thiserror 1.0.69",
+ "tokio",
+ "tokio-stream",
+ "tokio-util",
+ "zstd-framed",
 ]
 
 [[package]]
