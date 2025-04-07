@@ -402,10 +402,7 @@ impl ModuleSubscriptions {
         let removed_queries = {
             let mut subscriptions = self.subscriptions.write();
 
-            
-            match subscriptions
-                .remove_subscription((sender.id.identity, sender.id.connection_id), request.query_id)
-            {
+            match subscriptions.remove_subscription((sender.id.identity, sender.id.connection_id), request.query_id) {
                 Ok(queries) => queries,
                 Err(error) => {
                     // Apparently we ignore errors sending messages.
@@ -509,7 +506,6 @@ impl ModuleSubscriptions {
         // write lock on the db.
         let queries = {
             let mut subscriptions = self.subscriptions.write();
-            
 
             subscriptions.add_subscription_multi(sender.clone(), queries, request.query_id)?
         };
