@@ -262,11 +262,17 @@ pub fn spawn_jemalloc_stats(node_id: String) {
 }
 
 // How frequently to update the tokio stats.
+#[cfg(all(target_has_atomic = "64", tokio_unstable))]
 const TOKIO_STATS_INTERVAL: Duration = Duration::from_secs(10);
+#[cfg(all(target_has_atomic = "64", tokio_unstable))]
 static SPAWN_TOKIO_STATS_GUARD: Once = Once::new();
 pub fn spawn_tokio_stats(node_id: String) {
     // Some of these metrics could still be reported without these settings,
     // but it is simpler to just skip all the tokio metrics if they aren't set.
+
+    #[cfg(not(all(target_has_atomic = "64", tokio_unstable)))]
+    log::warn!("Skipping tokio metrics for {node_id}, as they are not enabled in this build.");
+
     #[cfg(all(target_has_atomic = "64", tokio_unstable))]
     SPAWN_TOKIO_STATS_GUARD.call_once(|| {
         spawn(async move {
