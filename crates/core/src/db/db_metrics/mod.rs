@@ -115,6 +115,16 @@ metrics_group!(
         #[help = "The total time spent in reducer ABI calls"]
         #[labels(db: Identity, reducer: str)]
         pub reducer_abi_time_usec: IntCounterVec,
+
+        #[name = spacetime_num_delta_queries_evaluated]
+        #[help = "The total number of times we performed incremental evaluation of a query"]
+        #[labels(db: Identity)]
+        pub delta_queries_evaluated: IntCounterVec,
+
+        #[name = spacetime_num_delta_queries_matched]
+        #[help = "The total number of times incremental evaluation resulted in a subscription update"]
+        #[labels(db: Identity)]
+        pub delta_queries_matched: IntCounterVec,
     }
 );
 
