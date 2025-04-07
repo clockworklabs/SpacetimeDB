@@ -15,6 +15,7 @@ pub mod fixed_bit_set;
 pub mod indexes;
 pub mod layout;
 pub mod page;
+pub mod page_pool;
 pub mod pages;
 pub mod pointer_map;
 pub mod read_column;

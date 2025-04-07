@@ -29,17 +29,14 @@ use spacetimedb_fs_utils::{
     dir_trie::{o_excl, o_rdonly, CountCreated, DirTrie},
     lockfile::{Lockfile, LockfileError},
 };
-use spacetimedb_lib::{
-    bsatn::{self},
-    de::Deserialize,
-    ser::Serialize,
-    Identity,
-};
+use spacetimedb_lib::Identity;
 use spacetimedb_paths::server::{SnapshotDirPath, SnapshotFilePath, SnapshotsPath};
 use spacetimedb_primitives::TableId;
+use spacetimedb_sats::{bsatn, de::Deserialize, ser::Serialize};
 use spacetimedb_table::{
     blob_store::{BlobHash, BlobStore, HashMapBlobStore},
     page::Page,
+    page_pool::PagePool,
     table::Table,
 };
 use std::{
@@ -399,6 +396,7 @@ impl Snapshot {
     fn reconstruct_one_table_pages(
         object_repo: &DirTrie,
         pages: &[blake3::Hash],
+        page_pool: &PagePool,
     ) -> Result<Vec<Box<Page>>, SnapshotError> {
         pages
             .iter()
@@ -413,7 +411,8 @@ impl Snapshot {
                     })?;
 
                 // Deserialize the bytes into a `Page`.
-                let page = bsatn::from_slice::<Box<Page>>(&buf).map_err(|cause| SnapshotError::Deserialize {
+                let page = page_pool.take_deserialize_from(&buf);
+                let page = page.map_err(|cause| SnapshotError::Deserialize {
                     ty: ObjectType::Page(*hash),
                     source_repo: object_repo.root().to_path_buf(),
                     cause,
@@ -441,8 +440,12 @@ impl Snapshot {
     fn reconstruct_one_table(
         object_repo: &DirTrie,
         TableEntry { table_id, pages }: &TableEntry,
+        page_pool: &PagePool,
     ) -> Result<(TableId, Vec<Box<Page>>), SnapshotError> {
-        Ok((*table_id, Self::reconstruct_one_table_pages(object_repo, pages)?))
+        Ok((
+            *table_id,
+            Self::reconstruct_one_table_pages(object_repo, pages, page_pool)?,
+        ))
     }
 
     /// Reconstruct all the table data from `self`,
@@ -455,10 +458,14 @@ impl Snapshot {
     /// Fails if any object file referenced in `self` (as a page or large blob)
     /// is missing or corrupted,
     /// as detected by comparing the hash of its bytes to the hash recorded in `self`.
-    fn reconstruct_tables(&self, object_repo: &DirTrie) -> Result<BTreeMap<TableId, Vec<Box<Page>>>, SnapshotError> {
+    fn reconstruct_tables(
+        &self,
+        object_repo: &DirTrie,
+        page_pool: &PagePool,
+    ) -> Result<BTreeMap<TableId, Vec<Box<Page>>>, SnapshotError> {
         self.tables
             .iter()
-            .map(|tbl| Self::reconstruct_one_table(object_repo, tbl))
+            .map(|tbl| Self::reconstruct_one_table(object_repo, tbl, page_pool))
             .collect()
     }
 
@@ -717,7 +724,11 @@ impl SnapshotRepository {
     ///
     /// This means that callers must inspect the returned [`ReconstructedSnapshot`]
     /// and verify that they can handle its contained database identity, instance ID, module ABI version and transaction offset.
-    pub fn read_snapshot(&self, tx_offset: TxOffset) -> Result<ReconstructedSnapshot, SnapshotError> {
+    pub fn read_snapshot(
+        &self,
+        tx_offset: TxOffset,
+        page_pool: &PagePool,
+    ) -> Result<ReconstructedSnapshot, SnapshotError> {
         let snapshot_dir = self.snapshot_dir_path(tx_offset);
         let lockfile = Lockfile::lock_path(&snapshot_dir);
         if lockfile.try_exists()? {
@@ -745,7 +756,7 @@ impl SnapshotRepository {
 
         let blob_store = snapshot.reconstruct_blob_store(&object_repo)?;
 
-        let tables = snapshot.reconstruct_tables(&object_repo)?;
+        let tables = snapshot.reconstruct_tables(&object_repo, page_pool)?;
 
         Ok(ReconstructedSnapshot {
             database_identity: snapshot.database_identity,

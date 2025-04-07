@@ -38,6 +38,7 @@ use spacetimedb_schema::def::{ModuleDef, TableDef};
 use spacetimedb_schema::schema::{IndexSchema, RowLevelSecuritySchema, Schema, SequenceSchema, TableSchema};
 use spacetimedb_snapshot::{SnapshotError, SnapshotRepository};
 use spacetimedb_table::indexes::RowPointer;
+use spacetimedb_table::page_pool::PagePool;
 use spacetimedb_table::table::RowRef;
 use spacetimedb_table::MemoryUsage;
 use std::borrow::Cow;
@@ -322,6 +323,7 @@ impl RelationalDB {
         history: impl durability::History<TxData = Txdata>,
         durability: Option<(Arc<Durability>, DiskSizeFn)>,
         snapshot_repo: Option<Arc<SnapshotRepository>>,
+        page_pool: PagePool,
     ) -> Result<(Self, ConnectedClients), DBError> {
         log::trace!("[{}] DATABASE: OPEN", database_identity);
 
@@ -337,8 +339,12 @@ impl RelationalDB {
             .and_then(|durability| durability.durable_tx_offset());
 
         log::info!("[{database_identity}] DATABASE: durable_tx_offset is {durable_tx_offset:?}");
-        let inner =
-            Self::restore_from_snapshot_or_bootstrap(database_identity, snapshot_repo.as_deref(), durable_tx_offset)?;
+        let inner = Self::restore_from_snapshot_or_bootstrap(
+            database_identity,
+            snapshot_repo.as_deref(),
+            durable_tx_offset,
+            page_pool,
+        )?;
 
         apply_history(&inner, database_identity, history)?;
         let db = Self::new(
@@ -455,6 +461,7 @@ impl RelationalDB {
         database_identity: Identity,
         snapshot_repo: Option<&SnapshotRepository>,
         durable_tx_offset: Option<TxOffset>,
+        page_pool: PagePool,
     ) -> Result<Locking, DBError> {
         if let Some(snapshot_repo) = snapshot_repo {
             if let Some(durable_tx_offset) = durable_tx_offset {
@@ -465,7 +472,7 @@ impl RelationalDB {
                     snapshot_repo.invalidate_newer_snapshots(durable_tx_offset)?;
                     log::info!("[{database_identity}] DATABASE: restoring snapshot of tx_offset {tx_offset}");
                     let start = std::time::Instant::now();
-                    let snapshot = snapshot_repo.read_snapshot(tx_offset)?;
+                    let snapshot = snapshot_repo.read_snapshot(tx_offset, &page_pool)?;
                     log::info!(
                         "[{database_identity}] DATABASE: read snapshot of tx_offset {tx_offset} in {:?}",
                         start.elapsed(),
@@ -479,7 +486,7 @@ impl RelationalDB {
                         .into());
                     }
                     let start = std::time::Instant::now();
-                    let res = Locking::restore_from_snapshot(snapshot);
+                    let res = Locking::restore_from_snapshot(snapshot, page_pool);
                     log::info!(
                         "[{database_identity}] DATABASE: restored from snapshot of tx_offset {tx_offset} in {:?}",
                         start.elapsed(),
@@ -490,7 +497,7 @@ impl RelationalDB {
             log::info!("[{database_identity}] DATABASE: no snapshot on disk");
         }
 
-        Locking::bootstrap(database_identity)
+        Locking::bootstrap(database_identity, page_pool)
     }
 
     /// Apply the provided [`spacetimedb_durability::History`] onto the database
@@ -1615,6 +1622,7 @@ pub mod tests_utils {
                 history,
                 durability,
                 snapshot_repo,
+                PagePool::default(),
             )?;
             assert_eq!(connected_clients.len(), expected_num_clients);
             let db = db.with_row_count(Self::row_count_fn());
@@ -1820,6 +1828,7 @@ mod tests {
             EmptyHistory::new(),
             None,
             None,
+            PagePool::default(),
         ) {
             Ok(_) => {
                 panic!("Allowed to open database twice")
