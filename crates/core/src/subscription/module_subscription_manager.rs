@@ -159,6 +159,20 @@ pub struct SubscriptionManager {
     tables: IntMap<TableId, HashSet<QueryHash>>,
 }
 
+// Tracks some gauges related to subscriptions.
+pub struct SubscriptionGaugeStats {
+    // The number of unique queries with at least one subscriber.
+    pub num_queries: usize,
+    // The number of unique connections with at least one subscription.
+    pub num_connections: usize,
+    // The number of subscription sets across all clients.
+    pub num_subscription_sets: usize,
+    // The total number of subscriptions across all clients and queries.
+    pub num_query_subscriptions: usize,
+    // The total number of subscriptions across all clients and queries.
+    pub num_legacy_subscriptions: usize,
+}
+
 impl SubscriptionManager {
     pub fn client(&self, id: &ClientId) -> Client {
         self.clients[id].outbound_ref.clone()
@@ -182,6 +196,26 @@ impl SubscriptionManager {
                     .get(*id)
                     .is_some_and(|info| !info.dropped.load(Ordering::Acquire))
             })
+    }
+
+    pub fn calculate_gauge_stats(&self) -> SubscriptionGaugeStats {
+        let num_queries = self.queries.len();
+        let num_connections = self.clients.len();
+        let num_query_subscriptions = self.queries.values().map(|state| state.subscriptions.len()).sum();
+        let num_subscription_sets = self.clients.values().map(|ci| ci.subscriptions.len()).sum();
+        let num_legacy_subscriptions = self
+            .clients
+            .values()
+            .filter(|ci| !ci.legacy_subscriptions.is_empty())
+            .count();
+
+        SubscriptionGaugeStats {
+            num_queries,
+            num_connections,
+            num_query_subscriptions,
+            num_subscription_sets,
+            num_legacy_subscriptions,
+        }
     }
 
     pub fn num_unique_queries(&self) -> usize {
