@@ -5397,6 +5397,7 @@ dependencies = [
  "spacetimedb-commitlog",
  "spacetimedb-paths",
  "spacetimedb-sats",
+ "spacetimedb-snapshot",
  "tokio",
  "tracing",
 ]

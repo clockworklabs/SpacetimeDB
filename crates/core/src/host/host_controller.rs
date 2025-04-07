@@ -710,7 +710,7 @@ impl Host {
             db::Storage::Disk => {
                 let snapshot_repo =
                     relational_db::open_snapshot_repo(replica_dir.snapshots(), database.database_identity, replica_id)?;
-                let (history, _) = relational_db::local_durability(replica_dir.commit_log()).await?;
+                let (history, _) = relational_db::local_durability(replica_dir.clone()).await?;
                 let (durability, start_snapshot_watcher) = durability.durability(replica_id).await?;
 
                 let (db, clients) = RelationalDB::open(

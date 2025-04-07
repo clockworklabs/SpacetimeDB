@@ -2,7 +2,7 @@ use std::fs::{self, File};
 use std::io;
 
 use log::{debug, warn};
-use spacetimedb_fs_utils::compression::{new_zstd_writer, CompressReader};
+use spacetimedb_fs_utils::compression::{compress_with_zstd, CompressReader};
 use spacetimedb_paths::server::{CommitLogDir, SegmentFile};
 use tempfile::NamedTempFile;
 
@@ -124,10 +124,7 @@ impl Repo for Fs {
         // bytes per frame. in the future, it might be worth looking into putting
         // every commit into its own frame, to make seeking more efficient.
         let max_frame_size = 0x1000;
-        let mut writer = new_zstd_writer(&mut dst, max_frame_size)?;
-        io::copy(&mut src, &mut writer)?;
-        writer.shutdown()?;
-        drop(writer);
+        compress_with_zstd(&mut src, &mut dst, Some(max_frame_size))?;
         dst.persist(self.segment_path(offset))?;
         Ok(())
     }

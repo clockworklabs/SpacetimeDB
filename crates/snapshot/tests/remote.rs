@@ -48,7 +48,7 @@ async fn can_sync_a_snapshot() -> anyhow::Result<()> {
 
     let snapshot_offset = create_snapshot(src_repo.clone()).await?;
     let src_snapshot_path = src_repo.snapshot_dir_path(snapshot_offset);
-    let mut src_snapshot = Snapshot::read_from_file(&src_snapshot_path.snapshot_file(snapshot_offset))?;
+    let (mut src_snapshot, _) = Snapshot::read_from_file(&src_snapshot_path.snapshot_file(snapshot_offset))?;
     let total_objects = src_snapshot.total_objects() as u64;
 
     let blob_provider = SnapshotRepository::object_repo(&src_snapshot_path).map(Arc::new)?;
@@ -92,7 +92,7 @@ async fn rejects_overwrite() -> anyhow::Result<()> {
 
     let snapshot_offset = create_snapshot(src_repo.clone()).await?;
     let src_snapshot_path = src_repo.snapshot_dir_path(snapshot_offset);
-    let src_snapshot = Snapshot::read_from_file(&src_snapshot_path.snapshot_file(snapshot_offset))?;
+    let (src_snapshot, _) = Snapshot::read_from_file(&src_snapshot_path.snapshot_file(snapshot_offset))?;
 
     let blob_provider = SnapshotRepository::object_repo(&src_snapshot_path).map(Arc::new)?;
 
@@ -101,7 +101,7 @@ async fn rejects_overwrite() -> anyhow::Result<()> {
     // Try to overwrite with the previous snapshot.
     let prev_offset = src_repo.latest_snapshot_older_than(snapshot_offset - 1)?.unwrap();
     let src_snapshot_path = src_repo.snapshot_dir_path(prev_offset);
-    let mut src_snapshot = Snapshot::read_from_file(&src_snapshot_path.snapshot_file(prev_offset))?;
+    let (mut src_snapshot, _) = Snapshot::read_from_file(&src_snapshot_path.snapshot_file(prev_offset))?;
     // Pretend it's the current snapshot, thereby altering the preimage.
     src_snapshot.tx_offset = snapshot_offset;
 

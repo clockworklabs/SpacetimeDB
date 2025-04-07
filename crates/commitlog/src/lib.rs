@@ -261,7 +261,7 @@ impl<T> Commitlog<T> {
         self.inner.read().unwrap().repo.existing_offsets()
     }
 
-    /// Compress the segments at the offsets provded, marking them as immutable.
+    /// Compress the segments at the offsets provided, marking them as immutable.
     pub fn compress_segments(&self, offsets: &[u64]) -> io::Result<()> {
         // even though `compress_segment` takes &self, we take an
         // exclusive lock to avoid any weirdness happening.

@@ -13,7 +13,9 @@
 //! The trie structure implemented here is still O(n), but with a drastically reduced constant factor (1/128th),
 //! which we expect to shrink the linear lookups to an acceptable size.
 
-use crate::compression::{CompressReader, CompressType, CompressWriter};
+use crate::compression::CompressReader;
+use std::fs::File;
+use std::io::BufWriter;
 use std::{
     fs::{create_dir_all, OpenOptions},
     io::{self, Read, Write},
@@ -66,8 +68,7 @@ impl DirTrie {
         &self.root
     }
 
-    /// Open the directory trie at `root`, using [`CompressType`] for writing files,
-    /// creating the root directory if it doesn't exist.
+    /// Open the directory trie at `root`, creating the root directory if it doesn't exist.
     ///
     /// Returns an error if the `root` cannot be created as a directory.
     /// See documentation on [`create_dir_all`] for more details.
@@ -151,7 +152,6 @@ impl DirTrie {
         &self,
         src_repo: Option<&DirTrie>,
         file_id: &FileId,
-        write_compress_type: CompressType,
         contents: impl FnOnce() -> Bytes,
         counter: &mut CountCreated,
     ) -> Result<(), io::Error> {
@@ -166,10 +166,10 @@ impl DirTrie {
             }
         }
 
-        let mut file = self.open_entry_writer(file_id, write_compress_type)?;
+        let mut file = self.open_entry_writer(file_id)?;
         let contents = contents();
         file.write_all(contents.as_ref())?;
-        file.finish()?;
+        file.flush()?;
         counter.objects_written += 1;
         Ok(())
     }
@@ -190,14 +190,10 @@ impl DirTrie {
     /// If `compress_type` is [`CompressType::None`], the file will be written uncompressed.
     ///
     /// The file will be opened with [`o_excl`].
-    pub fn open_entry_writer(
-        &self,
-        file_id: &FileId,
-        compress_type: CompressType,
-    ) -> Result<CompressWriter, io::Error> {
+    pub fn open_entry_writer(&self, file_id: &FileId) -> Result<BufWriter<File>, io::Error> {
         let path = self.file_path(file_id);
         Self::create_parent(&path)?;
-        CompressWriter::new(o_excl().open(path)?, compress_type)
+        Ok(BufWriter::new(o_excl().open(path)?))
     }
 
     /// Open the entry keyed with `file_id` and read it into a `Vec<u8>`.
@@ -226,7 +222,7 @@ mod test {
 
     /// Write the [`TEST_STRING`] into the entry [`TEST_ID`].
     fn write_test_string(trie: &DirTrie) {
-        let mut file = trie.open_entry_writer(&TEST_ID, CompressType::None).unwrap();
+        let mut file = trie.open_entry_writer(&TEST_ID).unwrap();
         file.write_all(TEST_STRING).unwrap();
     }
 
@@ -301,7 +297,7 @@ mod test {
             assert!(trie.contains_entry(&TEST_ID));
 
             // Because the file is there, we can't create it.
-            assert!(trie.open_entry_writer(&TEST_ID, CompressType::Zstd).is_err());
+            assert!(trie.open_entry_writer(&TEST_ID).is_err());
         })
     }
 }

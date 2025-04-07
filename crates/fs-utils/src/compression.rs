@@ -1,6 +1,6 @@
 use std::fs::File;
 use std::io;
-use std::io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write};
+use std::io::{BufReader, Read, Seek, SeekFrom};
 use zstd_framed;
 use zstd_framed::{ZstdReader, ZstdWriter};
 
@@ -111,56 +111,29 @@ impl Seek for CompressReader {
     }
 }
 
-pub fn new_zstd_writer<'a, W: io::Write>(inner: W, max_frame_size: u32) -> io::Result<ZstdWriter<'a, W>> {
-    ZstdWriter::builder(inner)
-        .with_compression_level(0)
-        .with_seek_table(max_frame_size)
-        .build()
+pub fn new_zstd_writer<'a, W: io::Write>(inner: W, max_frame_size: Option<u32>) -> io::Result<ZstdWriter<'a, W>> {
+    let writer = ZstdWriter::builder(inner).with_compression_level(0);
+    if let Some(max_frame_size) = max_frame_size {
+        writer.with_seek_table(max_frame_size)
+    } else {
+        writer
+    }
+    .build()
+}
+
+pub fn compress_with_zstd<W: io::Write, R: io::Read>(
+    mut src: R,
+    mut dst: W,
+    max_frame_size: Option<u32>,
+) -> io::Result<()> {
+    let mut writer = new_zstd_writer(&mut dst, max_frame_size)?;
+    io::copy(&mut src, &mut writer)?;
+    writer.shutdown()?;
+    drop(writer);
+    Ok(())
 }
 
 pub use async_impls::AsyncCompressReader;
-
-/// A writer that can write compressed files
-pub enum CompressWriter<'a> {
-    None(BufWriter<File>),
-    Zstd(ZstdWriter<'a, BufWriter<File>>),
-}
-
-impl CompressWriter<'_> {
-    pub fn new(inner: File, compress_type: CompressType) -> io::Result<Self> {
-        match compress_type {
-            CompressType::None => Ok(CompressWriter::None(BufWriter::new(inner))),
-            CompressType::Zstd => Ok(CompressWriter::Zstd(
-                ZstdWriter::builder(BufWriter::new(inner))
-                    .with_compression_level(0)
-                    .build()?,
-            )),
-        }
-    }
-
-    pub fn finish(self) -> io::Result<()> {
-        match self {
-            CompressWriter::None(mut inner) => inner.flush(),
-            CompressWriter::Zstd(mut inner) => inner.shutdown(),
-        }
-    }
-}
-
-impl Write for CompressWriter<'_> {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        match self {
-            CompressWriter::None(inner) => inner.write(buf),
-            CompressWriter::Zstd(inner) => inner.write(buf),
-        }
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        match self {
-            CompressWriter::None(inner) => inner.flush(),
-            CompressWriter::Zstd(inner) => inner.flush(),
-        }
-    }
-}
 
 mod async_impls {
     use super::*;

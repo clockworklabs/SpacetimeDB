@@ -214,7 +214,7 @@ impl<P: BlobProvider> SnapshotFetcher<P> {
         // If the snapshot file already exists at the target path,
         // check that it is valid and that it hashes to `snapshot_hash`.
         if fs::try_exists(&snapshot_file_path).await? {
-            let existing = spawn_blocking({
+            let (existing, _) = spawn_blocking({
                 let snapshot_file_path = snapshot_file_path.clone();
                 move || Snapshot::read_from_file(&snapshot_file_path)
             })

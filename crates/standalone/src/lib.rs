@@ -100,15 +100,12 @@ struct StandaloneDurabilityProvider {
 #[async_trait]
 impl DurabilityProvider for StandaloneDurabilityProvider {
     async fn durability(&self, replica_id: u64) -> anyhow::Result<(ExternalDurability, Option<StartSnapshotWatcher>)> {
-        let commitlog_dir = self.data_dir.replica(replica_id).commit_log();
-        let (durability, disk_size) = relational_db::local_durability(commitlog_dir).await?;
+        let replica_dir = self.data_dir.replica(replica_id);
+        let (durability, disk_size) = relational_db::local_durability(replica_dir).await?;
         let start_snapshot_watcher = {
             let durability = durability.clone();
             |snapshot_rx| {
-                tokio::spawn(relational_db::snapshot_watching_commitlog_compressor(
-                    snapshot_rx,
-                    durability,
-                ));
+                tokio::spawn(relational_db::snapshot_watching_compressor(snapshot_rx, durability));
             }
         };
         Ok(((durability, disk_size), Some(Box::new(start_snapshot_watcher))))
