@@ -6,6 +6,7 @@ use std::{
 
 use anyhow::{bail, Result};
 use derive_more::From;
+use either::Either;
 use spacetimedb_expr::{expr::AggType, StatementSource};
 use spacetimedb_lib::{query::Delta, sats::size_of::SizeOf, AlgebraicValue, ProductValue};
 use spacetimedb_primitives::{ColId, ColSet, IndexId};
@@ -82,6 +83,13 @@ impl ProjectPlan {
             }
         }
     }
+
+    /// Unwrap the underlying physical plan
+    pub fn physical_plan(&self) -> &PhysicalPlan {
+        match self {
+            Self::None(plan) | Self::Name(plan, ..) => plan,
+        }
+    }
 }
 
 /// Physical plans always terminate with a projection.
@@ -102,34 +110,28 @@ impl ProjectPlan {
 /// TODO: LIMIT and COUNT were added rather hastily.
 /// We should rethink having separate plan types for projections and selections,
 /// as it makes optimization more difficult the more they diverge.
+///
+/// Note that RLS takes a single expression and produces a list of expressions.
+/// Hence why these variants take lists rather than single expressions.
+/// See [spacetimedb_expr::ProjectList] for details.
 #[derive(Debug)]
 pub enum ProjectListPlan {
     /// A plan that returns physical rows
-    Name(ProjectPlan),
+    Name(Vec<ProjectPlan>),
     /// A plan that returns virtual rows
-    List(PhysicalPlan, Vec<TupleField>),
+    List(Vec<PhysicalPlan>, Vec<TupleField>),
     /// A plan that limits rows
     Limit(Box<ProjectListPlan>, u64),
     /// An aggregate function
-    Agg(PhysicalPlan, AggType),
-}
-
-impl Deref for ProjectListPlan {
-    type Target = PhysicalPlan;
-
-    fn deref(&self) -> &Self::Target {
-        match self {
-            Self::Name(plan) => plan,
-            Self::List(plan, ..) | Self::Agg(plan, ..) => plan,
-            Self::Limit(plan, ..) => plan,
-        }
-    }
+    Agg(Vec<PhysicalPlan>, AggType),
 }
 
 impl ProjectListPlan {
     pub fn optimize(self) -> Result<Self> {
         match self {
-            Self::Name(plan) => Ok(Self::Name(plan.optimize()?)),
+            Self::Name(plan) => Ok(Self::Name(
+                plan.into_iter().map(|plan| plan.optimize()).collect::<Result<_>>()?,
+            )),
             Self::Limit(plan, n) => {
                 let mut limit = Self::Limit(Box::new(plan.optimize()?), n);
                 // Merge a limit with a scan if possible
@@ -138,11 +140,27 @@ impl ProjectListPlan {
                 }
                 Ok(limit)
             }
-            Self::Agg(plan, agg_type) => Ok(Self::Agg(plan.optimize(vec![])?, agg_type)),
+            Self::Agg(plan, agg_type) => Ok(Self::Agg(
+                plan.into_iter()
+                    .map(|plan| plan.optimize(vec![]))
+                    .collect::<Result<_>>()?,
+                agg_type,
+            )),
             Self::List(plan, fields) => Ok(Self::List(
-                plan.optimize(fields.iter().map(|TupleField { label, .. }| label).copied().collect())?,
+                plan.into_iter()
+                    .map(|plan| plan.optimize(fields.iter().map(|TupleField { label, .. }| label).copied().collect()))
+                    .collect::<Result<_>>()?,
                 fields,
             )),
+        }
+    }
+
+    /// Returns an iterator over the underlying physical plans
+    pub fn plan_iter(&self) -> impl Iterator<Item = &PhysicalPlan> + '_ {
+        match self {
+            Self::List(plans, _) | Self::Agg(plans, _) => Either::Left(plans.iter()),
+            Self::Name(plans) => Either::Right(plans.iter().map(|plan| plan.physical_plan())),
+            Self::Limit(plan, _) => plan.plan_iter(),
         }
     }
 }
@@ -1119,11 +1137,13 @@ mod tests {
 
     use pretty_assertions::assert_eq;
     use spacetimedb_expr::{
-        check::{parse_and_type_sub, SchemaView},
+        check::{SchemaView, TypingResult},
+        expr::ProjectName,
         statement::{parse_and_type_sql, Statement},
     };
     use spacetimedb_lib::{
         db::auth::{StAccess, StTableType},
+        identity::AuthCtx,
         AlgebraicType, AlgebraicValue,
     };
     use spacetimedb_primitives::{ColId, ColList, ColSet, TableId};
@@ -1135,10 +1155,10 @@ mod tests {
 
     use crate::{
         compile::{compile_select, compile_select_list},
-        plan::{HashJoin, IxJoin, IxScan, PhysicalPlan, Sarg, Semi, TupleField},
+        plan::{HashJoin, IxJoin, IxScan, PhysicalPlan, ProjectListPlan, Sarg, Semi, TupleField},
     };
 
-    use super::{PhysicalExpr, ProjectListPlan, ProjectPlan, TableScan};
+    use super::{PhysicalExpr, ProjectPlan, TableScan};
 
     struct SchemaViewer {
         schemas: Vec<Arc<TableSchema>>,
@@ -1154,6 +1174,10 @@ mod tests {
 
         fn schema_for_table(&self, table_id: TableId) -> Option<Arc<TableSchema>> {
             self.schemas.iter().find(|schema| schema.table_id == table_id).cloned()
+        }
+
+        fn rls_rules_for_table(&self, _: TableId) -> anyhow::Result<Vec<Box<str>>> {
+            Ok(vec![])
         }
     }
 
@@ -1208,6 +1232,11 @@ mod tests {
             None,
             primary_key.map(ColId::from),
         )
+    }
+
+    /// A wrapper around [spacetimedb_expr::check::parse_and_type_sub] that takes a dummy [AuthCtx]
+    fn parse_and_type_sub(sql: &str, tx: &impl SchemaView) -> TypingResult<ProjectName> {
+        spacetimedb_expr::check::parse_and_type_sub(sql, tx, &AuthCtx::for_testing()).map(|(plan, _)| plan)
     }
 
     /// No rewrites applied to a simple table scan
@@ -1923,7 +1952,7 @@ mod tests {
         };
 
         let compile = |sql| {
-            let stmt = parse_and_type_sql(sql, &db).unwrap();
+            let stmt = parse_and_type_sql(sql, &db, &AuthCtx::for_testing()).unwrap();
             let Statement::Select(select) = stmt else {
                 unreachable!()
             };
@@ -1932,26 +1961,35 @@ mod tests {
 
         let plan = compile("select * from t limit 5");
 
+        let ProjectListPlan::Name(mut plans) = plan else {
+            panic!("expected a qualified wildcard projection {{table_name}}.*")
+        };
+
+        assert_eq!(plans.len(), 1);
         assert!(matches!(
-            plan,
-            ProjectListPlan::Name(ProjectPlan::None(PhysicalPlan::TableScan(
-                TableScan { limit: Some(5), .. },
-                _
-            )))
+            plans.pop().unwrap(),
+            ProjectPlan::None(PhysicalPlan::TableScan(TableScan { limit: Some(5), .. }, _))
         ));
 
         let plan = compile("select * from t where x = 1 limit 5");
 
+        let ProjectListPlan::Name(mut plans) = plan else {
+            panic!("expected a qualified wildcard projection {{table_name}}.*")
+        };
+
+        assert_eq!(plans.len(), 1);
         assert!(matches!(
-            plan,
-            ProjectListPlan::Name(ProjectPlan::None(PhysicalPlan::IxScan(
-                IxScan { limit: Some(5), .. },
-                _
-            )))
+            plans.pop().unwrap(),
+            ProjectPlan::None(PhysicalPlan::IxScan(IxScan { limit: Some(5), .. }, _))
         ));
 
         let plan = compile("select * from t where y = 1 limit 5");
 
-        assert!(matches!(plan, ProjectListPlan::Limit(_, 5)) && plan.has_filter() && plan.has_table_scan(None));
+        let ProjectListPlan::Limit(plan, 5) = plan else {
+            panic!("expected an outer LIMIT")
+        };
+
+        assert!(plan.plan_iter().any(|plan| plan.has_filter()));
+        assert!(plan.plan_iter().any(|plan| plan.has_table_scan(None)));
     }
 }

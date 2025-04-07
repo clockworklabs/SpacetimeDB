@@ -39,7 +39,7 @@ impl Segment {
     /// Obtain mutable access to the underlying buffer.
     ///
     /// This is intended for tests which deliberately corrupt the segment data.
-    pub fn buf_mut(&mut self) -> RwLockWriteGuard<'_, Vec<u8>> {
+    pub fn buf_mut(&self) -> RwLockWriteGuard<'_, Vec<u8>> {
         self.buf.write().unwrap()
     }
 }
@@ -50,9 +50,9 @@ impl From<SharedBytes> for Segment {
     }
 }
 
-impl super::Segment for Segment {
+impl super::SegmentLen for Segment {
     fn segment_len(&mut self) -> io::Result<u64> {
-        Ok(Segment::len(self) as u64)
+        Ok(self.len() as u64)
     }
 }
 
@@ -121,6 +121,88 @@ impl io::Seek for Segment {
     }
 }
 
+#[cfg(feature = "streaming")]
+mod async_impls {
+    use super::*;
+
+    use std::{
+        io::{Seek as _, Write as _},
+        pin::Pin,
+        task::{Context, Poll},
+    };
+
+    use tokio::io::{self, AsyncRead, AsyncSeek, AsyncWrite, ReadBuf};
+
+    use crate::stream::{AsyncFsync, AsyncLen, AsyncRepo, IntoAsyncWriter};
+
+    impl AsyncRepo for Memory {
+        type AsyncSegmentWriter = io::BufWriter<Segment>;
+        type AsyncSegmentReader = io::BufReader<Segment>;
+
+        async fn open_segment_reader_async(&self, offset: u64) -> io::Result<Self::AsyncSegmentReader> {
+            self.open_segment_writer(offset).map(io::BufReader::new)
+        }
+    }
+
+    impl IntoAsyncWriter for Segment {
+        type AsyncWriter = tokio::io::BufWriter<Self>;
+
+        fn into_async_writer(self) -> Self::AsyncWriter {
+            tokio::io::BufWriter::new(self)
+        }
+    }
+
+    impl AsyncRead for Segment {
+        fn poll_read(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut ReadBuf<'_>) -> Poll<io::Result<()>> {
+            let this = self.get_mut();
+            let inner = this.buf.read().unwrap();
+            let pos = this.pos as usize;
+            if pos > inner.len() {
+                // Bad file descriptor
+                return Poll::Ready(Err(io::Error::from_raw_os_error(9)));
+            }
+            let filled = buf.filled().len();
+            AsyncRead::poll_read(Pin::new(&mut &inner[pos..]), cx, buf).map_ok(|()| {
+                this.pos += (buf.filled().len() - filled) as u64;
+            })
+        }
+    }
+
+    impl AsyncSeek for Segment {
+        fn start_seek(self: Pin<&mut Self>, position: io::SeekFrom) -> io::Result<()> {
+            self.get_mut().seek(position).map(drop)
+        }
+
+        fn poll_complete(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<u64>> {
+            Poll::Ready(self.get_mut().stream_position())
+        }
+    }
+
+    impl AsyncWrite for Segment {
+        fn poll_write(self: Pin<&mut Self>, _cx: &mut Context<'_>, buf: &[u8]) -> Poll<Result<usize, io::Error>> {
+            Poll::Ready(self.get_mut().write(buf))
+        }
+
+        fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
+            Poll::Ready(Ok(()))
+        }
+    }
+
+    impl AsyncFsync for Segment {
+        async fn fsync(&self) {}
+    }
+
+    impl AsyncLen for Segment {
+        async fn segment_len(&mut self) -> io::Result<u64> {
+            Ok(self.len() as u64)
+        }
+    }
+}
+
 /// In-memory implementation of [`Repo`].
 #[derive(Clone, Debug, Default)]
 pub struct Memory(SharedLock<BTreeMap<u64, SharedBytes>>);
@@ -132,9 +214,10 @@ impl Memory {
 }
 
 impl Repo for Memory {
-    type Segment = Segment;
+    type SegmentWriter = Segment;
+    type SegmentReader = io::BufReader<Segment>;
 
-    fn create_segment(&self, offset: u64) -> io::Result<Self::Segment> {
+    fn create_segment(&self, offset: u64) -> io::Result<Self::SegmentWriter> {
         let mut inner = self.0.write().unwrap();
         match inner.entry(offset) {
             btree_map::Entry::Occupied(entry) => {
@@ -156,7 +239,7 @@ impl Repo for Memory {
         }
     }
 
-    fn open_segment(&self, offset: u64) -> io::Result<Self::Segment> {
+    fn open_segment_writer(&self, offset: u64) -> io::Result<Self::SegmentWriter> {
         let inner = self.0.read().unwrap();
         let Some(buf) = inner.get(&offset) else {
             return Err(io::Error::new(
@@ -165,6 +248,10 @@ impl Repo for Memory {
             ));
         };
         Ok(Segment::from(Arc::clone(buf)))
+    }
+
+    fn open_segment_reader(&self, offset: u64) -> io::Result<Self::SegmentReader> {
+        self.open_segment_writer(offset).map(io::BufReader::new)
     }
 
     fn remove_segment(&self, offset: u64) -> io::Result<()> {
@@ -176,6 +263,10 @@ impl Repo for Memory {
             ));
         }
 
+        Ok(())
+    }
+
+    fn compress_segment(&self, _offset: u64) -> io::Result<()> {
         Ok(())
     }
 

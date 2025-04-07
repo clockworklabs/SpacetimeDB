@@ -15,14 +15,13 @@ use hashbrown::hash_map::OccupiedError;
 use hashbrown::{HashMap, HashSet};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use spacetimedb_client_api_messages::websocket::{
-    BsatnFormat, CompressableQueryUpdate, FormatSwitch, JsonFormat, QueryId, QueryUpdate, WebsocketFormat,
+    BsatnFormat, CompressableQueryUpdate, Compression, FormatSwitch, JsonFormat, QueryId, QueryUpdate, WebsocketFormat,
 };
 use spacetimedb_data_structures::map::{Entry, IntMap};
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::{ConnectionId, Identity};
 use spacetimedb_primitives::TableId;
 use spacetimedb_subscription::SubscriptionPlan;
-use std::ops::Deref;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -43,24 +42,45 @@ type SubscriptionId = (ClientId, ClientQueryId);
 pub struct Plan {
     hash: QueryHash,
     sql: String,
-    plan: SubscriptionPlan,
-}
-
-impl Deref for Plan {
-    type Target = SubscriptionPlan;
-
-    fn deref(&self) -> &Self::Target {
-        &self.plan
-    }
+    plans: Vec<SubscriptionPlan>,
 }
 
 impl Plan {
-    pub fn new(plan: SubscriptionPlan, hash: QueryHash, text: String) -> Self {
-        Self { plan, hash, sql: text }
+    /// Create a new subscription plan to be cached
+    pub fn new(plans: Vec<SubscriptionPlan>, hash: QueryHash, text: String) -> Self {
+        Self { plans, hash, sql: text }
     }
 
+    /// Returns the query hash for this subscription
     pub fn hash(&self) -> QueryHash {
         self.hash
+    }
+
+    /// A subscription query return rows from a single table.
+    /// This method returns the id of that table.
+    pub fn subscribed_table_id(&self) -> TableId {
+        self.plans[0].subscribed_table_id()
+    }
+
+    /// A subscription query return rows from a single table.
+    /// This method returns the name of that table.
+    pub fn subscribed_table_name(&self) -> &str {
+        self.plans[0].subscribed_table_name()
+    }
+
+    /// Returns the table ids from which this subscription reads
+    pub fn table_ids(&self) -> impl Iterator<Item = TableId> + '_ {
+        self.plans
+            .iter()
+            .flat_map(|plan| plan.table_ids())
+            .collect::<HashSet<_>>()
+            .into_iter()
+    }
+
+    /// Returns the plan fragments that comprise this subscription.
+    /// Will only return one element unless there is a table with multiple RLS rules.
+    pub fn plans_fragments(&self) -> impl Iterator<Item = &SubscriptionPlan> + '_ {
+        self.plans.iter()
     }
 }
 
@@ -474,24 +494,26 @@ impl SubscriptionManager {
                 .flatten()
                 .collect::<HashSet<_>>()
                 .par_iter()
-                .filter_map(|&hash| {
-                    self.queries
-                        .get(hash)
-                        .map(|state| (hash, &state.query, ExecutionMetrics::default()))
+                .filter_map(|&hash| self.queries.get(hash).map(|state| (hash, &state.query)))
+                .flat_map_iter(|(hash, plan)| {
+                    plan.plans_fragments()
+                        .map(move |plan_fragment| (&plan.sql, hash, plan_fragment, ExecutionMetrics::default()))
                 })
                 // If N clients are subscribed to a query,
                 // we copy the DatabaseTableUpdate N times,
                 // which involves cloning BSATN (binary) or product values (json).
-                .map(|(hash, plan, mut metrics)| {
+                .map(|(sql, hash, plan, mut metrics)| {
                     let table_id = plan.subscribed_table_id();
                     let table_name: Box<str> = plan.subscribed_table_name().into();
-                    // Store at most one copy of the serialization to BSATN
+                    // Store at most one copy of the serialization to BSATN x Compression
                     // and ditto for the "serialization" for JSON.
                     // Each subscriber gets to pick which of these they want,
-                    // but we only fill `ops_bin` and `ops_json` at most once.
+                    // but we only fill `ops_bin_{compression}` and `ops_json` at most once.
                     // The former will be `Some(_)` if some subscriber uses `Protocol::Binary`
                     // and the latter `Some(_)` if some subscriber uses `Protocol::Text`.
-                    let mut ops_bin: Option<(CompressableQueryUpdate<BsatnFormat>, _, _)> = None;
+                    let mut ops_bin_brotli: Option<(CompressableQueryUpdate<BsatnFormat>, _, _)> = None;
+                    let mut ops_bin_gzip: Option<(CompressableQueryUpdate<BsatnFormat>, _, _)> = None;
+                    let mut ops_bin_none: Option<(CompressableQueryUpdate<BsatnFormat>, _, _)> = None;
                     let mut ops_json: Option<(QueryUpdate<JsonFormat>, _, _)> = None;
 
                     fn memo_encode<F: WebsocketFormat>(
@@ -522,7 +544,7 @@ impl SubscriptionManager {
                         .map_err(|err| {
                             tracing::error!(
                                 message = "Query errored during tx update",
-                                sql = plan.sql,
+                                sql = sql,
                                 reason = ?err,
                             );
                             self.clients_for_query(hash)
@@ -537,7 +559,11 @@ impl SubscriptionManager {
                                         Protocol::Binary => Bsatn(memo_encode::<BsatnFormat>(
                                             &delta_updates,
                                             client,
-                                            &mut ops_bin,
+                                            match client.config.compression {
+                                                Compression::Brotli => &mut ops_bin_brotli,
+                                                Compression::Gzip => &mut ops_bin_gzip,
+                                                Compression::None => &mut ops_bin_none,
+                                            },
                                             &mut metrics,
                                         )),
                                         Protocol::Text => Json(memo_encode::<JsonFormat>(
@@ -721,9 +747,9 @@ mod tests {
         db.with_read_only(Workload::ForTests, |tx| {
             let auth = AuthCtx::for_testing();
             let tx = SchemaViewer::new(&*tx, &auth);
-            let hash = QueryHash::from_string(sql);
-            let plan = SubscriptionPlan::compile(sql, &tx).unwrap();
-            Ok(Arc::new(Plan::new(plan, hash, sql.into())))
+            let (plans, has_param) = SubscriptionPlan::compile(sql, &tx, &auth).unwrap();
+            let hash = QueryHash::from_string(sql, auth.caller, has_param);
+            Ok(Arc::new(Plan::new(plans, hash, sql.into())))
         })
     }
 

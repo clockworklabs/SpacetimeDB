@@ -23,6 +23,7 @@ use spacetimedb_sql_parser::ast::{self, BinOp, ProjectElem, SqlExpr, SqlIdent, S
 pub mod check;
 pub mod errors;
 pub mod expr;
+pub mod rls;
 pub mod statement;
 
 /// Type check and lower a [SqlExpr]
@@ -50,12 +51,14 @@ pub(crate) fn type_limit(input: ProjectList, limit: &str) -> TypingResult<Projec
 pub(crate) fn type_proj(input: RelExpr, proj: ast::Project, vars: &Relvars) -> TypingResult<ProjectList> {
     match proj {
         ast::Project::Star(None) if input.nfields() > 1 => Err(InvalidWildcard::Join.into()),
-        ast::Project::Star(None) => Ok(ProjectList::Name(ProjectName::None(input))),
+        ast::Project::Star(None) => Ok(ProjectList::Name(vec![ProjectName::None(input)])),
         ast::Project::Star(Some(SqlIdent(var))) if input.has_field(&var) => {
-            Ok(ProjectList::Name(ProjectName::Some(input, var)))
+            Ok(ProjectList::Name(vec![ProjectName::Some(input, var)]))
         }
         ast::Project::Star(Some(SqlIdent(var))) => Err(Unresolved::var(&var).into()),
-        ast::Project::Count(SqlIdent(alias)) => Ok(ProjectList::Agg(input, AggType::Count, alias, AlgebraicType::U64)),
+        ast::Project::Count(SqlIdent(alias)) => {
+            Ok(ProjectList::Agg(vec![input], AggType::Count, alias, AlgebraicType::U64))
+        }
         ast::Project::Exprs(elems) => {
             let mut projections = vec![];
             let mut names = HashSet::new();
@@ -70,7 +73,7 @@ pub(crate) fn type_proj(input: RelExpr, proj: ast::Project, vars: &Relvars) -> T
                 }
             }
 
-            Ok(ProjectList::List(input, projections))
+            Ok(ProjectList::List(vec![input], projections))
         }
     }
 }
@@ -129,7 +132,9 @@ pub(crate) fn type_expr(vars: &Relvars, expr: SqlExpr, expected: Option<&Algebra
             }
         },
         (SqlExpr::Bin(..) | SqlExpr::Log(..), Some(ty)) => Err(UnexpectedType::new(&AlgebraicType::Bool, ty).into()),
-        (SqlExpr::Var(_), _) => unreachable!(),
+        // Both unqualified names as well as parameters are syntactic constructs.
+        // Unqualified names are qualified and parameters are resolved before type checking.
+        (SqlExpr::Var(_) | SqlExpr::Param(_), _) => unreachable!(),
     }
 }
 
@@ -191,7 +196,7 @@ where
 /// Parses a source text literal as a particular type
 pub(crate) fn parse(value: &str, ty: &AlgebraicType) -> anyhow::Result<AlgebraicValue> {
     let to_timestamp = || {
-        Timestamp::parse_from_str(value)?
+        Timestamp::parse_from_rfc3339(value)?
             .serialize(ValueSerializer)
             .with_context(|| "Could not parse timestamp")
     };

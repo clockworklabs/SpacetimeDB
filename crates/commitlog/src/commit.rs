@@ -7,8 +7,10 @@ use crc32c::{Crc32cReader, Crc32cWriter};
 use spacetimedb_sats::buffer::{BufReader, Cursor, DecodeError};
 
 use crate::{
-    error::ChecksumMismatch, payload::Decoder, segment::CHECKSUM_ALGORITHM_CRC32C, Transaction,
-    DEFAULT_LOG_FORMAT_VERSION,
+    error::ChecksumMismatch,
+    payload::Decoder,
+    segment::{CHECKSUM_ALGORITHM_CRC32C, CHECKSUM_CRC32C_LEN},
+    Transaction, DEFAULT_LOG_FORMAT_VERSION,
 };
 
 #[derive(Default)]
@@ -109,6 +111,7 @@ impl Header {
 
 /// Entry type of a [`crate::Commitlog`].
 #[derive(Clone, Debug, Default, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Commit {
     /// The offset of the first record in this commit.
     ///
@@ -139,8 +142,9 @@ pub struct Commit {
 impl Commit {
     pub const DEFAULT_EPOCH: u64 = 0;
 
-    pub const FRAMING_LEN: usize = Header::LEN + /* crc32 */ 4;
+    pub const FRAMING_LEN: usize = Header::LEN + Self::CHECKSUM_LEN;
     pub const CHECKSUM_ALGORITHM: u8 = CHECKSUM_ALGORITHM_CRC32C;
+    pub const CHECKSUM_LEN: usize = CHECKSUM_CRC32C_LEN;
 
     /// The range of transaction offsets contained in this commit.
     pub fn tx_range(&self) -> Range<u64> {

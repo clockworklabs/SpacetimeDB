@@ -726,12 +726,6 @@ pub(super) fn record_tx_metrics(
             }
         }
     }
-
-    if let Some(committed_state) = committed_state {
-        // TODO(cleanliness,bikeshedding): Consider inlining `report_data_size` here,
-        // or moving the above metric writes into it, for consistency of organization.
-        committed_state.report_data_size(*db);
-    }
 }
 
 impl MutTx for Locking {

@@ -1739,6 +1739,37 @@ public static partial class Module
         ctx.Db.pk_connection_id.Insert(new PkConnectionId { a = (ConnectionId)ctx.ConnectionId!, data = data });
     }
 
+    [SpacetimeDB.Reducer]
+    public static void insert_into_btree_u32(ReducerContext ctx, List<BTreeU32> rows)
+    {
+        foreach (var row in rows)
+        {
+            ctx.Db.btree_u32.Insert(row);
+        }
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void delete_from_btree_u32(ReducerContext ctx, List<BTreeU32> rows)
+    {
+        foreach (var row in rows)
+        {
+            ctx.Db.btree_u32.Delete(row);
+        }
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void insert_into_pk_btree_u32(ReducerContext ctx, List<PkU32> pk_u32, List<BTreeU32> bt_u32)
+    {
+        foreach (var row in pk_u32)
+        {
+            ctx.Db.pk_u32.Insert(row);
+        }
+        foreach (var row in bt_u32)
+        {
+            ctx.Db.btree_u32.Insert(row);
+        }
+    }
+
     [SpacetimeDB.Table(Name = "large_table", Public = true)]
     public partial struct LargeTable
     {
@@ -1886,7 +1917,17 @@ public static partial class Module
             {
                 s = typeof(EveryPrimitiveStruct)
                     .GetFields()
-                    .Select(f => f.GetValue(s)!.ToString()!.ToLowerInvariant())
+                    .Select(f =>
+                    {
+                        var value = f.GetValue(s)!;
+                        // To match Rust `false` output
+                        if (f.FieldType == typeof(bool))
+                        {
+                            return value.ToString()!.ToLowerInvariant();
+                        }
+                        return value.ToString()!;
+
+                    })
                     .ToList(),
             }
         );
@@ -1913,6 +1954,9 @@ public static partial class Module
 
     [SpacetimeDB.Reducer]
     public static void no_op_succeeds(ReducerContext ctx) { }
+
+    [SpacetimeDB.ClientVisibilityFilter]
+    public static readonly Filter ONE_U8_VISIBLE = new Filter.Sql("SELECT * FROM one_u8");
 
     [SpacetimeDB.Table(
         Name = "scheduled_table",
@@ -1953,5 +1997,30 @@ public static partial class Module
     {
         uint player_id;
         float player_snazz;
+    }
+
+    [SpacetimeDB.Table(Name = "btree_u32", Public = true)]
+    public partial struct BTreeU32
+    {
+        [SpacetimeDB.Index.BTree]
+        uint n;
+        int data;
+    }
+
+    [SpacetimeDB.ClientVisibilityFilter]
+    public static readonly Filter USERS_FILTER = new Filter.Sql("SELECT * FROM users WHERE identity = :sender");
+
+    [SpacetimeDB.Table(Name = "users", Public = true)]
+    public partial struct Users
+    {
+        [PrimaryKey]
+        public Identity identity;
+        public string name;
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void insert_user(ReducerContext ctx, string name, Identity identity)
+    {
+        ctx.Db.users.Insert(new Users { name = name, identity = identity });
     }
 }

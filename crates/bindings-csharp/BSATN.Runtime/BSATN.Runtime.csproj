@@ -2,9 +2,10 @@
 
   <PropertyGroup>
     <AssemblyName>SpacetimeDB.BSATN.Runtime</AssemblyName>
-    <Version>1.0.0</Version>
+    <Version>1.1.0</Version>
     <Title>SpacetimeDB BSATN Runtime</Title>
     <Description>The SpacetimeDB BSATN Runtime implements APIs for BSATN serialization/deserialization in C#.</Description>
+    <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
   </PropertyGroup>
 
   <PropertyGroup>

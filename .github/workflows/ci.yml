@@ -60,7 +60,8 @@ jobs:
         with: { python-version: '3.12' }
         if: runner.os == 'Windows'
       - name: Run smoketests
-        run: python -m smoketests ${{ matrix.smoketest_args }}
+        # Note: clear_database only works in private
+        run: python -m smoketests ${{ matrix.smoketest_args }} -x clear_database
       - name: Stop containers (Linux)
         if: always() && runner.os == 'Linux'
         run: docker compose down
@@ -99,6 +100,9 @@ jobs:
 
       - name: Run cargo test
         run: cargo test --all
+
+      - name: Check that the test outputs are up-to-date
+        run: git diff --exit-code
 
       - name: Ensure C# autogen bindings are up-to-date
         run: |
@@ -152,6 +156,10 @@ jobs:
         working-directory: spacetimedb-csharp-sdk
         run: |
           dotnet pack ../crates/bindings-csharp/BSATN.Runtime
+          # The SDK package overrides the following crate for use in their tests.
+          # Even though it doesn't actually depend on it, we still need to pack it
+          # so dotnet doesn't complain.
+          dotnet pack ../crates/bindings-csharp/Runtime
           ./tools~/write-nuget-config.sh ..
 
           # clear package caches, so we get fresh ones even if version numbers haven't changed
@@ -182,6 +190,19 @@ jobs:
         run: |
           dotnet tool restore
           dotnet csharpier --check .
+
+      - name: Run `cargo doc` for bindings crate
+        # `bindings` is the only crate we care strongly about documenting,
+        # since we link to its docs.rs from our website.
+        # We won't pass `--no-deps`, though,
+        # since we want everything reachable through it to also work.
+        # This includes `sats` and `lib`.
+        working-directory: crates/bindings
+        env:
+          # Make `cargo doc` exit with error on warnings, most notably broken links
+          RUSTDOCFLAGS: '--deny warnings'
+        run: |
+          cargo doc
 
   wasm_bindings:
     name: Build and test wasm bindings

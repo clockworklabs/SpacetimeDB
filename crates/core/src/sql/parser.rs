@@ -18,7 +18,7 @@ impl RowLevelExpr {
         auth_ctx: &AuthCtx,
         rls: &RawRowLevelSecurityDefV9,
     ) -> Result<Self, TypingError> {
-        let sql = parse_and_type_sub(&rls.sql, &SchemaViewer::new(tx, auth_ctx))?;
+        let (sql, _) = parse_and_type_sub(&rls.sql, &SchemaViewer::new(tx, auth_ctx), auth_ctx)?;
 
         Ok(Self {
             def: RowLevelSecuritySchema {

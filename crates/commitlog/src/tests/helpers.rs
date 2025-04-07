@@ -1,5 +1,7 @@
 use std::fmt::Debug;
 
+use env_logger::Env;
+
 use crate::{
     commitlog,
     repo::{self, Repo},
@@ -53,8 +55,7 @@ where
 }
 
 pub fn enable_logging() {
-    let _ = env_logger::builder()
-        .filter_level(log::LevelFilter::Trace)
+    let _ = env_logger::Builder::from_env(Env::default().default_filter_or("trace"))
         .format_timestamp(None)
         .is_test(true)
         .try_init();

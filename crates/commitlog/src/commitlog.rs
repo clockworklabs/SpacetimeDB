@@ -9,7 +9,7 @@ use crate::{
     payload::Decoder,
     repo::{self, Repo},
     segment::{self, FileLike, Transaction, Writer},
-    Commit, Encode, Options,
+    Commit, Encode, Options, DEFAULT_LOG_FORMAT_VERSION,
 };
 
 pub use crate::segment::Committed;
@@ -24,7 +24,7 @@ pub struct Generic<R: Repo, T> {
     ///
     /// If we squint, all segments in a log are a non-empty linked list, the
     /// head of which is the segment open for writing.
-    pub(crate) head: Writer<R::Segment>,
+    pub(crate) head: Writer<R::SegmentWriter>,
     /// The tail of the non-empty list of segments.
     ///
     /// We only retain the min transaction offset of each, from which the
@@ -240,43 +240,7 @@ impl<R: Repo, T> Generic<R, T> {
         self.panicked = true;
         self.tail.reserve(1);
         self.tail.push(self.head.min_tx_offset);
-        for segment in self.tail.iter().rev() {
-            let segment = *segment;
-            if segment > offset {
-                // Segment is outside the offset, so remove it wholesale.
-                debug!("removing segment {segment}");
-                self.repo.remove_segment(segment)?;
-            } else {
-                // Read commit-wise until we find the byte offset.
-                let reader = repo::open_segment_reader(&self.repo, self.opts.log_format_version, segment)?;
-                let commits = reader.commits();
-
-                let mut bytes_read = 0;
-                for commit in commits {
-                    let commit = commit?;
-                    if commit.min_tx_offset > offset {
-                        break;
-                    }
-                    bytes_read += Commit::from(commit).encoded_len() as u64;
-                }
-
-                if bytes_read == 0 {
-                    // Segment is empty, just remove it.
-                    self.repo.remove_segment(segment)?;
-                } else {
-                    let byte_offset = segment::Header::LEN as u64 + bytes_read;
-                    debug!("truncating segment {segment} to {offset} at {byte_offset}");
-                    let mut file = self.repo.open_segment(segment)?;
-                    // Note: The offset index truncates equal or greater,
-                    // inclusive. We'd like to retain `offset` in the index, as
-                    // the commit is also retained in the log.
-                    file.ftruncate(offset + 1, byte_offset)?;
-                    // Some filesystems require fsync after ftruncate.
-                    file.fsync()?;
-                    break;
-                }
-            }
-        }
+        reset_to_internal(&self.repo, &self.tail, offset)?;
         // Prevent finalizer from running by not updating self.panicked.
 
         Self::open(self.repo.clone(), self.opts)
@@ -288,7 +252,7 @@ impl<R: Repo, T> Generic<R, T> {
     /// appropriate. It is not appropriate to sync after a write error, as that
     /// is likely to return an error as well: the `Commit` will be written to
     /// the new segment anyway.
-    fn start_new_segment(&mut self) -> io::Result<&mut Writer<R::Segment>> {
+    fn start_new_segment(&mut self) -> io::Result<&mut Writer<R::SegmentWriter>> {
         debug!(
             "starting new segment offset={} prev-offset={}",
             self.head.next_tx_offset(),
@@ -339,6 +303,37 @@ impl<R: Repo, T> Drop for Generic<R, T> {
             }
         }
     }
+}
+
+/// Extract the most recently written [`segment::Metadata`] from the commitlog
+/// in `repo`.
+///
+/// Returns `None` if the commitlog is empty.
+///
+/// Note that this function validates the most recent segment, which entails
+/// traversing it from the start.
+///
+/// The function can be used instead of the pattern:
+///
+/// ```ignore
+/// let log = Commitlog::open(..)?;
+/// let max_offset = log.max_committed_offset();
+/// ```
+///
+/// like so:
+///
+/// ```ignore
+/// let max_offset = committed_meta(..)?.map(|meta| meta.tx_range.end);
+/// ```
+///
+/// Unlike `open`, no segment will be created in an empty `repo`.
+pub fn committed_meta(repo: impl Repo) -> Result<Option<segment::Metadata>, error::SegmentMetadata> {
+    let Some(last) = repo.existing_offsets()?.pop() else {
+        return Ok(None);
+    };
+
+    let mut storage = repo.open_segment_reader(last)?;
+    segment::Metadata::extract(last, &mut storage).map(Some)
 }
 
 pub fn commits_from<R: Repo>(repo: R, max_log_format_version: u8, offset: u64) -> io::Result<Commits<R>> {
@@ -446,6 +441,62 @@ where
     Ok(())
 }
 
+/// Remove all data past the given transaction `offset`.
+///
+/// The function deletes log segments starting from the newest. As multiple
+/// segments cannot be deleted atomically, the log may be left longer than
+/// `offset` if the function does not return successfully.
+///
+/// If the function returns successfully, the most recent [`Commit`] in the
+/// log will contain the transaction at `offset`.
+///
+/// The log must be re-opened if it is to be used after calling this function.
+pub fn reset_to(repo: &impl Repo, offset: u64) -> io::Result<()> {
+    let segments = repo.existing_offsets()?;
+    reset_to_internal(repo, &segments, offset)
+}
+
+fn reset_to_internal(repo: &impl Repo, segments: &[u64], offset: u64) -> io::Result<()> {
+    for segment in segments.iter().copied().rev() {
+        if segment > offset {
+            // Segment is outside the offset, so remove it wholesale.
+            debug!("removing segment {segment}");
+            repo.remove_segment(segment)?;
+        } else {
+            // Read commit-wise until we find the byte offset.
+            let reader = repo::open_segment_reader(repo, DEFAULT_LOG_FORMAT_VERSION, segment)?;
+            let commits = reader.commits();
+
+            let mut bytes_read = 0;
+            for commit in commits {
+                let commit = commit?;
+                if commit.min_tx_offset > offset {
+                    break;
+                }
+                bytes_read += Commit::from(commit).encoded_len() as u64;
+            }
+
+            if bytes_read == 0 {
+                // Segment is empty, just remove it.
+                repo.remove_segment(segment)?;
+            } else {
+                let byte_offset = segment::Header::LEN as u64 + bytes_read;
+                debug!("truncating segment {segment} to {offset} at {byte_offset}");
+                let mut file = repo.open_segment_writer(segment)?;
+                // Note: The offset index truncates equal or greater,
+                // inclusive. We'd like to retain `offset` in the index, as
+                // the commit is also retained in the log.
+                file.ftruncate(offset + 1, byte_offset)?;
+                // Some filesystems require fsync after ftruncate.
+                file.fsync()?;
+                break;
+            }
+        }
+    }
+
+    Ok(())
+}
+
 pub struct Segments<R> {
     repo: R,
     offs: vec::IntoIter<u64>,
@@ -453,7 +504,7 @@ pub struct Segments<R> {
 }
 
 impl<R: Repo> Iterator for Segments<R> {
-    type Item = io::Result<segment::Reader<R::Segment>>;
+    type Item = io::Result<segment::Reader<R::SegmentReader>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let off = self.offs.next()?;
@@ -528,7 +579,7 @@ impl CommitInfo {
 }
 
 pub struct Commits<R: Repo> {
-    inner: Option<segment::Commits<R::Segment>>,
+    inner: Option<segment::Commits<R::SegmentReader>>,
     segments: Segments<R>,
     last_commit: CommitInfo,
     last_error: Option<error::Traversal>,
@@ -637,7 +688,7 @@ impl<R: Repo> Commits<R> {
 
     /// If we're still looking for the initial commit, try to use the offset
     /// index to advance the segment reader.
-    fn try_seek_to_initial_offset(&self, segment: &mut segment::Reader<R::Segment>) {
+    fn try_seek_to_initial_offset(&self, segment: &mut segment::Reader<R::SegmentReader>) {
         if let CommitInfo::Initial { next_offset } = &self.last_commit {
             let _ = self
                 .segments

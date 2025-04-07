@@ -9,26 +9,38 @@ description = "Implementation of the SpacetimeDB commitlog."
 
 [features]
 default = ["serde"]
+streaming = ["dep:async-stream", "dep:bytes", "dep:futures", "dep:tokio", "dep:tokio-util"]
 # Enable types + impls useful for testing
 test = ["dep:env_logger"]
 
 [dependencies]
+async-stream = { workspace = true, optional = true }
 bitflags.workspace = true
+bytes= { workspace = true, optional = true }
 crc32c.workspace = true
+futures = { workspace = true, optional = true}
 itertools.workspace = true
 log.workspace = true
 memmap2 = "0.9.4"
 serde = { workspace = true, optional = true }
-spacetimedb-primitives.workspace = true
+spacetimedb-fs-utils.workspace = true
 spacetimedb-paths.workspace = true
+spacetimedb-primitives.workspace = true
 spacetimedb-sats.workspace = true
 tempfile.workspace = true
 thiserror.workspace = true
+tokio = { workspace = true, optional = true }
+tokio-util = { workspace = true, optional = true, features = ["io-util"] }
+zstd-framed.workspace = true
 
 # For the 'test' feature
 env_logger = { workspace = true, optional = true }
 
 [dev-dependencies]
+# Enable streaming in tests
+# Also enable 'test' feature, so integration tests can use the helpers.
+spacetimedb-commitlog = { path = ".", features = ["test", "streaming"] }
+
 env_logger.workspace = true
 once_cell.workspace = true
 pretty_assertions = { workspace = true, features = ["unstable"] }
@@ -36,3 +48,4 @@ proptest-derive.workspace = true
 proptest.workspace = true
 rand.workspace = true
 tempfile.workspace = true
+tokio-stream = { version = "0.1.17", features = ["fs"] }

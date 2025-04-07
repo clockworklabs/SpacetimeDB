@@ -31,6 +31,13 @@ impl WasmtimeRuntime {
             .consume_fuel(true)
             .wasm_backtrace_details(wasmtime::WasmBacktraceDetails::Enable);
 
+        // Offer a compile-time flag for enabling perfmap generation,
+        // so `perf` can display JITted symbol names.
+        // Ideally we would be able to configure this at runtime via a flag to `spacetime start`,
+        // but this is good enough for now.
+        #[cfg(feature = "perfmap")]
+        config.profiler(wasmtime::ProfilingStrategy::PerfMap);
+
         // ignore errors for this - if we're not able to set up caching, that's fine, it's just an optimization
         let _ = Self::set_cache_config(&mut config, data_dir.wasmtime_cache());
 

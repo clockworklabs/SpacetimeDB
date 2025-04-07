@@ -1,7 +1,7 @@
 use anyhow::{bail, Result};
 use spacetimedb_execution::{pipelined::PipelinedProject, Datastore, DeltaStore, Row};
 use spacetimedb_expr::check::SchemaView;
-use spacetimedb_lib::{metrics::ExecutionMetrics, query::Delta};
+use spacetimedb_lib::{identity::AuthCtx, metrics::ExecutionMetrics, query::Delta};
 use spacetimedb_physical_plan::plan::{HashJoin, IxJoin, Label, PhysicalPlan, ProjectPlan, TableScan};
 use spacetimedb_primitives::TableId;
 use spacetimedb_query::compile_subscription;
@@ -279,56 +279,71 @@ impl SubscriptionPlan {
     }
 
     /// Generate a plan for incrementally maintaining a subscription
-    pub fn compile(sql: &str, tx: &impl SchemaView) -> Result<Self> {
-        let (plan, return_id, return_name) = compile_subscription(sql, tx)?;
+    pub fn compile(sql: &str, tx: &impl SchemaView, auth: &AuthCtx) -> Result<(Vec<Self>, bool)> {
+        let (plans, return_id, return_name, has_param) = compile_subscription(sql, tx, auth)?;
 
-        let mut ix_joins = true;
-        plan.visit(&mut |plan| match plan {
-            PhysicalPlan::IxJoin(IxJoin { lhs_field, .. }, _) => {
-                ix_joins = ix_joins && plan.index_on_field(&lhs_field.label, lhs_field.field_pos);
-            }
-            PhysicalPlan::HashJoin(
-                HashJoin {
-                    lhs_field, rhs_field, ..
-                },
-                _,
-            ) => {
-                ix_joins = ix_joins && plan.index_on_field(&lhs_field.label, lhs_field.field_pos);
-                ix_joins = ix_joins && plan.index_on_field(&rhs_field.label, rhs_field.field_pos);
-            }
-            _ => {}
-        });
-
-        if !ix_joins {
-            bail!("Subscriptions require indexes on join columns")
+        /// Does this plan have any non-index joins?
+        fn has_non_index_join(plan: &PhysicalPlan) -> bool {
+            let mut ix_joins = true;
+            plan.visit(&mut |plan| match plan {
+                PhysicalPlan::IxJoin(IxJoin { lhs_field, .. }, _) => {
+                    ix_joins = ix_joins && plan.index_on_field(&lhs_field.label, lhs_field.field_pos);
+                }
+                PhysicalPlan::HashJoin(
+                    HashJoin {
+                        lhs_field, rhs_field, ..
+                    },
+                    _,
+                ) => {
+                    ix_joins = ix_joins && plan.index_on_field(&lhs_field.label, lhs_field.field_pos);
+                    ix_joins = ix_joins && plan.index_on_field(&rhs_field.label, rhs_field.field_pos);
+                }
+                _ => {}
+            });
+            !ix_joins
         }
 
-        let mut table_aliases = vec![];
-        let mut table_ids = vec![];
+        /// What tables are involved in this plan?
+        fn table_ids_for_plan(plan: &PhysicalPlan) -> (Vec<TableId>, Vec<Label>) {
+            let mut table_aliases = vec![];
+            let mut table_ids = vec![];
+            plan.visit(&mut |plan| {
+                if let PhysicalPlan::TableScan(
+                    TableScan {
+                        schema,
+                        limit: None,
+                        delta: None,
+                    },
+                    alias,
+                ) = plan
+                {
+                    table_aliases.push(*alias);
+                    table_ids.push(schema.table_id);
+                }
+            });
+            (table_ids, table_aliases)
+        }
 
-        plan.visit(&mut |plan| {
-            if let PhysicalPlan::TableScan(
-                TableScan {
-                    schema,
-                    limit: None,
-                    delta: None,
-                },
-                alias,
-            ) = plan
-            {
-                table_aliases.push(*alias);
-                table_ids.push(schema.table_id);
+        let mut subscriptions = vec![];
+
+        for plan in plans {
+            if has_non_index_join(&plan) {
+                bail!("Subscriptions require indexes on join columns")
             }
-        });
 
-        let fragments = Fragments::compile_from_plan(&plan, &table_aliases)?;
+            let (table_ids, table_aliases) = table_ids_for_plan(&plan);
 
-        Ok(Self {
-            return_id,
-            return_name,
-            table_ids,
-            plan,
-            fragments,
-        })
+            let fragments = Fragments::compile_from_plan(&plan, &table_aliases)?;
+
+            subscriptions.push(Self {
+                return_id,
+                return_name: return_name.clone(),
+                table_ids,
+                plan,
+                fragments,
+            });
+        }
+
+        Ok((subscriptions, has_param))
     }
 }

@@ -15,6 +15,10 @@ proc-macro = false     # Set to `true` for a proc-macro library.
 harness = true         # Use libtest harness.
 required-features = [] # Features required to build this target (N/A for lib)
 
+[features]
+# Perfmaps for profiling modules
+perfmap = ["spacetimedb-core/perfmap"]
+
 [dependencies]
 spacetimedb-client-api-messages.workspace = true
 spacetimedb-client-api.workspace = true
@@ -42,6 +46,10 @@ tokio.workspace = true
 tower-http.workspace = true
 toml.workspace = true
 tracing = { workspace = true, features = ["release_max_level_debug"] }
+
+[target.'cfg(not(target_env = "msvc"))'.dependencies]
+tikv-jemallocator = {workspace = true}
+tikv-jemalloc-ctl = {workspace = true}
 
 [dev-dependencies]
 once_cell.workspace = true

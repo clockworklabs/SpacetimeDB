@@ -4,7 +4,9 @@
 
 partial class Timers
 {
-    partial struct SendMessageTimer : SpacetimeDB.BSATN.IStructuralReadWrite
+    partial struct SendMessageTimer
+        : System.IEquatable<SendMessageTimer>,
+            SpacetimeDB.BSATN.IStructuralReadWrite
     {
         public void ReadFields(System.IO.BinaryReader reader)
         {
@@ -19,6 +21,9 @@ partial class Timers
             BSATN.ScheduledAt.Write(writer, ScheduledAt);
             BSATN.Text.Write(writer, Text);
         }
+
+        public override string ToString() =>
+            $"SendMessageTimer {{ ScheduledId = {SpacetimeDB.BSATN.StringUtil.GenericToString(ScheduledId)}, ScheduledAt = {SpacetimeDB.BSATN.StringUtil.GenericToString(ScheduledAt)}, Text = {SpacetimeDB.BSATN.StringUtil.GenericToString(Text)} }}";
 
         public readonly partial struct BSATN : SpacetimeDB.BSATN.IReadWrite<Timers.SendMessageTimer>
         {
@@ -52,5 +57,51 @@ partial class Timers
                 SpacetimeDB.BSATN.ITypeRegistrar registrar
             ) => GetAlgebraicType(registrar);
         }
+
+        public override int GetHashCode()
+        {
+            return ScheduledId.GetHashCode() ^ ScheduledAt.GetHashCode() ^ Text.GetHashCode();
+        }
+
+#nullable enable
+        public bool Equals(Timers.SendMessageTimer that)
+        {
+            return ScheduledId.Equals(that.ScheduledId)
+                && ScheduledAt.Equals(that.ScheduledAt)
+                && Text.Equals(that.Text);
+        }
+
+        public override bool Equals(object? that)
+        {
+            if (that == null)
+            {
+                return false;
+            }
+            var that_ = that as Timers.SendMessageTimer?;
+            if (((object?)that_) == null)
+            {
+                return false;
+            }
+            return Equals(that_);
+        }
+
+        public static bool operator ==(Timers.SendMessageTimer this_, Timers.SendMessageTimer that)
+        {
+            if (((object?)this_) == null || ((object?)that) == null)
+            {
+                return object.Equals(this_, that);
+            }
+            return this_.Equals(that);
+        }
+
+        public static bool operator !=(Timers.SendMessageTimer this_, Timers.SendMessageTimer that)
+        {
+            if (((object?)this_) == null || ((object?)that) == null)
+            {
+                return !object.Equals(this_, that);
+            }
+            return !this_.Equals(that);
+        }
+#nullable restore
     } // SendMessageTimer
 } // Timers

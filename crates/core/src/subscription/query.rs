@@ -79,10 +79,10 @@ pub fn compile_read_only_query(auth: &AuthCtx, tx: &Tx, input: &str) -> Result<P
     let input = WHITESPACE.replace_all(input, " ");
 
     let tx = SchemaViewer::new(tx, auth);
-    let plan = SubscriptionPlan::compile(&input, &tx)?;
-    let hash = QueryHash::from_string(&input);
+    let (plans, has_param) = SubscriptionPlan::compile(&input, &tx, auth)?;
+    let hash = QueryHash::from_string(&input, auth.caller, has_param);
 
-    Ok(Plan::new(plan, hash, input.into_owned()))
+    Ok(Plan::new(plans, hash, input.into_owned()))
 }
 
 /// The kind of [`QueryExpr`] currently supported for incremental evaluation.
@@ -118,10 +118,9 @@ mod tests {
     use crate::db::relational_db::tests_utils::{insert, TestDB};
     use crate::db::relational_db::MutTx;
     use crate::execution_context::Workload;
-    use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdate};
+    use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdate, UpdatesRelValue};
     use crate::sql::execute::collect_result;
     use crate::sql::execute::tests::run_for_testing;
-    use crate::subscription::delta::eval_delta;
     use crate::subscription::subscription::{legacy_get_all, ExecutionSet};
     use crate::subscription::tx::DeltaTx;
     use crate::vm::tests::create_table_with_rows;
@@ -143,6 +142,7 @@ mod tests {
     use spacetimedb_vm::expr::{Expr, SourceSet};
     use spacetimedb_vm::operator::OpCmp;
     use spacetimedb_vm::relation::{MemTable, RelValue};
+    use std::collections::HashMap;
     use std::sync::Arc;
 
     /// Runs a query that evaluates if the changes made should be reported to the [ModuleSubscriptionManager]
@@ -698,7 +698,12 @@ mod tests {
             let tx = SchemaViewer::new(tx, &auth);
             // Should be answered using an index semijion
             let sql = "select lhs.* from lhs join rhs on lhs.id = rhs.id where rhs.y >= 2 and rhs.y <= 4";
-            Ok(SubscriptionPlan::compile(sql, &tx).unwrap())
+            Ok(SubscriptionPlan::compile(sql, &tx, &auth)
+                .map(|(mut plans, _)| {
+                    assert_eq!(plans.len(), 1);
+                    plans.pop().unwrap()
+                })
+                .unwrap())
         })
     }
 
@@ -718,7 +723,12 @@ mod tests {
                 let tx = SchemaViewer::new(tx, &auth);
                 // Should be answered using an index semijion
                 let sql = "select lhs.* from lhs join rhs on lhs.id = rhs.id where lhs.x >= 5 and lhs.x <= 7";
-                Ok(SubscriptionPlan::compile(sql, &tx).unwrap())
+                Ok(SubscriptionPlan::compile(sql, &tx, &auth)
+                    .map(|(mut plans, _)| {
+                        assert_eq!(plans.len(), 1);
+                        plans.pop().unwrap()
+                    })
+                    .unwrap())
             })
         }
 
@@ -1023,7 +1033,59 @@ mod tests {
         let table_id = plan.subscribed_table_id();
         let table_name = plan.subscribed_table_name().into();
         let tx = DeltaTx::new(&tx, &data);
-        let updates = eval_delta(&tx, metrics, plan).unwrap();
+
+        // IMPORTANT: FOR TESTING ONLY!
+        //
+        // This utility implements set semantics for incremental updates.
+        // This is safe because we are only testing PK/FK joins,
+        // and we don't have to track row multiplicities for PK/FK joins.
+        // But in general we must assume bag semantics for server side tests.
+        let mut eval_delta = || {
+            // Note, we can't determine apriori what capacity to allocate
+            let mut inserts = HashMap::new();
+            let mut deletes = vec![];
+
+            plan.for_each_insert(&tx, metrics, &mut |row| {
+                inserts
+                    .entry(RelValue::from(row))
+                    // Row already inserted?
+                    // Increment its multiplicity.
+                    .and_modify(|n| *n += 1)
+                    .or_insert(1);
+                Ok(())
+            })
+            .unwrap();
+
+            plan.for_each_delete(&tx, metrics, &mut |row| {
+                let row = RelValue::from(row);
+                match inserts.get_mut(&row) {
+                    // This row was not inserted.
+                    // Add it to the delete set.
+                    None => {
+                        deletes.push(row);
+                    }
+                    // This row was inserted.
+                    // Decrement the multiplicity.
+                    Some(1) => {
+                        inserts.remove(&row);
+                    }
+                    // This row was inserted.
+                    // Decrement the multiplicity.
+                    Some(n) => {
+                        *n -= 1;
+                    }
+                }
+                Ok(())
+            })
+            .unwrap();
+
+            UpdatesRelValue {
+                inserts: inserts.into_keys().collect(),
+                deletes,
+            }
+        };
+
+        let updates = eval_delta();
 
         let inserts = updates
             .inserts

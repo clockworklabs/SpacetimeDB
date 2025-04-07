@@ -151,6 +151,7 @@ pub async fn exec_init_rust(args: &ArgMatches) -> Result<(), anyhow::Error> {
         (include_str!("project/rust/Cargo._toml"), "Cargo.toml"),
         (include_str!("project/rust/lib._rs"), "src/lib.rs"),
         (include_str!("project/rust/_gitignore"), ".gitignore"),
+        (include_str!("project/rust/config._toml"), ".cargo/config.toml"),
     ];
 
     for data_file in export_files {
