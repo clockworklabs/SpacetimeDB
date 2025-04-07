@@ -295,28 +295,28 @@ namespace SpacetimeDB
             {
                 public IEnumerable<global::TestIndexIssues> Filter(int SelfIndexingColumn) =>
                     DoFilter(
-                        new SpacetimeDB.Internal.BTreeIndexBounds<int, SpacetimeDB.BSATN.I32>(
+                        new SpacetimeDB.Internal.IndexScanRangeBounds<int, SpacetimeDB.BSATN.I32>(
                             SelfIndexingColumn
                         )
                     );
 
                 public ulong Delete(int SelfIndexingColumn) =>
                     DoDelete(
-                        new SpacetimeDB.Internal.BTreeIndexBounds<int, SpacetimeDB.BSATN.I32>(
+                        new SpacetimeDB.Internal.IndexScanRangeBounds<int, SpacetimeDB.BSATN.I32>(
                             SelfIndexingColumn
                         )
                     );
 
                 public IEnumerable<global::TestIndexIssues> Filter(Bound<int> SelfIndexingColumn) =>
                     DoFilter(
-                        new SpacetimeDB.Internal.BTreeIndexBounds<int, SpacetimeDB.BSATN.I32>(
+                        new SpacetimeDB.Internal.IndexScanRangeBounds<int, SpacetimeDB.BSATN.I32>(
                             SelfIndexingColumn
                         )
                     );
 
                 public ulong Delete(Bound<int> SelfIndexingColumn) =>
                     DoDelete(
-                        new SpacetimeDB.Internal.BTreeIndexBounds<int, SpacetimeDB.BSATN.I32>(
+                        new SpacetimeDB.Internal.IndexScanRangeBounds<int, SpacetimeDB.BSATN.I32>(
                             SelfIndexingColumn
                         )
                     );
