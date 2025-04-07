@@ -571,17 +571,6 @@ fn insert_into_pk_btree_u32(ctx: &ReducerContext, pk_u32: Vec<PkU32>, bt_u32: Ve
     Ok(())
 }
 
-#[spacetimedb::reducer]
-fn update_btree_u32(ctx: &ReducerContext, inserts: Vec<BTreeU32>, deletes: Vec<BTreeU32>) -> anyhow::Result<()> {
-    for row in deletes {
-        ctx.db.btree_u32().delete(row);
-    }
-    for row in inserts {
-        ctx.db.btree_u32().insert(row);
-    }
-    Ok(())
-}
-
 /// The purpose of this reducer is for a test which
 /// left-semijoins `UniqueU32` to `PkU32`
 /// for the purposes of behavior testing row-deduplication.
@@ -775,4 +764,20 @@ struct BTreeU32 {
     #[index(btree)]
     n: u32,
     data: i32,
+}
+
+#[spacetimedb::client_visibility_filter]
+const USERS_FILTER: spacetimedb::Filter = spacetimedb::Filter::Sql("SELECT * FROM users WHERE identity = :sender");
+
+#[spacetimedb::table(name = users, public)]
+struct Users {
+    #[primary_key]
+    identity: Identity,
+    name: String,
+}
+
+#[spacetimedb::reducer]
+fn insert_user(ctx: &ReducerContext, name: String, identity: Identity) -> anyhow::Result<()> {
+    ctx.db.users().insert(Users { name, identity });
+    Ok(())
 }

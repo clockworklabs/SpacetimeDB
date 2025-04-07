@@ -46,17 +46,21 @@ pub(crate) fn record_exec_metrics(workload: &WorkloadType, db: &Identity, metric
 }
 
 /// Execute a subscription query
-pub fn execute_plan<Tx, F>(plan: &PipelinedProject, tx: &Tx) -> Result<(F::List, u64, ExecutionMetrics)>
+pub fn execute_plan<Tx, F>(plan_fragments: &[PipelinedProject], tx: &Tx) -> Result<(F::List, u64, ExecutionMetrics)>
 where
     Tx: Datastore + DeltaStore,
     F: WebsocketFormat,
 {
     let mut rows = vec![];
     let mut metrics = ExecutionMetrics::default();
-    plan.execute(tx, &mut metrics, &mut |row| {
-        rows.push(row);
-        Ok(())
-    })?;
+
+    for fragment in plan_fragments {
+        fragment.execute(tx, &mut metrics, &mut |row| {
+            rows.push(row);
+            Ok(())
+        })?;
+    }
+
     let (list, n) = F::encode_list(rows.into_iter());
     metrics.bytes_scanned += list.num_bytes();
     metrics.bytes_sent_to_clients += list.num_bytes();
@@ -73,7 +77,7 @@ pub enum TableUpdateType {
 
 /// Execute a subscription query and collect the results in a [TableUpdate]
 pub fn collect_table_update<Tx, F>(
-    plan: &PipelinedProject,
+    plan_fragments: &[PipelinedProject],
     table_id: TableId,
     table_name: Box<str>,
     comp: Compression,
@@ -84,7 +88,7 @@ where
     Tx: Datastore + DeltaStore,
     F: WebsocketFormat,
 {
-    execute_plan::<Tx, F>(plan, tx).map(|(rows, num_rows, metrics)| {
+    execute_plan::<Tx, F>(plan_fragments, tx).map(|(rows, num_rows, metrics)| {
         let empty = F::List::default();
         let qu = match update_type {
             TableUpdateType::Subscribe => QueryUpdate {
@@ -114,13 +118,14 @@ where
 {
     plans
         .par_iter()
+        .flat_map_iter(|plan| plan.plans_fragments())
         .map(|plan| (plan, plan.subscribed_table_id(), plan.subscribed_table_name()))
         .map(|(plan, table_id, table_name)| {
             plan.physical_plan()
                 .clone()
                 .optimize()
                 .map(PipelinedProject::from)
-                .and_then(|plan| collect_table_update(&plan, table_id, table_name.into(), comp, tx, update_type))
+                .and_then(|plan| collect_table_update(&[plan], table_id, table_name.into(), comp, tx, update_type))
         })
         .collect::<Result<Vec<_>>>()
         .map(|table_updates_with_metrics| {
