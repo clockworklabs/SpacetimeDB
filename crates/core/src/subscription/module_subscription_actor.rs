@@ -1075,6 +1075,9 @@ mod tests {
 
                 let table_update = tables.pop().unwrap();
 
+                // We should not be sending empty updates to clients
+                assert_ne!(table_update.num_rows, 0);
+
                 // It should be the table we expect
                 assert_eq!(table_update.table_id, table_id);
 
@@ -1263,6 +1266,51 @@ mod tests {
         // Both clients should only receive their identities and not the other's.
         assert_tx_update_for_table(&mut rx_for_a, w_id, &schema, [product![id_for_a]], []).await;
         assert_tx_update_for_table(&mut rx_for_b, w_id, &schema, [product![id_for_b]], []).await;
+        Ok(())
+    }
+
+    /// Test that we do not send empty updates to clients
+    #[tokio::test]
+    async fn test_no_empty_updates() -> anyhow::Result<()> {
+        // Establish a client connection
+        let (tx, mut rx) = client_connection(client_id_from_u8(1));
+
+        let db = relational_db()?;
+        let subs = module_subscriptions(db.clone());
+
+        let schema = [("x", AlgebraicType::U8)];
+
+        let t_id = db.create_table_for_test("t", &schema, &[])?;
+
+        // Subscribe to rows of `t` where `x` is 0
+        subscribe(&subs, "select * from t where x = 0", Arc::new(tx), &mut 0)?;
+
+        // Wait to receive the initial subscription message
+        assert!(matches!(rx.recv().await, Some(SerializableMessage::Subscription(_))));
+
+        // Insert a row that does not match the query
+        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        db.insert(&mut tx, t_id, &bsatn::to_vec(&product![1_u8])?)?;
+
+        assert!(matches!(
+            subs.commit_and_broadcast_event(None, module_event(), tx),
+            Ok(Ok(_))
+        ));
+
+        // Insert a row that does match the query
+        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        db.insert(&mut tx, t_id, &bsatn::to_vec(&product![0_u8])?)?;
+
+        assert!(matches!(
+            subs.commit_and_broadcast_event(None, module_event(), tx),
+            Ok(Ok(_))
+        ));
+
+        let schema = ProductType::from([AlgebraicType::U8]);
+
+        // If the server sends empty updates, this assertion will fail,
+        // because we will receive one for the first transaction.
+        assert_tx_update_for_table(&mut rx, t_id, &schema, [product![0_u8]], []).await;
         Ok(())
     }
 
