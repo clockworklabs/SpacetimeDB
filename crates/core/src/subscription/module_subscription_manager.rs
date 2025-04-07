@@ -540,43 +540,46 @@ impl SubscriptionManager {
                         (update, num_rows)
                     }
 
-                    let updates = eval_delta(tx, &mut metrics, plan)
-                        .map_err(|err| {
+                    let updates = match eval_delta(tx, &mut metrics, plan) {
+                        Err(err) => {
                             tracing::error!(
                                 message = "Query errored during tx update",
                                 sql = sql,
                                 reason = ?err,
                             );
-                            self.clients_for_query(hash)
+                            Err(self
+                                .clients_for_query(hash)
                                 .map(|id| (id, err.to_string().into_boxed_str()))
-                                .collect::<Vec<_>>()
-                        })
-                        .map(|delta_updates| {
-                            self.clients_for_query(hash)
-                                .map(|id| {
-                                    let client = &self.clients[id].outbound_ref;
-                                    let update = match client.config.protocol {
-                                        Protocol::Binary => Bsatn(memo_encode::<BsatnFormat>(
-                                            &delta_updates,
-                                            client,
-                                            match client.config.compression {
-                                                Compression::Brotli => &mut ops_bin_brotli,
-                                                Compression::Gzip => &mut ops_bin_gzip,
-                                                Compression::None => &mut ops_bin_none,
-                                            },
-                                            &mut metrics,
-                                        )),
-                                        Protocol::Text => Json(memo_encode::<JsonFormat>(
-                                            &delta_updates,
-                                            client,
-                                            &mut ops_json,
-                                            &mut metrics,
-                                        )),
-                                    };
-                                    (id, table_id, table_name.clone(), update)
-                                })
-                                .collect::<Vec<_>>()
-                        });
+                                .collect::<Vec<_>>())
+                        }
+                        // The query didn't return any rows to update
+                        Ok(None) => Ok(vec![]),
+                        Ok(Some(delta_updates)) => Ok(self
+                            .clients_for_query(hash)
+                            .map(|id| {
+                                let client = &self.clients[id].outbound_ref;
+                                let update = match client.config.protocol {
+                                    Protocol::Binary => Bsatn(memo_encode::<BsatnFormat>(
+                                        &delta_updates,
+                                        client,
+                                        match client.config.compression {
+                                            Compression::Brotli => &mut ops_bin_brotli,
+                                            Compression::Gzip => &mut ops_bin_gzip,
+                                            Compression::None => &mut ops_bin_none,
+                                        },
+                                        &mut metrics,
+                                    )),
+                                    Protocol::Text => Json(memo_encode::<JsonFormat>(
+                                        &delta_updates,
+                                        client,
+                                        &mut ops_json,
+                                        &mut metrics,
+                                    )),
+                                };
+                                (id, table_id, table_name.clone(), update)
+                            })
+                            .collect::<Vec<_>>()),
+                    };
 
                     (updates, metrics)
                 })
