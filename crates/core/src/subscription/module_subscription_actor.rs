@@ -1,5 +1,5 @@
 use super::execution_unit::QueryHash;
-use super::module_subscription_manager::{Plan, SubscriptionManager};
+use super::module_subscription_manager::{Plan, SubscriptionGaugeStats, SubscriptionManager};
 use super::query::compile_read_only_query;
 use super::tx::DeltaTx;
 use super::{collect_table_update, record_exec_metrics, TableUpdateType};
@@ -9,6 +9,7 @@ use crate::client::messages::{
 };
 use crate::client::{ClientActorId, ClientConnectionSender, Protocol};
 use crate::db::datastore::locking_tx_datastore::tx::TxId;
+use crate::db::db_metrics::DB_METRICS;
 use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::error::DBError;
 use crate::estimation::estimate_rows_scanned;
@@ -20,6 +21,7 @@ use crate::subscription::execute_plans;
 use crate::vm::check_row_limit;
 use crate::worker_metrics::WORKER_METRICS;
 use parking_lot::RwLock;
+use prometheus::IntGauge;
 use spacetimedb_client_api_messages::websocket::{
     self as ws, BsatnFormat, FormatSwitch, JsonFormat, SubscribeMulti, SubscribeSingle, TableUpdate, Unsubscribe,
     UnsubscribeMulti,
@@ -40,6 +42,60 @@ pub struct ModuleSubscriptions {
     /// You will deadlock otherwise.
     subscriptions: Subscriptions,
     owner_identity: Identity,
+    stats: Box<SubscriptionGauges>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SubscriptionGauges {
+    db_identity: Identity,
+    num_queries: IntGauge,
+    num_connections: IntGauge,
+    num_subscription_sets: IntGauge,
+    num_query_subscriptions: IntGauge,
+    num_legacy_subscriptions: IntGauge,
+}
+
+impl SubscriptionGauges {
+    fn new(db_identity: &Identity) -> Self {
+        let num_queries = WORKER_METRICS.subscription_queries.with_label_values(db_identity);
+        let num_connections = DB_METRICS.subscription_connections.with_label_values(db_identity);
+        let num_subscription_sets = DB_METRICS.subscription_sets.with_label_values(db_identity);
+        let num_query_subscriptions = DB_METRICS.total_query_subscriptions.with_label_values(db_identity);
+        let num_legacy_subscriptions = DB_METRICS.num_legacy_subscriptions.with_label_values(db_identity);
+        Self {
+            db_identity: *db_identity,
+            num_queries,
+            num_connections,
+            num_subscription_sets,
+            num_query_subscriptions,
+            num_legacy_subscriptions,
+        }
+    }
+
+    // Clear the subscription gauges for this database.
+    fn unregister(&self) {
+        let _ = WORKER_METRICS
+            .subscription_queries
+            .remove_label_values(&self.db_identity);
+        let _ = DB_METRICS
+            .subscription_connections
+            .remove_label_values(&self.db_identity);
+        let _ = DB_METRICS.subscription_sets.remove_label_values(&self.db_identity);
+        let _ = DB_METRICS
+            .total_query_subscriptions
+            .remove_label_values(&self.db_identity);
+        let _ = DB_METRICS
+            .num_legacy_subscriptions
+            .remove_label_values(&self.db_identity);
+    }
+
+    fn report(&self, stats: &SubscriptionGaugeStats) {
+        self.num_queries.set(stats.num_queries as i64);
+        self.num_connections.set(stats.num_connections as i64);
+        self.num_subscription_sets.set(stats.num_subscription_sets as i64);
+        self.num_query_subscriptions.set(stats.num_query_subscriptions as i64);
+        self.num_legacy_subscriptions.set(stats.num_legacy_subscriptions as i64);
+    }
 }
 
 type AssertTxFn = Arc<dyn Fn(&Tx)>;
@@ -69,11 +125,25 @@ fn hash_query(sql: &str, tx: &TxId, auth: &AuthCtx) -> Result<QueryHash, DBError
 
 impl ModuleSubscriptions {
     pub fn new(relational_db: Arc<RelationalDB>, subscriptions: Subscriptions, owner_identity: Identity) -> Self {
+        let stats = Box::new(SubscriptionGauges::new(&relational_db.database_identity()));
         Self {
             relational_db,
             subscriptions,
             owner_identity,
+            stats,
         }
+    }
+
+    // Recompute gauges to update metrics.
+    pub fn update_gauges(&self) {
+        let num_queries = self.subscriptions.read().calculate_gauge_stats();
+        self.stats.report(&num_queries);
+    }
+
+    // Remove the subscription gauges for this database.
+    // TODO: This should be called when the database is shut down.
+    pub fn remove_gauges(&self) {
+        self.stats.unregister();
     }
 
     /// Run auth and row limit checks for a new subscriber, then compute the initial query results.
@@ -215,11 +285,6 @@ impl ModuleSubscriptions {
         let mut subscriptions = self.subscriptions.write();
         subscriptions.add_subscription(sender.clone(), query.clone(), request.query_id)?;
 
-        WORKER_METRICS
-            .subscription_queries
-            .with_label_values(&self.relational_db.database_identity())
-            .set(subscriptions.num_unique_queries() as i64);
-
         #[cfg(test)]
         if let Some(assert) = _assert {
             assert(&tx);
@@ -307,10 +372,6 @@ impl ModuleSubscriptions {
             metrics,
         );
 
-        WORKER_METRICS
-            .subscription_queries
-            .with_label_values(&self.relational_db.database_identity())
-            .set(subscriptions.num_unique_queries() as i64);
         let _ = sender.send_message(SubscriptionMessage {
             request_id: Some(request.request_id),
             query_id: Some(request.query_id),
@@ -352,21 +413,14 @@ impl ModuleSubscriptions {
         let removed_queries = {
             let mut subscriptions = self.subscriptions.write();
 
-            let queries = match subscriptions
-                .remove_subscription((sender.id.identity, sender.id.connection_id), request.query_id)
-            {
+            match subscriptions.remove_subscription((sender.id.identity, sender.id.connection_id), request.query_id) {
                 Ok(queries) => queries,
                 Err(error) => {
                     // Apparently we ignore errors sending messages.
                     let _ = send_err_msg(error.to_string().into());
                     return Ok(());
                 }
-            };
-            WORKER_METRICS
-                .subscription_queries
-                .with_label_values(&self.relational_db.database_identity())
-                .set(subscriptions.num_unique_queries() as i64);
-            queries
+            }
         };
 
         let auth = AuthCtx::new(self.owner_identity, sender.id.identity);
@@ -463,13 +517,8 @@ impl ModuleSubscriptions {
         // write lock on the db.
         let queries = {
             let mut subscriptions = self.subscriptions.write();
-            let new_queries = subscriptions.add_subscription_multi(sender.clone(), queries, request.query_id)?;
 
-            WORKER_METRICS
-                .subscription_queries
-                .with_label_values(&self.relational_db.database_identity())
-                .set(subscriptions.num_unique_queries() as i64);
-            new_queries
+            subscriptions.add_subscription_multi(sender.clone(), queries, request.query_id)?
         };
 
         let Ok((update, metrics)) =
@@ -584,12 +633,6 @@ impl ModuleSubscriptions {
         // but that should not pose an issue.
         let mut subscriptions = self.subscriptions.write();
         subscriptions.set_legacy_subscription(sender.clone(), queries.into_iter());
-        let num_queries = subscriptions.num_unique_queries();
-
-        WORKER_METRICS
-            .subscription_queries
-            .with_label_values(&self.relational_db.database_identity())
-            .set(num_queries as i64);
 
         #[cfg(test)]
         if let Some(assert) = _assert {
@@ -611,10 +654,6 @@ impl ModuleSubscriptions {
     pub fn remove_subscriber(&self, client_id: ClientActorId) {
         let mut subscriptions = self.subscriptions.write();
         subscriptions.remove_all_subscriptions(&(client_id.identity, client_id.connection_id));
-        WORKER_METRICS
-            .subscription_queries
-            .with_label_values(&self.relational_db.database_identity())
-            .set(subscriptions.num_unique_queries() as i64);
     }
 
     /// Commit a transaction and broadcast its ModuleEvent to all interested subscribers.
