@@ -1310,7 +1310,8 @@ impl MutTxId {
         };
 
         // 1. Insert the physical row.
-        let (tx_row_ref, blob_bytes) = tx_table.insert_physically_bsatn(tx_blob_store, row)?;
+        let page_pool = &mut self.committed_state_write_lock.page_pool;
+        let (tx_row_ref, blob_bytes) = tx_table.insert_physically_bsatn(page_pool, tx_blob_store, row)?;
         // 2. Optionally: Detect, generate, write sequence values.
         // 3. Confirm that the insertion respects constraints and update statistics.
         // 4. Post condition (PC.INS.1):
@@ -1504,7 +1505,8 @@ impl MutTxId {
                 self.committed_state_write_lock.get_table(table_id),
             )
             .ok_or(TableError::IdNotFoundState(table_id))?;
-        let (tx_row_ref, blob_bytes) = tx_table.insert_physically_bsatn(tx_blob_store, row)?;
+        let page_pool = &mut self.committed_state_write_lock.page_pool;
+        let (tx_row_ref, blob_bytes) = tx_table.insert_physically_bsatn(page_pool, tx_blob_store, row)?;
 
         // 2. Detect, generate, write sequence values in the new row.
         //----------------------------------------------------------------------
@@ -1822,7 +1824,7 @@ impl MutTxId {
         // - Table does not exist.
         //   - No such row; return false.
 
-        let commit_table = self.committed_state_write_lock.get_table_mut(table_id);
+        let (commit_table, page_pool) = self.committed_state_write_lock.get_table_mut(table_id);
 
         // If the tx table exists, get it.
         // If it doesn't exist, but the commit table does,
@@ -1838,7 +1840,7 @@ impl MutTxId {
 
         // We only want to physically insert the row here to get a row pointer.
         // We'd like to avoid any set semantic and unique constraint checks.
-        let (row_ref, _) = tx_table.insert_physically_pv(tx_blob_store, rel)?;
+        let (row_ref, _) = tx_table.insert_physically_pv(page_pool, tx_blob_store, rel)?;
         let ptr = row_ref.pointer();
 
         // First, check if a matching row exists in the `tx_table`.

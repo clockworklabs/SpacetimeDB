@@ -229,7 +229,7 @@ fn eq_byte_array(ctx: &mut EqCtx<'_, '_>, len: usize) -> bool {
 
 #[cfg(test)]
 mod test {
-    use crate::blob_store::NullBlobStore;
+    use crate::{blob_store::NullBlobStore, page_pool::PagePool};
     use spacetimedb_sats::{product, AlgebraicType, AlgebraicValue, ProductType};
 
     #[test]
@@ -241,29 +241,30 @@ mod test {
             AlgebraicType::product([AlgebraicType::U8, AlgebraicType::U32]), // xpppxxxx
         ])]);
 
+        let pool = PagePool::default();
         let bs = &mut NullBlobStore;
         let mut table_a = crate::table::test::table(ty.clone());
         let mut table_b = crate::table::test::table(ty);
 
         // Insert u64::MAX with tag 0 and then delete it.
         let a0 = product![AlgebraicValue::sum(0, u64::MAX.into())];
-        let (_, a0_rr) = table_a.insert(bs, &a0).unwrap();
+        let (_, a0_rr) = table_a.insert(&pool, bs, &a0).unwrap();
         let a0_ptr = a0_rr.pointer();
         assert!(table_a.delete(bs, a0_ptr, |_| {}).is_some());
 
         // Insert u64::ALTERNATING_BIT_PATTERN with tag 0 and then delete it.
         let b0 = 0b01010101_01010101_01010101_01010101_01010101_01010101_01010101_01010101u64;
         let b0 = product![AlgebraicValue::sum(0, b0.into())];
-        let (_, b0_rr) = table_b.insert(bs, &b0).unwrap();
+        let (_, b0_rr) = table_b.insert(&pool, bs, &b0).unwrap();
         let b0_ptr = b0_rr.pointer();
         assert!(table_b.delete(bs, b0_ptr, |_| {}).is_some());
 
         // Insert two identical rows `a1` and `b2` into the tables.
         // They should occupy the spaces of the previous rows.
         let v1 = product![AlgebraicValue::sum(1, product![0u8, 0u32].into())];
-        let (_, a1_rr) = table_a.insert(bs, &v1).unwrap();
+        let (_, a1_rr) = table_a.insert(&pool, bs, &v1).unwrap();
         let bs = &mut NullBlobStore;
-        let (_, b1_rr) = table_b.insert(bs, &v1).unwrap();
+        let (_, b1_rr) = table_b.insert(&pool, bs, &v1).unwrap();
         assert_eq!(a0_ptr, a1_rr.pointer());
         assert_eq!(b0_ptr, b1_rr.pointer());
 
