@@ -550,7 +550,7 @@ define_tables! {
 
 #[spacetimedb::reducer]
 fn update_pk_simple_enum(ctx: &ReducerContext, a: SimpleEnum, data: i32) -> anyhow::Result<()> {
-    let Some(mut o) = ctx.db.pk_simple_enum().a().find(&a) else {
+    let Some(mut o) = ctx.db.pk_simple_enum().a().find(a) else {
         return Err(anyhow!("row not found"));
     };
     o.data = data;

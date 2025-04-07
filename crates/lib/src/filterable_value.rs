@@ -87,7 +87,7 @@ pub enum TermBound<T> {
 }
 impl<Bound: FilterableValue> TermBound<&Bound> {
     #[inline]
-    /// If `self` is [`TermBound::Range`], returns the `rend_idx` value for [`BTreeScanArgs`],
+    /// If `self` is [`TermBound::Range`], returns the `rend_idx` value for `IndexScanRangeArgs`,
     /// i.e. the index in `buf` of the first byte in the end range
     pub fn serialize_into(&self, buf: &mut Vec<u8>) -> Option<usize> {
         let (start, end) = match self {
