@@ -42,7 +42,7 @@ pub struct ModuleSubscriptions {
     /// You will deadlock otherwise.
     subscriptions: Subscriptions,
     owner_identity: Identity,
-    stats: SubscriptionGauges,
+    stats: Box<SubscriptionGauges>,
 }
 
 #[derive(Debug, Clone)]
@@ -125,7 +125,7 @@ fn hash_query(sql: &str, tx: &TxId, auth: &AuthCtx) -> Result<QueryHash, DBError
 
 impl ModuleSubscriptions {
     pub fn new(relational_db: Arc<RelationalDB>, subscriptions: Subscriptions, owner_identity: Identity) -> Self {
-        let stats = SubscriptionGauges::new(&relational_db.database_identity());
+        let stats = Box::new(SubscriptionGauges::new(&relational_db.database_identity()));
         Self {
             relational_db,
             subscriptions,
