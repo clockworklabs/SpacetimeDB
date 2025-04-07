@@ -274,11 +274,6 @@ impl ModuleSubscriptions {
         let mut subscriptions = self.subscriptions.write();
         subscriptions.add_subscription(sender.clone(), query.clone(), request.query_id)?;
 
-        WORKER_METRICS
-            .subscription_queries
-            .with_label_values(&self.relational_db.database_identity())
-            .set(subscriptions.num_unique_queries() as i64);
-
         #[cfg(test)]
         if let Some(assert) = _assert {
             assert(&tx);
@@ -366,10 +361,6 @@ impl ModuleSubscriptions {
             metrics,
         );
 
-        WORKER_METRICS
-            .subscription_queries
-            .with_label_values(&self.relational_db.database_identity())
-            .set(subscriptions.num_unique_queries() as i64);
         let _ = sender.send_message(SubscriptionMessage {
             request_id: Some(request.request_id),
             query_id: Some(request.query_id),
@@ -411,7 +402,8 @@ impl ModuleSubscriptions {
         let removed_queries = {
             let mut subscriptions = self.subscriptions.write();
 
-            let queries = match subscriptions
+            
+            match subscriptions
                 .remove_subscription((sender.id.identity, sender.id.connection_id), request.query_id)
             {
                 Ok(queries) => queries,
@@ -420,12 +412,7 @@ impl ModuleSubscriptions {
                     let _ = send_err_msg(error.to_string().into());
                     return Ok(());
                 }
-            };
-            WORKER_METRICS
-                .subscription_queries
-                .with_label_values(&self.relational_db.database_identity())
-                .set(subscriptions.num_unique_queries() as i64);
-            queries
+            }
         };
 
         let auth = AuthCtx::new(self.owner_identity, sender.id.identity);
@@ -522,13 +509,9 @@ impl ModuleSubscriptions {
         // write lock on the db.
         let queries = {
             let mut subscriptions = self.subscriptions.write();
-            let new_queries = subscriptions.add_subscription_multi(sender.clone(), queries, request.query_id)?;
+            
 
-            WORKER_METRICS
-                .subscription_queries
-                .with_label_values(&self.relational_db.database_identity())
-                .set(subscriptions.num_unique_queries() as i64);
-            new_queries
+            subscriptions.add_subscription_multi(sender.clone(), queries, request.query_id)?
         };
 
         let Ok((update, metrics)) =
@@ -646,12 +629,6 @@ impl ModuleSubscriptions {
         // but that should not pose an issue.
         let mut subscriptions = self.subscriptions.write();
         subscriptions.set_legacy_subscription(sender.clone(), queries.into_iter());
-        let num_queries = subscriptions.num_unique_queries();
-
-        WORKER_METRICS
-            .subscription_queries
-            .with_label_values(&self.relational_db.database_identity())
-            .set(num_queries as i64);
 
         #[cfg(test)]
         if let Some(assert) = _assert {
@@ -673,10 +650,6 @@ impl ModuleSubscriptions {
     pub fn remove_subscriber(&self, client_id: ClientActorId) {
         let mut subscriptions = self.subscriptions.write();
         subscriptions.remove_all_subscriptions(&(client_id.identity, client_id.connection_id));
-        WORKER_METRICS
-            .subscription_queries
-            .with_label_values(&self.relational_db.database_identity())
-            .set(subscriptions.num_unique_queries() as i64);
     }
 
     /// Commit a transaction and broadcast its ModuleEvent to all interested subscribers.
