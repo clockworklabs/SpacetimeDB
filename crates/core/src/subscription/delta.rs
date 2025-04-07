@@ -6,6 +6,7 @@ use spacetimedb_subscription::SubscriptionPlan;
 use crate::host::module_host::UpdatesRelValue;
 
 /// Evaluate a subscription over a delta update.
+/// Returns `None` for empty updates.
 ///
 /// IMPORTANT: This does and must implement bag semantics.
 /// That is, we must not remove duplicate rows.
@@ -18,7 +19,7 @@ pub fn eval_delta<'a, Tx: Datastore + DeltaStore>(
     tx: &'a Tx,
     metrics: &mut ExecutionMetrics,
     plan: &SubscriptionPlan,
-) -> Result<UpdatesRelValue<'a>> {
+) -> Result<Option<UpdatesRelValue<'a>>> {
     let mut inserts = vec![];
     let mut deletes = vec![];
 
@@ -32,5 +33,10 @@ pub fn eval_delta<'a, Tx: Datastore + DeltaStore>(
         Ok(())
     })?;
 
-    Ok(UpdatesRelValue { inserts, deletes })
+    // Return `None` for empty updates
+    if inserts.is_empty() && deletes.is_empty() {
+        return Ok(None);
+    }
+
+    Ok(Some(UpdatesRelValue { inserts, deletes }))
 }
