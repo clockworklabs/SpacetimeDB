@@ -44,6 +44,7 @@ enum-as-inner.workspace = true
 itertools.workspace = true
 smallvec.workspace = true
 thiserror.workspace = true
+crossbeam-queue.workspace = true
 
 # For the 'proptest' feature.
 proptest = { workspace = true, optional = true }

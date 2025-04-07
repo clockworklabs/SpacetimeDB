@@ -28,6 +28,7 @@ use spacetimedb_schema::{
     schema::{Schema as _, TableSchema},
 };
 use spacetimedb_snapshot::{remote::synchronize_snapshot, Snapshot, SnapshotError, SnapshotRepository};
+use spacetimedb_table::page_pool::PagePool;
 use tempfile::tempdir;
 use tokio::task::spawn_blocking;
 
@@ -58,8 +59,9 @@ async fn can_sync_a_snapshot() -> anyhow::Result<()> {
     assert_eq!(stats.objects_written, total_objects);
 
     // Assert that the copied snapshot is valid.
-    let dst_snapshot_full = dst_repo.read_snapshot(snapshot_offset)?;
-    Locking::restore_from_snapshot(dst_snapshot_full)?;
+    let pool = PagePool::default();
+    let dst_snapshot_full = dst_repo.read_snapshot(snapshot_offset, &pool)?;
+    Locking::restore_from_snapshot(dst_snapshot_full, pool)?;
 
     // Let's also check that running `synchronize_snapshot` again does nothing.
     let stats = synchronize_snapshot(blob_provider.clone(), dst_path.clone(), src_snapshot.clone()).await?;

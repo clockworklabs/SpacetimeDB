@@ -150,6 +150,7 @@ convert_case = "0.6.0"
 crc32c = "0.6.4"
 criterion = { version = "0.5.1", features = ["async", "async_tokio", "html_reports"] }
 crossbeam-channel = "0.5"
+crossbeam-queue = "0.3.12"
 cursive = { version = "0.20", default-features = false, features = ["crossterm-backend"] }
 decorum = { version = "0.3.1", default-features = false, features = ["std"] }
 derive_more = "0.99"

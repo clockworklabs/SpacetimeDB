@@ -24,6 +24,7 @@ use spacetimedb_durability::{self as durability, TxOffset};
 use spacetimedb_lib::hash_bytes;
 use spacetimedb_paths::server::{ReplicaDir, ServerDataDir};
 use spacetimedb_sats::hash::Hash;
+use spacetimedb_table::page_pool::PagePool;
 use std::future::Future;
 use std::ops::Deref;
 use std::sync::Arc;
@@ -85,6 +86,8 @@ pub struct HostController {
     energy_monitor: Arc<dyn EnergyMonitor>,
     /// Provides implementations of [`Durability`] for each replica.
     durability: Arc<dyn DurabilityProvider>,
+    /// The page pool all databases will use by cloning the ref counted pool.
+    page_pool: PagePool,
     /// The runtimes for running our modules.
     runtimes: Arc<HostRuntimes>,
 }
@@ -170,6 +173,7 @@ impl HostController {
             durability,
             runtimes: HostRuntimes::new(&data_dir),
             data_dir,
+            page_pool: <_>::default(),
         }
     }
 
@@ -693,6 +697,7 @@ impl Host {
             energy_monitor,
             runtimes,
             durability,
+            page_pool,
             ..
         } = host_controller;
         let on_panic = host_controller.unregister_fn(replica_id);
@@ -706,6 +711,7 @@ impl Host {
                 EmptyHistory::new(),
                 None,
                 None,
+                page_pool.clone(),
             )?,
             db::Storage::Disk => {
                 let snapshot_repo =
@@ -720,6 +726,7 @@ impl Host {
                     history,
                     Some(durability),
                     Some(snapshot_repo),
+                    page_pool.clone(),
                 )?;
                 if let Some(start_snapshot_watcher) = start_snapshot_watcher {
                     let watcher = db.subscribe_to_snapshots().expect("we passed snapshot_repo");
