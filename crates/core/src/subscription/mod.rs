@@ -61,9 +61,9 @@ pub(crate) fn record_exec_metrics(workload: &WorkloadType, db: &Identity, metric
     }
     if metrics.delta_queries_evaluated > 0 {
         DB_METRICS
-            .delta_queries_matched
+            .delta_queries_evaluated
             .with_label_values(db)
-            .inc_by(metrics.delta_queries_matched);
+            .inc_by(metrics.delta_queries_evaluated);
     }
 }
 
