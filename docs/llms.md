@@ -495,7 +495,7 @@ Refer to the [official Rust Module SDK documentation on docs.rs](https://docs.rs
     ```
 
 :::info Scheduled Reducers and Connections
-Scheduled reducer calls originate from the SpacetimeDB scheduler itself, not from an external client connection. Therefore, within a scheduled reducer, `ctx.Sender` will be the module's own identity, and `ctx.ConnectionId` will not represent an external client connection.
+Scheduled reducer calls originate from the SpacetimeDB scheduler itself, not from an external client connection. Therefore, within a scheduled reducer, `ctx.sender` will be the module's own identity, and `ctx.connection_id` will not represent an external client connection.
 :::
 
 #### Row-Level Security (Client Visibility Filters)
