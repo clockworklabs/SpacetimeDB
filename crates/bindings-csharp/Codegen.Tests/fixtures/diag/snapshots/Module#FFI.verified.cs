@@ -991,6 +991,7 @@ static class ModuleRegistration
             SpacetimeDB.Internal.TableHandles.TestUniqueNotEquatable
         >();
         SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_FILTER);
+        SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_FOURTH_FILTER);
         SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_SECOND_FILTER);
         SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_THIRD_FILTER);
     }

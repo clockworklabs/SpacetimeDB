@@ -415,7 +415,7 @@ public partial struct TestScheduleIssues
     [SpacetimeDB.ClientVisibilityFilter]
     public static readonly string MY_THIRD_FILTER = "SELECT * FROM TestAutoIncNotInteger";
                                   ^^^^^^^^^^^^^^^
-}
+
 */
       Message: Field MY_THIRD_FILTER is marked as ClientVisibilityFilter but it has type string which is not SpacetimeDB.Filter,
       Severity: Error,
