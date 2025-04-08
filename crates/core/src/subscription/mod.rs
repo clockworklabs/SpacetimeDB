@@ -23,26 +23,48 @@ pub mod tx;
 
 /// Update the global system metrics with transaction-level execution metrics
 pub(crate) fn record_exec_metrics(workload: &WorkloadType, db: &Identity, metrics: ExecutionMetrics) {
-    DB_METRICS
-        .rdb_num_index_seeks
-        .with_label_values(workload, db)
-        .inc_by(metrics.index_seeks as u64);
-    DB_METRICS
-        .rdb_num_rows_scanned
-        .with_label_values(workload, db)
-        .inc_by(metrics.rows_scanned as u64);
-    DB_METRICS
-        .rdb_num_bytes_scanned
-        .with_label_values(workload, db)
-        .inc_by(metrics.bytes_scanned as u64);
-    DB_METRICS
-        .rdb_num_bytes_written
-        .with_label_values(workload, db)
-        .inc_by(metrics.bytes_written as u64);
-    WORKER_METRICS
-        .bytes_sent_to_clients
-        .with_label_values(workload, db)
-        .inc_by(metrics.bytes_sent_to_clients as u64);
+    if metrics.index_seeks > 0 {
+        DB_METRICS
+            .rdb_num_index_seeks
+            .with_label_values(workload, db)
+            .inc_by(metrics.index_seeks as u64);
+    }
+    if metrics.rows_scanned > 0 {
+        DB_METRICS
+            .rdb_num_rows_scanned
+            .with_label_values(workload, db)
+            .inc_by(metrics.rows_scanned as u64);
+    }
+    if metrics.bytes_scanned > 0 {
+        DB_METRICS
+            .rdb_num_bytes_scanned
+            .with_label_values(workload, db)
+            .inc_by(metrics.bytes_scanned as u64);
+    }
+    if metrics.bytes_written > 0 {
+        DB_METRICS
+            .rdb_num_bytes_written
+            .with_label_values(workload, db)
+            .inc_by(metrics.bytes_written as u64);
+    }
+    if metrics.bytes_sent_to_clients > 0 {
+        WORKER_METRICS
+            .bytes_sent_to_clients
+            .with_label_values(workload, db)
+            .inc_by(metrics.bytes_sent_to_clients as u64);
+    }
+    if metrics.delta_queries_matched > 0 {
+        DB_METRICS
+            .delta_queries_matched
+            .with_label_values(db)
+            .inc_by(metrics.delta_queries_matched);
+    }
+    if metrics.delta_queries_evaluated > 0 {
+        DB_METRICS
+            .delta_queries_evaluated
+            .with_label_values(db)
+            .inc_by(metrics.delta_queries_evaluated);
+    }
 }
 
 /// Execute a subscription query

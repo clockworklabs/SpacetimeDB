@@ -20,6 +20,7 @@ pub fn eval_delta<'a, Tx: Datastore + DeltaStore>(
     metrics: &mut ExecutionMetrics,
     plan: &SubscriptionPlan,
 ) -> Result<Option<UpdatesRelValue<'a>>> {
+    metrics.delta_queries_evaluated += 1;
     let mut inserts = vec![];
     let mut deletes = vec![];
 
@@ -38,5 +39,6 @@ pub fn eval_delta<'a, Tx: Datastore + DeltaStore>(
         return Ok(None);
     }
 
+    metrics.delta_queries_matched += 1;
     Ok(Some(UpdatesRelValue { inserts, deletes }))
 }
