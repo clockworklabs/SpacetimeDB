@@ -519,7 +519,6 @@ impl ExecutionSet {
         slow_query_threshold: Option<Duration>,
         compression: Compression,
     ) -> ws::DatabaseUpdate<F> {
-        // evaluate each of the execution units in this ExecutionSet in parallel
         let tables = self
             .exec_units
             // if you need eval to run single-threaded for debugging, change this to .iter()
