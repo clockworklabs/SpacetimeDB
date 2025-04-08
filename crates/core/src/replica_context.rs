@@ -48,8 +48,9 @@ impl ReplicaContext {
     }
 
     /// Update data size stats.
-    pub fn update_data_size_metrics(&self) {
+    pub fn update_gauges(&self) {
         self.relational_db.update_data_size_metrics();
+        self.subscriptions.update_gauges();
     }
 }
 

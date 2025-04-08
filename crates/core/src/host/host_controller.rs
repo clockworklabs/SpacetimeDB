@@ -857,7 +857,7 @@ async fn metric_reporter(replica_ctx: Arc<ReplicaContext>) {
     // TODO: Consider adding a metric for heap usage.
     loop {
         let disk_usage = tokio::task::block_in_place(|| replica_ctx.total_disk_usage());
-        replica_ctx.update_data_size_metrics();
+        replica_ctx.update_gauges();
         if let Some(num_bytes) = disk_usage.durability {
             DB_METRICS
                 .message_log_size
