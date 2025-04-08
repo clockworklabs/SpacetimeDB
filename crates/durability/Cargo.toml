@@ -12,7 +12,6 @@ anyhow.workspace = true
 itertools.workspace = true
 log.workspace = true
 spacetimedb-commitlog.workspace = true
-spacetimedb-snapshot.workspace = true
 spacetimedb-paths.workspace = true
 spacetimedb-sats.workspace = true
 tokio.workspace = true

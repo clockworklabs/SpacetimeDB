@@ -31,7 +31,7 @@ use spacetimedb_lib::db::auth::StAccess;
 use spacetimedb_lib::db::raw_def::v9::{btree, RawModuleDefV9Builder, RawSql};
 use spacetimedb_lib::ConnectionId;
 use spacetimedb_lib::Identity;
-use spacetimedb_paths::server::{ReplicaDir, SnapshotsPath};
+use spacetimedb_paths::server::{CommitLogDir, ReplicaDir, SnapshotsPath};
 use spacetimedb_primitives::*;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
 use spacetimedb_schema::def::{ModuleDef, TableDef};
@@ -156,10 +156,15 @@ impl SnapshotWorkerActor {
         let start_time = std::time::Instant::now();
         let committed_state = self.committed_state.clone();
         let snapshot_repo = self.repo.clone();
-        let res =
-            tokio::task::spawn_blocking(move || Locking::take_snapshot_internal(&committed_state, &snapshot_repo))
-                .await
-                .unwrap();
+        let res = tokio::task::spawn_blocking(move || {
+            Locking::take_snapshot_internal(&committed_state, &snapshot_repo).inspect(|opts| {
+                if let Some(opts) = opts {
+                    Locking::compress_older_snapshot_internal(&snapshot_repo, opts.0);
+                }
+            })
+        })
+        .await
+        .unwrap();
         match res {
             Err(e) => {
                 log::error!(
@@ -446,7 +451,7 @@ impl RelationalDB {
         self.inner.update_program(tx, program_kind, program)
     }
 
-    pub fn restore_from_snapshot_or_bootstrap(
+    fn restore_from_snapshot_or_bootstrap(
         database_identity: Identity,
         snapshot_repo: Option<&SnapshotRepository>,
         durable_tx_offset: Option<TxOffset>,
@@ -1292,12 +1297,12 @@ pub type LocalDurability = Arc<durability::Local<ProductValue>>;
 ///
 /// Note that this operation can be expensive, as it needs to traverse a suffix
 /// of the commitlog.
-pub async fn local_durability(root: ReplicaDir) -> io::Result<(LocalDurability, DiskSizeFn)> {
+pub async fn local_durability(commitlog_dir: CommitLogDir) -> io::Result<(LocalDurability, DiskSizeFn)> {
     let rt = tokio::runtime::Handle::current();
     // TODO: Should this better be spawn_blocking?
     let local = spawn_rayon(move || {
         durability::Local::open(
-            root,
+            commitlog_dir,
             rt,
             durability::local::Options {
                 commitlog: commitlog::Options {
@@ -1318,15 +1323,18 @@ pub async fn local_durability(root: ReplicaDir) -> io::Result<(LocalDurability, 
     Ok((local, disk_size_fn))
 }
 
-/// Watches snapshot creation events and compresses all commitlog segments
-/// and snapshots that are older than the snapshot.
+/// Watches snapshot creation events and compresses all commitlog segments older
+/// than the snapshot.
 ///
 /// Intended to be spawned as a [StartSnapshotWatcher], provided by a
 /// [DurabilityProvider]. Suitable **only** for non-replicated databases.
 ///
 /// [StartSnapshotWatcher]: crate::host::host_controller::StartSnapshotWatcher
 /// [DurabilityProvider]: crate::host::host_controller::DurabilityProvider
-pub async fn snapshot_watching_compressor(mut snapshot_rx: watch::Receiver<u64>, durability: LocalDurability) {
+pub async fn snapshot_watching_commitlog_compressor(
+    mut snapshot_rx: watch::Receiver<u64>,
+    durability: LocalDurability,
+) {
     let mut prev_snapshot_offset = *snapshot_rx.borrow_and_update();
     while snapshot_rx.changed().await.is_ok() {
         let snapshot_offset = *snapshot_rx.borrow_and_update();
@@ -1351,10 +1359,6 @@ pub async fn snapshot_watching_compressor(mut snapshot_rx: watch::Receiver<u64>,
         if let Err(e) = durability.compress_segments(segment_offsets) {
             tracing::warn!("failed to compress segments: {e}");
             continue;
-        }
-        if let Err(e) = durability.compress_snapshots(segment_offsets) {
-            // We can survive that the segments are compressed, but the snapshots are not.
-            tracing::warn!("failed to compress snapshots: {e}");
         }
         prev_snapshot_offset = snapshot_offset;
     }
@@ -1584,7 +1588,7 @@ pub mod tests_utils {
             root: &ReplicaDir,
             rt: tokio::runtime::Handle,
         ) -> Result<(RelationalDB, Arc<durability::Local<ProductValue>>), DBError> {
-            let (local, disk_size_fn) = rt.block_on(local_durability(root.clone()))?;
+            let (local, disk_size_fn) = rt.block_on(local_durability(root.commit_log()))?;
             let history = local.clone();
             let durability = local.clone() as Arc<Durability>;
             let snapshot_repo = open_snapshot_repo(root.snapshots(), Identity::ZERO, 0)?;
@@ -2681,8 +2685,11 @@ mod tests {
         stdb.release_tx(read_tx);
     }
 
-    // Verify that we can compress snapshots and hardlink them.
-    // then, verify that we can read the compressed snapshot.
+    // Verify that we can compress snapshots and hardlink them,
+    // except for the last one, which should be uncompressed.
+    // Then, verify that we can read the compressed snapshot.
+    //
+    // NOTE: `snapshot_watching_compressor` is what filter out the last snapshot
     #[test]
     fn compress_snapshot_test() -> ResultTest<()> {
         let stdb = TestDB::in_memory()?;
@@ -2700,14 +2707,15 @@ mod tests {
         stdb.take_snapshot(&repo)?;
 
         let total_objects = repo.size_on_disk()?.object_count;
-        // Another snapshot that will hardlink part of the first one
-        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
-        for v in 0..10 {
-            insert(&stdb, &mut tx, table_id, &product![v])?;
+        // Another snapshots that will hardlink part of the first one
+        for i in 0..2 {
+            let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+            for v in 0..(10 + i) {
+                insert(&stdb, &mut tx, table_id, &product![v])?;
+            }
+            stdb.commit_tx(tx)?;
+            stdb.take_snapshot(&repo)?;
         }
-        stdb.commit_tx(tx)?;
-
-        stdb.take_snapshot(&repo)?;
 
         let size_compress_off = repo.size_on_disk()?;
         assert!(
@@ -2716,24 +2724,22 @@ mod tests {
         );
         let mut offsets = repo.all_snapshots()?.collect::<Vec<_>>();
         offsets.sort();
-        assert_eq!(&offsets, &[1, 2]);
-        assert_eq!(
-            SnapshotRepository::compress_snapshots(&dir, &offsets)?,
-            CompressCount { none: 0, zstd: 2 }
-        );
+        assert_eq!(&offsets, &[1, 2, 3]);
+        // Simulate we take except the last snapshot
+        let last_compress = 2;
+        assert_eq!(repo.compress_older_snapshots(3)?, CompressCount { none: 0, zstd: 2 });
         let size_compress_on = repo.size_on_disk()?;
-
         assert!(size_compress_on.total_size < size_compress_off.total_size);
-
         // Verify we hard-linked the second snapshot
         #[cfg(unix)]
         {
             use std::os::unix::fs::MetadataExt;
-            let snapshot_dir = dir.snapshot_dir(offsets[1]);
+            let snapshot_dir = dir.snapshot_dir(last_compress);
             let mut hard_linked_on = 0;
             let mut hard_linked_off = 0;
 
-            let (snapshot, _) = Snapshot::read_from_file(&snapshot_dir.snapshot_file(offsets[1]))?;
+            let (snapshot, compress) = Snapshot::read_from_file(&snapshot_dir.snapshot_file(last_compress))?;
+            assert_eq!(compress, CompressType::Zstd);
             let repo = SnapshotRepository::object_repo(&snapshot_dir)?;
             for (_, path) in snapshot.files(&repo) {
                 match path.metadata()?.nlink() {
@@ -2747,8 +2753,7 @@ mod tests {
 
         // Sanity check that we can read the snapshot after compression
         let repo = open_snapshot_repo(dir, Identity::ZERO, 0)?;
-        let last = repo.latest_snapshot()?;
-        RelationalDB::restore_from_snapshot_or_bootstrap(Identity::ZERO, Some(&repo), last)?;
+        RelationalDB::restore_from_snapshot_or_bootstrap(Identity::ZERO, Some(&repo), Some(last_compress))?;
 
         Ok(())
     }
@@ -2782,7 +2787,6 @@ mod tests {
 
         stdb.take_snapshot(&repo)?;
         let size = repo.size_on_disk()?;
-        dbg!(&size);
         assert!(size.total_size > 0, "Snapshot size should be greater than 0");
 
         Ok(())

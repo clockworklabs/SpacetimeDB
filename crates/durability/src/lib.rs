@@ -4,7 +4,16 @@ pub use spacetimedb_commitlog::{error, payload::Txdata, Decoder, Transaction};
 
 mod imp;
 pub use imp::{local, Local};
-pub use spacetimedb_commitlog::repo::TxOffset;
+
+/// Transaction offset.
+///
+/// The transaction offset is essentially a monotonic counter of all
+/// transactions submitted to the durability layer, starting from zero.
+///
+/// While the implementation may not guarantee that the sequence contains no
+/// gaps, it must guarantee that a higher transaction offset implies durability
+/// of all offsets smaller than it.
+pub type TxOffset = u64;
 
 /// The durability API.
 ///

@@ -16,8 +16,7 @@ use anyhow::Context as _;
 use itertools::Itertools as _;
 use log::{info, trace, warn};
 use spacetimedb_commitlog::{error, payload::Txdata, Commit, Commitlog, Decoder, Encode, Transaction};
-use spacetimedb_paths::server::{ReplicaDir, SnapshotsPath};
-use spacetimedb_snapshot::{SnapshotError, SnapshotRepository};
+use spacetimedb_paths::server::CommitLogDir;
 use tokio::{
     sync::mpsc,
     task::{spawn_blocking, AbortHandle, JoinHandle},
@@ -61,8 +60,6 @@ impl Default for Options {
 pub struct Local<T> {
     /// The [`Commitlog`] this [`Durability`] and [`History`] impl wraps.
     clog: Arc<Commitlog<Txdata<T>>>,
-    /// The [`SnapshotsPath`] this [`Durability`] and [`History`] impl wraps.
-    snapshot_dir: Arc<SnapshotsPath>,
     /// The durable transaction offset, as reported by the background
     /// [`FlushAndSyncTask`].
     ///
@@ -97,11 +94,10 @@ impl<T: Encode + Send + Sync + 'static> Local<T> {
     /// The `root` directory must already exist.
     ///
     /// Background tasks are spawned onto the provided tokio runtime.
-    pub fn open(root: ReplicaDir, rt: tokio::runtime::Handle, opts: Options) -> io::Result<Self> {
+    pub fn open(root: CommitLogDir, rt: tokio::runtime::Handle, opts: Options) -> io::Result<Self> {
         info!("open local durability");
 
-        let clog = Arc::new(Commitlog::open(root.commit_log(), opts.commitlog)?);
-        let snapshot_dir = Arc::new(root.snapshots());
+        let clog = Arc::new(Commitlog::open(root, opts.commitlog)?);
         let (queue, rx) = mpsc::unbounded_channel();
         let queue_depth = Arc::new(AtomicU64::new(0));
         let offset = {
@@ -130,7 +126,6 @@ impl<T: Encode + Send + Sync + 'static> Local<T> {
 
         Ok(Self {
             clog,
-            snapshot_dir,
             durable_offset: offset,
             queue,
             queue_depth,
@@ -157,12 +152,6 @@ impl<T: Encode + Send + Sync + 'static> Local<T> {
     /// Compress the segments at the offsets provided, marking them as immutable.
     pub fn compress_segments(&self, offsets: &[TxOffset]) -> io::Result<()> {
         self.clog.compress_segments(offsets)
-    }
-
-    /// Compress the snapshots at the offsets provided, marking them as immutable.
-    pub fn compress_snapshots(&self, offsets: &[TxOffset]) -> Result<(), Box<SnapshotError>> {
-        SnapshotRepository::compress_snapshots(&self.snapshot_dir, offsets).map_err(Box::new)?;
-        Ok(())
     }
 
     /// Apply all outstanding transactions to the [`Commitlog`] and flush it

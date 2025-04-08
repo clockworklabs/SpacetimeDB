@@ -23,6 +23,7 @@
 
 #![allow(clippy::result_large_err)]
 
+use spacetimedb_durability::TxOffset;
 use spacetimedb_fs_utils::compression::{compress_with_zstd, CompressCount, CompressReader, CompressType};
 use spacetimedb_fs_utils::{
     dir_trie::{o_excl, o_rdonly, CountCreated, DirTrie},
@@ -41,20 +42,15 @@ use spacetimedb_table::{
     page::Page,
     table::Table,
 };
-use std::collections::HashMap;
-use std::io::{BufWriter, Write};
-use std::ops::{Add, AddAssign};
-use std::{collections::BTreeMap, ffi::OsStr, fmt, io::Read, path::PathBuf};
-
-/// Transaction offset.
-///
-/// The transaction offset is essentially a monotonic counter of all
-/// transactions submitted to the durability layer, starting from zero.
-///
-/// While the implementation may not guarantee that the sequence contains no
-/// gaps, it must guarantee that a higher transaction offset implies durability
-/// of all offsets smaller than it.
-pub type TxOffset = u64;
+use std::{
+    collections::BTreeMap,
+    collections::HashMap,
+    ffi::OsStr,
+    fmt,
+    io::{BufWriter, Read, Write},
+    ops::{Add, AddAssign},
+    path::PathBuf,
+};
 
 pub mod remote;
 
@@ -201,7 +197,6 @@ impl Snapshot {
     ///
     /// If the `prev_snapshot` is supplied, this method will attempt to hardlink the blob's on-disk object
     /// from that previous snapshot into `object_repo` rather than creating a fresh object.
-    #[allow(clippy::too_many_arguments)]
     fn write_blob(
         &mut self,
         object_repo: &DirTrie,
@@ -482,10 +477,10 @@ impl Snapshot {
     }
 
     /// Obtain an iterator over the [`Path`]s of all objects
-    pub fn files<'a>(&'a self, src_repo: &'a DirTrie) -> impl Iterator<Item = (String, PathBuf)> + 'a {
+    pub fn files<'a>(&'a self, src_repo: &'a DirTrie) -> impl Iterator<Item = (blake3::Hash, PathBuf)> + 'a {
         self.objects().map(move |hash| {
             let path = src_repo.file_path(hash.as_bytes());
-            (hash.to_string(), path)
+            (hash, path)
         })
     }
 }
@@ -632,11 +627,10 @@ impl SnapshotRepository {
 
         // Create the snapshot file, containing first the hash, then the `Snapshot`.
         {
-            let snapshot_file = snapshot_dir.snapshot_file(tx_offset).open_file(&o_excl())?;
-            let mut file = BufWriter::new(snapshot_file);
-            file.write_all(hash.as_bytes())?;
-            file.write_all(&snapshot_bsatn)?;
-            file.flush()?;
+            let mut snapshot_file = BufWriter::new(snapshot_dir.snapshot_file(tx_offset).open_file(&o_excl())?);
+            snapshot_file.write_all(hash.as_bytes())?;
+            snapshot_file.write_all(&snapshot_bsatn)?;
+            snapshot_file.flush()?;
         }
 
         log::info!(
@@ -853,13 +847,8 @@ impl SnapshotRepository {
         Ok(())
     }
 
-    /// Compress the snapshot of the replica with the given `tx_offset`.
-    ///
-    /// If the snapshot is already compressed, it will return the compress type.
-    ///
-    /// If the snapshot is not compressed, it will compress it and return the compress type.
-    ///
-    /// If the snapshot is locked, it will return an [`SnapshotError::CompressLocked`].
+    /// Compress the snapshot (if not already compressed)
+    /// of the replica with the given `tx_offset`, and return the [`CompressType`] type..
     pub fn compress_snapshot(
         previous: Option<&(TxOffset, SnapshotDirPath)>,
         current: &(TxOffset, SnapshotDirPath),
@@ -887,19 +876,26 @@ impl SnapshotRepository {
         };
 
         // Replace the original file with the compressed one.
-        fn compress(old: &HashMap<String, PathBuf>, src: &PathBuf, hash: String) -> Result<(), SnapshotError> {
+        fn compress(
+            old: &HashMap<blake3::Hash, PathBuf>,
+            src: &PathBuf,
+            hash: Option<blake3::Hash>,
+        ) -> Result<(), SnapshotError> {
             let read = CompressReader::new(o_rdonly().open(src)?)?;
             if read.compress_type() != CompressType::None {
                 return Ok(()); // Already compressed
             }
-            if let Some(old_path) = old.get(&hash) {
-                let old_file = CompressReader::new(o_rdonly().open(old_path)?)?;
-                if old_file.compress_type() != CompressType::None {
-                    std::fs::hard_link(old_path, src.with_extension("_tmp"))?;
-                    std::fs::rename(src.with_extension("_tmp"), src)?;
-                    return Ok(());
+            if let Some(hash) = hash {
+                if let Some(old_path) = old.get(&hash) {
+                    let old_file = CompressReader::new(o_rdonly().open(old_path)?)?;
+                    if old_file.compress_type() != CompressType::None {
+                        std::fs::hard_link(old_path, src.with_extension("_tmp"))?;
+                        std::fs::rename(src.with_extension("_tmp"), src)?;
+                        return Ok(());
+                    }
                 }
             }
+
             let dst = src.with_extension("_tmp");
             let mut write = BufWriter::new(o_excl().open(&dst)?);
             // The default frame size compress better.
@@ -917,13 +913,13 @@ impl SnapshotRepository {
 
         let dir = SnapshotRepository::object_repo(snapshot_dir)?;
         for (hash, path) in snapshot.files(&dir) {
-            compress(&old, &path, hash).inspect_err(|err| {
+            compress(&old, &path, Some(hash)).inspect_err(|err| {
                 log::error!("Failed to compress object file {path:?}: {err}");
             })?;
         }
 
         // Compress the snapshot file last, so it marks it compressed.
-        compress(&old, &snapshot_file.0, "".into()).inspect_err(|err| {
+        compress(&old, &snapshot_file.0, None).inspect_err(|err| {
             log::error!("Failed to compress snapshot file {snapshot_file:?}: {err}");
         })?;
 
@@ -934,19 +930,24 @@ impl SnapshotRepository {
         Ok(CompressType::Zstd)
     }
 
-    /// Compress the snapshots at the offsets provided, marking them as immutable.
+    /// Compress the snapshots older than the given [`TxOffset`].
     ///
-    /// *NOTE*: Except the current snapshot
-    pub fn compress_snapshots(root: &SnapshotsPath, offsets: &[TxOffset]) -> Result<CompressCount, SnapshotError> {
-        let mut snapshots: Vec<_> = offsets
-            .iter()
-            .map(|tx_offset| {
-                let path = root.snapshot_dir(*tx_offset);
-                (*tx_offset, path)
+    /// *NOTE*: Compression errors are logged but not returned.
+    pub fn compress_older_snapshots(&self, upper_bound: TxOffset) -> Result<CompressCount, SnapshotError> {
+        // TODO: The more snapshots we have, the more time it takes to compress, we need a way to limit this.
+        let mut snapshots: Vec<_> = self
+            .all_snapshots()?
+            // Ignore `tx_offset`s greater than the current upper bound.
+            .filter_map(|tx_offset| {
+                if tx_offset < upper_bound {
+                    let path = self.snapshot_dir_path(tx_offset);
+                    Some((tx_offset, path))
+                } else {
+                    None
+                }
             })
             .collect();
         snapshots.sort_by(|(a_offset, _), (b_offset, _)| a_offset.cmp(b_offset));
-
         let mut count = CompressCount::default();
         let mut previous = None;
         for current in snapshots.iter() {
