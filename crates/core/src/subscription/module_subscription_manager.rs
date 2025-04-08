@@ -523,12 +523,13 @@ impl SubscriptionManager {
         rayon::scope(|_| {
             let span = tracing::info_span!("eval_incr").entered();
 
-            type ClientUpdate<'a> = (
-                &'a ClientId,
-                TableId,
-                &'a str,
-                FormatSwitch<(CompressableQueryUpdate<BsatnFormat>, u64), (QueryUpdate<JsonFormat>, u64)>,
-            );
+            type ClientQueryUpdate<F> = (<F as WebsocketFormat>::QueryUpdate, /* num_rows */ u64);
+            struct ClientUpdate<'a> {
+                id: &'a ClientId,
+                table_id: TableId,
+                table_name: &'a str,
+                update: FormatSwitch<ClientQueryUpdate<BsatnFormat>, ClientQueryUpdate<JsonFormat>>,
+            }
 
             #[derive(Default)]
             struct FoldState<'a> {
@@ -650,7 +651,12 @@ impl SubscriptionManager {
                                         &mut acc.metrics,
                                     )),
                                 };
-                                (id, table_id, table_name, update)
+                                ClientUpdate {
+                                    id,
+                                    table_id,
+                                    table_name,
+                                    update,
+                                }
                             });
                             acc.updates.extend(row_iter);
                         }
@@ -663,12 +669,12 @@ impl SubscriptionManager {
 
             record_exec_metrics(&WorkloadType::Update, database_identity, metrics);
 
-            let clients_with_errors = errs.iter().map(|(id, _)| id).collect::<HashSet<_>>();
+            let clients_with_errors = errs.iter().map(|(id, _)| *id).collect::<HashSet<_>>();
 
             let mut eval = updates
                 .into_iter()
                 // Filter out clients whose subscriptions failed
-                .filter(|(id, ..)| !clients_with_errors.contains(id))
+                .filter(|upd| !clients_with_errors.contains(upd.id))
                 // For each subscriber, aggregate all the updates for the same table.
                 // That is, we build a map `(subscriber_id, table_id) -> updates`.
                 // A particular subscriber uses only one format,
@@ -676,15 +682,15 @@ impl SubscriptionManager {
                 // or BSATN (`Protocol::Binary`).
                 .fold(
                     HashMap::<(&ClientId, TableId), SwitchedTableUpdate>::new(),
-                    |mut tables, (id, table_id, table_name, update)| {
-                        match tables.entry((id, table_id)) {
-                            Entry::Occupied(mut entry) => match entry.get_mut().zip_mut(update) {
+                    |mut tables, upd| {
+                        match tables.entry((upd.id, upd.table_id)) {
+                            Entry::Occupied(mut entry) => match entry.get_mut().zip_mut(upd.update) {
                                 Bsatn((tbl_upd, update)) => tbl_upd.push(update),
                                 Json((tbl_upd, update)) => tbl_upd.push(update),
                             },
-                            Entry::Vacant(entry) => drop(entry.insert(match update {
-                                Bsatn(update) => Bsatn(TableUpdate::new(table_id, table_name.into(), update)),
-                                Json(update) => Json(TableUpdate::new(table_id, table_name.into(), update)),
+                            Entry::Vacant(entry) => drop(entry.insert(match upd.update {
+                                Bsatn(update) => Bsatn(TableUpdate::new(upd.table_id, upd.table_name.into(), update)),
+                                Json(update) => Json(TableUpdate::new(upd.table_id, upd.table_name.into(), update)),
                             })),
                         }
                         tables
