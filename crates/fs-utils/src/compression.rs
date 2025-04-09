@@ -4,7 +4,7 @@ use std::io::{BufReader, Read, Seek, SeekFrom};
 use zstd_framed;
 use zstd_framed::{ZstdReader, ZstdWriter};
 
-const ZSTD_MAGIC_BYTES: [u8; 4] = [0x28, 0xB5, 0x2F, 0xFD];
+pub const ZSTD_MAGIC_BYTES: [u8; 4] = [0x28, 0xB5, 0x2F, 0xFD];
 
 /// Helper struct to keep track of the number of files compressed using each algorithm
 #[derive(Debug, Copy, Clone, PartialEq, Default)]

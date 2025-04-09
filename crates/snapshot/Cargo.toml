@@ -16,6 +16,21 @@ spacetimedb-paths.workspace = true
 spacetimedb-fs-utils.workspace = true
 
 blake3.workspace = true
+bytes.workspace = true
+futures.workspace = true
 hex.workspace = true
 log.workspace = true
+tempfile.workspace = true
 thiserror.workspace = true
+tokio = { workspace = true, features = ["io-util"] }
+tokio-stream.workspace = true
+tokio-util = { workspace = true, features = ["io"] }
+zstd-framed.workspace = true
+
+[dev-dependencies]
+spacetimedb-core = { workspace = true, features = ["test"] }
+spacetimedb-schema.workspace = true
+
+anyhow.workspace = true
+env_logger.workspace = true
+pretty_assertions = { workspace = true, features = ["unstable"] }

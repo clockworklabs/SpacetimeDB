@@ -1,5 +1,5 @@
 use super::execution_unit::QueryHash;
-use super::module_subscription_manager::{Plan, SubscriptionManager};
+use super::module_subscription_manager::{Plan, SubscriptionGaugeStats, SubscriptionManager};
 use super::query::compile_read_only_query;
 use super::tx::DeltaTx;
 use super::{collect_table_update, record_exec_metrics, TableUpdateType};
@@ -9,6 +9,7 @@ use crate::client::messages::{
 };
 use crate::client::{ClientActorId, ClientConnectionSender, Protocol};
 use crate::db::datastore::locking_tx_datastore::tx::TxId;
+use crate::db::db_metrics::DB_METRICS;
 use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::error::DBError;
 use crate::estimation::estimate_rows_scanned;
@@ -20,6 +21,7 @@ use crate::subscription::execute_plans;
 use crate::vm::check_row_limit;
 use crate::worker_metrics::WORKER_METRICS;
 use parking_lot::RwLock;
+use prometheus::IntGauge;
 use spacetimedb_client_api_messages::websocket::{
     self as ws, BsatnFormat, FormatSwitch, JsonFormat, SubscribeMulti, SubscribeSingle, TableUpdate, Unsubscribe,
     UnsubscribeMulti,
@@ -40,6 +42,60 @@ pub struct ModuleSubscriptions {
     /// You will deadlock otherwise.
     subscriptions: Subscriptions,
     owner_identity: Identity,
+    stats: Box<SubscriptionGauges>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SubscriptionGauges {
+    db_identity: Identity,
+    num_queries: IntGauge,
+    num_connections: IntGauge,
+    num_subscription_sets: IntGauge,
+    num_query_subscriptions: IntGauge,
+    num_legacy_subscriptions: IntGauge,
+}
+
+impl SubscriptionGauges {
+    fn new(db_identity: &Identity) -> Self {
+        let num_queries = WORKER_METRICS.subscription_queries.with_label_values(db_identity);
+        let num_connections = DB_METRICS.subscription_connections.with_label_values(db_identity);
+        let num_subscription_sets = DB_METRICS.subscription_sets.with_label_values(db_identity);
+        let num_query_subscriptions = DB_METRICS.total_query_subscriptions.with_label_values(db_identity);
+        let num_legacy_subscriptions = DB_METRICS.num_legacy_subscriptions.with_label_values(db_identity);
+        Self {
+            db_identity: *db_identity,
+            num_queries,
+            num_connections,
+            num_subscription_sets,
+            num_query_subscriptions,
+            num_legacy_subscriptions,
+        }
+    }
+
+    // Clear the subscription gauges for this database.
+    fn unregister(&self) {
+        let _ = WORKER_METRICS
+            .subscription_queries
+            .remove_label_values(&self.db_identity);
+        let _ = DB_METRICS
+            .subscription_connections
+            .remove_label_values(&self.db_identity);
+        let _ = DB_METRICS.subscription_sets.remove_label_values(&self.db_identity);
+        let _ = DB_METRICS
+            .total_query_subscriptions
+            .remove_label_values(&self.db_identity);
+        let _ = DB_METRICS
+            .num_legacy_subscriptions
+            .remove_label_values(&self.db_identity);
+    }
+
+    fn report(&self, stats: &SubscriptionGaugeStats) {
+        self.num_queries.set(stats.num_queries as i64);
+        self.num_connections.set(stats.num_connections as i64);
+        self.num_subscription_sets.set(stats.num_subscription_sets as i64);
+        self.num_query_subscriptions.set(stats.num_query_subscriptions as i64);
+        self.num_legacy_subscriptions.set(stats.num_legacy_subscriptions as i64);
+    }
 }
 
 type AssertTxFn = Arc<dyn Fn(&Tx)>;
@@ -69,11 +125,25 @@ fn hash_query(sql: &str, tx: &TxId, auth: &AuthCtx) -> Result<QueryHash, DBError
 
 impl ModuleSubscriptions {
     pub fn new(relational_db: Arc<RelationalDB>, subscriptions: Subscriptions, owner_identity: Identity) -> Self {
+        let stats = Box::new(SubscriptionGauges::new(&relational_db.database_identity()));
         Self {
             relational_db,
             subscriptions,
             owner_identity,
+            stats,
         }
+    }
+
+    // Recompute gauges to update metrics.
+    pub fn update_gauges(&self) {
+        let num_queries = self.subscriptions.read().calculate_gauge_stats();
+        self.stats.report(&num_queries);
+    }
+
+    // Remove the subscription gauges for this database.
+    // TODO: This should be called when the database is shut down.
+    pub fn remove_gauges(&self) {
+        self.stats.unregister();
     }
 
     /// Run auth and row limit checks for a new subscriber, then compute the initial query results.
@@ -86,23 +156,37 @@ impl ModuleSubscriptions {
         update_type: TableUpdateType,
     ) -> Result<(SubscriptionUpdate, ExecutionMetrics), DBError> {
         check_row_limit(
-            query.physical_plan(),
+            &[&query],
             &self.relational_db,
             tx,
-            |plan, tx| estimate_rows_scanned(tx, plan),
+            |plan, tx| {
+                plan.plans_fragments()
+                    .map(|plan_fragment| estimate_rows_scanned(tx, plan_fragment.physical_plan()))
+                    .fold(0, |acc, rows_scanned| acc.saturating_add(rows_scanned))
+            },
             auth,
         )?;
 
         let comp = sender.config.compression;
         let table_id = query.subscribed_table_id();
         let table_name = query.subscribed_table_name();
-        let plan = query.physical_plan().clone().optimize().map(PipelinedProject::from)?;
+
+        let plans = query
+            .plans_fragments()
+            .map(|fragment| fragment.physical_plan())
+            .cloned()
+            .map(|plan| plan.optimize())
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .map(PipelinedProject::from)
+            .collect::<Vec<_>>();
+
         let tx = DeltaTx::from(tx);
 
         Ok(match sender.config.protocol {
-            Protocol::Binary => collect_table_update(&plan, table_id, table_name.into(), comp, &tx, update_type)
+            Protocol::Binary => collect_table_update(&plans, table_id, table_name.into(), comp, &tx, update_type)
                 .map(|(table_update, metrics)| (FormatSwitch::Bsatn(table_update), metrics))?,
-            Protocol::Text => collect_table_update(&plan, table_id, table_name.into(), comp, &tx, update_type)
+            Protocol::Text => collect_table_update(&plans, table_id, table_name.into(), comp, &tx, update_type)
                 .map(|(table_update, metrics)| (FormatSwitch::Json(table_update), metrics))?,
         })
     }
@@ -110,23 +194,20 @@ impl ModuleSubscriptions {
     fn evaluate_queries(
         &self,
         sender: Arc<ClientConnectionSender>,
-        queries: &Vec<Arc<Plan>>,
+        queries: &[Arc<Plan>],
         tx: &TxId,
         auth: &AuthCtx,
         update_type: TableUpdateType,
     ) -> Result<(FullSubscriptionUpdate, ExecutionMetrics), DBError> {
-        fn rows_scanned(tx: &TxId, plans: &[Arc<Plan>]) -> u64 {
-            plans
-                .iter()
-                .map(|plan| estimate_rows_scanned(tx, plan.physical_plan()))
-                .fold(0, |acc, n| acc.saturating_add(n))
-        }
-
         check_row_limit(
-            &queries,
+            queries,
             &self.relational_db,
             tx,
-            |plan, tx| rows_scanned(tx, plan),
+            |plan, tx| {
+                plan.plans_fragments()
+                    .map(|plan_fragment| estimate_rows_scanned(tx, plan_fragment.physical_plan()))
+                    .fold(0, |acc, rows_scanned| acc.saturating_add(rows_scanned))
+            },
             auth,
         )?;
         let comp = sender.config.compression;
@@ -203,11 +284,6 @@ impl ModuleSubscriptions {
         // but that should not pose an issue.
         let mut subscriptions = self.subscriptions.write();
         subscriptions.add_subscription(sender.clone(), query.clone(), request.query_id)?;
-
-        WORKER_METRICS
-            .subscription_queries
-            .with_label_values(&self.relational_db.database_identity())
-            .set(subscriptions.num_unique_queries() as i64);
 
         #[cfg(test)]
         if let Some(assert) = _assert {
@@ -296,10 +372,6 @@ impl ModuleSubscriptions {
             metrics,
         );
 
-        WORKER_METRICS
-            .subscription_queries
-            .with_label_values(&self.relational_db.database_identity())
-            .set(subscriptions.num_unique_queries() as i64);
         let _ = sender.send_message(SubscriptionMessage {
             request_id: Some(request.request_id),
             query_id: Some(request.query_id),
@@ -341,21 +413,14 @@ impl ModuleSubscriptions {
         let removed_queries = {
             let mut subscriptions = self.subscriptions.write();
 
-            let queries = match subscriptions
-                .remove_subscription((sender.id.identity, sender.id.connection_id), request.query_id)
-            {
+            match subscriptions.remove_subscription((sender.id.identity, sender.id.connection_id), request.query_id) {
                 Ok(queries) => queries,
                 Err(error) => {
                     // Apparently we ignore errors sending messages.
                     let _ = send_err_msg(error.to_string().into());
                     return Ok(());
                 }
-            };
-            WORKER_METRICS
-                .subscription_queries
-                .with_label_values(&self.relational_db.database_identity())
-                .set(subscriptions.num_unique_queries() as i64);
-            queries
+            }
         };
 
         let auth = AuthCtx::new(self.owner_identity, sender.id.identity);
@@ -452,13 +517,8 @@ impl ModuleSubscriptions {
         // write lock on the db.
         let queries = {
             let mut subscriptions = self.subscriptions.write();
-            let new_queries = subscriptions.add_subscription_multi(sender.clone(), queries, request.query_id)?;
 
-            WORKER_METRICS
-                .subscription_queries
-                .with_label_values(&self.relational_db.database_identity())
-                .set(subscriptions.num_unique_queries() as i64);
-            new_queries
+            subscriptions.add_subscription_multi(sender.clone(), queries, request.query_id)?
         };
 
         let Ok((update, metrics)) =
@@ -542,18 +602,15 @@ impl ModuleSubscriptions {
 
         let comp = sender.config.compression;
 
-        fn rows_scanned(tx: &TxId, plans: &[Arc<Plan>]) -> u64 {
-            plans
-                .iter()
-                .map(|plan| estimate_rows_scanned(tx, plan.physical_plan()))
-                .fold(0, |acc, n| acc.saturating_add(n))
-        }
-
         check_row_limit(
             &queries,
             &self.relational_db,
             &tx,
-            |plan, tx| rows_scanned(tx, plan),
+            |plan, tx| {
+                plan.plans_fragments()
+                    .map(|plan_fragment| estimate_rows_scanned(tx, plan_fragment.physical_plan()))
+                    .fold(0, |acc, rows_scanned| acc.saturating_add(rows_scanned))
+            },
             &auth,
         )?;
 
@@ -576,12 +633,6 @@ impl ModuleSubscriptions {
         // but that should not pose an issue.
         let mut subscriptions = self.subscriptions.write();
         subscriptions.set_legacy_subscription(sender.clone(), queries.into_iter());
-        let num_queries = subscriptions.num_unique_queries();
-
-        WORKER_METRICS
-            .subscription_queries
-            .with_label_values(&self.relational_db.database_identity())
-            .set(num_queries as i64);
 
         #[cfg(test)]
         if let Some(assert) = _assert {
@@ -603,10 +654,6 @@ impl ModuleSubscriptions {
     pub fn remove_subscriber(&self, client_id: ClientActorId) {
         let mut subscriptions = self.subscriptions.write();
         subscriptions.remove_all_subscriptions(&(client_id.identity, client_id.connection_id));
-        WORKER_METRICS
-            .subscription_queries
-            .with_label_values(&self.relational_db.database_identity())
-            .set(subscriptions.num_unique_queries() as i64);
     }
 
     /// Commit a transaction and broadcast its ModuleEvent to all interested subscribers.
@@ -678,6 +725,7 @@ mod tests {
         TransactionUpdateMessage,
     };
     use crate::client::{ClientActorId, ClientConfig, ClientConnectionSender, ClientName, Protocol};
+    use crate::db::datastore::system_tables::{StRowLevelSecurityRow, ST_ROW_LEVEL_SECURITY_ID};
     use crate::db::datastore::traits::IsolationLevel;
     use crate::db::relational_db::tests_utils::{insert, TestDB};
     use crate::db::relational_db::RelationalDB;
@@ -688,18 +736,21 @@ mod tests {
     use crate::subscription::module_subscription_manager::SubscriptionManager;
     use crate::subscription::query::compile_read_only_query;
     use crate::subscription::TableUpdateType;
+    use hashbrown::HashMap;
+    use itertools::Itertools;
     use parking_lot::RwLock;
     use spacetimedb_client_api_messages::energy::EnergyQuanta;
     use spacetimedb_client_api_messages::websocket::{
-        CompressableQueryUpdate, Compression, FormatSwitch, QueryId, RowListLen, Subscribe, SubscribeMulti,
-        SubscribeSingle, Unsubscribe,
+        CompressableQueryUpdate, Compression, FormatSwitch, QueryId, Subscribe, SubscribeMulti, SubscribeSingle,
+        Unsubscribe, UnsubscribeMulti,
     };
+    use spacetimedb_lib::bsatn::ToBsatn;
     use spacetimedb_lib::db::auth::StAccess;
     use spacetimedb_lib::identity::AuthCtx;
     use spacetimedb_lib::{bsatn, ConnectionId, ProductType, ProductValue, Timestamp};
     use spacetimedb_lib::{error::ResultTest, AlgebraicType, Identity};
-    use spacetimedb_primitives::{IndexId, TableId};
-    use spacetimedb_sats::{product, u256};
+    use spacetimedb_primitives::TableId;
+    use spacetimedb_sats::product;
     use std::time::Instant;
     use std::{sync::Arc, time::Duration};
     use tokio::sync::mpsc::{self, Receiver};
@@ -734,14 +785,6 @@ mod tests {
         )
     }
 
-    /// Return a client connection for testing
-    fn sender_with_rx() -> (Arc<ClientConnectionSender>, mpsc::Receiver<SerializableMessage>) {
-        let client = ClientActorId::for_test(Identity::ZERO);
-        let config = ClientConfig::for_test();
-        let (sender, rx) = ClientConnectionSender::dummy_with_channel(client, config);
-        (Arc::new(sender), rx)
-    }
-
     /// A [SubscribeSingle] message for testing
     fn single_subscribe(sql: &str, query_id: u32) -> SubscribeSingle {
         SubscribeSingle {
@@ -758,6 +801,14 @@ mod tests {
                 .iter()
                 .map(|sql| String::from(*sql).into_boxed_str())
                 .collect(),
+            request_id: 0,
+            query_id: QueryId::new(query_id),
+        }
+    }
+
+    /// A [SubscribeMulti] message for testing
+    fn multi_unsubscribe(query_id: u32) -> UnsubscribeMulti {
+        UnsubscribeMulti {
             request_id: 0,
             query_id: QueryId::new(query_id),
         }
@@ -786,37 +837,195 @@ mod tests {
         }
     }
 
-    /// Creates a single row, single column table with an index
-    fn create_table_with_index(db: &RelationalDB, name: &str) -> anyhow::Result<(TableId, IndexId)> {
-        let table_id = db.create_table_for_test(name, &[("id", AlgebraicType::U64)], &[0.into()])?;
-        let index_id = db.with_read_only(Workload::ForTests, |tx| {
-            db.schema_for_table(tx, table_id)?
-                .indexes
-                .iter()
-                .find(|schema| {
-                    schema
-                        .index_algorithm
-                        .columns()
-                        .as_singleton()
-                        .is_some_and(|col_id| col_id.idx() == 0)
-                })
-                .map(|schema| schema.index_id)
-                .ok_or_else(|| anyhow::anyhow!("Index not found for ColId `{}`", 0))
-        })?;
+    /// Create an [Identity] from a [u8]
+    fn identity_from_u8(v: u8) -> Identity {
+        Identity::from_byte_array([v; 32])
+    }
+
+    /// Create an [ConnectionId] from a [u8]
+    fn connection_id_from_u8(v: u8) -> ConnectionId {
+        ConnectionId::from_be_byte_array([v; 16])
+    }
+
+    /// Create an [ClientActorId] from a [u8].
+    /// Calls [identity_from_u8] internally with the passed value.
+    fn client_id_from_u8(v: u8) -> ClientActorId {
+        ClientActorId {
+            identity: identity_from_u8(v),
+            connection_id: connection_id_from_u8(v),
+            name: ClientName(v as u64),
+        }
+    }
+
+    /// Instantiate a client connection
+    fn client_connection(client_id: ClientActorId) -> (Arc<ClientConnectionSender>, Receiver<SerializableMessage>) {
+        let (sender, rx) = ClientConnectionSender::dummy_with_channel(
+            client_id,
+            ClientConfig {
+                protocol: Protocol::Binary,
+                compression: Compression::None,
+                tx_update_full: true,
+            },
+        );
+        (Arc::new(sender), rx)
+    }
+
+    /// Insert rules into the RLS system table
+    fn insert_rls_rules(
+        db: &RelationalDB,
+        table_ids: impl IntoIterator<Item = TableId>,
+        rules: impl IntoIterator<Item = &'static str>,
+    ) -> anyhow::Result<()> {
         db.with_auto_commit(Workload::ForTests, |tx| {
-            db.insert(tx, table_id, &bsatn::to_vec(&product![1_u64])?)?;
-            Ok((table_id, index_id))
+            for (table_id, sql) in table_ids.into_iter().zip(rules) {
+                db.insert(
+                    tx,
+                    ST_ROW_LEVEL_SECURITY_ID,
+                    &ProductValue::from(StRowLevelSecurityRow {
+                        table_id,
+                        sql: sql.into(),
+                    })
+                    .to_bsatn_vec()?,
+                )?;
+            }
+            Ok(())
         })
+    }
+
+    /// Subscribe to a query as a client
+    fn subscribe_single(
+        subs: &ModuleSubscriptions,
+        sql: &'static str,
+        sender: Arc<ClientConnectionSender>,
+        counter: &mut u32,
+    ) -> anyhow::Result<()> {
+        *counter += 1;
+        subs.add_single_subscription(sender, single_subscribe(sql, *counter), Instant::now(), None)?;
+        Ok(())
+    }
+
+    /// Subscribe to a set of queries as a client
+    fn subscribe_multi(
+        subs: &ModuleSubscriptions,
+        queries: &[&'static str],
+        sender: Arc<ClientConnectionSender>,
+        counter: &mut u32,
+    ) -> anyhow::Result<()> {
+        *counter += 1;
+        subs.add_multi_subscription(sender, multi_subscribe(queries, *counter), Instant::now(), None)?;
+        Ok(())
+    }
+
+    /// Unsubscribe from a single query
+    fn unsubscribe_single(
+        subs: &ModuleSubscriptions,
+        sender: Arc<ClientConnectionSender>,
+        query_id: u32,
+    ) -> anyhow::Result<()> {
+        subs.remove_single_subscription(sender, single_unsubscribe(query_id), Instant::now())?;
+        Ok(())
+    }
+
+    /// Unsubscribe from a set of queries
+    fn unsubscribe_multi(
+        subs: &ModuleSubscriptions,
+        sender: Arc<ClientConnectionSender>,
+        query_id: u32,
+    ) -> anyhow::Result<()> {
+        subs.remove_multi_subscription(sender, multi_unsubscribe(query_id), Instant::now())?;
+        Ok(())
+    }
+
+    /// Pull a message from receiver and assert that it is a `TxUpdate` with the expected rows
+    async fn assert_tx_update_for_table(
+        rx: &mut Receiver<SerializableMessage>,
+        table_id: TableId,
+        schema: &ProductType,
+        inserts: impl IntoIterator<Item = ProductValue>,
+        deletes: impl IntoIterator<Item = ProductValue>,
+    ) {
+        match rx.recv().await {
+            Some(SerializableMessage::TxUpdate(TransactionUpdateMessage {
+                database_update:
+                    SubscriptionUpdateMessage {
+                        database_update: FormatSwitch::Bsatn(ws::DatabaseUpdate { mut tables }),
+                        ..
+                    },
+                ..
+            })) => {
+                // Assume an update for only one table
+                assert_eq!(tables.len(), 1);
+
+                let table_update = tables.pop().unwrap();
+
+                // We should not be sending empty updates to clients
+                assert_ne!(table_update.num_rows, 0);
+
+                // It should be the table we expect
+                assert_eq!(table_update.table_id, table_id);
+
+                let mut rows_received: HashMap<ProductValue, i32> = HashMap::new();
+
+                for uncompressed in table_update.updates {
+                    let CompressableQueryUpdate::Uncompressed(table_update) = uncompressed else {
+                        panic!("expected an uncompressed table update")
+                    };
+
+                    for row in table_update
+                        .inserts
+                        .into_iter()
+                        .map(|bytes| ProductValue::decode(schema, &mut &*bytes).unwrap())
+                    {
+                        *rows_received.entry(row).or_insert(0) += 1;
+                    }
+
+                    for row in table_update
+                        .deletes
+                        .into_iter()
+                        .map(|bytes| ProductValue::decode(schema, &mut &*bytes).unwrap())
+                    {
+                        *rows_received.entry(row).or_insert(0) -= 1;
+                    }
+                }
+
+                assert_eq!(
+                    rows_received
+                        .iter()
+                        .filter(|(_, n)| n > &&0)
+                        .map(|(row, _)| row)
+                        .cloned()
+                        .collect::<Vec<_>>(),
+                    inserts.into_iter().sorted().collect::<Vec<_>>()
+                );
+                assert_eq!(
+                    rows_received
+                        .iter()
+                        .filter(|(_, n)| n < &&0)
+                        .map(|(row, _)| row)
+                        .cloned()
+                        .collect::<Vec<_>>(),
+                    deletes.into_iter().sorted().collect::<Vec<_>>()
+                );
+            }
+            Some(msg) => panic!("expected a TxUpdate, but got {:#?}", msg),
+            None => panic!("The receiver closed due to an error"),
+        }
     }
 
     #[test]
     fn test_subscribe_metrics() -> anyhow::Result<()> {
-        let (sender, _) = sender_with_rx();
+        let client_id = client_id_from_u8(1);
+        let (sender, _) = client_connection(client_id);
+
         let db = relational_db()?;
         let subs = module_subscriptions(db.clone());
 
         // Create a table `t` with index on `id`
-        create_table_with_index(&db, "t")?;
+        let table_id = db.create_table_for_test("t", &[("id", AlgebraicType::U64)], &[0.into()])?;
+        db.with_auto_commit(Workload::ForTests, |tx| -> anyhow::Result<_> {
+            db.insert(tx, table_id, &bsatn::to_vec(&product![1_u64])?)?;
+            Ok(())
+        })?;
 
         let auth = AuthCtx::for_testing();
         let sql = "select * from t where id = 1";
@@ -824,7 +1033,7 @@ mod tests {
         let plan = compile_read_only_query(&auth, &tx, sql)?;
         let plan = Arc::new(plan);
 
-        let (_, metrics) = subs.evaluate_queries(sender, &vec![plan], &tx, &auth, TableUpdateType::Subscribe)?;
+        let (_, metrics) = subs.evaluate_queries(sender, &[plan], &tx, &auth, TableUpdateType::Subscribe)?;
 
         // We only probe the index once
         assert_eq!(metrics.index_seeks, 1);
@@ -842,23 +1051,19 @@ mod tests {
         Ok(())
     }
 
+    /// Test that clients receive error messages on subscribe
     #[tokio::test]
-    async fn subscribe_error() -> anyhow::Result<()> {
-        let (sender, mut rx) = sender_with_rx();
+    async fn subscribe_single_error() -> anyhow::Result<()> {
+        let client_id = client_id_from_u8(1);
+        let (tx, mut rx) = client_connection(client_id);
+
         let db = relational_db()?;
         let subs = module_subscriptions(db.clone());
 
-        // Create a table `t` with index on `id`
-        create_table_with_index(&db, "t")?;
+        db.create_table_for_test("t", &[("x", AlgebraicType::U8)], &[])?;
 
-        let subscribe = || -> anyhow::Result<()> {
-            // Invalid query: t does not have a field x
-            let sql = "select * from t where x = 1";
-            subs.add_single_subscription(sender.clone(), single_subscribe(sql, 0), Instant::now(), None)?;
-            Ok(())
-        };
-
-        subscribe()?;
+        // Subscribe to an invalid query (r is not in scope)
+        subscribe_single(&subs, "select r.* from t", tx, &mut 0)?;
 
         assert!(matches!(
             rx.recv().await,
@@ -870,27 +1075,55 @@ mod tests {
         Ok(())
     }
 
+    /// Test that clients receive error messages on subscribe
     #[tokio::test]
-    async fn unsubscribe_error() -> anyhow::Result<()> {
-        let (sender, mut rx) = sender_with_rx();
+    async fn subscribe_multi_error() -> anyhow::Result<()> {
+        let client_id = client_id_from_u8(1);
+        let (tx, mut rx) = client_connection(client_id);
+
+        let db = relational_db()?;
+        let subs = module_subscriptions(db.clone());
+
+        db.create_table_for_test("t", &[("x", AlgebraicType::U8)], &[])?;
+
+        // Subscribe to an invalid query (r is not in scope)
+        subscribe_multi(&subs, &["select r.* from t"], tx, &mut 0)?;
+
+        assert!(matches!(
+            rx.recv().await,
+            Some(SerializableMessage::Subscription(SubscriptionMessage {
+                result: SubscriptionResult::Error(..),
+                ..
+            }))
+        ));
+        Ok(())
+    }
+
+    /// Test that clients receive error messages on unsubscribe
+    #[tokio::test]
+    async fn unsubscribe_single_error() -> anyhow::Result<()> {
+        let client_id = client_id_from_u8(1);
+        let (tx, mut rx) = client_connection(client_id);
+
         let db = relational_db()?;
         let subs = module_subscriptions(db.clone());
 
         // Create a table `t` with an index on `id`
-        let (_, index_id) = create_table_with_index(&db, "t")?;
+        let table_id = db.create_table_for_test("t", &[("id", AlgebraicType::U8)], &[0.into()])?;
+        let index_id = db.with_read_only(Workload::ForTests, |tx| {
+            db.schema_for_table(&*tx, table_id).map(|schema| {
+                schema
+                    .indexes
+                    .first()
+                    .map(|index_schema| index_schema.index_id)
+                    .unwrap()
+            })
+        })?;
 
-        let subscribe = || -> anyhow::Result<()> {
-            let sql = "select * from t where id = 1";
-            subs.add_single_subscription(sender.clone(), single_subscribe(sql, 0), Instant::now(), None)?;
-            Ok(())
-        };
+        let mut query_id = 0;
 
-        let unsubscribe = || -> anyhow::Result<()> {
-            subs.remove_single_subscription(sender.clone(), single_unsubscribe(0), Instant::now())?;
-            Ok(())
-        };
-
-        subscribe()?;
+        // Subscribe to `t`
+        subscribe_single(&subs, "select * from t where id = 1", tx.clone(), &mut query_id)?;
 
         // The initial subscription should succeed
         assert!(matches!(
@@ -904,7 +1137,8 @@ mod tests {
         // Remove the index from `id`
         db.with_auto_commit(Workload::ForTests, |tx| db.drop_index(tx, index_id))?;
 
-        unsubscribe()?;
+        // Unsubscribe from `t`
+        unsubscribe_single(&subs, tx, query_id)?;
 
         // Why does the unsubscribe fail?
         // This relies on some knowledge of the underlying implementation.
@@ -921,23 +1155,85 @@ mod tests {
         Ok(())
     }
 
+    /// Test that clients receive error messages on unsubscribe
+    #[tokio::test]
+    async fn unsubscribe_multi_error() -> anyhow::Result<()> {
+        let client_id = client_id_from_u8(1);
+        let (tx, mut rx) = client_connection(client_id);
+
+        let db = relational_db()?;
+        let subs = module_subscriptions(db.clone());
+
+        // Create a table `t` with an index on `id`
+        let table_id = db.create_table_for_test("t", &[("id", AlgebraicType::U8)], &[0.into()])?;
+        let index_id = db.with_read_only(Workload::ForTests, |tx| {
+            db.schema_for_table(&*tx, table_id).map(|schema| {
+                schema
+                    .indexes
+                    .first()
+                    .map(|index_schema| index_schema.index_id)
+                    .unwrap()
+            })
+        })?;
+
+        let mut query_id = 0;
+
+        // Subscribe to `t`
+        subscribe_multi(&subs, &["select * from t where id = 1"], tx.clone(), &mut query_id)?;
+
+        // The initial subscription should succeed
+        assert!(matches!(
+            rx.recv().await,
+            Some(SerializableMessage::Subscription(SubscriptionMessage {
+                result: SubscriptionResult::SubscribeMulti(..),
+                ..
+            }))
+        ));
+
+        // Remove the index from `id`
+        db.with_auto_commit(Workload::ForTests, |tx| db.drop_index(tx, index_id))?;
+
+        // Unsubscribe from `t`
+        unsubscribe_multi(&subs, tx, query_id)?;
+
+        // Why does the unsubscribe fail?
+        // This relies on some knowledge of the underlying implementation.
+        // Specifically that we do not recompile queries on unsubscribe.
+        // We execute the cached plan which in this case is an index scan.
+        // The index no longer exists, and therefore it fails.
+        assert!(matches!(
+            rx.recv().await,
+            Some(SerializableMessage::Subscription(SubscriptionMessage {
+                result: SubscriptionResult::Error(..),
+                ..
+            }))
+        ));
+        Ok(())
+    }
+
+    /// Test that clients receieve error messages on tx updates
     #[tokio::test]
     async fn tx_update_error() -> anyhow::Result<()> {
-        let (sender, mut rx) = sender_with_rx();
+        let client_id = client_id_from_u8(1);
+        let (tx, mut rx) = client_connection(client_id);
+
         let db = relational_db()?;
         let subs = module_subscriptions(db.clone());
 
         // Create two tables `t` and `s` with indexes on their `id` columns
-        let (table_id, _index_id) = create_table_with_index(&db, "t")?;
-        let (_table_id, index_id) = create_table_with_index(&db, "s")?;
+        let t_id = db.create_table_for_test("t", &[("id", AlgebraicType::U8)], &[0.into()])?;
+        let s_id = db.create_table_for_test("s", &[("id", AlgebraicType::U8)], &[0.into()])?;
+        let index_id = db.with_read_only(Workload::ForTests, |tx| {
+            db.schema_for_table(&*tx, s_id).map(|schema| {
+                schema
+                    .indexes
+                    .first()
+                    .map(|index_schema| index_schema.index_id)
+                    .unwrap()
+            })
+        })?;
 
-        let subscribe = || -> anyhow::Result<()> {
-            let sql = "select t.* from t join s on t.id = s.id";
-            subs.add_single_subscription(sender.clone(), single_subscribe(sql, 0), Instant::now(), None)?;
-            Ok(())
-        };
-
-        subscribe()?;
+        subscribe_single(&subs, "select t.* from t join s on t.id = s.id", tx, &mut 0)?;
 
         // The initial subscription should succeed
         assert!(matches!(
@@ -953,7 +1249,7 @@ mod tests {
 
         // Start a new transaction and insert a new row into `t`
         let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
-        db.insert(&mut tx, table_id, &bsatn::to_vec(&product![2_u64])?)?;
+        db.insert(&mut tx, t_id, &bsatn::to_vec(&product![2_u8])?)?;
 
         assert!(matches!(
             subs.commit_and_broadcast_event(None, module_event(), tx),
@@ -975,111 +1271,188 @@ mod tests {
         Ok(())
     }
 
-    /// In this test we have two clients issue parameterized subscriptions.
-    /// These subscriptions are identical syntactically but not semantically,
-    /// because they are parameterized by `:sender` - the caller's identity.
+    /// Test that two clients can subscribe to a parameterized query and get the correct rows.
     #[tokio::test]
     async fn test_parameterized_subscription() -> anyhow::Result<()> {
-        let client_0_identity = Identity::from_u256(u256::MAX);
-        let client_1_identity = Identity::from_u256(u256::ONE);
-        let client_0_config = ClientConfig {
-            protocol: Protocol::Binary,
-            compression: Compression::None,
-            tx_update_full: true,
-        };
-        let client_1_config = ClientConfig {
-            protocol: Protocol::Binary,
-            compression: Compression::None,
-            tx_update_full: true,
-        };
-        let client_0 = ClientActorId {
-            identity: client_0_identity,
-            connection_id: ConnectionId::from_u128(0),
-            name: ClientName(0),
-        };
-        let client_1 = ClientActorId {
-            identity: client_1_identity,
-            connection_id: ConnectionId::from_u128(1),
-            name: ClientName(1),
-        };
-        let (sender_0, mut rx_0) = ClientConnectionSender::dummy_with_channel(client_0, client_0_config);
-        let (sender_1, mut rx_1) = ClientConnectionSender::dummy_with_channel(client_1, client_1_config);
+        // Create identities for two different clients
+        let id_for_a = identity_from_u8(1);
+        let id_for_b = identity_from_u8(2);
+
+        let client_id_for_a = client_id_from_u8(1);
+        let client_id_for_b = client_id_from_u8(2);
+
+        // Establish a connection for each client
+        let (tx_for_a, mut rx_for_a) = client_connection(client_id_for_a);
+        let (tx_for_b, mut rx_for_b) = client_connection(client_id_for_b);
+
         let db = relational_db()?;
         let subs = module_subscriptions(db.clone());
 
-        // Create an empty table with an `Identity` column
-        let table_id = db.create_table_for_test("t", &[("identity", AlgebraicType::identity())], &[])?;
+        let schema = [("identity", AlgebraicType::identity())];
 
-        let subscribe = |sender, query_id| -> anyhow::Result<()> {
-            let sql = "select * from t where identity = :sender";
-            subs.add_multi_subscription(sender, multi_subscribe(&[sql], query_id), Instant::now(), None)?;
-            Ok(())
-        };
+        let table_id = db.create_table_for_test("t", &schema, &[])?;
 
-        let client_0_query_id = 1;
-        let client_1_query_id = 2;
+        let mut query_ids = 0;
 
-        subscribe(Arc::new(sender_0), client_0_query_id)?;
-        subscribe(Arc::new(sender_1), client_1_query_id)?;
-
-        /// Wait for the initial subscription
-        async fn wait(rx: &mut Receiver<SerializableMessage>) {
-            assert!(matches!(rx.recv().await, Some(SerializableMessage::Subscription(_))))
-        }
+        // Have each client subscribe to the same parameterized query.
+        // Each client should receive different rows.
+        subscribe_multi(
+            &subs,
+            &["select * from t where identity = :sender"],
+            tx_for_a,
+            &mut query_ids,
+        )?;
+        subscribe_multi(
+            &subs,
+            &["select * from t where identity = :sender"],
+            tx_for_b,
+            &mut query_ids,
+        )?;
 
         // Wait for both subscriptions
-        wait(&mut rx_0).await;
-        wait(&mut rx_1).await;
+        assert!(matches!(
+            rx_for_a.recv().await,
+            Some(SerializableMessage::Subscription(_))
+        ));
+        assert!(matches!(
+            rx_for_b.recv().await,
+            Some(SerializableMessage::Subscription(_))
+        ));
 
         // Insert two identities - one for each caller - into the table
         let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
-        db.insert(&mut tx, table_id, &bsatn::to_vec(&product![client_0_identity])?)?;
-        db.insert(&mut tx, table_id, &bsatn::to_vec(&product![client_1_identity])?)?;
+        db.insert(&mut tx, table_id, &bsatn::to_vec(&product![id_for_a])?)?;
+        db.insert(&mut tx, table_id, &bsatn::to_vec(&product![id_for_b])?)?;
 
         assert!(matches!(
             subs.commit_and_broadcast_event(None, module_event(), tx),
             Ok(Ok(_))
         ));
 
-        /// Assert that we get the expected identity from the receiver
-        async fn assert_identity(table_id: TableId, identity: Identity, rx: &mut Receiver<SerializableMessage>) {
-            match rx.recv().await {
-                Some(SerializableMessage::TxUpdate(TransactionUpdateMessage {
-                    database_update:
-                        SubscriptionUpdateMessage {
-                            database_update: FormatSwitch::Bsatn(ws::DatabaseUpdate { mut tables }),
-                            ..
-                        },
-                    ..
-                })) => {
-                    assert_eq!(tables.len(), 1);
-                    let mut table_update = tables.pop().unwrap();
+        let schema = ProductType::from([AlgebraicType::identity()]);
 
-                    assert_eq!(table_update.table_id, table_id);
-                    assert_eq!(table_update.num_rows, 1);
-                    assert_eq!(table_update.updates.len(), 1);
+        // Both clients should only receive their identities and not the other's.
+        assert_tx_update_for_table(&mut rx_for_a, table_id, &schema, [product![id_for_a]], []).await;
+        assert_tx_update_for_table(&mut rx_for_b, table_id, &schema, [product![id_for_b]], []).await;
+        Ok(())
+    }
 
-                    let CompressableQueryUpdate::Uncompressed(table_update) = table_update.updates.pop().unwrap()
-                    else {
-                        panic!("expected an uncompressed table update")
-                    };
+    /// Test that two clients can subscribe to a table with RLS rules and get the correct rows
+    #[tokio::test]
+    async fn test_rls_subscription() -> anyhow::Result<()> {
+        // Create identities for two different clients
+        let id_for_a = identity_from_u8(1);
+        let id_for_b = identity_from_u8(2);
 
-                    assert!(table_update.deletes.is_empty());
-                    assert_eq!(table_update.inserts.len(), 1);
+        let client_id_for_a = client_id_from_u8(1);
+        let client_id_for_b = client_id_from_u8(2);
 
-                    let typ = ProductType::from([AlgebraicType::identity()]);
-                    let raw = table_update.inserts.into_iter().next().unwrap();
-                    let row = ProductValue::decode(&typ, &mut &*raw).unwrap();
+        // Establish a connection for each client
+        let (tx_for_a, mut rx_for_a) = client_connection(client_id_for_a);
+        let (tx_for_b, mut rx_for_b) = client_connection(client_id_for_b);
 
-                    assert_eq!(row, product![identity]);
-                }
-                _ => panic!("expected a transaction update"),
-            }
-        }
+        let db = relational_db()?;
+        let subs = module_subscriptions(db.clone());
 
-        // Assert that each connection receives the correct update
-        assert_identity(table_id, client_0_identity, &mut rx_0).await;
-        assert_identity(table_id, client_1_identity, &mut rx_1).await;
+        let schema = [("id", AlgebraicType::identity())];
+
+        let u_id = db.create_table_for_test("u", &schema, &[0.into()])?;
+        let v_id = db.create_table_for_test("v", &schema, &[0.into()])?;
+        let w_id = db.create_table_for_test("w", &schema, &[0.into()])?;
+
+        insert_rls_rules(
+            &db,
+            [u_id, v_id, w_id, w_id],
+            [
+                "select * from u where id = :sender",
+                "select * from v where id = :sender",
+                "select w.* from u join w on u.id = w.id",
+                "select w.* from v join w on v.id = w.id",
+            ],
+        )?;
+
+        let mut query_ids = 0;
+
+        // Have each client subscribe to `w`.
+        // Because `w` is gated using parameterized RLS rules,
+        // each client should receive different rows.
+        subscribe_multi(&subs, &["select * from w"], tx_for_a, &mut query_ids)?;
+        subscribe_multi(&subs, &["select * from w"], tx_for_b, &mut query_ids)?;
+
+        // Wait for both subscriptions
+        assert!(matches!(
+            rx_for_a.recv().await,
+            Some(SerializableMessage::Subscription(_))
+        ));
+        assert!(matches!(
+            rx_for_b.recv().await,
+            Some(SerializableMessage::Subscription(_))
+        ));
+
+        // Insert a row into `u` for client "a".
+        // Insert a row into `v` for client "b".
+        // Insert a row into `w` for both.
+        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        db.insert(&mut tx, u_id, &bsatn::to_vec(&product![id_for_a])?)?;
+        db.insert(&mut tx, v_id, &bsatn::to_vec(&product![id_for_b])?)?;
+        db.insert(&mut tx, w_id, &bsatn::to_vec(&product![id_for_a])?)?;
+        db.insert(&mut tx, w_id, &bsatn::to_vec(&product![id_for_b])?)?;
+
+        assert!(matches!(
+            subs.commit_and_broadcast_event(None, module_event(), tx),
+            Ok(Ok(_))
+        ));
+
+        let schema = ProductType::from([AlgebraicType::identity()]);
+
+        // Both clients should only receive their identities and not the other's.
+        assert_tx_update_for_table(&mut rx_for_a, w_id, &schema, [product![id_for_a]], []).await;
+        assert_tx_update_for_table(&mut rx_for_b, w_id, &schema, [product![id_for_b]], []).await;
+        Ok(())
+    }
+
+    /// Test that we do not send empty updates to clients
+    #[tokio::test]
+    async fn test_no_empty_updates() -> anyhow::Result<()> {
+        // Establish a client connection
+        let (tx, mut rx) = client_connection(client_id_from_u8(1));
+
+        let db = relational_db()?;
+        let subs = module_subscriptions(db.clone());
+
+        let schema = [("x", AlgebraicType::U8)];
+
+        let t_id = db.create_table_for_test("t", &schema, &[])?;
+
+        // Subscribe to rows of `t` where `x` is 0
+        subscribe_multi(&subs, &["select * from t where x = 0"], tx, &mut 0)?;
+
+        // Wait to receive the initial subscription message
+        assert!(matches!(rx.recv().await, Some(SerializableMessage::Subscription(_))));
+
+        // Insert a row that does not match the query
+        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        db.insert(&mut tx, t_id, &bsatn::to_vec(&product![1_u8])?)?;
+
+        assert!(matches!(
+            subs.commit_and_broadcast_event(None, module_event(), tx),
+            Ok(Ok(_))
+        ));
+
+        // Insert a row that does match the query
+        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        db.insert(&mut tx, t_id, &bsatn::to_vec(&product![0_u8])?)?;
+
+        assert!(matches!(
+            subs.commit_and_broadcast_event(None, module_event(), tx),
+            Ok(Ok(_))
+        ));
+
+        let schema = ProductType::from([AlgebraicType::U8]);
+
+        // If the server sends empty updates, this assertion will fail,
+        // because we will receive one for the first transaction.
+        assert_tx_update_for_table(&mut rx, t_id, &schema, [product![0_u8]], []).await;
         Ok(())
     }
 

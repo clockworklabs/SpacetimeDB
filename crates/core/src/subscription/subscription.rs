@@ -620,10 +620,8 @@ pub(crate) fn get_all(relational_db: &RelationalDB, tx: &Tx, auth: &AuthCtx) -> 
         })
         .map(|schema| {
             let sql = format!("SELECT * FROM {}", schema.table_name);
-            // TODO: Once we have RLS, we must compute this hash after name resolution.
-            let hash = QueryHash::from_string(&sql, auth.caller, false);
             SubscriptionPlan::compile(&sql, &SchemaViewer::new(tx, auth), auth)
-                .map(|(plan, _)| Plan::new(plan, hash, sql))
+                .map(|(plans, has_param)| Plan::new(plans, QueryHash::from_string(&sql, auth.caller, has_param), sql))
         })
         .collect::<Result<_, _>>()?)
 }
