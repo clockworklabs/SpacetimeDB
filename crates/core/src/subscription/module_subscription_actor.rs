@@ -742,14 +742,14 @@ mod tests {
     use spacetimedb_client_api_messages::energy::EnergyQuanta;
     use spacetimedb_client_api_messages::websocket::{
         CompressableQueryUpdate, Compression, FormatSwitch, QueryId, Subscribe, SubscribeMulti, SubscribeSingle,
-        Unsubscribe,
+        Unsubscribe, UnsubscribeMulti,
     };
     use spacetimedb_lib::bsatn::ToBsatn;
     use spacetimedb_lib::db::auth::StAccess;
     use spacetimedb_lib::identity::AuthCtx;
     use spacetimedb_lib::{bsatn, ConnectionId, ProductType, ProductValue, Timestamp};
     use spacetimedb_lib::{error::ResultTest, AlgebraicType, Identity};
-    use spacetimedb_primitives::{IndexId, TableId};
+    use spacetimedb_primitives::TableId;
     use spacetimedb_sats::product;
     use std::time::Instant;
     use std::{sync::Arc, time::Duration};
@@ -785,14 +785,6 @@ mod tests {
         )
     }
 
-    /// Return a client connection for testing
-    fn sender_with_rx() -> (Arc<ClientConnectionSender>, mpsc::Receiver<SerializableMessage>) {
-        let client = ClientActorId::for_test(Identity::ZERO);
-        let config = ClientConfig::for_test();
-        let (sender, rx) = ClientConnectionSender::dummy_with_channel(client, config);
-        (Arc::new(sender), rx)
-    }
-
     /// A [SubscribeSingle] message for testing
     fn single_subscribe(sql: &str, query_id: u32) -> SubscribeSingle {
         SubscribeSingle {
@@ -809,6 +801,14 @@ mod tests {
                 .iter()
                 .map(|sql| String::from(*sql).into_boxed_str())
                 .collect(),
+            request_id: 0,
+            query_id: QueryId::new(query_id),
+        }
+    }
+
+    /// A [SubscribeMulti] message for testing
+    fn multi_unsubscribe(query_id: u32) -> UnsubscribeMulti {
+        UnsubscribeMulti {
             request_id: 0,
             query_id: QueryId::new(query_id),
         }
@@ -837,195 +837,6 @@ mod tests {
         }
     }
 
-    /// Creates a single row, single column table with an index
-    fn create_table_with_index(db: &RelationalDB, name: &str) -> anyhow::Result<(TableId, IndexId)> {
-        let table_id = db.create_table_for_test(name, &[("id", AlgebraicType::U64)], &[0.into()])?;
-        let index_id = db.with_read_only(Workload::ForTests, |tx| {
-            db.schema_for_table(tx, table_id)?
-                .indexes
-                .iter()
-                .find(|schema| {
-                    schema
-                        .index_algorithm
-                        .columns()
-                        .as_singleton()
-                        .is_some_and(|col_id| col_id.idx() == 0)
-                })
-                .map(|schema| schema.index_id)
-                .ok_or_else(|| anyhow::anyhow!("Index not found for ColId `{}`", 0))
-        })?;
-        db.with_auto_commit(Workload::ForTests, |tx| {
-            db.insert(tx, table_id, &bsatn::to_vec(&product![1_u64])?)?;
-            Ok((table_id, index_id))
-        })
-    }
-
-    #[test]
-    fn test_subscribe_metrics() -> anyhow::Result<()> {
-        let (sender, _) = sender_with_rx();
-        let db = relational_db()?;
-        let subs = module_subscriptions(db.clone());
-
-        // Create a table `t` with index on `id`
-        create_table_with_index(&db, "t")?;
-
-        let auth = AuthCtx::for_testing();
-        let sql = "select * from t where id = 1";
-        let tx = db.begin_tx(Workload::ForTests);
-        let plan = compile_read_only_query(&auth, &tx, sql)?;
-        let plan = Arc::new(plan);
-
-        let (_, metrics) = subs.evaluate_queries(sender, &[plan], &tx, &auth, TableUpdateType::Subscribe)?;
-
-        // We only probe the index once
-        assert_eq!(metrics.index_seeks, 1);
-        // We scan a single u64 when serializing the result
-        assert_eq!(metrics.bytes_scanned, 8);
-        // Subscriptions are read-only
-        assert_eq!(metrics.bytes_written, 0);
-        // Bytes scanned and bytes sent will always be the same for an initial subscription,
-        // because a subscription is initiated by a single client.
-        assert_eq!(metrics.bytes_sent_to_clients, 8);
-
-        // Note, rows scanned may be greater than one.
-        // It depends on the number of operators used to answer the query.
-        assert!(metrics.rows_scanned > 0);
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn subscribe_error() -> anyhow::Result<()> {
-        let (sender, mut rx) = sender_with_rx();
-        let db = relational_db()?;
-        let subs = module_subscriptions(db.clone());
-
-        // Create a table `t` with index on `id`
-        create_table_with_index(&db, "t")?;
-
-        let subscribe = || -> anyhow::Result<()> {
-            // Invalid query: t does not have a field x
-            let sql = "select * from t where x = 1";
-            subs.add_single_subscription(sender.clone(), single_subscribe(sql, 0), Instant::now(), None)?;
-            Ok(())
-        };
-
-        subscribe()?;
-
-        assert!(matches!(
-            rx.recv().await,
-            Some(SerializableMessage::Subscription(SubscriptionMessage {
-                result: SubscriptionResult::Error(..),
-                ..
-            }))
-        ));
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn unsubscribe_error() -> anyhow::Result<()> {
-        let (sender, mut rx) = sender_with_rx();
-        let db = relational_db()?;
-        let subs = module_subscriptions(db.clone());
-
-        // Create a table `t` with an index on `id`
-        let (_, index_id) = create_table_with_index(&db, "t")?;
-
-        let subscribe = || -> anyhow::Result<()> {
-            let sql = "select * from t where id = 1";
-            subs.add_single_subscription(sender.clone(), single_subscribe(sql, 0), Instant::now(), None)?;
-            Ok(())
-        };
-
-        let unsubscribe = || -> anyhow::Result<()> {
-            subs.remove_single_subscription(sender.clone(), single_unsubscribe(0), Instant::now())?;
-            Ok(())
-        };
-
-        subscribe()?;
-
-        // The initial subscription should succeed
-        assert!(matches!(
-            rx.recv().await,
-            Some(SerializableMessage::Subscription(SubscriptionMessage {
-                result: SubscriptionResult::Subscribe(..),
-                ..
-            }))
-        ));
-
-        // Remove the index from `id`
-        db.with_auto_commit(Workload::ForTests, |tx| db.drop_index(tx, index_id))?;
-
-        unsubscribe()?;
-
-        // Why does the unsubscribe fail?
-        // This relies on some knowledge of the underlying implementation.
-        // Specifically that we do not recompile queries on unsubscribe.
-        // We execute the cached plan which in this case is an index scan.
-        // The index no longer exists, and therefore it fails.
-        assert!(matches!(
-            rx.recv().await,
-            Some(SerializableMessage::Subscription(SubscriptionMessage {
-                result: SubscriptionResult::Error(..),
-                ..
-            }))
-        ));
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn tx_update_error() -> anyhow::Result<()> {
-        let (sender, mut rx) = sender_with_rx();
-        let db = relational_db()?;
-        let subs = module_subscriptions(db.clone());
-
-        // Create two tables `t` and `s` with indexes on their `id` columns
-        let (table_id, _index_id) = create_table_with_index(&db, "t")?;
-        let (_table_id, index_id) = create_table_with_index(&db, "s")?;
-
-        let subscribe = || -> anyhow::Result<()> {
-            let sql = "select t.* from t join s on t.id = s.id";
-            subs.add_single_subscription(sender.clone(), single_subscribe(sql, 0), Instant::now(), None)?;
-            Ok(())
-        };
-
-        subscribe()?;
-
-        // The initial subscription should succeed
-        assert!(matches!(
-            rx.recv().await,
-            Some(SerializableMessage::Subscription(SubscriptionMessage {
-                result: SubscriptionResult::Subscribe(..),
-                ..
-            }))
-        ));
-
-        // Remove the index from `s`
-        db.with_auto_commit(Workload::ForTests, |tx| db.drop_index(tx, index_id))?;
-
-        // Start a new transaction and insert a new row into `t`
-        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
-        db.insert(&mut tx, table_id, &bsatn::to_vec(&product![2_u64])?)?;
-
-        assert!(matches!(
-            subs.commit_and_broadcast_event(None, module_event(), tx),
-            Ok(Ok(_))
-        ));
-
-        // Why does the update fail?
-        // This relies on some knowledge of the underlying implementation.
-        // Specifically, plans are cached on the initial subscribe.
-        // Hence we execute a cached plan which happens to be an index join.
-        // We've removed the index on `s`, and therefore it fails.
-        assert!(matches!(
-            rx.recv().await,
-            Some(SerializableMessage::Subscription(SubscriptionMessage {
-                result: SubscriptionResult::Error(..),
-                ..
-            }))
-        ));
-        Ok(())
-    }
-
     /// Create an [Identity] from a [u8]
     fn identity_from_u8(v: u8) -> Identity {
         Identity::from_byte_array([v; 32])
@@ -1047,15 +858,16 @@ mod tests {
     }
 
     /// Instantiate a client connection
-    fn client_connection(client_id: ClientActorId) -> (ClientConnectionSender, Receiver<SerializableMessage>) {
-        ClientConnectionSender::dummy_with_channel(
+    fn client_connection(client_id: ClientActorId) -> (Arc<ClientConnectionSender>, Receiver<SerializableMessage>) {
+        let (sender, rx) = ClientConnectionSender::dummy_with_channel(
             client_id,
             ClientConfig {
                 protocol: Protocol::Binary,
                 compression: Compression::None,
                 tx_update_full: true,
             },
-        )
+        );
+        (Arc::new(sender), rx)
     }
 
     /// Insert rules into the RLS system table
@@ -1081,14 +893,46 @@ mod tests {
     }
 
     /// Subscribe to a query as a client
-    fn subscribe(
+    fn subscribe_single(
         subs: &ModuleSubscriptions,
         sql: &'static str,
         sender: Arc<ClientConnectionSender>,
         counter: &mut u32,
     ) -> anyhow::Result<()> {
         *counter += 1;
-        subs.add_multi_subscription(sender, multi_subscribe(&[sql], *counter), Instant::now(), None)?;
+        subs.add_single_subscription(sender, single_subscribe(sql, *counter), Instant::now(), None)?;
+        Ok(())
+    }
+
+    /// Subscribe to a set of queries as a client
+    fn subscribe_multi(
+        subs: &ModuleSubscriptions,
+        queries: &[&'static str],
+        sender: Arc<ClientConnectionSender>,
+        counter: &mut u32,
+    ) -> anyhow::Result<()> {
+        *counter += 1;
+        subs.add_multi_subscription(sender, multi_subscribe(queries, *counter), Instant::now(), None)?;
+        Ok(())
+    }
+
+    /// Unsubscribe from a single query
+    fn unsubscribe_single(
+        subs: &ModuleSubscriptions,
+        sender: Arc<ClientConnectionSender>,
+        query_id: u32,
+    ) -> anyhow::Result<()> {
+        subs.remove_single_subscription(sender, single_unsubscribe(query_id), Instant::now())?;
+        Ok(())
+    }
+
+    /// Unsubscribe from a set of queries
+    fn unsubscribe_multi(
+        subs: &ModuleSubscriptions,
+        sender: Arc<ClientConnectionSender>,
+        query_id: u32,
+    ) -> anyhow::Result<()> {
+        subs.remove_multi_subscription(sender, multi_unsubscribe(query_id), Instant::now())?;
         Ok(())
     }
 
@@ -1168,6 +1012,265 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_subscribe_metrics() -> anyhow::Result<()> {
+        let client_id = client_id_from_u8(1);
+        let (sender, _) = client_connection(client_id);
+
+        let db = relational_db()?;
+        let subs = module_subscriptions(db.clone());
+
+        // Create a table `t` with index on `id`
+        let table_id = db.create_table_for_test("t", &[("id", AlgebraicType::U64)], &[0.into()])?;
+        db.with_auto_commit(Workload::ForTests, |tx| -> anyhow::Result<_> {
+            db.insert(tx, table_id, &bsatn::to_vec(&product![1_u64])?)?;
+            Ok(())
+        })?;
+
+        let auth = AuthCtx::for_testing();
+        let sql = "select * from t where id = 1";
+        let tx = db.begin_tx(Workload::ForTests);
+        let plan = compile_read_only_query(&auth, &tx, sql)?;
+        let plan = Arc::new(plan);
+
+        let (_, metrics) = subs.evaluate_queries(sender, &[plan], &tx, &auth, TableUpdateType::Subscribe)?;
+
+        // We only probe the index once
+        assert_eq!(metrics.index_seeks, 1);
+        // We scan a single u64 when serializing the result
+        assert_eq!(metrics.bytes_scanned, 8);
+        // Subscriptions are read-only
+        assert_eq!(metrics.bytes_written, 0);
+        // Bytes scanned and bytes sent will always be the same for an initial subscription,
+        // because a subscription is initiated by a single client.
+        assert_eq!(metrics.bytes_sent_to_clients, 8);
+
+        // Note, rows scanned may be greater than one.
+        // It depends on the number of operators used to answer the query.
+        assert!(metrics.rows_scanned > 0);
+        Ok(())
+    }
+
+    /// Test that clients receive error messages on subscribe
+    #[tokio::test]
+    async fn subscribe_single_error() -> anyhow::Result<()> {
+        let client_id = client_id_from_u8(1);
+        let (tx, mut rx) = client_connection(client_id);
+
+        let db = relational_db()?;
+        let subs = module_subscriptions(db.clone());
+
+        db.create_table_for_test("t", &[("x", AlgebraicType::U8)], &[])?;
+
+        // Subscribe to an invalid query (r is not in scope)
+        subscribe_single(&subs, "select r.* from t", tx, &mut 0)?;
+
+        assert!(matches!(
+            rx.recv().await,
+            Some(SerializableMessage::Subscription(SubscriptionMessage {
+                result: SubscriptionResult::Error(..),
+                ..
+            }))
+        ));
+        Ok(())
+    }
+
+    /// Test that clients receive error messages on subscribe
+    #[tokio::test]
+    async fn subscribe_multi_error() -> anyhow::Result<()> {
+        let client_id = client_id_from_u8(1);
+        let (tx, mut rx) = client_connection(client_id);
+
+        let db = relational_db()?;
+        let subs = module_subscriptions(db.clone());
+
+        db.create_table_for_test("t", &[("x", AlgebraicType::U8)], &[])?;
+
+        // Subscribe to an invalid query (r is not in scope)
+        subscribe_multi(&subs, &["select r.* from t"], tx, &mut 0)?;
+
+        assert!(matches!(
+            rx.recv().await,
+            Some(SerializableMessage::Subscription(SubscriptionMessage {
+                result: SubscriptionResult::Error(..),
+                ..
+            }))
+        ));
+        Ok(())
+    }
+
+    /// Test that clients receive error messages on unsubscribe
+    #[tokio::test]
+    async fn unsubscribe_single_error() -> anyhow::Result<()> {
+        let client_id = client_id_from_u8(1);
+        let (tx, mut rx) = client_connection(client_id);
+
+        let db = relational_db()?;
+        let subs = module_subscriptions(db.clone());
+
+        // Create a table `t` with an index on `id`
+        let table_id = db.create_table_for_test("t", &[("id", AlgebraicType::U8)], &[0.into()])?;
+        let index_id = db.with_read_only(Workload::ForTests, |tx| {
+            db.schema_for_table(&*tx, table_id).map(|schema| {
+                schema
+                    .indexes
+                    .first()
+                    .map(|index_schema| index_schema.index_id)
+                    .unwrap()
+            })
+        })?;
+
+        let mut query_id = 0;
+
+        // Subscribe to `t`
+        subscribe_single(&subs, "select * from t where id = 1", tx.clone(), &mut query_id)?;
+
+        // The initial subscription should succeed
+        assert!(matches!(
+            rx.recv().await,
+            Some(SerializableMessage::Subscription(SubscriptionMessage {
+                result: SubscriptionResult::Subscribe(..),
+                ..
+            }))
+        ));
+
+        // Remove the index from `id`
+        db.with_auto_commit(Workload::ForTests, |tx| db.drop_index(tx, index_id))?;
+
+        // Unsubscribe from `t`
+        unsubscribe_single(&subs, tx, query_id)?;
+
+        // Why does the unsubscribe fail?
+        // This relies on some knowledge of the underlying implementation.
+        // Specifically that we do not recompile queries on unsubscribe.
+        // We execute the cached plan which in this case is an index scan.
+        // The index no longer exists, and therefore it fails.
+        assert!(matches!(
+            rx.recv().await,
+            Some(SerializableMessage::Subscription(SubscriptionMessage {
+                result: SubscriptionResult::Error(..),
+                ..
+            }))
+        ));
+        Ok(())
+    }
+
+    /// Test that clients receive error messages on unsubscribe
+    #[tokio::test]
+    async fn unsubscribe_multi_error() -> anyhow::Result<()> {
+        let client_id = client_id_from_u8(1);
+        let (tx, mut rx) = client_connection(client_id);
+
+        let db = relational_db()?;
+        let subs = module_subscriptions(db.clone());
+
+        // Create a table `t` with an index on `id`
+        let table_id = db.create_table_for_test("t", &[("id", AlgebraicType::U8)], &[0.into()])?;
+        let index_id = db.with_read_only(Workload::ForTests, |tx| {
+            db.schema_for_table(&*tx, table_id).map(|schema| {
+                schema
+                    .indexes
+                    .first()
+                    .map(|index_schema| index_schema.index_id)
+                    .unwrap()
+            })
+        })?;
+
+        let mut query_id = 0;
+
+        // Subscribe to `t`
+        subscribe_multi(&subs, &["select * from t where id = 1"], tx.clone(), &mut query_id)?;
+
+        // The initial subscription should succeed
+        assert!(matches!(
+            rx.recv().await,
+            Some(SerializableMessage::Subscription(SubscriptionMessage {
+                result: SubscriptionResult::SubscribeMulti(..),
+                ..
+            }))
+        ));
+
+        // Remove the index from `id`
+        db.with_auto_commit(Workload::ForTests, |tx| db.drop_index(tx, index_id))?;
+
+        // Unsubscribe from `t`
+        unsubscribe_multi(&subs, tx, query_id)?;
+
+        // Why does the unsubscribe fail?
+        // This relies on some knowledge of the underlying implementation.
+        // Specifically that we do not recompile queries on unsubscribe.
+        // We execute the cached plan which in this case is an index scan.
+        // The index no longer exists, and therefore it fails.
+        assert!(matches!(
+            rx.recv().await,
+            Some(SerializableMessage::Subscription(SubscriptionMessage {
+                result: SubscriptionResult::Error(..),
+                ..
+            }))
+        ));
+        Ok(())
+    }
+
+    /// Test that clients receieve error messages on tx updates
+    #[tokio::test]
+    async fn tx_update_error() -> anyhow::Result<()> {
+        let client_id = client_id_from_u8(1);
+        let (tx, mut rx) = client_connection(client_id);
+
+        let db = relational_db()?;
+        let subs = module_subscriptions(db.clone());
+
+        // Create two tables `t` and `s` with indexes on their `id` columns
+        let t_id = db.create_table_for_test("t", &[("id", AlgebraicType::U8)], &[0.into()])?;
+        let s_id = db.create_table_for_test("s", &[("id", AlgebraicType::U8)], &[0.into()])?;
+        let index_id = db.with_read_only(Workload::ForTests, |tx| {
+            db.schema_for_table(&*tx, s_id).map(|schema| {
+                schema
+                    .indexes
+                    .first()
+                    .map(|index_schema| index_schema.index_id)
+                    .unwrap()
+            })
+        })?;
+
+        subscribe_single(&subs, "select t.* from t join s on t.id = s.id", tx, &mut 0)?;
+
+        // The initial subscription should succeed
+        assert!(matches!(
+            rx.recv().await,
+            Some(SerializableMessage::Subscription(SubscriptionMessage {
+                result: SubscriptionResult::Subscribe(..),
+                ..
+            }))
+        ));
+
+        // Remove the index from `s`
+        db.with_auto_commit(Workload::ForTests, |tx| db.drop_index(tx, index_id))?;
+
+        // Start a new transaction and insert a new row into `t`
+        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        db.insert(&mut tx, t_id, &bsatn::to_vec(&product![2_u8])?)?;
+
+        assert!(matches!(
+            subs.commit_and_broadcast_event(None, module_event(), tx),
+            Ok(Ok(_))
+        ));
+
+        // Why does the update fail?
+        // This relies on some knowledge of the underlying implementation.
+        // Specifically, plans are cached on the initial subscribe.
+        // Hence we execute a cached plan which happens to be an index join.
+        // We've removed the index on `s`, and therefore it fails.
+        assert!(matches!(
+            rx.recv().await,
+            Some(SerializableMessage::Subscription(SubscriptionMessage {
+                result: SubscriptionResult::Error(..),
+                ..
+            }))
+        ));
+        Ok(())
+    }
+
     /// Test that two clients can subscribe to a parameterized query and get the correct rows.
     #[tokio::test]
     async fn test_parameterized_subscription() -> anyhow::Result<()> {
@@ -1193,16 +1296,16 @@ mod tests {
 
         // Have each client subscribe to the same parameterized query.
         // Each client should receive different rows.
-        subscribe(
+        subscribe_multi(
             &subs,
-            "select * from t where identity = :sender",
-            Arc::new(tx_for_a),
+            &["select * from t where identity = :sender"],
+            tx_for_a,
             &mut query_ids,
         )?;
-        subscribe(
+        subscribe_multi(
             &subs,
-            "select * from t where identity = :sender",
-            Arc::new(tx_for_b),
+            &["select * from t where identity = :sender"],
+            tx_for_b,
             &mut query_ids,
         )?;
 
@@ -1273,8 +1376,8 @@ mod tests {
         // Have each client subscribe to `w`.
         // Because `w` is gated using parameterized RLS rules,
         // each client should receive different rows.
-        subscribe(&subs, "select * from w", Arc::new(tx_for_a), &mut query_ids)?;
-        subscribe(&subs, "select * from w", Arc::new(tx_for_b), &mut query_ids)?;
+        subscribe_multi(&subs, &["select * from w"], tx_for_a, &mut query_ids)?;
+        subscribe_multi(&subs, &["select * from w"], tx_for_b, &mut query_ids)?;
 
         // Wait for both subscriptions
         assert!(matches!(
@@ -1322,7 +1425,7 @@ mod tests {
         let t_id = db.create_table_for_test("t", &schema, &[])?;
 
         // Subscribe to rows of `t` where `x` is 0
-        subscribe(&subs, "select * from t where x = 0", Arc::new(tx), &mut 0)?;
+        subscribe_multi(&subs, &["select * from t where x = 0"], tx, &mut 0)?;
 
         // Wait to receive the initial subscription message
         assert!(matches!(rx.recv().await, Some(SerializableMessage::Subscription(_))));
