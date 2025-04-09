@@ -31,6 +31,11 @@ impl SqlSelect {
         if self.project.has_unqualified_vars() {
             return Err(SqlUnsupported::UnqualifiedNames.into());
         }
+        if let Some(expr) = &self.filter {
+            if expr.has_unqualified_vars() {
+                return Err(SqlUnsupported::UnqualifiedNames.into());
+            }
+        }
         Ok(self)
     }
 
