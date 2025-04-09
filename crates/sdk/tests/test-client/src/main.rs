@@ -125,6 +125,7 @@ fn main() {
         "test-intra-query-bag-semantics-for-join" => test_intra_query_bag_semantics_for_join(),
         "two-different-compression-algos" => exec_two_different_compression_algos(),
         "test-parameterized-subscription" => test_parameterized_subscription(),
+        "test-rls-subscription" => test_rls_subscription(),
         _ => panic!("Unknown test: {}", test),
     }
 }
@@ -2293,6 +2294,67 @@ fn test_parameterized_subscription() {
         4,
         [ctr_for_test.clone(), ctr_for_subs.clone()],
         [sub_1, insert_1, update_1],
+    );
+    ctr_for_test.wait_for_all();
+}
+
+/// In this test we have two clients subscribe to the `users` table.
+/// Access to this table is controlled using the following RLS rule:
+/// ```rust
+/// #[spacetimedb::client_visibility_filter]
+/// const USERS_FILTER: spacetimedb::Filter = spacetimedb::Filter::Sql(
+///     "SELECT * FROM users WHERE identity = :sender"
+/// );
+/// ```
+/// Hence each client should receive different rows.
+fn test_rls_subscription() {
+    let ctr_for_test = TestCounter::new();
+    let ctr_for_subs = TestCounter::new();
+    let sub_0 = Some(ctr_for_subs.add_test("sub_0"));
+    let sub_1 = Some(ctr_for_subs.add_test("sub_1"));
+    let ins_0 = Some(ctr_for_test.add_test("insert_0"));
+    let ins_1 = Some(ctr_for_test.add_test("insert_1"));
+
+    fn subscribe_and_update(
+        test_name: &str,
+        user_name: &str,
+        waiters: [Arc<TestCounter>; 2],
+        senders: [Option<ResultRecorder>; 2],
+    ) {
+        let [ctr_for_test, ctr_for_subs] = waiters;
+        let [mut record_sub, mut record_ins] = senders;
+        let user_name = user_name.to_owned();
+        let expected_name = user_name.to_owned();
+        connect_with_then(&ctr_for_test, test_name, |builder| builder, {
+            move |ctx| {
+                let sender = ctx.identity();
+                let expected_identity = sender;
+                subscribe_these_then(ctx, &["SELECT * FROM users"], move |ctx| {
+                    put_result(&mut record_sub, Ok(()));
+                    // Wait to insert until both client connections have been made
+                    ctr_for_subs.wait_for_all();
+                    ctx.reducers.insert_user(user_name, sender).unwrap();
+                });
+                ctx.db.users().on_insert(move |_, user| {
+                    assert_eq!(user.name, expected_name);
+                    assert_eq!(user.identity, expected_identity);
+                    put_result(&mut record_ins, Ok(()));
+                });
+            }
+        });
+    }
+
+    subscribe_and_update(
+        "client_0",
+        "Alice",
+        [ctr_for_test.clone(), ctr_for_subs.clone()],
+        [sub_0, ins_0],
+    );
+    subscribe_and_update(
+        "client_1",
+        "Bob",
+        [ctr_for_test.clone(), ctr_for_subs.clone()],
+        [sub_1, ins_1],
     );
     ctr_for_test.wait_for_all();
 }

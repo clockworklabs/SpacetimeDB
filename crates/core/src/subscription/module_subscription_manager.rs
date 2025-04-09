@@ -22,7 +22,6 @@ use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::{ConnectionId, Identity};
 use spacetimedb_primitives::TableId;
 use spacetimedb_subscription::SubscriptionPlan;
-use std::ops::Deref;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -43,24 +42,45 @@ type SubscriptionId = (ClientId, ClientQueryId);
 pub struct Plan {
     hash: QueryHash,
     sql: String,
-    plan: SubscriptionPlan,
-}
-
-impl Deref for Plan {
-    type Target = SubscriptionPlan;
-
-    fn deref(&self) -> &Self::Target {
-        &self.plan
-    }
+    plans: Vec<SubscriptionPlan>,
 }
 
 impl Plan {
-    pub fn new(plan: SubscriptionPlan, hash: QueryHash, text: String) -> Self {
-        Self { plan, hash, sql: text }
+    /// Create a new subscription plan to be cached
+    pub fn new(plans: Vec<SubscriptionPlan>, hash: QueryHash, text: String) -> Self {
+        Self { plans, hash, sql: text }
     }
 
+    /// Returns the query hash for this subscription
     pub fn hash(&self) -> QueryHash {
         self.hash
+    }
+
+    /// A subscription query return rows from a single table.
+    /// This method returns the id of that table.
+    pub fn subscribed_table_id(&self) -> TableId {
+        self.plans[0].subscribed_table_id()
+    }
+
+    /// A subscription query return rows from a single table.
+    /// This method returns the name of that table.
+    pub fn subscribed_table_name(&self) -> &str {
+        self.plans[0].subscribed_table_name()
+    }
+
+    /// Returns the table ids from which this subscription reads
+    pub fn table_ids(&self) -> impl Iterator<Item = TableId> + '_ {
+        self.plans
+            .iter()
+            .flat_map(|plan| plan.table_ids())
+            .collect::<HashSet<_>>()
+            .into_iter()
+    }
+
+    /// Returns the plan fragments that comprise this subscription.
+    /// Will only return one element unless there is a table with multiple RLS rules.
+    pub fn plans_fragments(&self) -> impl Iterator<Item = &SubscriptionPlan> + '_ {
+        self.plans.iter()
     }
 }
 
@@ -159,6 +179,20 @@ pub struct SubscriptionManager {
     tables: IntMap<TableId, HashSet<QueryHash>>,
 }
 
+// Tracks some gauges related to subscriptions.
+pub struct SubscriptionGaugeStats {
+    // The number of unique queries with at least one subscriber.
+    pub num_queries: usize,
+    // The number of unique connections with at least one subscription.
+    pub num_connections: usize,
+    // The number of subscription sets across all clients.
+    pub num_subscription_sets: usize,
+    // The total number of subscriptions across all clients and queries.
+    pub num_query_subscriptions: usize,
+    // The total number of subscriptions across all clients and queries.
+    pub num_legacy_subscriptions: usize,
+}
+
 impl SubscriptionManager {
     pub fn client(&self, id: &ClientId) -> Client {
         self.clients[id].outbound_ref.clone()
@@ -182,6 +216,26 @@ impl SubscriptionManager {
                     .get(*id)
                     .is_some_and(|info| !info.dropped.load(Ordering::Acquire))
             })
+    }
+
+    pub fn calculate_gauge_stats(&self) -> SubscriptionGaugeStats {
+        let num_queries = self.queries.len();
+        let num_connections = self.clients.len();
+        let num_query_subscriptions = self.queries.values().map(|state| state.subscriptions.len()).sum();
+        let num_subscription_sets = self.clients.values().map(|ci| ci.subscriptions.len()).sum();
+        let num_legacy_subscriptions = self
+            .clients
+            .values()
+            .filter(|ci| !ci.legacy_subscriptions.is_empty())
+            .count();
+
+        SubscriptionGaugeStats {
+            num_queries,
+            num_connections,
+            num_query_subscriptions,
+            num_subscription_sets,
+            num_legacy_subscriptions,
+        }
     }
 
     pub fn num_unique_queries(&self) -> usize {
@@ -474,15 +528,15 @@ impl SubscriptionManager {
                 .flatten()
                 .collect::<HashSet<_>>()
                 .par_iter()
-                .filter_map(|&hash| {
-                    self.queries
-                        .get(hash)
-                        .map(|state| (hash, &state.query, ExecutionMetrics::default()))
+                .filter_map(|&hash| self.queries.get(hash).map(|state| (hash, &state.query)))
+                .flat_map_iter(|(hash, plan)| {
+                    plan.plans_fragments()
+                        .map(move |plan_fragment| (&plan.sql, hash, plan_fragment, ExecutionMetrics::default()))
                 })
                 // If N clients are subscribed to a query,
                 // we copy the DatabaseTableUpdate N times,
                 // which involves cloning BSATN (binary) or product values (json).
-                .map(|(hash, plan, mut metrics)| {
+                .map(|(sql, hash, plan, mut metrics)| {
                     let table_id = plan.subscribed_table_id();
                     let table_name: Box<str> = plan.subscribed_table_name().into();
                     // Store at most one copy of the serialization to BSATN x Compression
@@ -520,43 +574,46 @@ impl SubscriptionManager {
                         (update, num_rows)
                     }
 
-                    let updates = eval_delta(tx, &mut metrics, plan)
-                        .map_err(|err| {
+                    let updates = match eval_delta(tx, &mut metrics, plan) {
+                        Err(err) => {
                             tracing::error!(
                                 message = "Query errored during tx update",
-                                sql = plan.sql,
+                                sql = sql,
                                 reason = ?err,
                             );
-                            self.clients_for_query(hash)
+                            Err(self
+                                .clients_for_query(hash)
                                 .map(|id| (id, err.to_string().into_boxed_str()))
-                                .collect::<Vec<_>>()
-                        })
-                        .map(|delta_updates| {
-                            self.clients_for_query(hash)
-                                .map(|id| {
-                                    let client = &self.clients[id].outbound_ref;
-                                    let update = match client.config.protocol {
-                                        Protocol::Binary => Bsatn(memo_encode::<BsatnFormat>(
-                                            &delta_updates,
-                                            client,
-                                            match client.config.compression {
-                                                Compression::Brotli => &mut ops_bin_brotli,
-                                                Compression::Gzip => &mut ops_bin_gzip,
-                                                Compression::None => &mut ops_bin_none,
-                                            },
-                                            &mut metrics,
-                                        )),
-                                        Protocol::Text => Json(memo_encode::<JsonFormat>(
-                                            &delta_updates,
-                                            client,
-                                            &mut ops_json,
-                                            &mut metrics,
-                                        )),
-                                    };
-                                    (id, table_id, table_name.clone(), update)
-                                })
-                                .collect::<Vec<_>>()
-                        });
+                                .collect::<Vec<_>>())
+                        }
+                        // The query didn't return any rows to update
+                        Ok(None) => Ok(vec![]),
+                        Ok(Some(delta_updates)) => Ok(self
+                            .clients_for_query(hash)
+                            .map(|id| {
+                                let client = &self.clients[id].outbound_ref;
+                                let update = match client.config.protocol {
+                                    Protocol::Binary => Bsatn(memo_encode::<BsatnFormat>(
+                                        &delta_updates,
+                                        client,
+                                        match client.config.compression {
+                                            Compression::Brotli => &mut ops_bin_brotli,
+                                            Compression::Gzip => &mut ops_bin_gzip,
+                                            Compression::None => &mut ops_bin_none,
+                                        },
+                                        &mut metrics,
+                                    )),
+                                    Protocol::Text => Json(memo_encode::<JsonFormat>(
+                                        &delta_updates,
+                                        client,
+                                        &mut ops_json,
+                                        &mut metrics,
+                                    )),
+                                };
+                                (id, table_id, table_name.clone(), update)
+                            })
+                            .collect::<Vec<_>>()),
+                    };
 
                     (updates, metrics)
                 })
@@ -727,9 +784,9 @@ mod tests {
         db.with_read_only(Workload::ForTests, |tx| {
             let auth = AuthCtx::for_testing();
             let tx = SchemaViewer::new(&*tx, &auth);
-            let (plan, has_param) = SubscriptionPlan::compile(sql, &tx, &auth).unwrap();
+            let (plans, has_param) = SubscriptionPlan::compile(sql, &tx, &auth).unwrap();
             let hash = QueryHash::from_string(sql, auth.caller, has_param);
-            Ok(Arc::new(Plan::new(plan, hash, sql.into())))
+            Ok(Arc::new(Plan::new(plans, hash, sql.into())))
         })
     }
 

@@ -33,7 +33,10 @@
     ///
     /// The query follows the same syntax as a subscription query.
     /// See the <see href="https://spacetimedb.com/docs/sql">SQL reference</see> for more information.
+    ///
+    /// This is an experimental feature and subject to change in the future.
     /// </summary>
+    [System.Diagnostics.CodeAnalysis.Experimental("STDB_UNSTABLE")]
     [AttributeUsage(AttributeTargets.Field)]
     public sealed class ClientVisibilityFilterAttribute : Attribute { }
 

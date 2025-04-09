@@ -115,6 +115,36 @@ metrics_group!(
         #[help = "The total time spent in reducer ABI calls"]
         #[labels(db: Identity, reducer: str)]
         pub reducer_abi_time_usec: IntCounterVec,
+
+        #[name = spacetime_num_delta_queries_evaluated]
+        #[help = "The total number of times we performed incremental evaluation of a query"]
+        #[labels(db: Identity)]
+        pub delta_queries_evaluated: IntCounterVec,
+
+        #[name = spacetime_num_delta_queries_matched]
+        #[help = "The total number of times incremental evaluation resulted in a subscription update"]
+        #[labels(db: Identity)]
+        pub delta_queries_matched: IntCounterVec,
+
+        #[name = spacetime_subscription_connections]
+        #[help = "Number of connections with active subscriptions"]
+        #[labels(database_identity: Identity)]
+        pub subscription_connections: IntGaugeVec,
+
+        #[name = spacetime_subscription_sets]
+        #[help = "Number of different subscription sets"]
+        #[labels(database_identity: Identity)]
+        pub subscription_sets: IntGaugeVec,
+
+        #[name = spacetime_query_subscriptions]
+        #[help = "Total number of subscriptions across all clients and queries"]
+        #[labels(database_identity: Identity)]
+        pub total_query_subscriptions: IntGaugeVec,
+
+        #[name = spacetime_legacy_subscriptions]
+        #[help = "Number of subscriptions via the legacy api"]
+        #[labels(database_identity: Identity)]
+        pub num_legacy_subscriptions: IntGaugeVec,
     }
 );
 

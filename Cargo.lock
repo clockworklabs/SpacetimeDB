@@ -5342,6 +5342,7 @@ dependencies = [
  "tikv-jemalloc-ctl",
  "tikv-jemallocator",
  "tokio",
+ "tokio-metrics",
  "tokio-stream",
  "tokio-util",
  "toml 0.8.19",
@@ -5652,17 +5653,29 @@ dependencies = [
 name = "spacetimedb-snapshot"
 version = "1.1.0"
 dependencies = [
+ "anyhow",
  "blake3",
+ "bytes",
+ "env_logger 0.10.2",
+ "futures",
  "hex",
  "log",
+ "pretty_assertions",
+ "spacetimedb-core",
  "spacetimedb-durability",
  "spacetimedb-fs-utils",
  "spacetimedb-lib",
  "spacetimedb-paths",
  "spacetimedb-primitives",
  "spacetimedb-sats",
+ "spacetimedb-schema",
  "spacetimedb-table",
+ "tempfile",
  "thiserror 1.0.69",
+ "tokio",
+ "tokio-stream",
+ "tokio-util",
+ "zstd-framed",
 ]
 
 [[package]]
@@ -6443,6 +6456,18 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.87",
+]
+
+[[package]]
+name = "tokio-metrics"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cb2bb07a8451c4c6fa8b3497ad198510d8b8dffa5df5cfb97a64102a58b113c8"
+dependencies = [
+ "futures-util",
+ "pin-project-lite",
+ "tokio",
+ "tokio-stream",
 ]
 
 [[package]]

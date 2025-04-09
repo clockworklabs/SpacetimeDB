@@ -230,6 +230,11 @@ macro_rules! declare_tests_with_suffix {
             fn test_parameterized_subscription() {
                 make_test("test-parameterized-subscription").run();
             }
+
+            #[test]
+            fn test_rls_subscription() {
+                make_test("test-rls-subscription").run()
+            }
         }
     };
 }

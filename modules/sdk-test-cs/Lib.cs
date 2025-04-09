@@ -2,6 +2,8 @@ namespace SpacetimeDB.Sdk.Test;
 
 using SpacetimeDB;
 
+#pragma warning disable STDB_UNSTABLE // Enable experimental SpacetimeDB features
+
 public static partial class Module
 {
     [SpacetimeDB.Type]
@@ -2005,5 +2007,22 @@ public static partial class Module
         [SpacetimeDB.Index.BTree]
         uint n;
         int data;
+    }
+
+    [SpacetimeDB.ClientVisibilityFilter]
+    public static readonly Filter USERS_FILTER = new Filter.Sql("SELECT * FROM users WHERE identity = :sender");
+
+    [SpacetimeDB.Table(Name = "users", Public = true)]
+    public partial struct Users
+    {
+        [PrimaryKey]
+        public Identity identity;
+        public string name;
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void insert_user(ReducerContext ctx, string name, Identity identity)
+    {
+        ctx.Db.users.Insert(new Users { name = name, identity = identity });
     }
 }
