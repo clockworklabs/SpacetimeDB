@@ -3,12 +3,9 @@ use std::ops::Add;
 
 use reqwest::{header, Client, RequestBuilder};
 use serde::Deserialize;
-use serde_json::value::RawValue;
 
-use spacetimedb::json::client_api::StmtStatsJson;
 use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
 use spacetimedb_lib::de::serde::DeserializeWrapper;
-use spacetimedb_lib::sats::ProductType;
 use spacetimedb_lib::Identity;
 
 use crate::util::{AuthHeader, ResponseExt};
@@ -86,16 +83,8 @@ impl ClientApi {
     }
 }
 
-// Sync with spacetimedb::json::client_api::StmtResultJson
-#[derive(Debug, Clone, Deserialize)]
-pub struct StmtResultJson<'a> {
-    pub schema: ProductType,
-    #[serde(borrow)]
-    pub rows: Vec<&'a RawValue>,
-    pub total_duration_micros: u64,
-    #[serde(default)]
-    pub stats: StmtStatsJson,
-}
+pub(crate) type SqlStmtResult<'a> =
+    spacetimedb_client_api_messages::http::SqlStmtResult<&'a serde_json::value::RawValue>;
 
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct StmtStats {
@@ -126,8 +115,8 @@ impl Add for StmtStats {
     }
 }
 
-impl From<&StmtResultJson<'_>> for StmtStats {
-    fn from(value: &StmtResultJson<'_>) -> Self {
+impl From<&SqlStmtResult<'_>> for StmtStats {
+    fn from(value: &SqlStmtResult<'_>) -> Self {
         Self {
             total_duration_micros: value.total_duration_micros,
             rows_inserted: value.stats.rows_inserted,

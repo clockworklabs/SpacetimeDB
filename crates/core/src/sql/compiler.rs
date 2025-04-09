@@ -9,8 +9,6 @@ use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::relation::{self, ColExpr, DbTable, FieldName, Header};
 use spacetimedb_primitives::ColId;
-use spacetimedb_sats::satn::PsqlType;
-use spacetimedb_sats::{satn, ProductType, ProductValue, Typespace};
 use spacetimedb_schema::schema::TableSchema;
 use spacetimedb_vm::expr::{CrudExpr, Expr, FieldExpr, QueryExpr, SourceExpr};
 use spacetimedb_vm::operator::OpCmp;
@@ -228,40 +226,6 @@ fn compile_statement(db: &RelationalDB, statement: SqlAst) -> Result<CrudExpr, P
     Ok(q.optimize(&|table_id, table_name| db.row_count(table_id, table_name)))
 }
 
-/// Generates a [`tabled::Table`] from a schema and rows, using the style of a psql table.
-pub fn build_table<E>(
-    schema: &ProductType,
-    rows: impl Iterator<Item = Result<ProductValue, E>>,
-) -> Result<tabled::Table, E> {
-    let mut builder = tabled::builder::Builder::default();
-    builder.set_header(
-        schema
-            .elements
-            .iter()
-            .enumerate()
-            .map(|(i, e)| e.name.clone().unwrap_or_else(|| format!("column {i}").into())),
-    );
-
-    let ty = Typespace::EMPTY.with_type(schema);
-    for row in rows {
-        let row = row?;
-        builder.push_record(ty.with_values(&row).enumerate().map(|(idx, value)| {
-            let ty = PsqlType {
-                tuple: ty.ty(),
-                field: &ty.ty().elements[idx],
-                idx,
-            };
-
-            satn::PsqlWrapper { ty, value }.to_string()
-        }));
-    }
-
-    let mut table = builder.build();
-    table.with(tabled::settings::Style::psql());
-
-    Ok(table)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -269,15 +233,10 @@ mod tests {
     use crate::db::relational_db::tests_utils::{insert, TestDB};
     use crate::execution_context::Workload;
     use crate::sql::execute::tests::run_for_testing;
-    use itertools::Itertools;
     use spacetimedb_lib::error::{ResultTest, TestError};
     use spacetimedb_lib::{ConnectionId, Identity};
     use spacetimedb_primitives::{col_list, ColList, TableId};
-    use spacetimedb_sats::time_duration::TimeDuration;
-    use spacetimedb_sats::timestamp::Timestamp;
-    use spacetimedb_sats::{
-        product, AlgebraicType, AlgebraicValue, GroundSpacetimeType as _, ProductType, ProductValue,
-    };
+    use spacetimedb_sats::{product, AlgebraicType, AlgebraicValue, GroundSpacetimeType as _};
     use spacetimedb_vm::expr::{ColumnOp, IndexJoin, IndexScan, JoinExpr, Query};
     use std::convert::From;
     use std::ops::Bound;
@@ -437,105 +396,6 @@ mod tests {
         };
 
         assert_eq!(rows, vec![row]);
-
-        Ok(())
-    }
-
-    fn expect_psql_table(ty: &ProductType, rows: Vec<ProductValue>, expected: &str) {
-        let table = build_table(ty, rows.into_iter().map(Ok::<_, ()>)).unwrap().to_string();
-        let mut table = table.split('\n').map(|x| x.trim_end()).join("\n");
-        table.insert(0, '\n');
-        assert_eq!(expected, table);
-    }
-
-    // Verify the output of `sql` matches the inputs that return true for [`AlgebraicType::is_special()`]
-    #[test]
-    fn output_special_types() -> ResultTest<()> {
-        // Check tuples
-        let kind: ProductType = [
-            AlgebraicType::String,
-            AlgebraicType::U256,
-            Identity::get_type(),
-            ConnectionId::get_type(),
-            Timestamp::get_type(),
-            TimeDuration::get_type(),
-        ]
-        .into();
-        let value = product![
-            "a",
-            Identity::ZERO.to_u256(),
-            Identity::ZERO,
-            ConnectionId::ZERO,
-            Timestamp::UNIX_EPOCH,
-            TimeDuration::ZERO
-        ];
-
-        expect_psql_table(
-            &kind,
-            vec![value],
-            r#"
- column 0 | column 1 | column 2                                                           | column 3                           | column 4                  | column 5
-----------+----------+--------------------------------------------------------------------+------------------------------------+---------------------------+-----------
- "a"      | 0        | 0x0000000000000000000000000000000000000000000000000000000000000000 | 0x00000000000000000000000000000000 | 1970-01-01T00:00:00+00:00 | +0.000000"#,
-        );
-
-        // Check struct
-        let kind: ProductType = [
-            ("bool", AlgebraicType::Bool),
-            ("str", AlgebraicType::String),
-            ("bytes", AlgebraicType::bytes()),
-            ("identity", Identity::get_type()),
-            ("connection_id", ConnectionId::get_type()),
-            ("timestamp", Timestamp::get_type()),
-            ("duration", TimeDuration::get_type()),
-        ]
-        .into();
-
-        let value = product![
-            true,
-            "This is spacetimedb".to_string(),
-            AlgebraicValue::Bytes([1, 2, 3, 4, 5, 6, 7].into()),
-            Identity::ZERO,
-            ConnectionId::ZERO,
-            Timestamp::UNIX_EPOCH,
-            TimeDuration::ZERO
-        ];
-
-        expect_psql_table(
-            &kind,
-            vec![value.clone()],
-            r#"
- bool | str                   | bytes            | identity                                                           | connection_id                      | timestamp                 | duration
-------+-----------------------+------------------+--------------------------------------------------------------------+------------------------------------+---------------------------+-----------
- true | "This is spacetimedb" | 0x01020304050607 | 0x0000000000000000000000000000000000000000000000000000000000000000 | 0x00000000000000000000000000000000 | 1970-01-01T00:00:00+00:00 | +0.000000"#,
-        );
-
-        // Check nested struct, tuple...
-        let kind: ProductType = [(None, AlgebraicType::product(kind))].into();
-
-        let value = product![value.clone()];
-
-        expect_psql_table(
-            &kind,
-            vec![value.clone()],
-            r#"
- column 0
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- (bool = true, str = "This is spacetimedb", bytes = 0x01020304050607, identity = 0x0000000000000000000000000000000000000000000000000000000000000000, connection_id = 0x00000000000000000000000000000000, timestamp = 1970-01-01T00:00:00+00:00, duration = +0.000000)"#,
-        );
-
-        let kind: ProductType = [("tuple", AlgebraicType::product(kind))].into();
-
-        let value = product![value];
-
-        expect_psql_table(
-            &kind,
-            vec![value],
-            r#"
- tuple
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- (0 = (bool = true, str = "This is spacetimedb", bytes = 0x01020304050607, identity = 0x0000000000000000000000000000000000000000000000000000000000000000, connection_id = 0x00000000000000000000000000000000, timestamp = 1970-01-01T00:00:00+00:00, duration = +0.000000))"#,
-        );
 
         Ok(())
     }
