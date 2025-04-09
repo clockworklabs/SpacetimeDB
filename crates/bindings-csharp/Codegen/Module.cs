@@ -96,9 +96,32 @@ record ColumnDeclaration : MemberDeclaration
             diag.Report(ErrorDescriptor.AutoIncNotInteger, field);
         }
 
+        // Check whether this is a sum type without a payload.
+        var isAllUnitEnum = false;
+        if (type.TypeKind == Microsoft.CodeAnalysis.TypeKind.Enum)
+        {
+            isAllUnitEnum = true;
+        }
+        else if (type.BaseType?.OriginalDefinition.ToString() == "SpacetimeDB.TaggedEnum<Variants>")
+        {
+            if (
+                type.BaseType.TypeArguments.FirstOrDefault() is INamedTypeSymbol
+                {
+                    IsTupleType: true,
+                    TupleElements: var taggedEnumVariants
+                }
+            )
+            {
+                isAllUnitEnum = taggedEnumVariants.All(
+                    (field) => field.Type.ToString() == "SpacetimeDB.Unit"
+                );
+            }
+        }
+
         IsEquatable =
             (
                 isInteger
+                || isAllUnitEnum
                 || type.SpecialType switch
                 {
                     SpecialType.System_String or SpecialType.System_Boolean => true,
