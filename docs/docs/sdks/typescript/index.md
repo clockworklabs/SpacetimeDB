@@ -757,7 +757,7 @@ Each table defined by a module has an accessor method, whose name is the table n
 | [Accessing rows](#accessing-rows)                      | Iterate over or count subscribed rows.                                          |
 | [`onInsert` callback](#callback-oninsert)              | Register a function to run when a row is added to the client cache.             |
 | [`onDelete` callback](#callback-ondelete)              | Register a function to run when a row is removed from the client cache.         |
-| [`onUpdate` callback](#callback-onupdate)              | Register a functioNto run when a subscribed row is replaced with a new version. |
+| [`onUpdate` callback](#callback-onupdate)              | Register a function to run when a subscribed row is replaced with a new version. |
 | [Unique index access](#unique-constraint-index-access) | Seek a subscribed row by the value in its unique or primary key column.         |
 | [BTree index access](#btree-index-access)              | Not supported.                                                                  |
 
