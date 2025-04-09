@@ -12,7 +12,8 @@ use tokio::{
 
 use crate::{
     commit, error,
-    repo::{Repo, SegmentLen as _, TxOffsetIndexMut},
+    index::IndexFile,
+    repo::{Repo, SegmentLen as _},
     segment::{self, FileLike as _, OffsetIndexWriter, CHECKSUM_LEN, DEFAULT_CHECKSUM_ALGORITHM},
     stream::common::{read_exact, AsyncFsync},
     Options, StoredCommit, DEFAULT_LOG_FORMAT_VERSION,
@@ -107,23 +108,22 @@ where
         };
 
         let mut segment = repo.open_segment_writer(last)?;
-        let offset_index = repo
+        let mut offset_index = repo
             .get_offset_index(last)
             .inspect_err(|e| {
                 warn!("unable to open offset index for segment {last}: {e}");
             })
             .ok();
 
-        let (meta, offset_index) = match segment::Metadata::extract(last, &mut segment, offset_index.as_ref()) {
-            Ok(sofar) => (sofar, offset_index.map(|idx| idx.into())),
+        let meta = match segment::Metadata::extract(last, &mut segment, offset_index.as_ref()) {
+            Ok(sofar) => sofar,
             Err(error::SegmentMetadata::InvalidCommit { sofar, source }) => match on_trailing {
                 OnTrailingData::Error => {
                     return Err(io::Error::new(io::ErrorKind::InvalidData, source));
                 }
                 OnTrailingData::Trim => {
                     info!("trimming segment {last} after invalid commit: {sofar:?}");
-                    let mut offset_index_mut: Option<TxOffsetIndexMut> = offset_index.map(|idx| idx.into());
-                    if let Some(mut idx) = offset_index_mut.take() {
+                    if let Some(idx) = offset_index.as_mut().map(IndexFile::as_mut) {
                         idx.ftruncate(sofar.tx_range.end, sofar.size_in_bytes)
                             .inspect_err(|e| {
                                 error!(
@@ -131,12 +131,10 @@ where
                                     last, e
                                 )
                             })?;
-                        offset_index_mut = Some(idx);
-
                         segment.ftruncate(sofar.tx_range.end, sofar.size_in_bytes)?;
                         segment.seek(io::SeekFrom::End(0))?;
                     }
-                    (sofar, offset_index_mut)
+                    sofar
                 }
             },
             Err(error::SegmentMetadata::Io(e)) => Err(e)?,
@@ -149,7 +147,7 @@ where
         let current_segment = CurrentSegment {
             header: meta.header,
             segment: segment.into_async_writer(),
-            offset_index: offset_index.map(|index| OffsetIndexWriter::new(index, commitlog_options)),
+            offset_index: offset_index.map(|index| OffsetIndexWriter::new(index.into(), commitlog_options)),
         };
 
         let this = Self {
