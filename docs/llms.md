@@ -207,19 +207,24 @@ Getting started with SpacetimeDB involves a few key steps:
 
 #### Defining Types
 
-Any custom struct or enum used as a field in a table or as a parameter/return type in a reducer must derive `SpacetimeType`. This allows SpacetimeDB to serialize and deserialize the type.
+Custom structs or enums intended for use as fields within database tables or as parameters/return types in reducers must derive `SpacetimeType`. This derivation enables SpacetimeDB to handle the serialization and deserialization of these types.
 
-Use `#[sats(name = "...")]` to explicitly control the type name exposed to other languages (like C#) through generated bindings. This is useful for namespacing or avoiding conflicts.
+*   **Basic Usage:** Apply `#[derive(SpacetimeType, ...)]` to your structs and enums. Other common derives like `Clone`, `Debug`, `PartialEq` are often useful.
+*   **Cross-Language Naming:** Use the `#[sats(name = "Namespace.TypeName")]` attribute *on the type definition* to explicitly control the name exposed in generated client bindings (e.g., for C# or TypeScript). This helps prevent naming collisions and provides better organization. You can also use `#[sats(name = "VariantName")]` *on enum variants* to control their generated names.
+*   **Type Aliases:** Standard Rust `pub type` aliases can be used for clarity (e.g., `pub type PlayerScore = u32;`). The underlying primitive type must still be serializable by SpacetimeDB.
+*   **Advanced Deserialization:** For types with complex requirements (like lifetimes or custom binary representations), you might need manual implementation using `spacetimedb::Deserialize` and the `bsatn` crate (available via `spacetimedb::spacetimedb_lib`), though this is uncommon for typical application types.
 
 ```rust
 use spacetimedb::{SpacetimeType, Identity, Timestamp};
 
+// Example Struct
 #[derive(SpacetimeType, Clone, Debug, PartialEq)]
 pub struct Position {
     pub x: i32,
     pub y: i32,
 }
 
+// Example Enum
 #[derive(SpacetimeType, Clone, Debug, PartialEq)]
 pub enum PlayerStatus {
     Idle,
@@ -227,17 +232,19 @@ pub enum PlayerStatus {
     Fighting(Identity), // Store the identity of the opponent
 }
 
-// Specify a cross-language name for the enum itself and one variant
+// Example Enum with Cross-Language Naming Control
+// This enum will appear as `Game.ItemType` in C# bindings.
 #[derive(SpacetimeType, Clone, Debug, PartialEq)]
-#[sats(name = "Game.ItemType")] // Will be Game.ItemType in C# bindings
+#[sats(name = "Game.ItemType")]
 pub enum ItemType {
     Weapon,
     Armor,
-    #[sats(name = "ConsumableItem")] // This variant will be ConsumableItem in C#
+    // This specific variant will be `ConsumableItem` in C# bindings.
+    #[sats(name = "ConsumableItem")]
     Potion,
 }
 
-// Type aliases can be defined using `pub type`
+// Example Type Alias
 pub type PlayerScore = u32;
 
 // Advanced: For types with lifetimes or custom binary representations,
@@ -251,83 +258,65 @@ The `[lib]` section in your module's `Cargo.toml` must contain `crate-type = ["c
 
 #### Defining Tables
 
-Tables store the application's data. They are defined using Rust structs annotated with `#[table]`.
-This attribute automatically derives `SpacetimeType`, `Serialize`, `Deserialize`, and `Debug` for the struct.
+Database tables store the application's persistent state. They are defined using Rust structs annotated with the `#[table]` macro.
 
-:::caution `#[derive(SpacetimeType)]` Conflict
-Do **not** explicitly add `#[derive(SpacetimeType)]` to a struct that also has the `#[table]` attribute. The `#[table]` macro handles this automatically. Including both will lead to `E0119: conflicting implementations` compilation errors. Simply use `#[derive(Clone, Debug)]` or other necessary traits.
-:::
-
-Importantly, instances of the table struct are just plain data. Modifying a struct instance **does not** automatically update the database. Instead, you interact with the database tables through generated handles obtained from the `ReducerContext` (e.g., `ctx.db.my_table()`). See the Reducers section for more details on interaction and necessary imports (`use spacetimedb::Table;`).
-
-Fields can be marked with `#[primary_key]`, `#[auto_inc]`, `#[unique]`, or indexed using `#[index(...)]` or `#[table(index(...))]`.
-Use `Option<T>` for nullable fields.
-
-:::caution `name = identifier` Syntax
-Note that the `name` parameter within the `#[table(...)]` attribute expects a plain **identifier** (like `player_state`), not a string literal (`"player_state"`). Using a string literal may lead to compilation errors.
-:::
-
-:::caution Important: Public Tables
-By default, tables are **private** and only accessible by server-side reducer code. If clients need to read or subscribe to a table's data, you **must** mark the table as `public` using `#[table(..., public)]`.
-
-*Common Pitfall:* If your client subscriptions fail with "table not found" or "not a valid table" errors, or if subscribed tables appear empty on the client despite having data on the server, double-check that the relevant tables are marked `public`.
-:::
-
-:::caution Case Sensitivity
-The identifier specified in `name = ...` within the `#[table(...)]` attribute is case-sensitive. When referring to this table in SQL queries (e.g., in client-side `subscribe` calls), you **must** use the exact same casing.
-
-*Example:* If defined as `#[table(name = PlayerState)]`, querying `SELECT * FROM playerstate` or `SELECT * FROM player_state` will fail. You must use `SELECT * FROM PlayerState`.
-:::
-
-:::caution Note on Modifying Instances
-Instances of your table classes/structs are plain data objects. Modifying an instance **does not** automatically update the corresponding row in the database. You must explicitly call update methods (e.g., `ctx.Db.my_table.PrimaryKey.Update(modifiedInstance)`) to persist changes.
-:::
-
-:::danger `#[auto_inc]` + `#[unique]` Pitfall
-Be cautious when manually inserting rows into a table that uses both `#[auto_inc]` and `#[unique]` on the same field. If you manually insert a row with a value for that field that is *larger* than the current internal sequence counter, the sequence will eventually increment to that manually inserted value. When it attempts to assign this value to a new row (inserted with 0), it will cause a unique constraint violation error (or panic with `insert()`). Avoid manually inserting values into auto-incrementing unique fields unless you fully understand the sequence behavior.
-:::
+*   **Core Attribute:** `#[table(name = my_table_name, ...)]` marks a struct as a database table definition. The specified `name` (an identifier, *not* a string literal) is how the table will be referenced in SQL queries and generated APIs.
+*   **Derivations:** The `#[table]` macro automatically handles deriving necessary traits like `SpacetimeType`, `Serialize`, `Deserialize`, and `Debug`. **Do not** manually add `#[derive(SpacetimeType)]` to a `#[table]` struct, as it will cause compilation conflicts.
+*   **Public vs. Private:** By default, tables are **private**, accessible only by server-side reducer code. To allow clients to read or subscribe to a table's data, mark it as `public` using `#[table(..., public)]`. This is a common source of errors if forgotten.
+*   **Primary Keys:** Designate a single field as the primary key using `#[primary_key]`. This ensures uniqueness, creates an efficient index, and allows clients to track row updates.
+*   **Auto-Increment:** Mark an integer-typed primary key field with `#[auto_inc]` to have SpacetimeDB automatically assign unique, sequentially increasing values upon insertion. Provide `0` as the value for this field when inserting a new row to trigger the auto-increment mechanism.
+*   **Unique Constraints:** Enforce uniqueness on non-primary key fields using `#[unique]`. Attempts to insert or update rows violating this constraint will fail.
+*   **Indexes:** Create B-tree indexes for faster lookups on specific fields or combinations of fields. Use `#[index(btree)]` on a single field for a simple index, or `#[table(index(name = my_index_name, btree(columns = [col_a, col_b])))])` within the `#[table(...)]` attribute for named, multi-column indexes.
+*   **Nullable Fields:** Use standard Rust `Option<T>` for fields that can hold null values.
+*   **Instances vs. Database:** Remember that table struct instances (e.g., `let player = PlayerState { ... };`) are just data. Modifying an instance does **not** automatically update the database. Interaction happens through generated handles accessed via the `ReducerContext` (e.g., `ctx.db.player_state().insert(...)`).
+*   **Case Sensitivity:** Table names specified via `name = ...` are case-sensitive and must be matched exactly in SQL queries.
+*   **Pitfalls:**
+    *   Avoid manually inserting values into `#[auto_inc]` fields that are also `#[unique]`, especially values larger than the current sequence counter, as this can lead to future unique constraint violations when the counter catches up.
+    *   Ensure `public` is set if clients need access.
+    *   Do not manually derive `SpacetimeType`.
+    *   Define indexes *within* the main `#[table(name=..., index=...)]` attribute. Each `#[table]` macro invocation defines a *distinct* table and requires a `name`; separate `#[table]` attributes cannot be used solely to add indexes to a previously named table.
 
 ```rust
-use spacetimedb::{table, Identity, Timestamp, SpacetimeType};
+use spacetimedb::{table, Identity, Timestamp, SpacetimeType, Table}; // Added Table import
 
-// Assume Position, PlayerStatus, ItemType are defined as above
+// Assume Position, PlayerStatus, ItemType are defined as types
 
-// NOTE: `name` uses an identifier, not a string.
-#[table(name = player_state, public)]
-// Define indexes directly in the table attribute or on fields
-#[table(index(name = idx_level_btree, btree(columns = [level])))]
-// NOTE: Do not derive SpacetimeType here, #[table] does it.
-#[derive(Clone, Debug)]
+// Example Table Definition
+#[table(
+    name = player_state, 
+    public,
+    // Index definition is included here
+    index(name = idx_level_btree, btree(columns = [level])) 
+)]
+#[derive(Clone, Debug)] // No SpacetimeType needed here
 pub struct PlayerState {
     #[primary_key]
     player_id: Identity,
     #[unique] // Player names must be unique
     name: String,
-    conn_id: Option<ConnectionId>, // Store the connection ID when online
+    conn_id: Option<ConnectionId>, // Nullable field
     health: u32,
     level: u16,
-    position: Position,
-    status: PlayerStatus,
-    last_login: Option<Timestamp>, // Optional timestamp
+    position: Position, // Custom type field
+    status: PlayerStatus, // Custom enum field
+    last_login: Option<Timestamp>, // Nullable timestamp
 }
 
-// NOTE: `name` uses an identifier, not a string.
 #[table(name = inventory_item, public)]
-#[derive(Clone, Debug)] // No SpacetimeType derive needed
+#[derive(Clone, Debug)]
 pub struct InventoryItem {
     #[primary_key]
-    #[auto_inc] // Automatically generate unique IDs for items
+    #[auto_inc] // Automatically generate IDs
     item_id: u64,
     owner_id: Identity,
-    #[index(btree)] // Shorthand for single-column B-tree index on this field
+    #[index(btree)] // Simple index on this field
     item_type: ItemType,
     quantity: u32,
 }
 
-// Example of a private table (not marked public)
-// NOTE: `name` uses an identifier, not a string.
-#[table(name = internal_game_data)]
-#[derive(Clone, Debug)] // No SpacetimeType derive needed
+// Example of a private table
+#[table(name = internal_game_data)] // No `public` flag
+#[derive(Clone, Debug)]
 struct InternalGameData {
     #[primary_key]
     key: String,
@@ -402,99 +391,69 @@ Reviewing this generated documentation is the best way to understand the specifi
 
 #### Defining Reducers
 
-Reducers are functions that modify table data atomically. They are annotated
-with `#[reducer]`. 
+Reducers are the functions within your server module responsible for atomically modifying the database state in response to client requests or internal events (like lifecycle triggers or schedules).
 
-:::info `use spacetimedb::Table;` Required for Table Operations
-To call methods like `.insert()`, `.try_insert()`, `.update()`, `.delete()`, or access index/primary key handles (e.g., `.pk_field_name()`) on table handles returned by `ctx.db.table_name()`, you **must** bring the `spacetimedb::Table` trait into scope by adding `use spacetimedb::Table;` at the top of your `lib.rs` file. Without this import, the compiler will report errors like "method not found".
-:::
-
-:::info Transactionality
-Crucially, **every reducer call executes within a single, atomic database transaction.** If the reducer function completes successfully (returns `()` or `Ok(())`), all database modifications made within it are committed together. If the reducer fails (panics or returns `Err(...)`), the transaction is aborted, and **all database changes made during that specific call are automatically rolled back**, ensuring data consistency.
-:::
-
-Reducers operate within a sandbox and have limitations:
-*   They cannot directly perform network I/O (e.g., using `std::net`).
-*   They cannot directly access the filesystem (e.g., using `std::fs` or `std::io`).
-*   External communication happens primarily through database table modifications (which clients can subscribe to) and logging (`log` crate).
-
-Reducers *can* call other reducers defined within the same module. This is a direct function call, not a network request, and executes within the same single database transaction (i.e., it does **not** start a sub-transaction).
+*   **Core Attribute:** Reducers are defined as standard Rust functions annotated with `#[reducer]`.
+*   **Signature:** Every reducer function must accept `&ReducerContext` as its first argument. Subsequent arguments represent data passed from the client caller or scheduler, and their types must derive `SpacetimeType`.
+*   **Return Type:** Reducers typically return `()` for success or `Result<(), E>` (where `E: Display`) to signal recoverable errors.
+*   **Necessary Imports:** To perform table operations (insert, update, delete, query indexes), the `spacetimedb::Table` trait must be in scope. Add `use spacetimedb::Table;` to the top of your `lib.rs`.
+*   **Reducer Context:** The `ReducerContext` (`ctx`) provides access to:
+    *   `ctx.db`: Handles for interacting with database tables.
+    *   `ctx.sender`: The `Identity` of the caller.
+    *   `ctx.identity`: The `Identity` of the module itself.
+    *   `ctx.timestamp`: The `Timestamp` of the invocation.
+    *   `ctx.connection_id`: The optional `ConnectionId` of the caller.
+    *   `ctx.rng`: A source for deterministic random number generation (if needed).
+*   **Transactionality:** Each reducer call executes within a single, atomic database transaction. If the function returns `()` or `Ok(())`, all database changes are committed. If it returns `Err(...)` or panics, the transaction is aborted, and **all changes are rolled back**, preserving data integrity.
+*   **Execution Environment:** Reducers run in a sandbox and **cannot** directly perform network I/O (`std::net`) or filesystem operations (`std::fs`, `std::io`). External interaction primarily occurs through database table modifications (observed by clients) and logging (`spacetimedb::log`).
+*   **Calling Other Reducers:** A reducer can directly call another reducer defined in the same module. This is a standard function call and executes within the *same* transaction; it does not create a sub-transaction.
 
 ```rust
 use spacetimedb::{reducer, ReducerContext, Table, Identity, Timestamp, log};
 
+// Assume User and Message tables are defined as previously
 #[table(name = user, public)]
-#[derive(Clone, Debug)]
-pub struct User { /* ... fields ... */ }
+#[derive(Clone, Debug)] pub struct User { #[primary_key] identity: Identity, name: Option<String>, online: bool }
 #[table(name = message, public)]
-#[derive(Clone, Debug)]
-pub struct Message { /* ... fields ... */ }
+#[derive(Clone, Debug)] pub struct Message { #[primary_key] #[auto_inc] id: u64, sender: Identity, text: String, sent: Timestamp }
 
-// Reducer to set a user's name
+// Example: Basic reducer to set a user's name
 #[reducer]
 pub fn set_name(ctx: &ReducerContext, name: String) -> Result<(), String> {
-    let name = validate_name(name)?; // Basic validation
-    if let Some(user) = ctx.db.user().identity().find(ctx.sender) {
-        // Update the user's name using the primary key index handle
-        // Note: Update requires the full struct instance.
-        ctx.db.user().identity().update(User { name: Some(name), ..user });
+    let sender_id = ctx.sender;
+    let name = validate_name(name)?; // Use helper for validation
+
+    // Find the user row by primary key
+    if let Some(mut user) = ctx.db.user().identity().find(&sender_id) {
+        // Update the field
+        user.name = Some(name);
+        // Persist the change using the PK index update method
+        ctx.db.user().identity().update(user);
+        log::info!("User {} set name", sender_id);
         Ok(())
     } else {
-        Err("Cannot set name for unknown user".to_string())
+        Err(format!("User not found: {}", sender_id))
     }
 }
 
-// Reducer to send a message
+// Example: Basic reducer to send a message
 #[reducer]
 pub fn send_message(ctx: &ReducerContext, text: String) -> Result<(), String> {
-    let text = validate_message(text)?; // Basic validation
-    log::info!("Received message: {}", text);
-    // Insert the new message into the table.
-    // insert() panics on constraint violation (e.g., duplicate PK).
-    // Use try_insert() for Result-based error handling.
-    ctx.db.message().insert(Message {
+    let text = validate_message(text)?; // Use helper for validation
+    log::info!("User {} sent message: {}", ctx.sender, text);
+
+    // Insert a new row into the Message table
+    // Note: id is auto_inc, so we provide 0. insert() panics on constraint violation.
+    let new_message = Message {
+        id: 0, 
         sender: ctx.sender,
         text,
         sent: ctx.timestamp,
-    });
+    };
+    ctx.db.message().insert(new_message);
+    // For Result-based error handling on insert, use try_insert() - see below
+
     Ok(())
-}
-
-// Reducer called when a client connects
-#[reducer(client_connected)]
-pub fn client_connected(ctx: &ReducerContext) {
-    if let Some(user) = ctx.db.user().identity().find(ctx.sender) {
-        // Mark existing user as online
-        ctx.db.user().identity().update(User { online: true, ..user });
-    } else {
-        // Insert a new user record for the new connection
-        ctx.db.user().insert(User {
-            name: None,
-            identity: ctx.sender,
-            online: true,
-        });
-    }
-}
-
-// Reducer called when a client disconnects
-#[reducer(client_disconnected)]
-pub fn client_disconnected(ctx: &ReducerContext) {
-    if let Some(user) = ctx.db.user().identity().find(ctx.sender) {
-        // Mark user as offline
-        ctx.db.user().identity().update(User { online: false, ..user });
-    } else {
-        log::warn!("Disconnect event for unknown user: {:?}", ctx.sender);
-    }
-}
-
-// Reducer called once when the module is loaded/database is created
-#[reducer(init)]
-pub fn initialize_database(ctx: &ReducerContext) {
-    log::info!("Database Initializing! Module Identity: {}", ctx.identity());
-    // Perform one-time setup, like inserting initial data if tables are empty
-    if ctx.db.user().count() == 0 {
-        // Add an admin user or default settings
-    }
 }
 
 // Helper validation functions (example)
@@ -505,6 +464,7 @@ fn validate_name(name: String) -> Result<String, String> {
 fn validate_message(text: String) -> Result<String, String> {
     if text.is_empty() { Err("Message cannot be empty".to_string()) } else { Ok(text) }
 }
+```
 
 ##### Error Handling: `Result` vs. Panic
 
@@ -526,28 +486,64 @@ Reducers can indicate failure either by returning `Err` from a function with a `
 ##### Lifecycle Reducers
 
 Special reducers handle specific events:
-*   `#[reducer(init)]`: Runs once when the module is first published **and** any time the database is manually cleared. Failure prevents publishing or clearing.
+*   `#[reducer(init)]`: Runs once when the module is first published **and** any time the database is manually cleared (e.g., via `spacetime publish -c` or `spacetime server clear`). Failure prevents publishing or clearing. Often used for initial data setup.
 *   `#[reducer(client_connected)]`: Runs when any distinct client connection (e.g., WebSocket, HTTP call) is established. Failure disconnects the client. `ctx.connection_id` is guaranteed to be `Some(...)` within this reducer.
 *   `#[reducer(client_disconnected)]`: Runs when any distinct client connection terminates. Failure is logged but does not prevent disconnection. `ctx.connection_id` is guaranteed to be `Some(...)` within this reducer.
 
 These reducers cannot take arguments beyond `&ReducerContext`.
 
 ```rust
-// Example init reducer was shown previously
+use spacetimedb::{reducer, table, ReducerContext, Table, log};
+
+#[table(name = settings)]
+#[derive(Clone, Debug)]
+pub struct Settings {
+    #[primary_key]
+    key: String,
+    value: String,
+}
+
+// Example init reducer: Insert default settings if the table is empty
+#[reducer(init)]
+pub fn initialize_database(ctx: &ReducerContext) {
+    log::info!(
+        "Database Initializing! Module Identity: {}, Timestamp: {}", 
+        ctx.identity(), 
+        ctx.timestamp
+    );
+    // Check if settings table is empty
+    if ctx.db.settings().count() == 0 {
+        log::info!("Settings table is empty, inserting default values...");
+        // Insert default settings
+        ctx.db.settings().insert(Settings {
+            key: "welcome_message".to_string(),
+            value: "Hello from SpacetimeDB!".to_string(),
+        });
+        ctx.db.settings().insert(Settings {
+            key: "default_score".to_string(),
+            value: "0".to_string(),
+        });
+    } else {
+        log::info!("Settings table already contains data.");
+    }
+}
+
+// Example client_connected reducer
 #[reducer(client_connected)]
 pub fn handle_connect(ctx: &ReducerContext) {
-    log::info!("Client connected: {}", ctx.sender);
+    log::info!("Client connected: {}, Connection ID: {:?}", ctx.sender, ctx.connection_id);
     // ... setup initial state for ctx.sender ...
 }
 
+// Example client_disconnected reducer
 #[reducer(client_disconnected)]
 pub fn handle_disconnect(ctx: &ReducerContext) {
-    log::info!("Client disconnected: {}", ctx.sender);
+    log::info!("Client disconnected: {}, Connection ID: {:?}", ctx.sender, ctx.connection_id);
     // ... cleanup state for ctx.sender ...
 }
 ```
 
-#### Filtering and Deleting with Indexes
+##### Filtering and Deleting with Indexes
 
 SpacetimeDB provides powerful ways to filter and delete table rows using B-tree indexes. The generated accessor methods accept various argument types:
 
@@ -673,28 +669,126 @@ pub fn try_add_item(ctx: &ReducerContext, name: String) -> Result<(), String> {
 
 #### Scheduled Reducers (Rust)
 
-Rust modules also support scheduled reducers. The mechanism involves defining a scheduling table similar to C#, but the specific annotations and API calls differ slightly.
-The `spacetimedb::duration!` macro can be a convenient way to specify durations.
+In addition to lifecycle annotations, reducers can be scheduled. This allows calling the reducers at a particular time, or in a loop. This can be used for game loops.
 
-Refer to the [official Rust Module SDK documentation on docs.rs](https://docs.rs/spacetimedb/latest/spacetimedb/attr.reducer.html#scheduled-reducers) for detailed syntax and examples, including usage of the `duration!` macro (e.g., `duration!("5s").into()` to create a `ScheduleAt`).
+The scheduling information for a reducer is stored in a table. This table has two mandatory fields:
+
+*   A primary key that identifies scheduled reducer calls (often using `#[auto_inc]`).
+*   A field of type `spacetimedb::ScheduleAt` that says when to call the reducer.
+
+The table definition itself links to the reducer function using the `scheduled(reducer_function_name)` parameter within the `#[table(...)]` attribute.
+
+Managing timers with a scheduled table is as simple as inserting or deleting rows from the table. This makes scheduling transactional in SpacetimeDB. If a reducer A first schedules B but then errors for some other reason, B will not be scheduled to run.
+
+A `ScheduleAt` value can be created using `.into()` from:
+
+*   A `spacetimedb::Timestamp`: Schedules the reducer to run **once** at that specific time.
+*   A `spacetimedb::TimeDuration` or `std::time::Duration`: Schedules the reducer to run **periodically** with that duration as the interval.
+
+The scheduled reducer function itself is defined like a normal reducer (`#[reducer]`), taking `&ReducerContext` and an instance of the schedule table struct as arguments.
+
+```rust
+use spacetimedb::{table, reducer, ReducerContext, Timestamp, TimeDuration, ScheduleAt, Table};
+use log::debug;
+
+// 1. Declare the table with scheduling information, linking it to `send_message`.
+#[table(name = send_message_schedule, scheduled(send_message))] 
+struct SendMessageSchedule {
+    // Mandatory fields:
+    // ============================
+
+    /// An identifier for the scheduled reducer call.
+    #[primary_key]
+    #[auto_inc]
+    scheduled_id: u64,
+
+    /// Information about when the reducer should be called.
+    scheduled_at: ScheduleAt,
+
+    // In addition to the mandatory fields, any number of fields can be added.
+    // These can be used to provide extra information to the scheduled reducer.
+
+    // Custom fields:
+    // ============================
+
+    /// The text of the scheduled message to send.
+    text: String,
+}
+
+// 2. Declare the scheduled reducer.
+// The second argument is a row of the scheduling information table.
+#[reducer]
+fn send_message(ctx: &ReducerContext, args: SendMessageSchedule) -> Result<(), String> {
+    // Security check is important!
+    if ctx.sender != ctx.identity() {
+        return Err("Reducer `send_message` may not be invoked by clients, only via scheduling.".into());
+    }
+
+    let message_to_send = &args.text;
+    log::info!("Scheduled SendMessage: {}", message_to_send);
+
+    // ... potentially send the message or perform other actions ...
+
+    Ok(())
+}
+
+// 3. Example of scheduling reducers (e.g., in init)
+#[reducer(init)]
+fn init(ctx: &ReducerContext) -> Result<(), String> {
+
+    let current_time = ctx.timestamp;
+    let ten_seconds = TimeDuration::from_micros(10_000_000);
+    let future_timestamp: Timestamp = ctx.timestamp + ten_seconds;
+
+    // Schedule a one-off message
+    ctx.db.send_message_schedule().insert(SendMessageSchedule {
+        scheduled_id: 0, // Use 0 for auto_inc
+        text: "I'm a bot sending a message one time".to_string(),
+        // Creating a `ScheduleAt` from a `Timestamp` results in the reducer
+        // being called once, at exactly the time `future_timestamp`.
+        scheduled_at: future_timestamp.into()
+    });
+    log::info!("Scheduled one-off message.");
+
+    // Schedule a periodic message (every 10 seconds)
+    let loop_duration: TimeDuration = ten_seconds;
+    ctx.db.send_message_schedule().insert(SendMessageSchedule {
+        scheduled_id: 0, // Use 0 for auto_inc
+        text: "I'm a bot sending a message every 10 seconds".to_string(),
+        // Creating a `ScheduleAt` from a `Duration`/`TimeDuration` results in the reducer
+        // being called in a loop, once every `loop_duration`.
+        scheduled_at: loop_duration.into()
+    });
+    log::info!("Scheduled periodic message.");
+
+    Ok(())
+}
+```
+
+Refer to the [official Rust Module SDK documentation on docs.rs](https://docs.rs/spacetimedb/latest/spacetimedb/attr.reducer.html#scheduled-reducers) for more detailed syntax and alternative scheduling approaches (like using `schedule::periodic`).
 
 ##### Scheduled Reducer Details
 
-*   **Best-Effort Scheduling:** Scheduled reducers run on a best-effort basis and may be slightly delayed under heavy database load.
-*   **Security:** Since scheduled reducers can also be called directly by clients if not secured, it's crucial to verify the caller identity if the reducer performs sensitive operations:
+*   **Best-Effort Scheduling:** Scheduled reducers are called on a best-effort basis and may be slightly delayed in their execution when a database is under heavy load.
+
+*   **Restricting Access (Security):** Scheduled reducers are normal reducers and *can* still be called directly by clients. If a scheduled reducer should *only* be called by the scheduler, it is crucial to begin the reducer with a check comparing the caller's identity (`ctx.sender`) to the module's own identity (`ctx.identity()`).
     ```rust
+    use spacetimedb::{reducer, ReducerContext};
+    // Assuming MyScheduleArgs table is defined
+    struct MyScheduleArgs {/*...*/} 
+
     #[reducer]
-    fn scheduled_task(ctx: &ReducerContext, args: MyScheduleTable) -> Result<(), String> {
+    fn my_scheduled_reducer(ctx: &ReducerContext, args: MyScheduleArgs) -> Result<(), String> {
         if ctx.sender != ctx.identity() {
-            return Err("Permission denied: Task can only be run by scheduler.".into());
+            return Err("Reducer `my_scheduled_reducer` may not be invoked by clients, only via scheduling.".into());
         }
-        // ... proceed with scheduled logic ...
+        // ... Reducer body proceeds only if called by scheduler ...
         Ok(())
     }
     ```
 
 :::info Scheduled Reducers and Connections
-Scheduled reducer calls originate from the SpacetimeDB scheduler itself, not from an external client connection. Therefore, within a scheduled reducer, `ctx.sender` will be the module's own identity, and `ctx.connection_id` will not represent an external client connection.
+Scheduled reducer calls originate from the SpacetimeDB scheduler itself, not from an external client connection. Therefore, within a scheduled reducer, `ctx.sender` will be the module's own identity, and `ctx.connection_id` will be `None`.
 :::
 
 #### Row-Level Security (Client Visibility Filters)
@@ -742,23 +836,29 @@ const PLAYERS_SEE_ENTITIES_IN_SAME_CHUNK: Filter = Filter::Sql("
 
 #### Defining Types
 
-Custom classes, structs, or records used in tables or reducers must be marked with the `[Type]` attribute.
-Use `partial` to allow code generation.
-Tagged enums are represented using `TaggedEnum<(...)` with intermediate records defining variants.
+Custom classes, structs, or records intended for use as fields within database tables or as parameters/return types in reducers must be marked with the `[Type]` attribute. This attribute enables SpacetimeDB to handle the serialization and deserialization of these types.
+
+*   **Basic Usage:** Apply `[Type]` to your classes, structs, or records. Use the `partial` modifier to allow SpacetimeDB's source generators to augment the type definition.
+*   **Cross-Language Naming:** Currently, the C# module SDK does **not** provide a direct equivalent to Rust's `#[sats(name = "...")]` attribute for controlling the generated names in *other* client languages (like TypeScript). The C# type name itself (including its namespace) is typically used. Standard C# namespacing (`namespace MyGame.SharedTypes { ... }`) is the primary way to organize and avoid collisions.
+*   **Enums:** Standard C# enums can be marked with `[Type]`. For "tagged unions" or "discriminated unions" (like Rust enums with associated data), use the pattern of an abstract base record/class with the `[Type]` attribute, and derived records/classes for each variant, also marked with `[Type]`. Then, define a final `[Type]` record that inherits from `TaggedEnum<(...)>` listing the variants.
+*   **Type Aliases:** Use standard C# `using` aliases for clarity (e.g., `using PlayerScore = System.UInt32;`). The underlying primitive type must still be serializable by SpacetimeDB.
 
 ```csharp
 using SpacetimeDB;
-using System.Collections.Generic;
+using System; // Required for System.UInt32 if using aliases like below
 
+// Example Struct
 [Type]
 public partial struct Position { public int X; public int Y; }
 
-// C# Tagged Enum Pattern using intermediate records:
+// Example Tagged Union (Enum with Data) Pattern:
+// 1. Base abstract record
 [Type] public abstract partial record PlayerStatusBase { }
+// 2. Derived records for variants
 [Type] public partial record IdleStatus : PlayerStatusBase { }
 [Type] public partial record WalkingStatus : PlayerStatusBase { public Position Target; }
 [Type] public partial record FightingStatus : PlayerStatusBase { public Identity OpponentId; }
-
+// 3. Final type inheriting from TaggedEnum
 [Type]
 public partial record PlayerStatus : TaggedEnum<(
     IdleStatus Idle,
@@ -766,15 +866,13 @@ public partial record PlayerStatus : TaggedEnum<(
     FightingStatus Fighting
 )> { }
 
+// Example Standard Enum
 [Type]
 public enum ItemType { Weapon, Armor, Potion }
 
-// Type aliases can be defined using the `using` directive
+// Example Type Alias
 using PlayerScore = System.UInt32;
 
-// Note: A [Sats(Name = "...")] attribute similar to Rust's for cross-language naming
-// might not be fully supported or available in C# modules currently.
-// Check latest SDK documentation for updates.
 ```
 
 :::info C# `partial` Keyword
@@ -783,68 +881,57 @@ Table and Type definitions in C# should use the `partial` keyword (e.g., `public
 
 #### Defining Tables
 
-Tables are defined using C# partial classes or structs annotated with `[Table]`.
-Use `[PrimaryKey]`, `[AutoInc]`, `[Unique]`, and `[Index.BTree(...)]` attributes.
-Use nullable types (`T?`) for optional fields.
+Database tables store the application's persistent state. They are defined using C# classes or structs marked with the `[Table]` attribute.
 
-:::caution Public Fields Required for Attributes
-When using SpacetimeDB-specific attributes like `[PrimaryKey]`, `[AutoInc]`, `[Unique]`, or `[Index.BTree]` in C# table definitions, you **must** apply them to **public fields**, not C# properties (`{ get; set; }`). The SpacetimeDB code generator relies on direct field access for these attributes to function correctly. Using properties with these attributes can lead to build errors or unexpected runtime behavior.
-
-Properties can generally be used for simple data fields that do not have these special SpacetimeDB attributes applied.
-:::
-
-:::caution Important: Public Tables
-By default, tables are **private** and only accessible by server-side reducer code. If clients need to read or subscribe to a table's data, you **must** mark the table as `public` by setting `Public = true` in the `[Table]` attribute (e.g., `[Table(Name = "my_table", Public = true)]`).
-
-*Common Pitfall:* If your client subscriptions fail with "table not found" or "not a valid table" errors, or if subscribed tables appear empty on the client despite having data on the server, double-check that the relevant tables have `Public = true` set in their `[Table]` attribute.
-:::
-
-:::caution Case Sensitivity
-The `Name = "..."` specified in the `[Table(...)]` attribute is case-sensitive. When referring to this table in SQL queries (e.g., in client-side `subscribe` calls), you **must** use the exact same casing.
-
-*Example:* If defined as `[Table(Name = "PlayerState")]`, querying `SELECT * FROM player_state` will fail. You must use `SELECT * FROM PlayerState`.
-:::
-
-:::caution Note on Modifying Instances
-Instances of your table classes/structs are plain data objects. Modifying an instance **does not** automatically update the corresponding row in the database. You must explicitly call update methods (e.g., `ctx.Db.my_table.PrimaryKey.Update(modifiedInstance)`) to persist changes.
-:::
-
-:::danger `#[auto_inc]` + `#[unique]` Pitfall
-Be cautious when manually inserting rows into a table that uses both `#[auto_inc]` and `#[unique]` on the same field. If you manually insert a row with a value for that field that is *larger* than the current internal sequence counter, the sequence will eventually increment to that manually inserted value. When it attempts to assign this value to a new row (inserted with 0), it will cause a unique constraint violation error (or panic with `insert()`). Avoid manually inserting values into auto-incrementing unique fields unless you fully understand the sequence behavior.
-```
+*   **Core Attribute:** `[Table(Name = "my_table_name", ...)]` marks a class or struct as a database table definition. The specified string `Name` is how the table will be referenced in SQL queries and generated APIs.
+*   **Partial Modifier:** Use the `partial` keyword (e.g., `public partial class MyTable`) to allow SpacetimeDB's source generators to add necessary methods and logic to your definition.
+*   **Public vs. Private:** By default, tables are **private**, accessible only by server-side reducer code. To allow clients to read or subscribe to a table's data, set `Public = true` within the attribute: `[Table(..., Public = true)]`. This is a common source of errors if forgotten.
+*   **Primary Keys:** Designate a single **public field** as the primary key using `[PrimaryKey]`. This ensures uniqueness, creates an efficient index, and allows clients to track row updates.
+*   **Auto-Increment:** Mark an integer-typed primary key **public field** with `[AutoInc]` to have SpacetimeDB automatically assign unique, sequentially increasing values upon insertion. Provide `0` as the value for this field when inserting a new row to trigger the auto-increment mechanism.
+*   **Unique Constraints:** Enforce uniqueness on non-primary key **public fields** using `[Unique]`. Attempts to insert or update rows violating this constraint will fail (throw an exception).
+*   **Indexes:** Create B-tree indexes for faster lookups on specific **public fields** or combinations of fields. Use `[Index.BTree]` on a single field for a simple index, or define indexes at the class/struct level using `[Index.BTree(Name = "MyIndexName", Columns = new[] { nameof(ColA), nameof(ColB) })]`.
+*   **Nullable Fields:** Use standard C# nullable reference types (`string?`) or nullable value types (`int?`, `Timestamp?`) for fields that can hold null values.
+*   **Instances vs. Database:** Remember that table class/struct instances (e.g., `var player = new PlayerState { ... };`) are just data objects. Modifying an instance does **not** automatically update the database. Interaction happens through generated handles accessed via the `ReducerContext` (e.g., `ctx.Db.player_state.Insert(...)`).
+*   **Case Sensitivity:** Table names specified via `Name = "..."` are case-sensitive and must be matched exactly in SQL queries.
+*   **Pitfalls:**
+    *   SpacetimeDB attributes (`[PrimaryKey]`, `[AutoInc]`, `[Unique]`, `[Index.BTree]`) **must** be applied to **public fields**, not properties (`{ get; set; }`). Using properties can cause build errors or runtime issues.
+    *   Avoid manually inserting values into `[AutoInc]` fields that are also `[Unique]`, especially values larger than the current sequence counter, as this can lead to future unique constraint violations when the counter catches up.
+    *   Ensure `Public = true` is set if clients need access.
+    *   Always use the `partial` keyword on table definitions.
+    *   Define indexes *within* the main `#[table(name=..., index=...)]` attribute. Each `#[table]` macro invocation defines a *distinct* table and requires a `name`; separate `#[table]` attributes cannot be used solely to add indexes to a previously named table.
 
 ```csharp
 using SpacetimeDB;
-using System;
+using System; // For Nullable types if needed
 
-// Assume Position, PlayerStatus, ItemType are defined as above
+// Assume Position, PlayerStatus, ItemType are defined as types
 
+// Example Table Definition
 [Table(Name = "player_state", Public = true)]
 [Index.BTree(Name = "idx_level", Columns = new[] { nameof(Level) })] // Table-level index
 public partial class PlayerState
 {
     [PrimaryKey]
-    public Identity PlayerId; // Field
+    public Identity PlayerId; // Public field
     [Unique]
-    public string Name = ""; // Field (initialize to avoid null warnings if Nullable enabled)
-    public ConnectionId? ConnId; // Field
-    public uint Health; // Field
-    public ushort Level; // Field
-    public Position Position; // Field
-    public PlayerStatus Status; // Field
-    public Timestamp? LastLogin; // Field
+    public string Name = ""; // Public field (initialize to avoid null warnings if needed)
+    public uint Health; // Public field
+    public ushort Level; // Public field
+    public Position Position; // Public field (custom struct type)
+    public PlayerStatus Status; // Public field (custom record type)
+    public Timestamp? LastLogin; // Public field, nullable struct
 }
 
 [Table(Name = "inventory_item", Public = true)]
 public partial class InventoryItem
 {
     [PrimaryKey]
-    [AutoInc]
-    public ulong ItemId; // Field
-    public Identity OwnerId; // Field
-    [Index.BTree] // Index on this field
-    public ItemType ItemType; // Field
-    public uint Quantity; // Field
+    [AutoInc] // Automatically generate IDs
+    public ulong ItemId; // Public field
+    public Identity OwnerId; // Public field
+    [Index.BTree] // Simple index on this field
+    public ItemType ItemType; // Public field
+    public uint Quantity; // Public field
 }
 
 // Example of a private table
@@ -852,8 +939,8 @@ public partial class InventoryItem
 public partial class InternalGameData
 {
     [PrimaryKey]
-    public string Key = ""; // Field
-    public string Value = ""; // Field
+    public string Key = ""; // Public field
+    public string Value = ""; // Public field
 }
 ```
 
@@ -918,207 +1005,176 @@ public partial class PlayerSessionData
 
 #### Defining Reducers
 
-Reducers are static methods annotated with `[SpacetimeDB.Reducer]`. Lifecycle reducers use `ReducerKind`.
+Reducers are the functions within your server module responsible for atomically modifying the database state in response to client requests or internal events (like lifecycle triggers or schedules).
 
-:::info Transactionality
-Crucially, **every reducer call executes within a single, atomic database transaction.** If the reducer method completes successfully without throwing an unhandled exception, all database modifications made within it are committed together. If the reducer fails by throwing an unhandled exception, the transaction is aborted, and **all database changes made during that specific call are automatically rolled back**, ensuring data consistency.
-:::
-
-:::info Reducer Environment
-*   **Sandbox:** Reducers run in a restricted environment. They cannot directly perform network I/O or access the local filesystem.
-*   **External Interaction:** Communication with the outside world is done by modifying database tables (which clients can subscribe to) or through logging (`SpacetimeDB.Log`).
-*   **Calling Other Reducers:** Reducers can call other static methods within the module, including other reducers. Such calls execute within the same database transaction.
-:::
+*   **Core Attribute:** Reducers are defined as `static` methods within a (typically `static partial`) class, annotated with `[SpacetimeDB.Reducer]`.
+*   **Signature:** Every reducer method must accept `ReducerContext` as its first argument. Subsequent arguments represent data passed from the client caller or scheduler, and their types must be marked with `[Type]`.
+*   **Return Type:** Reducers should typically return `void`. Errors are signaled by throwing exceptions.
+*   **Reducer Context:** The `ReducerContext` (`ctx`) provides access to:
+    *   `ctx.Db`: Handles for interacting with database tables.
+    *   `ctx.Sender`: The `Identity` of the caller.
+    *   `ctx.Identity`: The `Identity` of the module itself.
+    *   `ctx.Timestamp`: The `Timestamp` of the invocation.
+    *   `ctx.ConnectionId`: The nullable `ConnectionId` of the caller.
+    *   `ctx.Rng`: A `System.Random` instance for deterministic random number generation (if needed).
+*   **Transactionality:** Each reducer call executes within a single, atomic database transaction. If the method completes without an unhandled exception, all database changes are committed. If an exception is thrown, the transaction is aborted, and **all changes are rolled back**, preserving data integrity.
+*   **Execution Environment:** Reducers run in a sandbox and **cannot** directly perform network I/O (`System.Net`) or filesystem operations (`System.IO`). External interaction primarily occurs through database table modifications (observed by clients) and logging (`SpacetimeDB.Log`).
+*   **Calling Other Reducers:** A reducer can directly call another static reducer method defined in the same module. This is a standard method call and executes within the *same* transaction; it does not create a sub-transaction.
 
 ```csharp
 using SpacetimeDB;
 using System;
-using System.Linq;
+using System.Linq; // Used in more complex examples later
 
 public static partial class Module
 {
-    // Assume PlayerState, InventoryItem tables and Position, PlayerStatus types are defined
+    // Assume PlayerState and InventoryItem tables are defined as previously
+    [Table(Name = "player_state", Public = true)] public partial class PlayerState { 
+        [PrimaryKey] public Identity PlayerId; 
+        [Unique] public string Name = ""; 
+        public uint Health; public ushort Level; /* ... other fields */ } 
+    [Table(Name = "inventory_item", Public = true)] public partial class InventoryItem { 
+        [PrimaryKey] #[AutoInc] public ulong ItemId; 
+        public Identity OwnerId; /* ... other fields */ }
 
-    // Example Reducer showing various operations
+    // Example: Basic reducer to update player data
     [Reducer]
     public static void UpdatePlayerData(ReducerContext ctx, string? newName)
     {
         var playerId = ctx.Sender;
 
-        // 1. Find a player by primary key
+        // Find player by primary key
         var player = ctx.Db.player_state.PlayerId.Find(playerId);
         if (player == null)
         {
             throw new Exception($"Player not found: {playerId}");
         }
 
-        // 2. Update fields
+        // Update fields conditionally
+        bool requiresUpdate = false;
         if (!string.IsNullOrWhiteSpace(newName))
         {
-            // Check for uniqueness using the unique index accessor
-            var existingPlayerWithNewName = ctx.Db.player_state.Name.Find(newName);
-            if (existingPlayerWithNewName != null && existingPlayerWithNewName.PlayerId != playerId)
-            {
-                 throw new Exception($"Name already taken: {newName}");
-            }
+             // Basic check for name uniqueness (simplified)
+             var existing = ctx.Db.player_state.Name.Find(newName); 
+             if(existing != null && !existing.PlayerId.Equals(playerId)) {
+                 throw new Exception($"Name '{newName}' already taken.");
+             }
+             if (player.Name != newName) {
             player.Name = newName;
+                requiresUpdate = true;
         }
+        }
+        
+        if (player.Level < 100) { // Example simple update
         player.Level += 1;
+            requiresUpdate = true;
+        }
 
-        // 3. Update the row using the primary key index
+        // Persist changes if any were made
+        if (requiresUpdate) {
         ctx.Db.player_state.PlayerId.Update(player);
         Log.Info($"Updated player data for {playerId}");
+        }
     }
 
-    // Example: Handling Insert Exceptions
+    // Example: Basic reducer to register a player
     [Reducer]
     public static void RegisterPlayer(ReducerContext ctx, string name)
     {
         if (string.IsNullOrWhiteSpace(name)) {
              throw new ArgumentException("Name cannot be empty.");
         }
-        Log.Info($"Attempting to register player: {name}");
+        Log.Info($"Attempting to register player: {name} ({ctx.Sender})");
 
-        // Check if player already exists (by PK or unique name)
+        // Check if player identity or name already exists
         if (ctx.Db.player_state.PlayerId.Find(ctx.Sender) != null || ctx.Db.player_state.Name.Find(name) != null)
         {
              throw new Exception("Player already registered or name taken.");
         }
 
+        // Create new player instance
         var newPlayer = new PlayerState
         {
             PlayerId = ctx.Sender,
             Name = name,
             Health = 100,
             Level = 1,
-            Position = new Position { X = 0, Y = 0 },
-            Status = PlayerStatus.Idle(new IdleStatus()),
-            LastLogin = ctx.Timestamp,
+            // Initialize other fields as needed...
         };
 
-        // Insert will throw an exception if constraints (PK, Unique) are violated
-        // A try-catch block could handle this, but checking first is often cleaner.
-        try {
+        // Insert the new player. This will throw on constraint violation.
             ctx.Db.player_state.Insert(newPlayer);
             Log.Info($"Player registered successfully: {ctx.Sender}");
-        } catch (Exception ex) {
-            // This might catch more than just constraint violations
-            Log.Error($"Failed to register player {ctx.Sender}: {ex.Message}");
-            throw; // Re-throw to ensure transaction rollback
-        }
     }
 
-    // Example: Filtering and Deleting with Indexes
+    // Example: Basic reducer showing deletion
     [Reducer]
-    public static void CleanupLowLevelItems(ReducerContext ctx, ushort maxLevelToKeep)
+    public static void DeleteMyItems(ReducerContext ctx) 
     {
-        var owner = ctx.Sender;
-        var playerLevel = ctx.Db.player_state.PlayerId.Find(owner)?.Level ?? 0;
+        var ownerId = ctx.Sender;
+        int deletedCount = 0;
 
-        if (playerLevel > maxLevelToKeep)
+        // Find items by owner (Requires an index on OwnerId for efficiency)
+        // This example iterates if no index exists.
+        var itemsToDelete = ctx.Db.inventory_item.Iter()
+                                  .Where(item => item.OwnerId.Equals(ownerId))
+                                  .ToList(); // Collect IDs to avoid modification during iteration
+        
+        foreach(var item in itemsToDelete)
         {
-            Log.Info($"Player level {playerLevel} exceeds threshold {maxLevelToKeep}. Cleaning up items...");
-
-            // Get items owned by the player
-            // Note: Filtering directly by OwnerId requires an index on that field.
-            // If no index, iterate and filter manually.
-            var itemsToCheck = ctx.Db.inventory_item.Iter()
-                                    .Where(item => item.OwnerId == owner)
-                                    // .Where(item => item.LevelRequirement < maxLevelToKeep) // Assuming LevelRequirement exists
-                                    .ToList(); // Collect to avoid modifying while iterating
-
-            uint deletedCount = 0;
-            foreach (var item in itemsToCheck)
-            {
-                 // Add logic here based on ItemType or other properties if needed
-                 Log.Info($"Deleting item ID: {item.ItemId} for owner {owner}");
-                 // Delete using the primary key index accessor
-                 if (ctx.Db.inventory_item.ItemId.Delete(item.ItemId))
-                 {
+            // Delete using the primary key index
+            if (ctx.Db.inventory_item.ItemId.Delete(item.ItemId)) {
                      deletedCount++;
                  }
             }
-            Log.Info($"Deleted {deletedCount} low-level items for player {owner}");
-        }
-    }
-
-    // Example: Interacting with a Private Table
-    [Reducer]
-    private static void UpdateInternalData(ReducerContext ctx, string key, string value)
-    {
-        // Example of a private helper reducer, possibly called by another reducer.
-        // Assume InternalGameData table exists (defined as private)
-
-        var data = ctx.Db.internal_game_data.Key.Find(key);
-        if (data != null)
-        {
-            data.Value = value;
-            ctx.Db.internal_game_data.Key.Update(data);
-            Log.Info($"Updated internal key: {key}");
-        }
-        else
-        {
-            ctx.Db.internal_game_data.Insert(new InternalGameData { Key = key, Value = value });
-            Log.Info($"Inserted internal key: {key}");
-        }
-    }
-
-    // Example: Getting Table Row Count
-    [Reducer]
-    public static void CountPlayers(ReducerContext ctx)
-    {
-        var count = ctx.Db.player_state.Count; // Use the Count property
-        Log.Info($"Current player count: {count}");
-    }
-
-    // Example: Timestamp/Duration Calculation
-    [Reducer]
-    public static void CheckLastLogin(ReducerContext ctx)
-    {
-        var player = ctx.Db.player_state.PlayerId.Find(ctx.Sender);
-        if (player != null && player.LastLogin.HasValue)
-        {
-            TimeSpan? durationSinceLogin = ctx.Timestamp.TimeDurationSince(player.LastLogin.Value);
-            if (durationSinceLogin.HasValue)
-            {
-                 Log.Info($"Player {ctx.Sender} last logged in {durationSinceLogin.Value} ago.");
-            }
-            else
-            {
-                 Log.Warn($"Player {ctx.Sender} last login time is in the future?");
-            }
-        }
-        else if (player != null)
-        {
-             Log.Info($"Player {ctx.Sender} has no recorded login time.");
-        }
-    }
-
-    // Example: Filtering and Deleting with Indexes
-    [Reducer]
-    public static void IndexOperations(ReducerContext ctx)
-    {
-        // Example: Find items named "Sword"
-        var items = ctx.Db.items.name.Filter("Sword");
-        foreach (var item in items) { /* ... */ }
-
-        // Example: Delete points where x is 5
-        bool deleted = ctx.Db.points.idx_xy.Delete(5L); // Filter on index prefix
-
-        // Example: Find points where x = 3 and y = 7
-        var specificPoint = ctx.Db.points.idx_xy.Filter((3L, 7L));
-        foreach(var pt in specificPoint) { /* ... should be at most one */}
-
-        // Example: Find points where x is between 100 and 200 (inclusive)
-        var pointsInRange = ctx.Db.points.idx_xy.Filter((100L, 200L));
-        foreach(var pt in pointsInRange) { /* ... */ }
-
-        // Example: Delete items named "Shield"
-        uint numDeleted = ctx.Db.items.name.Delete("Shield");
-        Log.Info($"Deleted {numDeleted} Shield(s)");
+        Log.Info($"Deleted {deletedCount} items for player {ownerId}.");
     }
 }
 ```
+
+##### Handling Insert Constraint Violations
+
+Unlike Rust's `try_insert` which returns a `Result`, the C# `Insert` method throws an exception if a constraint (like a primary key or unique index violation) occurs. There are two main ways to handle this in C# reducers:
+
+1.  **Pre-checking:** Before calling `Insert`, explicitly query the database using the relevant indexes to check if the insertion would violate any constraints (e.g., check if a user with the same ID or unique name already exists). This is often cleaner if the checks are straightforward. The `RegisterPlayer` example above demonstrates this pattern.
+
+2.  **Using `try-catch`:** Wrap the `Insert` call in a `try-catch` block. This allows you to catch the specific exception (often a `SpacetimeDB.ConstraintViolationException` or potentially a more general `Exception` depending on the SDK version and error type) and handle the failure gracefully (e.g., log an error, return a specific error message to the client via a different mechanism if applicable, or simply allow the transaction to roll back cleanly without crashing the reducer unexpectedly).
+
+```csharp
+using SpacetimeDB;
+using System;
+
+public static partial class Module
+{
+    [Table(Name = "unique_items")]
+    public partial class UniqueItem {
+        [PrimaryKey] public string ItemName;
+        public int Value;
+    }
+
+    // Example using try-catch for insertion
+    [Reducer]
+    public static void AddUniqueItemWithCatch(ReducerContext ctx, string name, int value)
+    {
+        var newItem = new UniqueItem { ItemName = name, Value = value };
+        try
+        {
+            // Attempt to insert
+            ctx.Db.unique_items.Insert(newItem);
+            Log.Info($"Successfully inserted item: {name}");
+        }
+        catch (Exception ex) // Catch a general exception or a more specific one if available
+        {
+            // Log the specific error
+            Log.Error($"Failed to insert item '{name}': Constraint violation or other error. Details: {ex.Message}");
+            // Optionally, re-throw a custom exception or handle differently
+            // Throwing ensures the transaction is rolled back
+            throw new Exception($"Item name '{name}' might already exist."); 
+        }
+    }
+}
+```
+Choosing between pre-checking and `try-catch` depends on the complexity of the constraints and the desired flow. Pre-checking can avoid the overhead of exception handling for predictable violations, while `try-catch` provides a direct way to handle unexpected insertion failures.
 
 :::note C# `Insert` vs Rust `try_insert`
 Unlike Rust, the C# SDK does not currently provide a `TryInsert` method that returns a result. The standard `Insert` method will throw an exception if a constraint (primary key, unique index) is violated. Therefore, C# reducers should typically check for potential constraint violations *before* calling `Insert`, or be prepared to handle the exception (which will likely roll back the transaction).
@@ -1138,9 +1194,9 @@ This distinction is crucial for security, especially with scheduled reducers. Yo
 ##### Lifecycle Reducers
 
 Special reducers handle specific events:
-*   `[Reducer(ReducerKind.Init)]`: Runs once when the module is first published **and** any time the database is manually cleared. Failure prevents publishing or clearing.
-*   `[Reducer(ReducerKind.ClientConnected)]`: Runs when any distinct client connection (e.g., WebSocket, HTTP call) is established. Failure disconnects the client. `ctx.ConnectionId` is guaranteed to have a value within this reducer.
-*   `[Reducer(ReducerKind.ClientDisconnected)]`: Runs when any distinct client connection terminates. Failure is logged but does not prevent disconnection. `ctx.ConnectionId` is guaranteed to have a value within this reducer.
+*   `[Reducer(ReducerKind.Init)]`: Runs once when the module is first published **and** any time the database is manually cleared (e.g., via `spacetime publish -c` or `spacetime server clear`). Failure prevents publishing or clearing. Often used for initial data setup.
+*   `[Reducer(ReducerKind.ClientConnected)]`: Runs when any distinct client connection (e.g., WebSocket, HTTP call) is established. Failure disconnects the client. `ctx.connection_id` is guaranteed to have a value within this reducer.
+*   `[Reducer(ReducerKind.ClientDisconnected)]`: Runs when any distinct client connection terminates. Failure is logged but does not prevent disconnection. `ctx.connection_id` is guaranteed to have a value within this reducer.
 
 These reducers cannot take arguments beyond `ReducerContext`.
 
@@ -1159,67 +1215,122 @@ public static void HandleDisconnect(ReducerContext ctx) {
 }
 ```
 
-#### Filtering and Deleting with Indexes
+#### Scheduled Reducers (C#)
 
-SpacetimeDB provides powerful ways to filter and delete table rows using B-tree indexes. The generated accessor methods accept various argument types:
+In addition to lifecycle annotations, reducers can be scheduled. This allows calling the reducers at a particular time, or periodically for loops (e.g., game loops).
 
-*   **Single Value:** Pass a reference (`&T`) for the indexed column type.
-*   **Ranges:** Use Rust's range syntax (`start..end`, `start..=end`, `..end`, `..=end`, `start..`). Values can be owned or references.
-*   **Multi-Column Indexes:** Pass a tuple containing values or ranges for each indexed column. The types must match the column order in the index definition. You can filter on a prefix of the index columns.
+The scheduling information for a reducer is stored in a table. This table links to the reducer function and has specific mandatory fields:
+
+1.  **Define the Schedule Table:** Create a table class/struct using `[Table(Name = ..., Scheduled = nameof(YourReducerName), ScheduledAt = nameof(YourScheduleAtColumnName))]`.
+    *   The `Scheduled` parameter links this table to the static reducer method `YourReducerName`.
+    *   The `ScheduledAt` parameter specifies the name of the field within this table that holds the scheduling information. This field **must** be of type `SpacetimeDB.ScheduleAt`.
+    *   The table **must** also have a primary key field (often `[AutoInc] ulong Id`).
+    *   Additional fields can be included to pass arguments to the scheduled reducer.
+2.  **Define the Scheduled Reducer:** Create the `static` reducer method (`YourReducerName`) specified in the table attribute. It takes `ReducerContext` and an instance of the schedule table class/struct as arguments.
+3.  **Schedule an Invocation:** Inside another reducer, create an instance of your schedule table struct.
+    *   Set the `ScheduleAt` field (using the name specified in the `ScheduledAt` parameter) to either:
+        *   `new ScheduleAt.Time(timestamp)`: Schedules the reducer to run **once** at the specified `Timestamp`.
+        *   `new ScheduleAt.Interval(timeDuration)`: Schedules the reducer to run **periodically** with the specified `TimeDuration` interval.
+    *   Set the primary key (e.g., to `0` if using `[AutoInc]`) and any other argument fields.
+    *   Insert this instance into the schedule table using `ctx.Db.your_schedule_table_name.Insert(...)`.
+
+Managing timers with a scheduled table is as simple as inserting or deleting rows. This makes scheduling transactional in SpacetimeDB. If a reducer A schedules B but then throws an exception, B will not be scheduled.
 
 ```csharp
 using SpacetimeDB;
 using System;
-using System.Linq;
 
 public static partial class Module
 {
-    // Example: Filtering and Deleting with Indexes
-    [Reducer]
-    public static void IndexOperations(ReducerContext ctx)
+    // 1. Define the table with scheduling information, linking to `SendMessage` reducer.
+    // Specifies that the `ScheduledAt` field holds the schedule info.
+    [Table(Name = "send_message_schedule", Scheduled = nameof(SendMessage), ScheduledAt = nameof(ScheduledAt))] 
+    public partial struct SendMessageSchedule
     {
-        // Example: Find items named "Sword"
-        var items = ctx.Db.items.name.Filter("Sword");
-        foreach (var item in items) { /* ... */ }
+        // Mandatory fields:
+        [PrimaryKey]
+        [AutoInc]
+        public ulong Id; // Identifier for the scheduled call
 
-        // Example: Delete points where x is 5
-        bool deleted = ctx.Db.points.idx_xy.Delete(5L); // Filter on index prefix
+        public ScheduleAt ScheduledAt; // Holds the schedule timing
 
-        // Example: Find points where x = 3 and y = 7
-        var specificPoint = ctx.Db.points.idx_xy.Filter((3L, 7L));
-        foreach(var pt in specificPoint) { /* ... should be at most one */}
+        // Custom fields (arguments for the reducer):
+        public string Message;
+    }
 
-        // Example: Find points where x is between 100 and 200 (inclusive)
-        var pointsInRange = ctx.Db.points.idx_xy.Filter((100L, 200L));
-        foreach(var pt in pointsInRange) { /* ... */ }
+    // 2. Define the scheduled reducer.
+    // It takes the schedule table struct as its second argument.
+    [Reducer]
+    public static void SendMessage(ReducerContext ctx, SendMessageSchedule scheduleArgs)
+    {
+        // Security check!
+        if (!ctx.Sender.Equals(ctx.Identity))
+        {
+            throw new Exception("Reducer SendMessage may not be invoked by clients, only via scheduling.");
+        }
 
-        // Example: Delete items named "Shield"
-        uint numDeleted = ctx.Db.items.name.Delete("Shield");
-        Log.Info($"Deleted {numDeleted} Shield(s)");
+        Log.Info($"Scheduled SendMessage: {scheduleArgs.Message}");
+        // ... perform action with scheduleArgs.Message ...
+    }
+
+    // 3. Example of scheduling reducers (e.g., in Init)
+    [Reducer(ReducerKind.Init)]
+    public static void Init(ReducerContext ctx)
+    {
+        // Avoid rescheduling if Init runs again
+        if (ctx.Db.send_message_schedule.Count > 0) {
+             return; 
+        }
+
+        var tenSeconds = new TimeDuration { Microseconds = 10_000_000 };
+        var futureTimestamp = ctx.Timestamp + tenSeconds;
+
+        // Schedule a one-off message
+        ctx.Db.send_message_schedule.Insert(new SendMessageSchedule
+        {
+            Id = 0, // Let AutoInc assign ID
+            // Use ScheduleAt.Time for one-off execution at a specific Timestamp
+            ScheduledAt = new ScheduleAt.Time(futureTimestamp), 
+            Message = "I'm a bot sending a message one time!"
+        });
+        Log.Info("Scheduled one-off message.");
+
+        // Schedule a periodic message (every 10 seconds)
+        ctx.Db.send_message_schedule.Insert(new SendMessageSchedule
+        {
+            Id = 0, // Let AutoInc assign ID
+             // Use ScheduleAt.Interval for periodic execution with a TimeDuration
+            ScheduledAt = new ScheduleAt.Interval(tenSeconds), 
+            Message = "I'm a bot sending a message every 10 seconds!"
+        });
+        Log.Info("Scheduled periodic message.");
     }
 }
 ```
 
-:::note C# `Insert` vs Rust `try_insert`
-Unlike Rust, the C# SDK does not currently provide a `TryInsert` method that returns a result. The standard `Insert` method will throw an exception if a constraint (primary key, unique index) is violated. Therefore, C# reducers should typically check for potential constraint violations *before* calling `Insert`, or be prepared to handle the exception (which will likely roll back the transaction).
-:::
-
 ##### Scheduled Reducer Details
 
-*   **Best-Effort Scheduling:** Scheduled reducers run on a best-effort basis and may be slightly delayed under heavy database load.
-*   **Security:** Since scheduled reducers can also be called directly by clients if not secured, it's crucial to verify the caller identity if the reducer performs sensitive operations:
+*   **Best-Effort Scheduling:** Scheduled reducers are called on a best-effort basis and may be slightly delayed in their execution when a database is under heavy load.
+
+*   **Restricting Access (Security):** Scheduled reducers are normal reducers and *can* still be called directly by clients. If a scheduled reducer should *only* be called by the scheduler, it is crucial to begin the reducer with a check comparing the caller's identity (`ctx.Sender`) to the module's own identity (`ctx.Identity`).
     ```csharp
-    [Reducer]
-    public static void ScheduledTask(ReducerContext ctx, GameTickSchedule args) // Use the actual schedule table type
+    [Reducer] // Assuming linked via [Table(Scheduled=...)]
+    public static void MyScheduledTask(ReducerContext ctx, MyScheduleArgs args)
     {
         if (!ctx.Sender.Equals(ctx.Identity))
         {
-            throw new Exception("Permission denied: Task can only be run by scheduler.");
+            throw new Exception("Reducer MyScheduledTask may not be invoked by clients, only via scheduling.");
         }
-        // ... proceed with scheduled logic ...
-        Log.Info($"Executing scheduled task for tick {args.TickNumber}");
+        // ... Reducer body proceeds only if called by scheduler ...
+        Log.Info("Executing scheduled task...");
     }
+    // Define MyScheduleArgs table elsewhere with [Table(Scheduled=nameof(MyScheduledTask), ...)]
+    public partial struct MyScheduleArgs { /* ... fields including ScheduleAt ... */ } 
     ```
+
+:::info Scheduled Reducers and Connections
+Scheduled reducer calls originate from the SpacetimeDB scheduler itself, not from an external client connection. Therefore, within a scheduled reducer, `ctx.Sender` will be the module's own identity, and `ctx.ConnectionId` will be `null`.
+:::
 
 ##### Error Handling: Exceptions
 
