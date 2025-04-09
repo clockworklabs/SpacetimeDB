@@ -23,13 +23,32 @@ SpacetimeDB.
 SpacetimeDB allows users to code generate type-safe client libraries based on
 the tables, types, and reducers defined in their module. Subscription queries
 allows the client SDK to store a partial, live updating, replica of the servers
-state. This makes reading database state on the client extremely inexpensive.
+state. This makes reading database state on the client extremely low-latency.
 
 Authentication is implemented in SpacetimeDB using the OpenID Connect protocol.
 An OpenID Connect token with a valid `iss`/`sub` pair constitutes a unique and
 authenticable SpacetimeDB identity. SpacetimeDB uses the `Identity` type as an
 identifier for all such identities. `Identity` is computed from the `iss`/`sub`
-pair. This allows SpacetimeDB to easily integrate with OIDC authentication
+pair using the following algorithm:
+
+1. Concatenate the issuer and subject with a pipe symbol (`|`).
+2. Perform the first BLAKE3 hash on the concatenated string.
+3. Get the first 26 bytes of the hash (let's call this `idHash`).
+4. Create a 28-byte sequence by concatenating the bytes `0xc2`, `0x00`, and `idHash`.
+5. Compute the BLAKE3 hash of the 28-byte sequence from step 4 (let's call this `checksumHash`).
+6. Construct the final 32-byte `Identity` by concatenating: the two prefix bytes (`0xc2`, `0x00`), the first 4 bytes of `checksumHash`, and the 26-byte `idHash`.
+7. This final 32-byte value is typically represented as a hexadecimal string.
+
+```ascii
+Byte Index: |  0  |  1  |  2  |  3  |  4  |  5  |  6  | ... | 31  |
+            +-----+-----+-----+-----+-----+-----+-----+-----+-----+
+Contents:   | 0xc2| 0x00| Checksum Hash (4 bytes) |  ID Hash (26 bytes)   |
+            +-----+-----+-------------------------+-----------------------+
+                      (First 4 bytes of           (First 26 bytes of
+                       BLAKE3(0xc200 || idHash))    BLAKE3(iss|sub))
+```
+
+This allows SpacetimeDB to easily integrate with OIDC authentication
 providers like FirebaseAuth, Auth0, or SuperTokens.
 
 Clockwork Labs, the developers of SpacetimeDB, offers three products:
@@ -60,10 +79,34 @@ Getting started with SpacetimeDB involves a few key steps:
         ```bash
         # This command starts a SpacetimeDB server instance in Docker
         docker run --rm --pull always -p 3000:3000 clockworklabs/spacetime start 
-        # Note: The CLI still needs to be installed separately via one of the methods above 
-        # to manage modules and interact with the Docker instance.
+        # Note: While the CLI can be installed separately (see above), you can also execute 
+        # CLI commands *within* the running Docker container (e.g., using `docker exec`) 
+        # or use the image as a base for a custom image containing your module management tools.
+        ```
+    *   **Docker (to execute CLI commands directly):**
+        You can also use the Docker image to run `spacetime` CLI commands without installing the CLI locally. For commands that operate on local files (like `build`, `publish`, `generate`), this involves mounting your project directory into the container. For commands that only interact with a database instance (like `sql`, `status`), mounting is typically not required, but network access to the database is.
+        ```bash
+        # Example: Build a module located in the current directory (.)
+        # Mount current dir to /module inside container, set working dir to /module
+        docker run --rm -v "$(pwd):/module" -w /module clockworklabs/spacetime build --project-path .
+
+        # Example: Publish the module after building
+        # Assumes a local server is running (or use --host for Maincloud/other)
+        docker run --rm -v "$(pwd):/module" -w /module --network host clockworklabs/spacetime publish --project-path . my-database-name
+        # Note: `--network host` is often needed to connect to a local server from the container.
         ```
     *   For more details or troubleshooting, see the official [Getting Started Guide](https://spacetimedb.com/docs/getting-started) and [Installation Page](https://spacetimedb.com/install).
+
+1.b **Log In (If Necessary):** If you plan to publish to a server that requires authentication (like the public Maincloud at `maincloud.spacetimedb.com`), you generally need to log in first using `spacetime login`. This associates your actions with your global SpacetimeDB identity (e.g., linked to your spacetimedb.com account).
+    ```bash
+    spacetime login
+    # Follow the prompts to authenticate via web browser
+    ```
+    If you attempt commands like `publish` against an authenticated server without being logged in, the CLI will prompt you: `You are not logged in. Would you like to log in with spacetimedb.com? [y/N]`. 
+    *   Choosing `y` initiates the standard browser login flow.
+    *   Choosing `n` proceeds without a global login for this operation. The CLI will confirm `We have logged in directly to your target server. WARNING: This login will NOT work for any other servers.` This uses or creates a server-issued identity specific to that server (see Step 5).
+
+    In general, using `spacetime login` (which authenticates via spacetimedb.com) is recommended, as the resulting identities are portable across different SpacetimeDB servers.
 
 2.  **Initialize Server Module:** Create a new directory for your project and use the CLI to initialize the server module structure:
     ```bash
@@ -73,7 +116,7 @@ Getting started with SpacetimeDB involves a few key steps:
     spacetime init --lang csharp my_server_module
     ```
     :::note C# Project Filename Convention (SpacetimeDB CLI)
-    The `spacetime` CLI tool (particularly `publish` and `build`) follows a convention and often expects the C# project file (`.csproj`) to be named `StdbModule.csproj`, matching the default generated by `spacetime init`. This appears to be a requirement of the SpacetimeDB tool itself, not the underlying .NET build system. If you encounter issues where the build succeeds but publishing fails (e.g., "couldn't find the output file" or silent failures after build), ensure your `.csproj` file is named `StdbModule.csproj` within your module's directory.
+    The `spacetime` CLI tool (particularly `publish` and `build`) follows a convention and often expects the C# project file (`.csproj`) to be named `StdbModule.csproj`, matching the default generated by `spacetime init`. This **is** a requirement of the SpacetimeDB tool itself (due to how it locates build artifacts), not the underlying .NET build system. This is a known issue tracked [here](https://github.com/clockworklabs/SpacetimeDB/issues/2475). If you encounter issues where the build succeeds but publishing fails (e.g., "couldn't find the output file" or silent failures after build), ensure your `.csproj` file is named `StdbModule.csproj` within your module's directory.
     :::
 3.  **Define Schema & Logic:** Edit the generated module code (`lib.rs` for Rust, `Lib.cs` for C#) to define your custom types (`[SpacetimeType]`/`[Type]`), database tables (`#[table]`/`[Table]`), and reducers (`#[reducer]`/`[Reducer]`).
 4.  **Build Module:** Compile your module code into WebAssembly using the CLI:
@@ -82,14 +125,37 @@ Getting started with SpacetimeDB involves a few key steps:
     spacetime build --project-path my_server_module 
     ```
     :::note C# Build Prerequisite (.NET SDK)
-    Building a **C# module** (on any platform: Windows, macOS, Linux) requires the .NET SDK to be installed. If the build fails with an error mentioning `dotnet workload list` or `No .NET SDKs were found`, you need to install the SDK first. Download and install **.NET 8 SDK** (or newer) from the official Microsoft website: [https://dotnet.microsoft.com/download](https://dotnet.microsoft.com/download).
+    Building a **C# module** (on any platform: Windows, macOS, Linux) requires the .NET SDK to be installed. If the build fails with an error mentioning `dotnet workload list` or `No .NET SDKs were found`, you need to install the SDK first. Download and install the **.NET 8 SDK** specifically from the official Microsoft website: [https://dotnet.microsoft.com/download](https://dotnet.microsoft.com/download). Newer versions (like .NET 9) are not currently supported for building SpacetimeDB modules, although they can be installed alongside .NET 8 without conflicting.
     :::
 5.  **Publish Module:** Deploy your compiled module to a SpacetimeDB instance (either a local one started with `spacetime start` or the managed Maincloud). Publishing creates or updates a database associated with your module.
+
+    *   Providing a `[name|identity]` for the database is **optional**. If omitted, a nameless database will be created and assigned a unique `Identity` automatically. If providing a *name*, it must match the regex `^[a-z0-9]+(-[a-z0-9]+)*$`.
+    *   By default (`--project-path`), it builds the module before publishing. Use `--bin-path <wasm_file>` to publish a pre-compiled WASM instead.
+    *   Use `-s, --server <server>` to specify the target instance (e.g., `maincloud.spacetimedb.com` or the nickname `maincloud`). If omitted, it targets a local instance or uses your configured default (check with `spacetime server list`).
+    *   Use `-c, --delete-data` when updating an existing database identity to destroy all existing data first.
+
+    :::note Server-Issued Identities
+    If you publish without being logged in (and choose to proceed without a global login when prompted), the SpacetimeDB server instance will generate or use a unique "server-issued identity" for the database operation. This identity is specific to that server instance. Its issuer (`iss`) is specifically `http://localhost`, and its subject (`sub`) will be a generated UUIDv4. This differs from the global identities derived from OIDC providers (like spacetimedb.com) when you use `spacetime login`. The token associated with this identity is signed by the issuing server, and the signature will be considered invalid if the token is presented to any other SpacetimeDB server instance.
+    :::
+
     ```bash
-    # Publish to a local instance or Maincloud, giving it a name
-    spacetime publish --project-path my_server_module my_database_name
+    # Build and publish from source to 'my-database-name' on the default server
+    spacetime publish --project-path my_server_module my-database-name
+
+    # Example: Publish a pre-compiled wasm to Maincloud using its nickname, clearing existing data
+    spacetime publish --bin-path ./my_module/target/wasm32-wasi/debug/my_module.wasm -s maincloud -c my-cloud-db-identity
     ```
-6.  **Generate Client Bindings:** Create type-safe client code based on your module's definitions.
+
+6.  **List Databases (Optional):** Use `spacetime list` to see the databases associated with your logged-in identity on the target server (defaults to your configured server). This is helpful to find the `Identity` of databases, especially unnamed ones.
+    ```bash
+    # List databases on the default server
+    spacetime list
+
+    # List databases on Maincloud
+    # spacetime list -s maincloud
+    ```
+
+7.  **Generate Client Bindings:** Create type-safe client code based on your module's definitions.
     This command inspects your compiled module's schema (tables, types, reducers) and generates corresponding code (classes, structs, functions) for your target client language. This allows you to interact with your SpacetimeDB module in a type-safe way on the client.
     ```bash
     # For Rust client (output to src/module_bindings)
@@ -97,12 +163,43 @@ Getting started with SpacetimeDB involves a few key steps:
     # For C# client (output to module_bindings directory)
     spacetime generate --lang csharp --out-dir path/to/client/module_bindings --project-path my_server_module
     ```
-7.  **Develop Client:** Create your client application (e.g., Rust binary, C# console app, Unity game). Use the generated bindings and the appropriate client SDK to:
-    *   Connect to the database (`my_database_name`).
+8.  **Develop Client:** Create your client application (e.g., Rust binary, C# console app, Unity game). Use the generated bindings and the appropriate client SDK to:
+    *   Connect to the database (`my-database-name`).
     *   Subscribe to data in public tables.
     *   Register callbacks to react to data changes.
     *   Call reducers defined in your module.
-8.  **Run:** Start your SpacetimeDB instance (if local or Docker), then run your client application.
+9.  **Run:** Start your SpacetimeDB instance (if local or Docker), then run your client application.
+
+10. **Inspect Data (Optional):** Use the `spacetime sql` command to run SQL queries directly against your database to view or verify data.
+    ```bash
+    # Query all data from the 'player_state' table in 'my-database-name'
+    # Note: Table names are case-sensitive (match your definition)
+    spacetime sql my-database-name "SELECT * FROM PlayerState"
+
+    # Use --interactive for a SQL prompt
+    # spacetime sql --interactive my-database-name
+    ```
+
+11. **View Logs (Optional):** Use the `spacetime logs` command to view logs generated by your module's reducers (e.g., using `log::info!` in Rust or `Log.Info()` in C#).
+    ```bash
+    # Show all logs for 'my-database-name'
+    spacetime logs my-database-name
+
+    # Follow the logs in real-time (like tail -f)
+    # spacetime logs -f my-database-name
+
+    # Show the last 50 log lines
+    # spacetime logs -n 50 my-database-name
+    ```
+
+12. **Delete Database (Optional):** When you no longer need a database (e.g., after testing), you can delete it using `spacetime delete` with its name or identity.
+    ```bash
+    # Delete the database named 'my-database-name'
+    spacetime delete my-database-name
+
+    # Delete a database by its identity (replace with actual identity)
+    # spacetime delete 0x123abc...
+    ```
 
 ## Core Concepts and Syntax Examples
 
@@ -155,12 +252,20 @@ The `[lib]` section in your module's `Cargo.toml` must contain `crate-type = ["c
 #### Defining Tables
 
 Tables store the application's data. They are defined using Rust structs annotated with `#[table]`.
-This attribute automatically derives `Serialize`, `Deserialize`, `SpacetimeType`, and `Debug` for the struct.
+This attribute automatically derives `SpacetimeType`, `Serialize`, `Deserialize`, and `Debug` for the struct.
 
-Importantly, instances of the table struct are just plain data. Modifying a struct instance **does not** automatically update the database. Instead, you interact with the database tables through generated handles obtained from the `ReducerContext` (e.g., `ctx.db.my_table()`).
+:::caution `#[derive(SpacetimeType)]` Conflict
+Do **not** explicitly add `#[derive(SpacetimeType)]` to a struct that also has the `#[table]` attribute. The `#[table]` macro handles this automatically. Including both will lead to `E0119: conflicting implementations` compilation errors. Simply use `#[derive(Clone, Debug)]` or other necessary traits.
+:::
+
+Importantly, instances of the table struct are just plain data. Modifying a struct instance **does not** automatically update the database. Instead, you interact with the database tables through generated handles obtained from the `ReducerContext` (e.g., `ctx.db.my_table()`). See the Reducers section for more details on interaction and necessary imports (`use spacetimedb::Table;`).
 
 Fields can be marked with `#[primary_key]`, `#[auto_inc]`, `#[unique]`, or indexed using `#[index(...)]` or `#[table(index(...))]`.
 Use `Option<T>` for nullable fields.
+
+:::caution `name = identifier` Syntax
+Note that the `name` parameter within the `#[table(...)]` attribute expects a plain **identifier** (like `player_state`), not a string literal (`"player_state"`). Using a string literal may lead to compilation errors.
+:::
 
 :::caution Important: Public Tables
 By default, tables are **private** and only accessible by server-side reducer code. If clients need to read or subscribe to a table's data, you **must** mark the table as `public` using `#[table(..., public)]`.
@@ -169,9 +274,13 @@ By default, tables are **private** and only accessible by server-side reducer co
 :::
 
 :::caution Case Sensitivity
-The `name = "..."` specified in the `#[table(...)]` attribute is case-sensitive. When referring to this table in SQL queries (e.g., in client-side `subscribe` calls), you **must** use the exact same casing.
+The identifier specified in `name = ...` within the `#[table(...)]` attribute is case-sensitive. When referring to this table in SQL queries (e.g., in client-side `subscribe` calls), you **must** use the exact same casing.
 
-*Example:* If defined as `#[table(name = "PlayerState")]`, querying `SELECT * FROM player_state` will fail. You must use `SELECT * FROM PlayerState`.
+*Example:* If defined as `#[table(name = PlayerState)]`, querying `SELECT * FROM playerstate` or `SELECT * FROM player_state` will fail. You must use `SELECT * FROM PlayerState`.
+:::
+
+:::caution Note on Modifying Instances
+Instances of your table classes/structs are plain data objects. Modifying an instance **does not** automatically update the corresponding row in the database. You must explicitly call update methods (e.g., `ctx.Db.my_table.PrimaryKey.Update(modifiedInstance)`) to persist changes.
 :::
 
 :::danger `#[auto_inc]` + `#[unique]` Pitfall
@@ -183,9 +292,12 @@ use spacetimedb::{table, Identity, Timestamp, SpacetimeType};
 
 // Assume Position, PlayerStatus, ItemType are defined as above
 
-#[table(name = "player_state", public)]
+// NOTE: `name` uses an identifier, not a string.
+#[table(name = player_state, public)]
 // Define indexes directly in the table attribute or on fields
-#[table(index(name = "idx_level_btree", btree(columns = [level])))]
+#[table(index(name = idx_level_btree, btree(columns = [level])))]
+// NOTE: Do not derive SpacetimeType here, #[table] does it.
+#[derive(Clone, Debug)]
 pub struct PlayerState {
     #[primary_key]
     player_id: Identity,
@@ -199,7 +311,9 @@ pub struct PlayerState {
     last_login: Option<Timestamp>, // Optional timestamp
 }
 
-#[table(name = "inventory_item", public)]
+// NOTE: `name` uses an identifier, not a string.
+#[table(name = inventory_item, public)]
+#[derive(Clone, Debug)] // No SpacetimeType derive needed
 pub struct InventoryItem {
     #[primary_key]
     #[auto_inc] // Automatically generate unique IDs for items
@@ -211,7 +325,9 @@ pub struct InventoryItem {
 }
 
 // Example of a private table (not marked public)
-#[table(name = "internal_game_data")]
+// NOTE: `name` uses an identifier, not a string.
+#[table(name = internal_game_data)]
+#[derive(Clone, Debug)] // No SpacetimeType derive needed
 struct InternalGameData {
     #[primary_key]
     key: String,
@@ -221,41 +337,21 @@ struct InternalGameData {
 
 ##### Multiple Tables from One Struct
 
-You can use the same underlying data struct for multiple tables by defining wrapper structs.
+:::caution Wrapper Struct Pattern Not Supported for This Use Case
+Defining multiple tables using wrapper tuple structs (e.g., `struct ActiveCharacter(CharacterInfo);`) where field attributes like `#[primary_key]`, `#[unique]`, etc., are defined only on fields inside the inner struct (`CharacterInfo` in this example) is **not supported**. This pattern can lead to macro expansion issues and compilation errors because the `#[table]` macro applied to the wrapper struct cannot correctly process attributes defined within the inner type.
+:::
+
+**Recommended Pattern:** Apply multiple `#[table(...)]` attributes directly to the single struct definition that contains the necessary fields and field-level attributes (like `#[primary_key]`). This maps the same underlying type definition to multiple distinct tables reliably:
 
 ```rust
-use spacetimedb::{table, SpacetimeType, Identity};
-
-// Define the core data structure
-#[derive(SpacetimeType, Clone, Debug)]
-pub struct CharacterInfo {
-     #[primary_key]
-     character_id: u64,
-     name: String,
-     level: u16,
-}
-
-// Define wrapper structs, each with its own table attribute
-#[table(name = "active_characters")]
-pub struct ActiveCharacter(CharacterInfo);
-
-#[table(name = "deleted_characters")]
-pub struct DeletedCharacter(CharacterInfo);
-
-// Reducers would interact with ActiveCharacter or DeletedCharacter tables
-// E.g., ctx.db.active_characters().insert(ActiveCharacter(info));
-```
-
-Alternatively, multiple `#[table(...)]` attributes can be applied directly to a single struct definition. This maps the same underlying type definition to multiple distinct tables:
-
-```rust
-use spacetimedb::{table, SpacetimeType, Identity, Timestamp};
+use spacetimedb::{table, Identity, Timestamp, Table}; // Added Table import
 
 // Define the core data structure once
-// Apply multiple #[table] attributes to map it to different tables
-#[derive(SpacetimeType, Clone, Debug)] // Mark as type if used elsewhere
-#[table(name = "logged_in_players", public)]
-#[table(name = "players_in_lobby", public)]
+// Note: #[table] automatically derives SpacetimeType, Serialize, Deserialize
+// Do NOT add #[derive(SpacetimeType)] here.
+#[derive(Clone, Debug)]
+#[table(name = logged_in_players, public)]  // Identifier name
+#[table(name = players_in_lobby, public)]   // Identifier name
 pub struct PlayerSessionData {
     #[primary_key]
     player_id: Identity,
@@ -265,9 +361,30 @@ pub struct PlayerSessionData {
     last_activity: Timestamp,
 }
 
-// Reducers would interact with the specific table handles:
-// E.g., ctx.db.logged_in_players().insert(PlayerSessionData { ... });
-// E.g., let lobby_player = ctx.db.players_in_lobby().player_id().find(&some_id);
+// Example Reducer demonstrating interaction
+#[spacetimedb::reducer]
+fn example_reducer(ctx: &spacetimedb::ReducerContext) {
+    // Reducers interact with the specific table handles:
+    let session = PlayerSessionData {
+        player_id: ctx.sender, // Example: Use sender identity
+        session_id: 0, // Assuming auto_inc
+        last_activity: ctx.timestamp,
+    };
+
+    // Insert into the 'logged_in_players' table
+    match ctx.db.logged_in_players().try_insert(session.clone()) {
+        Ok(inserted) => spacetimedb::log::info!("Player {} logged in, session {}", inserted.player_id, inserted.session_id),
+        Err(e) => spacetimedb::log::error!("Failed to insert into logged_in_players: {}", e),
+    }
+
+    // Find a player in the 'players_in_lobby' table by primary key
+    if let Some(lobby_player) = ctx.db.players_in_lobby().player_id().find(&ctx.sender) {
+        spacetimedb::log::info!("Player {} found in lobby.", lobby_player.player_id);
+    }
+
+    // Delete from the 'logged_in_players' table using the PK index
+    ctx.db.logged_in_players().player_id().delete(&ctx.sender);
+}
 ```
 
 ##### Browsing Generated Table APIs
@@ -288,6 +405,10 @@ Reviewing this generated documentation is the best way to understand the specifi
 Reducers are functions that modify table data atomically. They are annotated
 with `#[reducer]`. 
 
+:::info `use spacetimedb::Table;` Required for Table Operations
+To call methods like `.insert()`, `.try_insert()`, `.update()`, `.delete()`, or access index/primary key handles (e.g., `.pk_field_name()`) on table handles returned by `ctx.db.table_name()`, you **must** bring the `spacetimedb::Table` trait into scope by adding `use spacetimedb::Table;` at the top of your `lib.rs` file. Without this import, the compiler will report errors like "method not found".
+:::
+
 :::info Transactionality
 Crucially, **every reducer call executes within a single, atomic database transaction.** If the reducer function completes successfully (returns `()` or `Ok(())`), all database modifications made within it are committed together. If the reducer fails (panics or returns `Err(...)`), the transaction is aborted, and **all database changes made during that specific call are automatically rolled back**, ensuring data consistency.
 :::
@@ -297,14 +418,16 @@ Reducers operate within a sandbox and have limitations:
 *   They cannot directly access the filesystem (e.g., using `std::fs` or `std::io`).
 *   External communication happens primarily through database table modifications (which clients can subscribe to) and logging (`log` crate).
 
-Reducers *can* call other reducers defined within the same module. This is a direct function call, not a network request, and executes within the same database transaction.
+Reducers *can* call other reducers defined within the same module. This is a direct function call, not a network request, and executes within the same single database transaction (i.e., it does **not** start a sub-transaction).
 
 ```rust
 use spacetimedb::{reducer, ReducerContext, Table, Identity, Timestamp, log};
 
-#[table(name = "user", public)]
+#[table(name = user, public)]
+#[derive(Clone, Debug)]
 pub struct User { /* ... fields ... */ }
-#[table(name = "message", public)]
+#[table(name = message, public)]
+#[derive(Clone, Debug)]
 pub struct Message { /* ... fields ... */ }
 
 // Reducer to set a user's name
@@ -312,7 +435,8 @@ pub struct Message { /* ... fields ... */ }
 pub fn set_name(ctx: &ReducerContext, name: String) -> Result<(), String> {
     let name = validate_name(name)?; // Basic validation
     if let Some(user) = ctx.db.user().identity().find(ctx.sender) {
-        // Update the user's name
+        // Update the user's name using the primary key index handle
+        // Note: Update requires the full struct instance.
         ctx.db.user().identity().update(User { name: Some(name), ..user });
         Ok(())
     } else {
@@ -325,7 +449,9 @@ pub fn set_name(ctx: &ReducerContext, name: String) -> Result<(), String> {
 pub fn send_message(ctx: &ReducerContext, text: String) -> Result<(), String> {
     let text = validate_message(text)?; // Basic validation
     log::info!("Received message: {}", text);
-    // Insert the new message into the table
+    // Insert the new message into the table.
+    // insert() panics on constraint violation (e.g., duplicate PK).
+    // Use try_insert() for Result-based error handling.
     ctx.db.message().insert(Message {
         sender: ctx.sender,
         text,
@@ -382,9 +508,20 @@ fn validate_message(text: String) -> Result<String, String> {
 
 ##### Error Handling: `Result` vs. Panic
 
-Reducers can fail by returning `Err` or by panicking. Both methods trigger a transaction rollback.
-*   **Returning `Err(E)**:** This is the preferred way to handle *expected* failures (e.g., invalid input, failed validation). The error message (`E` must implement `Display`) is propagated back to the calling client and can be observed in the `ReducerEventContext` status.
-*   **Panicking:** This typically represents an *unexpected* or unrecoverable error (e.g., assertion failure, bug). While it also rolls back the transaction, the client might not receive a specific error message, potentially just seeing a generic failure or disconnection.
+Reducers can indicate failure either by returning `Err` from a function with a `Result` return type or by panicking (e.g., using `panic!`, `unwrap`, `expect`). Both methods trigger a transaction rollback, ensuring atomicity.
+
+*   **Returning `Err(E)**:**
+    *   This is generally preferred for handling *expected* or recoverable failures (e.g., invalid input, failed validation checks).
+    *   The error value `E` (which must implement `Display`) is propagated back to the calling client and can be observed in the `ReducerEventContext` status.
+    *   Crucially, returning `Err` does **not** destroy the underlying WebAssembly (WASM) instance.
+
+*   **Panicking:**
+    *   This typically represents an *unexpected* bug, violated invariant, or unrecoverable state (e.g., assertion failure, unexpected `None` value).
+    *   The client **will** receive an error message derived from the panic payload (the argument provided to `panic!`, or the messages from `unwrap`/`expect`).
+    *   Panicking does **not** cause the client to be disconnected.
+    *   However, a panic **destroys the current WASM instance**. This means the *next* reducer call (from any client) that runs on this module will incur additional latency as SpacetimeDB needs to create and initialize a fresh WASM instance.
+
+**Choosing between them:** While both ensure data consistency via rollback, returning `Result::Err` is generally better for predictable error conditions as it avoids the performance penalty associated with WASM instance recreation caused by panics. Use `panic!` for truly exceptional circumstances where state is considered unrecoverable or an unhandled bug is detected.
 
 ##### Lifecycle Reducers
 
@@ -414,36 +551,61 @@ pub fn handle_disconnect(ctx: &ReducerContext) {
 
 SpacetimeDB provides powerful ways to filter and delete table rows using B-tree indexes. The generated accessor methods accept various argument types:
 
-*   **Single Value:** Pass a reference (`&T`) for the indexed column type.
-*   **Ranges:** Use Rust's range syntax (`start..end`, `start..=end`, `..end`, `..=end`, `start..`). Values can be owned or references.
-*   **Multi-Column Indexes:** Pass a tuple containing values or ranges for each indexed column. The types must match the column order in the index definition. You can filter on a prefix of the index columns.
+*   **Single Value (Equality):** 
+    *   For columns of type `String`, you can pass `&String` or `&str`.
+    *   For columns of a type `T` that implements `Copy`, you can pass `&T` or an owned `T`.
+    *   For other column types `T`, pass a reference `&T`.
+*   **Ranges:** Use Rust's range syntax (`start..end`, `start..=end`, `..end`, `..=end`, `start..`). Values within the range can typically be owned or references.
+*   **Multi-Column Indexes:** 
+    *   To filter on an exact match for a *prefix* of the index columns, provide a tuple containing single values (following the rules above) for that prefix (e.g., `filter((val_a, val_b))` for an index on `[a, b, c]`).
+    *   To filter using a range, you **must** provide single values for all preceding columns in the index, and the range can **only** be applied to the *last* column in your filter tuple (e.g., `filter((val_a, val_b, range_c))` is valid, but `filter((val_a, range_b, val_c))` or `filter((range_a, val_b))` are **not** valid tuple filters).
+    *   Filtering or deleting using a range on *only the first column* of the index (without using a tuple) remains valid (e.g., `filter(range_a)`).
 
 ```rust
-#[table(name = "points", index(name = "idx_xy", btree(columns = [x, y])))]
-pub struct Point { x: i64, y: i64 }
-#[table(name = "items", index(btree(columns = [name])))]
-pub struct Item { #[primary_key] id: u32, name: String }
+use spacetimedb::{table, reducer, ReducerContext, Table, log};
+
+#[table(name = points, index(name = idx_xy, btree(columns = [x, y])))]
+#[derive(Clone, Debug)]
+pub struct Point { #[primary_key] id: u64, x: i64, y: i64 }
+#[table(name = items, index(btree(columns = [name])))]
+#[derive(Clone, Debug)] // No SpacetimeType derive
+pub struct Item { #[primary_key] item_key: u32, name: String }
 
 #[reducer]
 fn index_operations(ctx: &ReducerContext) {
-    // Example: Find items named "Sword"
+    // Example: Find items named "Sword" using the generated 'name' index handle
+    // Passing &str for a String column is allowed.
     for item in ctx.db.items().name().filter("Sword") {
         // ...
     }
 
     // Example: Delete points where x is between 5 (inclusive) and 10 (exclusive)
+    // using the multi-column index 'idx_xy' - filtering on first column range is OK.
     let num_deleted = ctx.db.points().idx_xy().delete(5i64..10i64);
     log::info!("Deleted {} points", num_deleted);
 
     // Example: Find points where x = 3 and y >= 0
+    // using the multi-column index 'idx_xy' - (value, range) is OK.
+    // Note: x is i64 which is Copy, so passing owned 3i64 is allowed.
     for point in ctx.db.points().idx_xy().filter((3i64, 0i64..)) {
         // ...
     }
 
-    // Example: Delete all points where x = 7 (filtering on index prefix)
+    // Example: Find points where x > 5 and y = 1
+    // This is INVALID: Cannot use range on non-last element of tuple filter.
+    // for point in ctx.db.points().idx_xy().filter((5i64.., 1i64)) { ... }
+
+    // Example: Delete all points where x = 7 (filtering on index prefix with single value)
+    // using the multi-column index 'idx_xy'. Passing owned 7i64 is allowed (Copy type).
     ctx.db.points().idx_xy().delete(7i64);
 
-    // Using references
+    // Example: Delete a single item by its primary key 'item_key'
+    // Use the PK field name as the method to get the PK index handle, then call delete.
+    // item_key is u32 (Copy), passing owned value is allowed.
+    let item_id_to_delete = 101u32;
+    ctx.db.items().item_key().delete(item_id_to_delete);
+
+    // Using references for a range filter on the first column - OK
     let min_x = 100i64;
     let max_x = 200i64;
     for point in ctx.db.points().idx_xy().filter(&min_x..=&max_x) {
@@ -454,23 +616,60 @@ fn index_operations(ctx: &ReducerContext) {
 
 ##### Using `try_insert()`
 
-Instead of `insert()`, which panics or throws if a constraint (like a primary key or unique index violation) occurs, Rust modules can use `try_insert()`. This method returns a `Result<RowType, String>`, allowing you to gracefully handle potential insertion failures.
+Instead of `insert()`, which panics or throws if a constraint (like a primary key or unique index violation) occurs, Rust modules can use `try_insert()`. This method returns a `Result<RowType, spacetimedb::TryInsertError<TableHandleType>>`, allowing you to gracefully handle potential insertion failures without aborting the entire reducer transaction due to a panic. 
+
+The `TryInsertError` enum provides specific variants detailing the cause of failure, such as `UniqueConstraintViolation` or `AutoIncOverflow`. These variants contain associated types specific to the table's constraints (e.g., `TableHandleType::UniqueConstraintViolation`). If a table lacks a certain constraint (like a unique index), the corresponding associated type might be uninhabited.
 
 ```rust
+use spacetimedb::{table, reducer, ReducerContext, Table, log, TryInsertError};
+
+#[table(name = items)]
+#[derive(Clone, Debug)]
+pub struct Item { 
+    #[primary_key] #[auto_inc] id: u64, 
+    #[unique] name: String 
+}
+
 #[reducer]
-pub fn try_add_item(ctx: &ReducerContext, name: String) {
-    let new_item = Item { id: 0, name }; // Assume AutoInc PK
+pub fn try_add_item(ctx: &ReducerContext, name: String) -> Result<(), String> {
+    // Assume Item has an auto-incrementing primary key 'id' and a unique 'name'
+    let new_item = Item { id: 0, name }; // Provide 0 for auto_inc
+
+    // try_insert returns Result<Item, TryInsertError<items__TableHandle>>
     match ctx.db.items().try_insert(new_item) {
         Ok(inserted_item) => {
+            // try_insert returns the inserted row (with assigned PK if auto_inc) on success
             log::info!("Successfully inserted item with ID: {}", inserted_item.id);
+            Ok(())
         }
         Err(e) => {
-            log::error!("Failed to insert item: {}", e);
-            // Optionally return an error to the client
+            // Match on the specific TryInsertError variant
+            match e {
+                TryInsertError::UniqueConstraintViolation(constraint_error) => {
+                    // constraint_error is of type items__TableHandle::UniqueConstraintViolation
+                    // This type often provides details about the violated constraint.
+                    // For simplicity, we just log a generic message here.
+                    let error_msg = format!("Failed to insert item: Name '{}' already exists.", name);
+                    log::error!("{}", error_msg);
+                    // Return an error to the calling client
+                    Err(error_msg)
+                }
+                TryInsertError::AutoIncOverflow(_) => {
+                    // Handle potential overflow of the auto-incrementing key
+                    let error_msg = "Failed to insert item: Auto-increment counter overflow.".to_string();
+                    log::error!("{}", error_msg);
+                    Err(error_msg)
+                }
+                // Use a wildcard for other potential errors or uninhabited variants
+                _ => {
+                    let error_msg = format!("Failed to insert item: Unknown constraint violation.");
+                    log::error!("{}", error_msg);
+                    Err(error_msg)
+                }
+            }
         }
     }
 }
-```
 
 #### Scheduled Reducers (Rust)
 
@@ -527,8 +726,16 @@ const PLAYERS_SEE_ENTITIES_IN_SAME_CHUNK: Filter = Filter::Sql("
 ");
 ```
 
-:::note Unstable Feature
-As of the time of writing, this feature might be marked as unstable or not fully implemented/enforced by the SpacetimeDB host. Check the latest official documentation for current status.
+:::info Version-Specific Status and Usage
+
+*   **SpacetimeDB 1.0:** The Row-Level Security feature was not fully implemented or enforced in version 1.0. Modules developed for SpacetimeDB 1.0 should **not** use this feature.
+*   **SpacetimeDB 1.1:** The feature is available but considered **unstable** in version 1.1. To use it, you must explicitly opt-in by enabling the `unstable` feature flag for the `spacetimedb` crate in your module's `Cargo.toml`:
+    ```toml
+    [dependencies]
+    spacetimedb = { version = "1.1", features = ["unstable"] }
+    # ... other dependencies
+    ```
+    Modules developed for 1.1 can use row-level security only if this feature flag is enabled.
 :::
 
 ### Server Module (C#)
@@ -602,9 +809,9 @@ The `Name = "..."` specified in the `[Table(...)]` attribute is case-sensitive. 
 Instances of your table classes/structs are plain data objects. Modifying an instance **does not** automatically update the corresponding row in the database. You must explicitly call update methods (e.g., `ctx.Db.my_table.PrimaryKey.Update(modifiedInstance)`) to persist changes.
 :::
 
-:::danger `[AutoInc]` + `[Unique]` Pitfall (C#)
-Be cautious when manually inserting rows into a table that uses both `[AutoInc]` and `[Unique]` on the same field. If you manually insert a row with a value for that field that is *larger* than the current internal sequence counter, the sequence will eventually increment to that manually inserted value. When it attempts to assign this value to a new row (inserted with 0), it will cause a unique constraint violation error (throwing an exception). Avoid manually inserting values into auto-incrementing unique fields unless you fully understand the sequence behavior.
-:::
+:::danger `#[auto_inc]` + `#[unique]` Pitfall
+Be cautious when manually inserting rows into a table that uses both `#[auto_inc]` and `#[unique]` on the same field. If you manually insert a row with a value for that field that is *larger* than the current internal sequence counter, the sequence will eventually increment to that manually inserted value. When it attempts to assign this value to a new row (inserted with 0), it will cause a unique constraint violation error (or panic with `insert()`). Avoid manually inserting values into auto-incrementing unique fields unless you fully understand the sequence behavior.
+```
 
 ```csharp
 using SpacetimeDB;
