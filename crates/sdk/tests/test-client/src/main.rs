@@ -123,6 +123,8 @@ fn main() {
         "row-deduplication" => exec_row_deduplication(),
         "row-deduplication-join-r-and-s" => exec_row_deduplication_join_r_and_s(),
         "row-deduplication-r-join-s-and-r-joint" => exec_row_deduplication_r_join_s_and_r_join_t(),
+        "test-lhs-join-update" => test_lhs_join_update(),
+        "test-lhs-join-update-disjoint-queries" => test_lhs_join_update_disjoint_queries(),
         "test-intra-query-bag-semantics-for-join" => test_intra_query_bag_semantics_for_join(),
         "two-different-compression-algos" => exec_two_different_compression_algos(),
         "test-parameterized-subscription" => test_parameterized_subscription(),
@@ -2092,6 +2094,118 @@ fn exec_row_deduplication_r_join_s_and_r_join_t() {
     test_counter.wait_for_all();
 
     assert_eq!(count_unique_u32_on_insert.load(Ordering::SeqCst), 1);
+}
+
+/// This test asserts that the correct callbacks are invoked when updating the lhs table of a join
+fn test_lhs_join_update() {
+    let insert_counter = TestCounter::new();
+    let update_counter = TestCounter::new();
+    let mut on_update_1 = Some(update_counter.add_test("on_update_1"));
+    let mut on_update_2 = Some(update_counter.add_test("on_update_2"));
+    let mut on_insert_1 = Some(insert_counter.add_test("on_insert_1"));
+    let mut on_insert_2 = Some(insert_counter.add_test("on_insert_2"));
+
+    let conn = Arc::new(connect_then(&update_counter, {
+        move |ctx| {
+            subscribe_these_then(
+                ctx,
+                &[
+                    "SELECT p.* FROM pk_u32 p WHERE n = 1",
+                    "SELECT p.* FROM pk_u32 p JOIN unique_u32 u ON p.n = u.n WHERE u.data > 0 AND u.data < 5",
+                ],
+                |_| {},
+            );
+        }
+    }));
+
+    conn.reducers.on_insert_pk_u_32(move |_, n, data| {
+        if *n == 1 && *data == 0 {
+            return put_result(&mut on_insert_1, Ok(()));
+        }
+        if *n == 2 && *data == 0 {
+            return put_result(&mut on_insert_2, Ok(()));
+        }
+        panic!("unexpected insert: pk_u32(n: {n}, data: {data})");
+    });
+
+    conn.reducers.on_update_pk_u_32(move |ctx, n, data| {
+        if *n == 2 && *data == 1 {
+            PkU32::update(ctx, 2, 0);
+            return put_result(&mut on_update_1, Ok(()));
+        }
+        if *n == 2 && *data == 0 {
+            return put_result(&mut on_update_2, Ok(()));
+        }
+        panic!("unexpected update: pk_u32(n: {n}, data: {data})");
+    });
+
+    // Add two pk_u32 rows to the subscription
+    conn.reducers.insert_pk_u_32(1, 0).unwrap();
+    conn.reducers.insert_pk_u_32(2, 0).unwrap();
+    conn.reducers.insert_unique_u_32(1, 3).unwrap();
+    conn.reducers.insert_unique_u_32(2, 4).unwrap();
+
+    // Wait for the subscription to be updated,
+    // then update one of the pk_u32 rows.
+    insert_counter.wait_for_all();
+    conn.reducers.update_pk_u_32(2, 1).unwrap();
+
+    // Wait for the second row update for pk_u32
+    update_counter.wait_for_all();
+}
+
+/// This test asserts that the correct callbacks are invoked when updating the lhs table of a join
+fn test_lhs_join_update_disjoint_queries() {
+    let insert_counter = TestCounter::new();
+    let update_counter = TestCounter::new();
+    let mut on_update_1 = Some(update_counter.add_test("on_update_1"));
+    let mut on_update_2 = Some(update_counter.add_test("on_update_2"));
+    let mut on_insert_1 = Some(insert_counter.add_test("on_insert_1"));
+    let mut on_insert_2 = Some(insert_counter.add_test("on_insert_2"));
+
+    let conn = Arc::new(connect_then(&update_counter, {
+        move |ctx| {
+            subscribe_these_then(ctx, &[
+                "SELECT p.* FROM pk_u32 p WHERE n = 1",
+                "SELECT p.* FROM pk_u32 p JOIN unique_u32 u ON p.n = u.n WHERE u.data > 0 AND u.data < 5 AND u.n != 1",
+            ], |_| {});
+        }
+    }));
+
+    conn.reducers.on_insert_pk_u_32(move |_, n, data| {
+        if *n == 1 && *data == 0 {
+            return put_result(&mut on_insert_1, Ok(()));
+        }
+        if *n == 2 && *data == 0 {
+            return put_result(&mut on_insert_2, Ok(()));
+        }
+        panic!("unexpected insert: pk_u32(n: {n}, data: {data})");
+    });
+
+    conn.reducers.on_update_pk_u_32(move |ctx, n, data| {
+        if *n == 2 && *data == 1 {
+            PkU32::update(ctx, 2, 0);
+            return put_result(&mut on_update_1, Ok(()));
+        }
+        if *n == 2 && *data == 0 {
+            return put_result(&mut on_update_2, Ok(()));
+        }
+        panic!("unexpected update: pk_u32(n: {n}, data: {data})");
+    });
+
+    // Add two pk_u32 rows to the subscription
+    conn.reducers.insert_pk_u_32(1, 0).unwrap();
+    conn.reducers.insert_pk_u_32(2, 0).unwrap();
+    conn.reducers.insert_unique_u_32(1, 3).unwrap();
+    conn.reducers.insert_unique_u_32(2, 4).unwrap();
+
+    // Wait for the subscription to be updated,
+    // then update one of the pk_u32 rows.
+    insert_counter.wait_for_all();
+    conn.reducers.update_pk_u_32(2, 1).unwrap();
+
+    // Wait for the second row update for pk_u32
+    update_counter.wait_for_all();
 }
 
 /// Test that when subscribing to a single join query,

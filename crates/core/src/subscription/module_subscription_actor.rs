@@ -744,6 +744,7 @@ mod tests {
         CompressableQueryUpdate, Compression, FormatSwitch, QueryId, Subscribe, SubscribeMulti, SubscribeSingle,
         Unsubscribe, UnsubscribeMulti,
     };
+    use spacetimedb_execution::dml::MutDatastore;
     use spacetimedb_lib::bsatn::ToBsatn;
     use spacetimedb_lib::db::auth::StAccess;
     use spacetimedb_lib::identity::AuthCtx;
@@ -994,6 +995,7 @@ mod tests {
                         .filter(|(_, n)| n > &&0)
                         .map(|(row, _)| row)
                         .cloned()
+                        .sorted()
                         .collect::<Vec<_>>(),
                     inserts.into_iter().sorted().collect::<Vec<_>>()
                 );
@@ -1003,6 +1005,7 @@ mod tests {
                         .filter(|(_, n)| n < &&0)
                         .map(|(row, _)| row)
                         .cloned()
+                        .sorted()
                         .collect::<Vec<_>>(),
                     deletes.into_iter().sorted().collect::<Vec<_>>()
                 );
@@ -1010,6 +1013,27 @@ mod tests {
             Some(msg) => panic!("expected a TxUpdate, but got {:#?}", msg),
             None => panic!("The receiver closed due to an error"),
         }
+    }
+
+    /// Commit a set of row updates and broadcast to subscribers
+    fn commit_tx(
+        db: &RelationalDB,
+        subs: &ModuleSubscriptions,
+        deletes: impl IntoIterator<Item = (TableId, ProductValue)>,
+        inserts: impl IntoIterator<Item = (TableId, ProductValue)>,
+    ) -> anyhow::Result<()> {
+        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        for (table_id, row) in deletes {
+            tx.delete_product_value(table_id, &row)?;
+        }
+        for (table_id, row) in inserts {
+            db.insert(&mut tx, table_id, &bsatn::to_vec(&row)?)?;
+        }
+        assert!(matches!(
+            subs.commit_and_broadcast_event(None, module_event(), tx),
+            Ok(Ok(_))
+        ));
+        Ok(())
     }
 
     #[test]
@@ -1453,6 +1477,119 @@ mod tests {
         // If the server sends empty updates, this assertion will fail,
         // because we will receive one for the first transaction.
         assert_tx_update_for_table(&mut rx, t_id, &schema, [product![0_u8]], []).await;
+        Ok(())
+    }
+
+    /// In this test we subscribe to a join query, update the lhs table,
+    /// and assert that the server sends the correct delta to the client.
+    #[tokio::test]
+    async fn test_update_for_join() -> anyhow::Result<()> {
+        async fn test_subscription_updates(queries: &[&'static str]) -> anyhow::Result<()> {
+            // Establish a client connection
+            let (sender, mut rx) = client_connection(client_id_from_u8(1));
+
+            let db = relational_db()?;
+            let subs = module_subscriptions(db.clone());
+
+            let p_schema = [("id", AlgebraicType::U64), ("signed_in", AlgebraicType::Bool)];
+            let l_schema = [
+                ("id", AlgebraicType::U64),
+                ("x", AlgebraicType::U64),
+                ("z", AlgebraicType::U64),
+            ];
+
+            let p_id = db.create_table_for_test("p", &p_schema, &[0.into()])?;
+            let l_id = db.create_table_for_test("l", &l_schema, &[0.into()])?;
+
+            subscribe_multi(&subs, queries, sender, &mut 0)?;
+
+            assert!(matches!(rx.recv().await, Some(SerializableMessage::Subscription(_))));
+
+            // Insert two matching player rows
+            commit_tx(
+                &db,
+                &subs,
+                [],
+                [
+                    (p_id, product![1_u64, true]),
+                    (p_id, product![2_u64, true]),
+                    (l_id, product![1_u64, 2_u64, 2_u64]),
+                    (l_id, product![2_u64, 3_u64, 3_u64]),
+                ],
+            )?;
+
+            let schema = ProductType::from(p_schema);
+
+            // We should receive both matching player rows
+            assert_tx_update_for_table(
+                &mut rx,
+                p_id,
+                &schema,
+                [product![1_u64, true], product![2_u64, true]],
+                [],
+            )
+            .await;
+
+            // Update one of the matching player rows
+            commit_tx(
+                &db,
+                &subs,
+                [(p_id, product![2_u64, true])],
+                [(p_id, product![2_u64, false])],
+            )?;
+
+            // We should receive an update for it because it is still matching
+            assert_tx_update_for_table(
+                &mut rx,
+                p_id,
+                &schema,
+                [product![2_u64, false]],
+                [product![2_u64, true]],
+            )
+            .await;
+
+            // Update the the same matching player row
+            commit_tx(
+                &db,
+                &subs,
+                [(p_id, product![2_u64, false])],
+                [(p_id, product![2_u64, true])],
+            )?;
+
+            // We should receive an update for it because it is still matching
+            assert_tx_update_for_table(
+                &mut rx,
+                p_id,
+                &schema,
+                [product![2_u64, true]],
+                [product![2_u64, false]],
+            )
+            .await;
+
+            Ok(())
+        }
+
+        test_subscription_updates(&[
+            "select * from p where id = 1",
+            "select p.* from p join l on p.id = l.id where l.x > 0 and l.x < 5 and l.z > 0 and l.z < 5",
+        ])
+        .await?;
+        test_subscription_updates(&[
+            "select * from p where id = 1",
+            "select p.* from p join l on p.id = l.id where 0 < l.x and l.x < 5 and 0 < l.z and l.z < 5",
+        ])
+        .await?;
+        test_subscription_updates(&[
+            "select * from p where id = 1",
+            "select p.* from p join l on p.id = l.id where l.x > 0 and l.x < 5 and l.x > 0 and l.z < 5 and l.id != 1",
+        ])
+        .await?;
+        test_subscription_updates(&[
+            "select * from p where id = 1",
+            "select p.* from p join l on p.id = l.id where 0 < l.x and l.x < 5 and 0 < l.z and l.z < 5 and l.id != 1",
+        ])
+        .await?;
+
         Ok(())
     }
 
