@@ -832,6 +832,257 @@ const PLAYERS_SEE_ENTITIES_IN_SAME_CHUNK: Filter = Filter::Sql("
     Modules developed for 1.1 can use row-level security only if this feature flag is enabled.
 :::
 
+### Client SDK (Rust)
+
+This section details how to build native Rust client applications that interact with a SpacetimeDB module.
+
+#### 1. Project Setup
+
+Start by creating a standard Rust binary project and adding the `spacetimedb_sdk` crate as a dependency:
+
+```bash
+cargo new my_rust_client
+cd my_rust_client
+cargo add spacetimedb_sdk # Ensure version matches your SpacetimeDB installation
+```
+
+#### 2. Generate Module Bindings
+
+Client code relies on generated bindings specific to your server module. Use the `spacetime generate` command, pointing it to your server module project:
+
+```bash
+# From your client project directory
+mkdir -p src/module_bindings
+spacetime generate --lang rust \
+    --out-dir src/module_bindings \
+    --project-path ../path/to/your/server_module
+```
+
+Then, declare the generated module in your `main.rs` or `lib.rs`:
+
+```rust
+mod module_bindings;
+// Optional: bring generated types into scope
+// use module_bindings::*;
+```
+
+#### 3. Connecting to the Database
+
+The core type for managing a connection is `module_bindings::DbConnection`. You configure and establish a connection using a builder pattern.
+
+*   **Builder:** Start with `DbConnection::builder()`.
+*   **URI & Name:** Specify the SpacetimeDB instance URI (`.with_uri("http://localhost:3000")`) and the database name or identity (`.with_module_name("my_database")`).
+*   **Authentication:** Provide an identity token using `.with_token(Option<String>)`. If `None` or omitted for the first connection, the server issues a new identity and token (retrieved via the `on_connect` callback).
+*   **Callbacks:** Register callbacks for connection lifecycle events:
+    *   `.on_connect(|conn, identity, token| { ... })`: Runs on successful connection. Often used to store the `token` for future connections.
+    *   `.on_connect_error(|err_ctx, error| { ... })`: Runs if connection fails.
+    *   `.on_disconnect(|err_ctx, maybe_error| { ... })`: Runs when the connection closes, either gracefully or due to an error.
+*   **Build:** Call `.build()` to initiate the connection attempt.
+
+```rust
+use spacetimedb_sdk::{identity, DbContext, Identity, credentials};
+use crate::module_bindings::{DbConnection, connect_event_callbacks, table_update_callbacks};
+
+const HOST: &str = "http://localhost:3000";
+const DB_NAME: &str = "my_database"; // Or your specific DB name/identity
+
+fn connect_to_db() -> DbConnection {
+    // Helper for storing/loading auth token
+    fn creds_store() -> credentials::File {
+        credentials::File::new(".my_client_creds") // Unique filename
+    }
+
+    DbConnection::builder()
+        .with_uri(HOST)
+        .with_module_name(DB_NAME)
+        .with_token(creds_store().load().ok()) // Load token if exists
+        .on_connect(|conn, identity, auth_token| {
+            println!("Connected. Identity: {}", identity.to_hex());
+            // Save the token for future connections
+            if let Err(e) = creds_store().save(auth_token) {
+                eprintln!("Failed to save auth token: {}", e);
+            }
+            // Register other callbacks *after* successful connection
+            connect_event_callbacks(conn);
+            table_update_callbacks(conn);
+            // Initiate subscriptions
+            subscribe_to_tables(conn);
+        })
+        .on_connect_error(|err_ctx, err| {
+            eprintln!("Connection Error: {}", err);
+            std::process::exit(1); 
+        })
+        .on_disconnect(|err_ctx, maybe_err| {
+            println!("Disconnected. Reason: {:?}", maybe_err);
+            std::process::exit(0);
+        })
+        .build()
+        .expect("Failed to connect")
+}
+```
+
+#### 4. Managing the Connection Loop
+
+After establishing the connection, you need to continuously process incoming messages and trigger callbacks. The SDK offers several ways:
+
+*   **Threaded:** `connection.run_threaded()`: Spawns a dedicated background thread that automatically handles message processing.
+*   **Async:** `async connection.run_async()`: Integrates with async runtimes like Tokio or async-std.
+*   **Manual Tick:** `connection.frame_tick()`: Processes pending messages without blocking. Suitable for integrating into game loops or other manual polling scenarios. You must call this repeatedly.
+
+```rust
+// Example using run_threaded
+fn main() {
+    let connection = connect_to_db();
+    let handle = connection.run_threaded(); // Spawns background thread
+    
+    // Main thread can now do other work, like handling user input
+    // handle_user_input(&connection);
+
+    handle.join().expect("Connection thread panicked");
+}
+```
+
+#### 5. Subscribing to Data
+
+Clients receive data by subscribing to SQL queries against the database's public tables.
+
+*   **Builder:** Start with `connection.subscription_builder()`.
+*   **Callbacks:**
+    *   `.on_applied(|sub_ctx| { ... })`: Runs when the initial data for the subscription arrives.
+    *   `.on_error(|err_ctx, error| { ... })`: Runs if the subscription fails (e.g., invalid SQL).
+*   **Subscribe:** Call `.subscribe(vec!["SELECT * FROM table_a", "SELECT * FROM table_b WHERE some_col > 10"])` with a list of query strings. This returns a `SubscriptionHandle`.
+*   **All Tables:** `.subscribe_to_all_tables()` is a convenience for simple clients but cannot be easily unsubscribed.
+*   **Unsubscribing:** Use `handle.unsubscribe()` or `handle.unsubscribe_then(|sub_ctx| { ... })` to stop receiving updates for specific queries.
+
+```rust
+use crate::module_bindings::{SubscriptionEventContext, ErrorContext};
+
+fn subscribe_to_tables(conn: &DbConnection) {
+    println!("Subscribing to tables...");
+    conn.subscription_builder()
+        .on_applied(on_subscription_applied)
+        .on_error(|err_ctx, err| {
+            eprintln!("Subscription failed: {}", err);
+        })
+        // Example: Subscribe to all rows from 'player' and 'message' tables
+        .subscribe(vec!["SELECT * FROM player", "SELECT * FROM message"]);
+}
+
+fn on_subscription_applied(ctx: &SubscriptionEventContext) {
+    println!("Subscription applied! Initial data received.");
+    // Example: Print initial messages sorted by time
+    let mut messages: Vec<_> = ctx.db().message().iter().collect();
+    messages.sort_by_key(|m| m.sent);
+    for msg in messages {
+        // print_message(ctx.db(), &msg); // Assuming a print_message helper
+    }
+}
+```
+
+#### 6. Accessing Cached Data & Handling Row Callbacks
+
+Subscribed data is stored locally in the client cache, accessible via `ctx.db()` (where `ctx` can be a `DbConnection` or any event context).
+
+*   **Accessing Tables:** Use `ctx.db().table_name()` to get a handle to a table.
+*   **Iterating:** `table_handle.iter()` returns an iterator over all cached rows.
+*   **Filtering/Finding:** Use index accessors like `table_handle.primary_key_field().find(&pk_value)` or `table_handle.indexed_field().filter(value_or_range)` for efficient lookups (similar to server-side).
+*   **Row Callbacks:** Register callbacks to react to changes in the cache:
+    *   `table_handle.on_insert(|event_ctx, inserted_row| { ... })`
+    *   `table_handle.on_delete(|event_ctx, deleted_row| { ... })`
+    *   `table_handle.on_update(|event_ctx, old_row, new_row| { ... })` (Only for tables with a `#[primary_key]`)
+
+```rust
+use crate::module_bindings::{Player, Message, EventContext, Event, DbView};
+
+// Placeholder for where other callbacks are registered
+fn table_update_callbacks(conn: &DbConnection) {
+    conn.db().player().on_insert(handle_player_insert);
+    conn.db().player().on_update(handle_player_update);
+    conn.db().message().on_insert(handle_message_insert);
+}
+
+fn handle_player_insert(ctx: &EventContext, player: &Player) {
+    // Only react to updates caused by reducers, not initial subscription load
+    if let Event::Reducer(_) = ctx.event {
+       println!("Player joined: {}", player.name.as_deref().unwrap_or("Unknown"));
+    }
+}
+
+fn handle_player_update(ctx: &EventContext, old: &Player, new: &Player) {
+    if old.name != new.name {
+        println!("Player renamed: {} -> {}", 
+            old.name.as_deref().unwrap_or("??"), 
+            new.name.as_deref().unwrap_or("??")
+        );
+    }
+    // ... handle other changes like online status ...
+}
+
+fn handle_message_insert(ctx: &EventContext, message: &Message) {
+    if let Event::Reducer(_) = ctx.event {
+        // Find sender name from cache
+        let sender_name = ctx.db().player().identity().find(&message.sender)
+            .map_or("Unknown".to_string(), |p| p.name.clone().unwrap_or("??".to_string()));
+        println!("{}: {}", sender_name, message.text);
+    }
+}
+```
+
+:::info Handling Initial Data vs. Live Updates in Callbacks
+Callbacks like `on_insert` and `on_update` are triggered for both the initial data received when a subscription is first applied *and* for subsequent live changes caused by reducers. If you need to differentiate (e.g., only react to *new* messages, not the backlog), you can inspect the `ctx.event` type. For example, `if let Event::Reducer(_) = ctx.event { ... }` checks if the change came from a reducer call.
+:::
+
+#### 7. Invoking Reducers & Handling Reducer Callbacks
+
+Clients trigger state changes by calling reducers defined in the server module.
+
+*   **Invoking:** Access generated reducer functions via `ctx.reducers().reducer_name(arg1, arg2, ...)`.
+*   **Reducer Callbacks:** Register callbacks to react to the *outcome* of reducer calls (especially useful for handling failures or confirming success if not directly observing table changes):
+    *   `ctx.reducers().on_reducer_name(|reducer_event_ctx, arg1, ...| { ... })`
+    *   The `reducer_event_ctx.event` contains:
+        *   `reducer`: The specific reducer variant and its arguments.
+        *   `status`: `Status::Committed`, `Status::Failed(reason)`, or `Status::OutOfEnergy`.
+        *   `caller_identity`, `timestamp`, etc.
+
+```rust
+use crate::module_bindings::{ReducerEventContext, Status};
+
+// Placeholder for where other callbacks are registered
+fn connect_event_callbacks(conn: &DbConnection) {
+    conn.reducers().on_set_name(handle_set_name_result); 
+    conn.reducers().on_send_message(handle_send_message_result);
+}
+
+fn handle_set_name_result(ctx: &ReducerContext, name: &String) {
+    if let Status::Failed(reason) = &ctx.event.status {
+        // Check if the failure was for *our* call (important in multi-user contexts)
+        if ctx.event.caller_identity == ctx.identity() {
+             eprintln!("Error setting name to '{}': {}", name, reason);
+        }
+    }
+}
+
+fn handle_send_message_result(ctx: &ReducerContext, text: &String) {
+    if let Status::Failed(reason) = &ctx.event.status {
+        if ctx.event.caller_identity == ctx.identity() { // Our call failed
+             eprintln!("[Error] Failed to send message '{}': {}", text, reason);
+        }
+    }
+}
+
+// Example of calling a reducer (e.g., from user input handler)
+fn send_chat_message(conn: &DbConnection, message: String) {
+    if !message.is_empty() {
+        conn.reducers().send_message(message); // Fire-and-forget style
+    }
+}
+```
+
+// ... (Keep the second info box about C# callbacks, it will be moved later) ...
+:::info Handling Initial Data vs. Live Updates in Callbacks
+Callbacks like `OnInsert` and `OnUpdate` are triggered for both the initial data received when a subscription is first applied *and* for subsequent live changes caused by reducers. If you need to differentiate (e.g., only react to *new* messages, not the backlog), you can inspect the `ctx.Event` type. For example, checking `if (ctx.Event is not Event<Reducer>.SubscribeApplied) { ... }` ensures the code only runs for events triggered by reducers, not the initial subscription data load.
+:::
+
 ### Server Module (C#)
 
 #### Defining Types
@@ -1198,7 +1449,7 @@ Special reducers handle specific events:
 *   `[Reducer(ReducerKind.ClientConnected)]`: Runs when any distinct client connection (e.g., WebSocket, HTTP call) is established. Failure disconnects the client. `ctx.connection_id` is guaranteed to have a value within this reducer.
 *   `[Reducer(ReducerKind.ClientDisconnected)]`: Runs when any distinct client connection terminates. Failure is logged but does not prevent disconnection. `ctx.connection_id` is guaranteed to have a value within this reducer.
 
-These reducers cannot take arguments beyond `ReducerContext`.
+These reducers cannot take arguments beyond `&ReducerContext`.
 
 ```csharp
 // Example init reducer is shown in Scheduled Reducers section
@@ -1340,18 +1591,602 @@ Throwing an unhandled exception within a C# reducer will cause the transaction t
 
 It's generally good practice to validate input and state early in the reducer and `throw` specific exceptions for handled error conditions.
 
-### Client SDK (Rust)
+### Client SDK (C#)
 
-fn on_message_sent_result(ctx: &ReducerEventContext, text: &String) {
-    if let Status::Failed(err) = &ctx.event.status {
-        eprintln!("[Error] Failed to send message '{}': {}", text, err);
+This section details how to build native C# client applications (including Unity games) that interact with a SpacetimeDB module.
+
+#### 1. Project Setup
+
+*   **For .NET Console/Desktop Apps:** Create a new project and add the `SpacetimeDB.ClientSDK` NuGet package:
+    ```bash
+    dotnet new console -o my_csharp_client
+    cd my_csharp_client
+    dotnet add package SpacetimeDB.ClientSDK
+    ```
+*   **For Unity:** Download the latest `.unitypackage` from the [SpacetimeDB Unity SDK releases](https://github.com/clockworklabs/com.clockworklabs.spacetimedbsdk/releases/latest). In Unity, go to `Assets > Import Package > Custom Package` and import the downloaded file.
+
+#### 2. Generate Module Bindings
+
+Client code relies on generated bindings specific to your server module. Use the `spacetime generate` command, pointing it to your server module project:
+
+```bash
+# From your client project directory
+mkdir -p module_bindings # Or your preferred output location
+spacetime generate --lang csharp \
+    --out-dir module_bindings \
+    --project-path ../path/to/your/server_module
+```
+
+Include the generated `.cs` files in your C# project or Unity Assets folder.
+
+#### 3. Connecting to the Database
+
+The core type for managing a connection is `SpacetimeDB.Types.DbConnection` (this type name comes from the generated bindings). You configure and establish a connection using a builder pattern.
+
+*   **Builder:** Start with `DbConnection.Builder()`.
+*   **URI & Name:** Specify the SpacetimeDB instance URI (`.WithUri("http://localhost:3000")`) and the database name or identity (`.WithModuleName("my_database")`).
+*   **Authentication:** Provide an identity token using `.WithToken(string?)`. The SDK provides a helper `AuthToken.Token` which loads a token from a local file (initialized via `AuthToken.Init(".credentials_filename")`). If `null` or omitted for the first connection, the server issues a new identity and token (retrieved via the `OnConnect` callback).
+*   **Callbacks:** Register callbacks (as delegates or lambda expressions) for connection lifecycle events:
+    *   `.OnConnect((conn, identity, token) => { ... })`: Runs on successful connection. Often used to save the `token` using `AuthToken.SaveToken(token)`.
+    *   `.OnConnectError((exception) => { ... })`: Runs if connection fails.
+    *   `.OnDisconnect((conn, maybeException) => { ... })`: Runs when the connection closes, either gracefully (`maybeException` is null) or due to an error.
+*   **Build:** Call `.Build()` to initiate the connection attempt.
+
+```csharp
+using SpacetimeDB;
+using SpacetimeDB.Types;
+using System;
+
+public class ClientManager // Example class
+{
+    const string HOST = "http://localhost:3000";
+    const string DB_NAME = "my_database"; // Or your specific DB name/identity
+    private DbConnection connection;
+
+    public void StartConnecting()
+    {
+        // Initialize token storage (e.g., in AppData)
+        AuthToken.Init(".my_client_creds");
+
+        connection = DbConnection.Builder()
+            .WithUri(HOST)
+            .WithModuleName(DB_NAME)
+            .WithToken(AuthToken.Token) // Load token if exists
+            .OnConnect(HandleConnect)
+            .OnConnectError(HandleConnectError)
+            .OnDisconnect(HandleDisconnect)
+            .Build();
+            
+        // Need to call FrameTick regularly - see next section
+    }
+
+    private void HandleConnect(DbConnection conn, Identity identity, string authToken)
+    {
+        Console.WriteLine($"Connected. Identity: {identity}");
+        AuthToken.SaveToken(authToken); // Save token for future connections
+
+        // Register other callbacks after connecting
+        RegisterEventCallbacks(conn);
+
+        // Subscribe to data
+        SubscribeToTables(conn);
+    }
+
+    private void HandleConnectError(Exception e)
+    {
+        Console.WriteLine($"Connection Error: {e.Message}");
+        // Handle error, e.g., retry or exit
+    }
+
+    private void HandleDisconnect(DbConnection conn, Exception? e)
+    {
+        Console.WriteLine($"Disconnected. Reason: {(e == null ? "Requested" : e.Message)}");
+        // Handle disconnection
+    }
+    
+    // Placeholder methods - implementations shown in later sections
+    private void RegisterEventCallbacks(DbConnection conn) { /* ... */ }
+    private void SubscribeToTables(DbConnection conn) { /* ... */ }
+}
+```
+
+#### 4. Managing the Connection Loop
+
+Unlike the Rust SDK's `run_threaded` or `run_async`, the C# SDK primarily uses a manual update loop. You **must** call `connection.FrameTick()` regularly (e.g., every frame in Unity's `Update`, or in a loop in a console app) to process incoming messages and trigger callbacks.
+
+*   **`FrameTick()`:** Processes all pending network messages, updates the local cache, and invokes registered callbacks.
+*   **Threading:** It is generally **not recommended** to call `FrameTick()` on a background thread if your main thread also accesses the connection's data (`connection.Db`), as this can lead to race conditions. Handle computationally intensive logic triggered by callbacks separately if needed.
+
+```csharp
+// Example in a simple console app loop:
+public void RunUpdateLoop()
+{
+    Console.WriteLine("Running update loop...");
+    bool isRunning = true;
+    while(isRunning && connection != null && connection.IsConnected)
+    {
+        connection.FrameTick(); // Process messages
+        
+        // Check for user input or other app logic...
+        if (Console.KeyAvailable) {
+             var key = Console.ReadKey(true).Key;
+             if (key == ConsoleKey.Escape) isRunning = false;
+             // Handle other input...
+        }
+
+        System.Threading.Thread.Sleep(16); // Avoid busy-waiting
+    }
+    connection?.Disconnect();
+    Console.WriteLine("Update loop stopped.");
+}
+```
+
+#### 5. Subscribing to Data
+
+Clients receive data by subscribing to SQL queries against the database's public tables.
+
+*   **Builder:** Start with `connection.SubscriptionBuilder()`.
+*   **Callbacks:**
+    *   `.OnApplied((subCtx) => { ... })`: Runs when the initial data for the subscription arrives.
+    *   `.OnError((errCtx, exception) => { ... })`: Runs if the subscription fails (e.g., invalid SQL).
+*   **Subscribe:** Call `.Subscribe(new string[] {"SELECT * FROM table_a", "SELECT * FROM table_b WHERE some_col > 10"})` with a list of query strings. This returns a `SubscriptionHandle`.
+*   **All Tables:** `.SubscribeToAllTables()` is a convenience for simple clients but cannot be easily unsubscribed.
+*   **Unsubscribing:** Use `handle.Unsubscribe()` or `handle.UnsubscribeThen((subCtx) => { ... })` to stop receiving updates for specific queries.
+
+```csharp
+using SpacetimeDB.Types; // For SubscriptionEventContext, ErrorContext
+using System.Linq;
+
+// In ClientManager or similar class...
+private void SubscribeToTables(DbConnection conn)
+{
+    Console.WriteLine("Subscribing to tables...");
+    conn.SubscriptionBuilder()
+        .OnApplied(OnSubscriptionApplied)
+        .OnError((errCtx, err) => {
+            Console.WriteLine($"Subscription failed: {err.Message}");
+        })
+        // Example: Subscribe to all rows from 'Player' and 'Message' tables
+        .Subscribe(new string[] { "SELECT * FROM Player", "SELECT * FROM Message" });
+}
+
+private void OnSubscriptionApplied(SubscriptionEventContext ctx)
+{
+    Console.WriteLine("Subscription applied! Initial data received.");
+    // Example: Print initial messages sorted by time
+    var messages = ctx.Db.Message.Iter().ToList();
+    messages.Sort((a, b) => a.Sent.CompareTo(b.Sent));
+    foreach (var msg in messages)
+    {
+        // PrintMessage(ctx.Db, msg); // Assuming a PrintMessage helper
+    }
+}
+```
+
+#### 6. Accessing Cached Data & Handling Row Callbacks
+
+Subscribed data is stored locally in the client cache, accessible via `ctx.Db` (where `ctx` can be a `DbConnection` or any event context like `EventContext`, `SubscriptionEventContext`).
+
+*   **Accessing Tables:** Use `ctx.Db.TableName` (e.g., `ctx.Db.Player`) to get a handle to a table's cache.
+*   **Iterating:** `tableHandle.Iter()` returns an `IEnumerable<RowType>` over all cached rows.
+*   **Filtering/Finding:** Use LINQ methods (`.Where()`, `.FirstOrDefault()`, etc.) on the result of `Iter()`, or use generated index accessors like `tableHandle.FindByPrimaryKeyField(pkValue)` or `tableHandle.FilterByIndexField(value)` for efficient lookups.
+*   **Row Callbacks:** Register callbacks using C# events to react to changes in the cache:
+    *   `tableHandle.OnInsert += (eventCtx, insertedRow) => { ... };`
+    *   `tableHandle.OnDelete += (eventCtx, deletedRow) => { ... };`
+    *   `tableHandle.OnUpdate += (eventCtx, oldRow, newRow) => { ... };` (Only for tables with a `[PrimaryKey]`)
+
+```csharp
+using SpacetimeDB.Types; // For EventContext, Event, Reducer
+using System.Linq;
+
+// In ClientManager or similar class...
+private void RegisterEventCallbacks(DbConnection conn)
+{
+    conn.Db.Player.OnInsert += HandlePlayerInsert;
+    conn.Db.Player.OnUpdate += HandlePlayerUpdate;
+    conn.Db.Message.OnInsert += HandleMessageInsert;
+    // Remember to unregister callbacks on disconnect/cleanup: -= HandlePlayerInsert;
+}
+
+private void HandlePlayerInsert(EventContext ctx, Player insertedPlayer)
+{
+    // Only react to updates caused by reducers, not initial subscription load
+    if (ctx.Event is not Event<Reducer>.SubscribeApplied)
+    {
+        Console.WriteLine($"Player joined: {insertedPlayer.Name ?? "Unknown"}");
     }
 }
 
-:::info Handling Initial Data vs. Live Updates in Callbacks
-Callbacks like `on_insert` and `on_update` are triggered for both the initial data received when a subscription is first applied *and* for subsequent live changes caused by reducers. If you need to differentiate (e.g., only react to *new* messages, not the backlog), you can inspect the `ctx.event` type. For example, `if let Event::Reducer(_) = ctx.event { ... }` checks if the change came from a reducer call.
-:::
+private void HandlePlayerUpdate(EventContext ctx, Player oldPlayer, Player newPlayer)
+{
+    if (oldPlayer.Name != newPlayer.Name)
+    {
+        Console.WriteLine($"Player renamed: {oldPlayer.Name ?? "??"} -> {newPlayer.Name ?? "??"}");
+    }
+    // ... handle other changes like online status ...
+}
+
+private void HandleMessageInsert(EventContext ctx, Message insertedMessage)
+{
+    if (ctx.Event is not Event<Reducer>.SubscribeApplied)
+    {
+        // Find sender name from cache
+        var sender = ctx.Db.Player.FindByPlayerId(insertedMessage.Sender);
+        string senderName = sender?.Name ?? "Unknown";
+        Console.WriteLine($"{senderName}: {insertedMessage.Text}");
+    }
+}
+```
 
 :::info Handling Initial Data vs. Live Updates in Callbacks
 Callbacks like `OnInsert` and `OnUpdate` are triggered for both the initial data received when a subscription is first applied *and* for subsequent live changes caused by reducers. If you need to differentiate (e.g., only react to *new* messages, not the backlog), you can inspect the `ctx.Event` type. For example, checking `if (ctx.Event is not Event<Reducer>.SubscribeApplied) { ... }` ensures the code only runs for events triggered by reducers, not the initial subscription data load.
 :::
+
+#### 7. Invoking Reducers & Handling Reducer Callbacks
+
+Clients trigger state changes by calling reducers defined in the server module.
+
+*   **Invoking:** Access generated static reducer methods via `SpacetimeDB.Types.Reducer.ReducerName(arg1, arg2, ...)`.
+*   **Reducer Callbacks:** Register callbacks using C# events to react to the *outcome* of reducer calls:
+    *   `Reducer.OnReducerName += (reducerEventCtx, arg1, ...) => { ... };`
+    *   The `reducerEventCtx.Event` contains:
+        *   `Reducer`: The specific reducer variant record and its arguments.
+        *   `Status`: A tagged union record: `Status.Committed`, `Status.Failed(reason)`, or `Status.OutOfEnergy`.
+        *   `CallerIdentity`, `Timestamp`, etc.
+
+```csharp
+using SpacetimeDB.Types;
+
+// In ClientManager or similar class, likely where HandleConnect is...
+private void RegisterEventCallbacks(DbConnection conn) // Updated registration point
+{
+    // Table callbacks (from previous section)
+    conn.Db.Player.OnInsert += HandlePlayerInsert;
+    conn.Db.Player.OnUpdate += HandlePlayerUpdate;
+    conn.Db.Message.OnInsert += HandleMessageInsert;
+    
+    // Reducer callbacks
+    Reducer.OnSetName += HandleSetNameResult;
+    Reducer.OnSendMessage += HandleSendMessageResult;
+}
+
+private void HandleSetNameResult(ReducerEventContext ctx, string name)
+{
+    // Check if the status is Failed
+    if (ctx.Event.Status is Status.Failed failedStatus)
+    {
+        // Check if the failure was for *our* call
+        if (ctx.Event.CallerIdentity == ctx.Identity) {
+             Console.WriteLine($"Error setting name to '{name}': {failedStatus.Reason}");
+        }
+    }
+}
+
+private void HandleSendMessageResult(ReducerEventContext ctx, string text)
+{
+    if (ctx.Event.Status is Status.Failed failedStatus)
+    {
+        if (ctx.Event.CallerIdentity == ctx.Identity) { // Our call failed
+             Console.WriteLine($"[Error] Failed to send message '{text}': {failedStatus.Reason}");
+        }
+    }
+}
+
+// Example of calling a reducer (e.g., from user input handler)
+public void SendChatMessage(string message)
+{
+    if (!string.IsNullOrEmpty(message))
+    {
+        Reducer.SendMessage(message); // Static method call
+    }
+}
+
+```
+
+### Client SDK (TypeScript)
+
+This section details how to build TypeScript/JavaScript client applications (for web browsers or Node.js) that interact with a SpacetimeDB module, using a framework-agnostic approach.
+
+#### 1. Project Setup
+
+Install the SDK package into your project:
+
+```bash
+# Using npm
+npm install @clockworklabs/spacetimedb-sdk
+
+# Or using yarn
+yarn add @clockworklabs/spacetimedb-sdk
+```
+
+#### 2. Generate Module Bindings
+
+Generate the module-specific bindings using the `spacetime generate` command:
+
+```bash
+mkdir -p src/module_bindings
+spacetime generate --lang typescript \
+    --out-dir src/module_bindings \
+    --project-path ../path/to/your/server_module
+```
+
+Import the necessary generated types and SDK components:
+
+```typescript
+// Import SDK core types
+import { Identity, Status } from "@clockworklabs/spacetimedb-sdk";
+// Import generated connection class, event contexts, and table types
+import { DbConnection, EventContext, ReducerEventContext, Message, User } from "./module_bindings"; 
+// Reducer functions are accessed via conn.reducers
+```
+
+#### 3. Connecting to the Database
+
+Use the generated `DbConnection` class and its builder pattern to establish a connection.
+
+```typescript
+import { DbConnection, EventContext, ReducerEventContext, Message, User } from './module_bindings';
+import { Identity, Status } from '@clockworklabs/spacetimedb-sdk';
+
+const HOST = "ws://localhost:3000";
+const DB_NAME = "quickstart-chat"; 
+const CREDS_KEY = "auth_token";
+
+class ChatClient {
+    public conn: DbConnection | null = null;
+    public identity: Identity | null = null;
+    public connected: boolean = false;
+    // Client-side cache for user lookups
+    private userMap: Map<string, User> = new Map();
+
+    constructor() {
+        // Bind methods to ensure `this` is correct in callbacks
+        this.handleConnect = this.handleConnect.bind(this);
+        this.handleDisconnect = this.handleDisconnect.bind(this);
+        this.handleConnectError = this.handleConnectError.bind(this);
+        this.registerTableCallbacks = this.registerTableCallbacks.bind(this);
+        this.registerReducerCallbacks = this.registerReducerCallbacks.bind(this);
+        this.subscribeToTables = this.subscribeToTables.bind(this);
+        this.handleMessageInsert = this.handleMessageInsert.bind(this);
+        this.handleUserInsert = this.handleUserInsert.bind(this);
+        this.handleUserUpdate = this.handleUserUpdate.bind(this);
+        this.handleUserDelete = this.handleUserDelete.bind(this);
+        this.handleSendMessageResult = this.handleSendMessageResult.bind(this);
+    }
+
+    public connect() {
+        console.log("Attempting to connect...");
+        const token = localStorage.getItem(CREDS_KEY) || null;
+
+        const connectionInstance = DbConnection.builder()
+            .withUri(HOST)
+            .withModuleName(DB_NAME)
+            .withToken(token)
+            .onConnect(this.handleConnect)
+            .onDisconnect(this.handleDisconnect)
+            .onConnectError(this.handleConnectError)
+            .build();
+            
+        this.conn = connectionInstance;
+    }
+
+    private handleConnect(conn: DbConnection, identity: Identity, token: string) {
+        this.identity = identity;
+        this.connected = true;
+        localStorage.setItem(CREDS_KEY, token); // Save new/refreshed token
+        console.log('Connected with identity:', identity.toHexString());
+
+        // Register callbacks and subscribe now that we are connected
+        this.registerTableCallbacks();
+        this.registerReducerCallbacks();
+        this.subscribeToTables();
+    }
+
+    private handleDisconnect() {
+        console.log('Disconnected');
+        this.connected = false;
+        this.identity = null;
+        this.conn = null; 
+        this.userMap.clear(); // Clear local cache on disconnect
+    }
+
+    private handleConnectError(err: Error) {
+        console.error('Connection Error:', err);
+        localStorage.removeItem(CREDS_KEY); // Clear potentially invalid token
+        this.conn = null; // Ensure connection is marked as unusable
+    }
+    
+    // Placeholder implementations for callback registration and subscription
+    private registerTableCallbacks() { /* See Section 6 */ }
+    private registerReducerCallbacks() { /* See Section 7 */ }
+    private subscribeToTables() { /* See Section 5 */ }
+    
+    // Placeholder implementations for table callbacks
+    private handleMessageInsert(ctx: EventContext | undefined, message: Message) { /* See Section 6 */ }
+    private handleUserInsert(ctx: EventContext | undefined, user: User) { /* See Section 6 */ }
+    private handleUserUpdate(ctx: EventContext | undefined, oldUser: User, newUser: User) { /* See Section 6 */ }
+    private handleUserDelete(ctx: EventContext, user: User) { /* See Section 6 */ }
+    
+    // Placeholder for reducer callback
+    private handleSendMessageResult(ctx: ReducerEventContext, messageText: string) { /* See Section 7 */ }
+
+    // Public methods for interaction
+    public sendChatMessage(message: string) { /* See Section 7 */ }
+    public setPlayerName(newName: string) { /* See Section 7 */ }
+}
+
+// Example Usage:
+// const client = new ChatClient();
+// client.connect();
+```
+
+#### 4. Managing the Connection Loop
+
+The TypeScript SDK is event-driven. No manual `FrameTick()` is needed.
+
+#### 5. Subscribing to Data
+
+Subscribe to SQL queries to receive data.
+
+```typescript
+// Part of the ChatClient class
+private subscribeToTables() {
+    if (!this.conn) return;
+    
+    const queries = ["SELECT * FROM message", "SELECT * FROM user"];
+    let appliedCount = 0;
+
+    console.log("Subscribing...");
+    for (const query of queries) {
+        this.conn
+            .subscriptionBuilder()
+            .onApplied(() => {
+                appliedCount++;
+                console.log(`Subscription applied for: ${query}`);
+                if (appliedCount === queries.length) {
+                    console.log('All initial subscriptions applied.');
+                    // Initial cache is now populated, process initial data if needed
+                    this.processInitialCache(); 
+                }
+            })
+            .onError((error: Error) => {
+                console.error(`Subscription error for query "${query}":`, error);
+            })
+            .subscribe(query);
+    }
+}
+
+private processInitialCache() {
+    if (!this.conn) return;
+    console.log("Processing initial cache...");
+    // Populate userMap from initial cache
+    this.userMap.clear();
+    for (const user of this.conn.db.User.iter()) {
+        this.handleUserInsert(undefined, user); // Pass undefined context for initial load
+    }
+    // Process initial messages, e.g., sort and display
+    const initialMessages = Array.from(this.conn.db.Message.iter());
+    initialMessages.sort((a, b) => a.sent.getTime() - b.sent.getTime());
+    for (const message of initialMessages) {
+        this.handleMessageInsert(undefined, message); // Pass undefined context
+    }
+}
+```
+
+#### 6. Accessing Cached Data & Handling Row Callbacks
+
+Maintain your own collections (e.g., `Map`) updated via table callbacks for efficient lookups.
+
+```typescript
+// Part of the ChatClient class
+private registerTableCallbacks() {
+    if (!this.conn) return;
+
+    this.conn.db.Message.onInsert(this.handleMessageInsert);
+    
+    // User table callbacks update the local userMap
+    this.conn.db.User.onInsert(this.handleUserInsert);
+    this.conn.db.User.onUpdate(this.handleUserUpdate);
+    this.conn.db.User.onDelete(this.handleUserDelete);
+    
+    // Note: In a real app, you might return a cleanup function 
+    // to unregister these if the ChatClient is destroyed.
+    // e.g., return () => { this.conn?.db.Message.removeOnInsert(...) };
+}
+
+private handleMessageInsert(ctx: EventContext | undefined, message: Message) {
+    const identityStr = message.sender.toHexString();
+    // Look up sender in our local map
+    const sender = this.userMap.get(identityStr);
+    const senderName = sender?.name ?? identityStr.substring(0, 8);
+    
+    if (ctx) { // Live update
+        console.log(`LIVE MSG: ${senderName}: ${message.text}`);
+        // TODO: Update UI (e.g., add to message list)
+    } else { // Initial load (handled in processInitialCache)
+        // console.log(`Initial MSG loaded: ${message.text} from ${senderName}`);
+    }
+}
+
+private handleUserInsert(ctx: EventContext | undefined, user: User) {
+    const identityStr = user.identity.toHexString();
+    this.userMap.set(identityStr, user);
+    const name = user.name ?? identityStr.substring(0, 8);
+    if (ctx) { // Live update
+        if (user.online) console.log(`${name} connected.`);
+    } else { // Initial load
+        // console.log(`Loaded user: ${name} (Online: ${user.online})`);
+    }
+    // TODO: Update UI (e.g., user list)
+}
+
+private handleUserUpdate(ctx: EventContext | undefined, oldUser: User, newUser: User) {
+    const oldIdentityStr = oldUser.identity.toHexString();
+    const newIdentityStr = newUser.identity.toHexString();
+    if(oldIdentityStr !== newIdentityStr) {
+       this.userMap.delete(oldIdentityStr);
+    }
+    this.userMap.set(newIdentityStr, newUser);
+    
+    const name = newUser.name ?? newIdentityStr.substring(0, 8);
+    if (ctx) { // Live update
+         if (!oldUser.online && newUser.online) console.log(`${name} connected.`);
+         else if (oldUser.online && !newUser.online) console.log(`${name} disconnected.`);
+         else if (oldUser.name !== newUser.name) console.log(`Rename: ${oldUser.name ?? '...'} -> ${name}.`);
+    }
+    // TODO: Update UI (e.g., user list, messages from this user)
+}
+
+private handleUserDelete(ctx: EventContext, user: User) {
+     const identityStr = user.identity.toHexString();
+     const name = user.name ?? identityStr.substring(0, 8);
+     this.userMap.delete(identityStr);
+     console.log(`${name} left/deleted.`);
+     // TODO: Update UI
+}
+```
+
+:::info Handling Initial Data vs. Live Updates in Callbacks
+In TypeScript, the first argument (`ctx: EventContext | undefined`) to row callbacks indicates the cause. If `ctx` is defined, it's a live update. If `undefined`, it's part of the initial subscription load.
+:::
+
+#### 7. Invoking Reducers & Handling Reducer Callbacks
+
+Call reducers via `conn.reducers`. Register callbacks via `conn.reducers.onReducerName(...)` to observe outcomes.
+
+```typescript
+// Part of the ChatClient class
+private registerReducerCallbacks() {
+    if (!this.conn) return;
+
+    this.conn.reducers.onSendMessage(this.handleSendMessageResult);
+    // Register other reducer callbacks if needed
+    // this.conn.reducers.onSetName(this.handleSetNameResult);
+    
+    // Note: Consider returning a cleanup function to unregister
+}
+
+private handleSendMessageResult(ctx: ReducerEventContext, messageText: string) {
+    const wasOurCall = ctx.reducerEvent.callerIdentity.isEqual(this.identity);
+    if (!wasOurCall) return; // Only care about our own calls here
+
+    if (ctx.reducerEvent.status === Status.Committed) {
+        console.log(`Our message "${messageText}" sent successfully.`);
+    } else if (ctx.reducerEvent.status.isFailed()) {
+        console.error(`Failed to send "${messageText}": ${ctx.reducerEvent.status.getFailedMessage()}`);
+    }
+}
+
+// Public methods to be called from application logic
+public sendChatMessage(message: string) {
+    if (this.conn && this.connected && message.trim()) {
+        this.conn.reducers.sendMessage(message);
+    }
+}
+
+public setPlayerName(newName: string) {
+    if (this.conn && this.connected && newName.trim()) {
+        this.conn.reducers.setName(newName);
+    }
+}
+```
