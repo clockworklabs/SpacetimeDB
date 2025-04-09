@@ -179,6 +179,20 @@ pub struct SubscriptionManager {
     tables: IntMap<TableId, HashSet<QueryHash>>,
 }
 
+// Tracks some gauges related to subscriptions.
+pub struct SubscriptionGaugeStats {
+    // The number of unique queries with at least one subscriber.
+    pub num_queries: usize,
+    // The number of unique connections with at least one subscription.
+    pub num_connections: usize,
+    // The number of subscription sets across all clients.
+    pub num_subscription_sets: usize,
+    // The total number of subscriptions across all clients and queries.
+    pub num_query_subscriptions: usize,
+    // The total number of subscriptions across all clients and queries.
+    pub num_legacy_subscriptions: usize,
+}
+
 impl SubscriptionManager {
     pub fn client(&self, id: &ClientId) -> Client {
         self.clients[id].outbound_ref.clone()
@@ -202,6 +216,26 @@ impl SubscriptionManager {
                     .get(*id)
                     .is_some_and(|info| !info.dropped.load(Ordering::Acquire))
             })
+    }
+
+    pub fn calculate_gauge_stats(&self) -> SubscriptionGaugeStats {
+        let num_queries = self.queries.len();
+        let num_connections = self.clients.len();
+        let num_query_subscriptions = self.queries.values().map(|state| state.subscriptions.len()).sum();
+        let num_subscription_sets = self.clients.values().map(|ci| ci.subscriptions.len()).sum();
+        let num_legacy_subscriptions = self
+            .clients
+            .values()
+            .filter(|ci| !ci.legacy_subscriptions.is_empty())
+            .count();
+
+        SubscriptionGaugeStats {
+            num_queries,
+            num_connections,
+            num_query_subscriptions,
+            num_subscription_sets,
+            num_legacy_subscriptions,
+        }
     }
 
     pub fn num_unique_queries(&self) -> usize {
@@ -540,43 +574,46 @@ impl SubscriptionManager {
                         (update, num_rows)
                     }
 
-                    let updates = eval_delta(tx, &mut metrics, plan)
-                        .map_err(|err| {
+                    let updates = match eval_delta(tx, &mut metrics, plan) {
+                        Err(err) => {
                             tracing::error!(
                                 message = "Query errored during tx update",
                                 sql = sql,
                                 reason = ?err,
                             );
-                            self.clients_for_query(hash)
+                            Err(self
+                                .clients_for_query(hash)
                                 .map(|id| (id, err.to_string().into_boxed_str()))
-                                .collect::<Vec<_>>()
-                        })
-                        .map(|delta_updates| {
-                            self.clients_for_query(hash)
-                                .map(|id| {
-                                    let client = &self.clients[id].outbound_ref;
-                                    let update = match client.config.protocol {
-                                        Protocol::Binary => Bsatn(memo_encode::<BsatnFormat>(
-                                            &delta_updates,
-                                            client,
-                                            match client.config.compression {
-                                                Compression::Brotli => &mut ops_bin_brotli,
-                                                Compression::Gzip => &mut ops_bin_gzip,
-                                                Compression::None => &mut ops_bin_none,
-                                            },
-                                            &mut metrics,
-                                        )),
-                                        Protocol::Text => Json(memo_encode::<JsonFormat>(
-                                            &delta_updates,
-                                            client,
-                                            &mut ops_json,
-                                            &mut metrics,
-                                        )),
-                                    };
-                                    (id, table_id, table_name.clone(), update)
-                                })
-                                .collect::<Vec<_>>()
-                        });
+                                .collect::<Vec<_>>())
+                        }
+                        // The query didn't return any rows to update
+                        Ok(None) => Ok(vec![]),
+                        Ok(Some(delta_updates)) => Ok(self
+                            .clients_for_query(hash)
+                            .map(|id| {
+                                let client = &self.clients[id].outbound_ref;
+                                let update = match client.config.protocol {
+                                    Protocol::Binary => Bsatn(memo_encode::<BsatnFormat>(
+                                        &delta_updates,
+                                        client,
+                                        match client.config.compression {
+                                            Compression::Brotli => &mut ops_bin_brotli,
+                                            Compression::Gzip => &mut ops_bin_gzip,
+                                            Compression::None => &mut ops_bin_none,
+                                        },
+                                        &mut metrics,
+                                    )),
+                                    Protocol::Text => Json(memo_encode::<JsonFormat>(
+                                        &delta_updates,
+                                        client,
+                                        &mut ops_json,
+                                        &mut metrics,
+                                    )),
+                                };
+                                (id, table_id, table_name.clone(), update)
+                            })
+                            .collect::<Vec<_>>()),
+                    };
 
                     (updates, metrics)
                 })

@@ -48,6 +48,8 @@ use std::{
     path::PathBuf,
 };
 
+pub mod remote;
+
 #[derive(Debug, Copy, Clone)]
 /// An object which may be associated with an error during snapshotting.
 pub enum ObjectType {
@@ -139,21 +141,21 @@ pub const SNAPSHOT_FILE_EXT: &str = "snapshot_bsatn";
 /// File extension of snapshots which have been marked invalid by [`SnapshotRepository::invalidate_newer_snapshots`].
 pub const INVALID_SNAPSHOT_DIR_EXT: &str = "invalid_snapshot";
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 /// The hash and refcount of a single blob in the blob store.
 struct BlobEntry {
     hash: BlobHash,
     uses: u32,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 /// A snapshot of a single table, containing the hashes of all its resident pages.
 struct TableEntry {
     table_id: TableId,
     pages: Vec<blake3::Hash>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Snapshot {
     /// A magic number: must be equal to [`MAGIC`].
     magic: [u8; 4],
@@ -450,6 +452,11 @@ impl Snapshot {
             .iter()
             .map(|tbl| Self::reconstruct_one_table(object_repo, tbl))
             .collect()
+    }
+
+    /// The number of objects in this snapshot, both blobs and pages.
+    pub fn total_objects(&self) -> usize {
+        self.blobs.len() + self.tables.iter().map(|table| table.pages.len()).sum::<usize>()
     }
 
     /// Obtain an iterator over the [`blake3::Hash`]es of all objects

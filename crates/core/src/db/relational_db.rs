@@ -1591,7 +1591,7 @@ pub mod tests_utils {
             Ok((db, local))
         }
 
-        fn open_db(
+        pub fn open_db(
             root: &ReplicaDir,
             history: impl durability::History<TxData = Txdata>,
             durability: Option<(Arc<Durability>, DiskSizeFn)>,

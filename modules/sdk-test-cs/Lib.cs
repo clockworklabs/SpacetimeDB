@@ -2,6 +2,8 @@ namespace SpacetimeDB.Sdk.Test;
 
 using SpacetimeDB;
 
+#pragma warning disable STDB_UNSTABLE // Enable experimental SpacetimeDB features
+
 public static partial class Module
 {
     [SpacetimeDB.Type]
