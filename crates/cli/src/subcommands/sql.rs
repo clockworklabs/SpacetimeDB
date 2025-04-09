@@ -2,7 +2,7 @@ use std::fmt;
 use std::fmt::Write;
 use std::time::{Duration, Instant};
 
-use crate::api::{from_json_seed, ClientApi, Connection, StmtResultJson, StmtStats};
+use crate::api::{from_json_seed, ClientApi, Connection, SqlStmtResult, StmtStats};
 use crate::common_args;
 use crate::config::Config;
 use crate::util::{database_identity, get_auth_header, ResponseExt, UNSTABLE_WARNING};
@@ -98,7 +98,7 @@ impl fmt::Display for StmtResult {
 }
 
 fn print_stmt_result(
-    stmt_results: &[StmtResultJson],
+    stmt_results: &[SqlStmtResult],
     with_stats: Option<Duration>,
     f: &mut String,
 ) -> anyhow::Result<()> {
@@ -147,7 +147,7 @@ pub(crate) async fn run_sql(builder: RequestBuilder, sql: &str, with_stats: bool
         .text()
         .await?;
 
-    let stmt_result_json: Vec<StmtResultJson> = serde_json::from_str(&json).context("malformed sql response")?;
+    let stmt_result_json: Vec<SqlStmtResult> = serde_json::from_str(&json).context("malformed sql response")?;
 
     let mut out = String::new();
     print_stmt_result(&stmt_result_json, with_stats.then_some(now.elapsed()), &mut out)?;
@@ -156,9 +156,9 @@ pub(crate) async fn run_sql(builder: RequestBuilder, sql: &str, with_stats: bool
     Ok(())
 }
 
-fn stmt_result_to_table(stmt_result: &StmtResultJson) -> anyhow::Result<(StmtStats, tabled::Table)> {
+fn stmt_result_to_table(stmt_result: &SqlStmtResult) -> anyhow::Result<(StmtStats, tabled::Table)> {
     let stats = StmtStats::from(stmt_result);
-    let StmtResultJson { schema, rows, .. } = stmt_result;
+    let SqlStmtResult { schema, rows, .. } = stmt_result;
     let ty = Typespace::EMPTY.with_type(schema);
 
     let table = build_table(
@@ -224,9 +224,9 @@ fn build_table<E>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::StmtStatsJson;
     use itertools::Itertools;
     use serde_json::value::RawValue;
+    use spacetimedb_client_api_messages::http::SqlStmtStats;
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::sats::time_duration::TimeDuration;
     use spacetimedb_lib::sats::timestamp::Timestamp;
@@ -239,7 +239,7 @@ mod tests {
     }
 
     fn check_outputs(
-        result: &[StmtResultJson],
+        result: &[SqlStmtResult],
         duration: Option<Duration>,
         expect: &str,
     ) -> Result<String, anyhow::Error> {
@@ -256,11 +256,11 @@ mod tests {
     fn check_output(
         schema: ProductType,
         rows: Vec<&RawValue>,
-        stats: StmtStatsJson,
+        stats: SqlStmtStats,
         duration: Option<Duration>,
         expect: &str,
     ) -> Result<String, anyhow::Error> {
-        let table = StmtResultJson {
+        let table = SqlStmtResult {
             schema: schema.clone(),
             rows,
             total_duration_micros: 1000,
@@ -286,7 +286,7 @@ mod tests {
         check_output(
             schema.clone(),
             vec![&row],
-            StmtStatsJson {
+            SqlStmtStats {
                 rows_inserted: 1,
                 rows_deleted: 1,
                 rows_updated: 1,
@@ -300,7 +300,7 @@ mod tests {
         check_output(
             schema.clone(),
             vec![&row],
-            StmtStatsJson {
+            SqlStmtStats {
                 rows_inserted: 1,
                 rows_deleted: 1,
                 rows_updated: 1,
@@ -317,7 +317,7 @@ Roundtrip time: 1.00ms"#,
         check_output(
             schema.clone(),
             vec![&row],
-            StmtStatsJson {
+            SqlStmtStats {
                 rows_inserted: 0,
                 rows_deleted: 0,
                 rows_updated: 0,
@@ -334,7 +334,7 @@ Roundtrip time: 1.00ms"#,
         check_output(
             schema.clone(),
             vec![],
-            StmtStatsJson {
+            SqlStmtStats {
                 rows_inserted: 0,
                 rows_deleted: 0,
                 rows_updated: 0,
@@ -350,7 +350,7 @@ Roundtrip time: 1.00ms"#,
         check_output(
             schema.clone(),
             vec![],
-            StmtStatsJson {
+            SqlStmtStats {
                 rows_inserted: 1,
                 rows_deleted: 0,
                 rows_updated: 0,
@@ -365,7 +365,7 @@ Roundtrip time: 1.00ms"#,
         check_output(
             schema.clone(),
             vec![],
-            StmtStatsJson {
+            SqlStmtStats {
                 rows_inserted: 0,
                 rows_deleted: 1,
                 rows_updated: 0,
@@ -380,7 +380,7 @@ Roundtrip time: 1.00ms"#,
         check_output(
             schema.clone(),
             vec![],
-            StmtStatsJson {
+            SqlStmtStats {
                 rows_inserted: 0,
                 rows_deleted: 0,
                 rows_updated: 1,
@@ -404,21 +404,21 @@ Roundtrip time: 1.00ms"#,
         // Verify with and without stats
         check_outputs(
             &[
-                StmtResultJson {
+                SqlStmtResult {
                     schema: schema.clone(),
                     rows: vec![&row],
                     total_duration_micros: 1000,
-                    stats: StmtStatsJson {
+                    stats: SqlStmtStats {
                         rows_inserted: 1,
                         rows_deleted: 1,
                         rows_updated: 1,
                     },
                 },
-                StmtResultJson {
+                SqlStmtResult {
                     schema: schema.clone(),
                     rows: vec![&row],
                     total_duration_micros: 1000,
-                    stats: StmtStatsJson {
+                    stats: SqlStmtStats {
                         rows_inserted: 1,
                         rows_deleted: 1,
                         rows_updated: 1,
