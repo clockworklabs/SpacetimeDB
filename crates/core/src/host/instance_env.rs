@@ -30,9 +30,34 @@ pub struct TxSlot {
     inner: Arc<Mutex<Option<MutTxId>>>,
 }
 
+/// The maximum number of chunks stored in a single [`ChunkPool`].
+///
+/// When returning a chunk to the pool via [`ChunkPool::put`],
+/// if the pool contains more than [`MAX_CHUNKS_IN_POOL`] chunks,
+/// the returned chunk will be freed rather than added to the pool.
+///
+/// This, together with [`MAX_CHUNK_SIZE_IN_BYTES`],
+/// prevents the heap usage of a [`ChunkPool`] from growing without bound.
+///
+/// This number chosen completely arbitrarily by pgoldman 2025-04-10.
+const MAX_CHUNKS_IN_POOL: usize = 32;
+
+/// The maximum size of chunks which can be saved in a [`ChunkPool`].
+///
+/// When returning a chunk to the pool via [`ChunkPool::put`],
+/// if the returned chunk is larger than [`MAX_CHUNK_SIZE_IN_BYTES`],
+/// the returned chunk will be freed rather than added to the pool.
+///
+/// This, together with [`MAX_CHUNKS_IN_POOL`],
+/// prevents the heap usage of a [`ChunkPool`] from growing without bound.
+///
+/// This number chosen completely arbitrarily by pgoldman 2025-04-10.
+const MAX_CHUNK_SIZE_IN_BYTES: usize = 1024;
+
 /// A pool of available unused chunks.
 ///
-/// The chunk places currently no limits on its size.
+/// The number of chunks stored in a `ChunkPool` is limited by [`MAX_CHUNKS_IN_POOL`],
+/// and the size of each individual saved chunk is limited by [`MAX_CHUNK_SIZE_IN_BYTES`].
 #[derive(Default)]
 pub struct ChunkPool {
     free_chunks: Vec<Vec<u8>>,
@@ -47,8 +72,21 @@ impl ChunkPool {
         self.free_chunks.pop().unwrap_or_default()
     }
 
-    /// Return a chunk back to the pool.
+    /// Return a chunk back to the pool, or frees it, as appropriate.
+    ///
+    /// `chunk` will be freed if either:
+    ///
+    /// - `self` already contains at least [`MAX_CHUNKS_IN_POOL`] chunks, or
+    /// - `chunk.capacity()` is greater than [`MAX_CHUNK_SIZE_IN_BYTES`].
+    ///
+    /// These limits place an upper bound on the memory usage of a single [`ChunkPool`].
     pub fn put(&mut self, mut chunk: Vec<u8>) {
+        if chunk.capacity() > MAX_CHUNK_SIZE_IN_BYTES {
+            return;
+        }
+        if self.free_chunks.len() > MAX_CHUNKS_IN_POOL {
+            return;
+        }
         chunk.clear();
         self.free_chunks.push(chunk);
     }
