@@ -228,6 +228,7 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
             // The database does not already exist, so we'll create it.
             None => {
                 let initial_program = self.program_store.put(&spec.program_bytes).await?;
+
                 let mut database = Database {
                     id: 0,
                     database_identity: spec.database_identity,
@@ -238,7 +239,26 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
                 let database_id = self.control_db.insert_database(database.clone())?;
                 database.id = database_id;
 
-                self.schedule_replicas(database_id, spec.num_replicas).await?;
+                if let Err(e) = self.schedule_replicas(database_id, spec.num_replicas).await {
+                    // If we failed to schedule any replicas, roll back the publish operation,
+                    // rather than leaving a broken entry in the control DB.
+                    // Note that this is non-atomic, since the standalone control DB is not transactional.
+                    // An ill-timed crash can leave the broken entry in place.
+                    //
+                    // One way that we can fail to schedule replicas
+                    // is if the `initial_program` contains an invalid RLS query.
+                    // It would be nice if we could check the RLS queries,
+                    // and any other validity constraints, before inserting the control DB entry,
+                    // but unfortunately our SQL compiler depends on having an instantiated replica,
+                    // and instantiating a replica depends on having a control DB entry for the database.
+                    self.delete_database_by_id(database_id).await.with_context(|| {
+                        format!(
+                            "Failed to schedule replicas due to error {e:#?}, then encountered error when rolling back"
+                        )
+                    })?;
+
+                    return Err(e);
+                }
 
                 Ok(None)
             }
@@ -326,12 +346,7 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
             database_identity.to_abbreviated_hex()
         );
 
-        self.control_db.delete_database(database.id)?;
-        for instance in self.control_db.get_replicas_by_database(database.id)? {
-            self.delete_replica(instance.id).await?;
-        }
-
-        Ok(())
+        self.delete_database_by_id(database.id).await
     }
 
     async fn add_energy(&self, identity: &Identity, amount: EnergyQuanta) -> anyhow::Result<()> {
@@ -378,6 +393,16 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
 }
 
 impl StandaloneEnv {
+    /// Delete the database denoted by `database_id`,
+    /// and unschedule all of its replicas.
+    async fn delete_database_by_id(&self, database_id: u64) -> anyhow::Result<()> {
+        self.control_db.delete_database(database_id)?;
+        for instance in self.control_db.get_replicas_by_database(database_id)? {
+            self.delete_replica(instance.id).await?;
+        }
+        Ok(())
+    }
+
     async fn insert_replica(&self, replica: Replica) -> Result<(), anyhow::Error> {
         let mut new_replica = replica.clone();
         let id = self.control_db.insert_replica(replica)?;
