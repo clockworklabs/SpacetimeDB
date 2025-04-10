@@ -14,10 +14,10 @@
 //! `noop` does nothing.
 //! `op` uses `std::time::Instant` and `std::time::Duration` to capture timings.
 //! Components which use the time-span interface will conditionally import one of the two modules, like:
-//! ```no_run
-//! #[cfg(feature = "spacetimedb-wasm-instance-times)]
+//! ```no-run
+//! #[cfg(feature = "spacetimedb-wasm-instance-times")]
 //! use instrumentation::op as span;
-//! #[cfg(not(feature = "spacetimedb-wasm-instance-times)]
+//! #[cfg(not(feature = "spacetimedb-wasm-instance-times"))]
 //! use instrumentation::noop as span;
 //! ```
 

@@ -535,7 +535,7 @@ impl __sdk::DbContext for ReducerEventContext {
 
 impl __sdk::ReducerEventContext for ReducerEventContext {}
 
-/// An [`__sdk::DbContext`] passed to subscription callbacks.
+/// An [`__sdk::DbContext`] passed to [`__sdk::SubscriptionBuilder::on_applied`] and [`SubscriptionHandle::unsubscribe_then`] callbacks.
 pub struct SubscriptionEventContext {
     /// Access to tables defined by the module via extension traits implemented for [`RemoteTables`].
     pub db: RemoteTables,
