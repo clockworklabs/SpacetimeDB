@@ -1591,7 +1591,7 @@ Scheduled reducer calls originate from the SpacetimeDB scheduler itself, not fro
 ##### Error Handling: Exceptions
 
 Throwing an unhandled exception within a C# reducer will cause the transaction to roll back.
-*   **Expected Failures:** For predictable errors (e.g., invalid arguments, state violations), explicitly `throw` an `Exception`. The exception message can often be observed by the client in the `ReducerEventContext` status (though the exact behavior might vary).
+*   **Expected Failures:** For predictable errors (e.g., invalid arguments, state violations), explicitly `throw` an `Exception`. The exception message can be observed by the client in the `ReducerEventContext` status.
 *   **Unexpected Errors:** Unhandled runtime exceptions (e.g., `NullReferenceException`) also cause rollbacks but might provide less informative feedback to the client, potentially just indicating a general failure.
 
 It's generally good practice to validate input and state early in the reducer and `throw` specific exceptions for handled error conditions.
