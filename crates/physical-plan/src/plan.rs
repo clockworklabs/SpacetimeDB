@@ -517,7 +517,14 @@ impl PhysicalPlan {
                     PhysicalExpr::BinOp(op, value, expr)
                         if matches!(&*value, PhysicalExpr::Value(_)) && matches!(&*expr, PhysicalExpr::Field(..)) =>
                     {
-                        PhysicalExpr::BinOp(op, expr, value)
+                        match op {
+                            BinOp::Eq => PhysicalExpr::BinOp(BinOp::Eq, expr, value),
+                            BinOp::Ne => PhysicalExpr::BinOp(BinOp::Ne, expr, value),
+                            BinOp::Lt => PhysicalExpr::BinOp(BinOp::Gt, expr, value),
+                            BinOp::Gt => PhysicalExpr::BinOp(BinOp::Lt, expr, value),
+                            BinOp::Lte => PhysicalExpr::BinOp(BinOp::Gte, expr, value),
+                            BinOp::Gte => PhysicalExpr::BinOp(BinOp::Lte, expr, value),
+                        }
                     }
                     _ => expr,
                 };

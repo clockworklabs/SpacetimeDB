@@ -217,6 +217,16 @@ macro_rules! declare_tests_with_suffix {
             }
 
             #[test]
+            fn test_lhs_join_update() {
+                make_test("test-lhs-join-update").run()
+            }
+
+            #[test]
+            fn test_lhs_join_update_disjoint_queries() {
+                make_test("test-lhs-join-update-disjoint-queries").run()
+            }
+
+            #[test]
             fn test_intra_query_bag_semantics_for_join() {
                 make_test("test-intra-query-bag-semantics-for-join").run()
             }
