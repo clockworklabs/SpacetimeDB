@@ -5016,6 +5016,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "spacetimedb-auth"
+version = "1.1.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "serde_json",
+ "serde_with",
+ "spacetimedb-jsonwebtoken",
+ "spacetimedb-lib",
+]
+
+[[package]]
 name = "spacetimedb-bench"
 version = "1.1.0"
 dependencies = [
@@ -5113,8 +5125,8 @@ dependencies = [
  "serde_json",
  "serde_with",
  "slab",
+ "spacetimedb-auth",
  "spacetimedb-client-api-messages",
- "spacetimedb-core",
  "spacetimedb-data-structures",
  "spacetimedb-fs-utils",
  "spacetimedb-jsonwebtoken",
@@ -5313,6 +5325,7 @@ dependencies = [
  "slab",
  "sled",
  "smallvec",
+ "spacetimedb-auth",
  "spacetimedb-client-api-messages",
  "spacetimedb-commitlog",
  "spacetimedb-data-structures",
@@ -5342,10 +5355,10 @@ dependencies = [
  "tikv-jemalloc-ctl",
  "tikv-jemallocator",
  "tokio",
+ "tokio-metrics",
  "tokio-stream",
  "tokio-util",
  "toml 0.8.19",
- "toml_edit",
  "tracing",
  "tracing-appender",
  "tracing-core",
@@ -6455,6 +6468,18 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.87",
+]
+
+[[package]]
+name = "tokio-metrics"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cb2bb07a8451c4c6fa8b3497ad198510d8b8dffa5df5cfb97a64102a58b113c8"
+dependencies = [
+ "futures-util",
+ "pin-project-lite",
+ "tokio",
+ "tokio-stream",
 ]
 
 [[package]]

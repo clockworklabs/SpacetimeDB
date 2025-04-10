@@ -8,11 +8,11 @@ use spacetimedb::client::ClientActorIndex;
 use spacetimedb::energy::{EnergyBalance, EnergyQuanta};
 use spacetimedb::host::{HostController, ModuleHost, NoSuchModule, UpdateDatabaseResult};
 use spacetimedb::identity::{AuthCtx, Identity};
-use spacetimedb::json::client_api::{StmtResultJson, StmtStatsJson};
 use spacetimedb::messages::control_db::{Database, HostType, Node, Replica};
 use spacetimedb::sql;
+use spacetimedb_client_api_messages::http::{SqlStmtResult, SqlStmtStats};
 use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, RegisterTldResult, SetDomainsResult, Tld};
-use spacetimedb_lib::ProductTypeElement;
+use spacetimedb_lib::{ProductTypeElement, ProductValue};
 use spacetimedb_paths::server::ModuleLogsDir;
 use tokio::sync::watch;
 
@@ -67,7 +67,7 @@ impl Host {
         auth: AuthCtx,
         database: Database,
         body: String,
-    ) -> axum::response::Result<Vec<StmtResultJson>> {
+    ) -> axum::response::Result<Vec<SqlStmtResult<ProductValue>>> {
         let module_host = self
             .module()
             .await
@@ -114,15 +114,11 @@ impl Host {
                         .map(|(col_name, col_type)| ProductTypeElement::new(col_type, Some(col_name)))
                         .collect();
 
-                    Ok(vec![StmtResultJson {
+                    Ok(vec![SqlStmtResult {
                         schema,
                         rows: result.rows,
                         total_duration_micros: total_duration.as_micros() as u64,
-                        stats: StmtStatsJson {
-                            rows_inserted: result.metrics.rows_inserted,
-                            rows_deleted: result.metrics.rows_deleted,
-                            rows_updated: result.metrics.rows_updated,
-                        },
+                        stats: SqlStmtStats::from_metrics(&result.metrics),
                     }])
                 },
             )

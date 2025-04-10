@@ -11,7 +11,9 @@ use crate::{
 };
 use spacetimedb_sats::{
     algebraic_value::{ser::ValueSerializer, Packed},
-    i256, u256, AlgebraicType, AlgebraicValue, ArrayValue, ProductType, ProductValue, SumValue,
+    i256,
+    sum_value::SumTag,
+    u256, AlgebraicType, AlgebraicValue, ArrayValue, ProductType, ProductValue, SumValue,
 };
 use std::{cell::Cell, mem};
 use thiserror::Error;
@@ -339,6 +341,29 @@ impl_read_column_via_from! {
     i256 => Box<i256>;
 }
 
+/// SAFETY: `is_compatible_type` only returns true for sum types,
+/// and any sum value stores the tag first in BFLATN.
+unsafe impl ReadColumn for SumTag {
+    fn is_compatible_type(ty: &AlgebraicTypeLayout) -> bool {
+        matches!(ty, AlgebraicTypeLayout::Sum(_))
+    }
+
+    unsafe fn unchecked_read_column(row_ref: RowRef<'_>, layout: &ProductTypeElementLayout) -> Self {
+        debug_assert!(Self::is_compatible_type(&layout.ty));
+
+        let (page, offset) = row_ref.page_and_offset();
+        let col_offset = offset + PageOffset(layout.offset);
+
+        let data = page.get_row_data(col_offset, Size(1));
+        let data: Result<[u8; 1], _> = data.try_into();
+        // SAFETY: `<[u8; 1] as TryFrom<&[u8]>` succeeds if and only if the slice's length is `1`.
+        // We used `1` as both the length of the slice and the array, so we know them to be equal.
+        let [data] = unsafe { data.unwrap_unchecked() };
+
+        Self(data)
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -512,5 +537,21 @@ mod test {
 
         // Use a long string which will hit the blob store.
         read_column_long_string { AlgebraicType::String => Box<str> = "long string. ".repeat(2048).into() };
+
+        read_sum_value_plain { AlgebraicType::simple_enum(["a", "b"].into_iter()) => SumValue = SumValue::new_simple(1) };
+        read_sum_tag_plain { AlgebraicType::simple_enum(["a", "b"].into_iter()) => SumTag = SumTag(1) };
+    }
+
+    #[test]
+    fn read_sum_tag_from_sum_with_payload() {
+        let algebraic_type = AlgebraicType::sum([("a", AlgebraicType::U8), ("b", AlgebraicType::U16)]);
+
+        let mut blob_store = HashMapBlobStore::default();
+        let mut table = table(ProductType::from([algebraic_type]));
+
+        let val = SumValue::new(1, 42u16);
+        let (_, row_ref) = table.insert(&mut blob_store, &product![val.clone()]).unwrap();
+
+        assert_eq!(val.tag, row_ref.read_col::<SumTag>(0).unwrap().0);
     }
 }
