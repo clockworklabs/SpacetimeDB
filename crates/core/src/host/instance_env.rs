@@ -51,8 +51,8 @@ const MAX_CHUNKS_IN_POOL: usize = 32;
 /// This, together with [`MAX_CHUNKS_IN_POOL`],
 /// prevents the heap usage of a [`ChunkPool`] from growing without bound.
 ///
-/// This number chosen completely arbitrarily by pgoldman 2025-04-10.
-const MAX_CHUNK_SIZE_IN_BYTES: usize = 1024;
+/// We switch to a new chunk when we pass ROW_ITER_CHUNK_SIZE, so this adds a buffer of 4x.
+const MAX_CHUNK_SIZE_IN_BYTES: usize = spacetimedb_primitives::ROW_ITER_CHUNK_SIZE * 4;
 
 /// A pool of available unused chunks.
 ///
