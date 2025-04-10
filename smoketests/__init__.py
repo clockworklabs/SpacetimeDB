@@ -38,6 +38,9 @@ HAVE_DOCKER = False
 # and a dotnet installation is detected
 HAVE_DOTNET = False
 
+# default value can be overriden by `--compose-file` flag
+COMPOSE_FILE = "./docker-compose.yml"
+
 # we need to late-bind the output stream to allow unittests to capture stdout/stderr.
 class CapturableHandler(logging.StreamHandler):
 
@@ -172,6 +175,12 @@ class Smoketest(unittest.TestCase):
         anon = ["--anonymous"] if anon else []
         self.spacetime("call", *anon, "--", self.database_identity, reducer, *map(json.dumps, args))
 
+
+    def sql(self, sql):
+        self._check_published()
+        anon = ["--anonymous"]
+        return self.spacetime("sql", *anon, "--", self.database_identity, sql)
+    
     def logs(self, n):
         return [log["message"] for log in self.log_records(n)]
 
@@ -181,6 +190,7 @@ class Smoketest(unittest.TestCase):
         return list(map(json.loads, logs.splitlines()))
 
     def publish_module(self, domain=None, *, clear=True, capture_stderr=True):
+        print("publishing module", self.publish_module)
         publish_output = self.spacetime(
             "publish",
             *[domain] if domain is not None else [],
@@ -210,7 +220,7 @@ class Smoketest(unittest.TestCase):
         self._check_published()
         assert isinstance(n, int)
 
-        args = [SPACETIME_BIN, "--config-path", str(self.config_path),"subscribe", self.database_identity, "-t", "60", "-n", str(n), "--print-initial-update", "--", *queries]
+        args = [SPACETIME_BIN, "--config-path", str(self.config_path),"subscribe", self.database_identity, "-t", "600", "-n", str(n), "--print-initial-update", "--", *queries]
         fake_args = ["spacetime", *args[1:]]
         log_cmd(fake_args)
 
@@ -283,23 +293,26 @@ class Smoketest(unittest.TestCase):
             logging.info(f"Compiling module for {cls.__qualname__}...")
             cls.publish_module(cls, capture_stderr=True) # capture stderr because otherwise it clutters the top-level test logs for some reason.
 
+    #TODO: revert this
     def tearDown(self):
-        # if this single test method published a database, clean it up now
-        if "database_identity" in self.__dict__:
-            try:
-                # TODO: save the credentials in publish_module()
-                self.spacetime("delete", self.database_identity)
-            except Exception:
-                pass
-
+        pass    
+    # if this single test method published a database, clean it up now
+#        if "database_identity" in self.__dict__:
+#            try:
+#                # TODO: save the credentials in publish_module()
+#                self.spacetime("delete", self.database_identity)
+#            except Exception:
+#                pass
+#
     @classmethod
     def tearDownClass(cls):
-        if hasattr(cls, "database_identity"):
-            try:
-                # TODO: save the credentials in publish_module()
-                cls.spacetime("delete", cls.database_identity)
-            except Exception:
-                pass
+        pass 
+#       if hasattr(cls, "database_identity"):
+ #           try:
+ #               # TODO: save the credentials in publish_module()
+ #               cls.spacetime("delete", cls.database_identity)
+ #           except Exception:
+ #               pass
 
     if sys.version_info < (3, 11):
         # polyfill; python 3.11 defines this classmethod on TestCase
