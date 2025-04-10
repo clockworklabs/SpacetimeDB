@@ -158,9 +158,7 @@ impl QueryState {
 
     // This returns all of the clients listening to a query. If a client has multiple subscriptions for this query, it will appear twice.
     fn all_clients(&self) -> impl Iterator<Item = &ClientId> {
-        let legacy_iter = self.legacy_subscribers.iter();
-        let subscriptions_iter = self.subscriptions.iter();
-        legacy_iter.chain(subscriptions_iter)
+        itertools::chain(&self.legacy_subscribers, &self.subscriptions)
     }
 }
 
@@ -202,22 +200,6 @@ impl SubscriptionManager {
 
     pub fn query(&self, hash: &QueryHash) -> Option<Query> {
         self.queries.get(hash).map(|state| state.query.clone())
-    }
-
-    /// Return all clients that are subscribed to a particular query.
-    /// Note this method filters out clients that have been dropped.
-    /// If you need all clients currently maintained by the manager,
-    /// regardless of drop status, do not use this method.
-    pub fn clients_for_query(&self, hash: &QueryHash) -> impl Iterator<Item = &ClientId> {
-        self.queries
-            .get(hash)
-            .into_iter()
-            .flat_map(|query| query.all_clients())
-            .filter(|id| {
-                self.clients
-                    .get(*id)
-                    .is_some_and(|info| !info.dropped.load(Ordering::Acquire))
-            })
     }
 
     pub fn calculate_gauge_stats(&self) -> SubscriptionGaugeStats {
@@ -531,6 +513,11 @@ impl SubscriptionManager {
                 update: FormatSwitch<ClientQueryUpdate<BsatnFormat>, ClientQueryUpdate<JsonFormat>>,
             }
 
+            // rayon has a fold-reduce idiom, which we use here. First, rayon splits
+            // the task onto a number of worker threads, and then on each thread, we *fold*
+            // each item of the iterator into an accumulator. This is that accumulator
+            // state; we use vecs because we're only ever going to be appending onto the
+            // end, so reallocation is more or less amortized.
             #[derive(Default)]
             struct FoldState<'a> {
                 updates: Vec<ClientUpdate<'a>>,
@@ -538,6 +525,10 @@ impl SubscriptionManager {
                 metrics: ExecutionMetrics,
             }
 
+            // Next, we *reduce* the result of multiple threads into one final output.
+            // This is the accumulator for that; we use `VecList`s here because they
+            // have good characteristics for this use case, namely cheap appension
+            // of the result of each thread.
             #[derive(Default)]
             struct ReduceState<'a> {
                 updates: VecList<ClientUpdate<'a>>,
@@ -545,6 +536,7 @@ impl SubscriptionManager {
                 metrics: ExecutionMetrics,
             }
             impl<'a> ReduceState<'a> {
+                /// Convert the result of a single-thread fold to get ready for a multi-thread reduce.
                 fn from_fold(acc: FoldState<'a>) -> Self {
                     Self {
                         updates: acc.updates.into(),
@@ -552,6 +544,9 @@ impl SubscriptionManager {
                         metrics: acc.metrics,
                     }
                 }
+                /// Concatenate this `ReduceState` with another one.
+                ///
+                /// This is a cheap operation, since `LinkedList::append` is `O(1)`.
                 fn append(mut self, rhs: Self) -> Self {
                     self.updates.append(rhs.updates);
                     self.errs.append(rhs.errs);
@@ -560,24 +555,34 @@ impl SubscriptionManager {
                 }
             }
 
-            let queries = tables
+            let plans = tables
                 .iter()
                 .filter(|table| !table.inserts.is_empty() || !table.deletes.is_empty())
                 .filter_map(|DatabaseTableUpdate { table_id, .. }| self.tables.get(table_id))
                 .flatten()
-                .collect::<HashSet<_>>();
-
-            let ReduceState { updates, errs, metrics } = queries
-                .into_par_iter()
-                .filter_map(|hash| self.queries.get(hash).map(|state| (hash, &state.query)))
-                .flat_map_iter(|(hash, plan)| {
-                    plan.plans_fragments()
-                        .map(move |plan_fragment| (&plan.sql, hash, plan_fragment))
+                // deduplicate queries by their hash
+                .filter({
+                    let mut seen = HashSet::new();
+                    // (HashSet::insert returns true for novel elements)
+                    move |&hash| seen.insert(hash)
                 })
+                .flat_map(|hash| {
+                    let qstate = &self.queries[hash];
+                    qstate
+                        .query
+                        .plans_fragments()
+                        .map(move |plan_fragment| (qstate, plan_fragment))
+                })
+                // collect all plan fragments we want to do work on into a
+                // single vec, which is more efficient for rayon to work with.
+                .collect::<Vec<_>>();
+
+            let ReduceState { updates, errs, metrics } = plans
+                .into_par_iter()
                 // If N clients are subscribed to a query,
                 // we copy the DatabaseTableUpdate N times,
                 // which involves cloning BSATN (binary) or product values (json).
-                .fold(FoldState::default, |mut acc, (sql, hash, plan)| {
+                .fold(FoldState::default, |mut acc, (qstate, plan)| {
                     let table_id = plan.subscribed_table_id();
                     let table_name = plan.subscribed_table_name();
                     // Store at most one copy of the serialization to BSATN x Compression
@@ -615,23 +620,28 @@ impl SubscriptionManager {
                         (update, num_rows)
                     }
 
+                    // filter out clients that've dropped
+                    let clients_for_query = qstate.all_clients().filter(|id| {
+                        self.clients
+                            .get(*id)
+                            .is_some_and(|info| !info.dropped.load(Ordering::Acquire))
+                    });
+
                     match eval_delta(tx, &mut acc.metrics, plan) {
                         Err(err) => {
                             tracing::error!(
                                 message = "Query errored during tx update",
-                                sql = sql,
+                                sql = qstate.query.sql,
                                 reason = ?err,
                             );
-                            acc.errs.extend(
-                                self.clients_for_query(hash)
-                                    .map(|id| (id, err.to_string().into_boxed_str())),
-                            )
+                            acc.errs
+                                .extend(clients_for_query.map(|id| (id, err.to_string().into_boxed_str())))
                         }
                         // The query didn't return any rows to update
                         Ok(None) => {}
                         // The query did return updates - process them and add them to the accumulator
                         Ok(Some(delta_updates)) => {
-                            let row_iter = self.clients_for_query(hash).map(|id| {
+                            let row_iter = clients_for_query.map(|id| {
                                 let client = &self.clients[id].outbound_ref;
                                 let update = match client.config.protocol {
                                     Protocol::Binary => Bsatn(memo_encode::<BsatnFormat>(
@@ -664,6 +674,10 @@ impl SubscriptionManager {
 
                     acc
                 })
+                // it would be nice to use `.collect_into_vec()` here, and reap the
+                // benefits of having an `IndexedParallelIterator`, but we actually
+                // produce many elements per `SubscriptionPlan` and would need to
+                // `flatten` them, meaning it effectively becomes unindexed.
                 .map(ReduceState::from_fold)
                 .reduce(ReduceState::default, ReduceState::append);
 
@@ -779,6 +793,14 @@ fn send_to_client(client: &ClientConnectionSender, message: impl Into<Serializab
     }
 }
 
+/// A linked list of vecs.
+///
+/// To quote the docs for [`ParallelIterator::collect_vec_list`] (which I (Noa) also wrote):
+///
+/// > This is useful when you need to condense a parallel iterator into a
+/// > collection, but have no specific requirements for what that collection
+/// > should be. [...] This is a very efficient way to collect an unindexed
+/// > parallel iterator, without much intermediate data movement.
 struct VecList<T>(LinkedList<Vec<T>>);
 
 impl<T> Default for VecList<T> {
@@ -796,9 +818,13 @@ impl<T> From<Vec<T>> for VecList<T> {
     }
 }
 impl<T> VecList<T> {
+    /// Append another `VecList` onto this one.
+    ///
+    /// This operation is `O(1)`.
     fn append(&mut self, mut other: Self) {
         self.0.append(&mut other.0)
     }
+    /// Iterate over the individual elements of this `VecList`.
     fn iter(&self) -> impl Iterator<Item = &T> {
         self.0.iter().flatten()
     }
