@@ -40,10 +40,10 @@ pair using the following algorithm:
 7. This final 32-byte value is typically represented as a hexadecimal string.
 
 ```ascii
-Byte Index: |  0  |  1  |  2  |  3  |  4  |  5  |  6  | ... | 31  |
-            +-----+-----+-----+-----+-----+-----+-----+-----+-----+
-Contents:   | 0xc2| 0x00| Checksum Hash (4 bytes) |  ID Hash (26 bytes)   |
-            +-----+-----+-------------------------+-----------------------+
+Byte Index: |  0  |  1  |  2  |  3  |  4  |  5  |  6  |  7  | ... | 31  |
+            +-----+-----+-----+-----+-----+-----+-----+-----+-----+-----+
+Contents:   | 0xc2| 0x00| Checksum Hash (4 bytes) |  ID Hash (26 bytes) |
+            +-----+-----+-------------------------+---------------------+
                       (First 4 bytes of           (First 26 bytes of
                        BLAKE3(0xc200 || idHash))    BLAKE3(iss|sub))
 ```
@@ -2034,26 +2034,19 @@ private subscribeToTables() {
     if (!this.conn) return;
     
     const queries = ["SELECT * FROM message", "SELECT * FROM user"];
-    let appliedCount = 0;
 
     console.log("Subscribing...");
-    for (const query of queries) {
-        this.conn
-            .subscriptionBuilder()
-            .onApplied(() => {
-                appliedCount++;
-                console.log(`Subscription applied for: ${query}`);
-                if (appliedCount === queries.length) {
-                    console.log('All initial subscriptions applied.');
-                    // Initial cache is now populated, process initial data if needed
-                    this.processInitialCache(); 
-                }
-            })
-            .onError((error: Error) => {
-                console.error(`Subscription error for query "${query}":`, error);
-            })
-            .subscribe(query);
-    }
+    this.conn
+        .subscriptionBuilder()
+        .onApplied(() => {
+            console.log(`Subscription applied for: ${queries}`);
+            // Initial cache is now populated, process initial data if needed
+            this.processInitialCache(); 
+        })
+        .onError((error: Error) => {
+            console.error(`Subscription error:`, error);
+        })
+        .subscribe(queries);
 }
 
 private processInitialCache() {
@@ -2190,3 +2183,93 @@ public setPlayerName(newName: string) {
     }
 }
 ```
+
+## SpacetimeDB Subscription Semantics
+
+This document describes the subscription semantics maintained by the SpacetimeDB host over WebSocket connections. These semantics outline message ordering guarantees, subscription handling, transaction updates, and client cache consistency.
+
+### WebSocket Communication Channels
+
+A single WebSocket connection between a client and the SpacetimeDB host consists of two distinct message channels:
+
+- **Client → Server:** Sends requests such as reducer invocations and subscription queries.
+- **Server → Client:** Sends responses to client requests and database transaction updates.
+
+#### Ordering Guarantees
+
+The server maintains the following guarantees:
+
+1. **Sequential Response Ordering:**
+   - Responses to client requests are always sent back in the same order the requests were received. If request A precedes request B, the response to A will always precede the response to B, even if A takes longer to process.
+
+2. **Atomic Transaction Updates:**
+   - Each database transaction (e.g., reducer invocation, INSERT, UPDATE, DELETE queries) generates exactly zero or one update message sent to clients. These updates are atomic and reflect the exact order of committed transactions.
+
+3. **Atomic Subscription Initialization:**
+   - When subscriptions are established, clients receive exactly one response containing all initially matching rows from a consistent database state snapshot taken between two transactions.
+   - The state snapshot reflects a committed database state that includes all previous transaction updates received and excludes all future transaction updates.
+
+### Subscription Workflow
+
+When invoking `SubscriptionBuilder::subscribe(QUERIES)` from the client SDK:
+
+1. **Client SDK → Host:**
+   - Sends a `Subscribe` message containing the specified QUERIES.
+
+2. **Host Processing:**
+   - Captures a snapshot of the committed database state.
+   - Evaluates QUERIES against this snapshot to determine matching rows.
+
+3. **Host → Client SDK:**
+   - Sends a `SubscribeApplied` message containing the matching rows.
+
+4. **Client SDK Processing:**
+   - Receives and processes the message.
+   - Locks the client cache and inserts all rows atomically.
+   - Invokes relevant callbacks:
+     - `on_insert` callback for each row.
+     - `on_applied` callback for the subscription.
+
+> **Note:** No relative ordering guarantees are made regarding the invocation order of these callbacks.
+
+### Transaction Update Workflow
+
+Upon committing a database transaction:
+
+1. **Host Evaluates State Delta:**
+   - Calculates the state delta (inserts and deletes) resulting from the transaction.
+
+2. **Host Evaluates Queries:**
+   - Computes the incremental query updates relevant to subscribed clients.
+
+3. **Host → Client SDK:**
+   - Sends a `TransactionUpdate` message if relevant updates exist, containing affected rows and transaction metadata.
+
+4. **Client SDK Processing:**
+   - Receives and processes the message.
+   - Locks the client cache, applying deletions and insertions atomically.
+   - Invokes relevant callbacks:
+     - `on_insert`, `on_delete`, `on_update`, and `on_reducer` as necessary.
+
+> **Note:**
+- No relative ordering guarantees are made regarding the invocation order of these callbacks.
+- Delete and insert operations within a `TransactionUpdate` have no internal order guarantees and are grouped into operation maps.
+
+#### Client Updates and Compute Processing
+
+Client SDKs must explicitly request processing time (e.g., `conn.FrameTick()` in C# or `conn.run_threaded()` in Rust) to receive and process messages. Until such a processing call is made, messages remain queued on the server-to-client channel.
+
+### Multiple Subscription Sets
+
+If multiple subscription sets are active, updates across these sets are bundled together into a single `TransactionUpdate` message.
+
+### Client Cache Guarantees
+
+- The client cache always maintains a consistent and correct subset of the committed database state.
+- Callback functions invoked due to events have guaranteed visibility into a fully updated cache state.
+- Reads from the client cache are effectively free as they access locally cached data.
+- During callback execution, the client cache accurately reflects the database state immediately following the event-triggering transaction.
+
+#### Pending Callbacks and Cache Consistency
+
+Callbacks (`pendingCallbacks`) are queued and deferred until the cache updates (inserts/deletes) from a transaction are fully applied. This ensures all callbacks see the fully consistent state of the cache, preventing callbacks from observing an inconsistent intermediate state.
