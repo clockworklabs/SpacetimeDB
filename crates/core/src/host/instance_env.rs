@@ -81,6 +81,11 @@ impl ChunkPool {
     ///
     /// These limits place an upper bound on the memory usage of a single [`ChunkPool`].
     pub fn put(&mut self, mut chunk: Vec<u8>) {
+        log::trace!(
+            "put: chunk of capacity {} into pool of {} chunks",
+            chunk.capacity(),
+            self.free_chunks.len()
+        );
         if chunk.capacity() > MAX_CHUNK_SIZE_IN_BYTES {
             return;
         }
