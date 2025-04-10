@@ -203,6 +203,22 @@ Getting started with SpacetimeDB involves a few key steps:
 
 ## Core Concepts and Syntax Examples
 
+### Reducer Context: Understanding Identities and Execution Information
+
+When a reducer function executes, it is provided with a **Reducer Context**. This context contains vital information about the call's origin and environment, crucial for logic, especially security checks. Key pieces of information typically available within the context include:
+
+*   **Sender Identity**: The authenticated [`Identity`](#identity) of the entity that invoked the reducer. This could be:
+    *   A client application connected to the database.
+    *   The module itself, if the reducer was triggered by the internal scheduler (for scheduled reducers).
+    *   The module itself, if the reducer was called internally by another reducer function within the same module.
+*   **Module Identity**: The authenticated [`Identity`](#identity) representing the database (module) itself. This is useful for checks where an action should only be performed by the module (e.g., in scheduled reducers).
+*   **Database Access**: Handles or interfaces for interacting with the database tables defined in the module. This allows the reducer to perform operations like inserting, updating, deleting, and querying rows based on primary keys or indexes.
+*   **Timestamp**: A [`Timestamp`](#timestamp) indicating precisely when the current reducer execution began.
+*   **Connection ID**: A [`ConnectionId`](#connectionid) representing the specific network connection instance (like a WebSocket session or a stateless HTTP request) that invoked the reducer. This is a unique, server-assigned identifier that persists only for the duration of that connection (from connection start to disconnect). 
+    *   **Important Distinction**: Unlike the **Sender Identity** (which represents the *authenticated user or module*), the **Connection ID** solely identifies the *transient network session*. It is assigned by the server and is not based on client-provided authentication credentials. Use the Connection ID for logic tied to a specific connection instance (e.g., tracking session state, rate limiting per connection), and use the Sender Identity for logic related to the persistent, authenticated user or the module itself.
+
+Understanding the difference between the **Sender Identity** and the **Module Identity** is particularly important for security. For example, when writing scheduled reducers, you often need to verify that the **Sender Identity** matches the **Module Identity** to ensure the action wasn't improperly triggered by an external client.
+
 ### Server Module (Rust)
 
 #### Defining Types
@@ -1430,17 +1446,6 @@ Choosing between pre-checking and `try-catch` depends on the complexity of the c
 :::note C# `Insert` vs Rust `try_insert`
 Unlike Rust, the C# SDK does not currently provide a `TryInsert` method that returns a result. The standard `Insert` method will throw an exception if a constraint (primary key, unique index) is violated. Therefore, C# reducers should typically check for potential constraint violations *before* calling `Insert`, or be prepared to handle the exception (which will likely roll back the transaction).
 :::
-
-##### Module Identity vs Sender Identity
-
-Inside a reducer, the `ReducerContext` provides two important identities:
-
-*   `ctx.Sender`: The [`Identity`](#identity) of the client who called the reducer, or the identity of the module itself if the reducer was called by the scheduler (for scheduled reducers) or internally by another reducer.
-*   `ctx.Identity`: The [`Identity`](#identity) of the module (database) itself.
-*   `ctx.Timestamp`: A [`Timestamp`](#timestamp) indicating when the reducer execution began.
-*   `ctx.ConnectionId`: A [`ConnectionId`](#connectionid) representing the specific connection that invoked the reducer. This is a large (u128-based), randomly generated identifier **assigned by the SpacetimeDB server** for each distinct client connection (e.g., a WebSocket session or a stateless HTTP call). It is unique for the duration of that connection instance (from `client_connected` to `client_disconnected`). Unlike `ctx.Sender` (the authenticated [`Identity`](#identity)), the `ConnectionId` is **not verified** based on client input; it solely identifies the server-side connection object. Use `ConnectionId` for logic specific to a *transient connection* (e.g., tracking session state, rate limiting) and `Sender` (`Identity`) for logic tied to the *persistent, authenticated user account*.
-
-This distinction is crucial for security, especially with scheduled reducers. You often want to ensure that only the scheduler (i.e., the module itself) can trigger certain actions.
 
 ##### Lifecycle Reducers
 
