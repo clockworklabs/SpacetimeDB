@@ -13,7 +13,7 @@
 //! The trie structure implemented here is still O(n), but with a drastically reduced constant factor (1/128th),
 //! which we expect to shrink the linear lookups to an acceptable size.
 
-use crate::compression::CompressReader;
+use crate::compression::{AsyncCompressReader, CompressReader};
 use std::fs::File;
 use std::io::BufWriter;
 use std::{
@@ -34,6 +34,14 @@ pub fn o_excl() -> OpenOptions {
 /// i.e. opening an existing file for reading.
 pub fn o_rdonly() -> OpenOptions {
     let mut options = OpenOptions::new();
+    options.read(true);
+    options
+}
+
+/// [`OpenOptions`] corresponding to opening a file with `O_RDONLY`,
+/// i.e. opening an existing file for reading.
+pub fn o_rdonly_async() -> tokio::fs::OpenOptions {
+    let mut options = tokio::fs::OpenOptions::new();
     options.read(true);
     options
 }
@@ -183,6 +191,20 @@ impl DirTrie {
         let path = self.file_path(file_id);
         Self::create_parent(&path)?;
         CompressReader::new(o_rdonly().open(path)?)
+    }
+
+    /// Open the file keyed with `file_id` for reading.
+    ///
+    /// It will be decompressed based on the file's magic bytes.
+    ///
+    /// It will be opened with [`o_rdonly_async`].
+    pub async fn open_entry_reader_async(
+        &self,
+        file_id: &FileId,
+    ) -> Result<AsyncCompressReader<tokio::fs::File>, io::Error> {
+        let path = self.file_path(file_id);
+        Self::create_parent(&path)?;
+        AsyncCompressReader::new(o_rdonly_async().open(path).await?).await
     }
 
     /// Open the file keyed with `file_id` for writing.

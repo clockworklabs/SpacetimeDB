@@ -1,6 +1,7 @@
 use std::fs::File;
 use std::io;
 use std::io::{BufReader, Read, Seek, SeekFrom};
+use tokio::io::AsyncSeek;
 use zstd_framed;
 use zstd_framed::{ZstdReader, ZstdWriter};
 
@@ -135,6 +136,18 @@ pub fn compress_with_zstd<W: io::Write, R: io::Read>(
 
 pub use async_impls::AsyncCompressReader;
 
+pub async fn segment_len<T: AsyncSeek + Unpin>(r: &mut T) -> tokio::io::Result<u64> {
+    use tokio::io::AsyncSeekExt;
+    let old_pos = r.stream_position().await?;
+    let len = r.seek(tokio::io::SeekFrom::End(0)).await?;
+    // If we're already at the end of the file, avoid seeking.
+    if old_pos != len {
+        r.seek(tokio::io::SeekFrom::Start(old_pos)).await?;
+    }
+
+    Ok(len)
+}
+
 mod async_impls {
     use super::*;
     use std::pin::Pin;
@@ -186,6 +199,14 @@ mod async_impls {
         }
     }
 
+    impl AsyncCompressReader<tokio::fs::File> {
+        pub async fn file_size(&mut self) -> io::Result<u64> {
+            match self {
+                AsyncCompressReader::None(inner) => inner.get_ref().metadata().await.map(|m| m.len()),
+                AsyncCompressReader::Zstd(inner) => segment_len(inner).await,
+            }
+        }
+    }
     macro_rules! forward_reader {
     ($self:ident.$method:ident($($args:expr),*)) => {
         match $self.get_mut() {

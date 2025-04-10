@@ -4,9 +4,7 @@ use std::{
     ops::{Bound, RangeBounds},
 };
 
-use tokio::io::{
-    AsyncBufRead, AsyncBufReadExt as _, AsyncRead, AsyncReadExt as _, AsyncSeek, AsyncSeekExt, AsyncWrite,
-};
+use tokio::io::{AsyncBufRead, AsyncBufReadExt as _, AsyncRead, AsyncReadExt as _, AsyncSeek, AsyncWrite};
 
 use crate::{commit, repo::Repo};
 
@@ -52,17 +50,11 @@ impl AsyncFsync for tokio::fs::File {
 }
 
 pub trait AsyncLen: AsyncSeek + Unpin + Send {
-    fn segment_len(&mut self) -> impl Future<Output = io::Result<u64>> + Send {
-        async {
-            let old_pos = self.stream_position().await?;
-            let len = self.seek(io::SeekFrom::End(0)).await?;
-            // If we're already at the end of the file, avoid seeking.
-            if old_pos != len {
-                self.seek(io::SeekFrom::Start(old_pos)).await?;
-            }
-
-            Ok(len)
-        }
+    fn segment_len(&mut self) -> impl Future<Output = io::Result<u64>> + Send
+    where
+        Self: Sized,
+    {
+        async { spacetimedb_fs_utils::compression::segment_len(self).await }
     }
 }
 
