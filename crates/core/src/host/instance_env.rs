@@ -115,6 +115,14 @@ impl ChunkedWriter {
         }
     }
 
+    /// Creates a new `ChunkedWriter` with an empty chunk allocated from the pool.
+    fn new(pool: &mut ChunkPool) -> Self {
+        Self {
+            chunks: Vec::new(),
+            curr: pool.take(),
+        }
+    }
+
     /// Finalises the writer and returns all the chunks.
     fn into_chunks(mut self) -> Vec<Vec<u8>> {
         if !self.curr.is_empty() {
@@ -129,7 +137,7 @@ impl ChunkedWriter {
         rows_scanned: &mut usize,
         bytes_scanned: &mut usize,
     ) -> Vec<Vec<u8>> {
-        let mut chunked_writer = Self::default();
+        let mut chunked_writer = Self::new(pool);
         // Consume the iterator, serializing each `item`,
         // while allowing a chunk to be created at boundaries.
         for item in iter {
