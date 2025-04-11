@@ -97,7 +97,10 @@ impl ChunkPool {
     }
 }
 
-#[derive(Default)]
+/// Construct a new `ChunkedWriter` using [`Self::new`].
+/// Do not impl `Default` for this struct or construct it manually;
+/// it is important that all allocated chunks are taken from the [`ChunkPool`],
+/// rather than directly from the global allocator.
 struct ChunkedWriter {
     /// Chunks collected thus far.
     chunks: Vec<Vec<u8>>,
