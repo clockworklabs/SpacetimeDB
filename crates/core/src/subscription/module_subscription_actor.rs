@@ -119,7 +119,10 @@ macro_rules! return_on_err {
 /// Hash a sql query, using the caller's identity if necessary
 fn hash_query(sql: &str, tx: &TxId, auth: &AuthCtx) -> Result<QueryHash, DBError> {
     parse_and_type_sub(sql, &SchemaViewer::new(tx, auth), auth)
-        .map_err(DBError::from)
+        .map_err(|err| DBError::WithSql {
+            sql: sql.into(),
+            error: Box::new(err.into()),
+        })
         .map(|(_, has_param)| QueryHash::from_string(sql, auth.caller, has_param))
 }
 
@@ -165,7 +168,11 @@ impl ModuleSubscriptions {
                     .fold(0, |acc, rows_scanned| acc.saturating_add(rows_scanned))
             },
             auth,
-        )?;
+        )
+        .map_err(|err| DBError::WithSql {
+            sql: query.sql().into(),
+            error: Box::new(err),
+        })?;
 
         let comp = sender.config.compression;
         let table_id = query.subscribed_table_id();
@@ -176,19 +183,27 @@ impl ModuleSubscriptions {
             .map(|fragment| fragment.physical_plan())
             .cloned()
             .map(|plan| plan.optimize())
-            .collect::<Result<Vec<_>, _>>()?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|err| DBError::WithSql {
+                sql: query.sql().into(),
+                error: Box::new(err.into()),
+            })?
             .into_iter()
             .map(PipelinedProject::from)
             .collect::<Vec<_>>();
 
         let tx = DeltaTx::from(tx);
 
-        Ok(match sender.config.protocol {
-            Protocol::Binary => collect_table_update(&plans, table_id, table_name.into(), comp, &tx, update_type)
-                .map(|(table_update, metrics)| (FormatSwitch::Bsatn(table_update), metrics))?,
-            Protocol::Text => collect_table_update(&plans, table_id, table_name.into(), comp, &tx, update_type)
-                .map(|(table_update, metrics)| (FormatSwitch::Json(table_update), metrics))?,
-        })
+        match sender.config.protocol {
+            Protocol::Binary => {
+                collect_table_update(query.sql(), &plans, table_id, table_name.into(), comp, &tx, update_type)
+                    .map(|(table_update, metrics)| (FormatSwitch::Bsatn(table_update), metrics))
+            }
+            Protocol::Text => {
+                collect_table_update(query.sql(), &plans, table_id, table_name.into(), comp, &tx, update_type)
+                    .map(|(table_update, metrics)| (FormatSwitch::Json(table_update), metrics))
+            }
+        }
     }
 
     fn evaluate_queries(
@@ -721,7 +736,7 @@ pub struct WriteConflict;
 mod tests {
     use super::{AssertTxFn, ModuleSubscriptions};
     use crate::client::messages::{
-        SerializableMessage, SubscriptionMessage, SubscriptionResult, SubscriptionUpdateMessage,
+        SerializableMessage, SubscriptionError, SubscriptionMessage, SubscriptionResult, SubscriptionUpdateMessage,
         TransactionUpdateMessage,
     };
     use crate::client::{ClientActorId, ClientConfig, ClientConnectionSender, ClientName, Protocol};
@@ -1075,6 +1090,21 @@ mod tests {
         Ok(())
     }
 
+    fn check_subscription_err(sql: &str, result: Option<SerializableMessage>) {
+        if let Some(SerializableMessage::Subscription(SubscriptionMessage {
+            result: SubscriptionResult::Error(SubscriptionError { message, .. }),
+            ..
+        })) = result
+        {
+            assert!(
+                message.contains(sql),
+                "Expected error message to contain the SQL query: {sql}, but got: {message}",
+            );
+            return;
+        }
+        panic!("Expected a subscription error message, but got: {:?}", result);
+    }
+
     /// Test that clients receive error messages on subscribe
     #[tokio::test]
     async fn subscribe_single_error() -> anyhow::Result<()> {
@@ -1089,13 +1119,8 @@ mod tests {
         // Subscribe to an invalid query (r is not in scope)
         subscribe_single(&subs, "select r.* from t", tx, &mut 0)?;
 
-        assert!(matches!(
-            rx.recv().await,
-            Some(SerializableMessage::Subscription(SubscriptionMessage {
-                result: SubscriptionResult::Error(..),
-                ..
-            }))
-        ));
+        check_subscription_err("select r.* from t", rx.recv().await);
+
         Ok(())
     }
 
@@ -1113,13 +1138,8 @@ mod tests {
         // Subscribe to an invalid query (r is not in scope)
         subscribe_multi(&subs, &["select r.* from t"], tx, &mut 0)?;
 
-        assert!(matches!(
-            rx.recv().await,
-            Some(SerializableMessage::Subscription(SubscriptionMessage {
-                result: SubscriptionResult::Error(..),
-                ..
-            }))
-        ));
+        check_subscription_err("select r.* from t", rx.recv().await);
+
         Ok(())
     }
 
@@ -1169,13 +1189,8 @@ mod tests {
         // Specifically that we do not recompile queries on unsubscribe.
         // We execute the cached plan which in this case is an index scan.
         // The index no longer exists, and therefore it fails.
-        assert!(matches!(
-            rx.recv().await,
-            Some(SerializableMessage::Subscription(SubscriptionMessage {
-                result: SubscriptionResult::Error(..),
-                ..
-            }))
-        ));
+        check_subscription_err("select * from t where id = 1", rx.recv().await);
+
         Ok(())
     }
 
@@ -1225,13 +1240,8 @@ mod tests {
         // Specifically that we do not recompile queries on unsubscribe.
         // We execute the cached plan which in this case is an index scan.
         // The index no longer exists, and therefore it fails.
-        assert!(matches!(
-            rx.recv().await,
-            Some(SerializableMessage::Subscription(SubscriptionMessage {
-                result: SubscriptionResult::Error(..),
-                ..
-            }))
-        ));
+        check_subscription_err("select * from t where id = 1", rx.recv().await);
+
         Ok(())
     }
 
@@ -1285,13 +1295,8 @@ mod tests {
         // Specifically, plans are cached on the initial subscribe.
         // Hence we execute a cached plan which happens to be an index join.
         // We've removed the index on `s`, and therefore it fails.
-        assert!(matches!(
-            rx.recv().await,
-            Some(SerializableMessage::Subscription(SubscriptionMessage {
-                result: SubscriptionResult::Error(..),
-                ..
-            }))
-        ));
+        check_subscription_err("select t.* from t join s on t.id = s.id", rx.recv().await);
+
         Ok(())
     }
 

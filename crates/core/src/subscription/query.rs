@@ -79,7 +79,10 @@ pub fn compile_read_only_query(auth: &AuthCtx, tx: &Tx, input: &str) -> Result<P
     let input = WHITESPACE.replace_all(input, " ");
 
     let tx = SchemaViewer::new(tx, auth);
-    let (plans, has_param) = SubscriptionPlan::compile(&input, &tx, auth)?;
+    let (plans, has_param) = SubscriptionPlan::compile(&input, &tx, auth).map_err(|err| DBError::WithSql {
+        sql: input.clone().into(),
+        error: Box::new(DBError::Other(err)),
+    })?;
     let hash = QueryHash::from_string(&input, auth.caller, has_param);
 
     Ok(Plan::new(plans, hash, input.into_owned()))

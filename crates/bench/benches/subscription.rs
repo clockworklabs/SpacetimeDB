@@ -135,6 +135,7 @@ fn eval(c: &mut Criterion) {
 
             b.iter(|| {
                 drop(black_box(collect_table_update::<_, BsatnFormat>(
+                    sql,
                     &plans,
                     table_id,
                     table_name.clone(),

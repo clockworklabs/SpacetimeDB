@@ -10,6 +10,7 @@ use spacetimedb_execution::{pipelined::PipelinedProject, Datastore, DeltaStore};
 use spacetimedb_lib::{metrics::ExecutionMetrics, Identity};
 use spacetimedb_primitives::TableId;
 
+use crate::error::DBError;
 use crate::{db::db_metrics::DB_METRICS, execution_context::WorkloadType, worker_metrics::WORKER_METRICS};
 
 pub mod delta;
@@ -99,32 +100,38 @@ pub enum TableUpdateType {
 
 /// Execute a subscription query and collect the results in a [TableUpdate]
 pub fn collect_table_update<Tx, F>(
+    sql: &str,
     plan_fragments: &[PipelinedProject],
     table_id: TableId,
     table_name: Box<str>,
     comp: Compression,
     tx: &Tx,
     update_type: TableUpdateType,
-) -> Result<(TableUpdate<F>, ExecutionMetrics)>
+) -> Result<(TableUpdate<F>, ExecutionMetrics), DBError>
 where
     Tx: Datastore + DeltaStore,
     F: WebsocketFormat,
 {
-    execute_plan::<Tx, F>(plan_fragments, tx).map(|(rows, num_rows, metrics)| {
-        let empty = F::List::default();
-        let qu = match update_type {
-            TableUpdateType::Subscribe => QueryUpdate {
-                deletes: empty,
-                inserts: rows,
-            },
-            TableUpdateType::Unsubscribe => QueryUpdate {
-                deletes: rows,
-                inserts: empty,
-            },
-        };
-        let update = F::into_query_update(qu, comp);
-        (TableUpdate::new(table_id, table_name, (update, num_rows)), metrics)
-    })
+    execute_plan::<Tx, F>(plan_fragments, tx)
+        .map(|(rows, num_rows, metrics)| {
+            let empty = F::List::default();
+            let qu = match update_type {
+                TableUpdateType::Subscribe => QueryUpdate {
+                    deletes: empty,
+                    inserts: rows,
+                },
+                TableUpdateType::Unsubscribe => QueryUpdate {
+                    deletes: rows,
+                    inserts: empty,
+                },
+            };
+            let update = F::into_query_update(qu, comp);
+            (TableUpdate::new(table_id, table_name, (update, num_rows)), metrics)
+        })
+        .map_err(|err| DBError::WithSql {
+            sql: sql.into(),
+            error: Box::new(err.into()),
+        })
 }
 
 /// Execute a collection of subscription queries in parallel
@@ -133,23 +140,29 @@ pub fn execute_plans<Tx, F>(
     comp: Compression,
     tx: &Tx,
     update_type: TableUpdateType,
-) -> Result<(DatabaseUpdate<F>, ExecutionMetrics)>
+) -> Result<(DatabaseUpdate<F>, ExecutionMetrics), DBError>
 where
     Tx: Datastore + DeltaStore + Sync,
     F: WebsocketFormat,
 {
     plans
         .par_iter()
-        .flat_map_iter(|plan| plan.plans_fragments())
-        .map(|plan| (plan, plan.subscribed_table_id(), plan.subscribed_table_name()))
-        .map(|(plan, table_id, table_name)| {
+        .flat_map_iter(|plan| plan.plans_fragments().map(|fragment| (plan.sql(), fragment)))
+        .map(|(sql, plan)| (sql, plan, plan.subscribed_table_id(), plan.subscribed_table_name()))
+        .map(|(sql, plan, table_id, table_name)| {
             plan.physical_plan()
                 .clone()
                 .optimize()
-                .map(PipelinedProject::from)
-                .and_then(|plan| collect_table_update(&[plan], table_id, table_name.into(), comp, tx, update_type))
+                .map(|plan| (sql, PipelinedProject::from(plan)))
+                .map_err(|err| DBError::WithSql {
+                    sql: sql.into(),
+                    error: Box::new(DBError::Other(err)),
+                })
+                .and_then(|(sql, plan)| {
+                    collect_table_update(sql, &[plan], table_id, table_name.into(), comp, tx, update_type)
+                })
         })
-        .collect::<Result<Vec<_>>>()
+        .collect::<Result<Vec<_>, _>>()
         .map(|table_updates_with_metrics| {
             let n = table_updates_with_metrics.len();
             let mut tables = Vec::with_capacity(n);
