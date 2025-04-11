@@ -351,10 +351,20 @@ namespace SpacetimeDB
 
         public Task Close(WebSocketCloseStatus code = WebSocketCloseStatus.NormalClosure)
         {
-            Ws?.CloseAsync(code, "Disconnecting normally.", CancellationToken.None);
-
-            return Task.CompletedTask;
-        }
+#if UNITY_WEBGL && !UNITY_EDITOR
+            if (_isConnected)
+            {
+                HandleWebGLClose(_webglSocketId, (int)code, "Disconnecting normally.");
+                _isConnected = false;
+            }
+#else
+            if (Ws?.State == WebSocketState.Open)
+            {
+                return Ws.CloseAsync(code, "Disconnecting normally.", CancellationToken.None);
+            }
+#endif
+             return Task.CompletedTask;
+         }
 
         private Task? senderTask;
         private readonly ConcurrentQueue<ClientMessage> messageSendQueue = new();
@@ -387,7 +397,6 @@ namespace SpacetimeDB
             }
 #endif
         }
-
 
         private async Task ProcessSendQueue()
         {

@@ -48,8 +48,11 @@ mergeInto(LibraryManager.library, {
             var __allocate = this.allocate;
             socket.onclose = function(event) {
                 if (manager.callbacks.close) {
-                    var reasonPtr = __allocate(intArrayFromString(event.reason || ""), 'i8', ALLOC_NORMAL);
-                    dynCall('vii', manager.callbacks.close, [socketId, event.code, reasonPtr]);
+                    var reasonStr = event.reason || "";
+                    var reasonArray = intArrayFromString(reasonStr);
+                    var reasonPtr = _malloc(reasonArray.length);
+                    HEAP8.set(reasonArray, reasonPtr);
+                    dynCall('viii', manager.callbacks.close, [socketId, event.code, reasonPtr]);
                     _free(reasonPtr);
                 }
                 delete manager.instances[socketId];

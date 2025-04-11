@@ -380,7 +380,7 @@ namespace SpacetimeDB
 #if UNITY_WEBGL && !UNITY_EDITOR
                 else
                 {
-                    yield return new UnityEngine.WaitForSeconds(0.1f);
+                    yield return new UnityEngine.WaitForSeconds(0.01f);
                 }
 #else
                 catch (OperationCanceledException)
