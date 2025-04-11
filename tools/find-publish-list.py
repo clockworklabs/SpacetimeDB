@@ -17,20 +17,20 @@ def process_crate(crate_name, crates_dir, recursive=False, debug=False):
 
     if not cargo_toml_path.is_file():
         if debug:
-            print(f"Warning: Cargo.toml not found for crate '{crate_name}' at {cargo_toml_path}", file=sys.stderr)
+            print(f"Warning: Cargo.toml not found for crate '{crate_name}' at {cargo_toml_path}")
         return []
 
     if debug:
-        print(f"\nChecking crate '{crate_name}'...", file=sys.stderr)
+        print(f"\nChecking crate '{crate_name}'...")
 
     deps = find_spacetimedb_dependencies(cargo_toml_path)
 
     if debug:
         if deps:
             for name in deps:
-                print(f"  {name}", file=sys.stderr)
+                print(f"  {name}")
         else:
-            print("  No spacetimedb-* dependencies found.", file=sys.stderr)
+            print("  No spacetimedb-* dependencies found.")
 
     all_deps = list(deps)
 
@@ -55,19 +55,20 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Find spacetimedb-* dependencies for one or more crates.")
     parser.add_argument("root", nargs="+", help="One or more crate names to start with")
     parser.add_argument("--recursive", action="store_true", help="Recursively resolve dependencies")
-    parser.add_argument("--debug", action="store_true", help="Print intermediate debug output")
+    parser.add_argument("--quiet", action="store_true", help="Only print the final output")
     args = parser.parse_args()
 
     crates_dir = Path("crates")
     all_crates = list(args.root)
 
     for crate in args.root:
-        deps = process_crate(crate, crates_dir, recursive=args.recursive, debug=args.debug)
+        deps = process_crate(crate, crates_dir, recursive=args.recursive, debug=not args.quiet)
         all_crates.extend(dep_to_crate_dir(dep) for dep in deps)
 
     publish_order = reversed(all_crates)
     publish_order = ordered_dedup(publish_order)
 
-    print("\nAll crates to publish, in order:", file=sys.stderr)
+    if not args.quiet:
+        print("\nAll crates to publish, in order:")
     for crate in publish_order:
         print(crate)
