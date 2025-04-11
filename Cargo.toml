@@ -168,7 +168,7 @@ fs-err = "2.9.0"
 fs2 = "0.4.3"
 futures = "0.3"
 futures-channel = "0.3"
-getrandom = "0.2.7"
+getrandom02 = { package = "getrandom", version = "0.2" }
 glob = "0.3.1"
 hashbrown = { version = "0.15", default-features = false, features = ["equivalent", "inline-more"] }
 headers = "0.4"
@@ -209,7 +209,8 @@ proptest = "1.4"
 proptest-derive = "0.5"
 quick-junit = { version = "0.3.2" }
 quote = "1.0.8"
-rand = "0.8.5"
+rand08 = { package = "rand", version = "0.8" }
+rand = "0.9"
 rayon = "1.8"
 rayon-core = "1.11.0"
 regex = "1"

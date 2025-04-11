@@ -335,7 +335,7 @@ fn insert_opt_str(c: &mut Criterion) {
                     unsafe { page.zero_data() };
 
                     let body = |_, _, page: &mut Page| loop {
-                        let insert_none = rng.gen_bool(some_ratio);
+                        let insert_none = rng.random_bool(some_ratio);
                         if !insert_none {
                             if !page.has_space_for_row(fixed_row_size, 0) {
                                 break;
@@ -374,7 +374,7 @@ fn delete_to_approx_fullness_ratio<Row: FixedLenRow>(page: &mut Page, fullness: 
     let row_offsets = page.iter_fixed_len(row_size_for_type::<Row>()).collect::<Vec<_>>();
     let visitor = Row::var_len_visitor();
     for row in row_offsets.into_iter() {
-        let should_keep = rng.gen_bool(fullness);
+        let should_keep = rng.random_bool(fullness);
         if !should_keep {
             unsafe { page.delete_row(row, row_size_for_type::<Row>(), &visitor, &mut NullBlobStore) };
         }
@@ -462,7 +462,7 @@ fn copy_filter_into_fixed_len_keep_ratio<Row: FixedLenRow>(b: &mut Bencher, keep
                 row_size_for_type::<Row>(),
                 &visitor,
                 &mut NullBlobStore,
-                |_page, _row| rng.gen_bool(*keep_ratio),
+                |_page, _row| rng.random_bool(*keep_ratio),
             )
         };
     });
