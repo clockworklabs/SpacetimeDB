@@ -13,8 +13,11 @@
 //! The trie structure implemented here is still O(n), but with a drastically reduced constant factor (1/128th),
 //! which we expect to shrink the linear lookups to an acceptable size.
 
+use crate::compression::{AsyncCompressReader, CompressReader};
+use std::fs::File;
+use std::io::BufWriter;
 use std::{
-    fs::{create_dir_all, File, OpenOptions},
+    fs::{create_dir_all, OpenOptions},
     io::{self, Read, Write},
     path::{Path, PathBuf},
 };
@@ -31,6 +34,14 @@ pub fn o_excl() -> OpenOptions {
 /// i.e. opening an existing file for reading.
 pub fn o_rdonly() -> OpenOptions {
     let mut options = OpenOptions::new();
+    options.read(true);
+    options
+}
+
+/// [`OpenOptions`] corresponding to opening a file with `O_RDONLY`,
+/// i.e. opening an existing file for reading.
+pub fn o_rdonly_async() -> tokio::fs::OpenOptions {
+    let mut options = tokio::fs::OpenOptions::new();
     options.read(true);
     options
 }
@@ -65,8 +76,7 @@ impl DirTrie {
         &self.root
     }
 
-    /// Open the directory trie at `root`,
-    /// creating the root directory if it doesn't exist.
+    /// Open the directory trie at `root`, creating the root directory if it doesn't exist.
     ///
     /// Returns an error if the `root` cannot be created as a directory.
     /// See documentation on [`create_dir_all`] for more details.
@@ -164,28 +174,54 @@ impl DirTrie {
             }
         }
 
-        let mut file = self.open_entry(file_id, &o_excl())?;
+        let mut file = self.open_entry_writer(file_id)?;
         let contents = contents();
         file.write_all(contents.as_ref())?;
+        file.flush()?;
         counter.objects_written += 1;
         Ok(())
     }
 
-    /// Open the file keyed with `file_id` with the given `options`.
+    /// Open the file keyed with `file_id` for reading.
     ///
-    /// Sensible choices for `options` are:
-    /// - [`o_excl`], to create a new entry.
-    /// - [`o_rdonly`], to read an existing entry.
-    pub fn open_entry(&self, file_id: &FileId, options: &OpenOptions) -> Result<File, io::Error> {
+    /// It will be decompressed based on the file's magic bytes.
+    ///
+    /// It will be opened with [`o_rdonly`].
+    pub fn open_entry_reader(&self, file_id: &FileId) -> Result<CompressReader, io::Error> {
         let path = self.file_path(file_id);
         Self::create_parent(&path)?;
-        options.open(path)
+        CompressReader::new(o_rdonly().open(path)?)
+    }
+
+    /// Open the file keyed with `file_id` for reading.
+    ///
+    /// It will be decompressed based on the file's magic bytes.
+    ///
+    /// It will be opened with [`o_rdonly_async`].
+    pub async fn open_entry_reader_async(
+        &self,
+        file_id: &FileId,
+    ) -> Result<AsyncCompressReader<tokio::fs::File>, io::Error> {
+        let path = self.file_path(file_id);
+        Self::create_parent(&path)?;
+        AsyncCompressReader::new(o_rdonly_async().open(path).await?).await
+    }
+
+    /// Open the file keyed with `file_id` for writing.
+    ///
+    /// If `compress_type` is [`CompressType::None`], the file will be written uncompressed.
+    ///
+    /// The file will be opened with [`o_excl`].
+    pub fn open_entry_writer(&self, file_id: &FileId) -> Result<BufWriter<File>, io::Error> {
+        let path = self.file_path(file_id);
+        Self::create_parent(&path)?;
+        Ok(BufWriter::new(o_excl().open(path)?))
     }
 
     /// Open the entry keyed with `file_id` and read it into a `Vec<u8>`.
     pub fn read_entry(&self, file_id: &FileId) -> Result<Vec<u8>, io::Error> {
-        let mut file = self.open_entry(file_id, &o_rdonly())?;
-        let mut buf = Vec::with_capacity(file.metadata()?.len() as usize);
+        let mut file = self.open_entry_reader(file_id)?;
+        let mut buf = Vec::with_capacity(file.file_size()?);
         // TODO(perf): Async IO?
         file.read_to_end(&mut buf)?;
         Ok(buf)
@@ -208,13 +244,13 @@ mod test {
 
     /// Write the [`TEST_STRING`] into the entry [`TEST_ID`].
     fn write_test_string(trie: &DirTrie) {
-        let mut file = trie.open_entry(&TEST_ID, &o_excl()).unwrap();
+        let mut file = trie.open_entry_writer(&TEST_ID).unwrap();
         file.write_all(TEST_STRING).unwrap();
     }
 
     /// Read the entry [`TEST_ID`] and assert that its contents match the [`TEST_STRING`].
     fn read_test_string(trie: &DirTrie) {
-        let mut file = trie.open_entry(&TEST_ID, &o_rdonly()).unwrap();
+        let mut file = trie.open_entry_reader(&TEST_ID).unwrap();
         let mut contents = Vec::new();
         file.read_to_end(&mut contents).unwrap();
         assert_eq!(&contents, TEST_STRING);
@@ -274,7 +310,7 @@ mod test {
             assert!(!trie.contains_entry(&TEST_ID));
 
             // Because the file isn't there, we can't open it.
-            assert!(trie.open_entry(&TEST_ID, &o_rdonly()).is_err());
+            assert!(trie.open_entry_reader(&TEST_ID).is_err());
 
             // Create an entry in the trie and write some data to it.
             write_test_string(&trie);
@@ -283,7 +319,7 @@ mod test {
             assert!(trie.contains_entry(&TEST_ID));
 
             // Because the file is there, we can't create it.
-            assert!(trie.open_entry(&TEST_ID, &o_excl()).is_err());
+            assert!(trie.open_entry_writer(&TEST_ID).is_err());
         })
     }
 }

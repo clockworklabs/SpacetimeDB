@@ -280,7 +280,7 @@ webbrowser = "1.0.2"
 windows-sys = "0.59"
 xdg = "2.5"
 tikv-jemallocator = { version = "0.6.0", features = ["profiling", "stats"] }
-tikv-jemalloc-ctl = { version = "0.6.0", features = ["stats"]}
+tikv-jemalloc-ctl = { version = "0.6.0", features = ["stats"] }
 jemalloc_pprof = { version = "0.7", features = ["symbolize", "flamegraph"] }
 zstd-framed = { version = "0.1.1", features = ["tokio"] }
 

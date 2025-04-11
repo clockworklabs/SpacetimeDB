@@ -5332,6 +5332,7 @@ dependencies = [
  "spacetimedb-durability",
  "spacetimedb-execution",
  "spacetimedb-expr",
+ "spacetimedb-fs-utils",
  "spacetimedb-jsonwebtoken",
  "spacetimedb-jwks",
  "spacetimedb-lib",
