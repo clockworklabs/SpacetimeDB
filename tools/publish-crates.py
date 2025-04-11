@@ -39,18 +39,21 @@ def process_crate(crate_name, crates_dir, recursive=False):
     return all_deps
 
 def main():
-    parser = argparse.ArgumentParser(description="Recursively find spacetimedb-* dependencies for a crate.")
-    parser.add_argument("crate", help="Starting crate name (in crates/<crate>/Cargo.toml)")
+    parser = argparse.ArgumentParser(description="Recursively find spacetimedb-* dependencies for one or more crates.")
+    parser.add_argument("crate", nargs="+", help="One or more crate names (in crates/<crate>/Cargo.toml)")
     parser.add_argument("--recursive", action="store_true", help="Recursively resolve spacetimedb-* dependencies")
     args = parser.parse_args()
 
     crates_dir = Path("crates")
-    all_deps = process_crate(args.crate, crates_dir, recursive=args.recursive)
+    all_crates = list(args.crate)
 
-    # Optional: Deduplicate and print flat list at the end
-    print("\nAll spacetimedb-* dependencies collected:")
-    for dep in all_deps:
-        print(dep)
+    for crate in args.crate:
+        deps = process_crate(crate, crates_dir, recursive=args.recursive)
+        all_crates.extend(dep_to_crate_dir(dep) for dep in deps)
+
+    print("\nAll crates including dependencies:")
+    for crate in all_crates:
+        print(crate)
 
 if __name__ == "__main__":
     main()
