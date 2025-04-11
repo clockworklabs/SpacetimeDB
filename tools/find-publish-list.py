@@ -17,20 +17,20 @@ def process_crate(crate_name, crates_dir, recursive=False, debug=False):
 
     if not cargo_toml_path.is_file():
         if debug:
-            print(f"Warning: Cargo.toml not found for crate '{crate_name}' at {cargo_toml_path}")
+            print(f"Warning: Cargo.toml not found for crate '{crate_name}' at {cargo_toml_path}", file=sys.stderr)
         return []
 
     if debug:
-        print(f"\nChecking crate '{crate_name}'...")
+        print(f"\nChecking crate '{crate_name}'...", file=sys.stderr)
 
     deps = find_spacetimedb_dependencies(cargo_toml_path)
 
     if debug:
         if deps:
             for name in deps:
-                print(f"  {name}")
+                print(f"  {name}", file=sys.stderr)
         else:
-            print("  No spacetimedb-* dependencies found.")
+            print("  No spacetimedb-* dependencies found.", file=sys.stderr)
 
     all_deps = list(deps)
 
@@ -68,6 +68,6 @@ if __name__ == "__main__":
     publish_order = reversed(all_crates)
     publish_order = ordered_dedup(publish_order)
 
-    print("\nAll crates including dependencies (deduplicated, last occurrence kept):")
+    print("\nAll crates to publish, in order:", file=sys.stderr)
     for crate in publish_order:
         print(crate)
