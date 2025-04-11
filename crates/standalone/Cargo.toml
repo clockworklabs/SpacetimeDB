@@ -37,6 +37,7 @@ hostname.workspace = true
 http.workspace = true
 log.workspace = true
 openssl.workspace = true
+parse-size.workspace = true
 prometheus.workspace = true
 scopeguard.workspace = true
 serde_json.workspace = true

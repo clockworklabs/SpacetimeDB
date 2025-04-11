@@ -10,7 +10,7 @@ use spacetimedb_sats::de::{
 use std::sync::Arc;
 
 /// A page pool of currently unused pages available for use in [`Pages`](super::pages::Pages).
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub struct PagePool {
     inner: Arc<PagePoolInner>,
 }
@@ -22,7 +22,31 @@ impl MemoryUsage for PagePool {
     }
 }
 
+/// The default page pool has a size of 8 GiB.
+impl Default for PagePool {
+    fn default() -> Self {
+        Self::new(None)
+    }
+}
+
 impl PagePool {
+    /// Returns a new page pool with `max_size` bytes rounded down to the nearest multiple of 64 KiB.
+    ///
+    /// if no size is provided, a default of 8 GiB is used.
+    pub fn new(max_size: Option<usize>) -> Self {
+        const DEFAULT_MAX_SIZE: usize = 8 * (1 << 30); // 8 GiB
+        const PAGE_SIZE: usize = 64 * (1 << 10); // 64 KiB, `size_of::<Page>()`
+
+        let queue_size = max_size.unwrap_or(DEFAULT_MAX_SIZE) / PAGE_SIZE;
+        let pages = ArrayQueue::new(queue_size);
+        let inner = Arc::new(PagePoolInner {
+            pages,
+            unpooled_pages_count: <_>::default(),
+            dropped_pages_count: <_>::default(),
+        });
+        Self { inner }
+    }
+
     /// Puts back a [`Page`] into the pool.
     pub fn put(&self, page: Box<Page>) {
         self.inner.put(page);
@@ -133,13 +157,12 @@ impl MemoryUsage for PagePoolInner {
 
 impl Default for PagePoolInner {
     fn default() -> Self {
-        const MAX_PAGE_MEM: usize = 8 * (1 << 30); // 32 GiB
-        const PAGE_SIZE: usize = 64 * (1 << 10); // 64 KiB, `size_of::<Page>()`
+        const MAX_PAGE_MEM: usize = 8 * (1 << 30); // 8 GiB
 
         // 2 ^ 17 pages at most.
         // Each slot in the pool is `(AtomicCell, Box<Page>)` which takes up 16 bytes.
         // The pool will therefore have a fixed cost of 2^20 bytes, i.e., 2 MiB.
-        const MAX_POOLED_PAGES: usize = MAX_PAGE_MEM / PAGE_SIZE;
+        const MAX_POOLED_PAGES: usize = MAX_PAGE_MEM / size_of::<Page>();
         let pages = ArrayQueue::new(MAX_POOLED_PAGES);
         Self {
             pages,

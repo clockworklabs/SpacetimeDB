@@ -218,10 +218,16 @@ impl CompiledModule {
 
 /// For testing, persist to disk by default, as many tests
 /// exercise functionality like restarting the database.
-pub static DEFAULT_CONFIG: Config = Config { storage: Storage::Disk };
+pub static DEFAULT_CONFIG: Config = Config {
+    storage: Storage::Disk,
+    page_pool_max_size: None,
+};
 
 /// For performance tests, do not persist to disk.
-pub static IN_MEMORY_CONFIG: Config = Config { storage: Storage::Disk };
+pub static IN_MEMORY_CONFIG: Config = Config {
+    storage: Storage::Disk,
+    page_pool_max_size: None,
+};
 
 /// Used to parse output from module logs.
 ///
