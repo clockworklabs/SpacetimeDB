@@ -5,7 +5,7 @@
 mod client_visibility_filter;
 pub mod log_stopwatch;
 mod logger;
-#[cfg(feature = "rand")]
+#[cfg(feature = "rand08")]
 mod rng;
 #[doc(hidden)]
 pub mod rt;
@@ -17,11 +17,11 @@ use std::cell::RefCell;
 
 pub use log;
 #[cfg(feature = "rand")]
-pub use rand;
+pub use rand08 as rand;
 
 #[cfg(feature = "unstable")]
 pub use client_visibility_filter::Filter;
-#[cfg(feature = "rand")]
+#[cfg(feature = "rand08")]
 pub use rng::StdbRng;
 pub use sats::SpacetimeType;
 #[doc(hidden)]
@@ -730,7 +730,7 @@ pub struct ReducerContext {
     /// See the [`#[table]`](macro@crate::table) macro for more information.
     pub db: Local,
 
-    #[cfg(feature = "rand")]
+    #[cfg(feature = "rand08")]
     rng: std::cell::OnceCell<StdbRng>,
 }
 

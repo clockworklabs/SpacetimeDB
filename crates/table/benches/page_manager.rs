@@ -364,7 +364,7 @@ fn insert_with_holes_fixed_len(c: &mut Criterion) {
                         }
                         .unwrap();
 
-                        if rng.gen_bool(delete_ratio) {
+                        if rng.random_bool(delete_ratio) {
                             ptrs_to_delete.push(RowPointer::new(
                                 false,
                                 page_idx,
@@ -431,7 +431,7 @@ fn copy_filter_fixed_len(c: &mut Criterion) {
 
             // To avoid advancing RNG in the benchmark,
             // precompute a big vec of bools, with one bool for each value that we may or may not keep.
-            let keep_seq: Vec<bool> = (0..total_num_rows).map(|_| rng.gen_bool(keep_ratio)).collect();
+            let keep_seq: Vec<bool> = (0..total_num_rows).map(|_| rng.random_bool(keep_ratio)).collect();
 
             group.bench_function(keep_ratio.to_string(), |b| {
                 b.iter_with_large_drop(|| unsafe {

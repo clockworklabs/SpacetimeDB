@@ -25,7 +25,7 @@ email_address = "0.2.3"
 tempfile.workspace = true
 async-trait = "0.1.60"
 chrono = { workspace = true, features = ["serde"] }
-rand = "0.8.5"
+rand.workspace = true
 axum.workspace = true
 axum-extra.workspace = true
 hyper.workspace = true

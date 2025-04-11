@@ -46,11 +46,9 @@ enum-map = { workspace = true, optional = true }
 # For the 'proptest' feature.
 proptest = { workspace = true, optional = true }
 proptest-derive = { workspace = true, optional = true }
-rand.workspace = true
 
 [dev-dependencies]
 spacetimedb-sats = { workspace = true, features = ["test"] }
-rand.workspace = true
 bytes.workspace = true
 serde_json.workspace = true
 insta.workspace = true

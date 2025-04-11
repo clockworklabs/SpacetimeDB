@@ -136,7 +136,7 @@ fn status_ok_or_panic(output: std::process::Output, command: &str, test_name: &s
 }
 
 fn random_module_name() -> String {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     std::iter::repeat_with(|| ('a'..='z').chain('0'..='9').choose(&mut rng).unwrap())
         .take(16)
         .collect()
