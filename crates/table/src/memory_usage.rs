@@ -18,6 +18,7 @@ pub trait MemoryUsage {
     }
 }
 
+impl MemoryUsage for () {}
 impl MemoryUsage for bool {}
 impl MemoryUsage for u8 {}
 impl MemoryUsage for u16 {}

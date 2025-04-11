@@ -433,6 +433,7 @@ impl<P: BlobProvider> SnapshotFetcher<P> {
     }
 
     fn verify_page(&self, expected_hash: blake3::Hash, buf: &[u8]) -> Result<()> {
+        // TODO(centril, kim): consider whether we want to use the page pool here.
         let page = bsatn::from_slice::<Box<Page>>(buf).map_err(|cause| SnapshotError::Deserialize {
             ty: ObjectType::Page(expected_hash),
             source_repo: self.dir.0.clone(),

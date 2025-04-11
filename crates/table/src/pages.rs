@@ -1,12 +1,12 @@
 //! Provides [`Pages`], a page manager dealing with [`Page`]s as a collection.
 
-use crate::MemoryUsage;
-
 use super::blob_store::BlobStore;
 use super::indexes::{Bytes, PageIndex, PageOffset, RowPointer, Size};
 use super::page::Page;
+use super::page_pool::PagePool;
 use super::table::BlobNumBytes;
 use super::var_len::VarLenMembers;
+use crate::MemoryUsage;
 use core::ops::{ControlFlow, Deref, Index, IndexMut};
 use std::ops::DerefMut;
 use thiserror::Error;
@@ -69,7 +69,7 @@ impl Pages {
     }
 
     /// Make all pages within `self` clear,
-    /// deallocating all rows.
+    /// deleting all rows.
     #[doc(hidden)] // Used in benchmarks.
     pub fn clear(&mut self) {
         // Clear every page.
@@ -94,17 +94,18 @@ impl Pages {
     ///
     /// The new page is initially empty, but is not added to the non-full set.
     /// Callers should call [`Pages::maybe_mark_page_non_full`] after operating on the new page.
-    fn allocate_new_page(&mut self, fixed_row_size: Size) -> Result<PageIndex, Error> {
+    fn allocate_new_page(&mut self, pool: &PagePool, fixed_row_size: Size) -> Result<PageIndex, Error> {
         let new_idx = self.can_allocate_new_page()?;
 
-        self.pages.push(Page::new(fixed_row_size));
+        let page = pool.take_with_fixed_row_size(fixed_row_size);
+        self.pages.push(page);
 
         Ok(new_idx)
     }
 
     /// Reserve a new, initially empty page.
-    pub fn reserve_empty_page(&mut self, fixed_row_size: Size) -> Result<PageIndex, Error> {
-        let idx = self.allocate_new_page(fixed_row_size)?;
+    pub fn reserve_empty_page(&mut self, pool: &PagePool, fixed_row_size: Size) -> Result<PageIndex, Error> {
+        let idx = self.allocate_new_page(pool, fixed_row_size)?;
         self.mark_page_non_full(idx);
         Ok(idx)
     }
@@ -126,11 +127,12 @@ impl Pages {
     /// `page.has_space_for_row(fixed_row_size, num_var_len_granules)`.
     pub fn with_page_to_insert_row<Res>(
         &mut self,
+        pool: &PagePool,
         fixed_row_size: Size,
         num_var_len_granules: usize,
         f: impl FnOnce(&mut Page) -> Res,
     ) -> Result<(PageIndex, Res), Error> {
-        let page_index = self.find_page_with_space_for_row(fixed_row_size, num_var_len_granules)?;
+        let page_index = self.find_page_with_space_for_row(pool, fixed_row_size, num_var_len_granules)?;
         let res = f(&mut self[page_index]);
         self.maybe_mark_page_non_full(page_index, fixed_row_size);
         Ok((page_index, res))
@@ -144,6 +146,7 @@ impl Pages {
     /// to restore the page to the non-full set.
     fn find_page_with_space_for_row(
         &mut self,
+        pool: &PagePool,
         fixed_row_size: Size,
         num_var_len_granules: usize,
     ) -> Result<PageIndex, Error> {
@@ -158,7 +161,7 @@ impl Pages {
             return Ok(page_idx);
         }
 
-        self.allocate_new_page(fixed_row_size)
+        self.allocate_new_page(pool, fixed_row_size)
     }
 
     /// Superseded by `write_av_to_pages`, but exposed for benchmarking
@@ -177,6 +180,7 @@ impl Pages {
     // TODO(bikeshedding): rename to make purpose as bench interface clear?
     pub unsafe fn insert_row(
         &mut self,
+        pool: &PagePool,
         var_len_visitor: &impl VarLenMembers,
         fixed_row_size: Size,
         fixed_len: &Bytes,
@@ -186,6 +190,7 @@ impl Pages {
         debug_assert!(fixed_len.len() == fixed_row_size.len());
 
         match self.with_page_to_insert_row(
+            pool,
             fixed_row_size,
             Page::total_granules_required_for_objects(var_len),
             |page| {
@@ -355,6 +360,11 @@ impl Pages {
             .filter_map(|(idx, page)| (!page.is_full(fixed_row_size)).then_some(PageIndex(idx as _)))
             .collect();
         self.pages = pages;
+    }
+
+    /// Consumes the page manager, returning all the pages it held.
+    pub fn into_page_iter(self) -> impl Iterator<Item = Box<Page>> {
+        self.pages.into_iter()
     }
 }
 

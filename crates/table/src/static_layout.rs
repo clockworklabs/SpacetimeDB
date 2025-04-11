@@ -438,7 +438,7 @@ impl LayoutBuilder {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::blob_store::HashMapBlobStore;
+    use crate::{blob_store::HashMapBlobStore, page_pool::PagePool};
     use proptest::prelude::*;
     use spacetimedb_sats::{bsatn, proptest::generate_typed_row, AlgebraicType, ProductType};
 
@@ -654,6 +654,7 @@ mod test {
 
         #[test]
         fn known_bsatn_same_as_bflatn_from((ty, val) in generate_typed_row()) {
+            let pool = PagePool::default();
             let mut blob_store = HashMapBlobStore::default();
             let mut table = crate::table::test::table(ty);
             let Some(static_layout) = table.static_layout().cloned() else {
@@ -662,7 +663,7 @@ mod test {
                 return Err(TestCaseError::reject("Var-length type"));
             };
 
-            let (_, row_ref) = table.insert(&mut blob_store, &val).unwrap();
+            let (_, row_ref) = table.insert(&pool, &mut blob_store, &val).unwrap();
             let bytes = row_ref.get_row_data();
 
             let slow_path = bsatn::to_vec(&row_ref).unwrap();
@@ -682,6 +683,7 @@ mod test {
 
         #[test]
         fn known_bflatn_same_as_pv_from((ty, val) in generate_typed_row()) {
+            let pool = PagePool::default();
             let mut blob_store = HashMapBlobStore::default();
             let mut table = crate::table::test::table(ty);
             let Some(static_layout) = table.static_layout().cloned() else {
@@ -691,7 +693,7 @@ mod test {
             };
             let bsatn = bsatn::to_vec(&val).unwrap();
 
-            let (_, row_ref) = table.insert(&mut blob_store, &val).unwrap();
+            let (_, row_ref) = table.insert(&pool, &mut blob_store, &val).unwrap();
             let slow_path = row_ref.get_row_data();
 
             let mut fast_path = vec![0u8; slow_path.len()];
