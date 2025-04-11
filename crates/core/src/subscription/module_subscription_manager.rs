@@ -84,6 +84,11 @@ impl Plan {
     pub fn plans_fragments(&self) -> impl Iterator<Item = &SubscriptionPlan> + '_ {
         self.plans.iter()
     }
+
+    /// The `SQL` text of this subscription.
+    pub fn sql(&self) -> &str {
+        &self.sql
+    }
 }
 
 /// For each client, we hold a handle for sending messages, and we track the queries they are subscribed to.
@@ -634,8 +639,14 @@ impl SubscriptionManager {
                                 sql = qstate.query.sql,
                                 reason = ?err,
                             );
-                            acc.errs
-                                .extend(clients_for_query.map(|id| (id, err.to_string().into_boxed_str())))
+                            let err = DBError::WithSql {
+                                sql: qstate.query.sql.as_str().into(),
+                                error: Box::new(err.into()),
+                            }
+                            .to_string()
+                            .into_boxed_str();
+
+                            acc.errs.extend(clients_for_query.map(|id| (id, err.clone())))
                         }
                         // The query didn't return any rows to update
                         Ok(None) => {}
