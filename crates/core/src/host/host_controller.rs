@@ -7,7 +7,7 @@ use crate::db::datastore::traits::Program;
 use crate::db::db_metrics::DB_METRICS;
 use crate::db::relational_db::{self, DiskSizeFn, RelationalDB, Txdata};
 use crate::db::{self, db_metrics};
-use crate::energy::{EnergyMonitor, EnergyQuanta};
+use crate::energy::{EnergyMonitor, EnergyQuanta, NullEnergyMonitor};
 use crate::messages::control_db::{Database, HostType};
 use crate::module_host_context::ModuleCreationContext;
 use crate::replica_context::ReplicaContext;
@@ -23,11 +23,13 @@ use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_durability::{self as durability, TxOffset};
 use spacetimedb_lib::hash_bytes;
 use spacetimedb_paths::server::{ReplicaDir, ServerDataDir};
+use spacetimedb_paths::FromPathUnchecked;
 use spacetimedb_sats::hash::Hash;
 use std::future::Future;
 use std::ops::Deref;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use tempfile::TempDir;
 use tokio::sync::{watch, OwnedRwLockReadGuard, OwnedRwLockWriteGuard, RwLock as AsyncRwLock};
 use tokio::task::AbortHandle;
 
@@ -245,6 +247,20 @@ impl HostController {
         *guard = Some(host);
 
         Ok(rx)
+    }
+
+    /// Construct an in-memory instance of `database` running `program`,
+    /// initialize it, then immediately destroy it.
+    ///
+    /// This is used during an initial, fresh publish operation
+    /// in order to check the `program`'s validity as a module,
+    /// since some validity checks we'd like to do (e.g. typechecking RLS filters)
+    /// require a fully instantiated database.
+    ///
+    /// This is not necessary during hotswap publishes,
+    /// as the automigration planner and executor accomplish the same validity checks.
+    pub async fn check_module_validity(&self, database: Database, program: Program) -> anyhow::Result<()> {
+        Host::try_init_in_memory_to_check(self, database, program).await
     }
 
     /// Run a computation on the [`RelationalDB`] of a [`ModuleHost`] managed by
@@ -786,6 +802,61 @@ impl Host {
             scheduler,
             metrics_task,
         })
+    }
+
+    /// Construct an in-memory instance of `database` running `program`,
+    /// initialize it, then immediately destroy it.
+    ///
+    /// This is used during an initial, fresh publish operation
+    /// in order to check the `program`'s validity as a module,
+    /// since some validity checks we'd like to do (e.g. typechecking RLS filters)
+    /// require a fully instantiated database.
+    ///
+    /// This is not necessary during hotswap publishes,
+    /// as the automigration planner and executor accomplish the same validity checks.
+    async fn try_init_in_memory_to_check(
+        host_controller: &HostController,
+        database: Database,
+        program: Program,
+    ) -> anyhow::Result<()> {
+        let HostController { runtimes, .. } = host_controller;
+
+        // Even in-memory databases acquire a lockfile.
+        // Grab a tempdir to put that lockfile in.
+        let phony_replica_dir = TempDir::with_prefix("spacetimedb-publish-in-memory-check")
+            .context("Error creating temporary directory to house temporary database during publish")?;
+
+        // Leave the `TempDir` instance in place, so that its destructor will still run.
+        let phony_replica_dir = ReplicaDir::from_path_unchecked(phony_replica_dir.path().to_owned());
+
+        let (db, _connected_clients) = RelationalDB::open(
+            &phony_replica_dir,
+            database.database_identity,
+            database.owner_identity,
+            EmptyHistory::new(),
+            None,
+            None,
+        )?;
+
+        let (program, launched) = launch_module(
+            database,
+            0,
+            program,
+            // TODO: Should we be reporting this to the caller somehow?
+            || log::error!("launch_module on_panic called for temporary publish in-memory instance"),
+            Arc::new(db),
+            Arc::new(NullEnergyMonitor),
+            phony_replica_dir,
+            runtimes.clone(),
+        )
+        .await?;
+
+        let call_result = launched.module_host.init_database(program).await?;
+        if let Some(call_result) = call_result {
+            Result::from(call_result)?;
+        }
+
+        Ok(())
     }
 
     /// Attempt to replace this [`Host`]'s [`ModuleHost`] with a new one running

@@ -38,6 +38,8 @@ pub struct CallParams {
     reducer: String,
 }
 
+pub const NO_SUCH_DATABASE: (StatusCode, &'static str) = (StatusCode::NOT_FOUND, "No such database.");
+
 pub async fn call<S: ControlStateDelegate + NodeDelegate>(
     State(worker_ctx): State<S>,
     Extension(auth): Extension<SpacetimeAuth>,
@@ -60,7 +62,7 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
         .await?
         .ok_or_else(|| {
             log::error!("Could not find database: {}", db_identity.to_hex());
-            (StatusCode::NOT_FOUND, "No such database.")
+            NO_SUCH_DATABASE
         })?;
     let identity = database.owner_identity;
 
@@ -208,7 +210,7 @@ where
     let db_identity = name_or_identity.resolve(&worker_ctx).await?;
     let database = worker_ctx_find_database(&worker_ctx, &db_identity)
         .await?
-        .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
+        .ok_or(NO_SUCH_DATABASE)?;
 
     let leader = worker_ctx
         .leader(database.id)
@@ -265,7 +267,7 @@ pub async fn db_info<S: ControlStateDelegate>(
     log::trace!("Resolved identity to: {database_identity:?}");
     let database = worker_ctx_find_database(&worker_ctx, &database_identity)
         .await?
-        .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
+        .ok_or(NO_SUCH_DATABASE)?;
     log::trace!("Fetched database from the worker db for database identity: {database_identity:?}");
 
     let response = DatabaseResponse::from(database);
@@ -299,7 +301,7 @@ where
     let database_identity: Identity = name_or_identity.resolve(&worker_ctx).await?;
     let database = worker_ctx_find_database(&worker_ctx, &database_identity)
         .await?
-        .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
+        .ok_or(NO_SUCH_DATABASE)?;
 
     if database.owner_identity != auth.identity {
         return Err((
@@ -401,7 +403,7 @@ where
     let db_identity = name_or_identity.resolve(&worker_ctx).await?;
     let database = worker_ctx_find_database(&worker_ctx, &db_identity)
         .await?
-        .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
+        .ok_or(NO_SUCH_DATABASE)?;
 
     let auth = AuthCtx::new(database.owner_identity, auth.identity);
     log::debug!("auth: {auth:?}");
