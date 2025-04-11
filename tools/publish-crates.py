@@ -38,6 +38,15 @@ def process_crate(crate_name, crates_dir, recursive=False):
 
     return all_deps
 
+def dedupe_preserve_first(items):
+    seen = set()
+    result = []
+    for item in items:
+        if item not in seen:
+            seen.add(item)
+            result.append(item)
+    return result
+
 def main():
     parser = argparse.ArgumentParser(description="Recursively find spacetimedb-* dependencies for one or more crates.")
     parser.add_argument("crate", nargs="+", help="One or more crate names (in crates/<crate>/Cargo.toml)")
@@ -51,7 +60,10 @@ def main():
         deps = process_crate(crate, crates_dir, recursive=args.recursive)
         all_crates.extend(dep_to_crate_dir(dep) for dep in deps)
 
-    print("\nAll crates including dependencies:")
+    # Reverse the list, then dedupe preserving first (i.e., keep last occurrence from original)
+    all_crates = dedupe_preserve_first(reversed(all_crates))
+
+    print("\nAll crates including dependencies (deduplicated, last occurrence kept):")
     for crate in all_crates:
         print(crate)
 
