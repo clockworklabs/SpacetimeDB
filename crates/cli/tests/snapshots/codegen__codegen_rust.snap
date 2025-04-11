@@ -2270,6 +2270,7 @@ use spacetimedb_sdk::__codegen::{
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
+#[derive(Copy, Eq, Hash)]
 pub enum NamespaceTestC {
     Foo,
 

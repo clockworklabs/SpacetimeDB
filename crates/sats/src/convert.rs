@@ -1,3 +1,4 @@
+use crate::sum_value::SumTag;
 use crate::{i256, u256};
 use crate::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
 use spacetimedb_primitives::{ColId, ConstraintId, IndexId, ScheduleId, SequenceId, TableId};
@@ -25,6 +26,12 @@ impl From<AlgebraicType> for ProductType {
     }
 }
 
+impl From<()> for AlgebraicValue {
+    fn from((): ()) -> Self {
+        AlgebraicValue::unit()
+    }
+}
+
 macro_rules! built_in_into {
     ($native:ty, $kind:ident) => {
         impl From<$native> for AlgebraicValue {
@@ -45,6 +52,7 @@ built_in_into!(&str, String);
 built_in_into!(String, String);
 built_in_into!(&[u8], Bytes);
 built_in_into!(Box<[u8]>, Bytes);
+built_in_into!(SumTag, Sum);
 
 macro_rules! system_id {
     ($name:ident) => {

@@ -528,6 +528,10 @@ mod tests {
                 sql: "select * from t limit 5",
                 msg: "Subscriptions do not support limit",
             },
+            TestCase {
+                sql: "select t.* from t join s on t.u32 = s.u32 where bytes = 0xABCD",
+                msg: "Columns must be qualified in join expressions",
+            },
         ] {
             let result = parse_and_type_sub(sql, &tx);
             assert!(result.is_err(), "{msg}");

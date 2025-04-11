@@ -684,6 +684,33 @@ pub(crate) mod tests {
         Ok(())
     }
 
+    /// Test projecting columns from both tables in join
+    #[test]
+    fn test_project_join() -> anyhow::Result<()> {
+        let db = TestDB::in_memory()?;
+
+        let t_schema = [("id", AlgebraicType::U8), ("x", AlgebraicType::U8)];
+        let s_schema = [("id", AlgebraicType::U8), ("y", AlgebraicType::U8)];
+
+        let t_id = db.create_table_for_test("t", &t_schema, &[0.into()])?;
+        let s_id = db.create_table_for_test("s", &s_schema, &[0.into()])?;
+
+        insert_rows(&db, t_id, [product![1_u8, 2_u8]])?;
+        insert_rows(&db, s_id, [product![1_u8, 3_u8]])?;
+
+        let id = identity_from_u8(1);
+        let auth = AuthCtx::new(Identity::ZERO, id);
+
+        assert_query_results(
+            &db,
+            "select t.x, s.y from t join s on t.id = s.id",
+            &auth,
+            [product![2_u8, 3_u8]],
+        );
+
+        Ok(())
+    }
+
     #[test]
     fn test_select_star_table() -> ResultTest<()> {
         let (db, input) = create_data(1)?;

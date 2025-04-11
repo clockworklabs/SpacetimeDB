@@ -9,6 +9,7 @@ use std::sync::{Arc, Barrier, Mutex};
 use module_bindings::*;
 
 use rand::RngCore;
+use spacetimedb_sdk::TableWithPrimaryKey;
 use spacetimedb_sdk::{
     credentials, i256, u256, unstable::CallReducerFlags, Compression, ConnectionId, DbConnectionBuilder, DbContext,
     Event, Identity, ReducerEvent, Status, SubscriptionHandle, Table, TimeDuration, Timestamp,
@@ -126,6 +127,8 @@ fn main() {
         "two-different-compression-algos" => exec_two_different_compression_algos(),
         "test-parameterized-subscription" => test_parameterized_subscription(),
         "test-rls-subscription" => test_rls_subscription(),
+        "pk-simple-enum" => exec_pk_simple_enum(),
+        "indexed-simple-enum" => exec_indexed_simple_enum(),
         _ => panic!("Unknown test: {}", test),
     }
 }
@@ -2357,4 +2360,52 @@ fn test_rls_subscription() {
         [sub_1, ins_1],
     );
     ctr_for_test.wait_for_all();
+}
+
+fn exec_pk_simple_enum() {
+    let test_counter: Arc<TestCounter> = TestCounter::new();
+    let mut updated = Some(test_counter.add_test("updated"));
+    connect_then(&test_counter, move |ctx| {
+        subscribe_these_then(ctx, &["SELECT * FROM pk_simple_enum"], move |ctx| {
+            let data1 = 42;
+            let data2 = 24;
+            let a = SimpleEnum::Two;
+            ctx.db.pk_simple_enum().on_update(move |_, old, new| {
+                assert_eq!(old.data, data1);
+                assert_eq!(new.data, data2);
+                assert_eq!(old.a, a);
+                assert_eq!(new.a, a);
+                put_result(&mut updated, Ok(()));
+            });
+            ctx.db.pk_simple_enum().on_insert(move |ctx, row| {
+                assert_eq!(row.data, data1);
+                assert_eq!(row.a, a);
+                ctx.reducers().update_pk_simple_enum(a, data2).unwrap();
+            });
+            ctx.db.pk_simple_enum().on_delete(|_, _| unreachable!());
+            ctx.reducers().insert_pk_simple_enum(a, data1).unwrap();
+        });
+    });
+    test_counter.wait_for_all();
+}
+
+fn exec_indexed_simple_enum() {
+    let test_counter: Arc<TestCounter> = TestCounter::new();
+    let mut updated = Some(test_counter.add_test("updated"));
+    connect_then(&test_counter, move |ctx| {
+        subscribe_these_then(ctx, &["SELECT * FROM indexed_simple_enum"], move |ctx| {
+            let a1 = SimpleEnum::Two;
+            let a2 = SimpleEnum::One;
+            ctx.db.indexed_simple_enum().on_insert(move |ctx, row| match &row.n {
+                SimpleEnum::Two => ctx.reducers().update_indexed_simple_enum(a1, a2).unwrap(),
+                SimpleEnum::One => {
+                    assert_eq!(row.n, a2);
+                    put_result(&mut updated, Ok(()));
+                }
+                SimpleEnum::Zero => unreachable!(),
+            });
+            ctx.reducers().insert_into_indexed_simple_enum(a1).unwrap();
+        });
+    });
+    test_counter.wait_for_all();
 }

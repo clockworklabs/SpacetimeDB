@@ -7,9 +7,8 @@ use anyhow::{bail, Context, Error};
 use clap::{Arg, ArgMatches};
 use convert_case::{Case, Casing};
 use itertools::Itertools;
-use spacetimedb::Identity;
 use spacetimedb_lib::sats::{self, AlgebraicType, Typespace};
-use spacetimedb_lib::ProductTypeElement;
+use spacetimedb_lib::{Identity, ProductTypeElement};
 use spacetimedb_schema::def::{ModuleDef, ReducerDef};
 use std::fmt::Write;
 

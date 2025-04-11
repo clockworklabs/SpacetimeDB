@@ -143,6 +143,7 @@ pub(crate) fn derive_satstype(ty: &SatsType<'_>) -> TokenStream {
     let name = &ty.ident;
     let krate = &ty.krate;
 
+    let mut add_impls_for_plain_enum = false;
     let typ = match &ty.data {
         SatsTypeData::Product(fields) => {
             let fields = fields.iter().map(|field| {
@@ -166,6 +167,10 @@ pub(crate) fn derive_satstype(ty: &SatsType<'_>) -> TokenStream {
             )
         }
         SatsTypeData::Sum(variants) => {
+            // To allow an enum, with all-unit variants, as an index key type,
+            // add derive `Filterable` for the enum.
+            add_impls_for_plain_enum = variants.iter().all(|var| var.ty.is_none());
+
             let unit = syn::Type::Tuple(syn::TypeTuple {
                 paren_token: Default::default(),
                 elems: Default::default(),
@@ -186,8 +191,7 @@ pub(crate) fn derive_satstype(ty: &SatsType<'_>) -> TokenStream {
                     [#(#variants),*]
                 )
             )
-            // todo!()
-        } // syn::Data::Union(u) => return Err(syn::Error::new(u.union_token.span, "unions not supported")),
+        }
     };
 
     let mut sats_generics = ty.generics.clone();
@@ -205,7 +209,43 @@ pub(crate) fn derive_satstype(ty: &SatsType<'_>) -> TokenStream {
     }
     let (_, typeid_ty_generics, _) = typeid_generics.split_for_impl();
 
+    let impl_plain_enum_extras = if add_impls_for_plain_enum {
+        // These will mostly be empty as lifetime and type parameters must be constrained
+        // but const parameters don't require constraining.
+        let mut generics = ty.generics.clone();
+        add_type_bounds(&mut generics, &quote!(#krate::FilterableValue));
+        let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+        // Assume that the type is `Copy`, as most all-unit enums will be.
+        let filterable_impl = quote! {
+            #[automatically_derived]
+            impl #impl_generics #krate::FilterableValue for #name #ty_generics #where_clause {
+                type Column = #name #ty_generics;
+            }
+            #[automatically_derived]
+            impl #impl_generics #krate::FilterableValue for &#name #ty_generics #where_clause {
+                type Column = #name #ty_generics;
+            }
+        };
+
+        let mut generics = ty.generics.clone();
+        add_type_bounds(&mut generics, &quote!(#krate::DirectIndexKey));
+        let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+        let dik_impl = quote! {
+            #[automatically_derived]
+            impl #impl_generics #krate::DirectIndexKey for #name #ty_generics #where_clause {}
+        };
+
+        Some(quote! {
+            #filterable_impl
+            #dik_impl
+        })
+    } else {
+        None
+    };
+
     quote! {
+        #impl_plain_enum_extras
+
         #[automatically_derived]
         impl #impl_generics #krate::SpacetimeType for #name #ty_generics #where_clause {
             fn make_type<S: #krate::sats::typespace::TypespaceBuilder>(__typespace: &mut S) -> #krate::sats::AlgebraicType {
