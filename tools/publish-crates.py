@@ -49,14 +49,14 @@ def dedupe_preserve_first(items):
 
 def main():
     parser = argparse.ArgumentParser(description="Recursively find spacetimedb-* dependencies for one or more crates.")
-    parser.add_argument("crate", nargs="+", help="One or more crate names (in crates/<crate>/Cargo.toml)")
+    parser.add_argument("root", nargs="+", help="One or more crate names")
     parser.add_argument("--recursive", action="store_true", help="Recursively resolve spacetimedb-* dependencies")
     args = parser.parse_args()
 
     crates_dir = Path("crates")
-    all_crates = list(args.crate)
+    all_crates = list(args.root)
 
-    for crate in args.crate:
+    for crate in args.root:
         deps = process_crate(crate, crates_dir, recursive=args.recursive)
         all_crates.extend(dep_to_crate_dir(dep) for dep in deps)
 
