@@ -40,7 +40,7 @@ fi
 
 BASEDIR=$(pwd)
 declare -a ROOTS=(cli standalone sdk bindings)
-declare -a CRATES=(python3 tools/find-publish-list.py --recursive --quiet "${ROOTS[@]}")
+declare -a CRATES=($(python3 tools/find-publish-list.py --recursive --quiet "${ROOTS[@]}"))
 
 for crate in "${CRATES[@]}"; do
     if [ ! -d "${BASEDIR}/crates/${crate}" ]; then
