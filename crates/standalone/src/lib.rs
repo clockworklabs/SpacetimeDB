@@ -230,17 +230,17 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
             None => {
                 let program = Program::from_bytes(&spec.program_bytes[..]);
 
-                let program_hash = self.program_store.put(&spec.program_bytes).await?;
-
-                debug_assert_eq!(program.hash, program_hash);
-
                 let mut database = Database {
                     id: 0,
                     database_identity: spec.database_identity,
                     owner_identity: *publisher,
                     host_type: spec.host_type,
-                    initial_program: program_hash,
+                    initial_program: program.hash,
                 };
+
+                let program_hash = self.program_store.put(&spec.program_bytes).await?;
+
+                debug_assert_eq!(program.hash, program_hash);
 
                 // Instantiate a temporary database in order to check that the module is valid.
                 // This will e.g. typecheck RLS filters.
