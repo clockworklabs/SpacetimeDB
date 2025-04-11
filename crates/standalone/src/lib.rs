@@ -339,9 +339,9 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
             database_identity.to_abbreviated_hex()
         );
 
-        self.control_db.delete_database(database_id)?;
+        self.control_db.delete_database(database.id)?;
 
-        for instance in self.control_db.get_replicas_by_database(database_id)? {
+        for instance in self.control_db.get_replicas_by_database(database.id)? {
             self.delete_replica(instance.id).await?;
         }
 
