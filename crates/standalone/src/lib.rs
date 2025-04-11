@@ -10,6 +10,7 @@ use async_trait::async_trait;
 use clap::{ArgMatches, Command};
 use spacetimedb::client::ClientActorIndex;
 use spacetimedb::config::{CertificateAuthority, MetadataFile};
+use spacetimedb::db::datastore::traits::Program;
 use spacetimedb::db::db_metrics::data_size::DATA_SIZE_METRICS;
 use spacetimedb::db::relational_db;
 use spacetimedb::db::{db_metrics::DB_METRICS, Config};
@@ -227,38 +228,30 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
         match existing_db {
             // The database does not already exist, so we'll create it.
             None => {
-                let initial_program = self.program_store.put(&spec.program_bytes).await?;
+                let program = Program::from_bytes(&spec.program_bytes[..]);
+
+                let program_hash = self.program_store.put(&spec.program_bytes).await?;
+
+                debug_assert_eq!(program.hash, program_hash);
 
                 let mut database = Database {
                     id: 0,
                     database_identity: spec.database_identity,
                     owner_identity: *publisher,
                     host_type: spec.host_type,
-                    initial_program,
+                    initial_program: program_hash,
                 };
+
+                // Instantiate a temporary database in order to check that the module is valid.
+                // This will e.g. typecheck RLS filters.
+                self.host_controller
+                    .check_module_validity(database.clone(), program)
+                    .await?;
+
                 let database_id = self.control_db.insert_database(database.clone())?;
                 database.id = database_id;
 
-                if let Err(e) = self.schedule_replicas(database_id, spec.num_replicas).await {
-                    // If we failed to schedule any replicas, roll back the publish operation,
-                    // rather than leaving a broken entry in the control DB.
-                    // Note that this is non-atomic, since the standalone control DB is not transactional.
-                    // An ill-timed crash can leave the broken entry in place.
-                    //
-                    // One way that we can fail to schedule replicas
-                    // is if the `initial_program` contains an invalid RLS query.
-                    // It would be nice if we could check the RLS queries,
-                    // and any other validity constraints, before inserting the control DB entry,
-                    // but unfortunately our SQL compiler depends on having an instantiated replica,
-                    // and instantiating a replica depends on having a control DB entry for the database.
-                    self.delete_database_by_id(database_id).await.with_context(|| {
-                        format!(
-                            "Failed to schedule replicas due to error {e:#?}, then encountered error when rolling back"
-                        )
-                    })?;
-
-                    return Err(e);
-                }
+                self.schedule_replicas(database_id, spec.num_replicas).await?;
 
                 Ok(None)
             }
@@ -346,7 +339,13 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
             database_identity.to_abbreviated_hex()
         );
 
-        self.delete_database_by_id(database.id).await
+        self.control_db.delete_database(database_id)?;
+
+        for instance in self.control_db.get_replicas_by_database(database_id)? {
+            self.delete_replica(instance.id).await?;
+        }
+
+        Ok(())
     }
 
     async fn add_energy(&self, identity: &Identity, amount: EnergyQuanta) -> anyhow::Result<()> {
@@ -393,16 +392,6 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
 }
 
 impl StandaloneEnv {
-    /// Delete the database denoted by `database_id`,
-    /// and unschedule all of its replicas.
-    async fn delete_database_by_id(&self, database_id: u64) -> anyhow::Result<()> {
-        self.control_db.delete_database(database_id)?;
-        for instance in self.control_db.get_replicas_by_database(database_id)? {
-            self.delete_replica(instance.id).await?;
-        }
-        Ok(())
-    }
-
     async fn insert_replica(&self, replica: Replica) -> Result<(), anyhow::Error> {
         let mut new_replica = replica.clone();
         let id = self.control_db.insert_replica(replica)?;
