@@ -89,7 +89,7 @@ pub struct HostController {
     /// Provides implementations of [`Durability`] for each replica.
     durability: Arc<dyn DurabilityProvider>,
     /// The page pool all databases will use by cloning the ref counted pool.
-    page_pool: PagePool,
+    pub page_pool: PagePool,
     /// The runtimes for running our modules.
     runtimes: Arc<HostRuntimes>,
 }

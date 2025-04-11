@@ -1,11 +1,12 @@
-use std::time::Duration;
-
 use crate::execution_context::WorkloadType;
 use crate::hash::Hash;
 use once_cell::sync::Lazy;
 use prometheus::{GaugeVec, HistogramVec, IntCounterVec, IntGaugeVec};
 use spacetimedb_lib::{ConnectionId, Identity};
 use spacetimedb_metrics::metrics_group;
+use spacetimedb_table::{page_pool::PagePool, MemoryUsage};
+use std::{sync::Once, time::Duration};
+use tokio::{spawn, time::sleep};
 
 metrics_group!(
     pub struct WorkerMetrics {
@@ -38,6 +39,21 @@ metrics_group!(
         #[help = "Total memory used by jemalloc"]
         #[labels(node_id: str)]
         pub jemalloc_resident_bytes: IntGaugeVec,
+
+        #[name = page_pool_resident_bytes]
+        #[help = "Total memory used by the page pool"]
+        #[labels(node_id: str)]
+        pub page_pool_resident_bytes: IntGaugeVec,
+
+        #[name = page_pool_unpooled_pages]
+        #[help = "Total number of pages outside the page pool"]
+        #[labels(node_id: str)]
+        pub page_pool_unpooled_pages: IntGaugeVec,
+
+        #[name = page_pool_dropped_pages]
+        #[help = "Total number of pages dropped by the page pool"]
+        #[labels(node_id: str)]
+        pub page_pool_dropped_pages: IntGaugeVec,
 
         #[name = tokio_num_workers]
         #[help = "Number of core tokio workers"]
@@ -229,8 +245,6 @@ pub static WORKER_METRICS: Lazy<WorkerMetrics> = Lazy::new(WorkerMetrics::new);
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemalloc_ctl::{epoch, stats};
 
-use std::sync::Once;
-use tokio::{spawn, time::sleep};
 static SPAWN_JEMALLOC_GUARD: Once = Once::new();
 pub fn spawn_jemalloc_stats(node_id: String) {
     #[cfg(not(target_env = "msvc"))]
@@ -254,6 +268,25 @@ pub fn spawn_jemalloc_stats(node_id: String) {
                     .jemalloc_active_bytes
                     .with_label_values(&node_id)
                     .set(active as i64);
+
+                sleep(Duration::from_secs(10)).await;
+            }
+        });
+    });
+}
+
+static SPAWN_PAGE_POOL_GUARD: Once = Once::new();
+pub fn spawn_page_pool_stats(node_id: String, page_pool: PagePool) {
+    SPAWN_PAGE_POOL_GUARD.call_once(|| {
+        spawn(async move {
+            let resident_bytes = WORKER_METRICS.page_pool_resident_bytes.with_label_values(&node_id);
+            let unpooled_pages = WORKER_METRICS.page_pool_unpooled_pages.with_label_values(&node_id);
+            let dropped_pages = WORKER_METRICS.page_pool_dropped_pages.with_label_values(&node_id);
+
+            loop {
+                resident_bytes.set(page_pool.heap_usage() as i64);
+                unpooled_pages.set(page_pool.unpooled_pages_count() as i64);
+                dropped_pages.set(page_pool.dropped_pages_count() as i64);
 
                 sleep(Duration::from_secs(10)).await;
             }

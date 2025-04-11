@@ -5746,6 +5746,7 @@ dependencies = [
  "spacetimedb-core",
  "spacetimedb-lib",
  "spacetimedb-paths",
+ "spacetimedb-table",
  "tempfile",
  "thiserror 1.0.69",
  "tikv-jemalloc-ctl",

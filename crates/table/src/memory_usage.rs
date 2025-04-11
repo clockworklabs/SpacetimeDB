@@ -1,3 +1,4 @@
+use core::sync::atomic::AtomicUsize;
 use std::hash::{BuildHasher, Hash};
 use std::mem;
 
@@ -27,6 +28,7 @@ impl MemoryUsage for u64 {}
 impl MemoryUsage for u128 {}
 impl MemoryUsage for u256 {}
 impl MemoryUsage for usize {}
+impl MemoryUsage for AtomicUsize {}
 impl MemoryUsage for i8 {}
 impl MemoryUsage for i16 {}
 impl MemoryUsage for i32 {}
