@@ -6,14 +6,8 @@ def find_spacetimedb_dependencies(cargo_toml_path):
     with open(cargo_toml_path, 'r') as file:
         cargo_data = toml.load(file)
 
-    dependencies = []
     deps = cargo_data.get('dependencies', {})
-
-    for dep in deps:
-        if dep.startswith("spacetimedb-"):
-            dependencies.append(dep)
-
-    return dependencies
+    return [dep for dep in deps if dep.startswith("spacetimedb-")]
 
 def dep_to_crate_dir(dep_name):
     return dep_name.replace("spacetimedb-", "", 1)
@@ -23,7 +17,7 @@ def process_crate(crate_name, crates_dir, recursive=False):
 
     if not cargo_toml_path.is_file():
         print(f"Warning: Cargo.toml not found for crate '{crate_name}' at {cargo_toml_path}")
-        return
+        return []
 
     print(f"\nChecking crate '{crate_name}'...")
     deps = find_spacetimedb_dependencies(cargo_toml_path)
@@ -34,10 +28,15 @@ def process_crate(crate_name, crates_dir, recursive=False):
     else:
         print("  No spacetimedb-* dependencies found.")
 
+    all_deps = list(deps)
+
     if recursive:
         for dep_name in deps:
             sub_crate = dep_to_crate_dir(dep_name)
-            process_crate(sub_crate, crates_dir, recursive=True)
+            sub_deps = process_crate(sub_crate, crates_dir, recursive=True)
+            all_deps.extend(sub_deps)
+
+    return all_deps
 
 def main():
     parser = argparse.ArgumentParser(description="Recursively find spacetimedb-* dependencies for a crate.")
@@ -46,7 +45,12 @@ def main():
     args = parser.parse_args()
 
     crates_dir = Path("crates")
-    process_crate(args.crate, crates_dir, recursive=args.recursive)
+    all_deps = process_crate(args.crate, crates_dir, recursive=args.recursive)
+
+    # Optional: Deduplicate and print flat list at the end
+    print("\nAll spacetimedb-* dependencies collected:")
+    for dep in all_deps:
+        print(dep)
 
 if __name__ == "__main__":
     main()
