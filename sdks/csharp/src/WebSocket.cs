@@ -352,9 +352,9 @@ namespace SpacetimeDB
         public Task Close(WebSocketCloseStatus code = WebSocketCloseStatus.NormalClosure)
         {
 #if UNITY_WEBGL && !UNITY_EDITOR
-            if (_isConnected)
+            if (_isConnected && _webglSocketId >= 0)
             {
-                HandleWebGLClose(_webglSocketId, (int)code, "Disconnecting normally.");
+                WebSocket_Close(_webglSocketId, (int)code, "Disconnecting normally.");
                 _isConnected = false;
             }
 #else
@@ -445,7 +445,6 @@ namespace SpacetimeDB
         
         public void HandleWebGLMessage(int socketId, byte[] message)
         {
-            UnityEngine.Debug.Log($"HandleWebGLMessage: {message.Length}");
             if (socketId == _webglSocketId && OnMessage != null)
             {
                 dispatchQueue.Enqueue(() => OnMessage(message, DateTime.UtcNow));
@@ -458,7 +457,7 @@ namespace SpacetimeDB
             if (socketId == _webglSocketId && OnClose != null)
             {
                 _isConnected = false;
-                var ex = code != 1000 ? new Exception($"WebSocket closed with code {code}: {reason}") : null;
+                var ex = code != (int)WebSocketCloseStatus.NormalClosure ? new Exception($"WebSocket closed with code {code}: {reason}") : null;
                 dispatchQueue.Enqueue(() => OnClose?.Invoke(ex));
             }
         }

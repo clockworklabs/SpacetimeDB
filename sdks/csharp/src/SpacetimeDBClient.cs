@@ -195,7 +195,9 @@ namespace SpacetimeDB
                 SpacetimeDBNetworkManager._instance.StartCoroutine(PreProcessMessages());
 #endif
 #endif
+            
 #if !(UNITY_WEBGL && !UNITY_EDITOR)
+            // For targets other than webgl we start a thread to pre-process messages
             networkMessageProcessThread = new Thread(PreProcessMessages);
             networkMessageProcessThread.Start();
 #endif
@@ -368,26 +370,23 @@ namespace SpacetimeDB
             {
                 
 #if UNITY_WEBGL && !UNITY_EDITOR
-                if (_messageQueue.Count > 0)
-#else
-                try
+                yield return null;
+                while (_messageQueue.Count > 0)
 #endif
+                try
                 {
                     var message = _messageQueue.Take(_preProcessCancellationToken);
                     var preprocessedMessage = PreProcessMessage(message);
                     _preProcessedNetworkMessages.Add(preprocessedMessage, _preProcessCancellationToken);
                 }
-#if UNITY_WEBGL && !UNITY_EDITOR
-                else
-                {
-                    yield return new UnityEngine.WaitForSeconds(0.01f);
-                }
-#else
                 catch (OperationCanceledException)
                 {
+#if UNITY_WEBGL && !UNITY_EDITOR
+                    break;
+#else
                     return; // Normal shutdown
-                }
 #endif
+                }
             }
 
             IEnumerable<(IRemoteTableHandle, TableUpdate)> GetTables(DatabaseUpdate updates)
@@ -609,7 +608,13 @@ namespace SpacetimeDB
         {
             isClosing = true;
             connectionClosed = true;
-            webSocket.Close();
+            
+            // Only try to close if the connection is active
+            if (webSocket.IsConnected)
+            {
+                webSocket.Close();
+            }
+            
             _preProcessCancellationTokenSource.Cancel();
         }
 
