@@ -1,5 +1,6 @@
 import argparse
 import toml
+import sys
 from pathlib import Path
 
 def find_spacetimedb_dependencies(cargo_toml_path):
@@ -16,8 +17,7 @@ def process_crate(crate_name, crates_dir, recursive=False, debug=False):
     cargo_toml_path = crates_dir / crate_name / "Cargo.toml"
 
     if not cargo_toml_path.is_file():
-        if debug:
-            print(f"Warning: Cargo.toml not found for crate '{crate_name}' at {cargo_toml_path}")
+        print(f"Warning: Cargo.toml not found for crate '{crate_name}' at {cargo_toml_path}", file=sys.stderr)
         return []
 
     if debug:
