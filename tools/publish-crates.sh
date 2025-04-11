@@ -39,7 +39,8 @@ if [ $DRY_RUN -ne 1 ]; then
 fi
 
 BASEDIR=$(pwd)
-declare -a CRATES=("metrics" "primitives" "sql-parser" "bindings-macro" "bindings-sys" "data-structures" "sats" "lib" "bindings" "client-api-messages" "schema" "table" "paths" "commitlog" "durability" "fs-utils" "snapshot" "expr" "physical-plan" "execution" "vm" "physical-plan" "query" "subscription" "core" "cli" "client-api" "standalone" "sdk")
+declare -a ROOTS=(cli standalone sdk bindings)
+declare -a CRATES=(python3 tools/find-publish-list.py --recursive --quiet "${ROOTS[@]}")
 
 for crate in "${CRATES[@]}"; do
     if [ ! -d "${BASEDIR}/crates/${crate}" ]; then
