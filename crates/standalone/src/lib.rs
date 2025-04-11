@@ -510,6 +510,7 @@ mod tests {
         ca.get_or_create_keys()?;
         let config = Config {
             storage: Storage::Memory,
+            page_pool_max_size: None,
         };
 
         let _env = StandaloneEnv::init(config, &ca, data_dir.clone()).await?;

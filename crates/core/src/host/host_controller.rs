@@ -175,7 +175,7 @@ impl HostController {
             durability,
             runtimes: HostRuntimes::new(&data_dir),
             data_dir,
-            page_pool: <_>::default(),
+            page_pool: PagePool::new(default_config.page_pool_max_size),
         }
     }
 
