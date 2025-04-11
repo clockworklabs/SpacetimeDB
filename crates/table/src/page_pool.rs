@@ -1,7 +1,7 @@
 use super::{indexes::Size, page::Page};
 use crate::indexes::max_rows_in_page;
 use crate::{page::PageHeader, MemoryUsage};
-use core::sync::atomic::AtomicUsize;
+use core::sync::atomic::{AtomicUsize, Ordering};
 use crossbeam_queue::ArrayQueue;
 use spacetimedb_sats::bsatn::{self, DecodeError};
 use spacetimedb_sats::de::{
@@ -53,6 +53,19 @@ impl PagePool {
     pub fn take_deserialize_from(&self, buf: &[u8]) -> Result<Box<Page>, DecodeError> {
         self.deserialize(bsatn::Deserializer::new(&mut &*buf))
     }
+
+    /// Returns the number of pages outside the pool.
+    ///
+    /// Note that if a page is dropped outside the pool,
+    /// it won't be aware and will count that as a leak.s
+    pub fn unpooled_pages_count(&self) -> usize {
+        self.inner.unpooled_pages_count.load(Ordering::Relaxed)
+    }
+
+    /// Returns the number of pages dropped by the pool because the pool was at capacity.
+    pub fn dropped_pages_count(&self) -> usize {
+        self.inner.dropped_pages_count.load(Ordering::Relaxed)
+    }
 }
 
 impl<'de> DeserializeSeed<'de> for &PagePool {
@@ -98,26 +111,41 @@ impl<'de> ProductVisitor<'de> for &PagePool {
 /// The inner actual page pool containing all the logic.
 struct PagePoolInner {
     pages: ArrayQueue<Box<Page>>,
+    unpooled_pages_count: AtomicUsize,
+    dropped_pages_count: AtomicUsize,
 }
 
 impl MemoryUsage for PagePoolInner {
     fn heap_usage(&self) -> usize {
-        let Self { pages } = self;
-        pages.capacity() * size_of::<(AtomicUsize, Box<Page>)>()
+        let Self {
+            pages,
+            unpooled_pages_count,
+            dropped_pages_count,
+        } = self;
+        unpooled_pages_count.heap_usage() +
+        dropped_pages_count.heap_usage() +
+        // This is the amount the queue itself takes up on the heap.
+        pages.capacity() * size_of::<(AtomicUsize, Box<Page>)>() +
+        // Each page takes up a fixed amount.
+        pages.len() * size_of::<Page>()
     }
 }
 
 impl Default for PagePoolInner {
     fn default() -> Self {
-        const MAX_PAGE_MEM: usize = 32 * (1 << 30); // 32 GiB
+        const MAX_PAGE_MEM: usize = 8 * (1 << 30); // 32 GiB
         const PAGE_SIZE: usize = 64 * (1 << 10); // 64 KiB, `size_of::<Page>()`
 
-        // 2 ^ 19 pages at most.
+        // 2 ^ 17 pages at most.
         // Each slot in the pool is `(AtomicCell, Box<Page>)` which takes up 16 bytes.
-        // The pool will therefore have a fixed cost of 2^23 bytes, i.e., 8 MiB.
+        // The pool will therefore have a fixed cost of 2^20 bytes, i.e., 2 MiB.
         const MAX_POOLED_PAGES: usize = MAX_PAGE_MEM / PAGE_SIZE;
         let pages = ArrayQueue::new(MAX_POOLED_PAGES);
-        Self { pages }
+        Self {
+            pages,
+            unpooled_pages_count: <_>::default(),
+            dropped_pages_count: <_>::default(),
+        }
     }
 }
 
@@ -125,13 +153,19 @@ impl PagePoolInner {
     /// Puts back a [`Page`] into the pool.
     fn put(&self, page: Box<Page>) {
         // Add it to the pool if there's room, or just drop it.
-        let _ = self.pages.push(page);
+        if self.pages.push(page).is_ok() {
+            self.unpooled_pages_count.fetch_sub(1, Ordering::Relaxed);
+        } else {
+            self.dropped_pages_count.fetch_add(1, Ordering::Relaxed);
+        }
     }
 
     /// Takes a [`Page`] from the pool or creates a new one.
     ///
     /// The returned page supports a maximum of `max_rows_in_page` rows.
     fn take_with_max_row_count(&self, max_rows_in_page: usize) -> Box<Page> {
+        self.unpooled_pages_count.fetch_add(1, Ordering::Relaxed);
+
         self.pages
             .pop()
             .map(|mut page| {

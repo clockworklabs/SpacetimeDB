@@ -74,13 +74,10 @@ impl MemoryUsage for CommittedState {
             tables,
             blob_store,
             index_id_map,
-            page_pool,
+            page_pool: _,
         } = self;
-        next_tx_offset.heap_usage()
-            + tables.heap_usage()
-            + blob_store.heap_usage()
-            + index_id_map.heap_usage()
-            + page_pool.heap_usage()
+        // NOTE(centril): We do not want to include the heap usage of `page_pool` as it's a shared resource.
+        next_tx_offset.heap_usage() + tables.heap_usage() + blob_store.heap_usage() + index_id_map.heap_usage()
     }
 }
 
