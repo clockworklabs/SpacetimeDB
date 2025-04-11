@@ -6,14 +6,14 @@ partial struct CustomClass : System.IEquatable<CustomClass>, SpacetimeDB.BSATN.I
 {
     public void ReadFields(System.IO.BinaryReader reader)
     {
-        IntField = BSATN.IntField.Read(reader);
-        StringField = BSATN.StringField.Read(reader);
+        IntField = BSATN.IntFieldRW.Read(reader);
+        StringField = BSATN.StringFieldRW.Read(reader);
     }
 
     public void WriteFields(System.IO.BinaryWriter writer)
     {
-        BSATN.IntField.Write(writer, IntField);
-        BSATN.StringField.Write(writer, StringField);
+        BSATN.IntFieldRW.Write(writer, IntField);
+        BSATN.StringFieldRW.Write(writer, StringField);
     }
 
     public override string ToString() =>
@@ -21,8 +21,8 @@ partial struct CustomClass : System.IEquatable<CustomClass>, SpacetimeDB.BSATN.I
 
     public readonly partial struct BSATN : SpacetimeDB.BSATN.IReadWrite<CustomClass>
     {
-        internal static readonly SpacetimeDB.BSATN.I32 IntField = new();
-        internal static readonly SpacetimeDB.BSATN.String StringField = new();
+        internal static readonly SpacetimeDB.BSATN.I32 IntFieldRW = new();
+        internal static readonly SpacetimeDB.BSATN.String StringFieldRW = new();
 
         public CustomClass Read(System.IO.BinaryReader reader) =>
             SpacetimeDB.BSATN.IStructuralReadWrite.Read<CustomClass>(reader);
@@ -38,8 +38,8 @@ partial struct CustomClass : System.IEquatable<CustomClass>, SpacetimeDB.BSATN.I
             registrar.RegisterType<CustomClass>(_ => new SpacetimeDB.BSATN.AlgebraicType.Product(
                 new SpacetimeDB.BSATN.AggregateElement[]
                 {
-                    new(nameof(IntField), IntField.GetAlgebraicType(registrar)),
-                    new(nameof(StringField), StringField.GetAlgebraicType(registrar))
+                    new("IntField", IntFieldRW.GetAlgebraicType(registrar)),
+                    new("StringField", StringFieldRW.GetAlgebraicType(registrar))
                 }
             ));
 
