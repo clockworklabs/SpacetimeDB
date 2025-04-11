@@ -38,7 +38,7 @@ pub struct CallParams {
     reducer: String,
 }
 
-pub const NO_SUCH_DATABASE: (StatusCode, &'static str) = (StatusCode::NOT_FOUND, "No such database.");
+pub const NO_SUCH_DATABASE: (StatusCode, &str) = (StatusCode::NOT_FOUND, "No such database.");
 
 pub async fn call<S: ControlStateDelegate + NodeDelegate>(
     State(worker_ctx): State<S>,
