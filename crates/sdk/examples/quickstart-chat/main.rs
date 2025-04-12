@@ -66,7 +66,7 @@ fn connect_to_db(cert_path: Option<PathBuf>) -> DbConnection {
         .with_uri(&uri)
 //;    // ### Add trusted cert if provided
 //    if let Some(cert_path) = cert_path {
-//    //XXX: we don't wanna do this(that's why it's acception Option instead):
+//    //XXX: we don't wanna do this(that's why it's accepting Option instead):
 //        builder = builder.with_trusted_cert(cert_path);
 //    }
 //     // Finalize configuration and connect!
