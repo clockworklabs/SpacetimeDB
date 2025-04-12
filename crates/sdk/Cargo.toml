@@ -29,6 +29,10 @@ prometheus.workspace = true
 rand.workspace = true
 tokio.workspace = true
 tokio-tungstenite.workspace = true
+rustls = "0.23"
+rustls-pemfile = "2.2.0"
+#tokio-rustls="0.24"
+native-tls = "0.2"  # Explicitly add for Connector::NativeTls
 
 [dev-dependencies]
 # for quickstart-chat and cursive-chat examples

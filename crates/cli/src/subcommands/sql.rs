@@ -37,6 +37,14 @@ pub fn cli() -> clap::Command {
         .arg(common_args::anonymous())
         .arg(common_args::server().help("The nickname, host name or URL of the server hosting the database"))
         .arg(common_args::yes())
+        .arg(
+            Arg::new("cert")
+            .long("cert")
+            .value_name("FILE")
+            .action(clap::ArgAction::Set)
+            .value_parser(clap::value_parser!(std::path::PathBuf))
+            .help("Path to the server’s self-signed certificate or CA certificate (PEM format) to trust"),
+        )
 }
 
 pub(crate) async fn parse_req(mut config: Config, args: &ArgMatches) -> Result<Connection, anyhow::Error> {
@@ -45,10 +53,11 @@ pub(crate) async fn parse_req(mut config: Config, args: &ArgMatches) -> Result<C
     let database_name_or_identity = args.get_one::<String>("database").unwrap();
     let anon_identity = args.get_flag("anon_identity");
 
+    let client = reqwest::Client::new();//TODO: see where this is for 'spacetime sql'
     Ok(Connection {
         host: config.get_host_url(server)?,
         auth_header: get_auth_header(&mut config, anon_identity, server, !force).await?,
-        database_identity: database_identity(&config, database_name_or_identity, server).await?,
+        database_identity: database_identity(&config, database_name_or_identity, server, &client).await?,
         database: database_name_or_identity.to_string(),
     })
 }

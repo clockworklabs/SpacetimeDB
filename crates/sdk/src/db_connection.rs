@@ -748,6 +748,8 @@ pub struct DbConnectionBuilder<M: SpacetimeModule> {
     on_disconnect: Option<OnDisconnectCallback<M>>,
 
     params: WsParams,
+
+    trusted_cert: Option<std::path::PathBuf>,
 }
 
 /// This process's global connection ID, which will be attacked to all connections it makes.
@@ -794,6 +796,7 @@ impl<M: SpacetimeModule> DbConnectionBuilder<M> {
             on_connect_error: None,
             on_disconnect: None,
             params: <_>::default(),
+            trusted_cert: None,
         }
     }
 
@@ -841,6 +844,7 @@ but you must call one of them, or else the connection will never progress.
                 self.token.as_deref(),
                 get_connection_id(),
                 self.params,
+                self.trusted_cert.as_ref(),
             ))
         })
         .map_err(|source| crate::Error::FailedToConnect {
@@ -889,6 +893,15 @@ but you must call one of them, or else the connection will never progress.
     pub fn with_uri<E: std::fmt::Debug>(mut self, uri: impl TryInto<Uri, Error = E>) -> Self {
         let uri = uri.try_into().expect("Unable to parse supplied URI");
         self.uri = Some(uri);
+        self
+    }
+
+//    pub fn with_trusted_cert(mut self, cert: impl Into<std::path::PathBuf>) -> Self {
+//        self.trusted_cert = Some(cert.into());
+//        self
+//    }
+    pub fn with_trusted_cert(mut self, cert: Option<impl Into<std::path::PathBuf>>) -> Self {
+        self.trusted_cert = cert.map(|c| c.into());
         self
     }
 

@@ -21,10 +21,11 @@ use tokio::task::JoinHandle;
 use tokio::time::Instant;
 use tokio::{net::TcpStream, runtime};
 use tokio_tungstenite::{
-    connect_async_with_config,
+    //connect_async_with_config,
     tungstenite::client::IntoClientRequest,
     tungstenite::protocol::{Message as WebSocketMessage, WebSocketConfig},
-    MaybeTlsStream, WebSocketStream,
+    MaybeTlsStream,
+    WebSocketStream,
 };
 
 use crate::metrics::CLIENT_METRICS;
@@ -207,19 +208,85 @@ impl WsConnection {
         token: Option<&str>,
         connection_id: ConnectionId,
         params: WsParams,
+        trusted_cert: Option<&std::path::PathBuf>, // Changed to borrow PathBuf
     ) -> Result<Self, WsError> {
         let req = make_request(host, db_name, token, connection_id, params)?;
 
         // Grab the URI for error-reporting.
         let uri = req.uri().clone();
 
-        let (sock, _): (WebSocketStream<MaybeTlsStream<TcpStream>>, _) = connect_async_with_config(
+        let host = uri.clone(); //shadow, and it's thus wss:// not https://
+        use native_tls::Certificate;
+        use native_tls::TlsConnector;
+        use std::sync::Arc;
+        use tokio::net::TcpStream;
+        use tokio_tungstenite::{client_async_tls_with_config, Connector, MaybeTlsStream, WebSocketStream};
+
+        let host_str = host.host().ok_or(WsError::UriError(UriError::InvalidUri {
+            source: Arc::new("No host in URI".parse::<Uri>().unwrap_err().into()),
+        }))?;
+        let port = host.port_u16().ok_or(WsError::UriError(UriError::InvalidUri {
+            source: Arc::new("No port specified in URI".parse::<Uri>().unwrap_err().into()),
+        }))?;
+        if port == 0 {
+            //|| port > 65535 {
+            return Err(WsError::UriError(UriError::InvalidUri {
+                source: Arc::new(format!("Invalid port: {}", port).parse::<Uri>().unwrap_err().into()),
+            }));
+        }
+
+        let tcp_stream = TcpStream::connect((host_str, port))
+            .await
+            .map_err(|source| WsError::Tungstenite {
+                uri: uri.clone(),
+                source: Arc::new(tokio_tungstenite::tungstenite::Error::Io(source)),
+            })?;
+
+        let connector = if host.scheme_str() == Some("wss") {
+            let mut builder = TlsConnector::builder();
+            if let Some(cert_path) = trusted_cert {
+                let cert_pem = std::fs::read_to_string(cert_path).map_err(|e| WsError::Tungstenite {
+                    uri: uri.clone(),
+                    source: Arc::new(tokio_tungstenite::tungstenite::Error::Io(std::io::Error::new(
+                        e.kind(),
+                        format!("Failed to read cert file '{}': {}", cert_path.display(), e),
+                    ))),
+                })?;
+                let cert = Certificate::from_pem(cert_pem.as_bytes()).map_err(|e| WsError::Tungstenite {
+                    uri: uri.clone(),
+                    source: Arc::new(tokio_tungstenite::tungstenite::Error::Io(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        format!("Failed to parse PEM cert file '{}': {}", cert_path.display(), e),
+                    ))),
+                })?;
+                builder.add_root_certificate(cert);
+            } else {
+                println!("Didn't add trusted cert file {:?}", trusted_cert);
+            }
+            let tls_connector = builder.build().map_err(|e| WsError::Tungstenite {
+                uri: uri.clone(),
+                source: Arc::new(tokio_tungstenite::tungstenite::Error::Io(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    e,
+                ))),
+            })?;
+            Some(Connector::NativeTls(tls_connector))
+        } else {
+            //This is probably just ws:// ie. from http:// aka plaintext non-TLS
+            //println!("!!! Unexpected non-wss:// scheme, is: {}", uri);
+            None
+        };
+
+        let (sock, _): (WebSocketStream<MaybeTlsStream<TcpStream>>, _) = client_async_tls_with_config(
+//        let (sock, _): (WebSocketStream<MaybeTlsStream<TcpStream>>, _) = connect_async_with_config(
             req,
+            tcp_stream,
             // TODO(kim): In order to be able to replicate module WASM blobs,
             // `cloud-next` cannot have message / frame size limits. That's
             // obviously a bad default for all other clients, though.
             Some(WebSocketConfig::default().max_frame_size(None).max_message_size(None)),
-            false,
+            connector
+//            false,
         )
         .await
         .map_err(|source| WsError::Tungstenite {
@@ -231,7 +298,7 @@ impl WsConnection {
             connection_id,
             sock,
         })
-    }
+    } //connect(
 
     pub(crate) fn parse_response(bytes: &[u8]) -> Result<ServerMessage<BsatnFormat>, WsError> {
         let (compression, bytes) = bytes.split_first().ok_or(WsError::EmptyMessage)?;

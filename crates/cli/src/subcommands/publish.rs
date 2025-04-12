@@ -64,6 +64,14 @@ i.e. only lowercase ASCII letters and numbers, separated by dashes."),
                 .help("The nickname, domain name or URL of the server to host the database."),
         )
         .arg(
+            Arg::new("cert")
+                .long("cert")
+                .value_name("FILE")
+                .action(Set)
+                .value_parser(clap::value_parser!(std::path::PathBuf))
+                .help("Path to the server’s self-signed certificate or the CA certificate (PEM format) which signed it, to trust the server."),
+        )
+        .arg(
             common_args::yes()
         )
         .after_help("Run `spacetime help publish` for more detailed information.")
@@ -79,6 +87,9 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let wasm_file = args.get_one::<PathBuf>("wasm_file");
     let database_host = config.get_host_url(server)?;
     let build_options = args.get_one::<String>("build_options").unwrap();
+    //let cert_path = args.get_one::<String>("cert").map(PathBuf::from);
+    let cert: Option<&std::path::Path> = args.get_one::<std::path::PathBuf>("cert").map(|p| p.as_path());
+
 
     // If the user didn't specify an identity and we didn't specify an anonymous identity, then
     // we want to use the default identity
@@ -86,7 +97,25 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     //  easily create a new identity with an email
     let auth_header = get_auth_header(&mut config, anon_identity, server, !force).await?;
 
-    let client = reqwest::Client::new();
+    //use reqwest::Client;
+    //use std::path::Path;
+    pub async fn build_client(cert_path: Option<&std::path::Path>) -> anyhow::Result<reqwest::Client> {
+        let mut client_builder = reqwest::Client::builder();
+
+        if let Some(path) = cert_path {
+            let cert_pem = tokio::fs::read_to_string(path).await
+                .map_err(|e| anyhow::anyhow!("Failed to read certificate file {} err: {}", path.display(), e))?;
+            let cert = reqwest::Certificate::from_pem(cert_pem.as_bytes())
+                .map_err(|e| anyhow::anyhow!("Failed to parse certificate file {} err: {}", path.display(), e))?;
+            client_builder = client_builder.add_root_certificate(cert);
+        }
+
+        client_builder.build()
+            .map_err(|e| anyhow::anyhow!("Failed to build client with cert {:?} err: {}", cert_path, e))
+    }
+
+    //let client = reqwest::Client::new();
+    let client = build_client(cert).await?;
 
     // If a domain or identity was provided, we should locally make sure it looks correct and
     let mut builder = if let Some(name_or_identity) = name_or_identity {
@@ -119,7 +148,17 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         let url = Url::parse(&database_host)?;
         url.host_str().unwrap_or("<default>").to_string()
     };
-    if server_address != "localhost" && server_address != "127.0.0.1" {
+
+    use std::net::IpAddr;
+    fn is_local_address(address: &str) -> bool {
+        if let Ok(IpAddr::V4(ipv4)) = address.parse::<IpAddr>() {
+            ipv4.is_loopback() // Check if the address is a loopback address
+        } else {
+            address.eq_ignore_ascii_case("localhost") // or 'false'
+        }
+    }
+    //if server_address != "localhost" && server_address != "127.0.0.1" {
+    if !is_local_address(&server_address) {
         println!("You are about to publish to a non-local server: {}", server_address);
         if !y_or_n(force, "Are you sure you want to proceed?")? {
             println!("Aborting");

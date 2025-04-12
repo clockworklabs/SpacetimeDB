@@ -13,7 +13,7 @@ use spacetimedb_client_api::routes::database::DatabaseRoutes;
 use spacetimedb_client_api::routes::router;
 use spacetimedb_paths::cli::{PrivKeyPath, PubKeyPath};
 use spacetimedb_paths::server::ServerDataDir;
-use tokio::net::TcpListener;
+//use tokio::net::TcpListener;
 
 pub fn cli() -> clap::Command {
     clap::Command::new("start")
@@ -67,6 +67,9 @@ pub fn cli() -> clap::Command {
         .arg(Arg::new("in_memory").long("in-memory").action(SetTrue).help(
             "If specified the database will run entirely in memory. After the process exits all data will be lost.",
         ))
+        .arg(Arg::new("ssl").long("ssl").alias("tls").alias("https").alias("secure").action(clap::ArgAction::SetTrue).help("enables the standalone server to listen in SSL mode, ie. use https instead of http to connect to it. Aliases --tls, --ssl, --secure, or --https."))
+        .arg(Arg::new("cert").long("cert").requires("ssl").value_name("FILE").help("--cert cert.pem: The server sends this to clients during the TLS handshake. ie. server's public key, which if it's self-signed then this is the file that you pass to clients via --cert when talking to the server from a client(or the cli), or if signed by a local CA then pass that CA's pub cert to your clients instead, in order to can trust this server from a client connection. Otherwise, you don't have to pass anything to clients if this cert was signed by a public CA like Let's Encrypt."))
+        .arg(Arg::new("key").long("key").requires("ssl").value_name("FILE").help("--key key.pem: The server keeps this private to decrypt and sign responses. ie. the server's private key"))
     // .after_help("Run `spacetime help start` for more detailed information.")
 }
 
@@ -143,10 +146,35 @@ pub async fn exec(args: &ArgMatches) -> anyhow::Result<()> {
     let extra = axum::Router::new().nest("/health", spacetimedb_client_api::routes::health::router());
     let service = router(&ctx, db_routes, extra).with_state(ctx);
 
-    let tcp = TcpListener::bind(listen_addr).await?;
-    socket2::SockRef::from(&tcp).set_nodelay(true)?;
-    log::debug!("Starting SpacetimeDB listening on {}", tcp.local_addr().unwrap());
-    axum::serve(tcp, service).await?;
+//    let tcp = TcpListener::bind(listen_addr).await?;
+//    socket2::SockRef::from(&tcp).set_nodelay(true)?;
+//    log::debug!("Starting SpacetimeDB listening on {}", tcp.local_addr().unwrap());
+//    axum::serve(tcp, service).await?;
+    use std::net::SocketAddr;
+    let addr: SocketAddr = listen_addr.parse()?;
+    if args.get_flag("ssl") {
+        let cert_path = args.get_one::<String>("cert").context("Missing --cert for SSL")?;
+        let key_path = args.get_one::<String>("key").context("Missing --key for SSL")?;
+        // Install the default CryptoProvider at the start of the function
+        // This only needs to happen once per process, so it's safe to call here
+        use rustls::crypto::ring::default_provider;  // Add this
+        use rustls::crypto::CryptoProvider;          // Add this
+        CryptoProvider::install_default(default_provider())
+            .expect("Failed to install default CryptoProvider");
+
+        use axum_server::tls_rustls::RustlsConfig;
+        let tls_config = RustlsConfig::from_pem_file(cert_path, key_path).await?;
+        log::debug!("Starting SpacetimeDB with SSL listening on {}", addr);
+        axum_server::bind_rustls(addr, tls_config)
+            .serve(service.into_make_service())
+            .await?;
+    } else {
+        log::debug!("Starting SpacetimeDB without any ssl (so it's plaintext) listening on {}", addr);
+        axum_server::bind(addr)
+            .serve(service.into_make_service())
+            .await?;
+    }
+
     Ok(())
 }
 

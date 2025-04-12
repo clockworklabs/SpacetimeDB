@@ -29,6 +29,15 @@ spacetimedb-paths.workspace = true
 anyhow.workspace = true
 async-trait.workspace = true
 axum.workspace = true
+
+# Add this for TLS support
+#axum-server = "0.6"  # Compatible with axum 0.7.9
+#axum-server = "0.7"  # Compatible with axum 0.7.9
+axum-server = { version = "0.7.2", features = ["tls-rustls"] }
+
+ring = "0.17"  # explicitly add this for the CryptoProvider, even tho it's included transitively.
+rustls= { version="0.23", default-features = true, features=[ "ring" ] }
+
 clap = { workspace = true, features = ["derive", "string"] }
 dirs.workspace = true
 futures.workspace = true

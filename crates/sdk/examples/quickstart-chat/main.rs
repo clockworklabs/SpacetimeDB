@@ -5,11 +5,20 @@ use module_bindings::*;
 
 use spacetimedb_sdk::{credentials, DbContext, Error, Event, Identity, Status, Table, TableWithPrimaryKey};
 
+use std::path::PathBuf;
+
+
 // ## Define the main function
 
 fn main() {
-    // Connect to the database
-    let ctx = connect_to_db();
+    // ### Parse command-line arguments for --cert into a PathBuf
+    let args: Vec<String> = std::env::args().collect();
+    let cert_path: Option<PathBuf> = args.iter()
+        .position(|arg| arg == "--cert")
+        .map(|i| args.get(i + 1).expect("Missing certificate path after --cert"))
+        .map(|s| PathBuf::from(s));
+    // Connect to the database with optional cert
+    let ctx = connect_to_db(cert_path);
 
     // Register callbacks to run in response to database events.
     register_callbacks(&ctx);
@@ -26,15 +35,21 @@ fn main() {
 
 // ## Connect to the database
 
-/// The URI of the SpacetimeDB instance hosting our chat module.
-const HOST: &str = "http://localhost:3000";
+/// The host and port, without scheme, of the SpacetimeDB instance hosting our chat module.
+const HOST_PORT: &str = "localhost:3000";
+//const HOST_PORT: &str = "127.1.2.3:6543";
 
 /// The module name we chose when we published our module.
 const DB_NAME: &str = "quickstart-chat";
 
 /// Load credentials from a file and connect to the database.
-fn connect_to_db() -> DbConnection {
-    DbConnection::builder()
+fn connect_to_db(cert_path: Option<PathBuf>) -> DbConnection {
+    // ### Construct URI with scheme based on cert presence
+    let scheme = if cert_path.is_some() { "https" } else { "http" };
+    let uri = format!("{}://{}", scheme, HOST_PORT);
+
+//    let mut builder=
+        DbConnection::builder()
         // Register our `on_connect` callback, which will save our auth token.
         .on_connect(on_connected)
         // Register our `on_connect_error` callback, which will print a message, then exit the process.
@@ -48,7 +63,17 @@ fn connect_to_db() -> DbConnection {
         // Set the database name we chose when we called `spacetime publish`.
         .with_module_name(DB_NAME)
         // Set the URI of the SpacetimeDB host that's running our database.
-        .with_uri(HOST)
+        .with_uri(&uri)
+//;    // ### Add trusted cert if provided
+//    if let Some(cert_path) = cert_path {
+//    //XXX: we don't wanna do this(that's why it's acception Option instead):
+//        builder = builder.with_trusted_cert(cert_path);
+//    }
+//     // Finalize configuration and connect!
+//     builder.build()
+//         .expect("Failed to connect")
+        // ### Add trusted cert if provided
+        .with_trusted_cert(cert_path)
         // Finalize configuration and connect!
         .build()
         .expect("Failed to connect")
