@@ -514,8 +514,7 @@
   },
   Stats: {
     ReducerRequestTracker: {
-      sampleCount: 3,
-      requestsAwaitingResponse: 6
+      requestsAwaitingResponse: 9
     },
     OneOffRequestTracker: {},
     SubscriptionRequestTracker: {
