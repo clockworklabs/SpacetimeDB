@@ -17,11 +17,12 @@ pub async fn database_identity(
     config: &Config,
     name_or_identity: &str,
     server: Option<&str>,
+    client: &reqwest::Client,
 ) -> Result<Identity, anyhow::Error> {
     if let Ok(identity) = Identity::from_hex(name_or_identity) {
         return Ok(identity);
     }
-    spacetime_dns(config, name_or_identity, server)
+    spacetime_dns(config, name_or_identity, server, client)
         .await?
         .with_context(|| format!("the dns resolution of `{name_or_identity}` failed."))
 }
@@ -111,8 +112,9 @@ pub async fn spacetime_dns(
     config: &Config,
     domain: &str,
     server: Option<&str>,
+    client: &reqwest::Client,
 ) -> Result<Option<Identity>, anyhow::Error> {
-    let client = reqwest::Client::new();
+    //let client = reqwest::Client::new();
     let url = format!("{}/v1/database/{}/identity", config.get_host_url(server)?, domain);
     let Some(res) = client.get(url).send().await?.found() else {
         return Ok(None);
@@ -314,9 +316,9 @@ pub async fn get_login_token_or_log_in(
 
     if full_login {
         let host = Url::parse(DEFAULT_AUTH_HOST)?;
-        spacetimedb_login_force(config, &host, false).await
+        spacetimedb_login_force(config, &host, false, None/*TODO*/).await
     } else {
         let host = Url::parse(&config.get_host_url(target_server)?)?;
-        spacetimedb_login_force(config, &host, true).await
+        spacetimedb_login_force(config, &host, true, None/*TODO*/).await
     }
 }

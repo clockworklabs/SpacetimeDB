@@ -31,6 +31,14 @@ pub fn cli() -> Command {
                 .group("login-method")
                 .help("Bypass the login flow and use a login token directly"),
         )
+        .arg(
+            Arg::new("cert")
+                .long("cert")
+                .value_name("FILE")
+                .action(clap::ArgAction::Set)
+                .value_parser(clap::value_parser!(std::path::PathBuf))
+                .help("Path to the server’s self-signed certificate or the CA certificate (PEM format) which signed it, to trust the server."),
+        )
         .about("Manage your login to the SpacetimeDB CLI")
 }
 
@@ -53,7 +61,18 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let spacetimedb_token: Option<&String> = args.get_one("spacetimedb-token");
     let host: &String = args.get_one("auth-host").unwrap();
     let host = Url::parse(host)?;
+    // XXX: specifying an url for the server below, instead of an existing nickname, will cause 'login' to
+    // succeed but you might wrongly assume like I did in https://github.com/clockworklabs/SpacetimeDB/issues/2512
+    // that any subsequent commands like `spacetime publish` will use that server that you specified
+    // but instead they won't, they'll use a default 127.0.0.1:3000(http) server instead
+    // because the url you used to login isn't saved in ~/.config/spacetime/cli.toml
+    // only the (login)spacetimedb_token is, and to select a default or add a new server
+    // to the list you've to use `spacetime server help`
+    // so let's warn, but allow this behavior.
     let server_issued_login: Option<&String> = args.get_one("server");
+    if let Some(server) = server_issued_login {
+        println!("WARNING: the server that you specified here as '{}' isn't the one that will be used by commands like 'spacetime publish' but instead it's the one listed on 'spacetime server list' as the default (3 stars) that will be used, eg. 127.0.0.1:3000 if you haven't manually added any via 'spacetime server add'.\n",server);//extra new line
+    }//if
 
     if let Some(token) = spacetimedb_token {
         config.set_spacetimedb_token(token.clone());
@@ -61,11 +80,14 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         return Ok(());
     }
 
+    let cert: Option<&std::path::Path> = args.get_one::<std::path::PathBuf>("cert").map(|p| p.as_path());
     if let Some(server) = server_issued_login {
         let host = Url::parse(&config.get_host_url(Some(server))?)?;
-        spacetimedb_token_cached(&mut config, &host, true).await?;
+        //config.protocol=host.scheme();
+        //eprintln!("!!!!! scheme: '{:#?}', host: '{}', config: '{:#?}'", config.protocol(Some(server)), host, config);
+        spacetimedb_token_cached(&mut config, &host, true, cert).await?;
     } else {
-        spacetimedb_token_cached(&mut config, &host, false).await?;
+        spacetimedb_token_cached(&mut config, &host, false, cert).await?;
     }
 
     Ok(())
@@ -98,7 +120,7 @@ async fn exec_show(config: Config, args: &ArgMatches) -> Result<(), anyhow::Erro
     Ok(())
 }
 
-async fn spacetimedb_token_cached(config: &mut Config, host: &Url, direct_login: bool) -> anyhow::Result<String> {
+async fn spacetimedb_token_cached(config: &mut Config, host: &Url, direct_login: bool, cert: Option<&std::path::Path>) -> anyhow::Result<String> {
     // Currently, this token does not expire. However, it will at some point in the future. When that happens,
     // this code will need to happen before any request to a spacetimedb server, rather than at the end of the login flow here.
     if let Some(token) = config.spacetimedb_token() {
@@ -106,17 +128,19 @@ async fn spacetimedb_token_cached(config: &mut Config, host: &Url, direct_login:
         println!("If you want to log out, use spacetime logout.");
         Ok(token.clone())
     } else {
-        spacetimedb_login_force(config, host, direct_login).await
+        spacetimedb_login_force(config, host, direct_login, cert).await
     }
 }
 
-pub async fn spacetimedb_login_force(config: &mut Config, host: &Url, direct_login: bool) -> anyhow::Result<String> {
+pub async fn spacetimedb_login_force(config: &mut Config, host: &Url, direct_login: bool, cert: Option<&std::path::Path>) -> anyhow::Result<String> {
     let token = if direct_login {
-        let token = spacetimedb_direct_login(host).await?;
+        println!("We will log in directly to your target server.");
+        let token = spacetimedb_direct_login(host, cert).await?;
         println!("We have logged in directly to your target server.");
         println!("WARNING: This login will NOT work for any other servers.");
         token
     } else {
+        println!("We will log in NON-directly to your target server.");
         let session_token = web_login_cached(config, host).await?;
         spacetimedb_login(host, &session_token).await?
     };
@@ -271,8 +295,25 @@ struct LocalLoginResponse {
     pub token: String,
 }
 
-async fn spacetimedb_direct_login(host: &Url) -> Result<String, anyhow::Error> {
-    let client = reqwest::Client::new();
+async fn spacetimedb_direct_login(host: &Url, cert: Option<&std::path::Path>) -> Result<String, anyhow::Error> {
+    pub async fn build_client(cert_path: Option<&std::path::Path>) -> anyhow::Result<reqwest::Client> {
+        let mut client_builder = reqwest::Client::builder();
+
+        if let Some(path) = cert_path {
+            let cert_pem = tokio::fs::read_to_string(path).await
+                .map_err(|e| anyhow::anyhow!("Failed to read certificate file {} err: {}", path.display(), e))?;
+            let cert = reqwest::Certificate::from_pem(cert_pem.as_bytes())
+                .map_err(|e| anyhow::anyhow!("Failed to parse certificate file {} err: {}", path.display(), e))?;
+            client_builder = client_builder.add_root_certificate(cert);
+        }
+
+        client_builder.build()
+            .map_err(|e| anyhow::anyhow!("Failed to build client with cert {:?} err: {}", cert_path, e))
+    }
+
+    //let client = reqwest::Client::new();
+    let client = build_client(cert.as_deref()).await?;
+
     let response: LocalLoginResponse = client
         .post(host.join("/v1/identity")?)
         .send()

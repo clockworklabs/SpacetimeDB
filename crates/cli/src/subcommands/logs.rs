@@ -48,6 +48,14 @@ pub fn cli() -> clap::Command {
                 .help("Output format for the logs")
         )
         .arg(common_args::yes())
+        .arg(
+            Arg::new("cert")
+            .long("cert")
+            .value_name("FILE")
+            .action(clap::ArgAction::Set)
+            .value_parser(clap::value_parser!(std::path::PathBuf))
+            .help("Path to the server’s self-signed certificate or CA certificate (PEM format) to trust"),
+        )
         .after_help("Run `spacetime help logs` for more detailed information.\n")
 }
 
@@ -120,7 +128,25 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
     let auth_header = get_auth_header(&mut config, false, server, !force).await?;
 
-    let database_identity = database_identity(&config, database, server).await?;
+    let cert: Option<&std::path::Path> = args.get_one::<std::path::PathBuf>("cert").map(|p| p.as_path());
+
+    pub async fn build_client(cert_path: Option<&std::path::Path>) -> anyhow::Result<reqwest::Client> {
+        let mut client_builder = reqwest::Client::builder();
+
+        if let Some(path) = cert_path {
+            let cert_pem = tokio::fs::read_to_string(path).await
+                .map_err(|e| anyhow::anyhow!("Failed to read certificate file {} err: {}", path.display(), e))?;
+            let cert = reqwest::Certificate::from_pem(cert_pem.as_bytes())
+                .map_err(|e| anyhow::anyhow!("Failed to parse certificate file {} err: {}", path.display(), e))?;
+            client_builder = client_builder.add_root_certificate(cert);
+        }
+
+        client_builder.build()
+            .map_err(|e| anyhow::anyhow!("Failed to build client with cert {:?} err: {}", cert_path, e))
+    }
+
+    let client = build_client(cert).await?;
+    let database_identity = database_identity(&config, database, server, &client).await?;
 
     if follow && num_lines.is_none() {
         // We typically don't want logs from the very beginning if we're also following.
@@ -130,7 +156,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
     let host_url = config.get_host_url(server)?;
 
-    let builder = reqwest::Client::new().get(format!("{}/v1/database/{}/logs", host_url, database_identity));
+    let builder = client.get(format!("{}/v1/database/{}/logs", host_url, database_identity));
     let builder = add_auth_header_opt(builder, &auth_header);
     let mut res = builder.query(&query_parms).send().await?;
     let status = res.status();
