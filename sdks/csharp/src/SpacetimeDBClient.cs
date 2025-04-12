@@ -788,7 +788,7 @@ namespace SpacetimeDB
                         var hostDuration = (TimeSpan)transactionUpdate.TotalHostExecutionDuration;
                         stats.AllReducersTracker.InsertRequest(hostDuration, $"reducer={reducer}");
                         var callerIdentity = transactionUpdate.CallerIdentity;
-                        if (callerIdentity == Identity)
+                        if (callerIdentity == Identity && transactionUpdate.CallerConnectionId == ConnectionId)
                         {
                             // This was a request that we initiated
                             var requestId = transactionUpdate.ReducerCall.RequestId;
