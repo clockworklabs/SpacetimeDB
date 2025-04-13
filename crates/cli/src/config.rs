@@ -366,8 +366,8 @@ impl RawConfig {
     ///
     /// Returns an `Err` if there is no such server configuration.
     /// Returns `None` if the server configuration exists, but does not have a fingerprint saved.
-    fn server_fingerprint(&self, server: &str) -> anyhow::Result<Option<&str>> {
-        self.find_server(server)
+    fn server_fingerprint(&self, server: &str, protocol: Option<&str>) -> anyhow::Result<Option<&str>> {
+        self.find_server_with_protocol(server, protocol)
             .with_context(|| {
                 format!(
                     "No saved fingerprint for server: {server}
@@ -375,7 +375,7 @@ Fetch the server's fingerprint with:
 \tspacetime server fingerprint -s {server}"
                 )
             })
-            .map(|cfg| cfg.ecdsa_public_key.as_deref())
+        .map(|cfg| cfg.ecdsa_public_key.as_deref())
     }
 
     /// Return the ECDSA public key in PEM format for the default server.
@@ -384,7 +384,7 @@ Fetch the server's fingerprint with:
     /// Returns `None` if the server configuration exists, but does not have a fingerprint saved.
     fn default_server_fingerprint(&self) -> anyhow::Result<Option<&str>> {
         if let Some(server) = &self.default_server {
-            self.server_fingerprint(server)
+            self.server_fingerprint(server, None)
         } else {
             Err(anyhow::anyhow!(NO_DEFAULT_SERVER_ERROR_MESSAGE))
         }
@@ -420,6 +420,7 @@ Fetch the server's fingerprint with:
     pub fn edit_server(
         &mut self,
         server: &str,
+        old_protocol: Option<&str>,
         new_nickname: Option<&str>,
         new_host: Option<&str>,
         new_protocol: Option<&str>,
@@ -449,7 +450,7 @@ Fetch the server's fingerprint with:
             }
         }
 
-        let cfg = self.find_server_with_protocol_mut(server, None)?;
+        let cfg = self.find_server_with_protocol_mut(server, old_protocol)?;
         let old_nickname = if let Some(new_nickname) = new_nickname {
             std::mem::replace(&mut cfg.nickname, Some(new_nickname.to_string()))
         } else {
@@ -790,7 +791,7 @@ impl Config {
     }
 
     pub fn server_decoding_key(&self, server: Option<&str>) -> anyhow::Result<DecodingKey> {
-        self.server_fingerprint(server).and_then(|fing| {
+        self.server_fingerprint(server, None).and_then(|fing| {
             if let Some(fing) = fing {
                 DecodingKey::from_ec_pem(fing.as_bytes()).with_context(|| {
                     format!(
@@ -818,10 +819,11 @@ Update the server's fingerprint with:
         }
     }
 
-    pub fn server_fingerprint(&self, server: Option<&str>) -> anyhow::Result<Option<&str>> {
+    pub fn server_fingerprint(&self, server: Option<&str>, protocol: Option<&str>) -> anyhow::Result<Option<&str>> {
         if let Some(server) = server {
-            let (host, _) = host_or_url_to_host_and_protocol(server);
-            self.home.server_fingerprint(host)
+            let (host, _proto) = host_or_url_to_host_and_protocol(server);
+            //FIXME: if _proto exists and one was specified as arg too... or if none as arg, take _proto?
+            self.home.server_fingerprint(host, protocol)
         } else {
             self.home.default_server_fingerprint()
         }
@@ -843,8 +845,8 @@ Update the server's fingerprint with:
         new_host: Option<&str>,
         new_protocol: Option<&str>,
     ) -> anyhow::Result<(Option<String>, Option<String>, Option<String>)> {
-        let (host, _) = host_or_url_to_host_and_protocol(server);
-        self.home.edit_server(host, new_nickname, new_host, new_protocol)
+        let (host, oldproto) = host_or_url_to_host_and_protocol(server);
+        self.home.edit_server(host, oldproto, new_nickname, new_host, new_protocol)
     }
 
     pub fn delete_server_fingerprint(&mut self, server: Option<&str>) -> anyhow::Result<()> {

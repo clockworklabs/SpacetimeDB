@@ -125,8 +125,20 @@ pub async fn spacetime_dns(
         .context("identity endpoint did not return an identity")
 }
 
-pub async fn spacetime_server_fingerprint(url: &str) -> anyhow::Result<String> {
-    let builder = reqwest::Client::new().get(format!("{}/v1/identity/public-key", url).as_str());
+pub async fn spacetime_server_fingerprint(url: &str, cert_path: Option<&Path>) -> anyhow::Result<String> {
+    let mut builder = reqwest::Client::builder();
+    if let Some(path) = cert_path {
+        if !url.starts_with("https") {
+            eprintln!("WARNING: Non-https url '{url}' but --cert was specified.");
+        }
+        let cert_pem = std::fs::read_to_string(path)
+            .with_context(|| format!("Failed to read certificate file: {}", path.display()))?;
+        let cert = reqwest::Certificate::from_pem(cert_pem.as_bytes())
+            .map_err(|e| anyhow::anyhow!("Invalid certificate: {}", e))?;
+        builder = builder.add_root_certificate(cert);
+    }
+    let client = builder.build().map_err(|e| anyhow::anyhow!("Failed to build client: {}", e))?;
+    let builder = client.get(format!("{}/v1/identity/public-key", url).as_str());
     let res = builder.send().await?.error_for_status()?;
     let fingerprint = res.text().await?;
     Ok(fingerprint)
