@@ -74,6 +74,7 @@ wasmbin.workspace = true
 wasmtime.workspace = true
 webbrowser.workspace = true
 clap-markdown.workspace = true
+native-tls = "0.2"
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = { workspace = true }

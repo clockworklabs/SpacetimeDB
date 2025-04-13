@@ -243,6 +243,7 @@ impl WsConnection {
             })?;
 
         let connector = if host.scheme_str() == Some("wss") {
+            //FIXME: --cert implies wss, or do we want to allow --cert even for ws instead of error-ing!
             let mut builder = TlsConnector::builder();
             if let Some(cert_path) = trusted_cert {
                 let cert_pem = std::fs::read_to_string(cert_path).map_err(|e| WsError::Tungstenite {
