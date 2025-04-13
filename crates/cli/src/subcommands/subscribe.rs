@@ -17,7 +17,7 @@ use tokio_tungstenite::tungstenite::Message as WsMessage;
 use crate::api::ClientApi;
 use crate::common_args;
 use crate::sql::parse_req;
-use crate::util::UNSTABLE_WARNING;
+use crate::util::{self, UNSTABLE_WARNING};
 use crate::Config;
 
 pub fn cli() -> clap::Command {
@@ -167,7 +167,19 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
     if let Some(auth_header) = api.con.auth_header.to_header() {
         req.headers_mut().insert(header::AUTHORIZATION, auth_header);
     }
-    let (mut ws, _) = tokio_tungstenite::connect_async(req).await?;
+
+    // Configure TLS with cert_path
+    let connector = {
+        // Changed: Use native-tls like websocket.rs
+        let mut builder = native_tls::TlsConnector::builder();
+        if let Some(cert) = util::load_root_cert(api.con.cert_path.as_deref()).await? {
+            builder.add_root_certificate(cert);
+        }
+        let tls_connector = builder.build().context("Failed to build TLS connector")?;
+        Some(tokio_tungstenite::Connector::NativeTls(tls_connector))
+    };
+
+    let (mut ws, _) = tokio_tungstenite::connect_async_tls_with_config(req, None, false, connector).await?;
 
     let task = async {
         subscribe(&mut ws, queries.cloned().map(Into::into).collect()).await?;

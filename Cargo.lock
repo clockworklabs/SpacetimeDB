@@ -5306,6 +5306,7 @@ dependencies = [
  "is-terminal",
  "itertools 0.12.1",
  "mimalloc",
+ "native-tls",
  "percent-encoding",
  "regex",
  "reqwest 0.12.9",
