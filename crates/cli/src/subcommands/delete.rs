@@ -1,6 +1,6 @@
 use crate::common_args;
 use crate::config::Config;
-use crate::util::{add_auth_header_opt, database_identity, get_auth_header};
+use crate::util::{add_auth_header_opt, database_identity, get_auth_header, build_client};
 use clap::{Arg, ArgMatches};
 
 pub fn cli() -> clap::Command {
@@ -32,21 +32,6 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let force = args.get_flag("force");
 
     let cert: Option<&std::path::Path> = args.get_one::<std::path::PathBuf>("cert").map(|p| p.as_path());
-
-    pub async fn build_client(cert_path: Option<&std::path::Path>) -> anyhow::Result<reqwest::Client> {
-        let mut client_builder = reqwest::Client::builder();
-
-        if let Some(path) = cert_path {
-            let cert_pem = tokio::fs::read_to_string(path).await
-                .map_err(|e| anyhow::anyhow!("Failed to read certificate file {} err: {}", path.display(), e))?;
-            let cert = reqwest::Certificate::from_pem(cert_pem.as_bytes())
-                .map_err(|e| anyhow::anyhow!("Failed to parse certificate file {} err: {}", path.display(), e))?;
-            client_builder = client_builder.add_root_certificate(cert);
-        }
-
-        client_builder.build()
-            .map_err(|e| anyhow::anyhow!("Failed to build client with cert {:?} err: {}", cert_path, e))
-    }
 
     let client = build_client(cert).await?;
     let identity = database_identity(&config, database, server, &client).await?;

@@ -1,16 +1,18 @@
 use std::fmt;
 use std::fmt::Write;
 use std::time::{Duration, Instant};
+use std::path::Path;
 
 use crate::api::{from_json_seed, ClientApi, Connection, SqlStmtResult, StmtStats};
 use crate::common_args;
 use crate::config::Config;
-use crate::util::{database_identity, get_auth_header, ResponseExt, UNSTABLE_WARNING};
+use crate::util::{database_identity, get_auth_header, ResponseExt, UNSTABLE_WARNING, build_client};
 use anyhow::Context;
 use clap::{Arg, ArgAction, ArgMatches};
 use reqwest::RequestBuilder;
 use spacetimedb_lib::de::serde::SeedWrapper;
 use spacetimedb_lib::sats::{satn, ProductType, ProductValue, Typespace};
+use std::path::PathBuf;
 
 pub fn cli() -> clap::Command {
     clap::Command::new("sql")
@@ -47,18 +49,20 @@ pub fn cli() -> clap::Command {
         )
 }
 
-pub(crate) async fn parse_req(mut config: Config, args: &ArgMatches) -> Result<Connection, anyhow::Error> {
+pub(crate) async fn parse_req(mut config: Config, args: &ArgMatches, cert_path: Option<&Path>) -> Result<Connection, anyhow::Error> {
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
     let force = args.get_flag("force");
     let database_name_or_identity = args.get_one::<String>("database").unwrap();
     let anon_identity = args.get_flag("anon_identity");
 
-    let client = reqwest::Client::new();//TODO: see where this is for 'spacetime sql'
+    let client = build_client(cert_path).await?;
+
     Ok(Connection {
         host: config.get_host_url(server)?,
         auth_header: get_auth_header(&mut config, anon_identity, server, !force).await?,
         database_identity: database_identity(&config, database_name_or_identity, server, &client).await?,
         database: database_name_or_identity.to_string(),
+        cert_path: cert_path.map(PathBuf::from), // Added: Store cert_path
     })
 }
 
@@ -180,15 +184,16 @@ fn stmt_result_to_table(stmt_result: &SqlStmtResult) -> anyhow::Result<(StmtStat
 
 pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     eprintln!("{}\n", UNSTABLE_WARNING);
+    let cert_path = args.get_one::<std::path::PathBuf>("cert").map(|p| p.as_path());
     let interactive = args.get_one::<bool>("interactive").unwrap_or(&false);
     if *interactive {
-        let con = parse_req(config, args).await?;
+        let con = parse_req(config, args, cert_path).await?;
 
         crate::repl::exec(con).await?;
     } else {
         let query = args.get_one::<String>("query").unwrap();
 
-        let con = parse_req(config, args).await?;
+        let con = parse_req(config, args, cert_path).await?;
         let api = ClientApi::new(con);
 
         run_sql(api.sql(), query, false).await?;

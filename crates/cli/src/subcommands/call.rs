@@ -30,6 +30,14 @@ pub fn cli() -> clap::Command {
                 .required(true)
                 .help("The name of the reducer to call"),
         )
+        .arg(
+            Arg::new("cert")
+            .long("cert")
+            .value_name("FILE")
+            .action(clap::ArgAction::Set)
+            .value_parser(clap::value_parser!(std::path::PathBuf))
+            .help("Path to the server’s self-signed certificate or CA certificate (PEM format) to trust"),
+        )
         .arg(Arg::new("arguments").help("arguments formatted as JSON").num_args(1..))
         .arg(common_args::server().help("The nickname, host name or URL of the server hosting the database"))
         .arg(common_args::anonymous())
@@ -42,7 +50,8 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), Error> {
     let reducer_name = args.get_one::<String>("reducer_name").unwrap();
     let arguments = args.get_many::<String>("arguments");
 
-    let conn = parse_req(config, args).await?;
+    let cert_path = args.get_one::<std::path::PathBuf>("cert").map(|p| p.as_path());
+    let conn = parse_req(config, args, cert_path).await?;
     let api = ClientApi::new(conn);
 
     let database_identity = api.con.database_identity;

@@ -9,7 +9,7 @@ use std::path::PathBuf;
 
 use crate::config::Config;
 use crate::util::{add_auth_header_opt, get_auth_header, ResponseExt};
-use crate::util::{decode_identity, unauth_error_context, y_or_n};
+use crate::util::{decode_identity, unauth_error_context, y_or_n, build_client};
 use crate::{build, common_args};
 
 pub fn cli() -> clap::Command {
@@ -87,8 +87,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let wasm_file = args.get_one::<PathBuf>("wasm_file");
     let database_host = config.get_host_url(server)?;
     let build_options = args.get_one::<String>("build_options").unwrap();
-    //let cert_path = args.get_one::<String>("cert").map(PathBuf::from);
-    let cert: Option<&std::path::Path> = args.get_one::<std::path::PathBuf>("cert").map(|p| p.as_path());
+    let cert_path: Option<&std::path::Path> = args.get_one::<std::path::PathBuf>("cert").map(|p| p.as_path());
 
 
     // If the user didn't specify an identity and we didn't specify an anonymous identity, then
@@ -97,25 +96,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     //  easily create a new identity with an email
     let auth_header = get_auth_header(&mut config, anon_identity, server, !force).await?;
 
-    //use reqwest::Client;
-    //use std::path::Path;
-    pub async fn build_client(cert_path: Option<&std::path::Path>) -> anyhow::Result<reqwest::Client> {
-        let mut client_builder = reqwest::Client::builder();
-
-        if let Some(path) = cert_path {
-            let cert_pem = tokio::fs::read_to_string(path).await
-                .map_err(|e| anyhow::anyhow!("Failed to read certificate file {} err: {}", path.display(), e))?;
-            let cert = reqwest::Certificate::from_pem(cert_pem.as_bytes())
-                .map_err(|e| anyhow::anyhow!("Failed to parse certificate file {} err: {}", path.display(), e))?;
-            client_builder = client_builder.add_root_certificate(cert);
-        }
-
-        client_builder.build()
-            .map_err(|e| anyhow::anyhow!("Failed to build client with cert {:?} err: {}", cert_path, e))
-    }
-
-    //let client = reqwest::Client::new();
-    let client = build_client(cert).await?;
+    let client = build_client(cert_path).await?;
 
     // If a domain or identity was provided, we should locally make sure it looks correct and
     let mut builder = if let Some(name_or_identity) = name_or_identity {

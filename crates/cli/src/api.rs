@@ -9,6 +9,8 @@ use spacetimedb_lib::de::serde::DeserializeWrapper;
 use spacetimedb_lib::Identity;
 
 use crate::util::{AuthHeader, ResponseExt};
+use crate::util;
+use std::path::PathBuf;
 
 static APP_USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"),);
 
@@ -18,6 +20,7 @@ pub struct Connection {
     pub(crate) database_identity: Identity,
     pub(crate) database: String,
     pub(crate) auth_header: AuthHeader,
+    pub(crate) cert_path: Option<PathBuf>, // FIXME: bad idea to put it here? else pass it as arg?
 }
 
 impl Connection {
@@ -34,7 +37,13 @@ impl Connection {
 }
 
 pub fn build_client(con: &Connection) -> Client {
-    let mut builder = Client::builder().user_agent(APP_USER_AGENT);
+    //XXX: alternatively make this async and then make new() async, and ensure callers do .await on it
+    let mut builder = tokio::task::block_in_place(|| {
+        tokio::runtime::Handle::current()
+            .block_on(util::configure_tls(con.cert_path.as_deref()))
+    })
+    .unwrap(); // Changed: Block on configure_tls
+    builder = builder.user_agent(APP_USER_AGENT);
 
     if let Some(auth_header) = con.auth_header.to_header() {
         let headers = http::HeaderMap::from_iter([(header::AUTHORIZATION, auth_header)]);
@@ -42,7 +51,7 @@ pub fn build_client(con: &Connection) -> Client {
         builder = builder.default_headers(headers);
     }
 
-    builder.build().unwrap()
+    util::build_client_with_context(builder, con.cert_path.as_deref()).unwrap()
 }
 
 pub struct ClientApi {

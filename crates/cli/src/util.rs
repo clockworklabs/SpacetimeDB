@@ -107,6 +107,33 @@ impl ResponseExt for reqwest::Response {
     }
 }
 
+pub async fn configure_tls(cert_path: Option<&Path>) -> anyhow::Result<reqwest::ClientBuilder> { // Added: TLS config
+    let mut client_builder = reqwest::Client::builder();
+    if let Some(path) = cert_path {
+        let cert_pem = tokio::fs::read_to_string(path)
+            .await
+            .context(format!("Failed to read certificate file: {}", path.display()))?;
+        let cert = reqwest::Certificate::from_pem(cert_pem.as_bytes())
+            .context(format!("Failed to parse certificate file: {}", path.display()))?;
+        client_builder = client_builder.add_root_certificate(cert);
+        eprintln!("Added trusted certificate from {} for a new TLS connection.", path.display());
+    } else {
+        eprintln!("No trusted certificate specified via --cert for this new connection, thus if you used local CA or self-signed server certificate, you may get an error like '(unable to get local issuer certificate)' next.");
+    }
+    Ok(client_builder)
+}
+
+pub fn build_client_with_context(builder: reqwest::ClientBuilder, cert_path: Option<&Path>) -> anyhow::Result<reqwest::Client> { // Added: Build with context
+    builder
+        .build()
+        .context(format!("Failed to build client with cert {:?}", cert_path))
+}
+
+pub async fn build_client(cert_path: Option<&Path>) -> anyhow::Result<reqwest::Client> { // Changed: Use sub-functions
+    let builder = configure_tls(cert_path).await?;
+    build_client_with_context(builder, cert_path)
+}
+
 /// Converts a name to a database identity.
 pub async fn spacetime_dns(
     config: &Config,
