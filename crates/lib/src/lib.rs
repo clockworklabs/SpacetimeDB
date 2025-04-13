@@ -386,3 +386,19 @@ pub fn resolved_type_via_v9<T: SpacetimeType>() -> AlgebraicType {
         .resolve_refs()
         .expect("recursive types not supported")
 }
+
+pub async fn load_root_cert(cert_path: Option<&std::path::Path>) -> anyhow::Result<Option<native_tls::Certificate>> {
+    if let Some(path) = cert_path {
+        let cert_pem = tokio::fs::read_to_string(path)
+            .await
+            .context(format!("Failed to read certificate file: {}", path.display()))?;
+        let cert = native_tls::Certificate::from_pem(cert_pem.as_bytes())
+            .context(format!("Failed to parse PEM certificate: {}", path.display()))?;
+        eprintln!("Added trusted certificate from {} for a new TLS connection.", path.display());
+        Ok(Some(cert))
+    } else {
+        eprintln!("No trusted certificate specified via --cert for this new connection, thus if you used local CA or self-signed server certificate, you may get an error like '(unable to get local issuer certificate)' next.");
+        Ok(None)
+    }
+}
+
