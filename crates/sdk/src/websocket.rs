@@ -91,6 +91,18 @@ pub(crate) struct WsConnection {
     sock: WebSocketStream<MaybeTlsStream<TcpStream>>,
 }
 
+impl From<anyhow::Error> for WsError {
+    fn from(err: anyhow::Error) -> Self {
+        WsError::Tungstenite {
+            uri: Uri::default(), // Fallback; context provides real URI
+            source: Arc::new(tokio_tungstenite::tungstenite::Error::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                err.to_string(),
+            ))),
+        }
+    }
+}
+
 fn parse_scheme(scheme: Option<Scheme>) -> Result<Scheme, UriError> {
     Ok(match scheme {
         Some(s) => match s.as_str() {
@@ -216,7 +228,7 @@ impl WsConnection {
         let uri = req.uri().clone();
 
         let host = uri.clone(); //shadow, and it's thus wss:// not https://
-        use native_tls::Certificate;
+        //use native_tls::Certificate;
         use native_tls::TlsConnector;
         use std::sync::Arc;
         use tokio::net::TcpStream;
@@ -246,23 +258,9 @@ impl WsConnection {
             //FIXME: --cert implies wss, or do we want to allow --cert even for ws instead of error-ing!
             let mut builder = TlsConnector::builder();
             if let Some(cert_path) = trusted_cert {
-                let cert_pem = std::fs::read_to_string(cert_path).map_err(|e| WsError::Tungstenite {
-                    uri: uri.clone(),
-                    source: Arc::new(tokio_tungstenite::tungstenite::Error::Io(std::io::Error::new(
-                        e.kind(),
-                        format!("Failed to read cert file '{}': {}", cert_path.display(), e),
-                    ))),
-                })?;
-                let cert = Certificate::from_pem(cert_pem.as_bytes()).map_err(|e| WsError::Tungstenite {
-                    uri: uri.clone(),
-                    source: Arc::new(tokio_tungstenite::tungstenite::Error::Io(std::io::Error::new(
-                        std::io::ErrorKind::InvalidData,
-                        format!("Failed to parse PEM cert file '{}': {}", cert_path.display(), e),
-                    ))),
-                })?;
-                builder.add_root_certificate(cert);
-            } else {
-                println!("Didn't add trusted cert file {:?}", trusted_cert);
+                if let Some(cert) = spacetimedb_lib::load_root_cert(Some(cert_path.as_path())).await? {
+                    builder.add_root_certificate(cert);
+                }
             }
             let tls_connector = builder.build().map_err(|e| WsError::Tungstenite {
                 uri: uri.clone(),
@@ -279,7 +277,6 @@ impl WsConnection {
         };
 
         let (sock, _): (WebSocketStream<MaybeTlsStream<TcpStream>>, _) = client_async_tls_with_config(
-//        let (sock, _): (WebSocketStream<MaybeTlsStream<TcpStream>>, _) = connect_async_with_config(
             req,
             tcp_stream,
             // TODO(kim): In order to be able to replicate module WASM blobs,
@@ -287,7 +284,6 @@ impl WsConnection {
             // obviously a bad default for all other clients, though.
             Some(WebSocketConfig::default().max_frame_size(None).max_message_size(None)),
             connector
-//            false,
         )
         .await
         .map_err(|source| WsError::Tungstenite {

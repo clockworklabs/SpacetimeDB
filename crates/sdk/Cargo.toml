@@ -31,8 +31,8 @@ tokio.workspace = true
 tokio-tungstenite.workspace = true
 rustls = "0.23"
 rustls-pemfile = "2.2.0"
-#tokio-rustls="0.24"
 native-tls = "0.2"  # Explicitly add for Connector::NativeTls
+anyhow="1.0"
 
 [dev-dependencies]
 # for quickstart-chat and cursive-chat examples

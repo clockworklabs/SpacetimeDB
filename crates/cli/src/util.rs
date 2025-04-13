@@ -9,6 +9,7 @@ use std::path::Path;
 
 use crate::config::Config;
 use crate::login::{spacetimedb_login_force, DEFAULT_AUTH_HOST};
+pub use spacetimedb_lib::load_root_cert;
 
 pub const UNSTABLE_WARNING: &str = "WARNING: This command is UNSTABLE and subject to breaking changes.";
 
@@ -107,20 +108,6 @@ impl ResponseExt for reqwest::Response {
     }
 }
 
-pub async fn load_root_cert(cert_path: Option<&Path>) -> anyhow::Result<Option<native_tls::Certificate>> {
-    if let Some(path) = cert_path {
-        let cert_pem = tokio::fs::read_to_string(path)
-            .await
-            .context(format!("Failed to read certificate file: {}", path.display()))?;
-        let cert = native_tls::Certificate::from_pem(cert_pem.as_bytes())
-            .context(format!("Failed to parse PEM certificate: {}", path.display()))?;
-        eprintln!("Added trusted certificate from {} for a new TLS connection.", path.display());
-        Ok(Some(cert))
-    } else {
-        eprintln!("No trusted certificate specified via --cert for this new connection, thus if you used local CA or self-signed server certificate, you may get an error like '(unable to get local issuer certificate)' next.");
-        Ok(None)
-    }
-}
 
 pub async fn configure_tls(cert_path: Option<&Path>) -> anyhow::Result<reqwest::ClientBuilder> { // Added: TLS config
     let mut client_builder = reqwest::Client::builder();
