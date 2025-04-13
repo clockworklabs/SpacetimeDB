@@ -287,13 +287,19 @@ async fn update_server_fingerprint(
     let (host, proto, nick_or_host) = match server {
         Some(s) => {
             let (h, p) = host_or_url_to_host_and_protocol(s);
-            let p = p.or(protocol).ok_or_else(|| {
-                anyhow::anyhow!(
-                    "Protocol not specified and server {} is ambiguous",
-                    h
-                )
-            })?;
-            (h.to_string(), p.to_string(), s.to_string())
+            if p.is_none() && !s.contains(':') && !s.contains('/') {
+                // Nickname case: fetch URL from config
+                let url = config.get_host_url(Some(s))?;
+                let (h_url, p_url) = host_or_url_to_host_and_protocol(&url);
+                let p_url = p_url.ok_or_else(|| anyhow::anyhow!("Server {} has no protocol", s))?;
+                (h_url.to_string(), p_url.to_string(), s.to_string())
+            } else {
+                // Host or URL case
+                let p = p.or(protocol).ok_or_else(|| {
+                    anyhow::anyhow!("Protocol not specified and server {} is ambiguous", h)
+                })?;
+                (h.to_string(), p.to_string(), s.to_string())
+            }
         }
         None => {
             let url = config.get_host_url(None)?;
