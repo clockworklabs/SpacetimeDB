@@ -112,12 +112,16 @@ impl ResponseExt for reqwest::Response {
 pub async fn configure_tls(cert_path: Option<&Path>) -> anyhow::Result<reqwest::ClientBuilder> { // Added: TLS config
     let mut client_builder = reqwest::Client::builder();
     if let Some(cert) = load_root_cert(cert_path).await? {
-        client_builder = client_builder.add_root_certificate(reqwest::Certificate::from_der(&cert.to_der()?)?);
+        let path:String=cert_path.map_or("<unexpected empty path>".to_string(), |p| p.display().to_string());
+        let reqwest_cert = reqwest::Certificate::from_der(&cert.to_der()
+            .context(format!("Failed to convert certificate to DER for: {}", path))?)
+            .context(format!("Invalid certificate: {}", path))?;
+        client_builder = client_builder.add_root_certificate(reqwest_cert);
     }
     Ok(client_builder)
 }
 
-pub fn build_client_with_context(builder: reqwest::ClientBuilder, cert_path: Option<&Path>) -> anyhow::Result<reqwest::Client> { // Added: Build with context
+pub fn build_client_with_context(builder: reqwest::ClientBuilder, cert_path: Option<&Path>) -> anyhow::Result<reqwest::Client> {
     builder
         .build()
         .context(format!("Failed to build client with cert {:?}", cert_path))
@@ -135,7 +139,6 @@ pub async fn spacetime_dns(
     server: Option<&str>,
     client: &reqwest::Client,
 ) -> Result<Option<Identity>, anyhow::Error> {
-    //let client = reqwest::Client::new();
     let url = format!("{}/v1/database/{}/identity", config.get_host_url(server)?, domain);
     let Some(res) = client.get(url).send().await?.found() else {
         return Ok(None);
@@ -147,17 +150,12 @@ pub async fn spacetime_dns(
 }
 
 pub async fn spacetime_server_fingerprint(url: &str, cert_path: Option<&Path>) -> anyhow::Result<String> {
-    let mut builder = reqwest::Client::builder();
-    if let Some(path) = cert_path {
+    if let Some(_path) = cert_path {
         if !url.starts_with("https") {
             eprintln!("WARNING: Non-https url '{url}' but --cert was specified.");
         }
-        let cert_pem = std::fs::read_to_string(path)
-            .with_context(|| format!("Failed to read certificate file: {}", path.display()))?;
-        let cert = reqwest::Certificate::from_pem(cert_pem.as_bytes())
-            .map_err(|e| anyhow::anyhow!("Invalid certificate: {}", e))?;
-        builder = builder.add_root_certificate(cert);
     }
+    let builder = configure_tls(cert_path).await?;
     let client = builder.build().map_err(|e| anyhow::anyhow!("Failed to build client: {}", e))?;
     let builder = client.get(format!("{}/v1/identity/public-key", url).as_str());
     let res = builder.send().await?.error_for_status()?;
