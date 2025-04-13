@@ -66,6 +66,14 @@ pub fn cli() -> clap::Command {
                 .action(ArgAction::SetTrue)
                 .help("Print the initial update for the queries."),
         )
+        .arg(
+            Arg::new("cert")
+            .long("cert")
+            .value_name("FILE")
+            .action(clap::ArgAction::Set)
+            .value_parser(clap::value_parser!(std::path::PathBuf))
+            .help("Path to the server’s self-signed certificate or CA certificate (PEM format) to trust"),
+        )
         .arg(common_args::anonymous())
         .arg(common_args::yes())
         .arg(common_args::server().help("The nickname, host name or URL of the server hosting the database"))
@@ -132,7 +140,8 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
     let timeout = args.get_one::<u32>("timeout").copied();
     let print_initial_update = args.get_flag("print_initial_update");
 
-    let conn = parse_req(config, args).await?;
+    let cert_path = args.get_one::<std::path::PathBuf>("cert").map(|p| p.as_path());
+    let conn = parse_req(config, args, cert_path).await?;
     let api = ClientApi::new(conn);
     let module_def = api.module_def().await?;
 

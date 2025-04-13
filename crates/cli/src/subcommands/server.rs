@@ -1,6 +1,6 @@
 use crate::{
     common_args,
-    util::{host_or_url_to_host_and_protocol, spacetime_server_fingerprint, y_or_n, UNSTABLE_WARNING, VALID_PROTOCOLS},
+    util::{host_or_url_to_host_and_protocol, spacetime_server_fingerprint, y_or_n, UNSTABLE_WARNING, VALID_PROTOCOLS, build_client},
     Config,
 };
 use anyhow::Context;
@@ -356,23 +356,6 @@ pub async fn exec_ping(config: Config, args: &ArgMatches) -> Result<(), anyhow::
     let server = args.get_one::<String>("server").unwrap().as_str();
     let url = config.get_host_url(Some(server))?;
     let cert_path = args.get_one::<std::path::PathBuf>("cert").map(|p| p.as_path());
-
-    async fn build_client(cert_path: Option<&std::path::Path>) -> anyhow::Result<reqwest::Client> {
-        let mut client_builder = reqwest::Client::builder();
-
-        if let Some(path) = cert_path {
-            let cert_pem = tokio::fs::read_to_string(path)
-                .await
-                .map_err(|e| anyhow::anyhow!("Failed to read certificate file {} err: {}", path.display(), e))?;
-            let cert = reqwest::Certificate::from_pem(cert_pem.as_bytes())
-                .map_err(|e| anyhow::anyhow!("Failed to parse certificate file {} err: {}", path.display(), e))?;
-            client_builder = client_builder.add_root_certificate(cert);
-        }
-
-        client_builder
-            .build()
-            .map_err(|e| anyhow::anyhow!("Failed to build client with cert {:?} err: {}", cert_path, e))
-    }
 
     let client = build_client(cert_path).await?;
     let builder = client.get(format!("{}/v1/ping", url).as_str());

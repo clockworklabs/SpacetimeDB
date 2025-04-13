@@ -1,4 +1,4 @@
-use crate::util::decode_identity;
+use crate::util::{decode_identity, build_client};
 use crate::Config;
 use clap::{Arg, ArgAction, ArgGroup, ArgMatches, Command};
 use reqwest::Url;
@@ -296,22 +296,6 @@ struct LocalLoginResponse {
 }
 
 async fn spacetimedb_direct_login(host: &Url, cert: Option<&std::path::Path>) -> Result<String, anyhow::Error> {
-    pub async fn build_client(cert_path: Option<&std::path::Path>) -> anyhow::Result<reqwest::Client> {
-        let mut client_builder = reqwest::Client::builder();
-
-        if let Some(path) = cert_path {
-            let cert_pem = tokio::fs::read_to_string(path).await
-                .map_err(|e| anyhow::anyhow!("Failed to read certificate file {} err: {}", path.display(), e))?;
-            let cert = reqwest::Certificate::from_pem(cert_pem.as_bytes())
-                .map_err(|e| anyhow::anyhow!("Failed to parse certificate file {} err: {}", path.display(), e))?;
-            client_builder = client_builder.add_root_certificate(cert);
-        }
-
-        client_builder.build()
-            .map_err(|e| anyhow::anyhow!("Failed to build client with cert {:?} err: {}", cert_path, e))
-    }
-
-    //let client = reqwest::Client::new();
     let client = build_client(cert.as_deref()).await?;
 
     let response: LocalLoginResponse = client
