@@ -389,11 +389,39 @@ pub fn resolved_type_via_v9<T: SpacetimeType>() -> AlgebraicType {
 
 pub async fn load_root_cert(cert_path: Option<&std::path::Path>) -> anyhow::Result<Option<native_tls::Certificate>> {
     if let Some(path) = cert_path {
-        let cert_pem = tokio::fs::read_to_string(path)
+//        let cert_pem = tokio::fs::read_to_string(path)
+//            .await
+//            .context(format!("Failed to read certificate file: {}", path.display()))?;
+//        let cert = native_tls::Certificate::from_pem(cert_pem.as_bytes())
+//            .context(format!("Failed to parse PEM certificate: {}", path.display()))?;
+        // Open file asynchronously
+        use tokio::fs::File;
+        use tokio::io::{AsyncReadExt, BufReader};
+        let file = File::open(path)
+            .await
+            .context(format!("Failed to open certificate file: {}", path.display()))?;
+        
+        // Limit read to 1MiB (1,048,576 bytes)
+        // otherwise you'd pass /dev/zero and oom
+        const MAX_CERT_SIZE: u64 = 1_048_576;
+        let mut reader = BufReader::new(file).take(MAX_CERT_SIZE);
+        let mut cert_pem = String::new();
+        
+        // Read up to 1MiB into cert_pem
+        reader
+            .read_to_string(&mut cert_pem)
             .await
             .context(format!("Failed to read certificate file: {}", path.display()))?;
+        
+        // Check if we hit the limit (more data remains)
+        if reader.limit() == 0 && reader.get_ref().get_ref().metadata().await.is_ok() {
+            anyhow::bail!("Certificate file too large (>1MiB): {}", path.display());
+        }
+
+        // Parse PEM
         let cert = native_tls::Certificate::from_pem(cert_pem.as_bytes())
             .context(format!("Failed to parse PEM certificate: {}", path.display()))?;
+
         eprintln!("Added trusted certificate from {} for a new TLS connection.", path.display());
         Ok(Some(cert))
     } else {
