@@ -71,7 +71,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     // so let's warn, but allow this behavior.
     let server_issued_login: Option<&String> = args.get_one("server");
     if let Some(server) = server_issued_login {
-        println!("WARNING: the server that you specified here as '{}' isn't the one that will be used by commands like 'spacetime publish' but instead it's the one listed on 'spacetime server list' as the default (3 stars) that will be used, eg. 127.0.0.1:3000 if you haven't manually added any via 'spacetime server add'.\n",server);//extra new line
+        eprintln!("WARNING: the server that you specified here as '{}' isn't the one that will be used by commands like 'spacetime publish' but instead it's the one listed on 'spacetime server list' as the default (3 stars) that will be used, eg. 127.0.0.1:3000 if you haven't manually added any via 'spacetime server add'.\n",server);//extra new line
     }//if
 
     if let Some(token) = spacetimedb_token {
