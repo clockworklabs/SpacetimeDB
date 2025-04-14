@@ -1,6 +1,6 @@
 # Rust Client SDK Quick Start
 
-In this guide we'll show you how to get up and running with a simple SpacetimDB app with a client written in Rust.
+In this guide we'll show you how to get up and running with a simple SpacetimeDB app with a client written in Rust.
 
 We'll implement a command-line client for the module created in our Rust or C# Module Quickstart guides. Make sure you follow one of these guides before you start on this one.
 
