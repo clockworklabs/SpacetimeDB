@@ -896,10 +896,6 @@ but you must call one of them, or else the connection will never progress.
         self
     }
 
-//    pub fn with_trusted_cert(mut self, cert: impl Into<std::path::PathBuf>) -> Self {
-//        self.trusted_cert = Some(cert.into());
-//        self
-//    }
     pub fn with_trusted_cert(mut self, cert: Option<impl Into<std::path::PathBuf>>) -> Self {
         self.trusted_cert = cert.map(|c| c.into());
         self

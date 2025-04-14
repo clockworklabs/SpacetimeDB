@@ -37,7 +37,6 @@ fn main() {
 
 /// The host and port, without scheme, of the SpacetimeDB instance hosting our chat module.
 const HOST_PORT: &str = "localhost:3000";
-//const HOST_PORT: &str = "127.1.2.3:6543";
 
 /// The module name we chose when we published our module.
 const DB_NAME: &str = "quickstart-chat";
@@ -49,7 +48,7 @@ fn connect_to_db(cert_path: Option<PathBuf>) -> DbConnection {
     let uri = format!("{}://{}", scheme, HOST_PORT);
 
 //    let mut builder=
-        DbConnection::builder()
+    DbConnection::builder()
         // Register our `on_connect` callback, which will save our auth token.
         .on_connect(on_connected)
         // Register our `on_connect_error` callback, which will print a message, then exit the process.

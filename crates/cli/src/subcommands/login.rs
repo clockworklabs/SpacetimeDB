@@ -83,8 +83,6 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let cert: Option<&std::path::Path> = args.get_one::<std::path::PathBuf>("cert").map(|p| p.as_path());
     if let Some(server) = server_issued_login {
         let host = Url::parse(&config.get_host_url(Some(server))?)?;
-        //config.protocol=host.scheme();
-        //eprintln!("!!!!! scheme: '{:#?}', host: '{}', config: '{:#?}'", config.protocol(Some(server)), host, config);
         spacetimedb_token_cached(&mut config, &host, true, cert).await?;
     } else {
         spacetimedb_token_cached(&mut config, &host, false, cert).await?;

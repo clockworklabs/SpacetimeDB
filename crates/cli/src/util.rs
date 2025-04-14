@@ -109,7 +109,7 @@ impl ResponseExt for reqwest::Response {
 }
 
 
-pub async fn configure_tls(cert_path: Option<&Path>) -> anyhow::Result<reqwest::ClientBuilder> { // Added: TLS config
+pub async fn configure_tls(cert_path: Option<&Path>) -> anyhow::Result<reqwest::ClientBuilder> {
     let mut client_builder = reqwest::Client::builder();
     if let Some(cert) = load_root_cert(cert_path).await? {
         let path:String=cert_path.map_or("<unexpected empty path>".to_string(), |p| p.display().to_string());
@@ -127,7 +127,7 @@ pub fn build_client_with_context(builder: reqwest::ClientBuilder, cert_path: Opt
         .context(format!("Failed to build client with cert {:?}", cert_path))
 }
 
-pub async fn build_client(cert_path: Option<&Path>) -> anyhow::Result<reqwest::Client> { // Changed: Use sub-functions
+pub async fn build_client(cert_path: Option<&Path>) -> anyhow::Result<reqwest::Client> {
     let builder = configure_tls(cert_path).await?;
     build_client_with_context(builder, cert_path)
 }

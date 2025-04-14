@@ -13,7 +13,6 @@ use spacetimedb_client_api::routes::database::DatabaseRoutes;
 use spacetimedb_client_api::routes::router;
 use spacetimedb_paths::cli::{PrivKeyPath, PubKeyPath};
 use spacetimedb_paths::server::ServerDataDir;
-//use tokio::net::TcpListener;
 
 pub fn cli() -> clap::Command {
     clap::Command::new("start")
@@ -146,10 +145,6 @@ pub async fn exec(args: &ArgMatches) -> anyhow::Result<()> {
     let extra = axum::Router::new().nest("/health", spacetimedb_client_api::routes::health::router());
     let service = router(&ctx, db_routes, extra).with_state(ctx);
 
-//    let tcp = TcpListener::bind(listen_addr).await?;
-//    socket2::SockRef::from(&tcp).set_nodelay(true)?;
-//    log::debug!("Starting SpacetimeDB listening on {}", tcp.local_addr().unwrap());
-//    axum::serve(tcp, service).await?;
     use std::net::SocketAddr;
     let addr: SocketAddr = listen_addr.parse()?;
     if args.get_flag("ssl") {
@@ -157,8 +152,8 @@ pub async fn exec(args: &ArgMatches) -> anyhow::Result<()> {
         let key_path = args.get_one::<String>("key").context("Missing --key for SSL")?;
         // Install the default CryptoProvider at the start of the function
         // This only needs to happen once per process, so it's safe to call here
-        use rustls::crypto::ring::default_provider;  // Add this
-        use rustls::crypto::CryptoProvider;          // Add this
+        use rustls::crypto::ring::default_provider;
+        use rustls::crypto::CryptoProvider;
         CryptoProvider::install_default(default_provider())
             .expect("Failed to install default CryptoProvider");
 
