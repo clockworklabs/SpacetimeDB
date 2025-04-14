@@ -64,6 +64,10 @@ pub struct CommittedState {
     ///
     /// Between transactions, this is untouched.
     /// During transactions, the [`MutTxId`] can steal pages from the committed state.
+    ///
+    /// This is a handle on a shared structure.
+    /// Pages are shared between all modules running on a particular host,
+    /// not allocated per-module.
     pub(super) page_pool: PagePool,
 }
 
