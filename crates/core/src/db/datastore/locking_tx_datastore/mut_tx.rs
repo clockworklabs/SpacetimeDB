@@ -1346,14 +1346,14 @@ impl MutTxId {
 
             // SAFETY: `self.is_row_present(row)` holds as we still haven't deleted the row,
             // in particular, the `write_gen_val_to_col` call does not remove the row.
-            let res = unsafe { tx_table.confirm_insertion(tx_blob_store, tx_row_ptr, blob_bytes) };
+            let res = unsafe { tx_table.confirm_insertion::<true>(tx_blob_store, tx_row_ptr, blob_bytes) };
             ((tx_table, tx_blob_store, delete_table), cols_to_gen, res)
         } else {
             // When `GENERATE` is not enabled, simply confirm the insertion.
             // This branch is hit when inside sequence generation itself, to avoid infinite recursion.
             let tx_row_ptr = tx_row_ref.pointer();
             // SAFETY: `self.is_row_present(row)` holds as we just inserted the row.
-            let res = unsafe { tx_table.confirm_insertion(tx_blob_store, tx_row_ptr, blob_bytes) };
+            let res = unsafe { tx_table.confirm_insertion::<true>(tx_blob_store, tx_row_ptr, blob_bytes) };
             // SAFETY: By virtue of `get_table_and_blob_store_or_maybe_create_from` above succeeding,
             // we can assume we have an insert and delete table.
             (
@@ -1633,7 +1633,8 @@ impl MutTxId {
                 // SAFETY: `self.is_row_present(row)` holds as we still haven't deleted the row,
                 // in particular, the `write_gen_val_to_col` call does not remove the row.
                 // On error, `tx_row_ptr` has already been removed, so don't do it again.
-                let (_, tx_row_ptr) = unsafe { tx_table.confirm_insertion(tx_blob_store, tx_row_ptr, blob_bytes) }?;
+                let (_, tx_row_ptr) =
+                    unsafe { tx_table.confirm_insertion::<false>(tx_blob_store, tx_row_ptr, blob_bytes) }?;
                 // Delete the old row.
                 del_table.insert(old_ptr);
                 tx_row_ptr
@@ -1692,7 +1693,7 @@ impl MutTxId {
                         // in particular, the `write_gen_val_to_col` call does not remove the row.
                         // On error, `tx_row_ptr` has already been removed, so don't do it again.
                         let (_, tx_row_ptr) =
-                            unsafe { tx_table.confirm_insertion(tx_blob_store, tx_row_ptr, blob_bytes) }?;
+                            unsafe { tx_table.confirm_insertion::<false>(tx_blob_store, tx_row_ptr, blob_bytes) }?;
                         // Delete the old row.
                         del_table.insert(old_ptr);
                         tx_row_ptr
@@ -1706,8 +1707,7 @@ impl MutTxId {
                         // as we've deleted neither.
                         // In particular, the `write_gen_val_to_col` call does not remove the row.
                         let tx_row_ptr =
-                            unsafe { tx_table.confirm_update(tx_blob_store, tx_row_ptr, old_ptr, blob_bytes) }
-                                .map_err(IndexError::UniqueConstraintViolation)?;
+                            unsafe { tx_table.confirm_update(tx_blob_store, tx_row_ptr, old_ptr, blob_bytes) }?;
 
                         if let Some(old_commit_del_ptr) = old_commit_del_ptr {
                             let commit_table =

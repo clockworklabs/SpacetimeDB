@@ -1057,7 +1057,7 @@ mod tests {
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::st_var::StVarValue;
     use spacetimedb_lib::{resolved_type_via_v9, ScheduleAt, TimeDuration};
-    use spacetimedb_primitives::{col_list, ColId, ColSet, ScheduleId};
+    use spacetimedb_primitives::{col_list, ColId, ScheduleId};
     use spacetimedb_sats::algebraic_value::ser::value_serialize;
     use spacetimedb_sats::{product, AlgebraicType, GroundSpacetimeType};
     use spacetimedb_schema::def::{BTreeAlgorithm, ConstraintData, IndexAlgorithm, UniqueConstraintData};
@@ -2747,6 +2747,14 @@ mod tests {
         Ok(())
     }
 
+    fn create_table(schema: TableSchema) -> ResultTest<(Locking, TableId)> {
+        let datastore = get_datastore()?;
+        let mut tx = begin_mut_tx(&datastore);
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        datastore.commit_mut_tx(tx)?;
+        Ok((datastore, table_id))
+    }
+
     #[test]
     fn test_set_semantics() -> ResultTest<()> {
         let col_schema = |col_name, col_pos| ColumnSchema {
@@ -2757,50 +2765,44 @@ mod tests {
         };
 
         // Create a table schema for (a: u8, b: u8)
-        let table_schema = |primary_key, constraint: Option<_>| {
+        let table_schema = |index: Option<_>, constraint: Option<_>| {
             TableSchema::new(
                 TableId::SENTINEL,
                 "Foo".into(),
                 vec![col_schema("a".into(), 0.into()), col_schema("b".into(), 1.into())],
-                vec![],
-                constraint.map(|cs| vec![cs]).unwrap_or_default(),
+                index.into_iter().collect(),
+                constraint.into_iter().collect(),
                 vec![],
                 StTableType::User,
                 StAccess::Public,
                 None,
-                primary_key,
+                None,
             )
         };
         let table_schema_no_constraints = || table_schema(None, None);
-        let table_schema_pk = || table_schema(Some(0.into()), None);
         let table_schema_unique_constraint = || {
             table_schema(
-                None,
+                Some(IndexSchema {
+                    table_id: TableId::SENTINEL,
+                    index_id: IndexId::SENTINEL,
+                    index_name: "a_index".into(),
+                    index_algorithm: BTreeAlgorithm { columns: 0.into() }.into(),
+                }),
                 Some(ConstraintSchema {
                     table_id: TableId::SENTINEL,
                     constraint_id: ConstraintId::SENTINEL,
                     constraint_name: "a_unique".into(),
-                    data: ConstraintData::Unique(UniqueConstraintData {
-                        columns: ColSet::from_iter([0]),
-                    }),
+                    data: ConstraintData::Unique(UniqueConstraintData { columns: 0.into() }),
                 }),
             )
         };
 
-        fn create_table(schema: TableSchema) -> ResultTest<(Locking, TableId)> {
-            let datastore = get_datastore()?;
-            let mut tx = begin_mut_tx(&datastore);
-            let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
-            datastore.commit_mut_tx(tx)?;
-            Ok((datastore, table_id))
-        }
-
         fn insert_rows(datastore: &Locking, rows: Vec<ProductValue>, table_id: TableId) -> ResultTest<()> {
             let mut tx = begin_mut_tx(datastore);
             for row in rows {
-                datastore.insert_mut_tx(&mut tx, table_id, row.to_bsatn_vec()?.as_slice())?;
+                insert(datastore, &mut tx, table_id, &row)?;
             }
-            datastore.commit_mut_tx(tx)?;
+            commit(datastore, tx)?;
             Ok(())
         }
 
@@ -2886,9 +2888,60 @@ mod tests {
             Ok(())
         }
 
-        assert_set_semantics_for_table(table_schema_pk)?;
         assert_set_semantics_for_table(table_schema_unique_constraint)?;
         assert_set_semantics_for_table(table_schema_no_constraints)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn add_twice_and_find_issue_2601() -> ResultTest<()> {
+        let schema = TableSchema::new(
+            TableId::SENTINEL,
+            "Table".into(),
+            vec![ColumnSchema {
+                table_id: TableId::SENTINEL,
+                col_pos: 0.into(),
+                col_name: "field".into(),
+                col_type: AlgebraicType::I32,
+            }],
+            vec![IndexSchema {
+                table_id: TableId::SENTINEL,
+                index_id: IndexId::SENTINEL,
+                index_name: "index".into(),
+                index_algorithm: BTreeAlgorithm { columns: 0.into() }.into(),
+            }],
+            vec![ConstraintSchema {
+                table_id: TableId::SENTINEL,
+                constraint_id: ConstraintId::SENTINEL,
+                constraint_name: "constraint".into(),
+                data: ConstraintData::Unique(UniqueConstraintData { columns: 0.into() }),
+            }],
+            vec![],
+            StTableType::User,
+            StAccess::Public,
+            None,
+            None,
+        );
+
+        let (datastore, table_id) = create_table(schema)?;
+
+        let mut tx = begin_mut_tx(&datastore);
+
+        let row = &product![42];
+        let (_, first) = insert(&datastore, &mut tx, table_id, row)?;
+        let first = first.pointer();
+        // There was a bug where this insertion caused a removal of the first row.
+        insert(&datastore, &mut tx, table_id, row)?;
+
+        assert_eq!(
+            datastore
+                .iter_by_col_eq_mut_tx(&tx, table_id, 0, &42i32.into())
+                .unwrap()
+                .map(|r| r.pointer())
+                .collect::<Vec<_>>(),
+            [first],
+        );
 
         Ok(())
     }
