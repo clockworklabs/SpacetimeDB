@@ -404,18 +404,12 @@ Add the following to your `App` function, just below `const [newMessage, setNewM
 
   useEffect(() => {
     const subscribeToQueries = (conn: DbConnection, queries: string[]) => {
-      let count = 0;
-      for (const query of queries) {
-        conn
-          ?.subscriptionBuilder()
-          .onApplied(() => {
-            count++;
-            if (count === queries.length) {
-              console.log('SDK client cache initialized.');
-            }
-          })
-          .subscribe(query);
-      }
+      conn
+        ?.subscriptionBuilder()
+        .onApplied(() => {
+          console.log('SDK client cache initialized.');
+        })
+        .subscribe(queries);
     };
 
     const onConnect = (
