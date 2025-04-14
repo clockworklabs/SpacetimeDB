@@ -133,12 +133,11 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     use std::net::IpAddr;
     fn is_local_address(address: &str) -> bool {
         if let Ok(IpAddr::V4(ipv4)) = address.parse::<IpAddr>() {
-            ipv4.is_loopback() // Check if the address is a loopback address
+            ipv4.is_loopback() // true if this is `127.0.0.0/8`
         } else {
-            address.eq_ignore_ascii_case("localhost") // or 'false'
+            address.eq_ignore_ascii_case("localhost")
         }
     }
-    //if server_address != "localhost" && server_address != "127.0.0.1" {
     if !is_local_address(&server_address) {
         println!("You are about to publish to a non-local server: {}", server_address);
         if !y_or_n(force, "Are you sure you want to proceed?")? {

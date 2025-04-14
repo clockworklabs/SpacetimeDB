@@ -62,7 +62,7 @@ pub(crate) async fn parse_req(mut config: Config, args: &ArgMatches, cert_path: 
         auth_header: get_auth_header(&mut config, anon_identity, server, !force).await?,
         database_identity: database_identity(&config, database_name_or_identity, server, &client).await?,
         database: database_name_or_identity.to_string(),
-        cert_path: cert_path.map(PathBuf::from), // Added: Store cert_path
+        cert_path: cert_path.map(PathBuf::from),
     })
 }
 

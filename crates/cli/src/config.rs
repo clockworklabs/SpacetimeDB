@@ -822,7 +822,7 @@ Update the server's fingerprint with:
     pub fn server_fingerprint(&self, server: Option<&str>, protocol: Option<&str>) -> anyhow::Result<Option<&str>> {
         if let Some(server) = server {
             let (host, _proto) = host_or_url_to_host_and_protocol(server);
-            //FIXME: if _proto exists and one was specified as arg too... or if none as arg, take _proto?
+            //FIXME: if _proto exists and one was specified as arg too... or if None as arg, take _proto?
             self.home.server_fingerprint(host, protocol)
         } else {
             self.home.default_server_fingerprint()

@@ -21,7 +21,6 @@ use tokio::task::JoinHandle;
 use tokio::time::Instant;
 use tokio::{net::TcpStream, runtime};
 use tokio_tungstenite::{
-    //connect_async_with_config,
     tungstenite::client::IntoClientRequest,
     tungstenite::protocol::{Message as WebSocketMessage, WebSocketConfig},
     MaybeTlsStream,
@@ -220,7 +219,7 @@ impl WsConnection {
         token: Option<&str>,
         connection_id: ConnectionId,
         params: WsParams,
-        trusted_cert: Option<&std::path::PathBuf>, // Changed to borrow PathBuf
+        trusted_cert: Option<&std::path::PathBuf>,
     ) -> Result<Self, WsError> {
         let req = make_request(host, db_name, token, connection_id, params)?;
 
@@ -228,7 +227,6 @@ impl WsConnection {
         let uri = req.uri().clone();
 
         let host = uri.clone(); //shadow, and it's thus wss:// not https://
-        //use native_tls::Certificate;
         use native_tls::TlsConnector;
         use std::sync::Arc;
         use tokio::net::TcpStream;
@@ -240,8 +238,7 @@ impl WsConnection {
         let port = host.port_u16().ok_or(WsError::UriError(UriError::InvalidUri {
             source: Arc::new("No port specified in URI".parse::<Uri>().unwrap_err().into()),
         }))?;
-        if port == 0 {
-            //|| port > 65535 {
+        if port == 0 { // || port > 65535 { //it's u16
             return Err(WsError::UriError(UriError::InvalidUri {
                 source: Arc::new(format!("Invalid port: {}", port).parse::<Uri>().unwrap_err().into()),
             }));
@@ -272,7 +269,7 @@ impl WsConnection {
             Some(Connector::NativeTls(tls_connector))
         } else {
             //This is probably just ws:// ie. from http:// aka plaintext non-TLS
-            //println!("!!! Unexpected non-wss:// scheme, is: {}", uri);
+            //eprintln!("!!! Unexpected non-wss:// scheme, is: {}", uri);
             None
         };
 

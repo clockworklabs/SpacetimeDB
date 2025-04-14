@@ -42,7 +42,7 @@ pub fn build_client(con: &Connection) -> Client {
         tokio::runtime::Handle::current()
             .block_on(util::configure_tls(con.cert_path.as_deref()))
     })
-    .unwrap(); // Changed: Block on configure_tls
+    .unwrap();
     builder = builder.user_agent(APP_USER_AGENT);
 
     if let Some(auth_header) = con.auth_header.to_header() {
