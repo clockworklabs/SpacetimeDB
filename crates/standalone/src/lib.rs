@@ -10,6 +10,7 @@ use async_trait::async_trait;
 use clap::{ArgMatches, Command};
 use spacetimedb::client::ClientActorIndex;
 use spacetimedb::config::{CertificateAuthority, MetadataFile};
+use spacetimedb::db::datastore::traits::Program;
 use spacetimedb::db::db_metrics::data_size::DATA_SIZE_METRICS;
 use spacetimedb::db::relational_db;
 use spacetimedb::db::{db_metrics::DB_METRICS, Config};
@@ -227,14 +228,28 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
         match existing_db {
             // The database does not already exist, so we'll create it.
             None => {
-                let initial_program = self.program_store.put(&spec.program_bytes).await?;
+                let program = Program::from_bytes(&spec.program_bytes[..]);
+
                 let mut database = Database {
                     id: 0,
                     database_identity: spec.database_identity,
                     owner_identity: *publisher,
                     host_type: spec.host_type,
-                    initial_program,
+                    initial_program: program.hash,
                 };
+
+                let _hash_for_assert = program.hash;
+
+                // Instantiate a temporary database in order to check that the module is valid.
+                // This will e.g. typecheck RLS filters.
+                self.host_controller
+                    .check_module_validity(database.clone(), program)
+                    .await?;
+
+                let program_hash = self.program_store.put(&spec.program_bytes).await?;
+
+                debug_assert_eq!(_hash_for_assert, program_hash);
+
                 let database_id = self.control_db.insert_database(database.clone())?;
                 database.id = database_id;
 
@@ -327,6 +342,7 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
         );
 
         self.control_db.delete_database(database.id)?;
+
         for instance in self.control_db.get_replicas_by_database(database.id)? {
             self.delete_replica(instance.id).await?;
         }
