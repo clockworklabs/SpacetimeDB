@@ -48,14 +48,7 @@ pub fn cli() -> clap::Command {
                 .help("Output format for the logs")
         )
         .arg(common_args::yes())
-        .arg(
-            Arg::new("cert")
-            .long("cert")
-            .value_name("FILE")
-            .action(clap::ArgAction::Set)
-            .value_parser(clap::value_parser!(std::path::PathBuf))
-            .help("Path to the server’s self-signed certificate or CA certificate (PEM format) to trust"),
-        )
+        .arg(common_args::cert())
         .after_help("Run `spacetime help logs` for more detailed information.\n")
 }
 

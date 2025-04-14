@@ -63,14 +63,7 @@ i.e. only lowercase ASCII letters and numbers, separated by dashes."),
         .arg(common_args::server()
                 .help("The nickname, domain name or URL of the server to host the database."),
         )
-        .arg(
-            Arg::new("cert")
-                .long("cert")
-                .value_name("FILE")
-                .action(Set)
-                .value_parser(clap::value_parser!(std::path::PathBuf))
-                .help("Path to the server’s self-signed certificate or the CA certificate (PEM format) which signed it, to trust the server."),
-        )
+        .arg(common_args::cert())
         .arg(
             common_args::yes()
         )

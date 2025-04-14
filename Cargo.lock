@@ -5673,6 +5673,7 @@ dependencies = [
  "blake3",
  "bytes",
  "chrono",
+ "clap 4.5.20",
  "derive_more",
  "enum-as-inner",
  "enum-map",

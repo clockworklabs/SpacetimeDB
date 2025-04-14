@@ -55,14 +55,7 @@ fn get_subcommands() -> Vec<Command> {
                     .long("no-fingerprint")
                     .action(ArgAction::SetTrue),
             )
-            .arg(
-                clap::Arg::new("cert")
-                .long("cert")
-                .help("Path to a PEM-encoded CA certificate for TLS verification, ie. treated as if it were in the cert trust store.")
-                .value_name("FILE")
-                .value_parser(clap::value_parser!(std::path::PathBuf))
-                .required(false),
-            ),
+            .arg(common_args::cert()),
         Command::new("remove")
             .about("Remove a saved server configuration")
             .arg(
@@ -78,14 +71,7 @@ fn get_subcommands() -> Vec<Command> {
                     .required(true)
                     .help("The nickname, host name or URL of the server"),
             )
-            .arg(
-                clap::Arg::new("cert")
-                .long("cert")
-                .help("Path to a PEM-encoded CA certificate for TLS verification, ie. treated as if it were in the cert trust store.")
-                .value_name("FILE")
-                .value_parser(clap::value_parser!(std::path::PathBuf))
-                .required(false),
-            )
+            .arg(common_args::cert())
             .arg(common_args::yes()),
         Command::new("ping")
             .about("Checks to see if a SpacetimeDB host is online")
@@ -94,14 +80,7 @@ fn get_subcommands() -> Vec<Command> {
                     .required(true)
                     .help("The nickname, host name or URL of the server to ping"),
             )
-            .arg(
-                clap::Arg::new("cert")
-                .long("cert")
-                .help("Path to a PEM-encoded CA certificate for TLS verification, ie. treated as if it were in the cert trust store.")
-                .value_name("FILE")
-                .value_parser(clap::value_parser!(std::path::PathBuf))
-                .required(false),
-            ),
+            .arg(common_args::cert()),
         Command::new("edit")
             .about("Update a saved server's nickname, host name or protocol")
             .arg(
@@ -125,14 +104,7 @@ fn get_subcommands() -> Vec<Command> {
                     .long("no-fingerprint")
                     .action(ArgAction::SetTrue),
             )
-            .arg(
-                clap::Arg::new("cert")
-                .long("cert")
-                .help("Path to a PEM-encoded CA certificate for TLS verification, ie. treated as if it were in the cert trust store.")
-                .value_name("FILE")
-                .value_parser(clap::value_parser!(std::path::PathBuf))
-                .required(false),
-            )
+            .arg(common_args::cert())
             .arg(common_args::yes()),
         Command::new("clear")
             .about("Deletes all data from all local databases")

@@ -31,14 +31,7 @@ pub fn cli() -> Command {
                 .group("login-method")
                 .help("Bypass the login flow and use a login token directly"),
         )
-        .arg(
-            Arg::new("cert")
-                .long("cert")
-                .value_name("FILE")
-                .action(clap::ArgAction::Set)
-                .value_parser(clap::value_parser!(std::path::PathBuf))
-                .help("Path to the server’s self-signed certificate or the CA certificate (PEM format) which signed it, to trust the server."),
-        )
+        .arg(crate::common_args::cert())
         .about("Manage your login to the SpacetimeDB CLI")
 }
 

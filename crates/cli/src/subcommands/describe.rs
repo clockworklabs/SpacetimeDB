@@ -40,14 +40,7 @@ pub fn cli() -> clap::Command {
                      give human-readable output.",
                 ),
         )
-        .arg(
-            clap::Arg::new("cert")
-            .long("cert")
-            .help("Path to a PEM-encoded CA certificate for TLS verification, ie. treated as if it were in the cert trust store.")
-            .value_name("FILE")
-            .value_parser(clap::value_parser!(std::path::PathBuf))
-            .required(false),
-        )
+        .arg(common_args::cert())
         .arg(common_args::anonymous())
         .arg(common_args::server().help("The nickname, host name or URL of the server hosting the database"))
         .arg(common_args::yes())

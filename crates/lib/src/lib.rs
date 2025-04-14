@@ -425,3 +425,13 @@ pub async fn load_root_cert(cert_path: Option<&std::path::Path>) -> anyhow::Resu
     }
 }
 
+pub fn cert() -> clap::Arg {
+    clap::Arg::new("cert")
+        .long("cert")
+        .value_name("FILE")
+        .action(clap::ArgAction::Set)
+        .value_parser(clap::value_parser!(std::path::PathBuf))
+        .required(false)
+        .help("Path to the server’s self-signed certificate or CA certificate (PEM format) to trust during this command (ie. as if it were part of your system's cert root store)")
+}
+
