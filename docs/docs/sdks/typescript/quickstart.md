@@ -546,7 +546,7 @@ These custom React hooks update the React state anytime a row in our tables chan
 
 > In principle, it should be possible to automatically generate these hooks based on your module's schema, or use [`useSyncExternalStore`](https://react.dev/reference/react/useSyncExternalStore). For simplicity, rather than creating them mechanically, we're just going to do it manually.
 
-Next add let's add these hooks to our `App` component just below our connection setup:
+Let's add these hooks to our `App` component just below our connection setup:
 
 ```tsx
   const messages = useMessages(conn);
