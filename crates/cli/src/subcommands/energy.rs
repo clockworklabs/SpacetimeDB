@@ -30,6 +30,14 @@ fn get_energy_subcommands() -> Vec<clap::Command> {
             common_args::server()
                 .help("The nickname, host name or URL of the server from which to request balance information"),
         )
+        .arg(
+            clap::Arg::new("cert")
+            .long("cert")
+            .value_name("FILE")
+            .action(clap::ArgAction::Set)
+            .value_parser(clap::value_parser!(std::path::PathBuf))
+            .help("Path to the server’s self-signed certificate or CA certificate (PEM format) to trust"),
+        )
         .arg(common_args::yes())]
 }
 
@@ -58,8 +66,10 @@ async fn exec_status(mut config: Config, args: &ArgMatches) -> Result<(), anyhow
         let token = get_login_token_or_log_in(&mut config, server, !force).await?;
         util::decode_identity(&token)?
     };
+    let cert: Option<&std::path::Path> = args.get_one::<std::path::PathBuf>("cert").map(|p| p.as_path());
+    let client = crate::util::build_client(cert).await?;
 
-    let status = reqwest::Client::new()
+    let status = client
         .get(format!("{}/v1/energy/{}", config.get_host_url(server)?, identity))
         .send()
         .await?

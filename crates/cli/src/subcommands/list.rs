@@ -19,6 +19,14 @@ pub fn cli() -> Command {
             "Lists the databases attached to an identity. {}",
             UNSTABLE_WARNING
         ))
+        .arg(
+            clap::Arg::new("cert")
+            .long("cert")
+            .value_name("FILE")
+            .action(clap::ArgAction::Set)
+            .value_parser(clap::value_parser!(std::path::PathBuf))
+            .help("Path to the server’s self-signed certificate or CA certificate (PEM format) to trust"),
+        )
         .arg(common_args::server().help("The nickname, host name or URL of the server from which to list databases"))
         .arg(common_args::yes())
 }
@@ -42,7 +50,8 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let token = get_login_token_or_log_in(&mut config, server, !force).await?;
     let identity = util::decode_identity(&token)?;
 
-    let client = reqwest::Client::new();
+    let cert: Option<&std::path::Path> = args.get_one::<std::path::PathBuf>("cert").map(|p| p.as_path());
+    let client = util::build_client(cert).await?;
     let res = client
         .get(format!(
             "{}/v1/identity/{}/databases",

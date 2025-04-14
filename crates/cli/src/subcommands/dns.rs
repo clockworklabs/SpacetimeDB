@@ -20,6 +20,14 @@ pub fn cli() -> Command {
                 .required(true)
                 .help("The database identity to rename"),
         )
+        .arg(
+            Arg::new("cert")
+            .long("cert")
+            .value_name("FILE")
+            .action(clap::ArgAction::Set)
+            .value_parser(clap::value_parser!(std::path::PathBuf))
+            .help("Path to the server’s self-signed certificate or CA certificate (PEM format) to trust"),
+        )
         .arg(common_args::server().help("The nickname, host name or URL of the server on which to set the name"))
         .arg(common_args::yes())
         .after_help("Run `spacetime rename --help` for more detailed information.\n")
@@ -33,10 +41,12 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let token = get_login_token_or_log_in(&mut config, server, !force).await?;
     let identity = decode_identity(&token)?;
     let auth_header = get_auth_header(&mut config, false, server, !force).await?;
+    let cert: Option<&std::path::Path> = args.get_one::<std::path::PathBuf>("cert").map(|p| p.as_path());
 
     let domain: DomainName = domain.parse()?;
 
-    let builder = reqwest::Client::new()
+    let client = crate::util::build_client(cert).await?;
+    let builder = client
         .post(format!(
             "{}/v1/database/{database_identity}/names",
             config.get_host_url(server)?
