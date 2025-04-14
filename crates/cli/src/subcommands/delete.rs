@@ -13,14 +13,7 @@ pub fn cli() -> clap::Command {
         )
         .arg(common_args::server().help("The nickname, host name or URL of the server hosting the database"))
         .arg(common_args::yes())
-        .arg(
-            Arg::new("cert")
-                .long("cert")
-                .value_name("FILE")
-                .action(clap::ArgAction::Set)
-                .value_parser(clap::value_parser!(std::path::PathBuf))
-                .help("Path to the server’s self-signed certificate or CA certificate (PEM format) to trust"),
-        )
+        .arg(common_args::cert())
         .after_help("Run `spacetime help delete` for more detailed information.\n")
 }
 

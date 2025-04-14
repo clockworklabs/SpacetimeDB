@@ -39,14 +39,7 @@ pub fn cli() -> clap::Command {
         .arg(common_args::anonymous())
         .arg(common_args::server().help("The nickname, host name or URL of the server hosting the database"))
         .arg(common_args::yes())
-        .arg(
-            Arg::new("cert")
-            .long("cert")
-            .value_name("FILE")
-            .action(clap::ArgAction::Set)
-            .value_parser(clap::value_parser!(std::path::PathBuf))
-            .help("Path to the server’s self-signed certificate or CA certificate (PEM format) to trust"),
-        )
+        .arg(common_args::cert())
 }
 
 pub(crate) async fn parse_req(mut config: Config, args: &ArgMatches, cert_path: Option<&Path>) -> Result<Connection, anyhow::Error> {

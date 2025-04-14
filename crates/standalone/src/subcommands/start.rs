@@ -67,7 +67,11 @@ pub fn cli() -> clap::Command {
             "If specified the database will run entirely in memory. After the process exits all data will be lost.",
         ))
         .arg(Arg::new("ssl").long("ssl").alias("tls").alias("https").alias("secure").action(clap::ArgAction::SetTrue).help("enables the standalone server to listen in SSL mode, ie. use https instead of http to connect to it. Aliases --tls, --ssl, --secure, or --https."))
-        .arg(Arg::new("cert").long("cert").requires("ssl").value_name("FILE").help("--cert cert.pem: The server sends this to clients during the TLS handshake. ie. server's public key, which if it's self-signed then this is the file that you pass to clients via --cert when talking to the server from a client(or the cli), or if signed by a local CA then pass that CA's pub cert to your clients instead, in order to can trust this server from a client connection. Otherwise, you don't have to pass anything to clients if this cert was signed by a public CA like Let's Encrypt."))
+        .arg(
+            spacetimedb_lib::cert()
+            .requires("ssl")
+            .help("--cert cert.pem: The server sends this to clients during the TLS handshake. ie. server's public key, which if it's self-signed then this is the file that you pass to clients via --cert when talking to the server from a client(or the cli), or if signed by a local CA then pass that CA's pub cert to your clients instead, in order to can trust this server from a client connection. Otherwise, you don't have to pass anything to clients if this cert was signed by a public CA like Let's Encrypt.")
+        )
         .arg(Arg::new("key").long("key").requires("ssl").value_name("FILE").help("--key key.pem: The server keeps this private to decrypt and sign responses. ie. the server's private key"))
     // .after_help("Run `spacetime help start` for more detailed information.")
 }
@@ -148,7 +152,8 @@ pub async fn exec(args: &ArgMatches) -> anyhow::Result<()> {
     use std::net::SocketAddr;
     let addr: SocketAddr = listen_addr.parse()?;
     if args.get_flag("ssl") {
-        let cert_path = args.get_one::<String>("cert").context("Missing --cert for SSL")?;
+        use std::path::{Path, PathBuf};
+        let cert_path: &Path = args.get_one::<PathBuf>("cert").context("Missing --cert for SSL")?.as_path();
         let key_path = args.get_one::<String>("key").context("Missing --key for SSL")?;
         // Install the default CryptoProvider at the start of the function
         // This only needs to happen once per process, so it's safe to call here

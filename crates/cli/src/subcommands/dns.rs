@@ -20,14 +20,7 @@ pub fn cli() -> Command {
                 .required(true)
                 .help("The database identity to rename"),
         )
-        .arg(
-            Arg::new("cert")
-            .long("cert")
-            .value_name("FILE")
-            .action(clap::ArgAction::Set)
-            .value_parser(clap::value_parser!(std::path::PathBuf))
-            .help("Path to the server’s self-signed certificate or CA certificate (PEM format) to trust"),
-        )
+        .arg(common_args::cert())
         .arg(common_args::server().help("The nickname, host name or URL of the server on which to set the name"))
         .arg(common_args::yes())
         .after_help("Run `spacetime rename --help` for more detailed information.\n")
