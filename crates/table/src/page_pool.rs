@@ -175,10 +175,16 @@ impl Default for PagePoolInner {
 impl PagePoolInner {
     /// Puts back a [`Page`] into the pool.
     fn put(&self, page: Box<Page>) {
+        // If pages are manually created and added to this pool,
+        // this count may underflow and wrap.
+        // There's no native operation to atomically saturating_sub,
+        // and it's not worth it to do something more complicated,
+        // so we'll live with this given that non-test operation of the pool
+        // won't use `put` without a `take_*` first.
+        self.unpooled_pages_count.fetch_sub(1, Ordering::Relaxed);
+
         // Add it to the pool if there's room, or just drop it.
-        if self.pages.push(page).is_ok() {
-            self.unpooled_pages_count.fetch_sub(1, Ordering::Relaxed);
-        } else {
+        if self.pages.push(page).is_err() {
             self.dropped_pages_count.fetch_add(1, Ordering::Relaxed);
         }
     }
@@ -209,7 +215,7 @@ impl PagePoolInner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use core::ptr::addr_eq;
+    use core::{iter, ptr::addr_eq};
 
     fn present_rows_ptr(page: &Page) -> *const () {
         page.page_header_for_test().present_rows_storage_ptr_for_test()
@@ -221,12 +227,18 @@ mod tests {
 
         // Create a page and put it back.
         let page1 = pool.take_with_max_row_count(10);
+        assert_eq!(pool.unpooled_pages_count(), 1);
+        assert_eq!(pool.dropped_pages_count(), 0);
         let page1_ptr = &*page1 as *const _;
         let page1_pr_ptr = present_rows_ptr(&page1);
         pool.put(page1);
+        assert_eq!(pool.unpooled_pages_count(), 0);
+        assert_eq!(pool.dropped_pages_count(), 0);
 
         // Extract a page again.
         let page2 = pool.take_with_max_row_count(64);
+        assert_eq!(pool.unpooled_pages_count(), 1);
+        assert_eq!(pool.dropped_pages_count(), 0);
         let page2_ptr = &*page2 as *const _;
         let page2_pr_ptr = present_rows_ptr(&page2);
         // It should be the same as the previous one.
@@ -234,9 +246,13 @@ mod tests {
         // And the bitset should also be the same, as `10.div_ceil(64) == 64`.
         assert!(addr_eq(page1_pr_ptr, page2_pr_ptr));
         pool.put(page2);
+        assert_eq!(pool.unpooled_pages_count(), 0);
+        assert_eq!(pool.dropped_pages_count(), 0);
 
         // Extract a page again, but this time, go beyond the first block.
         let page3 = pool.take_with_max_row_count(64 + 1);
+        assert_eq!(pool.unpooled_pages_count(), 1);
+        assert_eq!(pool.dropped_pages_count(), 0);
         let page3_ptr = &*page3 as *const _;
         let page3_pr_ptr = present_rows_ptr(&page3);
         // It should be the same as the previous one.
@@ -249,11 +265,30 @@ mod tests {
         let page4_ptr = &*page4 as *const _;
         pool.put(page4);
         pool.put(page3);
+        assert_eq!(pool.unpooled_pages_count(), usize::MAX);
+        assert_eq!(pool.dropped_pages_count(), 0);
         // When we take out a page, it should be the same as `page4` and not `page1`.
         let page5 = pool.take_with_max_row_count(10);
         let page5_ptr = &*page5 as *const _;
         // Same as page4.
         assert!(!addr_eq(page5_ptr, page1_ptr));
         assert!(addr_eq(page5_ptr, page4_ptr));
+    }
+
+    #[test]
+    fn page_pool_drops_past_max_size() {
+        const N: usize = 3;
+        let pool = PagePool::new(Some(size_of::<Page>() * N));
+
+        let pages = iter::repeat_with(|| pool.take_with_max_row_count(42))
+            .take(N + 1)
+            .collect::<Vec<_>>();
+        assert_eq!(pool.dropped_pages_count(), 0);
+        assert_eq!(pool.unpooled_pages_count(), N + 1);
+
+        pool.put_many(pages.into_iter());
+        assert_eq!(pool.dropped_pages_count(), 1);
+        assert_eq!(pool.unpooled_pages_count(), 0);
+        assert_eq!(pool.inner.pages.len(), N);
     }
 }
