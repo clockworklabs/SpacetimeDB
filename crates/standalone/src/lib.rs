@@ -238,15 +238,17 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
                     initial_program: program.hash,
                 };
 
-                let program_hash = self.program_store.put(&spec.program_bytes).await?;
-
-                debug_assert_eq!(program.hash, program_hash);
+                let _hash_for_assert = program.hash;
 
                 // Instantiate a temporary database in order to check that the module is valid.
                 // This will e.g. typecheck RLS filters.
                 self.host_controller
                     .check_module_validity(database.clone(), program)
                     .await?;
+
+                let program_hash = self.program_store.put(&spec.program_bytes).await?;
+
+                debug_assert_eq!(_hash_for_assert, program_hash);
 
                 let database_id = self.control_db.insert_database(database.clone())?;
                 database.id = database_id;

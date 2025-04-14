@@ -842,7 +842,9 @@ impl Host {
             database,
             0,
             program,
-            // TODO: Should we be reporting this to the caller somehow?
+            // No need to register a callback here:
+            // proper publishes use it to unregister a panicked module,
+            // but this module is not registered in the first place.
             || log::error!("launch_module on_panic called for temporary publish in-memory instance"),
             Arc::new(db),
             Arc::new(NullEnergyMonitor),
