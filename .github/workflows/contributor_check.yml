@@ -13,7 +13,7 @@ jobs:
     steps:
       - name: Verify author is contributor
         env:
-          GITHUB_TOKEN: ${{ secrets.ORG_READ_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CONTRIB_ORG: clockworklabs
           PR_AUTHOR: ${{ github.event.pull_request.user.login || (github.event_name == 'merge_group' && github.event.sender.login) || null }}
         run: |
