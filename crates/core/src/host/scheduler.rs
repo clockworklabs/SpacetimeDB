@@ -304,58 +304,56 @@ impl SchedulerActor {
         let caller_identity = module_host.info().database_identity;
         let module_info = module_host.info.clone();
 
-        let call_reducer_params = move |tx: &MutTxId| -> Result<Option<CallReducerParams>, anyhow::Error> {
-            let id = match item {
-                QueueItem::Id(id) => id,
-                QueueItem::VolatileNonatomicImmediate { reducer_name, args } => {
-                    let (reducer_id, reducer_seed) = module_info
-                        .module_def
-                        .reducer_arg_deserialize_seed(&reducer_name[..])
-                        .ok_or_else(|| anyhow!("Reducer not found: {}", reducer_name))?;
-                    let reducer_args = args.into_tuple(reducer_seed)?;
+        let call_reducer_params = move |tx: &MutTxId| match item {
+            QueueItem::Id(id) => {
+                let Ok(schedule_row) = get_schedule_row_mut(tx, &db, id) else {
+                    // if the row is not found, it means the schedule is cancelled by the user
+                    log::debug!(
+                        "table row corresponding to yeild scheduler id not found: tableid {}, schedulerId {}",
+                        id.table_id,
+                        id.schedule_id
+                    );
+                    return Ok(None);
+                };
 
-                    return Ok(Some(CallReducerParams {
-                        timestamp: Timestamp::now(),
-                        caller_identity,
-                        caller_connection_id: ConnectionId::ZERO,
-                        client: None,
-                        request_id: None,
-                        timer: None,
-                        reducer_id,
-                        args: reducer_args,
-                    }));
-                }
-            };
+                let ScheduledReducer { reducer, bsatn_args } = proccess_schedule(tx, &db, id.table_id, &schedule_row)?;
 
-            let Ok(schedule_row) = get_schedule_row_mut(tx, &db, id) else {
-                // if the row is not found, it means the schedule is cancelled by the user
-                log::debug!(
-                    "table row corresponding to yeild scheduler id not found: tableid {}, schedulerId {}",
-                    id.table_id,
-                    id.schedule_id
-                );
-                return Ok(None);
-            };
+                let (reducer_id, reducer_seed) = module_info
+                    .module_def
+                    .reducer_arg_deserialize_seed(&reducer[..])
+                    .ok_or_else(|| anyhow!("Reducer not found: {}", reducer))?;
 
-            let ScheduledReducer { reducer, bsatn_args } = proccess_schedule(tx, &db, id.table_id, &schedule_row)?;
+                let reducer_args = ReducerArgs::Bsatn(bsatn_args.into()).into_tuple(reducer_seed)?;
 
-            let (reducer_id, reducer_seed) = module_info
-                .module_def
-                .reducer_arg_deserialize_seed(&reducer[..])
-                .ok_or_else(|| anyhow!("Reducer not found: {}", reducer))?;
+                Ok(Some(CallReducerParams {
+                    timestamp: Timestamp::now(),
+                    caller_identity,
+                    caller_connection_id: ConnectionId::ZERO,
+                    client: None,
+                    request_id: None,
+                    timer: None,
+                    reducer_id,
+                    args: reducer_args,
+                }))
+            }
+            QueueItem::VolatileNonatomicImmediate { reducer_name, args } => {
+                let (reducer_id, reducer_seed) = module_info
+                    .module_def
+                    .reducer_arg_deserialize_seed(&reducer_name[..])
+                    .ok_or_else(|| anyhow!("Reducer not found: {}", reducer_name))?;
+                let reducer_args = args.into_tuple(reducer_seed)?;
 
-            let reducer_args = ReducerArgs::Bsatn(bsatn_args.into()).into_tuple(reducer_seed)?;
-
-            Ok(Some(CallReducerParams {
-                timestamp: Timestamp::now(),
-                caller_identity,
-                caller_connection_id: ConnectionId::ZERO,
-                client: None,
-                request_id: None,
-                timer: None,
-                reducer_id,
-                args: reducer_args,
-            }))
+                Ok(Some(CallReducerParams {
+                    timestamp: Timestamp::now(),
+                    caller_identity,
+                    caller_connection_id: ConnectionId::ZERO,
+                    client: None,
+                    request_id: None,
+                    timer: None,
+                    reducer_id,
+                    args: reducer_args,
+                }))
+            }
         };
 
         let db = module_host.replica_ctx().relational_db.clone();
