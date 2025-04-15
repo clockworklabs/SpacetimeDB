@@ -1,0 +1,74 @@
+name: Sync DLLs to C#/Unity SDK
+
+on:
+  push:
+    branches: [master]  # Triggers on new commits to master
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Set up GitHub CLI
+        uses: actions/setup-gh@v4
+
+      - name: Authenticate GitHub CLI
+        run: gh auth login --with-token <<< "${{secrets.UNITY_SDK_TOKEN}}"
+
+      - name: Checkout SpacetimeDB
+        uses: actions/checkout@v4
+        with:
+          path: SpacetimeDB
+
+      - name: Checkout C#/Unity SDK
+        uses: actions/checkout@v4
+        with:
+          repository: clockworklabs/com.clockworklabs.spacetimedbsdk
+          token: ${{secrets.UNITY_SDK_TOKEN}}
+          path: com.clockworklabs.spacetimedbsdk
+
+      - name: Update DLLs
+        run: |
+          cd SpacetimeDB/crates/bindings-csharp
+          dotnet pack
+
+      - name: Copy DLLs
+        run: |
+          cd com.clockworklabs.spacetimedbsdk
+          git checkout -B bot/update-dlls origin/master
+          bash tools~/write-nuget-config.sh ../SpacetimeDB
+          dotnet restore
+
+      - name: Update .meta files
+        run: |
+          cd com.clockworklabs.spacetimedbsdk/packages
+          # find any new untracked directories, which indicate that we've imported a new version of the DLLs
+          NEW_DIR="$(cd spacetimedb.bsatn.runtime && git ls-files --others --exclude-standard . | cut -d'/' -f1 | sort -u)"
+          if test -z "${NEW_DIR}"; then
+            echo "No meta files to update"
+          else
+            OLD_DIR="$(cd spacetimedb.bsatn.runtime && git ls-files . | cut -d'/' -f1 | sort -u)"
+            for file in $(find . -name '*.meta'); do
+              mv "$file" "${file/$OLD_DIR/$NEW_DIR}";
+            done
+            rm -rf "$OLD_DIR"
+          fi
+
+      - name: Commit Changes
+        run: |
+          cd com.clockworklabs.spacetimedbsdk/packages
+          git add .
+          git commit -m "Update DLLs from SpacetimeDB commit $GITHUB_SHA" || echo "No changes to commit"
+          git push -u origin bot/update-dlls
+
+      - name: Create or update PR
+        env:
+          GH_TOKEN: ${{ secrets.UNITY_SDK_TOKEN }}
+        run: |
+          cd com.clockworklabs.spacetimedbsdk/packages
+          gh pr create --title 'Update DLLs' --base master --head bot/update-dlls || echo 'PR already exists'
+          gh pr edit bot/update-dlls --body-file - <<EOF
+            This automated PR updates our DLLs.
+
+            Triggered by commit: https://github.com/${{ github.repository }}/commit/${{ github.sha }}
+          EOF
