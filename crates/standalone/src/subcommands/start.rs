@@ -75,12 +75,12 @@ pub fn cli() -> clap::Command {
         .arg(
             spacetimedb_lib::cert()
             .requires("ssl")
-            .help("--cert server.crt: The server sends this to clients during the TLS handshake. ie. server's public key, which if it's self-signed then this is the file that you pass to clients via --cert when talking to the server from a client(or the cli), or if signed by a local CA then pass that CA's pub cert to your clients instead, in order to can trust this server from a client connection. Otherwise, you don't have to pass anything to clients if this cert was signed by a public CA like Let's Encrypt.")
+            .help("--cert server.crt: The server sends this to clients during the TLS handshake. ie. server's certificate which contains its public key, which if it's self-signed then this is the file that you must pass to clients via --cert when talking to the server from a client(or the cli), or if signed by a local CA then pass that CA's cert to your clients instead, in order to can trust this server from a client connection. Otherwise, you don't have to pass anything to clients if this cert was signed by a public CA like Let's Encrypt.")
         )
         .arg(Arg::new("key").long("key").requires("ssl").value_name("FILE")
             .action(clap::ArgAction::Set)
             .value_parser(clap::value_parser!(PathBuf))
-            .help("--key server.key: The server keeps this private to decrypt and sign responses. ie. the server's private key"))
+            .help("--key server.key: The server's private key used to decrypt and sign responses."))
     // .after_help("Run `spacetime help start` for more detailed information.")
 }
 
