@@ -37,6 +37,7 @@ axum-server = { version = "0.7.2", features = ["tls-rustls"] }
 
 ring = "0.17"  # explicitly add this for the CryptoProvider, even tho it's included transitively.
 rustls= { version="0.23", default-features = true, features=[ "ring" ] }
+rustls-pemfile = "2.2"
 
 clap = { workspace = true, features = ["derive", "string"] }
 dirs.workspace = true

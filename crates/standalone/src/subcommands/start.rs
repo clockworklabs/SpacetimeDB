@@ -1,4 +1,9 @@
 use std::sync::Arc;
+use std::path::Path;
+use std::path::PathBuf;
+use tokio::io::AsyncReadExt;
+use rustls::pki_types::{CertificateDer, PrivateKeyDer};
+use rustls::pki_types::PrivatePkcs8KeyDer;
 
 use crate::StandaloneEnv;
 use anyhow::Context;
@@ -74,9 +79,125 @@ pub fn cli() -> clap::Command {
         )
         .arg(Arg::new("key").long("key").requires("ssl").value_name("FILE")
             .action(clap::ArgAction::Set)
-            .value_parser(clap::value_parser!(std::path::PathBuf))
+            .value_parser(clap::value_parser!(PathBuf))
             .help("--key server.key: The server keeps this private to decrypt and sign responses. ie. the server's private key"))
     // .after_help("Run `spacetime help start` for more detailed information.")
+}
+
+/// Asynchronously reads a file with a maximum size limit of 1 MiB.
+async fn read_file_limited(path: &Path) -> anyhow::Result<Vec<u8>> {
+    const MAX_SIZE: usize = 1_048_576; // 1 MiB
+
+    let file = tokio::fs::File::open(path)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to open file {}: {}", path.display(), e))?;
+    let metadata = file
+        .metadata()
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to read metadata for {}: {}", path.display(), e))?;
+
+    if metadata.len() > MAX_SIZE as u64 {
+        return Err(anyhow::anyhow!(
+            "File {} exceeds maximum size of {} bytes",
+            path.display(),
+            MAX_SIZE
+        ));
+    }
+
+    let mut reader = tokio::io::BufReader::new(file);
+    let mut data = Vec::with_capacity(metadata.len() as usize);
+    reader
+        .read_to_end(&mut data)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to read file {}: {}", path.display(), e))?;
+
+    Ok(data)
+}
+
+/// Loads certificates from a PEM file.
+async fn load_certs(file_path: &Path) -> anyhow::Result<Vec<CertificateDer<'static>>> {
+    let data = read_file_limited(file_path).await?;
+    let certs: Vec<CertificateDer<'static>> = rustls_pemfile::certs(&mut std::io::Cursor::new(data))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| anyhow::anyhow!("Failed to parse certificates from {}: {:?}", file_path.display(), e))?;
+    if certs.is_empty() {
+        return Err(anyhow::anyhow!("No certificates found in file {}", file_path.display()));
+    }
+    Ok(certs)
+}
+
+/// Loads a private key from a PEM file.
+async fn load_private_key(file_path: &Path) -> anyhow::Result<PrivateKeyDer<'static>> {
+    let data = read_file_limited(file_path).await?;
+    let keys: Vec<PrivatePkcs8KeyDer<'static>> = rustls_pemfile::pkcs8_private_keys(&mut std::io::Cursor::new(data))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| anyhow::anyhow!("Failed to parse private keys from {}: {:?}", file_path.display(), e))?;
+    let key = keys
+        .into_iter()
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("No private key found in file {}", file_path.display()))?;
+    Ok(PrivateKeyDer::Pkcs8(key))
+}
+
+/// Creates a custom CryptoProvider with specific cipher suites.
+fn custom_crypto_provider() -> rustls::crypto::CryptoProvider {
+    use rustls::crypto::ring::default_provider;
+    use rustls::crypto::ring::cipher_suite;
+    use rustls::crypto::ring::kx_group;
+
+    let cipher_suites = vec![
+        // TLS 1.3
+        // test with: $ openssl s_client -connect 127.0.0.1:3000 -tls1_3
+        cipher_suite::TLS13_AES_256_GCM_SHA384,
+        cipher_suite::TLS13_AES_128_GCM_SHA256,
+        cipher_suite::TLS13_CHACHA20_POLY1305_SHA256,
+        // TLS 1.2
+        // these are ignored if builder_with_protocol_versions() below doesn't contain TLS 1.2
+        // test with: $ openssl s_client -connect 127.0.0.1:3000 -tls1_2
+        cipher_suite::TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+        cipher_suite::TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+        cipher_suite::TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+        cipher_suite::TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+        cipher_suite::TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,
+        cipher_suite::TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
+    ];
+
+    // (KX) groups used in TLS handshakes to negotiate the shared secret between client and server.
+    let kx_groups = vec![
+        kx_group::X25519,
+        /*
+           X25519:
+
+           An elliptic curve Diffie-Hellman (ECDH) key exchange algorithm based on Curve25519.
+           Known for high security, speed, and resistance to side-channel attacks.
+           Commonly used in modern TLS (1.2 and 1.3) due to its efficiency and forward secrecy.
+           Preferred by many clients (e.g., browsers) for TLS 1.3 handshakes.
+           */
+        kx_group::SECP256R1,
+        /*
+           SECP256R1 (aka NIST P-256):
+
+           An elliptic curve standardized by NIST, using a 256-bit prime field.
+           Widely supported across TLS 1.2 and 1.3, especially in enterprise environments.
+           Slightly less performant than X25519 but trusted due to long-standing use.
+           Common in certificates signed by older CAs or legacy systems.
+           */
+        kx_group::SECP384R1,
+        /*
+           SECP384R1 (aka NIST P-384):
+
+           Another NIST elliptic curve, using a 384-bit prime field for higher security.
+           Offers stronger cryptographic strength than SECP256R1, at the cost of slower performance.
+           Used in TLS 1.2 and 1.3 when higher assurance is needed (e.g., government systems).
+           Less common than X25519 or SECP256R1 due to computational overhead.
+           */
+    ];
+
+    rustls::crypto::CryptoProvider {
+        cipher_suites,
+        kx_groups,
+        ..default_provider()
+    }
 }
 
 pub async fn exec(args: &ArgMatches) -> anyhow::Result<()> {
@@ -154,20 +275,37 @@ pub async fn exec(args: &ArgMatches) -> anyhow::Result<()> {
 
     use std::net::SocketAddr;
     let addr: SocketAddr = listen_addr.parse()?;
+
     if args.get_flag("ssl") {
-        use std::path::{Path, PathBuf};
+        // Install custom CryptoProvider at the start
+        rustls::crypto::CryptoProvider::install_default(custom_crypto_provider())
+            .map_err(|e| anyhow::anyhow!("Failed to install custom CryptoProvider: {:?}", e))?;
+
         let cert_path: &Path = args.get_one::<PathBuf>("cert").context("Missing --cert for SSL")?.as_path();
         let key_path: &Path = args.get_one::<PathBuf>("key").context("Missing --key for SSL")?.as_path();
-        // Install the default CryptoProvider at the start of the function
-        // This only needs to happen once per process, so it's safe to call here
-        use rustls::crypto::ring::default_provider;
-        use rustls::crypto::CryptoProvider;
-        CryptoProvider::install_default(default_provider())
-            .expect("Failed to install default CryptoProvider");
 
-        use axum_server::tls_rustls::RustlsConfig;
-        let tls_config = RustlsConfig::from_pem_file(cert_path, key_path).await?;
-        log::debug!("Starting SpacetimeDB with SSL listening on {}", addr);
+        // Load certificate and private key with file size limit
+        let cert_chain = load_certs(cert_path).await?;
+        let private_key = load_private_key(key_path).await?;
+
+        // Create ServerConfig with secure settings
+        let config=
+            rustls::ServerConfig::builder_with_protocol_versions(&[
+                &rustls::version::TLS13,
+//                &rustls::version::TLS12,
+            ])
+//            rustls::ServerConfig::builder() // using this instead, wouldn't restrict proto versions.
+            .with_no_client_auth()
+            .with_single_cert(cert_chain, private_key)
+            .map_err(|e| anyhow::anyhow!("Failed to set certificates from files pub:'{}', priv:'{}', err: {}", cert_path.display(), key_path.display(), e))?;
+
+        // Use axum_server with custom config
+        let tls_config = axum_server::tls_rustls::RustlsConfig::from_config(Arc::new(config));
+
+        log::info!(
+            "Starting SpacetimeDB with SSL on {}.",
+            addr,
+        );
         axum_server::bind_rustls(addr, tls_config)
             .serve(service.into_make_service())
             .await?;
