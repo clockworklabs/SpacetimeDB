@@ -999,10 +999,15 @@ pub fn write_type<W: Write>(
             if matches!(&**elem_ty, AlgebraicTypeUse::Primitive(PrimitiveType::U8)) {
                 return write!(out, "Uint8Array");
             }
+            let needs_parens = matches!(&**elem_ty, AlgebraicTypeUse::Option(_));
             // We wrap the inner type in parentheses to avoid ambiguity with the [] binding.
-            write!(out,"(")?;
+            if needs_parens {
+                write!(out, "(")?;
+            }
             write_type(module, out, elem_ty, ref_prefix)?;
-            write!(out,")")?;
+            if needs_parens {
+                write!(out, ")")?;
+            }
             write!(out, "[]")?;
         }
         AlgebraicTypeUse::Ref(r) => {
