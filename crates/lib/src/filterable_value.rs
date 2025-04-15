@@ -17,8 +17,8 @@ use spacetimedb_sats::{hash::Hash, i256, u256, Serialize};
 /// - [`Identity`].
 /// - [`ConnectionId`].
 /// - [`Hash`](struct@Hash).
-/// - Unitary enums annotated with `#[derive(SpacetimeType)]`.
-///   Unitary enums are sometimes called "plain," "simple" or "C-style."
+/// - No-payload enums annotated with `#[derive(SpacetimeType)]`.
+///   No-payload enums are sometimes called "plain," "simple" or "C-style."
 ///   They are enums where no variant has any payload data.
 //
 // General rules for implementors of this type:
@@ -37,8 +37,8 @@ use spacetimedb_sats::{hash::Hash, i256, u256, Serialize};
 //   E.g. `&str: FilterableValue<Column = String>` is desirable.
 #[diagnostic::on_unimplemented(
     message = "`{Self}` cannot appear as an argument to an index filtering operation",
-    label = "should be an integer type, `bool`, `String`, `&str`, `Identity`, `ConnectionId`, `Hash` or a unitary enum which derives `SpacetimeType`, not `{Self}`",
-    note = "The allowed set of types are limited to integers, bool, strings, `Identity`, `ConnectionId`, `Hash` and unitary enums which derive `SpacetimeType`,"
+    label = "should be an integer type, `bool`, `String`, `&str`, `Identity`, `ConnectionId`, `Hash` or a no-payload enum which derives `SpacetimeType`, not `{Self}`",
+    note = "The allowed set of types are limited to integers, bool, strings, `Identity`, `ConnectionId`, `Hash` and no-payload enums which derive `SpacetimeType`,"
 )]
 pub trait FilterableValue: Serialize + Private {
     type Column;
