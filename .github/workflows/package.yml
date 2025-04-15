@@ -7,7 +7,6 @@ on:
     branches:
       - master
       - release/*
-      - bfops/fix-packaging
 
 jobs:
   build-cli:
