@@ -589,12 +589,19 @@ impl Table {
             })
             .map_err(|(index_id, old, new)| {
                 // Found unique constraint violation!
-
-                // SAFETY:
-                // - The row layouts are the same as its the same table.
-                // - We know `old` exists in `self` as we just found it in an index.
-                // - Caller promised that `new` is valid for `self`.
-                if CHECK_SAME_ROW && unsafe { Self::eq_row_in_page(self, old, self, new.pointer()) } {
+                if CHECK_SAME_ROW
+                    // If the index was added in this tx,
+                    // `old` could be a committed row,
+                    // which we want to avoid here.
+                    // TODO(centril): not 100% correct, could still be a duplicate,
+                    // but this is rather pathological and should be fixed when we restructure.
+                    && old.squashed_offset().is_tx_state()
+                    // SAFETY:
+                    // - The row layouts are the same as its the same table.
+                    // - We know `old` exists in `self` as we just found it in an index.
+                    // - Caller promised that `new` is valid for `self`.
+                    && unsafe { Self::eq_row_in_page(self, old, self, new.pointer()) }
+                {
                     return (index_id, DuplicateError(old).into());
                 }
 
@@ -1303,6 +1310,7 @@ impl fmt::Debug for RowRef<'_> {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt.debug_struct("RowRef")
             .field("pointer", &self.pointer)
+            .field("value", &self.to_product_value())
             .finish_non_exhaustive()
     }
 }
