@@ -31,19 +31,26 @@ impl ScheduleAt {
     ///
     /// Returns [`std::time::Duration::ZERO`] if `self` represents a time in the past.
     #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-    pub fn to_duration_from_now(&self) -> std::time::Duration {
-        use std::time::{Duration, SystemTime};
+    pub fn to_duration_from(&self, from: Timestamp) -> std::time::Duration {
+        use std::time::Duration;
         match self {
-            ScheduleAt::Time(time) => {
-                let now = SystemTime::now();
-                let time = SystemTime::from(*time);
-                time.duration_since(now).unwrap_or(Duration::ZERO)
-            }
+            ScheduleAt::Time(time) => time.duration_since(from).unwrap_or(Duration::ZERO),
             // TODO(correctness): Determine useful behavior on negative intervals,
             // as that's the case where `to_duration` fails.
             // Currently, we use the magnitude / absolute value,
             // which seems at least less stupid than clamping to zero.
             ScheduleAt::Interval(dur) => dur.to_duration_abs(),
+        }
+    }
+
+    /// Converts the `ScheduleAt` to a `Timestamp`.
+    ///
+    /// If `self` is an interval, returns `from + dur`.
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+    pub fn to_timestamp_from(&self, from: Timestamp) -> Timestamp {
+        match *self {
+            ScheduleAt::Time(time) => time,
+            ScheduleAt::Interval(dur) => from + dur.abs(),
         }
     }
 
