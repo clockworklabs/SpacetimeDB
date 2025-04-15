@@ -295,6 +295,7 @@ impl InstanceEnv {
         if update_flags.is_scheduler_table {
             self.schedule_row(stdb, tx, table_id, row_ptr)?;
         }
+        tx.metrics.bytes_written += row_len;
 
         Ok(row_len)
     }
