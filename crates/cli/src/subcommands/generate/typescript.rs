@@ -956,6 +956,29 @@ pub fn type_name(module: &ModuleDef, ty: &AlgebraicTypeUse) -> String {
     s
 }
 
+// This should return true if we should wrap the type in parentheses when it is the element type of
+// an array. This is needed if the type has a `|` in it, e.g. `Option<T>` or `Foo | Bar`, since
+// without parens, `Foo | Bar[]` would be parsed as `Foo | (Bar[])`.
+fn needs_parens_within_array(ty: &AlgebraicTypeUse) -> bool {
+    match ty {
+        AlgebraicTypeUse::Unit
+        | AlgebraicTypeUse::Never
+        | AlgebraicTypeUse::Identity
+        | AlgebraicTypeUse::ConnectionId
+        | AlgebraicTypeUse::Timestamp
+        | AlgebraicTypeUse::TimeDuration
+        | AlgebraicTypeUse::Primitive(_)
+        | AlgebraicTypeUse::Array(_)
+        | AlgebraicTypeUse::Ref(_) // We use the type name for these.
+        | AlgebraicTypeUse::String => {
+            false
+        }
+        AlgebraicTypeUse::ScheduleAt | AlgebraicTypeUse::Option(_) => {
+            true
+        }
+    }
+}
+
 pub fn write_type<W: Write>(
     module: &ModuleDef,
     out: &mut W,
@@ -999,7 +1022,7 @@ pub fn write_type<W: Write>(
             if matches!(&**elem_ty, AlgebraicTypeUse::Primitive(PrimitiveType::U8)) {
                 return write!(out, "Uint8Array");
             }
-            let needs_parens = matches!(&**elem_ty, AlgebraicTypeUse::Option(_));
+            let needs_parens = needs_parens_within_array(elem_ty);
             // We wrap the inner type in parentheses to avoid ambiguity with the [] binding.
             if needs_parens {
                 write!(out, "(")?;
