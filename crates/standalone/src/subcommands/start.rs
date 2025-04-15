@@ -120,10 +120,11 @@ async fn load_certs(file_path: &Path) -> anyhow::Result<Vec<CertificateDer<'stat
     let certs: Vec<CertificateDer<'static>> = rustls_pemfile::certs(&mut std::io::Cursor::new(data))
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| anyhow::anyhow!("Failed to parse certificates from {}: {:?}", file_path.display(), e))?;
-    if certs.is_empty() {
-        return Err(anyhow::anyhow!("No certificates found in file {}", file_path.display()));
+    match certs.len() {
+        0 => Err(anyhow::anyhow!("No certificates found in file {}", file_path.display())),
+        1 => Ok(certs),
+        _ => Err(anyhow::anyhow!("Multiple certificates found in file {}; only one certificate is expected.", file_path.display())),
     }
-    Ok(certs)
 }
 
 /// Loads a private key from a PEM file.
@@ -132,11 +133,11 @@ async fn load_private_key(file_path: &Path) -> anyhow::Result<PrivateKeyDer<'sta
     let keys: Vec<PrivatePkcs8KeyDer<'static>> = rustls_pemfile::pkcs8_private_keys(&mut std::io::Cursor::new(data))
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| anyhow::anyhow!("Failed to parse private keys from {}: {:?}", file_path.display(), e))?;
-    let key = keys
-        .into_iter()
-        .next()
-        .ok_or_else(|| anyhow::anyhow!("No private key found in file {}", file_path.display()))?;
-    Ok(PrivateKeyDer::Pkcs8(key))
+    match keys.len() {
+        0 => Err(anyhow::anyhow!("No private key found in file {}", file_path.display())),
+        1 => Ok(PrivateKeyDer::Pkcs8(keys.into_iter().next().unwrap())),
+        _ => Err(anyhow::anyhow!("Multiple private keys found in file {}; only one private key is expected.", file_path.display())),
+    }
 }
 
 /// Creates a custom CryptoProvider with specific cipher suites.
