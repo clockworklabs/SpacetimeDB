@@ -100,38 +100,32 @@ pub enum TableUpdateType {
 
 /// Execute a subscription query and collect the results in a [TableUpdate]
 pub fn collect_table_update<Tx, F>(
-    sql: &str,
     plan_fragments: &[PipelinedProject],
     table_id: TableId,
     table_name: Box<str>,
     comp: Compression,
     tx: &Tx,
     update_type: TableUpdateType,
-) -> Result<(TableUpdate<F>, ExecutionMetrics), DBError>
+) -> Result<(TableUpdate<F>, ExecutionMetrics)>
 where
     Tx: Datastore + DeltaStore,
     F: WebsocketFormat,
 {
-    execute_plan::<Tx, F>(plan_fragments, tx)
-        .map(|(rows, num_rows, metrics)| {
-            let empty = F::List::default();
-            let qu = match update_type {
-                TableUpdateType::Subscribe => QueryUpdate {
-                    deletes: empty,
-                    inserts: rows,
-                },
-                TableUpdateType::Unsubscribe => QueryUpdate {
-                    deletes: rows,
-                    inserts: empty,
-                },
-            };
-            let update = F::into_query_update(qu, comp);
-            (TableUpdate::new(table_id, table_name, (update, num_rows)), metrics)
-        })
-        .map_err(|err| DBError::WithSql {
-            sql: sql.into(),
-            error: Box::new(err.into()),
-        })
+    execute_plan::<Tx, F>(plan_fragments, tx).map(|(rows, num_rows, metrics)| {
+        let empty = F::List::default();
+        let qu = match update_type {
+            TableUpdateType::Subscribe => QueryUpdate {
+                deletes: empty,
+                inserts: rows,
+            },
+            TableUpdateType::Unsubscribe => QueryUpdate {
+                deletes: rows,
+                inserts: empty,
+            },
+        };
+        let update = F::into_query_update(qu, comp);
+        (TableUpdate::new(table_id, table_name, (update, num_rows)), metrics)
+    })
 }
 
 /// Execute a collection of subscription queries in parallel
@@ -154,12 +148,10 @@ where
                 .clone()
                 .optimize()
                 .map(|plan| (sql, PipelinedProject::from(plan)))
+                .and_then(|(_, plan)| collect_table_update(&[plan], table_id, table_name.into(), comp, tx, update_type))
                 .map_err(|err| DBError::WithSql {
                     sql: sql.into(),
                     error: Box::new(DBError::Other(err)),
-                })
-                .and_then(|(sql, plan)| {
-                    collect_table_update(sql, &[plan], table_id, table_name.into(), comp, tx, update_type)
                 })
         })
         .collect::<Result<Vec<_>, _>>()
