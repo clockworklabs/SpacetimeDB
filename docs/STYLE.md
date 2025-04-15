@@ -81,6 +81,10 @@ When describing a chain of accesses through menus and submenus, use the **->** t
 
 It's generally not necessary or desirable to tell users where to look for the top-level menu. You may be tempted to write something like, "Open the **File** menu in the upper left, and navigate **File -> Export as -> Export as PDF**." Do not include "in the upper left" unless you are absolutely confident that the menu will be located there on any combination of OS, version, desktop environment, window manager, theming configuration &c. Even within a single system, UI designers are known to move graphical elements around during updates, making statements like "upper left" obsolete and stale. We can generally trust our readers to be familiar with their own systems and the software they use, and none of our documents involve introducing readers to new GUI software. (E.g. the Unity tutorial is targeted at introducing SpacetimeDB to people who already know Unity.) "Open the **File** menu and navigate **File -> Export as -> Export as PDF**" is sufficient.
 
+### Table names
+
+Table names should be in the singular. `user` rather than `users`, `player` rather than `players`, &c. This applies both to SQL code snippets and to modules. In module code, table names should obey the language's casing for method names: in Rust, `snake_case`, and in C#, `PascalCase`. A table which has a row for each player, containing their most recent login time, might be named `player_last_login_time` in a Rust module, or `PlayerLastLoginTime` in a C# module.
+
 ## Key vocabulary
 
 There are a small number of key terms that we need to use consistently throughout the documentation.
