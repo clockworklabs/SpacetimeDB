@@ -8,32 +8,55 @@ use spacetimedb_sats::{hash::Hash, i256, u256, Serialize};
 ///
 /// Types which can appear specifically as a terminating bound in a BTree index,
 /// which may be a range, instead use [`IndexScanRangeBoundsTerminator`].
-///
-/// General rules for implementors of this type:
-/// - It should only be implemented for types that have
-///   simple-to-implement consistent total equality and ordering
-///   on all languages SpacetimeDB supports in both client and module SDKs.
-///   This means that user-defined compound types other than C-style enums,
-///   and arrays thereof,
-///   should not implement it, as C# and TypeScript use reference equality for those types.
-/// - It should only be implemented for owned values if those values are `Copy`.
-///   Otherwise it should only be implemented for references.
-///   This is so that rustc and IDEs will recommend rewriting `x` to `&x` rather than `x.clone()`.
-/// - `Arg: FilterableValue<Column = Col>`
-///   for any pair of types `(Arg, Col)` which meet the above criteria
-///   is desirable if `Arg` and `Col` have the same BSATN layout.
-///   E.g. `&str: FilterableValue<Column = String>` is desirable.
+/// Because SpacetimeDB supports a only restricted set of types as index keys,
+/// only a small set of `Column` types have corresponding `FilterableValue` implementations.
+/// Specifically, these types are:
+/// - Signed and unsigned integers of various widths.
+/// - [`bool`].
+/// - [`String`], which is also filterable with `&str`.
+/// - [`Identity`].
+/// - [`ConnectionId`].
+/// - [`Hash`](struct@Hash).
+/// - No-payload enums annotated with `#[derive(SpacetimeType)]`.
+///   No-payload enums are sometimes called "plain," "simple" or "C-style."
+///   They are enums where no variant has any payload data.
+//
+// General rules for implementors of this type:
+// - It should only be implemented for types that have
+//   simple-to-implement consistent total equality and ordering
+//   on all languages SpacetimeDB supports in both client and module SDKs.
+//   This means that user-defined compound types other than C-style enums,
+//   and arrays thereof,
+//   should not implement it, as C# and TypeScript use reference equality for those types.
+// - It should only be implemented for owned values if those values are `Copy`.
+//   Otherwise it should only be implemented for references.
+//   This is so that rustc and IDEs will recommend rewriting `x` to `&x` rather than `x.clone()`.
+// - `Arg: FilterableValue<Column = Col>`
+//   for any pair of types `(Arg, Col)` which meet the above criteria
+//   is desirable if `Arg` and `Col` have the same BSATN layout.
+//   E.g. `&str: FilterableValue<Column = String>` is desirable.
 #[diagnostic::on_unimplemented(
     message = "`{Self}` cannot appear as an argument to an index filtering operation",
-    label = "should be an integer type, `bool`, `String`, `&str`, `Identity`, `ConnectionId`, or `Hash`, not `{Self}`",
-    note = "The allowed set of types are limited to integers, bool, strings, `Identity`, `ConnectionId`, and `Hash`"
+    label = "should be an integer type, `bool`, `String`, `&str`, `Identity`, `ConnectionId`, `Hash` or a no-payload enum which derives `SpacetimeType`, not `{Self}`",
+    note = "The allowed set of types are limited to integers, bool, strings, `Identity`, `ConnectionId`, `Hash` and no-payload enums which derive `SpacetimeType`,"
 )]
-pub trait FilterableValue: Serialize {
+pub trait FilterableValue: Serialize + Private {
     type Column;
 }
 
+/// Hidden supertrait for [`FilterableValue`],
+/// to discourage users from hand-writing implementations.
+///
+/// We want to expose [`FilterableValue`] in the docs, but to prevent users from implementing it.
+/// Normally, we would just make this `Private` trait inaccessible,
+/// but we need to macro-generate implementations, so it must be `pub`.
+/// We mark it `doc(hidden)` to discourage use.
+#[doc(hidden)]
+pub trait Private {}
+
 macro_rules! impl_filterable_value {
     (@one $arg:ty => $col:ty) => {
+        impl Private for $arg {}
         impl FilterableValue for $arg {
             type Column = $col;
         }
