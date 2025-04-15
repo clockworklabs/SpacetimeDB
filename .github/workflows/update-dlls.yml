@@ -3,6 +3,12 @@ name: Sync DLLs to C#/Unity SDK
 on:
   push:
     branches: [master]  # Triggers on new commits to master
+  workflow_dispatch:
+    inputs:
+      github_ref:
+        description: 'Ref to generate DLLs from (defaults to master)'
+        required: false
+        default: ''
 
 jobs:
   sync:
@@ -15,10 +21,20 @@ jobs:
       - name: Authenticate GitHub CLI
         run: gh auth login --with-token <<< "${{secrets.UNITY_SDK_TOKEN}}"
 
+      - name: Set SpacetimeDB ref
+        run: |
+          echo "SPACETIMEDB_REF=${{ github.event.inputs.github_ref || 'master' }}" >> $GITHUB_ENV
+
       - name: Checkout SpacetimeDB
         uses: actions/checkout@v4
         with:
           path: SpacetimeDB
+          ref: ${{ env.SPACETIMEDB_REF }}
+
+      - name: Set SpacetimeDB sha
+        run: |
+          cd SpacetimeDB
+          echo "SPACETIMEDB_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
 
       - name: Checkout C#/Unity SDK
         uses: actions/checkout@v4
@@ -58,7 +74,7 @@ jobs:
         run: |
           cd com.clockworklabs.spacetimedbsdk/packages
           git add .
-          git commit -m "Update DLLs from SpacetimeDB commit $GITHUB_SHA" || echo "No changes to commit"
+          git commit -m "Update DLLs from SpacetimeDB commit $SPACETIMEDB_SHA" || echo "No changes to commit"
           git push -u origin bot/update-dlls
 
       - name: Create or update PR
@@ -70,5 +86,5 @@ jobs:
           gh pr edit bot/update-dlls --body-file - <<EOF
             This automated PR updates our DLLs.
 
-            Triggered by commit: https://github.com/${{ github.repository }}/commit/${{ github.sha }}
+            Triggered by commit: https://github.com/${{ github.repository }}/commit/${SPACETIMEDB_SHA}
           EOF
