@@ -121,10 +121,10 @@ error[E0277]: `&'a Alpha` cannot appear as an argument to an index filtering ope
   --> tests/ui/tables.rs:32:33
    |
 32 |     ctx.db.delta().compound_a().find(Alpha { beta: 0 });
-   |                                 ^^^^ should be an integer type, `bool`, `String`, `&str`, `Identity`, `ConnectionId`, `Hash` or a unitary enum which derives `SpacetimeType`, not `&'a Alpha`
+   |                                 ^^^^ should be an integer type, `bool`, `String`, `&str`, `Identity`, `ConnectionId`, `Hash` or a no-payload enum which derives `SpacetimeType`, not `&'a Alpha`
    |
    = help: the trait `for<'a> FilterableValue` is not implemented for `&'a Alpha`
-   = note: The allowed set of types are limited to integers, bool, strings, `Identity`, `ConnectionId`, `Hash` and unitary enums which derive `SpacetimeType`,
+   = note: The allowed set of types are limited to integers, bool, strings, `Identity`, `ConnectionId`, `Hash` and no-payload enums which derive `SpacetimeType`,
    = help: the following other types implement trait `FilterableValue`:
              &ConnectionId
              &Identity
