@@ -211,7 +211,7 @@ pub fn run(
             // Evaluate the query
             let rows = execute_select_stmt(stmt, &DeltaTx::from(&*tx), &mut metrics, |plan| {
                 check_row_limit(
-                    &plan,
+                    &[&plan],
                     db,
                     &tx,
                     |plan, tx| plan.plan_iter().map(|plan| estimate_rows_scanned(tx, plan)).sum(),
@@ -301,6 +301,7 @@ pub(crate) mod tests {
     use crate::db::relational_db::tests_utils::{insert, TestDB};
     use crate::subscription::module_subscription_manager::SubscriptionManager;
     use crate::vm::tests::create_table_with_rows;
+    use itertools::Itertools;
     use parking_lot::RwLock;
     use pretty_assertions::assert_eq;
     use spacetimedb_lib::bsatn::ToBsatn;
@@ -309,8 +310,7 @@ pub(crate) mod tests {
     use spacetimedb_lib::relation::Header;
     use spacetimedb_lib::{AlgebraicValue, Identity};
     use spacetimedb_primitives::{col_list, ColId, TableId};
-    use spacetimedb_sats::{product, u256, AlgebraicType, ArrayValue, ProductType};
-    use spacetimedb_schema::schema::{ColumnSchema, TableSchema};
+    use spacetimedb_sats::{product, AlgebraicType, ArrayValue, ProductType};
     use spacetimedb_vm::eval::test_helpers::create_game_data;
     use std::sync::Arc;
 
@@ -364,17 +364,6 @@ pub(crate) mod tests {
         let header = Header::from(&*schema).into();
 
         Ok((stdb, MemTable::new(header, schema.table_access, rows)))
-    }
-
-    /// Manually insert RLS rules into the RLS system table
-    fn insert_rls_rules(db: &RelationalDB, rules: impl IntoIterator<Item = (TableId, &'static str)>) -> ResultTest<()> {
-        db.with_auto_commit(Workload::ForTests, |tx| {
-            for (table_id, sql) in rules.into_iter().map(|(table_id, sql)| (table_id, sql.into())) {
-                let row = ProductValue::from(StRowLevelSecurityRow { table_id, sql });
-                db.insert(tx, ST_ROW_LEVEL_SECURITY_ID, &row.to_bsatn_vec()?)?;
-            }
-            Ok(())
-        })
     }
 
     #[test]
@@ -446,98 +435,277 @@ pub(crate) mod tests {
         Ok(())
     }
 
+    /// Create an [Identity] from a [u8]
+    fn identity_from_u8(v: u8) -> Identity {
+        Identity::from_byte_array([v; 32])
+    }
+
+    /// Insert rules into the RLS system table
+    fn insert_rls_rules(
+        db: &RelationalDB,
+        table_ids: impl IntoIterator<Item = TableId>,
+        rules: impl IntoIterator<Item = &'static str>,
+    ) -> anyhow::Result<()> {
+        db.with_auto_commit(Workload::ForTests, |tx| {
+            for (table_id, sql) in table_ids.into_iter().zip(rules) {
+                db.insert(
+                    tx,
+                    ST_ROW_LEVEL_SECURITY_ID,
+                    &ProductValue::from(StRowLevelSecurityRow {
+                        table_id,
+                        sql: sql.into(),
+                    })
+                    .to_bsatn_vec()?,
+                )?;
+            }
+            Ok(())
+        })
+    }
+
+    /// Insert product values into a table
+    fn insert_rows(
+        db: &RelationalDB,
+        table_id: TableId,
+        rows: impl IntoIterator<Item = ProductValue>,
+    ) -> anyhow::Result<()> {
+        db.with_auto_commit(Workload::ForTests, |tx| {
+            for row in rows.into_iter() {
+                db.insert(tx, table_id, &row.to_bsatn_vec()?)?;
+            }
+            Ok(())
+        })
+    }
+
+    /// Assert this query returns the expected rows for this user
+    fn assert_query_results(
+        db: &RelationalDB,
+        sql: &str,
+        auth: &AuthCtx,
+        expected: impl IntoIterator<Item = ProductValue>,
+    ) {
+        assert_eq!(
+            run(db, sql, *auth, None, &mut vec![])
+                .unwrap()
+                .rows
+                .into_iter()
+                .sorted()
+                .dedup()
+                .collect::<Vec<_>>(),
+            expected.into_iter().sorted().dedup().collect::<Vec<_>>()
+        );
+    }
+
+    /// Test querying a table with RLS rules
     #[test]
-    fn test_rls_rules() -> ResultTest<()> {
+    fn test_rls_rules() -> anyhow::Result<()> {
         let db = TestDB::in_memory()?;
 
-        let create_table = |table_name: &str, column_names_and_types: Vec<(&str, AlgebraicType)>| {
-            db.with_auto_commit(Workload::ForTests, |tx| {
-                db.create_table(
-                    tx,
-                    TableSchema::new(
-                        TableId::SENTINEL,
-                        table_name.into(),
-                        column_names_and_types
-                            .into_iter()
-                            .enumerate()
-                            .map(|(i, (name, col_type))| ColumnSchema {
-                                table_id: TableId::SENTINEL,
-                                col_pos: i.into(),
-                                col_name: name.into(),
-                                col_type,
-                            })
-                            .collect(),
-                        vec![],
-                        vec![],
-                        vec![],
-                        StTableType::User,
-                        StAccess::Public,
-                        None,
-                        None,
-                    ),
-                )
-            })
-        };
+        let id_for_a = identity_from_u8(1);
+        let id_for_b = identity_from_u8(2);
 
-        let insert_into = |table_id, rows: Vec<ProductValue>| {
-            db.with_auto_commit(Workload::ForTests, |tx| -> ResultTest<()> {
-                for row in rows {
-                    db.insert(tx, table_id, &row.to_bsatn_vec()?)?;
-                }
-                Ok(())
-            })
-        };
+        let users_schema = [("identity", AlgebraicType::identity())];
+        let sales_schema = [
+            ("order_id", AlgebraicType::U64),
+            ("customer", AlgebraicType::identity()),
+        ];
 
-        let users_table_id = create_table("users", vec![("identity", AlgebraicType::identity())])?;
-        let sales_table_id = create_table(
-            "sales",
-            vec![
-                ("order_id", AlgebraicType::U64),
-                ("product_id", AlgebraicType::U64),
-                ("date", AlgebraicType::U64),
-                ("customer", AlgebraicType::identity()),
-            ],
-        )?;
+        let users_table_id = db.create_table_for_test("users", &users_schema, &[])?;
+        let sales_table_id = db.create_table_for_test("sales", &sales_schema, &[])?;
 
-        let id_1 = Identity::from_u256(u256::new(1));
-        let id_2 = Identity::from_u256(u256::new(2));
-
-        insert_into(users_table_id, vec![product![id_1], product![id_2]])?;
-        insert_into(
+        insert_rows(&db, users_table_id, vec![product![id_for_a], product![id_for_b]])?;
+        insert_rows(
+            &db,
             sales_table_id,
             vec![
-                product![1u64, 1u64, 1u64, id_1],
-                product![2u64, 1u64, 2u64, id_2],
-                product![3u64, 2u64, 3u64, id_1],
-                product![4u64, 2u64, 4u64, id_2],
+                product![1u64, id_for_a],
+                product![2u64, id_for_b],
+                product![3u64, id_for_a],
+                product![4u64, id_for_b],
             ],
         )?;
 
         insert_rls_rules(
             &db,
+            [users_table_id, sales_table_id],
             [
-                (users_table_id, "select * from users where identity = :sender"),
-                (
-                    sales_table_id,
-                    "select s.* from users u join sales s on u.identity = s.customer",
-                ),
+                "select * from users where identity = :sender",
+                "select s.* from users u join sales s on u.identity = s.customer",
             ],
         )?;
 
-        let auth_for_id_1 = AuthCtx::new(Identity::ZERO, id_1);
-        let auth_for_id_2 = AuthCtx::new(Identity::ZERO, id_2);
+        let auth_for_a = AuthCtx::new(Identity::ZERO, id_for_a);
+        let auth_for_b = AuthCtx::new(Identity::ZERO, id_for_b);
 
-        let run = |sql, user| run(&db, sql, user, None, &mut vec![]).map(|sql_result| sql_result.rows);
-
-        assert_eq!(run("select * from users", auth_for_id_1)?, vec![product![id_1]]);
-        assert_eq!(run("select * from users", auth_for_id_2)?, vec![product![id_2]]);
-        assert_eq!(
-            run("select * from sales", auth_for_id_1)?,
-            vec![product![1u64, 1u64, 1u64, id_1], product![3u64, 2u64, 3u64, id_1]]
+        assert_query_results(
+            &db,
+            // Should only return the identity for sender "a"
+            "select * from users",
+            &auth_for_a,
+            [product![id_for_a]],
         );
-        assert_eq!(
-            run("select * from sales", auth_for_id_2)?,
-            vec![product![2u64, 1u64, 2u64, id_2], product![4u64, 2u64, 4u64, id_2]]
+        assert_query_results(
+            &db,
+            // Should only return the identity for sender "b"
+            "select * from users",
+            &auth_for_b,
+            [product![id_for_b]],
+        );
+        assert_query_results(
+            &db,
+            // Should only return the orders for sender "a"
+            "select * from sales",
+            &auth_for_a,
+            [product![1u64, id_for_a], product![3u64, id_for_a]],
+        );
+        assert_query_results(
+            &db,
+            // Should only return the orders for sender "b"
+            "select * from sales",
+            &auth_for_b,
+            [product![2u64, id_for_b], product![4u64, id_for_b]],
+        );
+
+        Ok(())
+    }
+
+    /// Test querying tables with multiple levels of RLS rules
+    #[test]
+    fn test_nested_rls_rules() -> anyhow::Result<()> {
+        let db = TestDB::in_memory()?;
+
+        let id_for_a = identity_from_u8(1);
+        let id_for_b = identity_from_u8(2);
+        let id_for_c = identity_from_u8(3);
+
+        let users_schema = [("identity", AlgebraicType::identity())];
+        let sales_schema = [
+            ("order_id", AlgebraicType::U64),
+            ("product_id", AlgebraicType::U64),
+            ("customer", AlgebraicType::identity()),
+        ];
+
+        let users_table_id = db.create_table_for_test("users", &users_schema, &[0.into()])?;
+        let admin_table_id = db.create_table_for_test("admins", &users_schema, &[0.into()])?;
+        let sales_table_id = db.create_table_for_test("sales", &sales_schema, &[0.into()])?;
+
+        insert_rows(&db, admin_table_id, [product![id_for_c]])?;
+        insert_rows(
+            &db,
+            users_table_id,
+            [product![id_for_a], product![id_for_b], product![id_for_c]],
+        )?;
+        insert_rows(
+            &db,
+            sales_table_id,
+            [product![1u64, 1u64, id_for_a], product![2u64, 2u64, id_for_b]],
+        )?;
+
+        insert_rls_rules(
+            &db,
+            [admin_table_id, users_table_id, users_table_id, sales_table_id],
+            [
+                "select * from admins where identity = :sender",
+                "select * from users where identity = :sender",
+                "select users.* from admins join users",
+                "select s.* from users u join sales s on u.identity = s.customer",
+            ],
+        )?;
+
+        let auth_for_a = AuthCtx::new(Identity::ZERO, id_for_a);
+        let auth_for_b = AuthCtx::new(Identity::ZERO, id_for_b);
+        let auth_for_c = AuthCtx::new(Identity::ZERO, id_for_c);
+
+        assert_query_results(
+            &db,
+            "select * from admins",
+            &auth_for_a,
+            // Identity "a" is not an admin
+            [],
+        );
+        assert_query_results(
+            &db,
+            "select * from admins",
+            &auth_for_b,
+            // Identity "b" is not an admin
+            [],
+        );
+        assert_query_results(
+            &db,
+            "select * from admins",
+            &auth_for_c,
+            // Identity "c" is an admin
+            [product![id_for_c]],
+        );
+
+        assert_query_results(
+            &db,
+            "select * from users",
+            &auth_for_a,
+            // Identity "a" can only see its own user
+            vec![product![id_for_a]],
+        );
+        assert_query_results(
+            &db,
+            "select * from users",
+            &auth_for_b,
+            // Identity "b" can only see its own user
+            vec![product![id_for_b]],
+        );
+        assert_query_results(
+            &db,
+            "select * from users",
+            &auth_for_c,
+            // Identity "c" is an admin so it can see everyone's users
+            [product![id_for_a], product![id_for_b], product![id_for_c]],
+        );
+
+        assert_query_results(
+            &db,
+            "select * from sales",
+            &auth_for_a,
+            // Identity "a" can only see its own orders
+            [product![1u64, 1u64, id_for_a]],
+        );
+        assert_query_results(
+            &db,
+            "select * from sales",
+            &auth_for_b,
+            // Identity "b" can only see its own orders
+            [product![2u64, 2u64, id_for_b]],
+        );
+        assert_query_results(
+            &db,
+            "select * from sales",
+            &auth_for_c,
+            // Identity "c" is an admin so it can see everyone's orders
+            [product![1u64, 1u64, id_for_a], product![2u64, 2u64, id_for_b]],
+        );
+
+        Ok(())
+    }
+
+    /// Test projecting columns from both tables in join
+    #[test]
+    fn test_project_join() -> anyhow::Result<()> {
+        let db = TestDB::in_memory()?;
+
+        let t_schema = [("id", AlgebraicType::U8), ("x", AlgebraicType::U8)];
+        let s_schema = [("id", AlgebraicType::U8), ("y", AlgebraicType::U8)];
+
+        let t_id = db.create_table_for_test("t", &t_schema, &[0.into()])?;
+        let s_id = db.create_table_for_test("s", &s_schema, &[0.into()])?;
+
+        insert_rows(&db, t_id, [product![1_u8, 2_u8]])?;
+        insert_rows(&db, s_id, [product![1_u8, 3_u8]])?;
+
+        let id = identity_from_u8(1);
+        let auth = AuthCtx::new(Identity::ZERO, id);
+
+        assert_query_results(
+            &db,
+            "select t.x, s.y from t join s on t.id = s.id",
+            &auth,
+            [product![2_u8, 3_u8]],
         );
 
         Ok(())

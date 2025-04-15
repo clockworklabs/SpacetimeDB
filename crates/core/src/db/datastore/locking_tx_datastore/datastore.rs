@@ -276,6 +276,21 @@ impl Locking {
         Ok(Some((tx_offset, snapshot_dir)))
     }
 
+    pub(crate) fn compress_older_snapshot_internal(repo: &SnapshotRepository, upper_bound: TxOffset) {
+        log::info!(
+            "Compressing snapshots of database {:?} older than TX offset {}",
+            repo.database_identity(),
+            upper_bound,
+        );
+        if let Err(err) = repo.compress_older_snapshots(upper_bound) {
+            log::error!(
+                "Failed to compress snapshot of database {:?} older than  {:?}: {err}",
+                repo.database_identity(),
+                upper_bound
+            );
+        };
+    }
+
     /// Returns a list over all the currently connected clients,
     /// reading from the `st_clients` system table.
     pub fn connected_clients<'a>(

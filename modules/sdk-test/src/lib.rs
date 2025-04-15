@@ -550,7 +550,7 @@ define_tables! {
 
 #[spacetimedb::reducer]
 fn update_pk_simple_enum(ctx: &ReducerContext, a: SimpleEnum, data: i32) -> anyhow::Result<()> {
-    let Some(mut o) = ctx.db.pk_simple_enum().a().find(&a) else {
+    let Some(mut o) = ctx.db.pk_simple_enum().a().find(a) else {
         return Err(anyhow!("row not found"));
     };
     o.data = data;
@@ -778,6 +778,22 @@ struct BTreeU32 {
     #[index(btree)]
     n: u32,
     data: i32,
+}
+
+#[spacetimedb::client_visibility_filter]
+const USERS_FILTER: spacetimedb::Filter = spacetimedb::Filter::Sql("SELECT * FROM users WHERE identity = :sender");
+
+#[spacetimedb::table(name = users, public)]
+struct Users {
+    #[primary_key]
+    identity: Identity,
+    name: String,
+}
+
+#[spacetimedb::reducer]
+fn insert_user(ctx: &ReducerContext, name: String, identity: Identity) -> anyhow::Result<()> {
+    ctx.db.users().insert(Users { name, identity });
+    Ok(())
 }
 
 #[spacetimedb::table(name = indexed_simple_enum, public)]

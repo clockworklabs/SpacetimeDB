@@ -146,12 +146,21 @@ impl ProjectListPlan {
                     .collect::<Result<_>>()?,
                 agg_type,
             )),
-            Self::List(plan, fields) => Ok(Self::List(
-                plan.into_iter()
-                    .map(|plan| plan.optimize(fields.iter().map(|TupleField { label, .. }| label).copied().collect()))
-                    .collect::<Result<_>>()?,
-                fields,
-            )),
+            Self::List(plans, mut fields) => {
+                let mut optimized_plans = Vec::with_capacity(plans.len());
+                for plan in plans {
+                    // Collect the names of the relvars
+                    let labels = fields.iter().map(|field| field.label).collect();
+                    // Optimize each plan
+                    let optimized_plan = plan.optimize(labels)?;
+                    // Compute the position of each relvar referenced in the projection
+                    for TupleField { label, label_pos, .. } in &mut fields {
+                        *label_pos = optimized_plan.position(label);
+                    }
+                    optimized_plans.push(optimized_plan);
+                }
+                Ok(Self::List(optimized_plans, fields))
+            }
         }
     }
 
@@ -508,7 +517,14 @@ impl PhysicalPlan {
                     PhysicalExpr::BinOp(op, value, expr)
                         if matches!(&*value, PhysicalExpr::Value(_)) && matches!(&*expr, PhysicalExpr::Field(..)) =>
                     {
-                        PhysicalExpr::BinOp(op, expr, value)
+                        match op {
+                            BinOp::Eq => PhysicalExpr::BinOp(BinOp::Eq, expr, value),
+                            BinOp::Ne => PhysicalExpr::BinOp(BinOp::Ne, expr, value),
+                            BinOp::Lt => PhysicalExpr::BinOp(BinOp::Gt, expr, value),
+                            BinOp::Gt => PhysicalExpr::BinOp(BinOp::Lt, expr, value),
+                            BinOp::Lte => PhysicalExpr::BinOp(BinOp::Gte, expr, value),
+                            BinOp::Gte => PhysicalExpr::BinOp(BinOp::Lte, expr, value),
+                        }
                     }
                     _ => expr,
                 };

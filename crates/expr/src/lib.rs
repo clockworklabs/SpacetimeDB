@@ -121,16 +121,22 @@ pub(crate) fn type_expr(vars: &Relvars, expr: SqlExpr, expected: Option<&Algebra
             let b = type_expr(vars, *b, Some(&AlgebraicType::Bool))?;
             Ok(Expr::LogOp(op, Box::new(a), Box::new(b)))
         }
-        (SqlExpr::Bin(a, b, op), None | Some(AlgebraicType::Bool)) => match (*a, *b) {
-            (a, b @ SqlExpr::Lit(_)) | (b @ SqlExpr::Lit(_), a) | (a, b) => {
-                let a = type_expr(vars, a, None)?;
-                let b = type_expr(vars, b, Some(a.ty()))?;
-                if !op_supports_type(op, a.ty()) {
-                    return Err(InvalidOp::new(op, a.ty()).into());
-                }
-                Ok(Expr::BinOp(op, Box::new(a), Box::new(b)))
+        (SqlExpr::Bin(a, b, op), None | Some(AlgebraicType::Bool)) if matches!(&*a, SqlExpr::Lit(_)) => {
+            let b = type_expr(vars, *b, None)?;
+            let a = type_expr(vars, *a, Some(b.ty()))?;
+            if !op_supports_type(op, a.ty()) {
+                return Err(InvalidOp::new(op, a.ty()).into());
             }
-        },
+            Ok(Expr::BinOp(op, Box::new(a), Box::new(b)))
+        }
+        (SqlExpr::Bin(a, b, op), None | Some(AlgebraicType::Bool)) => {
+            let a = type_expr(vars, *a, None)?;
+            let b = type_expr(vars, *b, Some(a.ty()))?;
+            if !op_supports_type(op, a.ty()) {
+                return Err(InvalidOp::new(op, a.ty()).into());
+            }
+            Ok(Expr::BinOp(op, Box::new(a), Box::new(b)))
+        }
         (SqlExpr::Bin(..) | SqlExpr::Log(..), Some(ty)) => Err(UnexpectedType::new(&AlgebraicType::Bool, ty).into()),
         // Both unqualified names as well as parameters are syntactic constructs.
         // Unqualified names are qualified and parameters are resolved before type checking.

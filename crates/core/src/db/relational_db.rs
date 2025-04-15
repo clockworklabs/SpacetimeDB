@@ -156,10 +156,15 @@ impl SnapshotWorkerActor {
         let start_time = std::time::Instant::now();
         let committed_state = self.committed_state.clone();
         let snapshot_repo = self.repo.clone();
-        let res =
-            tokio::task::spawn_blocking(move || Locking::take_snapshot_internal(&committed_state, &snapshot_repo))
-                .await
-                .unwrap();
+        let res = tokio::task::spawn_blocking(move || {
+            Locking::take_snapshot_internal(&committed_state, &snapshot_repo).inspect(|opts| {
+                if let Some(opts) = opts {
+                    Locking::compress_older_snapshot_internal(&snapshot_repo, opts.0);
+                }
+            })
+        })
+        .await
+        .unwrap();
         match res {
             Err(e) => {
                 log::error!(
@@ -1386,7 +1391,9 @@ pub mod tests_utils {
     use super::*;
     use core::ops::Deref;
     use durability::EmptyHistory;
+    use spacetimedb_fs_utils::compression::CompressType;
     use spacetimedb_lib::{bsatn::to_vec, ser::Serialize};
+    use spacetimedb_paths::server::SnapshotDirPath;
     use spacetimedb_paths::FromPathUnchecked;
     use tempfile::TempDir;
 
@@ -1467,7 +1474,6 @@ pub mod tests_utils {
 
             Ok(Self {
                 db,
-
                 durable: Some(durable),
                 tmp_dir: dir,
             })
@@ -1591,7 +1597,7 @@ pub mod tests_utils {
             Ok((db, local))
         }
 
-        fn open_db(
+        pub fn open_db(
             root: &ReplicaDir,
             history: impl durability::History<TxData = Txdata>,
             durability: Option<(Arc<Durability>, DiskSizeFn)>,
@@ -1617,6 +1623,10 @@ pub mod tests_utils {
         // NOTE: This is important to make compiler tests work.
         fn row_count_fn() -> RowCountFn {
             Arc::new(|_, _| i64::MAX)
+        }
+
+        pub fn take_snapshot(&self, repo: &SnapshotRepository) -> Result<Option<SnapshotDirPath>, DBError> {
+            self.inner.take_snapshot(repo)
         }
     }
 
@@ -1675,6 +1685,24 @@ pub mod tests_utils {
             Self(log)
         }
     }
+
+    pub fn make_snapshot(
+        dir: SnapshotsPath,
+        identity: Identity,
+        replica: u64,
+        compress: CompressType,
+        delete_if_exists: bool,
+    ) -> (SnapshotsPath, SnapshotRepository) {
+        let path = dir.0.join(format!("{replica}_{compress:?}"));
+        if delete_if_exists && path.exists() {
+            std::fs::remove_dir_all(&path).unwrap();
+        }
+        let dir = SnapshotsPath::from_path_unchecked(path);
+        dir.create().unwrap();
+        let snapshot = SnapshotRepository::open(dir.clone(), identity, replica).unwrap();
+
+        (dir, snapshot)
+    }
 }
 
 #[cfg(test)]
@@ -1682,6 +1710,7 @@ mod tests {
     #![allow(clippy::disallowed_macros)]
 
     use std::cell::RefCell;
+    use std::path::PathBuf;
     use std::rc::Rc;
 
     use super::*;
@@ -1689,7 +1718,7 @@ mod tests {
         system_tables, StConstraintRow, StIndexRow, StSequenceRow, StTableRow, ST_CONSTRAINT_ID, ST_INDEX_ID,
         ST_SEQUENCE_ID, ST_TABLE_ID,
     };
-    use crate::db::relational_db::tests_utils::{insert, TestDB};
+    use crate::db::relational_db::tests_utils::{insert, make_snapshot, TestDB};
     use crate::error::IndexError;
     use crate::execution_context::ReducerContext;
     use anyhow::bail;
@@ -1699,15 +1728,19 @@ mod tests {
     use durability::EmptyHistory;
     use pretty_assertions::assert_eq;
     use spacetimedb_data_structures::map::IntMap;
+    use spacetimedb_fs_utils::compression::{CompressCount, CompressType};
     use spacetimedb_lib::db::raw_def::v9::{btree, RawTableDefBuilder};
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::Identity;
     use spacetimedb_lib::Timestamp;
+    use spacetimedb_paths::FromPathUnchecked;
     use spacetimedb_sats::buffer::BufReader;
     use spacetimedb_sats::product;
     use spacetimedb_schema::schema::RowLevelSecuritySchema;
+    use spacetimedb_snapshot::Snapshot;
     use spacetimedb_table::read_column::ReadColumn;
     use spacetimedb_table::table::RowRef;
+    use tempfile::TempDir;
     use tests::tests_utils::TestHistory;
 
     fn my_table(col_type: AlgebraicType) -> TableSchema {
@@ -2650,5 +2683,112 @@ mod tests {
         assert_eq!(present_rows[0], row_1);
 
         stdb.release_tx(read_tx);
+    }
+
+    // Verify that we can compress snapshots and hardlink them,
+    // except for the last one, which should be uncompressed.
+    // Then, verify that we can read the compressed snapshot.
+    //
+    // NOTE: `snapshot_watching_compressor` is what filter out the last snapshot
+    #[test]
+    fn compress_snapshot_test() -> ResultTest<()> {
+        let stdb = TestDB::in_memory()?;
+
+        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let schema = my_table(AlgebraicType::I32);
+        let table_id = stdb.create_table(&mut tx, schema)?;
+        for v in 0..3 {
+            insert(&stdb, &mut tx, table_id, &product![v])?;
+        }
+        stdb.commit_tx(tx)?;
+
+        let root = stdb.path().snapshots();
+        let (dir, repo) = make_snapshot(root.clone(), Identity::ZERO, 0, CompressType::None, true);
+        stdb.take_snapshot(&repo)?;
+
+        let total_objects = repo.size_on_disk()?.object_count;
+        // Another snapshots that will hardlink part of the first one
+        for i in 0..2 {
+            let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+            for v in 0..(10 + i) {
+                insert(&stdb, &mut tx, table_id, &product![v])?;
+            }
+            stdb.commit_tx(tx)?;
+            stdb.take_snapshot(&repo)?;
+        }
+
+        let size_compress_off = repo.size_on_disk()?;
+        assert!(
+            size_compress_off.total_size > 0,
+            "Snapshot size should be greater than 0"
+        );
+        let mut offsets = repo.all_snapshots()?.collect::<Vec<_>>();
+        offsets.sort();
+        assert_eq!(&offsets, &[1, 2, 3]);
+        // Simulate we take except the last snapshot
+        let last_compress = 2;
+        assert_eq!(repo.compress_older_snapshots(3)?, CompressCount { none: 0, zstd: 2 });
+        let size_compress_on = repo.size_on_disk()?;
+        assert!(size_compress_on.total_size < size_compress_off.total_size);
+        // Verify we hard-linked the second snapshot
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            let snapshot_dir = dir.snapshot_dir(last_compress);
+            let mut hard_linked_on = 0;
+            let mut hard_linked_off = 0;
+
+            let (snapshot, compress) = Snapshot::read_from_file(&snapshot_dir.snapshot_file(last_compress))?;
+            assert_eq!(compress, CompressType::Zstd);
+            let repo = SnapshotRepository::object_repo(&snapshot_dir)?;
+            for (_, path) in snapshot.files(&repo) {
+                match path.metadata()?.nlink() {
+                    0 => hard_linked_off += 1,
+                    _ => hard_linked_on += 1,
+                }
+            }
+            assert_eq!(hard_linked_on, total_objects);
+            assert_eq!(hard_linked_off, 0);
+        }
+
+        // Sanity check that we can read the snapshot after compression
+        let repo = open_snapshot_repo(dir, Identity::ZERO, 0)?;
+        RelationalDB::restore_from_snapshot_or_bootstrap(Identity::ZERO, Some(&repo), Some(last_compress))?;
+
+        Ok(())
+    }
+
+    // For test compression into an existing database.
+    // Must supply the path to the database and the identity of the replica using the `ENV`:
+    // - `SNAPSHOT` the path to the database, like `/tmp/db/replicas/.../8/database`
+    // - `IDENTITY` the identity in hex format
+    #[tokio::test]
+    #[ignore]
+    async fn read_existing() -> ResultTest<()> {
+        let path_db = PathBuf::from(std::env::var("SNAPSHOT").expect("SNAPSHOT must be set to a valid path"));
+        let identity =
+            Identity::from_hex(std::env::var("IDENTITY").expect("IDENTITY must be set to a valid hex identity"))?;
+        let path = ReplicaDir::from_path_unchecked(path_db);
+
+        let repo = open_snapshot_repo(path.snapshots(), Identity::ZERO, 0)?;
+        dbg!(repo.size_on_disk()?);
+        assert!(
+            repo.size_on_disk()?.total_size > 0,
+            "Snapshot size should be greater than 0"
+        );
+
+        let last = repo.latest_snapshot()?;
+        let stdb = RelationalDB::restore_from_snapshot_or_bootstrap(identity, Some(&repo), last)?;
+
+        let out = TempDir::with_prefix("snapshot_test")?;
+        let dir = SnapshotsPath::from_path_unchecked(out.path());
+
+        let (_, repo) = make_snapshot(dir.clone(), Identity::ZERO, 0, CompressType::Zstd, false);
+
+        stdb.take_snapshot(&repo)?;
+        let size = repo.size_on_disk()?;
+        assert!(size.total_size > 0, "Snapshot size should be greater than 0");
+
+        Ok(())
     }
 }

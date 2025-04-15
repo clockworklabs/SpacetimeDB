@@ -1,10 +1,11 @@
 use std::fs::File;
 use std::io;
 use std::io::{BufReader, Read, Seek, SeekFrom};
+use tokio::io::AsyncSeek;
 use zstd_framed;
 use zstd_framed::{ZstdReader, ZstdWriter};
 
-const ZSTD_MAGIC_BYTES: [u8; 4] = [0x28, 0xB5, 0x2F, 0xFD];
+pub const ZSTD_MAGIC_BYTES: [u8; 4] = [0x28, 0xB5, 0x2F, 0xFD];
 
 /// Helper struct to keep track of the number of files compressed using each algorithm
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
@@ -111,14 +112,41 @@ impl Seek for CompressReader {
     }
 }
 
-pub fn new_zstd_writer<'a, W: io::Write>(inner: W, max_frame_size: u32) -> io::Result<ZstdWriter<'a, W>> {
-    ZstdWriter::builder(inner)
-        .with_compression_level(0)
-        .with_seek_table(max_frame_size)
-        .build()
+pub fn new_zstd_writer<'a, W: io::Write>(inner: W, max_frame_size: Option<u32>) -> io::Result<ZstdWriter<'a, W>> {
+    let writer = ZstdWriter::builder(inner).with_compression_level(0);
+    if let Some(max_frame_size) = max_frame_size {
+        writer.with_seek_table(max_frame_size)
+    } else {
+        writer
+    }
+    .build()
+}
+
+pub fn compress_with_zstd<W: io::Write, R: io::Read>(
+    mut src: R,
+    mut dst: W,
+    max_frame_size: Option<u32>,
+) -> io::Result<()> {
+    let mut writer = new_zstd_writer(&mut dst, max_frame_size)?;
+    io::copy(&mut src, &mut writer)?;
+    writer.shutdown()?;
+    drop(writer);
+    Ok(())
 }
 
 pub use async_impls::AsyncCompressReader;
+
+pub async fn segment_len<T: AsyncSeek + Unpin>(r: &mut T) -> tokio::io::Result<u64> {
+    use tokio::io::AsyncSeekExt;
+    let old_pos = r.stream_position().await?;
+    let len = r.seek(tokio::io::SeekFrom::End(0)).await?;
+    // If we're already at the end of the file, avoid seeking.
+    if old_pos != len {
+        r.seek(tokio::io::SeekFrom::Start(old_pos)).await?;
+    }
+
+    Ok(len)
+}
 
 mod async_impls {
     use super::*;
@@ -171,6 +199,14 @@ mod async_impls {
         }
     }
 
+    impl AsyncCompressReader<tokio::fs::File> {
+        pub async fn file_size(&mut self) -> io::Result<u64> {
+            match self {
+                AsyncCompressReader::None(inner) => inner.get_ref().metadata().await.map(|m| m.len()),
+                AsyncCompressReader::Zstd(inner) => segment_len(inner).await,
+            }
+        }
+    }
     macro_rules! forward_reader {
     ($self:ident.$method:ident($($args:expr),*)) => {
         match $self.get_mut() {

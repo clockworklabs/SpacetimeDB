@@ -125,13 +125,17 @@ fn eval(c: &mut Criterion) {
             let tx = raw.db.begin_tx(Workload::Subscribe);
             let auth = AuthCtx::for_testing();
             let schema_viewer = &SchemaViewer::new(&tx, &auth);
-            let (plan, table_id, table_name, _) = compile_subscription(sql, schema_viewer, &auth).unwrap();
-            let plan = plan.optimize().map(PipelinedProject::from).unwrap();
+            let (plans, table_id, table_name, _) = compile_subscription(sql, schema_viewer, &auth).unwrap();
+            let plans = plans
+                .into_iter()
+                .map(|plan| plan.optimize().unwrap())
+                .map(PipelinedProject::from)
+                .collect::<Vec<_>>();
             let tx = DeltaTx::from(&tx);
 
             b.iter(|| {
                 drop(black_box(collect_table_update::<_, BsatnFormat>(
-                    &plan,
+                    &plans,
                     table_id,
                     table_name.clone(),
                     Compression::None,

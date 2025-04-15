@@ -215,10 +215,14 @@ pub(crate) fn derive_satstype(ty: &SatsType<'_>) -> TokenStream {
         let mut generics = ty.generics.clone();
         add_type_bounds(&mut generics, &quote!(#krate::FilterableValue));
         let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
-        // As we don't have access to other `derive` attributes,
-        // we don't know if `Copy` was derived,
-        // so we won't impl for the owned type.
+        // Assume that the type is `Copy`, as most all-unit enums will be.
         let filterable_impl = quote! {
+            #[automatically_derived]
+            impl #impl_generics #krate::Private for #name #ty_generics #where_clause {}
+                #[automatically_derived]
+            impl #impl_generics #krate::FilterableValue for #name #ty_generics #where_clause {
+                type Column = #name #ty_generics;
+            }
             #[automatically_derived]
             impl #impl_generics #krate::Private for &#name #ty_generics #where_clause {}
             #[automatically_derived]

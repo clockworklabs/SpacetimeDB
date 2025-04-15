@@ -1,16 +1,12 @@
 use std::num::NonZeroU16;
 
-use rand::Rng;
 use spacetimedb_commitlog::{payload, Commitlog, Options};
 use spacetimedb_paths::server::CommitLogDir;
 use spacetimedb_paths::FromPathUnchecked;
 use tempfile::tempdir;
 
 pub fn gen_payload() -> [u8; 256] {
-    let mut rng = rand::thread_rng();
-    let mut buf = [0u8; 256];
-    rng.fill(&mut buf);
-    buf
+    rand::random()
 }
 
 #[test]
@@ -77,4 +73,40 @@ fn resets() {
             clog.transactions(&payload::ArrayDecoder).map(Result::unwrap).count() as u64
         );
     }
+}
+
+#[test]
+fn compression() {
+    let root = tempdir().unwrap();
+    let clog = Commitlog::open(
+        CommitLogDir::from_path_unchecked(root.path()),
+        Options {
+            max_segment_size: 8 * 1024,
+            max_records_in_commit: NonZeroU16::MIN,
+            ..Options::default()
+        },
+    )
+    .unwrap();
+
+    // try to generate commitlogs that will be amenable to compression -
+    // random data doesn't compress well, so try and have there be repetition
+    let payloads = (0..4).map(|_| gen_payload()).cycle().take(1024).collect::<Vec<_>>();
+    for payload in &payloads {
+        clog.append_maybe_flush(*payload).unwrap();
+    }
+    clog.flush_and_sync().unwrap();
+
+    let uncompressed_size = clog.size_on_disk().unwrap();
+
+    let mut segments_to_compress = clog.existing_segment_offsets().unwrap();
+    segments_to_compress.retain(|&off| off < 20);
+    clog.compress_segments(&segments_to_compress).unwrap();
+
+    assert!(clog.size_on_disk().unwrap() < uncompressed_size);
+
+    assert!(clog
+        .transactions(&payload::ArrayDecoder)
+        .map(Result::unwrap)
+        .enumerate()
+        .all(|(i, x)| x.offset == i as u64 && x.txdata == payloads[i]));
 }

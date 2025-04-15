@@ -1,9 +1,6 @@
 use std::path::Path;
 use std::{fmt, io};
 
-use toml;
-use toml_edit;
-
 use spacetimedb_lib::ConnectionId;
 use spacetimedb_paths::cli::{ConfigDir, PrivKeyPath, PubKeyPath};
 use spacetimedb_paths::server::{ConfigToml, MetadataTomlPath};
@@ -146,53 +143,6 @@ pub struct LogConfig {
     pub level: Option<tracing_core::LevelFilter>,
     #[serde(default)]
     pub directives: Vec<String>,
-}
-
-/// Update the value of a key in a `TOML` document, preserving the formatting and comments of the original value.
-///
-/// ie:
-///
-/// ```toml;no_run
-/// # Moving key = value to key = new_value
-/// old = "value" # Comment
-/// new = "new_value" # Comment
-/// ```
-fn copy_value_with_decor(old_value: Option<&toml_edit::Item>, new_value: &str) -> toml_edit::Item {
-    match old_value {
-        Some(toml_edit::Item::Value(toml_edit::Value::String(old_value))) => {
-            // Creates a new `toml_edit::Value` with the same formatting as the old value.
-            let mut new = toml_edit::Value::String(toml_edit::Formatted::new(new_value.to_string()));
-            let decor = new.decor_mut();
-            // Copy the comments and formatting from the old value.
-            *decor = old_value.decor().clone();
-            new.into()
-        }
-        _ => new_value.into(),
-    }
-}
-
-/// Set the value of a key in a `TOML` document, removing the key if the value is `None`.
-///
-/// **NOTE**: This function will preserve the formatting and comments of the original value.
-pub fn set_opt_value(doc: &mut toml_edit::DocumentMut, key: &str, value: Option<&str>) {
-    let old_value = doc.get(key);
-    if let Some(new) = value {
-        doc[key] = copy_value_with_decor(old_value, new);
-    } else {
-        doc.remove(key);
-    }
-}
-
-/// Set the value of a key in a `TOML` table, removing the key if the value is `None`.
-///
-/// **NOTE**: This function will preserve the formatting and comments of the original value.
-pub fn set_table_opt_value(table: &mut toml_edit::Table, key: &str, value: Option<&str>) {
-    let old_value = table.get(key);
-    if let Some(new) = value {
-        table[key] = copy_value_with_decor(old_value, new);
-    } else {
-        table.remove(key);
-    }
 }
 
 #[cfg(test)]

@@ -30,9 +30,34 @@ pub struct TxSlot {
     inner: Arc<Mutex<Option<MutTxId>>>,
 }
 
+/// The maximum number of chunks stored in a single [`ChunkPool`].
+///
+/// When returning a chunk to the pool via [`ChunkPool::put`],
+/// if the pool contains more than [`MAX_CHUNKS_IN_POOL`] chunks,
+/// the returned chunk will be freed rather than added to the pool.
+///
+/// This, together with [`MAX_CHUNK_SIZE_IN_BYTES`],
+/// prevents the heap usage of a [`ChunkPool`] from growing without bound.
+///
+/// This number chosen completely arbitrarily by pgoldman 2025-04-10.
+const MAX_CHUNKS_IN_POOL: usize = 32;
+
+/// The maximum size of chunks which can be saved in a [`ChunkPool`].
+///
+/// When returning a chunk to the pool via [`ChunkPool::put`],
+/// if the returned chunk is larger than [`MAX_CHUNK_SIZE_IN_BYTES`],
+/// the returned chunk will be freed rather than added to the pool.
+///
+/// This, together with [`MAX_CHUNKS_IN_POOL`],
+/// prevents the heap usage of a [`ChunkPool`] from growing without bound.
+///
+/// We switch to a new chunk when we pass ROW_ITER_CHUNK_SIZE, so this adds a buffer of 4x.
+const MAX_CHUNK_SIZE_IN_BYTES: usize = spacetimedb_primitives::ROW_ITER_CHUNK_SIZE * 4;
+
 /// A pool of available unused chunks.
 ///
-/// The chunk places currently no limits on its size.
+/// The number of chunks stored in a `ChunkPool` is limited by [`MAX_CHUNKS_IN_POOL`],
+/// and the size of each individual saved chunk is limited by [`MAX_CHUNK_SIZE_IN_BYTES`].
 #[derive(Default)]
 pub struct ChunkPool {
     free_chunks: Vec<Vec<u8>>,
@@ -47,14 +72,35 @@ impl ChunkPool {
         self.free_chunks.pop().unwrap_or_default()
     }
 
-    /// Return a chunk back to the pool.
+    /// Return a chunk back to the pool, or frees it, as appropriate.
+    ///
+    /// `chunk` will be freed if either:
+    ///
+    /// - `self` already contains at least [`MAX_CHUNKS_IN_POOL`] chunks, or
+    /// - `chunk.capacity()` is greater than [`MAX_CHUNK_SIZE_IN_BYTES`].
+    ///
+    /// These limits place an upper bound on the memory usage of a single [`ChunkPool`].
     pub fn put(&mut self, mut chunk: Vec<u8>) {
+        log::trace!(
+            "put: chunk of capacity {} into pool of {} chunks",
+            chunk.capacity(),
+            self.free_chunks.len()
+        );
+        if chunk.capacity() > MAX_CHUNK_SIZE_IN_BYTES {
+            return;
+        }
+        if self.free_chunks.len() > MAX_CHUNKS_IN_POOL {
+            return;
+        }
         chunk.clear();
         self.free_chunks.push(chunk);
     }
 }
 
-#[derive(Default)]
+/// Construct a new `ChunkedWriter` using [`Self::new`].
+/// Do not impl `Default` for this struct or construct it manually;
+/// it is important that all allocated chunks are taken from the [`ChunkPool`],
+/// rather than directly from the global allocator.
 struct ChunkedWriter {
     /// Chunks collected thus far.
     chunks: Vec<Vec<u8>>,
@@ -72,6 +118,14 @@ impl ChunkedWriter {
         }
     }
 
+    /// Creates a new `ChunkedWriter` with an empty chunk allocated from the pool.
+    fn new(pool: &mut ChunkPool) -> Self {
+        Self {
+            chunks: Vec::new(),
+            curr: pool.take(),
+        }
+    }
+
     /// Finalises the writer and returns all the chunks.
     fn into_chunks(mut self) -> Vec<Vec<u8>> {
         if !self.curr.is_empty() {
@@ -86,7 +140,7 @@ impl ChunkedWriter {
         rows_scanned: &mut usize,
         bytes_scanned: &mut usize,
     ) -> Vec<Vec<u8>> {
-        let mut chunked_writer = Self::default();
+        let mut chunked_writer = Self::new(pool);
         // Consume the iterator, serializing each `item`,
         // while allowing a chunk to be created at boundaries.
         for item in iter {

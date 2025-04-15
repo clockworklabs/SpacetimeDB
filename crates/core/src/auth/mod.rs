@@ -6,7 +6,7 @@ use spacetimedb_paths::cli::{PrivKeyPath, PubKeyPath};
 
 use crate::config::CertificateAuthority;
 
-pub mod identity;
+pub use spacetimedb_auth::identity;
 pub mod token_validation;
 
 /// JWT verification and signing keys.

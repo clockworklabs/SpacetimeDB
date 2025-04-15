@@ -2,16 +2,15 @@ use std::fmt;
 use std::fmt::Write;
 use std::time::{Duration, Instant};
 
-use crate::api::{from_json_seed, ClientApi, Connection, StmtResultJson, StmtStats};
+use crate::api::{from_json_seed, ClientApi, Connection, SqlStmtResult, StmtStats};
 use crate::common_args;
 use crate::config::Config;
 use crate::util::{database_identity, get_auth_header, ResponseExt, UNSTABLE_WARNING};
 use anyhow::Context;
 use clap::{Arg, ArgAction, ArgMatches};
 use reqwest::RequestBuilder;
-use spacetimedb::sql::compiler::build_table;
 use spacetimedb_lib::de::serde::SeedWrapper;
-use spacetimedb_lib::sats::Typespace;
+use spacetimedb_lib::sats::{satn, ProductType, ProductValue, Typespace};
 
 pub fn cli() -> clap::Command {
     clap::Command::new("sql")
@@ -99,7 +98,7 @@ impl fmt::Display for StmtResult {
 }
 
 fn print_stmt_result(
-    stmt_results: &[StmtResultJson],
+    stmt_results: &[SqlStmtResult],
     with_stats: Option<Duration>,
     f: &mut String,
 ) -> anyhow::Result<()> {
@@ -148,7 +147,7 @@ pub(crate) async fn run_sql(builder: RequestBuilder, sql: &str, with_stats: bool
         .text()
         .await?;
 
-    let stmt_result_json: Vec<StmtResultJson> = serde_json::from_str(&json).context("malformed sql response")?;
+    let stmt_result_json: Vec<SqlStmtResult> = serde_json::from_str(&json).context("malformed sql response")?;
 
     let mut out = String::new();
     print_stmt_result(&stmt_result_json, with_stats.then_some(now.elapsed()), &mut out)?;
@@ -157,9 +156,9 @@ pub(crate) async fn run_sql(builder: RequestBuilder, sql: &str, with_stats: bool
     Ok(())
 }
 
-fn stmt_result_to_table(stmt_result: &StmtResultJson) -> anyhow::Result<(StmtStats, tabled::Table)> {
+fn stmt_result_to_table(stmt_result: &SqlStmtResult) -> anyhow::Result<(StmtStats, tabled::Table)> {
     let stats = StmtStats::from(stmt_result);
-    let StmtResultJson { schema, rows, .. } = stmt_result;
+    let SqlStmtResult { schema, rows, .. } = stmt_result;
     let ty = Typespace::EMPTY.with_type(schema);
 
     let table = build_table(
@@ -188,14 +187,51 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
     Ok(())
 }
 
+/// Generates a [`tabled::Table`] from a schema and rows, using the style of a psql table.
+fn build_table<E>(
+    schema: &ProductType,
+    rows: impl Iterator<Item = Result<ProductValue, E>>,
+) -> Result<tabled::Table, E> {
+    let mut builder = tabled::builder::Builder::default();
+    builder.set_header(
+        schema
+            .elements
+            .iter()
+            .enumerate()
+            .map(|(i, e)| e.name.clone().unwrap_or_else(|| format!("column {i}").into())),
+    );
+
+    let ty = Typespace::EMPTY.with_type(schema);
+    for row in rows {
+        let row = row?;
+        builder.push_record(ty.with_values(&row).enumerate().map(|(idx, value)| {
+            let ty = satn::PsqlType {
+                tuple: ty.ty(),
+                field: &ty.ty().elements[idx],
+                idx,
+            };
+
+            satn::PsqlWrapper { ty, value }.to_string()
+        }));
+    }
+
+    let mut table = builder.build();
+    table.with(tabled::settings::Style::psql());
+
+    Ok(table)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use itertools::Itertools;
     use serde_json::value::RawValue;
-    use spacetimedb::json::client_api::StmtStatsJson;
-    use spacetimedb_lib::sats::ProductType;
-    use spacetimedb_lib::{AlgebraicType, AlgebraicValue};
+    use spacetimedb_client_api_messages::http::SqlStmtStats;
+    use spacetimedb_lib::error::ResultTest;
+    use spacetimedb_lib::sats::time_duration::TimeDuration;
+    use spacetimedb_lib::sats::timestamp::Timestamp;
+    use spacetimedb_lib::sats::{product, GroundSpacetimeType, ProductType};
+    use spacetimedb_lib::{AlgebraicType, AlgebraicValue, ConnectionId, Identity};
 
     fn make_row(row: &[AlgebraicValue]) -> Result<Box<RawValue>, serde_json::Error> {
         let json = serde_json::json!(row);
@@ -203,7 +239,7 @@ mod tests {
     }
 
     fn check_outputs(
-        result: &[StmtResultJson],
+        result: &[SqlStmtResult],
         duration: Option<Duration>,
         expect: &str,
     ) -> Result<String, anyhow::Error> {
@@ -220,11 +256,11 @@ mod tests {
     fn check_output(
         schema: ProductType,
         rows: Vec<&RawValue>,
-        stats: StmtStatsJson,
+        stats: SqlStmtStats,
         duration: Option<Duration>,
         expect: &str,
     ) -> Result<String, anyhow::Error> {
-        let table = StmtResultJson {
+        let table = SqlStmtResult {
             schema: schema.clone(),
             rows,
             total_duration_micros: 1000,
@@ -250,7 +286,7 @@ mod tests {
         check_output(
             schema.clone(),
             vec![&row],
-            StmtStatsJson {
+            SqlStmtStats {
                 rows_inserted: 1,
                 rows_deleted: 1,
                 rows_updated: 1,
@@ -264,7 +300,7 @@ mod tests {
         check_output(
             schema.clone(),
             vec![&row],
-            StmtStatsJson {
+            SqlStmtStats {
                 rows_inserted: 1,
                 rows_deleted: 1,
                 rows_updated: 1,
@@ -281,7 +317,7 @@ Roundtrip time: 1.00ms"#,
         check_output(
             schema.clone(),
             vec![&row],
-            StmtStatsJson {
+            SqlStmtStats {
                 rows_inserted: 0,
                 rows_deleted: 0,
                 rows_updated: 0,
@@ -298,7 +334,7 @@ Roundtrip time: 1.00ms"#,
         check_output(
             schema.clone(),
             vec![],
-            StmtStatsJson {
+            SqlStmtStats {
                 rows_inserted: 0,
                 rows_deleted: 0,
                 rows_updated: 0,
@@ -314,7 +350,7 @@ Roundtrip time: 1.00ms"#,
         check_output(
             schema.clone(),
             vec![],
-            StmtStatsJson {
+            SqlStmtStats {
                 rows_inserted: 1,
                 rows_deleted: 0,
                 rows_updated: 0,
@@ -329,7 +365,7 @@ Roundtrip time: 1.00ms"#,
         check_output(
             schema.clone(),
             vec![],
-            StmtStatsJson {
+            SqlStmtStats {
                 rows_inserted: 0,
                 rows_deleted: 1,
                 rows_updated: 0,
@@ -344,7 +380,7 @@ Roundtrip time: 1.00ms"#,
         check_output(
             schema.clone(),
             vec![],
-            StmtStatsJson {
+            SqlStmtStats {
                 rows_inserted: 0,
                 rows_deleted: 0,
                 rows_updated: 1,
@@ -368,21 +404,21 @@ Roundtrip time: 1.00ms"#,
         // Verify with and without stats
         check_outputs(
             &[
-                StmtResultJson {
+                SqlStmtResult {
                     schema: schema.clone(),
                     rows: vec![&row],
                     total_duration_micros: 1000,
-                    stats: StmtStatsJson {
+                    stats: SqlStmtStats {
                         rows_inserted: 1,
                         rows_deleted: 1,
                         rows_updated: 1,
                     },
                 },
-                StmtResultJson {
+                SqlStmtResult {
                     schema: schema.clone(),
                     rows: vec![&row],
                     total_duration_micros: 1000,
-                    stats: StmtStatsJson {
+                    stats: SqlStmtStats {
                         rows_inserted: 1,
                         rows_deleted: 1,
                         rows_updated: 1,
@@ -401,6 +437,105 @@ Roundtrip time: 1.00ms"#,
 (1 row) [inserted: 1, deleted: 1, updated: 1, server: 1.00ms]
 Roundtrip time: 1.00ms"#,
         )?;
+
+        Ok(())
+    }
+
+    fn expect_psql_table(ty: &ProductType, rows: Vec<ProductValue>, expected: &str) {
+        let table = build_table(ty, rows.into_iter().map(Ok::<_, ()>)).unwrap().to_string();
+        let mut table = table.split('\n').map(|x| x.trim_end()).join("\n");
+        table.insert(0, '\n');
+        assert_eq!(expected, table);
+    }
+
+    // Verify the output of `sql` matches the inputs that return true for [`AlgebraicType::is_special()`]
+    #[test]
+    fn output_special_types() -> ResultTest<()> {
+        // Check tuples
+        let kind: ProductType = [
+            AlgebraicType::String,
+            AlgebraicType::U256,
+            Identity::get_type(),
+            ConnectionId::get_type(),
+            Timestamp::get_type(),
+            TimeDuration::get_type(),
+        ]
+        .into();
+        let value = product![
+            "a",
+            Identity::ZERO.to_u256(),
+            Identity::ZERO,
+            ConnectionId::ZERO,
+            Timestamp::UNIX_EPOCH,
+            TimeDuration::ZERO
+        ];
+
+        expect_psql_table(
+            &kind,
+            vec![value],
+            r#"
+ column 0 | column 1 | column 2                                                           | column 3                           | column 4                  | column 5
+----------+----------+--------------------------------------------------------------------+------------------------------------+---------------------------+-----------
+ "a"      | 0        | 0x0000000000000000000000000000000000000000000000000000000000000000 | 0x00000000000000000000000000000000 | 1970-01-01T00:00:00+00:00 | +0.000000"#,
+        );
+
+        // Check struct
+        let kind: ProductType = [
+            ("bool", AlgebraicType::Bool),
+            ("str", AlgebraicType::String),
+            ("bytes", AlgebraicType::bytes()),
+            ("identity", Identity::get_type()),
+            ("connection_id", ConnectionId::get_type()),
+            ("timestamp", Timestamp::get_type()),
+            ("duration", TimeDuration::get_type()),
+        ]
+        .into();
+
+        let value = product![
+            true,
+            "This is spacetimedb".to_string(),
+            AlgebraicValue::Bytes([1, 2, 3, 4, 5, 6, 7].into()),
+            Identity::ZERO,
+            ConnectionId::ZERO,
+            Timestamp::UNIX_EPOCH,
+            TimeDuration::ZERO
+        ];
+
+        expect_psql_table(
+            &kind,
+            vec![value.clone()],
+            r#"
+ bool | str                   | bytes            | identity                                                           | connection_id                      | timestamp                 | duration
+------+-----------------------+------------------+--------------------------------------------------------------------+------------------------------------+---------------------------+-----------
+ true | "This is spacetimedb" | 0x01020304050607 | 0x0000000000000000000000000000000000000000000000000000000000000000 | 0x00000000000000000000000000000000 | 1970-01-01T00:00:00+00:00 | +0.000000"#,
+        );
+
+        // Check nested struct, tuple...
+        let kind: ProductType = [(None, AlgebraicType::product(kind))].into();
+
+        let value = product![value.clone()];
+
+        expect_psql_table(
+            &kind,
+            vec![value.clone()],
+            r#"
+ column 0
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ (bool = true, str = "This is spacetimedb", bytes = 0x01020304050607, identity = 0x0000000000000000000000000000000000000000000000000000000000000000, connection_id = 0x00000000000000000000000000000000, timestamp = 1970-01-01T00:00:00+00:00, duration = +0.000000)"#,
+        );
+
+        let kind: ProductType = [("tuple", AlgebraicType::product(kind))].into();
+
+        let value = product![value];
+
+        expect_psql_table(
+            &kind,
+            vec![value],
+            r#"
+ tuple
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ (0 = (bool = true, str = "This is spacetimedb", bytes = 0x01020304050607, identity = 0x0000000000000000000000000000000000000000000000000000000000000000, connection_id = 0x00000000000000000000000000000000, timestamp = 1970-01-01T00:00:00+00:00, duration = +0.000000))"#,
+        );
 
         Ok(())
     }

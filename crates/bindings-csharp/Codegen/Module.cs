@@ -856,7 +856,9 @@ public class Module : IIncrementalGenerator
 
         var rlsFilters = context
             .SyntaxProvider.ForAttributeWithMetadataName(
+#pragma warning disable STDB_UNSTABLE
                 fullyQualifiedMetadataName: typeof(ClientVisibilityFilterAttribute).FullName,
+#pragma warning restore STDB_UNSTABLE
                 predicate: (node, ct) => true,
                 transform: (context, ct) =>
                     context.ParseWithDiags(diag => new ClientVisibilityFilterDeclaration(
