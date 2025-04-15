@@ -72,7 +72,10 @@ pub fn cli() -> clap::Command {
             .requires("ssl")
             .help("--cert server.crt: The server sends this to clients during the TLS handshake. ie. server's public key, which if it's self-signed then this is the file that you pass to clients via --cert when talking to the server from a client(or the cli), or if signed by a local CA then pass that CA's pub cert to your clients instead, in order to can trust this server from a client connection. Otherwise, you don't have to pass anything to clients if this cert was signed by a public CA like Let's Encrypt.")
         )
-        .arg(Arg::new("key").long("key").requires("ssl").value_name("FILE").help("--key key.pem: The server keeps this private to decrypt and sign responses. ie. the server's private key"))
+        .arg(Arg::new("key").long("key").requires("ssl").value_name("FILE")
+            .action(clap::ArgAction::Set)
+            .value_parser(clap::value_parser!(std::path::PathBuf))
+            .help("--key server.key: The server keeps this private to decrypt and sign responses. ie. the server's private key"))
     // .after_help("Run `spacetime help start` for more detailed information.")
 }
 
@@ -154,7 +157,7 @@ pub async fn exec(args: &ArgMatches) -> anyhow::Result<()> {
     if args.get_flag("ssl") {
         use std::path::{Path, PathBuf};
         let cert_path: &Path = args.get_one::<PathBuf>("cert").context("Missing --cert for SSL")?.as_path();
-        let key_path = args.get_one::<String>("key").context("Missing --key for SSL")?;
+        let key_path: &Path = args.get_one::<PathBuf>("key").context("Missing --key for SSL")?.as_path();
         // Install the default CryptoProvider at the start of the function
         // This only needs to happen once per process, so it's safe to call here
         use rustls::crypto::ring::default_provider;
