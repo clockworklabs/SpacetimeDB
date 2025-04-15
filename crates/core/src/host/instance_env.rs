@@ -795,9 +795,9 @@ mod test {
             Ok(())
         };
         let tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
-        let (tx, delete_result) = tx_slot.set(tx, f);
+        let (tx, res) = tx_slot.set(tx, f);
 
-        delete_result?;
+        res?;
 
         assert_eq!(new_row_len, tx.metrics.bytes_written);
         Ok(())
