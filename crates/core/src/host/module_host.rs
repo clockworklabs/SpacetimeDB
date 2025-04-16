@@ -516,7 +516,15 @@ impl ModuleHost {
             self.inner.get_instance(self.info.database_identity).await?
         };
 
-        let result = f(&mut *inst);
+        // Spawning a task allows to catch panics without proving to the
+        // compiler that `dyn ModuleInstance` is unwind safe.
+        // If a reducer call panics, we **must** ensure to call `self.on_panic`
+        // so that the module is discarded by the host controller.
+        let result = tokio::spawn(async move { f(&mut *inst) }).await.unwrap_or_else(|e| {
+            log::warn!("reducer {reducer} panicked");
+            (self.on_panic)();
+            std::panic::resume_unwind(e.into_panic());
+        });
         Ok(result)
     }
 
