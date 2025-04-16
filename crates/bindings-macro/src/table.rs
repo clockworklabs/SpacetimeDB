@@ -234,6 +234,36 @@ struct Column<'a> {
     ty: &'a syn::Type,
 }
 
+enum ColumnAttr {
+    Unique(Span),
+    AutoInc(Span),
+    PrimaryKey(Span),
+    Index(IndexArg),
+}
+
+impl ColumnAttr {
+    fn parse(attr: &syn::Attribute, field_ident: &Ident) -> syn::Result<Option<Self>> {
+        let Some(ident) = attr.path().get_ident() else {
+            return Ok(None);
+        };
+        Ok(if ident == sym::index {
+            let index = IndexArg::parse_index_attr(field_ident, attr)?;
+            Some(ColumnAttr::Index(index))
+        } else if ident == sym::unique {
+            attr.meta.require_path_only()?;
+            Some(ColumnAttr::Unique(ident.span()))
+        } else if ident == sym::auto_inc {
+            attr.meta.require_path_only()?;
+            Some(ColumnAttr::AutoInc(ident.span()))
+        } else if ident == sym::primary_key {
+            attr.meta.require_path_only()?;
+            Some(ColumnAttr::PrimaryKey(ident.span()))
+        } else {
+            None
+        })
+    }
+}
+
 //endregion Input
 //region Output
 
@@ -475,36 +505,6 @@ where
 
 fn find_column<'a, 'b>(cols: &'a [Column<'b>], name: &Ident) -> syn::Result<&'a Column<'b>> {
     try_find_column(cols, name).ok_or_else(|| syn::Error::new(name.span(), "not a column of the table"))
-}
-
-enum ColumnAttr {
-    Unique(Span),
-    AutoInc(Span),
-    PrimaryKey(Span),
-    Index(IndexArg),
-}
-
-impl ColumnAttr {
-    fn parse(attr: &syn::Attribute, field_ident: &Ident) -> syn::Result<Option<Self>> {
-        let Some(ident) = attr.path().get_ident() else {
-            return Ok(None);
-        };
-        Ok(if ident == sym::index {
-            let index = IndexArg::parse_index_attr(field_ident, attr)?;
-            Some(ColumnAttr::Index(index))
-        } else if ident == sym::unique {
-            attr.meta.require_path_only()?;
-            Some(ColumnAttr::Unique(ident.span()))
-        } else if ident == sym::auto_inc {
-            attr.meta.require_path_only()?;
-            Some(ColumnAttr::AutoInc(ident.span()))
-        } else if ident == sym::primary_key {
-            attr.meta.require_path_only()?;
-            Some(ColumnAttr::PrimaryKey(ident.span()))
-        } else {
-            None
-        })
-    }
 }
 
 pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::Result<TokenStream> {
