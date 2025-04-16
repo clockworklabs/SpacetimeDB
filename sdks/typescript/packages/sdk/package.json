@@ -1,6 +1,6 @@
 {
   "name": "@clockworklabs/spacetimedb-sdk",
-  "version": "1.0.3",
+  "version": "1.1.0",
   "description": "SDK for SpacetimeDB",
   "author": {
     "name": "Clockwork Labs",
