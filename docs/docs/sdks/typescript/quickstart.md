@@ -7,7 +7,7 @@ Please note that TypeScript is supported as a client language only. **Before you
 - [Rust](/docs/modules/rust/quickstart)
 - [C#](/docs/modules/c-sharp/quickstart)
 
-By the end of this introduciton, you will have created a basic single page web app which connects to the `quickstart-chat` module created in the above module quickstart guides.
+By the end of this introduciton, you will have created a basic single page web app which connects to the `quickstart-chat` database created in the above module quickstart guides.
 
 ## Project structure
 
@@ -393,7 +393,7 @@ import { Identity } from '@clockworklabs/spacetimedb-sdk';
 
 ## Create your SpacetimeDB client
 
-Now that we've imported the `DbConnection` type, we can use it to connect our app to our module.
+Now that we've imported the `DbConnection` type, we can use it to connect our app to our database.
 
 Add the following to your `App` function, just below `const [newMessage, setNewMessage] = useState('');`:
 
@@ -459,11 +459,11 @@ Add the following to your `App` function, just below `const [newMessage, setNewM
   }, []);
 ```
 
-Here we are configuring our SpacetimeDB connection by specifying the server URI, module name, and a few callbacks including the `onConnect` callback. When `onConnect` is called after connecting, we store the connection state, our `Identity`, and our SpacetimeDB credentials in our React state. If there is an error connecting, we print that error to the console as well.
+Here we are configuring our SpacetimeDB connection by specifying the server URI, database name, and a few callbacks including the `onConnect` callback. When `onConnect` is called after connecting, we store the connection state, our `Identity`, and our SpacetimeDB credentials in our React state. If there is an error connecting, we print that error to the console as well.
 
 We are also using `localStorage` to store our SpacetimeDB credentials. This way, we can reconnect to SpacetimeDB with the same `Identity` and token if we refresh the page. The first time we connect, we won't have any credentials stored, so we pass `undefined` to the `withToken` method. This will cause SpacetimeDB to generate new credentials for us.
 
-If you chose a different name for your module, replace `quickstart-chat` with that name, or republish your module as `quickstart-chat`.
+If you chose a different name for your database, replace `quickstart-chat` with that name, or republish your module as `quickstart-chat`.
 
 In the `onConnect` function we are also subscribing to the `message` and `user` tables. When we subscribe, SpacetimeDB will run our subscription queries and store the result in a local "client cache". This cache will be updated in real-time as the data in the table changes on the server. The `onApplied` callback is called after SpacetimeDB has synchronized our subscribed data with the client cache.
 
@@ -630,7 +630,7 @@ Try opening a few incognito windows to see what it's like with multiple users!
 
 ### Notify about new users
 
-We can also register `onInsert` and `onDelete` callbacks for the purpose of handling events, not just state. For example, we might want to show a notification any time a new user connects to the module.
+We can also register `onInsert` and `onDelete` callbacks for the purpose of handling events, not just state. For example, we might want to show a notification any time a new user connects to the database.
 
 Note that these callbacks can fire in two contexts:
 

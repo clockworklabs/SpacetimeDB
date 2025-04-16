@@ -168,7 +168,7 @@ If you have uncommented the `/v1/publish` restriction in Step 3 then you won't b
 ```bash
 spacetime build
 scp target/wasm32-unknown-unknown/release/spacetime_module.wasm ubuntu@<host>:/home/ubuntu/
-ssh ubuntu@<host> spacetime publish -s local --bin-path spacetime_module.wasm <module-name>
+ssh ubuntu@<host> spacetime publish -s local --bin-path spacetime_module.wasm <database-name>
 ```
 
 You could put the above commands into a shell script to make publishing to your server easier and faster. It's also possible to integrate a script like this into Github Actions to publish on some event (like a PR merging into master).

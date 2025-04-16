@@ -382,7 +382,7 @@ You should see something like the following output:
 ### Connecting our Client
 
 :::server-rust
-Next let's connect our client to our module. Let's start by modifying our `debug` reducer. Rename the reducer to be called `connect` and add `client_connected` in parentheses after `spacetimedb::reducer`. The end result should look like this:
+Next let's connect our client to our database. Let's start by modifying our `debug` reducer. Rename the reducer to be called `connect` and add `client_connected` in parentheses after `spacetimedb::reducer`. The end result should look like this:
 
 ```rust
 #[spacetimedb::reducer(client_connected)]
@@ -392,16 +392,16 @@ pub fn connect(ctx: &ReducerContext) -> Result<(), String> {
 }
 ```
 
-The `client_connected` argument to the `spacetimedb::reducer` macro indicates to SpacetimeDB that this is a special reducer. This reducer is only ever called by SpacetimeDB itself when a client connects to your module.
+The `client_connected` argument to the `spacetimedb::reducer` macro indicates to SpacetimeDB that this is a special reducer. This reducer is only ever called by SpacetimeDB itself when a client connects to your database.
 
 > SpacetimeDB gives you the ability to define custom reducers that automatically trigger when certain events occur.
 >
 > - `init` - Called the first time you publish your module and anytime you clear the database with `spacetime publish <name> --delete-data`.
-> - `client_connected` - Called when a user connects to the SpacetimeDB module. Their identity can be found in the `sender` value of the `ReducerContext`.
-> - `client_disconnected` - Called when a user disconnects from the SpacetimeDB module.
+> - `client_connected` - Called when a user connects to the SpacetimeDB database. Their identity can be found in the `sender` value of the `ReducerContext`.
+> - `client_disconnected` - Called when a user disconnects from the SpacetimeDB database.
 :::
 :::server-csharp
-Next let's connect our client to our module. Let's start by modifying our `Debug` reducer. Rename the reducer to be called `Connect` and add `ReducerKind.ClientConnected` in parentheses after `SpacetimeDB.Reducer`. The end result should look like this:
+Next let's connect our client to our database. Let's start by modifying our `Debug` reducer. Rename the reducer to be called `Connect` and add `ReducerKind.ClientConnected` in parentheses after `SpacetimeDB.Reducer`. The end result should look like this:
 
 ```csharp
 [Reducer(ReducerKind.ClientConnected)]
@@ -411,13 +411,13 @@ public static void Connect(ReducerContext ctx)
 }
 ```
 
-The `ReducerKind.ClientConnected` argument to the `SpacetimeDB.Reducer` attribute indicates to SpacetimeDB that this is a special reducer. This reducer is only ever called by SpacetimeDB itself when a client connects to your module.
+The `ReducerKind.ClientConnected` argument to the `SpacetimeDB.Reducer` attribute indicates to SpacetimeDB that this is a special reducer. This reducer is only ever called by SpacetimeDB itself when a client connects to your database.
 
 > SpacetimeDB gives you the ability to define custom reducers that automatically trigger when certain events occur.
 >
 > - `ReducerKind.Init` - Called the first time you publish your module and anytime you clear the database with `spacetime publish <name> --delete-data`.
-> - `ReducerKind.ClientConnected` - Called when a user connects to the SpacetimeDB module. Their identity can be found in the `Sender` value of the `ReducerContext`.
-> - `ReducerKind.ClientDisconnected` - Called when a user disconnects from the SpacetimeDB module.
+> - `ReducerKind.ClientConnected` - Called when a user connects to the SpacetimeDB database. Their identity can be found in the `Sender` value of the `ReducerContext`.
+> - `ReducerKind.ClientDisconnected` - Called when a user disconnects from the SpacetimeDB database.
 :::
 
 Publish your module again by running:
@@ -462,7 +462,7 @@ This will generate a set of files in the `client-unity/Assets/autogen` directory
 └── SpacetimeDBClient.g.cs
 ```
 
-This will also generate a file in the `client-unity/Assets/autogen/SpacetimeDBClient.g.cs` directory with a type aware `DbConnection` class. We will use this class to connect to your module from Unity.
+This will also generate a file in the `client-unity/Assets/autogen/SpacetimeDBClient.g.cs` directory with a type aware `DbConnection` class. We will use this class to connect to your database from Unity.
 
 > IMPORTANT! At this point there will be an error in your Unity project. Due to a [known issue](https://docs.unity3d.com/6000.0/Documentation/Manual/csharp-compiler.html) with Unity and C# 9 you need to insert the following code into your Unity project.
 >
@@ -475,7 +475,7 @@ This will also generate a file in the `client-unity/Assets/autogen/SpacetimeDBCl
 >
 > Add this snippet to the bottom of your `GameManager.cs` file in your Unity project. This will hopefully be resolved in Unity soon.
 
-### Connecting to the Module
+### Connecting to the Database
 
 At this point we can set up Unity to connect your Unity client to the server. Replace your imports at the top of the `GameManager.cs` file with:
 

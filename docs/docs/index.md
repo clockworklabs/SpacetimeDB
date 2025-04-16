@@ -229,7 +229,7 @@ Clients are regular software applications that developers can choose how to depl
 
 ### Identity
 
-A SpacetimeDB `Identity` identifies someone interacting with a module. It is a long lived, public, globally valid identifier that will always refer to the same end user, even across different connections.
+A SpacetimeDB `Identity` identifies someone interacting with a database. It is a long lived, public, globally valid identifier that will always refer to the same end user, even across different connections.
 
 A user's `Identity` is attached to every [reducer call](#reducer) they make, and you can use this to decide what they are allowed to do.
 
@@ -261,9 +261,9 @@ def identity_from_claims(issuer: str, subject: str) -> [u8; 32]:
 
 ### ConnectionId
 
-A `ConnectionId` identifies client connections to a SpacetimeDB module.
+A `ConnectionId` identifies client connections to a SpacetimeDB database.
 
-A user has a single [`Identity`](#identity), but may open multiple connections to your module. Each of these will receive a unique `ConnectionId`.
+A user has a single [`Identity`](#identity), but may open multiple connections to your database. Each of these will receive a unique `ConnectionId`.
 
 ### Energy
 **Energy** is the currency used to pay for data storage and compute operations in a SpacetimeDB host.

@@ -127,7 +127,7 @@ Accessible through the CLI as `spacetime delete <identity>`.
 
 ## `GET /v1/database/:name_or_identity/names`
 
-Get the names this datbase can be identified by.
+Get the names this database can be identified by.
 
 #### Returns
 

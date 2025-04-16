@@ -54,7 +54,7 @@ This document contains the help content for the `spacetime` command-line program
 * `logout` — 
 * `init` — Initializes a new spacetime project. WARNING: This command is UNSTABLE and subject to breaking changes.
 * `build` — Builds a spacetime module.
-* `server` — Manage the connection to the SpacetimeDB server. WARNING: This command is UNSTABLE and subject to breaking changes.
+* `server` — Manage the connection to the SpacetimeDB database server. WARNING: This command is UNSTABLE and subject to breaking changes.
 * `subscribe` — Subscribe to SQL queries on the database. WARNING: This command is UNSTABLE and subject to breaking changes.
 * `start` — Start a local SpacetimeDB instance
 * `version` — Manage installed spacetime versions
@@ -83,7 +83,7 @@ Run `spacetime help publish` for more detailed information.
 
 ###### <b>Options:</b>
 
-* `-c`, `--delete-data` — When publishing to an existing database identity, first DESTROY all data associated with the module
+* `-c`, `--delete-data` — When publishing to an existing database identity, first DESTROY all data associated with the database
 * `--build-options <BUILD_OPTIONS>` — Options to pass to the build command, for example --build-options='--lint-dir='
 
   Default value: ``
@@ -391,7 +391,7 @@ Builds a spacetime module.
 
 ## spacetime server
 
-Manage the connection to the SpacetimeDB server. WARNING: This command is UNSTABLE and subject to breaking changes.
+Manage the connection to the SpacetimeDB database server. WARNING: This command is UNSTABLE and subject to breaking changes.
 
 **Usage:** `spacetime server
        server <COMMAND>`

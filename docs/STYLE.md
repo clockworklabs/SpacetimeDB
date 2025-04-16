@@ -311,9 +311,9 @@ For example:
 >
 > You can supply your users with authorization tokens in several different ways; which one is best for you will depend on the needs of your app. [...] (I don't actually want to write a real answer to this question - pgoldman 2024-11-19.)
 >
-> #### Can my client connect to multiple modules at the same time?
+> #### Can my client connect to multiple databases at the same time?
 >
-> Yes! Your client can construct as many `DbConnection`s simultaneously as it wants to, each of which will operate independently. If you want to connect to two modules with different schemas, use `spacetime generate` to include bindings for both of them in your client project. Note that SpacetimeDB may reject multiple concurrent connections to the same module by a single client.
+> Yes! Your client can construct as many `DbConnection`s simultaneously as it wants to, each of which will operate independently. If you want to connect to two databases with different schemas, use `spacetime generate` to include bindings for both of them in your client project. Note that SpacetimeDB may reject multiple concurrent connections to the same database by a single client.
 
 ## Tutorial pages
 
@@ -341,7 +341,7 @@ The first time a tutorial or series introduces a new type / function / method / 
 
 ### Tutorial code
 
-If the tutorial involves writing code, e.g. for a module or client, the tutorial should include the complete result code within its text. Ideally, it should be possible for a reader to copy and paste all the code blocks in the document into a file, effectively concatentating them together, and wind up with a coherent and runnable program. Sometimes this is not possible, e.g. because C# requires wrapping your whole file in a bunch of scopes. In this case, precede each code block with a sentence that describes where the reader is going to paste it.
+If the tutorial involves writing code, e.g. for a module or client, the tutorial should include the complete result code within its text. Ideally, it should be possible for a reader to copy and paste all the code blocks in the document into a file, effectively concatenating them together, and wind up with a coherent and runnable program. Sometimes this is not possible, e.g. because C# requires wrapping your whole file in a bunch of scopes. In this case, precede each code block with a sentence that describes where the reader is going to paste it.
 
 Include even uninteresting code, like imports! You can rush through these without spending too much time on them, but make sure that every line of code required to make the project work appears in the tutorial.
 
