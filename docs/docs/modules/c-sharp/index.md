@@ -611,6 +611,17 @@ public partial struct AcademicPaper {
 
 Any table supports getting an [`Index`](#class-index) using `ctx.Db.{table}.{index}`. For example, `ctx.Db.academic_paper.TitleAndDate` or `ctx.Db.academic_paper.Venue`.
 
+## Indexable Types
+
+SpacetimeDB supports only a restricted set of types as index keys:
+
+- Signed and unsigned integers of various widths.
+- `bool`.
+- `string`.
+- [`Identity`](#struct-identity).
+- [`ConnectionId`](#struct-connectionid).
+- `enum`s annotated with [`SpacetimeDB.Type`](#attribute-spacetimedbtype).
+
 ## Class `Index`
 
 ```csharp
