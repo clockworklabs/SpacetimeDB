@@ -478,6 +478,8 @@ Any index supports getting a [`RangedIndex`] using [`ctx`](crate::ReducerContext
  - [`RangedIndex::filter`]
  - [`RangedIndex::delete`]
 
+Only types which implement [`FilterableValue`](trait@crate::FilterableValue) may be used as index keys.
+
 ## Reducers
 
 Reducers are declared using the [`#[reducer]` macro](macro@crate::reducer).

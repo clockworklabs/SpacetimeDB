@@ -29,6 +29,8 @@ pub mod type_value {
 
 pub use connection_id::ConnectionId;
 pub use direct_index_key::{assert_column_type_valid_for_direct_index, DirectIndexKey};
+#[doc(hidden)]
+pub use filterable_value::Private;
 pub use filterable_value::{FilterableValue, IndexScanRangeBoundsTerminator, TermBound};
 pub use identity::Identity;
 pub use scheduler::ScheduleAt;
