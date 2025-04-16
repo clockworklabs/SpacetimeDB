@@ -14,6 +14,8 @@ use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
 use syn::{parse_quote, Ident, Path, Token};
 
+//region Input
+
 pub(crate) struct TableArgs {
     access: Option<TableAccess>,
     scheduled: Option<ScheduledArg>,
@@ -234,7 +236,12 @@ impl IndexArg {
         let name = field.clone();
         Ok(IndexArg::new(name, kind))
     }
+}
 
+//endregion Input
+//region Output
+
+impl IndexArg {
     fn validate<'a>(&'a self, table_name: &str, cols: &'a [Column<'a>]) -> syn::Result<ValidatedIndex<'a>> {
         let find_column = |ident| find_column(cols, ident);
         let kind = match &self.kind {
@@ -806,3 +813,5 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
 
     Ok(emission)
 }
+
+//endregion Output
