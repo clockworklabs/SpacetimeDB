@@ -884,6 +884,7 @@ impl RelationalDB {
         name: &str,
         schema: &[(&str, AlgebraicType)],
         indexes: &[ColList],
+        unique_constraints: &[ColList],
         access: StAccess,
     ) -> Result<TableId, DBError> {
         let mut module_def_builder = RawModuleDefV9Builder::new();
@@ -894,6 +895,9 @@ impl RelationalDB {
 
         for columns in indexes {
             table_builder = table_builder.with_index(btree(columns.clone()), "accessor_name_doesnt_matter");
+        }
+        for columns in unique_constraints {
+            table_builder = table_builder.with_unique_constraint(columns.clone());
         }
         table_builder.finish();
         let module_def: ModuleDef = module_def_builder.finish().try_into()?;
@@ -915,7 +919,7 @@ impl RelationalDB {
         access: StAccess,
     ) -> Result<TableId, DBError> {
         let indexes: Vec<ColList> = indexes.iter().map(|col_id| (*col_id).into()).collect();
-        self.create_table_for_test_with_the_works(name, schema, &indexes[..], access)
+        self.create_table_for_test_with_the_works(name, schema, &indexes[..], &[], access)
     }
 
     pub fn create_table_for_test(
@@ -933,7 +937,7 @@ impl RelationalDB {
         schema: &[(&str, AlgebraicType)],
         idx_cols: ColList,
     ) -> Result<TableId, DBError> {
-        self.create_table_for_test_with_the_works(name, schema, &[idx_cols], StAccess::Public)
+        self.create_table_for_test_with_the_works(name, schema, &[idx_cols], &[], StAccess::Public)
     }
 
     pub fn create_table_for_test_mix_indexes(
@@ -949,7 +953,7 @@ impl RelationalDB {
             .chain(std::iter::once(idx_cols_multi))
             .collect();
 
-        self.create_table_for_test_with_the_works(name, schema, &indexes[..], StAccess::Public)
+        self.create_table_for_test_with_the_works(name, schema, &indexes[..], &[], StAccess::Public)
     }
 
     pub fn drop_table(&self, tx: &mut MutTx, table_id: TableId) -> Result<(), DBError> {
