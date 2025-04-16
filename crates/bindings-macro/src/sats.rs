@@ -218,9 +218,13 @@ pub(crate) fn derive_satstype(ty: &SatsType<'_>) -> TokenStream {
         // Assume that the type is `Copy`, as most all-unit enums will be.
         let filterable_impl = quote! {
             #[automatically_derived]
+            impl #impl_generics #krate::Private for #name #ty_generics #where_clause {}
+                #[automatically_derived]
             impl #impl_generics #krate::FilterableValue for #name #ty_generics #where_clause {
                 type Column = #name #ty_generics;
             }
+            #[automatically_derived]
+            impl #impl_generics #krate::Private for &#name #ty_generics #where_clause {}
             #[automatically_derived]
             impl #impl_generics #krate::FilterableValue for &#name #ty_generics #where_clause {
                 type Column = #name #ty_generics;
