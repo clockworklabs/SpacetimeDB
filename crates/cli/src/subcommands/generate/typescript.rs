@@ -157,7 +157,7 @@ export class {table_handle} {{
         for (unique_field_ident, unique_field_type_use) in
             iter_unique_cols(module.typespace_for_generate(), &schema, product_def)
         {
-            let unique_field_name = unique_field_ident.deref().to_case(Case::Snake);
+            let unique_field_name = unique_field_ident.deref().to_case(Case::Camel);
             let unique_field_name_pascalcase = unique_field_name.to_case(Case::Pascal);
 
             let unique_constraint = table_name_pascalcase.clone() + &unique_field_name_pascalcase + "Unique";
