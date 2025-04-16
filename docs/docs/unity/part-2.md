@@ -8,7 +8,7 @@ This progressive tutorial is continued from [part 1](/docs/unity/part-1).
 
 If you have not already installed the `spacetime` CLI, check out our [Getting Started](/docs/getting-started) guide for instructions on how to install.
 
-In your `blackholio` directory, run the following command to initialize the SpacetimeDB server module project with Rust as the language:
+In your `blackholio` directory, run the following command to initialize the SpacetimeDB server module project with your desired language:
 
 :::server-rust
 Run the following command to initialize the SpacetimeDB server module project with Rust as the language:
