@@ -1,0 +1,22 @@
+[package]
+name = "spacetimedb-codegen"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+spacetimedb-data-structures = { workspace = true, features = ["serde"] }
+spacetimedb-lib.workspace = true
+spacetimedb-primitives.workspace = true
+spacetimedb-schema.workspace = true
+
+anyhow.workspace = true
+convert_case.workspace = true
+itertools.workspace = true
+wasmtime.workspace = true
+
+[dev-dependencies]
+fs-err.workspace = true
+insta.workspace = true
+regex.workspace = true
+spacetimedb-testing = { path = "../testing" }
