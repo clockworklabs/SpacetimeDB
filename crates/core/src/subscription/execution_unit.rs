@@ -37,7 +37,7 @@ use std::time::Duration;
 /// as is the case for incremental joins.
 /// And we want to associate a hash with the entire unit of execution,
 /// rather than an individual plan.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct QueryHash {
     data: [u8; 32],
 }
@@ -49,7 +49,14 @@ impl From<QueryHash> for u256 {
 }
 
 impl QueryHash {
+    /// The zero value of a QueryHash
     pub const NONE: Self = Self { data: [0; 32] };
+
+    /// The min value of a QueryHash
+    pub const MIN: Self = Self::NONE;
+
+    /// The max value of a QueryHash
+    pub const MAX: Self = Self { data: [0xFFu8; 32] };
 
     pub fn from_bytes(bytes: &[u8]) -> Self {
         Self {
