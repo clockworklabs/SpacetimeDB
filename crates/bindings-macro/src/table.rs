@@ -28,18 +28,6 @@ enum TableAccess {
     Private(Span),
 }
 
-impl TableAccess {
-    fn to_value(&self) -> TokenStream {
-        let (TableAccess::Public(span) | TableAccess::Private(span)) = *self;
-        let name = match self {
-            TableAccess::Public(_) => "Public",
-            TableAccess::Private(_) => "Private",
-        };
-        let ident = Ident::new(name, span);
-        quote_spanned!(span => spacetimedb::table::TableAccess::#ident)
-    }
-}
-
 struct ScheduledArg {
     span: Span,
     reducer: Path,
@@ -240,6 +228,18 @@ impl IndexArg {
 
 //endregion Input
 //region Output
+
+impl TableAccess {
+    fn to_value(&self) -> TokenStream {
+        let (TableAccess::Public(span) | TableAccess::Private(span)) = *self;
+        let name = match self {
+            TableAccess::Public(_) => "Public",
+            TableAccess::Private(_) => "Private",
+        };
+        let ident = Ident::new(name, span);
+        quote_spanned!(span => spacetimedb::table::TableAccess::#ident)
+    }
+}
 
 impl IndexArg {
     fn validate<'a>(&'a self, table_name: &str, cols: &'a [Column<'a>]) -> syn::Result<ValidatedIndex<'a>> {
