@@ -15,7 +15,7 @@ Rust is the only fully supported language for server modules. Rust is a great op
 
 ### C#
 
-We have C# support available in experimental status. C# can be a good choice for developers who are already using Unity or .net for their client applications.
+We have C# support available. C# can be a good choice for developers who are already using Unity or .net for their client applications.
 
 - [C# Module Reference](/docs/modules/c-sharp)
 - [C# Module Quickstart Guide](/docs/modules/c-sharp/quickstart)
