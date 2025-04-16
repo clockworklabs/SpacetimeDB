@@ -39,8 +39,11 @@ if [ $DRY_RUN -ne 1 ]; then
 fi
 
 BASEDIR=$(pwd)
-declare -a ROOTS=(cli standalone sdk bindings)
+declare -a ROOTS=(bindings sdk cli standalone)
 declare -a CRATES=($(python3 tools/find-publish-list.py --recursive --quiet "${ROOTS[@]}"))
+
+echo Crates to publish: "${CRATES[@]}"
+echo
 
 for crate in "${CRATES[@]}"; do
     if [ ! -d "${BASEDIR}/crates/${crate}" ]; then
@@ -49,14 +52,16 @@ for crate in "${CRATES[@]}"; do
     fi
 done
 
+i=0
 for crate in "${CRATES[@]}"; do
+    i=$(($i+1))
     cd "${BASEDIR}/crates/${crate}"
 
     PUBLISH_CMD="cargo publish"
     [[ $DRY_RUN -eq 1 ]] && PUBLISH_CMD+=" --dry-run"
     [[ $ALLOW_DIRTY -eq 1 ]] && PUBLISH_CMD+=" --allow-dirty"
 
-    echo "Publishing crate: $crate with command: $PUBLISH_CMD"
+    echo "[$i/${#CRATES[@]}] Publishing crate: $crate with command: $PUBLISH_CMD"
     if ! OUTPUT=$($PUBLISH_CMD 2>&1); then
         if [ $SKIP_ALREADY_PUBLISHED -eq 1 ] && echo "$OUTPUT" | grep -q "already exists"; then
             echo "WARNING: Crate $crate version is already published. Skipping..."
@@ -72,16 +77,17 @@ for crate in "${CRATES[@]}"; do
     for owner in "${NEW_CRATE_OWNERS[@]}"; do
         if ! OUTPUT=$(cargo owner --add "$owner" 2>&1); then
           if echo "$OUTPUT" | grep -q "already" ; then
-	    echo "$owner already is an owner of the crate."
+            echo "$owner already is an owner of the crate."
           else
-	    echo "Unknown error adding owner $owner:"
-	    echo "$OUTPUT"
-	    exit 1
+            echo "Unknown error adding owner $owner:"
+            echo "$OUTPUT"
+            exit 1
           fi
         else
           echo "INFO: Added $owner as an owner of $crate."
         fi
     done
+    echo
 done
 
 echo "Doing a test install."
