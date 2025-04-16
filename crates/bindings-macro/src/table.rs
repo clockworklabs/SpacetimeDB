@@ -1,4 +1,5 @@
 use crate::sats;
+use crate::sats::SatsField;
 use crate::sym;
 use crate::util::{check_duplicate, check_duplicate_msg, ident_to_litstr, match_meta};
 use core::slice;
@@ -20,7 +21,7 @@ pub(crate) struct TableArgs {
     access: Option<TableAccess>,
     scheduled: Option<ScheduledArg>,
     name: Ident,
-    indices: Vec<IndexArg>,
+    pub(crate) indices: Vec<IndexArg>,
 }
 
 enum TableAccess {
@@ -55,7 +56,7 @@ enum IndexType {
 }
 
 impl TableArgs {
-    pub(crate) fn parse(input: TokenStream, struct_ident: &Ident) -> syn::Result<Self> {
+    pub(crate) fn parse(input: TokenStream, item: &syn::DeriveInput) -> syn::Result<Self> {
         let mut access = None;
         let mut scheduled = None;
         let mut name = None;
@@ -84,13 +85,14 @@ impl TableArgs {
             Ok(())
         })
         .parse2(input)?;
-        let name = name.ok_or_else(|| {
-            let table = struct_ident.to_string().to_snake_case();
+        let name: Ident = name.ok_or_else(|| {
+            let table = item.ident.to_string().to_snake_case();
             syn::Error::new(
                 Span::call_site(),
                 format_args!("must specify table name, e.g. `#[spacetimedb::table(name = {table})]"),
             )
         })?;
+
         Ok(TableArgs {
             access,
             scheduled,
@@ -223,6 +225,122 @@ impl IndexArg {
             .ok_or_else(|| syn::Error::new_spanned(&attr.meta, "must specify kind of index (`btree` or `direct`)"))?;
         let name = field.clone();
         Ok(IndexArg::new(name, kind))
+    }
+}
+
+pub(crate) struct ColumnArgs<'a> {
+    original_struct_name: Ident,
+    fields: Vec<SatsField<'a>>,
+    columns: Vec<Column<'a>>,
+    unique_columns: Vec<Column<'a>>,
+    sequenced_columns: Vec<Column<'a>>,
+    primary_key_column: Option<Column<'a>>,
+}
+
+impl<'a> ColumnArgs<'a> {
+    pub(crate) fn parse(indices: &'a mut Vec<IndexArg>, item: &'a syn::DeriveInput) -> syn::Result<Self> {
+        let sats_ty = sats::sats_type_from_derive(item, quote!(spacetimedb::spacetimedb_lib))?;
+
+        let original_struct_name = sats_ty.ident.clone();
+
+        let sats::SatsTypeData::Product(fields) = &sats_ty.data else {
+            return Err(syn::Error::new(Span::call_site(), "spacetimedb table must be a struct"));
+        };
+
+        if fields.len() > u16::MAX.into() {
+            return Err(syn::Error::new_spanned(
+                item,
+                "too many columns; the most a table can have is 2^16",
+            ));
+        }
+
+        let mut columns: Vec<Column<'a>> = vec![];
+        let mut unique_columns: Vec<Column<'a>> = vec![];
+        let mut sequenced_columns: Vec<Column<'a>> = vec![];
+        let mut primary_key_column: Option<Column<'a>> = None;
+
+        for (i, field) in fields.iter().enumerate() {
+            let col_num = i as u16;
+            let field_ident = field.ident.unwrap();
+
+            let mut unique = None;
+            let mut auto_inc = None;
+            let mut primary_key = None;
+            for attr in field.original_attrs {
+                let Some(attr) = ColumnAttr::parse(attr, field_ident)? else {
+                    continue;
+                };
+                match attr {
+                    ColumnAttr::Unique(span) => {
+                        check_duplicate(&unique, span)?;
+                        unique = Some(span);
+                    }
+                    ColumnAttr::AutoInc(span) => {
+                        check_duplicate(&auto_inc, span)?;
+                        auto_inc = Some(span);
+                    }
+                    ColumnAttr::PrimaryKey(span) => {
+                        check_duplicate(&primary_key, span)?;
+                        primary_key = Some(span);
+                    }
+                    ColumnAttr::Index(index_arg) => indices.push(index_arg),
+                }
+            }
+
+            let column: Column<'a> = Column {
+                index: col_num,
+                ident: field_ident,
+                vis: field.vis,
+                ty: field.ty,
+            };
+
+            if unique.is_some() || primary_key.is_some() {
+                unique_columns.push(column);
+            }
+            if auto_inc.is_some() {
+                sequenced_columns.push(column);
+            }
+            if let Some(span) = primary_key {
+                check_duplicate_msg(&primary_key_column, span, "can only have one primary key per table")?;
+                primary_key_column = Some(column);
+            }
+
+            columns.push(column);
+        }
+
+        // Mark all indices with a single column matching a unique constraint as unique.
+        // For all the unpaired unique columns, create a unique index.
+        for unique_col in &unique_columns {
+            if indices.iter_mut().any(|index| {
+                let covered_by_index = match &index.kind {
+                    IndexType::BTree { columns } => &*columns == slice::from_ref(unique_col.ident),
+                    IndexType::Direct { column } => column == unique_col.ident,
+                };
+                index.is_unique |= covered_by_index;
+                covered_by_index
+            }) {
+                continue;
+            }
+            // NOTE(centril): We pick `btree` here if the user does not specify otherwise,
+            // as it's the safest choice of index for the general case,
+            // even if isn't optimal in specific cases.
+            let name = unique_col.ident.clone();
+            let columns = vec![name.clone()];
+            indices.push(IndexArg {
+                name,
+                is_unique: true,
+                kind: IndexType::BTree { columns },
+            })
+        }
+
+        Ok(ColumnArgs {
+            original_struct_name,
+            fields: fields.to_vec(),
+            columns,
+            unique_columns,
+            sequenced_columns,
+            primary_key_column,
+        })
     }
 }
 
@@ -507,16 +625,12 @@ fn find_column<'a, 'b>(cols: &'a [Column<'b>], name: &Ident) -> syn::Result<&'a 
     try_find_column(cols, name).ok_or_else(|| syn::Error::new(name.span(), "not a column of the table"))
 }
 
-pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::Result<TokenStream> {
+pub(crate) fn table_impl(table: TableArgs, columns: ColumnArgs, item: &syn::DeriveInput) -> syn::Result<TokenStream> {
     let vis = &item.vis;
-    let sats_ty = sats::sats_type_from_derive(item, quote!(spacetimedb::spacetimedb_lib))?;
 
-    let original_struct_ident = sats_ty.ident;
-    let table_ident = &args.name;
+    let original_struct_ident = &columns.original_struct_name;
+    let table_ident = &table.name;
     let table_name = table_ident.unraw().to_string();
-    let sats::SatsTypeData::Product(fields) = &sats_ty.data else {
-        return Err(syn::Error::new(Span::call_site(), "spacetimedb table must be a struct"));
-    };
 
     for param in &item.generics.params {
         let err = |msg| syn::Error::new_spanned(param, msg);
@@ -536,98 +650,12 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
         }
     };
 
-    if fields.len() > u16::MAX.into() {
-        return Err(syn::Error::new_spanned(
-            item,
-            "too many columns; the most a table can have is 2^16",
-        ));
-    }
-
-    let mut columns = vec![];
-    let mut unique_columns = vec![];
-    let mut sequenced_columns = vec![];
-    let mut primary_key_column = None;
-
-    for (i, field) in fields.iter().enumerate() {
-        let col_num = i as u16;
-        let field_ident = field.ident.unwrap();
-
-        let mut unique = None;
-        let mut auto_inc = None;
-        let mut primary_key = None;
-        for attr in field.original_attrs {
-            let Some(attr) = ColumnAttr::parse(attr, field_ident)? else {
-                continue;
-            };
-            match attr {
-                ColumnAttr::Unique(span) => {
-                    check_duplicate(&unique, span)?;
-                    unique = Some(span);
-                }
-                ColumnAttr::AutoInc(span) => {
-                    check_duplicate(&auto_inc, span)?;
-                    auto_inc = Some(span);
-                }
-                ColumnAttr::PrimaryKey(span) => {
-                    check_duplicate(&primary_key, span)?;
-                    primary_key = Some(span);
-                }
-                ColumnAttr::Index(index_arg) => args.indices.push(index_arg),
-            }
-        }
-
-        let column = Column {
-            index: col_num,
-            ident: field_ident,
-            vis: field.vis,
-            ty: field.ty,
-        };
-
-        if unique.is_some() || primary_key.is_some() {
-            unique_columns.push(column);
-        }
-        if auto_inc.is_some() {
-            sequenced_columns.push(column);
-        }
-        if let Some(span) = primary_key {
-            check_duplicate_msg(&primary_key_column, span, "can only have one primary key per table")?;
-            primary_key_column = Some(column);
-        }
-
-        columns.push(column);
-    }
-
     let row_type = quote!(#original_struct_ident);
 
-    // Mark all indices with a single column matching a unique constraint as unique.
-    // For all the unpaired unique columns, create a unique index.
-    for unique_col in &unique_columns {
-        if args.indices.iter_mut().any(|index| {
-            let covered_by_index = match &index.kind {
-                IndexType::BTree { columns } => &**columns == slice::from_ref(unique_col.ident),
-                IndexType::Direct { column } => column == unique_col.ident,
-            };
-            index.is_unique |= covered_by_index;
-            covered_by_index
-        }) {
-            continue;
-        }
-        // NOTE(centril): We pick `btree` here if the user does not specify otherwise,
-        // as it's the safest choice of index for the general case,
-        // even if isn't optimal in specific cases.
-        let name = unique_col.ident.clone();
-        let columns = vec![name.clone()];
-        args.indices.push(IndexArg {
-            name,
-            is_unique: true,
-            kind: IndexType::BTree { columns },
-        })
-    }
-
-    let mut indices = args
+    let mut indices = table
         .indices
         .iter()
-        .map(|index| index.validate(&table_name, &columns))
+        .map(|index| index.validate(&table_name, &columns.columns))
         .collect::<syn::Result<Vec<_>>>()?;
     // Order unique accessors before index accessors.
     indices.sort_by_key(|index| !index.is_unique);
@@ -640,7 +668,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
 
     // Generate `integrate_generated_columns`
     // which will integrate all generated auto-inc col values into `_row`.
-    let integrate_gen_col = sequenced_columns.iter().map(|col| {
+    let integrate_gen_col = columns.sequenced_columns.iter().map(|col| {
         let field = col.ident;
         quote_spanned!(field.span()=>
             spacetimedb::table::SequenceTrigger::maybe_decode_into(&mut __row.#field, &mut __generated_cols);
@@ -652,21 +680,21 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
         }
     );
 
-    let table_access = args.access.iter().map(|acc| acc.to_value());
-    let unique_col_ids = unique_columns.iter().map(|col| col.index);
-    let primary_col_id = primary_key_column.iter().map(|col| col.index);
-    let sequence_col_ids = sequenced_columns.iter().map(|col| col.index);
+    let table_access = table.access.iter().map(|acc| acc.to_value());
+    let unique_col_ids = columns.unique_columns.iter().map(|col| col.index);
+    let primary_col_id = columns.primary_key_column.iter().map(|col| col.index);
+    let sequence_col_ids = columns.sequenced_columns.iter().map(|col| col.index);
 
-    let (schedule, schedule_typecheck) = args
+    let (schedule, schedule_typecheck) = table
         .scheduled
         .as_ref()
         .map(|sched| {
             let scheduled_at_column = match &sched.at {
-                Some(at) => Some(find_column(&columns, at)?),
-                None => try_find_column(&columns, "scheduled_at"),
+                Some(at) => Some(find_column(&columns.columns, at)?),
+                None => try_find_column(&columns.columns, "scheduled_at"),
             };
             // better error message when both are missing
-            if scheduled_at_column.is_none() && primary_key_column.is_none() {
+            if scheduled_at_column.is_none() && columns.primary_key_column.is_none() {
                 return Err(syn::Error::new(
                     sched.span,
                     "scheduled table missing required columns; add these to your struct:\n\
@@ -684,7 +712,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
                              `scheduled(my_reducer, at = custom_scheduled_at)`",
                 )
             })?;
-            let primary_key_column = primary_key_column.ok_or_else(|| {
+            let primary_key_column = columns.primary_key_column.ok_or_else(|| {
                 syn::Error::new(
                     sched.span,
                     "scheduled tables must have a `#[primary_key] #[auto_inc] scheduled_id: u64` column",
@@ -712,18 +740,18 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
         .unzip();
     let schedule = schedule.into_iter();
 
-    let unique_err = if !unique_columns.is_empty() {
+    let unique_err = if !columns.unique_columns.is_empty() {
         quote!(spacetimedb::UniqueConstraintViolation)
     } else {
         quote!(::core::convert::Infallible)
     };
-    let autoinc_err = if !sequenced_columns.is_empty() {
+    let autoinc_err = if !columns.sequenced_columns.is_empty() {
         quote!(spacetimedb::AutoIncOverflow)
     } else {
         quote!(::core::convert::Infallible)
     };
 
-    let field_types = fields.iter().map(|f| f.ty).collect::<Vec<_>>();
+    let field_types = columns.fields.iter().map(|f| f.ty).collect::<Vec<_>>();
 
     let tabletype_impl = quote! {
         impl spacetimedb::Table for #tablehandle_ident {
