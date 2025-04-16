@@ -65,6 +65,11 @@ if __name__ == "__main__":
         deps = process_crate(crate, crates_dir, recursive=args.recursive, debug=not args.quiet)
         all_crates.extend(dep_to_crate_dir(dep) for dep in deps)
 
+    # It takes a bit of reasoning to conclude that this is, in fact, going to be a legitimate
+    # dependency-order of all of these crates. Because of how the list is constructed, once it's reversed,
+    # every crate will be mentioned before any of the crates that use it. Because of that, it's safe to
+    # deduplicate the list in a way that preserves the _first_ occurrence of every crate name, without
+    # violating the "mentioned before it's used" property of the list.
     publish_order = reversed(all_crates)
     publish_order = ordered_dedup(publish_order)
 
