@@ -226,6 +226,14 @@ impl IndexArg {
     }
 }
 
+#[derive(Copy, Clone)]
+struct Column<'a> {
+    index: u16,
+    vis: &'a syn::Visibility,
+    ident: &'a syn::Ident,
+    ty: &'a syn::Type,
+}
+
 //endregion Input
 //region Output
 
@@ -456,14 +464,6 @@ fn superize_vis(vis: &syn::Visibility) -> Cow<'_, syn::Visibility> {
         }
         syn::Visibility::Inherited => Cow::Owned(parse_quote!(pub(super))),
     }
-}
-
-#[derive(Copy, Clone)]
-struct Column<'a> {
-    index: u16,
-    vis: &'a syn::Visibility,
-    ident: &'a syn::Ident,
-    ty: &'a syn::Type,
 }
 
 fn try_find_column<'a, 'b, T: ?Sized>(cols: &'a [Column<'b>], name: &T) -> Option<&'a Column<'b>>
