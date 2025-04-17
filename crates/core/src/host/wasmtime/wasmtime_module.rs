@@ -199,7 +199,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         let [conn_id_0, conn_id_1] = bytemuck::must_cast(op.caller_connection_id.as_le_byte_array());
 
         // Prepare arguments to the reducer + the error sink & start timings.
-        let (args_source, errors_sink) = store.data_mut().start_reducer(op.name, op.arg_bytes);
+        let (args_source, errors_sink) = store.data_mut().start_reducer(op.name, op.arg_bytes, op.timestamp);
 
         let call_result = self.call_reducer.call(
             &mut *store,
