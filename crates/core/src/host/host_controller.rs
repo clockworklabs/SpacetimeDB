@@ -843,6 +843,7 @@ impl Host {
             EmptyHistory::new(),
             None,
             None,
+            host_controller.page_pool.clone(),
         )?;
 
         let (program, launched) = launch_module(
