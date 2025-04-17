@@ -120,6 +120,18 @@ impl UniqueDirectFixedCapIndex {
         self.array.fill(NONE_PTR);
         self.len = 0;
     }
+
+    /// Returns whether `other` can be merged into `self`
+    /// with an error containing the element in `self` that caused the violation.
+    pub(crate) fn can_merge(&self, other: &UniqueDirectFixedCapIndex) -> Result<(), RowPointer> {
+        for (slot_s, slot_o) in self.array.iter().zip(other.array.iter()) {
+            if *slot_s != NONE_PTR && *slot_o != NONE_PTR {
+                // For the same key, we found both slots occupied, so we cannot merge.
+                return Err(slot_s.with_reserved_bit(false));
+            }
+        }
+        Ok(())
+    }
 }
 
 /// An iterator over a range of keys in a [`UniqueDirectFixedCapIndex`].
