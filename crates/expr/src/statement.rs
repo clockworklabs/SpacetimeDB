@@ -512,6 +512,8 @@ mod tests {
             "select id, str from s join t",
             // Wrong type for limit
             "select * from t limit '5'",
+            // Unqualified name in join expression
+            "select t.* from t join s on t.u32 = s.u32 where bytes = 0xABCD",
         ] {
             let result = parse_and_type_sql(sql, &tx);
             assert!(result.is_err());

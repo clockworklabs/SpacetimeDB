@@ -30,9 +30,34 @@ pub struct TxSlot {
     inner: Arc<Mutex<Option<MutTxId>>>,
 }
 
+/// The maximum number of chunks stored in a single [`ChunkPool`].
+///
+/// When returning a chunk to the pool via [`ChunkPool::put`],
+/// if the pool contains more than [`MAX_CHUNKS_IN_POOL`] chunks,
+/// the returned chunk will be freed rather than added to the pool.
+///
+/// This, together with [`MAX_CHUNK_SIZE_IN_BYTES`],
+/// prevents the heap usage of a [`ChunkPool`] from growing without bound.
+///
+/// This number chosen completely arbitrarily by pgoldman 2025-04-10.
+const MAX_CHUNKS_IN_POOL: usize = 32;
+
+/// The maximum size of chunks which can be saved in a [`ChunkPool`].
+///
+/// When returning a chunk to the pool via [`ChunkPool::put`],
+/// if the returned chunk is larger than [`MAX_CHUNK_SIZE_IN_BYTES`],
+/// the returned chunk will be freed rather than added to the pool.
+///
+/// This, together with [`MAX_CHUNKS_IN_POOL`],
+/// prevents the heap usage of a [`ChunkPool`] from growing without bound.
+///
+/// We switch to a new chunk when we pass ROW_ITER_CHUNK_SIZE, so this adds a buffer of 4x.
+const MAX_CHUNK_SIZE_IN_BYTES: usize = spacetimedb_primitives::ROW_ITER_CHUNK_SIZE * 4;
+
 /// A pool of available unused chunks.
 ///
-/// The chunk places currently no limits on its size.
+/// The number of chunks stored in a `ChunkPool` is limited by [`MAX_CHUNKS_IN_POOL`],
+/// and the size of each individual saved chunk is limited by [`MAX_CHUNK_SIZE_IN_BYTES`].
 #[derive(Default)]
 pub struct ChunkPool {
     free_chunks: Vec<Vec<u8>>,
@@ -47,14 +72,35 @@ impl ChunkPool {
         self.free_chunks.pop().unwrap_or_default()
     }
 
-    /// Return a chunk back to the pool.
+    /// Return a chunk back to the pool, or frees it, as appropriate.
+    ///
+    /// `chunk` will be freed if either:
+    ///
+    /// - `self` already contains at least [`MAX_CHUNKS_IN_POOL`] chunks, or
+    /// - `chunk.capacity()` is greater than [`MAX_CHUNK_SIZE_IN_BYTES`].
+    ///
+    /// These limits place an upper bound on the memory usage of a single [`ChunkPool`].
     pub fn put(&mut self, mut chunk: Vec<u8>) {
+        log::trace!(
+            "put: chunk of capacity {} into pool of {} chunks",
+            chunk.capacity(),
+            self.free_chunks.len()
+        );
+        if chunk.capacity() > MAX_CHUNK_SIZE_IN_BYTES {
+            return;
+        }
+        if self.free_chunks.len() > MAX_CHUNKS_IN_POOL {
+            return;
+        }
         chunk.clear();
         self.free_chunks.push(chunk);
     }
 }
 
-#[derive(Default)]
+/// Construct a new `ChunkedWriter` using [`Self::new`].
+/// Do not impl `Default` for this struct or construct it manually;
+/// it is important that all allocated chunks are taken from the [`ChunkPool`],
+/// rather than directly from the global allocator.
 struct ChunkedWriter {
     /// Chunks collected thus far.
     chunks: Vec<Vec<u8>>,
@@ -72,6 +118,14 @@ impl ChunkedWriter {
         }
     }
 
+    /// Creates a new `ChunkedWriter` with an empty chunk allocated from the pool.
+    fn new(pool: &mut ChunkPool) -> Self {
+        Self {
+            chunks: Vec::new(),
+            curr: pool.take(),
+        }
+    }
+
     /// Finalises the writer and returns all the chunks.
     fn into_chunks(mut self) -> Vec<Vec<u8>> {
         if !self.curr.is_empty() {
@@ -86,7 +140,7 @@ impl ChunkedWriter {
         rows_scanned: &mut usize,
         bytes_scanned: &mut usize,
     ) -> Vec<Vec<u8>> {
-        let mut chunked_writer = Self::default();
+        let mut chunked_writer = Self::new(pool);
         // Consume the iterator, serializing each `item`,
         // while allowing a chunk to be created at boundaries.
         for item in iter {
@@ -241,6 +295,8 @@ impl InstanceEnv {
         if update_flags.is_scheduler_table {
             self.schedule_row(stdb, tx, table_id, row_ptr)?;
         }
+        tx.metrics.bytes_written += buffer.len();
+        tx.metrics.rows_updated += 1;
 
         Ok(row_len)
     }
@@ -436,14 +492,6 @@ impl From<GetTxError> for NodesError {
 mod test {
     use std::{ops::Bound, sync::Arc};
 
-    use anyhow::{anyhow, Result};
-    use parking_lot::RwLock;
-    use spacetimedb_lib::{bsatn::to_vec, AlgebraicType, AlgebraicValue, Hash, Identity, ProductValue};
-    use spacetimedb_paths::{server::ModuleLogsDir, FromPathUnchecked};
-    use spacetimedb_primitives::{IndexId, TableId};
-    use spacetimedb_sats::product;
-    use tempfile::TempDir;
-
     use crate::{
         database_logger::DatabaseLogger,
         db::{
@@ -458,6 +506,14 @@ mod test {
             module_subscription_actor::ModuleSubscriptions, module_subscription_manager::SubscriptionManager,
         },
     };
+    use anyhow::{anyhow, Result};
+    use parking_lot::RwLock;
+    use spacetimedb_lib::db::auth::StAccess;
+    use spacetimedb_lib::{bsatn::to_vec, AlgebraicType, AlgebraicValue, Hash, Identity, ProductValue};
+    use spacetimedb_paths::{server::ModuleLogsDir, FromPathUnchecked};
+    use spacetimedb_primitives::{IndexId, TableId};
+    use spacetimedb_sats::product;
+    use tempfile::TempDir;
 
     use super::{ChunkPool, InstanceEnv, TxSlot};
 
@@ -544,6 +600,37 @@ mod test {
             "t",
             &[("id", AlgebraicType::U64), ("str", AlgebraicType::String)],
             &[0.into()],
+        )?;
+        let index_id = db.with_read_only(Workload::ForTests, |tx| {
+            db.schema_for_table(tx, table_id)?
+                .indexes
+                .iter()
+                .find(|schema| {
+                    schema
+                        .index_algorithm
+                        .columns()
+                        .as_singleton()
+                        .is_some_and(|col_id| col_id.idx() == 0)
+                })
+                .map(|schema| schema.index_id)
+                .ok_or_else(|| anyhow!("Index not found for ColId `{}`", 0))
+        })?;
+        db.with_auto_commit(Workload::ForTests, |tx| -> Result<_> {
+            for i in 1..=5 {
+                db.insert(tx, table_id, &bsatn_row(i)?)?;
+            }
+            Ok(())
+        })?;
+        Ok((table_id, index_id))
+    }
+
+    fn create_table_with_unique_index(db: &RelationalDB) -> Result<(TableId, IndexId)> {
+        let table_id = db.create_table_for_test_with_the_works(
+            "t",
+            &[("id", AlgebraicType::U64), ("str", AlgebraicType::String)],
+            &[0.into()],
+            &[0.into()],
+            StAccess::Public,
         )?;
         let index_id = db.with_read_only(Workload::ForTests, |tx| {
             db.schema_for_table(tx, table_id)?
@@ -686,6 +773,33 @@ mod test {
         assert_eq!(0, tx.metrics.bytes_scanned);
         assert_eq!(bytes_written, tx.metrics.bytes_written);
         assert_eq!(0, tx.metrics.bytes_sent_to_clients);
+        Ok(())
+    }
+
+    #[test]
+    fn update_metrics() -> Result<()> {
+        let db = relational_db()?;
+        let env = instance_env(db.clone())?;
+
+        let (table_id, index_id) = create_table_with_unique_index(&db)?;
+
+        let mut tx_slot = env.tx.clone();
+
+        let row_id: u64 = 1;
+        let row_val: String = "string".to_string();
+        let mut new_row_bytes = to_vec(&product!(row_id, row_val))?;
+        let new_row_len = new_row_bytes.len();
+        // Delete a single row via the index
+        let f = || -> Result<_> {
+            env.update(table_id, index_id, new_row_bytes.as_mut_slice())?;
+            Ok(())
+        };
+        let tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let (tx, res) = tx_slot.set(tx, f);
+
+        res?;
+
+        assert_eq!(new_row_len, tx.metrics.bytes_written);
         Ok(())
     }
 

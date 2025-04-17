@@ -149,7 +149,7 @@ impl<T: Encode + Send + Sync + 'static> Local<T> {
         self.clog.existing_segment_offsets()
     }
 
-    /// Compress the segments at the offsets provded, marking them as immutable.
+    /// Compress the segments at the offsets provided, marking them as immutable.
     pub fn compress_segments(&self, offsets: &[TxOffset]) -> io::Result<()> {
         self.clog.compress_segments(offsets)
     }

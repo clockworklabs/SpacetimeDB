@@ -2,6 +2,8 @@ namespace SpacetimeDB.Sdk.Test;
 
 using SpacetimeDB;
 
+#pragma warning disable STDB_UNSTABLE // Enable experimental SpacetimeDB features
+
 public static partial class Module
 {
     [SpacetimeDB.Type]
@@ -1682,6 +1684,28 @@ public static partial class Module
         ctx.Db.pk_connection_id.a.Delete(a);
     }
 
+    [SpacetimeDB.Table(Name = "pk_simple_enum", Public = true)]
+    public partial struct PkSimpleEnum
+    {
+        [SpacetimeDB.PrimaryKey]
+        public SimpleEnum a;
+        public int data;
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void insert_pk_simple_enum(ReducerContext ctx, SimpleEnum a, int data)
+    {
+        ctx.Db.pk_simple_enum.Insert(new PkSimpleEnum { a = a, data = data });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void update_pk_simple_enum(ReducerContext ctx, SimpleEnum a, int data)
+    {
+        var o = ctx.Db.pk_simple_enum.a.Find(a) ?? throw new ArgumentException("key not found");
+        o.data = data;
+        ctx.Db.pk_simple_enum.a.Update(o);
+    }
+
     [SpacetimeDB.Reducer]
     public static void insert_caller_one_identity(ReducerContext ctx)
     {
@@ -2005,5 +2029,44 @@ public static partial class Module
         [SpacetimeDB.Index.BTree]
         uint n;
         int data;
+    }
+
+    [SpacetimeDB.ClientVisibilityFilter]
+    public static readonly Filter USERS_FILTER = new Filter.Sql("SELECT * FROM users WHERE identity = :sender");
+
+    [SpacetimeDB.Table(Name = "users", Public = true)]
+    public partial struct Users
+    {
+        [PrimaryKey]
+        public Identity identity;
+        public string name;
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void insert_user(ReducerContext ctx, string name, Identity identity)
+    {
+        ctx.Db.users.Insert(new Users { name = name, identity = identity });
+    }
+
+    [SpacetimeDB.Table(Name = "indexed_simple_enum", Public = true)]
+    public partial struct IndexedSimpleEnum {
+        [SpacetimeDB.Index.BTree]
+        public SimpleEnum n;
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void insert_into_indexed_simple_enum(ReducerContext ctx, SimpleEnum n)
+    {
+        ctx.Db.indexed_simple_enum.Insert(new IndexedSimpleEnum { n = n });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void update_indexed_simple_enum(ReducerContext ctx, SimpleEnum a, SimpleEnum b)
+    {
+        foreach (var item in ctx.Db.indexed_simple_enum.n.Filter(a))
+        {
+            ctx.Db.indexed_simple_enum.n.Delete(a);
+            ctx.Db.indexed_simple_enum.Insert(new IndexedSimpleEnum { n = b });
+        }
     }
 }

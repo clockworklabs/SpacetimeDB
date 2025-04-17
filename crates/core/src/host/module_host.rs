@@ -27,6 +27,7 @@ use itertools::Itertools;
 use spacetimedb_client_api_messages::websocket::{ByteListLen, Compression, OneOffTable, QueryUpdate, WebsocketFormat};
 use spacetimedb_data_structures::error_stream::ErrorStream;
 use spacetimedb_data_structures::map::{HashCollectionExt as _, IntMap};
+use spacetimedb_execution::pipelined::PipelinedProject;
 use spacetimedb_lib::db::raw_def::v9::Lifecycle;
 use spacetimedb_lib::identity::{AuthCtx, RequestId};
 use spacetimedb_lib::ConnectionId;
@@ -515,13 +516,15 @@ impl ModuleHost {
             self.inner.get_instance(self.info.database_identity).await?
         };
 
-        let result = tokio::task::spawn_blocking(move || f(&mut *inst))
-            .await
-            .unwrap_or_else(|e| {
-                log::warn!("reducer `{reducer}` panicked");
-                (self.on_panic)();
-                std::panic::resume_unwind(e.into_panic())
-            });
+        // Spawning a task allows to catch panics without proving to the
+        // compiler that `dyn ModuleInstance` is unwind safe.
+        // If a reducer call panics, we **must** ensure to call `self.on_panic`
+        // so that the module is discarded by the host controller.
+        let result = tokio::spawn(async move { f(&mut *inst) }).await.unwrap_or_else(|e| {
+            log::warn!("reducer {reducer} panicked");
+            (self.on_panic)();
+            std::panic::resume_unwind(e.into_panic());
+        });
         Ok(result)
     }
 
@@ -924,10 +927,40 @@ impl ModuleHost {
 
         let (rows, metrics) = db.with_read_only(Workload::Sql, |tx| {
             let tx = SchemaViewer::new(tx, &auth);
-            let (plan, _, table_name, _) = compile_subscription(&query, &tx, &auth)?;
-            let plan = plan.optimize()?;
-            check_row_limit(&plan, db, &tx, |plan, tx| estimate_rows_scanned(tx, plan), &auth)?;
-            execute_plan::<_, F>(&plan.into(), &DeltaTx::from(&*tx))
+
+            let (
+                // A query may compile down to several plans.
+                // This happens when there are multiple RLS rules per table.
+                // The original query is the union of these plans.
+                plans,
+                _,
+                table_name,
+                _,
+            ) = compile_subscription(&query, &tx, &auth)?;
+
+            // Optimize each fragment
+            let optimized = plans
+                .into_iter()
+                .map(|plan| plan.optimize())
+                .collect::<Result<Vec<_>, _>>()?;
+
+            check_row_limit(
+                &optimized,
+                db,
+                &tx,
+                // Estimate the number of rows this query will scan
+                |plan, tx| estimate_rows_scanned(tx, plan),
+                &auth,
+            )?;
+
+            let optimized = optimized
+                .into_iter()
+                // Convert into something we can execute
+                .map(PipelinedProject::from)
+                .collect::<Vec<_>>();
+
+            // Execute the union and return the results
+            execute_plan::<_, F>(&optimized, &DeltaTx::from(&*tx))
                 .map(|(rows, _, metrics)| (OneOffTable { table_name, rows }, metrics))
                 .context("One-off queries are not allowed to modify the database")
         })?;

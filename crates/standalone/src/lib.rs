@@ -1,21 +1,20 @@
 mod control_db;
-mod energy_monitor;
 pub mod subcommands;
 pub mod util;
 pub mod version;
 
 use crate::control_db::ControlDb;
 use crate::subcommands::start;
-use anyhow::{ensure, Context};
+use anyhow::{ensure, Context, Ok};
 use async_trait::async_trait;
 use clap::{ArgMatches, Command};
-use energy_monitor::StandaloneEnergyMonitor;
 use spacetimedb::client::ClientActorIndex;
 use spacetimedb::config::{CertificateAuthority, MetadataFile};
+use spacetimedb::db::datastore::traits::Program;
 use spacetimedb::db::db_metrics::data_size::DATA_SIZE_METRICS;
 use spacetimedb::db::relational_db;
 use spacetimedb::db::{db_metrics::DB_METRICS, Config};
-use spacetimedb::energy::{EnergyBalance, EnergyQuanta};
+use spacetimedb::energy::{EnergyBalance, EnergyQuanta, NullEnergyMonitor};
 use spacetimedb::host::{
     DiskStorage, DurabilityProvider, ExternalDurability, HostController, StartSnapshotWatcher, UpdateDatabaseResult,
 };
@@ -56,7 +55,7 @@ impl StandaloneEnv {
         meta.write(&meta_path).context("failed writing metadata.toml")?;
 
         let control_db = ControlDb::new(&data_dir.control_db()).context("failed to initialize control db")?;
-        let energy_monitor = Arc::new(StandaloneEnergyMonitor::new(control_db.clone()));
+        let energy_monitor = Arc::new(NullEnergyMonitor);
         let program_store = Arc::new(DiskStorage::new(data_dir.program_bytes().0).await?);
 
         let durability_provider = Arc::new(StandaloneDurabilityProvider {
@@ -229,14 +228,28 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
         match existing_db {
             // The database does not already exist, so we'll create it.
             None => {
-                let initial_program = self.program_store.put(&spec.program_bytes).await?;
+                let program = Program::from_bytes(&spec.program_bytes[..]);
+
                 let mut database = Database {
                     id: 0,
                     database_identity: spec.database_identity,
                     owner_identity: *publisher,
                     host_type: spec.host_type,
-                    initial_program,
+                    initial_program: program.hash,
                 };
+
+                let _hash_for_assert = program.hash;
+
+                // Instantiate a temporary database in order to check that the module is valid.
+                // This will e.g. typecheck RLS filters.
+                self.host_controller
+                    .check_module_validity(database.clone(), program)
+                    .await?;
+
+                let program_hash = self.program_store.put(&spec.program_bytes).await?;
+
+                debug_assert_eq!(_hash_for_assert, program_hash);
+
                 let database_id = self.control_db.insert_database(database.clone())?;
                 database.id = database_id;
 
@@ -329,6 +342,7 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
         );
 
         self.control_db.delete_database(database.id)?;
+
         for instance in self.control_db.get_replicas_by_database(database.id)? {
             self.delete_replica(instance.id).await?;
         }
@@ -347,8 +361,9 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
         self.control_db.set_energy_balance(*identity, balance)?;
         Ok(())
     }
-    async fn withdraw_energy(&self, identity: &Identity, amount: EnergyQuanta) -> anyhow::Result<()> {
-        withdraw_energy(&self.control_db, identity, amount)
+    async fn withdraw_energy(&self, _identity: &Identity, _amount: EnergyQuanta) -> anyhow::Result<()> {
+        // The energy balance code is obsolete.
+        Ok(())
     }
 
     async fn register_tld(&self, identity: &Identity, tld: Tld) -> anyhow::Result<RegisterTldResult> {
@@ -437,16 +452,6 @@ impl StandaloneEnv {
 
         Ok(())
     }
-}
-
-fn withdraw_energy(control_db: &ControlDb, identity: &Identity, amount: EnergyQuanta) -> anyhow::Result<()> {
-    let energy_balance = control_db.get_energy_balance(identity)?;
-    let energy_balance = energy_balance.unwrap_or(EnergyBalance::ZERO);
-    log::trace!("Withdrawing {} from {}", amount, identity);
-    log::trace!("Old balance: {}", energy_balance);
-    let new_balance = energy_balance.saturating_sub_energy(amount);
-    control_db.set_energy_balance(*identity, new_balance)?;
-    Ok(())
 }
 
 pub async fn exec_subcommand(cmd: &str, args: &ArgMatches) -> Result<(), anyhow::Error> {

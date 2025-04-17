@@ -23,6 +23,29 @@
     }
   },
   {/*
+    // Valid Filter, but [ClientVisibilityFilter] is disabled
+    [SpacetimeDB.ClientVisibilityFilter]
+     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    public static readonly Filter MY_FOURTH_FILTER = new Filter.Sql(
+*/
+    Message: 'SpacetimeDB.ClientVisibilityFilterAttribute' is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.,
+    Severity: Error,
+    Descriptor: {
+      Id: STDB_UNSTABLE,
+      Title: Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS9204),
+      MessageFormat: '{0}' is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.,
+      Category: Compiler,
+      DefaultSeverity: Warning,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        CustomObsolete
+      ]
+    }
+  },
+  {/*
     {
         return Field.GetHashCode();
                ^^^^^
@@ -162,7 +185,7 @@ partial struct TestTypeParams<T>  : System.IEquatable<TestTypeParams>, Spacetime
 SpacetimeDB.Internal.Module.RegisterTable<global::TestUniqueNotEquatable, SpacetimeDB.Internal.TableHandles.TestUniqueNotEquatable>();
         SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_FILTER);
                                                                                   ^^^^^^^^^
-SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_SECOND_FILTER);
+SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_FOURTH_FILTER);
 */
     Message: 'Module.MY_FILTER' is inaccessible due to its protection level,
     Severity: Error,

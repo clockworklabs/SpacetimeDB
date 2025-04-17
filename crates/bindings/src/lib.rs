@@ -1,10 +1,11 @@
 #![doc = include_str!("../README.md")]
 // ^ if you are working on docs, go read the top comment of README.md please.
 
+#[cfg(feature = "unstable")]
 mod client_visibility_filter;
 pub mod log_stopwatch;
 mod logger;
-#[cfg(feature = "rand")]
+#[cfg(feature = "rand08")]
 mod rng;
 #[doc(hidden)]
 pub mod rt;
@@ -16,11 +17,11 @@ use std::cell::RefCell;
 
 pub use log;
 #[cfg(feature = "rand")]
-pub use rand;
+pub use rand08 as rand;
 
-#[doc(hidden)]
+#[cfg(feature = "unstable")]
 pub use client_visibility_filter::Filter;
-#[cfg(feature = "rand")]
+#[cfg(feature = "rand08")]
 pub use rng::StdbRng;
 pub use sats::SpacetimeType;
 #[doc(hidden)]
@@ -32,6 +33,8 @@ pub use spacetimedb_lib::sats;
 pub use spacetimedb_lib::ser::Serialize;
 pub use spacetimedb_lib::AlgebraicValue;
 pub use spacetimedb_lib::ConnectionId;
+// `FilterableValue` re-exported purely for rustdoc.
+pub use spacetimedb_lib::FilterableValue;
 pub use spacetimedb_lib::Identity;
 pub use spacetimedb_lib::ScheduleAt;
 pub use spacetimedb_lib::TimeDuration;
@@ -138,7 +141,7 @@ pub use spacetimedb_bindings_macro::client_visibility_filter;
 ///     for popular_user in by_popularity.filter((100, "a"..)) {
 ///         log::debug!("Popular user whose name starts with 'a': {:?}", popular_user);
 ///     }
-///     
+///
 ///     // For every `#[unique]` or `#[primary_key]` field,
 ///     // the table has an extra method that allows getting a
 ///     // corresponding `spacetimedb::UniqueColumn`.
@@ -358,7 +361,7 @@ pub use spacetimedb_bindings_macro::client_visibility_filter;
 /// ```ignore
 /// ctx.db.cities().latitude()
 /// ```
-///    
+///
 /// # Generated code
 ///
 /// For each `[table(name = {name})]` annotation on a type `{T}`, generates a struct
@@ -401,7 +404,7 @@ pub use spacetimedb_bindings_macro::client_visibility_filter;
 /// impl {name}Handle {
 ///     // For each `#[unique]` or `#[primary_key]` field `{field}` of type `{F}`:
 ///     fn {field}(&self) -> UniqueColumn<_, {F}, _> { /* ... */ };
-///     
+///
 ///     // For each named index `{index}` on fields of type `{(F1, ..., FN)}`:
 ///     fn {index}(&self) -> RangedIndex<_, {(F1, ..., FN)}, _>;
 /// }
@@ -729,7 +732,7 @@ pub struct ReducerContext {
     /// See the [`#[table]`](macro@crate::table) macro for more information.
     pub db: Local,
 
-    #[cfg(feature = "rand")]
+    #[cfg(feature = "rand08")]
     rng: std::cell::OnceCell<StdbRng>,
 }
 

@@ -1,7 +1,6 @@
 extern crate core;
 
 pub mod energy;
-pub mod json;
 pub mod sql;
 
 pub mod auth;

@@ -632,22 +632,20 @@ dependencies = [
 
 [[package]]
 name = "bzip2"
-version = "0.4.4"
+version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bdb116a6ef3f6c3698828873ad02c3014b3c85cadb88496095628e3ef1e347f8"
+checksum = "49ecfb22d906f800d4fe833b6282cf4dc1c298f5057ca0b5445e5c209735ca47"
 dependencies = [
  "bzip2-sys",
- "libc",
 ]
 
 [[package]]
 name = "bzip2-sys"
-version = "0.1.11+1.0.8"
+version = "0.1.13+1.0.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "736a955f3fa7875102d57c82b8cac37ec45224a07fd32d58f9f7a186b6cd4cdc"
+checksum = "225bff33b2141874fe80d71e07d6eec4f85c5c216453dd96388240f96e1acc14"
 dependencies = [
  "cc",
- "libc",
  "pkg-config",
 ]
 
@@ -2012,9 +2010,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "73fea8450eea4bac3940448fb7ae50d91f034f941199fcd9d909a5a07aa455f0"
 dependencies = [
  "cfg-if",
+ "js-sys",
  "libc",
  "r-efi",
  "wasi 0.14.2+wasi-0.2.4",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -2860,10 +2860,11 @@ dependencies = [
 
 [[package]]
 name = "js-sys"
-version = "0.3.72"
+version = "0.3.77"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6a88f1bda2bd75b0452a14784937d796722fdebfe50df998aeb3f0b7603019a9"
+checksum = "1cfaf33c695fc6e08064efbc1f72ec937429614f25eef83af942d0e227c3a28f"
 dependencies = [
+ "once_cell",
  "wasm-bindgen",
 ]
 
@@ -3022,6 +3023,17 @@ checksum = "297e814c836ae64db86b36cf2a557ba54368d03f6afcd7d947c266692f71115e"
 dependencies = [
  "byteorder",
  "crc",
+]
+
+[[package]]
+name = "lzma-sys"
+version = "0.1.20"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5fda04ab3764e6cde78b9974eec4f779acaba7c4e84b36eca3cf77c581b85d27"
+dependencies = [
+ "cc",
+ "libc",
+ "pkg-config",
 ]
 
 [[package]]
@@ -5016,6 +5028,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "spacetimedb-auth"
+version = "1.1.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "serde_json",
+ "serde_with",
+ "spacetimedb-jsonwebtoken",
+ "spacetimedb-lib",
+]
+
+[[package]]
 name = "spacetimedb-bench"
 version = "1.1.0"
 dependencies = [
@@ -5033,7 +5057,7 @@ dependencies = [
  "lazy_static",
  "log",
  "mimalloc",
- "rand 0.8.5",
+ "rand 0.9.0",
  "regex",
  "rusqlite",
  "serde",
@@ -5113,8 +5137,8 @@ dependencies = [
  "serde_json",
  "serde_with",
  "slab",
+ "spacetimedb-auth",
  "spacetimedb-client-api-messages",
- "spacetimedb-core",
  "spacetimedb-data-structures",
  "spacetimedb-fs-utils",
  "spacetimedb-jsonwebtoken",
@@ -5167,7 +5191,7 @@ dependencies = [
  "log",
  "mime",
  "prometheus",
- "rand 0.8.5",
+ "rand 0.9.0",
  "regex",
  "scopeguard",
  "serde",
@@ -5233,7 +5257,7 @@ dependencies = [
  "pretty_assertions",
  "proptest",
  "proptest-derive",
- "rand 0.8.5",
+ "rand 0.9.0",
  "serde",
  "spacetimedb-commitlog",
  "spacetimedb-fs-utils",
@@ -5295,7 +5319,7 @@ dependencies = [
  "prometheus",
  "proptest",
  "proptest-derive",
- "rand 0.8.5",
+ "rand 0.9.0",
  "rayon",
  "rayon-core",
  "regex",
@@ -5313,12 +5337,14 @@ dependencies = [
  "slab",
  "sled",
  "smallvec",
+ "spacetimedb-auth",
  "spacetimedb-client-api-messages",
  "spacetimedb-commitlog",
  "spacetimedb-data-structures",
  "spacetimedb-durability",
  "spacetimedb-execution",
  "spacetimedb-expr",
+ "spacetimedb-fs-utils",
  "spacetimedb-jsonwebtoken",
  "spacetimedb-jwks",
  "spacetimedb-lib",
@@ -5342,10 +5368,10 @@ dependencies = [
  "tikv-jemalloc-ctl",
  "tikv-jemallocator",
  "tokio",
+ "tokio-metrics",
  "tokio-stream",
  "tokio-util",
  "toml 0.8.19",
- "toml_edit",
  "tracing",
  "tracing-appender",
  "tracing-core",
@@ -5424,7 +5450,7 @@ version = "1.1.0"
 dependencies = [
  "anyhow",
  "hex",
- "rand 0.8.5",
+ "rand 0.9.0",
  "tempdir",
  "thiserror 1.0.69",
  "tokio",
@@ -5477,7 +5503,6 @@ dependencies = [
  "itertools 0.12.1",
  "proptest",
  "proptest-derive",
- "rand 0.8.5",
  "ron",
  "serde",
  "serde_json",
@@ -5580,7 +5605,7 @@ dependencies = [
  "itertools 0.12.1",
  "proptest",
  "proptest-derive",
- "rand 0.8.5",
+ "rand 0.9.0",
  "second-stack",
  "serde",
  "sha3",
@@ -5636,7 +5661,7 @@ dependencies = [
  "log",
  "once_cell",
  "prometheus",
- "rand 0.8.5",
+ "rand 0.9.0",
  "spacetimedb-client-api-messages",
  "spacetimedb-data-structures",
  "spacetimedb-lib",
@@ -5652,17 +5677,29 @@ dependencies = [
 name = "spacetimedb-snapshot"
 version = "1.1.0"
 dependencies = [
+ "anyhow",
  "blake3",
+ "bytes",
+ "env_logger 0.10.2",
+ "futures",
  "hex",
  "log",
+ "pretty_assertions",
+ "spacetimedb-core",
  "spacetimedb-durability",
  "spacetimedb-fs-utils",
  "spacetimedb-lib",
  "spacetimedb-paths",
  "spacetimedb-primitives",
  "spacetimedb-sats",
+ "spacetimedb-schema",
  "spacetimedb-table",
+ "tempfile",
  "thiserror 1.0.69",
+ "tokio",
+ "tokio-stream",
+ "tokio-util",
+ "zstd-framed",
 ]
 
 [[package]]
@@ -5737,7 +5774,7 @@ dependencies = [
  "itertools 0.12.1",
  "proptest",
  "proptest-derive",
- "rand 0.8.5",
+ "rand 0.9.0",
  "smallvec",
  "spacetimedb-data-structures",
  "spacetimedb-lib",
@@ -5757,7 +5794,7 @@ dependencies = [
  "env_logger 0.10.2",
  "lazy_static",
  "log",
- "rand 0.8.5",
+ "rand 0.9.0",
  "serde",
  "serde_json",
  "serial_test",
@@ -6232,7 +6269,7 @@ version = "1.1.0"
 dependencies = [
  "anyhow",
  "env_logger 0.10.2",
- "rand 0.8.5",
+ "rand 0.9.0",
  "spacetimedb-sdk",
  "test-counter",
  "tokio",
@@ -6443,6 +6480,18 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.87",
+]
+
+[[package]]
+name = "tokio-metrics"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cb2bb07a8451c4c6fa8b3497ad198510d8b8dffa5df5cfb97a64102a58b113c8"
+dependencies = [
+ "futures-util",
+ "pin-project-lite",
+ "tokio",
+ "tokio-stream",
 ]
 
 [[package]]
@@ -7022,24 +7071,24 @@ checksum = "b8dad83b4f25e74f184f64c43b150b91efe7647395b42289f38e50566d82855b"
 
 [[package]]
 name = "wasm-bindgen"
-version = "0.2.95"
+version = "0.2.100"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "128d1e363af62632b8eb57219c8fd7877144af57558fb2ef0368d0087bddeb2e"
+checksum = "1edc8929d7499fc4e8f0be2262a241556cfc54a0bea223790e71446f2aab1ef5"
 dependencies = [
  "cfg-if",
  "once_cell",
+ "rustversion",
  "wasm-bindgen-macro",
 ]
 
 [[package]]
 name = "wasm-bindgen-backend"
-version = "0.2.95"
+version = "0.2.100"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cb6dd4d3ca0ddffd1dd1c9c04f94b868c37ff5fac97c30b97cff2d74fce3a358"
+checksum = "2f0a0651a5c2bc21487bde11ee802ccaf4c51935d0d3d42a6101f98161700bc6"
 dependencies = [
  "bumpalo",
  "log",
- "once_cell",
  "proc-macro2",
  "quote",
  "syn 2.0.87",
@@ -7060,9 +7109,9 @@ dependencies = [
 
 [[package]]
 name = "wasm-bindgen-macro"
-version = "0.2.95"
+version = "0.2.100"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e79384be7f8f5a9dd5d7167216f022090cf1f9ec128e6e6a482a2cb5c5422c56"
+checksum = "7fe63fc6d09ed3792bd0897b314f53de8e16568c2b3f7982f468c0bf9bd0b407"
 dependencies = [
  "quote",
  "wasm-bindgen-macro-support",
@@ -7070,9 +7119,9 @@ dependencies = [
 
 [[package]]
 name = "wasm-bindgen-macro-support"
-version = "0.2.95"
+version = "0.2.100"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "26c6ab57572f7a24a4985830b120de1594465e5d500f24afe89e16b4e833ef68"
+checksum = "8ae87ea40c9f689fc23f209965b6fb8a99ad69aeeb0231408be24920604395de"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -7083,9 +7132,12 @@ dependencies = [
 
 [[package]]
 name = "wasm-bindgen-shared"
-version = "0.2.95"
+version = "0.2.100"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "65fc09f10666a9f147042251e0dda9c18f166ff7de300607007e96bdebc1068d"
+checksum = "1a05d73b933a847d6cccdda8f838a22ff101ad9bf93e33684f39c1f5f0eece3d"
+dependencies = [
+ "unicode-ident",
+]
 
 [[package]]
 name = "wasm-encoder"
@@ -7840,6 +7892,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a67300977d3dc3f8034dae89778f502b6ba20b269527b3223ba59c0cf393bb8a"
 
 [[package]]
+name = "xz2"
+version = "0.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "388c44dc09d76f1536602ead6d325eb532f5c122f17782bd57fb47baeeb767e2"
+dependencies = [
+ "lzma-sys",
+]
+
+[[package]]
 name = "yaml-rust"
 version = "0.4.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7984,9 +8045,9 @@ dependencies = [
 
 [[package]]
 name = "zip"
-version = "2.2.2"
+version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ae9c1ea7b3a5e1f4b922ff856a129881167511563dc219869afe3787fc0c1a45"
+checksum = "84e9a772a54b54236b9b744aaaf8d7be01b4d6e99725523cb82cb32d1c81b1d7"
 dependencies = [
  "aes",
  "arbitrary",
@@ -7997,15 +8058,16 @@ dependencies = [
  "deflate64",
  "displaydoc",
  "flate2",
+ "getrandom 0.3.2",
  "hmac",
  "indexmap 2.6.0",
  "lzma-rs",
  "memchr",
  "pbkdf2",
- "rand 0.8.5",
  "sha1",
  "thiserror 2.0.11",
  "time",
+ "xz2",
  "zeroize",
  "zopfli",
  "zstd",

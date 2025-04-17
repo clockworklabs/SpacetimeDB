@@ -1,0 +1,18 @@
+[package]
+name = "spacetimedb-auth"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license-file = "LICENSE"
+description = "Auth helpers for SpacetimeDB"
+
+[dependencies]
+spacetimedb-lib = { workspace = true, features = ["serde"] }
+
+anyhow.workspace = true
+serde.workspace = true
+serde_with.workspace = true
+jsonwebtoken.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

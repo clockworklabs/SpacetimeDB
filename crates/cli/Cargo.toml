@@ -21,9 +21,9 @@ bench = false
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+spacetimedb-auth.workspace = true
 spacetimedb-client-api-messages.workspace = true
-spacetimedb-core.workspace = true
-spacetimedb-data-structures.workspace = true
+spacetimedb-data-structures = { workspace = true, features = ["serde"] }
 spacetimedb-fs-utils.workspace = true
 spacetimedb-lib.workspace = true
 spacetimedb-paths.workspace = true

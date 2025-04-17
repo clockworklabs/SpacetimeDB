@@ -6,7 +6,6 @@ use criterion::{
 };
 use foldhash::{HashSet, HashSetExt};
 use itertools::Itertools as _;
-use rand::{distributions::Standard, rngs::ThreadRng, Rng};
 use spacetimedb_data_structures::map::{Entry, HashMap};
 use spacetimedb_table::indexes::{PageIndex, PageOffset, RowPointer, Size, SquashedOffset};
 use spacetimedb_table::table_index::unique_direct_index::UniqueDirectIndex;
@@ -56,7 +55,7 @@ fn monotonic_keys(n: u64) -> impl Clone + Iterator<Item = K> {
 fn random_keys(n: u64) -> HashSet<K> {
     let desired_len = n as usize;
     let mut set = HashSet::with_capacity(desired_len);
-    let mut iter = ThreadRng::default().sample_iter(Standard);
+    let mut iter = rand::random_iter();
     while set.len() < desired_len {
         set.insert(iter.next().unwrap());
     }

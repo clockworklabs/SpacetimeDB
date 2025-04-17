@@ -52,23 +52,6 @@
       }
     },
     {/*
-    [PrimaryKey]
-    public TestEnumWithExplicitValues PrimaryKeyField;
-                                      ^^^^^^^^^^^^^^^
-}
-*/
-      Message: Field PrimaryKeyField is marked as Unique but it has a type TestEnumWithExplicitValues which is not an equatable primitive.,
-      Severity: Error,
-      Descriptor: {
-        Id: STDB0003,
-        Title: Unique fields must be equatable,
-        MessageFormat: Field {0} is marked as Unique but it has a type {1} which is not an equatable primitive.,
-        Category: SpacetimeDB,
-        DefaultSeverity: Error,
-        IsEnabledByDefault: true
-      }
-    },
-    {/*
 [SpacetimeDB.Table]
 public partial record TestTableTaggedEnum : SpacetimeDB.TaggedEnum<(int X, int Y)> { }
                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -415,7 +398,7 @@ public partial struct TestScheduleIssues
     [SpacetimeDB.ClientVisibilityFilter]
     public static readonly string MY_THIRD_FILTER = "SELECT * FROM TestAutoIncNotInteger";
                                   ^^^^^^^^^^^^^^^
-}
+
 */
       Message: Field MY_THIRD_FILTER is marked as ClientVisibilityFilter but it has type string which is not SpacetimeDB.Filter,
       Severity: Error,

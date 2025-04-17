@@ -193,10 +193,14 @@ mod tests {
         let auth = AuthCtx::for_testing();
         let tx = db.begin_tx(Workload::ForTests);
         let tx = SchemaViewer::new(&tx, &auth);
-        let plan = compile_subscription(sql, &tx, &auth)
-            .and_then(|(plan, ..)| plan.optimize())
-            .expect("failed to compile sql query");
-        row_estimate(&tx, &plan)
+
+        compile_subscription(sql, &tx, &auth)
+            .map(|(plans, ..)| plans)
+            .expect("failed to compile sql query")
+            .into_iter()
+            .map(|plan| plan.optimize().expect("failed to optimize sql query"))
+            .map(|plan| row_estimate(&tx, &plan))
+            .sum()
     }
 
     const NUM_T_ROWS: u64 = 10;

@@ -10,9 +10,12 @@ use convert_case::{Case, Casing};
 use itertools::Itertools;
 use spacetimedb_lib::{db::raw_def::v9::Lifecycle, sats::AlgebraicTypeRef};
 use spacetimedb_primitives::ColList;
-use spacetimedb_schema::def::{IndexDef, TableDef, TypeDef};
 use spacetimedb_schema::schema::TableSchema;
 use spacetimedb_schema::type_for_generate::ProductTypeDef;
+use spacetimedb_schema::{
+    def::{IndexDef, TableDef, TypeDef},
+    type_for_generate::TypespaceForGenerate,
+};
 use spacetimedb_schema::{
     def::{ModuleDef, ReducerDef},
     identifier::Identifier,
@@ -57,10 +60,14 @@ pub(super) fn type_ref_name(module: &ModuleDef, typeref: AlgebraicTypeRef) -> St
     collect_case(Case::Pascal, name.name_segments())
 }
 
-pub(super) fn is_type_filterable(ty: &AlgebraicTypeUse) -> bool {
+pub(super) fn is_type_filterable(typespace: &TypespaceForGenerate, ty: &AlgebraicTypeUse) -> bool {
     match ty {
         AlgebraicTypeUse::Primitive(prim) => !matches!(prim, PrimitiveType::F32 | PrimitiveType::F64),
         AlgebraicTypeUse::String | AlgebraicTypeUse::Identity | AlgebraicTypeUse::ConnectionId => true,
+        // Sum types with all unit variants:
+        AlgebraicTypeUse::Never => true,
+        AlgebraicTypeUse::Option(inner) => matches!(&**inner, AlgebraicTypeUse::Unit),
+        AlgebraicTypeUse::Ref(r) => typespace[r].is_plain_enum(),
         _ => false,
     }
 }
@@ -87,6 +94,7 @@ pub(super) fn iter_tables(module: &ModuleDef) -> impl Iterator<Item = &TableDef>
 }
 
 pub(super) fn iter_unique_cols<'a>(
+    typespace: &'a TypespaceForGenerate,
     schema: &'a TableSchema,
     product_def: &'a ProductTypeDef,
 ) -> impl Iterator<Item = &'a (Identifier, AlgebraicTypeUse)> + 'a {
@@ -96,7 +104,7 @@ pub(super) fn iter_unique_cols<'a>(
             .has_unique()
             .then(|| {
                 let res @ (_, ref ty) = &product_def.elements[field.col_pos.idx()];
-                is_type_filterable(ty).then_some(res)
+                is_type_filterable(typespace, ty).then_some(res)
             })
             .flatten()
     })

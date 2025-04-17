@@ -46,6 +46,10 @@ pub struct ExecutionMetrics {
     pub rows_deleted: u64,
     /// How many rows were updated?
     pub rows_updated: u64,
+    /// How many subscription updates did we execute?
+    pub delta_queries_evaluated: u64,
+    /// How many subscriptions had some updates?
+    pub delta_queries_matched: u64,
 }
 
 impl ExecutionMetrics {
@@ -60,6 +64,8 @@ impl ExecutionMetrics {
             rows_inserted,
             rows_deleted,
             rows_updated,
+            delta_queries_evaluated,
+            delta_queries_matched,
         }: ExecutionMetrics,
     ) {
         self.index_seeks += index_seeks;
@@ -70,6 +76,8 @@ impl ExecutionMetrics {
         self.rows_inserted += rows_inserted;
         self.rows_deleted += rows_deleted;
         self.rows_updated += rows_updated;
+        self.delta_queries_evaluated += delta_queries_evaluated;
+        self.delta_queries_matched += delta_queries_matched;
     }
 }
 
@@ -90,6 +98,8 @@ mod tests {
             rows_inserted: 1,
             rows_deleted: 1,
             rows_updated: 1,
+            delta_queries_evaluated: 2,
+            delta_queries_matched: 3,
         });
 
         assert_eq!(a.index_seeks, 1);
@@ -99,5 +109,7 @@ mod tests {
         assert_eq!(a.bytes_sent_to_clients, 1);
         assert_eq!(a.rows_inserted, 1);
         assert_eq!(a.rows_deleted, 1);
+        assert_eq!(a.delta_queries_evaluated, 2);
+        assert_eq!(a.delta_queries_matched, 3);
     }
 }

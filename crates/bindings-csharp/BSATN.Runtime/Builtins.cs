@@ -357,10 +357,13 @@ public record struct Timestamp(long MicrosecondsSinceUnixEpoch)
     public readonly TimeSpan ToTimeSpanSinceUnixEpoch() => (TimeSpan)ToTimeDurationSinceUnixEpoch();
 
     public readonly TimeDuration TimeDurationSince(Timestamp earlier) =>
-        new TimeDuration(MicrosecondsSinceUnixEpoch - earlier.MicrosecondsSinceUnixEpoch);
+        new TimeDuration(checked(MicrosecondsSinceUnixEpoch - earlier.MicrosecondsSinceUnixEpoch));
 
     public static Timestamp operator +(Timestamp point, TimeDuration interval) =>
-        new Timestamp(point.MicrosecondsSinceUnixEpoch + interval.Microseconds);
+        new Timestamp(checked(point.MicrosecondsSinceUnixEpoch + interval.Microseconds));
+
+    public static Timestamp operator -(Timestamp point, TimeDuration interval) =>
+        new Timestamp(checked(point.MicrosecondsSinceUnixEpoch - interval.Microseconds));
 
     public int CompareTo(Timestamp that)
     {
@@ -429,6 +432,12 @@ public record struct TimeDuration(long Microseconds) : IStructuralReadWrite
 
     public static implicit operator TimeDuration(TimeSpan timeSpan) =>
         new(timeSpan.Ticks / Util.TicksPerMicrosecond);
+
+    public static TimeDuration operator +(TimeDuration lhs, TimeDuration rhs) =>
+        new TimeDuration(checked(lhs.Microseconds + rhs.Microseconds));
+
+    public static TimeDuration operator -(TimeDuration lhs, TimeDuration rhs) =>
+        new TimeDuration(checked(lhs.Microseconds + rhs.Microseconds));
 
     // For backwards-compatibility.
     public readonly TimeSpan ToStd() => this;
