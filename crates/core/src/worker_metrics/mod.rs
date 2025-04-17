@@ -55,7 +55,7 @@ metrics_group!(
         #[labels(node_id: str)]
         pub page_pool_new_pages_allocated: IntGaugeVec,
 
-        #[name = page_pool_new_pages_allocated]
+        #[name = page_pool_pages_reused]
         #[help = "Total number of pages reused by the page pool"]
         #[labels(node_id: str)]
         pub page_pool_pages_reused: IntGaugeVec,
