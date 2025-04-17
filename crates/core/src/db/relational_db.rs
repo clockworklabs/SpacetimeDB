@@ -2766,7 +2766,12 @@ mod tests {
 
         // Sanity check that we can read the snapshot after compression
         let repo = open_snapshot_repo(dir, Identity::ZERO, 0)?;
-        RelationalDB::restore_from_snapshot_or_bootstrap(Identity::ZERO, Some(&repo), Some(last_compress))?;
+        RelationalDB::restore_from_snapshot_or_bootstrap(
+            Identity::ZERO,
+            Some(&repo),
+            Some(last_compress),
+            PagePool::default(),
+        )?;
 
         Ok(())
     }
@@ -2790,7 +2795,7 @@ mod tests {
         );
 
         let last = repo.latest_snapshot()?;
-        let stdb = RelationalDB::restore_from_snapshot_or_bootstrap(identity, Some(&repo), last)?;
+        let stdb = RelationalDB::restore_from_snapshot_or_bootstrap(identity, Some(&repo), last, PagePool::default())?;
 
         let out = TempDir::with_prefix("snapshot_test")?;
         let dir = SnapshotsPath::from_path_unchecked(out.path());
