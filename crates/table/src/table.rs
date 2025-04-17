@@ -302,6 +302,10 @@ impl Table {
 
         // Confirm the insertion, checking any constraints, removing the physical row on error.
         // SAFETY: We just inserted `ptr`, so it must be present.
+        // Re. `CHECK_SAME_ROW = true`,
+        // where `insert` is called, we are not dealing with transactions,
+        // and we already know there cannot be a duplicate row error,
+        // but we check just in case it isn't.
         let (hash, row_ptr) = unsafe { self.confirm_insertion::<true>(blob_store, row_ptr, blob_bytes) }?;
         // SAFETY: Per post-condition of `confirm_insertion`, `row_ptr` refers to a valid row.
         let row_ref = unsafe { self.inner.get_row_ref_unchecked(blob_store, row_ptr) };
@@ -487,6 +491,8 @@ impl Table {
     /// and the `ptr` still points to a valid row, and otherwise not.
     ///
     /// If `CHECK_SAME_ROW` holds, an identical row will be treated as a set-semantic duplicate.
+    /// Otherwise, it will be treated as a unique constraint violation.
+    /// However, `false` should only be passed if it's known beforehand that there is no identical row.
     ///
     /// # Safety
     ///
@@ -569,7 +575,8 @@ impl Table {
     /// Deletes the row if there were any violations.
     ///
     /// If `CHECK_SAME_ROW`, upon a unique constraint violation,
-    /// this will check if it's a duplicate row.
+    /// this will check if it's really a duplicate row.
+    /// Otherwise, the unique constraint violation is returned.
     ///
     /// SAFETY: `self.is_row_present(new)` must hold.
     /// Post-condition: If this method returns `Ok(_)`, the row still exists.
@@ -597,7 +604,7 @@ impl Table {
                     // but this is rather pathological and should be fixed when we restructure.
                     && old.squashed_offset().is_tx_state()
                     // SAFETY:
-                    // - The row layouts are the same as its the same table.
+                    // - The row layouts are the same as it's the same table.
                     // - We know `old` exists in `self` as we just found it in an index.
                     // - Caller promised that `new` is valid for `self`.
                     && unsafe { Self::eq_row_in_page(self, old, self, new.pointer()) }

@@ -1344,6 +1344,7 @@ impl MutTxId {
                 unsafe { tx_table.write_gen_val_to_col(col_id, tx_row_ptr, seq_val) };
             }
 
+            // `CHECK_SAME_ROW = true`, as there might be an identical row already in the tx state.
             // SAFETY: `self.is_row_present(row)` holds as we still haven't deleted the row,
             // in particular, the `write_gen_val_to_col` call does not remove the row.
             let res = unsafe { tx_table.confirm_insertion::<true>(tx_blob_store, tx_row_ptr, blob_bytes) };
@@ -1352,6 +1353,7 @@ impl MutTxId {
             // When `GENERATE` is not enabled, simply confirm the insertion.
             // This branch is hit when inside sequence generation itself, to avoid infinite recursion.
             let tx_row_ptr = tx_row_ref.pointer();
+            // `CHECK_SAME_ROW = true`, as there might be an identical row already in the tx state.
             // SAFETY: `self.is_row_present(row)` holds as we just inserted the row.
             let res = unsafe { tx_table.confirm_insertion::<true>(tx_blob_store, tx_row_ptr, blob_bytes) };
             // SAFETY: By virtue of `get_table_and_blob_store_or_maybe_create_from` above succeeding,
@@ -1630,6 +1632,14 @@ impl MutTxId {
 
                 // Check constraints and confirm the insertion of the new row.
                 //
+                // `CHECK_SAME_ROW = false`,
+                // as we know there's a row (`old_ptr`) in the committed state with,
+                // for columns `C`, a unique value X.
+                // For `row` to be identical to another row in the tx state,
+                // it must have the value `X` for `C`,
+                // but it cannot, as the committed state already has `X` for `C`.
+                // So we don't need to check the tx state for a duplicate row.
+                //
                 // SAFETY: `self.is_row_present(row)` holds as we still haven't deleted the row,
                 // in particular, the `write_gen_val_to_col` call does not remove the row.
                 // On error, `tx_row_ptr` has already been removed, so don't do it again.
@@ -1688,6 +1698,14 @@ impl MutTxId {
                         }
 
                         // Check constraints and confirm the insertion of the new row.
+                        //
+                        // `CHECK_SAME_ROW = false`,
+                        // as we know there's a row (`old_ptr`) in the committed state with,
+                        // for columns `C`, a unique value X.
+                        // For `row` to be identical to another row in the tx state,
+                        // it must have the value `X` for `C`,
+                        // but it cannot, as the committed state already has `X` for `C`.
+                        // So we don't need to check the tx state for a duplicate row.
                         //
                         // SAFETY: `self.is_row_present(row)` holds as we still haven't deleted the row,
                         // in particular, the `write_gen_val_to_col` call does not remove the row.
