@@ -9,6 +9,7 @@ use std::path::Path;
 
 use crate::config::Config;
 use crate::login::{spacetimedb_login_force, DEFAULT_AUTH_HOST};
+pub use spacetimedb_lib::load_root_cert;
 
 pub const UNSTABLE_WARNING: &str = "WARNING: This command is UNSTABLE and subject to breaking changes.";
 
@@ -17,11 +18,12 @@ pub async fn database_identity(
     config: &Config,
     name_or_identity: &str,
     server: Option<&str>,
+    client: &reqwest::Client,
 ) -> Result<Identity, anyhow::Error> {
     if let Ok(identity) = Identity::from_hex(name_or_identity) {
         return Ok(identity);
     }
-    spacetime_dns(config, name_or_identity, server)
+    spacetime_dns(config, name_or_identity, server, client)
         .await?
         .with_context(|| format!("the dns resolution of `{name_or_identity}` failed."))
 }
@@ -106,13 +108,37 @@ impl ResponseExt for reqwest::Response {
     }
 }
 
+
+pub async fn configure_tls(cert_path: Option<&Path>) -> anyhow::Result<reqwest::ClientBuilder> {
+    let mut client_builder = reqwest::Client::builder();
+    if let Some(cert) = load_root_cert(cert_path).await? {
+        let path:String=cert_path.map_or("<unexpected empty path>".to_string(), |p| p.display().to_string());
+        let reqwest_cert = reqwest::Certificate::from_der(&cert.to_der()
+            .context(format!("Failed to convert certificate to DER for: {}", path))?)
+            .context(format!("Invalid certificate: {}", path))?;
+        client_builder = client_builder.add_root_certificate(reqwest_cert);
+    }
+    Ok(client_builder)
+}
+
+pub fn build_client_with_context(builder: reqwest::ClientBuilder, cert_path: Option<&Path>) -> anyhow::Result<reqwest::Client> {
+    builder
+        .build()
+        .context(format!("Failed to build client with cert {:?}", cert_path))
+}
+
+pub async fn build_client(cert_path: Option<&Path>) -> anyhow::Result<reqwest::Client> {
+    let builder = configure_tls(cert_path).await?;
+    build_client_with_context(builder, cert_path)
+}
+
 /// Converts a name to a database identity.
 pub async fn spacetime_dns(
     config: &Config,
     domain: &str,
     server: Option<&str>,
+    client: &reqwest::Client,
 ) -> Result<Option<Identity>, anyhow::Error> {
-    let client = reqwest::Client::new();
     let url = format!("{}/v1/database/{}/identity", config.get_host_url(server)?, domain);
     let Some(res) = client.get(url).send().await?.found() else {
         return Ok(None);
@@ -123,8 +149,15 @@ pub async fn spacetime_dns(
         .context("identity endpoint did not return an identity")
 }
 
-pub async fn spacetime_server_fingerprint(url: &str) -> anyhow::Result<String> {
-    let builder = reqwest::Client::new().get(format!("{}/v1/identity/public-key", url).as_str());
+pub async fn spacetime_server_fingerprint(url: &str, cert_path: Option<&Path>) -> anyhow::Result<String> {
+    if let Some(_path) = cert_path {
+        if !url.starts_with("https") {
+            eprintln!("WARNING: Non-https url '{url}' but --cert was specified.");
+        }
+    }
+    let builder = configure_tls(cert_path).await?;
+    let client = builder.build().map_err(|e| anyhow::anyhow!("Failed to build client: {}", e))?;
+    let builder = client.get(format!("{}/v1/identity/public-key", url).as_str());
     let res = builder.send().await?.error_for_status()?;
     let fingerprint = res.text().await?;
     Ok(fingerprint)
@@ -314,9 +347,9 @@ pub async fn get_login_token_or_log_in(
 
     if full_login {
         let host = Url::parse(DEFAULT_AUTH_HOST)?;
-        spacetimedb_login_force(config, &host, false).await
+        spacetimedb_login_force(config, &host, false, None/*TODO*/).await
     } else {
         let host = Url::parse(&config.get_host_url(target_server)?)?;
-        spacetimedb_login_force(config, &host, true).await
+        spacetimedb_login_force(config, &host, true, None/*TODO*/).await
     }
 }

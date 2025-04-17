@@ -3,7 +3,7 @@ use std::io::{self, Write};
 
 use crate::common_args;
 use crate::config::Config;
-use crate::util::{add_auth_header_opt, database_identity, get_auth_header};
+use crate::util::{add_auth_header_opt, database_identity, get_auth_header, build_client};
 use clap::{Arg, ArgAction, ArgMatches};
 use futures::{AsyncBufReadExt, TryStreamExt};
 use is_terminal::IsTerminal;
@@ -48,6 +48,7 @@ pub fn cli() -> clap::Command {
                 .help("Output format for the logs")
         )
         .arg(common_args::yes())
+        .arg(common_args::cert())
         .after_help("Run `spacetime help logs` for more detailed information.\n")
 }
 
@@ -120,7 +121,10 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
     let auth_header = get_auth_header(&mut config, false, server, !force).await?;
 
-    let database_identity = database_identity(&config, database, server).await?;
+    let cert: Option<&std::path::Path> = args.get_one::<std::path::PathBuf>("cert").map(|p| p.as_path());
+
+    let client = build_client(cert).await?;
+    let database_identity = database_identity(&config, database, server, &client).await?;
 
     if follow && num_lines.is_none() {
         // We typically don't want logs from the very beginning if we're also following.
@@ -130,7 +134,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
     let host_url = config.get_host_url(server)?;
 
-    let builder = reqwest::Client::new().get(format!("{}/v1/database/{}/logs", host_url, database_identity));
+    let builder = client.get(format!("{}/v1/database/{}/logs", host_url, database_identity));
     let builder = add_auth_header_opt(builder, &auth_header);
     let mut res = builder.query(&query_parms).send().await?;
     let status = res.status();

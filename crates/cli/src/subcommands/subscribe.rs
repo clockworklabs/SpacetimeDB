@@ -17,7 +17,7 @@ use tokio_tungstenite::tungstenite::Message as WsMessage;
 use crate::api::ClientApi;
 use crate::common_args;
 use crate::sql::parse_req;
-use crate::util::UNSTABLE_WARNING;
+use crate::util::{self, UNSTABLE_WARNING};
 use crate::Config;
 
 pub fn cli() -> clap::Command {
@@ -66,6 +66,7 @@ pub fn cli() -> clap::Command {
                 .action(ArgAction::SetTrue)
                 .help("Print the initial update for the queries."),
         )
+        .arg(common_args::cert())
         .arg(common_args::anonymous())
         .arg(common_args::yes())
         .arg(common_args::server().help("The nickname, host name or URL of the server hosting the database"))
@@ -132,7 +133,8 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
     let timeout = args.get_one::<u32>("timeout").copied();
     let print_initial_update = args.get_flag("print_initial_update");
 
-    let conn = parse_req(config, args).await?;
+    let cert_path = args.get_one::<std::path::PathBuf>("cert").map(|p| p.as_path());
+    let conn = parse_req(config, args, cert_path).await?;
     let api = ClientApi::new(conn);
     let module_def = api.module_def().await?;
 
@@ -158,7 +160,19 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
     if let Some(auth_header) = api.con.auth_header.to_header() {
         req.headers_mut().insert(header::AUTHORIZATION, auth_header);
     }
-    let (mut ws, _) = tokio_tungstenite::connect_async(req).await?;
+
+    // Configure TLS with cert_path
+    let connector = {
+        // Changed: Use native-tls like websocket.rs
+        let mut builder = native_tls::TlsConnector::builder();
+        if let Some(cert) = util::load_root_cert(api.con.cert_path.as_deref()).await? {
+            builder.add_root_certificate(cert);
+        }
+        let tls_connector = builder.build().context("Failed to build TLS connector")?;
+        Some(tokio_tungstenite::Connector::NativeTls(tls_connector))
+    };
+
+    let (mut ws, _) = tokio_tungstenite::connect_async_tls_with_config(req, None, false, connector).await?;
 
     let task = async {
         subscribe(&mut ws, queries.cloned().map(Into::into).collect()).await?;

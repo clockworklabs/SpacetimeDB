@@ -1,6 +1,6 @@
 use crate::{
     common_args,
-    util::{host_or_url_to_host_and_protocol, spacetime_server_fingerprint, y_or_n, UNSTABLE_WARNING, VALID_PROTOCOLS},
+    util::{host_or_url_to_host_and_protocol, spacetime_server_fingerprint, y_or_n, UNSTABLE_WARNING, VALID_PROTOCOLS, build_client},
     Config,
 };
 use anyhow::Context;
@@ -10,6 +10,7 @@ use tabled::{
     settings::{object::Columns, Alignment, Modify, Style},
     Table, Tabled,
 };
+use std::path::Path;
 
 pub fn cli() -> Command {
     Command::new("server")
@@ -53,7 +54,8 @@ fn get_subcommands() -> Vec<Command> {
                     .help("Skip fingerprinting the server")
                     .long("no-fingerprint")
                     .action(ArgAction::SetTrue),
-            ),
+            )
+            .arg(common_args::cert()),
         Command::new("remove")
             .about("Remove a saved server configuration")
             .arg(
@@ -69,6 +71,7 @@ fn get_subcommands() -> Vec<Command> {
                     .required(true)
                     .help("The nickname, host name or URL of the server"),
             )
+            .arg(common_args::cert())
             .arg(common_args::yes()),
         Command::new("ping")
             .about("Checks to see if a SpacetimeDB host is online")
@@ -76,7 +79,8 @@ fn get_subcommands() -> Vec<Command> {
                 Arg::new("server")
                     .required(true)
                     .help("The nickname, host name or URL of the server to ping"),
-            ),
+            )
+            .arg(common_args::cert()),
         Command::new("edit")
             .about("Update a saved server's nickname, host name or protocol")
             .arg(
@@ -100,6 +104,7 @@ fn get_subcommands() -> Vec<Command> {
                     .long("no-fingerprint")
                     .action(ArgAction::SetTrue),
             )
+            .arg(common_args::cert())
             .arg(common_args::yes()),
         Command::new("clear")
             .about("Deletes all data from all local databases")
@@ -195,6 +200,11 @@ pub async fn exec_add(mut config: Config, args: &ArgMatches) -> Result<(), anyho
     let nickname = args.get_one::<String>("name");
     let default = *args.get_one::<bool>("default").unwrap();
     let no_fingerprint = *args.get_one::<bool>("no-fingerprint").unwrap();
+    let cert_path = args.get_one::<std::path::PathBuf>("cert").map(|p| p.as_path());
+
+    if no_fingerprint && cert_path.is_some() {
+        eprintln!("WARNING: --cert ignored while using --no-fingerprint");
+    }
 
     let (host, protocol) = host_or_url_to_host_and_protocol(url);
     let protocol = protocol.ok_or_else(|| anyhow::anyhow!("Invalid url: {}", url))?;
@@ -204,12 +214,13 @@ pub async fn exec_add(mut config: Config, args: &ArgMatches) -> Result<(), anyho
     let fingerprint = if no_fingerprint {
         None
     } else {
-        let fingerprint = spacetime_server_fingerprint(url).await.with_context(|| {
+        let fingerprint = spacetime_server_fingerprint(url, cert_path).await.with_context(|| {
             format!(
                 "Unable to retrieve fingerprint for server: {url}
 Is the server running?
 Add a server without retrieving its fingerprint with:
-\tspacetime server add --url {url} --no-fingerprint",
+\tspacetime server add --url {url} --no-fingerprint
+or provide a trusted --cert."
             )
         })?;
         println!("For server {}, got fingerprint:\n{}", url, fingerprint);
@@ -224,7 +235,6 @@ Add a server without retrieving its fingerprint with:
 
     println!("Host: {}", host);
     println!("Protocol: {}", protocol);
-
     config.save();
 
     Ok(())
@@ -240,25 +250,51 @@ pub async fn exec_remove(mut config: Config, args: &ArgMatches) -> Result<(), an
     Ok(())
 }
 
-async fn update_server_fingerprint(config: &mut Config, server: Option<&str>) -> Result<bool, anyhow::Error> {
-    let url = config.get_host_url(server)?;
-    let nick_or_host = config.server_nick_or_host(server)?;
-    let new_fing = spacetime_server_fingerprint(&url)
+async fn update_server_fingerprint(
+    config: &mut Config,
+    server: Option<&str>,
+    cert_path: Option<&Path>,
+    protocol: Option<&str>,
+) -> Result<bool, anyhow::Error> {
+    let (host, proto, nick_or_host) = match server {
+        Some(s) => {
+            let (h, p) = host_or_url_to_host_and_protocol(s);
+            if p.is_none() && !s.contains(':') && !s.contains('/') {
+                // Nickname case: fetch URL from config
+                let url = config.get_host_url(Some(s))?;
+                let (h_url, p_url) = host_or_url_to_host_and_protocol(&url);
+                let p_url = p_url.ok_or_else(|| anyhow::anyhow!("Server {} has no protocol", s))?;
+                (h_url.to_string(), p_url.to_string(), s.to_string())
+            } else {
+                // Host or URL case
+                let p = p.or(protocol).ok_or_else(|| {
+                    anyhow::anyhow!("Protocol not specified and server {} is ambiguous", h)
+                })?;
+                (h.to_string(), p.to_string(), s.to_string())
+            }
+        }
+        None => {
+            let url = config.get_host_url(None)?;
+            let (h, p) = host_or_url_to_host_and_protocol(&url);
+            let p = p.ok_or_else(|| anyhow::anyhow!("Default server has no protocol"))?;
+            let nick = config.server_nick_or_host(None)?.to_string();
+            (h.to_string(), p.to_string(), nick)
+        }
+    };
+    let url = format!("{}://{}", proto, host);
+    let new_fing = spacetime_server_fingerprint(&url, cert_path)
         .await
         .context("Error fetching server fingerprint")?;
-    if let Some(saved_fing) = config.server_fingerprint(server)? {
+    if let Some(saved_fing) = config.server_fingerprint(Some(&host), Some(&proto))? {
         if saved_fing == new_fing {
             println!("Fingerprint is unchanged for server {}:\n{}", nick_or_host, saved_fing);
-
             Ok(false)
         } else {
             println!(
                 "Fingerprint has changed for server {}.\nWas:\n{}\nNew:\n{}",
                 nick_or_host, saved_fing, new_fing
             );
-
-            config.set_server_fingerprint(server, new_fing)?;
-
+            config.set_server_fingerprint(Some(&host), new_fing)?;
             Ok(true)
         }
     } else {
@@ -266,9 +302,7 @@ async fn update_server_fingerprint(config: &mut Config, server: Option<&str>) ->
             "No saved fingerprint for server {}. New fingerprint:\n{}",
             nick_or_host, new_fing
         );
-
-        config.set_server_fingerprint(server, new_fing)?;
-
+        config.set_server_fingerprint(Some(&host), new_fing)?;
         Ok(true)
     }
 }
@@ -276,8 +310,10 @@ async fn update_server_fingerprint(config: &mut Config, server: Option<&str>) ->
 pub async fn exec_fingerprint(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let server = args.get_one::<String>("server").unwrap().as_str();
     let force = args.get_flag("force");
+    let cert_path = args.get_one::<std::path::PathBuf>("cert").map(|p| p.as_path());
 
-    if update_server_fingerprint(&mut config, Some(server)).await? {
+    let (host, protocol) = host_or_url_to_host_and_protocol(server);
+    if update_server_fingerprint(&mut config, Some(host), cert_path, protocol).await? {
         if !y_or_n(force, "Continue?")? {
             anyhow::bail!("Aborted");
         }
@@ -291,8 +327,10 @@ pub async fn exec_fingerprint(mut config: Config, args: &ArgMatches) -> Result<(
 pub async fn exec_ping(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let server = args.get_one::<String>("server").unwrap().as_str();
     let url = config.get_host_url(Some(server))?;
+    let cert_path = args.get_one::<std::path::PathBuf>("cert").map(|p| p.as_path());
 
-    let builder = reqwest::Client::new().get(format!("{}/v1/ping", url).as_str());
+    let client = build_client(cert_path).await?;
+    let builder = client.get(format!("{}/v1/ping", url).as_str());
     let response = builder.send().await?;
 
     match response.status() {
@@ -342,6 +380,7 @@ pub async fn exec_edit(mut config: Config, args: &ArgMatches) -> Result<(), anyh
         println!("Changing host from {} to {}", old_host, new_host);
     }
     if let (Some(new_proto), Some(old_proto)) = (new_proto, old_proto) {
+        //FIXME: Changing protocol from https to https
         println!("Changing protocol from {} to {}", old_proto, new_proto);
     }
 
@@ -351,7 +390,8 @@ pub async fn exec_edit(mut config: Config, args: &ArgMatches) -> Result<(), anyh
         if no_fingerprint {
             config.delete_server_fingerprint(Some(&new_url))?;
         } else {
-            update_server_fingerprint(&mut config, Some(&new_url)).await?;
+            let cert_path = args.get_one::<std::path::PathBuf>("cert").map(|p| p.as_path());
+            update_server_fingerprint(&mut config, Some(&new_url), cert_path, new_proto).await?;
         }
     }
 

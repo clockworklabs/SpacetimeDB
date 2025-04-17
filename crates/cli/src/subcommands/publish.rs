@@ -9,7 +9,7 @@ use std::path::PathBuf;
 
 use crate::config::Config;
 use crate::util::{add_auth_header_opt, get_auth_header, ResponseExt};
-use crate::util::{decode_identity, unauth_error_context, y_or_n};
+use crate::util::{decode_identity, unauth_error_context, y_or_n, build_client};
 use crate::{build, common_args};
 
 pub fn cli() -> clap::Command {
@@ -63,6 +63,7 @@ i.e. only lowercase ASCII letters and numbers, separated by dashes."),
         .arg(common_args::server()
                 .help("The nickname, domain name or URL of the server to host the database."),
         )
+        .arg(common_args::cert())
         .arg(
             common_args::yes()
         )
@@ -79,6 +80,8 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let wasm_file = args.get_one::<PathBuf>("wasm_file");
     let database_host = config.get_host_url(server)?;
     let build_options = args.get_one::<String>("build_options").unwrap();
+    let cert_path: Option<&std::path::Path> = args.get_one::<std::path::PathBuf>("cert").map(|p| p.as_path());
+
 
     // If the user didn't specify an identity and we didn't specify an anonymous identity, then
     // we want to use the default identity
@@ -86,7 +89,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     //  easily create a new identity with an email
     let auth_header = get_auth_header(&mut config, anon_identity, server, !force).await?;
 
-    let client = reqwest::Client::new();
+    let client = build_client(cert_path).await?;
 
     // If a domain or identity was provided, we should locally make sure it looks correct and
     let mut builder = if let Some(name_or_identity) = name_or_identity {
@@ -119,7 +122,16 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         let url = Url::parse(&database_host)?;
         url.host_str().unwrap_or("<default>").to_string()
     };
-    if server_address != "localhost" && server_address != "127.0.0.1" {
+
+    use std::net::IpAddr;
+    fn is_local_address(address: &str) -> bool {
+        if let Ok(IpAddr::V4(ipv4)) = address.parse::<IpAddr>() {
+            ipv4.is_loopback() // true if this is `127.0.0.0/8`
+        } else {
+            address.eq_ignore_ascii_case("localhost")
+        }
+    }
+    if !is_local_address(&server_address) {
         println!("You are about to publish to a non-local server: {}", server_address);
         if !y_or_n(force, "Are you sure you want to proceed?")? {
             println!("Aborting");

@@ -40,6 +40,7 @@ pub fn cli() -> clap::Command {
                      give human-readable output.",
                 ),
         )
+        .arg(common_args::cert())
         .arg(common_args::anonymous())
         .arg(common_args::server().help("The nickname, host name or URL of the server hosting the database"))
         .arg(common_args::yes())
@@ -59,8 +60,9 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
     let entity_type = args.get_one::<EntityType>("entity_type");
     let entity = entity_type.zip(entity_name);
     let json = args.get_flag("json");
+    let cert_path = args.get_one::<std::path::PathBuf>("cert").map(|p| p.as_path());
 
-    let conn = parse_req(config, args).await?;
+    let conn = parse_req(config, args, cert_path).await?;
     let api = ClientApi::new(conn);
 
     let module_def = api.module_def().await?;

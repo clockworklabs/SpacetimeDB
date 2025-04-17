@@ -42,6 +42,9 @@ serde = { workspace = true, optional = true }
 thiserror.workspace = true
 blake3.workspace = true
 enum-map = { workspace = true, optional = true }
+tokio.workspace = true
+native-tls = "0.2"
+clap.workspace = true
 
 # For the 'proptest' feature.
 proptest = { workspace = true, optional = true }
