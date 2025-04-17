@@ -7,6 +7,7 @@ use crate::replica_context::ReplicaContext;
 use core::mem;
 use parking_lot::{Mutex, MutexGuard};
 use smallvec::SmallVec;
+use spacetimedb_lib::Timestamp;
 use spacetimedb_primitives::{ColId, ColList, IndexId, TableId};
 use spacetimedb_sats::{
     bsatn::{self, ToBsatn},
@@ -23,6 +24,8 @@ pub struct InstanceEnv {
     pub replica_ctx: Arc<ReplicaContext>,
     pub scheduler: Scheduler,
     pub tx: TxSlot,
+    /// The timestamp the current reducer began running.
+    pub start_time: Timestamp,
 }
 
 #[derive(Clone, Default)]
@@ -168,7 +171,13 @@ impl InstanceEnv {
             replica_ctx,
             scheduler,
             tx: TxSlot::default(),
+            start_time: Timestamp::now(),
         }
+    }
+
+    /// Signal to this `InstanceEnv` that a reducer call is beginning.
+    pub fn start_reducer(&mut self, ts: Timestamp) {
+        self.start_time = ts;
     }
 
     fn get_tx(&self) -> Result<impl DerefMut<Target = MutTxId> + '_, GetTxError> {
@@ -260,7 +269,14 @@ impl InstanceEnv {
             // as we successfully inserted and thus `ret` is verified against the table schema.
             .map_err(|e| NodesError::ScheduleError(ScheduleError::DecodingError(e)))?;
         self.scheduler
-            .schedule(table_id, schedule_id, schedule_at, id_column, at_column)
+            .schedule(
+                table_id,
+                schedule_id,
+                schedule_at,
+                id_column,
+                at_column,
+                self.start_time,
+            )
             .map_err(NodesError::ScheduleError)?;
 
         Ok(())
@@ -490,6 +506,8 @@ impl From<GetTxError> for NodesError {
 
 #[cfg(test)]
 mod test {
+    use super::*;
+
     use std::{ops::Bound, sync::Arc};
 
     use crate::{
@@ -514,8 +532,6 @@ mod test {
     use spacetimedb_primitives::{IndexId, TableId};
     use spacetimedb_sats::product;
     use tempfile::TempDir;
-
-    use super::{ChunkPool, InstanceEnv, TxSlot};
 
     /// An `InstanceEnv` requires a `DatabaseLogger`
     fn temp_logger() -> Result<DatabaseLogger> {
@@ -559,6 +575,7 @@ mod test {
             replica_ctx: Arc::new(replica_ctx(db)?),
             scheduler,
             tx: TxSlot::default(),
+            start_time: Timestamp::now(),
         })
     }
 

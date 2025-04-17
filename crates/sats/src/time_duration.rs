@@ -31,9 +31,6 @@ impl TimeDuration {
     }
 
     /// Construct a [`TimeDuration`] which is `micros` microseconds.
-    ///
-    /// A positive value means a time after the Unix epoch,
-    /// and a negative value means a time before.
     pub fn from_micros(micros: i64) -> Self {
         Self {
             __time_duration_micros__: micros,
@@ -57,6 +54,11 @@ impl TimeDuration {
         match self.to_duration() {
             Ok(dur) | Err(dur) => dur,
         }
+    }
+
+    /// Returns a positive `TimeDuration` with the magnitude of `self`.
+    pub fn abs(self) -> Self {
+        Self::from_micros(self.to_micros().saturating_abs())
     }
 
     /// Return a [`TimeDuration`] which represents the same span as `duration`.
