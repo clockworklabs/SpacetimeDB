@@ -45,15 +45,25 @@ metrics_group!(
         #[labels(node_id: str)]
         pub page_pool_resident_bytes: IntGaugeVec,
 
-        #[name = page_pool_unpooled_pages]
-        #[help = "Total number of pages outside the page pool"]
-        #[labels(node_id: str)]
-        pub page_pool_unpooled_pages: IntGaugeVec,
-
         #[name = page_pool_dropped_pages]
         #[help = "Total number of pages dropped by the page pool"]
         #[labels(node_id: str)]
         pub page_pool_dropped_pages: IntGaugeVec,
+
+        #[name = page_pool_new_pages_allocated]
+        #[help = "Total number of fresh pages allocated by the page pool"]
+        #[labels(node_id: str)]
+        pub page_pool_new_pages_allocated: IntGaugeVec,
+
+        #[name = page_pool_new_pages_allocated]
+        #[help = "Total number of pages reused by the page pool"]
+        #[labels(node_id: str)]
+        pub page_pool_pages_reused: IntGaugeVec,
+
+        #[name = page_pool_pages_returned]
+        #[help = "Total number of pages returned to the page pool"]
+        #[labels(node_id: str)]
+        pub page_pool_pages_returned: IntGaugeVec,
 
         #[name = tokio_num_workers]
         #[help = "Number of core tokio workers"]
@@ -280,13 +290,17 @@ pub fn spawn_page_pool_stats(node_id: String, page_pool: PagePool) {
     SPAWN_PAGE_POOL_GUARD.call_once(|| {
         spawn(async move {
             let resident_bytes = WORKER_METRICS.page_pool_resident_bytes.with_label_values(&node_id);
-            let unpooled_pages = WORKER_METRICS.page_pool_unpooled_pages.with_label_values(&node_id);
             let dropped_pages = WORKER_METRICS.page_pool_dropped_pages.with_label_values(&node_id);
+            let new_pages = WORKER_METRICS.page_pool_new_pages_allocated.with_label_values(&node_id);
+            let reused_pages = WORKER_METRICS.page_pool_pages_reused.with_label_values(&node_id);
+            let returned_pages = WORKER_METRICS.page_pool_pages_returned.with_label_values(&node_id);
 
             loop {
                 resident_bytes.set(page_pool.heap_usage() as i64);
-                unpooled_pages.set(page_pool.unpooled_pages_count() as i64);
                 dropped_pages.set(page_pool.dropped_pages_count() as i64);
+                new_pages.set(page_pool.new_pages_allocated_count() as i64);
+                reused_pages.set(page_pool.pages_reused_count() as i64);
+                returned_pages.set(page_pool.pages_reused_count() as i64);
 
                 sleep(Duration::from_secs(10)).await;
             }

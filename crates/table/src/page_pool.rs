@@ -38,12 +38,7 @@ impl PagePool {
         const PAGE_SIZE: usize = 64 * (1 << 10); // 64 KiB, `size_of::<Page>()`
 
         let queue_size = max_size.unwrap_or(DEFAULT_MAX_SIZE) / PAGE_SIZE;
-        let pages = ArrayQueue::new(queue_size);
-        let inner = Arc::new(PagePoolInner {
-            pages,
-            unpooled_pages_count: <_>::default(),
-            dropped_pages_count: <_>::default(),
-        });
+        let inner = Arc::new(PagePoolInner::new(queue_size));
         Self { inner }
     }
 
@@ -78,17 +73,24 @@ impl PagePool {
         self.deserialize(bsatn::Deserializer::new(&mut &*buf))
     }
 
-    /// Returns the number of pages outside the pool.
-    ///
-    /// Note that if a page is dropped outside the pool,
-    /// it won't be aware and will count that as a leak.s
-    pub fn unpooled_pages_count(&self) -> usize {
-        self.inner.unpooled_pages_count.load(Ordering::Relaxed)
-    }
-
     /// Returns the number of pages dropped by the pool because the pool was at capacity.
     pub fn dropped_pages_count(&self) -> usize {
         self.inner.dropped_pages_count.load(Ordering::Relaxed)
+    }
+
+    /// Returns the number of fresh pages allocated through the pool.
+    pub fn new_pages_allocated_count(&self) -> usize {
+        self.inner.new_pages_allocated_count.load(Ordering::Relaxed)
+    }
+
+    /// Returns the number of pages reused from the pool.
+    pub fn pages_reused_count(&self) -> usize {
+        self.inner.pages_reused_count.load(Ordering::Relaxed)
+    }
+
+    /// Returns the number of pages returned to the pool.
+    pub fn pages_returned_count(&self) -> usize {
+        self.inner.pages_returned_count.load(Ordering::Relaxed)
     }
 }
 
@@ -135,19 +137,25 @@ impl<'de> ProductVisitor<'de> for &PagePool {
 /// The inner actual page pool containing all the logic.
 struct PagePoolInner {
     pages: ArrayQueue<Box<Page>>,
-    unpooled_pages_count: AtomicUsize,
     dropped_pages_count: AtomicUsize,
+    new_pages_allocated_count: AtomicUsize,
+    pages_reused_count: AtomicUsize,
+    pages_returned_count: AtomicUsize,
 }
 
 impl MemoryUsage for PagePoolInner {
     fn heap_usage(&self) -> usize {
         let Self {
             pages,
-            unpooled_pages_count,
             dropped_pages_count,
+            new_pages_allocated_count,
+            pages_reused_count,
+            pages_returned_count,
         } = self;
-        unpooled_pages_count.heap_usage() +
         dropped_pages_count.heap_usage() +
+        new_pages_allocated_count.heap_usage() +
+        pages_reused_count.heap_usage() +
+        pages_returned_count.heap_usage() +
         // This is the amount the queue itself takes up on the heap.
         pages.capacity() * size_of::<(AtomicUsize, Box<Page>)>() +
         // Each page takes up a fixed amount.
@@ -163,29 +171,35 @@ impl Default for PagePoolInner {
         // Each slot in the pool is `(AtomicCell, Box<Page>)` which takes up 16 bytes.
         // The pool will therefore have a fixed cost of 2^20 bytes, i.e., 2 MiB.
         const MAX_POOLED_PAGES: usize = MAX_PAGE_MEM / size_of::<Page>();
-        let pages = ArrayQueue::new(MAX_POOLED_PAGES);
-        Self {
-            pages,
-            unpooled_pages_count: <_>::default(),
-            dropped_pages_count: <_>::default(),
-        }
+        Self::new(MAX_POOLED_PAGES)
     }
 }
 
+#[inline]
+fn inc(atomic: &AtomicUsize) {
+    atomic.fetch_add(1, Ordering::Relaxed);
+}
+
 impl PagePoolInner {
+    /// Creates a new page pool capable of holding `cap` pages.
+    fn new(cap: usize) -> Self {
+        let pages = ArrayQueue::new(cap);
+        Self {
+            pages,
+            dropped_pages_count: <_>::default(),
+            new_pages_allocated_count: <_>::default(),
+            pages_reused_count: <_>::default(),
+            pages_returned_count: <_>::default(),
+        }
+    }
+
     /// Puts back a [`Page`] into the pool.
     fn put(&self, page: Box<Page>) {
-        // If pages are manually created and added to this pool,
-        // this count may underflow and wrap.
-        // There's no native operation to atomically saturating_sub,
-        // and it's not worth it to do something more complicated,
-        // so we'll live with this given that non-test operation of the pool
-        // won't use `put` without a `take_*` first.
-        self.unpooled_pages_count.fetch_sub(1, Ordering::Relaxed);
-
         // Add it to the pool if there's room, or just drop it.
-        if self.pages.push(page).is_err() {
-            self.dropped_pages_count.fetch_add(1, Ordering::Relaxed);
+        if self.pages.push(page).is_ok() {
+            inc(&self.pages_returned_count);
+        } else {
+            inc(&self.dropped_pages_count);
         }
     }
 
@@ -193,15 +207,17 @@ impl PagePoolInner {
     ///
     /// The returned page supports a maximum of `max_rows_in_page` rows.
     fn take_with_max_row_count(&self, max_rows_in_page: usize) -> Box<Page> {
-        self.unpooled_pages_count.fetch_add(1, Ordering::Relaxed);
-
         self.pages
             .pop()
             .map(|mut page| {
+                inc(&self.pages_reused_count);
                 page.reset_for(max_rows_in_page);
                 page
             })
-            .unwrap_or_else(|| Page::new_with_max_row_count(max_rows_in_page))
+            .unwrap_or_else(|| {
+                inc(&self.new_pages_allocated_count);
+                Page::new_with_max_row_count(max_rows_in_page)
+            })
     }
 
     /// Takes a [`Page`] from the pool or creates a new one.
@@ -221,24 +237,29 @@ mod tests {
         page.page_header_for_test().present_rows_storage_ptr_for_test()
     }
 
+    fn assert_metrics(pool: &PagePool, dropped: usize, new: usize, reused: usize, returned: usize) {
+        assert_eq!(pool.dropped_pages_count(), dropped);
+        assert_eq!(pool.new_pages_allocated_count(), new);
+        assert_eq!(pool.pages_reused_count(), reused);
+        assert_eq!(pool.pages_returned_count(), returned);
+    }
+
     #[test]
     fn page_pool_returns_same_page() {
         let pool = PagePool::default();
+        assert_metrics(&pool, 0, 0, 0, 0);
 
         // Create a page and put it back.
         let page1 = pool.take_with_max_row_count(10);
-        assert_eq!(pool.unpooled_pages_count(), 1);
-        assert_eq!(pool.dropped_pages_count(), 0);
+        assert_metrics(&pool, 0, 1, 0, 0);
         let page1_ptr = &*page1 as *const _;
         let page1_pr_ptr = present_rows_ptr(&page1);
         pool.put(page1);
-        assert_eq!(pool.unpooled_pages_count(), 0);
-        assert_eq!(pool.dropped_pages_count(), 0);
+        assert_metrics(&pool, 0, 1, 0, 1);
 
         // Extract a page again.
         let page2 = pool.take_with_max_row_count(64);
-        assert_eq!(pool.unpooled_pages_count(), 1);
-        assert_eq!(pool.dropped_pages_count(), 0);
+        assert_metrics(&pool, 0, 1, 1, 1);
         let page2_ptr = &*page2 as *const _;
         let page2_pr_ptr = present_rows_ptr(&page2);
         // It should be the same as the previous one.
@@ -246,13 +267,11 @@ mod tests {
         // And the bitset should also be the same, as `10.div_ceil(64) == 64`.
         assert!(addr_eq(page1_pr_ptr, page2_pr_ptr));
         pool.put(page2);
-        assert_eq!(pool.unpooled_pages_count(), 0);
-        assert_eq!(pool.dropped_pages_count(), 0);
+        assert_metrics(&pool, 0, 1, 1, 2);
 
         // Extract a page again, but this time, go beyond the first block.
         let page3 = pool.take_with_max_row_count(64 + 1);
-        assert_eq!(pool.unpooled_pages_count(), 1);
-        assert_eq!(pool.dropped_pages_count(), 0);
+        assert_metrics(&pool, 0, 1, 2, 2);
         let page3_ptr = &*page3 as *const _;
         let page3_pr_ptr = present_rows_ptr(&page3);
         // It should be the same as the previous one.
@@ -265,10 +284,10 @@ mod tests {
         let page4_ptr = &*page4 as *const _;
         pool.put(page4);
         pool.put(page3);
-        assert_eq!(pool.unpooled_pages_count(), usize::MAX);
-        assert_eq!(pool.dropped_pages_count(), 0);
+        assert_metrics(&pool, 0, 1, 2, 4);
         // When we take out a page, it should be the same as `page4` and not `page1`.
         let page5 = pool.take_with_max_row_count(10);
+        assert_metrics(&pool, 0, 1, 3, 4);
         let page5_ptr = &*page5 as *const _;
         // Same as page4.
         assert!(!addr_eq(page5_ptr, page1_ptr));
@@ -283,12 +302,10 @@ mod tests {
         let pages = iter::repeat_with(|| pool.take_with_max_row_count(42))
             .take(N + 1)
             .collect::<Vec<_>>();
-        assert_eq!(pool.dropped_pages_count(), 0);
-        assert_eq!(pool.unpooled_pages_count(), N + 1);
+        assert_metrics(&pool, 0, N + 1, 0, 0);
 
         pool.put_many(pages.into_iter());
-        assert_eq!(pool.dropped_pages_count(), 1);
-        assert_eq!(pool.unpooled_pages_count(), 0);
+        assert_metrics(&pool, 1, N + 1, 0, N);
         assert_eq!(pool.inner.pages.len(), N);
     }
 }
