@@ -40,7 +40,11 @@ use spacetimedb_sats::{
     ser::{Serialize, Serializer},
     u256, AlgebraicValue, ProductType, ProductValue,
 };
-use spacetimedb_schema::{def::IndexAlgorithm, schema::TableSchema, type_for_generate::PrimitiveType};
+use spacetimedb_schema::{
+    def::IndexAlgorithm,
+    schema::{IndexSchema, TableSchema},
+    type_for_generate::PrimitiveType,
+};
 use std::{
     collections::{btree_map, BTreeMap},
     sync::Arc,
@@ -1062,8 +1066,8 @@ impl Table {
     /// If none but `self` refers to the schema, then the mutation will be in-place.
     /// Otherwise, the schema must be cloned, mutated,
     /// and then the cloned version is written back to the table.
-    pub fn with_mut_schema(&mut self, with: impl FnOnce(&mut TableSchema)) {
-        with(Arc::make_mut(&mut self.schema));
+    pub fn with_mut_schema<R>(&mut self, with: impl FnOnce(&mut TableSchema) -> R) -> R {
+        with(Arc::make_mut(&mut self.schema))
     }
 
     /// Returns a new [`TableIndex`] for `table`.
@@ -1100,35 +1104,42 @@ impl Table {
     /// # Safety
     ///
     /// Caller must promise that `index` was constructed with the same row type/layout as this table.
-    pub unsafe fn add_index(&mut self, index_id: IndexId, index: TableIndex) {
+    pub unsafe fn add_index(&mut self, index_id: IndexId, index: TableIndex) -> Option<PointerMap> {
         let is_unique = index.is_unique();
         self.indexes.insert(index_id, index);
 
         // Remove the pointer map, if any.
         if is_unique {
-            self.pointer_map = None;
+            self.pointer_map.take()
+        } else {
+            None
         }
     }
 
     /// Removes an index from the table.
     ///
     /// Returns whether an index existed with `index_id`.
-    pub fn delete_index(&mut self, blob_store: &dyn BlobStore, index_id: IndexId) -> bool {
-        let index = self.indexes.remove(&index_id);
-        let ret = index.is_some();
+    pub fn delete_index(
+        &mut self,
+        blob_store: &dyn BlobStore,
+        index_id: IndexId,
+        pointer_map: Option<PointerMap>,
+    ) -> Option<(TableIndex, IndexSchema)> {
+        let index = self.indexes.remove(&index_id)?;
 
         // If we removed the last unique index, add a pointer map.
-        if index.is_some_and(|i| i.is_unique()) && !self.indexes.values().any(|idx| idx.is_unique()) {
-            self.rebuild_pointer_map(blob_store);
+        if index.is_unique() && !self.indexes.values().any(|idx| idx.is_unique()) {
+            self.pointer_map = Some(pointer_map.unwrap_or_else(|| self.rebuild_pointer_map(blob_store)));
         }
 
         // Remove index from schema.
         //
         // This likely will do a clone-write as over time?
         // The schema might have found other referents.
-        self.with_mut_schema(|s| s.indexes.retain(|x| x.index_id != index_id));
-
-        ret
+        let schema = self
+            .with_mut_schema(|s| s.remove_index(index_id))
+            .expect("there should be an index with `index_id`");
+        Some((index, schema))
     }
 
     /// Returns an iterator over all the rows of `self`, yielded as [`RefRef`]s.
@@ -1225,7 +1236,7 @@ impl Table {
         // Recompute table metadata based on the new pages.
         // Compute the row count first, in case later computations want to use it as a capacity to pre-allocate.
         self.compute_row_count(blob_store);
-        self.rebuild_pointer_map(blob_store);
+        self.pointer_map = Some(self.rebuild_pointer_map(blob_store));
     }
 
     /// Consumes the table, returning some constituents needed for merge.
@@ -1735,16 +1746,10 @@ impl<'a> Iterator for IndexScanPointIter<'a> {
     type Item = RowRef<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let ptr = self.btree_index_iter.next()?;
-        // FIXME: Determine if this is correct and if so use `_unchecked`.
-        // Will a table's index necessarily hold only pointers into that index?
-        // Edge case: if an index is added during a transaction which then scans that index,
-        // it appears that the newly-created `TxState` index
-        // will also hold pointers into the `CommittedState`.
-        //
-        // SAFETY: Assuming this is correct,
-        // `ptr` came from the index, which always holds pointers to valid rows.
-        self.table.get_row_ref(self.blob_store, ptr)
+        self.btree_index_iter.next().map(|ptr| {
+            // SAFETY: `ptr` came from the index, which always holds pointers to valid rows for its table.
+            unsafe { self.table.get_row_ref_unchecked(self.blob_store, ptr) }
+        })
     }
 }
 
@@ -1765,16 +1770,10 @@ impl<'a> Iterator for IndexScanRangeIter<'a> {
     type Item = RowRef<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let ptr = self.btree_index_iter.next()?;
-        // FIXME: Determine if this is correct and if so use `_unchecked`.
-        // Will a table's index necessarily hold only pointers into that index?
-        // Edge case: if an index is added during a transaction which then scans that index,
-        // it appears that the newly-created `TxState` index
-        // will also hold pointers into the `CommittedState`.
-        //
-        // SAFETY: Assuming this is correct,
-        // `ptr` came from the index, which always holds pointers to valid rows.
-        self.table.get_row_ref(self.blob_store, ptr)
+        self.btree_index_iter.next().map(|ptr| {
+            // SAFETY: `ptr` came from the index, which always holds pointers to valid rows for its table.
+            unsafe { self.table.get_row_ref_unchecked(self.blob_store, ptr) }
+        })
     }
 }
 
@@ -1930,14 +1929,12 @@ impl Table {
     /// Called when restoring from a snapshot after installing the pages,
     /// but after computing the row count,
     /// since snapshots do not save the pointer map..
-    fn rebuild_pointer_map(&mut self, blob_store: &dyn BlobStore) {
+    fn rebuild_pointer_map(&mut self, blob_store: &dyn BlobStore) -> PointerMap {
         // TODO(perf): Pre-allocate `PointerMap.map` with capacity `self.row_count`.
         // Alternatively, do this at the same time as `compute_row_count`.
-        let ptrs = self
-            .scan_rows(blob_store)
+        self.scan_rows(blob_store)
             .map(|row_ref| (row_ref.row_hash(), row_ref.pointer()))
-            .collect::<PointerMap>();
-        self.pointer_map = Some(ptrs);
+            .collect()
     }
 
     /// Compute and store `self.row_count` and `self.blob_store_bytes`

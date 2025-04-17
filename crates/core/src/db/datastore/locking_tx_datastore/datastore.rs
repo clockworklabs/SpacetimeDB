@@ -638,7 +638,8 @@ impl MutTxDatastore for Locking {
         index_id: IndexId,
         row: &[u8],
     ) -> Result<(ColList, RowRef<'a>, UpdateFlags)> {
-        tx.update(table_id, index_id, row)
+        let (gens, row_ref, update_flags) = tx.update(table_id, index_id, row)?;
+        Ok((gens, row_ref.collapse(), update_flags))
     }
 
     fn metadata_mut_tx(&self, tx: &Self::MutTx) -> Result<Option<Metadata>> {
@@ -2358,7 +2359,7 @@ mod tests {
         // the delete should first mark the committed row as deleted in the delete tables,
         // and then it should remove it from the delete tables upon insertion,
         // rather than actually inserting it in the tx state.
-        // So the second transaction should be observationally a no-op.s
+        // So the second transaction should be observationally a no-op.
         // There was a bug in the datastore that did not respect this in the presence of a unique index.
         let (deleted_1, tx_data_1) = update(&datastore)?;
         let (deleted_2, tx_data_2) = update(&datastore)?;

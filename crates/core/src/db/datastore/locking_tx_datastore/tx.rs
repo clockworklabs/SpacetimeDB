@@ -1,7 +1,6 @@
-use super::datastore::TxMetrics;
 use super::{
     committed_state::CommittedState,
-    datastore::Result,
+    datastore::{Result, TxMetrics},
     state_view::{IterByColRangeTx, StateView},
     IterByColEqTx, SharedReadGuard,
 };
@@ -69,12 +68,8 @@ impl StateView for TxId {
         cols: ColList,
         range: R,
     ) -> Result<Self::IterByColRange<'_, R>> {
-        match self.committed_state_shared_lock.index_seek(table_id, &cols, &range) {
-            Some(committed_rows) => Ok(IterByColRangeTx::CommittedIndex(committed_rows)),
-            None => self
-                .committed_state_shared_lock
-                .iter_by_col_range(table_id, cols, range),
-        }
+        self.committed_state_shared_lock
+            .iter_by_col_range(table_id, cols, range)
     }
 
     fn iter_by_col_eq<'a, 'r>(
