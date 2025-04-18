@@ -69,10 +69,7 @@ impl SelfInstall {
         eprintln!("Downloading latest version...");
         let res = super::upgrade::Upgrade {}
             .exec(&paths)
-            .context("failed to download and install latest SpacetimeDB version");
-        if let Err(err) = &res {
-            eprintln!("Error: {err:#}\n")
-        }
+            .context("failed to download and install latest SpacetimeDB version")?;
 
         eprintln!(
             "The `spacetime` command has been installed as {}",
