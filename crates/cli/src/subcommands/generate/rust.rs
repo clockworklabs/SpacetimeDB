@@ -1317,7 +1317,7 @@ impl DbConnection {{
     /// Returns an error if the connection is disconnected.
     /// If the disconnection in question was normal,
     ///  i.e. the result of a call to [`__sdk::DbContext::disconnect`],
-    /// the returned error will be downcastable to [`__sdk::DisconnectedError`].
+    /// the returned error will be downcastable to [`__sdk::Error::Disconnected`].
     ///
     /// This is a low-level primitive exposed for power users who need significant control over scheduling.
     /// Most applications should call [`Self::frame_tick`] each frame
@@ -1331,7 +1331,7 @@ impl DbConnection {{
     /// Returns an error if the connection is disconnected.
     /// If the disconnection in question was normal,
     ///  i.e. the result of a call to [`__sdk::DbContext::disconnect`],
-    /// the returned error will be downcastable to [`__sdk::DisconnectedError`].
+    /// the returned error will be downcastable to [`__sdk::Error::Disconnected`].
     ///
     /// This is a low-level primitive exposed for power users who need significant control over scheduling.
     /// Most applications should call [`Self::run_threaded`] to spawn a thread
@@ -1345,7 +1345,7 @@ impl DbConnection {{
     /// Returns an error if the connection is disconnected.
     /// If the disconnection in question was normal,
     ///  i.e. the result of a call to [`__sdk::DbContext::disconnect`],
-    /// the returned error will be downcastable to [`__sdk::DisconnectedError`].
+    /// the returned error will be downcastable to [`__sdk::Error::Disconnected`].
     ///
     /// This is a low-level primitive exposed for power users who need significant control over scheduling.
     /// Most applications should call [`Self::run_async`] to run an `async` loop

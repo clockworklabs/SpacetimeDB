@@ -1021,7 +1021,7 @@ impl TypedIndex {
     }
 }
 
-/// An index on a set of [`ColId`]s of a table.
+/// An index on a set of [`ColList`] of a table.
 #[derive(Debug, PartialEq, Eq)]
 pub struct TableIndex {
     /// The actual index, specialized for the appropriate key type.

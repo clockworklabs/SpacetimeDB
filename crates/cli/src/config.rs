@@ -27,14 +27,14 @@ pub struct ServerConfig {
 }
 
 impl ServerConfig {
-    /// Generate a new [`Table`] representing this [`ServerConfig`].
+    /// Generate a new [`toml_edit::Table`] representing this [`ServerConfig`].
     pub fn as_table(&self) -> toml_edit::Table {
         let mut table = toml_edit::Table::new();
         Self::update_table(&mut table, self);
         table
     }
 
-    /// Update an existing [`Table`] with the values of a [`ServerConfig`].
+    /// Update an existing [`toml_edit::Table`] with the values of a [`ServerConfig`].
     pub fn update_table(edit: &mut toml_edit::Table, from: &ServerConfig) {
         set_table_opt_value(edit, NICKNAME_KEY, from.nickname.as_deref());
         set_table_opt_value(edit, HOST_KEY, Some(&from.host));
