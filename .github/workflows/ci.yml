@@ -240,6 +240,12 @@ jobs:
       - name: Install rust target
         run: rustup target add ${{ matrix.target }}
 
+      - name: Install packages
+        if: ${{ runner == 'arm-runner' }}
+        shell: bash
+        run: |
+          sudo apt install libssl-dev
+
       - name: Build spacetimedb-update
         run: cargo build --target ${{ matrix.target }} -p spacetimedb-update
 
