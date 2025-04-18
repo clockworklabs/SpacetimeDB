@@ -3,8 +3,6 @@ version: "3.6"
 services:
   node:
     build:
-      context: ./
-      dockerfile: ./crates/standalone/Dockerfile
       args:
         CARGO_PROFILE: dev
     volumes:
