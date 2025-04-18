@@ -259,7 +259,7 @@ impl HostController {
     ///
     /// This is not necessary during hotswap publishes,
     /// as the automigration planner and executor accomplish the same validity checks.
-    pub async fn check_module_validity(&self, database: Database, program: Program) -> anyhow::Result<()> {
+    pub async fn check_module_validity(&self, database: Database, program: Program) -> anyhow::Result<Arc<ModuleInfo>> {
         Host::try_init_in_memory_to_check(self, database, program).await
     }
 
@@ -818,7 +818,7 @@ impl Host {
         host_controller: &HostController,
         database: Database,
         program: Program,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<Arc<ModuleInfo>> {
         let HostController { runtimes, .. } = host_controller;
 
         // Even in-memory databases acquire a lockfile.
@@ -858,7 +858,7 @@ impl Host {
             Result::from(call_result)?;
         }
 
-        Ok(())
+        Ok(launched.module_host.info)
     }
 
     /// Attempt to replace this [`Host`]'s [`ModuleHost`] with a new one running

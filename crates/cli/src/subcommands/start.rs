@@ -6,6 +6,8 @@ use anyhow::Context;
 use clap::{Arg, ArgMatches};
 use spacetimedb_paths::SpacetimePaths;
 
+use crate::util::resolve_sibling_binary;
+
 pub fn cli() -> clap::Command {
     clap::Command::new("start")
         .about("Start a local SpacetimeDB instance")
@@ -45,12 +47,7 @@ pub async fn exec(paths: &SpacetimePaths, args: &ArgMatches) -> anyhow::Result<E
         Edition::Standalone => "spacetimedb-standalone",
         Edition::Cloud => "spacetimedb-cloud",
     };
-    let resolved_exe = std::env::current_exe().context("could not retrieve current exe")?;
-    let bin_path = resolved_exe
-        .parent()
-        .unwrap()
-        .join(bin_name)
-        .with_extension(std::env::consts::EXE_EXTENSION);
+    let bin_path = resolve_sibling_binary(bin_name)?;
     let mut cmd = Command::new(&bin_path);
     cmd.arg("start")
         .arg("--data-dir")
