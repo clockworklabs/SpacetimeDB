@@ -225,7 +225,7 @@ jobs:
     strategy:
       matrix:
         include:
-          - { target: x86_64-unknown-linux-gnu, runner: spacetimedb-latest }
+          - { target: x86_64-unknown-linux-gnu, runner: spacetimedb-runner }
           - { target: aarch64-unknown-linux-gnu, runner: arm-runner }
           - { target: aarch64-apple-darwin, runner: macos-latest }
           - { target: x86_64-pc-windows-msvc, runner: windows-latest }
