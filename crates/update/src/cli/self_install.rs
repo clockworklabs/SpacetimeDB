@@ -67,7 +67,7 @@ impl SelfInstall {
             .context("could not install binary")?;
 
         eprintln!("Downloading latest version...");
-        let res = super::upgrade::Upgrade {}
+        super::upgrade::Upgrade {}
             .exec(&paths)
             .context("failed to download and install latest SpacetimeDB version")?;
 
