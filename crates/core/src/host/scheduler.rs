@@ -12,8 +12,8 @@ use spacetimedb_primitives::{ColId, TableId};
 use spacetimedb_sats::{bsatn::ToBsatn as _, AlgebraicValue};
 use spacetimedb_table::table::RowRef;
 use tokio::sync::mpsc;
-use tokio_util::time::delay_queue::Expired;
-use tokio_util::time::{delay_queue, DelayQueue};
+use tokio::time::Instant;
+use tokio_util::time::delay_queue::{self, DelayQueue, Expired};
 
 use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::db::datastore::system_tables::{StFields, StScheduledFields, ST_SCHEDULED_ID};
@@ -51,8 +51,17 @@ enum MsgOrExit<T> {
 }
 
 enum SchedulerMessage {
-    Schedule { id: ScheduledReducerId, at: ScheduleAt },
-    ScheduleImmediate { reducer_name: String, args: ReducerArgs },
+    Schedule {
+        id: ScheduledReducerId,
+        /// The timestamp we'll tell the reducer it is.
+        effective_at: Timestamp,
+        /// The actual instant we're scheduling for.
+        real_at: Instant,
+    },
+    ScheduleImmediate {
+        reducer_name: String,
+        args: ReducerArgs,
+    },
 }
 
 pub struct ScheduledReducer {
@@ -102,20 +111,22 @@ impl SchedulerStarter {
                 .table_scheduled_id_and_at(&tx, table_id)?
                 .ok_or_else(|| anyhow!("scheduled table {table_id} doesn't have valid columns"))?;
 
+            let now_ts = Timestamp::now();
+            let now_instant = Instant::now();
+
             // Insert each entry (row) in the scheduled table into `queue`.
             for scheduled_row in self.db.iter(&tx, table_id)? {
                 let (schedule_id, schedule_at) = get_schedule_from_row(&scheduled_row, id_column, at_column)?;
                 // calculate duration left to call the scheduled reducer
-                let duration = schedule_at.to_duration_from_now();
-                queue.insert(
-                    QueueItem::Id(ScheduledReducerId {
-                        table_id,
-                        schedule_id,
-                        id_column,
-                        at_column,
-                    }),
-                    duration,
-                );
+                let duration = schedule_at.to_duration_from(now_ts);
+                let at = schedule_at.to_timestamp_from(now_ts);
+                let id = ScheduledReducerId {
+                    table_id,
+                    schedule_id,
+                    id_column,
+                    at_column,
+                };
+                queue.insert_at(QueueItem::Id { id, at }, now_instant + duration);
             }
         }
 
@@ -158,7 +169,7 @@ impl SchedulerStarter {
 /// If `DelayQueue` extends to support a larger range,
 /// we may reject some long-delayed schedule calls which could succeed,
 /// but we will never permit a schedule attempt which will panic.
-const MAX_SCHEDULE_DELAY: std::time::Duration = std::time::Duration::from_millis(
+const MAX_SCHEDULE_DELAY: Duration = Duration::from_millis(
     // Equal to 64^6 - 1 milliseconds, which is 2.177589 years.
     (1 << (6 * 6)) - 1,
 );
@@ -173,6 +184,9 @@ pub enum ScheduleError {
 }
 
 impl Scheduler {
+    /// Schedule a reducer to run from a scheduled table.
+    ///
+    /// `reducer_start` is the timestamp of the start of the current reducer.
     pub(super) fn schedule(
         &self,
         table_id: TableId,
@@ -180,33 +194,26 @@ impl Scheduler {
         schedule_at: ScheduleAt,
         id_column: ColId,
         at_column: ColId,
+        reducer_start: Timestamp,
     ) -> Result<(), ScheduleError> {
-        // Check that `at` is within `tokio_utils::time::DelayQueue`'s accepted time-range.
+        // if `Timestamp::now()` is properly monotonic, use it; otherwise, use
+        // the start of the reducer run as "now" for purposes of scheduling
+        let now = reducer_start.max(Timestamp::now());
+
+        // Check that `at` is within `tokio_utils::time::DelayQueue`'s
+        // accepted time-range.
         //
-        // `DelayQueue` uses a sliding window,
-        // and there may be some non-zero delay between this check
-        // and the actual call to `DelayQueue::insert`.
+        // `DelayQueue` uses a sliding window, and there may be some non-zero
+        // delay between this check and the actual call to `DelayQueue::insert_at`.
         //
-        // Assuming a monotonic clock,
-        // this means we may reject some otherwise acceptable schedule calls.
-        //
-        // If `Timestamp::now()`, i.e. `std::time::SystemTime::now()`,
-        // is not monotonic,
-        // `DelayQueue::insert` may panic.
-        // This will happen if a module attempts to schedule a reducer
-        // with a delay just before the two-year limit,
-        // and the system clock is adjusted backwards
-        // after the check but before scheduling so that after the adjustment,
-        // the delay is beyond the two-year limit.
-        //
-        // We could avoid this edge case by scheduling in terms of the monotonic `Instant`,
-        // rather than `SystemTime`,
-        // but we don't currently have a meaningful way
-        // to convert a `Timestamp` into an `Instant`.
-        let delay = schedule_at.to_duration_from_now();
+        // Assuming a monotonic clock, this means we may reject some otherwise
+        // acceptable schedule calls.
+        let delay = schedule_at.to_duration_from(now);
         if delay >= MAX_SCHEDULE_DELAY {
             return Err(ScheduleError::DelayTooLong(delay));
         }
+        let effective_at = schedule_at.to_timestamp_from(now);
+        let real_at = Instant::now() + delay;
 
         // if the actor has exited, it's fine to ignore; it means that the host actor calling
         // schedule will exit soon as well, and it'll be scheduled to run when the module host restarts
@@ -217,7 +224,8 @@ impl Scheduler {
                 id_column,
                 at_column,
             },
-            at: schedule_at,
+            effective_at,
+            real_at,
         }));
 
         Ok(())
@@ -247,9 +255,12 @@ struct SchedulerActor {
 }
 
 enum QueueItem {
-    Id(ScheduledReducerId),
+    Id { id: ScheduledReducerId, at: Timestamp },
     VolatileNonatomicImmediate { reducer_name: String, args: ReducerArgs },
 }
+
+#[cfg(target_pointer_width = "64")]
+spacetimedb_table::static_assert_size!(QueueItem, 64);
 
 impl SchedulerActor {
     async fn run(mut self) {
@@ -270,12 +281,16 @@ impl SchedulerActor {
 
     fn handle_message(&mut self, msg: SchedulerMessage) {
         match msg {
-            SchedulerMessage::Schedule { id, at } => {
+            SchedulerMessage::Schedule {
+                id,
+                effective_at,
+                real_at,
+            } => {
                 // Incase of row update, remove the existing entry from queue first
                 if let Some(key) = self.key_map.get(&id) {
                     self.queue.remove(key);
                 }
-                let key = self.queue.insert(QueueItem::Id(id), at.to_duration_from_now());
+                let key = self.queue.insert_at(QueueItem::Id { id, at: effective_at }, real_at);
                 self.key_map.insert(id, key);
             }
             SchedulerMessage::ScheduleImmediate { reducer_name, args } => {
@@ -290,7 +305,7 @@ impl SchedulerActor {
     async fn handle_queued(&mut self, id: Expired<QueueItem>) {
         let item = id.into_inner();
         let id = match item {
-            QueueItem::Id(id) => Some(id),
+            QueueItem::Id { id, .. } => Some(id),
             QueueItem::VolatileNonatomicImmediate { .. } => None,
         };
         if let Some(id) = id {
@@ -304,58 +319,60 @@ impl SchedulerActor {
         let caller_identity = module_host.info().database_identity;
         let module_info = module_host.info.clone();
 
-        let call_reducer_params = move |tx: &MutTxId| -> Result<Option<CallReducerParams>, anyhow::Error> {
-            let id = match item {
-                QueueItem::Id(id) => id,
-                QueueItem::VolatileNonatomicImmediate { reducer_name, args } => {
-                    let (reducer_id, reducer_seed) = module_info
-                        .module_def
-                        .reducer_arg_deserialize_seed(&reducer_name[..])
-                        .ok_or_else(|| anyhow!("Reducer not found: {}", reducer_name))?;
-                    let reducer_args = args.into_tuple(reducer_seed)?;
+        let call_reducer_params = move |tx: &MutTxId| match item {
+            QueueItem::Id { id, at } => {
+                let Ok(schedule_row) = get_schedule_row_mut(tx, &db, id) else {
+                    // if the row is not found, it means the schedule is cancelled by the user
+                    log::debug!(
+                        "table row corresponding to yeild scheduler id not found: tableid {}, schedulerId {}",
+                        id.table_id,
+                        id.schedule_id
+                    );
+                    return Ok(None);
+                };
 
-                    return Ok(Some(CallReducerParams {
-                        timestamp: Timestamp::now(),
-                        caller_identity,
-                        caller_connection_id: ConnectionId::ZERO,
-                        client: None,
-                        request_id: None,
-                        timer: None,
-                        reducer_id,
-                        args: reducer_args,
-                    }));
-                }
-            };
+                let ScheduledReducer { reducer, bsatn_args } = proccess_schedule(tx, &db, id.table_id, &schedule_row)?;
 
-            let Ok(schedule_row) = get_schedule_row_mut(tx, &db, id) else {
-                // if the row is not found, it means the schedule is cancelled by the user
-                log::debug!(
-                    "table row corresponding to yeild scheduler id not found: tableid {}, schedulerId {}",
-                    id.table_id,
-                    id.schedule_id
-                );
-                return Ok(None);
-            };
+                let (reducer_id, reducer_seed) = module_info
+                    .module_def
+                    .reducer_arg_deserialize_seed(&reducer[..])
+                    .ok_or_else(|| anyhow!("Reducer not found: {}", reducer))?;
 
-            let ScheduledReducer { reducer, bsatn_args } = proccess_schedule(tx, &db, id.table_id, &schedule_row)?;
+                let reducer_args = ReducerArgs::Bsatn(bsatn_args.into()).into_tuple(reducer_seed)?;
 
-            let (reducer_id, reducer_seed) = module_info
-                .module_def
-                .reducer_arg_deserialize_seed(&reducer[..])
-                .ok_or_else(|| anyhow!("Reducer not found: {}", reducer))?;
+                // the timestamp we tell the reducer it's running at will be
+                // at least the timestamp it was scheduled to run at.
+                let timestamp = at.max(Timestamp::now());
 
-            let reducer_args = ReducerArgs::Bsatn(bsatn_args.into()).into_tuple(reducer_seed)?;
+                Ok(Some(CallReducerParams {
+                    timestamp,
+                    caller_identity,
+                    caller_connection_id: ConnectionId::ZERO,
+                    client: None,
+                    request_id: None,
+                    timer: None,
+                    reducer_id,
+                    args: reducer_args,
+                }))
+            }
+            QueueItem::VolatileNonatomicImmediate { reducer_name, args } => {
+                let (reducer_id, reducer_seed) = module_info
+                    .module_def
+                    .reducer_arg_deserialize_seed(&reducer_name[..])
+                    .ok_or_else(|| anyhow!("Reducer not found: {}", reducer_name))?;
+                let reducer_args = args.into_tuple(reducer_seed)?;
 
-            Ok(Some(CallReducerParams {
-                timestamp: Timestamp::now(),
-                caller_identity,
-                caller_connection_id: ConnectionId::ZERO,
-                client: None,
-                request_id: None,
-                timer: None,
-                reducer_id,
-                args: reducer_args,
-            }))
+                Ok(Some(CallReducerParams {
+                    timestamp: Timestamp::now(),
+                    caller_identity,
+                    caller_connection_id: ConnectionId::ZERO,
+                    client: None,
+                    request_id: None,
+                    timer: None,
+                    reducer_id,
+                    args: reducer_args,
+                }))
+            }
         };
 
         let db = module_host.replica_ctx().relational_db.clone();
@@ -391,9 +408,13 @@ impl SchedulerActor {
         let schedule_at = read_schedule_at(schedule_row, id.at_column)?;
 
         if let ScheduleAt::Interval(dur) = schedule_at {
-            let key = self
-                .queue
-                .insert(QueueItem::Id(id), dur.to_duration().unwrap_or(Duration::ZERO));
+            let key = self.queue.insert(
+                QueueItem::Id {
+                    id,
+                    at: Timestamp::now() + dur,
+                },
+                dur.to_duration().unwrap_or(Duration::ZERO),
+            );
             self.key_map.insert(id, key);
             Ok(true)
         } else {
