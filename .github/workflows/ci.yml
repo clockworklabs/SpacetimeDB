@@ -239,4 +239,4 @@ jobs:
         run: |
           ROOT_DIR="$(mktemp -d)"
           cargo run -p spacetimedb-update -- self-install --root-dir="${ROOT_DIR}" --yes
-          "${ROOT_DIR}"/spacetime --help
+          "${ROOT_DIR}"/spacetime --root-dir="${ROOT_DIR}" help
