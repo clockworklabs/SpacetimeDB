@@ -94,7 +94,7 @@ fn reqwest_client() -> anyhow::Result<reqwest::Client> {
     {
         use reqwest::header;
         if let Ok(token) = std::env::var("GITHUB_TOKEN") {
-            eprintln!("HTTP requests will use GITHUB_TOKEN");
+            eprintln!("HTTP requests will use the GITHUB_TOKEN from your environment");
             let mut headers = header::HeaderMap::new();
             headers.insert(header::AUTHORIZATION, format!("Bearer {}", token).parse().unwrap());
             client = client.default_headers(headers);
