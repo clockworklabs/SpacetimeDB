@@ -253,5 +253,19 @@ jobs:
         shell: bash
         run: |
           ROOT_DIR="$(mktemp -d)"
-          cargo run --target ${{ matrix.target }} -p spacetimedb-update -- self-install --root-dir="${ROOT_DIR}" --yes
+          OUTPUT="$(mktemp)"
+          TRIES=5
+          # For some reason, we sometimes get HTTP errors when fetching the latest releases, so try this in a small loop.
+          for i in {1..$TRIES}; do
+            cargo run --target ${{ matrix.target }} -p spacetimedb-update -- self-install --root-dir="${ROOT_DIR}" --yes |& tee "${OUTPUT}"
+            if [[ $? == 0  ]]; then
+              break;
+            else
+              if grep -q 'Error: failed to download and install latest SpacetimeDB version: Could not fetch release info: HTTP status client error' "${OUTPUT}"; then
+                echo "Build failed due to HTTP issue. Retrying. [$i/$TRIES]"
+              else
+                exit 1;
+              fi
+            fi
+          done
           "${ROOT_DIR}"/spacetime --root-dir="${ROOT_DIR}" help
