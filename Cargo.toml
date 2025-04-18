@@ -162,6 +162,7 @@ enum-as-inner = "0.6"
 enum-map = "2.6.3"
 env_logger = "0.10"
 ethnum = { version = "1.5.0", features = ["serde"] }
+expect-test = "1.5.0"
 flate2 = "1.0.24"
 foldhash = "0.1.4"
 fs-err = "2.9.0"

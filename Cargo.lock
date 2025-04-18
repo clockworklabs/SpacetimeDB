@@ -1514,6 +1514,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "dissimilar"
+version = "1.0.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "59f8e79d1fbf76bdfbde321e902714bf6c49df88a7dda6fc682fc2979226962d"
+
+[[package]]
 name = "duct"
 version = "0.13.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1716,6 +1722,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b90ca2580b73ab6a1f724b76ca11ab632df820fd6040c336200d2c1df7b3c82c"
 dependencies = [
  "serde",
+]
+
+[[package]]
+name = "expect-test"
+version = "1.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "63af43ff4431e848fb47472a920f14fa71c24de13255a5692e93d4e90302acb0"
+dependencies = [
+ "dissimilar",
+ "once_cell",
 ]
 
 [[package]]
@@ -5296,6 +5312,7 @@ dependencies = [
  "enum-as-inner",
  "enum-map",
  "env_logger 0.10.2",
+ "expect-test",
  "faststr",
  "flate2",
  "fs2",
@@ -5547,6 +5564,8 @@ dependencies = [
  "anyhow",
  "derive_more",
  "either",
+ "expect-test",
+ "itertools 0.12.1",
  "pretty_assertions",
  "spacetimedb-expr",
  "spacetimedb-lib",

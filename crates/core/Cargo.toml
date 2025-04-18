@@ -52,6 +52,7 @@ derive_more.workspace = true
 dirs.workspace = true
 enum-as-inner.workspace = true
 enum-map.workspace = true
+expect-test.workspace = true
 flate2.workspace = true
 fs2.workspace = true
 futures.workspace = true
