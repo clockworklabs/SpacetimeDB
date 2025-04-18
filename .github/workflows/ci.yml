@@ -227,4 +227,15 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v3
+
       - uses: dsherret/rust-toolchain-file@v1
+
+      - name: Build spacetimedb-update
+        run: cargo build -p spacetimedb-update
+
+      - name: Run self-install
+        shell: bash
+        run: |
+          ROOT_DIR="$(mktemp -d)"
+          cargo run -p spacetimedb-update -- self-install --root-dir "${ROOT_DIR}"
+          "${ROOT_DIR}"/spacetime --help
