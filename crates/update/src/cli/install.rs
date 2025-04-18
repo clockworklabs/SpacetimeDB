@@ -117,6 +117,7 @@ pub(super) async fn download_and_install(
     pb.set_message("unpacking...");
 
     let version_dir = paths.cli_bin_dir.version_dir(&release_version.to_string());
+    version_dir.create()?;
     match artifact_type {
         ArtifactType::TarGz => {
             let tgz = archive.aggregate().reader();
@@ -183,8 +184,9 @@ impl Release {
 pub(super) async fn download_with_progress(
     pb: &ProgressBar,
     client: &reqwest::Client,
-    url: &str,
+    mut url: &str,
 ) -> Result<http_body_util::Collected<Bytes>, anyhow::Error> {
+    
     let response = client.get(url).send().await?.error_for_status()?;
 
     let pb_style = pb.style();
