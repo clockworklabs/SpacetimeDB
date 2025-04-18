@@ -252,6 +252,8 @@ jobs:
       - name: Run self-install
         shell: bash
         run: |
+          set -e
+          set -u
           ROOT_DIR="$(mktemp -d)"
           OUTPUT="$(mktemp)"
           # For some reason, we sometimes get HTTP errors when fetching the latest releases, so try this in a small loop.
