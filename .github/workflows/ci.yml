@@ -255,8 +255,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           ROOT_DIR="$(mktemp -d)"
-          # NOTE(bfops): We need the `github-token-auth` feature because otherwise we tend to get ratelimited when we try to fetch `/releases/latest`.
-          # Our best guess is that, on the GitHub runners, the "anonymous" ratelimit is shared by *all* users of that runner, because it happens very
-          # frequently, particularly on the `macos-runner`.
+          # NOTE(bfops): We need the `github-token-auth` feature because we otherwise tend to get ratelimited when we try to fetch `/releases/latest`.
+          # My best guess is that, on the GitHub runners, the "anonymous" ratelimit is shared by *all* users of that runner (I think this because it
+          # happens very frequently on the `macos-runner`, but we haven't seen it on any others).
           cargo run --features github-token-auth --target ${{ matrix.target }} -p spacetimedb-update -- self-install --root-dir="${ROOT_DIR}" --yes
           "${ROOT_DIR}"/spacetime --root-dir="${ROOT_DIR}" help
