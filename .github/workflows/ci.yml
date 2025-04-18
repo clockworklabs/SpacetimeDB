@@ -221,6 +221,7 @@ jobs:
 
   update:
     name: Test spacetimedb-update flow
+    permissions: read-all
     strategy:
       matrix:
         runner: [ spacetimedb-runner, windows-latest ]
