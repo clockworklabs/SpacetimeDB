@@ -77,19 +77,14 @@ pub(super) async fn download_and_install(
         Some(version) => format!("{releases_url}/tags/v{version}"),
         None => [&*releases_url, "/latest"].concat(),
     };
-    let release: Release = client
-        .get(url)
-        .send()
-        .await?
+    let response = client.get(url).send().await?;
+    eprintln!("Response headers:");
+    for (name, value) in response.headers() {
+        eprintln!("  {}: {}", name, value.to_str().unwrap_or("<invalid header value>"));
+    }
+    let release: Release = response
         .error_for_status()
         .map_err(|e| {
-            if let Some(response) = e.response() {
-                eprintln!("Response headers:");
-                for (name, value) in response.headers() {
-                    eprintln!("  {}: {}", name, value.to_str().unwrap_or("<invalid header value>"));
-                }
-            }
-
             if e.status() == Some(reqwest::StatusCode::NOT_FOUND) {
                 if let Some(version) = &version {
                     return anyhow::anyhow!(e).context(format!("No release found for version {version}"));
