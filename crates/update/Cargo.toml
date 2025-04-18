@@ -7,7 +7,7 @@ license-file = "LICENSE"
 publish = false
 
 [features]
-# NOTE(bfops): This is not a well-thought-through feature, and is only meant for debugging.
+# NOTE(bfops): This is not a well-thought-through feature. It's really only meant for internal testing/debugging.
 github-token-auth = []
 
 [dependencies]
