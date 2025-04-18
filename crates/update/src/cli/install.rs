@@ -77,6 +77,7 @@ pub(super) async fn download_and_install(
         Some(version) => format!("{releases_url}/tags/v{version}"),
         None => [&*releases_url, "/latest"].concat(),
     };
+    // TODO: revert this debug block once it's working
     let response = client.get(url).send().await?;
     eprintln!("Response headers:");
     for (name, value) in response.headers() {
