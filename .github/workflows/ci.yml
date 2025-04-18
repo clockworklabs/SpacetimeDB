@@ -237,5 +237,5 @@ jobs:
         shell: bash
         run: |
           ROOT_DIR="$(mktemp -d)"
-          cargo run -p spacetimedb-update -- self-install --root-dir "${ROOT_DIR}"
+          cargo run -p spacetimedb-update -- self-install --root-dir="${ROOT_DIR}" --yes
           "${ROOT_DIR}"/spacetime --help
