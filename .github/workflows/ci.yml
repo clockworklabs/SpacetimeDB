@@ -247,11 +247,11 @@ jobs:
           sudo apt install libssl-dev
 
       - name: Build spacetimedb-update
-        run: cargo build --target ${{ matrix.target }} -p spacetimedb-update
+        run: cargo build --release --target ${{ matrix.target }} -p spacetimedb-update
 
       - name: Run self-install
         shell: bash
         run: |
           ROOT_DIR="$(mktemp -d)"
-          cargo run --target ${{ matrix.target }} -p spacetimedb-update -- self-install --root-dir="${ROOT_DIR}" --yes
+          cargo run --release --target ${{ matrix.target }} -p spacetimedb-update -- self-install --root-dir="${ROOT_DIR}" --yes
           "${ROOT_DIR}"/spacetime --root-dir="${ROOT_DIR}" help
