@@ -261,7 +261,7 @@ jobs:
             if [[ $? == 0  ]]; then
               break;
             else
-              if grep -q 'Error: failed to download and install latest SpacetimeDB version: Could not fetch release info: HTTP status client error' "${OUTPUT}"; then
+              if grep -q 'HTTP status client error (403 Forbidden) for url (https://api.github.com/repos/clockworklabs/SpacetimeDB/releases/latest)' "${OUTPUT}"; then
                 echo "Build failed due to HTTP issue. Retrying. [$i/$TRIES]"
               else
                 exit 1;
