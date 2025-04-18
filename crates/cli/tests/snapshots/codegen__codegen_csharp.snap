@@ -27,7 +27,18 @@ namespace SpacetimeDB
 
         public bool InvokeAdd(ReducerEventContext ctx, Reducer.Add args)
         {
-            if (OnAdd == null) return false;
+            if (OnAdd == null)
+            {
+                if (InternalOnUnhandledReducerError != null)
+                {
+                    switch(ctx.Event.Status)
+                    {
+                        case Status.Failed(var reason): InternalOnUnhandledReducerError(ctx, new Exception(reason)); break;
+                        case Status.OutOfEnergy(var _): InternalOnUnhandledReducerError(ctx, new Exception("out of energy")); break;
+                    }
+                }
+                return false;
+            }
             OnAdd(
                 ctx,
                 args.Name,
@@ -98,7 +109,18 @@ namespace SpacetimeDB
 
         public bool InvokeAddPlayer(ReducerEventContext ctx, Reducer.AddPlayer args)
         {
-            if (OnAddPlayer == null) return false;
+            if (OnAddPlayer == null)
+            {
+                if (InternalOnUnhandledReducerError != null)
+                {
+                    switch(ctx.Event.Status)
+                    {
+                        case Status.Failed(var reason): InternalOnUnhandledReducerError(ctx, new Exception(reason)); break;
+                        case Status.OutOfEnergy(var _): InternalOnUnhandledReducerError(ctx, new Exception("out of energy")); break;
+                    }
+                }
+                return false;
+            }
             OnAddPlayer(
                 ctx,
                 args.Name
@@ -162,7 +184,18 @@ namespace SpacetimeDB
 
         public bool InvokeAddPrivate(ReducerEventContext ctx, Reducer.AddPrivate args)
         {
-            if (OnAddPrivate == null) return false;
+            if (OnAddPrivate == null)
+            {
+                if (InternalOnUnhandledReducerError != null)
+                {
+                    switch(ctx.Event.Status)
+                    {
+                        case Status.Failed(var reason): InternalOnUnhandledReducerError(ctx, new Exception(reason)); break;
+                        case Status.OutOfEnergy(var _): InternalOnUnhandledReducerError(ctx, new Exception("out of energy")); break;
+                    }
+                }
+                return false;
+            }
             OnAddPrivate(
                 ctx,
                 args.Name
@@ -226,7 +259,18 @@ namespace SpacetimeDB
 
         public bool InvokeAssertCallerIdentityIsModuleIdentity(ReducerEventContext ctx, Reducer.AssertCallerIdentityIsModuleIdentity args)
         {
-            if (OnAssertCallerIdentityIsModuleIdentity == null) return false;
+            if (OnAssertCallerIdentityIsModuleIdentity == null)
+            {
+                if (InternalOnUnhandledReducerError != null)
+                {
+                    switch(ctx.Event.Status)
+                    {
+                        case Status.Failed(var reason): InternalOnUnhandledReducerError(ctx, new Exception(reason)); break;
+                        case Status.OutOfEnergy(var _): InternalOnUnhandledReducerError(ctx, new Exception("out of energy")); break;
+                    }
+                }
+                return false;
+            }
             OnAssertCallerIdentityIsModuleIdentity(
                 ctx
             );
@@ -271,7 +315,18 @@ namespace SpacetimeDB
 
         public bool InvokeClientConnected(ReducerEventContext ctx, Reducer.ClientConnected args)
         {
-            if (OnClientConnected == null) return false;
+            if (OnClientConnected == null)
+            {
+                if (InternalOnUnhandledReducerError != null)
+                {
+                    switch(ctx.Event.Status)
+                    {
+                        case Status.Failed(var reason): InternalOnUnhandledReducerError(ctx, new Exception(reason)); break;
+                        case Status.OutOfEnergy(var _): InternalOnUnhandledReducerError(ctx, new Exception("out of energy")); break;
+                    }
+                }
+                return false;
+            }
             OnClientConnected(
                 ctx
             );
@@ -315,7 +370,18 @@ namespace SpacetimeDB
 
         public bool InvokeDeletePlayer(ReducerEventContext ctx, Reducer.DeletePlayer args)
         {
-            if (OnDeletePlayer == null) return false;
+            if (OnDeletePlayer == null)
+            {
+                if (InternalOnUnhandledReducerError != null)
+                {
+                    switch(ctx.Event.Status)
+                    {
+                        case Status.Failed(var reason): InternalOnUnhandledReducerError(ctx, new Exception(reason)); break;
+                        case Status.OutOfEnergy(var _): InternalOnUnhandledReducerError(ctx, new Exception("out of energy")); break;
+                    }
+                }
+                return false;
+            }
             OnDeletePlayer(
                 ctx,
                 args.Id
@@ -378,7 +444,18 @@ namespace SpacetimeDB
 
         public bool InvokeDeletePlayersByName(ReducerEventContext ctx, Reducer.DeletePlayersByName args)
         {
-            if (OnDeletePlayersByName == null) return false;
+            if (OnDeletePlayersByName == null)
+            {
+                if (InternalOnUnhandledReducerError != null)
+                {
+                    switch(ctx.Event.Status)
+                    {
+                        case Status.Failed(var reason): InternalOnUnhandledReducerError(ctx, new Exception(reason)); break;
+                        case Status.OutOfEnergy(var _): InternalOnUnhandledReducerError(ctx, new Exception("out of energy")); break;
+                    }
+                }
+                return false;
+            }
             OnDeletePlayersByName(
                 ctx,
                 args.Name
@@ -442,7 +519,18 @@ namespace SpacetimeDB
 
         public bool InvokeListOverAge(ReducerEventContext ctx, Reducer.ListOverAge args)
         {
-            if (OnListOverAge == null) return false;
+            if (OnListOverAge == null)
+            {
+                if (InternalOnUnhandledReducerError != null)
+                {
+                    switch(ctx.Event.Status)
+                    {
+                        case Status.Failed(var reason): InternalOnUnhandledReducerError(ctx, new Exception(reason)); break;
+                        case Status.OutOfEnergy(var _): InternalOnUnhandledReducerError(ctx, new Exception("out of energy")); break;
+                    }
+                }
+                return false;
+            }
             OnListOverAge(
                 ctx,
                 args.Age
@@ -505,7 +593,18 @@ namespace SpacetimeDB
 
         public bool InvokeLogModuleIdentity(ReducerEventContext ctx, Reducer.LogModuleIdentity args)
         {
-            if (OnLogModuleIdentity == null) return false;
+            if (OnLogModuleIdentity == null)
+            {
+                if (InternalOnUnhandledReducerError != null)
+                {
+                    switch(ctx.Event.Status)
+                    {
+                        case Status.Failed(var reason): InternalOnUnhandledReducerError(ctx, new Exception(reason)); break;
+                        case Status.OutOfEnergy(var _): InternalOnUnhandledReducerError(ctx, new Exception("out of energy")); break;
+                    }
+                }
+                return false;
+            }
             OnLogModuleIdentity(
                 ctx
             );
@@ -555,7 +654,18 @@ namespace SpacetimeDB
 
         public bool InvokeQueryPrivate(ReducerEventContext ctx, Reducer.QueryPrivate args)
         {
-            if (OnQueryPrivate == null) return false;
+            if (OnQueryPrivate == null)
+            {
+                if (InternalOnUnhandledReducerError != null)
+                {
+                    switch(ctx.Event.Status)
+                    {
+                        case Status.Failed(var reason): InternalOnUnhandledReducerError(ctx, new Exception(reason)); break;
+                        case Status.OutOfEnergy(var _): InternalOnUnhandledReducerError(ctx, new Exception("out of energy")); break;
+                    }
+                }
+                return false;
+            }
             OnQueryPrivate(
                 ctx
             );
@@ -605,7 +715,18 @@ namespace SpacetimeDB
 
         public bool InvokeRepeatingTest(ReducerEventContext ctx, Reducer.RepeatingTest args)
         {
-            if (OnRepeatingTest == null) return false;
+            if (OnRepeatingTest == null)
+            {
+                if (InternalOnUnhandledReducerError != null)
+                {
+                    switch(ctx.Event.Status)
+                    {
+                        case Status.Failed(var reason): InternalOnUnhandledReducerError(ctx, new Exception(reason)); break;
+                        case Status.OutOfEnergy(var _): InternalOnUnhandledReducerError(ctx, new Exception("out of energy")); break;
+                    }
+                }
+                return false;
+            }
             OnRepeatingTest(
                 ctx,
                 args.Arg
@@ -669,7 +790,18 @@ namespace SpacetimeDB
 
         public bool InvokeSayHello(ReducerEventContext ctx, Reducer.SayHello args)
         {
-            if (OnSayHello == null) return false;
+            if (OnSayHello == null)
+            {
+                if (InternalOnUnhandledReducerError != null)
+                {
+                    switch(ctx.Event.Status)
+                    {
+                        case Status.Failed(var reason): InternalOnUnhandledReducerError(ctx, new Exception(reason)); break;
+                        case Status.OutOfEnergy(var _): InternalOnUnhandledReducerError(ctx, new Exception("out of energy")); break;
+                    }
+                }
+                return false;
+            }
             OnSayHello(
                 ctx
             );
@@ -719,7 +851,18 @@ namespace SpacetimeDB
 
         public bool InvokeTest(ReducerEventContext ctx, Reducer.Test args)
         {
-            if (OnTest == null) return false;
+            if (OnTest == null)
+            {
+                if (InternalOnUnhandledReducerError != null)
+                {
+                    switch(ctx.Event.Status)
+                    {
+                        case Status.Failed(var reason): InternalOnUnhandledReducerError(ctx, new Exception(reason)); break;
+                        case Status.OutOfEnergy(var _): InternalOnUnhandledReducerError(ctx, new Exception("out of energy")); break;
+                    }
+                }
+                return false;
+            }
             OnTest(
                 ctx,
                 args.Arg,
@@ -802,7 +945,18 @@ namespace SpacetimeDB
 
         public bool InvokeTestBtreeIndexArgs(ReducerEventContext ctx, Reducer.TestBtreeIndexArgs args)
         {
-            if (OnTestBtreeIndexArgs == null) return false;
+            if (OnTestBtreeIndexArgs == null)
+            {
+                if (InternalOnUnhandledReducerError != null)
+                {
+                    switch(ctx.Event.Status)
+                    {
+                        case Status.Failed(var reason): InternalOnUnhandledReducerError(ctx, new Exception(reason)); break;
+                        case Status.OutOfEnergy(var _): InternalOnUnhandledReducerError(ctx, new Exception("out of energy")); break;
+                    }
+                }
+                return false;
+            }
             OnTestBtreeIndexArgs(
                 ctx
             );
@@ -844,6 +998,7 @@ namespace SpacetimeDB
     {
         internal RemoteReducers(DbConnection conn, SetReducerFlags flags) : base(conn) => SetCallReducerFlags = flags;
         internal readonly SetReducerFlags SetCallReducerFlags;
+        internal event Action<ReducerEventContext, Exception>? InternalOnUnhandledReducerError;
     }
 
     public sealed partial class RemoteTables : RemoteTablesBase
@@ -867,7 +1022,9 @@ namespace SpacetimeDB
 
     public sealed partial class SetReducerFlags { }
 
-        public interface IRemoteDbContext : IDbContext<RemoteTables, RemoteReducers, SetReducerFlags, SubscriptionBuilder> { }
+        public interface IRemoteDbContext : IDbContext<RemoteTables, RemoteReducers, SetReducerFlags, SubscriptionBuilder> {
+            public event Action<ReducerEventContext, Exception>? OnUnhandledReducerError;
+        }
 
         public sealed class EventContext : IEventContext, IRemoteDbContext
         {
@@ -928,6 +1085,13 @@ namespace SpacetimeDB
             /// Get this connection's <c>ConnectionId</c>.
             /// </summary>
             public ConnectionId ConnectionId => conn.ConnectionId;
+            /// <summary>
+            /// Register a callback to be called when a reducer with no handler returns an error.
+            /// </summary>
+            public event Action<ReducerEventContext, Exception>? OnUnhandledReducerError {
+                add => Reducers.InternalOnUnhandledReducerError += value;
+                remove => Reducers.InternalOnUnhandledReducerError -= value;
+            }
 
             internal EventContext(DbConnection conn, Event<Reducer> Event)
             {
@@ -994,6 +1158,13 @@ namespace SpacetimeDB
             /// Get this connection's <c>ConnectionId</c>.
             /// </summary>
             public ConnectionId ConnectionId => conn.ConnectionId;
+            /// <summary>
+            /// Register a callback to be called when a reducer with no handler returns an error.
+            /// </summary>
+            public event Action<ReducerEventContext, Exception>? OnUnhandledReducerError {
+                add => Reducers.InternalOnUnhandledReducerError += value;
+                remove => Reducers.InternalOnUnhandledReducerError -= value;
+            }
 
             internal ReducerEventContext(DbConnection conn, ReducerEvent<Reducer> reducerEvent)
             {
@@ -1065,6 +1236,13 @@ namespace SpacetimeDB
             /// Get this connection's <c>ConnectionId</c>.
             /// </summary>
             public ConnectionId ConnectionId => conn.ConnectionId;
+            /// <summary>
+            /// Register a callback to be called when a reducer with no handler returns an error.
+            /// </summary>
+            public event Action<ReducerEventContext, Exception>? OnUnhandledReducerError {
+                add => Reducers.InternalOnUnhandledReducerError += value;
+                remove => Reducers.InternalOnUnhandledReducerError -= value;
+            }
 
             internal ErrorContext(DbConnection conn, Exception error)
             {
@@ -1127,6 +1305,13 @@ namespace SpacetimeDB
             /// Get this connection's <c>ConnectionId</c>.
             /// </summary>
             public ConnectionId ConnectionId => conn.ConnectionId;
+            /// <summary>
+            /// Register a callback to be called when a reducer with no handler returns an error.
+            /// </summary>
+            public event Action<ReducerEventContext, Exception>? OnUnhandledReducerError {
+                add => Reducers.InternalOnUnhandledReducerError += value;
+                remove => Reducers.InternalOnUnhandledReducerError -= value;
+            }
 
             internal SubscriptionEventContext(DbConnection conn)
             {
@@ -1315,6 +1500,11 @@ namespace SpacetimeDB
         }
 
         public SubscriptionBuilder SubscriptionBuilder() => new(this);
+        public event Action<ReducerEventContext, Exception> OnUnhandledReducerError
+        {
+            add => Reducers.InternalOnUnhandledReducerError += value;
+            remove => Reducers.InternalOnUnhandledReducerError -= value;
+        }
     }
 }
 '''
