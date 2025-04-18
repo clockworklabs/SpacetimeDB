@@ -218,3 +218,13 @@ jobs:
 
       - name: Run bindgen tests
         run: cargo test -p spacetimedb-cli
+
+  update:
+    name: Test spacetimedb-update flow
+    strategy:
+      matrix:
+        runner: [ spacetimedb-runner, windows-latest ]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v3
+      - uses: dsherret/rust-toolchain-file@v1
