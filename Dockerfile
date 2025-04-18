@@ -37,6 +37,11 @@ RUN dotnet workload install wasi-experimental
 # Install Rust WASM target
 RUN rustup target add wasm32-unknown-unknown
 
+# Install any dependencies that are used by our internal docker-compose.yml file
+RUN if [ "$CARGO_PROFILE" = "dev" ]; then \
+      cargo binstall -y cargo-watch@8.4.0; \
+    fi
+
 # Copy over SpacetimeDB
 COPY --from=builder --chmod=755 /usr/src/app/target/release/spacetimedb-standalone /usr/src/app/target/release/spacetimedb-cli /opt/spacetime/
 RUN ln -s /opt/spacetime/spacetimedb-cli /usr/local/bin/spacetime
