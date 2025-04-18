@@ -255,19 +255,5 @@ jobs:
           set -e
           set -u
           ROOT_DIR="$(mktemp -d)"
-          OUTPUT="$(mktemp)"
-          # For some reason, we sometimes get HTTP errors when fetching the latest releases, so try this in a small loop.
-          TRIES=5
-          for i in $(seq 1 $TRIES); do
-            if cargo run --target ${{ matrix.target }} -p spacetimedb-update -- self-install --root-dir="${ROOT_DIR}" --yes 2>&1 | tee "${OUTPUT}"; then
-              break;
-            else
-              if grep -q 'HTTP status client error (403 Forbidden) for url (https://api.github.com/repos/clockworklabs/SpacetimeDB/releases/latest)' "${OUTPUT}"; then
-                echo "Build failed due to HTTP issue. [$i/$TRIES]";
-                sleep 5;
-              else
-                exit 1;
-              fi
-            fi
-          done
+          cargo run --target ${{ matrix.target }} -p spacetimedb-update -- self-install --root-dir="${ROOT_DIR}" --yes
           "${ROOT_DIR}"/spacetime --root-dir="${ROOT_DIR}" help
