@@ -184,9 +184,8 @@ impl Release {
 pub(super) async fn download_with_progress(
     pb: &ProgressBar,
     client: &reqwest::Client,
-    mut url: &str,
+    url: &str,
 ) -> Result<http_body_util::Collected<Bytes>, anyhow::Error> {
-    
     let response = client.get(url).send().await?.error_for_status()?;
 
     let pb_style = pb.style();
