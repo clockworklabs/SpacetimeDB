@@ -257,12 +257,12 @@ jobs:
           TRIES=5
           # For some reason, we sometimes get HTTP errors when fetching the latest releases, so try this in a small loop.
           for i in {1..$TRIES}; do
-            cargo run --target ${{ matrix.target }} -p spacetimedb-update -- self-install --root-dir="${ROOT_DIR}" --yes 2>&1 | tee "${OUTPUT}"
-            if [[ $? == 0  ]]; then
+            if cargo run --target ${{ matrix.target }} -p spacetimedb-update -- self-install --root-dir="${ROOT_DIR}" --yes 2>&1 | tee "${OUTPUT}"; then
               break;
             else
               if grep -q 'HTTP status client error (403 Forbidden) for url (https://api.github.com/repos/clockworklabs/SpacetimeDB/releases/latest)' "${OUTPUT}"; then
-                echo "Build failed due to HTTP issue. Retrying. [$i/$TRIES]"
+                echo "Build failed due to HTTP issue. Retrying. [$i/$TRIES]";
+                sleep 5;
               else
                 exit 1;
               fi
