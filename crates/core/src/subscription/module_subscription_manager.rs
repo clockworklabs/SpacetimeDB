@@ -1753,10 +1753,12 @@ mod tests {
         assert!(subscriptions.contains_legacy_subscription(&id1, &hash_select1));
 
         assert!(subscriptions.query_reads_from_table(&hash_scan, &t));
-        assert!(subscriptions.query_reads_from_table(&hash_select0, &t));
-        assert!(subscriptions.query_reads_from_table(&hash_select1, &s));
+        assert!(subscriptions.query_has_search_arg(hash_select0, t, ColId(0), AlgebraicValue::U8(0)));
+        assert!(subscriptions.query_has_search_arg(hash_select1, s, ColId(0), AlgebraicValue::U8(1)));
 
         assert!(!subscriptions.query_reads_from_table(&hash_scan, &s));
+        assert!(!subscriptions.query_reads_from_table(&hash_select0, &t));
+        assert!(!subscriptions.query_reads_from_table(&hash_select1, &s));
         assert!(!subscriptions.query_reads_from_table(&hash_select0, &s));
         assert!(!subscriptions.query_reads_from_table(&hash_select1, &t));
 
@@ -1773,8 +1775,9 @@ mod tests {
         assert!(!subscriptions.contains_legacy_subscription(&id0, &hash_select0));
 
         assert!(subscriptions.query_reads_from_table(&hash_scan, &t));
-        assert!(subscriptions.query_reads_from_table(&hash_select1, &s));
+        assert!(subscriptions.query_has_search_arg(hash_select1, s, ColId(0), AlgebraicValue::U8(1)));
 
+        assert!(!subscriptions.query_reads_from_table(&hash_select1, &s));
         assert!(!subscriptions.query_reads_from_table(&hash_scan, &s));
         assert!(!subscriptions.query_reads_from_table(&hash_select1, &t));
 
