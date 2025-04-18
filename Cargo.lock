@@ -5268,7 +5268,6 @@ dependencies = [
  "spacetimedb-primitives",
  "spacetimedb-schema",
  "spacetimedb-testing",
- "wasmtime",
 ]
 
 [[package]]
@@ -5663,7 +5662,6 @@ dependencies = [
  "serde_json",
  "serial_test",
  "smallvec",
- "spacetimedb-codegen",
  "spacetimedb-data-structures",
  "spacetimedb-lib",
  "spacetimedb-primitives",
@@ -5838,6 +5836,7 @@ dependencies = [
  "spacetimedb-data-structures",
  "spacetimedb-lib",
  "spacetimedb-paths",
+ "spacetimedb-schema",
  "spacetimedb-standalone",
  "tempfile",
  "tokio",

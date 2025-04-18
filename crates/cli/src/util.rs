@@ -5,7 +5,7 @@ use spacetimedb_auth::identity::{IncomingClaims, SpacetimeIdentityClaims};
 use spacetimedb_client_api_messages::name::GetNamesResponse;
 use spacetimedb_lib::Identity;
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::config::Config;
 use crate::login::{spacetimedb_login_force, DEFAULT_AUTH_HOST};
@@ -319,4 +319,14 @@ pub async fn get_login_token_or_log_in(
         let host = Url::parse(&config.get_host_url(target_server)?)?;
         spacetimedb_login_force(config, &host, true).await
     }
+}
+
+pub fn resolve_sibling_binary(bin_name: &str) -> anyhow::Result<PathBuf> {
+    let resolved_exe = std::env::current_exe().context("could not retrieve current exe")?;
+    let bin_path = resolved_exe
+        .parent()
+        .unwrap()
+        .join(bin_name)
+        .with_extension(std::env::consts::EXE_EXTENSION);
+    Ok(bin_path)
 }

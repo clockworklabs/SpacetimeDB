@@ -76,7 +76,7 @@ def main():
 
     if not args.no_build_cli:
         logging.info("Compiling spacetime cli...")
-        smoketests.run_cmd("cargo", "build", "-pspacetimedb-cli", "-pspacetimedb-update", cwd=TEST_DIR.parent, capture_stderr=False)
+        smoketests.run_cmd("cargo", "build", cwd=TEST_DIR.parent, capture_stderr=False)
 
     update_bin_name = "spacetimedb-update" + exe_suffix
     try:
