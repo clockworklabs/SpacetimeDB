@@ -89,9 +89,17 @@ enum VersionSubcommand {
 }
 
 fn reqwest_client() -> anyhow::Result<reqwest::Client> {
-    Ok(reqwest::Client::builder()
-        .user_agent(format!("SpacetimeDB CLI/{}", env!("CARGO_PKG_VERSION")))
-        .build()?)
+    let mut client = reqwest::Client::builder().user_agent(format!("SpacetimeDB CLI/{}", env!("CARGO_PKG_VERSION")));
+    #[cfg(feature = "github-token-auth")]
+    {
+        if let Ok(token) = std::env::var("GITHUB_TOKEN") {
+            eprintln!("HTTP requests will use GITHUB_TOKEN");
+            client = client.header(reqwest::header::AUTHORIZATION, format!("Bearer {}", token));
+        }
+    }
+    // To avoid a warning about `mut` being unnecessary if the above feature isn't enabled.
+    client = client;
+    Ok(client.build()?)
 }
 
 fn tokio_block_on<Fut: Future>(fut: Fut) -> anyhow::Result<Fut::Output> {

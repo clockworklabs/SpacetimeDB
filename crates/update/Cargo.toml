@@ -6,6 +6,9 @@ rust-version.workspace = true
 license-file = "LICENSE"
 publish = false
 
+[features]
+github-token-auth = []
+
 [dependencies]
 spacetimedb-paths.workspace = true
 
