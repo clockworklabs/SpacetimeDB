@@ -257,7 +257,7 @@ jobs:
           TRIES=5
           # For some reason, we sometimes get HTTP errors when fetching the latest releases, so try this in a small loop.
           for i in {1..$TRIES}; do
-            cargo run --target ${{ matrix.target }} -p spacetimedb-update -- self-install --root-dir="${ROOT_DIR}" --yes |& tee "${OUTPUT}"
+            cargo run --target ${{ matrix.target }} -p spacetimedb-update -- self-install --root-dir="${ROOT_DIR}" --yes 2>&1 | tee "${OUTPUT}"
             if [[ $? == 0  ]]; then
               break;
             else
