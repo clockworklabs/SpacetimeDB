@@ -224,7 +224,7 @@ jobs:
     permissions: read-all
     strategy:
       matrix:
-        runner: [ spacetimedb-runner, windows-latest ]
+        runner: [ spacetimedb-runner, windows-latest, macos-latest, arm-runner ]
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v3
