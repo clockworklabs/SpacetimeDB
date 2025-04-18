@@ -224,19 +224,28 @@ jobs:
     permissions: read-all
     strategy:
       matrix:
-        runner: [ spacetimedb-runner, windows-latest, macos-latest, arm-runner ]
+        include:
+          - { target: x86_64-unknown-linux-gnu, runner: spacetimedb-latest }
+          - { target: aarch64-unknown-linux-gnu, runner: arm-runner }
+          - { target: aarch64-apple-darwin, runner: macos-latest }
+          - { target: x86_64-pc-windows-msvc, runner: windows-latest }
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout
+        uses: actions/checkout@v3
 
-      - uses: dsherret/rust-toolchain-file@v1
+      - name: Install Rust
+        uses: dsherret/rust-toolchain-file@v1
+
+      - name: Install rust target
+        run: rustup target add ${{ matrix.target }}
 
       - name: Build spacetimedb-update
-        run: cargo build -p spacetimedb-update
+        run: cargo build --target ${{ matrix.target }} -p spacetimedb-update
 
       - name: Run self-install
         shell: bash
         run: |
           ROOT_DIR="$(mktemp -d)"
-          cargo run -p spacetimedb-update -- self-install --root-dir="${ROOT_DIR}" --yes
+          cargo run --target ${{ matrix.target }} -p spacetimedb-update -- self-install --root-dir="${ROOT_DIR}" --yes
           "${ROOT_DIR}"/spacetime --root-dir="${ROOT_DIR}" help
