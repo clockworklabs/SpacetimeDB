@@ -251,6 +251,8 @@ jobs:
 
       - name: Run self-install
         shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           ROOT_DIR="$(mktemp -d)"
           cargo run --target ${{ matrix.target }} -p spacetimedb-update -- self-install --root-dir="${ROOT_DIR}" --yes
