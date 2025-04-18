@@ -241,7 +241,7 @@ jobs:
         run: rustup target add ${{ matrix.target }}
 
       - name: Install packages
-        if: ${{ runner == 'arm-runner' }}
+        if: ${{ matrix.runner == 'arm-runner' }}
         shell: bash
         run: |
           sudo apt install libssl-dev
