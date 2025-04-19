@@ -7,7 +7,7 @@ class AddTableAutoMigration(Smoketest):
     MODULE_CODE = """
 use spacetimedb::{log, ReducerContext, Table, SpacetimeType};
 
-#[spacetimedb::table(name = person)]
+#[spacetimedb::table(name = person, public)]
 pub struct Person {
     name: String,
 }
@@ -44,7 +44,7 @@ const PERSON_VISIBLE: spacetimedb::Filter = spacetimedb::Filter::Sql("SELECT * F
     MODULE_CODE_UPDATED = (
         MODULE_CODE
         + """
-#[spacetimedb::table(name = book)]
+#[spacetimedb::table(name = book, public)]
 pub struct Book {
     isbn: String,
 }
