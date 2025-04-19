@@ -198,7 +198,7 @@ impl CachingOidcTokenValidator {
 }
 
 // Jwks fetcher for the async cache.
-struct KeyFetcher;
+pub struct KeyFetcher;
 
 impl async_cache::Fetcher<Arc<JwksValidator>> for KeyFetcher {
     type Error = TokenValidationError;
@@ -275,7 +275,7 @@ impl TokenValidator for OidcTokenValidator {
     }
 }
 
-struct JwksValidator {
+pub struct JwksValidator {
     pub issuer: String,
     pub keyset: Jwks,
 }
