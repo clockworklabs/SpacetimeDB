@@ -71,7 +71,6 @@ toml_edit.workspace = true
 tracing = { workspace = true, features = ["release_max_level_off"] }
 walkdir.workspace = true
 wasmbin.workspace = true
-wasmtime.workspace = true
 webbrowser.workspace = true
 clap-markdown.workspace = true
 

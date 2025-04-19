@@ -1,21 +1,28 @@
-use spacetimedb_cli::generate::{csharp::Csharp, extract_descriptions, generate, rust::Rust, typescript::TypeScript};
+use spacetimedb_cli::generate::{csharp::Csharp, generate, rust::Rust, typescript::TypeScript};
 use spacetimedb_data_structures::map::HashMap;
-use spacetimedb_testing::modules::{CompilationMode, CompiledModule};
-use std::path::Path;
+use spacetimedb_lib::RawModuleDef;
+use spacetimedb_testing::modules::{start_runtime, CompilationMode, CompiledModule};
+use spacetimedb_testing::spacetimedb::db::datastore::traits::Program;
+use spacetimedb_testing::spacetimedb::host::extract_schema;
+use spacetimedb_testing::spacetimedb::messages::control_db::HostType;
 use std::sync::OnceLock;
 
-fn compiled_module() -> &'static Path {
+fn compiled_module() -> &'static [u8] {
     static COMPILED_MODULE: OnceLock<CompiledModule> = OnceLock::new();
     COMPILED_MODULE
         .get_or_init(|| CompiledModule::compile("module-test", CompilationMode::Debug))
-        .path()
+        .program_bytes()
 }
 
 macro_rules! declare_tests {
     ($($name:ident => $lang:expr,)*) => ($(
         #[test]
         fn $name() {
-            let module = extract_descriptions(compiled_module()).unwrap();
+            let program = Program::from_bytes(compiled_module());
+            let module = start_runtime()
+                .block_on(extract_schema(program, HostType::Wasm))
+                .unwrap();
+            let module = RawModuleDef::V9(module.into());
             let outfiles: HashMap<_, _> = generate(module, &$lang)
                 .unwrap()
                 .into_iter()

@@ -2,6 +2,8 @@ use clap::Command;
 use spacetimedb_cli::Config;
 use spacetimedb_paths::SpacetimePaths;
 
+pub use spacetimedb;
+
 pub mod modules;
 pub mod sdk;
 

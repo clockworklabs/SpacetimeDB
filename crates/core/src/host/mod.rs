@@ -1,13 +1,19 @@
+use std::sync::Arc;
+
+use crate::db::datastore::traits::Program;
+use crate::messages::control_db;
 use anyhow::Context;
 use bytes::Bytes;
 use bytestring::ByteString;
 use derive_more::Display;
 use enum_map::Enum;
 use once_cell::sync::OnceCell;
-use spacetimedb_lib::bsatn;
 use spacetimedb_lib::de::serde::SeedWrapper;
 use spacetimedb_lib::de::DeserializeSeed;
 use spacetimedb_lib::ProductValue;
+use spacetimedb_lib::{bsatn, Identity};
+use spacetimedb_paths::server::ServerDataDir;
+use spacetimedb_paths::FromPathUnchecked;
 use spacetimedb_schema::def::deserialize::ReducerArgsDeserializeSeed;
 
 mod disk_storage;
@@ -102,6 +108,7 @@ impl Default for ArgsTuple {
 
 // TODO(noa): replace imports from this module with imports straight from primitives.
 pub use spacetimedb_primitives::ReducerId;
+use spacetimedb_schema::def::ModuleDef;
 
 #[derive(thiserror::Error, Debug)]
 #[error("invalid arguments for reducer {reducer}: {err}")]
@@ -143,4 +150,42 @@ pub enum AbiCall {
     Identity,
 
     VolatileNonatomicScheduleImmediate,
+}
+
+pub async fn extract_schema(program: Program, host_type: control_db::HostType) -> anyhow::Result<ModuleDef> {
+    let owner_identity = Identity::from_u256(0xdcba_u32.into());
+    let database_identity = Identity::from_u256(0xabcd_u32.into());
+
+    let data_dir = tempfile::TempDir::new()?;
+
+    let host_controller = HostController::new(
+        Arc::new(ServerDataDir::from_path_unchecked(data_dir.path())),
+        crate::db::Config {
+            storage: crate::db::Storage::Memory,
+        },
+        Arc::new(|_| async { Ok(None) }),
+        Arc::new(crate::energy::NullEnergyMonitor),
+        Arc::new(NullDurabilityProvider),
+    );
+
+    let database = control_db::Database {
+        id: 0,
+        database_identity,
+        owner_identity,
+        host_type,
+        initial_program: program.hash,
+    };
+
+    let module_info = host_controller.check_module_validity(database.clone(), program).await?;
+    let module_info = Arc::into_inner(module_info).unwrap();
+
+    Ok(module_info.module_def)
+}
+
+struct NullDurabilityProvider;
+#[async_trait::async_trait]
+impl DurabilityProvider for NullDurabilityProvider {
+    async fn durability(&self, _replica_id: u64) -> anyhow::Result<(ExternalDurability, Option<StartSnapshotWatcher>)> {
+        unreachable!("don't pass Storage::Disk when using NullDurabilityProvider")
+    }
 }
