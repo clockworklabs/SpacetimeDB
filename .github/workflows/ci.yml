@@ -249,6 +249,7 @@ jobs:
         run: cargo build --features github-token-auth --target ${{ matrix.target }} -p spacetimedb-update
 
       - name: Run self-install
+        shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
