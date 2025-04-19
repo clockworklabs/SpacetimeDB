@@ -243,14 +243,12 @@ jobs:
       - name: Install packages
         if: ${{ matrix.runner == 'arm-runner' }}
         shell: bash
-        run: |
-          sudo apt install libssl-dev
+        run: sudo apt install libssl-dev
 
       - name: Build spacetimedb-update
         run: cargo build --features github-token-auth --target ${{ matrix.target }} -p spacetimedb-update
 
       - name: Run self-install
-        shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
