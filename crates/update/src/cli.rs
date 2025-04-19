@@ -89,9 +89,19 @@ enum VersionSubcommand {
 }
 
 fn reqwest_client() -> anyhow::Result<reqwest::Client> {
-    Ok(reqwest::Client::builder()
-        .user_agent(format!("SpacetimeDB CLI/{}", env!("CARGO_PKG_VERSION")))
-        .build()?)
+    let mut client = reqwest::Client::builder();
+    #[cfg(feature = "github-token-auth")]
+    {
+        use reqwest::header;
+        if let Ok(token) = std::env::var("GITHUB_TOKEN") {
+            eprintln!("HTTP requests will use the GITHUB_TOKEN from your environment");
+            let mut headers = header::HeaderMap::new();
+            headers.insert(header::AUTHORIZATION, format!("Bearer {}", token).parse().unwrap());
+            client = client.default_headers(headers);
+        }
+    }
+    client = client.user_agent(format!("SpacetimeDB CLI/{}", env!("CARGO_PKG_VERSION")));
+    Ok(client.build()?)
 }
 
 fn tokio_block_on<Fut: Future>(fut: Fut) -> anyhow::Result<Fut::Output> {
