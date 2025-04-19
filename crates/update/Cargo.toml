@@ -8,6 +8,7 @@ publish = false
 
 [features]
 # NOTE(bfops): This is not a well-thought-through feature. It's really only meant for internal testing/debugging.
+# Specifically, we use it in some CI.
 github-token-auth = []
 
 [dependencies]
