@@ -57,6 +57,7 @@ impl<L: ModuleLanguage> BenchDatabase for SpacetimeModule<L> {
         let runtime = start_runtime();
         let config = Config {
             storage: if in_memory { Storage::Memory } else { Storage::Disk },
+            page_pool_max_size: None,
         };
 
         let module = runtime.block_on(async {

@@ -1,27 +1,22 @@
-use crate::{
-    bflatn_to::write_row_to_pages_bsatn,
-    layout::AlgebraicTypeLayout,
-    static_bsatn_validator::{static_bsatn_validator, validate_bsatn, StaticBsatnValidator},
-    table_index::TableIndexPointIter,
-};
-
 use super::{
     bflatn_from::serialize_row_from_page,
-    bflatn_to::{write_row_to_pages, Error},
+    bflatn_to::{write_row_to_pages, write_row_to_pages_bsatn, Error},
     blob_store::BlobStore,
     eq::eq_row_in_page,
     eq_to_pv::eq_row_in_page_to_pv,
     indexes::{Bytes, PageIndex, PageOffset, RowHash, RowPointer, Size, SquashedOffset, PAGE_DATA_SIZE},
-    layout::RowTypeLayout,
+    layout::{AlgebraicTypeLayout, RowTypeLayout},
     page::{FixedLenRowsIter, Page},
+    page_pool::PagePool,
     pages::Pages,
     pointer_map::PointerMap,
     read_column::{ReadColumn, TypeError},
     row_hash::hash_row_in_page,
     row_type_visitor::{row_type_visitor, VarLenVisitorProgram},
     static_assert_size,
+    static_bsatn_validator::{static_bsatn_validator, validate_bsatn, StaticBsatnValidator},
     static_layout::StaticLayout,
-    table_index::{TableIndex, TableIndexRangeIter},
+    table_index::{TableIndex, TableIndexPointIter, TableIndexRangeIter},
     var_len::VarLenMembers,
     MemoryUsage,
 };
@@ -86,7 +81,7 @@ pub struct Table {
     /// depending on whether this is a tx scratchpad table
     /// or a committed table.
     squashed_offset: SquashedOffset,
-    /// Store number of rows present in table.
+    /// Stores number of rows present in table.
     pub row_count: u64,
     /// Stores the sum total number of bytes that each blob object in the table occupies.
     ///
@@ -292,12 +287,13 @@ impl Table {
     /// TODO(error-handling): describe errors from `write_row_to_pages` and return meaningful errors.
     pub fn insert<'a>(
         &'a mut self,
+        pool: &PagePool,
         blob_store: &'a mut dyn BlobStore,
         row: &ProductValue,
     ) -> Result<(Option<RowHash>, RowRef<'a>), InsertError> {
         // Optimistically insert the `row` before checking any constraints
         // under the assumption that errors (unique constraint & set semantic violations) are rare.
-        let (row_ref, blob_bytes) = self.insert_physically_pv(blob_store, row)?;
+        let (row_ref, blob_bytes) = self.insert_physically_pv(pool, blob_store, row)?;
         let row_ptr = row_ref.pointer();
 
         // Confirm the insertion, checking any constraints, removing the physical row on error.
@@ -319,6 +315,7 @@ impl Table {
     /// A call to this method should be followed by a call to [`delete_internal_skip_pointer_map`].
     pub fn insert_physically_pv<'a>(
         &'a mut self,
+        pool: &PagePool,
         blob_store: &'a mut dyn BlobStore,
         row: &ProductValue,
     ) -> Result<(RowRef<'a>, BlobNumBytes), Error> {
@@ -326,6 +323,7 @@ impl Table {
         // as `self.pages` was constructed from `self.row_layout` in `Table::new`.
         let (ptr, blob_bytes) = unsafe {
             write_row_to_pages(
+                pool,
                 &mut self.inner.pages,
                 &self.inner.visitor_prog,
                 blob_store,
@@ -355,6 +353,7 @@ impl Table {
     /// an error is returned and there will be nothing for the caller to revert.
     pub fn insert_physically_bsatn<'a>(
         &'a mut self,
+        pool: &PagePool,
         blob_store: &'a mut dyn BlobStore,
         row: &[u8],
     ) -> Result<(RowRef<'a>, BlobNumBytes), Error> {
@@ -369,7 +368,7 @@ impl Table {
             let res = self
                 .inner
                 .pages
-                .with_page_to_insert_row(fixed_row_size, 0, |page| {
+                .with_page_to_insert_row(pool, fixed_row_size, 0, |page| {
                     // SAFETY: We've used the right `row_size` and we trust that others have too.
                     // `RowTypeLayout` also ensures that we satisfy the minimum row size.
                     let fixed_offset = unsafe { page.alloc_fixed_len(fixed_row_size) }.map_err(Error::PageError)?;
@@ -391,6 +390,7 @@ impl Table {
             // as `self.pages` was constructed from `self.row_layout` in `Table::new`.
             unsafe {
                 write_row_to_pages_bsatn(
+                    pool,
                     &mut self.inner.pages,
                     &self.inner.visitor_prog,
                     blob_store,
@@ -1007,13 +1007,14 @@ impl Table {
     /// then deleting the temporary insertion.
     pub fn delete_equal_row(
         &mut self,
+        pool: &PagePool,
         blob_store: &mut dyn BlobStore,
         row: &ProductValue,
     ) -> Result<Option<RowPointer>, Error> {
         // Insert `row` temporarily so `temp_ptr` and `hash` can be used to find the row.
         // This must avoid consulting and inserting to the pointer map,
         // as the row is already present, set-semantically.
-        let (temp_row, _) = self.insert_physically_pv(blob_store, row)?;
+        let (temp_row, _) = self.insert_physically_pv(pool, blob_store, row)?;
         let temp_ptr = temp_row.pointer();
 
         // Find the row equal to the passed-in `row`.
@@ -1225,6 +1226,17 @@ impl Table {
         // Compute the row count first, in case later computations want to use it as a capacity to pre-allocate.
         self.compute_row_count(blob_store);
         self.rebuild_pointer_map(blob_store);
+    }
+
+    /// Consumes the table, returning some constituents needed for merge.
+    pub fn consume_for_merge(
+        self,
+    ) -> (
+        Arc<TableSchema>,
+        impl Iterator<Item = (IndexId, TableIndex)>,
+        impl Iterator<Item = Box<Page>>,
+    ) {
+        (self.schema, self.indexes.into_iter(), self.inner.pages.into_page_iter())
     }
 
     /// Returns the number of rows resident in this table.
@@ -1985,6 +1997,7 @@ pub(crate) mod test {
         let index_schema = schema.indexes[0].clone();
 
         let mut table = Table::new(schema.into(), SquashedOffset::COMMITTED_STATE);
+        let pool = PagePool::default();
         let cols = ColList::new(0.into());
         let algo = BTreeAlgorithm { columns: cols.clone() }.into();
 
@@ -1993,12 +2006,12 @@ pub(crate) mod test {
         unsafe { table.insert_index(&NullBlobStore, index_schema.index_id, index) };
 
         // Reserve a page so that we can check the hash.
-        let pi = table.inner.pages.reserve_empty_page(table.row_size()).unwrap();
+        let pi = table.inner.pages.reserve_empty_page(&pool, table.row_size()).unwrap();
         let hash_pre_ins = hash_unmodified_save_get(&mut table.inner.pages[pi]);
 
         // Insert the row (0, 0).
         table
-            .insert(&mut NullBlobStore, &product![0i32, 0i32])
+            .insert(&pool, &mut NullBlobStore, &product![0i32, 0i32])
             .expect("Initial insert failed");
 
         // Inserting cleared the hash.
@@ -2006,7 +2019,7 @@ pub(crate) mod test {
         assert_ne!(hash_pre_ins, hash_post_ins);
 
         // Try to insert the row (0, 1), and assert that we get the expected error.
-        match table.insert(&mut NullBlobStore, &product![0i32, 1i32]) {
+        match table.insert(&pool, &mut NullBlobStore, &product![0i32, 1i32]) {
             Ok(_) => panic!("Second insert with same unique value succeeded"),
             Err(InsertError::IndexError(UniqueConstraintViolation {
                 constraint_name,
@@ -2029,9 +2042,10 @@ pub(crate) mod test {
 
     fn insert_retrieve_body(ty: impl Into<ProductType>, val: impl Into<ProductValue>) -> TestCaseResult {
         let val = val.into();
+        let pool = PagePool::default();
         let mut blob_store = HashMapBlobStore::default();
         let mut table = table(ty.into());
-        let (hash, row) = table.insert(&mut blob_store, &val).unwrap();
+        let (hash, row) = table.insert(&pool, &mut blob_store, &val).unwrap();
         let hash = hash.unwrap();
         prop_assert_eq!(row.row_hash(), hash);
         let ptr = row.pointer();
@@ -2090,11 +2104,12 @@ pub(crate) mod test {
         vals: Vec<ProductValue>,
         indexed_columns: ColList,
     ) -> Result<(), TestCaseError> {
+        let pool = PagePool::default();
         let mut blob_store = HashMapBlobStore::default();
         let mut table = table(ty.clone());
 
         for row in &vals {
-            prop_assume!(table.insert(&mut blob_store, row).is_ok());
+            prop_assume!(table.insert(&pool, &mut blob_store, row).is_ok());
         }
 
         // We haven't added any indexes yet, so there should be 0 rows in indexes.
@@ -2163,9 +2178,10 @@ pub(crate) mod test {
 
         #[test]
         fn insert_delete_removed_from_pointer_map((ty, val) in generate_typed_row()) {
+            let pool = PagePool::default();
             let mut blob_store = HashMapBlobStore::default();
             let mut table = table(ty);
-            let (hash, row) = table.insert(&mut blob_store, &val).unwrap();
+            let (hash, row) = table.insert(&pool, &mut blob_store, &val).unwrap();
             let hash = hash.unwrap();
             prop_assert_eq!(row.row_hash(), hash);
             let ptr = row.pointer();
@@ -2194,10 +2210,11 @@ pub(crate) mod test {
 
         #[test]
         fn insert_duplicate_set_semantic((ty, val) in generate_typed_row()) {
+            let pool = PagePool::default();
             let mut blob_store = HashMapBlobStore::default();
             let mut table = table(ty);
 
-            let (hash, row) = table.insert(&mut blob_store, &val).unwrap();
+            let (hash, row) = table.insert(&pool, &mut blob_store, &val).unwrap();
             let hash = hash.unwrap();
             prop_assert_eq!(row.row_hash(), hash);
             let ptr = row.pointer();
@@ -2210,7 +2227,7 @@ pub(crate) mod test {
 
             let hash_pre_ins = hash_unmodified_save_get(&mut table.inner.pages[ptr.page_index()]);
 
-            prop_assert!(table.insert(&mut blob_store, &val).is_err());
+            prop_assert!(table.insert(&pool, &mut blob_store, &val).is_err());
 
             // Hash was cleared and is different despite failure to insert.
             let hash_post_ins = hash_unmodified_save_get(&mut table.inner.pages[ptr.page_index()]);
@@ -2229,9 +2246,10 @@ pub(crate) mod test {
 
         #[test]
         fn insert_bsatn_same_as_pv((ty, val) in generate_typed_row()) {
+            let pool = PagePool::default();
             let mut bs_pv = HashMapBlobStore::default();
             let mut table_pv = table(ty.clone());
-            let res_pv = table_pv.insert(&mut bs_pv, &val);
+            let res_pv = table_pv.insert(&pool, &mut bs_pv, &val);
 
             let mut bs_bsatn = HashMapBlobStore::default();
             let mut table_bsatn = table(ty);
@@ -2244,11 +2262,12 @@ pub(crate) mod test {
 
         #[test]
         fn row_size_reporting_matches_slow_implementations((ty, vals) in generate_typed_row_vec(128, 2048)) {
+            let pool = PagePool::default();
             let mut blob_store = HashMapBlobStore::default();
             let mut table = table(ty.clone());
 
             for row in &vals {
-                prop_assume!(table.insert(&mut blob_store, row).is_ok());
+                prop_assume!(table.insert(&pool, &mut blob_store, row).is_ok());
             }
 
             prop_assert_eq!(table.bytes_used_by_rows(), table.reconstruct_bytes_used_by_rows());
@@ -2285,7 +2304,8 @@ pub(crate) mod test {
 
         // Optimistically insert the `row` before checking any constraints
         // under the assumption that errors (unique constraint & set semantic violations) are rare.
-        let (row_ref, blob_bytes) = table.insert_physically_bsatn(blob_store, row)?;
+        let pool = PagePool::default();
+        let (row_ref, blob_bytes) = table.insert_physically_bsatn(&pool, blob_store, row)?;
         let row_ptr = row_ref.pointer();
 
         // Confirm the insertion, checking any constraints, removing the physical row on error.
@@ -2299,10 +2319,11 @@ pub(crate) mod test {
     // Compare `scan_rows` against a simpler implementation.
     #[test]
     fn table_scan_iter_eq_flatmap() {
+        let pool = PagePool::default();
         let mut blob_store = HashMapBlobStore::default();
         let mut table = table(AlgebraicType::U64.into());
         for v in 0..2u64.pow(14) {
-            table.insert(&mut blob_store, &product![v]).unwrap();
+            table.insert(&pool, &mut blob_store, &product![v]).unwrap();
         }
 
         let complex = table.scan_rows(&blob_store).map(|r| r.pointer());
@@ -2325,8 +2346,9 @@ pub(crate) mod test {
         let pt = AlgebraicType::U64.into();
         let pv = product![42u64];
         let mut table = table(pt);
+        let pool = &PagePool::default();
         let blob_store = &mut NullBlobStore;
-        let (_, row_ref) = table.insert(blob_store, &pv).unwrap();
+        let (_, row_ref) = table.insert(pool, blob_store, &pv).unwrap();
 
         // Manipulate the page offset to 1 instead of 0.
         // This now points into the "middle" of a row.
@@ -2340,9 +2362,15 @@ pub(crate) mod test {
     #[test]
     fn test_blob_store_bytes() {
         let pt: ProductType = [AlgebraicType::String, AlgebraicType::I32].into();
+        let pool = &PagePool::default();
         let blob_store = &mut HashMapBlobStore::default();
-        let mut insert =
-            |table: &mut Table, string, num| table.insert(blob_store, &product![string, num]).unwrap().1.pointer();
+        let mut insert = |table: &mut Table, string, num| {
+            table
+                .insert(pool, blob_store, &product![string, num])
+                .unwrap()
+                .1
+                .pointer()
+        };
         let mut table1 = table(pt.clone());
 
         // Insert short string, `blob_store_bytes` should be 0.

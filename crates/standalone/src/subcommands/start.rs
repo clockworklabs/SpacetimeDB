@@ -67,6 +67,11 @@ pub fn cli() -> clap::Command {
         .arg(Arg::new("in_memory").long("in-memory").action(SetTrue).help(
             "If specified the database will run entirely in memory. After the process exits all data will be lost.",
         ))
+        .arg(
+            Arg::new("page_pool_max_size").long("page_pool_max_size").help(
+                "The maximum size of the page pool in bytes. Should be a multiple of 64KiB. The default is 8GiB.",
+            ),
+        )
     // .after_help("Run `spacetime help start` for more detailed information.")
 }
 
@@ -88,7 +93,16 @@ pub async fn exec(args: &ArgMatches) -> anyhow::Result<()> {
     } else {
         Storage::Disk
     };
-    let db_config = Config { storage };
+    let page_pool_max_size = args
+        .get_one::<&str>("page_pool_max_size")
+        .map(|size| parse_size::Config::new().with_binary().parse_size(size))
+        .transpose()
+        .context("unrecognized format in `page_pool_max_size`")?
+        .map(|size| size as usize);
+    let db_config = Config {
+        storage,
+        page_pool_max_size,
+    };
 
     banner();
     let exe_name = std::env::current_exe()?;
@@ -136,6 +150,7 @@ pub async fn exec(args: &ArgMatches) -> anyhow::Result<()> {
     let ctx = StandaloneEnv::init(db_config, &certs, data_dir).await?;
     worker_metrics::spawn_jemalloc_stats(listen_addr.clone());
     worker_metrics::spawn_tokio_stats(listen_addr.clone());
+    worker_metrics::spawn_page_pool_stats(listen_addr.clone(), ctx.page_pool().clone());
 
     let mut db_routes = DatabaseRoutes::default();
     db_routes.root_post = db_routes.root_post.layer(DefaultBodyLimit::disable());

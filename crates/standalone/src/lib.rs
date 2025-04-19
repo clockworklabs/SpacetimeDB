@@ -26,6 +26,7 @@ use spacetimedb_client_api::{Host, NodeDelegate};
 use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, RegisterTldResult, SetDomainsResult, Tld};
 use spacetimedb_paths::server::{ModuleLogsDir, PidFile, ServerDataDir};
 use spacetimedb_paths::standalone::StandaloneDataDirExt;
+use spacetimedb_table::page_pool::PagePool;
 use std::sync::Arc;
 
 pub use spacetimedb_client_api::routes::subscribe::{BIN_PROTOCOL, TEXT_PROTOCOL};
@@ -91,6 +92,10 @@ impl StandaloneEnv {
 
     pub fn data_dir(&self) -> &Arc<ServerDataDir> {
         &self.host_controller.data_dir
+    }
+
+    pub fn page_pool(&self) -> &PagePool {
+        &self.host_controller.page_pool
     }
 }
 
@@ -505,6 +510,7 @@ mod tests {
         ca.get_or_create_keys()?;
         let config = Config {
             storage: Storage::Memory,
+            page_pool_max_size: None,
         };
 
         let _env = StandaloneEnv::init(config, &ca, data_dir.clone()).await?;

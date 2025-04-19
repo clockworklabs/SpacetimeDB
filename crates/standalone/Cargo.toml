@@ -25,6 +25,7 @@ spacetimedb-client-api.workspace = true
 spacetimedb-core.workspace = true
 spacetimedb-lib.workspace = true
 spacetimedb-paths.workspace = true
+spacetimedb-table.workspace = true
 
 anyhow.workspace = true
 async-trait.workspace = true
@@ -36,6 +37,7 @@ hostname.workspace = true
 http.workspace = true
 log.workspace = true
 openssl.workspace = true
+parse-size.workspace = true
 prometheus.workspace = true
 scopeguard.workspace = true
 serde_json.workspace = true

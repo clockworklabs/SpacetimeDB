@@ -226,7 +226,7 @@ unsafe fn eq_at<T: Copy + Eq>(ctx: &mut EqCtx<'_>, rhs: &T) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use crate::blob_store::HashMapBlobStore;
+    use crate::{blob_store::HashMapBlobStore, page_pool::PagePool};
     use proptest::prelude::*;
     use spacetimedb_sats::proptest::generate_typed_row;
 
@@ -237,7 +237,7 @@ mod tests {
             // Turn `val` into a `RowRef`.
             let mut table = crate::table::test::table(ty);
             let blob_store = &mut HashMapBlobStore::default();
-            let (_, row) = table.insert(blob_store, &val).unwrap();
+            let (_, row) = table.insert(&PagePool::default(), blob_store, &val).unwrap();
 
             // Check eq algo.
             prop_assert_eq!(row, val);
