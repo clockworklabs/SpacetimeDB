@@ -7,7 +7,7 @@ class FailInitialPublish(Smoketest):
     MODULE_CODE_BROKEN = """
 use spacetimedb::{client_visibility_filter, Filter};
 
-#[spacetimedb::table(name = person)]
+#[spacetimedb::table(name = person, public)]
 pub struct Person {
     name: String,
 }
@@ -20,7 +20,7 @@ const HIDE_PEOPLE_EXCEPT_ME: Filter = Filter::Sql("SELECT * FROM Person WHERE na
     MODULE_CODE_FIXED = """
 use spacetimedb::{client_visibility_filter, Filter};
 
-#[spacetimedb::table(name = person)]
+#[spacetimedb::table(name = person, public)]
 pub struct Person {
     name: String,
 }
