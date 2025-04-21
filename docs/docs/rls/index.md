@@ -292,7 +292,7 @@ For example, it is valid for an RLS rule to have more joins than are supported b
 However a client will not be able to subscribe to the table for which that rule is defined.
 
 
-[reference docs]: /docs/sql/index.md#subscriptions
+[reference docs]: /docs/sql#subscriptions
 
 ## Best Practices
 
@@ -300,4 +300,4 @@ However a client will not be able to subscribe to the table for which that rule 
 2. Follow the [SQL best practices] for optimizing your RLS rules.
 
 
-[SQL best practices]: /docs/sql/index.md#best-practices-for-performance-and-scalability
+[SQL best practices]: /docs/sql#best-practices-for-performance-and-scalability
