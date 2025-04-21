@@ -68,7 +68,7 @@ This parameter is automatically bound to the requesting client's [Identity].
 Note that module owners have unrestricted access to all tables regardless of RLS.
 
 
-[Identity]: /docs/index.md#identity
+[Identity]: /docs/#identity
 
 ### Semantic Constraints
 
