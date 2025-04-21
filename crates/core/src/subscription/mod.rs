@@ -10,6 +10,7 @@ use spacetimedb_execution::{pipelined::PipelinedProject, Datastore, DeltaStore};
 use spacetimedb_lib::{metrics::ExecutionMetrics, Identity};
 use spacetimedb_primitives::TableId;
 
+use crate::error::DBError;
 use crate::{db::db_metrics::DB_METRICS, execution_context::WorkloadType, worker_metrics::WORKER_METRICS};
 
 pub mod delta;
@@ -133,23 +134,27 @@ pub fn execute_plans<Tx, F>(
     comp: Compression,
     tx: &Tx,
     update_type: TableUpdateType,
-) -> Result<(DatabaseUpdate<F>, ExecutionMetrics)>
+) -> Result<(DatabaseUpdate<F>, ExecutionMetrics), DBError>
 where
     Tx: Datastore + DeltaStore + Sync,
     F: WebsocketFormat,
 {
     plans
         .par_iter()
-        .flat_map_iter(|plan| plan.plans_fragments())
-        .map(|plan| (plan, plan.subscribed_table_id(), plan.subscribed_table_name()))
-        .map(|(plan, table_id, table_name)| {
+        .flat_map_iter(|plan| plan.plans_fragments().map(|fragment| (plan.sql(), fragment)))
+        .map(|(sql, plan)| (sql, plan, plan.subscribed_table_id(), plan.subscribed_table_name()))
+        .map(|(sql, plan, table_id, table_name)| {
             plan.physical_plan()
                 .clone()
                 .optimize()
-                .map(PipelinedProject::from)
-                .and_then(|plan| collect_table_update(&[plan], table_id, table_name.into(), comp, tx, update_type))
+                .map(|plan| (sql, PipelinedProject::from(plan)))
+                .and_then(|(_, plan)| collect_table_update(&[plan], table_id, table_name.into(), comp, tx, update_type))
+                .map_err(|err| DBError::WithSql {
+                    sql: sql.into(),
+                    error: Box::new(DBError::Other(err)),
+                })
         })
-        .collect::<Result<Vec<_>>>()
+        .collect::<Result<Vec<_>, _>>()
         .map(|table_updates_with_metrics| {
             let n = table_updates_with_metrics.len();
             let mut tables = Vec::with_capacity(n);
