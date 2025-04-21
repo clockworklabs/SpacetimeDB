@@ -17,7 +17,7 @@ use crate::util::spawn_rayon;
 use anyhow::{anyhow, ensure, Context};
 use async_trait::async_trait;
 use durability::{Durability, EmptyHistory};
-use log::{info, trace, warn};
+use log::{info, trace};
 use parking_lot::{Mutex, RwLock};
 use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_durability::{self as durability, TxOffset};
@@ -27,11 +27,11 @@ use spacetimedb_paths::FromPathUnchecked;
 use spacetimedb_sats::hash::Hash;
 use std::future::Future;
 use std::ops::Deref;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 use tempfile::TempDir;
 use tokio::sync::{watch, OwnedRwLockReadGuard, OwnedRwLockWriteGuard, RwLock as AsyncRwLock};
-use tokio::task::AbortHandle;
+use tokio::task::JoinHandle;
 
 // TODO:
 //
@@ -40,8 +40,12 @@ use tokio::task::AbortHandle;
 /// A shared mutable cell containing a module host and associated database.
 type HostCell = Arc<AsyncRwLock<Option<Host>>>;
 
+type HostsInner = Mutex<IntMap<u64, HostCell>>;
+
 /// The registry of all running hosts.
-type Hosts = Arc<Mutex<IntMap<u64, HostCell>>>;
+type Hosts = Arc<HostsInner>;
+
+type WeakHosts = Weak<HostsInner>;
 
 pub type ExternalDurability = (Arc<dyn Durability<TxData = Txdata>>, DiskSizeFn);
 
@@ -276,15 +280,23 @@ impl HostController {
     {
         trace!("using database {}/{}", database.database_identity, replica_id);
         let module = self.get_or_launch_module_host(database, replica_id).await?;
-        let on_panic = self.unregister_fn(replica_id);
-        let result = tokio::task::spawn_blocking(move || f(&module.replica_ctx().relational_db))
-            .await
-            .unwrap_or_else(|e| {
-                warn!("database operation panicked");
-                on_panic();
-                std::panic::resume_unwind(e.into_panic())
-            });
-        Ok(result)
+        let lifecycle = Arc::clone(&module.lifecycle);
+
+        let result = tokio::task::spawn_blocking(move || f(&module.replica_ctx().relational_db)).await;
+
+        match result {
+            Ok(result) => Ok(result),
+            Err(e) => {
+                // We never cancel this task
+                // (it's pretty clearly `spawn`ed and then immediately `await`ed right above),
+                // so no need to check `e.is_panic` or `e.is_cancelled`.
+                let panic_payload = e.into_panic();
+                let err = DatabaseLifecycleTracker::panic_payload_to_error("while `using_database`", &panic_payload);
+                log::error!("{err:?}");
+                lifecycle.lock().stop_database(err).await;
+                std::panic::resume_unwind(panic_payload)
+            }
+        }
     }
 
     /// Update the [`ModuleHost`] identified by `replica_id` to the given
@@ -327,13 +339,7 @@ impl HostController {
             }
         };
         let update_result = host
-            .update_module(
-                self.runtimes.clone(),
-                host_type,
-                program,
-                self.energy_monitor.clone(),
-                self.unregister_fn(replica_id),
-            )
+            .update_module(self.runtimes.clone(), host_type, program, self.energy_monitor.clone())
             .await?;
 
         *guard = Some(host);
@@ -404,13 +410,7 @@ impl HostController {
             );
             let program = load_program(&self.program_storage, program_hash).await?;
             let update_result = host
-                .update_module(
-                    self.runtimes.clone(),
-                    host_type,
-                    program,
-                    self.energy_monitor.clone(),
-                    self.unregister_fn(replica_id),
-                )
+                .update_module(self.runtimes.clone(), host_type, program, self.energy_monitor.clone())
                 .await?;
             match update_result {
                 UpdateDatabaseResult::NoUpdateNeeded | UpdateDatabaseResult::UpdatePerformed => {
@@ -439,6 +439,11 @@ impl HostController {
                 let module = host.module.borrow().clone();
                 module.exit().await;
                 let table_names = module.info().module_def.tables().map(|t| t.name.deref());
+                // FIXME: We need to drop `module` before this,
+                // or at least the metrics abort handle it contains.
+                // Currently there's a race between this and the metrics reporter job.
+                //
+                // Should we be calling this in `DatabaseLifecycleTracker::stop_database` instead of here?
                 db_metrics::data_size::remove_database_gauges(&module.info().database_identity, table_names);
             }
         }
@@ -485,13 +490,9 @@ impl HostController {
     /// On-panic callback passed to [`ModuleHost`]s created by this controller.
     ///
     /// Removes the module with the given `replica_id` from this controller.
-    fn unregister_fn(&self, replica_id: u64) -> impl Fn() + Send + Sync + 'static {
+    fn unregister_handle(&self, replica_id: u64) -> UnregisterHandle {
         let hosts = Arc::downgrade(&self.hosts);
-        move || {
-            if let Some(hosts) = hosts.upgrade() {
-                hosts.lock().remove(&replica_id);
-            }
-        }
+        UnregisterHandle { hosts, replica_id }
     }
 
     async fn acquire_write_lock(&self, replica_id: u64) -> OwnedRwLockWriteGuard<Option<Host>> {
@@ -506,6 +507,35 @@ impl HostController {
 
     async fn try_init_host(&self, database: Database, replica_id: u64) -> anyhow::Result<Host> {
         Host::try_init(self, database, replica_id).await
+    }
+}
+
+/// Handle to unregister a [`Host`] from its containing [`HostController`].
+///
+/// Held by the [`DatabaseLifecycleTracker`].
+struct UnregisterHandle {
+    hosts: WeakHosts,
+    replica_id: u64,
+}
+
+impl UnregisterHandle {
+    /// Unregister this handle's [`Host`] from its containing [`HostController`].
+    fn unregister(&self) {
+        if let Some(hosts) = self.hosts.upgrade() {
+            hosts.lock().remove(&self.replica_id);
+        }
+    }
+
+    /// Make a handle that doesn't reference any [`HostController`].
+    ///
+    /// Calling [`Self::unregister`] on this handle will not do anything.
+    ///
+    /// Used by [`HostController::check_module_validity`].
+    fn phony() -> Self {
+        Self {
+            hosts: std::sync::Weak::new(),
+            replica_id: 0,
+        }
     }
 }
 
@@ -560,7 +590,7 @@ async fn make_module_host(
     scheduler: Scheduler,
     program: Program,
     energy_monitor: Arc<dyn EnergyMonitor>,
-    unregister: impl Fn() + Send + Sync + 'static,
+    lifecycle: DatabaseLifecycleTrackerHandle,
 ) -> anyhow::Result<(Program, ModuleHost)> {
     spawn_rayon(move || {
         let module_host = match host_type {
@@ -574,7 +604,7 @@ async fn make_module_host(
                 let start = Instant::now();
                 let actor = runtimes.wasmtime.make_actor(mcc)?;
                 trace!("wasmtime::make_actor blocked for {:?}", start.elapsed());
-                ModuleHost::new(actor, unregister)
+                ModuleHost::new(actor, lifecycle)
             }
         };
         Ok((program, module_host))
@@ -602,7 +632,7 @@ async fn launch_module(
     database: Database,
     replica_id: u64,
     program: Program,
-    on_panic: impl Fn() + Send + Sync + 'static,
+    lifecycle: DatabaseLifecycleTrackerHandle,
     relational_db: Arc<RelationalDB>,
     energy_monitor: Arc<dyn EnergyMonitor>,
     replica_dir: ReplicaDir,
@@ -622,7 +652,7 @@ async fn launch_module(
         scheduler.clone(),
         program,
         energy_monitor.clone(),
-        on_panic,
+        lifecycle,
     )
     .await?;
 
@@ -671,6 +701,155 @@ async fn update_module(
     }
 }
 
+#[derive(Debug)]
+pub enum DatabaseLifecycle {
+    Starting,
+    Running,
+    Stopped { reason: anyhow::Error },
+}
+
+pub type DatabaseLifecycleTrackerHandle = Arc<Mutex<DatabaseLifecycleTracker>>;
+
+pub struct DatabaseLifecycleTracker {
+    lifecycle: DatabaseLifecycle,
+    /// Sender half of a [`watch::channel`] which notifies all client connections that they should disconnect.
+    ///
+    /// When this database is deleted, paused, crashes, or otherwise stops running,
+    /// this will be set to `Some(err)`,
+    /// where `err` is the printed representation of the reason in the [`DatabaseLifecycle::Stopped`].
+    ///
+    /// Client connection actors (see `spacetimedb_client_api::routes::subscribe`)
+    /// will poll the [`watch::Receiver`] side of this channel, and when it is set to `Some(err)`,
+    /// they will close their WebSocket connection with `err` as the message.
+    ///
+    /// This channel should not be used for anything other than disconnecting WebSocket clients.
+    /// Any other actions which need to be taken when the database changes lifecycle states
+    /// should use separate channels (or [`AbortHandles`], or some other mechanism).
+    /// This makes it much easier to reason about
+    /// what tasks are cancelled and what reseources are disposed when
+    /// and in what order.
+    connected_clients_disconnect: watch::Sender<Option<String>>,
+
+    /// Receiver half of the `connected_clients_disconnect` channel.
+    ///
+    /// Each WebSocket client will hold a clone of this channel, and will poll it in their loop.
+    /// When this is set to `Some(err)`, they will close their WebSocket connection
+    /// with `err` as the message.
+    pub connected_clients_watcher: watch::Receiver<Option<String>>,
+
+    /// Handle to the metrics collection task started via [`disk_monitor`].
+    ///
+    /// The task collects metrics from the `replica_ctx`, and so stays alive as long
+    /// as the `replica_ctx` is live.
+    ///
+    /// This will be aborted when the database transitions to [`DatabaseLifecycle::Stopped`].
+    metrics_task: Option<JoinHandle<()>>,
+
+    /// [`HostController::unregister_handle`] to unregister this database.
+    unregister_handle: UnregisterHandle,
+}
+
+impl Drop for DatabaseLifecycleTracker {
+    fn drop(&mut self) {
+        if !self.is_stopped() {
+            log::warn!("Dropping DatabaseLifecycleTracker whose state is not Stopped");
+            // TODO: should we attempt to clean up here? Or possibly should we treat this as a hard error?
+        }
+    }
+}
+
+impl DatabaseLifecycleTracker {
+    pub fn is_stopped(&self) -> bool {
+        matches!(self.get_lifecycle(), DatabaseLifecycle::Stopped { .. })
+    }
+
+    pub fn get_lifecycle(&self) -> &DatabaseLifecycle {
+        &self.lifecycle
+    }
+
+    pub async fn stop_database(&mut self, reason: anyhow::Error) {
+        if let DatabaseLifecycle::Stopped { reason: old_reason } = &self.lifecycle {
+            log::warn!("DatabaseLifecycleTracker already stopped with reason {old_reason:?}, but attempted to stop again with reason {reason:?}");
+            return;
+        }
+
+        self.unregister_handle.unregister();
+
+        match self.metrics_task.take() {
+            None => log::warn!("metrics_task is None when stopping database with reason {reason:?}"),
+            Some(metrics_task) => {
+                metrics_task.abort();
+                // It's not sufficient to just tell the metrics task to abort,
+                // we need to actually wait until it has fully stopped before we return from this method.
+                // Otherwise, we end up with a race condition between
+                // the metrics task noticing that it should abort
+                // and doing `db_metrics::data_size::remove_database_gauges`
+                // in `HostController::exit_module_host`.
+                let _ = metrics_task.await;
+            }
+        }
+
+        self.connected_clients_disconnect.send(Some(format!("{reason:?}"))).expect("connected_clients_disconnect channel is closed, but we are holding its receiver as connected_clients_watcher!");
+    }
+
+    fn new(unregister_handle: UnregisterHandle) -> Self {
+        let (connected_clients_disconnect, connected_clients_watcher) = watch::channel(None);
+        Self {
+            lifecycle: DatabaseLifecycle::Starting,
+            metrics_task: None,
+            connected_clients_disconnect,
+            connected_clients_watcher,
+            unregister_handle,
+        }
+    }
+
+    fn make_running(&mut self, metrics_task: JoinHandle<()>) {
+        match self.get_lifecycle() {
+            DatabaseLifecycle::Starting => {
+                self.metrics_task = Some(metrics_task);
+                self.lifecycle = DatabaseLifecycle::Running;
+            }
+            els => {
+                panic!("`make_running` on lifecycle manager in state {els:?}")
+            }
+        }
+    }
+
+    /// Create a tracker that doesn't do any clean-up when the module dies.
+    ///
+    /// Used by [`HostController::check_module_validity`],
+    /// which constructs a short-lived in-memory database which requires no cleanup.
+    fn phony() -> Self {
+        Self::new(UnregisterHandle::phony())
+    }
+
+    /// Convert the result of [`tokio::task::JoinError::into_panic`] into an `anyhow::Error`
+    /// which can be passed to [`Self::stop_database`].
+    ///
+    /// This must be a separate non-`async` method, rather than part of [`Self::stop_database`]
+    /// (or a wrapper around it) because `panic_payload` is not `Sync`,
+    /// and so the reference cannot be live across an `await` point.
+    /// Reference-typed function arguments are always live for the entire body of the function,
+    /// so the futures for `async` functions that accept a `panic_payload` argument are `!Send`,
+    /// even if the `panic_payload` is unused before all `await` points.
+    pub fn panic_payload_to_error(
+        context: &str,
+        panic_payload: &(dyn std::any::Any + Send + 'static),
+    ) -> anyhow::Error {
+        // According to the Rust docs
+        // https://doc.rust-lang.org/stable/std/panic/struct.PanicHookInfo.html#method.payload
+        // panic payloads resulting from `panic!` always result in a payload
+        // that is either `&'static str` or `String`.
+        if let Some(s) = panic_payload.downcast_ref::<&str>() {
+            anyhow::anyhow!("Host execution panicked {context}: {s}")
+        } else if let Some(s) = panic_payload.downcast_ref::<String>() {
+            anyhow::anyhow!("Host execution panicked {context}: {s}")
+        } else {
+            anyhow::anyhow!("Host execution panicked {context} with payload of unknown type")
+        }
+    }
+}
+
 /// Encapsulates a database, associated module, and auxiliary state.
 struct Host {
     /// The [`ModuleHost`], providing the callable reducer API.
@@ -687,11 +866,8 @@ struct Host {
     replica_ctx: Arc<ReplicaContext>,
     /// Scheduler for repeating reducers, operating on the current `module`.
     scheduler: Scheduler,
-    /// Handle to the metrics collection task started via [`disk_monitor`].
-    ///
-    /// The task collects metrics from the `replica_ctx`, and so stays alive as long
-    /// as the `replica_ctx` is live. The task is aborted when [`Host`] is dropped.
-    metrics_task: AbortHandle,
+
+    lifecycle: Arc<Mutex<DatabaseLifecycleTracker>>,
 }
 
 impl Host {
@@ -711,7 +887,11 @@ impl Host {
             durability,
             ..
         } = host_controller;
-        let on_panic = host_controller.unregister_fn(replica_id);
+
+        let lifecycle_tracker = Arc::new(Mutex::new(DatabaseLifecycleTracker::new(
+            host_controller.unregister_handle(replica_id),
+        )));
+
         let replica_dir = data_dir.replica(replica_id);
 
         let (db, connected_clients) = match config.storage {
@@ -756,7 +936,7 @@ impl Host {
             database,
             replica_id,
             program,
-            on_panic,
+            Arc::clone(&lifecycle_tracker),
             Arc::new(db),
             energy_monitor.clone(),
             replica_dir,
@@ -794,13 +974,15 @@ impl Host {
         }
 
         scheduler_starter.start(&module_host)?;
-        let metrics_task = tokio::spawn(metric_reporter(replica_ctx.clone())).abort_handle();
+        let metrics_task = tokio::spawn(metric_reporter(replica_ctx.clone()));
+
+        lifecycle_tracker.lock().make_running(metrics_task);
 
         Ok(Host {
             module: watch::Sender::new(module_host),
             replica_ctx,
             scheduler,
-            metrics_task,
+            lifecycle: lifecycle_tracker,
         })
     }
 
@@ -838,6 +1020,8 @@ impl Host {
             None,
         )?;
 
+        let phony_lifecycle_tracker = DatabaseLifecycleTracker::phony();
+
         let (program, launched) = launch_module(
             database,
             0,
@@ -845,7 +1029,7 @@ impl Host {
             // No need to register a callback here:
             // proper publishes use it to unregister a panicked module,
             // but this module is not registered in the first place.
-            || log::error!("launch_module on_panic called for temporary publish in-memory instance"),
+            Arc::new(Mutex::new(phony_lifecycle_tracker)),
             Arc::new(db),
             Arc::new(NullEnergyMonitor),
             phony_replica_dir,
@@ -879,7 +1063,6 @@ impl Host {
         host_type: HostType,
         program: Program,
         energy_monitor: Arc<dyn EnergyMonitor>,
-        on_panic: impl Fn() + Send + Sync + 'static,
     ) -> anyhow::Result<UpdateDatabaseResult> {
         let replica_ctx = &self.replica_ctx;
         let (scheduler, scheduler_starter) = Scheduler::open(self.replica_ctx.relational_db.clone());
@@ -891,7 +1074,7 @@ impl Host {
             scheduler.clone(),
             program,
             energy_monitor,
-            on_panic,
+            Arc::clone(&self.lifecycle),
         )
         .await?;
 
@@ -914,12 +1097,6 @@ impl Host {
 
     fn db(&self) -> &RelationalDB {
         &self.replica_ctx.relational_db
-    }
-}
-
-impl Drop for Host {
-    fn drop(&mut self) {
-        self.metrics_task.abort();
     }
 }
 

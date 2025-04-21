@@ -1,3 +1,4 @@
+use super::host_controller::{DatabaseLifecycleTracker, DatabaseLifecycleTrackerHandle};
 use super::{ArgsTuple, InvalidReducerArguments, ReducerArgs, ReducerCallResult, ReducerId, ReducerOutcome, Scheduler};
 use crate::client::{ClientActorId, ClientConnectionSender};
 use crate::database_logger::{LogLevel, Record};
@@ -326,8 +327,12 @@ impl<T: Module> ModuleInstance for AutoReplacingModuleInstance<T> {
 pub struct ModuleHost {
     pub info: Arc<ModuleInfo>,
     inner: Arc<dyn DynModuleHost>,
-    /// Called whenever a reducer call on this host panics.
-    on_panic: Arc<dyn Fn() + Send + Sync + 'static>,
+    /// Whenever host execution panics while executing a reducer,
+    /// we'll signal the [`DatabaseLifecycleTracker`] to shut down this database.
+    ///
+    /// Note that this does not apply to in-WASM panics or error returns,
+    /// only to host panics.
+    pub lifecycle: DatabaseLifecycleTrackerHandle,
 }
 
 impl fmt::Debug for ModuleHost {
@@ -419,7 +424,7 @@ impl<T: Module> DynModuleHost for HostControllerActor<T> {
 pub struct WeakModuleHost {
     info: Arc<ModuleInfo>,
     inner: Weak<dyn DynModuleHost>,
-    on_panic: Weak<dyn Fn() + Send + Sync + 'static>,
+    lifecycle: Weak<parking_lot::Mutex<DatabaseLifecycleTracker>>,
 }
 
 #[derive(Debug)]
@@ -480,7 +485,7 @@ pub enum ClientConnectedError {
 }
 
 impl ModuleHost {
-    pub fn new(mut module: impl Module, on_panic: impl Fn() + Send + Sync + 'static) -> Self {
+    pub fn new(mut module: impl Module, lifecycle: DatabaseLifecycleTrackerHandle) -> Self {
         let info = module.info();
         let instance_pool = LendingPool::new();
         instance_pool.add_multiple(module.initial_instances()).unwrap();
@@ -488,8 +493,7 @@ impl ModuleHost {
             module: Arc::new(module),
             instance_pool,
         });
-        let on_panic = Arc::new(on_panic);
-        ModuleHost { info, inner, on_panic }
+        ModuleHost { info, inner, lifecycle }
     }
 
     #[inline]
@@ -518,14 +522,32 @@ impl ModuleHost {
 
         // Spawning a task allows to catch panics without proving to the
         // compiler that `dyn ModuleInstance` is unwind safe.
-        // If a reducer call panics, we **must** ensure to call `self.on_panic`
+        // If the host panics during a reducer call, we **must** ensure to notify `self.lifecycle`
         // so that the module is discarded by the host controller.
-        let result = tokio::spawn(async move { f(&mut *inst) }).await.unwrap_or_else(|e| {
-            log::warn!("reducer {reducer} panicked");
-            (self.on_panic)();
-            std::panic::resume_unwind(e.into_panic());
-        });
-        Ok(result)
+        // Note that this is not the same as the WASM execution panicking!
+        // If the WASM code exits with error during [`Self::call_reducer_inner`],
+        // either by returning `Err`, panicking or throwing an exception,
+        // then `f` here will return `Err(_)`, *not* panic, and so the `tokio::spawn` `JoinHandle`
+        // will resolve to `Ok(Err(_))`.
+        // In that case, we should not stop the database,
+        // as we can and will handle that error and recover.
+        let result = tokio::spawn(async move { f(&mut *inst) }).await;
+
+        match result {
+            Ok(result) => Ok(result),
+            Err(e) => {
+                // We never cancel this task
+                // (it's pretty clearly `spawn`ed and then immediately `await`ed right above),
+                // so no need to check `e.is_panic` or `e.is_cancelled`.
+                let panic_payload = e.into_panic();
+                let err = DatabaseLifecycleTracker::panic_payload_to_error(
+                    &format!("while executing reducer {reducer}"),
+                    &panic_payload,
+                );
+                self.lifecycle.lock().stop_database(err).await;
+                std::panic::resume_unwind(panic_payload);
+            }
+        }
     }
 
     pub async fn disconnect_client(&self, client_id: ClientActorId) {
@@ -994,7 +1016,7 @@ impl ModuleHost {
         WeakModuleHost {
             info: self.info.clone(),
             inner: Arc::downgrade(&self.inner),
-            on_panic: Arc::downgrade(&self.on_panic),
+            lifecycle: Arc::downgrade(&self.lifecycle),
         }
     }
 
@@ -1010,11 +1032,11 @@ impl ModuleHost {
 impl WeakModuleHost {
     pub fn upgrade(&self) -> Option<ModuleHost> {
         let inner = self.inner.upgrade()?;
-        let on_panic = self.on_panic.upgrade()?;
+        let lifecycle = self.lifecycle.upgrade()?;
         Some(ModuleHost {
             info: self.info.clone(),
             inner,
-            on_panic,
+            lifecycle,
         })
     }
 }
