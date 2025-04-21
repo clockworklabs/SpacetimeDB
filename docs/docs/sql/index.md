@@ -379,7 +379,7 @@ DIGIT
     ;
 ```
 
-SATS supports multple fixed width integer types.
+SATS supports multiple fixed width integer types.
 The concrete type of a literal is inferred from the context.
 
 #### Examples
