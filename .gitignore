@@ -190,7 +190,6 @@ linux-target/
 # already existing elements were commented out
 
 /target
-/tools/venv
 #Cargo.lock
 
 __pycache__/
