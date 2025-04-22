@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
@@ -188,10 +189,18 @@ namespace SpacetimeDB
                     SpacetimeDBNetworkManager._instance.RemoveConnection(this);
                 }
             };
+            
+#if UNITY_WEBGL && !UNITY_EDITOR
+            if (SpacetimeDBNetworkManager._instance != null)
+                SpacetimeDBNetworkManager._instance.StartCoroutine(PreProcessMessages());
+#endif
 #endif
 
+#if !(UNITY_WEBGL && !UNITY_EDITOR)
+            // For targets other than webgl we start a thread to pre-process messages
             networkMessageProcessThread = new Thread(PreProcessMessages);
             networkMessageProcessThread.Start();
+#endif
         }
 
         struct UnprocessedMessage
@@ -351,10 +360,19 @@ namespace SpacetimeDB
             };
         }
 
+#if UNITY_WEBGL && !UNITY_EDITOR
+        IEnumerator PreProcessMessages()
+#else
         void PreProcessMessages()
+#endif
         {
             while (!isClosing)
             {
+
+#if UNITY_WEBGL && !UNITY_EDITOR
+                yield return null;
+                while (_messageQueue.Count > 0)
+#endif
                 try
                 {
                     var message = _messageQueue.Take(_preProcessCancellationToken);
@@ -363,7 +381,11 @@ namespace SpacetimeDB
                 }
                 catch (OperationCanceledException)
                 {
+#if UNITY_WEBGL && !UNITY_EDITOR
+                    break;
+#else
                     return; // Normal shutdown
+#endif
                 }
             }
 
@@ -586,7 +608,13 @@ namespace SpacetimeDB
         {
             isClosing = true;
             connectionClosed = true;
-            webSocket.Close();
+
+            // Only try to close if the connection is active
+            if (webSocket.IsConnected)
+            {
+                webSocket.Close();
+            }
+
             _preProcessCancellationTokenSource.Cancel();
         }
 
@@ -612,7 +640,11 @@ namespace SpacetimeDB
             Log.Info($"SpacetimeDBClient: Connecting to {uri} {addressOrName}");
             if (!IsTesting)
             {
+#if UNITY_WEBGL && !UNITY_EDITOR
+                async Task Function()
+#else
                 Task.Run(async () =>
+#endif
                 {
                     try
                     {
@@ -628,7 +660,12 @@ namespace SpacetimeDB
 
                         Log.Exception(e);
                     }
+#if UNITY_WEBGL && !UNITY_EDITOR
+                }
+                _ = Function();
+#else
                 });
+#endif
             }
         }
 
