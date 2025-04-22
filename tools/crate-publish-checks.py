@@ -20,10 +20,14 @@ def find_non_path_spacetimedb_deps(dev_deps):
 def check_cargo_metadata(data):
     package = data.get("package", {})
     missing_fields = []
-    if "license" not in package:
-        missing_fields.append("license")
+
+    # Accept either license OR license-file
+    if "license" not in package and "license-file" not in package:
+        missing_fields.append("license/license-file")
+
     if "description" not in package:
         missing_fields.append("description")
+
     return missing_fields
 
 if __name__ == "__main__":
@@ -43,7 +47,7 @@ if __name__ == "__main__":
         dev_deps = data.get("dev-dependencies", {})
         bad_deps = find_non_path_spacetimedb_deps(dev_deps)
 
-        # Check license and description
+        # Check license/license-file and description
         missing_fields = check_cargo_metadata(data)
 
         exit_code = 0
@@ -66,4 +70,3 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"⚠️ Error: {e}")
         sys.exit(2)
-
