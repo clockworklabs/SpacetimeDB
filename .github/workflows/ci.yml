@@ -231,6 +231,7 @@ jobs:
       - name: Run checks
         run: |
           FAILED=0
+          # This definition of ROOTS and invocation of find-publish-list.py is copied from publish-crates.sh
           ROOTS=(bindings sdk cli standalone)
           for crate in $(venv/bin/python3 tools/find-publish-list.py --recursive --quiet "${ROOTS[@]}"); do
             if ! venv/bin/python3 tools/crate-publish-checks.py "crates/$crate"; then
