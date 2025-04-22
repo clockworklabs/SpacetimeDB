@@ -224,12 +224,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - name: Set up Python env
+      - name: Run checks
         run: |
           test -d venv || python3 -m venv venv
           venv/bin/pip3 install argparse toml
-      - name: Run checks
-        run: |
           FAILED=0
           ROOTS=(bindings sdk cli standalone)
           for crate in $(venv/bin/python3 tools/find-publish-list.py --recursive --quiet "${ROOTS[@]}"); do
