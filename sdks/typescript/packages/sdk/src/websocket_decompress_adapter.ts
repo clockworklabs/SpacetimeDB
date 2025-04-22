@@ -97,6 +97,10 @@ export class WebsocketDecompressAdapter {
       if (response.ok) {
         const { token } = await response.json();
         url.searchParams.set('token', token);
+      } else {
+        return Promise.reject(
+          new Error(`Failed to verify token: ${response.statusText}`)
+        );
       }
     }
     url.searchParams.set(

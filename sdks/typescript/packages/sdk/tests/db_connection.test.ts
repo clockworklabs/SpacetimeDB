@@ -90,6 +90,32 @@ function encodeCreatePlayerArgs(name: string, location: Point): Uint8Array {
 }
 
 describe('DbConnection', () => {
+  test('call onConnectError callback after websocket connection failed to be established', async () => {
+    const onConnectErrorPromise = new Deferred<void>();
+
+    let errorCalled = false;
+    let connectCalled = false;
+    const client = DbConnection.builder()
+      .withUri('ws://127.0.0.1:1234')
+      .withModuleName('db')
+      .withWSFn(() => {
+        return Promise.reject(new Error('Failed to connect'));
+      })
+      .onConnect(() => {
+        connectCalled = true;
+      })
+      .onConnectError(() => {
+        errorCalled = true;
+        onConnectErrorPromise.resolve();
+      })
+      .build();
+
+    await client['wsPromise'];
+    await onConnectErrorPromise.promise;
+    expect(errorCalled).toBeTruthy();
+    expect(connectCalled).toBeFalsy();
+  });
+
   test('call onConnect callback after getting an identity', async () => {
     const onConnectPromise = new Deferred<void>();
 

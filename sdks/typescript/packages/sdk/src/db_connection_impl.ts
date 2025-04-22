@@ -177,7 +177,9 @@ export class DbConnectionImpl<
   // We use them in testing.
   private clientCache: ClientCache;
   private ws?: WebsocketDecompressAdapter | WebsocketTestAdapter;
-  private wsPromise: Promise<WebsocketDecompressAdapter | WebsocketTestAdapter>;
+  private wsPromise: Promise<
+    WebsocketDecompressAdapter | WebsocketTestAdapter | undefined
+  >;
 
   constructor({
     uri,
@@ -233,16 +235,13 @@ export class DbConnectionImpl<
         };
         this.ws.onopen = this.#handleOnOpen.bind(this);
         this.ws.onmessage = this.#handleOnMessage.bind(this);
-
         return v;
       })
       .catch(e => {
         stdbLogger('error', 'Error connecting to SpacetimeDB WS');
-        this.#on('connectError', e);
-        // TODO(cloutiertyler): I don't know but this makes it compile and
-        // I don't have time to investigate how to do this properly.
-        // Otherwise `.catch` returns void.
-        throw e;
+        this.#emitter.emit('connectError', this, e);
+
+        return undefined;
       });
   }
 
@@ -501,10 +500,12 @@ export class DbConnectionImpl<
 
   #sendMessage(message: ws.ClientMessage): void {
     this.wsPromise.then(wsResolved => {
-      const writer = new BinaryWriter(1024);
-      ws.ClientMessage.serialize(writer, message);
-      const encoded = writer.getBuffer();
-      wsResolved.send(encoded);
+      if (wsResolved) {
+        const writer = new BinaryWriter(1024);
+        ws.ClientMessage.serialize(writer, message);
+        const encoded = writer.getBuffer();
+        wsResolved.send(encoded);
+      }
     });
   }
 
@@ -810,7 +811,9 @@ export class DbConnectionImpl<
    */
   disconnect(): void {
     this.wsPromise.then(wsResolved => {
-      wsResolved.close();
+      if (wsResolved) {
+        wsResolved.close();
+      }
     });
   }
 
