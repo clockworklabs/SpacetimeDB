@@ -222,6 +222,7 @@ jobs:
   publish_checks:
     name: Check that packages are publishable
     runs-on: ubuntu-latest
+    permissions: read
     steps:
       - uses: actions/checkout@v3
       - name: Set up Python env
