@@ -1,4 +1,4 @@
-import tomli
+import toml
 import argparse
 import sys
 from pathlib import Path
@@ -18,10 +18,11 @@ def find_non_path_spacetimedb_deps(dev_deps):
     return non_path_spacetimedb
 
 def check_cargo_metadata(data):
+    package = data.get("package", {})
     missing_fields = []
-    if "license" not in data:
+    if "license" not in package:
         missing_fields.append("license")
-    if "description" not in data:
+    if "description" not in package:
         missing_fields.append("description")
     return missing_fields
 
@@ -36,8 +37,7 @@ if __name__ == "__main__":
         if not cargo_toml_path.exists():
             raise FileNotFoundError(f"{cargo_toml_path} not found.")
 
-        with cargo_toml_path.open("rb") as f:
-            data = tomli.load(f)
+        data = toml.load(cargo_toml_path)
 
         # Check dev-dependencies
         dev_deps = data.get("dev-dependencies", {})
@@ -55,7 +55,7 @@ if __name__ == "__main__":
             exit_code = 1
 
         if missing_fields:
-            print(f"❌ Missing required fields in {cargo_toml_path}: {', '.join(missing_fields)}")
+            print(f"❌ Missing required fields in [package] of {cargo_toml_path}: {', '.join(missing_fields)}")
             exit_code = 1
 
         if exit_code == 0:

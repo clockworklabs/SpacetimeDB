@@ -226,7 +226,7 @@ jobs:
       - uses: actions/checkout@v3
       - run: |
           test -d venv || python3 -m venv venv
-          venv/bin/pip3 install argparse tomli
+          venv/bin/pip3 install argparse toml
           FAILED=0
           ROOTS=(bindings sdk cli standalone)
           for crate in $(venv/bin/python3 tools/find-publish-list.py --recursive --quiet "${ROOTS[@]}"); do
