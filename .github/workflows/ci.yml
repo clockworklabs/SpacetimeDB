@@ -224,7 +224,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - run: |
+      - name: Run checks
+        run: |
           test -d venv || python3 -m venv venv
           venv/bin/pip3 install argparse toml
           FAILED=0
