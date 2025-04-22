@@ -219,6 +219,25 @@ jobs:
       - name: Run bindgen tests
         run: cargo test -p spacetimedb-cli
 
+  publish_checks:
+    name: Check that packages are publishable
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - run: |
+        test -d venv || python3 -m venv venv
+        venv/bin/pip3 install argparse tomli
+        FAILED=0
+        ROOTS=(bindings sdk cli standalone)
+        for crate in $(venv/bin/python3 tools/find-publish-list.py --recursive --quiet "${ROOTS[@]}"); do
+          if ! tools/venv/bin/python3 tools/check-dependencies.py "crates/$crate"; then
+            FAILED=$(( $FAILED + 1 ))
+          fi
+        done
+        if [ $FAILED -gt 0 ]; then
+          exit 1
+        fi
+
   update:
     name: Test spacetimedb-update flow
     permissions: read-all
