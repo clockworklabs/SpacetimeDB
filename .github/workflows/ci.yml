@@ -230,7 +230,7 @@ jobs:
         FAILED=0
         ROOTS=(bindings sdk cli standalone)
         for crate in $(venv/bin/python3 tools/find-publish-list.py --recursive --quiet "${ROOTS[@]}"); do
-          if ! tools/venv/bin/python3 tools/check-dependencies.py "crates/$crate"; then
+          if ! tools/venv/bin/python3 tools/crate-publish-checks.py "crates/$crate"; then
             FAILED=$(( $FAILED + 1 ))
           fi
         done
