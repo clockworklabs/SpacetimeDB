@@ -230,6 +230,12 @@ pub enum DBError {
     Other(#[from] anyhow::Error),
     #[error(transparent)]
     TypeError(#[from] TypingError),
+    #[error("{error}, executing: `{sql}`")]
+    WithSql {
+        #[source]
+        error: Box<DBError>,
+        sql: Box<str>,
+    },
 }
 
 impl From<bflatn_to::Error> for DBError {

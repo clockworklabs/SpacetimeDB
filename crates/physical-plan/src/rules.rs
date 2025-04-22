@@ -267,9 +267,14 @@ impl RewriteRule for PushConstEq {
     type Info = Label;
 
     fn matches(plan: &PhysicalPlan) -> Option<Self::Info> {
+        // Is this plan a table scan followed by a sequence of filters?
+        // If so, it's already in a normalized state, so no need to push.
+        let is_filter = |plan: &PhysicalPlan| {
+            !plan.any(&|plan| !matches!(plan, PhysicalPlan::TableScan(..) | PhysicalPlan::Filter(..)))
+        };
         if let PhysicalPlan::Filter(input, PhysicalExpr::BinOp(_, expr, value)) = plan {
             if let (PhysicalExpr::Field(TupleField { label, .. }), PhysicalExpr::Value(_)) = (&**expr, &**value) {
-                return (input.has_table_scan(Some(label)) && !input.is_table_scan(None)).then_some(*label);
+                return (input.has_table_scan(Some(label)) && !is_filter(input)).then_some(*label);
             }
         }
         None
@@ -328,12 +333,17 @@ impl RewriteRule for PushConstAnd {
     type Info = Label;
 
     fn matches(plan: &PhysicalPlan) -> Option<Self::Info> {
+        // Is this plan a table scan followed by a sequence of filters?
+        // If so, it's already in a normalized state, so no need to push.
+        let is_filter = |plan: &PhysicalPlan| {
+            !plan.any(&|plan| !matches!(plan, PhysicalPlan::TableScan(..) | PhysicalPlan::Filter(..)))
+        };
         if let PhysicalPlan::Filter(input, PhysicalExpr::LogOp(LogOp::And, exprs)) = plan {
             return exprs.iter().find_map(|expr| {
                 if let PhysicalExpr::BinOp(_, expr, value) = expr {
                     if let (PhysicalExpr::Field(TupleField { label, .. }), PhysicalExpr::Value(_)) = (&**expr, &**value)
                     {
-                        return (input.has_table_scan(Some(label)) && !input.is_table_scan(None)).then_some(*label);
+                        return (input.has_table_scan(Some(label)) && !is_filter(input)).then_some(*label);
                     }
                 }
                 None

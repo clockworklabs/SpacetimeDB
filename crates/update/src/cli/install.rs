@@ -117,6 +117,7 @@ pub(super) async fn download_and_install(
     pb.set_message("unpacking...");
 
     let version_dir = paths.cli_bin_dir.version_dir(&release_version.to_string());
+    version_dir.create()?;
     match artifact_type {
         ArtifactType::TarGz => {
             let tgz = archive.aggregate().reader();

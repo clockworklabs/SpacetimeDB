@@ -553,6 +553,112 @@ pub(crate) mod tests {
         assert_query_results(
             &db,
             // Should only return the orders for sender "a"
+            "select * from users where identity = :sender",
+            &auth_for_a,
+            [product![id_for_a]],
+        );
+        assert_query_results(
+            &db,
+            // Should only return the orders for sender "b"
+            "select * from users where identity = :sender",
+            &auth_for_b,
+            [product![id_for_b]],
+        );
+        assert_query_results(
+            &db,
+            // Should only return the orders for sender "a"
+            &format!("select * from users where identity = 0x{}", id_for_a.to_hex()),
+            &auth_for_a,
+            [product![id_for_a]],
+        );
+        assert_query_results(
+            &db,
+            // Should only return the orders for sender "b"
+            &format!("select * from users where identity = 0x{}", id_for_b.to_hex()),
+            &auth_for_b,
+            [product![id_for_b]],
+        );
+        assert_query_results(
+            &db,
+            // Should only return the orders for sender "a"
+            &format!(
+                "select * from users where identity = :sender and identity = 0x{}",
+                id_for_a.to_hex()
+            ),
+            &auth_for_a,
+            [product![id_for_a]],
+        );
+        assert_query_results(
+            &db,
+            // Should only return the orders for sender "b"
+            &format!(
+                "select * from users where identity = :sender and identity = 0x{}",
+                id_for_b.to_hex()
+            ),
+            &auth_for_b,
+            [product![id_for_b]],
+        );
+        assert_query_results(
+            &db,
+            // Should only return the orders for sender "a"
+            &format!(
+                "select * from users where identity = :sender or identity = 0x{}",
+                id_for_b.to_hex()
+            ),
+            &auth_for_a,
+            [product![id_for_a]],
+        );
+        assert_query_results(
+            &db,
+            // Should only return the orders for sender "b"
+            &format!(
+                "select * from users where identity = :sender or identity = 0x{}",
+                id_for_a.to_hex()
+            ),
+            &auth_for_b,
+            [product![id_for_b]],
+        );
+        assert_query_results(
+            &db,
+            // Should not return any rows.
+            // Querying as sender "a", but filtering on sender "b".
+            &format!("select * from users where identity = 0x{}", id_for_b.to_hex()),
+            &auth_for_a,
+            [],
+        );
+        assert_query_results(
+            &db,
+            // Should not return any rows.
+            // Querying as sender "b", but filtering on sender "a".
+            &format!("select * from users where identity = 0x{}", id_for_a.to_hex()),
+            &auth_for_b,
+            [],
+        );
+        assert_query_results(
+            &db,
+            // Should not return any rows.
+            // Querying as sender "a", but filtering on sender "b".
+            &format!(
+                "select * from users where identity = :sender and identity = 0x{}",
+                id_for_b.to_hex()
+            ),
+            &auth_for_a,
+            [],
+        );
+        assert_query_results(
+            &db,
+            // Should not return any rows.
+            // Querying as sender "b", but filtering on sender "a".
+            &format!(
+                "select * from users where identity = :sender and identity = 0x{}",
+                id_for_a.to_hex()
+            ),
+            &auth_for_b,
+            [],
+        );
+        assert_query_results(
+            &db,
+            // Should only return the orders for sender "a"
             "select * from sales",
             &auth_for_a,
             [product![1u64, id_for_a], product![3u64, id_for_a]],
@@ -561,6 +667,34 @@ pub(crate) mod tests {
             &db,
             // Should only return the orders for sender "b"
             "select * from sales",
+            &auth_for_b,
+            [product![2u64, id_for_b], product![4u64, id_for_b]],
+        );
+        assert_query_results(
+            &db,
+            // Should only return the orders for sender "a"
+            "select s.* from users u join sales s on u.identity = s.customer",
+            &auth_for_a,
+            [product![1u64, id_for_a], product![3u64, id_for_a]],
+        );
+        assert_query_results(
+            &db,
+            // Should only return the orders for sender "b"
+            "select s.* from users u join sales s on u.identity = s.customer",
+            &auth_for_b,
+            [product![2u64, id_for_b], product![4u64, id_for_b]],
+        );
+        assert_query_results(
+            &db,
+            // Should only return the orders for sender "a"
+            "select s.* from users u join sales s on u.identity = s.customer where u.identity = :sender",
+            &auth_for_a,
+            [product![1u64, id_for_a], product![3u64, id_for_a]],
+        );
+        assert_query_results(
+            &db,
+            // Should only return the orders for sender "b"
+            "select s.* from users u join sales s on u.identity = s.customer where u.identity = :sender",
             &auth_for_b,
             [product![2u64, id_for_b], product![4u64, id_for_b]],
         );
