@@ -1788,7 +1788,7 @@ mod tests {
 
         // We should only have evaluated a single query
         assert_eq!(metrics.delta_queries_evaluated, 1);
-        assert_eq!(metrics.delta_queries_matched, 1);
+        assert_eq!(metrics.delta_queries_matched, 0);
 
         // Insert a new row into `v`
         let metrics = commit_tx(&db, &subs, [], [(v_id, product![2u64, 6u64, 6u64])])?;

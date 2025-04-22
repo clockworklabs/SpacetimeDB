@@ -1,7 +1,9 @@
 use anyhow::Result;
+use hashbrown::HashMap;
 use spacetimedb_execution::{Datastore, DeltaStore};
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_subscription::SubscriptionPlan;
+use spacetimedb_vm::relation::RelValue;
 
 use crate::host::module_host::UpdatesRelValue;
 
@@ -21,18 +23,36 @@ pub fn eval_delta<'a, Tx: Datastore + DeltaStore>(
     plan: &SubscriptionPlan,
 ) -> Result<Option<UpdatesRelValue<'a>>> {
     metrics.delta_queries_evaluated += 1;
-    let mut inserts = vec![];
-    let mut deletes = vec![];
+
+    let mut insert_counts = HashMap::new();
+    let mut delete_counts = HashMap::new();
 
     plan.for_each_insert(tx, metrics, &mut |row| {
-        inserts.push(row.into());
+        *insert_counts.entry(row).or_default() += 1;
         Ok(())
     })?;
 
     plan.for_each_delete(tx, metrics, &mut |row| {
-        deletes.push(row.into());
+        match insert_counts.get_mut(&row) {
+            None | Some(0) => {
+                *delete_counts.entry(row).or_default() += 1;
+            }
+            Some(n) => {
+                *n -= 1;
+            }
+        }
         Ok(())
     })?;
+
+    let mut inserts = vec![];
+    let mut deletes = vec![];
+
+    for (row, n) in insert_counts.into_iter().filter(|(_, n)| *n > 0) {
+        inserts.extend(std::iter::repeat_n(row, n).map(RelValue::from));
+    }
+    for (row, n) in delete_counts.into_iter().filter(|(_, n)| *n > 0) {
+        deletes.extend(std::iter::repeat_n(row, n).map(RelValue::from));
+    }
 
     // Return `None` for empty updates
     if inserts.is_empty() && deletes.is_empty() {
