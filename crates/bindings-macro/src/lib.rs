@@ -158,7 +158,7 @@ pub fn table(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
         }
 
         let table = table::TableArgs::parse(args.into(), &derive_input)?;
-        let columns = table::ColumnArgs::parse(&table.indices, &derive_input)?;
+        let (table, columns) = table::ColumnArgs::parse(table, &derive_input)?;
         let generated = table::table_impl(table, columns, &derive_input)?;
         Ok(TokenStream::from_iter([quote!(#derive_input), generated]))
     })

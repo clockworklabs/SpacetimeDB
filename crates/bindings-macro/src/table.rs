@@ -21,7 +21,7 @@ pub(crate) struct TableArgs {
     access: Option<TableAccess>,
     scheduled: Option<ScheduledArg>,
     name: Ident,
-    pub(crate) indices: Vec<IndexArg>,
+    indices: Vec<IndexArg>,
 }
 
 enum TableAccess {
@@ -238,7 +238,7 @@ pub(crate) struct ColumnArgs<'a> {
 }
 
 impl<'a> ColumnArgs<'a> {
-    pub(crate) fn parse(indices: &'a mut Vec<IndexArg>, item: &'a syn::DeriveInput) -> syn::Result<Self> {
+    pub(crate) fn parse(mut table: TableArgs, item: &'a syn::DeriveInput) -> syn::Result<(TableArgs, Self)> {
         let sats_ty = sats::sats_type_from_derive(item, quote!(spacetimedb::spacetimedb_lib))?;
 
         let original_struct_name = sats_ty.ident.clone();
@@ -283,7 +283,7 @@ impl<'a> ColumnArgs<'a> {
                         check_duplicate(&primary_key, span)?;
                         primary_key = Some(span);
                     }
-                    ColumnAttr::Index(index_arg) => indices.push(index_arg),
+                    ColumnAttr::Index(index_arg) => table.indices.push(index_arg),
                 }
             }
 
@@ -311,7 +311,7 @@ impl<'a> ColumnArgs<'a> {
         // Mark all indices with a single column matching a unique constraint as unique.
         // For all the unpaired unique columns, create a unique index.
         for unique_col in &unique_columns {
-            if indices.iter_mut().any(|index| {
+            if table.indices.iter_mut().any(|index| {
                 let covered_by_index = match &index.kind {
                     IndexType::BTree { columns } => &*columns == slice::from_ref(unique_col.ident),
                     IndexType::Direct { column } => column == unique_col.ident,
@@ -326,21 +326,21 @@ impl<'a> ColumnArgs<'a> {
             // even if isn't optimal in specific cases.
             let name = unique_col.ident.clone();
             let columns = vec![name.clone()];
-            indices.push(IndexArg {
+            table.indices.push(IndexArg {
                 name,
                 is_unique: true,
                 kind: IndexType::BTree { columns },
             })
         }
 
-        Ok(ColumnArgs {
+        Ok((table, ColumnArgs {
             original_struct_name,
             fields: fields.to_vec(),
             columns,
             unique_columns,
             sequenced_columns,
             primary_key_column,
-        })
+        }))
     }
 }
 
