@@ -53,7 +53,7 @@ if __name__ == "__main__":
         exit_code = 0
 
         if bad_deps:
-            print(f"❌ Dev-dependencies found in {cargo_toml_path} that must be converted to `path` dependencies in order to not impede crate publishing:")
+            print(f"❌ These dev-dependencies in {cargo_toml_path} must be converted to `path` dependencies in order to not impede crate publishing:")
             for dep in bad_deps:
                 print(f"  - {dep}")
             exit_code = 1
