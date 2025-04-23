@@ -1547,22 +1547,22 @@ export class LoggedOutPlayerTableHandle {
     },
   };
   /**
-   * Access to the `player_id` unique index on the table `logged_out_player`,
+   * Access to the `playerId` unique index on the table `logged_out_player`,
    * which allows point queries on the field of the same name
    * via the [`LoggedOutPlayerPlayerIdUnique.find`] method.
    *
    * Users are encouraged not to explicitly reference this type,
    * but to directly chain method calls,
-   * like `ctx.db.loggedOutPlayer.player_id().find(...)`.
+   * like `ctx.db.loggedOutPlayer.playerId().find(...)`.
    *
-   * Get a handle on the `player_id` unique index on the table `logged_out_player`.
+   * Get a handle on the `playerId` unique index on the table `logged_out_player`.
    */
-  player_id = {
-    // Find the subscribed row whose `player_id` column value is equal to `col_val`,
+  playerId = {
+    // Find the subscribed row whose `playerId` column value is equal to `col_val`,
     // if such a row is present in the client cache.
     find: (col_val: bigint): Player | undefined => {
       for (let row of this.tableCache.iter()) {
-        if (deepEqual(row.player_id, col_val)) {
+        if (deepEqual(row.playerId, col_val)) {
           return row;
         }
       }
@@ -2218,22 +2218,22 @@ export class PlayerTableHandle {
     },
   };
   /**
-   * Access to the `player_id` unique index on the table `player`,
+   * Access to the `playerId` unique index on the table `player`,
    * which allows point queries on the field of the same name
    * via the [`PlayerPlayerIdUnique.find`] method.
    *
    * Users are encouraged not to explicitly reference this type,
    * but to directly chain method calls,
-   * like `ctx.db.player.player_id().find(...)`.
+   * like `ctx.db.player.playerId().find(...)`.
    *
-   * Get a handle on the `player_id` unique index on the table `player`.
+   * Get a handle on the `playerId` unique index on the table `player`.
    */
-  player_id = {
-    // Find the subscribed row whose `player_id` column value is equal to `col_val`,
+  playerId = {
+    // Find the subscribed row whose `playerId` column value is equal to `col_val`,
     // if such a row is present in the client cache.
     find: (col_val: bigint): Player | undefined => {
       for (let row of this.tableCache.iter()) {
-        if (deepEqual(row.player_id, col_val)) {
+        if (deepEqual(row.playerId, col_val)) {
           return row;
         }
       }
@@ -2759,22 +2759,22 @@ export class RepeatingTestArgTableHandle {
     return this.tableCache.iter();
   }
   /**
-   * Access to the `scheduled_id` unique index on the table `repeating_test_arg`,
+   * Access to the `scheduledId` unique index on the table `repeating_test_arg`,
    * which allows point queries on the field of the same name
    * via the [`RepeatingTestArgScheduledIdUnique.find`] method.
    *
    * Users are encouraged not to explicitly reference this type,
    * but to directly chain method calls,
-   * like `ctx.db.repeatingTestArg.scheduled_id().find(...)`.
+   * like `ctx.db.repeatingTestArg.scheduledId().find(...)`.
    *
-   * Get a handle on the `scheduled_id` unique index on the table `repeating_test_arg`.
+   * Get a handle on the `scheduledId` unique index on the table `repeating_test_arg`.
    */
-  scheduled_id = {
-    // Find the subscribed row whose `scheduled_id` column value is equal to `col_val`,
+  scheduledId = {
+    // Find the subscribed row whose `scheduledId` column value is equal to `col_val`,
     // if such a row is present in the client cache.
     find: (col_val: bigint): RepeatingTestArg | undefined => {
       for (let row of this.tableCache.iter()) {
-        if (deepEqual(row.scheduled_id, col_val)) {
+        if (deepEqual(row.scheduledId, col_val)) {
           return row;
         }
       }
