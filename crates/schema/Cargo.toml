@@ -31,10 +31,10 @@ enum-as-inner.workspace = true
 enum-map.workspace = true
 
 [dev-dependencies]
-spacetimedb-lib = { path = "../lib", features = ["test"] }
+spacetimedb-lib = { workspace = true, features = ["test"] }
 # these are circular dependencies, but only in tests, so it's fine
 spacetimedb-testing = { path = "../testing" }
-spacetimedb-cli = { path = "../cli" }
+spacetimedb-cli.workspace = true
 
 proptest.workspace = true
 serial_test.workspace = true
