@@ -7,7 +7,7 @@ use crate::auth::{
     SpacetimeIdentityToken,
 };
 use crate::routes::subscribe::generate_random_connection_id;
-use crate::util::{ByteStringBody, NameOrIdentity};
+pub use crate::util::{ByteStringBody, NameOrIdentity};
 use crate::{log_and_500, ControlStateDelegate, DatabaseDef, NodeDelegate};
 use axum::body::{Body, Bytes};
 use axum::extract::{Path, Query, State};
@@ -31,7 +31,7 @@ use spacetimedb_client_api_messages::name::{
 };
 use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::{sats, Timestamp};
+use spacetimedb_lib::{sats, ProductValue, Timestamp};
 use spacetimedb_schema::auto_migrate::{
     MigrationPolicy as SchemaMigrationPolicy, MigrationToken, PrettyPrintStyle as AutoMigratePrettyPrintStyle,
 };
@@ -383,7 +383,7 @@ pub(crate) async fn worker_ctx_find_database(
 
 #[derive(Deserialize)]
 pub struct SqlParams {
-    name_or_identity: NameOrIdentity,
+    pub name_or_identity: NameOrIdentity,
 }
 
 #[derive(Deserialize)]
@@ -391,16 +391,16 @@ pub struct SqlQueryParams {
     /// If `true`, return the query result only after its transaction offset
     /// is confirmed to be durable.
     #[serde(default)]
-    confirmed: bool,
+    pub confirmed: bool,
 }
 
-pub async fn sql<S>(
-    State(worker_ctx): State<S>,
-    Path(SqlParams { name_or_identity }): Path<SqlParams>,
-    Query(SqlQueryParams { confirmed }): Query<SqlQueryParams>,
-    Extension(auth): Extension<SpacetimeAuth>,
-    body: String,
-) -> axum::response::Result<impl IntoResponse>
+pub async fn sql_direct<S>(
+    worker_ctx: S,
+    SqlParams { name_or_identity }: SqlParams,
+    SqlQueryParams { confirmed }: SqlQueryParams,
+    caller_identity: Identity,
+    sql: String,
+) -> axum::response::Result<Vec<SqlStmtResult<ProductValue>>>
 where
     S: NodeDelegate + ControlStateDelegate,
 {
@@ -412,7 +412,7 @@ where
         .await?
         .ok_or(NO_SUCH_DATABASE)?;
 
-    let auth = AuthCtx::new(database.owner_identity, auth.identity);
+    let auth = AuthCtx::new(database.owner_identity, caller_identity);
     log::debug!("auth: {auth:?}");
 
     let host = worker_ctx
@@ -420,7 +420,21 @@ where
         .await
         .map_err(log_and_500)?
         .ok_or(StatusCode::NOT_FOUND)?;
-    let json = host.exec_sql(auth, database, confirmed, body).await?;
+
+    host.exec_sql(auth, database, confirmed, sql).await
+}
+
+pub async fn sql<S>(
+    State(worker_ctx): State<S>,
+    Path(name_or_identity): Path<SqlParams>,
+    Query(params): Query<SqlQueryParams>,
+    Extension(auth): Extension<SpacetimeAuth>,
+    body: String,
+) -> axum::response::Result<impl IntoResponse>
+where
+    S: NodeDelegate + ControlStateDelegate,
+{
+    let json = sql_direct(worker_ctx, name_or_identity, params, auth.identity, body).await?;
 
     let total_duration = json.iter().fold(0, |acc, x| acc + x.total_duration_micros);
 
@@ -488,7 +502,9 @@ pub struct PublishDatabaseQueryParams {
     policy: MigrationPolicy,
 }
 
+use spacetimedb_client_api_messages::http::SqlStmtResult;
 use std::env;
+
 fn require_spacetime_auth_for_creation() -> bool {
     env::var("TEMP_REQUIRE_SPACETIME_AUTH").is_ok_and(|v| !v.is_empty())
 }

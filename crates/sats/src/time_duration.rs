@@ -82,6 +82,20 @@ impl TimeDuration {
     pub fn checked_sub(self, other: Self) -> Option<Self> {
         self.to_micros().checked_sub(other.to_micros()).map(Self::from_micros)
     }
+
+    /// Generate an `iso8601` format string
+    ///
+    /// Example:
+    /// ```rust
+    /// use std::time::Duration;
+    /// use spacetimedb_sats::time_duration::TimeDuration;
+    /// assert_eq!( TimeDuration::from_micros(0).to_iso8601().as_str(), "P0D");
+    /// assert_eq!( TimeDuration::from_micros(-1_000_000).to_iso8601().as_str(), "-PT1S");
+    /// assert_eq!( TimeDuration::from_duration(Duration::from_secs(60 * 24)).to_iso8601().as_str(), "PT1440S");
+    /// ```
+    pub fn to_iso8601(self) -> String {
+        chrono::Duration::microseconds(self.to_micros()).to_string()
+    }
 }
 
 impl From<Duration> for TimeDuration {
