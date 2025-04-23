@@ -1,3 +1,4 @@
+use spacetimedb_pg::pg_server;
 use std::sync::Arc;
 
 use crate::StandaloneEnv;
@@ -9,8 +10,10 @@ use spacetimedb::config::{CertificateAuthority, ConfigFile};
 use spacetimedb::db::{Config, Storage};
 use spacetimedb::startup::{self, TracingOptions};
 use spacetimedb::worker_metrics;
+use spacetimedb_client_api::auth::JwtAuthProvider;
 use spacetimedb_client_api::routes::database::DatabaseRoutes;
 use spacetimedb_client_api::routes::router;
+use spacetimedb_client_api::NodeDelegate;
 use spacetimedb_paths::cli::{PrivKeyPath, PubKeyPath};
 use spacetimedb_paths::server::ServerDataDir;
 use tokio::net::TcpListener;
@@ -156,12 +159,24 @@ pub async fn exec(args: &ArgMatches) -> anyhow::Result<()> {
     db_routes.root_post = db_routes.root_post.layer(DefaultBodyLimit::disable());
     db_routes.db_put = db_routes.db_put.layer(DefaultBodyLimit::disable());
     let extra = axum::Router::new().nest("/health", spacetimedb_client_api::routes::health::router());
-    let service = router(&ctx, db_routes, extra).with_state(ctx);
+    let service = router(&ctx, db_routes, extra).with_state(ctx.clone());
 
     let tcp = TcpListener::bind(listen_addr).await?;
     socket2::SockRef::from(&tcp).set_nodelay(true)?;
-    log::debug!("Starting SpacetimeDB listening on {}", tcp.local_addr().unwrap());
-    axum::serve(tcp, service).await?;
+    log::debug!("Starting SpacetimeDB listening on {}", tcp.local_addr()?);
+    let (shutdown_tx, mut shutdown_rx) = tokio::sync::watch::channel(());
+    let private_key = ctx.jwt_auth_provider().private_key_bytes().to_vec();
+    tokio::select! {
+        _ = pg_server::start_pg(shutdown_rx.clone(), ctx, listen_addr, &private_key) => {},
+        _ = axum::serve(tcp, service).with_graceful_shutdown(async move {
+            shutdown_rx.changed().await.ok();
+        }) => {},
+        _ = tokio::signal::ctrl_c() => {
+            println!("Shutting down servers...");
+            let _ = shutdown_tx.send(()); // Notify all tasks
+        }
+    }
+
     Ok(())
 }
 
