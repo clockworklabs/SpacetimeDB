@@ -5,7 +5,7 @@ use crate::{i256, u256, AlgebraicValue, WithTypespace};
 use crate::{ser, ProductType, ProductTypeElement};
 use core::fmt;
 use core::fmt::Write as _;
-use derive_more::{From, Into};
+use derive_more::{Display, From, Into};
 
 /// An extension trait for [`Serialize`](ser::Serialize) providing formatting methods.
 pub trait Satn: ser::Serialize {
@@ -231,7 +231,7 @@ struct SatnFormatter<'a, 'f> {
 
 /// An error occurred during serialization to the SATS data format.
 #[derive(From, Into)]
-struct SatnError(fmt::Error);
+pub struct SatnError(fmt::Error);
 
 impl ser::Error for SatnError {
     fn custom<T: fmt::Display>(_msg: T) -> Self {
@@ -435,7 +435,7 @@ struct PsqlEntryWrapper<'a, 'f, const SEP: char> {
 }
 
 /// Provides the data format for named products for `SQL`.
-struct PsqlNamedFormatter<'a, 'f> {
+pub struct PsqlNamedFormatter<'a, 'f> {
     /// The formatter for each element separating elements by a `,`.
     f: PsqlEntryWrapper<'a, 'f, ','>,
     /// If is not [Self::is_special] to control if we start with `(`
@@ -445,7 +445,7 @@ struct PsqlNamedFormatter<'a, 'f> {
 }
 
 impl<'a, 'f> PsqlNamedFormatter<'a, 'f> {
-    pub fn new(ty: &'a PsqlType<'a>, f: Writer<'a, 'f>) -> Self {
+    fn new(ty: &'a PsqlType<'a>, f: Writer<'a, 'f>) -> Self {
         Self {
             start: true,
             f: PsqlEntryWrapper {
@@ -472,10 +472,20 @@ impl ser::SerializeNamedProduct for PsqlNamedFormatter<'_, '_> {
         // We need to check for both the  enclosing(`self.f.ty`) type and the inner element(`name`) type.
         self.use_fmt = self.f.ty.use_fmt(name);
         let res = self.f.entry.entry(|mut f| {
-            let PsqlType { tuple, field, idx } = self.f.ty;
+            let PsqlType {
+                client,
+                tuple,
+                field,
+                idx,
+            } = self.f.ty;
             if !self.use_fmt.is_special() {
+                let start = match client {
+                    PsqlClient::SpacetimeDB => "(",
+                    PsqlClient::Postgres => "{",
+                };
                 if self.start {
-                    write!(f, "(")?;
+                    write!(f, "{start}")?;
+
                     self.start = false;
                 }
                 // Format the name or use the index if unnamed.
@@ -484,7 +494,11 @@ impl ser::SerializeNamedProduct for PsqlNamedFormatter<'_, '_> {
                 } else {
                     write!(f, "{idx}")?;
                 }
-                write!(f, " = ")?;
+                let sep = match client {
+                    PsqlClient::SpacetimeDB => "=",
+                    PsqlClient::Postgres => ":",
+                };
+                write!(f, " {sep} ")?;
             }
             //Is a nested product type?
             let (tuple, field, idx) = if let Some(product) = field.algebraic_type.as_product() {
@@ -495,7 +509,12 @@ impl ser::SerializeNamedProduct for PsqlNamedFormatter<'_, '_> {
 
             elem.serialize(PsqlFormatter {
                 fmt: SatnFormatter { f },
-                ty: &PsqlType { tuple, field, idx },
+                ty: &PsqlType {
+                    client: *client,
+                    tuple,
+                    field,
+                    idx,
+                },
             })?;
 
             Ok(())
@@ -513,7 +532,11 @@ impl ser::SerializeNamedProduct for PsqlNamedFormatter<'_, '_> {
 
     fn end(mut self) -> Result<Self::Ok, Self::Error> {
         if !self.use_fmt.is_special() {
-            write!(self.f.entry.fmt, ")")?;
+            let end = match self.f.ty.client {
+                PsqlClient::SpacetimeDB => ")",
+                PsqlClient::Postgres => "}",
+            };
+            write!(self.f.entry.fmt, "{end}")?;
         }
         Ok(())
     }
@@ -538,8 +561,15 @@ impl ser::SerializeSeqProduct for PsqlSeqFormatter<'_, '_> {
     }
 }
 
+/// Which client is used to format the `SQL` output?
+#[derive(PartialEq, Copy, Clone, Debug)]
+pub enum PsqlClient {
+    SpacetimeDB,
+    Postgres,
+}
+
 /// How format of the `SQL` output?
-#[derive(PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq, Display)]
 pub enum PsqlPrintFmt {
     /// Print as `hex` format
     Hex,
@@ -552,14 +582,46 @@ pub enum PsqlPrintFmt {
 }
 
 impl PsqlPrintFmt {
-    fn is_special(&self) -> bool {
+    pub fn is_special(&self) -> bool {
         self != &PsqlPrintFmt::Satn
+    }
+    /// Returns if the type is a special type
+    ///
+    /// Is required to check both the enclosing type and the inner element type
+    pub fn use_fmt(tuple: &ProductType, field: &ProductTypeElement, name: Option<&str>) -> PsqlPrintFmt {
+        if tuple.is_identity()
+            || tuple.is_connection_id()
+            || field.algebraic_type.is_identity()
+            || field.algebraic_type.is_connection_id()
+            || name.map(ProductType::is_identity_tag).unwrap_or_default()
+            || name.map(ProductType::is_connection_id_tag).unwrap_or_default()
+        {
+            return PsqlPrintFmt::Hex;
+        };
+
+        if tuple.is_timestamp()
+            || field.algebraic_type.is_timestamp()
+            || name.map(ProductType::is_timestamp_tag).unwrap_or_default()
+        {
+            return PsqlPrintFmt::Timestamp;
+        };
+
+        if tuple.is_time_duration()
+            || field.algebraic_type.is_time_duration()
+            || name.map(ProductType::is_time_duration_tag).unwrap_or_default()
+        {
+            return PsqlPrintFmt::Duration;
+        };
+
+        PsqlPrintFmt::Satn
     }
 }
 
 /// A wrapper that remember the `header` of the tuple/struct and the current field
 #[derive(Debug, Clone)]
 pub struct PsqlType<'a> {
+    /// The client used to format the output
+    pub client: PsqlClient,
     /// The header of the tuple/struct
     pub tuple: &'a ProductType,
     /// The current field
@@ -572,32 +634,8 @@ impl PsqlType<'_> {
     /// Returns if the type is a special type
     ///
     /// Is required to check both the enclosing type and the inner element type
-    fn use_fmt(&self, name: Option<&str>) -> PsqlPrintFmt {
-        if self.tuple.is_identity()
-            || self.tuple.is_connection_id()
-            || self.field.algebraic_type.is_identity()
-            || self.field.algebraic_type.is_connection_id()
-            || name.map(ProductType::is_identity_tag).unwrap_or_default()
-            || name.map(ProductType::is_connection_id_tag).unwrap_or_default()
-        {
-            return PsqlPrintFmt::Hex;
-        };
-
-        if self.tuple.is_timestamp()
-            || self.field.algebraic_type.is_timestamp()
-            || name.map(ProductType::is_timestamp_tag).unwrap_or_default()
-        {
-            return PsqlPrintFmt::Timestamp;
-        };
-
-        if self.tuple.is_time_duration()
-            || self.field.algebraic_type.is_time_duration()
-            || name.map(ProductType::is_time_duration_tag).unwrap_or_default()
-        {
-            return PsqlPrintFmt::Duration;
-        };
-
-        PsqlPrintFmt::Satn
+    pub fn use_fmt(&self, name: Option<&str>) -> PsqlPrintFmt {
+        PsqlPrintFmt::use_fmt(self.tuple, self.field, name)
     }
 }
 
@@ -614,8 +652,13 @@ impl<'a, 'f> ser::Serializer for PsqlFormatter<'a, 'f> {
     type SerializeSeqProduct = PsqlSeqFormatter<'a, 'f>;
     type SerializeNamedProduct = PsqlNamedFormatter<'a, 'f>;
 
-    fn serialize_bool(self, v: bool) -> Result<Self::Ok, Self::Error> {
-        self.fmt.serialize_bool(v)
+    fn serialize_bool(mut self, v: bool) -> Result<Self::Ok, Self::Error> {
+        match self.ty.client {
+            PsqlClient::SpacetimeDB => self.fmt.serialize_bool(v),
+            PsqlClient::Postgres => {
+                write!(self.fmt, "{}", if v { "t" } else { "f" })
+            }
+        }
     }
     fn serialize_u8(self, v: u8) -> Result<Self::Ok, Self::Error> {
         self.fmt.serialize_u8(v)
@@ -676,12 +719,20 @@ impl<'a, 'f> ser::Serializer for PsqlFormatter<'a, 'f> {
         self.fmt.serialize_f64(v)
     }
 
-    fn serialize_str(self, v: &str) -> Result<Self::Ok, Self::Error> {
-        self.fmt.serialize_str(v)
+    fn serialize_str(mut self, v: &str) -> Result<Self::Ok, Self::Error> {
+        match self.ty.client {
+            PsqlClient::SpacetimeDB => self.fmt.serialize_str(v),
+            PsqlClient::Postgres => write!(self.fmt, "{v}"),
+        }
     }
 
-    fn serialize_bytes(self, v: &[u8]) -> Result<Self::Ok, Self::Error> {
-        self.fmt.serialize_bytes(v)
+    fn serialize_bytes(mut self, v: &[u8]) -> Result<Self::Ok, Self::Error> {
+        match self.ty.client {
+            PsqlClient::Postgres if self.ty.use_fmt(None) == PsqlPrintFmt::Satn => {
+                write!(self.fmt, "\\x{}", hex::encode(v))
+            }
+            _ => self.fmt.serialize_bytes(v),
+        }
     }
 
     fn serialize_array(self, len: usize) -> Result<Self::SerializeArray, Self::Error> {
