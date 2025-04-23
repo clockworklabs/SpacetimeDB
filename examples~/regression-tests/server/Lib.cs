@@ -26,4 +26,10 @@ public static partial class Module
     {
         ctx.Db.ExampleData.Insert(new ExampleData { Id = id, Indexed = indexed });
     }
+
+    [SpacetimeDB.Reducer]
+    public static void ThrowError(ReducerContext ctx, string error)
+    {
+        throw new Exception(error);
+    }
 }

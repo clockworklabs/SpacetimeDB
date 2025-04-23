@@ -12,17 +12,17 @@ namespace SpacetimeDB.Types
 {
     public sealed partial class RemoteReducers : RemoteBase
     {
-        public delegate void AddHandler(ReducerEventContext ctx, uint id, uint indexed);
-        public event AddHandler? OnAdd;
+        public delegate void ThrowErrorHandler(ReducerEventContext ctx, string error);
+        public event ThrowErrorHandler? OnThrowError;
 
-        public void Add(uint id, uint indexed)
+        public void ThrowError(string error)
         {
-            conn.InternalCallReducer(new Reducer.Add(id, indexed), this.SetCallReducerFlags.AddFlags);
+            conn.InternalCallReducer(new Reducer.ThrowError(error), this.SetCallReducerFlags.ThrowErrorFlags);
         }
 
-        public bool InvokeAdd(ReducerEventContext ctx, Reducer.Add args)
+        public bool InvokeThrowError(ReducerEventContext ctx, Reducer.ThrowError args)
         {
-            if (OnAdd == null)
+            if (OnThrowError == null)
             {
                 if (InternalOnUnhandledReducerError != null)
                 {
@@ -34,10 +34,9 @@ namespace SpacetimeDB.Types
                 }
                 return false;
             }
-            OnAdd(
+            OnThrowError(
                 ctx,
-                args.Id,
-                args.Indexed
+                args.Error
             );
             return true;
         }
@@ -47,33 +46,28 @@ namespace SpacetimeDB.Types
     {
         [SpacetimeDB.Type]
         [DataContract]
-        public sealed partial class Add : Reducer, IReducerArgs
+        public sealed partial class ThrowError : Reducer, IReducerArgs
         {
-            [DataMember(Name = "id")]
-            public uint Id;
-            [DataMember(Name = "indexed")]
-            public uint Indexed;
+            [DataMember(Name = "error")]
+            public string Error;
 
-            public Add(
-                uint Id,
-                uint Indexed
-            )
+            public ThrowError(string Error)
             {
-                this.Id = Id;
-                this.Indexed = Indexed;
+                this.Error = Error;
             }
 
-            public Add()
+            public ThrowError()
             {
+                this.Error = "";
             }
 
-            string IReducerArgs.ReducerName => "Add";
+            string IReducerArgs.ReducerName => "ThrowError";
         }
     }
 
     public sealed partial class SetReducerFlags
     {
-        internal CallReducerFlags AddFlags;
-        public void Add(CallReducerFlags flags) => AddFlags = flags;
+        internal CallReducerFlags ThrowErrorFlags;
+        public void ThrowError(CallReducerFlags flags) => ThrowErrorFlags = flags;
     }
 }

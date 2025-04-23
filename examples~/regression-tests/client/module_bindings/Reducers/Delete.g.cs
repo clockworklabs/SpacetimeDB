@@ -22,7 +22,18 @@ namespace SpacetimeDB.Types
 
         public bool InvokeDelete(ReducerEventContext ctx, Reducer.Delete args)
         {
-            if (OnDelete == null) return false;
+            if (OnDelete == null)
+            {
+                if (InternalOnUnhandledReducerError != null)
+                {
+                    switch (ctx.Event.Status)
+                    {
+                        case Status.Failed(var reason): InternalOnUnhandledReducerError(ctx, new Exception(reason)); break;
+                        case Status.OutOfEnergy(var _): InternalOnUnhandledReducerError(ctx, new Exception("out of energy")); break;
+                    }
+                }
+                return false;
+            }
             OnDelete(
                 ctx,
                 args.Id
