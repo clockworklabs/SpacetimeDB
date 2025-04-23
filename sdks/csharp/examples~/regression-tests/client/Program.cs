@@ -65,6 +65,13 @@ void OnConnected(DbConnection conn, Identity identity, string authToken)
         waiting--;
         ValidateBTreeIndexes(ctx);
     };
+
+    conn.OnUnhandledReducerError += (ReducerEventContext ctx, Exception exception) =>
+    {
+        Log.Info($"Got OnUnhandledReducerError: {exception}");
+        waiting--;
+        ValidateBTreeIndexes(ctx);
+    };
 }
 
 const uint MAX_ID = 10;
@@ -92,12 +99,13 @@ void ValidateBTreeIndexes(IRemoteDbContext conn)
 
 void OnSubscriptionApplied(SubscriptionEventContext context)
 {
+    applied = true;
+
     // Do some operations that alter row state;
     // we will check that everything is in sync in the callbacks for these reducer calls.
     Log.Debug("Calling Add");
     waiting++;
     context.Reducers.Add(1, 1);
-    applied = true;
 
     Log.Debug("Calling Delete");
     waiting++;
@@ -106,7 +114,10 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
     Log.Debug("Calling Add");
     waiting++;
     context.Reducers.Add(1, 1);
-    applied = true;
+
+    Log.Debug("Calling ThrowError");
+    waiting++;
+    context.Reducers.ThrowError("this is an error");
 
     // Now unsubscribe and check that the unsubscribe is actually applied.
     Log.Debug("Calling Unsubscribe");

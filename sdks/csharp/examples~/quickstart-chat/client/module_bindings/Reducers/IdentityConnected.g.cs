@@ -17,7 +17,18 @@ namespace SpacetimeDB.Types
 
         public bool InvokeIdentityConnected(ReducerEventContext ctx, Reducer.IdentityConnected args)
         {
-            if (OnIdentityConnected == null) return false;
+            if (OnIdentityConnected == null)
+            {
+                if (InternalOnUnhandledReducerError != null)
+                {
+                    switch (ctx.Event.Status)
+                    {
+                        case Status.Failed(var reason): InternalOnUnhandledReducerError(ctx, new Exception(reason)); break;
+                        case Status.OutOfEnergy(var _): InternalOnUnhandledReducerError(ctx, new Exception("out of energy")); break;
+                    }
+                }
+                return false;
+            }
             OnIdentityConnected(
                 ctx
             );
