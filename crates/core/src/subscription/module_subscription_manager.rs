@@ -167,14 +167,6 @@ impl QueryState {
         itertools::chain(&self.legacy_subscribers, &self.subscriptions)
     }
 
-    /// Does this query have any search arguments?
-    fn has_search_args(&self) -> bool {
-        self.query
-            .plans
-            .iter()
-            .any(|subscription| !subscription.physical_plan().search_args().is_empty())
-    }
-
     /// Return the search arguments for this query
     fn search_args(&self) -> impl Iterator<Item = (TableId, ColId, AlgebraicValue)> {
         let mut args = HashSet::new();
@@ -637,11 +629,12 @@ impl SubscriptionManager {
         // If this is new, we need to update the table to query mapping.
         if !query_state.has_subscribers() {
             let hash = query_state.query.hash();
-            if query_state.has_search_args() {
-                for (table_id, col_id, arg) in query_state.search_args() {
-                    search_args.insert_query(table_id, col_id, arg, hash);
-                }
-            } else {
+            let mut has_search_args = false;
+            for (table_id, col_id, arg) in query_state.search_args() {
+                has_search_args = true;
+                search_args.insert_query(table_id, col_id, arg, hash);
+            }
+            if !has_search_args {
                 for table_id in query_state.query.table_ids() {
                     tables.entry(table_id).or_default().insert(hash);
                 }
