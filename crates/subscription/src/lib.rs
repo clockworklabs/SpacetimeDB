@@ -230,6 +230,11 @@ pub struct SubscriptionPlan {
 }
 
 impl SubscriptionPlan {
+    /// Is this a plan for a join?
+    pub fn is_join(&self) -> bool {
+        self.fragments.insert_plans.len() > 1 && self.fragments.delete_plans.len() > 1
+    }
+
     /// To which table does this plan subscribe?
     pub fn subscribed_table_id(&self) -> TableId {
         self.return_id

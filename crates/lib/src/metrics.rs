@@ -50,6 +50,10 @@ pub struct ExecutionMetrics {
     pub delta_queries_evaluated: u64,
     /// How many subscriptions had some updates?
     pub delta_queries_matched: u64,
+    /// How many times do we evaluate the same row in a subscription update?
+    pub duplicate_rows_evaluated: u64,
+    /// How many duplicate rows do we send in a subscription update?
+    pub duplicate_rows_sent: u64,
 }
 
 impl ExecutionMetrics {
@@ -66,6 +70,8 @@ impl ExecutionMetrics {
             rows_updated,
             delta_queries_evaluated,
             delta_queries_matched,
+            duplicate_rows_evaluated,
+            duplicate_rows_sent,
         }: ExecutionMetrics,
     ) {
         self.index_seeks += index_seeks;
@@ -78,6 +84,8 @@ impl ExecutionMetrics {
         self.rows_updated += rows_updated;
         self.delta_queries_evaluated += delta_queries_evaluated;
         self.delta_queries_matched += delta_queries_matched;
+        self.duplicate_rows_evaluated += duplicate_rows_evaluated;
+        self.duplicate_rows_sent += duplicate_rows_sent;
     }
 }
 
@@ -100,6 +108,8 @@ mod tests {
             rows_updated: 1,
             delta_queries_evaluated: 2,
             delta_queries_matched: 3,
+            duplicate_rows_evaluated: 4,
+            duplicate_rows_sent: 2,
         });
 
         assert_eq!(a.index_seeks, 1);
@@ -111,5 +121,7 @@ mod tests {
         assert_eq!(a.rows_deleted, 1);
         assert_eq!(a.delta_queries_evaluated, 2);
         assert_eq!(a.delta_queries_matched, 3);
+        assert_eq!(a.duplicate_rows_evaluated, 4);
+        assert_eq!(a.duplicate_rows_sent, 2);
     }
 }
