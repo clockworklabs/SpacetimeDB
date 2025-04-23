@@ -23,8 +23,8 @@ use crate::worker_metrics::WORKER_METRICS;
 use parking_lot::RwLock;
 use prometheus::IntGauge;
 use spacetimedb_client_api_messages::websocket::{
-    self as ws, BsatnFormat, FormatSwitch, JsonFormat, SubscribeMulti, SubscribeSingle, TableUpdate, Unsubscribe,
-    UnsubscribeMulti,
+    self as ws, BsatnFormat, Compression, FormatSwitch, JsonFormat, SubscribeMulti, SubscribeSingle, TableUpdate,
+    Unsubscribe, UnsubscribeMulti,
 };
 use spacetimedb_execution::pipelined::PipelinedProject;
 use spacetimedb_expr::check::parse_and_type_sub;
@@ -170,7 +170,6 @@ impl ModuleSubscriptions {
             auth,
         )?;
 
-        let comp = sender.config.compression;
         let table_id = query.subscribed_table_id();
         let table_name = query.subscribed_table_name();
 
@@ -187,10 +186,34 @@ impl ModuleSubscriptions {
         let tx = DeltaTx::from(tx);
 
         Ok(match sender.config.protocol {
-            Protocol::Binary => collect_table_update(&plans, table_id, table_name.into(), comp, &tx, update_type)
-                .map(|(table_update, metrics)| (FormatSwitch::Bsatn(table_update), metrics)),
-            Protocol::Text => collect_table_update(&plans, table_id, table_name.into(), comp, &tx, update_type)
-                .map(|(table_update, metrics)| (FormatSwitch::Json(table_update), metrics)),
+            Protocol::Binary => {
+                collect_table_update(
+                    &plans,
+                    table_id,
+                    table_name.into(),
+                    // We will compress the outer server message,
+                    // after we release the tx lock.
+                    // There's no need to compress the inner table update too.
+                    Compression::None,
+                    &tx,
+                    update_type,
+                )
+                .map(|(table_update, metrics)| (FormatSwitch::Bsatn(table_update), metrics))
+            }
+            Protocol::Text => {
+                collect_table_update(
+                    &plans,
+                    table_id,
+                    table_name.into(),
+                    // We will compress the outer server message,
+                    // after we release the tx lock,
+                    // There's no need to compress the inner table update too.
+                    Compression::None,
+                    &tx,
+                    update_type,
+                )
+                .map(|(table_update, metrics)| (FormatSwitch::Json(table_update), metrics))
+            }
         }?)
     }
 
@@ -213,16 +236,31 @@ impl ModuleSubscriptions {
             },
             auth,
         )?;
-        let comp = sender.config.compression;
 
         let tx = DeltaTx::from(tx);
         match sender.config.protocol {
             Protocol::Binary => {
-                let (update, metrics) = execute_plans(queries, comp, &tx, update_type)?;
+                let (update, metrics) = execute_plans(
+                    queries,
+                    // We will compress the outer server message,
+                    // after we release the tx lock.
+                    // There's no need to compress the inner table updates too.
+                    Compression::None,
+                    &tx,
+                    update_type,
+                )?;
                 Ok((FormatSwitch::Bsatn(update), metrics))
             }
             Protocol::Text => {
-                let (update, metrics) = execute_plans(queries, comp, &tx, update_type)?;
+                let (update, metrics) = execute_plans(
+                    queries,
+                    // We will compress the outer server message,
+                    // after we release the tx lock.
+                    // There's no need to compress the inner table updates too.
+                    Compression::None,
+                    &tx,
+                    update_type,
+                )?;
                 Ok((FormatSwitch::Json(update), metrics))
             }
         }
@@ -598,8 +636,6 @@ impl ModuleSubscriptions {
 
         drop(guard);
 
-        let comp = sender.config.compression;
-
         check_row_limit(
             &queries,
             &self.relational_db,
@@ -614,10 +650,26 @@ impl ModuleSubscriptions {
 
         let tx = DeltaTx::from(&*tx);
         let (database_update, metrics) = match sender.config.protocol {
-            Protocol::Binary => execute_plans(&queries, comp, &tx, TableUpdateType::Subscribe)
-                .map(|(table_update, metrics)| (FormatSwitch::Bsatn(table_update), metrics))?,
-            Protocol::Text => execute_plans(&queries, comp, &tx, TableUpdateType::Subscribe)
-                .map(|(table_update, metrics)| (FormatSwitch::Json(table_update), metrics))?,
+            Protocol::Binary => execute_plans(
+                &queries,
+                // We will compress the outer server message,
+                // after we release the tx lock.
+                // There's no need to compress the inner table updates too.
+                Compression::None,
+                &tx,
+                TableUpdateType::Subscribe,
+            )
+            .map(|(table_update, metrics)| (FormatSwitch::Bsatn(table_update), metrics))?,
+            Protocol::Text => execute_plans(
+                &queries,
+                // We will compress the outer server message,
+                // after we release the tx lock.
+                // There's no need to compress the inner table updates too.
+                Compression::None,
+                &tx,
+                TableUpdateType::Subscribe,
+            )
+            .map(|(table_update, metrics)| (FormatSwitch::Json(table_update), metrics))?,
         };
 
         record_exec_metrics(
@@ -719,8 +771,8 @@ pub struct WriteConflict;
 mod tests {
     use super::{AssertTxFn, ModuleSubscriptions};
     use crate::client::messages::{
-        SerializableMessage, SubscriptionError, SubscriptionMessage, SubscriptionResult, SubscriptionUpdateMessage,
-        TransactionUpdateMessage,
+        SerializableMessage, SubscriptionData, SubscriptionError, SubscriptionMessage, SubscriptionResult,
+        SubscriptionUpdateMessage, TransactionUpdateMessage,
     };
     use crate::client::{ClientActorId, ClientConfig, ClientConnectionSender, ClientName, Protocol};
     use crate::db::datastore::system_tables::{StRowLevelSecurityRow, ST_ROW_LEVEL_SECURITY_ID};
@@ -740,7 +792,7 @@ mod tests {
     use spacetimedb_client_api_messages::energy::EnergyQuanta;
     use spacetimedb_client_api_messages::websocket::{
         CompressableQueryUpdate, Compression, FormatSwitch, QueryId, Subscribe, SubscribeMulti, SubscribeSingle,
-        Unsubscribe, UnsubscribeMulti,
+        TableUpdate, Unsubscribe, UnsubscribeMulti,
     };
     use spacetimedb_execution::dml::MutDatastore;
     use spacetimedb_lib::bsatn::ToBsatn;
@@ -856,17 +908,25 @@ mod tests {
         }
     }
 
-    /// Instantiate a client connection
-    fn client_connection(client_id: ClientActorId) -> (Arc<ClientConnectionSender>, Receiver<SerializableMessage>) {
+    /// Instantiate a client connection with compression
+    fn client_connection_with_compression(
+        client_id: ClientActorId,
+        compression: Compression,
+    ) -> (Arc<ClientConnectionSender>, Receiver<SerializableMessage>) {
         let (sender, rx) = ClientConnectionSender::dummy_with_channel(
             client_id,
             ClientConfig {
                 protocol: Protocol::Binary,
-                compression: Compression::None,
+                compression,
                 tx_update_full: true,
             },
         );
         (Arc::new(sender), rx)
+    }
+
+    /// Instantiate a client connection
+    fn client_connection(client_id: ClientActorId) -> (Arc<ClientConnectionSender>, Receiver<SerializableMessage>) {
+        client_connection_with_compression(client_id, Compression::None)
     }
 
     /// Insert rules into the RLS system table
@@ -1469,6 +1529,50 @@ mod tests {
         // If the server sends empty updates, this assertion will fail,
         // because we will receive one for the first transaction.
         assert_tx_update_for_table(&mut rx, t_id, &schema, [product![0_u8]], []).await;
+        Ok(())
+    }
+
+    /// Test that we do not compress the results of an initial subscribe call
+    #[tokio::test]
+    async fn test_no_compression_for_subscribe() -> anyhow::Result<()> {
+        // Establish a client connection with compression
+        let (tx, mut rx) = client_connection_with_compression(client_id_from_u8(1), Compression::Brotli);
+
+        let db = relational_db()?;
+        let subs = module_subscriptions(db.clone());
+
+        let table_id = db.create_table_for_test("t", &[("x", AlgebraicType::U64)], &[])?;
+
+        let mut inserts = vec![];
+
+        for i in 0..16_000u64 {
+            inserts.push((table_id, product![i]));
+        }
+
+        // Insert a lot of rows into `t`.
+        // We want to insert enough to cross any threshold there might be for compression.
+        commit_tx(&db, &subs, [], inserts)?;
+
+        // Subscribe to the entire table
+        subscribe_multi(&subs, &["select * from t"], tx, &mut 0)?;
+
+        // Assert the table updates within this message are all be uncompressed
+        match rx.recv().await {
+            Some(SerializableMessage::Subscription(SubscriptionMessage {
+                result:
+                    SubscriptionResult::SubscribeMulti(SubscriptionData {
+                        data: FormatSwitch::Bsatn(ws::DatabaseUpdate { tables }),
+                    }),
+                ..
+            })) => {
+                assert!(tables.iter().all(|TableUpdate { updates, .. }| updates
+                    .iter()
+                    .all(|query_update| matches!(query_update, CompressableQueryUpdate::Uncompressed(_)))));
+            }
+            Some(_) => panic!("unexpected message from subscription"),
+            None => panic!("channel unexpectedly closed"),
+        };
+
         Ok(())
     }
 
