@@ -2775,7 +2775,6 @@ mod tests {
         let path = ReplicaDir::from_path_unchecked(path_db);
 
         let repo = open_snapshot_repo(path.snapshots(), Identity::ZERO, 0)?;
-        dbg!(repo.size_on_disk()?);
         assert!(
             repo.size_on_disk()?.total_size > 0,
             "Snapshot size should be greater than 0"

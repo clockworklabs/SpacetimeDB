@@ -218,3 +218,44 @@ jobs:
 
       - name: Run bindgen tests
         run: cargo test -p spacetimedb-cli
+
+  update:
+    name: Test spacetimedb-update flow
+    permissions: read-all
+    strategy:
+      matrix:
+        include:
+          - { target: x86_64-unknown-linux-gnu, runner: spacetimedb-runner }
+          - { target: aarch64-unknown-linux-gnu, runner: arm-runner }
+          - { target: aarch64-apple-darwin, runner: macos-latest }
+          - { target: x86_64-pc-windows-msvc, runner: windows-latest }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Install Rust
+        uses: dsherret/rust-toolchain-file@v1
+
+      - name: Install rust target
+        run: rustup target add ${{ matrix.target }}
+
+      - name: Install packages
+        if: ${{ matrix.runner == 'arm-runner' }}
+        shell: bash
+        run: sudo apt install libssl-dev
+
+      - name: Build spacetimedb-update
+        run: cargo build --features github-token-auth --target ${{ matrix.target }} -p spacetimedb-update
+
+      - name: Run self-install
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          ROOT_DIR="$(mktemp -d)"
+          # NOTE(bfops): We need the `github-token-auth` feature because we otherwise tend to get ratelimited when we try to fetch `/releases/latest`.
+          # My best guess is that, on the GitHub runners, the "anonymous" ratelimit is shared by *all* users of that runner (I think this because it
+          # happens very frequently on the `macos-runner`, but we haven't seen it on any others).
+          cargo run --features github-token-auth --target ${{ matrix.target }} -p spacetimedb-update -- self-install --root-dir="${ROOT_DIR}" --yes
+          "${ROOT_DIR}"/spacetime --root-dir="${ROOT_DIR}" help

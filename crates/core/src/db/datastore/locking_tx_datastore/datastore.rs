@@ -1057,14 +1057,13 @@ mod tests {
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::st_var::StVarValue;
     use spacetimedb_lib::{resolved_type_via_v9, ScheduleAt, TimeDuration};
-    use spacetimedb_primitives::{col_list, ColId, ColSet, ScheduleId};
+    use spacetimedb_primitives::{col_list, ColId, ScheduleId};
     use spacetimedb_sats::algebraic_value::ser::value_serialize;
     use spacetimedb_sats::{product, AlgebraicType, GroundSpacetimeType};
     use spacetimedb_schema::def::{BTreeAlgorithm, ConstraintData, IndexAlgorithm, UniqueConstraintData};
     use spacetimedb_schema::schema::{
         ColumnSchema, ConstraintSchema, IndexSchema, RowLevelSecuritySchema, ScheduleSchema, SequenceSchema,
     };
-    use spacetimedb_table::table::UniqueConstraintViolation;
 
     /// For the first user-created table, sequences in the system tables start
     /// from this value.
@@ -1482,7 +1481,7 @@ mod tests {
     #[test]
     fn test_bootstrapping_sets_up_tables() -> ResultTest<()> {
         let datastore = get_datastore()?;
-        let tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let tx = begin_mut_tx(&datastore);
         let query = query_st_tables(&tx);
         #[rustfmt::skip]
         assert_eq!(query.scan_st_tables()?, map_array([
@@ -1674,7 +1673,7 @@ mod tests {
     fn test_create_table_post_commit() -> ResultTest<()> {
         let (datastore, tx, table_id) = setup_table()?;
         datastore.commit_mut_tx(tx)?;
-        let tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let tx = begin_mut_tx(&datastore);
         let query = query_st_tables(&tx);
 
         let table_rows = query.scan_st_tables_by_col(ColId(0), &table_id.into())?;
@@ -1693,7 +1692,7 @@ mod tests {
     fn test_create_table_post_rollback() -> ResultTest<()> {
         let (datastore, tx, table_id) = setup_table()?;
         datastore.rollback_mut_tx(tx);
-        let tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let tx = begin_mut_tx(&datastore);
         assert!(
             !datastore.table_id_exists_mut_tx(&tx, &table_id),
             "Table should not exist"
@@ -1729,7 +1728,7 @@ mod tests {
     fn test_schema_for_table_post_commit() -> ResultTest<()> {
         let (datastore, tx, table_id) = setup_table()?;
         datastore.commit_mut_tx(tx)?;
-        let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let mut tx = begin_mut_tx(&datastore);
         verify_schemas_consistent(&mut tx, table_id);
         let schema = &*datastore.schema_for_table_mut_tx(&tx, table_id)?;
         #[rustfmt::skip]
@@ -1742,7 +1741,7 @@ mod tests {
         let (datastore, tx, table_id) = setup_table()?;
         datastore.commit_mut_tx(tx)?;
 
-        let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let mut tx = begin_mut_tx(&datastore);
         let schema = datastore.schema_for_table_mut_tx(&tx, table_id)?;
 
         let mut dropped_indexes = 0;
@@ -1756,7 +1755,7 @@ mod tests {
         );
         datastore.commit_mut_tx(tx)?;
 
-        let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let mut tx = begin_mut_tx(&datastore);
         assert!(
             datastore.schema_for_table_mut_tx(&tx, table_id)?.indexes.is_empty(),
             "no indexes should be left in the schema post-commit"
@@ -1792,7 +1791,7 @@ mod tests {
 
         datastore.commit_mut_tx(tx)?;
 
-        let tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let tx = begin_mut_tx(&datastore);
         assert_eq!(
             datastore.schema_for_table_mut_tx(&tx, table_id)?.indexes,
             expected_indexes,
@@ -1808,7 +1807,7 @@ mod tests {
     fn test_schema_for_table_rollback() -> ResultTest<()> {
         let (datastore, tx, table_id) = setup_table()?;
         datastore.rollback_mut_tx(tx);
-        let tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let tx = begin_mut_tx(&datastore);
         let schema = datastore.schema_for_table_mut_tx(&tx, table_id);
         assert!(schema.is_err());
         Ok(())
@@ -1840,7 +1839,7 @@ mod tests {
         // 0 will be ignored.
         insert(&datastore, &mut tx, table_id, &u32_str_u32(0, "Foo", 18))?;
         datastore.commit_mut_tx(tx)?;
-        let tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let tx = begin_mut_tx(&datastore);
         #[rustfmt::skip]
         assert_eq!(all_rows(&datastore, &tx, table_id), vec![u32_str_u32(1, "Foo", 18)]);
         Ok(())
@@ -1851,10 +1850,10 @@ mod tests {
         let (datastore, tx, table_id) = setup_table()?;
         let row = u32_str_u32(15, "Foo", 18); // 15 is ignored.
         datastore.commit_mut_tx(tx)?;
-        let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let mut tx = begin_mut_tx(&datastore);
         insert(&datastore, &mut tx, table_id, &row)?;
         datastore.rollback_mut_tx(tx);
-        let tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let tx = begin_mut_tx(&datastore);
         #[rustfmt::skip]
         assert_eq!(all_rows(&datastore, &tx, table_id), vec![]);
         Ok(())
@@ -1866,7 +1865,7 @@ mod tests {
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
         insert(&datastore, &mut tx, table_id, &row)?;
         datastore.commit_mut_tx(tx)?;
-        let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let mut tx = begin_mut_tx(&datastore);
         let created_row = u32_str_u32(1, "Foo", 18);
         let num_deleted = datastore.delete_by_rel_mut_tx(&mut tx, table_id, [created_row]);
         assert_eq!(num_deleted, 1);
@@ -1916,12 +1915,7 @@ mod tests {
         insert(&datastore, &mut tx, table_id, &row)?;
         let result = insert(&datastore, &mut tx, table_id, &row);
         match result {
-            Err(DBError::Index(IndexError::UniqueConstraintViolation(UniqueConstraintViolation {
-                constraint_name: _,
-                table_name: _,
-                cols: _,
-                value: _,
-            }))) => (),
+            Err(DBError::Index(IndexError::UniqueConstraintViolation(_))) => (),
             _ => panic!("Expected an unique constraint violation error."),
         }
         #[rustfmt::skip]
@@ -1935,15 +1929,10 @@ mod tests {
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
         insert(&datastore, &mut tx, table_id, &row)?;
         datastore.commit_mut_tx(tx)?;
-        let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let mut tx = begin_mut_tx(&datastore);
         let result = insert(&datastore, &mut tx, table_id, &row);
         match result {
-            Err(DBError::Index(IndexError::UniqueConstraintViolation(UniqueConstraintViolation {
-                constraint_name: _,
-                table_name: _,
-                cols: _,
-                value: _,
-            }))) => (),
+            Err(DBError::Index(IndexError::UniqueConstraintViolation(_))) => (),
             _ => panic!("Expected an unique constraint violation error."),
         }
         #[rustfmt::skip]
@@ -1954,43 +1943,22 @@ mod tests {
     #[test]
     fn test_unique_constraint_post_rollback() -> ResultTest<()> {
         let (datastore, tx, table_id) = setup_table()?;
-        datastore.commit_mut_tx(tx)?;
-        let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        commit(&datastore, tx)?;
+        let mut tx = begin_mut_tx(&datastore);
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
         insert(&datastore, &mut tx, table_id, &row)?;
         datastore.rollback_mut_tx(tx);
-        let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let mut tx = begin_mut_tx(&datastore);
         insert(&datastore, &mut tx, table_id, &row)?;
         #[rustfmt::skip]
         assert_eq!(all_rows(&datastore, &tx, table_id), vec![u32_str_u32(2, "Foo", 18)]);
         Ok(())
     }
 
-    #[test]
-    fn test_create_index_pre_commit() -> ResultTest<()> {
-        let (datastore, tx, table_id) = setup_table()?;
-        datastore.commit_mut_tx(tx)?;
-
-        let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
-        let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
-        insert(&datastore, &mut tx, table_id, &row)?;
-        datastore.commit_mut_tx(tx)?;
-
-        let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
-        let index_def = IndexSchema {
-            index_id: IndexId::SENTINEL,
-            table_id,
-            index_name: "Foo_age_idx_btree".into(),
-            index_algorithm: IndexAlgorithm::BTree(BTreeAlgorithm { columns: col_list![2] }),
-        };
-        // TODO: it's slightly incorrect to create an index with `is_unique: true` without creating a corresponding constraint.
-        // But the `Table` crate allows it for now.
-        datastore.create_index_mut_tx(&mut tx, index_def, true)?;
-        let query = query_st_tables(&tx);
+    fn assert_st_indices(tx: &MutTxId, include_age: bool) -> ResultTest<()> {
         let seq_start = FIRST_NON_SYSTEM_ID;
-        let index_rows = query.scan_st_indexes()?;
         #[rustfmt::skip]
-        assert_eq!(index_rows, [
+        let mut known_index_rows = [
             IndexRow { id: 1, table: ST_TABLE_ID.into(), col: col(0), name: "st_table_table_id_idx_btree", },
             IndexRow { id: 2, table: ST_TABLE_ID.into(), col: col(1), name: "st_table_table_name_idx_btree", },
             IndexRow { id: 3, table: ST_COLUMN_ID.into(), col: col_list![0, 1], name: "st_column_table_id_col_pos_idx_btree", },
@@ -2006,16 +1974,48 @@ mod tests {
             IndexRow { id: seq_start,     table: FIRST_NON_SYSTEM_ID, col: col(0), name: "Foo_id_idx_btree",  },
             IndexRow { id: seq_start + 1, table: FIRST_NON_SYSTEM_ID, col: col(1), name: "Foo_name_idx_btree",  },
             IndexRow { id: seq_start + 2, table: FIRST_NON_SYSTEM_ID, col: col(2), name: "Foo_age_idx_btree",  },
-        ].map(Into::into));
+        ].map(Into::into).to_vec();
+
+        if !include_age {
+            known_index_rows.pop();
+        }
+
+        let query = query_st_tables(tx);
+        let index_rows = query.scan_st_indexes()?;
+        assert_eq!(index_rows, known_index_rows);
+        Ok(())
+    }
+
+    fn create_foo_age_idx_btree(datastore: &Locking, tx: &mut MutTxId, table_id: TableId) -> ResultTest<()> {
+        let index_def = IndexSchema {
+            index_id: IndexId::SENTINEL,
+            table_id,
+            index_name: "Foo_age_idx_btree".into(),
+            index_algorithm: BTreeAlgorithm { columns: 2.into() }.into(),
+        };
+        // TODO: it's slightly incorrect to create an index with `is_unique: true` without creating a corresponding constraint.
+        // But the `Table` crate allows it for now.
+        datastore.create_index_mut_tx(tx, index_def, true)?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_create_index_pre_commit() -> ResultTest<()> {
+        let (datastore, tx, table_id) = setup_table()?;
+        commit(&datastore, tx)?;
+
+        let mut tx = begin_mut_tx(&datastore);
+        let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
+        insert(&datastore, &mut tx, table_id, &row)?;
+        commit(&datastore, tx)?;
+
+        let mut tx = begin_mut_tx(&datastore);
+        create_foo_age_idx_btree(&datastore, &mut tx, table_id)?;
+        assert_st_indices(&tx, true)?;
         let row = u32_str_u32(0, "Bar", 18); // 0 will be ignored.
         let result = insert(&datastore, &mut tx, table_id, &row);
         match result {
-            Err(DBError::Index(IndexError::UniqueConstraintViolation(UniqueConstraintViolation {
-                constraint_name: _,
-                table_name: _,
-                cols: _,
-                value: _,
-            }))) => (),
+            Err(DBError::Index(IndexError::UniqueConstraintViolation(_))) => (),
             e => panic!("Expected an unique constraint violation error but got {e:?}."),
         }
         #[rustfmt::skip]
@@ -2028,48 +2028,18 @@ mod tests {
         let (datastore, mut tx, table_id) = setup_table()?;
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
         insert(&datastore, &mut tx, table_id, &row)?;
-        datastore.commit_mut_tx(tx)?;
-        let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
-        let index_def = IndexSchema {
-            index_id: IndexId::SENTINEL,
-            table_id,
-            index_name: "Foo_age_idx_btree".into(),
-            index_algorithm: IndexAlgorithm::BTree(BTreeAlgorithm { columns: col_list![2] }),
-        };
-        datastore.create_index_mut_tx(&mut tx, index_def, true)?;
-        datastore.commit_mut_tx(tx)?;
-        let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
-        let query = query_st_tables(&tx);
+        commit(&datastore, tx)?;
 
-        let seq_start = FIRST_NON_SYSTEM_ID;
-        let index_rows = query.scan_st_indexes()?;
-        #[rustfmt::skip]
-        assert_eq!(index_rows, [
-            IndexRow { id: 1, table: ST_TABLE_ID.into(), col: col(0), name: "st_table_table_id_idx_btree", },
-            IndexRow { id: 2, table: ST_TABLE_ID.into(), col: col(1), name: "st_table_table_name_idx_btree", },
-            IndexRow { id: 3, table: ST_COLUMN_ID.into(), col: col_list![0, 1], name: "st_column_table_id_col_pos_idx_btree", },
-            IndexRow { id: 4, table: ST_SEQUENCE_ID.into(), col: col(0), name: "st_sequence_sequence_id_idx_btree", },
-            IndexRow { id: 5, table: ST_INDEX_ID.into(), col: col(0), name: "st_index_index_id_idx_btree", },
-            IndexRow { id: 6, table: ST_CONSTRAINT_ID.into(), col: col(0), name: "st_constraint_constraint_id_idx_btree", },
-            IndexRow { id: 7, table: ST_CLIENT_ID.into(), col: col_list![0, 1], name: "st_client_identity_connection_id_idx_btree", },
-            IndexRow { id: 8, table: ST_VAR_ID.into(), col: col(0), name: "st_var_name_idx_btree", },
-            IndexRow { id: 9, table: ST_SCHEDULED_ID.into(), col: col(0), name: "st_scheduled_schedule_id_idx_btree", },
-            IndexRow { id: 10, table: ST_SCHEDULED_ID.into(), col: col(1), name: "st_scheduled_table_id_idx_btree", },
-            IndexRow { id: 11, table: ST_ROW_LEVEL_SECURITY_ID.into(), col: col(0), name: "st_row_level_security_table_id_idx_btree", },
-            IndexRow { id: 12, table: ST_ROW_LEVEL_SECURITY_ID.into(), col: col(1), name: "st_row_level_security_sql_idx_btree", },
-            IndexRow { id: seq_start    , table: FIRST_NON_SYSTEM_ID, col: col(0), name: "Foo_id_idx_btree",  },
-            IndexRow { id: seq_start + 1, table: FIRST_NON_SYSTEM_ID, col: col(1), name: "Foo_name_idx_btree", },
-            IndexRow { id: seq_start + 2, table: FIRST_NON_SYSTEM_ID, col: col(2), name: "Foo_age_idx_btree", },
-        ].map(Into::into));
+        let mut tx = begin_mut_tx(&datastore);
+        create_foo_age_idx_btree(&datastore, &mut tx, table_id)?;
+        commit(&datastore, tx)?;
+
+        let mut tx = begin_mut_tx(&datastore);
+        assert_st_indices(&tx, true)?;
         let row = u32_str_u32(0, "Bar", 18); // 0 will be ignored.
         let result = insert(&datastore, &mut tx, table_id, &row);
         match result {
-            Err(DBError::Index(IndexError::UniqueConstraintViolation(UniqueConstraintViolation {
-                constraint_name: _,
-                table_name: _,
-                cols: _,
-                value: _,
-            }))) => (),
+            Err(DBError::Index(IndexError::UniqueConstraintViolation(_))) => (),
             _ => panic!("Expected an unique constraint violation error."),
         }
         #[rustfmt::skip]
@@ -2083,38 +2053,12 @@ mod tests {
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
         insert(&datastore, &mut tx, table_id, &row)?;
         datastore.commit_mut_tx(tx)?;
-        let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
-        let index_def = IndexSchema {
-            index_id: IndexId::SENTINEL,
-            table_id,
-            index_name: "age_idx".into(),
-            index_algorithm: IndexAlgorithm::BTree(BTreeAlgorithm { columns: col_list![2] }),
-        };
-        datastore.create_index_mut_tx(&mut tx, index_def, true)?;
+        let mut tx = begin_mut_tx(&datastore);
+        create_foo_age_idx_btree(&datastore, &mut tx, table_id)?;
 
         datastore.rollback_mut_tx(tx);
-        let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
-        let query = query_st_tables(&tx);
-
-        let seq_start = FIRST_NON_SYSTEM_ID;
-        let index_rows = query.scan_st_indexes()?;
-        #[rustfmt::skip]
-        assert_eq!(index_rows, [
-            IndexRow { id: 1, table: ST_TABLE_ID.into(), col: col(0), name: "st_table_table_id_idx_btree", },
-            IndexRow { id: 2, table: ST_TABLE_ID.into(), col: col(1), name: "st_table_table_name_idx_btree", },
-            IndexRow { id: 3, table: ST_COLUMN_ID.into(), col: col_list![0, 1], name: "st_column_table_id_col_pos_idx_btree", },
-            IndexRow { id: 4, table: ST_SEQUENCE_ID.into(), col: col(0), name: "st_sequence_sequence_id_idx_btree", },
-            IndexRow { id: 5, table: ST_INDEX_ID.into(), col: col(0), name: "st_index_index_id_idx_btree", },
-            IndexRow { id: 6, table: ST_CONSTRAINT_ID.into(), col: col(0), name: "st_constraint_constraint_id_idx_btree", },
-            IndexRow { id: 7, table: ST_CLIENT_ID.into(), col: col_list![0, 1], name: "st_client_identity_connection_id_idx_btree", },
-            IndexRow { id: 8, table: ST_VAR_ID.into(), col: col(0), name: "st_var_name_idx_btree", },
-            IndexRow { id: 9, table: ST_SCHEDULED_ID.into(), col: col(0), name: "st_scheduled_schedule_id_idx_btree", },
-            IndexRow { id: 10, table: ST_SCHEDULED_ID.into(), col: col(1), name: "st_scheduled_table_id_idx_btree", },
-            IndexRow { id: 11, table: ST_ROW_LEVEL_SECURITY_ID.into(), col: col(0), name: "st_row_level_security_table_id_idx_btree", },
-            IndexRow { id: 12, table: ST_ROW_LEVEL_SECURITY_ID.into(), col: col(1), name: "st_row_level_security_sql_idx_btree", },
-            IndexRow { id: seq_start,     table: FIRST_NON_SYSTEM_ID, col: col(0), name: "Foo_id_idx_btree", },
-            IndexRow { id: seq_start + 1, table: FIRST_NON_SYSTEM_ID, col: col(1), name: "Foo_name_idx_btree", },
-        ].map(Into::into));
+        let mut tx = begin_mut_tx(&datastore);
+        assert_st_indices(&tx, false)?;
         let row = u32_str_u32(0, "Bar", 18); // 0 will be ignored.
         insert(&datastore, &mut tx, table_id, &row)?;
         #[rustfmt::skip]
@@ -2145,7 +2089,7 @@ mod tests {
         };
 
         // Update the db with the same actual value for that row, in a new tx.
-        let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let mut tx = begin_mut_tx(&datastore);
         // Iterate over all rows with the value 1 (from the auto_inc) in column 0.
         let rows = all_rows_col_0_eq_1(&tx);
         assert_eq!(rows.len(), 1);
@@ -2747,6 +2691,14 @@ mod tests {
         Ok(())
     }
 
+    fn create_table(schema: TableSchema) -> ResultTest<(Locking, TableId)> {
+        let datastore = get_datastore()?;
+        let mut tx = begin_mut_tx(&datastore);
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        datastore.commit_mut_tx(tx)?;
+        Ok((datastore, table_id))
+    }
+
     #[test]
     fn test_set_semantics() -> ResultTest<()> {
         let col_schema = |col_name, col_pos| ColumnSchema {
@@ -2757,50 +2709,44 @@ mod tests {
         };
 
         // Create a table schema for (a: u8, b: u8)
-        let table_schema = |primary_key, constraint: Option<_>| {
+        let table_schema = |index: Option<_>, constraint: Option<_>| {
             TableSchema::new(
                 TableId::SENTINEL,
                 "Foo".into(),
                 vec![col_schema("a".into(), 0.into()), col_schema("b".into(), 1.into())],
-                vec![],
-                constraint.map(|cs| vec![cs]).unwrap_or_default(),
+                index.into_iter().collect(),
+                constraint.into_iter().collect(),
                 vec![],
                 StTableType::User,
                 StAccess::Public,
                 None,
-                primary_key,
+                None,
             )
         };
         let table_schema_no_constraints = || table_schema(None, None);
-        let table_schema_pk = || table_schema(Some(0.into()), None);
         let table_schema_unique_constraint = || {
             table_schema(
-                None,
+                Some(IndexSchema {
+                    table_id: TableId::SENTINEL,
+                    index_id: IndexId::SENTINEL,
+                    index_name: "a_index".into(),
+                    index_algorithm: BTreeAlgorithm { columns: 0.into() }.into(),
+                }),
                 Some(ConstraintSchema {
                     table_id: TableId::SENTINEL,
                     constraint_id: ConstraintId::SENTINEL,
                     constraint_name: "a_unique".into(),
-                    data: ConstraintData::Unique(UniqueConstraintData {
-                        columns: ColSet::from_iter([0]),
-                    }),
+                    data: ConstraintData::Unique(UniqueConstraintData { columns: 0.into() }),
                 }),
             )
         };
 
-        fn create_table(schema: TableSchema) -> ResultTest<(Locking, TableId)> {
-            let datastore = get_datastore()?;
-            let mut tx = begin_mut_tx(&datastore);
-            let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
-            datastore.commit_mut_tx(tx)?;
-            Ok((datastore, table_id))
-        }
-
         fn insert_rows(datastore: &Locking, rows: Vec<ProductValue>, table_id: TableId) -> ResultTest<()> {
             let mut tx = begin_mut_tx(datastore);
             for row in rows {
-                datastore.insert_mut_tx(&mut tx, table_id, row.to_bsatn_vec()?.as_slice())?;
+                insert(datastore, &mut tx, table_id, &row)?;
             }
-            datastore.commit_mut_tx(tx)?;
+            commit(datastore, tx)?;
             Ok(())
         }
 
@@ -2886,9 +2832,60 @@ mod tests {
             Ok(())
         }
 
-        assert_set_semantics_for_table(table_schema_pk)?;
         assert_set_semantics_for_table(table_schema_unique_constraint)?;
         assert_set_semantics_for_table(table_schema_no_constraints)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn add_twice_and_find_issue_2601() -> ResultTest<()> {
+        let schema = TableSchema::new(
+            TableId::SENTINEL,
+            "Table".into(),
+            vec![ColumnSchema {
+                table_id: TableId::SENTINEL,
+                col_pos: 0.into(),
+                col_name: "field".into(),
+                col_type: AlgebraicType::I32,
+            }],
+            vec![IndexSchema {
+                table_id: TableId::SENTINEL,
+                index_id: IndexId::SENTINEL,
+                index_name: "index".into(),
+                index_algorithm: BTreeAlgorithm { columns: 0.into() }.into(),
+            }],
+            vec![ConstraintSchema {
+                table_id: TableId::SENTINEL,
+                constraint_id: ConstraintId::SENTINEL,
+                constraint_name: "constraint".into(),
+                data: ConstraintData::Unique(UniqueConstraintData { columns: 0.into() }),
+            }],
+            vec![],
+            StTableType::User,
+            StAccess::Public,
+            None,
+            None,
+        );
+
+        let (datastore, table_id) = create_table(schema)?;
+
+        let mut tx = begin_mut_tx(&datastore);
+
+        let row = &product![42];
+        let (_, first) = insert(&datastore, &mut tx, table_id, row)?;
+        let first = first.pointer();
+        // There was a bug where this insertion caused a removal of the first row.
+        insert(&datastore, &mut tx, table_id, row)?;
+
+        assert_eq!(
+            datastore
+                .iter_by_col_eq_mut_tx(&tx, table_id, 0, &42i32.into())
+                .unwrap()
+                .map(|r| r.pointer())
+                .collect::<Vec<_>>(),
+            [first],
+        );
 
         Ok(())
     }
