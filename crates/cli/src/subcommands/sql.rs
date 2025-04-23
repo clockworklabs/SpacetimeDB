@@ -10,6 +10,7 @@ use anyhow::Context;
 use clap::{Arg, ArgAction, ArgMatches};
 use reqwest::RequestBuilder;
 use spacetimedb_lib::de::serde::SeedWrapper;
+use spacetimedb_lib::sats::satn::PsqlClient;
 use spacetimedb_lib::sats::{satn, ProductType, ProductValue, Typespace};
 
 pub fn cli() -> clap::Command {
@@ -206,6 +207,7 @@ fn build_table<E>(
         let row = row?;
         builder.push_record(ty.with_values(&row).enumerate().map(|(idx, value)| {
             let ty = satn::PsqlType {
+                client: PsqlClient::SpacetimeDB,
                 tuple: ty.ty(),
                 field: &ty.ty().elements[idx],
                 idx,
