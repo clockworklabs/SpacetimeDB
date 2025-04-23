@@ -219,6 +219,30 @@ jobs:
       - name: Run bindgen tests
         run: cargo test -p spacetimedb-cli
 
+  publish_checks:
+    name: Check that packages are publishable
+    runs-on: ubuntu-latest
+    permissions: read-all
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python env
+        run: |
+          test -d venv || python3 -m venv venv
+          venv/bin/pip3 install argparse toml
+      - name: Run checks
+        run: |
+          FAILED=0
+          # This definition of ROOTS and invocation of find-publish-list.py is copied from publish-crates.sh
+          ROOTS=(bindings sdk cli standalone)
+          for crate in $(venv/bin/python3 tools/find-publish-list.py --recursive --quiet "${ROOTS[@]}"); do
+            if ! venv/bin/python3 tools/crate-publish-checks.py "crates/$crate"; then
+              FAILED=$(( $FAILED + 1 ))
+            fi
+          done
+          if [ $FAILED -gt 0 ]; then
+            exit 1
+          fi
+
   update:
     name: Test spacetimedb-update flow
     permissions: read-all

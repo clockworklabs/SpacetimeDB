@@ -28,8 +28,8 @@ tokio-util = { workspace = true, features = ["io"] }
 zstd-framed.workspace = true
 
 [dev-dependencies]
-spacetimedb-core = { workspace = true, features = ["test"] }
-spacetimedb-schema.workspace = true
+spacetimedb-core = { path = "../core", features = ["test"] }
+spacetimedb-schema = { path = "../schema" }
 
 anyhow.workspace = true
 env_logger.workspace = true
