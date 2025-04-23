@@ -752,7 +752,8 @@ pub struct DatabaseLifecycleTracker {
 impl Drop for DatabaseLifecycleTracker {
     fn drop(&mut self) {
         if !self.is_stopped() {
-            log::warn!("Dropping DatabaseLifecycleTracker whose state is not Stopped");
+            let backtrace = std::backtrace::Backtrace::force_capture();
+            log::warn!("Dropping DatabaseLifecycleTracker whose state is not Stopped at {backtrace:#?}");
             // TODO: should we attempt to clean up here? Or possibly should we treat this as a hard error?
         }
     }
@@ -772,6 +773,8 @@ impl DatabaseLifecycleTracker {
             log::warn!("DatabaseLifecycleTracker already stopped with reason {old_reason:?}, but attempted to stop again with reason {reason:?}");
             return;
         }
+
+        log::info!("Stopping database: {reason:?}");
 
         self.unregister_handle.unregister();
 
