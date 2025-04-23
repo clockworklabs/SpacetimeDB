@@ -53,7 +53,7 @@ if __name__ == "__main__":
         exit_code = 0
 
         if bad_deps:
-            print(f"❌ Non-path `spacetimedb` dev-dependencies found in {cargo_toml_path}:")
+            print(f"❌ Dev-dependencies found in {cargo_toml_path} that must be converted to `path` dependencies in order to not impede crate publishing:")
             for dep in bad_deps:
                 print(f"  - {dep}")
             exit_code = 1
