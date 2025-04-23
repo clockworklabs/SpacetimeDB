@@ -30,12 +30,9 @@ pub fn eval_delta<'a, Tx: Datastore + DeltaStore>(
     let mut duplicate_rows_evaluated = 0;
     let mut duplicate_rows_sent = 0;
 
-    // Query plans for joins may return redundant rows,
-    // but we track row counts to avoid sending them to clients.
-    //
-    // Single table plans will never return redundant rows,
-    // so there's no need to track row counts.
     if !plan.is_join() {
+        // Single table plans will never return redundant rows,
+        // so there's no need to track row counts.
         plan.for_each_insert(tx, metrics, &mut |row| {
             inserts.push(row.into());
             Ok(())
@@ -46,6 +43,8 @@ pub fn eval_delta<'a, Tx: Datastore + DeltaStore>(
             Ok(())
         })?;
     } else {
+        // Query plans for joins may return redundant rows.
+        // We track row counts to avoid sending them to clients.
         let mut insert_counts = HashMap::new();
         let mut delete_counts = HashMap::new();
 
