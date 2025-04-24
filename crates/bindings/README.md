@@ -580,7 +580,8 @@ The following changes are forbidden without a manual migration:
 
 Currently, manual migration support is limited. The `spacetime publish --clear-database <DATABASE_IDENTITY>` command can be used to **COMPLETELY DELETE** and reinitialize your database, but naturally it should be used with EXTREME CAUTION.
 
-[macro library]: https://github.com/clockworklabs/SpacetimeDB/tree/master/crates/bindings-macro
+[macro input parsing library]: https://github.com/clockworklabs/SpacetimeDB/tree/master/crates/bindings-macro-input
+[derive macro library]: https://github.com/clockworklabs/SpacetimeDB/tree/master/crates/bindings-macro
 [module library]: https://github.com/clockworklabs/SpacetimeDB/tree/master/crates/lib
 [demo]: /#demo
 [client]: https://spacetimedb.com/docs/#client

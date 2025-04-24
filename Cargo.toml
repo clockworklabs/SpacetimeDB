@@ -4,6 +4,7 @@ members = [
   "crates/bench",
   "crates/bindings-sys",
   "crates/bindings",
+  "crates/bindings-macro-input",
   "crates/bindings-macro",
   "crates/cli",
   "crates/client-api",
@@ -95,6 +96,7 @@ rust-version = "1.84.0"
 [workspace.dependencies]
 spacetimedb = { path = "crates/bindings", version = "1.1.1" }
 spacetimedb-auth = { path = "crates/auth", version = "1.1.1" }
+spacetimedb-bindings-macro-input = { path = "crates/bindings-macro-input", version = "1.1.1" }
 spacetimedb-bindings-macro = { path = "crates/bindings-macro", version = "1.1.1" }
 spacetimedb-bindings-sys = { path = "crates/bindings-sys", version = "1.1.1" }
 spacetimedb-cli = { path = "crates/cli", version = "1.1.1" }

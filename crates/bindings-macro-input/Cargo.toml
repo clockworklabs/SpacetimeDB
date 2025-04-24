@@ -1,0 +1,17 @@
+[package]
+name = "spacetimedb-bindings-macro-input"
+version.workspace = true
+edition.workspace = true
+license-file = "LICENSE"
+description = "Easy support for interacting between SpacetimeDB and Rust."
+rust-version.workspace = true
+
+[lib]
+# Benching off, because of https://bheisler.github.io/criterion.rs/book/faq.html#cargo-bench-gives-unrecognized-option-errors-for-valid-command-line-options
+bench = false
+
+[dependencies]
+proc-macro2.workspace = true
+quote.workspace = true
+syn.workspace = true
+heck.workspace = true
