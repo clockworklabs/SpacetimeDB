@@ -1,19 +1,12 @@
-use crate::sats;
-use crate::sats::SatsField;
-use crate::sym;
-use crate::util::{check_duplicate, check_duplicate_msg, ident_to_litstr, match_meta};
+use crate::input::table::{Column, ColumnArgs, IndexArg, IndexType, TableAccess, TableArgs};
+use crate::util::ident_to_litstr;
 use core::slice;
-use heck::ToSnakeCase;
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote, quote_spanned, ToTokens};
 use std::borrow::Cow;
 use syn::ext::IdentExt;
-use syn::meta::ParseNestedMeta;
-use syn::parse::Parse;
-use syn::parse::Parser as _;
-use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
-use syn::{parse_quote, Ident, Path, Token};
+use syn::{parse_quote, Ident};
 
 impl TableAccess {
     fn to_value(&self) -> TokenStream {

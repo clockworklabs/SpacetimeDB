@@ -12,7 +12,6 @@ mod input;
 mod output;
 mod reducer;
 mod sats;
-mod table;
 mod util;
 
 use proc_macro::TokenStream as StdTokenStream;
@@ -159,9 +158,9 @@ pub fn table(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
             derive_input.attrs.push(derive_table_helper);
         }
 
-        let table = table::TableArgs::parse(args.into(), &derive_input)?;
-        let (table, columns) = table::ColumnArgs::parse(table, &derive_input)?;
-        let generated = table::table_impl(table, columns, &derive_input)?;
+        let table = input::table::TableArgs::parse(args.into(), &derive_input)?;
+        let (table, columns) = input::table::ColumnArgs::parse(table, &derive_input)?;
+        let generated = output::table::table_impl(table, columns, &derive_input)?;
         Ok(TokenStream::from_iter([quote!(#derive_input), generated]))
     })
 }
