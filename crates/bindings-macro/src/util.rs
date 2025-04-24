@@ -1,5 +1,5 @@
 use proc_macro::TokenStream as StdTokenStream;
-use proc_macro2::{Span, TokenStream};
+use proc_macro2::TokenStream;
 use syn::parse::Parse;
 use syn::Ident;
 

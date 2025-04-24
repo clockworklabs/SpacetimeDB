@@ -1,7 +1,7 @@
 use crate::sats;
 use crate::sats::SatsField;
 use crate::sym;
-use crate::util::{check_duplicate, check_duplicate_msg, match_meta};
+use super::util::{check_duplicate, check_duplicate_msg, match_meta};
 use core::slice;
 use heck::ToSnakeCase;
 use proc_macro2::{Span, TokenStream};

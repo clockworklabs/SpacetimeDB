@@ -1,4 +1,6 @@
 pub(crate) trait ErrorSource {
+use proc_macro2::Span;
+
     fn error(self, msg: impl std::fmt::Display) -> syn::Error;
 }
 impl ErrorSource for Span {
@@ -60,7 +62,7 @@ macro_rules! match_meta {
     (@match ($($acc:tt)*), ($($comparisons:expr),*), $meta:ident {}) => {
         match () {
             $($acc)*
-            _ => return Err($meta.error($crate::util::one_of(&[$($comparisons),*]))),
+            _ => return Err($meta.error($crate::input::util::one_of(&[$($comparisons),*]))),
         }
     };
 

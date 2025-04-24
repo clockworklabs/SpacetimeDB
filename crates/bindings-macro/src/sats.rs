@@ -8,7 +8,7 @@ use syn::spanned::Spanned;
 use syn::{LitStr, Token};
 
 use crate::sym;
-use crate::util::{check_duplicate, match_meta};
+use crate::input::util::{check_duplicate, match_meta};
 
 pub(crate) struct SatsType<'a> {
     pub ident: &'a syn::Ident,
