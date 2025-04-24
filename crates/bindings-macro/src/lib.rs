@@ -8,6 +8,8 @@
 //
 // (private documentation for the macro authors is totally fine here and you SHOULD write that!)
 
+mod input;
+mod output;
 mod reducer;
 mod sats;
 mod table;
