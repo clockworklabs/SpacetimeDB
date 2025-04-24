@@ -25,25 +25,9 @@ use util::{cvt_attr, ok_or_compile_error};
 mod sym {
     use crate::input::sym::symbol;
 
-    symbol!(at);
-    symbol!(auto_inc);
-    symbol!(btree);
     symbol!(client_connected);
     symbol!(client_disconnected);
-    symbol!(column);
-    symbol!(columns);
-    symbol!(crate_, crate);
-    symbol!(direct);
-    symbol!(index);
     symbol!(init);
-    symbol!(name);
-    symbol!(primary_key);
-    symbol!(private);
-    symbol!(public);
-    symbol!(repr);
-    symbol!(sats);
-    symbol!(scheduled);
-    symbol!(unique);
     symbol!(update);
 
     symbol!(u8);
