@@ -30,7 +30,7 @@ pub fn check_duplicate_msg<T>(
     }
 }
 
-pub fn one_of(options: &[crate::sym::Symbol]) -> String {
+pub fn one_of(options: &[super::sym::Symbol]) -> String {
     match options {
         [] => "unexpected attribute".to_owned(),
         [a] => {

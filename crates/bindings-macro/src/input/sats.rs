@@ -5,7 +5,7 @@ use proc_macro2::TokenStream;
 use quote::ToTokens;
 use syn::LitStr;
 
-use crate::sym;
+use super::sym;
 use super::util::{check_duplicate, match_meta};
 
 pub struct SatsType<'a> {

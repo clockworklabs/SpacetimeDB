@@ -168,7 +168,7 @@ fn extract_repr_c_primitive<'a>(ty: &'a SatsType) -> Option<Vec<&'a syn::Ident>>
     };
 
     // Ensure every field is a primitive and collect the idents.
-    const PRIM_TY: &[sym::Symbol] = &[
+    const PRIM_TY: &[crate::input::sym::Symbol] = &[
         sym::u8,
         sym::i8,
         sym::u16,

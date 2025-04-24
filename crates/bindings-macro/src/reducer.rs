@@ -48,7 +48,7 @@ impl ReducerArgs {
                 sym::client_connected => set_lifecycle(LifecycleReducer::ClientConnected)?,
                 sym::client_disconnected => set_lifecycle(LifecycleReducer::ClientDisconnected)?,
                 sym::update => set_lifecycle(LifecycleReducer::Update)?,
-                sym::name => {
+                crate::input::sym::name => {
                     check_duplicate(&args.name, &meta)?;
                     args.name = Some(meta.value()?.parse()?);
                 }

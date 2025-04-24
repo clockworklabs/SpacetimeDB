@@ -23,7 +23,7 @@ use syn::{ItemConst, ItemFn};
 use util::{cvt_attr, ok_or_compile_error};
 
 mod sym {
-    use crate::input::sym::symbol;
+    use crate::input::sym::{symbol, Symbol};
 
     symbol!(client_connected);
     symbol!(client_disconnected);
