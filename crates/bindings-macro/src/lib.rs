@@ -203,7 +203,7 @@ fn parse_duration(input: ParseStream) -> syn::Result<Duration> {
 fn sats_derive(
     input: StdTokenStream,
     assume_in_module: bool,
-    logic: impl FnOnce(&sats::SatsType) -> TokenStream,
+    logic: impl FnOnce(&input::sats::SatsType) -> TokenStream,
 ) -> StdTokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);
     let crate_fallback = if assume_in_module {
@@ -211,7 +211,7 @@ fn sats_derive(
     } else {
         quote!(spacetimedb_lib)
     };
-    sats::sats_type_from_derive(&input, crate_fallback)
+    input::sats::sats_type_from_derive(&input, crate_fallback)
         .map(|ty| logic(&ty))
         .unwrap_or_else(syn::Error::into_compile_error)
         .into()

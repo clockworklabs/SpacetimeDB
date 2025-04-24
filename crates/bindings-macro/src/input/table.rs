@@ -1,5 +1,5 @@
-use crate::sats;
-use crate::sats::SatsField;
+use super::sats;
+use super::sats::SatsField;
 use crate::sym;
 use super::util::{check_duplicate, check_duplicate_msg, match_meta};
 use core::slice;
