@@ -23,8 +23,8 @@ use crate::worker_metrics::WORKER_METRICS;
 use parking_lot::RwLock;
 use prometheus::IntGauge;
 use spacetimedb_client_api_messages::websocket::{
-    self as ws, BsatnFormat, Compression, FormatSwitch, JsonFormat, SubscribeMulti, SubscribeSingle, TableUpdate,
-    Unsubscribe, UnsubscribeMulti,
+    self as ws, BsatnFormat, FormatSwitch, JsonFormat, SubscribeMulti, SubscribeSingle, TableUpdate, Unsubscribe,
+    UnsubscribeMulti,
 };
 use spacetimedb_execution::pipelined::PipelinedProject;
 use spacetimedb_expr::check::parse_and_type_sub;
@@ -186,34 +186,10 @@ impl ModuleSubscriptions {
         let tx = DeltaTx::from(tx);
 
         Ok(match sender.config.protocol {
-            Protocol::Binary => {
-                collect_table_update(
-                    &plans,
-                    table_id,
-                    table_name.into(),
-                    // We will compress the outer server message,
-                    // after we release the tx lock.
-                    // There's no need to compress the inner table update too.
-                    Compression::None,
-                    &tx,
-                    update_type,
-                )
-                .map(|(table_update, metrics)| (FormatSwitch::Bsatn(table_update), metrics))
-            }
-            Protocol::Text => {
-                collect_table_update(
-                    &plans,
-                    table_id,
-                    table_name.into(),
-                    // We will compress the outer server message,
-                    // after we release the tx lock,
-                    // There's no need to compress the inner table update too.
-                    Compression::None,
-                    &tx,
-                    update_type,
-                )
-                .map(|(table_update, metrics)| (FormatSwitch::Json(table_update), metrics))
-            }
+            Protocol::Binary => collect_table_update(&plans, table_id, table_name.into(), &tx, update_type)
+                .map(|(table_update, metrics)| (FormatSwitch::Bsatn(table_update), metrics)),
+            Protocol::Text => collect_table_update(&plans, table_id, table_name.into(), &tx, update_type)
+                .map(|(table_update, metrics)| (FormatSwitch::Json(table_update), metrics)),
         }?)
     }
 
@@ -240,27 +216,11 @@ impl ModuleSubscriptions {
         let tx = DeltaTx::from(tx);
         match sender.config.protocol {
             Protocol::Binary => {
-                let (update, metrics) = execute_plans(
-                    queries,
-                    // We will compress the outer server message,
-                    // after we release the tx lock.
-                    // There's no need to compress the inner table updates too.
-                    Compression::None,
-                    &tx,
-                    update_type,
-                )?;
+                let (update, metrics) = execute_plans(queries, &tx, update_type)?;
                 Ok((FormatSwitch::Bsatn(update), metrics))
             }
             Protocol::Text => {
-                let (update, metrics) = execute_plans(
-                    queries,
-                    // We will compress the outer server message,
-                    // after we release the tx lock.
-                    // There's no need to compress the inner table updates too.
-                    Compression::None,
-                    &tx,
-                    update_type,
-                )?;
+                let (update, metrics) = execute_plans(queries, &tx, update_type)?;
                 Ok((FormatSwitch::Json(update), metrics))
             }
         }
@@ -650,26 +610,10 @@ impl ModuleSubscriptions {
 
         let tx = DeltaTx::from(&*tx);
         let (database_update, metrics) = match sender.config.protocol {
-            Protocol::Binary => execute_plans(
-                &queries,
-                // We will compress the outer server message,
-                // after we release the tx lock.
-                // There's no need to compress the inner table updates too.
-                Compression::None,
-                &tx,
-                TableUpdateType::Subscribe,
-            )
-            .map(|(table_update, metrics)| (FormatSwitch::Bsatn(table_update), metrics))?,
-            Protocol::Text => execute_plans(
-                &queries,
-                // We will compress the outer server message,
-                // after we release the tx lock.
-                // There's no need to compress the inner table updates too.
-                Compression::None,
-                &tx,
-                TableUpdateType::Subscribe,
-            )
-            .map(|(table_update, metrics)| (FormatSwitch::Json(table_update), metrics))?,
+            Protocol::Binary => execute_plans(&queries, &tx, TableUpdateType::Subscribe)
+                .map(|(table_update, metrics)| (FormatSwitch::Bsatn(table_update), metrics))?,
+            Protocol::Text => execute_plans(&queries, &tx, TableUpdateType::Subscribe)
+                .map(|(table_update, metrics)| (FormatSwitch::Json(table_update), metrics))?,
         };
 
         record_exec_metrics(

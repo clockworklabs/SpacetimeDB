@@ -128,13 +128,17 @@ impl UpdatesRelValue<'_> {
         !(self.deletes.is_empty() && self.inserts.is_empty())
     }
 
-    pub fn encode<F: WebsocketFormat>(&self, compression: Compression) -> (F::QueryUpdate, u64, usize) {
+    pub fn encode<F: WebsocketFormat>(&self) -> (F::QueryUpdate, u64, usize) {
         let (deletes, nr_del) = F::encode_list(self.deletes.iter());
         let (inserts, nr_ins) = F::encode_list(self.inserts.iter());
         let num_rows = nr_del + nr_ins;
         let num_bytes = deletes.num_bytes() + inserts.num_bytes();
         let qu = QueryUpdate { deletes, inserts };
-        let cqu = F::into_query_update(qu, compression);
+        // We don't compress individual table updates.
+        // Previously we were, but the benefits, if any, were unclear.
+        // Note, each message is still compressed before being sent to clients,
+        // but we no longer have to hold a tx lock when doing so.
+        let cqu = F::into_query_update(qu, Compression::None);
         (cqu, num_rows, num_bytes)
     }
 }
