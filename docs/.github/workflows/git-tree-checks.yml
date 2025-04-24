@@ -3,7 +3,8 @@ name: Git tree checks
 on:
   pull_request:
     types: [opened, edited, reopened, synchronize]
-  merge_group:
+    branches:
+      - release
 permissions: read-all
 
 jobs:

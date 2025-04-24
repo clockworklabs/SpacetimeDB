@@ -4,6 +4,10 @@ on:
   pull_request:
     branches:
       - master
+  push:
+    branches:
+      - master
+  merge_group:
 
 jobs:
   check-links:
