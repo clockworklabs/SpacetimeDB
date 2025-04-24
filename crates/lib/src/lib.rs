@@ -6,7 +6,23 @@ use spacetimedb_sats::{impl_serialize, WithTypespace};
 use std::any::TypeId;
 use std::collections::{btree_map, BTreeMap};
 
+
+macro_rules! non_wasm {
+    ($($item:item)*) => {
+        $(
+            #[cfg(not(target_arch = "wasm32"))]
+            $item
+        )*
+    };
+}
+
+
+//XXX: we avoid anything 'mio' or 'openssl' which will fail to compile in wasm32; this this lib is
+//used on both wasm32 during 'spacetime publish' compilation and non-wasm32 ie. x86_64
+//#[cfg(not(target_arch = "wasm32"))]
+non_wasm! {
 use tokio::io::AsyncReadExt;
+}
 
 
 pub mod connection_id;
@@ -390,6 +406,8 @@ pub fn resolved_type_via_v9<T: SpacetimeType>() -> AlgebraicType {
         .expect("recursive types not supported")
 }
 
+//#[cfg(not(target_arch = "wasm32"))]
+non_wasm! {
 pub async fn load_root_cert(cert_path: Option<&std::path::Path>) -> anyhow::Result<Option<native_tls::Certificate>> {
     if let Some(path) = cert_path {
         // Open file asynchronously
@@ -596,6 +614,7 @@ pub fn client_no_trust_system_root_store() -> clap::Arg {
 /// Asynchronously reads a file with a maximum size limit of 1 MiB.
 /// Files of 1 MiB or larger will fail; files under 1 MiB are allowed.
 /// This should avoid unresponsive system(DOS-ing) until OOM kicks in  if you do /dev/zero as the path.
+//#[cfg(not(target_arch = "wasm32"))]
 pub async fn read_file_limited(path: &std::path::Path) -> anyhow::Result<Vec<u8>> {
     // if file is >= to this, fails!
     const MAX_SIZE: u64 = 1_048_576; // 1 MiB
@@ -839,6 +858,7 @@ Error: Failed sending request to https://127.0.0.1:3000: Server closed the conne
 )
 
 */
+//#[cfg(not(target_arch = "wasm32"))]
 pub fn map_request_error<E: Into<anyhow::Error>>(
     e: E,
     url: &String,
@@ -991,3 +1011,6 @@ macro_rules! map_request_error {
                 ))
     };
 }
+
+
+} // end of non_wasm! macro call
