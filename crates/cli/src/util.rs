@@ -134,9 +134,10 @@ pub async fn configure_tls(
 
     client_builder = if trust_system {
         //TODO: find out if this method is taking /etc/ssl/ system trust store certs or what!
+        eprintln!("Trusting system/root cert store for verifying server's cert.");
         client_builder.tls_built_in_root_certs(true)
     } else {
-        eprintln!("Not trusting system/root cert store.");
+        eprintln!("Not trusting system/root cert store for verifying server's cert.");
         client_builder.tls_built_in_root_certs(false)
     };
 //    // Validate trust store options
