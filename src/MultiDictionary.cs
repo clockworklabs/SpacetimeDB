@@ -74,7 +74,7 @@ namespace SpacetimeDB
             Debug.Assert(key != null);
             if (RawDict.TryGetValue(key, out var result))
             {
-                Debug.Assert(ValueComparer.Equals(value, result.Value), $"Added key-value pair with mismatched value to existing data, {key} {value} {result.Value}");
+                Debug.Assert(ValueComparer.Equals(value, result.Value));
                 RawDict[key] = (value, result.Multiplicity + 1);
                 return false;
             }
@@ -252,7 +252,7 @@ namespace SpacetimeDB
                         // However, it may remove the key-value pair entirely.
 
                         var theirDelta = their.NonValueChange;
-                        Debug.Assert(ValueComparer.Equals(my.Value, theirDelta.Value), $"mismatched value change: {my.Value} {theirDelta.Value} {their}");
+                        Debug.Assert(ValueComparer.Equals(my.Value, theirDelta.Value));
                         var newMultiplicity = (int)my.Multiplicity + theirDelta.Delta;
                         if (newMultiplicity > 0)
                         {
