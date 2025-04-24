@@ -2,27 +2,33 @@
 //!
 //! This module is internal, and may incompatibly change without warning.
 
+#[cfg(not(target_arch = "wasm32"))]
 use std::mem;
 use std::sync::Arc;
+#[cfg(not(target_arch = "wasm32"))]
 use std::time::Duration;
 
 use bytes::Bytes;
-use futures::{SinkExt, StreamExt as _, TryStreamExt};
+#[cfg(not(target_arch = "wasm32"))]
+use futures::TryStreamExt;
+use futures::{SinkExt, StreamExt as _};
 use futures_channel::mpsc;
 use http::uri::{InvalidUri, Scheme, Uri};
 use spacetimedb_client_api_messages::websocket::{BsatnFormat, Compression, BIN_PROTOCOL};
 use spacetimedb_client_api_messages::websocket::{ClientMessage, ServerMessage};
 use spacetimedb_lib::{bsatn, ConnectionId};
 use thiserror::Error;
-use tokio::task::JoinHandle;
-use tokio::time::Instant;
-use tokio::{net::TcpStream, runtime};
+#[cfg(not(target_arch = "wasm32"))]
+use tokio::{net::TcpStream, runtime, task::JoinHandle, time::Instant};
+#[cfg(not(target_arch = "wasm32"))]
 use tokio_tungstenite::{
     connect_async_with_config,
     tungstenite::client::IntoClientRequest,
     tungstenite::protocol::{Message as WebSocketMessage, WebSocketConfig},
     MaybeTlsStream, WebSocketStream,
 };
+#[cfg(target_arch = "wasm32")]
+use tokio_tungstenite_wasm::{Message as WebSocketMessage, WebSocketStream};
 
 use crate::compression::decompress_server_message;
 use crate::metrics::CLIENT_METRICS;
@@ -53,12 +59,22 @@ pub enum WsError {
     #[error(transparent)]
     UriError(#[from] UriError),
 
+    #[cfg(not(target_arch = "wasm32"))]
     #[error("Error in WebSocket connection with {uri}: {source}")]
     Tungstenite {
         uri: Uri,
         #[source]
         // `Arc` is required for `Self: Clone`, as `tungstenite::Error: !Clone`.
         source: Arc<tokio_tungstenite::tungstenite::Error>,
+    },
+
+    #[cfg(target_arch = "wasm32")]
+    #[error("Error in WebSocket connection with {uri}: {source}")]
+    Tungstenite {
+        uri: Uri,
+        #[source]
+        // `Arc` is required for `Self: Clone`, as `tungstenite::Error: !Clone`.
+        source: Arc<tokio_tungstenite_wasm::Error>,
     },
 
     #[error("Received empty raw message, but valid messages always start with a one-byte compression flag")]
@@ -84,7 +100,10 @@ pub enum WsError {
 
 pub(crate) struct WsConnection {
     db_name: Box<str>,
+    #[cfg(not(target_arch = "wasm32"))]
     sock: WebSocketStream<MaybeTlsStream<TcpStream>>,
+    #[cfg(target_arch = "wasm32")]
+    sock: WebSocketStream,
 }
 
 fn parse_scheme(scheme: Option<Scheme>) -> Result<Scheme, UriError> {
@@ -179,6 +198,7 @@ fn make_uri(host: Uri, db_name: &str, connection_id: Option<ConnectionId>, param
 //       rather than having Tungstenite manage its own connections. Should this library do
 //       the same?
 
+#[cfg(not(target_arch = "wasm32"))]
 fn make_request(
     host: Uri,
     db_name: &str,
@@ -196,6 +216,7 @@ fn make_request(
     Ok(req)
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn request_insert_protocol_header(req: &mut http::Request<()>) {
     req.headers_mut().insert(
         http::header::SEC_WEBSOCKET_PROTOCOL,
@@ -203,6 +224,7 @@ fn request_insert_protocol_header(req: &mut http::Request<()>) {
     );
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn request_insert_auth_header(req: &mut http::Request<()>, token: Option<&str>) {
     if let Some(token) = token {
         let auth = ["Bearer ", token].concat().try_into().unwrap();
@@ -213,6 +235,7 @@ fn request_insert_auth_header(req: &mut http::Request<()>, token: Option<&str>) 
 /// If `res` evaluates to `Err(e)`, log a warning in the form `"{}: {:?}", $cause, e`.
 ///
 /// Could be trivially written as a function, but macro-ifying it preserves the source location of the log.
+#[cfg(not(target_arch = "wasm32"))]
 macro_rules! maybe_log_error {
     ($cause:expr, $res:expr) => {
         if let Err(e) = $res {
@@ -222,6 +245,7 @@ macro_rules! maybe_log_error {
 }
 
 impl WsConnection {
+    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) async fn connect(
         host: Uri,
         db_name: &str,
@@ -253,6 +277,28 @@ impl WsConnection {
         })
     }
 
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) async fn connect(
+        host: Uri,
+        db_name: &str,
+        _token: Option<&str>,
+        connection_id: Option<ConnectionId>,
+        params: WsParams,
+    ) -> Result<Self, WsError> {
+        let uri = make_uri(host, db_name, connection_id, params)?;
+        let sock = tokio_tungstenite_wasm::connect_with_protocols(&uri.to_string(), &[BIN_PROTOCOL])
+            .await
+            .map_err(|source| WsError::Tungstenite {
+                uri,
+                source: Arc::new(source),
+            })?;
+
+        Ok(WsConnection {
+            db_name: db_name.into(),
+            sock,
+        })
+    }
+
     pub(crate) fn parse_response(bytes: &[u8]) -> Result<ServerMessage<BsatnFormat>, WsError> {
         let bytes = &*decompress_server_message(bytes)?;
         bsatn::from_slice(bytes).map_err(|source| WsError::DeserializeMessage { source })
@@ -262,6 +308,7 @@ impl WsConnection {
         WebSocketMessage::Binary(bsatn::to_vec(&msg).unwrap().into())
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     async fn message_loop(
         mut self,
         incoming_messages: mpsc::UnboundedSender<ServerMessage<BsatnFormat>>,
@@ -399,6 +446,7 @@ impl WsConnection {
         }
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn spawn_message_loop(
         self,
         runtime: &runtime::Handle,
@@ -411,5 +459,75 @@ impl WsConnection {
         let (incoming_send, incoming_recv) = mpsc::unbounded();
         let handle = runtime.spawn(self.message_loop(incoming_send, outgoing_recv));
         (handle, incoming_recv, outgoing_send)
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) fn spawn_message_loop(
+        self,
+    ) -> (
+        mpsc::UnboundedReceiver<ServerMessage<BsatnFormat>>,
+        mpsc::UnboundedSender<ClientMessage<Bytes>>,
+    ) {
+
+        let websocket_received = CLIENT_METRICS.websocket_received.with_label_values(&self.db_name);
+        let websocket_received_msg_size = CLIENT_METRICS
+            .websocket_received_msg_size
+            .with_label_values(&self.db_name);
+        let record_metrics = move |msg_size: usize| {
+            websocket_received.inc();
+            websocket_received_msg_size.observe(msg_size as f64);
+        };
+
+        let (outgoing_tx, outgoing_rx) = mpsc::unbounded::<ClientMessage<Bytes>>();
+        let (incoming_tx, incoming_rx) = mpsc::unbounded::<ServerMessage<BsatnFormat>>();
+
+        let ws = self.sock;
+
+        wasm_bindgen_futures::spawn_local(async move {
+            // fuse both streams so `select!` knows when one side is done
+            let mut ws_stream = ws.fuse();
+            let mut outgoing = outgoing_rx.fuse();
+
+            loop {
+                futures::select! {
+                    // 1) inbound WS frames
+                    frame = ws_stream.next() => match frame {
+                        Some(Ok(WebSocketMessage::Binary(bytes))) => {
+                            record_metrics(bytes.len());
+                            // parse + forward into `incoming_tx`
+                            if let Ok(msg) = Self::parse_response(&bytes) {
+                                match incoming_tx.unbounded_send(msg) {
+                                    Ok(_) => {},
+                                    Err(_) => {}
+                                }
+                            }
+                        }
+                        Some(Err(e)) => {
+                            gloo_console::warn!("WS Error: ", format!("{:?}",e));
+                            break;
+                        }
+                        None => {
+                            gloo_console::warn!("WS Closed");
+                            break;
+                        }
+                        _ => {}
+                    },
+
+                    // 2) outbound messages
+                    client_msg = outgoing.next() => if let Some(client_msg) = client_msg {
+                        let raw = Self::encode_message(client_msg);
+                        if let Err(e) = ws_stream.send(raw).await {
+                            gloo_console::warn!("WS Send error: ", format!("{:?}",e));
+                            break;
+                        }
+                    } else {
+                        // channel closed, so we're done  sending
+                        break;
+                    },
+                }
+            }
+        });
+
+        (incoming_rx, outgoing_tx)
     }
 }
