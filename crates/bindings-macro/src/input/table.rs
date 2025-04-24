@@ -1,42 +1,40 @@
 use crate::sats;
 use crate::sats::SatsField;
 use crate::sym;
-use crate::util::{check_duplicate, check_duplicate_msg, ident_to_litstr, match_meta};
+use crate::util::{check_duplicate, check_duplicate_msg, match_meta};
 use core::slice;
 use heck::ToSnakeCase;
 use proc_macro2::{Span, TokenStream};
-use quote::{format_ident, quote, quote_spanned, ToTokens};
-use std::borrow::Cow;
-use syn::ext::IdentExt;
+use quote::quote;
 use syn::meta::ParseNestedMeta;
 use syn::parse::Parse;
 use syn::parse::Parser as _;
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
-use syn::{parse_quote, Ident, Path, Token};
+use syn::{Ident, Path, Token};
 
-pub(crate) struct TableArgs {
-    access: Option<TableAccess>,
-    scheduled: Option<ScheduledArg>,
-    name: Ident,
-    indices: Vec<IndexArg>,
+pub struct TableArgs {
+    pub access: Option<TableAccess>,
+    pub scheduled: Option<ScheduledArg>,
+    pub name: Ident,
+    pub indices: Vec<IndexArg>,
 }
 
-enum TableAccess {
+pub enum TableAccess {
     Public(Span),
     Private(Span),
 }
 
-struct ScheduledArg {
-    span: Span,
-    reducer: Path,
-    at: Option<Ident>,
+pub struct ScheduledArg {
+    pub span: Span,
+    pub reducer: Path,
+    pub at: Option<Ident>,
 }
 
-struct IndexArg {
-    name: Ident,
-    is_unique: bool,
-    kind: IndexType,
+pub struct IndexArg {
+    pub name: Ident,
+    pub is_unique: bool,
+    pub kind: IndexType,
 }
 
 impl IndexArg {
@@ -48,13 +46,13 @@ impl IndexArg {
     }
 }
 
-enum IndexType {
+pub enum IndexType {
     BTree { columns: Vec<Ident> },
     Direct { column: Ident },
 }
 
 impl TableArgs {
-    pub(crate) fn parse(input: TokenStream, item: &syn::DeriveInput) -> syn::Result<Self> {
+    pub fn parse(input: TokenStream, item: &syn::DeriveInput) -> syn::Result<Self> {
         let mut access = None;
         let mut scheduled = None;
         let mut name = None;
@@ -226,17 +224,17 @@ impl IndexArg {
     }
 }
 
-pub(crate) struct ColumnArgs<'a> {
-    original_struct_name: Ident,
-    fields: Vec<SatsField<'a>>,
-    columns: Vec<Column<'a>>,
-    unique_columns: Vec<Column<'a>>,
-    sequenced_columns: Vec<Column<'a>>,
-    primary_key_column: Option<Column<'a>>,
+pub struct ColumnArgs<'a> {
+    pub original_struct_name: Ident,
+    pub fields: Vec<SatsField<'a>>,
+    pub columns: Vec<Column<'a>>,
+    pub unique_columns: Vec<Column<'a>>,
+    pub sequenced_columns: Vec<Column<'a>>,
+    pub primary_key_column: Option<Column<'a>>,
 }
 
 impl<'a> ColumnArgs<'a> {
-    pub(crate) fn parse(mut table: TableArgs, item: &'a syn::DeriveInput) -> syn::Result<(TableArgs, Self)> {
+    pub fn parse(mut table: TableArgs, item: &'a syn::DeriveInput) -> syn::Result<(TableArgs, Self)> {
         let sats_ty = sats::sats_type_from_derive(item, quote!(spacetimedb::spacetimedb_lib))?;
 
         let original_struct_name = sats_ty.ident.clone();
@@ -331,26 +329,29 @@ impl<'a> ColumnArgs<'a> {
             })
         }
 
-        Ok((table, ColumnArgs {
-            original_struct_name,
-            fields: fields.to_vec(),
-            columns,
-            unique_columns,
-            sequenced_columns,
-            primary_key_column,
-        }))
+        Ok((
+            table,
+            ColumnArgs {
+                original_struct_name,
+                fields: fields.to_vec(),
+                columns,
+                unique_columns,
+                sequenced_columns,
+                primary_key_column,
+            },
+        ))
     }
 }
 
 #[derive(Copy, Clone)]
-struct Column<'a> {
-    index: u16,
-    vis: &'a syn::Visibility,
-    ident: &'a syn::Ident,
-    ty: &'a syn::Type,
+pub struct Column<'a> {
+    pub index: u16,
+    pub vis: &'a syn::Visibility,
+    pub ident: &'a syn::Ident,
+    pub ty: &'a syn::Type,
 }
 
-enum ColumnAttr {
+pub enum ColumnAttr {
     Unique(Span),
     AutoInc(Span),
     PrimaryKey(Span),
