@@ -17,8 +17,9 @@ use tokio_tungstenite::tungstenite::Message as WsMessage;
 use crate::api::ClientApi;
 use crate::common_args;
 use crate::sql::parse_req;
-use crate::util::{self, UNSTABLE_WARNING};
+use crate::util::UNSTABLE_WARNING;
 use crate::Config;
+use std::path::{Path, PathBuf};
 
 pub fn cli() -> clap::Command {
     clap::Command::new("subscribe")
@@ -66,7 +67,12 @@ pub fn cli() -> clap::Command {
                 .action(ArgAction::SetTrue)
                 .help("Print the initial update for the queries."),
         )
-        .arg(common_args::cert())
+        //.arg(common_args::cert())
+        .arg(common_args::trust_server_cert())
+        .arg(common_args::client_cert())
+        .arg(common_args::client_key())
+        .arg(common_args::trust_system_root_store())
+        .arg(common_args::no_trust_system_root_store())
         .arg(common_args::anonymous())
         .arg(common_args::yes())
         .arg(common_args::server().help("The nickname, host name or URL of the server hosting the database"))
@@ -133,8 +139,22 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
     let timeout = args.get_one::<u32>("timeout").copied();
     let print_initial_update = args.get_flag("print_initial_update");
 
-    let cert_path = args.get_one::<std::path::PathBuf>("cert").map(|p| p.as_path());
-    let conn = parse_req(config, args, cert_path).await?;
+    // TLS arguments
+    let trust_server_cert_path: Option<&Path> = args.get_one::<PathBuf>("trust-server-cert").map(|p| p.as_path());
+    let client_cert_path: Option<&Path> = args.get_one::<PathBuf>("client-cert").map(|p| p.as_path());
+    let client_key_path: Option<&Path> = args.get_one::<PathBuf>("client-key").map(|p| p.as_path());
+
+    // for clients, default to true unless --no-trust-system-root-store
+    // because this is used to verify the received server cert which can be signed by public CA
+    // thus using system's trust/root store, by default, makes sense.
+    let trust_system = !args.get_flag("no-trust-system-root-store");
+
+    let conn = parse_req(config, args,
+        trust_server_cert_path,
+        client_cert_path,
+        client_key_path,
+        trust_system,
+        ).await?;
     let api = ClientApi::new(conn);
     let module_def = api.module_def().await?;
 
@@ -162,12 +182,66 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
     }
 
     // Configure TLS with cert_path
-    let connector = {
-        // Changed: Use native-tls like websocket.rs
-        let mut builder = native_tls::TlsConnector::builder();
-        if let Some(cert) = util::load_root_cert(api.con.cert_path.as_deref()).await? {
-            builder.add_root_certificate(cert);
+    let connector = if req.uri().scheme_str() != Some("wss") {
+        let b:bool=trust_server_cert_path.is_some() || client_cert_path.is_some() || client_key_path.is_some();
+        if b {
+            return Err(anyhow::anyhow!("Using cert(s)/key require using https:// scheme not http://"));
         }
+        None
+    } else {
+        let mut builder = native_tls::TlsConnector::builder();
+        
+        // Validate trust store
+        if !trust_system && trust_server_cert_path.is_none() {
+            return Err(anyhow::anyhow!(
+                "--no-trust-system-root-store requires --trust-server-cert"
+            ));
+        }
+        if !trust_system {
+            builder.disable_built_in_roots(true);
+        }
+
+        if let Some(cert_path) = trust_server_cert_path {
+            let cert_data = spacetimedb_lib::read_file_limited(cert_path)
+                .await
+                .context(format!("Failed to read cert file: {}", cert_path.display()))?;
+            let certs = rustls_pemfile::certs(&mut std::io::Cursor::new(cert_data))
+                .collect::<Result<Vec<_>, _>>()
+                .context(format!("Failed to parse trust certificates: {}", cert_path.display()))?;
+            if certs.is_empty() {
+                return Err(anyhow::anyhow!(
+                    "No valid certificates in: {}",
+                    cert_path.display()
+                ));
+            }
+            for cert in certs {
+                //TODO: show me added certs like we do in other places!
+                let native_cert = native_tls::Certificate::from_der(&cert).context(format!(
+                    "Failed to convert cert to native-tls format from {}",
+                    cert_path.display()
+                ))?;
+                builder.add_root_certificate(native_cert);
+            }
+        }
+
+        // Configure mTLS
+        if let Some(cert_path) = client_cert_path {
+            let key_path = client_key_path.ok_or_else(|| {
+                anyhow::anyhow!("--client-key is required with --client-cert")
+            })?;
+            let cert_data = spacetimedb_lib::read_file_limited(cert_path)
+                .await
+                .context(format!("Failed to read client cert: {}", cert_path.display()))?;
+            let key_data = spacetimedb_lib::read_file_limited(key_path)
+                .await
+                .context(format!("Failed to read client key: {}", key_path.display()))?;
+            let identity = native_tls::Identity::from_pkcs8(&cert_data, &key_data).context(format!(
+                "Failed to parse client cert/key: {}",
+                cert_path.display()
+            ))?;
+            builder.identity(identity);
+        }
+
         let tls_connector = builder.build().context("Failed to build TLS connector")?;
         Some(tokio_tungstenite::Connector::NativeTls(tls_connector))
     };

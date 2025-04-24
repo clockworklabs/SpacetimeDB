@@ -220,6 +220,9 @@ impl WsConnection {
         connection_id: ConnectionId,
         params: WsParams,
         trusted_cert: Option<&std::path::PathBuf>,
+        client_cert: Option<&std::path::PathBuf>,
+        client_key: Option<&std::path::PathBuf>,
+        trust_system_certs: bool,
     ) -> Result<Self, WsError> {
         let req = make_request(host, db_name, token, connection_id, params)?;
 
@@ -227,7 +230,6 @@ impl WsConnection {
         let uri = req.uri().clone();
 
         let host = uri.clone(); //shadow, and it's thus wss:// not https://
-        use native_tls::TlsConnector;
         use std::sync::Arc;
         use tokio::net::TcpStream;
         use tokio_tungstenite::{client_async_tls_with_config, Connector, MaybeTlsStream, WebSocketStream};
@@ -253,12 +255,101 @@ impl WsConnection {
 
         let connector = if host.scheme_str() == Some("wss") {
             //FIXME: --cert implies wss, or do we want to allow --cert even for ws instead of error-ing!
-            let mut builder = TlsConnector::builder();
-            if let Some(cert_path) = trusted_cert {
-                if let Some(cert) = spacetimedb_lib::load_root_cert(Some(cert_path.as_path())).await? {
-                    builder.add_root_certificate(cert);
-                }
+            let mut builder = native_tls::TlsConnector::builder();
+
+            // Validate trust store
+            if !trust_system_certs && trusted_cert.is_none() {
+                return Err(WsError::Tungstenite {
+                    uri: uri.clone(),
+                    source: Arc::new(tokio_tungstenite::tungstenite::Error::Io(std::io::Error::new(
+                                std::io::ErrorKind::Other,
+                                "--no-trust-system-root-store requires --trust-server-cert",
+                    ))),
+                });
             }
+            if !trust_system_certs {
+                eprintln!("Not trusting system/root cert store.");
+                builder.disable_built_in_roots(true);
+            }
+
+            if let Some(cert_path) = trusted_cert {
+                // This is the server's self-signed cert or local CA's cert that signed the server's cert.
+                let cert_data = spacetimedb_lib::read_file_limited(cert_path)
+                    .await?;
+                //FIXME: fix this and 2 more below.
+//                    .map_err(|e| WsError::Tungstenite {
+//                        uri: uri.clone(),
+//                        source: Arc::new(tokio_tungstenite::tungstenite::Error::Io(e)),
+//                    })?;
+                let certs = rustls_pemfile::certs(&mut std::io::Cursor::new(cert_data))
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|e| WsError::Tungstenite {
+                        uri: uri.clone(),
+                        source: Arc::new(tokio_tungstenite::tungstenite::Error::Io(std::io::Error::new(
+                                    std::io::ErrorKind::Other,
+                                    format!("Failed to parse trust certificates: {}", e),
+                        ))),
+                    })?;
+                if certs.is_empty() {
+                    return Err(WsError::Tungstenite {
+                        uri: uri.clone(),
+                        source: Arc::new(tokio_tungstenite::tungstenite::Error::Io(std::io::Error::new(
+                                    std::io::ErrorKind::Other,
+                                    format!("No valid certificates in {}", cert_path.display()),
+                        ))),
+                    });
+                }//if
+                for cert in certs {
+                    builder
+                        .add_root_certificate(native_tls::Certificate::from_der(&cert).map_err(|e| WsError::Tungstenite {
+                            uri: uri.clone(),
+                            source: Arc::new(tokio_tungstenite::tungstenite::Error::Io(std::io::Error::new(
+                                        std::io::ErrorKind::Other,
+                                        e,
+                            ))),
+                        })?);
+                }//for
+            }//if
+
+            // Configure mTLS
+            if let Some(cert_path) = client_cert {
+                let key_path = client_key.ok_or_else(|| WsError::Tungstenite {
+                    uri: uri.clone(),
+                    source: Arc::new(tokio_tungstenite::tungstenite::Error::Io(std::io::Error::new(
+                                std::io::ErrorKind::Other,
+                                "--client-key is required with --client-cert",
+                    ))),
+                })?;
+                let cert_data = spacetimedb_lib::read_file_limited(cert_path)
+                    .await?;
+//                    .map_err(|e| WsError::Tungstenite {
+//                        uri: uri.clone(),
+//                        source: Arc::new(tokio_tungstenite::tungstenite::Error::Io(e)),
+//                    })?;
+                let key_data = spacetimedb_lib::read_file_limited(key_path)
+                    .await?;
+//                    .map_err(|e| WsError::Tungstenite {
+//                        uri: uri.clone(),
+//                        source: Arc::new(tokio_tungstenite::tungstenite::Error::Io(e)),
+//                    })?;
+                //use anyhow::Context;
+                let identity = native_tls::Identity::from_pkcs8(&cert_data, &key_data)
+//                    .context("Failed to parse client cert/key")?;
+//                    //XXX: that shows: error: "Failed to parse client cert/key" only!
+                    .map_err(|e| WsError::Tungstenite {
+                    uri: uri.clone(),
+                    //this shows: error: "Failed to parse client cert/key: expected PKCS#8 PEM"
+                    source: Arc::new(tokio_tungstenite::tungstenite::Error::Io(std::io::Error::new(
+                                std::io::ErrorKind::Other,
+                                // {:#?} here would show only "NotPkcs8"
+                                // {} here shows "expected PKCS#8 PEM"
+                                format!("Failed to parse client cert/key: {}", e),
+                    //TODO: make better error msgs like these in other places that use .context()
+                    ))),
+                })?;
+                builder.identity(identity);
+            } //if
+
             let tls_connector = builder.build().map_err(|e| WsError::Tungstenite {
                 uri: uri.clone(),
                 source: Arc::new(tokio_tungstenite::tungstenite::Error::Io(std::io::Error::new(

@@ -43,8 +43,12 @@ thiserror.workspace = true
 blake3.workspace = true
 enum-map = { workspace = true, optional = true }
 tokio.workspace = true
-native-tls = "0.2"
+#native-tls = "0.2"
+native-tls.workspace=true
 clap.workspace = true
+hyper.workspace=true
+reqwest.workspace=true
+openssl.workspace=true
 
 # For the 'proptest' feature.
 proptest = { workspace = true, optional = true }

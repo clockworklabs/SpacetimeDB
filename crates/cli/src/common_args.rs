@@ -1,6 +1,6 @@
 use clap::Arg;
 use clap::ArgAction::SetTrue;
-pub use spacetimedb_lib::cert;
+pub use spacetimedb_lib::{no_trust_system_root_store, trust_system_root_store, trust_server_cert, client_key, client_cert};
 
 pub fn server() -> Arg {
     Arg::new("server")

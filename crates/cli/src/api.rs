@@ -8,7 +8,9 @@ use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
 use spacetimedb_lib::de::serde::DeserializeWrapper;
 use spacetimedb_lib::Identity;
 
-use crate::util::{AuthHeader, ResponseExt};
+use crate::util::{AuthHeader, ResponseExt,
+map_request_error // fn and macro
+};
 use crate::util;
 use std::path::PathBuf;
 
@@ -20,7 +22,11 @@ pub struct Connection {
     pub(crate) database_identity: Identity,
     pub(crate) database: String,
     pub(crate) auth_header: AuthHeader,
-    pub(crate) cert_path: Option<PathBuf>, // FIXME: bad idea to put it here? else pass it as arg?
+    // FIXME: bad idea to put these next ones here? else pass'em as arg?
+    pub(crate) trust_server_cert_path: Option<PathBuf>,
+    pub(crate) client_cert_path: Option<PathBuf>,
+    pub(crate) client_key_path: Option<PathBuf>,
+    pub(crate) trust_system: bool,
 }
 
 impl Connection {
@@ -37,10 +43,19 @@ impl Connection {
 }
 
 pub fn build_client(con: &Connection) -> Client {
+    let trust_server_cert_path=con.trust_server_cert_path.as_deref();
+    let client_cert_path=con.client_cert_path.as_deref();
+    let client_key_path=con.client_key_path.as_deref();
+    let trust_system=con.trust_system;
     //XXX: alternatively make this async and then make new() async, and ensure callers do .await on it
     let mut builder = tokio::task::block_in_place(|| {
         tokio::runtime::Handle::current()
-            .block_on(util::configure_tls(con.cert_path.as_deref()))
+            .block_on(util::configure_tls(
+                    trust_server_cert_path,
+                    client_cert_path,
+                    client_key_path,
+                    trust_system
+                    ))
     })
     .unwrap();
     builder = builder.user_agent(APP_USER_AGENT);
@@ -51,7 +66,15 @@ pub fn build_client(con: &Connection) -> Client {
         builder = builder.default_headers(headers);
     }
 
-    util::build_client_with_context(builder, con.cert_path.as_deref()).unwrap()
+    map_request_error!(
+        util::build_client_with_context(builder,
+            trust_server_cert_path,
+            client_cert_path,
+            client_key_path,
+            trust_system,
+        ), con.host, client_cert_path, client_key_path
+    )
+    .unwrap()
 }
 
 pub struct ClientApi {

@@ -1,7 +1,6 @@
 use std::sync::Arc;
 use std::path::Path;
 use std::path::PathBuf;
-use tokio::io::AsyncReadExt;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use rustls::pki_types::PrivatePkcs8KeyDer;
 
@@ -18,6 +17,8 @@ use spacetimedb_client_api::routes::database::DatabaseRoutes;
 use spacetimedb_client_api::routes::router;
 use spacetimedb_paths::cli::{PrivKeyPath, PubKeyPath};
 use spacetimedb_paths::server::ServerDataDir;
+
+pub use spacetimedb_lib::read_file_limited;
 
 pub fn cli() -> clap::Command {
     clap::Command::new("start")
@@ -71,60 +72,77 @@ pub fn cli() -> clap::Command {
         .arg(Arg::new("in_memory").long("in-memory").action(SetTrue).help(
             "If specified the database will run entirely in memory. After the process exits all data will be lost.",
         ))
-        .arg(Arg::new("ssl").long("ssl").alias("tls").alias("https").alias("secure").action(clap::ArgAction::SetTrue).help("enables the standalone server to listen in SSL mode, ie. use https instead of http to connect to it. Aliases --tls, --ssl, --secure, or --https."))
+
+        .arg(spacetimedb_lib::client_trust_cert())
+        .arg(spacetimedb_lib::client_trust_system_root_store())
+        .arg(spacetimedb_lib::client_no_trust_system_root_store())
+
         .arg(
-            spacetimedb_lib::cert()
-            .requires("ssl")
-            .help("--cert server.crt: The server sends this to clients during the TLS handshake. ie. server's certificate which contains its public key, which if it's self-signed then this is the file that you must pass to clients via --cert when talking to the server from a client(or the cli), or if signed by a local CA then pass that CA's cert to your clients instead, in order to can trust this server from a client connection. Otherwise, you don't have to pass anything to clients if this cert was signed by a public CA like Let's Encrypt.")
+            Arg::new("ssl")
+            .long("ssl")
+            .alias("tls")
+            .alias("https")
+            .alias("secure")
+            .action(clap::ArgAction::SetTrue)
+            .help("enables the standalone server to listen in SSL mode, ie. use https instead of http to connect to it. Aliases --tls, --ssl, --secure, or --https. While in this mode, plaintext connections aren't supported, only SSL/TLS.")
         )
-        .arg(Arg::new("key").long("key").requires("ssl").value_name("FILE")
+        .arg(
+//            spacetimedb_lib::cert()
+            clap::Arg::new("server-cert")
+            .long("server-cert")
+            .alias("cert")
+            .alias("server-public-cert")
+            .value_name("FILE")
+            .action(clap::ArgAction::Set)
+            .value_parser(clap::value_parser!(std::path::PathBuf))
+            .required(false)
+            .requires("ssl")
+            .help("--cert server.crt: The server sends this to clients during the TLS handshake. ie. server's certificate(in PEM format), which if it's self-signed then this is the file that you must pass to clients via --cert when talking to the server from a client(or the cli), or if signed by a local CA then pass that CA's cert to your clients instead, in order to can trust this server from a client connection. Otherwise, you don't have to pass anything to clients if this cert was signed by a public CA like Let's Encrypt.")
+        )
+        .arg(
+            Arg::new("server-key")
+            .long("server-key")
+            .alias("server-private-key")
+            .alias("private-key")
+            .alias("key")
+            .requires("ssl")
+            .requires("server-cert")
+            .value_name("FILE")
             .action(clap::ArgAction::Set)
             .value_parser(clap::value_parser!(PathBuf))
-            .help("--key server.key: The server's private key used to decrypt and sign responses."))
+            .help("--key server.key: The server's private key used to decrypt and sign responses. Used for SSL/TLS connections ie. https"))
     // .after_help("Run `spacetime help start` for more detailed information.")
 }
 
-/// Asynchronously reads a file with a maximum size limit of 1 MiB.
-async fn read_file_limited(path: &Path) -> anyhow::Result<Vec<u8>> {
-    const MAX_SIZE: usize = 1_048_576; // 1 MiB
-
-    let file = tokio::fs::File::open(path)
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to open file {}: {}", path.display(), e))?;
-    let metadata = file
-        .metadata()
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to read metadata for {}: {}", path.display(), e))?;
-
-    if metadata.len() > MAX_SIZE as u64 {
-        return Err(anyhow::anyhow!(
-            "File {} exceeds maximum size of {} bytes",
-            path.display(),
-            MAX_SIZE
-        ));
-    }
-
-    let mut reader = tokio::io::BufReader::new(file);
-    let mut data = Vec::with_capacity(metadata.len() as usize);
-    reader
-        .read_to_end(&mut data)
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to read file {}: {}", path.display(), e))?;
-
-    Ok(data)
-}
 
 /// Loads certificates from a PEM file.
-async fn load_certs(file_path: &Path) -> anyhow::Result<Vec<CertificateDer<'static>>> {
+async fn load_certs(file_path: &Path, expected_num: Option<usize>) -> anyhow::Result<Vec<CertificateDer<'static>>> {
     let data = read_file_limited(file_path).await?;
     let certs: Vec<CertificateDer<'static>> = rustls_pemfile::certs(&mut std::io::Cursor::new(data))
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| anyhow::anyhow!("Failed to parse certificates from {}: {:?}", file_path.display(), e))?;
-    match certs.len() {
-        0 => Err(anyhow::anyhow!("No certificates found in file {}", file_path.display())),
-        1 => Ok(certs),
-        _ => Err(anyhow::anyhow!("Multiple certificates found in file {}; only one certificate is expected.", file_path.display())),
+    if certs.len() < 1 {
+        //Err(anyhow::anyhow!("No certificate(s) found in file {}", file_path.display()))
+        eprintln!("WARNING: No certificate(s) found in file {}", file_path.display())
     }
+//    } else {
+//        Ok(certs)
+//    }
+    if let Some(expected_num)=expected_num {
+        let len=certs.len();
+        if len == expected_num {
+            return Ok(certs);
+        } else {
+            return Err(anyhow::anyhow!("{} certificate(s) found in file {}, but expected {} cert(s) exactly!", len, file_path.display(), expected_num));
+        }
+    } else {
+        return Ok(certs);
+    }
+//    match certs.len() {
+//        0 => Err(anyhow::anyhow!("No certificate(s) found in file {}, expected {} cert(s)", file_path.display(), expected_num)),
+//        expected_num => Ok(certs),
+//        _ => Err(anyhow::anyhow!("Multiple certificates found in file {}; only {} certificate(s) is expected.", file_path.display(), expected_num)),
+//    }
 }
 
 /// Loads a private key from a PEM file.
@@ -133,6 +151,11 @@ async fn load_private_key(file_path: &Path) -> anyhow::Result<PrivateKeyDer<'sta
     let keys: Vec<PrivatePkcs8KeyDer<'static>> = rustls_pemfile::pkcs8_private_keys(&mut std::io::Cursor::new(data))
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| anyhow::anyhow!("Failed to parse private keys from {}: {:?}", file_path.display(), e))?;
+//    if keys.len() < 1 {
+//        Err(anyhow::anyhow!("No private key(s) found in file {}", file_path.display())),
+//    } else {
+//        Ok(keys)
+//    }
     match keys.len() {
         0 => Err(anyhow::anyhow!("No private key found in file {}", file_path.display())),
         1 => Ok(PrivateKeyDer::Pkcs8(keys.into_iter().next().unwrap())),
@@ -282,12 +305,84 @@ pub async fn exec(args: &ArgMatches) -> anyhow::Result<()> {
         rustls::crypto::CryptoProvider::install_default(custom_crypto_provider())
             .map_err(|e| anyhow::anyhow!("Failed to install custom CryptoProvider: {:?}", e))?;
 
-        let cert_path: &Path = args.get_one::<PathBuf>("cert").context("Missing --cert for SSL")?.as_path();
-        let key_path: &Path = args.get_one::<PathBuf>("key").context("Missing --key for SSL")?.as_path();
+        let cert_path: &Path = args.get_one::<PathBuf>("server-cert").context("Missing --cert for SSL")?.as_path();
+        let key_path: &Path = args.get_one::<PathBuf>("server-key").context("Missing --key for SSL")?.as_path();
 
         // Load certificate and private key with file size limit
-        let cert_chain = load_certs(cert_path).await?;
+        let cert_chain = load_certs(cert_path,Some(1)).await?;
         let private_key = load_private_key(key_path).await?;
+
+        // XXX: No revocation status is checked, so a valid-but-revoked cert would pass. (because
+        // code doesn't use .with_crls() )
+
+        // Initialize root store
+        let mut roots = rustls::RootCertStore::empty();
+
+        // Handle system root certificates
+        let trust_system = args.get_flag("client-trust-system-root-store");
+
+        use x509_parser::prelude::FromDer;
+        use sha2::{Digest, Sha256};
+        //use openssl::sha::{Sha256, Digest};
+
+        if trust_system {
+            //unusual to trust system store with mTLS
+            //load system trust store certs
+            let cr:rustls_native_certs::CertificateResult = rustls_native_certs::load_native_certs();
+            if cr.errors.len() > 0 {
+                return Err(anyhow::anyhow!("Failed to load system certs: {:#?}", cr.errors));
+            }
+            let system_store = cr.expect("impossible now: failed to load system certs.");
+            for cert in system_store {
+                // Parse and log cert details
+                if let Ok((_, parsed)) = x509_parser::prelude::X509Certificate::from_der(cert.as_ref()) {
+                    let subject = parsed.subject().to_string();
+                    let issuer = parsed.issuer().to_string();
+                    let not_after = parsed.validity().not_after.to_string();
+                    let serial = parsed.serial.to_string();
+                    let fingerprint = format!("{:x}", Sha256::digest(cert.as_ref()));
+                    log::info!(
+                        "System cert: subject={}, issuer={}, serial={}, expires={}, fingerprint={}",
+                        subject, issuer, serial, not_after, fingerprint
+                    );
+                } else {
+                    log::warn!("Failed to parse system cert");
+                }
+
+                roots.add(cert)?;
+            }
+        }
+
+        // Load custom client trust certificates
+        if let Some(client_trust_path) = args.get_one::<PathBuf>("client-trust-cert") {
+            let client_certs = load_certs(client_trust_path, None).await?;
+            for cert in client_certs {
+                // Parse and log cert details
+                if let Ok((_, parsed)) = x509_parser::prelude::X509Certificate::from_der(cert.as_ref()) {
+                    let subject = parsed.subject().to_string();
+                    let issuer = parsed.issuer().to_string();
+                    let not_after = parsed.validity().not_after.to_string();
+                    let serial = parsed.serial.to_string();
+                    let fingerprint = format!("{:x}", Sha256::digest(cert.as_ref()));
+                    log::info!(
+                        "Custom cert: subject={}, issuer={}, serial={}, expires={}, fingerprint={}",
+                        subject, issuer, serial, not_after, fingerprint
+                    );
+                } else {
+                    log::warn!("Failed to parse custom cert from file {}", client_trust_path.display());
+                }
+                roots.add(cert)?;
+            }
+        }
+
+        // Configure client authentication (mTLS)
+        let client_auth: Arc<dyn rustls::server::danger::ClientCertVerifier> = if args.get_one::<PathBuf>("client-trust-cert").is_some() || trust_system {
+            rustls::server::WebPkiClientVerifier::builder(roots.into()) //Arc::new(roots))
+                .build()
+                .map_err(|e| anyhow::anyhow!("Failed to build client verifier: {}", e))?
+        } else {
+            rustls::server::WebPkiClientVerifier::no_client_auth()
+        };
 
         // Create ServerConfig with secure settings
         let config=
@@ -296,7 +391,8 @@ pub async fn exec(args: &ArgMatches) -> anyhow::Result<()> {
 //                &rustls::version::TLS12,
             ])
 //            rustls::ServerConfig::builder() // using this instead, wouldn't restrict proto versions.
-            .with_no_client_auth()
+            .with_client_cert_verifier(client_auth)
+            //.with_no_client_auth() ^
             .with_single_cert(cert_chain, private_key)
             .map_err(|e| anyhow::anyhow!("Failed to set certificates from files pub:'{}', priv:'{}', err: {}", cert_path.display(), key_path.display(), e))?;
 

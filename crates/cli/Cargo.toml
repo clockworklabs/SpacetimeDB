@@ -74,7 +74,12 @@ wasmbin.workspace = true
 wasmtime.workspace = true
 webbrowser.workspace = true
 clap-markdown.workspace = true
-native-tls = "0.2"
+#native-tls = "0.2"
+native-tls.workspace=true
+rustls-pemfile.workspace=true
+x509-parser.workspace=true
+sha2.workspace=true
+#hyper.workspace=true
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = { workspace = true }

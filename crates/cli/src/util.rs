@@ -1,3 +1,4 @@
+use anyhow::anyhow;
 use anyhow::Context;
 use base64::{engine::general_purpose::STANDARD_NO_PAD as BASE_64_STD_NO_PAD, Engine as _};
 use reqwest::{RequestBuilder, Url};
@@ -10,6 +11,8 @@ use std::path::Path;
 use crate::config::Config;
 use crate::login::{spacetimedb_login_force, DEFAULT_AUTH_HOST};
 pub use spacetimedb_lib::load_root_cert;
+pub use spacetimedb_lib::{read_file_limited, TrustCertError, ClientCertError, ClientKeyError};
+pub use spacetimedb_lib::map_request_error;
 
 pub const UNSTABLE_WARNING: &str = "WARNING: This command is UNSTABLE and subject to breaking changes.";
 
@@ -109,27 +112,146 @@ impl ResponseExt for reqwest::Response {
 }
 
 
-pub async fn configure_tls(cert_path: Option<&Path>) -> anyhow::Result<reqwest::ClientBuilder> {
-    let mut client_builder = reqwest::Client::builder();
-    if let Some(cert) = load_root_cert(cert_path).await? {
-        let path:String=cert_path.map_or("<unexpected empty path>".to_string(), |p| p.display().to_string());
-        let reqwest_cert = reqwest::Certificate::from_der(&cert.to_der()
-            .context(format!("Failed to convert certificate to DER for: {}", path))?)
-            .context(format!("Invalid certificate: {}", path))?;
-        client_builder = client_builder.add_root_certificate(reqwest_cert);
+//pub async fn configure_tls(cert_path: Option<&Path>) -> anyhow::Result<reqwest::ClientBuilder> {
+//    let mut client_builder = reqwest::Client::builder();
+//    if let Some(cert) = load_root_cert(cert_path).await? {
+//        let path:String=cert_path.map_or("<unexpected empty path>".to_string(), |p| p.display().to_string());
+//        let reqwest_cert = reqwest::Certificate::from_der(&cert.to_der()
+//            .context(format!("Failed to convert certificate to DER for: {}", path))?)
+//            .context(format!("Invalid certificate: {}", path))?;
+//        client_builder = client_builder.add_root_certificate(reqwest_cert);
+//    }
+//    Ok(client_builder)
+//}
+pub async fn configure_tls(
+    trust_server_cert_path: Option<&Path>,
+    client_cert_path: Option<&Path>,
+    client_key_path: Option<&Path>,
+    trust_system: bool,
+//    no_trust_system: bool,
+) -> anyhow::Result<reqwest::ClientBuilder> {
+    let mut client_builder = reqwest::Client::builder().use_native_tls();
+
+    client_builder = if trust_system {
+        //TODO: find out if this method is taking /etc/ssl/ system trust store certs or what!
+        client_builder.tls_built_in_root_certs(true)
+    } else {
+        eprintln!("Not trusting system/root cert store.");
+        client_builder.tls_built_in_root_certs(false)
+    };
+//    // Validate trust store options
+//    if no_trust_system && trust_cert_path.is_none() {
+//        //XXX: probably never hit due to clap enforcing this.
+//        return Err(anyhow!("--no-trust-system-root-store requires --trust-server-cert"));
+//    }
+
+    // Load trust certificates
+    if let Some(path) = trust_server_cert_path {
+        let cert_data = read_file_limited(path).await
+            //.context(format!("loading trust cert file: {}", path.display()))
+            .map_err(|e| anyhow::Error::new(TrustCertError::new(path, e)))?;
+        let certs = rustls_pemfile::certs(&mut std::io::Cursor::new(cert_data))
+            .collect::<Result<Vec<_>, _>>()
+            .context(format!("parse trust certificate(s) from file: {}", path.display()))
+            .map_err(|e| anyhow::Error::new(TrustCertError::new(path, e)))?;
+        if certs.is_empty() {
+            return Err(anyhow::anyhow!("No valid trust certificate(s) in file: {}", path.display()));
+        }
+        use x509_parser::prelude::FromDer;
+        use sha2::Digest;
+        for cert in certs {
+//            // Parse and log cert details
+//            if let Ok((_, parsed)) = x509_parser::prelude::X509Certificate::from_der(cert.as_ref()) {
+//                let subject = parsed.subject().to_string();
+//                let issuer = parsed.issuer().to_string();
+//                let not_after = parsed.validity().not_after.to_string();
+//                let serial = parsed.serial.to_string();
+//                let fingerprint = format!("{:x}", sha2::Sha256::digest(cert.as_ref()));
+//                log::info!(
+//                    "Client root cert: subject={}, issuer={}, serial={}, expires={}, fingerprint={}",
+//                    subject, issuer, serial, not_after, fingerprint
+//                );
+//            } else {
+//                log::warn!("Failed to parse client root cert from file: '{}'",path.display());
+//            }
+            // Parse and log cert details
+            let (_, parsed) = x509_parser::prelude::X509Certificate::from_der(cert.as_ref())
+                .context(format!("parse a trust cert from file: {}", path.display()))?;
+            let subject = parsed.subject().to_string();
+            let issuer = parsed.issuer().to_string();
+            let not_after = parsed.validity().not_after.to_string();
+            let serial = parsed.serial.to_string();
+            let fingerprint = format!("{:x}", sha2::Sha256::digest(cert.as_ref()));
+            //log::info!(
+            eprintln!(
+                "Adding trusted root cert(for server verification): subject={}, issuer={}, serial={}, expires={}, fingerprint={}",
+                subject, issuer, serial, not_after, fingerprint
+            );
+            let reqwest_cert = 
+                reqwest::Certificate::from_der(&cert)
+                //anyhow::anyhow!("foo")
+                .context(format!("convert trusted cert to reqwest format from file: {}", path.display()))
+                .map_err(|e| anyhow::Error::new(TrustCertError::new(path, e)))?;
+            client_builder = client_builder.add_root_certificate(reqwest_cert);
+        }
     }
+
+    // Configure client authentication aka mTLS
+    if let Some(cert_path) = client_cert_path {
+        //FIXME: clap ensures this, so if this is failing it's a different reason?:
+        let key_path = client_key_path.ok_or_else(|| anyhow!("--client-key is required with --client-cert"))?;
+        let cert_data = read_file_limited(cert_path).await
+            .map_err(|e| anyhow::Error::new(ClientCertError::new(cert_path,e)))
+            ?;
+        let key_data = read_file_limited(key_path).await
+            .map_err(|e| anyhow::Error::new(ClientKeyError::new(key_path,e)))
+            ?;
+        //let identity = reqwest::Identity::from_pkcs8_pem(&[&cert_data[..], &key_data[..]].concat())
+        let identity = reqwest::Identity::from_pkcs8_pem(&cert_data, &key_data)
+            .context(format!("parse client cert: {}, key: {}", cert_path.display(), key_path.display()))?;
+        client_builder = client_builder.identity(identity);
+    }
+
     Ok(client_builder)
 }
 
-pub fn build_client_with_context(builder: reqwest::ClientBuilder, cert_path: Option<&Path>) -> anyhow::Result<reqwest::Client> {
+pub fn build_client_with_context(
+    builder: reqwest::ClientBuilder,
+    trust_server_cert_path: Option<&Path>,
+    client_cert_path: Option<&Path>,
+    client_key_path: Option<&Path>,
+    trust_system: bool,
+    ) -> anyhow::Result<reqwest::Client> {
     builder
         .build()
-        .context(format!("Failed to build client with cert {:?}", cert_path))
+        .context(
+            format!("Failed to build client with trusted (server)cert(s) {:?}, with client cert(s): {:?}, with client private key: {:?}, while {} the system/root cert store.",
+            trust_server_cert_path,
+            client_cert_path,
+            client_key_path,
+            if trust_system { "trusting" } else { "NOT trusting" },
+            )
+        )
 }
 
-pub async fn build_client(cert_path: Option<&Path>) -> anyhow::Result<reqwest::Client> {
-    let builder = configure_tls(cert_path).await?;
-    build_client_with_context(builder, cert_path)
+pub async fn build_client(
+    trust_server_cert_path: Option<&Path>,
+    client_cert_path: Option<&Path>,
+    client_key_path: Option<&Path>,
+    trust_system: bool,
+    ) -> anyhow::Result<reqwest::Client> {
+    let builder = configure_tls(
+        trust_server_cert_path,
+        client_cert_path,
+        client_key_path,
+        trust_system,
+        ).await.context("build client")?;
+    build_client_with_context(builder,
+        trust_server_cert_path,
+        client_cert_path,
+        client_key_path,
+        trust_system,
+    )
 }
 
 /// Converts a name to a database identity.
@@ -149,16 +271,47 @@ pub async fn spacetime_dns(
         .context("identity endpoint did not return an identity")
 }
 
-pub async fn spacetime_server_fingerprint(url: &str, cert_path: Option<&Path>) -> anyhow::Result<String> {
-    if let Some(_path) = cert_path {
+pub async fn spacetime_server_fingerprint(
+    url: &String,
+    trust_server_cert_path: Option<&Path>,
+    client_cert_path: Option<&Path>,
+    client_key_path: Option<&Path>,
+    trust_system: bool,
+    ) -> anyhow::Result<String> {
+    if let Some(_path) = trust_server_cert_path {
         if !url.starts_with("https") {
             eprintln!("WARNING: Non-https url '{url}' but --cert was specified.");
         }
     }
-    let builder = configure_tls(cert_path).await?;
-    let client = builder.build().map_err(|e| anyhow::anyhow!("Failed to build client: {}", e))?;
+
+//    //doneTODO: collapse these 2 into build_client from above.
+//    let builder = configure_tls(
+//        trust_server_cert_path,
+//        client_cert_path,
+//        client_key_path,
+//        trust_system,
+//        ).await.context("attempt server fingerprint")?;
+//    let client = builder.build().map_err(|e| anyhow::anyhow!("Failed to build client: {}", e))?;
+
+    let client = map_request_error!(
+        build_client(
+            trust_server_cert_path,
+            client_cert_path,
+            client_key_path,
+            trust_system,
+        ).await.context("attempt server fingerprint")
+        , url, client_cert_path, client_key_path)
+        ?;
+
+
+    // A request 'builder' it seems:
     let builder = client.get(format!("{}/v1/identity/public-key", url).as_str());
-    let res = builder.send().await?.error_for_status()?;
+    let res = map_request_error!(
+        builder.send().await
+        //?
+        , url, client_cert_path, client_key_path)?
+        .error_for_status()
+        ?;
     let fingerprint = res.text().await?;
     Ok(fingerprint)
 }
@@ -347,9 +500,21 @@ pub async fn get_login_token_or_log_in(
 
     if full_login {
         let host = Url::parse(DEFAULT_AUTH_HOST)?;
-        spacetimedb_login_force(config, &host, false, None/*TODO*/).await
+        spacetimedb_login_force(config, &host, false,
+            /*TODO*/
+            None,
+            None,
+            None,
+            false,
+            ).await
     } else {
         let host = Url::parse(&config.get_host_url(target_server)?)?;
-        spacetimedb_login_force(config, &host, true, None/*TODO*/).await
+        spacetimedb_login_force(config, &host, true,
+            /*TODO*/
+            None,
+            None,
+            None,
+            false,
+            ).await
     }
 }

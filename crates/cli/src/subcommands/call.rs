@@ -11,6 +11,7 @@ use spacetimedb_lib::sats::{self, AlgebraicType, Typespace};
 use spacetimedb_lib::{Identity, ProductTypeElement};
 use spacetimedb_schema::def::{ModuleDef, ReducerDef};
 use std::fmt::Write;
+use std::path::{Path, PathBuf};
 
 use super::sql::parse_req;
 
@@ -30,7 +31,14 @@ pub fn cli() -> clap::Command {
                 .required(true)
                 .help("The name of the reducer to call"),
         )
-        .arg(common_args::cert())
+        //.arg(common_args::cert())
+
+        .arg(common_args::trust_server_cert())
+        .arg(common_args::client_cert())
+        .arg(common_args::client_key())
+        .arg(common_args::trust_system_root_store())
+        .arg(common_args::no_trust_system_root_store())
+
         .arg(Arg::new("arguments").help("arguments formatted as JSON").num_args(1..))
         .arg(common_args::server().help("The nickname, host name or URL of the server hosting the database"))
         .arg(common_args::anonymous())
@@ -43,8 +51,22 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), Error> {
     let reducer_name = args.get_one::<String>("reducer_name").unwrap();
     let arguments = args.get_many::<String>("arguments");
 
-    let cert_path = args.get_one::<std::path::PathBuf>("cert").map(|p| p.as_path());
-    let conn = parse_req(config, args, cert_path).await?;
+    // TLS arguments
+    let trust_server_cert_path: Option<&Path> = args.get_one::<PathBuf>("trust-server-cert").map(|p| p.as_path());
+    let client_cert_path: Option<&Path> = args.get_one::<PathBuf>("client-cert").map(|p| p.as_path());
+    let client_key_path: Option<&Path> = args.get_one::<PathBuf>("client-key").map(|p| p.as_path());
+
+    // for clients, default to true unless --no-trust-system-root-store
+    // because this is used to verify the received server cert which can be signed by public CA
+    // thus using system's trust/root store, by default, makes sense.
+    let trust_system = !args.get_flag("no-trust-system-root-store");
+
+    let conn = parse_req(config, args,
+        trust_server_cert_path,
+        client_cert_path,
+        client_key_path,
+        trust_system,
+    ).await?;
     let api = ClientApi::new(conn);
 
     let database_identity = api.con.database_identity;

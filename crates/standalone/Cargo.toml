@@ -31,13 +31,19 @@ async-trait.workspace = true
 axum.workspace = true
 
 # Add this for TLS support
-#axum-server = "0.6"  # Compatible with axum 0.7.9
-#axum-server = "0.7"  # Compatible with axum 0.7.9
-axum-server = { version = "0.7.2", features = ["tls-rustls"] }
+#axum-server = { version = "0.7.2", features = ["tls-rustls"] }
+axum-server.workspace=true
+#rustls-platform-verifier.workspace=true
+rustls-native-certs.workspace=true
+x509-parser.workspace=true
+sha2.workspace=true
 
-ring = "0.17"  # explicitly add this for the CryptoProvider, even tho it's included transitively.
-rustls= { version="0.23", default-features = true, features=[ "ring" ] }
-rustls-pemfile = "2.2"
+#ring = "0.17"  # explicitly add this for the CryptoProvider, even tho it's included transitively.
+ring.workspace=true
+#rustls= { version="0.23", default-features = true, features=[ "ring" ] }
+rustls.workspace=true
+#rustls-pemfile = "2.2"
+rustls-pemfile.workspace=true
 
 clap = { workspace = true, features = ["derive", "string"] }
 dirs.workspace = true

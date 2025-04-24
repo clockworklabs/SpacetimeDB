@@ -5,11 +5,11 @@ use reqwest::{StatusCode, Url};
 use spacetimedb_client_api_messages::name::PublishOp;
 use spacetimedb_client_api_messages::name::{is_identity, parse_database_name, PublishResult};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::config::Config;
 use crate::util::{add_auth_header_opt, get_auth_header, ResponseExt};
-use crate::util::{decode_identity, unauth_error_context, y_or_n, build_client};
+use crate::util::{decode_identity, unauth_error_context, y_or_n, build_client, map_request_error};
 use crate::{build, common_args};
 
 pub fn cli() -> clap::Command {
@@ -63,7 +63,12 @@ i.e. only lowercase ASCII letters and numbers, separated by dashes."),
         .arg(common_args::server()
                 .help("The nickname, domain name or URL of the server to host the database."),
         )
-        .arg(common_args::cert())
+//        .arg(common_args::cert())
+        .arg(common_args::trust_server_cert())
+        .arg(common_args::client_cert())
+        .arg(common_args::client_key())
+        .arg(common_args::trust_system_root_store())
+        .arg(common_args::no_trust_system_root_store())
         .arg(
             common_args::yes()
         )
@@ -80,7 +85,16 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let wasm_file = args.get_one::<PathBuf>("wasm_file");
     let database_host = config.get_host_url(server)?;
     let build_options = args.get_one::<String>("build_options").unwrap();
-    let cert_path: Option<&std::path::Path> = args.get_one::<std::path::PathBuf>("cert").map(|p| p.as_path());
+    // TLS arguments
+    let trust_server_cert_path: Option<&Path> = args.get_one::<PathBuf>("trust-server-cert").map(|p| p.as_path());
+    let client_cert_path: Option<&Path> = args.get_one::<PathBuf>("client-cert").map(|p| p.as_path());
+    let client_key_path: Option<&Path> = args.get_one::<PathBuf>("client-key").map(|p| p.as_path());
+
+    // for clients, default to true unless --no-trust-system-root-store
+    // because this is used to verify the received server cert which can be signed by public CA
+    // thus using system's trust/root store, by default, makes sense.
+    let trust_system = !args.get_flag("no-trust-system-root-store");
+
 
 
     // If the user didn't specify an identity and we didn't specify an anonymous identity, then
@@ -89,7 +103,15 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     //  easily create a new identity with an email
     let auth_header = get_auth_header(&mut config, anon_identity, server, !force).await?;
 
-    let client = build_client(cert_path).await?;
+    let client = map_request_error!(
+        build_client(
+            trust_server_cert_path,
+            client_cert_path,
+            client_key_path,
+            trust_system,
+        ).await
+        , database_host, client_cert_path, client_key_path)
+        ?;
 
     // If a domain or identity was provided, we should locally make sure it looks correct and
     let mut builder = if let Some(name_or_identity) = name_or_identity {
@@ -169,7 +191,10 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
     builder = add_auth_header_opt(builder, &auth_header);
 
-    let res = builder.body(program_bytes).send().await?;
+    let res = map_request_error!(
+        builder.body(program_bytes).send().await
+        , database_host, client_cert_path, client_key_path)
+        ?;
     if res.status() == StatusCode::UNAUTHORIZED && !anon_identity {
         // If we're not in the `anon_identity` case, then we have already forced the user to log in above (using `get_auth_header`), so this should be safe to unwrap.
         let token = config.spacetimedb_token().unwrap();

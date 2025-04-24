@@ -1,9 +1,11 @@
-use crate::util::{decode_identity, build_client};
+use crate::util::{decode_identity, build_client, map_request_error};
 use crate::Config;
 use clap::{Arg, ArgAction, ArgGroup, ArgMatches, Command};
 use reqwest::Url;
 use serde::Deserialize;
 use webbrowser;
+use crate::common_args;
+use std::path::{Path, PathBuf};
 
 pub const DEFAULT_AUTH_HOST: &str = "https://spacetimedb.com";
 
@@ -31,7 +33,12 @@ pub fn cli() -> Command {
                 .group("login-method")
                 .help("Bypass the login flow and use a login token directly"),
         )
-        .arg(crate::common_args::cert())
+        //.arg(crate::common_args::cert())
+        .arg(common_args::trust_server_cert())
+        .arg(common_args::client_cert())
+        .arg(common_args::client_key())
+        .arg(common_args::trust_system_root_store())
+        .arg(common_args::no_trust_system_root_store())
         .about("Manage your login to the SpacetimeDB CLI")
 }
 
@@ -53,7 +60,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
     let spacetimedb_token: Option<&String> = args.get_one("spacetimedb-token");
     let host: &String = args.get_one("auth-host").unwrap();
-    let host = Url::parse(host)?;
+    let mut host = Url::parse(host)?;
     // XXX: specifying an url for the server below, instead of an existing nickname, will cause 'login' to
     // succeed but you might wrongly assume like I did in https://github.com/clockworklabs/SpacetimeDB/issues/2512
     // that any subsequent commands like `spacetime publish` will use that server that you specified
@@ -63,9 +70,16 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     // to the list you've to use `spacetime server help`
     // so let's warn, but allow this behavior.
     let server_issued_login: Option<&String> = args.get_one("server");
+//    if let Some(server) = server_issued_login {
+//    }//if
+    let sil:bool=
     if let Some(server) = server_issued_login {
-        eprintln!("WARNING: the server that you specified here as '{}' isn't the one that will be used by commands like 'spacetime publish' but instead it's the one listed on 'spacetime server list' as the default (3 stars) that will be used, eg. 127.0.0.1:3000 if you haven't manually added any via 'spacetime server add'.\n",server);//extra new line
-    }//if
+        host = Url::parse(&config.get_host_url(Some(server))?)?;
+        eprintln!("WARNING: the server that you specified here as '{}'(aka {}) isn't the one that will be used by commands like 'spacetime publish' but instead it's the one listed on 'spacetime server list' as the default (3 stars) that will be used, eg. 127.0.0.1:3000 if you haven't manually added any via 'spacetime server add'.\n",server, host);//extra new line
+        true
+    } else {
+        false
+    };
 
     if let Some(token) = spacetimedb_token {
         config.set_spacetimedb_token(token.clone());
@@ -73,13 +87,25 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         return Ok(());
     }
 
-    let cert: Option<&std::path::Path> = args.get_one::<std::path::PathBuf>("cert").map(|p| p.as_path());
-    if let Some(server) = server_issued_login {
-        let host = Url::parse(&config.get_host_url(Some(server))?)?;
-        spacetimedb_token_cached(&mut config, &host, true, cert).await?;
-    } else {
-        spacetimedb_token_cached(&mut config, &host, false, cert).await?;
-    }
+    // TLS arguments
+    let trust_server_cert_path: Option<&Path> = args.get_one::<PathBuf>("trust-server-cert").map(|p| p.as_path());
+    let client_cert_path: Option<&Path> = args.get_one::<PathBuf>("client-cert").map(|p| p.as_path());
+    let client_key_path: Option<&Path> = args.get_one::<PathBuf>("client-key").map(|p| p.as_path());
+
+    // for clients, default to true unless --no-trust-system-root-store
+    // because this is used to verify the received server cert which can be signed by public CA
+    // thus using system's trust/root store, by default, makes sense.
+    let trust_system = !args.get_flag("no-trust-system-root-store");
+
+    map_request_error!(
+        spacetimedb_token_cached(&mut config, &host, sil,
+            trust_server_cert_path,
+            client_cert_path,
+            client_key_path,
+            trust_system,
+        ).await
+        , host.to_string(), client_cert_path, client_key_path)
+        ?;
 
     Ok(())
 }
@@ -111,7 +137,12 @@ async fn exec_show(config: Config, args: &ArgMatches) -> Result<(), anyhow::Erro
     Ok(())
 }
 
-async fn spacetimedb_token_cached(config: &mut Config, host: &Url, direct_login: bool, cert: Option<&std::path::Path>) -> anyhow::Result<String> {
+async fn spacetimedb_token_cached(config: &mut Config, host: &Url, direct_login: bool,
+    trust_server_cert_path: Option<&Path>,
+    client_cert_path: Option<&Path>,
+    client_key_path: Option<&Path>,
+    trust_system: bool,
+    ) -> anyhow::Result<String> {
     // Currently, this token does not expire. However, it will at some point in the future. When that happens,
     // this code will need to happen before any request to a spacetimedb server, rather than at the end of the login flow here.
     if let Some(token) = config.spacetimedb_token() {
@@ -119,14 +150,29 @@ async fn spacetimedb_token_cached(config: &mut Config, host: &Url, direct_login:
         println!("If you want to log out, use spacetime logout.");
         Ok(token.clone())
     } else {
-        spacetimedb_login_force(config, host, direct_login, cert).await
+        spacetimedb_login_force(config, host, direct_login,
+            trust_server_cert_path,
+            client_cert_path,
+            client_key_path,
+            trust_system,
+        ).await
     }
 }
 
-pub async fn spacetimedb_login_force(config: &mut Config, host: &Url, direct_login: bool, cert: Option<&std::path::Path>) -> anyhow::Result<String> {
+pub async fn spacetimedb_login_force(config: &mut Config, host: &Url, direct_login: bool,
+    trust_server_cert_path: Option<&Path>,
+    client_cert_path: Option<&Path>,
+    client_key_path: Option<&Path>,
+    trust_system: bool,
+) -> anyhow::Result<String> {
     let token = if direct_login {
         println!("We will log in directly to your target server.");
-        let token = spacetimedb_direct_login(host, cert).await?;
+        let token = spacetimedb_direct_login(host,
+            trust_server_cert_path,
+            client_cert_path,
+            client_key_path,
+            trust_system,
+        ).await?;
         println!("We have logged in directly to your target server.");
         println!("WARNING: This login will NOT work for any other servers.");
         token
@@ -286,8 +332,18 @@ struct LocalLoginResponse {
     pub token: String,
 }
 
-async fn spacetimedb_direct_login(host: &Url, cert: Option<&std::path::Path>) -> Result<String, anyhow::Error> {
-    let client = build_client(cert.as_deref()).await?;
+async fn spacetimedb_direct_login(host: &Url,
+    trust_server_cert_path: Option<&Path>,
+    client_cert_path: Option<&Path>,
+    client_key_path: Option<&Path>,
+    trust_system: bool,
+) -> Result<String, anyhow::Error> {
+    let client = build_client(
+        trust_server_cert_path,
+        client_cert_path,
+        client_key_path,
+        trust_system,
+    ).await?;
 
     let response: LocalLoginResponse = client
         .post(host.join("/v1/identity")?)
