@@ -314,7 +314,13 @@ namespace SpacetimeDB
                 _ => throw new InvalidOperationException("Unknown compression type"),
             };
 
-            return new ServerMessage.BSATN().Read(new BinaryReader(decompressedStream));
+            // TODO: consider pooling these.
+            // DO NOT TRY TO TAKE THIS OUT. The BrotliStream ReadByte() implementation allocates an array
+            // PER BYTE READ. You have to do it all at once to avoid that problem.
+            MemoryStream memoryStream = new MemoryStream();
+            decompressedStream.CopyTo(memoryStream);
+            memoryStream.Seek(0, SeekOrigin.Begin);
+            return new ServerMessage.BSATN().Read(new BinaryReader(memoryStream));
         }
 
         private static QueryUpdate DecompressDecodeQueryUpdate(CompressableQueryUpdate update)
@@ -338,7 +344,13 @@ namespace SpacetimeDB
                     throw new InvalidOperationException();
             }
 
-            return new QueryUpdate.BSATN().Read(new BinaryReader(decompressedStream));
+            // TODO: consider pooling these.
+            // DO NOT TRY TO TAKE THIS OUT. The BrotliStream ReadByte() implementation allocates an array
+            // PER BYTE READ. You have to do it all at once to avoid that problem.
+            MemoryStream memoryStream = new MemoryStream();
+            decompressedStream.CopyTo(memoryStream);
+            memoryStream.Seek(0, SeekOrigin.Begin);
+            return new QueryUpdate.BSATN().Read(new BinaryReader(memoryStream));
         }
 
         private static IEnumerable<byte[]> BsatnRowListIter(BsatnRowList list)
