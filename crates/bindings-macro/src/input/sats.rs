@@ -8,7 +8,7 @@ use syn::LitStr;
 use crate::sym;
 use super::util::{check_duplicate, match_meta};
 
-pub(crate) struct SatsType<'a> {
+pub struct SatsType<'a> {
     pub ident: &'a syn::Ident,
     pub generics: &'a syn::Generics,
     pub name: LitStr,
@@ -21,13 +21,13 @@ pub(crate) struct SatsType<'a> {
     pub is_repr_c: bool,
 }
 
-pub(crate) enum SatsTypeData<'a> {
+pub enum SatsTypeData<'a> {
     Product(Vec<SatsField<'a>>),
     Sum(Vec<SatsVariant<'a>>),
 }
 
 #[derive(Clone)]
-pub(crate) struct SatsField<'a> {
+pub struct SatsField<'a> {
     pub ident: Option<&'a syn::Ident>,
     pub vis: &'a syn::Visibility,
     pub name: Option<String>,
@@ -35,7 +35,7 @@ pub(crate) struct SatsField<'a> {
     pub original_attrs: &'a [syn::Attribute],
 }
 
-pub(crate) struct SatsVariant<'a> {
+pub struct SatsVariant<'a> {
     pub ident: &'a syn::Ident,
     pub name: String,
     pub ty: Option<&'a syn::Type>,
@@ -45,7 +45,7 @@ pub(crate) struct SatsVariant<'a> {
     pub original_attrs: &'a [syn::Attribute],
 }
 
-pub(crate) fn sats_type_from_derive(
+pub fn sats_type_from_derive(
     input: &syn::DeriveInput,
     crate_fallback: TokenStream,
 ) -> syn::Result<SatsType<'_>> {
@@ -89,7 +89,7 @@ fn is_repr_c(attrs: &[syn::Attribute]) -> bool {
     is_repr_c
 }
 
-pub(crate) fn extract_sats_type<'a>(
+fn extract_sats_type<'a>(
     ident: &'a syn::Ident,
     generics: &'a syn::Generics,
     attrs: &'a [syn::Attribute],
