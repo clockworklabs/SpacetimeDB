@@ -1,6 +1,6 @@
-pub(crate) trait ErrorSource {
 use proc_macro2::Span;
 
+pub trait ErrorSource {
     fn error(self, msg: impl std::fmt::Display) -> syn::Error;
 }
 impl ErrorSource for Span {
@@ -15,10 +15,10 @@ impl ErrorSource for &syn::meta::ParseNestedMeta<'_> {
 }
 
 /// Ensures that `x` is `None` or returns an error.
-pub(crate) fn check_duplicate<T>(x: &Option<T>, src: impl ErrorSource) -> syn::Result<()> {
+pub fn check_duplicate<T>(x: &Option<T>, src: impl ErrorSource) -> syn::Result<()> {
     check_duplicate_msg(x, src, "duplicate attribute")
 }
-pub(crate) fn check_duplicate_msg<T>(
+pub fn check_duplicate_msg<T>(
     x: &Option<T>,
     src: impl ErrorSource,
     msg: impl std::fmt::Display,
@@ -30,7 +30,7 @@ pub(crate) fn check_duplicate_msg<T>(
     }
 }
 
-pub(crate) fn one_of(options: &[crate::sym::Symbol]) -> String {
+pub fn one_of(options: &[crate::sym::Symbol]) -> String {
     match options {
         [] => "unexpected attribute".to_owned(),
         [a] => {
@@ -46,6 +46,7 @@ pub(crate) fn one_of(options: &[crate::sym::Symbol]) -> String {
     }
 }
 
+// TODO: Add #[macro_export] when the input module is copy+pasted into its own crate and used by bindings-macro instead
 macro_rules! match_meta {
     (match $meta:ident { $($matches:tt)* }) => {{
         let meta: &syn::meta::ParseNestedMeta = &$meta;
