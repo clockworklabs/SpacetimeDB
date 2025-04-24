@@ -806,24 +806,8 @@ impl WebsocketFormat for BsatnFormat {
 
     type QueryUpdate = CompressableQueryUpdate<Self>;
 
-    fn into_query_update(qu: QueryUpdate<Self>, compression: Compression) -> Self::QueryUpdate {
-        let qu_len_would_have_been = bsatn::to_len(&qu).unwrap();
-
-        match decide_compression(qu_len_would_have_been, compression) {
-            Compression::None => CompressableQueryUpdate::Uncompressed(qu),
-            Compression::Brotli => {
-                let bytes = bsatn::to_vec(&qu).unwrap();
-                let mut out = Vec::new();
-                brotli_compress(&bytes, &mut out);
-                CompressableQueryUpdate::Brotli(out.into())
-            }
-            Compression::Gzip => {
-                let bytes = bsatn::to_vec(&qu).unwrap();
-                let mut out = Vec::new();
-                gzip_compress(&bytes, &mut out);
-                CompressableQueryUpdate::Gzip(out.into())
-            }
-        }
+    fn into_query_update(qu: QueryUpdate<Self>, _compression: Compression) -> Self::QueryUpdate {
+        CompressableQueryUpdate::Uncompressed(qu)
     }
 }
 
