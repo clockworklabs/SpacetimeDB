@@ -1,7 +1,6 @@
 use proc_macro::TokenStream as StdTokenStream;
 use proc_macro2::TokenStream;
 use syn::parse::Parse;
-use syn::Ident;
 
 /// Parses `item`, passing it and `args` to `f`,
 /// which should return only whats newly added, excluding the `item`.
@@ -29,8 +28,4 @@ pub(crate) fn ok_or_compile_error<Res: Into<StdTokenStream>>(f: impl FnOnce() ->
         Ok(ok) => ok.into(),
         Err(e) => e.into_compile_error().into(),
     }
-}
-
-pub(crate) fn ident_to_litstr(ident: &Ident) -> syn::LitStr {
-    syn::LitStr::new(&ident.to_string(), ident.span())
 }

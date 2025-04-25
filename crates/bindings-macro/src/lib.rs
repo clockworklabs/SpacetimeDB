@@ -20,6 +20,7 @@ use std::time::Duration;
 use syn::{parse::ParseStream, Attribute};
 use syn::{ItemConst, ItemFn};
 use util::{cvt_attr, ok_or_compile_error};
+use spacetimedb_bindings_macro_input as input;
 
 mod sym {
     use crate::input::sym::{symbol, Symbol};

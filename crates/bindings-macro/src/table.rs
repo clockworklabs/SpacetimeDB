@@ -1,5 +1,5 @@
 use crate::input::table::{Column, ColumnArgs, IndexArg, IndexType, TableAccess, TableArgs};
-use crate::util::ident_to_litstr;
+use crate::input::util::ident_to_litstr;
 use core::slice;
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote, quote_spanned, ToTokens};

@@ -1,4 +1,5 @@
 use proc_macro2::Span;
+use syn::Ident;
 
 pub trait ErrorSource {
     fn error(self, msg: impl std::fmt::Display) -> syn::Error;
@@ -75,3 +76,7 @@ macro_rules! match_meta {
     };
 }
 pub use match_meta;
+
+pub fn ident_to_litstr(ident: &Ident) -> syn::LitStr {
+    syn::LitStr::new(&ident.to_string(), ident.span())
+}

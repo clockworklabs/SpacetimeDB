@@ -1,6 +1,5 @@
 use crate::sym;
-use crate::input::util::{check_duplicate, check_duplicate_msg, match_meta};
-use crate::util::ident_to_litstr;
+use crate::input::util::{check_duplicate, check_duplicate_msg, ident_to_litstr, match_meta};
 use proc_macro2::{Span, TokenStream};
 use quote::{quote, quote_spanned};
 use syn::parse::Parser as _;
