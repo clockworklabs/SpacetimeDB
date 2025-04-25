@@ -2,7 +2,7 @@
 /// which identifiers and paths may be matched.
 pub struct Symbol(pub &'static str);
 
-// TODO: Add #[macro_export] when the input module is copy+pasted into its own crate and used by bindings-macro instead
+#[macro_export]
 macro_rules! symbol {
     ($ident:ident) => {
         symbol!($ident, $ident);
@@ -13,7 +13,7 @@ macro_rules! symbol {
         pub const $const: Symbol = Symbol(stringify!($ident));
     };
 }
-pub(crate) use symbol;
+pub use symbol;
 
 symbol!(at);
 symbol!(auto_inc);

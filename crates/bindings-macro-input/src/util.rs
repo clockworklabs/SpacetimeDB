@@ -46,7 +46,7 @@ pub fn one_of(options: &[super::sym::Symbol]) -> String {
     }
 }
 
-// TODO: Add #[macro_export] when the input module is copy+pasted into its own crate and used by bindings-macro instead
+#[macro_export]
 macro_rules! match_meta {
     (match $meta:ident { $($matches:tt)* }) => {{
         let meta: &syn::meta::ParseNestedMeta = &$meta;
@@ -74,4 +74,4 @@ macro_rules! match_meta {
         ), ($($comparisons,)* $sym), $meta { $($rest)* })
     };
 }
-pub(crate) use match_meta;
+pub use match_meta;
