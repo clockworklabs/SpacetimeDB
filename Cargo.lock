@@ -5089,11 +5089,9 @@ dependencies = [
 name = "spacetimedb-bindings-macro"
 version = "1.1.1"
 dependencies = [
- "heck 0.4.1",
  "humantime",
  "proc-macro2",
  "quote",
- "spacetimedb-primitives",
  "spacetimedb-bindings-macro-input",
  "syn 2.0.87",
 ]
