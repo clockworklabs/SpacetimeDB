@@ -391,20 +391,20 @@ namespace SpacetimeDB
             {
                 if (_index >= _maxIndex)
                     return false;
-                    
+
                 _index++;
-                
+
                 // Create the array only when requested
                 var startIndex = _index * _size;
                 if (startIndex + _size > _rowsData.Count)
                     return false;
-                    
+
                 _current = new byte[_size];
                 for (var i = 0; i < _size; i++)
                 {
                     _current[i] = _rowsData[startIndex + i];
                 }
-                
+
                 return true;
             }
 
@@ -442,23 +442,23 @@ namespace SpacetimeDB
                 if (_index >= _offsets.Count - 1)
                     return false;
                 _index++;
-                
+
                 // Determine start and end indices
                 var startIndex = (int)_offsets[_index];
-                var endIndex = (_index + 1 < _offsets.Count) 
-                    ? (int)_offsets[_index + 1] 
+                var endIndex = (_index + 1 < _offsets.Count)
+                    ? (int)_offsets[_index + 1]
                     : _rowsData.Count;
-                    
+
                 var length = endIndex - startIndex;
                 if (length <= 0)
                     return false;
-                    
+
                 _current = new byte[length];
                 for (var i = 0; i < length; i++)
                 {
                     _current[i] = _rowsData[startIndex + i];
                 }
-                
+
                 return true;
             }
 
