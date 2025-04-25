@@ -24,7 +24,9 @@ use spacetimedb_schema::type_for_generate::{
 const INDENT: &str = "    ";
 
 const REDUCER_EVENTS: &str = r#"
-    public interface IRemoteDbContext : IDbContext<RemoteTables, RemoteReducers, SetReducerFlags, SubscriptionBuilder> { }
+    public interface IRemoteDbContext : IDbContext<RemoteTables, RemoteReducers, SetReducerFlags, SubscriptionBuilder> {
+        public event Action<ReducerEventContext, Exception>? OnUnhandledReducerError;
+    }
 
     public sealed class EventContext : IEventContext, IRemoteDbContext
     {
@@ -85,6 +87,13 @@ const REDUCER_EVENTS: &str = r#"
         /// Get this connection's <c>ConnectionId</c>.
         /// </summary>
         public ConnectionId ConnectionId => conn.ConnectionId;
+        /// <summary>
+        /// Register a callback to be called when a reducer with no handler returns an error.
+        /// </summary>
+        public event Action<ReducerEventContext, Exception>? OnUnhandledReducerError {
+            add => Reducers.InternalOnUnhandledReducerError += value;
+            remove => Reducers.InternalOnUnhandledReducerError -= value;
+        }
 
         internal EventContext(DbConnection conn, Event<Reducer> Event)
         {
@@ -151,6 +160,13 @@ const REDUCER_EVENTS: &str = r#"
         /// Get this connection's <c>ConnectionId</c>.
         /// </summary>
         public ConnectionId ConnectionId => conn.ConnectionId;
+        /// <summary>
+        /// Register a callback to be called when a reducer with no handler returns an error.
+        /// </summary>
+        public event Action<ReducerEventContext, Exception>? OnUnhandledReducerError {
+            add => Reducers.InternalOnUnhandledReducerError += value;
+            remove => Reducers.InternalOnUnhandledReducerError -= value;
+        }
 
         internal ReducerEventContext(DbConnection conn, ReducerEvent<Reducer> reducerEvent)
         {
@@ -222,6 +238,13 @@ const REDUCER_EVENTS: &str = r#"
         /// Get this connection's <c>ConnectionId</c>.
         /// </summary>
         public ConnectionId ConnectionId => conn.ConnectionId;
+        /// <summary>
+        /// Register a callback to be called when a reducer with no handler returns an error.
+        /// </summary>
+        public event Action<ReducerEventContext, Exception>? OnUnhandledReducerError {
+            add => Reducers.InternalOnUnhandledReducerError += value;
+            remove => Reducers.InternalOnUnhandledReducerError -= value;
+        }
 
         internal ErrorContext(DbConnection conn, Exception error)
         {
@@ -284,6 +307,13 @@ const REDUCER_EVENTS: &str = r#"
         /// Get this connection's <c>ConnectionId</c>.
         /// </summary>
         public ConnectionId ConnectionId => conn.ConnectionId;
+        /// <summary>
+        /// Register a callback to be called when a reducer with no handler returns an error.
+        /// </summary>
+        public event Action<ReducerEventContext, Exception>? OnUnhandledReducerError {
+            add => Reducers.InternalOnUnhandledReducerError += value;
+            remove => Reducers.InternalOnUnhandledReducerError -= value;
+        }
 
         internal SubscriptionEventContext(DbConnection conn)
         {
@@ -615,7 +645,19 @@ impl Lang for Csharp<'_> {
                 "public bool Invoke{func_name_pascal_case}(ReducerEventContext ctx, Reducer.{func_name_pascal_case} args)"
             );
             indented_block(output, |output| {
-                writeln!(output, "if (On{func_name_pascal_case} == null) return false;");
+                writeln!(output, "if (On{func_name_pascal_case} == null)");
+                indented_block(output, |output| {
+                    writeln!(output, "if (InternalOnUnhandledReducerError != null)");
+                    indented_block(output, |output| {
+                        writeln!(output, "switch(ctx.Event.Status)");
+                        indented_block(output, |output| {
+                            writeln!(output, "case Status.Failed(var reason): InternalOnUnhandledReducerError(ctx, new Exception(reason)); break;");
+                            writeln!(output, "case Status.OutOfEnergy(var _): InternalOnUnhandledReducerError(ctx, new Exception(\"out of energy\")); break;");
+                        });
+                    });
+                    writeln!(output, "return false;");
+                });
+
                 writeln!(output, "On{func_name_pascal_case}(");
                 // Write out arguments one per line
                 {
@@ -682,6 +724,10 @@ impl Lang for Csharp<'_> {
                 "internal RemoteReducers(DbConnection conn, SetReducerFlags flags) : base(conn) => SetCallReducerFlags = flags;"
             );
             writeln!(output, "internal readonly SetReducerFlags SetCallReducerFlags;");
+            writeln!(
+                output,
+                "internal event Action<ReducerEventContext, Exception>? InternalOnUnhandledReducerError;"
+            )
         });
         writeln!(output);
 
@@ -804,6 +850,14 @@ impl Lang for Csharp<'_> {
             writeln!(output);
 
             writeln!(output, "public SubscriptionBuilder SubscriptionBuilder() => new(this);");
+            writeln!(
+                output,
+                "public event Action<ReducerEventContext, Exception> OnUnhandledReducerError"
+            );
+            indented_block(output, |output| {
+                writeln!(output, "add => Reducers.InternalOnUnhandledReducerError += value;");
+                writeln!(output, "remove => Reducers.InternalOnUnhandledReducerError -= value;");
+            });
         });
 
         vec![("SpacetimeDBClient.g.cs".to_owned(), output.into_inner())]

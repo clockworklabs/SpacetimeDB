@@ -126,6 +126,16 @@ metrics_group!(
         #[labels(db: Identity)]
         pub delta_queries_matched: IntCounterVec,
 
+        #[name = spacetime_num_duplicate_rows_evaluated]
+        #[help = "The number of times we evaluate the same row in a subscription update"]
+        #[labels(db: Identity)]
+        pub duplicate_rows_evaluated: IntCounterVec,
+
+        #[name = spacetime_num_duplicate_rows_sent]
+        #[help = "The number of duplicate rows we send in a subscription update"]
+        #[labels(db: Identity)]
+        pub duplicate_rows_sent: IntCounterVec,
+
         #[name = spacetime_subscription_connections]
         #[help = "Number of connections with active subscriptions"]
         #[labels(database_identity: Identity)]

@@ -1,4 +1,7 @@
-use std::ops::RangeBounds;
+use std::{
+    hash::{Hash, Hasher},
+    ops::RangeBounds,
+};
 
 use anyhow::{anyhow, Result};
 use iter::PlanIter;
@@ -95,10 +98,19 @@ pub trait DeltaStore {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 pub enum Row<'a> {
     Ptr(RowRef<'a>),
     Ref(&'a ProductValue),
+}
+
+impl Hash for Row<'_> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        match self {
+            Self::Ptr(x) => x.hash(state),
+            Self::Ref(x) => x.hash(state),
+        }
+    }
 }
 
 impl Row<'_> {

@@ -13,16 +13,17 @@ use crate::subscription::delta::eval_delta;
 use crate::subscription::record_exec_metrics;
 use hashbrown::hash_map::OccupiedError;
 use hashbrown::{HashMap, HashSet};
+use itertools::Itertools;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use spacetimedb_client_api_messages::websocket::{
     BsatnFormat, CompressableQueryUpdate, Compression, FormatSwitch, JsonFormat, QueryId, QueryUpdate, WebsocketFormat,
 };
 use spacetimedb_data_structures::map::{Entry, IntMap};
 use spacetimedb_lib::metrics::ExecutionMetrics;
-use spacetimedb_lib::{ConnectionId, Identity};
-use spacetimedb_primitives::TableId;
+use spacetimedb_lib::{AlgebraicValue, ConnectionId, Identity, ProductValue};
+use spacetimedb_primitives::{ColId, TableId};
 use spacetimedb_subscription::SubscriptionPlan;
-use std::collections::LinkedList;
+use std::collections::{BTreeSet, LinkedList};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -83,6 +84,11 @@ impl Plan {
     /// Will only return one element unless there is a table with multiple RLS rules.
     pub fn plans_fragments(&self) -> impl Iterator<Item = &SubscriptionPlan> + '_ {
         self.plans.iter()
+    }
+
+    /// The `SQL` text of this subscription.
+    pub fn sql(&self) -> &str {
+        &self.sql
     }
 }
 
@@ -160,6 +166,134 @@ impl QueryState {
     fn all_clients(&self) -> impl Iterator<Item = &ClientId> {
         itertools::chain(&self.legacy_subscribers, &self.subscriptions)
     }
+
+    /// Return the search arguments for this query
+    fn search_args(&self) -> impl Iterator<Item = (TableId, ColId, AlgebraicValue)> {
+        let mut args = HashSet::new();
+        for arg in self
+            .query
+            .plans
+            .iter()
+            .flat_map(|subscription| subscription.physical_plan().search_args())
+        {
+            args.insert(arg);
+        }
+        args.into_iter()
+    }
+}
+
+/// In this container, we keep track of parameterized subscription queries.
+/// This is used to prune unnecessary queries during subscription evaluation.
+///
+/// TODO: This container is populated on initial subscription.
+/// Ideally this information would be stored in the datastore,
+/// but because subscriptions are evaluated using a read only tx,
+/// we have to manage this memory separately.
+///
+/// If we stored this information in the datastore,
+/// we could encode pruning logic in the execution plan itself.
+#[derive(Debug, Default)]
+pub struct SearchArguments {
+    /// We parameterize subscriptions if they have an equality selection.
+    /// In this case a parameter is a [TableId], [ColId] pair.
+    ///
+    /// Ex.
+    ///
+    /// ```sql
+    /// SELECT * FROM t WHERE id = <value>
+    /// ```
+    ///
+    /// This query is parameterized by `t.id`.
+    ///
+    /// Ex.
+    ///
+    /// ```sql
+    /// SELECT t.* FROM t JOIN s ON t.id = s.id WHERE s.x = <value>
+    /// ```
+    ///
+    /// This query is parameterized by `s.x`.
+    params: BTreeSet<(TableId, ColId)>,
+    /// For each parameter we keep track of its possible values or arguments.
+    /// These arguments are the different values that clients subscribe with.
+    ///
+    /// Ex.
+    ///
+    /// ```sql
+    /// SELECT * FROM t WHERE id = 3
+    /// SELECT * FROM t WHERE id = 5
+    /// ```
+    ///
+    /// These queries will get parameterized by `t.id`,
+    /// and we will record the args `3` and `5` in this map.
+    args: BTreeSet<(TableId, ColId, AlgebraicValue, QueryHash)>,
+}
+
+impl SearchArguments {
+    /// Return the column ids by which a table is parameterized
+    fn search_params_for_table(&self, table_id: TableId) -> impl Iterator<Item = ColId> + '_ {
+        let lower_bound = (table_id, 0.into());
+        let upper_bound = (table_id, u16::MAX.into());
+        self.params
+            .range(lower_bound..=upper_bound)
+            .map(|(_, col_id)| col_id)
+            .cloned()
+    }
+
+    /// Are there queries parameterized by this table and column?
+    /// If so, do we have a subscriber for this `search_arg`?
+    fn queries_for_search_arg(
+        &self,
+        table_id: TableId,
+        col_id: ColId,
+        search_arg: AlgebraicValue,
+    ) -> impl Iterator<Item = &QueryHash> {
+        let lower_bound = (table_id, col_id, search_arg.clone(), QueryHash::MIN);
+        let upper_bound = (table_id, col_id, search_arg, QueryHash::MAX);
+        self.args.range(lower_bound..upper_bound).map(|(_, _, _, hash)| hash)
+    }
+
+    /// Find the queries that need to be evaluated for this row.
+    fn queries_for_row<'a>(&'a self, table_id: TableId, row: &'a ProductValue) -> impl Iterator<Item = &'a QueryHash> {
+        self.search_params_for_table(table_id)
+            .filter_map(|col_id| row.get_field(col_id.idx(), None).ok().map(|arg| (col_id, arg.clone())))
+            .flat_map(move |(col_id, arg)| self.queries_for_search_arg(table_id, col_id, arg))
+    }
+
+    /// Remove a query hash and its associated data from this container.
+    /// Note, a query hash may be associated with multiple column ids.
+    fn remove_query(&mut self, query: &QueryHash) {
+        // Collect the column parameters for this query
+        let mut params = self
+            .args
+            .iter()
+            .filter(|(_, _, _, hash)| hash == query)
+            .map(|(table_id, col_id, _, _)| (*table_id, *col_id))
+            .dedup()
+            .collect::<HashSet<_>>();
+
+        // Remove the search argument entries for this query
+        self.args.retain(|(_, _, _, hash)| hash != query);
+
+        // Remove column parameters that no longer have any search arguments associated to them
+        params.retain(|(table_id, col_id)| {
+            self.args
+                .range(
+                    (*table_id, *col_id, AlgebraicValue::Min, QueryHash::MIN)
+                        ..=(*table_id, *col_id, AlgebraicValue::Max, QueryHash::MAX),
+                )
+                .next()
+                .is_none()
+        });
+
+        self.params
+            .retain(|(table_id, col_id)| !params.contains(&(*table_id, *col_id)));
+    }
+
+    /// Add a new mapping from search argument to query hash
+    fn insert_query(&mut self, table_id: TableId, col_id: ColId, arg: AlgebraicValue, query: QueryHash) {
+        self.args.insert((table_id, col_id, arg, query));
+        self.params.insert((table_id, col_id));
+    }
 }
 
 /// Responsible for the efficient evaluation of subscriptions.
@@ -176,7 +310,12 @@ pub struct SubscriptionManager {
     queries: HashMap<QueryHash, QueryState>,
 
     // Inverted index from tables to queries that read from them.
+    // Note, a query is present in either `tables` or `search_args` but not both.
     tables: IntMap<TableId, HashSet<QueryHash>>,
+
+    // For queries that have simple equality filters,
+    // we map the filter values to the query in this lookup table.
+    search_args: SearchArguments,
 }
 
 // Tracks some gauges related to subscriptions.
@@ -248,6 +387,20 @@ impl SubscriptionManager {
         self.tables.get(table).is_some_and(|queries| queries.contains(query))
     }
 
+    #[cfg(test)]
+    fn query_has_search_arg(&self, query: QueryHash, table_id: TableId, col_id: ColId, arg: AlgebraicValue) -> bool {
+        self.search_args
+            .queries_for_search_arg(table_id, col_id, arg)
+            .any(|hash| *hash == query)
+    }
+
+    #[cfg(test)]
+    fn table_has_search_param(&self, table_id: TableId, col_id: ColId) -> bool {
+        self.search_args
+            .search_params_for_table(table_id)
+            .any(|id| id == col_id)
+    }
+
     fn remove_legacy_subscriptions(&mut self, client: &ClientId) {
         if let Some(ci) = self.clients.get_mut(client) {
             let mut queries_to_remove = Vec::new();
@@ -259,7 +412,11 @@ impl SubscriptionManager {
 
                 query_state.legacy_subscribers.remove(client);
                 if !query_state.has_subscribers() {
-                    SubscriptionManager::remove_query_from_tables(&mut self.tables, &query_state.query);
+                    SubscriptionManager::remove_query_from_tables(
+                        &mut self.tables,
+                        &mut self.search_args,
+                        &query_state.query,
+                    );
                     queries_to_remove.push(*query_hash);
                 }
             }
@@ -320,7 +477,11 @@ impl SubscriptionManager {
             queries_to_return.push(query_state.query.clone());
             query_state.subscriptions.remove(&client_id);
             if !query_state.has_subscribers() {
-                SubscriptionManager::remove_query_from_tables(&mut self.tables, &query_state.query);
+                SubscriptionManager::remove_query_from_tables(
+                    &mut self.tables,
+                    &mut self.search_args,
+                    &query_state.query,
+                );
                 self.queries.remove(&hash);
             }
         }
@@ -385,12 +546,8 @@ impl SubscriptionManager {
                 .entry(hash)
                 .or_insert_with(|| QueryState::new(query.clone()));
 
-            // If this is new, we need to update the table to query mapping.
-            if !query_state.has_subscribers() {
-                for table_id in query.table_ids() {
-                    self.tables.entry(table_id).or_default().insert(hash);
-                }
-            }
+            Self::insert_query(&mut self.tables, &mut self.search_args, query_state);
+
             let entry = ci.subscription_ref_count.entry(hash).or_insert(0);
             *entry += 1;
             let is_new_entry = *entry == 1;
@@ -436,9 +593,7 @@ impl SubscriptionManager {
                 .queries
                 .entry(hash)
                 .or_insert_with(|| QueryState::new(unit.clone()));
-            for table_id in unit.table_ids() {
-                self.tables.entry(table_id).or_default().insert(hash);
-            }
+            Self::insert_query(&mut self.tables, &mut self.search_args, query_state);
             query_state.legacy_subscribers.insert(client_id);
         }
     }
@@ -446,13 +601,42 @@ impl SubscriptionManager {
     // Update the mapping from table id to related queries by removing the given query.
     // If this removes all queries for a table, the map entry for that table is removed altogether.
     // This takes a ref to the table map instead of `self` to avoid borrowing issues.
-    fn remove_query_from_tables(tables: &mut IntMap<TableId, HashSet<QueryHash>>, query: &Query) {
+    fn remove_query_from_tables(
+        tables: &mut IntMap<TableId, HashSet<QueryHash>>,
+        search_args: &mut SearchArguments,
+        query: &Query,
+    ) {
         let hash = query.hash();
+        search_args.remove_query(&hash);
         for table_id in query.table_ids() {
             if let Entry::Occupied(mut entry) = tables.entry(table_id) {
                 let hashes = entry.get_mut();
                 if hashes.remove(&hash) && hashes.is_empty() {
                     entry.remove();
+                }
+            }
+        }
+    }
+
+    // Update the mapping from table id to related queries by inserting the given query.
+    // If this query has search arguments, that mapping is updated instead.
+    // This takes a ref to the table map instead of `self` to avoid borrowing issues.
+    fn insert_query(
+        tables: &mut IntMap<TableId, HashSet<QueryHash>>,
+        search_args: &mut SearchArguments,
+        query_state: &QueryState,
+    ) {
+        // If this is new, we need to update the table to query mapping.
+        if !query_state.has_subscribers() {
+            let hash = query_state.query.hash();
+            let mut has_search_args = false;
+            for (table_id, col_id, arg) in query_state.search_args() {
+                has_search_args = true;
+                search_args.insert_query(table_id, col_id, arg, hash);
+            }
+            if !has_search_args {
+                for table_id in query_state.query.table_ids() {
+                    tables.entry(table_id).or_default().insert(hash);
                 }
             }
         }
@@ -478,12 +662,61 @@ impl SubscriptionManager {
             // This could happen twice for the same hash if a client has a duplicate, but that's fine. It is idepotent.
             if !query_state.has_subscribers() {
                 queries_to_remove.push(*query_hash);
-                SubscriptionManager::remove_query_from_tables(&mut self.tables, &query_state.query);
+                SubscriptionManager::remove_query_from_tables(
+                    &mut self.tables,
+                    &mut self.search_args,
+                    &query_state.query,
+                );
             }
         }
         for query_hash in queries_to_remove {
             self.queries.remove(&query_hash);
         }
+    }
+
+    /// Find the queries that need to be evaluated for this table update.
+    ///
+    /// Note, this tries to prune irrelevant queries from the subscription.
+    ///
+    /// When is this beneficial?
+    ///
+    /// If many different clients subscribe to the same parameterized query,
+    /// but they all subscribe with different parameter values,
+    /// and if these rows contain only a few unique values for this parameter,
+    /// most clients will not receive an update,
+    /// and so we can avoid evaluating queries for them entirely.
+    ///
+    /// Ex.
+    ///
+    /// 1000 clients subscribe to `SELECT * FROM t WHERE id = ?`,
+    /// each one with a different value for `?`.
+    /// If there are transactions that only ever update one row of `t` at a time,
+    /// we only pay the cost of evaluating one query.
+    ///
+    /// When is this not beneficial?
+    ///
+    /// If the table update contains a lot of unique values for a parameter,
+    /// we won't be able to prune very many queries from the subscription,
+    /// so this could add some overhead linear in the size of the table update.
+    ///
+    /// TODO: This logic should be expressed in the execution plan itself,
+    /// so that we don't have to preprocess the table update before execution.
+    fn queries_for_table_update<'a>(
+        &'a self,
+        table_update: &'a DatabaseTableUpdate,
+    ) -> impl Iterator<Item = &'a QueryHash> {
+        let mut queries = HashSet::new();
+        for hash in table_update
+            .inserts
+            .iter()
+            .chain(table_update.deletes.iter())
+            .flat_map(|row| self.search_args.queries_for_row(table_update.table_id, row))
+        {
+            queries.insert(hash);
+        }
+        queries
+            .into_iter()
+            .chain(self.tables.get(&table_update.table_id).into_iter().flatten())
     }
 
     /// This method takes a set of delta tables,
@@ -496,7 +729,7 @@ impl SubscriptionManager {
         event: Arc<ModuleEvent>,
         caller: Option<&ClientConnectionSender>,
         database_identity: &Identity,
-    ) {
+    ) -> ExecutionMetrics {
         use FormatSwitch::{Bsatn, Json};
 
         let tables = &event.status.database_update().unwrap().tables;
@@ -558,8 +791,7 @@ impl SubscriptionManager {
             let plans = tables
                 .iter()
                 .filter(|table| !table.inserts.is_empty() || !table.deletes.is_empty())
-                .filter_map(|DatabaseTableUpdate { table_id, .. }| self.tables.get(table_id))
-                .flatten()
+                .flat_map(|table_update| self.queries_for_table_update(table_update))
                 // deduplicate queries by their hash
                 .filter({
                     let mut seen = HashSet::new();
@@ -634,8 +866,14 @@ impl SubscriptionManager {
                                 sql = qstate.query.sql,
                                 reason = ?err,
                             );
-                            acc.errs
-                                .extend(clients_for_query.map(|id| (id, err.to_string().into_boxed_str())))
+                            let err = DBError::WithSql {
+                                sql: qstate.query.sql.as_str().into(),
+                                error: Box::new(err.into()),
+                            }
+                            .to_string()
+                            .into_boxed_str();
+
+                            acc.errs.extend(clients_for_query.map(|id| (id, err.clone())))
                         }
                         // The query didn't return any rows to update
                         Ok(None) => {}
@@ -783,6 +1021,8 @@ impl SubscriptionManager {
                     );
                 }
             }
+
+            metrics
         })
     }
 }
@@ -842,12 +1082,15 @@ mod tests {
     use std::{sync::Arc, time::Duration};
 
     use spacetimedb_client_api_messages::websocket::QueryId;
+    use spacetimedb_lib::AlgebraicValue;
     use spacetimedb_lib::{error::ResultTest, identity::AuthCtx, AlgebraicType, ConnectionId, Identity, Timestamp};
-    use spacetimedb_primitives::TableId;
+    use spacetimedb_primitives::{ColId, TableId};
+    use spacetimedb_sats::product;
     use spacetimedb_subscription::SubscriptionPlan;
 
     use super::{Plan, SubscriptionManager};
     use crate::execution_context::Workload;
+    use crate::host::module_host::DatabaseTableUpdate;
     use crate::sql::ast::SchemaViewer;
     use crate::subscription::module_subscription_manager::ClientQueryId;
     use crate::{
@@ -1202,6 +1445,138 @@ mod tests {
     }
 
     #[test]
+    fn test_internals_for_search_args() -> ResultTest<()> {
+        let db = TestDB::durable()?;
+
+        let table_id = create_table(&db, "t")?;
+
+        let client = Arc::new(client(0));
+        let mut subscriptions = SubscriptionManager::default();
+
+        // Subscribe to queries that have search arguments
+        let queries = (0u8..5)
+            .map(|name| format!("select * from t where a = {}", name))
+            .map(|sql| compile_plan(&db, &sql))
+            .collect::<ResultTest<Vec<_>>>()?;
+
+        for (i, query) in queries.iter().enumerate().take(5) {
+            let added =
+                subscriptions.add_subscription_multi(client.clone(), vec![query.clone()], QueryId::new(i as u32))?;
+            assert_eq!(added.len(), 1);
+            assert_eq!(added[0].hash, queries[i].hash);
+        }
+
+        // Assert this table has a search parameter
+        assert!(subscriptions.table_has_search_param(table_id, ColId(0)));
+
+        for (i, query) in queries.iter().enumerate().take(5) {
+            assert!(subscriptions.query_has_search_arg(query.hash, table_id, ColId(0), AlgebraicValue::U8(i as u8)));
+
+            // Only one of `query_reads_from_table` and `query_has_search_arg` can be true at any given time
+            assert!(!subscriptions.query_reads_from_table(&queries[i].hash, &table_id));
+        }
+
+        // Remove one of the subscriptions
+        let query_id = QueryId::new(2);
+        let client_id = (client.id.identity, client.id.connection_id);
+        let removed = subscriptions.remove_subscription(client_id, query_id)?;
+        assert_eq!(removed.len(), 1);
+
+        // We haven't removed the other subscriptions,
+        // so this table should still have a search parameter.
+        assert!(subscriptions.table_has_search_param(table_id, ColId(0)));
+
+        // We should have removed the search argument for this query
+        assert!(!subscriptions.query_reads_from_table(&queries[2].hash, &table_id));
+        assert!(!subscriptions.query_has_search_arg(queries[2].hash, table_id, ColId(0), AlgebraicValue::U8(2)));
+
+        for (i, query) in queries.iter().enumerate().take(5) {
+            if i != 2 {
+                assert!(subscriptions.query_has_search_arg(
+                    query.hash,
+                    table_id,
+                    ColId(0),
+                    AlgebraicValue::U8(i as u8)
+                ));
+            }
+        }
+
+        // Remove all of the subscriptions
+        subscriptions.remove_all_subscriptions(&client_id);
+
+        // We should no longer record a search parameter for this table
+        assert!(!subscriptions.table_has_search_param(table_id, ColId(0)));
+        for (i, query) in queries.iter().enumerate().take(5) {
+            assert!(!subscriptions.query_has_search_arg(query.hash, table_id, ColId(0), AlgebraicValue::U8(i as u8)));
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_lookup_queries_for_search_arg() -> ResultTest<()> {
+        let db = TestDB::durable()?;
+
+        let table_id = create_table(&db, "t")?;
+
+        let client = Arc::new(client(0));
+        let mut subscriptions = SubscriptionManager::default();
+
+        let queries = (0u8..5)
+            .map(|name| format!("select * from t where a = {}", name))
+            .chain(std::iter::once(String::from("select * from t")))
+            .map(|sql| compile_plan(&db, &sql))
+            .collect::<ResultTest<Vec<_>>>()?;
+
+        for (i, query) in queries.iter().enumerate() {
+            subscriptions.add_subscription_multi(client.clone(), vec![query.clone()], QueryId::new(i as u32))?;
+        }
+
+        let hash_for_2 = queries[2].hash;
+        let hash_for_3 = queries[3].hash;
+        let hash_for_5 = queries[5].hash;
+
+        // Which queries are relevant for this table update? Only:
+        //
+        // select * from t where a = 2
+        // select * from t where a = 3
+        // select * from t
+        let table_update = DatabaseTableUpdate {
+            table_id,
+            table_name: "t".into(),
+            inserts: [product![2u8]].into(),
+            deletes: [product![3u8]].into(),
+        };
+
+        let hashes = subscriptions
+            .queries_for_table_update(&table_update)
+            .collect::<Vec<_>>();
+
+        assert!(hashes.len() == 3);
+        assert!(hashes.contains(&&hash_for_2));
+        assert!(hashes.contains(&&hash_for_3));
+        assert!(hashes.contains(&&hash_for_5));
+
+        // Which queries are relevant for this table update?
+        // Only: select * from t
+        let table_update = DatabaseTableUpdate {
+            table_id,
+            table_name: "t".into(),
+            inserts: [product![8u8]].into(),
+            deletes: [product![9u8]].into(),
+        };
+
+        let hashes = subscriptions
+            .queries_for_table_update(&table_update)
+            .collect::<Vec<_>>();
+
+        assert!(hashes.len() == 1);
+        assert!(hashes.contains(&&hash_for_5));
+
+        Ok(())
+    }
+
+    #[test]
     fn test_subscribe_fails_with_duplicate_request_id() -> ResultTest<()> {
         let db = TestDB::durable()?;
 
@@ -1371,10 +1746,12 @@ mod tests {
         assert!(subscriptions.contains_legacy_subscription(&id1, &hash_select1));
 
         assert!(subscriptions.query_reads_from_table(&hash_scan, &t));
-        assert!(subscriptions.query_reads_from_table(&hash_select0, &t));
-        assert!(subscriptions.query_reads_from_table(&hash_select1, &s));
+        assert!(subscriptions.query_has_search_arg(hash_select0, t, ColId(0), AlgebraicValue::U8(0)));
+        assert!(subscriptions.query_has_search_arg(hash_select1, s, ColId(0), AlgebraicValue::U8(1)));
 
         assert!(!subscriptions.query_reads_from_table(&hash_scan, &s));
+        assert!(!subscriptions.query_reads_from_table(&hash_select0, &t));
+        assert!(!subscriptions.query_reads_from_table(&hash_select1, &s));
         assert!(!subscriptions.query_reads_from_table(&hash_select0, &s));
         assert!(!subscriptions.query_reads_from_table(&hash_select1, &t));
 
@@ -1391,8 +1768,9 @@ mod tests {
         assert!(!subscriptions.contains_legacy_subscription(&id0, &hash_select0));
 
         assert!(subscriptions.query_reads_from_table(&hash_scan, &t));
-        assert!(subscriptions.query_reads_from_table(&hash_select1, &s));
+        assert!(subscriptions.query_has_search_arg(hash_select1, s, ColId(0), AlgebraicValue::U8(1)));
 
+        assert!(!subscriptions.query_reads_from_table(&hash_select1, &s));
         assert!(!subscriptions.query_reads_from_table(&hash_scan, &s));
         assert!(!subscriptions.query_reads_from_table(&hash_select1, &t));
 
