@@ -66,6 +66,18 @@ pub(crate) fn record_exec_metrics(workload: &WorkloadType, db: &Identity, metric
             .with_label_values(db)
             .inc_by(metrics.delta_queries_evaluated);
     }
+    if metrics.duplicate_rows_evaluated > 0 {
+        DB_METRICS
+            .duplicate_rows_evaluated
+            .with_label_values(db)
+            .inc_by(metrics.duplicate_rows_evaluated);
+    }
+    if metrics.duplicate_rows_sent > 0 {
+        DB_METRICS
+            .duplicate_rows_sent
+            .with_label_values(db)
+            .inc_by(metrics.duplicate_rows_sent);
+    }
 }
 
 /// Execute a subscription query

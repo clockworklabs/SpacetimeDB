@@ -23,8 +23,8 @@ use crate::worker_metrics::WORKER_METRICS;
 use parking_lot::RwLock;
 use prometheus::IntGauge;
 use spacetimedb_client_api_messages::websocket::{
-    self as ws, BsatnFormat, FormatSwitch, JsonFormat, SubscribeMulti, SubscribeSingle, TableUpdate, Unsubscribe,
-    UnsubscribeMulti,
+    self as ws, BsatnFormat, Compression, FormatSwitch, JsonFormat, SubscribeMulti, SubscribeSingle, TableUpdate,
+    Unsubscribe, UnsubscribeMulti,
 };
 use spacetimedb_execution::pipelined::PipelinedProject;
 use spacetimedb_expr::check::parse_and_type_sub;
@@ -170,7 +170,6 @@ impl ModuleSubscriptions {
             auth,
         )?;
 
-        let comp = sender.config.compression;
         let table_id = query.subscribed_table_id();
         let table_name = query.subscribed_table_name();
 
@@ -187,10 +186,34 @@ impl ModuleSubscriptions {
         let tx = DeltaTx::from(tx);
 
         Ok(match sender.config.protocol {
-            Protocol::Binary => collect_table_update(&plans, table_id, table_name.into(), comp, &tx, update_type)
-                .map(|(table_update, metrics)| (FormatSwitch::Bsatn(table_update), metrics)),
-            Protocol::Text => collect_table_update(&plans, table_id, table_name.into(), comp, &tx, update_type)
-                .map(|(table_update, metrics)| (FormatSwitch::Json(table_update), metrics)),
+            Protocol::Binary => {
+                collect_table_update(
+                    &plans,
+                    table_id,
+                    table_name.into(),
+                    // We will compress the outer server message,
+                    // after we release the tx lock.
+                    // There's no need to compress the inner table update too.
+                    Compression::None,
+                    &tx,
+                    update_type,
+                )
+                .map(|(table_update, metrics)| (FormatSwitch::Bsatn(table_update), metrics))
+            }
+            Protocol::Text => {
+                collect_table_update(
+                    &plans,
+                    table_id,
+                    table_name.into(),
+                    // We will compress the outer server message,
+                    // after we release the tx lock,
+                    // There's no need to compress the inner table update too.
+                    Compression::None,
+                    &tx,
+                    update_type,
+                )
+                .map(|(table_update, metrics)| (FormatSwitch::Json(table_update), metrics))
+            }
         }?)
     }
 
@@ -213,16 +236,31 @@ impl ModuleSubscriptions {
             },
             auth,
         )?;
-        let comp = sender.config.compression;
 
         let tx = DeltaTx::from(tx);
         match sender.config.protocol {
             Protocol::Binary => {
-                let (update, metrics) = execute_plans(queries, comp, &tx, update_type)?;
+                let (update, metrics) = execute_plans(
+                    queries,
+                    // We will compress the outer server message,
+                    // after we release the tx lock.
+                    // There's no need to compress the inner table updates too.
+                    Compression::None,
+                    &tx,
+                    update_type,
+                )?;
                 Ok((FormatSwitch::Bsatn(update), metrics))
             }
             Protocol::Text => {
-                let (update, metrics) = execute_plans(queries, comp, &tx, update_type)?;
+                let (update, metrics) = execute_plans(
+                    queries,
+                    // We will compress the outer server message,
+                    // after we release the tx lock.
+                    // There's no need to compress the inner table updates too.
+                    Compression::None,
+                    &tx,
+                    update_type,
+                )?;
                 Ok((FormatSwitch::Json(update), metrics))
             }
         }
@@ -598,8 +636,6 @@ impl ModuleSubscriptions {
 
         drop(guard);
 
-        let comp = sender.config.compression;
-
         check_row_limit(
             &queries,
             &self.relational_db,
@@ -614,10 +650,26 @@ impl ModuleSubscriptions {
 
         let tx = DeltaTx::from(&*tx);
         let (database_update, metrics) = match sender.config.protocol {
-            Protocol::Binary => execute_plans(&queries, comp, &tx, TableUpdateType::Subscribe)
-                .map(|(table_update, metrics)| (FormatSwitch::Bsatn(table_update), metrics))?,
-            Protocol::Text => execute_plans(&queries, comp, &tx, TableUpdateType::Subscribe)
-                .map(|(table_update, metrics)| (FormatSwitch::Json(table_update), metrics))?,
+            Protocol::Binary => execute_plans(
+                &queries,
+                // We will compress the outer server message,
+                // after we release the tx lock.
+                // There's no need to compress the inner table updates too.
+                Compression::None,
+                &tx,
+                TableUpdateType::Subscribe,
+            )
+            .map(|(table_update, metrics)| (FormatSwitch::Bsatn(table_update), metrics))?,
+            Protocol::Text => execute_plans(
+                &queries,
+                // We will compress the outer server message,
+                // after we release the tx lock.
+                // There's no need to compress the inner table updates too.
+                Compression::None,
+                &tx,
+                TableUpdateType::Subscribe,
+            )
+            .map(|(table_update, metrics)| (FormatSwitch::Json(table_update), metrics))?,
         };
 
         record_exec_metrics(
@@ -660,7 +712,7 @@ impl ModuleSubscriptions {
         caller: Option<&ClientConnectionSender>,
         mut event: ModuleEvent,
         tx: MutTx,
-    ) -> Result<Result<Arc<ModuleEvent>, WriteConflict>, DBError> {
+    ) -> Result<Result<(Arc<ModuleEvent>, ExecutionMetrics), WriteConflict>, DBError> {
         // Take a read lock on `subscriptions` before committing tx
         // else it can result in subscriber receiving duplicate updates.
         let subscriptions = self.subscriptions.read();
@@ -690,10 +742,16 @@ impl ModuleSubscriptions {
             .unwrap_or_else(|| DeltaTx::from(&*read_tx));
 
         let event = Arc::new(event);
+        let mut metrics = ExecutionMetrics::default();
 
         match &event.status {
             EventStatus::Committed(_) => {
-                subscriptions.eval_updates(&read_tx, event.clone(), caller, &self.relational_db.database_identity())
+                metrics.merge(subscriptions.eval_updates(
+                    &read_tx,
+                    event.clone(),
+                    caller,
+                    &self.relational_db.database_identity(),
+                ));
             }
             EventStatus::Failed(_) => {
                 if let Some(client) = caller {
@@ -709,7 +767,7 @@ impl ModuleSubscriptions {
             EventStatus::OutOfEnergy => {} // ?
         }
 
-        Ok(Ok(event))
+        Ok(Ok((event, metrics)))
     }
 }
 
@@ -719,8 +777,8 @@ pub struct WriteConflict;
 mod tests {
     use super::{AssertTxFn, ModuleSubscriptions};
     use crate::client::messages::{
-        SerializableMessage, SubscriptionError, SubscriptionMessage, SubscriptionResult, SubscriptionUpdateMessage,
-        TransactionUpdateMessage,
+        SerializableMessage, SubscriptionData, SubscriptionError, SubscriptionMessage, SubscriptionResult,
+        SubscriptionUpdateMessage, TransactionUpdateMessage,
     };
     use crate::client::{ClientActorId, ClientConfig, ClientConnectionSender, ClientName, Protocol};
     use crate::db::datastore::system_tables::{StRowLevelSecurityRow, ST_ROW_LEVEL_SECURITY_ID};
@@ -740,12 +798,13 @@ mod tests {
     use spacetimedb_client_api_messages::energy::EnergyQuanta;
     use spacetimedb_client_api_messages::websocket::{
         CompressableQueryUpdate, Compression, FormatSwitch, QueryId, Subscribe, SubscribeMulti, SubscribeSingle,
-        Unsubscribe, UnsubscribeMulti,
+        TableUpdate, Unsubscribe, UnsubscribeMulti,
     };
     use spacetimedb_execution::dml::MutDatastore;
     use spacetimedb_lib::bsatn::ToBsatn;
     use spacetimedb_lib::db::auth::StAccess;
     use spacetimedb_lib::identity::AuthCtx;
+    use spacetimedb_lib::metrics::ExecutionMetrics;
     use spacetimedb_lib::{bsatn, ConnectionId, ProductType, ProductValue, Timestamp};
     use spacetimedb_lib::{error::ResultTest, AlgebraicType, Identity};
     use spacetimedb_primitives::TableId;
@@ -856,17 +915,25 @@ mod tests {
         }
     }
 
-    /// Instantiate a client connection
-    fn client_connection(client_id: ClientActorId) -> (Arc<ClientConnectionSender>, Receiver<SerializableMessage>) {
+    /// Instantiate a client connection with compression
+    fn client_connection_with_compression(
+        client_id: ClientActorId,
+        compression: Compression,
+    ) -> (Arc<ClientConnectionSender>, Receiver<SerializableMessage>) {
         let (sender, rx) = ClientConnectionSender::dummy_with_channel(
             client_id,
             ClientConfig {
                 protocol: Protocol::Binary,
-                compression: Compression::None,
+                compression,
                 tx_update_full: true,
             },
         );
         (Arc::new(sender), rx)
+    }
+
+    /// Instantiate a client connection
+    fn client_connection(client_id: ClientActorId) -> (Arc<ClientConnectionSender>, Receiver<SerializableMessage>) {
+        client_connection_with_compression(client_id, Compression::None)
     }
 
     /// Insert rules into the RLS system table
@@ -1019,7 +1086,7 @@ mod tests {
         subs: &ModuleSubscriptions,
         deletes: impl IntoIterator<Item = (TableId, ProductValue)>,
         inserts: impl IntoIterator<Item = (TableId, ProductValue)>,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<ExecutionMetrics> {
         let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
         for (table_id, row) in deletes {
             tx.delete_product_value(table_id, &row)?;
@@ -1027,11 +1094,11 @@ mod tests {
         for (table_id, row) in inserts {
             db.insert(&mut tx, table_id, &bsatn::to_vec(&row)?)?;
         }
-        assert!(matches!(
-            subs.commit_and_broadcast_event(None, module_event(), tx),
-            Ok(Ok(_))
-        ));
-        Ok(())
+
+        let Ok(Ok((_, metrics))) = subs.commit_and_broadcast_event(None, module_event(), tx) else {
+            panic!("Encountered an error in `commit_and_broadcast_event`");
+        };
+        Ok(metrics)
     }
 
     #[test]
@@ -1472,6 +1539,50 @@ mod tests {
         Ok(())
     }
 
+    /// Test that we do not compress the results of an initial subscribe call
+    #[tokio::test]
+    async fn test_no_compression_for_subscribe() -> anyhow::Result<()> {
+        // Establish a client connection with compression
+        let (tx, mut rx) = client_connection_with_compression(client_id_from_u8(1), Compression::Brotli);
+
+        let db = relational_db()?;
+        let subs = module_subscriptions(db.clone());
+
+        let table_id = db.create_table_for_test("t", &[("x", AlgebraicType::U64)], &[])?;
+
+        let mut inserts = vec![];
+
+        for i in 0..16_000u64 {
+            inserts.push((table_id, product![i]));
+        }
+
+        // Insert a lot of rows into `t`.
+        // We want to insert enough to cross any threshold there might be for compression.
+        commit_tx(&db, &subs, [], inserts)?;
+
+        // Subscribe to the entire table
+        subscribe_multi(&subs, &["select * from t"], tx, &mut 0)?;
+
+        // Assert the table updates within this message are all be uncompressed
+        match rx.recv().await {
+            Some(SerializableMessage::Subscription(SubscriptionMessage {
+                result:
+                    SubscriptionResult::SubscribeMulti(SubscriptionData {
+                        data: FormatSwitch::Bsatn(ws::DatabaseUpdate { tables }),
+                    }),
+                ..
+            })) => {
+                assert!(tables.iter().all(|TableUpdate { updates, .. }| updates
+                    .iter()
+                    .all(|query_update| matches!(query_update, CompressableQueryUpdate::Uncompressed(_)))));
+            }
+            Some(_) => panic!("unexpected message from subscription"),
+            None => panic!("channel unexpectedly closed"),
+        };
+
+        Ok(())
+    }
+
     /// In this test we subscribe to a join query, update the lhs table,
     /// and assert that the server sends the correct delta to the client.
     #[tokio::test]
@@ -1581,6 +1692,119 @@ mod tests {
             "select p.* from p join l on p.id = l.id where 0 < l.x and l.x < 5 and 0 < l.z and l.z < 5 and l.id != 1",
         ])
         .await?;
+
+        Ok(())
+    }
+
+    /// Test that we do not evaluate queries that we know will not match table update rows
+    #[tokio::test]
+    async fn test_query_pruning() -> anyhow::Result<()> {
+        // Establish a connection for each client
+        let (tx_for_a, mut rx_for_a) = client_connection(client_id_from_u8(1));
+        let (tx_for_b, mut rx_for_b) = client_connection(client_id_from_u8(2));
+
+        let db = relational_db()?;
+        let subs = module_subscriptions(db.clone());
+
+        let u_id = db.create_table_for_test(
+            "u",
+            &[
+                ("i", AlgebraicType::U64),
+                ("a", AlgebraicType::U64),
+                ("b", AlgebraicType::U64),
+            ],
+            &[0.into()],
+        )?;
+        let v_id = db.create_table_for_test(
+            "v",
+            &[
+                ("i", AlgebraicType::U64),
+                ("x", AlgebraicType::U64),
+                ("y", AlgebraicType::U64),
+            ],
+            &[0.into(), 1.into()],
+        )?;
+
+        commit_tx(
+            &db,
+            &subs,
+            [],
+            [
+                (u_id, product![0u64, 1u64, 1u64]),
+                (u_id, product![1u64, 2u64, 2u64]),
+                (u_id, product![2u64, 3u64, 3u64]),
+                (v_id, product![0u64, 4u64, 4u64]),
+                (v_id, product![1u64, 5u64, 5u64]),
+            ],
+        )?;
+
+        let mut query_ids = 0;
+
+        // Returns (i: 0, a: 1, b: 1)
+        subscribe_multi(
+            &subs,
+            &[
+                "select u.* from u join v on u.i = v.i where v.x = 4",
+                "select u.* from u join v on u.i = v.i where v.x = 6",
+            ],
+            tx_for_a,
+            &mut query_ids,
+        )?;
+
+        // Returns (i: 1, a: 2, b: 2)
+        subscribe_multi(
+            &subs,
+            &[
+                "select u.* from u join v on u.i = v.i where v.x = 5",
+                "select u.* from u join v on u.i = v.i where v.x = 7",
+            ],
+            tx_for_b,
+            &mut query_ids,
+        )?;
+
+        // Wait for both subscriptions
+        assert!(matches!(
+            rx_for_a.recv().await,
+            Some(SerializableMessage::Subscription(SubscriptionMessage {
+                result: SubscriptionResult::SubscribeMulti(_),
+                ..
+            }))
+        ));
+        assert!(matches!(
+            rx_for_b.recv().await,
+            Some(SerializableMessage::Subscription(SubscriptionMessage {
+                result: SubscriptionResult::SubscribeMulti(_),
+                ..
+            }))
+        ));
+
+        // Modify a single row in `v`
+        let metrics = commit_tx(
+            &db,
+            &subs,
+            [(v_id, product![1u64, 5u64, 5u64])],
+            [(v_id, product![1u64, 5u64, 6u64])],
+        )?;
+
+        // We should only have evaluated a single query
+        assert_eq!(metrics.delta_queries_evaluated, 1);
+        assert_eq!(metrics.delta_queries_matched, 0);
+
+        // Insert a new row into `v`
+        let metrics = commit_tx(&db, &subs, [], [(v_id, product![2u64, 6u64, 6u64])])?;
+
+        assert_tx_update_for_table(
+            &mut rx_for_a,
+            u_id,
+            &ProductType::from([AlgebraicType::U64, AlgebraicType::U64, AlgebraicType::U64]),
+            [product![2u64, 3u64, 3u64]],
+            [],
+        )
+        .await;
+
+        // We should only have evaluated a single query
+        assert_eq!(metrics.delta_queries_evaluated, 1);
+        assert_eq!(metrics.delta_queries_matched, 1);
 
         Ok(())
     }
