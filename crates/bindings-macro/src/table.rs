@@ -8,7 +8,11 @@ use syn::ext::IdentExt;
 use syn::spanned::Spanned;
 use syn::{parse_quote, Ident};
 
-impl TableAccess {
+trait ToValue {
+    fn to_value(&self) -> TokenStream;
+}
+
+impl ToValue for TableAccess {
     fn to_value(&self) -> TokenStream {
         let (TableAccess::Public(span) | TableAccess::Private(span)) = *self;
         let name = match self {
@@ -20,7 +24,11 @@ impl TableAccess {
     }
 }
 
-impl IndexArg {
+trait Validate {
+    fn validate<'a>(&'a self, table_name: &str, cols: &'a [Column<'a>]) -> syn::Result<ValidatedIndex<'a>>;
+}
+
+impl Validate for IndexArg {
     fn validate<'a>(&'a self, table_name: &str, cols: &'a [Column<'a>]) -> syn::Result<ValidatedIndex<'a>> {
         let find_column = |ident| find_column(cols, ident);
         let kind = match &self.kind {

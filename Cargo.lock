@@ -5094,6 +5094,17 @@ dependencies = [
  "proc-macro2",
  "quote",
  "spacetimedb-primitives",
+ "spacetimedb-bindings-macro-input",
+ "syn 2.0.87",
+]
+
+[[package]]
+name = "spacetimedb-bindings-macro-input"
+version = "1.1.1"
+dependencies = [
+ "heck 0.4.1",
+ "proc-macro2",
+ "quote",
  "syn 2.0.87",
 ]
 
