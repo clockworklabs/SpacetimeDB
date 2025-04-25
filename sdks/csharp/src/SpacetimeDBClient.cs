@@ -357,6 +357,12 @@ namespace SpacetimeDB
         {
             var rowsData = list.RowsData;
 
+            // Previously here we were using LINQ to do what we're now doing with the custom row iterators. This
+            // is because the LINQ statements were fast under the Mono runtime (which Unity uses in the Editor
+            // but also in builds if it's enabled), but *a lot* slower under IL2CPP. This has to do with differences
+            // between how Mono uses JIT VS how IL2CPP uses AOT. Apparently Mono's JIT is smart enough to inline
+            // most of the LINQ ops but IL2CPP's AOT is not.
+            // See: https://github.com/clockworklabs/com.clockworklabs.spacetimedbsdk/pull/306
             return list.SizeHint switch
             {
                 RowSizeHint.FixedSize(var size) => new FixedSizeRowIterator(rowsData, size),
