@@ -64,7 +64,7 @@ macro_rules! match_meta {
     (@match ($($acc:tt)*), ($($comparisons:expr),*), $meta:ident {}) => {
         match () {
             $($acc)*
-            _ => return Err($meta.error($crate::input::util::one_of(&[$($comparisons),*]))),
+            _ => return Err($meta.error($crate::util::one_of(&[$($comparisons),*]))),
         }
     };
 
