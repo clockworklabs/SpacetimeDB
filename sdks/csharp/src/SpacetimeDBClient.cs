@@ -359,17 +359,116 @@ namespace SpacetimeDB
 
             return list.SizeHint switch
             {
-                RowSizeHint.FixedSize(var size) => Enumerable
-                    .Range(0, rowsData.Count / size)
-                    .Select(index => rowsData.Skip(index * size).Take(size).ToArray()),
-
-                RowSizeHint.RowOffsets(var offsets) => offsets.Zip(
-                    offsets.Skip(1).Append((ulong)rowsData.Count),
-                    (start, end) => rowsData.Take((int)end).Skip((int)start).ToArray()
-                ),
-
+                RowSizeHint.FixedSize(var size) => new FixedSizeRowIterator(rowsData, size),
+                RowSizeHint.RowOffsets(var offsets) => new RowOffsetsIterator(rowsData, offsets),
                 _ => throw new InvalidOperationException("Unknown RowSizeHint variant"),
             };
+        }
+
+        private class FixedSizeRowIterator : IEnumerable<byte[]>, IEnumerator<byte[]>
+        {
+            private readonly List<byte> _rowsData;
+            private readonly int _size;
+            private int _index = -1;
+            private readonly int _maxIndex;
+            private byte[] _current;
+
+            public FixedSizeRowIterator(List<byte> rowsData, int size)
+            {
+                _rowsData = rowsData;
+                _size = size;
+                _maxIndex = rowsData.Count / size - 1;
+                _current = Array.Empty<byte>();
+            }
+
+            public byte[] Current => _current;
+            object IEnumerator.Current => Current;
+
+            public IEnumerator<byte[]> GetEnumerator() => this;
+            IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+
+            public bool MoveNext()
+            {
+                if (_index >= _maxIndex)
+                    return false;
+                    
+                _index++;
+                
+                // Create the array only when requested
+                var startIndex = _index * _size;
+                if (startIndex + _size > _rowsData.Count)
+                    return false;
+                    
+                _current = new byte[_size];
+                for (var i = 0; i < _size; i++)
+                {
+                    _current[i] = _rowsData[startIndex + i];
+                }
+                
+                return true;
+            }
+
+            public void Reset()
+            {
+                _index = -1;
+                _current = Array.Empty<byte>();
+            }
+
+            public void Dispose() { }
+        }
+
+        private class RowOffsetsIterator : IEnumerable<byte[]>, IEnumerator<byte[]>
+        {
+            private readonly List<byte> _rowsData;
+            private readonly List<ulong> _offsets;
+            private int _index = -1;
+            private byte[] _current;
+
+            public RowOffsetsIterator(List<byte> rowsData, List<ulong> offsets)
+            {
+                _rowsData = rowsData;
+                _offsets = offsets;
+                _current = Array.Empty<byte>();
+            }
+
+            public byte[] Current => _current;
+            object IEnumerator.Current => Current;
+
+            public IEnumerator<byte[]> GetEnumerator() => this;
+            IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+
+            public bool MoveNext()
+            {
+                if (_index >= _offsets.Count - 1)
+                    return false;
+                _index++;
+                
+                // Determine start and end indices
+                var startIndex = (int)_offsets[_index];
+                var endIndex = (_index + 1 < _offsets.Count) 
+                    ? (int)_offsets[_index + 1] 
+                    : _rowsData.Count;
+                    
+                var length = endIndex - startIndex;
+                if (length <= 0)
+                    return false;
+                    
+                _current = new byte[length];
+                for (var i = 0; i < length; i++)
+                {
+                    _current[i] = _rowsData[startIndex + i];
+                }
+                
+                return true;
+            }
+
+            public void Reset()
+            {
+                _index = -1;
+                _current = Array.Empty<byte>();
+            }
+
+            public void Dispose() { }
         }
 
 #if UNITY_WEBGL && !UNITY_EDITOR
