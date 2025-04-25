@@ -90,11 +90,14 @@ const nav: Nav = {
     section('Subscriptions'),
     page('Subscription Reference', 'subscriptions', 'subscriptions/index.md'),
 
+    section('Row Level Security'),
+    page('Row Level Security', 'rls', 'rls/index.md'),
+
     section('How To'),
     page('Incremental Migrations', 'how-to/incremental-migrations', 'how-to/incremental-migrations.md'),
 
     section('HTTP API'),
-    page('HTTP', 'http', 'http/index.md'),
+    page('Authorization', 'http/authorization', 'http/authorization.md'),
     page('`/identity`', 'http/identity', 'http/identity.md'),
     page('`/database`', 'http/database', 'http/database.md'),
 

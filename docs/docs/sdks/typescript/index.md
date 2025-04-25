@@ -94,11 +94,11 @@ A connection to a remote database is represented by the `DbConnection` type. Thi
 
 | Name                                                      | Description                                                                                      |
 |-----------------------------------------------------------|--------------------------------------------------------------------------------------------------|
-| [Connect to a module](#connect-to-a-module)               | Construct a `DbConnection`.                                                                      |
+| [Connect to a database](#connect-to-a-database)               | Construct a `DbConnection`.                                                                      |
 | [Access tables and reducers](#access-tables-and-reducers) | Access subscribed rows in the client cache, request reducer invocations, and register callbacks. |
 
 
-### Connect to a module
+### Connect to a database
 
 ```typescript
 class DbConnection {
@@ -106,7 +106,7 @@ class DbConnection {
 }
 ```
 
-Construct a `DbConnection` by calling `DbConnection.builder()` and chaining configuration methods, then calling `.build()`. You must at least specify `withUri`, to supply the URI of the SpacetimeDB to which you published your module, and `withModuleName`, to supply the human-readable SpacetimeDB domain name or the raw `Identity` which identifies the module.
+Construct a `DbConnection` by calling `DbConnection.builder()` and chaining configuration methods, then calling `.build()`. You must at least specify `withUri`, to supply the URI of the SpacetimeDB to which you published your module, and `withModuleName`, to supply the human-readable SpacetimeDB domain name or the raw `Identity` which identifies the database.
 
 | Name                                                  | Description                                                                          |
 |-------------------------------------------------------|--------------------------------------------------------------------------------------|
@@ -126,7 +126,7 @@ class DbConnectionBuilder {
 }
 ```
 
-Configure the URI of the SpacetimeDB instance or cluster which hosts the remote module.
+Configure the URI of the SpacetimeDB instance or cluster which hosts the remote database.
 
 #### Method `withModuleName`
 
@@ -137,7 +137,7 @@ class DbConnectionBuilder {
 
 ```
 
-Configure the SpacetimeDB domain name or hex string encoded `Identity` of the remote module which identifies it within the SpacetimeDB instance or cluster.
+Configure the SpacetimeDB domain name or hex string encoded `Identity` of the remote database which identifies it within the SpacetimeDB instance or cluster.
 
 #### Callback `onConnect`
 
@@ -149,7 +149,7 @@ class DbConnectionBuilder {
 }
 ```
 
-Chain a call to `.onConnect(callback)` to your builder to register a callback to run when your new `DbConnection` successfully initiates its connection to the remote module. The callback accepts three arguments: a reference to the `DbConnection`, the `Identity` by which SpacetimeDB identifies this connection, and a private access token which can be saved and later passed to [`withToken`](#method-withtoken) to authenticate the same user in future connections.
+Chain a call to `.onConnect(callback)` to your builder to register a callback to run when your new `DbConnection` successfully initiates its connection to the remote database. The callback accepts three arguments: a reference to the `DbConnection`, the `Identity` by which SpacetimeDB identifies this connection, and a private access token which can be saved and later passed to [`withToken`](#method-withtoken) to authenticate the same user in future connections.
 
 #### Callback `onConnectError`
 
@@ -173,7 +173,7 @@ class DbConnectionBuilder {
 }
 ```
 
-Chain a call to `.onDisconnect(callback)` to your builder to register a callback to run when your `DbConnection` disconnects from the remote module, either as a result of a call to [`disconnect`](#method-disconnect) or due to an error.
+Chain a call to `.onDisconnect(callback)` to your builder to register a callback to run when your `DbConnection` disconnects from the remote database, either as a result of a call to [`disconnect`](#method-disconnect) or due to an error.
 
 #### Method `withToken`
 
@@ -499,7 +499,7 @@ type Event<Reducer> =
 { tag: 'Reducer'; value: ReducerEvent<Reducer> }
 ```
 
-Event when we are notified that a reducer ran in the remote module. The [`ReducerEvent`](#type-reducerevent) contains metadata about the reducer run, including its arguments and termination status(#type-updatestatus).
+Event when we are notified that a reducer ran in the remote database. The [`ReducerEvent`](#type-reducerevent) contains metadata about the reducer run, including its arguments and termination status(#type-updatestatus).
 
 This event is passed to row callbacks resulting from modifications by the reducer.
 
@@ -540,7 +540,7 @@ This event is passed to [row `onDelete` callbacks](#callback-ondelete) resulting
 { tag: 'UnknownTransaction' }
 ```
 
-Event when we are notified of a transaction in the remote module which we cannot associate with a known reducer. This may be an ad-hoc SQL query or a reducer for which we do not have bindings.
+Event when we are notified of a transaction in the remote database which we cannot associate with a known reducer. This may be an ad-hoc SQL query or a reducer for which we do not have bindings.
 
 This event is passed to [row callbacks](#callback-oninsert) resulting from modifications by the transaction.
 

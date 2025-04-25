@@ -53,11 +53,11 @@ A connection to a remote database is represented by the `DbConnection` class. Th
 
 | Name                                                                   | Description                                                                   |
 |------------------------------------------------------------------------|-------------------------------------------------------------------------------|
-| [Connect to a module](#connect-to-a-module)                            | Construct a `DbConnection` instance.                                          |
+| [Connect to a database](#connect-to-a-database)                            | Construct a `DbConnection` instance.                                          |
 | [Advance the connection](#advance-the-connection-and-process-messages) | Poll the `DbConnection` or run it in the background.                          |
 | [Access tables and reducers](#access-tables-and-reducers)              | Access the client cache, request reducer invocations, and register callbacks. |
 
-## Connect to a module
+## Connect to a database
 
 ```csharp
 class DbConnection
@@ -66,12 +66,12 @@ class DbConnection
 }
 ```
 
-Construct a `DbConnection` by calling `DbConnection.Builder()`, chaining configuration methods, and finally calling `.Build()`. At a minimum, you must specify `WithUri` to provide the URI of the SpacetimeDB instance, and `WithModuleName` to specify the module's name or identity.
+Construct a `DbConnection` by calling `DbConnection.Builder()`, chaining configuration methods, and finally calling `.Build()`. At a minimum, you must specify `WithUri` to provide the URI of the SpacetimeDB instance, and `WithModuleName` to specify the database's name or identity.
 
 | Name                                                    | Description                                                                                |
 |---------------------------------------------------------|--------------------------------------------------------------------------------------------|
 | [WithUri method](#method-withuri)                       | Set the URI of the SpacetimeDB instance hosting the remote database.                       |
-| [WithModuleName method](#method-withmodulename)         | Set the name or identity of the remote module.                                             |
+| [WithModuleName method](#method-withmodulename)         | Set the name or identity of the remote database.                                             |
 | [OnConnect callback](#callback-onconnect)               | Register a callback to run when the connection is successfully established.                |
 | [OnConnectError callback](#callback-onconnecterror)     | Register a callback to run if the connection is rejected or the host is unreachable.       |
 | [OnDisconnect callback](#callback-ondisconnect)         | Register a callback to run when the connection ends.                                       |
@@ -87,7 +87,7 @@ class DbConnectionBuilder<DbConnection>
 }
 ```
 
-Configure the URI of the SpacetimeDB instance or cluster which hosts the remote module.
+Configure the URI of the SpacetimeDB instance or cluster which hosts the remote module and database.
 
 ### Method `WithModuleName`
 
@@ -98,7 +98,7 @@ class DbConnectionBuilder
 }
 ```
 
-Configure the SpacetimeDB domain name or `Identity` of the remote module which identifies it within the SpacetimeDB instance or cluster.
+Configure the SpacetimeDB domain name or `Identity` of the remote database which identifies it within the SpacetimeDB instance or cluster.
 
 ### Callback `OnConnect`
 
@@ -109,7 +109,7 @@ class DbConnectionBuilder<DbConnection>
 }
 ```
 
-Chain a call to `.OnConnect(callback)` to your builder to register a callback to run when your new `DbConnection` successfully initiates its connection to the remote module. The callback accepts three arguments: a reference to the `DbConnection`, the `Identity` by which SpacetimeDB identifies this connection, and a private access token which can be saved and later passed to [`WithToken`](#method-withtoken) to authenticate the same user in future connections.
+Chain a call to `.OnConnect(callback)` to your builder to register a callback to run when your new `DbConnection` successfully initiates its connection to the remote database. The callback accepts three arguments: a reference to the `DbConnection`, the `Identity` by which SpacetimeDB identifies this connection, and a private access token which can be saved and later passed to [`WithToken`](#method-withtoken) to authenticate the same user in future connections.
 
 ### Callback `OnConnectError`
 
@@ -133,7 +133,7 @@ class DbConnectionBuilder<DbConnection>
 }
 ```
 
-Chain a call to `.OnDisconnect(callback)` to your builder to register a callback to run when your `DbConnection` disconnects from the remote module, either as a result of a call to [`Disconnect`](#method-disconnect) or due to an error.
+Chain a call to `.OnDisconnect(callback)` to your builder to register a callback to run when your `DbConnection` disconnects from the remote database, either as a result of a call to [`Disconnect`](#method-disconnect) or due to an error.
 
 ### Method `WithToken`
 
@@ -203,7 +203,7 @@ class DbConnection
 }
 ```
 
-The `Reducers` field of the `DbConnection` provides access to reducers exposed by the remote module. See [Observe and invoke reducers](#observe-and-invoke-reducers).
+The `Reducers` field of the `DbConnection` provides access to reducers exposed by the module of the remote database. See [Observe and invoke reducers](#observe-and-invoke-reducers).
 
 ## Interface `IDbContext`
 
@@ -522,7 +522,7 @@ record Event<R>
 }
 ```
 
-Event when we are notified that a reducer ran in the remote module. The [`ReducerEvent`](#record-reducerevent) contains metadata about the reducer run, including its arguments and termination [`Status`](#record-status).
+Event when we are notified that a reducer ran in the remote database. The [`ReducerEvent`](#record-reducerevent) contains metadata about the reducer run, including its arguments and termination [`Status`](#record-status).
 
 This event is passed to row callbacks resulting from modifications by the reducer.
 
@@ -574,7 +574,7 @@ record Event<R>
 }
 ```
 
-Event when we are notified of a transaction in the remote module which we cannot associate with a known reducer. This may be an ad-hoc SQL query or a reducer for which we do not have bindings.
+Event when we are notified of a transaction in the remote database which we cannot associate with a known reducer. This may be an ad-hoc SQL query or a reducer for which we do not have bindings.
 
 This event is passed to [row callbacks](#callback-oninsert) resulting from modifications by the transaction.
 
@@ -741,7 +741,7 @@ class ErrorContext {
 }
 ```
 
-The `Reducers` property of the context provides access to reducers exposed by the remote module. See [Observe and invoke reducers](#observe-and-invoke-reducers).
+The `Reducers` property of the context provides access to reducers exposed by the remote database. See [Observe and invoke reducers](#observe-and-invoke-reducers).
 
 ## Access the client cache
 

@@ -22,7 +22,7 @@ cargo new client
 
 `client/Cargo.toml` should be initialized without any dependencies. We'll need two:
 
-- [`spacetimedb-sdk`](https://crates.io/crates/spacetimedb-sdk), which defines client-side interfaces for interacting with a remote SpacetimeDB module.
+- [`spacetimedb-sdk`](https://crates.io/crates/spacetimedb-sdk), which defines client-side interfaces for interacting with a remote SpacetimeDB database.
 - [`hex`](https://crates.io/crates/hex), which we'll use to print unnamed users' identities as hexadecimal strings.
 
 Below the `[dependencies]` line in `client/Cargo.toml`, add:
@@ -131,12 +131,12 @@ In our case, we'll supply the following options:
 3. An `on_disconnect` callback, to run when our connection ends.
 4. A `with_token` call, to supply a token to authenticate with.
 5. A `with_module_name` call, to specify the name or `Identity` of our database. Make sure to pass the same name here as you supplied to `spacetime publish`.
-6. A `with_uri` call, to specify the URI of the SpacetimeDB host where our module is running.
+6. A `with_uri` call, to specify the URI of the SpacetimeDB host where our database is running.
 
 To `client/src/main.rs`, add:
 
 ```rust
-/// The URI of the SpacetimeDB instance hosting our chat module.
+/// The URI of the SpacetimeDB instance hosting our chat database and module.
 const HOST: &str = "http://localhost:3000";
 
 /// The database name we chose when we published our module.
