@@ -1509,7 +1509,13 @@ impl DbConnection {{
     }}
 
     /// Spawn a thread which processes WebSocket messages as they are received.
+    #[cfg(not(target_arch = \"wasm32\"))]
     pub fn run_threaded(&self) -> std::thread::JoinHandle<()> {{
+        self.imp.run_threaded()
+    }}
+
+    #[cfg(target_arch = \"wasm32\")]
+    pub fn run_threaded(&self) {{
         self.imp.run_threaded()
     }}
 
