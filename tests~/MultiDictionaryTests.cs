@@ -345,18 +345,18 @@ public class MultiDictionaryTests
     {
         // GenericEqualityComparer used to have a bug, this is a regression test for that.
         var identity = Identity.From(Convert.FromBase64String("l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY="));
-        var hashSet = new HashSet<object>(GenericEqualityComparer.Instance)
+        var hashSet = new HashSet<object>(EqualityComparer<object>.Default)
         {
             identity
         };
         Debug.Assert(hashSet.Contains(identity));
 
-        var dict = new MultiDictionary<object, byte>(GenericEqualityComparer.Instance, EqualityComparer<byte>.Default);
+        var dict = new MultiDictionary<object, byte>(EqualityComparer<object>.Default, EqualityComparer<byte>.Default);
 
         dict.Add(identity, 3);
         dict.Add(identity, 3);
 
-        var delta = new MultiDictionaryDelta<object, byte>(GenericEqualityComparer.Instance, EqualityComparer<byte>.Default);
+        var delta = new MultiDictionaryDelta<object, byte>(EqualityComparer<object>.Default, EqualityComparer<byte>.Default);
         delta.Remove(identity, 3);
         delta.Remove(identity, 3);
         var wasInserted = new List<KeyValuePair<object, byte>>();

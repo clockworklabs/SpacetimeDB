@@ -1,9 +1,11 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using SpacetimeDB.BSATN;
+using SpacetimeDB.ClientApi;
 
 namespace SpacetimeDB
 {
@@ -23,14 +25,14 @@ namespace SpacetimeDB
         internal string RemoteTableName { get; }
 
         internal Type ClientTableType { get; }
-        internal IStructuralReadWrite DecodeValue(byte[] bytes);
+        internal IStructuralReadWrite DecodeValue(BinaryReader reader);
 
         /// <summary>
         /// Start applying a delta to the table.
         /// This is called for all tables before any updates are actually applied, allowing OnBeforeDelete to be invoked correctly.
         /// </summary>
         /// <param name="multiDictionaryDelta"></param>
-        internal void PreApply(IEventContext context, MultiDictionaryDelta<object, DbValue> multiDictionaryDelta);
+        internal void PreApply(IEventContext context, MultiDictionaryDelta<object, IStructuralReadWrite> multiDictionaryDelta);
 
         /// <summary>
         /// Apply a delta to the table.
@@ -38,7 +40,7 @@ namespace SpacetimeDB
         /// Should fix up indices, to be ready for PostApply.
         /// </summary>
         /// <param name="multiDictionaryDelta"></param>
-        internal void Apply(IEventContext context, MultiDictionaryDelta<object, DbValue> multiDictionaryDelta);
+        internal void Apply(IEventContext context, MultiDictionaryDelta<object, IStructuralReadWrite> multiDictionaryDelta);
 
         /// <summary>
         /// Finish applying a delta to a table.
@@ -138,10 +140,10 @@ namespace SpacetimeDB
         // We store the BSATN encodings of objects next to their runtime representation.
         // This is memory-inefficient, but allows us to quickly compare objects when seeing if an update is a "real"
         // update or just a multiplicity change.
-        private readonly MultiDictionary<object, DbValue> Entries = new(GenericEqualityComparer.Instance, DbValueComparer.Instance);
+        private readonly MultiDictionary<object, IStructuralReadWrite> Entries = new(EqualityComparer<object>.Default, EqualityComparer<Object>.Default);
 
         // The function to use for decoding a type value.
-        IStructuralReadWrite IRemoteTableHandle.DecodeValue(byte[] bytes) => BSATNHelpers.Decode<Row>(bytes);
+        IStructuralReadWrite IRemoteTableHandle.DecodeValue(BinaryReader reader) => IStructuralReadWrite.Read<Row>(reader);
 
         public delegate void RowEventHandler(EventContext context, Row row);
         public event RowEventHandler? OnInsert;
@@ -153,7 +155,7 @@ namespace SpacetimeDB
 
         public int Count => (int)Entries.CountDistinct;
 
-        public IEnumerable<Row> Iter() => Entries.Entries.Select(entry => (Row)entry.Value.value);
+        public IEnumerable<Row> Iter() => Entries.Entries.Select(entry => (Row)entry.Value);
 
         public Task<Row[]> RemoteQuery(string query) =>
             conn.RemoteQuery<Row>($"SELECT {RemoteTableName}.* FROM {RemoteTableName} {query}");
@@ -206,21 +208,21 @@ namespace SpacetimeDB
             }
         }
 
-        List<KeyValuePair<object, DbValue>> wasInserted = new();
-        List<(object key, DbValue oldValue, DbValue newValue)> wasUpdated = new();
-        List<KeyValuePair<object, DbValue>> wasRemoved = new();
+        List<KeyValuePair<object, IStructuralReadWrite>> wasInserted = new();
+        List<(object key, IStructuralReadWrite oldValue, IStructuralReadWrite newValue)> wasUpdated = new();
+        List<KeyValuePair<object, IStructuralReadWrite>> wasRemoved = new();
 
-        void IRemoteTableHandle.PreApply(IEventContext context, MultiDictionaryDelta<object, DbValue> multiDictionaryDelta)
+        void IRemoteTableHandle.PreApply(IEventContext context, MultiDictionaryDelta<object, IStructuralReadWrite> multiDictionaryDelta)
         {
             Debug.Assert(wasInserted.Count == 0 && wasUpdated.Count == 0 && wasRemoved.Count == 0, "Call Apply and PostApply before calling PreApply again");
 
             foreach (var (_, value) in Entries.WillRemove(multiDictionaryDelta))
             {
-                InvokeBeforeDelete(context, value.value);
+                InvokeBeforeDelete(context, value);
             }
         }
 
-        void IRemoteTableHandle.Apply(IEventContext context, MultiDictionaryDelta<object, DbValue> multiDictionaryDelta)
+        void IRemoteTableHandle.Apply(IEventContext context, MultiDictionaryDelta<object, IStructuralReadWrite> multiDictionaryDelta)
         {
             try
             {
@@ -241,40 +243,40 @@ namespace SpacetimeDB
             // (And we need to do it before any PostApply is called.)
             foreach (var (_, value) in wasInserted)
             {
-                if (value.value is Row newRow)
+                if (value is Row newRow)
                 {
                     OnInternalInsert?.Invoke(newRow);
                 }
                 else
                 {
-                    throw new Exception($"Invalid row type for table {RemoteTableName}: {value.value.GetType().Name}");
+                    throw new Exception($"Invalid row type for table {RemoteTableName}: {value.GetType().Name}");
                 }
             }
             foreach (var (_, oldValue, newValue) in wasUpdated)
             {
-                if (oldValue.value is Row oldRow)
+                if (oldValue is Row oldRow)
                 {
-                    OnInternalDelete?.Invoke((Row)oldValue.value);
+                    OnInternalDelete?.Invoke((Row)oldValue);
                 }
                 else
                 {
-                    throw new Exception($"Invalid row type for table {RemoteTableName}: {oldValue.value.GetType().Name}");
+                    throw new Exception($"Invalid row type for table {RemoteTableName}: {oldValue.GetType().Name}");
                 }
 
 
-                if (newValue.value is Row newRow)
+                if (newValue is Row newRow)
                 {
                     OnInternalInsert?.Invoke(newRow);
                 }
                 else
                 {
-                    throw new Exception($"Invalid row type for table {RemoteTableName}: {newValue.value.GetType().Name}");
+                    throw new Exception($"Invalid row type for table {RemoteTableName}: {newValue.GetType().Name}");
                 }
             }
 
             foreach (var (_, value) in wasRemoved)
             {
-                if (value.value is Row oldRow)
+                if (value is Row oldRow)
                 {
                     OnInternalDelete?.Invoke(oldRow);
                 }
@@ -285,52 +287,20 @@ namespace SpacetimeDB
         {
             foreach (var (_, value) in wasInserted)
             {
-                InvokeInsert(context, value.value);
+                InvokeInsert(context, value);
             }
             foreach (var (_, oldValue, newValue) in wasUpdated)
             {
-                InvokeUpdate(context, oldValue.value, newValue.value);
+                InvokeUpdate(context, oldValue, newValue);
             }
             foreach (var (_, value) in wasRemoved)
             {
-                InvokeDelete(context, value.value);
+                InvokeDelete(context, value);
             }
             wasInserted.Clear();
             wasUpdated.Clear();
             wasRemoved.Clear();
 
         }
-    }
-
-    /// <summary>
-    /// EqualityComparer used to compare primary keys.
-    /// 
-    /// If the primary keys are byte arrays (i.e. if the table has no primary key), uses Internal.ByteArrayComparer.
-    /// Otherwise, falls back to .Equals().
-    /// 
-    /// TODO: we should test that this works for all of our supported primary key types.
-    /// </summary>
-    internal readonly struct GenericEqualityComparer : IEqualityComparer<object>
-    {
-        public static GenericEqualityComparer Instance = new();
-
-        public new bool Equals(object x, object y)
-        {
-            if (x is byte[] x_ && y is byte[] y_)
-            {
-                return Internal.ByteArrayComparer.Instance.Equals(x_, y_);
-            }
-            return x.Equals(y); // MAKE SURE to use .Equals and not ==... that was a bug.
-        }
-
-        public int GetHashCode(object obj)
-        {
-            if (obj is byte[] obj_)
-            {
-                return Internal.ByteArrayComparer.Instance.GetHashCode(obj_);
-            }
-            return obj.GetHashCode();
-        }
-
     }
 }

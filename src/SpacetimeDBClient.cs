@@ -11,6 +11,7 @@ using SpacetimeDB.BSATN;
 using SpacetimeDB.Internal;
 using SpacetimeDB.ClientApi;
 using Thread = System.Threading.Thread;
+using System.Diagnostics;
 
 
 namespace SpacetimeDB
@@ -211,11 +212,10 @@ namespace SpacetimeDB
 
         struct ProcessedDatabaseUpdate
         {
-            // Map: table handles -> (primary key -> DbValue).
-            // If a particular table has no primary key, the "primary key" is just a byte[]
-            // storing the BSATN encoding of the row.
-            // See Decode(...).
-            public Dictionary<IRemoteTableHandle, MultiDictionaryDelta<object, DbValue>> Updates;
+            // Map: table handles -> (primary key -> IStructuralReadWrite).
+            // If a particular table has no primary key, the "primary key" is just the row itself.
+            // This is valid because any [SpacetimeDB.Type] automatically has a correct Equals and HashSet implementation.
+            public Dictionary<IRemoteTableHandle, MultiDictionaryDelta<object, IStructuralReadWrite>> Updates;
 
             // Can't override the default constructor. Make sure you use this one!
             public static ProcessedDatabaseUpdate New()
@@ -225,13 +225,11 @@ namespace SpacetimeDB
                 return result;
             }
 
-            public MultiDictionaryDelta<object, DbValue> DeltaForTable(IRemoteTableHandle table)
+            public MultiDictionaryDelta<object, IStructuralReadWrite> DeltaForTable(IRemoteTableHandle table)
             {
                 if (!Updates.TryGetValue(table, out var delta))
                 {
-                    // Make sure we use GenericEqualityComparer here, since it handles byte[]s and arbitrary primary key types
-                    // correctly.
-                    delta = new MultiDictionaryDelta<object, DbValue>(GenericEqualityComparer.Instance, DbValueComparer.Instance);
+                    delta = new MultiDictionaryDelta<object, IStructuralReadWrite>(EqualityComparer<object>.Default, EqualityComparer<object>.Default);
                     Updates[table] = delta;
                 }
 
@@ -265,18 +263,20 @@ namespace SpacetimeDB
         /// If not, the BSATN for the entire row is used instead.
         /// </summary>
         /// <param name="table"></param>
-        /// <param name="bin"></param>
+        /// <param name="reader"></param>
         /// <param name="primaryKey"></param>
         /// <returns></returns>
-        static DbValue Decode(IRemoteTableHandle table, byte[] bin, out object primaryKey)
+        static IStructuralReadWrite Decode(IRemoteTableHandle table, BinaryReader reader, out object primaryKey)
         {
-            var obj = table.DecodeValue(bin);
+            var obj = table.DecodeValue(reader);
+
             // TODO(1.1): we should exhaustively check that GenericEqualityComparer works
             // for all types that are allowed to be primary keys.
             var primaryKey_ = table.GetPrimaryKey(obj);
-            primaryKey_ ??= bin;
+            primaryKey_ ??= obj;
             primaryKey = primaryKey_;
-            return new(obj, bin);
+
+            return obj;
         }
 
         private static readonly Status Committed = new Status.Committed(default);
@@ -353,24 +353,28 @@ namespace SpacetimeDB
             return new QueryUpdate.BSATN().Read(new BinaryReader(memoryStream));
         }
 
-        private static IEnumerable<byte[]> BsatnRowListIter(BsatnRowList list)
-        {
-            var rowsData = list.RowsData;
 
-            return list.SizeHint switch
-            {
-                RowSizeHint.FixedSize(var size) => Enumerable
-                    .Range(0, rowsData.Count / size)
-                    .Select(index => rowsData.Skip(index * size).Take(size).ToArray()),
-
-                RowSizeHint.RowOffsets(var offsets) => offsets.Zip(
-                    offsets.Skip(1).Append((ulong)rowsData.Count),
-                    (start, end) => rowsData.Take((int)end).Skip((int)start).ToArray()
-                ),
-
-                _ => throw new InvalidOperationException("Unknown RowSizeHint variant"),
-            };
-        }
+        /// <summary>
+        /// Prepare to read a BsatnRowList.
+        /// 
+        /// This could return an IEnumerable, but we return the reader and row count directly to avoid an allocation.
+        /// It is legitimate to repeatedly call <c>IStructuralReadWrite.Read<T></c> <c>rowCount</c> times on the resulting
+        /// BinaryReader:
+        /// Our decoding infrastructure guarantees that reading a value consumes the correct number of bytes
+        /// from the BinaryReader. (This is easy because BSATN doesn't have padding.)
+        /// </summary>
+        /// <param name="list"></param>
+        /// <returns>A reader for the rows of the list and a count of rows.</returns>
+        private static (BinaryReader reader, int rowCount) ParseRowList(BsatnRowList list) =>
+            (
+                new BinaryReader(new ListStream(list.RowsData)),
+                list.SizeHint switch
+                {
+                    RowSizeHint.FixedSize(var size) => list.RowsData.Count / size,
+                    RowSizeHint.RowOffsets(var offsets) => offsets.Count,
+                    _ => throw new NotImplementedException()
+                }
+            );
 
 #if UNITY_WEBGL && !UNITY_EDITOR
         IEnumerator PreProcessMessages()
@@ -455,9 +459,10 @@ namespace SpacetimeDB
                     {
                         Log.Warn("Non-insert during an insert-only server message!");
                     }
-                    foreach (var bin in BsatnRowListIter(qu.Inserts))
+                    var (insertReader, insertRowCount) = ParseRowList(qu.Inserts);
+                    for (var i = 0; i < insertRowCount; i++)
                     {
-                        var obj = Decode(table, bin, out var pk);
+                        var obj = Decode(table, insertReader, out var pk);
                         delta.Add(pk, obj);
                     }
                 }
@@ -473,9 +478,11 @@ namespace SpacetimeDB
                     {
                         Log.Warn("Non-delete during a delete-only operation!");
                     }
-                    foreach (var bin in BsatnRowListIter(qu.Deletes))
+
+                    var (deleteReader, deleteRowCount) = ParseRowList(qu.Deletes);
+                    for (var i = 0; i < deleteRowCount; i++)
                     {
-                        var obj = Decode(table, bin, out var pk);
+                        var obj = Decode(table, deleteReader, out var pk);
                         delta.Remove(pk, obj);
                     }
                 }
@@ -491,14 +498,17 @@ namespace SpacetimeDB
                     // Because we are accumulating into a MultiDictionaryDelta that will be applied all-at-once
                     // to the table, it doesn't matter that we call Add before Remove here.
 
-                    foreach (var bin in BsatnRowListIter(qu.Inserts))
+                    var (insertReader, insertRowCount) = ParseRowList(qu.Inserts);
+                    for (var i = 0; i < insertRowCount; i++)
                     {
-                        var obj = Decode(table, bin, out var pk);
+                        var obj = Decode(table, insertReader, out var pk);
                         delta.Add(pk, obj);
                     }
-                    foreach (var bin in BsatnRowListIter(qu.Deletes))
+
+                    var (deleteReader, deleteRowCount) = ParseRowList(qu.Deletes);
+                    for (var i = 0; i < deleteRowCount; i++)
                     {
-                        var obj = Decode(table, bin, out var pk);
+                        var obj = Decode(table, deleteReader, out var pk);
                         delta.Remove(pk, obj);
                     }
                 }
@@ -1002,9 +1012,13 @@ namespace SpacetimeDB
                 return LogAndThrow($"Mismatched result type, expected {typeof(T)} but got {resultTable.TableName}");
             }
 
-            return BsatnRowListIter(resultTable.Rows)
-                .Select(BSATNHelpers.Decode<T>)
-                .ToArray();
+            var (resultReader, resultCount) = ParseRowList(resultTable.Rows);
+            var output = new T[resultCount];
+            for (int i = 0; i < resultCount; i++)
+            {
+                output[i] = IStructuralReadWrite.Read<T>(resultReader);
+            }
+            return output;
         }
 
         public bool IsActive => webSocket.IsConnected;
@@ -1055,33 +1069,5 @@ namespace SpacetimeDB
             lastAllocated++;
             return lastAllocated;
         }
-    }
-    internal readonly struct DbValue
-    {
-        public readonly IStructuralReadWrite value;
-        public readonly byte[] bytes;
-
-        public DbValue(IStructuralReadWrite value, byte[] bytes)
-        {
-            this.value = value;
-            this.bytes = bytes;
-        }
-
-        // TODO: having a nice ToString here would give better way better errors when applying table deltas,
-        // but it's tricky to do that generically.
-    }
-
-    /// <summary>
-    /// DbValue comparer that uses BSATN-encoded records to compare DbValues for equality.
-    /// </summary>
-    internal readonly struct DbValueComparer : IEqualityComparer<DbValue>
-    {
-        public static DbValueComparer Instance = new();
-
-        public bool Equals(DbValue x, DbValue y) =>
-            ByteArrayComparer.Instance.Equals(x.bytes, y.bytes);
-
-        public int GetHashCode(DbValue obj) =>
-            ByteArrayComparer.Instance.GetHashCode(obj.bytes);
     }
 }
