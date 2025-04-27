@@ -16,7 +16,6 @@ use spacetimedb_schema::type_for_generate::{AlgebraicTypeDef, AlgebraicTypeUse, 
 
 use super::code_indenter::{CodeIndenter, Indenter};
 use super::Lang;
-use crate::version::CLI_VERSION;
 use std::path::PathBuf;
 
 type Imports = BTreeSet<AlgebraicTypeRef>;
@@ -362,11 +361,6 @@ removeOnUpdate = (cb: (ctx: EventContext, onRow: {row_type}, newRow: {row_type})
             out.dedent(1);
             writeln!(out, "}},");
         }
-        out.dedent(1);
-        writeln!(out, "}},");
-        writeln!(out, "versionInfo: {{");
-        out.indent(1);
-        writeln!(out, "cliVersion: \"{CLI_VERSION}\",");
         out.dedent(1);
         writeln!(out, "}},");
         writeln!(
