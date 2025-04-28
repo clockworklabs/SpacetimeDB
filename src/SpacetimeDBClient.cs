@@ -356,12 +356,23 @@ namespace SpacetimeDB
 
         /// <summary>
         /// Prepare to read a BsatnRowList.
-        /// 
+        ///
         /// This could return an IEnumerable, but we return the reader and row count directly to avoid an allocation.
         /// It is legitimate to repeatedly call <c>IStructuralReadWrite.Read<T></c> <c>rowCount</c> times on the resulting
         /// BinaryReader:
         /// Our decoding infrastructure guarantees that reading a value consumes the correct number of bytes
         /// from the BinaryReader. (This is easy because BSATN doesn't have padding.)
+        ///
+        /// Previously here we were using LINQ to do what we're now doing with a custsom reader.
+        ///
+        /// Why are we no longer using LINQ?
+        ///
+        /// The calls in question, namely `Skip().Take()`, were fast under the Mono runtime,
+        /// but *much* slower when compiled AOT with IL2CPP.
+        /// Apparently Mono's JIT is smart enough to optimize away these LINQ ops,
+        /// resulting in a linear scan of the `BsatnRowList`.
+        /// Unfortunately IL2CPP could not, resulting in a quadratic scan.
+        /// See: https://github.com/clockworklabs/com.clockworklabs.spacetimedbsdk/pull/306
         /// </summary>
         /// <param name="list"></param>
         /// <returns>A reader for the rows of the list and a count of rows.</returns>
