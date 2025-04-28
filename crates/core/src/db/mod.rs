@@ -19,4 +19,6 @@ pub enum Storage {
 pub struct Config {
     /// Specifies the object storage model.
     pub storage: Storage,
+    /// Specifies the page pool max size in bytes.
+    pub page_pool_max_size: Option<usize>,
 }
