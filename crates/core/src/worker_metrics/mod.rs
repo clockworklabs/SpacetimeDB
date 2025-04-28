@@ -231,8 +231,9 @@ use tikv_jemalloc_ctl::{epoch, stats};
 
 use std::sync::Once;
 use tokio::{spawn, time::sleep};
+#[cfg(not(target_env = "msvc"))]
 static SPAWN_JEMALLOC_GUARD: Once = Once::new();
-pub fn spawn_jemalloc_stats(node_id: String) {
+pub fn spawn_jemalloc_stats(_node_id: String) {
     #[cfg(not(target_env = "msvc"))]
     SPAWN_JEMALLOC_GUARD.call_once(|| {
         spawn(async move {
@@ -242,17 +243,17 @@ pub fn spawn_jemalloc_stats(node_id: String) {
                 let allocated = stats::allocated::read().unwrap();
                 WORKER_METRICS
                     .jemalloc_allocated_bytes
-                    .with_label_values(&node_id)
+                    .with_label_values(&_node_id)
                     .set(allocated as i64);
                 let resident = stats::resident::read().unwrap();
                 WORKER_METRICS
                     .jemalloc_resident_bytes
-                    .with_label_values(&node_id)
+                    .with_label_values(&_node_id)
                     .set(resident as i64);
                 let active = stats::active::read().unwrap();
                 WORKER_METRICS
                     .jemalloc_active_bytes
-                    .with_label_values(&node_id)
+                    .with_label_values(&_node_id)
                     .set(active as i64);
 
                 sleep(Duration::from_secs(10)).await;
