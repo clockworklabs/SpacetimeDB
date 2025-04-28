@@ -60,9 +60,10 @@ jobs:
         with: { python-version: '3.12' }
         if: runner.os == 'Windows'
       - name: Run smoketests
-        # Note: clear_database only works in private
+        # Note: clear_database and replication only work in private
         run: |
-          python -m smoketests ${{ matrix.smoketest_args }} -x clear_database -x replication
+          python -m smoketests ${{ matrix.smoketest_args }} \
+            -x clear_database replication
       - name: Stop containers (Linux)
         if: always() && runner.os == 'Linux'
         run: docker compose down
