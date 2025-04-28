@@ -2159,19 +2159,25 @@ private registerReducerCallbacks() {
 
     this.conn.reducers.onSendMessage(this.handleSendMessageResult);
     // Register other reducer callbacks if needed
-    // this.conn.reducers.onSetName(this.handleSetNameResult);
+    // this.conn.reducers.onSetName(handleSetNameResult);
     
     // Note: Consider returning a cleanup function to unregister
 }
 
 private handleSendMessageResult(ctx: ReducerEventContext, messageText: string) {
-    const wasOurCall = ctx.reducerEvent.callerIdentity.isEqual(this.identity);
+    const wasOurCall = ctx.event.callerIdentity.isEqual(this.identity);
     if (!wasOurCall) return; // Only care about our own calls here
 
-    if (ctx.reducerEvent.status === Status.Committed) {
+    switch(ctx.event.status.tag) {
+    case "Committed":
         console.log(`Our message "${messageText}" sent successfully.`);
-    } else if (ctx.reducerEvent.status.isFailed()) {
-        console.error(`Failed to send "${messageText}": ${ctx.reducerEvent.status.getFailedMessage()}`);
+        break;
+    case "Failed":
+        console.error(`Failed to send "${messageText}": ${ctx.event.status.value}`);
+        break;
+    case "OutOfEnergy":
+        console.error(`Failed to send "${messageText}": Out of Energy!`);
+        break;
     }
 }
 
