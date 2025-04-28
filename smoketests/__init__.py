@@ -6,7 +6,6 @@ import random
 import re
 import shutil
 import string
-import string
 import subprocess
 import sys
 import tempfile
@@ -116,7 +115,7 @@ def run_cmd(*args, capture_stderr=True, check=True, full_output=False, cmd_name=
 
     needs_close = False
     if not capture_stderr:
-        logging.debug(f"--- stderr ---")
+        logging.debug("--- stderr ---")
         needs_close = True
 
     output = subprocess.run(
@@ -180,7 +179,7 @@ class Smoketest(unittest.TestCase):
         self._check_published()
         anon = ["--anonymous"]
         return self.spacetime("sql", *anon, "--", self.database_identity, sql)
-    
+
     def logs(self, n):
         return [log["message"] for log in self.log_records(n)]
 
@@ -293,26 +292,23 @@ class Smoketest(unittest.TestCase):
             logging.info(f"Compiling module for {cls.__qualname__}...")
             cls.publish_module(cls, capture_stderr=True) # capture stderr because otherwise it clutters the top-level test logs for some reason.
 
-    #TODO: revert this
     def tearDown(self):
-        pass    
-    # if this single test method published a database, clean it up now
-#        if "database_identity" in self.__dict__:
-#            try:
-#                # TODO: save the credentials in publish_module()
-#                self.spacetime("delete", self.database_identity)
-#            except Exception:
-#                pass
-#
+        # if this single test method published a database, clean it up now
+        if "database_identity" in self.__dict__:
+            try:
+                # TODO: save the credentials in publish_module()
+                self.spacetime("delete", self.database_identity)
+            except Exception:
+                pass
+
     @classmethod
     def tearDownClass(cls):
-        pass 
-#       if hasattr(cls, "database_identity"):
- #           try:
- #               # TODO: save the credentials in publish_module()
- #               cls.spacetime("delete", cls.database_identity)
- #           except Exception:
- #               pass
+       if hasattr(cls, "database_identity"):
+           try:
+               # TODO: save the credentials in publish_module()
+               cls.spacetime("delete", cls.database_identity)
+           except Exception:
+               pass
 
     if sys.version_info < (3, 11):
         # polyfill; python 3.11 defines this classmethod on TestCase

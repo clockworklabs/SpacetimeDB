@@ -11,6 +11,7 @@ from . import TEST_DIR, SPACETIME_BIN, exe_suffix, build_template_target
 import smoketests
 import sys
 import logging
+import itertools
 
 def check_docker():
     docker_ps = smoketests.run_cmd("docker", "ps", "--format=json")
@@ -51,6 +52,7 @@ class ExclusionaryTestLoader(unittest.TestLoader):
 def _convert_select_pattern(pattern):
     return f'*{pattern}*' if '*' not in pattern else pattern
 
+
 TESTPREFIX = "smoketests.tests."
 def main():
     tests = [fname.removesuffix(".py") for fname in os.listdir(TEST_DIR / "tests") if fname.endswith(".py") and fname != "__init__.py"]
@@ -69,6 +71,7 @@ def main():
                         help='Only run tests which match the given substring')
     parser.add_argument("-x", dest="exclude", nargs="*", default=[])
     parser.add_argument("--no-build-cli", action="store_true", help="don't cargo build the cli")
+    parser.add_argument("--list", action="store_true", help="list the tests that would be run, but don't run them")
     args = parser.parse_args()
 
     if not args.no_build_cli:
@@ -124,6 +127,12 @@ def main():
     loader.testNamePatterns = args.testNamePatterns
 
     tests = loader.loadTestsFromNames(testlist)
+    if args.list:
+        print("Selected tests:\n")
+        for test in itertools.chain(*itertools.chain(*tests)):
+            print(f"{test}")
+        exit(0)
+
     buffer = not args.show_all_output
     verbosity = 2
 
