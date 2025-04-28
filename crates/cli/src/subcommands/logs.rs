@@ -3,12 +3,13 @@ use std::io::{self, Write};
 
 use crate::common_args;
 use crate::config::Config;
-use crate::util::{add_auth_header_opt, database_identity, get_auth_header};
+use crate::util::{add_auth_header_opt, database_identity, get_auth_header, build_client, map_request_error};
 use clap::{Arg, ArgAction, ArgMatches};
 use futures::{AsyncBufReadExt, TryStreamExt};
 use is_terminal::IsTerminal;
 use termcolor::{Color, ColorSpec, WriteColor};
 use tokio::io::AsyncWriteExt;
+use std::path::{Path, PathBuf};
 
 pub fn cli() -> clap::Command {
     clap::Command::new("logs")
@@ -48,6 +49,12 @@ pub fn cli() -> clap::Command {
                 .help("Output format for the logs")
         )
         .arg(common_args::yes())
+        //.arg(common_args::cert())
+        .arg(common_args::trust_server_cert())
+        .arg(common_args::client_cert())
+        .arg(common_args::client_key())
+        .arg(common_args::trust_system_root_store())
+        .arg(common_args::no_trust_system_root_store())
         .after_help("Run `spacetime help logs` for more detailed information.\n")
 }
 
@@ -120,7 +127,31 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
     let auth_header = get_auth_header(&mut config, false, server, !force).await?;
 
-    let database_identity = database_identity(&config, database, server).await?;
+    // TLS arguments
+    let trust_server_cert_path: Option<&Path> = args.get_one::<PathBuf>("trust-server-cert").map(|p| p.as_path());
+    let client_cert_path: Option<&Path> = args.get_one::<PathBuf>("client-cert").map(|p| p.as_path());
+    let client_key_path: Option<&Path> = args.get_one::<PathBuf>("client-key").map(|p| p.as_path());
+
+    // for clients, default to true unless --no-trust-system-root-store
+    // because this is used to verify the received server cert which can be signed by public CA
+    // thus using system's trust/root store, by default, makes sense.
+    let trust_system = !args.get_flag("no-trust-system-root-store");
+
+    let host_url = config.get_host_url(server)?;
+
+    let client = map_request_error!(
+        build_client(
+            trust_server_cert_path,
+            client_cert_path,
+            client_key_path,
+            trust_system,
+        ).await
+        , host_url, client_cert_path, client_key_path)
+        ?;
+    let database_identity = map_request_error!(
+        database_identity(&config, database, server, &client).await
+        , host_url, client_cert_path, client_key_path)
+        ?;
 
     if follow && num_lines.is_none() {
         // We typically don't want logs from the very beginning if we're also following.
@@ -128,9 +159,8 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     }
     let query_parms = LogsParams { num_lines, follow };
 
-    let host_url = config.get_host_url(server)?;
 
-    let builder = reqwest::Client::new().get(format!("{}/v1/database/{}/logs", host_url, database_identity));
+    let builder = client.get(format!("{}/v1/database/{}/logs", host_url, database_identity));
     let builder = add_auth_header_opt(builder, &auth_header);
     let mut res = builder.query(&query_parms).send().await?;
     let status = res.status();

@@ -66,7 +66,8 @@ lto = "thin"
 
 [profile.dev]
 opt-level = 0
-debug = true
+debug = 1
+#debug = true #FIXME: put this back
 debug-assertions = true
 overflow-checks = true
 lto = false
@@ -129,7 +130,12 @@ arrayvec = "0.7.2"
 async-stream = "0.3.6"
 async-trait = "0.1.68"
 axum = { version = "0.7", features = ["tracing"] }
+axum-server = { version = "0.7.2", features = ["tls-rustls"] }
 axum-extra = { version = "0.9", features = ["typed-header"] }
+#rustls-platform-verifier = "0.5"
+x509-parser = "0.17"
+sha2="0.10.8"
+rustls-native-certs = "0.8"
 backtrace = "0.3.66"
 base64 = "0.21.2"
 bigdecimal = "0.4.7"
@@ -178,8 +184,8 @@ home = "0.5"
 hostname = "^0.3"
 http = "1.0"
 humantime = "2.1.0"
-hyper = "1.0"
-hyper-util = { version = "0.1", features = ["tokio"] }
+hyper = "1.6"
+hyper-util = { version = "0.1.11", features = ["tokio"] }
 imara-diff = "0.1.3"
 indexmap = "2.0.0"
 indicatif = "0.17"
@@ -214,7 +220,12 @@ rand = "0.9"
 rayon = "1.8"
 rayon-core = "1.11.0"
 regex = "1"
-reqwest = { version = "0.12", features = ["stream", "json"] }
+reqwest = { version = "0.12", features = ["stream", "json", "native-tls"] }
+rustls-pemfile = "2.2"
+#rustls = "0.23"
+rustls= { version="0.23", default-features = true, features=[ "ring" ] }
+native-tls = "0.2"  # Explicitly add for Connector::NativeTls
+ring = "0.17"  # explicitly add this for the CryptoProvider, even tho it's included transitively.
 ron = "0.8"
 rusqlite = { version = "0.29.0", features = ["bundled", "column_decltype"] }
 rust_decimal = { version = "1.29.1", features = ["db-tokio-postgres"] }

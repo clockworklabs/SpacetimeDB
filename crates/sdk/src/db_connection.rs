@@ -44,6 +44,7 @@ use tokio::{
     runtime::{self, Runtime},
     sync::Mutex as TokioMutex,
 };
+use std::path::PathBuf;
 
 pub(crate) type SharedCell<T> = Arc<StdMutex<T>>;
 
@@ -748,6 +749,11 @@ pub struct DbConnectionBuilder<M: SpacetimeModule> {
     on_disconnect: Option<OnDisconnectCallback<M>>,
 
     params: WsParams,
+
+    trusted_cert: Option<std::path::PathBuf>,
+    client_cert: Option<std::path::PathBuf>,
+    client_key: Option<std::path::PathBuf>,
+    trust_system_certs: Option<bool>,
 }
 
 /// This process's global connection ID, which will be attacked to all connections it makes.
@@ -794,6 +800,10 @@ impl<M: SpacetimeModule> DbConnectionBuilder<M> {
             on_connect_error: None,
             on_disconnect: None,
             params: <_>::default(),
+            trusted_cert: None,
+            client_cert: None,
+            client_key: None,
+            trust_system_certs: None,
         }
     }
 
@@ -841,6 +851,11 @@ but you must call one of them, or else the connection will never progress.
                 self.token.as_deref(),
                 get_connection_id(),
                 self.params,
+                self.trusted_cert.as_ref(),
+                self.client_cert.as_ref(),
+                self.client_key.as_ref(),
+                //XXX: trust system/root store by default, for clients when verifying server certs!
+                self.trust_system_certs.unwrap_or(true),
             ))
         })
         .map_err(|source| crate::Error::FailedToConnect {
@@ -889,6 +904,34 @@ but you must call one of them, or else the connection will never progress.
     pub fn with_uri<E: std::fmt::Debug>(mut self, uri: impl TryInto<Uri, Error = E>) -> Self {
         let uri = uri.try_into().expect("Unable to parse supplied URI");
         self.uri = Some(uri);
+        self
+    }
+
+    pub fn with_trusted_cert(mut self, cert: Option<impl Into<std::path::PathBuf>>) -> Self {
+        self.trusted_cert = cert.map(|c| c.into());
+        self
+    }
+
+    pub fn with_client_cert(mut self, cert: Option<impl Into<PathBuf>>) -> Self {
+        self.client_cert = cert.map(|c| c.into());
+        self
+    }
+
+    pub fn with_client_key(mut self, key: Option<impl Into<PathBuf>>) -> Self {
+        self.client_key = key.map(|c| c.into());
+        self
+    }
+
+//    pub fn with_trust_system_certs(mut self, trust: bool) -> Self {
+//        self.trust_system_certs = trust;
+//        self
+//    }
+//    pub fn with_trust_system_certs(mut self, trust: Option<impl Into<Option<bool>>>) -> Self {
+//        self.trust_system_certs = trust.map(|t| t.into()).unwrap_or(None);
+//        self
+//    }
+    pub fn with_trust_system_certs(mut self, trust: Option<impl Into<bool>>) -> Self {
+        self.trust_system_certs = trust.map(|t| t.into());
         self
     }
 

@@ -3,7 +3,8 @@ use crate::common_args;
 use clap::ArgMatches;
 
 use crate::config::Config;
-use crate::util::{self, get_login_token_or_log_in, UNSTABLE_WARNING};
+use crate::util::{self, get_login_token_or_log_in, UNSTABLE_WARNING, build_client, map_request_error};
+use std::path::{Path, PathBuf};
 
 pub fn cli() -> clap::Command {
     clap::Command::new("energy")
@@ -30,6 +31,12 @@ fn get_energy_subcommands() -> Vec<clap::Command> {
             common_args::server()
                 .help("The nickname, host name or URL of the server from which to request balance information"),
         )
+        //.arg(common_args::cert())
+        .arg(common_args::trust_server_cert())
+        .arg(common_args::client_cert())
+        .arg(common_args::client_key())
+        .arg(common_args::trust_system_root_store())
+        .arg(common_args::no_trust_system_root_store())
         .arg(common_args::yes())]
 }
 
@@ -58,11 +65,35 @@ async fn exec_status(mut config: Config, args: &ArgMatches) -> Result<(), anyhow
         let token = get_login_token_or_log_in(&mut config, server, !force).await?;
         util::decode_identity(&token)?
     };
+    // TLS arguments
+    let trust_server_cert_path: Option<&Path> = args.get_one::<PathBuf>("trust-server-cert").map(|p| p.as_path());
+    let client_cert_path: Option<&Path> = args.get_one::<PathBuf>("client-cert").map(|p| p.as_path());
+    let client_key_path: Option<&Path> = args.get_one::<PathBuf>("client-key").map(|p| p.as_path());
 
-    let status = reqwest::Client::new()
-        .get(format!("{}/v1/energy/{}", config.get_host_url(server)?, identity))
+    // for clients, default to true unless --no-trust-system-root-store
+    // because this is used to verify the received server cert which can be signed by public CA
+    // thus using system's trust/root store, by default, makes sense.
+    let trust_system = !args.get_flag("no-trust-system-root-store");
+
+    let host = config.get_host_url(server)?;
+
+    let client = map_request_error!(
+        build_client(
+            trust_server_cert_path,
+            client_cert_path,
+            client_key_path,
+            trust_system,
+        ).await
+        ,host, client_cert_path, client_key_path)
+        ?;
+
+    let status = map_request_error!(
+        client
+        .get(format!("{}/v1/energy/{}", host, identity))
         .send()
-        .await?
+        .await
+        ,host, client_cert_path, client_key_path)
+        ?
         .error_for_status()?
         .text()
         .await?;

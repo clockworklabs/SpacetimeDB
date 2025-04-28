@@ -177,21 +177,59 @@ impl RawConfig {
     }
 
     fn find_server(&self, name_or_host: &str) -> anyhow::Result<&ServerConfig> {
+        self.find_server_with_protocol(name_or_host, None)
+    }
+    fn find_server_with_protocol(&self, name_or_host: &str, protocol: Option<&str>) -> anyhow::Result<&ServerConfig> {
+        let mut matches = Vec::new();
         for cfg in &self.server_configs {
-            if cfg.nickname.as_deref() == Some(name_or_host) || cfg.host == name_or_host {
-                return Ok(cfg);
+            if cfg.nickname.as_deref() == Some(name_or_host) {
+                return Ok(cfg); // Nickname is unique
+            }
+            if cfg.host == name_or_host && protocol.map_or(true, |p| cfg.protocol == p) {
+                matches.push(cfg);
             }
         }
-        Err(no_such_server_error(name_or_host))
+        match matches.len() {
+            0 => Err(no_such_server_error(name_or_host)),
+            1 => Ok(matches[0]),
+            _ => Err(anyhow::anyhow!(
+                    "Ambiguous server: {} matches multiple protocols (e.g., {}://{}, {}://{}). Specify nickname or protocol.",
+                    name_or_host,
+                    matches[0].protocol,
+                    name_or_host,
+                    matches[1].protocol,
+                    name_or_host
+            )),
+        }
     }
 
-    fn find_server_mut(&mut self, name_or_host: &str) -> anyhow::Result<&mut ServerConfig> {
-        for cfg in &mut self.server_configs {
-            if cfg.nickname.as_deref() == Some(name_or_host) || cfg.host == name_or_host {
-                return Ok(cfg);
+    fn find_server_with_protocol_mut(&mut self, name_or_host: &str, protocol: Option<&str>) -> anyhow::Result<&mut ServerConfig> {
+        let mut indices = Vec::new();
+        let mut protocols = Vec::new();
+        for (i, cfg) in self.server_configs.iter().enumerate() {
+            if cfg.nickname.as_deref() == Some(name_or_host) {
+                return Ok(&mut self.server_configs[i]);
+            }
+            if cfg.host == name_or_host && protocol.map_or(true, |p| cfg.protocol == p) {
+                indices.push(i);
+                protocols.push(&cfg.protocol);
             }
         }
-        Err(no_such_server_error(name_or_host))
+        match indices.len() {
+            0 => Err(no_such_server_error(name_or_host)),
+            1 => Ok(&mut self.server_configs[indices[0]]),
+            _ => Err(anyhow::anyhow!(
+                    "Ambiguous server: {} matches multiple protocols (e.g., {}://{}, {}://{}). Specify nickname or protocol.",
+                    name_or_host,
+                    protocols[0],
+                    name_or_host,
+                    protocols[1],
+                    name_or_host
+            )),
+        }
+    }
+    fn find_server_mut(&mut self, name_or_host: &str) -> anyhow::Result<&mut ServerConfig> {
+        self.find_server_with_protocol_mut(name_or_host, None)
     }
 
     fn default_server(&self) -> anyhow::Result<&ServerConfig> {
@@ -231,13 +269,10 @@ impl RawConfig {
             }
         }
 
-        if let Ok(cfg) = self.find_server(&host) {
-            if let Some(nick) = &cfg.nickname {
-                if nick == &host {
-                    anyhow::bail!("Server host name is ambiguous with existing server nickname: {}", nick);
-                }
-            }
-            anyhow::bail!("Server already configured for host: {}", host);
+        if self.server_configs.iter().any(|cfg| {
+            cfg.host == host && cfg.protocol == protocol
+        }) {
+            anyhow::bail!("Server already configured for host: {}, proto: {}", host, protocol);
         }
 
         self.server_configs.push(ServerConfig {
@@ -271,47 +306,68 @@ impl RawConfig {
             .map(|cfg| cfg.protocol.as_ref())
     }
 
-    fn set_default_server(&mut self, server: &str) -> anyhow::Result<()> {
+    fn set_default_server(&mut self, server: &str, protocol: Option<&str>) -> anyhow::Result<()> {
         // Check that such a server exists before setting the default.
-        self.find_server(server)
-            .with_context(|| format!("Cannot set default server to unknown server {server}"))?;
+        let cfg = self
+            .find_server_with_protocol(server, protocol)
+            .with_context(|| {
+                if let Some(p) = protocol {
+                    format!("Cannot set default server to unknown server {} with protocol {}", server, p)
+                } else {
+                    format!("Cannot set default server to unknown server {}", server)
+                }
+            })?;
 
-        self.default_server = Some(server.to_string());
+        // Prefer nickname if available, else use host
+        self.default_server = Some(cfg.nickname.clone().unwrap_or_else(|| cfg.host.clone()));
 
         Ok(())
     }
 
     /// Implements `spacetime server remove`.
-    fn remove_server(&mut self, server: &str) -> anyhow::Result<()> {
-        // Have to find the server config manually instead of doing `find_server_mut`
-        // because we need to mutably borrow multiple components of `self`.
-        if let Some(idx) = self
-            .server_configs
-            .iter()
-            .position(|cfg| cfg.nick_or_host_or_url_is(server))
-        {
-            // Actually remove the config.
-            let cfg = self.server_configs.remove(idx);
-
-            // If we're removing the default server,
-            // unset the default server.
-            if let Some(default_server) = &self.default_server {
-                if cfg.nick_or_host_or_url_is(default_server) {
-                    self.default_server = None;
-                }
+    fn remove_server(&mut self, server: &str, protocol: Option<&str>) -> anyhow::Result<()> {
+        let mut indices = Vec::new();
+        let mut protocols = Vec::new();
+        for (i, cfg) in self.server_configs.iter().enumerate() {
+            if cfg.nickname.as_deref() == Some(server) {
+                indices = vec![i];
+                protocols = vec![&cfg.protocol];
+                break; // Nickname is unique
             }
-
-            return Ok(());
+            if cfg.host == server && protocol.map_or(true, |p| cfg.protocol == p) {
+                indices.push(i);
+                protocols.push(&cfg.protocol);
+            }
         }
-        Err(no_such_server_error(server))
+
+        match indices.len() {
+            0 => Err(no_such_server_error(server)),
+            1 => {
+                let cfg = self.server_configs.remove(indices[0]);
+                if let Some(default_server) = &self.default_server {
+                    if cfg.nickname.as_deref() == Some(default_server) || cfg.host == *default_server {
+                        self.default_server = None;
+                    }
+                }
+                Ok(())
+            }
+            _ => Err(anyhow::anyhow!(
+                    "Ambiguous server: {} matches multiple protocols (e.g., {}://{}, {}://{}). Specify nickname or protocol.",
+                    server,
+                    protocols[0],
+                    server,
+                    protocols[1],
+                    server
+            )),
+        }
     }
 
     /// Return the ECDSA public key in PEM format for the server named by `server`.
     ///
     /// Returns an `Err` if there is no such server configuration.
     /// Returns `None` if the server configuration exists, but does not have a fingerprint saved.
-    fn server_fingerprint(&self, server: &str) -> anyhow::Result<Option<&str>> {
-        self.find_server(server)
+    fn server_fingerprint(&self, server: &str, protocol: Option<&str>) -> anyhow::Result<Option<&str>> {
+        self.find_server_with_protocol(server, protocol)
             .with_context(|| {
                 format!(
                     "No saved fingerprint for server: {server}
@@ -319,7 +375,7 @@ Fetch the server's fingerprint with:
 \tspacetime server fingerprint -s {server}"
                 )
             })
-            .map(|cfg| cfg.ecdsa_public_key.as_deref())
+        .map(|cfg| cfg.ecdsa_public_key.as_deref())
     }
 
     /// Return the ECDSA public key in PEM format for the default server.
@@ -328,7 +384,7 @@ Fetch the server's fingerprint with:
     /// Returns `None` if the server configuration exists, but does not have a fingerprint saved.
     fn default_server_fingerprint(&self) -> anyhow::Result<Option<&str>> {
         if let Some(server) = &self.default_server {
-            self.server_fingerprint(server)
+            self.server_fingerprint(server, None)
         } else {
             Err(anyhow::anyhow!(NO_DEFAULT_SERVER_ERROR_MESSAGE))
         }
@@ -364,6 +420,7 @@ Fetch the server's fingerprint with:
     pub fn edit_server(
         &mut self,
         server: &str,
+        old_protocol: Option<&str>,
         new_nickname: Option<&str>,
         new_host: Option<&str>,
         new_protocol: Option<&str>,
@@ -371,7 +428,7 @@ Fetch the server's fingerprint with:
         // Check if the new nickname or host name would introduce ambiguities between
         // server configurations.
         if let Some(new_nick) = new_nickname {
-            if let Ok(other_server) = self.find_server(new_nick) {
+            if let Ok(other_server) = self.find_server_with_protocol(new_nick, None) {
                 anyhow::bail!(
                     "Nickname {} conflicts with saved configuration for server {}: {}://{}",
                     new_nick,
@@ -382,7 +439,7 @@ Fetch the server's fingerprint with:
             }
         }
         if let Some(new_host) = new_host {
-            if let Ok(other_server) = self.find_server(new_host) {
+            if let Ok(other_server) = self.find_server_with_protocol(new_host, new_protocol) {
                 anyhow::bail!(
                     "Host {} conflicts with saved configuration for server {}: {}://{}",
                     new_host,
@@ -393,7 +450,7 @@ Fetch the server's fingerprint with:
             }
         }
 
-        let cfg = self.find_server_mut(server)?;
+        let cfg = self.find_server_with_protocol_mut(server, old_protocol)?;
         let old_nickname = if let Some(new_nickname) = new_nickname {
             std::mem::replace(&mut cfg.nickname, Some(new_nickname.to_string()))
         } else {
@@ -509,8 +566,8 @@ impl Config {
     /// Callers should call `Config::save` afterwards
     /// to ensure modifications are persisted to disk.
     pub fn set_default_server(&mut self, nickname_or_host_or_url: &str) -> anyhow::Result<()> {
-        let (host, _) = host_or_url_to_host_and_protocol(nickname_or_host_or_url);
-        self.home.set_default_server(host)
+        let (host, proto) = host_or_url_to_host_and_protocol(nickname_or_host_or_url);
+        self.home.set_default_server(host, proto)
     }
 
     /// Delete a `ServerConfig` from the home configuration.
@@ -522,8 +579,8 @@ impl Config {
     /// Callers should call `Config::save` afterwards
     /// to ensure modifications are persisted to disk.
     pub fn remove_server(&mut self, nickname_or_host_or_url: &str) -> anyhow::Result<()> {
-        let (host, _) = host_or_url_to_host_and_protocol(nickname_or_host_or_url);
-        self.home.remove_server(host)
+        let (host, proto) = host_or_url_to_host_and_protocol(nickname_or_host_or_url);
+        self.home.remove_server(host, proto)
     }
 
     /// Get a URL for the specified `server`.
@@ -734,7 +791,7 @@ impl Config {
     }
 
     pub fn server_decoding_key(&self, server: Option<&str>) -> anyhow::Result<DecodingKey> {
-        self.server_fingerprint(server).and_then(|fing| {
+        self.server_fingerprint(server, None).and_then(|fing| {
             if let Some(fing) = fing {
                 DecodingKey::from_ec_pem(fing.as_bytes()).with_context(|| {
                     format!(
@@ -762,10 +819,11 @@ Update the server's fingerprint with:
         }
     }
 
-    pub fn server_fingerprint(&self, server: Option<&str>) -> anyhow::Result<Option<&str>> {
+    pub fn server_fingerprint(&self, server: Option<&str>, protocol: Option<&str>) -> anyhow::Result<Option<&str>> {
         if let Some(server) = server {
-            let (host, _) = host_or_url_to_host_and_protocol(server);
-            self.home.server_fingerprint(host)
+            let (host, _proto) = host_or_url_to_host_and_protocol(server);
+            //FIXME: if _proto exists and one was specified as arg too... or if None as arg, take _proto?
+            self.home.server_fingerprint(host, protocol)
         } else {
             self.home.default_server_fingerprint()
         }
@@ -787,8 +845,8 @@ Update the server's fingerprint with:
         new_host: Option<&str>,
         new_protocol: Option<&str>,
     ) -> anyhow::Result<(Option<String>, Option<String>, Option<String>)> {
-        let (host, _) = host_or_url_to_host_and_protocol(server);
-        self.home.edit_server(host, new_nickname, new_host, new_protocol)
+        let (host, oldproto) = host_or_url_to_host_and_protocol(server);
+        self.home.edit_server(host, oldproto, new_nickname, new_host, new_protocol)
     }
 
     pub fn delete_server_fingerprint(&mut self, server: Option<&str>) -> anyhow::Result<()> {

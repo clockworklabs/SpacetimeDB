@@ -43,6 +43,18 @@ thiserror.workspace = true
 blake3.workspace = true
 enum-map = { workspace = true, optional = true }
 
+#XXX: can't bring openssl or mio into this lib due to "publish" failing to compile them in wasm!
+#eg. hyper,reqwest,native-tls,tokio all bring either of them.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+#tokio = { version= "1.44", default-features = false, features = ["rt", "sync", "time"] }
+tokio.workspace = true #this "full" tokio causes 'mio' to fail to wasm compile see: https://github.com/tokio-rs/mio/pull/1856
+#native-tls = "0.2"
+native-tls.workspace=true
+hyper.workspace=true
+reqwest.workspace=true
+openssl.workspace=true
+clap.workspace = true
+
 # For the 'proptest' feature.
 proptest = { workspace = true, optional = true }
 proptest-derive = { workspace = true, optional = true }

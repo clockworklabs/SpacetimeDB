@@ -5,11 +5,86 @@ use module_bindings::*;
 
 use spacetimedb_sdk::{credentials, DbContext, Error, Event, Identity, Status, Table, TableWithPrimaryKey};
 
+use clap::{Arg, Command};
+use std::path::PathBuf;
+
+
 // ## Define the main function
 
 fn main() {
+     // Parse command-line arguments with clap
+    let matches = Command::new("quickstart-chat")
+        .arg(
+            Arg::new("trust-server-cert")
+                .long("trust-server-cert")
+                .alias("cert")
+                .value_name("FILE")
+                .value_parser(clap::value_parser!(PathBuf))
+                .help("Path to PEM file containing certificates to trust for the server"),
+        )
+        .arg(
+            Arg::new("client-cert")
+                .long("client-cert")
+                .value_name("FILE")
+                .value_parser(clap::value_parser!(PathBuf))
+                .help("Path to the client’s certificate (PEM) for mTLS"),
+        )
+        .arg(
+            Arg::new("client-key")
+                .long("client-key")
+                .value_name("FILE")
+                .value_parser(clap::value_parser!(PathBuf))
+                .requires("client-cert")
+                .help("Path to the client’s private key (PEM) for mTLS"),
+        )
+        .arg(
+            Arg::new("trust-system-certs")
+                .long("trust-system-certs")
+                .action(clap::ArgAction::SetTrue)
+                .conflicts_with("no-trust-system-certs")
+                .help("Use system root certificates (default)"),
+        )
+        .arg(
+            Arg::new("no-trust-system-certs")
+                .long("no-trust-system-certs")
+                .alias("empty-trust-store")
+                .action(clap::ArgAction::SetTrue)
+                .conflicts_with("trust-system-certs")
+                .help("Use empty trust store (requires --trust-server-cert)"),
+        )
+        .get_matches();
+    //FIXME: check args./aliases
+
+    //FIXME: see if this 'if' makes sense:
+    // Validate no-trust-system-certs
+    if matches.get_flag("no-trust-system-certs") && !matches.contains_id("trust-server-cert") {
+        eprintln!("--no-trust-system-certs requires --trust-server-cert");
+        std::process::exit(1);
+    }
+
+//    // ### Parse command-line arguments for --cert into a PathBuf
+//    let args: Vec<String> = std::env::args().collect();
+//    let cert_path: Option<PathBuf> = args.iter()
+//        .position(|arg| arg == "--cert")
+//        .map(|i| args.get(i + 1).expect("Missing certificate path after --cert"))
+//        .map(|s| PathBuf::from(s));
+//    // Connect to the database with optional cert
+//    let ctx = connect_to_db(cert_path);
+
+    // Extract arguments
+    let trust_server_cert = matches.get_one::<PathBuf>("trust-server-cert").cloned();
+    let client_cert = matches.get_one::<PathBuf>("client-cert").cloned();
+    let client_key = matches.get_one::<PathBuf>("client-key").cloned();
+    let trust_system_certs = if matches.get_flag("no-trust-system-certs") {
+        Some(false)
+    } else if matches.get_flag("trust-system-certs") {
+        Some(true)
+    } else {
+        None // None here but deeper this means 'true', in db_connection.rs
+    };
+
     // Connect to the database
-    let ctx = connect_to_db();
+    let ctx = connect_to_db(trust_server_cert, client_cert, client_key, trust_system_certs);
 
     // Register callbacks to run in response to database events.
     register_callbacks(&ctx);
@@ -22,18 +97,36 @@ fn main() {
 
     // Handle CLI input
     user_input_loop(&ctx);
+    //gracefully exit, if Ctrl+D was pressed (Ctrl+Z on Windows)
+    let _=ctx.disconnect();
+    const TIMEOUT:u64=3;
+    let duration = std::time::Duration::from_secs(TIMEOUT);
+    std::thread::sleep(duration);
+    //not reached:
+    println!("Failed to disconnect from the database! Waited {} seconds.", TIMEOUT);
 }
 
 // ## Connect to the database
 
-/// The URI of the SpacetimeDB instance hosting our chat module.
-const HOST: &str = "http://localhost:3000";
+/// The host and port, without scheme, of the SpacetimeDB instance hosting our chat module.
+const HOST_PORT: &str = "localhost:3000";
 
 /// The module name we chose when we published our module.
 const DB_NAME: &str = "quickstart-chat";
 
 /// Load credentials from a file and connect to the database.
-fn connect_to_db() -> DbConnection {
+fn connect_to_db(
+    cert_path: Option<PathBuf>,
+    client_cert: Option<PathBuf>,
+    client_key: Option<PathBuf>,
+    trust_system_certs: Option<impl Into<bool>>
+    ) -> DbConnection {
+    // ### Construct URI with scheme based on cert presence
+    let expects_https=cert_path.is_some() || client_cert.is_some() || client_key.is_some();
+    let scheme = if expects_https { "https" } else { "http" };
+    let uri = format!("{}://{}", scheme, HOST_PORT);
+
+//    let mut builder=
     DbConnection::builder()
         // Register our `on_connect` callback, which will save our auth token.
         .on_connect(on_connected)
@@ -48,7 +141,23 @@ fn connect_to_db() -> DbConnection {
         // Set the database name we chose when we called `spacetime publish`.
         .with_module_name(DB_NAME)
         // Set the URI of the SpacetimeDB host that's running our database.
-        .with_uri(HOST)
+        .with_uri(&uri)
+//;    // ### Add trusted cert if provided
+//    if let Some(cert_path) = cert_path {
+//    //XXX: we don't wanna do this(that's why it's accepting Option instead):
+//        builder = builder.with_trusted_cert(cert_path);
+//    }
+//     // Finalize configuration and connect!
+//     builder.build()
+//         .expect("Failed to connect")
+        // ### Add trusted cert if provided
+        .with_trusted_cert(cert_path)
+        // Add client identity (TLS)
+        .with_client_cert(client_cert)
+        .with_client_key(client_key)
+        // Configure trust store
+        .with_trust_system_certs(trust_system_certs)
+
         // Finalize configuration and connect!
         .build()
         .expect("Failed to connect")

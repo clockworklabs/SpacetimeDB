@@ -6,6 +6,7 @@ use crate::util::UNSTABLE_WARNING;
 use anyhow::Context;
 use clap::{Arg, ArgAction, ArgMatches};
 use spacetimedb_lib::sats;
+use std::path::{Path, PathBuf};
 
 pub fn cli() -> clap::Command {
     clap::Command::new("describe")
@@ -40,6 +41,12 @@ pub fn cli() -> clap::Command {
                      give human-readable output.",
                 ),
         )
+        //.arg(common_args::cert())
+        .arg(common_args::trust_server_cert())
+        .arg(common_args::client_cert())
+        .arg(common_args::client_key())
+        .arg(common_args::trust_system_root_store())
+        .arg(common_args::no_trust_system_root_store())
         .arg(common_args::anonymous())
         .arg(common_args::server().help("The nickname, host name or URL of the server hosting the database"))
         .arg(common_args::yes())
@@ -59,8 +66,23 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
     let entity_type = args.get_one::<EntityType>("entity_type");
     let entity = entity_type.zip(entity_name);
     let json = args.get_flag("json");
+    // TLS arguments
+    let trust_server_cert_path: Option<&Path> = args.get_one::<PathBuf>("trust-server-cert").map(|p| p.as_path());
+    let client_cert_path: Option<&Path> = args.get_one::<PathBuf>("client-cert").map(|p| p.as_path());
+    let client_key_path: Option<&Path> = args.get_one::<PathBuf>("client-key").map(|p| p.as_path());
 
-    let conn = parse_req(config, args).await?;
+    // for clients, default to true unless --no-trust-system-root-store
+    // because this is used to verify the received server cert which can be signed by public CA
+    // thus using system's trust/root store, by default, makes sense.
+    let trust_system = !args.get_flag("no-trust-system-root-store");
+
+
+    let conn = parse_req(config, args,
+        trust_server_cert_path,
+        client_cert_path,
+        client_key_path,
+        trust_system,
+        ).await?;
     let api = ClientApi::new(conn);
 
     let module_def = api.module_def().await?;

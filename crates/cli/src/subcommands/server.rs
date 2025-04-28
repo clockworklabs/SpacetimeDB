@@ -1,6 +1,11 @@
+//use spacetimedb_lib::map_request_error;//this must be at crate level! else func call within macro will fail at compile time.
+//use crate::util::map_request_error;// it's a reimport of spacetimedb_lib::map_request_error
+
 use crate::{
     common_args,
-    util::{host_or_url_to_host_and_protocol, spacetime_server_fingerprint, y_or_n, UNSTABLE_WARNING, VALID_PROTOCOLS},
+    util::{host_or_url_to_host_and_protocol, spacetime_server_fingerprint, y_or_n, UNSTABLE_WARNING, VALID_PROTOCOLS, build_client,
+    map_request_error, // this is macro & fn both
+    },
     Config,
 };
 use anyhow::Context;
@@ -10,6 +15,7 @@ use tabled::{
     settings::{object::Columns, Alignment, Modify, Style},
     Table, Tabled,
 };
+use std::path::{Path, PathBuf};
 
 pub fn cli() -> Command {
     Command::new("server")
@@ -53,8 +59,13 @@ fn get_subcommands() -> Vec<Command> {
                     .help("Skip fingerprinting the server")
                     .long("no-fingerprint")
                     .action(ArgAction::SetTrue),
-            ),
-        Command::new("remove")
+            )
+        .arg(common_args::trust_server_cert())
+        .arg(common_args::client_cert())
+        .arg(common_args::client_key())
+        .arg(common_args::trust_system_root_store())
+        .arg(common_args::no_trust_system_root_store())
+        ,Command::new("remove")
             .about("Remove a saved server configuration")
             .arg(
                 Arg::new("server")
@@ -69,6 +80,11 @@ fn get_subcommands() -> Vec<Command> {
                     .required(true)
                     .help("The nickname, host name or URL of the server"),
             )
+        .arg(common_args::trust_server_cert())
+        .arg(common_args::client_cert())
+        .arg(common_args::client_key())
+        .arg(common_args::trust_system_root_store())
+        .arg(common_args::no_trust_system_root_store())
             .arg(common_args::yes()),
         Command::new("ping")
             .about("Checks to see if a SpacetimeDB host is online")
@@ -76,8 +92,13 @@ fn get_subcommands() -> Vec<Command> {
                 Arg::new("server")
                     .required(true)
                     .help("The nickname, host name or URL of the server to ping"),
-            ),
-        Command::new("edit")
+            )
+        .arg(common_args::trust_server_cert())
+        .arg(common_args::client_cert())
+        .arg(common_args::client_key())
+        .arg(common_args::trust_system_root_store())
+        .arg(common_args::no_trust_system_root_store())
+        ,Command::new("edit")
             .about("Update a saved server's nickname, host name or protocol")
             .arg(
                 Arg::new("server")
@@ -100,6 +121,11 @@ fn get_subcommands() -> Vec<Command> {
                     .long("no-fingerprint")
                     .action(ArgAction::SetTrue),
             )
+        .arg(common_args::trust_server_cert())
+        .arg(common_args::client_cert())
+        .arg(common_args::client_key())
+        .arg(common_args::trust_system_root_store())
+        .arg(common_args::no_trust_system_root_store())
             .arg(common_args::yes()),
         Command::new("clear")
             .about("Deletes all data from all local databases")
@@ -195,6 +221,24 @@ pub async fn exec_add(mut config: Config, args: &ArgMatches) -> Result<(), anyho
     let nickname = args.get_one::<String>("name");
     let default = *args.get_one::<bool>("default").unwrap();
     let no_fingerprint = *args.get_one::<bool>("no-fingerprint").unwrap();
+    // TLS arguments
+    let trust_server_cert_path: Option<&Path> = args.get_one::<PathBuf>("trust-server-cert").map(|p| p.as_path());
+    let client_cert_path: Option<&Path> = args.get_one::<PathBuf>("client-cert").map(|p| p.as_path());
+    let client_key_path: Option<&Path> = args.get_one::<PathBuf>("client-key").map(|p| p.as_path());
+
+    // for clients, default to true unless --no-trust-system-root-store
+    // because this is used to verify the received server cert which can be signed by public CA
+    // thus using system's trust/root store, by default, makes sense.
+    let trust_system = !args.get_flag("no-trust-system-root-store");
+
+//    if no_fingerprint {
+//        if trust_server_cert_path.is_some() {
+//            eprintln!("WARNING: --cert ignored while using --no-fingerprint");
+//        }
+//        if client_cert_path.is_some() {
+//            eprintln!("WARNING:  ignored while using --no-fingerprint");
+//        }
+//    }
 
     let (host, protocol) = host_or_url_to_host_and_protocol(url);
     let protocol = protocol.ok_or_else(|| anyhow::anyhow!("Invalid url: {}", url))?;
@@ -204,14 +248,36 @@ pub async fn exec_add(mut config: Config, args: &ArgMatches) -> Result<(), anyho
     let fingerprint = if no_fingerprint {
         None
     } else {
-        let fingerprint = spacetime_server_fingerprint(url).await.with_context(|| {
+        let fingerprint = //map_request_error!(
+            spacetime_server_fingerprint(
+            &url.to_string(),
+            trust_server_cert_path,
+            client_cert_path,
+            client_key_path,
+            trust_system,
+        ).await.with_context(|| {
             format!(
                 "Unable to retrieve fingerprint for server: {url}
 Is the server running?
 Add a server without retrieving its fingerprint with:
-\tspacetime server add --url {url} --no-fingerprint",
+\tspacetime server add --url {url} --no-fingerprint
+or provide a trusted --cert."
             )
-        })?;
+        })
+//        ,url.to_string(), client_cert_path, client_key_path)
+        ?;
+        //?;
+//        .map_err(|e| spacetimedb_lib::map_request_error(e, &url.to_string(), client_cert_path.as_deref(), client_key_path.as_deref()))?;
+//        .with_context(|e| {
+//            spacetimedb_lib::map_request_error(
+//                //anyhow::anyhow!("request failed"),
+//                e,
+//                &url.to_string(),
+//                client_cert_path.as_deref(),
+//                client_key_path.as_deref(),
+//            )
+//                .to_string()
+//        })?;
         println!("For server {}, got fingerprint:\n{}", url, fingerprint);
         Some(fingerprint)
     };
@@ -224,7 +290,6 @@ Add a server without retrieving its fingerprint with:
 
     println!("Host: {}", host);
     println!("Protocol: {}", protocol);
-
     config.save();
 
     Ok(())
@@ -240,25 +305,62 @@ pub async fn exec_remove(mut config: Config, args: &ArgMatches) -> Result<(), an
     Ok(())
 }
 
-async fn update_server_fingerprint(config: &mut Config, server: Option<&str>) -> Result<bool, anyhow::Error> {
-    let url = config.get_host_url(server)?;
-    let nick_or_host = config.server_nick_or_host(server)?;
-    let new_fing = spacetime_server_fingerprint(&url)
-        .await
-        .context("Error fetching server fingerprint")?;
-    if let Some(saved_fing) = config.server_fingerprint(server)? {
+async fn update_server_fingerprint(
+    config: &mut Config,
+    server: Option<&str>,
+    protocol: Option<&str>,
+    trust_server_cert_path: Option<&Path>,
+    client_cert_path: Option<&Path>,
+    client_key_path: Option<&Path>,
+    trust_system: bool,
+) -> Result<bool, anyhow::Error> {
+    let (host, proto, nick_or_host) = match server {
+        Some(s) => {
+            let (h, p) = host_or_url_to_host_and_protocol(s);
+            if p.is_none() && !s.contains(':') && !s.contains('/') {
+                // Nickname case: fetch URL from config
+                let url = config.get_host_url(Some(s))?;
+                let (h_url, p_url) = host_or_url_to_host_and_protocol(&url);
+                let p_url = p_url.ok_or_else(|| anyhow::anyhow!("Server {} has no protocol", s))?;
+                (h_url.to_string(), p_url.to_string(), s.to_string())
+            } else {
+                // Host or URL case
+                let p = p.or(protocol).ok_or_else(|| {
+                    anyhow::anyhow!("Protocol not specified and server {} is ambiguous", h)
+                })?;
+                (h.to_string(), p.to_string(), s.to_string())
+            }
+        }
+        None => {
+            let url = config.get_host_url(None)?;
+            let (h, p) = host_or_url_to_host_and_protocol(&url);
+            let p = p.ok_or_else(|| anyhow::anyhow!("Default server has no protocol"))?;
+            let nick = config.server_nick_or_host(None)?.to_string();
+            (h.to_string(), p.to_string(), nick)
+        }
+    };
+    let url = format!("{}://{}", proto, host);
+    let new_fing = //map_request_error!(
+        spacetime_server_fingerprint(
+            &url,
+            trust_server_cert_path,
+            client_cert_path,
+            client_key_path,
+            trust_system,
+        ).await
+        .context("fetching server fingerprint")
+//        , url, client_cert_path, client_key_path)
+        ?;
+    if let Some(saved_fing) = config.server_fingerprint(Some(&host), Some(&proto))? {
         if saved_fing == new_fing {
             println!("Fingerprint is unchanged for server {}:\n{}", nick_or_host, saved_fing);
-
             Ok(false)
         } else {
             println!(
                 "Fingerprint has changed for server {}.\nWas:\n{}\nNew:\n{}",
                 nick_or_host, saved_fing, new_fing
             );
-
-            config.set_server_fingerprint(server, new_fing)?;
-
+            config.set_server_fingerprint(Some(&host), new_fing)?;
             Ok(true)
         }
     } else {
@@ -266,9 +368,7 @@ async fn update_server_fingerprint(config: &mut Config, server: Option<&str>) ->
             "No saved fingerprint for server {}. New fingerprint:\n{}",
             nick_or_host, new_fing
         );
-
-        config.set_server_fingerprint(server, new_fing)?;
-
+        config.set_server_fingerprint(Some(&host), new_fing)?;
         Ok(true)
     }
 }
@@ -276,8 +376,32 @@ async fn update_server_fingerprint(config: &mut Config, server: Option<&str>) ->
 pub async fn exec_fingerprint(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let server = args.get_one::<String>("server").unwrap().as_str();
     let force = args.get_flag("force");
+    // TLS arguments
+    let trust_server_cert_path: Option<&Path> = args.get_one::<PathBuf>("trust-server-cert").map(|p| p.as_path());
+    let client_cert_path: Option<&Path> = args.get_one::<PathBuf>("client-cert").map(|p| p.as_path());
+    let client_key_path: Option<&Path> = args.get_one::<PathBuf>("client-key").map(|p| p.as_path());
 
-    if update_server_fingerprint(&mut config, Some(server)).await? {
+    // for clients, default to true unless --no-trust-system-root-store
+    // because this is used to verify the received server cert which can be signed by public CA
+    // thus using system's trust/root store, by default, makes sense.
+    let trust_system = !args.get_flag("no-trust-system-root-store");
+
+    let url = config.get_host_url(Some(server))?;
+
+    let (host, protocol) = host_or_url_to_host_and_protocol(server);
+    println!("!!! {:#?}\n{:#?}\n{:#?}", host, server, url);
+    //if map_request_error!(
+    if update_server_fingerprint(
+        &mut config,
+        Some(host),
+        protocol,
+        trust_server_cert_path,
+        client_cert_path,
+        client_key_path,
+        trust_system,
+    ).await? {
+        //.map_err(|e| spacetimedb_lib::map_request_error(e, &url, client_cert_path.as_deref(), client_key_path.as_deref()))? {
+     //   ,url, client_cert_path, client_key_path)? { 
         if !y_or_n(force, "Continue?")? {
             anyhow::bail!("Aborted");
         }
@@ -288,12 +412,39 @@ pub async fn exec_fingerprint(mut config: Config, args: &ArgMatches) -> Result<(
     Ok(())
 }
 
+
+
 pub async fn exec_ping(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let server = args.get_one::<String>("server").unwrap().as_str();
     let url = config.get_host_url(Some(server))?;
+    // TLS arguments
+    let trust_server_cert_path: Option<&Path> = args.get_one::<PathBuf>("trust-server-cert").map(|p| p.as_path());
+    let client_cert_path: Option<&Path> = args.get_one::<PathBuf>("client-cert").map(|p| p.as_path());
+    let client_key_path: Option<&Path> = args.get_one::<PathBuf>("client-key").map(|p| p.as_path());
 
-    let builder = reqwest::Client::new().get(format!("{}/v1/ping", url).as_str());
-    let response = builder.send().await?;
+    // for clients, default to true unless --no-trust-system-root-store
+    // because this is used to verify the received server cert which can be signed by public CA
+    // thus using system's trust/root store, by default, makes sense.
+    let trust_system = !args.get_flag("no-trust-system-root-store");
+
+//    use spacetimedb_lib;
+//    use spacetimedb_lib as u;
+//    let client = spacetimedb_lib::map_request_error2!(
+    let client = map_request_error!(
+        build_client(
+            trust_server_cert_path,
+            client_cert_path,
+            client_key_path,
+            trust_system,
+        ).await//?;
+    //.map_err(|e| spacetimedb_lib::map_request_error(e, &url, client_cert_path.as_deref(), client_key_path.as_deref()))?;
+    //.map_request_error!(
+    ,url, client_cert_path, client_key_path)?;
+    //)?;
+    let builder = client.get(format!("{}/v1/ping", url).as_str());
+    let response = map_request_error!(builder.send().await
+        ,url, client_cert_path, client_key_path)?;
+//        .map_err(|e| spacetimedb_lib::map_request_error(e, &url, client_cert_path.as_deref(), client_key_path.as_deref()))?;
 
     match response.status() {
         reqwest::StatusCode::OK => {
@@ -342,6 +493,7 @@ pub async fn exec_edit(mut config: Config, args: &ArgMatches) -> Result<(), anyh
         println!("Changing host from {} to {}", old_host, new_host);
     }
     if let (Some(new_proto), Some(old_proto)) = (new_proto, old_proto) {
+        //FIXME: Changing protocol from https to https
         println!("Changing protocol from {} to {}", old_proto, new_proto);
     }
 
@@ -351,7 +503,26 @@ pub async fn exec_edit(mut config: Config, args: &ArgMatches) -> Result<(), anyh
         if no_fingerprint {
             config.delete_server_fingerprint(Some(&new_url))?;
         } else {
-            update_server_fingerprint(&mut config, Some(&new_url)).await?;
+            // TLS arguments
+            let trust_server_cert_path: Option<&Path> = args.get_one::<PathBuf>("trust-server-cert").map(|p| p.as_path());
+            let client_cert_path: Option<&Path> = args.get_one::<PathBuf>("client-cert").map(|p| p.as_path());
+            let client_key_path: Option<&Path> = args.get_one::<PathBuf>("client-key").map(|p| p.as_path());
+
+            // for clients, default to true unless --no-trust-system-root-store
+            // because this is used to verify the received server cert which can be signed by public CA
+            // thus using system's trust/root store, by default, makes sense.
+            let trust_system = !args.get_flag("no-trust-system-root-store");
+            //map_request_error!(
+            update_server_fingerprint(
+                &mut config,
+                Some(&new_url),
+                new_proto,
+                trust_server_cert_path,
+                client_cert_path,
+                client_key_path,
+                trust_system,
+            ).await?;
+             //   ,new_url, client_cert_path, client_key_path)?;
         }
     }
 

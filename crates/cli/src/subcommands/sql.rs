@@ -1,16 +1,18 @@
 use std::fmt;
 use std::fmt::Write;
 use std::time::{Duration, Instant};
+use std::path::Path;
 
 use crate::api::{from_json_seed, ClientApi, Connection, SqlStmtResult, StmtStats};
 use crate::common_args;
 use crate::config::Config;
-use crate::util::{database_identity, get_auth_header, ResponseExt, UNSTABLE_WARNING};
+use crate::util::{self, database_identity, get_auth_header, ResponseExt, UNSTABLE_WARNING, map_request_error};
 use anyhow::Context;
 use clap::{Arg, ArgAction, ArgMatches};
 use reqwest::RequestBuilder;
 use spacetimedb_lib::de::serde::SeedWrapper;
 use spacetimedb_lib::sats::{satn, ProductType, ProductValue, Typespace};
+use std::path::PathBuf;
 
 pub fn cli() -> clap::Command {
     clap::Command::new("sql")
@@ -37,20 +39,60 @@ pub fn cli() -> clap::Command {
         .arg(common_args::anonymous())
         .arg(common_args::server().help("The nickname, host name or URL of the server hosting the database"))
         .arg(common_args::yes())
+        //.arg(common_args::cert())
+        .arg(common_args::trust_server_cert())
+        .arg(common_args::client_cert())
+        .arg(common_args::client_key())
+        .arg(common_args::trust_system_root_store())
+        .arg(common_args::no_trust_system_root_store())
 }
 
-pub(crate) async fn parse_req(mut config: Config, args: &ArgMatches) -> Result<Connection, anyhow::Error> {
+pub(crate) async fn parse_req(
+    mut config: Config,
+    args: &ArgMatches,
+    trust_server_cert_path: Option<&Path>,
+    client_cert_path: Option<&Path>,
+    client_key_path: Option<&Path>,
+    trust_system: bool,
+    ) -> Result<Connection, anyhow::Error> {
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
     let force = args.get_flag("force");
     let database_name_or_identity = args.get_one::<String>("database").unwrap();
     let anon_identity = args.get_flag("anon_identity");
 
-    Ok(Connection {
-        host: config.get_host_url(server)?,
-        auth_header: get_auth_header(&mut config, anon_identity, server, !force).await?,
-        database_identity: database_identity(&config, database_name_or_identity, server).await?,
+    let host=config.get_host_url(server)?;
+    let client = map_request_error!(
+        util::build_client(
+            trust_server_cert_path,
+            client_cert_path,
+            client_key_path,
+            trust_system,
+        ).await
+        , host, client_cert_path, client_key_path)?;
+    //    ?;
+
+//    let con=
+    Ok(
+    Connection {
+        host: host.clone(), 
+        auth_header: 
+            map_request_error!(
+                get_auth_header(&mut config, anon_identity, server, !force).await
+                , host, client_cert_path, client_key_path)
+                ?,
+        database_identity: 
+            map_request_error!(
+                database_identity(&config, database_name_or_identity, server, &client).await
+                , host, client_cert_path, client_key_path)
+                ?,
         database: database_name_or_identity.to_string(),
+        trust_server_cert_path: trust_server_cert_path.map(PathBuf::from),
+        client_cert_path: client_cert_path.map(PathBuf::from),
+        client_key_path: client_key_path.map(PathBuf::from),
+        trust_system,
     })
+//        )?
+//    Ok(con)
 }
 
 struct StmtResult {
@@ -171,15 +213,29 @@ fn stmt_result_to_table(stmt_result: &SqlStmtResult) -> anyhow::Result<(StmtStat
 
 pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     eprintln!("{}\n", UNSTABLE_WARNING);
+    // TLS arguments
+    let trust_server_cert_path: Option<&Path> = args.get_one::<PathBuf>("trust-server-cert").map(|p| p.as_path());
+    let client_cert_path: Option<&Path> = args.get_one::<PathBuf>("client-cert").map(|p| p.as_path());
+    let client_key_path: Option<&Path> = args.get_one::<PathBuf>("client-key").map(|p| p.as_path());
+
+    // for clients, default to true unless --no-trust-system-root-store
+    // because this is used to verify the received server cert which can be signed by public CA
+    // thus using system's trust/root store, by default, makes sense.
+    let trust_system = !args.get_flag("no-trust-system-root-store");
+
+    let con = parse_req(config, args,
+        trust_server_cert_path,
+        client_cert_path,
+        client_key_path,
+        trust_system,
+    ).await?;
+
     let interactive = args.get_one::<bool>("interactive").unwrap_or(&false);
     if *interactive {
-        let con = parse_req(config, args).await?;
-
         crate::repl::exec(con).await?;
     } else {
         let query = args.get_one::<String>("query").unwrap();
 
-        let con = parse_req(config, args).await?;
         let api = ClientApi::new(con);
 
         run_sql(api.sql(), query, false).await?;
