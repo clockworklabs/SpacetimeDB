@@ -37,7 +37,7 @@ use std::time::Duration;
 /// as is the case for incremental joins.
 /// And we want to associate a hash with the entire unit of execution,
 /// rather than an individual plan.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct QueryHash {
     data: [u8; 32],
 }
@@ -49,7 +49,14 @@ impl From<QueryHash> for u256 {
 }
 
 impl QueryHash {
+    /// The zero value of a QueryHash
     pub const NONE: Self = Self { data: [0; 32] };
+
+    /// The min value of a QueryHash
+    pub const MIN: Self = Self::NONE;
+
+    /// The max value of a QueryHash
+    pub const MAX: Self = Self { data: [0xFFu8; 32] };
 
     pub fn from_bytes(bytes: &[u8]) -> Self {
         Self {
@@ -57,8 +64,27 @@ impl QueryHash {
         }
     }
 
-    pub fn from_string(str: &str) -> Self {
+    /// Generate a hash from a query string
+    pub fn from_string(str: &str, identity: Identity, has_param: bool) -> Self {
+        if has_param {
+            return Self::from_string_and_identity(str, identity);
+        }
         Self::from_bytes(str.as_bytes())
+    }
+
+    /// If a query is parameterized with `:sender`, we must use the value of `:sender`,
+    /// i.e. the identity of the caller, when hashing the query text,
+    /// so that two identical queries from different clients aren't hashed to the same value.
+    ///
+    /// TODO: Once we have RLS, this hash must computed after name resolution.
+    /// It can no longer be computed from the source text.
+    pub fn from_string_and_identity(str: &str, identity: Identity) -> Self {
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(str.as_bytes());
+        hasher.update(&identity.to_byte_array());
+        Self {
+            data: hasher.finalize().into(),
+        }
     }
 }
 

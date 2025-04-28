@@ -154,8 +154,10 @@ export class {table_handle} {{
         });
         writeln!(out, "}}");
 
-        for (unique_field_ident, unique_field_type_use) in iter_unique_cols(&schema, product_def) {
-            let unique_field_name = unique_field_ident.deref().to_case(Case::Snake);
+        for (unique_field_ident, unique_field_type_use) in
+            iter_unique_cols(module.typespace_for_generate(), &schema, product_def)
+        {
+            let unique_field_name = unique_field_ident.deref().to_case(Case::Camel);
             let unique_field_name_pascalcase = unique_field_name.to_case(Case::Pascal);
 
             let unique_constraint = table_name_pascalcase.clone() + &unique_field_name_pascalcase + "Unique";
@@ -323,7 +325,7 @@ removeOnUpdate = (cb: (ctx: EventContext, onRow: {row_type}, newRow: {row_type})
             writeln!(out, "tableName: \"{}\",", table.name);
             writeln!(out, "rowType: {row_type}.getTypeScriptAlgebraicType(),");
             if let Some(pk) = schema.pk() {
-                writeln!(out, "primaryKey: \"{}\",", pk.col_name);
+                writeln!(out, "primaryKey: \"{}\",", pk.col_name.to_string().to_case(Case::Camel));
             }
             out.dedent(1);
             writeln!(out, "}},");
@@ -954,6 +956,29 @@ pub fn type_name(module: &ModuleDef, ty: &AlgebraicTypeUse) -> String {
     s
 }
 
+// This should return true if we should wrap the type in parentheses when it is the element type of
+// an array. This is needed if the type has a `|` in it, e.g. `Option<T>` or `Foo | Bar`, since
+// without parens, `Foo | Bar[]` would be parsed as `Foo | (Bar[])`.
+fn needs_parens_within_array(ty: &AlgebraicTypeUse) -> bool {
+    match ty {
+        AlgebraicTypeUse::Unit
+        | AlgebraicTypeUse::Never
+        | AlgebraicTypeUse::Identity
+        | AlgebraicTypeUse::ConnectionId
+        | AlgebraicTypeUse::Timestamp
+        | AlgebraicTypeUse::TimeDuration
+        | AlgebraicTypeUse::Primitive(_)
+        | AlgebraicTypeUse::Array(_)
+        | AlgebraicTypeUse::Ref(_) // We use the type name for these.
+        | AlgebraicTypeUse::String => {
+            false
+        }
+        AlgebraicTypeUse::ScheduleAt | AlgebraicTypeUse::Option(_) => {
+            true
+        }
+    }
+}
+
 pub fn write_type<W: Write>(
     module: &ModuleDef,
     out: &mut W,
@@ -997,7 +1022,15 @@ pub fn write_type<W: Write>(
             if matches!(&**elem_ty, AlgebraicTypeUse::Primitive(PrimitiveType::U8)) {
                 return write!(out, "Uint8Array");
             }
+            let needs_parens = needs_parens_within_array(elem_ty);
+            // We wrap the inner type in parentheses to avoid ambiguity with the [] binding.
+            if needs_parens {
+                write!(out, "(")?;
+            }
             write_type(module, out, elem_ty, ref_prefix)?;
+            if needs_parens {
+                write!(out, ")")?;
+            }
             write!(out, "[]")?;
         }
         AlgebraicTypeUse::Ref(r) => {

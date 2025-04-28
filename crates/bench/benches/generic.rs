@@ -4,7 +4,6 @@ use criterion::{
     Bencher, BenchmarkGroup, Criterion,
 };
 use lazy_static::lazy_static;
-use mimalloc::MiMalloc;
 use spacetimedb_bench::{
     database::BenchDatabase,
     schemas::{create_sequential, u32_u64_str, u32_u64_u64, BenchTable, IndexStrategy, RandomTable},
@@ -14,8 +13,16 @@ use spacetimedb_lib::sats::AlgebraicType;
 use spacetimedb_primitives::ColId;
 use spacetimedb_testing::modules::{Csharp, Rust};
 
+#[cfg(target_env = "msvc")]
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
+
+#[cfg(not(target_env = "msvc"))]
+use tikv_jemallocator::Jemalloc;
+
+#[cfg(not(target_env = "msvc"))]
+#[global_allocator]
+static GLOBAL: Jemalloc = Jemalloc;
 
 lazy_static! {
     static ref RUN_ONE_MILLION: bool = std::env::var("RUN_ONE_MILLION").is_ok();

@@ -6,10 +6,17 @@ public interface ITypeRegistrar
 }
 
 [SpacetimeDB.Type]
-public partial struct AggregateElement(string? name, AlgebraicType algebraicType)
+public partial struct AggregateElement
 {
-    public string? Name = name;
-    public AlgebraicType AlgebraicType = algebraicType;
+    public string? Name;
+
+    public AlgebraicType AlgebraicType;
+
+    public AggregateElement(string name, AlgebraicType algebraicType)
+    {
+        Name = name;
+        AlgebraicType = algebraicType;
+    }
 }
 
 [SpacetimeDB.Type]

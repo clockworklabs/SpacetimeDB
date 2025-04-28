@@ -122,9 +122,9 @@ fn check_for_issues(artifact: &Path) -> anyhow::Result<()> {
              the `getrandom` crate for random number generation. getrandom is the default\n\
              randomness source for the `rand` crate, and is used when you call\n\
              `rand::random()` or `rand::thread_rng()`. If this is you, you should instead\n\
-             use `spacetimedb::random()` or `spacetimedb::rng()`. If this is a crate in your\n\
+             use `ctx.rng()` on a `ReducerContext`. If this is a crate in your\n\
              tree, you should try to see if the crate provides a way to pass in a custom\n\
-             `Rng` type, and pass it the rng returned from `spacetimedb::rng()`."
+             `Rng` type, and pass it the rng returned from `ctx.rng()`."
         )
     }
     Ok(())

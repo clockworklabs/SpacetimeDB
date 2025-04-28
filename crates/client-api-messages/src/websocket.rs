@@ -887,7 +887,7 @@ pub fn gzip_compress(bytes: &[u8], out: &mut Vec<u8>) {
 
 pub fn gzip_decompress(bytes: &[u8]) -> Result<Vec<u8>, io::Error> {
     let mut decompressed = Vec::new();
-    let _ = flate2::read::GzDecoder::new(bytes).read(&mut decompressed)?;
+    let _ = flate2::read::GzDecoder::new(bytes).read_to_end(&mut decompressed)?;
     Ok(decompressed)
 }
 

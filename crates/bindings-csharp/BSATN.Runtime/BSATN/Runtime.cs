@@ -452,3 +452,156 @@ public readonly struct Unsupported<T> : IReadWrite<T>
 
     public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) => throw Exception;
 }
+
+/// <summary>
+/// Support methods for converting <c>[SpacetimeDB.Type]</c>s to strings.
+/// </summary>
+public static class StringUtil
+{
+    /// <summary>
+    /// Convert an arbitrary object to a string:
+    /// - Printing <c>null</c> instead of empty string for null objects
+    /// - Quoting strings
+    /// - Printing list contents as <c>$"[ {list[0].ToString()} {list[1].ToString()} {...} {list[n-1].ToString()} ]"</c>,
+    ///     printing at most 16 elements of the list, with an ellipsis in the middle if there
+    ///     are more. (This is to prevent crashing Unity if you accidentally print a large array, say.)
+    ///
+    /// This is NOT a deep pretty-printer: it only pretty-prints the object given, relying on <c>ToString()</c>
+    /// to print sub-objects. However, objects marked with <c>[SpacetimeDB.Type]</c> use this method as part of
+    /// generated code to implement deep pretty-printing in their <c>ToString()</c> implementations.
+    /// </summary>
+    /// <param name="obj"></param>
+    /// <returns></returns>
+    public static string GenericToString(object? obj)
+    {
+        if (obj == null)
+        {
+            return "null";
+        }
+
+        var str = obj as string;
+        if (str != null)
+        {
+            return ToStringLiteral(str);
+        }
+
+        // Casting to IList means if a user implements IList for some
+        // [SpacetimeDB.Type], it will get printed as a list.
+        // Shrug.
+        var list = obj as System.Collections.IList;
+        if (list != null)
+        {
+            return GenericListToString(list);
+        }
+
+        return obj.ToString()!;
+    }
+
+    internal static string ToStringLiteral(string input)
+    {
+        var literal = new StringBuilder(input.Length + 2);
+        literal.Append('\"');
+        foreach (var c in input)
+        {
+            switch (c)
+            {
+                case '\"':
+                    literal.Append("\\\"");
+                    break;
+                case '\\':
+                    literal.Append(@"\\");
+                    break;
+                case '\0':
+                    literal.Append(@"\0");
+                    break;
+                case '\a':
+                    literal.Append(@"\a");
+                    break;
+                case '\b':
+                    literal.Append(@"\b");
+                    break;
+                case '\f':
+                    literal.Append(@"\f");
+                    break;
+                case '\n':
+                    literal.Append(@"\n");
+                    break;
+                case '\r':
+                    literal.Append(@"\r");
+                    break;
+                case '\t':
+                    literal.Append(@"\t");
+                    break;
+                case '\v':
+                    literal.Append(@"\v");
+                    break;
+                default:
+                    if (c is >= (char)0x20 and <= (char)0x7e)
+                    {
+                        // ASCII printable character
+                        literal.Append(c);
+                    }
+                    else if (
+                        Char.GetUnicodeCategory(c) == System.Globalization.UnicodeCategory.Control
+                    )
+                    {
+                        // As UTF16 escaped character
+                        literal.Append(@"\u");
+                        literal.Append(((int)c).ToString("x4"));
+                    }
+                    else
+                    {
+                        // Something else
+                        literal.Append(c);
+                    }
+                    break;
+            }
+        }
+        literal.Append('"');
+        return literal.ToString();
+    }
+
+    internal static string GenericListToString(System.Collections.IList list)
+    {
+        StringBuilder result = new();
+        result.Append("[ ");
+
+        // avoid debug-dumping huge lists.
+        if (list.Count <= 16)
+        {
+            for (var i = 0; i < list.Count; i++)
+            {
+                result.Append(GenericToString(list[i]));
+                if (i < list.Count - 1)
+                {
+                    result.Append(", ");
+                }
+            }
+        }
+        else
+        {
+            for (var i = 0; i < 8; i++)
+            {
+                result.Append(GenericToString(list[i]));
+                result.Append(", ");
+            }
+            result.Append("..., ");
+            for (var i = list.Count - 8; i < list.Count; i++)
+            {
+                result.Append(GenericToString(list[i]));
+                if (i < list.Count - 1)
+                {
+                    result.Append(", ");
+                }
+            }
+        }
+
+        if (list.Count > 0)
+        {
+            result.Append(' ');
+        }
+        result.Append(']');
+
+        return result.ToString();
+    }
+}

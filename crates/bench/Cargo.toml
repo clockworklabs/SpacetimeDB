@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 license-file = "LICENSE"
 description = "Bench library/utility for SpacetimeDB"
+publish = false
 
 [[bench]]
 name = "special"
@@ -72,6 +73,10 @@ tokio.workspace = true
 tracing-subscriber.workspace = true
 walkdir.workspace = true
 itertools.workspace = true
+
+[target.'cfg(not(target_env = "msvc"))'.dependencies]
+tikv-jemallocator = { workspace = true }
+tikv-jemalloc-ctl = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 # only try to build these on linux

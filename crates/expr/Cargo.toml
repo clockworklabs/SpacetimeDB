@@ -19,4 +19,6 @@ spacetimedb-schema.workspace = true
 spacetimedb-sql-parser.workspace = true
 
 [dev-dependencies]
-spacetimedb-lib.workspace = true
+pretty_assertions.workspace = true
+spacetimedb = { path = "../bindings", features = ["unstable"] }
+spacetimedb-lib = { path = "../lib" }

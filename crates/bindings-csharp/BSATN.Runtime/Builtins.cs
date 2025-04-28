@@ -119,6 +119,9 @@ public readonly partial struct Unit
 
 [StructLayout(LayoutKind.Sequential)]
 public readonly record struct ConnectionId
+    : IEquatable<ConnectionId>,
+        IComparable,
+        IComparable<ConnectionId>
 {
     private readonly U128 value;
 
@@ -198,10 +201,30 @@ public readonly record struct ConnectionId
     }
 
     public override string ToString() => Util.ToHexBigEndian(value);
+
+    /// <inheritdoc cref="IComparable.CompareTo(object)" />
+    public int CompareTo(object? value)
+    {
+        if (value is ConnectionId other)
+        {
+            return CompareTo(other);
+        }
+        else if (value is null)
+        {
+            return 1;
+        }
+        else
+        {
+            throw new ArgumentException("Argument must be a ConnectionId", nameof(value));
+        }
+    }
+
+    /// <inheritdoc cref="IComparable{T}.CompareTo(T)" />
+    public int CompareTo(ConnectionId connectionId) => this.value.CompareTo(connectionId.value);
 }
 
 [StructLayout(LayoutKind.Sequential)]
-public readonly record struct Identity
+public readonly record struct Identity : IEquatable<Identity>, IComparable, IComparable<Identity>
 {
     private readonly U256 value;
 
@@ -271,6 +294,26 @@ public readonly record struct Identity
 
     // This must be explicitly implemented, otherwise record will generate a new implementation.
     public override string ToString() => Util.ToHexBigEndian(value);
+
+    /// <inheritdoc cref="IComparable.CompareTo(object)" />
+    public int CompareTo(object? value)
+    {
+        if (value is Identity other)
+        {
+            return CompareTo(other);
+        }
+        else if (value is null)
+        {
+            return 1;
+        }
+        else
+        {
+            throw new ArgumentException("Argument must be a Identity", nameof(value));
+        }
+    }
+
+    /// <inheritdoc cref="IComparable{T}.CompareTo(T)" />
+    public int CompareTo(Identity identity) => this.value.CompareTo(identity.value);
 }
 
 /// <summary>
@@ -296,11 +339,9 @@ public record struct Timestamp(long MicrosecondsSinceUnixEpoch)
     // Should be consistent with Rust implementation of Display.
     public override readonly string ToString()
     {
-        var sign = MicrosecondsSinceUnixEpoch < 0 ? "-" : "";
-        var pos = Math.Abs(MicrosecondsSinceUnixEpoch);
-        var secs = pos / Util.MicrosecondsPerSecond;
-        var microsRemaining = pos % Util.MicrosecondsPerSecond;
-        return $"{sign}{secs}.{microsRemaining:D6}";
+        var date = ToStd();
+
+        return date.ToString("yyyy-MM-dd'T'HH:mm:ss.ffffffK");
     }
 
     public static readonly Timestamp UNIX_EPOCH = new(0);
@@ -316,10 +357,13 @@ public record struct Timestamp(long MicrosecondsSinceUnixEpoch)
     public readonly TimeSpan ToTimeSpanSinceUnixEpoch() => (TimeSpan)ToTimeDurationSinceUnixEpoch();
 
     public readonly TimeDuration TimeDurationSince(Timestamp earlier) =>
-        new TimeDuration(MicrosecondsSinceUnixEpoch - earlier.MicrosecondsSinceUnixEpoch);
+        new TimeDuration(checked(MicrosecondsSinceUnixEpoch - earlier.MicrosecondsSinceUnixEpoch));
 
     public static Timestamp operator +(Timestamp point, TimeDuration interval) =>
-        new Timestamp(point.MicrosecondsSinceUnixEpoch + interval.Microseconds);
+        new Timestamp(checked(point.MicrosecondsSinceUnixEpoch + interval.Microseconds));
+
+    public static Timestamp operator -(Timestamp point, TimeDuration interval) =>
+        new Timestamp(checked(point.MicrosecondsSinceUnixEpoch - interval.Microseconds));
 
     public int CompareTo(Timestamp that)
     {
@@ -388,6 +432,12 @@ public record struct TimeDuration(long Microseconds) : IStructuralReadWrite
 
     public static implicit operator TimeDuration(TimeSpan timeSpan) =>
         new(timeSpan.Ticks / Util.TicksPerMicrosecond);
+
+    public static TimeDuration operator +(TimeDuration lhs, TimeDuration rhs) =>
+        new TimeDuration(checked(lhs.Microseconds + rhs.Microseconds));
+
+    public static TimeDuration operator -(TimeDuration lhs, TimeDuration rhs) =>
+        new TimeDuration(checked(lhs.Microseconds + rhs.Microseconds));
 
     // For backwards-compatibility.
     public readonly TimeSpan ToStd() => this;

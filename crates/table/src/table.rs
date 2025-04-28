@@ -302,7 +302,11 @@ impl Table {
 
         // Confirm the insertion, checking any constraints, removing the physical row on error.
         // SAFETY: We just inserted `ptr`, so it must be present.
-        let (hash, row_ptr) = unsafe { self.confirm_insertion(blob_store, row_ptr, blob_bytes) }?;
+        // Re. `CHECK_SAME_ROW = true`,
+        // where `insert` is called, we are not dealing with transactions,
+        // and we already know there cannot be a duplicate row error,
+        // but we check just in case it isn't.
+        let (hash, row_ptr) = unsafe { self.confirm_insertion::<true>(blob_store, row_ptr, blob_bytes) }?;
         // SAFETY: Per post-condition of `confirm_insertion`, `row_ptr` refers to a valid row.
         let row_ref = unsafe { self.inner.get_row_ref_unchecked(blob_store, row_ptr) };
         Ok((hash, row_ref))
@@ -486,10 +490,14 @@ impl Table {
     /// On `Ok(_)`, statistics of the table are also updated,
     /// and the `ptr` still points to a valid row, and otherwise not.
     ///
+    /// If `CHECK_SAME_ROW` holds, an identical row will be treated as a set-semantic duplicate.
+    /// Otherwise, it will be treated as a unique constraint violation.
+    /// However, `false` should only be passed if it's known beforehand that there is no identical row.
+    ///
     /// # Safety
     ///
     /// `self.is_row_present(row)` must hold.
-    pub unsafe fn confirm_insertion<'a>(
+    pub unsafe fn confirm_insertion<'a, const CHECK_SAME_ROW: bool>(
         &'a mut self,
         blob_store: &'a mut dyn BlobStore,
         ptr: RowPointer,
@@ -498,7 +506,7 @@ impl Table {
         // SAFETY: Caller promised that `self.is_row_present(ptr)` holds.
         let hash = unsafe { self.insert_into_pointer_map(blob_store, ptr) }?;
         // SAFETY: Caller promised that `self.is_row_present(ptr)` holds.
-        unsafe { self.insert_into_indices(blob_store, ptr) }?;
+        unsafe { self.insert_into_indices::<CHECK_SAME_ROW>(blob_store, ptr) }?;
 
         self.update_statistics_added_row(blob_bytes);
         Ok((hash, ptr))
@@ -523,17 +531,17 @@ impl Table {
         new_ptr: RowPointer,
         old_ptr: RowPointer,
         blob_bytes_added: BlobNumBytes,
-    ) -> Result<RowPointer, UniqueConstraintViolation> {
+    ) -> Result<RowPointer, InsertError> {
         // (1) Remove old row from indices.
         // SAFETY: Caller promised that `self.is_row_present(old_ptr)` holds.
         unsafe { self.delete_from_indices(blob_store, old_ptr) };
 
         // Insert new row into indices.
         // SAFETY: Caller promised that `self.is_row_present(ptr)` holds.
-        let res = unsafe { self.insert_into_indices(blob_store, new_ptr) };
+        let res = unsafe { self.insert_into_indices::<true>(blob_store, new_ptr) };
         if let Err(e) = res {
             // Undo (1).
-            unsafe { self.insert_into_indices(blob_store, old_ptr) }
+            unsafe { self.insert_into_indices::<true>(blob_store, old_ptr) }
                 .expect("re-inserting the old row into indices should always work");
             return Err(e);
         }
@@ -562,41 +570,66 @@ impl Table {
         self.blob_store_bytes -= blob_bytes;
     }
 
-    /// Insert row identified by `ptr` into indices.
+    /// Insert row identified by `new` into indices.
     /// This also checks unique constraints.
     /// Deletes the row if there were any violations.
     ///
-    /// SAFETY: `self.is_row_present(row)` must hold.
+    /// If `CHECK_SAME_ROW`, upon a unique constraint violation,
+    /// this will check if it's really a duplicate row.
+    /// Otherwise, the unique constraint violation is returned.
+    ///
+    /// SAFETY: `self.is_row_present(new)` must hold.
     /// Post-condition: If this method returns `Ok(_)`, the row still exists.
-    unsafe fn insert_into_indices<'a>(
+    unsafe fn insert_into_indices<'a, const CHECK_SAME_ROW: bool>(
         &'a mut self,
         blob_store: &'a mut dyn BlobStore,
-        ptr: RowPointer,
-    ) -> Result<(), UniqueConstraintViolation> {
-        let mut index_error = None;
-        for (&index_id, index) in self.indexes.iter_mut() {
-            // SAFETY: We just inserted `ptr`, so it must be present.
-            let row_ref = unsafe { self.inner.get_row_ref_unchecked(blob_store, ptr) };
-            // SAFETY: any index in this table was constructed with the same row type as this table.
-            let violation = unsafe { index.check_and_insert(row_ref) };
-            if violation.is_err() {
-                let cols = &index.indexed_columns;
-                let value = row_ref.project(cols).unwrap();
-                let error = UniqueConstraintViolation::build(&self.schema, index, index_id, value);
-                index_error = Some(error);
-                break;
-            }
-        }
-        if let Some(err) = index_error {
-            // Found unique constraint violation.
-            // Undo the insertion.
-            // SAFETY: We just inserted `ptr`, so it must be present.
-            unsafe {
-                self.delete_unchecked(blob_store, ptr);
-            }
-            return Err(err);
-        }
-        Ok(())
+        new: RowPointer,
+    ) -> Result<(), InsertError> {
+        self.indexes
+            .iter_mut()
+            .try_for_each(|(index_id, index)| {
+                // SAFETY: We just inserted `ptr`, so it must be present.
+                let new = unsafe { self.inner.get_row_ref_unchecked(blob_store, new) };
+                // SAFETY: any index in this table was constructed with the same row type as this table.
+                let violation = unsafe { index.check_and_insert(new) };
+                violation.map_err(|old| (*index_id, old, new))
+            })
+            .map_err(|(index_id, old, new)| {
+                // Found unique constraint violation!
+                if CHECK_SAME_ROW
+                    // If the index was added in this tx,
+                    // `old` could be a committed row,
+                    // which we want to avoid here.
+                    // TODO(centril): not 100% correct, could still be a duplicate,
+                    // but this is rather pathological and should be fixed when we restructure.
+                    && old.squashed_offset().is_tx_state()
+                    // SAFETY:
+                    // - The row layouts are the same as it's the same table.
+                    // - We know `old` exists in `self` as we just found it in an index.
+                    // - Caller promised that `new` is valid for `self`.
+                    && unsafe { Self::eq_row_in_page(self, old, self, new.pointer()) }
+                {
+                    return (index_id, DuplicateError(old).into());
+                }
+
+                let index = self.indexes.get(&index_id).unwrap();
+                let value = new.project(&index.indexed_columns).unwrap();
+                let error = self.build_error_unique(index, index_id, value).into();
+                (index_id, error)
+            })
+            .map_err(|(index_id, error)| {
+                // Delete row from indices.
+                // Do this before the actual deletion, as `index.delete` needs a `RowRef`
+                // so it can extract the appropriate value.
+                // SAFETY: We just inserted `new`, so it must be present.
+                unsafe { self.delete_from_indices_until(blob_store, new, index_id) };
+
+                // Cleanup, undo the row insertion of `new`s.
+                // SAFETY: We just inserted `new`, so it must be present.
+                unsafe { self.delete_internal(blob_store, new) };
+
+                error
+            })
     }
 
     /// Finds the [`RowPointer`] to the row in `target_table` equal, if any,
@@ -904,6 +937,19 @@ impl Table {
 
         // SAFETY: Caller promised that `self.is_row_present(row)` holds.
         unsafe { self.delete_internal(blob_store, ptr) }
+    }
+
+    /// Delete `row_ref` from all the indices of this table until `index_id` is reached.
+    /// The range is exclusive of `index_id`.
+    ///
+    /// SAFETY: `self.is_row_present(row)` must hold.
+    unsafe fn delete_from_indices_until(&mut self, blob_store: &dyn BlobStore, ptr: RowPointer, index_id: IndexId) {
+        // SAFETY: Caller promised that `self.is_row_present(row)` holds.
+        let row_ref = unsafe { self.inner.get_row_ref_unchecked(blob_store, ptr) };
+
+        for (_, index) in self.indexes.range_mut(..index_id) {
+            index.delete(row_ref).unwrap();
+        }
     }
 
     /// Delete `row_ref` from all the indices of this table.
@@ -1271,6 +1317,7 @@ impl fmt::Debug for RowRef<'_> {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt.debug_struct("RowRef")
             .field("pointer", &self.pointer)
+            .field("value", &self.to_product_value())
             .finish_non_exhaustive()
     }
 }
@@ -2243,7 +2290,7 @@ pub(crate) mod test {
 
         // Confirm the insertion, checking any constraints, removing the physical row on error.
         // SAFETY: We just inserted `ptr`, so it must be present.
-        let (hash, row_ptr) = unsafe { table.confirm_insertion(blob_store, row_ptr, blob_bytes) }?;
+        let (hash, row_ptr) = unsafe { table.confirm_insertion::<true>(blob_store, row_ptr, blob_bytes) }?;
         // SAFETY: Per post-condition of `confirm_insertion`, `row_ptr` refers to a valid row.
         let row_ref = unsafe { table.inner.get_row_ref_unchecked(blob_store, row_ptr) };
         Ok((hash, row_ref))

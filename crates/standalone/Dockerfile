@@ -32,6 +32,9 @@ RUN mkdir -p /stdb/data && ln -s /usr/src/app/crates/standalone/config.toml /std
 ENV PATH="/usr/src/app/target/debug:${PATH}"
 
 FROM debian as env-release
+RUN apt-get update && \
+    apt-get install -y ca-certificates libssl-dev && \
+    rm -rf /var/lib/apt/lists/*
 COPY --from=builder /usr/src/app/target/release/spacetimedb-standalone /usr/local/bin/
 COPY --from=builder /usr/src/app/crates/standalone/config.toml /stdb/data/config.toml
 

@@ -620,8 +620,8 @@ pub(crate) fn get_all(relational_db: &RelationalDB, tx: &Tx, auth: &AuthCtx) -> 
         })
         .map(|schema| {
             let sql = format!("SELECT * FROM {}", schema.table_name);
-            let hash = QueryHash::from_string(&sql);
-            SubscriptionPlan::compile(&sql, &SchemaViewer::new(tx, auth)).map(|plan| Plan::new(plan, hash, sql))
+            SubscriptionPlan::compile(&sql, &SchemaViewer::new(tx, auth), auth)
+                .map(|(plans, has_param)| Plan::new(plans, QueryHash::from_string(&sql, auth.caller, has_param), sql))
         })
         .collect::<Result<_, _>>()?)
 }

@@ -14,3 +14,27 @@ pub struct SumValue {
 impl crate::Value for SumValue {
     type Type = SumType;
 }
+
+impl SumValue {
+    /// Returns a new `SumValue` with the given `tag` and `value`.
+    pub fn new(tag: u8, value: impl Into<AlgebraicValue>) -> Self {
+        let value = Box::from(value.into());
+        Self { tag, value }
+    }
+
+    /// Returns a new `SumValue` with the given `tag` and unit value.
+    pub fn new_simple(tag: u8) -> Self {
+        Self::new(tag, ())
+    }
+}
+
+/// The tag of a `SumValue`.
+/// Can be used to read out the tag of a sum value without reading the payload.
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub struct SumTag(pub u8);
+
+impl From<SumTag> for SumValue {
+    fn from(SumTag(tag): SumTag) -> Self {
+        SumValue::new_simple(tag)
+    }
+}

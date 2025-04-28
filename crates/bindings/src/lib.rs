@@ -1,10 +1,11 @@
 #![doc = include_str!("../README.md")]
 // ^ if you are working on docs, go read the top comment of README.md please.
 
+#[cfg(feature = "unstable")]
 mod client_visibility_filter;
 pub mod log_stopwatch;
 mod logger;
-#[cfg(feature = "rand")]
+#[cfg(feature = "rand08")]
 mod rng;
 #[doc(hidden)]
 pub mod rt;
@@ -16,11 +17,11 @@ use std::cell::RefCell;
 
 pub use log;
 #[cfg(feature = "rand")]
-pub use rand;
+pub use rand08 as rand;
 
-#[doc(hidden)]
+#[cfg(feature = "unstable")]
 pub use client_visibility_filter::Filter;
-#[cfg(feature = "rand")]
+#[cfg(feature = "rand08")]
 pub use rng::StdbRng;
 pub use sats::SpacetimeType;
 #[doc(hidden)]
@@ -32,6 +33,8 @@ pub use spacetimedb_lib::sats;
 pub use spacetimedb_lib::ser::Serialize;
 pub use spacetimedb_lib::AlgebraicValue;
 pub use spacetimedb_lib::ConnectionId;
+// `FilterableValue` re-exported purely for rustdoc.
+pub use spacetimedb_lib::FilterableValue;
 pub use spacetimedb_lib::Identity;
 pub use spacetimedb_lib::ScheduleAt;
 pub use spacetimedb_lib::TimeDuration;
@@ -67,7 +70,7 @@ pub use spacetimedb_bindings_macro::duration;
 /// const PLAYERS_SEE_ENTITIES_IN_SAME_CHUNK: Filter = Filter::Sql("
 ///     SELECT * FROM LocationState WHERE chunk_index IN (
 ///         SELECT chunk_index FROM LocationState WHERE entity_id IN (
-///             SELECT entity_id FROM UserState WHERE identity = @sender
+///             SELECT entity_id FROM UserState WHERE identity = :sender
 ///         )
 ///     )
 /// ");
@@ -78,6 +81,7 @@ pub use spacetimedb_bindings_macro::duration;
 /// until they are processed by the SpacetimeDB host.
 /// This means that errors in queries, such as syntax errors, type errors or unknown tables,
 /// will be reported during `spacetime publish`, not at compile time.
+#[cfg(feature = "unstable")]
 #[doc(inline, hidden)] // TODO: RLS filters are currently unimplemented, and are not enforced.
 pub use spacetimedb_bindings_macro::client_visibility_filter;
 
@@ -137,7 +141,7 @@ pub use spacetimedb_bindings_macro::client_visibility_filter;
 ///     for popular_user in by_popularity.filter((100, "a"..)) {
 ///         log::debug!("Popular user whose name starts with 'a': {:?}", popular_user);
 ///     }
-///     
+///
 ///     // For every `#[unique]` or `#[primary_key]` field,
 ///     // the table has an extra method that allows getting a
 ///     // corresponding `spacetimedb::UniqueColumn`.
@@ -357,7 +361,7 @@ pub use spacetimedb_bindings_macro::client_visibility_filter;
 /// ```ignore
 /// ctx.db.cities().latitude()
 /// ```
-///    
+///
 /// # Generated code
 ///
 /// For each `[table(name = {name})]` annotation on a type `{T}`, generates a struct
@@ -400,7 +404,7 @@ pub use spacetimedb_bindings_macro::client_visibility_filter;
 /// impl {name}Handle {
 ///     // For each `#[unique]` or `#[primary_key]` field `{field}` of type `{F}`:
 ///     fn {field}(&self) -> UniqueColumn<_, {F}, _> { /* ... */ };
-///     
+///
 ///     // For each named index `{index}` on fields of type `{(F1, ..., FN)}`:
 ///     fn {index}(&self) -> RangedIndex<_, {(F1, ..., FN)}, _>;
 /// }
@@ -534,35 +538,11 @@ pub use spacetimedb_bindings_macro::table;
 /// If an error occurs in the disconnect reducer,
 /// the client is still recorded as disconnected.
 ///
-/// ### The `update` reducer
-///
-/// This reducer is marked with `#[spacetimedb::reducer(update)]`. It is run when the module is updated,
-/// i.e., when publishing a module for a database that has already been initialized.
-///
-/// If an error occurs when updating, the module will not be published,
-/// and the previous version of the module attached to the database will continue executing.
-///
 /// # Scheduled reducers
 ///
 /// In addition to life cycle annotations, reducers can be made **scheduled**.
 /// This allows calling the reducers at a particular time, or in a loop.
 /// This can be used for game loops.
-///
-/// Scheduled reducers are normal reducers, and may still be called by clients.
-/// If a scheduled reducer should only be called by the scheduler,
-/// consider beginning it with a check that the caller `Identity` is the module:
-///
-/// ```no_run
-/// # #[cfg(target_arch = "wasm32")] mod demo {
-/// #[reducer]
-/// fn scheduled(ctx: &ReducerContext, args: ScheduledArgs) -> Result<(), String> {
-///     if ctx.sender != ctx.identity() {
-///         return Err("Reducer `scheduled` may not be invoked by clients, only via scheduling.");
-///     }
-///     // Reducer body...
-/// }
-/// # }
-/// ```
 ///
 /// The scheduling information for a reducer is stored in a table.
 /// This table has two mandatory fields:
@@ -570,6 +550,7 @@ pub use spacetimedb_bindings_macro::table;
 /// - A [`ScheduleAt`] field that says when to call the reducer.
 ///
 /// Managing timers with a scheduled table is as simple as inserting or deleting rows from the table.
+/// This makes scheduling transactional in SpacetimeDB. If a reducer A first schedules B but then errors for some other reason, B will not be scheduled to run.
 ///
 /// A [`ScheduleAt`] can be created from a [`spacetimedb::Timestamp`](crate::Timestamp), in which case the reducer will be scheduled once,
 /// or from a [`std::time::Duration`], in which case the reducer will be scheduled in a loop. In either case the conversion can be performed using [`Into::into`].
@@ -652,6 +633,29 @@ pub use spacetimedb_bindings_macro::table;
 /// Scheduled reducers are called on a best-effort basis and may be slightly delayed in their execution
 /// when a database is under heavy load.
 ///
+/// ### Restricting scheduled reducers
+///
+/// Scheduled reducers are normal reducers, and may still be called by clients.
+/// If a scheduled reducer should only be called by the scheduler,
+/// consider beginning it with a check that the caller `Identity` is the module:
+///
+/// ```no_run
+/// # #[cfg(target_arch = "wasm32")] mod demo {
+/// use spacetimedb::{reducer, ReducerContext};
+///
+/// # #[derive(spacetimedb::SpacetimeType)] struct ScheduledArgs {}
+///
+/// #[reducer]
+/// fn scheduled(ctx: &ReducerContext, args: ScheduledArgs) -> Result<(), String> {
+///     if ctx.sender != ctx.identity() {
+///         return Err("Reducer `scheduled` may not be invoked by clients, only via scheduling.".into());
+///     }
+///     // Reducer body...
+///     # Ok(())
+/// }
+/// # }
+/// ```
+///
 /// <!-- TODO: SLAs? -->
 ///
 /// [`&ReducerContext`]: `ReducerContext`
@@ -686,8 +690,8 @@ pub struct ReducerContext {
     /// `None` if no `ConnectionId` was supplied to the `/database/call` HTTP endpoint,
     /// or via the CLI's `spacetime call` subcommand.
     ///
-    /// For automatic reducers, i.e. `init`, `update` and scheduled reducers,
-    /// this will be the module's `Address`.
+    /// For automatic reducers, i.e. `init`, `client_connected`, `client_disconnected`, and scheduled reducers,
+    /// this will be the module's `ConnectionId`.
     pub connection_id: Option<ConnectionId>,
 
     /// Allows accessing the local database attached to a module.
@@ -728,7 +732,7 @@ pub struct ReducerContext {
     /// See the [`#[table]`](macro@crate::table) macro for more information.
     pub db: Local,
 
-    #[cfg(feature = "rand")]
+    #[cfg(feature = "rand08")]
     rng: std::cell::OnceCell<StdbRng>,
 }
 

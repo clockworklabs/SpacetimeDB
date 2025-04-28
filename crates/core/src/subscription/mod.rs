@@ -10,6 +10,7 @@ use spacetimedb_execution::{pipelined::PipelinedProject, Datastore, DeltaStore};
 use spacetimedb_lib::{metrics::ExecutionMetrics, Identity};
 use spacetimedb_primitives::TableId;
 
+use crate::error::DBError;
 use crate::{db::db_metrics::DB_METRICS, execution_context::WorkloadType, worker_metrics::WORKER_METRICS};
 
 pub mod delta;
@@ -23,40 +24,78 @@ pub mod tx;
 
 /// Update the global system metrics with transaction-level execution metrics
 pub(crate) fn record_exec_metrics(workload: &WorkloadType, db: &Identity, metrics: ExecutionMetrics) {
-    DB_METRICS
-        .rdb_num_index_seeks
-        .with_label_values(workload, db)
-        .inc_by(metrics.index_seeks as u64);
-    DB_METRICS
-        .rdb_num_rows_scanned
-        .with_label_values(workload, db)
-        .inc_by(metrics.rows_scanned as u64);
-    DB_METRICS
-        .rdb_num_bytes_scanned
-        .with_label_values(workload, db)
-        .inc_by(metrics.bytes_scanned as u64);
-    DB_METRICS
-        .rdb_num_bytes_written
-        .with_label_values(workload, db)
-        .inc_by(metrics.bytes_written as u64);
-    WORKER_METRICS
-        .bytes_sent_to_clients
-        .with_label_values(workload, db)
-        .inc_by(metrics.bytes_sent_to_clients as u64);
+    if metrics.index_seeks > 0 {
+        DB_METRICS
+            .rdb_num_index_seeks
+            .with_label_values(workload, db)
+            .inc_by(metrics.index_seeks as u64);
+    }
+    if metrics.rows_scanned > 0 {
+        DB_METRICS
+            .rdb_num_rows_scanned
+            .with_label_values(workload, db)
+            .inc_by(metrics.rows_scanned as u64);
+    }
+    if metrics.bytes_scanned > 0 {
+        DB_METRICS
+            .rdb_num_bytes_scanned
+            .with_label_values(workload, db)
+            .inc_by(metrics.bytes_scanned as u64);
+    }
+    if metrics.bytes_written > 0 {
+        DB_METRICS
+            .rdb_num_bytes_written
+            .with_label_values(workload, db)
+            .inc_by(metrics.bytes_written as u64);
+    }
+    if metrics.bytes_sent_to_clients > 0 {
+        WORKER_METRICS
+            .bytes_sent_to_clients
+            .with_label_values(workload, db)
+            .inc_by(metrics.bytes_sent_to_clients as u64);
+    }
+    if metrics.delta_queries_matched > 0 {
+        DB_METRICS
+            .delta_queries_matched
+            .with_label_values(db)
+            .inc_by(metrics.delta_queries_matched);
+    }
+    if metrics.delta_queries_evaluated > 0 {
+        DB_METRICS
+            .delta_queries_evaluated
+            .with_label_values(db)
+            .inc_by(metrics.delta_queries_evaluated);
+    }
+    if metrics.duplicate_rows_evaluated > 0 {
+        DB_METRICS
+            .duplicate_rows_evaluated
+            .with_label_values(db)
+            .inc_by(metrics.duplicate_rows_evaluated);
+    }
+    if metrics.duplicate_rows_sent > 0 {
+        DB_METRICS
+            .duplicate_rows_sent
+            .with_label_values(db)
+            .inc_by(metrics.duplicate_rows_sent);
+    }
 }
 
 /// Execute a subscription query
-pub fn execute_plan<Tx, F>(plan: &PipelinedProject, tx: &Tx) -> Result<(F::List, u64, ExecutionMetrics)>
+pub fn execute_plan<Tx, F>(plan_fragments: &[PipelinedProject], tx: &Tx) -> Result<(F::List, u64, ExecutionMetrics)>
 where
     Tx: Datastore + DeltaStore,
     F: WebsocketFormat,
 {
     let mut rows = vec![];
     let mut metrics = ExecutionMetrics::default();
-    plan.execute(tx, &mut metrics, &mut |row| {
-        rows.push(row);
-        Ok(())
-    })?;
+
+    for fragment in plan_fragments {
+        fragment.execute(tx, &mut metrics, &mut |row| {
+            rows.push(row);
+            Ok(())
+        })?;
+    }
+
     let (list, n) = F::encode_list(rows.into_iter());
     metrics.bytes_scanned += list.num_bytes();
     metrics.bytes_sent_to_clients += list.num_bytes();
@@ -73,7 +112,7 @@ pub enum TableUpdateType {
 
 /// Execute a subscription query and collect the results in a [TableUpdate]
 pub fn collect_table_update<Tx, F>(
-    plan: &PipelinedProject,
+    plan_fragments: &[PipelinedProject],
     table_id: TableId,
     table_name: Box<str>,
     comp: Compression,
@@ -84,7 +123,7 @@ where
     Tx: Datastore + DeltaStore,
     F: WebsocketFormat,
 {
-    execute_plan::<Tx, F>(plan, tx).map(|(rows, num_rows, metrics)| {
+    execute_plan::<Tx, F>(plan_fragments, tx).map(|(rows, num_rows, metrics)| {
         let empty = F::List::default();
         let qu = match update_type {
             TableUpdateType::Subscribe => QueryUpdate {
@@ -107,22 +146,27 @@ pub fn execute_plans<Tx, F>(
     comp: Compression,
     tx: &Tx,
     update_type: TableUpdateType,
-) -> Result<(DatabaseUpdate<F>, ExecutionMetrics)>
+) -> Result<(DatabaseUpdate<F>, ExecutionMetrics), DBError>
 where
     Tx: Datastore + DeltaStore + Sync,
     F: WebsocketFormat,
 {
     plans
         .par_iter()
-        .map(|plan| (plan, plan.subscribed_table_id(), plan.subscribed_table_name()))
-        .map(|(plan, table_id, table_name)| {
+        .flat_map_iter(|plan| plan.plans_fragments().map(|fragment| (plan.sql(), fragment)))
+        .map(|(sql, plan)| (sql, plan, plan.subscribed_table_id(), plan.subscribed_table_name()))
+        .map(|(sql, plan, table_id, table_name)| {
             plan.physical_plan()
                 .clone()
                 .optimize()
-                .map(PipelinedProject::from)
-                .and_then(|plan| collect_table_update(&plan, table_id, table_name.into(), comp, tx, update_type))
+                .map(|plan| (sql, PipelinedProject::from(plan)))
+                .and_then(|(_, plan)| collect_table_update(&[plan], table_id, table_name.into(), comp, tx, update_type))
+                .map_err(|err| DBError::WithSql {
+                    sql: sql.into(),
+                    error: Box::new(DBError::Other(err)),
+                })
         })
-        .collect::<Result<Vec<_>>>()
+        .collect::<Result<Vec<_>, _>>()
         .map(|table_updates_with_metrics| {
             let n = table_updates_with_metrics.len();
             let mut tables = Vec::with_capacity(n);

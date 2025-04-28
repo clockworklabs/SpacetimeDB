@@ -1,6 +1,5 @@
-use std::collections::HashMap;
-
 use anyhow::Result;
+use hashbrown::HashMap;
 use spacetimedb_execution::{Datastore, DeltaStore};
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_subscription::SubscriptionPlan;
@@ -8,55 +7,108 @@ use spacetimedb_vm::relation::RelValue;
 
 use crate::host::module_host::UpdatesRelValue;
 
-/// This utility deduplicates an incremental update.
-/// That is, if a row is both inserted and deleted,
-/// this method removes it from the result set.
+/// Evaluate a subscription over a delta update.
+/// Returns `None` for empty updates.
 ///
-/// Note, the 1.0 api does allow for duplicate rows.
-/// Hence this may be removed at any time after 1.0.
+/// IMPORTANT: This does and must implement bag semantics.
+/// That is, we must not remove duplicate rows.
+/// Any deviation from this is a bug, as clients will lose information.
+///
+/// Take for example the semijoin R ⋉ S.
+/// A client needs to know for each row in R,
+/// how many rows it joins with in S.
 pub fn eval_delta<'a, Tx: Datastore + DeltaStore>(
     tx: &'a Tx,
     metrics: &mut ExecutionMetrics,
     plan: &SubscriptionPlan,
-) -> Result<UpdatesRelValue<'a>> {
-    // Note, we can't determine apriori what capacity to allocate
-    let mut inserts = HashMap::new();
+) -> Result<Option<UpdatesRelValue<'a>>> {
+    metrics.delta_queries_evaluated += 1;
+
+    let mut inserts = vec![];
     let mut deletes = vec![];
 
-    plan.for_each_insert(tx, metrics, &mut |row| {
-        inserts
-            .entry(RelValue::from(row))
-            // Row already inserted?
-            // Increment its multiplicity.
-            .and_modify(|n| *n += 1)
-            .or_insert(1);
-        Ok(())
-    })?;
+    let mut duplicate_rows_evaluated = 0;
+    let mut duplicate_rows_sent = 0;
 
-    plan.for_each_delete(tx, metrics, &mut |row| {
-        let row = RelValue::from(row);
-        match inserts.get_mut(&row) {
-            // This row was not inserted.
-            // Add it to the delete set.
-            None => {
-                deletes.push(row);
+    if !plan.is_join() {
+        // Single table plans will never return redundant rows,
+        // so there's no need to track row counts.
+        plan.for_each_insert(tx, metrics, &mut |row| {
+            inserts.push(row.into());
+            Ok(())
+        })?;
+
+        plan.for_each_delete(tx, metrics, &mut |row| {
+            deletes.push(row.into());
+            Ok(())
+        })?;
+    } else {
+        // Query plans for joins may return redundant rows.
+        // We track row counts to avoid sending them to clients.
+        let mut insert_counts = HashMap::new();
+        let mut delete_counts = HashMap::new();
+
+        plan.for_each_insert(tx, metrics, &mut |row| {
+            let n = insert_counts.entry(row).or_default();
+            if *n > 0 {
+                duplicate_rows_evaluated += 1;
             }
-            // This row was inserted.
-            // Decrement the multiplicity.
-            Some(1) => {
-                inserts.remove(&row);
+            *n += 1;
+            Ok(())
+        })?;
+
+        plan.for_each_delete(tx, metrics, &mut |row| {
+            match insert_counts.get_mut(&row) {
+                // We have not seen an insert for this row.
+                // If we have seen a delete, increment the metric.
+                // Always increment the delete_count.
+                None => {
+                    let n = delete_counts.entry(row).or_default();
+                    if *n > 0 {
+                        duplicate_rows_evaluated += 1;
+                    }
+                    *n += 1;
+                }
+                // We have already seen an insert for this row.
+                // This is a duplicate, so increment the metric.
+                //
+                // There are no more inserts for this row,
+                // so increment the delete_count as well.
+                Some(0) => {
+                    duplicate_rows_evaluated += 1;
+                    *delete_counts.entry(row).or_default() += 1;
+                }
+                // We have already seen an insert for this row.
+                // This is a duplicate, so increment the metric.
+                //
+                // There are still more inserts for this row,
+                // so don't increment the delete_count.
+                Some(n) => {
+                    duplicate_rows_evaluated += 1;
+                    *n -= 1;
+                }
             }
-            // This row was inserted.
-            // Decrement the multiplicity.
-            Some(n) => {
-                *n -= 1;
-            }
+            Ok(())
+        })?;
+
+        for (row, n) in insert_counts.into_iter().filter(|(_, n)| *n > 0) {
+            duplicate_rows_sent += n as u64 - 1;
+            inserts.extend(std::iter::repeat_n(row, n).map(RelValue::from));
         }
-        Ok(())
-    })?;
+        for (row, n) in delete_counts.into_iter().filter(|(_, n)| *n > 0) {
+            duplicate_rows_sent += n as u64 - 1;
+            deletes.extend(std::iter::repeat_n(row, n).map(RelValue::from));
+        }
+    }
 
-    Ok(UpdatesRelValue {
-        inserts: inserts.into_keys().collect(),
-        deletes,
-    })
+    // Return `None` for empty updates
+    if inserts.is_empty() && deletes.is_empty() {
+        return Ok(None);
+    }
+
+    metrics.delta_queries_matched += 1;
+    metrics.duplicate_rows_evaluated += duplicate_rows_evaluated;
+    metrics.duplicate_rows_sent += duplicate_rows_sent;
+
+    Ok(Some(UpdatesRelValue { inserts, deletes }))
 }

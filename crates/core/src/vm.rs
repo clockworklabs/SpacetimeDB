@@ -459,16 +459,19 @@ pub struct DbProgram<'db, 'tx> {
 
 /// If the subscriber is not the database owner,
 /// reject the request if the estimated cardinality exceeds the limit.
-pub fn check_row_limit<QuerySet>(
-    queries: &QuerySet,
+pub fn check_row_limit<Query>(
+    queries: &[Query],
     db: &RelationalDB,
     tx: &TxId,
-    row_est: impl Fn(&QuerySet, &TxId) -> u64,
+    row_est: impl Fn(&Query, &TxId) -> u64,
     auth: &AuthCtx,
 ) -> Result<(), DBError> {
     if auth.caller != auth.owner {
         if let Some(limit) = StVarTable::row_limit(db, tx)? {
-            let estimate = row_est(queries, tx);
+            let mut estimate: u64 = 0;
+            for query in queries {
+                estimate = estimate.saturating_add(row_est(query, tx));
+            }
             if estimate > limit {
                 return Err(DBError::Other(anyhow::anyhow!(
                     "Estimated cardinality ({estimate} rows) exceeds limit ({limit} rows)"
@@ -487,7 +490,7 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
     fn _eval_query<const N: usize>(&mut self, query: &QueryExpr, sources: Sources<'_, N>) -> Result<Code, ErrorVm> {
         if let TxMode::Tx(tx) = self.tx {
             check_row_limit(
-                query,
+                &[query],
                 self.db,
                 tx,
                 |expr, tx| estimation::num_rows(tx, expr),

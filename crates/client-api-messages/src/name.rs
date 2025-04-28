@@ -182,7 +182,7 @@ pub enum DatabaseNameError {
     Invalid,
 }
 
-fn parse_database_name(s: &str) -> Result<&str, DatabaseNameError> {
+pub fn parse_database_name(s: &str) -> Result<&str, DatabaseNameError> {
     use DatabaseNameError::*;
 
     if is_identity(s) {

@@ -6,13 +6,13 @@
 // and clippy misunderstands `#[allow]` attributes in macro-expansions.
 #![allow(clippy::too_many_arguments)]
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use spacetimedb::{
     sats::{i256, u256},
     ConnectionId, Identity, ReducerContext, SpacetimeType, Table, TimeDuration, Timestamp,
 };
 
-#[derive(SpacetimeType)]
+#[derive(PartialEq, Eq, Hash, SpacetimeType)]
 pub enum SimpleEnum {
     Zero,
     One,
@@ -542,6 +542,47 @@ define_tables! {
         update_by update_pk_connection_id = update_by_a(a),
         delete_by delete_pk_connection_id = delete_by_a(a: ConnectionId),
     } #[primary_key] a ConnectionId, data i32;
+
+    PkSimpleEnum {
+        insert_or_panic insert_pk_simple_enum,
+    } #[primary_key] a SimpleEnum, data i32;
+}
+
+#[spacetimedb::reducer]
+fn update_pk_simple_enum(ctx: &ReducerContext, a: SimpleEnum, data: i32) -> anyhow::Result<()> {
+    let Some(mut o) = ctx.db.pk_simple_enum().a().find(a) else {
+        return Err(anyhow!("row not found"));
+    };
+    o.data = data;
+    ctx.db.pk_simple_enum().a().update(o);
+    Ok(())
+}
+
+#[spacetimedb::reducer]
+fn insert_into_btree_u32(ctx: &ReducerContext, rows: Vec<BTreeU32>) -> anyhow::Result<()> {
+    for row in rows {
+        ctx.db.btree_u32().insert(row);
+    }
+    Ok(())
+}
+
+#[spacetimedb::reducer]
+fn delete_from_btree_u32(ctx: &ReducerContext, rows: Vec<BTreeU32>) -> anyhow::Result<()> {
+    for row in rows {
+        ctx.db.btree_u32().delete(row);
+    }
+    Ok(())
+}
+
+#[spacetimedb::reducer]
+fn insert_into_pk_btree_u32(ctx: &ReducerContext, pk_u32: Vec<PkU32>, bt_u32: Vec<BTreeU32>) -> anyhow::Result<()> {
+    for row in pk_u32 {
+        ctx.db.pk_u32().insert(row);
+    }
+    for row in bt_u32 {
+        ctx.db.btree_u32().insert(row);
+    }
+    Ok(())
 }
 
 /// The purpose of this reducer is for a test which
@@ -730,4 +771,48 @@ struct IndexedTable {
 struct IndexedTable2 {
     player_id: u32,
     player_snazz: f32,
+}
+
+#[spacetimedb::table(name = btree_u32, public)]
+struct BTreeU32 {
+    #[index(btree)]
+    n: u32,
+    data: i32,
+}
+
+#[spacetimedb::client_visibility_filter]
+const USERS_FILTER: spacetimedb::Filter = spacetimedb::Filter::Sql("SELECT * FROM users WHERE identity = :sender");
+
+#[spacetimedb::table(name = users, public)]
+struct Users {
+    #[primary_key]
+    identity: Identity,
+    name: String,
+}
+
+#[spacetimedb::reducer]
+fn insert_user(ctx: &ReducerContext, name: String, identity: Identity) -> anyhow::Result<()> {
+    ctx.db.users().insert(Users { name, identity });
+    Ok(())
+}
+
+#[spacetimedb::table(name = indexed_simple_enum, public)]
+struct IndexedSimpleEnum {
+    #[index(btree)]
+    n: SimpleEnum,
+}
+
+#[spacetimedb::reducer]
+fn insert_into_indexed_simple_enum(ctx: &ReducerContext, n: SimpleEnum) -> anyhow::Result<()> {
+    ctx.db.indexed_simple_enum().insert(IndexedSimpleEnum { n });
+    Ok(())
+}
+
+#[spacetimedb::reducer]
+fn update_indexed_simple_enum(ctx: &ReducerContext, a: SimpleEnum, b: SimpleEnum) -> anyhow::Result<()> {
+    if ctx.db.indexed_simple_enum().n().filter(&a).next().is_some() {
+        ctx.db.indexed_simple_enum().n().delete(&a);
+        ctx.db.indexed_simple_enum().insert(IndexedSimpleEnum { n: b });
+    }
+    Ok(())
 }

@@ -39,6 +39,12 @@ impl MemoryUsage for f64 {}
 impl MemoryUsage for spacetimedb_sats::F32 {}
 impl MemoryUsage for spacetimedb_sats::F64 {}
 
+impl<T: MemoryUsage + ?Sized> MemoryUsage for &T {
+    fn heap_usage(&self) -> usize {
+        (*self).heap_usage()
+    }
+}
+
 impl<T: MemoryUsage + ?Sized> MemoryUsage for Box<T> {
     fn heap_usage(&self) -> usize {
         mem::size_of_val::<T>(self) + T::heap_usage(self)
@@ -60,6 +66,12 @@ impl<T: MemoryUsage + ?Sized> MemoryUsage for std::rc::Rc<T> {
 }
 
 impl<T: MemoryUsage> MemoryUsage for [T] {
+    fn heap_usage(&self) -> usize {
+        self.iter().map(T::heap_usage).sum()
+    }
+}
+
+impl<T: MemoryUsage, const N: usize> MemoryUsage for [T; N] {
     fn heap_usage(&self) -> usize {
         self.iter().map(T::heap_usage).sum()
     }

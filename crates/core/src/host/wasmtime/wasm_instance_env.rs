@@ -12,6 +12,7 @@ use crate::host::wasm_common::{
 };
 use crate::host::AbiCall;
 use anyhow::Context as _;
+use spacetimedb_lib::Timestamp;
 use spacetimedb_primitives::{errno, ColId};
 use wasmtime::{AsContext, Caller, StoreContextMut};
 
@@ -139,7 +140,7 @@ impl WasmInstanceEnv {
     ///
     /// Returns the handle used by reducers to read from `args`
     /// as well as the handle used to write the error message, if any.
-    pub fn start_reducer(&mut self, name: &str, args: bytes::Bytes) -> (u32, u32) {
+    pub fn start_reducer(&mut self, name: &str, args: bytes::Bytes, ts: Timestamp) -> (u32, u32) {
         let errors = self.setup_standard_bytes_sink();
 
         // Pass an invalid source when the reducer args were empty.
@@ -153,6 +154,7 @@ impl WasmInstanceEnv {
 
         self.reducer_start = Instant::now();
         name.clone_into(&mut self.reducer_name);
+        self.instance_env.start_reducer(ts);
 
         (args, errors)
     }

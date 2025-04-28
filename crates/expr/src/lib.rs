@@ -12,14 +12,18 @@ use ethnum::i256;
 use ethnum::u256;
 use expr::AggType;
 use expr::{Expr, FieldProject, ProjectList, ProjectName, RelExpr};
+use spacetimedb_lib::ser::Serialize;
+use spacetimedb_lib::Timestamp;
 use spacetimedb_lib::{from_hex_pad, AlgebraicType, AlgebraicValue, ConnectionId, Identity};
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
+use spacetimedb_sats::algebraic_value::ser::ValueSerializer;
 use spacetimedb_schema::schema::ColumnSchema;
 use spacetimedb_sql_parser::ast::{self, BinOp, ProjectElem, SqlExpr, SqlIdent, SqlLiteral};
 
 pub mod check;
 pub mod errors;
 pub mod expr;
+pub mod rls;
 pub mod statement;
 
 /// Type check and lower a [SqlExpr]
@@ -47,12 +51,14 @@ pub(crate) fn type_limit(input: ProjectList, limit: &str) -> TypingResult<Projec
 pub(crate) fn type_proj(input: RelExpr, proj: ast::Project, vars: &Relvars) -> TypingResult<ProjectList> {
     match proj {
         ast::Project::Star(None) if input.nfields() > 1 => Err(InvalidWildcard::Join.into()),
-        ast::Project::Star(None) => Ok(ProjectList::Name(ProjectName::None(input))),
+        ast::Project::Star(None) => Ok(ProjectList::Name(vec![ProjectName::None(input)])),
         ast::Project::Star(Some(SqlIdent(var))) if input.has_field(&var) => {
-            Ok(ProjectList::Name(ProjectName::Some(input, var)))
+            Ok(ProjectList::Name(vec![ProjectName::Some(input, var)]))
         }
         ast::Project::Star(Some(SqlIdent(var))) => Err(Unresolved::var(&var).into()),
-        ast::Project::Count(SqlIdent(alias)) => Ok(ProjectList::Agg(input, AggType::Count, alias, AlgebraicType::U64)),
+        ast::Project::Count(SqlIdent(alias)) => {
+            Ok(ProjectList::Agg(vec![input], AggType::Count, alias, AlgebraicType::U64))
+        }
         ast::Project::Exprs(elems) => {
             let mut projections = vec![];
             let mut names = HashSet::new();
@@ -67,7 +73,7 @@ pub(crate) fn type_proj(input: RelExpr, proj: ast::Project, vars: &Relvars) -> T
                 }
             }
 
-            Ok(ProjectList::List(input, projections))
+            Ok(ProjectList::List(vec![input], projections))
         }
     }
 }
@@ -77,10 +83,10 @@ pub(crate) fn type_expr(vars: &Relvars, expr: SqlExpr, expected: Option<&Algebra
     match (expr, expected) {
         (SqlExpr::Lit(SqlLiteral::Bool(v)), None | Some(AlgebraicType::Bool)) => Ok(Expr::bool(v)),
         (SqlExpr::Lit(SqlLiteral::Bool(_)), Some(ty)) => Err(UnexpectedType::new(&AlgebraicType::Bool, ty).into()),
-        (SqlExpr::Lit(SqlLiteral::Str(v)), None | Some(AlgebraicType::String)) => Ok(Expr::str(v)),
-        (SqlExpr::Lit(SqlLiteral::Str(_)), Some(ty)) => Err(UnexpectedType::new(&AlgebraicType::String, ty).into()),
-        (SqlExpr::Lit(SqlLiteral::Num(_) | SqlLiteral::Hex(_)), None) => Err(Unresolved::Literal.into()),
-        (SqlExpr::Lit(SqlLiteral::Num(v) | SqlLiteral::Hex(v)), Some(ty)) => Ok(Expr::Value(
+        (SqlExpr::Lit(SqlLiteral::Str(_) | SqlLiteral::Num(_) | SqlLiteral::Hex(_)), None) => {
+            Err(Unresolved::Literal.into())
+        }
+        (SqlExpr::Lit(SqlLiteral::Str(v) | SqlLiteral::Num(v) | SqlLiteral::Hex(v)), Some(ty)) => Ok(Expr::Value(
             parse(&v, ty).map_err(|_| InvalidLiteral::new(v.into_string(), ty))?,
             ty.clone(),
         )),
@@ -115,18 +121,26 @@ pub(crate) fn type_expr(vars: &Relvars, expr: SqlExpr, expected: Option<&Algebra
             let b = type_expr(vars, *b, Some(&AlgebraicType::Bool))?;
             Ok(Expr::LogOp(op, Box::new(a), Box::new(b)))
         }
-        (SqlExpr::Bin(a, b, op), None | Some(AlgebraicType::Bool)) => match (*a, *b) {
-            (a, b @ SqlExpr::Lit(_)) | (b @ SqlExpr::Lit(_), a) | (a, b) => {
-                let a = type_expr(vars, a, None)?;
-                let b = type_expr(vars, b, Some(a.ty()))?;
-                if !op_supports_type(op, a.ty()) {
-                    return Err(InvalidOp::new(op, a.ty()).into());
-                }
-                Ok(Expr::BinOp(op, Box::new(a), Box::new(b)))
+        (SqlExpr::Bin(a, b, op), None | Some(AlgebraicType::Bool)) if matches!(&*a, SqlExpr::Lit(_)) => {
+            let b = type_expr(vars, *b, None)?;
+            let a = type_expr(vars, *a, Some(b.ty()))?;
+            if !op_supports_type(op, a.ty()) {
+                return Err(InvalidOp::new(op, a.ty()).into());
             }
-        },
+            Ok(Expr::BinOp(op, Box::new(a), Box::new(b)))
+        }
+        (SqlExpr::Bin(a, b, op), None | Some(AlgebraicType::Bool)) => {
+            let a = type_expr(vars, *a, None)?;
+            let b = type_expr(vars, *b, Some(a.ty()))?;
+            if !op_supports_type(op, a.ty()) {
+                return Err(InvalidOp::new(op, a.ty()).into());
+            }
+            Ok(Expr::BinOp(op, Box::new(a), Box::new(b)))
+        }
         (SqlExpr::Bin(..) | SqlExpr::Log(..), Some(ty)) => Err(UnexpectedType::new(&AlgebraicType::Bool, ty).into()),
-        (SqlExpr::Var(_), _) => unreachable!(),
+        // Both unqualified names as well as parameters are syntactic constructs.
+        // Unqualified names are qualified and parameters are resolved before type checking.
+        (SqlExpr::Var(_) | SqlExpr::Param(_), _) => unreachable!(),
     }
 }
 
@@ -139,6 +153,7 @@ fn op_supports_type(_op: BinOp, t: &AlgebraicType) -> bool {
         || t.is_bytes()
         || t.is_identity()
         || t.is_connection_id()
+        || t.is_timestamp()
 }
 
 /// Parse an integer literal into an [AlgebraicValue]
@@ -186,6 +201,11 @@ where
 
 /// Parses a source text literal as a particular type
 pub(crate) fn parse(value: &str, ty: &AlgebraicType) -> anyhow::Result<AlgebraicValue> {
+    let to_timestamp = || {
+        Timestamp::parse_from_rfc3339(value)?
+            .serialize(ValueSerializer)
+            .with_context(|| "Could not parse timestamp")
+    };
     let to_bytes = || {
         from_hex_pad::<Vec<u8>, _>(value)
             .map(|v| v.into_boxed_slice())
@@ -318,6 +338,7 @@ pub(crate) fn parse(value: &str, ty: &AlgebraicType) -> anyhow::Result<Algebraic
             AlgebraicValue::U256,
         ),
         AlgebraicType::String => Ok(AlgebraicValue::String(value.into())),
+        t if t.is_timestamp() => to_timestamp(),
         t if t.is_bytes() => to_bytes(),
         t if t.is_identity() => to_identity(),
         t if t.is_connection_id() => to_connection_id(),

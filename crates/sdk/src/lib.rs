@@ -31,6 +31,7 @@ pub use event::{Event, ReducerEvent, Status};
 pub use table::{Table, TableWithPrimaryKey};
 
 pub use spacetime_module::SubscriptionHandle;
+pub use spacetimedb_client_api_messages::websocket::Compression;
 pub use spacetimedb_lib::{ConnectionId, Identity, ScheduleAt, TimeDuration, Timestamp};
 pub use spacetimedb_sats::{i256, u256};
 

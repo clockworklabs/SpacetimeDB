@@ -15,7 +15,8 @@ bench = false
 
 [features]
 default = ["rand"]
-rand = ["dep:rand", "dep:getrandom"]
+rand = ["rand08"]
+rand08 = ["dep:rand08", "dep:getrandom02"]
 unstable = ["spacetimedb-bindings-sys/unstable"]
 
 [dependencies]
@@ -29,11 +30,11 @@ derive_more.workspace = true
 log.workspace = true
 scoped-tls.workspace = true
 
-rand = { workspace = true, optional = true }
+rand08 = { workspace = true, optional = true }
 # we depend on getrandom and enable the `custom` feature, so that
 # if someone tries to use rand's ThreadRng, it will fail to link
 # because no one defined __getrandom_custom
-getrandom = { workspace = true, optional = true, features = ["custom"] }
+getrandom02 = { workspace = true, optional = true, features = ["custom"] }
 
 [dev-dependencies]
 insta.workspace = true

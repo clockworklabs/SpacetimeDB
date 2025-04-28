@@ -9,10 +9,11 @@ use super::{
     SharedMutexGuard, SharedWriteGuard,
 };
 use crate::db::datastore::system_tables::{
-    with_sys_table_buf, StColumnFields, StColumnRow, StConstraintFields, StConstraintRow, StFields as _, StIndexFields,
-    StIndexRow, StRowLevelSecurityFields, StRowLevelSecurityRow, StScheduledFields, StScheduledRow, StSequenceFields,
-    StSequenceRow, StTableFields, StTableRow, SystemTable, ST_COLUMN_ID, ST_CONSTRAINT_ID, ST_INDEX_ID,
-    ST_ROW_LEVEL_SECURITY_ID, ST_SCHEDULED_ID, ST_SEQUENCE_ID, ST_TABLE_ID,
+    with_sys_table_buf, StClientFields, StClientRow, StColumnFields, StColumnRow, StConstraintFields, StConstraintRow,
+    StFields as _, StIndexFields, StIndexRow, StRowLevelSecurityFields, StRowLevelSecurityRow, StScheduledFields,
+    StScheduledRow, StSequenceFields, StSequenceRow, StTableFields, StTableRow, SystemTable, ST_CLIENT_ID,
+    ST_COLUMN_ID, ST_CONSTRAINT_ID, ST_INDEX_ID, ST_ROW_LEVEL_SECURITY_ID, ST_SCHEDULED_ID, ST_SEQUENCE_ID,
+    ST_TABLE_ID,
 };
 use crate::db::datastore::traits::{RowTypeForTable, TxData};
 use crate::db::datastore::{
@@ -34,9 +35,14 @@ use core::ops::RangeBounds;
 use core::{iter, ops::Bound};
 use smallvec::SmallVec;
 use spacetimedb_execution::{dml::MutDatastore, Datastore, DeltaStore};
-use spacetimedb_lib::db::{auth::StAccess, raw_def::SEQUENCE_ALLOCATION_STEP};
 use spacetimedb_lib::{db::raw_def::v9::RawSql, metrics::ExecutionMetrics};
-use spacetimedb_primitives::{ColId, ColList, ColSet, ConstraintId, IndexId, ScheduleId, SequenceId, TableId};
+use spacetimedb_lib::{
+    db::{auth::StAccess, raw_def::SEQUENCE_ALLOCATION_STEP},
+    ConnectionId, Identity,
+};
+use spacetimedb_primitives::{
+    col_list, ColId, ColList, ColSet, ConstraintId, IndexId, ScheduleId, SequenceId, TableId,
+};
 use spacetimedb_sats::{
     bsatn::{self, to_writer, DecodeError, Deserializer},
     de::{DeserializeSeed, WithBound},
@@ -102,14 +108,15 @@ impl DeltaStore for MutTxId {
 }
 
 impl MutDatastore for MutTxId {
-    fn insert_product_value(&mut self, table_id: TableId, row: &ProductValue) -> anyhow::Result<()> {
-        self.insert_via_serialize_bsatn(table_id, row)?;
-        Ok(())
+    fn insert_product_value(&mut self, table_id: TableId, row: &ProductValue) -> anyhow::Result<bool> {
+        Ok(match self.insert_via_serialize_bsatn(table_id, row)?.1 {
+            RowRefInsertion::Inserted(_) => true,
+            RowRefInsertion::Existed(_) => false,
+        })
     }
 
-    fn delete_product_value(&mut self, table_id: TableId, row: &ProductValue) -> anyhow::Result<()> {
-        self.delete_by_row_value(table_id, row)?;
-        Ok(())
+    fn delete_product_value(&mut self, table_id: TableId, row: &ProductValue) -> anyhow::Result<bool> {
+        Ok(self.delete_by_row_value(table_id, row)?)
     }
 }
 
@@ -1229,6 +1236,31 @@ impl<'a> Iterator for IndexScanFilterDeleted<'a> {
 }
 
 impl MutTxId {
+    pub(crate) fn insert_st_client(&mut self, identity: Identity, connection_id: ConnectionId) -> Result<()> {
+        let row = &StClientRow {
+            identity: identity.into(),
+            connection_id: connection_id.into(),
+        };
+        self.insert_via_serialize_bsatn(ST_CLIENT_ID, row).map(|_| ())
+    }
+
+    pub(crate) fn delete_st_client(&mut self, identity: Identity, connection_id: ConnectionId) -> Result<()> {
+        let row = &StClientRow {
+            identity: identity.into(),
+            connection_id: connection_id.into(),
+        };
+        let ptr = self
+            .iter_by_col_eq(
+                ST_CLIENT_ID,
+                col_list![StClientFields::Identity, StClientFields::ConnectionId],
+                &AlgebraicValue::product(row),
+            )?
+            .next()
+            .expect("the client should be connected")
+            .pointer();
+        self.delete(ST_CLIENT_ID, ptr).map(drop)
+    }
+
     pub(crate) fn insert_via_serialize_bsatn<'a, T: Serialize>(
         &'a mut self,
         table_id: TableId,
@@ -1312,16 +1344,18 @@ impl MutTxId {
                 unsafe { tx_table.write_gen_val_to_col(col_id, tx_row_ptr, seq_val) };
             }
 
+            // `CHECK_SAME_ROW = true`, as there might be an identical row already in the tx state.
             // SAFETY: `self.is_row_present(row)` holds as we still haven't deleted the row,
             // in particular, the `write_gen_val_to_col` call does not remove the row.
-            let res = unsafe { tx_table.confirm_insertion(tx_blob_store, tx_row_ptr, blob_bytes) };
+            let res = unsafe { tx_table.confirm_insertion::<true>(tx_blob_store, tx_row_ptr, blob_bytes) };
             ((tx_table, tx_blob_store, delete_table), cols_to_gen, res)
         } else {
             // When `GENERATE` is not enabled, simply confirm the insertion.
             // This branch is hit when inside sequence generation itself, to avoid infinite recursion.
             let tx_row_ptr = tx_row_ref.pointer();
+            // `CHECK_SAME_ROW = true`, as there might be an identical row already in the tx state.
             // SAFETY: `self.is_row_present(row)` holds as we just inserted the row.
-            let res = unsafe { tx_table.confirm_insertion(tx_blob_store, tx_row_ptr, blob_bytes) };
+            let res = unsafe { tx_table.confirm_insertion::<true>(tx_blob_store, tx_row_ptr, blob_bytes) };
             // SAFETY: By virtue of `get_table_and_blob_store_or_maybe_create_from` above succeeding,
             // we can assume we have an insert and delete table.
             (
@@ -1598,10 +1632,19 @@ impl MutTxId {
 
                 // Check constraints and confirm the insertion of the new row.
                 //
+                // `CHECK_SAME_ROW = false`,
+                // as we know there's a row (`old_ptr`) in the committed state with,
+                // for columns `C`, a unique value X.
+                // For `row` to be identical to another row in the tx state,
+                // it must have the value `X` for `C`,
+                // but it cannot, as the committed state already has `X` for `C`.
+                // So we don't need to check the tx state for a duplicate row.
+                //
                 // SAFETY: `self.is_row_present(row)` holds as we still haven't deleted the row,
                 // in particular, the `write_gen_val_to_col` call does not remove the row.
                 // On error, `tx_row_ptr` has already been removed, so don't do it again.
-                let (_, tx_row_ptr) = unsafe { tx_table.confirm_insertion(tx_blob_store, tx_row_ptr, blob_bytes) }?;
+                let (_, tx_row_ptr) =
+                    unsafe { tx_table.confirm_insertion::<false>(tx_blob_store, tx_row_ptr, blob_bytes) }?;
                 // Delete the old row.
                 del_table.insert(old_ptr);
                 tx_row_ptr
@@ -1656,11 +1699,19 @@ impl MutTxId {
 
                         // Check constraints and confirm the insertion of the new row.
                         //
+                        // `CHECK_SAME_ROW = false`,
+                        // as we know there's a row (`old_ptr`) in the committed state with,
+                        // for columns `C`, a unique value X.
+                        // For `row` to be identical to another row in the tx state,
+                        // it must have the value `X` for `C`,
+                        // but it cannot, as the committed state already has `X` for `C`.
+                        // So we don't need to check the tx state for a duplicate row.
+                        //
                         // SAFETY: `self.is_row_present(row)` holds as we still haven't deleted the row,
                         // in particular, the `write_gen_val_to_col` call does not remove the row.
                         // On error, `tx_row_ptr` has already been removed, so don't do it again.
                         let (_, tx_row_ptr) =
-                            unsafe { tx_table.confirm_insertion(tx_blob_store, tx_row_ptr, blob_bytes) }?;
+                            unsafe { tx_table.confirm_insertion::<false>(tx_blob_store, tx_row_ptr, blob_bytes) }?;
                         // Delete the old row.
                         del_table.insert(old_ptr);
                         tx_row_ptr
@@ -1674,8 +1725,7 @@ impl MutTxId {
                         // as we've deleted neither.
                         // In particular, the `write_gen_val_to_col` call does not remove the row.
                         let tx_row_ptr =
-                            unsafe { tx_table.confirm_update(tx_blob_store, tx_row_ptr, old_ptr, blob_bytes) }
-                                .map_err(IndexError::UniqueConstraintViolation)?;
+                            unsafe { tx_table.confirm_update(tx_blob_store, tx_row_ptr, old_ptr, blob_bytes) }?;
 
                         if let Some(old_commit_del_ptr) = old_commit_del_ptr {
                             let commit_table =

@@ -6,10 +6,13 @@ use std::time::Instant;
 use super::messages::{OneOffQueryResponseMessage, SerializableMessage};
 use super::{message_handlers, ClientActorId, MessageHandleError};
 use crate::error::DBError;
+use crate::host::module_host::ClientConnectedError;
 use crate::host::{ModuleHost, NoSuchModule, ReducerArgs, ReducerCallError, ReducerCallResult};
 use crate::messages::websocket::Subscribe;
 use crate::util::prometheus_handle::IntGaugeExt;
 use crate::worker_metrics::WORKER_METRICS;
+use bytes::Bytes;
+use bytestring::ByteString;
 use derive_more::From;
 use futures::prelude::*;
 use spacetimedb_client_api_messages::websocket::{
@@ -140,8 +143,20 @@ impl Deref for ClientConnection {
 
 #[derive(Debug, From)]
 pub enum DataMessage {
-    Text(String),
-    Binary(Vec<u8>),
+    Text(ByteString),
+    Binary(Bytes),
+}
+
+impl From<String> for DataMessage {
+    fn from(value: String) -> Self {
+        ByteString::from(value).into()
+    }
+}
+
+impl From<Vec<u8>> for DataMessage {
+    fn from(value: Vec<u8>) -> Self {
+        Bytes::from(value).into()
+    }
 }
 
 impl DataMessage {
@@ -171,7 +186,7 @@ impl ClientConnection {
         replica_id: u64,
         mut module_rx: watch::Receiver<ModuleHost>,
         actor: impl FnOnce(ClientConnection, mpsc::Receiver<SerializableMessage>) -> Fut,
-    ) -> Result<ClientConnection, ReducerCallError>
+    ) -> Result<ClientConnection, ClientConnectedError>
     where
         Fut: Future<Output = ()> + Send + 'static,
     {
@@ -180,9 +195,7 @@ impl ClientConnection {
         // logically subscribed to the database, not any particular replica. We should handle failover for
         // them and stuff. Not right now though.
         let module = module_rx.borrow_and_update().clone();
-        module
-            .call_identity_connected_disconnected(id.identity, id.connection_id, true)
-            .await?;
+        module.call_identity_connected(id.identity, id.connection_id).await?;
 
         let (sendtx, sendrx) = mpsc::channel::<SerializableMessage>(CLIENT_CHANNEL_CAPACITY);
 

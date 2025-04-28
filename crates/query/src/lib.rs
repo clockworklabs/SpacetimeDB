@@ -7,9 +7,10 @@ use spacetimedb_execution::{
 use spacetimedb_expr::{
     check::{parse_and_type_sub, SchemaView},
     expr::ProjectList,
+    rls::{resolve_views_for_sql, resolve_views_for_sub},
     statement::{parse_and_type_sql, Statement, DML},
 };
-use spacetimedb_lib::{metrics::ExecutionMetrics, ProductValue};
+use spacetimedb_lib::{identity::AuthCtx, metrics::ExecutionMetrics, ProductValue};
 use spacetimedb_physical_plan::{
     compile::{compile_dml_plan, compile_select, compile_select_list},
     plan::{ProjectListPlan, ProjectPlan},
@@ -21,12 +22,16 @@ use spacetimedb_primitives::TableId;
 /// This prevents a stack overflow when compiling queries with deeply-nested `AND` and `OR` conditions.
 const MAX_SQL_LENGTH: usize = 50_000;
 
-pub fn compile_subscription(sql: &str, tx: &impl SchemaView) -> Result<(ProjectPlan, TableId, Box<str>)> {
+pub fn compile_subscription(
+    sql: &str,
+    tx: &impl SchemaView,
+    auth: &AuthCtx,
+) -> Result<(Vec<ProjectPlan>, TableId, Box<str>, bool)> {
     if sql.len() > MAX_SQL_LENGTH {
         bail!("SQL query exceeds maximum allowed length: \"{sql:.120}...\"")
     }
 
-    let plan = parse_and_type_sub(sql, tx)?;
+    let (plan, mut has_param) = parse_and_type_sub(sql, tx, auth)?;
 
     let Some(return_id) = plan.return_table_id() else {
         bail!("Failed to determine TableId for query")
@@ -36,17 +41,25 @@ pub fn compile_subscription(sql: &str, tx: &impl SchemaView) -> Result<(ProjectP
         bail!("TableId `{return_id}` does not exist")
     };
 
-    let plan = compile_select(plan);
+    // Resolve any RLS filters
+    let plan_fragments = resolve_views_for_sub(tx, plan, auth, &mut has_param)?
+        .into_iter()
+        .map(compile_select)
+        .collect();
 
-    Ok((plan, return_id, return_name))
+    Ok((plan_fragments, return_id, return_name, has_param))
 }
 
 /// A utility for parsing and type checking a sql statement
-pub fn compile_sql_stmt(sql: &str, tx: &impl SchemaView) -> Result<Statement> {
+pub fn compile_sql_stmt(sql: &str, tx: &impl SchemaView, auth: &AuthCtx) -> Result<Statement> {
     if sql.len() > MAX_SQL_LENGTH {
         bail!("SQL query exceeds maximum allowed length: \"{sql:.120}...\"")
     }
-    Ok(parse_and_type_sql(sql, tx)?)
+
+    match parse_and_type_sql(sql, tx, auth)? {
+        stmt @ Statement::DML(_) => Ok(stmt),
+        Statement::Select(expr) => Ok(Statement::Select(resolve_views_for_sql(tx, expr, auth)?)),
+    }
 }
 
 /// A utility for executing a sql select statement

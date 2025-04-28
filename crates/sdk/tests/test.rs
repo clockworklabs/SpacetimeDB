@@ -215,6 +215,46 @@ macro_rules! declare_tests_with_suffix {
             fn row_deduplication_r_join_s_and_r_join_t8() {
                 make_test("row-deduplication-r-join-s-and-r-joint").run();
             }
+
+            #[test]
+            fn test_lhs_join_update() {
+                make_test("test-lhs-join-update").run()
+            }
+
+            #[test]
+            fn test_lhs_join_update_disjoint_queries() {
+                make_test("test-lhs-join-update-disjoint-queries").run()
+            }
+
+            #[test]
+            fn test_intra_query_bag_semantics_for_join() {
+                make_test("test-intra-query-bag-semantics-for-join").run()
+            }
+
+            #[test]
+            fn two_different_compression_algos() {
+                make_test("two-different-compression-algos").run();
+            }
+
+            #[test]
+            fn test_parameterized_subscription() {
+                make_test("test-parameterized-subscription").run();
+            }
+
+            #[test]
+            fn test_rls_subscription() {
+                make_test("test-rls-subscription").run()
+            }
+
+            #[test]
+            fn pk_simple_enum() {
+                make_test("pk-simple-enum").run();
+            }
+
+            #[test]
+            fn indexed_simple_enum() {
+                make_test("indexed-simple-enum").run();
+            }
         }
     };
 }

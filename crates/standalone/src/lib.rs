@@ -1,22 +1,23 @@
 mod control_db;
-mod energy_monitor;
 pub mod subcommands;
 pub mod util;
 pub mod version;
 
 use crate::control_db::ControlDb;
 use crate::subcommands::start;
-use anyhow::{ensure, Context};
+use anyhow::{ensure, Context, Ok};
 use async_trait::async_trait;
 use clap::{ArgMatches, Command};
-use energy_monitor::StandaloneEnergyMonitor;
 use spacetimedb::client::ClientActorIndex;
 use spacetimedb::config::{CertificateAuthority, MetadataFile};
+use spacetimedb::db::datastore::traits::Program;
 use spacetimedb::db::db_metrics::data_size::DATA_SIZE_METRICS;
-use spacetimedb::db::relational_db::{self, Durability, Txdata};
+use spacetimedb::db::relational_db;
 use spacetimedb::db::{db_metrics::DB_METRICS, Config};
-use spacetimedb::energy::{EnergyBalance, EnergyQuanta};
-use spacetimedb::host::{DiskStorage, DurabilityProvider, ExternalDurability, HostController, UpdateDatabaseResult};
+use spacetimedb::energy::{EnergyBalance, EnergyQuanta, NullEnergyMonitor};
+use spacetimedb::host::{
+    DiskStorage, DurabilityProvider, ExternalDurability, HostController, StartSnapshotWatcher, UpdateDatabaseResult,
+};
 use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, Node, Replica};
 use spacetimedb::worker_metrics::WORKER_METRICS;
@@ -47,22 +48,14 @@ impl StandaloneEnv {
     ) -> anyhow::Result<Arc<Self>> {
         let _pid_file = data_dir.pid_file()?;
         let meta_path = data_dir.metadata_toml();
-        let meta = MetadataFile {
-            version: spacetimedb::config::current_version(),
-            edition: "standalone".to_owned(),
-            client_connection_id: None,
-        };
+        let mut meta = MetadataFile::new("standalone");
         if let Some(existing_meta) = MetadataFile::read(&meta_path).context("failed reading metadata.toml")? {
-            anyhow::ensure!(
-                existing_meta.version_compatible_with(&meta.version) && existing_meta.edition == meta.edition,
-                "metadata.toml indicates that this database is from an incompatible \
-                 version of SpacetimeDB. please run a migration before proceeding."
-            );
+            meta = existing_meta.check_compatibility_and_update(meta)?;
         }
         meta.write(&meta_path).context("failed writing metadata.toml")?;
 
         let control_db = ControlDb::new(&data_dir.control_db()).context("failed to initialize control db")?;
-        let energy_monitor = Arc::new(StandaloneEnergyMonitor::new(control_db.clone()));
+        let energy_monitor = Arc::new(NullEnergyMonitor);
         let program_store = Arc::new(DiskStorage::new(data_dir.program_bytes().0).await?);
 
         let durability_provider = Arc::new(StandaloneDurabilityProvider {
@@ -107,12 +100,19 @@ struct StandaloneDurabilityProvider {
 
 #[async_trait]
 impl DurabilityProvider for StandaloneDurabilityProvider {
-    async fn durability(&self, replica_id: u64) -> anyhow::Result<ExternalDurability> {
+    async fn durability(&self, replica_id: u64) -> anyhow::Result<(ExternalDurability, Option<StartSnapshotWatcher>)> {
         let commitlog_dir = self.data_dir.replica(replica_id).commit_log();
-        relational_db::local_durability(commitlog_dir)
-            .await
-            .map(|(durability, disk_size)| (durability as Arc<dyn Durability<TxData = Txdata>>, disk_size))
-            .map_err(Into::into)
+        let (durability, disk_size) = relational_db::local_durability(commitlog_dir).await?;
+        let start_snapshot_watcher = {
+            let durability = durability.clone();
+            |snapshot_rx| {
+                tokio::spawn(relational_db::snapshot_watching_commitlog_compressor(
+                    snapshot_rx,
+                    durability,
+                ));
+            }
+        };
+        Ok(((durability, disk_size), Some(Box::new(start_snapshot_watcher))))
     }
 }
 
@@ -228,14 +228,28 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
         match existing_db {
             // The database does not already exist, so we'll create it.
             None => {
-                let initial_program = self.program_store.put(&spec.program_bytes).await?;
+                let program = Program::from_bytes(&spec.program_bytes[..]);
+
                 let mut database = Database {
                     id: 0,
                     database_identity: spec.database_identity,
                     owner_identity: *publisher,
                     host_type: spec.host_type,
-                    initial_program,
+                    initial_program: program.hash,
                 };
+
+                let _hash_for_assert = program.hash;
+
+                // Instantiate a temporary database in order to check that the module is valid.
+                // This will e.g. typecheck RLS filters.
+                self.host_controller
+                    .check_module_validity(database.clone(), program)
+                    .await?;
+
+                let program_hash = self.program_store.put(&spec.program_bytes).await?;
+
+                debug_assert_eq!(_hash_for_assert, program_hash);
+
                 let database_id = self.control_db.insert_database(database.clone())?;
                 database.id = database_id;
 
@@ -328,6 +342,7 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
         );
 
         self.control_db.delete_database(database.id)?;
+
         for instance in self.control_db.get_replicas_by_database(database.id)? {
             self.delete_replica(instance.id).await?;
         }
@@ -346,8 +361,9 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
         self.control_db.set_energy_balance(*identity, balance)?;
         Ok(())
     }
-    async fn withdraw_energy(&self, identity: &Identity, amount: EnergyQuanta) -> anyhow::Result<()> {
-        withdraw_energy(&self.control_db, identity, amount)
+    async fn withdraw_energy(&self, _identity: &Identity, _amount: EnergyQuanta) -> anyhow::Result<()> {
+        // The energy balance code is obsolete.
+        Ok(())
     }
 
     async fn register_tld(&self, identity: &Identity, tld: Tld) -> anyhow::Result<RegisterTldResult> {
@@ -436,16 +452,6 @@ impl StandaloneEnv {
 
         Ok(())
     }
-}
-
-fn withdraw_energy(control_db: &ControlDb, identity: &Identity, amount: EnergyQuanta) -> anyhow::Result<()> {
-    let energy_balance = control_db.get_energy_balance(identity)?;
-    let energy_balance = energy_balance.unwrap_or(EnergyBalance::ZERO);
-    log::trace!("Withdrawing {} from {}", amount, identity);
-    log::trace!("Old balance: {}", energy_balance);
-    let new_balance = energy_balance.saturating_sub_energy(amount);
-    control_db.set_energy_balance(*identity, new_balance)?;
-    Ok(())
 }
 
 pub async fn exec_subcommand(cmd: &str, args: &ArgMatches) -> Result<(), anyhow::Error> {

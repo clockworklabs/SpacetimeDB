@@ -129,7 +129,7 @@ impl<T> LendingPool<T> {
         self.sem.available_permits()
     }
 
-    pub fn close(&self) -> Closed<'_> {
+    pub fn close(&self) {
         let mut vec = self.inner.vec.lock();
         self.sem.close();
         if let Some(deque) = vec.deque.take() {
@@ -138,7 +138,6 @@ impl<T> LendingPool<T> {
         if vec.total_count == 0 {
             self.inner.closed_notify.notify();
         }
-        self.closed()
     }
 
     pub fn closed(&self) -> Closed<'_> {

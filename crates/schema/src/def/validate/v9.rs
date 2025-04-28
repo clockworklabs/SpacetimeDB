@@ -625,9 +625,16 @@ impl TableValidator<'_, '_> {
                 let field = &self.product_type.elements[column.idx()];
                 let ty = &field.algebraic_type;
                 use AlgebraicType::*;
-                if let U8 | U16 | U32 | U64 = ty {
-                } else {
-                    return Err(ValidationError::DirectIndexOnNonUnsignedInt {
+                let is_bad_type = match ty {
+                    U8 | U16 | U32 | U64 => false,
+                    Ref(r) => self.module_validator.typespace[*r]
+                        .as_sum()
+                        .is_none_or(|s| !s.is_simple_enum()),
+                    Sum(sum) if sum.is_simple_enum() => false,
+                    _ => true,
+                };
+                if is_bad_type {
+                    return Err(ValidationError::DirectIndexOnBadType {
                         index: name.clone(),
                         column: field.name.clone().unwrap_or_else(|| column.idx().to_string().into()),
                         ty: ty.clone().into(),
@@ -1440,7 +1447,7 @@ mod tests {
             .finish();
         let result: Result<ModuleDef> = builder.finish().try_into();
 
-        expect_error_matching!(result, ValidationError::DirectIndexOnNonUnsignedInt { index, .. } => {
+        expect_error_matching!(result, ValidationError::DirectIndexOnBadType { index, .. } => {
             &index[..] == "Bananas_b_idx_direct"
         });
     }

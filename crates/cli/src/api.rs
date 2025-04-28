@@ -1,10 +1,11 @@
+use std::iter::Sum;
+use std::ops::Add;
+
 use reqwest::{header, Client, RequestBuilder};
 use serde::Deserialize;
-use serde_json::value::RawValue;
 
 use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
 use spacetimedb_lib::de::serde::DeserializeWrapper;
-use spacetimedb_lib::sats::ProductType;
 use spacetimedb_lib::Identity;
 
 use crate::util::{AuthHeader, ResponseExt};
@@ -82,11 +83,48 @@ impl ClientApi {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
-pub struct StmtResultJson<'a> {
-    pub schema: ProductType,
-    #[serde(borrow)]
-    pub rows: Vec<&'a RawValue>,
+pub(crate) type SqlStmtResult<'a> =
+    spacetimedb_client_api_messages::http::SqlStmtResult<&'a serde_json::value::RawValue>;
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct StmtStats {
+    pub total_duration_micros: u64,
+    pub rows_inserted: u64,
+    pub rows_updated: u64,
+    pub rows_deleted: u64,
+    pub total_rows: usize,
+}
+
+impl Sum<StmtStats> for StmtStats {
+    fn sum<I: Iterator<Item = StmtStats>>(iter: I) -> Self {
+        iter.fold(StmtStats::default(), Add::add)
+    }
+}
+
+impl Add for StmtStats {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Self {
+            total_duration_micros: self.total_duration_micros + rhs.total_duration_micros,
+            rows_inserted: self.rows_inserted + rhs.rows_inserted,
+            rows_deleted: self.rows_deleted + rhs.rows_deleted,
+            rows_updated: self.rows_updated + rhs.rows_updated,
+            total_rows: self.total_rows + rhs.total_rows,
+        }
+    }
+}
+
+impl From<&SqlStmtResult<'_>> for StmtStats {
+    fn from(value: &SqlStmtResult<'_>) -> Self {
+        Self {
+            total_duration_micros: value.total_duration_micros,
+            rows_inserted: value.stats.rows_inserted,
+            rows_deleted: value.stats.rows_deleted,
+            rows_updated: value.stats.rows_updated,
+            total_rows: value.rows.len(),
+        }
+    }
 }
 
 pub fn from_json_seed<'de, T: serde::de::DeserializeSeed<'de>>(

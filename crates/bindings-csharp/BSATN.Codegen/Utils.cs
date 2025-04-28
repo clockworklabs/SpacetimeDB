@@ -75,21 +75,35 @@ public static class Utils
     public class UnresolvedTypeException(INamedTypeSymbol type)
         : InvalidOperationException($"Could not resolve type {type}") { }
 
-    public static string GetTypeInfo(ITypeSymbol type)
-    {
+    /// <summary>
+    /// Return whether a type is a nullable, non-value type.
+    /// For example, `string?`.
+    /// </summary>
+    /// <param name="type"></param>
+    /// <returns></returns>
+    public static bool IsNullableReferenceType(ITypeSymbol type) =>
         // We need to distinguish handle nullable reference types specially:
         // compiler expands something like `int?` to `System.Nullable<int>` with the nullable annotation set to `Annotated`
-        // while something like `string?` is expanded to `string` with the nullable annotation set to `Annotated`...
-        // Beautiful design requires beautiful hacks.
-        if (
-            type.NullableAnnotation == NullableAnnotation.Annotated
-            && type.OriginalDefinition.SpecialType != SpecialType.System_Nullable_T
-        )
+        // while something like `string?` is expanded to `string` with the nullable annotation set to `Annotated`.
+        type.NullableAnnotation == NullableAnnotation.Annotated
+        && type.OriginalDefinition.SpecialType != SpecialType.System_Nullable_T;
+
+    /// <summary>
+    /// Get the BSATN struct name for a type.
+    /// </summary>
+    /// <param name="type"></param>
+    /// <returns></returns>
+    /// <exception cref="InvalidOperationException"></exception>
+    /// <exception cref="UnresolvedTypeException"></exception>
+    public static string GetTypeInfo(ITypeSymbol type)
+    {
+        if (IsNullableReferenceType(type))
         {
             // If we're here, then this is a nullable reference type like `string?` and the original definition is `string`.
             type = type.WithNullableAnnotation(NullableAnnotation.None);
             return $"SpacetimeDB.BSATN.RefOption<{type}, {GetTypeInfo(type)}>";
         }
+
         return type switch
         {
             ITypeParameterSymbol typeParameter => MakeRwTypeParam(typeParameter.Name),
@@ -270,6 +284,18 @@ public static class Utils
                 node = node.Parent as MemberDeclarationSyntax;
             }
             namespaces = new(namespaces_.ToImmutable());
+        }
+
+        /// <returns>Whether this Scope is a struct declaration.</returns>
+        public bool IsStruct
+        {
+            get => typeScopes[0].Keyword == "struct";
+        }
+
+        /// <returns>Whether this Scope is a record declaration.</returns>
+        public bool IsRecord
+        {
+            get => typeScopes[0].Keyword == "record";
         }
 
         public readonly record struct TypeScope(string Keyword, string Name, string Constraints);

@@ -1,3 +1,4 @@
+use super::ast::TableSchemaView;
 use super::ast::{compile_to_ast, Column, From, Join, Selection, SqlAst};
 use super::type_check::TypeCheck;
 use crate::db::datastore::locking_tx_datastore::state_view::StateView;
@@ -12,8 +13,6 @@ use spacetimedb_schema::schema::TableSchema;
 use spacetimedb_vm::expr::{CrudExpr, Expr, FieldExpr, QueryExpr, SourceExpr};
 use spacetimedb_vm::operator::OpCmp;
 use std::sync::Arc;
-
-use super::ast::TableSchemaView;
 
 /// DIRTY HACK ALERT: Maximum allowed length, in UTF-8 bytes, of SQL queries.
 /// Any query longer than this will be rejected.
@@ -237,9 +236,7 @@ mod tests {
     use spacetimedb_lib::error::{ResultTest, TestError};
     use spacetimedb_lib::{ConnectionId, Identity};
     use spacetimedb_primitives::{col_list, ColList, TableId};
-    use spacetimedb_sats::{
-        product, satn, AlgebraicType, AlgebraicValue, GroundSpacetimeType as _, ProductType, Typespace, ValueWithType,
-    };
+    use spacetimedb_sats::{product, AlgebraicType, AlgebraicValue, GroundSpacetimeType as _};
     use spacetimedb_vm::expr::{ColumnOp, IndexJoin, IndexScan, JoinExpr, Query};
     use std::convert::From;
     use std::ops::Bound;
@@ -399,59 +396,6 @@ mod tests {
         };
 
         assert_eq!(rows, vec![row]);
-
-        Ok(())
-    }
-
-    // Verify the output of `sql` matches the inputs for `Identity`, 'ConnectionId' & binary data.
-    #[test]
-    fn output_identity_connection_id() -> ResultTest<()> {
-        let row = product![AlgebraicValue::from(Identity::__dummy())];
-        let kind: ProductType = [("i", Identity::get_type())].into();
-        let ty = Typespace::EMPTY.with_type(&kind);
-        let out = ty
-            .with_values(&row)
-            .map(|value| satn::PsqlWrapper { ty: &kind, value }.to_string())
-            .collect::<Vec<_>>()
-            .join(", ");
-        assert_eq!(out, "0");
-
-        // Check tuples
-        let kind = [
-            ("a", AlgebraicType::String),
-            ("b", AlgebraicType::U256),
-            ("o", Identity::get_type()),
-            ("p", ConnectionId::get_type()),
-        ]
-        .into();
-
-        let value = AlgebraicValue::product([
-            AlgebraicValue::String("a".into()),
-            Identity::ZERO.to_u256().into(),
-            Identity::ZERO.to_u256().into(),
-            ConnectionId::ZERO.to_u128().into(),
-        ]);
-
-        assert_eq!(
-            satn::PsqlWrapper { ty: &kind, value }.to_string().as_str(),
-            "(0 = \"a\", 1 = 0, 2 = 0, 3 = 0)"
-        );
-
-        let ty = Typespace::EMPTY.with_type(&kind);
-
-        // Check struct
-        let value = product![
-            "a",
-            Identity::ZERO.to_u256(),
-            AlgebraicValue::product([Identity::ZERO.to_u256().into()]),
-            AlgebraicValue::product([ConnectionId::ZERO.to_u128().into()]),
-        ];
-
-        let value = ValueWithType::new(ty, &value);
-        assert_eq!(
-            satn::PsqlWrapper { ty: ty.ty(), value }.to_string().as_str(),
-            "(a = \"a\", b = 0, o = 0, p = 0)"
-        );
 
         Ok(())
     }
