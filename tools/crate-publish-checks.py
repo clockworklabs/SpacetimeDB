@@ -58,7 +58,7 @@ if __name__ == "__main__":
 
         dev_deps = data.get('dev-dependencies', {})
         package = data.get('package', {})
-        if check_deps(dev_deps) and check_package_metadata(package, cargo_toml_path):
+        if check_deps(dev_deps, cargo_toml_path) and check_package_metadata(package, cargo_toml_path):
             print(f"✅ {cargo_toml_path} passed all checks.")
         else:
             sys.exit(1)
