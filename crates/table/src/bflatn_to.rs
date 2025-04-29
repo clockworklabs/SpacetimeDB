@@ -10,6 +10,7 @@ use super::{
         RowTypeLayout, SumTypeLayout, VarLenType,
     },
     page::{GranuleOffsetIter, Page, VarView},
+    page_pool::PagePool,
     pages::Pages,
     table::BlobNumBytes,
     util::range_move,
@@ -47,6 +48,7 @@ pub enum Error {
 /// and must do so in the same order as a `VarLenVisitorProgram` for `ty` would,
 /// i.e. by monotonically increasing offsets.
 pub unsafe fn write_row_to_pages_bsatn(
+    pool: &PagePool,
     pages: &mut Pages,
     visitor: &impl VarLenMembers,
     blob_store: &mut dyn BlobStore,
@@ -55,7 +57,7 @@ pub unsafe fn write_row_to_pages_bsatn(
     squashed_offset: SquashedOffset,
 ) -> Result<(RowPointer, BlobNumBytes), Error> {
     let val = ty.product().deserialize(bsatn::Deserializer::new(&mut bytes))?;
-    unsafe { write_row_to_pages(pages, visitor, blob_store, ty, &val, squashed_offset) }
+    unsafe { write_row_to_pages(pool, pages, visitor, blob_store, ty, &val, squashed_offset) }
 }
 
 /// Writes `row` typed at `ty` to `pages`
@@ -70,6 +72,7 @@ pub unsafe fn write_row_to_pages_bsatn(
 /// and must do so in the same order as a `VarLenVisitorProgram` for `ty` would,
 /// i.e. by monotonically increasing offsets.
 pub unsafe fn write_row_to_pages(
+    pool: &PagePool,
     pages: &mut Pages,
     visitor: &impl VarLenMembers,
     blob_store: &mut dyn BlobStore,
@@ -79,7 +82,7 @@ pub unsafe fn write_row_to_pages(
 ) -> Result<(RowPointer, BlobNumBytes), Error> {
     let num_granules = required_var_len_granules_for_row(val);
 
-    match pages.with_page_to_insert_row(ty.size(), num_granules, |page| {
+    match pages.with_page_to_insert_row(pool, ty.size(), num_granules, |page| {
         // SAFETY:
         // - Caller promised that `pages` is suitable for storing instances of `ty`
         //   so `page` is also suitable.

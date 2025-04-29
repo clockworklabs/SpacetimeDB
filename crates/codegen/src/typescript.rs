@@ -319,7 +319,22 @@ removeOnUpdate = (cb: (ctx: EventContext, onRow: {row_type}, newRow: {row_type})
             writeln!(out, "tableName: \"{}\",", table.name);
             writeln!(out, "rowType: {row_type}.getTypeScriptAlgebraicType(),");
             if let Some(pk) = schema.pk() {
+                // This is left here so we can release the codegen change before releasing a new
+                // version of the SDK.
+                //
+                // Eventually we can remove this and only generate use the `primaryKeyInfo` field.
                 writeln!(out, "primaryKey: \"{}\",", pk.col_name.to_string().to_case(Case::Camel));
+
+                writeln!(out, "primaryKeyInfo: {{");
+                out.indent(1);
+                writeln!(out, "colName: \"{}\",", pk.col_name.to_string().to_case(Case::Camel));
+                writeln!(
+                    out,
+                    "colType: {row_type}.getTypeScriptAlgebraicType().product.elements[{}].algebraicType,",
+                    pk.col_pos.0
+                );
+                out.dedent(1);
+                writeln!(out, "}},");
             }
             out.dedent(1);
             writeln!(out, "}},");
