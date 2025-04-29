@@ -3,7 +3,7 @@ import argparse
 import sys
 from pathlib import Path
 
-def check_deps(dev_deps):
+def check_deps(dev_deps, cargo_toml_path):
     non_path_spacetimedb = []
     for name, details in dev_deps.items():
         if not name.startswith("spacetimedb"):
@@ -16,7 +16,7 @@ def check_deps(dev_deps):
             # String dependency = version from crates.io
             non_path_spacetimedb.append(name)
     if non_path_spacetimedb:
-        print(f"❌ These dev-dependencies must be converted to use `path` in order to not impede crate publishing:")
+        print(f"❌ These dev-dependencies in {cargo_toml_path} must be converted to use `path` in order to not impede crate publishing:")
         for dep in non_path_spacetimedb:
             print(f"  - {dep}")
         return False
@@ -27,18 +27,18 @@ def check_package_metadata(package, cargo_toml_path):
 
     # Accept either license OR license-file
     if "license" not in package and "license-file" not in package:
-        print(f"❌ Missing required field: license/license-file")
+        print(f"❌ Missing required field in {cargo_toml_path}: license/license-file")
         has_errors = True
 
     if "license-file" in package:
         license_file = package["license-file"]
         license_path = cargo_toml_path.parent / license_file
         if not license_path.exists():
-            print(f"❌ License file '{license_file}' specified in Cargo.toml does not exist")
+            print(f"❌ License file '{license_file}' specified in {cargo_toml_path} does not exist")
             has_errors = True
 
     if "description" not in package:
-        print(f"❌ Missing required field: description")
+        print(f"❌ Missing required field in {cargo_toml_path}: description")
         has_errors = True
 
     return not has_errors
