@@ -1242,6 +1242,7 @@ impl TableIndex {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::page_pool::PagePool;
     use crate::{blob_store::HashMapBlobStore, table::test::table};
     use core::ops::Bound::*;
     use proptest::prelude::*;
@@ -1301,8 +1302,9 @@ mod test {
         fn remove_nonexistent_noop(((ty, cols, pv), is_unique) in (gen_row_and_cols(), any::<bool>())) {
             let mut index = new_index(&ty, &cols, is_unique);
             let mut table = table(ty);
+            let pool = PagePool::default();
             let mut blob_store = HashMapBlobStore::default();
-            let row_ref = table.insert(&mut blob_store, &pv).unwrap().1;
+            let row_ref = table.insert(&pool, &mut blob_store, &pv).unwrap().1;
             prop_assert_eq!(index.delete(row_ref).unwrap(), false);
             prop_assert!(index.idx.is_empty());
         }
@@ -1311,8 +1313,9 @@ mod test {
         fn insert_delete_noop(((ty, cols, pv), is_unique) in (gen_row_and_cols(), any::<bool>())) {
             let mut index = new_index(&ty, &cols, is_unique);
             let mut table = table(ty);
+            let pool = PagePool::default();
             let mut blob_store = HashMapBlobStore::default();
-            let row_ref = table.insert(&mut blob_store, &pv).unwrap().1;
+            let row_ref = table.insert(&pool, &mut blob_store, &pv).unwrap().1;
             let value = get_fields(&cols, &pv);
 
             prop_assert_eq!(index.idx.len(), 0);
@@ -1331,8 +1334,9 @@ mod test {
         fn insert_again_violates_unique_constraint((ty, cols, pv) in gen_row_and_cols()) {
             let mut index = new_index(&ty, &cols, true);
             let mut table = table(ty);
+            let pool = PagePool::default();
             let mut blob_store = HashMapBlobStore::default();
-            let row_ref = table.insert(&mut blob_store, &pv).unwrap().1;
+            let row_ref = table.insert(&pool, &mut blob_store, &pv).unwrap().1;
             let value = get_fields(&cols, &pv);
 
             // Nothing in the index yet.
@@ -1366,6 +1370,7 @@ mod test {
             let ty = ProductType::from_iter([AlgebraicType::U64]);
             let mut index = new_index(&ty, &cols, true);
             let mut table = table(ty);
+            let pool = PagePool::default();
             let mut blob_store = HashMapBlobStore::default();
 
             let prev = needle - 1;
@@ -1377,7 +1382,7 @@ mod test {
             // Insert `prev`, `needle`, and `next`.
             for x in range.clone() {
                 let row = product![x];
-                let row_ref = table.insert(&mut blob_store, &row).unwrap().1;
+                let row_ref = table.insert(&pool, &mut blob_store, &row).unwrap().1;
                 val_to_ptr.insert(x, row_ref.pointer());
                 // SAFETY: `row_ref` has the same type as was passed in when constructing `index`.
                 prop_assert_eq!(unsafe { index.check_and_insert(row_ref) }, Ok(()));

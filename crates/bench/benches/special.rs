@@ -8,6 +8,7 @@ use spacetimedb_bench::{
 use spacetimedb_lib::sats::{self, bsatn};
 use spacetimedb_lib::{bsatn::ToBsatn as _, ProductValue};
 use spacetimedb_schema::schema::TableSchema;
+use spacetimedb_table::page_pool::PagePool;
 use spacetimedb_testing::modules::{Csharp, ModuleLanguage, Rust};
 use std::sync::Arc;
 use std::sync::OnceLock;
@@ -140,6 +141,7 @@ fn serialize_benchmarks<
         Arc::new(table_schema),
         spacetimedb_table::indexes::SquashedOffset::COMMITTED_STATE,
     );
+    let pool = PagePool::default();
     let mut blob_store = spacetimedb_table::blob_store::HashMapBlobStore::default();
 
     let ptrs = data_pv
@@ -147,7 +149,7 @@ fn serialize_benchmarks<
         .iter()
         .map(|row| {
             table
-                .insert(&mut blob_store, row.as_product().unwrap())
+                .insert(&pool, &mut blob_store, row.as_product().unwrap())
                 .unwrap()
                 .1
                 .pointer()

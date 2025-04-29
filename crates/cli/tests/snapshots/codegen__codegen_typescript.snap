@@ -881,21 +881,37 @@ const REMOTE_MODULE = {
       tableName: "logged_out_player",
       rowType: Player.getTypeScriptAlgebraicType(),
       primaryKey: "identity",
+      primaryKeyInfo: {
+        colName: "identity",
+        colType: Player.getTypeScriptAlgebraicType().product.elements[0].algebraicType,
+      },
     },
     person: {
       tableName: "person",
       rowType: Person.getTypeScriptAlgebraicType(),
       primaryKey: "id",
+      primaryKeyInfo: {
+        colName: "id",
+        colType: Person.getTypeScriptAlgebraicType().product.elements[0].algebraicType,
+      },
     },
     pk_multi_identity: {
       tableName: "pk_multi_identity",
       rowType: PkMultiIdentity.getTypeScriptAlgebraicType(),
       primaryKey: "id",
+      primaryKeyInfo: {
+        colName: "id",
+        colType: PkMultiIdentity.getTypeScriptAlgebraicType().product.elements[0].algebraicType,
+      },
     },
     player: {
       tableName: "player",
       rowType: Player.getTypeScriptAlgebraicType(),
       primaryKey: "identity",
+      primaryKeyInfo: {
+        colName: "identity",
+        colType: Player.getTypeScriptAlgebraicType().product.elements[0].algebraicType,
+      },
     },
     points: {
       tableName: "points",
@@ -909,6 +925,10 @@ const REMOTE_MODULE = {
       tableName: "repeating_test_arg",
       rowType: RepeatingTestArg.getTypeScriptAlgebraicType(),
       primaryKey: "scheduledId",
+      primaryKeyInfo: {
+        colName: "scheduledId",
+        colType: RepeatingTestArg.getTypeScriptAlgebraicType().product.elements[0].algebraicType,
+      },
     },
     test_a: {
       tableName: "test_a",
@@ -922,6 +942,10 @@ const REMOTE_MODULE = {
       tableName: "test_e",
       rowType: TestE.getTypeScriptAlgebraicType(),
       primaryKey: "id",
+      primaryKeyInfo: {
+        colName: "id",
+        colType: TestE.getTypeScriptAlgebraicType().product.elements[0].algebraicType,
+      },
     },
     test_f: {
       tableName: "test_f",

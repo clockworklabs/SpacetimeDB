@@ -45,6 +45,7 @@ use spacetimedb_schema::schema::{IndexSchema, SequenceSchema, TableSchema};
 use spacetimedb_snapshot::{ReconstructedSnapshot, SnapshotRepository};
 use spacetimedb_table::{
     indexes::RowPointer,
+    page_pool::PagePool,
     table::{RowRef, Table},
     MemoryUsage,
 };
@@ -91,9 +92,9 @@ impl MemoryUsage for Locking {
 }
 
 impl Locking {
-    pub fn new(database_identity: Identity) -> Self {
+    pub fn new(database_identity: Identity, page_pool: PagePool) -> Self {
         Self {
-            committed_state: <_>::default(),
+            committed_state: Arc::new(RwLock::new(CommittedState::new(page_pool))),
             sequence_state: <_>::default(),
             database_identity,
         }
@@ -101,12 +102,12 @@ impl Locking {
 
     /// IMPORTANT! This the most delicate function in the entire codebase.
     /// DO NOT CHANGE UNLESS YOU KNOW WHAT YOU'RE DOING!!!
-    pub fn bootstrap(database_identity: Identity) -> Result<Self> {
+    pub fn bootstrap(database_identity: Identity, page_pool: PagePool) -> Result<Self> {
         log::trace!("DATABASE: BOOTSTRAPPING SYSTEM TABLES...");
 
         // NOTE! The bootstrapping process does not take plan in a transaction.
         // This is intentional.
-        let datastore = Self::new(database_identity);
+        let datastore = Self::new(database_identity, page_pool);
         let mut commit_state = datastore.committed_state.write_arc();
         // TODO(cloutiertyler): One thing to consider in the future is, should
         // we persist the bootstrap transaction in the message log? My intuition
@@ -173,7 +174,7 @@ impl Locking {
     /// - Notably, **do not** construct indexes or sequences.
     ///   This should be done by [`Self::rebuild_state_after_replay`],
     ///   after replaying the suffix of the commitlog.
-    pub fn restore_from_snapshot(snapshot: ReconstructedSnapshot) -> Result<Self> {
+    pub fn restore_from_snapshot(snapshot: ReconstructedSnapshot, page_pool: PagePool) -> Result<Self> {
         let ReconstructedSnapshot {
             database_identity,
             tx_offset,
@@ -182,7 +183,7 @@ impl Locking {
             ..
         } = snapshot;
 
-        let datastore = Self::new(database_identity);
+        let datastore = Self::new(database_identity, page_pool);
         let mut committed_state = datastore.committed_state.write_arc();
         committed_state.blob_store = blob_store;
 
@@ -196,7 +197,7 @@ impl Locking {
                 // As such, this call will compute and save the schema from `st_table` and friends.
                 None => committed_state.schema_for_table(table_id)?,
             };
-            let (table, blob_store) = committed_state.get_table_and_blob_store_or_create(table_id, &schema);
+            let (table, blob_store, _) = committed_state.get_table_and_blob_store_or_create(table_id, &schema);
             unsafe {
                 // Safety:
                 // - The snapshot is uncorrupted because reconstructing it verified its hashes.
@@ -1156,7 +1157,7 @@ mod tests {
     }
 
     fn get_datastore() -> Result<Locking> {
-        Locking::bootstrap(Identity::ZERO)
+        Locking::bootstrap(Identity::ZERO, <_>::default())
     }
 
     fn col(col: u16) -> ColList {

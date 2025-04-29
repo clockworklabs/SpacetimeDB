@@ -6,7 +6,6 @@ import random
 import re
 import shutil
 import string
-import string
 import subprocess
 import sys
 import tempfile
@@ -37,6 +36,9 @@ HAVE_DOCKER = False
 # this is set to true when the --skip-dotnet flag is not passed to the cli,
 # and a dotnet installation is detected
 HAVE_DOTNET = False
+
+# default value can be overriden by `--compose-file` flag
+COMPOSE_FILE = "./docker-compose.yml"
 
 # we need to late-bind the output stream to allow unittests to capture stdout/stderr.
 class CapturableHandler(logging.StreamHandler):
@@ -113,7 +115,7 @@ def run_cmd(*args, capture_stderr=True, check=True, full_output=False, cmd_name=
 
     needs_close = False
     if not capture_stderr:
-        logging.debug(f"--- stderr ---")
+        logging.debug("--- stderr ---")
         needs_close = True
 
     output = subprocess.run(
@@ -172,6 +174,12 @@ class Smoketest(unittest.TestCase):
         anon = ["--anonymous"] if anon else []
         self.spacetime("call", *anon, "--", self.database_identity, reducer, *map(json.dumps, args))
 
+
+    def sql(self, sql):
+        self._check_published()
+        anon = ["--anonymous"]
+        return self.spacetime("sql", *anon, "--", self.database_identity, sql)
+
     def logs(self, n):
         return [log["message"] for log in self.log_records(n)]
 
@@ -181,6 +189,7 @@ class Smoketest(unittest.TestCase):
         return list(map(json.loads, logs.splitlines()))
 
     def publish_module(self, domain=None, *, clear=True, capture_stderr=True):
+        print("publishing module", self.publish_module)
         publish_output = self.spacetime(
             "publish",
             *[domain] if domain is not None else [],
@@ -210,7 +219,7 @@ class Smoketest(unittest.TestCase):
         self._check_published()
         assert isinstance(n, int)
 
-        args = [SPACETIME_BIN, "--config-path", str(self.config_path),"subscribe", self.database_identity, "-t", "60", "-n", str(n), "--print-initial-update", "--", *queries]
+        args = [SPACETIME_BIN, "--config-path", str(self.config_path),"subscribe", self.database_identity, "-t", "600", "-n", str(n), "--print-initial-update", "--", *queries]
         fake_args = ["spacetime", *args[1:]]
         log_cmd(fake_args)
 
@@ -294,12 +303,12 @@ class Smoketest(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        if hasattr(cls, "database_identity"):
-            try:
-                # TODO: save the credentials in publish_module()
-                cls.spacetime("delete", cls.database_identity)
-            except Exception:
-                pass
+       if hasattr(cls, "database_identity"):
+           try:
+               # TODO: save the credentials in publish_module()
+               cls.spacetime("delete", cls.database_identity)
+           except Exception:
+               pass
 
     if sys.version_info < (3, 11):
         # polyfill; python 3.11 defines this classmethod on TestCase
