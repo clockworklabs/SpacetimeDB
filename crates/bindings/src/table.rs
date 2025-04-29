@@ -388,6 +388,28 @@ impl<Tbl: Table, Col: Index + Column<Table = Tbl>> UniqueColumn<Tbl, Col::ColTyp
         let buf = IterBuf::take();
         update::<Tbl>(Col::index_id(), new_row, buf)
     }
+
+    /// Attempts to insert `new_row` into the table. If it exists, deletes the row with the same value in the unique column.
+    #[track_caller]
+    pub fn try_upsert(&self, new_row: Tbl::Row) -> Result<Tbl::Row, TryInsertError<Tbl>> {
+        let index = Col::get_field(&new_row);
+        match self._find(index) {
+            None => {
+                let buf = IterBuf::take();
+                insert::<Tbl>(new_row, buf)
+            }
+            Some(_existing) => Ok(self.update(new_row)),
+        }
+    }
+
+    /// Attempts to insert `new_row` into the table. If it exists, deletes the row with the same value in the unique column.
+    ///
+    /// # Panics
+    /// Panics if either the delete or the insertion would violate a constraint.
+    #[track_caller]
+    pub fn upsert(&self, new_row: Tbl::Row) -> Tbl::Row {
+        self.try_upsert(new_row).unwrap_or_else(|e| panic!("{e}"))
+    }
 }
 
 pub trait Index {
