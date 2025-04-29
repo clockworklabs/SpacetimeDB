@@ -77,7 +77,7 @@ pub trait BlobStore: Sync {
     /// Insert `bytes` into the blob store.
     ///
     /// Returns the content address of `bytes` a `BlobHash`
-    /// which can be used in [`retrieve_blob`] to fetch it.
+    /// which can be used in [`Self::retrieve_blob`] to fetch it.
     fn insert_blob(&mut self, bytes: &[u8]) -> BlobHash;
 
     /// Insert `hash` referring to `bytes` and mark its refcount as `uses`.

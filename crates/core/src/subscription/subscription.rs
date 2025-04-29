@@ -4,10 +4,10 @@
 //!
 //! A subscription query returns rows matching one or more SQL SELECT statements
 //! alongside information about the affected table and an operation identifier
-//! (insert or delete) -- a [`DatabaseUpdate`]. This allows subscribers to
+//! (insert or delete) -- a [`super::DatabaseUpdate`]. This allows subscribers to
 //! maintain their own view of (virtual) tables matching the statements.
 //!
-//! When the [`Subscription`] is first established, all its queries are
+//! When the [`SubscriptionPlan`] is first established, all its queries are
 //! evaluated against the database and the results are sent back to the
 //! subscriber (see [`QuerySet::eval`]). Afterwards, the [`QuerySet`] is
 //! evaluated [incrementally][`QuerySet::eval_incr`] whenever a transaction

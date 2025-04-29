@@ -206,7 +206,7 @@ impl UniqueDirectIndex {
     }
 }
 
-/// An iterator over the potential value in a [`UniqueDirectMap`] for a given key.
+/// An iterator over the potential value in a [`RowPointer`] for a given key.
 pub struct UniqueDirectIndexPointIter {
     iter: IntoIter<RowPointer>,
 }

@@ -620,8 +620,6 @@ impl SourceExpr {
     /// If `self` refers to a [`DbTable`], get a reference to it.
     ///
     /// Returns `None` if `self` refers to a [`MemTable`].
-    /// In that case, retrieving the [`MemTable`] requires inspecting the plan's corresponding [`SourceSet`]
-    /// via [`SourceSet::take_mem_table`] or [`SourceSet::take_table`].
     pub fn get_db_table(&self) -> Option<&DbTable> {
         if let SourceExpr::DbTable(db_table) = self {
             Some(db_table)
@@ -1753,7 +1751,7 @@ impl QueryExpr {
     ///   which is fundamentally limited to operate on the first expr.
     ///   Note that we still get to optimize incremental joins, because we first optimize the original query
     ///   with [`DbTable`] sources, which results in an [`IndexJoin`]
-    ///   then we replace the sources with [`MemTable`]s and go back to a [`JoinInner`] with `semi: true`.
+    ///   then we replace the sources with [`MemTable`]s and go back to a [`Query::JoinInner`] with `semi: true`.
     /// - The `Project` must immediately follow the `JoinInner`, with no intervening exprs.
     ///   Future work could search through intervening exprs to detect that the RHS table is unused.
     /// - The LHS/source table must be a [`DbTable`], not a [`MemTable`].

@@ -350,7 +350,7 @@ fn infer_str_or_enum(field: Option<&AlgebraicType>, value: String) -> Result<Alg
     }
 }
 
-/// Compiles a [SqlExpr] expression into a [ColumnOp]
+/// Compiles a [SqlExpr] expression into a [FieldOp]
 fn compile_expr_value<'a>(
     tables: impl Clone + Iterator<Item = &'a TableSchema>,
     field: Option<&'a AlgebraicType>,

@@ -13,10 +13,10 @@ use std::sync::atomic::{AtomicU32, Ordering};
 /// Our solution is to wrap the code of interest in a function that is only called when the global flag is set.
 ///
 /// See: documentation on valgrind/callgrind/iai-callgrind's `toggle-collect` option (ctrl-f on these pages):
-/// - https://github.com/iai-callgrind/iai-callgrind/
-/// - https://valgrind.org/docs/manual/cl-manual.html
+/// - <https://github.com/iai-callgrind/iai-callgrind/>
+/// - <https://valgrind.org/docs/manual/cl-manual.html>
 ///
-/// We do NOT use the valgrind macros (or the crate https://github.com/2dav/crabgrind) because they are a pain to build.
+/// We do NOT use the valgrind macros (or the crate <https://github.com/2dav/crabgrind>) because they are a pain to build.
 /// (Hours wasted here: 9.)
 /// Instead, we have a wrapper function which is only called when a global flag is set.
 ///

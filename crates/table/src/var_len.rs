@@ -148,7 +148,7 @@ impl VarLenGranuleHeader {
     /// but currently have no use for them.
     const LEN_BITMASK: u16 = (1 << Self::LEN_BITS) - 1;
 
-    /// The [`LEN_BITMASK`] will preserve all granule lengths possible.
+    /// The [`Self::LEN_BITMASK`] will preserve all granule lengths possible.
     #[allow(clippy::assertions_on_constants)]
     const _ASSERT_LEN_BITMASK_FITS_ALL_POSSIBLE_GRANULE_LENGTHS: () =
         assert!(VarLenGranule::DATA_SIZE <= Self::LEN_BITMASK as usize);

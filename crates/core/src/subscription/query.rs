@@ -25,7 +25,7 @@ pub const SUBSCRIBE_TO_ALL_QUERY: &str = "SELECT * FROM *";
 /// rather than returning a new `SourceSet`.
 ///
 /// This is necessary when merging multiple SQL queries into a single query set,
-/// as in [`crate::subscription::module_subscription_actor::ModuleSubscriptions::add_subscriber`].
+/// as in [`crate::subscription::module_subscription_actor::ModuleSubscriptions::add_multi_subscription`].
 pub fn compile_read_only_queryset(
     relational_db: &RelationalDB,
     auth: &AuthCtx,
@@ -88,11 +88,11 @@ pub fn compile_read_only_query(auth: &AuthCtx, tx: &Tx, input: &str) -> Result<P
 /// The kind of [`QueryExpr`] currently supported for incremental evaluation.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Hash)]
 pub enum Supported {
-    /// A scan or [`QueryExpr::Select`] of a single table.
+    /// A scan or [`expr::Query::Select`] of a single table.
     Select,
-    /// A semijoin of two tables, restricted to [`QueryExpr::IndexJoin`]s.
+    /// A semijoin of two tables, restricted to [`expr::Query::IndexJoin`]s.
     ///
-    /// See [`crate::sql::compiler::try_index_join`].
+    /// See [`QueryExpr::try_index_join`].
     Semijoin,
 }
 

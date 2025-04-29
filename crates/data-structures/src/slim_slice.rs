@@ -227,7 +227,7 @@ impl<T> SlimRawSlice<T> {
     /// SAFETY: `self.ptr` and `self.len`
     /// must satisfy [`std::slice::from_raw_parts_mut`]'s requirements.
     /// That is,
-    /// * `self.ptr` must be [valid] for both reads and writes
+    /// * `self.ptr` must be *valid* for both reads and writes
     ///    for `self.len * mem::size_of::<T>()` many bytes,
     ///   and it must be properly aligned.
     ///

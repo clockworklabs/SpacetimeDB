@@ -32,7 +32,7 @@ pub struct Database {
     ///
     /// Valid only for as long as `initial_program` is valid.
     pub host_type: HostType,
-    /// [`Hash`] of the compiled module to initialize the database with.
+    /// [`struct@Hash`] of the compiled module to initialize the database with.
     ///
     /// Updating the database's module will **not** change this value.
     pub initial_program: Hash,
