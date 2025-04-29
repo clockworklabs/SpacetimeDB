@@ -1,0 +1,9 @@
+{
+    "compilerOptions": {
+        "target": "ESNext",
+        "paths": {
+            "spacetimedb": ["./wrapper"]
+        },
+        "inlineSourceMap": true
+    }
+}
