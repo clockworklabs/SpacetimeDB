@@ -695,7 +695,7 @@ impl ModuleSubscriptions {
 
         match &event.status {
             EventStatus::Committed(_) => {
-                update_metrics = subscriptions.eval_updates(&delta_read_tx, event.clone(), caller);
+                update_metrics = subscriptions.eval_updates_sequential(&delta_read_tx, event.clone(), caller);
             }
             EventStatus::Failed(_) => {
                 if let Some(client) = caller {

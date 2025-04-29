@@ -12,7 +12,6 @@ use crate::subscription::delta::eval_delta;
 use hashbrown::hash_map::OccupiedError;
 use hashbrown::{HashMap, HashSet};
 use itertools::Itertools;
-use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use spacetimedb_client_api_messages::websocket::{
     BsatnFormat, CompressableQueryUpdate, FormatSwitch, JsonFormat, QueryId, QueryUpdate, WebsocketFormat,
 };
@@ -723,8 +722,13 @@ impl SubscriptionManager {
     /// This method takes a set of delta tables,
     /// evaluates only the necessary queries for those delta tables,
     /// and then sends the results to each client.
+    ///
+    /// This previously used rayon to parallelize subscription evaluation.
+    /// However, in order to optimize for the common case of small updates,
+    /// we removed rayon and switched to a single-threaded execution,
+    /// which removed significant overhead associated with thread switching.
     #[tracing::instrument(level = "trace", skip_all)]
-    pub fn eval_updates(
+    pub fn eval_updates_sequential(
         &self,
         tx: &DeltaTx,
         event: Arc<ModuleEvent>,
@@ -734,299 +738,249 @@ impl SubscriptionManager {
 
         let tables = &event.status.database_update().unwrap().tables;
 
-        // Put the main work on a rayon compute thread.
-        rayon::scope(|_| {
-            let span = tracing::info_span!("eval_incr").entered();
+        let span = tracing::info_span!("eval_incr").entered();
 
-            type ClientQueryUpdate<F> = (<F as WebsocketFormat>::QueryUpdate, /* num_rows */ u64);
-            struct ClientUpdate<'a> {
-                id: &'a ClientId,
-                table_id: TableId,
-                table_name: &'a str,
-                update: FormatSwitch<ClientQueryUpdate<BsatnFormat>, ClientQueryUpdate<JsonFormat>>,
-            }
+        type ClientQueryUpdate<F> = (<F as WebsocketFormat>::QueryUpdate, /* num_rows */ u64);
+        struct ClientUpdate<'a> {
+            id: &'a ClientId,
+            table_id: TableId,
+            table_name: &'a str,
+            update: FormatSwitch<ClientQueryUpdate<BsatnFormat>, ClientQueryUpdate<JsonFormat>>,
+        }
 
-            // rayon has a fold-reduce idiom, which we use here. First, rayon splits
-            // the task onto a number of worker threads, and then on each thread, we *fold*
-            // each item of the iterator into an accumulator. This is that accumulator
-            // state; we use vecs because we're only ever going to be appending onto the
-            // end, so reallocation is more or less amortized.
-            #[derive(Default)]
-            struct FoldState<'a> {
-                updates: Vec<ClientUpdate<'a>>,
-                errs: Vec<(&'a ClientId, Box<str>)>,
-                metrics: ExecutionMetrics,
-            }
+        #[derive(Default)]
+        struct FoldState<'a> {
+            updates: Vec<ClientUpdate<'a>>,
+            errs: Vec<(&'a ClientId, Box<str>)>,
+            metrics: ExecutionMetrics,
+        }
 
-            // Next, we *reduce* the result of multiple threads into one final output.
-            // This is the accumulator for that; we use `VecList`s here because they
-            // have good characteristics for this use case, namely cheap appension
-            // of the result of each thread.
-            #[derive(Default)]
-            struct ReduceState<'a> {
-                updates: VecList<ClientUpdate<'a>>,
-                errs: VecList<(&'a ClientId, Box<str>)>,
-                metrics: ExecutionMetrics,
-            }
-            impl<'a> ReduceState<'a> {
-                /// Convert the result of a single-thread fold to get ready for a multi-thread reduce.
-                fn from_fold(acc: FoldState<'a>) -> Self {
-                    Self {
-                        updates: acc.updates.into(),
-                        errs: acc.errs.into(),
-                        metrics: acc.metrics,
-                    }
+        let FoldState { updates, errs, metrics } = tables
+            .iter()
+            .filter(|table| !table.inserts.is_empty() || !table.deletes.is_empty())
+            .flat_map(|table_update| self.queries_for_table_update(table_update))
+            // deduplicate queries by their hash
+            .filter({
+                let mut seen = HashSet::new();
+                // (HashSet::insert returns true for novel elements)
+                move |&hash| seen.insert(hash)
+            })
+            .flat_map(|hash| {
+                let qstate = &self.queries[hash];
+                qstate
+                    .query
+                    .plans_fragments()
+                    .map(move |plan_fragment| (qstate, plan_fragment))
+            })
+            // If N clients are subscribed to a query,
+            // we copy the DatabaseTableUpdate N times,
+            // which involves cloning BSATN (binary) or product values (json).
+            .fold(FoldState::default(), |mut acc, (qstate, plan)| {
+                let table_id = plan.subscribed_table_id();
+                let table_name = plan.subscribed_table_name();
+                // Store at most one copy for both the serialization to BSATN and JSON.
+                // Each subscriber gets to pick which of these they want,
+                // but we only fill `ops_bin_uncompressed` and `ops_json` at most once.
+                // The former will be `Some(_)` if some subscriber uses `Protocol::Binary`
+                // and the latter `Some(_)` if some subscriber uses `Protocol::Text`.
+                //
+                // Previously we were compressing each `QueryUpdate` within a `TransactionUpdate`.
+                // The reason was simple - many clients can subscribe to the same query.
+                // If we compress `TransactionUpdate`s independently for each client,
+                // we could be doing a lot of redundant compression.
+                //
+                // However the risks associated with this approach include:
+                //   1. We have to hold the tx lock when compressing
+                //   2. A potentially worse compression ratio
+                //   3. Extra decompression overhead on the client
+                //
+                // Because transaction processing is currently single-threaded,
+                // the risks of holding the tx lock for longer than necessary,
+                // as well as additional the message processing overhead on the client,
+                // outweighed the benefit of reduced cpu with the former approach.
+                let mut ops_bin_uncompressed: Option<(CompressableQueryUpdate<BsatnFormat>, _, _)> = None;
+                let mut ops_json: Option<(QueryUpdate<JsonFormat>, _, _)> = None;
+
+                fn memo_encode<F: WebsocketFormat>(
+                    updates: &UpdatesRelValue<'_>,
+                    memory: &mut Option<(F::QueryUpdate, u64, usize)>,
+                    metrics: &mut ExecutionMetrics,
+                ) -> (F::QueryUpdate, u64) {
+                    let (update, num_rows, num_bytes) = memory
+                        .get_or_insert_with(|| {
+                            let encoded = updates.encode::<F>();
+                            // The first time we insert into this map, we call encode.
+                            // This is when we serialize the rows to BSATN/JSON.
+                            // Hence this is where we increment `bytes_scanned`.
+                            metrics.bytes_scanned += encoded.2;
+                            encoded
+                        })
+                        .clone();
+                    // We call this function for each query,
+                    // and for each client subscribed to it.
+                    // Therefore every time we call this function,
+                    // we update the `bytes_sent_to_clients` metric.
+                    metrics.bytes_sent_to_clients += num_bytes;
+                    (update, num_rows)
                 }
-                /// Concatenate this `ReduceState` with another one.
-                ///
-                /// This is a cheap operation, since `LinkedList::append` is `O(1)`.
-                fn append(mut self, rhs: Self) -> Self {
-                    self.updates.append(rhs.updates);
-                    self.errs.append(rhs.errs);
-                    self.metrics.merge(rhs.metrics);
-                    self
-                }
-            }
 
-            let plans = tables
-                .iter()
-                .filter(|table| !table.inserts.is_empty() || !table.deletes.is_empty())
-                .flat_map(|table_update| self.queries_for_table_update(table_update))
-                // deduplicate queries by their hash
-                .filter({
-                    let mut seen = HashSet::new();
-                    // (HashSet::insert returns true for novel elements)
-                    move |&hash| seen.insert(hash)
-                })
-                .flat_map(|hash| {
-                    let qstate = &self.queries[hash];
-                    qstate
-                        .query
-                        .plans_fragments()
-                        .map(move |plan_fragment| (qstate, plan_fragment))
-                })
-                // collect all plan fragments we want to do work on into a
-                // single vec, which is more efficient for rayon to work with.
-                .collect::<Vec<_>>();
+                // filter out clients that've dropped
+                let clients_for_query = qstate.all_clients().filter(|id| {
+                    self.clients
+                        .get(*id)
+                        .is_some_and(|info| !info.dropped.load(Ordering::Acquire))
+                });
 
-            let ReduceState { updates, errs, metrics } = plans
-                .into_par_iter()
-                // If N clients are subscribed to a query,
-                // we copy the DatabaseTableUpdate N times,
-                // which involves cloning BSATN (binary) or product values (json).
-                .fold(FoldState::default, |mut acc, (qstate, plan)| {
-                    let table_id = plan.subscribed_table_id();
-                    let table_name = plan.subscribed_table_name();
-                    // Store at most one copy for both the serialization to BSATN and JSON.
-                    // Each subscriber gets to pick which of these they want,
-                    // but we only fill `ops_bin_uncompressed` and `ops_json` at most once.
-                    // The former will be `Some(_)` if some subscriber uses `Protocol::Binary`
-                    // and the latter `Some(_)` if some subscriber uses `Protocol::Text`.
-                    //
-                    // Previously we were compressing each `QueryUpdate` within a `TransactionUpdate`.
-                    // The reason was simple - many clients can subscribe to the same query.
-                    // If we compress `TransactionUpdate`s independently for each client,
-                    // we could be doing a lot of redundant compression.
-                    //
-                    // However the risks associated with this approach include:
-                    //   1. We have to hold the tx lock when compressing
-                    //   2. A potentially worse compression ratio
-                    //   3. Extra decompression overhead on the client
-                    //
-                    // Because transaction processing is currently single-threaded,
-                    // the risks of holding the tx lock for longer than necessary,
-                    // as well as the additional message processing overhead on the client,
-                    // outweighed the benefit of reduced cpu with the former approach.
-                    let mut ops_bin_uncompressed: Option<(CompressableQueryUpdate<BsatnFormat>, _, _)> = None;
-                    let mut ops_json: Option<(QueryUpdate<JsonFormat>, _, _)> = None;
+                match eval_delta(tx, &mut acc.metrics, plan) {
+                    Err(err) => {
+                        tracing::error!(
+                            message = "Query errored during tx update",
+                            sql = qstate.query.sql,
+                            reason = ?err,
+                        );
+                        let err = DBError::WithSql {
+                            sql: qstate.query.sql.as_str().into(),
+                            error: Box::new(err.into()),
+                        }
+                        .to_string()
+                        .into_boxed_str();
 
-                    fn memo_encode<F: WebsocketFormat>(
-                        updates: &UpdatesRelValue<'_>,
-                        memory: &mut Option<(F::QueryUpdate, u64, usize)>,
-                        metrics: &mut ExecutionMetrics,
-                    ) -> (F::QueryUpdate, u64) {
-                        let (update, num_rows, num_bytes) = memory
-                            .get_or_insert_with(|| {
-                                let encoded = updates.encode::<F>();
-                                // The first time we insert into this map, we call encode.
-                                // This is when we serialize the rows to BSATN/JSON.
-                                // Hence this is where we increment `bytes_scanned`.
-                                metrics.bytes_scanned += encoded.2;
-                                encoded
-                            })
-                            .clone();
-                        // We call this function for each query,
-                        // and for each client subscribed to it.
-                        // Therefore every time we call this function,
-                        // we update the `bytes_sent_to_clients` metric.
-                        metrics.bytes_sent_to_clients += num_bytes;
-                        (update, num_rows)
+                        acc.errs.extend(clients_for_query.map(|id| (id, err.clone())))
                     }
-
-                    // filter out clients that've dropped
-                    let clients_for_query = qstate.all_clients().filter(|id| {
-                        self.clients
-                            .get(*id)
-                            .is_some_and(|info| !info.dropped.load(Ordering::Acquire))
-                    });
-
-                    match eval_delta(tx, &mut acc.metrics, plan) {
-                        Err(err) => {
-                            tracing::error!(
-                                message = "Query errored during tx update",
-                                sql = qstate.query.sql,
-                                reason = ?err,
-                            );
-                            let err = DBError::WithSql {
-                                sql: qstate.query.sql.as_str().into(),
-                                error: Box::new(err.into()),
+                    // The query didn't return any rows to update
+                    Ok(None) => {}
+                    // The query did return updates - process them and add them to the accumulator
+                    Ok(Some(delta_updates)) => {
+                        let row_iter = clients_for_query.map(|id| {
+                            let client = &self.clients[id].outbound_ref;
+                            let update = match client.config.protocol {
+                                Protocol::Binary => Bsatn(memo_encode::<BsatnFormat>(
+                                    &delta_updates,
+                                    &mut ops_bin_uncompressed,
+                                    &mut acc.metrics,
+                                )),
+                                Protocol::Text => Json(memo_encode::<JsonFormat>(
+                                    &delta_updates,
+                                    &mut ops_json,
+                                    &mut acc.metrics,
+                                )),
+                            };
+                            ClientUpdate {
+                                id,
+                                table_id,
+                                table_name,
+                                update,
                             }
-                            .to_string()
-                            .into_boxed_str();
-
-                            acc.errs.extend(clients_for_query.map(|id| (id, err.clone())))
-                        }
-                        // The query didn't return any rows to update
-                        Ok(None) => {}
-                        // The query did return updates - process them and add them to the accumulator
-                        Ok(Some(delta_updates)) => {
-                            let row_iter = clients_for_query.map(|id| {
-                                let client = &self.clients[id].outbound_ref;
-                                let update = match client.config.protocol {
-                                    Protocol::Binary => Bsatn(memo_encode::<BsatnFormat>(
-                                        &delta_updates,
-                                        &mut ops_bin_uncompressed,
-                                        &mut acc.metrics,
-                                    )),
-                                    Protocol::Text => Json(memo_encode::<JsonFormat>(
-                                        &delta_updates,
-                                        &mut ops_json,
-                                        &mut acc.metrics,
-                                    )),
-                                };
-                                ClientUpdate {
-                                    id,
-                                    table_id,
-                                    table_name,
-                                    update,
-                                }
-                            });
-                            acc.updates.extend(row_iter);
-                        }
-                    }
-
-                    acc
-                })
-                // it would be nice to use `.collect_into_vec()` here, and reap the
-                // benefits of having an `IndexedParallelIterator`, but we actually
-                // produce many elements per `SubscriptionPlan` and would need to
-                // `flatten` them, meaning it effectively becomes unindexed.
-                .map(ReduceState::from_fold)
-                .reduce(ReduceState::default, ReduceState::append);
-
-            let clients_with_errors = errs.iter().map(|(id, _)| *id).collect::<HashSet<_>>();
-
-            let mut eval = updates
-                .into_iter()
-                // Filter out clients whose subscriptions failed
-                .filter(|upd| !clients_with_errors.contains(upd.id))
-                // For each subscriber, aggregate all the updates for the same table.
-                // That is, we build a map `(subscriber_id, table_id) -> updates`.
-                // A particular subscriber uses only one format,
-                // so their `TableUpdate` will contain either JSON (`Protocol::Text`)
-                // or BSATN (`Protocol::Binary`).
-                .fold(
-                    HashMap::<(&ClientId, TableId), SwitchedTableUpdate>::new(),
-                    |mut tables, upd| {
-                        match tables.entry((upd.id, upd.table_id)) {
-                            Entry::Occupied(mut entry) => match entry.get_mut().zip_mut(upd.update) {
-                                Bsatn((tbl_upd, update)) => tbl_upd.push(update),
-                                Json((tbl_upd, update)) => tbl_upd.push(update),
-                            },
-                            Entry::Vacant(entry) => drop(entry.insert(match upd.update {
-                                Bsatn(update) => Bsatn(TableUpdate::new(upd.table_id, upd.table_name.into(), update)),
-                                Json(update) => Json(TableUpdate::new(upd.table_id, upd.table_name.into(), update)),
-                            })),
-                        }
-                        tables
-                    },
-                )
-                .into_iter()
-                // Each client receives a single list of updates per transaction.
-                // So before sending the updates to each client,
-                // we must stitch together the `TableUpdate*`s into an aggregated list.
-                .fold(
-                    HashMap::<&ClientId, SwitchedDbUpdate>::new(),
-                    |mut updates, ((id, _), update)| {
-                        let entry = updates.entry(id);
-                        let entry = entry.or_insert_with(|| match &update {
-                            Bsatn(_) => Bsatn(<_>::default()),
-                            Json(_) => Json(<_>::default()),
                         });
-                        match entry.zip_mut(update) {
-                            Bsatn((list, elem)) => list.tables.push(elem),
-                            Json((list, elem)) => list.tables.push(elem),
-                        }
-                        updates
+                        acc.updates.extend(row_iter);
+                    }
+                }
+
+                acc
+            });
+
+        let clients_with_errors = errs.iter().map(|(id, _)| *id).collect::<HashSet<_>>();
+
+        let mut eval = updates
+            .into_iter()
+            // Filter out clients whose subscriptions failed
+            .filter(|upd| !clients_with_errors.contains(upd.id))
+            // For each subscriber, aggregate all the updates for the same table.
+            // That is, we build a map `(subscriber_id, table_id) -> updates`.
+            // A particular subscriber uses only one format,
+            // so their `TableUpdate` will contain either JSON (`Protocol::Text`)
+            // or BSATN (`Protocol::Binary`).
+            .fold(
+                HashMap::<(&ClientId, TableId), SwitchedTableUpdate>::new(),
+                |mut tables, upd| {
+                    match tables.entry((upd.id, upd.table_id)) {
+                        Entry::Occupied(mut entry) => match entry.get_mut().zip_mut(upd.update) {
+                            Bsatn((tbl_upd, update)) => tbl_upd.push(update),
+                            Json((tbl_upd, update)) => tbl_upd.push(update),
+                        },
+                        Entry::Vacant(entry) => drop(entry.insert(match upd.update {
+                            Bsatn(update) => Bsatn(TableUpdate::new(upd.table_id, upd.table_name.into(), update)),
+                            Json(update) => Json(TableUpdate::new(upd.table_id, upd.table_name.into(), update)),
+                        })),
+                    }
+                    tables
+                },
+            )
+            .into_iter()
+            // Each client receives a single list of updates per transaction.
+            // So before sending the updates to each client,
+            // we must stitch together the `TableUpdate*`s into an aggregated list.
+            .fold(
+                HashMap::<&ClientId, SwitchedDbUpdate>::new(),
+                |mut updates, ((id, _), update)| {
+                    let entry = updates.entry(id);
+                    let entry = entry.or_insert_with(|| match &update {
+                        Bsatn(_) => Bsatn(<_>::default()),
+                        Json(_) => Json(<_>::default()),
+                    });
+                    match entry.zip_mut(update) {
+                        Bsatn((list, elem)) => list.tables.push(elem),
+                        Json((list, elem)) => list.tables.push(elem),
+                    }
+                    updates
+                },
+            );
+
+        drop(clients_with_errors);
+        drop(span);
+
+        let _span = tracing::info_span!("eval_send").entered();
+
+        // We might have a known caller that hasn't been hidden from here..
+        // This caller may have subscribed to some query.
+        // If they haven't, we'll send them an empty update.
+        // Regardless, the update that we send to the caller, if we send any,
+        // is a full tx update, rather than a light one.
+        // That is, in the case of the caller, we don't respect the light setting.
+        if let Some((caller, conn_id)) = caller.zip(event.caller_connection_id) {
+            let database_update = eval
+                .remove(&(event.caller_identity, conn_id))
+                .map(|update| SubscriptionUpdateMessage::from_event_and_update(&event, update))
+                .unwrap_or_else(|| {
+                    SubscriptionUpdateMessage::default_for_protocol(caller.config.protocol, event.request_id)
+                });
+            let message = TransactionUpdateMessage {
+                event: Some(event.clone()),
+                database_update,
+            };
+            send_to_client(caller, message);
+        }
+
+        // Send all the other updates.
+        for (id, update) in eval {
+            let database_update = SubscriptionUpdateMessage::from_event_and_update(&event, update);
+            let client = self.client(id);
+            // Conditionally send out a full update or a light one otherwise.
+            let event = client.config.tx_update_full.then(|| event.clone());
+            let message = TransactionUpdateMessage { event, database_update };
+            send_to_client(&client, message);
+        }
+
+        // Send error messages and mark clients for removal
+        for (id, message) in errs {
+            if let Some(client) = self.clients.get(id) {
+                client.dropped.store(true, Ordering::Release);
+                send_to_client(
+                    &client.outbound_ref,
+                    SubscriptionMessage {
+                        request_id: None,
+                        query_id: None,
+                        timer: None,
+                        result: SubscriptionResult::Error(SubscriptionError {
+                            table_id: None,
+                            message,
+                        }),
                     },
                 );
-
-            drop(clients_with_errors);
-            drop(span);
-
-            let _span = tracing::info_span!("eval_send").entered();
-
-            // We might have a known caller that hasn't been hidden from here..
-            // This caller may have subscribed to some query.
-            // If they haven't, we'll send them an empty update.
-            // Regardless, the update that we send to the caller, if we send any,
-            // is a full tx update, rather than a light one.
-            // That is, in the case of the caller, we don't respect the light setting.
-            if let Some((caller, conn_id)) = caller.zip(event.caller_connection_id) {
-                let database_update = eval
-                    .remove(&(event.caller_identity, conn_id))
-                    .map(|update| SubscriptionUpdateMessage::from_event_and_update(&event, update))
-                    .unwrap_or_else(|| {
-                        SubscriptionUpdateMessage::default_for_protocol(caller.config.protocol, event.request_id)
-                    });
-                let message = TransactionUpdateMessage {
-                    event: Some(event.clone()),
-                    database_update,
-                };
-                send_to_client(caller, message);
             }
+        }
 
-            // Send all the other updates.
-            for (id, update) in eval {
-                let database_update = SubscriptionUpdateMessage::from_event_and_update(&event, update);
-                let client = self.client(id);
-                // Conditionally send out a full update or a light one otherwise.
-                let event = client.config.tx_update_full.then(|| event.clone());
-                let message = TransactionUpdateMessage { event, database_update };
-                send_to_client(&client, message);
-            }
-
-            // Send error messages and mark clients for removal
-            for (id, message) in errs {
-                if let Some(client) = self.clients.get(id) {
-                    client.dropped.store(true, Ordering::Release);
-                    send_to_client(
-                        &client.outbound_ref,
-                        SubscriptionMessage {
-                            request_id: None,
-                            query_id: None,
-                            timer: None,
-                            result: SubscriptionResult::Error(SubscriptionError {
-                                table_id: None,
-                                message,
-                            }),
-                        },
-                    );
-                }
-            }
-
-            metrics
-        })
+        metrics
     }
 }
 
@@ -1044,6 +998,13 @@ fn send_to_client(client: &ClientConnectionSender, message: impl Into<Serializab
 /// > collection, but have no specific requirements for what that collection
 /// > should be. [...] This is a very efficient way to collect an unindexed
 /// > parallel iterator, without much intermediate data movement.
+///
+/// Note: This is currently unused.
+///
+/// It was previously used with rayon to parallelize subscription evaluation.
+/// However, in order to optimize for the common case of small updates,
+/// we removed rayon and switched to a single-threaded execution,
+/// which removed significant overhead associated with thread switching.
 struct VecList<T>(LinkedList<Vec<T>>);
 
 impl<T> Default for VecList<T> {
@@ -1060,6 +1021,8 @@ impl<T> From<Vec<T>> for VecList<T> {
         Self(list)
     }
 }
+
+#[allow(unused)]
 impl<T> VecList<T> {
     /// Append another `VecList` onto this one.
     ///
@@ -1880,7 +1843,7 @@ mod tests {
         });
 
         db.with_read_only(Workload::Update, |tx| {
-            subscriptions.eval_updates(&(&*tx).into(), event, Some(&client0))
+            subscriptions.eval_updates_sequential(&(&*tx).into(), event, Some(&client0))
         });
 
         tokio::runtime::Builder::new_current_thread()
