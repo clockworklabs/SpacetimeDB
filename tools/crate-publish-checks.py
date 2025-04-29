@@ -15,33 +15,47 @@ def check_deps(dev_deps, cargo_toml_path):
         else:
             # String dependency = version from crates.io
             non_path_spacetimedb.append(name)
-    if non_path_spacetimedb:
-        print(f"❌ These dev-dependencies in {cargo_toml_path} must be converted to use `path` in order to not impede crate publishing:")
-        for dep in non_path_spacetimedb:
-            print(f"  - {dep}")
-        return False
-    return True
+    success = not non_path_spacetimedb
+    return success, non_path_spacetimedb
 
 def check_package_metadata(package, cargo_toml_path):
-    has_errors = False
+    missing_fields = []
 
     # Accept either license OR license-file
     if "license" not in package and "license-file" not in package:
-        print(f"❌ Missing required field in {cargo_toml_path}: license/license-file")
-        has_errors = True
+        missing_fields.append("license/license-file")
 
     if "description" not in package:
-        print(f"❌ Missing required field in {cargo_toml_path}: description")
-        has_errors = True
+        missing_fields.append("description")
 
+    missing_license_file = False
     if "license-file" in package:
         license_file = package["license-file"]
         license_path = cargo_toml_path.parent / license_file
         if not license_path.exists():
-            print(f"❌ License file '{license_file}' specified in {cargo_toml_path} does not exist")
-            has_errors = True
+            missing_license_file = True
 
-    return not has_errors
+    success = not missing_fields and not missing_license_file
+    return success, missing_fields, missing_license_file
+
+def run_checks(data, cargo_toml_path):
+    result = {
+        "success": True,
+        "missing_fields": [],
+        "missing_license_file": False,
+        "bad_deps": [],
+    }
+    
+    success, bad_deps = check_deps(data.get("dev-dependencies", {}), cargo_toml_path)
+    result["success"] = result["success"] and success
+    result["bad_deps"] = bad_deps
+    
+    success, missing_fields, missing_license_file = check_package_metadata(data.get("package", {}), cargo_toml_path)
+    result["missing_fields"] = missing_fields
+    result["missing_license_file"] = missing_license_file
+    result["success"] = result["success"] and success
+    
+    return result
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Check Cargo.toml for metadata and dev-dependencies.")
@@ -56,13 +70,18 @@ if __name__ == "__main__":
 
         data = toml.load(cargo_toml_path)
 
-        dev_deps = data.get('dev-dependencies', {})
-        package = data.get('package', {})
-        deps_pass = check_deps(dev_deps, cargo_toml_path)
-        package_passes = check_package_metadata(package, cargo_toml_path)
-        if deps_pass and package_passes:
+        checks = run_checks(data, cargo_toml_path)
+        print('hello')
+        if checks["success"]:
             print(f"✅ {cargo_toml_path} passed all checks.")
         else:
+            print(f"❌ {cargo_toml_path} failed checks:")
+            if checks["missing_fields"]:
+                print(f"  Missing required fields: {', '.join(checks['missing_fields'])}")
+            if checks["missing_license_file"]:
+                print("  Specified license file does not exist")
+            if checks["bad_deps"]:
+                print(f"  These dev-dependencies must be converted to use `path` in order to not impede crate publishing: {', '.join(checks['bad_deps'])}")
             sys.exit(1)
 
     except Exception as e:
