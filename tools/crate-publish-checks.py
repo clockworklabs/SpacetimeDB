@@ -28,12 +28,12 @@ def check_package_metadata(package, cargo_toml_path):
     if "description" not in package:
         missing_fields.append("description")
 
-    missing_license_file = False
+    missing_license_file = None
     if "license-file" in package:
         license_file = package["license-file"]
         license_path = cargo_toml_path.parent / license_file
         if not license_path.exists():
-            missing_license_file = True
+            missing_license_file = license_path
 
     success = not missing_fields and not missing_license_file
     return success, missing_fields, missing_license_file
@@ -41,20 +41,17 @@ def check_package_metadata(package, cargo_toml_path):
 def run_checks(data, cargo_toml_path):
     result = {
         "success": True,
-        "missing_fields": [],
-        "missing_license_file": False,
-        "bad_deps": [],
     }
-    
+
     success, bad_deps = check_deps(data.get("dev-dependencies", {}), cargo_toml_path)
     result["success"] = result["success"] and success
     result["bad_deps"] = bad_deps
-    
+
     success, missing_fields, missing_license_file = check_package_metadata(data.get("package", {}), cargo_toml_path)
     result["missing_fields"] = missing_fields
     result["missing_license_file"] = missing_license_file
     result["success"] = result["success"] and success
-    
+
     return result
 
 if __name__ == "__main__":
@@ -71,7 +68,6 @@ if __name__ == "__main__":
         data = toml.load(cargo_toml_path)
 
         checks = run_checks(data, cargo_toml_path)
-        print('hello')
         if checks["success"]:
             print(f"✅ {cargo_toml_path} passed all checks.")
         else:
@@ -79,7 +75,7 @@ if __name__ == "__main__":
             if checks["missing_fields"]:
                 print(f"  Missing required fields: {', '.join(checks['missing_fields'])}")
             if checks["missing_license_file"]:
-                print("  Specified license file does not exist")
+                print(f"  Specified license file does not exist: {checks['missing_license_file']}")
             if checks["bad_deps"]:
                 print(f"  These dev-dependencies must be converted to use `path` in order to not impede crate publishing: {', '.join(checks['bad_deps'])}")
             sys.exit(1)
