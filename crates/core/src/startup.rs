@@ -57,9 +57,10 @@ impl Default for TracingOptions {
 
 impl StartupOptions {
     pub fn configure(self) {
-        if let Some(tracing_opts) = self.tracing {
-            configure_tracing(tracing_opts)
-        }
+        // if let Some(tracing_opts) = self.tracing {
+        //     configure_tracing(tracing_opts)
+        // }
+        console_subscriber::init();
         if self.rayon {
             configure_rayon()
         }

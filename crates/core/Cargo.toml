@@ -36,6 +36,7 @@ spacetimedb-expr.workspace = true
 spacetimedb-execution.workspace = true
 spacetimedb-fs-utils.workspace = true
 
+console-subscriber = {workspace = true}
 anyhow = { workspace = true, features = ["backtrace"] }
 arrayvec.workspace = true
 async-trait.workspace = true

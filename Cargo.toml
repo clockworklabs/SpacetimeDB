@@ -123,6 +123,7 @@ spacetimedb-fs-utils = { path = "crates/fs-utils", version = "1.1.1" }
 spacetimedb-snapshot = { path = "crates/snapshot", version = "1.1.1" }
 spacetimedb-subscription = { path = "crates/subscription", version = "1.1.1" }
 
+console-subscriber = "0.4.1"
 ahash = "0.8"
 anyhow = "1.0.68"
 anymap = "0.12"
@@ -254,7 +255,7 @@ tempfile = "3.8"
 termcolor = "1.2.0"
 thin-vec = "0.2.13"
 thiserror = "1.0.37"
-tokio = { version = "1.37", features = ["full"] }
+tokio = { version = "1.37", features = ["full", "tracing"] }
 tokio_metrics = { version = "0.4.0" }
 tokio-postgres = { version = "0.7.8", features = ["with-chrono-0_4"] }
 tokio-stream = "0.1.17"
