@@ -1,4 +1,4 @@
-use spacetimedb_cli::generate::{csharp::Csharp, extract_descriptions, generate, rust::Rust, typescript::TypeScript};
+use spacetimedb_codegen::{extract_descriptions, generate, Csharp, Rust, TypeScript};
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_testing::modules::{CompilationMode, CompiledModule};
 use std::path::Path;
@@ -15,11 +15,8 @@ macro_rules! declare_tests {
     ($($name:ident => $lang:expr,)*) => ($(
         #[test]
         fn $name() {
-            let module = extract_descriptions(compiled_module()).unwrap();
-            let outfiles: HashMap<_, _> = generate(module, &$lang)
-                .unwrap()
-                .into_iter()
-                .collect();
+            let module = extract_descriptions(compiled_module()).unwrap().try_into().unwrap();
+            let outfiles = HashMap::<_, _>::from_iter(generate(&module, &$lang));
             insta::with_settings!({ sort_maps => true }, {
                 insta::assert_toml_snapshot!(outfiles);
             });

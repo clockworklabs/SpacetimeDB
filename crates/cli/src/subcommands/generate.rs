@@ -1,35 +1,25 @@
 #![warn(clippy::uninlined_format_args)]
 
-use anyhow::Context;
 use clap::parser::ValueSource;
 use clap::Arg;
 use clap::ArgAction::Set;
-use core::mem;
 use fs_err as fs;
+use spacetimedb_codegen::{
+    compile_wasm, extract_descriptions_from_module, generate, Csharp, Lang, Rust, TypeScript, AUTO_GENERATED_PREFIX,
+};
 use spacetimedb_lib::de::serde::DeserializeWrapper;
-use spacetimedb_lib::{bsatn, RawModuleDefV8};
-use spacetimedb_lib::{RawModuleDef, MODULE_ABI_MAJOR_VERSION};
-use spacetimedb_primitives::errno;
 use spacetimedb_schema;
-use spacetimedb_schema::def::{ModuleDef, ReducerDef, ScopedTypeName, TableDef, TypeDef};
-use spacetimedb_schema::identifier::Identifier;
+use spacetimedb_schema::def::ModuleDef;
 use std::path::{Path, PathBuf};
-use wasmtime::{Caller, StoreContextMut};
 
-use crate::generate::util::iter_reducers;
+use crate::tasks::csharp::dotnet_format;
+use crate::tasks::rust::rustfmt;
 use crate::util::y_or_n;
 use crate::Config;
 use crate::{build, common_args};
 use clap::builder::PossibleValue;
 use std::collections::BTreeSet;
 use std::io::Read;
-use util::AUTO_GENERATED_PREFIX;
-
-mod code_indenter;
-pub mod csharp;
-pub mod rust;
-pub mod typescript;
-mod util;
 
 pub fn cli() -> clap::Command {
     clap::Command::new("generate")
@@ -132,22 +122,23 @@ pub async fn exec(config: Config, args: &clap::ArgMatches) -> anyhow::Result<()>
         spinner.set_message("Extracting schema from wasm...");
         extract_descriptions_from_module(module)?
     };
+    let module: ModuleDef = module.try_into()?;
 
     fs::create_dir_all(out_dir)?;
 
     let mut paths = BTreeSet::new();
 
     let csharp_lang;
-    let lang = match lang {
+    let gen_lang = match lang {
         Language::Csharp => {
-            csharp_lang = csharp::Csharp { namespace };
+            csharp_lang = Csharp { namespace };
             &csharp_lang as &dyn Lang
         }
-        Language::Rust => &rust::Rust,
-        Language::TypeScript => &typescript::TypeScript,
+        Language::Rust => &Rust,
+        Language::TypeScript => &TypeScript,
     };
 
-    for (fname, code) in generate(module, lang)? {
+    for (fname, code) in generate(&module, gen_lang) {
         let fname = Path::new(&fname);
         // If a generator asks for a file in a subdirectory, create the subdirectory first.
         if let Some(parent) = fname.parent().filter(|p| !p.as_os_str().is_empty()) {
@@ -223,156 +214,23 @@ impl clap::ValueEnum for Language {
     }
     fn to_possible_value(&self) -> Option<PossibleValue> {
         Some(match self {
-            Self::Csharp => csharp::Csharp::clap_value(),
-            Self::TypeScript => typescript::TypeScript::clap_value(),
-            Self::Rust => rust::Rust::clap_value(),
+            Self::Csharp => clap::builder::PossibleValue::new("csharp").aliases(["c#", "cs"]),
+            Self::TypeScript => clap::builder::PossibleValue::new("typescript").aliases(["ts", "TS"]),
+            Self::Rust => clap::builder::PossibleValue::new("rust").aliases(["rs", "RS"]),
         })
     }
 }
 
-pub fn generate(module: RawModuleDef, lang: &dyn Lang) -> anyhow::Result<Vec<(String, String)>> {
-    let module = &ModuleDef::try_from(module)?;
-    Ok(itertools::chain!(
-        module
-            .tables()
-            .map(|tbl| { (lang.table_filename(module, tbl), lang.generate_table(module, tbl),) }),
-        module
-            .types()
-            .map(|typ| { (lang.type_filename(&typ.name), lang.generate_type(module, typ),) }),
-        iter_reducers(module).map(|reducer| {
-            (
-                lang.reducer_filename(&reducer.name),
-                lang.generate_reducer(module, reducer),
-            )
-        }),
-        lang.generate_globals(module),
-    )
-    .collect())
-}
-
-pub trait Lang {
-    fn table_filename(&self, module: &ModuleDef, table: &TableDef) -> String;
-    fn type_filename(&self, type_name: &ScopedTypeName) -> String;
-    fn reducer_filename(&self, reducer_name: &Identifier) -> String;
-
-    fn generate_table(&self, module: &ModuleDef, tbl: &TableDef) -> String;
-    fn generate_type(&self, module: &ModuleDef, typ: &TypeDef) -> String;
-    fn generate_reducer(&self, module: &ModuleDef, reducer: &ReducerDef) -> String;
-    fn generate_globals(&self, module: &ModuleDef) -> Vec<(String, String)>;
-
-    fn format_files(&self, generated_files: BTreeSet<PathBuf>) -> anyhow::Result<()>;
-    fn clap_value() -> PossibleValue
-    where
-        Self: Sized;
-}
-
-pub fn extract_descriptions(wasm_file: &Path) -> anyhow::Result<RawModuleDef> {
-    let module = compile_wasm(wasm_file)?;
-    extract_descriptions_from_module(module)
-}
-
-fn compile_wasm(wasm_file: &Path) -> anyhow::Result<wasmtime::Module> {
-    wasmtime::Module::from_file(&wasmtime::Engine::default(), wasm_file)
-}
-
-fn extract_descriptions_from_module(module: wasmtime::Module) -> anyhow::Result<RawModuleDef> {
-    let engine = module.engine();
-    let ctx = WasmCtx {
-        mem: None,
-        sink: Vec::new(),
-    };
-    let mut store = wasmtime::Store::new(engine, ctx);
-    let mut linker = wasmtime::Linker::new(engine);
-    linker.allow_shadowing(true).define_unknown_imports_as_traps(&module)?;
-    let module_name = &*format!("spacetime_{MODULE_ABI_MAJOR_VERSION}.0");
-    linker.func_wrap(
-        module_name,
-        "console_log",
-        |mut caller: Caller<'_, WasmCtx>,
-         _level: u32,
-         _target_ptr: u32,
-         _target_len: u32,
-         _filename_ptr: u32,
-         _filename_len: u32,
-         _line_number: u32,
-         message_ptr: u32,
-         message_len: u32| {
-            let (mem, _) = WasmCtx::mem_env(&mut caller);
-            let slice = deref_slice(mem, message_ptr, message_len).unwrap();
-            println!("from wasm: {}", String::from_utf8_lossy(slice));
-        },
-    )?;
-    linker.func_wrap(module_name, "bytes_sink_write", WasmCtx::bytes_sink_write)?;
-    let instance = linker.instantiate(&mut store, &module)?;
-    let memory = instance.get_memory(&mut store, "memory").context("no memory export")?;
-    store.data_mut().mem = Some(memory);
-
-    let mut preinits = instance
-        .exports(&mut store)
-        .filter_map(|exp| Some((exp.name().strip_prefix("__preinit__")?.to_owned(), exp.into_func()?)))
-        .collect::<Vec<_>>();
-    preinits.sort_by(|(a, _), (b, _)| a.cmp(b));
-    for (_, func) in preinits {
-        func.typed(&store)?.call(&mut store, ())?
-    }
-    let module: RawModuleDef = match instance.get_func(&mut store, "__describe_module__") {
-        Some(f) => {
-            store.data_mut().sink = Vec::new();
-            f.typed::<u32, ()>(&store)?.call(&mut store, 1)?;
-            let buf = mem::take(&mut store.data_mut().sink);
-            bsatn::from_slice(&buf)?
-        }
-        // TODO: shouldn't we return an error here?
-        None => RawModuleDef::V8BackCompat(RawModuleDefV8::default()),
-    };
-    Ok(module)
-}
-
-struct WasmCtx {
-    mem: Option<wasmtime::Memory>,
-    sink: Vec<u8>,
-}
-
-fn deref_slice(mem: &[u8], offset: u32, len: u32) -> anyhow::Result<&[u8]> {
-    anyhow::ensure!(offset != 0, "ptr is null");
-    mem.get(offset as usize..)
-        .and_then(|s| s.get(..len as usize))
-        .context("pointer out of bounds")
-}
-
-fn read_u32(mem: &[u8], offset: u32) -> anyhow::Result<u32> {
-    Ok(u32::from_le_bytes(deref_slice(mem, offset, 4)?.try_into().unwrap()))
-}
-
-impl WasmCtx {
-    pub fn get_mem(&self) -> wasmtime::Memory {
-        self.mem.expect("Initialized memory")
-    }
-
-    fn mem_env<'a>(ctx: impl Into<StoreContextMut<'a, Self>>) -> (&'a mut [u8], &'a mut Self) {
-        let ctx = ctx.into();
-        let mem = ctx.data().get_mem();
-        mem.data_and_store_mut(ctx)
-    }
-
-    pub fn bytes_sink_write(
-        mut caller: Caller<'_, Self>,
-        sink_handle: u32,
-        buffer_ptr: u32,
-        buffer_len_ptr: u32,
-    ) -> anyhow::Result<u32> {
-        if sink_handle != 1 {
-            return Ok(errno::NO_SUCH_BYTES.get().into());
+impl Language {
+    fn format_files(&self, generated_files: BTreeSet<PathBuf>) -> anyhow::Result<()> {
+        match self {
+            Language::Rust => rustfmt(generated_files)?,
+            Language::Csharp => dotnet_format(generated_files)?,
+            Language::TypeScript => {
+                // TODO: implement formatting.
+            }
         }
 
-        let (mem, env) = Self::mem_env(&mut caller);
-
-        // Read `buffer_len`, i.e., the capacity of `buffer` pointed to by `buffer_ptr`.
-        let buffer_len = read_u32(mem, buffer_len_ptr)?;
-        // Write `buffer` to `sink`.
-        let buffer = deref_slice(mem, buffer_ptr, buffer_len)?;
-        env.sink.extend(buffer);
-
-        Ok(0)
+        Ok(())
     }
 }
