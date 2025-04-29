@@ -2,6 +2,8 @@
 name = "spacetimedb-codegen"
 version.workspace = true
 edition.workspace = true
+license-file = "LICENSE"
+description = "Client codegen for SpacetimeDB"
 rust-version.workspace = true
 
 [dependencies]
