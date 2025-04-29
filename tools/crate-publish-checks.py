@@ -3,7 +3,7 @@ import argparse
 import sys
 from pathlib import Path
 
-def check_deps(dev_deps, cargo_toml_path):
+def find_non_path_spacetimedb_deps(dev_deps, cargo_toml_path):
     non_path_spacetimedb = []
     for name, details in dev_deps.items():
         if not name.startswith("spacetimedb"):
@@ -18,7 +18,7 @@ def check_deps(dev_deps, cargo_toml_path):
     success = not non_path_spacetimedb
     return success, non_path_spacetimedb
 
-def check_package_metadata(package, cargo_toml_path):
+def check_cargo_metadata(package, cargo_toml_path):
     missing_fields = []
 
     # Accept either license OR license-file
@@ -43,11 +43,11 @@ def run_checks(data, cargo_toml_path):
         "success": True,
     }
 
-    success, bad_deps = check_deps(data.get("dev-dependencies", {}), cargo_toml_path)
+    success, bad_deps = find_non_path_spacetimedb_deps(data.get("dev-dependencies", {}), cargo_toml_path)
     result["success"] = result["success"] and success
     result["bad_deps"] = bad_deps
 
-    success, missing_fields, missing_license_file = check_package_metadata(data.get("package", {}), cargo_toml_path)
+    success, missing_fields, missing_license_file = check_cargo_metadata(data.get("package", {}), cargo_toml_path)
     result["missing_fields"] = missing_fields
     result["missing_license_file"] = missing_license_file
     result["success"] = result["success"] and success
