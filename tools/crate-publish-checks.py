@@ -30,16 +30,16 @@ def check_package_metadata(package, cargo_toml_path):
         print(f"❌ Missing required field in {cargo_toml_path}: license/license-file")
         has_errors = True
 
+    if "description" not in package:
+        print(f"❌ Missing required field in {cargo_toml_path}: description")
+        has_errors = True
+
     if "license-file" in package:
         license_file = package["license-file"]
         license_path = cargo_toml_path.parent / license_file
         if not license_path.exists():
             print(f"❌ License file '{license_file}' specified in {cargo_toml_path} does not exist")
             has_errors = True
-
-    if "description" not in package:
-        print(f"❌ Missing required field in {cargo_toml_path}: description")
-        has_errors = True
 
     return not has_errors
 
@@ -58,7 +58,9 @@ if __name__ == "__main__":
 
         dev_deps = data.get('dev-dependencies', {})
         package = data.get('package', {})
-        if check_deps(dev_deps, cargo_toml_path) and check_package_metadata(package, cargo_toml_path):
+        deps_pass = check_deps(dev_deps, cargo_toml_path)
+        package_passes = check_package_metadata(package, cargo_toml_path)
+        if deps_pass and package_passes:
             print(f"✅ {cargo_toml_path} passed all checks.")
         else:
             sys.exit(1)
