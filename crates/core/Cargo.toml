@@ -113,6 +113,8 @@ wasmtime.workspace = true
 jwks.workspace = true
 async_cache = "0.3.1"
 faststr = "0.2.23"
+v8 = "134"
+# sourcemap = "9"
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = {workspace = true}
