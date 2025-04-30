@@ -82,7 +82,22 @@ server {
     listen 80;
     server_name example.com;
 
+    #########################################
+    # To enable open access to all routes (including publishing), simply uncomment the block below. This will
+    # allow *anyone* to publish to your SpacetimeDB instance.
+    #########################################
+    # location / {
+    #     proxy_pass http://localhost:3000;
+    #     proxy_http_version 1.1;
+    #     proxy_set_header Upgrade $http_upgrade;
+    #     proxy_set_header Connection "Upgrade";
+    #     proxy_set_header Host $host;
+    #     break;
+    # }
+
     # Anyone can subscribe to any database.
+    # Note: This is the only section *required* for the websocket to function properly. Clients will
+    # be able to create identities, call reducers, and subscribe to tables through this websocket.
     location ~ ^/v1/[^/]+/subscribe$ {
         proxy_pass http://localhost:3000;
         proxy_http_version 1.1;
@@ -91,9 +106,8 @@ server {
         proxy_set_header Host $host;
     }
 
-    # If you want to block access to all database except for a specific database, use this section instead
-    # and comment out the subscribe section above.
-    # location /v1/<database-identity>/subscribe$ {
+    # Uncomment this section to allow all HTTP reducer calls
+    # location ~ ^/v1/[^/]+/call/[^/]+$ {
     #     proxy_pass http://localhost:3000;
     #     proxy_http_version 1.1;
     #     proxy_set_header Upgrade $http_upgrade;
@@ -101,8 +115,19 @@ server {
     #     proxy_set_header Host $host;
     # }
 
-    # Uncomment this section to optionally allow /v1/<any-database-identity>/call
-    # location ~ ^/v1/[^/]+/call$ {
+    # Uncomment this section to allow all HTTP sql requests
+    # location ~ ^/v1/[^/]+/sql$ {
+    #     proxy_pass http://localhost:3000;
+    #     proxy_http_version 1.1;
+    #     proxy_set_header Upgrade $http_upgrade;
+    #     proxy_set_header Connection "Upgrade";
+    #     proxy_set_header Host $host;
+    # }
+
+    # Uncomment this section to optionally allow /v1/identity. This would allow remote users to create
+    # an identity for the purpose of connecting to your SpacetimeDB instance.
+    # NOTE: this is *not* required for the subscribe route to function.
+    # location /v1/identity {
     #     proxy_pass http://localhost:3000;
     #     proxy_http_version 1.1;
     #     proxy_set_header Upgrade $http_upgrade;
