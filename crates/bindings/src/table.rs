@@ -389,10 +389,12 @@ impl<Tbl: Table, Col: Index + Column<Table = Tbl>> UniqueColumn<Tbl, Col::ColTyp
         update::<Tbl>(Col::index_id(), new_row, buf)
     }
 
-    /// Attempts to insert `new_row` into the table. If it exists, deletes the row with the same value in the unique column.
+    /// Inserts `new_row` into the table, first checking for an existing
+    /// row with a matching value in the unique column and deleting it if present.
     #[track_caller]
+    #[doc(alias = "try_upsert")]
     #[cfg(feature = "unstable")]
-    pub fn try_upsert(&self, new_row: Tbl::Row) -> Result<Tbl::Row, TryInsertError<Tbl>> {
+    pub fn try_insert_or_update(&self, new_row: Tbl::Row) -> Result<Tbl::Row, TryInsertError<Tbl>> {
         let index = Col::get_field(&new_row);
         match self._find(index) {
             None => {
@@ -403,14 +405,16 @@ impl<Tbl: Table, Col: Index + Column<Table = Tbl>> UniqueColumn<Tbl, Col::ColTyp
         }
     }
 
-    /// Attempts to insert `new_row` into the table. If it exists, deletes the row with the same value in the unique column.
+    /// Inserts `new_row` into the table, first checking for an existing
+    /// row with a matching value in the unique column and deleting it if present.
     ///
     /// # Panics
     /// Panics if either the delete or the insertion would violate a constraint.
     #[track_caller]
+    #[doc(alias = "upsert")]
     #[cfg(feature = "unstable")]
-    pub fn upsert(&self, new_row: Tbl::Row) -> Tbl::Row {
-        self.try_upsert(new_row).unwrap_or_else(|e| panic!("{e}"))
+    pub fn insert_or_update(&self, new_row: Tbl::Row) -> Tbl::Row {
+        self.try_insert_or_update(new_row).unwrap_or_else(|e| panic!("{e}"))
     }
 }
 
