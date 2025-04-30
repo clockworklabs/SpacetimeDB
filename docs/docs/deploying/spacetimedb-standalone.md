@@ -136,7 +136,8 @@ server {
     #     proxy_set_header Host $host;
     # }
 
-    # Block all other routes explicitly. Only localhost can use these routes.
+    # Block all other routes explicitly. Only localhost can use these routes. If you want to open your
+    # server up so that anyone can publish to it you should comment this section out.
     location / {
         allow 127.0.0.1;
         deny all;
