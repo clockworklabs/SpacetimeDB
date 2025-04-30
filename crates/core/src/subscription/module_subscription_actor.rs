@@ -1539,7 +1539,9 @@ mod tests {
         Ok(())
     }
 
-    /// Test that we do not compress the results of an initial subscribe call
+    /// Test that we do not compress within a [SubscriptionMessage].
+    /// The message itself is compressed before being sent over the wire,
+    /// but we don't care about that for this test.
     #[tokio::test]
     async fn test_no_compression_for_subscribe() -> anyhow::Result<()> {
         // Establish a client connection with compression
@@ -1570,6 +1572,56 @@ mod tests {
                     SubscriptionResult::SubscribeMulti(SubscriptionData {
                         data: FormatSwitch::Bsatn(ws::DatabaseUpdate { tables }),
                     }),
+                ..
+            })) => {
+                assert!(tables.iter().all(|TableUpdate { updates, .. }| updates
+                    .iter()
+                    .all(|query_update| matches!(query_update, CompressableQueryUpdate::Uncompressed(_)))));
+            }
+            Some(_) => panic!("unexpected message from subscription"),
+            None => panic!("channel unexpectedly closed"),
+        };
+
+        Ok(())
+    }
+
+    /// Test that we do not compress within a [TransactionUpdateMessage].
+    /// The message itself is compressed before being sent over the wire,
+    /// but we don't care about that for this test.
+    #[tokio::test]
+    async fn test_no_compression_for_update() -> anyhow::Result<()> {
+        // Establish a client connection with compression
+        let (tx, mut rx) = client_connection_with_compression(client_id_from_u8(1), Compression::Brotli);
+
+        let db = relational_db()?;
+        let subs = module_subscriptions(db.clone());
+
+        let table_id = db.create_table_for_test("t", &[("x", AlgebraicType::U64)], &[])?;
+
+        let mut inserts = vec![];
+
+        for i in 0..16_000u64 {
+            inserts.push((table_id, product![i]));
+        }
+
+        // Subscribe to the entire table
+        subscribe_multi(&subs, &["select * from t"], tx, &mut 0)?;
+
+        // Wait to receive the initial subscription message
+        assert!(matches!(rx.recv().await, Some(SerializableMessage::Subscription(_))));
+
+        // Insert a lot of rows into `t`.
+        // We want to insert enough to cross any threshold there might be for compression.
+        commit_tx(&db, &subs, [], inserts)?;
+
+        // Assert the table updates within this message are all be uncompressed
+        match rx.recv().await {
+            Some(SerializableMessage::TxUpdate(TransactionUpdateMessage {
+                database_update:
+                    SubscriptionUpdateMessage {
+                        database_update: FormatSwitch::Bsatn(ws::DatabaseUpdate { tables }),
+                        ..
+                    },
                 ..
             })) => {
                 assert!(tables.iter().all(|TableUpdate { updates, .. }| updates
