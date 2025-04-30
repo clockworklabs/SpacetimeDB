@@ -138,7 +138,6 @@ fn eval(c: &mut Criterion) {
                     &plans,
                     table_id,
                     table_name.clone(),
-                    Compression::None,
                     &tx,
                     TableUpdateType::Subscribe,
                 )))

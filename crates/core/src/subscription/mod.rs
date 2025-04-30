@@ -115,7 +115,6 @@ pub fn collect_table_update<Tx, F>(
     plan_fragments: &[PipelinedProject],
     table_id: TableId,
     table_name: Box<str>,
-    comp: Compression,
     tx: &Tx,
     update_type: TableUpdateType,
 ) -> Result<(TableUpdate<F>, ExecutionMetrics)>
@@ -135,7 +134,10 @@ where
                 inserts: empty,
             },
         };
-        let update = F::into_query_update(qu, comp);
+        // We will compress the outer server message,
+        // after we release the tx lock.
+        // There's no need to compress the inner table update too.
+        let update = F::into_query_update(qu, Compression::None);
         (TableUpdate::new(table_id, table_name, (update, num_rows)), metrics)
     })
 }
@@ -143,7 +145,6 @@ where
 /// Execute a collection of subscription queries in parallel
 pub fn execute_plans<Tx, F>(
     plans: &[Arc<Plan>],
-    comp: Compression,
     tx: &Tx,
     update_type: TableUpdateType,
 ) -> Result<(DatabaseUpdate<F>, ExecutionMetrics), DBError>
@@ -160,7 +161,7 @@ where
                 .clone()
                 .optimize()
                 .map(|plan| (sql, PipelinedProject::from(plan)))
-                .and_then(|(_, plan)| collect_table_update(&[plan], table_id, table_name.into(), comp, tx, update_type))
+                .and_then(|(_, plan)| collect_table_update(&[plan], table_id, table_name.into(), tx, update_type))
                 .map_err(|err| DBError::WithSql {
                     sql: sql.into(),
                     error: Box::new(DBError::Other(err)),
