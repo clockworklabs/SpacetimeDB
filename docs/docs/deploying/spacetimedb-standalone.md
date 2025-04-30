@@ -82,7 +82,8 @@ server {
     listen 80;
     server_name example.com;
 
-    location / {
+    # Anyone can subscribe to any database.
+    location ~ ^/v1/[^/]+/subscribe$ {
         proxy_pass http://localhost:3000;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
@@ -90,16 +91,29 @@ server {
         proxy_set_header Host $host;
     }
 
-    # This restricts who can publish new databases to your SpacetimeDB instance. We recommend
-    # restricting this ability to local connections. 
-    location /v1/publish {
+    # If you want to block access to all database except for a specific database, use this section instead
+    # and comment out the subscribe section above.
+    # location /v1/<database-identity>/subscribe$ {
+    #     proxy_pass http://localhost:3000;
+    #     proxy_http_version 1.1;
+    #     proxy_set_header Upgrade $http_upgrade;
+    #     proxy_set_header Connection "Upgrade";
+    #     proxy_set_header Host $host;
+    # }
+
+    # Uncomment this section to optionally allow /v1/<any-database-identity>/call
+    # location ~ ^/v1/[^/]+/call$ {
+    #     proxy_pass http://localhost:3000;
+    #     proxy_http_version 1.1;
+    #     proxy_set_header Upgrade $http_upgrade;
+    #     proxy_set_header Connection "Upgrade";
+    #     proxy_set_header Host $host;
+    # }
+
+    # Block all other routes explicitly. Only localhost can use these routes.
+    location / {
         allow 127.0.0.1;
         deny all;
-        proxy_pass http://localhost:3000;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "Upgrade";
-        proxy_set_header Host $host;
     }
 }
 ```
