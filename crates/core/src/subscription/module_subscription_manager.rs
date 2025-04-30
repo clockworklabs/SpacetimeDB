@@ -835,7 +835,7 @@ impl SubscriptionManager {
                     //
                     // Because transaction processing is currently single-threaded,
                     // the risks of holding the tx lock for longer than necessary,
-                    // as well as additional the message processing overhead on the client,
+                    // as well as the additional message processing overhead on the client,
                     // outweighed the benefit of reduced cpu with the former approach.
                     let mut ops_bin_uncompressed: Option<(CompressableQueryUpdate<BsatnFormat>, _, _)> = None;
                     let mut ops_json: Option<(QueryUpdate<JsonFormat>, _, _)> = None;
