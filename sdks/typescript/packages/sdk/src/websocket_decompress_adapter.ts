@@ -106,7 +106,7 @@ export class WebsocketDecompressAdapter {
       }
     }
 
-    const databaseUrl = new URL(`v1/database/${nameOrAddress}/subscribe`,url);
+    const databaseUrl = new URL(`v1/database/${nameOrAddress}/subscribe`, url);
     databaseUrl.searchParams.set(
       'compression',
       compression === 'gzip' ? 'Gzip' : 'None'
