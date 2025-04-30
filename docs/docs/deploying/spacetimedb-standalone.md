@@ -83,17 +83,18 @@ server {
     server_name example.com;
 
     #########################################
-    # To enable open access to all routes (including publishing), simply uncomment the block below. This will
-    # allow *anyone* to publish to your SpacetimeDB instance.
+    # Warning: By default SpacetimeDB is completely open so that anyone can publish to it. If you want to block
+    # users from creating new databases you should comment out this section. We generally would recommend
+    # commenting this section out and then only publishing your changes locally.
     #########################################
-    # location / {
-    #     proxy_pass http://localhost:3000;
-    #     proxy_http_version 1.1;
-    #     proxy_set_header Upgrade $http_upgrade;
-    #     proxy_set_header Connection "Upgrade";
-    #     proxy_set_header Host $host;
-    #     break;
-    # }
+    location / {
+        proxy_pass http://localhost:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "Upgrade";
+        proxy_set_header Host $host;
+        break;
+    }
 
     # Anyone can subscribe to any database.
     # Note: This is the only section *required* for the websocket to function properly. Clients will
