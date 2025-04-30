@@ -391,18 +391,22 @@ impl<Tbl: Table, Col: Index + Column<Table = Tbl>> UniqueColumn<Tbl, Col::ColTyp
 
     /// Inserts `new_row` into the table, first checking for an existing
     /// row with a matching value in the unique column and deleting it if present.
+    ///
+    /// Be careful: in case of a constraint violation, this method will return Err,
+    /// but the previous row will be deleted. If you propagate the error, SpacetimeDB will
+    /// rollback the transaction and the old row will be restored. If you ignore the error,
+    /// the old row will be lost.
     #[track_caller]
     #[doc(alias = "try_upsert")]
     #[cfg(feature = "unstable")]
     pub fn try_insert_or_update(&self, new_row: Tbl::Row) -> Result<Tbl::Row, TryInsertError<Tbl>> {
-        let index = Col::get_field(&new_row);
-        match self._find(index) {
-            None => {
-                let buf = IterBuf::take();
-                insert::<Tbl>(new_row, buf)
-            }
-            Some(_existing) => Ok(self.update(new_row)),
-        }
+        let col_val = Col::get_field(&new_row);
+        // If the row doesn't exist, delete will return false, which we ignore.
+        let _ = self.delete(col_val);
+
+        // Then, insert the new row.
+        let buf = IterBuf::take();
+        insert::<Tbl>(new_row, buf)
     }
 
     /// Inserts `new_row` into the table, first checking for an existing
