@@ -138,7 +138,7 @@ spacetimedb-subscription = { path = "crates/subscription", version = "=1.9.0" }
 # from appearing in module dependency graphs.
 ahash = { version = "0.8", default-features = false, features = ["std"] }
 anyhow = "1.0.68"
-anymap = "0.12"
+anymap = { package = "anymap3", version = "1.0.1" }
 arrayvec = "0.7.2"
 async-stream = "0.3.6"
 async-trait = "0.1.68"

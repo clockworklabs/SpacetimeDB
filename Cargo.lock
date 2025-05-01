@@ -166,10 +166,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "anymap"
-version = "0.12.1"
+name = "anymap3"
+version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "33954243bd79057c2de7338850b85983a44588021f8a5fee574a8888c6de4344"
+checksum = "170433209e817da6aae2c51aa0dd443009a613425dd041ebfb2492d1c4c11a25"
 
 [[package]]
 name = "append-only-vec"
@@ -7160,7 +7160,7 @@ name = "spacetimedb-bench"
 version = "1.9.0"
 dependencies = [
  "anyhow",
- "anymap",
+ "anymap3",
  "byte-unit",
  "clap 4.5.50",
  "criterion",
@@ -7965,7 +7965,7 @@ dependencies = [
 name = "spacetimedb-sdk"
 version = "1.9.0"
 dependencies = [
- "anymap",
+ "anymap3",
  "base64 0.21.7",
  "brotli",
  "bytes",
