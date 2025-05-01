@@ -1,5 +1,5 @@
-use crate::generate::util::{is_reducer_invokable, iter_reducers, iter_tables, iter_types, iter_unique_cols};
 use crate::indent_scope;
+use crate::util::{is_reducer_invokable, iter_reducers, iter_tables, iter_types, iter_unique_cols};
 
 use super::util::{collect_case, print_auto_generated_file_comment, type_ref_name};
 
@@ -16,8 +16,7 @@ use spacetimedb_schema::type_for_generate::{AlgebraicTypeDef, AlgebraicTypeUse, 
 
 use super::code_indenter::{CodeIndenter, Indenter};
 use super::Lang;
-use crate::version::CLI_VERSION;
-use std::path::PathBuf;
+use spacetimedb_lib::version::spacetimedb_lib_version;
 
 type Imports = BTreeSet<AlgebraicTypeRef>;
 
@@ -40,11 +39,6 @@ impl Lang for TypeScript {
 
     fn reducer_filename(&self, reducer_name: &Identifier) -> String {
         reducer_module_name(reducer_name) + ".ts"
-    }
-
-    fn format_files(&self, _generated_files: BTreeSet<PathBuf>) -> anyhow::Result<()> {
-        // TODO: implement formatting.
-        Ok(())
     }
 
     fn generate_type(&self, module: &ModuleDef, typ: &TypeDef) -> String {
@@ -366,7 +360,8 @@ removeOnUpdate = (cb: (ctx: EventContext, onRow: {row_type}, newRow: {row_type})
         writeln!(out, "}},");
         writeln!(out, "versionInfo: {{");
         out.indent(1);
-        writeln!(out, "cliVersion: \"{CLI_VERSION}\",");
+        //let lib_version = spacetimedb_lib_version();
+        writeln!(out, "cliVersion: \"{}\",", spacetimedb_lib_version());
         out.dedent(1);
         writeln!(out, "}},");
         writeln!(
@@ -444,10 +439,6 @@ setReducerFlagsConstructor: () => {{
         );
 
         vec![("index.ts".to_string(), (output.into_inner()))]
-    }
-
-    fn clap_value() -> clap::builder::PossibleValue {
-        clap::builder::PossibleValue::new("typescript").aliases(["ts", "TS"])
     }
 }
 

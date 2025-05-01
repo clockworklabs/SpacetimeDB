@@ -50,9 +50,25 @@ public interface IReadWrite<T>
 public readonly struct Enum<T> : IReadWrite<T>
     where T : struct, Enum
 {
+    private static readonly ulong NumVariants;
+
+    static Enum()
+    {
+        NumVariants = (ulong)Enum.GetValues(typeof(T)).Length;
+    }
+
     private static T Validate(T value)
     {
-        if (!Enum.IsDefined(typeof(T), value))
+        // Previously this was: `if (!Enum.IsDefined(typeof(T), value))`.
+        // This was quite expensive because:
+        //   1. It uses reflection
+        //   2. It allocates
+        //   3. It is called on each row when decoding
+        //
+        // However, enum values are guaranteed to be sequential and zero based.
+        // Hence we only ever need to do an upper bound check.
+        // See `SpacetimeDB.Type.ParseEnum` for the syntax analysis.
+        if (Convert.ToUInt64(value) >= NumVariants)
         {
             throw new ArgumentOutOfRangeException(
                 nameof(value),

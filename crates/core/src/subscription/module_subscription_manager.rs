@@ -16,7 +16,7 @@ use hashbrown::{HashMap, HashSet};
 use itertools::Itertools;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use spacetimedb_client_api_messages::websocket::{
-    BsatnFormat, CompressableQueryUpdate, Compression, FormatSwitch, JsonFormat, QueryId, QueryUpdate, WebsocketFormat,
+    BsatnFormat, CompressableQueryUpdate, FormatSwitch, JsonFormat, QueryId, QueryUpdate, WebsocketFormat,
 };
 use spacetimedb_data_structures::map::{Entry, IntMap};
 use spacetimedb_lib::metrics::ExecutionMetrics;
@@ -817,26 +817,37 @@ impl SubscriptionManager {
                 .fold(FoldState::default, |mut acc, (qstate, plan)| {
                     let table_id = plan.subscribed_table_id();
                     let table_name = plan.subscribed_table_name();
-                    // Store at most one copy of the serialization to BSATN x Compression
-                    // and ditto for the "serialization" for JSON.
+                    // Store at most one copy for both the serialization to BSATN and JSON.
                     // Each subscriber gets to pick which of these they want,
-                    // but we only fill `ops_bin_{compression}` and `ops_json` at most once.
+                    // but we only fill `ops_bin_uncompressed` and `ops_json` at most once.
                     // The former will be `Some(_)` if some subscriber uses `Protocol::Binary`
                     // and the latter `Some(_)` if some subscriber uses `Protocol::Text`.
-                    let mut ops_bin_brotli: Option<(CompressableQueryUpdate<BsatnFormat>, _, _)> = None;
-                    let mut ops_bin_gzip: Option<(CompressableQueryUpdate<BsatnFormat>, _, _)> = None;
-                    let mut ops_bin_none: Option<(CompressableQueryUpdate<BsatnFormat>, _, _)> = None;
+                    //
+                    // Previously we were compressing each `QueryUpdate` within a `TransactionUpdate`.
+                    // The reason was simple - many clients can subscribe to the same query.
+                    // If we compress `TransactionUpdate`s independently for each client,
+                    // we could be doing a lot of redundant compression.
+                    //
+                    // However the risks associated with this approach include:
+                    //   1. We have to hold the tx lock when compressing
+                    //   2. A potentially worse compression ratio
+                    //   3. Extra decompression overhead on the client
+                    //
+                    // Because transaction processing is currently single-threaded,
+                    // the risks of holding the tx lock for longer than necessary,
+                    // as well as the additional message processing overhead on the client,
+                    // outweighed the benefit of reduced cpu with the former approach.
+                    let mut ops_bin_uncompressed: Option<(CompressableQueryUpdate<BsatnFormat>, _, _)> = None;
                     let mut ops_json: Option<(QueryUpdate<JsonFormat>, _, _)> = None;
 
                     fn memo_encode<F: WebsocketFormat>(
                         updates: &UpdatesRelValue<'_>,
-                        client: &ClientConnectionSender,
                         memory: &mut Option<(F::QueryUpdate, u64, usize)>,
                         metrics: &mut ExecutionMetrics,
                     ) -> (F::QueryUpdate, u64) {
                         let (update, num_rows, num_bytes) = memory
                             .get_or_insert_with(|| {
-                                let encoded = updates.encode::<F>(client.config.compression);
+                                let encoded = updates.encode::<F>();
                                 // The first time we insert into this map, we call encode.
                                 // This is when we serialize the rows to BSATN/JSON.
                                 // Hence this is where we increment `bytes_scanned`.
@@ -884,17 +895,11 @@ impl SubscriptionManager {
                                 let update = match client.config.protocol {
                                     Protocol::Binary => Bsatn(memo_encode::<BsatnFormat>(
                                         &delta_updates,
-                                        client,
-                                        match client.config.compression {
-                                            Compression::Brotli => &mut ops_bin_brotli,
-                                            Compression::Gzip => &mut ops_bin_gzip,
-                                            Compression::None => &mut ops_bin_none,
-                                        },
+                                        &mut ops_bin_uncompressed,
                                         &mut acc.metrics,
                                     )),
                                     Protocol::Text => Json(memo_encode::<JsonFormat>(
                                         &delta_updates,
-                                        client,
                                         &mut ops_json,
                                         &mut acc.metrics,
                                     )),

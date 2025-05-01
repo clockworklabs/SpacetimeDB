@@ -106,7 +106,7 @@ jobs:
 
       - name: Ensure C# autogen bindings are up-to-date
         run: |
-          cargo run --example regen-csharp-moduledef
+          cargo run -p spacetimedb-codegen --example regen-csharp-moduledef
           bash tools/check-diff.sh crates/bindings-csharp
 
       - name: C# bindings tests
