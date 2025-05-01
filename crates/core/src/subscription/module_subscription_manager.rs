@@ -8,6 +8,7 @@ use crate::client::{ClientConnectionSender, Protocol};
 use crate::error::DBError;
 use crate::execution_context::WorkloadType;
 use crate::host::module_host::{DatabaseTableUpdate, ModuleEvent, UpdatesRelValue};
+use crate::host::ArgsTuple;
 use crate::messages::websocket::{self as ws, TableUpdate};
 use crate::subscription::delta::eval_delta;
 use crate::subscription::record_exec_metrics;
@@ -997,6 +998,21 @@ impl SubscriptionManager {
                 };
                 send_to_client(caller, message);
             }
+
+            // Censor Reducer args
+            let mut event = ModuleEvent {
+                timestamp: event.timestamp,
+                caller_identity: event.caller_identity,
+                caller_connection_id: event.caller_connection_id,
+                function_call: event.function_call.clone(),
+                status: event.status.clone(),
+                energy_quanta_used: event.energy_quanta_used,
+                host_execution_duration: event.host_execution_duration,
+                request_id: event.request_id,
+                timer: event.timer,
+            };
+            event.function_call.args = ArgsTuple::nullary();
+            let event = Arc::new(event);
 
             // Send all the other updates.
             for (id, update) in eval {
