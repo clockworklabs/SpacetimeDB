@@ -89,6 +89,22 @@ pub enum TestF {
     Baz(String),
 }
 
+#[spacetimedb::table(
+    name = test_g,
+    index(name = created_at_index, btree(columns = [name, created_at])),
+)]
+#[derive(Debug)]
+pub struct TestG {
+    #[primary_key]
+    #[auto_inc]
+    id: u64,
+
+    name: String,
+
+    #[index(btree)]
+    created_at: Timestamp,
+}
+
 // // All tables are private by default.
 const _: () = assert!(matches!(get_table_access(test_e::test_e), TableAccess::Private));
 
@@ -362,6 +378,9 @@ fn test_btree_index_args(ctx: &ReducerContext) {
 
     ctx.db.test_e().name().delete(&string);
     ctx.db.test_e().name().delete("str");
+
+    // Testing if it compiles with a range of timestamps.
+    let _ = ctx.db.test_g().created_at().filter(..ctx.timestamp);
 
     // ctx.db.test_e().name().delete(string); // SHOULD FAIL
 
