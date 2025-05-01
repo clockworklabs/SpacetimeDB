@@ -481,47 +481,76 @@ impl WsConnection {
         let (outgoing_tx, outgoing_rx) = mpsc::unbounded::<ClientMessage<Bytes>>();
         let (incoming_tx, incoming_rx) = mpsc::unbounded::<ServerMessage<BsatnFormat>>();
 
-        let ws = self.sock;
+        let (mut ws_writer, ws_reader) = self.sock.split();
 
         wasm_bindgen_futures::spawn_local(async move {
-            // fuse both streams so `select!` knows when one side is done
-            let mut ws_stream = ws.fuse();
+            let mut incoming = ws_reader.fuse();
             let mut outgoing = outgoing_rx.fuse();
 
             loop {
                 futures::select! {
                     // 1) inbound WS frames
-                    frame = ws_stream.next() => match frame {
+                    inbound = incoming.next() => match inbound {
+                        Some(Err(tokio_tungstenite_wasm::Error::ConnectionClosed)) | None => {
+                            gloo_console::log!("Connection closed");
+                            break;
+                        },
+
                         Some(Ok(WebSocketMessage::Binary(bytes))) => {
                             record_metrics(bytes.len());
                             // parse + forward into `incoming_tx`
-                            if let Ok(msg) = Self::parse_response(&bytes) {
-                                match incoming_tx.unbounded_send(msg) {
-                                    Ok(_) => {},
-                                    Err(_) => {}
-                                }
+                            match Self::parse_response(&bytes) {
+                                Ok(msg) => if let Err(_e) = incoming_tx.unbounded_send(msg) {
+                                    gloo_console::warn!("Incoming receiver dropped.");
+                                    break;
+                                },
+                                Err(e) => {
+                                    gloo_console::warn!(
+                                        "Error decoding WebSocketMessage::Binay payload: ",
+                                        format!("{:?}", e)
+                                    );
+                                },
                             }
-                        }
+                        },
+
+                        Some(Ok(WebSocketMessage::Ping(payload)))
+                        | Some(Ok(WebSocketMessage::Pong(payload))) => {
+                            record_metrics(payload.len());
+                        },
+
+                        Some(Ok(WebSocketMessage::Close(r))) => {
+                            let reason: String = if let Some(r) = r {
+                                format!("{}:{:?}", r, r.code)
+                            } else {String::default()};
+                            gloo_console::warn!("Connection Closed.", reason);
+                            let _ = ws_writer.close().await;
+                            break;
+                        },
+
                         Some(Err(e)) => {
-                            gloo_console::warn!("WS Error: ", format!("{:?}",e));
+                            gloo_console::warn!(
+                                "Error reading message from read WebSocket stream: ",
+                                format!("{:?}",e)
+                            );
                             break;
+                        },
+
+                        Some(Ok(other)) => {
+                            record_metrics(other.len());
+                            gloo_console::warn!("Unexpected WebSocket message: ", format!("{:?}",other));
                         }
-                        None => {
-                            gloo_console::warn!("WS Closed");
-                            break;
-                        }
-                        _ => {}
                     },
 
                     // 2) outbound messages
-                    client_msg = outgoing.next() => if let Some(client_msg) = client_msg {
+                    outbound = outgoing.next() => if let Some(client_msg) = outbound {
                         let raw = Self::encode_message(client_msg);
-                        if let Err(e) = ws_stream.send(raw).await {
+                        if let Err(e) = ws_writer.send(raw).await {
                             gloo_console::warn!("WS Send error: ", format!("{:?}",e));
                             break;
                         }
                     } else {
                         // channel closed, so we're done  sending
+                        let _ = ws_writer.close().await;
                         break;
                     },
                 }
