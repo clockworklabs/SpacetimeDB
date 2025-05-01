@@ -360,7 +360,6 @@ removeOnUpdate = (cb: (ctx: EventContext, onRow: {row_type}, newRow: {row_type})
         writeln!(out, "}},");
         writeln!(out, "versionInfo: {{");
         out.indent(1);
-        //let lib_version = spacetimedb_lib_version();
         writeln!(out, "cliVersion: \"{}\",", spacetimedb_lib_version());
         out.dedent(1);
         writeln!(out, "}},");
