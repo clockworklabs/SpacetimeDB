@@ -403,8 +403,18 @@ public readonly struct Array<Element, ElementRW> : IReadWrite<Element[]>
     where ElementRW : IReadWrite<Element>, new()
 {
     private static readonly Enumerable<Element, ElementRW> enumerable = new();
+    private static readonly ElementRW elementRW = new();
 
-    public Element[] Read(BinaryReader reader) => enumerable.Read(reader).ToArray();
+    public Element[] Read(BinaryReader reader)
+    {
+        var count = reader.ReadInt32();
+        var result = new Element[count];
+        for (var i = 0; i < count; i++)
+        {
+            result[i] = elementRW.Read(reader);
+        }
+        return result;
+    }
 
     public void Write(BinaryWriter writer, Element[] value) => enumerable.Write(writer, value);
 
@@ -446,8 +456,18 @@ public readonly struct List<Element, ElementRW> : IReadWrite<List<Element>>
     where ElementRW : IReadWrite<Element>, new()
 {
     private static readonly Enumerable<Element, ElementRW> enumerable = new();
+    private static readonly ElementRW elementRW = new();
 
-    public List<Element> Read(BinaryReader reader) => enumerable.Read(reader).ToList();
+    public List<Element> Read(BinaryReader reader)
+    {
+        var count = reader.ReadInt32();
+        var result = new List<Element>(count);
+        for (var i = 0; i < count; i++)
+        {
+            result.Add(elementRW.Read(reader));
+        }
+        return result;
+    }
 
     public void Write(BinaryWriter writer, List<Element> value) => enumerable.Write(writer, value);
 
