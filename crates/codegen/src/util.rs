@@ -8,6 +8,7 @@ use std::{
 use super::code_indenter::Indenter;
 use convert_case::{Case, Casing};
 use itertools::Itertools;
+use spacetimedb_lib::version;
 use spacetimedb_lib::{db::raw_def::v9::Lifecycle, sats::AlgebraicTypeRef};
 use spacetimedb_primitives::ColList;
 use spacetimedb_schema::schema::TableSchema;
@@ -53,6 +54,13 @@ const AUTO_GENERATED_FILE_COMMENT: &[&str] = &[
 
 pub(super) fn print_auto_generated_file_comment(output: &mut Indenter) {
     print_lines(output, AUTO_GENERATED_FILE_COMMENT);
+    writeln!(
+        output,
+        "// This was generated using spacetimedb cli version {} (commit {}).",
+        version::spacetimedb_lib_version(),
+        version::GIT_HASH
+    );
+    writeln!(output);
 }
 
 pub(super) fn type_ref_name(module: &ModuleDef, typeref: AlgebraicTypeRef) -> String {

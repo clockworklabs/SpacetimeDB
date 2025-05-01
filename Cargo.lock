@@ -2749,6 +2749,7 @@ dependencies = [
  "console",
  "lazy_static",
  "linked-hash-map",
+ "regex",
  "serde",
  "similar",
  "toml 0.5.11",

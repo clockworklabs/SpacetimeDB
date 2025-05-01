@@ -102,12 +102,12 @@ jobs:
         run: cargo test --all
 
       - name: Check that the test outputs are up-to-date
-        run: git diff --exit-code
+        run: bash tools/check-diff.sh
 
       - name: Ensure C# autogen bindings are up-to-date
         run: |
           cargo run -p spacetimedb-codegen --example regen-csharp-moduledef
-          git diff --exit-code -- crates/bindings-csharp
+          bash tools/check-diff.sh crates/bindings-csharp
 
       - name: C# bindings tests
         working-directory: crates/bindings-csharp
