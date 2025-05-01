@@ -640,9 +640,9 @@ column
 ```
 
 
-[sdk]:       /docs/sdks/rust/index.md#subscribe-to-queries
-[http]:      /docs/http/database#databasesqlname_or_address-post
-[cli]:       /docs/cli-reference.md#spacetime-sql
+[sdk]:       /docs/sdks/rust#subscribe-to-queries
+[http]:      /docs/http/database#post-v1databasename_or_identitysql
+[cli]:       /docs/cli-reference#spacetime-sql
 
-[Identity]: /docs/index.md#identity
-[ConnectionId]:  /docs/index.md#connectionid
+[Identity]: /docs#identity
+[ConnectionId]:  /docs#connectionid

@@ -223,9 +223,9 @@ However:
 
 # Tables
 
-Tables are declared using the [`[SpacetimeDB.Table]` attribute](#table-attribute).
+Tables are declared using the `[SpacetimeDB.Table]` attribute.
 
-This macro is applied to a C# `partial class` or `partial struct` with named fields. (The `partial` modifier is required to allow code generation to add methods.) All of the fields of the table must be marked with [`[SpacetimeDB.Type]`](#type-attribute).
+This macro is applied to a C# `partial class` or `partial struct` with named fields. (The `partial` modifier is required to allow code generation to add methods.) All of the fields of the table must be marked with [`[SpacetimeDB.Type]`]( #attribute-spacetimedbtype).
 
 The resulting type is used to store rows of the table. It's a normal class (or struct). Row values are not special -- operations on row types do not, by themselves, modify the table. Instead, a [`ReducerContext`](#class-reducercontext) is needed to get a handle to the table.
 
