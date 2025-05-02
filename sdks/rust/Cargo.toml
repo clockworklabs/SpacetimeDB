@@ -37,6 +37,7 @@ tokio-tungstenite.workspace = true
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { version = "0.3.2", features = ["wasm_js"]}
 gloo-console = "0.3.0"
+gloo-storage = "0.3.0"
 rustls-pki-types = { version = "1.11.0", features = ["web"] }
 tokio-tungstenite-wasm = { git = "https://github.com/thlsrms/tokio-tungstenite-wasm", rev = "c788b7cfc30f576c" }
 tokio = { version = "1.37", default-features = false, features = [
@@ -45,7 +46,7 @@ tokio = { version = "1.37", default-features = false, features = [
 tungstenite = { version = "0.26.2", features = ["rustls"] }
 wasm-bindgen = "0.2.100"
 wasm-bindgen-futures = "0.4.45"
-web-sys = { version = "0.3.77", features = [ "Window", "Storage" ] }
+web-sys = { version = "0.3.77", features = [ "Document", "HtmlDocument", "Window", "Storage" ] }
 
 [dev-dependencies]
 # for quickstart-chat and cursive-chat examples
