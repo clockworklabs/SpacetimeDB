@@ -7,7 +7,7 @@ Please note that TypeScript is supported as a client language only. **Before you
 - [Rust](/docs/modules/rust/quickstart)
 - [C#](/docs/modules/c-sharp/quickstart)
 
-By the end of this introduciton, you will have created a basic single page web app which connects to the `quickstart-chat` database created in the above module quickstart guides.
+By the end of this introduction, you will have created a basic single page web app which connects to the `quickstart-chat` database created in the above module quickstart guides.
 
 ## Project structure
 
