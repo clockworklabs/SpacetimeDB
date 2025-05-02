@@ -34,7 +34,7 @@ enum-map.workspace = true
 spacetimedb-lib = { path = "../lib", features = ["test"] }
 # these are circular dependencies, but only in tests, so it's fine
 spacetimedb-testing = { path = "../testing" }
-spacetimedb-cli = { path = "../cli" }
+spacetimedb-codegen = { path = "../codegen" }
 
 proptest.workspace = true
 serial_test.workspace = true
