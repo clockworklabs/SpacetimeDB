@@ -407,7 +407,7 @@ public readonly struct Array<Element, ElementRW> : IReadWrite<Element[]>
 
     public Element[] Read(BinaryReader reader)
     {
-        // Don't use IEnumerable here: save an allocation and pre-allocate the output.
+        // Don't use Enumerable here: save an allocation and pre-allocate the output.
         var count = reader.ReadInt32();
         var result = new Element[count];
         for (var i = 0; i < count; i++)
@@ -461,7 +461,7 @@ public readonly struct List<Element, ElementRW> : IReadWrite<List<Element>>
 
     public List<Element> Read(BinaryReader reader)
     {
-        // Don't use IEnumerable here: save an allocation and pre-allocate the output.
+        // Don't use Enumerable here: save an allocation and pre-allocate the output.
         var count = reader.ReadInt32();
         var result = new List<Element>(count);
         for (var i = 0; i < count; i++)
