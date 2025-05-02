@@ -72,6 +72,12 @@ pub fn cli() -> clap::Command {
                 "The maximum size of the page pool in bytes. Should be a multiple of 64KiB. The default is 8GiB.",
             ),
         )
+        .arg(
+            Arg::new("no_reducer_args")
+                .long("no-reducer-args")
+                .help("This flag disables reducer callbacks from broadcasting their arguments to anyone but the caller")
+                .action(SetTrue),
+        )
     // .after_help("Run `spacetime help start` for more detailed information.")
 }
 
@@ -103,6 +109,7 @@ pub async fn exec(args: &ArgMatches) -> anyhow::Result<()> {
         storage,
         page_pool_max_size,
     };
+    let no_reducer_args = args.get_flag("no_reducer_args");
 
     banner();
     let exe_name = std::env::current_exe()?;
@@ -147,7 +154,7 @@ pub async fn exec(args: &ArgMatches) -> anyhow::Result<()> {
         .context("cannot omit --jwt-{pub,priv}-key-path when those options are not specified in config.toml")?;
 
     let data_dir = Arc::new(data_dir.clone());
-    let ctx = StandaloneEnv::init(db_config, &certs, data_dir).await?;
+    let ctx = StandaloneEnv::init(db_config, &certs, data_dir, no_reducer_args).await?;
     worker_metrics::spawn_jemalloc_stats(listen_addr.clone());
     worker_metrics::spawn_tokio_stats(listen_addr.clone());
     worker_metrics::spawn_page_pool_stats(listen_addr.clone(), ctx.page_pool().clone());

@@ -92,6 +92,8 @@ pub struct HostController {
     pub page_pool: PagePool,
     /// The runtimes for running our modules.
     runtimes: Arc<HostRuntimes>,
+    /// Flag for hiding reducer callback arguments from broadcasting to non-caller
+    disable_reducer_args: bool,
 }
 
 struct HostRuntimes {
@@ -166,6 +168,7 @@ impl HostController {
         program_storage: ProgramStorage,
         energy_monitor: Arc<impl EnergyMonitor>,
         durability: Arc<dyn DurabilityProvider>,
+        disable_reducer_args: bool,
     ) -> Self {
         Self {
             hosts: <_>::default(),
@@ -176,6 +179,7 @@ impl HostController {
             runtimes: HostRuntimes::new(&data_dir),
             data_dir,
             page_pool: PagePool::new(default_config.page_pool_max_size),
+            disable_reducer_args,
         }
     }
 
@@ -523,9 +527,11 @@ async fn make_replica_ctx(
     database: Database,
     replica_id: u64,
     relational_db: Arc<RelationalDB>,
+    disable_reducer_args: bool,
 ) -> anyhow::Result<ReplicaContext> {
     let logger = tokio::task::block_in_place(move || Arc::new(DatabaseLogger::open_today(path.module_logs())));
     let subscriptions = Arc::new(RwLock::new(SubscriptionManager::default()));
+    subscriptions.write_arc().set_disable_reducer_args(disable_reducer_args);
     let downgraded = Arc::downgrade(&subscriptions);
     let subscriptions = ModuleSubscriptions::new(relational_db.clone(), subscriptions, database.owner_identity);
 
@@ -611,11 +617,12 @@ async fn launch_module(
     energy_monitor: Arc<dyn EnergyMonitor>,
     replica_dir: ReplicaDir,
     runtimes: Arc<HostRuntimes>,
+    disable_reducer_args: bool,
 ) -> anyhow::Result<(Program, LaunchedModule)> {
     let db_identity = database.database_identity;
     let host_type = database.host_type;
 
-    let replica_ctx = make_replica_ctx(replica_dir, database, replica_id, relational_db)
+    let replica_ctx = make_replica_ctx(replica_dir, database, replica_id, relational_db, disable_reducer_args)
         .await
         .map(Arc::new)?;
     let (scheduler, scheduler_starter) = Scheduler::open(replica_ctx.relational_db.clone());
@@ -768,6 +775,7 @@ impl Host {
             energy_monitor.clone(),
             replica_dir,
             runtimes.clone(),
+            host_controller.disable_reducer_args,
         )
         .await?;
 
@@ -858,6 +866,7 @@ impl Host {
             Arc::new(NullEnergyMonitor),
             phony_replica_dir,
             runtimes.clone(),
+            host_controller.disable_reducer_args,
         )
         .await?;
 

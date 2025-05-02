@@ -46,6 +46,7 @@ impl StandaloneEnv {
         config: Config,
         certs: &CertificateAuthority,
         data_dir: Arc<ServerDataDir>,
+        disable_reducer_args: bool,
     ) -> anyhow::Result<Arc<Self>> {
         let _pid_file = data_dir.pid_file()?;
         let meta_path = data_dir.metadata_toml();
@@ -68,6 +69,7 @@ impl StandaloneEnv {
             program_store.clone(),
             energy_monitor,
             durability_provider,
+            disable_reducer_args,
         );
         let client_actor_index = ClientActorIndex::new();
         let jwt_keys = certs.get_or_create_keys()?;
@@ -513,9 +515,9 @@ mod tests {
             page_pool_max_size: None,
         };
 
-        let _env = StandaloneEnv::init(config, &ca, data_dir.clone()).await?;
+        let _env = StandaloneEnv::init(config, &ca, data_dir.clone(), false).await?;
         // Ensure that we have a lock.
-        assert!(StandaloneEnv::init(config, &ca, data_dir.clone()).await.is_err());
+        assert!(StandaloneEnv::init(config, &ca, data_dir.clone(), false).await.is_err());
 
         Ok(())
     }

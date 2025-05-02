@@ -317,6 +317,9 @@ pub struct SubscriptionManager {
     // For queries that have simple equality filters,
     // we map the filter values to the query in this lookup table.
     search_args: SearchArguments,
+
+    // Changes Reducer callbacks to send back empty arguments to everyone but the caller
+    disable_reducer_args: bool,
 }
 
 // Tracks some gauges related to subscriptions.
@@ -999,20 +1002,24 @@ impl SubscriptionManager {
                 send_to_client(caller, message);
             }
 
-            // Censor Reducer args
-            let mut event = ModuleEvent {
-                timestamp: event.timestamp,
-                caller_identity: event.caller_identity,
-                caller_connection_id: event.caller_connection_id,
-                function_call: event.function_call.clone(),
-                status: event.status.clone(),
-                energy_quanta_used: event.energy_quanta_used,
-                host_execution_duration: event.host_execution_duration,
-                request_id: event.request_id,
-                timer: event.timer,
+            // Disable Reducer args
+            let event = if self.disable_reducer_args {
+                let mut new_event = ModuleEvent {
+                    timestamp: event.timestamp,
+                    caller_identity: event.caller_identity,
+                    caller_connection_id: event.caller_connection_id,
+                    function_call: event.function_call.clone(),
+                    status: event.status.clone(),
+                    energy_quanta_used: event.energy_quanta_used,
+                    host_execution_duration: event.host_execution_duration,
+                    request_id: event.request_id,
+                    timer: event.timer,
+                };
+                new_event.function_call.args = ArgsTuple::nullary();
+                Arc::new(new_event)
+            } else {
+                event.clone()
             };
-            event.function_call.args = ArgsTuple::nullary();
-            let event = Arc::new(event);
 
             // Send all the other updates.
             for (id, update) in eval {
@@ -1045,6 +1052,10 @@ impl SubscriptionManager {
 
             metrics
         })
+    }
+
+    pub fn set_disable_reducer_args(&mut self, disable: bool) {
+        self.disable_reducer_args = disable;
     }
 }
 
