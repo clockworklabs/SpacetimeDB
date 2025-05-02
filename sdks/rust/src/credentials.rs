@@ -155,54 +155,166 @@ mod native_mod {
 
 #[cfg(target_arch = "wasm32")]
 mod web_mod {
-    use thiserror::Error;
+    pub use gloo_storage::{LocalStorage, SessionStorage, Storage};
 
-    #[derive(Error, Debug)]
-    pub enum CredentialStorageError {
-        #[error("Could not access localStorage")]
-        LocalStorageAccess,
+    pub mod cookies {
+        use thiserror::Error;
+        use wasm_bindgen::{JsCast, JsValue};
+        use web_sys::{window, Document, HtmlDocument};
 
-        #[error("Exception while interacting with localStorage: {0:?}")]
-        LocalStorageJsError(wasm_bindgen::JsValue),
-
-        #[error("Window object is not available in this context")]
-        WindowObjectAccess,
-    }
-
-    /// TODO: Give it an option for 'Local', 'Session', 'Cookie'?
-    pub struct StorageEntry {
-        key: String,
-    }
-
-    impl StorageEntry {
-        pub fn new(key: impl Into<String>) -> Self {
-            Self { key: key.into() }
+        #[derive(Error, Debug)]
+        pub enum CookieError {
+            #[error("Window Object not valid in this context")]
+            NoWindow,
+            #[error("No `document` available on `window` object")]
+            NoDocument,
+            #[error("`document` is not an HtmlDocument")]
+            NoHtmlDocument,
+            #[error("web_sys error: {0:?}")]
+            WebSys(JsValue),
         }
 
-        pub fn save(&self, token: impl Into<String>) -> Result<(), CredentialStorageError> {
-            let local_storage = web_sys::window()
-                .ok_or(CredentialStorageError::WindowObjectAccess)?
-                .local_storage()
-                .map_err(CredentialStorageError::LocalStorageJsError)?
-                .ok_or(CredentialStorageError::LocalStorageAccess)?;
-            local_storage
-                .set_item(&self.key, &token.into())
-                .map_err(CredentialStorageError::LocalStorageJsError)?;
-            Ok(())
-        }
-
-        pub fn load(&self) -> Result<Option<String>, CredentialStorageError> {
-            let local_storage = web_sys::window()
-                .ok_or(CredentialStorageError::WindowObjectAccess)?
-                .local_storage()
-                .map_err(CredentialStorageError::LocalStorageJsError)?
-                .ok_or(CredentialStorageError::LocalStorageAccess)?;
-
-            match local_storage.get_item(&self.key) {
-                Ok(Some(token)) => Ok(Some(token)),
-                Ok(None) => Ok(None),
-                Err(err) => Err(CredentialStorageError::LocalStorageJsError(err)),
+        impl From<JsValue> for CookieError {
+            fn from(err: JsValue) -> Self {
+                CookieError::WebSys(err)
             }
+        }
+
+        /// A builder for contructing and setting cookies.
+        pub struct Cookie {
+            name: String,
+            value: String,
+            path: Option<String>,
+            domain: Option<String>,
+            max_age: Option<i32>,
+            secure: bool,
+            same_site: Option<SameSite>,
+        }
+
+        impl Cookie {
+            /// Creates a new cookie builder with the specified name and value.
+            pub fn new(name: impl Into<String>, value: impl Into<String>) -> Self {
+                Self {
+                    name: name.into(),
+                    value: value.into(),
+                    path: None,
+                    domain: None,
+                    max_age: None,
+                    secure: false,
+                    same_site: None,
+                }
+            }
+
+            /// Gets the value of a cookie by name.
+            pub fn get(name: &str) -> Result<Option<String>, CookieError> {
+                let doc = get_html_document()?;
+                let all = doc.cookie().map_err(CookieError::from)?;
+                for cookie in all.split(';') {
+                    let cookie = cookie.trim();
+                    if let Some((k, v)) = cookie.split_once('=') {
+                        if k == name {
+                            return Ok(Some(v.to_string()));
+                        }
+                    }
+                }
+
+                Ok(None)
+            }
+
+            /// Sets the `Path` attribute (e.g., "/").
+            pub fn path(mut self, path: impl Into<String>) -> Self {
+                self.path = Some(path.into());
+                self
+            }
+
+            /// Sets the `Domain` attribute (e.g., "example.com").
+            pub fn domain(mut self, domain: impl Into<String>) -> Self {
+                self.domain = Some(domain.into());
+                self
+            }
+
+            /// Sets the `Max-Age` attribute in seconds.
+            pub fn max_age(mut self, seconds: i32) -> Self {
+                self.max_age = Some(seconds);
+                self
+            }
+
+            /// Toggles the `Secure` flag.
+            /// The default is `false`.
+            pub fn secure(mut self, enabled: bool) -> Self {
+                self.secure = enabled;
+                self
+            }
+
+            /// Sets the `SameSite` attribute (`Strict`, `Lax`, or `None`).
+            pub fn same_site(mut self, same_site: SameSite) -> Self {
+                self.same_site = Some(same_site);
+                self
+            }
+
+            pub fn set(self) -> Result<(), CookieError> {
+                let doc = get_html_document()?;
+                let mut parts = vec![format!("{}={}", self.name, self.value)];
+
+                if let Some(path) = self.path {
+                    parts.push(format!("Path={}", path));
+                }
+                if let Some(domain) = self.domain {
+                    parts.push(format!("Domain={}", domain));
+                }
+                if let Some(age) = self.max_age {
+                    parts.push(format!("Max-Age={}", age));
+                }
+                if self.secure {
+                    parts.push("Secure".into());
+                }
+                if let Some(same) = self.same_site {
+                    parts.push(format!("SameSite={}", same.to_string()));
+                }
+
+                let cookie_str = parts.join("; ");
+                doc.set_cookie(&cookie_str).map_err(CookieError::from)
+            }
+
+            /// Deletes the cookie by setting its value to empty and `Max-Age=0`.
+            pub fn delete(self) -> Result<(), CookieError> {
+                self.value("").max_age(0).set()
+            }
+
+            /// Helper to override value for delete
+            fn value(mut self, value: impl Into<String>) -> Self {
+                self.value = value.into();
+                self
+            }
+        }
+
+        /// Controls the `SameSite` attribute for cookies.
+        pub enum SameSite {
+            Strict,
+            Lax,
+            None,
+        }
+
+        impl ToString for SameSite {
+            fn to_string(&self) -> String {
+                match self {
+                    SameSite::Strict => "Strict".into(),
+                    SameSite::Lax => "Lax".into(),
+                    SameSite::None => "None".into(),
+                }
+            }
+        }
+
+        fn get_document() -> Result<Document, CookieError> {
+            window()
+                .ok_or(CookieError::NoWindow)?
+                .document()
+                .ok_or(CookieError::NoDocument)
+        }
+
+        fn get_html_document() -> Result<HtmlDocument, CookieError> {
+            let doc = get_document()?;
+            doc.dyn_into::<HtmlDocument>().map_err(|_| CookieError::NoHtmlDocument)
         }
     }
 }
