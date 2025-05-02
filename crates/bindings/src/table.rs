@@ -388,6 +388,38 @@ impl<Tbl: Table, Col: Index + Column<Table = Tbl>> UniqueColumn<Tbl, Col::ColTyp
         let buf = IterBuf::take();
         update::<Tbl>(Col::index_id(), new_row, buf)
     }
+
+    /// Inserts `new_row` into the table, first checking for an existing
+    /// row with a matching value in the unique column and deleting it if present.
+    ///
+    /// Be careful: in case of a constraint violation, this method will return Err,
+    /// but the previous row will be deleted. If you propagate the error, SpacetimeDB will
+    /// rollback the transaction and the old row will be restored. If you ignore the error,
+    /// the old row will be lost.
+    #[track_caller]
+    #[doc(alias = "try_upsert")]
+    #[cfg(feature = "unstable")]
+    pub fn try_insert_or_update(&self, new_row: Tbl::Row) -> Result<Tbl::Row, TryInsertError<Tbl>> {
+        let col_val = Col::get_field(&new_row);
+        // If the row doesn't exist, delete will return false, which we ignore.
+        let _ = self.delete(col_val);
+
+        // Then, insert the new row.
+        let buf = IterBuf::take();
+        insert::<Tbl>(new_row, buf)
+    }
+
+    /// Inserts `new_row` into the table, first checking for an existing
+    /// row with a matching value in the unique column and deleting it if present.
+    ///
+    /// # Panics
+    /// Panics if either the delete or the insertion would violate a constraint.
+    #[track_caller]
+    #[doc(alias = "upsert")]
+    #[cfg(feature = "unstable")]
+    pub fn insert_or_update(&self, new_row: Tbl::Row) -> Tbl::Row {
+        self.try_insert_or_update(new_row).unwrap_or_else(|e| panic!("{e}"))
+    }
 }
 
 pub trait Index {
