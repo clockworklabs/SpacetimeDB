@@ -53,11 +53,11 @@ A connection to a remote database is represented by the `module_bindings::DbConn
 
 | Name                                                                   | Description                                                                                      |
 |------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------|
-| [Connect to a module](#connect-to-a-module)                            | Construct a `DbConnection`.                                                                      |
+| [Connect to a database](#connect-to-a-database)                            | Construct a `DbConnection`.                                                                      |
 | [Advance the connection](#advance-the-connection-and-process-messages) | Poll the `DbConnection`, or set up a background worker to run it.                                |
 | [Access tables and reducers](#access-tables-and-reducers)              | Access subscribed rows in the client cache, request reducer invocations, and register callbacks. |
 
-### Connect to a module
+### Connect to a database
 
 ```rust
 impl DbConnection {
@@ -65,7 +65,7 @@ impl DbConnection {
 }
 ```
 
-Construct a `DbConnection` by calling `DbConnection::builder()` and chaining configuration methods, then calling `.build()`. You must at least specify `with_uri`, to supply the URI of the SpacetimeDB to which you published your module, and `with_module_name`, to supply the human-readable SpacetimeDB domain name or the raw `Identity` which identifies the module.
+Construct a `DbConnection` by calling `DbConnection::builder()` and chaining configuration methods, then calling `.build()`. You must at least specify `with_uri`, to supply the URI of the SpacetimeDB to which you published your module, and `with_module_name`, to supply the human-readable SpacetimeDB domain name or the raw `Identity` which identifies the database.
 
 | Name                                                      | Description                                                                          |
 |-----------------------------------------------------------|--------------------------------------------------------------------------------------|
@@ -85,7 +85,7 @@ impl DbConnectionBuilder {
 }
 ```
 
-Configure the URI of the SpacetimeDB instance or cluster which hosts the remote module.
+Configure the URI of the SpacetimeDB instance or cluster which hosts the remote database containing the module.
 
 #### Method `with_module_name`
 
@@ -95,7 +95,7 @@ impl DbConnectionBuilder {
 }
 ```
 
-Configure the SpacetimeDB domain name or `Identity` of the remote module which identifies it within the SpacetimeDB instance or cluster.
+Configure the SpacetimeDB domain name or `Identity` of the remote database which identifies it within the SpacetimeDB instance or cluster.
 
 #### Callback `on_connect`
 
@@ -105,7 +105,7 @@ impl DbConnectionBuilder {
 }
 ```
 
-Chain a call to `.on_connect(callback)` to your builder to register a callback to run when your new `DbConnection` successfully initiates its connection to the remote module. The callback accepts three arguments: a reference to the `DbConnection`, the `Identity` by which SpacetimeDB identifies this connection, and a private access token which can be saved and later passed to [`with_token`](#method-with_token) to authenticate the same user in future connections.
+Chain a call to `.on_connect(callback)` to your builder to register a callback to run when your new `DbConnection` successfully initiates its connection to the remote database. The callback accepts three arguments: a reference to the `DbConnection`, the `Identity` by which SpacetimeDB identifies this connection, and a private access token which can be saved and later passed to [`with_token`](#method-with_token) to authenticate the same user in future connections.
 
 This interface may change in an upcoming release as we rework SpacetimeDB's authentication model.
 
@@ -135,7 +135,7 @@ impl DbConnectionBuilder {
 }
 ```
 
-Chain a call to `.on_disconnect(callback)` to your builder to register a callback to run when your `DbConnection` disconnects from the remote module, either as a result of a call to [`disconnect`](#method-disconnect) or due to an error.
+Chain a call to `.on_disconnect(callback)` to your builder to register a callback to run when your `DbConnection` disconnects from the remote database, either as a result of a call to [`disconnect`](#method-disconnect) or due to an error.
 
 #### Method `with_token`
 
@@ -553,7 +553,7 @@ spacetimedb_sdk::Event<module_bindings::Reducer>
 spacetimedb_sdk::Event::Reducer(spacetimedb_sdk::ReducerEvent<module_bindings::Reducer>)
 ```
 
-Event when we are notified that a reducer ran in the remote module. The [`ReducerEvent`](#struct-reducerevent) contains metadata about the reducer run, including its arguments and termination [`Status`](#enum-status).
+Event when we are notified that a reducer ran in the remote database. The [`ReducerEvent`](#struct-reducerevent) contains metadata about the reducer run, including its arguments and termination [`Status`](#enum-status).
 
 This event is passed to row callbacks resulting from modifications by the reducer.
 
@@ -589,7 +589,7 @@ This event is passed to [row `on_delete` callbacks](#callback-on_delete) resulti
 
 #### Variant `UnknownTransaction`
 
-Event when we are notified of a transaction in the remote module which we cannot associate with a known reducer. This may be an ad-hoc SQL query or a reducer for which we do not have bindings.
+Event when we are notified of a transaction in the remote database which we cannot associate with a known reducer. This may be an ad-hoc SQL query or a reducer for which we do not have bindings.
 
 This event is passed to [row callbacks](#callback-on_insert) resulting from modifications by the transaction.
 

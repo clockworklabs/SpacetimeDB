@@ -223,9 +223,9 @@ However:
 
 # Tables
 
-Tables are declared using the [`[SpacetimeDB.Table]` attribute](#table-attribute).
+Tables are declared using the `[SpacetimeDB.Table]` attribute.
 
-This macro is applied to a C# `partial class` or `partial struct` with named fields. (The `partial` modifier is required to allow code generation to add methods.) All of the fields of the table must be marked with [`[SpacetimeDB.Type]`](#type-attribute).
+This macro is applied to a C# `partial class` or `partial struct` with named fields. (The `partial` modifier is required to allow code generation to add methods.) All of the fields of the table must be marked with [`[SpacetimeDB.Type]`]( #attribute-spacetimedbtype).
 
 The resulting type is used to store rows of the table. It's a normal class (or struct). Row values are not special -- operations on row types do not, by themselves, modify the table. Instead, a [`ReducerContext`](#class-reducercontext) is needed to get a handle to the table.
 
@@ -611,6 +611,17 @@ public partial struct AcademicPaper {
 
 Any table supports getting an [`Index`](#class-index) using `ctx.Db.{table}.{index}`. For example, `ctx.Db.academic_paper.TitleAndDate` or `ctx.Db.academic_paper.Venue`.
 
+## Indexable Types
+
+SpacetimeDB supports only a restricted set of types as index keys:
+
+- Signed and unsigned integers of various widths.
+- `bool`.
+- `string`.
+- [`Identity`](#struct-identity).
+- [`ConnectionId`](#struct-connectionid).
+- `enum`s annotated with [`SpacetimeDB.Type`](#attribute-spacetimedbtype).
+
 ## Class `Index`
 
 ```csharp
@@ -830,13 +841,13 @@ This reducer can be used to configure any static data tables used by your module
 
 ### The `ClientConnected` reducer
 
-This reducer is marked with `[SpacetimeDB.Reducer(ReducerKind.ClientConnected)]`. It is run when a client connects to the SpacetimeDB module. Their identity can be found in the sender value of the `ReducerContext`.
+This reducer is marked with `[SpacetimeDB.Reducer(ReducerKind.ClientConnected)]`. It is run when a client connects to the SpacetimeDB database. Their identity can be found in the sender value of the `ReducerContext`.
 
 If an error occurs in the reducer, the client will be disconnected.
 
 ### The `ClientDisconnected` reducer
 
-This reducer is marked with `[SpacetimeDB.Reducer(ReducerKind.ClientDisconnected)]`. It is run when a client disconnects from the SpacetimeDB module. Their identity can be found in the sender value of the `ReducerContext`.
+This reducer is marked with `[SpacetimeDB.Reducer(ReducerKind.ClientDisconnected)]`. It is run when a client disconnects from the SpacetimeDB database. Their identity can be found in the sender value of the `ReducerContext`.
 
 If an error occurs in the disconnect reducer, the client is still recorded as disconnected.
 
@@ -1002,7 +1013,7 @@ namespace SpacetimeDB
 
 Methods for writing to a private debug log. Log messages will include file and line numbers.
 
-Log outputs of a running module can be inspected using the `spacetime logs` command:
+Log outputs of a running database can be inspected using the `spacetime logs` command:
 
 ```text
 spacetime logs <DATABASE_IDENTITY>

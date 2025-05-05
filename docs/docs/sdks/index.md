@@ -12,7 +12,7 @@ The SpacetimeDB Client SDKs offer the following key functionalities:
 
 ### Connection Management
 
-The SDKs handle the process of connecting and disconnecting from the SpacetimeDB server, simplifying this process for the client applications.
+The SDKs handle the process of connecting and disconnecting from SpacetimeDB database servers, simplifying this process for the client applications.
 
 ### Authentication
 
@@ -32,7 +32,7 @@ The SpacetimeDB Client SDKs offer powerful callback functionality that allow cli
 
 #### Connection and Subscription Callbacks
 
-Clients can also register callbacks that trigger when the connection to the server is established or lost, or when a subscription is updated. This allows clients to react to changes in the connection status.
+Clients can also register callbacks that trigger when the connection to the database server is established or lost, or when a subscription is updated. This allows clients to react to changes in the connection status.
 
 #### Row Update Callbacks
 

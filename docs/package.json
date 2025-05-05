@@ -8,8 +8,11 @@
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
+    "remark-parse": "^11.0.0",
     "tsx": "^4.19.2",
-    "typescript": "^5.3.2"
+    "typescript": "^5.3.2",
+    "unified": "^11.0.5",
+    "unist-util-visit": "^5.0.0"
   },
   "scripts": {
     "build": "tsc --project ./tsconfig.json",

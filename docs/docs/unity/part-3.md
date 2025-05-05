@@ -7,7 +7,7 @@ This progressive tutorial is continued from [part 2](/docs/unity/part-2).
 ### Spawning Food
 
 :::server-rust
-Let's start by spawning food into the map. The first thing we need to do is create a new, special reducer called the `init` reducer. SpacetimeDB calls the `init` reducer automatically when first publish your module, and also after any time you run with `publish --delete-data`. It gives you an opportunity to initialize the state of your module before any clients connect.
+Let's start by spawning food into the map. The first thing we need to do is create a new, special reducer called the `init` reducer. SpacetimeDB calls the `init` reducer automatically when first publish your module, and also after any time you run with `publish --delete-data`. It gives you an opportunity to initialize the state of your database before any clients connect.
 
 Add this new reducer above our `connect` reducer.
 
@@ -78,7 +78,7 @@ pub fn spawn_food(ctx: &ReducerContext) -> Result<(), String> {
 ```
 :::
 :::server-csharp
-Let's start by spawning food into the map. The first thing we need to do is create a new, special reducer called the `Init` reducer. SpacetimeDB calls the `Init` reducer automatically when you first publish your module, and also after any time you run with `publish --delete-data`. It gives you an opportunity to initialize the state of your module before any clients connect.
+Let's start by spawning food into the map. The first thing we need to do is create a new, special reducer called the `Init` reducer. SpacetimeDB calls the `Init` reducer automatically when you first publish your module, and also after any time you run with `publish --delete-data`. It gives you an opportunity to initialize the state of your database before any clients connect.
 
 Add this new reducer above our `Connect` reducer.
 
@@ -106,7 +106,7 @@ const uint TARGET_FOOD_COUNT = 600;
 public static float MassToRadius(uint mass) => MathF.Sqrt(mass);
 
 [Reducer]
-public static void SpawnFood(ReducerContext ctx, SpawnFoodTimer timer)
+public static void SpawnFood(ReducerContext ctx)
 {
     if (ctx.Db.player.Count == 0) //Are there no players yet?
     {
@@ -153,7 +153,7 @@ Although, we've written the reducer to spawn food, no food will actually be spaw
 We would like for this function to be called periodically to "top up" the amount of food on the map so that it never falls very far below our target amount of food. SpacetimeDB has built in functionality for exactly this. With SpacetimeDB you can schedule your module to call itself in the future or repeatedly with reducers.
 
 :::server-rust
-In order to schedule a reducer to be called we have to create a new table which specifies when an how a reducer should be called. Add this new table to the top of the file, below your imports.
+In order to schedule a reducer to be called we have to create a new table which specifies when and how a reducer should be called. Add this new table to the top of the file, below your imports.
 
 ```rust
 #[spacetimedb::table(name = spawn_food_timer, scheduled(spawn_food))]
@@ -508,7 +508,7 @@ public static Entity SpawnCircleAt(ReducerContext ctx, uint player_id, uint mass
 The `EnterGame` reducer takes one argument, the player's `name`. We can use this name to display as a label for the player in the match, by storing the name on the player's row. We are also spawning some circles for the player to control now that they are entering the game. To do this, we choose a random position within the bounds of the arena and create a new entity and corresponding circle row.
 :::
 
-Let's also modify our `disconnect` reducer to remove the circles from the arena when the player disconnects from the server.
+Let's also modify our `disconnect` reducer to remove the circles from the arena when the player disconnects from the database server.
 
 :::server-rust
 ```rust
@@ -554,7 +554,7 @@ public static void Disconnect(ReducerContext ctx)
 :::
 
 
-Finally publish the new module to SpacetimeDB with this command:
+Finally, publish the new module to SpacetimeDB with this command:
 
 ```sh
 spacetime publish --server local blackholio --delete-data
@@ -591,7 +591,7 @@ Start by adding `SetupArena` and `CreateBorderCube` methods to your `GameManager
     }
 ```
 
-In your `HandleSubscriptionApplied` let's now call `SetupArea` method. Modify your `HandleSubscriptionApplied` method as in the below.
+In your `HandleSubscriptionApplied` let's now call `SetupArena` method. Modify your `HandleSubscriptionApplied` method as in the below.
 
 ```cs
     private void HandleSubscriptionApplied(SubscriptionEventContext ctx)
@@ -622,7 +622,7 @@ Now let's make some prefabs for our game objects. In the scene hierarchy window,
 2D Object > Sprites > Circle
 ```
 
-Rename the new game object in the scene to `CirclePrefab`. Next in the `Inspector` window click the `Add Component` button and add the `Circle Controller` script component that we just created. Finally drag the object into the `Project` folder. Once the prefab file is created, delete the `CirclePrefab` object from the scene. We'll use this prefab to draw the circles that a player controllers.
+Rename the new game object in the scene to `CirclePrefab`. Next in the `Inspector` window click the `Add Component` button and add the `Circle Controller` script component that we just created. Finally drag the object into the `Project` folder. Once the prefab file is created, delete the `CirclePrefab` object from the scene. We'll use this prefab to draw the circles that a player controls.
 
 Next repeat that same process for the `FoodPrefab` and `Food Controller` component. 
 
@@ -1146,7 +1146,7 @@ public class CameraController : MonoBehaviour
 
 Add the `CameraController` as a component to the `Main Camera` object in the scene.
 
-Lastly modify the `GameManager.SetupArea` method to set the `WorldSize` on the `CameraController`.
+Lastly modify the `GameManager.SetupArena` method to set the `WorldSize` on the `CameraController`.
 
 ```cs
     private void SetupArena(float worldSize)

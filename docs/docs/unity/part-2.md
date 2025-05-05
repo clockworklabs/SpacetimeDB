@@ -8,7 +8,7 @@ This progressive tutorial is continued from [part 1](/docs/unity/part-1).
 
 If you have not already installed the `spacetime` CLI, check out our [Getting Started](/docs/getting-started) guide for instructions on how to install.
 
-In your `blackholio` directory, run the following command to initialize the SpacetimeDB server module project with Rust as the language:
+In your `blackholio` directory, run the following command to initialize the SpacetimeDB server module project with your desired language:
 
 :::server-rust
 Run the following command to initialize the SpacetimeDB server module project with Rust as the language:
@@ -96,7 +96,7 @@ Let's start by defining the `Config` table. This is a simple table which will st
 
 ```csharp
 // We're using this table as a singleton, so in this table
-// there only be one element where the `id` is 0.
+// there will only be one element where the `id` is 0.
 [Table(Name = "config", Public = true)]
 public partial struct Config
 {
@@ -110,7 +110,7 @@ Let's break down this code. This defines a normal C# `struct` with two fields: `
 
 > Although we're using `lower_snake_case` for our column names to have consistent column names across languages in this tutorial, you can also use `camelCase` or `PascalCase` if you prefer. See [#2168](https://github.com/clockworklabs/SpacetimeDB/issues/2168) for more information.
 
-The `Table` attribute with takes two parameters, a `Name` which is the name of the table and what you will use to query the table in SQL, and a `Public` visibility modifier which ensures that the rows of this table are visible to everyone.
+The `Table` attribute takes two parameters, a `Name` which is the name of the table and what you will use to query the table in SQL, and a `Public` visibility modifier which ensures that the rows of this table are visible to everyone.
 
 The `[PrimaryKey]` attribute, specifies that the `id` field should be used as the primary key of the table.
 :::
@@ -229,7 +229,7 @@ public partial struct Food
 
 The first table we defined is the `entity` table. An entity represents an object in our game world. We have decided, for convenience, that all entities in our game should share some common fields, namely `position` and `mass`.
 
-We can create different types of entities with additional data by creating a new tables with additional fields that have an `entity_id` which references a row in the `entity` table.
+We can create different types of entities with additional data by creating new tables with additional fields that have an `entity_id` which references a row in the `entity` table.
 
 We've created two types of entities in our game world: `Food`s and `Circle`s. `Food` does not have any additional fields beyond the attributes in the `entity` table, so the `food` table simply represents the set of `entity_id`s that we want to recognize as food.
 
@@ -268,10 +268,10 @@ public partial struct Player
 }
 ```
 
-There's a few new concepts we should touch on. First of all, we are using the `[Unique]` attribute on the `player_id` field. This attribute adds a constraint to the table that ensures that only one row in the player table has a particular `player_id`. We are also using the `[AutoInc]` attribute on the `player_id` field, which indicates "this field should get automatically assigned an auto-incremented value".
+There are a few new concepts we should touch on. First of all, we are using the `[Unique]` attribute on the `player_id` field. This attribute adds a constraint to the table that ensures that only one row in the player table has a particular `player_id`. We are also using the `[AutoInc]` attribute on the `player_id` field, which indicates "this field should get automatically assigned an auto-incremented value".
 :::
 
-We also have an `identity` field which uses the `Identity` type. The `Identity` type is a identifier that SpacetimeDB uses to uniquely assign and authenticate SpacetimeDB users.
+We also have an `identity` field which uses the `Identity` type. The `Identity` type is an identifier that SpacetimeDB uses to uniquely assign and authenticate SpacetimeDB users.
 
 ### Writing a Reducer
 
@@ -334,7 +334,7 @@ Now that SpacetimeDB is running we can publish our module to the SpacetimeDB hos
 Now that SpacetimeDB is running we can publish our module to the SpacetimeDB host. In a separate terminal window, navigate to the `blackholio/server-csharp` directory.
 :::
 
-If you are not already logged in to the `spacetime` CLI, run the `spacetime login` command log in to your SpacetimeDB website account. Once you are logged in, run `spacetime publish --server local blackholio`. This will publish our Blackholio server logic to SpacetimeDB.
+If you are not already logged in to the `spacetime` CLI, run the `spacetime login` command to log in to your SpacetimeDB website account. Once you are logged in, run `spacetime publish --server local blackholio`. This will publish our Blackholio server logic to SpacetimeDB.
 
 If the publish completed successfully, you will see something like the following in the logs:
 
@@ -382,7 +382,7 @@ You should see something like the following output:
 ### Connecting our Client
 
 :::server-rust
-Next let's connect our client to our module. Let's start by modifying our `debug` reducer. Rename the reducer to be called `connect` and add `client_connected` in parentheses after `spacetimedb::reducer`. The end result should look like this:
+Next let's connect our client to our database. Let's start by modifying our `debug` reducer. Rename the reducer to be called `connect` and add `client_connected` in parentheses after `spacetimedb::reducer`. The end result should look like this:
 
 ```rust
 #[spacetimedb::reducer(client_connected)]
@@ -392,16 +392,16 @@ pub fn connect(ctx: &ReducerContext) -> Result<(), String> {
 }
 ```
 
-The `client_connected` argument to the `spacetimedb::reducer` macro indicates to SpacetimeDB that this is a special reducer. This reducer is only every called by SpacetimeDB itself when a client connects to your module.
+The `client_connected` argument to the `spacetimedb::reducer` macro indicates to SpacetimeDB that this is a special reducer. This reducer is only ever called by SpacetimeDB itself when a client connects to your database.
 
 > SpacetimeDB gives you the ability to define custom reducers that automatically trigger when certain events occur.
 >
 > - `init` - Called the first time you publish your module and anytime you clear the database with `spacetime publish <name> --delete-data`.
-> - `client_connected` - Called when a user connects to the SpacetimeDB module. Their identity can be found in the `sender` value of the `ReducerContext`.
-> - `client_disconnected` - Called when a user disconnects from the SpacetimeDB module.
+> - `client_connected` - Called when a user connects to the SpacetimeDB database. Their identity can be found in the `sender` value of the `ReducerContext`.
+> - `client_disconnected` - Called when a user disconnects from the SpacetimeDB database.
 :::
 :::server-csharp
-Next let's connect our client to our module. Let's start by modifying our `Debug` reducer. Rename the reducer to be called `Connect` and add `ReducerKind.ClientConnected` in parentheses after `SpacetimeDB.Reducer`. The end result should look like this:
+Next let's connect our client to our database. Let's start by modifying our `Debug` reducer. Rename the reducer to be called `Connect` and add `ReducerKind.ClientConnected` in parentheses after `SpacetimeDB.Reducer`. The end result should look like this:
 
 ```csharp
 [Reducer(ReducerKind.ClientConnected)]
@@ -411,13 +411,13 @@ public static void Connect(ReducerContext ctx)
 }
 ```
 
-The `ReducerKind.ClientConnected` argument to the `SpacetimeDB.Reducer` attribute indicates to SpacetimeDB that this is a special reducer. This reducer is only every called by SpacetimeDB itself when a client connects to your module.
+The `ReducerKind.ClientConnected` argument to the `SpacetimeDB.Reducer` attribute indicates to SpacetimeDB that this is a special reducer. This reducer is only ever called by SpacetimeDB itself when a client connects to your database.
 
 > SpacetimeDB gives you the ability to define custom reducers that automatically trigger when certain events occur.
 >
 > - `ReducerKind.Init` - Called the first time you publish your module and anytime you clear the database with `spacetime publish <name> --delete-data`.
-> - `ReducerKind.ClientConnected` - Called when a user connects to the SpacetimeDB module. Their identity can be found in the `Sender` value of the `ReducerContext`.
-> - `ReducerKind.ClientDisconnected` - Called when a user disconnects from the SpacetimeDB module.
+> - `ReducerKind.ClientConnected` - Called when a user connects to the SpacetimeDB database. Their identity can be found in the `Sender` value of the `ReducerContext`.
+> - `ReducerKind.ClientDisconnected` - Called when a user disconnects from the SpacetimeDB database.
 :::
 
 Publish your module again by running:
@@ -462,7 +462,7 @@ This will generate a set of files in the `client-unity/Assets/autogen` directory
 └── SpacetimeDBClient.g.cs
 ```
 
-This will also generate a file in the `client-unity/Assets/autogen/SpacetimeDBClient.g.cs` directory with a type aware `DbConnection` class. We will use this class to connect to your module from Unity.
+This will also generate a file in the `client-unity/Assets/autogen/SpacetimeDBClient.g.cs` directory with a type aware `DbConnection` class. We will use this class to connect to your database from Unity.
 
 > IMPORTANT! At this point there will be an error in your Unity project. Due to a [known issue](https://docs.unity3d.com/6000.0/Documentation/Manual/csharp-compiler.html) with Unity and C# 9 you need to insert the following code into your Unity project.
 >
@@ -475,7 +475,7 @@ This will also generate a file in the `client-unity/Assets/autogen/SpacetimeDBCl
 >
 > Add this snippet to the bottom of your `GameManager.cs` file in your Unity project. This will hopefully be resolved in Unity soon.
 
-### Connecting to the Module
+### Connecting to the Database
 
 At this point we can set up Unity to connect your Unity client to the server. Replace your imports at the top of the `GameManager.cs` file with:
 
@@ -582,7 +582,7 @@ public class GameManager : MonoBehaviour
 
 Here we configure the connection to the database, by passing it some callbacks in addition to providing the `SERVER_URI` and `MODULE_NAME` to the connection. When the client connects, the SpacetimeDB SDK will call the `HandleConnect` method, allowing us to start up the game.
 
-In our `HandleConnect` callback we building a subscription and are calling `Subscribe` and subscribing to all data in the database. This will cause SpacetimeDB to synchronize the state of all your tables with your Unity client's SpacetimeDB SDK's "client cache". You can also subscribe to specific tables using SQL syntax, e.g. `SELECT * FROM my_table`. Our [SQL documentation](/docs/sql) enumerates the operations that are accepted in our SQL syntax.
+In our `HandleConnect` callback we build a subscription and are calling `Subscribe` and subscribing to all data in the database. This will cause SpacetimeDB to synchronize the state of all your tables with your Unity client's SpacetimeDB SDK's "client cache". You can also subscribe to specific tables using SQL syntax, e.g. `SELECT * FROM my_table`. Our [SQL documentation](/docs/sql) enumerates the operations that are accepted in our SQL syntax.
 
 ---
 
