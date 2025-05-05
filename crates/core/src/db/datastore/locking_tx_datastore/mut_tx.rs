@@ -1615,19 +1615,11 @@ impl MutTxId {
         let tx_row_ref = unsafe { tx_table.get_row_ref_unchecked(tx_blob_store, tx_row_ptr) };
 
         let err = 'error: {
-            // These two macros can be thought of as a `throw $e` and `$e?` within `'error`.
+            // This macros can be thought of as a `throw $e` within `'error`.
             // TODO(centril): Get rid of this once we have stable `try` blocks or polonius.
             macro_rules! throw {
                 ($e:expr) => {
                     break 'error $e.into()
-                };
-            }
-            macro_rules! unwrap {
-                ($e:expr) => {
-                    match $e {
-                        Ok(x) => x,
-                        Err(e) => throw!(e),
-                    }
                 };
             }
 
@@ -1661,15 +1653,16 @@ impl MutTxId {
             };
             // SAFETY: `commit_table.row_layout() == new_row.row_layout()` holds
             // as the `tx_table` is derived from `commit_table`.
-            unwrap!(unsafe {
+            if let Err(e) = unsafe {
                 commit_table.check_unique_constraints(
                     tx_row_ref,
                     // Don't check this index since we'll do a 1-1 old/new replacement.
                     |ixs| ixs.filter(|(&id, _)| id != index_id),
                     is_deleted,
                 )
+            } {
+                throw!(IndexError::from(e));
             }
-            .map_err(IndexError::from));
 
             let tx_row_ptr = if let Some(old_ptr) = commit_old_ptr {
                 // Row was found in the committed state!
@@ -1703,7 +1696,7 @@ impl MutTxId {
                 // in particular, the `write_gen_val_to_col` call does not remove the row.
                 // On error, `tx_row_ptr` has already been removed, so don't do it again.
                 let (_, tx_row_ptr) =
-                    unwrap!(unsafe { tx_table.confirm_insertion::<false>(tx_blob_store, tx_row_ptr, blob_bytes) });
+                    unsafe { tx_table.confirm_insertion::<false>(tx_blob_store, tx_row_ptr, blob_bytes) }?;
 
                 // Delete the old row.
                 del_table.insert(old_ptr);
@@ -1721,8 +1714,7 @@ impl MutTxId {
                 // SAFETY: `tx_table.is_row_present(tx_row_ptr)` and `tx_table.is_row_present(old_ptr)` both hold
                 // as we've deleted neither.
                 // In particular, the `write_gen_val_to_col` call does not remove the row.
-                let tx_row_ptr =
-                    unwrap!(unsafe { tx_table.confirm_update(tx_blob_store, tx_row_ptr, old_ptr, blob_bytes) });
+                let tx_row_ptr = unsafe { tx_table.confirm_update(tx_blob_store, tx_row_ptr, old_ptr, blob_bytes) }?;
 
                 if let Some(old_commit_del_ptr) = old_commit_del_ptr {
                     // If we have an identical deleted row in the committed state,
