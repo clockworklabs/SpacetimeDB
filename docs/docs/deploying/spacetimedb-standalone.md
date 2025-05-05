@@ -85,7 +85,8 @@ server {
     #########################################
     # By default SpacetimeDB is completely open so that anyone can publish to it. If you want to block
     # users from creating new databases you should keep this section commented out. Otherwise, if you
-    # want to open it up (probably for dev environments) then you can uncomment this section.
+    # want to open it up (probably for dev environments) then you can uncomment this section and then
+    # comment out the location / section below.
     #########################################
     # location / {
     #     proxy_pass http://localhost:3000;
