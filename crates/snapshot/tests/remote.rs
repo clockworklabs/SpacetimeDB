@@ -1,8 +1,9 @@
-use std::{sync::Arc, time::Instant};
+use std::{io, sync::Arc, time::Instant};
 
 use env_logger::Env;
 use log::info;
 use pretty_assertions::assert_matches;
+use rand::seq::IndexedRandom as _;
 use spacetimedb::{
     db::{
         datastore::locking_tx_datastore::datastore::Locking,
@@ -63,9 +64,6 @@ async fn can_sync_a_snapshot() -> anyhow::Result<()> {
     let dst_snapshot_full = dst_repo.read_snapshot(src.offset, &pool)?;
     Locking::restore_from_snapshot(dst_snapshot_full, pool)?;
 
-    // Check that `verify_snapshot` agrees.
-    verify_snapshot(blob_provider.clone(), dst_path.clone(), src_snapshot.clone()).await?;
-
     // Let's also check that running `synchronize_snapshot` again does nothing.
     let stats = synchronize_snapshot(blob_provider.clone(), dst_path.clone(), src_snapshot.clone()).await?;
     assert_eq!(stats.objects_skipped, total_objects);
@@ -108,6 +106,70 @@ async fn rejects_overwrite() -> anyhow::Result<()> {
 
     let res = synchronize_snapshot(blob_provider, dst_path, src_snapshot).await;
     assert_matches!(res, Err(SnapshotError::HashMismatch { .. }));
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn verifies_objects() -> anyhow::Result<()> {
+    enable_logging();
+    let tmp = tempdir()?;
+    let src = SourceSnapshot::get_or_create().await?;
+
+    let dst_path = SnapshotsPath::from_path_unchecked(tmp.path());
+    dst_path.create()?;
+
+    let src_snapshot = src.meta.clone();
+
+    synchronize_snapshot(src.objects.clone(), dst_path.clone(), src_snapshot.clone()).await?;
+
+    // Read objects for verification from the destination repo.
+    let blob_provider = spawn_blocking({
+        let dst_path = dst_path.clone();
+        let snapshot_offset = src_snapshot.tx_offset;
+        move || {
+            let repo = SnapshotRepository::open(dst_path, Identity::ZERO, 0)?;
+            let objects = SnapshotRepository::object_repo(&repo.snapshot_dir_path(snapshot_offset))?;
+            anyhow::Ok(Arc::new(objects))
+        }
+    })
+    .await
+    .unwrap()?;
+    // Initially, all should be good.
+    verify_snapshot(blob_provider.clone(), dst_path.clone(), src_snapshot.clone()).await?;
+
+    // Pick a random object to mess with.
+    let random_object_path = {
+        let all_objects = src_snapshot.objects().collect::<Box<[_]>>();
+        let random_object = all_objects.choose(&mut rand::rng()).copied().unwrap();
+        blob_provider.file_path(random_object.as_bytes())
+    };
+
+    // Truncate the object file and assert that verification fails.
+    tokio::fs::File::options()
+        .write(true)
+        .open(&random_object_path)
+        .await?
+        .set_len(1)
+        .await?;
+    info!("truncated object file {}", random_object_path.display());
+    let err = verify_snapshot(blob_provider.clone(), dst_path.clone(), src_snapshot.clone())
+        .await
+        .unwrap_err();
+    assert_matches!(
+        err,
+        // If the object is a page, we'll get `Deserialize`,
+        // otherwise `HashMismatch`.
+        SnapshotError::HashMismatch { .. } | SnapshotError::Deserialize { .. }
+    );
+
+    // Delete the object file and assert that verification fails.
+    tokio::fs::remove_file(&random_object_path).await?;
+    info!("deleted object file {}", random_object_path.display());
+    let err = verify_snapshot(blob_provider, dst_path, src_snapshot)
+        .await
+        .unwrap_err();
+    assert_matches!(err, SnapshotError::ReadObject { cause, ..} if cause.kind() == io::ErrorKind::NotFound);
 
     Ok(())
 }

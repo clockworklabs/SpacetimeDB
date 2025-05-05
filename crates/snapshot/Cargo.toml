@@ -34,3 +34,4 @@ spacetimedb-schema = { path = "../schema" }
 anyhow.workspace = true
 env_logger.workspace = true
 pretty_assertions = { workspace = true, features = ["unstable"] }
+rand.workspace = true
