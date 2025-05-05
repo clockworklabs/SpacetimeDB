@@ -72,3 +72,9 @@ pub mod unstable {
     pub use crate::metrics::{ClientMetrics, CLIENT_METRICS};
     pub use spacetimedb_client_api_messages::websocket::CallReducerFlags;
 }
+
+#[cfg(all(not(target_arch = "wasm32"), feature = "web"))]
+compile_error!(
+    "The `web` feature can only be enabled when targeting `wasm32`. \
+     Remove `--features web` or switch your target to a wasm32 architecture."
+);
