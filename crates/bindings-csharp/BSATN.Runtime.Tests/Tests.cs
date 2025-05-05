@@ -296,8 +296,9 @@ public static partial class BSATNRuntimeTests
         (int X, string Y, int? Z, string? W) c2
     )> GenTwoBasic = Gen.Select(GenBasic, GenBasic, (c1, c2) => (c1, c2));
 
+
     [Fact]
-    public static void TestGeneratedEquals()
+    public static void GeneratedProductEqualsWorks()
     {
         GenTwoBasic.Sample(
             example =>
@@ -371,7 +372,8 @@ public static partial class BSATNRuntimeTests
             BasicDataClass U,
             BasicDataStruct V,
             BasicDataRecord W
-        )> { }
+        )>
+    { }
 
     static readonly Gen<BasicEnum> GenBasicEnum = Gen.SelectMany<int, BasicEnum>(
         Gen.Int[0, 7],
@@ -395,21 +397,9 @@ public static partial class BSATNRuntimeTests
         (e1, e2) => (e1, e2)
     );
 
-    [Type]
-    public partial class ContainsList
-    {
-        public List<BasicEnum?> TheList = [];
-
-        public ContainsList() { }
-
-        public ContainsList(List<BasicEnum?> theList)
-        {
-            TheList = theList;
-        }
-    }
 
     [Fact]
-    public static void GeneratedEnumsWork()
+    public static void GeneratedSumEqualsWorks()
     {
         GenTwoBasicEnum.Sample(
             example =>
@@ -447,6 +437,72 @@ public static partial class BSATNRuntimeTests
             iter: 10_000
         );
     }
+
+
+    [Type]
+    public partial class ContainsList
+    {
+        public List<BasicEnum?>? TheList = [];
+
+        public ContainsList() { }
+
+        public ContainsList(List<BasicEnum?>? theList)
+        {
+            TheList = theList;
+        }
+    }
+
+    [Type]
+    public partial class ContainsNestedList
+    {
+        public List<int[][]> TheList = [];
+
+        public ContainsNestedList() { }
+
+        public ContainsNestedList(List<int[][]> theList)
+        {
+            TheList = theList;
+        }
+    }
+
+    static readonly Gen<ContainsList> GenContainsList = GenBasicEnum.Null().List[0, 2].Null().Select(list => new ContainsList(list));
+    static readonly Gen<(ContainsList e1, ContainsList e2)> GenTwoContainsList = Gen.Select(
+        GenContainsList,
+        GenContainsList,
+        (e1, e2) => (e1, e2)
+    );
+    [Fact]
+    public static void GeneratedListEqualsWorks()
+    {
+        GenTwoContainsList.Sample(
+            example =>
+            {
+                var equal = example.e1.TheList == null ?
+                    example.e2.TheList == null :
+                    (example.e2.TheList == null ? false : example.e1.TheList.SequenceEqual(example.e2.TheList));
+
+                if (equal)
+                {
+                    Assert.Equal(example.e1, example.e2);
+                    Assert.True(example.e1 == example.e2);
+                    Assert.False(example.e1 != example.e2);
+                    Assert.Equal(example.e1.ToString(), example.e2.ToString());
+                    Assert.Equal(example.e1.GetHashCode(), example.e2.GetHashCode());
+                }
+                else
+                {
+                    Assert.NotEqual(example.e1, example.e2);
+                    Assert.False(example.e1 == example.e2);
+                    Assert.True(example.e1 != example.e2);
+                    Assert.NotEqual(example.e1.ToString(), example.e2.ToString());
+                }
+            },
+            iter: 10_000
+        );
+    }
+
+
+
 
     [Fact]
     public static void GeneratedToString()
