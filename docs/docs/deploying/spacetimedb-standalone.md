@@ -93,7 +93,6 @@ server {
     #     proxy_set_header Upgrade $http_upgrade;
     #     proxy_set_header Connection "Upgrade";
     #     proxy_set_header Host $host;
-    #     break;
     # }
 
     # Anyone can subscribe to any database.
@@ -125,16 +124,15 @@ server {
     #     proxy_set_header Host $host;
     # }
 
-    # Uncomment this section to optionally allow /v1/identity. This would allow remote users to create
-    # an identity for the purpose of connecting to your SpacetimeDB instance.
-    # NOTE: this is *not* required for the subscribe route to function.
-    # location /v1/identity {
-    #     proxy_pass http://localhost:3000;
-    #     proxy_http_version 1.1;
-    #     proxy_set_header Upgrade $http_upgrade;
-    #     proxy_set_header Connection "Upgrade";
-    #     proxy_set_header Host $host;
-    # }
+    # NOTE: This is required for the typescript sdk to function, it is optional
+    # for the rust and the C# SDKs.
+    location /v1/identity {
+        proxy_pass http://localhost:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "Upgrade";
+        proxy_set_header Host $host;
+    }
 
     # Block all other routes explicitly. Only localhost can use these routes. If you want to open your
     # server up so that anyone can publish to it you should comment this section out.
