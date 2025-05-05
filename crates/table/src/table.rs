@@ -141,11 +141,45 @@ impl TableInner {
     /// - The `SquashedOffset` of `ptr` must match the enclosing table's `table.squashed_offset`.
     ///
     /// Showing that `ptr` was the result of a call to [`Table::insert(table, ..)`]
-    /// and has not been passed to [`Table::delete(table, ..)`]
+    /// and has not been passed to [`Table::delete_internal_skip_pointer_map(table, ..)`]
     /// is sufficient to demonstrate all of these properties.
-    unsafe fn get_row_ref_unchecked<'a>(&'a self, blob_store: &'a dyn BlobStore, ptr: RowPointer) -> RowRef<'a> {
+    unsafe fn get_row_ref_unchecked<'a>(
+        &'a self,
+        blob_store: &'a dyn BlobStore,
+        squashed_offset: SquashedOffset,
+        ptr: RowPointer,
+    ) -> RowRef<'a> {
         // SAFETY: Forward caller requirements.
-        unsafe { RowRef::new(self, blob_store, ptr) }
+        unsafe { RowRef::new(self, blob_store, squashed_offset, ptr) }
+    }
+
+    /// Returns whether the row at `ptr` is present or not.
+    // TODO: Remove all uses of this method,
+    //       or more likely, gate them behind `debug_assert!`
+    //       so they don't have semantic meaning.
+    //
+    //       Unlike the previous `locking_tx_datastore::Table`'s `RowId`,
+    //       `RowPointer` is not content-addressed.
+    //       This means it is possible to:
+    //       - have a `RowPointer` A* to row A,
+    //       - Delete row A,
+    //       - Insert row B into the same storage as freed from A,
+    //       - Test `is_row_present(A*)`, which falsely reports that row A is still present.
+    //
+    //       In the final interface, this method is superfluous anyways,
+    //       as `RowPointer` is not part of our public interface.
+    //       Instead, we will always discover a known-present `RowPointer`
+    //       during a table scan or index seek.
+    //       As such, our `delete` and `insert` methods can be `unsafe`
+    //       and trust that the `RowPointer` is valid.
+    fn is_row_present(&self, _squashed_offset: SquashedOffset, ptr: RowPointer) -> bool {
+        if _squashed_offset != ptr.squashed_offset() {
+            return false;
+        }
+        let Some((page, offset)) = self.try_page_and_offset(ptr) else {
+            return false;
+        };
+        page.has_row_offset(self.row_layout.size(), offset)
     }
 
     fn try_page_and_offset(&self, ptr: RowPointer) -> Option<(&Page, PageOffset)> {
@@ -308,7 +342,7 @@ impl Table {
         // but we check just in case it isn't.
         let (hash, row_ptr) = unsafe { self.confirm_insertion::<true>(blob_store, row_ptr, blob_bytes) }?;
         // SAFETY: Per post-condition of `confirm_insertion`, `row_ptr` refers to a valid row.
-        let row_ref = unsafe { self.inner.get_row_ref_unchecked(blob_store, row_ptr) };
+        let row_ref = unsafe { self.get_row_ref_unchecked(blob_store, row_ptr) };
         Ok((hash, row_ref))
     }
 
@@ -337,7 +371,7 @@ impl Table {
             )
         }?;
         // SAFETY: We just inserted `ptr`, so it must be present.
-        let row_ref = unsafe { self.inner.get_row_ref_unchecked(blob_store, ptr) };
+        let row_ref = unsafe { self.inner.get_row_ref_unchecked(blob_store, self.squashed_offset, ptr) };
 
         Ok((row_ref, blob_bytes))
     }
@@ -406,7 +440,7 @@ impl Table {
         };
 
         // SAFETY: We just inserted `ptr`, so it must be present.
-        let row_ref = unsafe { self.inner.get_row_ref_unchecked(blob_store, ptr) };
+        let row_ref = unsafe { self.inner.get_row_ref_unchecked(blob_store, self.squashed_offset, ptr) };
 
         Ok((row_ref, blob_bytes))
     }
@@ -593,7 +627,7 @@ impl Table {
             .iter_mut()
             .try_for_each(|(index_id, index)| {
                 // SAFETY: We just inserted `ptr`, so it must be present.
-                let new = unsafe { self.inner.get_row_ref_unchecked(blob_store, new) };
+                let new = unsafe { self.inner.get_row_ref_unchecked(blob_store, self.squashed_offset, new) };
                 // SAFETY: any index in this table was constructed with the same row type as this table.
                 let violation = unsafe { index.check_and_insert(new) };
                 violation.map_err(|old| (*index_id, old, new))
@@ -875,9 +909,8 @@ impl Table {
     /// and has not been passed to [`Table::delete(table, ..)`]
     /// is sufficient to demonstrate all of these properties.
     pub unsafe fn get_row_ref_unchecked<'a>(&'a self, blob_store: &'a dyn BlobStore, ptr: RowPointer) -> RowRef<'a> {
-        debug_assert!(self.is_row_present(ptr));
         // SAFETY: Caller promised that ^-- holds.
-        unsafe { RowRef::new(&self.inner, blob_store, ptr) }
+        unsafe { self.inner.get_row_ref_unchecked(blob_store, self.squashed_offset, ptr) }
     }
 
     /// Deletes a row in the page manager
@@ -891,6 +924,7 @@ impl Table {
         blob_store: &mut dyn BlobStore,
         ptr: RowPointer,
     ) -> BlobNumBytes {
+        debug_assert!(self.is_row_present(ptr));
         // Delete the physical row.
         //
         // SAFETY:
@@ -916,7 +950,7 @@ impl Table {
         // Remove the set semantic association.
         if let Some(pointer_map) = &mut self.pointer_map {
             // SAFETY: `self.is_row_present(row)` holds.
-            let row = unsafe { RowRef::new(&self.inner, blob_store, ptr) };
+            let row = unsafe { self.inner.get_row_ref_unchecked(blob_store, self.squashed_offset, ptr) };
 
             let _remove_result = pointer_map.remove(row.row_hash(), ptr);
             debug_assert!(_remove_result);
@@ -949,7 +983,7 @@ impl Table {
     /// SAFETY: `self.is_row_present(row)` must hold.
     unsafe fn delete_from_indices_until(&mut self, blob_store: &dyn BlobStore, ptr: RowPointer, index_id: IndexId) {
         // SAFETY: Caller promised that `self.is_row_present(row)` holds.
-        let row_ref = unsafe { self.inner.get_row_ref_unchecked(blob_store, ptr) };
+        let row_ref = unsafe { self.inner.get_row_ref_unchecked(blob_store, self.squashed_offset, ptr) };
 
         for (_, index) in self.indexes.range_mut(..index_id) {
             index.delete(row_ref).unwrap();
@@ -961,7 +995,7 @@ impl Table {
     /// SAFETY: `self.is_row_present(row)` must hold.
     unsafe fn delete_from_indices(&mut self, blob_store: &dyn BlobStore, ptr: RowPointer) {
         // SAFETY: Caller promised that `self.is_row_present(row)` holds.
-        let row_ref = unsafe { self.inner.get_row_ref_unchecked(blob_store, ptr) };
+        let row_ref = unsafe { self.inner.get_row_ref_unchecked(blob_store, self.squashed_offset, ptr) };
 
         for index in self.indexes.values_mut() {
             index.delete(row_ref).unwrap();
@@ -987,7 +1021,7 @@ impl Table {
         };
 
         // SAFETY: We only call `get_row_ref_unchecked` when `is_row_present` holds.
-        let row_ref = unsafe { self.inner.get_row_ref_unchecked(blob_store, ptr) };
+        let row_ref = unsafe { self.get_row_ref_unchecked(blob_store, ptr) };
 
         let ret = before(row_ref);
 
@@ -1370,7 +1404,13 @@ impl<'a> RowRef<'a> {
     /// Showing that `pointer` was the result of a call to `table.insert`
     /// and has not been passed to `table.delete`
     /// is sufficient to demonstrate all of these properties.
-    unsafe fn new(table: &'a TableInner, blob_store: &'a dyn BlobStore, pointer: RowPointer) -> Self {
+    unsafe fn new(
+        table: &'a TableInner,
+        blob_store: &'a dyn BlobStore,
+        _squashed_offset: SquashedOffset,
+        pointer: RowPointer,
+    ) -> Self {
+        debug_assert!(table.is_row_present(_squashed_offset, pointer));
         Self {
             table,
             blob_store,
@@ -2317,7 +2357,7 @@ pub(crate) mod test {
         // SAFETY: We just inserted `ptr`, so it must be present.
         let (hash, row_ptr) = unsafe { table.confirm_insertion::<true>(blob_store, row_ptr, blob_bytes) }?;
         // SAFETY: Per post-condition of `confirm_insertion`, `row_ptr` refers to a valid row.
-        let row_ref = unsafe { table.inner.get_row_ref_unchecked(blob_store, row_ptr) };
+        let row_ref = unsafe { table.get_row_ref_unchecked(blob_store, row_ptr) };
         Ok((hash, row_ref))
     }
 
