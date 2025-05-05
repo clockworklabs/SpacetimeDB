@@ -131,7 +131,29 @@ pub(crate) struct WsParams {
     pub light: bool,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn make_uri(host: Uri, db_name: &str, connection_id: ConnectionId, params: WsParams) -> Result<Uri, UriError> {
+    make_uri_impl(host, db_name, connection_id, params, None)
+}
+
+#[cfg(target_arch = "wasm32")]
+fn make_uri(
+    host: Uri,
+    db_name: &str,
+    connection_id: ConnectionId,
+    params: WsParams,
+    token: Option<&str>,
+) -> Result<Uri, UriError> {
+    make_uri_impl(host, db_name, connection_id, params, token)
+}
+
+fn make_uri_impl(
+    host: Uri,
+    db_name: &str,
+    connection_id: ConnectionId,
+    params: WsParams,
+    token: Option<&str>,
+) -> Result<Uri, UriError> {
     let mut parts = host.into_parts();
     let scheme = parse_scheme(parts.scheme.take())?;
     parts.scheme = Some(scheme);
@@ -169,6 +191,11 @@ fn make_uri(host: Uri, db_name: &str, connection_id: ConnectionId, params: WsPar
     // Specify the `light` mode if requested.
     if params.light {
         path.push_str("&light=true");
+    }
+
+    // Specify the `token` param if needed
+    if let Some(token) = token {
+        path.push_str(&format!("&token={token}"));
     }
 
     parts.path_and_query = Some(path.parse().map_err(|source: InvalidUri| UriError::InvalidUri {
@@ -260,11 +287,11 @@ impl WsConnection {
     pub(crate) async fn connect(
         host: Uri,
         db_name: &str,
-        _token: Option<&str>,
+        token: Option<&str>,
         connection_id: ConnectionId,
         params: WsParams,
     ) -> Result<Self, WsError> {
-        let uri = make_uri(host, db_name, connection_id, params)?;
+        let uri = make_uri(host, db_name, connection_id, params, token)?;
         let sock = tokio_tungstenite_wasm::connect_with_protocols(&uri.to_string(), &[BIN_PROTOCOL])
             .await
             .map_err(|source| WsError::Tungstenite {
