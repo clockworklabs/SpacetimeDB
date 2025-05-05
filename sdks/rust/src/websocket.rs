@@ -513,11 +513,6 @@ impl WsConnection {
                             }
                         },
 
-                        Some(Ok(WebSocketMessage::Ping(payload)))
-                        | Some(Ok(WebSocketMessage::Pong(payload))) => {
-                            record_metrics(payload.len());
-                        },
-
                         Some(Ok(WebSocketMessage::Close(r))) => {
                             let reason: String = if let Some(r) = r {
                                 format!("{}:{:?}", r, r.code)
@@ -545,12 +540,14 @@ impl WsConnection {
                     outbound = outgoing.next() => if let Some(client_msg) = outbound {
                         let raw = Self::encode_message(client_msg);
                         if let Err(e) = ws_writer.send(raw).await {
-                            gloo_console::warn!("WS Send error: ", format!("{:?}",e));
+                            gloo_console::warn!("Error sending outgoing message:", format!("{:?}",e));
                             break;
                         }
                     } else {
                         // channel closed, so we're done  sending
-                        let _ = ws_writer.close().await;
+                        if let Err(e) = ws_writer.close().await {
+                            gloo_console::warn!("Error sending close frame:", format!("{:?}", e));
+                        }
                         break;
                     },
                 }
