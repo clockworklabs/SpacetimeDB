@@ -143,7 +143,7 @@ server {
 }
 ```
 
-This configuration contains a restriction to the `/v1/publish` route. This restriction makes it so that you can only publish to the database if you're publishing from a local connection on the host. 
+This configuration by default blocks all connections other than `/v1/identity` and `/v1/database/<database-name>/subscribe` which only allows the most basic functionality. This will prevent all remote users from publishing to your SpacetimeDB instance.
 
 Enable the configuration:
 
