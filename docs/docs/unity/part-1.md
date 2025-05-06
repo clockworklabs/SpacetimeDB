@@ -30,7 +30,7 @@ In this section, we will guide you through the process of setting up a Unity Pro
 
 ### Step 1: Create a Blank Unity Project
 
-The SpacetimeDB Unity SDK minimum supported Unity version is `2021.2` as the SDK requires C# 9. See [the overview](.) for more information on specific supported versions.
+SpacetimeDB supports Unity version `2022.3.32f1` or later. See [the overview](.) for more information on specific supported versions.
 
 Open Unity and create a new project by selecting "New" from the Unity Hub or going to **File -> New Project**.
 

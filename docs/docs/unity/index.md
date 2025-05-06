@@ -12,12 +12,12 @@ Our game, called [Blackhol.io](https://github.com/ClockworkLabs/Blackholio), wil
 
 This tutorial assumes that you have a basic understanding of the Unity Editor, using a command line terminal and programming. We'll give you some CLI commands to execute. If you are using Windows, we recommend using Git Bash or PowerShell. For Mac, we recommend Terminal.
 
-We recommend using Unity `2022.3.32f1` or later, but the SDK's minimum supported Unity version is `2021.2` as the SDK requires C# 9. This tutorial has been tested with the following Unity versions.
+SpacetimeDB supports Unity version `2022.3.32f1` or later, and this tutorial has been tested with the following Unity versions:
 
 - `2022.3.32f1 LTS`
 - `6000.0.33f1`
 
-Please file an issue [here](https://github.com/clockworklabs/spacetime-docs/issues) if you encounter an issue with a specific Unity version.
+Please file an issue [here](https://github.com/clockworklabs/spacetime-docs/issues) if you encounter an issue with a specific Unity version, but please be aware that the SpacetimeDB team is unable to offer support for issues related to versions of Unity prior to `2022.3.32f1 LTS`.
 
 ## Blackhol.io Tutorial - Basic Multiplayer
 
