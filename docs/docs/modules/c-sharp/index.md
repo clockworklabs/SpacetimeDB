@@ -88,6 +88,8 @@ This creates a `dotnet` project in `my-project-directory` with the following `St
 </Project>
 ```
 
+> NOTE: It is important to not change the `StdbModule.csproj` name because SpacetimeDB assumes that this will be the name of the file.
+
 This is a standard `csproj`, with the exception of the line `<RuntimeIdentifier>wasi-wasm</RuntimeIdentifier>`.
 This line is important: it allows the project to be compiled to a WebAssembly module. 
 
