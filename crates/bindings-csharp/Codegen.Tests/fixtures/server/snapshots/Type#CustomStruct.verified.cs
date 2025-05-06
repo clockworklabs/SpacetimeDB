@@ -70,7 +70,7 @@ partial struct CustomStruct
     public override int GetHashCode()
     {
         return IntField.GetHashCode()
-            ^ StringField.GetHashCode()
+            ^ (StringField == null ? 0 : StringField.GetHashCode())
             ^ NullableIntField.GetHashCode()
             ^ (NullableStringField == null ? 0 : NullableStringField.GetHashCode());
     }
@@ -79,7 +79,11 @@ partial struct CustomStruct
     public bool Equals(CustomStruct that)
     {
         return IntField.Equals(that.IntField)
-            && StringField.Equals(that.StringField)
+            && (
+                StringField == null
+                    ? that.StringField == null
+                    : StringField.Equals(that.StringField)
+            )
             && NullableIntField.Equals(that.NullableIntField)
             && (
                 NullableStringField == null

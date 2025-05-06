@@ -68,19 +68,27 @@ partial struct TestScheduleIssues
 
     public override int GetHashCode()
     {
-        return IdWrongType.GetHashCode()
+        return (IdWrongType == null ? 0 : IdWrongType.GetHashCode())
             ^ IdCorrectType.GetHashCode()
             ^ ScheduleAtWrongType.GetHashCode()
-            ^ ScheduleAtCorrectType.GetHashCode();
+            ^ (ScheduleAtCorrectType == null ? 0 : ScheduleAtCorrectType.GetHashCode());
     }
 
 #nullable enable
     public bool Equals(TestScheduleIssues that)
     {
-        return IdWrongType.Equals(that.IdWrongType)
+        return (
+                IdWrongType == null
+                    ? that.IdWrongType == null
+                    : IdWrongType.Equals(that.IdWrongType)
+            )
             && IdCorrectType.Equals(that.IdCorrectType)
             && ScheduleAtWrongType.Equals(that.ScheduleAtWrongType)
-            && ScheduleAtCorrectType.Equals(that.ScheduleAtCorrectType);
+            && (
+                ScheduleAtCorrectType == null
+                    ? that.ScheduleAtCorrectType == null
+                    : ScheduleAtCorrectType.Equals(that.ScheduleAtCorrectType)
+            );
     }
 
     public override bool Equals(object? that)

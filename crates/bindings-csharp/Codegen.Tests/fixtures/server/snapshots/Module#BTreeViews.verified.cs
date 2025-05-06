@@ -58,7 +58,10 @@ partial struct BTreeViews : System.IEquatable<BTreeViews>, SpacetimeDB.BSATN.ISt
 
     public override int GetHashCode()
     {
-        return Id.GetHashCode() ^ X.GetHashCode() ^ Y.GetHashCode() ^ Faction.GetHashCode();
+        return Id.GetHashCode()
+            ^ X.GetHashCode()
+            ^ Y.GetHashCode()
+            ^ (Faction == null ? 0 : Faction.GetHashCode());
     }
 
 #nullable enable
@@ -67,7 +70,7 @@ partial struct BTreeViews : System.IEquatable<BTreeViews>, SpacetimeDB.BSATN.ISt
         return Id.Equals(that.Id)
             && X.Equals(that.X)
             && Y.Equals(that.Y)
-            && Faction.Equals(that.Faction);
+            && (Faction == null ? that.Faction == null : Faction.Equals(that.Faction));
     }
 
     public override bool Equals(object? that)

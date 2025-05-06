@@ -105,13 +105,13 @@ partial class CustomNestedClass
 
     public override int GetHashCode()
     {
-        return NestedClass.GetHashCode()
+        return (NestedClass == null ? 0 : NestedClass.GetHashCode())
             ^ (NestedNullableClass == null ? 0 : NestedNullableClass.GetHashCode())
             ^ NestedEnum.GetHashCode()
             ^ NestedNullableEnum.GetHashCode()
-            ^ NestedTaggedEnum.GetHashCode()
+            ^ (NestedTaggedEnum == null ? 0 : NestedTaggedEnum.GetHashCode())
             ^ (NestedNullableTaggedEnum == null ? 0 : NestedNullableTaggedEnum.GetHashCode())
-            ^ NestedCustomRecord.GetHashCode()
+            ^ (NestedCustomRecord == null ? 0 : NestedCustomRecord.GetHashCode())
             ^ (NestedNullableCustomRecord == null ? 0 : NestedNullableCustomRecord.GetHashCode());
     }
 
@@ -122,7 +122,11 @@ partial class CustomNestedClass
         {
             return false;
         }
-        return NestedClass.Equals(that.NestedClass)
+        return (
+                NestedClass == null
+                    ? that.NestedClass == null
+                    : NestedClass.Equals(that.NestedClass)
+            )
             && (
                 NestedNullableClass == null
                     ? that.NestedNullableClass == null
@@ -130,13 +134,21 @@ partial class CustomNestedClass
             )
             && NestedEnum.Equals(that.NestedEnum)
             && NestedNullableEnum.Equals(that.NestedNullableEnum)
-            && NestedTaggedEnum.Equals(that.NestedTaggedEnum)
+            && (
+                NestedTaggedEnum == null
+                    ? that.NestedTaggedEnum == null
+                    : NestedTaggedEnum.Equals(that.NestedTaggedEnum)
+            )
             && (
                 NestedNullableTaggedEnum == null
                     ? that.NestedNullableTaggedEnum == null
                     : NestedNullableTaggedEnum.Equals(that.NestedNullableTaggedEnum)
             )
-            && NestedCustomRecord.Equals(that.NestedCustomRecord)
+            && (
+                NestedCustomRecord == null
+                    ? that.NestedCustomRecord == null
+                    : NestedCustomRecord.Equals(that.NestedCustomRecord)
+            )
             && (
                 NestedNullableCustomRecord == null
                     ? that.NestedNullableCustomRecord == null

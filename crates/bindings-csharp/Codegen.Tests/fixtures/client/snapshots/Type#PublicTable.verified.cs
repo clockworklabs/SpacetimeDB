@@ -170,14 +170,14 @@ partial struct PublicTable : System.IEquatable<PublicTable>, SpacetimeDB.BSATN.I
             ^ BoolField.GetHashCode()
             ^ FloatField.GetHashCode()
             ^ DoubleField.GetHashCode()
-            ^ StringField.GetHashCode()
+            ^ (StringField == null ? 0 : StringField.GetHashCode())
             ^ IdentityField.GetHashCode()
             ^ ConnectionIdField.GetHashCode()
             ^ CustomStructField.GetHashCode()
             ^ CustomClassField.GetHashCode()
             ^ CustomEnumField.GetHashCode()
-            ^ CustomTaggedEnumField.GetHashCode()
-            ^ ListField.GetHashCode()
+            ^ (CustomTaggedEnumField == null ? 0 : CustomTaggedEnumField.GetHashCode())
+            ^ (ListField == null ? 0 : ListField.GetHashCode())
             ^ NullableValueField.GetHashCode()
             ^ (NullableReferenceField == null ? 0 : NullableReferenceField.GetHashCode());
     }
@@ -200,14 +200,22 @@ partial struct PublicTable : System.IEquatable<PublicTable>, SpacetimeDB.BSATN.I
             && BoolField.Equals(that.BoolField)
             && FloatField.Equals(that.FloatField)
             && DoubleField.Equals(that.DoubleField)
-            && StringField.Equals(that.StringField)
+            && (
+                StringField == null
+                    ? that.StringField == null
+                    : StringField.Equals(that.StringField)
+            )
             && IdentityField.Equals(that.IdentityField)
             && ConnectionIdField.Equals(that.ConnectionIdField)
             && CustomStructField.Equals(that.CustomStructField)
             && CustomClassField.Equals(that.CustomClassField)
             && CustomEnumField.Equals(that.CustomEnumField)
-            && CustomTaggedEnumField.Equals(that.CustomTaggedEnumField)
-            && ListField.Equals(that.ListField)
+            && (
+                CustomTaggedEnumField == null
+                    ? that.CustomTaggedEnumField == null
+                    : CustomTaggedEnumField.Equals(that.CustomTaggedEnumField)
+            )
+            && (ListField == null ? that.ListField == null : ListField.Equals(that.ListField))
             && NullableValueField.Equals(that.NullableValueField)
             && (
                 NullableReferenceField == null
