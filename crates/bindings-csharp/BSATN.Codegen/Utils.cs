@@ -90,26 +90,6 @@ public static class Utils
         && type.OriginalDefinition.SpecialType != SpecialType.System_Nullable_T;
 
     /// <summary>
-    /// Return whether a type needs a null check.
-    /// All reference types are considered to need a null check.
-    /// </summary>
-    public static bool NeedsNullCheck(ITypeSymbol type) =>
-        !type.IsValueType;
-
-    public static bool NeedsCustomEquals(ITypeSymbol type) =>
-        type switch
-        {
-            IArrayTypeSymbol { ElementType: var _ } => true,
-            INamedTypeSymbol namedType =>
-            namedType.OriginalDefinition.ToString() switch
-            {
-                "System.Collections.Generic.List<T>" => true,
-                _ => false
-            },
-            _ => false
-        };
-
-    /// <summary>
     /// Get the BSATN struct name for a type.
     /// </summary>
     /// <param name="type"></param>
