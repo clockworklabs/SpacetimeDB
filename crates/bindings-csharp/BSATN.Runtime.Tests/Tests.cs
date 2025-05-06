@@ -297,10 +297,39 @@ public static partial class BSATNRuntimeTests
         (int X, string Y, int? Z, string? W) c2
     )> GenTwoBasic = Gen.Select(GenBasic, GenBasic, (c1, c2) => (c1, c2));
 
+    /// <summary>
+    /// Count collisions when comparing hashcodes of non-equal structures. 
+    /// </summary>
+    struct CollisionCounter
+    {
+        private uint Comparisons;
+        private uint Collisions;
+
+        public void Add(bool collides)
+        {
+            Comparisons += 1;
+            if (collides)
+            {
+                Collisions += 1;
+            }
+        }
+
+        public double CollisionFraction
+        {
+            get => (double)Collisions / (double)Comparisons;
+        }
+
+        public void AssertCollisionsLessThan(double fraction)
+        {
+            Assert.True(CollisionFraction < fraction, $"Expected {fraction} portion of collisions, but got {CollisionFraction} = {Collisions} / {Comparisons}");
+        }
+    }
 
     [Fact]
     public static void GeneratedProductEqualsWorks()
     {
+        CollisionCounter collisionCounter = new();
+
         GenTwoBasic.Sample(
             example =>
             {
@@ -357,10 +386,13 @@ public static partial class BSATNRuntimeTests
                     // hash code should not depend on the type of object.
                     Assert.Equal(class1.GetHashCode(), record1.GetHashCode());
                     Assert.Equal(record1.GetHashCode(), struct1.GetHashCode());
+
+                    collisionCounter.Add(class1.GetHashCode() == class2.GetHashCode());
                 }
             },
             iter: 10_000
         );
+        collisionCounter.AssertCollisionsLessThan(0.05);
     }
 
     [Type]
@@ -402,6 +434,8 @@ public static partial class BSATNRuntimeTests
     [Fact]
     public static void GeneratedSumEqualsWorks()
     {
+        CollisionCounter collisionCounter = new();
+
         GenTwoBasicEnum.Sample(
             example =>
             {
@@ -433,10 +467,12 @@ public static partial class BSATNRuntimeTests
                     Assert.False(example.e1 == example.e2);
                     Assert.True(example.e1 != example.e2);
                     Assert.NotEqual(example.e1.ToString(), example.e2.ToString());
+                    collisionCounter.Add(example.e1.GetHashCode() == example.e2.GetHashCode());
                 }
             },
             iter: 10_000
         );
+        collisionCounter.AssertCollisionsLessThan(0.05);
     }
 
 
@@ -465,6 +501,7 @@ public static partial class BSATNRuntimeTests
     [Fact]
     public static void GeneratedListEqualsWorks()
     {
+        CollisionCounter collisionCounter = new();
         GenTwoContainsList.Sample(
             example =>
             {
@@ -486,10 +523,12 @@ public static partial class BSATNRuntimeTests
                     Assert.False(example.e1 == example.e2);
                     Assert.True(example.e1 != example.e2);
                     Assert.NotEqual(example.e1.ToString(), example.e2.ToString());
+                    collisionCounter.Add(example.e1.GetHashCode() == example.e2.GetHashCode());
                 }
             },
             iter: 10_000
         );
+        collisionCounter.AssertCollisionsLessThan(0.05);
     }
 
     [Type]
@@ -550,6 +589,7 @@ public static partial class BSATNRuntimeTests
                 )
             )
         );
+        CollisionCounter collisionCounter = new();
         GenTwoContainsNestedList.Sample(
             example =>
             {
@@ -569,10 +609,12 @@ public static partial class BSATNRuntimeTests
                     Assert.False(example.e1 == example.e2);
                     Assert.True(example.e1 != example.e2);
                     Assert.NotEqual(example.e1.ToString(), example.e2.ToString());
+                    collisionCounter.Add(example.e1.GetHashCode() == example.e2.GetHashCode());
                 }
             },
             iter: 10_000
         );
+        collisionCounter.AssertCollisionsLessThan(0.05);
     }
 
 
