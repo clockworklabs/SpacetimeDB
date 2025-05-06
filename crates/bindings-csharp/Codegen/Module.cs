@@ -169,13 +169,13 @@ record TableView
             try
             {
                 Scheduled = new(reducer, scheduledAtIndex);
-                if (table.GetPrimaryKey(this) is not { } pk || table.Members[pk].Type != "ulong")
+                if (table.GetPrimaryKey(this) is not { } pk || table.Members[pk].Type_.Type != "ulong")
                 {
                     throw new InvalidOperationException(
                         $"{Name} is a scheduled table but doesn't have a primary key of type `ulong`."
                     );
                 }
-                if (table.Members[Scheduled.ScheduledAtColumn].Type != "SpacetimeDB.ScheduleAt")
+                if (table.Members[Scheduled.ScheduledAtColumn].Type_.Type != "SpacetimeDB.ScheduleAt")
                 {
                     throw new InvalidOperationException(
                         $"{Name}.{attr.ScheduledAt} is marked with `ScheduledAt`, but doesn't have the expected type `SpacetimeDB.ScheduleAt`."
@@ -227,7 +227,8 @@ record ViewIndex
             ImmutableArray.Create(col),
             null,
             ViewIndexType.BTree // this might become hash in the future
-        ) { }
+        )
+    { }
 
     private ViewIndex(Index.BTreeAttribute attr, ImmutableArray<ColumnRef> columns)
         : this(attr.Name, columns, attr.Table, ViewIndexType.BTree) { }
@@ -388,12 +389,12 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             }
             var standardIndexName = ct.ToIndex().StandardIndexName(view);
             yield return $$"""
-                {{vis}} sealed class {{f.Name}}UniqueIndex : UniqueIndex<{{view.Name}}, {{globalName}}, {{f.Type}}, {{f.TypeInfo}}> {
+                {{vis}} sealed class {{f.Name}}UniqueIndex : UniqueIndex<{{view.Name}}, {{globalName}}, {{f.Type_.Type}}, {{f.Type_.TypeInfo}}> {
                     internal {{f.Name}}UniqueIndex() : base("{{standardIndexName}}") {}
                     // Important: don't move this to the base class.
                     // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
                     // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
-                    public {{globalName}}? Find({{f.Type}} key) => DoFilter(key).Cast<{{globalName}}?>().SingleOrDefault();
+                    public {{globalName}}? Find({{f.Type_.Type}} key) => DoFilter(key).Cast<{{globalName}}?>().SingleOrDefault();
                     public {{globalName}} Update({{globalName}} row) => DoUpdate(row);
                 }
                 {{vis}} {{f.Name}}UniqueIndex {{f.Name}} => new();
@@ -422,11 +423,11 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             {
                 var types = string.Join(
                     ", ",
-                    members.Take(n + 1).Select(m => $"{m.Type}, {m.TypeInfo}")
+                    members.Take(n + 1).Select(m => $"{m.Type_.Type}, {m.Type_.TypeInfo}")
                 );
-                var scalars = members.Take(n).Select(m => $"{m.Type} {m.Name}");
-                var lastScalar = $"{members[n].Type} {members[n].Name}";
-                var lastBounds = $"Bound<{members[n].Type}> {members[n].Name}";
+                var scalars = members.Take(n).Select(m => $"{m.Type_.Type} {m.Name}");
+                var lastScalar = $"{members[n].Type_.Type} {members[n].Name}";
+                var lastBounds = $"Bound<{members[n].Type_.Type}> {members[n].Name}";
                 var argsScalar = string.Join(", ", scalars.Append(lastScalar));
                 var argsBounds = string.Join(", ", scalars.Append(lastBounds));
                 string argName;
@@ -672,13 +673,13 @@ record ReducerDeclaration
             [System.Diagnostics.CodeAnalysis.Experimental("STDB_UNSTABLE")]
             public static void VolatileNonatomicScheduleImmediate{{Name}}({{string.Join(
                 ", ",
-                Args.Select(a => $"{a.Type} {a.Name}")
+                Args.Select(a => $"{a.Type_.Type} {a.Name}")
             )}}) {
                 using var stream = new MemoryStream();
                 using var writer = new BinaryWriter(stream);
                 {{string.Join(
                     "\n",
-                    Args.Select(a => $"new {a.TypeInfo}().Write(writer, {a.Name});")
+                    Args.Select(a => $"new {a.Type_.TypeInfo}().Write(writer, {a.Name});")
                 )}}
                 SpacetimeDB.Internal.IReducer.VolatileNonatomicScheduleImmediate(nameof({{Name}}), stream);
             }
