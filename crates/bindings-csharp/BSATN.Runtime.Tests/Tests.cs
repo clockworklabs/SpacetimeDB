@@ -1,5 +1,6 @@
 namespace SpacetimeDB;
 
+using System.Diagnostics.CodeAnalysis;
 using CsCheck;
 using Xunit;
 
@@ -452,18 +453,6 @@ public static partial class BSATNRuntimeTests
         }
     }
 
-    [Type]
-    public partial class ContainsNestedList
-    {
-        public List<int[][]> TheList = [];
-
-        public ContainsNestedList() { }
-
-        public ContainsNestedList(List<int[][]> theList)
-        {
-            TheList = theList;
-        }
-    }
 
     static readonly Gen<ContainsList> GenContainsList = GenBasicEnum.Null().List[0, 2].Null().Select(list => new ContainsList(list));
     static readonly Gen<(ContainsList e1, ContainsList e2)> GenTwoContainsList = Gen.Select(
@@ -471,6 +460,8 @@ public static partial class BSATNRuntimeTests
         GenContainsList,
         (e1, e2) => (e1, e2)
     );
+
+
     [Fact]
     public static void GeneratedListEqualsWorks()
     {
@@ -501,7 +492,88 @@ public static partial class BSATNRuntimeTests
         );
     }
 
+    [Type]
+    public partial class ContainsNestedList
+    {
+        public List<BasicEnum[][]> TheList = [];
 
+        public ContainsNestedList() { }
+
+        public ContainsNestedList(List<BasicEnum[][]> theList)
+        {
+            TheList = theList;
+        }
+    }
+#pragma warning disable CS8620 // Argument cannot be used for parameter due to differences in the nullability of reference types.
+    static readonly Gen<ContainsNestedList> GenContainsNestedList = GenBasicEnum.Null().Array[0, 2].Null().Array[0, 2].Null().List[0, 2].Select(list => new ContainsNestedList(list));
+#pragma warning restore CS8620 // Argument cannot be used for parameter due to differences in the nullability of reference types.
+
+    static readonly Gen<(ContainsNestedList e1, ContainsNestedList e2)> GenTwoContainsNestedList = Gen.Select(
+        GenContainsNestedList,
+        GenContainsNestedList,
+        (e1, e2) => (e1, e2)
+    );
+
+    class EnumerableEqualityComparer<T> : EqualityComparer<IEnumerable<T>>
+    {
+        private readonly EqualityComparer<T> EqualityComparer;
+        public EnumerableEqualityComparer(EqualityComparer<T> equalityComparer)
+        {
+            EqualityComparer = equalityComparer;
+        }
+
+        public override bool Equals(IEnumerable<T>? x, IEnumerable<T>? y) => x == null ?
+            y == null :
+            (y == null ? false : x.SequenceEqual(y, EqualityComparer));
+
+        public override int GetHashCode([DisallowNull] IEnumerable<T> obj)
+        {
+            var hashCode = 0;
+            foreach (var item in obj)
+            {
+                if (item != null)
+                {
+                    hashCode ^= EqualityComparer.GetHashCode(item);
+                }
+            }
+            return hashCode;
+        }
+    }
+
+    [Fact]
+    public static void GeneratedNestedListEqualsWorks()
+    {
+        var equalityComparer = new EnumerableEqualityComparer<IEnumerable<IEnumerable<BasicEnum>>>(
+            new EnumerableEqualityComparer<IEnumerable<BasicEnum>>(
+                new EnumerableEqualityComparer<BasicEnum>(
+                    EqualityComparer<BasicEnum>.Default
+                )
+            )
+        );
+        GenTwoContainsNestedList.Sample(
+            example =>
+            {
+                var equal = equalityComparer.Equals(example.e1.TheList, example.e2.TheList);
+
+                if (equal)
+                {
+                    Assert.Equal(example.e1, example.e2);
+                    Assert.True(example.e1 == example.e2);
+                    Assert.False(example.e1 != example.e2);
+                    Assert.Equal(example.e1.ToString(), example.e2.ToString());
+                    Assert.Equal(example.e1.GetHashCode(), example.e2.GetHashCode());
+                }
+                else
+                {
+                    Assert.NotEqual(example.e1, example.e2);
+                    Assert.False(example.e1 == example.e2);
+                    Assert.True(example.e1 != example.e2);
+                    Assert.NotEqual(example.e1.ToString(), example.e2.ToString());
+                }
+            },
+            iter: 10_000
+        );
+    }
 
 
     [Fact]
@@ -572,5 +644,17 @@ public static partial class BSATNRuntimeTests
                 ]
             ).ToString()
         );
+#pragma warning disable CS8625 // Cannot convert null literal to non-nullable reference type.
+        Assert.Equal(
+            "ContainsNestedList { TheList = [ [ [ X(1), null ], null ], null ] }",
+            new ContainsNestedList([
+                [
+                    [ new BasicEnum.X(1), null ],
+                    null,
+                ],
+                null,
+            ]).ToString()
+        );
+#pragma warning restore CS8625 // Cannot convert null literal to non-nullable reference type.
     }
 }
