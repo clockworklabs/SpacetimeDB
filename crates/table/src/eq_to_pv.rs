@@ -237,7 +237,7 @@ mod tests {
             // Turn `val` into a `RowRef`.
             let mut table = crate::table::test::table(ty);
             let blob_store = &mut HashMapBlobStore::default();
-            let (_, row) = table.insert(&PagePool::default(), blob_store, &val).unwrap();
+            let (_, row) = table.insert(&PagePool::new_for_test(), blob_store, &val).unwrap();
 
             // Check eq algo.
             prop_assert_eq!(row, val);

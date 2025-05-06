@@ -382,7 +382,7 @@ mod test {
         /// inserting the row, then doing `AlgebraicValue::read_column` on each column of the row
         /// returns the expected value.
         fn read_column_same_value((ty, val) in generate_typed_row()) {
-            let pool = PagePool::default();
+            let pool = PagePool::new_for_test();
             let mut blob_store = HashMapBlobStore::default();
             let mut table = table(ty);
 
@@ -399,7 +399,7 @@ mod test {
         /// which does not match the actual column type
         /// returns an appropriate error.
         fn read_column_wrong_type((ty, val) in generate_typed_row()) {
-            let pool = PagePool::default();
+            let pool = PagePool::new_for_test();
             let mut blob_store = HashMapBlobStore::default();
             let mut table = table(ty.clone());
 
@@ -430,7 +430,7 @@ mod test {
         /// i.e. with an out-of-bounds index,
         /// returns an appropriate error.
         fn read_column_out_of_bounds((ty, val) in generate_typed_row()) {
-            let pool = PagePool::default();
+            let pool = PagePool::new_for_test();
             let mut blob_store = HashMapBlobStore::default();
             let mut table = table(ty.clone());
 
@@ -488,7 +488,7 @@ mod test {
         ($name:ident { $algebraic_type:expr => $rust_type:ty = $val:expr }) => {
             #[test]
             fn $name() {
-                let pool = PagePool::default();
+                let pool = PagePool::new_for_test();
                 let mut blob_store = HashMapBlobStore::default();
                 let mut table = table(ProductType::from_iter([$algebraic_type]));
 
@@ -550,7 +550,7 @@ mod test {
     fn read_sum_tag_from_sum_with_payload() {
         let algebraic_type = AlgebraicType::sum([("a", AlgebraicType::U8), ("b", AlgebraicType::U16)]);
 
-        let pool = PagePool::default();
+        let pool = PagePool::new_for_test();
         let mut blob_store = HashMapBlobStore::default();
         let mut table = table(ProductType::from([algebraic_type]));
 

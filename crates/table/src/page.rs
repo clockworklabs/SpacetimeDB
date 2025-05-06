@@ -2493,7 +2493,7 @@ pub(crate) mod tests {
 
     #[test]
     fn serde_round_trip_whole_page() {
-        let pool = PagePool::default();
+        let pool = PagePool::new_for_test();
         let mut page = Page::new(u64_row_size());
 
         // Construct an empty page, ser/de it, and assert that it's still empty.

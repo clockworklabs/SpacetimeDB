@@ -241,7 +241,7 @@ mod test {
             AlgebraicType::product([AlgebraicType::U8, AlgebraicType::U32]), // xpppxxxx
         ])]);
 
-        let pool = PagePool::default();
+        let pool = PagePool::new_for_test();
         let bs = &mut NullBlobStore;
         let mut table_a = crate::table::test::table(ty.clone());
         let mut table_b = crate::table::test::table(ty);
