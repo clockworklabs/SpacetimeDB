@@ -71,8 +71,8 @@ partial struct TestUnsupportedType
     public override int GetHashCode()
     {
         return UnsupportedSpecialType.GetHashCode()
-            ^ UnsupportedSystemType.GetHashCode()
-            ^ UnresolvedType.GetHashCode()
+            ^ (UnsupportedSystemType == null ? 0 : UnsupportedSystemType.GetHashCode())
+            ^ (UnresolvedType == null ? 0 : UnresolvedType.GetHashCode())
             ^ UnsupportedEnum.GetHashCode();
     }
 
@@ -80,8 +80,16 @@ partial struct TestUnsupportedType
     public bool Equals(TestUnsupportedType that)
     {
         return UnsupportedSpecialType.Equals(that.UnsupportedSpecialType)
-            && UnsupportedSystemType.Equals(that.UnsupportedSystemType)
-            && UnresolvedType.Equals(that.UnresolvedType)
+            && (
+                UnsupportedSystemType == null
+                    ? that.UnsupportedSystemType == null
+                    : UnsupportedSystemType.Equals(that.UnsupportedSystemType)
+            )
+            && (
+                UnresolvedType == null
+                    ? that.UnresolvedType == null
+                    : UnresolvedType.Equals(that.UnresolvedType)
+            )
             && UnsupportedEnum.Equals(that.UnsupportedEnum);
     }
 

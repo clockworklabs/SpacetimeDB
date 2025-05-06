@@ -10,11 +10,12 @@ public record MemberDeclaration(
     string Name,
     string Type,
     string TypeInfo,
-    bool IsNullableReferenceType
+    bool IsNullableReferenceType,
+    bool NeedsNullCheck
 )
 {
     public MemberDeclaration(ISymbol member, ITypeSymbol type, DiagReporter diag)
-        : this(member.Name, SymbolToName(type), "", Utils.IsNullableReferenceType(type))
+        : this(member.Name, SymbolToName(type), "", Utils.IsNullableReferenceType(type), Utils.NeedsNullCheck(type))
     {
         try
         {
@@ -236,7 +237,7 @@ public abstract record BaseTypeDeclaration<M>
                     {
                         string innerGetHash;
 
-                        if (member.IsNullableReferenceType)
+                        if (member.NeedsNullCheck)
                         {
                             innerGetHash = "inner == null ? 0 : inner.GetHashCode()";
                         }
@@ -256,7 +257,7 @@ public abstract record BaseTypeDeclaration<M>
             """;
 
             bsatnDecls = bsatnDecls.Prepend(
-                new("__enumTag", "@enum", "SpacetimeDB.BSATN.Enum<@enum>", false)
+                new("__enumTag", "@enum", "SpacetimeDB.BSATN.Enum<@enum>", false, false)
             );
         }
         else
@@ -305,7 +306,7 @@ public abstract record BaseTypeDeclaration<M>
                     " ^\n            ",
                     bsatnDecls.Select(decl =>
                     {
-                        if (decl.IsNullableReferenceType)
+                        if (decl.NeedsNullCheck)
                         {
                             return $"({decl.Name} == null ? 0 : {decl.Name}.GetHashCode())";
                         }
@@ -365,7 +366,7 @@ public abstract record BaseTypeDeclaration<M>
                         " &&\n        ",
                         bsatnDecls.Select(member =>
                         {
-                            if (member.IsNullableReferenceType)
+                            if (member.NeedsNullCheck)
                             {
                                 return $"({member.Name} == null ? that.{member.Name} == null : {member.Name}.Equals(that.{member.Name}))";
                             }

@@ -117,7 +117,7 @@ partial record CustomTaggedEnum : System.IEquatable<CustomTaggedEnum>
             case IntVariant(var inner):
                 return inner.GetHashCode();
             case StringVariant(var inner):
-                return inner.GetHashCode();
+                return inner == null ? 0 : inner.GetHashCode();
             case NullableIntVariant(var inner):
                 return inner.GetHashCode();
             case NullableStringVariant(var inner):

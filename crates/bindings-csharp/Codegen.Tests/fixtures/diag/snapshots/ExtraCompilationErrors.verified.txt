@@ -1,28 +1,5 @@
 ﻿[
   {/*
-    public Exception UnsupportedSystemType;
-    public UnresolvedType UnresolvedType;
-           ^^^^^^^^^^^^^^
-    public LocalEnum UnsupportedEnum;
-*/
-    Message: The type or namespace name 'UnresolvedType' could not be found (are you missing a using directive or an assembly reference?),
-    Severity: Error,
-    Descriptor: {
-      Id: CS0246,
-      Title: ,
-      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0246),
-      MessageFormat: The type or namespace name '{0}' could not be found (are you missing a using directive or an assembly reference?),
-      Category: Compiler,
-      DefaultSeverity: Error,
-      IsEnabledByDefault: true,
-      CustomTags: [
-        Compiler,
-        Telemetry,
-        NotConfigurable
-      ]
-    }
-  },
-  {/*
     // Valid Filter, but [ClientVisibilityFilter] is disabled
     [SpacetimeDB.ClientVisibilityFilter]
      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -46,46 +23,25 @@
     }
   },
   {/*
-    {
-        return Field.GetHashCode();
-               ^^^^^
-    }
+    public Exception UnsupportedSystemType;
+    public UnresolvedType UnresolvedType;
+           ^^^^^^^^^^^^^^
+    public LocalEnum UnsupportedEnum;
 */
-    Message: Dereference of a possibly null reference.,
-    Severity: Warning,
+    Message: The type or namespace name 'UnresolvedType' could not be found (are you missing a using directive or an assembly reference?),
+    Severity: Error,
     Descriptor: {
-      Id: CS8602,
-      Title: Dereference of a possibly null reference.,
-      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS8602),
-      MessageFormat: Dereference of a possibly null reference.,
+      Id: CS0246,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0246),
+      MessageFormat: The type or namespace name '{0}' could not be found (are you missing a using directive or an assembly reference?),
       Category: Compiler,
-      DefaultSeverity: Warning,
+      DefaultSeverity: Error,
       IsEnabledByDefault: true,
       CustomTags: [
         Compiler,
-        Telemetry
-      ]
-    }
-  },
-  {/*
-    {
-        return Field.Equals(that.Field);
-               ^^^^^
-    }
-*/
-    Message: Dereference of a possibly null reference.,
-    Severity: Warning,
-    Descriptor: {
-      Id: CS8602,
-      Title: Dereference of a possibly null reference.,
-      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS8602),
-      MessageFormat: Dereference of a possibly null reference.,
-      Category: Compiler,
-      DefaultSeverity: Warning,
-      IsEnabledByDefault: true,
-      CustomTags: [
-        Compiler,
-        Telemetry
+        Telemetry,
+        NotConfigurable
       ]
     }
   },
@@ -159,9 +115,9 @@ partial struct TestTypeParams<T>  : System.IEquatable<TestTypeParams>, Spacetime
     }
   },
   {/*
-            UnsupportedSystemType.GetHashCode() ^
-            UnresolvedType.GetHashCode() ^
-                           ^^^^^^^^^^^
+            (UnsupportedSystemType == null ? 0 : UnsupportedSystemType.GetHashCode()) ^
+            (UnresolvedType == null ? 0 : UnresolvedType.GetHashCode()) ^
+                                                         ^^^^^^^^^^^
             UnsupportedEnum.GetHashCode();
 */
     Message: 'UnresolvedType' does not contain a definition for 'GetHashCode' and no accessible extension method 'GetHashCode' accepting a first argument of type 'UnresolvedType' could be found (are you missing a using directive or an assembly reference?),

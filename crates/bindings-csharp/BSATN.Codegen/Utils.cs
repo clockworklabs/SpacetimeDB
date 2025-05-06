@@ -73,7 +73,8 @@ public static class Utils
     public static string MakeRwTypeParam(string typeParam) => typeParam + "RW";
 
     public class UnresolvedTypeException(INamedTypeSymbol type)
-        : InvalidOperationException($"Could not resolve type {type}") { }
+        : InvalidOperationException($"Could not resolve type {type}")
+    { }
 
     /// <summary>
     /// Return whether a type is a nullable, non-value type.
@@ -87,6 +88,26 @@ public static class Utils
         // while something like `string?` is expanded to `string` with the nullable annotation set to `Annotated`.
         type.NullableAnnotation == NullableAnnotation.Annotated
         && type.OriginalDefinition.SpecialType != SpecialType.System_Nullable_T;
+
+    /// <summary>
+    /// Return whether a type needs a null check.
+    /// All reference types are considered to need a null check.
+    /// </summary>
+    public static bool NeedsNullCheck(ITypeSymbol type) =>
+        !type.IsValueType;
+
+    public static bool NeedsCustomEquals(ITypeSymbol type) =>
+        type switch
+        {
+            IArrayTypeSymbol { ElementType: var _ } => true,
+            INamedTypeSymbol namedType =>
+            namedType.OriginalDefinition.ToString() switch
+            {
+                "System.Collections.Generic.List<T>" => true,
+                _ => false
+            },
+            _ => false
+        };
 
     /// <summary>
     /// Get the BSATN struct name for a type.

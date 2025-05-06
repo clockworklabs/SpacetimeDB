@@ -60,15 +60,21 @@ partial class Timers
 
         public override int GetHashCode()
         {
-            return ScheduledId.GetHashCode() ^ ScheduledAt.GetHashCode() ^ Text.GetHashCode();
+            return ScheduledId.GetHashCode()
+                ^ (ScheduledAt == null ? 0 : ScheduledAt.GetHashCode())
+                ^ (Text == null ? 0 : Text.GetHashCode());
         }
 
 #nullable enable
         public bool Equals(Timers.SendMessageTimer that)
         {
             return ScheduledId.Equals(that.ScheduledId)
-                && ScheduledAt.Equals(that.ScheduledAt)
-                && Text.Equals(that.Text);
+                && (
+                    ScheduledAt == null
+                        ? that.ScheduledAt == null
+                        : ScheduledAt.Equals(that.ScheduledAt)
+                )
+                && (Text == null ? that.Text == null : Text.Equals(that.Text));
         }
 
         public override bool Equals(object? that)
