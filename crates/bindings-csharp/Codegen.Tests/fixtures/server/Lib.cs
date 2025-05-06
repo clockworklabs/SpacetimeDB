@@ -57,6 +57,20 @@ public partial class CustomNestedClass
 }
 
 [SpacetimeDB.Type]
+public partial class ContainsNestedLists
+{
+    public List<int> IntList = [];
+    public List<string> StringList = [];
+    public int[] IntArray = [];
+    public string[] StringArray = [];
+    public List<int[][]> IntArrayArrayList = [];
+    public List<List<int>>[] IntListListArray = [];
+    public List<string[][]> StringArrayArrayList = [];
+    public List<List<string>>[] StringListListArray = [];
+}
+
+
+[SpacetimeDB.Type]
 public partial class EmptyClass { }
 
 [SpacetimeDB.Type]
