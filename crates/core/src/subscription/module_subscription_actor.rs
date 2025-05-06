@@ -1806,6 +1806,34 @@ mod tests {
         assert_eq!(metrics.delta_queries_evaluated, 1);
         assert_eq!(metrics.delta_queries_matched, 1);
 
+        // Modify a matching row in `u`
+        let metrics = commit_tx(
+            &db,
+            &subs,
+            [(u_id, product![1u64, 2u64, 2u64])],
+            [(u_id, product![1u64, 2u64, 3u64])],
+        )?;
+
+        assert_tx_update_for_table(
+            &mut rx_for_b,
+            u_id,
+            &ProductType::from([AlgebraicType::U64, AlgebraicType::U64, AlgebraicType::U64]),
+            [product![1u64, 2u64, 3u64]],
+            [product![1u64, 2u64, 2u64]],
+        )
+        .await;
+
+        // We should have evaluated all of the queries
+        assert_eq!(metrics.delta_queries_evaluated, 4);
+        assert_eq!(metrics.delta_queries_matched, 1);
+
+        // Insert a non-matching row in `u`
+        let metrics = commit_tx(&db, &subs, [], [(u_id, product![3u64, 0u64, 0u64])])?;
+
+        // We should have evaluated all of the queries
+        assert_eq!(metrics.delta_queries_evaluated, 4);
+        assert_eq!(metrics.delta_queries_matched, 0);
+
         Ok(())
     }
 
