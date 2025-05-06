@@ -309,11 +309,13 @@ pub struct SubscriptionManager {
     // Queries for which there is at least one subscriber.
     queries: HashMap<QueryHash, QueryState>,
 
-    // Inverted index from tables to queries that read from them.
-    // Note, a query is present in either `tables` or `search_args` but not both.
+    // If a query reads from a table,
+    // but does not have a simple equality filter on that table,
+    // we map the table to the query in this inverted index.
     tables: IntMap<TableId, HashSet<QueryHash>>,
 
-    // For queries that have simple equality filters,
+    // If a query reads from a table,
+    // and has a simple equality filter on that table,
     // we map the filter values to the query in this lookup table.
     search_args: SearchArguments,
 }
@@ -629,15 +631,13 @@ impl SubscriptionManager {
         // If this is new, we need to update the table to query mapping.
         if !query_state.has_subscribers() {
             let hash = query_state.query.hash();
-            let mut has_search_args = false;
+            let mut table_ids = query_state.query.table_ids().collect::<HashSet<_>>();
             for (table_id, col_id, arg) in query_state.search_args() {
-                has_search_args = true;
+                table_ids.remove(&table_id);
                 search_args.insert_query(table_id, col_id, arg, hash);
             }
-            if !has_search_args {
-                for table_id in query_state.query.table_ids() {
-                    tables.entry(table_id).or_default().insert(hash);
-                }
+            for table_id in table_ids {
+                tables.entry(table_id).or_default().insert(hash);
             }
         }
     }
@@ -714,9 +714,10 @@ impl SubscriptionManager {
         {
             queries.insert(hash);
         }
-        queries
-            .into_iter()
-            .chain(self.tables.get(&table_update.table_id).into_iter().flatten())
+        for hash in self.tables.get(&table_update.table_id).into_iter().flatten() {
+            queries.insert(hash);
+        }
+        queries.into_iter()
     }
 
     /// This method takes a set of delta tables,
