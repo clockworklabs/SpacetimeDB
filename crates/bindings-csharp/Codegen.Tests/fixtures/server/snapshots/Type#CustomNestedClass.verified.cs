@@ -105,14 +105,26 @@ partial class CustomNestedClass
 
     public override int GetHashCode()
     {
-        return (NestedClass == null ? 0 : NestedClass.GetHashCode())
-            ^ (NestedNullableClass == null ? 0 : NestedNullableClass.GetHashCode())
-            ^ NestedEnum.GetHashCode()
-            ^ NestedNullableEnum.GetHashCode()
-            ^ (NestedTaggedEnum == null ? 0 : NestedTaggedEnum.GetHashCode())
-            ^ (NestedNullableTaggedEnum == null ? 0 : NestedNullableTaggedEnum.GetHashCode())
-            ^ (NestedCustomRecord == null ? 0 : NestedCustomRecord.GetHashCode())
-            ^ (NestedNullableCustomRecord == null ? 0 : NestedNullableCustomRecord.GetHashCode());
+        var hashNestedClass = NestedClass == null ? 0 : NestedClass.GetHashCode();
+        var hashNestedNullableClass =
+            NestedNullableClass == null ? 0 : NestedNullableClass.GetHashCode();
+        var hashNestedEnum = NestedEnum.GetHashCode();
+        var hashNestedNullableEnum = NestedNullableEnum.GetHashCode();
+        var hashNestedTaggedEnum = NestedTaggedEnum == null ? 0 : NestedTaggedEnum.GetHashCode();
+        var hashNestedNullableTaggedEnum =
+            NestedNullableTaggedEnum == null ? 0 : NestedNullableTaggedEnum.GetHashCode();
+        var hashNestedCustomRecord =
+            NestedCustomRecord == null ? 0 : NestedCustomRecord.GetHashCode();
+        var hashNestedNullableCustomRecord =
+            NestedNullableCustomRecord == null ? 0 : NestedNullableCustomRecord.GetHashCode();
+        return hashNestedClass
+            ^ hashNestedNullableClass
+            ^ hashNestedEnum
+            ^ hashNestedNullableEnum
+            ^ hashNestedTaggedEnum
+            ^ hashNestedNullableTaggedEnum
+            ^ hashNestedCustomRecord
+            ^ hashNestedNullableCustomRecord;
     }
 
 #nullable enable
@@ -122,38 +134,41 @@ partial class CustomNestedClass
         {
             return false;
         }
-        return (
-                NestedClass == null
-                    ? that.NestedClass == null
-                    : NestedClass.Equals(that.NestedClass)
-            )
-            && (
-                NestedNullableClass == null
-                    ? that.NestedNullableClass == null
-                    : NestedNullableClass.Equals(that.NestedNullableClass)
-            )
-            && NestedEnum.Equals(that.NestedEnum)
-            && NestedNullableEnum.Equals(that.NestedNullableEnum)
-            && (
-                NestedTaggedEnum == null
-                    ? that.NestedTaggedEnum == null
-                    : NestedTaggedEnum.Equals(that.NestedTaggedEnum)
-            )
-            && (
-                NestedNullableTaggedEnum == null
-                    ? that.NestedNullableTaggedEnum == null
-                    : NestedNullableTaggedEnum.Equals(that.NestedNullableTaggedEnum)
-            )
-            && (
-                NestedCustomRecord == null
-                    ? that.NestedCustomRecord == null
-                    : NestedCustomRecord.Equals(that.NestedCustomRecord)
-            )
-            && (
-                NestedNullableCustomRecord == null
-                    ? that.NestedNullableCustomRecord == null
-                    : NestedNullableCustomRecord.Equals(that.NestedNullableCustomRecord)
-            );
+
+        var eqNestedClass =
+            this.NestedClass == null
+                ? that.NestedClass == null
+                : this.NestedClass.Equals(that.NestedClass);
+        var eqNestedNullableClass =
+            this.NestedNullableClass == null
+                ? that.NestedNullableClass == null
+                : this.NestedNullableClass.Equals(that.NestedNullableClass);
+        var eqNestedEnum = this.NestedEnum.Equals(that.NestedEnum);
+        var eqNestedNullableEnum = this.NestedNullableEnum.Equals(that.NestedNullableEnum);
+        var eqNestedTaggedEnum =
+            this.NestedTaggedEnum == null
+                ? that.NestedTaggedEnum == null
+                : this.NestedTaggedEnum.Equals(that.NestedTaggedEnum);
+        var eqNestedNullableTaggedEnum =
+            this.NestedNullableTaggedEnum == null
+                ? that.NestedNullableTaggedEnum == null
+                : this.NestedNullableTaggedEnum.Equals(that.NestedNullableTaggedEnum);
+        var eqNestedCustomRecord =
+            this.NestedCustomRecord == null
+                ? that.NestedCustomRecord == null
+                : this.NestedCustomRecord.Equals(that.NestedCustomRecord);
+        var eqNestedNullableCustomRecord =
+            this.NestedNullableCustomRecord == null
+                ? that.NestedNullableCustomRecord == null
+                : this.NestedNullableCustomRecord.Equals(that.NestedNullableCustomRecord);
+        return eqNestedClass
+            && eqNestedNullableClass
+            && eqNestedEnum
+            && eqNestedNullableEnum
+            && eqNestedTaggedEnum
+            && eqNestedNullableTaggedEnum
+            && eqNestedCustomRecord
+            && eqNestedNullableCustomRecord;
     }
 
     public override bool Equals(object? that)

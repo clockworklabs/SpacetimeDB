@@ -58,19 +58,22 @@ partial struct BTreeViews : System.IEquatable<BTreeViews>, SpacetimeDB.BSATN.ISt
 
     public override int GetHashCode()
     {
-        return Id.GetHashCode()
-            ^ X.GetHashCode()
-            ^ Y.GetHashCode()
-            ^ (Faction == null ? 0 : Faction.GetHashCode());
+        var hashId = Id.GetHashCode();
+        var hashX = X.GetHashCode();
+        var hashY = Y.GetHashCode();
+        var hashFaction = Faction == null ? 0 : Faction.GetHashCode();
+        return hashId ^ hashX ^ hashY ^ hashFaction;
     }
 
 #nullable enable
     public bool Equals(BTreeViews that)
     {
-        return Id.Equals(that.Id)
-            && X.Equals(that.X)
-            && Y.Equals(that.Y)
-            && (Faction == null ? that.Faction == null : Faction.Equals(that.Faction));
+        var eqId = this.Id.Equals(that.Id);
+        var eqX = this.X.Equals(that.X);
+        var eqY = this.Y.Equals(that.Y);
+        var eqFaction =
+            this.Faction == null ? that.Faction == null : this.Faction.Equals(that.Faction);
+        return eqId && eqX && eqY && eqFaction;
     }
 
     public override bool Equals(object? that)

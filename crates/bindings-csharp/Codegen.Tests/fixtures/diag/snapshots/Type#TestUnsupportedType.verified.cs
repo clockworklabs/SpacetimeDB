@@ -70,27 +70,36 @@ partial struct TestUnsupportedType
 
     public override int GetHashCode()
     {
-        return UnsupportedSpecialType.GetHashCode()
-            ^ (UnsupportedSystemType == null ? 0 : UnsupportedSystemType.GetHashCode())
-            ^ (UnresolvedType == null ? 0 : UnresolvedType.GetHashCode())
-            ^ UnsupportedEnum.GetHashCode();
+        var hashUnsupportedSpecialType = UnsupportedSpecialType.GetHashCode();
+        var hashUnsupportedSystemType =
+            UnsupportedSystemType == null ? 0 : UnsupportedSystemType.GetHashCode();
+        var hashUnresolvedType = UnresolvedType == null ? 0 : UnresolvedType.GetHashCode();
+        var hashUnsupportedEnum = UnsupportedEnum.GetHashCode();
+        return hashUnsupportedSpecialType
+            ^ hashUnsupportedSystemType
+            ^ hashUnresolvedType
+            ^ hashUnsupportedEnum;
     }
 
 #nullable enable
     public bool Equals(TestUnsupportedType that)
     {
-        return UnsupportedSpecialType.Equals(that.UnsupportedSpecialType)
-            && (
-                UnsupportedSystemType == null
-                    ? that.UnsupportedSystemType == null
-                    : UnsupportedSystemType.Equals(that.UnsupportedSystemType)
-            )
-            && (
-                UnresolvedType == null
-                    ? that.UnresolvedType == null
-                    : UnresolvedType.Equals(that.UnresolvedType)
-            )
-            && UnsupportedEnum.Equals(that.UnsupportedEnum);
+        var eqUnsupportedSpecialType = this.UnsupportedSpecialType.Equals(
+            that.UnsupportedSpecialType
+        );
+        var eqUnsupportedSystemType =
+            this.UnsupportedSystemType == null
+                ? that.UnsupportedSystemType == null
+                : this.UnsupportedSystemType.Equals(that.UnsupportedSystemType);
+        var eqUnresolvedType =
+            this.UnresolvedType == null
+                ? that.UnresolvedType == null
+                : this.UnresolvedType.Equals(that.UnresolvedType);
+        var eqUnsupportedEnum = this.UnsupportedEnum.Equals(that.UnsupportedEnum);
+        return eqUnsupportedSpecialType
+            && eqUnsupportedSystemType
+            && eqUnresolvedType
+            && eqUnsupportedEnum;
     }
 
     public override bool Equals(object? that)

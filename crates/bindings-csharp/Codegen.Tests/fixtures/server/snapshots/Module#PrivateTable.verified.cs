@@ -44,6 +44,7 @@ partial class PrivateTable : System.IEquatable<PrivateTable>, SpacetimeDB.BSATN.
         {
             return false;
         }
+
         return true;
     }
 
