@@ -1157,7 +1157,7 @@ mod tests {
     }
 
     fn get_datastore() -> Result<Locking> {
-        Locking::bootstrap(Identity::ZERO, <_>::default())
+        Locking::bootstrap(Identity::ZERO, PagePool::new_for_test())
     }
 
     fn col(col: u16) -> ColList {
