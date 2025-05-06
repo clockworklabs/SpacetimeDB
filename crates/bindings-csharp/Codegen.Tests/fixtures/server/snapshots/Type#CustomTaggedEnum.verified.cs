@@ -115,13 +115,17 @@ partial record CustomTaggedEnum : System.IEquatable<CustomTaggedEnum>
         switch (this)
         {
             case IntVariant(var inner):
-                return inner.GetHashCode();
+                var hashIntVariant = inner.GetHashCode();
+                return hashIntVariant;
             case StringVariant(var inner):
-                return inner == null ? 0 : inner.GetHashCode();
+                var hashStringVariant = inner == null ? 0 : inner.GetHashCode();
+                return hashStringVariant;
             case NullableIntVariant(var inner):
-                return inner.GetHashCode();
+                var hashNullableIntVariant = inner.GetHashCode();
+                return hashNullableIntVariant;
             case NullableStringVariant(var inner):
-                return inner == null ? 0 : inner.GetHashCode();
+                var hashNullableStringVariant = inner == null ? 0 : inner.GetHashCode();
+                return hashNullableStringVariant;
             default:
                 return 0;
         }

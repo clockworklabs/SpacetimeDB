@@ -23,11 +23,11 @@ using static Utils;
 /// That's good, since Equals and GetHashCode for BSATN types are used in hot parts
 /// of the codebase.)
 /// </summary>
-/// <param name="Type">The name of the type</param>
-/// <param name="TypeInfo">The name of the BSATN struct for the type.</param>
+/// <param name="Name">The name of the type</param>
+/// <param name="BSATNName">The name of the BSATN struct for the type.</param>
 public abstract record TypeUse(
-    string Type,
-    string TypeInfo
+    string Name,
+    string BSATNName
 )
 {
     /// <summary>
@@ -76,18 +76,10 @@ public abstract record TypeUse(
     }
 
     /// <summary>
-    /// Get a statement that declares outVar and assigns assigns the hash code of inVar to it.
-    /// 
-    /// This can't be an expression because some types need to use loops.
-    /// </summary>
-    /// <param name="inVar">A variable of type `Type` that we want to hash.</param>
-    /// <param name="outVar">The variable to declare and store the hash in.</param>
-    /// <param name="level">Iteration level counter. You don't need to set this.</param>
-    /// <returns></returns>
-    public abstract string GetHashCodeStatement(string inVar, string outVar, int level = 0);
-
-    /// <summary>
-    /// Get a statement that declares outVar and assigns (inVar1 logically equals inVar2) to it.
+    /// Get a statement that declares outVar and assigns (inVar1 logically-equals inVar2) to it.
+    /// logically-equals is:
+    /// - the same as to SequenceEquals for arrays and lists
+    /// - otherwise, just .Equals.
     /// 
     /// This can't be an expression because some types need to use loops.
     /// </summary>
@@ -97,7 +89,18 @@ public abstract record TypeUse(
     /// <param name="level">Iteration level counter. You don't need to set this.</param>
     /// <returns></returns>
     public abstract string EqualsStatement(string inVar1, string inVar2, string outVar, int level = 0);
+    /// <summary>
+    /// Get a statement that declares outVar and assigns assigns the hash code of inVar to it.
+    /// 
+    /// This can't be an expression because some types need to use loops.
+    /// </summary>
+    /// <param name="inVar">A variable of type `Type` that we want to hash.</param>
+    /// <param name="outVar">The variable to declare and store the hash in.</param>
+    /// <param name="level">Iteration level counter. You don't need to set this.</param>
+    /// <returns></returns>
+    public abstract string GetHashCodeStatement(string inVar, string outVar, int level = 0);
 }
+
 
 /// <summary>
 /// A use of a value type.
@@ -106,9 +109,9 @@ public abstract record TypeUse(
 /// <param name="TypeInfo"></param>
 public record ValueUse(string Type, string TypeInfo) : TypeUse(Type, TypeInfo)
 {
-    public override string EqualsStatement(string outVar, string inVar1, string inVar2, int level = 0) =>
+    public override string EqualsStatement(string inVar1, string inVar2, string outVar, int level = 0) =>
         $"var {outVar} = {inVar1}.Equals({inVar2});";
-    public override string GetHashCodeStatement(string outVar, string inVar, int level = 0) =>
+    public override string GetHashCodeStatement(string inVar, string outVar, int level = 0) =>
         $"var {outVar} = {inVar}.GetHashCode();";
 }
 
@@ -145,7 +148,7 @@ public record ArrayUse(string Type, string TypeInfo, TypeUse ElementType) : Type
         } else if ({{inVar1}}.Length != {{inVar2}}.Length) {
             {{outVar}} = false;
         } else {
-            for (var {{iterVar}} = 0; {{iterVar}} < {{inVar1}}.Length; {{iterVar}}++) {
+            for (int {{iterVar}} = 0; {{iterVar}} < {{inVar1}}.Length; {{iterVar}}++) {
                 {{ElementType.EqualsStatement($"{inVar1}[{iterVar}]", $"{inVar2}[{iterVar}]", innerOutVar, level + 1)}}
                 if (!{{innerOutVar}}) {
                     {{outVar}} = false;
@@ -166,7 +169,7 @@ public record ArrayUse(string Type, string TypeInfo, TypeUse ElementType) : Type
         var {{outVar}} = 0;
         if ({{inVar}} != null) {
             var {{innerHashCode}} = new System.HashCode();
-            for (var {{iterVar}} = 0; {{iterVar}} < {{inVar}}.Length; {{iterVar}}++) {
+            for (int {{iterVar}} = 0; {{iterVar}} < {{inVar}}.Length; {{iterVar}}++) {
                 {{ElementType.GetHashCodeStatement($"{inVar}[{iterVar}]", innerOutVar, level + 1)}}
                 {{innerHashCode}}.Add({{innerOutVar}});
             }
@@ -187,17 +190,22 @@ public record ListUse(string Type, string TypeInfo, TypeUse ElementType) : TypeU
     public override string EqualsStatement(string inVar1, string inVar2, string outVar, int level = 0)
     {
         var iterVar = $"i{level}";
+        // needed to avoid warnings on list re-reference.
+        var innerTmp1 = $"tmpA{level}";
+        var innerTmp2 = $"tmpB{level}";
         var innerOutVar = $"{outVar}{level + 1}";
 
         return $$"""
         var {{outVar}} = true;
         if ({{inVar1}} == null || {{inVar2}} == null) {
             {{outVar}} = {{inVar1}} == {{inVar2}};
-        } else if ({{inVar1}}.Length != {{inVar2}}.Length) {
+        } else if ({{inVar1}}.Count != {{inVar2}}.Count) {
             {{outVar}} = false;
         } else {
-            for (var {{iterVar}} = 0; {{iterVar}} < {{inVar1}}.Length; {{iterVar}}++) {
-                {{ElementType.EqualsStatement($"{inVar1}[{iterVar}]", $"{inVar2}[{iterVar}]", innerOutVar, level + 1)}}
+            for (int {{iterVar}} = 0; {{iterVar}} < {{inVar1}}.Count; {{iterVar}}++) {
+                var {{innerTmp1}} = {{inVar1}}[{{iterVar}}];
+                var {{innerTmp2}} = {{inVar2}}[{{iterVar}}];
+                {{ElementType.EqualsStatement(innerTmp1, innerTmp2, innerOutVar, level + 1)}}
                 if (!{{innerOutVar}}) {
                     {{outVar}} = false;
                     break;
@@ -210,6 +218,7 @@ public record ListUse(string Type, string TypeInfo, TypeUse ElementType) : TypeU
     public override string GetHashCodeStatement(string inVar, string outVar, int level = 0)
     {
         var iterVar = $"i{level}";
+        var innerTmp = $"tmp{level}";
         var innerHashCode = $"hc{level}";
         var innerOutVar = $"{outVar}{level + 1}";
 
@@ -217,8 +226,9 @@ public record ListUse(string Type, string TypeInfo, TypeUse ElementType) : TypeU
         var {{outVar}} = 0;
         if ({{inVar}} != null) {
             var {{innerHashCode}} = new System.HashCode();
-            for (var {{iterVar}} = 0; {{iterVar}} < {{inVar}}.Length; {{iterVar}}++) {
-                {{ElementType.GetHashCodeStatement($"{inVar}[{iterVar}]", innerOutVar, level + 1)}}
+            for (int {{iterVar}} = 0; {{iterVar}} < {{inVar}}.Count; {{iterVar}}++) {
+                var {{innerTmp}} = {{inVar}}[{{iterVar}}];
+                {{ElementType.GetHashCodeStatement(innerTmp, innerOutVar, level + 1)}}
                 {{innerHashCode}}.Add({{innerOutVar}});
             }
             {{outVar}} = {{innerHashCode}}.ToHashCode();
@@ -231,12 +241,11 @@ public record ListUse(string Type, string TypeInfo, TypeUse ElementType) : TypeU
 /// A declaration of a member of a product or sum type.
 /// </summary>
 /// <param name="Name">The name of the member.</param>
-/// <param name="Type">The type of the member as a string.</param>
-/// <param name="TypeInfo">The type of the <c>BSATN</c> struct for the member. This allows serializing and deserializing the member.</param>
+/// <param name="Type">Type information relevant to the member.</param>
 public record MemberDeclaration(
     string Name,
     // TODO: rename to `Type` once I've checked uses
-    TypeUse Type_
+    TypeUse Type
 )
 {
     public MemberDeclaration(ISymbol member, ITypeSymbol type, DiagReporter diag)
@@ -256,7 +265,7 @@ public record MemberDeclaration(
         var visStr = SyntaxFacts.GetText(visibility);
         return string.Join(
             "\n        ",
-            members.Select(m => $"{visStr} static readonly {m.Type_.TypeInfo} {m.Name} = new();")
+            members.Select(m => $"{visStr} static readonly {m.Type.BSATNName} {m.Name} = new();")
         );
     }
 
@@ -401,7 +410,7 @@ public abstract record BaseTypeDeclaration<M>
                         // To avoid this, we append an underscore to the field name.
                         // In most cases the field name shouldn't matter anyway as you'll idiomatically use pattern matching to extract the value.
                         $$"""
-                            public sealed record {{m.Name}}({{m.Type_.Type}} {{m.Name}}_) : {{ShortName}}
+                            public sealed record {{m.Name}}({{m.Type.Name}} {{m.Name}}_) : {{ShortName}}
                             {
                                 public override string ToString() =>
                                     $"{{m.Name}}({ SpacetimeDB.BSATN.StringUtil.GenericToString({{m.Name}}_) })";
@@ -444,11 +453,11 @@ public abstract record BaseTypeDeclaration<M>
                     bsatnDecls
                     .Select(member =>
                     {
-                        var hashName = $"{member.Name}Hash";
+                        var hashName = $"hash{member.Name}";
 
                         return $"""
                                 case {member.Name}(var inner):
-                                    {member.Type_.GetHashCodeStatement("inner", hashName)}
+                                    {member.Type.GetHashCodeStatement("inner", hashName)}
                                     return {hashName};
                         """;
                     }))}}
@@ -502,10 +511,10 @@ public abstract record BaseTypeDeclaration<M>
 
             write = "value.WriteFields(writer);";
 
-            var declHashName = (MemberDeclaration decl) => $"{decl.Name}Hash";
+            var declHashName = (MemberDeclaration decl) => $"hash{decl.Name}";
 
             getHashCode = $$"""
-                {{string.Join("\n", bsatnDecls.Select(decl => decl.Type_.GetHashCodeStatement(decl.Name, declHashName(decl))))}}
+                {{string.Join("\n", bsatnDecls.Select(decl => decl.Type.GetHashCodeStatement(decl.Name, declHashName(decl))))}}
                 return {{JoinOrValue(
                     " ^\n            ",
                     bsatnDecls.Select(declHashName),
@@ -549,7 +558,7 @@ public abstract record BaseTypeDeclaration<M>
             // If we are a reference type, various equality methods need to take nullable references.
             // If we are a value type, everything is pleasantly by-value.
             var fullNameMaybeRef = $"{FullName}{(Scope.IsStruct ? "" : "?")}";
-            var declEqualsName = (MemberDeclaration decl) => $"{decl.Name}Equals";
+            var declEqualsName = (MemberDeclaration decl) => $"eq{decl.Name}";
 
             extensions.Contents.Append(
                 $$"""
@@ -558,7 +567,7 @@ public abstract record BaseTypeDeclaration<M>
                 public bool Equals({{fullNameMaybeRef}} that)
                 {
                     {{(Scope.IsStruct ? "" : "if (((object?)that) == null) { return false; }\n        ")}}
-                    {{string.Join("\n", bsatnDecls.Select(decl => decl.Type_.GetHashCodeStatement(decl.Name, declEqualsName(decl))))}}
+                    {{string.Join("\n", bsatnDecls.Select(decl => decl.Type.EqualsStatement($"this.{decl.Name}", $"that.{decl.Name}", declEqualsName(decl))))}}
                     return {{JoinOrValue(
                         " &&\n        ",
                         bsatnDecls.Select(declEqualsName),

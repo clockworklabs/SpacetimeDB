@@ -115,10 +115,10 @@ partial struct TestTypeParams<T>  : System.IEquatable<TestTypeParams>, Spacetime
     }
   },
   {/*
-            (UnsupportedSystemType == null ? 0 : UnsupportedSystemType.GetHashCode()) ^
-            (UnresolvedType == null ? 0 : UnresolvedType.GetHashCode()) ^
-                                                         ^^^^^^^^^^^
-            UnsupportedEnum.GetHashCode();
+var hashUnsupportedSystemType = UnsupportedSystemType == null ? 0 : UnsupportedSystemType.GetHashCode();
+var hashUnresolvedType = UnresolvedType == null ? 0 : UnresolvedType.GetHashCode();
+                                                                     ^^^^^^^^^^^
+var hashUnsupportedEnum = UnsupportedEnum.GetHashCode();
 */
     Message: 'UnresolvedType' does not contain a definition for 'GetHashCode' and no accessible extension method 'GetHashCode' accepting a first argument of type 'UnresolvedType' could be found (are you missing a using directive or an assembly reference?),
     Severity: Error,
