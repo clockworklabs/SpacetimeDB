@@ -1519,7 +1519,7 @@ mod tests {
     }
 
     #[test]
-    fn test_lookup_queries_for_search_arg() -> ResultTest<()> {
+    fn test_search_args_for_selects() -> ResultTest<()> {
         let db = TestDB::durable()?;
 
         let table_id = create_table(&db, "t")?;
@@ -1577,6 +1577,75 @@ mod tests {
 
         assert!(hashes.len() == 1);
         assert!(hashes.contains(&&hash_for_5));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_search_args_for_join() -> ResultTest<()> {
+        let db = TestDB::durable()?;
+
+        let schema = [("id", AlgebraicType::U8), ("a", AlgebraicType::U8)];
+
+        let t_id = db.create_table_for_test("t", &schema, &[0.into()])?;
+        let s_id = db.create_table_for_test("s", &schema, &[0.into()])?;
+
+        let client = Arc::new(client(0));
+        let mut subscriptions = SubscriptionManager::default();
+
+        let plan = compile_plan(&db, "select t.* from t join s on t.id = s.id where s.a = 1")?;
+        let hash = plan.hash;
+
+        subscriptions.add_subscription_multi(client.clone(), vec![plan], QueryId::new(0))?;
+
+        // Do we need to evaluate the above join query for this table update?
+        // Yes, because the above query does not filter on `t`.
+        // Therefore we must evaluate it for any update on `t`.
+        let table_update = DatabaseTableUpdate {
+            table_id: t_id,
+            table_name: "t".into(),
+            inserts: [product![0u8, 0u8]].into(),
+            deletes: [].into(),
+        };
+
+        let hashes = subscriptions
+            .queries_for_table_update(&table_update)
+            .cloned()
+            .collect::<Vec<_>>();
+
+        assert_eq!(hashes, vec![hash]);
+
+        // Do we need to evaluate the above join query for this table update?
+        // Yes, because `s.a = 1`.
+        let table_update = DatabaseTableUpdate {
+            table_id: s_id,
+            table_name: "s".into(),
+            inserts: [product![0u8, 1u8]].into(),
+            deletes: [].into(),
+        };
+
+        let hashes = subscriptions
+            .queries_for_table_update(&table_update)
+            .cloned()
+            .collect::<Vec<_>>();
+
+        assert_eq!(hashes, vec![hash]);
+
+        // Do we need to evaluate the above join query for this table update?
+        // No, because `s.a != 1`.
+        let table_update = DatabaseTableUpdate {
+            table_id: s_id,
+            table_name: "s".into(),
+            inserts: [product![0u8, 2u8]].into(),
+            deletes: [].into(),
+        };
+
+        let hashes = subscriptions
+            .queries_for_table_update(&table_update)
+            .cloned()
+            .collect::<Vec<_>>();
+
+        assert!(hashes.is_empty());
 
         Ok(())
     }
