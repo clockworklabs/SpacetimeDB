@@ -204,28 +204,37 @@ impl_serialize!([] ValueWithType<'_, ProductValue>, (self, ser) => {
     }
     prod.end()
 });
-impl_serialize!([] ValueWithType<'_, ArrayValue>, (self, ser) => match (self.value(), &*self.ty().elem_ty) {
-    (ArrayValue::Sum(v), AlgebraicType::Sum(ty)) => self.with(ty, v).serialize(ser),
-    (ArrayValue::Product(v), AlgebraicType::Product(ty)) => self.with(ty, v).serialize(ser),
-    (ArrayValue::Bool(v), AlgebraicType::Bool) => v.serialize(ser),
-    (ArrayValue::I8(v), AlgebraicType::I8) => v.serialize(ser),
-    (ArrayValue::U8(v), AlgebraicType::U8) => v.serialize(ser),
-    (ArrayValue::I16(v), AlgebraicType::I16) => v.serialize(ser),
-    (ArrayValue::U16(v), AlgebraicType::U16) => v.serialize(ser),
-    (ArrayValue::I32(v), AlgebraicType::I32) => v.serialize(ser),
-    (ArrayValue::U32(v), AlgebraicType::U32) => v.serialize(ser),
-    (ArrayValue::I64(v), AlgebraicType::I64) => v.serialize(ser),
-    (ArrayValue::U64(v), AlgebraicType::U64) => v.serialize(ser),
-    (ArrayValue::I128(v), AlgebraicType::I128) => v.serialize(ser),
-    (ArrayValue::U128(v), AlgebraicType::U128) => v.serialize(ser),
-    (ArrayValue::I256(v), AlgebraicType::I256) => v.serialize(ser),
-    (ArrayValue::U256(v), AlgebraicType::U256) => v.serialize(ser),
-    (ArrayValue::F32(v), AlgebraicType::F32) => v.serialize(ser),
-    (ArrayValue::F64(v), AlgebraicType::F64) => v.serialize(ser),
-    (ArrayValue::String(v), AlgebraicType::String) => v.serialize(ser),
-    (ArrayValue::Array(v), AlgebraicType::Array(ty)) => self.with(ty, v).serialize(ser),
-    (val, _) if val.is_empty() => ser.serialize_array(0)?.end(),
-    (val, ty) => panic!("mismatched value and schema: {val:?} {ty:?}"),
+impl_serialize!([] ValueWithType<'_, ArrayValue>, (self, ser) => {
+    let mut ty = &*self.ty().elem_ty;
+    loop { // We're doing this because of `Ref`s.
+        break match (self.value(), ty) {
+            (_, &AlgebraicType::Ref(r)) => {
+                ty = &self.typespace()[r];
+                continue;
+            }
+            (ArrayValue::Sum(v), AlgebraicType::Sum(ty)) => self.with(ty, v).serialize(ser),
+            (ArrayValue::Product(v), AlgebraicType::Product(ty)) => self.with(ty, v).serialize(ser),
+            (ArrayValue::Bool(v), AlgebraicType::Bool) => v.serialize(ser),
+            (ArrayValue::I8(v), AlgebraicType::I8) => v.serialize(ser),
+            (ArrayValue::U8(v), AlgebraicType::U8) => v.serialize(ser),
+            (ArrayValue::I16(v), AlgebraicType::I16) => v.serialize(ser),
+            (ArrayValue::U16(v), AlgebraicType::U16) => v.serialize(ser),
+            (ArrayValue::I32(v), AlgebraicType::I32) => v.serialize(ser),
+            (ArrayValue::U32(v), AlgebraicType::U32) => v.serialize(ser),
+            (ArrayValue::I64(v), AlgebraicType::I64) => v.serialize(ser),
+            (ArrayValue::U64(v), AlgebraicType::U64) => v.serialize(ser),
+            (ArrayValue::I128(v), AlgebraicType::I128) => v.serialize(ser),
+            (ArrayValue::U128(v), AlgebraicType::U128) => v.serialize(ser),
+            (ArrayValue::I256(v), AlgebraicType::I256) => v.serialize(ser),
+            (ArrayValue::U256(v), AlgebraicType::U256) => v.serialize(ser),
+            (ArrayValue::F32(v), AlgebraicType::F32) => v.serialize(ser),
+            (ArrayValue::F64(v), AlgebraicType::F64) => v.serialize(ser),
+            (ArrayValue::String(v), AlgebraicType::String) => v.serialize(ser),
+            (ArrayValue::Array(v), AlgebraicType::Array(ty)) => self.with(ty, v).serialize(ser),
+            (val, _) if val.is_empty() => ser.serialize_array(0)?.end(),
+            (val, ty) => panic!("mismatched value and schema: {val:?} {ty:?}"),
+        }
+    }
 });
 
 impl_serialize!([] spacetimedb_primitives::TableId, (self, ser) => ser.serialize_u32(self.0));
