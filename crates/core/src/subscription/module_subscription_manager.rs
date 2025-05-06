@@ -621,7 +621,7 @@ impl SubscriptionManager {
     }
 
     // Update the mapping from table id to related queries by inserting the given query.
-    // If this query has search arguments, that mapping is updated instead.
+    // Also add any search arguments the query may have.
     // This takes a ref to the table map instead of `self` to avoid borrowing issues.
     fn insert_query(
         tables: &mut IntMap<TableId, HashSet<QueryHash>>,
@@ -636,6 +636,8 @@ impl SubscriptionManager {
                 table_ids.remove(&table_id);
                 search_args.insert_query(table_id, col_id, arg, hash);
             }
+            // Update the `tables` map if this query reads from a table,
+            // but does not have a search argument for that table.
             for table_id in table_ids {
                 tables.entry(table_id).or_default().insert(hash);
             }
