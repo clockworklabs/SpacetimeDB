@@ -235,7 +235,7 @@ mod tests {
         fn pv_row_ref_hash_same_std_random_state((ty, val) in generate_typed_row()) {
             // Turn `val` into a `RowRef`.
             let mut table = crate::table::test::table(ty);
-            let pool = &PagePool::default();
+            let pool = &PagePool::new_for_test();
             let blob_store = &mut HashMapBlobStore::default();
             let (_, row) = table.insert(pool, blob_store, &val).unwrap();
 
@@ -247,7 +247,7 @@ mod tests {
         #[test]
         fn pv_row_ref_hash_same_ahash((ty, val) in generate_typed_row()) {
             // Turn `val` into a `RowRef`.
-            let pool = &PagePool::default();
+            let pool = &PagePool::new_for_test();
             let blob_store = &mut HashMapBlobStore::default();
             let mut table = crate::table::test::table(ty);
             let (_, row) = table.insert(pool, blob_store, &val).unwrap();

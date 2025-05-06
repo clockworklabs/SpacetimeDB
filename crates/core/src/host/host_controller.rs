@@ -972,7 +972,7 @@ pub async fn extract_schema(program_bytes: Box<[u8]>, host_type: HostType) -> an
     };
 
     let runtimes = HostRuntimes::new(None);
-    let page_pool = PagePool::default();
+    let page_pool = PagePool::new(None);
     let module_info = Host::try_init_in_memory_to_check(&runtimes, page_pool, database, program).await?;
     let module_info = Arc::into_inner(module_info).unwrap();
 

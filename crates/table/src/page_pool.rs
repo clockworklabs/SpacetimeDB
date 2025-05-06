@@ -22,14 +22,11 @@ impl MemoryUsage for PagePool {
     }
 }
 
-/// The default page pool has a size of 8 GiB.
-impl Default for PagePool {
-    fn default() -> Self {
+impl PagePool {
+    pub fn new_for_test() -> Self {
         Self::new(None)
     }
-}
 
-impl PagePool {
     /// Returns a new page pool with `max_size` bytes rounded down to the nearest multiple of 64 KiB.
     ///
     /// if no size is provided, a default of 8 GiB is used.
@@ -163,18 +160,6 @@ impl MemoryUsage for PagePoolInner {
     }
 }
 
-impl Default for PagePoolInner {
-    fn default() -> Self {
-        const MAX_PAGE_MEM: usize = 8 * (1 << 30); // 8 GiB
-
-        // 2 ^ 17 pages at most.
-        // Each slot in the pool is `(AtomicCell, Box<Page>)` which takes up 16 bytes.
-        // The pool will therefore have a fixed cost of 2^20 bytes, i.e., 2 MiB.
-        const MAX_POOLED_PAGES: usize = MAX_PAGE_MEM / size_of::<Page>();
-        Self::new(MAX_POOLED_PAGES)
-    }
-}
-
 #[inline]
 fn inc(atomic: &AtomicUsize) {
     atomic.fetch_add(1, Ordering::Relaxed);
@@ -246,7 +231,7 @@ mod tests {
 
     #[test]
     fn page_pool_returns_same_page() {
-        let pool = PagePool::default();
+        let pool = PagePool::new_for_test();
         assert_metrics(&pool, 0, 0, 0, 0);
 
         // Create a page and put it back.
