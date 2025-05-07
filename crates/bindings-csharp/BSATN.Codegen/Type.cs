@@ -82,9 +82,9 @@ public abstract record TypeUse(string Name, string BSATNName)
 
     /// <summary>
     /// Get a statement that declares outVar and assigns (inVar1 logically-equals inVar2) to it.
-    /// logically-equals is:
-    /// - the same as to SequenceEquals for arrays and lists
-    /// - otherwise, just .Equals.
+    /// logically-equals:
+    /// - recursively compares lists and arrays by sequence equality.
+    /// - is the same as .Equals( ) for everything else.
     ///
     /// This can't be an expression because some types need to use loops.
     /// </summary>
