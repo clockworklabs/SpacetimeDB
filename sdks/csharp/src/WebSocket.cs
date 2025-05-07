@@ -217,6 +217,7 @@ namespace SpacetimeDB
                     + "4. The auth token is malformed (400 BAD REQUEST).\n"
                     + "5. You are not authorized (401 UNAUTHORIZED).\n\n"
                     + "Did you forget to start the server or publish your module?\n\n"
+                    + "In Unity, you may also need to Edit -> Clear All PlayerPrefs.\n\n"
                     + "Here are some values that might help you debug:\n"
                     + $"Message: {ex.Message}\n"
                     + $"WebSocketErrorCode: {ex.WebSocketErrorCode}\n"
