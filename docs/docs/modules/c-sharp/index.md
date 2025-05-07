@@ -480,7 +480,7 @@ public static partial class Module {
     [Reducer]
     void Demo(ReducerContext ctx) {
         var idIndex = ctx.Db.user.Id;
-        var exampleUser = idIndex.Find(357);
+        var exampleUser = idIndex.Find(357).Value;
         exampleUser.DogCount += 5;
         idIndex.Update(exampleUser);
 
