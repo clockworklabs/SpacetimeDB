@@ -2538,23 +2538,15 @@ fn exec_indexed_simple_enum() {
 ///
 /// A simple reproducer is available at [https://github.com/lavirlifiliol/spacetime-repro].
 fn exec_overlapping_subscriptions() {
-    let test_counter = TestCounter::new();
+    // First, a bit of setup: insert the row `{ n: 1, data: 0 }`,
+    // and wait for it to be present.
+    let setup_counter = TestCounter::new();
 
-    let subscribe_result = test_counter.add_test("subscribe_with_row_present");
+    let call_insert_result = setup_counter.add_test("call_insert_reducer");
+    let mut row_inserted = Some(setup_counter.add_test("insert_reducer_done"));
 
-    let call_update_result = test_counter.add_test("call_update_reducer");
-
-    let mut update_result = Some(test_counter.add_test("update_row"));
-
-    connect_then(&test_counter, move |ctx| {
-        // First, a bit of setup: insert the row `{ n: 1, data: 0 }`,
-        // and wait for it to be present.
-        let setup_counter = TestCounter::new();
-
-        let call_insert_result = setup_counter.add_test("call_insert_reducer");
-        let mut row_inserted = Some(setup_counter.add_test("insert_reducer_done"));
-
-        let callback_id = ctx.reducers.on_insert_pk_u_8(move |ctx, _n, _data| {
+    let conn = connect_then(&setup_counter, move |ctx| {
+        ctx.reducers.on_insert_pk_u_8(move |ctx, _n, _data| {
             (row_inserted.take().unwrap())(match &ctx.event.status {
                 Status::Committed => Ok(()),
                 s @ (Status::Failed(_) | Status::OutOfEnergy) => {
@@ -2564,47 +2556,53 @@ fn exec_overlapping_subscriptions() {
         });
 
         call_insert_result(ctx.reducers.insert_pk_u_8(1, 0).map_err(|e| e.into()));
-
-        setup_counter.wait_for_all();
-
-        ctx.reducers.remove_on_insert_pk_u_8(callback_id);
-
-        // Now, subscribe to two queries which each match that row.
-        subscribe_these_then(
-            ctx,
-            &["select * from PkU8 where n < 100", "select * from PkU8 where n > 0"],
-            move |ctx| {
-                // It's not exposed to users of the SDK, so we won't assert on it,
-                // but we expect the row to have multiplicity 2.
-                subscribe_result(if ctx.db.pk_u_8().count() == 1 {
-                    Ok(())
-                } else {
-                    Err(anyhow::anyhow!(
-                        "Expected one row for PkU8 but found {}",
-                        ctx.db.pk_u_8().count()
-                    ))
-                });
-
-                // Once the row is in the cache, update it by replacing it with `{ n: 1, data: 1 }`.
-                ctx.db.pk_u_8().on_update(move |ctx, old, new| {
-                    // It's not exposed, so no assert,
-                    // but we expect to have received two deletes for the old row,
-                    // and two inserts for the new row.
-                    // The SDK will combine all of these into a single update event.
-                    (update_result.take().unwrap())((|| {
-                        anyhow::ensure!(old.n == new.n);
-                        anyhow::ensure!(old.n == 1);
-                        anyhow::ensure!(old.data == 0);
-                        anyhow::ensure!(new.data == 1);
-                        anyhow::ensure!(ctx.db.pk_u_8().count() == 1);
-                        Ok(())
-                    })())
-                });
-
-                call_update_result(ctx.reducers.update_pk_u_8(1, 1).map_err(|e| e.into()));
-            },
-        )
     });
+
+    setup_counter.wait_for_all();
+
+    let test_counter = TestCounter::new();
+
+    let subscribe_result = test_counter.add_test("subscribe_with_row_present");
+
+    let call_update_result = test_counter.add_test("call_update_reducer");
+
+    let mut update_result = Some(test_counter.add_test("update_row"));
+
+    // Now, subscribe to two queries which each match that row.
+    subscribe_these_then(
+        &conn,
+        &["select * from pk_u8 where n < 100", "select * from pk_u8 where n > 0"],
+        move |ctx| {
+            // It's not exposed to users of the SDK, so we won't assert on it,
+            // but we expect the row to have multiplicity 2.
+            subscribe_result(if ctx.db.pk_u_8().count() == 1 {
+                Ok(())
+            } else {
+                Err(anyhow::anyhow!(
+                    "Expected one row for PkU8 but found {}",
+                    ctx.db.pk_u_8().count()
+                ))
+            });
+        },
+    );
+
+    // Once the row is in the cache, update it by replacing it with `{ n: 1, data: 1 }`.
+    conn.db.pk_u_8().on_update(move |ctx, old, new| {
+        // It's not exposed, so no assert,
+        // but we expect to have received two deletes for the old row,
+        // and two inserts for the new row.
+        // The SDK will combine all of these into a single update event.
+        (update_result.take().unwrap())((|| {
+            anyhow::ensure!(old.n == new.n);
+            anyhow::ensure!(old.n == 1);
+            anyhow::ensure!(old.data == 0);
+            anyhow::ensure!(new.data == 1);
+            anyhow::ensure!(ctx.db.pk_u_8().count() == 1);
+            Ok(())
+        })())
+    });
+
+    call_update_result(conn.reducers.update_pk_u_8(1, 1).map_err(|e| e.into()));
 
     test_counter.wait_for_all();
 }
