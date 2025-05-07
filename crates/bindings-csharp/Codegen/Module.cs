@@ -169,13 +169,18 @@ record TableView
             try
             {
                 Scheduled = new(reducer, scheduledAtIndex);
-                if (table.GetPrimaryKey(this) is not { } pk || table.Members[pk].Type.Name != "ulong")
+                if (
+                    table.GetPrimaryKey(this) is not { } pk
+                    || table.Members[pk].Type.Name != "ulong"
+                )
                 {
                     throw new InvalidOperationException(
                         $"{Name} is a scheduled table but doesn't have a primary key of type `ulong`."
                     );
                 }
-                if (table.Members[Scheduled.ScheduledAtColumn].Type.Name != "SpacetimeDB.ScheduleAt")
+                if (
+                    table.Members[Scheduled.ScheduledAtColumn].Type.Name != "SpacetimeDB.ScheduleAt"
+                )
                 {
                     throw new InvalidOperationException(
                         $"{Name}.{attr.ScheduledAt} is marked with `ScheduledAt`, but doesn't have the expected type `SpacetimeDB.ScheduleAt`."
@@ -227,8 +232,7 @@ record ViewIndex
             ImmutableArray.Create(col),
             null,
             ViewIndexType.BTree // this might become hash in the future
-        )
-    { }
+        ) { }
 
     private ViewIndex(Index.BTreeAttribute attr, ImmutableArray<ColumnRef> columns)
         : this(attr.Name, columns, attr.Table, ViewIndexType.BTree) { }

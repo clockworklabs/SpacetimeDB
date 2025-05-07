@@ -298,7 +298,7 @@ public static partial class BSATNRuntimeTests
     )> GenTwoBasic = Gen.Select(GenBasic, GenBasic, (c1, c2) => (c1, c2));
 
     /// <summary>
-    /// Count collisions when comparing hashcodes of non-equal structures. 
+    /// Count collisions when comparing hashcodes of non-equal structures.
     /// </summary>
     struct CollisionCounter
     {
@@ -321,7 +321,10 @@ public static partial class BSATNRuntimeTests
 
         public void AssertCollisionsLessThan(double fraction)
         {
-            Assert.True(CollisionFraction < fraction, $"Expected {fraction} portion of collisions, but got {CollisionFraction} = {Collisions} / {Comparisons}");
+            Assert.True(
+                CollisionFraction < fraction,
+                $"Expected {fraction} portion of collisions, but got {CollisionFraction} = {Collisions} / {Comparisons}"
+            );
         }
     }
 
@@ -405,8 +408,7 @@ public static partial class BSATNRuntimeTests
             BasicDataClass U,
             BasicDataStruct V,
             BasicDataRecord W
-        )>
-    { }
+        )> { }
 
     static readonly Gen<BasicEnum> GenBasicEnum = Gen.SelectMany<int, BasicEnum>(
         Gen.Int[0, 7],
@@ -429,7 +431,6 @@ public static partial class BSATNRuntimeTests
         GenBasicEnum,
         (e1, e2) => (e1, e2)
     );
-
 
     [Fact]
     public static void GeneratedSumEqualsWorks()
@@ -475,7 +476,6 @@ public static partial class BSATNRuntimeTests
         collisionCounter.AssertCollisionsLessThan(0.05);
     }
 
-
     [Type]
     public partial class ContainsList
     {
@@ -489,14 +489,16 @@ public static partial class BSATNRuntimeTests
         }
     }
 
-
-    static readonly Gen<ContainsList> GenContainsList = GenBasicEnum.Null().List[0, 2].Null().Select(list => new ContainsList(list));
+    static readonly Gen<ContainsList> GenContainsList = GenBasicEnum
+        .Null()
+        .List[0, 2]
+        .Null()
+        .Select(list => new ContainsList(list));
     static readonly Gen<(ContainsList e1, ContainsList e2)> GenTwoContainsList = Gen.Select(
         GenContainsList,
         GenContainsList,
         (e1, e2) => (e1, e2)
     );
-
 
     [Fact]
     public static void GeneratedListEqualsWorks()
@@ -505,9 +507,14 @@ public static partial class BSATNRuntimeTests
         GenTwoContainsList.Sample(
             example =>
             {
-                var equal = example.e1.TheList == null ?
-                    example.e2.TheList == null :
-                    (example.e2.TheList == null ? false : example.e1.TheList.SequenceEqual(example.e2.TheList));
+                var equal =
+                    example.e1.TheList == null
+                        ? example.e2.TheList == null
+                        : (
+                            example.e2.TheList == null
+                                ? false
+                                : example.e1.TheList.SequenceEqual(example.e2.TheList)
+                        );
 
                 if (equal)
                 {
@@ -544,26 +551,30 @@ public static partial class BSATNRuntimeTests
         }
     }
 #pragma warning disable CS8620 // Argument cannot be used for parameter due to differences in the nullability of reference types.
-    static readonly Gen<ContainsNestedList> GenContainsNestedList = GenBasicEnum.Null().Array[0, 2].Null().Array[0, 2].Null().List[0, 2].Select(list => new ContainsNestedList(list));
+    static readonly Gen<ContainsNestedList> GenContainsNestedList = GenBasicEnum
+        .Null()
+        .Array[0, 2]
+        .Null()
+        .Array[0, 2]
+        .Null()
+        .List[0, 2]
+        .Select(list => new ContainsNestedList(list));
 #pragma warning restore CS8620 // Argument cannot be used for parameter due to differences in the nullability of reference types.
 
-    static readonly Gen<(ContainsNestedList e1, ContainsNestedList e2)> GenTwoContainsNestedList = Gen.Select(
-        GenContainsNestedList,
-        GenContainsNestedList,
-        (e1, e2) => (e1, e2)
-    );
+    static readonly Gen<(ContainsNestedList e1, ContainsNestedList e2)> GenTwoContainsNestedList =
+        Gen.Select(GenContainsNestedList, GenContainsNestedList, (e1, e2) => (e1, e2));
 
     class EnumerableEqualityComparer<T> : EqualityComparer<IEnumerable<T>>
     {
         private readonly EqualityComparer<T> EqualityComparer;
+
         public EnumerableEqualityComparer(EqualityComparer<T> equalityComparer)
         {
             EqualityComparer = equalityComparer;
         }
 
-        public override bool Equals(IEnumerable<T>? x, IEnumerable<T>? y) => x == null ?
-            y == null :
-            (y == null ? false : x.SequenceEqual(y, EqualityComparer));
+        public override bool Equals(IEnumerable<T>? x, IEnumerable<T>? y) =>
+            x == null ? y == null : (y == null ? false : x.SequenceEqual(y, EqualityComparer));
 
         public override int GetHashCode([DisallowNull] IEnumerable<T> obj)
         {
@@ -584,9 +595,7 @@ public static partial class BSATNRuntimeTests
     {
         var equalityComparer = new EnumerableEqualityComparer<IEnumerable<IEnumerable<BasicEnum>>>(
             new EnumerableEqualityComparer<IEnumerable<BasicEnum>>(
-                new EnumerableEqualityComparer<BasicEnum>(
-                    EqualityComparer<BasicEnum>.Default
-                )
+                new EnumerableEqualityComparer<BasicEnum>(EqualityComparer<BasicEnum>.Default)
             )
         );
         CollisionCounter collisionCounter = new();
@@ -616,7 +625,6 @@ public static partial class BSATNRuntimeTests
         );
         collisionCounter.AssertCollisionsLessThan(0.05);
     }
-
 
     [Fact]
     public static void GeneratedToString()
@@ -689,13 +697,15 @@ public static partial class BSATNRuntimeTests
 #pragma warning disable CS8625 // Cannot convert null literal to non-nullable reference type.
         Assert.Equal(
             "ContainsNestedList { TheList = [ [ [ X(1), null ], null ], null ] }",
-            new ContainsNestedList([
+            new ContainsNestedList(
                 [
-                    [ new BasicEnum.X(1), null ],
+                    [
+                        [new BasicEnum.X(1), null],
+                        null,
+                    ],
                     null,
-                ],
-                null,
-            ]).ToString()
+                ]
+            ).ToString()
         );
 #pragma warning restore CS8625 // Cannot convert null literal to non-nullable reference type.
     }
