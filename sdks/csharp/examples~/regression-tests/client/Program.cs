@@ -39,13 +39,23 @@ DbConnection ConnectToDB()
 
 uint waiting = 0;
 bool applied = false;
-SubscriptionHandle? handle = null;
+SubscriptionHandle? handle1 = null;
+SubscriptionHandle? handle2 = null;
 
 void OnConnected(DbConnection conn, Identity identity, string authToken)
 {
-    Log.Debug($"Connected to {DBNAME} on {HOST}");
-    handle = conn.SubscriptionBuilder()
-        .OnApplied(OnSubscriptionApplied)
+    Log.Info($"Connected to {DBNAME} on {HOST}");
+    handle1 = conn.SubscriptionBuilder()
+        .OnApplied((ctx) =>
+        {
+            handle2 = conn.SubscriptionBuilder()
+               .OnApplied(OnSubscriptionApplied)
+               .OnError((ctx, err) =>
+               {
+                   throw err;
+               })
+               .Subscribe(["SELECT * FROM ExampleData"]);
+        })
         .OnError((ctx, err) =>
         {
             throw err;
@@ -80,10 +90,28 @@ const uint MAX_ID = 10;
 // This used to fail, when row types did not correctly implement IEquatable.
 void ValidateBTreeIndexes(IRemoteDbContext conn)
 {
-    Log.Debug("Checking indexes...");
+    Log.Info("Checking indexes...");
+
+    Log.Info($"Iter:");
     foreach (var data in conn.Db.ExampleData.Iter())
     {
-        Debug.Assert(conn.Db.ExampleData.Indexed.Filter(data.Id).Contains(data));
+        Log.Info($"   {data}");
+    }
+    for (uint i = 0; i < MAX_ID; i++)
+    {
+        if (conn.Db.ExampleData.Indexed.Filter(i).Any())
+        {
+            Log.Info($"Filter({i}):");
+            foreach (var data in conn.Db.ExampleData.Indexed.Filter(i))
+            {
+                Log.Info($"   {data}");
+            }
+        }
+    }
+
+    foreach (var data in conn.Db.ExampleData.Iter())
+    {
+        Debug.Assert(conn.Db.ExampleData.Indexed.Filter(data.Indexed).Contains(data));
     }
     var outOfIndex = conn.Db.ExampleData.Iter().ToHashSet();
 
@@ -94,7 +122,7 @@ void ValidateBTreeIndexes(IRemoteDbContext conn)
             Debug.Assert(outOfIndex.Contains(data));
         }
     }
-    Log.Debug("   Indexes are good.");
+    Log.Info("   Indexes are good.");
 }
 
 void OnSubscriptionApplied(SubscriptionEventContext context)
@@ -103,30 +131,68 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
 
     // Do some operations that alter row state;
     // we will check that everything is in sync in the callbacks for these reducer calls.
-    Log.Debug("Calling Add");
+    Log.Info("Calling Add");
+    waiting++;
+    context.Reducers.Add(3, 1);
+
+    Log.Info("Calling Add");
     waiting++;
     context.Reducers.Add(1, 1);
 
-    Log.Debug("Calling Delete");
+    Log.Info("Calling Delete");
     waiting++;
     context.Reducers.Delete(1);
 
-    Log.Debug("Calling Add");
+    Log.Info("Calling Add");
     waiting++;
     context.Reducers.Add(1, 1);
 
-    Log.Debug("Calling ThrowError");
+    Log.Info("Calling Add");
+    waiting++;
+    context.Reducers.Add(2, 1);
+
+    Log.Info("Calling Delete");
+    waiting++;
+    context.Reducers.Delete(2);
+
+    Log.Info("Calling ThrowError");
     waiting++;
     context.Reducers.ThrowError("this is an error");
 
     // Now unsubscribe and check that the unsubscribe is actually applied.
-    Log.Debug("Calling Unsubscribe");
+    Log.Info("Calling Unsubscribe");
     waiting++;
-    handle?.UnsubscribeThen((ctx) =>
+    handle1?.UnsubscribeThen((ctx) =>
     {
-        Log.Debug("Received Unsubscribe");
-        ValidateBTreeIndexes(ctx);
-        waiting--;
+        Log.Info("Calling Add");
+        waiting++;
+        context.Reducers.Add(1, 1);
+
+        Log.Info("Calling Delete");
+        waiting++;
+        context.Reducers.Delete(1);
+
+        Log.Info("Calling Add");
+        waiting++;
+        context.Reducers.Add(1, 1);
+
+        Log.Info("Calling Add");
+        waiting++;
+        context.Reducers.Add(2, 1);
+
+        Log.Info("Calling Delete");
+        waiting++;
+        context.Reducers.Delete(2);
+
+        Log.Info("Calling ThrowError");
+        waiting++;
+        context.Reducers.ThrowError("this is an error");
+        handle2?.UnsubscribeThen((ctx) =>
+        {
+            Log.Info("Received Unsubscribe");
+            ValidateBTreeIndexes(ctx);
+            waiting--;
+        });
     });
 }
 
