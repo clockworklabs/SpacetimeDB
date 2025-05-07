@@ -8,15 +8,15 @@ using static Utils;
 
 /// <summary>
 /// The type of a member of one of the types we are generating code for.
-/// 
+///
 /// Knows how to serialize and deserialize the member.
-/// 
+///
 /// Also knows how to compare the member for equality and compute its hash code.
 /// We can't just use Equals and GetHashCode for this, because they implement reference
 /// equality for arrays and Lists.
-/// 
+///
 /// (It would be nice to be able to dynamically build EqualityComparers at runtime
-/// to do these operations, but this seems to require either (A) reflective calls 
+/// to do these operations, but this seems to require either (A) reflective calls
 /// or (B) instantiating generics at runtime. These are (A) slow and (B) very slow
 /// when compiling under IL2CPP. Instead, we just inline the needed loops to compute
 /// the relevant values. This is very simple for IL2CPP to optimize.
@@ -25,10 +25,7 @@ using static Utils;
 /// </summary>
 /// <param name="Name">The name of the type</param>
 /// <param name="BSATNName">The name of the BSATN struct for the type.</param>
-public abstract record TypeUse(
-    string Name,
-    string BSATNName
-)
+public abstract record TypeUse(string Name, string BSATNName)
 {
     /// <summary>
     /// Parse a type use for a member.
@@ -63,13 +60,21 @@ public abstract record TypeUse(
         return typeSymbol switch
         {
             ITypeParameterSymbol => new ReferenceUse(type, typeInfo),
-            IArrayTypeSymbol { ElementType: var elementType } => new ArrayUse(type, typeInfo, Parse(member, elementType, diag)),
+            IArrayTypeSymbol { ElementType: var elementType } => new ArrayUse(
+                type,
+                typeInfo,
+                Parse(member, elementType, diag)
+            ),
             INamedTypeSymbol named => named.OriginalDefinition.ToString() switch
             {
-                "System.Collections.Generic.List<T>" => new ListUse(type, typeInfo, Parse(member, named.TypeArguments[0], diag)),
-                _ => named.IsValueType ?
-                    new ValueUse(type, typeInfo) :
-                    new ReferenceUse(type, typeInfo)
+                "System.Collections.Generic.List<T>" => new ListUse(
+                    type,
+                    typeInfo,
+                    Parse(member, named.TypeArguments[0], diag)
+                ),
+                _ => named.IsValueType
+                    ? new ValueUse(type, typeInfo)
+                    : new ReferenceUse(type, typeInfo),
             },
             _ => throw new InvalidOperationException($"Unsupported type {type}"),
         };
@@ -80,7 +85,7 @@ public abstract record TypeUse(
     /// logically-equals is:
     /// - the same as to SequenceEquals for arrays and lists
     /// - otherwise, just .Equals.
-    /// 
+    ///
     /// This can't be an expression because some types need to use loops.
     /// </summary>
     /// <param name="inVar1">A variable of type `Type` that we want to hash.</param>
@@ -88,10 +93,16 @@ public abstract record TypeUse(
     /// <param name="outVar">The variable to declare and store the `Equals` bool in.</param>
     /// <param name="level">Iteration level counter. You don't need to set this.</param>
     /// <returns></returns>
-    public abstract string EqualsStatement(string inVar1, string inVar2, string outVar, int level = 0);
+    public abstract string EqualsStatement(
+        string inVar1,
+        string inVar2,
+        string outVar,
+        int level = 0
+    );
+
     /// <summary>
     /// Get a statement that declares outVar and assigns assigns the hash code of inVar to it.
-    /// 
+    ///
     /// This can't be an expression because some types need to use loops.
     /// </summary>
     /// <param name="inVar">A variable of type `Type` that we want to hash.</param>
@@ -101,7 +112,6 @@ public abstract record TypeUse(
     public abstract string GetHashCodeStatement(string inVar, string outVar, int level = 0);
 }
 
-
 /// <summary>
 /// A use of a value type.
 /// </summary>
@@ -109,8 +119,13 @@ public abstract record TypeUse(
 /// <param name="TypeInfo"></param>
 public record ValueUse(string Type, string TypeInfo) : TypeUse(Type, TypeInfo)
 {
-    public override string EqualsStatement(string inVar1, string inVar2, string outVar, int level = 0) =>
-        $"var {outVar} = {inVar1}.Equals({inVar2});";
+    public override string EqualsStatement(
+        string inVar1,
+        string inVar2,
+        string outVar,
+        int level = 0
+    ) => $"var {outVar} = {inVar1}.Equals({inVar2});";
+
     public override string GetHashCodeStatement(string inVar, string outVar, int level = 0) =>
         $"var {outVar} = {inVar}.GetHashCode();";
 }
@@ -122,8 +137,13 @@ public record ValueUse(string Type, string TypeInfo) : TypeUse(Type, TypeInfo)
 /// <param name="TypeInfo"></param>
 public record ReferenceUse(string Type, string TypeInfo) : TypeUse(Type, TypeInfo)
 {
-    public override string EqualsStatement(string inVar1, string inVar2, string outVar, int level = 0) =>
-        $"var {outVar} = {inVar1} == null ? {inVar2} == null : {inVar1}.Equals({inVar2});";
+    public override string EqualsStatement(
+        string inVar1,
+        string inVar2,
+        string outVar,
+        int level = 0
+    ) => $"var {outVar} = {inVar1} == null ? {inVar2} == null : {inVar1}.Equals({inVar2});";
+
     public override string GetHashCodeStatement(string inVar, string outVar, int level = 0) =>
         $"var {outVar} = {inVar} == null ? 0 : {inVar}.GetHashCode();";
 }
@@ -136,27 +156,37 @@ public record ReferenceUse(string Type, string TypeInfo) : TypeUse(Type, TypeInf
 /// <param name="ElementType"></param>
 public record ArrayUse(string Type, string TypeInfo, TypeUse ElementType) : TypeUse(Type, TypeInfo)
 {
-    public override string EqualsStatement(string inVar1, string inVar2, string outVar, int level = 0)
+    public override string EqualsStatement(
+        string inVar1,
+        string inVar2,
+        string outVar,
+        int level = 0
+    )
     {
         var iterVar = $"i{level}";
         var innerOutVar = $"{outVar}{level + 1}";
 
         return $$"""
-        var {{outVar}} = true;
-        if ({{inVar1}} == null || {{inVar2}} == null) {
-            {{outVar}} = {{inVar1}} == {{inVar2}};
-        } else if ({{inVar1}}.Length != {{inVar2}}.Length) {
-            {{outVar}} = false;
-        } else {
-            for (int {{iterVar}} = 0; {{iterVar}} < {{inVar1}}.Length; {{iterVar}}++) {
-                {{ElementType.EqualsStatement($"{inVar1}[{iterVar}]", $"{inVar2}[{iterVar}]", innerOutVar, level + 1)}}
-                if (!{{innerOutVar}}) {
-                    {{outVar}} = false;
-                    break;
+            var {{outVar}} = true;
+            if ({{inVar1}} == null || {{inVar2}} == null) {
+                {{outVar}} = {{inVar1}} == {{inVar2}};
+            } else if ({{inVar1}}.Length != {{inVar2}}.Length) {
+                {{outVar}} = false;
+            } else {
+                for (int {{iterVar}} = 0; {{iterVar}} < {{inVar1}}.Length; {{iterVar}}++) {
+                    {{ElementType.EqualsStatement(
+                $"{inVar1}[{iterVar}]",
+                $"{inVar2}[{iterVar}]",
+                innerOutVar,
+                level + 1
+            )}}
+                    if (!{{innerOutVar}}) {
+                        {{outVar}} = false;
+                        break;
+                    }
                 }
             }
-        }
-        """;
+            """;
     }
 
     public override string GetHashCodeStatement(string inVar, string outVar, int level = 0)
@@ -166,16 +196,20 @@ public record ArrayUse(string Type, string TypeInfo, TypeUse ElementType) : Type
         var innerOutVar = $"{outVar}{level + 1}";
 
         return $$"""
-        var {{outVar}} = 0;
-        if ({{inVar}} != null) {
-            var {{innerHashCode}} = new System.HashCode();
-            for (int {{iterVar}} = 0; {{iterVar}} < {{inVar}}.Length; {{iterVar}}++) {
-                {{ElementType.GetHashCodeStatement($"{inVar}[{iterVar}]", innerOutVar, level + 1)}}
-                {{innerHashCode}}.Add({{innerOutVar}});
+            var {{outVar}} = 0;
+            if ({{inVar}} != null) {
+                var {{innerHashCode}} = new System.HashCode();
+                for (int {{iterVar}} = 0; {{iterVar}} < {{inVar}}.Length; {{iterVar}}++) {
+                    {{ElementType.GetHashCodeStatement(
+                $"{inVar}[{iterVar}]",
+                innerOutVar,
+                level + 1
+            )}}
+                    {{innerHashCode}}.Add({{innerOutVar}});
+                }
+                {{outVar}} = {{innerHashCode}}.ToHashCode();
             }
-            {{outVar}} = {{innerHashCode}}.ToHashCode();
-        }
-        """;
+            """;
     }
 }
 
@@ -187,7 +221,12 @@ public record ArrayUse(string Type, string TypeInfo, TypeUse ElementType) : Type
 /// <param name="ElementType"></param>
 public record ListUse(string Type, string TypeInfo, TypeUse ElementType) : TypeUse(Type, TypeInfo)
 {
-    public override string EqualsStatement(string inVar1, string inVar2, string outVar, int level = 0)
+    public override string EqualsStatement(
+        string inVar1,
+        string inVar2,
+        string outVar,
+        int level = 0
+    )
     {
         var iterVar = $"i{level}";
         // needed to avoid warnings on list re-reference.
@@ -196,23 +235,23 @@ public record ListUse(string Type, string TypeInfo, TypeUse ElementType) : TypeU
         var innerOutVar = $"{outVar}{level + 1}";
 
         return $$"""
-        var {{outVar}} = true;
-        if ({{inVar1}} == null || {{inVar2}} == null) {
-            {{outVar}} = {{inVar1}} == {{inVar2}};
-        } else if ({{inVar1}}.Count != {{inVar2}}.Count) {
-            {{outVar}} = false;
-        } else {
-            for (int {{iterVar}} = 0; {{iterVar}} < {{inVar1}}.Count; {{iterVar}}++) {
-                var {{innerTmp1}} = {{inVar1}}[{{iterVar}}];
-                var {{innerTmp2}} = {{inVar2}}[{{iterVar}}];
-                {{ElementType.EqualsStatement(innerTmp1, innerTmp2, innerOutVar, level + 1)}}
-                if (!{{innerOutVar}}) {
-                    {{outVar}} = false;
-                    break;
+            var {{outVar}} = true;
+            if ({{inVar1}} == null || {{inVar2}} == null) {
+                {{outVar}} = {{inVar1}} == {{inVar2}};
+            } else if ({{inVar1}}.Count != {{inVar2}}.Count) {
+                {{outVar}} = false;
+            } else {
+                for (int {{iterVar}} = 0; {{iterVar}} < {{inVar1}}.Count; {{iterVar}}++) {
+                    var {{innerTmp1}} = {{inVar1}}[{{iterVar}}];
+                    var {{innerTmp2}} = {{inVar2}}[{{iterVar}}];
+                    {{ElementType.EqualsStatement(innerTmp1, innerTmp2, innerOutVar, level + 1)}}
+                    if (!{{innerOutVar}}) {
+                        {{outVar}} = false;
+                        break;
+                    }
                 }
             }
-        }
-        """;
+            """;
     }
 
     public override string GetHashCodeStatement(string inVar, string outVar, int level = 0)
@@ -223,17 +262,17 @@ public record ListUse(string Type, string TypeInfo, TypeUse ElementType) : TypeU
         var innerOutVar = $"{outVar}{level + 1}";
 
         return $$"""
-        var {{outVar}} = 0;
-        if ({{inVar}} != null) {
-            var {{innerHashCode}} = new System.HashCode();
-            for (int {{iterVar}} = 0; {{iterVar}} < {{inVar}}.Count; {{iterVar}}++) {
-                var {{innerTmp}} = {{inVar}}[{{iterVar}}];
-                {{ElementType.GetHashCodeStatement(innerTmp, innerOutVar, level + 1)}}
-                {{innerHashCode}}.Add({{innerOutVar}});
+            var {{outVar}} = 0;
+            if ({{inVar}} != null) {
+                var {{innerHashCode}} = new System.HashCode();
+                for (int {{iterVar}} = 0; {{iterVar}} < {{inVar}}.Count; {{iterVar}}++) {
+                    var {{innerTmp}} = {{inVar}}[{{iterVar}}];
+                    {{ElementType.GetHashCodeStatement(innerTmp, innerOutVar, level + 1)}}
+                    {{innerHashCode}}.Add({{innerOutVar}});
+                }
+                {{outVar}} = {{innerHashCode}}.ToHashCode();
             }
-            {{outVar}} = {{innerHashCode}}.ToHashCode();
-        }
-        """;
+            """;
     }
 }
 
@@ -249,10 +288,7 @@ public record MemberDeclaration(
 )
 {
     public MemberDeclaration(ISymbol member, ITypeSymbol type, DiagReporter diag)
-        : this(member.Name, TypeUse.Parse(member, type, diag))
-    {
-
-    }
+        : this(member.Name, TypeUse.Parse(member, type, diag)) { }
 
     public MemberDeclaration(IFieldSymbol field, DiagReporter diag)
         : this(field, field.Type, diag) { }

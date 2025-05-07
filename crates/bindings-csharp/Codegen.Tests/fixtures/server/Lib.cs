@@ -69,7 +69,6 @@ public partial class ContainsNestedLists
     public List<List<string>>[] StringListListArray = [];
 }
 
-
 [SpacetimeDB.Type]
 public partial class EmptyClass { }
 
