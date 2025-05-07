@@ -1375,6 +1375,7 @@ impl __sdk::InModule for RemoteTables {{
 ///
 /// - [`DbConnection::frame_tick`].
 /// - [`DbConnection::run_threaded`].
+/// - [`DbConnection::run_background`].
 /// - [`DbConnection::run_async`].
 /// - [`DbConnection::advance_one_message`].
 /// - [`DbConnection::advance_one_message_blocking`].
@@ -1484,8 +1485,19 @@ impl DbConnection {{
     /// This is a low-level primitive exposed for power users who need significant control over scheduling.
     /// Most applications should call [`Self::run_threaded`] to spawn a thread
     /// which advances the connection automatically.
+    ///
+    /// # Panics
+    /// At runtime if called on any `wasm32` target.
     pub fn advance_one_message_blocking(&self) -> __sdk::Result<()> {{
-        self.imp.advance_one_message_blocking()
+        #[cfg(target_arch = \"wasm32\")]
+        {{
+            panic!(\"`DbConnection::advance_one_message_blocking` is not supported on WebAssembly (wasm32); \\
+            prefer using `advance_one_message` or `advance_one_message_async` instead\");
+        }}
+        #[cfg(not(target_arch = \"wasm32\"))]
+        {{
+            self.imp.advance_one_message_blocking()
+        }}
     }}
 
     /// Process one WebSocket message, `await`ing until one is received.
@@ -1509,14 +1521,35 @@ impl DbConnection {{
     }}
 
     /// Spawn a thread which processes WebSocket messages as they are received.
-    #[cfg(not(target_arch = \"wasm32\"))]
+    ///
+    /// # Panics
+    /// At runtime if called on any `wasm32` target.
     pub fn run_threaded(&self) -> std::thread::JoinHandle<()> {{
-        self.imp.run_threaded()
+        #[cfg(target_arch = \"wasm32\")]
+        {{
+            panic!(\"`DbConnection::run_threaded` is not supported on WebAssembly (wasm32); \\
+            prefer using `DbConnection::run_background` instead\");
+        }}
+        #[cfg(not(target_arch = \"wasm32\"))]
+        {{
+            self.imp.run_threaded()
+        }}
     }}
 
-    #[cfg(target_arch = \"wasm32\")]
-    pub fn run_threaded(&self) {{
-        self.imp.run_threaded()
+    /// Spawn a task which processes WebSocket messages as they are received.
+    ///
+    /// # Panics
+    /// At runtime if called on any non-`wasm32` target.
+    pub fn run_background(&self) {{
+        #[cfg(not(target_arch = \"wasm32\"))]
+        {{
+            panic!(\"`DbConnection::run_background` is only supported on WebAssembly (wasm32); \\
+            prefer using `DbConnection::run_threaded` instead\");
+        }}
+        #[cfg(target_arch = \"wasm32\")]
+        {{
+            self.imp.run_background()
+        }}
     }}
 
     /// Run an `async` loop which processes WebSocket messages when polled.
