@@ -60,17 +60,17 @@ partial struct RegressionMultipleUniqueIndexesHadSameName
 
     public override int GetHashCode()
     {
-        var hashUnique1 = Unique1.GetHashCode();
-        var hashUnique2 = Unique2.GetHashCode();
-        return hashUnique1 ^ hashUnique2;
+        var ___hashUnique1 = Unique1.GetHashCode();
+        var ___hashUnique2 = Unique2.GetHashCode();
+        return ___hashUnique1 ^ ___hashUnique2;
     }
 
 #nullable enable
     public bool Equals(RegressionMultipleUniqueIndexesHadSameName that)
     {
-        var eqUnique1 = this.Unique1.Equals(that.Unique1);
-        var eqUnique2 = this.Unique2.Equals(that.Unique2);
-        return eqUnique1 && eqUnique2;
+        var ___eqUnique1 = this.Unique1.Equals(that.Unique1);
+        var ___eqUnique2 = this.Unique2.Equals(that.Unique2);
+        return ___eqUnique1 && ___eqUnique2;
     }
 
     public override bool Equals(object? that)

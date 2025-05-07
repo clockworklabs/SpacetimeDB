@@ -115,190 +115,193 @@ partial class ContainsNestedLists
 
     public override int GetHashCode()
     {
-        var hashIntList = 0;
+        var ___hashIntList = 0;
         if (IntList != null)
         {
-            var hc0 = new System.HashCode();
-            for (int i0 = 0; i0 < IntList.Count; i0++)
+            var ___hc0 = new System.HashCode();
+            for (int ___i0 = 0; ___i0 < IntList.Count; ___i0++)
             {
-                var tmp0 = IntList[i0];
-                var out1 = tmp0.GetHashCode();
-                hc0.Add(out1);
+                var ___tmp0 = IntList[___i0];
+                var ___out1 = ___tmp0.GetHashCode();
+                ___hc0.Add(___out1);
             }
-            hashIntList = hc0.ToHashCode();
+            ___hashIntList = ___hc0.ToHashCode();
         }
-        var hashStringList = 0;
+        var ___hashStringList = 0;
         if (StringList != null)
         {
-            var hc0 = new System.HashCode();
-            for (int i0 = 0; i0 < StringList.Count; i0++)
+            var ___hc0 = new System.HashCode();
+            for (int ___i0 = 0; ___i0 < StringList.Count; ___i0++)
             {
-                var tmp0 = StringList[i0];
-                var out1 = tmp0 == null ? 0 : tmp0.GetHashCode();
-                hc0.Add(out1);
+                var ___tmp0 = StringList[___i0];
+                var ___out1 = ___tmp0 == null ? 0 : ___tmp0.GetHashCode();
+                ___hc0.Add(___out1);
             }
-            hashStringList = hc0.ToHashCode();
+            ___hashStringList = ___hc0.ToHashCode();
         }
-        var hashIntArray = 0;
+        var ___hashIntArray = 0;
         if (IntArray != null)
         {
-            var hc0 = new System.HashCode();
-            for (int i0 = 0; i0 < IntArray.Length; i0++)
+            var ___hc0 = new System.HashCode();
+            for (int ___i0 = 0; ___i0 < IntArray.Length; ___i0++)
             {
-                var out1 = IntArray[i0].GetHashCode();
-                hc0.Add(out1);
+                var ___out1 = IntArray[___i0].GetHashCode();
+                ___hc0.Add(___out1);
             }
-            hashIntArray = hc0.ToHashCode();
+            ___hashIntArray = ___hc0.ToHashCode();
         }
-        var hashStringArray = 0;
+        var ___hashStringArray = 0;
         if (StringArray != null)
         {
-            var hc0 = new System.HashCode();
-            for (int i0 = 0; i0 < StringArray.Length; i0++)
+            var ___hc0 = new System.HashCode();
+            for (int ___i0 = 0; ___i0 < StringArray.Length; ___i0++)
             {
-                var out1 = StringArray[i0] == null ? 0 : StringArray[i0].GetHashCode();
-                hc0.Add(out1);
+                var ___out1 = StringArray[___i0] == null ? 0 : StringArray[___i0].GetHashCode();
+                ___hc0.Add(___out1);
             }
-            hashStringArray = hc0.ToHashCode();
+            ___hashStringArray = ___hc0.ToHashCode();
         }
-        var hashIntArrayArrayList = 0;
+        var ___hashIntArrayArrayList = 0;
         if (IntArrayArrayList != null)
         {
-            var hc0 = new System.HashCode();
-            for (int i0 = 0; i0 < IntArrayArrayList.Count; i0++)
+            var ___hc0 = new System.HashCode();
+            for (int ___i0 = 0; ___i0 < IntArrayArrayList.Count; ___i0++)
             {
-                var tmp0 = IntArrayArrayList[i0];
-                var out1 = 0;
-                if (tmp0 != null)
+                var ___tmp0 = IntArrayArrayList[___i0];
+                var ___out1 = 0;
+                if (___tmp0 != null)
                 {
-                    var hc1 = new System.HashCode();
-                    for (int i1 = 0; i1 < tmp0.Length; i1++)
+                    var ___hc1 = new System.HashCode();
+                    for (int ___i1 = 0; ___i1 < ___tmp0.Length; ___i1++)
                     {
-                        var out2 = 0;
-                        if (tmp0[i1] != null)
+                        var ___out2 = 0;
+                        if (___tmp0[___i1] != null)
                         {
-                            var hc2 = new System.HashCode();
-                            for (int i2 = 0; i2 < tmp0[i1].Length; i2++)
+                            var ___hc2 = new System.HashCode();
+                            for (int ___i2 = 0; ___i2 < ___tmp0[___i1].Length; ___i2++)
                             {
-                                var out3 = tmp0[i1][i2].GetHashCode();
-                                hc2.Add(out3);
+                                var ___out3 = ___tmp0[___i1][___i2].GetHashCode();
+                                ___hc2.Add(___out3);
                             }
-                            out2 = hc2.ToHashCode();
+                            ___out2 = ___hc2.ToHashCode();
                         }
-                        hc1.Add(out2);
+                        ___hc1.Add(___out2);
                     }
-                    out1 = hc1.ToHashCode();
+                    ___out1 = ___hc1.ToHashCode();
                 }
-                hc0.Add(out1);
+                ___hc0.Add(___out1);
             }
-            hashIntArrayArrayList = hc0.ToHashCode();
+            ___hashIntArrayArrayList = ___hc0.ToHashCode();
         }
-        var hashIntListListArray = 0;
+        var ___hashIntListListArray = 0;
         if (IntListListArray != null)
         {
-            var hc0 = new System.HashCode();
-            for (int i0 = 0; i0 < IntListListArray.Length; i0++)
+            var ___hc0 = new System.HashCode();
+            for (int ___i0 = 0; ___i0 < IntListListArray.Length; ___i0++)
             {
-                var out1 = 0;
-                if (IntListListArray[i0] != null)
+                var ___out1 = 0;
+                if (IntListListArray[___i0] != null)
                 {
-                    var hc1 = new System.HashCode();
-                    for (int i1 = 0; i1 < IntListListArray[i0].Count; i1++)
+                    var ___hc1 = new System.HashCode();
+                    for (int ___i1 = 0; ___i1 < IntListListArray[___i0].Count; ___i1++)
                     {
-                        var tmp1 = IntListListArray[i0][i1];
-                        var out2 = 0;
-                        if (tmp1 != null)
+                        var ___tmp1 = IntListListArray[___i0][___i1];
+                        var ___out2 = 0;
+                        if (___tmp1 != null)
                         {
-                            var hc2 = new System.HashCode();
-                            for (int i2 = 0; i2 < tmp1.Count; i2++)
+                            var ___hc2 = new System.HashCode();
+                            for (int ___i2 = 0; ___i2 < ___tmp1.Count; ___i2++)
                             {
-                                var tmp2 = tmp1[i2];
-                                var out3 = tmp2.GetHashCode();
-                                hc2.Add(out3);
+                                var ___tmp2 = ___tmp1[___i2];
+                                var ___out3 = ___tmp2.GetHashCode();
+                                ___hc2.Add(___out3);
                             }
-                            out2 = hc2.ToHashCode();
+                            ___out2 = ___hc2.ToHashCode();
                         }
-                        hc1.Add(out2);
+                        ___hc1.Add(___out2);
                     }
-                    out1 = hc1.ToHashCode();
+                    ___out1 = ___hc1.ToHashCode();
                 }
-                hc0.Add(out1);
+                ___hc0.Add(___out1);
             }
-            hashIntListListArray = hc0.ToHashCode();
+            ___hashIntListListArray = ___hc0.ToHashCode();
         }
-        var hashStringArrayArrayList = 0;
+        var ___hashStringArrayArrayList = 0;
         if (StringArrayArrayList != null)
         {
-            var hc0 = new System.HashCode();
-            for (int i0 = 0; i0 < StringArrayArrayList.Count; i0++)
+            var ___hc0 = new System.HashCode();
+            for (int ___i0 = 0; ___i0 < StringArrayArrayList.Count; ___i0++)
             {
-                var tmp0 = StringArrayArrayList[i0];
-                var out1 = 0;
-                if (tmp0 != null)
+                var ___tmp0 = StringArrayArrayList[___i0];
+                var ___out1 = 0;
+                if (___tmp0 != null)
                 {
-                    var hc1 = new System.HashCode();
-                    for (int i1 = 0; i1 < tmp0.Length; i1++)
+                    var ___hc1 = new System.HashCode();
+                    for (int ___i1 = 0; ___i1 < ___tmp0.Length; ___i1++)
                     {
-                        var out2 = 0;
-                        if (tmp0[i1] != null)
+                        var ___out2 = 0;
+                        if (___tmp0[___i1] != null)
                         {
-                            var hc2 = new System.HashCode();
-                            for (int i2 = 0; i2 < tmp0[i1].Length; i2++)
+                            var ___hc2 = new System.HashCode();
+                            for (int ___i2 = 0; ___i2 < ___tmp0[___i1].Length; ___i2++)
                             {
-                                var out3 = tmp0[i1][i2] == null ? 0 : tmp0[i1][i2].GetHashCode();
-                                hc2.Add(out3);
+                                var ___out3 =
+                                    ___tmp0[___i1][___i2] == null
+                                        ? 0
+                                        : ___tmp0[___i1][___i2].GetHashCode();
+                                ___hc2.Add(___out3);
                             }
-                            out2 = hc2.ToHashCode();
+                            ___out2 = ___hc2.ToHashCode();
                         }
-                        hc1.Add(out2);
+                        ___hc1.Add(___out2);
                     }
-                    out1 = hc1.ToHashCode();
+                    ___out1 = ___hc1.ToHashCode();
                 }
-                hc0.Add(out1);
+                ___hc0.Add(___out1);
             }
-            hashStringArrayArrayList = hc0.ToHashCode();
+            ___hashStringArrayArrayList = ___hc0.ToHashCode();
         }
-        var hashStringListListArray = 0;
+        var ___hashStringListListArray = 0;
         if (StringListListArray != null)
         {
-            var hc0 = new System.HashCode();
-            for (int i0 = 0; i0 < StringListListArray.Length; i0++)
+            var ___hc0 = new System.HashCode();
+            for (int ___i0 = 0; ___i0 < StringListListArray.Length; ___i0++)
             {
-                var out1 = 0;
-                if (StringListListArray[i0] != null)
+                var ___out1 = 0;
+                if (StringListListArray[___i0] != null)
                 {
-                    var hc1 = new System.HashCode();
-                    for (int i1 = 0; i1 < StringListListArray[i0].Count; i1++)
+                    var ___hc1 = new System.HashCode();
+                    for (int ___i1 = 0; ___i1 < StringListListArray[___i0].Count; ___i1++)
                     {
-                        var tmp1 = StringListListArray[i0][i1];
-                        var out2 = 0;
-                        if (tmp1 != null)
+                        var ___tmp1 = StringListListArray[___i0][___i1];
+                        var ___out2 = 0;
+                        if (___tmp1 != null)
                         {
-                            var hc2 = new System.HashCode();
-                            for (int i2 = 0; i2 < tmp1.Count; i2++)
+                            var ___hc2 = new System.HashCode();
+                            for (int ___i2 = 0; ___i2 < ___tmp1.Count; ___i2++)
                             {
-                                var tmp2 = tmp1[i2];
-                                var out3 = tmp2 == null ? 0 : tmp2.GetHashCode();
-                                hc2.Add(out3);
+                                var ___tmp2 = ___tmp1[___i2];
+                                var ___out3 = ___tmp2 == null ? 0 : ___tmp2.GetHashCode();
+                                ___hc2.Add(___out3);
                             }
-                            out2 = hc2.ToHashCode();
+                            ___out2 = ___hc2.ToHashCode();
                         }
-                        hc1.Add(out2);
+                        ___hc1.Add(___out2);
                     }
-                    out1 = hc1.ToHashCode();
+                    ___out1 = ___hc1.ToHashCode();
                 }
-                hc0.Add(out1);
+                ___hc0.Add(___out1);
             }
-            hashStringListListArray = hc0.ToHashCode();
+            ___hashStringListListArray = ___hc0.ToHashCode();
         }
-        return hashIntList
-            ^ hashStringList
-            ^ hashIntArray
-            ^ hashStringArray
-            ^ hashIntArrayArrayList
-            ^ hashIntListListArray
-            ^ hashStringArrayArrayList
-            ^ hashStringListListArray;
+        return ___hashIntList
+            ^ ___hashStringList
+            ^ ___hashIntArray
+            ^ ___hashStringArray
+            ^ ___hashIntArrayArrayList
+            ^ ___hashIntListListArray
+            ^ ___hashStringArrayArrayList
+            ^ ___hashStringListListArray;
     }
 
 #nullable enable
@@ -309,364 +312,370 @@ partial class ContainsNestedLists
             return false;
         }
 
-        var eqIntList = true;
+        var ___eqIntList = true;
         if (this.IntList == null || that.IntList == null)
         {
-            eqIntList = this.IntList == that.IntList;
+            ___eqIntList = this.IntList == that.IntList;
         }
         else if (this.IntList.Count != that.IntList.Count)
         {
-            eqIntList = false;
+            ___eqIntList = false;
         }
         else
         {
-            for (int i0 = 0; i0 < this.IntList.Count; i0++)
+            for (int ___i0 = 0; ___i0 < this.IntList.Count; ___i0++)
             {
-                var tmpA0 = this.IntList[i0];
-                var tmpB0 = that.IntList[i0];
-                var out1 = tmpA0.Equals(tmpB0);
-                if (!out1)
+                var ___tmpA0 = this.IntList[___i0];
+                var ___tmpB0 = that.IntList[___i0];
+                var ___out1 = ___tmpA0.Equals(___tmpB0);
+                if (!___out1)
                 {
-                    eqIntList = false;
+                    ___eqIntList = false;
                     break;
                 }
             }
         }
-        var eqStringList = true;
+        var ___eqStringList = true;
         if (this.StringList == null || that.StringList == null)
         {
-            eqStringList = this.StringList == that.StringList;
+            ___eqStringList = this.StringList == that.StringList;
         }
         else if (this.StringList.Count != that.StringList.Count)
         {
-            eqStringList = false;
+            ___eqStringList = false;
         }
         else
         {
-            for (int i0 = 0; i0 < this.StringList.Count; i0++)
+            for (int ___i0 = 0; ___i0 < this.StringList.Count; ___i0++)
             {
-                var tmpA0 = this.StringList[i0];
-                var tmpB0 = that.StringList[i0];
-                var out1 = tmpA0 == null ? tmpB0 == null : tmpA0.Equals(tmpB0);
-                if (!out1)
+                var ___tmpA0 = this.StringList[___i0];
+                var ___tmpB0 = that.StringList[___i0];
+                var ___out1 = ___tmpA0 == null ? ___tmpB0 == null : ___tmpA0.Equals(___tmpB0);
+                if (!___out1)
                 {
-                    eqStringList = false;
+                    ___eqStringList = false;
                     break;
                 }
             }
         }
-        var eqIntArray = true;
+        var ___eqIntArray = true;
         if (this.IntArray == null || that.IntArray == null)
         {
-            eqIntArray = this.IntArray == that.IntArray;
+            ___eqIntArray = this.IntArray == that.IntArray;
         }
         else if (this.IntArray.Length != that.IntArray.Length)
         {
-            eqIntArray = false;
+            ___eqIntArray = false;
         }
         else
         {
-            for (int i0 = 0; i0 < this.IntArray.Length; i0++)
+            for (int ___i0 = 0; ___i0 < this.IntArray.Length; ___i0++)
             {
-                var out1 = this.IntArray[i0].Equals(that.IntArray[i0]);
-                if (!out1)
+                var ___out1 = this.IntArray[___i0].Equals(that.IntArray[___i0]);
+                if (!___out1)
                 {
-                    eqIntArray = false;
+                    ___eqIntArray = false;
                     break;
                 }
             }
         }
-        var eqStringArray = true;
+        var ___eqStringArray = true;
         if (this.StringArray == null || that.StringArray == null)
         {
-            eqStringArray = this.StringArray == that.StringArray;
+            ___eqStringArray = this.StringArray == that.StringArray;
         }
         else if (this.StringArray.Length != that.StringArray.Length)
         {
-            eqStringArray = false;
+            ___eqStringArray = false;
         }
         else
         {
-            for (int i0 = 0; i0 < this.StringArray.Length; i0++)
+            for (int ___i0 = 0; ___i0 < this.StringArray.Length; ___i0++)
             {
-                var out1 =
-                    this.StringArray[i0] == null
-                        ? that.StringArray[i0] == null
-                        : this.StringArray[i0].Equals(that.StringArray[i0]);
-                if (!out1)
+                var ___out1 =
+                    this.StringArray[___i0] == null
+                        ? that.StringArray[___i0] == null
+                        : this.StringArray[___i0].Equals(that.StringArray[___i0]);
+                if (!___out1)
                 {
-                    eqStringArray = false;
+                    ___eqStringArray = false;
                     break;
                 }
             }
         }
-        var eqIntArrayArrayList = true;
+        var ___eqIntArrayArrayList = true;
         if (this.IntArrayArrayList == null || that.IntArrayArrayList == null)
         {
-            eqIntArrayArrayList = this.IntArrayArrayList == that.IntArrayArrayList;
+            ___eqIntArrayArrayList = this.IntArrayArrayList == that.IntArrayArrayList;
         }
         else if (this.IntArrayArrayList.Count != that.IntArrayArrayList.Count)
         {
-            eqIntArrayArrayList = false;
+            ___eqIntArrayArrayList = false;
         }
         else
         {
-            for (int i0 = 0; i0 < this.IntArrayArrayList.Count; i0++)
+            for (int ___i0 = 0; ___i0 < this.IntArrayArrayList.Count; ___i0++)
             {
-                var tmpA0 = this.IntArrayArrayList[i0];
-                var tmpB0 = that.IntArrayArrayList[i0];
-                var out1 = true;
-                if (tmpA0 == null || tmpB0 == null)
+                var ___tmpA0 = this.IntArrayArrayList[___i0];
+                var ___tmpB0 = that.IntArrayArrayList[___i0];
+                var ___out1 = true;
+                if (___tmpA0 == null || ___tmpB0 == null)
                 {
-                    out1 = tmpA0 == tmpB0;
+                    ___out1 = ___tmpA0 == ___tmpB0;
                 }
-                else if (tmpA0.Length != tmpB0.Length)
+                else if (___tmpA0.Length != ___tmpB0.Length)
                 {
-                    out1 = false;
+                    ___out1 = false;
                 }
                 else
                 {
-                    for (int i1 = 0; i1 < tmpA0.Length; i1++)
+                    for (int ___i1 = 0; ___i1 < ___tmpA0.Length; ___i1++)
                     {
-                        var out2 = true;
-                        if (tmpA0[i1] == null || tmpB0[i1] == null)
+                        var ___out2 = true;
+                        if (___tmpA0[___i1] == null || ___tmpB0[___i1] == null)
                         {
-                            out2 = tmpA0[i1] == tmpB0[i1];
+                            ___out2 = ___tmpA0[___i1] == ___tmpB0[___i1];
                         }
-                        else if (tmpA0[i1].Length != tmpB0[i1].Length)
+                        else if (___tmpA0[___i1].Length != ___tmpB0[___i1].Length)
                         {
-                            out2 = false;
+                            ___out2 = false;
                         }
                         else
                         {
-                            for (int i2 = 0; i2 < tmpA0[i1].Length; i2++)
+                            for (int ___i2 = 0; ___i2 < ___tmpA0[___i1].Length; ___i2++)
                             {
-                                var out3 = tmpA0[i1][i2].Equals(tmpB0[i1][i2]);
-                                if (!out3)
+                                var ___out3 = ___tmpA0[___i1][___i2].Equals(___tmpB0[___i1][___i2]);
+                                if (!___out3)
                                 {
-                                    out2 = false;
+                                    ___out2 = false;
                                     break;
                                 }
                             }
                         }
-                        if (!out2)
+                        if (!___out2)
                         {
-                            out1 = false;
+                            ___out1 = false;
                             break;
                         }
                     }
                 }
-                if (!out1)
+                if (!___out1)
                 {
-                    eqIntArrayArrayList = false;
+                    ___eqIntArrayArrayList = false;
                     break;
                 }
             }
         }
-        var eqIntListListArray = true;
+        var ___eqIntListListArray = true;
         if (this.IntListListArray == null || that.IntListListArray == null)
         {
-            eqIntListListArray = this.IntListListArray == that.IntListListArray;
+            ___eqIntListListArray = this.IntListListArray == that.IntListListArray;
         }
         else if (this.IntListListArray.Length != that.IntListListArray.Length)
         {
-            eqIntListListArray = false;
+            ___eqIntListListArray = false;
         }
         else
         {
-            for (int i0 = 0; i0 < this.IntListListArray.Length; i0++)
+            for (int ___i0 = 0; ___i0 < this.IntListListArray.Length; ___i0++)
             {
-                var out1 = true;
-                if (this.IntListListArray[i0] == null || that.IntListListArray[i0] == null)
+                var ___out1 = true;
+                if (this.IntListListArray[___i0] == null || that.IntListListArray[___i0] == null)
                 {
-                    out1 = this.IntListListArray[i0] == that.IntListListArray[i0];
+                    ___out1 = this.IntListListArray[___i0] == that.IntListListArray[___i0];
                 }
-                else if (this.IntListListArray[i0].Count != that.IntListListArray[i0].Count)
+                else if (this.IntListListArray[___i0].Count != that.IntListListArray[___i0].Count)
                 {
-                    out1 = false;
+                    ___out1 = false;
                 }
                 else
                 {
-                    for (int i1 = 0; i1 < this.IntListListArray[i0].Count; i1++)
+                    for (int ___i1 = 0; ___i1 < this.IntListListArray[___i0].Count; ___i1++)
                     {
-                        var tmpA1 = this.IntListListArray[i0][i1];
-                        var tmpB1 = that.IntListListArray[i0][i1];
-                        var out2 = true;
-                        if (tmpA1 == null || tmpB1 == null)
+                        var ___tmpA1 = this.IntListListArray[___i0][___i1];
+                        var ___tmpB1 = that.IntListListArray[___i0][___i1];
+                        var ___out2 = true;
+                        if (___tmpA1 == null || ___tmpB1 == null)
                         {
-                            out2 = tmpA1 == tmpB1;
+                            ___out2 = ___tmpA1 == ___tmpB1;
                         }
-                        else if (tmpA1.Count != tmpB1.Count)
+                        else if (___tmpA1.Count != ___tmpB1.Count)
                         {
-                            out2 = false;
+                            ___out2 = false;
                         }
                         else
                         {
-                            for (int i2 = 0; i2 < tmpA1.Count; i2++)
+                            for (int ___i2 = 0; ___i2 < ___tmpA1.Count; ___i2++)
                             {
-                                var tmpA2 = tmpA1[i2];
-                                var tmpB2 = tmpB1[i2];
-                                var out3 = tmpA2.Equals(tmpB2);
-                                if (!out3)
+                                var ___tmpA2 = ___tmpA1[___i2];
+                                var ___tmpB2 = ___tmpB1[___i2];
+                                var ___out3 = ___tmpA2.Equals(___tmpB2);
+                                if (!___out3)
                                 {
-                                    out2 = false;
+                                    ___out2 = false;
                                     break;
                                 }
                             }
                         }
-                        if (!out2)
+                        if (!___out2)
                         {
-                            out1 = false;
+                            ___out1 = false;
                             break;
                         }
                     }
                 }
-                if (!out1)
+                if (!___out1)
                 {
-                    eqIntListListArray = false;
+                    ___eqIntListListArray = false;
                     break;
                 }
             }
         }
-        var eqStringArrayArrayList = true;
+        var ___eqStringArrayArrayList = true;
         if (this.StringArrayArrayList == null || that.StringArrayArrayList == null)
         {
-            eqStringArrayArrayList = this.StringArrayArrayList == that.StringArrayArrayList;
+            ___eqStringArrayArrayList = this.StringArrayArrayList == that.StringArrayArrayList;
         }
         else if (this.StringArrayArrayList.Count != that.StringArrayArrayList.Count)
         {
-            eqStringArrayArrayList = false;
+            ___eqStringArrayArrayList = false;
         }
         else
         {
-            for (int i0 = 0; i0 < this.StringArrayArrayList.Count; i0++)
+            for (int ___i0 = 0; ___i0 < this.StringArrayArrayList.Count; ___i0++)
             {
-                var tmpA0 = this.StringArrayArrayList[i0];
-                var tmpB0 = that.StringArrayArrayList[i0];
-                var out1 = true;
-                if (tmpA0 == null || tmpB0 == null)
+                var ___tmpA0 = this.StringArrayArrayList[___i0];
+                var ___tmpB0 = that.StringArrayArrayList[___i0];
+                var ___out1 = true;
+                if (___tmpA0 == null || ___tmpB0 == null)
                 {
-                    out1 = tmpA0 == tmpB0;
+                    ___out1 = ___tmpA0 == ___tmpB0;
                 }
-                else if (tmpA0.Length != tmpB0.Length)
+                else if (___tmpA0.Length != ___tmpB0.Length)
                 {
-                    out1 = false;
+                    ___out1 = false;
                 }
                 else
                 {
-                    for (int i1 = 0; i1 < tmpA0.Length; i1++)
+                    for (int ___i1 = 0; ___i1 < ___tmpA0.Length; ___i1++)
                     {
-                        var out2 = true;
-                        if (tmpA0[i1] == null || tmpB0[i1] == null)
+                        var ___out2 = true;
+                        if (___tmpA0[___i1] == null || ___tmpB0[___i1] == null)
                         {
-                            out2 = tmpA0[i1] == tmpB0[i1];
+                            ___out2 = ___tmpA0[___i1] == ___tmpB0[___i1];
                         }
-                        else if (tmpA0[i1].Length != tmpB0[i1].Length)
+                        else if (___tmpA0[___i1].Length != ___tmpB0[___i1].Length)
                         {
-                            out2 = false;
+                            ___out2 = false;
                         }
                         else
                         {
-                            for (int i2 = 0; i2 < tmpA0[i1].Length; i2++)
+                            for (int ___i2 = 0; ___i2 < ___tmpA0[___i1].Length; ___i2++)
                             {
-                                var out3 =
-                                    tmpA0[i1][i2] == null
-                                        ? tmpB0[i1][i2] == null
-                                        : tmpA0[i1][i2].Equals(tmpB0[i1][i2]);
-                                if (!out3)
+                                var ___out3 =
+                                    ___tmpA0[___i1][___i2] == null
+                                        ? ___tmpB0[___i1][___i2] == null
+                                        : ___tmpA0[___i1][___i2].Equals(___tmpB0[___i1][___i2]);
+                                if (!___out3)
                                 {
-                                    out2 = false;
+                                    ___out2 = false;
                                     break;
                                 }
                             }
                         }
-                        if (!out2)
+                        if (!___out2)
                         {
-                            out1 = false;
+                            ___out1 = false;
                             break;
                         }
                     }
                 }
-                if (!out1)
+                if (!___out1)
                 {
-                    eqStringArrayArrayList = false;
+                    ___eqStringArrayArrayList = false;
                     break;
                 }
             }
         }
-        var eqStringListListArray = true;
+        var ___eqStringListListArray = true;
         if (this.StringListListArray == null || that.StringListListArray == null)
         {
-            eqStringListListArray = this.StringListListArray == that.StringListListArray;
+            ___eqStringListListArray = this.StringListListArray == that.StringListListArray;
         }
         else if (this.StringListListArray.Length != that.StringListListArray.Length)
         {
-            eqStringListListArray = false;
+            ___eqStringListListArray = false;
         }
         else
         {
-            for (int i0 = 0; i0 < this.StringListListArray.Length; i0++)
+            for (int ___i0 = 0; ___i0 < this.StringListListArray.Length; ___i0++)
             {
-                var out1 = true;
-                if (this.StringListListArray[i0] == null || that.StringListListArray[i0] == null)
+                var ___out1 = true;
+                if (
+                    this.StringListListArray[___i0] == null
+                    || that.StringListListArray[___i0] == null
+                )
                 {
-                    out1 = this.StringListListArray[i0] == that.StringListListArray[i0];
+                    ___out1 = this.StringListListArray[___i0] == that.StringListListArray[___i0];
                 }
-                else if (this.StringListListArray[i0].Count != that.StringListListArray[i0].Count)
+                else if (
+                    this.StringListListArray[___i0].Count != that.StringListListArray[___i0].Count
+                )
                 {
-                    out1 = false;
+                    ___out1 = false;
                 }
                 else
                 {
-                    for (int i1 = 0; i1 < this.StringListListArray[i0].Count; i1++)
+                    for (int ___i1 = 0; ___i1 < this.StringListListArray[___i0].Count; ___i1++)
                     {
-                        var tmpA1 = this.StringListListArray[i0][i1];
-                        var tmpB1 = that.StringListListArray[i0][i1];
-                        var out2 = true;
-                        if (tmpA1 == null || tmpB1 == null)
+                        var ___tmpA1 = this.StringListListArray[___i0][___i1];
+                        var ___tmpB1 = that.StringListListArray[___i0][___i1];
+                        var ___out2 = true;
+                        if (___tmpA1 == null || ___tmpB1 == null)
                         {
-                            out2 = tmpA1 == tmpB1;
+                            ___out2 = ___tmpA1 == ___tmpB1;
                         }
-                        else if (tmpA1.Count != tmpB1.Count)
+                        else if (___tmpA1.Count != ___tmpB1.Count)
                         {
-                            out2 = false;
+                            ___out2 = false;
                         }
                         else
                         {
-                            for (int i2 = 0; i2 < tmpA1.Count; i2++)
+                            for (int ___i2 = 0; ___i2 < ___tmpA1.Count; ___i2++)
                             {
-                                var tmpA2 = tmpA1[i2];
-                                var tmpB2 = tmpB1[i2];
-                                var out3 = tmpA2 == null ? tmpB2 == null : tmpA2.Equals(tmpB2);
-                                if (!out3)
+                                var ___tmpA2 = ___tmpA1[___i2];
+                                var ___tmpB2 = ___tmpB1[___i2];
+                                var ___out3 =
+                                    ___tmpA2 == null ? ___tmpB2 == null : ___tmpA2.Equals(___tmpB2);
+                                if (!___out3)
                                 {
-                                    out2 = false;
+                                    ___out2 = false;
                                     break;
                                 }
                             }
                         }
-                        if (!out2)
+                        if (!___out2)
                         {
-                            out1 = false;
+                            ___out1 = false;
                             break;
                         }
                     }
                 }
-                if (!out1)
+                if (!___out1)
                 {
-                    eqStringListListArray = false;
+                    ___eqStringListListArray = false;
                     break;
                 }
             }
         }
-        return eqIntList
-            && eqStringList
-            && eqIntArray
-            && eqStringArray
-            && eqIntArrayArrayList
-            && eqIntListListArray
-            && eqStringArrayArrayList
-            && eqStringListListArray;
+        return ___eqIntList
+            && ___eqStringList
+            && ___eqIntArray
+            && ___eqStringArray
+            && ___eqIntArrayArrayList
+            && ___eqIntListListArray
+            && ___eqStringArrayArrayList
+            && ___eqStringListListArray;
     }
 
     public override bool Equals(object? that)

@@ -68,31 +68,34 @@ partial struct TestScheduleIssues
 
     public override int GetHashCode()
     {
-        var hashIdWrongType = IdWrongType == null ? 0 : IdWrongType.GetHashCode();
-        var hashIdCorrectType = IdCorrectType.GetHashCode();
-        var hashScheduleAtWrongType = ScheduleAtWrongType.GetHashCode();
-        var hashScheduleAtCorrectType =
+        var ___hashIdWrongType = IdWrongType == null ? 0 : IdWrongType.GetHashCode();
+        var ___hashIdCorrectType = IdCorrectType.GetHashCode();
+        var ___hashScheduleAtWrongType = ScheduleAtWrongType.GetHashCode();
+        var ___hashScheduleAtCorrectType =
             ScheduleAtCorrectType == null ? 0 : ScheduleAtCorrectType.GetHashCode();
-        return hashIdWrongType
-            ^ hashIdCorrectType
-            ^ hashScheduleAtWrongType
-            ^ hashScheduleAtCorrectType;
+        return ___hashIdWrongType
+            ^ ___hashIdCorrectType
+            ^ ___hashScheduleAtWrongType
+            ^ ___hashScheduleAtCorrectType;
     }
 
 #nullable enable
     public bool Equals(TestScheduleIssues that)
     {
-        var eqIdWrongType =
+        var ___eqIdWrongType =
             this.IdWrongType == null
                 ? that.IdWrongType == null
                 : this.IdWrongType.Equals(that.IdWrongType);
-        var eqIdCorrectType = this.IdCorrectType.Equals(that.IdCorrectType);
-        var eqScheduleAtWrongType = this.ScheduleAtWrongType.Equals(that.ScheduleAtWrongType);
-        var eqScheduleAtCorrectType =
+        var ___eqIdCorrectType = this.IdCorrectType.Equals(that.IdCorrectType);
+        var ___eqScheduleAtWrongType = this.ScheduleAtWrongType.Equals(that.ScheduleAtWrongType);
+        var ___eqScheduleAtCorrectType =
             this.ScheduleAtCorrectType == null
                 ? that.ScheduleAtCorrectType == null
                 : this.ScheduleAtCorrectType.Equals(that.ScheduleAtCorrectType);
-        return eqIdWrongType && eqIdCorrectType && eqScheduleAtWrongType && eqScheduleAtCorrectType;
+        return ___eqIdWrongType
+            && ___eqIdCorrectType
+            && ___eqScheduleAtWrongType
+            && ___eqScheduleAtCorrectType;
     }
 
     public override bool Equals(object? that)
