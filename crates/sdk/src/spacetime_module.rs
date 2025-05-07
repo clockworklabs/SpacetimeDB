@@ -212,6 +212,11 @@ impl<Row> Default for TableUpdate<Row> {
 }
 
 impl<Row> TableUpdate<Row> {
+    pub fn append(&mut self, mut other: TableUpdate<Row>) {
+        self.inserts.append(&mut other.inserts);
+        self.deletes.append(&mut other.deletes);
+    }
+
     pub(crate) fn is_empty(&self) -> bool {
         self.inserts.is_empty() && self.deletes.is_empty()
     }
