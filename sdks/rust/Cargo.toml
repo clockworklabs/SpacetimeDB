@@ -13,7 +13,9 @@ default = []
 web = [
     "dep:getrandom",
     "dep:gloo-console",
+    "dep:gloo-net",
     "dep:gloo-storage",
+    "dep:js-sys",
     "dep:rustls-pki-types",
     "dep:tokio-tungstenite-wasm",
     "dep:wasm-bindgen",
@@ -44,7 +46,9 @@ rand.workspace = true
 
 getrandom = { version = "0.3.2", features = ["wasm_js"], optional = true }
 gloo-console = { version = "0.3.0", optional = true }
+gloo-net = { version = "0.6.0", optional = true }
 gloo-storage = { version = "0.3.0", optional = true }
+js-sys = { version = "0.3", optional = true }
 rustls-pki-types = { version = "1.12.0", features = ["web"], optional = true }
 tokio-tungstenite-wasm = { version = "0.6.0", optional = true }
 wasm-bindgen = { version = "0.2.100", optional = true }
