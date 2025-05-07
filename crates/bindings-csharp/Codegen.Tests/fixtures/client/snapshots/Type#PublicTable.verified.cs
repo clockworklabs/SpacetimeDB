@@ -185,8 +185,8 @@ partial struct PublicTable : System.IEquatable<PublicTable>, SpacetimeDB.BSATN.I
             for (int i0 = 0; i0 < ListField.Count; i0++)
             {
                 var tmp0 = ListField[i0];
-                var hashListField1 = tmp0.GetHashCode();
-                hc0.Add(hashListField1);
+                var out1 = tmp0.GetHashCode();
+                hc0.Add(out1);
             }
             hashListField = hc0.ToHashCode();
         }
@@ -266,8 +266,8 @@ partial struct PublicTable : System.IEquatable<PublicTable>, SpacetimeDB.BSATN.I
             {
                 var tmpA0 = this.ListField[i0];
                 var tmpB0 = that.ListField[i0];
-                var eqListField1 = tmpA0.Equals(tmpB0);
-                if (!eqListField1)
+                var out1 = tmpA0.Equals(tmpB0);
+                if (!out1)
                 {
                     eqListField = false;
                     break;

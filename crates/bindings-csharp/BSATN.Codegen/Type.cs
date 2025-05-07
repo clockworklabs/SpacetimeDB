@@ -164,7 +164,7 @@ public record ArrayUse(string Type, string TypeInfo, TypeUse ElementType) : Type
     )
     {
         var iterVar = $"i{level}";
-        var innerOutVar = $"{outVar}{level + 1}";
+        var innerOutVar = $"out{level + 1}";
 
         return $$"""
             var {{outVar}} = true;
@@ -193,7 +193,7 @@ public record ArrayUse(string Type, string TypeInfo, TypeUse ElementType) : Type
     {
         var iterVar = $"i{level}";
         var innerHashCode = $"hc{level}";
-        var innerOutVar = $"{outVar}{level + 1}";
+        var innerOutVar = $"out{level + 1}";
 
         return $$"""
             var {{outVar}} = 0;
@@ -232,7 +232,7 @@ public record ListUse(string Type, string TypeInfo, TypeUse ElementType) : TypeU
         // needed to avoid warnings on list re-reference.
         var innerTmp1 = $"tmpA{level}";
         var innerTmp2 = $"tmpB{level}";
-        var innerOutVar = $"{outVar}{level + 1}";
+        var innerOutVar = $"out{level + 1}";
 
         return $$"""
             var {{outVar}} = true;
@@ -259,7 +259,7 @@ public record ListUse(string Type, string TypeInfo, TypeUse ElementType) : TypeU
         var iterVar = $"i{level}";
         var innerTmp = $"tmp{level}";
         var innerHashCode = $"hc{level}";
-        var innerOutVar = $"{outVar}{level + 1}";
+        var innerOutVar = $"out{level + 1}";
 
         return $$"""
             var {{outVar}} = 0;
