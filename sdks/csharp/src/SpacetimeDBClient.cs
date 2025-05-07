@@ -155,6 +155,11 @@ namespace SpacetimeDB
         public readonly ConnectionId ConnectionId = ConnectionId.Random();
         public Identity? Identity { get; private set; }
 
+        /// <summary>
+        /// Whether to log all subscription events.
+        /// </summary>
+        public bool LogSubscriptionEvents;
+
         internal WebSocket webSocket;
         private bool connectionClosed;
         public abstract Tables Db { get; }
@@ -190,7 +195,7 @@ namespace SpacetimeDB
                     SpacetimeDBNetworkManager._instance.RemoveConnection(this);
                 }
             };
-            
+
 #if UNITY_WEBGL && !UNITY_EDITOR
             if (SpacetimeDBNetworkManager._instance != null)
                 SpacetimeDBNetworkManager._instance.StartCoroutine(PreProcessMessages());
@@ -742,6 +747,10 @@ namespace SpacetimeDB
 
                         if (legacySubscriptions.TryGetValue(initialSubscription.RequestId, out var subscription))
                         {
+                            if (LogSubscriptionEvents)
+                            {
+                                Log.Debug($"Subscribed to: [{string.Join("", subscription.Queries.Select(q => $"   \"{q}\",\n"))}]");
+                            }
                             try
                             {
                                 subscription.OnApplied(eventContext, new SubscriptionAppliedType.LegacyActive(new()));
@@ -767,6 +776,10 @@ namespace SpacetimeDB
                         OnMessageProcessCompleteUpdate(legacyEventContext, dbOps);
                         if (subscriptions.TryGetValue(subscribeMultiApplied.QueryId.Id, out var subscription))
                         {
+                            if (LogSubscriptionEvents)
+                            {
+                                Log.Debug($"Subscribed to: [{string.Join("", subscription.Queries.Select(q => $"   \"{q}\",\n"))}]");
+                            }
                             try
                             {
                                 subscription.OnApplied(eventContext, new SubscriptionAppliedType.Active(subscribeMultiApplied.QueryId));
@@ -797,6 +810,11 @@ namespace SpacetimeDB
                         {
                             if (subscriptions.TryGetValue(subscriptionError.QueryId.Value, out var subscription))
                             {
+                                if (LogSubscriptionEvents)
+                                {
+                                    Log.Debug($"Subscription error on: [{string.Join("", subscription.Queries.Select(q => $"   \"{q}\",\n"))}]");
+                                }
+
                                 try
                                 {
                                     subscription.OnError(eventContext);
@@ -829,6 +847,10 @@ namespace SpacetimeDB
                         OnMessageProcessCompleteUpdate(legacyEventContext, dbOps);
                         if (subscriptions.TryGetValue(unsubscribeMultiApplied.QueryId.Id, out var subscription))
                         {
+                            if (LogSubscriptionEvents)
+                            {
+                                Log.Debug($"Unsubscribed to: [{string.Join("", subscription.Queries.Select(q => $"   \"{q}\",\n"))}]");
+                            }
                             try
                             {
                                 subscription.OnEnded(eventContext);

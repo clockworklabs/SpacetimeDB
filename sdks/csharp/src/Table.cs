@@ -69,6 +69,16 @@ namespace SpacetimeDB
             {
                 table.OnInternalInsert += row => cache.Add(GetKey(row), row);
                 table.OnInternalDelete += row => cache.Remove(GetKey(row));
+                table.OnIntegrityCheck += () =>
+                {
+                    var tableSet = table.Iter().Select(row => (GetKey(row), row)).ToHashSet();
+                    var cacheSet = cache.Select(entry => (entry.Key, entry.Value)).ToHashSet();
+
+                    if (!tableSet.SetEquals(cacheSet))
+                    {
+                        Log.Warn($"BTreeIndex on table {typeof(Row)} column {typeof(Column)} out of sync:\ntable has:\n{tableSet}\n, index has: [\n{string.Join(", ", cacheSet)}]");
+                    }
+                };
             }
 
             public Row? Find(Column value) => cache.TryGetValue(value, out var row) ? row : null;
@@ -103,6 +113,17 @@ namespace SpacetimeDB
                         cache.Remove(key);
                     }
                 };
+
+                table.OnIntegrityCheck += () =>
+                {
+                    var tableSet = table.Iter().Select(row => (GetKey(row), row)).ToHashSet();
+                    var cacheSet = cache.SelectMany(entry => entry.Value).Select(row => (GetKey(row), row)).ToHashSet();
+
+                    if (!tableSet.SetEquals(cacheSet))
+                    {
+                        Log.Warn($"BTreeIndex on table {typeof(Row)} column {typeof(Column)} out of sync:\ntable has:\n{tableSet}\n, index has: [\n{string.Join(", ", cacheSet)}]");
+                    }
+                };
             }
 
             public IEnumerable<Row> Filter(Column value) =>
@@ -124,6 +145,16 @@ namespace SpacetimeDB
         //          - Ingvar
         private event Action<Row>? OnInternalInsert;
         private event Action<Row>? OnInternalDelete;
+
+        /// <summary>
+        /// Used to check integrity of indexes.
+        /// </summary>
+        private event Action? OnIntegrityCheck;
+
+        /// <summary>
+        /// Whether or not to log all changes to this table.
+        /// </summary>
+        public bool LogAllAlterations;
 
         // These are implementations of the type-erased interface.
         object? IRemoteTableHandle.GetPrimaryKey(IStructuralReadWrite row) => GetPrimaryKey((Row)row);
@@ -227,6 +258,16 @@ namespace SpacetimeDB
             try
             {
                 Entries.Apply(multiDictionaryDelta, wasInserted, wasUpdated, wasRemoved);
+                if (LogAllAlterations)
+                {
+                    var inserts = string.Join("\n", wasInserted.Select(inserted => $"+ {inserted.Value}"));
+                    var updates = string.Join("\n", wasUpdated.Select(updated => $"from: {updated.oldValue}\nto:{updated.newValue}"));
+                    var removes = string.Join("\n", wasRemoved.Select(removed => $"- {removed.Value}"));
+
+                    Log.Debug($"APPLYING:\n{multiDictionaryDelta.ToString()}\nRESULTED IN:\n{inserts}\n{updates}\n{removes}");
+
+                    OnIntegrityCheck?.Invoke();
+                }
             }
             catch (Exception e)
             {

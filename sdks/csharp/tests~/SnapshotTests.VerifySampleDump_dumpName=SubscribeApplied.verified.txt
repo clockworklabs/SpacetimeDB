@@ -119,10 +119,12 @@
       },
       Db: {
         Message: {
+          LogAllAlterations: false,
           Count: 4
         },
         User: {
           Identity: {},
+          LogAllAlterations: false,
           Count: 3
         }
       },
@@ -179,10 +181,12 @@
       },
       Db: {
         Message: {
+          LogAllAlterations: false,
           Count: 4
         },
         User: {
           Identity: {},
+          LogAllAlterations: false,
           Count: 3
         }
       },
@@ -243,10 +247,12 @@
       },
       Db: {
         Message: {
+          LogAllAlterations: false,
           Count: 4
         },
         User: {
           Identity: {},
+          LogAllAlterations: false,
           Count: 3
         }
       },
@@ -303,10 +309,12 @@
       },
       Db: {
         Message: {
+          LogAllAlterations: false,
           Count: 4
         },
         User: {
           Identity: {},
+          LogAllAlterations: false,
           Count: 3
         }
       },
@@ -363,10 +371,12 @@
       },
       Db: {
         Message: {
+          LogAllAlterations: false,
           Count: 4
         },
         User: {
           Identity: {},
+          LogAllAlterations: false,
           Count: 3
         }
       },
@@ -458,10 +468,12 @@
       },
       Db: {
         Message: {
+          LogAllAlterations: false,
           Count: 4
         },
         User: {
           Identity: {},
+          LogAllAlterations: false,
           Count: 3
         }
       },

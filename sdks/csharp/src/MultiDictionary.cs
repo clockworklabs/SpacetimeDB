@@ -506,7 +506,7 @@ namespace SpacetimeDB
                         {
                             // In this case, something strange is going on: both values have the same sign.
                             // There's nothing sensible to do here, and this represents a server-side error, so just throw.
-                            throw new InvalidOperationException($"Called NonValueChange on a ValueDelta in an ambiguous state: {this}");
+                            throw new InvalidOperationException($"Called NonValueChange on a ValueDelta in an ambiguous state: {this}, values are equal?: {D1.Value?.Equals(D2.Value.Value)}");
                         }
                     }
                 }

@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using SpacetimeDB.ClientApi;
 
 namespace SpacetimeDB
@@ -127,6 +128,7 @@ namespace SpacetimeDB
 
     public interface ISubscriptionHandle
     {
+        public ReadOnlyCollection<string> Queries { get; }
         void OnApplied(ISubscriptionEventContext ctx, SubscriptionAppliedType state);
         void OnError(IErrorContext ctx);
         void OnEnded(ISubscriptionEventContext ctx);
@@ -186,6 +188,12 @@ namespace SpacetimeDB
         }
 
         /// <summary>
+        /// The queries used to build this subscription.
+        /// </summary>
+        public readonly ReadOnlyCollection<string> Queries;
+        ReadOnlyCollection<string> ISubscriptionHandle.Queries => Queries;
+
+        /// <summary>
         /// Whether the subscription is active.
         /// </summary>
         public bool IsActive
@@ -234,6 +242,7 @@ namespace SpacetimeDB
             this.conn = conn;
             this.onApplied = onApplied;
             queryId = null;
+            Queries = new ReadOnlyCollection<string>(querySqls);
             conn.LegacySubscribe(this, querySqls);
         }
 
@@ -255,6 +264,7 @@ namespace SpacetimeDB
             this.onApplied = onApplied;
             this.onError = onError;
             this.conn = conn;
+            Queries = new ReadOnlyCollection<string>(querySqls);
             queryId = conn.Subscribe(this, querySqls);
         }
 
