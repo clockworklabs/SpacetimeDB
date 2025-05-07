@@ -52,20 +52,20 @@ partial struct CustomStruct
 
     public override int GetHashCode()
     {
-        var hashIntField = IntField.GetHashCode();
-        var hashStringField = StringField == null ? 0 : StringField.GetHashCode();
-        return hashIntField ^ hashStringField;
+        var ___hashIntField = IntField.GetHashCode();
+        var ___hashStringField = StringField == null ? 0 : StringField.GetHashCode();
+        return ___hashIntField ^ ___hashStringField;
     }
 
 #nullable enable
     public bool Equals(CustomStruct that)
     {
-        var eqIntField = this.IntField.Equals(that.IntField);
-        var eqStringField =
+        var ___eqIntField = this.IntField.Equals(that.IntField);
+        var ___eqStringField =
             this.StringField == null
                 ? that.StringField == null
                 : this.StringField.Equals(that.StringField);
-        return eqIntField && eqStringField;
+        return ___eqIntField && ___eqStringField;
     }
 
     public override bool Equals(object? that)

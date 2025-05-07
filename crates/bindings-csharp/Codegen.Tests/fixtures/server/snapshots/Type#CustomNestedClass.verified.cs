@@ -105,26 +105,26 @@ partial class CustomNestedClass
 
     public override int GetHashCode()
     {
-        var hashNestedClass = NestedClass == null ? 0 : NestedClass.GetHashCode();
-        var hashNestedNullableClass =
+        var ___hashNestedClass = NestedClass == null ? 0 : NestedClass.GetHashCode();
+        var ___hashNestedNullableClass =
             NestedNullableClass == null ? 0 : NestedNullableClass.GetHashCode();
-        var hashNestedEnum = NestedEnum.GetHashCode();
-        var hashNestedNullableEnum = NestedNullableEnum.GetHashCode();
-        var hashNestedTaggedEnum = NestedTaggedEnum == null ? 0 : NestedTaggedEnum.GetHashCode();
-        var hashNestedNullableTaggedEnum =
+        var ___hashNestedEnum = NestedEnum.GetHashCode();
+        var ___hashNestedNullableEnum = NestedNullableEnum.GetHashCode();
+        var ___hashNestedTaggedEnum = NestedTaggedEnum == null ? 0 : NestedTaggedEnum.GetHashCode();
+        var ___hashNestedNullableTaggedEnum =
             NestedNullableTaggedEnum == null ? 0 : NestedNullableTaggedEnum.GetHashCode();
-        var hashNestedCustomRecord =
+        var ___hashNestedCustomRecord =
             NestedCustomRecord == null ? 0 : NestedCustomRecord.GetHashCode();
-        var hashNestedNullableCustomRecord =
+        var ___hashNestedNullableCustomRecord =
             NestedNullableCustomRecord == null ? 0 : NestedNullableCustomRecord.GetHashCode();
-        return hashNestedClass
-            ^ hashNestedNullableClass
-            ^ hashNestedEnum
-            ^ hashNestedNullableEnum
-            ^ hashNestedTaggedEnum
-            ^ hashNestedNullableTaggedEnum
-            ^ hashNestedCustomRecord
-            ^ hashNestedNullableCustomRecord;
+        return ___hashNestedClass
+            ^ ___hashNestedNullableClass
+            ^ ___hashNestedEnum
+            ^ ___hashNestedNullableEnum
+            ^ ___hashNestedTaggedEnum
+            ^ ___hashNestedNullableTaggedEnum
+            ^ ___hashNestedCustomRecord
+            ^ ___hashNestedNullableCustomRecord;
     }
 
 #nullable enable
@@ -135,40 +135,40 @@ partial class CustomNestedClass
             return false;
         }
 
-        var eqNestedClass =
+        var ___eqNestedClass =
             this.NestedClass == null
                 ? that.NestedClass == null
                 : this.NestedClass.Equals(that.NestedClass);
-        var eqNestedNullableClass =
+        var ___eqNestedNullableClass =
             this.NestedNullableClass == null
                 ? that.NestedNullableClass == null
                 : this.NestedNullableClass.Equals(that.NestedNullableClass);
-        var eqNestedEnum = this.NestedEnum.Equals(that.NestedEnum);
-        var eqNestedNullableEnum = this.NestedNullableEnum.Equals(that.NestedNullableEnum);
-        var eqNestedTaggedEnum =
+        var ___eqNestedEnum = this.NestedEnum.Equals(that.NestedEnum);
+        var ___eqNestedNullableEnum = this.NestedNullableEnum.Equals(that.NestedNullableEnum);
+        var ___eqNestedTaggedEnum =
             this.NestedTaggedEnum == null
                 ? that.NestedTaggedEnum == null
                 : this.NestedTaggedEnum.Equals(that.NestedTaggedEnum);
-        var eqNestedNullableTaggedEnum =
+        var ___eqNestedNullableTaggedEnum =
             this.NestedNullableTaggedEnum == null
                 ? that.NestedNullableTaggedEnum == null
                 : this.NestedNullableTaggedEnum.Equals(that.NestedNullableTaggedEnum);
-        var eqNestedCustomRecord =
+        var ___eqNestedCustomRecord =
             this.NestedCustomRecord == null
                 ? that.NestedCustomRecord == null
                 : this.NestedCustomRecord.Equals(that.NestedCustomRecord);
-        var eqNestedNullableCustomRecord =
+        var ___eqNestedNullableCustomRecord =
             this.NestedNullableCustomRecord == null
                 ? that.NestedNullableCustomRecord == null
                 : this.NestedNullableCustomRecord.Equals(that.NestedNullableCustomRecord);
-        return eqNestedClass
-            && eqNestedNullableClass
-            && eqNestedEnum
-            && eqNestedNullableEnum
-            && eqNestedTaggedEnum
-            && eqNestedNullableTaggedEnum
-            && eqNestedCustomRecord
-            && eqNestedNullableCustomRecord;
+        return ___eqNestedClass
+            && ___eqNestedNullableClass
+            && ___eqNestedEnum
+            && ___eqNestedNullableEnum
+            && ___eqNestedTaggedEnum
+            && ___eqNestedNullableTaggedEnum
+            && ___eqNestedCustomRecord
+            && ___eqNestedNullableCustomRecord;
     }
 
     public override bool Equals(object? that)

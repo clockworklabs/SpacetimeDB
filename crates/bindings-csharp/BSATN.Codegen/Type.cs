@@ -163,8 +163,8 @@ public record ArrayUse(string Type, string TypeInfo, TypeUse ElementType) : Type
         int level = 0
     )
     {
-        var iterVar = $"i{level}";
-        var innerOutVar = $"out{level + 1}";
+        var iterVar = $"___i{level}";
+        var innerOutVar = $"___out{level + 1}";
 
         return $$"""
             var {{outVar}} = true;
@@ -191,9 +191,9 @@ public record ArrayUse(string Type, string TypeInfo, TypeUse ElementType) : Type
 
     public override string GetHashCodeStatement(string inVar, string outVar, int level = 0)
     {
-        var iterVar = $"i{level}";
-        var innerHashCode = $"hc{level}";
-        var innerOutVar = $"out{level + 1}";
+        var iterVar = $"___i{level}";
+        var innerHashCode = $"___hc{level}";
+        var innerOutVar = $"___out{level + 1}";
 
         return $$"""
             var {{outVar}} = 0;
@@ -228,11 +228,11 @@ public record ListUse(string Type, string TypeInfo, TypeUse ElementType) : TypeU
         int level = 0
     )
     {
-        var iterVar = $"i{level}";
+        var iterVar = $"___i{level}";
         // needed to avoid warnings on list re-reference.
-        var innerTmp1 = $"tmpA{level}";
-        var innerTmp2 = $"tmpB{level}";
-        var innerOutVar = $"out{level + 1}";
+        var innerTmp1 = $"___tmpA{level}";
+        var innerTmp2 = $"___tmpB{level}";
+        var innerOutVar = $"___out{level + 1}";
 
         return $$"""
             var {{outVar}} = true;
@@ -256,10 +256,10 @@ public record ListUse(string Type, string TypeInfo, TypeUse ElementType) : TypeU
 
     public override string GetHashCodeStatement(string inVar, string outVar, int level = 0)
     {
-        var iterVar = $"i{level}";
-        var innerTmp = $"tmp{level}";
-        var innerHashCode = $"hc{level}";
-        var innerOutVar = $"out{level + 1}";
+        var iterVar = $"___i{level}";
+        var innerTmp = $"___tmp{level}";
+        var innerHashCode = $"___hc{level}";
+        var innerOutVar = $"___out{level + 1}";
 
         return $$"""
             var {{outVar}} = 0;
@@ -547,7 +547,7 @@ public abstract record BaseTypeDeclaration<M>
 
             write = "value.WriteFields(writer);";
 
-            var declHashName = (MemberDeclaration decl) => $"hash{decl.Name}";
+            var declHashName = (MemberDeclaration decl) => $"___hash{decl.Name}";
 
             getHashCode = $$"""
                 {{string.Join("\n", bsatnDecls.Select(decl => decl.Type.GetHashCodeStatement(decl.Name, declHashName(decl))))}}
@@ -594,7 +594,7 @@ public abstract record BaseTypeDeclaration<M>
             // If we are a reference type, various equality methods need to take nullable references.
             // If we are a value type, everything is pleasantly by-value.
             var fullNameMaybeRef = $"{FullName}{(Scope.IsStruct ? "" : "?")}";
-            var declEqualsName = (MemberDeclaration decl) => $"eq{decl.Name}";
+            var declEqualsName = (MemberDeclaration decl) => $"___eq{decl.Name}";
 
             extensions.Contents.Append(
                 $$"""

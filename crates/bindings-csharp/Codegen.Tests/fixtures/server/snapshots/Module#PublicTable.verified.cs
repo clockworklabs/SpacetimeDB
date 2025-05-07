@@ -167,170 +167,170 @@ partial struct PublicTable : System.IEquatable<PublicTable>, SpacetimeDB.BSATN.I
 
     public override int GetHashCode()
     {
-        var hashId = Id.GetHashCode();
-        var hashByteField = ByteField.GetHashCode();
-        var hashUshortField = UshortField.GetHashCode();
-        var hashUintField = UintField.GetHashCode();
-        var hashUlongField = UlongField.GetHashCode();
-        var hashUInt128Field = UInt128Field.GetHashCode();
-        var hashU128Field = U128Field.GetHashCode();
-        var hashU256Field = U256Field.GetHashCode();
-        var hashSbyteField = SbyteField.GetHashCode();
-        var hashShortField = ShortField.GetHashCode();
-        var hashIntField = IntField.GetHashCode();
-        var hashLongField = LongField.GetHashCode();
-        var hashInt128Field = Int128Field.GetHashCode();
-        var hashI128Field = I128Field.GetHashCode();
-        var hashI256Field = I256Field.GetHashCode();
-        var hashBoolField = BoolField.GetHashCode();
-        var hashFloatField = FloatField.GetHashCode();
-        var hashDoubleField = DoubleField.GetHashCode();
-        var hashStringField = StringField == null ? 0 : StringField.GetHashCode();
-        var hashIdentityField = IdentityField.GetHashCode();
-        var hashConnectionIdField = ConnectionIdField.GetHashCode();
-        var hashCustomStructField = CustomStructField.GetHashCode();
-        var hashCustomClassField = CustomClassField == null ? 0 : CustomClassField.GetHashCode();
-        var hashCustomEnumField = CustomEnumField.GetHashCode();
-        var hashCustomTaggedEnumField =
+        var ___hashId = Id.GetHashCode();
+        var ___hashByteField = ByteField.GetHashCode();
+        var ___hashUshortField = UshortField.GetHashCode();
+        var ___hashUintField = UintField.GetHashCode();
+        var ___hashUlongField = UlongField.GetHashCode();
+        var ___hashUInt128Field = UInt128Field.GetHashCode();
+        var ___hashU128Field = U128Field.GetHashCode();
+        var ___hashU256Field = U256Field.GetHashCode();
+        var ___hashSbyteField = SbyteField.GetHashCode();
+        var ___hashShortField = ShortField.GetHashCode();
+        var ___hashIntField = IntField.GetHashCode();
+        var ___hashLongField = LongField.GetHashCode();
+        var ___hashInt128Field = Int128Field.GetHashCode();
+        var ___hashI128Field = I128Field.GetHashCode();
+        var ___hashI256Field = I256Field.GetHashCode();
+        var ___hashBoolField = BoolField.GetHashCode();
+        var ___hashFloatField = FloatField.GetHashCode();
+        var ___hashDoubleField = DoubleField.GetHashCode();
+        var ___hashStringField = StringField == null ? 0 : StringField.GetHashCode();
+        var ___hashIdentityField = IdentityField.GetHashCode();
+        var ___hashConnectionIdField = ConnectionIdField.GetHashCode();
+        var ___hashCustomStructField = CustomStructField.GetHashCode();
+        var ___hashCustomClassField = CustomClassField == null ? 0 : CustomClassField.GetHashCode();
+        var ___hashCustomEnumField = CustomEnumField.GetHashCode();
+        var ___hashCustomTaggedEnumField =
             CustomTaggedEnumField == null ? 0 : CustomTaggedEnumField.GetHashCode();
-        var hashListField = 0;
+        var ___hashListField = 0;
         if (ListField != null)
         {
-            var hc0 = new System.HashCode();
-            for (int i0 = 0; i0 < ListField.Count; i0++)
+            var ___hc0 = new System.HashCode();
+            for (int ___i0 = 0; ___i0 < ListField.Count; ___i0++)
             {
-                var tmp0 = ListField[i0];
-                var out1 = tmp0.GetHashCode();
-                hc0.Add(out1);
+                var ___tmp0 = ListField[___i0];
+                var ___out1 = ___tmp0.GetHashCode();
+                ___hc0.Add(___out1);
             }
-            hashListField = hc0.ToHashCode();
+            ___hashListField = ___hc0.ToHashCode();
         }
-        var hashNullableValueField = NullableValueField.GetHashCode();
-        var hashNullableReferenceField =
+        var ___hashNullableValueField = NullableValueField.GetHashCode();
+        var ___hashNullableReferenceField =
             NullableReferenceField == null ? 0 : NullableReferenceField.GetHashCode();
-        return hashId
-            ^ hashByteField
-            ^ hashUshortField
-            ^ hashUintField
-            ^ hashUlongField
-            ^ hashUInt128Field
-            ^ hashU128Field
-            ^ hashU256Field
-            ^ hashSbyteField
-            ^ hashShortField
-            ^ hashIntField
-            ^ hashLongField
-            ^ hashInt128Field
-            ^ hashI128Field
-            ^ hashI256Field
-            ^ hashBoolField
-            ^ hashFloatField
-            ^ hashDoubleField
-            ^ hashStringField
-            ^ hashIdentityField
-            ^ hashConnectionIdField
-            ^ hashCustomStructField
-            ^ hashCustomClassField
-            ^ hashCustomEnumField
-            ^ hashCustomTaggedEnumField
-            ^ hashListField
-            ^ hashNullableValueField
-            ^ hashNullableReferenceField;
+        return ___hashId
+            ^ ___hashByteField
+            ^ ___hashUshortField
+            ^ ___hashUintField
+            ^ ___hashUlongField
+            ^ ___hashUInt128Field
+            ^ ___hashU128Field
+            ^ ___hashU256Field
+            ^ ___hashSbyteField
+            ^ ___hashShortField
+            ^ ___hashIntField
+            ^ ___hashLongField
+            ^ ___hashInt128Field
+            ^ ___hashI128Field
+            ^ ___hashI256Field
+            ^ ___hashBoolField
+            ^ ___hashFloatField
+            ^ ___hashDoubleField
+            ^ ___hashStringField
+            ^ ___hashIdentityField
+            ^ ___hashConnectionIdField
+            ^ ___hashCustomStructField
+            ^ ___hashCustomClassField
+            ^ ___hashCustomEnumField
+            ^ ___hashCustomTaggedEnumField
+            ^ ___hashListField
+            ^ ___hashNullableValueField
+            ^ ___hashNullableReferenceField;
     }
 
 #nullable enable
     public bool Equals(PublicTable that)
     {
-        var eqId = this.Id.Equals(that.Id);
-        var eqByteField = this.ByteField.Equals(that.ByteField);
-        var eqUshortField = this.UshortField.Equals(that.UshortField);
-        var eqUintField = this.UintField.Equals(that.UintField);
-        var eqUlongField = this.UlongField.Equals(that.UlongField);
-        var eqUInt128Field = this.UInt128Field.Equals(that.UInt128Field);
-        var eqU128Field = this.U128Field.Equals(that.U128Field);
-        var eqU256Field = this.U256Field.Equals(that.U256Field);
-        var eqSbyteField = this.SbyteField.Equals(that.SbyteField);
-        var eqShortField = this.ShortField.Equals(that.ShortField);
-        var eqIntField = this.IntField.Equals(that.IntField);
-        var eqLongField = this.LongField.Equals(that.LongField);
-        var eqInt128Field = this.Int128Field.Equals(that.Int128Field);
-        var eqI128Field = this.I128Field.Equals(that.I128Field);
-        var eqI256Field = this.I256Field.Equals(that.I256Field);
-        var eqBoolField = this.BoolField.Equals(that.BoolField);
-        var eqFloatField = this.FloatField.Equals(that.FloatField);
-        var eqDoubleField = this.DoubleField.Equals(that.DoubleField);
-        var eqStringField =
+        var ___eqId = this.Id.Equals(that.Id);
+        var ___eqByteField = this.ByteField.Equals(that.ByteField);
+        var ___eqUshortField = this.UshortField.Equals(that.UshortField);
+        var ___eqUintField = this.UintField.Equals(that.UintField);
+        var ___eqUlongField = this.UlongField.Equals(that.UlongField);
+        var ___eqUInt128Field = this.UInt128Field.Equals(that.UInt128Field);
+        var ___eqU128Field = this.U128Field.Equals(that.U128Field);
+        var ___eqU256Field = this.U256Field.Equals(that.U256Field);
+        var ___eqSbyteField = this.SbyteField.Equals(that.SbyteField);
+        var ___eqShortField = this.ShortField.Equals(that.ShortField);
+        var ___eqIntField = this.IntField.Equals(that.IntField);
+        var ___eqLongField = this.LongField.Equals(that.LongField);
+        var ___eqInt128Field = this.Int128Field.Equals(that.Int128Field);
+        var ___eqI128Field = this.I128Field.Equals(that.I128Field);
+        var ___eqI256Field = this.I256Field.Equals(that.I256Field);
+        var ___eqBoolField = this.BoolField.Equals(that.BoolField);
+        var ___eqFloatField = this.FloatField.Equals(that.FloatField);
+        var ___eqDoubleField = this.DoubleField.Equals(that.DoubleField);
+        var ___eqStringField =
             this.StringField == null
                 ? that.StringField == null
                 : this.StringField.Equals(that.StringField);
-        var eqIdentityField = this.IdentityField.Equals(that.IdentityField);
-        var eqConnectionIdField = this.ConnectionIdField.Equals(that.ConnectionIdField);
-        var eqCustomStructField = this.CustomStructField.Equals(that.CustomStructField);
-        var eqCustomClassField =
+        var ___eqIdentityField = this.IdentityField.Equals(that.IdentityField);
+        var ___eqConnectionIdField = this.ConnectionIdField.Equals(that.ConnectionIdField);
+        var ___eqCustomStructField = this.CustomStructField.Equals(that.CustomStructField);
+        var ___eqCustomClassField =
             this.CustomClassField == null
                 ? that.CustomClassField == null
                 : this.CustomClassField.Equals(that.CustomClassField);
-        var eqCustomEnumField = this.CustomEnumField.Equals(that.CustomEnumField);
-        var eqCustomTaggedEnumField =
+        var ___eqCustomEnumField = this.CustomEnumField.Equals(that.CustomEnumField);
+        var ___eqCustomTaggedEnumField =
             this.CustomTaggedEnumField == null
                 ? that.CustomTaggedEnumField == null
                 : this.CustomTaggedEnumField.Equals(that.CustomTaggedEnumField);
-        var eqListField = true;
+        var ___eqListField = true;
         if (this.ListField == null || that.ListField == null)
         {
-            eqListField = this.ListField == that.ListField;
+            ___eqListField = this.ListField == that.ListField;
         }
         else if (this.ListField.Count != that.ListField.Count)
         {
-            eqListField = false;
+            ___eqListField = false;
         }
         else
         {
-            for (int i0 = 0; i0 < this.ListField.Count; i0++)
+            for (int ___i0 = 0; ___i0 < this.ListField.Count; ___i0++)
             {
-                var tmpA0 = this.ListField[i0];
-                var tmpB0 = that.ListField[i0];
-                var out1 = tmpA0.Equals(tmpB0);
-                if (!out1)
+                var ___tmpA0 = this.ListField[___i0];
+                var ___tmpB0 = that.ListField[___i0];
+                var ___out1 = ___tmpA0.Equals(___tmpB0);
+                if (!___out1)
                 {
-                    eqListField = false;
+                    ___eqListField = false;
                     break;
                 }
             }
         }
-        var eqNullableValueField = this.NullableValueField.Equals(that.NullableValueField);
-        var eqNullableReferenceField =
+        var ___eqNullableValueField = this.NullableValueField.Equals(that.NullableValueField);
+        var ___eqNullableReferenceField =
             this.NullableReferenceField == null
                 ? that.NullableReferenceField == null
                 : this.NullableReferenceField.Equals(that.NullableReferenceField);
-        return eqId
-            && eqByteField
-            && eqUshortField
-            && eqUintField
-            && eqUlongField
-            && eqUInt128Field
-            && eqU128Field
-            && eqU256Field
-            && eqSbyteField
-            && eqShortField
-            && eqIntField
-            && eqLongField
-            && eqInt128Field
-            && eqI128Field
-            && eqI256Field
-            && eqBoolField
-            && eqFloatField
-            && eqDoubleField
-            && eqStringField
-            && eqIdentityField
-            && eqConnectionIdField
-            && eqCustomStructField
-            && eqCustomClassField
-            && eqCustomEnumField
-            && eqCustomTaggedEnumField
-            && eqListField
-            && eqNullableValueField
-            && eqNullableReferenceField;
+        return ___eqId
+            && ___eqByteField
+            && ___eqUshortField
+            && ___eqUintField
+            && ___eqUlongField
+            && ___eqUInt128Field
+            && ___eqU128Field
+            && ___eqU256Field
+            && ___eqSbyteField
+            && ___eqShortField
+            && ___eqIntField
+            && ___eqLongField
+            && ___eqInt128Field
+            && ___eqI128Field
+            && ___eqI256Field
+            && ___eqBoolField
+            && ___eqFloatField
+            && ___eqDoubleField
+            && ___eqStringField
+            && ___eqIdentityField
+            && ___eqConnectionIdField
+            && ___eqCustomStructField
+            && ___eqCustomClassField
+            && ___eqCustomEnumField
+            && ___eqCustomTaggedEnumField
+            && ___eqListField
+            && ___eqNullableValueField
+            && ___eqNullableReferenceField;
     }
 
     public override bool Equals(object? that)

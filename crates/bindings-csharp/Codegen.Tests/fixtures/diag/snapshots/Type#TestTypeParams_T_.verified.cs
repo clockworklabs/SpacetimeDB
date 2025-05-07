@@ -51,15 +51,15 @@ partial struct TestTypeParams<T>
 
     public override int GetHashCode()
     {
-        var hashField = Field == null ? 0 : Field.GetHashCode();
-        return hashField;
+        var ___hashField = Field == null ? 0 : Field.GetHashCode();
+        return ___hashField;
     }
 
 #nullable enable
     public bool Equals(TestTypeParams<T> that)
     {
-        var eqField = this.Field == null ? that.Field == null : this.Field.Equals(that.Field);
-        return eqField;
+        var ___eqField = this.Field == null ? that.Field == null : this.Field.Equals(that.Field);
+        return ___eqField;
     }
 
     public override bool Equals(object? that)
