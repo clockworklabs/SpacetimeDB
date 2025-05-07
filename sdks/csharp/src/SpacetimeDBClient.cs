@@ -760,6 +760,10 @@ namespace SpacetimeDB
                                 Log.Exception(e);
                             }
                         }
+                        else
+                        {
+                            Log.Warn("Subscribed to something, but couldn't find the subscription object");
+                        }
                         break;
                     }
 
@@ -788,6 +792,10 @@ namespace SpacetimeDB
                             {
                                 Log.Exception(e);
                             }
+                        }
+                        else
+                        {
+                            Log.Warn("Subscribed to something, but couldn't find the subscription object");
                         }
 
                         break;
@@ -859,6 +867,10 @@ namespace SpacetimeDB
                             {
                                 Log.Exception(e);
                             }
+                        }
+                        else
+                        {
+                            Log.Warn("Unsubscribed to something, but couldn't find the subscription object");
                         }
                     }
                     break;

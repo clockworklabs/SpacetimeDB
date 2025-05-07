@@ -76,7 +76,7 @@ namespace SpacetimeDB
 
                     if (!tableSet.SetEquals(cacheSet))
                     {
-                        Log.Warn($"BTreeIndex on table {typeof(Row)} column {typeof(Column)} out of sync:\ntable has:\n{tableSet}\n, index has: [\n{string.Join(", ", cacheSet)}]");
+                        Log.Warn($"UniqueIndex on table {typeof(Row)} column {typeof(Column)} out of sync:\ntable has:\n[{string.Join(", ", tableSet)}]\n, index has: \n[{string.Join(", ", cacheSet)}]\n");
                     }
                 };
             }
@@ -121,7 +121,7 @@ namespace SpacetimeDB
 
                     if (!tableSet.SetEquals(cacheSet))
                     {
-                        Log.Warn($"BTreeIndex on table {typeof(Row)} column {typeof(Column)} out of sync:\ntable has:\n{tableSet}\n, index has: [\n{string.Join(", ", cacheSet)}]");
+                        Log.Warn($"BTreeIndex on table {typeof(Row)} column {typeof(Column)} out of sync:\ntable has:\n[{string.Join(", ", tableSet)}]\n, index has: \n[{string.Join(", ", cacheSet)}]\n");
                     }
                 };
             }
@@ -265,8 +265,6 @@ namespace SpacetimeDB
                     var removes = string.Join("\n", wasRemoved.Select(removed => $"- {removed.Value}"));
 
                     Log.Debug($"APPLYING:\n{multiDictionaryDelta.ToString()}\nRESULTED IN:\n{inserts}\n{updates}\n{removes}");
-
-                    OnIntegrityCheck?.Invoke();
                 }
             }
             catch (Exception e)
@@ -321,6 +319,11 @@ namespace SpacetimeDB
                 {
                     OnInternalDelete?.Invoke(oldRow);
                 }
+            }
+
+            if (LogAllAlterations)
+            {
+                OnIntegrityCheck?.Invoke();
             }
         }
 
