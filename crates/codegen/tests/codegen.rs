@@ -1,21 +1,20 @@
-use spacetimedb_codegen::{extract_descriptions, generate, Csharp, Rust, TypeScript};
+use spacetimedb_codegen::{generate, Csharp, Rust, TypeScript};
 use spacetimedb_data_structures::map::HashMap;
+use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_testing::modules::{CompilationMode, CompiledModule};
-use std::path::Path;
 use std::sync::OnceLock;
 
-fn compiled_module() -> &'static Path {
-    static COMPILED_MODULE: OnceLock<CompiledModule> = OnceLock::new();
+fn compiled_module() -> &'static ModuleDef {
+    static COMPILED_MODULE: OnceLock<ModuleDef> = OnceLock::new();
     COMPILED_MODULE
-        .get_or_init(|| CompiledModule::compile("module-test", CompilationMode::Debug))
-        .path()
+        .get_or_init(|| CompiledModule::compile("module-test", CompilationMode::Debug).extract_schema_blocking())
 }
 
 macro_rules! declare_tests {
     ($($name:ident => $lang:expr,)*) => ($(
         #[test]
         fn $name() {
-            let module = extract_descriptions(compiled_module()).unwrap().try_into().unwrap();
+            let module = compiled_module();
             let outfiles = HashMap::<_, _>::from_iter(generate(&module, &$lang));
             let mut settings = insta::Settings::clone_current();
             settings.set_sort_maps(true);

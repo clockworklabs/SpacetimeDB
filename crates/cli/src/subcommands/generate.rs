@@ -1,20 +1,21 @@
 #![warn(clippy::uninlined_format_args)]
 
+use anyhow::Context;
 use clap::parser::ValueSource;
 use clap::Arg;
 use clap::ArgAction::Set;
 use fs_err as fs;
-use spacetimedb_codegen::{
-    compile_wasm, extract_descriptions_from_module, generate, Csharp, Lang, Rust, TypeScript, AUTO_GENERATED_PREFIX,
-};
+use spacetimedb_codegen::{generate, Csharp, Lang, Rust, TypeScript, AUTO_GENERATED_PREFIX};
 use spacetimedb_lib::de::serde::DeserializeWrapper;
+use spacetimedb_lib::{sats, RawModuleDef};
 use spacetimedb_schema;
 use spacetimedb_schema::def::ModuleDef;
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 
 use crate::tasks::csharp::dotnet_format;
 use crate::tasks::rust::rustfmt;
-use crate::util::y_or_n;
+use crate::util::{resolve_sibling_binary, y_or_n};
 use crate::Config;
 use crate::{build, common_args};
 use clap::builder::PossibleValue;
@@ -88,6 +89,15 @@ pub fn cli() -> clap::Command {
 }
 
 pub async fn exec(config: Config, args: &clap::ArgMatches) -> anyhow::Result<()> {
+    exec_ex(config, args, extract_descriptions).await
+}
+
+/// Like `exec`, but lets you specify a custom a function to extract a schema from a file.
+pub async fn exec_ex(
+    config: Config,
+    args: &clap::ArgMatches,
+    extract_descriptions: ExtractDescriptions,
+) -> anyhow::Result<()> {
     let project_path = args.get_one::<PathBuf>("project_path").unwrap();
     let wasm_file = args.get_one::<PathBuf>("wasm_file").cloned();
     let json_module = args.get_many::<PathBuf>("json_module");
@@ -101,13 +111,13 @@ pub async fn exec(config: Config, args: &clap::ArgMatches) -> anyhow::Result<()>
         return Err(anyhow::anyhow!("--namespace is only supported with --lang csharp"));
     }
 
-    let module = if let Some(mut json_module) = json_module {
-        let DeserializeWrapper(module) = if let Some(path) = json_module.next() {
+    let module: ModuleDef = if let Some(mut json_module) = json_module {
+        let DeserializeWrapper::<RawModuleDef>(module) = if let Some(path) = json_module.next() {
             serde_json::from_slice(&fs::read(path)?)?
         } else {
             serde_json::from_reader(std::io::stdin().lock())?
         };
-        module
+        module.try_into()?
     } else {
         let wasm_path = if let Some(path) = wasm_file {
             println!("Skipping build. Instead we are inspecting {}", path.display());
@@ -117,12 +127,9 @@ pub async fn exec(config: Config, args: &clap::ArgMatches) -> anyhow::Result<()>
         };
         let spinner = indicatif::ProgressBar::new_spinner();
         spinner.enable_steady_tick(std::time::Duration::from_millis(60));
-        spinner.set_message("Compiling wasm...");
-        let module = compile_wasm(&wasm_path)?;
         spinner.set_message("Extracting schema from wasm...");
-        extract_descriptions_from_module(module)?
+        extract_descriptions(&wasm_path).context("could not extract schema")?
     };
-    let module: ModuleDef = module.try_into()?;
 
     fs::create_dir_all(out_dir)?;
 
@@ -233,4 +240,17 @@ impl Language {
 
         Ok(())
     }
+}
+
+pub type ExtractDescriptions = fn(&Path) -> anyhow::Result<ModuleDef>;
+fn extract_descriptions(wasm_file: &Path) -> anyhow::Result<ModuleDef> {
+    let bin_path = resolve_sibling_binary("spacetimedb-standalone")?;
+    let child = Command::new(&bin_path)
+        .arg("extract-schema")
+        .arg(wasm_file)
+        .stdout(Stdio::piped())
+        .spawn()
+        .with_context(|| format!("failed to spawn {}", bin_path.display()))?;
+    let sats::serde::SerdeWrapper::<RawModuleDef>(module) = serde_json::from_reader(child.stdout.unwrap())?;
+    Ok(module.try_into()?)
 }

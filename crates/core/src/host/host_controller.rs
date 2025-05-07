@@ -21,10 +21,11 @@ use log::{info, trace, warn};
 use parking_lot::{Mutex, RwLock};
 use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_durability::{self as durability, TxOffset};
-use spacetimedb_lib::hash_bytes;
+use spacetimedb_lib::{hash_bytes, Identity};
 use spacetimedb_paths::server::{ReplicaDir, ServerDataDir};
 use spacetimedb_paths::FromPathUnchecked;
 use spacetimedb_sats::hash::Hash;
+use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_table::page_pool::PagePool;
 use std::future::Future;
 use std::ops::Deref;
@@ -99,7 +100,7 @@ struct HostRuntimes {
 }
 
 impl HostRuntimes {
-    fn new(data_dir: &ServerDataDir) -> Arc<Self> {
+    fn new(data_dir: Option<&ServerDataDir>) -> Arc<Self> {
         let wasmtime = WasmtimeRuntime::new(data_dir);
         Arc::new(Self { wasmtime })
     }
@@ -173,7 +174,7 @@ impl HostController {
             program_storage,
             energy_monitor,
             durability,
-            runtimes: HostRuntimes::new(&data_dir),
+            runtimes: HostRuntimes::new(Some(&data_dir)),
             data_dir,
             page_pool: PagePool::new(default_config.page_pool_max_size),
         }
@@ -263,8 +264,8 @@ impl HostController {
     ///
     /// This is not necessary during hotswap publishes,
     /// as the automigration planner and executor accomplish the same validity checks.
-    pub async fn check_module_validity(&self, database: Database, program: Program) -> anyhow::Result<()> {
-        Host::try_init_in_memory_to_check(self, database, program).await
+    pub async fn check_module_validity(&self, database: Database, program: Program) -> anyhow::Result<Arc<ModuleInfo>> {
+        Host::try_init_in_memory_to_check(&self.runtimes, self.page_pool.clone(), database, program).await
     }
 
     /// Run a computation on the [`RelationalDB`] of a [`ModuleHost`] managed by
@@ -822,12 +823,11 @@ impl Host {
     /// This is not necessary during hotswap publishes,
     /// as the automigration planner and executor accomplish the same validity checks.
     async fn try_init_in_memory_to_check(
-        host_controller: &HostController,
+        runtimes: &Arc<HostRuntimes>,
+        page_pool: PagePool,
         database: Database,
         program: Program,
-    ) -> anyhow::Result<()> {
-        let HostController { runtimes, .. } = host_controller;
-
+    ) -> anyhow::Result<Arc<ModuleInfo>> {
         // Even in-memory databases acquire a lockfile.
         // Grab a tempdir to put that lockfile in.
         let phony_replica_dir = TempDir::with_prefix("spacetimedb-publish-in-memory-check")
@@ -843,7 +843,7 @@ impl Host {
             EmptyHistory::new(),
             None,
             None,
-            host_controller.page_pool.clone(),
+            page_pool,
         )?;
 
         let (program, launched) = launch_module(
@@ -866,7 +866,7 @@ impl Host {
             Result::from(call_result)?;
         }
 
-        Ok(())
+        Ok(launched.module_host.info)
     }
 
     /// Attempt to replace this [`Host`]'s [`ModuleHost`] with a new one running
@@ -953,4 +953,28 @@ async fn metric_reporter(replica_ctx: Arc<ReplicaContext>) {
         }
         tokio::time::sleep(STORAGE_METERING_INTERVAL).await;
     }
+}
+
+/// Extracts the schema from a given module.
+///
+/// Spins up a dummy host and returns the `ModuleDef` that it extracts.
+pub async fn extract_schema(program_bytes: Box<[u8]>, host_type: HostType) -> anyhow::Result<ModuleDef> {
+    let owner_identity = Identity::from_u256(0xdcba_u32.into());
+    let database_identity = Identity::from_u256(0xabcd_u32.into());
+    let program = Program::from_bytes(program_bytes);
+
+    let database = Database {
+        id: 0,
+        database_identity,
+        owner_identity,
+        host_type,
+        initial_program: program.hash,
+    };
+
+    let runtimes = HostRuntimes::new(None);
+    let page_pool = PagePool::default();
+    let module_info = Host::try_init_in_memory_to_check(&runtimes, page_pool, database, program).await?;
+    let module_info = Arc::into_inner(module_info).unwrap();
+
+    Ok(module_info.module_def)
 }

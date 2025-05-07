@@ -1,15 +1,11 @@
 use serial_test::serial;
-use spacetimedb_codegen::extract_descriptions;
 use spacetimedb_schema::auto_migrate::{ponder_auto_migrate, AutoMigrateStep};
 use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_testing::modules::{CompilationMode, CompiledModule};
 
 fn get_normalized_schema(module_name: &str) -> ModuleDef {
     let module = CompiledModule::compile(module_name, CompilationMode::Debug);
-    extract_descriptions(module.path())
-        .expect("failed to extract module descriptions")
-        .try_into()
-        .expect("failed to convert raw module def to module def")
+    module.extract_schema_blocking()
 }
 
 fn assert_identical_modules(module_name_prefix: &str) {

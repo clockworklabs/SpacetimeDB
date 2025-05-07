@@ -24,7 +24,7 @@ pub struct WasmtimeRuntime {
 }
 
 impl WasmtimeRuntime {
-    pub fn new(data_dir: &ServerDataDir) -> Self {
+    pub fn new(data_dir: Option<&ServerDataDir>) -> Self {
         let mut config = wasmtime::Config::new();
         config
             .cranelift_opt_level(wasmtime::OptLevel::Speed)
@@ -39,7 +39,9 @@ impl WasmtimeRuntime {
         config.profiler(wasmtime::ProfilingStrategy::PerfMap);
 
         // ignore errors for this - if we're not able to set up caching, that's fine, it's just an optimization
-        let _ = Self::set_cache_config(&mut config, data_dir.wasmtime_cache());
+        if let Some(data_dir) = data_dir {
+            let _ = Self::set_cache_config(&mut config, data_dir.wasmtime_cache());
+        }
 
         let engine = Engine::new(&config).unwrap();
 

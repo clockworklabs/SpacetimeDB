@@ -4,7 +4,7 @@ pub mod util;
 pub mod version;
 
 use crate::control_db::ControlDb;
-use crate::subcommands::start;
+use crate::subcommands::{extract_schema, start};
 use anyhow::{ensure, Context, Ok};
 use async_trait::async_trait;
 use clap::{ArgMatches, Command};
@@ -462,12 +462,13 @@ impl StandaloneEnv {
 pub async fn exec_subcommand(cmd: &str, args: &ArgMatches) -> Result<(), anyhow::Error> {
     match cmd {
         "start" => start::exec(args).await,
+        "extract-schema" => extract_schema::exec(args).await,
         unknown => Err(anyhow::anyhow!("Invalid subcommand: {}", unknown)),
     }
 }
 
 pub fn get_subcommands() -> Vec<Command> {
-    vec![start::cli()]
+    vec![start::cli(), extract_schema::cli()]
 }
 
 pub async fn start_server(data_dir: &ServerDataDir, cert_dir: Option<&std::path::Path>) -> anyhow::Result<()> {
