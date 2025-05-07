@@ -122,8 +122,8 @@ partial class ContainsNestedLists
             for (int i0 = 0; i0 < IntList.Count; i0++)
             {
                 var tmp0 = IntList[i0];
-                var hashIntList1 = tmp0.GetHashCode();
-                hc0.Add(hashIntList1);
+                var out1 = tmp0.GetHashCode();
+                hc0.Add(out1);
             }
             hashIntList = hc0.ToHashCode();
         }
@@ -134,8 +134,8 @@ partial class ContainsNestedLists
             for (int i0 = 0; i0 < StringList.Count; i0++)
             {
                 var tmp0 = StringList[i0];
-                var hashStringList1 = tmp0 == null ? 0 : tmp0.GetHashCode();
-                hc0.Add(hashStringList1);
+                var out1 = tmp0 == null ? 0 : tmp0.GetHashCode();
+                hc0.Add(out1);
             }
             hashStringList = hc0.ToHashCode();
         }
@@ -145,8 +145,8 @@ partial class ContainsNestedLists
             var hc0 = new System.HashCode();
             for (int i0 = 0; i0 < IntArray.Length; i0++)
             {
-                var hashIntArray1 = IntArray[i0].GetHashCode();
-                hc0.Add(hashIntArray1);
+                var out1 = IntArray[i0].GetHashCode();
+                hc0.Add(out1);
             }
             hashIntArray = hc0.ToHashCode();
         }
@@ -156,8 +156,8 @@ partial class ContainsNestedLists
             var hc0 = new System.HashCode();
             for (int i0 = 0; i0 < StringArray.Length; i0++)
             {
-                var hashStringArray1 = StringArray[i0] == null ? 0 : StringArray[i0].GetHashCode();
-                hc0.Add(hashStringArray1);
+                var out1 = StringArray[i0] == null ? 0 : StringArray[i0].GetHashCode();
+                hc0.Add(out1);
             }
             hashStringArray = hc0.ToHashCode();
         }
@@ -168,28 +168,28 @@ partial class ContainsNestedLists
             for (int i0 = 0; i0 < IntArrayArrayList.Count; i0++)
             {
                 var tmp0 = IntArrayArrayList[i0];
-                var hashIntArrayArrayList1 = 0;
+                var out1 = 0;
                 if (tmp0 != null)
                 {
                     var hc1 = new System.HashCode();
                     for (int i1 = 0; i1 < tmp0.Length; i1++)
                     {
-                        var hashIntArrayArrayList12 = 0;
+                        var out2 = 0;
                         if (tmp0[i1] != null)
                         {
                             var hc2 = new System.HashCode();
                             for (int i2 = 0; i2 < tmp0[i1].Length; i2++)
                             {
-                                var hashIntArrayArrayList123 = tmp0[i1][i2].GetHashCode();
-                                hc2.Add(hashIntArrayArrayList123);
+                                var out3 = tmp0[i1][i2].GetHashCode();
+                                hc2.Add(out3);
                             }
-                            hashIntArrayArrayList12 = hc2.ToHashCode();
+                            out2 = hc2.ToHashCode();
                         }
-                        hc1.Add(hashIntArrayArrayList12);
+                        hc1.Add(out2);
                     }
-                    hashIntArrayArrayList1 = hc1.ToHashCode();
+                    out1 = hc1.ToHashCode();
                 }
-                hc0.Add(hashIntArrayArrayList1);
+                hc0.Add(out1);
             }
             hashIntArrayArrayList = hc0.ToHashCode();
         }
@@ -199,30 +199,30 @@ partial class ContainsNestedLists
             var hc0 = new System.HashCode();
             for (int i0 = 0; i0 < IntListListArray.Length; i0++)
             {
-                var hashIntListListArray1 = 0;
+                var out1 = 0;
                 if (IntListListArray[i0] != null)
                 {
                     var hc1 = new System.HashCode();
                     for (int i1 = 0; i1 < IntListListArray[i0].Count; i1++)
                     {
                         var tmp1 = IntListListArray[i0][i1];
-                        var hashIntListListArray12 = 0;
+                        var out2 = 0;
                         if (tmp1 != null)
                         {
                             var hc2 = new System.HashCode();
                             for (int i2 = 0; i2 < tmp1.Count; i2++)
                             {
                                 var tmp2 = tmp1[i2];
-                                var hashIntListListArray123 = tmp2.GetHashCode();
-                                hc2.Add(hashIntListListArray123);
+                                var out3 = tmp2.GetHashCode();
+                                hc2.Add(out3);
                             }
-                            hashIntListListArray12 = hc2.ToHashCode();
+                            out2 = hc2.ToHashCode();
                         }
-                        hc1.Add(hashIntListListArray12);
+                        hc1.Add(out2);
                     }
-                    hashIntListListArray1 = hc1.ToHashCode();
+                    out1 = hc1.ToHashCode();
                 }
-                hc0.Add(hashIntListListArray1);
+                hc0.Add(out1);
             }
             hashIntListListArray = hc0.ToHashCode();
         }
@@ -233,29 +233,28 @@ partial class ContainsNestedLists
             for (int i0 = 0; i0 < StringArrayArrayList.Count; i0++)
             {
                 var tmp0 = StringArrayArrayList[i0];
-                var hashStringArrayArrayList1 = 0;
+                var out1 = 0;
                 if (tmp0 != null)
                 {
                     var hc1 = new System.HashCode();
                     for (int i1 = 0; i1 < tmp0.Length; i1++)
                     {
-                        var hashStringArrayArrayList12 = 0;
+                        var out2 = 0;
                         if (tmp0[i1] != null)
                         {
                             var hc2 = new System.HashCode();
                             for (int i2 = 0; i2 < tmp0[i1].Length; i2++)
                             {
-                                var hashStringArrayArrayList123 =
-                                    tmp0[i1][i2] == null ? 0 : tmp0[i1][i2].GetHashCode();
-                                hc2.Add(hashStringArrayArrayList123);
+                                var out3 = tmp0[i1][i2] == null ? 0 : tmp0[i1][i2].GetHashCode();
+                                hc2.Add(out3);
                             }
-                            hashStringArrayArrayList12 = hc2.ToHashCode();
+                            out2 = hc2.ToHashCode();
                         }
-                        hc1.Add(hashStringArrayArrayList12);
+                        hc1.Add(out2);
                     }
-                    hashStringArrayArrayList1 = hc1.ToHashCode();
+                    out1 = hc1.ToHashCode();
                 }
-                hc0.Add(hashStringArrayArrayList1);
+                hc0.Add(out1);
             }
             hashStringArrayArrayList = hc0.ToHashCode();
         }
@@ -265,31 +264,30 @@ partial class ContainsNestedLists
             var hc0 = new System.HashCode();
             for (int i0 = 0; i0 < StringListListArray.Length; i0++)
             {
-                var hashStringListListArray1 = 0;
+                var out1 = 0;
                 if (StringListListArray[i0] != null)
                 {
                     var hc1 = new System.HashCode();
                     for (int i1 = 0; i1 < StringListListArray[i0].Count; i1++)
                     {
                         var tmp1 = StringListListArray[i0][i1];
-                        var hashStringListListArray12 = 0;
+                        var out2 = 0;
                         if (tmp1 != null)
                         {
                             var hc2 = new System.HashCode();
                             for (int i2 = 0; i2 < tmp1.Count; i2++)
                             {
                                 var tmp2 = tmp1[i2];
-                                var hashStringListListArray123 =
-                                    tmp2 == null ? 0 : tmp2.GetHashCode();
-                                hc2.Add(hashStringListListArray123);
+                                var out3 = tmp2 == null ? 0 : tmp2.GetHashCode();
+                                hc2.Add(out3);
                             }
-                            hashStringListListArray12 = hc2.ToHashCode();
+                            out2 = hc2.ToHashCode();
                         }
-                        hc1.Add(hashStringListListArray12);
+                        hc1.Add(out2);
                     }
-                    hashStringListListArray1 = hc1.ToHashCode();
+                    out1 = hc1.ToHashCode();
                 }
-                hc0.Add(hashStringListListArray1);
+                hc0.Add(out1);
             }
             hashStringListListArray = hc0.ToHashCode();
         }
@@ -326,8 +324,8 @@ partial class ContainsNestedLists
             {
                 var tmpA0 = this.IntList[i0];
                 var tmpB0 = that.IntList[i0];
-                var eqIntList1 = tmpA0.Equals(tmpB0);
-                if (!eqIntList1)
+                var out1 = tmpA0.Equals(tmpB0);
+                if (!out1)
                 {
                     eqIntList = false;
                     break;
@@ -349,8 +347,8 @@ partial class ContainsNestedLists
             {
                 var tmpA0 = this.StringList[i0];
                 var tmpB0 = that.StringList[i0];
-                var eqStringList1 = tmpA0 == null ? tmpB0 == null : tmpA0.Equals(tmpB0);
-                if (!eqStringList1)
+                var out1 = tmpA0 == null ? tmpB0 == null : tmpA0.Equals(tmpB0);
+                if (!out1)
                 {
                     eqStringList = false;
                     break;
@@ -370,8 +368,8 @@ partial class ContainsNestedLists
         {
             for (int i0 = 0; i0 < this.IntArray.Length; i0++)
             {
-                var eqIntArray1 = this.IntArray[i0].Equals(that.IntArray[i0]);
-                if (!eqIntArray1)
+                var out1 = this.IntArray[i0].Equals(that.IntArray[i0]);
+                if (!out1)
                 {
                     eqIntArray = false;
                     break;
@@ -391,11 +389,11 @@ partial class ContainsNestedLists
         {
             for (int i0 = 0; i0 < this.StringArray.Length; i0++)
             {
-                var eqStringArray1 =
+                var out1 =
                     this.StringArray[i0] == null
                         ? that.StringArray[i0] == null
                         : this.StringArray[i0].Equals(that.StringArray[i0]);
-                if (!eqStringArray1)
+                if (!out1)
                 {
                     eqStringArray = false;
                     break;
@@ -417,48 +415,48 @@ partial class ContainsNestedLists
             {
                 var tmpA0 = this.IntArrayArrayList[i0];
                 var tmpB0 = that.IntArrayArrayList[i0];
-                var eqIntArrayArrayList1 = true;
+                var out1 = true;
                 if (tmpA0 == null || tmpB0 == null)
                 {
-                    eqIntArrayArrayList1 = tmpA0 == tmpB0;
+                    out1 = tmpA0 == tmpB0;
                 }
                 else if (tmpA0.Length != tmpB0.Length)
                 {
-                    eqIntArrayArrayList1 = false;
+                    out1 = false;
                 }
                 else
                 {
                     for (int i1 = 0; i1 < tmpA0.Length; i1++)
                     {
-                        var eqIntArrayArrayList12 = true;
+                        var out2 = true;
                         if (tmpA0[i1] == null || tmpB0[i1] == null)
                         {
-                            eqIntArrayArrayList12 = tmpA0[i1] == tmpB0[i1];
+                            out2 = tmpA0[i1] == tmpB0[i1];
                         }
                         else if (tmpA0[i1].Length != tmpB0[i1].Length)
                         {
-                            eqIntArrayArrayList12 = false;
+                            out2 = false;
                         }
                         else
                         {
                             for (int i2 = 0; i2 < tmpA0[i1].Length; i2++)
                             {
-                                var eqIntArrayArrayList123 = tmpA0[i1][i2].Equals(tmpB0[i1][i2]);
-                                if (!eqIntArrayArrayList123)
+                                var out3 = tmpA0[i1][i2].Equals(tmpB0[i1][i2]);
+                                if (!out3)
                                 {
-                                    eqIntArrayArrayList12 = false;
+                                    out2 = false;
                                     break;
                                 }
                             }
                         }
-                        if (!eqIntArrayArrayList12)
+                        if (!out2)
                         {
-                            eqIntArrayArrayList1 = false;
+                            out1 = false;
                             break;
                         }
                     }
                 }
-                if (!eqIntArrayArrayList1)
+                if (!out1)
                 {
                     eqIntArrayArrayList = false;
                     break;
@@ -478,14 +476,14 @@ partial class ContainsNestedLists
         {
             for (int i0 = 0; i0 < this.IntListListArray.Length; i0++)
             {
-                var eqIntListListArray1 = true;
+                var out1 = true;
                 if (this.IntListListArray[i0] == null || that.IntListListArray[i0] == null)
                 {
-                    eqIntListListArray1 = this.IntListListArray[i0] == that.IntListListArray[i0];
+                    out1 = this.IntListListArray[i0] == that.IntListListArray[i0];
                 }
                 else if (this.IntListListArray[i0].Count != that.IntListListArray[i0].Count)
                 {
-                    eqIntListListArray1 = false;
+                    out1 = false;
                 }
                 else
                 {
@@ -493,14 +491,14 @@ partial class ContainsNestedLists
                     {
                         var tmpA1 = this.IntListListArray[i0][i1];
                         var tmpB1 = that.IntListListArray[i0][i1];
-                        var eqIntListListArray12 = true;
+                        var out2 = true;
                         if (tmpA1 == null || tmpB1 == null)
                         {
-                            eqIntListListArray12 = tmpA1 == tmpB1;
+                            out2 = tmpA1 == tmpB1;
                         }
                         else if (tmpA1.Count != tmpB1.Count)
                         {
-                            eqIntListListArray12 = false;
+                            out2 = false;
                         }
                         else
                         {
@@ -508,22 +506,22 @@ partial class ContainsNestedLists
                             {
                                 var tmpA2 = tmpA1[i2];
                                 var tmpB2 = tmpB1[i2];
-                                var eqIntListListArray123 = tmpA2.Equals(tmpB2);
-                                if (!eqIntListListArray123)
+                                var out3 = tmpA2.Equals(tmpB2);
+                                if (!out3)
                                 {
-                                    eqIntListListArray12 = false;
+                                    out2 = false;
                                     break;
                                 }
                             }
                         }
-                        if (!eqIntListListArray12)
+                        if (!out2)
                         {
-                            eqIntListListArray1 = false;
+                            out1 = false;
                             break;
                         }
                     }
                 }
-                if (!eqIntListListArray1)
+                if (!out1)
                 {
                     eqIntListListArray = false;
                     break;
@@ -545,51 +543,51 @@ partial class ContainsNestedLists
             {
                 var tmpA0 = this.StringArrayArrayList[i0];
                 var tmpB0 = that.StringArrayArrayList[i0];
-                var eqStringArrayArrayList1 = true;
+                var out1 = true;
                 if (tmpA0 == null || tmpB0 == null)
                 {
-                    eqStringArrayArrayList1 = tmpA0 == tmpB0;
+                    out1 = tmpA0 == tmpB0;
                 }
                 else if (tmpA0.Length != tmpB0.Length)
                 {
-                    eqStringArrayArrayList1 = false;
+                    out1 = false;
                 }
                 else
                 {
                     for (int i1 = 0; i1 < tmpA0.Length; i1++)
                     {
-                        var eqStringArrayArrayList12 = true;
+                        var out2 = true;
                         if (tmpA0[i1] == null || tmpB0[i1] == null)
                         {
-                            eqStringArrayArrayList12 = tmpA0[i1] == tmpB0[i1];
+                            out2 = tmpA0[i1] == tmpB0[i1];
                         }
                         else if (tmpA0[i1].Length != tmpB0[i1].Length)
                         {
-                            eqStringArrayArrayList12 = false;
+                            out2 = false;
                         }
                         else
                         {
                             for (int i2 = 0; i2 < tmpA0[i1].Length; i2++)
                             {
-                                var eqStringArrayArrayList123 =
+                                var out3 =
                                     tmpA0[i1][i2] == null
                                         ? tmpB0[i1][i2] == null
                                         : tmpA0[i1][i2].Equals(tmpB0[i1][i2]);
-                                if (!eqStringArrayArrayList123)
+                                if (!out3)
                                 {
-                                    eqStringArrayArrayList12 = false;
+                                    out2 = false;
                                     break;
                                 }
                             }
                         }
-                        if (!eqStringArrayArrayList12)
+                        if (!out2)
                         {
-                            eqStringArrayArrayList1 = false;
+                            out1 = false;
                             break;
                         }
                     }
                 }
-                if (!eqStringArrayArrayList1)
+                if (!out1)
                 {
                     eqStringArrayArrayList = false;
                     break;
@@ -609,15 +607,14 @@ partial class ContainsNestedLists
         {
             for (int i0 = 0; i0 < this.StringListListArray.Length; i0++)
             {
-                var eqStringListListArray1 = true;
+                var out1 = true;
                 if (this.StringListListArray[i0] == null || that.StringListListArray[i0] == null)
                 {
-                    eqStringListListArray1 =
-                        this.StringListListArray[i0] == that.StringListListArray[i0];
+                    out1 = this.StringListListArray[i0] == that.StringListListArray[i0];
                 }
                 else if (this.StringListListArray[i0].Count != that.StringListListArray[i0].Count)
                 {
-                    eqStringListListArray1 = false;
+                    out1 = false;
                 }
                 else
                 {
@@ -625,14 +622,14 @@ partial class ContainsNestedLists
                     {
                         var tmpA1 = this.StringListListArray[i0][i1];
                         var tmpB1 = that.StringListListArray[i0][i1];
-                        var eqStringListListArray12 = true;
+                        var out2 = true;
                         if (tmpA1 == null || tmpB1 == null)
                         {
-                            eqStringListListArray12 = tmpA1 == tmpB1;
+                            out2 = tmpA1 == tmpB1;
                         }
                         else if (tmpA1.Count != tmpB1.Count)
                         {
-                            eqStringListListArray12 = false;
+                            out2 = false;
                         }
                         else
                         {
@@ -640,23 +637,22 @@ partial class ContainsNestedLists
                             {
                                 var tmpA2 = tmpA1[i2];
                                 var tmpB2 = tmpB1[i2];
-                                var eqStringListListArray123 =
-                                    tmpA2 == null ? tmpB2 == null : tmpA2.Equals(tmpB2);
-                                if (!eqStringListListArray123)
+                                var out3 = tmpA2 == null ? tmpB2 == null : tmpA2.Equals(tmpB2);
+                                if (!out3)
                                 {
-                                    eqStringListListArray12 = false;
+                                    out2 = false;
                                     break;
                                 }
                             }
                         }
-                        if (!eqStringListListArray12)
+                        if (!out2)
                         {
-                            eqStringListListArray1 = false;
+                            out1 = false;
                             break;
                         }
                     }
                 }
-                if (!eqStringListListArray1)
+                if (!out1)
                 {
                     eqStringListListArray = false;
                     break;
