@@ -98,6 +98,25 @@ pub enum WsError {
 
     #[error("Unrecognized compression scheme: {scheme:#x}")]
     UnknownCompressionScheme { scheme: u8 },
+
+    #[cfg(feature = "web")]
+    #[error("Token verification error: {0}")]
+    TokenVerification(String),
+}
+
+#[cfg(feature = "web")]
+impl From<wasm_bindgen::JsValue> for WsError {
+    fn from(js: wasm_bindgen::JsValue) -> Self {
+        use wasm_bindgen::JsCast;
+        if let Some(err) = js.dyn_ref::<js_sys::Error>() {
+            // If it's a JS `Error` grab its .message()
+            WsError::TokenVerification(err.message().into())
+        } else {
+            // Try to coerce to a JS string first; otherwise debug‑print
+            let s = js.as_string().unwrap_or_else(|| format!("{:?}", js));
+            WsError::TokenVerification(s)
+        }
+    }
 }
 
 pub(crate) struct WsConnection {
@@ -249,6 +268,43 @@ fn request_insert_auth_header(req: &mut http::Request<()>, token: Option<&str>) 
     }
 }
 
+#[cfg(feature = "web")]
+async fn fetch_ws_token(host: &Uri, auth_token: &str) -> Result<String, WsError> {
+    use js_sys::Reflect;
+    use wasm_bindgen::{JsCast, JsValue};
+    use wasm_bindgen_futures::JsFuture;
+    use web_sys::{Headers, RequestInit, Response};
+
+    let url = format!("{}v1/identity/websocket-token", host);
+
+    // Build the Request
+    let headers = Headers::new()?;
+    headers.set("Authorization", &format!("Bearer {auth_token}"))?;
+    let req_opts = RequestInit::new();
+    req_opts.set_method("POST");
+    req_opts.set_headers(&headers);
+
+    // Send the request
+    let window = web_sys::window().ok_or_else(|| WsError::TokenVerification("No global window object".into()))?;
+    let resp: Response = JsFuture::from(window.fetch_with_str_and_init(&url, &req_opts))
+        .await?
+        .dyn_into()?;
+    if !resp.ok() {
+        return Err(WsError::TokenVerification(format!(
+            "HTTP error: {} {}",
+            resp.status(),
+            resp.status_text()
+        )));
+    }
+
+    // Parse the response
+    let json = JsFuture::from(resp.json()?).await?;
+    let token_js = Reflect::get(&json, &JsValue::from_str("token"))?;
+    token_js
+        .as_string()
+        .ok_or_else(|| WsError::TokenVerification("`token` parsing failed".into()))
+}
+
 impl WsConnection {
     #[cfg(not(feature = "web"))]
     pub(crate) async fn connect(
@@ -291,7 +347,13 @@ impl WsConnection {
         connection_id: ConnectionId,
         params: WsParams,
     ) -> Result<Self, WsError> {
-        let uri = make_uri(host, db_name, connection_id, params, token)?;
+        let token = if let Some(auth_token) = token {
+            Some(fetch_ws_token(&host, auth_token).await?)
+        } else {
+            None
+        };
+
+        let uri = make_uri(host, db_name, connection_id, params, token.as_deref())?;
         let sock = tokio_tungstenite_wasm::connect_with_protocols(&uri.to_string(), &[BIN_PROTOCOL])
             .await
             .map_err(|source| WsError::Tungstenite {
