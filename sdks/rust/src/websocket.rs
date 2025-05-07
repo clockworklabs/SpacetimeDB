@@ -96,6 +96,10 @@ pub enum WsError {
 
     #[error("Unrecognized compression scheme: {scheme:#x}")]
     UnknownCompressionScheme { scheme: u8 },
+
+    #[cfg(feature = "web")]
+    #[error("Token verification error: {0}")]
+    TokenVerification(String),
 }
 
 pub(crate) struct WsConnection {
@@ -132,7 +136,29 @@ pub(crate) struct WsParams {
     pub confirmed: Option<bool>,
 }
 
+#[cfg(not(feature = "web"))]
 fn make_uri(host: Uri, db_name: &str, connection_id: Option<ConnectionId>, params: WsParams) -> Result<Uri, UriError> {
+    make_uri_impl(host, db_name, connection_id, params, None)
+}
+
+#[cfg(feature = "web")]
+fn make_uri(
+    host: Uri,
+    db_name: &str,
+    connection_id: Option<ConnectionId>,
+    params: WsParams,
+    token: Option<&str>,
+) -> Result<Uri, UriError> {
+    make_uri_impl(host, db_name, connection_id, params, token)
+}
+
+fn make_uri_impl(
+    host: Uri,
+    db_name: &str,
+    connection_id: Option<ConnectionId>,
+    params: WsParams,
+    token: Option<&str>,
+) -> Result<Uri, UriError> {
     let mut parts = host.into_parts();
     let scheme = parse_scheme(parts.scheme.take())?;
     parts.scheme = Some(scheme);
@@ -179,6 +205,11 @@ fn make_uri(host: Uri, db_name: &str, connection_id: Option<ConnectionId>, param
     if let Some(confirmed) = params.confirmed {
         path.push_str("&confirmed=");
         path.push_str(if confirmed { "true" } else { "false" });
+    }
+
+    // Specify the `token` param if needed
+    if let Some(token) = token {
+        path.push_str(&format!("&token={token}"));
     }
 
     parts.path_and_query = Some(path.parse().map_err(|source: InvalidUri| UriError::InvalidUri {
@@ -232,10 +263,57 @@ fn request_insert_auth_header(req: &mut http::Request<()>, token: Option<&str>) 
     }
 }
 
+#[cfg(feature = "web")]
+async fn fetch_ws_token(host: &Uri, auth_token: &str) -> Result<String, WsError> {
+    use gloo_net::http::{Method, RequestBuilder};
+    use js_sys::{Reflect, JSON};
+    use wasm_bindgen::{JsCast, JsValue};
+
+    let url = format!("{}v1/identity/websocket-token", host);
+
+    // helpers to convert gloo_net::Error or JsValue into WsError::TokenVerification
+    let gloo_to_ws_err = |e: gloo_net::Error| match e {
+        gloo_net::Error::JsError(js_err) => WsError::TokenVerification(js_err.message.into()),
+        gloo_net::Error::SerdeError(e) => WsError::TokenVerification(e.to_string()),
+        gloo_net::Error::GlooError(msg) => WsError::TokenVerification(msg),
+    };
+    let js_to_ws_err = |e: JsValue| {
+        if let Some(err) = e.dyn_ref::<js_sys::Error>() {
+            WsError::TokenVerification(err.message().into())
+        } else if let Some(s) = e.as_string() {
+            WsError::TokenVerification(s)
+        } else {
+            WsError::TokenVerification(format!("{:?}", e))
+        }
+    };
+
+    let res = RequestBuilder::new(&url)
+        .method(Method::POST)
+        .header("Authorization", &format!("Bearer {auth_token}"))
+        .send()
+        .await
+        .map_err(gloo_to_ws_err)?;
+
+    if !res.ok() {
+        return Err(WsError::TokenVerification(format!(
+            "HTTP error: {} {}",
+            res.status(),
+            res.status_text()
+        )));
+    }
+
+    let body = res.text().await.map_err(gloo_to_ws_err)?;
+    let json = JSON::parse(&body).map_err(js_to_ws_err)?;
+    let token_js = Reflect::get(&json, &JsValue::from_str("token")).map_err(js_to_ws_err)?;
+    token_js
+        .as_string()
+        .ok_or_else(|| WsError::TokenVerification("`token` parsing failed".into()))
+}
+
 /// If `res` evaluates to `Err(e)`, log a warning in the form `"{}: {:?}", $cause, e`.
 ///
 /// Could be trivially written as a function, but macro-ifying it preserves the source location of the log.
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(feature = "web"))]
 macro_rules! maybe_log_error {
     ($cause:expr, $res:expr) => {
         if let Err(e) = $res {
@@ -281,11 +359,17 @@ impl WsConnection {
     pub(crate) async fn connect(
         host: Uri,
         db_name: &str,
-        _token: Option<&str>,
+        token: Option<&str>,
         connection_id: Option<ConnectionId>,
         params: WsParams,
     ) -> Result<Self, WsError> {
-        let uri = make_uri(host, db_name, connection_id, params)?;
+        let token = if let Some(auth_token) = token {
+            Some(fetch_ws_token(&host, auth_token).await?)
+        } else {
+            None
+        };
+
+        let uri = make_uri(host, db_name, connection_id, params, token.as_deref())?;
         let sock = tokio_tungstenite_wasm::connect_with_protocols(&uri.to_string(), &[BIN_PROTOCOL])
             .await
             .map_err(|source| WsError::Tungstenite {

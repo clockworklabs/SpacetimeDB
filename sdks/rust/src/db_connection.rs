@@ -1114,7 +1114,6 @@ but you must call one of them, or else the connection will never progress.
     /// If the passed token is invalid or rejected by the host,
     /// the connection will fail asynchrnonously.
     // FIXME: currently this causes `disconnect` to be called rather than `on_connect_error`.
-    #[cfg(not(target_arch = "wasm32"))]
     pub fn with_token(mut self, token: Option<impl Into<String>>) -> Self {
         self.token = token.map(|token| token.into());
         self
