@@ -612,7 +612,8 @@ impl MutTxDatastore for Locking {
         index_id: IndexId,
         row: &[u8],
     ) -> Result<(ColList, RowRef<'a>, UpdateFlags)> {
-        tx.update(table_id, index_id, row)
+        let (gens, row_ref, update_flags) = tx.update(table_id, index_id, row)?;
+        Ok((gens, row_ref.collapse(), update_flags))
     }
 
     fn metadata_mut_tx(&self, tx: &Self::MutTx) -> Result<Option<Metadata>> {
@@ -1037,6 +1038,7 @@ fn metadata_from_row(row: RowRef<'_>) -> Result<Metadata> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::datastore::locking_tx_datastore::tx_state::PendingSchemaChange;
     use crate::db::datastore::system_tables::{
         system_tables, StColumnRow, StConstraintData, StConstraintFields, StConstraintRow, StIndexAlgorithm,
         StIndexFields, StIndexRow, StRowLevelSecurityFields, StScheduledFields, StSequenceFields, StSequenceRow,
@@ -1157,7 +1159,7 @@ mod tests {
     }
 
     fn get_datastore() -> Result<Locking> {
-        Locking::bootstrap(Identity::ZERO, <_>::default())
+        Locking::bootstrap(Identity::ZERO, PagePool::new_for_test())
     }
 
     fn col(col: u16) -> ColList {
@@ -2219,7 +2221,7 @@ mod tests {
         // the delete should first mark the committed row as deleted in the delete tables,
         // and then it should remove it from the delete tables upon insertion,
         // rather than actually inserting it in the tx state.
-        // So the second transaction should be observationally a no-op.s
+        // So the second transaction should be observationally a no-op.
         // There was a bug in the datastore that did not respect this in the presence of a unique index.
         let (deleted_1, tx_data_1) = update(&datastore)?;
         let (deleted_2, tx_data_2) = update(&datastore)?;
@@ -2888,6 +2890,71 @@ mod tests {
             [first],
         );
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_drop_table_is_transactional() -> ResultTest<()> {
+        let (datastore, mut tx, table_id) = setup_table()?;
+
+        // Insert a row and commit.
+        insert(&datastore, &mut tx, table_id, &random_row())?;
+        commit(&datastore, tx)?;
+
+        // Create a transaction and drop the table and roll back.
+        let mut tx = begin_mut_tx(&datastore);
+        assert_eq!(&*tx.tx_state.pending_schema_changes, []);
+        assert!(datastore.drop_table_mut_tx(&mut tx, table_id).is_ok());
+        assert_matches!(
+            &*tx.tx_state.pending_schema_changes,
+            [
+                PendingSchemaChange::IndexRemoved(..),
+                PendingSchemaChange::IndexRemoved(..),
+                PendingSchemaChange::SequenceRemoved(..),
+                PendingSchemaChange::ConstraintRemoved(..),
+                PendingSchemaChange::ConstraintRemoved(..),
+                PendingSchemaChange::TableRemoved(removed_table_id, _)
+            ]
+                if *removed_table_id == table_id
+        );
+        datastore.rollback_mut_tx(tx);
+
+        // Ensure the table still exists in the next transaction.
+        let tx = begin_mut_tx(&datastore);
+        assert_eq!(&*tx.tx_state.pending_schema_changes, []);
+        assert!(
+            datastore.table_id_exists_mut_tx(&tx, &table_id),
+            "Table should still exist",
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_create_table_is_transactional() -> ResultTest<()> {
+        // Create a table in a failed transaction.
+        let (datastore, tx, table_id) = setup_table()?;
+        assert_matches!(
+            &*tx.tx_state.pending_schema_changes,
+            [
+                PendingSchemaChange::TableAdded(added_table_id),
+                PendingSchemaChange::IndexAdded(..),
+                PendingSchemaChange::IndexAdded(..),
+                PendingSchemaChange::ConstraintAdded(..),
+                PendingSchemaChange::ConstraintAdded(..),
+                PendingSchemaChange::SequenceAdded(..),
+            ]
+                if *added_table_id == table_id
+        );
+        datastore.rollback_mut_tx(tx);
+
+        // Nothing should have happened.
+        let tx = begin_mut_tx(&datastore);
+        assert_eq!(&*tx.tx_state.pending_schema_changes, []);
+        assert!(
+            !datastore.table_id_exists_mut_tx(&tx, &table_id),
+            "Table should not exist"
+        );
         Ok(())
     }
 

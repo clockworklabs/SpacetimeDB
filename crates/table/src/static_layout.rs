@@ -654,7 +654,7 @@ mod test {
 
         #[test]
         fn known_bsatn_same_as_bflatn_from((ty, val) in generate_typed_row()) {
-            let pool = PagePool::default();
+            let pool = PagePool::new_for_test();
             let mut blob_store = HashMapBlobStore::default();
             let mut table = crate::table::test::table(ty);
             let Some(static_layout) = table.static_layout().cloned() else {
@@ -683,7 +683,7 @@ mod test {
 
         #[test]
         fn known_bflatn_same_as_pv_from((ty, val) in generate_typed_row()) {
-            let pool = PagePool::default();
+            let pool = PagePool::new_for_test();
             let mut blob_store = HashMapBlobStore::default();
             let mut table = crate::table::test::table(ty);
             let Some(static_layout) = table.static_layout().cloned() else {

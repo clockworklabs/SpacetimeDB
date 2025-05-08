@@ -1622,7 +1622,7 @@ pub mod tests_utils {
                 history,
                 durability,
                 snapshot_repo,
-                PagePool::default(),
+                PagePool::new_for_test(),
             )?;
             assert_eq!(connected_clients.len(), expected_num_clients);
             let db = db.with_row_count(Self::row_count_fn());
@@ -1828,7 +1828,7 @@ mod tests {
             EmptyHistory::new(),
             None,
             None,
-            PagePool::default(),
+            PagePool::new_for_test(),
         ) {
             Ok(_) => {
                 panic!("Allowed to open database twice")
@@ -2770,7 +2770,7 @@ mod tests {
             Identity::ZERO,
             Some(&repo),
             Some(last_compress),
-            PagePool::default(),
+            PagePool::new_for_test(),
         )?;
 
         Ok(())
@@ -2795,7 +2795,8 @@ mod tests {
         );
 
         let last = repo.latest_snapshot()?;
-        let stdb = RelationalDB::restore_from_snapshot_or_bootstrap(identity, Some(&repo), last, PagePool::default())?;
+        let stdb =
+            RelationalDB::restore_from_snapshot_or_bootstrap(identity, Some(&repo), last, PagePool::new_for_test())?;
 
         let out = TempDir::with_prefix("snapshot_test")?;
         let dir = SnapshotsPath::from_path_unchecked(out.path());
