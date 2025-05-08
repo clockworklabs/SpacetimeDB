@@ -230,9 +230,10 @@ fn compile_statement(db: &RelationalDB, statement: SqlAst) -> Result<CrudExpr, P
 mod tests {
     use super::*;
     use crate::db::datastore::traits::IsolationLevel;
-    use crate::db::relational_db::tests_utils::{insert, TestDB};
+    use crate::db::relational_db::tests_utils::{expect_query, expect_sub, insert, TestDB};
     use crate::execution_context::Workload;
     use crate::sql::execute::tests::run_for_testing;
+    use expect_test::expect;
     use spacetimedb_lib::error::{ResultTest, TestError};
     use spacetimedb_lib::{ConnectionId, Identity};
     use spacetimedb_primitives::{col_list, ColList, TableId};
@@ -498,13 +499,18 @@ mod tests {
         db.create_table_for_test("test", schema, indexes)?;
 
         let tx = db.begin_tx(Workload::ForTests);
+        // TODO: Need support for index range scans.
         // Compile query
-        let sql = "select * from test where b > 2";
-        let CrudExpr::Query(QueryExpr { source: _, query }) = compile_sql(&db, &tx, sql)?.remove(0) else {
-            panic!("Expected QueryExpr");
-        };
-        assert_eq!(1, query.len());
-        assert_index_scan(&query[0], 1, Bound::Excluded(AlgebraicValue::U64(2)), Bound::Unbounded);
+        expect_query(
+            &tx,
+            "select * from test where b > 2",
+            expect![
+                r#"
+Seq Scan on test
+  Output: test.a, test.b
+  -> Filter: (test.b > U64(2))"#
+            ],
+        );
 
         Ok(())
     }
@@ -798,7 +804,7 @@ mod tests {
         // Create table [lhs] with index on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
         let indexes = &[1.into()];
-        let lhs_id = db.create_table_for_test("lhs", schema, indexes)?;
+        db.create_table_for_test("lhs", schema, indexes)?;
 
         // Create table [rhs] with index on [b, c]
         let schema = &[
@@ -807,69 +813,26 @@ mod tests {
             ("d", AlgebraicType::U64),
         ];
         let indexes = &[0.into(), 1.into()];
-        let rhs_id = db.create_table_for_test("rhs", schema, indexes)?;
+        db.create_table_for_test("rhs", schema, indexes)?;
 
         let tx = db.begin_tx(Workload::ForTests);
         // Should generate an index join since there is an index on `lhs.b`.
         // Should push the sargable range condition into the index join's probe side.
-        let sql = "select lhs.* from lhs join rhs on lhs.b = rhs.b where rhs.c > 2 and rhs.c < 4 and rhs.d = 3";
-        let exp = compile_sql(&db, &tx, sql)?.remove(0);
-
-        let CrudExpr::Query(QueryExpr {
-            source: SourceExpr::DbTable(DbTable { table_id, .. }),
-            query,
-            ..
-        }) = exp
-        else {
-            panic!("unexpected result from compilation: {:?}", exp);
-        };
-
-        assert_eq!(table_id, lhs_id);
-        assert_eq!(query.len(), 1);
-
-        let Query::IndexJoin(IndexJoin {
-            probe_side:
-                QueryExpr {
-                    source: SourceExpr::DbTable(DbTable { table_id, .. }),
-                    query: rhs,
-                },
-            probe_col,
-            index_side: SourceExpr::DbTable(DbTable {
-                table_id: index_table, ..
-            }),
-            index_col,
-            ..
-        }) = &query[0]
-        else {
-            panic!("unexpected operator {:#?}", query[0]);
-        };
-
-        assert_eq!(*table_id, rhs_id);
-        assert_eq!(*index_table, lhs_id);
-        assert_eq!(index_col, &1.into());
-        assert_eq!(*probe_col, 0.into());
-
-        assert_eq!(2, rhs.len());
-
-        // The probe side of the join should be an index scan
-        let table_id = assert_index_scan(
-            &rhs[0],
-            1,
-            Bound::Excluded(AlgebraicValue::U64(2)),
-            Bound::Excluded(AlgebraicValue::U64(4)),
+        expect_sub(
+            &tx,
+            "select lhs.* from lhs join rhs on lhs.b = rhs.b where rhs.c > 2 and rhs.c < 4 and rhs.d = 3",
+            expect![
+                r#"
+Index Join: Rhs on lhs
+  Inner Unique: false
+  Join Cond: (rhs.b = lhs.b)
+  Output: lhs.a, lhs.b
+  -> Seq Scan on rhs
+     Output: rhs.b, rhs.c, rhs.d
+     -> Filter: (rhs.c > U64(2) AND rhs.c < U64(4) AND rhs.d = U64(3))"#
+            ],
         );
 
-        assert_eq!(table_id, rhs_id);
-
-        // Followed by a selection
-        let Query::Select(ColumnOp::ColCmpVal {
-            cmp: OpCmp::Eq,
-            lhs: ColId(2),
-            rhs: AlgebraicValue::U64(3),
-        }) = rhs[1]
-        else {
-            panic!("unexpected operator {:#?}", rhs[0]);
-        };
         Ok(())
     }
 

@@ -149,7 +149,7 @@ impl RewriteRule for ComputePositions {
 /// Merge a limit with a table or index scan.
 ///
 /// Note that for pull-based, tuple at a time iterators,
-/// a limit is a short circuiting operator,
+/// a limit is a short-circuiting operator,
 /// and therefore this optimization is essentially a no-op.
 ///
 /// However for executors that materialize intermediate results,
