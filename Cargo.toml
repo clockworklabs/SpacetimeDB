@@ -122,7 +122,10 @@ spacetimedb-fs-utils = { path = "crates/fs-utils", version = "1.1.1" }
 spacetimedb-snapshot = { path = "crates/snapshot", version = "1.1.1" }
 spacetimedb-subscription = { path = "crates/subscription", version = "1.1.1" }
 
-ahash = "0.8"
+# Prevent `ahash` from pulling in `getrandom` by disabling default features.
+# Modules use `getrandom02` and we need to prevent an incompatible version
+# from appearing in module dependency graphs.
+ahash = { version = "0.8", default-features = false, features = ["std"] }
 anyhow = "1.0.68"
 anymap = "0.12"
 arrayvec = "0.7.2"
