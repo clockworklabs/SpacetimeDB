@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::StandaloneEnv;
+use crate::{pg_server, StandaloneEnv};
 use anyhow::Context;
 use axum::extract::DefaultBodyLimit;
 use clap::ArgAction::SetTrue;
@@ -156,12 +156,24 @@ pub async fn exec(args: &ArgMatches) -> anyhow::Result<()> {
     db_routes.root_post = db_routes.root_post.layer(DefaultBodyLimit::disable());
     db_routes.db_put = db_routes.db_put.layer(DefaultBodyLimit::disable());
     let extra = axum::Router::new().nest("/health", spacetimedb_client_api::routes::health::router());
-    let service = router(&ctx, db_routes, extra).with_state(ctx);
+    let service = router(&ctx, db_routes, extra).with_state(ctx.clone());
 
     let tcp = TcpListener::bind(listen_addr).await?;
     socket2::SockRef::from(&tcp).set_nodelay(true)?;
     log::debug!("Starting SpacetimeDB listening on {}", tcp.local_addr().unwrap());
-    axum::serve(tcp, service).await?;
+    let (shutdown_tx, mut shutdown_rx) = tokio::sync::watch::channel(());
+
+    tokio::select! {
+        _ = pg_server::start_pg(shutdown_rx.clone(), ctx) => {},
+        _ = axum::serve(tcp, service).with_graceful_shutdown(async move {
+            shutdown_rx.changed().await.ok();
+        }) => {},
+        _ = tokio::signal::ctrl_c() => {
+            println!("Shutting down servers...");
+            let _ = shutdown_tx.send(()); // Notify all tasks
+        }
+    }
+
     Ok(())
 }
 

@@ -204,6 +204,7 @@ paste = "1.0"
 percent-encoding = "2.3"
 petgraph = { version = "0.6.5", default-features = false }
 pin-project-lite = "0.2.9"
+pgwire = { version = "0.28.0", features = ["server-api"] }
 postgres-types = "0.2.5"
 pretty_assertions = { version = "1.4", features = ["unstable"] }
 proc-macro2 = "1.0"
@@ -216,6 +217,7 @@ rand08 = { package = "rand", version = "0.8" }
 rand = "0.9"
 rayon = "1.8"
 rayon-core = "1.11.0"
+rcgen = { version = "0.13.1", features = ["pem", "x509-parser", "crypto", "ring"] }
 regex = "1"
 reqwest = { version = "0.12", features = ["stream", "json"] }
 ron = "0.8"
@@ -224,6 +226,8 @@ rust_decimal = { version = "1.29.1", features = ["db-tokio-postgres"] }
 rustc-demangle = "0.1.21"
 rustc-hash = "2"
 rustyline = { version = "12.0.0", features = [] }
+rustls-pki-types = "1.11.0"
+rustls = "0.23.26"
 scoped-tls = "1.0.1"
 scopeguard = "1.1.0"
 second-stack = "0.3"
@@ -255,6 +259,7 @@ termcolor = "1.2.0"
 thin-vec = "0.2.13"
 thiserror = "1.0.37"
 tokio = { version = "1.37", features = ["full"] }
+tokio-rustls = "0.26.2"
 tokio_metrics = { version = "0.4.0" }
 tokio-postgres = { version = "0.7.8", features = ["with-chrono-0_4"] }
 tokio-stream = "0.1.17"

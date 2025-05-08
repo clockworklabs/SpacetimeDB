@@ -38,16 +38,22 @@ http.workspace = true
 log.workspace = true
 openssl.workspace = true
 parse-size.workspace = true
+pgwire.workspace = true
 prometheus.workspace = true
 scopeguard.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 sled.workspace = true
 socket2.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
+tokio-rustls.workspace = true
 tower-http.workspace = true
 toml.workspace = true
 tracing = { workspace = true, features = ["release_max_level_debug"] }
+rustls-pki-types.workspace = true
+rcgen.workspace = true
+rustls.workspace = true
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = {workspace = true}

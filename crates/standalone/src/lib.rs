@@ -1,4 +1,5 @@
 mod control_db;
+pub mod pg_server;
 pub mod subcommands;
 pub mod util;
 pub mod version;

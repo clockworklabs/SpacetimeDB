@@ -6,7 +6,7 @@ use crate::auth::{
     SpacetimeIdentityToken,
 };
 use crate::routes::subscribe::generate_random_connection_id;
-use crate::util::{ByteStringBody, NameOrIdentity};
+pub use crate::util::{ByteStringBody, NameOrIdentity};
 use crate::{log_and_500, ControlStateDelegate, DatabaseDef, NodeDelegate};
 use axum::body::{Body, Bytes};
 use axum::extract::{Path, Query, State};
@@ -25,10 +25,11 @@ use spacetimedb::host::ReducerOutcome;
 use spacetimedb::host::UpdateDatabaseResult;
 use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, HostType};
+use spacetimedb_client_api_messages::http::SqlStmtResult;
 use spacetimedb_client_api_messages::name::{self, DatabaseName, DomainName, PublishOp, PublishResult};
 use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::sats;
+use spacetimedb_lib::{sats, ProductValue};
 
 use super::subscribe::handle_websocket;
 
@@ -381,19 +382,19 @@ async fn worker_ctx_find_database(
 
 #[derive(Deserialize)]
 pub struct SqlParams {
-    name_or_identity: NameOrIdentity,
+    pub name_or_identity: NameOrIdentity,
 }
 
 #[derive(Deserialize)]
 pub struct SqlQueryParams {}
 
-pub async fn sql<S>(
-    State(worker_ctx): State<S>,
-    Path(SqlParams { name_or_identity }): Path<SqlParams>,
-    Query(SqlQueryParams {}): Query<SqlQueryParams>,
-    Extension(auth): Extension<SpacetimeAuth>,
-    body: String,
-) -> axum::response::Result<impl IntoResponse>
+pub async fn sql_direct<S>(
+    worker_ctx: S,
+    SqlParams { name_or_identity }: SqlParams,
+    _params: SqlQueryParams,
+    auth: SpacetimeAuth,
+    sql: String,
+) -> axum::response::Result<Vec<SqlStmtResult<ProductValue>>>
 where
     S: NodeDelegate + ControlStateDelegate,
 {
@@ -413,7 +414,20 @@ where
         .await
         .map_err(log_and_500)?
         .ok_or(StatusCode::NOT_FOUND)?;
-    let json = host.exec_sql(auth, database, body).await?;
+    host.exec_sql(auth, database, sql).await
+}
+
+pub async fn sql<S>(
+    State(worker_ctx): State<S>,
+    Path(name_or_identity): Path<SqlParams>,
+    Query(params): Query<SqlQueryParams>,
+    Extension(auth): Extension<SpacetimeAuth>,
+    body: String,
+) -> axum::response::Result<impl IntoResponse>
+where
+    S: NodeDelegate + ControlStateDelegate,
+{
+    let json = sql_direct(worker_ctx, name_or_identity, params, auth, body).await?;
 
     let total_duration = json.iter().fold(0, |acc, x| acc + x.total_duration_micros);
 
