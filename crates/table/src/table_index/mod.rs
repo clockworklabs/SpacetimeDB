@@ -1302,7 +1302,7 @@ mod test {
         fn remove_nonexistent_noop(((ty, cols, pv), is_unique) in (gen_row_and_cols(), any::<bool>())) {
             let mut index = new_index(&ty, &cols, is_unique);
             let mut table = table(ty);
-            let pool = PagePool::default();
+            let pool = PagePool::new_for_test();
             let mut blob_store = HashMapBlobStore::default();
             let row_ref = table.insert(&pool, &mut blob_store, &pv).unwrap().1;
             prop_assert_eq!(index.delete(row_ref).unwrap(), false);
@@ -1313,7 +1313,7 @@ mod test {
         fn insert_delete_noop(((ty, cols, pv), is_unique) in (gen_row_and_cols(), any::<bool>())) {
             let mut index = new_index(&ty, &cols, is_unique);
             let mut table = table(ty);
-            let pool = PagePool::default();
+            let pool = PagePool::new_for_test();
             let mut blob_store = HashMapBlobStore::default();
             let row_ref = table.insert(&pool, &mut blob_store, &pv).unwrap().1;
             let value = get_fields(&cols, &pv);
@@ -1334,7 +1334,7 @@ mod test {
         fn insert_again_violates_unique_constraint((ty, cols, pv) in gen_row_and_cols()) {
             let mut index = new_index(&ty, &cols, true);
             let mut table = table(ty);
-            let pool = PagePool::default();
+            let pool = PagePool::new_for_test();
             let mut blob_store = HashMapBlobStore::default();
             let row_ref = table.insert(&pool, &mut blob_store, &pv).unwrap().1;
             let value = get_fields(&cols, &pv);
@@ -1370,7 +1370,7 @@ mod test {
             let ty = ProductType::from_iter([AlgebraicType::U64]);
             let mut index = new_index(&ty, &cols, true);
             let mut table = table(ty);
-            let pool = PagePool::default();
+            let pool = PagePool::new_for_test();
             let mut blob_store = HashMapBlobStore::default();
 
             let prev = needle - 1;
