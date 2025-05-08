@@ -926,10 +926,12 @@ but you must call one of them, or else the connection will never progress.
     /// Sets whether the "light" mode is used.
     ///
     /// The light mode is meant for clients which are network-bandwidth constrained
-    /// and results in the following:
-    /// - Incremental updates will not include information about the reducer that caused them.
-    /// - The client will not be notified about a reducer the client called
-    ///   without being subscribed to any relevant queries.
+    /// and results in non-callers receiving only light incremental updates.
+    /// These updates will not include information about the reducer that caused them,
+    /// but will contain updates to subscribed-to tables.
+    /// As a consequence, when light-mode is enabled,
+    /// non-callers will not receive reducer callbacks,
+    /// but will receive callbacks for row insertion/deletion/updates.
     pub fn with_light_mode(mut self, light: bool) -> Self {
         self.params.light = light;
         self
