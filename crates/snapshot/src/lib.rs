@@ -48,8 +48,10 @@ use std::{
     ops::{Add, AddAssign},
     path::PathBuf,
 };
+use tokio::task::spawn_blocking;
 
 pub mod remote;
+use remote::verify_snapshot;
 
 #[derive(Debug, Copy, Clone)]
 /// An object which may be associated with an error during snapshotting.
@@ -543,6 +545,7 @@ impl fmt::Debug for SnapshotSize {
 }
 
 /// A repository of snapshots of a particular database instance.
+#[derive(Clone)]
 pub struct SnapshotRepository {
     /// The directory which contains all the snapshots.
     root: SnapshotsPath,
@@ -752,6 +755,7 @@ impl SnapshotRepository {
             });
         }
 
+        let snapshot_dir = self.snapshot_dir_path(tx_offset);
         let object_repo = Self::object_repo(&snapshot_dir)?;
 
         let blob_store = snapshot.reconstruct_blob_store(&object_repo)?;
@@ -767,6 +771,60 @@ impl SnapshotRepository {
             tables,
             compress_type,
         })
+    }
+
+    /// Read the [`Snapshot`] metadata at `tx_offset` and verify the integrity
+    /// of all objects it refers to.
+    ///
+    /// Fails if:
+    ///
+    /// - No snapshot exists in `self` for `tx_offset`
+    /// - The snapshot is incomplete, as detected by its lockfile still existing.
+    /// - The snapshot file's magic number does not match [`MAGIC`].
+    /// - Any object file (page or large blob) referenced by the snapshot file
+    ///   is missing or corrupted.
+    ///
+    /// The following conditions are not detected or considered as errors:
+    ///
+    /// - The snapshot file's version does not match [`CURRENT_SNAPSHOT_VERSION`].
+    /// - The snapshot file's database identity or instance ID do not match
+    ///   those in `self`.
+    /// - The snapshot file's module ABI version does not match
+    ///   [`CURRENT_MODULE_ABI_VERSION`].
+    /// - The snapshot file's recorded transaction offset does not match
+    ///   `tx_offset`.
+    ///
+    /// Callers may want to inspect the returned [`Snapshot`] and ensure its
+    /// contents match their expectations.
+    pub async fn verify_snapshot(&self, tx_offset: TxOffset) -> Result<Snapshot, SnapshotError> {
+        let snapshot_dir = self.snapshot_dir_path(tx_offset);
+        let snapshot = spawn_blocking({
+            let snapshot_dir = snapshot_dir.clone();
+            move || {
+                let lockfile = Lockfile::lock_path(&snapshot_dir);
+                if lockfile.try_exists()? {
+                    return Err(SnapshotError::Incomplete { tx_offset, lockfile });
+                }
+
+                let snapshot_file_path = snapshot_dir.snapshot_file(tx_offset);
+                let (snapshot, _compress_type) = Snapshot::read_from_file(&snapshot_file_path)?;
+
+                if snapshot.magic != MAGIC {
+                    return Err(SnapshotError::BadMagic {
+                        tx_offset,
+                        magic: snapshot.magic,
+                    });
+                }
+                Ok(snapshot)
+            }
+        })
+        .await
+        .unwrap()?;
+        let object_repo = Self::object_repo(&snapshot_dir)?;
+        verify_snapshot(object_repo, self.root.clone(), snapshot.clone())
+            .await
+            .map(drop)?;
+        Ok(snapshot)
     }
 
     /// Open a repository at `root`, failing if the `root` doesn't exist or isn't a directory.

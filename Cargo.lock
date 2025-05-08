@@ -5839,6 +5839,7 @@ dependencies = [
  "hex",
  "log",
  "pretty_assertions",
+ "rand 0.9.1",
  "spacetimedb-core",
  "spacetimedb-durability",
  "spacetimedb-fs-utils",
