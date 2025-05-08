@@ -3,6 +3,7 @@ use spacetimedb_primitives::SequenceId;
 use spacetimedb_schema::schema::SequenceSchema;
 use spacetimedb_table::MemoryUsage;
 
+#[derive(Debug, PartialEq)]
 pub(super) struct Sequence {
     schema: SequenceSchema,
     pub(super) value: i128,
