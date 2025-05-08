@@ -24,15 +24,24 @@ impl MemoryUsage for PagePool {
 
 impl PagePool {
     pub fn new_for_test() -> Self {
-        Self::new(None)
+        Self::new(Some(100 * size_of::<Page>()))
     }
 
     /// Returns a new page pool with `max_size` bytes rounded down to the nearest multiple of 64 KiB.
     ///
-    /// if no size is provided, a default of 8 GiB is used.
+    /// if no size is provided, a default of 1 page is used.
     pub fn new(max_size: Option<usize>) -> Self {
-        const DEFAULT_MAX_SIZE: usize = 8 * (1 << 30); // 8 GiB
-        const PAGE_SIZE: usize = 64 * (1 << 10); // 64 KiB, `size_of::<Page>()`
+        const PAGE_SIZE: usize = size_of::<Page>();
+        // TODO(centril): This effectively disables the page pool.
+        // Currently, we have a test `test_index_scans`.
+        // The test sets up a `Location` table, like in BitCraft, with a `chunk` field,
+        // and populates it with 1000 different chunks with 1200 rows each.
+        // Then it asserts that the cold latency of an index scan on `chunk` takes < 1 ms.
+        // However, for reasons currently unknown to us,
+        // a large page pool, with capacity `1 << 26` bytes, on i7-7700K, 64GB RAM,
+        // will turn the latency into 30-40 ms.
+        // As a precaution, we disable the page pool by default.
+        const DEFAULT_MAX_SIZE: usize = PAGE_SIZE; // 1 page
 
         let queue_size = max_size.unwrap_or(DEFAULT_MAX_SIZE) / PAGE_SIZE;
         let inner = Arc::new(PagePoolInner::new(queue_size));
