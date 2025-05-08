@@ -86,6 +86,7 @@ pub(super) struct TxState {
 /// The places that do need to care about changes are those that make them, and merge/rollback.
 /// Architecting this way should benefit performance both during transactions and merge.
 /// On rollback, it should be fairly cheap to e.g., just re-add an index or drop it on the floor.
+#[derive(Debug, PartialEq)]
 pub(super) enum PendingSchemaChange {
     /// The [`TableIndex`] / [`IndexSchema`] with `IndexId`
     /// was removed from the table with [`TableId`].
