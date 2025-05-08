@@ -238,8 +238,8 @@ pub static DEFAULT_CONFIG: Config = Config {
 /// For performance tests, do not persist to disk.
 pub static IN_MEMORY_CONFIG: Config = Config {
     storage: Storage::Disk,
-    // For some reason, `None`, i.e., 8 GiB capacity causes `test_index_scans`
-    // to slow down, and makes the perf test for `chunk` go over 1ms.
+    // For some reason, a large page pool capacity causes `test_index_scans` to slow down,
+    // and makes the perf test for `chunk` go over 1ms.
     // The threshold for failure on i7-7700K, 64GB RAM seems to be at 1 << 26.
     // TODO(centril): investigate further why this size affects the benchmark.
     page_pool_max_size: Some(1 << 16),
