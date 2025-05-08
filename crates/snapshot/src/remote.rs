@@ -710,7 +710,7 @@ struct BufPool {
 }
 
 impl BufPool {
-    /// Create a new pool capabale of holding a maximum of `cap` buffers.
+    /// Creates a new pool capable of holding a maximum of `cap` buffers.
     pub fn new(cap: usize) -> Self {
         Self {
             inner: Arc::new(ArrayQueue::new(cap)),
