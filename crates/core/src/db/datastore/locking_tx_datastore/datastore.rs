@@ -1173,6 +1173,7 @@ fn metadata_from_row(row: RowRef<'_>) -> Result<Metadata> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::datastore::locking_tx_datastore::tx_state::PendingSchemaChange;
     use crate::db::datastore::system_tables::{
         system_tables, StColumnRow, StConstraintData, StConstraintFields, StConstraintRow, StIndexAlgorithm,
         StIndexFields, StIndexRow, StRowLevelSecurityFields, StScheduledFields, StSequenceFields, StSequenceRow,
@@ -3041,11 +3042,25 @@ mod tests {
 
         // Create a transaction and drop the table and roll back.
         let mut tx = begin_mut_tx(&datastore);
+        assert_eq!(&*tx.tx_state.pending_schema_changes, []);
         assert!(datastore.drop_table_mut_tx(&mut tx, table_id).is_ok());
+        assert_matches!(
+            &*tx.tx_state.pending_schema_changes,
+            [
+                PendingSchemaChange::IndexRemoved(..),
+                PendingSchemaChange::IndexRemoved(..),
+                PendingSchemaChange::SequenceRemoved(..),
+                PendingSchemaChange::ConstraintRemoved(..),
+                PendingSchemaChange::ConstraintRemoved(..),
+                PendingSchemaChange::TableRemoved(removed_table_id, _)
+            ]
+                if *removed_table_id == table_id
+        );
         datastore.rollback_mut_tx(tx);
 
         // Ensure the table still exists in the next transaction.
         let tx = begin_mut_tx(&datastore);
+        assert_eq!(&*tx.tx_state.pending_schema_changes, []);
         assert!(
             datastore.table_id_exists_mut_tx(&tx, &table_id),
             "Table should still exist",
@@ -3058,10 +3073,23 @@ mod tests {
     fn test_create_table_is_transactional() -> ResultTest<()> {
         // Create a table in a failed transaction.
         let (datastore, tx, table_id) = setup_table()?;
+        assert_matches!(
+            &*tx.tx_state.pending_schema_changes,
+            [
+                PendingSchemaChange::TableAdded(added_table_id),
+                PendingSchemaChange::IndexAdded(..),
+                PendingSchemaChange::IndexAdded(..),
+                PendingSchemaChange::ConstraintAdded(..),
+                PendingSchemaChange::ConstraintAdded(..),
+                PendingSchemaChange::SequenceAdded(..),
+            ]
+                if *added_table_id == table_id
+        );
         datastore.rollback_mut_tx(tx);
 
         // Nothing should have happened.
         let tx = begin_mut_tx(&datastore);
+        assert_eq!(&*tx.tx_state.pending_schema_changes, []);
         assert!(
             !datastore.table_id_exists_mut_tx(&tx, &table_id),
             "Table should not exist"
