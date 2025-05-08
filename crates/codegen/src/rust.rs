@@ -1000,7 +1000,7 @@ impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
             for table in iter_tables(module) {
                 writeln!(
                     out,
-                    "{:?} => db_update.{} = {}::parse_table_update(table_update)?,",
+                    "{:?} => db_update.{}.append({}::parse_table_update(table_update)?),",
                     table.name.deref(),
                     table_method_name(&table.name),
                     table_module_name(&table.name),

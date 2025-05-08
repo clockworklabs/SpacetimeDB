@@ -1,5 +1,5 @@
 ---
-source: crates/cli/tests/codegen.rs
+source: crates/codegen/tests/codegen.rs
 expression: outfiles
 ---
 "add_player_reducer.rs" = '''
@@ -1611,18 +1611,18 @@ impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
         for table_update in raw.tables {
             match &table_update.table_name[..] {
 
-        "has_special_stuff" => db_update.has_special_stuff = has_special_stuff_table::parse_table_update(table_update)?,
-    "logged_out_player" => db_update.logged_out_player = logged_out_player_table::parse_table_update(table_update)?,
-    "person" => db_update.person = person_table::parse_table_update(table_update)?,
-    "pk_multi_identity" => db_update.pk_multi_identity = pk_multi_identity_table::parse_table_update(table_update)?,
-    "player" => db_update.player = player_table::parse_table_update(table_update)?,
-    "points" => db_update.points = points_table::parse_table_update(table_update)?,
-    "private_table" => db_update.private_table = private_table_table::parse_table_update(table_update)?,
-    "repeating_test_arg" => db_update.repeating_test_arg = repeating_test_arg_table::parse_table_update(table_update)?,
-    "test_a" => db_update.test_a = test_a_table::parse_table_update(table_update)?,
-    "test_d" => db_update.test_d = test_d_table::parse_table_update(table_update)?,
-    "test_e" => db_update.test_e = test_e_table::parse_table_update(table_update)?,
-    "test_f" => db_update.test_f = test_f_table::parse_table_update(table_update)?,
+        "has_special_stuff" => db_update.has_special_stuff.append(has_special_stuff_table::parse_table_update(table_update)?),
+    "logged_out_player" => db_update.logged_out_player.append(logged_out_player_table::parse_table_update(table_update)?),
+    "person" => db_update.person.append(person_table::parse_table_update(table_update)?),
+    "pk_multi_identity" => db_update.pk_multi_identity.append(pk_multi_identity_table::parse_table_update(table_update)?),
+    "player" => db_update.player.append(player_table::parse_table_update(table_update)?),
+    "points" => db_update.points.append(points_table::parse_table_update(table_update)?),
+    "private_table" => db_update.private_table.append(private_table_table::parse_table_update(table_update)?),
+    "repeating_test_arg" => db_update.repeating_test_arg.append(repeating_test_arg_table::parse_table_update(table_update)?),
+    "test_a" => db_update.test_a.append(test_a_table::parse_table_update(table_update)?),
+    "test_d" => db_update.test_d.append(test_d_table::parse_table_update(table_update)?),
+    "test_e" => db_update.test_e.append(test_e_table::parse_table_update(table_update)?),
+    "test_f" => db_update.test_f.append(test_f_table::parse_table_update(table_update)?),
 
                 unknown => {
                     return Err(__sdk::InternalError::unknown_name(
