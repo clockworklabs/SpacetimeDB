@@ -193,7 +193,7 @@ impl CompiledModule {
             DatabaseDef {
                 database_identity: db_identity,
                 program_bytes,
-                num_replicas: 1,
+                num_replicas: None,
                 host_type: HostType::Wasm,
             },
         )
