@@ -26,8 +26,12 @@ partial struct TestAutoIncNotInteger
         internal static readonly SpacetimeDB.BSATN.F32 AutoIncField = new();
         internal static readonly SpacetimeDB.BSATN.String IdentityField = new();
 
-        public TestAutoIncNotInteger Read(System.IO.BinaryReader reader) =>
-            SpacetimeDB.BSATN.IStructuralReadWrite.Read<TestAutoIncNotInteger>(reader);
+        public TestAutoIncNotInteger Read(System.IO.BinaryReader reader)
+        {
+            var ___result = new TestAutoIncNotInteger();
+            ___result.ReadFields(reader);
+            return ___result;
+        }
 
         public void Write(System.IO.BinaryWriter writer, TestAutoIncNotInteger value)
         {

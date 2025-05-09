@@ -12,8 +12,12 @@ partial class PrivateTable : System.IEquatable<PrivateTable>, SpacetimeDB.BSATN.
 
     public readonly partial struct BSATN : SpacetimeDB.BSATN.IReadWrite<PrivateTable>
     {
-        public PrivateTable Read(System.IO.BinaryReader reader) =>
-            SpacetimeDB.BSATN.IStructuralReadWrite.Read<PrivateTable>(reader);
+        public PrivateTable Read(System.IO.BinaryReader reader)
+        {
+            var ___result = new PrivateTable();
+            ___result.ReadFields(reader);
+            return ___result;
+        }
 
         public void Write(System.IO.BinaryWriter writer, PrivateTable value)
         {

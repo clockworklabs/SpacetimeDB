@@ -14,8 +14,12 @@ partial struct TestDuplicateTableName
 
     public readonly partial struct BSATN : SpacetimeDB.BSATN.IReadWrite<TestDuplicateTableName>
     {
-        public TestDuplicateTableName Read(System.IO.BinaryReader reader) =>
-            SpacetimeDB.BSATN.IStructuralReadWrite.Read<TestDuplicateTableName>(reader);
+        public TestDuplicateTableName Read(System.IO.BinaryReader reader)
+        {
+            var ___result = new TestDuplicateTableName();
+            ___result.ReadFields(reader);
+            return ___result;
+        }
 
         public void Write(System.IO.BinaryWriter writer, TestDuplicateTableName value)
         {

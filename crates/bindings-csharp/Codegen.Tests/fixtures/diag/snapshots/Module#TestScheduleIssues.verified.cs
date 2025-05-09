@@ -32,8 +32,12 @@ partial struct TestScheduleIssues
         internal static readonly SpacetimeDB.BSATN.I32 ScheduleAtWrongType = new();
         internal static readonly SpacetimeDB.ScheduleAt.BSATN ScheduleAtCorrectType = new();
 
-        public TestScheduleIssues Read(System.IO.BinaryReader reader) =>
-            SpacetimeDB.BSATN.IStructuralReadWrite.Read<TestScheduleIssues>(reader);
+        public TestScheduleIssues Read(System.IO.BinaryReader reader)
+        {
+            var ___result = new TestScheduleIssues();
+            ___result.ReadFields(reader);
+            return ___result;
+        }
 
         public void Write(System.IO.BinaryWriter writer, TestScheduleIssues value)
         {

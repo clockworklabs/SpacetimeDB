@@ -12,8 +12,12 @@ partial record EmptyRecord : System.IEquatable<EmptyRecord>, SpacetimeDB.BSATN.I
 
     public readonly partial struct BSATN : SpacetimeDB.BSATN.IReadWrite<EmptyRecord>
     {
-        public EmptyRecord Read(System.IO.BinaryReader reader) =>
-            SpacetimeDB.BSATN.IStructuralReadWrite.Read<EmptyRecord>(reader);
+        public EmptyRecord Read(System.IO.BinaryReader reader)
+        {
+            var ___result = new EmptyRecord();
+            ___result.ReadFields(reader);
+            return ___result;
+        }
 
         public void Write(System.IO.BinaryWriter writer, EmptyRecord value)
         {

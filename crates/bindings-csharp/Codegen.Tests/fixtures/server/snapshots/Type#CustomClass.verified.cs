@@ -36,8 +36,12 @@ partial class CustomClass : System.IEquatable<CustomClass>, SpacetimeDB.BSATN.IS
             SpacetimeDB.BSATN.String
         > NullableStringField = new();
 
-        public CustomClass Read(System.IO.BinaryReader reader) =>
-            SpacetimeDB.BSATN.IStructuralReadWrite.Read<CustomClass>(reader);
+        public CustomClass Read(System.IO.BinaryReader reader)
+        {
+            var ___result = new CustomClass();
+            ___result.ReadFields(reader);
+            return ___result;
+        }
 
         public void Write(System.IO.BinaryWriter writer, CustomClass value)
         {
