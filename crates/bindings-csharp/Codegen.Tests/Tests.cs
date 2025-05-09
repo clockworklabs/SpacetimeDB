@@ -124,7 +124,7 @@ public static class GeneratorSnapshotTests
             .Emit(Stream.Null)
             .Diagnostics.Where(diag => diag.Severity != DiagnosticSeverity.Hidden)
             // The order of diagnostics is not predictable, sort them by location to make the test deterministic.
-            .OrderBy(diag => diag.ToString());
+            .OrderBy(diag => diag.GetMessage() + diag.Location.ToString());
     }
 
     [Fact]

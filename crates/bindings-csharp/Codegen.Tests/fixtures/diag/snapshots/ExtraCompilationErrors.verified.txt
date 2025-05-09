@@ -1,17 +1,17 @@
 ﻿[
   {/*
-    public Exception UnsupportedSystemType;
-    public UnresolvedType UnresolvedType;
-           ^^^^^^^^^^^^^^
-    public LocalEnum UnsupportedEnum;
+SpacetimeDB.Internal.Module.RegisterTable<global::TestUniqueNotEquatable, SpacetimeDB.Internal.TableHandles.TestUniqueNotEquatable>();
+        SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_FILTER);
+                                                                                  ^^^^^^^^^
+SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_FOURTH_FILTER);
 */
-    Message: The type or namespace name 'UnresolvedType' could not be found (are you missing a using directive or an assembly reference?),
+    Message: 'Module.MY_FILTER' is inaccessible due to its protection level,
     Severity: Error,
     Descriptor: {
-      Id: CS0246,
+      Id: CS0122,
       Title: ,
-      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0246),
-      MessageFormat: The type or namespace name '{0}' could not be found (are you missing a using directive or an assembly reference?),
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0122),
+      MessageFormat: '{0}' is inaccessible due to its protection level,
       Category: Compiler,
       DefaultSeverity: Error,
       IsEnabledByDefault: true,
@@ -46,29 +46,6 @@
     }
   },
   {/*
-    {
-        internal static readonly TRW Field = new();
-                                 ^^^
-
-*/
-    Message: The type or namespace name 'TRW' could not be found (are you missing a using directive or an assembly reference?),
-    Severity: Error,
-    Descriptor: {
-      Id: CS0246,
-      Title: ,
-      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0246),
-      MessageFormat: The type or namespace name '{0}' could not be found (are you missing a using directive or an assembly reference?),
-      Category: Compiler,
-      DefaultSeverity: Error,
-      IsEnabledByDefault: true,
-      CustomTags: [
-        Compiler,
-        Telemetry,
-        NotConfigurable
-      ]
-    }
-  },
-  {/*
 
 partial struct TestTypeParams<T>  : System.IEquatable<TestTypeParams>, SpacetimeDB.BSATN.IStructuralReadWrite {
                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -81,29 +58,6 @@ partial struct TestTypeParams<T>  : System.IEquatable<TestTypeParams>, Spacetime
       Title: ,
       HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0535),
       MessageFormat: '{0}' does not implement interface member '{1}',
-      Category: Compiler,
-      DefaultSeverity: Error,
-      IsEnabledByDefault: true,
-      CustomTags: [
-        Compiler,
-        Telemetry,
-        NotConfigurable
-      ]
-    }
-  },
-  {/*
-
-partial struct TestTypeParams<T>  : System.IEquatable<TestTypeParams>, SpacetimeDB.BSATN.IStructuralReadWrite {
-                                                      ^^^^^^^^^^^^^^
-
-*/
-    Message: Using the generic type 'TestTypeParams<T>' requires 1 type arguments,
-    Severity: Error,
-    Descriptor: {
-      Id: CS0305,
-      Title: ,
-      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0305),
-      MessageFormat: Using the generic {1} '{0}' requires {2} type arguments,
       Category: Compiler,
       DefaultSeverity: Error,
       IsEnabledByDefault: true,
@@ -138,29 +92,6 @@ var ___hashUnsupportedEnum = UnsupportedEnum.GetHashCode();
     }
   },
   {/*
-SpacetimeDB.Internal.Module.RegisterTable<global::TestUniqueNotEquatable, SpacetimeDB.Internal.TableHandles.TestUniqueNotEquatable>();
-        SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_FILTER);
-                                                                                  ^^^^^^^^^
-SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_FOURTH_FILTER);
-*/
-    Message: 'Module.MY_FILTER' is inaccessible due to its protection level,
-    Severity: Error,
-    Descriptor: {
-      Id: CS0122,
-      Title: ,
-      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0122),
-      MessageFormat: '{0}' is inaccessible due to its protection level,
-      Category: Compiler,
-      DefaultSeverity: Error,
-      IsEnabledByDefault: true,
-      CustomTags: [
-        Compiler,
-        Telemetry,
-        NotConfigurable
-      ]
-    }
-  },
-  {/*
 SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_SECOND_FILTER);
 SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_THIRD_FILTER);
                                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -173,6 +104,75 @@ SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_THI
       Title: ,
       HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS1503),
       MessageFormat: Argument {0}: cannot convert from '{1}' to '{2}',
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+    {
+        internal static readonly TRW Field = new();
+                                 ^^^
+
+*/
+    Message: The type or namespace name 'TRW' could not be found (are you missing a using directive or an assembly reference?),
+    Severity: Error,
+    Descriptor: {
+      Id: CS0246,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0246),
+      MessageFormat: The type or namespace name '{0}' could not be found (are you missing a using directive or an assembly reference?),
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+    public Exception UnsupportedSystemType;
+    public UnresolvedType UnresolvedType;
+           ^^^^^^^^^^^^^^
+    public LocalEnum UnsupportedEnum;
+*/
+    Message: The type or namespace name 'UnresolvedType' could not be found (are you missing a using directive or an assembly reference?),
+    Severity: Error,
+    Descriptor: {
+      Id: CS0246,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0246),
+      MessageFormat: The type or namespace name '{0}' could not be found (are you missing a using directive or an assembly reference?),
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+
+partial struct TestTypeParams<T>  : System.IEquatable<TestTypeParams>, SpacetimeDB.BSATN.IStructuralReadWrite {
+                                                      ^^^^^^^^^^^^^^
+
+*/
+    Message: Using the generic type 'TestTypeParams<T>' requires 1 type arguments,
+    Severity: Error,
+    Descriptor: {
+      Id: CS0305,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0305),
+      MessageFormat: Using the generic {1} '{0}' requires {2} type arguments,
       Category: Compiler,
       DefaultSeverity: Error,
       IsEnabledByDefault: true,
