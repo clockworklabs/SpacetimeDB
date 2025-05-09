@@ -4,14 +4,6 @@
 
 partial record CustomTaggedEnum : System.IEquatable<CustomTaggedEnum>
 {
-    private CustomTaggedEnum() { }
-
-    internal enum @enum : byte
-    {
-        IntVariant,
-        StringVariant
-    }
-
     public sealed record IntVariant(int IntVariant_) : CustomTaggedEnum
     {
         public override string ToString() =>
@@ -26,31 +18,32 @@ partial record CustomTaggedEnum : System.IEquatable<CustomTaggedEnum>
 
     public readonly partial struct BSATN : SpacetimeDB.BSATN.IReadWrite<CustomTaggedEnum>
     {
-        internal static readonly SpacetimeDB.BSATN.Enum<@enum> __enumTag = new();
         internal static readonly SpacetimeDB.BSATN.I32 IntVariant = new();
         internal static readonly SpacetimeDB.BSATN.String StringVariant = new();
 
-        public CustomTaggedEnum Read(System.IO.BinaryReader reader) =>
-            __enumTag.Read(reader) switch
+        public CustomTaggedEnum Read(System.IO.BinaryReader reader)
+        {
+            return reader.ReadByte() switch
             {
-                @enum.IntVariant => new IntVariant(IntVariant.Read(reader)),
-                @enum.StringVariant => new StringVariant(StringVariant.Read(reader)),
+                0 => new IntVariant(IntVariant.Read(reader)),
+                1 => new StringVariant(StringVariant.Read(reader)),
                 _
                     => throw new System.InvalidOperationException(
                         "Invalid tag value, this state should be unreachable."
                     )
             };
+        }
 
         public void Write(System.IO.BinaryWriter writer, CustomTaggedEnum value)
         {
             switch (value)
             {
                 case IntVariant(var inner):
-                    __enumTag.Write(writer, @enum.IntVariant);
+                    writer.Write((byte)0);
                     IntVariant.Write(writer, inner);
                     break;
                 case StringVariant(var inner):
-                    __enumTag.Write(writer, @enum.StringVariant);
+                    writer.Write((byte)1);
                     StringVariant.Write(writer, inner);
                     break;
             }

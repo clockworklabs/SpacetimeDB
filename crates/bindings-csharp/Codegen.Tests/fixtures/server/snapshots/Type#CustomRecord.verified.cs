@@ -20,6 +20,11 @@ partial class CustomRecord : System.IEquatable<CustomRecord>, SpacetimeDB.BSATN.
         BSATN.NullableStringField.Write(writer, NullableStringField);
     }
 
+    object SpacetimeDB.BSATN.IStructuralReadWrite.GetSerializer()
+    {
+        return new BSATN();
+    }
+
     public override string ToString() =>
         $"CustomRecord {{ IntField = {SpacetimeDB.BSATN.StringUtil.GenericToString(IntField)}, StringField = {SpacetimeDB.BSATN.StringUtil.GenericToString(StringField)}, NullableIntField = {SpacetimeDB.BSATN.StringUtil.GenericToString(NullableIntField)}, NullableStringField = {SpacetimeDB.BSATN.StringUtil.GenericToString(NullableStringField)} }}";
 
@@ -36,8 +41,12 @@ partial class CustomRecord : System.IEquatable<CustomRecord>, SpacetimeDB.BSATN.
             SpacetimeDB.BSATN.String
         > NullableStringField = new();
 
-        public CustomRecord Read(System.IO.BinaryReader reader) =>
-            SpacetimeDB.BSATN.IStructuralReadWrite.Read<CustomRecord>(reader);
+        public CustomRecord Read(System.IO.BinaryReader reader)
+        {
+            var ___result = new CustomRecord();
+            ___result.ReadFields(reader);
+            return ___result;
+        }
 
         public void Write(System.IO.BinaryWriter writer, CustomRecord value)
         {

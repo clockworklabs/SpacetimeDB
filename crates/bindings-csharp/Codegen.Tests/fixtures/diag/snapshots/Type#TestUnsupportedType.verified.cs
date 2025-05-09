@@ -22,6 +22,11 @@ partial struct TestUnsupportedType
         BSATN.UnsupportedEnum.Write(writer, UnsupportedEnum);
     }
 
+    object SpacetimeDB.BSATN.IStructuralReadWrite.GetSerializer()
+    {
+        return new BSATN();
+    }
+
     public override string ToString() =>
         $"TestUnsupportedType {{ UnsupportedSpecialType = {SpacetimeDB.BSATN.StringUtil.GenericToString(UnsupportedSpecialType)}, UnsupportedSystemType = {SpacetimeDB.BSATN.StringUtil.GenericToString(UnsupportedSystemType)}, UnresolvedType = {SpacetimeDB.BSATN.StringUtil.GenericToString(UnresolvedType)}, UnsupportedEnum = {SpacetimeDB.BSATN.StringUtil.GenericToString(UnsupportedEnum)} }}";
 
@@ -34,8 +39,12 @@ partial struct TestUnsupportedType
         internal static readonly SpacetimeDB.BSATN.Unsupported<object> UnresolvedType = new();
         internal static readonly SpacetimeDB.BSATN.Unsupported<LocalEnum> UnsupportedEnum = new();
 
-        public TestUnsupportedType Read(System.IO.BinaryReader reader) =>
-            SpacetimeDB.BSATN.IStructuralReadWrite.Read<TestUnsupportedType>(reader);
+        public TestUnsupportedType Read(System.IO.BinaryReader reader)
+        {
+            var ___result = new TestUnsupportedType();
+            ___result.ReadFields(reader);
+            return ___result;
+        }
 
         public void Write(System.IO.BinaryWriter writer, TestUnsupportedType value)
         {

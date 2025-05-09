@@ -392,6 +392,11 @@ public record struct Timestamp(long MicrosecondsSinceUnixEpoch)
         BSATN.MicrosecondsSinceUnixEpoch.Write(writer, MicrosecondsSinceUnixEpoch);
     }
 
+    readonly object IStructuralReadWrite.GetSerializer()
+    {
+        return new BSATN();
+    }
+
     public readonly partial struct BSATN : IReadWrite<Timestamp>
     {
         internal static readonly I64 MicrosecondsSinceUnixEpoch = new();
@@ -461,6 +466,11 @@ public record struct TimeDuration(long Microseconds) : IStructuralReadWrite
     public readonly void WriteFields(BinaryWriter writer)
     {
         BSATN.__time_duration_micros__.Write(writer, Microseconds);
+    }
+
+    readonly object IStructuralReadWrite.GetSerializer()
+    {
+        return new BSATN();
     }
 
     public readonly partial struct BSATN : IReadWrite<TimeDuration>

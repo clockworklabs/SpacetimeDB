@@ -30,6 +30,11 @@ partial class CustomNestedClass
         BSATN.NestedNullableCustomRecord.Write(writer, NestedNullableCustomRecord);
     }
 
+    object SpacetimeDB.BSATN.IStructuralReadWrite.GetSerializer()
+    {
+        return new BSATN();
+    }
+
     public override string ToString() =>
         $"CustomNestedClass {{ NestedClass = {SpacetimeDB.BSATN.StringUtil.GenericToString(NestedClass)}, NestedNullableClass = {SpacetimeDB.BSATN.StringUtil.GenericToString(NestedNullableClass)}, NestedEnum = {SpacetimeDB.BSATN.StringUtil.GenericToString(NestedEnum)}, NestedNullableEnum = {SpacetimeDB.BSATN.StringUtil.GenericToString(NestedNullableEnum)}, NestedTaggedEnum = {SpacetimeDB.BSATN.StringUtil.GenericToString(NestedTaggedEnum)}, NestedNullableTaggedEnum = {SpacetimeDB.BSATN.StringUtil.GenericToString(NestedNullableTaggedEnum)}, NestedCustomRecord = {SpacetimeDB.BSATN.StringUtil.GenericToString(NestedCustomRecord)}, NestedNullableCustomRecord = {SpacetimeDB.BSATN.StringUtil.GenericToString(NestedNullableCustomRecord)} }}";
 
@@ -56,8 +61,12 @@ partial class CustomNestedClass
             CustomRecord.BSATN
         > NestedNullableCustomRecord = new();
 
-        public CustomNestedClass Read(System.IO.BinaryReader reader) =>
-            SpacetimeDB.BSATN.IStructuralReadWrite.Read<CustomNestedClass>(reader);
+        public CustomNestedClass Read(System.IO.BinaryReader reader)
+        {
+            var ___result = new CustomNestedClass();
+            ___result.ReadFields(reader);
+            return ___result;
+        }
 
         public void Write(System.IO.BinaryWriter writer, CustomNestedClass value)
         {

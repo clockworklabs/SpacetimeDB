@@ -22,6 +22,11 @@ partial struct CustomStruct
         BSATN.NullableStringField.Write(writer, NullableStringField);
     }
 
+    object SpacetimeDB.BSATN.IStructuralReadWrite.GetSerializer()
+    {
+        return new BSATN();
+    }
+
     public override string ToString() =>
         $"CustomStruct {{ IntField = {SpacetimeDB.BSATN.StringUtil.GenericToString(IntField)}, StringField = {SpacetimeDB.BSATN.StringUtil.GenericToString(StringField)}, NullableIntField = {SpacetimeDB.BSATN.StringUtil.GenericToString(NullableIntField)}, NullableStringField = {SpacetimeDB.BSATN.StringUtil.GenericToString(NullableStringField)} }}";
 
@@ -38,8 +43,12 @@ partial struct CustomStruct
             SpacetimeDB.BSATN.String
         > NullableStringField = new();
 
-        public CustomStruct Read(System.IO.BinaryReader reader) =>
-            SpacetimeDB.BSATN.IStructuralReadWrite.Read<CustomStruct>(reader);
+        public CustomStruct Read(System.IO.BinaryReader reader)
+        {
+            var ___result = new CustomStruct();
+            ___result.ReadFields(reader);
+            return ___result;
+        }
 
         public void Write(System.IO.BinaryWriter writer, CustomStruct value)
         {
