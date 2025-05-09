@@ -44,6 +44,7 @@ partial class EmptyClass : System.IEquatable<EmptyClass>, SpacetimeDB.BSATN.IStr
         {
             return false;
         }
+
         return true;
     }
 

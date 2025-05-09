@@ -67,10 +67,15 @@ partial class CustomRecord : System.IEquatable<CustomRecord>, SpacetimeDB.BSATN.
 
     public override int GetHashCode()
     {
-        return IntField.GetHashCode()
-            ^ StringField.GetHashCode()
-            ^ NullableIntField.GetHashCode()
-            ^ (NullableStringField == null ? 0 : NullableStringField.GetHashCode());
+        var ___hashIntField = IntField.GetHashCode();
+        var ___hashStringField = StringField == null ? 0 : StringField.GetHashCode();
+        var ___hashNullableIntField = NullableIntField.GetHashCode();
+        var ___hashNullableStringField =
+            NullableStringField == null ? 0 : NullableStringField.GetHashCode();
+        return ___hashIntField
+            ^ ___hashStringField
+            ^ ___hashNullableIntField
+            ^ ___hashNullableStringField;
     }
 
 #nullable enable
@@ -80,14 +85,21 @@ partial class CustomRecord : System.IEquatable<CustomRecord>, SpacetimeDB.BSATN.
         {
             return false;
         }
-        return IntField.Equals(that.IntField)
-            && StringField.Equals(that.StringField)
-            && NullableIntField.Equals(that.NullableIntField)
-            && (
-                NullableStringField == null
-                    ? that.NullableStringField == null
-                    : NullableStringField.Equals(that.NullableStringField)
-            );
+
+        var ___eqIntField = this.IntField.Equals(that.IntField);
+        var ___eqStringField =
+            this.StringField == null
+                ? that.StringField == null
+                : this.StringField.Equals(that.StringField);
+        var ___eqNullableIntField = this.NullableIntField.Equals(that.NullableIntField);
+        var ___eqNullableStringField =
+            this.NullableStringField == null
+                ? that.NullableStringField == null
+                : this.NullableStringField.Equals(that.NullableStringField);
+        return ___eqIntField
+            && ___eqStringField
+            && ___eqNullableIntField
+            && ___eqNullableStringField;
     }
 
     public override bool Equals(object? that)

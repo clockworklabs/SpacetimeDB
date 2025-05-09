@@ -79,9 +79,11 @@ partial record TestTaggedEnumField : System.IEquatable<TestTaggedEnumField>
         switch (this)
         {
             case X(var inner):
-                return inner.GetHashCode();
+                var ___hashX = inner.GetHashCode();
+                return ___hashX;
             case Y(var inner):
-                return inner.GetHashCode();
+                var ___hashY = inner.GetHashCode();
+                return ___hashY;
             default:
                 return 0;
         }

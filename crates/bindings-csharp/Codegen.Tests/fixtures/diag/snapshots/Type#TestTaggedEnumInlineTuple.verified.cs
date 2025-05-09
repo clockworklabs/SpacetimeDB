@@ -65,7 +65,8 @@ partial record TestTaggedEnumInlineTuple : System.IEquatable<TestTaggedEnumInlin
         switch (this)
         {
             case Item1(var inner):
-                return inner.GetHashCode();
+                var ___hashItem1 = inner.GetHashCode();
+                return ___hashItem1;
             default:
                 return 0;
         }

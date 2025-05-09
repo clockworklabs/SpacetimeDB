@@ -54,13 +54,20 @@ partial struct TestAutoIncNotInteger
 
     public override int GetHashCode()
     {
-        return AutoIncField.GetHashCode() ^ IdentityField.GetHashCode();
+        var ___hashAutoIncField = AutoIncField.GetHashCode();
+        var ___hashIdentityField = IdentityField == null ? 0 : IdentityField.GetHashCode();
+        return ___hashAutoIncField ^ ___hashIdentityField;
     }
 
 #nullable enable
     public bool Equals(TestAutoIncNotInteger that)
     {
-        return AutoIncField.Equals(that.AutoIncField) && IdentityField.Equals(that.IdentityField);
+        var ___eqAutoIncField = this.AutoIncField.Equals(that.AutoIncField);
+        var ___eqIdentityField =
+            this.IdentityField == null
+                ? that.IdentityField == null
+                : this.IdentityField.Equals(that.IdentityField);
+        return ___eqAutoIncField && ___eqIdentityField;
     }
 
     public override bool Equals(object? that)
