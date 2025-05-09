@@ -733,12 +733,14 @@ mod tests {
     use crate::execution_context::Workload;
     use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall};
     use crate::messages::websocket as ws;
+    use crate::sql::execute::run;
     use crate::subscription::module_subscription_manager::SubscriptionManager;
     use crate::subscription::query::compile_read_only_query;
     use crate::subscription::TableUpdateType;
     use hashbrown::HashMap;
     use itertools::Itertools;
     use parking_lot::RwLock;
+    use pretty_assertions::assert_matches;
     use spacetimedb_client_api_messages::energy::EnergyQuanta;
     use spacetimedb_client_api_messages::websocket::{
         CompressableQueryUpdate, Compression, FormatSwitch, QueryId, Subscribe, SubscribeMulti, SubscribeSingle,
@@ -1526,6 +1528,51 @@ mod tests {
             None => panic!("channel unexpectedly closed"),
         };
 
+        Ok(())
+    }
+
+    /// Test that we receive subscription updates for DML
+    #[tokio::test]
+    async fn test_updates_for_dml() -> anyhow::Result<()> {
+        // Establish a client connection
+        let (tx, mut rx) = client_connection(client_id_from_u8(1));
+
+        let db = relational_db()?;
+        let subs = module_subscriptions(db.clone());
+        let schema = [("x", AlgebraicType::U8), ("y", AlgebraicType::U8)];
+        let t_id = db.create_table_for_test("t", &schema, &[])?;
+
+        // Subscribe to `t`
+        subscribe_multi(&subs, &["select * from t"], tx, &mut 0)?;
+
+        // Wait to receive the initial subscription message
+        assert_matches!(rx.recv().await, Some(SerializableMessage::Subscription(_)));
+
+        let schema = ProductType::from([AlgebraicType::U8, AlgebraicType::U8]);
+
+        // Only the owner can invoke DML commands
+        let auth = AuthCtx::new(identity_from_u8(0), identity_from_u8(0));
+
+        run(
+            &db,
+            "INSERT INTO t (x, y) VALUES (0, 1)",
+            auth,
+            Some(&subs),
+            &mut vec![],
+        )?;
+
+        // Client should receive insert
+        assert_tx_update_for_table(&mut rx, t_id, &schema, [product![0_u8, 1_u8]], []).await;
+
+        run(&db, "UPDATE t SET y=2 WHERE x=0", auth, Some(&subs), &mut vec![])?;
+
+        // Client should receive update
+        assert_tx_update_for_table(&mut rx, t_id, &schema, [product![0_u8, 2_u8]], [product![0_u8, 1_u8]]).await;
+
+        run(&db, "DELETE FROM t WHERE x=0", auth, Some(&subs), &mut vec![])?;
+
+        // Client should receive delete
+        assert_tx_update_for_table(&mut rx, t_id, &schema, [], [product![0_u8, 2_u8]]).await;
         Ok(())
     }
 
