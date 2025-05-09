@@ -690,7 +690,7 @@ impl ModuleSubscriptions {
 
         match &event.status {
             EventStatus::Committed(_) => {
-                metrics.merge(subscriptions.eval_updates(
+                metrics.merge(subscriptions.eval_updates_sequential(
                     &read_tx,
                     event.clone(),
                     caller,
