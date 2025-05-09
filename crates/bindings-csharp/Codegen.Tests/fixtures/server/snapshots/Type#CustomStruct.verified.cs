@@ -38,8 +38,12 @@ partial struct CustomStruct
             SpacetimeDB.BSATN.String
         > NullableStringField = new();
 
-        public CustomStruct Read(System.IO.BinaryReader reader) =>
-            SpacetimeDB.BSATN.IStructuralReadWrite.Read<CustomStruct>(reader);
+        public CustomStruct Read(System.IO.BinaryReader reader)
+        {
+            var ___result = new CustomStruct();
+            ___result.ReadFields(reader);
+            return ___result;
+        }
 
         public void Write(System.IO.BinaryWriter writer, CustomStruct value)
         {

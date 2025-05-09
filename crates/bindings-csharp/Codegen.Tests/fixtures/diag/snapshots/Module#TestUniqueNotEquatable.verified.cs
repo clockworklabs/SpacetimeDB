@@ -30,8 +30,12 @@ partial struct TestUniqueNotEquatable
         internal static readonly SpacetimeDB.BSATN.Enum<TestEnumWithExplicitValues> PrimaryKeyField =
             new();
 
-        public TestUniqueNotEquatable Read(System.IO.BinaryReader reader) =>
-            SpacetimeDB.BSATN.IStructuralReadWrite.Read<TestUniqueNotEquatable>(reader);
+        public TestUniqueNotEquatable Read(System.IO.BinaryReader reader)
+        {
+            var ___result = new TestUniqueNotEquatable();
+            ___result.ReadFields(reader);
+            return ___result;
+        }
 
         public void Write(System.IO.BinaryWriter writer, TestUniqueNotEquatable value)
         {

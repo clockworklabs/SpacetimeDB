@@ -30,8 +30,12 @@ partial struct BTreeViews : System.IEquatable<BTreeViews>, SpacetimeDB.BSATN.ISt
         internal static readonly SpacetimeDB.BSATN.U32 Y = new();
         internal static readonly SpacetimeDB.BSATN.String Faction = new();
 
-        public BTreeViews Read(System.IO.BinaryReader reader) =>
-            SpacetimeDB.BSATN.IStructuralReadWrite.Read<BTreeViews>(reader);
+        public BTreeViews Read(System.IO.BinaryReader reader)
+        {
+            var ___result = new BTreeViews();
+            ___result.ReadFields(reader);
+            return ___result;
+        }
 
         public void Write(System.IO.BinaryWriter writer, BTreeViews value)
         {

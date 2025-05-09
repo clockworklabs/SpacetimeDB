@@ -36,8 +36,12 @@ partial class CustomRecord : System.IEquatable<CustomRecord>, SpacetimeDB.BSATN.
             SpacetimeDB.BSATN.String
         > NullableStringField = new();
 
-        public CustomRecord Read(System.IO.BinaryReader reader) =>
-            SpacetimeDB.BSATN.IStructuralReadWrite.Read<CustomRecord>(reader);
+        public CustomRecord Read(System.IO.BinaryReader reader)
+        {
+            var ___result = new CustomRecord();
+            ___result.ReadFields(reader);
+            return ___result;
+        }
 
         public void Write(System.IO.BinaryWriter writer, CustomRecord value)
         {

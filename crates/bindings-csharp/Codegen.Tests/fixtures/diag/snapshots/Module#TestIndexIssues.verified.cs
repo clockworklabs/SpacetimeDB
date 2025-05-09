@@ -23,8 +23,12 @@ partial struct TestIndexIssues
     {
         internal static readonly SpacetimeDB.BSATN.I32 SelfIndexingColumn = new();
 
-        public TestIndexIssues Read(System.IO.BinaryReader reader) =>
-            SpacetimeDB.BSATN.IStructuralReadWrite.Read<TestIndexIssues>(reader);
+        public TestIndexIssues Read(System.IO.BinaryReader reader)
+        {
+            var ___result = new TestIndexIssues();
+            ___result.ReadFields(reader);
+            return ___result;
+        }
 
         public void Write(System.IO.BinaryWriter writer, TestIndexIssues value)
         {

@@ -27,10 +27,12 @@ partial struct RegressionMultipleUniqueIndexesHadSameName
         internal static readonly SpacetimeDB.BSATN.U32 Unique1 = new();
         internal static readonly SpacetimeDB.BSATN.U32 Unique2 = new();
 
-        public RegressionMultipleUniqueIndexesHadSameName Read(System.IO.BinaryReader reader) =>
-            SpacetimeDB.BSATN.IStructuralReadWrite.Read<RegressionMultipleUniqueIndexesHadSameName>(
-                reader
-            );
+        public RegressionMultipleUniqueIndexesHadSameName Read(System.IO.BinaryReader reader)
+        {
+            var ___result = new RegressionMultipleUniqueIndexesHadSameName();
+            ___result.ReadFields(reader);
+            return ___result;
+        }
 
         public void Write(
             System.IO.BinaryWriter writer,

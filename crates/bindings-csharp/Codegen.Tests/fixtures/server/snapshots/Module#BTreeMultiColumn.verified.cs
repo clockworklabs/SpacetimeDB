@@ -29,8 +29,12 @@ partial struct BTreeMultiColumn
         internal static readonly SpacetimeDB.BSATN.U32 Y = new();
         internal static readonly SpacetimeDB.BSATN.U32 Z = new();
 
-        public BTreeMultiColumn Read(System.IO.BinaryReader reader) =>
-            SpacetimeDB.BSATN.IStructuralReadWrite.Read<BTreeMultiColumn>(reader);
+        public BTreeMultiColumn Read(System.IO.BinaryReader reader)
+        {
+            var ___result = new BTreeMultiColumn();
+            ___result.ReadFields(reader);
+            return ___result;
+        }
 
         public void Write(System.IO.BinaryWriter writer, BTreeMultiColumn value)
         {
