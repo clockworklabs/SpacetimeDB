@@ -18,7 +18,7 @@ use spacetimedb_fs_utils::{compression::ZSTD_MAGIC_BYTES, dir_trie::DirTrie, loc
 use spacetimedb_lib::bsatn;
 use spacetimedb_paths::server::{SnapshotDirPath, SnapshotsPath};
 use spacetimedb_sats::buffer::BufWriter as SatsWriter;
-use spacetimedb_table::{blob_store::BlobHash, page_pool::PagePool};
+use spacetimedb_table::{blob_store::BlobHash, page::Page, page_pool::PagePool};
 use tempfile::NamedTempFile;
 use tokio::{
     fs,
@@ -151,11 +151,19 @@ async fn run_fetcher(
     snapshot: Snapshot,
     dry_run: bool,
 ) -> Result<Stats> {
-    spawn_blocking(|| SnapshotFetcher::create(provider, snapshots_dir, snapshot))
-        .await
-        .unwrap()?
-        .run(dry_run)
-        .await
+    spawn_blocking(|| {
+        SnapshotFetcher::create(
+            provider,
+            snapshots_dir,
+            snapshot,
+            PagePool::new(Some(PAGE_POOL_SIZE)),
+            BufPool::new(BUF_POOL_SIZE),
+        )
+    })
+    .await
+    .unwrap()?
+    .run(dry_run)
+    .await
 }
 
 #[derive(Default)]
@@ -206,7 +214,15 @@ const PAGE_POOL_SIZE: usize = FETCH_CONCURRENCY * PAGE_SIZE;
 /// Therefore, the maximum size we need is `3 * FETCH_CONCURRENCY`.
 const BUF_POOL_SIZE: usize = 3 * FETCH_CONCURRENCY;
 
-struct SnapshotFetcher<P> {
+/// Creates a [`PagePool`] suitable for a one-off [`SnapshotFetcher::run`].
+///
+/// When many fetchers are active in parallel, sharing a larger pool between
+/// them is likely beneficial.
+pub fn default_page_pool() -> PagePool {
+    PagePool::new(Some(PAGE_POOL_SIZE))
+}
+
+pub struct SnapshotFetcher<P> {
     snapshot: Snapshot,
     dir: SnapshotDirPath,
     object_repo: Arc<DirTrie>,
@@ -228,7 +244,13 @@ struct SnapshotFetcher<P> {
 }
 
 impl<P: BlobProvider> SnapshotFetcher<P> {
-    fn create(provider: P, snapshots_dir: SnapshotsPath, snapshot: Snapshot) -> Result<Self> {
+    pub fn create(
+        provider: P,
+        snapshots_dir: SnapshotsPath,
+        snapshot: Snapshot,
+        page_pool: PagePool,
+        buf_pool: BufPool,
+    ) -> Result<Self> {
         let snapshot_repo = SnapshotRepository::open(snapshots_dir, snapshot.database_identity, snapshot.replica_id)?;
         let snapshot_dir = snapshot_repo.snapshot_dir_path(snapshot.tx_offset);
         let lock = Lockfile::for_file(&snapshot_dir)?;
@@ -255,15 +277,19 @@ impl<P: BlobProvider> SnapshotFetcher<P> {
             object_repo: Arc::new(object_repo),
             parent_repo: parent_repo.map(Arc::new),
             provider,
-            page_pool: PagePool::new(Some(PAGE_POOL_SIZE)),
-            buf_pool: BufPool::new(BUF_POOL_SIZE),
+            page_pool,
+            buf_pool,
             dry_run: false,
             stats: <_>::default(),
             lock,
         })
     }
 
-    async fn run(mut self, dry_run: bool) -> Result<Stats> {
+    /// Run the snapshot fetcher, returning [`Stats`] of what it did.
+    ///
+    /// If `dry_run` is `true`, no modifications will be made to the object
+    /// repository. This is useful for verifying the integrity of a snapshot.
+    pub async fn run(&mut self, dry_run: bool) -> Result<Stats> {
         self.dry_run = dry_run;
 
         let snapshot_bsatn = {
@@ -312,7 +338,7 @@ impl<P: BlobProvider> SnapshotFetcher<P> {
         })
         .await?;
 
-        Ok(self.stats.into())
+        Ok(mem::take(&mut self.stats).into())
     }
 
     async fn fetch_blobs(&self) -> Result<()> {
@@ -704,9 +730,19 @@ fn serialize_snapshot(w: &mut impl SatsWriter, value: &Snapshot) -> Result<()> {
 }
 
 /// Pool of [`BytesMut`] buffers, each with page-sized capacity.
+///
+/// The [`Default`] impl creates a pool suitable a one-off [`SnapshotFetcher::run`].
+/// When many fetchers are active in parallel, sharing a larger pool between
+/// them is likely beneficial.
 #[derive(Clone)]
-struct BufPool {
+pub struct BufPool {
     inner: Arc<ArrayQueue<BytesMut>>,
+}
+
+impl Default for BufPool {
+    fn default() -> Self {
+        Self::new(BUF_POOL_SIZE)
+    }
 }
 
 impl BufPool {
@@ -770,7 +806,7 @@ mod tests {
     use tempfile::tempdir;
     use zstd_framed::AsyncZstdWriter;
 
-    use super::{BlobProvider, SnapshotFetcher};
+    use super::{default_page_pool, BlobProvider, BufPool, SnapshotFetcher};
     use crate::{Snapshot, SnapshotError, CURRENT_MODULE_ABI_VERSION, CURRENT_SNAPSHOT_VERSION, MAGIC};
 
     const ZEROES: &[u8] = &[0; 32];
@@ -804,7 +840,14 @@ mod tests {
         let dir = SnapshotsPath::from_path_unchecked(tmp.path());
 
         let blob_hash = blake3::hash(&[1; 32]);
-        let sf = SnapshotFetcher::create(zeroes_provider(), dir, DUMMY_SNAPSHOT).unwrap();
+        let sf = SnapshotFetcher::create(
+            zeroes_provider(),
+            dir,
+            DUMMY_SNAPSHOT,
+            default_page_pool(),
+            BufPool::default(),
+        )
+        .unwrap();
 
         sf.fetch_blob(blake3::hash(ZEROES)).await.unwrap();
         assert_matches!(sf.fetch_blob(blob_hash).await, Err(SnapshotError::HashMismatch { .. }));
@@ -820,7 +863,14 @@ mod tests {
         let mut blob_zstd = Vec::new();
         compress(&mut blob_data.as_slice(), &mut blob_zstd).await;
 
-        let sf = SnapshotFetcher::create(const_provider(blob_zstd), dir, DUMMY_SNAPSHOT).unwrap();
+        let sf = SnapshotFetcher::create(
+            const_provider(blob_zstd),
+            dir,
+            DUMMY_SNAPSHOT,
+            default_page_pool(),
+            BufPool::default(),
+        )
+        .unwrap();
 
         sf.fetch_blob(blob_hash).await.unwrap();
         assert_matches!(
@@ -841,7 +891,14 @@ mod tests {
         let page_hash = page_hash_save_get(&mut page);
         let page_blob = bsatn::to_vec(&page).unwrap();
 
-        let sf = SnapshotFetcher::create(const_provider(page_blob), dir, DUMMY_SNAPSHOT).unwrap();
+        let sf = SnapshotFetcher::create(
+            const_provider(page_blob),
+            dir,
+            DUMMY_SNAPSHOT,
+            default_page_pool(),
+            BufPool::default(),
+        )
+        .unwrap();
 
         sf.fetch_page(page_hash).await.unwrap();
         assert_matches!(
@@ -864,7 +921,14 @@ mod tests {
         let mut page_zstd = Vec::new();
         compress(&mut page_blob.as_slice(), &mut page_zstd).await;
 
-        let sf = SnapshotFetcher::create(const_provider(page_zstd), dir, DUMMY_SNAPSHOT).unwrap();
+        let sf = SnapshotFetcher::create(
+            const_provider(page_zstd),
+            dir,
+            DUMMY_SNAPSHOT,
+            default_page_pool(),
+            BufPool::default(),
+        )
+        .unwrap();
 
         sf.fetch_page(page_hash).await.unwrap();
         pretty_assertions::assert_matches!(
