@@ -330,26 +330,38 @@ public static partial class BSATNRuntimeTests
     }
 
     static void TestRoundTrip<T, BSATN>(Gen<T> gen, BSATN serializer)
-    where BSATN : IReadWrite<T>
+        where BSATN : IReadWrite<T>
     {
-        gen.Sample((value) =>
-        {
-            var stream = new MemoryStream();
-            var writer = new BinaryWriter(stream);
-            serializer.Write(writer, value);
-            stream.Seek(0, SeekOrigin.Begin);
-            var reader = new BinaryReader(stream);
-            var result = serializer.Read(reader);
-            Assert.Equal(value, result);
-        }, iter: 10_000);
+        gen.Sample(
+            (value) =>
+            {
+                var stream = new MemoryStream();
+                var writer = new BinaryWriter(stream);
+                serializer.Write(writer, value);
+                stream.Seek(0, SeekOrigin.Begin);
+                var reader = new BinaryReader(stream);
+                var result = serializer.Read(reader);
+                Assert.Equal(value, result);
+            },
+            iter: 10_000
+        );
     }
 
     [Fact]
     public static void GeneratedProductRoundTrip()
     {
-        TestRoundTrip(GenBasic.Select(value => new BasicDataClass(value)), new BasicDataClass.BSATN());
-        TestRoundTrip(GenBasic.Select(value => new BasicDataRecord(value)), new BasicDataRecord.BSATN());
-        TestRoundTrip(GenBasic.Select(value => new BasicDataStruct(value)), new BasicDataStruct.BSATN());
+        TestRoundTrip(
+            GenBasic.Select(value => new BasicDataClass(value)),
+            new BasicDataClass.BSATN()
+        );
+        TestRoundTrip(
+            GenBasic.Select(value => new BasicDataRecord(value)),
+            new BasicDataRecord.BSATN()
+        );
+        TestRoundTrip(
+            GenBasic.Select(value => new BasicDataStruct(value)),
+            new BasicDataStruct.BSATN()
+        );
     }
 
     [Fact]
@@ -432,8 +444,7 @@ public static partial class BSATNRuntimeTests
             BasicDataClass U,
             BasicDataStruct V,
             BasicDataRecord W
-        )>
-    { }
+        )> { }
 
     static readonly Gen<BasicEnum> GenBasicEnum = Gen.SelectMany<int, BasicEnum>(
         Gen.Int[0, 7],
@@ -595,7 +606,6 @@ public static partial class BSATNRuntimeTests
         .List[0, 2]
         .Select(list => new ContainsNestedList(list));
 
-
     [Fact]
     public static void GeneratedNestedListRoundTrip()
     {
@@ -645,7 +655,6 @@ public static partial class BSATNRuntimeTests
             return hashCode;
         }
     }
-
 
     [Fact]
     public static void GeneratedNestedListEqualsWorks()
