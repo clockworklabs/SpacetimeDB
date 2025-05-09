@@ -1,6 +1,6 @@
 use std::{
     future::Future,
-    io,
+    io, mem,
     path::PathBuf,
     pin::Pin,
     sync::{
@@ -189,7 +189,7 @@ impl StatsInner {
 /// concurrency limit is `2*FETCH_CONCURRENCY`.
 const FETCH_CONCURRENCY: usize = 8;
 /// Size of a [`Page`], in bytes.
-const PAGE_SIZE: usize = 64 * (1 << 10); // 64 KiB
+const PAGE_SIZE: usize = size_of::<Page>(); // 64 KiB
 /// Max size of the [`PagePool`], in bytes.
 ///
 /// We only ever retain at most `FETCH_CONCURRENCY` pages in memory at the same
