@@ -677,7 +677,7 @@ impl ModuleHost {
                 .replica_ctx()
                 .relational_db
                 .with_auto_commit(workload, |mut_tx| {
-                    mut_tx.delete_st_client(caller_identity, caller_connection_id)
+                    mut_tx.delete_st_client(caller_identity, caller_connection_id, self.info.database_identity)
                 })
                 .inspect_err(|e| {
                     log::error!(

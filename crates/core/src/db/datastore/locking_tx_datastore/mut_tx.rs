@@ -1244,21 +1244,30 @@ impl MutTxId {
         self.insert_via_serialize_bsatn(ST_CLIENT_ID, row).map(|_| ())
     }
 
-    pub(crate) fn delete_st_client(&mut self, identity: Identity, connection_id: ConnectionId) -> Result<()> {
+    pub(crate) fn delete_st_client(
+        &mut self,
+        identity: Identity,
+        connection_id: ConnectionId,
+        database_identity: Identity,
+    ) -> Result<()> {
         let row = &StClientRow {
             identity: identity.into(),
             connection_id: connection_id.into(),
         };
-        let ptr = self
+        if let Some(ptr) = self
             .iter_by_col_eq(
                 ST_CLIENT_ID,
                 col_list![StClientFields::Identity, StClientFields::ConnectionId],
                 &AlgebraicValue::product(row),
             )?
             .next()
-            .expect("the client should be connected")
-            .pointer();
-        self.delete(ST_CLIENT_ID, ptr).map(drop)
+            .map(|row| row.pointer())
+        {
+            self.delete(ST_CLIENT_ID, ptr).map(drop)
+        } else {
+            log::error!("[{database_identity}]: delete_st_client: attempting to delete client ({identity}, {connection_id}), but no st_client row for that client is resident");
+            Ok(())
+        }
     }
 
     pub(crate) fn insert_via_serialize_bsatn<'a, T: Serialize>(
