@@ -100,7 +100,7 @@ pub fn compile_query_with_hashes(
     hash: QueryHash,
     hash_with_param: QueryHash,
 ) -> Result<Plan, DBError> {
-    if WHITESPACE.is_match_at(input, 0) {
+    if is_whitespace_or_empty(input) {
         return Err(SubscriptionError::Empty.into());
     }
 
