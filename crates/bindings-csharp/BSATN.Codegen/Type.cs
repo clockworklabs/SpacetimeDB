@@ -101,7 +101,7 @@ public abstract record TypeUse(string Name, string BSATNName)
     );
 
     /// <summary>
-    /// Get a statement that declares outVar and assigns assigns the hash code of inVar to it.
+    /// Get a statement that declares outVar and assigns the hash code of inVar to it.
     ///
     /// This can't be an expression because some types need to use loops.
     /// </summary>
@@ -489,7 +489,7 @@ public abstract record BaseTypeDeclaration<M>
                     bsatnDecls
                     .Select(member =>
                     {
-                        var hashName = $"hash{member.Name}";
+                        var hashName = $"___hash{member.Name}";
 
                         return $"""
                                 case {member.Name}(var inner):
