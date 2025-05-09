@@ -1,6 +1,6 @@
 use super::execution_unit::QueryHash;
 use super::module_subscription_manager::{Plan, SubscriptionGaugeStats, SubscriptionManager};
-use super::query::compile_read_only_query;
+use super::query::compile_query_with_hashes;
 use super::tx::DeltaTx;
 use super::{collect_table_update, record_exec_metrics, TableUpdateType};
 use crate::client::messages::{
@@ -16,8 +16,8 @@ use crate::estimation::estimate_rows_scanned;
 use crate::execution_context::{Workload, WorkloadType};
 use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent};
 use crate::messages::websocket::Subscribe;
-use crate::sql::ast::SchemaViewer;
 use crate::subscription::execute_plans;
+use crate::subscription::query::is_subscribe_to_all_tables;
 use crate::vm::check_row_limit;
 use crate::worker_metrics::WORKER_METRICS;
 use parking_lot::RwLock;
@@ -27,8 +27,6 @@ use spacetimedb_client_api_messages::websocket::{
     UnsubscribeMulti,
 };
 use spacetimedb_execution::pipelined::PipelinedProject;
-use spacetimedb_expr::check::parse_and_type_sub;
-use spacetimedb_expr::errors::TypingError;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::Identity;
@@ -105,6 +103,20 @@ type FullSubscriptionUpdate = FormatSwitch<ws::DatabaseUpdate<BsatnFormat>, ws::
 
 /// A utility for sending an error message to a client and returning early
 macro_rules! return_on_err {
+    ($expr:expr, $handler:expr) => {
+        match $expr {
+            Ok(val) => val,
+            Err(e) => {
+                // TODO: Handle errors sending messages.
+                let _ = $handler(e.to_string().into());
+                return Ok(());
+            }
+        }
+    };
+}
+
+/// A utility for sending an error message to a client and returning early
+macro_rules! return_on_err_with_sql {
     ($expr:expr, $sql:expr, $handler:expr) => {
         match $expr.map_err(|err| DBError::WithSql {
             sql: $sql.into(),
@@ -118,12 +130,6 @@ macro_rules! return_on_err {
             }
         }
     };
-}
-
-/// Hash a sql query, using the caller's identity if necessary
-fn hash_query(sql: &str, tx: &TxId, auth: &AuthCtx) -> Result<QueryHash, TypingError> {
-    parse_and_type_sub(sql, &SchemaViewer::new(tx, auth), auth)
-        .map(|(_, has_param)| QueryHash::from_string(sql, auth.caller, has_param))
 }
 
 impl ModuleSubscriptions {
@@ -248,29 +254,34 @@ impl ModuleSubscriptions {
             })
         };
 
+        let sql = request.query;
+        let auth = AuthCtx::new(self.owner_identity, sender.id.identity);
+        let hash = QueryHash::from_string(&sql, auth.caller, false);
+        let hash_with_param = QueryHash::from_string(&sql, auth.caller, true);
+
         let tx = scopeguard::guard(self.relational_db.begin_tx(Workload::Subscribe), |tx| {
             self.relational_db.release_tx(tx);
         });
-        let auth = AuthCtx::new(self.owner_identity, sender.id.identity);
-        let query = super::query::WHITESPACE.replace_all(&request.query, " ");
-        let sql = query.trim();
-
-        let hash = return_on_err!(hash_query(sql, &tx, &auth), sql, send_err_msg);
 
         let existing_query = {
             let guard = self.subscriptions.read();
             guard.query(&hash)
         };
 
-        let query = return_on_err!(
-            existing_query
-                .map(Ok)
-                .unwrap_or_else(|| compile_read_only_query(&auth, &tx, sql).map(Arc::new)),
+        let query = return_on_err_with_sql!(
+            existing_query.map(Ok).unwrap_or_else(|| compile_query_with_hashes(
+                &auth,
+                &tx,
+                &sql,
+                hash,
+                hash_with_param
+            )
+            .map(Arc::new)),
             sql,
             send_err_msg
         );
 
-        let (table_rows, metrics) = return_on_err!(
+        let (table_rows, metrics) = return_on_err_with_sql!(
             self.evaluate_initial_subscription(sender.clone(), query.clone(), &tx, &auth, TableUpdateType::Subscribe),
             query.sql(),
             send_err_msg
@@ -356,7 +367,7 @@ impl ModuleSubscriptions {
             self.relational_db.release_tx(tx);
         });
         let auth = AuthCtx::new(self.owner_identity, sender.id.identity);
-        let (table_rows, metrics) = return_on_err!(
+        let (table_rows, metrics) = return_on_err_with_sql!(
             self.evaluate_initial_subscription(sender.clone(), query.clone(), &tx, &auth, TableUpdateType::Unsubscribe),
             query.sql(),
             send_err_msg
@@ -452,6 +463,74 @@ impl ModuleSubscriptions {
         Ok(())
     }
 
+    /// Compiles the queries in a [Subscribe] or [SubscribeMulti] message.
+    ///
+    /// Note, we hash queries to avoid recompilation,
+    /// but we need to know if a query is parameterized in order to hash it correctly.
+    /// This requires that we type check which in turn requires that we start a tx.
+    ///
+    /// Unfortunately parsing with sqlparser is quite expensive,
+    /// so we'd like to avoid that cost while holding the tx lock,
+    /// especially since all we're trying to do is generate a hash.
+    ///
+    /// Instead we generate two hashes and outside of the tx lock.
+    /// If either one is currently tracked, we can avoid recompilation.
+    fn compile_queries(
+        &self,
+        sender: Identity,
+        queries: impl IntoIterator<Item = Box<str>>,
+        num_queries: usize,
+    ) -> Result<(Vec<Arc<Plan>>, AuthCtx, TxId), DBError> {
+        let mut subscribe_to_all_tables = false;
+        let mut plans = Vec::with_capacity(num_queries);
+        let mut query_hashes = Vec::with_capacity(num_queries);
+
+        for sql in queries {
+            if is_subscribe_to_all_tables(&sql) {
+                subscribe_to_all_tables = true;
+                continue;
+            }
+            let hash = QueryHash::from_string(&sql, sender, false);
+            let hash_with_param = QueryHash::from_string(&sql, sender, true);
+            query_hashes.push((sql, hash, hash_with_param));
+        }
+
+        let auth = AuthCtx::new(self.owner_identity, sender);
+
+        // We always get the db lock before the subscription lock to avoid deadlocks.
+        let tx = scopeguard::guard(self.relational_db.begin_tx(Workload::Subscribe), |tx| {
+            self.relational_db.release_tx(tx);
+        });
+        let guard = self.subscriptions.read();
+
+        if subscribe_to_all_tables {
+            plans.extend(
+                super::subscription::get_all(&self.relational_db, &tx, &auth)?
+                    .into_iter()
+                    .map(Arc::new),
+            );
+        }
+
+        for (sql, hash, hash_with_param) in query_hashes {
+            if let Some(unit) = guard.query(&hash) {
+                plans.push(unit);
+            } else if let Some(unit) = guard.query(&hash_with_param) {
+                plans.push(unit);
+            } else {
+                plans.push(Arc::new(
+                    compile_query_with_hashes(&auth, &tx, &sql, hash, hash_with_param).map_err(|err| {
+                        DBError::WithSql {
+                            error: Box::new(DBError::Other(err.into())),
+                            sql,
+                        }
+                    })?,
+                ));
+            }
+        }
+
+        Ok((plans, auth, scopeguard::ScopeGuard::into_inner(tx)))
+    }
+
     #[tracing::instrument(level = "trace", skip_all)]
     pub fn add_multi_subscription(
         &self,
@@ -473,39 +552,14 @@ impl ModuleSubscriptions {
             });
         };
 
-        // We always get the db lock before the subscription lock to avoid deadlocks.
-        let tx = scopeguard::guard(self.relational_db.begin_tx(Workload::Subscribe), |tx| {
+        let num_queries = request.query_strings.len();
+        let (queries, auth, tx) = return_on_err!(
+            self.compile_queries(sender.id.identity, request.query_strings, num_queries),
+            send_err_msg
+        );
+        let tx = scopeguard::guard(tx, |tx| {
             self.relational_db.release_tx(tx);
         });
-        let auth = AuthCtx::new(self.owner_identity, sender.id.identity);
-        let mut queries = vec![];
-        let guard = self.subscriptions.read();
-        for sql in request
-            .query_strings
-            .iter()
-            .map(|sql| super::query::WHITESPACE.replace_all(sql, " "))
-        {
-            let sql = sql.trim();
-            if sql == super::query::SUBSCRIBE_TO_ALL_QUERY {
-                queries.extend(
-                    super::subscription::get_all(&self.relational_db, &tx, &auth)?
-                        .into_iter()
-                        .map(Arc::new),
-                );
-                continue;
-            }
-
-            let hash = return_on_err!(hash_query(sql, &tx, &auth), sql, send_err_msg);
-
-            if let Some(unit) = guard.query(&hash) {
-                queries.push(unit);
-            } else {
-                let compiled = return_on_err!(compile_read_only_query(&auth, &tx, sql), sql, send_err_msg);
-                queries.push(Arc::new(compiled));
-            }
-        }
-
-        drop(guard);
 
         // We minimize locking so that other clients can add subscriptions concurrently.
         // We are protected from race conditions with broadcasts, because we have the db lock,
@@ -561,40 +615,11 @@ impl ModuleSubscriptions {
         timer: Instant,
         _assert: Option<AssertTxFn>,
     ) -> Result<(), DBError> {
-        let tx = scopeguard::guard(self.relational_db.begin_tx(Workload::Subscribe), |tx| {
+        let num_queries = subscription.query_strings.len();
+        let (queries, auth, tx) = self.compile_queries(sender.id.identity, subscription.query_strings, num_queries)?;
+        let tx = scopeguard::guard(tx, |tx| {
             self.relational_db.release_tx(tx);
         });
-        let request_id = subscription.request_id;
-        let auth = AuthCtx::new(self.owner_identity, sender.id.identity);
-        let mut queries = vec![];
-
-        let guard = self.subscriptions.read();
-
-        for sql in subscription
-            .query_strings
-            .iter()
-            .map(|sql| super::query::WHITESPACE.replace_all(sql, " "))
-        {
-            let sql = sql.trim();
-            if sql == super::query::SUBSCRIBE_TO_ALL_QUERY {
-                queries.extend(
-                    super::subscription::get_all(&self.relational_db, &tx, &auth)?
-                        .into_iter()
-                        .map(Arc::new),
-                );
-                continue;
-            }
-
-            let hash = hash_query(sql, &tx, &auth)?;
-            if let Some(unit) = guard.query(&hash) {
-                queries.push(unit);
-            } else {
-                let compiled = compile_read_only_query(&auth, &tx, sql)?;
-                queries.push(Arc::new(compiled));
-            }
-        }
-
-        drop(guard);
 
         check_row_limit(
             &queries,
@@ -639,7 +664,7 @@ impl ModuleSubscriptions {
         // on the wire
         let _ = sender.send_message(SubscriptionUpdateMessage {
             database_update,
-            request_id: Some(request_id),
+            request_id: Some(subscription.request_id),
             timer: Some(timer),
         });
         Ok(())
