@@ -2,6 +2,7 @@ namespace SpacetimeDB;
 
 using System.Diagnostics.CodeAnalysis;
 using CsCheck;
+using SpacetimeDB.BSATN;
 using Xunit;
 
 public static partial class BSATNRuntimeTests
@@ -328,6 +329,29 @@ public static partial class BSATNRuntimeTests
         }
     }
 
+    static void TestRoundTrip<T, BSATN>(Gen<T> gen, BSATN serializer)
+    where BSATN : IReadWrite<T>
+    {
+        gen.Sample((value) =>
+        {
+            var stream = new MemoryStream();
+            var writer = new BinaryWriter(stream);
+            serializer.Write(writer, value);
+            stream.Seek(0, SeekOrigin.Begin);
+            var reader = new BinaryReader(stream);
+            var result = serializer.Read(reader);
+            Assert.Equal(value, result);
+        }, iter: 10_000);
+    }
+
+    [Fact]
+    public static void GeneratedProductRoundTrip()
+    {
+        TestRoundTrip(GenBasic.Select(value => new BasicDataClass(value)), new BasicDataClass.BSATN());
+        TestRoundTrip(GenBasic.Select(value => new BasicDataRecord(value)), new BasicDataRecord.BSATN());
+        TestRoundTrip(GenBasic.Select(value => new BasicDataStruct(value)), new BasicDataStruct.BSATN());
+    }
+
     [Fact]
     public static void GeneratedProductEqualsWorks()
     {
@@ -408,7 +432,8 @@ public static partial class BSATNRuntimeTests
             BasicDataClass U,
             BasicDataStruct V,
             BasicDataRecord W
-        )> { }
+        )>
+    { }
 
     static readonly Gen<BasicEnum> GenBasicEnum = Gen.SelectMany<int, BasicEnum>(
         Gen.Int[0, 7],
@@ -431,6 +456,12 @@ public static partial class BSATNRuntimeTests
         GenBasicEnum,
         (e1, e2) => (e1, e2)
     );
+
+    [Fact]
+    public static void GeneratedSumRoundTrip()
+    {
+        TestRoundTrip(GenBasicEnum, new BasicEnum.BSATN());
+    }
 
     [Fact]
     public static void GeneratedSumEqualsWorks()
@@ -501,6 +532,12 @@ public static partial class BSATNRuntimeTests
     );
 
     [Fact]
+    public static void GeneratedListRoundTrip()
+    {
+        TestRoundTrip(GenContainsList, new ContainsList.BSATN());
+    }
+
+    [Fact]
     public static void GeneratedListEqualsWorks()
     {
         CollisionCounter collisionCounter = new();
@@ -550,6 +587,24 @@ public static partial class BSATNRuntimeTests
             TheList = theList;
         }
     }
+
+    // For the serialization test, forbid nulls.
+    static readonly Gen<ContainsNestedList> GenContainsNestedListNoNulls = GenBasicEnum
+        .Array[0, 2]
+        .Array[0, 2]
+        .List[0, 2]
+        .Select(list => new ContainsNestedList(list));
+
+
+    [Fact]
+    public static void GeneratedNestedListRoundTrip()
+    {
+        TestRoundTrip(GenContainsNestedListNoNulls, new ContainsNestedList.BSATN());
+    }
+
+    // However, for the equals + hashcode test, throw in some nulls, just to be paranoid.
+    // The user might have constructed a bad one of these in-memory.
+
 #pragma warning disable CS8620 // Argument cannot be used for parameter due to differences in the nullability of reference types.
     static readonly Gen<ContainsNestedList> GenContainsNestedList = GenBasicEnum
         .Null()
@@ -560,6 +615,7 @@ public static partial class BSATNRuntimeTests
         .List[0, 2]
         .Select(list => new ContainsNestedList(list));
 #pragma warning restore CS8620 // Argument cannot be used for parameter due to differences in the nullability of reference types.
+
 
     static readonly Gen<(ContainsNestedList e1, ContainsNestedList e2)> GenTwoContainsNestedList =
         Gen.Select(GenContainsNestedList, GenContainsNestedList, (e1, e2) => (e1, e2));
@@ -589,6 +645,7 @@ public static partial class BSATNRuntimeTests
             return hashCode;
         }
     }
+
 
     [Fact]
     public static void GeneratedNestedListEqualsWorks()
