@@ -293,13 +293,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
 
     /// Apply all queued [`PendingMutation`]s.
     fn apply_pending_mutations(&self) -> crate::Result<()> {
-        #[cfg(not(feature = "web"))]
-        while let Ok(Some(pending_mutation)) = self.pending_mutations_recv.blocking_lock().try_next() {
-            self.apply_mutation(pending_mutation)?;
-        }
-
-        #[cfg(feature = "web")]
-        while let Ok(Some(pending_mutation)) = self.pending_mutations_recv.lock().unwrap().try_next() {
+        while let Ok(Some(pending_mutation)) = get_lock_sync(&self.pending_mutations_recv).try_next() {
             self.apply_mutation(pending_mutation)?;
         }
 
@@ -547,23 +541,14 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
         // returns `Err(_)`. Similar behavior as `Iterator::next` and
         // `Stream::poll_next`. No comment on whether this is a good mental
         // model or not.
-
-        let res = {
-            #[cfg(not(feature = "web"))]
-            let mut recv = self.recv.blocking_lock();
-
-            #[cfg(feature = "web")]
-            let mut recv = self.recv.lock().unwrap();
-
-            match recv.try_next() {
-                Ok(None) => {
-                    let disconnect_ctx = self.make_event_ctx(None);
-                    self.invoke_disconnected(&disconnect_ctx);
-                    Err(crate::Error::Disconnected)
-                }
-                Err(_) => Ok(false),
-                Ok(Some(msg)) => self.process_message(msg).map(|_| true),
+        let res = match get_lock_sync(&self.recv).try_next() {
+            Ok(None) => {
+                let disconnect_ctx = self.make_event_ctx(None);
+                self.invoke_disconnected(&disconnect_ctx);
+                Err(crate::Error::Disconnected)
             }
+            Err(_) => Ok(false),
+            Ok(Some(msg)) => self.process_message(msg).map(|_| true),
         };
 
         // Also apply any new pending messages afterwards,
@@ -579,15 +564,8 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
         // We call this out as an incorrect and unsupported thing to do.
         #![allow(clippy::await_holding_lock)]
 
-        #[cfg(not(feature = "web"))]
-        let mut pending_mutations = self.pending_mutations_recv.lock().await;
-        #[cfg(feature = "web")]
-        let mut pending_mutations = self.pending_mutations_recv.lock().unwrap();
-
-        #[cfg(not(feature = "web"))]
-        let mut recv = self.recv.lock().await;
-        #[cfg(feature = "web")]
-        let mut recv = self.recv.lock().unwrap();
+        let mut pending_mutations = get_lock_async(&self.pending_mutations_recv).await;
+        let mut recv = get_lock_async(&self.recv).await;
 
         // Always process pending mutations before WS messages, if they're available,
         // so that newly registered callbacks run on messages.
@@ -1249,6 +1227,31 @@ fn enter_or_create_runtime() -> crate::Result<(Option<Runtime>, runtime::Handle)
                 .into(),
         ),
     }
+}
+
+/// Synchronous lock helper: native = blocking_lock, web = lock().unwrap()
+#[cfg(not(feature = "web"))]
+fn get_lock_sync<T>(mutex: &TokioMutex<T>) -> tokio::sync::MutexGuard<'_, T> {
+    mutex.blocking_lock()
+}
+
+/// Synchronous lock helper: native = blocking_lock, web = lock().unwrap()
+#[cfg(feature = "web")]
+fn get_lock_sync<T>(mutex: &StdMutex<T>) -> std::sync::MutexGuard<'_, T> {
+    mutex.lock().unwrap()
+}
+
+// Async‐lock helper: native = .lock().await, web = lock().unwrap() inside async fn
+#[cfg(not(feature = "web"))]
+async fn get_lock_async<T>(mutex: &TokioMutex<T>) -> tokio::sync::MutexGuard<'_, T> {
+    mutex.lock().await
+}
+
+// Async‐lock helper: native = .lock().await, web = lock().unwrap() inside async fn
+#[cfg(feature = "web")]
+pub async fn get_lock_async<T>(mutex: &StdMutex<T>) -> std::sync::MutexGuard<'_, T> {
+    // still async, but does the sync lock immediately
+    mutex.lock().unwrap()
 }
 
 enum ParsedMessage<M: SpacetimeModule> {
