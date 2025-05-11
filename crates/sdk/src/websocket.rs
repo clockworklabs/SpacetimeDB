@@ -2,14 +2,14 @@
 //!
 //! This module is internal, and may incompatibly change without warning.
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(feature = "web"))]
 use std::mem;
 use std::sync::Arc;
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(feature = "web"))]
 use std::time::Duration;
 
 use bytes::Bytes;
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(feature = "web"))]
 use futures::TryStreamExt;
 use futures::{SinkExt, StreamExt as _};
 use futures_channel::mpsc;
@@ -21,16 +21,16 @@ use spacetimedb_client_api_messages::websocket::{
 use spacetimedb_client_api_messages::websocket::{ClientMessage, ServerMessage};
 use spacetimedb_lib::{bsatn, ConnectionId};
 use thiserror::Error;
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(feature = "web"))]
 use tokio::{net::TcpStream, runtime, task::JoinHandle, time::Instant};
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(feature = "web"))]
 use tokio_tungstenite::{
     connect_async_with_config,
     tungstenite::client::IntoClientRequest,
     tungstenite::protocol::{Message as WebSocketMessage, WebSocketConfig},
     MaybeTlsStream, WebSocketStream,
 };
-#[cfg(target_arch = "wasm32")]
+#[cfg(feature = "web")]
 use tokio_tungstenite_wasm::{Message as WebSocketMessage, WebSocketStream};
 
 use crate::metrics::CLIENT_METRICS;
@@ -61,7 +61,7 @@ pub enum WsError {
     #[error(transparent)]
     UriError(#[from] UriError),
 
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(not(feature = "web"))]
     #[error("Error in WebSocket connection with {uri}: {source}")]
     Tungstenite {
         uri: Uri,
@@ -70,7 +70,7 @@ pub enum WsError {
         source: Arc<tokio_tungstenite::tungstenite::Error>,
     },
 
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(feature = "web")]
     #[error("Error in WebSocket connection with {uri}: {source}")]
     Tungstenite {
         uri: Uri,
@@ -103,9 +103,9 @@ pub enum WsError {
 pub(crate) struct WsConnection {
     db_name: Box<str>,
     connection_id: ConnectionId,
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(not(feature = "web"))]
     sock: WebSocketStream<MaybeTlsStream<TcpStream>>,
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(feature = "web")]
     sock: WebSocketStream,
 }
 
@@ -188,7 +188,7 @@ fn make_uri(host: Uri, db_name: &str, connection_id: ConnectionId, params: WsPar
 //       rather than having Tungstenite manage its own connections. Should this library do
 //       the same?
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(feature = "web"))]
 fn make_request(
     host: Uri,
     db_name: &str,
@@ -206,7 +206,7 @@ fn make_request(
     Ok(req)
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(feature = "web"))]
 fn request_insert_protocol_header(req: &mut http::Request<()>) {
     req.headers_mut().insert(
         http::header::SEC_WEBSOCKET_PROTOCOL,
@@ -214,7 +214,7 @@ fn request_insert_protocol_header(req: &mut http::Request<()>) {
     );
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(feature = "web"))]
 fn request_insert_auth_header(req: &mut http::Request<()>, token: Option<&str>) {
     if let Some(token) = token {
         let auth = ["Bearer ", token].concat().try_into().unwrap();
@@ -223,7 +223,7 @@ fn request_insert_auth_header(req: &mut http::Request<()>, token: Option<&str>) 
 }
 
 impl WsConnection {
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(not(feature = "web"))]
     pub(crate) async fn connect(
         host: Uri,
         db_name: &str,
@@ -256,7 +256,7 @@ impl WsConnection {
         })
     }
 
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(feature = "web")]
     pub(crate) async fn connect(
         host: Uri,
         db_name: &str,
@@ -310,14 +310,14 @@ impl WsConnection {
         WebSocketMessage::Binary(bsatn::to_vec(&msg).unwrap().into())
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(not(feature = "web"))]
     fn maybe_log_error<T, U: std::fmt::Debug>(cause: &str, res: std::result::Result<T, U>) {
         if let Err(e) = res {
             log::warn!("{}: {:?}", cause, e);
         }
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(not(feature = "web"))]
     async fn message_loop(
         mut self,
         incoming_messages: mpsc::UnboundedSender<ServerMessage<BsatnFormat>>,
@@ -457,7 +457,7 @@ impl WsConnection {
         }
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(not(feature = "web"))]
     pub(crate) fn spawn_message_loop(
         self,
         runtime: &runtime::Handle,
@@ -472,7 +472,7 @@ impl WsConnection {
         (handle, incoming_recv, outgoing_send)
     }
 
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(feature = "web")]
     pub(crate) fn spawn_message_loop(
         self,
     ) -> (
