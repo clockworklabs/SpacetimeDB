@@ -8,6 +8,19 @@ rust-version.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+default = []
+web = [
+    "dep:getrandom",
+    "dep:gloo-console",
+    "dep:gloo-storage",
+    "dep:rustls-pki-types",
+    "dep:tokio-tungstenite-wasm",
+    "dep:wasm-bindgen",
+    "dep:wasm-bindgen-futures",
+    "dep:web-sys",
+]
+
 [dependencies]
 spacetimedb-data-structures.workspace = true
 spacetimedb-sats.workspace = true
@@ -29,24 +42,26 @@ once_cell.workspace = true
 prometheus.workspace = true
 rand.workspace = true
 
+getrandom = { version = "0.3.2", features = ["wasm_js"], optional = true }
+gloo-console = { version = "0.3.0", optional = true }
+gloo-storage = { version = "0.3.0", optional = true }
+rustls-pki-types = { version = "1.12.0", features = ["web"], optional = true }
+tokio-tungstenite-wasm = { version = "0.6.0", optional = true }
+wasm-bindgen = { version = "0.2.100", optional = true }
+wasm-bindgen-futures = { version = "0.4.45", optional = true }
+web-sys = { version = "0.3.77", features = [
+    "Document", "HtmlDocument", "Window"
+], optional = true}
+
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 home.workspace = true
 tokio.workspace = true
 tokio-tungstenite.workspace = true
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-getrandom = { version = "0.3.2", features = ["wasm_js"]}
-gloo-console = "0.3.0"
-gloo-storage = "0.3.0"
-rustls-pki-types = { version = "1.11.0", features = ["web"] }
 tokio = { version = "1.37", default-features = false, features = [
     "rt", "macros", "sync", "io-util"
 ] }
-tokio-tungstenite-wasm = "0.6.0"
-tungstenite = { version = "0.26.2", features = ["rustls"] }
-wasm-bindgen = "0.2.100"
-wasm-bindgen-futures = "0.4.45"
-web-sys = { version = "0.3.77", features = [ "Document", "HtmlDocument", "Window" ] }
 
 [dev-dependencies]
 # for quickstart-chat and cursive-chat examples
