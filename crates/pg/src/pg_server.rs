@@ -1,6 +1,7 @@
 use std::fmt::Debug;
 use std::sync::Arc;
 
+use crate::encoder::{row_desc, PsqlFormatter};
 use async_trait::async_trait;
 use axum::body::to_bytes;
 use axum::response::IntoResponse;
@@ -15,7 +16,7 @@ use pgwire::api::copy::NoopCopyHandler;
 use pgwire::api::portal::Format;
 use pgwire::api::query::{PlaceholderExtendedQueryHandler, SimpleQueryHandler};
 use pgwire::api::results::{DataRowEncoder, FieldInfo, QueryResponse, Response, Tag};
-use pgwire::api::{ClientInfo, Type};
+use pgwire::api::ClientInfo;
 use pgwire::api::{NoopErrorHandler, METADATA_DATABASE, METADATA_USER};
 use pgwire::api::{PgWireConnectionState, PgWireServerHandlers};
 use pgwire::error::{ErrorInfo, PgWireError, PgWireResult};
@@ -32,12 +33,10 @@ use spacetimedb_client_api::routes::database::{SqlParams, SqlQueryParams};
 use spacetimedb_client_api::{ControlStateReadAccess, ControlStateWriteAccess, NodeDelegate};
 use spacetimedb_client_api_messages::http::SqlStmtResult;
 use spacetimedb_client_api_messages::name::DatabaseName;
-use spacetimedb_lib::sats::satn::{PsqlPrintFmt, Satn};
-use spacetimedb_lib::sats::ArrayValue;
+use spacetimedb_lib::sats::satn::{PsqlClient, TypedSerializer};
+use spacetimedb_lib::sats::{satn, Serialize, Typespace};
 use spacetimedb_lib::version::spacetimedb_lib_version;
-use spacetimedb_lib::{
-    AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement, ProductValue, TimeDuration, Timestamp,
-};
+use spacetimedb_lib::ProductValue;
 use thiserror::Error;
 use tokio::net::TcpListener;
 use tokio::sync::{watch, Mutex};
@@ -45,7 +44,7 @@ use tokio_rustls::rustls::ServerConfig;
 use tokio_rustls::TlsAcceptor;
 
 #[derive(Error, Debug)]
-enum PgError {
+pub(crate) enum PgError {
     #[error("(metadata) {0}")]
     MetadataError(anyhow::Error),
     #[error("(Sql) {0}")]
@@ -60,8 +59,6 @@ enum PgError {
     Pem(#[from] rustls_pki_types::pem::Error),
     #[error(transparent)]
     RustTls(#[from] rustls::Error),
-    #[error("Special type with format {0} is invalid for {1}")]
-    SpecialTypeInvalid(PsqlPrintFmt, String),
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }
@@ -82,167 +79,29 @@ struct Metadata {
     auth: SpacetimeAuth,
 }
 
-fn type_of(schema: &ProductType, ty: &ProductTypeElement) -> Type {
-    let format = PsqlPrintFmt::use_fmt(schema, ty, ty.name());
-    match &ty.algebraic_type {
-        AlgebraicType::String => Type::VARCHAR,
-        AlgebraicType::Bool => Type::BOOL,
-        AlgebraicType::I8 | AlgebraicType::U8 | AlgebraicType::I16 => Type::INT2,
-        AlgebraicType::U16 | AlgebraicType::I32 => Type::INT4,
-        AlgebraicType::U32 | AlgebraicType::I64 => Type::INT8,
-        AlgebraicType::U64 | AlgebraicType::I128 | AlgebraicType::U128 | AlgebraicType::I256 | AlgebraicType::U256 => {
-            Type::NUMERIC
-        }
-        AlgebraicType::F32 => Type::FLOAT4,
-        AlgebraicType::F64 => Type::FLOAT8,
-        AlgebraicType::Array(ty) => match *ty.elem_ty {
-            AlgebraicType::String => Type::VARCHAR_ARRAY,
-            AlgebraicType::Bool => Type::BOOL_ARRAY,
-            AlgebraicType::U8 => Type::BYTEA_ARRAY,
-            AlgebraicType::I8 | AlgebraicType::I16 => Type::INT2_ARRAY,
-            AlgebraicType::U16 | AlgebraicType::I32 => Type::INT4_ARRAY,
-            AlgebraicType::U32 | AlgebraicType::I64 => Type::INT8_ARRAY,
-            AlgebraicType::U64
-            | AlgebraicType::I128
-            | AlgebraicType::U128
-            | AlgebraicType::I256
-            | AlgebraicType::U256 => Type::NUMERIC_ARRAY,
-            _ => Type::ANYARRAY,
-        },
-        AlgebraicType::Product(_) => match format {
-            PsqlPrintFmt::Hex => Type::BYTEA_ARRAY,
-            PsqlPrintFmt::Timestamp => Type::TIMESTAMP,
-            PsqlPrintFmt::Duration => Type::INTERVAL,
-            _ => Type::JSON,
-        },
-        x if x.as_sum().map(|x| x.is_simple_enum()).unwrap_or(false) => Type::ANYENUM,
-        _ => Type::UNKNOWN,
-    }
-}
-
-fn encode_value(
-    encoder: &mut DataRowEncoder,
-    schema: &ProductType,
-    ty: &ProductTypeElement,
-    value: &AlgebraicValue,
-) -> Result<(), PgError> {
-    let format = PsqlPrintFmt::use_fmt(schema, ty, ty.name());
-
-    match value {
-        AlgebraicValue::Bool(x) => encoder.encode_field(x)?,
-        AlgebraicValue::I8(x) => encoder.encode_field(x)?,
-        AlgebraicValue::U8(x) => encoder.encode_field(&(*x as i16))?,
-        AlgebraicValue::I16(x) => encoder.encode_field(x)?,
-        AlgebraicValue::U16(x) => encoder.encode_field(&(*x as u32))?,
-        AlgebraicValue::I32(x) => encoder.encode_field(x)?,
-        AlgebraicValue::U32(x) => encoder.encode_field(x)?,
-        AlgebraicValue::I64(x) => encoder.encode_field(&x)?,
-        AlgebraicValue::U64(x) => encoder.encode_field(&x.to_string())?,
-        AlgebraicValue::I128(x) => {
-            let x = x.0;
-            encoder.encode_field(&(x.to_string()))?
-        }
-        AlgebraicValue::U128(x) => {
-            let x = x.0;
-            encoder.encode_field(&x.to_string())?;
-        }
-        AlgebraicValue::I256(x) => encoder.encode_field(&(x.to_string()))?,
-        AlgebraicValue::U256(x) => encoder.encode_field(&x.to_string())?,
-        AlgebraicValue::F32(x) => encoder.encode_field(&x.into_inner())?,
-        AlgebraicValue::F64(x) => encoder.encode_field(&x.into_inner())?,
-        AlgebraicValue::String(x) => encoder.encode_field(&x.to_string())?,
-        AlgebraicValue::Array(x) => match x {
-            ArrayValue::Bool(x) => {
-                encoder.encode_field(&x.as_ref())?;
-            }
-            ArrayValue::I8(x) => {
-                encoder.encode_field(&x.as_ref())?;
-            }
-            ArrayValue::U8(x) => {
-                encoder.encode_field(&x.as_ref())?;
-            }
-            ArrayValue::I16(x) => {
-                encoder.encode_field(&x.as_ref())?;
-            }
-            ArrayValue::I32(x) => {
-                encoder.encode_field(&x.as_ref())?;
-            }
-            ArrayValue::U32(x) => {
-                encoder.encode_field(&x.as_ref())?;
-            }
-            ArrayValue::I64(x) => {
-                encoder.encode_field(&x.as_ref())?;
-            }
-            ArrayValue::F32(x) => {
-                let x = x.iter().map(|x| x.into_inner()).collect::<Vec<_>>();
-                encoder.encode_field(&x)?;
-            }
-            ArrayValue::F64(x) => {
-                let x = x.iter().map(|x| x.into_inner()).collect::<Vec<_>>();
-                encoder.encode_field(&x)?;
-            }
-            ArrayValue::String(x) => {
-                let x = x.iter().map(|x| x.as_ref()).collect::<Vec<_>>();
-                encoder.encode_field(&x)?;
-            }
-            _ => {
-                let json = serde_json::to_string(&value).unwrap();
-                encoder.encode_field(&json)?;
-            }
-        },
-        AlgebraicValue::Product(x) => match (format, x.as_special_value_raw()) {
-            (PsqlPrintFmt::Hex, Some(AlgebraicValue::U128(x))) => encoder.encode_field(&x.0.to_be_bytes())?,
-            (PsqlPrintFmt::Hex, Some(AlgebraicValue::U256(x))) => encoder.encode_field(&x.to_be_bytes())?,
-            (PsqlPrintFmt::Timestamp, Some(AlgebraicValue::I64(x))) => {
-                encoder.encode_field(&Timestamp::from_micros_since_unix_epoch(*x).to_rfc3339()?)?
-            }
-            (PsqlPrintFmt::Duration, Some(AlgebraicValue::I64(x))) => {
-                encoder.encode_field(&TimeDuration::from_micros(*x).to_iso8601())?
-            }
-            (PsqlPrintFmt::Satn, Some(..))
-            | (PsqlPrintFmt::Hex | PsqlPrintFmt::Timestamp | PsqlPrintFmt::Duration, _) => {
-                return Err(PgError::SpecialTypeInvalid(format, value.to_satn()))
-            }
-            (PsqlPrintFmt::Satn, None) => {
-                let json = serde_json::to_string(&value).unwrap();
-
-                encoder.encode_field(&json)?
-            }
-        },
-        x => encoder.encode_field(&x.to_satn())?,
-    }
-
-    Ok(())
-}
-
-fn to_rows(
+pub(crate) fn to_rows(
     stmt: SqlStmtResult<ProductValue>,
     header: Arc<Vec<FieldInfo>>,
 ) -> Result<impl Stream<Item = PgWireResult<DataRow>>, PgError> {
     let mut results = Vec::with_capacity(stmt.rows.len());
+    let ty = Typespace::EMPTY.with_type(&stmt.schema);
 
     for row in stmt.rows {
         let mut encoder = DataRowEncoder::new(header.clone());
 
-        for (idx, ty) in stmt.schema.elements.iter().enumerate() {
-            let value = row.get_field(idx, None).unwrap();
-
-            encode_value(&mut encoder, &stmt.schema, ty, value)?;
+        for (idx, value) in ty.with_values(&row).enumerate() {
+            let ty = satn::PsqlType {
+                client: PsqlClient::Postgres,
+                tuple: ty.ty(),
+                field: &ty.ty().elements[idx],
+                idx,
+            };
+            let mut fmt = PsqlFormatter { encoder: &mut encoder };
+            value.serialize(TypedSerializer { ty: &ty, f: &mut fmt })?;
         }
         results.push(encoder.finish());
     }
     Ok(stream::iter(results))
-}
-
-fn row_desc_from_stmt(stmt: &SqlStmtResult<ProductValue>, format: &Format) -> Vec<FieldInfo> {
-    let mut field_info = Vec::with_capacity(stmt.schema.elements.len());
-    for (idx, ty) in stmt.schema.elements.iter().enumerate() {
-        let field_name = ty.name.clone().map(Into::into).unwrap_or_else(|| format!("col {idx}"));
-        let field_type = type_of(&stmt.schema, ty);
-        let field_desc = FieldInfo::new(field_name, None, None, field_type, format.format_for(idx));
-        field_info.push(field_desc);
-    }
-    field_info
 }
 
 fn stats(stmt: &SqlStmtResult<ProductValue>) -> String {
@@ -277,6 +136,7 @@ async fn response<T>(res: axum::response::Result<T>, database: &str) -> Result<T
         err => {
             let res = err.into_response();
             if res.status() == StatusCode::NOT_FOUND {
+                log::error!("PG: Database not found: {database}");
                 return Err(PgWireError::UserError(Box::new(ErrorInfo::new(
                     "FATAL".to_string(),
                     "3D000".to_string(),
@@ -288,6 +148,7 @@ async fn response<T>(res: axum::response::Result<T>, database: &str) -> Result<T
                 .await
                 .map_err(|err| PgWireError::ApiError(Box::new(err)))?;
             let err = String::from_utf8_lossy(&bytes);
+            log::error!("PG: Error for database {database}: {err}");
             Err(PgError::Sql(format!("{err}")))
         }
     }
@@ -330,7 +191,7 @@ impl<T: ControlStateReadAccess + ControlStateWriteAccess + NodeDelegate> PgSpace
 
         let mut result = Vec::with_capacity(sql.len());
         for sql_result in sql {
-            let header = Arc::new(row_desc_from_stmt(&sql_result, &Format::UnifiedText));
+            let header = row_desc(&sql_result.schema, &Format::UnifiedText);
 
             let tag = Tag::new(&stats(&sql_result));
 
@@ -418,6 +279,7 @@ impl<T: Sync + Send + ControlStateReadAccess + ControlStateWriteAccess + NodeDel
                 let auth = match validate_token(&self.ctx, &pwd.password).await {
                     Ok(claims) => response(SpacetimeAuth::from_claims(&self.ctx, claims), &database).await?,
                     Err(err) => {
+                        log::error!("PG: Authentication failed for user {user} on database {database}: {err}");
                         let err = ErrorInfo::new("FATAL".to_owned(), "28P01".to_owned(), err.to_string());
                         return close_client(client, err).await;
                     }

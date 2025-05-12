@@ -83,7 +83,9 @@ impl TimeDuration {
         self.to_micros().checked_sub(other.to_micros()).map(Self::from_micros)
     }
 
-    /// Generate an `iso8601` format string
+    /// Generate an `iso8601` format string.
+    ///
+    /// This is the better supported format for use for the `pg wire protocol`.
     ///
     /// Example:
     /// ```rust
