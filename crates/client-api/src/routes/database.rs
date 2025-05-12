@@ -30,7 +30,7 @@ use spacetimedb_client_api_messages::http::SqlStmtResult;
 use spacetimedb_client_api_messages::name::{self, DatabaseName, DomainName, PublishOp, PublishResult};
 use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::{sats, Timestamp,ProductValue};
+use spacetimedb_lib::{sats, ProductValue, Timestamp};
 
 use super::subscribe::{handle_websocket, HasWebSocketOptions};
 
