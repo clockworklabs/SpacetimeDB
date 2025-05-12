@@ -3066,7 +3066,7 @@ mod tests {
         let stdb = TestDB::durable_without_snapshot_repo().expect("failed to create TestDB");
 
         // Begin a transaction, create a table, then commit.
-        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let mut tx = begin_mut_tx(&stdb);
         let product_type = ProductType::from([("col_0", AlgebraicType::I32)]);
         let schema = table("table_0", product_type.clone(), |builder| builder);
         let table_0_id = stdb.create_table(&mut tx, schema).unwrap();
@@ -3080,7 +3080,7 @@ mod tests {
         let stdb = stdb.reopen().unwrap();
 
         // Begin a transaction, create another table, then commit.
-        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let mut tx = begin_mut_tx(&stdb);
         let other_schema = table("table_1", product_type.clone(), |builder| builder);
         // Before the fix to issue #2758,
         // this next call to `create_table` would fail with:

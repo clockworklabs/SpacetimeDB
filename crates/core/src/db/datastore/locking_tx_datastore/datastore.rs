@@ -1045,7 +1045,7 @@ impl<F: FnMut(u64)> spacetimedb_commitlog::Decoder for &mut Replay<F> {
 // context of the commit log.
 //
 // Not caring about the order in the log, however, requires that we **do
-// not** check index constraints during replay of transaction operatoins.
+// not** check index constraints during replay of transaction operations.
 // We **could** check them in between transactions if we wanted to update
 // the indexes and constraints as they changed during replay, but that is
 // unnecessary.
@@ -1198,7 +1198,7 @@ mod tests {
     use spacetimedb_primitives::{col_list, ColId, ScheduleId};
     use spacetimedb_sats::algebraic_value::ser::value_serialize;
     use spacetimedb_sats::{product, AlgebraicType, GroundSpacetimeType};
-    use spacetimedb_schema::def::{BTreeAlgorithm, ConstraintData, IndexAlgorithm, UniqueConstraintData};
+    use spacetimedb_schema::def::BTreeAlgorithm;
     use spacetimedb_schema::schema::{
         ColumnSchema, ConstraintSchema, IndexSchema, RowLevelSecuritySchema, ScheduleSchema, SequenceSchema,
     };
@@ -1447,7 +1447,6 @@ mod tests {
         datastore.begin_tx(Workload::ForTests)
     }
 
-    // TODO(centril): find-replace all occurrences of body.
     fn begin_mut_tx(datastore: &Locking) -> MutTxId {
         datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests)
     }
@@ -1468,18 +1467,8 @@ mod tests {
 
     fn basic_indices() -> Vec<IndexSchema> {
         vec![
-            IndexSchema {
-                index_id: IndexId::SENTINEL,
-                table_id: TableId::SENTINEL,
-                index_name: "Foo_id_idx_btree".into(),
-                index_algorithm: IndexAlgorithm::BTree(BTreeAlgorithm { columns: col_list![0] }),
-            },
-            IndexSchema {
-                index_id: IndexId::SENTINEL,
-                table_id: TableId::SENTINEL,
-                index_name: "Foo_name_idx_btree".into(),
-                index_algorithm: IndexAlgorithm::BTree(BTreeAlgorithm { columns: col_list![1] }),
-            },
+            IndexSchema::for_test("Foo_id_idx_btree", BTreeAlgorithm::from(0)),
+            IndexSchema::for_test("Foo_name_idx_btree", BTreeAlgorithm::from(1)),
         ]
     }
 
@@ -1490,58 +1479,64 @@ mod tests {
 
     fn basic_constraints() -> Vec<ConstraintSchema> {
         vec![
-            ConstraintSchema {
-                table_id: TableId::SENTINEL,
-                constraint_id: ConstraintId::SENTINEL,
-                constraint_name: "Foo_id_key".into(),
-                data: ConstraintData::Unique(UniqueConstraintData {
-                    columns: col_list![0].into(),
-                }),
-            },
-            ConstraintSchema {
-                table_id: TableId::SENTINEL,
-                constraint_id: ConstraintId::SENTINEL,
-                constraint_name: "Foo_name_key".into(),
-                data: ConstraintData::Unique(UniqueConstraintData {
-                    columns: col_list![1].into(),
-                }),
-            },
+            ConstraintSchema::unique_for_test("Foo_id_key", 0),
+            ConstraintSchema::unique_for_test("Foo_name_key", 1),
         ]
     }
 
-    fn basic_table_schema_with_indices(indices: Vec<IndexSchema>, constraints: Vec<ConstraintSchema>) -> TableSchema {
+    fn user_public_table(
+        cols: impl Into<Vec<ColumnSchema>>,
+        indices: impl Into<Vec<IndexSchema>>,
+        constraints: impl Into<Vec<ConstraintSchema>>,
+        seqs: impl Into<Vec<SequenceSchema>>,
+        schedule: Option<ScheduleSchema>,
+        pk: Option<ColId>,
+    ) -> TableSchema {
         TableSchema::new(
             TableId::SENTINEL,
             "Foo".into(),
+            cols.into(),
+            indices.into(),
+            constraints.into(),
+            seqs.into(),
+            StTableType::User,
+            StAccess::Public,
+            schedule,
+            pk,
+        )
+    }
+
+    fn basic_table_schema_with_indices(
+        indices: impl Into<Vec<IndexSchema>>,
+        constraints: impl Into<Vec<ConstraintSchema>>,
+    ) -> TableSchema {
+        let seq = SequenceSchema {
+            sequence_id: SequenceId::SENTINEL,
+            table_id: TableId::SENTINEL,
+            col_pos: 0.into(),
+            sequence_name: "Foo_id_seq".into(),
+            start: 1,
+            increment: 1,
+            min_value: 1,
+            max_value: i128::MAX,
+            allocated: 0,
+        };
+        user_public_table(
             map_array(basic_table_schema_cols()),
             indices,
             constraints,
-            vec![SequenceSchema {
-                sequence_id: SequenceId::SENTINEL,
-                table_id: TableId::SENTINEL,
-                col_pos: 0.into(),
-                sequence_name: "Foo_id_seq".into(),
-                start: 1,
-                increment: 1,
-                min_value: 1,
-                max_value: i128::MAX,
-                allocated: 0,
-            }],
-            StTableType::User,
-            StAccess::Public,
+            vec![seq],
             None,
             None,
         )
     }
 
     #[rustfmt::skip]
-    fn basic_table_schema_created(table_id: TableId) -> TableSchema {
-        let table: u32 = table_id.into();
+    fn basic_table_schema_created() -> TableSchema {
+        let table = TableId::SENTINEL.into();
         let seq_start = FIRST_NON_SYSTEM_ID;
 
-        TableSchema::new(
-            table_id,
-            "Foo".into(),
+        user_public_table(
             map_array(basic_table_schema_cols()),
              map_array([
                 IndexRow { id: seq_start,     table, col: ColList::new(0.into()), name: "Foo_id_idx_btree", },
@@ -1554,16 +1549,14 @@ mod tests {
              map_array([
                 SequenceRow { id: seq_start, table, col_pos: 0, name: "Foo_id_seq", start: 1 }
             ]),
-            StTableType::User,
-            StAccess::Public,
             None,
             None
         )
     }
 
     fn setup_table_with_indices(
-        indices: Vec<IndexSchema>,
-        constraints: Vec<ConstraintSchema>,
+        indices: impl Into<Vec<IndexSchema>>,
+        constraints: impl Into<Vec<ConstraintSchema>>,
     ) -> ResultTest<(Locking, MutTxId, TableId)> {
         let datastore = get_datastore()?;
         let mut tx = begin_mut_tx(&datastore);
@@ -1861,8 +1854,9 @@ mod tests {
 
         verify_schemas_consistent(&mut tx, table_id);
 
-        #[rustfmt::skip]
-        assert_eq!(schema, &basic_table_schema_created(table_id));
+        let mut expected_schema = basic_table_schema_created();
+        expected_schema.update_table_id(table_id);
+        assert_eq!(schema, &expected_schema);
         Ok(())
     }
 
@@ -1873,8 +1867,9 @@ mod tests {
         let mut tx = begin_mut_tx(&datastore);
         verify_schemas_consistent(&mut tx, table_id);
         let schema = &*datastore.schema_for_table_mut_tx(&tx, table_id)?;
-        #[rustfmt::skip]
-        assert_eq!(schema, &basic_table_schema_created(table_id));
+        let mut expected_schema = basic_table_schema_created();
+        expected_schema.update_table_id(table_id);
+        assert_eq!(schema, &expected_schema);
         Ok(())
     }
 
@@ -1886,10 +1881,19 @@ mod tests {
         let mut tx = begin_mut_tx(&datastore);
         let schema = datastore.schema_for_table_mut_tx(&tx, table_id)?;
 
+        assert_eq!(&*tx.tx_state.pending_schema_changes, []);
         let mut dropped_indexes = 0;
-        for index in &*schema.indexes {
+        for (pos, index) in schema.indexes.iter().enumerate() {
             datastore.drop_index_mut_tx(&mut tx, index.index_id)?;
             dropped_indexes += 1;
+
+            let psc = &tx.tx_state.pending_schema_changes[pos];
+            let PendingSchemaChange::IndexRemoved(tid, iid, _, schema) = psc else {
+                panic!("wrong pending schema change: {psc:?}");
+            };
+            assert_eq!(table_id, *tid);
+            assert_eq!(index.index_id, *iid);
+            assert_eq!(index, schema);
         }
         assert!(
             datastore.schema_for_table_mut_tx(&tx, table_id)?.indexes.is_empty(),
@@ -1898,6 +1902,7 @@ mod tests {
         datastore.commit_mut_tx(tx)?;
 
         let mut tx = begin_mut_tx(&datastore);
+        assert_eq!(&*tx.tx_state.pending_schema_changes, []);
         assert!(
             datastore.schema_for_table_mut_tx(&tx, table_id)?.indexes.is_empty(),
             "no indexes should be left in the schema post-commit"
@@ -1911,10 +1916,15 @@ mod tests {
                 index_id: IndexId::SENTINEL,
                 table_id,
                 index_name: "Foo_id_idx_btree".into(),
-                index_algorithm: IndexAlgorithm::BTree(BTreeAlgorithm { columns: col_list![0] }),
+                index_algorithm: BTreeAlgorithm::from(0).into(),
             },
             true,
         )?;
+        assert_matches!(
+            &*tx.tx_state.pending_schema_changes,
+            [PendingSchemaChange::IndexAdded(tid, _, Some(_))]
+            if *tid == table_id
+        );
 
         verify_schemas_consistent(&mut tx, table_id);
 
@@ -1934,6 +1944,7 @@ mod tests {
         datastore.commit_mut_tx(tx)?;
 
         let tx = begin_mut_tx(&datastore);
+        assert_eq!(&*tx.tx_state.pending_schema_changes, []);
         assert_eq!(
             datastore.schema_for_table_mut_tx(&tx, table_id)?.indexes,
             expected_indexes,
@@ -1948,8 +1959,10 @@ mod tests {
     #[test]
     fn test_schema_for_table_rollback() -> ResultTest<()> {
         let (datastore, tx, table_id) = setup_table()?;
+        assert_eq!(tx.tx_state.pending_schema_changes.len(), 6);
         let _ = datastore.rollback_mut_tx(tx);
         let tx = begin_mut_tx(&datastore);
+        assert_eq!(&*tx.tx_state.pending_schema_changes, []);
         let schema = datastore.schema_for_table_mut_tx(&tx, table_id);
         assert!(schema.is_err());
         Ok(())
@@ -2133,7 +2146,7 @@ mod tests {
             index_id: IndexId::SENTINEL,
             table_id,
             index_name: "Foo_age_idx_btree".into(),
-            index_algorithm: BTreeAlgorithm { columns: 2.into() }.into(),
+            index_algorithm: BTreeAlgorithm::from(2).into(),
         };
         // TODO: it's slightly incorrect to create an index with `is_unique: true` without creating a corresponding constraint.
         // But the `Table` crate allows it for now.
@@ -2152,7 +2165,12 @@ mod tests {
         commit(&datastore, tx)?;
 
         let mut tx = begin_mut_tx(&datastore);
+        assert_eq!(&*tx.tx_state.pending_schema_changes, []);
         create_foo_age_idx_btree(&datastore, &mut tx, table_id)?;
+        assert_matches!(
+            &*tx.tx_state.pending_schema_changes,
+            [PendingSchemaChange::IndexAdded(.., None)]
+        );
         assert_st_indices(&tx, true)?;
         let row = u32_str_u32(0, "Bar", 18); // 0 will be ignored.
         let result = insert(&datastore, &mut tx, table_id, &row);
@@ -2177,6 +2195,7 @@ mod tests {
         commit(&datastore, tx)?;
 
         let mut tx = begin_mut_tx(&datastore);
+        assert_eq!(&*tx.tx_state.pending_schema_changes, []);
         assert_st_indices(&tx, true)?;
         let row = u32_str_u32(0, "Bar", 18); // 0 will be ignored.
         let result = insert(&datastore, &mut tx, table_id, &row);
@@ -2208,6 +2227,125 @@ mod tests {
             u32_str_u32(1, "Foo", 18),
             u32_str_u32(2, "Bar", 18),
         ]);
+        Ok(())
+    }
+
+    #[test]
+    fn test_create_drop_sequence_transactionality() -> ResultTest<()> {
+        // Start a transaction. Schema changes empty so far.
+        let datastore = get_datastore()?;
+        let mut tx = begin_mut_tx(&datastore);
+        assert_eq!(&*tx.tx_state.pending_schema_changes, []);
+
+        // Make the table and witness `TableAdded`. Commit.
+        let column = ColumnSchema::for_test(0, "id", AlgebraicType::I32);
+        let schema = user_public_table([column], [], [], [], None, None);
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        assert_matches!(
+            &*tx.tx_state.pending_schema_changes,
+            [PendingSchemaChange::TableAdded(..)]
+        );
+        commit(&datastore, tx)?;
+
+        // Start a new tx. Insert a row and witness that a sequence isn't used.
+        let mut tx = begin_mut_tx(&datastore);
+        let zero = product![0];
+        let one = product![1];
+        let insert_assert_and_remove = |tx: &mut MutTxId, ins: &ProductValue, exp: &ProductValue| -> ResultTest<()> {
+            insert(&datastore, tx, table_id, ins)?;
+            assert_eq!(all_rows(&datastore, tx, table_id), [exp.clone()]);
+            datastore.delete_by_rel_mut_tx(tx, table_id, [exp.clone()]);
+            assert_eq!(all_rows(&datastore, tx, table_id), []);
+            Ok(())
+        };
+        insert_assert_and_remove(&mut tx, &zero, &zero)?;
+
+        // Add the sequence, and witness that it works.
+        let sequence = SequenceSchema {
+            sequence_id: SequenceId::SENTINEL,
+            table_id,
+            col_pos: 0.into(),
+            sequence_name: "seq".into(),
+            start: 1,
+            increment: 1,
+            min_value: 1,
+            max_value: i128::MAX,
+            allocated: 0,
+        };
+        let seq_id = datastore.create_sequence_mut_tx(&mut tx, sequence.clone())?;
+        assert_matches!(
+            &*tx.tx_state.pending_schema_changes,
+            [PendingSchemaChange::SequenceAdded(_, added_seq_id)]
+                if *added_seq_id == seq_id
+        );
+        insert_assert_and_remove(&mut tx, &zero, &one)?;
+
+        // Drop the uncommitted sequence.
+        datastore.drop_sequence_mut_tx(&mut tx, seq_id)?;
+        assert_matches!(
+            &*tx.tx_state.pending_schema_changes,
+            [
+                PendingSchemaChange::SequenceAdded(..),
+                PendingSchemaChange::SequenceRemoved(.., schema),
+            ]
+                if schema.sequence_id == seq_id
+        );
+        insert_assert_and_remove(&mut tx, &zero, &zero)?;
+
+        // Add the sequence again and rollback, witnessing that this had no effect in the next tx.
+        let seq_id = datastore.create_sequence_mut_tx(&mut tx, sequence.clone())?;
+        assert_matches!(
+            &*tx.tx_state.pending_schema_changes,
+            [
+                PendingSchemaChange::SequenceAdded(..),
+                PendingSchemaChange::SequenceRemoved(..),
+                PendingSchemaChange::SequenceAdded(_, added_seq_id),
+            ]
+                if *added_seq_id == seq_id
+        );
+        let _ = datastore.rollback_mut_tx(tx);
+        let mut tx: MutTxId = begin_mut_tx(&datastore);
+        assert_eq!(&*tx.tx_state.pending_schema_changes, []);
+        insert_assert_and_remove(&mut tx, &zero, &zero)?;
+
+        // Add the sequence and this time actually commit. Check that it exists in next tx.
+        assert_eq!(&*tx.tx_state.pending_schema_changes, []);
+        let seq_id = datastore.create_sequence_mut_tx(&mut tx, sequence.clone())?;
+        assert_matches!(
+            &*tx.tx_state.pending_schema_changes,
+            [PendingSchemaChange::SequenceAdded(_, added_seq_id)]
+                if *added_seq_id == seq_id
+        );
+        commit(&datastore, tx)?;
+        let mut tx = begin_mut_tx(&datastore);
+        assert_eq!(&*tx.tx_state.pending_schema_changes, []);
+        insert_assert_and_remove(&mut tx, &zero, &one)?;
+
+        // We have the sequence in committed state.
+        // Drop it and then rollback, so in the next tx the seq is still there.
+        datastore.drop_sequence_mut_tx(&mut tx, seq_id)?;
+        assert_matches!(
+            &*tx.tx_state.pending_schema_changes,
+            [PendingSchemaChange::SequenceRemoved(..)]
+        );
+        insert_assert_and_remove(&mut tx, &zero, &zero)?;
+        let _ = datastore.rollback_mut_tx(tx);
+        let mut tx = begin_mut_tx(&datastore);
+        assert_eq!(&*tx.tx_state.pending_schema_changes, []);
+        insert_assert_and_remove(&mut tx, &zero, &product![2])?;
+
+        // Drop the seq and commit this time around. In the next tx, we witness that there's no seq.
+        datastore.drop_sequence_mut_tx(&mut tx, seq_id)?;
+        assert_matches!(
+            &*tx.tx_state.pending_schema_changes,
+            [PendingSchemaChange::SequenceRemoved(..)]
+        );
+        insert_assert_and_remove(&mut tx, &zero, &zero)?;
+        commit(&datastore, tx)?;
+        let mut tx = begin_mut_tx(&datastore);
+        assert_eq!(&*tx.tx_state.pending_schema_changes, []);
+        insert_assert_and_remove(&mut tx, &zero, &zero)?;
+
         Ok(())
     }
 
@@ -2278,7 +2416,7 @@ mod tests {
     /// Checks that update validates the row against the row type.
     #[test]
     fn test_update_wrong_row_type() -> ResultTest<()> {
-        let (datastore, tx, table_id) = setup_table_with_indices([].into(), [].into())?;
+        let (datastore, tx, table_id) = setup_table_with_indices([], [])?;
         test_under_tx_and_commit(&datastore, tx, |tx| {
             // We provide an index that doesn't exist on purpose.
             let index_id = 0.into();
@@ -2307,33 +2445,11 @@ mod tests {
         let mut tx = begin_mut_tx(&datastore);
 
         // Create the table. The minimal repro is a one column table with a unique constraint.
-        let table_id = TableId::SENTINEL;
-        let table_schema = TableSchema::new(
-            table_id,
-            "Foo".into(),
-            vec![ColumnSchema {
-                table_id,
-                col_pos: 0.into(),
-                col_name: "id".into(),
-                col_type: AlgebraicType::I32,
-            }],
-            vec![IndexSchema {
-                table_id,
-                index_id: IndexId::SENTINEL,
-                index_name: "btree".into(),
-                index_algorithm: IndexAlgorithm::BTree(BTreeAlgorithm { columns: 0.into() }),
-            }],
-            vec![ConstraintSchema {
-                table_id,
-                constraint_id: ConstraintId::SENTINEL,
-                constraint_name: "constraint".into(),
-                data: ConstraintData::Unique(UniqueConstraintData {
-                    columns: col_list![0].into(),
-                }),
-            }],
-            vec![],
-            StTableType::User,
-            StAccess::Public,
+        let table_schema = user_public_table(
+            [ColumnSchema::for_test(0, "id", AlgebraicType::I32)],
+            [IndexSchema::for_test("btree", BTreeAlgorithm::from(0))],
+            [ConstraintSchema::unique_for_test("constraint", 0)],
+            [],
             None,
             None,
         );
@@ -2387,32 +2503,11 @@ mod tests {
         let mut tx = begin_mut_tx(&datastore);
 
         // Create the table. The minimal repro is a two column table with a unique constraint.
-        let table_id = TableId::SENTINEL;
-        let col = |pos: usize| ColumnSchema {
-            table_id,
-            col_pos: pos.into(),
-            col_name: format!("c{pos}").into(),
-            col_type: AlgebraicType::U32,
-        };
-        let table_schema = TableSchema::new(
-            table_id,
-            "Foo".into(),
-            [col(0), col(1)].into(),
-            vec![IndexSchema {
-                table_id,
-                index_id: IndexId::SENTINEL,
-                index_name: "index".into(),
-                index_algorithm: IndexAlgorithm::BTree(BTreeAlgorithm { columns: 0.into() }),
-            }],
-            vec![ConstraintSchema {
-                table_id,
-                constraint_id: ConstraintId::SENTINEL,
-                constraint_name: "constraint".into(),
-                data: ConstraintData::Unique(UniqueConstraintData { columns: 0.into() }),
-            }],
-            vec![],
-            StTableType::User,
-            StAccess::Public,
+        let table_schema = user_public_table(
+            [0, 1].map(|pos| ColumnSchema::for_test(pos, format!("c{pos}"), AlgebraicType::U32)),
+            [IndexSchema::for_test("index", BTreeAlgorithm::from(0))],
+            [ConstraintSchema::unique_for_test("constraint", 0)],
+            [],
             None,
             None,
         );
@@ -2461,7 +2556,7 @@ mod tests {
 
     #[test]
     fn test_update_no_such_index() -> ResultTest<()> {
-        let (datastore, tx, table_id) = setup_table_with_indices([].into(), [].into())?;
+        let (datastore, tx, table_id) = setup_table_with_indices([], [])?;
         test_under_tx_and_commit(&datastore, tx, |tx| {
             let index_id = 0.into();
             let err = expect_index_err(update(&datastore, tx, table_id, index_id, &random_row()));
@@ -2475,12 +2570,19 @@ mod tests {
     fn test_update_no_such_index_because_deleted() -> ResultTest<()> {
         // Setup and immediately commit.
         let (datastore, tx, table_id) = setup_table()?;
+        assert_eq!(tx.tx_state.pending_schema_changes.len(), 6);
         commit(&datastore, tx)?;
 
         // Remove index in tx state.
         let mut tx = begin_mut_tx(&datastore);
+        assert_eq!(&*tx.tx_state.pending_schema_changes, []);
         let index_id = extract_index_id(&datastore, &tx, &basic_indices()[0])?;
         tx.drop_index(index_id)?;
+        assert_matches!(
+            &*tx.tx_state.pending_schema_changes,
+            [PendingSchemaChange::IndexRemoved(tid, iid, _, _)]
+            if *tid == table_id && *iid == index_id
+        );
 
         test_under_tx_and_commit(&datastore, tx, |tx: &mut _| {
             let err = expect_index_err(update(&datastore, tx, table_id, index_id, &random_row()));
@@ -2493,7 +2595,7 @@ mod tests {
     #[test]
     fn test_update_index_not_unique() -> ResultTest<()> {
         let indices = basic_indices();
-        let (datastore, mut tx, table_id) = setup_table_with_indices(indices.clone(), [].into())?;
+        let (datastore, mut tx, table_id) = setup_table_with_indices(indices.clone(), [])?;
         let row = &random_row();
         insert(&datastore, &mut tx, table_id, row)?;
 
@@ -2550,7 +2652,14 @@ mod tests {
     /// Checks that update ensures that the row-to-update exists and considers delete tables.
     #[test]
     fn test_update_no_such_row_because_deleted_new_index_in_tx() -> ResultTest<()> {
-        let (datastore, mut tx, table_id) = setup_table_with_indices([].into(), [].into())?;
+        let (datastore, mut tx, table_id) = setup_table_with_indices([], [])?;
+        assert_matches!(
+            &*tx.tx_state.pending_schema_changes,
+            [
+                PendingSchemaChange::TableAdded(_),
+                PendingSchemaChange::SequenceAdded(..),
+            ]
+        );
 
         // Insert the row and commit.
         let row = &random_row();
@@ -2559,10 +2668,16 @@ mod tests {
 
         // Now add the indices and then delete the row.
         let mut tx = begin_mut_tx(&datastore);
+        assert_eq!(&*tx.tx_state.pending_schema_changes, []);
         let mut indices = basic_indices();
-        for index in &mut indices {
+        for (pos, index) in indices.iter_mut().enumerate() {
             index.table_id = table_id;
             index.index_id = datastore.create_index_mut_tx(&mut tx, index.clone(), true)?;
+            assert_matches!(
+                &tx.tx_state.pending_schema_changes[pos],
+                PendingSchemaChange::IndexAdded(_, iid, _)
+                if *iid == index.index_id
+            );
         }
         assert_eq!(1, datastore.delete_by_rel_mut_tx(&mut tx, table_id, [row.clone()]));
 
@@ -2597,7 +2712,7 @@ mod tests {
     /// Checks that update checks other unique constraints against the committed state.
     #[test]
     fn test_update_violates_commit_unique_constraints() -> ResultTest<()> {
-        let (datastore, mut tx, table_id) = setup_table_with_indices([].into(), [].into())?;
+        let (datastore, mut tx, table_id) = setup_table_with_indices([], [])?;
 
         // Insert two rows.
         let mut row = random_row();
@@ -2740,48 +2855,17 @@ mod tests {
 
     #[test]
     fn test_scheduled_table_insert_and_update() -> ResultTest<()> {
-        let table_id = TableId::SENTINEL;
         // Build the minimal schema that is a valid scheduler table.
-        let schema = TableSchema::new(
-            table_id,
-            "Foo".into(),
-            vec![
-                ColumnSchema {
-                    table_id,
-                    col_pos: 0.into(),
-                    col_name: "id".into(),
-                    col_type: AlgebraicType::U64,
-                },
-                ColumnSchema {
-                    table_id,
-                    col_pos: 1.into(),
-                    col_name: "at".into(),
-                    col_type: ScheduleAt::get_type(),
-                },
+        let schema = user_public_table(
+            [
+                ColumnSchema::for_test(0, "id", AlgebraicType::U64),
+                ColumnSchema::for_test(1, "at", ScheduleAt::get_type()),
             ],
-            vec![IndexSchema {
-                table_id,
-                index_id: IndexId::SENTINEL,
-                index_name: "id_idx".into(),
-                index_algorithm: IndexAlgorithm::BTree(BTreeAlgorithm { columns: 0.into() }),
-            }],
-            vec![ConstraintSchema {
-                table_id,
-                constraint_id: ConstraintId::SENTINEL,
-                constraint_name: "id_unique".into(),
-                data: ConstraintData::Unique(UniqueConstraintData { columns: 0.into() }),
-            }],
-            vec![],
-            StTableType::User,
-            StAccess::Public,
-            Some(ScheduleSchema {
-                table_id,
-                schedule_id: ScheduleId::SENTINEL,
-                schedule_name: "schedule".into(),
-                reducer_name: "reducer".into(),
-                at_column: 1.into(),
-            }),
-            Some(0.into()),
+            [IndexSchema::for_test("id_idx", BTreeAlgorithm::from(0))],
+            [ConstraintSchema::unique_for_test("id_unique", 0)],
+            [],
+            Some(ScheduleSchema::for_test("schedule", "reducer", 1)),
+            Some(ColId(0)),
         );
 
         // Create the table.
@@ -2843,24 +2927,13 @@ mod tests {
 
     #[test]
     fn test_set_semantics() -> ResultTest<()> {
-        let col_schema = |col_name, col_pos| ColumnSchema {
-            table_id: TableId::SENTINEL,
-            col_pos,
-            col_name,
-            col_type: AlgebraicType::U8,
-        };
-
         // Create a table schema for (a: u8, b: u8)
         let table_schema = |index: Option<_>, constraint: Option<_>| {
-            TableSchema::new(
-                TableId::SENTINEL,
-                "Foo".into(),
-                vec![col_schema("a".into(), 0.into()), col_schema("b".into(), 1.into())],
-                index.into_iter().collect(),
-                constraint.into_iter().collect(),
-                vec![],
-                StTableType::User,
-                StAccess::Public,
+            user_public_table(
+                [("a", 0), ("b", 1)].map(|(name, pos)| ColumnSchema::for_test(pos, name, AlgebraicType::U8)),
+                Vec::from_iter(index),
+                Vec::from_iter(constraint),
+                [],
                 None,
                 None,
             )
@@ -2868,18 +2941,8 @@ mod tests {
         let table_schema_no_constraints = || table_schema(None, None);
         let table_schema_unique_constraint = || {
             table_schema(
-                Some(IndexSchema {
-                    table_id: TableId::SENTINEL,
-                    index_id: IndexId::SENTINEL,
-                    index_name: "a_index".into(),
-                    index_algorithm: BTreeAlgorithm { columns: 0.into() }.into(),
-                }),
-                Some(ConstraintSchema {
-                    table_id: TableId::SENTINEL,
-                    constraint_id: ConstraintId::SENTINEL,
-                    constraint_name: "a_unique".into(),
-                    data: ConstraintData::Unique(UniqueConstraintData { columns: 0.into() }),
-                }),
+                Some(IndexSchema::for_test("a_index", BTreeAlgorithm::from(0))),
+                Some(ConstraintSchema::unique_for_test("a_unique", 0)),
             )
         };
 
@@ -2982,30 +3045,11 @@ mod tests {
 
     #[test]
     fn add_twice_and_find_issue_2601() -> ResultTest<()> {
-        let schema = TableSchema::new(
-            TableId::SENTINEL,
-            "Table".into(),
-            vec![ColumnSchema {
-                table_id: TableId::SENTINEL,
-                col_pos: 0.into(),
-                col_name: "field".into(),
-                col_type: AlgebraicType::I32,
-            }],
-            vec![IndexSchema {
-                table_id: TableId::SENTINEL,
-                index_id: IndexId::SENTINEL,
-                index_name: "index".into(),
-                index_algorithm: BTreeAlgorithm { columns: 0.into() }.into(),
-            }],
-            vec![ConstraintSchema {
-                table_id: TableId::SENTINEL,
-                constraint_id: ConstraintId::SENTINEL,
-                constraint_name: "constraint".into(),
-                data: ConstraintData::Unique(UniqueConstraintData { columns: 0.into() }),
-            }],
-            vec![],
-            StTableType::User,
-            StAccess::Public,
+        let schema = user_public_table(
+            [ColumnSchema::for_test(0, "field", AlgebraicType::I32)],
+            [IndexSchema::for_test("index", BTreeAlgorithm::from(0))],
+            [ConstraintSchema::unique_for_test("constraint", 0)],
+            [],
             None,
             None,
         );
@@ -3056,7 +3100,7 @@ mod tests {
             ]
                 if *removed_table_id == table_id
         );
-        datastore.rollback_mut_tx(tx);
+        let _ = datastore.rollback_mut_tx(tx);
 
         // Ensure the table still exists in the next transaction.
         let tx = begin_mut_tx(&datastore);
@@ -3077,15 +3121,15 @@ mod tests {
             &*tx.tx_state.pending_schema_changes,
             [
                 PendingSchemaChange::TableAdded(added_table_id),
-                PendingSchemaChange::IndexAdded(..),
-                PendingSchemaChange::IndexAdded(..),
+                PendingSchemaChange::IndexAdded(.., Some(_)),
+                PendingSchemaChange::IndexAdded(.., None),
                 PendingSchemaChange::ConstraintAdded(..),
                 PendingSchemaChange::ConstraintAdded(..),
                 PendingSchemaChange::SequenceAdded(..),
             ]
                 if *added_table_id == table_id
         );
-        datastore.rollback_mut_tx(tx);
+        let _ = datastore.rollback_mut_tx(tx);
 
         // Nothing should have happened.
         let tx = begin_mut_tx(&datastore);
@@ -3098,8 +3142,6 @@ mod tests {
     }
 
     // TODO: Add the following tests
-    // - Create index with unique constraint and immediately insert a row that violates the constraint before committing.
     // - Create a tx that inserts 2000 rows with an auto_inc column
     // - Create a tx that inserts 2000 rows with an auto_inc column and then rolls back
-    // - Test creating sequences pre_commit, post_commit, post_rollback
 }
