@@ -141,7 +141,7 @@ fn serialize_benchmarks<
         Arc::new(table_schema),
         spacetimedb_table::indexes::SquashedOffset::COMMITTED_STATE,
     );
-    let pool = PagePool::default();
+    let pool = PagePool::new_for_test();
     let mut blob_store = spacetimedb_table::blob_store::HashMapBlobStore::default();
 
     let ptrs = data_pv
