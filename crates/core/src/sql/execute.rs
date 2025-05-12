@@ -495,6 +495,39 @@ pub(crate) mod tests {
         );
     }
 
+    /// Test a query that uses a multi-column index
+    #[test]
+    fn test_multi_column_index() -> anyhow::Result<()> {
+        let db = TestDB::in_memory()?;
+
+        let schema = [
+            ("a", AlgebraicType::U64),
+            ("b", AlgebraicType::U64),
+            ("c", AlgebraicType::U64),
+        ];
+
+        let table_id = db.create_table_for_test_multi_column("t", &schema, [1, 2].into())?;
+
+        insert_rows(
+            &db,
+            table_id,
+            vec![
+                product![0_u64, 1_u64, 2_u64],
+                product![1_u64, 2_u64, 1_u64],
+                product![2_u64, 2_u64, 2_u64],
+            ],
+        )?;
+
+        assert_query_results(
+            &db,
+            "select * from t where c = 1 and b = 2",
+            &AuthCtx::for_testing(),
+            [product![1_u64, 2_u64, 1_u64]],
+        );
+
+        Ok(())
+    }
+
     /// Test querying a table with RLS rules
     #[test]
     fn test_rls_rules() -> anyhow::Result<()> {
