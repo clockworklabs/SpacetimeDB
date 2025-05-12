@@ -107,7 +107,7 @@ impl Sequence {
 }
 
 /// A map of [`SequenceId`] -> [`Sequence`].
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub(super) struct SequencesState {
     sequences: IntMap<SequenceId, Sequence>,
 }

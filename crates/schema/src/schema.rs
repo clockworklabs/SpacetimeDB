@@ -753,6 +753,17 @@ pub struct ColumnSchema {
     pub col_type: AlgebraicType,
 }
 
+impl ColumnSchema {
+    pub fn for_test(pos: impl Into<ColId>, name: impl Into<Box<str>>, ty: AlgebraicType) -> Self {
+        Self {
+            table_id: TableId::SENTINEL,
+            col_pos: pos.into(),
+            col_name: name.into(),
+            col_type: ty,
+        }
+    }
+}
+
 impl Schema for ColumnSchema {
     type Def = ColumnDef;
     type ParentId = ();
@@ -903,6 +914,18 @@ pub struct ScheduleSchema {
     pub at_column: ColId,
 }
 
+impl ScheduleSchema {
+    pub fn for_test(name: impl Into<Box<str>>, reducer: impl Into<Box<str>>, at: impl Into<ColId>) -> Self {
+        Self {
+            table_id: TableId::SENTINEL,
+            schedule_id: ScheduleId::SENTINEL,
+            schedule_name: name.into(),
+            reducer_name: reducer.into(),
+            at_column: at.into(),
+        }
+    }
+}
+
 impl Schema for ScheduleSchema {
     type Def = ScheduleDef;
 
@@ -948,7 +971,16 @@ pub struct IndexSchema {
     pub index_algorithm: IndexAlgorithm,
 }
 
-impl IndexSchema {}
+impl IndexSchema {
+    pub fn for_test(name: impl Into<Box<str>>, algo: impl Into<IndexAlgorithm>) -> Self {
+        Self {
+            index_id: IndexId::SENTINEL,
+            table_id: TableId::SENTINEL,
+            index_name: name.into(),
+            index_algorithm: algo.into(),
+        }
+    }
+}
 
 impl Schema for IndexSchema {
     type Def = IndexDef;
@@ -991,6 +1023,15 @@ pub struct ConstraintSchema {
 }
 
 impl ConstraintSchema {
+    pub fn unique_for_test(name: impl Into<Box<str>>, cols: impl Into<ColSet>) -> Self {
+        Self {
+            table_id: TableId::SENTINEL,
+            constraint_id: ConstraintId::SENTINEL,
+            constraint_name: name.into(),
+            data: ConstraintData::Unique(UniqueConstraintData { columns: cols.into() }),
+        }
+    }
+
     /// Constructs a `ConstraintSchema` from a given `ConstraintDef` and table identifier.
     ///
     /// # Parameters
