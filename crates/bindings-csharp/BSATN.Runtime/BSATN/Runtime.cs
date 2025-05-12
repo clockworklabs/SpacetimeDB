@@ -44,7 +44,7 @@ public interface IStructuralReadWrite
     /// Using the resulting serializer rather than <c>Read&lt;T&gt;</c> is usually faster in Mono/IL2CPP.
     /// This is because we manually monomorphise the code to read rows in our automatically-generated
     /// implementation of IReadWrite. This allows rows to be initialized with new() rather than reflection
-    /// in the generated code.
+    /// in the compiled code.
     /// </summary>
     /// <returns>An <c>IReadWrite&lt;T&gt;</c> for <c>T : IStructuralReadWrite</c>.</returns>
     object GetSerializer();
