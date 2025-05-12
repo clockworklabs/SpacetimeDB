@@ -1,4 +1,4 @@
-use super::{Serialize, SerializeArray, SerializeNamedProduct, SerializeSeqProduct, Serializer};
+use super::{Serialize, SerializeArray, SerializeSeqProduct, Serializer};
 use crate::{i256, u256};
 use crate::{AlgebraicType, AlgebraicValue, ArrayValue, ProductValue, SumValue, ValueWithType, F32, F64};
 use core::ops::Bound;
@@ -190,19 +190,10 @@ impl_serialize!(
     }
 );
 impl_serialize!([] ValueWithType<'_, SumValue>, (self, ser) => {
-    let sv = self.value();
-    let (tag, val) = (sv.tag, &*sv.value);
-    let var_ty = &self.ty().variants[tag as usize]; // Extract the variant type by tag.
-    ser.serialize_variant(tag, var_ty.name(), &self.with(&var_ty.algebraic_type, val))
+   ser.serialize_variant_raw(self)
 });
 impl_serialize!([] ValueWithType<'_, ProductValue>, (self, ser) => {
-    let val = &self.value().elements;
-    assert_eq!(val.len(), self.ty().elements.len());
-    let mut prod = ser.serialize_named_product(val.len())?;
-    for (val, el_ty) in val.iter().zip(&*self.ty().elements) {
-        prod.serialize_element(el_ty.name(), &self.with(&el_ty.algebraic_type, val))?
-    }
-    prod.end()
+    ser.serialize_named_product_raw(self)
 });
 impl_serialize!([] ValueWithType<'_, ArrayValue>, (self, ser) => {
     let mut ty = &*self.ty().elem_ty;
