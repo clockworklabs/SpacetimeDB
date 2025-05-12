@@ -158,6 +158,14 @@ mod tests {
     }
 
     #[test]
+    fn test_slice_segments_on_single_commit() {
+        let offsets = vec![0, 10];
+
+        let retained = retain_range(&offsets, 19..=19);
+        assert_eq!(&retained, &[10]);
+    }
+
+    #[test]
     fn test_slice_segments_on_boundary() {
         let offsets = vec![0, 10, 20, 30];
 

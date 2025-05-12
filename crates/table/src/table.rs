@@ -1997,7 +1997,7 @@ pub(crate) mod test {
         let index_schema = schema.indexes[0].clone();
 
         let mut table = Table::new(schema.into(), SquashedOffset::COMMITTED_STATE);
-        let pool = PagePool::default();
+        let pool = PagePool::new_for_test();
         let cols = ColList::new(0.into());
         let algo = BTreeAlgorithm { columns: cols.clone() }.into();
 
@@ -2042,7 +2042,7 @@ pub(crate) mod test {
 
     fn insert_retrieve_body(ty: impl Into<ProductType>, val: impl Into<ProductValue>) -> TestCaseResult {
         let val = val.into();
-        let pool = PagePool::default();
+        let pool = PagePool::new_for_test();
         let mut blob_store = HashMapBlobStore::default();
         let mut table = table(ty.into());
         let (hash, row) = table.insert(&pool, &mut blob_store, &val).unwrap();
@@ -2104,7 +2104,7 @@ pub(crate) mod test {
         vals: Vec<ProductValue>,
         indexed_columns: ColList,
     ) -> Result<(), TestCaseError> {
-        let pool = PagePool::default();
+        let pool = PagePool::new_for_test();
         let mut blob_store = HashMapBlobStore::default();
         let mut table = table(ty.clone());
 
@@ -2178,7 +2178,7 @@ pub(crate) mod test {
 
         #[test]
         fn insert_delete_removed_from_pointer_map((ty, val) in generate_typed_row()) {
-            let pool = PagePool::default();
+            let pool = PagePool::new_for_test();
             let mut blob_store = HashMapBlobStore::default();
             let mut table = table(ty);
             let (hash, row) = table.insert(&pool, &mut blob_store, &val).unwrap();
@@ -2210,7 +2210,7 @@ pub(crate) mod test {
 
         #[test]
         fn insert_duplicate_set_semantic((ty, val) in generate_typed_row()) {
-            let pool = PagePool::default();
+            let pool = PagePool::new_for_test();
             let mut blob_store = HashMapBlobStore::default();
             let mut table = table(ty);
 
@@ -2246,7 +2246,7 @@ pub(crate) mod test {
 
         #[test]
         fn insert_bsatn_same_as_pv((ty, val) in generate_typed_row()) {
-            let pool = PagePool::default();
+            let pool = PagePool::new_for_test();
             let mut bs_pv = HashMapBlobStore::default();
             let mut table_pv = table(ty.clone());
             let res_pv = table_pv.insert(&pool, &mut bs_pv, &val);
@@ -2262,7 +2262,7 @@ pub(crate) mod test {
 
         #[test]
         fn row_size_reporting_matches_slow_implementations((ty, vals) in generate_typed_row_vec(128, 2048)) {
-            let pool = PagePool::default();
+            let pool = PagePool::new_for_test();
             let mut blob_store = HashMapBlobStore::default();
             let mut table = table(ty.clone());
 
@@ -2304,7 +2304,7 @@ pub(crate) mod test {
 
         // Optimistically insert the `row` before checking any constraints
         // under the assumption that errors (unique constraint & set semantic violations) are rare.
-        let pool = PagePool::default();
+        let pool = PagePool::new_for_test();
         let (row_ref, blob_bytes) = table.insert_physically_bsatn(&pool, blob_store, row)?;
         let row_ptr = row_ref.pointer();
 
@@ -2319,7 +2319,7 @@ pub(crate) mod test {
     // Compare `scan_rows` against a simpler implementation.
     #[test]
     fn table_scan_iter_eq_flatmap() {
-        let pool = PagePool::default();
+        let pool = PagePool::new_for_test();
         let mut blob_store = HashMapBlobStore::default();
         let mut table = table(AlgebraicType::U64.into());
         for v in 0..2u64.pow(14) {
@@ -2346,7 +2346,7 @@ pub(crate) mod test {
         let pt = AlgebraicType::U64.into();
         let pv = product![42u64];
         let mut table = table(pt);
-        let pool = &PagePool::default();
+        let pool = &PagePool::new_for_test();
         let blob_store = &mut NullBlobStore;
         let (_, row_ref) = table.insert(pool, blob_store, &pv).unwrap();
 
@@ -2362,7 +2362,7 @@ pub(crate) mod test {
     #[test]
     fn test_blob_store_bytes() {
         let pt: ProductType = [AlgebraicType::String, AlgebraicType::I32].into();
-        let pool = &PagePool::default();
+        let pool = &PagePool::new_for_test();
         let blob_store = &mut HashMapBlobStore::default();
         let mut insert = |table: &mut Table, string, num| {
             table
