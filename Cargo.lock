@@ -6010,7 +6010,6 @@ dependencies = [
  "rcgen",
  "rustls",
  "rustls-pki-types",
- "serde_json",
  "spacetimedb-client-api",
  "spacetimedb-client-api-messages",
  "spacetimedb-lib",

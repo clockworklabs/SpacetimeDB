@@ -111,6 +111,23 @@ pub trait Serializer: Sized {
     /// The argument is the number of fields in the product.
     fn serialize_named_product(self, len: usize) -> Result<Self::SerializeNamedProduct, Self::Error>;
 
+    fn serialize_named_product_raw(self, value: &ValueWithType<'_, ProductValue>) -> Result<Self::Ok, Self::Error> {
+        let val = &value.val.elements;
+        assert_eq!(val.len(), value.ty().elements.len());
+        let mut prod = self.serialize_named_product(val.len())?;
+        for (val, el_ty) in val.iter().zip(&*value.ty().elements) {
+            prod.serialize_element(el_ty.name(), &value.with(&el_ty.algebraic_type, val))?
+        }
+        prod.end()
+    }
+
+    fn serialize_variant_raw(self, sum: &ValueWithType<'_, SumValue>) -> Result<Self::Ok, Self::Error> {
+        let sv = sum.value();
+        let (tag, val) = (sv.tag, &*sv.value);
+        let var_ty = &sum.ty().variants[tag as usize]; // Extract the variant type by tag.
+        self.serialize_variant(tag, var_ty.name(), &sum.with(&var_ty.algebraic_type, val))
+    }
+
     /// Serialize a sum value provided the chosen `tag`, `name`, and `value`.
     fn serialize_variant<T: Serialize + ?Sized>(
         self,
@@ -200,7 +217,7 @@ pub trait Serializer: Sized {
 use ethnum::{i256, u256};
 pub use spacetimedb_bindings_macro::Serialize;
 
-use crate::{bsatn, buffer::BufWriter, AlgebraicType};
+use crate::{bsatn, buffer::BufWriter, AlgebraicType, ProductValue, SumValue, ValueWithType};
 
 /// A **data structure** that can be serialized into any data format supported by
 /// the SpacetimeDB Algebraic Type System.
