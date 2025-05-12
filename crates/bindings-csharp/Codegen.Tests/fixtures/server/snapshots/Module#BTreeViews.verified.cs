@@ -6,18 +6,18 @@ partial struct BTreeViews : System.IEquatable<BTreeViews>, SpacetimeDB.BSATN.ISt
 {
     public void ReadFields(System.IO.BinaryReader reader)
     {
-        Id = BSATN.Id.Read(reader);
-        X = BSATN.X.Read(reader);
-        Y = BSATN.Y.Read(reader);
-        Faction = BSATN.Faction.Read(reader);
+        Id = BSATN.IdRW.Read(reader);
+        X = BSATN.XRW.Read(reader);
+        Y = BSATN.YRW.Read(reader);
+        Faction = BSATN.FactionRW.Read(reader);
     }
 
     public void WriteFields(System.IO.BinaryWriter writer)
     {
-        BSATN.Id.Write(writer, Id);
-        BSATN.X.Write(writer, X);
-        BSATN.Y.Write(writer, Y);
-        BSATN.Faction.Write(writer, Faction);
+        BSATN.IdRW.Write(writer, Id);
+        BSATN.XRW.Write(writer, X);
+        BSATN.YRW.Write(writer, Y);
+        BSATN.FactionRW.Write(writer, Faction);
     }
 
     public override string ToString() =>
@@ -25,10 +25,10 @@ partial struct BTreeViews : System.IEquatable<BTreeViews>, SpacetimeDB.BSATN.ISt
 
     public readonly partial struct BSATN : SpacetimeDB.BSATN.IReadWrite<BTreeViews>
     {
-        internal static readonly SpacetimeDB.Identity.BSATN Id = new();
-        internal static readonly SpacetimeDB.BSATN.U32 X = new();
-        internal static readonly SpacetimeDB.BSATN.U32 Y = new();
-        internal static readonly SpacetimeDB.BSATN.String Faction = new();
+        internal static readonly SpacetimeDB.Identity.BSATN IdRW = new();
+        internal static readonly SpacetimeDB.BSATN.U32 XRW = new();
+        internal static readonly SpacetimeDB.BSATN.U32 YRW = new();
+        internal static readonly SpacetimeDB.BSATN.String FactionRW = new();
 
         public BTreeViews Read(System.IO.BinaryReader reader) =>
             SpacetimeDB.BSATN.IStructuralReadWrite.Read<BTreeViews>(reader);
@@ -44,10 +44,10 @@ partial struct BTreeViews : System.IEquatable<BTreeViews>, SpacetimeDB.BSATN.ISt
             registrar.RegisterType<BTreeViews>(_ => new SpacetimeDB.BSATN.AlgebraicType.Product(
                 new SpacetimeDB.BSATN.AggregateElement[]
                 {
-                    new(nameof(Id), Id.GetAlgebraicType(registrar)),
-                    new(nameof(X), X.GetAlgebraicType(registrar)),
-                    new(nameof(Y), Y.GetAlgebraicType(registrar)),
-                    new(nameof(Faction), Faction.GetAlgebraicType(registrar))
+                    new("Id", IdRW.GetAlgebraicType(registrar)),
+                    new("X", XRW.GetAlgebraicType(registrar)),
+                    new("Y", YRW.GetAlgebraicType(registrar)),
+                    new("Faction", FactionRW.GetAlgebraicType(registrar))
                 }
             ));
 
