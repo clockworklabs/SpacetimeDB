@@ -70,19 +70,36 @@ partial struct TestUnsupportedType
 
     public override int GetHashCode()
     {
-        return UnsupportedSpecialType.GetHashCode()
-            ^ UnsupportedSystemType.GetHashCode()
-            ^ UnresolvedType.GetHashCode()
-            ^ UnsupportedEnum.GetHashCode();
+        var ___hashUnsupportedSpecialType = UnsupportedSpecialType.GetHashCode();
+        var ___hashUnsupportedSystemType =
+            UnsupportedSystemType == null ? 0 : UnsupportedSystemType.GetHashCode();
+        var ___hashUnresolvedType = UnresolvedType == null ? 0 : UnresolvedType.GetHashCode();
+        var ___hashUnsupportedEnum = UnsupportedEnum.GetHashCode();
+        return ___hashUnsupportedSpecialType
+            ^ ___hashUnsupportedSystemType
+            ^ ___hashUnresolvedType
+            ^ ___hashUnsupportedEnum;
     }
 
 #nullable enable
     public bool Equals(TestUnsupportedType that)
     {
-        return UnsupportedSpecialType.Equals(that.UnsupportedSpecialType)
-            && UnsupportedSystemType.Equals(that.UnsupportedSystemType)
-            && UnresolvedType.Equals(that.UnresolvedType)
-            && UnsupportedEnum.Equals(that.UnsupportedEnum);
+        var ___eqUnsupportedSpecialType = this.UnsupportedSpecialType.Equals(
+            that.UnsupportedSpecialType
+        );
+        var ___eqUnsupportedSystemType =
+            this.UnsupportedSystemType == null
+                ? that.UnsupportedSystemType == null
+                : this.UnsupportedSystemType.Equals(that.UnsupportedSystemType);
+        var ___eqUnresolvedType =
+            this.UnresolvedType == null
+                ? that.UnresolvedType == null
+                : this.UnresolvedType.Equals(that.UnresolvedType);
+        var ___eqUnsupportedEnum = this.UnsupportedEnum.Equals(that.UnsupportedEnum);
+        return ___eqUnsupportedSpecialType
+            && ___eqUnsupportedSystemType
+            && ___eqUnresolvedType
+            && ___eqUnsupportedEnum;
     }
 
     public override bool Equals(object? that)

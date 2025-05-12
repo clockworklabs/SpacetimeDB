@@ -53,13 +53,15 @@ partial struct TestIndexIssues
 
     public override int GetHashCode()
     {
-        return SelfIndexingColumn.GetHashCode();
+        var ___hashSelfIndexingColumn = SelfIndexingColumn.GetHashCode();
+        return ___hashSelfIndexingColumn;
     }
 
 #nullable enable
     public bool Equals(TestIndexIssues that)
     {
-        return SelfIndexingColumn.Equals(that.SelfIndexingColumn);
+        var ___eqSelfIndexingColumn = this.SelfIndexingColumn.Equals(that.SelfIndexingColumn);
+        return ___eqSelfIndexingColumn;
     }
 
     public override bool Equals(object? that)

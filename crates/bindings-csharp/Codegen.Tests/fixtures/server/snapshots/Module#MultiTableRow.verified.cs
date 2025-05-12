@@ -56,13 +56,19 @@ partial struct MultiTableRow
 
     public override int GetHashCode()
     {
-        return Name.GetHashCode() ^ Foo.GetHashCode() ^ Bar.GetHashCode();
+        var ___hashName = Name == null ? 0 : Name.GetHashCode();
+        var ___hashFoo = Foo.GetHashCode();
+        var ___hashBar = Bar.GetHashCode();
+        return ___hashName ^ ___hashFoo ^ ___hashBar;
     }
 
 #nullable enable
     public bool Equals(MultiTableRow that)
     {
-        return Name.Equals(that.Name) && Foo.Equals(that.Foo) && Bar.Equals(that.Bar);
+        var ___eqName = this.Name == null ? that.Name == null : this.Name.Equals(that.Name);
+        var ___eqFoo = this.Foo.Equals(that.Foo);
+        var ___eqBar = this.Bar.Equals(that.Bar);
+        return ___eqName && ___eqFoo && ___eqBar;
     }
 
     public override bool Equals(object? that)

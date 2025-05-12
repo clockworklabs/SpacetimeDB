@@ -58,13 +58,17 @@ partial struct TestUniqueNotEquatable
 
     public override int GetHashCode()
     {
-        return UniqueField.GetHashCode() ^ PrimaryKeyField.GetHashCode();
+        var ___hashUniqueField = UniqueField.GetHashCode();
+        var ___hashPrimaryKeyField = PrimaryKeyField.GetHashCode();
+        return ___hashUniqueField ^ ___hashPrimaryKeyField;
     }
 
 #nullable enable
     public bool Equals(TestUniqueNotEquatable that)
     {
-        return UniqueField.Equals(that.UniqueField) && PrimaryKeyField.Equals(that.PrimaryKeyField);
+        var ___eqUniqueField = this.UniqueField.Equals(that.UniqueField);
+        var ___eqPrimaryKeyField = this.PrimaryKeyField.Equals(that.PrimaryKeyField);
+        return ___eqUniqueField && ___eqPrimaryKeyField;
     }
 
     public override bool Equals(object? that)

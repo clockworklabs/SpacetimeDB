@@ -58,13 +58,19 @@ partial struct BTreeMultiColumn
 
     public override int GetHashCode()
     {
-        return X.GetHashCode() ^ Y.GetHashCode() ^ Z.GetHashCode();
+        var ___hashX = X.GetHashCode();
+        var ___hashY = Y.GetHashCode();
+        var ___hashZ = Z.GetHashCode();
+        return ___hashX ^ ___hashY ^ ___hashZ;
     }
 
 #nullable enable
     public bool Equals(BTreeMultiColumn that)
     {
-        return X.Equals(that.X) && Y.Equals(that.Y) && Z.Equals(that.Z);
+        var ___eqX = this.X.Equals(that.X);
+        var ___eqY = this.Y.Equals(that.Y);
+        var ___eqZ = this.Z.Equals(that.Z);
+        return ___eqX && ___eqY && ___eqZ;
     }
 
     public override bool Equals(object? that)
