@@ -24,4 +24,3 @@ rustls.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tokio-rustls.workspace = true
-serde_json.workspace = true
