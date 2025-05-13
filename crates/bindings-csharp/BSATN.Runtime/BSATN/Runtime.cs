@@ -5,7 +5,6 @@ using System.Text;
 /// <summary>
 /// Implemented by product types marked with [SpacetimeDB.Type].
 /// All rows in SpacetimeDB are product types, so this is also implemented by all row types.
-///
 /// </summary>
 public interface IStructuralReadWrite
 {
@@ -118,6 +117,12 @@ public interface IReadWrite<T>
     AlgebraicType GetAlgebraicType(ITypeRegistrar registrar);
 }
 
+/// <summary>
+/// Present for backwards-compatibility reasons, but no longer used.
+/// The auto-generated serialization code for enum now reads/writes
+/// the tag byte directly to the wire. This avoids calling into reflective code.
+/// </summary>
+/// <typeparam name="T"></typeparam>
 public readonly struct Enum<T> : IReadWrite<T>
     where T : struct, Enum
 {
@@ -139,6 +144,9 @@ public readonly struct Enum<T> : IReadWrite<T>
         // However, enum values are guaranteed to be sequential and zero based.
         // Hence we only ever need to do an upper bound check.
         // See `SpacetimeDB.Type.ParseEnum` for the syntax analysis.
+
+        // Later note: this STILL uses reflection. We've deprecated this class entirely
+        // because of this.
         if (Convert.ToUInt64(value) >= NumVariants)
         {
             throw new ArgumentOutOfRangeException(
