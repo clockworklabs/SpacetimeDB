@@ -19,39 +19,39 @@ declare module 'spacetime:sys/v10.0' {
 
     export function register_type(name: string, type: AlgebraicType): number;
 
-    export type AlgebraicType = TypeRef | ProductType | ArrayType | PrimitiveType;
-    export type TypeRef = Readonly<{
-        type: 'ref';
-        ref: number;
-    }>;
+    type Variant<Tag extends string, Value> = Readonly<{ tag: Tag; value: Value }>;
+
+    export type option<T> = Readonly<{ some: T }> | null;
+
+    export type AlgebraicType =
+        | Variant<'Ref', number>
+        | Variant<'Product', ProductType>
+        | ArrayVariant
+        | PrimitiveType;
     export type ProductType = Readonly<{
-        type: 'product';
         elements: readonly ProductTypeElement[];
     }>;
     export type ProductTypeElement = Readonly<{
-        name: string | null;
+        name?: option<string>;
         algebraic_type: AlgebraicType;
     }>;
-    export type ArrayType = Readonly<{
-        type: 'array';
-        elem_ty: AlgebraicType;
-    }>;
-    export type PrimitiveType = Readonly<
-        | { type: 'string' }
-        | { type: 'bool' }
-        | { type: 'i8' }
-        | { type: 'u8' }
-        | { type: 'i16' }
-        | { type: 'u16' }
-        | { type: 'i32' }
-        | { type: 'u32' }
-        | { type: 'i64' }
-        | { type: 'u64' }
-        | { type: 'i128' }
-        | { type: 'u128' }
-        | { type: 'i256' }
-        | { type: 'u256' }
-        | { type: 'f32' }
-        | { type: 'f64' }
-    >;
+    type ArrayVariant = Readonly<{ tag: 'Array'; value: AlgebraicType }>;
+    export type Unit = Readonly<{}>;
+    export type PrimitiveType =
+        | Variant<'String', Unit>
+        | Variant<'Bool', Unit>
+        | Variant<'I8', Unit>
+        | Variant<'U8', Unit>
+        | Variant<'I16', Unit>
+        | Variant<'U16', Unit>
+        | Variant<'I32', Unit>
+        | Variant<'U32', Unit>
+        | Variant<'I64', Unit>
+        | Variant<'U64', Unit>
+        | Variant<'I128', Unit>
+        | Variant<'U128', Unit>
+        | Variant<'I256', Unit>
+        | Variant<'U256', Unit>
+        | Variant<'F32', Unit>
+        | Variant<'F64', Unit>;
 }
