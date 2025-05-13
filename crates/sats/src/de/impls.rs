@@ -647,6 +647,10 @@ impl FieldNameVisitor<'_> for TupleNameVisitor<'_> {
         names.extend(self.elems.iter().filter_map(|f| f.name()))
     }
 
+    fn nth_name(&self, i: usize) -> Option<&str> {
+        self.elems.get(i).and_then(|f| f.name())
+    }
+
     fn kind(&self) -> ProductKind {
         self.kind
     }
@@ -657,6 +661,10 @@ impl FieldNameVisitor<'_> for TupleNameVisitor<'_> {
             .iter()
             .position(|f| f.has_name(name))
             .ok_or_else(|| Error::unknown_field_name(name, &self))
+    }
+
+    fn visit_seq<E: Error>(self, i: usize) -> Result<Self::Output, E> {
+        Ok(i)
     }
 }
 

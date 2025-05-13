@@ -9,6 +9,7 @@ use crate::{algebraic_value::ser::ValueSerializer, bsatn, buffer::BufWriter, Alg
 use core::fmt;
 use ethnum::{i256, u256};
 pub use spacetimedb_bindings_macro::Serialize;
+use std::marker::PhantomData;
 
 /// A data format that can deserialize any data structure supported by SATs.
 ///
@@ -383,5 +384,51 @@ impl<S: SerializeSeqProduct> SerializeNamedProduct for ForwardNamedToSeqProduct<
 
     fn end(self) -> Result<Self::Ok, Self::Error> {
         self.tup.end()
+    }
+}
+
+enum Void {}
+
+pub struct Impossible<Ok, Error> {
+    void: Void,
+    marker: PhantomData<(Ok, Error)>,
+}
+
+impl<Ok, Error: self::Error> SerializeArray for Impossible<Ok, Error> {
+    type Ok = Ok;
+    type Error = Error;
+
+    fn serialize_element<T: Serialize + ?Sized>(&mut self, _element: &T) -> Result<(), Self::Error> {
+        match self.void {}
+    }
+
+    fn end(self) -> Result<Self::Ok, Self::Error> {
+        match self.void {}
+    }
+}
+
+impl<Ok, Error: self::Error> SerializeSeqProduct for Impossible<Ok, Error> {
+    type Ok = Ok;
+    type Error = Error;
+
+    fn serialize_element<T: Serialize + ?Sized>(&mut self, _element: &T) -> Result<(), Self::Error> {
+        match self.void {}
+    }
+
+    fn end(self) -> Result<Self::Ok, Self::Error> {
+        match self.void {}
+    }
+}
+
+impl<Ok, Error: self::Error> SerializeNamedProduct for Impossible<Ok, Error> {
+    type Ok = Ok;
+    type Error = Error;
+
+    fn serialize_element<T: Serialize + ?Sized>(&mut self, _name: Option<&str>, _elem: &T) -> Result<(), Self::Error> {
+        match self.void {}
+    }
+
+    fn end(self) -> Result<Self::Ok, Self::Error> {
+        match self.void {}
     }
 }

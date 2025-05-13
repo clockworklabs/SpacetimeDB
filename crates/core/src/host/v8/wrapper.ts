@@ -113,9 +113,9 @@ export const type = freeze({
 const toInternalType = Symbol('spacetimedb.toInternalType');
 
 class ArrayType<Elem extends AlgebraicType> {
-    #inner: import('spacetime:sys/v10.0').ArrayType;
+    #inner: Extract<import('spacetime:sys/v10.0').AlgebraicType, { tag: 'Array' }>;
     constructor(inner: Elem) {
-        this.#inner = freeze({ type: 'array', elem_ty: convertType(inner) });
+        this.#inner = freeze({ tag: 'Array', value: convertType(inner) });
     }
     get [toInternalType]() {
         return this.#inner;
@@ -124,12 +124,14 @@ class ArrayType<Elem extends AlgebraicType> {
 
 type ProductMap = { [s: string]: AlgebraicType };
 class ProductType<Map extends ProductMap> {
-    #inner: import('spacetime:sys/v10.0').ProductType;
+    #inner: Extract<import('spacetime:sys/v10.0').AlgebraicType, { tag: 'Product' }>;
     constructor(map: Map) {
         const elements = freeze(
-            Object.entries(map).map(([k, v]) => freeze({ name: k, algebraic_type: convertType(v) }))
+            Object.entries(map).map(([k, v]) =>
+                freeze({ name: freeze({ some: k }), algebraic_type: convertType(v) })
+            )
         );
-        this.#inner = freeze({ type: 'product', elements });
+        this.#inner = freeze({ tag: 'Product', value: freeze({ elements }) });
     }
     get [toInternalType]() {
         return this.#inner;
@@ -137,32 +139,34 @@ class ProductType<Map extends ProductMap> {
 }
 
 class TypeRef<Type extends AlgebraicType> {
-    #inner: import('spacetime:sys/v10.0').TypeRef;
+    #inner: Extract<import('spacetime:sys/v10.0').AlgebraicType, { tag: 'Ref' }>;
     constructor(ref: number) {
-        this.#inner = freeze({ type: 'ref', ref });
+        this.#inner = freeze({ tag: 'Ref', value: ref });
     }
     get [toInternalType]() {
         return this.#inner;
     }
 }
 
+export const unit = freeze({});
+
 const primitives = freeze({
-    string: freeze({ type: 'string' }),
-    bool: freeze({ type: 'bool' }),
-    i8: freeze({ type: 'i8' }),
-    u8: freeze({ type: 'u8' }),
-    i16: freeze({ type: 'i16' }),
-    u16: freeze({ type: 'u16' }),
-    i32: freeze({ type: 'i32' }),
-    u32: freeze({ type: 'u32' }),
-    i64: freeze({ type: 'i64' }),
-    u64: freeze({ type: 'u64' }),
-    i128: freeze({ type: 'i128' }),
-    u128: freeze({ type: 'u128' }),
-    i256: freeze({ type: 'i256' }),
-    u256: freeze({ type: 'u256' }),
-    f32: freeze({ type: 'f32' }),
-    f64: freeze({ type: 'f64' }),
+    string: freeze({ tag: 'String', value: unit }),
+    bool: freeze({ tag: 'Bool', value: unit }),
+    i8: freeze({ tag: 'I8', value: unit }),
+    u8: freeze({ tag: 'U8', value: unit }),
+    i16: freeze({ tag: 'I16', value: unit }),
+    u16: freeze({ tag: 'U16', value: unit }),
+    i32: freeze({ tag: 'I32', value: unit }),
+    u32: freeze({ tag: 'U32', value: unit }),
+    i64: freeze({ tag: 'I64', value: unit }),
+    u64: freeze({ tag: 'U64', value: unit }),
+    i128: freeze({ tag: 'I128', value: unit }),
+    u128: freeze({ tag: 'U128', value: unit }),
+    i256: freeze({ tag: 'I256', value: unit }),
+    u256: freeze({ tag: 'U256', value: unit }),
+    f32: freeze({ tag: 'F32', value: unit }),
+    f64: freeze({ tag: 'F64', value: unit }),
 });
 
 function convertType(ty: AlgebraicType): import('spacetime:sys/v10.0').AlgebraicType {
@@ -200,10 +204,11 @@ function convertType(ty: AlgebraicType): import('spacetime:sys/v10.0').Algebraic
                 return primitives.f32;
             case type.f64:
                 return primitives.f64;
+            default:
+                let {}: never = ty;
         }
-    } else if (ty != null) {
-        const x = ty[toInternalType];
-        if (x) return x;
+    } else if (toInternalType in ty) {
+        return ty[toInternalType];
     }
     throw new TypeError('Expected Spacetime type, got ' + ty);
 }
@@ -269,8 +274,6 @@ type AlgebraicTypeToType<T extends AlgebraicType> = [T] extends [TypeRef<infer U
     ? PrimitiveTypeToType<T>
     : never;
 
-type MakeArray<T> = T extends Array<any> ? T : never;
-
 type ArgsToType<Args extends readonly AlgebraicType[]> = {
     [i in keyof Args]: AlgebraicTypeToType<Args[i]>;
 };
@@ -289,7 +292,7 @@ export function registerReducer<const Args extends readonly AlgebraicType[]>(
     const elements = freeze(
         params.map(ty => freeze({ name: null, algebraic_type: convertType(ty) }))
     );
-    register_reducer(name, freeze({ type: 'product', elements }), func);
+    register_reducer(name, freeze({ elements }), func);
 }
 
 export function registerType<Type extends AlgebraicType>(name: string, type: Type): TypeRef<Type> {

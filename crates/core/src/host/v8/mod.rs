@@ -1,4 +1,6 @@
-use std::sync::{Arc, LazyLock};
+use std::cell::RefCell;
+use std::rc::Rc;
+use std::sync::Arc;
 
 use crate::database_logger::{BacktraceProvider, LogLevel, Record};
 use crate::db::datastore::locking_tx_datastore::MutTxId;
@@ -11,15 +13,17 @@ use super::instance_env::InstanceEnv;
 use super::module_host::{CallReducerParams, Module, ModuleInfo, ModuleInstance};
 use super::{ReducerCallResult, Scheduler, UpdateDatabaseResult};
 
+mod convert;
+mod de;
+mod ser;
 mod util;
 
 use indexmap::IndexMap;
-use itertools::Itertools;
 use spacetimedb_lib::db::raw_def::v9::{sats_name_to_scoped_name, RawModuleDefV9, RawReducerDefV9, RawTypeDefV9};
 use spacetimedb_lib::sats;
 use util::{
-    ascii_str, iter_array, module, scratch_buf, strings, throw, ErrorOrException, ExcResult, ExceptionOptionExt,
-    ExceptionThrown, ObjectExt, ThrowExceptionResultExt, TypeError,
+    ascii_str, module, scratch_buf, strings, throw, ErrorOrException, ExcResult, ExceptionOptionExt, ExceptionThrown,
+    ThrowExceptionResultExt, TypeError,
 };
 
 #[allow(unused)]
@@ -110,7 +114,7 @@ enum GlobalInternalField {
 
 // fn builtins_snapshot() -> anyhow::Result<Arc<[u8]>> {
 fn builtins_snapshot() -> anyhow::Result<(v8::OwnedIsolate, v8::Global<v8::Context>)> {
-    let isolate = v8::Isolate::snapshot_creator(Some(&EXTERN_REFS), None);
+    let isolate = v8::Isolate::snapshot_creator(Some(extern_refs().into()), None);
     let mut isolate = scopeguard::guard(isolate, |isolate| {
         // rusty_v8 panics if we don't call this when dropping isolate
         isolate.create_blob(v8::FunctionCodeHandling::Clear);
@@ -309,8 +313,13 @@ module!(
     function(register_type),
 );
 
-static EXTERN_REFS: LazyLock<v8::ExternalReferences> =
-    LazyLock::new(|| v8::ExternalReferences::new(&spacetime_sys_10_0::external_refs().collect_vec()));
+fn extern_refs() -> Vec<v8::ExternalReference> {
+    spacetime_sys_10_0::external_refs()
+        .chain(Some(v8::ExternalReference {
+            pointer: std::ptr::null_mut(),
+        }))
+        .collect()
+}
 
 fn console_log(scope: &mut v8::HandleScope<'_>, args: v8::FunctionCallbackArguments<'_>) -> ExcResult<()> {
     let logger = scope.get_slot::<Arc<Logger>>().unwrap().clone();
@@ -353,96 +362,31 @@ fn console_log(scope: &mut v8::HandleScope<'_>, args: v8::FunctionCallbackArgume
     Ok(())
 }
 
-fn js_to_type(scope: &mut v8::HandleScope<'_>, val: v8::Local<'_, v8::Value>) -> ExcResult<sats::AlgebraicType> {
-    strings!(
-        REF = "ref",
-        TYPE = "type",
-        SUM = "sum",
-        PRODUCT = "product",
-        ARRAY = "array",
-        STRING = "string",
-        BOOL = "bool",
-        I8 = "i8",
-        U8 = "u8",
-        I16 = "i16",
-        U16 = "u16",
-        I32 = "i32",
-        U32 = "u32",
-        I64 = "i64",
-        U64 = "u64",
-        I128 = "i128",
-        U128 = "u128",
-        I256 = "i256",
-        U256 = "u256",
-        F32 = "f32",
-        F64 = "f64",
-    );
+fn deserialize_js_seed<'de, T: sats::de::DeserializeSeed<'de>>(
+    scope: &mut v8::HandleScope<'de>,
+    val: v8::Local<'_, v8::Value>,
+    seed: T,
+) -> ExcResult<T::Output> {
+    let context = scope.get_current_context();
+    let key_cache = context.get_slot::<RefCell<de::KeyCache>>().unwrap_or_else(|| {
+        let cache = Rc::default();
+        context.set_slot(Rc::clone(&cache));
+        cache
+    });
+    let key_cache = &mut *key_cache.borrow_mut();
+    let de = de::Deserializer::new(scope, val, key_cache);
+    seed.deserialize(de).or_else(|x| match x {
+        de::Error::Value(val) => throw(scope, val),
+        de::Error::Exception(e) => Err(e),
+        de::Error::String(msg) => throw(scope, TypeError(msg)),
+    })
+}
 
-    let val = val.cast::<v8::Object>();
-    let ty = val.get_str(scope, &TYPE).err()?;
-
-    if ty == REF.string(scope) {
-        let r = val.get_str(scope, &REF).err()?.cast::<v8::Number>().value() as u32;
-        Ok(sats::AlgebraicType::Ref(sats::AlgebraicTypeRef(r)))
-    } else if ty == PRODUCT.string(scope) {
-        let elements = val.get_str(scope, ascii_str!("elements")).err()?.cast();
-        let elements = iter_array(scope, elements, |scope, elem| {
-            let elem = elem.cast::<v8::Object>();
-
-            let name = elem.get_str(scope, ascii_str!("name")).err()?;
-            let name = if name.is_null_or_undefined() {
-                None
-            } else {
-                Some(name.cast::<v8::String>().to_rust_string_lossy(scope).into())
-            };
-
-            let ty = elem.get_str(scope, ascii_str!("algebraic_type")).err()?;
-            let ty = js_to_type(scope, ty)?;
-
-            Ok(sats::ProductTypeElement::new(ty, name))
-        })
-        .collect::<Result<Box<[_]>, _>>()?;
-
-        Ok(sats::AlgebraicType::product(elements))
-    } else if ty == ARRAY.string(scope) {
-        let elem_ty = val.get_str(scope, ascii_str!("elem_ty")).err()?;
-        let elem_ty = js_to_type(scope, elem_ty)?;
-        Ok(sats::AlgebraicType::array(elem_ty))
-    } else if ty == STRING.string(scope) {
-        Ok(sats::AlgebraicType::String)
-    } else if ty == BOOL.string(scope) {
-        Ok(sats::AlgebraicType::Bool)
-    } else if ty == I8.string(scope) {
-        Ok(sats::AlgebraicType::I8)
-    } else if ty == U8.string(scope) {
-        Ok(sats::AlgebraicType::U8)
-    } else if ty == I16.string(scope) {
-        Ok(sats::AlgebraicType::I16)
-    } else if ty == U16.string(scope) {
-        Ok(sats::AlgebraicType::U16)
-    } else if ty == I32.string(scope) {
-        Ok(sats::AlgebraicType::I32)
-    } else if ty == U32.string(scope) {
-        Ok(sats::AlgebraicType::U32)
-    } else if ty == I64.string(scope) {
-        Ok(sats::AlgebraicType::I64)
-    } else if ty == U64.string(scope) {
-        Ok(sats::AlgebraicType::U64)
-    } else if ty == I128.string(scope) {
-        Ok(sats::AlgebraicType::I128)
-    } else if ty == U128.string(scope) {
-        Ok(sats::AlgebraicType::U128)
-    } else if ty == I256.string(scope) {
-        Ok(sats::AlgebraicType::I256)
-    } else if ty == U256.string(scope) {
-        Ok(sats::AlgebraicType::U256)
-    } else if ty == F32.string(scope) {
-        Ok(sats::AlgebraicType::F32)
-    } else if ty == F64.string(scope) {
-        Ok(sats::AlgebraicType::F64)
-    } else {
-        throw(scope, TypeError(ascii_str!("Unknown type")))
-    }
+fn deserialize_js<'de, T: sats::Deserialize<'de>>(
+    scope: &mut v8::HandleScope<'de>,
+    val: v8::Local<'_, v8::Value>,
+) -> ExcResult<T> {
+    deserialize_js_seed(scope, val, std::marker::PhantomData)
 }
 
 fn register_reducer(scope: &mut v8::HandleScope<'_>, args: v8::FunctionCallbackArguments<'_>) -> ExcResult<()> {
@@ -453,7 +397,7 @@ fn register_reducer(scope: &mut v8::HandleScope<'_>, args: v8::FunctionCallbackA
     let name = args.get(0).cast::<v8::String>();
     let params = args.get(1);
 
-    let params = js_to_type(scope, params)?.into_product().unwrap();
+    let params: sats::ProductType = deserialize_js(scope, params)?;
 
     let function = args
         .get(2)
@@ -499,7 +443,7 @@ fn register_type(scope: &mut v8::HandleScope<'_>, args: v8::FunctionCallbackArgu
     let name = name.to_rust_cow_lossy(scope, &mut buf);
     let name = sats_name_to_scoped_name(&name);
 
-    let ty = js_to_type(scope, ty)?;
+    let ty: sats::AlgebraicType = deserialize_js(scope, ty)?;
 
     let module = scope.get_slot_mut::<ModuleBuilder>().unwrap();
     let r = module.inner.typespace.add(ty);
@@ -519,7 +463,7 @@ fn v8_compile_test() {
     v8::V8::initialize();
     let program = include_str!("./test_code.js");
     let (_snapshot, module) = compile(program, Arc::new(Logger)).unwrap();
-    // dbg!(module);
+    dbg!(module);
     // dbg!(module_idx, bytes::Bytes::copy_from_slice(&snapshot));
     // panic!();
 }
