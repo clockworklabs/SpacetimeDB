@@ -6,6 +6,7 @@ use crate::host::module_host::{EventStatus, ModuleEvent, ModuleFunctionCall};
 use crate::host::{ReducerArgs, ReducerId};
 use crate::identity::Identity;
 use crate::messages::websocket::{CallReducer, ClientMessage, OneOffQuery};
+use crate::subscription::record_exec_metrics;
 use crate::worker_metrics::WORKER_METRICS;
 use spacetimedb_lib::de::serde::DeserializeWrapper;
 use spacetimedb_lib::identity::RequestId;
@@ -86,7 +87,12 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
             })
         }
         ClientMessage::SubscribeMulti(subscription) => {
-            let res = client.subscribe_multi(subscription, timer).await;
+            let res = client.subscribe_multi(subscription, timer).await.map(|metrics| {
+                if let Some(metrics) = metrics {
+                    record_exec_metrics(&WorkloadType::Subscribe, &database_identity, metrics)
+                }
+            });
+
             WORKER_METRICS
                 .request_round_trip
                 .with_label_values(&WorkloadType::Subscribe, &database_identity, "")
@@ -94,7 +100,11 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
             res.map_err(|e| (None, None, e.into()))
         }
         ClientMessage::UnsubscribeMulti(request) => {
-            let res = client.unsubscribe_multi(request, timer).await;
+            let res = client.unsubscribe_multi(request, timer).await.map(|metrics| {
+                if let Some(metrics) = metrics {
+                    record_exec_metrics(&WorkloadType::Unsubscribe, &database_identity, metrics)
+                }
+            });
             WORKER_METRICS
                 .request_round_trip
                 .with_label_values(&WorkloadType::Unsubscribe, &database_identity, "")
@@ -118,7 +128,10 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
             res.map_err(|e| (None, None, e.into()))
         }
         ClientMessage::Subscribe(subscription) => {
-            let res = client.subscribe(subscription, timer).await;
+            let res = client
+                .subscribe(subscription, timer)
+                .await
+                .map(|metrics| record_exec_metrics(&WorkloadType::Subscribe, &database_identity, metrics));
             WORKER_METRICS
                 .request_round_trip
                 .with_label_values(&WorkloadType::Subscribe, &database_identity, "")
