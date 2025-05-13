@@ -15,6 +15,7 @@ use crate::sql::ast::SchemaViewer;
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use crate::subscription::tx::DeltaTx;
 use crate::subscription::{execute_plan, record_exec_metrics};
+use crate::util::asyncify;
 use crate::util::lending_pool::{LendingPool, LentResource, PoolClosed};
 use crate::vm::check_row_limit;
 use crate::worker_metrics::WORKER_METRICS;
@@ -622,18 +623,18 @@ impl ModuleHost {
                 timestamp: Timestamp::now(),
                 arg_bsatn: Bytes::new(),
             });
-            self.inner
-                .replica_ctx()
-                .relational_db
-                .with_auto_commit(workload, |mut_tx| {
+
+            let stdb = self.inner.replica_ctx().relational_db.clone();
+            asyncify(move || {
+                stdb.with_auto_commit(workload, |mut_tx| {
                     mut_tx.insert_st_client(caller_identity, caller_connection_id)
                 })
-                .inspect_err(|e| {
-                    log::error!(
-                        "`call_identity_connected`: fallback transaction to insert into `st_client` failed: {e:#?}"
-                    );
-                })
-                .map_err(Into::into)
+            })
+            .await
+            .inspect_err(|e| {
+                log::error!("`call_identity_connected`: fallback transaction to insert into `st_client` failed: {e:#?}")
+            })
+            .map_err(Into::into)
         }
     }
 
@@ -660,7 +661,7 @@ impl ModuleHost {
         let reducer_lookup = self.info.module_def.lifecycle_reducer(Lifecycle::OnDisconnect);
 
         // A fallback transaction that deletes the client from `st_client`.
-        let fallback = || {
+        let fallback = || async {
             let reducer_name = reducer_lookup
                 .as_ref()
                 .map(|(_, def)| &*def.name)
@@ -673,24 +674,24 @@ impl ModuleHost {
                 timestamp: Timestamp::now(),
                 arg_bsatn: Bytes::new(),
             });
-            self.inner
-                .replica_ctx()
-                .relational_db
-                .with_auto_commit(workload, |mut_tx| {
-                    mut_tx.delete_st_client(caller_identity, caller_connection_id, self.info.database_identity)
+            let stdb = self.inner.replica_ctx().relational_db.clone();
+            let database_identity = self.info.database_identity;
+            asyncify(move || {
+                stdb.with_auto_commit(workload, |mut_tx| {
+                    mut_tx.delete_st_client(caller_identity, caller_connection_id, database_identity)
                 })
-                .inspect_err(|e| {
-                    log::error!(
-                        "`call_identity_disconnected`: fallback transaction to delete from `st_client` failed: {e}"
-                    );
-                })
-                .map_err(|err| {
-                    InvalidReducerArguments {
-                        err: err.into(),
-                        reducer: reducer_name.into(),
-                    }
-                    .into()
-                })
+            })
+            .await
+            .map_err(|err| {
+                log::error!(
+                    "`call_identity_disconnected`: fallback transaction to delete from `st_client` failed: {err}"
+                );
+                InvalidReducerArguments {
+                    err: err.into(),
+                    reducer: reducer_name.into(),
+                }
+                .into()
+            })
         };
 
         if let Some((reducer_id, reducer_def)) = reducer_lookup {
@@ -720,12 +721,12 @@ impl ModuleHost {
             match result {
                 Err(e) => {
                     log::error!("call_reducer_inner of client_disconnected failed: {e:#?}");
-                    fallback()
+                    fallback().await
                 }
                 Ok(ReducerCallResult {
                     outcome: ReducerOutcome::Failed(_) | ReducerOutcome::BudgetExceeded,
                     ..
-                }) => fallback(),
+                }) => fallback().await,
 
                 // If it succeeded, as mentioend above, `st_client` is already updated.
                 Ok(ReducerCallResult {
@@ -736,7 +737,7 @@ impl ModuleHost {
         } else {
             // The module doesn't define a `client_disconnected` reducer.
             // Commit a transaction to update `st_clients`.
-            fallback()
+            fallback().await
         }
     }
 
