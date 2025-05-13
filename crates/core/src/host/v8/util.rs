@@ -17,38 +17,7 @@ pub(super) fn scratch_buf<const N: usize>() -> [MaybeUninit<u8>; N] {
     [const { MaybeUninit::uninit() }; N]
 }
 
-pub(super) trait ObjectExt {
-    fn get_str<'s>(
-        &self,
-        scope: &mut v8::HandleScope<'s>,
-        key: &'static StringConst,
-    ) -> Option<v8::Local<'s, v8::Value>>;
-}
-
-impl ObjectExt for v8::Object {
-    fn get_str<'s>(
-        &self,
-        scope: &mut v8::HandleScope<'s>,
-        key: &'static StringConst,
-    ) -> Option<v8::Local<'s, v8::Value>> {
-        let key = key.string(scope);
-        self.get(scope, key.into())
-    }
-}
-
-pub(super) fn iter_array<'a, 'b, 's, T, F>(
-    scope: &'a mut v8::HandleScope<'s>,
-    array: v8::Local<'b, v8::Array>,
-    mut map: F,
-) -> impl Iterator<Item = ExcResult<T>> + use<'a, 'b, 's, T, F>
-where
-    F: FnMut(&mut v8::HandleScope<'s>, v8::Local<'s, v8::Value>) -> ExcResult<T> + 'a,
-{
-    (0..array.length()).map(move |i| {
-        let val = array.get_index(scope, i).err()?;
-        map(scope, val)
-    })
-}
+pub(super) type ValueResult<'s, T> = Result<T, v8::Local<'s, v8::Value>>;
 
 #[derive(Debug)]
 pub(super) struct ExceptionThrown;
@@ -103,12 +72,16 @@ where
 pub(super) trait ThrowExceptionResultExt<'s> {
     type T;
     fn throw(self, scope: &mut v8::HandleScope<'s>) -> Result<Self::T, ExceptionThrown>;
+    fn map_err_exc(self, scope: &mut v8::HandleScope<'s>) -> ValueResult<'s, Self::T>;
 }
 
 impl<'s, T, E: IntoException<'s>> ThrowExceptionResultExt<'s> for Result<T, E> {
     type T = T;
     fn throw(self, scope: &mut v8::HandleScope<'s>) -> Result<Self::T, ExceptionThrown> {
         self.or_else(|err| throw(scope, err))
+    }
+    fn map_err_exc(self, scope: &mut v8::HandleScope<'s>) -> ValueResult<'s, Self::T> {
+        self.map_err(|e| e.into_exception(scope))
     }
 }
 
@@ -193,9 +166,9 @@ impl_return_value!(u32, set_uint32);
 impl_return_value!(f64, set_double);
 impl_return_value!((), self, set_undefined());
 
-pub(super) fn external_synthetic_steps<'s, F>(f: F) -> v8::ExternalReference<'s>
+pub(super) fn external_synthetic_steps<F>(f: F) -> v8::ExternalReference
 where
-    F: v8::MapFnTo<v8::SyntheticModuleEvaluationSteps<'s>>,
+    for<'a> F: v8::MapFnTo<v8::SyntheticModuleEvaluationSteps<'a>>,
 {
     let pointer = f.map_fn_to() as _;
     v8::ExternalReference { pointer }
@@ -243,7 +216,7 @@ macro_rules! module {
                 Some(v8::undefined(scope).into())
             }
 
-            pub fn external_refs<'s>() -> impl Iterator<Item = v8::ExternalReference<'s>> {
+            pub fn external_refs<'s>() -> impl Iterator<Item = v8::ExternalReference> {
                 [
                     $crate::host::v8::util::external_synthetic_steps(evaluation_steps),
                     $($crate::host::v8::util::module!(@export_ref $export_kind($export_name $($export)*)),)*
