@@ -130,7 +130,8 @@ impl fmt::Debug for EnergyBalance {
 pub struct ReducerBudget(u64);
 
 impl ReducerBudget {
-    pub const DEFAULT_BUDGET: Self = ReducerBudget(1_000_000_000_000_000_000);
+    // 1.3 TeV - roughly 1 minute of wasm runtime
+    pub const DEFAULT_BUDGET: Self = ReducerBudget(1_300_000_000_000);
 
     pub const ZERO: Self = ReducerBudget(0);
     pub const MAX: Self = ReducerBudget(u64::MAX);
