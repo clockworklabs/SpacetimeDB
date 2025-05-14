@@ -12,6 +12,7 @@ use crate::identity::Identity;
 use crate::messages::control_db::Database;
 use crate::replica_context::ReplicaContext;
 use crate::sql::ast::SchemaViewer;
+use crate::sql::parser::RowLevelExpr;
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use crate::subscription::tx::DeltaTx;
 use crate::subscription::{execute_plan, record_exec_metrics};
@@ -39,6 +40,7 @@ use spacetimedb_sats::ProductValue;
 use spacetimedb_schema::auto_migrate::AutoMigrateError;
 use spacetimedb_schema::def::deserialize::ReducerArgsDeserializeSeed;
 use spacetimedb_schema::def::{ModuleDef, ReducerDef};
+use spacetimedb_schema::schema::{Schema, TableSchema};
 use spacetimedb_vm::relation::RelValue;
 use std::fmt;
 use std::sync::{Arc, Weak};
@@ -263,9 +265,6 @@ pub trait Module: Send + Sync + 'static {
 pub trait ModuleInstance: Send + 'static {
     fn trapped(&self) -> bool;
 
-    /// If the module instance's replica_ctx is uninitialized, initialize it.
-    fn init_database(&mut self, program: Program) -> anyhow::Result<Option<ReducerCallResult>>;
-
     /// Update the module instance's database to match the schema of the module instance.
     fn update_database(
         &mut self,
@@ -274,6 +273,79 @@ pub trait ModuleInstance: Send + 'static {
     ) -> anyhow::Result<UpdateDatabaseResult>;
 
     fn call_reducer(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> ReducerCallResult;
+}
+
+/// If the module instance's replica_ctx is uninitialized, initialize it.
+fn init_database(
+    replica_ctx: &ReplicaContext,
+    module_def: &ModuleDef,
+    inst: &mut dyn ModuleInstance,
+    program: Program,
+) -> anyhow::Result<Option<ReducerCallResult>> {
+    log::debug!("init database");
+    let timestamp = Timestamp::now();
+    let stdb = &*replica_ctx.relational_db;
+    let logger = replica_ctx.logger.system_logger();
+
+    let tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
+    let auth_ctx = AuthCtx::for_current(replica_ctx.database.owner_identity);
+    let (tx, ()) = stdb
+        .with_auto_rollback(tx, |tx| {
+            let mut table_defs: Vec<_> = module_def.tables().collect();
+            table_defs.sort_by(|a, b| a.name.cmp(&b.name));
+
+            for def in table_defs {
+                let table_name = &def.name;
+                logger.info(&format!("Creating table `{table_name}`"));
+                let schema = TableSchema::from_module_def(module_def, def, (), TableId::SENTINEL);
+                stdb.create_table(tx, schema)
+                    .with_context(|| format!("failed to create table {table_name}"))?;
+            }
+            // Insert the late-bound row-level security expressions.
+            for rls in module_def.row_level_security() {
+                logger.info(&format!("Creating row level security `{}`", rls.sql));
+
+                let rls = RowLevelExpr::build_row_level_expr(tx, &auth_ctx, rls)
+                    .with_context(|| format!("failed to create row-level security: `{}`", rls.sql))?;
+                let table_id = rls.def.table_id;
+                let sql = rls.def.sql.clone();
+                stdb.create_row_level_security(tx, rls.def)
+                    .with_context(|| format!("failed to create row-level security for table `{table_id}`: `{sql}`",))?;
+            }
+
+            stdb.set_initialized(tx, replica_ctx.host_type, program)?;
+
+            anyhow::Ok(())
+        })
+        .inspect_err(|e| log::error!("{e:?}"))?;
+
+    let rcr = match module_def.lifecycle_reducer(Lifecycle::Init) {
+        None => {
+            stdb.commit_tx(tx)?;
+            None
+        }
+
+        Some((reducer_id, _)) => {
+            logger.info("Invoking `init` reducer");
+            let caller_identity = replica_ctx.database.owner_identity;
+            Some(inst.call_reducer(
+                Some(tx),
+                CallReducerParams {
+                    timestamp,
+                    caller_identity,
+                    caller_connection_id: ConnectionId::ZERO,
+                    client: None,
+                    request_id: None,
+                    timer: None,
+                    reducer_id,
+                    args: ArgsTuple::nullary(),
+                },
+            ))
+        }
+    };
+
+    logger.info("Database initialized");
+    Ok(rcr)
 }
 
 pub struct CallReducerParams {
@@ -305,11 +377,6 @@ impl<T: Module> AutoReplacingModuleInstance<T> {
 impl<T: Module> ModuleInstance for AutoReplacingModuleInstance<T> {
     fn trapped(&self) -> bool {
         self.inst.trapped()
-    }
-    fn init_database(&mut self, program: Program) -> anyhow::Result<Option<ReducerCallResult>> {
-        let ret = self.inst.init_database(program);
-        self.check_trap();
-        ret
     }
     fn update_database(
         &mut self,
@@ -877,9 +944,13 @@ impl ModuleHost {
     }
 
     pub async fn init_database(&self, program: Program) -> Result<Option<ReducerCallResult>, InitDatabaseError> {
-        self.call("<init_database>", move |inst| inst.init_database(program))
-            .await?
-            .map_err(InitDatabaseError::Other)
+        let replica_ctx = self.inner.replica_ctx().clone();
+        let info = self.info.clone();
+        self.call("<init_database>", move |inst| {
+            init_database(&replica_ctx, &info.module_def, inst, program)
+        })
+        .await?
+        .map_err(InitDatabaseError::Other)
     }
 
     pub async fn update_database(
