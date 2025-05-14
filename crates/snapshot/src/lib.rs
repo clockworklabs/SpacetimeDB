@@ -31,6 +31,7 @@ use spacetimedb_fs_utils::{
 };
 use spacetimedb_lib::Identity;
 use spacetimedb_paths::server::{SnapshotDirPath, SnapshotFilePath, SnapshotsPath};
+use spacetimedb_paths::FromPathUnchecked;
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::{bsatn, de::Deserialize, ser::Serialize};
 use spacetimedb_table::{
@@ -874,8 +875,19 @@ impl SnapshotRepository {
             // Ignore entries whose lockfile still exists.
             .filter(|path| !Lockfile::lock_path(path).exists())
             // Parse each entry's TxOffset from the file name; ignore unparseable.
+            // Also ignore if the snapshot file doesn't exists.
+            // This can happen on incomplete transfers, or if something went
+            // wrong during creation.
             // Item = TxOffset
-            .filter_map(|path| TxOffset::from_str_radix(path.file_stem()?.to_str()?, 10).ok()))
+            .filter_map(|path| {
+                let offset = TxOffset::from_str_radix(path.file_stem()?.to_str()?, 10).ok()?;
+                let snapshot_file = SnapshotDirPath::from_path_unchecked(path).snapshot_file(offset);
+                if !snapshot_file.0.exists() {
+                    None
+                } else {
+                    Some(offset)
+                }
+            }))
     }
 
     /// Return the `TxOffset` of the highest-offset complete snapshot in the repository.
