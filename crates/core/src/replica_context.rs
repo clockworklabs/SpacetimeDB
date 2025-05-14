@@ -20,6 +20,22 @@ pub struct ReplicaContext {
 }
 
 impl ReplicaContext {
+    pub fn new(
+        database: Database,
+        replica_id: u64,
+        logger: Arc<DatabaseLogger>,
+        subscriptions: ModuleSubscriptions,
+        relational_db: Arc<RelationalDB>,
+    ) -> Self {
+        Self {
+            database,
+            replica_id,
+            logger,
+            subscriptions,
+            relational_db,
+        }
+    }
+
     /// The number of bytes on disk occupied by the database's durability layer.
     ///
     /// An in-memory database will return `Ok(0)`.

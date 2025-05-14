@@ -160,8 +160,7 @@ fn index_row_est(tx: &Tx, table_id: TableId, cols: &ColList) -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use crate::db::relational_db::tests_utils::insert;
-    use crate::execution_context::Workload;
+    use crate::db::relational_db::tests_utils::{begin_tx, insert, with_auto_commit};
     use crate::sql::ast::SchemaViewer;
     use crate::{
         db::relational_db::{tests_utils::TestDB, RelationalDB},
@@ -181,7 +180,7 @@ mod tests {
     }
 
     fn num_rows_for(db: &RelationalDB, sql: &str) -> u64 {
-        let tx = db.begin_tx(Workload::ForTests);
+        let tx = begin_tx(db);
         match &*compile_sql(db, &AuthCtx::for_testing(), &tx, sql).expect("Failed to compile sql") {
             [CrudExpr::Query(expr)] => num_rows(&tx, expr),
             exprs => panic!("unexpected result from compilation: {:#?}", exprs),
@@ -191,7 +190,7 @@ mod tests {
     /// Using the new query plan
     fn new_row_estimate(db: &RelationalDB, sql: &str) -> u64 {
         let auth = AuthCtx::for_testing();
-        let tx = db.begin_tx(Workload::ForTests);
+        let tx = begin_tx(db);
         let tx = SchemaViewer::new(&tx, &auth);
 
         compile_subscription(sql, &tx, &auth)
@@ -215,7 +214,7 @@ mod tests {
             .create_table_for_test("T", &["a", "b"].map(|n| (n, AlgebraicType::U64)), indexes)
             .expect("Failed to create table");
 
-        db.with_auto_commit(Workload::ForTests, |tx| -> Result<(), DBError> {
+        with_auto_commit(db, |tx| -> Result<(), DBError> {
             for i in 0..NUM_T_ROWS {
                 insert(db, tx, table_id, &product![i % NDV_T, i]).expect("failed to insert into table");
             }
@@ -231,7 +230,7 @@ mod tests {
             .create_table_for_test("S", &["a", "c"].map(|n| (n, AlgebraicType::U64)), indexes)
             .expect("Failed to create table");
 
-        db.with_auto_commit(Workload::ForTests, |tx| -> Result<(), DBError> {
+        with_auto_commit(db, |tx| -> Result<(), DBError> {
             for i in 0..NUM_S_ROWS {
                 insert(db, tx, rhs, &product![i, i]).expect("failed to insert into table");
             }

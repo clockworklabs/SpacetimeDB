@@ -9,7 +9,7 @@ use spacetimedb_sats::bsatn;
 /// Represents the context under which a database runtime method is executed.
 /// In particular it provides details about the currently executing txn to runtime operations.
 /// More generally it acts as a container for information that database operations may require to function correctly.
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub struct ExecutionContext {
     /// The identity of the database on which a transaction is being executed.
     pub database_identity: Identity,
@@ -94,7 +94,7 @@ impl TryFrom<&txdata::Inputs> for ReducerContext {
 /// Used as constructor helper for [ExecutionContext].
 #[derive(Clone)]
 pub enum Workload {
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test"))]
     ForTests,
     Reducer(ReducerContext),
     Sql,
@@ -104,11 +104,26 @@ pub enum Workload {
     Internal,
 }
 
+impl Workload {
+    pub fn workload_type(&self) -> WorkloadType {
+        match self {
+            #[cfg(any(test, feature = "test"))]
+            Self::ForTests => WorkloadType::Internal,
+            Self::Reducer(_) => WorkloadType::Reducer,
+            Self::Sql => WorkloadType::Sql,
+            Self::Subscribe => WorkloadType::Subscribe,
+            Self::Unsubscribe => WorkloadType::Unsubscribe,
+            Self::Update => WorkloadType::Update,
+            Self::Internal => WorkloadType::Internal,
+        }
+    }
+}
+
 /// Classifies a transaction according to its workload.
 /// A transaction can be executing a reducer.
 /// It can be used to satisfy a one-off sql query or subscription.
 /// It can also be an internal operation that is not associated with a reducer or sql request.
-#[derive(Clone, Copy, Display, Hash, PartialEq, Eq, strum::AsRefStr)]
+#[derive(Clone, Copy, Display, Hash, PartialEq, Eq, strum::AsRefStr, enum_map::Enum)]
 pub enum WorkloadType {
     Reducer,
     Sql,
@@ -116,21 +131,6 @@ pub enum WorkloadType {
     Unsubscribe,
     Update,
     Internal,
-}
-
-impl From<Workload> for WorkloadType {
-    fn from(value: Workload) -> Self {
-        match value {
-            #[cfg(test)]
-            Workload::ForTests => Self::Internal,
-            Workload::Reducer(_) => Self::Reducer,
-            Workload::Sql => Self::Sql,
-            Workload::Subscribe => Self::Subscribe,
-            Workload::Unsubscribe => Self::Unsubscribe,
-            Workload::Update => Self::Update,
-            Workload::Internal => Self::Internal,
-        }
-    }
 }
 
 impl Default for WorkloadType {
@@ -150,53 +150,17 @@ impl ExecutionContext {
     }
 
     /// Returns an [ExecutionContext] with the provided [Workload] and empty metrics.
-    pub(crate) fn with_workload(database_identity: Identity, workload: Workload) -> Self {
+    pub(crate) fn with_workload(database: Identity, workload: Workload) -> Self {
         match workload {
-            #[cfg(test)]
-            Workload::ForTests => Self::default(),
-            Workload::Internal => Self::internal(database_identity),
-            Workload::Reducer(ctx) => Self::reducer(database_identity, ctx),
-            Workload::Sql => Self::sql(database_identity),
-            Workload::Subscribe => Self::subscribe(database_identity),
-            Workload::Unsubscribe => Self::unsubscribe(database_identity),
-            Workload::Update => Self::incremental_update(database_identity),
+            #[cfg(any(test, feature = "test"))]
+            Workload::ForTests => Self::new(database, None, WorkloadType::Internal),
+            Workload::Internal => Self::new(database, None, WorkloadType::Internal),
+            Workload::Reducer(ctx) => Self::new(database, Some(ctx), WorkloadType::Reducer),
+            Workload::Sql => Self::new(database, None, WorkloadType::Sql),
+            Workload::Subscribe => Self::new(database, None, WorkloadType::Subscribe),
+            Workload::Unsubscribe => Self::new(database, None, WorkloadType::Unsubscribe),
+            Workload::Update => Self::new(database, None, WorkloadType::Update),
         }
-    }
-
-    /// Returns an [ExecutionContext] for a reducer transaction.
-    pub fn reducer(database_identity: Identity, ctx: ReducerContext) -> Self {
-        Self::new(database_identity, Some(ctx), WorkloadType::Reducer)
-    }
-
-    /// Returns an [ExecutionContext] for a one-off sql query.
-    pub fn sql(database_identity: Identity) -> Self {
-        Self::new(database_identity, None, WorkloadType::Sql)
-    }
-
-    /// Returns an [ExecutionContext] for an initial subscribe call.
-    pub fn subscribe(database: Identity) -> Self {
-        Self::new(database, None, WorkloadType::Subscribe)
-    }
-
-    /// Returns an [ExecutionContext] for an unsubscribe call.
-    pub fn unsubscribe(database: Identity) -> Self {
-        Self::new(database, None, WorkloadType::Unsubscribe)
-    }
-
-    /// Returns an [ExecutionContext] for a subscription update.
-    pub fn incremental_update(database: Identity) -> Self {
-        Self::new(database, None, WorkloadType::Update)
-    }
-
-    /// Returns an [ExecutionContext] for an incremental subscription update,
-    /// where this update is the result of a reducer mutation.
-    pub fn incremental_update_for_reducer(database: Identity, ctx: ReducerContext) -> Self {
-        Self::new(database, Some(ctx), WorkloadType::Update)
-    }
-
-    /// Returns an [ExecutionContext] for an internal database operation.
-    pub fn internal(database_identity: Identity) -> Self {
-        Self::new(database_identity, None, WorkloadType::Internal)
     }
 
     /// Returns the identity of the database on which we are operating.
@@ -209,6 +173,12 @@ impl ExecutionContext {
     #[inline]
     pub fn reducer_name(&self) -> &str {
         self.reducer.as_ref().map(|ctx| ctx.name.as_str()).unwrap_or_default()
+    }
+
+    /// If this is a reducer context, returns the name of the reducer.
+    #[inline]
+    pub fn into_reducer_name(self) -> String {
+        self.reducer.map(|ctx| ctx.name).unwrap_or_default()
     }
 
     /// If this is a reducer context, returns the full reducer metadata.
