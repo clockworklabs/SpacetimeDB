@@ -156,6 +156,8 @@ where
         .par_iter()
         .flat_map_iter(|plan| plan.plans_fragments().map(|fragment| (plan.sql(), fragment)))
         .filter(|(_, plan)| {
+            // Since subscriptions only support selects and inner joins,
+            // we filter out any plans that read from an empty table.
             plan.table_ids()
                 .all(|table_id| tx.table(table_id).is_some_and(|t| t.row_count > 0))
         })
