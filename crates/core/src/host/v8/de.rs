@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use spacetimedb_sats::{de, i256, u256};
 
 use super::convert::{cast, FromValue};
-use super::{scratch_buf, ExceptionOptionExt, ExceptionThrown, ThrowExceptionResultExt};
+use super::util::{scratch_buf, ExceptionOptionExt, ExceptionThrown, IntoExceptionResultExt, Throwable, TypeError};
 
 pub(super) struct Deserializer<'a, 's> {
     common: DeserializerCommon<'a, 's>,
@@ -78,6 +78,16 @@ pub(super) enum Error<'s> {
     Value(v8::Local<'s, v8::Value>),
     Exception(ExceptionThrown),
     String(String),
+}
+
+impl<'s> Throwable for Error<'s> {
+    fn throw(self, scope: &mut v8::HandleScope<'_>) -> ExceptionThrown {
+        match self {
+            Error::Value(exc) => exc.throw(scope),
+            Error::Exception(thrown) => thrown,
+            Error::String(s) => TypeError(s).throw(scope),
+        }
+    }
 }
 
 impl<'s> From<ExceptionThrown> for Error<'s> {
