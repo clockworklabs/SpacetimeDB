@@ -22,12 +22,14 @@ struct Args {
 #[derive(clap::ValueEnum, Copy, Clone)]
 enum HostType {
     Wasm,
+    Js,
 }
 
 impl From<HostType> for control_db::HostType {
     fn from(x: HostType) -> Self {
         match x {
             HostType::Wasm => control_db::HostType::Wasm,
+            HostType::Js => control_db::HostType::Js,
         }
     }
 }

@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::Arc;
+use std::sync::{Arc, Once};
 
 use crate::database_logger::{BacktraceProvider, LogLevel, Record};
 use crate::db::datastore::locking_tx_datastore::MutTxId;
@@ -19,40 +19,65 @@ mod ser;
 mod util;
 
 use indexmap::IndexMap;
+use spacetimedb_client_api_messages::energy::EnergyQuanta;
 use spacetimedb_lib::db::raw_def::v9::{sats_name_to_scoped_name, RawModuleDefV9, RawReducerDefV9, RawTypeDefV9};
 use spacetimedb_lib::sats;
 use util::{
     ascii_str, module, scratch_buf, strings, throw, ErrorOrException, ExcResult, ExceptionOptionExt, ExceptionThrown,
-    ThrowExceptionResultExt, TypeError,
+    ThrowableResultExt, TypeError,
 };
 
-#[allow(unused)]
+pub struct V8Runtime {
+    _priv: (),
+}
+
+impl V8Runtime {
+    pub fn new() -> Self {
+        static V8_INIT: Once = Once::new();
+        V8_INIT.call_once(|| {
+            let platform = v8::new_default_platform(0, false).make_shared();
+            v8::V8::initialize_platform(platform);
+            v8::V8::initialize();
+        });
+        Self { _priv: () }
+    }
+
+    pub fn make_actor(&self, mcc: ModuleCreationContext<'_>) -> anyhow::Result<impl Module> {
+        let program = std::str::from_utf8(&mcc.program.bytes)?;
+        let (snapshot, mut module_builder) = compile(program, Arc::new(Logger))?;
+        let info = ModuleInfo::new(
+            module_builder.inner.try_into()?,
+            mcc.replica_ctx.owner_identity,
+            mcc.replica_ctx.database_identity,
+            mcc.program.hash,
+            // TODO:
+            tokio::sync::broadcast::channel(0).0,
+            mcc.replica_ctx.subscriptions.clone(),
+        );
+        module_builder.reducers.shrink_to_fit();
+        Ok(JsModule {
+            replica_context: mcc.replica_ctx,
+            scheduler: mcc.scheduler,
+            info,
+            energy_monitor: mcc.energy_monitor,
+            snapshot,
+            reducers: Arc::new(module_builder.reducers),
+        })
+    }
+}
+
 struct V8InstanceEnv {
     instance_env: InstanceEnv,
 }
 
-#[allow(unused)]
+#[derive(Clone)]
 pub struct JsModule {
     replica_context: Arc<ReplicaContext>,
     scheduler: Scheduler,
     info: Arc<ModuleInfo>,
     energy_monitor: Arc<dyn EnergyMonitor>,
     snapshot: Arc<[u8]>,
-    module_builder: ModuleBuilder,
-}
-
-#[allow(unused)]
-pub fn compile_real(mcc: ModuleCreationContext) -> anyhow::Result<JsModule> {
-    let program = std::str::from_utf8(&mcc.program.bytes)?;
-    let (snapshot, module_builder) = compile(program, Arc::new(Logger))?;
-    Ok(JsModule {
-        replica_context: mcc.replica_ctx,
-        scheduler: mcc.scheduler,
-        info: todo!(),
-        energy_monitor: mcc.energy_monitor,
-        snapshot,
-        module_builder,
-    })
+    reducers: Arc<IndexMap<String, usize>>,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -362,24 +387,24 @@ fn console_log(scope: &mut v8::HandleScope<'_>, args: v8::FunctionCallbackArgume
     Ok(())
 }
 
+fn get_or_create_key_cache(scope: &mut v8::HandleScope<'_>) -> Rc<RefCell<de::KeyCache>> {
+    let context = scope.get_current_context();
+    context.get_slot::<RefCell<de::KeyCache>>().unwrap_or_else(|| {
+        let cache = Rc::default();
+        context.set_slot(Rc::clone(&cache));
+        cache
+    })
+}
+
 fn deserialize_js_seed<'de, T: sats::de::DeserializeSeed<'de>>(
     scope: &mut v8::HandleScope<'de>,
     val: v8::Local<'_, v8::Value>,
     seed: T,
 ) -> ExcResult<T::Output> {
-    let context = scope.get_current_context();
-    let key_cache = context.get_slot::<RefCell<de::KeyCache>>().unwrap_or_else(|| {
-        let cache = Rc::default();
-        context.set_slot(Rc::clone(&cache));
-        cache
-    });
+    let key_cache = get_or_create_key_cache(scope);
     let key_cache = &mut *key_cache.borrow_mut();
     let de = de::Deserializer::new(scope, val, key_cache);
-    seed.deserialize(de).or_else(|x| match x {
-        de::Error::Value(val) => throw(scope, val),
-        de::Error::Exception(e) => Err(e),
-        de::Error::String(msg) => throw(scope, TypeError(msg)),
-    })
+    seed.deserialize(de).throw(scope)
 }
 
 fn deserialize_js<'de, T: sats::Deserialize<'de>>(
@@ -387,6 +412,15 @@ fn deserialize_js<'de, T: sats::Deserialize<'de>>(
     val: v8::Local<'_, v8::Value>,
 ) -> ExcResult<T> {
     deserialize_js_seed(scope, val, std::marker::PhantomData)
+}
+
+fn serialize_to_js<'s, T: sats::Serialize>(
+    scope: &mut v8::HandleScope<'s>,
+    value: &T,
+) -> ExcResult<v8::Local<'s, v8::Value>> {
+    let key_cache = get_or_create_key_cache(scope);
+    let key_cache = &mut *key_cache.borrow_mut();
+    value.serialize(ser::Serializer::new(scope, key_cache)).throw(scope)
 }
 
 fn register_reducer(scope: &mut v8::HandleScope<'_>, args: v8::FunctionCallbackArguments<'_>) -> ExcResult<()> {
@@ -458,9 +492,6 @@ fn register_type(scope: &mut v8::HandleScope<'_>, args: v8::FunctionCallbackArgu
 
 #[test]
 fn v8_compile_test() {
-    let platform = v8::new_default_platform(0, false).make_shared();
-    v8::V8::initialize_platform(platform);
-    v8::V8::initialize();
     let program = include_str!("./test_code.js");
     let (_snapshot, module) = compile(program, Arc::new(Logger)).unwrap();
     dbg!(module);
@@ -468,7 +499,6 @@ fn v8_compile_test() {
     // panic!();
 }
 
-#[allow(unused)]
 impl Module for JsModule {
     type Instance = JsInstance;
 
@@ -495,16 +525,14 @@ impl Module for JsModule {
     }
 }
 
-pub struct JsInstance {}
+pub struct JsInstance {
+    module: JsModule,
+}
 
 #[allow(unused)]
 impl ModuleInstance for JsInstance {
     fn trapped(&self) -> bool {
         false
-    }
-
-    fn init_database(&mut self, program: Program) -> anyhow::Result<Option<ReducerCallResult>> {
-        todo!()
     }
 
     fn update_database(
@@ -516,6 +544,65 @@ impl ModuleInstance for JsInstance {
     }
 
     fn call_reducer(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> ReducerCallResult {
-        todo!()
+        let mut isolate = v8::Isolate::new(
+            v8::CreateParams::default()
+                .external_references(extern_refs().into())
+                // have to reallocate :(
+                .snapshot_blob(self.module.snapshot.to_vec().into()),
+        );
+        let reducer_function_idx = self.module.reducers[params.reducer_id.idx()];
+        let module_def = &self.module.info.module_def;
+        let reducer_def = module_def.reducer_by_id(params.reducer_id);
+        let start = std::time::Instant::now();
+        let result = {
+            let mut scope = &mut v8::HandleScope::new(&mut isolate);
+            let mut context = v8::Context::from_snapshot(scope, 0, v8::ContextOptions::default()).unwrap();
+            let mut scope = &mut v8::ContextScope::new(scope, context);
+            let func = scope
+                .get_context_data_from_snapshot_once::<v8::Function>(reducer_function_idx)
+                .unwrap();
+            let args = module_def
+                .typespace()
+                .with_type(&reducer_def.params)
+                .with_value(&params.args.tuple);
+            catch_exception(scope, |scope| {
+                let args = args
+                    .elements()
+                    .map(|x| serialize_to_js(scope, &x))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let recv = v8::undefined(scope).into();
+                func.call(scope, recv, &args).err()?;
+                Ok(())
+            })
+        };
+        let execution_duration = start.elapsed();
+        let outcome = match result {
+            Ok(()) => super::ReducerOutcome::Committed,
+            Err(e) => super::ReducerOutcome::Failed(anyhow::Error::from(e).to_string()),
+        };
+        ReducerCallResult {
+            outcome,
+            energy_used: EnergyQuanta::ZERO,
+            execution_duration,
+        }
     }
+}
+
+fn _request_interrupt<F>(handle: &v8::IsolateHandle, f: F) -> bool
+where
+    F: FnOnce(&mut v8::Isolate),
+{
+    unsafe extern "C" fn cb<F>(isolate: &mut v8::Isolate, data: *mut std::ffi::c_void)
+    where
+        F: FnOnce(&mut v8::Isolate),
+    {
+        let f = unsafe { Box::<F>::from_raw(data.cast()) };
+        f(isolate)
+    }
+    let data = Box::into_raw(Box::new(f));
+    let already_destroyed = handle.request_interrupt(cb::<F>, data.cast());
+    if already_destroyed {
+        drop(unsafe { Box::from_raw(data) });
+    }
+    already_destroyed
 }
