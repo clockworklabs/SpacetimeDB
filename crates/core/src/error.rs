@@ -5,7 +5,9 @@ use std::sync::{MutexGuard, PoisonError};
 
 use enum_as_inner::EnumAsInner;
 use hex::FromHexError;
+use spacetimedb_commitlog::repo::TxOffset;
 use spacetimedb_expr::errors::TypingError;
+use spacetimedb_lib::Identity;
 use spacetimedb_sats::AlgebraicType;
 use spacetimedb_schema::error::ValidationErrors;
 use spacetimedb_snapshot::SnapshotError;
@@ -236,6 +238,8 @@ pub enum DBError {
         error: Box<DBError>,
         sql: Box<str>,
     },
+    #[error(transparent)]
+    RestoreSnapshot(#[from] RestoreSnapshotError),
 }
 
 impl From<bflatn_to::Error> for DBError {
@@ -408,4 +412,18 @@ impl From<ErrorVm> for NodesError {
     fn from(err: ErrorVm) -> Self {
         DBError::from(err).into()
     }
+}
+
+#[derive(Debug, Error)]
+pub enum RestoreSnapshotError {
+    #[error("Snapshot has incorrect database_identity: expected {expected} but found {actual}")]
+    IdentityMismatch { expected: Identity, actual: Identity },
+    #[error("Failed to restore datastore from snapshot")]
+    Datastore(#[source] Box<DBError>),
+    #[error("Failed to read snapshot")]
+    Snapshot(#[from] Box<SnapshotError>),
+    #[error("Failed to bootstrap datastore without snapshot")]
+    Bootstrap(#[source] Box<DBError>),
+    #[error("No connected snapshot found, commitlog starts at {min_commitlog_offset}")]
+    NoConnectedSnapshot { min_commitlog_offset: TxOffset },
 }
