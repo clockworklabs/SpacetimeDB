@@ -20,6 +20,7 @@ use spacetimedb_client_api_messages::websocket::{
     UnsubscribeMulti, WebsocketFormat,
 };
 use spacetimedb_lib::identity::RequestId;
+use spacetimedb_lib::metrics::ExecutionMetrics;
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::AbortHandle;
 
@@ -321,7 +322,11 @@ impl ClientConnection {
         .unwrap() // TODO: is unwrapping right here?
     }
 
-    pub async fn subscribe_multi(&self, request: SubscribeMulti, timer: Instant) -> Result<(), DBError> {
+    pub async fn subscribe_multi(
+        &self,
+        request: SubscribeMulti,
+        timer: Instant,
+    ) -> Result<Option<ExecutionMetrics>, DBError> {
         let me = self.clone();
         tokio::task::spawn_blocking(move || {
             me.module
@@ -332,7 +337,11 @@ impl ClientConnection {
         .unwrap() // TODO: is unwrapping right here?
     }
 
-    pub async fn unsubscribe_multi(&self, request: UnsubscribeMulti, timer: Instant) -> Result<(), DBError> {
+    pub async fn unsubscribe_multi(
+        &self,
+        request: UnsubscribeMulti,
+        timer: Instant,
+    ) -> Result<Option<ExecutionMetrics>, DBError> {
         let me = self.clone();
         tokio::task::spawn_blocking(move || {
             me.module
@@ -343,7 +352,7 @@ impl ClientConnection {
         .unwrap() // TODO: is unwrapping right here?
     }
 
-    pub async fn subscribe(&self, subscription: Subscribe, timer: Instant) -> Result<(), DBError> {
+    pub async fn subscribe(&self, subscription: Subscribe, timer: Instant) -> Result<ExecutionMetrics, DBError> {
         let me = self.clone();
         tokio::task::spawn_blocking(move || {
             me.module
