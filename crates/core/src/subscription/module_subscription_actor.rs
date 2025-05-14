@@ -1850,19 +1850,11 @@ mod tests {
         let db = relational_db()?;
         let subs = module_subscriptions(db.clone());
 
-        // Create t(i: u64, a: u64)
-        db.create_table_for_test(
-            "t",
-            &[("id", AlgebraicType::U64), ("a", AlgebraicType::U64)],
-            &[0.into()],
-        )?;
-
-        // Create s(i: u64, a: u64)
-        let s_id = db.create_table_for_test(
-            "s",
-            &[("id", AlgebraicType::U64), ("a", AlgebraicType::U64)],
-            &[0.into()],
-        )?;
+        let schema = &[("id", AlgebraicType::U64), ("a", AlgebraicType::U64)];
+        let indices = &[0.into()];
+        // Create tables `t` and `s` with `(i: u64, a: u64)`.
+        db.create_table_for_test("t", schema, indices)?;.
+        db.create_table_for_test("s", schema, indices)?;
 
         // Insert one row into `s`, but leave `t` empty.
         commit_tx(&db, &subs, [], [(s_id, product![0u64, 0u64])])?;
