@@ -819,10 +819,21 @@ impl From<StRowLevelSecurityRow> for RowLevelSecuritySchema {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ModuleKind(u8);
 
-/// The [`ModuleKind`] of WASM-based modules.
-///
-/// This is currently the only known kind.
-pub const WASM_MODULE: ModuleKind = ModuleKind(0);
+impl ModuleKind {
+    /// The [`ModuleKind`] of WASM-based modules.
+    pub const WASM: ModuleKind = ModuleKind(0);
+    /// The [`ModuleKind`] of JS modules.
+    pub const JS: ModuleKind = ModuleKind(1);
+}
+
+impl From<crate::messages::control_db::HostType> for ModuleKind {
+    fn from(host_type: crate::messages::control_db::HostType) -> Self {
+        match host_type {
+            crate::messages::control_db::HostType::Wasm => Self::WASM,
+            crate::messages::control_db::HostType::Js => Self::JS,
+        }
+    }
+}
 
 impl_serialize!([] ModuleKind, (self, ser) => self.0.serialize(ser));
 impl_deserialize!([] ModuleKind, de => u8::deserialize(de).map(Self));

@@ -60,66 +60,84 @@ impl<T> ExceptionOptionExt for Option<T> {
     }
 }
 
-pub(super) fn throw<'s, T, E>(scope: &mut v8::HandleScope<'s>, err: E) -> Result<T, ExceptionThrown>
+pub(super) fn throw<T, E>(scope: &mut v8::HandleScope<'_>, err: E) -> Result<T, ExceptionThrown>
 where
-    E: IntoException<'s>,
+    E: Throwable,
 {
-    let exc = err.into_exception(scope);
-    scope.throw_exception(exc);
-    Err(ExceptionThrown)
+    Err(err.throw(scope))
 }
 
-pub(super) trait ThrowExceptionResultExt<'s> {
+pub(super) trait ThrowableResultExt {
     type T;
-    fn throw(self, scope: &mut v8::HandleScope<'s>) -> Result<Self::T, ExceptionThrown>;
-    fn map_err_exc(self, scope: &mut v8::HandleScope<'s>) -> ValueResult<'s, Self::T>;
+    fn throw(self, scope: &mut v8::HandleScope<'_>) -> Result<Self::T, ExceptionThrown>;
 }
 
-impl<'s, T, E: IntoException<'s>> ThrowExceptionResultExt<'s> for Result<T, E> {
+pub(super) trait IntoExceptionResultExt {
+    type T;
+    fn map_err_exc<'s>(self, scope: &mut v8::HandleScope<'s>) -> ValueResult<'s, Self::T>;
+}
+
+impl<T, E: Throwable> ThrowableResultExt for Result<T, E> {
     type T = T;
-    fn throw(self, scope: &mut v8::HandleScope<'s>) -> Result<Self::T, ExceptionThrown> {
-        self.or_else(|err| throw(scope, err))
+    fn throw(self, scope: &mut v8::HandleScope<'_>) -> Result<Self::T, ExceptionThrown> {
+        self.map_err(|err| err.throw(scope))
     }
-    fn map_err_exc(self, scope: &mut v8::HandleScope<'s>) -> ValueResult<'s, Self::T> {
+}
+
+impl<T, E: IntoException> IntoExceptionResultExt for Result<T, E> {
+    type T = T;
+    fn map_err_exc<'s>(self, scope: &mut v8::HandleScope<'s>) -> ValueResult<'s, Self::T> {
         self.map_err(|e| e.into_exception(scope))
     }
 }
 
-pub(super) trait IntoException<'s> {
-    fn into_exception(self, scope: &mut v8::HandleScope<'s>) -> v8::Local<'s, v8::Value>;
+pub(super) trait IntoException {
+    fn into_exception<'s>(self, scope: &mut v8::HandleScope<'s>) -> v8::Local<'s, v8::Value>;
 }
 
-impl<'s> IntoException<'s> for v8::Local<'s, v8::Value> {
-    fn into_exception(self, _scope: &mut v8::HandleScope<'s>) -> v8::Local<'s, v8::Value> {
-        self
+impl IntoException for v8::Local<'_, v8::Value> {
+    fn into_exception<'s>(self, scope: &mut v8::HandleScope<'s>) -> v8::Local<'s, v8::Value> {
+        v8::Local::new(scope, self)
+    }
+}
+
+pub(super) trait Throwable {
+    fn throw(self, scope: &mut v8::HandleScope<'_>) -> ExceptionThrown;
+}
+
+impl<T: IntoException> Throwable for T {
+    fn throw(self, scope: &mut v8::HandleScope<'_>) -> ExceptionThrown {
+        let exception = self.into_exception(scope);
+        scope.throw_exception(exception);
+        ExceptionThrown
     }
 }
 
 #[derive(Copy, Clone)]
 pub struct TypeError<M>(pub M);
 
-impl<'s, M: IntoJsString<'s>> IntoException<'s> for TypeError<M> {
-    fn into_exception(self, scope: &mut v8::HandleScope<'s>) -> v8::Local<'s, v8::Value> {
+impl<M: IntoJsString> IntoException for TypeError<M> {
+    fn into_exception<'s>(self, scope: &mut v8::HandleScope<'s>) -> v8::Local<'s, v8::Value> {
         let msg = self.0.into_string(scope);
         v8::Exception::type_error(scope, msg)
     }
 }
 
-pub(super) trait IntoJsString<'s> {
-    fn into_string(self, scope: &mut v8::HandleScope<'s>) -> v8::Local<'s, v8::String>;
+pub(super) trait IntoJsString {
+    fn into_string<'s>(self, scope: &mut v8::HandleScope<'s>) -> v8::Local<'s, v8::String>;
 }
-impl<'s> IntoJsString<'s> for v8::Local<'s, v8::String> {
-    fn into_string(self, _scope: &mut v8::HandleScope<'s>) -> v8::Local<'s, v8::String> {
-        self
+impl IntoJsString for v8::Local<'_, v8::String> {
+    fn into_string<'s>(self, scope: &mut v8::HandleScope<'s>) -> v8::Local<'s, v8::String> {
+        v8::Local::new(scope, self)
     }
 }
-impl<'s> IntoJsString<'s> for String {
-    fn into_string(self, scope: &mut v8::HandleScope<'s>) -> v8::Local<'s, v8::String> {
+impl IntoJsString for String {
+    fn into_string<'s>(self, scope: &mut v8::HandleScope<'s>) -> v8::Local<'s, v8::String> {
         v8::String::new(scope, &self).unwrap()
     }
 }
-impl<'s> IntoJsString<'s> for &'static StringConst {
-    fn into_string(self, scope: &mut v8::HandleScope<'s>) -> v8::Local<'s, v8::String> {
+impl IntoJsString for &'static StringConst {
+    fn into_string<'s>(self, scope: &mut v8::HandleScope<'s>) -> v8::Local<'s, v8::String> {
         self.string(scope)
     }
 }

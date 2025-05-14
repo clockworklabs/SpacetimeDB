@@ -1,4 +1,4 @@
-use super::util::{IntoException, ThrowExceptionResultExt, TypeError, ValueResult};
+use super::util::{IntoException, IntoExceptionResultExt, TypeError, ValueResult};
 use num_traits::ToPrimitive;
 use spacetimedb_sats::{i256, u256};
 

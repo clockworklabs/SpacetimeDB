@@ -10,6 +10,10 @@ pub(super) struct Serializer<'a, 's> {
 }
 
 impl<'a, 's> Serializer<'a, 's> {
+    pub fn new(scope: &'a mut v8::HandleScope<'s>, key_cache: &'a mut KeyCache) -> Self {
+        Self { scope, key_cache }
+    }
+
     fn reborrow(&mut self) -> Serializer<'_, 's> {
         Serializer {
             scope: self.scope,
