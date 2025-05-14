@@ -39,7 +39,10 @@ use super::{
     layout::MIN_ROW_SIZE,
     var_len::{is_granule_offset_aligned, VarLenGranule, VarLenGranuleHeader, VarLenMembers, VarLenRef},
 };
-use crate::{fixed_bit_set::IterSet, indexes::max_rows_in_page, static_assert_size, table::BlobNumBytes, MemoryUsage};
+use crate::{
+    blob_store::BlobHash, fixed_bit_set::IterSet, indexes::max_rows_in_page, static_assert_size, table::BlobNumBytes,
+    MemoryUsage,
+};
 use core::{mem, ops::ControlFlow};
 use spacetimedb_sats::{de::Deserialize, ser::Serialize};
 use thiserror::Error;
@@ -1638,7 +1641,7 @@ impl Page {
         dst: &mut Page,
         fixed_row_size: Size,
         var_len_visitor: &impl VarLenMembers,
-        blob_store: &mut dyn BlobStore,
+        mut blob_policy: Option<&mut impl FnMut(BlobHash)>,
         mut filter: impl FnMut(&Page, PageOffset) -> bool,
     ) -> ControlFlow<(), PageOffset> {
         for row_offset in self
@@ -1646,11 +1649,12 @@ impl Page {
             // Only copy rows satisfying the predicate `filter`.
             .filter(|o| filter(self, *o))
         {
+            let blob_policy = blob_policy.as_mut();
             // SAFETY:
             // - `starting_from` points to a valid row and thus `row_offset` also does.
             // - `var_len_visitor` will visit the right `VarLenRef`s and is consistent with other calls.
             // - `fixed_row_size` is consistent with `var_len_visitor` and `self`.
-            if !unsafe { self.copy_row_into(row_offset, dst, fixed_row_size, var_len_visitor, blob_store) } {
+            if !unsafe { self.copy_row_into(row_offset, dst, fixed_row_size, var_len_visitor, blob_policy) } {
                 // Target doesn't have enough space for row;
                 // stop here and return the offset of the uncopied row
                 // so a later call to `copy_filter_into` can start there.
@@ -1682,7 +1686,7 @@ impl Page {
         dst: &mut Page,
         fixed_row_size: Size,
         var_len_visitor: &impl VarLenMembers,
-        blob_store: &mut dyn BlobStore,
+        mut blob_policy: Option<&mut impl FnMut(BlobHash)>,
     ) -> bool {
         // SAFETY: Caller promised that `starting_from` points to a valid row
         // consistent with `fixed_row_size` which was also
@@ -1715,6 +1719,7 @@ impl Page {
         // SAFETY: forward our requirement on `var_len_visitor` to `visit_var_len_mut`.
         let target_vlr_iter = unsafe { var_len_visitor.visit_var_len_mut(dst_row) };
         for (src_vlr, target_vlr_slot) in src_vlr_iter.zip(target_vlr_iter) {
+            let blob_policy = blob_policy.as_mut();
             // SAFETY:
             //
             // - requirements of `visit_var_len_assume_init` were met,
@@ -1722,7 +1727,7 @@ impl Page {
             //
             // - the call to `dst.has_space_for_row` above ensures
             //   that the allocation will not fail part-way through.
-            let target_vlr_fixup = unsafe { self.copy_var_len_into(*src_vlr, &mut dst_var, blob_store) }
+            let target_vlr_fixup = unsafe { self.copy_var_len_into(*src_vlr, &mut dst_var, blob_policy) }
                 .expect("Failed to allocate var-len object in dst page after checking for available space");
 
             *target_vlr_slot = target_vlr_fixup;
@@ -1749,7 +1754,7 @@ impl Page {
         &self,
         src_vlr: VarLenRef,
         dst_var: &mut VarView<'_>,
-        blob_store: &mut dyn BlobStore,
+        blob_policy: Option<&mut impl FnMut(BlobHash)>,
     ) -> Result<VarLenRef, Error> {
         // SAFETY: Caller promised that `src_vlr.first_granule` points to a valid granule is be NULL.
         let mut iter = unsafe { self.iter_var_len_object(src_vlr.first_granule) };
@@ -1801,12 +1806,12 @@ impl Page {
         //    or was `next_dst_chunk` in the previous iteration and hasn't been written to yet.
         unsafe { dst_var.write_chunk_to_granule(data, data.len(), dst_chunk, PageOffset::VAR_LEN_NULL) };
 
-        // For a large blob object,
-        // notify the `blob_store` that we've taken a reference to the blob hash.
-        if src_vlr.is_large_blob() {
-            blob_store
-                .clone_blob(&src_chunk.blob_hash())
-                .expect("blob_store could not mark hash as used");
+        // For a large blob object, run the blob policy, if we have one.
+        // This could, for example:
+        // - increment the refcount in the blob store
+        // - clone the blob object and the bytes to a new blob store.
+        if let Some(blob_policy) = blob_policy.filter(|_| src_vlr.is_large_blob()) {
+            blob_policy(src_chunk.blob_hash());
         }
 
         Ok(VarLenRef {

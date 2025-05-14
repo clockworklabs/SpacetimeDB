@@ -598,6 +598,8 @@ impl CommittedState {
             let (commit_table, commit_blob_store, page_pool) =
                 self.get_table_and_blob_store_or_create(table_id, tx_table.get_schema());
 
+            // Copy over all rows to the committed state.
+
             // For each newly-inserted row, insert it into the committed state.
             let mut inserts = Vec::with_capacity(tx_table.row_count as usize);
             for row_ref in tx_table.scan_rows(&tx_blob_store) {

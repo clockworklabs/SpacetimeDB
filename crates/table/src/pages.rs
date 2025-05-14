@@ -1,6 +1,6 @@
 //! Provides [`Pages`], a page manager dealing with [`Page`]s as a collection.
 
-use super::blob_store::BlobStore;
+use super::blob_store::{BlobHash, BlobStore};
 use super::indexes::{Bytes, PageIndex, PageOffset, RowPointer, Size};
 use super::page::Page;
 use super::page_pool::PagePool;
@@ -263,7 +263,7 @@ impl Pages {
         &self,
         var_len_visitor: &impl VarLenMembers,
         fixed_row_size: Size,
-        blob_store: &mut dyn BlobStore,
+        mut blob_policy: Option<&mut impl FnMut(BlobHash)>,
         mut filter: impl FnMut(&Page, PageOffset) -> bool,
     ) -> Self {
         // Build a new container to hold the materialized view.
@@ -310,7 +310,7 @@ impl Pages {
                         &mut to_page,
                         fixed_row_size,
                         var_len_visitor,
-                        blob_store,
+                        blob_policy.as_mut(),
                         &mut filter,
                     )
                 };
