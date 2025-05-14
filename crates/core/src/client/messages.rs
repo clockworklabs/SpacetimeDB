@@ -297,10 +297,19 @@ fn num_rows_in(rows: &SubscriptionRows) -> usize {
     }
 }
 
+fn subscription_data_rows(rows: &SubscriptionData) -> usize {
+    match &rows.data {
+        FormatSwitch::Bsatn(x) => x.num_rows(),
+        FormatSwitch::Json(x) => x.num_rows(),
+    }
+}
+
 impl SubscriptionMessage {
     fn num_rows(&self) -> usize {
         match &self.result {
             SubscriptionResult::Subscribe(x) => num_rows_in(x),
+            SubscriptionResult::SubscribeMulti(x) => subscription_data_rows(x),
+            SubscriptionResult::UnsubscribeMulti(x) => subscription_data_rows(x),
             SubscriptionResult::Unsubscribe(x) => num_rows_in(x),
             _ => 0,
         }
