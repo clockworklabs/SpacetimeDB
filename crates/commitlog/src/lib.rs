@@ -131,6 +131,13 @@ impl<T> Commitlog<T> {
         self.inner.read().unwrap().max_committed_offset()
     }
 
+    /// Determine the minimum transaction offset in the log.
+    ///
+    /// The offset is `None` if the log hasn't been flushed to disk yet.
+    pub fn min_committed_offset(&self) -> Option<u64> {
+        self.inner.read().unwrap().min_committed_offset()
+    }
+
     /// Get the current epoch.
     ///
     /// See also: [`Commit::epoch`].

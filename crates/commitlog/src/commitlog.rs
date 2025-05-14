@@ -182,6 +182,15 @@ impl<R: Repo, T> Generic<R, T> {
         self.head.next_tx_offset().checked_sub(1)
     }
 
+    /// The first transaction offset written to disk, or `None` if nothing has
+    /// been written yet.
+    pub fn min_committed_offset(&self) -> Option<u64> {
+        self.tail
+            .first()
+            .copied()
+            .or_else(|| (!self.head.is_empty()).then(|| self.head.min_tx_offset()))
+    }
+
     // Helper to obtain a list of the segment offsets which include transaction
     // offset `offset`.
     //
