@@ -6,13 +6,16 @@ use super::{
     tx::TxId,
     tx_state::TxState,
 };
-use crate::execution_context::Workload;
 use crate::{
     db::datastore::{
         locking_tx_datastore::state_view::{IterByColRangeMutTx, IterMutTx, IterTx},
         traits::{InsertFlags, UpdateFlags},
     },
-    subscription::record_exec_metrics,
+    subscription::ExecutionCounters,
+};
+use crate::{
+    db::relational_db::RelationalDB,
+    execution_context::{Workload, WorkloadType},
 };
 use crate::{
     db::{
@@ -33,8 +36,10 @@ use crate::{
 };
 use anyhow::{anyhow, Context};
 use core::{cell::RefCell, ops::RangeBounds};
+use enum_map::EnumMap;
 use parking_lot::{Mutex, RwLock};
 use spacetimedb_commitlog::payload::{txdata, Txdata};
+use spacetimedb_data_structures::map::{HashCollectionExt, HashMap};
 use spacetimedb_durability::TxOffset;
 use spacetimedb_lib::{db::auth::StAccess, metrics::ExecutionMetrics};
 use spacetimedb_lib::{ConnectionId, Identity};
@@ -43,12 +48,7 @@ use spacetimedb_primitives::{ColList, ConstraintId, IndexId, SequenceId, TableId
 use spacetimedb_sats::{bsatn, buffer::BufReader, AlgebraicValue, ProductValue};
 use spacetimedb_schema::schema::{IndexSchema, SequenceSchema, TableSchema};
 use spacetimedb_snapshot::{ReconstructedSnapshot, SnapshotRepository};
-use spacetimedb_table::{
-    indexes::RowPointer,
-    page_pool::PagePool,
-    table::{RowRef, Table},
-    MemoryUsage,
-};
+use spacetimedb_table::{indexes::RowPointer, page_pool::PagePool, table::RowRef, MemoryUsage};
 use std::borrow::Cow;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -74,6 +74,9 @@ pub struct Locking {
     sequence_state: Arc<Mutex<SequencesState>>,
     /// The identity of this database.
     pub(crate) database_identity: Identity,
+
+    /// A map from workload types to their cached prometheus counters.
+    workload_type_to_exec_counters: Arc<EnumMap<WorkloadType, ExecutionCounters>>,
 }
 
 impl MemoryUsage for Locking {
@@ -82,6 +85,7 @@ impl MemoryUsage for Locking {
             committed_state,
             sequence_state,
             database_identity,
+            workload_type_to_exec_counters: _,
         } = self;
         std::mem::size_of_val(&**committed_state)
             + committed_state.read().heap_usage()
@@ -93,10 +97,14 @@ impl MemoryUsage for Locking {
 
 impl Locking {
     pub fn new(database_identity: Identity, page_pool: PagePool) -> Self {
+        let workload_type_to_exec_counters =
+            Arc::new(EnumMap::from_fn(|ty| ExecutionCounters::new(&ty, &database_identity)));
+
         Self {
             committed_state: Arc::new(RwLock::new(CommittedState::new(page_pool))),
             sequence_state: <_>::default(),
             database_identity,
+            workload_type_to_exec_counters,
         }
     }
 
@@ -313,6 +321,10 @@ impl Locking {
 
         tx.alter_table_access(table_id, access)
     }
+
+    pub(crate) fn exec_counters_for(&self, workload_type: WorkloadType) -> &ExecutionCounters {
+        &self.workload_type_to_exec_counters[workload_type]
+    }
 }
 
 impl DataRow for Locking {
@@ -328,12 +340,13 @@ impl Tx for Locking {
     type Tx = TxId;
 
     fn begin_tx(&self, workload: Workload) -> Self::Tx {
-        let timer = Instant::now();
+        let metrics = ExecutionMetrics::default();
+        let ctx = ExecutionContext::with_workload(self.database_identity, workload);
 
+        let timer = Instant::now();
         let committed_state_shared_lock = self.committed_state.read_arc();
         let lock_wait_time = timer.elapsed();
-        let ctx = ExecutionContext::with_workload(self.database_identity, workload);
-        let metrics = ExecutionMetrics::default();
+
         Self::Tx {
             committed_state_shared_lock,
             lock_wait_time,
@@ -343,8 +356,8 @@ impl Tx for Locking {
         }
     }
 
-    fn release_tx(&self, tx: Self::Tx) {
-        tx.release();
+    fn release_tx(&self, tx: Self::Tx) -> (TxMetrics, String) {
+        tx.release()
     }
 }
 
@@ -648,100 +661,193 @@ impl MutTxDatastore for Locking {
     }
 }
 
-/// This utility is responsible for recording all transaction metrics.
-pub(super) fn record_tx_metrics(
-    ctx: &ExecutionContext,
-    tx_timer: Instant,
+#[must_use = "TxMetrics should be reported"]
+pub struct TxMetrics {
+    table_stats: HashMap<TableId, TableStats>,
+    workload: WorkloadType,
+    database_identity: Identity,
+    elapsed_time: Duration,
     lock_wait_time: Duration,
     committed: bool,
+    exec_metrics: ExecutionMetrics,
+}
+
+struct TableStats {
+    /// The number of rows in the table after this transaction.
+    ///
+    /// Derived from [`Table::row_count`](spacetimedb_table::table::Table::row_count).
+    row_count: u64,
+    /// The number of bytes occupied by the pages and the blob store after this transaction.
+    ///
+    /// Derived from [`Table::bytes_occupied_overestimate`](spacetimedb_table::table::Table::bytes_occupied_overestimate).
+    bytes_occupied_overestimate: usize,
+    /// The number of indices after this transaction.
+    ///
+    /// Derived from [`Table::num_indices`](spacetimedb_table::table::Table::num_indices).
+    num_indices: usize,
+}
+
+impl TxMetrics {
+    /// Compute transaction metrics that we can report once the tx lock is released.
+    pub(super) fn new(
+        ctx: &ExecutionContext,
+        tx_timer: Instant,
+        lock_wait_time: Duration,
+        exec_metrics: ExecutionMetrics,
+        committed: bool,
+        tx_data: Option<&TxData>,
+        committed_state: &CommittedState,
+    ) -> TxMetrics {
+        let workload = ctx.workload();
+        let database_identity = ctx.database_identity();
+        let elapsed_time = tx_timer.elapsed();
+
+        // Collect the extra stats for tables that we don't have in `tx_data`.
+        let table_stats = tx_data
+            .map(|tx_data| {
+                let mut table_stats =
+                    <HashMap<_, _, _> as HashCollectionExt>::with_capacity(tx_data.num_tables_affected());
+                for (table_id, _) in tx_data.table_ids_and_names() {
+                    let table = committed_state
+                        .get_table(table_id)
+                        .expect("should have a table in committed state for one in tx data");
+                    table_stats.insert(
+                        table_id,
+                        TableStats {
+                            row_count: table.row_count,
+                            bytes_occupied_overestimate: table.bytes_occupied_overestimate(),
+                            num_indices: table.num_indices(),
+                        },
+                    );
+                }
+                table_stats
+            })
+            .unwrap_or_default();
+
+        TxMetrics {
+            table_stats,
+            workload,
+            database_identity,
+            elapsed_time,
+            lock_wait_time,
+            exec_metrics,
+            committed,
+        }
+    }
+
+    fn report<'a>(
+        &self,
+        tx_data: Option<&TxData>,
+        reducer: &str,
+        get_exec_counter: impl FnOnce(WorkloadType) -> &'a ExecutionCounters,
+    ) {
+        let workload = &self.workload;
+        let db = &self.database_identity;
+
+        let cpu_time = self.elapsed_time - self.lock_wait_time;
+
+        let elapsed_time = self.elapsed_time.as_secs_f64();
+        let cpu_time = cpu_time.as_secs_f64();
+
+        // Increment tx counter
+        DB_METRICS
+            .rdb_num_txns
+            .with_label_values(workload, db, reducer, &self.committed)
+            .inc();
+        // Record tx cpu time
+        DB_METRICS
+            .rdb_txn_cpu_time_sec
+            .with_label_values(workload, db, reducer)
+            .observe(cpu_time);
+        // Record tx elapsed time
+        DB_METRICS
+            .rdb_txn_elapsed_time_sec
+            .with_label_values(workload, db, reducer)
+            .observe(elapsed_time);
+
+        get_exec_counter(self.workload).record(&self.exec_metrics);
+
+        if let Some(tx_data) = tx_data {
+            // Update table rows and table size gauges,
+            // and sets them to zero if no table is present.
+            for (table_id, table_name) in tx_data.table_ids_and_names() {
+                let stats = self.table_stats.get(&table_id).unwrap();
+
+                DB_METRICS
+                    .rdb_num_table_rows
+                    .with_label_values(db, &table_id.0, table_name)
+                    .set(stats.row_count as i64);
+                DB_METRICS
+                    .rdb_table_size
+                    .with_label_values(db, &table_id.0, table_name)
+                    .set(stats.bytes_occupied_overestimate as i64);
+            }
+
+            // Record inserts.
+            for (table_id, table_name, inserts) in tx_data.inserts_with_table_name() {
+                let stats = self.table_stats.get(table_id).unwrap();
+                let num_inserts = inserts.len() as u64;
+                let num_indices = stats.num_indices as u64;
+
+                // Increment rows inserted counter.
+                DB_METRICS
+                    .rdb_num_rows_inserted
+                    .with_label_values(workload, db, reducer, &table_id.0, table_name)
+                    .inc_by(num_inserts);
+
+                // We don't have sparse indexes, so we can just multiply by the number of indexes.
+                if stats.num_indices > 0 {
+                    // Increment index rows inserted counter
+                    DB_METRICS
+                        .rdb_num_index_entries_inserted
+                        .with_label_values(workload, db, reducer, &table_id.0, table_name)
+                        .inc_by(num_inserts * num_indices);
+                }
+            }
+
+            // Record deletes.
+            for (table_id, table_name, deletes) in tx_data.deletes_with_table_name() {
+                let stats = self.table_stats.get(table_id).unwrap();
+                let num_deletes = deletes.len() as u64;
+                let num_indices = stats.num_indices as u64;
+
+                // Increment rows deleted counter.
+                DB_METRICS
+                    .rdb_num_rows_deleted
+                    .with_label_values(workload, db, reducer, &table_id.0, table_name)
+                    .inc_by(num_deletes);
+
+                // We don't have sparse indexes, so we can just multiply by the number of indexes.
+                if num_indices > 0 {
+                    // Increment index rows deleted counter.
+                    DB_METRICS
+                        .rdb_num_index_entries_deleted
+                        .with_label_values(workload, db, reducer, &table_id.0, table_name)
+                        .inc_by(num_deletes * num_indices);
+                }
+            }
+        }
+    }
+
+    pub(crate) fn report_with_db(&self, reducer: &str, db: &RelationalDB, tx_data: Option<&TxData>) {
+        self.report(tx_data, reducer, |wl| db.exec_counters_for(wl));
+    }
+}
+
+/// Report the `TxMetrics`s passed.
+///
+/// Should only be called after the tx lock has been fully released.
+pub(crate) fn report_tx_metricses(
+    reducer: &str,
+    db: &RelationalDB,
     tx_data: Option<&TxData>,
-    committed_state: Option<&CommittedState>,
-    metrics: ExecutionMetrics,
+    metrics_mut: Option<TxMetrics>,
+    metrics_read: TxMetrics,
 ) {
-    let workload = &ctx.workload();
-    let db = &ctx.database_identity();
-    let reducer = ctx.reducer_name();
-    let elapsed_time = tx_timer.elapsed();
-    let cpu_time = elapsed_time - lock_wait_time;
-
-    let elapsed_time = elapsed_time.as_secs_f64();
-    let cpu_time = cpu_time.as_secs_f64();
-
-    // Increment tx counter
-    DB_METRICS
-        .rdb_num_txns
-        .with_label_values(workload, db, reducer, &committed)
-        .inc();
-    // Record tx cpu time
-    DB_METRICS
-        .rdb_txn_cpu_time_sec
-        .with_label_values(workload, db, reducer)
-        .observe(cpu_time);
-    // Record tx elapsed time
-    DB_METRICS
-        .rdb_txn_elapsed_time_sec
-        .with_label_values(workload, db, reducer)
-        .observe(elapsed_time);
-
-    record_exec_metrics(workload, db, metrics);
-
-    /// Update table rows and table size gauges,
-    /// and sets them to zero if no table is present.
-    fn update_table_gauges(db: &Identity, table_id: &TableId, table_name: &str, table: Option<&Table>) {
-        let (mut table_rows, mut table_size) = (0, 0);
-        if let Some(table) = table {
-            table_rows = table.row_count as i64;
-            table_size = table.bytes_occupied_overestimate() as i64;
-        }
-        DB_METRICS
-            .rdb_num_table_rows
-            .with_label_values(db, &table_id.0, table_name)
-            .set(table_rows);
-        DB_METRICS
-            .rdb_table_size
-            .with_label_values(db, &table_id.0, table_name)
-            .set(table_size);
+    if let Some(metrics_mut) = metrics_mut {
+        metrics_mut.report_with_db(reducer, db, tx_data);
     }
-
-    if let (Some(tx_data), Some(committed_state)) = (tx_data, committed_state) {
-        for (table_id, table_name, inserts) in tx_data.inserts_with_table_name() {
-            let table = committed_state.get_table(*table_id);
-            let num_indexes = table.map(|t| t.indexes.len()).unwrap_or(0) as u64;
-
-            update_table_gauges(db, table_id, table_name, table);
-            // Increment rows inserted counter
-            DB_METRICS
-                .rdb_num_rows_inserted
-                .with_label_values(workload, db, reducer, &table_id.0, table_name)
-                .inc_by(inserts.len() as u64);
-            // We don't have sparse indexes, so we can just multiply by the number of indexes.
-            if num_indexes > 0 {
-                // Increment index rows inserted counter
-                DB_METRICS
-                    .rdb_num_index_entries_inserted
-                    .with_label_values(workload, db, reducer, &table_id.0, table_name)
-                    .inc_by((inserts.len() as u64) * num_indexes);
-            }
-        }
-        for (table_id, table_name, deletes) in tx_data.deletes_with_table_name() {
-            let table = committed_state.get_table(*table_id);
-            let num_indexes = table.map(|t| t.indexes.len()).unwrap_or(0) as u64;
-            update_table_gauges(db, table_id, table_name, table);
-            // Increment rows deleted counter
-            DB_METRICS
-                .rdb_num_rows_deleted
-                .with_label_values(workload, db, reducer, &table_id.0, table_name)
-                .inc_by(deletes.len() as u64);
-            // We don't have sparse indexes, so we can just multiply by the number of indexes.
-            if num_indexes > 0 {
-                // Increment index rows inserted counter
-                DB_METRICS
-                    .rdb_num_index_entries_deleted
-                    .with_label_values(workload, db, reducer, &table_id.0, table_name)
-                    .inc_by((deletes.len() as u64) * num_indexes);
-            }
-        }
-    }
+    metrics_read.report_with_db(reducer, db, None);
 }
 
 impl MutTx for Locking {
@@ -750,12 +856,14 @@ impl MutTx for Locking {
     /// Note: We do not use the isolation level here because this implementation
     /// guarantees the highest isolation level, Serializable.
     fn begin_mut_tx(&self, _isolation_level: IsolationLevel, workload: Workload) -> Self::MutTx {
-        let timer = Instant::now();
+        let metrics = ExecutionMetrics::default();
+        let ctx = ExecutionContext::with_workload(self.database_identity, workload);
 
+        let timer = Instant::now();
         let committed_state_write_lock = self.committed_state.write_arc();
         let sequence_state_lock = self.sequence_state.lock_arc();
         let lock_wait_time = timer.elapsed();
-        let ctx = ExecutionContext::with_workload(self.database_identity, workload);
+
         MutTxId {
             committed_state_write_lock,
             sequence_state_lock,
@@ -763,25 +871,29 @@ impl MutTx for Locking {
             lock_wait_time,
             timer,
             ctx,
-            metrics: ExecutionMetrics::default(),
+            metrics,
         }
     }
 
-    fn rollback_mut_tx(&self, tx: Self::MutTx) {
-        tx.rollback();
+    fn rollback_mut_tx(&self, tx: Self::MutTx) -> (TxMetrics, String) {
+        tx.rollback()
     }
 
-    fn commit_mut_tx(&self, tx: Self::MutTx) -> Result<Option<TxData>> {
+    fn commit_mut_tx(&self, tx: Self::MutTx) -> Result<Option<(TxData, TxMetrics, String)>> {
         Ok(Some(tx.commit()))
     }
 }
 
 impl Locking {
-    pub fn rollback_mut_tx_downgrade(&self, tx: MutTxId, workload: Workload) -> TxId {
+    pub fn rollback_mut_tx_downgrade(&self, tx: MutTxId, workload: Workload) -> (TxMetrics, TxId) {
         tx.rollback_downgrade(workload)
     }
 
-    pub fn commit_mut_tx_downgrade(&self, tx: MutTxId, workload: Workload) -> Result<Option<(TxData, TxId)>> {
+    pub fn commit_mut_tx_downgrade(
+        &self,
+        tx: MutTxId,
+        workload: Workload,
+    ) -> Result<Option<(TxData, TxMetrics, TxId)>> {
         Ok(Some(tx.commit_downgrade(workload)))
     }
 }
@@ -1306,13 +1418,17 @@ mod tests {
         }
     }
 
+    fn begin_tx(datastore: &Locking) -> TxId {
+        datastore.begin_tx(Workload::ForTests)
+    }
+
     // TODO(centril): find-replace all occurrences of body.
     fn begin_mut_tx(datastore: &Locking) -> MutTxId {
         datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests)
     }
 
     fn commit(datastore: &Locking, tx: MutTxId) -> ResultTest<TxData> {
-        Ok(datastore.commit_mut_tx(tx)?.expect("commit should produce `TxData`"))
+        Ok(datastore.commit_mut_tx(tx)?.expect("commit should produce `TxData`").0)
     }
 
     #[rustfmt::skip]
@@ -1650,7 +1766,7 @@ mod tests {
             );
         }
 
-        datastore.rollback_mut_tx(tx);
+        let _ = datastore.rollback_mut_tx(tx);
         Ok(())
     }
 
@@ -1692,7 +1808,7 @@ mod tests {
     #[test]
     fn test_create_table_post_rollback() -> ResultTest<()> {
         let (datastore, tx, table_id) = setup_table()?;
-        datastore.rollback_mut_tx(tx);
+        let _ = datastore.rollback_mut_tx(tx);
         let tx = begin_mut_tx(&datastore);
         assert!(
             !datastore.table_id_exists_mut_tx(&tx, &table_id),
@@ -1807,7 +1923,7 @@ mod tests {
     #[test]
     fn test_schema_for_table_rollback() -> ResultTest<()> {
         let (datastore, tx, table_id) = setup_table()?;
-        datastore.rollback_mut_tx(tx);
+        let _ = datastore.rollback_mut_tx(tx);
         let tx = begin_mut_tx(&datastore);
         let schema = datastore.schema_for_table_mut_tx(&tx, table_id);
         assert!(schema.is_err());
@@ -1853,7 +1969,7 @@ mod tests {
         datastore.commit_mut_tx(tx)?;
         let mut tx = begin_mut_tx(&datastore);
         insert(&datastore, &mut tx, table_id, &row)?;
-        datastore.rollback_mut_tx(tx);
+        let _ = datastore.rollback_mut_tx(tx);
         let tx = begin_mut_tx(&datastore);
         #[rustfmt::skip]
         assert_eq!(all_rows(&datastore, &tx, table_id), vec![]);
@@ -1948,7 +2064,7 @@ mod tests {
         let mut tx = begin_mut_tx(&datastore);
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
         insert(&datastore, &mut tx, table_id, &row)?;
-        datastore.rollback_mut_tx(tx);
+        let _ = datastore.rollback_mut_tx(tx);
         let mut tx = begin_mut_tx(&datastore);
         insert(&datastore, &mut tx, table_id, &row)?;
         #[rustfmt::skip]
@@ -2057,7 +2173,7 @@ mod tests {
         let mut tx = begin_mut_tx(&datastore);
         create_foo_age_idx_btree(&datastore, &mut tx, table_id)?;
 
-        datastore.rollback_mut_tx(tx);
+        let _ = datastore.rollback_mut_tx(tx);
         let mut tx = begin_mut_tx(&datastore);
         assert_st_indices(&tx, false)?;
         let row = u32_str_u32(0, "Bar", 18); // 0 will be ignored.
@@ -2587,13 +2703,13 @@ mod tests {
         datastore.commit_mut_tx(tx)?;
 
         // create multiple read only tx, and use them together.
-        let read_tx_1 = datastore.begin_tx(Workload::Internal);
-        let read_tx_2 = datastore.begin_tx(Workload::Internal);
+        let read_tx_1 = begin_tx(&datastore);
+        let read_tx_2 = begin_tx(&datastore);
         let rows = &[row1, row2];
         assert_eq!(&all_rows_tx(&read_tx_2, table_id), rows);
         assert_eq!(&all_rows_tx(&read_tx_1, table_id), rows);
-        read_tx_2.release();
-        read_tx_1.release();
+        let _ = read_tx_2.release();
+        let _ = read_tx_1.release();
         Ok(())
     }
 
@@ -2752,7 +2868,7 @@ mod tests {
         }
 
         fn assert_rows(datastore: &Locking, table_id: TableId, rows: Vec<ProductValue>) -> ResultTest<()> {
-            let tx = datastore.begin_tx(Workload::ForTests);
+            let tx = begin_tx(datastore);
             for (actual, expected) in datastore.iter_tx(&tx, table_id)?.zip_eq(rows.into_iter()) {
                 assert_eq!(actual.to_bsatn_vec()?, expected.to_bsatn_vec()?);
             }

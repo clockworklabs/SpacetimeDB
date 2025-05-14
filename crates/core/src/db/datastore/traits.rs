@@ -3,6 +3,7 @@ use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::{ops::RangeBounds, sync::Arc};
 
+use super::locking_tx_datastore::datastore::TxMetrics;
 use super::system_tables::ModuleKind;
 use super::Result;
 use crate::db::datastore::system_tables::ST_TABLE_ID;
@@ -165,6 +166,9 @@ pub enum IsolationLevel {
 }
 
 /// A record of all the operations within a transaction.
+///
+/// Some extra information is embedded here
+/// so that the recording of execution metrics can be done without holding the tx lock.
 #[derive(Default)]
 pub struct TxData {
     /// The inserted rows per table.
@@ -258,6 +262,16 @@ impl TxData {
                 Some(Some("connected__" | "disconnected__"))
             )
     }
+
+    /// Returns a list of tables affected in this transaction.
+    pub fn table_ids_and_names(&self) -> impl '_ + Iterator<Item = (TableId, &str)> {
+        self.tables.iter().map(|(k, v)| (*k, &**v))
+    }
+
+    /// Returns the number o tables affected in this transaction.
+    pub fn num_tables_affected(&self) -> usize {
+        self.tables.len()
+    }
 }
 
 /// The result of [`MutTxDatastore::row_type_for_table_mut_tx`] and friends.
@@ -298,15 +312,15 @@ pub trait Tx {
     type Tx;
 
     fn begin_tx(&self, workload: Workload) -> Self::Tx;
-    fn release_tx(&self, tx: Self::Tx);
+    fn release_tx(&self, tx: Self::Tx) -> (TxMetrics, String);
 }
 
 pub trait MutTx {
     type MutTx;
 
     fn begin_mut_tx(&self, isolation_level: IsolationLevel, workload: Workload) -> Self::MutTx;
-    fn commit_mut_tx(&self, tx: Self::MutTx) -> Result<Option<TxData>>;
-    fn rollback_mut_tx(&self, tx: Self::MutTx);
+    fn commit_mut_tx(&self, tx: Self::MutTx) -> Result<Option<(TxData, TxMetrics, String)>>;
+    fn rollback_mut_tx(&self, tx: Self::MutTx) -> (TxMetrics, String);
 }
 
 /// Standard metadata associated with a database.

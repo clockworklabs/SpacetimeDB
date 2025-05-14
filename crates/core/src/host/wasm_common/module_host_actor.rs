@@ -284,11 +284,14 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
             Err(e) => {
                 log::warn!("Database update failed: {} @ {}", e, stdb.database_identity());
                 self.system_logger().warn(&format!("Database update failed: {e}"));
-                stdb.rollback_mut_tx(tx);
+                let (tx_metrics, reducer) = stdb.rollback_mut_tx(tx);
+                tx_metrics.report_with_db(&reducer, stdb, None);
                 Ok(UpdateDatabaseResult::ErrorExecutingMigration(e))
             }
             Ok(()) => {
-                stdb.commit_tx(tx)?;
+                if let Some((tx_data, tx_metrics, reducer)) = stdb.commit_tx(tx)? {
+                    tx_metrics.report_with_db(&reducer, stdb, Some(&tx_data));
+                }
                 self.system_logger().info("Database updated");
                 log::info!("Database updated, {}", stdb.database_identity());
                 Ok(UpdateDatabaseResult::UpdatePerformed)
@@ -362,12 +365,8 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             arg_bytes: args.get_bsatn().clone(),
         };
 
-        let tx = tx.unwrap_or_else(|| {
-            stdb.begin_mut_tx(
-                IsolationLevel::Serializable,
-                Workload::Reducer(ReducerContext::from(op.clone())),
-            )
-        });
+        let workload = Workload::Reducer(ReducerContext::from(op.clone()));
+        let tx = tx.unwrap_or_else(|| stdb.begin_mut_tx(IsolationLevel::Serializable, workload));
         let _guard = WORKER_METRICS
             .reducer_plus_query_duration
             .with_label_values(&database_identity, op.name)

@@ -1,4 +1,4 @@
-use super::datastore::record_tx_metrics;
+use super::datastore::TxMetrics;
 use super::{
     committed_state::CommittedState,
     datastore::Result,
@@ -87,16 +87,18 @@ impl StateView for TxId {
 }
 
 impl TxId {
-    pub(super) fn release(self) {
-        record_tx_metrics(
+    pub(super) fn release(self) -> (TxMetrics, String) {
+        let tx_metrics = TxMetrics::new(
             &self.ctx,
             self.timer,
             self.lock_wait_time,
+            self.metrics,
             true,
             None,
-            None,
-            self.metrics,
+            &self.committed_state_shared_lock,
         );
+        let reducer = self.ctx.into_reducer_name();
+        (tx_metrics, reducer)
     }
 
     /// The Number of Distinct Values (NDV) for a column or list of columns,
