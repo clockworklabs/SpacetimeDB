@@ -653,8 +653,7 @@ pub(crate) fn legacy_get_all(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::relational_db::tests_utils::TestDB;
-    use crate::execution_context::Workload;
+    use crate::db::relational_db::tests_utils::{begin_tx, TestDB};
     use crate::sql::compiler::compile_sql;
     use spacetimedb_lib::relation::DbTable;
     use spacetimedb_lib::{error::ResultTest, identity::AuthCtx};
@@ -681,7 +680,7 @@ mod tests {
         let indexes = &[0.into(), 1.into()];
         let rhs_id = db.create_table_for_test("rhs", schema, indexes)?;
 
-        let tx = db.begin_tx(Workload::ForTests);
+        let tx = begin_tx(&db);
         // Should generate an index join since there is an index on `lhs.b`.
         // Should push the sargable range condition into the index join's probe side.
         let sql = "select lhs.* from lhs join rhs on lhs.b = rhs.b where rhs.c > 2 and rhs.c < 4 and rhs.d = 3";
@@ -761,7 +760,7 @@ mod tests {
         let indexes = &[0.into(), 1.into()];
         let _ = db.create_table_for_test("rhs", schema, indexes)?;
 
-        let tx = db.begin_tx(Workload::ForTests);
+        let tx = begin_tx(&db);
         // Should generate an index join since there is an index on `lhs.b`.
         // Should push the sargable range condition into the index join's probe side.
         let sql = "select lhs.* from lhs join rhs on lhs.b = rhs.b where rhs.c > 2 and rhs.c < 4 and rhs.d = 3";
@@ -845,7 +844,7 @@ mod tests {
             .create_table_for_test("rhs", schema, indexes)
             .expect("Failed to create_table_for_test rhs");
 
-        let tx = db.begin_tx(Workload::ForTests);
+        let tx = begin_tx(&db);
 
         // Should generate an index join since there is an index on `lhs.b`.
         // Should push the sargable range condition into the index join's probe side.

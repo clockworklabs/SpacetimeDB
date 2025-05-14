@@ -1210,18 +1210,15 @@ fn to_product_value<T: Serialize>(value: &T) -> ProductValue {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::relational_db::tests_utils::TestDB;
-    use crate::execution_context::Workload;
+    use crate::db::relational_db::tests_utils::{with_auto_commit, with_read_only, TestDB};
 
     #[test]
     fn test_system_variables() {
         let db = TestDB::durable().expect("failed to create db");
-        let _ = db.with_auto_commit(Workload::ForTests, |tx| {
-            StVarTable::write_var(&db, tx, StVarName::RowLimit, "5")
-        });
+        let _ = with_auto_commit(&db, |tx| StVarTable::write_var(&db, tx, StVarName::RowLimit, "5"));
         assert_eq!(
             5,
-            db.with_read_only(Workload::ForTests, |tx| StVarTable::row_limit(&db, tx))
+            with_read_only(&db, |tx| StVarTable::row_limit(&db, tx))
                 .expect("failed to read from st_var")
                 .expect("row_limit does not exist")
         );

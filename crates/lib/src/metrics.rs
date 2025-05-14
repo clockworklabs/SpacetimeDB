@@ -1,4 +1,4 @@
-/// Metrics collected during the course of a transaction
+/// Metrics collected during the course of a transaction.
 #[derive(Debug, Default, Copy, Clone)]
 pub struct ExecutionMetrics {
     /// How many times is an index probed?

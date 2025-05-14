@@ -1243,7 +1243,7 @@ impl Table {
     ///
     /// This scales in runtime with the number of pages in the table.
     pub fn num_rows(&self) -> u64 {
-        self.pages().iter().map(|page| page.num_rows() as u64).sum()
+        self.row_count
     }
 
     #[cfg(test)]
@@ -1266,6 +1266,9 @@ impl Table {
     /// Of these, the caller should inspect the blob store in order to account for memory usage by large blobs,
     /// and call [`Self::bytes_used_by_index_keys`] to account for indexes,
     /// but we intend to eat all the other overheads when billing.
+    ///
+    // TODO(perf, centril): consider storing the total number of granules in the table instead
+    // so that this runs in constant time rather than O(|Pages|).
     pub fn bytes_used_by_rows(&self) -> u64 {
         self.pages()
             .iter()
@@ -1283,6 +1286,11 @@ impl Table {
                 page.reconstruct_bytes_used_by_rows(self.inner.row_layout.size(), &self.inner.visitor_prog)
             } as u64)
             .sum()
+    }
+
+    /// Returns the number of indices in this table.
+    pub fn num_indices(&self) -> usize {
+        self.indexes.len()
     }
 
     /// Returns the number of rows (or [`RowPointer`]s, more accurately)

@@ -2,12 +2,13 @@ use super::execution_unit::QueryHash;
 use super::module_subscription_manager::{Plan, SubscriptionGaugeStats, SubscriptionManager};
 use super::query::compile_query_with_hashes;
 use super::tx::DeltaTx;
-use super::{collect_table_update, record_exec_metrics, TableUpdateType};
+use super::{collect_table_update, TableUpdateType};
 use crate::client::messages::{
     SubscriptionData, SubscriptionError, SubscriptionMessage, SubscriptionResult, SubscriptionRows,
     SubscriptionUpdateMessage, TransactionUpdateMessage,
 };
 use crate::client::{ClientActorId, ClientConnectionSender, Protocol};
+use crate::db::datastore::locking_tx_datastore::datastore::report_tx_metricses;
 use crate::db::datastore::locking_tx_datastore::tx::TxId;
 use crate::db::db_metrics::DB_METRICS;
 use crate::db::relational_db::{MutTx, RelationalDB, Tx};
@@ -41,7 +42,7 @@ pub struct ModuleSubscriptions {
     /// You will deadlock otherwise.
     subscriptions: Subscriptions,
     owner_identity: Identity,
-    stats: Box<SubscriptionGauges>,
+    stats: Arc<SubscriptionGauges>,
 }
 
 #[derive(Debug, Clone)]
@@ -134,7 +135,9 @@ macro_rules! return_on_err_with_sql {
 
 impl ModuleSubscriptions {
     pub fn new(relational_db: Arc<RelationalDB>, subscriptions: Subscriptions, owner_identity: Identity) -> Self {
-        let stats = Box::new(SubscriptionGauges::new(&relational_db.database_identity()));
+        let db = &relational_db.database_identity();
+        let stats = Arc::new(SubscriptionGauges::new(db));
+
         Self {
             relational_db,
             subscriptions,
@@ -260,7 +263,8 @@ impl ModuleSubscriptions {
         let hash_with_param = QueryHash::from_string(&sql, auth.caller, true);
 
         let tx = scopeguard::guard(self.relational_db.begin_tx(Workload::Subscribe), |tx| {
-            self.relational_db.release_tx(tx);
+            let (tx_metrics, reducer) = self.relational_db.release_tx(tx);
+            tx_metrics.report_with_db(&reducer, &self.relational_db, None);
         });
 
         let existing_query = {
@@ -287,11 +291,9 @@ impl ModuleSubscriptions {
             send_err_msg
         );
 
-        record_exec_metrics(
-            &WorkloadType::Subscribe,
-            &self.relational_db.database_identity(),
-            metrics,
-        );
+        self.relational_db
+            .exec_counters_for(WorkloadType::Subscribe)
+            .record(&metrics);
 
         // It acquires the subscription lock after `eval`, allowing `add_subscription` to run concurrently.
         // This also makes it possible for `broadcast_event` to get scheduled before the subsequent part here
@@ -364,7 +366,8 @@ impl ModuleSubscriptions {
             };
 
         let tx = scopeguard::guard(self.relational_db.begin_tx(Workload::Unsubscribe), |tx| {
-            self.relational_db.release_tx(tx);
+            let (tx_metrics, reducer) = self.relational_db.release_tx(tx);
+            tx_metrics.report_with_db(&reducer, &self.relational_db, None);
         });
         let auth = AuthCtx::new(self.owner_identity, sender.id.identity);
         let (table_rows, metrics) = return_on_err_with_sql!(
@@ -373,11 +376,9 @@ impl ModuleSubscriptions {
             send_err_msg
         );
 
-        record_exec_metrics(
-            &WorkloadType::Subscribe,
-            &self.relational_db.database_identity(),
-            metrics,
-        );
+        self.relational_db
+            .exec_counters_for(WorkloadType::Unsubscribe)
+            .record(&metrics);
 
         let _ = sender.send_message(SubscriptionMessage {
             request_id: Some(request.request_id),
@@ -414,7 +415,8 @@ impl ModuleSubscriptions {
 
         // Always lock the db before the subscription lock to avoid deadlocks.
         let tx = scopeguard::guard(self.relational_db.begin_tx(Workload::Unsubscribe), |tx| {
-            self.relational_db.release_tx(tx);
+            let (tx_metrics, reducer) = self.relational_db.release_tx(tx);
+            tx_metrics.report_with_db(&reducer, &self.relational_db, None);
         });
 
         let removed_queries = {
@@ -448,11 +450,9 @@ impl ModuleSubscriptions {
             }
         };
 
-        record_exec_metrics(
-            &WorkloadType::Unsubscribe,
-            &self.relational_db.database_identity(),
-            metrics,
-        );
+        self.relational_db
+            .exec_counters_for(WorkloadType::Unsubscribe)
+            .record(&metrics);
 
         let _ = sender.send_message(SubscriptionMessage {
             request_id: Some(request.request_id),
@@ -499,7 +499,8 @@ impl ModuleSubscriptions {
 
         // We always get the db lock before the subscription lock to avoid deadlocks.
         let tx = scopeguard::guard(self.relational_db.begin_tx(Workload::Subscribe), |tx| {
-            self.relational_db.release_tx(tx);
+            let (tx_metrics, reducer) = self.relational_db.release_tx(tx);
+            tx_metrics.report_with_db(&reducer, &self.relational_db, None);
         });
         let guard = self.subscriptions.read();
 
@@ -558,7 +559,8 @@ impl ModuleSubscriptions {
             send_err_msg
         );
         let tx = scopeguard::guard(tx, |tx| {
-            self.relational_db.release_tx(tx);
+            let (tx_metrics, reducer) = self.relational_db.release_tx(tx);
+            tx_metrics.report_with_db(&reducer, &self.relational_db, None);
         });
 
         // We minimize locking so that other clients can add subscriptions concurrently.
@@ -581,11 +583,9 @@ impl ModuleSubscriptions {
             return Ok(());
         };
 
-        record_exec_metrics(
-            &WorkloadType::Subscribe,
-            &self.relational_db.database_identity(),
-            metrics,
-        );
+        self.relational_db
+            .exec_counters_for(WorkloadType::Subscribe)
+            .record(&metrics);
 
         #[cfg(test)]
         if let Some(assert) = _assert {
@@ -618,7 +618,8 @@ impl ModuleSubscriptions {
         let num_queries = subscription.query_strings.len();
         let (queries, auth, tx) = self.compile_queries(sender.id.identity, subscription.query_strings, num_queries)?;
         let tx = scopeguard::guard(tx, |tx| {
-            self.relational_db.release_tx(tx);
+            let (tx_metrics, reducer) = self.relational_db.release_tx(tx);
+            tx_metrics.report_with_db(&reducer, &self.relational_db, None);
         });
 
         check_row_limit(
@@ -641,11 +642,9 @@ impl ModuleSubscriptions {
                 .map(|(table_update, metrics)| (FormatSwitch::Json(table_update), metrics))?,
         };
 
-        record_exec_metrics(
-            &WorkloadType::Subscribe,
-            &self.relational_db.database_identity(),
-            metrics,
-        );
+        self.relational_db
+            .exec_counters_for(WorkloadType::Subscribe)
+            .record(&metrics);
 
         // It acquires the subscription lock after `eval`, allowing `add_subscription` to run concurrently.
         // This also makes it possible for `broadcast_event` to get scheduled before the subsequent part here
@@ -688,21 +687,23 @@ impl ModuleSubscriptions {
         let stdb = &self.relational_db;
         // Downgrade mutable tx.
         // Ensure tx is released/cleaned up once out of scope.
-        let (read_tx, tx_data) = match &mut event.status {
+        let (read_tx, tx_data, tx_metrics_mut) = match &mut event.status {
             EventStatus::Committed(db_update) => {
-                let Some((tx_data, read_tx)) = stdb.commit_tx_downgrade(tx, Workload::Update)? else {
+                let Some((tx_data, tx_metrics, read_tx)) = stdb.commit_tx_downgrade(tx, Workload::Update)? else {
                     return Ok(Err(WriteConflict));
                 };
                 *db_update = DatabaseUpdate::from_writes(&tx_data);
-                (read_tx, Some(tx_data))
+                (read_tx, Some(tx_data), tx_metrics)
             }
             EventStatus::Failed(_) | EventStatus::OutOfEnergy => {
-                (stdb.rollback_mut_tx_downgrade(tx, Workload::Update), None)
+                let (tx_metrics, tx) = stdb.rollback_mut_tx_downgrade(tx, Workload::Update);
+                (tx, None, tx_metrics)
             }
         };
 
         let read_tx = scopeguard::guard(read_tx, |tx| {
-            self.relational_db.release_tx(tx);
+            let (tx_metrics_read, reducer) = self.relational_db.release_tx(tx);
+            report_tx_metricses(&reducer, stdb, tx_data.as_ref(), Some(tx_metrics_mut), tx_metrics_read);
         });
 
         let read_tx = tx_data
@@ -715,12 +716,7 @@ impl ModuleSubscriptions {
 
         match &event.status {
             EventStatus::Committed(_) => {
-                metrics.merge(subscriptions.eval_updates(
-                    &read_tx,
-                    event.clone(),
-                    caller,
-                    &self.relational_db.database_identity(),
-                ));
+                metrics.merge(subscriptions.eval_updates(stdb, &read_tx, event.clone(), caller));
             }
             EventStatus::Failed(_) => {
                 if let Some(client) = caller {
@@ -751,19 +747,17 @@ mod tests {
     };
     use crate::client::{ClientActorId, ClientConfig, ClientConnectionSender, ClientName, Protocol};
     use crate::db::datastore::system_tables::{StRowLevelSecurityRow, ST_ROW_LEVEL_SECURITY_ID};
-    use crate::db::datastore::traits::IsolationLevel;
-    use crate::db::relational_db::tests_utils::{insert, TestDB};
+    use crate::db::relational_db::tests_utils::{
+        begin_mut_tx, begin_tx, insert, with_auto_commit, with_read_only, TestDB,
+    };
     use crate::db::relational_db::RelationalDB;
     use crate::error::DBError;
-    use crate::execution_context::Workload;
     use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall};
     use crate::messages::websocket as ws;
-    use crate::subscription::module_subscription_manager::SubscriptionManager;
     use crate::subscription::query::compile_read_only_query;
     use crate::subscription::TableUpdateType;
     use hashbrown::HashMap;
     use itertools::Itertools;
-    use parking_lot::RwLock;
     use spacetimedb_client_api_messages::energy::EnergyQuanta;
     use spacetimedb_client_api_messages::websocket::{
         CompressableQueryUpdate, Compression, FormatSwitch, QueryId, Subscribe, SubscribeMulti, SubscribeSingle,
@@ -787,8 +781,7 @@ mod tests {
         let client = ClientActorId::for_test(Identity::ZERO);
         let config = ClientConfig::for_test();
         let sender = Arc::new(ClientConnectionSender::dummy(client, config));
-        let module_subscriptions =
-            ModuleSubscriptions::new(db.clone(), Arc::new(RwLock::new(SubscriptionManager::default())), owner);
+        let module_subscriptions = ModuleSubscriptions::new(db.clone(), <_>::default(), owner);
 
         let subscribe = Subscribe {
             query_strings: [sql.into()].into(),
@@ -805,11 +798,7 @@ mod tests {
 
     /// Initialize a module [SubscriptionManager]
     fn module_subscriptions(db: Arc<RelationalDB>) -> ModuleSubscriptions {
-        ModuleSubscriptions::new(
-            db,
-            Arc::new(RwLock::new(SubscriptionManager::default())),
-            Identity::ZERO,
-        )
+        ModuleSubscriptions::new(db, <_>::default(), Identity::ZERO)
     }
 
     /// A [SubscribeSingle] message for testing
@@ -911,7 +900,7 @@ mod tests {
         table_ids: impl IntoIterator<Item = TableId>,
         rules: impl IntoIterator<Item = &'static str>,
     ) -> anyhow::Result<()> {
-        db.with_auto_commit(Workload::ForTests, |tx| {
+        with_auto_commit(db, |tx| {
             for (table_id, sql) in table_ids.into_iter().zip(rules) {
                 db.insert(
                     tx,
@@ -1056,7 +1045,7 @@ mod tests {
         deletes: impl IntoIterator<Item = (TableId, ProductValue)>,
         inserts: impl IntoIterator<Item = (TableId, ProductValue)>,
     ) -> anyhow::Result<ExecutionMetrics> {
-        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let mut tx = begin_mut_tx(db);
         for (table_id, row) in deletes {
             tx.delete_product_value(table_id, &row)?;
         }
@@ -1080,14 +1069,14 @@ mod tests {
 
         // Create a table `t` with index on `id`
         let table_id = db.create_table_for_test("t", &[("id", AlgebraicType::U64)], &[0.into()])?;
-        db.with_auto_commit(Workload::ForTests, |tx| -> anyhow::Result<_> {
+        with_auto_commit(&db, |tx| -> anyhow::Result<_> {
             db.insert(tx, table_id, &bsatn::to_vec(&product![1_u64])?)?;
             Ok(())
         })?;
 
         let auth = AuthCtx::for_testing();
         let sql = "select * from t where id = 1";
-        let tx = db.begin_tx(Workload::ForTests);
+        let tx = begin_tx(&db);
         let plan = compile_read_only_query(&auth, &tx, sql)?;
         let plan = Arc::new(plan);
 
@@ -1175,7 +1164,7 @@ mod tests {
 
         // Create a table `t` with an index on `id`
         let table_id = db.create_table_for_test("t", &[("id", AlgebraicType::U8)], &[0.into()])?;
-        let index_id = db.with_read_only(Workload::ForTests, |tx| {
+        let index_id = with_read_only(&db, |tx| {
             db.schema_for_table(&*tx, table_id).map(|schema| {
                 schema
                     .indexes
@@ -1201,7 +1190,7 @@ mod tests {
         ));
 
         // Remove the index from `id`
-        db.with_auto_commit(Workload::ForTests, |tx| db.drop_index(tx, index_id))?;
+        with_auto_commit(&db, |tx| db.drop_index(tx, index_id))?;
 
         // Unsubscribe from `t`
         unsubscribe_single(&subs, tx, query_id)?;
@@ -1227,7 +1216,7 @@ mod tests {
 
         // Create a table `t` with an index on `id`
         let table_id = db.create_table_for_test("t", &[("id", AlgebraicType::U8)], &[0.into()])?;
-        let index_id = db.with_read_only(Workload::ForTests, |tx| {
+        let index_id = with_read_only(&db, |tx| {
             db.schema_for_table(&*tx, table_id).map(|schema| {
                 schema
                     .indexes
@@ -1253,7 +1242,7 @@ mod tests {
         ));
 
         // Remove the index from `id`
-        db.with_auto_commit(Workload::ForTests, |tx| db.drop_index(tx, index_id))?;
+        with_auto_commit(&db, |tx| db.drop_index(tx, index_id))?;
 
         // Unsubscribe from `t`
         unsubscribe_multi(&subs, tx, query_id)?;
@@ -1280,7 +1269,7 @@ mod tests {
         // Create two tables `t` and `s` with indexes on their `id` columns
         let t_id = db.create_table_for_test("t", &[("id", AlgebraicType::U8)], &[0.into()])?;
         let s_id = db.create_table_for_test("s", &[("id", AlgebraicType::U8)], &[0.into()])?;
-        let index_id = db.with_read_only(Workload::ForTests, |tx| {
+        let index_id = with_read_only(&db, |tx| {
             db.schema_for_table(&*tx, s_id).map(|schema| {
                 schema
                     .indexes
@@ -1302,10 +1291,10 @@ mod tests {
         ));
 
         // Remove the index from `s`
-        db.with_auto_commit(Workload::ForTests, |tx| db.drop_index(tx, index_id))?;
+        with_auto_commit(&db, |tx| db.drop_index(tx, index_id))?;
 
         // Start a new transaction and insert a new row into `t`
-        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let mut tx = begin_mut_tx(&db);
         db.insert(&mut tx, t_id, &bsatn::to_vec(&product![2_u8])?)?;
 
         assert!(matches!(
@@ -1372,7 +1361,7 @@ mod tests {
         ));
 
         // Insert two identities - one for each caller - into the table
-        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let mut tx = begin_mut_tx(&db);
         db.insert(&mut tx, table_id, &bsatn::to_vec(&product![id_for_a])?)?;
         db.insert(&mut tx, table_id, &bsatn::to_vec(&product![id_for_b])?)?;
 
@@ -1444,7 +1433,7 @@ mod tests {
         // Insert a row into `u` for client "a".
         // Insert a row into `v` for client "b".
         // Insert a row into `w` for both.
-        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let mut tx = begin_mut_tx(&db);
         db.insert(&mut tx, u_id, &bsatn::to_vec(&product![id_for_a])?)?;
         db.insert(&mut tx, v_id, &bsatn::to_vec(&product![id_for_b])?)?;
         db.insert(&mut tx, w_id, &bsatn::to_vec(&product![id_for_a])?)?;
@@ -1483,7 +1472,7 @@ mod tests {
         assert!(matches!(rx.recv().await, Some(SerializableMessage::Subscription(_))));
 
         // Insert a row that does not match the query
-        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let mut tx = begin_mut_tx(&db);
         db.insert(&mut tx, t_id, &bsatn::to_vec(&product![1_u8])?)?;
 
         assert!(matches!(
@@ -1492,7 +1481,7 @@ mod tests {
         ));
 
         // Insert a row that does match the query
-        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let mut tx = begin_mut_tx(&db);
         db.insert(&mut tx, t_id, &bsatn::to_vec(&product![0_u8])?)?;
 
         assert!(matches!(
@@ -1868,9 +1857,7 @@ mod tests {
 
         // Create table with one row
         let table_id = db.create_table_for_test("T", &[("a", AlgebraicType::U8)], &[])?;
-        db.with_auto_commit(Workload::ForTests, |tx| {
-            insert(&db, tx, table_id, &product!(1_u8)).map(drop)
-        })?;
+        with_auto_commit(&db, |tx| insert(&db, tx, table_id, &product!(1_u8)).map(drop))?;
 
         let (send, mut recv) = mpsc::unbounded_channel();
 
@@ -1896,9 +1883,7 @@ mod tests {
         // Write a second row to T concurrently with the reader thread
         let write_handle = runtime.spawn(async move {
             let _ = recv.recv().await;
-            db2.with_auto_commit(Workload::ForTests, |tx| {
-                insert(&db2, tx, table_id, &product!(2_u8)).map(drop)
-            })
+            with_auto_commit(&db2, |tx| insert(&db2, tx, table_id, &product!(2_u8)).map(drop))
         });
 
         runtime.block_on(write_handle)??;
