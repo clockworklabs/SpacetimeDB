@@ -50,13 +50,20 @@ partial struct CustomClass : System.IEquatable<CustomClass>, SpacetimeDB.BSATN.I
 
     public override int GetHashCode()
     {
-        return IntField.GetHashCode() ^ StringField.GetHashCode();
+        var ___hashIntField = IntField.GetHashCode();
+        var ___hashStringField = StringField == null ? 0 : StringField.GetHashCode();
+        return ___hashIntField ^ ___hashStringField;
     }
 
 #nullable enable
     public bool Equals(CustomClass that)
     {
-        return IntField.Equals(that.IntField) && StringField.Equals(that.StringField);
+        var ___eqIntField = this.IntField.Equals(that.IntField);
+        var ___eqStringField =
+            this.StringField == null
+                ? that.StringField == null
+                : this.StringField.Equals(that.StringField);
+        return ___eqIntField && ___eqStringField;
     }
 
     public override bool Equals(object? that)

@@ -1830,10 +1830,10 @@ mod tests {
                 _,
             )) => {
                 assert_eq!(schema.table_id, t_id);
-                assert_eq!(arg, Sarg::Eq(ColId(1), AlgebraicValue::U8(3)));
+                assert_eq!(arg, Sarg::Eq(ColId(3), AlgebraicValue::U8(5)));
                 assert_eq!(
                     prefix,
-                    vec![(ColId(3), AlgebraicValue::U8(5)), (ColId(2), AlgebraicValue::U8(4))]
+                    vec![(ColId(1), AlgebraicValue::U8(3)), (ColId(2), AlgebraicValue::U8(4))]
                 );
             }
             proj => panic!("unexpected plan: {:#?}", proj),
@@ -1941,8 +1941,8 @@ mod tests {
                 _,
             )) => {
                 assert_eq!(schema.table_id, t_id);
-                assert_eq!(arg, Sarg::Eq(ColId(2), AlgebraicValue::U8(1)));
-                assert_eq!(prefix, vec![(ColId(3), AlgebraicValue::U8(2))]);
+                assert_eq!(arg, Sarg::Eq(ColId(3), AlgebraicValue::U8(2)));
+                assert_eq!(prefix, vec![(ColId(2), AlgebraicValue::U8(1))]);
             }
             proj => panic!("unexpected plan: {:#?}", proj),
         };
