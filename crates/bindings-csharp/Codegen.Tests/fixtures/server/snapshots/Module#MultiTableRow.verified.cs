@@ -20,6 +20,11 @@ partial struct MultiTableRow
         BSATN.Bar.Write(writer, Bar);
     }
 
+    object SpacetimeDB.BSATN.IStructuralReadWrite.GetSerializer()
+    {
+        return new BSATN();
+    }
+
     public override string ToString() =>
         $"MultiTableRow {{ Name = {SpacetimeDB.BSATN.StringUtil.GenericToString(Name)}, Foo = {SpacetimeDB.BSATN.StringUtil.GenericToString(Foo)}, Bar = {SpacetimeDB.BSATN.StringUtil.GenericToString(Bar)} }}";
 
@@ -29,8 +34,12 @@ partial struct MultiTableRow
         internal static readonly SpacetimeDB.BSATN.U32 Foo = new();
         internal static readonly SpacetimeDB.BSATN.U32 Bar = new();
 
-        public MultiTableRow Read(System.IO.BinaryReader reader) =>
-            SpacetimeDB.BSATN.IStructuralReadWrite.Read<MultiTableRow>(reader);
+        public MultiTableRow Read(System.IO.BinaryReader reader)
+        {
+            var ___result = new MultiTableRow();
+            ___result.ReadFields(reader);
+            return ___result;
+        }
 
         public void Write(System.IO.BinaryWriter writer, MultiTableRow value)
         {

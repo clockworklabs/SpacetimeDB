@@ -16,6 +16,11 @@ partial struct TestTypeParams<T>
         BSATN.Field.Write(writer, Field);
     }
 
+    object SpacetimeDB.BSATN.IStructuralReadWrite.GetSerializer()
+    {
+        return new BSATN();
+    }
+
     public override string ToString() =>
         $"TestTypeParams {{ Field = {SpacetimeDB.BSATN.StringUtil.GenericToString(Field)} }}";
 
@@ -23,8 +28,12 @@ partial struct TestTypeParams<T>
     {
         internal static readonly TRW Field = new();
 
-        public TestTypeParams<T> Read(System.IO.BinaryReader reader) =>
-            SpacetimeDB.BSATN.IStructuralReadWrite.Read<TestTypeParams<T>>(reader);
+        public TestTypeParams<T> Read(System.IO.BinaryReader reader)
+        {
+            var ___result = new TestTypeParams<T>();
+            ___result.ReadFields(reader);
+            return ___result;
+        }
 
         public void Write(System.IO.BinaryWriter writer, TestTypeParams<T> value)
         {
