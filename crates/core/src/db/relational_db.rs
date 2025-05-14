@@ -17,7 +17,7 @@ use super::datastore::{
     traits::TxData,
 };
 use super::db_metrics::DB_METRICS;
-use crate::db::datastore::system_tables::{StModuleRow, WASM_MODULE};
+use crate::db::datastore::system_tables::StModuleRow;
 use crate::error::{DBError, DatabaseError, RestoreSnapshotError};
 use crate::execution_context::{ReducerContext, Workload, WorkloadType};
 use crate::messages::control_db::HostType;
@@ -427,9 +427,7 @@ impl RelationalDB {
             database_identity: self.database_identity.into(),
             owner_identity: self.owner_identity.into(),
 
-            program_kind: match host_type {
-                HostType::Wasm => WASM_MODULE,
-            },
+            program_kind: host_type.into(),
             program_hash: program.hash,
             program_bytes: program.bytes,
             module_version: ONLY_MODULE_VERSION.into(),
@@ -473,10 +471,7 @@ impl RelationalDB {
     /// - the `__init__` reducer contained in the module has been executed
     ///   within the transactional context `tx`.
     pub fn update_program(&self, tx: &mut MutTx, host_type: HostType, program: Program) -> Result<(), DBError> {
-        let program_kind = match host_type {
-            HostType::Wasm => WASM_MODULE,
-        };
-        Ok(self.inner.update_program(tx, program_kind, program)?)
+        Ok(self.inner.update_program(tx, host_type.into(), program)?)
     }
 
     fn restore_from_snapshot_or_bootstrap(
