@@ -6,6 +6,8 @@ use tokio::sync::broadcast;
 
 use spacetimedb_paths::server::{ModuleLogPath, ModuleLogsDir};
 
+use crate::util::asyncify;
+
 pub struct DatabaseLogger {
     inner: Mutex<DatabaseLoggerInner>,
     pub tx: broadcast::Sender<bytes::Bytes>,
@@ -176,12 +178,11 @@ impl DatabaseLogger {
             }
             // if there's none for today, read the directory and
             let logs_dir = path.popped();
-            return tokio::task::spawn_blocking(move || match logs_dir.most_recent()? {
+            return asyncify(move || match logs_dir.most_recent()? {
                 Some(newest_log_file) => std::fs::read_to_string(newest_log_file),
                 None => Ok(String::new()),
             })
             .await
-            .unwrap()
             .expect("couldn't read log file");
         };
 
@@ -189,9 +190,8 @@ impl DatabaseLogger {
             return String::new();
         }
 
-        tokio::task::spawn_blocking(move || read_latest_lines(logs_dir, num_lines))
+        asyncify(move || read_latest_lines(logs_dir, num_lines))
             .await
-            .unwrap()
             .expect("couldn't read log file")
     }
 
