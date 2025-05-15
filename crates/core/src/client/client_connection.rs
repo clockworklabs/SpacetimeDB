@@ -209,6 +209,8 @@ impl ClientConnection {
             let Ok(fut) = fut_rx.await else { return };
 
             let _gauge_guard = WORKER_METRICS.connected_clients.with_label_values(&db).inc_scope();
+            WORKER_METRICS.ws_clients_spawned.with_label_values(&db).inc();
+            scopeguard::defer!(WORKER_METRICS.ws_clients_aborted.with_label_values(&db).inc());
 
             fut.await
         })

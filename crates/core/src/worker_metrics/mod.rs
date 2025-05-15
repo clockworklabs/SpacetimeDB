@@ -15,6 +15,16 @@ metrics_group!(
         #[labels(database_identity: Identity)]
         pub connected_clients: IntGaugeVec,
 
+        #[name = spacetime_worker_ws_clients_spawned]
+        #[help = "Number of new ws client connections spawned. Counted after any on_connect reducers are run."]
+        #[labels(database_identity: Identity)]
+        pub ws_clients_spawned: IntGaugeVec,
+
+        #[name = spacetime_worker_ws_clients_aborted]
+        #[help = "Number of ws client connections aborted"]
+        #[labels(database_identity: Identity)]
+        pub ws_clients_aborted: IntGaugeVec,
+
         #[name = spacetime_websocket_requests_total]
         #[help = "The cumulative number of websocket request messages"]
         #[labels(replica_id: u64, protocol: str)]
