@@ -50,6 +50,10 @@ namespace SpacetimeDB
         public event OpenEventHandler? OnConnect;
         public event ConnectErrorEventHandler? OnConnectError;
         public event SendErrorEventHandler? OnSendError;
+
+        /// <summary>
+        ///  Called directly by background task (not on main thread!)
+        /// </summary>
         public event MessageEventHandler? OnMessage;
         public event CloseEventHandler? OnClose;
 
@@ -337,7 +341,8 @@ namespace SpacetimeDB
                     if (OnMessage != null)
                     {
                         var message = _receiveBuffer.Take(count).ToArray();
-                        dispatchQueue.Enqueue(() => OnMessage(message, startReceive));
+                        // directly invoke message handling
+                        OnMessage(message, startReceive);
                     }
                 }
                 catch (WebSocketException ex)
