@@ -4,14 +4,6 @@
 
 partial record TestTableTaggedEnum : System.IEquatable<TestTableTaggedEnum>
 {
-    private TestTableTaggedEnum() { }
-
-    internal enum @enum : byte
-    {
-        X,
-        Y
-    }
-
     public sealed record X(int X_) : TestTableTaggedEnum
     {
         public override string ToString() =>
@@ -26,31 +18,32 @@ partial record TestTableTaggedEnum : System.IEquatable<TestTableTaggedEnum>
 
     public readonly partial struct BSATN : SpacetimeDB.BSATN.IReadWrite<TestTableTaggedEnum>
     {
-        internal static readonly SpacetimeDB.BSATN.Enum<@enum> __enumTag = new();
         internal static readonly SpacetimeDB.BSATN.I32 X = new();
         internal static readonly SpacetimeDB.BSATN.I32 Y = new();
 
-        public TestTableTaggedEnum Read(System.IO.BinaryReader reader) =>
-            __enumTag.Read(reader) switch
+        public TestTableTaggedEnum Read(System.IO.BinaryReader reader)
+        {
+            return reader.ReadByte() switch
             {
-                @enum.X => new X(X.Read(reader)),
-                @enum.Y => new Y(Y.Read(reader)),
+                0 => new X(X.Read(reader)),
+                1 => new Y(Y.Read(reader)),
                 _
                     => throw new System.InvalidOperationException(
                         "Invalid tag value, this state should be unreachable."
                     )
             };
+        }
 
         public void Write(System.IO.BinaryWriter writer, TestTableTaggedEnum value)
         {
             switch (value)
             {
                 case X(var inner):
-                    __enumTag.Write(writer, @enum.X);
+                    writer.Write((byte)0);
                     X.Write(writer, inner);
                     break;
                 case Y(var inner):
-                    __enumTag.Write(writer, @enum.Y);
+                    writer.Write((byte)1);
                     Y.Write(writer, inner);
                     break;
             }
@@ -79,9 +72,11 @@ partial record TestTableTaggedEnum : System.IEquatable<TestTableTaggedEnum>
         switch (this)
         {
             case X(var inner):
-                return inner.GetHashCode();
+                var ___hashX = inner.GetHashCode();
+                return ___hashX;
             case Y(var inner):
-                return inner.GetHashCode();
+                var ___hashY = inner.GetHashCode();
+                return ___hashY;
             default:
                 return 0;
         }

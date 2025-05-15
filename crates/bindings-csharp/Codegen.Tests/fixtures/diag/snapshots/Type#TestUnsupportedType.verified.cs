@@ -22,6 +22,11 @@ partial struct TestUnsupportedType
         BSATN.UnsupportedEnum.Write(writer, UnsupportedEnum);
     }
 
+    object SpacetimeDB.BSATN.IStructuralReadWrite.GetSerializer()
+    {
+        return new BSATN();
+    }
+
     public override string ToString() =>
         $"TestUnsupportedType {{ UnsupportedSpecialType = {SpacetimeDB.BSATN.StringUtil.GenericToString(UnsupportedSpecialType)}, UnsupportedSystemType = {SpacetimeDB.BSATN.StringUtil.GenericToString(UnsupportedSystemType)}, UnresolvedType = {SpacetimeDB.BSATN.StringUtil.GenericToString(UnresolvedType)}, UnsupportedEnum = {SpacetimeDB.BSATN.StringUtil.GenericToString(UnsupportedEnum)} }}";
 
@@ -34,8 +39,12 @@ partial struct TestUnsupportedType
         internal static readonly SpacetimeDB.BSATN.Unsupported<object> UnresolvedType = new();
         internal static readonly SpacetimeDB.BSATN.Unsupported<LocalEnum> UnsupportedEnum = new();
 
-        public TestUnsupportedType Read(System.IO.BinaryReader reader) =>
-            SpacetimeDB.BSATN.IStructuralReadWrite.Read<TestUnsupportedType>(reader);
+        public TestUnsupportedType Read(System.IO.BinaryReader reader)
+        {
+            var ___result = new TestUnsupportedType();
+            ___result.ReadFields(reader);
+            return ___result;
+        }
 
         public void Write(System.IO.BinaryWriter writer, TestUnsupportedType value)
         {
@@ -70,19 +79,36 @@ partial struct TestUnsupportedType
 
     public override int GetHashCode()
     {
-        return UnsupportedSpecialType.GetHashCode()
-            ^ UnsupportedSystemType.GetHashCode()
-            ^ UnresolvedType.GetHashCode()
-            ^ UnsupportedEnum.GetHashCode();
+        var ___hashUnsupportedSpecialType = UnsupportedSpecialType.GetHashCode();
+        var ___hashUnsupportedSystemType =
+            UnsupportedSystemType == null ? 0 : UnsupportedSystemType.GetHashCode();
+        var ___hashUnresolvedType = UnresolvedType == null ? 0 : UnresolvedType.GetHashCode();
+        var ___hashUnsupportedEnum = UnsupportedEnum.GetHashCode();
+        return ___hashUnsupportedSpecialType
+            ^ ___hashUnsupportedSystemType
+            ^ ___hashUnresolvedType
+            ^ ___hashUnsupportedEnum;
     }
 
 #nullable enable
     public bool Equals(TestUnsupportedType that)
     {
-        return UnsupportedSpecialType.Equals(that.UnsupportedSpecialType)
-            && UnsupportedSystemType.Equals(that.UnsupportedSystemType)
-            && UnresolvedType.Equals(that.UnresolvedType)
-            && UnsupportedEnum.Equals(that.UnsupportedEnum);
+        var ___eqUnsupportedSpecialType = this.UnsupportedSpecialType.Equals(
+            that.UnsupportedSpecialType
+        );
+        var ___eqUnsupportedSystemType =
+            this.UnsupportedSystemType == null
+                ? that.UnsupportedSystemType == null
+                : this.UnsupportedSystemType.Equals(that.UnsupportedSystemType);
+        var ___eqUnresolvedType =
+            this.UnresolvedType == null
+                ? that.UnresolvedType == null
+                : this.UnresolvedType.Equals(that.UnresolvedType);
+        var ___eqUnsupportedEnum = this.UnsupportedEnum.Equals(that.UnsupportedEnum);
+        return ___eqUnsupportedSpecialType
+            && ___eqUnsupportedSystemType
+            && ___eqUnresolvedType
+            && ___eqUnsupportedEnum;
     }
 
     public override bool Equals(object? that)

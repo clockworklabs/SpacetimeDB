@@ -22,20 +22,26 @@ impl MemoryUsage for PagePool {
     }
 }
 
-/// The default page pool has a size of 8 GiB.
-impl Default for PagePool {
-    fn default() -> Self {
-        Self::new(None)
-    }
-}
-
 impl PagePool {
+    pub fn new_for_test() -> Self {
+        Self::new(Some(100 * size_of::<Page>()))
+    }
+
     /// Returns a new page pool with `max_size` bytes rounded down to the nearest multiple of 64 KiB.
     ///
-    /// if no size is provided, a default of 8 GiB is used.
+    /// if no size is provided, a default of 1 page is used.
     pub fn new(max_size: Option<usize>) -> Self {
-        const DEFAULT_MAX_SIZE: usize = 8 * (1 << 30); // 8 GiB
-        const PAGE_SIZE: usize = 64 * (1 << 10); // 64 KiB, `size_of::<Page>()`
+        const PAGE_SIZE: usize = size_of::<Page>();
+        // TODO(centril): This effectively disables the page pool.
+        // Currently, we have a test `test_index_scans`.
+        // The test sets up a `Location` table, like in BitCraft, with a `chunk` field,
+        // and populates it with 1000 different chunks with 1200 rows each.
+        // Then it asserts that the cold latency of an index scan on `chunk` takes < 1 ms.
+        // However, for reasons currently unknown to us,
+        // a large page pool, with capacity `1 << 26` bytes, on i7-7700K, 64GB RAM,
+        // will turn the latency into 30-40 ms.
+        // As a precaution, we disable the page pool by default.
+        const DEFAULT_MAX_SIZE: usize = PAGE_SIZE; // 1 page
 
         let queue_size = max_size.unwrap_or(DEFAULT_MAX_SIZE) / PAGE_SIZE;
         let inner = Arc::new(PagePoolInner::new(queue_size));
@@ -163,18 +169,6 @@ impl MemoryUsage for PagePoolInner {
     }
 }
 
-impl Default for PagePoolInner {
-    fn default() -> Self {
-        const MAX_PAGE_MEM: usize = 8 * (1 << 30); // 8 GiB
-
-        // 2 ^ 17 pages at most.
-        // Each slot in the pool is `(AtomicCell, Box<Page>)` which takes up 16 bytes.
-        // The pool will therefore have a fixed cost of 2^20 bytes, i.e., 2 MiB.
-        const MAX_POOLED_PAGES: usize = MAX_PAGE_MEM / size_of::<Page>();
-        Self::new(MAX_POOLED_PAGES)
-    }
-}
-
 #[inline]
 fn inc(atomic: &AtomicUsize) {
     atomic.fetch_add(1, Ordering::Relaxed);
@@ -246,7 +240,7 @@ mod tests {
 
     #[test]
     fn page_pool_returns_same_page() {
-        let pool = PagePool::default();
+        let pool = PagePool::new_for_test();
         assert_metrics(&pool, 0, 0, 0, 0);
 
         // Create a page and put it back.

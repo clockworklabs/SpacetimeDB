@@ -60,7 +60,7 @@ async fn can_sync_a_snapshot() -> anyhow::Result<()> {
     assert_eq!(stats.objects_written, total_objects);
 
     // Assert that the copied snapshot is valid.
-    let pool = PagePool::default();
+    let pool = PagePool::new_for_test();
     let dst_snapshot_full = dst_repo.read_snapshot(src.offset, &pool)?;
     Locking::restore_from_snapshot(dst_snapshot_full, pool)?;
 

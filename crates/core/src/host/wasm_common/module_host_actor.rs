@@ -1,10 +1,7 @@
-use anyhow::Context;
 use bytes::Bytes;
 use spacetimedb_lib::db::raw_def::v9::Lifecycle;
-use spacetimedb_primitives::TableId;
 use spacetimedb_schema::auto_migrate::ponder_migrate;
 use spacetimedb_schema::def::ModuleDef;
-use spacetimedb_schema::schema::{Schema, TableSchema};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -19,12 +16,11 @@ use crate::host::instance_env::InstanceEnv;
 use crate::host::module_host::{
     CallReducerParams, DatabaseUpdate, EventStatus, Module, ModuleEvent, ModuleFunctionCall, ModuleInfo, ModuleInstance,
 };
-use crate::host::{ArgsTuple, ReducerCallResult, ReducerId, ReducerOutcome, Scheduler, UpdateDatabaseResult};
+use crate::host::{ReducerCallResult, ReducerId, ReducerOutcome, Scheduler, UpdateDatabaseResult};
 use crate::identity::Identity;
 use crate::messages::control_db::HostType;
 use crate::module_host_context::ModuleCreationContext;
 use crate::replica_context::ReplicaContext;
-use crate::sql::parser::RowLevelExpr;
 use crate::subscription::module_subscription_actor::WriteConflict;
 use crate::util::prometheus_handle::HistogramExt;
 use crate::worker_metrics::WORKER_METRICS;
@@ -261,81 +257,6 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
         self.trapped
     }
 
-    #[tracing::instrument(
-        level = "debug",
-        skip_all,
-        err
-        fields(db_id = self.instance.instance_env().replica_ctx.id),
-    )]
-    fn init_database(&mut self, program: Program) -> anyhow::Result<Option<ReducerCallResult>> {
-        log::debug!("init database");
-        let timestamp = Timestamp::now();
-        let stdb = &*self.replica_context().relational_db;
-
-        let tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
-        let auth_ctx = AuthCtx::for_current(self.replica_context().database.owner_identity);
-        let (tx, ()) = stdb
-            .with_auto_rollback(tx, |tx| {
-                let mut table_defs: Vec<_> = self.info.module_def.tables().collect();
-                table_defs.sort_by(|a, b| a.name.cmp(&b.name));
-
-                for def in table_defs {
-                    let table_name = &def.name;
-                    self.system_logger().info(&format!("Creating table `{table_name}`"));
-                    let schema = TableSchema::from_module_def(&self.info.module_def, def, (), TableId::SENTINEL);
-                    stdb.create_table(tx, schema)
-                        .with_context(|| format!("failed to create table {table_name}"))?;
-                }
-                // Insert the late-bound row-level security expressions.
-                for rls in self.info.module_def.row_level_security() {
-                    self.system_logger()
-                        .info(&format!("Creating row level security `{}`", rls.sql));
-
-                    let rls = RowLevelExpr::build_row_level_expr(tx, &auth_ctx, rls)
-                        .with_context(|| format!("failed to create row-level security: `{}`", rls.sql))?;
-                    let table_id = rls.def.table_id;
-                    let sql = rls.def.sql.clone();
-                    stdb.create_row_level_security(tx, rls.def).with_context(|| {
-                        format!("failed to create row-level security for table `{table_id}`: `{sql}`",)
-                    })?;
-                }
-
-                stdb.set_initialized(tx, HostType::Wasm, program)?;
-
-                anyhow::Ok(())
-            })
-            .inspect_err(|e| log::error!("{e:?}"))?;
-
-        let rcr = match self.info.module_def.lifecycle_reducer(Lifecycle::Init) {
-            None => {
-                stdb.commit_tx(tx)?;
-                None
-            }
-
-            Some((reducer_id, _)) => {
-                self.system_logger().info("Invoking `init` reducer");
-                let caller_identity = self.replica_context().database.owner_identity;
-                Some(self.call_reducer_with_tx(
-                    Some(tx),
-                    CallReducerParams {
-                        timestamp,
-                        caller_identity,
-                        caller_connection_id: ConnectionId::ZERO,
-                        client: None,
-                        request_id: None,
-                        timer: None,
-                        reducer_id,
-                        args: ArgsTuple::nullary(),
-                    },
-                ))
-            }
-        };
-
-        self.system_logger().info("Database initialized");
-
-        Ok(rcr)
-    }
-
     #[tracing::instrument(level = "trace", skip_all)]
     fn update_database(
         &mut self,
@@ -558,7 +479,9 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             Ok(Ok(())) => {
                 let res = match reducer_def.lifecycle {
                     Some(Lifecycle::OnConnect) => tx.insert_st_client(caller_identity, caller_connection_id),
-                    Some(Lifecycle::OnDisconnect) => tx.delete_st_client(caller_identity, caller_connection_id),
+                    Some(Lifecycle::OnDisconnect) => {
+                        tx.delete_st_client(caller_identity, caller_connection_id, database_identity)
+                    }
                     _ => Ok(()),
                 };
                 match res {

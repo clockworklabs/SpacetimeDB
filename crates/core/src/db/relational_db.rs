@@ -19,7 +19,7 @@ use crate::db::datastore::system_tables::{StModuleRow, WASM_MODULE};
 use crate::error::{DBError, DatabaseError, TableError};
 use crate::execution_context::{ReducerContext, Workload};
 use crate::messages::control_db::HostType;
-use crate::util::spawn_rayon;
+use crate::util::{asyncify, spawn_rayon};
 use anyhow::{anyhow, Context};
 use fs2::FileExt;
 use futures::channel::mpsc;
@@ -157,15 +157,14 @@ impl SnapshotWorkerActor {
         let start_time = std::time::Instant::now();
         let committed_state = self.committed_state.clone();
         let snapshot_repo = self.repo.clone();
-        let res = tokio::task::spawn_blocking(move || {
+        let res = asyncify(move || {
             Locking::take_snapshot_internal(&committed_state, &snapshot_repo).inspect(|opts| {
                 if let Some(opts) = opts {
                     Locking::compress_older_snapshot_internal(&snapshot_repo, opts.0);
                 }
             })
         })
-        .await
-        .unwrap();
+        .await;
         match res {
             Err(e) => {
                 log::error!(
@@ -1622,7 +1621,7 @@ pub mod tests_utils {
                 history,
                 durability,
                 snapshot_repo,
-                PagePool::default(),
+                PagePool::new_for_test(),
             )?;
             assert_eq!(connected_clients.len(), expected_num_clients);
             let db = db.with_row_count(Self::row_count_fn());
@@ -1828,7 +1827,7 @@ mod tests {
             EmptyHistory::new(),
             None,
             None,
-            PagePool::default(),
+            PagePool::new_for_test(),
         ) {
             Ok(_) => {
                 panic!("Allowed to open database twice")
@@ -2770,7 +2769,7 @@ mod tests {
             Identity::ZERO,
             Some(&repo),
             Some(last_compress),
-            PagePool::default(),
+            PagePool::new_for_test(),
         )?;
 
         Ok(())
@@ -2795,7 +2794,8 @@ mod tests {
         );
 
         let last = repo.latest_snapshot()?;
-        let stdb = RelationalDB::restore_from_snapshot_or_bootstrap(identity, Some(&repo), last, PagePool::default())?;
+        let stdb =
+            RelationalDB::restore_from_snapshot_or_bootstrap(identity, Some(&repo), last, PagePool::new_for_test())?;
 
         let out = TempDir::with_prefix("snapshot_test")?;
         let dir = SnapshotsPath::from_path_unchecked(out.path());
