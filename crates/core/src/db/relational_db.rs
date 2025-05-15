@@ -1789,6 +1789,7 @@ mod tests {
     #![allow(clippy::disallowed_macros)]
 
     use std::cell::RefCell;
+    use std::fs::OpenOptions;
     use std::path::PathBuf;
     use std::rc::Rc;
 
@@ -1805,7 +1806,7 @@ mod tests {
     use commitlog::payload::txdata;
     use commitlog::Commitlog;
     use durability::EmptyHistory;
-    use pretty_assertions::assert_eq;
+    use pretty_assertions::{assert_eq, assert_matches};
     use spacetimedb_data_structures::map::IntMap;
     use spacetimedb_fs_utils::compression::{CompressCount, CompressType};
     use spacetimedb_lib::db::raw_def::v9::{btree, RawTableDefBuilder};
@@ -2874,6 +2875,54 @@ mod tests {
         stdb.take_snapshot(&repo)?;
         let size = repo.size_on_disk()?;
         assert!(size.total_size > 0, "Snapshot size should be greater than 0");
+
+        Ok(())
+    }
+
+    #[test]
+    fn tries_older_snapshots() -> ResultTest<()> {
+        let stdb = TestDB::in_memory()?;
+        stdb.path().snapshots().create()?;
+        let repo = SnapshotRepository::open(stdb.path().snapshots(), stdb.database_identity(), 85)?;
+
+        stdb.take_snapshot(&repo)?.expect("failed to take snapshot");
+        {
+            let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+            let schema = my_table(AlgebraicType::I32);
+            let table_id = stdb.create_table(&mut tx, schema)?;
+            for v in 0..3 {
+                insert(&stdb, &mut tx, table_id, &product![v])?;
+            }
+            stdb.commit_tx(tx)?;
+        }
+        stdb.take_snapshot(&repo)?.expect("failed to take snapshot");
+
+        let try_restore = |durable_tx_offset, min_commitlog_offset| {
+            RelationalDB::restore_from_snapshot_or_bootstrap(
+                stdb.database_identity(),
+                Some(&repo),
+                Some(durable_tx_offset),
+                min_commitlog_offset,
+                PagePool::new_for_test(),
+            )
+        };
+
+        try_restore(1, 0)?;
+        // We can restore from the previous snapshot
+        // if the snapshot file is corrupted
+        repo.snapshot_dir_path(1)
+            .snapshot_file(1)
+            .open_file(OpenOptions::new().write(true))?
+            .set_len(1)?;
+        try_restore(1, 0)?;
+        // Also if it's gone
+        std::fs::remove_file(repo.snapshot_dir_path(1).snapshot_file(1))?;
+        try_restore(1, 0)?;
+        // But not if the commitlog starts after the previous snapshot
+        assert_matches!(
+            try_restore(1, 1).map(drop),
+            Err(RestoreSnapshotError::NoConnectedSnapshot { .. })
+        );
 
         Ok(())
     }
