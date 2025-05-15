@@ -466,7 +466,7 @@ impl RelationalDB {
         min_commitlog_offset: TxOffset,
         page_pool: PagePool,
     ) -> Result<Locking, RestoreSnapshotError> {
-        fn try_restore_napshot(
+        fn try_restore_snapshot(
             snapshot_repo: &SnapshotRepository,
             snapshot_offset: TxOffset,
             database_identity: Identity,
