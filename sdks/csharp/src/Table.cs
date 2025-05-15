@@ -3,10 +3,12 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using SpacetimeDB.BSATN;
 using SpacetimeDB.ClientApi;
 
+#nullable enable
 namespace SpacetimeDB
 {
     public abstract class RemoteBase
@@ -50,10 +52,20 @@ namespace SpacetimeDB
     }
 
 
+    /// <summary>
+    /// Base class for views of remote tables.
+    /// </summary>
+    /// <typeparam name="EventContext"></typeparam>
+    /// <typeparam name="Row"></typeparam>
     public abstract class RemoteTableHandle<EventContext, Row> : RemoteBase, IRemoteTableHandle
         where EventContext : class, IEventContext
         where Row : class, IStructuralReadWrite, new()
     {
+        // Note: This should really be also parameterized with RowRW: IReadWrite<Row>, but that is a backwards-
+        // incompatible change. Instead, we call (IReadWrite<Row>)((IStructuralReadWrite)new Row()).GetSerializer().
+        // Serializer.Read is faster than IStructuralReadWrite.Read<Row> since it's manually monomorphized
+        // and therefore avoids using reflection when initializing the row object.
+
         public abstract class IndexBase<Column>
             where Column : IEquatable<Column>
         {
@@ -134,16 +146,35 @@ namespace SpacetimeDB
         // THE DATA IN THE TABLE.
         // The keys of this map are:
         // - Primary keys, if we have them.
-        // - Byte arrays, if we don't.
+        // - The entire row itself, if we don't.
         // But really, the keys are whatever SpacetimeDBClient chooses to give us.
-        //
-        // We store the BSATN encodings of objects next to their runtime representation.
-        // This is memory-inefficient, but allows us to quickly compare objects when seeing if an update is a "real"
-        // update or just a multiplicity change.
         private readonly MultiDictionary<object, IStructuralReadWrite> Entries = new(EqualityComparer<object>.Default, EqualityComparer<Object>.Default);
 
+        private static IReadWrite<Row>? _serializer;
+
+        /// <summary>
+        /// Serializer for the rows of this table.
+        /// </summary>
+        private static IReadWrite<Row> Serializer
+        {
+            get
+            {
+                // We can't just initialize this statically, because some BitCraft row types have static
+                // methods that read SpacetimeDBService.Conn.Db, and these fail if the connection is not
+                // there on the first load of those types (????).
+                // This should really be considered an error on their part, but for now we delay initializing any Rows until
+                // Serializer is actually read, that is, until a row actually needs to be deserialized --
+                // at which point, the connection should be initialized.
+                if (_serializer == null)
+                {
+                    _serializer = (IReadWrite<Row>)new Row().GetSerializer();
+                }
+                return _serializer;
+            }
+        }
+
         // The function to use for decoding a type value.
-        IStructuralReadWrite IRemoteTableHandle.DecodeValue(BinaryReader reader) => IStructuralReadWrite.Read<Row>(reader);
+        IStructuralReadWrite IRemoteTableHandle.DecodeValue(BinaryReader reader) => Serializer.Read(reader);
 
         public delegate void RowEventHandler(EventContext context, Row row);
         public event RowEventHandler? OnInsert;
@@ -304,3 +335,4 @@ namespace SpacetimeDB
         }
     }
 }
+#nullable disable
