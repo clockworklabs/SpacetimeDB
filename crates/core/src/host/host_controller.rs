@@ -704,8 +704,7 @@ impl Host {
     ///
     /// Note that this does **not** run module initialization routines, but may
     /// create on-disk artifacts if the host / database did not exist.
-
-    #[tracing::instrument(level = "debug", skip_all, err)]
+    #[tracing::instrument(level = "debug", skip_all)]
     async fn try_init(host_controller: &HostController, database: Database, replica_id: u64) -> anyhow::Result<Self> {
         let HostController {
             data_dir,
@@ -744,7 +743,17 @@ impl Host {
                     Some(durability),
                     Some(snapshot_repo),
                     page_pool.clone(),
-                )?;
+                )
+                // Make sure we log the source chain of the error
+                // as a single line, with the help of `anyhow`.
+                .map_err(anyhow::Error::from)
+                .inspect_err(|e| {
+                    tracing::error!(
+                        database = %database.database_identity,
+                        replica = replica_id,
+                        "Failed to open database: {e:#}"
+                    );
+                })?;
                 if let Some(start_snapshot_watcher) = start_snapshot_watcher {
                     let watcher = db.subscribe_to_snapshots().expect("we passed snapshot_repo");
                     start_snapshot_watcher(watcher)
