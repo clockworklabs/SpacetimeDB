@@ -592,13 +592,11 @@ impl ModuleHost {
         // compiler that `dyn ModuleInstance` is unwind safe.
         // If a reducer call panics, we **must** ensure to call `self.on_panic`
         // so that the module is discarded by the host controller.
-        let result = tokio::task::spawn_blocking(move || f(&mut *inst))
-            .await
-            .unwrap_or_else(|e| {
-                log::warn!("reducer {reducer} panicked");
-                (self.on_panic)();
-                std::panic::resume_unwind(e.into_panic());
-            });
+        scopeguard::defer_on_unwind!({
+            log::warn!("reducer {reducer} panicked");
+            (self.on_panic)();
+        });
+        let result = asyncify(move || f(&mut *inst)).await;
         Ok(result)
     }
 
