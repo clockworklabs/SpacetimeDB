@@ -82,10 +82,10 @@ pub trait History {
     ///
     /// Callers should thus only rely on it for informational purposes.
     ///
-    /// The default implementation returns `None`, which is correct for any
+    /// The default implementation returns `(0, None)`, which is correct for any
     /// history implementation.
-    fn max_tx_offset(&self) -> Option<TxOffset> {
-        None
+    fn tx_range_hint(&self) -> (TxOffset, Option<TxOffset>) {
+        (0, None)
     }
 }
 
@@ -113,8 +113,8 @@ impl<T: History> History for Arc<T> {
         (**self).transactions_from(offset, decoder)
     }
 
-    fn max_tx_offset(&self) -> Option<TxOffset> {
-        (**self).max_tx_offset()
+    fn tx_range_hint(&self) -> (TxOffset, Option<TxOffset>) {
+        (**self).tx_range_hint()
     }
 }
 
@@ -153,7 +153,7 @@ impl<T> History for EmptyHistory<T> {
         iter::empty()
     }
 
-    fn max_tx_offset(&self) -> Option<TxOffset> {
-        Some(0)
+    fn tx_range_hint(&self) -> (TxOffset, Option<TxOffset>) {
+        (0, Some(0))
     }
 }

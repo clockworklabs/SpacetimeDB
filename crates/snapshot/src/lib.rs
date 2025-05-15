@@ -31,6 +31,7 @@ use spacetimedb_fs_utils::{
 };
 use spacetimedb_lib::Identity;
 use spacetimedb_paths::server::{SnapshotDirPath, SnapshotFilePath, SnapshotsPath};
+use spacetimedb_paths::FromPathUnchecked;
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::{bsatn, de::Deserialize, ser::Serialize};
 use spacetimedb_table::{
@@ -874,8 +875,19 @@ impl SnapshotRepository {
             // Ignore entries whose lockfile still exists.
             .filter(|path| !Lockfile::lock_path(path).exists())
             // Parse each entry's TxOffset from the file name; ignore unparseable.
+            // Also ignore if the snapshot file doesn't exists.
+            // This can happen on incomplete transfers, or if something went
+            // wrong during creation.
             // Item = TxOffset
-            .filter_map(|path| TxOffset::from_str_radix(path.file_stem()?.to_str()?, 10).ok()))
+            .filter_map(|path| {
+                let offset = TxOffset::from_str_radix(path.file_stem()?.to_str()?, 10).ok()?;
+                let snapshot_file = SnapshotDirPath::from_path_unchecked(path).snapshot_file(offset);
+                if !snapshot_file.0.exists() {
+                    None
+                } else {
+                    Some(offset)
+                }
+            }))
     }
 
     /// Return the `TxOffset` of the highest-offset complete snapshot in the repository.
@@ -1094,4 +1106,55 @@ pub struct ReconstructedSnapshot {
     pub tables: BTreeMap<TableId, Vec<Box<Page>>>,
     /// If the snapshot was compressed or not.
     pub compress_type: CompressType,
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs::OpenOptions;
+
+    use tempfile::tempdir;
+
+    use super::*;
+
+    #[test]
+    fn listing_ignores_if_snapshot_file_is_missing() -> anyhow::Result<()> {
+        let tmp = tempdir()?;
+
+        let root = SnapshotsPath::from_path_unchecked(tmp.path());
+        let repo = SnapshotRepository::open(root, Identity::ZERO, 42)?;
+        for i in 0..10 {
+            repo.snapshot_dir_path(i).create()?;
+        }
+        repo.snapshot_dir_path(5)
+            .snapshot_file(5)
+            .open_file(OpenOptions::new().write(true).create_new(true))
+            .map(drop)?;
+
+        assert_eq!(vec![5], repo.all_snapshots()?.collect::<Vec<_>>());
+
+        Ok(())
+    }
+
+    #[test]
+    fn listing_ignores_if_lockfile_exists() -> anyhow::Result<()> {
+        let tmp = tempdir()?;
+
+        let root = SnapshotsPath::from_path_unchecked(tmp.path());
+        let repo = SnapshotRepository::open(root, Identity::ZERO, 42)?;
+        for i in 0..10 {
+            let snapshot_dir = repo.snapshot_dir_path(i);
+            snapshot_dir.create()?;
+            snapshot_dir
+                .snapshot_file(i)
+                .open_file(OpenOptions::new().write(true).create_new(true))
+                .map(drop)?;
+        }
+        let _lock = Lockfile::for_file(repo.snapshot_dir_path(5))?;
+
+        let mut snapshots = repo.all_snapshots()?.collect::<Vec<_>>();
+        snapshots.sort();
+        assert_eq!(vec![0, 1, 2, 3, 4, 6, 7, 8, 9], snapshots);
+
+        Ok(())
+    }
 }
