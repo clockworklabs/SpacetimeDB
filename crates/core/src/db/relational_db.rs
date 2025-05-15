@@ -532,7 +532,7 @@ impl RelationalDB {
                     break;
                 }
                 if let Ok(datastore) =
-                    try_restore_napshot(snapshot_repo, snapshot_offset, database_identity, page_pool.clone())
+                    try_restore_snapshot(snapshot_repo, snapshot_offset, database_identity, page_pool.clone())
                 {
                     return Ok(datastore);
                 } else {
