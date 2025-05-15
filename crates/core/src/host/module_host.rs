@@ -588,17 +588,20 @@ impl ModuleHost {
             self.inner.get_instance(self.info.database_identity).await?
         };
 
-        // Spawning a task allows to catch panics without proving to the
-        // compiler that `dyn ModuleInstance` is unwind safe.
+        // Operations on module instances (e.g. calling reducers) is blocking,
+        // partially because the computation can potentialyl take a long time
+        // and partially because interacting with the database requires taking
+        // a blocking lock. So, we run `f` inside of `asyncify()`, which runs
+        // the provided closure in a tokio blocking task, and bubbles up any
+        // panic that may occur.
+
         // If a reducer call panics, we **must** ensure to call `self.on_panic`
         // so that the module is discarded by the host controller.
-        let result = tokio::task::spawn_blocking(move || f(&mut *inst))
-            .await
-            .unwrap_or_else(|e| {
-                log::warn!("reducer {reducer} panicked");
-                (self.on_panic)();
-                std::panic::resume_unwind(e.into_panic());
-            });
+        scopeguard::defer_on_unwind!({
+            log::warn!("reducer {reducer} panicked");
+            (self.on_panic)();
+        });
+        let result = asyncify(move || f(&mut *inst)).await;
         Ok(result)
     }
 
