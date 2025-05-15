@@ -103,13 +103,13 @@ type FullSubscriptionUpdate = FormatSwitch<ws::DatabaseUpdate<BsatnFormat>, ws::
 
 /// A utility for sending an error message to a client and returning early
 macro_rules! return_on_err {
-    ($expr:expr, $handler:expr) => {
+    ($expr:expr, $handler:expr, $metrics:expr) => {
         match $expr {
             Ok(val) => val,
             Err(e) => {
                 // TODO: Handle errors sending messages.
                 let _ = $handler(e.to_string().into());
-                return Ok(());
+                return Ok($metrics);
             }
         }
     };
@@ -398,7 +398,7 @@ impl ModuleSubscriptions {
         sender: Arc<ClientConnectionSender>,
         request: UnsubscribeMulti,
         timer: Instant,
-    ) -> Result<(), DBError> {
+    ) -> Result<Option<ExecutionMetrics>, DBError> {
         // Send an error message to the client
         let send_err_msg = |message| {
             sender.send_message(SubscriptionMessage {
@@ -420,38 +420,23 @@ impl ModuleSubscriptions {
         let removed_queries = {
             let mut subscriptions = self.subscriptions.write();
 
-            match subscriptions.remove_subscription((sender.id.identity, sender.id.connection_id), request.query_id) {
-                Ok(queries) => queries,
-                Err(error) => {
-                    // Apparently we ignore errors sending messages.
-                    let _ = send_err_msg(error.to_string().into());
-                    return Ok(());
-                }
-            }
+            return_on_err!(
+                subscriptions.remove_subscription((sender.id.identity, sender.id.connection_id), request.query_id),
+                send_err_msg,
+                None
+            )
         };
 
-        let auth = AuthCtx::new(self.owner_identity, sender.id.identity);
-        let eval_result = self.evaluate_queries(
-            sender.clone(),
-            &removed_queries,
-            &tx,
-            &auth,
-            TableUpdateType::Unsubscribe,
-        );
-        // If execution error, send to client
-        let (update, metrics) = match eval_result {
-            Ok(ok) => ok,
-            Err(e) => {
-                // Apparently we ignore errors sending messages.
-                let _ = send_err_msg(e.to_string().into());
-                return Ok(());
-            }
-        };
-
-        record_exec_metrics(
-            &WorkloadType::Unsubscribe,
-            &self.relational_db.database_identity(),
-            metrics,
+        let (update, metrics) = return_on_err!(
+            self.evaluate_queries(
+                sender.clone(),
+                &removed_queries,
+                &tx,
+                &AuthCtx::new(self.owner_identity, sender.id.identity),
+                TableUpdateType::Unsubscribe,
+            ),
+            send_err_msg,
+            None
         );
 
         let _ = sender.send_message(SubscriptionMessage {
@@ -460,7 +445,8 @@ impl ModuleSubscriptions {
             timer: Some(timer),
             result: SubscriptionResult::UnsubscribeMulti(SubscriptionData { data: update }),
         });
-        Ok(())
+
+        Ok(Some(metrics))
     }
 
     /// Compiles the queries in a [Subscribe] or [SubscribeMulti] message.
@@ -538,7 +524,7 @@ impl ModuleSubscriptions {
         request: SubscribeMulti,
         timer: Instant,
         _assert: Option<AssertTxFn>,
-    ) -> Result<(), DBError> {
+    ) -> Result<Option<ExecutionMetrics>, DBError> {
         // Send an error message to the client
         let send_err_msg = |message| {
             let _ = sender.send_message(SubscriptionMessage {
@@ -555,7 +541,8 @@ impl ModuleSubscriptions {
         let num_queries = request.query_strings.len();
         let (queries, auth, tx) = return_on_err!(
             self.compile_queries(sender.id.identity, request.query_strings, num_queries),
-            send_err_msg
+            send_err_msg,
+            None
         );
         let tx = scopeguard::guard(tx, |tx| {
             self.relational_db.release_tx(tx);
@@ -578,14 +565,8 @@ impl ModuleSubscriptions {
             let mut subscriptions = self.subscriptions.write();
             subscriptions.remove_subscription((sender.id.identity, sender.id.connection_id), request.query_id)?;
             send_err_msg("Internal error evaluating queries".into());
-            return Ok(());
+            return Ok(None);
         };
-
-        record_exec_metrics(
-            &WorkloadType::Subscribe,
-            &self.relational_db.database_identity(),
-            metrics,
-        );
 
         #[cfg(test)]
         if let Some(assert) = _assert {
@@ -602,7 +583,8 @@ impl ModuleSubscriptions {
             timer: Some(timer),
             result: SubscriptionResult::SubscribeMulti(SubscriptionData { data: update }),
         });
-        Ok(())
+
+        Ok(Some(metrics))
     }
 
     /// Add a subscriber to the module. NOTE: this function is blocking.
@@ -614,7 +596,7 @@ impl ModuleSubscriptions {
         subscription: Subscribe,
         timer: Instant,
         _assert: Option<AssertTxFn>,
-    ) -> Result<(), DBError> {
+    ) -> Result<ExecutionMetrics, DBError> {
         let num_queries = subscription.query_strings.len();
         let (queries, auth, tx) = self.compile_queries(sender.id.identity, subscription.query_strings, num_queries)?;
         let tx = scopeguard::guard(tx, |tx| {
@@ -641,12 +623,6 @@ impl ModuleSubscriptions {
                 .map(|(table_update, metrics)| (FormatSwitch::Json(table_update), metrics))?,
         };
 
-        record_exec_metrics(
-            &WorkloadType::Subscribe,
-            &self.relational_db.database_identity(),
-            metrics,
-        );
-
         // It acquires the subscription lock after `eval`, allowing `add_subscription` to run concurrently.
         // This also makes it possible for `broadcast_event` to get scheduled before the subsequent part here
         // but that should not pose an issue.
@@ -667,7 +643,8 @@ impl ModuleSubscriptions {
             request_id: Some(subscription.request_id),
             timer: Some(timer),
         });
-        Ok(())
+
+        Ok(metrics)
     }
 
     pub fn remove_subscriber(&self, client_id: ClientActorId) {
@@ -764,6 +741,7 @@ mod tests {
     use hashbrown::HashMap;
     use itertools::Itertools;
     use parking_lot::RwLock;
+    use pretty_assertions::assert_matches;
     use spacetimedb_client_api_messages::energy::EnergyQuanta;
     use spacetimedb_client_api_messages::websocket::{
         CompressableQueryUpdate, Compression, FormatSwitch, QueryId, Subscribe, SubscribeMulti, SubscribeSingle,
@@ -794,7 +772,8 @@ mod tests {
             query_strings: [sql.into()].into(),
             request_id: 0,
         };
-        module_subscriptions.add_legacy_subscriber(sender, subscribe, Instant::now(), assert)
+        module_subscriptions.add_legacy_subscriber(sender, subscribe, Instant::now(), assert)?;
+        Ok(())
     }
 
     /// An in-memory `RelationalDB` for testing
@@ -945,10 +924,12 @@ mod tests {
         queries: &[&'static str],
         sender: Arc<ClientConnectionSender>,
         counter: &mut u32,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<ExecutionMetrics> {
         *counter += 1;
-        subs.add_multi_subscription(sender, multi_subscribe(queries, *counter), Instant::now(), None)?;
-        Ok(())
+        let metrics = subs
+            .add_multi_subscription(sender, multi_subscribe(queries, *counter), Instant::now(), None)
+            .map(|metrics| metrics.unwrap_or_default())?;
+        Ok(metrics)
     }
 
     /// Unsubscribe from a single query
@@ -1236,6 +1217,8 @@ mod tests {
                     .unwrap()
             })
         })?;
+
+        commit_tx(&db, &subs, [], [(table_id, product![0_u8])])?;
 
         let mut query_id = 0;
 
@@ -1854,6 +1837,50 @@ mod tests {
         // We should have evaluated all of the queries
         assert_eq!(metrics.delta_queries_evaluated, 4);
         assert_eq!(metrics.delta_queries_matched, 0);
+
+        Ok(())
+    }
+
+    /// Test that we do not evaluate queries that return trivially empty results
+    #[tokio::test]
+    async fn test_query_pruning_for_empty_tables() -> anyhow::Result<()> {
+        // Establish a client connection
+        let (tx, mut rx) = client_connection(client_id_from_u8(1));
+
+        let db = relational_db()?;
+        let subs = module_subscriptions(db.clone());
+
+        let schema = &[("id", AlgebraicType::U64), ("a", AlgebraicType::U64)];
+        let indices = &[0.into()];
+        // Create tables `t` and `s` with `(i: u64, a: u64)`.
+        db.create_table_for_test("t", schema, indices)?;
+        let s_id = db.create_table_for_test("s", schema, indices)?;
+
+        // Insert one row into `s`, but leave `t` empty.
+        commit_tx(&db, &subs, [], [(s_id, product![0u64, 0u64])])?;
+
+        // Subscribe to queries that return empty results
+        let metrics = subscribe_multi(
+            &subs,
+            &[
+                "select t.* from t where a = 0",
+                "select t.* from t join s on t.id = s.id where s.a = 0",
+                "select s.* from t join s on t.id = s.id where t.a = 0",
+            ],
+            tx,
+            &mut 0,
+        )?;
+
+        assert_matches!(
+            rx.recv().await,
+            Some(SerializableMessage::Subscription(SubscriptionMessage {
+                result: SubscriptionResult::SubscribeMulti(_),
+                ..
+            }))
+        );
+
+        assert_eq!(metrics.rows_scanned, 0);
+        assert_eq!(metrics.index_seeks, 0);
 
         Ok(())
     }

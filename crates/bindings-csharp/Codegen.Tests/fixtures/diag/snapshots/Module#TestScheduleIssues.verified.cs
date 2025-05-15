@@ -22,6 +22,11 @@ partial struct TestScheduleIssues
         BSATN.ScheduleAtCorrectType.Write(writer, ScheduleAtCorrectType);
     }
 
+    object SpacetimeDB.BSATN.IStructuralReadWrite.GetSerializer()
+    {
+        return new BSATN();
+    }
+
     public override string ToString() =>
         $"TestScheduleIssues {{ IdWrongType = {SpacetimeDB.BSATN.StringUtil.GenericToString(IdWrongType)}, IdCorrectType = {SpacetimeDB.BSATN.StringUtil.GenericToString(IdCorrectType)}, ScheduleAtWrongType = {SpacetimeDB.BSATN.StringUtil.GenericToString(ScheduleAtWrongType)}, ScheduleAtCorrectType = {SpacetimeDB.BSATN.StringUtil.GenericToString(ScheduleAtCorrectType)} }}";
 
@@ -32,8 +37,12 @@ partial struct TestScheduleIssues
         internal static readonly SpacetimeDB.BSATN.I32 ScheduleAtWrongType = new();
         internal static readonly SpacetimeDB.ScheduleAt.BSATN ScheduleAtCorrectType = new();
 
-        public TestScheduleIssues Read(System.IO.BinaryReader reader) =>
-            SpacetimeDB.BSATN.IStructuralReadWrite.Read<TestScheduleIssues>(reader);
+        public TestScheduleIssues Read(System.IO.BinaryReader reader)
+        {
+            var ___result = new TestScheduleIssues();
+            ___result.ReadFields(reader);
+            return ___result;
+        }
 
         public void Write(System.IO.BinaryWriter writer, TestScheduleIssues value)
         {

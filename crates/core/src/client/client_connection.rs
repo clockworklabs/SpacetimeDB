@@ -9,6 +9,7 @@ use crate::error::DBError;
 use crate::host::module_host::ClientConnectedError;
 use crate::host::{ModuleHost, NoSuchModule, ReducerArgs, ReducerCallError, ReducerCallResult};
 use crate::messages::websocket::Subscribe;
+use crate::util::asyncify;
 use crate::util::prometheus_handle::IntGaugeExt;
 use crate::worker_metrics::WORKER_METRICS;
 use bytes::Bytes;
@@ -20,6 +21,7 @@ use spacetimedb_client_api_messages::websocket::{
     UnsubscribeMulti, WebsocketFormat,
 };
 use spacetimedb_lib::identity::RequestId;
+use spacetimedb_lib::metrics::ExecutionMetrics;
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::AbortHandle;
 
@@ -301,57 +303,60 @@ impl ClientConnection {
 
     pub async fn subscribe_single(&self, subscription: SubscribeSingle, timer: Instant) -> Result<(), DBError> {
         let me = self.clone();
-        tokio::task::spawn_blocking(move || {
+        asyncify(move || {
             me.module
                 .subscriptions()
                 .add_single_subscription(me.sender, subscription, timer, None)
         })
         .await
-        .unwrap() // TODO: is unwrapping right here?
     }
 
     pub async fn unsubscribe(&self, request: Unsubscribe, timer: Instant) -> Result<(), DBError> {
         let me = self.clone();
-        tokio::task::spawn_blocking(move || {
+        asyncify(move || {
             me.module
                 .subscriptions()
                 .remove_single_subscription(me.sender, request, timer)
         })
         .await
-        .unwrap() // TODO: is unwrapping right here?
     }
 
-    pub async fn subscribe_multi(&self, request: SubscribeMulti, timer: Instant) -> Result<(), DBError> {
+    pub async fn subscribe_multi(
+        &self,
+        request: SubscribeMulti,
+        timer: Instant,
+    ) -> Result<Option<ExecutionMetrics>, DBError> {
         let me = self.clone();
-        tokio::task::spawn_blocking(move || {
+        asyncify(move || {
             me.module
                 .subscriptions()
                 .add_multi_subscription(me.sender, request, timer, None)
         })
         .await
-        .unwrap() // TODO: is unwrapping right here?
     }
 
-    pub async fn unsubscribe_multi(&self, request: UnsubscribeMulti, timer: Instant) -> Result<(), DBError> {
+    pub async fn unsubscribe_multi(
+        &self,
+        request: UnsubscribeMulti,
+        timer: Instant,
+    ) -> Result<Option<ExecutionMetrics>, DBError> {
         let me = self.clone();
-        tokio::task::spawn_blocking(move || {
+        asyncify(move || {
             me.module
                 .subscriptions()
                 .remove_multi_subscription(me.sender, request, timer)
         })
         .await
-        .unwrap() // TODO: is unwrapping right here?
     }
 
-    pub async fn subscribe(&self, subscription: Subscribe, timer: Instant) -> Result<(), DBError> {
+    pub async fn subscribe(&self, subscription: Subscribe, timer: Instant) -> Result<ExecutionMetrics, DBError> {
         let me = self.clone();
-        tokio::task::spawn_blocking(move || {
+        asyncify(move || {
             me.module
                 .subscriptions()
                 .add_legacy_subscriber(me.sender, subscription, timer, None)
         })
         .await
-        .unwrap()
     }
 
     pub fn one_off_query_json(&self, query: &str, message_id: &[u8], timer: Instant) -> Result<(), anyhow::Error> {

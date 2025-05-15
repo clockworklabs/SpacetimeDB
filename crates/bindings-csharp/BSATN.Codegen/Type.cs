@@ -422,22 +422,12 @@ public abstract record BaseTypeDeclaration<M>
 
         var bsatnDecls = Members.Cast<MemberDeclaration>();
         var fieldNames = bsatnDecls.Select(m => m.Name);
+        var fieldNamesAndIds = fieldNames.Select((name, i) => (name, i));
 
         extensions.BaseTypes.Add($"System.IEquatable<{ShortName}>");
 
         if (Kind is TypeKind.Sum)
         {
-            extensions.Contents.Append(
-                $$"""
-                    private {{ShortName}}() { }
-
-                    internal enum @enum: byte
-                    {
-                        {{string.Join(",\n        ", fieldNames)}}
-                    }
-                
-                """
-            );
             extensions.Contents.Append(
                 string.Join(
                     "\n",
@@ -458,24 +448,24 @@ public abstract record BaseTypeDeclaration<M>
             );
 
             read = $$"""
-                    __enumTag.Read(reader) switch {
+                    return reader.ReadByte() switch {
                         {{string.Join(
                             "\n            ",
-                            fieldNames.Select(name =>
-                                $"@enum.{name} => new {name}({name}.Read(reader)),"
+                            fieldNames.Select((name, i) =>
+                                $"{i} => new {name}({name}.Read(reader)),"
                             )
                         )}}
                         _ => throw new System.InvalidOperationException("Invalid tag value, this state should be unreachable.")
-                    }
+                    };
             """;
 
             write = $$"""
             switch (value) {
             {{string.Join(
                 "\n",
-                fieldNames.Select(name => $"""
+                fieldNames.Select((name, i) => $"""
                             case {name}(var inner):
-                                __enumTag.Write(writer, @enum.{name});
+                                writer.Write((byte){i});
                                 {name}.Write(writer, inner);
                                 break;
                 """))}}
@@ -501,10 +491,6 @@ public abstract record BaseTypeDeclaration<M>
                         return 0;
                     }
             """;
-
-            bsatnDecls = bsatnDecls.Prepend(
-                new("__enumTag", new ValueUse("@enum", "SpacetimeDB.BSATN.Enum<@enum>"))
-            );
         }
         else
         {
@@ -526,6 +512,10 @@ public abstract record BaseTypeDeclaration<M>
                 )}}
                 }
 
+                object SpacetimeDB.BSATN.IStructuralReadWrite.GetSerializer() {
+                    return new BSATN();
+                }
+
             """
             );
 
@@ -543,7 +533,14 @@ public abstract record BaseTypeDeclaration<M>
             """
             );
 
-            read = $"SpacetimeDB.BSATN.IStructuralReadWrite.Read<{FullName}>(reader)";
+            // Directly allocating the result object here (instead of calling e.g. IStructuralReadWrite.Read<T>, which does the same thing)
+            // avoids generics; we've found that generics often result in reflective code being generated.
+            // Using simple code here hopefully helps IL2CPP and Mono do this faster.
+            read = $$"""
+                    var ___result = new {{FullName}}();
+                    ___result.ReadFields(reader);
+                    return ___result;
+                """;
 
             write = "value.WriteFields(writer);";
 
@@ -566,7 +563,9 @@ public abstract record BaseTypeDeclaration<M>
                 {
                     {{MemberDeclaration.GenerateBsatnFields(Accessibility.Internal, bsatnDecls)}}
 
-                    public {{FullName}} Read(System.IO.BinaryReader reader) => {{read}};
+                    public {{FullName}} Read(System.IO.BinaryReader reader) {
+                        {{read}}
+                    }
 
                     public void Write(System.IO.BinaryWriter writer, {{FullName}} value) {
                         {{write}}

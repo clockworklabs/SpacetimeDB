@@ -22,6 +22,11 @@ partial class Timers
             BSATN.Text.Write(writer, Text);
         }
 
+        object SpacetimeDB.BSATN.IStructuralReadWrite.GetSerializer()
+        {
+            return new BSATN();
+        }
+
         public override string ToString() =>
             $"SendMessageTimer {{ ScheduledId = {SpacetimeDB.BSATN.StringUtil.GenericToString(ScheduledId)}, ScheduledAt = {SpacetimeDB.BSATN.StringUtil.GenericToString(ScheduledAt)}, Text = {SpacetimeDB.BSATN.StringUtil.GenericToString(Text)} }}";
 
@@ -31,8 +36,12 @@ partial class Timers
             internal static readonly SpacetimeDB.ScheduleAt.BSATN ScheduledAt = new();
             internal static readonly SpacetimeDB.BSATN.String Text = new();
 
-            public Timers.SendMessageTimer Read(System.IO.BinaryReader reader) =>
-                SpacetimeDB.BSATN.IStructuralReadWrite.Read<Timers.SendMessageTimer>(reader);
+            public Timers.SendMessageTimer Read(System.IO.BinaryReader reader)
+            {
+                var ___result = new Timers.SendMessageTimer();
+                ___result.ReadFields(reader);
+                return ___result;
+            }
 
             public void Write(System.IO.BinaryWriter writer, Timers.SendMessageTimer value)
             {

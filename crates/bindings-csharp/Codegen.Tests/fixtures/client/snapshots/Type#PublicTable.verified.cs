@@ -62,6 +62,11 @@ partial struct PublicTable : System.IEquatable<PublicTable>, SpacetimeDB.BSATN.I
         BSATN.NullableReferenceField.Write(writer, NullableReferenceField);
     }
 
+    object SpacetimeDB.BSATN.IStructuralReadWrite.GetSerializer()
+    {
+        return new BSATN();
+    }
+
     public override string ToString() =>
         $"PublicTable {{ ByteField = {SpacetimeDB.BSATN.StringUtil.GenericToString(ByteField)}, UshortField = {SpacetimeDB.BSATN.StringUtil.GenericToString(UshortField)}, UintField = {SpacetimeDB.BSATN.StringUtil.GenericToString(UintField)}, UlongField = {SpacetimeDB.BSATN.StringUtil.GenericToString(UlongField)}, U128Field = {SpacetimeDB.BSATN.StringUtil.GenericToString(U128Field)}, U256Field = {SpacetimeDB.BSATN.StringUtil.GenericToString(U256Field)}, SbyteField = {SpacetimeDB.BSATN.StringUtil.GenericToString(SbyteField)}, ShortField = {SpacetimeDB.BSATN.StringUtil.GenericToString(ShortField)}, IntField = {SpacetimeDB.BSATN.StringUtil.GenericToString(IntField)}, LongField = {SpacetimeDB.BSATN.StringUtil.GenericToString(LongField)}, I128Field = {SpacetimeDB.BSATN.StringUtil.GenericToString(I128Field)}, I256Field = {SpacetimeDB.BSATN.StringUtil.GenericToString(I256Field)}, BoolField = {SpacetimeDB.BSATN.StringUtil.GenericToString(BoolField)}, FloatField = {SpacetimeDB.BSATN.StringUtil.GenericToString(FloatField)}, DoubleField = {SpacetimeDB.BSATN.StringUtil.GenericToString(DoubleField)}, StringField = {SpacetimeDB.BSATN.StringUtil.GenericToString(StringField)}, IdentityField = {SpacetimeDB.BSATN.StringUtil.GenericToString(IdentityField)}, ConnectionIdField = {SpacetimeDB.BSATN.StringUtil.GenericToString(ConnectionIdField)}, CustomStructField = {SpacetimeDB.BSATN.StringUtil.GenericToString(CustomStructField)}, CustomClassField = {SpacetimeDB.BSATN.StringUtil.GenericToString(CustomClassField)}, CustomEnumField = {SpacetimeDB.BSATN.StringUtil.GenericToString(CustomEnumField)}, CustomTaggedEnumField = {SpacetimeDB.BSATN.StringUtil.GenericToString(CustomTaggedEnumField)}, ListField = {SpacetimeDB.BSATN.StringUtil.GenericToString(ListField)}, NullableValueField = {SpacetimeDB.BSATN.StringUtil.GenericToString(NullableValueField)}, NullableReferenceField = {SpacetimeDB.BSATN.StringUtil.GenericToString(NullableReferenceField)} }}";
 
@@ -100,8 +105,12 @@ partial struct PublicTable : System.IEquatable<PublicTable>, SpacetimeDB.BSATN.I
             SpacetimeDB.BSATN.String
         > NullableReferenceField = new();
 
-        public PublicTable Read(System.IO.BinaryReader reader) =>
-            SpacetimeDB.BSATN.IStructuralReadWrite.Read<PublicTable>(reader);
+        public PublicTable Read(System.IO.BinaryReader reader)
+        {
+            var ___result = new PublicTable();
+            ___result.ReadFields(reader);
+            return ___result;
+        }
 
         public void Write(System.IO.BinaryWriter writer, PublicTable value)
         {

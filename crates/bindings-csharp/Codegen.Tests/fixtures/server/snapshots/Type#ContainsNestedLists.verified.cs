@@ -30,6 +30,11 @@ partial class ContainsNestedLists
         BSATN.StringListListArray.Write(writer, StringListListArray);
     }
 
+    object SpacetimeDB.BSATN.IStructuralReadWrite.GetSerializer()
+    {
+        return new BSATN();
+    }
+
     public override string ToString() =>
         $"ContainsNestedLists {{ IntList = {SpacetimeDB.BSATN.StringUtil.GenericToString(IntList)}, StringList = {SpacetimeDB.BSATN.StringUtil.GenericToString(StringList)}, IntArray = {SpacetimeDB.BSATN.StringUtil.GenericToString(IntArray)}, StringArray = {SpacetimeDB.BSATN.StringUtil.GenericToString(StringArray)}, IntArrayArrayList = {SpacetimeDB.BSATN.StringUtil.GenericToString(IntArrayArrayList)}, IntListListArray = {SpacetimeDB.BSATN.StringUtil.GenericToString(IntListListArray)}, StringArrayArrayList = {SpacetimeDB.BSATN.StringUtil.GenericToString(StringArrayArrayList)}, StringListListArray = {SpacetimeDB.BSATN.StringUtil.GenericToString(StringListListArray)} }}";
 
@@ -72,8 +77,12 @@ partial class ContainsNestedLists
             >
         > StringListListArray = new();
 
-        public ContainsNestedLists Read(System.IO.BinaryReader reader) =>
-            SpacetimeDB.BSATN.IStructuralReadWrite.Read<ContainsNestedLists>(reader);
+        public ContainsNestedLists Read(System.IO.BinaryReader reader)
+        {
+            var ___result = new ContainsNestedLists();
+            ___result.ReadFields(reader);
+            return ___result;
+        }
 
         public void Write(System.IO.BinaryWriter writer, ContainsNestedLists value)
         {

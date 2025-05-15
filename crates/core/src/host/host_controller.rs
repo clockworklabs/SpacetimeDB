@@ -13,7 +13,7 @@ use crate::module_host_context::ModuleCreationContext;
 use crate::replica_context::ReplicaContext;
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use crate::subscription::module_subscription_manager::SubscriptionManager;
-use crate::util::spawn_rayon;
+use crate::util::{asyncify, spawn_rayon};
 use anyhow::{anyhow, ensure, Context};
 use async_trait::async_trait;
 use durability::{Durability, EmptyHistory};
@@ -282,13 +282,11 @@ impl HostController {
         trace!("using database {}/{}", database.database_identity, replica_id);
         let module = self.get_or_launch_module_host(database, replica_id).await?;
         let on_panic = self.unregister_fn(replica_id);
-        let result = tokio::task::spawn_blocking(move || f(&module.replica_ctx().relational_db))
-            .await
-            .unwrap_or_else(|e| {
-                warn!("database operation panicked");
-                on_panic();
-                std::panic::resume_unwind(e.into_panic())
-            });
+        scopeguard::defer_on_unwind!({
+            warn!("database operation panicked");
+            on_panic();
+        });
+        let result = asyncify(move || f(&module.replica_ctx().relational_db)).await;
         Ok(result)
     }
 
@@ -539,11 +537,7 @@ async fn make_replica_ctx(
             let Some(subscriptions) = downgraded.upgrade() else {
                 break;
             };
-            tokio::task::spawn_blocking(move || {
-                subscriptions.write().remove_dropped_clients();
-            })
-            .await
-            .unwrap();
+            asyncify(move || subscriptions.write().remove_dropped_clients()).await
         }
     });
 

@@ -16,6 +16,11 @@ partial struct CustomClass : System.IEquatable<CustomClass>, SpacetimeDB.BSATN.I
         BSATN.StringField.Write(writer, StringField);
     }
 
+    object SpacetimeDB.BSATN.IStructuralReadWrite.GetSerializer()
+    {
+        return new BSATN();
+    }
+
     public override string ToString() =>
         $"CustomClass {{ IntField = {SpacetimeDB.BSATN.StringUtil.GenericToString(IntField)}, StringField = {SpacetimeDB.BSATN.StringUtil.GenericToString(StringField)} }}";
 
@@ -24,8 +29,12 @@ partial struct CustomClass : System.IEquatable<CustomClass>, SpacetimeDB.BSATN.I
         internal static readonly SpacetimeDB.BSATN.I32 IntField = new();
         internal static readonly SpacetimeDB.BSATN.String StringField = new();
 
-        public CustomClass Read(System.IO.BinaryReader reader) =>
-            SpacetimeDB.BSATN.IStructuralReadWrite.Read<CustomClass>(reader);
+        public CustomClass Read(System.IO.BinaryReader reader)
+        {
+            var ___result = new CustomClass();
+            ___result.ReadFields(reader);
+            return ___result;
+        }
 
         public void Write(System.IO.BinaryWriter writer, CustomClass value)
         {

@@ -19,7 +19,7 @@ use crate::db::datastore::system_tables::{StModuleRow, WASM_MODULE};
 use crate::error::{DBError, DatabaseError, RestoreSnapshotError, TableError};
 use crate::execution_context::{ReducerContext, Workload};
 use crate::messages::control_db::HostType;
-use crate::util::spawn_rayon;
+use crate::util::{asyncify, spawn_rayon};
 use anyhow::{anyhow, Context};
 use fs2::FileExt;
 use futures::channel::mpsc;
@@ -157,15 +157,14 @@ impl SnapshotWorkerActor {
         let start_time = std::time::Instant::now();
         let committed_state = self.committed_state.clone();
         let snapshot_repo = self.repo.clone();
-        let res = tokio::task::spawn_blocking(move || {
+        let res = asyncify(move || {
             Locking::take_snapshot_internal(&committed_state, &snapshot_repo).inspect(|opts| {
                 if let Some(opts) = opts {
                     Locking::compress_older_snapshot_internal(&snapshot_repo, opts.0);
                 }
             })
         })
-        .await
-        .unwrap();
+        .await;
         match res {
             Err(e) => {
                 log::error!(
