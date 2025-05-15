@@ -511,45 +511,43 @@ impl RelationalDB {
                 .map_err(RestoreSnapshotError::Datastore)
         }
 
-        if let Some(snapshot_repo) = snapshot_repo {
-            if let Some(durable_tx_offset) = durable_tx_offset {
-                // Mark any newer snapshots as invalid, as the history past
-                // `durable_tx_offset` may have been reset and thus diverge from
-                // any snapshots taken earlier.
-                snapshot_repo
-                    .invalidate_newer_snapshots(durable_tx_offset)
-                    .map_err(Box::new)?;
+        if let Some((snapshot_repo, durable_tx_offset)) = snapshot_repo.zip(durable_tx_offset) {
+            // Mark any newer snapshots as invalid, as the history past
+            // `durable_tx_offset` may have been reset and thus diverge from
+            // any snapshots taken earlier.
+            snapshot_repo
+                .invalidate_newer_snapshots(durable_tx_offset)
+                .map_err(Box::new)?;
 
-                // Try to restore from any snapshot that was taken within the
-                // range `(min_commitlog_offset + 1)..=durable_tx_offset`.
-                let mut upper_bound = durable_tx_offset;
-                loop {
-                    let Some(snapshot_offset) = snapshot_repo
-                        .latest_snapshot_older_than(upper_bound)
-                        .map_err(Box::new)?
-                    else {
-                        break;
-                    };
-                    if min_commitlog_offset + 1 > snapshot_offset {
-                        break;
-                    }
-                    if let Ok(datastore) =
-                        try_restore_snapshot(snapshot_repo, snapshot_offset, database_identity, page_pool.clone())
-                    {
-                        return Ok(datastore);
-                    } else {
-                        // `latest_snapshot_older_than` is inclusive of the
-                        // upper bound, so subtract one and give up if there
-                        // are no more offsets to try.
-                        match snapshot_offset.checked_sub(1) {
-                            None => break,
-                            Some(older_than) => upper_bound = older_than,
-                        }
+            // Try to restore from any snapshot that was taken within the
+            // range `(min_commitlog_offset + 1)..=durable_tx_offset`.
+            let mut upper_bound = durable_tx_offset;
+            loop {
+                let Some(snapshot_offset) = snapshot_repo
+                    .latest_snapshot_older_than(upper_bound)
+                    .map_err(Box::new)?
+                else {
+                    break;
+                };
+                if min_commitlog_offset + 1 > snapshot_offset {
+                    break;
+                }
+                if let Ok(datastore) =
+                    try_restore_napshot(snapshot_repo, snapshot_offset, database_identity, page_pool.clone())
+                {
+                    return Ok(datastore);
+                } else {
+                    // `latest_snapshot_older_than` is inclusive of the
+                    // upper bound, so subtract one and give up if there
+                    // are no more offsets to try.
+                    match snapshot_offset.checked_sub(1) {
+                        None => break,
+                        Some(older_than) => upper_bound = older_than,
                     }
                 }
             }
-            log::info!("[{database_identity}] DATABASE: no snapshot on disk");
         }
+        log::info!("[{database_identity}] DATABASE: no usable snapshot on disk");
 
         // If we didn't find a snapshot and the commitlog doesn't start at the
         // zero-th commit (e.g. due to archiving), there is no way to restore
