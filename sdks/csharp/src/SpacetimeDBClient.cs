@@ -229,7 +229,7 @@ namespace SpacetimeDB
             {
                 if (!Updates.TryGetValue(table, out var delta))
                 {
-                    delta = new MultiDictionaryDelta<object, PreHashedRow>(EqualityComparer<object>.Default, EqualityComparer<PreHashedRow>.Default);
+                    delta = new MultiDictionaryDelta<object, PreHashedRow>(EqualityComparer<object>.Default, PreHashedRowComparer.Default);
                     Updates[table] = delta;
                 }
 

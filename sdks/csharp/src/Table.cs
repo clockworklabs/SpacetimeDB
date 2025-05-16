@@ -105,7 +105,7 @@ namespace SpacetimeDB
                     var key = GetKey(row);
                     if (!cache.TryGetValue(key, out var rows))
                     {
-                        rows = new();
+                        rows = new(PreHashedRowComparer.Default);
                         cache.Add(key, rows);
                     }
                     rows.Add(preHashed);
@@ -128,6 +128,7 @@ namespace SpacetimeDB
             public IEnumerable<Row> Filter(Column value) =>
                 cache.TryGetValue(value, out var rows) ? rows.Select(preHashed => (Row)preHashed.Row) : Enumerable.Empty<Row>();
         }
+
 
         protected abstract string RemoteTableName { get; }
         string IRemoteTableHandle.RemoteTableName => RemoteTableName;
@@ -158,7 +159,7 @@ namespace SpacetimeDB
         // - Primary keys, if we have them.
         // - The entire row itself, if we don't.
         // But really, the keys are whatever SpacetimeDBClient chooses to give us.
-        private readonly MultiDictionary<object, PreHashedRow> Entries = new(EqualityComparer<object>.Default, EqualityComparer<PreHashedRow>.Default);
+        private readonly MultiDictionary<object, PreHashedRow> Entries = new(EqualityComparer<object>.Default, PreHashedRowComparer.Default);
 
         private static IReadWrite<Row>? _serializer;
 
@@ -403,6 +404,21 @@ internal struct PreHashedRow
 
     public override string ToString()
         => Row.ToString();
+}
+
+internal class PreHashedRowComparer : IEqualityComparer<PreHashedRow>
+{
+    public static PreHashedRowComparer Default = new();
+
+    public bool Equals(PreHashedRow x, PreHashedRow y)
+    {
+        return x.Equals(y);
+    }
+
+    public int GetHashCode(PreHashedRow obj)
+    {
+        return obj.GetHashCode();
+    }
 }
 
 #nullable disable
