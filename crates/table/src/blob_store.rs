@@ -11,11 +11,11 @@
 //! - [`HashMapBlobStore`], a blob store backed by a `HashMap` that refcounts blob objects.
 //!   It is not optimize and is mainly intended for testing purposes.
 
+use crate::MemoryUsage;
 use blake3::hash;
+use core::mem;
 use spacetimedb_data_structures::map::{Entry, HashMap};
 use spacetimedb_lib::{de::Deserialize, ser::Serialize};
-
-use crate::MemoryUsage;
 
 /// The content address of a blob-stored object.
 #[derive(Eq, PartialEq, PartialOrd, Ord, Clone, Copy, Hash, Debug, Serialize, Deserialize)]
@@ -231,6 +231,16 @@ impl BlobStore for HashMapBlobStore {
 
     fn iter_blobs(&self) -> BlobsIter<'_> {
         Box::new(self.map.iter().map(|(hash, obj)| (hash, obj.uses, &obj.blob[..])))
+    }
+}
+
+impl HashMapBlobStore {
+    /// Merge `src_bs` into `self`.
+    pub fn merge_from(&mut self, src_bs: Self) {
+        for (hash, mut obj) in src_bs.map {
+            let uses = mem::take(&mut obj.uses);
+            self.map.entry(hash).or_insert(obj).uses += uses;
+        }
     }
 }
 

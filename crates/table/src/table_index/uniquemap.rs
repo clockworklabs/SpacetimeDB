@@ -90,6 +90,11 @@ impl<K: Ord, V: Ord> UniqueMap<K, V> {
         };
         Err(found)
     }
+
+    /// Merge `src`, mapped through `translate`, into `self`.
+    pub(crate) fn merge_from(&mut self, src: Self, translate: impl Fn(V) -> V) {
+        self.map.extend(src.map.into_iter().map(|(k, v)| (k, translate(v))));
+    }
 }
 
 /// An iterator over the potential value in a [`UniqueMap`] for a given key.

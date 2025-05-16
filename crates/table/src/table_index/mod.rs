@@ -1250,6 +1250,58 @@ impl TableIndex {
         }
     }
 
+    /// Merge `src_index` into `self`,
+    /// `translate`ing every row pointer in the former into one that fits the latter.
+    ///
+    /// Panics if the indices are of different kinds.
+    pub(crate) fn merge_from(&mut self, src_index: TableIndex, translate: impl Fn(RowPointer) -> RowPointer) {
+        self.num_rows += src_index.num_rows;
+        self.num_key_bytes += src_index.num_key_bytes;
+
+        use TypedIndex::*;
+        match (&mut self.idx, src_index.idx) {
+            (BtreeBool(dst), BtreeBool(src)) => dst.merge_from(src, translate),
+            (BtreeU8(dst), BtreeU8(src)) => dst.merge_from(src, translate),
+            (BtreeSumTag(dst), BtreeSumTag(src)) => dst.merge_from(src, translate),
+            (BtreeI8(dst), BtreeI8(src)) => dst.merge_from(src, translate),
+            (BtreeU16(dst), BtreeU16(src)) => dst.merge_from(src, translate),
+            (BtreeI16(dst), BtreeI16(src)) => dst.merge_from(src, translate),
+            (BtreeU32(dst), BtreeU32(src)) => dst.merge_from(src, translate),
+            (BtreeI32(dst), BtreeI32(src)) => dst.merge_from(src, translate),
+            (BtreeU64(dst), BtreeU64(src)) => dst.merge_from(src, translate),
+            (BtreeI64(dst), BtreeI64(src)) => dst.merge_from(src, translate),
+            (BtreeU128(dst), BtreeU128(src)) => dst.merge_from(src, translate),
+            (BtreeI128(dst), BtreeI128(src)) => dst.merge_from(src, translate),
+            (BtreeU256(dst), BtreeU256(src)) => dst.merge_from(src, translate),
+            (BtreeI256(dst), BtreeI256(src)) => dst.merge_from(src, translate),
+            (BtreeString(dst), BtreeString(src)) => dst.merge_from(src, translate),
+            (BtreeAV(dst), BtreeAV(src)) => dst.merge_from(src, translate),
+            (UniqueBtreeBool(dst), UniqueBtreeBool(src)) => dst.merge_from(src, translate),
+            (UniqueBtreeU8(dst), UniqueBtreeU8(src)) => dst.merge_from(src, translate),
+            (UniqueBtreeSumTag(dst), UniqueBtreeSumTag(src)) => dst.merge_from(src, translate),
+            (UniqueBtreeI8(dst), UniqueBtreeI8(src)) => dst.merge_from(src, translate),
+            (UniqueBtreeU16(dst), UniqueBtreeU16(src)) => dst.merge_from(src, translate),
+            (UniqueBtreeI16(dst), UniqueBtreeI16(src)) => dst.merge_from(src, translate),
+            (UniqueBtreeU32(dst), UniqueBtreeU32(src)) => dst.merge_from(src, translate),
+            (UniqueBtreeI32(dst), UniqueBtreeI32(src)) => dst.merge_from(src, translate),
+            (UniqueBtreeU64(dst), UniqueBtreeU64(src)) => dst.merge_from(src, translate),
+            (UniqueBtreeI64(dst), UniqueBtreeI64(src)) => dst.merge_from(src, translate),
+            (UniqueBtreeU128(dst), UniqueBtreeU128(src)) => dst.merge_from(src, translate),
+            (UniqueBtreeI128(dst), UniqueBtreeI128(src)) => dst.merge_from(src, translate),
+            (UniqueBtreeU256(dst), UniqueBtreeU256(src)) => dst.merge_from(src, translate),
+            (UniqueBtreeI256(dst), UniqueBtreeI256(src)) => dst.merge_from(src, translate),
+            (UniqueBtreeString(dst), UniqueBtreeString(src)) => dst.merge_from(src, translate),
+            (UniqueBtreeAV(dst), UniqueBtreeAV(src)) => dst.merge_from(src, translate),
+            (UniqueDirectU8(dst), UniqueDirectU8(src)) => dst.merge_from(src, translate),
+            (UniqueDirectSumTag(dst), UniqueDirectSumTag(src)) => dst.merge_from(src, translate),
+            (UniqueDirectU16(dst), UniqueDirectU16(src)) => dst.merge_from(src, translate),
+            (UniqueDirectU32(dst), UniqueDirectU32(src)) => dst.merge_from(src, translate),
+            (UniqueDirectU64(dst), UniqueDirectU64(src)) => dst.merge_from(src, translate),
+
+            _ => unreachable!("non-matching index kinds"),
+        }
+    }
+
     /// Deletes all entries from the index, leaving it empty.
     ///
     /// When inserting a newly-created index into the committed state,
