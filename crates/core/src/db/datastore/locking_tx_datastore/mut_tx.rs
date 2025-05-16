@@ -1087,6 +1087,12 @@ impl MutTxId {
         })
     }
 
+    /// Commits this transaction, applying its changes to the committed state.
+    ///
+    /// Returns:
+    /// - [`TxData`], the set of inserts and deletes performed by this transaction.
+    /// - [`TxMetrics`], various measurements of the work performed by this transaction.
+    /// - `String`, the name of the reducer which ran during this transaction.
     pub fn commit(mut self) -> (TxData, TxMetrics, String) {
         let tx_data = self.committed_state_write_lock.merge(self.tx_state, &self.ctx);
 
@@ -1108,6 +1114,14 @@ impl MutTxId {
         (tx_data, tx_metrics, reducer)
     }
 
+    /// Commits this transaction, applying its changes to the committed state.
+    /// The lock on the committed state is converted into a read lock,
+    /// and returned as a new read-only transaction.
+    ///
+    /// Returns:
+    /// - [`TxData`], the set of inserts and deletes performed by this transaction.
+    /// - [`TxMetrics`], various measurements of the work performed by this transaction.
+    /// - [`TxId`], a read-only transaction with a shared lock on the committed state.
     pub fn commit_downgrade(mut self, workload: Workload) -> (TxData, TxMetrics, TxId) {
         let tx_data = self.committed_state_write_lock.merge(self.tx_state, &self.ctx);
 
@@ -1138,6 +1152,11 @@ impl MutTxId {
         (tx_data, tx_metrics, tx)
     }
 
+    /// Rolls back this transaction, discarding its changes.
+    ///
+    /// Returns:
+    /// - [`TxMetrics`], various measurements of the work performed by this transaction.
+    /// - `String`, the name of the reducer which ran during this transaction.
     pub fn rollback(self) -> (TxMetrics, String) {
         // Compute and keep enough info that we can
         // record metrics after the transaction has ended
@@ -1156,6 +1175,13 @@ impl MutTxId {
         (tx_metrics, reducer)
     }
 
+    /// Roll back this transaction, discarding its changes.
+    /// The lock on the committed state is converted into a read lock,
+    /// and returned as a new read-only transaction.
+    ///
+    /// Returns:
+    /// - [`TxMetrics`], various measurements of the work performed by this transaction.
+    /// - [`TxId`], a read-only transaction with a shared lock on the committed state.
     pub fn rollback_downgrade(mut self, workload: Workload) -> (TxMetrics, TxId) {
         // Compute and keep enough info that we can
         // record metrics after the transaction has ended

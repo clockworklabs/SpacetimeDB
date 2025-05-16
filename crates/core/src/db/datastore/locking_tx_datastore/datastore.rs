@@ -661,6 +661,7 @@ impl MutTxDatastore for Locking {
     }
 }
 
+/// Various measurements, needed for metrics, of the work performed by a transaction.
 #[must_use = "TxMetrics should be reported"]
 pub struct TxMetrics {
     table_stats: HashMap<TableId, TableStats>,
@@ -702,7 +703,7 @@ impl TxMetrics {
         let database_identity = ctx.database_identity();
         let elapsed_time = tx_timer.elapsed();
 
-        // Collect the extra stats for tables that we don't have in `tx_data`.
+        // For each table, collect the extra stats, that we don't have in `tx_data`.
         let table_stats = tx_data
             .map(|tx_data| {
                 let mut table_stats =

@@ -1241,7 +1241,7 @@ impl Table {
 
     /// Returns the number of rows resident in this table.
     ///
-    /// This scales in runtime with the number of pages in the table.
+    /// This method runs in constant time.
     pub fn num_rows(&self) -> u64 {
         self.row_count
     }
