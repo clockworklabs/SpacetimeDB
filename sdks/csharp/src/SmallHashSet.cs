@@ -1,12 +1,13 @@
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq.Expressions;
 using System.Runtime.CompilerServices;
 
 #nullable enable
 
 /// <summary>
 /// A hashset optimized to store small numbers of values of type T.
-/// Used because many of the hash sets in our BTree indexes
+/// Used because many of the hash sets in our BTreeIndexes store only one value.
 /// </summary>
 /// <typeparam name="T"></typeparam>
 internal struct SmallHashSet<T, EQ> : IEnumerable<T>
@@ -93,14 +94,15 @@ where EQ : IEqualityComparer<T>, new()
     {
         if (Value != null)
         {
-            yield return Value.Value;
+            return new SingleElementEnumerator<T>(Value.Value);
         }
         else if (Values != null)
         {
-            foreach (var value in Values)
-            {
-                yield return value;
-            }
+            return Values.GetEnumerator();
+        }
+        else
+        {
+            return new NoElementEnumerator<T>();
         }
     }
 
@@ -109,4 +111,82 @@ where EQ : IEqualityComparer<T>, new()
         return GetEnumerator();
     }
 }
+
+/// <summary>
+/// This is a silly object.
+/// </summary>
+/// <typeparam name="T"></typeparam>
+internal struct SingleElementEnumerator<T> : IEnumerator<T>
+where T : struct
+{
+    T value;
+    enum State
+    {
+        Unstarted,
+        Started,
+        finished
+    }
+
+    State state;
+
+    public SingleElementEnumerator(T value)
+    {
+        this.value = value;
+        state = State.Unstarted;
+    }
+
+    public T Current => value;
+
+    object IEnumerator.Current => Current;
+
+    public void Dispose()
+    {
+    }
+
+    public bool MoveNext()
+    {
+        if (state == State.Unstarted)
+        {
+            state = State.Started;
+            return true;
+        }
+        else if (state == State.Started)
+        {
+            state = State.finished;
+            return false;
+        }
+        return false;
+    }
+
+    public void Reset()
+    {
+        state = State.Started;
+    }
+}
+
+/// <summary>
+/// This is a very silly object.
+/// </summary>
+/// <typeparam name="T"></typeparam>
+internal struct NoElementEnumerator<T> : IEnumerator<T>
+where T : struct
+{
+    public T Current => new();
+
+    object IEnumerator.Current => Current;
+
+    public void Dispose()
+    {
+    }
+
+    public bool MoveNext()
+    {
+        return false;
+    }
+
+    public void Reset()
+    {
+    }
+}
+
 #nullable disable
