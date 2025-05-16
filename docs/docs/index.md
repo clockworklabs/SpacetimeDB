@@ -188,6 +188,9 @@ pub fn world(ctx: &spacetimedb::ReducerContext) -> Result<(), String> {
    clear_all_tables(ctx);
 }
 ```
+While SpacetimeDB doesn't support nested transactions,
+a reducer can [schedule another reducer](https://docs.rs/spacetimedb/latest/spacetimedb/attr.reducer.html#scheduled-reducers) to run at an interval,
+or at a specific time.
 :::
 :::server-csharp
 ```csharp
@@ -207,18 +210,11 @@ public static void World(ReducerContext ctx)
    // ...
 }
 ```
-:::
-
-:::server-rust
-While SpacetimeDB doesn't support nested transactions,
-a reducer can [schedule another reducer](https://docs.rs/spacetimedb/latest/spacetimedb/attr.reducer.html#scheduled-reducers) to run at an interval,
-or at a specific time.
-:::
-:::server-csharp
 While SpacetimeDB doesn't support nested transactions,
 a reducer can [schedule another reducer](/docs/modules/c-sharp#scheduled-reducers) to run at an interval,
 or at a specific time.
 :::
+
 
 ### Client
 A **client** is an application that connects to a [database](#database). A client logs in using an [identity](#identity) and receives an [connection id](#connectionid) to identify the connection. After that, it can call [reducers](#reducer) and query public [tables](#table).
