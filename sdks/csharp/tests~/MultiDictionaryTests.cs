@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using CsCheck;
 using SpacetimeDB;
+using SpacetimeDB.Types;
 using Xunit;
 
 public class MultiDictionaryTests
@@ -403,5 +404,15 @@ public class MultiDictionaryTests
 #pragma warning disable xUnit2017
         Assert.True(wasMaybeUpdated.Contains((1, 2, 3)), $"{dict}: {wasMaybeUpdated}");
 #pragma warning restore xUnit2017
+    }
+
+    [Fact]
+    public void PreHashedRowEqualsWorks()
+    {
+        var row = new PreHashedRow(
+                new User(Identity.From(Convert.FromBase64String("l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=")), null, true));
+        Assert.Equal(
+            row, row
+        );
     }
 }

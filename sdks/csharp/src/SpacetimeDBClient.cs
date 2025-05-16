@@ -215,7 +215,7 @@ namespace SpacetimeDB
             // Map: table handles -> (primary key -> IStructuralReadWrite).
             // If a particular table has no primary key, the "primary key" is just the row itself.
             // This is valid because any [SpacetimeDB.Type] automatically has a correct Equals and HashSet implementation.
-            public Dictionary<IRemoteTableHandle, MultiDictionaryDelta<object, IStructuralReadWrite>> Updates;
+            public Dictionary<IRemoteTableHandle, MultiDictionaryDelta<object, PreHashedRow>> Updates;
 
             // Can't override the default constructor. Make sure you use this one!
             public static ProcessedDatabaseUpdate New()
@@ -225,11 +225,11 @@ namespace SpacetimeDB
                 return result;
             }
 
-            public MultiDictionaryDelta<object, IStructuralReadWrite> DeltaForTable(IRemoteTableHandle table)
+            public MultiDictionaryDelta<object, PreHashedRow> DeltaForTable(IRemoteTableHandle table)
             {
                 if (!Updates.TryGetValue(table, out var delta))
                 {
-                    delta = new MultiDictionaryDelta<object, IStructuralReadWrite>(EqualityComparer<object>.Default, EqualityComparer<object>.Default);
+                    delta = new MultiDictionaryDelta<object, PreHashedRow>(EqualityComparer<object>.Default, EqualityComparer<PreHashedRow>.Default);
                     Updates[table] = delta;
                 }
 
@@ -266,13 +266,13 @@ namespace SpacetimeDB
         /// <param name="reader"></param>
         /// <param name="primaryKey"></param>
         /// <returns></returns>
-        static IStructuralReadWrite Decode(IRemoteTableHandle table, BinaryReader reader, out object primaryKey)
+        static PreHashedRow Decode(IRemoteTableHandle table, BinaryReader reader, out object primaryKey)
         {
             var obj = table.DecodeValue(reader);
 
             // TODO(1.1): we should exhaustively check that GenericEqualityComparer works
             // for all types that are allowed to be primary keys.
-            var primaryKey_ = table.GetPrimaryKey(obj);
+            var primaryKey_ = table.GetPrimaryKey(obj.Row);
             primaryKey_ ??= obj;
             primaryKey = primaryKey_;
 

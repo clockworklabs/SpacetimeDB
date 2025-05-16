@@ -27,14 +27,14 @@ namespace SpacetimeDB
         internal string RemoteTableName { get; }
 
         internal Type ClientTableType { get; }
-        internal IStructuralReadWrite DecodeValue(BinaryReader reader);
+        internal PreHashedRow DecodeValue(BinaryReader reader);
 
         /// <summary>
         /// Start applying a delta to the table.
         /// This is called for all tables before any updates are actually applied, allowing OnBeforeDelete to be invoked correctly.
         /// </summary>
         /// <param name="multiDictionaryDelta"></param>
-        internal void PreApply(IEventContext context, MultiDictionaryDelta<object, IStructuralReadWrite> multiDictionaryDelta);
+        internal void PreApply(IEventContext context, MultiDictionaryDelta<object, PreHashedRow> multiDictionaryDelta);
 
         /// <summary>
         /// Apply a delta to the table.
@@ -42,7 +42,7 @@ namespace SpacetimeDB
         /// Should fix up indices, to be ready for PostApply.
         /// </summary>
         /// <param name="multiDictionaryDelta"></param>
-        internal void Apply(IEventContext context, MultiDictionaryDelta<object, IStructuralReadWrite> multiDictionaryDelta);
+        internal void Apply(IEventContext context, MultiDictionaryDelta<object, PreHashedRow> multiDictionaryDelta);
 
         /// <summary>
         /// Finish applying a delta to a table.
@@ -148,7 +148,7 @@ namespace SpacetimeDB
         // - Primary keys, if we have them.
         // - The entire row itself, if we don't.
         // But really, the keys are whatever SpacetimeDBClient chooses to give us.
-        private readonly MultiDictionary<object, IStructuralReadWrite> Entries = new(EqualityComparer<object>.Default, EqualityComparer<Object>.Default);
+        private readonly MultiDictionary<object, PreHashedRow> Entries = new(EqualityComparer<object>.Default, EqualityComparer<PreHashedRow>.Default);
 
         private static IReadWrite<Row>? _serializer;
 
@@ -174,7 +174,7 @@ namespace SpacetimeDB
         }
 
         // The function to use for decoding a type value.
-        IStructuralReadWrite IRemoteTableHandle.DecodeValue(BinaryReader reader) => Serializer.Read(reader);
+        PreHashedRow IRemoteTableHandle.DecodeValue(BinaryReader reader) => new PreHashedRow(Serializer.Read(reader));
 
         public delegate void RowEventHandler(EventContext context, Row row);
         public event RowEventHandler? OnInsert;
@@ -186,7 +186,7 @@ namespace SpacetimeDB
 
         public int Count => (int)Entries.CountDistinct;
 
-        public IEnumerable<Row> Iter() => Entries.Entries.Select(entry => (Row)entry.Value);
+        public IEnumerable<Row> Iter() => Entries.Entries.Select(entry => (Row)entry.Value.Row);
 
         public Task<Row[]> RemoteQuery(string query) =>
             conn.RemoteQuery<Row>($"SELECT {RemoteTableName}.* FROM {RemoteTableName} {query}");
@@ -239,21 +239,21 @@ namespace SpacetimeDB
             }
         }
 
-        List<KeyValuePair<object, IStructuralReadWrite>> wasInserted = new();
-        List<(object key, IStructuralReadWrite oldValue, IStructuralReadWrite newValue)> wasUpdated = new();
-        List<KeyValuePair<object, IStructuralReadWrite>> wasRemoved = new();
+        List<KeyValuePair<object, PreHashedRow>> wasInserted = new();
+        List<(object key, PreHashedRow oldValue, PreHashedRow newValue)> wasUpdated = new();
+        List<KeyValuePair<object, PreHashedRow>> wasRemoved = new();
 
-        void IRemoteTableHandle.PreApply(IEventContext context, MultiDictionaryDelta<object, IStructuralReadWrite> multiDictionaryDelta)
+        void IRemoteTableHandle.PreApply(IEventContext context, MultiDictionaryDelta<object, PreHashedRow> multiDictionaryDelta)
         {
             Debug.Assert(wasInserted.Count == 0 && wasUpdated.Count == 0 && wasRemoved.Count == 0, "Call Apply and PostApply before calling PreApply again");
 
             foreach (var (_, value) in Entries.WillRemove(multiDictionaryDelta))
             {
-                InvokeBeforeDelete(context, value);
+                InvokeBeforeDelete(context, value.Row);
             }
         }
 
-        void IRemoteTableHandle.Apply(IEventContext context, MultiDictionaryDelta<object, IStructuralReadWrite> multiDictionaryDelta)
+        void IRemoteTableHandle.Apply(IEventContext context, MultiDictionaryDelta<object, PreHashedRow> multiDictionaryDelta)
         {
             try
             {
@@ -274,7 +274,7 @@ namespace SpacetimeDB
             // (And we need to do it before any PostApply is called.)
             foreach (var (_, value) in wasInserted)
             {
-                if (value is Row newRow)
+                if (value.Row is Row newRow)
                 {
                     OnInternalInsert?.Invoke(newRow);
                 }
@@ -285,9 +285,9 @@ namespace SpacetimeDB
             }
             foreach (var (_, oldValue, newValue) in wasUpdated)
             {
-                if (oldValue is Row oldRow)
+                if (oldValue.Row is Row oldRow)
                 {
-                    OnInternalDelete?.Invoke((Row)oldValue);
+                    OnInternalDelete?.Invoke((Row)oldValue.Row);
                 }
                 else
                 {
@@ -295,7 +295,7 @@ namespace SpacetimeDB
                 }
 
 
-                if (newValue is Row newRow)
+                if (newValue.Row is Row newRow)
                 {
                     OnInternalInsert?.Invoke(newRow);
                 }
@@ -307,7 +307,7 @@ namespace SpacetimeDB
 
             foreach (var (_, value) in wasRemoved)
             {
-                if (value is Row oldRow)
+                if (value.Row is Row oldRow)
                 {
                     OnInternalDelete?.Invoke(oldRow);
                 }
@@ -318,15 +318,15 @@ namespace SpacetimeDB
         {
             foreach (var (_, value) in wasInserted)
             {
-                InvokeInsert(context, value);
+                InvokeInsert(context, value.Row);
             }
             foreach (var (_, oldValue, newValue) in wasUpdated)
             {
-                InvokeUpdate(context, oldValue, newValue);
+                InvokeUpdate(context, oldValue.Row, newValue.Row);
             }
             foreach (var (_, value) in wasRemoved)
             {
-                InvokeDelete(context, value);
+                InvokeDelete(context, value.Row);
             }
             wasInserted.Clear();
             wasUpdated.Clear();
@@ -335,4 +335,64 @@ namespace SpacetimeDB
         }
     }
 }
+
+/// <summary>
+/// An immutable row, with its hash precomputed.
+/// Inserting values into indexes on the main thread requires a lot of hashing, and for large rows,
+/// this takes a lot of time.
+/// Pre-computing the hash saves main thread time.
+/// It costs time on the preprocessing thread, but hopefully that thread is less loaded.
+/// Also, once we parallelize message pre-processing, we can split this work over a thread pool.
+/// 
+/// You MUST create objects of this type with the single-argument constructor.
+/// Default-initializing an object of this type breaks its invariant, which is that Hash is the hash of Row.
+/// </summary>
+internal struct PreHashedRow
+{
+    /// <summary>
+    /// The row itself.
+    /// Mutating this value breaks the invariant of this type.
+    /// Mutations should be impossible in our workflow, but you never know.
+    /// </summary>
+    public readonly IStructuralReadWrite Row;
+
+    /// <summary>
+    /// The hash of the row.
+    /// </summary>
+    readonly int Hash;
+
+    public PreHashedRow(IStructuralReadWrite Row)
+    {
+        this.Row = Row;
+        Hash = Row.GetHashCode();
+    }
+
+    public override int GetHashCode()
+    {
+        return Hash;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public bool Equals(PreHashedRow other)
+        // compare hashes too: speeds up if not equal, not expensive if they are equal.
+        => Hash == other.Hash && Row.Equals(other.Row);
+
+    public override bool Equals(object? other)
+    {
+        if (other == null)
+        {
+            return false; // it is impossible for Row to be null
+        }
+        var other_ = other as PreHashedRow?;
+        if (other_ == null)
+        {
+            return false;
+        }
+        return Equals(other_.Value);
+    }
+
+    public override string ToString()
+        => Row.ToString();
+}
+
 #nullable disable
