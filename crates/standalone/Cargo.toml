@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 license-file = "LICENSE"
 description = "An executable for running a single SpacetimeDB standalone instance"
+rust-version.workspace = true
 
 [[bin]]
 name = "spacetimedb-standalone"   # The name of the target.

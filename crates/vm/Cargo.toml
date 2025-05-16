@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 license-file = "LICENSE"
 description = "A VM for SpacetimeDB"
+rust-version.workspace = true
 
 [dependencies]
 spacetimedb-data-structures.workspace = true
