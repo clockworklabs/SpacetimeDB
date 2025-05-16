@@ -584,49 +584,32 @@ impl CommittedState {
         &mut self,
         tx_data: &mut TxData,
         insert_tables: BTreeMap<TableId, Table>,
-        tx_blob_store: impl BlobStore,
+        tx_blob_store: HashMapBlobStore,
     ) {
-        // TODO(perf): Consider moving whole pages from the `insert_tables` into the committed state,
-        //             rather than copying individual rows out of them.
-        //             This will require some magic to get the indexes right,
-        //             and may lead to a large number of mostly-empty pages in the committed state.
-        //             Likely we want to decide dynamically whether to move a page or copy its contents,
-        //             based on the available holes in the committed state
-        //             and the fullness of the page.
-
+        // Merge all the tables together.
         for (table_id, tx_table) in insert_tables {
-            let (commit_table, commit_blob_store, page_pool) =
+            let (commit_table, _, page_pool) =
                 self.get_table_and_blob_store_or_create(table_id, tx_table.get_schema());
 
-            // Copy over all rows to the committed state.
-
-            // For each newly-inserted row, insert it into the committed state.
+            // For each newly-inserted row, add an entry to `tx_data`.
             let mut inserts = Vec::with_capacity(tx_table.row_count as usize);
             for row_ref in tx_table.scan_rows(&tx_blob_store) {
-                let pv = row_ref.to_product_value();
-                commit_table
-                    .insert(page_pool, commit_blob_store, &pv)
-                    .expect("Failed to insert when merging commit");
-
-                inserts.push(pv);
+                inserts.push(row_ref.to_product_value());
             }
-
             // Add the table to `TxData` if there were insertions.
             if !inserts.is_empty() {
                 let table_name = &*commit_table.get_schema().table_name;
                 tx_data.set_inserts_for_table(table_id, table_name, inserts.into());
             }
 
-            let (schema, _indexes, pages) = tx_table.consume_for_merge();
-
-            // The schema may have been modified in the transaction.
-            // Update this last to placate borrowck and avoid a clone.
-            // None of the above operations will inspect the schema.
-            commit_table.schema = schema;
-
-            // Put all the pages in the table back into the pool.
-            self.page_pool.put_many(pages);
+            // Merge the tables,
+            // moving over all rows and indices to the committed state.
+            // SAFETY: `tx_table` is derived from `commit_table`.
+            unsafe { commit_table.merge_from(tx_table, page_pool) };
         }
+
+        // Merge `tx_blob_store` into committed state's blob store.
+        self.blob_store.merge_from(tx_blob_store);
     }
 
     /// Rolls back the changes immediately made to the committed state during a transaction.

@@ -207,7 +207,7 @@ impl UniqueDirectIndex {
 
     /// Returns whether `other` can be merged into `self`
     /// with an error containing the element in `self` that caused the violation.
-    pub(crate) fn can_merge(&self, other: &UniqueDirectIndex) -> Result<(), RowPointer> {
+    pub(crate) fn can_merge(&self, other: &Self) -> Result<(), RowPointer> {
         for (inner_s, inner_o) in self.outer.iter().zip(&other.outer) {
             let (Some(inner_s), Some(inner_o)) = (inner_s, inner_o) else {
                 continue;
@@ -222,6 +222,49 @@ impl UniqueDirectIndex {
         }
 
         Ok(())
+    }
+
+    /// Merge `src`, mapped through `translate`, into `self`.
+    pub(crate) fn merge_from(&mut self, src: Self, translate: impl Fn(RowPointer) -> RowPointer) {
+        self.len += src.len;
+
+        // Fetch the `self`'s outer index and ensure it can house at least `src.outer.len()`.
+        let dst_outer = &mut self.outer;
+        dst_outer.resize(dst_outer.len().max(src.outer.len()), None);
+
+        for (key_outer, mut src_inner) in src
+            .outer
+            .into_iter()
+            .enumerate()
+            // Ignore unused outer slots.
+            .filter_map(|(pos, o)| o.map(|o| (pos, o)))
+        {
+            // Fetch `self`'s inner index.
+            // SAFETY: ensured in `.resize(_)` that `key_outer < dst_outer.len()`, making indexing to `key_outer` valid.
+            let dst_inner = unsafe { dst_outer.get_unchecked_mut(key_outer) };
+
+            match dst_inner {
+                // `self` doesn't have this inner index, so move it over but translate first.
+                None => {
+                    // Translate all used slots in `src_inner`.
+                    src_inner
+                        .inner
+                        .iter_mut()
+                        .filter(|s| **s != NONE_PTR)
+                        .for_each(|slot| *slot = translate(*slot));
+                    *dst_inner = Some(src_inner);
+                }
+                // `self` does have the inner index, so write each ptr in `src_inner` to `dst_inner`.
+                Some(dst_inner) => {
+                    dst_inner
+                        .inner
+                        .iter_mut()
+                        .zip(src_inner.inner.iter().copied())
+                        .filter(|(_, src)| *src != NONE_PTR)
+                        .for_each(|(dst, src)| *dst = translate(src));
+                }
+            }
+        }
     }
 }
 

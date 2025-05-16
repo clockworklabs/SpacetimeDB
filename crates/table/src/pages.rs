@@ -6,6 +6,7 @@ use super::page::Page;
 use super::page_pool::PagePool;
 use super::table::BlobNumBytes;
 use super::var_len::VarLenMembers;
+use crate::indexes::SquashedOffset;
 use crate::MemoryUsage;
 use core::ops::{ControlFlow, Deref, Index, IndexMut};
 use std::ops::DerefMut;
@@ -119,7 +120,7 @@ impl Pages {
     /// add it to the non-full set so that later insertions can access it.
     pub fn maybe_mark_page_non_full(&mut self, page_index: PageIndex, fixed_row_size: Size) {
         if !self[page_index].is_full(fixed_row_size) {
-            self.non_full_pages.push(page_index);
+            self.mark_page_non_full(page_index);
         }
     }
 
@@ -250,6 +251,125 @@ impl Pages {
         blob_store_deleted_bytes
     }
 
+    /// Moves over all pages in `src` to `self`.
+    ///
+    /// This consumes `src` and either frees pages or moves them to `self`.
+    //  TODO(perf, centril): Currently we just copy pages over and free the source pages,
+    //  figure out some clever heuristic as to when we can move pages instead.
+    ///
+    /// # Safety
+    ///
+    /// - The `var_len_visitor` will visit the same set of `VarLenRef`s in the row
+    ///   as the visitor provided to all other methods on `self` and `src`.
+    ///
+    /// - The `fixed_row_size` is consistent with the `var_len_visitor`
+    ///   and is equal to the value provided to all other methods on `self` and `src`.
+    #[allow(clippy::too_many_arguments)]
+    pub unsafe fn take_pages_of(
+        &mut self,
+        src: Pages,
+        src_so: SquashedOffset,
+        dst_so: SquashedOffset,
+        pool: &PagePool,
+        var_len_visitor: &impl VarLenMembers,
+        fixed_row_size: Size,
+        mut notify: impl FnMut(RowPointer, RowPointer),
+    ) -> Result<(), Error> {
+        let dst = self;
+
+        // A destination page that was not filled entirely,
+        // or `None` if we need to find a page in `dst`.
+        let mut partial_page = None;
+
+        // Copy each page.
+        for (src_page, src_page_index) in src.pages.into_iter().zip(0..) {
+            let src_page_index = PageIndex(src_page_index);
+
+            // You may require multiple calls to `Page::copy_starting_from`
+            // if `partial_page` fills up;
+            // the first call starts from 0.
+            let mut copy_starting_from = Some(PageOffset(0));
+
+            // While there are unprocessed rows in `src_page`,
+            while let Some(next_offset) = copy_starting_from.take() {
+                // Grab the `partial_page` or grab a new one from `dst`.
+                // The `dst` will allocate a new one if necessary.
+                if partial_page.is_none() {
+                    // SAFETY:
+                    // - Still processing `src_page`, so `next_offset` is a valid offset in it.
+                    // - Caller promised that `fixed_row_size` is consistent with `var_len_visitor`
+                    //   and as `src_page` is part of `src`,
+                    //   it follows that `fixed_row_size` is equal to the size used for `src_page`.
+                    let required_granules =
+                        unsafe { src_page.row_total_granules(next_offset, fixed_row_size, var_len_visitor) };
+                    let dst_page_index = dst.find_page_with_space_for_row(pool, fixed_row_size, required_granules)?;
+                    partial_page = Some((dst_page_index, &mut dst[dst_page_index]));
+                }
+                let dst_page_and_index = partial_page.take();
+                // SAFETY: if `partial_page` was `None` the `if` made it `Some`.
+                let (dst_page_index, dst_page) = unsafe { dst_page_and_index.unwrap_unchecked() };
+
+                // Copy as many rows as will fit in `dst_page`.
+                //
+                // SAFETY:
+                //
+                // - The `var_len_visitor` will visit the same set of `VarLenRef`s in the row
+                //   as the visitor provided to all other methods on `dst`.
+                //   The `dst_page` uses the same visitor as the `src_page`.
+                //
+                // - The `fixed_row_size` is consistent with the `var_len_visitor`
+                //   and is equal to the value provided to all other methods on `dst` and `src`,
+                //   as promised by the caller,
+                //   and thus `dst_page` and `src_page`
+                //
+                // - The `next_offset` is either 0,
+                //   which is always a valid starting offset for any row size,
+                //   or it came from `copy_filter_into` in a previous iteration,
+                //   which, given that `fixed_row_size` was valid,
+                //   always returns a valid starting offset in case of `Continue(_)`.
+                let cfi_ret = unsafe {
+                    src_page.copy_filter_into(
+                        next_offset,
+                        dst_page,
+                        fixed_row_size,
+                        var_len_visitor,
+                        // No blob policy. We will merge the blob stores wholesale instead.
+                        None::<&mut &mut dyn FnMut(_)>,
+                        // Copy all rows.
+                        |_, _| true,
+                        // Add a translation entry for indices.
+                        |src_offset, dst_offset| {
+                            let src_ptr = RowPointer::new(false, src_page_index, src_offset, src_so);
+                            let dst_ptr = RowPointer::new(false, dst_page_index, dst_offset, dst_so);
+                            notify(src_ptr, dst_ptr);
+                        },
+                    )
+                };
+                // If `dst_page` couldn't fit all of `src_page` (`Continue`),
+                // repeat the `while_let` loop to copy the rest.
+                // If `dst_page` fit all of `src_page`, we can move on.
+                copy_starting_from = cfi_ret.continue_value();
+
+                // If `src_page` finished copying into `dst_page`, then `dst_page` may have extra room.
+                //
+                // If `copy_filter_into` returns `Continue`,
+                // that means at least one row didn't have space in `dst_page`,
+                // so we must consider `dst_page` full.
+                //
+                // Note that this is distinct from `Page::is_full`,
+                // as that method considers the optimistic case of a row with no var-len members.
+                if copy_starting_from.is_none() {
+                    partial_page = Some((dst_page_index, dst_page));
+                }
+            }
+
+            // We're done with `src_page`, so return it to the pool.
+            pool.put(src_page);
+        }
+
+        Ok(())
+    }
+
     /// Materialize a view of rows in `self` for which the  `filter` returns `true`.
     ///
     /// # Safety
@@ -312,6 +432,7 @@ impl Pages {
                         var_len_visitor,
                         blob_policy.as_mut(),
                         &mut filter,
+                        |_, _| {},
                     )
                 };
                 copy_starting_from = if let ControlFlow::Continue(continue_point) = cfi_ret {

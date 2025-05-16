@@ -1624,6 +1624,10 @@ impl Page {
     /// If the entirety of `self` is processed, return `Break`.
     /// `dst` may or may not be full in this case, but is likely not full.
     ///
+    /// When a row is copied over,
+    /// `notify` is called with first the source row offset
+    /// and then the destination row offset.
+    ///
     /// # Safety
     ///
     /// The `var_len_visitor` must visit the same set of `VarLenRef`s in the row
@@ -1635,6 +1639,7 @@ impl Page {
     /// The `starting_from` offset must point to a valid starting offset
     /// consistent with `fixed_row_size`.
     /// That is, it must not point into the middle of a row.
+    #[allow(clippy::too_many_arguments)]
     pub unsafe fn copy_filter_into(
         &self,
         starting_from: PageOffset,
@@ -1643,6 +1648,7 @@ impl Page {
         var_len_visitor: &impl VarLenMembers,
         mut blob_policy: Option<&mut impl FnMut(BlobHash)>,
         mut filter: impl FnMut(&Page, PageOffset) -> bool,
+        mut notify: impl FnMut(PageOffset, PageOffset),
     ) -> ControlFlow<(), PageOffset> {
         for row_offset in self
             .iter_fixed_len_from(fixed_row_size, starting_from)
@@ -1654,11 +1660,13 @@ impl Page {
             // - `starting_from` points to a valid row and thus `row_offset` also does.
             // - `var_len_visitor` will visit the right `VarLenRef`s and is consistent with other calls.
             // - `fixed_row_size` is consistent with `var_len_visitor` and `self`.
-            if !unsafe { self.copy_row_into(row_offset, dst, fixed_row_size, var_len_visitor, blob_policy) } {
+            let res = unsafe { self.copy_row_into(row_offset, dst, fixed_row_size, var_len_visitor, blob_policy) };
+            match res {
+                Some(inserted_offset) => notify(row_offset, inserted_offset),
                 // Target doesn't have enough space for row;
                 // stop here and return the offset of the uncopied row
                 // so a later call to `copy_filter_into` can start there.
-                return ControlFlow::Continue(row_offset);
+                None => return ControlFlow::Continue(row_offset),
             }
         }
 
@@ -1669,7 +1677,8 @@ impl Page {
     }
 
     /// Copies the row at `row_offset` from `self` into `dst`
-    /// or returns `false` otherwise if `dst` has no space for the row.
+    /// and returns the new offset in `dst`.
+    /// Returns `None` if `dst` has no space for the row.
     ///
     /// # Safety
     ///
@@ -1687,14 +1696,14 @@ impl Page {
         fixed_row_size: Size,
         var_len_visitor: &impl VarLenMembers,
         mut blob_policy: Option<&mut impl FnMut(BlobHash)>,
-    ) -> bool {
+    ) -> Option<PageOffset> {
         // SAFETY: Caller promised that `starting_from` points to a valid row
         // consistent with `fixed_row_size` which was also
         // claimed to be consistent with `var_len_visitor` and `self`.
         let required_granules = unsafe { self.row_total_granules(row_offset, fixed_row_size, var_len_visitor) };
         if !dst.has_space_for_row(fixed_row_size, required_granules) {
             // Target doesn't have enough space for row.
-            return false;
+            return None;
         };
 
         let src_row = self.get_row_data(row_offset, fixed_row_size);
@@ -1733,7 +1742,7 @@ impl Page {
             *target_vlr_slot = target_vlr_fixup;
         }
 
-        true
+        Some(inserted_offset)
     }
 
     /// Copy a var-len object `src_vlr` from `self` into `dst_var`,

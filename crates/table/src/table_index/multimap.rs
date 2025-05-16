@@ -1,9 +1,8 @@
+use crate::MemoryUsage;
 use core::ops::RangeBounds;
 use core::slice;
 use smallvec::SmallVec;
-use std::collections::btree_map::{BTreeMap, Range};
-
-use crate::MemoryUsage;
+use std::collections::btree_map::{BTreeMap, Entry, Range};
 
 /// A multi map that relates a `K` to a *set* of `V`s.
 #[derive(Debug, PartialEq, Eq)]
@@ -89,6 +88,24 @@ impl<K: Ord, V: Ord> MultiMap<K, V> {
     /// This will not deallocate the outer map.
     pub fn clear(&mut self) {
         self.map.clear();
+    }
+
+    /// Merge `src`, mapped through `translate`, into `self`.
+    pub(crate) fn merge_from(&mut self, src: Self, translate: impl Fn(V) -> V)
+    where
+        V: Copy,
+    {
+        for (key, mut vals) in src.map {
+            for v in &mut vals {
+                *v = translate(*v);
+            }
+            match self.map.entry(key) {
+                Entry::Vacant(e) => {
+                    e.insert(vals);
+                }
+                Entry::Occupied(e) => e.into_mut().extend_from_slice(&vals),
+            }
+        }
     }
 }
 

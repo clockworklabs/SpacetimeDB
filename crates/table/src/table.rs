@@ -29,6 +29,7 @@ use core::{
 use derive_more::{Add, AddAssign, From, Sub, SubAssign};
 use enum_as_inner::EnumAsInner;
 use smallvec::SmallVec;
+use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::{bsatn::DecodeError, de::DeserializeOwned};
 use spacetimedb_primitives::{ColId, ColList, IndexId, SequenceId};
 use spacetimedb_sats::{
@@ -1273,15 +1274,72 @@ impl Table {
         self.pointer_map = Some(self.rebuild_pointer_map(blob_store));
     }
 
-    /// Consumes the table, returning some constituents needed for merge.
-    pub fn consume_for_merge(
-        self,
-    ) -> (
-        Arc<TableSchema>,
-        impl Iterator<Item = (IndexId, TableIndex)>,
-        impl Iterator<Item = Box<Page>>,
-    ) {
-        (self.schema, self.indexes.into_iter(), self.inner.pages.into_page_iter())
+    /// Merge `src` into `self`.
+    ///
+    /// # Safety
+    ///
+    /// The tables `self` and `src` must share the same schema/layout.
+    /// This is the case when `src` is derived from `self`.
+    pub unsafe fn merge_from(&mut self, src: Table, pool: &PagePool) {
+        let dst = self;
+        // The schema may have been modified in the transaction,
+        // but these changes are applied immediately.
+
+        // Keep a translation table of source -> destination row pointer mappings.
+        // This is necessary to fixup the row pointers of `src`'s indices.
+        let mut ptr_translations = HashMap::with_capacity(src.row_count as usize);
+        let notify_copy = |src, dst| {
+            ptr_translations.insert(src, dst);
+        };
+
+        // Merge the pages of `src` into `dst.pages`.
+        let vlv_program = &dst.inner.visitor_prog;
+        let fixed_row_size = dst.row_size();
+        // TODO(perf): Consider moving pages in some cases,
+        // deciding dynamically based on the available holes in the committed state
+        // and the fullness of the page.
+        //
+        // SAFETY:
+        // - `vlv_program` is the same as for `src` and is used for everything in both tables.
+        // - `fixed_row_size` and `vlv_program` are consistent as they were both derived
+        //   from the same schema/layout.
+        let res = unsafe {
+            dst.inner.pages.take_pages_of(
+                src.inner.pages,
+                src.squashed_offset,
+                dst.squashed_offset,
+                pool,
+                vlv_program,
+                fixed_row_size,
+                notify_copy,
+            )
+        };
+        // TODO(centril): this isn't strictly true,
+        // but before this happens we'll OOM as we don't have 32 PiB of RAM
+        // and neither does any other computer in the world.
+        res.expect("should not, in practice, overflow the max page index");
+
+        // Merge the pointer map of `self` into `dst_table`.
+        let translate = |src_ptr| {
+            // SAFETY: any pointer in a `src_index` exists in `self`
+            // so it also exists in `ptr_translations`.
+            *unsafe { ptr_translations.get(&src_ptr).unwrap_unchecked() }
+        };
+        if let Some((dst_pm, src_pm)) = dst.pointer_map.as_mut().zip(src.pointer_map) {
+            dst_pm.merge_from(src_pm, translate);
+        }
+
+        // Merge the indices of `self` into `dst_table`.
+        for (index_id, src_index) in src.indexes.into_iter() {
+            dst.indexes
+                .get_mut(&index_id)
+                .expect("any index in `self` should exist in `dst_table`")
+                .merge_from(src_index, translate);
+        }
+
+        // Merge the statistics.
+        dst.row_count += src.row_count;
+        dst.blob_store_bytes += src.blob_store_bytes;
     }
 
     /// Returns the number of rows resident in this table.
