@@ -469,6 +469,9 @@ Both types of identifiers are case sensitive.
 Use quoted identifiers to avoid conflict with reserved SQL keywords,
 or if your table or column contains non-alphanumeric characters.
 
+Because SpacetimeDB uses a postgres compatible parser, identifiers which are
+reserved in postgres are automatically reserved in Spacetime SQL. See [SQL Key Words in the PostgreSQL documentation](https://www.postgresql.org/docs/current/sql-keywords-appendix.html).
+
 ### Example
 
 ```sql
