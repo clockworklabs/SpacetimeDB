@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 license-file = "LICENSE"
 description = "Types for the SpacetimeDB client API messages"
+rust-version.workspace = true
 
 [dependencies]
 spacetimedb-lib = { workspace = true, features = ["serde"] }
