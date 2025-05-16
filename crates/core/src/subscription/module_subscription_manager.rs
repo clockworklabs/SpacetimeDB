@@ -16,7 +16,7 @@ use hashbrown::{HashMap, HashSet};
 use itertools::Itertools;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use spacetimedb_client_api_messages::websocket::{
-    BsatnFormat, CompressableQueryUpdate, Compression, FormatSwitch, JsonFormat, QueryId, QueryUpdate, WebsocketFormat,
+    BsatnFormat, CompressableQueryUpdate, FormatSwitch, JsonFormat, QueryId, QueryUpdate, WebsocketFormat,
 };
 use spacetimedb_data_structures::map::{Entry, IntMap};
 use spacetimedb_lib::metrics::ExecutionMetrics;
@@ -309,11 +309,13 @@ pub struct SubscriptionManager {
     // Queries for which there is at least one subscriber.
     queries: HashMap<QueryHash, QueryState>,
 
-    // Inverted index from tables to queries that read from them.
-    // Note, a query is present in either `tables` or `search_args` but not both.
+    // If a query reads from a table,
+    // but does not have a simple equality filter on that table,
+    // we map the table to the query in this inverted index.
     tables: IntMap<TableId, HashSet<QueryHash>>,
 
-    // For queries that have simple equality filters,
+    // If a query reads from a table,
+    // and has a simple equality filter on that table,
     // we map the filter values to the query in this lookup table.
     search_args: SearchArguments,
 }
@@ -619,7 +621,7 @@ impl SubscriptionManager {
     }
 
     // Update the mapping from table id to related queries by inserting the given query.
-    // If this query has search arguments, that mapping is updated instead.
+    // Also add any search arguments the query may have.
     // This takes a ref to the table map instead of `self` to avoid borrowing issues.
     fn insert_query(
         tables: &mut IntMap<TableId, HashSet<QueryHash>>,
@@ -629,15 +631,15 @@ impl SubscriptionManager {
         // If this is new, we need to update the table to query mapping.
         if !query_state.has_subscribers() {
             let hash = query_state.query.hash();
-            let mut has_search_args = false;
+            let mut table_ids = query_state.query.table_ids().collect::<HashSet<_>>();
             for (table_id, col_id, arg) in query_state.search_args() {
-                has_search_args = true;
+                table_ids.remove(&table_id);
                 search_args.insert_query(table_id, col_id, arg, hash);
             }
-            if !has_search_args {
-                for table_id in query_state.query.table_ids() {
-                    tables.entry(table_id).or_default().insert(hash);
-                }
+            // Update the `tables` map if this query reads from a table,
+            // but does not have a search argument for that table.
+            for table_id in table_ids {
+                tables.entry(table_id).or_default().insert(hash);
             }
         }
     }
@@ -714,9 +716,10 @@ impl SubscriptionManager {
         {
             queries.insert(hash);
         }
-        queries
-            .into_iter()
-            .chain(self.tables.get(&table_update.table_id).into_iter().flatten())
+        for hash in self.tables.get(&table_update.table_id).into_iter().flatten() {
+            queries.insert(hash);
+        }
+        queries.into_iter()
     }
 
     /// This method takes a set of delta tables,
@@ -817,26 +820,37 @@ impl SubscriptionManager {
                 .fold(FoldState::default, |mut acc, (qstate, plan)| {
                     let table_id = plan.subscribed_table_id();
                     let table_name = plan.subscribed_table_name();
-                    // Store at most one copy of the serialization to BSATN x Compression
-                    // and ditto for the "serialization" for JSON.
+                    // Store at most one copy for both the serialization to BSATN and JSON.
                     // Each subscriber gets to pick which of these they want,
-                    // but we only fill `ops_bin_{compression}` and `ops_json` at most once.
+                    // but we only fill `ops_bin_uncompressed` and `ops_json` at most once.
                     // The former will be `Some(_)` if some subscriber uses `Protocol::Binary`
                     // and the latter `Some(_)` if some subscriber uses `Protocol::Text`.
-                    let mut ops_bin_brotli: Option<(CompressableQueryUpdate<BsatnFormat>, _, _)> = None;
-                    let mut ops_bin_gzip: Option<(CompressableQueryUpdate<BsatnFormat>, _, _)> = None;
-                    let mut ops_bin_none: Option<(CompressableQueryUpdate<BsatnFormat>, _, _)> = None;
+                    //
+                    // Previously we were compressing each `QueryUpdate` within a `TransactionUpdate`.
+                    // The reason was simple - many clients can subscribe to the same query.
+                    // If we compress `TransactionUpdate`s independently for each client,
+                    // we could be doing a lot of redundant compression.
+                    //
+                    // However the risks associated with this approach include:
+                    //   1. We have to hold the tx lock when compressing
+                    //   2. A potentially worse compression ratio
+                    //   3. Extra decompression overhead on the client
+                    //
+                    // Because transaction processing is currently single-threaded,
+                    // the risks of holding the tx lock for longer than necessary,
+                    // as well as the additional message processing overhead on the client,
+                    // outweighed the benefit of reduced cpu with the former approach.
+                    let mut ops_bin_uncompressed: Option<(CompressableQueryUpdate<BsatnFormat>, _, _)> = None;
                     let mut ops_json: Option<(QueryUpdate<JsonFormat>, _, _)> = None;
 
                     fn memo_encode<F: WebsocketFormat>(
                         updates: &UpdatesRelValue<'_>,
-                        client: &ClientConnectionSender,
                         memory: &mut Option<(F::QueryUpdate, u64, usize)>,
                         metrics: &mut ExecutionMetrics,
                     ) -> (F::QueryUpdate, u64) {
                         let (update, num_rows, num_bytes) = memory
                             .get_or_insert_with(|| {
-                                let encoded = updates.encode::<F>(client.config.compression);
+                                let encoded = updates.encode::<F>();
                                 // The first time we insert into this map, we call encode.
                                 // This is when we serialize the rows to BSATN/JSON.
                                 // Hence this is where we increment `bytes_scanned`.
@@ -884,17 +898,11 @@ impl SubscriptionManager {
                                 let update = match client.config.protocol {
                                     Protocol::Binary => Bsatn(memo_encode::<BsatnFormat>(
                                         &delta_updates,
-                                        client,
-                                        match client.config.compression {
-                                            Compression::Brotli => &mut ops_bin_brotli,
-                                            Compression::Gzip => &mut ops_bin_gzip,
-                                            Compression::None => &mut ops_bin_none,
-                                        },
+                                        &mut ops_bin_uncompressed,
                                         &mut acc.metrics,
                                     )),
                                     Protocol::Text => Json(memo_encode::<JsonFormat>(
                                         &delta_updates,
-                                        client,
                                         &mut ops_json,
                                         &mut acc.metrics,
                                     )),
@@ -1514,7 +1522,7 @@ mod tests {
     }
 
     #[test]
-    fn test_lookup_queries_for_search_arg() -> ResultTest<()> {
+    fn test_search_args_for_selects() -> ResultTest<()> {
         let db = TestDB::durable()?;
 
         let table_id = create_table(&db, "t")?;
@@ -1572,6 +1580,75 @@ mod tests {
 
         assert!(hashes.len() == 1);
         assert!(hashes.contains(&&hash_for_5));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_search_args_for_join() -> ResultTest<()> {
+        let db = TestDB::durable()?;
+
+        let schema = [("id", AlgebraicType::U8), ("a", AlgebraicType::U8)];
+
+        let t_id = db.create_table_for_test("t", &schema, &[0.into()])?;
+        let s_id = db.create_table_for_test("s", &schema, &[0.into()])?;
+
+        let client = Arc::new(client(0));
+        let mut subscriptions = SubscriptionManager::default();
+
+        let plan = compile_plan(&db, "select t.* from t join s on t.id = s.id where s.a = 1")?;
+        let hash = plan.hash;
+
+        subscriptions.add_subscription_multi(client.clone(), vec![plan], QueryId::new(0))?;
+
+        // Do we need to evaluate the above join query for this table update?
+        // Yes, because the above query does not filter on `t`.
+        // Therefore we must evaluate it for any update on `t`.
+        let table_update = DatabaseTableUpdate {
+            table_id: t_id,
+            table_name: "t".into(),
+            inserts: [product![0u8, 0u8]].into(),
+            deletes: [].into(),
+        };
+
+        let hashes = subscriptions
+            .queries_for_table_update(&table_update)
+            .cloned()
+            .collect::<Vec<_>>();
+
+        assert_eq!(hashes, vec![hash]);
+
+        // Do we need to evaluate the above join query for this table update?
+        // Yes, because `s.a = 1`.
+        let table_update = DatabaseTableUpdate {
+            table_id: s_id,
+            table_name: "s".into(),
+            inserts: [product![0u8, 1u8]].into(),
+            deletes: [].into(),
+        };
+
+        let hashes = subscriptions
+            .queries_for_table_update(&table_update)
+            .cloned()
+            .collect::<Vec<_>>();
+
+        assert_eq!(hashes, vec![hash]);
+
+        // Do we need to evaluate the above join query for this table update?
+        // No, because `s.a != 1`.
+        let table_update = DatabaseTableUpdate {
+            table_id: s_id,
+            table_name: "s".into(),
+            inserts: [product![0u8, 2u8]].into(),
+            deletes: [].into(),
+        };
+
+        let hashes = subscriptions
+            .queries_for_table_update(&table_update)
+            .cloned()
+            .collect::<Vec<_>>();
+
+        assert!(hashes.is_empty());
 
         Ok(())
     }

@@ -622,13 +622,20 @@ impl RewriteRule for IxScanEq2Col {
                     .indexes
                     .iter()
                     .filter(|idx| idx.index_algorithm.columns().len() == 2) // TODO: Support prefix scans
-                    .find_map(|idx| {
+                    .map(|idx| (idx.index_id, idx.index_algorithm.columns()))
+                    .find_map(|(index_id, columns)| {
+                        let mut columns = columns.iter();
+                        let x = columns.next()?;
+                        if x.idx() != u.field_pos {
+                            return None;
+                        }
+                        let y = columns.next()?;
+                        if y.idx() != v.field_pos {
+                            return None;
+                        }
                         Some(IxScanInfo {
-                            index_id: idx.index_id,
-                            cols: vec![
-                                (i, idx.index_algorithm.find_col_index(u.field_pos)?),
-                                (j, idx.index_algorithm.find_col_index(v.field_pos)?),
-                            ],
+                            index_id,
+                            cols: vec![(i, x), (j, y)],
                         })
                     })
                 {
@@ -795,14 +802,24 @@ impl RewriteRule for IxScanEq3Col {
                         .indexes
                         .iter()
                         .filter(|idx| idx.index_algorithm.columns().len() == 3)
-                        .find_map(|idx| {
+                        .map(|idx| (idx.index_id, idx.index_algorithm.columns()))
+                        .find_map(|(index_id, columns)| {
+                            let mut columns = columns.iter();
+                            let x = columns.next()?;
+                            if x.idx() != u.field_pos {
+                                return None;
+                            }
+                            let y = columns.next()?;
+                            if y.idx() != v.field_pos {
+                                return None;
+                            }
+                            let z = columns.next()?;
+                            if z.idx() != w.field_pos {
+                                return None;
+                            }
                             Some(IxScanInfo {
-                                index_id: idx.index_id,
-                                cols: vec![
-                                    (i, idx.index_algorithm.find_col_index(u.field_pos)?),
-                                    (j, idx.index_algorithm.find_col_index(v.field_pos)?),
-                                    (k, idx.index_algorithm.find_col_index(w.field_pos)?),
-                                ],
+                                index_id,
+                                cols: vec![(i, x), (j, y), (k, z)],
                             })
                         })
                     {

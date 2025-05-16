@@ -18,6 +18,11 @@ partial struct TestAutoIncNotInteger
         BSATN.IdentityField.Write(writer, IdentityField);
     }
 
+    object SpacetimeDB.BSATN.IStructuralReadWrite.GetSerializer()
+    {
+        return new BSATN();
+    }
+
     public override string ToString() =>
         $"TestAutoIncNotInteger {{ AutoIncField = {SpacetimeDB.BSATN.StringUtil.GenericToString(AutoIncField)}, IdentityField = {SpacetimeDB.BSATN.StringUtil.GenericToString(IdentityField)} }}";
 
@@ -26,8 +31,12 @@ partial struct TestAutoIncNotInteger
         internal static readonly SpacetimeDB.BSATN.F32 AutoIncField = new();
         internal static readonly SpacetimeDB.BSATN.String IdentityField = new();
 
-        public TestAutoIncNotInteger Read(System.IO.BinaryReader reader) =>
-            SpacetimeDB.BSATN.IStructuralReadWrite.Read<TestAutoIncNotInteger>(reader);
+        public TestAutoIncNotInteger Read(System.IO.BinaryReader reader)
+        {
+            var ___result = new TestAutoIncNotInteger();
+            ___result.ReadFields(reader);
+            return ___result;
+        }
 
         public void Write(System.IO.BinaryWriter writer, TestAutoIncNotInteger value)
         {
@@ -54,13 +63,20 @@ partial struct TestAutoIncNotInteger
 
     public override int GetHashCode()
     {
-        return AutoIncField.GetHashCode() ^ IdentityField.GetHashCode();
+        var ___hashAutoIncField = AutoIncField.GetHashCode();
+        var ___hashIdentityField = IdentityField == null ? 0 : IdentityField.GetHashCode();
+        return ___hashAutoIncField ^ ___hashIdentityField;
     }
 
 #nullable enable
     public bool Equals(TestAutoIncNotInteger that)
     {
-        return AutoIncField.Equals(that.AutoIncField) && IdentityField.Equals(that.IdentityField);
+        var ___eqAutoIncField = this.AutoIncField.Equals(that.AutoIncField);
+        var ___eqIdentityField =
+            this.IdentityField == null
+                ? that.IdentityField == null
+                : this.IdentityField.Equals(that.IdentityField);
+        return ___eqAutoIncField && ___eqIdentityField;
     }
 
     public override bool Equals(object? that)

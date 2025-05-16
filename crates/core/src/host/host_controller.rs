@@ -13,7 +13,7 @@ use crate::module_host_context::ModuleCreationContext;
 use crate::replica_context::ReplicaContext;
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use crate::subscription::module_subscription_manager::SubscriptionManager;
-use crate::util::spawn_rayon;
+use crate::util::{asyncify, spawn_rayon};
 use anyhow::{anyhow, ensure, Context};
 use async_trait::async_trait;
 use durability::{Durability, EmptyHistory};
@@ -21,10 +21,11 @@ use log::{info, trace, warn};
 use parking_lot::{Mutex, RwLock};
 use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_durability::{self as durability, TxOffset};
-use spacetimedb_lib::hash_bytes;
+use spacetimedb_lib::{hash_bytes, Identity};
 use spacetimedb_paths::server::{ReplicaDir, ServerDataDir};
 use spacetimedb_paths::FromPathUnchecked;
 use spacetimedb_sats::hash::Hash;
+use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_table::page_pool::PagePool;
 use std::future::Future;
 use std::ops::Deref;
@@ -99,7 +100,7 @@ struct HostRuntimes {
 }
 
 impl HostRuntimes {
-    fn new(data_dir: &ServerDataDir) -> Arc<Self> {
+    fn new(data_dir: Option<&ServerDataDir>) -> Arc<Self> {
         let wasmtime = WasmtimeRuntime::new(data_dir);
         Arc::new(Self { wasmtime })
     }
@@ -173,7 +174,7 @@ impl HostController {
             program_storage,
             energy_monitor,
             durability,
-            runtimes: HostRuntimes::new(&data_dir),
+            runtimes: HostRuntimes::new(Some(&data_dir)),
             data_dir,
             page_pool: PagePool::new(default_config.page_pool_max_size),
         }
@@ -263,8 +264,8 @@ impl HostController {
     ///
     /// This is not necessary during hotswap publishes,
     /// as the automigration planner and executor accomplish the same validity checks.
-    pub async fn check_module_validity(&self, database: Database, program: Program) -> anyhow::Result<()> {
-        Host::try_init_in_memory_to_check(self, database, program).await
+    pub async fn check_module_validity(&self, database: Database, program: Program) -> anyhow::Result<Arc<ModuleInfo>> {
+        Host::try_init_in_memory_to_check(&self.runtimes, self.page_pool.clone(), database, program).await
     }
 
     /// Run a computation on the [`RelationalDB`] of a [`ModuleHost`] managed by
@@ -281,13 +282,11 @@ impl HostController {
         trace!("using database {}/{}", database.database_identity, replica_id);
         let module = self.get_or_launch_module_host(database, replica_id).await?;
         let on_panic = self.unregister_fn(replica_id);
-        let result = tokio::task::spawn_blocking(move || f(&module.replica_ctx().relational_db))
-            .await
-            .unwrap_or_else(|e| {
-                warn!("database operation panicked");
-                on_panic();
-                std::panic::resume_unwind(e.into_panic())
-            });
+        scopeguard::defer_on_unwind!({
+            warn!("database operation panicked");
+            on_panic();
+        });
+        let result = asyncify(move || f(&module.replica_ctx().relational_db)).await;
         Ok(result)
     }
 
@@ -538,11 +537,7 @@ async fn make_replica_ctx(
             let Some(subscriptions) = downgraded.upgrade() else {
                 break;
             };
-            tokio::task::spawn_blocking(move || {
-                subscriptions.write().remove_dropped_clients();
-            })
-            .await
-            .unwrap();
+            asyncify(move || subscriptions.write().remove_dropped_clients()).await
         }
     });
 
@@ -703,8 +698,7 @@ impl Host {
     ///
     /// Note that this does **not** run module initialization routines, but may
     /// create on-disk artifacts if the host / database did not exist.
-
-    #[tracing::instrument(level = "debug", skip_all, err)]
+    #[tracing::instrument(level = "debug", skip_all)]
     async fn try_init(host_controller: &HostController, database: Database, replica_id: u64) -> anyhow::Result<Self> {
         let HostController {
             data_dir,
@@ -743,7 +737,17 @@ impl Host {
                     Some(durability),
                     Some(snapshot_repo),
                     page_pool.clone(),
-                )?;
+                )
+                // Make sure we log the source chain of the error
+                // as a single line, with the help of `anyhow`.
+                .map_err(anyhow::Error::from)
+                .inspect_err(|e| {
+                    tracing::error!(
+                        database = %database.database_identity,
+                        replica = replica_id,
+                        "Failed to open database: {e:#}"
+                    );
+                })?;
                 if let Some(start_snapshot_watcher) = start_snapshot_watcher {
                     let watcher = db.subscribe_to_snapshots().expect("we passed snapshot_repo");
                     start_snapshot_watcher(watcher)
@@ -822,12 +826,11 @@ impl Host {
     /// This is not necessary during hotswap publishes,
     /// as the automigration planner and executor accomplish the same validity checks.
     async fn try_init_in_memory_to_check(
-        host_controller: &HostController,
+        runtimes: &Arc<HostRuntimes>,
+        page_pool: PagePool,
         database: Database,
         program: Program,
-    ) -> anyhow::Result<()> {
-        let HostController { runtimes, .. } = host_controller;
-
+    ) -> anyhow::Result<Arc<ModuleInfo>> {
         // Even in-memory databases acquire a lockfile.
         // Grab a tempdir to put that lockfile in.
         let phony_replica_dir = TempDir::with_prefix("spacetimedb-publish-in-memory-check")
@@ -843,7 +846,7 @@ impl Host {
             EmptyHistory::new(),
             None,
             None,
-            host_controller.page_pool.clone(),
+            page_pool,
         )?;
 
         let (program, launched) = launch_module(
@@ -866,7 +869,7 @@ impl Host {
             Result::from(call_result)?;
         }
 
-        Ok(())
+        Ok(launched.module_host.info)
     }
 
     /// Attempt to replace this [`Host`]'s [`ModuleHost`] with a new one running
@@ -953,4 +956,28 @@ async fn metric_reporter(replica_ctx: Arc<ReplicaContext>) {
         }
         tokio::time::sleep(STORAGE_METERING_INTERVAL).await;
     }
+}
+
+/// Extracts the schema from a given module.
+///
+/// Spins up a dummy host and returns the `ModuleDef` that it extracts.
+pub async fn extract_schema(program_bytes: Box<[u8]>, host_type: HostType) -> anyhow::Result<ModuleDef> {
+    let owner_identity = Identity::from_u256(0xdcba_u32.into());
+    let database_identity = Identity::from_u256(0xabcd_u32.into());
+    let program = Program::from_bytes(program_bytes);
+
+    let database = Database {
+        id: 0,
+        database_identity,
+        owner_identity,
+        host_type,
+        initial_program: program.hash,
+    };
+
+    let runtimes = HostRuntimes::new(None);
+    let page_pool = PagePool::new(None);
+    let module_info = Host::try_init_in_memory_to_check(&runtimes, page_pool, database, program).await?;
+    let module_info = Arc::into_inner(module_info).unwrap();
+
+    Ok(module_info.module_def)
 }

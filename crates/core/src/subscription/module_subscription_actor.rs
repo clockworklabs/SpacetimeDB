@@ -1,6 +1,6 @@
 use super::execution_unit::QueryHash;
 use super::module_subscription_manager::{Plan, SubscriptionGaugeStats, SubscriptionManager};
-use super::query::compile_read_only_query;
+use super::query::compile_query_with_hashes;
 use super::tx::DeltaTx;
 use super::{collect_table_update, record_exec_metrics, TableUpdateType};
 use crate::client::messages::{
@@ -16,19 +16,17 @@ use crate::estimation::estimate_rows_scanned;
 use crate::execution_context::{Workload, WorkloadType};
 use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent};
 use crate::messages::websocket::Subscribe;
-use crate::sql::ast::SchemaViewer;
 use crate::subscription::execute_plans;
+use crate::subscription::query::is_subscribe_to_all_tables;
 use crate::vm::check_row_limit;
 use crate::worker_metrics::WORKER_METRICS;
 use parking_lot::RwLock;
 use prometheus::IntGauge;
 use spacetimedb_client_api_messages::websocket::{
-    self as ws, BsatnFormat, Compression, FormatSwitch, JsonFormat, SubscribeMulti, SubscribeSingle, TableUpdate,
-    Unsubscribe, UnsubscribeMulti,
+    self as ws, BsatnFormat, FormatSwitch, JsonFormat, SubscribeMulti, SubscribeSingle, TableUpdate, Unsubscribe,
+    UnsubscribeMulti,
 };
 use spacetimedb_execution::pipelined::PipelinedProject;
-use spacetimedb_expr::check::parse_and_type_sub;
-use spacetimedb_expr::errors::TypingError;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::Identity;
@@ -105,6 +103,20 @@ type FullSubscriptionUpdate = FormatSwitch<ws::DatabaseUpdate<BsatnFormat>, ws::
 
 /// A utility for sending an error message to a client and returning early
 macro_rules! return_on_err {
+    ($expr:expr, $handler:expr, $metrics:expr) => {
+        match $expr {
+            Ok(val) => val,
+            Err(e) => {
+                // TODO: Handle errors sending messages.
+                let _ = $handler(e.to_string().into());
+                return Ok($metrics);
+            }
+        }
+    };
+}
+
+/// A utility for sending an error message to a client and returning early
+macro_rules! return_on_err_with_sql {
     ($expr:expr, $sql:expr, $handler:expr) => {
         match $expr.map_err(|err| DBError::WithSql {
             sql: $sql.into(),
@@ -118,12 +130,6 @@ macro_rules! return_on_err {
             }
         }
     };
-}
-
-/// Hash a sql query, using the caller's identity if necessary
-fn hash_query(sql: &str, tx: &TxId, auth: &AuthCtx) -> Result<QueryHash, TypingError> {
-    parse_and_type_sub(sql, &SchemaViewer::new(tx, auth), auth)
-        .map(|(_, has_param)| QueryHash::from_string(sql, auth.caller, has_param))
 }
 
 impl ModuleSubscriptions {
@@ -186,34 +192,10 @@ impl ModuleSubscriptions {
         let tx = DeltaTx::from(tx);
 
         Ok(match sender.config.protocol {
-            Protocol::Binary => {
-                collect_table_update(
-                    &plans,
-                    table_id,
-                    table_name.into(),
-                    // We will compress the outer server message,
-                    // after we release the tx lock.
-                    // There's no need to compress the inner table update too.
-                    Compression::None,
-                    &tx,
-                    update_type,
-                )
-                .map(|(table_update, metrics)| (FormatSwitch::Bsatn(table_update), metrics))
-            }
-            Protocol::Text => {
-                collect_table_update(
-                    &plans,
-                    table_id,
-                    table_name.into(),
-                    // We will compress the outer server message,
-                    // after we release the tx lock,
-                    // There's no need to compress the inner table update too.
-                    Compression::None,
-                    &tx,
-                    update_type,
-                )
-                .map(|(table_update, metrics)| (FormatSwitch::Json(table_update), metrics))
-            }
+            Protocol::Binary => collect_table_update(&plans, table_id, table_name.into(), &tx, update_type)
+                .map(|(table_update, metrics)| (FormatSwitch::Bsatn(table_update), metrics)),
+            Protocol::Text => collect_table_update(&plans, table_id, table_name.into(), &tx, update_type)
+                .map(|(table_update, metrics)| (FormatSwitch::Json(table_update), metrics)),
         }?)
     }
 
@@ -240,27 +222,11 @@ impl ModuleSubscriptions {
         let tx = DeltaTx::from(tx);
         match sender.config.protocol {
             Protocol::Binary => {
-                let (update, metrics) = execute_plans(
-                    queries,
-                    // We will compress the outer server message,
-                    // after we release the tx lock.
-                    // There's no need to compress the inner table updates too.
-                    Compression::None,
-                    &tx,
-                    update_type,
-                )?;
+                let (update, metrics) = execute_plans(queries, &tx, update_type)?;
                 Ok((FormatSwitch::Bsatn(update), metrics))
             }
             Protocol::Text => {
-                let (update, metrics) = execute_plans(
-                    queries,
-                    // We will compress the outer server message,
-                    // after we release the tx lock.
-                    // There's no need to compress the inner table updates too.
-                    Compression::None,
-                    &tx,
-                    update_type,
-                )?;
+                let (update, metrics) = execute_plans(queries, &tx, update_type)?;
                 Ok((FormatSwitch::Json(update), metrics))
             }
         }
@@ -288,29 +254,34 @@ impl ModuleSubscriptions {
             })
         };
 
+        let sql = request.query;
+        let auth = AuthCtx::new(self.owner_identity, sender.id.identity);
+        let hash = QueryHash::from_string(&sql, auth.caller, false);
+        let hash_with_param = QueryHash::from_string(&sql, auth.caller, true);
+
         let tx = scopeguard::guard(self.relational_db.begin_tx(Workload::Subscribe), |tx| {
             self.relational_db.release_tx(tx);
         });
-        let auth = AuthCtx::new(self.owner_identity, sender.id.identity);
-        let query = super::query::WHITESPACE.replace_all(&request.query, " ");
-        let sql = query.trim();
-
-        let hash = return_on_err!(hash_query(sql, &tx, &auth), sql, send_err_msg);
 
         let existing_query = {
             let guard = self.subscriptions.read();
             guard.query(&hash)
         };
 
-        let query = return_on_err!(
-            existing_query
-                .map(Ok)
-                .unwrap_or_else(|| compile_read_only_query(&auth, &tx, sql).map(Arc::new)),
+        let query = return_on_err_with_sql!(
+            existing_query.map(Ok).unwrap_or_else(|| compile_query_with_hashes(
+                &auth,
+                &tx,
+                &sql,
+                hash,
+                hash_with_param
+            )
+            .map(Arc::new)),
             sql,
             send_err_msg
         );
 
-        let (table_rows, metrics) = return_on_err!(
+        let (table_rows, metrics) = return_on_err_with_sql!(
             self.evaluate_initial_subscription(sender.clone(), query.clone(), &tx, &auth, TableUpdateType::Subscribe),
             query.sql(),
             send_err_msg
@@ -396,7 +367,7 @@ impl ModuleSubscriptions {
             self.relational_db.release_tx(tx);
         });
         let auth = AuthCtx::new(self.owner_identity, sender.id.identity);
-        let (table_rows, metrics) = return_on_err!(
+        let (table_rows, metrics) = return_on_err_with_sql!(
             self.evaluate_initial_subscription(sender.clone(), query.clone(), &tx, &auth, TableUpdateType::Unsubscribe),
             query.sql(),
             send_err_msg
@@ -427,7 +398,7 @@ impl ModuleSubscriptions {
         sender: Arc<ClientConnectionSender>,
         request: UnsubscribeMulti,
         timer: Instant,
-    ) -> Result<(), DBError> {
+    ) -> Result<Option<ExecutionMetrics>, DBError> {
         // Send an error message to the client
         let send_err_msg = |message| {
             sender.send_message(SubscriptionMessage {
@@ -449,38 +420,23 @@ impl ModuleSubscriptions {
         let removed_queries = {
             let mut subscriptions = self.subscriptions.write();
 
-            match subscriptions.remove_subscription((sender.id.identity, sender.id.connection_id), request.query_id) {
-                Ok(queries) => queries,
-                Err(error) => {
-                    // Apparently we ignore errors sending messages.
-                    let _ = send_err_msg(error.to_string().into());
-                    return Ok(());
-                }
-            }
+            return_on_err!(
+                subscriptions.remove_subscription((sender.id.identity, sender.id.connection_id), request.query_id),
+                send_err_msg,
+                None
+            )
         };
 
-        let auth = AuthCtx::new(self.owner_identity, sender.id.identity);
-        let eval_result = self.evaluate_queries(
-            sender.clone(),
-            &removed_queries,
-            &tx,
-            &auth,
-            TableUpdateType::Unsubscribe,
-        );
-        // If execution error, send to client
-        let (update, metrics) = match eval_result {
-            Ok(ok) => ok,
-            Err(e) => {
-                // Apparently we ignore errors sending messages.
-                let _ = send_err_msg(e.to_string().into());
-                return Ok(());
-            }
-        };
-
-        record_exec_metrics(
-            &WorkloadType::Unsubscribe,
-            &self.relational_db.database_identity(),
-            metrics,
+        let (update, metrics) = return_on_err!(
+            self.evaluate_queries(
+                sender.clone(),
+                &removed_queries,
+                &tx,
+                &AuthCtx::new(self.owner_identity, sender.id.identity),
+                TableUpdateType::Unsubscribe,
+            ),
+            send_err_msg,
+            None
         );
 
         let _ = sender.send_message(SubscriptionMessage {
@@ -489,7 +445,76 @@ impl ModuleSubscriptions {
             timer: Some(timer),
             result: SubscriptionResult::UnsubscribeMulti(SubscriptionData { data: update }),
         });
-        Ok(())
+
+        Ok(Some(metrics))
+    }
+
+    /// Compiles the queries in a [Subscribe] or [SubscribeMulti] message.
+    ///
+    /// Note, we hash queries to avoid recompilation,
+    /// but we need to know if a query is parameterized in order to hash it correctly.
+    /// This requires that we type check which in turn requires that we start a tx.
+    ///
+    /// Unfortunately parsing with sqlparser is quite expensive,
+    /// so we'd like to avoid that cost while holding the tx lock,
+    /// especially since all we're trying to do is generate a hash.
+    ///
+    /// Instead we generate two hashes and outside of the tx lock.
+    /// If either one is currently tracked, we can avoid recompilation.
+    fn compile_queries(
+        &self,
+        sender: Identity,
+        queries: impl IntoIterator<Item = Box<str>>,
+        num_queries: usize,
+    ) -> Result<(Vec<Arc<Plan>>, AuthCtx, TxId), DBError> {
+        let mut subscribe_to_all_tables = false;
+        let mut plans = Vec::with_capacity(num_queries);
+        let mut query_hashes = Vec::with_capacity(num_queries);
+
+        for sql in queries {
+            if is_subscribe_to_all_tables(&sql) {
+                subscribe_to_all_tables = true;
+                continue;
+            }
+            let hash = QueryHash::from_string(&sql, sender, false);
+            let hash_with_param = QueryHash::from_string(&sql, sender, true);
+            query_hashes.push((sql, hash, hash_with_param));
+        }
+
+        let auth = AuthCtx::new(self.owner_identity, sender);
+
+        // We always get the db lock before the subscription lock to avoid deadlocks.
+        let tx = scopeguard::guard(self.relational_db.begin_tx(Workload::Subscribe), |tx| {
+            self.relational_db.release_tx(tx);
+        });
+        let guard = self.subscriptions.read();
+
+        if subscribe_to_all_tables {
+            plans.extend(
+                super::subscription::get_all(&self.relational_db, &tx, &auth)?
+                    .into_iter()
+                    .map(Arc::new),
+            );
+        }
+
+        for (sql, hash, hash_with_param) in query_hashes {
+            if let Some(unit) = guard.query(&hash) {
+                plans.push(unit);
+            } else if let Some(unit) = guard.query(&hash_with_param) {
+                plans.push(unit);
+            } else {
+                plans.push(Arc::new(
+                    compile_query_with_hashes(&auth, &tx, &sql, hash, hash_with_param).map_err(|err| {
+                        DBError::WithSql {
+                            error: Box::new(DBError::Other(err.into())),
+                            sql,
+                        }
+                    })?,
+                ));
+            }
+        }
+
+        Ok((plans, auth, scopeguard::ScopeGuard::into_inner(tx)))
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
@@ -499,7 +524,7 @@ impl ModuleSubscriptions {
         request: SubscribeMulti,
         timer: Instant,
         _assert: Option<AssertTxFn>,
-    ) -> Result<(), DBError> {
+    ) -> Result<Option<ExecutionMetrics>, DBError> {
         // Send an error message to the client
         let send_err_msg = |message| {
             let _ = sender.send_message(SubscriptionMessage {
@@ -513,39 +538,15 @@ impl ModuleSubscriptions {
             });
         };
 
-        // We always get the db lock before the subscription lock to avoid deadlocks.
-        let tx = scopeguard::guard(self.relational_db.begin_tx(Workload::Subscribe), |tx| {
+        let num_queries = request.query_strings.len();
+        let (queries, auth, tx) = return_on_err!(
+            self.compile_queries(sender.id.identity, request.query_strings, num_queries),
+            send_err_msg,
+            None
+        );
+        let tx = scopeguard::guard(tx, |tx| {
             self.relational_db.release_tx(tx);
         });
-        let auth = AuthCtx::new(self.owner_identity, sender.id.identity);
-        let mut queries = vec![];
-        let guard = self.subscriptions.read();
-        for sql in request
-            .query_strings
-            .iter()
-            .map(|sql| super::query::WHITESPACE.replace_all(sql, " "))
-        {
-            let sql = sql.trim();
-            if sql == super::query::SUBSCRIBE_TO_ALL_QUERY {
-                queries.extend(
-                    super::subscription::get_all(&self.relational_db, &tx, &auth)?
-                        .into_iter()
-                        .map(Arc::new),
-                );
-                continue;
-            }
-
-            let hash = return_on_err!(hash_query(sql, &tx, &auth), sql, send_err_msg);
-
-            if let Some(unit) = guard.query(&hash) {
-                queries.push(unit);
-            } else {
-                let compiled = return_on_err!(compile_read_only_query(&auth, &tx, sql), sql, send_err_msg);
-                queries.push(Arc::new(compiled));
-            }
-        }
-
-        drop(guard);
 
         // We minimize locking so that other clients can add subscriptions concurrently.
         // We are protected from race conditions with broadcasts, because we have the db lock,
@@ -564,14 +565,8 @@ impl ModuleSubscriptions {
             let mut subscriptions = self.subscriptions.write();
             subscriptions.remove_subscription((sender.id.identity, sender.id.connection_id), request.query_id)?;
             send_err_msg("Internal error evaluating queries".into());
-            return Ok(());
+            return Ok(None);
         };
-
-        record_exec_metrics(
-            &WorkloadType::Subscribe,
-            &self.relational_db.database_identity(),
-            metrics,
-        );
 
         #[cfg(test)]
         if let Some(assert) = _assert {
@@ -588,7 +583,8 @@ impl ModuleSubscriptions {
             timer: Some(timer),
             result: SubscriptionResult::SubscribeMulti(SubscriptionData { data: update }),
         });
-        Ok(())
+
+        Ok(Some(metrics))
     }
 
     /// Add a subscriber to the module. NOTE: this function is blocking.
@@ -600,41 +596,12 @@ impl ModuleSubscriptions {
         subscription: Subscribe,
         timer: Instant,
         _assert: Option<AssertTxFn>,
-    ) -> Result<(), DBError> {
-        let tx = scopeguard::guard(self.relational_db.begin_tx(Workload::Subscribe), |tx| {
+    ) -> Result<ExecutionMetrics, DBError> {
+        let num_queries = subscription.query_strings.len();
+        let (queries, auth, tx) = self.compile_queries(sender.id.identity, subscription.query_strings, num_queries)?;
+        let tx = scopeguard::guard(tx, |tx| {
             self.relational_db.release_tx(tx);
         });
-        let request_id = subscription.request_id;
-        let auth = AuthCtx::new(self.owner_identity, sender.id.identity);
-        let mut queries = vec![];
-
-        let guard = self.subscriptions.read();
-
-        for sql in subscription
-            .query_strings
-            .iter()
-            .map(|sql| super::query::WHITESPACE.replace_all(sql, " "))
-        {
-            let sql = sql.trim();
-            if sql == super::query::SUBSCRIBE_TO_ALL_QUERY {
-                queries.extend(
-                    super::subscription::get_all(&self.relational_db, &tx, &auth)?
-                        .into_iter()
-                        .map(Arc::new),
-                );
-                continue;
-            }
-
-            let hash = hash_query(sql, &tx, &auth)?;
-            if let Some(unit) = guard.query(&hash) {
-                queries.push(unit);
-            } else {
-                let compiled = compile_read_only_query(&auth, &tx, sql)?;
-                queries.push(Arc::new(compiled));
-            }
-        }
-
-        drop(guard);
 
         check_row_limit(
             &queries,
@@ -650,33 +617,11 @@ impl ModuleSubscriptions {
 
         let tx = DeltaTx::from(&*tx);
         let (database_update, metrics) = match sender.config.protocol {
-            Protocol::Binary => execute_plans(
-                &queries,
-                // We will compress the outer server message,
-                // after we release the tx lock.
-                // There's no need to compress the inner table updates too.
-                Compression::None,
-                &tx,
-                TableUpdateType::Subscribe,
-            )
-            .map(|(table_update, metrics)| (FormatSwitch::Bsatn(table_update), metrics))?,
-            Protocol::Text => execute_plans(
-                &queries,
-                // We will compress the outer server message,
-                // after we release the tx lock.
-                // There's no need to compress the inner table updates too.
-                Compression::None,
-                &tx,
-                TableUpdateType::Subscribe,
-            )
-            .map(|(table_update, metrics)| (FormatSwitch::Json(table_update), metrics))?,
+            Protocol::Binary => execute_plans(&queries, &tx, TableUpdateType::Subscribe)
+                .map(|(table_update, metrics)| (FormatSwitch::Bsatn(table_update), metrics))?,
+            Protocol::Text => execute_plans(&queries, &tx, TableUpdateType::Subscribe)
+                .map(|(table_update, metrics)| (FormatSwitch::Json(table_update), metrics))?,
         };
-
-        record_exec_metrics(
-            &WorkloadType::Subscribe,
-            &self.relational_db.database_identity(),
-            metrics,
-        );
 
         // It acquires the subscription lock after `eval`, allowing `add_subscription` to run concurrently.
         // This also makes it possible for `broadcast_event` to get scheduled before the subsequent part here
@@ -695,10 +640,11 @@ impl ModuleSubscriptions {
         // on the wire
         let _ = sender.send_message(SubscriptionUpdateMessage {
             database_update,
-            request_id: Some(request_id),
+            request_id: Some(subscription.request_id),
             timer: Some(timer),
         });
-        Ok(())
+
+        Ok(metrics)
     }
 
     pub fn remove_subscriber(&self, client_id: ClientActorId) {
@@ -795,6 +741,7 @@ mod tests {
     use hashbrown::HashMap;
     use itertools::Itertools;
     use parking_lot::RwLock;
+    use pretty_assertions::assert_matches;
     use spacetimedb_client_api_messages::energy::EnergyQuanta;
     use spacetimedb_client_api_messages::websocket::{
         CompressableQueryUpdate, Compression, FormatSwitch, QueryId, Subscribe, SubscribeMulti, SubscribeSingle,
@@ -825,7 +772,8 @@ mod tests {
             query_strings: [sql.into()].into(),
             request_id: 0,
         };
-        module_subscriptions.add_legacy_subscriber(sender, subscribe, Instant::now(), assert)
+        module_subscriptions.add_legacy_subscriber(sender, subscribe, Instant::now(), assert)?;
+        Ok(())
     }
 
     /// An in-memory `RelationalDB` for testing
@@ -976,10 +924,12 @@ mod tests {
         queries: &[&'static str],
         sender: Arc<ClientConnectionSender>,
         counter: &mut u32,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<ExecutionMetrics> {
         *counter += 1;
-        subs.add_multi_subscription(sender, multi_subscribe(queries, *counter), Instant::now(), None)?;
-        Ok(())
+        let metrics = subs
+            .add_multi_subscription(sender, multi_subscribe(queries, *counter), Instant::now(), None)
+            .map(|metrics| metrics.unwrap_or_default())?;
+        Ok(metrics)
     }
 
     /// Unsubscribe from a single query
@@ -1268,6 +1218,8 @@ mod tests {
             })
         })?;
 
+        commit_tx(&db, &subs, [], [(table_id, product![0_u8])])?;
+
         let mut query_id = 0;
 
         // Subscribe to `t`
@@ -1539,7 +1491,9 @@ mod tests {
         Ok(())
     }
 
-    /// Test that we do not compress the results of an initial subscribe call
+    /// Test that we do not compress within a [SubscriptionMessage].
+    /// The message itself is compressed before being sent over the wire,
+    /// but we don't care about that for this test.
     #[tokio::test]
     async fn test_no_compression_for_subscribe() -> anyhow::Result<()> {
         // Establish a client connection with compression
@@ -1570,6 +1524,56 @@ mod tests {
                     SubscriptionResult::SubscribeMulti(SubscriptionData {
                         data: FormatSwitch::Bsatn(ws::DatabaseUpdate { tables }),
                     }),
+                ..
+            })) => {
+                assert!(tables.iter().all(|TableUpdate { updates, .. }| updates
+                    .iter()
+                    .all(|query_update| matches!(query_update, CompressableQueryUpdate::Uncompressed(_)))));
+            }
+            Some(_) => panic!("unexpected message from subscription"),
+            None => panic!("channel unexpectedly closed"),
+        };
+
+        Ok(())
+    }
+
+    /// Test that we do not compress within a [TransactionUpdateMessage].
+    /// The message itself is compressed before being sent over the wire,
+    /// but we don't care about that for this test.
+    #[tokio::test]
+    async fn test_no_compression_for_update() -> anyhow::Result<()> {
+        // Establish a client connection with compression
+        let (tx, mut rx) = client_connection_with_compression(client_id_from_u8(1), Compression::Brotli);
+
+        let db = relational_db()?;
+        let subs = module_subscriptions(db.clone());
+
+        let table_id = db.create_table_for_test("t", &[("x", AlgebraicType::U64)], &[])?;
+
+        let mut inserts = vec![];
+
+        for i in 0..16_000u64 {
+            inserts.push((table_id, product![i]));
+        }
+
+        // Subscribe to the entire table
+        subscribe_multi(&subs, &["select * from t"], tx, &mut 0)?;
+
+        // Wait to receive the initial subscription message
+        assert!(matches!(rx.recv().await, Some(SerializableMessage::Subscription(_))));
+
+        // Insert a lot of rows into `t`.
+        // We want to insert enough to cross any threshold there might be for compression.
+        commit_tx(&db, &subs, [], inserts)?;
+
+        // Assert the table updates within this message are all be uncompressed
+        match rx.recv().await {
+            Some(SerializableMessage::TxUpdate(TransactionUpdateMessage {
+                database_update:
+                    SubscriptionUpdateMessage {
+                        database_update: FormatSwitch::Bsatn(ws::DatabaseUpdate { tables }),
+                        ..
+                    },
                 ..
             })) => {
                 assert!(tables.iter().all(|TableUpdate { updates, .. }| updates
@@ -1805,6 +1809,78 @@ mod tests {
         // We should only have evaluated a single query
         assert_eq!(metrics.delta_queries_evaluated, 1);
         assert_eq!(metrics.delta_queries_matched, 1);
+
+        // Modify a matching row in `u`
+        let metrics = commit_tx(
+            &db,
+            &subs,
+            [(u_id, product![1u64, 2u64, 2u64])],
+            [(u_id, product![1u64, 2u64, 3u64])],
+        )?;
+
+        assert_tx_update_for_table(
+            &mut rx_for_b,
+            u_id,
+            &ProductType::from([AlgebraicType::U64, AlgebraicType::U64, AlgebraicType::U64]),
+            [product![1u64, 2u64, 3u64]],
+            [product![1u64, 2u64, 2u64]],
+        )
+        .await;
+
+        // We should have evaluated all of the queries
+        assert_eq!(metrics.delta_queries_evaluated, 4);
+        assert_eq!(metrics.delta_queries_matched, 1);
+
+        // Insert a non-matching row in `u`
+        let metrics = commit_tx(&db, &subs, [], [(u_id, product![3u64, 0u64, 0u64])])?;
+
+        // We should have evaluated all of the queries
+        assert_eq!(metrics.delta_queries_evaluated, 4);
+        assert_eq!(metrics.delta_queries_matched, 0);
+
+        Ok(())
+    }
+
+    /// Test that we do not evaluate queries that return trivially empty results
+    #[tokio::test]
+    async fn test_query_pruning_for_empty_tables() -> anyhow::Result<()> {
+        // Establish a client connection
+        let (tx, mut rx) = client_connection(client_id_from_u8(1));
+
+        let db = relational_db()?;
+        let subs = module_subscriptions(db.clone());
+
+        let schema = &[("id", AlgebraicType::U64), ("a", AlgebraicType::U64)];
+        let indices = &[0.into()];
+        // Create tables `t` and `s` with `(i: u64, a: u64)`.
+        db.create_table_for_test("t", schema, indices)?;
+        let s_id = db.create_table_for_test("s", schema, indices)?;
+
+        // Insert one row into `s`, but leave `t` empty.
+        commit_tx(&db, &subs, [], [(s_id, product![0u64, 0u64])])?;
+
+        // Subscribe to queries that return empty results
+        let metrics = subscribe_multi(
+            &subs,
+            &[
+                "select t.* from t where a = 0",
+                "select t.* from t join s on t.id = s.id where s.a = 0",
+                "select s.* from t join s on t.id = s.id where t.a = 0",
+            ],
+            tx,
+            &mut 0,
+        )?;
+
+        assert_matches!(
+            rx.recv().await,
+            Some(SerializableMessage::Subscription(SubscriptionMessage {
+                result: SubscriptionResult::SubscribeMulti(_),
+                ..
+            }))
+        );
+
+        assert_eq!(metrics.rows_scanned, 0);
+        assert_eq!(metrics.index_seeks, 0);
 
         Ok(())
     }

@@ -11,6 +11,7 @@ use spacetimedb::Identity;
 use spacetimedb_client_api::auth::SpacetimeAuth;
 use spacetimedb_client_api::routes::subscribe::generate_random_connection_id;
 use spacetimedb_paths::{RootDir, SpacetimePaths};
+use spacetimedb_schema::def::ModuleDef;
 use tokio::runtime::{Builder, Runtime};
 
 use spacetimedb::client::{ClientActorId, ClientConfig, ClientConnection, DataMessage};
@@ -119,6 +120,20 @@ impl CompiledModule {
         &self.path
     }
 
+    pub fn program_bytes(&self) -> &[u8] {
+        self.program_bytes.get_or_init(|| std::fs::read(&self.path).unwrap())
+    }
+
+    pub async fn extract_schema(&self) -> ModuleDef {
+        spacetimedb::host::extract_schema(self.program_bytes().into(), HostType::Wasm)
+            .await
+            .unwrap()
+    }
+
+    pub fn extract_schema_blocking(&self) -> ModuleDef {
+        start_runtime().block_on(self.extract_schema())
+    }
+
     pub fn with_module_async<O, R, F>(&self, config: Config, routine: R)
     where
         R: FnOnce(ModuleHandle) -> F,
@@ -171,10 +186,7 @@ impl CompiledModule {
         let db_identity = SpacetimeAuth::alloc(&env).await.unwrap().identity;
         let connection_id = generate_random_connection_id();
 
-        let program_bytes = self
-            .program_bytes
-            .get_or_init(|| std::fs::read(&self.path).unwrap())
-            .clone();
+        let program_bytes = self.program_bytes().to_owned();
 
         env.publish_database(
             &identity,
@@ -226,7 +238,11 @@ pub static DEFAULT_CONFIG: Config = Config {
 /// For performance tests, do not persist to disk.
 pub static IN_MEMORY_CONFIG: Config = Config {
     storage: Storage::Disk,
-    page_pool_max_size: None,
+    // For some reason, a large page pool capacity causes `test_index_scans` to slow down,
+    // and makes the perf test for `chunk` go over 1ms.
+    // The threshold for failure on i7-7700K, 64GB RAM seems to be at 1 << 26.
+    // TODO(centril): investigate further why this size affects the benchmark.
+    page_pool_max_size: Some(1 << 16),
 };
 
 /// Used to parse output from module logs.

@@ -2,12 +2,60 @@ namespace SpacetimeDB.BSATN;
 
 using System.Text;
 
+/// <summary>
+/// Implemented by product types marked with [SpacetimeDB.Type].
+/// All rows in SpacetimeDB are product types, so this is also implemented by all row types.
+/// </summary>
 public interface IStructuralReadWrite
 {
+    /// <summary>
+    /// Initialize this value from the reader.
+    /// The reader is assumed to store a <see href="https://spacetimedb.com/docs/bsatn">BSATN-encoded</see>
+    /// value of this type.
+    /// Advances the reader to the first byte past the end of the read value.
+    /// Throws an exception if this would advance past the end of the reader.
+    /// </summary>
+    /// <param name="reader"></param>
     void ReadFields(BinaryReader reader);
 
+    /// <summary>
+    /// Write the fields of this type to the writer.
+    /// Throws an exception if the underlying writer throws.
+    /// Throws if this value is malformed (i.e. has null values for fields that
+    /// are not explicitly marked nullable.)
+    /// </summary>
+    /// <param name="writer"></param>
     void WriteFields(BinaryWriter writer);
 
+    /// <summary>
+    /// Get an IReadWrite implementation that can read values of this type.
+    /// In Rust, this would return <c>IReadWrite&lt;Self&gt;</c>, but the C# type system
+    /// has no equivalent Self type -- that is, you can't use the implementing type in type signatures
+    /// in an interface. So, you have to manually downcast.
+    /// A typical invocation looks like: <c>(IReadWrite&lt;Row&gt;) new Row().GetSerializer()</c>
+    ///
+    /// This is an instance method because of limitations of C# interfaces.
+    /// (C# 11 has static virtual interface members, but Unity does not support C# 11.)
+    /// This method always works, whether or not the row it is called on is correctly initialized.
+    /// The returned serializer has nothing to do with the row GetSerializer is called on -- it returns
+    /// new rows and does not modify or interact with the original row.
+    ///
+    /// Using the resulting serializer rather than <c>Read&lt;T&gt;</c> is usually faster in Mono/IL2CPP.
+    /// This is because we manually monomorphise the code to read rows in our automatically-generated
+    /// implementation of IReadWrite. This allows rows to be initialized with new() rather than reflection
+    /// in the compiled code.
+    /// </summary>
+    /// <returns>An <c>IReadWrite&lt;T&gt;</c> for <c>T : IStructuralReadWrite</c>.</returns>
+    object GetSerializer();
+
+    /// <summary>
+    /// Read a row from the reader.
+    /// This method usually uses Activator.CreateInstance to create the resulting row;
+    /// if this is too slow, prefer using GetSerializer.
+    /// </summary>
+    /// <typeparam name="T"></typeparam>
+    /// <param name="reader"></param>
+    /// <returns></returns>
     static T Read<T>(BinaryReader reader)
         where T : IStructuralReadWrite, new()
     {
@@ -38,21 +86,68 @@ public interface IStructuralReadWrite
     }
 }
 
+/// <summary>
+/// Interface for types that know how to serialize another type.
+/// We auto-generate an implementation of <c>IReadWrite&lt;T&gt;</c> for all
+/// types marked with <c>[SpacetimeDB.Type]</c>. For a type <c>T</c>, this implementation
+/// is accessible at <c>T.BSATN</c>. The implementation is always a zero-sized struct.
+/// </summary>
+/// <typeparam name="T"></typeparam>
 public interface IReadWrite<T>
 {
+    /// <summary>
+    /// Read a BSATN-encoded value of type T from the reader.
+    /// Throws on end-of-stream or if the stream is malformed.
+    /// Advances the reader to the first byte past the end of the encoded value.
+    /// </summary>
+    /// <param name="reader"></param>
+    /// <returns></returns>
     T Read(BinaryReader reader);
 
+    /// <summary>
+    /// Write a BSATN-encoded value of type T to the writer.
+    /// </summary>
     void Write(BinaryWriter writer, T value);
 
+    /// <summary>
+    /// Get metadata for this type. Used in module initialization.
+    /// </summary>
+    /// <param name="registrar"></param>
+    /// <returns></returns>
     AlgebraicType GetAlgebraicType(ITypeRegistrar registrar);
 }
 
+/// <summary>
+/// Present for backwards-compatibility reasons, but no longer used.
+/// The auto-generated serialization code for enum now reads/writes
+/// the tag byte directly to the wire. This avoids calling into reflective code.
+/// </summary>
+/// <typeparam name="T"></typeparam>
 public readonly struct Enum<T> : IReadWrite<T>
     where T : struct, Enum
 {
+    private static readonly ulong NumVariants;
+
+    static Enum()
+    {
+        NumVariants = (ulong)Enum.GetValues(typeof(T)).Length;
+    }
+
     private static T Validate(T value)
     {
-        if (!Enum.IsDefined(typeof(T), value))
+        // Previously this was: `if (!Enum.IsDefined(typeof(T), value))`.
+        // This was quite expensive because:
+        //   1. It uses reflection
+        //   2. It allocates
+        //   3. It is called on each row when decoding
+        //
+        // However, enum values are guaranteed to be sequential and zero based.
+        // Hence we only ever need to do an upper bound check.
+        // See `SpacetimeDB.Type.ParseEnum` for the syntax analysis.
+
+        // Later note: this STILL uses reflection. We've deprecated this class entirely
+        // because of this.
+        if (Convert.ToUInt64(value) >= NumVariants)
         {
             throw new ArgumentOutOfRangeException(
                 nameof(value),
@@ -387,8 +482,19 @@ public readonly struct Array<Element, ElementRW> : IReadWrite<Element[]>
     where ElementRW : IReadWrite<Element>, new()
 {
     private static readonly Enumerable<Element, ElementRW> enumerable = new();
+    private static readonly ElementRW elementRW = new();
 
-    public Element[] Read(BinaryReader reader) => enumerable.Read(reader).ToArray();
+    public Element[] Read(BinaryReader reader)
+    {
+        // Don't use Enumerable here: save an allocation and pre-allocate the output.
+        var count = reader.ReadInt32();
+        var result = new Element[count];
+        for (var i = 0; i < count; i++)
+        {
+            result[i] = elementRW.Read(reader);
+        }
+        return result;
+    }
 
     public void Write(BinaryWriter writer, Element[] value) => enumerable.Write(writer, value);
 
@@ -430,8 +536,19 @@ public readonly struct List<Element, ElementRW> : IReadWrite<List<Element>>
     where ElementRW : IReadWrite<Element>, new()
 {
     private static readonly Enumerable<Element, ElementRW> enumerable = new();
+    private static readonly ElementRW elementRW = new();
 
-    public List<Element> Read(BinaryReader reader) => enumerable.Read(reader).ToList();
+    public List<Element> Read(BinaryReader reader)
+    {
+        // Don't use Enumerable here: save an allocation and pre-allocate the output.
+        var count = reader.ReadInt32();
+        var result = new List<Element>(count);
+        for (var i = 0; i < count; i++)
+        {
+            result.Add(elementRW.Read(reader));
+        }
+        return result;
+    }
 
     public void Write(BinaryWriter writer, List<Element> value) => enumerable.Write(writer, value);
 

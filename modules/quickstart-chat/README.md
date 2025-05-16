@@ -20,5 +20,5 @@ and described by [the SpacetimeDB C# SDK quickstart](https://spacetimedb.com/doc
 ### TypeScript
 
 A web client for this module, built with TypeScript and React, is defined
-in [the TypeScript SDK's examples](https://github.com/clockworklabs/spacetimedb-typescript-sdk/tree/master/examples/quickstart),
+in [the TypeScript SDK's examples](https://github.com/clockworklabs/spacetimedb-typescript-sdk/tree/main/examples/quickstart-chat),
 and described by [the SpacetimeDB TypeScript SDK quickstart](https://spacetimedb.com/docs/sdks/typescript/quickstart).

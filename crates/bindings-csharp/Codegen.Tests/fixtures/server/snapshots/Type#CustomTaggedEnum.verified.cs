@@ -4,16 +4,6 @@
 
 partial record CustomTaggedEnum : System.IEquatable<CustomTaggedEnum>
 {
-    private CustomTaggedEnum() { }
-
-    internal enum @enum : byte
-    {
-        IntVariant,
-        StringVariant,
-        NullableIntVariant,
-        NullableStringVariant
-    }
-
     public sealed record IntVariant(int IntVariant_) : CustomTaggedEnum
     {
         public override string ToString() =>
@@ -40,7 +30,6 @@ partial record CustomTaggedEnum : System.IEquatable<CustomTaggedEnum>
 
     public readonly partial struct BSATN : SpacetimeDB.BSATN.IReadWrite<CustomTaggedEnum>
     {
-        internal static readonly SpacetimeDB.BSATN.Enum<@enum> __enumTag = new();
         internal static readonly SpacetimeDB.BSATN.I32 IntVariant = new();
         internal static readonly SpacetimeDB.BSATN.String StringVariant = new();
         internal static readonly SpacetimeDB.BSATN.ValueOption<
@@ -52,38 +41,39 @@ partial record CustomTaggedEnum : System.IEquatable<CustomTaggedEnum>
             SpacetimeDB.BSATN.String
         > NullableStringVariant = new();
 
-        public CustomTaggedEnum Read(System.IO.BinaryReader reader) =>
-            __enumTag.Read(reader) switch
+        public CustomTaggedEnum Read(System.IO.BinaryReader reader)
+        {
+            return reader.ReadByte() switch
             {
-                @enum.IntVariant => new IntVariant(IntVariant.Read(reader)),
-                @enum.StringVariant => new StringVariant(StringVariant.Read(reader)),
-                @enum.NullableIntVariant => new NullableIntVariant(NullableIntVariant.Read(reader)),
-                @enum.NullableStringVariant
-                    => new NullableStringVariant(NullableStringVariant.Read(reader)),
+                0 => new IntVariant(IntVariant.Read(reader)),
+                1 => new StringVariant(StringVariant.Read(reader)),
+                2 => new NullableIntVariant(NullableIntVariant.Read(reader)),
+                3 => new NullableStringVariant(NullableStringVariant.Read(reader)),
                 _
                     => throw new System.InvalidOperationException(
                         "Invalid tag value, this state should be unreachable."
                     )
             };
+        }
 
         public void Write(System.IO.BinaryWriter writer, CustomTaggedEnum value)
         {
             switch (value)
             {
                 case IntVariant(var inner):
-                    __enumTag.Write(writer, @enum.IntVariant);
+                    writer.Write((byte)0);
                     IntVariant.Write(writer, inner);
                     break;
                 case StringVariant(var inner):
-                    __enumTag.Write(writer, @enum.StringVariant);
+                    writer.Write((byte)1);
                     StringVariant.Write(writer, inner);
                     break;
                 case NullableIntVariant(var inner):
-                    __enumTag.Write(writer, @enum.NullableIntVariant);
+                    writer.Write((byte)2);
                     NullableIntVariant.Write(writer, inner);
                     break;
                 case NullableStringVariant(var inner):
-                    __enumTag.Write(writer, @enum.NullableStringVariant);
+                    writer.Write((byte)3);
                     NullableStringVariant.Write(writer, inner);
                     break;
             }
@@ -115,13 +105,17 @@ partial record CustomTaggedEnum : System.IEquatable<CustomTaggedEnum>
         switch (this)
         {
             case IntVariant(var inner):
-                return inner.GetHashCode();
+                var ___hashIntVariant = inner.GetHashCode();
+                return ___hashIntVariant;
             case StringVariant(var inner):
-                return inner.GetHashCode();
+                var ___hashStringVariant = inner == null ? 0 : inner.GetHashCode();
+                return ___hashStringVariant;
             case NullableIntVariant(var inner):
-                return inner.GetHashCode();
+                var ___hashNullableIntVariant = inner.GetHashCode();
+                return ___hashNullableIntVariant;
             case NullableStringVariant(var inner):
-                return inner == null ? 0 : inner.GetHashCode();
+                var ___hashNullableStringVariant = inner == null ? 0 : inner.GetHashCode();
+                return ___hashNullableStringVariant;
             default:
                 return 0;
         }
