@@ -8012,6 +8012,7 @@ dependencies = [
  "gloo-console",
  "gloo-net",
  "gloo-storage",
+ "gloo-utils",
  "hex",
  "home",
  "http 1.3.1",

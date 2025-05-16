@@ -160,27 +160,18 @@ mod web_mod {
     pub mod cookies {
         use thiserror::Error;
         use wasm_bindgen::{JsCast, JsValue};
-        use web_sys::{window, Document, HtmlDocument};
+        use web_sys::HtmlDocument;
 
         #[derive(Error, Debug)]
         pub enum CookieError {
-            #[error("Window Object not valid in this context")]
-            NoWindow,
-            #[error("No `document` available on `window` object")]
-            NoDocument,
-            #[error("`document` is not an HtmlDocument")]
-            NoHtmlDocument,
-            #[error("web_sys error: {0:?}")]
-            WebSys(JsValue),
+            #[error("Error reading cookies: {0:?}")]
+            Get(JsValue),
+
+            #[error("Error setting cookie `{key}`: {js_value:?}")]
+            Set { key: String, js_value: JsValue },
         }
 
-        impl From<JsValue> for CookieError {
-            fn from(err: JsValue) -> Self {
-                CookieError::WebSys(err)
-            }
-        }
-
-        /// A builder for contructing and setting cookies.
+        /// A builder for constructing and setting cookies.
         pub struct Cookie {
             name: String,
             value: String,
@@ -207,8 +198,8 @@ mod web_mod {
 
             /// Gets the value of a cookie by name.
             pub fn get(name: &str) -> Result<Option<String>, CookieError> {
-                let doc = get_html_document()?;
-                let all = doc.cookie().map_err(CookieError::from)?;
+                let doc = get_html_document();
+                let all = doc.cookie().map_err(|e| CookieError::Get(e))?;
                 for cookie in all.split(';') {
                     let cookie = cookie.trim();
                     if let Some((k, v)) = cookie.split_once('=') {
@@ -240,7 +231,7 @@ mod web_mod {
             }
 
             /// Toggles the `Secure` flag.
-            /// The default is `false`.
+            /// Defaults to `false`.
             pub fn secure(mut self, enabled: bool) -> Self {
                 self.secure = enabled;
                 self
@@ -253,7 +244,7 @@ mod web_mod {
             }
 
             pub fn set(self) -> Result<(), CookieError> {
-                let doc = get_html_document()?;
+                let doc = get_html_document();
                 let mut parts = vec![format!("{}={}", self.name, self.value)];
 
                 if let Some(path) = self.path {
@@ -273,7 +264,10 @@ mod web_mod {
                 }
 
                 let cookie_str = parts.join("; ");
-                doc.set_cookie(&cookie_str).map_err(CookieError::from)
+                doc.set_cookie(&cookie_str).map_err(|e| CookieError::Set {
+                    key: self.name.clone(),
+                    js_value: e,
+                })
             }
 
             /// Deletes the cookie by setting its value to empty and `Max-Age=0`.
@@ -305,16 +299,8 @@ mod web_mod {
             }
         }
 
-        fn get_document() -> Result<Document, CookieError> {
-            window()
-                .ok_or(CookieError::NoWindow)?
-                .document()
-                .ok_or(CookieError::NoDocument)
-        }
-
-        fn get_html_document() -> Result<HtmlDocument, CookieError> {
-            let doc = get_document()?;
-            doc.dyn_into::<HtmlDocument>().map_err(|_| CookieError::NoHtmlDocument)
+        fn get_html_document() -> HtmlDocument {
+            gloo_utils::document().unchecked_into::<HtmlDocument>()
         }
     }
 }
