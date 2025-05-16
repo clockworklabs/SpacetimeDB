@@ -103,12 +103,21 @@ namespace SpacetimeDB
                     // Guaranteed to be a valid cast by contract of OnInternalInsert.
                     var row = (Row)preHashed.Row;
                     var key = GetKey(row);
-                    if (!cache.TryGetValue(key, out var rows))
+                    if (cache.TryGetValue(key, out var rows))
                     {
-                        rows = new();
+                        rows.Add(preHashed);
+                        // Need to update the parent dictionary: rows is a mutable struct.
+                        // Just updating the local `rows` variable won't update the parent dict.
+                        cache[key] = rows;
+                    }
+                    else
+                    {
+                        rows = new()
+                        {
+                            preHashed
+                        };
                         cache.Add(key, rows);
                     }
-                    rows.Add(preHashed);
                 };
 
                 table.OnInternalDelete += preHashed =>
@@ -121,6 +130,12 @@ namespace SpacetimeDB
                     if (keyCache.Count == 0)
                     {
                         cache.Remove(key);
+                    }
+                    else
+                    {
+                        // Need to update the parent dictionary: keyCache is a mutable struct.
+                        // Just updating the local `keyCache` variable won't update the parent dict.
+                        cache[key] = keyCache;
                     }
                 };
             }

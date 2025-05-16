@@ -83,7 +83,8 @@ void ValidateBTreeIndexes(IRemoteDbContext conn)
     Log.Debug("Checking indexes...");
     foreach (var data in conn.Db.ExampleData.Iter())
     {
-        Debug.Assert(conn.Db.ExampleData.Indexed.Filter(data.Id).Contains(data));
+        Log.Debug($"{data}: [{string.Join(", ", conn.Db.ExampleData.Indexed.Filter(data.Indexed))}]");
+        Debug.Assert(conn.Db.ExampleData.Indexed.Filter(data.Indexed).Contains(data));
     }
     var outOfIndex = conn.Db.ExampleData.Iter().ToHashSet();
 
@@ -107,9 +108,37 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
     waiting++;
     context.Reducers.Add(1, 1);
 
+    Log.Debug("Calling Add");
+    waiting++;
+    context.Reducers.Add(2, 1);
+
+    Log.Debug("Calling Add");
+    waiting++;
+    context.Reducers.Add(3, 1);
+
+    Log.Debug("Calling Add");
+    waiting++;
+    context.Reducers.Add(4, 2);
+
+    Log.Debug("Calling Add");
+    waiting++;
+    context.Reducers.Add(6, 2);
+
+    Log.Debug("Calling Add");
+    waiting++;
+    context.Reducers.Add(5, 2);
+
     Log.Debug("Calling Delete");
     waiting++;
     context.Reducers.Delete(1);
+
+    Log.Debug("Calling Delete");
+    waiting++;
+    context.Reducers.Delete(2);
+
+    Log.Debug("Calling Delete");
+    waiting++;
+    context.Reducers.Delete(3);
 
     Log.Debug("Calling Add");
     waiting++;
