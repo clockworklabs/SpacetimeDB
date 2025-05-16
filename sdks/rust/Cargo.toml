@@ -15,6 +15,7 @@ web = [
     "dep:gloo-console",
     "dep:gloo-net",
     "dep:gloo-storage",
+    "dep:gloo-utils",
     "dep:js-sys",
     "dep:tokio-tungstenite-wasm",
     "dep:wasm-bindgen",
@@ -47,13 +48,12 @@ getrandom = { version = "0.3.2", features = ["wasm_js"], optional = true }
 gloo-console = { version = "0.3.0", optional = true }
 gloo-net = { version = "0.6.0", optional = true }
 gloo-storage = { version = "0.3.0", optional = true }
+gloo-utils = { version = "0.2.0", optional = true }
 js-sys = { version = "0.3", optional = true }
 tokio-tungstenite-wasm = { version = "0.6.0", optional = true }
 wasm-bindgen = { version = "0.2.100", optional = true }
 wasm-bindgen-futures = { version = "0.4.45", optional = true }
-web-sys = { version = "0.3.77", features = [
-    "Document", "HtmlDocument", "Window"
-], optional = true}
+web-sys = { version = "0.3.77", features = ["HtmlDocument"], optional = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 home.workspace = true
