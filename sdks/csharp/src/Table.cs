@@ -75,41 +75,49 @@ namespace SpacetimeDB
         public abstract class UniqueIndexBase<Column> : IndexBase<Column>
             where Column : IEquatable<Column>
         {
-            private readonly Dictionary<Column, Row> cache = new();
+            // This is not typed, to avoid the runtime overhead of generics.
+            // Despite that, every preHashedRow.Row in this cache is guaranteed to be of type Row.
+            private readonly Dictionary<Column, PreHashedRow> cache = new();
 
             public UniqueIndexBase(RemoteTableHandle<EventContext, Row> table)
             {
-                table.OnInternalInsert += row => cache.Add(GetKey(row), row);
-                table.OnInternalDelete += row => cache.Remove(GetKey(row));
+                // Guaranteed to be a valid cast by contract of OnInternalInsert.
+                table.OnInternalInsert += row => cache.Add(GetKey((Row)row.Row), row);
+                // Guaranteed to be a valid cast by contract of OnInternalDelete.
+                table.OnInternalDelete += row => cache.Remove(GetKey((Row)row.Row));
             }
 
-            public Row? Find(Column value) => cache.TryGetValue(value, out var row) ? row : null;
+            public Row? Find(Column value) => cache.TryGetValue(value, out var row) ? (Row)row.Row : null;
         }
 
         public abstract class BTreeIndexBase<Column> : IndexBase<Column>
             where Column : IEquatable<Column>, IComparable<Column>
         {
             // TODO: change to SortedDictionary when adding support for range queries.
-            private readonly Dictionary<Column, HashSet<Row>> cache = new();
+            private readonly Dictionary<Column, HashSet<PreHashedRow>> cache = new();
 
             public BTreeIndexBase(RemoteTableHandle<EventContext, Row> table)
             {
-                table.OnInternalInsert += row =>
+                table.OnInternalInsert += preHashed =>
                 {
+                    // Guaranteed to be a valid cast by contract of OnInternalInsert.
+                    var row = (Row)preHashed.Row;
                     var key = GetKey(row);
                     if (!cache.TryGetValue(key, out var rows))
                     {
                         rows = new();
                         cache.Add(key, rows);
                     }
-                    rows.Add(row);
+                    rows.Add(preHashed);
                 };
 
-                table.OnInternalDelete += row =>
+                table.OnInternalDelete += preHashed =>
                 {
+                    // Guaranteed to be a valid cast by contract of OnInternalDelete.
+                    var row = (Row)preHashed.Row;
                     var key = GetKey(row);
                     var keyCache = cache[key];
-                    keyCache.Remove(row);
+                    keyCache.Remove(preHashed);
                     if (keyCache.Count == 0)
                     {
                         cache.Remove(key);
@@ -118,7 +126,7 @@ namespace SpacetimeDB
             }
 
             public IEnumerable<Row> Filter(Column value) =>
-                cache.TryGetValue(value, out var rows) ? rows : Enumerable.Empty<Row>();
+                cache.TryGetValue(value, out var rows) ? rows.Select(preHashed => (Row)preHashed.Row) : Enumerable.Empty<Row>();
         }
 
         protected abstract string RemoteTableName { get; }
@@ -130,12 +138,14 @@ namespace SpacetimeDB
         protected virtual object? GetPrimaryKey(Row row) => null;
 
         // These events are used by indices to add/remove rows to their dictionaries.
+        // They can assume the Row stored in the PreHashedRow passed is of the correct type;
+        // the check is done before performing these callbacks.
         // TODO: figure out if they can be merged into regular OnInsert / OnDelete.
         // I didn't do that because that delays the index updates until after the row is processed.
         // In theory, that shouldn't be the issue, but I didn't want to break it right before leaving :)
         //          - Ingvar
-        private event Action<Row>? OnInternalInsert;
-        private event Action<Row>? OnInternalDelete;
+        private event Action<PreHashedRow>? OnInternalInsert;
+        private event Action<PreHashedRow>? OnInternalDelete;
 
         // These are implementations of the type-erased interface.
         object? IRemoteTableHandle.GetPrimaryKey(IStructuralReadWrite row) => GetPrimaryKey((Row)row);
@@ -276,7 +286,7 @@ namespace SpacetimeDB
             {
                 if (value.Row is Row newRow)
                 {
-                    OnInternalInsert?.Invoke(newRow);
+                    OnInternalInsert?.Invoke(value);
                 }
                 else
                 {
@@ -287,7 +297,7 @@ namespace SpacetimeDB
             {
                 if (oldValue.Row is Row oldRow)
                 {
-                    OnInternalDelete?.Invoke((Row)oldValue.Row);
+                    OnInternalDelete?.Invoke(oldValue);
                 }
                 else
                 {
@@ -297,7 +307,7 @@ namespace SpacetimeDB
 
                 if (newValue.Row is Row newRow)
                 {
-                    OnInternalInsert?.Invoke(newRow);
+                    OnInternalInsert?.Invoke(newValue);
                 }
                 else
                 {
@@ -309,7 +319,7 @@ namespace SpacetimeDB
             {
                 if (value.Row is Row oldRow)
                 {
-                    OnInternalDelete?.Invoke(oldRow);
+                    OnInternalDelete?.Invoke(value);
                 }
             }
         }
