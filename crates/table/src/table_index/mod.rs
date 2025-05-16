@@ -1181,7 +1181,7 @@ impl TableIndex {
         }
     }
 
-    /// Extends [`TableIndex`] with `rows`.s
+    /// Extends [`TableIndex`] with `rows`.
     ///
     /// Returns the first unique constraint violation caused when adding this index, if any.
     ///
@@ -1199,6 +1199,55 @@ impl TableIndex {
         rows.into_iter()
             // SAFETY: Forward caller proof obligation.
             .try_for_each(|row_ref| unsafe { self.check_and_insert(row_ref) })
+    }
+
+    /// Returns an error with the first unique constraint violation that
+    /// would occur if `self` and `other` were to be merged.
+    pub fn can_merge(&self, other: &Self) -> Result<(), RowPointer> {
+        use TypedIndex::*;
+        match (&self.idx, &other.idx) {
+            // For non-unique indices, it's always possible to merge.
+            (BtreeBool(_), BtreeBool(_))
+            | (BtreeU8(_), BtreeU8(_))
+            | (BtreeSumTag(_), BtreeSumTag(_))
+            | (BtreeI8(_), BtreeI8(_))
+            | (BtreeU16(_), BtreeU16(_))
+            | (BtreeI16(_), BtreeI16(_))
+            | (BtreeU32(_), BtreeU32(_))
+            | (BtreeI32(_), BtreeI32(_))
+            | (BtreeU64(_), BtreeU64(_))
+            | (BtreeI64(_), BtreeI64(_))
+            | (BtreeU128(_), BtreeU128(_))
+            | (BtreeI128(_), BtreeI128(_))
+            | (BtreeU256(_), BtreeU256(_))
+            | (BtreeI256(_), BtreeI256(_))
+            | (BtreeString(_), BtreeString(_))
+            | (BtreeAV(_), BtreeAV(_)) => Ok(()),
+            // For unique indices, we'll need to see if everything in `other` can be added to `idx`.
+            (UniqueBtreeBool(idx), UniqueBtreeBool(other)) => idx.can_merge(other).map_err(|ptr| *ptr),
+            (UniqueBtreeU8(idx), UniqueBtreeU8(other)) => idx.can_merge(other).map_err(|ptr| *ptr),
+            (UniqueBtreeSumTag(idx), UniqueBtreeSumTag(other)) => idx.can_merge(other).map_err(|ptr| *ptr),
+            (UniqueBtreeI8(idx), UniqueBtreeI8(other)) => idx.can_merge(other).map_err(|ptr| *ptr),
+            (UniqueBtreeU16(idx), UniqueBtreeU16(other)) => idx.can_merge(other).map_err(|ptr| *ptr),
+            (UniqueBtreeI16(idx), UniqueBtreeI16(other)) => idx.can_merge(other).map_err(|ptr| *ptr),
+            (UniqueBtreeU32(idx), UniqueBtreeU32(other)) => idx.can_merge(other).map_err(|ptr| *ptr),
+            (UniqueBtreeI32(idx), UniqueBtreeI32(other)) => idx.can_merge(other).map_err(|ptr| *ptr),
+            (UniqueBtreeU64(idx), UniqueBtreeU64(other)) => idx.can_merge(other).map_err(|ptr| *ptr),
+            (UniqueBtreeI64(idx), UniqueBtreeI64(other)) => idx.can_merge(other).map_err(|ptr| *ptr),
+            (UniqueBtreeU128(idx), UniqueBtreeU128(other)) => idx.can_merge(other).map_err(|ptr| *ptr),
+            (UniqueBtreeI128(idx), UniqueBtreeI128(other)) => idx.can_merge(other).map_err(|ptr| *ptr),
+            (UniqueBtreeU256(idx), UniqueBtreeU256(other)) => idx.can_merge(other).map_err(|ptr| *ptr),
+            (UniqueBtreeI256(idx), UniqueBtreeI256(other)) => idx.can_merge(other).map_err(|ptr| *ptr),
+            (UniqueBtreeString(idx), UniqueBtreeString(other)) => idx.can_merge(other).map_err(|ptr| *ptr),
+            (UniqueBtreeAV(idx), UniqueBtreeAV(other)) => idx.can_merge(other).map_err(|ptr| *ptr),
+            (UniqueDirectU8(idx), UniqueDirectU8(other)) => idx.can_merge(other),
+            (UniqueDirectSumTag(idx), UniqueDirectSumTag(other)) => idx.can_merge(other),
+            (UniqueDirectU16(idx), UniqueDirectU16(other)) => idx.can_merge(other),
+            (UniqueDirectU32(idx), UniqueDirectU32(other)) => idx.can_merge(other),
+            (UniqueDirectU64(idx), UniqueDirectU64(other)) => idx.can_merge(other),
+
+            _ => unreachable!("non-matching index kinds"),
+        }
     }
 
     /// Deletes all entries from the index, leaving it empty.

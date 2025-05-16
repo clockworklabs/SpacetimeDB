@@ -1,19 +1,23 @@
-use super::delete_table::DeleteTable;
+use super::{delete_table::DeleteTable, sequence::Sequence};
 use core::ops::RangeBounds;
-use spacetimedb_data_structures::map::{IntMap, IntSet};
-use spacetimedb_primitives::{ColList, IndexId, TableId};
+use spacetimedb_data_structures::map::IntMap;
+use spacetimedb_lib::db::auth::StAccess;
+use spacetimedb_primitives::{ColList, ConstraintId, IndexId, SequenceId, TableId};
 use spacetimedb_sats::AlgebraicValue;
+use spacetimedb_schema::schema::{ConstraintSchema, IndexSchema, SequenceSchema};
 use spacetimedb_table::{
     blob_store::{BlobStore, HashMapBlobStore},
     indexes::{RowPointer, SquashedOffset},
+    pointer_map::PointerMap,
     static_assert_size,
     table::{IndexScanRangeIter, RowRef, Table, TableAndIndex},
+    table_index::TableIndex,
 };
 use std::collections::{btree_map, BTreeMap};
+use thin_vec::ThinVec;
 
 /// A mapping to find the actual index given an `IndexId`.
 pub(super) type IndexIdMap = IntMap<IndexId, TableId>;
-pub(super) type RemovedIndexIdSet = IntSet<IndexId>;
 
 /// `TxState` tracks all of the modifications made during a particular transaction.
 /// Rows inserted during a transaction will be added to insert_tables, and similarly,
@@ -67,16 +71,48 @@ pub(super) struct TxState {
     /// - Traverse all rows in the `insert_tables` and free each of their blobs during rollback.
     pub(super) blob_store: HashMapBlobStore,
 
-    /// Provides fast lookup for index id -> an index.
-    pub(super) index_id_map: IndexIdMap,
-
-    /// Lists all the `IndexId` that are to be removed from `CommittedState::index_id_map`.
-    // This is in an `Option<Box<>>` to reduce the size of `TxState` - it's very uncommon
-    // that this would be created.
-    pub(super) index_id_map_removals: Option<Box<RemovedIndexIdSet>>,
+    /// All of the immediately applied schema changes to the committed state during this transaction.
+    ///
+    /// This is stored as a `ThinVec` as it would be very uncommon to add anything to this list.
+    pub(super) pending_schema_changes: ThinVec<PendingSchemaChange>,
 }
 
-static_assert_size!(TxState, 120);
+/// A pending schema change is a change to a `TableSchema`
+/// that has been applied immediately to the [`CommittedState`](super::committed_state::CommittedState)
+/// and which need to be reverted if the transaction fails.
+///
+/// The goal here is that by applying changes immediately,
+/// most of the datastore does not have to care about schema change transactionality.
+/// The places that do need to care about changes are those that make them, and merge/rollback.
+/// Architecting this way should benefit performance both during transactions and merge.
+/// On rollback, it should be fairly cheap to e.g., just re-add an index or drop it on the floor.
+#[derive(Debug, PartialEq)]
+pub(super) enum PendingSchemaChange {
+    /// The [`TableIndex`] / [`IndexSchema`] with `IndexId`
+    /// was removed from the table with [`TableId`].
+    IndexRemoved(TableId, IndexId, TableIndex, IndexSchema),
+    /// The index with [`IndexId`] was added.
+    /// If adding this index caused the pointer map to be removed,
+    /// it will be present here.
+    IndexAdded(TableId, IndexId, Option<PointerMap>),
+    /// The [`Table`] with [`TableId`] was removed.
+    TableRemoved(TableId, Table),
+    /// The table with [`TableId`] was added.
+    TableAdded(TableId),
+    /// The access of the table with [`TableId`] was changed.
+    /// The old access was stored.
+    TableAlterAccess(TableId, StAccess),
+    /// The constraint with [`ConstraintSchema`] was added to the table with [`TableId`].
+    ConstraintRemoved(TableId, ConstraintSchema),
+    /// The constraint with [`ConstraintId`] was added to the table with [`TableId`].
+    ConstraintAdded(TableId, ConstraintId),
+    /// The [`Sequence`] with [`SequenceSchema`] was added to the table with [`TableId`].
+    SequenceRemoved(TableId, Sequence, SequenceSchema),
+    /// The sequence with [`SequenceId`] was added to the table with [`TableId`].
+    SequenceAdded(TableId, SequenceId),
+}
+
+static_assert_size!(TxState, 88);
 
 impl TxState {
     /// Returns the row count in insert tables
@@ -105,11 +141,6 @@ impl TxState {
             .get(&table_id)?
             .get_index_by_cols_with_table(&self.blob_store, cols)
             .map(|i| i.seek_range(range))
-    }
-
-    /// Returns the table associated with the given `index_id`, if any.
-    pub(super) fn get_table_for_index(&self, index_id: IndexId) -> Option<TableId> {
-        self.index_id_map.get(&index_id).copied()
     }
 
     /// Returns the table for `table_id` combined with the index for `index_id`, if both exist.
@@ -173,28 +204,22 @@ impl TxState {
         Some((table, blob_store))
     }
 
-    pub(super) fn get_table_and_blob_store_or_maybe_create_from<'this>(
-        &'this mut self,
+    pub(super) fn get_table_and_blob_store_or_create_from(
+        &mut self,
         table_id: TableId,
-        template: Option<&Table>,
-    ) -> Option<(
-        &'this mut Table,
-        &'this mut dyn BlobStore,
-        &'this mut IndexIdMap,
-        &'this mut DeleteTable,
-    )> {
+        template: &Table,
+    ) -> TxTableForInsertion<'_> {
         let insert_tables = &mut self.insert_tables;
         let blob_store = &mut self.blob_store;
-        let idx_map = &mut self.index_id_map;
         let table = match insert_tables.entry(table_id) {
             btree_map::Entry::Vacant(e) => {
-                let new_table = template?.clone_structure(SquashedOffset::TX_STATE);
+                let new_table = template.clone_structure(SquashedOffset::TX_STATE);
                 e.insert(new_table)
             }
             btree_map::Entry::Occupied(e) => e.into_mut(),
         };
         let delete_table = get_delete_table_mut(&mut self.delete_tables, table_id, table);
-        Some((table, blob_store, idx_map, delete_table))
+        (table, blob_store, delete_table)
     }
 
     /// Assumes that the insert and delete tables exist for `table_id` and fetches them.
@@ -202,10 +227,7 @@ impl TxState {
     /// # Safety
     ///
     /// The insert and delete tables must exist.
-    pub unsafe fn assume_present_get_mut_table(
-        &mut self,
-        table_id: TableId,
-    ) -> (&mut Table, &mut dyn BlobStore, &mut DeleteTable) {
+    pub unsafe fn assume_present_get_mut_table(&mut self, table_id: TableId) -> TxTableForInsertion<'_> {
         let tx_blob_store: &mut dyn BlobStore = &mut self.blob_store;
         let tx_table = self.insert_tables.get_mut(&table_id);
         // SAFETY: we successfully got a `tx_table` before and haven't removed it since.
@@ -216,6 +238,8 @@ impl TxState {
         (tx_table, tx_blob_store, delete_table)
     }
 }
+
+pub(super) type TxTableForInsertion<'a> = (&'a mut Table, &'a mut dyn BlobStore, &'a mut DeleteTable);
 
 fn get_delete_table_mut<'a>(
     delete_tables: &'a mut BTreeMap<TableId, DeleteTable>,

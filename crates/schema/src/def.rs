@@ -598,6 +598,13 @@ pub struct BTreeAlgorithm {
     pub columns: ColList,
 }
 
+impl<CL: Into<ColList>> From<CL> for BTreeAlgorithm {
+    fn from(columns: CL) -> Self {
+        let columns = columns.into();
+        Self { columns }
+    }
+}
+
 impl From<BTreeAlgorithm> for IndexAlgorithm {
     fn from(val: BTreeAlgorithm) -> Self {
         IndexAlgorithm::BTree(val)
@@ -609,6 +616,13 @@ impl From<BTreeAlgorithm> for IndexAlgorithm {
 pub struct DirectAlgorithm {
     /// The column to index.
     pub column: ColId,
+}
+
+impl<C: Into<ColId>> From<C> for DirectAlgorithm {
+    fn from(column: C) -> Self {
+        let column = column.into();
+        Self { column }
+    }
 }
 
 impl From<DirectAlgorithm> for IndexAlgorithm {
