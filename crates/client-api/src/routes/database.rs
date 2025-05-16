@@ -778,14 +778,14 @@ where
             .route("/names", self.names_put)
             .route("/identity", self.identity_get)
             .route("/subscribe", self.subscribe_get)
-            .route("/call/:reducer", self.call_reducer_post)
+            .route("/call/{reducer}", self.call_reducer_post)
             .route("/schema", self.schema_get)
             .route("/logs", self.logs_get)
             .route("/sql", self.sql_post);
 
         axum::Router::new()
             .route("/", self.root_post)
-            .nest("/:name_or_identity", db_router)
+            .nest("/{name_or_identity}", db_router)
             .route_layer(axum::middleware::from_fn_with_state(ctx, anon_auth_middleware::<S>))
     }
 }

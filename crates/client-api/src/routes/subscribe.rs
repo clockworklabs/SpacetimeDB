@@ -3,6 +3,7 @@ use std::mem;
 use std::pin::{pin, Pin};
 use std::time::Duration;
 
+use axum::extract::ws;
 use axum::extract::{Path, Query, State};
 use axum::response::IntoResponse;
 use axum::Extension;
@@ -24,12 +25,8 @@ use spacetimedb_client_api_messages::websocket::{self as ws_api, Compression};
 use spacetimedb_lib::connection_id::{ConnectionId, ConnectionIdForUrl};
 use std::time::Instant;
 use tokio::sync::mpsc;
-use tokio_tungstenite::tungstenite::Utf8Bytes;
 
 use crate::auth::SpacetimeAuth;
-use crate::util::websocket::{
-    CloseCode, CloseFrame, Message as WsMessage, WebSocketConfig, WebSocketStream, WebSocketUpgrade,
-};
 use crate::util::{NameOrIdentity, XForwardedFor};
 use crate::{log_and_500, ControlStateDelegate, NodeDelegate};
 
@@ -68,7 +65,7 @@ pub async fn handle_websocket<S>(
     }): Query<SubscribeQueryParams>,
     forwarded_for: Option<TypedHeader<XForwardedFor>>,
     Extension(auth): Extension<SpacetimeAuth>,
-    ws: WebSocketUpgrade,
+    ws: ws::WebSocketUpgrade,
 ) -> axum::response::Result<impl IntoResponse>
 where
     S: NodeDelegate + ControlStateDelegate,
@@ -91,8 +88,17 @@ where
 
     let db_identity = name_or_identity.resolve(&ctx).await?;
 
-    let (res, ws_upgrade, protocol) =
-        ws.select_protocol([(BIN_PROTOCOL, Protocol::Binary), (TEXT_PROTOCOL, Protocol::Text)]);
+    let ws = ws.protocols([ws_api::BIN_PROTOCOL, ws_api::TEXT_PROTOCOL]);
+
+    let protocol = ws.selected_protocol().and_then(|proto| {
+        if proto == BIN_PROTOCOL {
+            Some(Protocol::Binary)
+        } else if proto == TEXT_PROTOCOL {
+            Some(Protocol::Text)
+        } else {
+            None
+        }
+    });
 
     let protocol = protocol.ok_or((StatusCode::BAD_REQUEST, "no valid protocol selected"))?;
     let client_config = ClientConfig {
@@ -125,20 +131,13 @@ where
         name: ctx.client_actor_index().next_client_name(),
     };
 
-    let ws_config = WebSocketConfig::default()
-        .max_message_size(Some(0x2000000))
-        .max_frame_size(None)
-        .accept_unmasked_frames(false);
+    let ws = ws
+        .max_message_size(0x2000000)
+        .max_frame_size(usize::MAX)
+        .accept_unmasked_frames(false)
+        .on_failed_upgrade(|err| log::error!("WebSocket init error: {}", err));
 
-    tokio::spawn(async move {
-        let ws = match ws_upgrade.upgrade(ws_config).await {
-            Ok(ws) => ws,
-            Err(err) => {
-                log::error!("WebSocket init error: {}", err);
-                return;
-            }
-        };
-
+    let res = ws.on_upgrade(move |ws| async move {
         match forwarded_for {
             Some(TypedHeader(XForwardedFor(ip))) => {
                 log::debug!("New client connected from ip {}", ip)
@@ -180,7 +179,7 @@ where
 
 const LIVELINESS_TIMEOUT: Duration = Duration::from_secs(60);
 
-async fn ws_client_actor(client: ClientConnection, ws: WebSocketStream, sendrx: mpsc::Receiver<SerializableMessage>) {
+async fn ws_client_actor(client: ClientConnection, ws: ws::WebSocket, sendrx: mpsc::Receiver<SerializableMessage>) {
     // ensure that even if this task gets cancelled, we always cleanup the connection
     let mut client = scopeguard::guard(client, |client| {
         tokio::spawn(client.disconnect());
@@ -201,7 +200,7 @@ async fn make_progress<Fut: Future>(fut: &mut Pin<&mut MaybeDone<Fut>>) {
 
 async fn ws_client_actor_inner(
     client: &mut ClientConnection,
-    mut ws: WebSocketStream,
+    mut ws: ws::WebSocket,
     mut sendrx: mpsc::Receiver<SerializableMessage>,
 ) {
     let mut liveness_check_interval = tokio::time::interval(LIVELINESS_TIMEOUT);
@@ -280,7 +279,7 @@ async fn ws_client_actor_inner(
                             let workload = msg.workload();
                             let num_rows = msg.num_rows();
 
-                            let msg = datamsg_to_wsmsg(serialize(msg, client.config));
+                            let msg = serialize(msg, client.config);
 
                             // These metrics should be updated together,
                             // or not at all.
@@ -295,7 +294,7 @@ async fn ws_client_actor_inner(
                                     .observe(msg.len() as f64);
                             }
                             // feed() buffers the message, but does not necessarily send it
-                            ws.feed(msg).await?;
+                            ws.feed(datamsg_to_wsmsg(msg)).await?;
                         }
                         // now we flush all the messages to the socket
                         ws.flush().await
@@ -323,7 +322,7 @@ async fn ws_client_actor_inner(
                         // Send a close frame while continuing to poll the `handle_queue`,
                         // to avoid deadlocks or delays due to enqueued futures holding resources.
                         let close = also_poll(
-                            ws.close(Some(CloseFrame { code: CloseCode::Away, reason: "module exited".into() })),
+                            ws.send(ws::Message::Close(Some(ws::CloseFrame { code: ws::close_code::AWAY, reason: "module exited".into() }))),
                             make_progress(&mut current_message),
                         );
                         if let Err(e) = close.await {
@@ -341,7 +340,7 @@ async fn ws_client_actor_inner(
                 if mem::take(&mut got_pong) {
                     // Send a ping message while continuing to poll the `handle_queue`,
                     // to avoid deadlocks or delays due to enqueued futures holding resources.
-                    if let Err(e) = also_poll(ws.send(WsMessage::Ping(Bytes::new())), make_progress(&mut current_message)).await {
+                    if let Err(e) = also_poll(ws.send(ws::Message::Ping(Bytes::new())), make_progress(&mut current_message)).await {
                         log::warn!("error sending ping: {e:#}");
                     }
                     continue;
@@ -376,10 +375,10 @@ async fn ws_client_actor_inner(
                     }
                     log::debug!("Client caused error on text message: {}", e);
                     if let Err(e) = ws
-                        .close(Some(CloseFrame {
-                            code: CloseCode::Error,
+                        .send(ws::Message::Close(Some(ws::CloseFrame {
+                            code: ws::close_code::ERROR,
                             reason: format!("{e:#}").into(),
-                        }))
+                        })))
                         .await
                     {
                         log::warn!("error closing websocket: {e:#}")
@@ -419,34 +418,32 @@ enum ClientMessage {
     Message(DataMessage),
     Ping(Bytes),
     Pong(Bytes),
-    Close(Option<CloseFrame>),
+    Close(Option<ws::CloseFrame>),
 }
 impl ClientMessage {
-    fn from_message(msg: WsMessage) -> Self {
+    fn from_message(msg: ws::Message) -> Self {
         match msg {
-            WsMessage::Text(s) => Self::Message(DataMessage::Text(utf8bytes_to_bytestring(s))),
-            WsMessage::Binary(b) => Self::Message(DataMessage::Binary(b)),
-            WsMessage::Ping(b) => Self::Ping(b),
-            WsMessage::Pong(b) => Self::Pong(b),
-            WsMessage::Close(frame) => Self::Close(frame),
-            // WebSocket::read_message() never returns a raw Message::Frame
-            WsMessage::Frame(_) => unreachable!(),
+            ws::Message::Text(s) => Self::Message(DataMessage::Text(utf8bytes_to_bytestring(s))),
+            ws::Message::Binary(b) => Self::Message(DataMessage::Binary(b)),
+            ws::Message::Ping(b) => Self::Ping(b),
+            ws::Message::Pong(b) => Self::Pong(b),
+            ws::Message::Close(frame) => Self::Close(frame),
         }
     }
 }
 
-fn datamsg_to_wsmsg(msg: DataMessage) -> WsMessage {
+fn datamsg_to_wsmsg(msg: DataMessage) -> ws::Message {
     match msg {
-        DataMessage::Text(text) => WsMessage::Text(bytestring_to_utf8bytes(text)),
-        DataMessage::Binary(bin) => WsMessage::Binary(bin),
+        DataMessage::Text(text) => ws::Message::Text(bytestring_to_utf8bytes(text)),
+        DataMessage::Binary(bin) => ws::Message::Binary(bin),
     }
 }
 
-fn utf8bytes_to_bytestring(s: Utf8Bytes) -> ByteString {
+fn utf8bytes_to_bytestring(s: ws::Utf8Bytes) -> ByteString {
     // SAFETY: `Utf8Bytes` and `ByteString` have the same invariant of UTF-8 validity
     unsafe { ByteString::from_bytes_unchecked(Bytes::from(s)) }
 }
-fn bytestring_to_utf8bytes(s: ByteString) -> Utf8Bytes {
+fn bytestring_to_utf8bytes(s: ByteString) -> ws::Utf8Bytes {
     // SAFETY: `Utf8Bytes` and `ByteString` have the same invariant of UTF-8 validity
-    unsafe { Utf8Bytes::from_bytes_unchecked(s.into_bytes()) }
+    unsafe { ws::Utf8Bytes::try_from(s.into_bytes()).unwrap_unchecked() }
 }
