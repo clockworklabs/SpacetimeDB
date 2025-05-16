@@ -1236,12 +1236,29 @@ impl<'a> Iterator for IndexScanFilterDeleted<'a> {
 }
 
 impl MutTxId {
-    pub(crate) fn insert_st_client(&mut self, identity: Identity, connection_id: ConnectionId) -> Result<()> {
+    /// Insert a new row into `st_client` for the client `client_identity, connection_id`.
+    ///
+    /// Returns an error if such a row is already present in `st_client`,
+    /// unlike normal insertions, which silently ignore set-semantic duplicates.
+    /// This is how we prevent duplicated connections.
+    ///
+    /// The provided `database_identity` is used for error reporting,
+    /// and does not effect the behavior of this method.
+    pub(crate) fn insert_st_client(
+        &mut self,
+        client_identity: Identity,
+        connection_id: ConnectionId,
+        database_identity: Identity,
+    ) -> Result<()> {
         let row = &StClientRow {
-            identity: identity.into(),
+            identity: client_identity.into(),
             connection_id: connection_id.into(),
         };
-        self.insert_via_serialize_bsatn(ST_CLIENT_ID, row).map(|_| ())
+        match self.insert_via_serialize_bsatn(ST_CLIENT_ID, row) {
+            Err(e) => Err(e),
+            Ok((_, RowRefInsertion::Existed(_), _)) => Err(anyhow::anyhow!("In database {database_identity}, `st_client` already contains an entry for the client {client_identity}, {connection_id}").into()),
+            Ok((_, RowRefInsertion::Inserted(_), _)) => Ok(()),
+        }
     }
 
     pub(crate) fn delete_st_client(

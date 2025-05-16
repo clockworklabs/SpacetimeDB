@@ -694,9 +694,10 @@ impl ModuleHost {
             });
 
             let stdb = self.inner.replica_ctx().relational_db.clone();
+            let database_identity = self.info().database_identity;
             asyncify(move || {
                 stdb.with_auto_commit(workload, |mut_tx| {
-                    mut_tx.insert_st_client(caller_identity, caller_connection_id)
+                    mut_tx.insert_st_client(caller_identity, caller_connection_id, database_identity)
                 })
             })
             .await
