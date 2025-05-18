@@ -172,8 +172,8 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let res = builder.body(program_bytes).send().await?;
     if res.status() == StatusCode::UNAUTHORIZED && !anon_identity {
         // If we're not in the `anon_identity` case, then we have already forced the user to log in above (using `get_auth_header`), so this should be safe to unwrap.
-        let token = config.spacetimedb_token().unwrap();
-        let identity = decode_identity(token)?;
+        let token = config.spacetimedb_token(server, true).unwrap();
+        let identity = decode_identity(&token)?;
         let err = res.text().await?;
         return unauth_error_context(
             Err(anyhow::anyhow!(err)),
@@ -204,8 +204,8 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
                 anyhow::bail!("You need to be logged in as the owner of {name} to publish to {name}",);
             }
             // If we're not in the `anon_identity` case, then we have already forced the user to log in above (using `get_auth_header`), so this should be safe to unwrap.
-            let token = config.spacetimedb_token().unwrap();
-            let identity = decode_identity(token)?;
+            let token = config.spacetimedb_token(server, true).unwrap();
+            let identity = decode_identity(&token)?;
             //TODO(jdetter): Have a nice name generator here, instead of using some abstract characters
             // we should perhaps generate fun names like 'green-fire-dragon' instead
             let suggested_tld: String = identity.chars().take(12).collect();

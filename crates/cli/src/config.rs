@@ -24,6 +24,7 @@ pub struct ServerConfig {
     pub host: String,
     pub protocol: String,
     pub ecdsa_public_key: Option<String>,
+    pub spacetimedb_token: Option<String>,
 }
 
 impl ServerConfig {
@@ -40,6 +41,7 @@ impl ServerConfig {
         set_table_opt_value(edit, HOST_KEY, Some(&from.host));
         set_table_opt_value(edit, PROTOCOL_KEY, Some(&from.protocol));
         set_table_opt_value(edit, ECDSA_PUBLIC_KEY, from.ecdsa_public_key.as_deref());
+        set_table_opt_value(edit, SPACETIMEDB_TOKEN_KEY, from.spacetimedb_token.as_deref());
     }
 
     fn nick_or_host(&self) -> &str {
@@ -105,11 +107,13 @@ impl TryFrom<&toml_edit::Table> for ServerConfig {
         let host = read_str(table, HOST_KEY)?;
         let protocol = read_str(table, PROTOCOL_KEY)?;
         let ecdsa_public_key = read_opt_str(table, ECDSA_PUBLIC_KEY)?;
+        let spacetimedb_token = read_opt_str(table, SPACETIMEDB_TOKEN_KEY)?;
         Ok(ServerConfig {
             nickname,
             host,
             protocol,
             ecdsa_public_key,
+            spacetimedb_token,
         })
     }
 }
@@ -161,12 +165,14 @@ impl RawConfig {
             protocol: "http".to_string(),
             nickname: Some("local".to_string()),
             ecdsa_public_key: None,
+            spacetimedb_token: None,
         };
         let maincloud = ServerConfig {
             host: "maincloud.spacetimedb.com".to_string(),
             protocol: "https".to_string(),
             nickname: Some("maincloud".to_string()),
             ecdsa_public_key: None,
+            spacetimedb_token: None,
         };
         RawConfig {
             default_server: local.nickname.clone(),
@@ -245,6 +251,7 @@ impl RawConfig {
             host,
             protocol,
             ecdsa_public_key,
+            spacetimedb_token: None
         });
         Ok(())
     }
@@ -444,13 +451,57 @@ Fetch the server's fingerprint with:
         self.web_session_token = Some(token);
     }
 
+
+    /// Return the spacetimedb_token for the server named by `server`.
+    ///
+    /// Returns an `Err` if there is no server configuration.
+    /// Returns `None` if the server configuration exists, but does not have a token saved.
+    pub fn server_spacetimedb_token(&self, server: &str) -> anyhow::Result<Option<&str>> {
+        self.find_server(server)
+            .map(|cfg| cfg.spacetimedb_token.as_deref())
+            .with_context(|| format!("Cannot find spacetimedb_token for unknown server: {server}"))
+    }
+
+    /// Return the spacetimedb_token for the default server.
+    ///
+    /// Returns an `Err` if there is no default server configuration.
+    /// Returns `None` if the server configuration exists, but does not have a token saved.
+    pub fn default_server_spacetimedb_token(&self) -> anyhow::Result<Option<&str>> {
+        if let Some(server) = &self.default_server {
+            self.server_spacetimedb_token(server)
+        } else {
+            Err(anyhow::anyhow!(NO_DEFAULT_SERVER_ERROR_MESSAGE))
+        }
+    }
+
     pub fn set_spacetimedb_token(&mut self, token: String) {
         self.spacetimedb_token = Some(token);
+    }
+
+    /// Store the spacetimedb_token for the server named by `server`.
+    ///
+    /// Returns an `Err` if no such server configuration exists.
+    pub fn set_server_spacetimedb_token(&mut self, server: &str, spacetimedb_token: String) -> anyhow::Result<()> {
+        let cfg = self.find_server_mut(server)?;
+        cfg.spacetimedb_token = Some(spacetimedb_token);
+        Ok(())
+    }
+
+    /// Store the spacetimedb_token for the default server.
+    ///
+    /// Returns an `Err` if there is no default server configuration.
+    pub fn set_default_server_spacetimedb_token(&mut self, spacetimedb_token: String) -> anyhow::Result<()> {
+        let cfg = self.default_server_mut()?;
+        cfg.spacetimedb_token = Some(spacetimedb_token);
+        Ok(())
     }
 
     pub fn clear_login_tokens(&mut self) {
         self.web_session_token = None;
         self.spacetimedb_token = None;
+        for cfg in &mut self.server_configs {
+            cfg.spacetimedb_token = None;
+        }
     }
 }
 
@@ -808,6 +859,14 @@ Update the server's fingerprint with:
         self.home.set_spacetimedb_token(token);
     }
 
+    pub fn set_server_spacetimedb_token(&mut self, server: Option<&str>, token: String) -> anyhow::Result<()> {
+        if let Some(server) = server {
+            self.home.set_server_spacetimedb_token(server, token)
+        } else {
+            self.home.set_default_server_spacetimedb_token(token)
+        }
+    }
+
     pub fn clear_login_tokens(&mut self) {
         self.home.clear_login_tokens();
     }
@@ -816,8 +875,19 @@ Update the server's fingerprint with:
         self.home.web_session_token.as_ref()
     }
 
-    pub fn spacetimedb_token(&self) -> Option<&String> {
-        self.home.spacetimedb_token.as_ref()
+    pub fn spacetimedb_token(&self, server: Option<&str>, allow_fallback: bool) -> Option<String> {
+        let token = if let Some(server) = server {
+            self.home.server_spacetimedb_token(server)
+        } else {
+            self.home.default_server_spacetimedb_token()
+        };
+        if let Ok(Some(token)) = token {
+            Some(token.to_string())
+        } else if allow_fallback {
+            self.home.spacetimedb_token.clone()
+        } else {
+            None
+        }
     }
 }
 
@@ -1001,12 +1071,14 @@ default_server = "local"
                     host: "127.0.0.1:3000".to_string(),
                     protocol: "http".to_string(),
                     ecdsa_public_key: None,
+                    spacetimedb_token: None,
                 },
                 ServerConfig {
                     nickname: Some("testnet".to_string()),
                     host: "testnet.spacetimedb.com".to_string(),
                     protocol: "https".to_string(),
                     ecdsa_public_key: None,
+                    spacetimedb_token: None,
                 },
             ];
             config.home.spacetimedb_token =
