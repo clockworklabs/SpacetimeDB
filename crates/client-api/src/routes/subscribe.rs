@@ -228,6 +228,21 @@ async fn ws_client_actor_inner(
 
     let addr = client.module.info().database_identity;
 
+    let client_identity = client.sender().id.identity;
+    let connection_id = client.sender().id.connection_id;
+
+    scopeguard::defer!(
+        if let Err(e) = WORKER_METRICS
+            .client_connection_incoming_queue_length
+            .remove_label_values(&addr, &client_identity, &connection_id) {
+                log::error!("Failed to `remove_label_values` for `client_connection_incoming_queue_length`: {e:?}");
+            };
+    );
+
+    let queue_length_metric = WORKER_METRICS
+        .client_connection_incoming_queue_length
+        .with_label_values(&addr, &client_identity, &connection_id);
+
     loop {
         rx_buf.clear();
         enum Item {
@@ -236,6 +251,7 @@ async fn ws_client_actor_inner(
         }
         if let MaybeDone::Gone = *current_message {
             if let Some((message, timer)) = message_queue.pop_front() {
+                queue_length_metric.dec();
                 let client = client.clone();
                 let fut = async move { client.handle_message(message, timer).await };
                 current_message.set(MaybeDone::Future(fut));
@@ -362,6 +378,7 @@ async fn ws_client_actor_inner(
         match message {
             Item::Message(ClientMessage::Message(message)) => {
                 let timer = Instant::now();
+                queue_length_metric.inc();
                 message_queue.push_back((message, timer))
             }
             Item::HandleResult(res) => {
