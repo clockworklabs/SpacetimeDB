@@ -431,6 +431,35 @@ namespace SpacetimeDB
             public MultiDictionaryDelta<object, PreHashedRow> Delta;
         }
 
+        /// <summary>
+        /// *Maybe* do something in parallel, depending on how many bytes we need to process.
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="values"></param>
+        /// <param name="action"></param>
+        /// <param name="bytes"></param>
+        /// <param name="enoughBytesToParallelize"></param>
+        static void MaybeParallelForEach<T>(
+            IEnumerable<T> values,
+            Action<T> action,
+            int bytes,
+            int enoughBytesToParallelize = 64_000
+        )
+        {
+            if (bytes >= enoughBytesToParallelize)
+            {
+                Parallel.ForEach(values, action);
+            }
+            else
+            {
+                foreach (var value in values)
+                {
+                    action(value);
+                }
+            }
+
+        }
+
 #if UNITY_WEBGL && !UNITY_EDITOR
         IEnumerator PreProcessMessages()
 #else
@@ -493,14 +522,15 @@ namespace SpacetimeDB
                 return tableToUpdates.Values;
             }
 
-            ProcessedDatabaseUpdate PreProcessLegacySubscription(InitialSubscription initSub)
+
+            ProcessedDatabaseUpdate PreProcessLegacySubscription(InitialSubscription initSub, int messageBytes)
             {
                 var dbOps = ProcessedDatabaseUpdate.New();
 
-                Parallel.ForEach(GetUpdatesToPreProcess(initSub.DatabaseUpdate, dbOps), (todo) =>
+                MaybeParallelForEach(GetUpdatesToPreProcess(initSub.DatabaseUpdate, dbOps), (todo) =>
                 {
                     PreProcessInsertOnlyTable(todo);
-                });
+                }, bytes: messageBytes);
                 return dbOps;
             }
 
@@ -508,13 +538,13 @@ namespace SpacetimeDB
             /// TODO: the dictionary is here for backwards compatibility and can be removed
             /// once we get rid of legacy subscriptions.
             /// </summary>
-            ProcessedDatabaseUpdate PreProcessSubscribeMultiApplied(SubscribeMultiApplied subscribeMultiApplied)
+            ProcessedDatabaseUpdate PreProcessSubscribeMultiApplied(SubscribeMultiApplied subscribeMultiApplied, int messageBytes)
             {
                 var dbOps = ProcessedDatabaseUpdate.New();
-                Parallel.ForEach(GetUpdatesToPreProcess(subscribeMultiApplied.Update, dbOps), (todo) =>
+                MaybeParallelForEach(GetUpdatesToPreProcess(subscribeMultiApplied.Update, dbOps), (todo) =>
                 {
                     PreProcessInsertOnlyTable(todo);
-                });
+                }, bytes: messageBytes);
                 return dbOps;
             }
 
@@ -589,26 +619,26 @@ namespace SpacetimeDB
                 }
             }
 
-            ProcessedDatabaseUpdate PreProcessUnsubscribeMultiApplied(UnsubscribeMultiApplied unsubMultiApplied)
+            ProcessedDatabaseUpdate PreProcessUnsubscribeMultiApplied(UnsubscribeMultiApplied unsubMultiApplied, int messageBytes)
             {
                 var dbOps = ProcessedDatabaseUpdate.New();
 
-                Parallel.ForEach(GetUpdatesToPreProcess(unsubMultiApplied.Update, dbOps), (todo) =>
+                MaybeParallelForEach(GetUpdatesToPreProcess(unsubMultiApplied.Update, dbOps), (todo) =>
                 {
                     PreProcessDeleteOnlyTable(todo);
-                });
+                }, bytes: messageBytes);
 
                 return dbOps;
             }
 
-            ProcessedDatabaseUpdate PreProcessDatabaseUpdate(DatabaseUpdate updates)
+            ProcessedDatabaseUpdate PreProcessDatabaseUpdate(DatabaseUpdate updates, int messageBytes)
             {
                 var dbOps = ProcessedDatabaseUpdate.New();
 
-                Parallel.ForEach(GetUpdatesToPreProcess(updates, dbOps), (todo) =>
+                MaybeParallelForEach(GetUpdatesToPreProcess(updates, dbOps), (todo) =>
                 {
                     PreProcessTable(todo);
-                });
+                }, bytes: messageBytes);
                 return dbOps;
             }
 
@@ -637,12 +667,12 @@ namespace SpacetimeDB
                 switch (message)
                 {
                     case ServerMessage.InitialSubscription(var initSub):
-                        dbOps = PreProcessLegacySubscription(initSub);
+                        dbOps = PreProcessLegacySubscription(initSub, unprocessed.bytes.Length);
                         break;
                     case ServerMessage.SubscribeApplied(var subscribeApplied):
                         break;
                     case ServerMessage.SubscribeMultiApplied(var subscribeMultiApplied):
-                        dbOps = PreProcessSubscribeMultiApplied(subscribeMultiApplied);
+                        dbOps = PreProcessSubscribeMultiApplied(subscribeMultiApplied, unprocessed.bytes.Length);
                         break;
                     case ServerMessage.SubscriptionError(var subscriptionError):
                         // do nothing; main thread will warn.
@@ -651,7 +681,7 @@ namespace SpacetimeDB
                         // do nothing; main thread will warn.
                         break;
                     case ServerMessage.UnsubscribeMultiApplied(var unsubscribeMultiApplied):
-                        dbOps = PreProcessUnsubscribeMultiApplied(unsubscribeMultiApplied);
+                        dbOps = PreProcessUnsubscribeMultiApplied(unsubscribeMultiApplied, unprocessed.bytes.Length);
                         break;
                     case ServerMessage.TransactionUpdate(var transactionUpdate):
                         // Convert the generic event arguments in to a domain specific event object
@@ -680,11 +710,11 @@ namespace SpacetimeDB
 
                         if (transactionUpdate.Status is UpdateStatus.Committed(var committed))
                         {
-                            dbOps = PreProcessDatabaseUpdate(committed);
+                            dbOps = PreProcessDatabaseUpdate(committed, unprocessed.bytes.Length);
                         }
                         break;
                     case ServerMessage.TransactionUpdateLight(var update):
-                        dbOps = PreProcessDatabaseUpdate(update.Update);
+                        dbOps = PreProcessDatabaseUpdate(update.Update, unprocessed.bytes.Length);
                         break;
                     case ServerMessage.IdentityToken(var identityToken):
                         break;
