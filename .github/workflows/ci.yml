@@ -225,9 +225,8 @@ jobs:
       - name: Build module-test
         run: cargo run -p spacetimedb-cli -- build --project-path modules/module-test
 
-      # TODO(kim): What does this have to do with bindgen?
       - name: Run bindgen tests
-        run: cargo test -p spacetimedb-cli
+        run: cargo test -p spacetimedb-codegen
 
   publish_checks:
     name: Check that packages are publishable
