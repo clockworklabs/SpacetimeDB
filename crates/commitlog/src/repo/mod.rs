@@ -243,6 +243,7 @@ pub fn resume_segment_writer<R: Repo>(
         tx_range,
         size_in_bytes,
         max_epoch,
+        max_commit_offset: _,
     } = match Metadata::extract(offset, &mut storage, offset_index.as_ref()) {
         Err(error::SegmentMetadata::InvalidCommit { sofar, source }) => {
             warn!("invalid commit in segment {offset}: {source}");
