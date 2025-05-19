@@ -401,11 +401,16 @@ namespace SpacetimeDB
 
             /// <summary>
             /// The updates to parse.
+            /// There may be multiple TableUpdates corresponding to a single table.
+            /// (Each TableUpdate then contains multiple CompressableQueryUpdates.
+            /// Unfortunately, these are compressed independently due to serverside limitations.)
             /// </summary>
             public List<TableUpdate> Updates;
 
             /// <summary>
             /// The delta to fill with data. Starts out empty.
+            /// This delta is also stored in a ProcessedDatabaseUpdate, so modifying it
+            /// directly modifies a ProcessedDatabaseUpdate that needs to be filled in with data.
             /// </summary>
             public MultiDictionaryDelta<object, PreHashedRow> Delta;
         }
@@ -441,7 +446,9 @@ namespace SpacetimeDB
 
             IEnumerable<UpdatesToPreProcess> GetUpdatesToPreProcess(DatabaseUpdate updates, ProcessedDatabaseUpdate dbOps)
             {
-                Dictionary<IRemoteTableHandle, UpdatesToPreProcess> tableToUpdates = new(32);
+                // There may be multiple TableUpdates corresponding to a single table in a DatabaseUpdate.
+                // Preemptively group them.
+                Dictionary<IRemoteTableHandle, UpdatesToPreProcess> tableToUpdates = new(updates.Tables.Count);
                 foreach (var update in updates.Tables)
                 {
                     var tableName = update.TableName;
