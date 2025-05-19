@@ -390,6 +390,22 @@ namespace SpacetimeDB
         /// <summary>
         /// A collection of updates to the same table that need to be pre-processed.
         /// This is the unit of work that is spread across worker threads.
+        ///
+        /// It is fairly coarse-grained -- which means latency depends on the table with the most updates.
+        ///
+        /// We actually could reduce latency further by doing more fine-grained parallelism --
+        /// splitting up row parsing within a TableUpdate using the RowSizeHint data in a BsatnRowList.
+        /// Probably we would want to split large messages into chunks, but only large messages.
+        /// However, if we do this, we'd need to have data from multiple threads aggregated into a single
+        /// MultiDictionaryDelta. To do this, we'd need to:
+        /// - make MultiDictionaryDelta a synchronized data structure
+        /// - or, add methods to MultiDictionaryDelta that allow them to be combined after being
+        ///     produced independently.
+        ///
+        /// I'm not comfortable doing either of these while MultiDictionaryDelta is as complicated as it is.
+        /// Commit ba9f3be made MultiDictionary so complicated because we needed to handle a weird edge case.
+        /// https://github.com/clockworklabs/SpacetimeDB/pull/2654 made the edge-case impossible server-side,
+        /// so once it has been released for a while, we could consider reverting ba9f3be and doing fancier parallelism here.
         /// </summary>
         internal struct UpdatesToPreProcess
         {
