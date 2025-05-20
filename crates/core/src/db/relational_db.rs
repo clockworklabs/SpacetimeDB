@@ -549,7 +549,12 @@ impl RelationalDB {
                 else {
                     break;
                 };
-                if min_commitlog_offset + 1 > snapshot_offset {
+                if min_commitlog_offset > 0 && min_commitlog_offset + 1 > snapshot_offset {
+                    log::debug!(
+                        "snapshot_offset={} min_commitlog_offset={}",
+                        snapshot_offset,
+                        min_commitlog_offset
+                    );
                     break;
                 }
                 match try_load_snapshot(snapshot_repo, snapshot_offset, database_identity, &page_pool) {
