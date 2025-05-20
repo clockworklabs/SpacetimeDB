@@ -433,13 +433,14 @@ namespace SpacetimeDB
 
         /// <summary>
         /// *Maybe* do something in parallel, depending on how many bytes we need to process.
+        /// For small messages, avoid the overhead from parallelizing.
         /// </summary>
         /// <typeparam name="T"></typeparam>
         /// <param name="values">The enumerator to consume.</param>
         /// <param name="action">The action to perform for each element of the enumerator.</param>
         /// <param name="bytes">The number of bytes in the compressed message.</param>
         /// <param name="enoughBytesToParallelize">The threshold for whether to parse updates on multiple threads.</param>
-        static void MaybeParallelForEach<T>(
+        static void FastParallelForEach<T>(
             IEnumerable<T> values,
             Action<T> action,
             int bytes,
