@@ -40,3 +40,6 @@ futures-channel.workspace = true
 
 # for tests
 spacetimedb-testing = { path = "../testing" }
+
+[lints]
+workspace = true

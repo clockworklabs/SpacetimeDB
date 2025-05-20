@@ -58,3 +58,6 @@ tikv-jemalloc-ctl = {workspace = true}
 [dev-dependencies]
 once_cell.workspace = true
 tempfile.workspace = true
+
+[lints]
+workspace = true

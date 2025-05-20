@@ -326,3 +326,10 @@ features = [
   "broadcast",
   "ondemand",
 ]
+
+[workspace.lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tokio_unstable)'] }
+
+[workspace.lints.clippy]
+# FIXME: we should work on this lint incrementally
+result_large_err = "allow"

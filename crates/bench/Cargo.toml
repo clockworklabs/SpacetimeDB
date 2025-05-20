@@ -90,3 +90,6 @@ tikv-jemalloc-ctl = { workspace = true }
 iai-callgrind = { git = "https://github.com/clockworklabs/iai-callgrind.git", branch = "main" }
 iai-callgrind-runner = { git = "https://github.com/clockworklabs/iai-callgrind.git", branch = "main" }
 iai-callgrind-macros = { git = "https://github.com/clockworklabs/iai-callgrind.git", branch = "main" }
+
+[lints]
+workspace = true

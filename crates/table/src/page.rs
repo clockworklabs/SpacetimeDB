@@ -12,25 +12,25 @@
 //! Technical terms:
 //!
 //! - `valid` refers to, when referring to a type, granule, or row,
-//!    depending on the context, a memory location that holds a *safe* object.
-//!    When "valid for writes" is used, the location must be properly aligned
-//!    and none of its bytes may be uninit,
-//!    but the value need not be valid at the type in question.
-//!    "Valid for writes" is equivalent to valid-unconstrained.
+//!   depending on the context, a memory location that holds a *safe* object.
+//!   When "valid for writes" is used, the location must be properly aligned
+//!   and none of its bytes may be uninit,
+//!   but the value need not be valid at the type in question.
+//!   "Valid for writes" is equivalent to valid-unconstrained.
 //!
 //! - `valid-unconstrained`, when referring to a memory location with a given type,
-//!    that the location stores a byte pattern which Rust/LLVM's memory model recognizes as valid,
-//!    and therefore must not contain any uninit,
-//!    but the value is not required to be logically meaningful,
-//!    and no code may depend on the data within it to uphold any invariants.
-//!    E.g. an unallocated [`VarLenGranule`] within a page stores valid-unconstrained bytes,
-//!    because the bytes are either 0 from the initial [`alloc_zeroed`] of the page,
-//!    or contain stale data from a previously freed [`VarLenGranule`].
+//!   that the location stores a byte pattern which Rust/LLVM's memory model recognizes as valid,
+//!   and therefore must not contain any uninit,
+//!   but the value is not required to be logically meaningful,
+//!   and no code may depend on the data within it to uphold any invariants.
+//!   E.g. an unallocated [`VarLenGranule`] within a page stores valid-unconstrained bytes,
+//!   because the bytes are either 0 from the initial [`alloc_zeroed`] of the page,
+//!   or contain stale data from a previously freed [`VarLenGranule`].
 //!
 //! - `unused` means that it is safe to overwrite a block of memory without cleaning up its previous value.
 //!
-//!    See the post [Two Kinds of Invariants: Safety and Validity][ralf_safe_valid]
-//!    for a discussion on safety and validity invariants.
+//!   See the post [Two Kinds of Invariants: Safety and Validity][ralf_safe_valid]
+//!   for a discussion on safety and validity invariants.
 
 use super::{
     blob_store::BlobStore,
@@ -661,6 +661,7 @@ impl<'page> VarView<'page> {
     ///    b. For each `(_, len) ∈ cs`, caller must ensure that
     ///       the relevant granule is initialized with data for at least `len`
     ///       before the granule's data is read from / assumed to be initialized.
+    #[expect(clippy::doc_overindented_list_items)]
     fn alloc_for_obj_common<'chunk, Cs: Iterator<Item = (&'chunk [u8], usize)>>(
         &mut self,
         obj_len: usize,

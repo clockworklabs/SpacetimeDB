@@ -539,6 +539,8 @@ pub enum InitDatabaseError {
     Other(anyhow::Error),
 }
 
+// FIXME: reduce type size
+#[expect(clippy::large_enum_variant)]
 #[derive(thiserror::Error, Debug)]
 pub enum ClientConnectedError {
     #[error(transparent)]
@@ -754,7 +756,6 @@ impl ModuleHost {
                         "`call_identity_connected`: fallback transaction to insert into `st_client` failed: {e:#?}"
                     )
                 })
-                .map_err(DBError::from)
                 .map_err(Into::into)
             }
         })
@@ -1039,7 +1040,6 @@ impl ModuleHost {
         })
         .await
         .unwrap_or_else(|e| Err(e.into()))
-        .map_err(Into::into)
     }
 
     pub fn subscribe_to_logs(&self) -> anyhow::Result<tokio::sync::broadcast::Receiver<bytes::Bytes>> {
@@ -1065,7 +1065,6 @@ impl ModuleHost {
             inst.update_database(program, old_module_info)
         })
         .await?
-        .map_err(Into::into)
     }
 
     pub async fn exit(&self) {

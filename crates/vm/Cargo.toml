@@ -27,3 +27,6 @@ tracing.workspace = true
 [dev-dependencies]
 tempfile.workspace = true
 typed-arena.workspace = true
+
+[lints]
+workspace = true

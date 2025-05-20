@@ -22,3 +22,6 @@ spacetimedb-sql-parser.workspace = true
 pretty_assertions.workspace = true
 spacetimedb = { path = "../bindings", features = ["unstable"] }
 spacetimedb-lib = { path = "../lib" }
+
+[lints]
+workspace = true

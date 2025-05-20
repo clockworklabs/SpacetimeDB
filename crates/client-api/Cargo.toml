@@ -58,3 +58,6 @@ jemalloc_pprof.workspace = true
 [dev-dependencies]
 jsonwebtoken.workspace = true
 pretty_assertions = { workspace = true, features = ["unstable"] }
+
+[lints]
+workspace = true
