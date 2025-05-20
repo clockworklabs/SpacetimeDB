@@ -528,7 +528,7 @@ namespace SpacetimeDB
             {
                 var dbOps = ProcessedDatabaseUpdate.New();
 
-                MaybeParallelForEach(GetUpdatesToPreProcess(initSub.DatabaseUpdate, dbOps), (todo) =>
+                FastParallelForEach(GetUpdatesToPreProcess(initSub.DatabaseUpdate, dbOps), (todo) =>
                 {
                     PreProcessInsertOnlyTable(todo);
                 }, bytes: messageBytes);
@@ -542,7 +542,7 @@ namespace SpacetimeDB
             ProcessedDatabaseUpdate PreProcessSubscribeMultiApplied(SubscribeMultiApplied subscribeMultiApplied, int messageBytes)
             {
                 var dbOps = ProcessedDatabaseUpdate.New();
-                MaybeParallelForEach(GetUpdatesToPreProcess(subscribeMultiApplied.Update, dbOps), (todo) =>
+                FastParallelForEach(GetUpdatesToPreProcess(subscribeMultiApplied.Update, dbOps), (todo) =>
                 {
                     PreProcessInsertOnlyTable(todo);
                 }, bytes: messageBytes);
@@ -624,7 +624,7 @@ namespace SpacetimeDB
             {
                 var dbOps = ProcessedDatabaseUpdate.New();
 
-                MaybeParallelForEach(GetUpdatesToPreProcess(unsubMultiApplied.Update, dbOps), (todo) =>
+                FastParallelForEach(GetUpdatesToPreProcess(unsubMultiApplied.Update, dbOps), (todo) =>
                 {
                     PreProcessDeleteOnlyTable(todo);
                 }, bytes: messageBytes);
@@ -636,7 +636,7 @@ namespace SpacetimeDB
             {
                 var dbOps = ProcessedDatabaseUpdate.New();
 
-                MaybeParallelForEach(GetUpdatesToPreProcess(updates, dbOps), (todo) =>
+                FastParallelForEach(GetUpdatesToPreProcess(updates, dbOps), (todo) =>
                 {
                     PreProcessTable(todo);
                 }, bytes: messageBytes);
