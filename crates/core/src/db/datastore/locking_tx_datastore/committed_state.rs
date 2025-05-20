@@ -368,15 +368,24 @@ impl CommittedState {
         let st_sequences = self.tables.get(&ST_SEQUENCE_ID).unwrap();
         for row_ref in st_sequences.scan_rows(&self.blob_store) {
             let sequence = StSequenceRow::try_from(row_ref)?;
-            let mut seq = sequence_state
-                .remove(sequence.sequence_id)
-                .unwrap_or_else(|| Sequence::new(sequence.into()));
+            let mut seq = Sequence::new(sequence.into());
 
             // Now we need to recover the last allocation value.
             if seq.value < seq.allocated() + 1 {
                 seq.value = seq.allocated() + 1;
             }
 
+            // Clobber any existing in-memory `Sequence`.
+            // Such a value may exist because, when replaying without a snapshot,
+            // `build_sequence_state` is called twice:
+            // once when bootstrapping the empty datastore,
+            // and then again after replaying the commitlog.
+            // At this latter time, `sequence_state.get(seq.id())` for the system table sequences
+            // will return a sequence with incorrect `allocated`,
+            // as it will reflect the state after initializing the system tables,
+            // but before creating any user tables.
+            // The `sequence` we read out of `row_ref` above, and used to construct `seq`,
+            // will correctly reflect the state after creating user tables.
             sequence_state.insert(seq.id(), seq);
         }
         Ok(())
