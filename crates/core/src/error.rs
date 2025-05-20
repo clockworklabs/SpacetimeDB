@@ -176,6 +176,8 @@ pub enum SequenceError {
     MultiColumnAutoInc(TableId, ColList),
 }
 
+// FIXME: reduce type size
+#[expect(clippy::large_enum_variant)]
 #[derive(Error, Debug, EnumAsInner)]
 pub enum DBError {
     #[error("LibError: {0}")]

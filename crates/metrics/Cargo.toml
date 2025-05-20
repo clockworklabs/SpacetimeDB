@@ -12,3 +12,6 @@ itertools.workspace = true
 paste.workspace = true
 prometheus.workspace = true
 arrayvec.workspace = true
+
+[lints]
+workspace = true

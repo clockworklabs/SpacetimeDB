@@ -5,20 +5,20 @@
 //! [`SpacetimePaths`] holds the paths to the various directories used by the CLI & database.
 //!
 //! * **cli-bin-dir**: a directory under which all versions of all
-//!     SpacetimeDB binaries is be stored. Each binary is stored in a
-//!     directory named with version number of the binary in this directory. If a
-//!     binary has any related files required by that binary which are specific to
-//!     that version, for example, template configuration files, these files will be
-//!     installed in this folder as well.
+//!   SpacetimeDB binaries is be stored. Each binary is stored in a
+//!   directory named with version number of the binary in this directory. If a
+//!   binary has any related files required by that binary which are specific to
+//!   that version, for example, template configuration files, these files will be
+//!   installed in this folder as well.
 //!
 //! * **cli-config-dir**: a directory where configuration and state for the CLI,
-//!     as well as the keyfiles used by the server, are stored.
+//!   as well as the keyfiles used by the server, are stored.
 //!
 //! * **cli-bin-file**: the location of the default spacetime CLI executable, which
-//!     is a symlink to the actual `spacetime` binary in the cli-bin-dir.
+//!   is a symlink to the actual `spacetime` binary in the cli-bin-dir.
 //!
 //! * **data-dir**: the directory where all persistent server & database files
-//!     are stored.
+//!   are stored.
 //!
 //! ## Unix Directory Structure
 //!
