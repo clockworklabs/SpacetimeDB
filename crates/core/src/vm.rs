@@ -3,7 +3,7 @@
 use crate::db::datastore::locking_tx_datastore::state_view::IterByColRangeMutTx;
 use crate::db::datastore::locking_tx_datastore::tx::TxId;
 use crate::db::datastore::locking_tx_datastore::IterByColRangeTx;
-use crate::db::datastore::system_tables::{st_var_schema, StVarName, StVarRow, StVarTable};
+use crate::db::datastore::system_tables::{st_var_schema, StVarName, StVarRow};
 use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::error::DBError;
 use crate::estimation;
@@ -467,7 +467,7 @@ pub fn check_row_limit<Query>(
     auth: &AuthCtx,
 ) -> Result<(), DBError> {
     if auth.caller != auth.owner {
-        if let Some(limit) = StVarTable::row_limit(db, tx)? {
+        if let Some(limit) = db.row_limit(db, tx)? {
             let mut estimate: u64 = 0;
             for query in queries {
                 estimate = estimate.saturating_add(row_est(query, tx));

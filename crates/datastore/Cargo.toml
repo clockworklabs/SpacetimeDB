@@ -1,0 +1,36 @@
+[package]
+name = "spacetimedb-datastore"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[features]
+# Print a warning when doing an unindexed `iter_by_col_range` on a large table.
+unindexed_iter_by_col_range_warn = []
+default = ["unindexed_iter_by_col_range_warn"]
+
+[dependencies]
+spacetimedb-commitlog.workspace = true
+spacetimedb-data-structures = { workspace = true }
+spacetimedb-execution = { workspace = true }
+spacetimedb-lib = { workspace = true }
+spacetimedb-primitives = { workspace = true }
+spacetimedb-sats = { workspace = true }
+spacetimedb-schema = { workspace = true }
+spacetimedb-table = { workspace = true }
+spacetimedb-vm = { workspace = true }
+
+anyhow = { workspace = true, features = ["backtrace"] }
+bytes.workspace = true
+derive_more.workspace = true
+enum-as-inner.workspace = true
+itertools.workspace = true
+lazy_static.workspace = true
+log.workspace = true
+parking_lot.workspace = true
+smallvec.workspace = true
+strum.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+spacetimedb-core = { workspace = true }

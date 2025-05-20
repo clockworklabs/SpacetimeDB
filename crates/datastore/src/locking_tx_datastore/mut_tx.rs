@@ -8,25 +8,25 @@ use super::{
     tx_state::{IndexIdMap, TxState},
     SharedMutexGuard, SharedWriteGuard,
 };
-use crate::db::datastore::system_tables::{
+use crate::system_tables::{
     with_sys_table_buf, StClientFields, StClientRow, StColumnFields, StColumnRow, StConstraintFields, StConstraintRow,
     StFields as _, StIndexFields, StIndexRow, StRowLevelSecurityFields, StRowLevelSecurityRow, StScheduledFields,
     StScheduledRow, StSequenceFields, StSequenceRow, StTableFields, StTableRow, SystemTable, ST_CLIENT_ID,
     ST_COLUMN_ID, ST_CONSTRAINT_ID, ST_INDEX_ID, ST_ROW_LEVEL_SECURITY_ID, ST_SCHEDULED_ID, ST_SEQUENCE_ID,
     ST_TABLE_ID,
 };
-use crate::db::datastore::traits::{RowTypeForTable, TxData};
-use crate::db::datastore::{
+use crate::traits::{RowTypeForTable, TxData};
+use crate::{
     locking_tx_datastore::committed_state::CommittedIndexIterWithDeletedMutTx, traits::InsertFlags,
 };
-use crate::db::datastore::{
+use crate::{
     locking_tx_datastore::state_view::{
         IndexSeekIterIdWithDeletedMutTx, IterByColEqMutTx, IterByColRangeMutTx, IterMutTx,
     },
     traits::UpdateFlags,
 };
-use crate::execution_context::Workload;
-use crate::{
+use spacetimedb::execution_context::Workload;
+use spacetimedb::{
     error::{IndexError, SequenceError, TableError},
     execution_context::ExecutionContext,
 };

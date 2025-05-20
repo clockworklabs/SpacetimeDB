@@ -35,6 +35,7 @@ spacetimedb-subscription.workspace = true
 spacetimedb-expr.workspace = true
 spacetimedb-execution.workspace = true
 spacetimedb-fs-utils.workspace = true
+spacetimedb-datastore.workspace = true
 
 anyhow = { workspace = true, features = ["backtrace"] }
 arrayvec.workspace = true
@@ -119,9 +120,6 @@ tikv-jemallocator = {workspace = true}
 tikv-jemalloc-ctl = {workspace = true}
 
 [features]
-# Print a warning when doing an unindexed `iter_by_col_range` on a large table.
-unindexed_iter_by_col_range_warn = []
-default = ["unindexed_iter_by_col_range_warn"]
 # Enable timing for wasm ABI calls
 spacetimedb-wasm-instance-env-times = []
 # Enable test helpers and utils

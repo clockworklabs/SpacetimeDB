@@ -5,15 +5,19 @@ use std::{ops::RangeBounds, sync::Arc};
 
 use super::system_tables::ModuleKind;
 use super::Result;
-use crate::db::datastore::system_tables::ST_TABLE_ID;
+use crate::system_tables::{StVarFields, StVarName, StVarRow, ST_TABLE_ID, ST_VAR_ID};
 use crate::execution_context::{ReducerContext, Workload};
 use spacetimedb_data_structures::map::IntMap;
+use spacetimedb_lib::st_var::StVarValue;
 use spacetimedb_lib::{hash_bytes, Identity};
 use spacetimedb_primitives::*;
+use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::{AlgebraicValue, ProductType, ProductValue};
 use spacetimedb_schema::schema::{IndexSchema, SequenceSchema, TableSchema};
 use spacetimedb_table::table::RowRef;
+use spacetimedb_vm::errors::{ErrorType, ErrorVm};
+use spacetimedb_vm::ops::parse;
 
 /// The `IsolationLevel` enum specifies the degree to which a transaction is
 /// isolated from concurrently running transactions. The higher the isolation
@@ -535,4 +539,75 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
 
     /// Update the datastore with the supplied binary program.
     fn update_program(&self, tx: &mut Self::MutTx, program_kind: ModuleKind, program: Program) -> Result<()>;
+
+    /// Read the value of [ST_VARNAME_ROW_LIMIT] from `st_var`
+    fn row_limit(&self, tx: &Self::Tx) -> Result<Option<u64>> {
+        let data = self.read_var(tx, StVarName::RowLimit);
+
+        if let Some(StVarValue::U64(limit)) = data? {
+            return Ok(Some(limit));
+        }
+        Ok(None)
+    }
+
+    /// Read the value of [ST_VARNAME_SLOW_QRY] from `st_var`
+    fn query_limit(&self, tx: &Self::Tx) -> Result<Option<u64>> {
+        if let Some(StVarValue::U64(ms)) = self.read_var(tx, StVarName::SlowQryThreshold)? {
+            return Ok(Some(ms));
+        }
+        Ok(None)
+    }
+
+    /// Read the value of [ST_VARNAME_SLOW_SUB] from `st_var`
+    fn sub_limit(&self, tx: &Self::Tx) -> Result<Option<u64>> {
+        if let Some(StVarValue::U64(ms)) = self.read_var(tx, StVarName::SlowSubThreshold)? {
+            return Ok(Some(ms));
+        }
+        Ok(None)
+    }
+
+    /// Read the value of [ST_VARNAME_SLOW_INC] from `st_var`
+    fn incr_limit(&self, tx: &Self::Tx) -> Result<Option<u64>> {
+        if let Some(StVarValue::U64(ms)) = self.read_var(tx, StVarName::SlowIncThreshold)? {
+            return Ok(Some(ms));
+        }
+        Ok(None)
+    }
+
+    /// Read the value of a system variable from `st_var`
+    fn read_var(&self, tx: &Self::Tx, name: StVarName) -> Result<Option<StVarValue>> {
+        if let Some(row_ref) = self 
+            .iter_by_col_eq(tx, ST_VAR_ID, StVarFields::Name.col_id(), &name.into())?
+            .next()
+        {
+            return Ok(Some(StVarRow::try_from(row_ref)?.value));
+        }
+        Ok(None)
+    }
+
+    /// Update the value of a system variable in `st_var`
+    fn write_var(&self, tx: &mut Self::MutTx, name: StVarName, literal: &str) -> Result<()> {
+        let value = Self::parse_var(name, literal)?;
+        if let Some(row_ref) = self
+            .iter_by_col_eq_mut(tx, ST_VAR_ID, StVarFields::Name.col_id(), &name.into())?
+            .next()
+        {
+            self.delete_mut_tx(tx, ST_VAR_ID, [row_ref.pointer()]);
+        }
+        tx.insert_via_serialize_bsatn(ST_VAR_ID, &StVarRow { name, value })?;
+        Ok(())
+    }
+
+    /// Parse the literal representation of a system variable
+    fn parse_var(name: StVarName, literal: &str) -> Result<StVarValue> {
+        StVarValue::try_from_primitive(parse::parse(literal, &name.type_of())?).map_err(|v| {
+            ErrorVm::Type(ErrorType::Parse {
+                value: literal.to_string(),
+                ty: fmt_algebraic_type(&name.type_of()).to_string(),
+                err: format!("error parsing value: {:?}", v),
+            })
+            .into()
+        })
+    }
+
 }

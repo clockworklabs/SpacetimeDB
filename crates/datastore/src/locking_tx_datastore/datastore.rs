@@ -251,7 +251,9 @@ impl Locking {
         Ok(maybe_offset_and_path.map(|(_, path)| path))
     }
 
-    pub(crate) fn take_snapshot_internal(
+    /// Take a snapshot of this [`Locking`] datastore's [`CommittedState`]
+    /// TODO: Tyler don't forget to clean this up
+    pub fn take_snapshot_internal(
         committed_state: &RwLock<CommittedState>,
         repo: &SnapshotRepository,
     ) -> Result<Option<(TxOffset, SnapshotDirPath)>> {

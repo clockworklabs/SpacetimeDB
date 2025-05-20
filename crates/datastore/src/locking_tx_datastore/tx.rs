@@ -5,8 +5,8 @@ use super::{
     state_view::{IterByColRangeTx, StateView},
     IterByColEqTx, SharedReadGuard,
 };
-use crate::db::datastore::locking_tx_datastore::state_view::IterTx;
-use crate::execution_context::ExecutionContext;
+use crate::locking_tx_datastore::state_view::IterTx;
+use spacetimedb::execution_context::ExecutionContext;
 use spacetimedb_execution::Datastore;
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_primitives::{ColList, TableId};

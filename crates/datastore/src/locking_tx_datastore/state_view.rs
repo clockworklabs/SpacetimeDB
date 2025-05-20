@@ -1,13 +1,11 @@
 use super::{committed_state::CommittedState, datastore::Result, delete_table::DeleteTable, tx_state::TxState};
-use crate::db::datastore::locking_tx_datastore::committed_state::CommittedIndexIterWithDeletedMutTx;
-use crate::{
-    db::datastore::system_tables::{
+use crate::locking_tx_datastore::committed_state::CommittedIndexIterWithDeletedMutTx;
+use crate::error::TableError;
+use crate::system_tables::{
         StColumnFields, StColumnRow, StConstraintFields, StConstraintRow, StIndexFields, StIndexRow, StScheduledFields,
         StScheduledRow, StSequenceFields, StSequenceRow, StTableFields, StTableRow, SystemTable, ST_COLUMN_ID,
         ST_CONSTRAINT_ID, ST_INDEX_ID, ST_SCHEDULED_ID, ST_SEQUENCE_ID, ST_TABLE_ID,
-    },
-    error::TableError,
-};
+    };
 use core::ops::RangeBounds;
 use spacetimedb_primitives::{ColList, TableId};
 use spacetimedb_sats::AlgebraicValue;

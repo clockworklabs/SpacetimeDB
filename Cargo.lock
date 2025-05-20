@@ -5341,6 +5341,7 @@ dependencies = [
  "spacetimedb-client-api-messages",
  "spacetimedb-commitlog",
  "spacetimedb-data-structures",
+ "spacetimedb-datastore",
  "spacetimedb-durability",
  "spacetimedb-execution",
  "spacetimedb-expr",
@@ -5394,6 +5395,33 @@ dependencies = [
  "nohash-hasher",
  "serde",
  "smallvec",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "spacetimedb-datastore"
+version = "1.1.0"
+dependencies = [
+ "anyhow",
+ "bytes",
+ "derive_more",
+ "enum-as-inner",
+ "itertools 0.12.1",
+ "lazy_static",
+ "log",
+ "parking_lot 0.12.3",
+ "smallvec",
+ "spacetimedb-commitlog",
+ "spacetimedb-core",
+ "spacetimedb-data-structures",
+ "spacetimedb-execution",
+ "spacetimedb-lib",
+ "spacetimedb-primitives",
+ "spacetimedb-sats",
+ "spacetimedb-schema",
+ "spacetimedb-table",
+ "spacetimedb-vm",
+ "strum",
  "thiserror 1.0.69",
 ]
 

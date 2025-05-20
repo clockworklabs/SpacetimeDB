@@ -1,13 +1,13 @@
-use super::datastore::locking_tx_datastore::committed_state::CommittedState;
-use super::datastore::locking_tx_datastore::state_view::{
+use spacetimedb_datastore::locking_tx_datastore::committed_state::CommittedState;
+use spacetimedb_datastore::locking_tx_datastore::state_view::{
     IterByColEqMutTx, IterByColRangeMutTx, IterMutTx, IterTx, StateView,
 };
-use super::datastore::system_tables::ST_MODULE_ID;
-use super::datastore::traits::{
+use spacetimedb_datastore::system_tables::ST_MODULE_ID;
+use spacetimedb_datastore::traits::{
     InsertFlags, IsolationLevel, Metadata, MutTx as _, MutTxDatastore, Program, RowTypeForTable, Tx as _, TxDatastore,
     UpdateFlags,
 };
-use super::datastore::{
+use spacetimedb_datastore::{
     locking_tx_datastore::{
         datastore::Locking,
         state_view::{IterByColEqTx, IterByColRangeTx},
@@ -15,7 +15,7 @@ use super::datastore::{
     traits::TxData,
 };
 use super::db_metrics::DB_METRICS;
-use crate::db::datastore::system_tables::{StModuleRow, WASM_MODULE};
+use spacetimedb_datastore::system_tables::{StModuleRow, WASM_MODULE};
 use crate::error::{DBError, DatabaseError, TableError};
 use crate::execution_context::{ReducerContext, Workload};
 use crate::messages::control_db::HostType;
@@ -1218,6 +1218,36 @@ impl RelationalDB {
     ///Removes the [Constraints] from database instance
     pub fn drop_constraint(&self, tx: &mut MutTx, constraint_id: ConstraintId) -> Result<(), DBError> {
         self.inner.drop_constraint_mut_tx(tx, constraint_id)
+    }
+
+    /// Read the value of [ST_VARNAME_ROW_LIMIT] from `st_var`
+    pub fn row_limit(&self, tx: &Tx) -> Result<Option<u64>> {
+        self.inner.row_limit(tx)
+    }
+
+    /// Read the value of [ST_VARNAME_SLOW_QRY] from `st_var`
+    pub fn query_limit(&self, tx: &Self::Tx) -> Result<Option<u64>> {
+        self.inner.query_limit(tx)
+    }
+
+    /// Read the value of [ST_VARNAME_SLOW_SUB] from `st_var`
+    pub fn sub_limit(&self, tx: &Self::Tx) -> Result<Option<u64>> {
+        self.inner.sub_limit(tx)
+    }
+
+    /// Read the value of [ST_VARNAME_SLOW_INC] from `st_var`
+    pub fn incr_limit(&self, tx: &Self::Tx) -> Result<Option<u64>> {
+        self.inner.incr_limit(tx)
+    }
+
+    /// Read the value of a system variable from `st_var`
+    pub fn read_var(&self, tx: &Self::Tx, name: StVarName) -> Result<Option<StVarValue>> {
+        self.inner.read_var(tx)
+    }
+
+    /// Update the value of a system variable in `st_var`
+    pub fn write_var(&self, tx: &mut Self::MutTx, name: StVarName, literal: &str) -> Result<()> {
+        self.inner.write_var_mut_tx(tx, name, literal)
     }
 }
 
