@@ -465,10 +465,11 @@ impl RelationalDB {
         min_commitlog_offset: TxOffset,
         page_pool: PagePool,
     ) -> Result<Locking, RestoreSnapshotError> {
+        // Try to load the `ReconstructedSnapshot` at `snapshot_offset`.
         fn try_load_snapshot(
+            database_identity: &Identity,
             snapshot_repo: &SnapshotRepository,
             snapshot_offset: TxOffset,
-            database_identity: Identity,
             page_pool: &PagePool,
         ) -> Result<ReconstructedSnapshot, Box<SnapshotError>> {
             log::info!(
@@ -488,7 +489,12 @@ impl RelationalDB {
             Ok(snapshot)
         }
 
-        let restore_from_snapshot = |snapshot: ReconstructedSnapshot, page_pool: PagePool| {
+        // Do restore a `Locking` from the `ReconstructedSnapshot`.
+        fn restore_from_snapshot(
+            database_identity: &Identity,
+            snapshot: ReconstructedSnapshot,
+            page_pool: PagePool,
+        ) -> Result<Locking, Box<DBError>> {
             let start = std::time::Instant::now();
             let snapshot_offset = snapshot.tx_offset;
             Locking::restore_from_snapshot(snapshot, page_pool)
@@ -507,9 +513,11 @@ impl RelationalDB {
                     )
                 })
                 .map_err(Box::new)
-                .map_err(RestoreSnapshotError::Datastore)
-        };
+        }
 
+        // `true` if the `SnapshotError` can be considered transient.
+        // It is not transient if it has to do with hash verification,
+        // deserialization or the snapshot format itself.
         fn is_transient_error(e: &SnapshotError) -> bool {
             match e {
                 SnapshotError::Open(_)
@@ -557,7 +565,7 @@ impl RelationalDB {
                     );
                     break;
                 }
-                match try_load_snapshot(snapshot_repo, snapshot_offset, database_identity, &page_pool) {
+                match try_load_snapshot(&database_identity, snapshot_repo, snapshot_offset, &page_pool) {
                     Ok(snapshot) if snapshot.database_identity != database_identity => {
                         return Err(RestoreSnapshotError::IdentityMismatch {
                             expected: database_identity,
@@ -565,7 +573,8 @@ impl RelationalDB {
                         });
                     }
                     Ok(snapshot) => {
-                        return restore_from_snapshot(snapshot, page_pool);
+                        return restore_from_snapshot(&database_identity, snapshot, page_pool)
+                            .map_err(RestoreSnapshotError::Datastore);
                     }
                     Err(e) => {
                         // Invalidate the snapshot if the error is permanent.
