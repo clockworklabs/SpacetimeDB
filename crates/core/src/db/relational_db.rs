@@ -2974,7 +2974,7 @@ mod tests {
         try_restore(1, 0)?;
         // But not if the commitlog starts after the previous snapshot
         assert_matches!(
-            try_restore(1, 1).map(drop),
+            try_restore(1, 2).map(drop),
             Err(RestoreSnapshotError::NoConnectedSnapshot { .. })
         );
 
