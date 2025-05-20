@@ -432,7 +432,7 @@ namespace SpacetimeDB
         }
 
         /// <summary>
-        /// *Maybe* do something in parallel, depending on how many bytes we need to process.
+        /// An optimized ForEach, depending on how many bytes we need to process.
         /// For small messages, avoid the overhead from parallelizing.
         /// </summary>
         /// <typeparam name="T"></typeparam>
