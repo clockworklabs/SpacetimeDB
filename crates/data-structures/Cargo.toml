@@ -16,3 +16,6 @@ nohash-hasher.workspace = true
 serde = { workspace = true, optional = true }
 thiserror.workspace = true
 smallvec.workspace = true
+
+[lints]
+workspace = true

@@ -55,3 +55,6 @@ jemalloc_pprof.workspace = true
 
 [dev-dependencies]
 jsonwebtoken.workspace = true
+
+[lints]
+workspace = true

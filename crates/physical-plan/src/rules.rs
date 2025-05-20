@@ -3,29 +3,29 @@
 //! These include:
 //!
 //! * [PushConstEq]  
-//!     Push down predicates of the form `x=1`
+//!   Push down predicates of the form `x=1`
 //! * [PushConstAnd]  
-//!     Push down predicates of the form `x=1 and y=2`
+//!   Push down predicates of the form `x=1 and y=2`
 //! * [IxScanEq]  
-//!     Generate 1-column index scan for `x=1`
+//!   Generate 1-column index scan for `x=1`
 //! * [IxScanAnd]  
-//!     Generate 1-column index scan for `x=1 and y=2`
+//!   Generate 1-column index scan for `x=1 and y=2`
 //! * [IxScanEq2Col]  
-//!     Generate 2-column index scan
+//!   Generate 2-column index scan
 //! * [IxScanEq3Col]  
-//!     Generate 3-column index scan
+//!   Generate 3-column index scan
 //! * [ReorderHashJoin]  
-//!     Reorder the sides of a hash join
+//!   Reorder the sides of a hash join
 //! * [ReorderDeltaJoinRhs]
-//!     Reorder the sides of a hash join with delta tables
+//!   Reorder the sides of a hash join with delta tables
 //! * [PullFilterAboveHashJoin]
-//!     Pull a filter above a hash join with delta tables
+//!   Pull a filter above a hash join with delta tables
 //! * [HashToIxJoin]  
-//!     Convert hash join to index join
+//!   Convert hash join to index join
 //! * [UniqueIxJoinRule]  
-//!     Mark index join as unique
+//!   Mark index join as unique
 //! * [UniqueHashJoinRule]  
-//!     Mark hash join as unique
+//!   Mark hash join as unique
 use anyhow::{bail, Result};
 use spacetimedb_primitives::{ColId, ColSet, IndexId};
 use spacetimedb_schema::schema::IndexSchema;
