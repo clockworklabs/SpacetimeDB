@@ -16,6 +16,7 @@ use bytes::Bytes;
 use bytestring::ByteString;
 use derive_more::From;
 use futures::prelude::*;
+use prometheus::IntGauge;
 use spacetimedb_client_api_messages::websocket::{
     BsatnFormat, CallReducerFlags, Compression, FormatSwitch, JsonFormat, SubscribeMulti, SubscribeSingle, Unsubscribe,
     UnsubscribeMulti, WebsocketFormat,
@@ -69,6 +70,7 @@ pub struct ClientConnectionSender {
     sendtx: mpsc::Sender<SerializableMessage>,
     abort_handle: AbortHandle,
     cancelled: AtomicBool,
+    sendtx_queue_size_metric: Option<IntGauge>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -87,6 +89,7 @@ impl ClientConnectionSender {
             Ok(h) => h.spawn(async {}).abort_handle(),
             Err(_) => tokio::runtime::Runtime::new().unwrap().spawn(async {}).abort_handle(),
         };
+
         (
             Self {
                 id,
@@ -94,6 +97,7 @@ impl ClientConnectionSender {
                 sendtx,
                 abort_handle,
                 cancelled: AtomicBool::new(false),
+                sendtx_queue_size_metric: None,
             },
             rx,
         )
@@ -111,6 +115,11 @@ impl ClientConnectionSender {
         if self.cancelled.load(Relaxed) {
             return Err(ClientSendError::Cancelled);
         }
+
+        if let Some(metric) = &self.sendtx_queue_size_metric {
+            metric.inc();
+        }
+
         self.sendtx.try_send(message).map_err(|e| match e {
             mpsc::error::TrySendError::Full(_) => {
                 // we've hit CLIENT_CHANNEL_CAPACITY messages backed up in
@@ -216,12 +225,17 @@ impl ClientConnection {
         })
         .abort_handle();
 
+        let sendtx_queue_size_metric = WORKER_METRICS
+            .client_connection_outgoing_queue_length
+            .with_label_values(&db, &id.identity, &id.connection_id);
+
         let sender = Arc::new(ClientConnectionSender {
             id,
             config,
             sendtx,
             abort_handle,
             cancelled: AtomicBool::new(false),
+            sendtx_queue_size_metric: Some(sendtx_queue_size_metric),
         });
         let this = Self {
             sender,

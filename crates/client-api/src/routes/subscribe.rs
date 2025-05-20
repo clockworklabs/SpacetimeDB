@@ -237,10 +237,20 @@ async fn ws_client_actor_inner(
             .remove_label_values(&addr, &client_identity, &connection_id) {
                 log::error!("Failed to `remove_label_values` for `client_connection_incoming_queue_length`: {e:?}");
             };
+
+        if let Err(e) = WORKER_METRICS
+            .client_connection_outgoing_queue_length
+            .remove_label_values(&addr, &client_identity, &connection_id) {
+                log::error!("Failed to `remove_label_values` for `client_connection_outgoing_queue_length`: {e:?}");
+            }
     );
 
-    let queue_length_metric = WORKER_METRICS
+    let incoming_queue_length_metric = WORKER_METRICS
         .client_connection_incoming_queue_length
+        .with_label_values(&addr, &client_identity, &connection_id);
+
+    let outgoing_queue_length_metric = WORKER_METRICS
+        .client_connection_outgoing_queue_length
         .with_label_values(&addr, &client_identity, &connection_id);
 
     loop {
@@ -251,7 +261,7 @@ async fn ws_client_actor_inner(
         }
         if let MaybeDone::Gone = *current_message {
             if let Some((message, timer)) = message_queue.pop_front() {
-                queue_length_metric.dec();
+                incoming_queue_length_metric.dec();
                 let client = client.clone();
                 let fut = async move { client.handle_message(message, timer).await };
                 current_message.set(MaybeDone::Future(fut));
@@ -285,6 +295,7 @@ async fn ws_client_actor_inner(
             // If we have an outgoing message to send, send it off.
             // No incoming `message` to handle, so `continue`.
             Some(n) = sendrx.recv_many(&mut rx_buf, 32).map(|n| (n != 0).then_some(n)) => {
+                outgoing_queue_length_metric.sub(n as _);
                 if closed {
                     // TODO: this isn't great. when we receive a close request from the peer,
                     //       tungstenite doesn't let us send any new messages on the socket,
@@ -378,7 +389,7 @@ async fn ws_client_actor_inner(
         match message {
             Item::Message(ClientMessage::Message(message)) => {
                 let timer = Instant::now();
-                queue_length_metric.inc();
+                incoming_queue_length_metric.inc();
                 message_queue.push_back((message, timer))
             }
             Item::HandleResult(res) => {
