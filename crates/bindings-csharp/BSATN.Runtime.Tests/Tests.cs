@@ -656,6 +656,51 @@ public static partial class BSATNRuntimeTests
         }
     }
 
+    [Type]
+    enum Banana
+    {
+        Cavendish,
+        LadyFinger,
+        RedBanana,
+        Manzano,
+        BlueJava,
+        GreenPlantain,
+        YellowPlantain,
+        PisangRaja,
+    }
+
+    [Fact]
+    public static void EnumSerializationWorks()
+    {
+        var serializer = new Enum<Banana>();
+        var bananas = new Banana[]
+        {
+            Banana.Cavendish,
+            Banana.LadyFinger,
+            Banana.RedBanana,
+            Banana.Manzano,
+            Banana.BlueJava,
+            Banana.GreenPlantain,
+            Banana.YellowPlantain,
+            Banana.PisangRaja,
+        };
+        for (var i = 0; i < bananas.Length; i++)
+        {
+            var stream = new MemoryStream();
+            var writer = new BinaryWriter(stream);
+            var banana = bananas[i];
+            serializer.Write(writer, banana);
+
+            stream.Seek(0, SeekOrigin.Begin);
+            var tag = new BinaryReader(stream).ReadByte();
+            Assert.Equal(tag, i);
+
+            stream.Seek(0, SeekOrigin.Begin);
+            var newBanana = serializer.Read(new BinaryReader(stream));
+            Assert.Equal(banana, newBanana);
+        }
+    }
+
     [Fact]
     public static void GeneratedNestedListEqualsWorks()
     {
