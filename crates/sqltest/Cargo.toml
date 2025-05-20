@@ -32,3 +32,6 @@ sqllogictest.workspace = true
 tempfile.workspace = true
 tokio.workspace = true
 tokio-postgres.workspace = true
+
+[lints]
+workspace = true

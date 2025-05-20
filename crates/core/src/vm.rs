@@ -284,7 +284,7 @@ where
     Rhs: RelOps<'a>,
 {
     fn filter(&self, index_row: &RelValue<'_>) -> bool {
-        self.index_select.as_ref().map_or(true, |op| op.eval_bool(index_row))
+        self.index_select.as_ref().is_none_or(|op| op.eval_bool(index_row))
     }
 }
 
@@ -383,7 +383,7 @@ where
     IndexIter: Iterator<Item = RowRef<'a>>,
 {
     fn filter(&self, index_row: &RelValue<'_>) -> bool {
-        self.index_select.as_ref().map_or(true, |op| op.eval_bool(index_row))
+        self.index_select.as_ref().is_none_or(|op| op.eval_bool(index_row))
     }
 }
 
