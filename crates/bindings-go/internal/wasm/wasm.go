@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"github.com/tetratelabs/wazero/imports/wasi_snapshot_preview1"
 	"math"
 	"runtime"
 	"sync"
@@ -15,6 +14,7 @@ import (
 
 	"github.com/tetratelabs/wazero"
 	"github.com/tetratelabs/wazero/api"
+	"github.com/tetratelabs/wazero/imports/wasi_snapshot_preview1"
 )
 
 // Error codes
@@ -196,6 +196,12 @@ func (r *Runtime) LoadModule(ctx context.Context, wasmBytes []byte) error {
 		})
 	}
 
+	// Print module information
+	fmt.Printf("Module imports:\n")
+	for _, imp := range module.ImportedFunctions() {
+		fmt.Printf("  Import: %s\n", imp.Name())
+	}
+
 	// Validate module
 	if err := r.validateModule(module); err != nil {
 		runtime.Close(ctx)
@@ -209,8 +215,8 @@ func (r *Runtime) LoadModule(ctx context.Context, wasmBytes []byte) error {
 	return nil
 }
 
-// InstantiateModule instantiates the loaded module
-func (r *Runtime) InstantiateModule(ctx context.Context) error {
+// InstantiateModule instantiates a loaded WASM module
+func (r *Runtime) InstantiateModule(ctx context.Context, moduleName string, withWASI bool) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -218,47 +224,32 @@ func (r *Runtime) InstantiateModule(ctx context.Context) error {
 		return NewWASMError(ErrCodeNoModuleLoaded, "no module loaded", nil)
 	}
 
-	// Register dummy import if needed
-	imports := r.Module.ImportedFunctions()
-	for _, imp := range imports {
-		if imp.ModuleName() == "env" && imp.Name() == "dummy" {
-			// Register a dummy function in the 'env' module
-			_, err := r.Runtime.NewHostModuleBuilder("env").
-				NewFunctionBuilder().
-				WithFunc(func() {}).
-				Export("dummy").
-				Instantiate(ctx)
-			if err != nil {
-				return NewWASMError(ErrCodeInstantiateFailed, "failed to register dummy import", map[string]interface{}{
-					"error": err.Error(),
-				})
-			}
-			break
-		}
+	// Register WASI in the runtime if requested
+	if withWASI {
+		wasi_snapshot_preview1.MustInstantiate(ctx, r.Runtime)
 	}
 
-	// Instantiate WASI, which implements host functions needed for TinyGo to
-	// implement `panic`.
-	wasi_snapshot_preview1.MustInstantiate(ctx, r.Runtime)
+	// Create module config
+	config := wazero.NewModuleConfig().WithName(moduleName)
+	if withWASI {
+		// Something about _initialize
+		config.WithStartFunctions("_initialize")
+	}
+	// Add spacetime module with version (if needed, adjust as appropriate)
+	// spacetimeConfig := wazero.NewModuleConfig().WithName("spacetime_10.0")
+	// config = config.WithImportModule("spacetime_10.0", spacetimeConfig)
 
 	// Create instance
-	instance, err := r.Runtime.InstantiateModule(ctx, r.Module, wazero.NewModuleConfig().WithName("").WithStartFunctions("_initialize"))
+	instance, err := r.Runtime.InstantiateModule(ctx, r.Module, config)
 	if err != nil {
 		return NewWASMError(ErrCodeInstantiateFailed, "failed to instantiate module", map[string]interface{}{
 			"error": err.Error(),
 		})
 	}
 
-	// Get memory
-	memory := instance.Memory()
-	if memory == nil {
-		instance.Close(ctx)
-		return NewWASMError(ErrCodeNoMemory, "module has no memory", nil)
-	}
-
-	// Store instance and memory
+	// Store instance and get memory
 	r.instance = instance
-	r.memory = memory
+	r.memory = instance.Memory()
 
 	return nil
 }
@@ -323,16 +314,16 @@ func (r *Runtime) CallFunction(ctx context.Context, name string, params ...inter
 
 // validateModule validates the module
 func (r *Runtime) validateModule(module wazero.CompiledModule) error {
-	// Check for required imports
-	imports := module.ImportedFunctions()
-	if len(imports) == 0 {
-		return NewWASMError(ErrCodeNoImports, "module has no imported functions", nil)
-	}
-
 	// Check for required exports
 	exports := module.ExportedFunctions()
 	if len(exports) == 0 {
 		return NewWASMError(ErrCodeNoExports, "module has no exported functions", nil)
+	}
+
+	// Check for imports
+	imports := module.ImportedFunctions()
+	if len(imports) > 0 {
+		fmt.Printf("Module requires imports: %v\n", imports)
 	}
 
 	return nil
@@ -360,13 +351,13 @@ func (r *Runtime) marshalParams(params ...interface{}) ([]uint64, error) {
 		case float64:
 			wasmParams = append(wasmParams, math.Float64bits(v))
 		case []byte:
-			ptr, err := r.writeToMemory(v)
+			ptr, err := r.WriteToMemory(v)
 			if err != nil {
 				return nil, err
 			}
 			wasmParams = append(wasmParams, uint64(ptr))
 		case string:
-			ptr, err := r.writeToMemory([]byte(v))
+			ptr, err := r.WriteToMemory([]byte(v))
 			if err != nil {
 				return nil, err
 			}
@@ -459,8 +450,8 @@ func (r *Runtime) GetMemoryStats() (*MemoryStats, error) {
 	}, nil
 }
 
-// writeToMemory writes data to WASM memory and returns the pointer
-func (r *Runtime) writeToMemory(data []byte) (uint32, error) {
+// WriteToMemory writes data to WASM memory and returns the pointer
+func (r *Runtime) WriteToMemory(data []byte) (uint32, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -499,8 +490,8 @@ func (r *Runtime) writeToMemory(data []byte) (uint32, error) {
 	return uint32(size), nil
 }
 
-// readFromMemory reads data from WASM memory
-func (r *Runtime) readFromMemory(ptr uint32, size uint32) ([]byte, error) {
+// ReadFromMemory reads data from WASM memory
+func (r *Runtime) ReadFromMemory(ptr uint32, size uint32) ([]byte, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -560,4 +551,9 @@ func (r *Runtime) PutBuffer(buf *bytes.Buffer) error {
 
 	r.MemoryPool.Put(buf)
 	return nil
+}
+
+// UnmarshalResults converts raw uint64 results into Go values
+func (r *Runtime) UnmarshalResults(results []uint64) ([]interface{}, error) {
+	return r.unmarshalResults(results)
 }
