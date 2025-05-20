@@ -4,8 +4,9 @@ use std::sync::{Arc, Once};
 
 use crate::database_logger::{BacktraceProvider, LogLevel, Record};
 use crate::db::datastore::locking_tx_datastore::MutTxId;
-use crate::db::datastore::traits::Program;
+use crate::db::datastore::traits::{IsolationLevel, Program};
 use crate::energy::EnergyMonitor;
+use crate::execution_context::{ReducerContext, Workload};
 use crate::module_host_context::ModuleCreationContext;
 use crate::replica_context::ReplicaContext;
 
@@ -59,15 +60,11 @@ impl V8Runtime {
             replica_context: mcc.replica_ctx,
             scheduler: mcc.scheduler,
             info,
-            energy_monitor: mcc.energy_monitor,
+            _energy_monitor: mcc.energy_monitor,
             snapshot,
             reducers: Arc::new(module_builder.reducers),
         })
     }
-}
-
-struct V8InstanceEnv {
-    instance_env: InstanceEnv,
 }
 
 #[derive(Clone)]
@@ -75,7 +72,7 @@ pub struct JsModule {
     replica_context: Arc<ReplicaContext>,
     scheduler: Scheduler,
     info: Arc<ModuleInfo>,
-    energy_monitor: Arc<dyn EnergyMonitor>,
+    _energy_monitor: Arc<dyn EnergyMonitor>,
     snapshot: Arc<[u8]>,
     reducers: Arc<IndexMap<String, usize>>,
 }
@@ -544,6 +541,27 @@ impl ModuleInstance for JsInstance {
     }
 
     fn call_reducer(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> ReducerCallResult {
+        let stdb = self.module.replica_context.relational_db.clone();
+        let module_def = &self.module.info.module_def;
+        let reducer_def = module_def.reducer_by_id(params.reducer_id);
+
+        let tx = tx.unwrap_or_else(|| {
+            stdb.begin_mut_tx(
+                IsolationLevel::Serializable,
+                Workload::Reducer(ReducerContext {
+                    name: (&*reducer_def.name).into(),
+                    caller_identity: params.caller_identity,
+                    caller_connection_id: params.caller_connection_id,
+                    timestamp: params.timestamp,
+                    arg_bsatn: params.args.get_bsatn().clone(),
+                }),
+            )
+        });
+
+        let mut instance_env = InstanceEnv::new(self.module.replica_context.clone(), self.module.scheduler.clone());
+        instance_env.start_reducer(params.timestamp);
+        let mut tx_slot = instance_env.tx.clone();
+
         let mut isolate = v8::Isolate::new(
             v8::CreateParams::default()
                 .external_references(extern_refs().into())
@@ -551,10 +569,8 @@ impl ModuleInstance for JsInstance {
                 .snapshot_blob(self.module.snapshot.to_vec().into()),
         );
         let reducer_function_idx = self.module.reducers[params.reducer_id.idx()];
-        let module_def = &self.module.info.module_def;
-        let reducer_def = module_def.reducer_by_id(params.reducer_id);
         let start = std::time::Instant::now();
-        let result = {
+        let (tx, result) = tx_slot.set(tx, || {
             let mut scope = &mut v8::HandleScope::new(&mut isolate);
             let mut context = v8::Context::from_snapshot(scope, 0, v8::ContextOptions::default()).unwrap();
             let mut scope = &mut v8::ContextScope::new(scope, context);
@@ -574,7 +590,7 @@ impl ModuleInstance for JsInstance {
                 func.call(scope, recv, &args).err()?;
                 Ok(())
             })
-        };
+        });
         let execution_duration = start.elapsed();
         let outcome = match result {
             Ok(()) => super::ReducerOutcome::Committed,
