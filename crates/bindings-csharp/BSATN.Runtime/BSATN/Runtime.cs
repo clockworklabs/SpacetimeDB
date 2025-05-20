@@ -157,10 +157,13 @@ public readonly struct Enum<T> : IReadWrite<T>
         // However, enum values are guaranteed to be sequential and zero based.
         // Hence we only ever need to do an upper bound check.
         // See `SpacetimeDB.Type.ParseEnum` for the syntax analysis.
+        //
+        // Note: this actually still uses reflection and allocates.
+        // It's hard to figure out how to avoid this without custom-generating a writer for each enum type.
         var tag = Convert.ToByte(value);
         if (tag < TagToValue.Length)
         {
-            writer.Write(Convert.ToByte(tag));
+            writer.Write(tag);
         }
         else
         {
