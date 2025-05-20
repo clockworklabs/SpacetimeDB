@@ -557,7 +557,7 @@ impl RelationalDB {
                 else {
                     break;
                 };
-                if min_commitlog_offset > 0 && min_commitlog_offset + 1 > snapshot_offset {
+                if min_commitlog_offset > 0 && min_commitlog_offset > snapshot_offset + 1 {
                     log::debug!(
                         "snapshot_offset={} min_commitlog_offset={}",
                         snapshot_offset,
