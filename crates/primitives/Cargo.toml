@@ -18,3 +18,6 @@ spacetimedb-memory-usage = { workspace = true, optional = true, default-features
 
 [dev-dependencies]
 proptest.workspace = true
+
+[lints]
+workspace = true

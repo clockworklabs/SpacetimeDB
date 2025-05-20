@@ -309,15 +309,11 @@ impl Table {
             let row_layout = this.row_layout();
 
             // Require that a scheduler table doesn't change the `id` and `at` fields.
-            let schedule_compat = schema
-                .schedule
-                .as_ref()
-                .zip(schema.pk())
-                .map_or(true, |(schedule, pk)| {
-                    let at_col = schedule.at_column.idx();
-                    let id_col = pk.col_pos.idx();
-                    row_layout[at_col] == new_row_layout[at_col] && row_layout[id_col] == new_row_layout[id_col]
-                });
+            let schedule_compat = schema.schedule.as_ref().zip(schema.pk()).is_none_or(|(schedule, pk)| {
+                let at_col = schedule.at_column.idx();
+                let id_col = pk.col_pos.idx();
+                row_layout[at_col] == new_row_layout[at_col] && row_layout[id_col] == new_row_layout[id_col]
+            });
 
             // The `row_layout` must also be compatible with the new.
             if schedule_compat && row_layout.is_compatible_with(new_row_layout) {

@@ -63,3 +63,6 @@ ron.workspace = true
 # Also as dev-dependencies for use in _this_ crate's tests.
 proptest.workspace = true
 proptest-derive.workspace = true
+
+[lints]
+workspace = true

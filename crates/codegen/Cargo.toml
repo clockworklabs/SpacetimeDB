@@ -21,3 +21,6 @@ fs-err.workspace = true
 insta.workspace = true
 regex.workspace = true
 spacetimedb-testing = { path = "../testing" }
+
+[lints]
+workspace = true
