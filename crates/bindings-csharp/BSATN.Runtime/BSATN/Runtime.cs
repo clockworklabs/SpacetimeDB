@@ -165,7 +165,7 @@ public readonly struct Enum<T> : IReadWrite<T>
         else
         {
             throw new ArgumentOutOfRangeException(
-                $"Enum {value} is malformed for type {typeof(T).Name}"
+                $"Value {value} is out of range for enum {typeof(T).Name}"
             );
         }
     }
