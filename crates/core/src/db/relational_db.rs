@@ -1488,6 +1488,9 @@ pub mod tests_utils {
         // nb: drop order is declaration order
         durable: Option<DurableState>,
         tmp_dir: TempReplicaDir,
+
+        /// Whether to construct a snapshot repository when restarting with [`Self::reopen`].
+        want_snapshot_repo: bool,
     }
 
     pub struct TempReplicaDir(ReplicaDir);
@@ -1528,6 +1531,7 @@ pub mod tests_utils {
 
                 durable: None,
                 tmp_dir: dir,
+                want_snapshot_repo: false,
             })
         }
 
@@ -1541,16 +1545,32 @@ pub mod tests_utils {
             let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build()?;
             // Enter the runtime so that `Self::durable_internal` can spawn a `SnapshotWorker`.
             let _rt = rt.enter();
-            let (db, handle) = Self::durable_internal(&dir, rt.handle().clone())?;
+            let (db, handle) = Self::durable_internal(&dir, rt.handle().clone(), true)?;
             let durable = DurableState { handle, rt };
 
             Ok(Self {
                 db,
                 durable: Some(durable),
                 tmp_dir: dir,
+                want_snapshot_repo: true,
             })
         }
 
+        pub fn durable_without_snapshot_repo() -> Result<Self, DBError> {
+            let dir = TempReplicaDir::new()?;
+            let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build()?;
+            // Enter the runtime so that `Self::durable_internal` can spawn a `SnapshotWorker`.
+            let _rt = rt.enter();
+            let (db, handle) = Self::durable_internal(&dir, rt.handle().clone(), false)?;
+            let durable = DurableState { handle, rt };
+
+            Ok(Self {
+                db,
+                durable: Some(durable),
+                tmp_dir: dir,
+                want_snapshot_repo: false,
+            })
+        }
         /// Create a [`TestDB`] which stores data in a local commitlog,
         /// initialized with pre-existing data from `history`.
         ///
@@ -1570,6 +1590,7 @@ pub mod tests_utils {
                 db,
                 durable: None,
                 tmp_dir: dir,
+                want_snapshot_repo: false,
             })
         }
 
@@ -1585,7 +1606,7 @@ pub mod tests_utils {
 
                 // Enter the runtime so that `Self::durable_internal` can spawn a `SnapshotWorker`.
                 let _rt = rt.enter();
-                let (db, handle) = Self::durable_internal(&self.tmp_dir, rt.handle().clone())?;
+                let (db, handle) = Self::durable_internal(&self.tmp_dir, rt.handle().clone(), self.want_snapshot_repo)?;
                 let durable = DurableState { handle, rt };
 
                 Ok(Self {
@@ -1645,7 +1666,9 @@ pub mod tests_utils {
             Option<tokio::runtime::Runtime>,
             TempReplicaDir,
         ) {
-            let Self { db, durable, tmp_dir } = self;
+            let Self {
+                db, durable, tmp_dir, ..
+            } = self;
             let (durability, rt) = durable
                 .map(|DurableState { handle, rt }| (Some(handle), Some(rt)))
                 .unwrap_or((None, None));
@@ -1659,12 +1682,15 @@ pub mod tests_utils {
         fn durable_internal(
             root: &ReplicaDir,
             rt: tokio::runtime::Handle,
+            want_snapshot_repo: bool,
         ) -> Result<(RelationalDB, Arc<durability::Local<ProductValue>>), DBError> {
             let (local, disk_size_fn) = rt.block_on(local_durability(root.commit_log()))?;
             let history = local.clone();
             let durability = local.clone() as Arc<Durability>;
-            let snapshot_repo = open_snapshot_repo(root.snapshots(), Identity::ZERO, 0)?;
-            let db = Self::open_db(root, history, Some((durability, disk_size_fn)), Some(snapshot_repo), 0)?;
+            let snapshot_repo = want_snapshot_repo
+                .then(|| open_snapshot_repo(root.snapshots(), Identity::ZERO, 0))
+                .transpose()?;
+            let db = Self::open_db(root, history, Some((durability, disk_size_fn)), snapshot_repo, 0)?;
 
             Ok((db, local))
         }
@@ -2925,5 +2951,51 @@ mod tests {
         );
 
         Ok(())
+    }
+
+    #[test]
+    /// Test that we can create a table after replaying a durable database
+    /// without a snapshot.
+    ///
+    /// Regression test for
+    /// [SpacetimeDB issue #2758](https://github.com/clockworklabs/SpacetimeDB/issues/2758).
+    /// Before [the fix](https://github.com/clockworklabs/SpacetimeDB/pull/2760),
+    /// this would fail because the sequence allocations for system table sequences,
+    /// including the one on `st_table.table_id`,
+    /// were not correctly reinitialized in memory after replaying a commitlog
+    /// into a database that had been [`Locking::bootstrap`]ped,
+    /// as opposed to restored from a snapshot.
+    fn repro_2758_create_table_after_replay_without_snapshot() {
+        // Create a new database which has an on-disk commitlog but no snapshots.
+        let stdb = TestDB::durable_without_snapshot_repo().expect("failed to create TestDB");
+
+        // Begin a transaction, create a table, then commit.
+        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let product_type = ProductType::from([("col_0", AlgebraicType::I32)]);
+        let schema = table("table_0", product_type.clone(), |builder| builder);
+        let table_0_id = stdb.create_table(&mut tx, schema).unwrap();
+        stdb.commit_tx(tx).unwrap();
+
+        // At this point, the sequence on `st_table.table_id` will have allocated once and advanced once,
+        // i.e. have `allocated = 8193`, `value = 4198`.
+
+        // Reopen the database. This will replay all the way from the commitlog,
+        // since we have no snapshot repository.
+        let stdb = stdb.reopen().unwrap();
+
+        // Begin a transaction, create another table, then commit.
+        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let other_schema = table("table_1", product_type.clone(), |builder| builder);
+        // Before the fix to issue #2758,
+        // this next call to `create_table` would fail with:
+        // ```
+        // called `Result::unwrap()` on an `Err` value: Index(UniqueConstraintViolation(UniqueConstraintViolation { constraint_name: "st_table_table_id_idx_btree", table_name: "st_table", cols: ["table_id"], value: U32(4097) }))
+        // ```
+        let table_1_id = stdb.create_table(&mut tx, other_schema).unwrap();
+        stdb.commit_tx(tx).unwrap();
+
+        // Quick sanity check: we actually got different table IDs,
+        // we didn't just fail to detect a unique constraint violation.
+        assert!(table_1_id > table_0_id);
     }
 }
