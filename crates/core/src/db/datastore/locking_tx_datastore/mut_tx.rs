@@ -480,7 +480,7 @@ impl MutTxId {
     /// - `index.index_id == IndexId::SENTINEL`
     /// - `index.table_id != TableId::SENTINEL`
     /// - `is_unique` must be `true` if and only if a unique constraint will exist on
-    ///     `ColSet::from(&index.index_algorithm.columns())` after this transaction is committed.
+    ///   `ColSet::from(&index.index_algorithm.columns())` after this transaction is committed.
     ///
     /// Ensures:
     /// - The index metadata is inserted into the system tables (and other data structures reflecting them).
@@ -746,7 +746,7 @@ impl MutTxId {
             let mut vals: Vec<_> = prefix.elements.into();
             vals.reserve(1 + suffix_len);
             vals.push(val);
-            vals.extend(iter::repeat(fill).take(suffix_len));
+            vals.extend(iter::repeat_n(fill, suffix_len));
             AlgebraicValue::product(vals)
         };
         // The start endpoint needs `Min` as the suffix-filling element,
@@ -945,7 +945,7 @@ impl MutTxId {
     /// - `constraint.constraint_id == ConstraintId::SENTINEL`
     /// - `constraint.table_id != TableId::SENTINEL`
     /// - `is_unique` must be `true` if and only if a unique constraint will exist on
-    ///     `ColSet::from(&constraint.constraint_algorithm.columns())` after this transaction is committed.
+    ///   `ColSet::from(&constraint.constraint_algorithm.columns())` after this transaction is committed.
     ///
     /// Ensures:
     /// - The constraint metadata is inserted into the system tables (and other data structures reflecting them).

@@ -37,3 +37,6 @@ anyhow.workspace = true
 env_logger.workspace = true
 pretty_assertions = { workspace = true, features = ["unstable"] }
 rand.workspace = true
+
+[lints]
+workspace = true

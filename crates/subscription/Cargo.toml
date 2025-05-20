@@ -14,3 +14,5 @@ spacetimedb-lib.workspace = true
 spacetimedb-primitives.workspace = true
 spacetimedb-physical-plan.workspace = true
 spacetimedb-query.workspace = true
+[lints]
+workspace = true

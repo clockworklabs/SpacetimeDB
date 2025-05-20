@@ -156,10 +156,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let out = termcolor::StandardStream::stdout(term_color);
     let mut out = out.lock();
 
-    let mut rdr = res
-        .bytes_stream()
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
-        .into_async_read();
+    let mut rdr = res.bytes_stream().map_err(io::Error::other).into_async_read();
     let mut line = String::new();
     while rdr.read_line(&mut line).await? != 0 {
         let record = serde_json::from_str::<Record<'_>>(&line)?;

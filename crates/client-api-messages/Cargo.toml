@@ -30,3 +30,6 @@ hex.workspace = true
 itertools.workspace = true
 proptest.workspace = true
 serde_json.workspace = true
+
+[lints]
+workspace = true

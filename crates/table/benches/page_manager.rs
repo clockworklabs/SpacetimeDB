@@ -781,8 +781,7 @@ fn insert_num_same<R: IndexedRow>(
     mut make_row: impl FnMut() -> R,
     num_same: usize,
 ) -> Option<RowPointer> {
-    iter::repeat(make_row().to_product())
-        .take(num_same)
+    iter::repeat_n(make_row().to_product(), num_same)
         .zip(0u32..)
         .map(|(mut row, n)| {
             if let Some(slot) = row.elements.get_mut(1) {
