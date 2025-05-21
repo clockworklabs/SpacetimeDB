@@ -269,6 +269,7 @@ impl SpacetimePaths {
 #[cfg(test)]
 mod tests {
     use std::path::Path;
+    use crate::{PathBufExt, RootDir, SpacetimePaths};
 
     #[cfg(not(windows))]
     mod vars {
@@ -317,11 +318,10 @@ mod tests {
     }
 
     #[cfg(windows)]
-    use super::*;
-
-    #[cfg(windows)]
     #[test]
     fn windows() {
+        use crate::SpacetimePaths;
+
         let paths = SpacetimePaths::platform_defaults().unwrap();
         let appdata_local = dirs::data_local_dir().unwrap();
         assert_eq!(paths.cli_config_dir.0, appdata_local.join("config"));
