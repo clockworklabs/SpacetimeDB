@@ -41,7 +41,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             "{}/v1/database/{database_identity}/names",
             config.get_host_url(server)?
         ))
-        .body(format!("[{}]", String::from(domain)));
+        .body(format!("[\"{}\"]", String::from(domain)));
     let builder = add_auth_header_opt(builder, &auth_header);
 
     let result = builder.send().await?.json_or_error().await?;
