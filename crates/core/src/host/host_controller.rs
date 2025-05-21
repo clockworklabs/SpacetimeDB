@@ -3,22 +3,23 @@ use super::scheduler::SchedulerStarter;
 use super::wasmtime::WasmtimeRuntime;
 use super::{Scheduler, UpdateDatabaseResult};
 use crate::database_logger::DatabaseLogger;
+use crate::worker_metrics::WORKER_METRICS;
+use spacetimedb_datastore::db_metrics::data_size::DATA_SIZE_METRICS;
 use spacetimedb_datastore::traits::Program;
-use crate::db::db_metrics::DB_METRICS;
+use spacetimedb_datastore::db_metrics::DB_METRICS;
 use crate::db::relational_db::{self, DiskSizeFn, RelationalDB, Txdata};
-use crate::db::{self, db_metrics};
+use spacetimedb_datastore::{self};
 use crate::energy::{EnergyMonitor, EnergyQuanta, NullEnergyMonitor};
 use crate::messages::control_db::{Database, HostType};
 use crate::module_host_context::ModuleCreationContext;
 use crate::replica_context::ReplicaContext;
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
-use crate::subscription::module_subscription_manager::SubscriptionManager;
 use crate::util::spawn_rayon;
 use anyhow::{anyhow, ensure, Context};
 use async_trait::async_trait;
 use durability::{Durability, EmptyHistory};
 use log::{info, trace, warn};
-use parking_lot::{Mutex, RwLock};
+use parking_lot::Mutex;
 use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_durability::{self as durability, TxOffset};
 use spacetimedb_lib::{hash_bytes, Identity};
@@ -444,7 +445,7 @@ impl HostController {
                 let module = host.module.borrow().clone();
                 module.exit().await;
                 let table_names = module.info().module_def.tables().map(|t| t.name.deref());
-                db_metrics::data_size::remove_database_gauges(&module.info().database_identity, table_names);
+                remove_database_gauges(&module.info().database_identity, table_names);
             }
         }
 
@@ -526,7 +527,7 @@ async fn make_replica_ctx(
     relational_db: Arc<RelationalDB>,
 ) -> anyhow::Result<ReplicaContext> {
     let logger = tokio::task::block_in_place(move || Arc::new(DatabaseLogger::open_today(path.module_logs())));
-    let subscriptions = Arc::new(RwLock::new(SubscriptionManager::default()));
+    let subscriptions = <_>::default();
     let downgraded = Arc::downgrade(&subscriptions);
     let subscriptions = ModuleSubscriptions::new(relational_db.clone(), subscriptions, database.owner_identity);
 
@@ -551,8 +552,8 @@ async fn make_replica_ctx(
         database,
         replica_id,
         logger,
-        relational_db,
         subscriptions,
+        relational_db,
     })
 }
 
@@ -936,20 +937,21 @@ const STORAGE_METERING_INTERVAL: Duration = Duration::from_secs(15);
 /// Periodically collect gauge stats and update prometheus metrics.
 async fn metric_reporter(replica_ctx: Arc<ReplicaContext>) {
     // TODO: Consider adding a metric for heap usage.
+    let message_log_size = DB_METRICS
+        .message_log_size
+        .with_label_values(&replica_ctx.database_identity);
+    let module_log_file_size = DB_METRICS
+        .module_log_file_size
+        .with_label_values(&replica_ctx.database_identity);
+
     loop {
         let disk_usage = tokio::task::block_in_place(|| replica_ctx.total_disk_usage());
         replica_ctx.update_gauges();
         if let Some(num_bytes) = disk_usage.durability {
-            DB_METRICS
-                .message_log_size
-                .with_label_values(&replica_ctx.database_identity)
-                .set(num_bytes as i64);
+            message_log_size.set(num_bytes as i64);
         }
         if let Some(num_bytes) = disk_usage.logs {
-            DB_METRICS
-                .module_log_file_size
-                .with_label_values(&replica_ctx.database_identity)
-                .set(num_bytes as i64);
+            module_log_file_size.set(num_bytes as i64);
         }
         tokio::time::sleep(STORAGE_METERING_INTERVAL).await;
     }
@@ -977,4 +979,33 @@ pub async fn extract_schema(program_bytes: Box<[u8]>, host_type: HostType) -> an
     let module_info = Arc::into_inner(module_info).unwrap();
 
     Ok(module_info.module_def)
+}
+
+// Remove all gauges associated with a database.
+// This is useful if a database is being deleted.
+pub fn remove_database_gauges<'a, I>(db: &Identity, table_names: I)
+where
+    I: IntoIterator<Item = &'a str>,
+{
+    // Remove the per-table gauges.
+    for table_name in table_names {
+        let _ = DATA_SIZE_METRICS
+            .data_size_table_num_rows
+            .remove_label_values(db, table_name);
+        let _ = DATA_SIZE_METRICS
+            .data_size_table_bytes_used_by_rows
+            .remove_label_values(db, table_name);
+        let _ = DATA_SIZE_METRICS
+            .data_size_table_num_rows_in_indexes
+            .remove_label_values(db, table_name);
+        let _ = DATA_SIZE_METRICS
+            .data_size_table_bytes_used_by_index_keys
+            .remove_label_values(db, table_name);
+    }
+    // Remove the per-db gauges.
+    let _ = DATA_SIZE_METRICS.data_size_blob_store_num_blobs.remove_label_values(db);
+    let _ = DATA_SIZE_METRICS
+        .data_size_blob_store_bytes_used_by_blobs
+        .remove_label_values(db);
+    let _ = WORKER_METRICS.wasm_memory_bytes.remove_label_values(db);
 }

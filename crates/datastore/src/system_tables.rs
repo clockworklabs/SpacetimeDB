@@ -39,37 +39,37 @@ use v9::{RawModuleDefV9Builder, TableType};
 use crate::error::DatastoreError;
 
 /// The static ID of the table that defines tables
-pub(crate) const ST_TABLE_ID: TableId = TableId(1);
+pub const ST_TABLE_ID: TableId = TableId(1);
 /// The static ID of the table that defines columns
-pub(crate) const ST_COLUMN_ID: TableId = TableId(2);
+pub const ST_COLUMN_ID: TableId = TableId(2);
 /// The static ID of the table that defines sequences
-pub(crate) const ST_SEQUENCE_ID: TableId = TableId(3);
+pub const ST_SEQUENCE_ID: TableId = TableId(3);
 /// The static ID of the table that defines indexes
-pub(crate) const ST_INDEX_ID: TableId = TableId(4);
+pub const ST_INDEX_ID: TableId = TableId(4);
 /// The static ID of the table that defines constraints
-pub(crate) const ST_CONSTRAINT_ID: TableId = TableId(5);
+pub const ST_CONSTRAINT_ID: TableId = TableId(5);
 /// The static ID of the table that defines the stdb module associated with
 /// the database
-pub(crate) const ST_MODULE_ID: TableId = TableId(6);
+pub const ST_MODULE_ID: TableId = TableId(6);
 /// The static ID of the table that defines connected clients
-pub(crate) const ST_CLIENT_ID: TableId = TableId(7);
+pub const ST_CLIENT_ID: TableId = TableId(7);
 /// The static ID of the table that defines system variables
-pub(crate) const ST_VAR_ID: TableId = TableId(8);
+pub const ST_VAR_ID: TableId = TableId(8);
 /// The static ID of the table that defines scheduled tables
-pub(crate) const ST_SCHEDULED_ID: TableId = TableId(9);
+pub const ST_SCHEDULED_ID: TableId = TableId(9);
 
 /// The static ID of the table that defines the row level security (RLS) policies
-pub(crate) const ST_ROW_LEVEL_SECURITY_ID: TableId = TableId(10);
-pub(crate) const ST_TABLE_NAME: &str = "st_table";
-pub(crate) const ST_COLUMN_NAME: &str = "st_column";
-pub(crate) const ST_SEQUENCE_NAME: &str = "st_sequence";
-pub(crate) const ST_INDEX_NAME: &str = "st_index";
-pub(crate) const ST_CONSTRAINT_NAME: &str = "st_constraint";
-pub(crate) const ST_MODULE_NAME: &str = "st_module";
-pub(crate) const ST_CLIENT_NAME: &str = "st_client";
-pub(crate) const ST_SCHEDULED_NAME: &str = "st_scheduled";
-pub(crate) const ST_VAR_NAME: &str = "st_var";
-pub(crate) const ST_ROW_LEVEL_SECURITY_NAME: &str = "st_row_level_security";
+pub const ST_ROW_LEVEL_SECURITY_ID: TableId = TableId(10);
+pub const ST_TABLE_NAME: &str = "st_table";
+pub const ST_COLUMN_NAME: &str = "st_column";
+pub const ST_SEQUENCE_NAME: &str = "st_sequence";
+pub const ST_INDEX_NAME: &str = "st_index";
+pub const ST_CONSTRAINT_NAME: &str = "st_constraint";
+pub const ST_MODULE_NAME: &str = "st_module";
+pub const ST_CLIENT_NAME: &str = "st_client";
+pub const ST_SCHEDULED_NAME: &str = "st_scheduled";
+pub const ST_VAR_NAME: &str = "st_var";
+pub const ST_ROW_LEVEL_SECURITY_NAME: &str = "st_row_level_security";
 /// Reserved range of sequence values used for system tables.
 ///
 /// Ids for user-created tables will start at `ST_RESERVED_SEQUENCE_RANGE + 1`.
@@ -83,7 +83,7 @@ pub(crate) const ST_ROW_LEVEL_SECURITY_NAME: &str = "st_row_level_security";
 ///
 /// However unlikely it may seem, it is advisable to check for overflow in the
 /// test suite when adding sequences to system tables.
-pub(crate) const ST_RESERVED_SEQUENCE_RANGE: u32 = 4096;
+pub const ST_RESERVED_SEQUENCE_RANGE: u32 = 4096;
 
 // This help to keep the correct order when bootstrapping
 #[allow(non_camel_case_types)]
@@ -97,7 +97,7 @@ pub enum SystemTable {
     st_row_level_security,
 }
 
-pub(crate) fn system_tables() -> [TableSchema; 10] {
+pub fn system_tables() -> [TableSchema; 10] {
     [
         // The order should match the `id` of the system table, that start with [ST_TABLE_IDX].
         st_table_schema(),

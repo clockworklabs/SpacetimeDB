@@ -57,20 +57,19 @@ mod tests {
     use spacetimedb_lib::st_var::StVarValue;
     use spacetimedb_lib::ProductValue;
 
-    use crate::db::relational_db::tests_utils::{insert, TestDB};
+    use crate::db::relational_db::tests_utils::{begin_tx, insert, with_auto_commit, TestDB};
     use crate::db::relational_db::RelationalDB;
-    use crate::execution_context::Workload;
     use spacetimedb_sats::{product, AlgebraicType};
     use spacetimedb_vm::relation::MemTable;
 
     fn run_query(db: &RelationalDB, sql: String) -> ResultTest<MemTable> {
-        let tx = db.begin_tx(Workload::ForTests);
+        let tx = begin_tx(db);
         let q = compile_sql(db, &AuthCtx::for_testing(), &tx, &sql)?;
         Ok(execute_for_testing(db, &sql, q)?.pop().unwrap())
     }
 
     fn run_query_write(db: &RelationalDB, sql: String) -> ResultTest<()> {
-        let tx = db.begin_tx(Workload::ForTests);
+        let tx = begin_tx(db);
         let q = compile_sql(db, &AuthCtx::for_testing(), &tx, &sql)?;
         drop(tx);
 
@@ -85,13 +84,13 @@ mod tests {
         let table_id =
             db.create_table_for_test("test", &[("x", AlgebraicType::I32), ("y", AlgebraicType::I32)], &[])?;
 
-        db.with_auto_commit(Workload::ForTests, |tx| -> ResultTest<_> {
+        with_auto_commit(&db, |tx| -> ResultTest<_> {
             for i in 0..100_000 {
                 insert(&db, tx, table_id, &product![i, i * 2])?;
             }
             Ok(())
         })?;
-        let tx = db.begin_tx(Workload::ForTests);
+        let tx = begin_tx(&db);
 
         let sql = "select * from test where x > 0";
         let q = compile_sql(&db, &AuthCtx::for_testing(), &tx, sql)?;

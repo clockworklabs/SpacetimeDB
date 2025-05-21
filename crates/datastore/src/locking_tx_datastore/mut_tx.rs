@@ -1,6 +1,6 @@
 use super::{
     committed_state::{CommitTableForInsertion, CommittedState},
-    datastore::{record_tx_metrics, Result},
+    datastore::{Result, TxMetrics},
     delete_table::DeleteTable,
     sequence::{Sequence, SequencesState},
     state_view::{IterByColEqMutTx, IterByColRangeMutTx, IterMutTx, ScanIterByColRangeMutTx, StateView},
@@ -64,7 +64,7 @@ pub struct MutTxId {
     pub(super) committed_state_write_lock: SharedWriteGuard<CommittedState>,
     pub(super) sequence_state_lock: SharedMutexGuard<SequencesState>,
     pub(super) lock_wait_time: Duration,
-    pub(crate) timer: Instant,
+    pub timer: Instant,
     pub ctx: ExecutionContext,
     pub metrics: ExecutionMetrics,
 }
@@ -1082,98 +1082,127 @@ impl MutTxId {
         })
     }
 
-    pub fn commit(self) -> TxData {
-        let Self {
-            mut committed_state_write_lock,
-            tx_state,
-            ..
-        } = self;
-        let tx_data = committed_state_write_lock.merge(tx_state, &self.ctx);
-        // Record metrics for the transaction at the very end,
-        // right before we drop and release the lock.
-        record_tx_metrics(
+    /// Commits this transaction, applying its changes to the committed state.
+    ///
+    /// Returns:
+    /// - [`TxData`], the set of inserts and deletes performed by this transaction.
+    /// - [`TxMetrics`], various measurements of the work performed by this transaction.
+    /// - `String`, the name of the reducer which ran during this transaction.
+    pub fn commit(mut self) -> (TxData, TxMetrics, String) {
+        let tx_data = self.committed_state_write_lock.merge(self.tx_state, &self.ctx);
+
+        // Compute and keep enough info that we can
+        // record metrics after the transaction has ended
+        // and after the lock has been dropped.
+        // Recording metrics when holding the lock is too expensive.
+        let tx_metrics = TxMetrics::new(
             &self.ctx,
             self.timer,
             self.lock_wait_time,
+            self.metrics,
             true,
             Some(&tx_data),
-            Some(&committed_state_write_lock),
-            self.metrics,
+            &self.committed_state_write_lock,
         );
-        tx_data
+        let reducer = self.ctx.into_reducer_name();
+
+        (tx_data, tx_metrics, reducer)
     }
 
-    pub fn commit_downgrade(mut self, workload: Workload) -> (TxData, TxId) {
-        let Self {
-            mut committed_state_write_lock,
-            tx_state,
-            ..
-        } = self;
-        let tx_data = committed_state_write_lock.merge(tx_state, &self.ctx);
-        // Record metrics for the transaction at the very end,
-        // right before we drop and release the lock.
-        record_tx_metrics(
+    /// Commits this transaction, applying its changes to the committed state.
+    /// The lock on the committed state is converted into a read lock,
+    /// and returned as a new read-only transaction.
+    ///
+    /// Returns:
+    /// - [`TxData`], the set of inserts and deletes performed by this transaction.
+    /// - [`TxMetrics`], various measurements of the work performed by this transaction.
+    /// - [`TxId`], a read-only transaction with a shared lock on the committed state.
+    pub fn commit_downgrade(mut self, workload: Workload) -> (TxData, TxMetrics, TxId) {
+        let tx_data = self.committed_state_write_lock.merge(self.tx_state, &self.ctx);
+
+        // Compute and keep enough info that we can
+        // record metrics after the transaction has ended
+        // and after the lock has been dropped.
+        // Recording metrics when holding the lock is too expensive.
+        let tx_metrics = TxMetrics::new(
             &self.ctx,
             self.timer,
             self.lock_wait_time,
+            self.metrics,
             true,
             Some(&tx_data),
-            Some(&committed_state_write_lock),
-            self.metrics,
+            &self.committed_state_write_lock,
         );
+
         // Update the workload type of the execution context
-        self.ctx.workload = workload.into();
+        self.ctx.workload = workload.workload_type();
         let tx = TxId {
-            committed_state_shared_lock: SharedWriteGuard::downgrade(committed_state_write_lock),
-            lock_wait_time: Duration::ZERO,
-            timer: Instant::now(),
-            ctx: self.ctx,
-            metrics: ExecutionMetrics::default(),
-        };
-        (tx_data, tx)
-    }
-
-    pub fn rollback(mut self) {
-        self.committed_state_write_lock
-            .rollback(&mut self.sequence_state_lock, self.tx_state);
-
-        // Record metrics for the transaction at the very end,
-        // right before we drop and release the lock.
-        record_tx_metrics(
-            &self.ctx,
-            self.timer,
-            self.lock_wait_time,
-            false,
-            None,
-            None,
-            self.metrics,
-        );
-    }
-
-    pub fn rollback_downgrade(mut self, workload: Workload) -> TxId {
-        self.committed_state_write_lock
-            .rollback(&mut self.sequence_state_lock, self.tx_state);
-
-        // Record metrics for the transaction at the very end,
-        // right before we drop and release the lock.
-        record_tx_metrics(
-            &self.ctx,
-            self.timer,
-            self.lock_wait_time,
-            false,
-            None,
-            None,
-            self.metrics,
-        );
-        // Update the workload type of the execution context
-        self.ctx.workload = workload.into();
-        TxId {
             committed_state_shared_lock: SharedWriteGuard::downgrade(self.committed_state_write_lock),
             lock_wait_time: Duration::ZERO,
             timer: Instant::now(),
             ctx: self.ctx,
             metrics: ExecutionMetrics::default(),
-        }
+        };
+
+        (tx_data, tx_metrics, tx)
+    }
+
+    /// Rolls back this transaction, discarding its changes.
+    ///
+    /// Returns:
+    /// - [`TxMetrics`], various measurements of the work performed by this transaction.
+    /// - `String`, the name of the reducer which ran during this transaction.
+    pub fn rollback(self) -> (TxMetrics, String) {
+        // Compute and keep enough info that we can
+        // record metrics after the transaction has ended
+        // and after the lock has been dropped.
+        // Recording metrics when holding the lock is too expensive.
+        let tx_metrics = TxMetrics::new(
+            &self.ctx,
+            self.timer,
+            self.lock_wait_time,
+            self.metrics,
+            true,
+            None,
+            &self.committed_state_write_lock,
+        );
+        let reducer = self.ctx.into_reducer_name();
+        (tx_metrics, reducer)
+    }
+
+    /// Roll back this transaction, discarding its changes.
+    /// The lock on the committed state is converted into a read lock,
+    /// and returned as a new read-only transaction.
+    ///
+    /// Returns:
+    /// - [`TxMetrics`], various measurements of the work performed by this transaction.
+    /// - [`TxId`], a read-only transaction with a shared lock on the committed state.
+    pub fn rollback_downgrade(mut self, workload: Workload) -> (TxMetrics, TxId) {
+        // Compute and keep enough info that we can
+        // record metrics after the transaction has ended
+        // and after the lock has been dropped.
+        // Recording metrics when holding the lock is too expensive.
+        let tx_metrics = TxMetrics::new(
+            &self.ctx,
+            self.timer,
+            self.lock_wait_time,
+            self.metrics,
+            true,
+            None,
+            &self.committed_state_write_lock,
+        );
+
+        // Update the workload type of the execution context
+        self.ctx.workload = workload.workload_type();
+        let tx = TxId {
+            committed_state_shared_lock: SharedWriteGuard::downgrade(self.committed_state_write_lock),
+            lock_wait_time: Duration::ZERO,
+            timer: Instant::now(),
+            ctx: self.ctx,
+            metrics: ExecutionMetrics::default(),
+        };
+
+        (tx_metrics, tx)
     }
 }
 
@@ -1233,7 +1262,7 @@ impl<'a, I: Iterator<Item = RowRef<'a>>> Iterator for FilterDeleted<'a, I> {
 }
 
 impl MutTxId {
-    pub(crate) fn insert_st_client(&mut self, identity: Identity, connection_id: ConnectionId) -> Result<()> {
+    pub fn insert_st_client(&mut self, identity: Identity, connection_id: ConnectionId) -> Result<()> {
         let row = &StClientRow {
             identity: identity.into(),
             connection_id: connection_id.into(),
@@ -1241,7 +1270,7 @@ impl MutTxId {
         self.insert_via_serialize_bsatn(ST_CLIENT_ID, row).map(|_| ())
     }
 
-    pub(crate) fn delete_st_client(
+    pub fn delete_st_client(
         &mut self,
         identity: Identity,
         connection_id: ConnectionId,
