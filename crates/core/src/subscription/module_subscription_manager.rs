@@ -320,6 +320,17 @@ pub struct SubscriptionManager {
     search_args: SearchArguments,
 }
 
+// This is a representation of the current subscription sets.
+// This uses vecs and tuples instead of more human-readable types for the sake of efficiency.
+#[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct SubscriptionSetSnapshot {
+    // The sql definitions of all the actively subscribed queries.
+    pub queries: Vec<(QueryHash, String)>,
+
+    // For each client, the list of active subscription sets.
+    pub clients: Vec<(ClientId, Vec<Vec<QueryHash>>)>,
+}
+
 // Tracks some gauges related to subscriptions.
 pub struct SubscriptionGaugeStats {
     // The number of unique queries with at least one subscriber.
@@ -335,6 +346,22 @@ pub struct SubscriptionGaugeStats {
 }
 
 impl SubscriptionManager {
+    pub fn build_snapshot(&self) -> SubscriptionSetSnapshot {
+        let mut queries = Vec::with_capacity(self.queries.len());
+        for (hash, state) in &self.queries {
+            queries.push((*hash, state.query.sql().to_string()));
+        }
+        let mut clients = Vec::with_capacity(self.clients.len());
+        for (client_id, client_info) in &self.clients {
+            let mut subscriptions = Vec::with_capacity(client_info.subscriptions.len());
+            for (_, query_hashes) in &client_info.subscriptions {
+                subscriptions.push(query_hashes.iter().copied().collect());
+            }
+            clients.push((*client_id, subscriptions));
+        }
+        SubscriptionSetSnapshot { queries, clients }
+    }
+
     pub fn client(&self, id: &ClientId) -> Client {
         self.clients[id].outbound_ref.clone()
     }
@@ -1096,7 +1123,7 @@ mod tests {
     use spacetimedb_sats::product;
     use spacetimedb_subscription::SubscriptionPlan;
 
-    use super::{Plan, SubscriptionManager};
+    use super::{Plan, SubscriptionManager, SubscriptionSetSnapshot};
     use crate::execution_context::Workload;
     use crate::host::module_host::DatabaseTableUpdate;
     use crate::sql::ast::SchemaViewer;
@@ -1246,6 +1273,30 @@ mod tests {
         subscriptions.remove_subscription(client_id, query_id)?;
 
         assert!(subscriptions.query_reads_from_table(&hash, &table_id));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_snapshot_serde() -> ResultTest<()> {
+        let db = TestDB::in_memory()?;
+
+        create_table(&db, "T")?;
+        let sql = "select * from T";
+        let plan = compile_plan(&db, sql)?;
+        let hash = plan.hash();
+
+        let client = Arc::new(client(0));
+
+        let query_id: ClientQueryId = QueryId::new(1);
+        let mut subscriptions = SubscriptionManager::default();
+        subscriptions.add_subscription(client.clone(), plan.clone(), query_id)?;
+        subscriptions.add_subscription(client.clone(), plan.clone(), QueryId::new(2))?;
+        let snapshot = subscriptions.build_snapshot();
+        let as_json = serde_json::to_string(&snapshot)?;
+        let parsed = serde_json::from_str::<SubscriptionSetSnapshot>(&as_json)?;
+        assert_eq!(parsed, snapshot);
+        assert_eq!(parsed.queries[0].0, hash);
 
         Ok(())
     }

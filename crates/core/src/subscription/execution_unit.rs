@@ -37,6 +37,7 @@ use std::time::Duration;
 /// as is the case for incremental joins.
 /// And we want to associate a hash with the entire unit of execution,
 /// rather than an individual plan.
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct QueryHash {
     data: [u8; 32],
@@ -45,6 +46,34 @@ pub struct QueryHash {
 impl From<QueryHash> for u256 {
     fn from(hash: QueryHash) -> Self {
         u256::from_le_bytes(hash.data)
+    }
+}
+
+impl From<u256> for QueryHash {
+    fn from(value: u256) -> Self {
+        QueryHash {
+            data: value.to_le_bytes(),
+        }
+    }
+}
+
+impl serde::Serialize for QueryHash {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let int: u256 = (*self).into();
+        int.serialize(serializer)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for QueryHash {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let int = u256::deserialize(deserializer)?;
+        Ok(QueryHash::from(int))
     }
 }
 

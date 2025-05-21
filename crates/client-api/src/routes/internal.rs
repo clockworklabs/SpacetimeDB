@@ -1,4 +1,8 @@
-use crate::NodeDelegate;
+use crate::routes::database::{DatabaseParam, NO_SUCH_DATABASE};
+use crate::{log_and_500, ControlStateDelegate, NodeDelegate};
+use axum::extract::{Path, State};
+use axum::response::IntoResponse;
+use http::StatusCode;
 
 #[cfg(not(target_env = "msvc"))]
 mod jemalloc_profiling {
@@ -153,10 +157,38 @@ mod jemalloc_profiling {
     }
 }
 
+// Get the set of active subscriptions for a database.
+// This is an internal debugging function, which is why it is not in the public API.
+pub async fn view_subscriptions<S: ControlStateDelegate + NodeDelegate>(
+    State(worker_ctx): State<S>,
+    Path(DatabaseParam { name_or_identity }): Path<DatabaseParam>,
+) -> axum::response::Result<impl IntoResponse> {
+    let db_identity = name_or_identity.resolve(&worker_ctx).await?;
+    let database = crate::routes::database::worker_ctx_find_database(&worker_ctx, &db_identity)
+        .await?
+        .ok_or_else(|| {
+            log::error!("Could not find database: {}", db_identity.to_hex());
+            NO_SUCH_DATABASE
+        })?;
+    let leader = worker_ctx
+        .leader(database.id)
+        .await
+        .map_err(log_and_500)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+    let module = leader.module().await.map_err(log_and_500)?;
+    let subscription_snapshot = module.subscriptions().get_snapshot();
+    Ok(axum::Json(subscription_snapshot))
+}
+
 // The internal router is for things that are not meant to be exposed to the public API.
 pub fn router<S>() -> axum::Router<S>
 where
-    S: NodeDelegate + Clone + 'static,
+    S: NodeDelegate + ControlStateDelegate + Clone + 'static,
 {
-    axum::Router::new().nest("/heap", jemalloc_profiling::jemalloc_router())
+    axum::Router::new()
+        .nest("/heap", jemalloc_profiling::jemalloc_router())
+        .route(
+            "/database/:name_or_identity/subscriptions",
+            axum::routing::get(view_subscriptions::<S>),
+        )
 }

@@ -1,5 +1,5 @@
 use super::execution_unit::QueryHash;
-use super::module_subscription_manager::{Plan, SubscriptionGaugeStats, SubscriptionManager};
+use super::module_subscription_manager::{Plan, SubscriptionGaugeStats, SubscriptionManager, SubscriptionSetSnapshot};
 use super::query::compile_query_with_hashes;
 use super::tx::DeltaTx;
 use super::{collect_table_update, record_exec_metrics, TableUpdateType};
@@ -515,6 +515,11 @@ impl ModuleSubscriptions {
         }
 
         Ok((plans, auth, scopeguard::ScopeGuard::into_inner(tx)))
+    }
+
+    pub fn get_snapshot(&self) -> SubscriptionSetSnapshot {
+        let subscriptions = self.subscriptions.read();
+        subscriptions.build_snapshot()
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
