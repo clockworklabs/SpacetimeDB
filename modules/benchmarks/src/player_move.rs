@@ -1,6 +1,7 @@
 use spacetimedb::log;
 use spacetimedb::ReducerContext;
 use spacetimedb::SpacetimeType;
+use spacetimedb::Timestamp;
 
 #[macro_export]
 macro_rules! unwrap_or_err(
@@ -78,6 +79,41 @@ pub enum CharacterStatType {
     TeleportationEnergyRegenRate,
 }
 
+#[derive(SpacetimeType, Clone, Debug)]
+pub struct ActiveBuff {
+    pub buff_id: i32,
+    pub buff_start_timestamp: OnlineTimestamp,
+    pub buff_duration: i32,
+    pub values: Vec<f32>,
+}
+
+#[derive(SpacetimeType, Clone)]
+pub struct ExperienceStackF32 {
+    pub skill_id: i32,
+    pub quantity: f32,
+}
+
+#[derive(SpacetimeType, Clone, Debug)]
+pub struct InputItemStack {
+    pub item_id: i32,
+    pub quantity: i32,
+    pub item_type: ItemType,
+    pub discovery_score: i32,
+    pub consumption_chance: f32,
+}
+
+#[derive(SpacetimeType, Clone, Debug)]
+pub struct OnlineTimestamp {
+    pub value: i32,
+}
+
+#[derive(SpacetimeType, Debug, Clone)]
+pub struct CsvStatEntry {
+    pub id: CharacterStatType,
+    pub value: f32,
+    pub is_pct: bool,
+}
+
 #[spacetimedb::table(name = paved_tile_state, public)]
 #[derive(bitcraft_macro::Operations, Clone)]
 #[operations(delete)]
@@ -89,6 +125,76 @@ pub struct PavedTileState {
 
     pub tile_type_id: i32,
     pub related_entity_id: u64, // optional : when this related entitiy is deleted, delete this paving instance as well
+}
+
+#[spacetimedb::table(name = mounting_state, public, index(name = deployable_entity_id, btree(columns = [deployable_entity_id])))]
+#[derive(bitcraft_macro::Operations, Clone)]
+#[operations(delete)]
+pub struct MountingState {
+    // Sort fields in order of decreasing size/alignment
+    // to take advantage of a serialization fast-path in SpacetimeDB.
+    #[primary_key]
+    pub entity_id: u64,
+
+    pub deployable_entity_id: u64,
+    pub deployable_slot: i32,
+}
+
+#[spacetimedb::table(name = active_buff_state, public)]
+#[derive(Clone, bitcraft_macro::Operations, Debug)]
+#[operations(delete)]
+pub struct ActiveBuffState {
+    #[primary_key]
+    pub entity_id: u64,
+
+    pub active_buffs: Vec<ActiveBuff>,
+}
+
+#[spacetimedb::table(name = claim_state, public, 
+    index(name = owner_player_entity_id, btree(columns = [owner_player_entity_id])),
+    index(name = name, btree(columns = [name])), 
+    index(name = neutral, btree(columns = [neutral])))]
+#[derive(bitcraft_macro::Operations, Clone, Debug)]
+#[shared_table] //Owned by region, replicated to global module
+#[operations(delete)]
+pub struct ClaimState {
+    #[primary_key]
+    pub entity_id: u64,
+    pub owner_player_entity_id: u64,
+    #[unique]
+    pub owner_building_entity_id: u64,
+    pub name: String,
+    pub neutral: bool,
+}
+
+// Keep all players affected by long term rez sickness to improve player_move
+#[spacetimedb::table(name = rez_sick_long_term_state)]
+#[derive(Clone, bitcraft_macro::Operations)]
+#[operations(delete)]
+pub struct RezSickLongTermState {
+    #[primary_key]
+    pub entity_id: u64,
+}
+
+#[spacetimedb::table(name = exploration_chunks_state, public)]
+#[derive(Clone, bitcraft_macro::Operations, Debug)]
+#[operations(delete)]
+pub struct ExplorationChunksState {
+    #[primary_key]
+    pub entity_id: u64,
+
+    pub bitmap: Vec<u64>, //Essentially a bitfield. Index=(Z*W+X)/64, bit=(Z*W+X)%64
+    pub explored_chunks_count: i32,
+}
+
+#[spacetimedb::table(name = character_stats_state, public)]
+#[derive(bitcraft_macro::Operations, Clone, Debug)]
+#[operations(delete)]
+pub struct CharacterStatsState {
+    #[primary_key]
+    pub entity_id: u64,
+
+    pub values: Vec<f32>,
 }
 
 #[derive(Default, Clone, SpacetimeType, Debug)]
@@ -360,6 +466,41 @@ pub fn player_move(ctx: &ReducerContext, mut request: PlayerMoveRequest) -> Resu
     Ok(())
 }
 
+#[spacetimedb::table(name = building_desc, public)]
+pub struct BuildingDesc {
+    #[primary_key]
+    pub id: i32,
+    pub functions: Vec<BuildingFunction>,
+    pub name: String,
+    pub description: String,
+    pub rested_buff_duration: i32,
+    pub light_radius: i32,
+    pub model_asset_name: String,
+    pub icon_asset_name: String,
+    pub unenterable: bool,
+    pub wilderness: bool,
+    pub footprint: Vec<FootprintTile>,
+    pub max_health: i32,
+    pub ignore_damage: bool,
+    pub defense_level: i32,
+    pub decay: f32,
+    pub maintenance: f32,
+    pub build_permission: BuildingInteractionLevel,
+    pub interact_permission: BuildingInteractionLevel,
+    pub has_action: bool,
+    pub show_in_compendium: bool,
+    pub is_ruins: bool,
+    pub not_deconstructible: bool,
+}
+
+#[spacetimedb::table(name = parameters_player_move_desc)]
+#[derive(Default)]
+pub struct ParametersPlayerMoveDesc {
+    #[primary_key]
+    pub version: i32,
+    pub default_speed: Vec<MovementSpeed>,
+}
+
 impl PlayerState {
     pub fn move_player_and_explore(
         ctx: &ReducerContext,
@@ -505,6 +646,89 @@ impl PlayerState {
 
         Ok(())
     }
+}
+
+#[derive(spacetimedb::SpacetimeType, Clone, Copy, Debug, Default, PartialEq, Eq, EnumIter, PartialOrd, Ord, Hash)]
+#[sats(name = "SurfaceType")]
+#[repr(u8)]
+pub enum SurfaceType {
+    #[default]
+    Ground,
+    Lake,
+    River,
+    Ocean,
+    OceanBiome,
+    Swamp,
+}
+
+#[spacetimedb::table(name = move_validation_strike_counter_state)]
+#[derive(Clone, bitcraft_macro::Operations, Debug)]
+#[operations(delete)]
+pub struct MoveValidationStrikeCounterState {
+    #[primary_key]
+    pub entity_id: u64,
+    pub validation_failure_timestamps: Vec<Timestamp>,
+}
+
+pub struct Knowledges {
+    pub knowledge_achievement: Vec<KnowledgeEntry>,
+    pub knowledge_achievement_hash: i32,
+    pub knowledge_battle_action: Vec<KnowledgeEntry>,
+    pub knowledge_battle_action_hash: i32,
+    pub knowledge_building: Vec<KnowledgeEntry>,
+    pub knowledge_building_hash: i32,
+    pub knowledge_cargo: Vec<KnowledgeEntry>,
+    pub knowledge_cargo_hash: i32,
+    pub knowledge_claim: Vec<KnowledgeEntityEntry>,
+    pub knowledge_claim_hash: i32,
+    pub knowledge_construction: Vec<KnowledgeEntry>,
+    pub knowledge_construction_hash: i32,
+    pub knowledge_craft: Vec<KnowledgeEntry>,
+    pub knowledge_craft_hash: i32,
+    pub knowledge_deployable: Vec<KnowledgeEntry>,
+    pub knowledge_deployable_hash: i32,
+    pub knowledge_enemy: Vec<KnowledgeEntry>,
+    pub knowledge_enemy_hash: i32,
+    pub knowledge_extract: Vec<KnowledgeEntry>,
+    pub knowledge_extract_hash: i32,
+    pub knowledge_item: Vec<KnowledgeEntry>,
+    pub knowledge_item_hash: i32,
+    pub knowledge_lore: Vec<KnowledgeEntry>,
+    pub knowledge_lore_hash: i32,
+    pub knowledge_npc: Vec<KnowledgeEntry>,
+    pub knowledge_npc_hash: i32,
+    pub knowledge_paving: Vec<KnowledgeEntry>,
+    pub knowledge_paving_hash: i32,
+    pub knowledge_pillar_shaping: Vec<KnowledgeEntry>,
+    pub knowledge_pillar_shaping_hash: i32,
+    pub knowledge_resource_placement: Vec<KnowledgeEntry>,
+    pub knowledge_resource_placement_hash: i32,
+    pub knowledge_resource: Vec<KnowledgeEntry>,
+    pub knowledge_resource_hash: i32,
+    pub knowledge_ruins: Vec<KnowledgeLocationEntry>,
+    pub knowledge_ruins_hash: i32,
+    pub knowledge_secondary: Vec<KnowledgeEntry>,
+    pub knowledge_secondary_hash: i32,
+    pub knowledge_vault: Vec<KnowledgeEntry>,
+    pub knowledge_vault_hash: i32,
+}
+
+#[derive(SpacetimeType, Clone, Debug)]
+pub struct KnowledgeEntry {
+    pub id: i32,
+    pub state: KnowledgeState,
+}
+
+#[derive(SpacetimeType, Clone, Debug)]
+pub struct KnowledgeEntityEntry {
+    pub entity_id: u64,
+    pub state: KnowledgeState,
+}
+
+#[derive(SpacetimeType, Clone, Debug)]
+pub struct KnowledgeLocationEntry {
+    pub location: OffsetCoordinatesSmallMessage,
+    pub state: KnowledgeState,
 }
 
 #[spacetimedb::table(name = knowledge_achievement_state, public)]
@@ -1674,6 +1898,15 @@ pub struct CharacterStatDesc {
     pub desc: String,
 }
 
+#[spacetimedb::table(name = private_parameters_desc)]
+#[derive(Debug)]
+pub struct PrivateParametersDesc {
+    #[primary_key]
+    pub version: i32,
+
+    pub move_validation: MoveValidationParamsDesc,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, spacetimedb::SpacetimeType)]
 #[sats(name = "TeleportLocationType")]
 #[repr(i32)]
@@ -1691,7 +1924,93 @@ impl Default for TeleportLocationType {
     }
 }
 
+#[spacetimedb::table(name = terrain_chunk_state, public, index(name = dimension, btree(columns = [dimension])))]
+#[derive(Default, Clone)]
+pub struct TerrainChunkState {
+    #[primary_key]
+    // chunk_index = (dimension-1)*1000000 + chunk_z * 1000 + chunk_x + 1
+    pub chunk_index: u64,
+
+    pub chunk_x: i32,
+    pub chunk_z: i32,
+    pub dimension: u32,
+
+    pub biomes: Vec<u32>,        // bitfield
+    pub biome_density: Vec<u32>, // bitfield
+    pub elevations: Vec<i16>,
+    pub water_levels: Vec<i16>,
+    pub water_body_types: Vec<u8>,
+    pub zoning_types: Vec<u8>,
+    pub original_elevations: Vec<i16>,
+}
+
+#[spacetimedb::table(name = dimension_description_state, public, index(name = dimension_network_entity_id, btree(columns = [dimension_network_entity_id])))]
+#[derive(Default, Clone, bitcraft_macro::Operations, Debug)]
+#[operations(delete)]
+pub struct DimensionDescriptionState {
+    // Sort fields in order of decreasing size/alignment
+    // to take advantage of a serialization fast-path in SpacetimeDB.
+    // Note that C-style enums count as size/align of 1,
+    // regardless of declared `repr` in Rust.
+    #[primary_key]
+    pub entity_id: u64,
+    pub dimension_network_entity_id: u64,
+    pub collapse_timestamp: u64,
+    pub interior_instance_id: i32,
+    pub dimension_position_large_x: u32, //In large tiles
+    pub dimension_position_large_z: u32, //In large tiles
+    pub dimension_size_large_x: u32,     //In large tiles
+    pub dimension_size_large_z: u32,     //In large tiles
+
+    #[unique]
+    pub dimension_id: u32,
+    pub dimension_type: DimensionType,
+}
+
+#[spacetimedb::table(name = reset_mobile_entity_timer, scheduled(reset_mobile_entity_position, at = scheduled_at))]
+pub struct ResetMobileEntityTimer {
+    #[primary_key]
+    #[auto_inc]
+    pub scheduled_id: u64,
+    pub scheduled_at: spacetimedb::ScheduleAt,
+    pub owner_entity_id: u64,
+    pub position: Option<OffsetCoordinatesFloat>,
+    pub strike_counter_to_update: Option<MoveValidationStrikeCounterState>,
+}
+
+#[spacetimedb::reducer]
+pub fn reset_mobile_entity_position(ctx: &ReducerContext, timer: ResetMobileEntityTimer) -> Result<(), String> {
+    ServerIdentity::validate(&ctx)?;
+
+    ctx.db
+        .mobile_entity_state()
+        .entity_id()
+        .update(MobileEntityState::for_location(
+            timer.owner_entity_id,
+            timer.position.clone().unwrap(),
+            ctx.timestamp,
+        ));
+
+    if let Some(strike_counter) = timer.strike_counter_to_update {
+        ctx.db
+            .move_validation_strike_counter_state()
+            .entity_id()
+            .update(strike_counter);
+    }
+
+    PlayerActionState::clear_by_entity_id(ctx, timer.owner_entity_id)
+}
+
 mod move_validation_helpers {
+    use super::move_validation_strike_counter_state;
+    use super::private_parameters_desc;
+    use super::reset_mobile_entity_timer;
+    use super::MoveValidationStrikeCounterState;
+    use super::OffsetCoordinatesFloat;
+    use spacetimedb::log;
+    use spacetimedb::ReducerContext;
+    use spacetimedb::SpacetimeType;
+    use spacetimedb::Timestamp;
 
     pub fn travel_time(source_coordinates: &FloatHexTile, target_coordinates: &FloatHexTile, speed: f32) -> f32 {
         let distance = (source_coordinates.to_world_position() - target_coordinates.to_world_position()).magnitude();
