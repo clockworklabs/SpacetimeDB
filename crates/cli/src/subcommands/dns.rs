@@ -42,7 +42,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             config.get_host_url(server)?
         ))
         .header(reqwest::header::CONTENT_TYPE, "application/json")
-        .body(serde_json::to_string(&[String::from(domain)]));
+        .body(serde_json::to_string(&[String::from(domain)])?);
     let builder = add_auth_header_opt(builder, &auth_header);
 
     let result = builder.send().await?.json_or_error().await?;
