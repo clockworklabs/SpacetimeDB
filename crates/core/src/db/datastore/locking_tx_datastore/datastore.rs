@@ -749,7 +749,8 @@ impl TxMetrics {
         }
     }
 
-    fn report<'a>(
+    /// Reports the metrics for `reducer` using `get_exec_counter` to retrieve the metrics counters.
+    pub fn report<'a>(
         &self,
         tx_data: Option<&TxData>,
         reducer: &str,
@@ -843,15 +844,16 @@ impl TxMetrics {
         }
     }
 
+    /// Reports the metrics for `reducer`, using counters provided by `db`.
     pub(crate) fn report_with_db(&self, reducer: &str, db: &RelationalDB, tx_data: Option<&TxData>) {
         self.report(tx_data, reducer, |wl| db.exec_counters_for(wl));
     }
 }
 
-/// Report the `TxMetrics`s passed.
+/// Reports the `TxMetrics`s passed.
 ///
 /// Should only be called after the tx lock has been fully released.
-pub(crate) fn report_tx_metricses(
+pub fn report_tx_metricses(
     reducer: &str,
     db: &RelationalDB,
     tx_data: Option<&TxData>,

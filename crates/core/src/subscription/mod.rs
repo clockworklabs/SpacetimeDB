@@ -38,7 +38,7 @@ pub struct ExecutionCounters {
 }
 
 impl ExecutionCounters {
-    pub(crate) fn new(workload: &WorkloadType, db: &Identity) -> Self {
+    pub fn new(workload: &WorkloadType, db: &Identity) -> Self {
         Self {
             rdb_num_index_seeks: DB_METRICS.rdb_num_index_seeks.with_label_values(workload, db),
             rdb_num_rows_scanned: DB_METRICS.rdb_num_rows_scanned.with_label_values(workload, db),
