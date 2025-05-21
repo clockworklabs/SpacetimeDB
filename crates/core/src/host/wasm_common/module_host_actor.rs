@@ -1,4 +1,5 @@
 use bytes::Bytes;
+use prometheus::IntGauge;
 use spacetimedb_lib::db::raw_def::v9::Lifecycle;
 use spacetimedb_schema::auto_migrate::ponder_migrate;
 use spacetimedb_schema::def::ModuleDef;
@@ -191,6 +192,9 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
             energy_monitor: self.energy_monitor.clone(),
             // will be updated on the first reducer call
             allocated_memory: 0,
+            metric_wasm_memory_bytes: WORKER_METRICS
+                .wasm_memory_bytes
+                .with_label_values(&self.info.database_identity),
             trapped: false,
         }
     }
@@ -235,6 +239,7 @@ pub struct WasmModuleInstance<T: WasmInstance> {
     info: Arc<ModuleInfo>,
     energy_monitor: Arc<dyn EnergyMonitor>,
     allocated_memory: usize,
+    metric_wasm_memory_bytes: IntGauge,
     trapped: bool,
 }
 
@@ -284,11 +289,14 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
             Err(e) => {
                 log::warn!("Database update failed: {} @ {}", e, stdb.database_identity());
                 self.system_logger().warn(&format!("Database update failed: {e}"));
-                stdb.rollback_mut_tx(tx);
+                let (tx_metrics, reducer) = stdb.rollback_mut_tx(tx);
+                tx_metrics.report_with_db(&reducer, stdb, None);
                 Ok(UpdateDatabaseResult::ErrorExecutingMigration(e))
             }
             Ok(()) => {
-                stdb.commit_tx(tx)?;
+                if let Some((tx_data, tx_metrics, reducer)) = stdb.commit_tx(tx)? {
+                    tx_metrics.report_with_db(&reducer, stdb, Some(&tx_data));
+                }
                 self.system_logger().info("Database updated");
                 log::info!("Database updated, {}", stdb.database_identity());
                 Ok(UpdateDatabaseResult::UpdatePerformed)
@@ -362,16 +370,23 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             arg_bytes: args.get_bsatn().clone(),
         };
 
-        let tx = tx.unwrap_or_else(|| {
-            stdb.begin_mut_tx(
-                IsolationLevel::Serializable,
-                Workload::Reducer(ReducerContext::from(op.clone())),
-            )
-        });
-        let _guard = WORKER_METRICS
+        // Before we take the lock, do some `with_label_values`.
+        let metric_reducer_plus_query_duration = WORKER_METRICS
             .reducer_plus_query_duration
-            .with_label_values(&database_identity, op.name)
-            .with_timer(tx.timer);
+            .with_label_values(&database_identity, op.name);
+        let metric_reducer_wasmtime_fuel_used = DB_METRICS
+            .reducer_wasmtime_fuel_used
+            .with_label_values(&database_identity, reducer_name);
+        let metric_reducer_duration_usec = DB_METRICS
+            .reducer_duration_usec
+            .with_label_values(&database_identity, reducer_name);
+        let metric_reducer_abi_time_usec = DB_METRICS
+            .reducer_abi_time_usec
+            .with_label_values(&database_identity, reducer_name);
+
+        let workload = Workload::Reducer(ReducerContext::from(op.clone()));
+        let tx = tx.unwrap_or_else(|| stdb.begin_mut_tx(IsolationLevel::Serializable, workload));
+        let _guard = metric_reducer_plus_query_duration.with_timer(tx.timer);
 
         let mut tx_slot = self.instance.instance_env().tx.clone();
 
@@ -394,26 +409,14 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             call_result,
         } = result;
 
-        DB_METRICS
-            .reducer_wasmtime_fuel_used
-            .with_label_values(&database_identity, reducer_name)
-            .inc_by(energy.wasmtime_fuel_used);
-        DB_METRICS
-            .reducer_duration_usec
-            .with_label_values(&database_identity, reducer_name)
-            .inc_by(timings.total_duration.as_micros() as u64);
-        DB_METRICS
-            .reducer_abi_time_usec
-            .with_label_values(&database_identity, reducer_name)
-            .inc_by(timings.wasm_instance_env_call_times.sum().as_micros() as u64);
+        metric_reducer_wasmtime_fuel_used.inc_by(energy.wasmtime_fuel_used);
+        metric_reducer_duration_usec.inc_by(timings.total_duration.as_micros() as u64);
+        metric_reducer_abi_time_usec.inc_by(timings.wasm_instance_env_call_times.sum().as_micros() as u64);
 
         self.energy_monitor
             .record_reducer(&energy_fingerprint, energy.used, timings.total_duration);
         if self.allocated_memory != memory_allocation {
-            WORKER_METRICS
-                .wasm_memory_bytes
-                .with_label_values(&database_identity)
-                .set(memory_allocation as i64);
+            self.metric_wasm_memory_bytes.set(memory_allocation as i64);
             self.allocated_memory = memory_allocation;
         }
 

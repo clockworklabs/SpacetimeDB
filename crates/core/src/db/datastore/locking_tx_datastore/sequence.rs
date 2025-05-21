@@ -3,6 +3,7 @@ use spacetimedb_primitives::SequenceId;
 use spacetimedb_schema::schema::SequenceSchema;
 use spacetimedb_table::MemoryUsage;
 
+#[derive(Debug, PartialEq)]
 pub(super) struct Sequence {
     schema: SequenceSchema,
     pub(super) value: i128,
@@ -106,7 +107,7 @@ impl Sequence {
 }
 
 /// A map of [`SequenceId`] -> [`Sequence`].
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub(super) struct SequencesState {
     sequences: IntMap<SequenceId, Sequence>,
 }
@@ -123,8 +124,8 @@ impl SequencesState {
         self.sequences.get_mut(&seq_id)
     }
 
-    pub(super) fn insert(&mut self, seq_id: SequenceId, seq: Sequence) {
-        self.sequences.insert(seq_id, seq);
+    pub(super) fn insert(&mut self, seq: Sequence) {
+        self.sequences.insert(seq.id(), seq);
     }
 
     pub(super) fn remove(&mut self, seq_id: SequenceId) -> Option<Sequence> {
