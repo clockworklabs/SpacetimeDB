@@ -268,8 +268,8 @@ impl SpacetimePaths {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
     use crate::{PathBufExt, RootDir, SpacetimePaths};
+    use std::path::Path;
 
     #[cfg(not(windows))]
     mod vars {
