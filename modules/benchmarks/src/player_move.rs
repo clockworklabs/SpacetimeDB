@@ -150,9 +150,9 @@ pub struct ActiveBuffState {
     pub active_buffs: Vec<ActiveBuff>,
 }
 
-#[spacetimedb::table(name = claim_state, public, 
+#[spacetimedb::table(name = claim_state, public,
     index(name = owner_player_entity_id, btree(columns = [owner_player_entity_id])),
-    index(name = name, btree(columns = [name])), 
+    index(name = name, btree(columns = [name])),
     index(name = neutral, btree(columns = [neutral])))]
 #[derive(bitcraft_macro::Operations, Clone, Debug)]
 #[shared_table] //Owned by region, replicated to global module
@@ -320,8 +320,8 @@ pub enum Role {
     Relay,
 }
 
-#[spacetimedb::table(name = building_state, public, 
-    index(name = claim_entity_id, btree(columns = [claim_entity_id])), 
+#[spacetimedb::table(name = building_state, public,
+    index(name = claim_entity_id, btree(columns = [claim_entity_id])),
     index(name = building_description_id, btree(columns = [building_description_id])))]
 #[shared_table]
 #[derive(Default, Clone, bitcraft_macro::Operations, Debug)]
@@ -1804,7 +1804,7 @@ impl PavingTileDesc {
     }
 }
 
-#[spacetimedb::table(name = mobile_entity_state, public, 
+#[spacetimedb::table(name = mobile_entity_state, public,
     index(name = chunk_index, btree(columns = [chunk_index])))]
 #[derive(Clone, bitcraft_macro::Operations, Debug)]
 #[operations(delete)] // IMPORTANT: MOBILE_ENTITIES SHOULD NOT HAVE THE COMMIT ATTRIBUTE
