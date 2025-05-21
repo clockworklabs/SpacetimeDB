@@ -545,19 +545,19 @@ mod test {
     /// An `InstanceEnv` requires a `ReplicaContext`.
     /// For our purposes this is just a wrapper for `RelationalDB`.
     fn replica_ctx(relational_db: Arc<RelationalDB>) -> Result<ReplicaContext> {
-        Ok(ReplicaContext::new(
-            Database {
+        Ok(ReplicaContext {
+            database: Database {
                 id: 0,
                 database_identity: Identity::ZERO,
                 owner_identity: Identity::ZERO,
                 host_type: HostType::Wasm,
                 initial_program: Hash::ZERO,
             },
-            0,
-            Arc::new(temp_logger()?),
-            subscription_actor(relational_db.clone()),
+            replica_id: 0,
+            logger: Arc::new(temp_logger()?),
+            subscriptions: subscription_actor(relational_db.clone()),
             relational_db,
-        ))
+        })
     }
 
     /// An `InstanceEnv` used for testing the database syscalls.

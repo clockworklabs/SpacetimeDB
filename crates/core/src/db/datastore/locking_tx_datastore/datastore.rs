@@ -339,6 +339,13 @@ impl DataRow for Locking {
 impl Tx for Locking {
     type Tx = TxId;
 
+    /// Begins a read-only transaction under the given `workload`.
+    ///
+    /// While this transaction is pending,
+    /// other read-only transactions may be started,
+    /// but new mutable transactions will block until there are no read-only transactions left.
+    ///
+    /// Blocks if a mutable transaction is pending.
     fn begin_tx(&self, workload: Workload) -> Self::Tx {
         let metrics = ExecutionMetrics::default();
         let ctx = ExecutionContext::with_workload(self.database_identity, workload);
@@ -356,6 +363,12 @@ impl Tx for Locking {
         }
     }
 
+    /// Release this read-only transaction,
+    /// allowing new mutable transactions to start if this was the last read-only transaction.
+    ///
+    /// Returns:
+    /// - [`TxMetrics`], various measurements of the work performed by this transaction.
+    /// - `String`, the name of the reducer which ran within this transaction.
     fn release_tx(&self, tx: Self::Tx) -> (TxMetrics, String) {
         tx.release()
     }
@@ -854,6 +867,13 @@ pub(crate) fn report_tx_metricses(
 impl MutTx for Locking {
     type MutTx = MutTxId;
 
+    /// Begins a mutable transaction under the given `isolation_level` and `workload`.
+    ///
+    /// While this transaction is pending,
+    /// no other read-only  mutable transaction may happen or
+    ///
+    /// Blocks if a read-only or mutable transaction is pending.
+    ///
     /// Note: We do not use the isolation level here because this implementation
     /// guarantees the highest isolation level, Serializable.
     fn begin_mut_tx(&self, _isolation_level: IsolationLevel, workload: Workload) -> Self::MutTx {

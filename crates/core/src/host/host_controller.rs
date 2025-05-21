@@ -540,13 +540,13 @@ async fn make_replica_ctx(
         }
     });
 
-    Ok(ReplicaContext::new(
+    Ok(ReplicaContext {
         database,
         replica_id,
         logger,
         subscriptions,
         relational_db,
-    ))
+    })
 }
 
 /// Initialize a module host for the given program.
