@@ -1,11 +1,11 @@
 use super::{
-    committed_state::CommittedState,
-    datastore::{record_tx_metrics, Result},
+    committed_state::{CommitTableForInsertion, CommittedState},
+    datastore::{Result, TxMetrics},
     delete_table::DeleteTable,
     sequence::{Sequence, SequencesState},
-    state_view::{IndexSeekIterIdMutTx, ScanIterByColRangeMutTx, StateView},
+    state_view::{IterByColEqMutTx, IterByColRangeMutTx, IterMutTx, ScanIterByColRangeMutTx, StateView},
     tx::TxId,
-    tx_state::{IndexIdMap, TxState},
+    tx_state::{IndexIdMap, PendingSchemaChange, TxState, TxTableForInsertion},
     SharedMutexGuard, SharedWriteGuard,
 };
 use crate::db::datastore::system_tables::{
@@ -15,23 +15,14 @@ use crate::db::datastore::system_tables::{
     ST_COLUMN_ID, ST_CONSTRAINT_ID, ST_INDEX_ID, ST_ROW_LEVEL_SECURITY_ID, ST_SCHEDULED_ID, ST_SEQUENCE_ID,
     ST_TABLE_ID,
 };
-use crate::db::datastore::traits::{RowTypeForTable, TxData};
-use crate::db::datastore::{
-    locking_tx_datastore::committed_state::CommittedIndexIterWithDeletedMutTx, traits::InsertFlags,
-};
-use crate::db::datastore::{
-    locking_tx_datastore::state_view::{
-        IndexSeekIterIdWithDeletedMutTx, IterByColEqMutTx, IterByColRangeMutTx, IterMutTx,
-    },
-    traits::UpdateFlags,
-};
+use crate::db::datastore::traits::{InsertFlags, RowTypeForTable, TxData, UpdateFlags};
 use crate::execution_context::Workload;
 use crate::{
     error::{IndexError, SequenceError, TableError},
     execution_context::ExecutionContext,
 };
-use core::cell::RefCell;
 use core::ops::RangeBounds;
+use core::{cell::RefCell, mem};
 use core::{iter, ops::Bound};
 use smallvec::SmallVec;
 use spacetimedb_execution::{dml::MutDatastore, Datastore, DeltaStore};
@@ -51,9 +42,11 @@ use spacetimedb_sats::{
 };
 use spacetimedb_schema::schema::{ConstraintSchema, IndexSchema, RowLevelSecuritySchema, SequenceSchema, TableSchema};
 use spacetimedb_table::{
-    blob_store::{BlobStore, HashMapBlobStore},
+    blob_store::BlobStore,
     indexes::{RowPointer, SquashedOffset},
-    table::{DuplicateError, IndexScanRangeIter, InsertError, RowRef, Table, TableAndIndex},
+    static_assert_size,
+    table::{BlobNumBytes, DuplicateError, IndexScanRangeIter, InsertError, RowRef, Table, TableAndIndex},
+    table_index::TableIndex,
 };
 use std::{
     sync::Arc,
@@ -76,6 +69,8 @@ pub struct MutTxId {
     pub(crate) ctx: ExecutionContext,
     pub(crate) metrics: ExecutionMetrics,
 }
+
+static_assert_size!(MutTxId, 400);
 
 impl Datastore for MutTxId {
     fn blob_store(&self) -> &dyn BlobStore {
@@ -121,7 +116,14 @@ impl MutDatastore for MutTxId {
 }
 
 impl MutTxId {
-    fn drop_col_eq(&mut self, table_id: TableId, col_pos: ColId, value: &AlgebraicValue) -> Result<()> {
+    /// Push a pending schema change.
+    fn push_schema_change(&mut self, change: PendingSchemaChange) {
+        self.tx_state.pending_schema_changes.push(change);
+    }
+
+    /// Deletes all the rows in table with `table_id`
+    /// where the column with `col_pos` equals `value`.
+    fn delete_col_eq(&mut self, table_id: TableId, col_pos: ColId, value: &AlgebraicValue) -> Result<()> {
         let rows = self.iter_by_col_eq(table_id, col_pos, value)?;
         let ptrs_to_delete = rows.map(|row_ref| row_ref.pointer()).collect::<Vec<_>>();
         if ptrs_to_delete.is_empty() {
@@ -154,14 +156,15 @@ impl MutTxId {
             // checks for children are performed in the relevant `create_...` functions.
         }
 
-        log::trace!("TABLE CREATING: {}", table_schema.table_name);
+        let table_name = table_schema.table_name.clone();
+        log::trace!("TABLE CREATING: {}", table_name);
 
         // Insert the table row into `st_tables`
         // NOTE: Because `st_tables` has a unique index on `table_name`, this will
         // fail if the table already exists.
         let row = StTableRow {
             table_id: TableId::SENTINEL,
-            table_name: table_schema.table_name[..].into(),
+            table_name: table_name.clone(),
             table_type: table_schema.table_type,
             table_access: table_schema.table_access,
             table_primary_key: table_schema.primary_key.map(Into::into),
@@ -187,9 +190,11 @@ impl MutTxId {
             self.insert_via_serialize_bsatn(ST_COLUMN_ID, &row)?;
         }
 
-        let mut schema_internal = table_schema.clone();
-        // Remove all indexes, constraints, and sequences from the schema; we will add them back later with correct index_id, ...
-        schema_internal.clear_adjacent_schemas();
+        let schedule = table_schema.schedule.clone();
+        let mut schema_internal = table_schema;
+        // Extract all indexes, constraints, and sequences from the schema.
+        // We will add them back later with correct ids.
+        let (indices, sequences, constraints) = schema_internal.take_adjacent_schemas();
 
         // Create the in memory representation of the table
         // NOTE: This should be done before creating the indexes
@@ -198,7 +203,7 @@ impl MutTxId {
         self.create_table_internal(schema_internal.into());
 
         // Insert the scheduled table entry into `st_scheduled`
-        if let Some(schedule) = table_schema.schedule {
+        if let Some(schedule) = schedule {
             let row = StScheduledRow {
                 table_id: schedule.table_id,
                 schedule_id: ScheduleId::SENTINEL,
@@ -215,49 +220,45 @@ impl MutTxId {
             table.with_mut_schema(|s| s.schedule.as_mut().unwrap().schedule_id = id);
         }
 
-        // Insert constraints into `st_constraints`
-        for constraint in table_schema.constraints.iter().cloned() {
-            self.create_constraint(constraint)?;
-        }
-
-        // Insert sequences into `st_sequences`
-        for seq in table_schema.sequences {
-            self.create_sequence(seq)?;
-        }
-
-        // Create the indexes for the table
-        for index in table_schema.indexes {
+        // Create the indexes for the table.
+        for index in indices {
             let col_set = ColSet::from(index.index_algorithm.columns());
-            let is_unique = table_schema
-                .constraints
-                .iter()
-                .any(|c| c.data.unique_columns() == Some(&col_set));
+            let is_unique = constraints.iter().any(|c| c.data.unique_columns() == Some(&col_set));
             self.create_index(index, is_unique)?;
         }
 
-        log::trace!("TABLE CREATED: {}, table_id: {table_id}", table_schema.table_name);
+        // Insert constraints into `st_constraints`.
+        for constraint in constraints {
+            self.create_constraint(constraint)?;
+        }
+
+        // Insert sequences into `st_sequences`.
+        for seq in sequences {
+            self.create_sequence(seq)?;
+        }
+
+        log::trace!("TABLE CREATED: {}, table_id: {table_id}", table_name);
 
         Ok(table_id)
     }
 
     fn create_table_internal(&mut self, schema: Arc<TableSchema>) {
-        self.tx_state
-            .insert_tables
-            .insert(schema.table_id, Table::new(schema, SquashedOffset::TX_STATE));
+        // Construct the in memory tables.
+        let table_id = schema.table_id;
+        let commit_table = Table::new(schema, SquashedOffset::COMMITTED_STATE);
+        let tx_table = commit_table.clone_structure(SquashedOffset::TX_STATE);
+
+        // Add them to the committed and tx states.
+        self.committed_state_write_lock.tables.insert(table_id, commit_table);
+        self.tx_state.insert_tables.insert(table_id, tx_table);
+
+        // Record that the committed state table is pending.
+        self.push_schema_change(PendingSchemaChange::TableAdded(table_id));
     }
 
     fn get_row_type(&self, table_id: TableId) -> Option<&ProductType> {
-        if let Some(row_type) = self
-            .tx_state
-            .insert_tables
-            .get(&table_id)
-            .map(|table| table.get_row_type())
-        {
-            return Some(row_type);
-        }
         self.committed_state_write_lock
-            .tables
-            .get(&table_id)
+            .get_table(table_id)
             .map(|table| table.get_row_type())
     }
 
@@ -268,6 +269,10 @@ impl MutTxId {
             return Ok(RowTypeForTable::Ref(row_type));
         }
 
+        // TODO(centril): if the table exists, this is now dead code,
+        // as we will immediately insert a table into the committed state upon creation.
+        // So simplify this and merge with `get_row_type`.
+        //
         // Look up the columns for the table in question.
         // NOTE: This is quite an expensive operation, although we only need
         // to do this in situations where there is not currently an in memory
@@ -293,11 +298,11 @@ impl MutTxId {
         }
 
         // Drop the table and their columns
-        self.drop_col_eq(ST_TABLE_ID, StTableFields::TableId.col_id(), &table_id.into())?;
-        self.drop_col_eq(ST_COLUMN_ID, StColumnFields::TableId.col_id(), &table_id.into())?;
+        self.delete_col_eq(ST_TABLE_ID, StTableFields::TableId.col_id(), &table_id.into())?;
+        self.delete_col_eq(ST_COLUMN_ID, StColumnFields::TableId.col_id(), &table_id.into())?;
 
         if let Some(schedule) = &schema.schedule {
-            self.drop_col_eq(
+            self.delete_col_eq(
                 ST_SCHEDULED_ID,
                 StScheduledFields::ScheduleId.col_id(),
                 &schedule.schedule_id.into(),
@@ -305,20 +310,25 @@ impl MutTxId {
         }
 
         // Delete the table and its rows and indexes from memory.
-        // TODO: This needs to not remove it from the committed state, because it can still be rolled back.
-        // We will have to store the deletion in the TxState and then apply it to the CommittedState in commit.
+        self.tx_state.insert_tables.remove(&table_id);
+        self.tx_state.delete_tables.remove(&table_id);
+        let commit_table = self
+            .committed_state_write_lock
+            .tables
+            .remove(&table_id)
+            .expect("there should be a schema in the committed state if we reach here");
+        self.push_schema_change(PendingSchemaChange::TableRemoved(table_id, commit_table));
 
-        // NOT use unwrap
-        self.committed_state_write_lock.tables.remove(&table_id);
         Ok(())
     }
 
+    // TODO(centril): remove this. It doesn't seem to be used by anything.
     pub fn rename_table(&mut self, table_id: TableId, new_name: &str) -> Result<()> {
         // Update the table's name in st_tables.
         self.update_st_table_row(table_id, |st| st.table_name = new_name.into())
     }
 
-    fn update_st_table_row(&mut self, table_id: TableId, updater: impl FnOnce(&mut StTableRow)) -> Result<()> {
+    fn update_st_table_row<R>(&mut self, table_id: TableId, updater: impl FnOnce(&mut StTableRow) -> R) -> Result<R> {
         // Fetch the row.
         let st_table_ref = self
             .iter_by_col_eq(ST_TABLE_ID, StTableFields::TableId, &table_id.into())?
@@ -329,10 +339,10 @@ impl MutTxId {
 
         // Delete the row, run updates, and insert again.
         self.delete(ST_TABLE_ID, ptr)?;
-        updater(&mut row);
+        let ret = updater(&mut row);
         self.insert_via_serialize_bsatn(ST_TABLE_ID, &row)?;
 
-        Ok(())
+        Ok(ret)
     }
 
     pub fn table_id_from_name(&self, table_name: &str) -> Result<Option<TableId>> {
@@ -357,34 +367,38 @@ impl MutTxId {
         &mut Table,
         &mut dyn BlobStore,
         &mut IndexIdMap,
-        Option<&Table>,
-        &HashMapBlobStore,
+        &mut Table,
+        &mut dyn BlobStore,
     )> {
-        let commit_table = self.committed_state_write_lock.get_table(table_id);
+        let (commit_table, commit_bs, idx_map) = self.committed_state_write_lock.get_table_and_blob_store_mut(table_id);
+        // NOTE(centril): `TableError` is a fairly large type.
+        // Not making this lazy made `TableError::drop` show up in perf.
+        // TODO(centril): Box all the errors.
+        #[allow(clippy::unnecessary_lazy_evaluations)]
+        let commit_table = commit_table.ok_or_else(|| TableError::IdNotFoundState(table_id))?;
 
         // Get the insert table, so we can write the row into it.
-        self.tx_state
-            .get_table_and_blob_store_or_maybe_create_from(table_id, commit_table)
-            .ok_or_else(|| TableError::IdNotFoundState(table_id).into())
-            .map(|(tx, bs, idx_map, _)| {
-                (
-                    tx,
-                    bs,
-                    idx_map,
-                    commit_table,
-                    &self.committed_state_write_lock.blob_store,
-                )
-            })
+        let (tx, bs, ..) = self
+            .tx_state
+            .get_table_and_blob_store_or_create_from(table_id, commit_table);
+        Ok((tx, bs, idx_map, commit_table, commit_bs))
     }
+}
 
+impl MutTxId {
     /// Set the table access of `table_id` to `access`.
     pub(crate) fn alter_table_access(&mut self, table_id: TableId, access: StAccess) -> Result<()> {
         // Write to the table in the tx state.
-        let (table, ..) = self.get_or_create_insert_table_mut(table_id)?;
-        table.with_mut_schema(|s| s.table_access = access);
+        let (tx_table, _, _, commit_table, _) = self.get_or_create_insert_table_mut(table_id)?;
+        tx_table.with_mut_schema(|s| s.table_access = access);
+        commit_table.with_mut_schema(|s| s.table_access = access);
 
         // Update system tables.
-        self.update_st_table_row(table_id, |st| st.table_access = access)?;
+        let old_access = self.update_st_table_row(table_id, |st| mem::replace(&mut st.table_access, access))?;
+
+        // Remember the pending change so we can undo if necessary.
+        self.push_schema_change(PendingSchemaChange::TableAlterAccess(table_id, old_access));
+
         Ok(())
     }
 
@@ -434,39 +448,34 @@ impl MutTxId {
         let (table, blob_store, idx_map, commit_table, commit_blob_store) =
             self.get_or_create_insert_table_mut(table_id)?;
 
-        // Create and build the index.
-        //
-        // Ensure adding the index does not cause a unique constraint violation due to
-        // the existing rows having the same value for some column(s).
-        let mut insert_index = table.new_index(&index.index_algorithm, is_unique)?;
-        let mut build_from_rows = |table: &Table, bs: &dyn BlobStore| -> Result<()> {
-            let rows = table.scan_rows(bs);
-            // SAFETY: (1) `insert_index` was derived from `table`
-            // which in turn was derived from `commit_table`.
-            let violation = unsafe { insert_index.build_from_rows(rows) };
-            if let Err(violation) = violation {
-                let violation = table
-                    .get_row_ref(bs, violation)
-                    .expect("row came from scanning the table")
-                    .project(&insert_index.indexed_columns)
-                    .expect("`cols` should consist of valid columns for this table");
-                return Err(IndexError::from(table.build_error_unique(&insert_index, index_id, violation)).into());
-            }
-            Ok(())
+        // Create and build the indices.
+        let map_violation = |violation, index: &TableIndex, table: &Table, bs: &dyn BlobStore| {
+            let violation = table
+                .get_row_ref(bs, violation)
+                .expect("row came from scanning the table")
+                .project(&index.indexed_columns)
+                .expect("`cols` should consist of valid columns for this table");
+            IndexError::from(table.build_error_unique(index, index_id, violation)).into()
         };
-        build_from_rows(table, blob_store)?;
-        // NOTE: Also add all the rows in the already committed table to the index.
-        //
-        // FIXME: Is this correct? Index scan iterators (incl. the existing `Locking` versions)
-        // appear to assume that a table's index refers only to rows within that table,
-        // and does not handle the case where a `TxState` index refers to `CommittedState` rows.
-        //
-        // TODO(centril): An alternative here is to actually add this index to `CommittedState`,
-        // pretending that it was already committed, and recording this pretense.
-        // Then, we can roll that back on a failed tx.
-        if let Some(commit_table) = commit_table {
-            build_from_rows(commit_table, commit_blob_store)?;
-        }
+        // Builds the index and ensures that `table`'s row won't cause a unique constraint violation
+        // due to the existing rows having the same value for some column(s).
+        let build_from_rows = |index: &mut TableIndex, table: &Table, bs: &dyn BlobStore| -> Result<()> {
+            let rows = table.scan_rows(bs);
+            // SAFETY: (1) `tx_index` / `commit_index` was derived from `table` / `commit_table`
+            // which in turn was derived from `commit_table`.
+            let violation = unsafe { index.build_from_rows(rows) };
+            violation.map_err(|v| map_violation(v, index, table, bs))
+        };
+        // Build the tx index.
+        let mut tx_index = table.new_index(&index.index_algorithm, is_unique)?;
+        build_from_rows(&mut tx_index, table, blob_store)?;
+        // Build the commit index.
+        let mut commit_index = tx_index.clone_structure();
+        build_from_rows(&mut commit_index, commit_table, commit_blob_store)?;
+        // Make sure the two indices can be merged.
+        commit_index
+            .can_merge(&tx_index)
+            .map_err(|v| map_violation(v, &commit_index, commit_table, commit_blob_store))?;
 
         log::trace!(
             "INDEX CREATED: {} for table: {} and algorithm: {:?}",
@@ -475,14 +484,17 @@ impl MutTxId {
             index.index_algorithm
         );
 
-        // SAFETY: same as (1).
-        unsafe { table.add_index(index_id, insert_index) };
         // Associate `index_id -> table_id` for fast lookup.
         idx_map.insert(index_id, table_id);
-
+        // SAFETY: same as (1).
+        unsafe { table.add_index(index_id, tx_index) };
+        let pointer_map = unsafe { commit_table.add_index(index_id, commit_index) };
         // Update the table's schema.
         // This won't clone-write when creating a table but likely to otherwise.
-        table.with_mut_schema(|s| s.indexes.push(index));
+        table.with_mut_schema(|s| s.indexes.push(index.clone()));
+        commit_table.with_mut_schema(|s| s.indexes.push(index));
+        // Note the index in pending schema changes.
+        self.push_schema_change(PendingSchemaChange::IndexAdded(table_id, index_id, pointer_map));
 
         Ok(index_id)
     }
@@ -501,18 +513,21 @@ impl MutTxId {
         // Remove the index from st_indexes.
         self.delete(ST_INDEX_ID, st_index_ptr)?;
 
-        // Remove the index in the transaction's insert table.
-        // By altering the insert table, this gets moved over to the committed state on merge.
-        let (table, blob_store, idx_map, ..) = self.get_or_create_insert_table_mut(table_id)?;
-        assert!(table.delete_index(blob_store, index_id));
-        // Remove the `index_id -> (table_id, col_list)` association from tx state.
+        // Remove the index in the transaction's insert table and the commit table.
+        let (tx_table, tx_bs, idx_map, commit_table, commit_bs) = self.get_or_create_insert_table_mut(table_id)?;
+        tx_table.delete_index(tx_bs, index_id, None);
+        let (commit_index, index_schema) = commit_table
+            .delete_index(commit_bs, index_id, None)
+            .expect("there should be a schema in the committed state if we reach here");
+        // Remove the `index_id -> (table_id, col_list)` association.
         idx_map.remove(&index_id);
-        // Queue the deletion of the index in the committed state.
-        // Note that the index could have been added in this tx.
-        self.tx_state
-            .index_id_map_removals
-            .get_or_insert_default()
-            .insert(index_id);
+        // Note the index in pending schema changes.
+        self.push_schema_change(PendingSchemaChange::IndexRemoved(
+            table_id,
+            index_id,
+            commit_index,
+            index_schema,
+        ));
 
         log::trace!("INDEX DROPPED: {}", index_id);
         Ok(())
@@ -539,13 +554,11 @@ impl MutTxId {
         rend: &[u8],
     ) -> Result<(TableId, IndexScanRanged<'a>)> {
         // Extract the table id, and commit/tx indices.
-        let (table_id, commit_index, tx_index) = self.get_table_and_index(index_id);
-        // Extract the index type and make sure we have a table id.
-        let (index_ty, table_id) = commit_index
-            .or(tx_index)
-            .map(|index| &index.index().key_type)
-            .zip(table_id)
+        let (table_id, commit_index, tx_index) = self
+            .get_table_and_index(index_id)
             .ok_or_else(|| IndexError::NotFound(index_id))?;
+        // Extract the index type.
+        let index_ty = &commit_index.index().key_type;
 
         // TODO(centril): Once we have more index types than range-compatible ones,
         // we'll need to enforce that `index_id` refers to a range-compatible index.
@@ -556,74 +569,31 @@ impl MutTxId {
 
         // Get an index seek iterator for the tx and committed state.
         let tx_iter = tx_index.map(|i| i.seek_range(&bounds));
-        let commit_iter = commit_index.map(|i| i.seek_range(&bounds));
+        let commit_iter = commit_index.seek_range(&bounds);
 
-        // Chain together the indexed rows in the tx and committed state,
-        // but don't yield rows deleted in the tx state.
-        use itertools::Either::*;
-        use IndexScanRangedInner::*;
-        let commit_iter = commit_iter.map(|iter| match self.tx_state.get_delete_table(table_id) {
-            None => Left(iter),
-            Some(deletes) => Right(IndexScanFilterDeleted { iter, deletes }),
-        });
-        // This is effectively just `tx_iter.into_iter().flatten().chain(commit_iter.into_iter().flatten())`,
-        // but with all the branching and `Option`s flattened to just one layer.
-        let iter = match (tx_iter, commit_iter) {
-            (None, None) => Empty(iter::empty()),
-            (Some(tx_iter), None) => TxOnly(tx_iter),
-            (None, Some(Left(commit_iter))) => CommitOnly(commit_iter),
-            (None, Some(Right(commit_iter))) => CommitOnlyWithDeletes(commit_iter),
-            (Some(tx_iter), Some(Left(commit_iter))) => Both(tx_iter.chain(commit_iter)),
-            (Some(tx_iter), Some(Right(commit_iter))) => BothWithDeletes(tx_iter.chain(commit_iter)),
-        };
-        Ok((table_id, IndexScanRanged { inner: iter }))
+        let dt = self.tx_state.get_delete_table(table_id);
+        let iter = combine_range_index_iters(dt, tx_iter, commit_iter);
+        Ok((table_id, iter))
     }
 
     /// Translate `index_id` to the table id, and commit/tx indices.
     fn get_table_and_index(
         &self,
         index_id: IndexId,
-    ) -> (Option<TableId>, Option<TableAndIndex<'_>>, Option<TableAndIndex<'_>>) {
-        // The order of querying the committed vs. tx state for the translation is not important.
-        // But it is vastly more likely that it is in the committed state,
-        // so query that first to avoid two lookups.
-        //
-        // Also, the tx state must have the index.
-        // If the index was e.g., dropped from the tx state but exists physically in the committed state,
-        // the index does not exist, semantically.
-        // TODO: handle the case where the table has been dropped in this transaction.
-        let commit_table_id = self
+    ) -> Option<(TableId, TableAndIndex<'_>, Option<TableAndIndex<'_>>)> {
+        // Figure out what table the index belongs to.
+        let table_id = self.committed_state_write_lock.get_table_for_index(index_id)?;
+
+        // Find the index for the commit state.
+        // If we cannot find it, there's a bug.
+        let commit_index = self
             .committed_state_write_lock
-            .get_table_for_index(index_id)
-            .filter(|_| !self.tx_state_removed_index(index_id));
+            .get_index_by_id_with_table(table_id, index_id)?;
 
-        let (table_id, commit_index, tx_index) = if let t_id @ Some(table_id) = commit_table_id {
-            // Index found for commit state, might also exist for tx state.
-            let commit_index = self
-                .committed_state_write_lock
-                .get_index_by_id_with_table(table_id, index_id);
-            let tx_index = self.tx_state.get_index_by_id_with_table(table_id, index_id);
-            (t_id, commit_index, tx_index)
-        } else if let t_id @ Some(table_id) = self.tx_state.get_table_for_index(index_id) {
-            // Index might exist for tx state.
-            let tx_index = self.tx_state.get_index_by_id_with_table(table_id, index_id);
-            (t_id, None, tx_index)
-        } else {
-            // No index in either side.
-            (None, None, None)
-        };
-        (table_id, commit_index, tx_index)
-    }
+        // Find the index for the tx state, if any.
+        let tx_index = self.tx_state.get_index_by_id_with_table(table_id, index_id);
 
-    /// Returns whether the index with `index_id` was removed in this transaction.
-    ///
-    /// An index removed in the tx state but existing physically in the committed state
-    /// does not exist semantically.
-    fn tx_state_removed_index(&self, index_id: IndexId) -> bool {
-        self.tx_state
-            .index_id_map_removals
-            .as_ref()
-            .is_some_and(|s| s.contains(&index_id))
+        Some((table_id, commit_index, tx_index))
     }
 
     /// Decode the bounds for a ranged index scan for an index typed at `key_type`.
@@ -724,57 +694,79 @@ impl MutTxId {
         (range_start, range_end)
     }
 
-    fn get_sequence_mut(&mut self, seq_id: SequenceId) -> Result<&mut Sequence> {
-        self.sequence_state_lock
-            .get_sequence_mut(seq_id)
-            .ok_or_else(|| SequenceError::NotFound(seq_id).into())
-    }
-
     pub fn get_next_sequence_value(&mut self, seq_id: SequenceId) -> Result<i128> {
-        {
-            let sequence = self.get_sequence_mut(seq_id)?;
+        get_next_sequence_value(
+            &mut self.tx_state,
+            &self.committed_state_write_lock,
+            &mut self.sequence_state_lock,
+            seq_id,
+        )
+    }
+}
 
-            // If there are allocated sequence values, return the new value.
-            // `gen_next_value` internally checks that the new allocation is acceptable,
-            // i.e. is less than or equal to the allocation amount.
-            // Note that on restart we start one after the allocation amount.
-            if let Some(value) = sequence.gen_next_value() {
-                return Ok(value);
-            }
+fn get_sequence_mut(seq_state: &mut SequencesState, seq_id: SequenceId) -> Result<&mut Sequence> {
+    seq_state
+        .get_sequence_mut(seq_id)
+        .ok_or_else(|| SequenceError::NotFound(seq_id).into())
+}
+
+fn get_next_sequence_value(
+    tx_state: &mut TxState,
+    committed_state: &CommittedState,
+    seq_state: &mut SequencesState,
+    seq_id: SequenceId,
+) -> Result<i128> {
+    {
+        let sequence = get_sequence_mut(seq_state, seq_id)?;
+
+        // If there are allocated sequence values, return the new value.
+        // `gen_next_value` internally checks that the new allocation is acceptable,
+        // i.e. is less than or equal to the allocation amount.
+        // Note that on restart we start one after the allocation amount.
+        if let Some(value) = sequence.gen_next_value() {
+            return Ok(value);
         }
-        // Allocate new sequence values
-        // If we're out of allocations, then update the sequence row in st_sequences to allocate a fresh batch of sequences.
-        let old_seq_row_ref = self
-            .iter_by_col_eq(ST_SEQUENCE_ID, StSequenceFields::SequenceId, &seq_id.into())?
-            .last()
-            .unwrap();
-        let old_seq_row_ptr = old_seq_row_ref.pointer();
-        let seq_row = {
-            let mut seq_row = StSequenceRow::try_from(old_seq_row_ref)?;
-
-            let sequence = self.get_sequence_mut(seq_id)?;
-            seq_row.allocated = sequence.nth_value(SEQUENCE_ALLOCATION_STEP as usize);
-            sequence.set_allocation(seq_row.allocated);
-            seq_row
-        };
-
-        self.delete(ST_SEQUENCE_ID, old_seq_row_ptr)?;
-        // `insert::<GENERATE = false>` rather than `GENERATE = true` because:
-        // - We have already checked unique constraints during `create_sequence`.
-        // - Similarly, we have already applied autoinc sequences.
-        // - We do not want to apply autoinc sequences again,
-        //   since the system table sequence `seq_st_table_table_id_primary_key_auto`
-        //   has ID 0, and would otherwise trigger autoinc.
-        with_sys_table_buf(|buf| {
-            to_writer(buf, &seq_row).unwrap();
-            self.insert::<false>(ST_SEQUENCE_ID, buf)
-        })?;
-
-        self.get_sequence_mut(seq_id)?
-            .gen_next_value()
-            .ok_or_else(|| SequenceError::UnableToAllocate(seq_id).into())
     }
 
+    // Allocate new sequence values
+    // If we're out of allocations, then update the sequence row in st_sequences to allocate a fresh batch of sequences.
+    let old_seq_row_ref = iter_by_col_eq(
+        tx_state,
+        committed_state,
+        ST_SEQUENCE_ID,
+        StSequenceFields::SequenceId,
+        &seq_id.into(),
+    )?
+    .last()
+    .unwrap();
+    let old_seq_row_ptr = old_seq_row_ref.pointer();
+    let seq_row = {
+        let mut seq_row = StSequenceRow::try_from(old_seq_row_ref)?;
+
+        let sequence = get_sequence_mut(seq_state, seq_id)?;
+        seq_row.allocated = sequence.nth_value(SEQUENCE_ALLOCATION_STEP as usize);
+        sequence.set_allocation(seq_row.allocated);
+        seq_row
+    };
+
+    delete(tx_state, committed_state, ST_SEQUENCE_ID, old_seq_row_ptr)?;
+    // `insert::<GENERATE = false>` rather than `GENERATE = true` because:
+    // - We have already checked unique constraints during `create_sequence`.
+    // - Similarly, we have already applied autoinc sequences.
+    // - We do not want to apply autoinc sequences again,
+    //   since the system table sequence `seq_st_table_table_id_primary_key_auto`
+    //   has ID 0, and would otherwise trigger autoinc.
+    with_sys_table_buf(|buf| {
+        to_writer(buf, &seq_row).unwrap();
+        insert::<false>(tx_state, committed_state, seq_state, ST_SEQUENCE_ID, buf)
+    })?;
+
+    get_sequence_mut(seq_state, seq_id)?
+        .gen_next_value()
+        .ok_or_else(|| SequenceError::UnableToAllocate(seq_id).into())
+}
+
+impl MutTxId {
     /// Create a sequence.
     /// Requires:
     /// - `seq.sequence_id == SequenceId::SENTINEL`
@@ -819,10 +811,12 @@ impl MutTxId {
         sequence_row.sequence_id = seq_id;
 
         let schema: SequenceSchema = sequence_row.into();
-        self.get_insert_table_mut(schema.table_id)?
-            // This won't clone-write when creating a table but likely to otherwise.
-            .with_mut_schema(|s| s.update_sequence(schema.clone()));
-        self.sequence_state_lock.insert(seq_id, Sequence::new(schema));
+        let (tx_table, _, _, commit_table, _) = self.get_or_create_insert_table_mut(table_id)?;
+        // This won't clone-write when creating a table but likely to otherwise.
+        tx_table.with_mut_schema(|s| s.update_sequence(schema.clone()));
+        commit_table.with_mut_schema(|s| s.update_sequence(schema.clone()));
+        self.sequence_state_lock.insert(Sequence::new(schema));
+        self.push_schema_change(PendingSchemaChange::SequenceAdded(table_id, seq_id));
 
         log::trace!("SEQUENCE CREATED: id = {}", seq_id);
 
@@ -830,24 +824,30 @@ impl MutTxId {
     }
 
     pub fn drop_sequence(&mut self, sequence_id: SequenceId) -> Result<()> {
+        // Ensure the sequence exists.
         let st_sequence_ref = self
             .iter_by_col_eq(ST_SEQUENCE_ID, StSequenceFields::SequenceId, &sequence_id.into())?
             .next()
             .ok_or_else(|| TableError::IdNotFound(SystemTable::st_sequence, sequence_id.into()))?;
         let table_id = st_sequence_ref.read_col(StSequenceFields::TableId)?;
 
+        // Delete from system tables.
         self.delete(ST_SEQUENCE_ID, st_sequence_ref.pointer())?;
 
-        // TODO: Transactionality.
-        // Currently, a TX which drops a sequence then aborts
-        // will leave the sequence deleted,
-        // rather than restoring it during rollback.
-        self.sequence_state_lock.remove(sequence_id);
-        if let Some((insert_table, _)) = self.tx_state.get_table_and_blob_store(table_id) {
-            // This likely will do a clone-write as over time?
-            // The schema might have found other referents.
-            insert_table.with_mut_schema(|s| s.remove_sequence(sequence_id));
-        }
+        // Drop the sequence from in-memory tables.
+        let sequence = self
+            .sequence_state_lock
+            .remove(sequence_id)
+            .expect("there should be a sequence in the committed state if we reach here");
+        let (tx_table, _, _, commit_table, _) = self.get_or_create_insert_table_mut(table_id)?;
+        // This likely will do a clone-write as over time?
+        // The schema might have found other referents.
+        tx_table.with_mut_schema(|s| s.remove_sequence(sequence_id));
+        let schema = commit_table
+            .with_mut_schema(|s| s.remove_sequence(sequence_id))
+            .expect("there should be a schema in the committed state if we reach here");
+        self.push_schema_change(PendingSchemaChange::SequenceRemoved(table_id, sequence, schema));
+
         Ok(())
     }
 
@@ -893,9 +893,9 @@ impl MutTxId {
             constraint.data
         );
 
-        // Insert the constraint row into st_constraint
-        // NOTE: Because st_constraint has a unique index on constraint_name, this will
-        // fail if the table already exists.
+        // Insert the constraint row into `st_constraint`.
+        // NOTE: Because `st_constraint` has a unique index on constraint_name,
+        // this will fail if the table already exists.
         let constraint_row = StConstraintRow {
             table_id,
             constraint_id: ConstraintId::SENTINEL,
@@ -905,28 +905,20 @@ impl MutTxId {
 
         let constraint_row = self.insert_via_serialize_bsatn(ST_CONSTRAINT_ID, &constraint_row)?;
         let constraint_id = constraint_row.1.collapse().read_col(StConstraintFields::ConstraintId)?;
-        let existed = matches!(constraint_row.1, RowRefInsertion::Existed(_));
-        // TODO: Can we return early here?
-
-        let (table, ..) = self.get_or_create_insert_table_mut(table_id)?;
-        constraint.constraint_id = constraint_id;
-        // This won't clone-write when creating a table but likely to otherwise.
-        table.with_mut_schema(|s| s.update_constraint(constraint));
-
-        if existed {
+        if let RowRefInsertion::Existed(_) = constraint_row.1 {
             log::trace!("CONSTRAINT ALREADY EXISTS: {constraint_id}");
-        } else {
-            log::trace!("CONSTRAINT CREATED: {constraint_id}");
+            return Ok(constraint_id);
         }
 
-        Ok(constraint_id)
-    }
+        let (tx_table, _, _, commit_table, _) = self.get_or_create_insert_table_mut(table_id)?;
+        constraint.constraint_id = constraint_id;
+        // This won't clone-write when creating a table but likely to otherwise.
+        tx_table.with_mut_schema(|s| s.update_constraint(constraint.clone()));
+        commit_table.with_mut_schema(|s| s.update_constraint(constraint));
+        self.push_schema_change(PendingSchemaChange::ConstraintAdded(table_id, constraint_id));
 
-    fn get_insert_table_mut(&mut self, table_id: TableId) -> Result<&mut Table> {
-        self.tx_state
-            .get_table_and_blob_store(table_id)
-            .map(|(tbl, _)| tbl)
-            .ok_or_else(|| TableError::IdNotFoundState(table_id).into())
+        log::trace!("CONSTRAINT CREATED: {constraint_id}");
+        Ok(constraint_id)
     }
 
     pub fn drop_constraint(&mut self, constraint_id: ConstraintId) -> Result<()> {
@@ -943,12 +935,19 @@ impl MutTxId {
         self.delete(ST_CONSTRAINT_ID, st_constraint_ref.pointer())?;
 
         // Remove constraint in transaction's insert table.
-        let (table, ..) = self.get_or_create_insert_table_mut(table_id)?;
+        let (tx_table, _, _, commit_table, _) = self.get_or_create_insert_table_mut(table_id)?;
         // This likely will do a clone-write as over time?
         // The schema might have found other referents.
-        table.with_mut_schema(|s| s.remove_constraint(constraint_id));
+        tx_table.with_mut_schema(|s| s.remove_constraint(constraint_id));
+        let schema = commit_table
+            .with_mut_schema(|s| s.remove_constraint(constraint_id))
+            .expect("there should be a schema in the committed state if we reach here");
+        self.push_schema_change(PendingSchemaChange::ConstraintRemoved(table_id, schema));
         // TODO(1.0): we should also re-initialize `table` without a unique constraint.
         // unless some other unique constraint on the same columns exists.
+        // NOTE(centril): is this already handled by dropping the corresponding index?
+        // Probably not in the case where an index
+        // with the same name goes from being unique to not unique.
 
         Ok(())
     }
@@ -1087,92 +1086,132 @@ impl MutTxId {
         })
     }
 
-    pub fn commit(self) -> TxData {
-        let Self {
-            mut committed_state_write_lock,
-            tx_state,
-            ..
-        } = self;
-        let tx_data = committed_state_write_lock.merge(tx_state, &self.ctx);
-        // Record metrics for the transaction at the very end,
-        // right before we drop and release the lock.
-        record_tx_metrics(
+    /// Commits this transaction, applying its changes to the committed state.
+    ///
+    /// Returns:
+    /// - [`TxData`], the set of inserts and deletes performed by this transaction.
+    /// - [`TxMetrics`], various measurements of the work performed by this transaction.
+    /// - `String`, the name of the reducer which ran during this transaction.
+    pub fn commit(mut self) -> (TxData, TxMetrics, String) {
+        let tx_data = self.committed_state_write_lock.merge(self.tx_state, &self.ctx);
+
+        // Compute and keep enough info that we can
+        // record metrics after the transaction has ended
+        // and after the lock has been dropped.
+        // Recording metrics when holding the lock is too expensive.
+        let tx_metrics = TxMetrics::new(
             &self.ctx,
             self.timer,
             self.lock_wait_time,
+            self.metrics,
             true,
             Some(&tx_data),
-            Some(&committed_state_write_lock),
-            self.metrics,
+            &self.committed_state_write_lock,
         );
-        tx_data
+        let reducer = self.ctx.into_reducer_name();
+
+        (tx_data, tx_metrics, reducer)
     }
 
-    pub fn commit_downgrade(mut self, workload: Workload) -> (TxData, TxId) {
-        let Self {
-            mut committed_state_write_lock,
-            tx_state,
-            ..
-        } = self;
-        let tx_data = committed_state_write_lock.merge(tx_state, &self.ctx);
-        // Record metrics for the transaction at the very end,
-        // right before we drop and release the lock.
-        record_tx_metrics(
+    /// Commits this transaction, applying its changes to the committed state.
+    /// The lock on the committed state is converted into a read lock,
+    /// and returned as a new read-only transaction.
+    ///
+    /// Returns:
+    /// - [`TxData`], the set of inserts and deletes performed by this transaction.
+    /// - [`TxMetrics`], various measurements of the work performed by this transaction.
+    /// - [`TxId`], a read-only transaction with a shared lock on the committed state.
+    pub fn commit_downgrade(mut self, workload: Workload) -> (TxData, TxMetrics, TxId) {
+        let tx_data = self.committed_state_write_lock.merge(self.tx_state, &self.ctx);
+
+        // Compute and keep enough info that we can
+        // record metrics after the transaction has ended
+        // and after the lock has been dropped.
+        // Recording metrics when holding the lock is too expensive.
+        let tx_metrics = TxMetrics::new(
             &self.ctx,
             self.timer,
             self.lock_wait_time,
+            self.metrics,
             true,
             Some(&tx_data),
-            Some(&committed_state_write_lock),
-            self.metrics,
+            &self.committed_state_write_lock,
         );
+
         // Update the workload type of the execution context
-        self.ctx.workload = workload.into();
+        self.ctx.workload = workload.workload_type();
         let tx = TxId {
-            committed_state_shared_lock: SharedWriteGuard::downgrade(committed_state_write_lock),
-            lock_wait_time: Duration::ZERO,
-            timer: Instant::now(),
-            ctx: self.ctx,
-            metrics: ExecutionMetrics::default(),
-        };
-        (tx_data, tx)
-    }
-
-    pub fn rollback(self) {
-        // Record metrics for the transaction at the very end,
-        // right before we drop and release the lock.
-        record_tx_metrics(
-            &self.ctx,
-            self.timer,
-            self.lock_wait_time,
-            false,
-            None,
-            None,
-            self.metrics,
-        );
-    }
-
-    pub fn rollback_downgrade(mut self, workload: Workload) -> TxId {
-        // Record metrics for the transaction at the very end,
-        // right before we drop and release the lock.
-        record_tx_metrics(
-            &self.ctx,
-            self.timer,
-            self.lock_wait_time,
-            false,
-            None,
-            None,
-            self.metrics,
-        );
-        // Update the workload type of the execution context
-        self.ctx.workload = workload.into();
-        TxId {
             committed_state_shared_lock: SharedWriteGuard::downgrade(self.committed_state_write_lock),
             lock_wait_time: Duration::ZERO,
             timer: Instant::now(),
             ctx: self.ctx,
             metrics: ExecutionMetrics::default(),
-        }
+        };
+        (tx_data, tx_metrics, tx)
+    }
+
+    /// Rolls back this transaction, discarding its changes.
+    ///
+    /// Returns:
+    /// - [`TxMetrics`], various measurements of the work performed by this transaction.
+    /// - `String`, the name of the reducer which ran during this transaction.
+    pub fn rollback(mut self) -> (TxMetrics, String) {
+        self.committed_state_write_lock
+            .rollback(&mut self.sequence_state_lock, self.tx_state);
+
+        // Compute and keep enough info that we can
+        // record metrics after the transaction has ended
+        // and after the lock has been dropped.
+        // Recording metrics when holding the lock is too expensive.
+        let tx_metrics = TxMetrics::new(
+            &self.ctx,
+            self.timer,
+            self.lock_wait_time,
+            self.metrics,
+            true,
+            None,
+            &self.committed_state_write_lock,
+        );
+        let reducer = self.ctx.into_reducer_name();
+        (tx_metrics, reducer)
+    }
+
+    /// Roll back this transaction, discarding its changes.
+    /// The lock on the committed state is converted into a read lock,
+    /// and returned as a new read-only transaction.
+    ///
+    /// Returns:
+    /// - [`TxMetrics`], various measurements of the work performed by this transaction.
+    /// - [`TxId`], a read-only transaction with a shared lock on the committed state.
+    pub fn rollback_downgrade(mut self, workload: Workload) -> (TxMetrics, TxId) {
+        self.committed_state_write_lock
+            .rollback(&mut self.sequence_state_lock, self.tx_state);
+
+        // Compute and keep enough info that we can
+        // record metrics after the transaction has ended
+        // and after the lock has been dropped.
+        // Recording metrics when holding the lock is too expensive.
+        let tx_metrics = TxMetrics::new(
+            &self.ctx,
+            self.timer,
+            self.lock_wait_time,
+            self.metrics,
+            true,
+            None,
+            &self.committed_state_write_lock,
+        );
+
+        // Update the workload type of the execution context
+        self.ctx.workload = workload.workload_type();
+        let tx = TxId {
+            committed_state_shared_lock: SharedWriteGuard::downgrade(self.committed_state_write_lock),
+            lock_wait_time: Duration::ZERO,
+            timer: Instant::now(),
+            ctx: self.ctx,
+            metrics: ExecutionMetrics::default(),
+        };
+
+        (tx_metrics, tx)
     }
 }
 
@@ -1200,17 +1239,15 @@ pub struct IndexScanRanged<'a> {
 }
 
 enum IndexScanRangedInner<'a> {
-    Empty(iter::Empty<RowRef<'a>>),
-    TxOnly(IndexScanRangeIter<'a>),
     CommitOnly(IndexScanRangeIter<'a>),
-    CommitOnlyWithDeletes(IndexScanFilterDeleted<'a>),
+    CommitOnlyWithDeletes(FilterDeleted<'a, IndexScanRangeIter<'a>>),
     Both(iter::Chain<IndexScanRangeIter<'a>, IndexScanRangeIter<'a>>),
-    BothWithDeletes(iter::Chain<IndexScanRangeIter<'a>, IndexScanFilterDeleted<'a>>),
+    BothWithDeletes(iter::Chain<IndexScanRangeIter<'a>, FilterDeleted<'a, IndexScanRangeIter<'a>>>),
 }
 
-struct IndexScanFilterDeleted<'a> {
-    iter: IndexScanRangeIter<'a>,
-    deletes: &'a DeleteTable,
+pub(super) struct FilterDeleted<'a, I> {
+    pub(super) iter: I,
+    pub(super) deletes: &'a DeleteTable,
 }
 
 impl<'a> Iterator for IndexScanRanged<'a> {
@@ -1218,8 +1255,6 @@ impl<'a> Iterator for IndexScanRanged<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         match &mut self.inner {
-            IndexScanRangedInner::Empty(it) => it.next(),
-            IndexScanRangedInner::TxOnly(it) => it.next(),
             IndexScanRangedInner::CommitOnly(it) => it.next(),
             IndexScanRangedInner::CommitOnlyWithDeletes(it) => it.next(),
             IndexScanRangedInner::Both(it) => it.next(),
@@ -1228,7 +1263,7 @@ impl<'a> Iterator for IndexScanRanged<'a> {
     }
 }
 
-impl<'a> Iterator for IndexScanFilterDeleted<'a> {
+impl<'a, I: Iterator<Item = RowRef<'a>>> Iterator for FilterDeleted<'a, I> {
     type Item = RowRef<'a>;
     fn next(&mut self) -> Option<Self::Item> {
         self.iter.find(|row| !self.deletes.contains(row.pointer()))
@@ -1257,6 +1292,8 @@ impl MutTxId {
         if let Some(ptr) = self
             .iter_by_col_eq(
                 ST_CLIENT_ID,
+                // TODO(perf, minor, centril): consider a `const_col_list([x, ..])`
+                // so we know this is not computed at runtime.
                 col_list![StClientFields::Identity, StClientFields::ConnectionId],
                 &AlgebraicValue::product(row),
             )?
@@ -1305,178 +1342,230 @@ impl MutTxId {
         table_id: TableId,
         row: &[u8],
     ) -> Result<(ColList, RowRefInsertion<'_>, InsertFlags)> {
-        // Get the insert table, so we can write the row into it.
-        let (tx_table, tx_blob_store, ..) = self
-            .tx_state
-            .get_table_and_blob_store_or_maybe_create_from(
-                table_id,
-                self.committed_state_write_lock.get_table(table_id),
-            )
-            .ok_or(TableError::IdNotFoundState(table_id))?;
-
-        let insert_flags = InsertFlags {
-            is_scheduler_table: tx_table.is_scheduler(),
-        };
-
-        // 1. Insert the physical row.
-        let page_pool = &mut self.committed_state_write_lock.page_pool;
-        let (tx_row_ref, blob_bytes) = tx_table.insert_physically_bsatn(page_pool, tx_blob_store, row)?;
-        // 2. Optionally: Detect, generate, write sequence values.
-        // 3. Confirm that the insertion respects constraints and update statistics.
-        // 4. Post condition (PC.INS.1):
-        //        `res = Ok((hash, ptr))`
-        //     => `ptr` refers to a valid row in `table_id` for `tx_table`
-        //      ∧ `hash` is the hash of this row
-        //    This follows from both `if/else` branches leading to `confirm_insertion`
-        //    which both entail the above post-condition.
-        let ((tx_table, tx_blob_store, delete_table), gen_cols, res) = if GENERATE {
-            // When `GENERATE` is enabled, we're instructed to deal with sequence value generation.
-            // Collect all the columns with sequences that need generation.
-            let tx_row_ptr = tx_row_ref.pointer();
-            let (cols_to_gen, seqs_to_use) = unsafe { tx_table.sequence_triggers_for(tx_blob_store, tx_row_ptr) };
-
-            // Generate a value for every column in the row that needs it.
-            let mut seq_vals: SmallVec<[i128; 1]> = <_>::default();
-            for sequence_id in seqs_to_use {
-                seq_vals.push(self.get_next_sequence_value(sequence_id)?);
-            }
-
-            // Write the generated values to the physical row at `tx_row_ptr`.
-            // We assume here that column with a sequence is of a sequence-compatible type.
-            // SAFETY: By virtue of `get_table_and_blob_store_or_maybe_create_from` above succeeding,
-            // we can assume we have an insert and delete table.
-            let (tx_table, tx_blob_store, delete_table) =
-                unsafe { self.tx_state.assume_present_get_mut_table(table_id) };
-            for (col_id, seq_val) in cols_to_gen.iter().zip(seq_vals) {
-                // SAFETY:
-                // - `self.is_row_present(row)` holds as we haven't deleted the row.
-                // - `col_id` is a valid column, and has a sequence, so it must have a primitive type.
-                unsafe { tx_table.write_gen_val_to_col(col_id, tx_row_ptr, seq_val) };
-            }
-
-            // `CHECK_SAME_ROW = true`, as there might be an identical row already in the tx state.
-            // SAFETY: `self.is_row_present(row)` holds as we still haven't deleted the row,
-            // in particular, the `write_gen_val_to_col` call does not remove the row.
-            let res = unsafe { tx_table.confirm_insertion::<true>(tx_blob_store, tx_row_ptr, blob_bytes) };
-            ((tx_table, tx_blob_store, delete_table), cols_to_gen, res)
-        } else {
-            // When `GENERATE` is not enabled, simply confirm the insertion.
-            // This branch is hit when inside sequence generation itself, to avoid infinite recursion.
-            let tx_row_ptr = tx_row_ref.pointer();
-            // `CHECK_SAME_ROW = true`, as there might be an identical row already in the tx state.
-            // SAFETY: `self.is_row_present(row)` holds as we just inserted the row.
-            let res = unsafe { tx_table.confirm_insertion::<true>(tx_blob_store, tx_row_ptr, blob_bytes) };
-            // SAFETY: By virtue of `get_table_and_blob_store_or_maybe_create_from` above succeeding,
-            // we can assume we have an insert and delete table.
-            (
-                unsafe { self.tx_state.assume_present_get_mut_table(table_id) },
-                ColList::empty(),
-                res,
-            )
-        };
-
-        match res {
-            Ok((tx_row_hash, tx_row_ptr)) => {
-                if let Some(commit_table) = self.committed_state_write_lock.get_table(table_id) {
-                    // The `tx_row_ref` was not previously present in insert tables,
-                    // but may still be a set-semantic conflict
-                    // or may violate a unique constraint with a row in the committed state.
-                    // We'll check the set-semantic aspect in (1) and the constraint in (2).
-
-                    // (1) Rule out a set-semantic conflict with the committed state.
-                    // SAFETY:
-                    // - `commit_table` and `tx_table` use the same schema
-                    //   because `tx_table` is derived from `commit_table`.
-                    // - `tx_row_ptr` is correct per (PC.INS.1).
-                    if let (_, Some(commit_ptr)) =
-                        unsafe { Table::find_same_row(commit_table, tx_table, tx_blob_store, tx_row_ptr, tx_row_hash) }
-                    {
-                        // (insert_undelete)
-                        // -----------------------------------------------------
-                        // If `row` was already present in the committed state,
-                        // either this is a set-semantic duplicate,
-                        // or the row is marked as deleted, so we will undelete it
-                        // and leave it in the committed state.
-                        // Either way, it should not appear in the insert tables,
-                        // so roll back the insertion.
-                        //
-                        // NOTE for future MVCC implementors:
-                        // In MVCC, it is no longer valid to elide inserts in this way.
-                        // When a transaction inserts a row, that row *must* appear in its insert tables,
-                        // even if the row is already present in the committed state.
-                        //
-                        // Imagine a chain of committed but un-squashed transactions:
-                        // `Committed 0: Insert Row A` - `Committed 1: Delete Row A`
-                        // where `Committed 1` happens after `Committed 0`.
-                        // Imagine a transaction `Running 2: Insert Row A`,
-                        // which began before `Committed 1` was committed.
-                        // Because `Committed 1` has since been committed,
-                        // `Running 2` *must* happen after `Committed 1`.
-                        // Therefore, the correct sequence of events is:
-                        // - Insert Row A
-                        // - Delete Row A
-                        // - Insert Row A
-                        // This is impossible to recover if `Running 2` elides its insert.
-                        tx_table
-                            .delete(tx_blob_store, tx_row_ptr, |_| ())
-                            .expect("Failed to delete a row we just inserted");
-
-                        // It's possible that `row` appears in the committed state,
-                        // but is marked as deleted.
-                        // In this case, undelete it, so it remains in the committed state.
-                        delete_table.remove(commit_ptr);
-
-                        // No new row was inserted, but return `committed_ptr`.
-                        let blob_store = &self.committed_state_write_lock.blob_store;
-                        let rri = RowRefInsertion::Existed(
-                            // SAFETY: `find_same_row` told us that `ptr` refers to a valid row in `commit_table`.
-                            unsafe { commit_table.get_row_ref_unchecked(blob_store, commit_ptr) },
-                        );
-                        return Ok((gen_cols, rri, insert_flags));
-                    }
-
-                    // Pacify the borrow checker.
-                    // SAFETY: `tx_row_ptr` is still correct for `tx_table` per (PC.INS.1).
-                    // as there haven't been any interleaving `&mut` calls that could invalidate the pointer.
-                    let tx_row_ref = unsafe { tx_table.get_row_ref_unchecked(tx_blob_store, tx_row_ptr) };
-
-                    // (2) The `tx_row_ref` did not violate a unique constraint *within* the `tx_table`,
-                    // but it could do so wrt., `commit_table`,
-                    // assuming the conflicting row hasn't been deleted since.
-                    // Ensure that it doesn't, or roll back the insertion.
-                    let is_deleted = |commit_ptr| delete_table.contains(commit_ptr);
-                    // SAFETY: `commit_table.row_layout() == tx_row_ref.row_layout()` holds
-                    // as the `tx_table` is derived from `commit_table`.
-                    let res = unsafe { commit_table.check_unique_constraints(tx_row_ref, |ixs| ixs, is_deleted) };
-                    if let Err(e) = res {
-                        // There was a constraint violation, so undo the insertion.
-                        tx_table.delete(tx_blob_store, tx_row_ptr, |_| {});
-                        return Err(IndexError::from(e).into());
-                    }
-                }
-
-                let rri = RowRefInsertion::Inserted(unsafe {
-                    // SAFETY: `tx_row_ptr` is still correct for `tx_table` per (PC.INS.1).
-                    // as there haven't been any interleaving `&mut` calls that could invalidate the pointer.
-                    tx_table.get_row_ref_unchecked(tx_blob_store, tx_row_ptr)
-                });
-                Ok((gen_cols, rri, insert_flags))
-            }
-            // `row` previously present in insert tables; do nothing but return `ptr`.
-            Err(InsertError::Duplicate(DuplicateError(ptr))) => {
-                let rri = RowRefInsertion::Existed(
-                    // SAFETY: `tx_table` told us that `ptr` refers to a valid row in it.
-                    unsafe { tx_table.get_row_ref_unchecked(tx_blob_store, ptr) },
-                );
-                Ok((gen_cols, rri, insert_flags))
-            }
-
-            // Unwrap these error into `TableError::{IndexError, Bflatn}`:
-            Err(InsertError::IndexError(e)) => Err(IndexError::from(e).into()),
-            Err(InsertError::Bflatn(e)) => Err(TableError::Bflatn(e).into()),
-        }
+        insert::<GENERATE>(
+            &mut self.tx_state,
+            &self.committed_state_write_lock,
+            &mut self.sequence_state_lock,
+            table_id,
+            row,
+        )
     }
+}
 
+/// Insert a row, encoded in BSATN, into a table.
+///
+/// Zero placeholders, i.e., sequence triggers,
+/// in auto-inc columns in the new row will be replaced with generated values
+/// if and only if `GENERATE` is true.
+/// This method is called with `GENERATE` false when updating the `st_sequence` system table.
+///
+/// Requires:
+/// - `table_id` must refer to a valid table for the database at `database_identity`.
+/// - `row` must be a valid row for the table at `table_id`.
+///
+/// Returns:
+/// - list of columns which have been replaced with generated values.
+/// - a pointer to the inserted row.
+/// - the number of bytes added to the tx blob store.
+/// - The "tx table for insertion" for further processing.
+/// - The "commit table for insertion" for further processing.
+fn insert_physically_maybe_generate<'a, const GENERATE: bool>(
+    tx_state: &'a mut TxState,
+    committed_state: &'a CommittedState,
+    seq_state: &mut SequencesState,
+    table_id: TableId,
+    row: &[u8],
+) -> Result<(
+    RowPointer,
+    ColList,
+    BlobNumBytes,
+    TxTableForInsertion<'a>,
+    CommitTableForInsertion<'a>,
+)> {
+    // Get commit table and friends.
+    let commit_parts = committed_state.get_table_and_blob_store(table_id)?;
+    let (commit_table, ..) = commit_parts;
+
+    // Get the insert table, so we can write the row into it.
+    let (tx_table, tx_blob_store, _) = tx_state.get_table_and_blob_store_or_create_from(table_id, commit_table);
+
+    // 1. Insert the physical row.
+    let page_pool = &committed_state.page_pool;
+    let (tx_row_ref, blob_bytes) = tx_table.insert_physically_bsatn(page_pool, tx_blob_store, row)?;
+    let tx_row_ptr = tx_row_ref.pointer();
+    // 2. Optionally: Detect, generate, write sequence values.
+    let (tx_parts, gen_cols) = if GENERATE {
+        // When `GENERATE` is enabled, we're instructed to deal with sequence value generation.
+        // Collect all the columns with sequences that need generation.
+        let (cols_to_gen, seqs_to_use) = unsafe { tx_table.sequence_triggers_for(tx_blob_store, tx_row_ptr) };
+
+        // Generate a value for every column in the row that needs it.
+        let mut seq_vals: SmallVec<[i128; 1]> = <_>::default();
+        for sequence_id in seqs_to_use {
+            seq_vals.push(get_next_sequence_value(
+                tx_state,
+                committed_state,
+                seq_state,
+                sequence_id,
+            )?);
+        }
+
+        // Write the generated values to the physical row at `tx_row_ptr`.
+        // We assume here that column with a sequence is of a sequence-compatible type.
+        // SAFETY: After `get_table_and_blob_store_or_create_from` there's a insert and delete table.
+        let (tx_table, tx_blob_store, delete_table) = unsafe { tx_state.assume_present_get_mut_table(table_id) };
+        for (col_id, seq_val) in cols_to_gen.iter().zip(seq_vals) {
+            // SAFETY:
+            // - `self.is_row_present(row)` holds as we haven't deleted the row.
+            // - `col_id` is a valid column, and has a sequence, so it must have a primitive type.
+            unsafe { tx_table.write_gen_val_to_col(col_id, tx_row_ptr, seq_val) };
+        }
+
+        ((tx_table, tx_blob_store, delete_table), cols_to_gen)
+    } else {
+        // When `GENERATE` is not enabled, avoid sequence generation.
+        // This branch is hit when inside sequence generation itself, to avoid infinite recursion.
+        // SAFETY: After `get_table_and_blob_store_or_create_from` there's a insert and delete table.
+        let tx_parts = unsafe { tx_state.assume_present_get_mut_table(table_id) };
+        (tx_parts, ColList::empty())
+    };
+
+    Ok((tx_row_ptr, gen_cols, blob_bytes, tx_parts, commit_parts))
+}
+
+/// Insert a row, encoded in BSATN, into a table.
+///
+/// Zero placeholders, i.e., sequence triggers,
+/// in auto-inc columns in the new row will be replaced with generated values
+/// if and only if `GENERATE` is true.
+/// This method is called with `GENERATE` false when updating the `st_sequence` system table.
+///
+/// Requires:
+/// - `table_id` must refer to a valid table for the database at `database_identity`.
+/// - `row` must be a valid row for the table at `table_id`.
+///
+/// Returns:
+/// - a list of columns which have been replaced with generated values.
+/// - a ref to the inserted row.
+/// - any insert flags.
+pub(super) fn insert<'a, const GENERATE: bool>(
+    tx_state: &'a mut TxState,
+    committed_state: &'a CommittedState,
+    seq_state: &mut SequencesState,
+    table_id: TableId,
+    row: &[u8],
+) -> Result<(ColList, RowRefInsertion<'a>, InsertFlags)> {
+    let (
+        tx_row_ptr,
+        gen_cols,
+        blob_bytes,
+        (tx_table, tx_blob_store, delete_table),
+        (commit_table, commit_blob_store, _),
+    ) = insert_physically_maybe_generate::<GENERATE>(tx_state, committed_state, seq_state, table_id, row)?;
+
+    let insert_flags = InsertFlags {
+        is_scheduler_table: tx_table.is_scheduler(),
+    };
+    let ok = |row_ref| Ok((gen_cols, row_ref, insert_flags));
+
+    // `CHECK_SAME_ROW = true`, as there might be an identical row already in the tx state.
+    // SAFETY: `tx_table.is_row_present(row)` holds as we still haven't deleted the row,
+    // in particular, the `write_gen_val_to_col` call does not remove the row.
+    let res = unsafe { tx_table.confirm_insertion::<true>(tx_blob_store, tx_row_ptr, blob_bytes) };
+
+    match res {
+        Ok((tx_row_hash, tx_row_ptr)) => {
+            // The `tx_row_ref` was not previously present in insert tables,
+            // but may still be a set-semantic conflict
+            // or may violate a unique constraint with a row in the committed state.
+            // We'll check the set-semantic aspect in (1) and the constraint in (2).
+
+            // (1) Rule out a set-semantic conflict with the committed state.
+            // SAFETY:
+            // - `commit_table` and `tx_table` use the same schema
+            //   because `tx_table` is derived from `commit_table`.
+            // - `tx_row_ptr` is correct per post-condition of `tx_table.confirm_insertion(...)`.
+            if let (_, Some(commit_ptr)) =
+                unsafe { Table::find_same_row(commit_table, tx_table, tx_blob_store, tx_row_ptr, tx_row_hash) }
+            {
+                // (insert_undelete)
+                // -----------------------------------------------------
+                // If `row` was already present in the committed state,
+                // either this is a set-semantic duplicate,
+                // or the row is marked as deleted, so we will undelete it
+                // and leave it in the committed state.
+                // Either way, it should not appear in the insert tables,
+                // so roll back the insertion.
+                //
+                // NOTE for future MVCC implementors:
+                // In MVCC, it is no longer valid to elide inserts in this way.
+                // When a transaction inserts a row, that row *must* appear in its insert tables,
+                // even if the row is already present in the committed state.
+                //
+                // Imagine a chain of committed but un-squashed transactions:
+                // `Committed 0: Insert Row A` - `Committed 1: Delete Row A`
+                // where `Committed 1` happens after `Committed 0`.
+                // Imagine a transaction `Running 2: Insert Row A`,
+                // which began before `Committed 1` was committed.
+                // Because `Committed 1` has since been committed,
+                // `Running 2` *must* happen after `Committed 1`.
+                // Therefore, the correct sequence of events is:
+                // - Insert Row A
+                // - Delete Row A
+                // - Insert Row A
+                // This is impossible to recover if `Running 2` elides its insert.
+                tx_table
+                    .delete(tx_blob_store, tx_row_ptr, |_| ())
+                    .expect("Failed to delete a row we just inserted");
+
+                // It's possible that `row` appears in the committed state,
+                // but is marked as deleted.
+                // In this case, undelete it, so it remains in the committed state.
+                delete_table.remove(commit_ptr);
+
+                // No new row was inserted, but return `committed_ptr`.
+                // SAFETY: `find_same_row` told us that `ptr` refers to a valid row in `commit_table`.
+                let row_ref = unsafe { commit_table.get_row_ref_unchecked(commit_blob_store, commit_ptr) };
+                return ok(RowRefInsertion::Existed(row_ref));
+            }
+
+            // Pacify the borrow checker.
+            // SAFETY: `tx_row_ptr` is still correct for `tx_table` per (PC.INS.1).
+            // as there haven't been any interleaving `&mut` calls that could invalidate the pointer.
+            let tx_row_ref = unsafe { tx_table.get_row_ref_unchecked(tx_blob_store, tx_row_ptr) };
+
+            // (2) The `tx_row_ref` did not violate a unique constraint *within* the `tx_table`,
+            // but it could do so wrt., `commit_table`,
+            // assuming the conflicting row hasn't been deleted since.
+            // Ensure that it doesn't, or roll back the insertion.
+            let is_deleted = |commit_ptr| delete_table.contains(commit_ptr);
+            // SAFETY: `commit_table.row_layout() == tx_row_ref.row_layout()` holds
+            // as the `tx_table` is derived from `commit_table`.
+            let res = unsafe { commit_table.check_unique_constraints(tx_row_ref, |ixs| ixs, is_deleted) };
+            if let Err(e) = res {
+                // There was a constraint violation, so undo the insertion.
+                tx_table.delete(tx_blob_store, tx_row_ptr, |_| {});
+                return Err(IndexError::from(e).into());
+            }
+
+            // SAFETY: `tx_row_ptr` is still correct for `tx_table` per (PC.INS.1).
+            // as there haven't been any interleaving `&mut` calls that could invalidate the pointer.
+            let row_ref = unsafe { tx_table.get_row_ref_unchecked(tx_blob_store, tx_row_ptr) };
+            ok(RowRefInsertion::Inserted(row_ref))
+        }
+        // `row` previously present in insert tables; do nothing but return `ptr`.
+        Err(InsertError::Duplicate(DuplicateError(ptr))) => {
+            // SAFETY: `tx_table` told us that `ptr` refers to a valid row in it.
+            let row_ref = unsafe { tx_table.get_row_ref_unchecked(tx_blob_store, ptr) };
+            ok(RowRefInsertion::Existed(row_ref))
+        }
+        // Unwrap these error into `TableError::{IndexError, Bflatn}`:
+        Err(InsertError::IndexError(e)) => Err(IndexError::from(e).into()),
+        Err(InsertError::Bflatn(e)) => Err(TableError::Bflatn(e).into()),
+    }
+}
+
+impl MutTxId {
     /// Update a row, encoded in BSATN, into a table.
     ///
     /// Zero placeholders, i.e., sequence triggers,
@@ -1498,147 +1587,102 @@ impl MutTxId {
         table_id: TableId,
         index_id: IndexId,
         row: &[u8],
-    ) -> Result<(ColList, RowRef<'_>, UpdateFlags)> {
-        let tx_removed_index = self.tx_state_removed_index(index_id);
-
-        // 1. Insert the physical row into the tx insert table.
-        //----------------------------------------------------------------------
+    ) -> Result<(ColList, RowRefInsertion<'_>, UpdateFlags)> {
+        // Insert the physical row into the tx insert table
+        // and possibly generate sequence values.
+        //
         // As we are provided the `row` encoded in BSATN,
         // and since we don't have a convenient way to BSATN to a set of columns,
         // we cannot really do an in-place update in the row-was-in-tx-state case.
         // So we will begin instead by inserting the row physically to the tx state and project that.
-        let (tx_table, tx_blob_store, ..) = self
-            .tx_state
-            .get_table_and_blob_store_or_maybe_create_from(
-                table_id,
-                self.committed_state_write_lock.get_table(table_id),
-            )
-            .ok_or(TableError::IdNotFoundState(table_id))?;
-        let page_pool = &mut self.committed_state_write_lock.page_pool;
-        let (tx_row_ref, blob_bytes) = tx_table.insert_physically_bsatn(page_pool, tx_blob_store, row)?;
-
-        // 2. Detect, generate, write sequence values in the new row.
-        //----------------------------------------------------------------------
-        // Unlike the `fn insert(...)` case, this is not conditional on a `GENERATE` flag.
-        // Collect all the columns with sequences that need generation.
-        let tx_row_ptr = tx_row_ref.pointer();
-        let (cols_to_gen, seqs_to_use) = unsafe { tx_table.sequence_triggers_for(tx_blob_store, tx_row_ptr) };
-        // Generate a value for every column in the row that needs it.
-        let mut seq_vals: SmallVec<[i128; 1]> = <_>::default();
-        for sequence_id in seqs_to_use {
-            seq_vals.push(self.get_next_sequence_value(sequence_id)?);
-        }
-        // Write the generated values to the physical row at `tx_row_ptr`.
-        // We assume here that column with a sequence is of a sequence-compatible type.
-        // SAFETY: By virtue of `get_table_and_blob_store_or_maybe_create_from` above succeeding,
-        // we can assume we have an insert and delete table.
-        let (tx_table, tx_blob_store, del_table) = unsafe { self.tx_state.assume_present_get_mut_table(table_id) };
-        for (col_id, seq_val) in cols_to_gen.iter().zip(seq_vals) {
-            // SAFETY:
-            // - `self.is_row_present(row)` holds as we haven't deleted the row.
-            // - `col_id` is a valid column, and has a sequence, so it must have a primitive type.
-            unsafe { tx_table.write_gen_val_to_col(col_id, tx_row_ptr, seq_val) };
-        }
-        // SAFETY: `tx_table.is_row_present(tx_row_ptr)` holds as we haven't deleted it yet.
-        let tx_row_ref = unsafe { tx_table.get_row_ref_unchecked(tx_blob_store, tx_row_ptr) };
+        let (
+            tx_row_ptr,
+            cols_to_gen,
+            blob_bytes,
+            (tx_table, tx_blob_store, del_table),
+            (commit_table, commit_blob_store, _),
+        ) = insert_physically_maybe_generate::<true>(
+            &mut self.tx_state,
+            &self.committed_state_write_lock,
+            &mut self.sequence_state_lock,
+            table_id,
+            row,
+        )?;
 
         let update_flags = UpdateFlags {
             is_scheduler_table: tx_table.is_scheduler(),
         };
+        let ok = |row_ref| Ok((cols_to_gen, row_ref, update_flags));
 
-        // 3. Find the old row and remove it.
-        //----------------------------------------------------------------------
-        #[inline]
-        fn ensure_unique(index_id: IndexId, index: TableAndIndex<'_>) -> Result<()> {
-            if !index.index().is_unique() {
-                return Err(IndexError::NotUnique(index_id).into());
+        // SAFETY: `tx_table.is_row_present(tx_row_ptr)` holds as we just inserted it.
+        let tx_row_ref = unsafe { tx_table.get_row_ref_unchecked(tx_blob_store, tx_row_ptr) };
+
+        let err = 'error: {
+            // This macros can be thought of as a `throw $e` within `'error`.
+            // TODO(centril): Get rid of this once we have stable `try` blocks or polonius.
+            macro_rules! throw {
+                ($e:expr) => {
+                    break 'error $e.into()
+                };
             }
-            Ok(())
-        }
-        /// Ensure that the new row does not violate the commit table's unique constraints.
-        #[inline]
-        fn check_commit_unique_constraints(
-            commit_table: &Table,
-            del_table: &DeleteTable,
-            ignore_index_id: IndexId,
-            new_row: RowRef<'_>,
-            old_ptr: RowPointer,
-        ) -> Result<()> {
-            let is_deleted = |commit_ptr| commit_ptr == old_ptr || del_table.contains(commit_ptr);
+
+            // Check that the index exists and is unique.
+            // It's sufficient to check the committed state.
+            let Some(commit_index) = commit_table.get_index_by_id(index_id) else {
+                throw!(IndexError::NotFound(index_id));
+            };
+            if !commit_index.is_unique() {
+                throw!(IndexError::NotUnique(index_id));
+            }
+
+            // Project the row to the index's type.
+            // SAFETY: `tx_row_ref`'s table is derived from `commit_index`'s table,
+            // so all `index.indexed_columns` will be in-bounds of the row layout.
+            let index_key = unsafe { tx_row_ref.project_unchecked(&commit_index.indexed_columns) };
+
+            // Try to find the old row first in the committed state using the `index_key`.
+            let mut old_commit_del_ptr = None;
+            let commit_old_ptr = commit_index.seek_point(&index_key).next().filter(|&ptr| {
+                // Was committed row previously deleted in this TX?
+                let deleted = del_table.contains(ptr);
+                // If so, remember it in case it was identical to the new row.
+                old_commit_del_ptr = deleted.then_some(ptr);
+                !deleted
+            });
+
+            // Ensure that the new row does not violate other commit table unique constraints.
+            let is_deleted = |commit_ptr| {
+                commit_old_ptr.is_some_and(|old_ptr| old_ptr == commit_ptr) || del_table.contains(commit_ptr)
+            };
             // SAFETY: `commit_table.row_layout() == new_row.row_layout()` holds
             // as the `tx_table` is derived from `commit_table`.
-            let res = unsafe {
+            if let Err(e) = unsafe {
                 commit_table.check_unique_constraints(
-                    new_row,
+                    tx_row_ref,
                     // Don't check this index since we'll do a 1-1 old/new replacement.
-                    |ixs| ixs.filter(|(&id, _)| id != ignore_index_id),
+                    |ixs| ixs.filter(|(&id, _)| id != index_id),
                     is_deleted,
                 )
-            };
-            res.map_err(IndexError::from).map_err(Into::into)
-        }
-        /// Projects the new row to the index to find the old row.
-        #[inline]
-        fn find_old_row(new_row: RowRef<'_>, index: TableAndIndex<'_>) -> (Option<RowPointer>, AlgebraicValue) {
-            let index = index.index();
-            // Project the row to the index's columns/type.
-            // SAFETY: `new_row` belongs to the same table as `index`,
-            // so all `index.indexed_columns` will be in-bounds of the row layout.
-            let needle = unsafe { new_row.project_unchecked(&index.indexed_columns) };
-            // Find the old row.
-            (index.seek_point(&needle).next(), needle)
-        }
+            } {
+                throw!(IndexError::from(e));
+            }
 
-        // The index we've been directed to use must exist
-        // either in the committed state or in the tx state.
-        // In the former case, the index must not have been removed in the transaction.
-        // As it's unlikely that an index was added in this transaction,
-        // we begin by checking the committed state.
-        let commit_blob_store = &self.committed_state_write_lock.blob_store;
-        let mut old_commit_del_ptr = None;
-        let err = 'failed_rev_ins: {
-            let tx_row_ptr = if tx_removed_index {
-                break 'failed_rev_ins IndexError::NotFound(index_id).into();
-            } else if let Some((commit_index, old_ptr)) =
-                // Find the committed state index, project the row to it, and find the old row.
-                // The old row must not have been deleted.
+            let tx_row_ptr = if let Some(old_ptr) = commit_old_ptr {
+                // Row was found in the committed state!
                 //
-                // If the old row wasn't found, it may still exist in the tx state,
-                // which inherits the index structure of the committed state,
-                // so we'd like to avoid an early error in that case.
-                self
-                    .committed_state_write_lock
-                    .get_index_by_id_with_table(table_id, index_id)
-                    .and_then(|index| find_old_row(tx_row_ref, index).0.map(|ptr| (index, ptr)))
-                    .filter(|&(_, ptr)| {
-                        // Was committed row previously deleted in this TX?
-                        let deleted = del_table.contains(ptr);
-                        // If so, remember it in case it was identical to the new row.
-                        old_commit_del_ptr = deleted.then_some(ptr);
-                        !deleted
-                    })
-            {
-                // 1. Ensure the index is unique.
-                // 2. Ensure the new row doesn't violate any other committed state unique indices.
-                let commit_table = commit_index.table();
-                if let Err(e) = ensure_unique(index_id, commit_index).and_then(|_| {
-                    check_commit_unique_constraints(commit_table, del_table, index_id, tx_row_ref, old_ptr)
-                }) {
-                    break 'failed_rev_ins e;
-                }
-
                 // If the new row is the same as the old,
                 // skip the update altogether to match the semantics of `Self::insert`.
+                //
                 // SAFETY:
                 // 1. `tx_table` is derived from `commit_table` so they have the same layouts.
                 // 2. `old_ptr` was found in an index of `commit_table`, so we know it is valid.
                 // 3. we just inserted `tx_row_ptr` into `tx_table`, so we know it is valid.
                 if unsafe { Table::eq_row_in_page(commit_table, old_ptr, tx_table, tx_row_ptr) } {
-                    // SAFETY: `self.is_row_present(tx_row_ptr)` holds, as noted in 3.
+                    // SAFETY: `tx_table.is_row_present(tx_row_ptr)` holds, as noted in 3.
                     unsafe { tx_table.delete_internal_skip_pointer_map(tx_blob_store, tx_row_ptr) };
                     // SAFETY: `commit_table.is_row_present(old_ptr)` holds, as noted in 2.
-                    let old_row_ref = unsafe { commit_table.get_row_ref_unchecked(commit_blob_store, old_ptr) };
-                    return Ok((cols_to_gen, old_row_ref, update_flags));
+                    let row_ref = unsafe { commit_table.get_row_ref_unchecked(commit_blob_store, old_ptr) };
+                    return ok(RowRefInsertion::Existed(row_ref));
                 }
 
                 // Check constraints and confirm the insertion of the new row.
@@ -1651,236 +1695,163 @@ impl MutTxId {
                 // but it cannot, as the committed state already has `X` for `C`.
                 // So we don't need to check the tx state for a duplicate row.
                 //
-                // SAFETY: `self.is_row_present(row)` holds as we still haven't deleted the row,
+                // SAFETY: `tx_table.is_row_present(row)` holds as we still haven't deleted the row,
                 // in particular, the `write_gen_val_to_col` call does not remove the row.
                 // On error, `tx_row_ptr` has already been removed, so don't do it again.
                 let (_, tx_row_ptr) =
                     unsafe { tx_table.confirm_insertion::<false>(tx_blob_store, tx_row_ptr, blob_bytes) }?;
+
                 // Delete the old row.
                 del_table.insert(old_ptr);
                 tx_row_ptr
-            } else if let Some(tx_index) =
-                // Either the row was not found in the committed state index,
-                // or the index was added in our tx state.
-                // In the latter case, committed state rows will be present in the index,
-                // so we must handle those specially.
-                tx_table.get_index_by_id_with_table(tx_blob_store, index_id)
+            } else if let Some(old_ptr) = tx_table
+                .get_index_by_id(index_id)
+                .and_then(|index| index.seek_point(&index_key).next())
             {
-                // 0. Find the old row.
-                // 1. Ensure the index is unique.
-                // 2. Ensure the new row doesn't violate any other committed state unique indices.
-                let (old_ptr, needle) = find_old_row(tx_row_ref, tx_index);
-                let commit_table = self.committed_state_write_lock.get_table(table_id);
-                let res = old_ptr
-                    // If we have an old committed state row, ensure it hasn't been deleted in our tx.
-                    .filter(|ptr| ptr.squashed_offset() == SquashedOffset::TX_STATE || !del_table.contains(*ptr))
-                    .ok_or_else(|| IndexError::KeyNotFound(index_id, needle).into())
-                    .and_then(|old_ptr| {
-                        ensure_unique(index_id, tx_index)?;
-                        if let Some(commit_table) = commit_table {
-                            check_commit_unique_constraints(commit_table, del_table, index_id, tx_row_ref, old_ptr)?;
-                        }
-                        Ok(old_ptr)
-                    });
-                let old_ptr = match res {
-                    Err(e) => break 'failed_rev_ins e,
-                    Ok(x) => x,
-                };
+                // Row was found in the tx state!
+                //
+                // Check constraints and confirm the update of the new row.
+                // This ensures that the old row is removed from the indices
+                // before attempting to insert the new row into the indices.
+                //
+                // SAFETY: `tx_table.is_row_present(tx_row_ptr)` and `tx_table.is_row_present(old_ptr)` both hold
+                // as we've deleted neither.
+                // In particular, the `write_gen_val_to_col` call does not remove the row.
+                let tx_row_ptr = unsafe { tx_table.confirm_update(tx_blob_store, tx_row_ptr, old_ptr, blob_bytes) }?;
 
-                match old_ptr.squashed_offset() {
-                    SquashedOffset::COMMITTED_STATE => {
-                        if let Some(commit_table) = commit_table {
-                            // If the new row is the same as the old,
-                            // skip the update altogether to match the semantics of `Self::insert`.
-                            // SAFETY:
-                            // 1. `tx_table` is derived from `commit_table` so they have the same layouts.
-                            // 2. `old_ptr` was found in an index of `tx_table`,
-                            //     but we had `SquashedOffset::COMMITTED_STATE`,
-                            //     so we know it is valid for `commit_table`.
-                            // 3. we just inserted `tx_row_ptr` into `tx_table`, so we know it is valid.
-                            if unsafe { Table::eq_row_in_page(commit_table, old_ptr, tx_table, tx_row_ptr) } {
-                                // SAFETY: `self.is_row_present(tx_row_ptr)` holds, as noted in 3.
-                                unsafe { tx_table.delete_internal_skip_pointer_map(tx_blob_store, tx_row_ptr) };
-                                // SAFETY: `commit_table.is_row_present(old_ptr)` holds, as noted in 2.
-                                let old_row_ref =
-                                    unsafe { commit_table.get_row_ref_unchecked(commit_blob_store, old_ptr) };
-                                return Ok((cols_to_gen, old_row_ref, update_flags));
-                            }
-                        }
+                if let Some(old_commit_del_ptr) = old_commit_del_ptr {
+                    // If we have an identical deleted row in the committed state,
+                    // we need to undelete it, just like in `Self::insert`.
+                    // The same note (`insert_undelete`) there re. MVCC applies here as well.
+                    //
+                    // SAFETY:
+                    // 1. `tx_table` is derived from `commit_table` so they have the same layouts.
+                    // 2. `old_commit_del_ptr` was found in an index of `commit_table`.
+                    // 3. we just inserted `tx_row_ptr` into `tx_table`, so we know it is valid.
+                    if unsafe { Table::eq_row_in_page(commit_table, old_commit_del_ptr, tx_table, tx_row_ptr) } {
+                        // It is important that we `confirm_update` first,
+                        // as we must ensure that undeleting the row causes no tx state conflict.
+                        tx_table
+                            .delete(tx_blob_store, tx_row_ptr, |_| ())
+                            .expect("Failed to delete a row we just inserted");
 
-                        // Check constraints and confirm the insertion of the new row.
-                        //
-                        // `CHECK_SAME_ROW = false`,
-                        // as we know there's a row (`old_ptr`) in the committed state with,
-                        // for columns `C`, a unique value X.
-                        // For `row` to be identical to another row in the tx state,
-                        // it must have the value `X` for `C`,
-                        // but it cannot, as the committed state already has `X` for `C`.
-                        // So we don't need to check the tx state for a duplicate row.
-                        //
-                        // SAFETY: `self.is_row_present(row)` holds as we still haven't deleted the row,
-                        // in particular, the `write_gen_val_to_col` call does not remove the row.
-                        // On error, `tx_row_ptr` has already been removed, so don't do it again.
-                        let (_, tx_row_ptr) =
-                            unsafe { tx_table.confirm_insertion::<false>(tx_blob_store, tx_row_ptr, blob_bytes) }?;
-                        // Delete the old row.
-                        del_table.insert(old_ptr);
-                        tx_row_ptr
+                        // Undelete.
+                        del_table.remove(old_commit_del_ptr);
+
+                        // Return the undeleted committed state row.
+                        // SAFETY: `commit_table.is_row_present(old_commit_del_ptr)` holds.
+                        let row_ref =
+                            unsafe { commit_table.get_row_ref_unchecked(commit_blob_store, old_commit_del_ptr) };
+                        return ok(RowRefInsertion::Existed(row_ref));
                     }
-                    SquashedOffset::TX_STATE => {
-                        // Check constraints and confirm the update of the new row.
-                        // This ensures that the old row is removed from the indices
-                        // before attempting to insert the new row into the indices.
-                        //
-                        // SAFETY: `self.is_row_present(tx_row_ptr)` and `self.is_row_present(old_ptr)` both hold
-                        // as we've deleted neither.
-                        // In particular, the `write_gen_val_to_col` call does not remove the row.
-                        let tx_row_ptr =
-                            unsafe { tx_table.confirm_update(tx_blob_store, tx_row_ptr, old_ptr, blob_bytes) }?;
-
-                        if let Some(old_commit_del_ptr) = old_commit_del_ptr {
-                            let commit_table =
-                                commit_table.expect("previously found a row in `commit_table`, so there should be one");
-                            // If we have an identical deleted row in the committed state,
-                            // we need to undeleted it, just like in `Self::insert`.
-                            // The same note (`insert_undelete`) there re. MVCC applies here as well.
-                            //
-                            // SAFETY:
-                            // 1. `tx_table` is derived from `commit_table` so they have the same layouts.
-                            // 2. `old_commit_del_ptr` was found in an index of `commit_table`.
-                            // 3. we just inserted `tx_row_ptr` into `tx_table`, so we know it is valid.
-                            if unsafe { Table::eq_row_in_page(commit_table, old_commit_del_ptr, tx_table, tx_row_ptr) }
-                            {
-                                // It is important that we `confirm_update` first,
-                                // as we must ensure that undeleting the row causes no tx state conflict.
-                                tx_table
-                                    .delete(tx_blob_store, tx_row_ptr, |_| ())
-                                    .expect("Failed to delete a row we just inserted");
-
-                                // Undelete.
-                                del_table.remove(old_commit_del_ptr);
-
-                                // Return the undeleted committed state row.
-                                // SAFETY: `commit_table.is_row_present(old_commit_del_ptr)` holds.
-                                let old_row_ref = unsafe {
-                                    commit_table.get_row_ref_unchecked(commit_blob_store, old_commit_del_ptr)
-                                };
-                                return Ok((cols_to_gen, old_row_ref, update_flags));
-                            }
-                        }
-
-                        tx_row_ptr
-                    }
-                    _ => unreachable!("Invalid SquashedOffset for RowPointer: {:?}", old_ptr),
                 }
+
+                tx_row_ptr
             } else {
-                break 'failed_rev_ins IndexError::NotFound(index_id).into();
+                throw!(IndexError::KeyNotFound(index_id, index_key));
             };
 
             // SAFETY: `tx_table.is_row_present(tx_row_ptr)` holds
             // per post-condition of `confirm_insertion` and `confirm_update`
             // in the if/else branches respectively.
-            let tx_row_ref = unsafe { tx_table.get_row_ref_unchecked(tx_blob_store, tx_row_ptr) };
-            return Ok((cols_to_gen, tx_row_ref, update_flags));
+            let row_ref = unsafe { tx_table.get_row_ref_unchecked(tx_blob_store, tx_row_ptr) };
+            return ok(RowRefInsertion::Inserted(row_ref));
         };
 
         // When we reach here, we had an error and we need to revert the insertion of `tx_row_ref`.
-        // SAFETY: `self.is_row_present(tx_row_ptr)` holds,
+        // SAFETY: `tx_table.is_row_present(tx_row_ptr)` holds,
         // as we still haven't deleted the row physically.
         unsafe { tx_table.delete_internal_skip_pointer_map(tx_blob_store, tx_row_ptr) };
         Err(err)
     }
 
     pub(super) fn delete(&mut self, table_id: TableId, row_pointer: RowPointer) -> Result<bool> {
-        match row_pointer.squashed_offset() {
-            // For newly-inserted rows,
-            // just delete them from the insert tables
-            // - there's no reason to have them in both the insert and delete tables.
-            SquashedOffset::TX_STATE => {
-                let (table, blob_store) = self
-                    .tx_state
-                    .get_table_and_blob_store(table_id)
-                    .ok_or(TableError::IdNotFoundState(table_id))?;
-                Ok(table.delete(blob_store, row_pointer, |_| ()).is_some())
-            }
-            SquashedOffset::COMMITTED_STATE => {
-                let commit_table = self
-                    .committed_state_write_lock
-                    .get_table(table_id)
-                    .expect("there's a row in committed state so there should be a committed table");
-                // NOTE: We trust the `row_pointer` refers to an extant row,
-                // and check only that it hasn't yet been deleted.
-                self.tx_state
-                    .get_delete_table_mut(table_id, commit_table)
-                    .insert(row_pointer);
-                Ok(true)
-            }
-            _ => unreachable!("Invalid SquashedOffset for RowPointer: {:?}", row_pointer),
-        }
+        delete(
+            &mut self.tx_state,
+            &self.committed_state_write_lock,
+            table_id,
+            row_pointer,
+        )
     }
+}
 
+pub(super) fn delete(
+    tx_state: &mut TxState,
+    committed_state: &CommittedState,
+    table_id: TableId,
+    row_pointer: RowPointer,
+) -> Result<bool> {
+    match row_pointer.squashed_offset() {
+        // For newly-inserted rows,
+        // just delete them from the insert tables
+        // - there's no reason to have them in both the insert and delete tables.
+        SquashedOffset::TX_STATE => {
+            let (table, blob_store) = tx_state
+                .get_table_and_blob_store(table_id)
+                .ok_or(TableError::IdNotFoundState(table_id))?;
+            Ok(table.delete(blob_store, row_pointer, |_| ()).is_some())
+        }
+        SquashedOffset::COMMITTED_STATE => {
+            let commit_table = committed_state
+                .get_table(table_id)
+                .expect("there's a row in committed state so there should be a committed table");
+            // NOTE: We trust the `row_pointer` refers to an extant row,
+            // and check only that it hasn't yet been deleted.
+            tx_state
+                .get_delete_table_mut(table_id, commit_table)
+                .insert(row_pointer);
+            Ok(true)
+        }
+        _ => unreachable!("Invalid SquashedOffset for RowPointer: {:?}", row_pointer),
+    }
+}
+
+impl MutTxId {
     pub(super) fn delete_by_row_value(&mut self, table_id: TableId, rel: &ProductValue) -> Result<bool> {
-        // Four cases here:
-        // - Table exists in both tx_state and committed_state.
-        //   - Temporary insert into tx_state.
-        //   - If match exists in tx_state, delete it immediately.
-        //   - Else if match exists in committed_state, add to delete tables.
-        //   - Roll back temp insertion.
-        // - Table exists only in tx_state.
-        //   - As above, but without else branch.
-        // - Table exists only in committed_state.
-        //   - Create table in tx_state, then as above.
-        // - Table does not exist.
-        //   - No such row; return false.
+        // Get commit table and page pool.
+        let page_pool = &self.committed_state_write_lock.page_pool;
+        let (commit_table, ..) = self.committed_state_write_lock.get_table_and_blob_store(table_id)?;
 
-        let (commit_table, page_pool) = self.committed_state_write_lock.get_table_mut(table_id);
-
-        // If the tx table exists, get it.
-        // If it doesn't exist, but the commit table does,
-        // create the tx table using the commit table as a template.
-        let Some((tx_table, tx_blob_store, ..)) = self
+        // Temporarily insert the row into the tx insert table.
+        let (tx_table, tx_blob_store, _) = self
             .tx_state
-            .get_table_and_blob_store_or_maybe_create_from(table_id, commit_table.as_deref())
-        else {
-            // If neither the committed table nor the tx table exists,
-            // the row can't exist, so delete nothing.
-            return Ok(false);
-        };
+            .get_table_and_blob_store_or_create_from(table_id, commit_table);
 
         // We only want to physically insert the row here to get a row pointer.
         // We'd like to avoid any set semantic and unique constraint checks.
         let (row_ref, _) = tx_table.insert_physically_pv(page_pool, tx_blob_store, rel)?;
         let ptr = row_ref.pointer();
 
-        // First, check if a matching row exists in the `tx_table`.
-        // If it does, no need to check the `commit_table`.
+        // First, check if a matching row exists in the `commit_table`.
+        // If it does, no need to check the `tx_table`.
+        //
+        // We start with `commit_table` as, in most cases,
+        // we'll likely have a transaction that deletes a committed row
+        // rather than deleting a row that was inserted in the same transaction.
         //
         // SAFETY:
-        // - `tx_table` trivially uses the same schema as itself.
+        // - `commit_table` and `tx_table` use the same schema.
         // - `ptr` is valid because we just inserted it.
-        // - `hash` is correct because we just computed it.
-        let (hash, to_delete) = unsafe { Table::find_same_row(tx_table, tx_table, tx_blob_store, ptr, None) };
+        let (hash, to_delete) = unsafe { Table::find_same_row(commit_table, tx_table, tx_blob_store, ptr, None) };
         let to_delete = to_delete
-            // Not present in insert tables? Check if present in the commit tables.
+            // Not present in commit table? Check if present in the tx table.
             .or_else(|| {
-                commit_table.and_then(|commit_table| {
-                    // SAFETY:
-                    // - `commit_table` and `tx_table` use the same schema
-                    // - `ptr` is valid because we just inserted it.
-                    let (_, to_delete) =
-                        unsafe { Table::find_same_row(commit_table, tx_table, tx_blob_store, ptr, hash) };
-                    to_delete
-                })
+                // SAFETY:
+                // - `commit_table` and `tx_table` use the same schema.
+                // - `ptr` is valid because we just inserted it.
+                let (_, to_delete) = unsafe { Table::find_same_row(tx_table, tx_table, tx_blob_store, ptr, hash) };
+                to_delete
             });
 
-        // Remove the temporary entry from the insert tables.
-        // Do this before actually deleting to drop the borrows on the tables.
+        // Remove the temporary entry from the tx table.
+        // Do this before actually deleting to drop the borrows on the table.
         // SAFETY: `ptr` is valid because we just inserted it and haven't deleted it since.
         unsafe {
             tx_table.delete_internal_skip_pointer_map(tx_blob_store, ptr);
         }
 
-        // Mark the committed row to be deleted by adding it to the delete table.
+        // Delete the found row either by marking (commit table)
+        // or by deleteing directly (tx table).
         to_delete
             .map(|to_delete| self.delete(table_id, to_delete))
             .unwrap_or(Ok(false))
@@ -1899,34 +1870,18 @@ impl StateView for MutTxId {
         // TODO(bikeshedding, docs): should this also check if the schema is in the system tables,
         // but the table hasn't been constructed yet?
         // If not, document why.
-        self.tx_state
-            .insert_tables
-            .get(&table_id)
-            .or_else(|| self.committed_state_write_lock.tables.get(&table_id))
-            .map(|table| table.get_schema())
+
+        // No need to check the tx state.
+        // If the table is not in the committed state, it doesn't exist.
+        self.committed_state_write_lock.get_schema(table_id)
     }
 
     fn table_row_count(&self, table_id: TableId) -> Option<u64> {
-        let commit_count = self.committed_state_write_lock.table_row_count(table_id);
-        let (tx_ins_count, tx_del_count) = self.tx_state.table_row_count(table_id);
-        let commit_count = commit_count.map(|cc| cc - tx_del_count);
-        // Keep track of whether `table_id` exists.
-        match (commit_count, tx_ins_count) {
-            (Some(cc), Some(ic)) => Some(cc + ic),
-            (Some(c), None) | (None, Some(c)) => Some(c),
-            (None, None) => None,
-        }
+        table_row_count(&self.tx_state, &self.committed_state_write_lock, table_id)
     }
 
     fn iter(&self, table_id: TableId) -> Result<Self::Iter<'_>> {
-        if self.table_name(table_id).is_some() {
-            return Ok(IterMutTx::new(
-                table_id,
-                &self.tx_state,
-                &self.committed_state_write_lock,
-            ));
-        }
-        Err(TableError::IdNotFound(SystemTable::st_table, table_id.0).into())
+        iter(&self.tx_state, &self.committed_state_write_lock, table_id)
     }
 
     fn iter_by_col_range<R: RangeBounds<AlgebraicValue>>(
@@ -1935,89 +1890,129 @@ impl StateView for MutTxId {
         cols: ColList,
         range: R,
     ) -> Result<Self::IterByColRange<'_, R>> {
-        // We have to index_seek in both the committed state and the current tx state.
-        // First, we will check modifications in the current tx. It may be that the table
-        // has not been modified yet in the current tx, in which case we will only search
-        // the committed state. Finally, the table may not be indexed at all, in which case
-        // we fall back to iterating the entire table.
-        //
-        // We need to check the tx_state first. In particular, it may be that the index
-        // was only added in the current transaction.
-        // TODO(george): It's unclear that we truly support dynamically creating an index
-        // yet. In particular, I don't know if creating an index in a transaction and
-        // rolling it back will leave the index in place.
-        if let Some(inserted_rows) = self.tx_state.index_seek_by_cols(table_id, &cols, &range) {
-            let committed_rows = self.committed_state_write_lock.index_seek(table_id, &cols, &range);
-            // The current transaction has modified this table, and the table is indexed.
-            Ok(if let Some(del_table) = self.tx_state.get_delete_table(table_id) {
-                IterByColRangeMutTx::IndexWithDeletes(IndexSeekIterIdWithDeletedMutTx {
-                    inserted_rows,
-                    committed_rows,
-                    del_table,
-                })
-            } else {
-                IterByColRangeMutTx::Index(IndexSeekIterIdMutTx {
-                    inserted_rows,
-                    committed_rows,
-                })
-            })
-        } else {
-            // Either the current transaction has not modified this table, or the table is not
-            // indexed.
-            match self.committed_state_write_lock.index_seek(table_id, &cols, &range) {
-                Some(committed_rows) => Ok(if let Some(del_table) = self.tx_state.get_delete_table(table_id) {
-                    IterByColRangeMutTx::CommittedIndexWithDeletes(CommittedIndexIterWithDeletedMutTx::new(
-                        committed_rows,
-                        del_table,
-                    ))
-                } else {
-                    IterByColRangeMutTx::CommittedIndex(committed_rows)
-                }),
-                None => {
-                    #[cfg(feature = "unindexed_iter_by_col_range_warn")]
-                    match self.table_row_count(table_id) {
-                        // TODO(ux): log these warnings to the module logs rather than host logs.
-                        None => log::error!(
-                            "iter_by_col_range on unindexed column, but couldn't fetch table `{table_id}`s row count",
-                        ),
-                        Some(num_rows) => {
-                            const TOO_MANY_ROWS_FOR_SCAN: u64 = 1000;
-                            if num_rows >= TOO_MANY_ROWS_FOR_SCAN {
-                                let schema = self.schema_for_table(table_id).unwrap();
-                                let table_name = &schema.table_name;
-                                let col_names = cols
-                                    .iter()
-                                    .map(|col_id| {
-                                        schema
-                                            .columns()
-                                            .get(col_id.idx())
-                                            .map(|col| &col.col_name[..])
-                                            .unwrap_or("[unknown column]")
-                                    })
-                                    .collect::<Vec<_>>();
-                                log::warn!(
-                                    "iter_by_col_range without index: table {table_name} has {num_rows} rows; scanning columns {col_names:?}",
-                                );
-                            }
-                        }
-                    }
-
-                    Ok(IterByColRangeMutTx::Scan(ScanIterByColRangeMutTx::new(
-                        self.iter(table_id)?,
-                        cols,
-                        range,
-                    )))
-                }
-            }
-        }
+        iter_by_col_range(&self.tx_state, &self.committed_state_write_lock, table_id, cols, range)
     }
 
-    fn iter_by_col_eq<'a, 'r>(
-        &'a self,
+    fn iter_by_col_eq<'r>(
+        &self,
         table_id: TableId,
         cols: impl Into<ColList>,
         value: &'r AlgebraicValue,
-    ) -> Result<Self::IterByColEq<'a, 'r>> {
-        self.iter_by_col_range(table_id, cols.into(), value)
+    ) -> Result<Self::IterByColEq<'_, 'r>> {
+        iter_by_col_eq(&self.tx_state, &self.committed_state_write_lock, table_id, cols, value)
+    }
+}
+
+fn table_row_count(tx_state: &TxState, committed_state: &CommittedState, table_id: TableId) -> Option<u64> {
+    let commit_count = committed_state.table_row_count(table_id);
+    let (tx_ins_count, tx_del_count) = tx_state.table_row_count(table_id);
+    let commit_count = commit_count.map(|cc| cc - tx_del_count);
+    // Keep track of whether `table_id` exists.
+    match (commit_count, tx_ins_count) {
+        (Some(cc), Some(ic)) => Some(cc + ic),
+        (Some(c), None) | (None, Some(c)) => Some(c),
+        (None, None) => None,
+    }
+}
+
+fn iter<'a>(tx_state: &'a TxState, committed_state: &'a CommittedState, table_id: TableId) -> Result<IterMutTx<'a>> {
+    IterMutTx::new(table_id, tx_state, committed_state)
+}
+
+fn iter_by_col_range<'a, R: RangeBounds<AlgebraicValue>>(
+    tx_state: &'a TxState,
+    committed_state: &'a CommittedState,
+    table_id: TableId,
+    cols: ColList,
+    range: R,
+) -> Result<IterByColRangeMutTx<'a, R>> {
+    // If there's an index, use that.
+    // It's sufficient to check that the committed state has an index
+    // as index schema changes are applied immediately.
+    if let Some(commit_iter) = committed_state.index_seek(table_id, &cols, &range) {
+        let tx_iter = tx_state.index_seek_by_cols(table_id, &cols, &range);
+        let delete_table = tx_state.get_delete_table(table_id);
+        let iter = combine_range_index_iters(delete_table, tx_iter, commit_iter);
+        Ok(IterByColRangeMutTx::Index(iter))
+    } else {
+        unindexed_iter_by_col_range_warn(tx_state, committed_state, table_id, &cols);
+        let iter = iter(tx_state, committed_state, table_id)?;
+
+        Ok(IterByColRangeMutTx::Scan(ScanIterByColRangeMutTx::new(
+            iter, cols, range,
+        )))
+    }
+}
+
+fn iter_by_col_eq<'a, 'r>(
+    tx_state: &'a TxState,
+    committed_state: &'a CommittedState,
+    table_id: TableId,
+    cols: impl Into<ColList>,
+    value: &'r AlgebraicValue,
+) -> Result<IterByColEqMutTx<'a, 'r>> {
+    iter_by_col_range(tx_state, committed_state, table_id, cols.into(), value)
+}
+
+fn combine_range_index_iters<'a>(
+    delete_table: Option<&'a DeleteTable>,
+    tx_iter: Option<IndexScanRangeIter<'a>>,
+    commit_iter: IndexScanRangeIter<'a>,
+) -> IndexScanRanged<'a> {
+    // Chain together the indexed rows in the tx and committed state,
+    // but don't yield rows deleted in the tx state.
+    use itertools::Either::*;
+    use IndexScanRangedInner::*;
+    let commit_iter = match delete_table {
+        None => Left(commit_iter),
+        Some(deletes) => Right(FilterDeleted {
+            iter: commit_iter,
+            deletes,
+        }),
+    };
+    // This is effectively just `tx_iter.into_iter().flatten().chain(commit_iter)`,
+    // but with all the branching and `Option`s flattened to just one layer.
+    let iter = match (tx_iter, commit_iter) {
+        (None, Left(commit_iter)) => CommitOnly(commit_iter),
+        (None, Right(commit_iter)) => CommitOnlyWithDeletes(commit_iter),
+        (Some(tx_iter), Left(commit_iter)) => Both(tx_iter.chain(commit_iter)),
+        (Some(tx_iter), Right(commit_iter)) => BothWithDeletes(tx_iter.chain(commit_iter)),
+    };
+    IndexScanRanged { inner: iter }
+}
+
+#[cfg(not(feature = "unindexed_iter_by_col_range_warn"))]
+fn unindexed_iter_by_col_range_warn(_: &TxState, _: &CommittedState, _: TableId, _: &ColList) {}
+
+#[cfg(feature = "unindexed_iter_by_col_range_warn")]
+fn unindexed_iter_by_col_range_warn(
+    tx_state: &TxState,
+    committed_state: &CommittedState,
+    table_id: TableId,
+    cols: &ColList,
+) {
+    match table_row_count(tx_state, committed_state, table_id) {
+        // TODO(ux): log these warnings to the module logs rather than host logs.
+        None => log::error!("iter_by_col_range on unindexed column, but couldn't fetch table `{table_id}`s row count",),
+        Some(num_rows) => {
+            const TOO_MANY_ROWS_FOR_SCAN: u64 = 1000;
+            if num_rows >= TOO_MANY_ROWS_FOR_SCAN {
+                let schema = committed_state.get_schema(table_id).unwrap();
+                let table_name = &schema.table_name;
+                let col_names = cols
+                    .iter()
+                    .map(|col_id| {
+                        schema
+                            .columns()
+                            .get(col_id.idx())
+                            .map(|col| &col.col_name[..])
+                            .unwrap_or("[unknown column]")
+                    })
+                    .collect::<Vec<_>>();
+                log::warn!(
+                    "iter_by_col_range without index: table {table_name} has {num_rows} rows; scanning columns {col_names:?}",
+                );
+            }
+        }
     }
 }

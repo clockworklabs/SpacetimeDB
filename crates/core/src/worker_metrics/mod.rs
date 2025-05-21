@@ -27,12 +27,12 @@ metrics_group!(
 
         #[name = spacetime_websocket_requests_total]
         #[help = "The cumulative number of websocket request messages"]
-        #[labels(replica_id: u64, protocol: str)]
+        #[labels(database_identity: Identity, protocol: str)]
         pub websocket_requests: IntCounterVec,
 
         #[name = spacetime_websocket_request_msg_size]
         #[help = "The size of messages received on connected sessions"]
-        #[labels(replica_id: u64, protocol: str)]
+        #[labels(database_identity: Identity, protocol: str)]
         pub websocket_request_msg_size: HistogramVec,
 
         #[name = jemalloc_active_bytes]
@@ -265,29 +265,27 @@ pub static WORKER_METRICS: Lazy<WorkerMetrics> = Lazy::new(WorkerMetrics::new);
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemalloc_ctl::{epoch, stats};
 
+#[cfg(not(target_env = "msvc"))]
 static SPAWN_JEMALLOC_GUARD: Once = Once::new();
-pub fn spawn_jemalloc_stats(node_id: String) {
+pub fn spawn_jemalloc_stats(_node_id: String) {
     #[cfg(not(target_env = "msvc"))]
     SPAWN_JEMALLOC_GUARD.call_once(|| {
         spawn(async move {
+            let allocated_bytes = WORKER_METRICS.jemalloc_allocated_bytes.with_label_values(&_node_id);
+            let resident_bytes = WORKER_METRICS.jemalloc_resident_bytes.with_label_values(&_node_id);
+            let active_bytes = WORKER_METRICS.jemalloc_active_bytes.with_label_values(&_node_id);
+
             let e = epoch::mib().unwrap();
             loop {
                 e.advance().unwrap();
+
                 let allocated = stats::allocated::read().unwrap();
-                WORKER_METRICS
-                    .jemalloc_allocated_bytes
-                    .with_label_values(&node_id)
-                    .set(allocated as i64);
                 let resident = stats::resident::read().unwrap();
-                WORKER_METRICS
-                    .jemalloc_resident_bytes
-                    .with_label_values(&node_id)
-                    .set(resident as i64);
                 let active = stats::active::read().unwrap();
-                WORKER_METRICS
-                    .jemalloc_active_bytes
-                    .with_label_values(&node_id)
-                    .set(active as i64);
+
+                allocated_bytes.set(allocated as i64);
+                resident_bytes.set(resident as i64);
+                active_bytes.set(active as i64);
 
                 sleep(Duration::from_secs(10)).await;
             }

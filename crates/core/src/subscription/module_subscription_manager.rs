@@ -6,11 +6,9 @@ use crate::client::messages::{
 };
 use crate::client::{ClientConnectionSender, Protocol};
 use crate::error::DBError;
-use crate::execution_context::WorkloadType;
 use crate::host::module_host::{DatabaseTableUpdate, ModuleEvent, UpdatesRelValue};
 use crate::messages::websocket::{self as ws, TableUpdate};
 use crate::subscription::delta::eval_delta;
-use crate::subscription::record_exec_metrics;
 use hashbrown::hash_map::OccupiedError;
 use hashbrown::{HashMap, HashSet};
 use itertools::Itertools;
@@ -758,7 +756,6 @@ impl SubscriptionManager {
         tx: &DeltaTx,
         event: Arc<ModuleEvent>,
         caller: Option<&ClientConnectionSender>,
-        database_identity: &Identity,
     ) -> ExecutionMetrics {
         use FormatSwitch::{Bsatn, Json};
 
@@ -954,8 +951,6 @@ impl SubscriptionManager {
                 .map(ReduceState::from_fold)
                 .reduce(ReduceState::default, ReduceState::append);
 
-            record_exec_metrics(&WorkloadType::Update, database_identity, metrics);
-
             let clients_with_errors = errs.iter().map(|(id, _)| *id).collect::<HashSet<_>>();
 
             let mut eval = updates
@@ -1124,6 +1119,7 @@ mod tests {
     use spacetimedb_subscription::SubscriptionPlan;
 
     use super::{Plan, SubscriptionManager, SubscriptionSetSnapshot};
+    use crate::db::relational_db::tests_utils::with_read_only;
     use crate::execution_context::Workload;
     use crate::host::module_host::DatabaseTableUpdate;
     use crate::sql::ast::SchemaViewer;
@@ -1144,7 +1140,7 @@ mod tests {
     }
 
     fn compile_plan(db: &RelationalDB, sql: &str) -> ResultTest<Arc<Plan>> {
-        db.with_read_only(Workload::ForTests, |tx| {
+        with_read_only(db, |tx| {
             let auth = AuthCtx::for_testing();
             let tx = SchemaViewer::new(&*tx, &auth);
             let (plans, has_param) = SubscriptionPlan::compile(sql, &tx, &auth).unwrap();
@@ -1935,7 +1931,7 @@ mod tests {
         });
 
         db.with_read_only(Workload::Update, |tx| {
-            subscriptions.eval_updates(&(&*tx).into(), event, Some(&client0), &db.database_identity())
+            subscriptions.eval_updates(&(&*tx).into(), event, Some(&client0))
         });
 
         tokio::runtime::Builder::new_current_thread()
