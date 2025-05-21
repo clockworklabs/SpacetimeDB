@@ -265,14 +265,15 @@ pub static WORKER_METRICS: Lazy<WorkerMetrics> = Lazy::new(WorkerMetrics::new);
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemalloc_ctl::{epoch, stats};
 
+#[cfg(not(target_env = "msvc"))]
 static SPAWN_JEMALLOC_GUARD: Once = Once::new();
-pub fn spawn_jemalloc_stats(node_id: String) {
+pub fn spawn_jemalloc_stats(_node_id: String) {
     #[cfg(not(target_env = "msvc"))]
     SPAWN_JEMALLOC_GUARD.call_once(|| {
         spawn(async move {
-            let allocated_bytes = WORKER_METRICS.jemalloc_allocated_bytes.with_label_values(&node_id);
-            let resident_bytes = WORKER_METRICS.jemalloc_resident_bytes.with_label_values(&node_id);
-            let active_bytes = WORKER_METRICS.jemalloc_active_bytes.with_label_values(&node_id);
+            let allocated_bytes = WORKER_METRICS.jemalloc_allocated_bytes.with_label_values(&_node_id);
+            let resident_bytes = WORKER_METRICS.jemalloc_resident_bytes.with_label_values(&_node_id);
+            let active_bytes = WORKER_METRICS.jemalloc_active_bytes.with_label_values(&_node_id);
 
             let e = epoch::mib().unwrap();
             loop {
