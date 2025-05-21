@@ -268,13 +268,12 @@ impl SpacetimePaths {
 
 #[cfg(test)]
 mod tests {
-    use std::ffi::{OsStr, OsString};
+    use crate::{PathBufExt, RootDir, SpacetimePaths};
     use std::path::Path;
 
-    use super::*;
-
+    #[cfg(not(windows))]
     mod vars {
-        use super::*;
+        use std::ffi::{OsStr, OsString};
         struct ResetVar<'a>(&'a str, Option<OsString>);
         impl Drop for ResetVar<'_> {
             fn drop(&mut self) {
@@ -320,6 +319,8 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn windows() {
+        use crate::SpacetimePaths;
+
         let paths = SpacetimePaths::platform_defaults().unwrap();
         let appdata_local = dirs::data_local_dir().unwrap();
         assert_eq!(paths.cli_config_dir.0, appdata_local.join("config"));

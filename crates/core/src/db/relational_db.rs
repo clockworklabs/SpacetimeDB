@@ -1749,6 +1749,7 @@ mod tests {
     use spacetimedb_sats::buffer::BufReader;
     use spacetimedb_sats::product;
     use spacetimedb_schema::schema::RowLevelSecuritySchema;
+    #[cfg(unix)]
     use spacetimedb_snapshot::Snapshot;
     use spacetimedb_table::read_column::ReadColumn;
     use spacetimedb_table::table::RowRef;
@@ -2719,6 +2720,7 @@ mod tests {
         let (dir, repo) = make_snapshot(root.clone(), Identity::ZERO, 0, CompressType::None, true);
         stdb.take_snapshot(&repo)?;
 
+        #[cfg(unix)]
         let total_objects = repo.size_on_disk()?.object_count;
         // Another snapshots that will hardlink part of the first one
         for i in 0..2 {
