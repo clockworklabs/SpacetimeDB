@@ -23,6 +23,7 @@ use spacetimedb_client_api_messages::websocket::{
 };
 use spacetimedb_lib::identity::RequestId;
 use spacetimedb_lib::metrics::ExecutionMetrics;
+use spacetimedb_lib::Identity;
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::AbortHandle;
 
@@ -77,7 +78,13 @@ pub struct ClientConnectionSender {
     sendtx: mpsc::Sender<SerializableMessage>,
     abort_handle: AbortHandle,
     cancelled: AtomicBool,
-    pub(crate) metrics: ClientConnectionMetrics,
+
+    /// Handles on Prometheus metrics related to connections to this database.
+    ///
+    /// Will be `None` when constructed by [`ClientConnectionSender::dummy_with_channel`]
+    /// or [`ClientConnectionSender::dummy`], which are used in tests.
+    /// Will be `Some` whenever this `ClientConnectionSender` is wired up to an actual client connection.
+    metrics: Option<ClientConnectionMetrics>,
 }
 
 #[derive(Debug)]
@@ -87,14 +94,14 @@ pub struct ClientConnectionMetrics {
 }
 
 impl ClientConnectionMetrics {
-    fn new(replica_id: u64, protocol: Protocol) -> Self {
+    fn new(database_identity: Identity, protocol: Protocol) -> Self {
         let message_kind = protocol.as_str();
         let websocket_request_msg_size = WORKER_METRICS
             .websocket_request_msg_size
-            .with_label_values(&replica_id, message_kind);
+            .with_label_values(&database_identity, message_kind);
         let websocket_requests = WORKER_METRICS
             .websocket_requests
-            .with_label_values(&replica_id, message_kind);
+            .with_label_values(&database_identity, message_kind);
 
         Self {
             websocket_request_msg_size,
@@ -112,25 +119,6 @@ pub enum ClientSendError {
 }
 
 impl ClientConnectionSender {
-    fn new(
-        replica_id: u64,
-        id: ClientActorId,
-        config: ClientConfig,
-        sendtx: mpsc::Sender<SerializableMessage>,
-        abort_handle: AbortHandle,
-        cancelled: AtomicBool,
-    ) -> Self {
-        let metrics = ClientConnectionMetrics::new(replica_id, config.protocol);
-        Self {
-            id,
-            config,
-            sendtx,
-            abort_handle,
-            cancelled,
-            metrics,
-        }
-    }
-
     pub fn dummy_with_channel(id: ClientActorId, config: ClientConfig) -> (Self, mpsc::Receiver<SerializableMessage>) {
         let (sendtx, rx) = mpsc::channel(1);
         // just make something up, it doesn't need to be attached to a real task
@@ -139,7 +127,14 @@ impl ClientConnectionSender {
             Err(_) => tokio::runtime::Runtime::new().unwrap().spawn(async {}).abort_handle(),
         };
         let cancelled = AtomicBool::new(false);
-        let sender = Self::new(0, id, config, sendtx, abort_handle, cancelled);
+        let sender = Self {
+            id,
+            config,
+            sendtx,
+            abort_handle,
+            cancelled,
+            metrics: None,
+        };
         (sender, rx)
     }
 
@@ -168,6 +163,13 @@ impl ClientConnectionSender {
         })?;
 
         Ok(())
+    }
+
+    pub(crate) fn observe_websocket_request_message(&self, message: &DataMessage) {
+        if let Some(metrics) = &self.metrics {
+            metrics.websocket_request_msg_size.observe(message.len() as f64);
+            metrics.websocket_requests.inc();
+        }
     }
 }
 
@@ -248,6 +250,7 @@ impl ClientConnection {
         let (fut_tx, fut_rx) = oneshot::channel::<Fut>();
         // weird dance so that we can get an abort_handle into ClientConnection
         let module_info = module.info.clone();
+        let database_identity = module_info.database_identity;
         let abort_handle = tokio::spawn(async move {
             let Ok(fut) = fut_rx.await else { return };
 
@@ -259,14 +262,16 @@ impl ClientConnection {
         })
         .abort_handle();
 
-        let sender = Arc::new(ClientConnectionSender::new(
-            replica_id,
+        let metrics = ClientConnectionMetrics::new(database_identity, config.protocol);
+
+        let sender = Arc::new(ClientConnectionSender {
             id,
             config,
             sendtx,
             abort_handle,
-            AtomicBool::new(false),
-        ));
+            cancelled: AtomicBool::new(false),
+            metrics: Some(metrics),
+        });
         let this = Self {
             sender,
             replica_id,
