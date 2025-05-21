@@ -3081,7 +3081,8 @@ mod tests {
         let (datastore, mut tx, table_id) = setup_table()?;
 
         // Insert a row and commit.
-        insert(&datastore, &mut tx, table_id, &random_row())?;
+        let row = random_row();
+        insert(&datastore, &mut tx, table_id, &row)?;
         commit(&datastore, tx)?;
 
         // Create a transaction and drop the table and roll back.
@@ -3109,6 +3110,7 @@ mod tests {
             datastore.table_id_exists_mut_tx(&tx, &table_id),
             "Table should still exist",
         );
+        assert_eq!(all_rows(&datastore, &tx, table_id), [row]);
 
         Ok(())
     }

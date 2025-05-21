@@ -359,7 +359,7 @@ impl MutTxId {
     }
 
     /// Retrieves or creates the insert tx table for `table_id`.
-    #[allow(clippy::type_complexity, clippy::unnecessary_lazy_evaluations)]
+    #[allow(clippy::type_complexity)]
     fn get_or_create_insert_table_mut(
         &mut self,
         table_id: TableId,
@@ -371,6 +371,10 @@ impl MutTxId {
         &mut dyn BlobStore,
     )> {
         let (commit_table, commit_bs, idx_map) = self.committed_state_write_lock.get_table_and_blob_store_mut(table_id);
+        // NOTE(centril): `TableError` is a fairly large type.
+        // Not making this lazy made `TableError::drop` show up in perf.
+        // TODO(centril): Box all the errors.
+        #[allow(clippy::unnecessary_lazy_evaluations)]
         let commit_table = commit_table.ok_or_else(|| TableError::IdNotFoundState(table_id))?;
 
         // Get the insert table, so we can write the row into it.
@@ -577,17 +581,16 @@ impl MutTxId {
         &self,
         index_id: IndexId,
     ) -> Option<(TableId, TableAndIndex<'_>, Option<TableAndIndex<'_>>)> {
-        // The hierarchy is as follows:
-        // 1. The table exists.
-        // 2. The commit index exists.
-        // 3. The tx index exists.
+        // Figure out what table the index belongs to.
         let table_id = self.committed_state_write_lock.get_table_for_index(index_id)?;
 
-        // Index found for commit state, might also exist for tx state.
+        // Find the index for the commit state.
+        // If we cannot find it, there's a bug.
         let commit_index = self
             .committed_state_write_lock
             .get_index_by_id_with_table(table_id, index_id)?;
 
+        // Find the index for the tx state, if any.
         let tx_index = self.tx_state.get_index_by_id_with_table(table_id, index_id);
 
         Some((table_id, commit_index, tx_index))
