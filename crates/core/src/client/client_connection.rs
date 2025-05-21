@@ -70,6 +70,13 @@ pub struct ClientConnectionSender {
     sendtx: mpsc::Sender<SerializableMessage>,
     abort_handle: AbortHandle,
     cancelled: AtomicBool,
+    /// The `total_outgoing_queue_length` metric labeled with this database's `Identity`,
+    /// which we'll increment whenever sending a message.
+    ///
+    /// This metric will be decremented, and cleaned up,
+    /// by `ws_client_actor_inner` in client-api/src/routes/subscribe.rs.
+    /// Care must be taken not to increment it after the client has disconnected
+    /// and performed its clean-up.
     sendtx_queue_size_metric: Option<IntGauge>,
 }
 
@@ -116,21 +123,26 @@ impl ClientConnectionSender {
             return Err(ClientSendError::Cancelled);
         }
 
-        if let Some(metric) = &self.sendtx_queue_size_metric {
-            metric.inc();
-        }
-
-        self.sendtx.try_send(message).map_err(|e| match e {
-            mpsc::error::TrySendError::Full(_) => {
+        match self.sendtx.try_send(message) {
+            Err(mpsc::error::TrySendError::Full(_)) => {
                 // we've hit CLIENT_CHANNEL_CAPACITY messages backed up in
                 // the channel, so forcibly kick the client
                 tracing::warn!(identity = %self.id.identity, connection_id = %self.id.connection_id, "client channel capacity exceeded");
                 self.abort_handle.abort();
                 self.cancelled.store(true, Relaxed);
-                ClientSendError::Cancelled
+                return Err(ClientSendError::Cancelled);
             }
-            mpsc::error::TrySendError::Closed(_) => ClientSendError::Disconnected,
-        })?;
+            Err(mpsc::error::TrySendError::Closed(_)) => return Err(ClientSendError::Disconnected),
+            Ok(()) => {
+                // If we successfully pushed a message into the queue, increment the queue size metric.
+                // Don't do this before pushing because, if the client has disconnected,
+                // it will already have performed its clean-up,
+                // and so would never perform the corresponding `dec` to this `inc`.
+                if let Some(metric) = &self.sendtx_queue_size_metric {
+                    metric.inc();
+                }
+            }
+        }
 
         Ok(())
     }
@@ -225,9 +237,7 @@ impl ClientConnection {
         })
         .abort_handle();
 
-        let sendtx_queue_size_metric = WORKER_METRICS
-            .client_connection_outgoing_queue_length
-            .with_label_values(&db, &id.identity, &id.connection_id);
+        let sendtx_queue_size_metric = WORKER_METRICS.total_outgoing_queue_length.with_label_values(&db);
 
         let sender = Arc::new(ClientConnectionSender {
             id,
