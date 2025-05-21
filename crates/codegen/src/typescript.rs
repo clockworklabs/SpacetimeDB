@@ -105,7 +105,7 @@ impl Lang for TypeScript {
 
         writeln!(
             out,
-            "import {{ EventContext, Reducer, RemoteReducers, RemoteTables }} from \".\";"
+            "import {{ type EventContext, type Reducer, RemoteReducers, RemoteTables }} from \".\";"
         );
 
         let table_name = table.name.deref();
@@ -636,16 +636,16 @@ fn print_spacetimedb_imports(out: &mut Indenter) {
         "DbConnectionBuilder",
         "TableCache",
         "BinaryWriter",
-        "CallReducerFlags",
-        "EventContextInterface",
-        "ReducerEventContextInterface",
-        "SubscriptionEventContextInterface",
-        "ErrorContextInterface",
+        "type CallReducerFlags",
+        "type EventContextInterface",
+        "type ReducerEventContextInterface",
+        "type SubscriptionEventContextInterface",
+        "type ErrorContextInterface",
         "SubscriptionBuilderImpl",
         "BinaryReader",
         "DbConnectionImpl",
-        "DbContext",
-        "Event",
+        "type DbContext",
+        "type Event",
         "deepEqual",
     ];
     types.sort();
