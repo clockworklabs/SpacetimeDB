@@ -353,7 +353,7 @@ static_assert_size!(
         fn(AlgebraicValue) -> Result<IterByColRangeTx<'static, AlgebraicValue>, DBError>,
         IterByColRangeTx<'static, AlgebraicValue>,
     >,
-    232
+    144
 );
 static_assert_size!(
     IndexSemiJoinLeft<
