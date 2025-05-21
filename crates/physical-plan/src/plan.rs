@@ -906,6 +906,14 @@ impl PhysicalPlan {
         self.any(&|plan| plan.is_filter())
     }
 
+    /// Is this operator a scan, index or otherwise, of a delta table?
+    pub fn is_delta_scan(&self) -> bool {
+        matches!(
+            self,
+            Self::TableScan(TableScan { delta: Some(_), .. }, _) | Self::IxScan(IxScan { delta: Some(_), .. }, _)
+        )
+    }
+
     /// If this plan has any simple equality filters such as `x = 0`,
     /// this method returns the values along with the appropriate table and column.
     /// Note, this excludes compound equality filters such as `x = 0 and y = 1`.
@@ -951,6 +959,8 @@ pub struct IxScan {
     pub schema: Arc<TableSchema>,
     /// Limit the number of rows scanned
     pub limit: Option<u64>,
+    /// Is this an index scan over a delta table?
+    pub delta: Option<Delta>,
     /// The index id
     pub index_id: IndexId,
     /// An equality prefix for multi-column scans
@@ -999,6 +1009,8 @@ pub struct IxJoin {
     /// Values are projected from the lhs,
     /// and used to probe the index on the rhs.
     pub lhs_field: TupleField,
+    // Is the rhs a delta table?
+    pub rhs_delta: Option<Delta>,
 }
 
 /// Is this a semijoin?

@@ -19,7 +19,7 @@ use spacetimedb_client_api_messages::websocket::{
 use spacetimedb_data_structures::map::{Entry, IntMap};
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::{AlgebraicValue, ConnectionId, Identity, ProductValue};
-use spacetimedb_primitives::{ColId, TableId};
+use spacetimedb_primitives::{ColId, IndexId, TableId};
 use spacetimedb_subscription::SubscriptionPlan;
 use std::collections::{BTreeSet, LinkedList};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -67,6 +67,15 @@ impl Plan {
     /// This method returns the name of that table.
     pub fn subscribed_table_name(&self) -> &str {
         self.plans[0].subscribed_table_name()
+    }
+
+    /// Returns the index ids from which this subscription reads
+    pub fn index_ids(&self) -> impl Iterator<Item = (TableId, IndexId)> {
+        self.plans
+            .iter()
+            .flat_map(|plan| plan.index_ids())
+            .collect::<HashSet<_>>()
+            .into_iter()
     }
 
     /// Returns the table ids from which this subscription reads
@@ -163,6 +172,11 @@ impl QueryState {
     // This returns all of the clients listening to a query. If a client has multiple subscriptions for this query, it will appear twice.
     fn all_clients(&self) -> impl Iterator<Item = &ClientId> {
         itertools::chain(&self.legacy_subscribers, &self.subscriptions)
+    }
+
+    /// Return the [Query] for this [QueryState]
+    pub fn query(&self) -> &Query {
+        &self.query
     }
 
     /// Return the search arguments for this query
@@ -294,6 +308,79 @@ impl SearchArguments {
     }
 }
 
+/// This type is used to keep track of the indexes that are used in subscriptions
+#[derive(Debug, Default)]
+pub struct TableIndexIds {
+    ids: HashMap<TableId, HashMap<IndexId, usize>>,
+}
+
+impl FromIterator<(TableId, IndexId)> for TableIndexIds {
+    fn from_iter<T: IntoIterator<Item = (TableId, IndexId)>>(iter: T) -> Self {
+        let mut index_ids = Self::default();
+        for (table_id, index_id) in iter {
+            index_ids.insert_index_id(table_id, index_id);
+        }
+        index_ids
+    }
+}
+
+impl TableIndexIds {
+    /// Return the index ids that are used in subscriptions for this table.
+    /// Note, it does not return all of the index ids that are defined on this table.
+    /// Only those that are used by at least one subscription query.
+    pub fn index_ids_for_table(&self, table_id: TableId) -> impl Iterator<Item = IndexId> + '_ {
+        self.ids
+            .get(&table_id)
+            .into_iter()
+            .flat_map(|index_ids| index_ids.keys())
+            .copied()
+    }
+
+    /// Insert a new `table_id` `index_id` pair into this container.
+    /// Note, different queries may read from the same index.
+    /// Hence we may already be tracking this index, in which case we bump its ref count.
+    pub fn insert_index_id(&mut self, table_id: TableId, index_id: IndexId) {
+        *self.ids.entry(table_id).or_default().entry(index_id).or_default() += 1;
+    }
+
+    /// Remove a `table_id` `index_id` pair from this container.
+    /// Note, different queries may read from the same index.
+    /// Hence we only remove this key from the map if its ref count goes to zero.
+    pub fn delete_index_id(&mut self, table_id: TableId, index_id: IndexId) {
+        if let Some(ids) = self.ids.get_mut(&table_id) {
+            if let Some(n) = ids.get_mut(&index_id) {
+                *n -= 1;
+
+                if *n == 0 {
+                    ids.remove(&index_id);
+
+                    if ids.is_empty() {
+                        self.ids.remove(&table_id);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Insert the index ids from which a query reads into this mapping.
+    /// Note, an index may already be tracked if another query is already using it.
+    /// In this case we just bump its ref count.
+    pub fn insert_index_ids_for_query(&mut self, query: &Query) {
+        for (table_id, index_id) in query.index_ids() {
+            self.insert_index_id(table_id, index_id);
+        }
+    }
+
+    /// Delete the index ids from which a query reads from this mapping
+    /// Note, we will not remove an index id from this mapping if another query is using it.
+    /// Instead we decrement its ref count.
+    pub fn delete_index_ids_for_query(&mut self, query: &Query) {
+        for (table_id, index_id) in query.index_ids() {
+            self.delete_index_id(table_id, index_id);
+        }
+    }
+}
+
 /// Responsible for the efficient evaluation of subscriptions.
 /// It performs basic multi-query optimization,
 /// in that if a query has N subscribers,
@@ -311,6 +398,10 @@ pub struct SubscriptionManager {
     // but does not have a simple equality filter on that table,
     // we map the table to the query in this inverted index.
     tables: IntMap<TableId, HashSet<QueryHash>>,
+
+    // We track the indexes that are used across all subscriptions.
+    // This is so that we can build the appropriate indexes for row updates.
+    indexes: TableIndexIds,
 
     // If a query reads from a table,
     // and has a simple equality filter on that table,
@@ -414,6 +505,7 @@ impl SubscriptionManager {
                 if !query_state.has_subscribers() {
                     SubscriptionManager::remove_query_from_tables(
                         &mut self.tables,
+                        &mut self.indexes,
                         &mut self.search_args,
                         &query_state.query,
                     );
@@ -479,6 +571,7 @@ impl SubscriptionManager {
             if !query_state.has_subscribers() {
                 SubscriptionManager::remove_query_from_tables(
                     &mut self.tables,
+                    &mut self.indexes,
                     &mut self.search_args,
                     &query_state.query,
                 );
@@ -546,7 +639,7 @@ impl SubscriptionManager {
                 .entry(hash)
                 .or_insert_with(|| QueryState::new(query.clone()));
 
-            Self::insert_query(&mut self.tables, &mut self.search_args, query_state);
+            Self::insert_query(&mut self.tables, &mut self.indexes, &mut self.search_args, query_state);
 
             let entry = ci.subscription_ref_count.entry(hash).or_insert(0);
             *entry += 1;
@@ -593,7 +686,7 @@ impl SubscriptionManager {
                 .queries
                 .entry(hash)
                 .or_insert_with(|| QueryState::new(unit.clone()));
-            Self::insert_query(&mut self.tables, &mut self.search_args, query_state);
+            Self::insert_query(&mut self.tables, &mut self.indexes, &mut self.search_args, query_state);
             query_state.legacy_subscribers.insert(client_id);
         }
     }
@@ -603,11 +696,13 @@ impl SubscriptionManager {
     // This takes a ref to the table map instead of `self` to avoid borrowing issues.
     fn remove_query_from_tables(
         tables: &mut IntMap<TableId, HashSet<QueryHash>>,
+        index_ids: &mut TableIndexIds,
         search_args: &mut SearchArguments,
         query: &Query,
     ) {
         let hash = query.hash();
         search_args.remove_query(&hash);
+        index_ids.delete_index_ids_for_query(query);
         for table_id in query.table_ids() {
             if let Entry::Occupied(mut entry) = tables.entry(table_id) {
                 let hashes = entry.get_mut();
@@ -623,11 +718,13 @@ impl SubscriptionManager {
     // This takes a ref to the table map instead of `self` to avoid borrowing issues.
     fn insert_query(
         tables: &mut IntMap<TableId, HashSet<QueryHash>>,
+        index_ids: &mut TableIndexIds,
         search_args: &mut SearchArguments,
         query_state: &QueryState,
     ) {
         // If this is new, we need to update the table to query mapping.
         if !query_state.has_subscribers() {
+            index_ids.insert_index_ids_for_query(query_state.query());
             let hash = query_state.query.hash();
             let mut table_ids = query_state.query.table_ids().collect::<HashSet<_>>();
             for (table_id, col_id, arg) in query_state.search_args() {
@@ -664,6 +761,7 @@ impl SubscriptionManager {
                 queries_to_remove.push(*query_hash);
                 SubscriptionManager::remove_query_from_tables(
                     &mut self.tables,
+                    &mut self.indexes,
                     &mut self.search_args,
                     &query_state.query,
                 );
@@ -718,6 +816,11 @@ impl SubscriptionManager {
             queries.insert(hash);
         }
         queries.into_iter()
+    }
+
+    /// Returns the index ids that are used in subscription queries
+    pub fn index_ids_for_subscriptions(&self) -> &TableIndexIds {
+        &self.indexes
     }
 
     /// This method takes a set of delta tables,

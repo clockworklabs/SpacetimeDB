@@ -677,7 +677,7 @@ impl ModuleSubscriptions {
 
         let read_tx = tx_data
             .as_ref()
-            .map(|tx_data| DeltaTx::new(&read_tx, tx_data))
+            .map(|tx_data| DeltaTx::new(&read_tx, tx_data, subscriptions.index_ids_for_subscriptions()))
             .unwrap_or_else(|| DeltaTx::from(&*read_tx));
 
         let event = Arc::new(event);

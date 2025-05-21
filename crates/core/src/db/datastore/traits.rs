@@ -218,6 +218,11 @@ impl TxData {
         self.inserts.iter()
     }
 
+    /// Get the `i`th inserted row for `table_id` if it exists
+    pub fn get_ith_insert(&self, table_id: TableId, i: usize) -> Option<&ProductValue> {
+        self.inserts.get(&table_id).and_then(|rows| rows.get(i))
+    }
+
     /// Obtain an iterator over the inserted rows per table.
     ///
     /// If you don't need access to the table name, [`Self::inserts`] is
@@ -235,6 +240,11 @@ impl TxData {
     /// Obtain an iterator over the deleted rows per table.
     pub fn deletes(&self) -> impl Iterator<Item = (&TableId, &Arc<[ProductValue]>)> + '_ {
         self.deletes.iter()
+    }
+
+    /// Get the `i`th deleted row for `table_id` if it exists
+    pub fn get_ith_delete(&self, table_id: TableId, i: usize) -> Option<&ProductValue> {
+        self.deletes.get(&table_id).and_then(|rows| rows.get(i))
     }
 
     /// Obtain an iterator over the inserted rows per table.
