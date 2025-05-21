@@ -28,8 +28,7 @@ pub enum MessageHandleError {
 }
 
 pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Instant) -> Result<(), MessageHandleError> {
-    client.metrics.websocket_request_msg_size.observe(message.len() as f64);
-    client.metrics.websocket_requests.inc();
+    client.observe_websocket_request_message(&message);
 
     let message = match message {
         DataMessage::Text(text) => {

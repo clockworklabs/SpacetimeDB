@@ -27,12 +27,12 @@ metrics_group!(
 
         #[name = spacetime_websocket_requests_total]
         #[help = "The cumulative number of websocket request messages"]
-        #[labels(replica_id: u64, protocol: str)]
+        #[labels(database_identity: Identity, protocol: str)]
         pub websocket_requests: IntCounterVec,
 
         #[name = spacetime_websocket_request_msg_size]
         #[help = "The size of messages received on connected sessions"]
-        #[labels(replica_id: u64, protocol: str)]
+        #[labels(database_identity: Identity, protocol: str)]
         pub websocket_request_msg_size: HistogramVec,
 
         #[name = jemalloc_active_bytes]
