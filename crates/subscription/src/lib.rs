@@ -1,12 +1,18 @@
-use std::sync::Arc;
-
 use anyhow::{bail, Result};
-use spacetimedb_execution::{pipelined::PipelinedProject, Datastore, DeltaStore, Row};
+use spacetimedb_execution::{
+    pipelined::{
+        PipelinedExecutor, PipelinedIxDeltaJoin, PipelinedIxDeltaScan, PipelinedIxJoin, PipelinedIxScan,
+        PipelinedProject,
+    },
+    Datastore, DeltaStore, Row,
+};
 use spacetimedb_expr::check::SchemaView;
 use spacetimedb_lib::{identity::AuthCtx, metrics::ExecutionMetrics, query::Delta};
 use spacetimedb_physical_plan::plan::{HashJoin, IxJoin, Label, PhysicalPlan, ProjectPlan, TableScan};
-use spacetimedb_primitives::TableId;
+use spacetimedb_primitives::{IndexId, TableId};
 use spacetimedb_query::compile_subscription;
+use std::collections::HashSet;
+use std::sync::Arc;
 
 /// A subscription is a view over a particular table.
 /// How do we incrementally maintain that view?
@@ -25,6 +31,31 @@ struct Fragments {
 }
 
 impl Fragments {
+    /// Returns the index ids from which this fragment reads.
+    fn index_ids(&self) -> impl Iterator<Item = (TableId, IndexId)> {
+        let mut index_ids = HashSet::new();
+        for plan in self.insert_plans.iter().chain(self.delete_plans.iter()) {
+            plan.visit(&mut |plan| match plan {
+                PipelinedExecutor::IxScan(PipelinedIxScan { table_id, index_id, .. })
+                | PipelinedExecutor::IxDeltaScan(PipelinedIxDeltaScan { table_id, index_id, .. })
+                | PipelinedExecutor::IxJoin(PipelinedIxJoin {
+                    rhs_table: table_id,
+                    rhs_index: index_id,
+                    ..
+                })
+                | PipelinedExecutor::IxDeltaJoin(PipelinedIxDeltaJoin {
+                    rhs_table: table_id,
+                    rhs_index: index_id,
+                    ..
+                }) => {
+                    index_ids.insert((*table_id, *index_id));
+                }
+                _ => {}
+            });
+        }
+        index_ids.into_iter()
+    }
+
     /// A subscription is just a view of a particular table.
     /// Here we compute the rows that are to be inserted into that view,
     /// and evaluate a closure over each one.
@@ -302,6 +333,11 @@ impl SubscriptionPlan {
     /// therefore it should ultimately be removed.
     pub fn physical_plan(&self) -> &ProjectPlan {
         &self.plan
+    }
+
+    /// From which indexes does this plan read?
+    pub fn index_ids(&self) -> impl Iterator<Item = (TableId, IndexId)> {
+        self.fragments.index_ids()
     }
 
     /// A subscription is just a view of a particular table.

@@ -25,7 +25,7 @@ use core::ops::RangeBounds;
 use core::{cell::RefCell, mem};
 use core::{iter, ops::Bound};
 use smallvec::SmallVec;
-use spacetimedb_execution::{dml::MutDatastore, Datastore, DeltaStore};
+use spacetimedb_execution::{dml::MutDatastore, Datastore, DeltaStore, Row};
 use spacetimedb_lib::{db::raw_def::v9::RawSql, metrics::ExecutionMetrics};
 use spacetimedb_lib::{
     db::{auth::StAccess, raw_def::SEQUENCE_ALLOCATION_STEP},
@@ -102,6 +102,30 @@ impl DeltaStore for MutTxId {
 
     fn deletes_for_table(&self, _: TableId) -> Option<std::slice::Iter<'_, ProductValue>> {
         None
+    }
+
+    /// Subscriptions are currently evaluated using read-only transcations.
+    /// Hence this will never be called on a mutable transaction.
+    fn index_scan_range_for_delta(
+        &self,
+        _: TableId,
+        _: IndexId,
+        _: spacetimedb_lib::query::Delta,
+        _: impl RangeBounds<AlgebraicValue>,
+    ) -> impl Iterator<Item = Row> {
+        std::iter::empty()
+    }
+
+    /// Subscriptions are currently evaluated using read-only transcations.
+    /// Hence this will never be called on a mutable transaction.
+    fn index_scan_point_for_delta(
+        &self,
+        _: TableId,
+        _: IndexId,
+        _: spacetimedb_lib::query::Delta,
+        _: &AlgebraicValue,
+    ) -> impl Iterator<Item = Row> {
+        std::iter::empty()
     }
 }
 
