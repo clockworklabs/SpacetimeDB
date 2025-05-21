@@ -270,8 +270,6 @@ impl SpacetimePaths {
 mod tests {
     use std::path::Path;
 
-    use super::*;
-
     #[cfg(not(windows))]
     mod vars {
         use super::*;
@@ -317,6 +315,9 @@ mod tests {
         assert_eq!(paths.cli_bin_dir.0, p("/__data_home/spacetime/bin"));
         assert_eq!(paths.data_dir.0, p("/__data_home/spacetime/data"));
     }
+
+    #[cfg(windows)]
+    use super::*;
 
     #[cfg(windows)]
     #[test]
