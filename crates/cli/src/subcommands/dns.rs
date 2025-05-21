@@ -47,7 +47,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let status = response.status();
     let response_body = response.text().await?;
     if !status.is_success() {
-        anyhow::bail!("{response_body}");
+        anyhow::bail!("Error: {response_body}");
     }
 
     println!("Domain set to {} for identity {}.", domain, database_identity);
