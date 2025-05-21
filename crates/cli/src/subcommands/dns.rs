@@ -50,7 +50,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         anyhow::bail!("Error: {response_body}");
     }
 
-    println!("Domain set to {} for identity {}.", domain, database_identity);
+    println!("Name set to {} for identity {}.", domain, database_identity);
 
     Ok(())
 }
