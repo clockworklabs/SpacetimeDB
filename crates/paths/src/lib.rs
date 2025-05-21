@@ -273,7 +273,6 @@ mod tests {
 
     #[cfg(not(windows))]
     mod vars {
-        use super::*;
         use std::ffi::{OsStr, OsString};
         struct ResetVar<'a>(&'a str, Option<OsString>);
         impl Drop for ResetVar<'_> {
