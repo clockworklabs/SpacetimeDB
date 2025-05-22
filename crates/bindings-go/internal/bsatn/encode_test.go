@@ -26,12 +26,23 @@ func TestRoundTripPrimitives(t *testing.T) {
 	cases = append(cases, NewUnitVariant(3))
 	cases = append(cases, NewVariant(1, uint8(7)))
 
+	// large integer byte arrays
+	var u128Bytes [16]byte
+	for i := range u128Bytes {
+		u128Bytes[i] = byte(i + 1)
+	}
+	var u256Bytes [32]byte
+	for i := range u256Bytes {
+		u256Bytes[i] = byte(i + 101)
+	}
+	cases = append(cases, u128Bytes, u256Bytes)
+
 	for _, c := range cases {
 		encoded, err := Marshal(c)
 		if err != nil {
 			t.Fatalf("marshal %v: %v", c, err)
 		}
-		decoded, err := Unmarshal(encoded)
+		decoded, _, err := Unmarshal(encoded)
 		if err != nil {
 			t.Fatalf("unmarshal %v: %v", c, err)
 		}
@@ -65,7 +76,31 @@ func TestRoundTripPrimitives(t *testing.T) {
 
 		equal := false
 		if b, ok := c.([]byte); ok {
-			equal = string(decoded.([]byte)) == string(b)
+			if decSlice, okDec := decoded.([]byte); okDec {
+				equal = reflect.DeepEqual(b, decSlice)
+			} else {
+				t.Fatalf("decoded type mismatch for []byte: expected []byte, got %T for original %#v", decoded, c)
+			}
+		} else if arr16, ok := c.([16]byte); ok {
+			if decSlice, okDec := decoded.([]byte); okDec {
+				if len(decSlice) != 16 {
+					t.Fatalf("decoded []byte length mismatch for [16]byte: got %d, want 16", len(decSlice))
+				}
+				var originalSlice [16]byte = arr16
+				equal = reflect.DeepEqual(originalSlice[:], decSlice)
+			} else {
+				t.Fatalf("decoded type mismatch for [16]byte: expected []byte, got %T for original %#v", decoded, c)
+			}
+		} else if arr32, ok := c.([32]byte); ok {
+			if decSlice, okDec := decoded.([]byte); okDec {
+				if len(decSlice) != 32 {
+					t.Fatalf("decoded []byte length mismatch for [32]byte: got %d, want 32", len(decSlice))
+				}
+				var originalSlice [32]byte = arr32
+				equal = reflect.DeepEqual(originalSlice[:], decSlice)
+			} else {
+				t.Fatalf("decoded type mismatch for [32]byte: expected []byte, got %T for original %#v", decoded, c)
+			}
 		} else {
 			rv := reflect.ValueOf(c)
 			if rv.Kind() == reflect.Ptr && rv.IsNil() {
@@ -74,6 +109,7 @@ func TestRoundTripPrimitives(t *testing.T) {
 				equal = reflect.DeepEqual(decoded, c)
 			}
 		}
+
 		if !equal {
 			t.Fatalf("round-trip mismatch: got %#v (%T) want %#v (%T)", decoded, decoded, c, c)
 		}

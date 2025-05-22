@@ -92,3 +92,7 @@ func (r *Runtime) Free(ptr, size uint32) {
 		r.memoryFrees.Add(1)
 	}
 }
+
+// Backward-compat helper for packages that still expect internal/runtime.NewRuntime().
+// Prefer using runtime.New going forward.
+func NewRuntime() *Runtime { return New() }

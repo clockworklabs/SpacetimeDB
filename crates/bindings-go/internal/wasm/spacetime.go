@@ -745,7 +745,7 @@ func (m *spacetimeModule) bsatnSerialize(ctx context.Context, stack []uint64) {
 	// Implement BSATN serialization
 	// For now, we'll use the actual db.Serialize method if available, otherwise fallback
 	serialized := valBytes
-	if m.runtime.db != nil && m.runtime.db.Serialize != nil {
+	if m.runtime.db != nil {
 		var serializeErr error
 		serialized, serializeErr = m.runtime.db.Serialize(valBytes)
 		if serializeErr != nil {
@@ -810,7 +810,7 @@ func (m *spacetimeModule) bsatnDeserialize(ctx context.Context, stack []uint64) 
 	// Implement BSATN deserialization
 	// For now, use the actual db.Deserialize method if available, otherwise fallback
 	deserialized := dataBytes
-	if m.runtime.db != nil && m.runtime.db.Deserialize != nil {
+	if m.runtime.db != nil {
 		var deserializeErr error
 		deserialized, deserializeErr = m.runtime.db.Deserialize(dataBytes)
 		if deserializeErr != nil {

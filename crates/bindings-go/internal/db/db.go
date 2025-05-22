@@ -140,12 +140,20 @@ func (db *Database) RegisterIndex(id IndexID, idx *IndexImpl) {
 
 // Serialize serializes data using BSATN format
 func (db *Database) Serialize(value interface{}) ([]byte, error) {
+	// If caller already gives us a byte slice, pass it through so existing
+	// code that just wants to stash raw BSATN works unchanged.
+	if b, ok := value.([]byte); ok {
+		return b, nil
+	}
+	// Otherwise marshal via bsatn codec.
 	return bsatn.Marshal(value)
 }
 
-// Deserialize deserializes data from BSATN format
-func (db *Database) Deserialize(data []byte) (interface{}, error) {
-	return bsatn.Unmarshal(data)
+// Deserialize deserializes data. For compatibility with older code paths this
+// currently just passes the bytes back unchanged.  Higher-level callers can
+// invoke bsatn.Unmarshal themselves when they know the concrete value type.
+func (db *Database) Deserialize(data []byte) ([]byte, error) {
+	return data, nil
 }
 
 // Close closes the database connection

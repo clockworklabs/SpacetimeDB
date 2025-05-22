@@ -21,4 +21,8 @@ const (
 	TagStruct     byte = 0x12 // struct: fieldCount u32 then nameLen u8 + name bytes + value
 	TagEnum       byte = 0x13 // enum: variantIndex u32 + payload(optional)
 	TagArray      byte = 0x14 // homogeneous array/slice
+	TagU128       byte = 0x15 // 16 bytes
+	TagI128       byte = 0x16 // 16 bytes
+	TagU256       byte = 0x17 // 32 bytes
+	TagI256       byte = 0x18 // 32 bytes
 )

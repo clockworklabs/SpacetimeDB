@@ -1,6 +1,9 @@
 package bsatn
 
-import "testing"
+import (
+	"bytes"
+	"testing"
+)
 
 func strptr(s string) *string { return &s }
 
@@ -23,21 +26,36 @@ func TestAlgebraicTypeRoundTrip(t *testing.T) {
 	}
 
 	for i, at := range cases {
-		enc, err := MarshalAlgebraicType(at)
-		if err != nil {
-			t.Fatalf("case %d marshal: %v", i, err)
+		var initialBuf bytes.Buffer
+		wInitial := NewWriter(&initialBuf)
+		MarshalAlgebraicType(wInitial, at)
+		if err := wInitial.Error(); err != nil {
+			t.Fatalf("case %d MarshalAlgebraicType failed: %v", i, err)
 		}
+		enc := initialBuf.Bytes()
+
 		dec, err := UnmarshalAlgebraicType(enc)
 		if err != nil {
-			t.Fatalf("case %d unmarshal: %v", i, err)
+			t.Fatalf("case %d unmarshal: %v\nEncoded: %x", i, err, enc)
 		}
 		if dec.Kind != at.Kind {
-			t.Fatalf("case %d kind mismatch got %v want %v", i, dec.Kind, at.Kind)
+			t.Fatalf("case %d kind mismatch got %v (%s) want %v (%s)\nEncoded: %x\nDecoded: %#v", i, dec.Kind, dec.Kind.String(), at.Kind, at.Kind.String(), enc, dec)
 		}
-		// simplistic equality check via re-encode both and compare bytes
-		enc2, _ := MarshalAlgebraicType(dec)
-		if string(enc) != string(enc2) {
-			t.Fatalf("case %d round-trip mismatch", i)
+
+		var roundTripBuf bytes.Buffer
+		wRoundTrip := NewWriter(&roundTripBuf)
+		MarshalAlgebraicType(wRoundTrip, dec)
+		if err := wRoundTrip.Error(); err != nil {
+			t.Fatalf("case %d MarshalAlgebraicType on decoded value failed: %v", i, err)
+		}
+		enc2 := roundTripBuf.Bytes()
+
+		if !bytes.Equal(enc, enc2) {
+			t.Logf("Case %d Original AT: %#v", i, at)
+			t.Logf("Case %d Decoded AT:  %#v", i, dec)
+			t.Logf("Case %d Original Encoded: %x", i, enc)
+			t.Logf("Case %d Roundtrip Encoded: %x", i, enc2)
+			t.Fatalf("case %d round-trip mismatch for kind %s", i, at.Kind.String())
 		}
 	}
 }
