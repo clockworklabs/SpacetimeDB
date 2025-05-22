@@ -644,6 +644,8 @@ impl ModuleSubscriptions {
     }
 
     /// Commit a transaction and broadcast its ModuleEvent to all interested subscribers.
+    ///
+    /// The returned [`ExecutionMetrics`] are meant for testing purposes and should not be reported.
     pub fn commit_and_broadcast_event(
         &self,
         caller: Option<&ClientConnectionSender>,
@@ -655,7 +657,7 @@ impl ModuleSubscriptions {
         let subscriptions = self.subscriptions.read();
         let stdb = &self.relational_db;
         // Downgrade mutable tx.
-        // Ensure tx is released/cleaned up once out of scope.
+        // We'll later ensure tx is released/cleaned up once out of scope.
         let (read_tx, tx_data, tx_metrics_mut) = match &mut event.status {
             EventStatus::Committed(db_update) => {
                 let Some((tx_data, tx_metrics, read_tx)) = stdb.commit_tx_downgrade(tx, Workload::Update)? else {
@@ -670,22 +672,29 @@ impl ModuleSubscriptions {
             }
         };
 
-        let read_tx = scopeguard::guard(read_tx, |tx| {
+        // When we're done with this method, release the tx and report metrics.
+        let mut read_tx = scopeguard::guard(read_tx, |tx| {
             let (tx_metrics_read, reducer) = self.relational_db.release_tx(tx);
-            report_tx_metricses(&reducer, stdb, tx_data.as_ref(), Some(tx_metrics_mut), tx_metrics_read);
+            report_tx_metricses(
+                &reducer,
+                stdb,
+                tx_data.as_ref(),
+                Some(&tx_metrics_mut),
+                &tx_metrics_read,
+            );
         });
-
-        let read_tx = tx_data
+        // Create the delta transaction we'll use to eval updates against.
+        let delta_read_tx = tx_data
             .as_ref()
             .map(|tx_data| DeltaTx::new(&read_tx, tx_data))
             .unwrap_or_else(|| DeltaTx::from(&*read_tx));
 
         let event = Arc::new(event);
-        let mut metrics = ExecutionMetrics::default();
+        let mut update_metrics: ExecutionMetrics = ExecutionMetrics::default();
 
         match &event.status {
             EventStatus::Committed(_) => {
-                metrics.merge(subscriptions.eval_updates(&read_tx, event.clone(), caller));
+                update_metrics = subscriptions.eval_updates(&delta_read_tx, event.clone(), caller);
             }
             EventStatus::Failed(_) => {
                 if let Some(client) = caller {
@@ -701,7 +710,10 @@ impl ModuleSubscriptions {
             EventStatus::OutOfEnergy => {} // ?
         }
 
-        Ok(Ok((event, metrics)))
+        // Merge in the pdate evaluation metrics.
+        read_tx.metrics.merge(update_metrics);
+
+        Ok(Ok((event, update_metrics)))
     }
 }
 

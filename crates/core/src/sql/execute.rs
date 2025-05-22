@@ -174,6 +174,7 @@ pub fn execute_sql_tx<'a>(
 
 pub struct SqlResult {
     pub rows: Vec<ProductValue>,
+    /// Should not be reported!
     pub metrics: ExecutionMetrics,
 }
 
@@ -199,10 +200,16 @@ pub fn run(
             // and hence there are no deltas to process.
             let (tx_data, tx_metrics_mut, tx) = tx.commit_downgrade(Workload::Sql);
 
-            // Release the tx on drop, so that we record metrics
+            // Release the tx on drop, so that we record metrics.
             let mut tx = scopeguard::guard(tx, |tx| {
                 let (tx_metrics_downgrade, reducer) = db.release_tx(tx);
-                report_tx_metricses(&reducer, db, Some(&tx_data), Some(tx_metrics_mut), tx_metrics_downgrade);
+                report_tx_metricses(
+                    &reducer,
+                    db,
+                    Some(&tx_data),
+                    Some(&tx_metrics_mut),
+                    &tx_metrics_downgrade,
+                );
             });
 
             // Compute the header for the result set
