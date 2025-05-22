@@ -174,7 +174,8 @@ pub fn execute_sql_tx<'a>(
 
 pub struct SqlResult {
     pub rows: Vec<ProductValue>,
-    /// Should not be reported!
+    /// These metrics will be reported via `report_tx_metrics`.
+    /// They should not be reported separately to avoid double counting.
     pub metrics: ExecutionMetrics,
 }
 

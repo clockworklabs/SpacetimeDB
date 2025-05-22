@@ -645,7 +645,8 @@ impl ModuleSubscriptions {
 
     /// Commit a transaction and broadcast its ModuleEvent to all interested subscribers.
     ///
-    /// The returned [`ExecutionMetrics`] are meant for testing purposes and should not be reported.
+    /// The returned [`ExecutionMetrics`] are reported in this method via `report_tx_metrics`.
+    /// They are returned for testing purposes but should not be reported separately.
     pub fn commit_and_broadcast_event(
         &self,
         caller: Option<&ClientConnectionSender>,
@@ -710,7 +711,7 @@ impl ModuleSubscriptions {
             EventStatus::OutOfEnergy => {} // ?
         }
 
-        // Merge in the pdate evaluation metrics.
+        // Merge in the subscription evaluation metrics.
         read_tx.metrics.merge(update_metrics);
 
         Ok(Ok((event, update_metrics)))
