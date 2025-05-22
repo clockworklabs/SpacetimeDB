@@ -115,6 +115,10 @@ impl<Key: Into<u64> + From<u64>> IndexFileMut<Key> {
         if low == 0 && key < low_key {
             return Err(IndexError::KeyNotFound);
         }
+        // If found key is 0, return `KeyNotFound`
+        if low_key == 0 {
+            return Err(IndexError::KeyNotFound);
+        }
 
         Ok((Key::from(low_key), low as u64))
     }
@@ -334,6 +338,7 @@ mod tests {
     use std::path::Path;
 
     use super::*;
+    use pretty_assertions::assert_matches;
     use spacetimedb_paths::server::CommitLogDir;
     use spacetimedb_paths::FromPathUnchecked;
     use tempfile::TempDir;
@@ -403,6 +408,14 @@ mod tests {
         // key smaller than 1st entry should return error
         assert!(index.key_lookup(1).is_err());
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_empty_index_lookup_should_fail() -> Result<(), IndexError> {
+        let index = create_index_in(TempDir::new().unwrap().path(), 100)?;
+        assert_matches!(index.key_lookup(0), Err(IndexError::KeyNotFound));
+        assert_matches!(index.key_lookup(10), Err(IndexError::KeyNotFound));
         Ok(())
     }
 
