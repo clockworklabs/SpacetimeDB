@@ -432,6 +432,31 @@ public record struct TimeDuration(long Microseconds) : IStructuralReadWrite
 {
     public static readonly TimeDuration ZERO = new(0);
 
+    /// <summary>
+    /// Returns a <see cref="TimeDuration"/> that represents a specified number of <paramref name="milliseconds"/>, accurate to the nearest microsecond.
+    /// </summary>
+    public static TimeDuration FromMilliseconds(double milliseconds) => new((long)(milliseconds * 1000L));
+
+	/// <summary>
+	/// Returns a <see cref="TimeDuration"/> that represents a specified number of <paramref name="seconds"/>, accurate to the nearest microsecond.
+	/// </summary>
+	public static TimeDuration FromSeconds(double seconds) => new((long)(seconds * Util.MicrosecondsPerSecond));
+
+	/// <summary>
+	/// Returns a <see cref="TimeDuration"/> that represents a specified number of 60-second <paramref name="minutes"/>.
+	/// </summary>
+	public static TimeDuration FromMinutes(double minutes) => FromSeconds(minutes * 60);
+
+	/// <summary>
+	/// Returns a <see cref="TimeDuration"/> that represents a specified number of 60-minute <paramref name="hours"/>.
+	/// </summary>
+	public static TimeDuration FromHours(double hours) => FromMinutes(hours * 60);
+
+	/// <summary>
+	/// Returns a <see cref="TimeDuration"/> that represents a specified number of 24-hour <paramref name="days"/>.
+	/// </summary>
+	public static TimeDuration FromDays(double days) => FromHours(days * 24);
+
     public static implicit operator TimeSpan(TimeDuration d) =>
         new(d.Microseconds * Util.TicksPerMicrosecond);
 
