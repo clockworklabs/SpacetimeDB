@@ -972,7 +972,7 @@ impl RelationalDB {
         let mut tx = self.begin_tx(workload);
         let res = f(&mut tx);
         let (tx_metics, reducer) = self.release_tx(tx);
-        report_tx_metricses(&reducer, self, None, None, tx_metics);
+        report_tx_metricses(&reducer, self, None, None, &tx_metics);
         res
     }
 
