@@ -21,11 +21,13 @@
 //! one of 20 bytes to copy the leading `(u64, u64, u32)`, which contains no padding,
 //! and then one of 8 bytes to copy the trailing `u64`, skipping over 4 bytes of padding in between.
 
+use crate::layout::ProductTypeLayoutView;
+
 use super::{
     indexes::{Byte, Bytes},
     layout::{
-        AlgebraicTypeLayout, HasLayout, PrimitiveType, ProductTypeElementLayout, ProductTypeLayout, RowTypeLayout,
-        SumTypeLayout, SumTypeVariantLayout,
+        AlgebraicTypeLayout, HasLayout, PrimitiveType, ProductTypeElementLayout, RowTypeLayout, SumTypeLayout,
+        SumTypeVariantLayout,
     },
     util::range_move,
     MemoryUsage,
@@ -331,7 +333,7 @@ impl LayoutBuilder {
         last.bsatn_offset + last.length
     }
 
-    fn visit_product(&mut self, product: &ProductTypeLayout) -> Option<()> {
+    fn visit_product(&mut self, product: ProductTypeLayoutView) -> Option<()> {
         let base_bflatn_offset = self.next_bflatn_offset();
         for elt in product.elements.iter() {
             self.visit_product_element(elt, base_bflatn_offset)?;
@@ -363,7 +365,7 @@ impl LayoutBuilder {
     fn visit_value(&mut self, val: &AlgebraicTypeLayout) -> Option<()> {
         match val {
             AlgebraicTypeLayout::Sum(sum) => self.visit_sum(sum),
-            AlgebraicTypeLayout::Product(prod) => self.visit_product(prod),
+            AlgebraicTypeLayout::Product(prod) => self.visit_product(prod.view()),
             AlgebraicTypeLayout::Primitive(prim) => {
                 self.visit_primitive(prim);
                 Some(())

@@ -5,11 +5,15 @@
 use super::{
     bflatn_from::read_tag,
     indexes::{Bytes, PageOffset},
-    layout::{align_to, AlgebraicTypeLayout, HasLayout, ProductTypeLayout, RowTypeLayout},
+    layout::{align_to, AlgebraicTypeLayout, HasLayout, RowTypeLayout},
     page::Page,
     var_len::VarLenRef,
 };
-use crate::{bflatn_from::vlr_blob_bytes, blob_store::BlobStore, layout::VarLenType};
+use crate::{
+    bflatn_from::vlr_blob_bytes,
+    blob_store::BlobStore,
+    layout::{ProductTypeLayoutView, VarLenType},
+};
 use core::hash::{Hash as _, Hasher};
 use core::mem;
 use core::str;
@@ -56,10 +60,10 @@ unsafe fn hash_product(
     page: &Page,
     blob_store: &dyn BlobStore,
     curr_offset: &mut usize,
-    ty: &ProductTypeLayout,
+    ty: ProductTypeLayoutView<'_>,
 ) {
     let base_offset = *curr_offset;
-    for elem_ty in &*ty.elements {
+    for elem_ty in ty.elements {
         *curr_offset = base_offset + elem_ty.offset as usize;
 
         // SAFETY: By 1., `value` is valid at `ty`,
@@ -112,7 +116,7 @@ unsafe fn hash_value(
         }
         AlgebraicTypeLayout::Product(ty) => {
             // SAFETY: `value` was valid at `ty` and `VarLenRef`s won't be dangling.
-            unsafe { hash_product(hasher, bytes, page, blob_store, curr_offset, ty) }
+            unsafe { hash_product(hasher, bytes, page, blob_store, curr_offset, ty.view()) }
         }
 
         // The primitive types:
