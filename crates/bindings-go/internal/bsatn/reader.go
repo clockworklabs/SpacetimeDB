@@ -36,6 +36,16 @@ func (r *Reader) BytesRead() int {
 	return r.bytesRead
 }
 
+// Remaining returns the number of bytes left before the current limit is
+// reached. If no limit is active it returns -1.
+func (r *Reader) Remaining() int {
+	if r.limit == -1 {
+		return -1
+	}
+	consumed := r.bytesRead - r.limitStart
+	return r.limit - consumed
+}
+
 // recordError records the first error encountered.
 // It also stops further reading if an error occurs by setting a limit.
 func (r *Reader) recordError(err error) {
@@ -210,7 +220,12 @@ func (r *Reader) ReadFloat32() (float32, error) {
 	if err != nil {
 		return 0, err
 	}
-	return math.Float32frombits(bits), nil
+	v := math.Float32frombits(bits)
+	if math.IsNaN(float64(v)) || math.IsInf(float64(v), 0) {
+		r.recordError(ErrInvalidFloat)
+		return 0, r.err
+	}
+	return v, nil
 }
 
 // ReadFloat64 decodes and returns a float64 value.
@@ -219,7 +234,12 @@ func (r *Reader) ReadFloat64() (float64, error) {
 	if err != nil {
 		return 0, err
 	}
-	return math.Float64frombits(bits), nil
+	v := math.Float64frombits(bits)
+	if math.IsNaN(v) || math.IsInf(v, 0) {
+		r.recordError(ErrInvalidFloat)
+		return 0, r.err
+	}
+	return v, nil
 }
 
 // ReadString decodes and returns a string value.
@@ -235,7 +255,10 @@ func (r *Reader) ReadString() (string, error) {
 	if size == 0 {
 		return "", nil
 	}
-	// TODO: Add check against max string length if necessary
+	if int(size) > MaxPayloadLen {
+		r.recordError(ErrTooLarge)
+		return "", r.err
+	}
 	data := make([]byte, size)
 	err = r.readBytes(data)
 	if err != nil {
@@ -257,6 +280,10 @@ func (r *Reader) ReadBytesRaw() ([]byte, error) { // Renamed to avoid conflict w
 	}
 	if size == 0 {
 		return []byte{}, nil
+	}
+	if int(size) > MaxPayloadLen {
+		r.recordError(ErrTooLarge)
+		return nil, r.err
 	}
 	// TODO: Add check against max slice length
 	data := make([]byte, size)

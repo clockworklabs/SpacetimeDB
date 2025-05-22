@@ -1,0 +1,11 @@
+[package]
+name = "bsatn_test"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+spacetimedb = { path = "../../crates/bindings" }
+
+[lib]
+crate-type = ["cdylib"]     # instructs Cargo to produce a .wasm for non-native targets

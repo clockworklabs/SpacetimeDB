@@ -553,6 +553,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "bsatn_test"
+version = "1.1.1"
+dependencies = [
+ "spacetimedb",
+]
+
+[[package]]
 name = "bumpalo"
 version = "3.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

@@ -34,6 +34,7 @@ members = [
   "crates/update",
   "crates/vm",
   "modules/benchmarks",
+  "modules/bsatn-test",
   "modules/keynote-benchmarks",
   "modules/perf-test",
   "modules/module-test",
@@ -43,7 +44,7 @@ members = [
   "crates/sdk/tests/test-client",
   "crates/sdk/tests/test-counter",
   "crates/sdk/tests/connect_disconnect_client",
-  "tools/upgrade-version", "crates/codegen",
+  "tools/upgrade-version", "crates/codegen", "modules/bsatn-test",
 ]
 default-members = ["crates/cli", "crates/standalone", "crates/update"]
 # cargo feature graph resolver. v3 is default in edition2024 but workspace

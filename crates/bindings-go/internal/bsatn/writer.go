@@ -13,8 +13,9 @@ import (
 // It wraps an io.Writer (typically a bytes.Buffer) and provides methods
 // for writing various BSATN-tagged primitive types and structures.
 type Writer struct {
-	w   io.Writer
-	err error // Stores the first error encountered during writing.
+	w            io.Writer
+	err          error // Stores the first error encountered during writing.
+	bytesWritten int   // number of bytes successfully written to underlying writer
 }
 
 // NewWriter creates a new BSATN Writer that writes to the provided io.Writer.
@@ -40,6 +41,12 @@ func (w *Writer) Error() error {
 	return w.err
 }
 
+// BytesWritten returns the number of bytes that have been successfully written
+// via this Writer so far, or -1 if an error occurred before any write.
+func (w *Writer) BytesWritten() int {
+	return w.bytesWritten
+}
+
 // recordError records the first error encountered.
 func (w *Writer) recordError(err error) {
 	if w.err == nil && err != nil {
@@ -55,6 +62,9 @@ func (w *Writer) WriteTag(tag byte) {
 		return
 	}
 	_, err := w.w.Write([]byte{tag})
+	if err == nil {
+		w.bytesWritten++
+	}
 	w.recordError(err)
 }
 
@@ -77,6 +87,9 @@ func (w *Writer) WriteUint8(val uint8) {
 	}
 	w.WriteTag(TagU8)
 	_, err := w.w.Write([]byte{val})
+	if err == nil {
+		w.bytesWritten++
+	}
 	w.recordError(err)
 }
 
@@ -87,6 +100,9 @@ func (w *Writer) WriteInt8(val int8) {
 	}
 	w.WriteTag(TagI8)
 	_, err := w.w.Write([]byte{byte(val)})
+	if err == nil {
+		w.bytesWritten++
+	}
 	w.recordError(err)
 }
 
@@ -98,6 +114,9 @@ func (w *Writer) writeUint16LE(val uint16) {
 	var buf [2]byte
 	binary.LittleEndian.PutUint16(buf[:], val)
 	_, err := w.w.Write(buf[:])
+	if err == nil {
+		w.bytesWritten += 2
+	}
 	w.recordError(err)
 }
 
@@ -127,6 +146,9 @@ func (w *Writer) writeUint32LE(val uint32) {
 	var buf [4]byte
 	binary.LittleEndian.PutUint32(buf[:], val)
 	_, err := w.w.Write(buf[:])
+	if err == nil {
+		w.bytesWritten += 4
+	}
 	w.recordError(err)
 }
 
@@ -156,6 +178,9 @@ func (w *Writer) writeUint64LE(val uint64) {
 	var buf [8]byte
 	binary.LittleEndian.PutUint64(buf[:], val)
 	_, err := w.w.Write(buf[:])
+	if err == nil {
+		w.bytesWritten += 8
+	}
 	w.recordError(err)
 }
 
@@ -182,6 +207,10 @@ func (w *Writer) WriteFloat32(val float32) {
 	if w.err != nil {
 		return
 	}
+	if math.IsNaN(float64(val)) || math.IsInf(float64(val), 0) {
+		w.recordError(ErrInvalidFloat)
+		return
+	}
 	w.WriteTag(TagF32)
 	w.writeUint32LE(math.Float32bits(val))
 }
@@ -189,6 +218,10 @@ func (w *Writer) WriteFloat32(val float32) {
 // WriteFloat64 encodes and writes a float64 value.
 func (w *Writer) WriteFloat64(val float64) {
 	if w.err != nil {
+		return
+	}
+	if math.IsNaN(val) || math.IsInf(val, 0) {
+		w.recordError(ErrInvalidFloat)
 		return
 	}
 	w.WriteTag(TagF64)
@@ -204,11 +237,18 @@ func (w *Writer) WriteString(val string) {
 		w.recordError(ErrInvalidUTF8)
 		return
 	}
+	if len(val) > MaxPayloadLen {
+		w.recordError(ErrTooLarge)
+		return
+	}
 	strBytes := []byte(val)
 	w.WriteTag(TagString)
 	w.writeUint32LE(uint32(len(strBytes))) // Length prefix
 	if len(strBytes) > 0 {
 		_, err := w.w.Write(strBytes)
+		if err == nil {
+			w.bytesWritten += len(strBytes)
+		}
 		w.recordError(err)
 	}
 }
@@ -218,10 +258,17 @@ func (w *Writer) WriteBytes(val []byte) {
 	if w.err != nil {
 		return
 	}
+	if len(val) > MaxPayloadLen {
+		w.recordError(ErrTooLarge)
+		return
+	}
 	w.WriteTag(TagBytes)
 	w.writeUint32LE(uint32(len(val))) // Length prefix
 	if len(val) > 0 {
 		_, err := w.w.Write(val)
+		if err == nil {
+			w.bytesWritten += len(val)
+		}
 		w.recordError(err)
 	}
 }
@@ -329,12 +376,18 @@ func (w *Writer) WriteFieldName(name string) {
 	}
 	lenByte := byte(len(nameBytes))
 	_, err := w.w.Write([]byte{lenByte})
+	if err == nil {
+		w.bytesWritten++
+	}
 	if err != nil {
 		w.recordError(err)
 		return
 	}
 	if len(nameBytes) > 0 {
 		_, err = w.w.Write(nameBytes)
+		if err == nil {
+			w.bytesWritten += len(nameBytes)
+		}
 		w.recordError(err)
 	}
 }

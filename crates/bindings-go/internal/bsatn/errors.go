@@ -7,4 +7,6 @@ var (
 	ErrBufferTooSmall = errors.New("bsatn: buffer too small")
 	ErrInvalidUTF8    = errors.New("bsatn: invalid utf8 string")
 	ErrOverflow       = errors.New("bsatn: integer overflow")
+	ErrInvalidFloat   = errors.New("bsatn: invalid float value (NaN or Inf)")
+	ErrTooLarge       = errors.New("bsatn: payload too large")
 )
