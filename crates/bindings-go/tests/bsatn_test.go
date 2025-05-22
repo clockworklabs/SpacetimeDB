@@ -1234,6 +1234,57 @@ func valuesEqual(a, b interface{}) bool {
 		}
 	}
 
+	// Handle byte slice comparisons
+	if aBytes, ok := a.([]byte); ok {
+		if bBytes, ok := b.([]byte); ok {
+			if len(aBytes) != len(bBytes) {
+				return false
+			}
+			for i, av := range aBytes {
+				if bBytes[i] != av {
+					return false
+				}
+			}
+			return true
+		}
+		if bBytes, ok := b.([]uint8); ok {
+			if len(aBytes) != len(bBytes) {
+				return false
+			}
+			for i, av := range aBytes {
+				if bBytes[i] != av {
+					return false
+				}
+			}
+			return true
+		}
+	}
+
+	if aBytes, ok := a.([]uint8); ok {
+		if bBytes, ok := b.([]byte); ok {
+			if len(aBytes) != len(bBytes) {
+				return false
+			}
+			for i, av := range aBytes {
+				if bBytes[i] != av {
+					return false
+				}
+			}
+			return true
+		}
+		if bBytes, ok := b.([]uint8); ok {
+			if len(aBytes) != len(bBytes) {
+				return false
+			}
+			for i, av := range aBytes {
+				if bBytes[i] != av {
+					return false
+				}
+			}
+			return true
+		}
+	}
+
 	// Handle slice comparisons
 	if aSlice, ok := a.([]int32); ok {
 		if bInterfaceSlice, ok := b.([]interface{}); ok {
@@ -1260,6 +1311,32 @@ func valuesEqual(a, b interface{}) bool {
 				}
 			}
 			return true
+		}
+	}
+
+	// Handle map comparisons
+	if aMap, ok := a.(map[string]interface{}); ok {
+		if bMap, ok := b.(map[string]interface{}); ok {
+			if len(aMap) != len(bMap) {
+				return false
+			}
+			for key, aValue := range aMap {
+				bValue, exists := bMap[key]
+				if !exists {
+					return false
+				}
+				if !valuesEqual(aValue, bValue) {
+					return false
+				}
+			}
+			return true
+		}
+	}
+
+	// Handle Variant comparisons
+	if aVariant, ok := a.(bsatn.Variant); ok {
+		if bVariant, ok := b.(bsatn.Variant); ok {
+			return aVariant.Index == bVariant.Index && valuesEqual(aVariant.Value, bVariant.Value)
 		}
 	}
 
