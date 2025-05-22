@@ -6,6 +6,7 @@
 // TODO(1.0): change all the `Box<str>`s in this file to `Identifier`.
 // This doesn't affect the ABI so can wait until 1.0.
 
+use core::mem;
 use itertools::Itertools;
 use spacetimedb_lib::db::auth::{StAccess, StTableType};
 use spacetimedb_lib::db::error::{DefType, SchemaError};
@@ -191,11 +192,13 @@ impl TableSchema {
         &self.columns
     }
 
-    /// Clear all the [Self::indexes], [Self::sequences] & [Self::constraints]
-    pub fn clear_adjacent_schemas(&mut self) {
-        self.indexes.clear();
-        self.sequences.clear();
-        self.constraints.clear();
+    /// Extracts all the [Self::indexes], [Self::sequences], and [Self::constraints].
+    pub fn take_adjacent_schemas(&mut self) -> (Vec<IndexSchema>, Vec<SequenceSchema>, Vec<ConstraintSchema>) {
+        (
+            mem::take(&mut self.indexes),
+            mem::take(&mut self.sequences),
+            mem::take(&mut self.constraints),
+        )
     }
 
     // Crud operation on adjacent schemas
@@ -210,8 +213,8 @@ impl TableSchema {
     }
 
     /// Removes the given `sequence_id`
-    pub fn remove_sequence(&mut self, sequence_id: SequenceId) {
-        self.sequences.retain(|x| x.sequence_id != sequence_id)
+    pub fn remove_sequence(&mut self, sequence_id: SequenceId) -> Option<SequenceSchema> {
+        find_remove(&mut self.sequences, |x| x.sequence_id == sequence_id)
     }
 
     /// Add OR replace the [IndexSchema]
@@ -224,8 +227,8 @@ impl TableSchema {
     }
 
     /// Removes the given `index_id`
-    pub fn remove_index(&mut self, index_id: IndexId) {
-        self.indexes.retain(|x| x.index_id != index_id)
+    pub fn remove_index(&mut self, index_id: IndexId) -> Option<IndexSchema> {
+        find_remove(&mut self.indexes, |x| x.index_id == index_id)
     }
 
     /// Add OR replace the [ConstraintSchema]
@@ -242,8 +245,8 @@ impl TableSchema {
     }
 
     /// Removes the given `index_id`
-    pub fn remove_constraint(&mut self, constraint_id: ConstraintId) {
-        self.constraints.retain(|x| x.constraint_id != constraint_id)
+    pub fn remove_constraint(&mut self, constraint_id: ConstraintId) -> Option<ConstraintSchema> {
+        find_remove(&mut self.constraints, |x| x.constraint_id == constraint_id)
     }
 
     /// Concatenate the column names from the `columns`
@@ -532,6 +535,12 @@ impl TableSchema {
     }
 }
 
+/// Removes and returns the first element satisfying `predicate` in `vec`.
+fn find_remove<T>(vec: &mut Vec<T>, predicate: impl Fn(&T) -> bool) -> Option<T> {
+    let pos = vec.iter().position(predicate)?;
+    Some(vec.remove(pos))
+}
+
 /// Like `assert_eq!` for `anyhow`, but `$msg` is just a string, not a format string.
 macro_rules! ensure_eq {
     ($a:expr, $b:expr, $msg:expr) => {
@@ -744,6 +753,17 @@ pub struct ColumnSchema {
     pub col_type: AlgebraicType,
 }
 
+impl ColumnSchema {
+    pub fn for_test(pos: impl Into<ColId>, name: impl Into<Box<str>>, ty: AlgebraicType) -> Self {
+        Self {
+            table_id: TableId::SENTINEL,
+            col_pos: pos.into(),
+            col_name: name.into(),
+            col_type: ty,
+        }
+    }
+}
+
 impl Schema for ColumnSchema {
     type Def = ColumnDef;
     type ParentId = ();
@@ -894,6 +914,18 @@ pub struct ScheduleSchema {
     pub at_column: ColId,
 }
 
+impl ScheduleSchema {
+    pub fn for_test(name: impl Into<Box<str>>, reducer: impl Into<Box<str>>, at: impl Into<ColId>) -> Self {
+        Self {
+            table_id: TableId::SENTINEL,
+            schedule_id: ScheduleId::SENTINEL,
+            schedule_name: name.into(),
+            reducer_name: reducer.into(),
+            at_column: at.into(),
+        }
+    }
+}
+
 impl Schema for ScheduleSchema {
     type Def = ScheduleDef;
 
@@ -939,7 +971,16 @@ pub struct IndexSchema {
     pub index_algorithm: IndexAlgorithm,
 }
 
-impl IndexSchema {}
+impl IndexSchema {
+    pub fn for_test(name: impl Into<Box<str>>, algo: impl Into<IndexAlgorithm>) -> Self {
+        Self {
+            index_id: IndexId::SENTINEL,
+            table_id: TableId::SENTINEL,
+            index_name: name.into(),
+            index_algorithm: algo.into(),
+        }
+    }
+}
 
 impl Schema for IndexSchema {
     type Def = IndexDef;
@@ -982,6 +1023,15 @@ pub struct ConstraintSchema {
 }
 
 impl ConstraintSchema {
+    pub fn unique_for_test(name: impl Into<Box<str>>, cols: impl Into<ColSet>) -> Self {
+        Self {
+            table_id: TableId::SENTINEL,
+            constraint_id: ConstraintId::SENTINEL,
+            constraint_name: name.into(),
+            data: ConstraintData::Unique(UniqueConstraintData { columns: cols.into() }),
+        }
+    }
+
     /// Constructs a `ConstraintSchema` from a given `ConstraintDef` and table identifier.
     ///
     /// # Parameters

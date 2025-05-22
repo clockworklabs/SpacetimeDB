@@ -50,6 +50,7 @@ pub fn cli() -> clap::Command {
         )
         .arg(
             Arg::new("num_replicas")
+                .value_parser(clap::value_parser!(u8))
                 .long("num-replicas")
                 .hide(true)
                 .help("UNSTABLE: The number of replicas the database should have")

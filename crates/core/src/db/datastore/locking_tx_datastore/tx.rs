@@ -1,7 +1,6 @@
-use super::datastore::record_tx_metrics;
 use super::{
     committed_state::CommittedState,
-    datastore::Result,
+    datastore::{Result, TxMetrics},
     state_view::{IterByColRangeTx, StateView},
     IterByColEqTx, SharedReadGuard,
 };
@@ -21,6 +20,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+/// A read-only transaction with a shared lock on the committed state.
 pub struct TxId {
     pub(super) committed_state_shared_lock: SharedReadGuard<CommittedState>,
     pub(super) lock_wait_time: Duration,
@@ -68,12 +68,8 @@ impl StateView for TxId {
         cols: ColList,
         range: R,
     ) -> Result<Self::IterByColRange<'_, R>> {
-        match self.committed_state_shared_lock.index_seek(table_id, &cols, &range) {
-            Some(committed_rows) => Ok(IterByColRangeTx::CommittedIndex(committed_rows)),
-            None => self
-                .committed_state_shared_lock
-                .iter_by_col_range(table_id, cols, range),
-        }
+        self.committed_state_shared_lock
+            .iter_by_col_range(table_id, cols, range)
     }
 
     fn iter_by_col_eq<'a, 'r>(
@@ -87,16 +83,24 @@ impl StateView for TxId {
 }
 
 impl TxId {
-    pub(super) fn release(self) {
-        record_tx_metrics(
+    /// Release this read-only transaction,
+    /// allowing new mutable transactions to start if this was the last read-only transaction.
+    ///
+    /// Returns:
+    /// - [`TxMetrics`], various measurements of the work performed by this transaction.
+    /// - `String`, the name of the reducer which ran within this transaction.
+    pub(super) fn release(self) -> (TxMetrics, String) {
+        let tx_metrics = TxMetrics::new(
             &self.ctx,
             self.timer,
             self.lock_wait_time,
+            self.metrics,
             true,
             None,
-            None,
-            self.metrics,
+            &self.committed_state_shared_lock,
         );
+        let reducer = self.ctx.into_reducer_name();
+        (tx_metrics, reducer)
     }
 
     /// The Number of Distinct Values (NDV) for a column or list of columns,

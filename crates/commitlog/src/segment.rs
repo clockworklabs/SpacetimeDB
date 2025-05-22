@@ -431,9 +431,9 @@ pub fn seek_to_offset<R: io::Read + io::Seek>(
 ) -> Result<(), IndexError> {
     let (index_key, byte_offset) = index_file.key_lookup(start_tx_offset)?;
 
-    // If the index_key is 0, it means the index file is empty, no need to seek
+    // If the index_key is 0, it means the index file is empty, return error without seeking
     if index_key == 0 {
-        return Ok(());
+        return Err(IndexError::KeyNotFound);
     }
     debug!("index lookup for key={start_tx_offset}: found key={index_key} at byte-offset={byte_offset}");
     // returned `index_key` should never be greater than `start_tx_offset`
