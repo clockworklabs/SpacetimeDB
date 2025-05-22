@@ -156,8 +156,8 @@ impl ClientConnectionSender {
             return Err(ClientSendError::Cancelled);
         }
 
-        if let Some(metric) = &self.sendtx_queue_size_metric {
-            metric.inc();
+        if let Some(metrics) = &self.metrics {
+            metrics.sendtx_queue_size.inc();
         }
 
         self.sendtx.try_send(message).map_err(|e| match e {
