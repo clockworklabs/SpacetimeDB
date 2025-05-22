@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -9,7 +10,7 @@ import (
 
 func main() {
 	// Initialize the SpacetimeDB client
-	client, err := spacetimedb.NewClient()
+	client, err := spacetimedb.NewClient(context.Background())
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to initialize SpacetimeDB client: %v\n", err)
 		os.Exit(1)

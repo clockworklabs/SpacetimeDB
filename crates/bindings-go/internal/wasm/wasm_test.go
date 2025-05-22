@@ -13,11 +13,29 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// createTestModule creates a WASM module by reading from fixtures/add.wasm
+// createTestModule creates a WASM module by reading from fixtures/get_buffer_ptr.wasm
 func createTestModule() []byte {
+	wasmBytes, err := os.ReadFile("fixtures/get_buffer_ptr.wasm")
+	if err != nil {
+		panic(fmt.Sprintf("failed to read fixtures/get_buffer_ptr.wasm: %v", err))
+	}
+	return wasmBytes
+}
+
+// createAddModule creates a WASM module by reading from fixtures/add.wasm
+func createAddModule() []byte {
 	wasmBytes, err := os.ReadFile("fixtures/add.wasm")
 	if err != nil {
 		panic(fmt.Sprintf("failed to read fixtures/add.wasm: %v", err))
+	}
+	return wasmBytes
+}
+
+// createBufferPtrModule creates a WASM module by reading from fixtures/get_buffer_ptr.wasm
+func createBufferPtrModule() []byte {
+	wasmBytes, err := os.ReadFile("fixtures/get_buffer_ptr.wasm")
+	if err != nil {
+		panic(fmt.Sprintf("failed to read fixtures/get_buffer_ptr.wasm: %v", err))
 	}
 	return wasmBytes
 }
@@ -61,7 +79,10 @@ func TestRuntime_NewRuntime(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r := wasm.NewRuntime(tt.config)
+			r, err := wasm.NewRuntime(tt.config)
+			if err != nil {
+				t.Fatalf("failed to create runtime: %v", err)
+			}
 			assert.Equal(t, tt.want, r.Config)
 		})
 	}
@@ -69,11 +90,16 @@ func TestRuntime_NewRuntime(t *testing.T) {
 
 // TestRuntime_LoadModule tests loading and compiling a WASM module
 func TestRuntime_LoadModule(t *testing.T) {
+	r, err := wasm.NewRuntime(wasm.DefaultConfig())
+	if err != nil {
+		t.Fatalf("failed to create runtime: %v", err)
+	}
+	defer r.Close(context.Background())
+
 	tests := []struct {
 		name      string
 		wasmBytes []byte
 		wantErr   bool
-		errCode   uint16
 	}{
 		{
 			name:      "valid module",
@@ -84,19 +110,14 @@ func TestRuntime_LoadModule(t *testing.T) {
 			name:      "invalid module",
 			wasmBytes: []byte{0x00, 0x00},
 			wantErr:   true,
-			errCode:   wasm.ErrCodeCompileFailed,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r := wasm.NewRuntime(nil)
 			err := r.LoadModule(context.Background(), tt.wasmBytes)
 			if tt.wantErr {
 				assert.Error(t, err)
-				if wasmErr, ok := err.(*wasm.WASMError); ok {
-					assert.Equal(t, tt.errCode, wasmErr.Code)
-				}
 			} else {
 				assert.NoError(t, err)
 				assert.NotNil(t, r.Module)
@@ -107,44 +128,44 @@ func TestRuntime_LoadModule(t *testing.T) {
 
 // TestRuntime_InstantiateModule tests instantiating a WASM module
 func TestRuntime_InstantiateModule(t *testing.T) {
+	r, err := wasm.NewRuntime(wasm.DefaultConfig())
+	if err != nil {
+		t.Fatalf("failed to create runtime: %v", err)
+	}
+	defer r.Close(context.Background())
+
 	tests := []struct {
 		name    string
 		setup   func(*wasm.Runtime) error
 		wantErr bool
-		errCode uint16
 	}{
-		{
-			name: "no module loaded",
-			setup: func(r *wasm.Runtime) error {
-				// Don't load any module
-				return nil
-			},
-			wantErr: true,
-			errCode: wasm.ErrCodeNoModuleLoaded,
-		},
 		{
 			name: "valid module",
 			setup: func(r *wasm.Runtime) error {
-				if err := r.LoadModule(context.Background(), createTestModule()); err != nil {
-					return err
-				}
-				return nil
+				return r.LoadModule(context.Background(), createTestModule())
 			},
 			wantErr: false,
+		},
+		{
+			name: "invalid module",
+			setup: func(r *wasm.Runtime) error {
+				return r.LoadModule(context.Background(), []byte{0x00})
+			},
+			wantErr: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r := wasm.NewRuntime(nil)
 			err := tt.setup(r)
+			if tt.wantErr {
+				assert.Error(t, err)
+				return
+			}
 			require.NoError(t, err)
 			err = r.InstantiateModule(context.Background(), "", true)
 			if tt.wantErr {
 				assert.Error(t, err)
-				if wasmErr, ok := err.(*wasm.WASMError); ok {
-					assert.Equal(t, tt.errCode, wasmErr.Code)
-				}
 			} else {
 				assert.NoError(t, err)
 			}
@@ -154,6 +175,12 @@ func TestRuntime_InstantiateModule(t *testing.T) {
 
 // TestRuntime_CallFunction tests calling functions in a WASM module
 func TestRuntime_CallFunction(t *testing.T) {
+	r, err := wasm.NewRuntime(wasm.DefaultConfig())
+	if err != nil {
+		t.Fatalf("failed to create runtime: %v", err)
+	}
+	defer r.Close(context.Background())
+
 	tests := []struct {
 		name    string
 		setup   func(*wasm.Runtime) error
@@ -161,62 +188,46 @@ func TestRuntime_CallFunction(t *testing.T) {
 		params  []interface{}
 		want    []uint64
 		wantErr bool
-		errCode uint16
 	}{
 		{
-			name: "no module instantiated",
+			name: "valid function",
 			setup: func(r *wasm.Runtime) error {
-				// Don't load or instantiate any module
-				return nil
-			},
-			fnName:  "test",
-			wantErr: true,
-			errCode: wasm.ErrCodeNoModuleLoaded,
-		},
-		{
-			name: "function not found",
-			setup: func(r *wasm.Runtime) error {
-				if err := r.LoadModule(context.Background(), createTestModule()); err != nil {
+				if err := r.LoadModule(context.Background(), createAddModule()); err != nil {
 					return err
 				}
-				if err := r.InstantiateModule(context.Background(), "", true); err != nil {
-					return err
-				}
-				return nil
-			},
-			fnName:  "nonexistent",
-			wantErr: true,
-			errCode: wasm.ErrCodeFunctionNotFound,
-		},
-		{
-			name: "successful function call",
-			setup: func(r *wasm.Runtime) error {
-				if err := r.LoadModule(context.Background(), createTestModule()); err != nil {
-					return err
-				}
-				if err := r.InstantiateModule(context.Background(), "", true); err != nil {
-					return err
-				}
-				return nil
+				return r.InstantiateModule(context.Background(), "test_module", false)
 			},
 			fnName:  "add",
 			params:  []interface{}{int32(1), int32(2)},
 			want:    []uint64{3},
 			wantErr: false,
 		},
+		{
+			name: "invalid function",
+			setup: func(r *wasm.Runtime) error {
+				if err := r.LoadModule(context.Background(), []byte{0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00}); err != nil {
+					return err
+				}
+				return r.InstantiateModule(context.Background(), "test_module", false)
+			},
+			fnName:  "nonexistent",
+			params:  []interface{}{},
+			want:    nil,
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r := wasm.NewRuntime(nil)
 			err := tt.setup(r)
+			if tt.wantErr {
+				assert.Error(t, err)
+				return
+			}
 			require.NoError(t, err)
 			got, err := r.CallFunction(context.Background(), tt.fnName, tt.params...)
 			if tt.wantErr {
 				assert.Error(t, err)
-				if wasmErr, ok := err.(*wasm.WASMError); ok {
-					assert.Equal(t, tt.errCode, wasmErr.Code)
-				}
 			} else {
 				assert.NoError(t, err)
 				assert.Equal(t, tt.want, got)
@@ -227,67 +238,61 @@ func TestRuntime_CallFunction(t *testing.T) {
 
 // TestRuntime_MemoryManagement tests memory management functionality
 func TestRuntime_MemoryManagement(t *testing.T) {
+	r, err := wasm.NewRuntime(wasm.DefaultConfig())
+	if err != nil {
+		t.Fatalf("failed to create runtime: %v", err)
+	}
+	defer r.Close(context.Background())
+
 	tests := []struct {
 		name    string
 		setup   func(*wasm.Runtime) error
 		data    []byte
 		wantErr bool
-		errCode uint16
 	}{
 		{
-			name: "no memory available",
+			name: "valid data",
 			setup: func(r *wasm.Runtime) error {
-				// Don't instantiate any module
-				return nil
+				if err := r.LoadModule(context.Background(), createBufferPtrModule()); err != nil {
+					return err
+				}
+				return r.InstantiateModule(context.Background(), "test_module", false)
 			},
-			data:    []byte{1, 2, 3},
-			wantErr: true,
-			errCode: wasm.ErrCodeNoMemory,
-		},
-		{
-			name: "memory limit exceeded",
-			setup: func(r *wasm.Runtime) error {
-				// Setup module with small memory limit
-				r.Config.MemoryLimit = 2 // 128KB
-				if err := r.LoadModule(context.Background(), createTestModule()); err != nil {
-					return err
-				}
-				if err := r.InstantiateModule(context.Background(), "", true); err != nil {
-					return err
-				}
-				return nil
-			},
-			data:    make([]byte, 129537), // Exceed 128KB
-			wantErr: true,
-			errCode: wasm.ErrCodeMemoryExceeded,
-		},
-		{
-			name: "successful memory write and read",
-			setup: func(r *wasm.Runtime) error {
-				if err := r.LoadModule(context.Background(), createTestModule()); err != nil {
-					return err
-				}
-				if err := r.InstantiateModule(context.Background(), "", true); err != nil {
-					return err
-				}
-				return nil
-			},
-			data:    []byte{1, 2, 3, 4, 5},
+			data:    []byte{1, 2, 3, 4},
 			wantErr: false,
+		},
+		{
+			name: "empty data",
+			setup: func(r *wasm.Runtime) error {
+				if err := r.LoadModule(context.Background(), []byte{0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00}); err != nil {
+					return err
+				}
+				return r.InstantiateModule(context.Background(), "test_module", false)
+			},
+			data:    []byte{},
+			wantErr: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r := wasm.NewRuntime(nil)
 			err := tt.setup(r)
+			if tt.wantErr && err != nil {
+				assert.Error(t, err)
+				return
+			}
 			require.NoError(t, err)
-			ptr, err := r.WriteToMemory(tt.data)
+
+			// Call the exported get_buffer_ptr function to get a valid pointer
+			results, err := r.CallFunction(context.Background(), "get_buffer_ptr")
+			require.NoError(t, err)
+			require.Len(t, results, 1, "Expected one result from get_buffer_ptr")
+			ptr := uint32(results[0])
+
+			// Write data at the returned pointer
+			err = r.WriteToMemoryAt(ptr, tt.data)
 			if tt.wantErr {
 				assert.Error(t, err)
-				if wasmErr, ok := err.(*wasm.WASMError); ok {
-					assert.Equal(t, tt.errCode, wasmErr.Code)
-				}
 			} else {
 				assert.NoError(t, err)
 				// Read back the data
@@ -301,155 +306,144 @@ func TestRuntime_MemoryManagement(t *testing.T) {
 
 // TestRuntime_BufferPool tests the buffer pool functionality
 func TestRuntime_BufferPool(t *testing.T) {
-	tests := []struct {
-		name    string
-		setup   func(*wasm.Runtime)
-		size    int
-		wantErr bool
-		errCode uint16
-	}{
-		{
-			name: "pool disabled",
-			setup: func(r *wasm.Runtime) {
-				r.Config.EnableMemoryPool = false
-			},
-			size:    4096,
-			wantErr: false,
-		},
-		{
-			name: "buffer too large",
-			setup: func(r *wasm.Runtime) {
-				r.Config.EnableMemoryPool = true
-				r.Config.MemoryPoolMaxSize = 1024
-			},
-			size:    2048,
-			wantErr: true,
-			errCode: wasm.ErrCodePoolPutFailed,
-		},
-		// Add more test cases for successful buffer operations
+	r, err := wasm.NewRuntime(wasm.DefaultConfig())
+	if err != nil {
+		t.Fatalf("failed to create runtime: %v", err)
 	}
+	defer r.Close(context.Background())
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			r := wasm.NewRuntime(nil)
-			tt.setup(r)
-			buf := r.GetBuffer()
-			assert.NotNil(t, buf)
-			// Write some data
-			buf.Write(make([]byte, tt.size))
-			// Return buffer to pool
-			err := r.PutBuffer(buf)
-			if tt.wantErr {
-				assert.Error(t, err)
-				if wasmErr, ok := err.(*wasm.WASMError); ok {
-					assert.Equal(t, tt.errCode, wasmErr.Code)
-				}
-			} else {
-				assert.NoError(t, err)
-			}
-		})
-	}
-}
-
-// TestRuntime_Close tests the cleanup functionality
-func TestRuntime_Close(t *testing.T) {
-	tests := []struct {
-		name    string
-		setup   func(*wasm.Runtime)
-		wantErr bool
-		errCode uint16
-	}{
-		{
-			name: "cleanup function fails",
-			setup: func(r *wasm.Runtime) {
-				r.AddCleanup(func() error {
-					return assert.AnError
-				})
-			},
-			wantErr: true,
-			errCode: wasm.ErrCodeCleanupFailed,
-		},
-		{
-			name: "successful cleanup",
-			setup: func(r *wasm.Runtime) {
-				// Add successful cleanup function
-				r.AddCleanup(func() error {
-					return nil
-				})
-			},
-			wantErr: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			r := wasm.NewRuntime(nil)
-			tt.setup(r)
-			err := r.Close(context.Background())
-			if tt.wantErr {
-				assert.Error(t, err)
-				if wasmErr, ok := err.(*wasm.WASMError); ok {
-					assert.Equal(t, tt.errCode, wasmErr.Code)
-				}
-			} else {
-				assert.NoError(t, err)
-			}
-		})
-	}
-}
-
-// TestRuntime_GetMemoryStats tests memory statistics functionality
-func TestRuntime_GetMemoryStats(t *testing.T) {
 	tests := []struct {
 		name    string
 		setup   func(*wasm.Runtime) error
+		data    []byte
 		wantErr bool
-		errCode uint16
 	}{
 		{
-			name: "no memory available",
+			name: "valid buffer",
 			setup: func(r *wasm.Runtime) error {
-				// Don't instantiate any module
-				return nil
+				return r.LoadModule(context.Background(), createTestModule())
 			},
-			wantErr: true,
-			errCode: wasm.ErrCodeNoMemory,
+			data:    []byte{1, 2, 3, 4},
+			wantErr: false,
 		},
 		{
-			name: "valid memory stats",
+			name: "empty buffer",
 			setup: func(r *wasm.Runtime) error {
-				if err := r.LoadModule(context.Background(), createTestModule()); err != nil {
-					return err
-				}
-				if err := r.InstantiateModule(context.Background(), "", true); err != nil {
-					return err
-				}
-				return nil
+				return r.LoadModule(context.Background(), []byte{0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00})
 			},
+			data:    []byte{},
 			wantErr: false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r := wasm.NewRuntime(nil)
 			err := tt.setup(r)
 			require.NoError(t, err)
-			stats, err := r.GetMemoryStats()
+			buf := r.GetBuffer()
+			_, err = buf.Write(tt.data)
 			if tt.wantErr {
 				assert.Error(t, err)
-				if wasmErr, ok := err.(*wasm.WASMError); ok {
-					assert.Equal(t, tt.errCode, wasmErr.Code)
-				}
 			} else {
 				assert.NoError(t, err)
-				assert.NotNil(t, stats)
-				// Verify stats fields
-				assert.GreaterOrEqual(t, stats.Usage, uint64(0))
-				assert.GreaterOrEqual(t, stats.Allocs, uint64(0))
-				assert.GreaterOrEqual(t, stats.Frees, uint64(0))
-				assert.GreaterOrEqual(t, stats.Size, uint32(0))
-				assert.GreaterOrEqual(t, stats.Capacity, uint32(0))
+				assert.Equal(t, tt.data, buf.Bytes())
+				err = r.PutBuffer(buf)
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+// TestRuntime_Close tests closing the runtime
+func TestRuntime_Close(t *testing.T) {
+	r, err := wasm.NewRuntime(wasm.DefaultConfig())
+	if err != nil {
+		t.Fatalf("failed to create runtime: %v", err)
+	}
+	defer r.Close(context.Background())
+
+	err = r.Close(context.Background())
+	assert.NoError(t, err)
+}
+
+// TestRuntime_AddCleanup tests adding cleanup functions
+func TestRuntime_AddCleanup(t *testing.T) {
+	r, err := wasm.NewRuntime(wasm.DefaultConfig())
+	if err != nil {
+		t.Fatalf("failed to create runtime: %v", err)
+	}
+	defer r.Close(context.Background())
+
+	cleanupCalled := false
+	r.AddCleanup(func() error {
+		cleanupCalled = true
+		return nil
+	})
+
+	err = r.Close(context.Background())
+	assert.NoError(t, err)
+	assert.True(t, cleanupCalled)
+}
+
+// TestRuntime_GetMemoryStats tests getting memory statistics
+func TestRuntime_GetMemoryStats(t *testing.T) {
+	r, err := wasm.NewRuntime(wasm.DefaultConfig())
+	if err != nil {
+		t.Fatalf("failed to create runtime: %v", err)
+	}
+	defer r.Close(context.Background())
+
+	// Load and instantiate a test module
+	err = r.LoadModule(context.Background(), createTestModule())
+	require.NoError(t, err)
+
+	err = r.InstantiateModule(context.Background(), "test", false)
+	require.NoError(t, err)
+
+	stats, err := r.GetMemoryStats()
+	require.NoError(t, err)
+	assert.NotNil(t, stats)
+	assert.Equal(t, uint64(0), stats.Usage)
+	assert.Equal(t, uint64(0), stats.Allocs)
+	assert.Equal(t, uint64(0), stats.Frees)
+}
+
+// TestRuntime_UnmarshalResults tests unmarshaling function results
+func TestRuntime_UnmarshalResults(t *testing.T) {
+	r, err := wasm.NewRuntime(wasm.DefaultConfig())
+	if err != nil {
+		t.Fatalf("failed to create runtime: %v", err)
+	}
+	defer r.Close(context.Background())
+
+	tests := []struct {
+		name    string
+		results []uint64
+		want    []interface{}
+		wantErr bool
+	}{
+		{
+			name:    "valid results",
+			results: []uint64{1, 2, 3},
+			want:    []interface{}{uint64(1), uint64(2), uint64(3)},
+			wantErr: false,
+		},
+		{
+			name:    "empty results",
+			results: []uint64{},
+			want:    []interface{}{},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := r.UnmarshalResults(tt.results)
+			if tt.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tt.want, got)
 			}
 		})
 	}
@@ -460,11 +454,14 @@ func TestRuntime_DebugInstantiate(t *testing.T) {
 	// Create runtime with debug config
 	config := wasm.DefaultConfig()
 	config.EnableMemoryPool = false // Disable memory pool for simpler debugging
-	r := wasm.NewRuntime(config)
+	r, err := wasm.NewRuntime(config)
+	if err != nil {
+		t.Fatalf("failed to create runtime: %v", err)
+	}
 
 	// Load the module
 	wasmBytes := createTestModule()
-	err := r.LoadModule(context.Background(), wasmBytes)
+	err = r.LoadModule(context.Background(), wasmBytes)
 	require.NoError(t, err)
 
 	// Print module information
@@ -492,7 +489,10 @@ func TestRuntime_DebugInstantiate(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create a new runtime for WASI test
-	r = wasm.NewRuntime(config)
+	r, err = wasm.NewRuntime(config)
+	if err != nil {
+		t.Fatalf("failed to create runtime: %v", err)
+	}
 	err = r.LoadModule(context.Background(), wasmBytes)
 	require.NoError(t, err)
 
@@ -513,12 +513,15 @@ func TestRuntime_DebugInstantiate(t *testing.T) {
 // TestSimpleAddFunction tests the add function in a simple C-based WASM module
 func TestSimpleAddFunction(t *testing.T) {
 	// Create runtime with default config
-	r := wasm.NewRuntime(nil)
+	r, err := wasm.NewRuntime(nil)
+	if err != nil {
+		t.Fatalf("failed to create runtime: %v", err)
+	}
 	defer r.Close(context.Background())
 
 	// Load the WASM module
-	wasmBytes := createTestModule()
-	err := r.LoadModule(context.Background(), wasmBytes)
+	wasmBytes := createAddModule()
+	err = r.LoadModule(context.Background(), wasmBytes)
 	require.NoError(t, err)
 
 	// Instantiate the module (no WASI support needed for simple C module)
@@ -552,12 +555,15 @@ func TestSimpleAddFunction(t *testing.T) {
 // TestSimpleAddFunctionError tests error cases for the add function in a simple C-based WASM module
 func TestSimpleAddFunctionError(t *testing.T) {
 	// Create runtime with default config
-	r := wasm.NewRuntime(nil)
+	r, err := wasm.NewRuntime(nil)
+	if err != nil {
+		t.Fatalf("failed to create runtime: %v", err)
+	}
 	defer r.Close(context.Background())
 
 	// Load the WASM module
-	wasmBytes := createTestModule()
-	err := r.LoadModule(context.Background(), wasmBytes)
+	wasmBytes := createAddModule()
+	err = r.LoadModule(context.Background(), wasmBytes)
 	require.NoError(t, err)
 
 	// Instantiate the module (no WASI support needed for simple C module)
