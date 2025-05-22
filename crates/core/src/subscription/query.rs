@@ -142,8 +142,9 @@ pub fn classify(expr: &QueryExpr) -> Option<Supported> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::datastore::traits::IsolationLevel;
-    use crate::db::relational_db::tests_utils::{insert, TestDB};
+    use crate::db::relational_db::tests_utils::{
+        begin_mut_tx, begin_tx, insert, with_auto_commit, with_read_only, TestDB,
+    };
     use crate::db::relational_db::MutTx;
     use crate::execution_context::Workload;
     use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdate, UpdatesRelValue};
@@ -407,7 +408,7 @@ mod tests {
         db.create_table_for_test("a", schema, indexes)?;
         db.create_table_for_test("b", schema, indexes)?;
 
-        let tx = db.begin_tx(Workload::ForTests);
+        let tx = begin_tx(&db);
         let sql = "SELECT b.* FROM b JOIN a ON b.n = a.n WHERE b.data > 200";
         let result = compile_read_only_query(&AuthCtx::for_testing(), &tx, sql);
         assert!(result.is_ok());
@@ -423,7 +424,7 @@ mod tests {
         let indexes = &[1.into()];
         let table_id = db.create_table_for_test("test", schema, indexes)?;
 
-        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let mut tx = begin_mut_tx(&db);
         let mut deletes = Vec::new();
         for i in 0u64..9u64 {
             insert(&db, &mut tx, table_id, &product!(i, i))?;
@@ -440,7 +441,7 @@ mod tests {
         };
 
         db.commit_tx(tx)?;
-        let tx = db.begin_tx(Workload::ForTests);
+        let tx = begin_tx(&db);
 
         let sql = "select * from test where b = 3";
         let mut exp = compile_sql(&db, &AuthCtx::for_testing(), &tx, sql)?;
@@ -472,14 +473,14 @@ mod tests {
     fn test_subscribe() -> ResultTest<()> {
         let db = TestDB::durable()?;
 
-        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let mut tx = begin_mut_tx(&db);
 
         let (schema, table, data, q) = make_inv(&db, &mut tx, StAccess::Public)?;
         db.commit_tx(tx)?;
         assert_eq!(schema.table_type, StTableType::User);
         assert_eq!(schema.table_access, StAccess::Public);
 
-        let tx = db.begin_tx(Workload::ForTests);
+        let tx = begin_tx(&db);
         let q_1 = q.clone();
         check_query(&db, &table, &tx, &q_1, &data)?;
 
@@ -495,7 +496,7 @@ mod tests {
     fn test_subscribe_private() -> ResultTest<()> {
         let db = TestDB::durable()?;
 
-        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let mut tx = begin_mut_tx(&db);
 
         let (schema, table, data, q) = make_inv(&db, &mut tx, StAccess::Private)?;
         db.commit_tx(tx)?;
@@ -503,7 +504,7 @@ mod tests {
         assert_eq!(schema.table_access, StAccess::Private);
 
         let row = product!(1u64, "health");
-        let tx = db.begin_tx(Workload::ForTests);
+        let tx = begin_tx(&db);
         check_query(&db, &table, &tx, &q, &data)?;
 
         // SELECT * FROM inventory WHERE inventory_id = 1
@@ -595,7 +596,7 @@ mod tests {
         AND MobileEntityState.location_z > 96000 \
         AND MobileEntityState.location_z < 192000";
 
-        let tx = db.begin_tx(Workload::ForTests);
+        let tx = begin_tx(&db);
         let qset = compile_read_only_queryset(&db, &AuthCtx::for_testing(), &tx, sql_query)?;
 
         for q in qset {
@@ -616,7 +617,7 @@ mod tests {
     fn test_subscribe_all() -> ResultTest<()> {
         let db = TestDB::durable()?;
 
-        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let mut tx = begin_mut_tx(&db);
 
         let (schema_1, _, _, _) = make_inv(&db, &mut tx, StAccess::Public)?;
         let (schema_2, _, _, _) = make_player(&db, &mut tx)?;
@@ -670,7 +671,7 @@ mod tests {
         let indexes = &[ColId(0), ColId(1)];
         db.create_table_for_test("rhs", schema, indexes)?;
 
-        let tx = db.begin_tx(Workload::ForTests);
+        let tx = begin_tx(&db);
 
         // All single table queries are supported
         let scans = [
@@ -717,7 +718,7 @@ mod tests {
     fn create_lhs_table_for_eval_incr(db: &RelationalDB) -> ResultTest<TableId> {
         const I32: AlgebraicType = AlgebraicType::I32;
         let lhs_id = db.create_table_for_test("lhs", &[("id", I32), ("x", I32)], &[0.into()])?;
-        db.with_auto_commit(Workload::ForTests, |tx| {
+        with_auto_commit(db, |tx| {
             for i in 0..5 {
                 let row = product!(i, i + 5);
                 insert(db, tx, lhs_id, &row)?;
@@ -730,7 +731,7 @@ mod tests {
     fn create_rhs_table_for_eval_incr(db: &RelationalDB) -> ResultTest<TableId> {
         const I32: AlgebraicType = AlgebraicType::I32;
         let rhs_id = db.create_table_for_test("rhs", &[("rid", I32), ("id", I32), ("y", I32)], &[1.into()])?;
-        db.with_auto_commit(Workload::ForTests, |tx| {
+        with_auto_commit(db, |tx| {
             for i in 10..20 {
                 let row = product!(i, i - 10, i - 8);
                 insert(db, tx, rhs_id, &row)?;
@@ -740,7 +741,7 @@ mod tests {
     }
 
     fn compile_query(db: &RelationalDB) -> ResultTest<SubscriptionPlan> {
-        db.with_read_only(Workload::ForTests, |tx| {
+        with_read_only(db, |tx| {
             let auth = AuthCtx::for_testing();
             let tx = SchemaViewer::new(tx, &auth);
             // Should be answered using an index semijion
@@ -765,7 +766,7 @@ mod tests {
     /// Should refactor to reduce duplicate logic between the two tests.
     fn test_eval_incr_for_left_semijoin() -> ResultTest<()> {
         fn compile_query(db: &RelationalDB) -> ResultTest<SubscriptionPlan> {
-            db.with_read_only(Workload::ForTests, |tx| {
+            with_read_only(db, |tx| {
                 let auth = AuthCtx::for_testing();
                 let tx = SchemaViewer::new(tx, &auth);
                 // Should be answered using an index semijion
@@ -1066,7 +1067,7 @@ mod tests {
         plan: &SubscriptionPlan,
         ops: Vec<(TableId, ProductValue, bool)>,
     ) -> ResultTest<DatabaseUpdate> {
-        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let mut tx = begin_mut_tx(db);
 
         for (table_id, row, insert) in ops {
             if insert {
@@ -1076,7 +1077,7 @@ mod tests {
             }
         }
 
-        let (data, tx) = tx.commit_downgrade(Workload::ForTests);
+        let (data, _, tx) = tx.commit_downgrade(Workload::ForTests);
         let table_id = plan.subscribed_table_id();
         let table_name = plan.subscribed_table_name().into();
         let tx = DeltaTx::new(&tx, &data);

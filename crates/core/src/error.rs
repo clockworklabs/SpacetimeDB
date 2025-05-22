@@ -426,4 +426,10 @@ pub enum RestoreSnapshotError {
     Bootstrap(#[source] Box<DBError>),
     #[error("No connected snapshot found, commitlog starts at {min_commitlog_offset}")]
     NoConnectedSnapshot { min_commitlog_offset: TxOffset },
+    #[error("Failed to invalidate snapshots at or newer than {offset}")]
+    Invalidate {
+        offset: TxOffset,
+        #[source]
+        source: Box<SnapshotError>,
+    },
 }

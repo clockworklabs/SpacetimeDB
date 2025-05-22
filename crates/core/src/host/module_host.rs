@@ -13,9 +13,9 @@ use crate::messages::control_db::Database;
 use crate::replica_context::ReplicaContext;
 use crate::sql::ast::SchemaViewer;
 use crate::sql::parser::RowLevelExpr;
+use crate::subscription::execute_plan;
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use crate::subscription::tx::DeltaTx;
-use crate::subscription::{execute_plan, record_exec_metrics};
 use crate::util::asyncify;
 use crate::util::lending_pool::{LendingPool, LentResource, PoolClosed};
 use crate::vm::check_row_limit;
@@ -26,6 +26,7 @@ use derive_more::From;
 use futures::{Future, FutureExt};
 use indexmap::IndexSet;
 use itertools::Itertools;
+use prometheus::{Histogram, IntGauge};
 use spacetimedb_client_api_messages::websocket::{ByteListLen, Compression, OneOffTable, QueryUpdate, WebsocketFormat};
 use spacetimedb_data_structures::error_stream::ErrorStream;
 use spacetimedb_data_structures::map::{HashCollectionExt as _, IntMap};
@@ -199,6 +200,45 @@ pub struct ModuleInfo {
     pub log_tx: tokio::sync::broadcast::Sender<bytes::Bytes>,
     /// Subscriptions to this module.
     pub subscriptions: ModuleSubscriptions,
+    /// Metrics handles for this module.
+    pub metrics: ModuleMetrics,
+}
+
+#[derive(Debug)]
+pub struct ModuleMetrics {
+    pub connected_clients: IntGauge,
+    pub ws_clients_spawned: IntGauge,
+    pub ws_clients_aborted: IntGauge,
+    pub request_round_trip_subscribe: Histogram,
+    pub request_round_trip_unsubscribe: Histogram,
+    pub request_round_trip_sql: Histogram,
+}
+
+impl ModuleMetrics {
+    fn new(db: &Identity) -> Self {
+        let connected_clients = WORKER_METRICS.connected_clients.with_label_values(db);
+        let ws_clients_spawned = WORKER_METRICS.ws_clients_spawned.with_label_values(db);
+        let ws_clients_aborted = WORKER_METRICS.ws_clients_aborted.with_label_values(db);
+        let request_round_trip_subscribe =
+            WORKER_METRICS
+                .request_round_trip
+                .with_label_values(&WorkloadType::Subscribe, db, "");
+        let request_round_trip_unsubscribe =
+            WORKER_METRICS
+                .request_round_trip
+                .with_label_values(&WorkloadType::Unsubscribe, db, "");
+        let request_round_trip_sql = WORKER_METRICS
+            .request_round_trip
+            .with_label_values(&WorkloadType::Sql, db, "");
+        Self {
+            connected_clients,
+            ws_clients_spawned,
+            ws_clients_aborted,
+            request_round_trip_subscribe,
+            request_round_trip_unsubscribe,
+            request_round_trip_sql,
+        }
+    }
 }
 
 impl ModuleInfo {
@@ -212,6 +252,7 @@ impl ModuleInfo {
         log_tx: tokio::sync::broadcast::Sender<bytes::Bytes>,
         subscriptions: ModuleSubscriptions,
     ) -> Arc<Self> {
+        let metrics = ModuleMetrics::new(&database_identity);
         Arc::new(ModuleInfo {
             module_def,
             owner_identity,
@@ -219,6 +260,7 @@ impl ModuleInfo {
             module_hash,
             log_tx,
             subscriptions,
+            metrics,
         })
     }
 }
@@ -321,7 +363,9 @@ fn init_database(
 
     let rcr = match module_def.lifecycle_reducer(Lifecycle::Init) {
         None => {
-            stdb.commit_tx(tx)?;
+            if let Some((tx_data, tx_metrics, reducer)) = stdb.commit_tx(tx)? {
+                tx_metrics.report_with_db(&reducer, stdb, Some(&tx_data));
+            }
             None
         }
 
@@ -1043,7 +1087,7 @@ impl ModuleHost {
                 .context("One-off queries are not allowed to modify the database")
         })?;
 
-        record_exec_metrics(&WorkloadType::Sql, &db.database_identity(), metrics);
+        db.exec_counters_for(WorkloadType::Sql).record(&metrics);
 
         Ok(rows)
     }
