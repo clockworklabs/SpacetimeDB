@@ -858,8 +858,8 @@ pub fn report_tx_metricses(
     reducer: &str,
     db: &RelationalDB,
     tx_data: Option<&TxData>,
-    metrics_mut: Option<TxMetrics>,
-    metrics_read: TxMetrics,
+    metrics_mut: Option<&TxMetrics>,
+    metrics_read: &TxMetrics,
 ) {
     if let Some(metrics_mut) = metrics_mut {
         metrics_mut.report_with_db(reducer, db, tx_data);
