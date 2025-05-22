@@ -1,10 +1,10 @@
 module github.com/clockworklabs/SpacetimeDB/crates/bindings-go
 
-go 1.23.4
+go 1.21
 
 require (
 	github.com/stretchr/testify v1.10.0
-	github.com/tetratelabs/wazero v1.9.0
+	github.com/tetratelabs/wazero v1.8.0
 )
 
 require (
