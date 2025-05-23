@@ -2,6 +2,9 @@
 
 set -euo pipefail
 
+# Path to perf binary
+PERF_BIN="/home/ubuntu/bin/perf"
+
 # Function to print help information
 print_help() {
     cat <<EOF
@@ -85,20 +88,12 @@ if [[ -z "$DATAFILE" ]]; then
     DATAFILE=perf.data
 fi
 if [[ -z "$SPACETIME_PID" ]]; then
-    # -f allows us to get the args
-    # -e lets us see all users
-    SPACETIMES="$(ps -a -e -f | grep '\<spacetime\>.*\<start\>' | grep -v '\<grep\>')"
-    LINES="$(echo "$SPACETIMES" | wc -l)"
-    if [[ $LINES < 1 ]] ; then
+    # Use pgrep for reliable PID detection
+    SPACETIME_PID=$(pgrep -x spacetimedb-sta)
+    if [[ -z "$SPACETIME_PID" ]]; then
         >&2 echo "spacetime PID not found, is it running?"
         exit 1
-    elif [[ $LINES > 1 ]] ; then
-        >&2 echo "Multiple spacetime PIDs. Specify one with -z"
-        >&2 echo "$SPACETIMES"
-        exit 1
     fi
-
-    SPACETIME_PID=$(echo "$SPACETIMES" | awk '{print $2}')
 fi
 if ! [[ $SPACETIME_PID =~ ^[0-9]+$ ]]; then
     >&2 echo "Refusing to instrument suspicious-looking PID: $SPACETIME_PID"
@@ -111,6 +106,5 @@ fi
 echo "Instrumenting PID $SPACETIME_PID for $SLEEP_TIME seconds."
 echo "Writing data to $DATAFILE and flamegraph to $OUTFILE."
 
-perf record -m 8192 --call-graph lbr --pid $SPACETIME_PID -o $DATAFILE sleep $SLEEP_TIME
-perf script report flamegraph -i $DATAFILE -o $OUTFILE
-
+$PERF_BIN record -m 8192 --call-graph lbr --pid $SPACETIME_PID -o $DATAFILE sleep $SLEEP_TIME
+$PERF_BIN script report flamegraph -i $DATAFILE -o $OUTFILE
