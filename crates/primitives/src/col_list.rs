@@ -197,7 +197,7 @@ impl ColList {
     ///
     /// If `col >= 63` or `col <= last_col`, the list will become heap allocated if not already.
     pub fn push(&mut self, col: ColId) {
-        self.push_inner(col, self.last().map_or(true, |l| l < col));
+        self.push_inner(col, self.last().is_none_or(|l| l < col));
     }
 
     /// Sort and deduplicate the list.
