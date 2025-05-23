@@ -3,11 +3,11 @@
 use spacetimedb_datastore::locking_tx_datastore::state_view::IterByColRangeMutTx;
 use spacetimedb_datastore::locking_tx_datastore::tx::TxId;
 use spacetimedb_datastore::locking_tx_datastore::IterByColRangeTx;
-use spacetimedb_datastore::system_tables::{st_var_schema, StVarName, StVarRow, StVarTable};
+use spacetimedb_datastore::system_tables::{st_var_schema, StVarName, StVarRow};
 use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::error::DBError;
 use crate::estimation;
-use crate::execution_context::ExecutionContext;
+use spacetimedb_datastore::execution_context::ExecutionContext;
 use core::ops::{Bound, RangeBounds};
 use itertools::Itertools;
 use spacetimedb_data_structures::map::IntMap;
@@ -57,12 +57,6 @@ impl<'a> From<&'a mut MutTx> for TxMode<'a> {
 
 impl<'a> From<&'a Tx> for TxMode<'a> {
     fn from(tx: &'a Tx) -> Self {
-        TxMode::Tx(tx)
-    }
-}
-
-impl<'a> From<&'a mut Tx> for TxMode<'a> {
-    fn from(tx: &'a mut Tx) -> Self {
         TxMode::Tx(tx)
     }
 }

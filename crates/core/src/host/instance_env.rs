@@ -1,8 +1,9 @@
 use super::scheduler::{get_schedule_from_row, ScheduleError, Scheduler};
 use crate::database_logger::{BacktraceProvider, LogLevel, Record};
+use spacetimedb_datastore::error::{DatastoreError, IndexError};
 use spacetimedb_datastore::locking_tx_datastore::MutTxId;
 use crate::db::relational_db::{MutTx, RelationalDB};
-use crate::error::{DBError, IndexError, NodesError};
+use crate::error::{DBError, NodesError};
 use crate::replica_context::ReplicaContext;
 use core::mem;
 use parking_lot::{Mutex, MutexGuard};
@@ -227,7 +228,7 @@ impl InstanceEnv {
                 #[cold]
                 #[inline(never)]
                 |e| match e {
-                    DBError::Index(IndexError::UniqueConstraintViolation(_)) => {}
+                    DBError::Datastore(DatastoreError::Index(IndexError::UniqueConstraintViolation(_))) => {}
                     _ => {
                         let res = stdb.table_name_from_id_mut(tx, table_id);
                         if let Ok(Some(table_name)) = res {
@@ -296,7 +297,7 @@ impl InstanceEnv {
                 #[cold]
                 #[inline(never)]
                 |e| match e {
-                    DBError::Index(IndexError::UniqueConstraintViolation(_)) => {}
+                    DBError::Datastore(DatastoreError::Index(IndexError::UniqueConstraintViolation(_))) => {}
                     _ => {
                         let res = stdb.table_name_from_id_mut(tx, table_id);
                         if let Ok(Some(table_name)) = res {

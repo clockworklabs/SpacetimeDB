@@ -13,7 +13,7 @@ spacetimedb-lib = { workspace = true, features = ["serde", "metrics_impls"] }
 # spacetimedb-client-api-messages.workspace = true
 spacetimedb-commitlog.workspace = true
 spacetimedb-durability.workspace = true
-# spacetimedb-metrics.workspace = true
+spacetimedb-metrics.workspace = true
 spacetimedb-primitives.workspace = true
 spacetimedb-paths.workspace = true
 # spacetimedb-physical-plan.workspace = true
@@ -43,7 +43,7 @@ bytes.workspace = true
 derive_more.workspace = true
 # dirs.workspace = true
 enum-as-inner.workspace = true
-# enum-map.workspace = true
+enum-map.workspace = true
 # flate2.workspace = true
 # fs2.workspace = true
 # futures.workspace = true
@@ -58,12 +58,12 @@ itertools.workspace = true
 lazy_static.workspace = true
 log.workspace = true
 # memchr.workspace = true
-# once_cell.workspace = true
+once_cell.workspace = true
 # openssl.workspace = true
 parking_lot.workspace = true
 # paste.workspace = true
 # pin-project-lite.workspace = true
-# prometheus.workspace = true
+prometheus.workspace = true
 # rayon.workspace = true
 # rayon-core.workspace = true
 # regex.workspace = true
@@ -110,18 +110,18 @@ thin-vec.workspace = true
 # tikv-jemallocator = {workspace = true}
 # tikv-jemalloc-ctl = {workspace = true}
 
-# [features]
+[features]
 # # Print a warning when doing an unindexed `iter_by_col_range` on a large table.
 # unindexed_iter_by_col_range_warn = []
 # default = ["unindexed_iter_by_col_range_warn"]
 # # Enable timing for wasm ABI calls
 # spacetimedb-wasm-instance-env-times = []
 # # Enable test helpers and utils
-# test = ["spacetimedb-commitlog/test"]
+test = ["spacetimedb-commitlog/test"]
 # # Perfmaps for profiling modules
 # perfmap = []
 
-# [dev-dependencies]
+[dev-dependencies]
 # spacetimedb-lib = { path = "../lib", features = ["proptest"] }
 # spacetimedb-sats = { path = "../sats", features = ["proptest"] }
 # spacetimedb-commitlog = { path = "../commitlog", features = ["test"] }
@@ -132,7 +132,7 @@ proptest.workspace = true
 # proptest-derive.workspace = true
 # rand.workspace = true
 # env_logger.workspace = true
-# pretty_assertions.workspace = true
+pretty_assertions.workspace = true
 # jsonwebtoken.workspace = true
 # axum.workspace = true
 # reqwest.workspace = true

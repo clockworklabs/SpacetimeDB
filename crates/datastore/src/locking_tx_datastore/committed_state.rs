@@ -18,10 +18,8 @@ use crate::{
             },
             traits::TxData,
         };
+use crate::db_metrics::DB_METRICS;
 use crate::{
-    db::{
-        db_metrics::DB_METRICS,
-    },
     error::{IndexError, TableError},
     execution_context::ExecutionContext,
 };
@@ -736,7 +734,7 @@ impl CommittedState {
     }
 
     pub fn report_data_size(&self, database_identity: Identity) {
-        use crate::db::db_metrics::data_size::DATA_SIZE_METRICS;
+        use crate::db_metrics::data_size::DATA_SIZE_METRICS;
 
         for (_, table) in &self.tables {
             let table_name = &table.schema.table_name;

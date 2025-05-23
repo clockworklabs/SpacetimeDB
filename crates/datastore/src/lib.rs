@@ -4,6 +4,7 @@ pub mod system_tables;
 pub mod traits;
 pub mod error;
 pub mod execution_context;
+pub mod db_metrics;
 
 use crate::error::DatastoreError;
 

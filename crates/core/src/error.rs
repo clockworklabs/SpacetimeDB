@@ -5,26 +5,19 @@ use std::sync::{MutexGuard, PoisonError};
 
 use enum_as_inner::EnumAsInner;
 use hex::FromHexError;
+use spacetimedb_datastore::error::{DatastoreError, IndexError, TableError};
 use spacetimedb_expr::errors::TypingError;
-use spacetimedb_sats::AlgebraicType;
 use spacetimedb_schema::error::ValidationErrors;
 use spacetimedb_snapshot::SnapshotError;
-use spacetimedb_table::table::{self, ReadViaBsatnError, UniqueConstraintViolation};
-use spacetimedb_table::{bflatn_to, read_column};
 use thiserror::Error;
 
 use crate::client::ClientActorId;
 use crate::host::scheduler::ScheduleError;
 use spacetimedb_lib::buffer::DecodeError;
-use spacetimedb_lib::db::error::{LibError, RelationError, SchemaErrors};
-use spacetimedb_lib::db::raw_def::v9::RawSql;
-use spacetimedb_lib::db::raw_def::RawIndexDefV8;
+use spacetimedb_lib::db::error::{RelationError, SchemaErrors};
 use spacetimedb_lib::relation::FieldName;
 use spacetimedb_primitives::*;
 use spacetimedb_sats::hash::Hash;
-use spacetimedb_sats::product_value::InvalidFieldError;
-use spacetimedb_sats::satn::Satn;
-use spacetimedb_sats::{AlgebraicValue, ProductValue};
 use spacetimedb_vm::errors::{ErrorKind, ErrorLang, ErrorType, ErrorVm};
 use spacetimedb_vm::expr::Crud;
 
@@ -88,12 +81,8 @@ pub enum DatabaseError {
 pub enum DBError {
     #[error("BufferError: {0}")]
     Buffer(#[from] DecodeError),
-    #[error("TableError: {0}")]
-    Table(#[from] TableError),
-    #[error("SequenceError: {0}")]
-    Sequence2(#[from] SequenceError),
-    #[error("IndexError: {0}")]
-    Index(#[from] IndexError),
+    #[error(transparent)]
+    Datastore(#[from] DatastoreError),
     #[error("SchemaError: {0}")]
     Schema(SchemaErrors),
     #[error("IOError: {0}.")]
@@ -263,14 +252,14 @@ pub enum NodesError {
 impl From<DBError> for NodesError {
     fn from(e: DBError) -> Self {
         match e {
-            DBError::Table(TableError::Exist(name)) => Self::AlreadyExists(name),
-            DBError::Table(TableError::System(name)) => Self::SystemName(name),
-            DBError::Table(TableError::IdNotFound(_, _) | TableError::NotFound(_)) => Self::TableNotFound,
-            DBError::Table(TableError::ColumnNotFound(_)) => Self::BadColumn,
-            DBError::Index(IndexError::NotFound(_)) => Self::IndexNotFound,
-            DBError::Index(IndexError::Decode(e)) => Self::DecodeRow(e),
-            DBError::Index(IndexError::NotUnique(_)) => Self::IndexNotUnique,
-            DBError::Index(IndexError::KeyNotFound(..)) => Self::IndexRowNotFound,
+            DBError::Datastore(DatastoreError::Table(TableError::Exist(name))) => Self::AlreadyExists(name),
+            DBError::Datastore(DatastoreError::Table(TableError::System(name))) => Self::SystemName(name),
+            DBError::Datastore(DatastoreError::Table(TableError::IdNotFound(_, _)) | DatastoreError::Table(TableError::NotFound(_))) => Self::TableNotFound,
+            DBError::Datastore(DatastoreError::Table(TableError::ColumnNotFound(_))) => Self::BadColumn,
+            DBError::Datastore(DatastoreError::Index(IndexError::NotFound(_))) => Self::IndexNotFound,
+            DBError::Datastore(DatastoreError::Index(IndexError::Decode(e))) => Self::DecodeRow(e),
+            DBError::Datastore(DatastoreError::Index(IndexError::NotUnique(_))) => Self::IndexNotUnique,
+            DBError::Datastore(DatastoreError::Index(IndexError::KeyNotFound(..))) => Self::IndexRowNotFound,
             _ => Self::Internal(Box::new(e)),
         }
     }

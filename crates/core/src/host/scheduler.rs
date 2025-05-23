@@ -19,7 +19,7 @@ use spacetimedb_datastore::locking_tx_datastore::MutTxId;
 use spacetimedb_datastore::system_tables::{StFields, StScheduledFields, ST_SCHEDULED_ID};
 use spacetimedb_datastore::traits::IsolationLevel;
 use crate::db::relational_db::RelationalDB;
-use crate::execution_context::Workload;
+use spacetimedb_datastore::execution_context::Workload;
 
 use super::module_host::ModuleEvent;
 use super::module_host::ModuleFunctionCall;

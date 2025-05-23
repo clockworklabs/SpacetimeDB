@@ -11,8 +11,10 @@ use spacetimedb_execution::{pipelined::PipelinedProject, Datastore, DeltaStore};
 use spacetimedb_lib::{metrics::ExecutionMetrics, Identity};
 use spacetimedb_primitives::TableId;
 
+use spacetimedb_datastore::{db_metrics::DB_METRICS, locking_tx_datastore::datastore::MetricsRecorder};
+use spacetimedb_datastore::execution_context::WorkloadType;
 use crate::{
-    db::db_metrics::DB_METRICS, error::DBError, execution_context::WorkloadType, worker_metrics::WORKER_METRICS,
+    error::DBError, worker_metrics::WORKER_METRICS,
 };
 
 pub mod delta;
@@ -81,6 +83,12 @@ impl ExecutionCounters {
         if metrics.duplicate_rows_sent > 0 {
             self.duplicate_rows_sent.inc_by(metrics.duplicate_rows_sent);
         }
+    }
+}
+
+impl MetricsRecorder for ExecutionCounters {
+    fn record(&self, metrics: &ExecutionMetrics) {
+        self.record(metrics);
     }
 }
 
