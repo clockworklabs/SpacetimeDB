@@ -60,16 +60,16 @@
 use core::{
     borrow::Borrow,
     cmp::Ordering,
-    fmt::{Debug, Display},
+    fmt::{self, Debug, Display},
     hash::{Hash, Hasher},
     marker::PhantomData,
-    mem,
-    mem::ManuallyDrop,
+    mem::{self, ManuallyDrop},
     ops::{Deref, DerefMut},
     ptr::{slice_from_raw_parts_mut, NonNull},
     slice,
     str::{from_utf8_unchecked, from_utf8_unchecked_mut},
 };
+use smallvec::SmallVec;
 use thiserror::Error;
 
 // =============================================================================
@@ -574,11 +574,13 @@ impl<A> FromIterator<A> for SlimSliceBoxCollected<A> {
 // Owned boxed slice with SSO
 // =============================================================================
 
+#[derive(Clone)]
 pub struct SlimSmallSliceBox<T, const N: usize>(SlimSmallSliceBoxData<T, N>);
 
 /// The representation of [`SlimSmallSliceBox<T>`].
 ///
 /// The parameter `N` is the number of elements that can be inline.
+#[derive(Clone)]
 enum SlimSmallSliceBoxData<T, const N: usize> {
     /// The data is inline, not using any indirections.
     Inline([T; N]),
@@ -625,6 +627,29 @@ impl<T, const N: usize> DerefMut for SlimSmallSliceBox<T, N> {
         match &mut self.0 {
             SlimSmallSliceBoxData::Inline(i) => i,
             SlimSmallSliceBoxData::Heap(h) => h,
+        }
+    }
+}
+
+impl<T: PartialEq, const N: usize> PartialEq for SlimSmallSliceBox<T, N> {
+    fn eq(&self, other: &Self) -> bool {
+        self.deref().eq(other.deref())
+    }
+}
+
+impl<T: Eq, const N: usize> Eq for SlimSmallSliceBox<T, N> {}
+
+impl<T: Debug, const N: usize> fmt::Debug for SlimSmallSliceBox<T, N> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        Debug::fmt(self.deref(), f)
+    }
+}
+
+impl<T, const N: usize> From<SmallVec<[T; N]>> for SlimSmallSliceBox<T, N> {
+    fn from(value: SmallVec<[T; N]>) -> Self {
+        match value.into_inner() {
+            Ok(inline) => inline.into(),
+            Err(heap) => SlimSliceBox::from_boxed(heap.into_boxed_slice()).into(),
         }
     }
 }
