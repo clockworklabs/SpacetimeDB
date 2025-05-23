@@ -204,6 +204,25 @@ impl UniqueDirectIndex {
         self.outer.clear();
         self.len = 0;
     }
+
+    /// Returns whether `other` can be merged into `self`
+    /// with an error containing the element in `self` that caused the violation.
+    pub(crate) fn can_merge(&self, other: &UniqueDirectIndex) -> Result<(), RowPointer> {
+        for (inner_s, inner_o) in self.outer.iter().zip(&other.outer) {
+            let (Some(inner_s), Some(inner_o)) = (inner_s, inner_o) else {
+                continue;
+            };
+
+            for (slot_s, slot_o) in inner_s.inner.iter().zip(inner_o.inner.iter()) {
+                if *slot_s != NONE_PTR && *slot_o != NONE_PTR {
+                    // For the same key, we found both slots occupied, so we cannot merge.
+                    return Err(slot_s.with_reserved_bit(false));
+                }
+            }
+        }
+
+        Ok(())
+    }
 }
 
 /// An iterator over the potential value in a [`UniqueDirectMap`] for a given key.

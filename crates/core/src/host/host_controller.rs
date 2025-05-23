@@ -12,13 +12,12 @@ use crate::messages::control_db::{Database, HostType};
 use crate::module_host_context::ModuleCreationContext;
 use crate::replica_context::ReplicaContext;
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
-use crate::subscription::module_subscription_manager::SubscriptionManager;
 use crate::util::{asyncify, spawn_rayon};
 use anyhow::{anyhow, ensure, Context};
 use async_trait::async_trait;
 use durability::{Durability, EmptyHistory};
 use log::{info, trace, warn};
-use parking_lot::{Mutex, RwLock};
+use parking_lot::Mutex;
 use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_durability::{self as durability, TxOffset};
 use spacetimedb_lib::{hash_bytes, Identity};
@@ -524,7 +523,7 @@ async fn make_replica_ctx(
     relational_db: Arc<RelationalDB>,
 ) -> anyhow::Result<ReplicaContext> {
     let logger = tokio::task::block_in_place(move || Arc::new(DatabaseLogger::open_today(path.module_logs())));
-    let subscriptions = Arc::new(RwLock::new(SubscriptionManager::default()));
+    let subscriptions = <_>::default();
     let downgraded = Arc::downgrade(&subscriptions);
     let subscriptions = ModuleSubscriptions::new(relational_db.clone(), subscriptions, database.owner_identity);
 
@@ -545,8 +544,8 @@ async fn make_replica_ctx(
         database,
         replica_id,
         logger,
-        relational_db,
         subscriptions,
+        relational_db,
     })
 }
 
@@ -939,20 +938,21 @@ const STORAGE_METERING_INTERVAL: Duration = Duration::from_secs(15);
 /// Periodically collect gauge stats and update prometheus metrics.
 async fn metric_reporter(replica_ctx: Arc<ReplicaContext>) {
     // TODO: Consider adding a metric for heap usage.
+    let message_log_size = DB_METRICS
+        .message_log_size
+        .with_label_values(&replica_ctx.database_identity);
+    let module_log_file_size = DB_METRICS
+        .module_log_file_size
+        .with_label_values(&replica_ctx.database_identity);
+
     loop {
         let disk_usage = tokio::task::block_in_place(|| replica_ctx.total_disk_usage());
         replica_ctx.update_gauges();
         if let Some(num_bytes) = disk_usage.durability {
-            DB_METRICS
-                .message_log_size
-                .with_label_values(&replica_ctx.database_identity)
-                .set(num_bytes as i64);
+            message_log_size.set(num_bytes as i64);
         }
         if let Some(num_bytes) = disk_usage.logs {
-            DB_METRICS
-                .module_log_file_size
-                .with_label_values(&replica_ctx.database_identity)
-                .set(num_bytes as i64);
+            module_log_file_size.set(num_bytes as i64);
         }
         tokio::time::sleep(STORAGE_METERING_INTERVAL).await;
     }

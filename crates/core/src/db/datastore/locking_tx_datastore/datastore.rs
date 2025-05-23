@@ -6,13 +6,16 @@ use super::{
     tx::TxId,
     tx_state::TxState,
 };
-use crate::execution_context::Workload;
 use crate::{
     db::datastore::{
         locking_tx_datastore::state_view::{IterByColRangeMutTx, IterMutTx, IterTx},
         traits::{InsertFlags, UpdateFlags},
     },
-    subscription::record_exec_metrics,
+    subscription::ExecutionCounters,
+};
+use crate::{
+    db::relational_db::RelationalDB,
+    execution_context::{Workload, WorkloadType},
 };
 use crate::{
     db::{
@@ -33,8 +36,10 @@ use crate::{
 };
 use anyhow::{anyhow, Context};
 use core::{cell::RefCell, ops::RangeBounds};
+use enum_map::EnumMap;
 use parking_lot::{Mutex, RwLock};
 use spacetimedb_commitlog::payload::{txdata, Txdata};
+use spacetimedb_data_structures::map::{HashCollectionExt, HashMap};
 use spacetimedb_durability::TxOffset;
 use spacetimedb_lib::{db::auth::StAccess, metrics::ExecutionMetrics};
 use spacetimedb_lib::{ConnectionId, Identity};
@@ -43,12 +48,7 @@ use spacetimedb_primitives::{ColList, ConstraintId, IndexId, SequenceId, TableId
 use spacetimedb_sats::{bsatn, buffer::BufReader, AlgebraicValue, ProductValue};
 use spacetimedb_schema::schema::{IndexSchema, SequenceSchema, TableSchema};
 use spacetimedb_snapshot::{ReconstructedSnapshot, SnapshotRepository};
-use spacetimedb_table::{
-    indexes::RowPointer,
-    page_pool::PagePool,
-    table::{RowRef, Table},
-    MemoryUsage,
-};
+use spacetimedb_table::{indexes::RowPointer, page_pool::PagePool, table::RowRef, MemoryUsage};
 use std::borrow::Cow;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -74,6 +74,9 @@ pub struct Locking {
     sequence_state: Arc<Mutex<SequencesState>>,
     /// The identity of this database.
     pub(crate) database_identity: Identity,
+
+    /// A map from workload types to their cached prometheus counters.
+    workload_type_to_exec_counters: Arc<EnumMap<WorkloadType, ExecutionCounters>>,
 }
 
 impl MemoryUsage for Locking {
@@ -82,6 +85,7 @@ impl MemoryUsage for Locking {
             committed_state,
             sequence_state,
             database_identity,
+            workload_type_to_exec_counters: _,
         } = self;
         std::mem::size_of_val(&**committed_state)
             + committed_state.read().heap_usage()
@@ -93,10 +97,14 @@ impl MemoryUsage for Locking {
 
 impl Locking {
     pub fn new(database_identity: Identity, page_pool: PagePool) -> Self {
+        let workload_type_to_exec_counters =
+            Arc::new(EnumMap::from_fn(|ty| ExecutionCounters::new(&ty, &database_identity)));
+
         Self {
             committed_state: Arc::new(RwLock::new(CommittedState::new(page_pool))),
             sequence_state: <_>::default(),
             database_identity,
+            workload_type_to_exec_counters,
         }
     }
 
@@ -313,6 +321,10 @@ impl Locking {
 
         tx.alter_table_access(table_id, access)
     }
+
+    pub(crate) fn exec_counters_for(&self, workload_type: WorkloadType) -> &ExecutionCounters {
+        &self.workload_type_to_exec_counters[workload_type]
+    }
 }
 
 impl DataRow for Locking {
@@ -327,13 +339,21 @@ impl DataRow for Locking {
 impl Tx for Locking {
     type Tx = TxId;
 
+    /// Begins a read-only transaction under the given `workload`.
+    ///
+    /// While this transaction is pending,
+    /// other read-only transactions may be started,
+    /// but new mutable transactions will block until there are no read-only transactions left.
+    ///
+    /// Blocks if a mutable transaction is pending.
     fn begin_tx(&self, workload: Workload) -> Self::Tx {
-        let timer = Instant::now();
+        let metrics = ExecutionMetrics::default();
+        let ctx = ExecutionContext::with_workload(self.database_identity, workload);
 
+        let timer = Instant::now();
         let committed_state_shared_lock = self.committed_state.read_arc();
         let lock_wait_time = timer.elapsed();
-        let ctx = ExecutionContext::with_workload(self.database_identity, workload);
-        let metrics = ExecutionMetrics::default();
+
         Self::Tx {
             committed_state_shared_lock,
             lock_wait_time,
@@ -343,8 +363,14 @@ impl Tx for Locking {
         }
     }
 
-    fn release_tx(&self, tx: Self::Tx) {
-        tx.release();
+    /// Release this read-only transaction,
+    /// allowing new mutable transactions to start if this was the last read-only transaction.
+    ///
+    /// Returns:
+    /// - [`TxMetrics`], various measurements of the work performed by this transaction.
+    /// - `String`, the name of the reducer which ran within this transaction.
+    fn release_tx(&self, tx: Self::Tx) -> (TxMetrics, String) {
+        tx.release()
     }
 }
 
@@ -612,7 +638,8 @@ impl MutTxDatastore for Locking {
         index_id: IndexId,
         row: &[u8],
     ) -> Result<(ColList, RowRef<'a>, UpdateFlags)> {
-        tx.update(table_id, index_id, row)
+        let (gens, row_ref, update_flags) = tx.update(table_id, index_id, row)?;
+        Ok((gens, row_ref.collapse(), update_flags))
     }
 
     fn metadata_mut_tx(&self, tx: &Self::MutTx) -> Result<Option<Metadata>> {
@@ -648,114 +675,219 @@ impl MutTxDatastore for Locking {
     }
 }
 
-/// This utility is responsible for recording all transaction metrics.
-pub(super) fn record_tx_metrics(
-    ctx: &ExecutionContext,
-    tx_timer: Instant,
+/// Various measurements, needed for metrics, of the work performed by a transaction.
+#[must_use = "TxMetrics should be reported"]
+pub struct TxMetrics {
+    table_stats: HashMap<TableId, TableStats>,
+    workload: WorkloadType,
+    database_identity: Identity,
+    elapsed_time: Duration,
     lock_wait_time: Duration,
     committed: bool,
+    exec_metrics: ExecutionMetrics,
+}
+
+struct TableStats {
+    /// The number of rows in the table after this transaction.
+    ///
+    /// Derived from [`Table::row_count`](spacetimedb_table::table::Table::row_count).
+    row_count: u64,
+    /// The number of bytes occupied by the pages and the blob store after this transaction.
+    ///
+    /// Derived from [`Table::bytes_occupied_overestimate`](spacetimedb_table::table::Table::bytes_occupied_overestimate).
+    bytes_occupied_overestimate: usize,
+    /// The number of indices after this transaction.
+    ///
+    /// Derived from [`Table::num_indices`](spacetimedb_table::table::Table::num_indices).
+    num_indices: usize,
+}
+
+impl TxMetrics {
+    /// Compute transaction metrics that we can report once the tx lock is released.
+    pub(super) fn new(
+        ctx: &ExecutionContext,
+        tx_timer: Instant,
+        lock_wait_time: Duration,
+        exec_metrics: ExecutionMetrics,
+        committed: bool,
+        tx_data: Option<&TxData>,
+        committed_state: &CommittedState,
+    ) -> TxMetrics {
+        let workload = ctx.workload();
+        let database_identity = ctx.database_identity();
+        let elapsed_time = tx_timer.elapsed();
+
+        // For each table, collect the extra stats, that we don't have in `tx_data`.
+        let table_stats = tx_data
+            .map(|tx_data| {
+                let mut table_stats =
+                    <HashMap<_, _, _> as HashCollectionExt>::with_capacity(tx_data.num_tables_affected());
+                for (table_id, _) in tx_data.table_ids_and_names() {
+                    let table = committed_state
+                        .get_table(table_id)
+                        .expect("should have a table in committed state for one in tx data");
+                    table_stats.insert(
+                        table_id,
+                        TableStats {
+                            row_count: table.row_count,
+                            bytes_occupied_overestimate: table.bytes_occupied_overestimate(),
+                            num_indices: table.num_indices(),
+                        },
+                    );
+                }
+                table_stats
+            })
+            .unwrap_or_default();
+
+        TxMetrics {
+            table_stats,
+            workload,
+            database_identity,
+            elapsed_time,
+            lock_wait_time,
+            exec_metrics,
+            committed,
+        }
+    }
+
+    /// Reports the metrics for `reducer` using `get_exec_counter` to retrieve the metrics counters.
+    pub fn report<'a>(
+        &self,
+        tx_data: Option<&TxData>,
+        reducer: &str,
+        get_exec_counter: impl FnOnce(WorkloadType) -> &'a ExecutionCounters,
+    ) {
+        let workload = &self.workload;
+        let db = &self.database_identity;
+
+        let cpu_time = self.elapsed_time - self.lock_wait_time;
+
+        let elapsed_time = self.elapsed_time.as_secs_f64();
+        let cpu_time = cpu_time.as_secs_f64();
+
+        // Increment tx counter
+        DB_METRICS
+            .rdb_num_txns
+            .with_label_values(workload, db, reducer, &self.committed)
+            .inc();
+        // Record tx cpu time
+        DB_METRICS
+            .rdb_txn_cpu_time_sec
+            .with_label_values(workload, db, reducer)
+            .observe(cpu_time);
+        // Record tx elapsed time
+        DB_METRICS
+            .rdb_txn_elapsed_time_sec
+            .with_label_values(workload, db, reducer)
+            .observe(elapsed_time);
+
+        get_exec_counter(self.workload).record(&self.exec_metrics);
+
+        if let Some(tx_data) = tx_data {
+            // Update table rows and table size gauges,
+            // and sets them to zero if no table is present.
+            for (table_id, table_name) in tx_data.table_ids_and_names() {
+                let stats = self.table_stats.get(&table_id).unwrap();
+
+                DB_METRICS
+                    .rdb_num_table_rows
+                    .with_label_values(db, &table_id.0, table_name)
+                    .set(stats.row_count as i64);
+                DB_METRICS
+                    .rdb_table_size
+                    .with_label_values(db, &table_id.0, table_name)
+                    .set(stats.bytes_occupied_overestimate as i64);
+            }
+
+            // Record inserts.
+            for (table_id, table_name, inserts) in tx_data.inserts_with_table_name() {
+                let stats = self.table_stats.get(table_id).unwrap();
+                let num_inserts = inserts.len() as u64;
+                let num_indices = stats.num_indices as u64;
+
+                // Increment rows inserted counter.
+                DB_METRICS
+                    .rdb_num_rows_inserted
+                    .with_label_values(workload, db, reducer, &table_id.0, table_name)
+                    .inc_by(num_inserts);
+
+                // We don't have sparse indexes, so we can just multiply by the number of indexes.
+                if stats.num_indices > 0 {
+                    // Increment index rows inserted counter
+                    DB_METRICS
+                        .rdb_num_index_entries_inserted
+                        .with_label_values(workload, db, reducer, &table_id.0, table_name)
+                        .inc_by(num_inserts * num_indices);
+                }
+            }
+
+            // Record deletes.
+            for (table_id, table_name, deletes) in tx_data.deletes_with_table_name() {
+                let stats = self.table_stats.get(table_id).unwrap();
+                let num_deletes = deletes.len() as u64;
+                let num_indices = stats.num_indices as u64;
+
+                // Increment rows deleted counter.
+                DB_METRICS
+                    .rdb_num_rows_deleted
+                    .with_label_values(workload, db, reducer, &table_id.0, table_name)
+                    .inc_by(num_deletes);
+
+                // We don't have sparse indexes, so we can just multiply by the number of indexes.
+                if num_indices > 0 {
+                    // Increment index rows deleted counter.
+                    DB_METRICS
+                        .rdb_num_index_entries_deleted
+                        .with_label_values(workload, db, reducer, &table_id.0, table_name)
+                        .inc_by(num_deletes * num_indices);
+                }
+            }
+        }
+    }
+
+    /// Reports the metrics for `reducer`, using counters provided by `db`.
+    pub(crate) fn report_with_db(&self, reducer: &str, db: &RelationalDB, tx_data: Option<&TxData>) {
+        self.report(tx_data, reducer, |wl| db.exec_counters_for(wl));
+    }
+}
+
+/// Reports the `TxMetrics`s passed.
+///
+/// Should only be called after the tx lock has been fully released.
+pub fn report_tx_metricses(
+    reducer: &str,
+    db: &RelationalDB,
     tx_data: Option<&TxData>,
-    committed_state: Option<&CommittedState>,
-    metrics: ExecutionMetrics,
+    metrics_mut: Option<&TxMetrics>,
+    metrics_read: &TxMetrics,
 ) {
-    let workload = &ctx.workload();
-    let db = &ctx.database_identity();
-    let reducer = ctx.reducer_name();
-    let elapsed_time = tx_timer.elapsed();
-    let cpu_time = elapsed_time - lock_wait_time;
-
-    let elapsed_time = elapsed_time.as_secs_f64();
-    let cpu_time = cpu_time.as_secs_f64();
-
-    // Increment tx counter
-    DB_METRICS
-        .rdb_num_txns
-        .with_label_values(workload, db, reducer, &committed)
-        .inc();
-    // Record tx cpu time
-    DB_METRICS
-        .rdb_txn_cpu_time_sec
-        .with_label_values(workload, db, reducer)
-        .observe(cpu_time);
-    // Record tx elapsed time
-    DB_METRICS
-        .rdb_txn_elapsed_time_sec
-        .with_label_values(workload, db, reducer)
-        .observe(elapsed_time);
-
-    record_exec_metrics(workload, db, metrics);
-
-    /// Update table rows and table size gauges,
-    /// and sets them to zero if no table is present.
-    fn update_table_gauges(db: &Identity, table_id: &TableId, table_name: &str, table: Option<&Table>) {
-        let (mut table_rows, mut table_size) = (0, 0);
-        if let Some(table) = table {
-            table_rows = table.row_count as i64;
-            table_size = table.bytes_occupied_overestimate() as i64;
-        }
-        DB_METRICS
-            .rdb_num_table_rows
-            .with_label_values(db, &table_id.0, table_name)
-            .set(table_rows);
-        DB_METRICS
-            .rdb_table_size
-            .with_label_values(db, &table_id.0, table_name)
-            .set(table_size);
+    if let Some(metrics_mut) = metrics_mut {
+        metrics_mut.report_with_db(reducer, db, tx_data);
     }
-
-    if let (Some(tx_data), Some(committed_state)) = (tx_data, committed_state) {
-        for (table_id, table_name, inserts) in tx_data.inserts_with_table_name() {
-            let table = committed_state.get_table(*table_id);
-            let num_indexes = table.map(|t| t.indexes.len()).unwrap_or(0) as u64;
-
-            update_table_gauges(db, table_id, table_name, table);
-            // Increment rows inserted counter
-            DB_METRICS
-                .rdb_num_rows_inserted
-                .with_label_values(workload, db, reducer, &table_id.0, table_name)
-                .inc_by(inserts.len() as u64);
-            // We don't have sparse indexes, so we can just multiply by the number of indexes.
-            if num_indexes > 0 {
-                // Increment index rows inserted counter
-                DB_METRICS
-                    .rdb_num_index_entries_inserted
-                    .with_label_values(workload, db, reducer, &table_id.0, table_name)
-                    .inc_by((inserts.len() as u64) * num_indexes);
-            }
-        }
-        for (table_id, table_name, deletes) in tx_data.deletes_with_table_name() {
-            let table = committed_state.get_table(*table_id);
-            let num_indexes = table.map(|t| t.indexes.len()).unwrap_or(0) as u64;
-            update_table_gauges(db, table_id, table_name, table);
-            // Increment rows deleted counter
-            DB_METRICS
-                .rdb_num_rows_deleted
-                .with_label_values(workload, db, reducer, &table_id.0, table_name)
-                .inc_by(deletes.len() as u64);
-            // We don't have sparse indexes, so we can just multiply by the number of indexes.
-            if num_indexes > 0 {
-                // Increment index rows inserted counter
-                DB_METRICS
-                    .rdb_num_index_entries_deleted
-                    .with_label_values(workload, db, reducer, &table_id.0, table_name)
-                    .inc_by((deletes.len() as u64) * num_indexes);
-            }
-        }
-    }
+    metrics_read.report_with_db(reducer, db, None);
 }
 
 impl MutTx for Locking {
     type MutTx = MutTxId;
 
+    /// Begins a mutable transaction under the given `isolation_level` and `workload`.
+    ///
+    /// While this transaction is pending,
+    /// no other read-only  mutable transaction may happen or
+    ///
+    /// Blocks if a read-only or mutable transaction is pending.
+    ///
     /// Note: We do not use the isolation level here because this implementation
     /// guarantees the highest isolation level, Serializable.
     fn begin_mut_tx(&self, _isolation_level: IsolationLevel, workload: Workload) -> Self::MutTx {
-        let timer = Instant::now();
+        let metrics = ExecutionMetrics::default();
+        let ctx = ExecutionContext::with_workload(self.database_identity, workload);
 
+        let timer = Instant::now();
         let committed_state_write_lock = self.committed_state.write_arc();
         let sequence_state_lock = self.sequence_state.lock_arc();
         let lock_wait_time = timer.elapsed();
-        let ctx = ExecutionContext::with_workload(self.database_identity, workload);
+
         MutTxId {
             committed_state_write_lock,
             sequence_state_lock,
@@ -763,25 +895,29 @@ impl MutTx for Locking {
             lock_wait_time,
             timer,
             ctx,
-            metrics: ExecutionMetrics::default(),
+            metrics,
         }
     }
 
-    fn rollback_mut_tx(&self, tx: Self::MutTx) {
-        tx.rollback();
+    fn rollback_mut_tx(&self, tx: Self::MutTx) -> (TxMetrics, String) {
+        tx.rollback()
     }
 
-    fn commit_mut_tx(&self, tx: Self::MutTx) -> Result<Option<TxData>> {
+    fn commit_mut_tx(&self, tx: Self::MutTx) -> Result<Option<(TxData, TxMetrics, String)>> {
         Ok(Some(tx.commit()))
     }
 }
 
 impl Locking {
-    pub fn rollback_mut_tx_downgrade(&self, tx: MutTxId, workload: Workload) -> TxId {
+    pub fn rollback_mut_tx_downgrade(&self, tx: MutTxId, workload: Workload) -> (TxMetrics, TxId) {
         tx.rollback_downgrade(workload)
     }
 
-    pub fn commit_mut_tx_downgrade(&self, tx: MutTxId, workload: Workload) -> Result<Option<(TxData, TxId)>> {
+    pub fn commit_mut_tx_downgrade(
+        &self,
+        tx: MutTxId,
+        workload: Workload,
+    ) -> Result<Option<(TxData, TxMetrics, TxId)>> {
         Ok(Some(tx.commit_downgrade(workload)))
     }
 }
@@ -909,7 +1045,7 @@ impl<F: FnMut(u64)> spacetimedb_commitlog::Decoder for &mut Replay<F> {
 // context of the commit log.
 //
 // Not caring about the order in the log, however, requires that we **do
-// not** check index constraints during replay of transaction operatoins.
+// not** check index constraints during replay of transaction operations.
 // We **could** check them in between transactions if we wanted to update
 // the indexes and constraints as they changed during replay, but that is
 // unnecessary.
@@ -1037,6 +1173,7 @@ fn metadata_from_row(row: RowRef<'_>) -> Result<Metadata> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::datastore::locking_tx_datastore::tx_state::PendingSchemaChange;
     use crate::db::datastore::system_tables::{
         system_tables, StColumnRow, StConstraintData, StConstraintFields, StConstraintRow, StIndexAlgorithm,
         StIndexFields, StIndexRow, StRowLevelSecurityFields, StScheduledFields, StSequenceFields, StSequenceRow,
@@ -1061,7 +1198,7 @@ mod tests {
     use spacetimedb_primitives::{col_list, ColId, ScheduleId};
     use spacetimedb_sats::algebraic_value::ser::value_serialize;
     use spacetimedb_sats::{product, AlgebraicType, GroundSpacetimeType};
-    use spacetimedb_schema::def::{BTreeAlgorithm, ConstraintData, IndexAlgorithm, UniqueConstraintData};
+    use spacetimedb_schema::def::BTreeAlgorithm;
     use spacetimedb_schema::schema::{
         ColumnSchema, ConstraintSchema, IndexSchema, RowLevelSecuritySchema, ScheduleSchema, SequenceSchema,
     };
@@ -1306,13 +1443,16 @@ mod tests {
         }
     }
 
-    // TODO(centril): find-replace all occurrences of body.
+    fn begin_tx(datastore: &Locking) -> TxId {
+        datastore.begin_tx(Workload::ForTests)
+    }
+
     fn begin_mut_tx(datastore: &Locking) -> MutTxId {
         datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests)
     }
 
     fn commit(datastore: &Locking, tx: MutTxId) -> ResultTest<TxData> {
-        Ok(datastore.commit_mut_tx(tx)?.expect("commit should produce `TxData`"))
+        Ok(datastore.commit_mut_tx(tx)?.expect("commit should produce `TxData`").0)
     }
 
     #[rustfmt::skip]
@@ -1327,18 +1467,8 @@ mod tests {
 
     fn basic_indices() -> Vec<IndexSchema> {
         vec![
-            IndexSchema {
-                index_id: IndexId::SENTINEL,
-                table_id: TableId::SENTINEL,
-                index_name: "Foo_id_idx_btree".into(),
-                index_algorithm: IndexAlgorithm::BTree(BTreeAlgorithm { columns: col_list![0] }),
-            },
-            IndexSchema {
-                index_id: IndexId::SENTINEL,
-                table_id: TableId::SENTINEL,
-                index_name: "Foo_name_idx_btree".into(),
-                index_algorithm: IndexAlgorithm::BTree(BTreeAlgorithm { columns: col_list![1] }),
-            },
+            IndexSchema::for_test("Foo_id_idx_btree", BTreeAlgorithm::from(0)),
+            IndexSchema::for_test("Foo_name_idx_btree", BTreeAlgorithm::from(1)),
         ]
     }
 
@@ -1349,58 +1479,64 @@ mod tests {
 
     fn basic_constraints() -> Vec<ConstraintSchema> {
         vec![
-            ConstraintSchema {
-                table_id: TableId::SENTINEL,
-                constraint_id: ConstraintId::SENTINEL,
-                constraint_name: "Foo_id_key".into(),
-                data: ConstraintData::Unique(UniqueConstraintData {
-                    columns: col_list![0].into(),
-                }),
-            },
-            ConstraintSchema {
-                table_id: TableId::SENTINEL,
-                constraint_id: ConstraintId::SENTINEL,
-                constraint_name: "Foo_name_key".into(),
-                data: ConstraintData::Unique(UniqueConstraintData {
-                    columns: col_list![1].into(),
-                }),
-            },
+            ConstraintSchema::unique_for_test("Foo_id_key", 0),
+            ConstraintSchema::unique_for_test("Foo_name_key", 1),
         ]
     }
 
-    fn basic_table_schema_with_indices(indices: Vec<IndexSchema>, constraints: Vec<ConstraintSchema>) -> TableSchema {
+    fn user_public_table(
+        cols: impl Into<Vec<ColumnSchema>>,
+        indices: impl Into<Vec<IndexSchema>>,
+        constraints: impl Into<Vec<ConstraintSchema>>,
+        seqs: impl Into<Vec<SequenceSchema>>,
+        schedule: Option<ScheduleSchema>,
+        pk: Option<ColId>,
+    ) -> TableSchema {
         TableSchema::new(
             TableId::SENTINEL,
             "Foo".into(),
+            cols.into(),
+            indices.into(),
+            constraints.into(),
+            seqs.into(),
+            StTableType::User,
+            StAccess::Public,
+            schedule,
+            pk,
+        )
+    }
+
+    fn basic_table_schema_with_indices(
+        indices: impl Into<Vec<IndexSchema>>,
+        constraints: impl Into<Vec<ConstraintSchema>>,
+    ) -> TableSchema {
+        let seq = SequenceSchema {
+            sequence_id: SequenceId::SENTINEL,
+            table_id: TableId::SENTINEL,
+            col_pos: 0.into(),
+            sequence_name: "Foo_id_seq".into(),
+            start: 1,
+            increment: 1,
+            min_value: 1,
+            max_value: i128::MAX,
+            allocated: 0,
+        };
+        user_public_table(
             map_array(basic_table_schema_cols()),
             indices,
             constraints,
-            vec![SequenceSchema {
-                sequence_id: SequenceId::SENTINEL,
-                table_id: TableId::SENTINEL,
-                col_pos: 0.into(),
-                sequence_name: "Foo_id_seq".into(),
-                start: 1,
-                increment: 1,
-                min_value: 1,
-                max_value: i128::MAX,
-                allocated: 0,
-            }],
-            StTableType::User,
-            StAccess::Public,
+            vec![seq],
             None,
             None,
         )
     }
 
     #[rustfmt::skip]
-    fn basic_table_schema_created(table_id: TableId) -> TableSchema {
-        let table: u32 = table_id.into();
+    fn basic_table_schema_created() -> TableSchema {
+        let table = TableId::SENTINEL.into();
         let seq_start = FIRST_NON_SYSTEM_ID;
 
-        TableSchema::new(
-            table_id,
-            "Foo".into(),
+        user_public_table(
             map_array(basic_table_schema_cols()),
              map_array([
                 IndexRow { id: seq_start,     table, col: ColList::new(0.into()), name: "Foo_id_idx_btree", },
@@ -1413,16 +1549,14 @@ mod tests {
              map_array([
                 SequenceRow { id: seq_start, table, col_pos: 0, name: "Foo_id_seq", start: 1 }
             ]),
-            StTableType::User,
-            StAccess::Public,
             None,
             None
         )
     }
 
     fn setup_table_with_indices(
-        indices: Vec<IndexSchema>,
-        constraints: Vec<ConstraintSchema>,
+        indices: impl Into<Vec<IndexSchema>>,
+        constraints: impl Into<Vec<ConstraintSchema>>,
     ) -> ResultTest<(Locking, MutTxId, TableId)> {
         let datastore = get_datastore()?;
         let mut tx = begin_mut_tx(&datastore);
@@ -1650,7 +1784,7 @@ mod tests {
             );
         }
 
-        datastore.rollback_mut_tx(tx);
+        let _ = datastore.rollback_mut_tx(tx);
         Ok(())
     }
 
@@ -1692,7 +1826,7 @@ mod tests {
     #[test]
     fn test_create_table_post_rollback() -> ResultTest<()> {
         let (datastore, tx, table_id) = setup_table()?;
-        datastore.rollback_mut_tx(tx);
+        let _ = datastore.rollback_mut_tx(tx);
         let tx = begin_mut_tx(&datastore);
         assert!(
             !datastore.table_id_exists_mut_tx(&tx, &table_id),
@@ -1720,8 +1854,9 @@ mod tests {
 
         verify_schemas_consistent(&mut tx, table_id);
 
-        #[rustfmt::skip]
-        assert_eq!(schema, &basic_table_schema_created(table_id));
+        let mut expected_schema = basic_table_schema_created();
+        expected_schema.update_table_id(table_id);
+        assert_eq!(schema, &expected_schema);
         Ok(())
     }
 
@@ -1732,8 +1867,9 @@ mod tests {
         let mut tx = begin_mut_tx(&datastore);
         verify_schemas_consistent(&mut tx, table_id);
         let schema = &*datastore.schema_for_table_mut_tx(&tx, table_id)?;
-        #[rustfmt::skip]
-        assert_eq!(schema, &basic_table_schema_created(table_id));
+        let mut expected_schema = basic_table_schema_created();
+        expected_schema.update_table_id(table_id);
+        assert_eq!(schema, &expected_schema);
         Ok(())
     }
 
@@ -1745,10 +1881,19 @@ mod tests {
         let mut tx = begin_mut_tx(&datastore);
         let schema = datastore.schema_for_table_mut_tx(&tx, table_id)?;
 
+        assert_eq!(&*tx.tx_state.pending_schema_changes, []);
         let mut dropped_indexes = 0;
-        for index in &*schema.indexes {
+        for (pos, index) in schema.indexes.iter().enumerate() {
             datastore.drop_index_mut_tx(&mut tx, index.index_id)?;
             dropped_indexes += 1;
+
+            let psc = &tx.tx_state.pending_schema_changes[pos];
+            let PendingSchemaChange::IndexRemoved(tid, iid, _, schema) = psc else {
+                panic!("wrong pending schema change: {psc:?}");
+            };
+            assert_eq!(table_id, *tid);
+            assert_eq!(index.index_id, *iid);
+            assert_eq!(index, schema);
         }
         assert!(
             datastore.schema_for_table_mut_tx(&tx, table_id)?.indexes.is_empty(),
@@ -1757,6 +1902,7 @@ mod tests {
         datastore.commit_mut_tx(tx)?;
 
         let mut tx = begin_mut_tx(&datastore);
+        assert_eq!(&*tx.tx_state.pending_schema_changes, []);
         assert!(
             datastore.schema_for_table_mut_tx(&tx, table_id)?.indexes.is_empty(),
             "no indexes should be left in the schema post-commit"
@@ -1770,10 +1916,15 @@ mod tests {
                 index_id: IndexId::SENTINEL,
                 table_id,
                 index_name: "Foo_id_idx_btree".into(),
-                index_algorithm: IndexAlgorithm::BTree(BTreeAlgorithm { columns: col_list![0] }),
+                index_algorithm: BTreeAlgorithm::from(0).into(),
             },
             true,
         )?;
+        assert_matches!(
+            &*tx.tx_state.pending_schema_changes,
+            [PendingSchemaChange::IndexAdded(tid, _, Some(_))]
+            if *tid == table_id
+        );
 
         verify_schemas_consistent(&mut tx, table_id);
 
@@ -1793,6 +1944,7 @@ mod tests {
         datastore.commit_mut_tx(tx)?;
 
         let tx = begin_mut_tx(&datastore);
+        assert_eq!(&*tx.tx_state.pending_schema_changes, []);
         assert_eq!(
             datastore.schema_for_table_mut_tx(&tx, table_id)?.indexes,
             expected_indexes,
@@ -1807,8 +1959,10 @@ mod tests {
     #[test]
     fn test_schema_for_table_rollback() -> ResultTest<()> {
         let (datastore, tx, table_id) = setup_table()?;
-        datastore.rollback_mut_tx(tx);
+        assert_eq!(tx.tx_state.pending_schema_changes.len(), 6);
+        let _ = datastore.rollback_mut_tx(tx);
         let tx = begin_mut_tx(&datastore);
+        assert_eq!(&*tx.tx_state.pending_schema_changes, []);
         let schema = datastore.schema_for_table_mut_tx(&tx, table_id);
         assert!(schema.is_err());
         Ok(())
@@ -1853,7 +2007,7 @@ mod tests {
         datastore.commit_mut_tx(tx)?;
         let mut tx = begin_mut_tx(&datastore);
         insert(&datastore, &mut tx, table_id, &row)?;
-        datastore.rollback_mut_tx(tx);
+        let _ = datastore.rollback_mut_tx(tx);
         let tx = begin_mut_tx(&datastore);
         #[rustfmt::skip]
         assert_eq!(all_rows(&datastore, &tx, table_id), vec![]);
@@ -1948,7 +2102,7 @@ mod tests {
         let mut tx = begin_mut_tx(&datastore);
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
         insert(&datastore, &mut tx, table_id, &row)?;
-        datastore.rollback_mut_tx(tx);
+        let _ = datastore.rollback_mut_tx(tx);
         let mut tx = begin_mut_tx(&datastore);
         insert(&datastore, &mut tx, table_id, &row)?;
         #[rustfmt::skip]
@@ -1992,7 +2146,7 @@ mod tests {
             index_id: IndexId::SENTINEL,
             table_id,
             index_name: "Foo_age_idx_btree".into(),
-            index_algorithm: BTreeAlgorithm { columns: 2.into() }.into(),
+            index_algorithm: BTreeAlgorithm::from(2).into(),
         };
         // TODO: it's slightly incorrect to create an index with `is_unique: true` without creating a corresponding constraint.
         // But the `Table` crate allows it for now.
@@ -2011,7 +2165,12 @@ mod tests {
         commit(&datastore, tx)?;
 
         let mut tx = begin_mut_tx(&datastore);
+        assert_eq!(&*tx.tx_state.pending_schema_changes, []);
         create_foo_age_idx_btree(&datastore, &mut tx, table_id)?;
+        assert_matches!(
+            &*tx.tx_state.pending_schema_changes,
+            [PendingSchemaChange::IndexAdded(.., None)]
+        );
         assert_st_indices(&tx, true)?;
         let row = u32_str_u32(0, "Bar", 18); // 0 will be ignored.
         let result = insert(&datastore, &mut tx, table_id, &row);
@@ -2036,6 +2195,7 @@ mod tests {
         commit(&datastore, tx)?;
 
         let mut tx = begin_mut_tx(&datastore);
+        assert_eq!(&*tx.tx_state.pending_schema_changes, []);
         assert_st_indices(&tx, true)?;
         let row = u32_str_u32(0, "Bar", 18); // 0 will be ignored.
         let result = insert(&datastore, &mut tx, table_id, &row);
@@ -2057,7 +2217,7 @@ mod tests {
         let mut tx = begin_mut_tx(&datastore);
         create_foo_age_idx_btree(&datastore, &mut tx, table_id)?;
 
-        datastore.rollback_mut_tx(tx);
+        let _ = datastore.rollback_mut_tx(tx);
         let mut tx = begin_mut_tx(&datastore);
         assert_st_indices(&tx, false)?;
         let row = u32_str_u32(0, "Bar", 18); // 0 will be ignored.
@@ -2067,6 +2227,125 @@ mod tests {
             u32_str_u32(1, "Foo", 18),
             u32_str_u32(2, "Bar", 18),
         ]);
+        Ok(())
+    }
+
+    #[test]
+    fn test_create_drop_sequence_transactionality() -> ResultTest<()> {
+        // Start a transaction. Schema changes empty so far.
+        let datastore = get_datastore()?;
+        let mut tx = begin_mut_tx(&datastore);
+        assert_eq!(&*tx.tx_state.pending_schema_changes, []);
+
+        // Make the table and witness `TableAdded`. Commit.
+        let column = ColumnSchema::for_test(0, "id", AlgebraicType::I32);
+        let schema = user_public_table([column], [], [], [], None, None);
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        assert_matches!(
+            &*tx.tx_state.pending_schema_changes,
+            [PendingSchemaChange::TableAdded(..)]
+        );
+        commit(&datastore, tx)?;
+
+        // Start a new tx. Insert a row and witness that a sequence isn't used.
+        let mut tx = begin_mut_tx(&datastore);
+        let zero = product![0];
+        let one = product![1];
+        let insert_assert_and_remove = |tx: &mut MutTxId, ins: &ProductValue, exp: &ProductValue| -> ResultTest<()> {
+            insert(&datastore, tx, table_id, ins)?;
+            assert_eq!(all_rows(&datastore, tx, table_id), [exp.clone()]);
+            datastore.delete_by_rel_mut_tx(tx, table_id, [exp.clone()]);
+            assert_eq!(all_rows(&datastore, tx, table_id), []);
+            Ok(())
+        };
+        insert_assert_and_remove(&mut tx, &zero, &zero)?;
+
+        // Add the sequence, and witness that it works.
+        let sequence = SequenceSchema {
+            sequence_id: SequenceId::SENTINEL,
+            table_id,
+            col_pos: 0.into(),
+            sequence_name: "seq".into(),
+            start: 1,
+            increment: 1,
+            min_value: 1,
+            max_value: i128::MAX,
+            allocated: 0,
+        };
+        let seq_id = datastore.create_sequence_mut_tx(&mut tx, sequence.clone())?;
+        assert_matches!(
+            &*tx.tx_state.pending_schema_changes,
+            [PendingSchemaChange::SequenceAdded(_, added_seq_id)]
+                if *added_seq_id == seq_id
+        );
+        insert_assert_and_remove(&mut tx, &zero, &one)?;
+
+        // Drop the uncommitted sequence.
+        datastore.drop_sequence_mut_tx(&mut tx, seq_id)?;
+        assert_matches!(
+            &*tx.tx_state.pending_schema_changes,
+            [
+                PendingSchemaChange::SequenceAdded(..),
+                PendingSchemaChange::SequenceRemoved(.., schema),
+            ]
+                if schema.sequence_id == seq_id
+        );
+        insert_assert_and_remove(&mut tx, &zero, &zero)?;
+
+        // Add the sequence again and rollback, witnessing that this had no effect in the next tx.
+        let seq_id = datastore.create_sequence_mut_tx(&mut tx, sequence.clone())?;
+        assert_matches!(
+            &*tx.tx_state.pending_schema_changes,
+            [
+                PendingSchemaChange::SequenceAdded(..),
+                PendingSchemaChange::SequenceRemoved(..),
+                PendingSchemaChange::SequenceAdded(_, added_seq_id),
+            ]
+                if *added_seq_id == seq_id
+        );
+        let _ = datastore.rollback_mut_tx(tx);
+        let mut tx: MutTxId = begin_mut_tx(&datastore);
+        assert_eq!(&*tx.tx_state.pending_schema_changes, []);
+        insert_assert_and_remove(&mut tx, &zero, &zero)?;
+
+        // Add the sequence and this time actually commit. Check that it exists in next tx.
+        assert_eq!(&*tx.tx_state.pending_schema_changes, []);
+        let seq_id = datastore.create_sequence_mut_tx(&mut tx, sequence.clone())?;
+        assert_matches!(
+            &*tx.tx_state.pending_schema_changes,
+            [PendingSchemaChange::SequenceAdded(_, added_seq_id)]
+                if *added_seq_id == seq_id
+        );
+        commit(&datastore, tx)?;
+        let mut tx = begin_mut_tx(&datastore);
+        assert_eq!(&*tx.tx_state.pending_schema_changes, []);
+        insert_assert_and_remove(&mut tx, &zero, &one)?;
+
+        // We have the sequence in committed state.
+        // Drop it and then rollback, so in the next tx the seq is still there.
+        datastore.drop_sequence_mut_tx(&mut tx, seq_id)?;
+        assert_matches!(
+            &*tx.tx_state.pending_schema_changes,
+            [PendingSchemaChange::SequenceRemoved(..)]
+        );
+        insert_assert_and_remove(&mut tx, &zero, &zero)?;
+        let _ = datastore.rollback_mut_tx(tx);
+        let mut tx = begin_mut_tx(&datastore);
+        assert_eq!(&*tx.tx_state.pending_schema_changes, []);
+        insert_assert_and_remove(&mut tx, &zero, &product![2])?;
+
+        // Drop the seq and commit this time around. In the next tx, we witness that there's no seq.
+        datastore.drop_sequence_mut_tx(&mut tx, seq_id)?;
+        assert_matches!(
+            &*tx.tx_state.pending_schema_changes,
+            [PendingSchemaChange::SequenceRemoved(..)]
+        );
+        insert_assert_and_remove(&mut tx, &zero, &zero)?;
+        commit(&datastore, tx)?;
+        let mut tx = begin_mut_tx(&datastore);
+        assert_eq!(&*tx.tx_state.pending_schema_changes, []);
+        insert_assert_and_remove(&mut tx, &zero, &zero)?;
+
         Ok(())
     }
 
@@ -2137,7 +2416,7 @@ mod tests {
     /// Checks that update validates the row against the row type.
     #[test]
     fn test_update_wrong_row_type() -> ResultTest<()> {
-        let (datastore, tx, table_id) = setup_table_with_indices([].into(), [].into())?;
+        let (datastore, tx, table_id) = setup_table_with_indices([], [])?;
         test_under_tx_and_commit(&datastore, tx, |tx| {
             // We provide an index that doesn't exist on purpose.
             let index_id = 0.into();
@@ -2166,33 +2445,11 @@ mod tests {
         let mut tx = begin_mut_tx(&datastore);
 
         // Create the table. The minimal repro is a one column table with a unique constraint.
-        let table_id = TableId::SENTINEL;
-        let table_schema = TableSchema::new(
-            table_id,
-            "Foo".into(),
-            vec![ColumnSchema {
-                table_id,
-                col_pos: 0.into(),
-                col_name: "id".into(),
-                col_type: AlgebraicType::I32,
-            }],
-            vec![IndexSchema {
-                table_id,
-                index_id: IndexId::SENTINEL,
-                index_name: "btree".into(),
-                index_algorithm: IndexAlgorithm::BTree(BTreeAlgorithm { columns: 0.into() }),
-            }],
-            vec![ConstraintSchema {
-                table_id,
-                constraint_id: ConstraintId::SENTINEL,
-                constraint_name: "constraint".into(),
-                data: ConstraintData::Unique(UniqueConstraintData {
-                    columns: col_list![0].into(),
-                }),
-            }],
-            vec![],
-            StTableType::User,
-            StAccess::Public,
+        let table_schema = user_public_table(
+            [ColumnSchema::for_test(0, "id", AlgebraicType::I32)],
+            [IndexSchema::for_test("btree", BTreeAlgorithm::from(0))],
+            [ConstraintSchema::unique_for_test("constraint", 0)],
+            [],
             None,
             None,
         );
@@ -2219,7 +2476,7 @@ mod tests {
         // the delete should first mark the committed row as deleted in the delete tables,
         // and then it should remove it from the delete tables upon insertion,
         // rather than actually inserting it in the tx state.
-        // So the second transaction should be observationally a no-op.s
+        // So the second transaction should be observationally a no-op.
         // There was a bug in the datastore that did not respect this in the presence of a unique index.
         let (deleted_1, tx_data_1) = update(&datastore)?;
         let (deleted_2, tx_data_2) = update(&datastore)?;
@@ -2246,32 +2503,11 @@ mod tests {
         let mut tx = begin_mut_tx(&datastore);
 
         // Create the table. The minimal repro is a two column table with a unique constraint.
-        let table_id = TableId::SENTINEL;
-        let col = |pos: usize| ColumnSchema {
-            table_id,
-            col_pos: pos.into(),
-            col_name: format!("c{pos}").into(),
-            col_type: AlgebraicType::U32,
-        };
-        let table_schema = TableSchema::new(
-            table_id,
-            "Foo".into(),
-            [col(0), col(1)].into(),
-            vec![IndexSchema {
-                table_id,
-                index_id: IndexId::SENTINEL,
-                index_name: "index".into(),
-                index_algorithm: IndexAlgorithm::BTree(BTreeAlgorithm { columns: 0.into() }),
-            }],
-            vec![ConstraintSchema {
-                table_id,
-                constraint_id: ConstraintId::SENTINEL,
-                constraint_name: "constraint".into(),
-                data: ConstraintData::Unique(UniqueConstraintData { columns: 0.into() }),
-            }],
-            vec![],
-            StTableType::User,
-            StAccess::Public,
+        let table_schema = user_public_table(
+            [0, 1].map(|pos| ColumnSchema::for_test(pos, format!("c{pos}"), AlgebraicType::U32)),
+            [IndexSchema::for_test("index", BTreeAlgorithm::from(0))],
+            [ConstraintSchema::unique_for_test("constraint", 0)],
+            [],
             None,
             None,
         );
@@ -2320,7 +2556,7 @@ mod tests {
 
     #[test]
     fn test_update_no_such_index() -> ResultTest<()> {
-        let (datastore, tx, table_id) = setup_table_with_indices([].into(), [].into())?;
+        let (datastore, tx, table_id) = setup_table_with_indices([], [])?;
         test_under_tx_and_commit(&datastore, tx, |tx| {
             let index_id = 0.into();
             let err = expect_index_err(update(&datastore, tx, table_id, index_id, &random_row()));
@@ -2334,12 +2570,19 @@ mod tests {
     fn test_update_no_such_index_because_deleted() -> ResultTest<()> {
         // Setup and immediately commit.
         let (datastore, tx, table_id) = setup_table()?;
+        assert_eq!(tx.tx_state.pending_schema_changes.len(), 6);
         commit(&datastore, tx)?;
 
         // Remove index in tx state.
         let mut tx = begin_mut_tx(&datastore);
+        assert_eq!(&*tx.tx_state.pending_schema_changes, []);
         let index_id = extract_index_id(&datastore, &tx, &basic_indices()[0])?;
         tx.drop_index(index_id)?;
+        assert_matches!(
+            &*tx.tx_state.pending_schema_changes,
+            [PendingSchemaChange::IndexRemoved(tid, iid, _, _)]
+            if *tid == table_id && *iid == index_id
+        );
 
         test_under_tx_and_commit(&datastore, tx, |tx: &mut _| {
             let err = expect_index_err(update(&datastore, tx, table_id, index_id, &random_row()));
@@ -2352,7 +2595,7 @@ mod tests {
     #[test]
     fn test_update_index_not_unique() -> ResultTest<()> {
         let indices = basic_indices();
-        let (datastore, mut tx, table_id) = setup_table_with_indices(indices.clone(), [].into())?;
+        let (datastore, mut tx, table_id) = setup_table_with_indices(indices.clone(), [])?;
         let row = &random_row();
         insert(&datastore, &mut tx, table_id, row)?;
 
@@ -2409,7 +2652,14 @@ mod tests {
     /// Checks that update ensures that the row-to-update exists and considers delete tables.
     #[test]
     fn test_update_no_such_row_because_deleted_new_index_in_tx() -> ResultTest<()> {
-        let (datastore, mut tx, table_id) = setup_table_with_indices([].into(), [].into())?;
+        let (datastore, mut tx, table_id) = setup_table_with_indices([], [])?;
+        assert_matches!(
+            &*tx.tx_state.pending_schema_changes,
+            [
+                PendingSchemaChange::TableAdded(_),
+                PendingSchemaChange::SequenceAdded(..),
+            ]
+        );
 
         // Insert the row and commit.
         let row = &random_row();
@@ -2418,10 +2668,16 @@ mod tests {
 
         // Now add the indices and then delete the row.
         let mut tx = begin_mut_tx(&datastore);
+        assert_eq!(&*tx.tx_state.pending_schema_changes, []);
         let mut indices = basic_indices();
-        for index in &mut indices {
+        for (pos, index) in indices.iter_mut().enumerate() {
             index.table_id = table_id;
             index.index_id = datastore.create_index_mut_tx(&mut tx, index.clone(), true)?;
+            assert_matches!(
+                &tx.tx_state.pending_schema_changes[pos],
+                PendingSchemaChange::IndexAdded(_, iid, _)
+                if *iid == index.index_id
+            );
         }
         assert_eq!(1, datastore.delete_by_rel_mut_tx(&mut tx, table_id, [row.clone()]));
 
@@ -2456,7 +2712,7 @@ mod tests {
     /// Checks that update checks other unique constraints against the committed state.
     #[test]
     fn test_update_violates_commit_unique_constraints() -> ResultTest<()> {
-        let (datastore, mut tx, table_id) = setup_table_with_indices([].into(), [].into())?;
+        let (datastore, mut tx, table_id) = setup_table_with_indices([], [])?;
 
         // Insert two rows.
         let mut row = random_row();
@@ -2587,60 +2843,29 @@ mod tests {
         datastore.commit_mut_tx(tx)?;
 
         // create multiple read only tx, and use them together.
-        let read_tx_1 = datastore.begin_tx(Workload::Internal);
-        let read_tx_2 = datastore.begin_tx(Workload::Internal);
+        let read_tx_1 = begin_tx(&datastore);
+        let read_tx_2 = begin_tx(&datastore);
         let rows = &[row1, row2];
         assert_eq!(&all_rows_tx(&read_tx_2, table_id), rows);
         assert_eq!(&all_rows_tx(&read_tx_1, table_id), rows);
-        read_tx_2.release();
-        read_tx_1.release();
+        let _ = read_tx_2.release();
+        let _ = read_tx_1.release();
         Ok(())
     }
 
     #[test]
     fn test_scheduled_table_insert_and_update() -> ResultTest<()> {
-        let table_id = TableId::SENTINEL;
         // Build the minimal schema that is a valid scheduler table.
-        let schema = TableSchema::new(
-            table_id,
-            "Foo".into(),
-            vec![
-                ColumnSchema {
-                    table_id,
-                    col_pos: 0.into(),
-                    col_name: "id".into(),
-                    col_type: AlgebraicType::U64,
-                },
-                ColumnSchema {
-                    table_id,
-                    col_pos: 1.into(),
-                    col_name: "at".into(),
-                    col_type: ScheduleAt::get_type(),
-                },
+        let schema = user_public_table(
+            [
+                ColumnSchema::for_test(0, "id", AlgebraicType::U64),
+                ColumnSchema::for_test(1, "at", ScheduleAt::get_type()),
             ],
-            vec![IndexSchema {
-                table_id,
-                index_id: IndexId::SENTINEL,
-                index_name: "id_idx".into(),
-                index_algorithm: IndexAlgorithm::BTree(BTreeAlgorithm { columns: 0.into() }),
-            }],
-            vec![ConstraintSchema {
-                table_id,
-                constraint_id: ConstraintId::SENTINEL,
-                constraint_name: "id_unique".into(),
-                data: ConstraintData::Unique(UniqueConstraintData { columns: 0.into() }),
-            }],
-            vec![],
-            StTableType::User,
-            StAccess::Public,
-            Some(ScheduleSchema {
-                table_id,
-                schedule_id: ScheduleId::SENTINEL,
-                schedule_name: "schedule".into(),
-                reducer_name: "reducer".into(),
-                at_column: 1.into(),
-            }),
-            Some(0.into()),
+            [IndexSchema::for_test("id_idx", BTreeAlgorithm::from(0))],
+            [ConstraintSchema::unique_for_test("id_unique", 0)],
+            [],
+            Some(ScheduleSchema::for_test("schedule", "reducer", 1)),
+            Some(ColId(0)),
         );
 
         // Create the table.
@@ -2702,24 +2927,13 @@ mod tests {
 
     #[test]
     fn test_set_semantics() -> ResultTest<()> {
-        let col_schema = |col_name, col_pos| ColumnSchema {
-            table_id: TableId::SENTINEL,
-            col_pos,
-            col_name,
-            col_type: AlgebraicType::U8,
-        };
-
         // Create a table schema for (a: u8, b: u8)
         let table_schema = |index: Option<_>, constraint: Option<_>| {
-            TableSchema::new(
-                TableId::SENTINEL,
-                "Foo".into(),
-                vec![col_schema("a".into(), 0.into()), col_schema("b".into(), 1.into())],
-                index.into_iter().collect(),
-                constraint.into_iter().collect(),
-                vec![],
-                StTableType::User,
-                StAccess::Public,
+            user_public_table(
+                [("a", 0), ("b", 1)].map(|(name, pos)| ColumnSchema::for_test(pos, name, AlgebraicType::U8)),
+                Vec::from_iter(index),
+                Vec::from_iter(constraint),
+                [],
                 None,
                 None,
             )
@@ -2727,18 +2941,8 @@ mod tests {
         let table_schema_no_constraints = || table_schema(None, None);
         let table_schema_unique_constraint = || {
             table_schema(
-                Some(IndexSchema {
-                    table_id: TableId::SENTINEL,
-                    index_id: IndexId::SENTINEL,
-                    index_name: "a_index".into(),
-                    index_algorithm: BTreeAlgorithm { columns: 0.into() }.into(),
-                }),
-                Some(ConstraintSchema {
-                    table_id: TableId::SENTINEL,
-                    constraint_id: ConstraintId::SENTINEL,
-                    constraint_name: "a_unique".into(),
-                    data: ConstraintData::Unique(UniqueConstraintData { columns: 0.into() }),
-                }),
+                Some(IndexSchema::for_test("a_index", BTreeAlgorithm::from(0))),
+                Some(ConstraintSchema::unique_for_test("a_unique", 0)),
             )
         };
 
@@ -2752,7 +2956,7 @@ mod tests {
         }
 
         fn assert_rows(datastore: &Locking, table_id: TableId, rows: Vec<ProductValue>) -> ResultTest<()> {
-            let tx = datastore.begin_tx(Workload::ForTests);
+            let tx = begin_tx(datastore);
             for (actual, expected) in datastore.iter_tx(&tx, table_id)?.zip_eq(rows.into_iter()) {
                 assert_eq!(actual.to_bsatn_vec()?, expected.to_bsatn_vec()?);
             }
@@ -2841,30 +3045,11 @@ mod tests {
 
     #[test]
     fn add_twice_and_find_issue_2601() -> ResultTest<()> {
-        let schema = TableSchema::new(
-            TableId::SENTINEL,
-            "Table".into(),
-            vec![ColumnSchema {
-                table_id: TableId::SENTINEL,
-                col_pos: 0.into(),
-                col_name: "field".into(),
-                col_type: AlgebraicType::I32,
-            }],
-            vec![IndexSchema {
-                table_id: TableId::SENTINEL,
-                index_id: IndexId::SENTINEL,
-                index_name: "index".into(),
-                index_algorithm: BTreeAlgorithm { columns: 0.into() }.into(),
-            }],
-            vec![ConstraintSchema {
-                table_id: TableId::SENTINEL,
-                constraint_id: ConstraintId::SENTINEL,
-                constraint_name: "constraint".into(),
-                data: ConstraintData::Unique(UniqueConstraintData { columns: 0.into() }),
-            }],
-            vec![],
-            StTableType::User,
-            StAccess::Public,
+        let schema = user_public_table(
+            [ColumnSchema::for_test(0, "field", AlgebraicType::I32)],
+            [IndexSchema::for_test("index", BTreeAlgorithm::from(0))],
+            [ConstraintSchema::unique_for_test("constraint", 0)],
+            [],
             None,
             None,
         );
@@ -2891,9 +3076,74 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn test_drop_table_is_transactional() -> ResultTest<()> {
+        let (datastore, mut tx, table_id) = setup_table()?;
+
+        // Insert a row and commit.
+        let row = random_row();
+        insert(&datastore, &mut tx, table_id, &row)?;
+        commit(&datastore, tx)?;
+
+        // Create a transaction and drop the table and roll back.
+        let mut tx = begin_mut_tx(&datastore);
+        assert_eq!(&*tx.tx_state.pending_schema_changes, []);
+        assert!(datastore.drop_table_mut_tx(&mut tx, table_id).is_ok());
+        assert_matches!(
+            &*tx.tx_state.pending_schema_changes,
+            [
+                PendingSchemaChange::IndexRemoved(..),
+                PendingSchemaChange::IndexRemoved(..),
+                PendingSchemaChange::SequenceRemoved(..),
+                PendingSchemaChange::ConstraintRemoved(..),
+                PendingSchemaChange::ConstraintRemoved(..),
+                PendingSchemaChange::TableRemoved(removed_table_id, _)
+            ]
+                if *removed_table_id == table_id
+        );
+        let _ = datastore.rollback_mut_tx(tx);
+
+        // Ensure the table still exists in the next transaction.
+        let tx = begin_mut_tx(&datastore);
+        assert_eq!(&*tx.tx_state.pending_schema_changes, []);
+        assert!(
+            datastore.table_id_exists_mut_tx(&tx, &table_id),
+            "Table should still exist",
+        );
+        assert_eq!(all_rows(&datastore, &tx, table_id), [row]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_create_table_is_transactional() -> ResultTest<()> {
+        // Create a table in a failed transaction.
+        let (datastore, tx, table_id) = setup_table()?;
+        assert_matches!(
+            &*tx.tx_state.pending_schema_changes,
+            [
+                PendingSchemaChange::TableAdded(added_table_id),
+                PendingSchemaChange::IndexAdded(.., Some(_)),
+                PendingSchemaChange::IndexAdded(.., None),
+                PendingSchemaChange::ConstraintAdded(..),
+                PendingSchemaChange::ConstraintAdded(..),
+                PendingSchemaChange::SequenceAdded(..),
+            ]
+                if *added_table_id == table_id
+        );
+        let _ = datastore.rollback_mut_tx(tx);
+
+        // Nothing should have happened.
+        let tx = begin_mut_tx(&datastore);
+        assert_eq!(&*tx.tx_state.pending_schema_changes, []);
+        assert!(
+            !datastore.table_id_exists_mut_tx(&tx, &table_id),
+            "Table should not exist"
+        );
+        Ok(())
+    }
+
     // TODO: Add the following tests
-    // - Create index with unique constraint and immediately insert a row that violates the constraint before committing.
     // - Create a tx that inserts 2000 rows with an auto_inc column
     // - Create a tx that inserts 2000 rows with an auto_inc column and then rolls back
-    // - Test creating sequences pre_commit, post_commit, post_rollback
 }

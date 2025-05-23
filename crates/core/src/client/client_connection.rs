@@ -16,12 +16,14 @@ use bytes::Bytes;
 use bytestring::ByteString;
 use derive_more::From;
 use futures::prelude::*;
+use prometheus::{Histogram, IntCounter};
 use spacetimedb_client_api_messages::websocket::{
     BsatnFormat, CallReducerFlags, Compression, FormatSwitch, JsonFormat, SubscribeMulti, SubscribeSingle, Unsubscribe,
     UnsubscribeMulti, WebsocketFormat,
 };
 use spacetimedb_lib::identity::RequestId;
 use spacetimedb_lib::metrics::ExecutionMetrics;
+use spacetimedb_lib::Identity;
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::AbortHandle;
 
@@ -32,6 +34,13 @@ pub enum Protocol {
 }
 
 impl Protocol {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Protocol::Text => "text",
+            Protocol::Binary => "binary",
+        }
+    }
+
     pub(crate) fn assert_matches_format_switch<B, J>(self, fs: &FormatSwitch<B, J>) {
         match (self, fs) {
             (Protocol::Text, FormatSwitch::Json(_)) | (Protocol::Binary, FormatSwitch::Bsatn(_)) => {}
@@ -69,6 +78,36 @@ pub struct ClientConnectionSender {
     sendtx: mpsc::Sender<SerializableMessage>,
     abort_handle: AbortHandle,
     cancelled: AtomicBool,
+
+    /// Handles on Prometheus metrics related to connections to this database.
+    ///
+    /// Will be `None` when constructed by [`ClientConnectionSender::dummy_with_channel`]
+    /// or [`ClientConnectionSender::dummy`], which are used in tests.
+    /// Will be `Some` whenever this `ClientConnectionSender` is wired up to an actual client connection.
+    metrics: Option<ClientConnectionMetrics>,
+}
+
+#[derive(Debug)]
+pub struct ClientConnectionMetrics {
+    pub websocket_request_msg_size: Histogram,
+    pub websocket_requests: IntCounter,
+}
+
+impl ClientConnectionMetrics {
+    fn new(database_identity: Identity, protocol: Protocol) -> Self {
+        let message_kind = protocol.as_str();
+        let websocket_request_msg_size = WORKER_METRICS
+            .websocket_request_msg_size
+            .with_label_values(&database_identity, message_kind);
+        let websocket_requests = WORKER_METRICS
+            .websocket_requests
+            .with_label_values(&database_identity, message_kind);
+
+        Self {
+            websocket_request_msg_size,
+            websocket_requests,
+        }
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -87,16 +126,16 @@ impl ClientConnectionSender {
             Ok(h) => h.spawn(async {}).abort_handle(),
             Err(_) => tokio::runtime::Runtime::new().unwrap().spawn(async {}).abort_handle(),
         };
-        (
-            Self {
-                id,
-                config,
-                sendtx,
-                abort_handle,
-                cancelled: AtomicBool::new(false),
-            },
-            rx,
-        )
+        let cancelled = AtomicBool::new(false);
+        let sender = Self {
+            id,
+            config,
+            sendtx,
+            abort_handle,
+            cancelled,
+            metrics: None,
+        };
+        (sender, rx)
     }
 
     pub fn dummy(id: ClientActorId, config: ClientConfig) -> Self {
@@ -124,6 +163,13 @@ impl ClientConnectionSender {
         })?;
 
         Ok(())
+    }
+
+    pub(crate) fn observe_websocket_request_message(&self, message: &DataMessage) {
+        if let Some(metrics) = &self.metrics {
+            metrics.websocket_request_msg_size.observe(message.len() as f64);
+            metrics.websocket_requests.inc();
+        }
     }
 }
 
@@ -201,20 +247,22 @@ impl ClientConnection {
 
         let (sendtx, sendrx) = mpsc::channel::<SerializableMessage>(CLIENT_CHANNEL_CAPACITY);
 
-        let db = module.info().database_identity;
-
         let (fut_tx, fut_rx) = oneshot::channel::<Fut>();
         // weird dance so that we can get an abort_handle into ClientConnection
+        let module_info = module.info.clone();
+        let database_identity = module_info.database_identity;
         let abort_handle = tokio::spawn(async move {
             let Ok(fut) = fut_rx.await else { return };
 
-            let _gauge_guard = WORKER_METRICS.connected_clients.with_label_values(&db).inc_scope();
-            WORKER_METRICS.ws_clients_spawned.with_label_values(&db).inc();
-            scopeguard::defer!(WORKER_METRICS.ws_clients_aborted.with_label_values(&db).inc());
+            let _gauge_guard = module_info.metrics.connected_clients.inc_scope();
+            module_info.metrics.ws_clients_spawned.inc();
+            scopeguard::defer!(module_info.metrics.ws_clients_aborted.inc());
 
             fut.await
         })
         .abort_handle();
+
+        let metrics = ClientConnectionMetrics::new(database_identity, config.protocol);
 
         let sender = Arc::new(ClientConnectionSender {
             id,
@@ -222,6 +270,7 @@ impl ClientConnection {
             sendtx,
             abort_handle,
             cancelled: AtomicBool::new(false),
+            metrics: Some(metrics),
         });
         let this = Self {
             sender,
@@ -303,7 +352,11 @@ impl ClientConnection {
             .await
     }
 
-    pub async fn subscribe_single(&self, subscription: SubscribeSingle, timer: Instant) -> Result<(), DBError> {
+    pub async fn subscribe_single(
+        &self,
+        subscription: SubscribeSingle,
+        timer: Instant,
+    ) -> Result<Option<ExecutionMetrics>, DBError> {
         let me = self.clone();
         asyncify(move || {
             me.module
@@ -313,7 +366,7 @@ impl ClientConnection {
         .await
     }
 
-    pub async fn unsubscribe(&self, request: Unsubscribe, timer: Instant) -> Result<(), DBError> {
+    pub async fn unsubscribe(&self, request: Unsubscribe, timer: Instant) -> Result<Option<ExecutionMetrics>, DBError> {
         let me = self.clone();
         asyncify(move || {
             me.module

@@ -84,11 +84,6 @@ impl ChunkPool {
     ///
     /// These limits place an upper bound on the memory usage of a single [`ChunkPool`].
     pub fn put(&mut self, mut chunk: Vec<u8>) {
-        log::trace!(
-            "put: chunk of capacity {} into pool of {} chunks",
-            chunk.capacity(),
-            self.free_chunks.len()
-        );
         if chunk.capacity() > MAX_CHUNK_SIZE_IN_BYTES {
             return;
         }
@@ -512,20 +507,16 @@ mod test {
 
     use crate::{
         database_logger::DatabaseLogger,
-        db::{
-            datastore::traits::IsolationLevel,
-            relational_db::{tests_utils::TestDB, RelationalDB},
+        db::relational_db::{
+            tests_utils::{begin_mut_tx, with_auto_commit, with_read_only, TestDB},
+            RelationalDB,
         },
-        execution_context::Workload,
         host::Scheduler,
         messages::control_db::{Database, HostType},
         replica_context::ReplicaContext,
-        subscription::{
-            module_subscription_actor::ModuleSubscriptions, module_subscription_manager::SubscriptionManager,
-        },
+        subscription::module_subscription_actor::ModuleSubscriptions,
     };
     use anyhow::{anyhow, Result};
-    use parking_lot::RwLock;
     use spacetimedb_lib::db::auth::StAccess;
     use spacetimedb_lib::{bsatn::to_vec, AlgebraicType, AlgebraicValue, Hash, Identity, ProductValue};
     use spacetimedb_paths::{server::ModuleLogsDir, FromPathUnchecked};
@@ -543,11 +534,7 @@ mod test {
 
     /// An `InstanceEnv` requires `ModuleSubscriptions`
     fn subscription_actor(relational_db: Arc<RelationalDB>) -> ModuleSubscriptions {
-        ModuleSubscriptions::new(
-            relational_db,
-            Arc::new(RwLock::new(SubscriptionManager::default())),
-            Identity::ZERO,
-        )
+        ModuleSubscriptions::new(relational_db, <_>::default(), Identity::ZERO)
     }
 
     /// An `InstanceEnv` requires a `ReplicaContext`.
@@ -618,7 +605,7 @@ mod test {
             &[("id", AlgebraicType::U64), ("str", AlgebraicType::String)],
             &[0.into()],
         )?;
-        let index_id = db.with_read_only(Workload::ForTests, |tx| {
+        let index_id = with_read_only(db, |tx| {
             db.schema_for_table(tx, table_id)?
                 .indexes
                 .iter()
@@ -632,7 +619,7 @@ mod test {
                 .map(|schema| schema.index_id)
                 .ok_or_else(|| anyhow!("Index not found for ColId `{}`", 0))
         })?;
-        db.with_auto_commit(Workload::ForTests, |tx| -> Result<_> {
+        with_auto_commit(db, |tx| -> Result<_> {
             for i in 1..=5 {
                 db.insert(tx, table_id, &bsatn_row(i)?)?;
             }
@@ -649,7 +636,7 @@ mod test {
             &[0.into()],
             StAccess::Public,
         )?;
-        let index_id = db.with_read_only(Workload::ForTests, |tx| {
+        let index_id = with_read_only(db, |tx| {
             db.schema_for_table(tx, table_id)?
                 .indexes
                 .iter()
@@ -663,7 +650,7 @@ mod test {
                 .map(|schema| schema.index_id)
                 .ok_or_else(|| anyhow!("Index not found for ColId `{}`", 0))
         })?;
-        db.with_auto_commit(Workload::ForTests, |tx| -> Result<_> {
+        with_auto_commit(db, |tx| -> Result<_> {
             for i in 1..=5 {
                 db.insert(tx, table_id, &bsatn_row(i)?)?;
             }
@@ -682,7 +669,7 @@ mod test {
         let mut tx_slot = env.tx.clone();
 
         let f = || env.datastore_table_scan_bsatn_chunks(&mut ChunkPool::default(), table_id);
-        let tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let tx = begin_mut_tx(&db);
         let (tx, scan_result) = tx_slot.set(tx, f);
 
         scan_result?;
@@ -735,7 +722,7 @@ mod test {
             )?;
             Ok(())
         };
-        let tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let tx = begin_mut_tx(&db);
         let (tx, scan_result) = tx_slot.set(tx, f);
 
         scan_result?;
@@ -773,7 +760,7 @@ mod test {
             }
             Ok(())
         };
-        let tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let tx = begin_mut_tx(&db);
         let (tx, insert_result) = tx_slot.set(tx, f);
 
         insert_result?;
@@ -811,7 +798,7 @@ mod test {
             env.update(table_id, index_id, new_row_bytes.as_mut_slice())?;
             Ok(())
         };
-        let tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let tx = begin_mut_tx(&db);
         let (tx, res) = tx_slot.set(tx, f);
 
         res?;
@@ -835,7 +822,7 @@ mod test {
             env.datastore_delete_by_index_scan_range_bsatn(index_id, &[], 0.into(), &index_key, &index_key)?;
             Ok(())
         };
-        let tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let tx = begin_mut_tx(&db);
         let (tx, delete_result) = tx_slot.set(tx, f);
 
         delete_result?;
@@ -864,7 +851,7 @@ mod test {
             env.datastore_delete_all_by_eq_bsatn(table_id, &bsatn_rows)?;
             Ok(())
         };
-        let tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let tx = begin_mut_tx(&db);
         let (tx, delete_result) = tx_slot.set(tx, f);
 
         delete_result?;
