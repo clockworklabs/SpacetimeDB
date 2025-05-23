@@ -20,6 +20,8 @@
 
 #![allow(unused)]
 
+use crate::layout::ProductTypeLayoutView;
+
 use super::{
     layout::{AlgebraicTypeLayout, HasLayout as _, ProductTypeLayout, RowTypeLayout},
     static_layout::StaticLayout,
@@ -45,7 +47,7 @@ pub(crate) fn static_bsatn_validator(ty: &RowTypeLayout) -> StaticBsatnValidator
 /// Construct a `Tree` from `ty`.
 ///
 /// See [`extend_trees_for_algebraic_type`] for more details.
-fn row_type_to_tree(ty: &ProductTypeLayout) -> Tree {
+fn row_type_to_tree(ty: ProductTypeLayoutView<'_>) -> Tree {
     let mut sub_trees = Vec::new();
     extend_trees_for_product_type(ty, &mut 0, &mut sub_trees);
     sub_trees_to_tree(sub_trees)
@@ -67,8 +69,8 @@ fn sub_trees_to_tree(mut sub_trees: Vec<Tree>) -> Tree {
 /// Extend `sub_trees` with checks for `ty`.
 ///
 /// See [`extend_trees_for_algebraic_type`] for more details.
-fn extend_trees_for_product_type(ty: &ProductTypeLayout, current_offset: &mut usize, sub_trees: &mut Vec<Tree>) {
-    for elem in &*ty.elements {
+fn extend_trees_for_product_type(ty: ProductTypeLayoutView<'_>, current_offset: &mut usize, sub_trees: &mut Vec<Tree>) {
+    for elem in ty.elements {
         extend_trees_for_algebraic_type(&elem.ty, current_offset, sub_trees);
     }
 }
@@ -91,7 +93,9 @@ fn extend_trees_for_algebraic_type(ty: &AlgebraicTypeLayout, current_offset: &mu
             // Primitive types have no padding, so we can use `prim_ty.size()` for bsatn.
             *current_offset += prim_ty.size();
         }
-        AlgebraicTypeLayout::Product(prod_ty) => extend_trees_for_product_type(prod_ty, current_offset, sub_trees),
+        AlgebraicTypeLayout::Product(prod_ty) => {
+            extend_trees_for_product_type(prod_ty.view(), current_offset, sub_trees)
+        }
         AlgebraicTypeLayout::Sum(sum_ty) => {
             // Record the tag's offset and the number of variants.
             let num_variants = sum_ty.variants.len() as u8;

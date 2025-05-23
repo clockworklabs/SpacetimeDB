@@ -2,10 +2,12 @@
 //! which, for `value_a/b = page_a/b.get_row_data(offset_a/b, fixed_row_size)` typed at `ty`,
 //! compares `value_a` and `value_b` for equality.
 
+use crate::layout::ProductTypeLayoutView;
+
 use super::{
     bflatn_from::read_tag,
     indexes::{Bytes, PageOffset},
-    layout::{align_to, AlgebraicTypeLayout, HasLayout, ProductTypeLayout, RowTypeLayout},
+    layout::{align_to, AlgebraicTypeLayout, HasLayout, RowTypeLayout},
     page::Page,
     row_hash::read_from_bytes,
     static_layout::StaticLayout,
@@ -102,7 +104,7 @@ struct EqCtx<'page_a, 'page_b> {
 /// 1. `value_a/b` must be valid at type `ty` and properly aligned for `ty`.
 /// 2. for any `vlr_a/b: VarLenRef` stored in `value_a/b`,
 ///    `vlr_a/b.first_offset` must either be `NULL` or point to a valid granule in `page_a/b`.
-unsafe fn eq_product(ctx: &mut EqCtx<'_, '_>, ty: &ProductTypeLayout) -> bool {
+unsafe fn eq_product(ctx: &mut EqCtx<'_, '_>, ty: ProductTypeLayoutView<'_>) -> bool {
     let base_offset = ctx.curr_offset;
     ty.elements.iter().all(|elem_ty| {
         ctx.curr_offset = base_offset + elem_ty.offset as usize;
@@ -155,7 +157,7 @@ unsafe fn eq_value(ctx: &mut EqCtx<'_, '_>, ty: &AlgebraicTypeLayout) -> bool {
         }
         AlgebraicTypeLayout::Product(ty) => {
             // SAFETY: `value_a/b` are valid at `ty` and `VarLenRef`s won't be dangling.
-            unsafe { eq_product(ctx, ty) }
+            unsafe { eq_product(ctx, ty.view()) }
         }
 
         // The primitive types:
