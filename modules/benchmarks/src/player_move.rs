@@ -1,7 +1,10 @@
 use spacetimedb::log;
+use spacetimedb::Identity;
 use spacetimedb::ReducerContext;
 use spacetimedb::SpacetimeType;
+use spacetimedb::Table;
 use spacetimedb::Timestamp;
+use std::fmt::Display;
 
 #[macro_export]
 macro_rules! unwrap_or_err(
@@ -16,10 +19,18 @@ macro_rules! unwrap_or_err(
     );
 );
 
+const FLOAT_COORD_PRECISION: u32 = 3;
+const FLOAT_COORD_PRECISION_MUL: i32 = 10i32.pow(FLOAT_COORD_PRECISION);
+const OUTER_RADIUS: f32 = TERRAIN_OUTER_RADIUS / 3.0;
+const INNER_RADIUS: f32 = OUTER_RADIUS * RADIUS_RATIO;
+const RADIUS_RATIO: f32 = 0.866025404;
+const TERRAIN_OUTER_RADIUS: f32 = 10.0;
+const TERRAIN_INNER_RADIUS: f32 = TERRAIN_OUTER_RADIUS * RADIUS_RATIO;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, spacetimedb::SpacetimeType)]
 #[sats(name = "CharacterStatType")]
 #[repr(i32)]
-pub enum CharacterStatType {
+enum CharacterStatType {
     MaxHealth,
     MaxStamina,
     PassiveHealthRegenRate,
@@ -80,7 +91,7 @@ pub enum CharacterStatType {
 }
 
 #[derive(SpacetimeType, Clone, Debug)]
-pub struct ActiveBuff {
+struct ActiveBuff {
     pub buff_id: i32,
     pub buff_start_timestamp: OnlineTimestamp,
     pub buff_duration: i32,
@@ -88,108 +99,25 @@ pub struct ActiveBuff {
 }
 
 #[derive(SpacetimeType, Clone)]
-pub struct ExperienceStackF32 {
+struct ExperienceStackF32 {
     pub skill_id: i32,
     pub quantity: f32,
 }
 
 #[derive(SpacetimeType, Clone, Debug)]
-pub struct InputItemStack {
-    pub item_id: i32,
-    pub quantity: i32,
-    pub item_type: ItemType,
-    pub discovery_score: i32,
-    pub consumption_chance: f32,
-}
-
-#[derive(SpacetimeType, Clone, Debug)]
-pub struct OnlineTimestamp {
+struct OnlineTimestamp {
     pub value: i32,
 }
 
 #[derive(SpacetimeType, Debug, Clone)]
-pub struct CsvStatEntry {
+struct CsvStatEntry {
     pub id: CharacterStatType,
     pub value: f32,
     pub is_pct: bool,
 }
 
-#[spacetimedb::table(name = paved_tile_state, public)]
-#[derive(bitcraft_macro::Operations, Clone)]
-#[operations(delete)]
-pub struct PavedTileState {
-    // Sort fields in order of decreasing size/alignment
-    // to take advantage of a serialization fast-path in SpacetimeDB.
-    #[primary_key]
-    pub entity_id: u64,
-
-    pub tile_type_id: i32,
-    pub related_entity_id: u64, // optional : when this related entitiy is deleted, delete this paving instance as well
-}
-
-#[spacetimedb::table(name = mounting_state, public, index(name = deployable_entity_id, btree(columns = [deployable_entity_id])))]
-#[derive(bitcraft_macro::Operations, Clone)]
-#[operations(delete)]
-pub struct MountingState {
-    // Sort fields in order of decreasing size/alignment
-    // to take advantage of a serialization fast-path in SpacetimeDB.
-    #[primary_key]
-    pub entity_id: u64,
-
-    pub deployable_entity_id: u64,
-    pub deployable_slot: i32,
-}
-
-#[spacetimedb::table(name = active_buff_state, public)]
-#[derive(Clone, bitcraft_macro::Operations, Debug)]
-#[operations(delete)]
-pub struct ActiveBuffState {
-    #[primary_key]
-    pub entity_id: u64,
-
-    pub active_buffs: Vec<ActiveBuff>,
-}
-
-#[spacetimedb::table(name = claim_state, public,
-    index(name = owner_player_entity_id, btree(columns = [owner_player_entity_id])),
-    index(name = name, btree(columns = [name])),
-    index(name = neutral, btree(columns = [neutral])))]
-#[derive(bitcraft_macro::Operations, Clone, Debug)]
-#[shared_table] //Owned by region, replicated to global module
-#[operations(delete)]
-pub struct ClaimState {
-    #[primary_key]
-    pub entity_id: u64,
-    pub owner_player_entity_id: u64,
-    #[unique]
-    pub owner_building_entity_id: u64,
-    pub name: String,
-    pub neutral: bool,
-}
-
-// Keep all players affected by long term rez sickness to improve player_move
-#[spacetimedb::table(name = rez_sick_long_term_state)]
-#[derive(Clone, bitcraft_macro::Operations)]
-#[operations(delete)]
-pub struct RezSickLongTermState {
-    #[primary_key]
-    pub entity_id: u64,
-}
-
-#[spacetimedb::table(name = exploration_chunks_state, public)]
-#[derive(Clone, bitcraft_macro::Operations, Debug)]
-#[operations(delete)]
-pub struct ExplorationChunksState {
-    #[primary_key]
-    pub entity_id: u64,
-
-    pub bitmap: Vec<u64>, //Essentially a bitfield. Index=(Z*W+X)/64, bit=(Z*W+X)%64
-    pub explored_chunks_count: i32,
-}
-
 #[spacetimedb::table(name = character_stats_state, public)]
-#[derive(bitcraft_macro::Operations, Clone, Debug)]
-#[operations(delete)]
+#[derive(Clone, Debug)]
 pub struct CharacterStatsState {
     #[primary_key]
     pub entity_id: u64,
@@ -204,8 +132,7 @@ pub struct TeleportLocation {
 }
 
 #[spacetimedb::table(name = player_state, public)]
-#[derive(Default, Clone, bitcraft_macro::Operations, Debug)]
-#[operations(delete)]
+#[derive(Default, Clone, Debug)]
 pub struct PlayerState {
     pub teleport_location: TeleportLocation,
     #[primary_key]
@@ -216,26 +143,6 @@ pub struct PlayerState {
     pub sign_in_timestamp: i32,
     pub signed_in: bool, // Keeping this attribute for optimization even if the value could be found by filtering SignedInPlayerState by entityId
     pub traveler_tasks_expiration: i32,
-}
-
-#[spacetimedb::table(name = paving_tile_desc, public)]
-pub struct PavingTileDesc {
-    #[primary_key]
-    pub id: i32,
-    pub name: String,
-    pub consumed_item_stacks: Vec<InputItemStack>,
-    pub input_cargo_id: i32,
-    pub input_cargo_discovery_score: i32,
-    pub experience_per_progress: Vec<ExperienceStackF32>,
-    pub discovery_triggers: Vec<i32>,
-    pub required_knowledges: Vec<i32>,
-    pub full_discovery_score: i32,
-    pub paving_duration: f32,
-    pub prefab_address: String,
-    pub tier: i32,
-    pub stat_effects: Vec<CsvStatEntry>,
-    pub icon_address: String,
-    pub description: String,
 }
 
 #[derive(spacetimedb::SpacetimeType, Clone, Copy, PartialEq, Debug)]
@@ -300,7 +207,7 @@ pub struct PlayerActionDesc {
 }
 
 #[derive(SpacetimeType, Clone)]
-pub struct PlayerMoveRequest {
+struct PlayerMoveRequest {
     pub timestamp: u64,
     pub destination: Option<OffsetCoordinatesFloat>,
     pub origin: Option<OffsetCoordinatesFloat>,
@@ -309,49 +216,17 @@ pub struct PlayerMoveRequest {
     pub running: bool,
 }
 
-#[derive(spacetimedb::SpacetimeType, Clone, Copy, PartialEq, Debug)]
-#[repr(i32)]
-// IMPORTANT: These are sorted in order of access level, from least to most access.
-pub enum Role {
-    Player,
-    Mod,
-    Gm,
-    Admin,
-    Relay,
-}
-
-#[spacetimedb::table(name = building_state, public,
-    index(name = claim_entity_id, btree(columns = [claim_entity_id])),
-    index(name = building_description_id, btree(columns = [building_description_id])))]
-#[shared_table]
-#[derive(Default, Clone, bitcraft_macro::Operations, Debug)]
-pub struct BuildingState {
-    #[primary_key]
-    pub entity_id: u64,
-
-    pub claim_entity_id: u64,
-    pub direction_index: i32,
-    pub building_description_id: i32,
-    pub constructed_by_player_entity_id: u64,
-}
-
 #[spacetimedb::reducer]
-pub fn player_move_timestamp(ctx: &ReducerContext, mut request: PlayerMoveRequest) -> Result<(), String> {
+fn player_move_timestamp(ctx: &ReducerContext, _request: PlayerMoveRequest) -> Result<(), String> {
     let actor_id = game_state::actor_id(&ctx, true)?;
     PlayerTimestampState::refresh(ctx, actor_id, ctx.timestamp);
+    Ok(())
 }
 
 #[spacetimedb::reducer]
-pub fn player_move_move(ctx: &ReducerContext, mut request: PlayerMoveRequest) -> Result<(), String> {
+fn player_move_move(ctx: &ReducerContext, request: PlayerMoveRequest) -> Result<(), String> {
     let actor_id = game_state::actor_id(&ctx, true)?;
 
-    if request.running && InventoryState::get_player_cargo_id(ctx, actor_id) > 0 {
-        return Err("Can't run with cargo.".into());
-    }
-
-    let mut prev_mobile_entity = ctx.db.mobile_entity_state().entity_id().find(&actor_id).unwrap();
-
-    let prev_origin = prev_mobile_entity.coordinates_float();
     let target_coordinates: FloatHexTile =
         unwrap_or_err!(request.destination, "Expected destination in move request").into();
     let source_coordinates: FloatHexTile = unwrap_or_err!(request.origin, "Expected origin in move request").into();
@@ -371,22 +246,97 @@ pub fn player_move_move(ctx: &ReducerContext, mut request: PlayerMoveRequest) ->
     Ok(())
 }
 
-#[spacetimedb::reducer]
-pub fn player_move_action(ctx: &ReducerContext, mut request: PlayerMoveRequest) -> Result<(), String> {
-    let actor_id = game_state::actor_id(&ctx, true)?;
+#[spacetimedb::table(name = player_action_state, public, index(name = entity_id, btree(columns = [entity_id])))]
+#[derive(Clone, Debug)]
+pub struct PlayerActionState {
+    #[primary_key]
+    #[auto_inc]
+    pub auto_id: u64,
+    pub entity_id: u64,
+    pub action_type: PlayerActionType,
+    pub layer: PlayerActionLayer,
+    pub last_action_result: PlayerActionResult,
+    pub start_time: u64,
+    pub duration: u64,
+    pub target: Option<u64>,
+    pub recipe_id: Option<i32>,
+    pub client_cancel: bool, // don't interrupt the actoin again on the client upon receiving this state change
+}
 
-    if request.running && InventoryState::get_player_cargo_id(ctx, actor_id) > 0 {
-        return Err("Can't run with cargo.".into());
+impl PlayerActionState {
+    pub fn success(
+        ctx: &ReducerContext,
+        entity_id: u64,
+        action_type: PlayerActionType,
+        layer: PlayerActionLayer,
+        duration: u64,
+        target: Option<u64>,
+        recipe_id: Option<i32>,
+    ) {
+        if let Err(e) = PlayerActionState::update_by_entity_id(
+            ctx,
+            &entity_id,
+            PlayerActionState {
+                auto_id: 0,
+                entity_id: entity_id,
+                action_type: action_type,
+                layer: layer,
+                last_action_result: PlayerActionResult::Success,
+                start_time: game_state::unix_ms(ctx.timestamp),
+                duration,
+                target,
+                recipe_id,
+                client_cancel: false,
+            },
+        ) {
+            log::error!("Couldn't call success on PlayerActionState, with error: {}", e);
+        }
     }
 
-    let mut prev_mobile_entity = ctx.db.mobile_entity_state().entity_id().find(&actor_id).unwrap();
+    pub fn get_state(ctx: &ReducerContext, entity_id: &u64, layer: &PlayerActionLayer) -> Option<PlayerActionState> {
+        return ctx
+            .db
+            .player_action_state()
+            .entity_id()
+            .filter(entity_id)
+            .find(|x| x.layer == *layer);
+    }
 
-    let prev_origin = prev_mobile_entity.coordinates_float();
+    pub fn get_auto_id(ctx: &ReducerContext, entity_id: &u64, layer: &PlayerActionLayer) -> Option<u64> {
+        return PlayerActionState::get_state(ctx, &entity_id, &layer).map(|state| state.auto_id);
+    }
+
+    pub fn update_by_entity_id(
+        ctx: &ReducerContext,
+        entity_id: &u64,
+        mut state: PlayerActionState,
+    ) -> Result<(), String> {
+        let id: u64 = unwrap_or_err!(
+            PlayerActionState::get_auto_id(ctx, &entity_id, &state.layer),
+            "Can't find base layer state, invalid player id."
+        );
+        state.auto_id = id;
+        ctx.db.player_action_state().auto_id().update(state);
+        Ok(())
+    }
+}
+
+#[derive(spacetimedb::SpacetimeType, Clone, Copy, PartialEq, Debug)]
+#[sats(name = "PlayerActionResult")]
+pub enum PlayerActionResult {
+    Success,
+    TimingFail,
+    Fail,
+    Cancel,
+}
+
+#[spacetimedb::reducer]
+fn player_move_action(ctx: &ReducerContext, request: PlayerMoveRequest) -> Result<(), String> {
+    let actor_id = game_state::actor_id(&ctx, true)?;
+
     let target_coordinates: FloatHexTile =
         unwrap_or_err!(request.destination, "Expected destination in move request").into();
     let source_coordinates: FloatHexTile = unwrap_or_err!(request.origin, "Expected origin in move request").into();
-
-    let stamina_used = 0.0;
 
     PlayerActionState::success(
         ctx,
@@ -405,48 +355,13 @@ pub fn player_move_action(ctx: &ReducerContext, mut request: PlayerMoveRequest) 
     Ok(())
 }
 
-#[spacetimedb::table(name = building_desc, public)]
-pub struct BuildingDesc {
-    #[primary_key]
-    pub id: i32,
-    pub functions: Vec<BuildingFunction>,
-    pub name: String,
-    pub description: String,
-    pub rested_buff_duration: i32,
-    pub light_radius: i32,
-    pub model_asset_name: String,
-    pub icon_asset_name: String,
-    pub unenterable: bool,
-    pub wilderness: bool,
-    pub footprint: Vec<FootprintTile>,
-    pub max_health: i32,
-    pub ignore_damage: bool,
-    pub defense_level: i32,
-    pub decay: f32,
-    pub maintenance: f32,
-    pub build_permission: BuildingInteractionLevel,
-    pub interact_permission: BuildingInteractionLevel,
-    pub has_action: bool,
-    pub show_in_compendium: bool,
-    pub is_ruins: bool,
-    pub not_deconstructible: bool,
-}
-
-#[spacetimedb::table(name = parameters_player_move_desc)]
-#[derive(Default)]
-pub struct ParametersPlayerMoveDesc {
-    #[primary_key]
-    pub version: i32,
-    pub default_speed: Vec<MovementSpeed>,
-}
-
 impl PlayerState {
     pub fn move_player_and_explore(
         ctx: &ReducerContext,
         entity_id: u64,
         start_coordinates: &FloatHexTile,
         target_coordinates: &FloatHexTile,
-        stamina_delta: f32,
+        _stamina_delta: f32,
         is_running: bool,
         timestamp: Option<u64>,
     ) -> Result<(), String> {
@@ -456,8 +371,6 @@ impl PlayerState {
         let previous_chunk = ChunkCoordinates::from(start_large);
         let entered_chunk = ChunkCoordinates::from(target_large);
 
-        // Don't explore non-overworld dimensions
-        let in_overworld = target_coordinates.dimension == dimensions::OVERWORLD;
         let dimension_desc_start = ctx
             .db
             .dimension_description_state()
@@ -519,7 +432,7 @@ impl PlayerState {
             })
             .chunk_coordinates()
             .chunk_index(),
-            timestamp: timestamp.unwrap_or_else(|| unix_ms(ctx.timestamp)),
+            timestamp: timestamp.unwrap_or_else(|| game_state::unix_ms(ctx.timestamp)),
             location_x: start_offset_coordinates.x.clamp(1, i32::MAX),
             location_z: start_offset_coordinates.z.clamp(1, i32::MAX),
             destination_x: target_offset_coordinates.x.clamp(1, i32::MAX),
@@ -530,306 +443,12 @@ impl PlayerState {
 
         ctx.db.mobile_entity_state().entity_id().update(mobile_entity);
 
-        StaminaState::add_player_stamina(ctx, entity_id, stamina_delta);
-
         Ok(())
     }
 }
 
-#[derive(spacetimedb::SpacetimeType, Clone, Copy, Debug, Default, PartialEq, Eq, EnumIter, PartialOrd, Ord, Hash)]
-#[sats(name = "SurfaceType")]
-#[repr(u8)]
-pub enum SurfaceType {
-    #[default]
-    Ground,
-    Lake,
-    River,
-    Ocean,
-    OceanBiome,
-    Swamp,
-}
-
-#[spacetimedb::table(name = move_validation_strike_counter_state)]
-#[derive(Clone, bitcraft_macro::Operations, Debug)]
-#[operations(delete)]
-pub struct MoveValidationStrikeCounterState {
-    #[primary_key]
-    pub entity_id: u64,
-    pub validation_failure_timestamps: Vec<Timestamp>,
-}
-
-pub struct Knowledges {
-    pub knowledge_achievement: Vec<KnowledgeEntry>,
-    pub knowledge_achievement_hash: i32,
-    pub knowledge_battle_action: Vec<KnowledgeEntry>,
-    pub knowledge_battle_action_hash: i32,
-    pub knowledge_building: Vec<KnowledgeEntry>,
-    pub knowledge_building_hash: i32,
-    pub knowledge_cargo: Vec<KnowledgeEntry>,
-    pub knowledge_cargo_hash: i32,
-    pub knowledge_claim: Vec<KnowledgeEntityEntry>,
-    pub knowledge_claim_hash: i32,
-    pub knowledge_construction: Vec<KnowledgeEntry>,
-    pub knowledge_construction_hash: i32,
-    pub knowledge_craft: Vec<KnowledgeEntry>,
-    pub knowledge_craft_hash: i32,
-    pub knowledge_deployable: Vec<KnowledgeEntry>,
-    pub knowledge_deployable_hash: i32,
-    pub knowledge_enemy: Vec<KnowledgeEntry>,
-    pub knowledge_enemy_hash: i32,
-    pub knowledge_extract: Vec<KnowledgeEntry>,
-    pub knowledge_extract_hash: i32,
-    pub knowledge_item: Vec<KnowledgeEntry>,
-    pub knowledge_item_hash: i32,
-    pub knowledge_lore: Vec<KnowledgeEntry>,
-    pub knowledge_lore_hash: i32,
-    pub knowledge_npc: Vec<KnowledgeEntry>,
-    pub knowledge_npc_hash: i32,
-    pub knowledge_paving: Vec<KnowledgeEntry>,
-    pub knowledge_paving_hash: i32,
-    pub knowledge_pillar_shaping: Vec<KnowledgeEntry>,
-    pub knowledge_pillar_shaping_hash: i32,
-    pub knowledge_resource_placement: Vec<KnowledgeEntry>,
-    pub knowledge_resource_placement_hash: i32,
-    pub knowledge_resource: Vec<KnowledgeEntry>,
-    pub knowledge_resource_hash: i32,
-    pub knowledge_ruins: Vec<KnowledgeLocationEntry>,
-    pub knowledge_ruins_hash: i32,
-    pub knowledge_secondary: Vec<KnowledgeEntry>,
-    pub knowledge_secondary_hash: i32,
-    pub knowledge_vault: Vec<KnowledgeEntry>,
-    pub knowledge_vault_hash: i32,
-}
-
-#[derive(SpacetimeType, Clone, Debug)]
-pub struct KnowledgeEntry {
-    pub id: i32,
-    pub state: KnowledgeState,
-}
-
-#[derive(SpacetimeType, Clone, Debug)]
-pub struct KnowledgeEntityEntry {
-    pub entity_id: u64,
-    pub state: KnowledgeState,
-}
-
-#[derive(SpacetimeType, Clone, Debug)]
-pub struct KnowledgeLocationEntry {
-    pub location: OffsetCoordinatesSmallMessage,
-    pub state: KnowledgeState,
-}
-
-#[spacetimedb::table(name = knowledge_achievement_state, public)]
-#[derive(Clone, bitcraft_macro::Operations, Debug)]
-#[operations(delete, knowledge)]
-pub struct KnowledgeAchievementState {
-    #[primary_key]
-    pub entity_id: u64,
-
-    pub entries: Vec<KnowledgeEntry>,
-}
-
-#[spacetimedb::table(name = knowledge_battle_action_state, public)]
-#[derive(Clone, bitcraft_macro::Operations, Debug)]
-#[operations(delete, knowledge)]
-pub struct KnowledgeBattleActionState {
-    #[primary_key]
-    pub entity_id: u64,
-
-    pub entries: Vec<KnowledgeEntry>,
-}
-
-#[spacetimedb::table(name = knowledge_building_state, public)]
-#[derive(Clone, bitcraft_macro::Operations, Debug)]
-#[operations(delete, knowledge)]
-pub struct KnowledgeBuildingState {
-    #[primary_key]
-    pub entity_id: u64,
-
-    pub entries: Vec<KnowledgeEntry>,
-}
-
-#[spacetimedb::table(name = knowledge_cargo_state, public)]
-#[derive(Clone, bitcraft_macro::Operations, Debug)]
-#[operations(delete, knowledge_on_acquire_callback, achievement)]
-pub struct KnowledgeCargoState {
-    #[primary_key]
-    pub entity_id: u64,
-
-    pub entries: Vec<KnowledgeEntry>,
-}
-
-#[spacetimedb::table(name = knowledge_construction_state, public)]
-#[derive(Clone, bitcraft_macro::Operations, Debug)]
-#[operations(delete, knowledge_recipe)]
-pub struct KnowledgeConstructionState {
-    #[primary_key]
-    pub entity_id: u64,
-
-    pub entries: Vec<KnowledgeEntry>,
-}
-
-#[spacetimedb::table(name = knowledge_resource_placement_state, public)]
-#[derive(Clone, bitcraft_macro::Operations, Debug)]
-#[operations(delete, knowledge_recipe)]
-pub struct KnowledgeResourcePlacementState {
-    #[primary_key]
-    pub entity_id: u64,
-
-    pub entries: Vec<KnowledgeEntry>,
-}
-
-#[spacetimedb::table(name = knowledge_craft_state, public)]
-#[derive(Clone, bitcraft_macro::Operations, Debug)]
-#[operations(delete, knowledge_recipe, achievement)]
-pub struct KnowledgeCraftState {
-    #[primary_key]
-    pub entity_id: u64,
-
-    pub entries: Vec<KnowledgeEntry>,
-}
-
-#[spacetimedb::table(name = knowledge_enemy_state, public)]
-#[derive(Clone, bitcraft_macro::Operations, Debug)]
-#[operations(delete, knowledge)]
-pub struct KnowledgeEnemyState {
-    #[primary_key]
-    pub entity_id: u64,
-
-    pub entries: Vec<KnowledgeEntry>,
-}
-
-#[spacetimedb::table(name = knowledge_extract_state, public)]
-#[derive(Clone, bitcraft_macro::Operations, Debug)]
-#[operations(delete, knowledge_recipe)]
-pub struct KnowledgeExtractState {
-    #[primary_key]
-    pub entity_id: u64,
-
-    pub entries: Vec<KnowledgeEntry>,
-}
-
-#[spacetimedb::table(name = knowledge_item_state, public)]
-#[derive(Clone, bitcraft_macro::Operations, Debug)]
-#[operations(delete, knowledge_on_acquire_callback, achievement)]
-pub struct KnowledgeItemState {
-    #[primary_key]
-    pub entity_id: u64,
-
-    pub entries: Vec<KnowledgeEntry>,
-}
-
-#[spacetimedb::table(name = knowledge_lore_state, public)]
-#[derive(Clone, bitcraft_macro::Operations, Debug)]
-#[operations(delete, knowledge)]
-pub struct KnowledgeLoreState {
-    #[primary_key]
-    pub entity_id: u64,
-
-    pub entries: Vec<KnowledgeEntry>,
-}
-
-#[spacetimedb::table(name = knowledge_npc_state, public)]
-#[derive(Clone, bitcraft_macro::Operations, Debug)]
-#[operations(delete, knowledge)]
-pub struct KnowledgeNpcState {
-    #[primary_key]
-    pub entity_id: u64,
-
-    pub entries: Vec<KnowledgeEntry>,
-}
-
-#[spacetimedb::table(name = knowledge_resource_state, public)]
-#[derive(Clone, bitcraft_macro::Operations, Debug)]
-#[operations(delete, knowledge, achievement)]
-pub struct KnowledgeResourceState {
-    #[primary_key]
-    pub entity_id: u64,
-
-    pub entries: Vec<KnowledgeEntry>,
-}
-
-#[spacetimedb::table(name = knowledge_ruins_state, public)]
-#[derive(Clone, bitcraft_macro::Operations, Debug)]
-#[operations(delete, knowledge_location)]
-pub struct KnowledgeRuinsState {
-    #[primary_key]
-    pub entity_id: u64,
-
-    pub entries: Vec<KnowledgeLocationEntry>,
-}
-
-#[spacetimedb::table(name = knowledge_claim_state, public)]
-#[derive(Clone, bitcraft_macro::Operations, Debug)]
-#[operations(delete, knowledge_entity)]
-pub struct KnowledgeClaimState {
-    #[primary_key]
-    pub entity_id: u64,
-    pub entries: Vec<KnowledgeEntityEntry>,
-}
-
-#[spacetimedb::table(name = knowledge_secondary_state, public)]
-#[derive(Clone, bitcraft_macro::Operations, Debug)]
-#[operations(delete, knowledge)]
-pub struct KnowledgeSecondaryState {
-    #[primary_key]
-    pub entity_id: u64,
-
-    pub entries: Vec<KnowledgeEntry>,
-}
-
-#[spacetimedb::table(name = knowledge_vault_state, public)]
-#[derive(Clone, bitcraft_macro::Operations, Debug)]
-#[operations(delete, knowledge)]
-pub struct KnowledgeVaultState {
-    #[primary_key]
-    pub entity_id: u64,
-
-    pub entries: Vec<KnowledgeEntry>,
-}
-
-#[spacetimedb::table(name = knowledge_deployable_state, public)]
-#[derive(Clone, bitcraft_macro::Operations, Debug)]
-#[operations(delete, knowledge)]
-pub struct KnowledgeDeployableState {
-    #[primary_key]
-    pub entity_id: u64,
-
-    pub entries: Vec<KnowledgeEntry>,
-}
-
-#[spacetimedb::table(name = knowledge_pillar_shaping_state, public)]
-#[derive(Clone, bitcraft_macro::Operations, Debug)]
-#[operations(delete, knowledge_recipe)]
-pub struct KnowledgePillarShapingState {
-    #[primary_key]
-    pub entity_id: u64,
-
-    pub entries: Vec<KnowledgeEntry>,
-}
-
-#[spacetimedb::table(name = knowledge_paving_state, public)]
-#[derive(Clone, bitcraft_macro::Operations, Debug)]
-#[operations(delete, knowledge_recipe)]
-pub struct KnowledgePavingState {
-    #[primary_key]
-    pub entity_id: u64,
-
-    pub entries: Vec<KnowledgeEntry>,
-}
-
-#[derive(spacetimedb::SpacetimeType, Clone, Copy, PartialEq, Debug)]
-#[sats(name = "KnowledgeState")]
-#[repr(i32)]
-pub enum KnowledgeState {
-    Unknown,
-    Discovered,
-    Acquired,
-}
-
 #[spacetimedb::table(name = stamina_state, public)]
-#[derive(Clone, bitcraft_macro::Operations, Debug)]
-#[operations(delete)]
+#[derive(Clone, Debug)]
 pub struct StaminaState {
     // Sort fields in order of decreasing size/alignment
     // to take advantage of a serialization fast-path in SpacetimeDB.
@@ -842,8 +461,7 @@ pub struct StaminaState {
 
 #[spacetimedb::table(name = mobile_entity_state, public,
     index(name = chunk_index, btree(columns = [chunk_index])))]
-#[derive(Clone, bitcraft_macro::Operations, Debug)]
-#[operations(delete)] // IMPORTANT: MOBILE_ENTITIES SHOULD NOT HAVE THE COMMIT ATTRIBUTE
+#[derive(Clone, Debug)]
 pub struct MobileEntityState {
     // Sort fields in order of decreasing size/alignment
     // to take advantage of a serialization fast-path in SpacetimeDB.
@@ -859,57 +477,129 @@ pub struct MobileEntityState {
     pub is_running: bool,
 }
 
-impl MobileEntityState {
-    pub fn coordinates_float(&self) -> FloatHexTile {
-        FloatHexTile::from(self.offset_coordinates_float())
-    }
+#[derive(Default, Clone, PartialEq)]
+struct HexCoordinates {
+    pub x: i32,
+    pub z: i32,
+    pub dimension: u32,
+}
 
-    pub fn offset_coordinates_float(&self) -> OffsetCoordinatesFloat {
-        return OffsetCoordinatesFloat {
-            x: self.location_x,
-            z: self.location_z,
-            dimension: self.dimension,
+impl HexCoordinates {
+    pub fn from_position(position: Vector2, terrain: bool, dimension: u32) -> HexCoordinates {
+        //Equivalent to HexCoordinates.FromPosition on client
+
+        let inner_radius = if terrain { TERRAIN_INNER_RADIUS } else { INNER_RADIUS };
+        let outer_radius = if terrain { TERRAIN_OUTER_RADIUS } else { OUTER_RADIUS };
+
+        let mut x = position.x / (inner_radius * 2.0);
+        let mut y = -x;
+        let offset = position.y / (outer_radius * 3.0);
+        x -= offset;
+        y -= offset;
+        let mut ix = x.round() as i32;
+        let iy = y.round() as i32;
+        let mut iz = (-x - y).round() as i32;
+
+        if ix + iy + iz != 0 {
+            let dx = (x - ix as f32).abs();
+            let dy = (y - iy as f32).abs();
+            let dz = (-x - y - iz as f32).abs();
+
+            if dx > dy && dx > dz {
+                ix = -iy - iz;
+            } else if dz > dy {
+                iz = -ix - iy;
+            }
+        }
+
+        return HexCoordinates {
+            x: ix,
+            z: iz,
+            dimension,
         };
     }
+}
 
-    //pub fn cur_coord(&self, speed: f32) -> FloatHexTile {
-    //    let origin = self.coordinates_float();
-    //    let distination: crate::messages::util::FloatHexTileMessage = self.destination_float();
-    //    if origin.x == distination.x && origin.z == distination.z {
-    //        return origin.clone();
-    //    } else {
-    //        let travel_time = travel_time(&origin, &distination, speed);
-    //        let time_diff = ((game_state::unix_ms() - self.timestamp) as f32 / 1000.0).clamp(0.0, travel_time);
-    //        let t = time_diff / travel_time;
-    //        return FloatHexTile::lerp(&origin, &distination, t);
-    //    };
-    //}
-    //
-    //pub fn cur_distance_traveled(&self, speed: f32) -> f32 {
-    //    let origin = self.coordinates_float();
-    //    let distination = self.destination_float();
-    //    if origin.x == distination.x && origin.z == distination.z {
-    //        return 0.0;
-    //    } else {
-    //        let travel_time = move_validation_helpers::travel_time(&origin, &distination, speed);
-    //        let travel_time = travel_time;
-    //        let time_diff = ((game_state::unix_ms() - self.timestamp) as f32 / 1000.0).clamp(0.0, travel_time);
-    //        return speed * time_diff / travel_time;
-    //    };
-    //}
-    //
-    //pub fn cur_coord_and_distance_traveled(&self, speed: f32) -> (FloatHexTile, f32) {
-    //    let origin = self.coordinates_float();
-    //    let distination: crate::messages::util::FloatHexTileMessage = self.destination_float();
-    //    if origin.x == distination.x && origin.z == distination.z {
-    //        return (origin.clone(), 0.0);
-    //    } else {
-    //        let travel_time = move_validation_helpers::travel_time(&origin, &distination, speed);
-    //        let time_diff = ((game_state::unix_ms() - self.timestamp) as f32 / 1000.0).clamp(0.0, travel_time);
-    //        let t = time_diff / travel_time;
-    //        return (FloatHexTile::lerp(&origin, &distination, t), speed * t);
-    //    };
-    //}
+type LargeHexTile = LargeHexTileMessage;
+
+impl LargeHexTile {
+    pub fn chunk_coordinates(&self) -> ChunkCoordinates {
+        return ChunkCoordinates::from(self);
+    }
+
+    pub fn from_position(position: Vector2, dimension: u32) -> LargeHexTile {
+        return LargeHexTile::from(HexCoordinates::from_position(position, true, dimension));
+    }
+}
+
+impl From<HexCoordinates> for LargeHexTile {
+    fn from(coordinates: HexCoordinates) -> Self {
+        return LargeHexTile {
+            x: coordinates.x,
+            z: coordinates.z,
+            dimension: coordinates.dimension,
+        };
+    }
+}
+
+impl From<&OffsetCoordinatesLarge> for ChunkCoordinates {
+    fn from(offset: &OffsetCoordinatesLarge) -> Self {
+        ChunkCoordinates {
+            x: offset.x / TerrainChunkState::WIDTH as i32,
+            z: offset.z / TerrainChunkState::HEIGHT as i32,
+            dimension: offset.dimension,
+        }
+    }
+}
+
+impl From<LargeHexTile> for OffsetCoordinatesLarge {
+    fn from(coordinates: LargeHexTile) -> Self {
+        Self {
+            x: coordinates.x + coordinates.z / 2,
+            z: coordinates.z,
+            dimension: coordinates.dimension,
+        }
+    }
+}
+
+impl From<&LargeHexTile> for OffsetCoordinatesLarge {
+    fn from(coordinates: &LargeHexTile) -> Self {
+        Self {
+            x: coordinates.x + coordinates.z / 2,
+            z: coordinates.z,
+            dimension: coordinates.dimension,
+        }
+    }
+}
+
+impl From<OffsetCoordinatesLarge> for ChunkCoordinates {
+    fn from(offset: OffsetCoordinatesLarge) -> Self {
+        ChunkCoordinates::from(&offset)
+    }
+}
+
+impl From<LargeHexTile> for ChunkCoordinates {
+    fn from(coordinates: LargeHexTile) -> Self {
+        return ChunkCoordinates::from(OffsetCoordinatesLarge::from(coordinates));
+    }
+}
+
+impl From<&LargeHexTile> for ChunkCoordinates {
+    fn from(coordinates: &LargeHexTile) -> Self {
+        return ChunkCoordinates::from(OffsetCoordinatesLarge::from(coordinates));
+    }
+}
+
+impl From<&FloatHexTile> for ChunkCoordinates {
+    fn from(coordinates: &FloatHexTile) -> Self {
+        return LargeHexTile::from(coordinates).chunk_coordinates();
+    }
+}
+
+impl From<&FloatHexTile> for LargeHexTile {
+    fn from(coordinates: &FloatHexTile) -> Self {
+        return LargeHexTile::from_position(coordinates.to_world_position(), coordinates.dimension);
+    }
 }
 
 impl From<OffsetCoordinatesFloat> for FloatHexTile {
@@ -922,25 +612,36 @@ impl From<OffsetCoordinatesFloat> for FloatHexTile {
     }
 }
 
-#[spacetimedb::table(name = character_stat_desc, public)]
-pub struct CharacterStatDesc {
-    #[primary_key]
-    pub stat_type: i32,
-    pub name: String,
-    pub value: f32,
-    pub min_value: f32,
-    pub max_value: f32,
-    pub suffix: String,
-    pub desc: String,
+impl From<&FloatHexTile> for OffsetCoordinatesFloat {
+    fn from(coordinates: &FloatHexTile) -> Self {
+        Self {
+            x: coordinates.x + coordinates.z / 2,
+            z: coordinates.z,
+            dimension: coordinates.dimension,
+        }
+    }
 }
 
-#[spacetimedb::table(name = private_parameters_desc)]
-#[derive(Debug)]
-pub struct PrivateParametersDesc {
-    #[primary_key]
-    pub version: i32,
+impl FloatHexTile {
+    pub fn chunk_coordinates(&self) -> ChunkCoordinates {
+        return ChunkCoordinates::from(self);
+    }
 
-    pub move_validation: MoveValidationParamsDesc,
+    pub fn parent_large_tile(&self) -> LargeHexTile {
+        return LargeHexTile::from(self);
+    }
+
+    pub fn to_world_position(&self) -> Vector2 {
+        //Equivalent to FloatHexTile.ToCenterPositionVector2 on client
+
+        let ix = (self.x as f32) / FLOAT_COORD_PRECISION_MUL as f32;
+        let iz = (self.z as f32) / FLOAT_COORD_PRECISION_MUL as f32;
+
+        let x = 2.0 * ix * INNER_RADIUS + iz * INNER_RADIUS;
+        let z = 1.5 * iz * OUTER_RADIUS;
+
+        return Vector2 { x, y: z };
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, spacetimedb::SpacetimeType)]
@@ -980,9 +681,13 @@ pub struct TerrainChunkState {
     pub original_elevations: Vec<i16>,
 }
 
+impl TerrainChunkState {
+    pub const WIDTH: u32 = 32;
+    pub const HEIGHT: u32 = 32;
+}
+
 #[spacetimedb::table(name = dimension_description_state, public, index(name = dimension_network_entity_id, btree(columns = [dimension_network_entity_id])))]
-#[derive(Default, Clone, bitcraft_macro::Operations, Debug)]
-#[operations(delete)]
+#[derive(Default, Clone, Debug)]
 pub struct DimensionDescriptionState {
     // Sort fields in order of decreasing size/alignment
     // to take advantage of a serialization fast-path in SpacetimeDB.
@@ -1003,161 +708,19 @@ pub struct DimensionDescriptionState {
     pub dimension_type: DimensionType,
 }
 
-#[spacetimedb::table(name = reset_mobile_entity_timer, scheduled(reset_mobile_entity_position, at = scheduled_at))]
-pub struct ResetMobileEntityTimer {
-    #[primary_key]
-    #[auto_inc]
-    pub scheduled_id: u64,
-    pub scheduled_at: spacetimedb::ScheduleAt,
-    pub owner_entity_id: u64,
-    pub position: Option<OffsetCoordinatesFloat>,
-    pub strike_counter_to_update: Option<MoveValidationStrikeCounterState>,
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, spacetimedb::SpacetimeType)]
+#[repr(i32)]
+pub enum DimensionType {
+    Unknown,
+    Overworld,
+    AncientRuin,
+    BuildingInterior,
 }
 
-#[spacetimedb::reducer]
-pub fn reset_mobile_entity_position(ctx: &ReducerContext, timer: ResetMobileEntityTimer) -> Result<(), String> {
-    ServerIdentity::validate(&ctx)?;
-
-    ctx.db
-        .mobile_entity_state()
-        .entity_id()
-        .update(MobileEntityState::for_location(
-            timer.owner_entity_id,
-            timer.position.clone().unwrap(),
-            ctx.timestamp,
-        ));
-
-    if let Some(strike_counter) = timer.strike_counter_to_update {
-        ctx.db
-            .move_validation_strike_counter_state()
-            .entity_id()
-            .update(strike_counter);
+impl Default for DimensionType {
+    fn default() -> Self {
+        DimensionType::Unknown
     }
-
-    PlayerActionState::clear_by_entity_id(ctx, timer.owner_entity_id)
-}
-
-mod move_validation_helpers {
-    use super::move_validation_strike_counter_state;
-    use super::private_parameters_desc;
-    use super::reset_mobile_entity_timer;
-    use super::MoveValidationStrikeCounterState;
-    use super::OffsetCoordinatesFloat;
-    use spacetimedb::log;
-    use spacetimedb::ReducerContext;
-    use spacetimedb::SpacetimeType;
-    use spacetimedb::Timestamp;
-
-    pub fn travel_time(source_coordinates: &FloatHexTile, target_coordinates: &FloatHexTile, speed: f32) -> f32 {
-        let distance = (source_coordinates.to_world_position() - target_coordinates.to_world_position()).magnitude();
-        return distance / speed;
-    }
-
-    pub fn validate_move_origin(
-        prev_origin: &FloatHexTile,
-        cur_origin: &FloatHexTile,
-        timestamp_diff_ms: u64,
-        move_speed: f32,
-        player_id: u64,
-    ) -> Result<(), String> {
-        const DURATION_LENIENCY_FLAT_VALUE: f32 = 0.05;
-        const DURATION_LENIENCY_MULTIPLIER: f32 = 0.9;
-
-        let estimated_duration = travel_time(prev_origin, cur_origin, move_speed);
-        let timestamp_diff = timestamp_diff_ms as f32 / 1000.0;
-        if timestamp_diff < estimated_duration * DURATION_LENIENCY_MULTIPLIER - DURATION_LENIENCY_FLAT_VALUE {
-            log::warn!(
-                "Player {} tried to move too quickly from {} to {} (estimated duration: {}, received duration: {})",
-                player_id,
-                prev_origin,
-                cur_origin,
-                estimated_duration,
-                timestamp_diff
-            );
-            return Err("~Tried to move too quickly".into());
-        }
-
-        Ok(())
-    }
-
-    pub fn move_validation_strike(
-        ctx: &ReducerContext,
-        actor_id: u64,
-        entity_id_to_reset: u64,
-        prev_origin: FloatHexTile,
-        identifier: String,
-        error: String,
-    ) -> Result<(), String> {
-        let params = ctx.db.private_parameters_desc().version().find(&0).unwrap();
-        let mut strike_counter = ctx
-            .db
-            .move_validation_strike_counter_state()
-            .entity_id()
-            .find(&actor_id)
-            .unwrap();
-
-        let oldest_timestamp = Timestamp::from_micros_since_unix_epoch(
-            ctx.timestamp.to_time_duration_since_unix_epoch().to_micros()
-                - (params.move_validation.strike_counter_time_window_sec * 1_000_000) as i64,
-        );
-        strike_counter
-            .validation_failure_timestamps
-            .retain(|t| *t > oldest_timestamp); //Remove old timestamps
-        strike_counter.validation_failure_timestamps.push(ctx.timestamp);
-
-        let cur_strikes = strike_counter.validation_failure_timestamps.len() as i32;
-        let max_strikes = params.move_validation.strike_count_before_move_validation_failure;
-        if cur_strikes > max_strikes {
-            log::error!(
-                "{} failed move validation, move request is rejected (strike {}/{}, error: '{}')",
-                identifier,
-                cur_strikes,
-                max_strikes,
-                error
-            );
-            return fail_validation(ctx, error, entity_id_to_reset, prev_origin, Some(strike_counter));
-        } else {
-            log::warn!(
-                "{} failed move validation, but is allowed to move (strike {}/{}, error: '{}')",
-                identifier,
-                cur_strikes,
-                max_strikes,
-                error
-            );
-            ctx.db
-                .move_validation_strike_counter_state()
-                .entity_id()
-                .update(strike_counter);
-        }
-
-        Ok(())
-    }
-
-    pub fn fail_validation(
-        ctx: &ReducerContext,
-        error: String,
-        entity_id: u64,
-        coord: FloatHexTile,
-        strike_counter: Option<MoveValidationStrikeCounterState>,
-    ) -> Result<(), String> {
-        let oc: OffsetCoordinatesFloat = coord.into();
-        ctx.db
-            .reset_mobile_entity_timer()
-            .try_insert(ResetMobileEntityTimer {
-                scheduled_id: 0,
-                scheduled_at: ctx.timestamp.into(),
-                owner_entity_id: entity_id,
-                position: Some(oc),
-                strike_counter_to_update: strike_counter,
-            })
-            .ok()
-            .unwrap();
-        return Err(error);
-    }
-}
-
-mod dimensions {
-    pub const OVERWORLD: u32 = 1;
 }
 
 #[derive(SpacetimeType, Default, Copy, Clone, Debug, PartialEq, Eq)]
@@ -1167,8 +730,35 @@ pub struct FloatHexTileMessage {
     pub dimension: u32,
 }
 
+type FloatHexTile = FloatHexTileMessage;
+
+impl Display for FloatHexTile {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let oc = OffsetCoordinatesFloat::from(self);
+        write!(
+            f,
+            "FloatHexTile ({}.{:.03}, {}.{:.03}, {})",
+            oc.x / FLOAT_COORD_PRECISION_MUL,
+            oc.x % FLOAT_COORD_PRECISION_MUL,
+            oc.z / FLOAT_COORD_PRECISION_MUL,
+            oc.z % FLOAT_COORD_PRECISION_MUL,
+            oc.dimension
+        )
+    }
+}
+
+impl From<FloatHexTile> for OffsetCoordinatesFloat {
+    fn from(coordinates: FloatHexTile) -> Self {
+        Self {
+            x: coordinates.x + coordinates.z / 2,
+            z: coordinates.z,
+            dimension: coordinates.dimension,
+        }
+    }
+}
+
 #[derive(SpacetimeType, Default, Copy, Clone, Debug, PartialEq, Eq)]
-pub struct SmallHexTileMessage {
+struct SmallHexTileMessage {
     pub x: i32,
     pub z: i32,
     pub dimension: u32,
@@ -1182,7 +772,7 @@ pub struct LargeHexTileMessage {
 }
 
 #[derive(SpacetimeType, Default, Copy, Clone, Debug, PartialEq, Eq)]
-pub struct OffsetCoordinatesFloat {
+struct OffsetCoordinatesFloat {
     pub x: i32,
     pub z: i32,
     pub dimension: u32,
@@ -1196,11 +786,13 @@ pub struct OffsetCoordinatesSmallMessage {
 }
 
 #[derive(SpacetimeType, Default, Copy, Clone, Debug, PartialEq, Eq)]
-pub struct OffsetCoordinatesLargeMessage {
+struct OffsetCoordinatesLargeMessage {
     pub x: i32,
     pub z: i32,
     pub dimension: u32,
 }
+
+type OffsetCoordinatesLarge = OffsetCoordinatesLargeMessage;
 
 #[derive(SpacetimeType, PartialEq, Eq, Clone, Copy, Debug)]
 pub struct ChunkCoordinatesMessage {
@@ -1209,8 +801,156 @@ pub struct ChunkCoordinatesMessage {
     pub dimension: u32,
 }
 
-#[derive(SpacetimeType, Default, Copy, Clone, Debug, PartialEq)]
-pub struct MovementSpeed {
-    pub surface_type: SurfaceType,
-    pub speed: f32,
+type ChunkCoordinates = ChunkCoordinatesMessage;
+
+impl ChunkCoordinates {
+    pub fn chunk_index(self) -> u64 {
+        (self.dimension as u64 - 1) * 1000000 + self.z as u64 * 1000 + self.x as u64 + 1
+        // 1000 is over the maximum chunk size and will skip a table access at runtime
+    }
 }
+
+#[spacetimedb::table(name = player_timestamp_state)]
+#[derive(Clone)]
+pub struct PlayerTimestampState {
+    #[primary_key]
+    pub entity_id: u64,
+    pub timestamp: Timestamp,
+}
+
+impl PlayerTimestampState {
+    pub fn refresh(ctx: &ReducerContext, actor_id: u64, timestamp: Timestamp) {
+        if let Some(mut entry) = ctx.db.player_timestamp_state().entity_id().find(&actor_id) {
+            entry.timestamp = timestamp;
+            ctx.db.player_timestamp_state().entity_id().update(entry);
+        } else {
+            let _ = ctx.db.player_timestamp_state().try_insert(PlayerTimestampState {
+                entity_id: actor_id,
+                timestamp,
+            });
+        }
+    }
+}
+
+#[spacetimedb::table(name = signed_in_player_state, public)]
+#[derive(Clone, Debug)]
+pub struct SignedInPlayerState {
+    #[primary_key]
+    pub entity_id: u64,
+}
+
+#[spacetimedb::table(name = user_state, public)]
+#[derive(Clone, Debug)]
+pub struct UserState {
+    #[unique]
+    pub identity: Identity,
+    #[primary_key]
+    pub entity_id: u64,
+    pub can_sign_in: bool,
+}
+
+mod game_state {
+    use super::signed_in_player_state;
+    use super::user_state;
+    use spacetimedb::ReducerContext;
+    use spacetimedb::Timestamp;
+
+    pub fn unix_ms(now: Timestamp) -> u64 {
+        return now.duration_since(Timestamp::UNIX_EPOCH).unwrap().as_millis() as u64;
+    }
+
+    pub fn ensure_signed_in(ctx: &ReducerContext, entity_id: u64) -> Result<(), String> {
+        if ctx.db.signed_in_player_state().entity_id().find(&entity_id).is_none() {
+            return Err("Not signed in".into());
+        }
+        return Ok(());
+    }
+
+    pub fn actor_id(ctx: &ReducerContext, must_be_signed_in: bool) -> Result<u64, String> {
+        match ctx.db.user_state().identity().find(&ctx.sender) {
+            Some(user) => {
+                if must_be_signed_in {
+                    ensure_signed_in(ctx, user.entity_id)?;
+                }
+                Ok(user.entity_id)
+            }
+            None => Err("Invalid sender".into()),
+        }
+    }
+}
+
+#[derive(SpacetimeType, Default, Debug, Clone)]
+pub struct WorldGenVector2 {
+    pub x: f32,
+    pub y: f32,
+}
+
+type Vector2 = WorldGenVector2;
+
+impl std::ops::Add<&Vector2> for Vector2 {
+    type Output = Vector2;
+
+    fn add(self, other: &Vector2) -> Vector2 {
+        Vector2 {
+            x: self.x + other.x,
+            y: self.y + other.y,
+        }
+    }
+}
+
+impl std::ops::Add<Vector2> for Vector2 {
+    type Output = Vector2;
+
+    fn add(self, other: Vector2) -> Vector2 {
+        Vector2 {
+            x: self.x + other.x,
+            y: self.y + other.y,
+        }
+    }
+}
+
+impl std::ops::Sub<&Vector2> for Vector2 {
+    type Output = Vector2;
+
+    fn sub(self, other: &Vector2) -> Vector2 {
+        Vector2 {
+            x: self.x - other.x,
+            y: self.y - other.y,
+        }
+    }
+}
+
+impl std::ops::Sub<Vector2> for Vector2 {
+    type Output = Vector2;
+
+    fn sub(self, other: Vector2) -> Vector2 {
+        Vector2 {
+            x: self.x - other.x,
+            y: self.y - other.y,
+        }
+    }
+}
+
+impl std::ops::Mul<f32> for Vector2 {
+    type Output = Vector2;
+
+    fn mul(self, other: f32) -> Vector2 {
+        Vector2 {
+            x: self.x * other,
+            y: self.y * other,
+        }
+    }
+}
+
+impl std::ops::Div<f32> for Vector2 {
+    type Output = Vector2;
+
+    fn div(self, other: f32) -> Vector2 {
+        Vector2 {
+            x: self.x / other,
+            y: self.y / other,
+        }
+    }
+}
+
+impl std::marker::Copy for Vector2 {}
