@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <AssemblyName>SpacetimeDB.Runtime</AssemblyName>
-    <Version>1.1.1</Version>
+    <Version>1.1.2</Version>
     <Title>SpacetimeDB Module Runtime</Title>
     <Description>The SpacetimeDB Runtime implements the database runtime bindings for writing SpacetimeDB modules in C#.</Description>
   </PropertyGroup>

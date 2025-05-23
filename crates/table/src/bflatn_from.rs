@@ -2,12 +2,12 @@
 //! which serializes `value = page.get_row_data(fixed_offset, fixed_row_size)` typed at `ty`
 //! and associated var len objects in `value` into the serializer `ser`.
 
+use crate::layout::ProductTypeLayoutView;
+
 use super::{
     blob_store::BlobStore,
     indexes::{Bytes, PageOffset},
-    layout::{
-        align_to, AlgebraicTypeLayout, HasLayout as _, ProductTypeLayout, RowTypeLayout, SumTypeLayout, VarLenType,
-    },
+    layout::{align_to, AlgebraicTypeLayout, HasLayout as _, RowTypeLayout, SumTypeLayout, VarLenType},
     page::Page,
     row_hash,
     var_len::VarLenRef,
@@ -68,7 +68,7 @@ unsafe fn serialize_product<S: Serializer>(
     page: &Page,
     blob_store: &dyn BlobStore,
     curr_offset: CurrOffset<'_>,
-    ty: &ProductTypeLayout,
+    ty: ProductTypeLayoutView<'_>,
 ) -> Result<S::Ok, S::Error> {
     let elems = &ty.elements;
     let mut ser = ser.serialize_named_product(elems.len())?;
@@ -188,7 +188,7 @@ pub(crate) unsafe fn serialize_value<S: Serializer>(
         }
         AlgebraicTypeLayout::Product(ty) => {
             // SAFETY: `value` was valid at `ty` and `VarLenRef`s won't be dangling.
-            unsafe { serialize_product(ser, bytes, page, blob_store, curr_offset, ty) }
+            unsafe { serialize_product(ser, bytes, page, blob_store, curr_offset, ty.view()) }
         }
         // The primitive types:
         //

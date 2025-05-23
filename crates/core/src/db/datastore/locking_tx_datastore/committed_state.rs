@@ -455,7 +455,7 @@ impl CommittedState {
         // Construct their schemas and insert tables for them.
         for table_id in table_ids {
             let schema = self.schema_for_table(table_id)?;
-            self.tables.insert(table_id, Self::make_table(schema));
+            self.create_table(table_id, schema);
         }
         Ok(())
     }

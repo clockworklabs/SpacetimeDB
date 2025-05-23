@@ -8,7 +8,7 @@ use crate::{
     blob_store::BlobStore,
     eq::BytesPage,
     indexes::PageOffset,
-    layout::{align_to, AlgebraicTypeLayout, HasLayout as _, ProductTypeLayout, RowTypeLayout},
+    layout::{align_to, AlgebraicTypeLayout, HasLayout as _, ProductTypeLayoutView, RowTypeLayout},
     page::Page,
     row_hash::{read_from_bytes, run_vlo_bytes},
     var_len::{VarLenGranule, VarLenRef},
@@ -75,7 +75,7 @@ struct EqCtx<'page> {
 /// 1. `lhs` must be valid at type `ty` and properly aligned for `ty`.
 /// 2. for any `vlr: VarLenRef` stored in `lhs`,
 ///    `vlr.first_offset` must either be `NULL` or point to a valid granule in `ctx.lhs.page`.
-unsafe fn eq_product(ctx: &mut EqCtx<'_>, ty: &ProductTypeLayout, rhs: &ProductValue) -> bool {
+unsafe fn eq_product(ctx: &mut EqCtx<'_>, ty: ProductTypeLayoutView<'_>, rhs: &ProductValue) -> bool {
     let base_offset = ctx.curr_offset;
     ty.elements.len() == rhs.elements.len()
         && ty.elements.iter().zip(&*rhs.elements).all(|(elem_ty, rhs)| {
@@ -128,7 +128,7 @@ unsafe fn eq_value(ctx: &mut EqCtx<'_>, ty: &AlgebraicTypeLayout, rhs: &Algebrai
         }
         (AlgebraicTypeLayout::Product(ty), AlgebraicValue::Product(rhs)) => {
             // SAFETY: `lhs` is valid at `ty` and `VarLenRef`s won't be dangling.
-            unsafe { eq_product(ctx, ty, rhs) }
+            unsafe { eq_product(ctx, ty.view(), rhs) }
         }
 
         // The primitive types:

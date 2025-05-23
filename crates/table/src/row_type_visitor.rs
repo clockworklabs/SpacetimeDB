@@ -27,11 +27,11 @@
 //! The `VarLenMembers` impl for `VarLenVisitorProgram`
 //! implements a simple interpreter loop for the var-len visitor bytecode.
 
-use crate::MemoryUsage;
+use crate::{layout::ProductTypeLayoutView, MemoryUsage};
 
 use super::{
     indexes::{Byte, Bytes, PageOffset},
-    layout::{align_to, AlgebraicTypeLayout, HasLayout, ProductTypeLayout, RowTypeLayout, SumTypeLayout},
+    layout::{align_to, AlgebraicTypeLayout, HasLayout, RowTypeLayout, SumTypeLayout},
     page::get_ref,
     var_len::{VarLenMembers, VarLenRef},
 };
@@ -59,7 +59,7 @@ pub fn row_type_visitor(ty: &RowTypeLayout) -> VarLenVisitorProgram {
 /// Construct a `VarLenRoseTree` from `ty`.
 ///
 /// See [`algebraic_type_to_rose_tree`] for more details.
-fn product_type_to_rose_tree(ty: &ProductTypeLayout, current_offset: &mut usize) -> VarLenRoseTree {
+fn product_type_to_rose_tree(ty: ProductTypeLayoutView<'_>, current_offset: &mut usize) -> VarLenRoseTree {
     // Loop over all the product elements,
     // which we store in-order,
     // and collect them into a subtree.
@@ -67,7 +67,7 @@ fn product_type_to_rose_tree(ty: &ProductTypeLayout, current_offset: &mut usize)
     // Better to over-allocate than under-allocate (maybe).
     let mut contents = Vec::with_capacity(ty.elements.len());
 
-    for elt in &*ty.elements {
+    for elt in ty.elements {
         match algebraic_type_to_rose_tree(&elt.ty, current_offset) {
             // No need to collect empty subtrees.
             VarLenRoseTree::Empty => {}
@@ -175,7 +175,7 @@ fn algebraic_type_to_rose_tree(ty: &AlgebraicTypeLayout, current_offset: &mut us
             *current_offset += primitive_type.size();
             VarLenRoseTree::Empty
         }
-        AlgebraicTypeLayout::Product(ty) => product_type_to_rose_tree(ty, current_offset),
+        AlgebraicTypeLayout::Product(ty) => product_type_to_rose_tree(ty.view(), current_offset),
         AlgebraicTypeLayout::Sum(ty) => sum_type_to_rose_tree(ty, current_offset),
     }
 }
