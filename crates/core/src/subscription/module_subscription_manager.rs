@@ -20,7 +20,7 @@ use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::{AlgebraicValue, ConnectionId, Identity, ProductValue};
 use spacetimedb_primitives::{ColId, TableId};
 use spacetimedb_subscription::SubscriptionPlan;
-use std::collections::{BTreeSet, LinkedList};
+use std::collections::BTreeSet;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -987,59 +987,6 @@ impl SubscriptionManager {
 fn send_to_client(client: &ClientConnectionSender, message: impl Into<SerializableMessage>) {
     if let Err(e) = client.send_message(message) {
         tracing::warn!(%client.id, "failed to send update message to client: {e}")
-    }
-}
-
-/// A linked list of vecs.
-///
-/// To quote the docs for [`ParallelIterator::collect_vec_list`] (which I (Noa) also wrote):
-///
-/// > This is useful when you need to condense a parallel iterator into a
-/// > collection, but have no specific requirements for what that collection
-/// > should be. [...] This is a very efficient way to collect an unindexed
-/// > parallel iterator, without much intermediate data movement.
-///
-/// Note: This is currently unused.
-///
-/// It was previously used with rayon to parallelize subscription evaluation.
-/// However, in order to optimize for the common case of small updates,
-/// we removed rayon and switched to a single-threaded execution,
-/// which removed significant overhead associated with thread switching.
-struct VecList<T>(LinkedList<Vec<T>>);
-
-impl<T> Default for VecList<T> {
-    fn default() -> Self {
-        Self(Default::default())
-    }
-}
-impl<T> From<Vec<T>> for VecList<T> {
-    fn from(vec: Vec<T>) -> Self {
-        let mut list = LinkedList::new();
-        if !vec.is_empty() {
-            list.push_back(vec);
-        }
-        Self(list)
-    }
-}
-
-#[allow(unused)]
-impl<T> VecList<T> {
-    /// Append another `VecList` onto this one.
-    ///
-    /// This operation is `O(1)`.
-    fn append(&mut self, mut other: Self) {
-        self.0.append(&mut other.0)
-    }
-    /// Iterate over the individual elements of this `VecList`.
-    fn iter(&self) -> impl Iterator<Item = &T> {
-        self.0.iter().flatten()
-    }
-}
-impl<T> IntoIterator for VecList<T> {
-    type Item = T;
-    type IntoIter = std::iter::Flatten<std::collections::linked_list::IntoIter<Vec<T>>>;
-    fn into_iter(self) -> Self::IntoIter {
-        self.0.into_iter().flatten()
     }
 }
 
