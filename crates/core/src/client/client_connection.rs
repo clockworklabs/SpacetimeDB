@@ -16,7 +16,7 @@ use bytes::Bytes;
 use bytestring::ByteString;
 use derive_more::From;
 use futures::prelude::*;
-use prometheus::{Histogram, IntCounter};
+use prometheus::{Histogram, IntCounter, IntGauge};
 use spacetimedb_client_api_messages::websocket::{
     BsatnFormat, CallReducerFlags, Compression, FormatSwitch, JsonFormat, SubscribeMulti, SubscribeSingle, Unsubscribe,
     UnsubscribeMulti, WebsocketFormat,
@@ -78,7 +78,6 @@ pub struct ClientConnectionSender {
     sendtx: mpsc::Sender<SerializableMessage>,
     abort_handle: AbortHandle,
     cancelled: AtomicBool,
-
     /// Handles on Prometheus metrics related to connections to this database.
     ///
     /// Will be `None` when constructed by [`ClientConnectionSender::dummy_with_channel`]
@@ -91,10 +90,11 @@ pub struct ClientConnectionSender {
 pub struct ClientConnectionMetrics {
     pub websocket_request_msg_size: Histogram,
     pub websocket_requests: IntCounter,
+    pub sendtx_queue_size: IntGauge,
 }
 
 impl ClientConnectionMetrics {
-    fn new(database_identity: Identity, protocol: Protocol) -> Self {
+    fn new(database_identity: Identity, protocol: Protocol, client_id: &ClientActorId) -> Self {
         let message_kind = protocol.as_str();
         let websocket_request_msg_size = WORKER_METRICS
             .websocket_request_msg_size
@@ -103,9 +103,14 @@ impl ClientConnectionMetrics {
             .websocket_requests
             .with_label_values(&database_identity, message_kind);
 
+        let sendtx_queue_size = WORKER_METRICS
+            .client_connection_outgoing_queue_length
+            .with_label_values(&database_identity, &client_id.identity, &client_id.connection_id);
+
         Self {
             websocket_request_msg_size,
             websocket_requests,
+            sendtx_queue_size,
         }
     }
 }
@@ -150,6 +155,11 @@ impl ClientConnectionSender {
         if self.cancelled.load(Relaxed) {
             return Err(ClientSendError::Cancelled);
         }
+
+        if let Some(metrics) = &self.metrics {
+            metrics.sendtx_queue_size.inc();
+        }
+
         self.sendtx.try_send(message).map_err(|e| match e {
             mpsc::error::TrySendError::Full(_) => {
                 // we've hit CLIENT_CHANNEL_CAPACITY messages backed up in
@@ -262,7 +272,7 @@ impl ClientConnection {
         })
         .abort_handle();
 
-        let metrics = ClientConnectionMetrics::new(database_identity, config.protocol);
+        let metrics = ClientConnectionMetrics::new(database_identity, config.protocol, &id);
 
         let sender = Arc::new(ClientConnectionSender {
             id,
