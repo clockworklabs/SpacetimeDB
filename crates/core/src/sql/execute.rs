@@ -1,9 +1,9 @@
 use std::time::Duration;
 
 use super::ast::SchemaViewer;
-use crate::db::datastore::locking_tx_datastore::state_view::StateView;
-use crate::db::datastore::system_tables::StVarTable;
-use crate::db::datastore::traits::IsolationLevel;
+use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
+use spacetimedb_datastore::system_tables::StVarTable;
+use spacetimedb_datastore::traits::IsolationLevel;
 use crate::db::relational_db::{RelationalDB, Tx};
 use crate::energy::EnergyQuanta;
 use crate::error::DBError;
@@ -295,7 +295,7 @@ pub fn translate_col(tx: &Tx, field: FieldName) -> Option<Box<str>> {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use crate::db::datastore::system_tables::{
+    use spacetimedb_datastore::system_tables::{
         StRowLevelSecurityRow, StTableFields, ST_ROW_LEVEL_SECURITY_ID, ST_TABLE_ID, ST_TABLE_NAME,
     };
     use crate::db::relational_db::tests_utils::{insert, TestDB};

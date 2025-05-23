@@ -1,9 +1,9 @@
 //! The [DbProgram] that execute arbitrary queries & code against the database.
 
-use crate::db::datastore::locking_tx_datastore::state_view::IterByColRangeMutTx;
-use crate::db::datastore::locking_tx_datastore::tx::TxId;
-use crate::db::datastore::locking_tx_datastore::IterByColRangeTx;
-use crate::db::datastore::system_tables::{st_var_schema, StVarName, StVarRow, StVarTable};
+use spacetimedb_datastore::locking_tx_datastore::state_view::IterByColRangeMutTx;
+use spacetimedb_datastore::locking_tx_datastore::tx::TxId;
+use spacetimedb_datastore::locking_tx_datastore::IterByColRangeTx;
+use spacetimedb_datastore::system_tables::{st_var_schema, StVarName, StVarRow, StVarTable};
 use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::error::DBError;
 use crate::estimation;
@@ -643,7 +643,7 @@ impl ProgramVm for DbProgram<'_, '_> {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use crate::db::datastore::system_tables::{
+    use spacetimedb_datastore::system_tables::{
         StColumnFields, StColumnRow, StFields as _, StIndexAlgorithm, StIndexFields, StIndexRow, StSequenceFields,
         StSequenceRow, StTableFields, StTableRow, ST_COLUMN_ID, ST_COLUMN_NAME, ST_INDEX_ID, ST_INDEX_NAME,
         ST_RESERVED_SEQUENCE_RANGE, ST_SEQUENCE_ID, ST_SEQUENCE_NAME, ST_TABLE_ID, ST_TABLE_NAME,

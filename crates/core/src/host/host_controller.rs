@@ -3,7 +3,7 @@ use super::scheduler::SchedulerStarter;
 use super::wasmtime::WasmtimeRuntime;
 use super::{Scheduler, UpdateDatabaseResult};
 use crate::database_logger::DatabaseLogger;
-use crate::db::datastore::traits::Program;
+use spacetimedb_datastore::traits::Program;
 use crate::db::db_metrics::DB_METRICS;
 use crate::db::relational_db::{self, DiskSizeFn, RelationalDB, Txdata};
 use crate::db::{self, db_metrics};

@@ -1,5 +1,5 @@
-use crate::db::datastore::locking_tx_datastore::state_view::StateView;
-use crate::db::datastore::system_tables::{StRowLevelSecurityFields, ST_ROW_LEVEL_SECURITY_ID};
+use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
+use spacetimedb_datastore::system_tables::{StRowLevelSecurityFields, ST_ROW_LEVEL_SECURITY_ID};
 use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::error::{DBError, PlanError};
 use anyhow::Context;

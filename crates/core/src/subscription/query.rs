@@ -142,7 +142,7 @@ pub fn classify(expr: &QueryExpr) -> Option<Supported> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::datastore::traits::IsolationLevel;
+    use spacetimedb_datastore::traits::IsolationLevel;
     use crate::db::relational_db::tests_utils::{insert, TestDB};
     use crate::db::relational_db::MutTx;
     use crate::execution_context::Workload;

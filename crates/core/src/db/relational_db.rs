@@ -1,13 +1,13 @@
-use super::datastore::locking_tx_datastore::committed_state::CommittedState;
-use super::datastore::locking_tx_datastore::state_view::{
+use spacetimedb_datastore::locking_tx_datastore::committed_state::CommittedState;
+use spacetimedb_datastore::locking_tx_datastore::state_view::{
     IterByColEqMutTx, IterByColRangeMutTx, IterMutTx, IterTx, StateView,
 };
-use super::datastore::system_tables::ST_MODULE_ID;
-use super::datastore::traits::{
+use spacetimedb_datastore::system_tables::ST_MODULE_ID;
+use spacetimedb_datastore::traits::{
     InsertFlags, IsolationLevel, Metadata, MutTx as _, MutTxDatastore, Program, RowTypeForTable, Tx as _, TxDatastore,
     UpdateFlags,
 };
-use super::datastore::{
+use spacetimedb_datastore::{
     locking_tx_datastore::{
         datastore::Locking,
         state_view::{IterByColEqTx, IterByColRangeTx},
@@ -15,7 +15,7 @@ use super::datastore::{
     traits::TxData,
 };
 use super::db_metrics::DB_METRICS;
-use crate::db::datastore::system_tables::{StModuleRow, WASM_MODULE};
+use spacetimedb_datastore::system_tables::{StModuleRow, WASM_MODULE};
 use crate::error::{DBError, DatabaseError, TableError};
 use crate::execution_context::{ReducerContext, Workload};
 use crate::messages::control_db::HostType;
@@ -51,8 +51,8 @@ use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::watch;
 
-pub type MutTx = <Locking as super::datastore::traits::MutTx>::MutTx;
-pub type Tx = <Locking as super::datastore::traits::Tx>::Tx;
+pub type MutTx = <Locking as spacetimedb_datastore::traits::MutTx>::MutTx;
+pub type Tx = <Locking as spacetimedb_datastore::traits::Tx>::Tx;
 
 type RowCountFn = Arc<dyn Fn(TableId, &str) -> i64 + Send + Sync>;
 
@@ -153,6 +153,21 @@ impl SnapshotWorkerActor {
         }
     }
 
+    pub(crate) fn compress_older_snapshot_internal(repo: &SnapshotRepository, upper_bound: TxOffset) {
+        log::info!(
+            "Compressing snapshots of database {:?} older than TX offset {}",
+            repo.database_identity(),
+            upper_bound,
+        );
+        if let Err(err) = repo.compress_older_snapshots(upper_bound) {
+            log::error!(
+                "Failed to compress snapshot of database {:?} older than  {:?}: {err}",
+                repo.database_identity(),
+                upper_bound
+            );
+        };
+    }
+
     async fn take_snapshot(&self) {
         let start_time = std::time::Instant::now();
         let committed_state = self.committed_state.clone();
@@ -160,7 +175,7 @@ impl SnapshotWorkerActor {
         let res = tokio::task::spawn_blocking(move || {
             Locking::take_snapshot_internal(&committed_state, &snapshot_repo).inspect(|opts| {
                 if let Some(opts) = opts {
-                    Locking::compress_older_snapshot_internal(&snapshot_repo, opts.0);
+                    Self::compress_older_snapshot_internal(&snapshot_repo, opts.0);
                 }
             })
         })
@@ -693,7 +708,7 @@ impl RelationalDB {
     /// If `(tx_data, ctx)` should be appended to the commitlog, do so.
     ///
     /// Note that by this stage,
-    /// [`crate::db::datastore::locking_tx_datastore::committed_state::tx_consumes_offset`]
+    /// [`spacetimedb_datastore::locking_tx_datastore::committed_state::tx_consumes_offset`]
     /// has already decided based on the reducer and operations whether the transaction should be appended;
     /// this method is responsible only for reading its decision out of the `tx_data`
     /// and calling `durability.append_tx`.
@@ -1226,6 +1241,76 @@ impl RelationalDB {
     pub fn drop_constraint(&self, tx: &mut MutTx, constraint_id: ConstraintId) -> Result<(), DBError> {
         self.inner.drop_constraint_mut_tx(tx, constraint_id)
     }
+
+    /// Read the value of [ST_VARNAME_ROW_LIMIT] from `st_var`
+    fn row_limit(&self, tx: &Self::Tx) -> Result<Option<u64>> {
+        let data = self.read_var(tx, StVarName::RowLimit);
+
+        if let Some(StVarValue::U64(limit)) = data? {
+            return Ok(Some(limit));
+        }
+        Ok(None)
+    }
+
+    /// Read the value of [ST_VARNAME_SLOW_QRY] from `st_var`
+    fn query_limit(&self, tx: &Self::Tx) -> Result<Option<u64>> {
+        if let Some(StVarValue::U64(ms)) = self.read_var(tx, StVarName::SlowQryThreshold)? {
+            return Ok(Some(ms));
+        }
+        Ok(None)
+    }
+
+    /// Read the value of [ST_VARNAME_SLOW_SUB] from `st_var`
+    fn sub_limit(&self, tx: &Self::Tx) -> Result<Option<u64>> {
+        if let Some(StVarValue::U64(ms)) = self.read_var(tx, StVarName::SlowSubThreshold)? {
+            return Ok(Some(ms));
+        }
+        Ok(None)
+    }
+
+    /// Read the value of [ST_VARNAME_SLOW_INC] from `st_var`
+    fn incr_limit(&self, tx: &Self::Tx) -> Result<Option<u64>> {
+        if let Some(StVarValue::U64(ms)) = self.read_var(tx, StVarName::SlowIncThreshold)? {
+            return Ok(Some(ms));
+        }
+        Ok(None)
+    }
+
+    /// Read the value of a system variable from `st_var`
+    fn read_var(&self, tx: &Self::Tx, name: StVarName) -> Result<Option<StVarValue>> {
+        if let Some(row_ref) = self 
+            .iter_by_col_eq(tx, ST_VAR_ID, StVarFields::Name.col_id(), &name.into())?
+            .next()
+        {
+            return Ok(Some(StVarRow::try_from(row_ref)?.value));
+        }
+        Ok(None)
+    }
+
+    /// Update the value of a system variable in `st_var`
+    fn write_var(&self, tx: &mut Self::MutTx, name: StVarName, literal: &str) -> Result<()> {
+        let value = Self::parse_var(name, literal)?;
+        if let Some(row_ref) = self
+            .iter_by_col_eq_mut(tx, ST_VAR_ID, StVarFields::Name.col_id(), &name.into())?
+            .next()
+        {
+            self.delete_mut_tx(tx, ST_VAR_ID, [row_ref.pointer()]);
+        }
+        tx.insert_via_serialize_bsatn(ST_VAR_ID, &StVarRow { name, value })?;
+        Ok(())
+    }
+
+    /// Parse the literal representation of a system variable
+    fn parse_var(name: StVarName, literal: &str) -> Result<StVarValue> {
+        StVarValue::try_from_primitive(parse::parse(literal, &name.type_of())?).map_err(|v| {
+            ErrorVm::Type(ErrorType::Parse {
+                value: literal.to_string(),
+                ty: fmt_algebraic_type(&name.type_of()).to_string(),
+                err: format!("error parsing value: {:?}", v),
+            })
+            .into()
+        })
+    }
 }
 
 #[allow(unused)]
@@ -1726,7 +1811,7 @@ mod tests {
     use std::rc::Rc;
 
     use super::*;
-    use crate::db::datastore::system_tables::{
+    use spacetimedb_datastore::system_tables::{
         system_tables, StConstraintRow, StIndexRow, StSequenceRow, StTableRow, ST_CONSTRAINT_ID, ST_INDEX_ID,
         ST_SEQUENCE_ID, ST_TABLE_ID,
     };
@@ -1812,6 +1897,20 @@ mod tests {
         stdb.commit_tx(tx)?;
 
         Ok(())
+    }
+
+    #[test]
+    fn test_system_variables() {
+        let db = TestDB::durable().expect("failed to create db");
+        let _ = db.with_auto_commit(Workload::ForTests, |tx| {
+            db.write_var(tx, StVarName::RowLimit, "5")
+        });
+        assert_eq!(
+            5,
+            db.with_read_only(Workload::ForTests, |tx| db.row_limit(tx))
+                .expect("failed to read from st_var")
+                .expect("row_limit does not exist")
+        );
     }
 
     #[test]
@@ -2629,7 +2728,7 @@ mod tests {
     /// fixed a bug where replaying deletes to `st_client` would fail due to an unpopulated index.
     #[test]
     fn replay_delete_from_st_client() {
-        use crate::db::datastore::system_tables::{StClientRow, ST_CLIENT_ID};
+        use spacetimedb_datastore::system_tables::{StClientRow, ST_CLIENT_ID};
 
         let row_0 = StClientRow {
             identity: Identity::ZERO.into(),

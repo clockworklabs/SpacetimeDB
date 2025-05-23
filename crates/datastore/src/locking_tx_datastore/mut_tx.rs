@@ -8,18 +8,17 @@ use super::{
     tx_state::{IndexIdMap, PendingSchemaChange, TxState, TxTableForInsertion},
     SharedMutexGuard, SharedWriteGuard,
 };
-use crate::db::datastore::system_tables::{
+use crate::system_tables::{
     with_sys_table_buf, StClientFields, StClientRow, StColumnFields, StColumnRow, StConstraintFields, StConstraintRow,
     StFields as _, StIndexFields, StIndexRow, StRowLevelSecurityFields, StRowLevelSecurityRow, StScheduledFields,
     StScheduledRow, StSequenceFields, StSequenceRow, StTableFields, StTableRow, SystemTable, ST_CLIENT_ID,
     ST_COLUMN_ID, ST_CONSTRAINT_ID, ST_INDEX_ID, ST_ROW_LEVEL_SECURITY_ID, ST_SCHEDULED_ID, ST_SEQUENCE_ID,
     ST_TABLE_ID,
 };
-use crate::db::datastore::traits::{InsertFlags, RowTypeForTable, TxData, UpdateFlags};
-use crate::execution_context::Workload;
+use crate::traits::{InsertFlags, RowTypeForTable, TxData, UpdateFlags};
+use crate::execution_context::{ExecutionContext, Workload};
 use crate::{
     error::{IndexError, SequenceError, TableError},
-    execution_context::ExecutionContext,
 };
 use core::ops::RangeBounds;
 use core::{cell::RefCell, mem};
@@ -66,8 +65,8 @@ pub struct MutTxId {
     pub(super) sequence_state_lock: SharedMutexGuard<SequencesState>,
     pub(super) lock_wait_time: Duration,
     pub(crate) timer: Instant,
-    pub(crate) ctx: ExecutionContext,
-    pub(crate) metrics: ExecutionMetrics,
+    pub ctx: ExecutionContext,
+    pub metrics: ExecutionMetrics,
 }
 
 static_assert_size!(MutTxId, 400);
@@ -1270,7 +1269,7 @@ impl MutTxId {
         }
     }
 
-    pub(crate) fn insert_via_serialize_bsatn<'a, T: Serialize>(
+    pub fn insert_via_serialize_bsatn<'a, T: Serialize>(
         &'a mut self,
         table_id: TableId,
         row: &T,

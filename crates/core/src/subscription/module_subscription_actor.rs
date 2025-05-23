@@ -8,7 +8,7 @@ use crate::client::messages::{
     SubscriptionUpdateMessage, TransactionUpdateMessage,
 };
 use crate::client::{ClientActorId, ClientConnectionSender, Protocol};
-use crate::db::datastore::locking_tx_datastore::tx::TxId;
+use spacetimedb_datastore::locking_tx_datastore::tx::TxId;
 use crate::db::db_metrics::DB_METRICS;
 use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::error::DBError;
@@ -750,8 +750,8 @@ mod tests {
         SubscriptionUpdateMessage, TransactionUpdateMessage,
     };
     use crate::client::{ClientActorId, ClientConfig, ClientConnectionSender, ClientName, Protocol};
-    use crate::db::datastore::system_tables::{StRowLevelSecurityRow, ST_ROW_LEVEL_SECURITY_ID};
-    use crate::db::datastore::traits::IsolationLevel;
+    use spacetimedb_datastore::system_tables::{StRowLevelSecurityRow, ST_ROW_LEVEL_SECURITY_ID};
+    use spacetimedb_datastore::traits::IsolationLevel;
     use crate::db::relational_db::tests_utils::{insert, TestDB};
     use crate::db::relational_db::RelationalDB;
     use crate::error::DBError;

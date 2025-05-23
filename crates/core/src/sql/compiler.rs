@@ -1,7 +1,7 @@
 use super::ast::TableSchemaView;
 use super::ast::{compile_to_ast, Column, From, Join, Selection, SqlAst};
 use super::type_check::TypeCheck;
-use crate::db::datastore::locking_tx_datastore::state_view::StateView;
+use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
 use crate::db::relational_db::RelationalDB;
 use crate::error::{DBError, PlanError};
 use core::ops::Deref;
@@ -229,7 +229,7 @@ fn compile_statement(db: &RelationalDB, statement: SqlAst) -> Result<CrudExpr, P
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::datastore::traits::IsolationLevel;
+    use spacetimedb_datastore::traits::IsolationLevel;
     use crate::db::relational_db::tests_utils::{insert, TestDB};
     use crate::execution_context::Workload;
     use crate::sql::execute::tests::run_for_testing;

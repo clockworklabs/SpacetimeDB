@@ -1,4 +1,3 @@
-pub mod datastore;
 pub mod db_metrics;
 pub mod relational_db;
 pub mod update;

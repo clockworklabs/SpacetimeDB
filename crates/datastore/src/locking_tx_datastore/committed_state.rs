@@ -6,9 +6,8 @@ use super::{
     tx_state::{IndexIdMap, PendingSchemaChange, TxState},
     IterByColEqTx,
 };
+
 use crate::{
-    db::{
-        datastore::{
             system_tables::{
                 system_tables, StColumnRow, StConstraintData, StConstraintRow, StIndexRow, StSequenceRow,
                 StTableFields, StTableRow, SystemTable, ST_CLIENT_ID, ST_CLIENT_IDX, ST_COLUMN_ID, ST_COLUMN_IDX,
@@ -18,7 +17,9 @@ use crate::{
                 ST_SEQUENCE_NAME, ST_TABLE_ID, ST_TABLE_IDX, ST_VAR_ID, ST_VAR_IDX,
             },
             traits::TxData,
-        },
+        };
+use crate::{
+    db::{
         db_metrics::DB_METRICS,
     },
     error::{IndexError, TableError},

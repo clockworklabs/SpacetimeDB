@@ -6,17 +6,15 @@ use super::{
     tx::TxId,
     tx_state::TxState,
 };
-use crate::execution_context::Workload;
+use crate::execution_context::{ExecutionContext, Workload};
 use crate::{
-    db::datastore::{
-        locking_tx_datastore::state_view::{IterByColRangeMutTx, IterMutTx, IterTx},
-        traits::{InsertFlags, UpdateFlags},
-    },
+    locking_tx_datastore::state_view::{IterByColRangeMutTx, IterMutTx, IterTx},
+    traits::{InsertFlags, UpdateFlags},
+};
+use crate::{
     subscription::record_exec_metrics,
 };
 use crate::{
-    db::{
-        datastore::{
             system_tables::{
                 read_bytes_from_col, read_hash_from_col, read_identity_from_col, system_table_schema, ModuleKind,
                 StClientRow, StModuleFields, StModuleRow, StTableFields, ST_CLIENT_ID, ST_MODULE_ID, ST_TABLE_ID,
@@ -25,11 +23,12 @@ use crate::{
                 DataRow, IsolationLevel, Metadata, MutTx, MutTxDatastore, Program, RowTypeForTable, Tx, TxData,
                 TxDatastore,
             },
-        },
+};
+use crate::{
+    db::{
         db_metrics::DB_METRICS,
     },
-    error::{DBError, TableError},
-    execution_context::ExecutionContext,
+    error::{DatastoreError, TableError},
 };
 use anyhow::{anyhow, Context};
 use core::{cell::RefCell, ops::RangeBounds};
@@ -54,7 +53,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use thiserror::Error;
 
-pub type Result<T> = std::result::Result<T, DBError>;
+pub type Result<T> = std::result::Result<T, DatastoreError>;
 
 /// Struct contains various database states, each protected by
 /// their own lock. To avoid deadlocks, it is crucial to acquire these locks
@@ -69,7 +68,7 @@ pub type Result<T> = std::result::Result<T, DBError>;
 #[derive(Clone)]
 pub struct Locking {
     /// The state of the database up to the point of the last committed transaction.
-    pub(crate) committed_state: Arc<RwLock<CommittedState>>,
+    pub committed_state: Arc<RwLock<CommittedState>>,
     /// The state of sequence generation in this database.
     sequence_state: Arc<Mutex<SequencesState>>,
     /// The identity of this database.
@@ -252,7 +251,7 @@ impl Locking {
         Ok(maybe_offset_and_path.map(|(_, path)| path))
     }
 
-    pub(crate) fn take_snapshot_internal(
+    pub fn take_snapshot_internal(
         committed_state: &RwLock<CommittedState>,
         repo: &SnapshotRepository,
     ) -> Result<Option<(TxOffset, SnapshotDirPath)>> {
@@ -277,21 +276,6 @@ impl Locking {
         Ok(Some((tx_offset, snapshot_dir)))
     }
 
-    pub(crate) fn compress_older_snapshot_internal(repo: &SnapshotRepository, upper_bound: TxOffset) {
-        log::info!(
-            "Compressing snapshots of database {:?} older than TX offset {}",
-            repo.database_identity(),
-            upper_bound,
-        );
-        if let Err(err) = repo.compress_older_snapshots(upper_bound) {
-            log::error!(
-                "Failed to compress snapshot of database {:?} older than  {:?}: {err}",
-                repo.database_identity(),
-                upper_bound
-            );
-        };
-    }
-
     /// Returns a list over all the currently connected clients,
     /// reading from the `st_clients` system table.
     pub fn connected_clients<'a>(
@@ -306,7 +290,7 @@ impl Locking {
         Ok(iter)
     }
 
-    pub(crate) fn alter_table_access_mut_tx(&self, tx: &mut MutTxId, name: Box<str>, access: StAccess) -> Result<()> {
+    pub fn alter_table_access_mut_tx(&self, tx: &mut MutTxId, name: Box<str>, access: StAccess) -> Result<()> {
         let table_id = self
             .table_id_from_name_mut_tx(tx, &name)?
             .ok_or_else(|| TableError::NotFound(name.into()))?;
@@ -627,7 +611,7 @@ impl MutTxDatastore for Locking {
             .map(|row| {
                 let ptr = row.pointer();
                 let row = StModuleRow::try_from(row)?;
-                Ok::<_, DBError>((ptr, row))
+                Ok::<_, DatastoreError>((ptr, row))
             })
             .transpose()?;
         match old {
@@ -794,7 +778,7 @@ pub enum ReplayError {
     #[error(transparent)]
     Decode(#[from] bsatn::DecodeError),
     #[error(transparent)]
-    Db(#[from] DBError),
+    Db(#[from] DatastoreError),
     #[error(transparent)]
     Any(#[from] anyhow::Error),
 }
@@ -1038,8 +1022,8 @@ fn metadata_from_row(row: RowRef<'_>) -> Result<Metadata> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::datastore::locking_tx_datastore::tx_state::PendingSchemaChange;
-    use crate::db::datastore::system_tables::{
+    use crate::locking_tx_datastore::tx_state::PendingSchemaChange;
+    use crate::system_tables::{
         system_tables, StColumnRow, StConstraintData, StConstraintFields, StConstraintRow, StIndexAlgorithm,
         StIndexFields, StIndexRow, StRowLevelSecurityFields, StScheduledFields, StSequenceFields, StSequenceRow,
         StTableRow, StVarFields, ST_CLIENT_NAME, ST_COLUMN_ID, ST_COLUMN_NAME, ST_CONSTRAINT_ID, ST_CONSTRAINT_NAME,
@@ -1047,9 +1031,9 @@ mod tests {
         ST_ROW_LEVEL_SECURITY_NAME, ST_SCHEDULED_ID, ST_SCHEDULED_NAME, ST_SEQUENCE_ID, ST_SEQUENCE_NAME,
         ST_TABLE_NAME, ST_VAR_ID, ST_VAR_NAME,
     };
-    use crate::db::datastore::traits::{IsolationLevel, MutTx};
-    use crate::db::datastore::Result;
-    use crate::error::{DBError, IndexError};
+    use crate::traits::{IsolationLevel, MutTx};
+    use crate::Result;
+    use crate::error::{DatastoreError, IndexError};
     use bsatn::to_vec;
     use core::{fmt, mem};
     use itertools::Itertools;
@@ -1931,7 +1915,7 @@ mod tests {
         insert(&datastore, &mut tx, table_id, &row)?;
         let result = insert(&datastore, &mut tx, table_id, &row);
         match result {
-            Err(DBError::Index(IndexError::UniqueConstraintViolation(_))) => (),
+            Err(DatastoreError::Index(IndexError::UniqueConstraintViolation(_))) => (),
             _ => panic!("Expected an unique constraint violation error."),
         }
         #[rustfmt::skip]
@@ -1948,7 +1932,7 @@ mod tests {
         let mut tx = begin_mut_tx(&datastore);
         let result = insert(&datastore, &mut tx, table_id, &row);
         match result {
-            Err(DBError::Index(IndexError::UniqueConstraintViolation(_))) => (),
+            Err(DatastoreError::Index(IndexError::UniqueConstraintViolation(_))) => (),
             _ => panic!("Expected an unique constraint violation error."),
         }
         #[rustfmt::skip]
@@ -2036,7 +2020,7 @@ mod tests {
         let row = u32_str_u32(0, "Bar", 18); // 0 will be ignored.
         let result = insert(&datastore, &mut tx, table_id, &row);
         match result {
-            Err(DBError::Index(IndexError::UniqueConstraintViolation(_))) => (),
+            Err(DatastoreError::Index(IndexError::UniqueConstraintViolation(_))) => (),
             e => panic!("Expected an unique constraint violation error but got {e:?}."),
         }
         #[rustfmt::skip]
@@ -2061,7 +2045,7 @@ mod tests {
         let row = u32_str_u32(0, "Bar", 18); // 0 will be ignored.
         let result = insert(&datastore, &mut tx, table_id, &row);
         match result {
-            Err(DBError::Index(IndexError::UniqueConstraintViolation(_))) => (),
+            Err(DatastoreError::Index(IndexError::UniqueConstraintViolation(_))) => (),
             _ => panic!("Expected an unique constraint violation error."),
         }
         #[rustfmt::skip]

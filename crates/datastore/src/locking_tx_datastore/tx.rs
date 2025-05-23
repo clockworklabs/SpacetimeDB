@@ -4,7 +4,7 @@ use super::{
     state_view::{IterByColRangeTx, StateView},
     IterByColEqTx, SharedReadGuard,
 };
-use crate::db::datastore::locking_tx_datastore::state_view::IterTx;
+use crate::locking_tx_datastore::state_view::IterTx;
 use crate::execution_context::ExecutionContext;
 use spacetimedb_execution::Datastore;
 use spacetimedb_lib::metrics::ExecutionMetrics;
@@ -24,8 +24,8 @@ pub struct TxId {
     pub(super) committed_state_shared_lock: SharedReadGuard<CommittedState>,
     pub(super) lock_wait_time: Duration,
     pub(super) timer: Instant,
-    pub(crate) ctx: ExecutionContext,
-    pub(crate) metrics: ExecutionMetrics,
+    pub ctx: ExecutionContext,
+    pub metrics: ExecutionMetrics,
 }
 
 impl Datastore for TxId {

@@ -17,6 +17,7 @@ bench = false
 [dependencies]
 spacetimedb-auth.workspace = true
 spacetimedb-data-structures.workspace = true
+spacetimedb-datastore.workspace = true
 spacetimedb-lib = { workspace = true, features = ["serde", "metrics_impls"] }
 spacetimedb-client-api-messages.workspace = true
 spacetimedb-commitlog.workspace = true

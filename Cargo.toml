@@ -104,6 +104,7 @@ spacetimedb-codegen = { path = "crates/codegen", version = "1.1.1" }
 spacetimedb-commitlog = { path = "crates/commitlog", version = "1.1.1" }
 spacetimedb-core = { path = "crates/core", version = "1.1.1" }
 spacetimedb-data-structures = { path = "crates/data-structures", version = "1.1.1" }
+spacetimedb-datastore = { path = "crates/datastore", version = "1.1.1" }
 spacetimedb-durability = { path = "crates/durability", version = "1.1.1" }
 spacetimedb-execution = { path = "crates/execution", version = "1.1.1" }
 spacetimedb-expr = { path = "crates/expr", version = "1.1.1" }

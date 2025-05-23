@@ -1,8 +1,8 @@
 use super::{ArgsTuple, InvalidReducerArguments, ReducerArgs, ReducerCallResult, ReducerId, ReducerOutcome, Scheduler};
 use crate::client::{ClientActorId, ClientConnectionSender};
 use crate::database_logger::{LogLevel, Record};
-use crate::db::datastore::locking_tx_datastore::MutTxId;
-use crate::db::datastore::traits::{IsolationLevel, Program, TxData};
+use spacetimedb_datastore::locking_tx_datastore::MutTxId;
+use spacetimedb_datastore::traits::{IsolationLevel, Program, TxData};
 use crate::energy::EnergyQuanta;
 use crate::error::DBError;
 use crate::estimation::estimate_rows_scanned;
