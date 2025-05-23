@@ -133,8 +133,8 @@ func DefaultTableOptions() *TableOptions {
 	}
 }
 
-// NewTable creates a new type-safe table accessor
-func NewTable[T any](name string, options *TableOptions) (*TableAccessor[T], error) {
+// NewTableAccessor creates a new type-safe table accessor
+func NewTableAccessor[T any](name string, options *TableOptions) (*TableAccessor[T], error) {
 	if options == nil {
 		options = DefaultTableOptions()
 	}
@@ -200,7 +200,7 @@ func NewTable[T any](name string, options *TableOptions) (*TableAccessor[T], err
 	if !exists {
 		// Auto-create table info from struct (development mode)
 		tableInfo = generateTableInfo(name, entityType)
-		if err := schema.GlobalRegisterTable(tableInfo); err != nil {
+		if err := schema.GlobalRegister(tableInfo); err != nil {
 			return nil, &TableError{
 				Operation: "create",
 				Table:     name,
@@ -240,10 +240,10 @@ func generateTableInfo(tableName string, entityType reflect.Type) *schema.TableI
 		tag := field.Tag.Get("spacetime")
 		if tag == "primary_key" || tag == "pk" || field.Name == "ID" || field.Name == "Id" {
 			column := schema.NewPrimaryKeyColumn(field.Name, columnType)
-			table.Columns = append(table.Columns, *column)
+			table.Columns = append(table.Columns, column)
 		} else {
 			column := schema.NewColumn(field.Name, columnType)
-			table.Columns = append(table.Columns, *column)
+			table.Columns = append(table.Columns, column)
 		}
 	}
 
@@ -569,7 +569,7 @@ func GetTable[T any](name string) (*TableAccessor[T], error) {
 	}
 
 	// Create new table with default options
-	table, err := NewTable[T](name, DefaultTableOptions())
+	table, err := NewTableAccessor[T](name, DefaultTableOptions())
 	if err != nil {
 		return nil, err
 	}

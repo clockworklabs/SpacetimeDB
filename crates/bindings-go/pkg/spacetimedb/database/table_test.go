@@ -21,7 +21,7 @@ type Game struct {
 func TestTableAccessorCreation(t *testing.T) {
 	// Test successful table creation
 	t.Run("ValidEntity", func(t *testing.T) {
-		table, err := NewTableAccessor[Player]("players")
+		table, err := NewTableAccessor[Player]("players", nil)
 		if err != nil {
 			t.Fatalf("Failed to create table: %v", err)
 		}
@@ -42,7 +42,7 @@ func TestTableAccessorCreation(t *testing.T) {
 
 	// Test entity without struct
 	t.Run("InvalidEntityType", func(t *testing.T) {
-		_, err := NewTableAccessor[string]("invalid")
+		_, err := NewTableAccessor[string]("invalid", nil)
 		if err == nil {
 			t.Error("Expected error for non-struct entity type")
 		}
@@ -58,7 +58,7 @@ func TestTableAccessorCreation(t *testing.T) {
 }
 
 func TestTableOperations(t *testing.T) {
-	table, err := NewTableAccessor[Player]("test_players")
+	table, err := NewTableAccessor[Player]("test_players", nil)
 	if err != nil {
 		t.Fatalf("Failed to create table: %v", err)
 	}
@@ -126,7 +126,7 @@ func TestTableOperations(t *testing.T) {
 func TestGlobalRegistry(t *testing.T) {
 	// Test registration and retrieval
 	t.Run("RegisterAndRetrieve", func(t *testing.T) {
-		table, err := NewTableAccessor[Game]("games")
+		table, err := NewTableAccessor[Game]("games", nil)
 		if err != nil {
 			t.Fatalf("Failed to create table: %v", err)
 		}
@@ -200,7 +200,7 @@ func TestGlobalRegistry(t *testing.T) {
 }
 
 func TestTableStats(t *testing.T) {
-	table, err := NewTableAccessor[Player]("stats_test")
+	table, err := NewTableAccessor[Player]("stats_test", nil)
 	if err != nil {
 		t.Fatalf("Failed to create table: %v", err)
 	}
@@ -227,7 +227,7 @@ func TestTableStats(t *testing.T) {
 }
 
 func TestSchemaGeneration(t *testing.T) {
-	table, err := NewTableAccessor[Player]("schema_test")
+	table, err := NewTableAccessor[Player]("schema_test", nil)
 	if err != nil {
 		t.Fatalf("Failed to create table: %v", err)
 	}
@@ -244,7 +244,7 @@ func TestSchemaGeneration(t *testing.T) {
 	// Check that primary key column exists
 	foundPK := false
 	for _, col := range schema.Columns {
-		if col.Name == "ID" && col.IsPrimaryKey {
+		if col.Name == "ID" && col.PrimaryKey {
 			foundPK = true
 			break
 		}
@@ -259,7 +259,7 @@ func TestSchemaGeneration(t *testing.T) {
 func BenchmarkTableCreation(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, err := NewTableAccessor[Player]("bench_table")
+		_, err := NewTableAccessor[Player]("bench_table", nil)
 		if err != nil {
 			b.Fatalf("Table creation failed: %v", err)
 		}
@@ -267,7 +267,7 @@ func BenchmarkTableCreation(b *testing.B) {
 }
 
 func BenchmarkTableInsert(b *testing.B) {
-	table, err := NewTableAccessor[Player]("bench_insert")
+	table, err := NewTableAccessor[Player]("bench_insert", nil)
 	if err != nil {
 		b.Fatalf("Failed to create table: %v", err)
 	}
@@ -286,7 +286,7 @@ func BenchmarkTableInsert(b *testing.B) {
 }
 
 func BenchmarkTableInsertBatch(b *testing.B) {
-	table, err := NewTableAccessor[Player]("bench_batch")
+	table, err := NewTableAccessor[Player]("bench_batch", nil)
 	if err != nil {
 		b.Fatalf("Failed to create table: %v", err)
 	}

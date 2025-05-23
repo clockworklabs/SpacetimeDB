@@ -67,7 +67,6 @@ type Column struct {
 }
 
 // Index represents a table index definition
-// This matches SpacetimeDB's index schema requirements
 type Index struct {
 	// Name is the index name, must be unique within the table
 	Name string `json:"name"`
@@ -127,6 +126,75 @@ const (
 	TypeScheduleAt   = "ScheduleAt"
 )
 
+// Constructor functions
+
+// NewTableInfo creates a new TableInfo with the given name
+func NewTableInfo(name string) *TableInfo {
+	return &TableInfo{
+		Name:       name,
+		PublicRead: true, // Default to public
+		Columns:    make([]Column, 0),
+		Indexes:    make([]Index, 0),
+	}
+}
+
+// NewColumn creates a new Column with the given name and type
+func NewColumn(name, typeName string) Column {
+	return Column{
+		Name: name,
+		Type: typeName,
+	}
+}
+
+// NewPrimaryKeyColumn creates a new primary key column
+func NewPrimaryKeyColumn(name, typeName string) Column {
+	return Column{
+		Name:       name,
+		Type:       typeName,
+		PrimaryKey: true,
+		NotNull:    true,
+	}
+}
+
+// NewAutoIncColumn creates a new auto-incrementing primary key column
+func NewAutoIncColumn(name, typeName string) Column {
+	return Column{
+		Name:       name,
+		Type:       typeName,
+		PrimaryKey: true,
+		AutoInc:    true,
+		NotNull:    true,
+	}
+}
+
+// NewIndex creates a new Index with the given name, type, and columns
+func NewIndex(name string, indexType IndexType, columns []string) Index {
+	return Index{
+		Name:    name,
+		Type:    indexType,
+		Columns: columns,
+	}
+}
+
+// NewBTreeIndex creates a new B-tree index
+func NewBTreeIndex(name string, columns []string) Index {
+	return Index{
+		Name:    name,
+		Type:    IndexTypeBTree,
+		Columns: columns,
+	}
+}
+
+// NewUniqueIndex creates a new unique index
+func NewUniqueIndex(name string, indexType IndexType, columns []string) Index {
+	return Index{
+		Name:    name,
+		Type:    indexType,
+		Columns: columns,
+		Unique:  true,
+	}
+}
+
 // Validation Methods
 
 // Validate validates a TableInfo
@@ -167,16 +235,10 @@ func (t *TableInfo) Validate() error {
 	}
 
 	// Validate indexes
-	indexNames := make(map[string]bool)
 	for i, idx := range t.Indexes {
 		if err := idx.Validate(columnNames); err != nil {
 			return fmt.Errorf("index %d: %w", i, err)
 		}
-
-		if indexNames[idx.Name] {
-			return fmt.Errorf("duplicate index name: %s", idx.Name)
-		}
-		indexNames[idx.Name] = true
 	}
 
 	return nil
@@ -200,55 +262,56 @@ func (c *Column) Validate() error {
 		return fmt.Errorf("column type '%s' is not a valid SpacetimeDB type", c.Type)
 	}
 
-	if c.AutoInc && !c.PrimaryKey {
-		return fmt.Errorf("auto-increment columns must be primary keys")
-	}
-
-	if c.AutoInc && !isIntegerType(c.Type) {
-		return fmt.Errorf("auto-increment columns must be integer types")
+	// Auto-increment validation
+	if c.AutoInc {
+		if !c.PrimaryKey {
+			return fmt.Errorf("auto-increment columns must be primary keys")
+		}
+		if !isIntegerType(c.Type) {
+			return fmt.Errorf("auto-increment columns must be integer types")
+		}
 	}
 
 	return nil
 }
 
 // Validate validates an Index
-func (i *Index) Validate(availableColumns map[string]bool) error {
-	if i.Name == "" {
+func (idx *Index) Validate(availableColumns map[string]bool) error {
+	if idx.Name == "" {
 		return fmt.Errorf("index name cannot be empty")
 	}
 
-	if !isValidIdentifier(i.Name) {
-		return fmt.Errorf("index name '%s' is not a valid identifier", i.Name)
+	if !isValidIdentifier(idx.Name) {
+		return fmt.Errorf("index name '%s' is not a valid identifier", idx.Name)
 	}
 
-	if len(i.Columns) == 0 {
+	if len(idx.Columns) == 0 {
 		return fmt.Errorf("index must have at least one column")
 	}
 
-	if !isValidIndexType(i.Type) {
-		return fmt.Errorf("index type '%s' is not valid", i.Type)
+	if !isValidIndexType(idx.Type) {
+		return fmt.Errorf("index type '%s' is not valid", string(idx.Type))
 	}
 
-	// Validate all columns exist
-	for _, colName := range i.Columns {
-		if !availableColumns[colName] {
-			return fmt.Errorf("index column '%s' does not exist in table", colName)
+	// Check for duplicate columns in index
+	seenCols := make(map[string]bool)
+	for _, colName := range idx.Columns {
+		if !isValidIdentifier(colName) {
+			return fmt.Errorf("index column name '%s' is not a valid identifier", colName)
 		}
-	}
 
-	// Validate column uniqueness within index
-	columnSet := make(map[string]bool)
-	for _, colName := range i.Columns {
-		if columnSet[colName] {
+		if seenCols[colName] {
 			return fmt.Errorf("duplicate column '%s' in index", colName)
 		}
-		columnSet[colName] = true
+		seenCols[colName] = true
+
+		if availableColumns != nil && !availableColumns[colName] {
+			return fmt.Errorf("column '%s' does not exist in table", colName)
+		}
 	}
 
 	return nil
 }
-
-// Utility Methods
 
 // GetPrimaryKeyColumn returns the primary key column, if any
 func (t *TableInfo) GetPrimaryKeyColumn() *Column {
@@ -280,73 +343,24 @@ func (t *TableInfo) GetIndex(name string) *Index {
 	return nil
 }
 
-// HasColumn returns true if the table has a column with the given name
+// HasColumn returns true if a column with the given name exists
 func (t *TableInfo) HasColumn(name string) bool {
 	return t.GetColumn(name) != nil
 }
 
-// HasIndex returns true if the table has an index with the given name
+// HasIndex returns true if an index with the given name exists
 func (t *TableInfo) HasIndex(name string) bool {
 	return t.GetIndex(name) != nil
 }
 
-// ColumnCount returns the number of columns
+// ColumnCount returns the number of columns in the table
 func (t *TableInfo) ColumnCount() int {
 	return len(t.Columns)
 }
 
-// IndexCount returns the number of indexes
+// IndexCount returns the number of indexes in the table
 func (t *TableInfo) IndexCount() int {
 	return len(t.Indexes)
-}
-
-// String returns a string representation of the table
-func (t *TableInfo) String() string {
-	return fmt.Sprintf("Table{name=%s, columns=%d, indexes=%d}",
-		t.Name, len(t.Columns), len(t.Indexes))
-}
-
-// String returns a string representation of the column
-func (c *Column) String() string {
-	flags := []string{}
-	if c.PrimaryKey {
-		flags = append(flags, "PK")
-	}
-	if c.AutoInc {
-		flags = append(flags, "AUTO")
-	}
-	if c.Unique {
-		flags = append(flags, "UNIQUE")
-	}
-	if c.NotNull {
-		flags = append(flags, "NOT NULL")
-	}
-
-	flagStr := ""
-	if len(flags) > 0 {
-		flagStr = " [" + strings.Join(flags, ",") + "]"
-	}
-
-	return fmt.Sprintf("Column{%s:%s%s}", c.Name, c.Type, flagStr)
-}
-
-// String returns a string representation of the index
-func (i *Index) String() string {
-	flags := []string{}
-	if i.Unique {
-		flags = append(flags, "UNIQUE")
-	}
-	if i.Clustered {
-		flags = append(flags, "CLUSTERED")
-	}
-
-	flagStr := ""
-	if len(flags) > 0 {
-		flagStr = " [" + strings.Join(flags, ",") + "]"
-	}
-
-	return fmt.Sprintf("Index{%s:%s on (%s)%s}",
-		i.Name, i.Type, strings.Join(i.Columns, ","), flagStr)
 }
 
 // Helper functions
@@ -371,37 +385,75 @@ func isValidType(typeName string) bool {
 		TypeIdentity: true, TypeTimestamp: true, TypeTimeDuration: true, TypeScheduleAt: true,
 	}
 
-	if basicTypes[typeName] {
-		return true
+	return basicTypes[typeName]
+}
+
+// isValidIndexType checks if a string is a valid SpacetimeDB index type
+func isValidIndexType(indexType IndexType) bool {
+	// Valid index types
+	validTypes := map[IndexType]bool{
+		IndexTypeBTree:  true,
+		IndexTypeHash:   true,
+		IndexTypeDirect: true,
 	}
 
-	// For now, only allow basic types in validation
-	// Custom types could be added to a type registry in the future
-	return false
+	return validTypes[indexType]
 }
 
 // isIntegerType checks if a type is an integer type
 func isIntegerType(typeName string) bool {
-	intTypes := map[string]bool{
+	integerTypes := map[string]bool{
 		TypeU8: true, TypeU16: true, TypeU32: true, TypeU64: true, TypeU128: true, TypeU256: true,
 		TypeI8: true, TypeI16: true, TypeI32: true, TypeI64: true, TypeI128: true, TypeI256: true,
 	}
-	return intTypes[typeName]
+	return integerTypes[typeName]
 }
 
-// isValidIndexType checks if an index type is valid
-func isValidIndexType(indexType IndexType) bool {
-	switch indexType {
-	case IndexTypeBTree, IndexTypeHash, IndexTypeDirect:
-		return true
-	default:
-		return false
+// String returns a string representation of the table
+func (t *TableInfo) String() string {
+	return fmt.Sprintf("TableInfo{name: %s, columns=%d, indexes=%d}",
+		t.Name, len(t.Columns), len(t.Indexes))
+}
+
+// String returns a string representation of the column
+func (c *Column) String() string {
+	var parts []string
+	parts = append(parts, fmt.Sprintf("%s:%s", c.Name, c.Type))
+
+	if c.PrimaryKey {
+		parts = append(parts, "PK")
 	}
+	if c.AutoInc {
+		parts = append(parts, "AUTO")
+	}
+	if c.Unique {
+		parts = append(parts, "UNIQUE")
+	}
+	if c.NotNull {
+		parts = append(parts, "NOT NULL")
+	}
+
+	return fmt.Sprintf("Column{%s}", strings.Join(parts, ", "))
 }
 
-// JSON serialization helpers
+// String returns a string representation of the index
+func (idx *Index) String() string {
+	var parts []string
+	parts = append(parts, fmt.Sprintf("name: %s", idx.Name))
+	parts = append(parts, fmt.Sprintf("type: %s", string(idx.Type)))
+	parts = append(parts, fmt.Sprintf("columns: [%s]", strings.Join(idx.Columns, ", ")))
 
-// MarshalJSON implements custom JSON encoding for TableInfo
+	if idx.Unique {
+		parts = append(parts, "UNIQUE")
+	}
+	if idx.Clustered {
+		parts = append(parts, "CLUSTERED")
+	}
+
+	return fmt.Sprintf("Index{%s}", strings.Join(parts, ", "))
+}
+
+// MarshalJSON customizes JSON marshaling for TableInfo
 func (t *TableInfo) MarshalJSON() ([]byte, error) {
 	type Alias TableInfo
 	return json.Marshal(&struct {
@@ -413,66 +465,4 @@ func (t *TableInfo) MarshalJSON() ([]byte, error) {
 		ColumnCount: len(t.Columns),
 		IndexCount:  len(t.Indexes),
 	})
-}
-
-// Constructor functions
-
-// NewTableInfo creates a new TableInfo with the given name
-func NewTableInfo(name string) *TableInfo {
-	return &TableInfo{
-		Name:       name,
-		PublicRead: true, // Default to public
-		Columns:    make([]Column, 0),
-		Indexes:    make([]Index, 0),
-	}
-}
-
-// NewColumn creates a new Column with the given name and type
-func NewColumn(name, typeName string) Column {
-	return Column{
-		Name: name,
-		Type: typeName,
-	}
-}
-
-// NewPrimaryKeyColumn creates a new primary key column
-func NewPrimaryKeyColumn(name, typeName string) Column {
-	return Column{
-		Name:       name,
-		Type:       typeName,
-		PrimaryKey: true,
-		NotNull:    true,
-	}
-}
-
-// NewAutoIncColumn creates a new auto-increment primary key column
-func NewAutoIncColumn(name, typeName string) Column {
-	return Column{
-		Name:       name,
-		Type:       typeName,
-		PrimaryKey: true,
-		AutoInc:    true,
-		NotNull:    true,
-	}
-}
-
-// NewIndex creates a new index
-func NewIndex(name string, indexType IndexType, columns []string) Index {
-	return Index{
-		Name:    name,
-		Type:    indexType,
-		Columns: columns,
-	}
-}
-
-// NewBTreeIndex creates a new B-tree index
-func NewBTreeIndex(name string, columns []string) Index {
-	return NewIndex(name, IndexTypeBTree, columns)
-}
-
-// NewUniqueIndex creates a new unique index
-func NewUniqueIndex(name string, indexType IndexType, columns []string) Index {
-	idx := NewIndex(name, indexType, columns)
-	idx.Unique = true
-	return idx
 }
