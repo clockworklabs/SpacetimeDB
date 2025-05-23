@@ -35,6 +35,7 @@ members = [
   "crates/vm",
   "modules/benchmarks",
   "modules/bsatn-test",
+  "modules/go-integration-test",
   "modules/keynote-benchmarks",
   "modules/perf-test",
   "modules/module-test",
