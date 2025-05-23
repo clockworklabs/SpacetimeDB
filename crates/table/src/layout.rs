@@ -202,6 +202,9 @@ pub struct RowTypeLayout {
     ///
     /// This is `Arc`ed at the row type level
     /// as clones and drops of this showed up in flamegraphs.
+    /// A [`RowTypeLayout`] will typically be cloned once per table per transaction,
+    /// assuming the table is touched during that transaction.
+    /// This can be expensive for modules that have a lot of reducer calls per second.
     pub elements: Arc<[ProductTypeElementLayout]>,
 }
 
