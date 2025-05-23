@@ -187,7 +187,7 @@ fn configure_rayon() {
         // and Rayon threads to the other.
         // Then we should give Tokio and Rayon each a number of worker threads
         // equal to the size of their pool.
-        .num_threads(std::thread::available_parallelism().unwrap().get() / 2)
+        .num_threads(std::thread::available_parallelism().unwrap().get() / 4)
         .build_global()
         .unwrap()
 }

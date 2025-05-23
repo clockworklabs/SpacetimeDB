@@ -346,12 +346,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         let reducer_def = self.info.module_def.reducer_by_id(reducer_id);
         let reducer_name = &*reducer_def.name;
 
-        let _outer_span = tracing::trace_span!("call_reducer",
-            reducer_name,
-            %caller_identity,
-            caller_connection_id = caller_connection_id_opt.map(tracing::field::debug),
-        )
-        .entered();
+        let _outer_span = tracing::trace_span!("call_reducer", reducer_name).entered();
 
         let energy_fingerprint = ReducerFingerprint {
             module_hash: self.info.module_hash,
