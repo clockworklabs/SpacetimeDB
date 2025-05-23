@@ -1,4 +1,4 @@
-use crate::db::datastore::traits::Program;
+use spacetimedb_datastore::traits::Program;
 use crate::energy::EnergyMonitor;
 use crate::host::scheduler::Scheduler;
 use crate::replica_context::ReplicaContext;

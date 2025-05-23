@@ -5,7 +5,7 @@ use spacetimedb_lib::ProductValue;
 use spacetimedb_primitives::TableId;
 use spacetimedb_table::{blob_store::BlobStore, table::Table};
 
-use crate::db::datastore::{locking_tx_datastore::tx::TxId, traits::TxData};
+use spacetimedb_datastore::{locking_tx_datastore::tx::TxId, traits::TxData};
 
 /// A wrapper around a read only tx delta queries
 pub struct DeltaTx<'a> {

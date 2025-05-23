@@ -15,7 +15,7 @@ use spacetimedb_testing::modules::{Csharp, Rust};
 
 #[cfg(target_env = "msvc")]
 #[global_allocator]
-static GLOBAL: MiMalloc = MiMalloc;
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemallocator::Jemalloc;

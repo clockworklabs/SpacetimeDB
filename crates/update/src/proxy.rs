@@ -9,7 +9,7 @@ use std::process::ExitCode;
 
 pub(crate) fn run_cli(
     paths: Option<&SpacetimePaths>,
-    argv0: Option<&OsStr>,
+    _argv0: Option<&OsStr>,
     args: Vec<OsString>,
 ) -> anyhow::Result<ExitCode> {
     let parse_args = || PartialCliArgs::parse(&args);
@@ -44,8 +44,8 @@ pub(crate) fn run_cli(
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
-        if let Some(argv0) = argv0 {
-            cmd.arg0(argv0);
+        if let Some(_argv0) = _argv0 {
+            cmd.arg0(_argv0);
         }
     };
     let exec_result = exec_replace(&mut cmd).with_context(|| format!("exec failed for {}", cli_path.display()));

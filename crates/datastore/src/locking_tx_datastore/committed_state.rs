@@ -6,9 +6,8 @@ use super::{
     tx_state::{IndexIdMap, PendingSchemaChange, TxState},
     IterByColEqTx,
 };
+
 use crate::{
-    db::{
-        datastore::{
             system_tables::{
                 system_tables, StColumnRow, StConstraintData, StConstraintRow, StIndexRow, StSequenceRow,
                 StTableFields, StTableRow, SystemTable, ST_CLIENT_ID, ST_CLIENT_IDX, ST_COLUMN_ID, ST_COLUMN_IDX,
@@ -18,9 +17,9 @@ use crate::{
                 ST_SEQUENCE_NAME, ST_TABLE_ID, ST_TABLE_IDX, ST_VAR_ID, ST_VAR_IDX,
             },
             traits::TxData,
-        },
-        db_metrics::DB_METRICS,
-    },
+        };
+use crate::db_metrics::DB_METRICS;
+use crate::{
     error::{IndexError, TableError},
     execution_context::ExecutionContext,
 };
@@ -735,7 +734,7 @@ impl CommittedState {
     }
 
     pub fn report_data_size(&self, database_identity: Identity) {
-        use crate::db::db_metrics::data_size::DATA_SIZE_METRICS;
+        use crate::db_metrics::data_size::DATA_SIZE_METRICS;
 
         for (_, table) in &self.tables {
             let table_name = &table.schema.table_name;

@@ -1,13 +1,13 @@
 //! The [DbProgram] that execute arbitrary queries & code against the database.
 
-use crate::db::datastore::locking_tx_datastore::state_view::IterByColRangeMutTx;
-use crate::db::datastore::locking_tx_datastore::tx::TxId;
-use crate::db::datastore::locking_tx_datastore::IterByColRangeTx;
-use crate::db::datastore::system_tables::{st_var_schema, StVarName, StVarRow, StVarTable};
+use spacetimedb_datastore::locking_tx_datastore::state_view::IterByColRangeMutTx;
+use spacetimedb_datastore::locking_tx_datastore::tx::TxId;
+use spacetimedb_datastore::locking_tx_datastore::IterByColRangeTx;
+use spacetimedb_datastore::system_tables::{st_var_schema, StVarName, StVarRow};
 use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::error::DBError;
 use crate::estimation;
-use crate::execution_context::ExecutionContext;
+use spacetimedb_datastore::execution_context::ExecutionContext;
 use core::ops::{Bound, RangeBounds};
 use itertools::Itertools;
 use spacetimedb_data_structures::map::IntMap;
@@ -57,12 +57,6 @@ impl<'a> From<&'a mut MutTx> for TxMode<'a> {
 
 impl<'a> From<&'a Tx> for TxMode<'a> {
     fn from(tx: &'a Tx) -> Self {
-        TxMode::Tx(tx)
-    }
-}
-
-impl<'a> From<&'a mut Tx> for TxMode<'a> {
-    fn from(tx: &'a mut Tx) -> Self {
         TxMode::Tx(tx)
     }
 }
@@ -643,13 +637,12 @@ impl ProgramVm for DbProgram<'_, '_> {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use crate::db::datastore::system_tables::{
+    use spacetimedb_datastore::system_tables::{
         StColumnFields, StColumnRow, StFields as _, StIndexAlgorithm, StIndexFields, StIndexRow, StSequenceFields,
         StSequenceRow, StTableFields, StTableRow, ST_COLUMN_ID, ST_COLUMN_NAME, ST_INDEX_ID, ST_INDEX_NAME,
         ST_RESERVED_SEQUENCE_RANGE, ST_SEQUENCE_ID, ST_SEQUENCE_NAME, ST_TABLE_ID, ST_TABLE_NAME,
     };
-    use crate::db::relational_db::tests_utils::{insert, TestDB};
-    use crate::execution_context::Workload;
+    use crate::db::relational_db::tests_utils::{begin_tx, insert, with_auto_commit, with_read_only, TestDB};
     use pretty_assertions::assert_eq;
     use spacetimedb_lib::db::auth::{StAccess, StTableType};
     use spacetimedb_lib::error::ResultTest;
@@ -719,7 +712,7 @@ pub(crate) mod tests {
         q: QueryExpr,
         sources: SourceSet<Vec<ProductValue>, N>,
     ) -> MemTable {
-        db.with_read_only(Workload::ForTests, |tx| {
+        with_read_only(db, |tx| {
             let mut tx_mode = (&*tx).into();
             let p = &mut DbProgram::new(db, &mut tx_mode, AuthCtx::for_testing());
             match run_ast(p, q.into(), sources) {
@@ -733,7 +726,7 @@ pub(crate) mod tests {
     fn test_db_query_inner_join() -> ResultTest<()> {
         let stdb = TestDB::durable()?;
 
-        let (schema, _) = stdb.with_auto_commit(Workload::ForTests, |tx| create_inv_table(&stdb, tx))?;
+        let (schema, _) = with_auto_commit(&stdb, |tx| create_inv_table(&stdb, tx))?;
         let table_id = schema.table_id;
 
         let data = mem_table_one_u64(u32::MAX.into());
@@ -756,7 +749,7 @@ pub(crate) mod tests {
     fn test_db_query_semijoin() -> ResultTest<()> {
         let stdb = TestDB::durable()?;
 
-        let (schema, row) = stdb.with_auto_commit(Workload::ForTests, |tx| create_inv_table(&stdb, tx))?;
+        let (schema, row) = with_auto_commit(&stdb, |tx| create_inv_table(&stdb, tx))?;
 
         let data = mem_table_one_u64(u32::MAX.into());
         let mut sources = SourceSet::<_, 1>::empty();
@@ -780,9 +773,7 @@ pub(crate) mod tests {
     #[test]
     fn test_query_catalog_tables() -> ResultTest<()> {
         let stdb = TestDB::durable()?;
-        let schema = &*stdb
-            .schema_for_table(&stdb.begin_tx(Workload::ForTests), ST_TABLE_ID)
-            .unwrap();
+        let schema = &*stdb.schema_for_table(&begin_tx(&stdb), ST_TABLE_ID).unwrap();
 
         let q = QueryExpr::new(schema)
             .with_select_cmp(
@@ -807,9 +798,7 @@ pub(crate) mod tests {
     #[test]
     fn test_query_catalog_columns() -> ResultTest<()> {
         let stdb = TestDB::durable()?;
-        let schema = &*stdb
-            .schema_for_table(&stdb.begin_tx(Workload::ForTests), ST_COLUMN_ID)
-            .unwrap();
+        let schema = &*stdb.schema_for_table(&begin_tx(&stdb), ST_COLUMN_ID).unwrap();
 
         let q = QueryExpr::new(schema)
             .with_select_cmp(
@@ -840,7 +829,7 @@ pub(crate) mod tests {
     fn test_query_catalog_indexes() -> ResultTest<()> {
         let db = TestDB::durable()?;
 
-        let (schema, _) = db.with_auto_commit(Workload::ForTests, |tx| create_inv_table(&db, tx))?;
+        let (schema, _) = with_auto_commit(&db, |tx| create_inv_table(&db, tx))?;
         let table_id = schema.table_id;
         let columns = ColList::from(ColId(0));
         let index_name = "idx_1";
@@ -854,11 +843,9 @@ pub(crate) mod tests {
                 columns: columns.clone(),
             }),
         };
-        let index_id = db.with_auto_commit(Workload::ForTests, |tx| db.create_index(tx, index, is_unique))?;
+        let index_id = with_auto_commit(&db, |tx| db.create_index(tx, index, is_unique))?;
 
-        let indexes_schema = &*db
-            .schema_for_table(&db.begin_tx(Workload::ForTests), ST_INDEX_ID)
-            .unwrap();
+        let indexes_schema = &*db.schema_for_table(&begin_tx(&db), ST_INDEX_ID).unwrap();
         let q = QueryExpr::new(indexes_schema)
             .with_select_cmp(
                 OpCmp::Eq,
@@ -883,9 +870,7 @@ pub(crate) mod tests {
     fn test_query_catalog_sequences() -> ResultTest<()> {
         let db = TestDB::durable()?;
 
-        let schema = &*db
-            .schema_for_table(&db.begin_tx(Workload::ForTests), ST_SEQUENCE_ID)
-            .unwrap();
+        let schema = &*db.schema_for_table(&begin_tx(&db), ST_SEQUENCE_ID).unwrap();
         let q = QueryExpr::new(schema)
             .with_select_cmp(
                 OpCmp::Eq,

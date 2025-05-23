@@ -275,15 +275,15 @@ impl WsConnection {
         incoming_messages: mpsc::UnboundedSender<ServerMessage<BsatnFormat>>,
         outgoing_messages: mpsc::UnboundedReceiver<ClientMessage<Bytes>>,
     ) {
+        let websocket_received = CLIENT_METRICS
+            .websocket_received
+            .with_label_values(&self.db_name, &self.connection_id);
+        let websocket_received_msg_size = CLIENT_METRICS
+            .websocket_received_msg_size
+            .with_label_values(&self.db_name, &self.connection_id);
         let record_metrics = |msg_size: usize| {
-            CLIENT_METRICS
-                .websocket_received
-                .with_label_values(&self.db_name, &self.connection_id)
-                .inc();
-            CLIENT_METRICS
-                .websocket_received_msg_size
-                .with_label_values(&self.db_name, &self.connection_id)
-                .observe(msg_size as f64);
+            websocket_received.inc();
+            websocket_received_msg_size.observe(msg_size as f64);
         };
 
         // There is a small but plausible chance that a client's socket will not

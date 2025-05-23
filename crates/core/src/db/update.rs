@@ -1,4 +1,4 @@
-use super::datastore::locking_tx_datastore::MutTxId;
+use spacetimedb_datastore::locking_tx_datastore::MutTxId;
 use super::relational_db::RelationalDB;
 use crate::database_logger::SystemLogger;
 use crate::sql::parser::RowLevelExpr;

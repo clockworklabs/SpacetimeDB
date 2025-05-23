@@ -15,11 +15,13 @@ use bytes::Bytes;
 use bytestring::ByteString;
 use derive_more::From;
 use futures::prelude::*;
+use prometheus::{Histogram, IntCounter};
 use spacetimedb_client_api_messages::websocket::{
     BsatnFormat, CallReducerFlags, Compression, FormatSwitch, JsonFormat, SubscribeMulti, SubscribeSingle, Unsubscribe,
     UnsubscribeMulti, WebsocketFormat,
 };
 use spacetimedb_lib::identity::RequestId;
+use spacetimedb_lib::metrics::ExecutionMetrics;
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::AbortHandle;
 
@@ -30,6 +32,13 @@ pub enum Protocol {
 }
 
 impl Protocol {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Protocol::Text => "text",
+            Protocol::Binary => "binary",
+        }
+    }
+
     pub(crate) fn assert_matches_format_switch<B, J>(self, fs: &FormatSwitch<B, J>) {
         match (self, fs) {
             (Protocol::Text, FormatSwitch::Json(_)) | (Protocol::Binary, FormatSwitch::Bsatn(_)) => {}
@@ -67,6 +76,30 @@ pub struct ClientConnectionSender {
     sendtx: mpsc::Sender<SerializableMessage>,
     abort_handle: AbortHandle,
     cancelled: AtomicBool,
+    pub(crate) metrics: ClientConnectionMetrics,
+}
+
+#[derive(Debug)]
+pub struct ClientConnectionMetrics {
+    pub websocket_request_msg_size: Histogram,
+    pub websocket_requests: IntCounter,
+}
+
+impl ClientConnectionMetrics {
+    fn new(replica_id: u64, protocol: Protocol) -> Self {
+        let message_kind = protocol.as_str();
+        let websocket_request_msg_size = WORKER_METRICS
+            .websocket_request_msg_size
+            .with_label_values(&replica_id, message_kind);
+        let websocket_requests = WORKER_METRICS
+            .websocket_requests
+            .with_label_values(&replica_id, message_kind);
+
+        Self {
+            websocket_request_msg_size,
+            websocket_requests,
+        }
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -78,6 +111,25 @@ pub enum ClientSendError {
 }
 
 impl ClientConnectionSender {
+    fn new(
+        replica_id: u64,
+        id: ClientActorId,
+        config: ClientConfig,
+        sendtx: mpsc::Sender<SerializableMessage>,
+        abort_handle: AbortHandle,
+        cancelled: AtomicBool,
+    ) -> Self {
+        let metrics = ClientConnectionMetrics::new(replica_id, config.protocol);
+        Self {
+            id,
+            config,
+            sendtx,
+            abort_handle,
+            cancelled,
+            metrics,
+        }
+    }
+
     pub fn dummy_with_channel(id: ClientActorId, config: ClientConfig) -> (Self, mpsc::Receiver<SerializableMessage>) {
         let (sendtx, rx) = mpsc::channel(1);
         // just make something up, it doesn't need to be attached to a real task
@@ -85,16 +137,9 @@ impl ClientConnectionSender {
             Ok(h) => h.spawn(async {}).abort_handle(),
             Err(_) => tokio::runtime::Runtime::new().unwrap().spawn(async {}).abort_handle(),
         };
-        (
-            Self {
-                id,
-                config,
-                sendtx,
-                abort_handle,
-                cancelled: AtomicBool::new(false),
-            },
-            rx,
-        )
+        let cancelled = AtomicBool::new(false);
+        let sender = Self::new(0, id, config, sendtx, abort_handle, cancelled);
+        (sender, rx)
     }
 
     pub fn dummy(id: ClientActorId, config: ClientConfig) -> Self {
@@ -199,26 +244,28 @@ impl ClientConnection {
 
         let (sendtx, sendrx) = mpsc::channel::<SerializableMessage>(CLIENT_CHANNEL_CAPACITY);
 
-        let db = module.info().database_identity;
-
         let (fut_tx, fut_rx) = oneshot::channel::<Fut>();
         // weird dance so that we can get an abort_handle into ClientConnection
+        let module_info = module.info.clone();
         let abort_handle = tokio::spawn(async move {
             let Ok(fut) = fut_rx.await else { return };
 
-            let _gauge_guard = WORKER_METRICS.connected_clients.with_label_values(&db).inc_scope();
+            let _gauge_guard = module_info.metrics.connected_clients.inc_scope();
+            module_info.metrics.ws_clients_spawned.inc();
+            scopeguard::defer!(module_info.metrics.ws_clients_aborted.inc());
 
             fut.await
         })
         .abort_handle();
 
-        let sender = Arc::new(ClientConnectionSender {
+        let sender = Arc::new(ClientConnectionSender::new(
+            replica_id,
             id,
             config,
             sendtx,
             abort_handle,
-            cancelled: AtomicBool::new(false),
-        });
+            AtomicBool::new(false),
+        ));
         let this = Self {
             sender,
             replica_id,
@@ -299,7 +346,11 @@ impl ClientConnection {
             .await
     }
 
-    pub async fn subscribe_single(&self, subscription: SubscribeSingle, timer: Instant) -> Result<(), DBError> {
+    pub async fn subscribe_single(
+        &self,
+        subscription: SubscribeSingle,
+        timer: Instant,
+    ) -> Result<Option<ExecutionMetrics>, DBError> {
         let me = self.clone();
         tokio::task::spawn_blocking(move || {
             me.module
@@ -310,7 +361,7 @@ impl ClientConnection {
         .unwrap() // TODO: is unwrapping right here?
     }
 
-    pub async fn unsubscribe(&self, request: Unsubscribe, timer: Instant) -> Result<(), DBError> {
+    pub async fn unsubscribe(&self, request: Unsubscribe, timer: Instant) -> Result<Option<ExecutionMetrics>, DBError> {
         let me = self.clone();
         tokio::task::spawn_blocking(move || {
             me.module

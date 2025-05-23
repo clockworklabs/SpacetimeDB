@@ -3,8 +3,6 @@ use prometheus::IntGaugeVec;
 use spacetimedb_lib::Identity;
 use spacetimedb_metrics::metrics_group;
 
-use crate::worker_metrics::WORKER_METRICS;
-
 metrics_group!(
     #[non_exhaustive]
     pub struct DbDataSize {
@@ -42,32 +40,3 @@ metrics_group!(
 );
 
 pub static DATA_SIZE_METRICS: Lazy<DbDataSize> = Lazy::new(DbDataSize::new);
-
-// Remove all gauges associated with a database.
-// This is useful if a database is being deleted.
-pub fn remove_database_gauges<'a, I>(db: &Identity, table_names: I)
-where
-    I: IntoIterator<Item = &'a str>,
-{
-    // Remove the per-table gauges.
-    for table_name in table_names {
-        let _ = DATA_SIZE_METRICS
-            .data_size_table_num_rows
-            .remove_label_values(db, table_name);
-        let _ = DATA_SIZE_METRICS
-            .data_size_table_bytes_used_by_rows
-            .remove_label_values(db, table_name);
-        let _ = DATA_SIZE_METRICS
-            .data_size_table_num_rows_in_indexes
-            .remove_label_values(db, table_name);
-        let _ = DATA_SIZE_METRICS
-            .data_size_table_bytes_used_by_index_keys
-            .remove_label_values(db, table_name);
-    }
-    // Remove the per-db gauges.
-    let _ = DATA_SIZE_METRICS.data_size_blob_store_num_blobs.remove_label_values(db);
-    let _ = DATA_SIZE_METRICS
-        .data_size_blob_store_bytes_used_by_blobs
-        .remove_label_values(db);
-    let _ = WORKER_METRICS.wasm_memory_bytes.remove_label_values(db);
-}
