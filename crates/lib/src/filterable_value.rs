@@ -1,6 +1,8 @@
 use crate::{ConnectionId, Identity};
 use core::ops;
 use spacetimedb_sats::bsatn;
+use spacetimedb_sats::time_duration::TimeDuration;
+use spacetimedb_sats::timestamp::Timestamp;
 use spacetimedb_sats::{hash::Hash, i256, u256, Serialize};
 
 /// Types which can appear as an argument to an index filtering operation
@@ -96,6 +98,9 @@ impl_filterable_value! {
     Identity: Copy,
     ConnectionId: Copy,
     Hash: Copy,
+
+    Timestamp: Copy,
+    TimeDuration: Copy,
 
     // Some day we will likely also want to support `Vec<u8>` and `[u8]`,
     // as they have trivial portable equality and ordering,
