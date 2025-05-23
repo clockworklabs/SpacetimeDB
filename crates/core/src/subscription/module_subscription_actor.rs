@@ -380,6 +380,7 @@ impl ModuleSubscriptions {
     }
 
     /// Remove a client's subscription for a set of queries.
+    #[tracing::instrument(level = "trace", skip_all)]
     pub fn remove_multi_subscription(
         &self,
         sender: Arc<ClientConnectionSender>,
