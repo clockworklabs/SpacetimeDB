@@ -143,6 +143,15 @@ func (m *spacetimeModule) Instantiate(ctx context.Context, r wazero.Runtime) err
 		WithGoFunction(api.GoFunc(m.logEnabled), []api.ValueType{api.ValueTypeI32}, []api.ValueType{api.ValueTypeI32}).
 		Export("log_enabled")
 
+	// Timer functions (needed by perf-test module)
+	builder.NewFunctionBuilder().
+		WithGoFunction(api.GoFunc(m.consoleTimerStart), []api.ValueType{api.ValueTypeI32, api.ValueTypeI32}, []api.ValueType{api.ValueTypeI32}).
+		Export("console_timer_start")
+
+	builder.NewFunctionBuilder().
+		WithGoFunction(api.GoFunc(m.consoleTimerEnd), []api.ValueType{api.ValueTypeI32}, []api.ValueType{api.ValueTypeI32}).
+		Export("console_timer_end")
+
 	builder.NewFunctionBuilder().
 		WithGoFunction(api.GoFunc(m.bsatnDeserializeTableSchema), []api.ValueType{api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32, api.ValueTypeI32}, []api.ValueType{api.ValueTypeI32}).
 		Export("bsatn_deserialize_table_schema")
@@ -1019,4 +1028,37 @@ func (m *spacetimeModule) spacetimeModuleAbiVersion(ctx context.Context, stack [
 	// Return ABI version 10
 	fmt.Printf("[DEBUG] spacetimeModuleAbiVersion called, returning 10\n")
 	stack[0] = 10
+}
+
+// Timer functions implementation
+// consoleTimerStart starts a timer and returns a timer ID
+func (m *spacetimeModule) consoleTimerStart(ctx context.Context, stack []uint64) {
+	namePtr := uint32(stack[0])
+	nameLen := uint32(stack[1])
+
+	// Get timer name from memory
+	name, err := m.runtime.ReadFromMemory(namePtr, nameLen)
+	if err != nil {
+		fmt.Printf("[DEBUG] consoleTimerStart: Error reading timer name: %v\n", err)
+		stack[0] = 0 // Return invalid timer ID
+		return
+	}
+
+	timerName := string(name)
+	fmt.Printf("[DEBUG] Timer started: %s\n", timerName)
+
+	// Generate a simple timer ID (in real implementation, would track actual timers)
+	timerID := uint32(len(timerName) + 1) // Simple ID generation
+	stack[0] = uint64(timerID)
+}
+
+// consoleTimerEnd ends a timer and logs the duration
+func (m *spacetimeModule) consoleTimerEnd(ctx context.Context, stack []uint64) {
+	timerID := uint32(stack[0])
+
+	fmt.Printf("[DEBUG] Timer ended: ID %d\n", timerID)
+
+	// In real implementation, would calculate and log actual duration
+	// For now, just return success
+	stack[0] = uint64(SPACETIME_OK)
 }
