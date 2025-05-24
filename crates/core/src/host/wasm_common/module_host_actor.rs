@@ -398,9 +398,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         )
         .entered();
 
-        // run the call_reducer call in rayon. it's important that we don't acquire a lock inside a rayon task,
-        // as that can lead to deadlock.
-        let (mut tx, result) = rayon::scope(|_| tx_slot.set(tx, || self.instance.call_reducer(op, budget)));
+        let (mut tx, result) = tx_slot.set(tx, || self.instance.call_reducer(op, budget));
 
         let ExecuteResult {
             energy,
