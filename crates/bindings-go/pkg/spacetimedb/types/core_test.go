@@ -2,6 +2,7 @@ package types
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 )
@@ -53,6 +54,57 @@ func TestIdentity(t *testing.T) {
 
 		if decoded.Bytes != identity.Bytes {
 			t.Errorf("JSON roundtrip failed: got %v, want %v", decoded.Bytes, identity.Bytes)
+		}
+	})
+
+	t.Run("JSON Error Cases", func(t *testing.T) {
+		// Test invalid hex string length (too short)
+		var identity Identity
+		err := json.Unmarshal([]byte(`"0102030405060708090a0b0c0d0e0f"`), &identity)
+		if err == nil {
+			t.Error("Expected error for hex string too short, got nil")
+		}
+		if err != nil && !strings.Contains(err.Error(), "invalid identity hex string length") {
+			t.Errorf("Expected length error, got: %v", err)
+		}
+
+		// Test invalid hex string length (too long)
+		err = json.Unmarshal([]byte(`"0102030405060708090a0b0c0d0e0f1011"`), &identity)
+		if err == nil {
+			t.Error("Expected error for hex string too long, got nil")
+		}
+		if err != nil && !strings.Contains(err.Error(), "invalid identity hex string length") {
+			t.Errorf("Expected length error, got: %v", err)
+		}
+
+		// Test invalid hex characters
+		err = json.Unmarshal([]byte(`"0102030405060708090a0b0c0d0eXX10"`), &identity)
+		if err == nil {
+			t.Error("Expected error for invalid hex character, got nil")
+		}
+		if err != nil && !strings.Contains(err.Error(), "invalid hex character") {
+			t.Errorf("Expected hex character error, got: %v", err)
+		}
+
+		// Test non-hex characters
+		err = json.Unmarshal([]byte(`"ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ"`), &identity)
+		if err == nil {
+			t.Error("Expected error for non-hex characters, got nil")
+		}
+
+		// Test invalid JSON (not a string)
+		err = json.Unmarshal([]byte(`123`), &identity)
+		if err == nil {
+			t.Error("Expected error for non-string JSON, got nil")
+		}
+
+		// Test empty string
+		err = json.Unmarshal([]byte(`""`), &identity)
+		if err == nil {
+			t.Error("Expected error for empty string, got nil")
+		}
+		if err != nil && !strings.Contains(err.Error(), "invalid identity hex string length") {
+			t.Errorf("Expected length error for empty string, got: %v", err)
 		}
 	})
 }
