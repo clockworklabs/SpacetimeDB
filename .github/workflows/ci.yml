@@ -93,6 +93,10 @@ jobs:
         with:
           global-json-file: modules/global.json
 
+      - uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+
       - name: Create /stdb dir
         run: |
           sudo mkdir /stdb
@@ -112,6 +116,15 @@ jobs:
       - name: C# bindings tests
         working-directory: crates/bindings-csharp
         run: dotnet test -warnaserror
+
+      - name: Ensure Go autogen bindings are up-to-date
+        run: |
+          cargo run -p spacetimedb-codegen --example regen-go-moduledef
+          bash tools/check-diff.sh crates/bindings-go
+
+      - name: Go bindings tests
+        working-directory: crates/bindings-go
+        run: go test ./internal/bsatn ./internal/db ./internal/types ./internal/wasm ./pkg/... ./tests/... ./cmd/...
 
   sdk_test:
     name: SDK Tests
@@ -139,6 +152,10 @@ jobs:
       - uses: actions/setup-dotnet@v3
         with:
           global-json-file: modules/global.json
+
+      - uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
 
       - name: Create /stdb dir
         run: |
@@ -190,6 +207,30 @@ jobs:
         run: |
           dotnet tool restore
           dotnet csharpier --check .
+
+      - uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+
+      - name: Run Go formatting check
+        working-directory: crates/bindings-go
+        run: |
+          if [ "$(find . -name '*.go' -not -path './internal/autogen/*' | xargs gofmt -l)" ]; then
+            echo "Go code is not formatted. Run 'gofmt -w .'"
+            find . -name '*.go' -not -path './internal/autogen/*' | xargs gofmt -l
+            exit 1
+          fi
+
+      - name: Run Go vet check
+        working-directory: crates/bindings-go
+        run: go vet ./...
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v3
+        with:
+          version: latest
+          working-directory: crates/bindings-go
+          args: --timeout=5m
 
       - name: Run `cargo doc` for bindings crate
         # `bindings` is the only crate we care strongly about documenting,
