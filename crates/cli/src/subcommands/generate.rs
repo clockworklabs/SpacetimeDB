@@ -5,7 +5,7 @@ use clap::parser::ValueSource;
 use clap::Arg;
 use clap::ArgAction::Set;
 use fs_err as fs;
-use spacetimedb_codegen::{generate, Csharp, Lang, Rust, TypeScript, AUTO_GENERATED_PREFIX};
+use spacetimedb_codegen::{generate, Csharp, Go, Lang, Rust, TypeScript, AUTO_GENERATED_PREFIX};
 use spacetimedb_lib::de::serde::DeserializeWrapper;
 use spacetimedb_lib::{sats, RawModuleDef};
 use spacetimedb_schema;
@@ -14,6 +14,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use crate::tasks::csharp::dotnet_format;
+use crate::tasks::go::go_format;
 use crate::tasks::rust::rustfmt;
 use crate::util::{resolve_sibling_binary, y_or_n};
 use crate::Config;
@@ -136,10 +137,15 @@ pub async fn exec_ex(
     let mut paths = BTreeSet::new();
 
     let csharp_lang;
+    let go_lang;
     let gen_lang = match lang {
         Language::Csharp => {
             csharp_lang = Csharp { namespace };
             &csharp_lang as &dyn Lang
+        }
+        Language::Go => {
+            go_lang = Go::default();
+            &go_lang as &dyn Lang
         }
         Language::Rust => &Rust,
         Language::TypeScript => &TypeScript,
@@ -211,17 +217,19 @@ pub async fn exec_ex(
 #[derive(Clone, Copy, PartialEq)]
 pub enum Language {
     Csharp,
+    Go,
     TypeScript,
     Rust,
 }
 
 impl clap::ValueEnum for Language {
     fn value_variants<'a>() -> &'a [Self] {
-        &[Self::Csharp, Self::TypeScript, Self::Rust]
+        &[Self::Csharp, Self::Go, Self::TypeScript, Self::Rust]
     }
     fn to_possible_value(&self) -> Option<PossibleValue> {
         Some(match self {
             Self::Csharp => clap::builder::PossibleValue::new("csharp").aliases(["c#", "cs"]),
+            Self::Go => clap::builder::PossibleValue::new("go").aliases(["golang"]),
             Self::TypeScript => clap::builder::PossibleValue::new("typescript").aliases(["ts", "TS"]),
             Self::Rust => clap::builder::PossibleValue::new("rust").aliases(["rs", "RS"]),
         })
@@ -233,6 +241,7 @@ impl Language {
         match self {
             Language::Rust => rustfmt(generated_files)?,
             Language::Csharp => dotnet_format(generated_files)?,
+            Language::Go => go_format(generated_files)?,
             Language::TypeScript => {
                 // TODO: implement formatting.
             }

@@ -1,0 +1,83 @@
+package main
+
+import (
+	"log"
+
+	"github.com/clockworklabs/SpacetimeDB/crates/bindings-go/pkg/spacetimedb"
+)
+
+// Person represents a table in the database
+type Person struct {
+	ID   uint32 `json:"id" bsatn:"id"`
+	Name string `json:"name" bsatn:"name"`
+	Age  int32  `json:"age" bsatn:"age"`
+}
+
+// InitReducer is called when the module is initially published
+func InitReducer(ctx *spacetimedb.ReducerContext) error {
+	log.Println("Module initialized!")
+	return nil
+}
+
+// IdentityConnectedReducer is called every time a new client connects
+func IdentityConnectedReducer(ctx *spacetimedb.ReducerContext) error {
+	log.Println("Client connected!")
+	return nil
+}
+
+// IdentityDisconnectedReducer is called every time a client disconnects
+func IdentityDisconnectedReducer(ctx *spacetimedb.ReducerContext) error {
+	log.Println("Client disconnected!")
+	return nil
+}
+
+// AddPersonReducer adds a new person to the database
+func AddPersonReducer(ctx *spacetimedb.ReducerContext, name string, age int32) error {
+	person := Person{
+		ID:   0, // Auto-generated
+		Name: name,
+		Age:  age,
+	}
+	
+	// Insert the person into the database
+	err := ctx.Database.Insert("person", person)
+	if err != nil {
+		return err
+	}
+	
+	log.Printf("Inserted person: %s (age %d)", name, age)
+	return nil
+}
+
+// SayHelloReducer greets all people in the database
+func SayHelloReducer(ctx *spacetimedb.ReducerContext) error {
+	// Query all people from the database
+	people, err := ctx.Database.Query("person")
+	if err != nil {
+		return err
+	}
+	
+	for _, personData := range people {
+		var person Person
+		if err := ctx.Database.Decode(personData, &person); err != nil {
+			log.Printf("Error decoding person: %v", err)
+			continue
+		}
+		log.Printf("Hello, %s!", person.Name)
+	}
+	
+	log.Println("Hello, World!")
+	return nil
+}
+
+func init() {
+	// Register table
+	spacetimedb.RegisterTable("person", Person{})
+	
+	// Register reducers
+	spacetimedb.RegisterReducer("init", "InitReducer", InitReducer)
+	spacetimedb.RegisterReducer("identity_connected", "IdentityConnectedReducer", IdentityConnectedReducer) 
+	spacetimedb.RegisterReducer("identity_disconnected", "IdentityDisconnectedReducer", IdentityDisconnectedReducer)
+	spacetimedb.RegisterReducer("add_person", "AddPersonReducer", AddPersonReducer)
+	spacetimedb.RegisterReducer("say_hello", "SayHelloReducer", SayHelloReducer)
+} 

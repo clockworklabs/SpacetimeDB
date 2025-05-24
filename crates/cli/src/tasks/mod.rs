@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use crate::util::{self, ModuleLanguage};
 
 use self::csharp::build_csharp;
+use self::go::build_go;
 use crate::tasks::rust::build_rust;
 
 use duct::cmd;
@@ -12,6 +13,7 @@ pub fn build(project_path: &Path, lint_dir: Option<&Path>, build_debug: bool) ->
     let mut wasm_path = match lang {
         ModuleLanguage::Rust => build_rust(project_path, lint_dir, build_debug),
         ModuleLanguage::Csharp => build_csharp(project_path, build_debug),
+        ModuleLanguage::Go => build_go(project_path, lint_dir, build_debug),
     }?;
     if !build_debug {
         eprintln!("Optimising module with wasm-opt...");
@@ -38,4 +40,5 @@ pub fn build(project_path: &Path, lint_dir: Option<&Path>, build_debug: bool) ->
 }
 
 pub mod csharp;
+pub mod go;
 pub mod rust;

@@ -1,0 +1,11 @@
+module spacetime-module
+
+go 1.21
+
+require (
+	github.com/clockworklabs/SpacetimeDB/crates/bindings-go v0.0.0
+)
+
+// Replace with the actual path to SpacetimeDB Go bindings
+// when they are published to a public repository
+// replace github.com/clockworklabs/SpacetimeDB/crates/bindings-go => ../path/to/spacetimedb/crates/bindings-go 

@@ -79,6 +79,27 @@ fn check_for_dotnet() -> bool {
     false
 }
 
+fn check_for_go() -> bool {
+    match std::env::consts::OS {
+        "linux" | "freebsd" | "netbsd" | "openbsd" | "solaris" | "macos" => {
+            if find_executable("go").is_some() {
+                return true;
+            }
+            println!("{}", "Warning: You have created a Go project, but you are missing the Go toolchain. You should install Go from:\n\n\thttps://golang.org/dl/\n".yellow());
+        }
+        "windows" => {
+            if find_executable("go.exe").is_some() {
+                return true;
+            }
+            println!("{}", "Warning: You have created a Go project, but you are missing the Go toolchain. Visit https://golang.org/dl/ for installation instructions.\n".yellow());
+        }
+        unsupported_os => {
+            println!("{}", format!("This OS may be unsupported: {}", unsupported_os).yellow());
+        }
+    }
+    false
+}
+
 fn check_for_git() -> bool {
     match std::env::consts::OS {
         "linux" | "freebsd" | "netbsd" | "openbsd" | "solaris" => {
@@ -141,6 +162,7 @@ pub async fn exec(_config: Config, args: &ArgMatches) -> Result<(), anyhow::Erro
     match project_lang {
         ModuleLanguage::Rust => exec_init_rust(args).await,
         ModuleLanguage::Csharp => exec_init_csharp(args).await,
+        ModuleLanguage::Go => exec_init_go(args).await,
     }
 }
 
@@ -186,6 +208,36 @@ pub async fn exec_init_csharp(args: &ArgMatches) -> anyhow::Result<()> {
 
     // Check all dependencies
     check_for_dotnet();
+    check_for_git();
+
+    for data_file in export_files {
+        let path = project_path.join(data_file.1);
+
+        create_directory(path.parent().unwrap())?;
+
+        std::fs::write(path, data_file.0)?;
+    }
+
+    println!(
+        "{}",
+        format!("Project successfully created at path: {}", project_path.display()).green()
+    );
+
+    Ok(())
+}
+
+pub async fn exec_init_go(args: &ArgMatches) -> anyhow::Result<()> {
+    let project_path = args.get_one::<PathBuf>("project-path").unwrap();
+
+    let export_files = vec![
+        (include_str!("project/go/go._mod"), "go.mod"),
+        (include_str!("project/go/main._go"), "main.go"),
+        (include_str!("project/go/_gitignore"), ".gitignore"),
+        (include_str!("project/go/Makefile"), "Makefile"),
+    ];
+
+    // Check all dependencies
+    check_for_go();
     check_for_git();
 
     for data_file in export_files {
