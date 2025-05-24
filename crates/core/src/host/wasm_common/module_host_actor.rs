@@ -479,7 +479,9 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             // and conversely removing from `st_clients` on disconnect.
             Ok(Ok(())) => {
                 let res = match reducer_def.lifecycle {
-                    Some(Lifecycle::OnConnect) => tx.insert_st_client(caller_identity, caller_connection_id),
+                    Some(Lifecycle::OnConnect) => {
+                        tx.insert_st_client(caller_identity, caller_connection_id, database_identity)
+                    }
                     Some(Lifecycle::OnDisconnect) => {
                         tx.delete_st_client(caller_identity, caller_connection_id, database_identity)
                     }
