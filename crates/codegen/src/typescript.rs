@@ -623,6 +623,15 @@ fn print_reducer_enum_defn(module: &ModuleDef, out: &mut Indenter) {
 
 fn print_spacetimedb_imports(out: &mut Indenter) {
     let mut types = [
+        "CallReducerFlags",
+        "EventContextInterface",
+        "ReducerEventContextInterface",
+        "SubscriptionEventContextInterface",
+        "ErrorContextInterface",
+        "DbContext",
+        "Event",
+    ];
+    let mut classes = [
         "AlgebraicType",
         "ProductType",
         "ProductTypeElement",
@@ -636,20 +645,21 @@ fn print_spacetimedb_imports(out: &mut Indenter) {
         "DbConnectionBuilder",
         "TableCache",
         "BinaryWriter",
-        "type CallReducerFlags",
-        "type EventContextInterface",
-        "type ReducerEventContextInterface",
-        "type SubscriptionEventContextInterface",
-        "type ErrorContextInterface",
         "SubscriptionBuilderImpl",
         "BinaryReader",
         "DbConnectionImpl",
-        "type DbContext",
-        "type Event",
         "deepEqual",
     ];
     types.sort();
+    classes.sort();
     writeln!(out, "import {{");
+    out.indent(1);
+    for cl in &classes {
+        writeln!(out, "{cl},");
+    }
+    out.dedent(1);
+    writeln!(out, "}} from \"@clockworklabs/spacetimedb-sdk\";");
+    writeln!(out, "import type {{");
     out.indent(1);
     for ty in &types {
         writeln!(out, "{ty},");
