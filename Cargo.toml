@@ -89,7 +89,8 @@ debug = true
 [workspace.package]
 version = "1.1.2"
 edition = "2021"
-# update rust-toolchain.toml too!
+# This is the rust-version for the bindings crate, but not necessarily
+# the database (core, standalone, etc)
 rust-version = "1.84.0"
 
 [workspace.dependencies]
@@ -322,3 +323,10 @@ features = [
   "broadcast",
   "ondemand",
 ]
+
+[workspace.lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tokio_unstable)'] }
+
+[workspace.lints.clippy]
+# FIXME: we should work on this lint incrementally
+result_large_err = "allow"

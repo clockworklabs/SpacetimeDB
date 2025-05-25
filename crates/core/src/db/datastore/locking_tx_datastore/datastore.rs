@@ -922,6 +922,8 @@ impl Locking {
     }
 }
 
+// FIXME: reduce type size
+#[expect(clippy::large_enum_variant)]
 #[derive(Debug, Error)]
 pub enum ReplayError {
     #[error("Expected tx offset {expected}, encountered {encountered}")]
