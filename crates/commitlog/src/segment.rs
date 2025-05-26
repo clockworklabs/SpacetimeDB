@@ -387,7 +387,7 @@ impl<R: io::BufRead + io::Seek> Reader<R> {
         }
     }
 
-    pub fn seek_to_offset(&mut self, index_file: &TxOffsetIndex, start_tx_offset: u64) -> Result<(), IndexError> {
+    pub fn seek_to_offset(&mut self, index_file: &TxOffsetIndex, start_tx_offset: u64) -> Result<u64, IndexError> {
         seek_to_offset(&mut self.inner, index_file, start_tx_offset)
     }
 
@@ -424,11 +424,13 @@ impl<R: io::BufRead + io::Seek> Reader<R> {
 /// - `segment` - segment reader
 /// - `min_tx_offset` - minimum transaction offset in the segment
 /// - `start_tx_offset` - transaction offset to advance to
+///
+/// Returns the byte position `segment` is at after seeking.
 pub fn seek_to_offset<R: io::Read + io::Seek>(
     mut segment: &mut R,
     index_file: &TxOffsetIndex,
     start_tx_offset: u64,
-) -> Result<(), IndexError> {
+) -> Result<u64, IndexError> {
     let (index_key, byte_offset) = index_file.key_lookup(start_tx_offset)?;
 
     // If the index_key is 0, it means the index file is empty, return error without seeking
@@ -440,17 +442,17 @@ pub fn seek_to_offset<R: io::Read + io::Seek>(
     debug_assert!(index_key <= start_tx_offset);
 
     // Check if the offset index is pointing to the right commit.
-    validate_commit_header(&mut segment, byte_offset).map(|hdr| {
-        if hdr.min_tx_offset == index_key {
-            // Advance the segment Seek if expected commit is found.
-            segment
-                .seek(SeekFrom::Start(byte_offset))
-                .map(|_| ())
-                .map_err(Into::into)
-        } else {
-            Err(io::Error::new(io::ErrorKind::InvalidData, "mismatch key in index offset file").into())
-        }
-    })?
+    let hdr = validate_commit_header(&mut segment, byte_offset)?;
+    if hdr.min_tx_offset == index_key {
+        // Advance the segment Seek if expected commit is found.
+        segment.seek(SeekFrom::Start(byte_offset))
+    } else {
+        Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "mismatched key in offset index file",
+        ))
+    }
+    .map_err(Into::into)
 }
 
 /// Try to extract the commit header from the asked position without advancing seek.
