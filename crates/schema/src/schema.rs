@@ -61,6 +61,7 @@ pub struct TableSchema {
     pub table_id: TableId,
 
     /// The name of the table.
+    // TODO(perf): This should likely be an `Arc<str>`, not a `Box<str>`, as we `Clone` it somewhat frequently.
     pub table_name: Box<str>,
 
     /// The columns of the table.

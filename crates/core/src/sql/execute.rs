@@ -332,12 +332,18 @@ pub(crate) mod tests {
         sql_text: &str,
         q: Vec<CrudExpr>,
     ) -> Result<Vec<MemTable>, DBError> {
+        // Create and enter a Tokio runtime to run the `ModuleSubscriptions`' background workers in parallel.
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let _rt = runtime.enter();
         let subs = ModuleSubscriptions::new(Arc::new(db.clone()), <_>::default(), Identity::ZERO);
         execute_sql(db, sql_text, q, AuthCtx::for_testing(), Some(&subs))
     }
 
     /// Short-cut for simplify test execution
     pub(crate) fn run_for_testing(db: &RelationalDB, sql_text: &str) -> Result<Vec<ProductValue>, DBError> {
+        // Create and enter a Tokio runtime to run the `ModuleSubscriptions`' background workers in parallel.
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let _guard = rt.enter();
         let subs = ModuleSubscriptions::new(Arc::new(db.clone()), <_>::default(), Identity::ZERO);
         run(db, sql_text, AuthCtx::for_testing(), Some(&subs), &mut vec![]).map(|x| x.rows)
     }

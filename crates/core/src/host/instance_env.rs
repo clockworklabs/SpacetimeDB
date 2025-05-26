@@ -534,6 +534,9 @@ mod test {
 
     /// An `InstanceEnv` requires `ModuleSubscriptions`
     fn subscription_actor(relational_db: Arc<RelationalDB>) -> ModuleSubscriptions {
+        // Create and enter a Tokio runtime to run the `ModuleSubscriptions`' background workers in parallel.
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let _rt = runtime.enter();
         ModuleSubscriptions::new(relational_db, <_>::default(), Identity::ZERO)
     }
 

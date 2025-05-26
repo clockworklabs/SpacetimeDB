@@ -254,7 +254,7 @@ impl ExecutionUnit {
             let deletes = F::List::default();
             let qu = QueryUpdate { deletes, inserts };
             let update = F::into_query_update(qu, compression);
-            TableUpdate::new(self.return_table(), self.return_name(), (update, num_rows))
+            TableUpdate::new(self.return_table(), self.return_name(), update, num_rows)
         })
     }
 

@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use anyhow::{bail, Result};
 use spacetimedb_execution::{pipelined::PipelinedProject, Datastore, DeltaStore, Row};
 use spacetimedb_expr::check::SchemaView;
@@ -215,7 +217,7 @@ pub struct SubscriptionPlan {
     /// To which table are we subscribed?
     return_id: TableId,
     /// To which table are we subscribed?
-    return_name: Box<str>,
+    return_name: Arc<str>,
     /// A subscription can read from multiple tables.
     /// From which tables do we read?
     table_ids: Vec<TableId>,
@@ -241,7 +243,7 @@ impl SubscriptionPlan {
     }
 
     /// To which table does this plan subscribe?
-    pub fn subscribed_table_name(&self) -> &str {
+    pub fn subscribed_table_name(&self) -> &Arc<str> {
         &self.return_name
     }
 
@@ -331,6 +333,8 @@ impl SubscriptionPlan {
 
         let mut subscriptions = vec![];
 
+        let return_name = Arc::<str>::from(return_name);
+
         for plan in plans {
             if has_non_index_join(&plan) {
                 bail!("Subscriptions require indexes on join columns")
@@ -342,7 +346,7 @@ impl SubscriptionPlan {
 
             subscriptions.push(Self {
                 return_id,
-                return_name: return_name.clone(),
+                return_name: Arc::clone(&return_name),
                 table_ids,
                 plan,
                 fragments,

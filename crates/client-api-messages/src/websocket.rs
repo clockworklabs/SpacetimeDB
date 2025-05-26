@@ -623,7 +623,7 @@ pub struct TableUpdate<F: WebsocketFormat> {
 }
 
 impl<F: WebsocketFormat> TableUpdate<F> {
-    pub fn new(table_id: TableId, table_name: Box<str>, (update, num_rows): (F::QueryUpdate, u64)) -> Self {
+    pub fn new(table_id: TableId, table_name: Box<str>, update: F::QueryUpdate, num_rows: u64) -> Self {
         Self {
             table_id,
             table_name,
@@ -641,7 +641,7 @@ impl<F: WebsocketFormat> TableUpdate<F> {
         }
     }
 
-    pub fn push(&mut self, (update, num_rows): (F::QueryUpdate, u64)) {
+    pub fn push(&mut self, update: F::QueryUpdate, num_rows: u64) {
         self.updates.push(update);
         self.num_rows += num_rows;
     }
