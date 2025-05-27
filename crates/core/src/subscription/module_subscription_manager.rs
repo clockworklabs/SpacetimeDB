@@ -20,7 +20,7 @@ use spacetimedb_data_structures::map::{Entry, IntMap};
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::{AlgebraicValue, ConnectionId, Identity, ProductValue};
 use spacetimedb_primitives::{ColId, TableId};
-use spacetimedb_subscription::SubscriptionPlan;
+use spacetimedb_subscription::{SubscriptionPlan, TableName};
 use std::collections::BTreeSet;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -363,7 +363,7 @@ struct ClientQueryUpdate<F: WebsocketFormat> {
 struct ClientUpdate {
     id: ClientId,
     table_id: TableId,
-    table_name: Arc<str>,
+    table_name: TableName,
     update: FormatSwitch<ClientQueryUpdate<BsatnFormat>, ClientQueryUpdate<JsonFormat>>,
 }
 
@@ -842,7 +842,7 @@ impl SubscriptionManager {
             // which involves cloning BSATN (binary) or product values (json).
             .fold(FoldState::default(), |mut acc, (qstate, plan)| {
                 let table_id = plan.subscribed_table_id();
-                let table_name = Arc::clone(plan.subscribed_table_name());
+                let table_name = plan.subscribed_table_name().clone();
                 // Store at most one copy for both the serialization to BSATN and JSON.
                 // Each subscriber gets to pick which of these they want,
                 // but we only fill `ops_bin_uncompressed` and `ops_json` at most once.
