@@ -320,6 +320,7 @@ public static partial class Module
     [SpacetimeDB.Table(Name = "one_timestamp", Public = true)]
     public partial struct OneTimestamp
     {
+        [SpacetimeDB.Index.BTree]
         public Timestamp t;
     }
 
@@ -327,6 +328,8 @@ public static partial class Module
     public static void insert_one_timestamp(ReducerContext ctx, Timestamp t)
     {
         ctx.Db.one_timestamp.Insert(new OneTimestamp { t = t });
+
+        var _count = ctx.Db.one_timestamp.t.Filter((t, ctx.Timestamp)).Count();
     }
 
     [SpacetimeDB.Table(Name = "one_simple_enum", Public = true)]
