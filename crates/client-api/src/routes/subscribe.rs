@@ -3,6 +3,12 @@ use std::mem;
 use std::pin::{pin, Pin};
 use std::time::Duration;
 
+use crate::auth::SpacetimeAuth;
+use crate::util::websocket::{
+    CloseCode, CloseFrame, Message as WsMessage, WebSocketConfig, WebSocketStream, WebSocketUpgrade,
+};
+use crate::util::{NameOrIdentity, XForwardedFor};
+use crate::{log_and_500, ControlStateDelegate, NodeDelegate};
 use axum::extract::{Path, Query, State};
 use axum::response::IntoResponse;
 use axum::Extension;
@@ -16,6 +22,7 @@ use scopeguard::ScopeGuard;
 use serde::Deserialize;
 use spacetimedb::client::messages::{serialize, IdentityTokenMessage, SerializableMessage};
 use spacetimedb::client::{ClientActorId, ClientConfig, ClientConnection, DataMessage, MessageHandleError, Protocol};
+use spacetimedb::execution_context::WorkloadType;
 use spacetimedb::host::module_host::ClientConnectedError;
 use spacetimedb::host::NoSuchModule;
 use spacetimedb::util::also_poll;
@@ -25,13 +32,6 @@ use spacetimedb_lib::connection_id::{ConnectionId, ConnectionIdForUrl};
 use std::time::Instant;
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Utf8Bytes;
-
-use crate::auth::SpacetimeAuth;
-use crate::util::websocket::{
-    CloseCode, CloseFrame, Message as WsMessage, WebSocketConfig, WebSocketStream, WebSocketUpgrade,
-};
-use crate::util::{NameOrIdentity, XForwardedFor};
-use crate::{log_and_500, ControlStateDelegate, NodeDelegate};
 
 #[allow(clippy::declare_interior_mutable_const)]
 pub const TEXT_PROTOCOL: HeaderValue = HeaderValue::from_static(ws_api::TEXT_PROTOCOL);
@@ -276,8 +276,18 @@ async fn ws_client_actor_inner(
                     log::info!("dropping messages due to ws already being closed: {:?}", &rx_buf[..n]);
                 } else {
                     let send_all = async {
+                        // We are going to randomly delay flushing if there are only updates
+                        // in the buffer. If there are any other types of messages, we will flush.
+                        let mut only_updates = true;
                         for msg in rx_buf.drain(..n) {
                             let workload = msg.workload();
+                            if msg.workload().filter(|w| {
+                                *w == WorkloadType::Update
+                            }).is_none() {
+                                // If the message is an update, we want to send it immediately,
+                                // even if the client has requested "light" responses.
+                                only_updates = false;
+                            }
                             let num_rows = msg.num_rows();
 
                             let msg = datamsg_to_wsmsg(serialize(msg, client.config));
@@ -297,8 +307,14 @@ async fn ws_client_actor_inner(
                             // feed() buffers the message, but does not necessarily send it
                             ws.feed(msg).await?;
                         }
-                        // now we flush all the messages to the socket
-                        ws.flush().await
+                        if only_updates && rand::random_bool(0.75) {
+                            // If these are only updates, we randomly delay flushing.
+                            Ok(())
+                        } else {
+                            // now we flush all the messages to the socket
+
+                            ws.flush().await
+                        }
                     };
                     // Flush the websocket while continuing to poll the `handle_queue`,
                     // to avoid deadlocks or delays due to enqueued futures holding resources.
