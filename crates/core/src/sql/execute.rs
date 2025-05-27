@@ -255,7 +255,7 @@ pub fn run(
                 let metrics = tx.metrics;
                 return db.commit_tx(tx).map(|tx_opt| {
                     if let Some((tx_data, tx_metrics, reducer)) = tx_opt {
-                        tx_metrics.report_with_db(&reducer, db, Some(&tx_data));
+                        db.report(&reducer, &tx_metrics, Some(&tx_data));
                     }
                     SqlResult { rows: vec![], metrics }
                 });

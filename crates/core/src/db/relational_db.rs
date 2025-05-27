@@ -983,11 +983,11 @@ impl RelationalDB {
     {
         if res.is_err() {
             let (tx_metrics, reducer) = self.rollback_mut_tx(tx);
-            tx_metrics.report_with_db(&reducer, self, None);
+            self.report(&reducer, &tx_metrics, None);
         } else {
             match self.commit_tx(tx).map_err(E::from)? {
                 Some((tx_data, tx_metrics, reducer)) => {
-                    tx_metrics.report_with_db(&reducer, self, Some(&tx_data));
+                    self.report(&reducer, &tx_metrics, Some(&tx_data));
                 }
                 None => panic!("TODO: retry?"),
             }
@@ -1002,7 +1002,7 @@ impl RelationalDB {
         match res {
             Err(e) => {
                 let (tx_metrics, reducer) = self.rollback_mut_tx(tx);
-                tx_metrics.report_with_db(&reducer, self, None);
+                self.report(&reducer, &tx_metrics, None);
 
                 Err(e)
             }
@@ -1359,6 +1359,11 @@ impl RelationalDB {
     ///Removes the [Constraints] from database instance
     pub fn drop_constraint(&self, tx: &mut MutTx, constraint_id: ConstraintId) -> Result<(), DBError> {
         self.inner.drop_constraint_mut_tx(tx, constraint_id)
+    }
+
+    /// Reports the metrics for `reducer`, using counters provided by `db`.
+    pub fn report(&self, reducer: &str, metrics: &TxMetrics, tx_data: Option<&TxData>) {
+        metrics.report(tx_data, reducer, |wl: WorkloadType| self.exec_counters_for(wl));
     }
 }
 

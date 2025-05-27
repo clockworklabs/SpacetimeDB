@@ -702,6 +702,10 @@ struct TableStats {
     num_indices: usize,
 }
 
+pub trait MetricsRecorder {
+    fn record(&self, metrics: &ExecutionMetrics);
+}
+
 impl TxMetrics {
     /// Compute transaction metrics that we can report once the tx lock is released.
     pub(super) fn new(
@@ -751,11 +755,11 @@ impl TxMetrics {
     }
 
     /// Reports the metrics for `reducer` using `get_exec_counter` to retrieve the metrics counters.
-    pub fn report<'a>(
+    pub fn report<'a, R: MetricsRecorder + 'a>(
         &self,
         tx_data: Option<&TxData>,
         reducer: &str,
-        get_exec_counter: impl FnOnce(WorkloadType) -> &'a ExecutionCounters,
+        get_exec_counter: impl FnOnce(WorkloadType) -> &'a R,
     ) {
         let workload = &self.workload;
         let db = &self.database_identity;
@@ -844,11 +848,6 @@ impl TxMetrics {
             }
         }
     }
-
-    /// Reports the metrics for `reducer`, using counters provided by `db`.
-    pub(crate) fn report_with_db(&self, reducer: &str, db: &RelationalDB, tx_data: Option<&TxData>) {
-        self.report(tx_data, reducer, |wl| db.exec_counters_for(wl));
-    }
 }
 
 /// Reports the `TxMetrics`s passed.
@@ -862,9 +861,9 @@ pub fn report_tx_metricses(
     metrics_read: &TxMetrics,
 ) {
     if let Some(metrics_mut) = metrics_mut {
-        metrics_mut.report_with_db(reducer, db, tx_data);
+        db.report(reducer, metrics_mut, tx_data);
     }
-    metrics_read.report_with_db(reducer, db, None);
+    db.report(reducer, metrics_read, None);
 }
 
 impl MutTx for Locking {

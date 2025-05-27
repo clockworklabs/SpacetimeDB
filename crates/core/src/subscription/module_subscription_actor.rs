@@ -264,7 +264,7 @@ impl ModuleSubscriptions {
 
         let tx = scopeguard::guard(self.relational_db.begin_tx(Workload::Subscribe), |tx| {
             let (tx_metrics, reducer) = self.relational_db.release_tx(tx);
-            tx_metrics.report_with_db(&reducer, &self.relational_db, None);
+            self.relational_db.report(&reducer, &tx_metrics, None);
         });
 
         let existing_query = {
@@ -357,7 +357,7 @@ impl ModuleSubscriptions {
 
         let tx = scopeguard::guard(self.relational_db.begin_tx(Workload::Unsubscribe), |tx| {
             let (tx_metrics, reducer) = self.relational_db.release_tx(tx);
-            tx_metrics.report_with_db(&reducer, &self.relational_db, None);
+            self.relational_db.report(&reducer, &tx_metrics, None);
         });
         let auth = AuthCtx::new(self.owner_identity, sender.id.identity);
         let (table_rows, metrics) = return_on_err_with_sql!(
@@ -403,7 +403,7 @@ impl ModuleSubscriptions {
         // Always lock the db before the subscription lock to avoid deadlocks.
         let tx = scopeguard::guard(self.relational_db.begin_tx(Workload::Unsubscribe), |tx| {
             let (tx_metrics, reducer) = self.relational_db.release_tx(tx);
-            tx_metrics.report_with_db(&reducer, &self.relational_db, None);
+            self.relational_db.report(&reducer, &tx_metrics, None);
         });
 
         let removed_queries = {
@@ -475,7 +475,7 @@ impl ModuleSubscriptions {
         // We always get the db lock before the subscription lock to avoid deadlocks.
         let tx = scopeguard::guard(self.relational_db.begin_tx(Workload::Subscribe), |tx| {
             let (tx_metrics, reducer) = self.relational_db.release_tx(tx);
-            tx_metrics.report_with_db(&reducer, &self.relational_db, None);
+            self.relational_db.report(&reducer, &tx_metrics, None);
         });
         let guard = self.subscriptions.read();
 
@@ -536,7 +536,7 @@ impl ModuleSubscriptions {
         );
         let tx = scopeguard::guard(tx, |tx| {
             let (tx_metrics, reducer) = self.relational_db.release_tx(tx);
-            tx_metrics.report_with_db(&reducer, &self.relational_db, None);
+            self.relational_db.report(&reducer, &tx_metrics, None);
         });
 
         // We minimize locking so that other clients can add subscriptions concurrently.
@@ -592,7 +592,7 @@ impl ModuleSubscriptions {
         let (queries, auth, tx) = self.compile_queries(sender.id.identity, subscription.query_strings, num_queries)?;
         let tx = scopeguard::guard(tx, |tx| {
             let (tx_metrics, reducer) = self.relational_db.release_tx(tx);
-            tx_metrics.report_with_db(&reducer, &self.relational_db, None);
+            self.relational_db.report(&reducer, &tx_metrics, None);
         });
 
         check_row_limit(
