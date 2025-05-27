@@ -843,7 +843,7 @@ pub fn decide_compression(len: usize, compression: Compression) -> Compression {
     /// The threshold beyond which we start to compress messages.
     /// 1KiB was chosen without measurement.
     /// TODO(perf): measure!
-    const COMPRESS_THRESHOLD: usize = 1024;
+    const COMPRESS_THRESHOLD: usize = 10240;
 
     if len > COMPRESS_THRESHOLD {
         compression
