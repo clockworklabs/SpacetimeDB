@@ -314,6 +314,7 @@ pub(crate) mod tests {
         StRowLevelSecurityRow, StTableFields, ST_ROW_LEVEL_SECURITY_ID, ST_TABLE_ID, ST_TABLE_NAME,
     };
     use crate::db::relational_db::tests_utils::{begin_tx, insert, with_auto_commit, TestDB};
+    use crate::subscription::module_subscription_manager::SubscriptionManager;
     use crate::vm::tests::create_table_with_rows;
     use itertools::Itertools;
     use pretty_assertions::assert_eq;
@@ -327,24 +328,29 @@ pub(crate) mod tests {
     use spacetimedb_vm::eval::test_helpers::create_game_data;
     use std::sync::Arc;
 
+    pub(crate) fn make_module_subscriptions(db: &RelationalDB) -> ModuleSubscriptions {
+        // Create and enter a Tokio runtime to run the `ModuleSubscriptions`' background workers in parallel.
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let _rt = runtime.enter();
+        ModuleSubscriptions::new(
+            Arc::new(db.clone()),
+            SubscriptionManager::for_test_without_metrics_arc_rwlock(),
+            Identity::ZERO,
+        )
+    }
+
     pub(crate) fn execute_for_testing(
         db: &RelationalDB,
         sql_text: &str,
         q: Vec<CrudExpr>,
     ) -> Result<Vec<MemTable>, DBError> {
-        // Create and enter a Tokio runtime to run the `ModuleSubscriptions`' background workers in parallel.
-        let runtime = tokio::runtime::Runtime::new().unwrap();
-        let _rt = runtime.enter();
-        let subs = ModuleSubscriptions::new(Arc::new(db.clone()), <_>::default(), Identity::ZERO);
+        let subs = make_module_subscriptions(db);
         execute_sql(db, sql_text, q, AuthCtx::for_testing(), Some(&subs))
     }
 
     /// Short-cut for simplify test execution
     pub(crate) fn run_for_testing(db: &RelationalDB, sql_text: &str) -> Result<Vec<ProductValue>, DBError> {
-        // Create and enter a Tokio runtime to run the `ModuleSubscriptions`' background workers in parallel.
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        let _guard = rt.enter();
-        let subs = ModuleSubscriptions::new(Arc::new(db.clone()), <_>::default(), Identity::ZERO);
+        let subs = make_module_subscriptions(db);
         run(db, sql_text, AuthCtx::for_testing(), Some(&subs), &mut vec![]).map(|x| x.rows)
     }
 

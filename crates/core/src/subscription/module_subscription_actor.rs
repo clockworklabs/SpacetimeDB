@@ -737,6 +737,7 @@ mod tests {
     use crate::error::DBError;
     use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall};
     use crate::messages::websocket as ws;
+    use crate::subscription::module_subscription_manager::SubscriptionManager;
     use crate::subscription::query::compile_read_only_query;
     use crate::subscription::TableUpdateType;
     use hashbrown::HashMap;
@@ -768,7 +769,11 @@ mod tests {
         let client = ClientActorId::for_test(Identity::ZERO);
         let config = ClientConfig::for_test();
         let sender = Arc::new(ClientConnectionSender::dummy(client, config));
-        let module_subscriptions = ModuleSubscriptions::new(db.clone(), <_>::default(), owner);
+        let module_subscriptions = ModuleSubscriptions::new(
+            db.clone(),
+            SubscriptionManager::for_test_without_metrics_arc_rwlock(),
+            owner,
+        );
 
         let subscribe = Subscribe {
             query_strings: [sql.into()].into(),
@@ -791,7 +796,11 @@ mod tests {
     fn module_subscriptions(db: Arc<RelationalDB>) -> ModuleSubscriptions {
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let _rt = runtime.enter();
-        ModuleSubscriptions::new(db, <_>::default(), Identity::ZERO)
+        ModuleSubscriptions::new(
+            db,
+            SubscriptionManager::for_test_without_metrics_arc_rwlock(),
+            Identity::ZERO,
+        )
     }
 
     /// Initialize a [`ModuleSubscriptions`] manager.
@@ -799,7 +808,11 @@ mod tests {
     /// Must be called from within a multi-threaded Tokio runtime,
     /// so that the manager's background tasks can run in parallel.
     fn module_subscriptions_async(db: Arc<RelationalDB>) -> ModuleSubscriptions {
-        ModuleSubscriptions::new(db, <_>::default(), Identity::ZERO)
+        ModuleSubscriptions::new(
+            db,
+            SubscriptionManager::for_test_without_metrics_arc_rwlock(),
+            Identity::ZERO,
+        )
     }
 
     /// A [SubscribeSingle] message for testing

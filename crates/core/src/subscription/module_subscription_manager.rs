@@ -9,10 +9,13 @@ use crate::error::DBError;
 use crate::host::module_host::{DatabaseTableUpdate, ModuleEvent, UpdatesRelValue};
 use crate::messages::websocket::{self as ws, TableUpdate};
 use crate::subscription::delta::eval_delta;
+use crate::worker_metrics::WORKER_METRICS;
 use hashbrown::hash_map::OccupiedError;
 use hashbrown::{HashMap, HashSet};
 use itertools::Itertools;
 use parking_lot::RwLock;
+use prometheus::IntGauge;
+use scopeguard::ScopeGuard;
 use spacetimedb_client_api_messages::websocket::{
     BsatnFormat, CompressableQueryUpdate, FormatSwitch, JsonFormat, QueryId, QueryUpdate, WebsocketFormat,
 };
@@ -339,20 +342,8 @@ pub struct SubscriptionManager {
     /// as it imposes a delay between unlocking the datastore
     /// and waking the many per-client sender Tokio tasks.
     send_worker_tx: mpsc::UnboundedSender<ComputedQueries>,
-}
 
-impl Default for SubscriptionManager {
-    fn default() -> Self {
-        let (send_worker_tx, rx) = mpsc::unbounded_channel();
-        tokio::spawn(Self::send_worker(rx));
-        Self {
-            clients: Default::default(),
-            queries: Default::default(),
-            tables: Default::default(),
-            search_args: Default::default(),
-            send_worker_tx,
-        }
-    }
+    send_queue_length_metric: Option<IntGauge>,
 }
 
 struct ClientQueryUpdate<F: WebsocketFormat> {
@@ -390,6 +381,46 @@ pub struct SubscriptionGaugeStats {
 }
 
 impl SubscriptionManager {
+    pub fn for_database(database_identity: Identity) -> Self {
+        let metric = WORKER_METRICS
+            .subscription_send_queue_length
+            .with_label_values(&database_identity);
+
+        // The `Self::send_worker` will drop this `ScopeGuard` when it exits, thus cleaning up the metric.
+        let clean_up_metric = scopeguard::guard((), move |_| {
+            let _ = WORKER_METRICS
+                .subscription_send_queue_length
+                .with_label_values(&database_identity);
+        });
+
+        Self::with_metric(Some(metric), clean_up_metric)
+    }
+
+    pub fn for_test_without_metrics_arc_rwlock() -> Arc<RwLock<Self>> {
+        Arc::new(RwLock::new(Self::for_test_without_metrics()))
+    }
+
+    pub fn for_test_without_metrics() -> Self {
+        let clean_up_metric = scopeguard::guard((), |_| {});
+        Self::with_metric(None, clean_up_metric)
+    }
+
+    fn with_metric(
+        metric: Option<IntGauge>,
+        clean_up_metric: ScopeGuard<(), impl FnOnce(()) + Send + 'static>,
+    ) -> Self {
+        let (send_worker_tx, rx) = mpsc::unbounded_channel();
+        tokio::spawn(Self::send_worker(rx, metric.clone(), clean_up_metric));
+        Self {
+            clients: Default::default(),
+            queries: Default::default(),
+            tables: Default::default(),
+            search_args: Default::default(),
+            send_worker_tx,
+            send_queue_length_metric: metric,
+        }
+    }
+
     pub fn client(&self, id: &ClientId) -> Client {
         self.clients.read()[id].outbound_ref.clone()
     }
@@ -944,6 +975,10 @@ impl SubscriptionManager {
                 acc
             });
 
+        if let Some(metric) = &self.send_queue_length_metric {
+            metric.inc();
+        }
+
         // We've now finished all of the work which needs to read from the datastore,
         // so get this work off the main thread and over to the `send_worker`,
         // then return ASAP in order to unlock the datastore and start running the next transaction.
@@ -967,7 +1002,16 @@ impl SubscriptionManager {
     /// into `DbUpdate`s and then sends them to the clients' WebSocket workers.
     ///
     /// See comment on the `send_worker_tx` field in [`SubscriptionManager`] for motivation.
-    async fn send_worker(mut rx: mpsc::UnboundedReceiver<ComputedQueries>) {
+    ///
+    /// If `queue_length_metric` is supplied, it will be decremented each time we pop a [`ComputedQueries`] from `rx`.
+    ///
+    /// `_clean_up_metric` will be dropped upon exiting this worker,
+    /// and should be a [`ScopeGuard`] which does `remove_label_values` on the `queue_length_metric`.
+    async fn send_worker(
+        mut rx: mpsc::UnboundedReceiver<ComputedQueries>,
+        queue_length_metric: Option<IntGauge>,
+        _clean_up_metric: ScopeGuard<(), impl FnOnce(()) + Send + 'static>,
+    ) {
         use FormatSwitch::{Bsatn, Json};
 
         while let Some(ComputedQueries {
@@ -978,6 +1022,10 @@ impl SubscriptionManager {
             clients,
         }) = rx.recv().await
         {
+            if let Some(metric) = &queue_length_metric {
+                metric.dec();
+            }
+
             let clients_with_errors = errs.iter().map(|(id, _)| id).collect::<HashSet<_>>();
 
             let span = tracing::info_span!("eval_incr_group_messages_by_client");
@@ -1174,7 +1222,7 @@ mod tests {
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let _rt = runtime.enter();
 
-        let mut subscriptions = SubscriptionManager::default();
+        let mut subscriptions = SubscriptionManager::for_test_without_metrics();
         subscriptions.set_legacy_subscription(client.clone(), [plan.clone()]);
 
         assert!(subscriptions.contains_query(&hash));
@@ -1200,7 +1248,7 @@ mod tests {
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let _rt = runtime.enter();
 
-        let mut subscriptions = SubscriptionManager::default();
+        let mut subscriptions = SubscriptionManager::for_test_without_metrics();
         subscriptions.add_subscription(client.clone(), plan.clone(), query_id)?;
         assert!(subscriptions.query_reads_from_table(&hash, &table_id));
 
@@ -1223,7 +1271,7 @@ mod tests {
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let _rt = runtime.enter();
 
-        let mut subscriptions = SubscriptionManager::default();
+        let mut subscriptions = SubscriptionManager::for_test_without_metrics();
         subscriptions.add_subscription(client.clone(), plan.clone(), query_id)?;
         assert!(subscriptions.query_reads_from_table(&hash, &table_id));
 
@@ -1249,7 +1297,7 @@ mod tests {
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let _rt = runtime.enter();
 
-        let mut subscriptions = SubscriptionManager::default();
+        let mut subscriptions = SubscriptionManager::for_test_without_metrics();
         subscriptions.add_subscription(client.clone(), plan.clone(), query_id)?;
 
         let client_id = (client.id.identity, client.id.connection_id);
@@ -1274,7 +1322,7 @@ mod tests {
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let _rt = runtime.enter();
 
-        let mut subscriptions = SubscriptionManager::default();
+        let mut subscriptions = SubscriptionManager::for_test_without_metrics();
         subscriptions.add_subscription(client.clone(), plan.clone(), query_id)?;
         subscriptions.add_subscription(client.clone(), plan.clone(), QueryId::new(2))?;
 
@@ -1303,7 +1351,7 @@ mod tests {
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let _rt = runtime.enter();
 
-        let mut subscriptions = SubscriptionManager::default();
+        let mut subscriptions = SubscriptionManager::for_test_without_metrics();
         let added_query = subscriptions.add_subscription_multi(client.clone(), vec![plan.clone()], query_id)?;
         assert!(added_query.len() == 1);
         assert_eq!(added_query[0].hash, hash);
@@ -1341,7 +1389,7 @@ mod tests {
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let _rt = runtime.enter();
 
-        let mut subscriptions = SubscriptionManager::default();
+        let mut subscriptions = SubscriptionManager::for_test_without_metrics();
         subscriptions.add_subscription(clients[0].clone(), plan.clone(), query_id)?;
         subscriptions.add_subscription(clients[1].clone(), plan.clone(), query_id)?;
         subscriptions.add_subscription(clients[2].clone(), plan.clone(), query_id)?;
@@ -1382,7 +1430,7 @@ mod tests {
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let _rt = runtime.enter();
 
-        let mut subscriptions = SubscriptionManager::default();
+        let mut subscriptions = SubscriptionManager::for_test_without_metrics();
         subscriptions.add_subscription(clients[0].clone(), plan.clone(), query_id)?;
         subscriptions.add_subscription(clients[1].clone(), plan.clone(), query_id)?;
         subscriptions.add_subscription(clients[2].clone(), plan.clone(), query_id)?;
@@ -1430,7 +1478,7 @@ mod tests {
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let _rt = runtime.enter();
 
-        let mut subscriptions = SubscriptionManager::default();
+        let mut subscriptions = SubscriptionManager::for_test_without_metrics();
         subscriptions.add_subscription(client.clone(), queries[0].clone(), QueryId::new(1))?;
         subscriptions.add_subscription(client.clone(), queries[1].clone(), QueryId::new(2))?;
         subscriptions.add_subscription(client.clone(), queries[2].clone(), QueryId::new(3))?;
@@ -1475,7 +1523,7 @@ mod tests {
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let _rt = runtime.enter();
 
-        let mut subscriptions = SubscriptionManager::default();
+        let mut subscriptions = SubscriptionManager::for_test_without_metrics();
         let added = subscriptions.add_subscription_multi(client.clone(), vec![queries[0].clone()], QueryId::new(1))?;
         assert_eq!(added.len(), 1);
         assert_eq!(added[0].hash, queries[0].hash());
@@ -1519,7 +1567,7 @@ mod tests {
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let _rt = runtime.enter();
 
-        let mut subscriptions = SubscriptionManager::default();
+        let mut subscriptions = SubscriptionManager::for_test_without_metrics();
 
         // Subscribe to queries that have search arguments
         let queries = (0u8..5)
@@ -1592,7 +1640,7 @@ mod tests {
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let _rt = runtime.enter();
 
-        let mut subscriptions = SubscriptionManager::default();
+        let mut subscriptions = SubscriptionManager::for_test_without_metrics();
 
         let queries = (0u8..5)
             .map(|name| format!("select * from t where a = {}", name))
@@ -1662,7 +1710,7 @@ mod tests {
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let _rt = runtime.enter();
 
-        let mut subscriptions = SubscriptionManager::default();
+        let mut subscriptions = SubscriptionManager::for_test_without_metrics();
 
         let plan = compile_plan(&db, "select t.* from t join s on t.id = s.id where s.a = 1")?;
         let hash = plan.hash;
@@ -1736,7 +1784,7 @@ mod tests {
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let _rt = runtime.enter();
 
-        let mut subscriptions = SubscriptionManager::default();
+        let mut subscriptions = SubscriptionManager::for_test_without_metrics();
         subscriptions.add_subscription(client.clone(), plan.clone(), query_id)?;
 
         assert!(subscriptions
@@ -1761,7 +1809,7 @@ mod tests {
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let _rt = runtime.enter();
 
-        let mut subscriptions = SubscriptionManager::default();
+        let mut subscriptions = SubscriptionManager::for_test_without_metrics();
         let result = subscriptions.add_subscription_multi(client.clone(), vec![plan.clone()], query_id)?;
         assert_eq!(result[0].hash, plan.hash);
 
@@ -1787,7 +1835,7 @@ mod tests {
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let _rt = runtime.enter();
 
-        let mut subscriptions = SubscriptionManager::default();
+        let mut subscriptions = SubscriptionManager::for_test_without_metrics();
         subscriptions.set_legacy_subscription(client, [plan]);
         subscriptions.remove_all_subscriptions(&id);
 
@@ -1813,7 +1861,7 @@ mod tests {
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let _rt = runtime.enter();
 
-        let mut subscriptions = SubscriptionManager::default();
+        let mut subscriptions = SubscriptionManager::for_test_without_metrics();
         subscriptions.set_legacy_subscription(client.clone(), [plan.clone()]);
         subscriptions.set_legacy_subscription(client.clone(), [plan.clone()]);
 
@@ -1848,7 +1896,7 @@ mod tests {
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let _rt = runtime.enter();
 
-        let mut subscriptions = SubscriptionManager::default();
+        let mut subscriptions = SubscriptionManager::for_test_without_metrics();
         subscriptions.set_legacy_subscription(client0, [plan.clone()]);
         subscriptions.set_legacy_subscription(client1, [plan.clone()]);
 
@@ -1895,7 +1943,7 @@ mod tests {
 
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let _rt = runtime.enter();
-        let mut subscriptions = SubscriptionManager::default();
+        let mut subscriptions = SubscriptionManager::for_test_without_metrics();
         subscriptions.set_legacy_subscription(client0, [plan_scan.clone(), plan_select0.clone()]);
         subscriptions.set_legacy_subscription(client1, [plan_scan.clone(), plan_select1.clone()]);
 
@@ -1954,7 +2002,7 @@ mod tests {
 
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let _rt = runtime.enter();
-        let subscriptions = SubscriptionManager::default();
+        let subscriptions = SubscriptionManager::for_test_without_metrics();
 
         let event = Arc::new(ModuleEvent {
             timestamp: Timestamp::now(),

@@ -514,7 +514,9 @@ mod test {
         host::Scheduler,
         messages::control_db::{Database, HostType},
         replica_context::ReplicaContext,
-        subscription::module_subscription_actor::ModuleSubscriptions,
+        subscription::{
+            module_subscription_actor::ModuleSubscriptions, module_subscription_manager::SubscriptionManager,
+        },
     };
     use anyhow::{anyhow, Result};
     use spacetimedb_lib::db::auth::StAccess;
@@ -537,7 +539,11 @@ mod test {
         // Create and enter a Tokio runtime to run the `ModuleSubscriptions`' background workers in parallel.
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let _rt = runtime.enter();
-        ModuleSubscriptions::new(relational_db, <_>::default(), Identity::ZERO)
+        ModuleSubscriptions::new(
+            relational_db,
+            SubscriptionManager::for_test_without_metrics_arc_rwlock(),
+            Identity::ZERO,
+        )
     }
 
     /// An `InstanceEnv` requires a `ReplicaContext`.

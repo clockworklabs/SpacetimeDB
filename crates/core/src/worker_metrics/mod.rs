@@ -257,6 +257,11 @@ metrics_group!(
         #[help = "The cumulative number of bytes sent to clients"]
         #[labels(txn_type: WorkloadType, db: Identity)]
         pub bytes_sent_to_clients: IntCounterVec,
+
+        #[name = spacetime_subscription_send_queue_length]
+        #[help = "The number of `ComputedQueries` waiting in the queue to be aggregated and broadcast by the `send_worker`"]
+        #[labels(database_identity: Identity)]
+        pub subscription_send_queue_length: IntGaugeVec,
     }
 );
 
