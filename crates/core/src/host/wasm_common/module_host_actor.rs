@@ -290,12 +290,12 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
                 log::warn!("Database update failed: {} @ {}", e, stdb.database_identity());
                 self.system_logger().warn(&format!("Database update failed: {e}"));
                 let (tx_metrics, reducer) = stdb.rollback_mut_tx(tx);
-                tx_metrics.report_with_db(&reducer, stdb, None);
+                stdb.report(&reducer, &tx_metrics, None);
                 Ok(UpdateDatabaseResult::ErrorExecutingMigration(e))
             }
             Ok(()) => {
                 if let Some((tx_data, tx_metrics, reducer)) = stdb.commit_tx(tx)? {
-                    tx_metrics.report_with_db(&reducer, stdb, Some(&tx_data));
+                    stdb.report(&reducer, &tx_metrics, Some(&tx_data));
                 }
                 self.system_logger().info("Database updated");
                 log::info!("Database updated, {}", stdb.database_identity());
@@ -398,9 +398,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         )
         .entered();
 
-        // run the call_reducer call in rayon. it's important that we don't acquire a lock inside a rayon task,
-        // as that can lead to deadlock.
-        let (mut tx, result) = rayon::scope(|_| tx_slot.set(tx, || self.instance.call_reducer(op, budget)));
+        let (mut tx, result) = tx_slot.set(tx, || self.instance.call_reducer(op, budget));
 
         let ExecuteResult {
             energy,

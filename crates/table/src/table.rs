@@ -270,7 +270,7 @@ impl Table {
         // By default, we start off with an empty pointer map,
         // which is removed when the first unique index is added.
         let pm = Some(PointerMap::default());
-        Self::new_with_indexes_capacity(schema, row_layout, static_layout, visitor_prog, squashed_offset, pm)
+        Self::new_raw(schema, row_layout, static_layout, visitor_prog, squashed_offset, pm)
     }
 
     /// Returns whether this is a scheduler table.
@@ -1231,13 +1231,19 @@ impl Table {
     /// The new table will be completely empty
     /// and will use the given `squashed_offset` instead of that of `self`.
     pub fn clone_structure(&self, squashed_offset: SquashedOffset) -> Self {
+        // Clone a bunch of static data.
+        // NOTE(centril): It's important that these be cheap to clone.
+        // This is why they are all `Arc`ed or have some sort of small-vec optimization.
         let schema = self.schema.clone();
         let layout = self.row_layout().clone();
         let sbl = self.inner.static_layout.clone();
         let visitor = self.inner.visitor_prog.clone();
+
         // If we had a pointer map, we'll have one in the cloned one as well, but empty.
         let pm = self.pointer_map.as_ref().map(|_| PointerMap::default());
-        let mut new = Table::new_with_indexes_capacity(schema, layout, sbl, visitor, squashed_offset, pm);
+
+        // Make the new table.
+        let mut new = Table::new_raw(schema, layout, sbl, visitor, squashed_offset, pm);
 
         // Clone the index structure. The table is empty, so no need to `build_from_rows`.
         for (&index_id, index) in self.indexes.iter() {
@@ -1875,7 +1881,7 @@ impl Table {
     }
 
     /// Returns a new empty table using the particulars passed.
-    fn new_with_indexes_capacity(
+    fn new_raw(
         schema: Arc<TableSchema>,
         row_layout: RowTypeLayout,
         static_layout: Option<(StaticLayout, StaticBsatnValidator)>,

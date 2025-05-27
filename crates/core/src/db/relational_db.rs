@@ -1,5 +1,5 @@
 use super::datastore::locking_tx_datastore::committed_state::CommittedState;
-use super::datastore::locking_tx_datastore::datastore::{report_tx_metricses, TxMetrics};
+use super::datastore::locking_tx_datastore::datastore::TxMetrics;
 use super::datastore::locking_tx_datastore::state_view::{
     IterByColEqMutTx, IterByColRangeMutTx, IterMutTx, IterTx, StateView,
 };
@@ -23,6 +23,7 @@ use crate::messages::control_db::HostType;
 use crate::subscription::ExecutionCounters;
 use crate::util::{asyncify, spawn_rayon};
 use anyhow::{anyhow, Context};
+use enum_map::EnumMap;
 use fs2::FileExt;
 use futures::channel::mpsc;
 use futures::StreamExt;
@@ -107,6 +108,9 @@ pub struct RelationalDB {
     // We want to release the file lock last.
     // TODO(noa): is this lockfile still necessary now that we have data-dir?
     _lock: LockFile,
+
+    /// A map from workload types to their cached prometheus counters.
+    workload_type_to_exec_counters: Arc<EnumMap<WorkloadType, ExecutionCounters>>,
 }
 
 #[derive(Clone)]
@@ -224,6 +228,8 @@ impl RelationalDB {
         let (durability, disk_size_fn) = durability.unzip();
         let snapshot_worker =
             snapshot_repo.map(|repo| SnapshotWorker::new(inner.committed_state.clone(), repo.clone()));
+        let workload_type_to_exec_counters =
+            Arc::new(EnumMap::from_fn(|ty| ExecutionCounters::new(&ty, &database_identity)));
 
         Self {
             inner,
@@ -237,6 +243,7 @@ impl RelationalDB {
             disk_size_fn,
 
             _lock: lock,
+            workload_type_to_exec_counters,
         }
     }
 
@@ -735,7 +742,7 @@ impl RelationalDB {
 
     /// Returns the execution counters for `workload_type` for this database.
     pub fn exec_counters_for(&self, workload_type: WorkloadType) -> &ExecutionCounters {
-        self.inner.exec_counters_for(workload_type)
+        &self.workload_type_to_exec_counters[workload_type]
     }
 
     /// Begin a transaction.
@@ -972,7 +979,7 @@ impl RelationalDB {
         let mut tx = self.begin_tx(workload);
         let res = f(&mut tx);
         let (tx_metics, reducer) = self.release_tx(tx);
-        report_tx_metricses(&reducer, self, None, None, &tx_metics);
+        self.report_tx_metricses(&reducer, None, None, &tx_metics);
         res
     }
 
@@ -983,11 +990,11 @@ impl RelationalDB {
     {
         if res.is_err() {
             let (tx_metrics, reducer) = self.rollback_mut_tx(tx);
-            tx_metrics.report_with_db(&reducer, self, None);
+            self.report(&reducer, &tx_metrics, None);
         } else {
             match self.commit_tx(tx).map_err(E::from)? {
                 Some((tx_data, tx_metrics, reducer)) => {
-                    tx_metrics.report_with_db(&reducer, self, Some(&tx_data));
+                    self.report(&reducer, &tx_metrics, Some(&tx_data));
                 }
                 None => panic!("TODO: retry?"),
             }
@@ -1002,7 +1009,7 @@ impl RelationalDB {
         match res {
             Err(e) => {
                 let (tx_metrics, reducer) = self.rollback_mut_tx(tx);
-                tx_metrics.report_with_db(&reducer, self, None);
+                self.report(&reducer, &tx_metrics, None);
 
                 Err(e)
             }
@@ -1012,6 +1019,22 @@ impl RelationalDB {
 
     pub(crate) fn alter_table_access(&self, tx: &mut MutTx, name: Box<str>, access: StAccess) -> Result<(), DBError> {
         self.inner.alter_table_access_mut_tx(tx, name, access)
+    }
+
+    /// Reports the `TxMetrics`s passed.
+    ///
+    /// Should only be called after the tx lock has been fully released.
+    pub(crate) fn report_tx_metricses(
+        &self,
+        reducer: &str,
+        tx_data: Option<&TxData>,
+        metrics_mut: Option<&TxMetrics>,
+        metrics_read: &TxMetrics,
+    ) {
+        if let Some(metrics_mut) = metrics_mut {
+            self.report(reducer, metrics_mut, tx_data);
+        }
+        self.report(reducer, metrics_read, None);
     }
 }
 
@@ -1359,6 +1382,11 @@ impl RelationalDB {
     ///Removes the [Constraints] from database instance
     pub fn drop_constraint(&self, tx: &mut MutTx, constraint_id: ConstraintId) -> Result<(), DBError> {
         self.inner.drop_constraint_mut_tx(tx, constraint_id)
+    }
+
+    /// Reports the metrics for `reducer`, using counters provided by `db`.
+    pub fn report(&self, reducer: &str, metrics: &TxMetrics, tx_data: Option<&TxData>) {
+        metrics.report(tx_data, reducer, |wl: WorkloadType| self.exec_counters_for(wl));
     }
 }
 

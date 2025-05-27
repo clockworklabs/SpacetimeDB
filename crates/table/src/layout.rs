@@ -27,6 +27,7 @@ use spacetimedb_sats::{
     SumValue, WithTypespace,
 };
 pub use spacetimedb_schema::type_for_generate::PrimitiveType;
+use std::sync::Arc;
 
 /// Aligns a `base` offset to the `required_alignment` (in the positive direction) and returns it.
 ///
@@ -194,50 +195,65 @@ pub const fn row_size_for_type<T>() -> Size {
 ///
 /// This type ensures that the minimum row size is adhered to.
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub struct RowTypeLayout(ProductTypeLayout);
+pub struct RowTypeLayout {
+    /// The memoized layout of the product type.
+    pub layout: Layout,
+    /// The fields of the product type with their own layout annotations.
+    ///
+    /// This is `Arc`ed at the row type level
+    /// as clones and drops of this showed up in flamegraphs.
+    /// A [`RowTypeLayout`] will typically be cloned once per table per transaction,
+    /// assuming the table is touched during that transaction.
+    /// This can be expensive for modules that have a lot of reducer calls per second.
+    pub elements: Arc<[ProductTypeElementLayout]>,
+}
 
 impl MemoryUsage for RowTypeLayout {
     fn heap_usage(&self) -> usize {
-        let Self(layout) = self;
-        layout.heap_usage()
+        let Self { layout, elements } = self;
+        layout.heap_usage() + elements.heap_usage()
     }
 }
 
 impl RowTypeLayout {
     /// Returns a view of this row type as a product type.
-    pub fn product(&self) -> &ProductTypeLayout {
-        &self.0
+    pub fn product(&self) -> ProductTypeLayoutView<'_> {
+        let elements = &*self.elements;
+        let layout = self.layout;
+        ProductTypeLayoutView { layout, elements }
     }
 
     /// Returns the row size for this row type.
     pub fn size(&self) -> Size {
-        Size(self.0.size() as u16)
-    }
-}
-
-impl From<ProductTypeLayout> for RowTypeLayout {
-    fn from(mut cols: ProductTypeLayout) -> Self {
-        cols.layout.size = row_size_for_bytes(cols.layout.size as usize).0;
-        Self(cols)
-    }
-}
-
-impl From<ProductType> for RowTypeLayout {
-    fn from(ty: ProductType) -> Self {
-        ProductTypeLayout::from(ty).into()
+        Size(self.product().size() as u16)
     }
 }
 
 impl HasLayout for RowTypeLayout {
     fn layout(&self) -> &Layout {
-        self.0.layout()
+        &self.layout
     }
 }
 
 impl Index<usize> for RowTypeLayout {
     type Output = AlgebraicTypeLayout;
     fn index(&self, index: usize) -> &Self::Output {
-        &self.0.elements[index].ty
+        &self.elements[index].ty
+    }
+}
+
+/// A mirror of [`ProductType`] annotated with a [`Layout`].
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct ProductTypeLayoutView<'a> {
+    /// The memoized layout of the product type.
+    pub layout: Layout,
+    /// The fields of the product type with their own layout annotations.
+    pub elements: &'a [ProductTypeElementLayout],
+}
+
+impl HasLayout for ProductTypeLayoutView<'_> {
+    fn layout(&self) -> &Layout {
+        &self.layout
     }
 }
 
@@ -248,6 +264,15 @@ pub struct ProductTypeLayout {
     pub layout: Layout,
     /// The fields of the product type with their own layout annotations.
     pub elements: Collection<ProductTypeElementLayout>,
+}
+
+impl ProductTypeLayout {
+    /// Returns a view of this row type as a product type.
+    pub fn view(&self) -> ProductTypeLayoutView<'_> {
+        let elements = &*self.elements;
+        let layout = self.layout;
+        ProductTypeLayoutView { layout, elements }
+    }
 }
 
 impl MemoryUsage for ProductTypeLayout {
@@ -443,40 +468,53 @@ impl From<AlgebraicType> for AlgebraicTypeLayout {
     }
 }
 
+/// Constructs the layout form of `ty`, returning the elements as `C` as well as the memoized `Layout`.
+fn product_type_layout<C: FromIterator<ProductTypeElementLayout>>(ty: ProductType) -> (C, Layout) {
+    let mut current_offset: usize = 0;
+
+    // Minimum possible alignment is 1, even though minimum possible size is 0.
+    // This is consistent with Rust.
+    let mut max_child_align = 1;
+
+    let mut fixed = true;
+    let elements = Vec::from(ty.elements)
+        .into_iter()
+        .map(|elem| {
+            let layout_type: AlgebraicTypeLayout = elem.algebraic_type.into();
+            fixed &= layout_type.layout().fixed;
+            let this_offset = align_to(current_offset, layout_type.align());
+            max_child_align = usize::max(max_child_align, layout_type.align());
+
+            current_offset = this_offset + layout_type.size();
+
+            ProductTypeElementLayout {
+                offset: this_offset as u16,
+                name: elem.name,
+                ty: layout_type,
+            }
+        })
+        .collect();
+
+    let layout = Layout {
+        align: max_child_align as u16,
+        size: align_to(current_offset, max_child_align) as u16,
+        fixed,
+    };
+
+    (elements, layout)
+}
+
+impl From<ProductType> for RowTypeLayout {
+    fn from(ty: ProductType) -> Self {
+        let (elements, mut layout) = product_type_layout(ty);
+        layout.size = row_size_for_bytes(layout.size as usize).0;
+        Self { layout, elements }
+    }
+}
+
 impl From<ProductType> for ProductTypeLayout {
     fn from(ty: ProductType) -> Self {
-        let mut current_offset: usize = 0;
-
-        // Minimum possible alignment is 1, even though minimum possible size is 0.
-        // This is consistent with Rust.
-        let mut max_child_align = 1;
-
-        let mut fixed = true;
-        let elements = Vec::from(ty.elements)
-            .into_iter()
-            .map(|elem| {
-                let layout_type: AlgebraicTypeLayout = elem.algebraic_type.into();
-                fixed &= layout_type.layout().fixed;
-                let this_offset = align_to(current_offset, layout_type.align());
-                max_child_align = usize::max(max_child_align, layout_type.align());
-
-                current_offset = this_offset + layout_type.size();
-
-                ProductTypeElementLayout {
-                    offset: this_offset as u16,
-                    name: elem.name,
-                    ty: layout_type,
-                }
-            })
-            .collect::<Vec<_>>()
-            .into();
-
-        let layout = Layout {
-            align: max_child_align as u16,
-            size: align_to(current_offset, max_child_align) as u16,
-            fixed,
-        };
-
+        let (elements, layout) = product_type_layout(ty);
         Self { layout, elements }
     }
 }
@@ -545,7 +583,7 @@ impl AlgebraicTypeLayout {
         match self {
             AlgebraicTypeLayout::Primitive(prim) => prim.algebraic_type(),
             AlgebraicTypeLayout::VarLen(var_len) => var_len.algebraic_type(),
-            AlgebraicTypeLayout::Product(prod) => AlgebraicType::Product(prod.product_type()),
+            AlgebraicTypeLayout::Product(prod) => AlgebraicType::Product(prod.view().product_type()),
             AlgebraicTypeLayout::Sum(sum) => AlgebraicType::Sum(sum.sum_type()),
         }
     }
@@ -560,7 +598,7 @@ impl VarLenType {
     }
 }
 
-impl ProductTypeLayout {
+impl ProductTypeLayoutView<'_> {
     pub(crate) fn product_type(&self) -> ProductType {
         ProductType {
             elements: self
@@ -647,13 +685,6 @@ impl SumTypeLayout {
     }
 }
 
-impl ProductTypeLayout {
-    /// Returns the offset of the element at `field_idx`.
-    pub fn offset_of_element(&self, field_idx: usize) -> usize {
-        self.elements[field_idx].offset as usize
-    }
-}
-
 /// Counts the number of [`VarLenGranule`] allocations required to store `val` in a page.
 pub fn required_var_len_granules_for_row(val: &ProductValue) -> usize {
     fn traverse_av(val: &AlgebraicValue, count: &mut usize) {
@@ -696,7 +727,7 @@ impl<'de> DeserializeSeed<'de> for &AlgebraicTypeLayout {
     fn deserialize<D: Deserializer<'de>>(self, de: D) -> Result<Self::Output, D::Error> {
         match self {
             AlgebraicTypeLayout::Sum(ty) => ty.deserialize(de).map(Into::into),
-            AlgebraicTypeLayout::Product(ty) => ty.deserialize(de).map(Into::into),
+            AlgebraicTypeLayout::Product(ty) => ty.view().deserialize(de).map(Into::into),
             AlgebraicTypeLayout::Primitive(PrimitiveType::Bool) => bool::deserialize(de).map(Into::into),
             AlgebraicTypeLayout::Primitive(PrimitiveType::I8) => i8::deserialize(de).map(Into::into),
             AlgebraicTypeLayout::Primitive(PrimitiveType::U8) => u8::deserialize(de).map(Into::into),
@@ -718,7 +749,7 @@ impl<'de> DeserializeSeed<'de> for &AlgebraicTypeLayout {
     }
 }
 
-impl<'de> DeserializeSeed<'de> for &ProductTypeLayout {
+impl<'de> DeserializeSeed<'de> for ProductTypeLayoutView<'_> {
     type Output = ProductValue;
 
     fn deserialize<D: Deserializer<'de>>(self, de: D) -> Result<Self::Output, D::Error> {
@@ -726,7 +757,7 @@ impl<'de> DeserializeSeed<'de> for &ProductTypeLayout {
     }
 }
 
-impl<'de> ProductVisitor<'de> for &ProductTypeLayout {
+impl<'de> ProductVisitor<'de> for ProductTypeLayoutView<'_> {
     type Output = ProductValue;
 
     fn product_name(&self) -> Option<&str> {
