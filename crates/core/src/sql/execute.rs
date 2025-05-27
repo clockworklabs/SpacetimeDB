@@ -1,7 +1,6 @@
 use std::time::Duration;
 
 use super::ast::SchemaViewer;
-use crate::db::datastore::locking_tx_datastore::datastore::report_tx_metricses;
 use crate::db::datastore::locking_tx_datastore::state_view::StateView;
 use crate::db::datastore::system_tables::StVarTable;
 use crate::db::datastore::traits::IsolationLevel;
@@ -204,13 +203,7 @@ pub fn run(
             // Release the tx on drop, so that we record metrics.
             let mut tx = scopeguard::guard(tx, |tx| {
                 let (tx_metrics_downgrade, reducer) = db.release_tx(tx);
-                report_tx_metricses(
-                    &reducer,
-                    db,
-                    Some(&tx_data),
-                    Some(&tx_metrics_mut),
-                    &tx_metrics_downgrade,
-                );
+                db.report_tx_metricses(&reducer, Some(&tx_data), Some(&tx_metrics_mut), &tx_metrics_downgrade);
             });
 
             // Compute the header for the result set

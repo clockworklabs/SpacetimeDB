@@ -8,7 +8,6 @@ use crate::client::messages::{
     SubscriptionUpdateMessage, TransactionUpdateMessage,
 };
 use crate::client::{ClientActorId, ClientConnectionSender, Protocol};
-use crate::db::datastore::locking_tx_datastore::datastore::report_tx_metricses;
 use crate::db::datastore::locking_tx_datastore::tx::TxId;
 use crate::db::db_metrics::DB_METRICS;
 use crate::db::relational_db::{MutTx, RelationalDB, Tx};
@@ -677,13 +676,7 @@ impl ModuleSubscriptions {
         // When we're done with this method, release the tx and report metrics.
         let mut read_tx = scopeguard::guard(read_tx, |tx| {
             let (tx_metrics_read, reducer) = self.relational_db.release_tx(tx);
-            report_tx_metricses(
-                &reducer,
-                stdb,
-                tx_data.as_ref(),
-                Some(&tx_metrics_mut),
-                &tx_metrics_read,
-            );
+            stdb.report_tx_metricses(&reducer, tx_data.as_ref(), Some(&tx_metrics_mut), &tx_metrics_read);
         });
         // Create the delta transaction we'll use to eval updates against.
         let delta_read_tx = tx_data

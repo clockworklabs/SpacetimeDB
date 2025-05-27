@@ -1,5 +1,5 @@
 use super::datastore::locking_tx_datastore::committed_state::CommittedState;
-use super::datastore::locking_tx_datastore::datastore::{report_tx_metricses, TxMetrics};
+use super::datastore::locking_tx_datastore::datastore::TxMetrics;
 use super::datastore::locking_tx_datastore::state_view::{
     IterByColEqMutTx, IterByColRangeMutTx, IterMutTx, IterTx, StateView,
 };
@@ -972,7 +972,7 @@ impl RelationalDB {
         let mut tx = self.begin_tx(workload);
         let res = f(&mut tx);
         let (tx_metics, reducer) = self.release_tx(tx);
-        report_tx_metricses(&reducer, self, None, None, &tx_metics);
+        self.report_tx_metricses(&reducer, None, None, &tx_metics);
         res
     }
 
@@ -1012,6 +1012,22 @@ impl RelationalDB {
 
     pub(crate) fn alter_table_access(&self, tx: &mut MutTx, name: Box<str>, access: StAccess) -> Result<(), DBError> {
         self.inner.alter_table_access_mut_tx(tx, name, access)
+    }
+
+    /// Reports the `TxMetrics`s passed.
+    ///
+    /// Should only be called after the tx lock has been fully released.
+    pub(crate) fn report_tx_metricses(
+        &self,
+        reducer: &str,
+        tx_data: Option<&TxData>,
+        metrics_mut: Option<&TxMetrics>,
+        metrics_read: &TxMetrics,
+    ) {
+        if let Some(metrics_mut) = metrics_mut {
+            self.report(reducer, metrics_mut, tx_data);
+        }
+        self.report(reducer, metrics_read, None);
     }
 }
 

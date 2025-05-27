@@ -6,16 +6,13 @@ use super::{
     tx::TxId,
     tx_state::TxState,
 };
+use crate::execution_context::{Workload, WorkloadType};
 use crate::{
     db::datastore::{
         locking_tx_datastore::state_view::{IterByColRangeMutTx, IterMutTx, IterTx},
         traits::{InsertFlags, UpdateFlags},
     },
     subscription::ExecutionCounters,
-};
-use crate::{
-    db::relational_db::RelationalDB,
-    execution_context::{Workload, WorkloadType},
 };
 use crate::{
     db::{
@@ -848,22 +845,6 @@ impl TxMetrics {
             }
         }
     }
-}
-
-/// Reports the `TxMetrics`s passed.
-///
-/// Should only be called after the tx lock has been fully released.
-pub fn report_tx_metricses(
-    reducer: &str,
-    db: &RelationalDB,
-    tx_data: Option<&TxData>,
-    metrics_mut: Option<&TxMetrics>,
-    metrics_read: &TxMetrics,
-) {
-    if let Some(metrics_mut) = metrics_mut {
-        db.report(reducer, metrics_mut, tx_data);
-    }
-    db.report(reducer, metrics_read, None);
 }
 
 impl MutTx for Locking {
