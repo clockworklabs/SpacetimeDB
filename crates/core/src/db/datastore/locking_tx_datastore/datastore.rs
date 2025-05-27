@@ -6,14 +6,11 @@ use super::{
     tx::TxId,
     tx_state::TxState,
 };
-use crate::execution_context::{Workload, WorkloadType};
-use crate::{
-    db::datastore::{
-        locking_tx_datastore::state_view::{IterByColRangeMutTx, IterMutTx, IterTx},
-        traits::{InsertFlags, UpdateFlags},
-    },
-    subscription::ExecutionCounters,
+use crate::db::datastore::{
+    locking_tx_datastore::state_view::{IterByColRangeMutTx, IterMutTx, IterTx},
+    traits::{InsertFlags, UpdateFlags},
 };
+use crate::execution_context::{Workload, WorkloadType};
 use crate::{
     db::{
         datastore::{
@@ -33,7 +30,6 @@ use crate::{
 };
 use anyhow::{anyhow, Context};
 use core::{cell::RefCell, ops::RangeBounds};
-use enum_map::EnumMap;
 use parking_lot::{Mutex, RwLock};
 use spacetimedb_commitlog::payload::{txdata, Txdata};
 use spacetimedb_data_structures::map::{HashCollectionExt, HashMap};
@@ -71,9 +67,6 @@ pub struct Locking {
     sequence_state: Arc<Mutex<SequencesState>>,
     /// The identity of this database.
     pub(crate) database_identity: Identity,
-
-    /// A map from workload types to their cached prometheus counters.
-    workload_type_to_exec_counters: Arc<EnumMap<WorkloadType, ExecutionCounters>>,
 }
 
 impl MemoryUsage for Locking {
@@ -82,7 +75,6 @@ impl MemoryUsage for Locking {
             committed_state,
             sequence_state,
             database_identity,
-            workload_type_to_exec_counters: _,
         } = self;
         std::mem::size_of_val(&**committed_state)
             + committed_state.read().heap_usage()
@@ -94,14 +86,10 @@ impl MemoryUsage for Locking {
 
 impl Locking {
     pub fn new(database_identity: Identity, page_pool: PagePool) -> Self {
-        let workload_type_to_exec_counters =
-            Arc::new(EnumMap::from_fn(|ty| ExecutionCounters::new(&ty, &database_identity)));
-
         Self {
             committed_state: Arc::new(RwLock::new(CommittedState::new(page_pool))),
             sequence_state: <_>::default(),
             database_identity,
-            workload_type_to_exec_counters,
         }
     }
 
@@ -317,10 +305,6 @@ impl Locking {
             .ok_or_else(|| TableError::NotFound(name.into()))?;
 
         tx.alter_table_access(table_id, access)
-    }
-
-    pub(crate) fn exec_counters_for(&self, workload_type: WorkloadType) -> &ExecutionCounters {
-        &self.workload_type_to_exec_counters[workload_type]
     }
 }
 

@@ -23,6 +23,7 @@ use crate::messages::control_db::HostType;
 use crate::subscription::ExecutionCounters;
 use crate::util::{asyncify, spawn_rayon};
 use anyhow::{anyhow, Context};
+use enum_map::EnumMap;
 use fs2::FileExt;
 use futures::channel::mpsc;
 use futures::StreamExt;
@@ -107,6 +108,9 @@ pub struct RelationalDB {
     // We want to release the file lock last.
     // TODO(noa): is this lockfile still necessary now that we have data-dir?
     _lock: LockFile,
+
+    /// A map from workload types to their cached prometheus counters.
+    workload_type_to_exec_counters: Arc<EnumMap<WorkloadType, ExecutionCounters>>,
 }
 
 #[derive(Clone)]
@@ -224,6 +228,8 @@ impl RelationalDB {
         let (durability, disk_size_fn) = durability.unzip();
         let snapshot_worker =
             snapshot_repo.map(|repo| SnapshotWorker::new(inner.committed_state.clone(), repo.clone()));
+        let workload_type_to_exec_counters =
+            Arc::new(EnumMap::from_fn(|ty| ExecutionCounters::new(&ty, &database_identity)));
 
         Self {
             inner,
@@ -237,6 +243,7 @@ impl RelationalDB {
             disk_size_fn,
 
             _lock: lock,
+            workload_type_to_exec_counters,
         }
     }
 
@@ -735,7 +742,7 @@ impl RelationalDB {
 
     /// Returns the execution counters for `workload_type` for this database.
     pub fn exec_counters_for(&self, workload_type: WorkloadType) -> &ExecutionCounters {
-        self.inner.exec_counters_for(workload_type)
+        &self.workload_type_to_exec_counters[workload_type]
     }
 
     /// Begin a transaction.
