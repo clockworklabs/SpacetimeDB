@@ -41,7 +41,6 @@ futures = "0.3"
 bytes = "1"
 tracing.workspace = true
 bytestring = "1"
-tokio-tungstenite.workspace = true
 itoa.workspace = true
 derive_more = "0.99.17"
 uuid.workspace = true
