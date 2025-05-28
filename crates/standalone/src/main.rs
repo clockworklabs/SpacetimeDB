@@ -1,13 +1,14 @@
 use clap::Command;
 
 use spacetimedb::startup;
+use spacetimedb::util::jobs::JobCores;
 use tokio::runtime::Builder;
 
 use spacetimedb_standalone::*;
 use std::panic;
 use std::process;
 
-async fn async_main(db_cores: startup::DatabaseCores) -> anyhow::Result<()> {
+async fn async_main(db_cores: JobCores) -> anyhow::Result<()> {
     let matches = get_command().get_matches();
     let (cmd, subcommand_args) = matches.subcommand().unwrap();
     exec_subcommand(cmd, subcommand_args, db_cores).await?;

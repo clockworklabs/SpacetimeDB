@@ -13,11 +13,11 @@ use crate::messages::control_db::Database;
 use crate::replica_context::ReplicaContext;
 use crate::sql::ast::SchemaViewer;
 use crate::sql::parser::RowLevelExpr;
-use crate::startup::DatabaseCore;
 use crate::subscription::execute_plan;
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use crate::subscription::tx::DeltaTx;
 use crate::util::asyncify;
+use crate::util::jobs::{JobCore, JobThread, WeakJobThread};
 use crate::util::lending_pool::{LendingPool, LentResource, PoolClosed};
 use crate::vm::check_row_limit;
 use crate::worker_metrics::WORKER_METRICS;
@@ -47,7 +47,6 @@ use spacetimedb_vm::relation::RelValue;
 use std::fmt;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
-use tokio::sync::{mpsc, oneshot};
 
 #[derive(Debug, Default, Clone, From)]
 pub struct DatabaseUpdate {
@@ -446,7 +445,7 @@ pub struct ModuleHost {
     inner: Arc<dyn DynModuleHost>,
     /// Called whenever a reducer call on this host panics.
     on_panic: Arc<dyn Fn() + Send + Sync + 'static>,
-    job_tx: mpsc::Sender<Box<dyn FnOnce() + Send>>,
+    job_tx: JobThread<()>,
 }
 
 impl fmt::Debug for ModuleHost {
@@ -539,7 +538,7 @@ pub struct WeakModuleHost {
     info: Arc<ModuleInfo>,
     inner: Weak<dyn DynModuleHost>,
     on_panic: Weak<dyn Fn() + Send + Sync + 'static>,
-    tx: mpsc::WeakSender<Box<dyn FnOnce() + Send>>,
+    tx: WeakJobThread<()>,
 }
 
 #[derive(Debug)]
@@ -600,11 +599,7 @@ pub enum ClientConnectedError {
 }
 
 impl ModuleHost {
-    pub(super) fn new(
-        mut module: impl Module,
-        on_panic: impl Fn() + Send + Sync + 'static,
-        core: DatabaseCore,
-    ) -> Self {
+    pub(super) fn new(mut module: impl Module, on_panic: impl Fn() + Send + Sync + 'static, core: JobCore) -> Self {
         let info = module.info();
         let instance_pool = LendingPool::new();
         instance_pool.add_multiple(module.initial_instances()).unwrap();
@@ -613,17 +608,12 @@ impl ModuleHost {
             instance_pool,
         });
         let on_panic = Arc::new(on_panic);
-        let (tx, mut rx) = mpsc::channel::<Box<dyn FnOnce() + Send>>(8);
-        core.spawn(move || {
-            while let Some(f) = rx.blocking_recv() {
-                f()
-            }
-        });
+        let job_tx = core.start(|| (), |x| x);
         ModuleHost {
             info,
             inner,
             on_panic,
-            job_tx: tx,
+            job_tx,
         }
     }
 
@@ -664,14 +654,7 @@ impl ModuleHost {
             log::warn!("reducer {reducer} panicked");
             (self.on_panic)();
         });
-        let (ret_tx, ret_rx) = oneshot::channel();
-        self.job_tx
-            .send(Box::new(move || {
-                let _ = ret_tx.send(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(&mut *inst))));
-            }))
-            .await
-            .unwrap();
-        let result = ret_rx.await.unwrap().unwrap_or_else(|e| std::panic::resume_unwind(e));
+        let result = self.job_tx.run(move |()| f(&mut *inst)).await;
         Ok(result)
     }
 

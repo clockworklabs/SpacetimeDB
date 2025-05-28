@@ -7,7 +7,8 @@ use clap::ArgAction::SetTrue;
 use clap::{Arg, ArgMatches};
 use spacetimedb::config::{CertificateAuthority, ConfigFile};
 use spacetimedb::db::{Config, Storage};
-use spacetimedb::startup::{self, DatabaseCores, TracingOptions};
+use spacetimedb::startup::{self, TracingOptions};
+use spacetimedb::util::jobs::JobCores;
 use spacetimedb::worker_metrics;
 use spacetimedb_client_api::routes::database::DatabaseRoutes;
 use spacetimedb_client_api::routes::router;
@@ -75,7 +76,7 @@ pub fn cli() -> clap::Command {
     // .after_help("Run `spacetime help start` for more detailed information.")
 }
 
-pub async fn exec(args: &ArgMatches, db_cores: DatabaseCores) -> anyhow::Result<()> {
+pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
     let listen_addr = args.get_one::<String>("listen_addr").unwrap();
     let cert_dir = args.get_one::<spacetimedb_paths::cli::ConfigDir>("jwt_key_dir");
     let certs = Option::zip(

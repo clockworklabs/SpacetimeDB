@@ -14,6 +14,7 @@ use tracing_subscriber::prelude::*;
 use tracing_subscriber::{reload, EnvFilter};
 
 use crate::config::{ConfigFile, LogConfig};
+use crate::util::jobs::JobCores;
 
 pub struct TracingOptions {
     pub config: LogConfig,
@@ -152,7 +153,7 @@ fn reload_config<S>(conf_file: &ConfigToml, reload_handle: &reload::Handle<EnvFi
 }
 
 pub struct Cores {
-    pub databases: DatabaseCores,
+    pub databases: JobCores,
     pub tokio_workers: TokioCores,
     pub rest: usize,
 }
@@ -160,7 +161,7 @@ pub struct Cores {
 impl Default for Cores {
     fn default() -> Self {
         Self {
-            databases: DatabaseCores::default(),
+            databases: JobCores::default(),
             tokio_workers: TokioCores(None),
             rest: std::thread::available_parallelism().map_or(4, |x| x.get()),
         }
@@ -169,18 +170,16 @@ impl Default for Cores {
 
 impl Cores {
     fn get() -> Option<Self> {
-        let mut cores = core_affinity::get_core_ids()
+        let cores = &mut core_affinity::get_core_ids()
             .filter(|cores| cores.len() >= 8)?
             .into_iter();
 
         let total = cores.len() as f64;
-        let mut take = |frac: f64| cores.by_ref().take((total * frac).ceil() as usize).collect::<Vec<_>>();
+        let frac = |frac: f64| (total * frac).ceil() as usize;
 
-        let databases = DatabaseCores {
-            queue: Some(vec_to_queue(take(1.0 / 8.0))),
-        };
+        let databases = cores.take(frac(1.0 / 8.0)).collect();
 
-        let tokio_workers = TokioCores(Some(take(5.0 / 8.0)));
+        let tokio_workers = TokioCores(Some(cores.take(frac(5.0 / 8.0)).collect()));
 
         Some(Self {
             databases,
@@ -214,45 +213,6 @@ impl TokioCores {
                 }
             });
         }
-    }
-}
-
-#[derive(Clone, Default)]
-pub struct DatabaseCores {
-    queue: Option<CoreQueue>,
-}
-
-impl DatabaseCores {
-    pub fn take(&self) -> DatabaseCore {
-        if let Some(queue) = &self.queue {
-            if let Some(core) = queue.pop() {
-                return DatabaseCore {
-                    cores_id: Some((queue.clone(), core)),
-                };
-            }
-        }
-        DatabaseCore { cores_id: None }
-    }
-}
-
-#[derive(Default)]
-pub struct DatabaseCore {
-    cores_id: Option<(CoreQueue, CoreId)>,
-}
-
-impl DatabaseCore {
-    pub fn spawn(self, f: impl FnOnce() + Send + 'static) {
-        std::thread::spawn(move || {
-            if let Some((_, id)) = self.cores_id {
-                core_affinity::set_for_current(id);
-            }
-            scopeguard::defer!({
-                if let Some((queue, id)) = self.cores_id {
-                    queue.push(id).unwrap();
-                }
-            });
-            f();
-        });
     }
 }
 

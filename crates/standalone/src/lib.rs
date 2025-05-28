@@ -20,7 +20,7 @@ use spacetimedb::host::{
 };
 use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, Node, Replica};
-use spacetimedb::startup::DatabaseCores;
+use spacetimedb::util::jobs::JobCores;
 use spacetimedb::worker_metrics::WORKER_METRICS;
 use spacetimedb_client_api::auth::{self, LOCALHOST};
 use spacetimedb_client_api::{Host, NodeDelegate};
@@ -47,7 +47,7 @@ impl StandaloneEnv {
         config: Config,
         certs: &CertificateAuthority,
         data_dir: Arc<ServerDataDir>,
-        db_cores: DatabaseCores,
+        db_cores: JobCores,
     ) -> anyhow::Result<Arc<Self>> {
         let _pid_file = data_dir.pid_file()?;
         let meta_path = data_dir.metadata_toml();
@@ -464,7 +464,7 @@ impl StandaloneEnv {
     }
 }
 
-pub async fn exec_subcommand(cmd: &str, args: &ArgMatches, db_cores: DatabaseCores) -> Result<(), anyhow::Error> {
+pub async fn exec_subcommand(cmd: &str, args: &ArgMatches, db_cores: JobCores) -> Result<(), anyhow::Error> {
     match cmd {
         "start" => start::exec(args, db_cores).await,
         "extract-schema" => extract_schema::exec(args).await,
@@ -482,7 +482,7 @@ pub async fn start_server(data_dir: &ServerDataDir, cert_dir: Option<&std::path:
         args.extend(["--jwt-key-dir".as_ref(), cert_dir.as_os_str()])
     }
     let args = start::cli().try_get_matches_from(args)?;
-    start::exec(&args, DatabaseCores::default()).await
+    start::exec(&args, JobCores::default()).await
 }
 
 #[cfg(test)]

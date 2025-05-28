@@ -12,10 +12,10 @@ use crate::energy::{EnergyMonitor, EnergyQuanta, NullEnergyMonitor};
 use crate::messages::control_db::{Database, HostType};
 use crate::module_host_context::ModuleCreationContext;
 use crate::replica_context::ReplicaContext;
-use crate::startup::{DatabaseCore, DatabaseCores};
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use crate::subscription::module_subscription_manager::SubscriptionManager;
-use crate::util::{asyncify, spawn_rayon};
+use crate::util::asyncify;
+use crate::util::jobs::{JobCore, JobCores};
 use crate::worker_metrics::WORKER_METRICS;
 use anyhow::{anyhow, ensure, Context};
 use async_trait::async_trait;
@@ -97,7 +97,7 @@ pub struct HostController {
     /// The runtimes for running our modules.
     runtimes: Arc<HostRuntimes>,
     /// The CPU cores that are reserved for running databases on.
-    db_cores: DatabaseCores,
+    db_cores: JobCores,
 }
 
 struct HostRuntimes {
@@ -172,7 +172,7 @@ impl HostController {
         program_storage: ProgramStorage,
         energy_monitor: Arc<impl EnergyMonitor>,
         durability: Arc<dyn DurabilityProvider>,
-        db_cores: DatabaseCores,
+        db_cores: JobCores,
     ) -> Self {
         Self {
             hosts: <_>::default(),
@@ -579,9 +579,9 @@ async fn make_module_host(
     program: Program,
     energy_monitor: Arc<dyn EnergyMonitor>,
     unregister: impl Fn() + Send + Sync + 'static,
-    core: DatabaseCore,
+    core: JobCore,
 ) -> anyhow::Result<(Program, ModuleHost)> {
-    spawn_rayon(move || {
+    asyncify(move || {
         let module_host = match host_type {
             HostType::Wasm => {
                 let mcc = ModuleCreationContext {
@@ -626,7 +626,7 @@ async fn launch_module(
     energy_monitor: Arc<dyn EnergyMonitor>,
     replica_dir: ReplicaDir,
     runtimes: Arc<HostRuntimes>,
-    core: DatabaseCore,
+    core: JobCore,
 ) -> anyhow::Result<(Program, LaunchedModule)> {
     let db_identity = database.database_identity;
     let host_type = database.host_type;
@@ -853,7 +853,7 @@ impl Host {
         page_pool: PagePool,
         database: Database,
         program: Program,
-        core: DatabaseCore,
+        core: JobCore,
     ) -> anyhow::Result<Arc<ModuleInfo>> {
         // Even in-memory databases acquire a lockfile.
         // Grab a tempdir to put that lockfile in.
@@ -916,7 +916,7 @@ impl Host {
         program: Program,
         energy_monitor: Arc<dyn EnergyMonitor>,
         on_panic: impl Fn() + Send + Sync + 'static,
-        core: DatabaseCore,
+        core: JobCore,
     ) -> anyhow::Result<UpdateDatabaseResult> {
         let replica_ctx = &self.replica_ctx;
         let (scheduler, scheduler_starter) = Scheduler::open(self.replica_ctx.relational_db.clone());
@@ -1004,7 +1004,7 @@ pub async fn extract_schema(program_bytes: Box<[u8]>, host_type: HostType) -> an
 
     let runtimes = HostRuntimes::new(None);
     let page_pool = PagePool::new(None);
-    let core = DatabaseCore::default();
+    let core = JobCore::default();
     let module_info = Host::try_init_in_memory_to_check(&runtimes, page_pool, database, program, core).await?;
     // this should always succeed, but sometimes it doesn't
     let module_def = match Arc::try_unwrap(module_info) {
