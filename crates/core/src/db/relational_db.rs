@@ -3,7 +3,7 @@ use super::datastore::locking_tx_datastore::datastore::TxMetrics;
 use super::datastore::locking_tx_datastore::state_view::{
     IterByColEqMutTx, IterByColRangeMutTx, IterMutTx, IterTx, StateView,
 };
-use super::datastore::system_tables::ST_MODULE_ID;
+use super::datastore::system_tables::{StFields, StVarFields, StVarName, StVarRow, ST_MODULE_ID, ST_VAR_ID};
 use super::datastore::traits::{
     InsertFlags, IsolationLevel, Metadata, MutTx as _, MutTxDatastore, Program, RowTypeForTable, Tx as _, TxDatastore,
     UpdateFlags,
@@ -32,10 +32,12 @@ use spacetimedb_commitlog as commitlog;
 use spacetimedb_durability::{self as durability, TxOffset};
 use spacetimedb_lib::db::auth::StAccess;
 use spacetimedb_lib::db::raw_def::v9::{btree, RawModuleDefV9Builder, RawSql};
+use spacetimedb_lib::st_var::StVarValue;
 use spacetimedb_lib::ConnectionId;
 use spacetimedb_lib::Identity;
 use spacetimedb_paths::server::{CommitLogDir, ReplicaDir, SnapshotsPath};
 use spacetimedb_primitives::*;
+use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
 use spacetimedb_schema::def::{ModuleDef, TableDef};
 use spacetimedb_schema::schema::{IndexSchema, RowLevelSecuritySchema, Schema, SequenceSchema, TableSchema};
@@ -44,6 +46,8 @@ use spacetimedb_table::indexes::RowPointer;
 use spacetimedb_table::page_pool::PagePool;
 use spacetimedb_table::table::RowRef;
 use spacetimedb_table::MemoryUsage;
+use spacetimedb_vm::errors::{ErrorType, ErrorVm};
+use spacetimedb_vm::ops::parse;
 use std::borrow::Cow;
 use std::collections::HashSet;
 use std::fmt;
@@ -1388,6 +1392,78 @@ impl RelationalDB {
     pub fn report(&self, reducer: &str, metrics: &TxMetrics, tx_data: Option<&TxData>) {
         metrics.report(tx_data, reducer, |wl: WorkloadType| self.exec_counters_for(wl));
     }
+
+    /// Read the value of [ST_VARNAME_ROW_LIMIT] from `st_var`
+    pub(crate) fn row_limit(&self, tx: &Tx) -> Result<Option<u64>, DBError> {
+        let data = self.read_var(tx, StVarName::RowLimit);
+
+        if let Some(StVarValue::U64(limit)) = data? {
+            return Ok(Some(limit));
+        }
+        Ok(None)
+    }
+
+    /// Read the value of [ST_VARNAME_SLOW_QRY] from `st_var`
+    pub(crate) fn query_limit(&self, tx: &Tx) -> Result<Option<u64>, DBError> {
+        if let Some(StVarValue::U64(ms)) = self.read_var(tx, StVarName::SlowQryThreshold)? {
+            return Ok(Some(ms));
+        }
+        Ok(None)
+    }
+
+    /// Read the value of [ST_VARNAME_SLOW_SUB] from `st_var`
+    #[allow(dead_code)]
+    pub(crate) fn sub_limit(&self, tx: &Tx) -> Result<Option<u64>, DBError> {
+        if let Some(StVarValue::U64(ms)) = self.read_var(tx, StVarName::SlowSubThreshold)? {
+            return Ok(Some(ms));
+        }
+        Ok(None)
+    }
+
+    /// Read the value of [ST_VARNAME_SLOW_INC] from `st_var`
+    #[allow(dead_code)]
+    pub(crate) fn incr_limit(&self, tx: &Tx) -> Result<Option<u64>, DBError> {
+        if let Some(StVarValue::U64(ms)) = self.read_var(tx, StVarName::SlowIncThreshold)? {
+            return Ok(Some(ms));
+        }
+        Ok(None)
+    }
+
+    /// Read the value of a system variable from `st_var`
+    pub(crate) fn read_var(&self, tx: &Tx, name: StVarName) -> Result<Option<StVarValue>, DBError> {
+        if let Some(row_ref) = self
+            .iter_by_col_eq(tx, ST_VAR_ID, StVarFields::Name.col_id(), &name.into())?
+            .next()
+        {
+            return Ok(Some(StVarRow::try_from(row_ref)?.value));
+        }
+        Ok(None)
+    }
+
+    /// Update the value of a system variable in `st_var`
+    pub(crate) fn write_var(&self, tx: &mut MutTx, name: StVarName, literal: &str) -> Result<(), DBError> {
+        let value = Self::parse_var(name, literal)?;
+        if let Some(row_ref) = self
+            .iter_by_col_eq_mut(tx, ST_VAR_ID, StVarFields::Name.col_id(), &name.into())?
+            .next()
+        {
+            self.delete(tx, ST_VAR_ID, [row_ref.pointer()]);
+        }
+        tx.insert_via_serialize_bsatn(ST_VAR_ID, &StVarRow { name, value })?;
+        Ok(())
+    }
+
+    /// Parse the literal representation of a system variable
+    fn parse_var(name: StVarName, literal: &str) -> Result<StVarValue, DBError> {
+        StVarValue::try_from_primitive(parse::parse(literal, &name.type_of())?).map_err(|v| {
+            ErrorVm::Type(ErrorType::Parse {
+                value: literal.to_string(),
+                ty: fmt_algebraic_type(&name.type_of()).to_string(),
+                err: format!("error parsing value: {:?}", v),
+            })
+            .into()
+        })
+    }
 }
 
 #[allow(unused)]
@@ -1948,7 +2024,9 @@ mod tests {
         system_tables, StConstraintRow, StIndexRow, StSequenceRow, StTableRow, ST_CONSTRAINT_ID, ST_INDEX_ID,
         ST_SEQUENCE_ID, ST_TABLE_ID,
     };
-    use crate::db::relational_db::tests_utils::{begin_tx, insert, make_snapshot, TestDB};
+    use crate::db::relational_db::tests_utils::{
+        begin_tx, insert, make_snapshot, with_auto_commit, with_read_only, TestDB,
+    };
     use crate::error::IndexError;
     use crate::execution_context::ReducerContext;
     use anyhow::bail;
@@ -2030,6 +2108,18 @@ mod tests {
         stdb.commit_tx(tx)?;
 
         Ok(())
+    }
+
+    #[test]
+    fn test_system_variables() {
+        let db = TestDB::durable().expect("failed to create db");
+        let _ = with_auto_commit(&db, |tx| db.write_var(tx, StVarName::RowLimit, "5"));
+        assert_eq!(
+            5,
+            with_read_only(&db, |tx| db.row_limit(tx))
+                .expect("failed to read from st_var")
+                .expect("row_limit does not exist")
+        );
     }
 
     #[test]

@@ -2,7 +2,6 @@ use std::time::Duration;
 
 use super::ast::SchemaViewer;
 use crate::db::datastore::locking_tx_datastore::state_view::StateView;
-use crate::db::datastore::system_tables::StVarTable;
 use crate::db::datastore::traits::IsolationLevel;
 use crate::db::relational_db::{RelationalDB, Tx};
 use crate::energy::EnergyQuanta;
@@ -72,7 +71,7 @@ fn execute(
     updates: &mut Vec<DatabaseTableUpdate>,
 ) -> Result<Vec<MemTable>, DBError> {
     let slow_query_threshold = if let TxMode::Tx(tx) = p.tx {
-        StVarTable::query_limit(p.db, tx)?.map(Duration::from_millis)
+        p.db.query_limit(tx)?.map(Duration::from_millis)
     } else {
         None
     };

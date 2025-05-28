@@ -3,7 +3,7 @@
 use crate::db::datastore::locking_tx_datastore::state_view::IterByColRangeMutTx;
 use crate::db::datastore::locking_tx_datastore::tx::TxId;
 use crate::db::datastore::locking_tx_datastore::IterByColRangeTx;
-use crate::db::datastore::system_tables::{st_var_schema, StVarName, StVarRow, StVarTable};
+use crate::db::datastore::system_tables::{st_var_schema, StVarName, StVarRow};
 use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::error::DBError;
 use crate::estimation;
@@ -467,7 +467,7 @@ pub fn check_row_limit<Query>(
     auth: &AuthCtx,
 ) -> Result<(), DBError> {
     if auth.caller != auth.owner {
-        if let Some(limit) = StVarTable::row_limit(db, tx)? {
+        if let Some(limit) = db.row_limit(tx)? {
             let mut estimate: u64 = 0;
             for query in queries {
                 estimate = estimate.saturating_add(row_est(query, tx));
@@ -603,7 +603,7 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
 
     fn _set_var(&mut self, name: String, literal: String) -> Result<Code, ErrorVm> {
         let tx = self.tx.unwrap_mut();
-        StVarTable::write_var(self.db, tx, StVarName::from_str(&name)?, &literal)?;
+        self.db.write_var(tx, StVarName::from_str(&name)?, &literal)?;
         Ok(Code::Pass(None))
     }
 
@@ -611,7 +611,7 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
         fn read_key_into_table(env: &DbProgram, name: &str) -> Result<MemTable, ErrorVm> {
             if let TxMode::Tx(tx) = &env.tx {
                 let name = StVarName::from_str(name)?;
-                if let Some(value) = StVarTable::read_var(env.db, tx, name)? {
+                if let Some(value) = env.db.read_var(tx, name)? {
                     return Ok(MemTable::from_iter(
                         Arc::new(st_var_schema().into()),
                         [ProductValue::from(StVarRow { name, value })],
