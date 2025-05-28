@@ -148,10 +148,10 @@ impl ModuleSubscriptions {
 
     /// Construct a new [`ModuleSubscriptions`] for use in testing,
     /// creating a new [`tokio::runtime::Runtime`] to run its send worker.
-    pub fn for_test_new_runtime(db: Arc<RelationalDB>) -> ModuleSubscriptions {
+    pub fn for_test_new_runtime(db: Arc<RelationalDB>) -> (ModuleSubscriptions, tokio::runtime::Runtime) {
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let _rt = runtime.enter();
-        Self::for_test_enclosing_runtime(db)
+        (Self::for_test_enclosing_runtime(db), runtime)
     }
 
     /// Construct a new [`ModuleSubscriptions`] for use in testing,
@@ -1073,7 +1073,7 @@ mod tests {
         let (sender, _) = client_connection(client_id);
 
         let db = relational_db()?;
-        let subs = ModuleSubscriptions::for_test_new_runtime(db.clone());
+        let (subs, _runtime) = ModuleSubscriptions::for_test_new_runtime(db.clone());
 
         // Create a table `t` with index on `id`
         let table_id = db.create_table_for_test("t", &[("id", AlgebraicType::U64)], &[0.into()])?;

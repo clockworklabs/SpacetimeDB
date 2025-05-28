@@ -405,7 +405,10 @@ impl SubscriptionManager {
     }
 
     pub fn for_test_without_metrics() -> Self {
-        let clean_up_metric = scopeguard::guard((), |_| {});
+        let clean_up_metric = scopeguard::guard((), |_| {
+            let bt = std::backtrace::Backtrace::force_capture();
+            println!("Exiting test send_worker at {bt}");
+        });
         Self::with_metric(None, clean_up_metric)
     }
 
