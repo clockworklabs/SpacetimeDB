@@ -3,7 +3,7 @@ use std::{
     ops::Bound,
 };
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use itertools::Either;
 use spacetimedb_expr::expr::AggType;
 use spacetimedb_lib::{metrics::ExecutionMetrics, query::Delta, sats::size_of::SizeOf, AlgebraicValue, ProductValue};
@@ -14,7 +14,7 @@ use spacetimedb_physical_plan::plan::{
 use spacetimedb_primitives::{ColId, IndexId, TableId};
 use spacetimedb_sats::product;
 
-use crate::{Datastore, DeltaStore, Row, Tuple};
+use crate::{iter::get_index, Datastore, DeltaStore, Row, Tuple};
 
 /// An executor for explicit column projections.
 /// Note, this plan can only be constructed from the http api,
@@ -514,11 +514,7 @@ impl PipelinedIxJoin {
         metrics: &mut ExecutionMetrics,
         f: &mut dyn FnMut(Tuple<'a>) -> Result<()>,
     ) -> Result<()> {
-        let blob_store = tx.blob_store();
-        let rhs_table = tx.table_or_err(self.rhs_table)?;
-        let rhs_index = rhs_table
-            .get_index_by_id(self.rhs_index)
-            .ok_or_else(|| anyhow!("IndexId `{0}` does not exist", self.rhs_index))?;
+        let rhs_index = get_index(tx, self.rhs_table, self.rhs_index)?;
 
         let mut n = 0;
         let mut index_seeks = 0;
@@ -537,7 +533,10 @@ impl PipelinedIxJoin {
                 lhs.execute(tx, metrics, &mut |u| {
                     n += 1;
                     index_seeks += 1;
-                    if rhs_index.contains_any(&project(&u, lhs_field, &mut bytes_scanned)) {
+                    if rhs_index
+                        .index()
+                        .contains_any(&project(&u, lhs_field, &mut bytes_scanned))
+                    {
                         f(u)?;
                     }
                     Ok(())
@@ -557,7 +556,6 @@ impl PipelinedIxJoin {
                     if let Some(v) = rhs_index
                         .seek_point(&project(&u, lhs_field, &mut bytes_scanned))
                         .next()
-                        .and_then(|ptr| rhs_table.get_row_ref(blob_store, ptr))
                         .map(Row::Ptr)
                         .map(Tuple::Row)
                     {
@@ -580,7 +578,6 @@ impl PipelinedIxJoin {
                     if let Some(v) = rhs_index
                         .seek_point(&project(&u, lhs_field, &mut bytes_scanned))
                         .next()
-                        .and_then(|ptr| rhs_table.get_row_ref(blob_store, ptr))
                         .map(Row::Ptr)
                         .map(Tuple::Row)
                     {
@@ -601,7 +598,7 @@ impl PipelinedIxJoin {
                 lhs.execute(tx, metrics, &mut |u| {
                     n += 1;
                     index_seeks += 1;
-                    if let Some(n) = rhs_index.count(&project(&u, lhs_field, &mut bytes_scanned)) {
+                    if let Some(n) = rhs_index.index().count(&project(&u, lhs_field, &mut bytes_scanned)) {
                         for _ in 0..n {
                             f(u.clone())?;
                         }
@@ -622,7 +619,6 @@ impl PipelinedIxJoin {
                     index_seeks += 1;
                     for v in rhs_index
                         .seek_point(&project(&u, lhs_field, &mut bytes_scanned))
-                        .filter_map(|ptr| rhs_table.get_row_ref(blob_store, ptr))
                         .map(Row::Ptr)
                         .map(Tuple::Row)
                     {
@@ -644,7 +640,6 @@ impl PipelinedIxJoin {
                     index_seeks += 1;
                     for v in rhs_index
                         .seek_point(&project(&u, lhs_field, &mut bytes_scanned))
-                        .filter_map(|ptr| rhs_table.get_row_ref(blob_store, ptr))
                         .map(Row::Ptr)
                         .map(Tuple::Row)
                     {
