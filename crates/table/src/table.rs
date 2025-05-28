@@ -700,7 +700,7 @@ impl Table {
             .project(&target_index.indexed_columns)
             .expect("needle row should be valid");
         target_index.seek_point(&key).next().filter(|&target_ptr| {
-            // SAFETY:
+            // SAFETY:s
             // - Caller promised that the row layouts were the same.
             // - We know `target_ptr` exists, as it was in `target_index`, belonging to `target_table`.
             // - Caller promised that `needle_ptr` is valid for `needle_table`.
@@ -1835,26 +1835,36 @@ pub struct UniqueConstraintViolation {
 impl UniqueConstraintViolation {
     /// Returns a unique constraint violation error for the given `index`
     /// and the `value` that would have been duplicated.
+    ///
+    /// In this version, the [`IndexSchema`] is looked up in `schema` based on `index_id`.
     #[cold]
     fn build(schema: &TableSchema, index: &TableIndex, index_id: IndexId, value: AlgebraicValue) -> Self {
+        let index_schema = schema.indexes.iter().find(|i| i.index_id == index_id).unwrap();
+        Self::build_with_index_schema(schema, index, index_schema, value)
+    }
+
+    /// Returns a unique constraint violation error for the given `index`
+    /// and the `value` that would have been duplicated.
+    ///
+    /// In this version, the `index_schema` is explicitly passed.
+    #[cold]
+    pub fn build_with_index_schema(
+        schema: &TableSchema,
+        index: &TableIndex,
+        index_schema: &IndexSchema,
+        value: AlgebraicValue,
+    ) -> Self {
         // Fetch the table name.
         let table_name = schema.table_name.clone();
 
         // Fetch the names of the columns used in the index.
-        let cols = index
-            .indexed_columns
-            .iter()
-            .map(|x| schema.columns()[x.idx()].col_name.clone())
+        let cols = schema
+            .get_columns(&index.indexed_columns)
+            .map(|(_, cs)| cs.unwrap().col_name.clone())
             .collect();
 
         // Fetch the name of the index.
-        let constraint_name = schema
-            .indexes
-            .iter()
-            .find(|i| i.index_id == index_id)
-            .unwrap()
-            .index_name
-            .clone();
+        let constraint_name = index_schema.index_name.clone();
 
         Self {
             constraint_name,

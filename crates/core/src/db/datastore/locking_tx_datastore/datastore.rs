@@ -2119,6 +2119,30 @@ mod tests {
     }
 
     #[test]
+    fn test_create_index_ignores_deleted_committed_rows() -> ResultTest<()> {
+        // Setup a table, insert a row, and commit.
+        let (datastore, mut tx, table_id) = setup_table()?;
+        let row_to_delete = u32_str_u32(1, "Foo", 18); // 1 to avoid autoinc.
+        insert(&datastore, &mut tx, table_id, &row_to_delete)?;
+        commit(&datastore, tx)?;
+
+        // Delete `row` but don't commit.
+        let mut tx = begin_mut_tx(&datastore);
+        assert!(tx.delete_by_row_value(table_id, &row_to_delete)?);
+        // Ensure that deleting again is a no-op.
+        assert!(!tx.delete_by_row_value(table_id, &row_to_delete)?);
+
+        // Insert a row that could conflict with the deleted one.
+        let row_potential_conflict = u32_str_u32(1, "Bar", 18);
+        insert(&datastore, &mut tx, table_id, &row_potential_conflict)?;
+
+        // Create the unique index on the last field. This should not error.
+        create_foo_age_idx_btree(&datastore, &mut tx, table_id)?;
+
+        Ok(())
+    }
+
+    #[test]
     fn test_create_index_pre_commit() -> ResultTest<()> {
         let (datastore, tx, table_id) = setup_table()?;
         commit(&datastore, tx)?;
