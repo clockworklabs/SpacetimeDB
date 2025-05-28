@@ -607,11 +607,7 @@ pub enum ClientConnectedError {
 }
 
 impl ModuleHost {
-    pub(super) fn new(
-        module: impl Module,
-        on_panic: impl Fn() + Send + Sync + 'static,
-        core: DatabaseCore,
-    ) -> Self {
+    pub(super) fn new(module: impl Module, on_panic: impl Fn() + Send + Sync + 'static, core: DatabaseCore) -> Self {
         let info = module.info();
         let instance_pool = LendingPool::new();
         let module = Arc::new(module);
@@ -660,6 +656,17 @@ impl ModuleHost {
             .reducer_wait_time
             .with_label_values(&self.info.database_identity, reducer)
             .start_timer();
+        let queue_length_gauge = WORKER_METRICS
+            .instance_queue_length
+            .with_label_values(&self.info.database_identity);
+        queue_length_gauge.inc();
+        {
+            let queue_length = queue_length_gauge.get();
+            WORKER_METRICS
+                .instance_queue_length_histogram
+                .with_label_values(&self.info.database_identity)
+                .observe(queue_length as f64);
+        }
 
         // Operations on module instances (e.g. calling reducers) is blocking,
         // partially because the computation can potentialyl take a long time
@@ -678,6 +685,7 @@ impl ModuleHost {
         self.job_tx
             .send(Box::new(move |inst| {
                 queue_timer.stop_and_record();
+                queue_length_gauge.dec();
                 let _ = ret_tx.send(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(inst))));
             }))
             .await
