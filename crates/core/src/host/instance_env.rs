@@ -2,7 +2,7 @@ use super::scheduler::{get_schedule_from_row, ScheduleError, Scheduler};
 use crate::database_logger::{BacktraceProvider, LogLevel, Record};
 use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::db::relational_db::{MutTx, RelationalDB};
-use crate::error::{DBError, IndexError, NodesError};
+use crate::error::{DBError, DatastoreError, IndexError, NodesError};
 use crate::replica_context::ReplicaContext;
 use core::mem;
 use parking_lot::{Mutex, MutexGuard};
@@ -222,7 +222,7 @@ impl InstanceEnv {
                 #[cold]
                 #[inline(never)]
                 |e| match e {
-                    DBError::Index(IndexError::UniqueConstraintViolation(_)) => {}
+                    DBError::Datastore(DatastoreError::Index(IndexError::UniqueConstraintViolation(_))) => {}
                     _ => {
                         let res = stdb.table_name_from_id_mut(tx, table_id);
                         if let Ok(Some(table_name)) = res {
@@ -258,7 +258,7 @@ impl InstanceEnv {
             .table_scheduled_id_and_at(tx, table_id)?
             .expect("schedule_row should only be called when we know its a scheduler table");
 
-        let row_ref = tx.get(table_id, row_ptr)?.unwrap();
+        let row_ref = tx.get(table_id, row_ptr).map_err(DBError::from)?.unwrap();
         let (schedule_id, schedule_at) = get_schedule_from_row(&row_ref, id_column, at_column)
             // NOTE(centril): Should never happen,
             // as we successfully inserted and thus `ret` is verified against the table schema.
@@ -291,7 +291,7 @@ impl InstanceEnv {
                 #[cold]
                 #[inline(never)]
                 |e| match e {
-                    DBError::Index(IndexError::UniqueConstraintViolation(_)) => {}
+                    DBError::Datastore(DatastoreError::Index(IndexError::UniqueConstraintViolation(_))) => {}
                     _ => {
                         let res = stdb.table_name_from_id_mut(tx, table_id);
                         if let Ok(Some(table_name)) = res {

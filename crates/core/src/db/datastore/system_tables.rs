@@ -11,7 +11,6 @@
 //! - Use [`st_fields_enum`] to define its column enum.
 //! - Register its schema in [`system_module_def`], making sure to call `validate_system_table` at the end of the function.
 
-use crate::error::DBError;
 use spacetimedb_lib::db::auth::{StAccess, StTableType};
 use spacetimedb_lib::db::raw_def::v9::{btree, RawSql};
 use spacetimedb_lib::db::raw_def::*;
@@ -36,6 +35,8 @@ use std::cell::RefCell;
 use std::str::FromStr;
 use strum::Display;
 use v9::{RawModuleDefV9Builder, TableType};
+
+use super::error::DatastoreError;
 
 /// The static ID of the table that defines tables
 pub(crate) const ST_TABLE_ID: TableId = TableId(1);
@@ -490,8 +491,8 @@ pub struct StTableRow {
 }
 
 impl TryFrom<RowRef<'_>> for StTableRow {
-    type Error = DBError;
-    fn try_from(row: RowRef<'_>) -> Result<Self, DBError> {
+    type Error = DatastoreError;
+    fn try_from(row: RowRef<'_>) -> Result<Self, DatastoreError> {
         read_via_bsatn(row)
     }
 }
@@ -544,8 +545,8 @@ pub struct StColumnRow {
 }
 
 impl TryFrom<RowRef<'_>> for StColumnRow {
-    type Error = DBError;
-    fn try_from(row: RowRef<'_>) -> Result<Self, DBError> {
+    type Error = DatastoreError;
+    fn try_from(row: RowRef<'_>) -> Result<Self, DatastoreError> {
         read_via_bsatn(row)
     }
 }
@@ -622,8 +623,8 @@ impl From<StIndexAlgorithm> for IndexAlgorithm {
 }
 
 impl TryFrom<RowRef<'_>> for StIndexRow {
-    type Error = DBError;
-    fn try_from(row: RowRef<'_>) -> Result<Self, DBError> {
+    type Error = DatastoreError;
+    fn try_from(row: RowRef<'_>) -> Result<Self, DatastoreError> {
         read_via_bsatn(row)
     }
 }
@@ -676,8 +677,8 @@ pub struct StSequenceRow {
 }
 
 impl TryFrom<RowRef<'_>> for StSequenceRow {
-    type Error = DBError;
-    fn try_from(row: RowRef<'_>) -> Result<Self, DBError> {
+    type Error = DatastoreError;
+    fn try_from(row: RowRef<'_>) -> Result<Self, DatastoreError> {
         read_via_bsatn(row)
     }
 }
@@ -745,8 +746,8 @@ impl From<ConstraintData> for StConstraintData {
 }
 
 impl TryFrom<RowRef<'_>> for StConstraintRow {
-    type Error = DBError;
-    fn try_from(row: RowRef<'_>) -> Result<Self, DBError> {
+    type Error = DatastoreError;
+    fn try_from(row: RowRef<'_>) -> Result<Self, DatastoreError> {
         read_via_bsatn(row)
     }
 }
@@ -784,8 +785,8 @@ pub struct StRowLevelSecurityRow {
 }
 
 impl TryFrom<RowRef<'_>> for StRowLevelSecurityRow {
-    type Error = DBError;
-    fn try_from(row: RowRef<'_>) -> Result<Self, DBError> {
+    type Error = DatastoreError;
+    fn try_from(row: RowRef<'_>) -> Result<Self, DatastoreError> {
         read_via_bsatn(row)
     }
 }
@@ -871,7 +872,7 @@ pub struct StModuleRow {
 }
 
 /// Read bytes directly from the column `col` in `row`.
-pub fn read_bytes_from_col(row: RowRef<'_>, col: impl StFields) -> Result<Box<[u8]>, DBError> {
+pub fn read_bytes_from_col(row: RowRef<'_>, col: impl StFields) -> Result<Box<[u8]>, DatastoreError> {
     let bytes = row.read_col::<ArrayValue>(col.col_id())?;
     if let ArrayValue::U8(bytes) = bytes {
         Ok(bytes)
@@ -887,19 +888,19 @@ pub fn read_bytes_from_col(row: RowRef<'_>, col: impl StFields) -> Result<Box<[u
 /// Read an [`Identity`] directly from the column `col` in `row`.
 ///
 /// The [`Identity`] is assumed to be stored as a flat byte array.
-pub fn read_identity_from_col(row: RowRef<'_>, col: impl StFields) -> Result<Identity, DBError> {
+pub fn read_identity_from_col(row: RowRef<'_>, col: impl StFields) -> Result<Identity, DatastoreError> {
     Ok(Identity::from_u256(row.read_col(col.col_id())?))
 }
 
 /// Read a [`Hash`] directly from the column `col` in `row`.
 ///
 /// The [`Hash`] is assumed to be stored as a flat byte array.
-pub fn read_hash_from_col(row: RowRef<'_>, col: impl StFields) -> Result<Hash, DBError> {
+pub fn read_hash_from_col(row: RowRef<'_>, col: impl StFields) -> Result<Hash, DatastoreError> {
     Ok(Hash::from_u256(row.read_col(col.col_id())?))
 }
 
 impl TryFrom<RowRef<'_>> for StModuleRow {
-    type Error = DBError;
+    type Error = DatastoreError;
 
     fn try_from(row: RowRef<'_>) -> Result<Self, Self::Error> {
         read_via_bsatn(row)
@@ -936,7 +937,7 @@ impl From<&StClientRow> for ProductValue {
 }
 
 impl TryFrom<RowRef<'_>> for StClientRow {
-    type Error = DBError;
+    type Error = DatastoreError;
 
     fn try_from(row: RowRef<'_>) -> Result<Self, Self::Error> {
         read_via_bsatn(row)
@@ -1036,7 +1037,7 @@ impl StVarName {
 }
 
 impl TryFrom<RowRef<'_>> for StVarRow {
-    type Error = DBError;
+    type Error = DatastoreError;
 
     fn try_from(row: RowRef<'_>) -> Result<Self, Self::Error> {
         // The position of the `value` column in `st_var`
@@ -1073,8 +1074,8 @@ pub struct StScheduledRow {
 }
 
 impl TryFrom<RowRef<'_>> for StScheduledRow {
-    type Error = DBError;
-    fn try_from(row: RowRef<'_>) -> Result<Self, DBError> {
+    type Error = DatastoreError;
+    fn try_from(row: RowRef<'_>) -> Result<Self, DatastoreError> {
         read_via_bsatn(row)
     }
 }
@@ -1110,7 +1111,7 @@ pub(crate) fn with_sys_table_buf<R>(run: impl FnOnce(&mut Vec<u8>) -> R) -> R {
 }
 
 /// Read a value from a system table via BSATN.
-fn read_via_bsatn<T: DeserializeOwned>(row: RowRef<'_>) -> Result<T, DBError> {
+fn read_via_bsatn<T: DeserializeOwned>(row: RowRef<'_>) -> Result<T, DatastoreError> {
     with_sys_table_buf(|buf| Ok(row.read_via_bsatn::<T>(buf)?))
 }
 

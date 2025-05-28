@@ -1,3 +1,4 @@
+use super::datastore::error::{DatastoreError, TableError};
 use super::datastore::locking_tx_datastore::committed_state::CommittedState;
 use super::datastore::locking_tx_datastore::datastore::TxMetrics;
 use super::datastore::locking_tx_datastore::state_view::{
@@ -17,7 +18,7 @@ use super::datastore::{
 };
 use super::db_metrics::DB_METRICS;
 use crate::db::datastore::system_tables::{StModuleRow, WASM_MODULE};
-use crate::error::{DBError, DatabaseError, RestoreSnapshotError, TableError};
+use crate::error::{DBError, DatabaseError, RestoreSnapshotError};
 use crate::execution_context::{ReducerContext, Workload, WorkloadType};
 use crate::messages::control_db::HostType;
 use crate::subscription::ExecutionCounters;
@@ -433,14 +434,14 @@ impl RelationalDB {
             program_bytes: program.bytes,
             module_version: ONLY_MODULE_VERSION.into(),
         };
-        tx.insert_via_serialize_bsatn(ST_MODULE_ID, &row).map(drop)
+        Ok(tx.insert_via_serialize_bsatn(ST_MODULE_ID, &row).map(drop)?)
     }
 
     /// Obtain the [`Metadata`] of this database.
     ///
     /// `None` if the database is not yet fully initialized.
     pub fn metadata(&self) -> Result<Option<Metadata>, DBError> {
-        self.with_read_only(Workload::Internal, |tx| self.inner.metadata(tx))
+        Ok(self.with_read_only(Workload::Internal, |tx| self.inner.metadata(tx))?)
     }
 
     /// Obtain the module associated with this database.
@@ -448,12 +449,17 @@ impl RelationalDB {
     /// `None` if the database is not yet fully initialized.
     /// Note that a `Some` result may yield an empty slice.
     pub fn program(&self) -> Result<Option<Program>, DBError> {
-        self.with_read_only(Workload::Internal, |tx| self.inner.program(tx))
+        Ok(self.with_read_only(Workload::Internal, |tx| self.inner.program(tx))?)
     }
 
     /// Read the set of clients currently connected to the database.
     pub fn connected_clients(&self) -> Result<ConnectedClients, DBError> {
-        self.with_read_only(Workload::Internal, |tx| self.inner.connected_clients(tx)?.collect())
+        self.with_read_only(Workload::Internal, |tx| {
+            self.inner
+                .connected_clients(tx)?
+                .collect::<Result<ConnectedClients, _>>()
+        })
+        .map_err(DBError::from)
     }
 
     /// Update the module associated with this database.
@@ -470,7 +476,7 @@ impl RelationalDB {
         let program_kind = match host_type {
             HostType::Wasm => WASM_MODULE,
         };
-        self.inner.update_program(tx, program_kind, program)
+        Ok(self.inner.update_program(tx, program_kind, program)?)
     }
 
     fn restore_from_snapshot_or_bootstrap(
@@ -527,6 +533,7 @@ impl RelationalDB {
                         e
                     )
                 })
+                .map_err(DBError::from)
                 .map_err(Box::new)
         }
 
@@ -625,6 +632,7 @@ impl RelationalDB {
         }
 
         Locking::bootstrap(database_identity, page_pool)
+            .map_err(DBError::from)
             .map_err(Box::new)
             .map_err(RestoreSnapshotError::Bootstrap)
     }
@@ -685,11 +693,11 @@ impl RelationalDB {
     }
 
     pub fn schema_for_table_mut(&self, tx: &MutTx, table_id: TableId) -> Result<Arc<TableSchema>, DBError> {
-        self.inner.schema_for_table_mut_tx(tx, table_id)
+        Ok(self.inner.schema_for_table_mut_tx(tx, table_id)?)
     }
 
     pub fn schema_for_table(&self, tx: &Tx, table_id: TableId) -> Result<Arc<TableSchema>, DBError> {
-        self.inner.schema_for_table_tx(tx, table_id)
+        Ok(self.inner.schema_for_table_tx(tx, table_id)?)
     }
 
     pub fn row_schema_for_table<'tx>(
@@ -697,15 +705,15 @@ impl RelationalDB {
         tx: &'tx MutTx,
         table_id: TableId,
     ) -> Result<RowTypeForTable<'tx>, DBError> {
-        self.inner.row_type_for_table_mut_tx(tx, table_id)
+        Ok(self.inner.row_type_for_table_mut_tx(tx, table_id)?)
     }
 
     pub fn get_all_tables_mut(&self, tx: &MutTx) -> Result<Vec<Arc<TableSchema>>, DBError> {
-        self.inner.get_all_tables_mut_tx(tx)
+        Ok(self.inner.get_all_tables_mut_tx(tx)?)
     }
 
     pub fn get_all_tables(&self, tx: &Tx) -> Result<Vec<Arc<TableSchema>>, DBError> {
-        self.inner.get_all_tables_tx(tx)
+        Ok(self.inner.get_all_tables_tx(tx)?)
     }
 
     pub fn table_scheduled_id_and_at(
@@ -734,7 +742,7 @@ impl RelationalDB {
         let check_bounds = |schema: &ProductType| -> Result<_, DBError> {
             let col_idx = col_id.idx();
             if col_idx >= schema.elements.len() {
-                return Err(TableError::ColumnNotFound(col_id).into());
+                return Err(DatastoreError::Table(TableError::ColumnNotFound(col_id)).into());
             }
             Ok(col_idx)
         };
@@ -1022,7 +1030,7 @@ impl RelationalDB {
     }
 
     pub(crate) fn alter_table_access(&self, tx: &mut MutTx, name: Box<str>, access: StAccess) -> Result<(), DBError> {
-        self.inner.alter_table_access_mut_tx(tx, name, access)
+        Ok(self.inner.alter_table_access_mut_tx(tx, name, access)?)
     }
 
     /// Reports the `TxMetrics`s passed.
@@ -1044,7 +1052,7 @@ impl RelationalDB {
 
 impl RelationalDB {
     pub fn create_table(&self, tx: &mut MutTx, schema: TableSchema) -> Result<TableId, DBError> {
-        self.inner.create_table_mut_tx(tx, schema)
+        Ok(self.inner.create_table_mut_tx(tx, schema)?)
     }
 
     pub fn create_table_for_test_with_the_works(
@@ -1129,12 +1137,12 @@ impl RelationalDB {
             .table_name_from_id_mut(tx, table_id)?
             .map(|name| name.to_string())
             .unwrap_or_default();
-        self.inner.drop_table_mut_tx(tx, table_id).map(|_| {
+        Ok(self.inner.drop_table_mut_tx(tx, table_id).map(|_| {
             DB_METRICS
                 .rdb_num_table_rows
                 .with_label_values(&self.database_identity, &table_id.into(), &table_name)
                 .set(0)
-        })
+        })?)
     }
 
     /// Rename a table.
@@ -1144,15 +1152,15 @@ impl RelationalDB {
     ///
     /// If the table is not found or is a system table, an error is returned.
     pub fn rename_table(&self, tx: &mut MutTx, table_id: TableId, new_name: &str) -> Result<(), DBError> {
-        self.inner.rename_table_mut_tx(tx, table_id, new_name)
+        Ok(self.inner.rename_table_mut_tx(tx, table_id, new_name)?)
     }
 
     pub fn table_id_from_name_mut(&self, tx: &MutTx, table_name: &str) -> Result<Option<TableId>, DBError> {
-        self.inner.table_id_from_name_mut_tx(tx, table_name)
+        Ok(self.inner.table_id_from_name_mut_tx(tx, table_name)?)
     }
 
     pub fn table_id_from_name(&self, tx: &Tx, table_name: &str) -> Result<Option<TableId>, DBError> {
-        self.inner.table_id_from_name_tx(tx, table_name)
+        Ok(self.inner.table_id_from_name_tx(tx, table_name)?)
     }
 
     pub fn table_id_exists(&self, tx: &Tx, table_id: &TableId) -> bool {
@@ -1164,7 +1172,7 @@ impl RelationalDB {
     }
 
     pub fn table_name_from_id<'a>(&'a self, tx: &'a Tx, table_id: TableId) -> Result<Option<Cow<'a, str>>, DBError> {
-        self.inner.table_name_from_id_tx(tx, table_id)
+        Ok(self.inner.table_name_from_id_tx(tx, table_id)?)
     }
 
     pub fn table_name_from_id_mut<'a>(
@@ -1172,11 +1180,11 @@ impl RelationalDB {
         tx: &'a MutTx,
         table_id: TableId,
     ) -> Result<Option<Cow<'a, str>>, DBError> {
-        self.inner.table_name_from_id_mut_tx(tx, table_id)
+        Ok(self.inner.table_name_from_id_mut_tx(tx, table_id)?)
     }
 
     pub fn index_id_from_name_mut(&self, tx: &MutTx, index_name: &str) -> Result<Option<IndexId>, DBError> {
-        self.inner.index_id_from_name_mut_tx(tx, index_name)
+        Ok(self.inner.index_id_from_name_mut_tx(tx, index_name)?)
     }
 
     pub fn table_row_count_mut(&self, tx: &MutTx, table_id: TableId) -> Option<u64> {
@@ -1212,27 +1220,27 @@ impl RelationalDB {
     }
 
     pub fn index_id_from_name(&self, tx: &MutTx, index_name: &str) -> Result<Option<IndexId>, DBError> {
-        self.inner.index_id_from_name_mut_tx(tx, index_name)
+        Ok(self.inner.index_id_from_name_mut_tx(tx, index_name)?)
     }
 
     pub fn sequence_id_from_name(&self, tx: &MutTx, sequence_name: &str) -> Result<Option<SequenceId>, DBError> {
-        self.inner.sequence_id_from_name_mut_tx(tx, sequence_name)
+        Ok(self.inner.sequence_id_from_name_mut_tx(tx, sequence_name)?)
     }
 
     pub fn constraint_id_from_name(&self, tx: &MutTx, constraint_name: &str) -> Result<Option<ConstraintId>, DBError> {
-        self.inner.constraint_id_from_name(tx, constraint_name)
+        Ok(self.inner.constraint_id_from_name(tx, constraint_name)?)
     }
 
     /// Adds the index into the [ST_INDEXES_NAME] table
     ///
     /// NOTE: It loads the data from the table into it before returning
     pub fn create_index(&self, tx: &mut MutTx, schema: IndexSchema, is_unique: bool) -> Result<IndexId, DBError> {
-        self.inner.create_index_mut_tx(tx, schema, is_unique)
+        Ok(self.inner.create_index_mut_tx(tx, schema, is_unique)?)
     }
 
     /// Removes the [`TableIndex`] from the database by their `index_id`
     pub fn drop_index(&self, tx: &mut MutTx, index_id: IndexId) -> Result<(), DBError> {
-        self.inner.drop_index_mut_tx(tx, index_id)
+        Ok(self.inner.drop_index_mut_tx(tx, index_id)?)
     }
 
     pub fn create_row_level_security(
@@ -1240,11 +1248,11 @@ impl RelationalDB {
         tx: &mut MutTx,
         row_level_security_schema: RowLevelSecuritySchema,
     ) -> Result<RawSql, DBError> {
-        tx.create_row_level_security(row_level_security_schema)
+        Ok(tx.create_row_level_security(row_level_security_schema)?)
     }
 
     pub fn drop_row_level_security(&self, tx: &mut MutTx, sql: RawSql) -> Result<(), DBError> {
-        tx.drop_row_level_security(sql)
+        Ok(tx.drop_row_level_security(sql)?)
     }
 
     pub fn row_level_security_for_table_id_mut_tx(
@@ -1252,17 +1260,17 @@ impl RelationalDB {
         tx: &mut MutTx,
         table_id: TableId,
     ) -> Result<Vec<RowLevelSecuritySchema>, DBError> {
-        tx.row_level_security_for_table_id(table_id)
+        Ok(tx.row_level_security_for_table_id(table_id)?)
     }
 
     /// Returns an iterator,
     /// yielding every row in the table identified by `table_id`.
     pub fn iter_mut<'a>(&'a self, tx: &'a MutTx, table_id: TableId) -> Result<IterMutTx<'a>, DBError> {
-        self.inner.iter_mut_tx(tx, table_id)
+        Ok(self.inner.iter_mut_tx(tx, table_id)?)
     }
 
     pub fn iter<'a>(&'a self, tx: &'a Tx, table_id: TableId) -> Result<IterTx<'a>, DBError> {
-        self.inner.iter_tx(tx, table_id)
+        Ok(self.inner.iter_tx(tx, table_id)?)
     }
 
     /// Returns an iterator,
@@ -1277,7 +1285,7 @@ impl RelationalDB {
         cols: impl Into<ColList>,
         value: &'r AlgebraicValue,
     ) -> Result<IterByColEqMutTx<'a, 'r>, DBError> {
-        self.inner.iter_by_col_eq_mut_tx(tx, table_id.into(), cols, value)
+        Ok(self.inner.iter_by_col_eq_mut_tx(tx, table_id.into(), cols, value)?)
     }
 
     pub fn iter_by_col_eq<'a, 'r>(
@@ -1287,7 +1295,7 @@ impl RelationalDB {
         cols: impl Into<ColList>,
         value: &'r AlgebraicValue,
     ) -> Result<IterByColEqTx<'a, 'r>, DBError> {
-        self.inner.iter_by_col_eq_tx(tx, table_id.into(), cols, value)
+        Ok(self.inner.iter_by_col_eq_tx(tx, table_id.into(), cols, value)?)
     }
 
     /// Returns an iterator,
@@ -1302,7 +1310,7 @@ impl RelationalDB {
         cols: impl Into<ColList>,
         range: R,
     ) -> Result<IterByColRangeMutTx<'a, R>, DBError> {
-        self.inner.iter_by_col_range_mut_tx(tx, table_id.into(), cols, range)
+        Ok(self.inner.iter_by_col_range_mut_tx(tx, table_id.into(), cols, range)?)
     }
 
     /// Returns an iterator,
@@ -1317,7 +1325,7 @@ impl RelationalDB {
         cols: impl Into<ColList>,
         range: R,
     ) -> Result<IterByColRangeTx<'a, R>, DBError> {
-        self.inner.iter_by_col_range_tx(tx, table_id.into(), cols, range)
+        Ok(self.inner.iter_by_col_range_tx(tx, table_id.into(), cols, range)?)
     }
 
     pub fn index_scan_range<'a>(
@@ -1329,7 +1337,7 @@ impl RelationalDB {
         rstart: &[u8],
         rend: &[u8],
     ) -> Result<(TableId, impl Iterator<Item = RowRef<'a>>), DBError> {
-        tx.index_scan_range(index_id, prefix, prefix_elems, rstart, rend)
+        Ok(tx.index_scan_range(index_id, prefix, prefix_elems, rstart, rend)?)
     }
 
     pub fn insert<'a>(
@@ -1338,7 +1346,7 @@ impl RelationalDB {
         table_id: TableId,
         row: &[u8],
     ) -> Result<(ColList, RowRef<'a>, InsertFlags), DBError> {
-        self.inner.insert_mut_tx(tx, table_id, row)
+        Ok(self.inner.insert_mut_tx(tx, table_id, row)?)
     }
 
     pub fn update<'a>(
@@ -1348,7 +1356,7 @@ impl RelationalDB {
         index_id: IndexId,
         row: &[u8],
     ) -> Result<(ColList, RowRef<'a>, UpdateFlags), DBError> {
-        self.inner.update_mut_tx(tx, table_id, index_id, row)
+        Ok(self.inner.update_mut_tx(tx, table_id, index_id, row)?)
     }
 
     pub fn delete(&self, tx: &mut MutTx, table_id: TableId, row_ids: impl IntoIterator<Item = RowPointer>) -> u32 {
@@ -1375,17 +1383,17 @@ impl RelationalDB {
     }
 
     pub fn create_sequence(&self, tx: &mut MutTx, sequence_schema: SequenceSchema) -> Result<SequenceId, DBError> {
-        self.inner.create_sequence_mut_tx(tx, sequence_schema)
+        Ok(self.inner.create_sequence_mut_tx(tx, sequence_schema)?)
     }
 
     ///Removes the [Sequence] from database instance
     pub fn drop_sequence(&self, tx: &mut MutTx, seq_id: SequenceId) -> Result<(), DBError> {
-        self.inner.drop_sequence_mut_tx(tx, seq_id)
+        Ok(self.inner.drop_sequence_mut_tx(tx, seq_id)?)
     }
 
     ///Removes the [Constraints] from database instance
     pub fn drop_constraint(&self, tx: &mut MutTx, constraint_id: ConstraintId) -> Result<(), DBError> {
-        self.inner.drop_constraint_mut_tx(tx, constraint_id)
+        Ok(self.inner.drop_constraint_mut_tx(tx, constraint_id)?)
     }
 
     /// Reports the metrics for `reducer`, using counters provided by `db`.
@@ -1905,7 +1913,7 @@ pub mod tests_utils {
         }
 
         pub fn take_snapshot(&self, repo: &SnapshotRepository) -> Result<Option<SnapshotDirPath>, DBError> {
-            self.inner.take_snapshot(repo)
+            Ok(self.inner.take_snapshot(repo)?)
         }
     }
 
@@ -2020,6 +2028,7 @@ mod tests {
 
     use super::tests_utils::begin_mut_tx;
     use super::*;
+    use crate::db::datastore::error::{DatastoreError, IndexError};
     use crate::db::datastore::system_tables::{
         system_tables, StConstraintRow, StIndexRow, StSequenceRow, StTableRow, ST_CONSTRAINT_ID, ST_INDEX_ID,
         ST_SEQUENCE_ID, ST_TABLE_ID,
@@ -2027,7 +2036,6 @@ mod tests {
     use crate::db::relational_db::tests_utils::{
         begin_tx, insert, make_snapshot, with_auto_commit, with_read_only, TestDB,
     };
-    use crate::error::IndexError;
     use crate::execution_context::ReducerContext;
     use anyhow::bail;
     use bytes::Bytes;
@@ -2476,7 +2484,7 @@ mod tests {
         insert(&stdb, &mut tx, table_id, &product![1i64, 0i64]).expect("stdb.insert failed");
         match insert(&stdb, &mut tx, table_id, &product![1i64, 1i64]) {
             Ok(_) => panic!("Allow to insert duplicate row"),
-            Err(DBError::Index(IndexError::UniqueConstraintViolation { .. })) => {}
+            Err(DBError::Datastore(DatastoreError::Index(IndexError::UniqueConstraintViolation { .. }))) => {}
             Err(err) => panic!("Expected error `UniqueConstraintViolation`, got {err}"),
         }
 
