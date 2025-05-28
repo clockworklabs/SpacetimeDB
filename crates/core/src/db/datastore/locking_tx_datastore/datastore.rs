@@ -6,17 +6,12 @@ use super::{
     tx::TxId,
     tx_state::TxState,
 };
-use crate::{
-    db::datastore::{
-        locking_tx_datastore::state_view::{IterByColRangeMutTx, IterMutTx, IterTx},
-        traits::{InsertFlags, UpdateFlags},
-    },
-    subscription::ExecutionCounters,
+use crate::db::datastore::{
+    error::{DatastoreError, TableError},
+    locking_tx_datastore::state_view::{IterByColRangeMutTx, IterMutTx, IterTx},
+    traits::{InsertFlags, UpdateFlags},
 };
-use crate::{
-    db::relational_db::RelationalDB,
-    execution_context::{Workload, WorkloadType},
-};
+use crate::execution_context::{Workload, WorkloadType};
 use crate::{
     db::{
         datastore::{
@@ -31,12 +26,10 @@ use crate::{
         },
         db_metrics::DB_METRICS,
     },
-    error::{DBError, TableError},
     execution_context::ExecutionContext,
 };
 use anyhow::{anyhow, Context};
 use core::{cell::RefCell, ops::RangeBounds};
-use enum_map::EnumMap;
 use parking_lot::{Mutex, RwLock};
 use spacetimedb_commitlog::payload::{txdata, Txdata};
 use spacetimedb_data_structures::map::{HashCollectionExt, HashMap};
@@ -54,7 +47,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use thiserror::Error;
 
-pub type Result<T> = std::result::Result<T, DBError>;
+pub type Result<T> = std::result::Result<T, DatastoreError>;
 
 /// Struct contains various database states, each protected by
 /// their own lock. To avoid deadlocks, it is crucial to acquire these locks
@@ -74,9 +67,6 @@ pub struct Locking {
     sequence_state: Arc<Mutex<SequencesState>>,
     /// The identity of this database.
     pub(crate) database_identity: Identity,
-
-    /// A map from workload types to their cached prometheus counters.
-    workload_type_to_exec_counters: Arc<EnumMap<WorkloadType, ExecutionCounters>>,
 }
 
 impl MemoryUsage for Locking {
@@ -85,7 +75,6 @@ impl MemoryUsage for Locking {
             committed_state,
             sequence_state,
             database_identity,
-            workload_type_to_exec_counters: _,
         } = self;
         std::mem::size_of_val(&**committed_state)
             + committed_state.read().heap_usage()
@@ -97,14 +86,10 @@ impl MemoryUsage for Locking {
 
 impl Locking {
     pub fn new(database_identity: Identity, page_pool: PagePool) -> Self {
-        let workload_type_to_exec_counters =
-            Arc::new(EnumMap::from_fn(|ty| ExecutionCounters::new(&ty, &database_identity)));
-
         Self {
             committed_state: Arc::new(RwLock::new(CommittedState::new(page_pool))),
             sequence_state: <_>::default(),
             database_identity,
-            workload_type_to_exec_counters,
         }
     }
 
@@ -320,10 +305,6 @@ impl Locking {
             .ok_or_else(|| TableError::NotFound(name.into()))?;
 
         tx.alter_table_access(table_id, access)
-    }
-
-    pub(crate) fn exec_counters_for(&self, workload_type: WorkloadType) -> &ExecutionCounters {
-        &self.workload_type_to_exec_counters[workload_type]
     }
 }
 
@@ -653,7 +634,7 @@ impl MutTxDatastore for Locking {
             .map(|row| {
                 let ptr = row.pointer();
                 let row = StModuleRow::try_from(row)?;
-                Ok::<_, DBError>((ptr, row))
+                Ok::<_, DatastoreError>((ptr, row))
             })
             .transpose()?;
         match old {
@@ -700,6 +681,10 @@ struct TableStats {
     ///
     /// Derived from [`Table::num_indices`](spacetimedb_table::table::Table::num_indices).
     num_indices: usize,
+}
+
+pub trait MetricsRecorder {
+    fn record(&self, metrics: &ExecutionMetrics);
 }
 
 impl TxMetrics {
@@ -751,11 +736,11 @@ impl TxMetrics {
     }
 
     /// Reports the metrics for `reducer` using `get_exec_counter` to retrieve the metrics counters.
-    pub fn report<'a>(
+    pub fn report<'a, R: MetricsRecorder + 'a>(
         &self,
         tx_data: Option<&TxData>,
         reducer: &str,
-        get_exec_counter: impl FnOnce(WorkloadType) -> &'a ExecutionCounters,
+        get_exec_counter: impl FnOnce(WorkloadType) -> &'a R,
     ) {
         let workload = &self.workload;
         let db = &self.database_identity;
@@ -844,27 +829,6 @@ impl TxMetrics {
             }
         }
     }
-
-    /// Reports the metrics for `reducer`, using counters provided by `db`.
-    pub(crate) fn report_with_db(&self, reducer: &str, db: &RelationalDB, tx_data: Option<&TxData>) {
-        self.report(tx_data, reducer, |wl| db.exec_counters_for(wl));
-    }
-}
-
-/// Reports the `TxMetrics`s passed.
-///
-/// Should only be called after the tx lock has been fully released.
-pub fn report_tx_metricses(
-    reducer: &str,
-    db: &RelationalDB,
-    tx_data: Option<&TxData>,
-    metrics_mut: Option<&TxMetrics>,
-    metrics_read: &TxMetrics,
-) {
-    if let Some(metrics_mut) = metrics_mut {
-        metrics_mut.report_with_db(reducer, db, tx_data);
-    }
-    metrics_read.report_with_db(reducer, db, None);
 }
 
 impl MutTx for Locking {
@@ -929,7 +893,7 @@ pub enum ReplayError {
     #[error(transparent)]
     Decode(#[from] bsatn::DecodeError),
     #[error(transparent)]
-    Db(#[from] DBError),
+    Db(#[from] DatastoreError),
     #[error(transparent)]
     Any(#[from] anyhow::Error),
 }
@@ -1173,6 +1137,7 @@ fn metadata_from_row(row: RowRef<'_>) -> Result<Metadata> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::datastore::error::IndexError;
     use crate::db::datastore::locking_tx_datastore::tx_state::PendingSchemaChange;
     use crate::db::datastore::system_tables::{
         system_tables, StColumnRow, StConstraintData, StConstraintFields, StConstraintRow, StIndexAlgorithm,
@@ -1184,7 +1149,6 @@ mod tests {
     };
     use crate::db::datastore::traits::{IsolationLevel, MutTx};
     use crate::db::datastore::Result;
-    use crate::error::{DBError, IndexError};
     use bsatn::to_vec;
     use core::{fmt, mem};
     use itertools::Itertools;
@@ -2070,7 +2034,7 @@ mod tests {
         insert(&datastore, &mut tx, table_id, &row)?;
         let result = insert(&datastore, &mut tx, table_id, &row);
         match result {
-            Err(DBError::Index(IndexError::UniqueConstraintViolation(_))) => (),
+            Err(DatastoreError::Index(IndexError::UniqueConstraintViolation(_))) => (),
             _ => panic!("Expected an unique constraint violation error."),
         }
         #[rustfmt::skip]
@@ -2087,7 +2051,7 @@ mod tests {
         let mut tx = begin_mut_tx(&datastore);
         let result = insert(&datastore, &mut tx, table_id, &row);
         match result {
-            Err(DBError::Index(IndexError::UniqueConstraintViolation(_))) => (),
+            Err(DatastoreError::Index(IndexError::UniqueConstraintViolation(_))) => (),
             _ => panic!("Expected an unique constraint violation error."),
         }
         #[rustfmt::skip]
@@ -2155,6 +2119,30 @@ mod tests {
     }
 
     #[test]
+    fn test_create_index_ignores_deleted_committed_rows() -> ResultTest<()> {
+        // Setup a table, insert a row, and commit.
+        let (datastore, mut tx, table_id) = setup_table()?;
+        let row_to_delete = u32_str_u32(1, "Foo", 18); // 1 to avoid autoinc.
+        insert(&datastore, &mut tx, table_id, &row_to_delete)?;
+        commit(&datastore, tx)?;
+
+        // Delete `row` but don't commit.
+        let mut tx = begin_mut_tx(&datastore);
+        assert!(tx.delete_by_row_value(table_id, &row_to_delete)?);
+        // Ensure that deleting again is a no-op.
+        assert!(!tx.delete_by_row_value(table_id, &row_to_delete)?);
+
+        // Insert a row that could conflict with the deleted one.
+        let row_potential_conflict = u32_str_u32(1, "Bar", 18);
+        insert(&datastore, &mut tx, table_id, &row_potential_conflict)?;
+
+        // Create the unique index on the last field. This should not error.
+        create_foo_age_idx_btree(&datastore, &mut tx, table_id)?;
+
+        Ok(())
+    }
+
+    #[test]
     fn test_create_index_pre_commit() -> ResultTest<()> {
         let (datastore, tx, table_id) = setup_table()?;
         commit(&datastore, tx)?;
@@ -2175,7 +2163,7 @@ mod tests {
         let row = u32_str_u32(0, "Bar", 18); // 0 will be ignored.
         let result = insert(&datastore, &mut tx, table_id, &row);
         match result {
-            Err(DBError::Index(IndexError::UniqueConstraintViolation(_))) => (),
+            Err(DatastoreError::Index(IndexError::UniqueConstraintViolation(_))) => (),
             e => panic!("Expected an unique constraint violation error but got {e:?}."),
         }
         #[rustfmt::skip]
@@ -2200,7 +2188,7 @@ mod tests {
         let row = u32_str_u32(0, "Bar", 18); // 0 will be ignored.
         let result = insert(&datastore, &mut tx, table_id, &row);
         match result {
-            Err(DBError::Index(IndexError::UniqueConstraintViolation(_))) => (),
+            Err(DatastoreError::Index(IndexError::UniqueConstraintViolation(_))) => (),
             _ => panic!("Expected an unique constraint violation error."),
         }
         #[rustfmt::skip]

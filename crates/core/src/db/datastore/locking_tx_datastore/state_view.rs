@@ -1,12 +1,10 @@
 use super::mut_tx::{FilterDeleted, IndexScanRanged};
 use super::{committed_state::CommittedState, datastore::Result, tx_state::TxState};
-use crate::{
-    db::datastore::system_tables::{
-        StColumnFields, StColumnRow, StConstraintFields, StConstraintRow, StIndexFields, StIndexRow, StScheduledFields,
-        StScheduledRow, StSequenceFields, StSequenceRow, StTableFields, StTableRow, SystemTable, ST_COLUMN_ID,
-        ST_CONSTRAINT_ID, ST_INDEX_ID, ST_SCHEDULED_ID, ST_SEQUENCE_ID, ST_TABLE_ID,
-    },
-    error::TableError,
+use crate::db::datastore::error::TableError;
+use crate::db::datastore::system_tables::{
+    StColumnFields, StColumnRow, StConstraintFields, StConstraintRow, StIndexFields, StIndexRow, StScheduledFields,
+    StScheduledRow, StSequenceFields, StSequenceRow, StTableFields, StTableRow, SystemTable, ST_COLUMN_ID,
+    ST_CONSTRAINT_ID, ST_INDEX_ID, ST_SCHEDULED_ID, ST_SEQUENCE_ID, ST_TABLE_ID,
 };
 use core::ops::RangeBounds;
 use spacetimedb_primitives::{ColList, TableId};
