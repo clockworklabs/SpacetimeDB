@@ -152,20 +152,11 @@ fn reload_config<S>(conf_file: &ConfigToml, reload_handle: &reload::Handle<EnvFi
     }
 }
 
+#[derive(Default)]
 pub struct Cores {
     pub databases: JobCores,
-    pub tokio_workers: TokioCores,
-    pub rest: usize,
-}
-
-impl Default for Cores {
-    fn default() -> Self {
-        Self {
-            databases: JobCores::default(),
-            tokio_workers: TokioCores(None),
-            rest: std::thread::available_parallelism().map_or(4, |x| x.get()),
-        }
-    }
+    pub tokio_workers: ThreadPoolCores,
+    pub rayon: ThreadPoolCores,
 }
 
 impl Cores {
@@ -179,12 +170,14 @@ impl Cores {
 
         let databases = cores.take(frac(1.0 / 8.0)).collect();
 
-        let tokio_workers = TokioCores(Some(cores.take(frac(5.0 / 8.0)).collect()));
+        let tokio_workers = ThreadPoolCores(Some(cores.take(frac(4.0 / 8.0)).collect()));
+
+        let rayon = ThreadPoolCores(Some(cores.take(frac(1.0 / 8.0)).collect()));
 
         Some(Self {
             databases,
             tokio_workers,
-            rest: cores.len(),
+            rayon,
         })
     }
 }
@@ -198,42 +191,54 @@ fn vec_to_queue(cores: Vec<CoreId>) -> CoreQueue {
     queue
 }
 
-pub struct TokioCores(Option<Vec<CoreId>>);
+#[derive(Default)]
+pub struct ThreadPoolCores(Option<Vec<CoreId>>);
 
-impl TokioCores {
-    pub fn configure(self, builder: &mut tokio::runtime::Builder) {
-        if let Some(cores) = self.0 {
+impl ThreadPoolCores {
+    fn into_setup_fn(self) -> Option<(usize, impl Fn())> {
+        self.0.map(|cores| {
             let cores = vec_to_queue(cores);
-            // `on_thread_start` gets called for both async worker threads and blocking threads,
-            // but the first `worker_threads` threads that tokio spawns are worker threads,
-            // so this ends up working fine
-            builder.worker_threads(cores.len()).on_thread_start(move || {
+            (cores.len(), move || {
                 if let Some(core) = cores.pop() {
                     core_affinity::set_for_current(core);
                 }
-            });
+            })
+        })
+    }
+
+    pub fn configure_tokio(self, builder: &mut tokio::runtime::Builder) {
+        if let Some((num, setup)) = self.into_setup_fn() {
+            // `on_thread_start` gets called for both async worker threads and blocking threads,
+            // but the first `worker_threads` threads that tokio spawns are worker threads,
+            // so this ends up working fine
+            builder.worker_threads(num).on_thread_start(setup);
         }
     }
-}
 
-pub fn configure_rayon(num_threads: usize, tokio_handle: &tokio::runtime::Handle) {
-    rayon_core::ThreadPoolBuilder::new()
-        .thread_name(|_idx| "rayon-worker".to_string())
-        .spawn_handler(thread_spawn_handler(tokio_handle))
-        // TODO(perf, pgoldman 2024-02-22):
-        // in the case where we have many modules running many reducers,
-        // we'll wind up with Rayon threads competing with each other and with Tokio threads
-        // for CPU time.
-        //
-        // We should investigate creating two separate CPU pools,
-        // possibly via https://docs.rs/nix/latest/nix/sched/fn.sched_setaffinity.html,
-        // and restricting Tokio threads to one CPU pool
-        // and Rayon threads to the other.
-        // Then we should give Tokio and Rayon each a number of worker threads
-        // equal to the size of their pool.
-        .num_threads(num_threads)
-        .build_global()
-        .unwrap()
+    pub fn configure_rayon(self, tokio_handle: &tokio::runtime::Handle) {
+        rayon_core::ThreadPoolBuilder::new()
+            .thread_name(|_idx| "rayon-worker".to_string())
+            .spawn_handler(thread_spawn_handler(tokio_handle))
+            // TODO(perf, pgoldman 2024-02-22):
+            // in the case where we have many modules running many reducers,
+            // we'll wind up with Rayon threads competing with each other and with Tokio threads
+            // for CPU time.
+            //
+            // We should investigate creating two separate CPU pools,
+            // possibly via https://docs.rs/nix/latest/nix/sched/fn.sched_setaffinity.html,
+            // and restricting Tokio threads to one CPU pool
+            // and Rayon threads to the other.
+            // Then we should give Tokio and Rayon each a number of worker threads
+            // equal to the size of their pool.
+            .num_threads(self.0.as_ref().map_or(0, |cores| cores.len()))
+            .start_handler(move |i| {
+                if let Some(cores) = &self.0 {
+                    core_affinity::set_for_current(cores[i]);
+                }
+            })
+            .build_global()
+            .unwrap()
+    }
 }
 
 /// A Rayon [spawn_handler](https://docs.rs/rustc-rayon-core/latest/rayon_core/struct.ThreadPoolBuilder.html#method.spawn_handler)
