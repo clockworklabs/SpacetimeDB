@@ -620,7 +620,7 @@ impl ModuleHost {
             instance_pool,
         });
         let on_panic = Arc::new(on_panic);
-        let (tx, mut rx) = mpsc::channel::<Box<dyn FnOnce(&mut dyn ModuleInstance) + Send>>(8);
+        let (tx, mut rx) = mpsc::channel::<Box<dyn FnOnce(&mut dyn ModuleInstance) + Send>>(50);
 
         let module_clone = module.clone();
         core.spawn(move || {
