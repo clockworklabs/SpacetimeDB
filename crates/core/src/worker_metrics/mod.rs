@@ -258,6 +258,11 @@ metrics_group!(
         #[labels(txn_type: WorkloadType, db: Identity)]
         pub bytes_sent_to_clients: IntCounterVec,
 
+        #[name = spacetime_subscription_send_queue_length]
+        #[help = "The number of `ComputedQueries` waiting in the queue to be aggregated and broadcast by the `send_worker`"]
+        #[labels(database_identity: Identity)]
+        pub subscription_send_queue_length: IntGaugeVec,
+
         #[name = spacetime_total_incoming_queue_length]
         #[help = "The number of client -> server WebSocket messages waiting any client's incoming queue"]
         #[labels(db: Identity)]

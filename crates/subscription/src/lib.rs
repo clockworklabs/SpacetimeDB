@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use anyhow::{bail, Result};
 use spacetimedb_execution::{pipelined::PipelinedProject, Datastore, DeltaStore, Row};
 use spacetimedb_expr::check::SchemaView;
@@ -209,13 +211,56 @@ impl Fragments {
     }
 }
 
+/// Newtype wrapper for table names.
+///
+/// Uses an `Arc` internally, so `Clone` is cheap.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct TableName(Arc<str>);
+
+impl From<Arc<str>> for TableName {
+    fn from(name: Arc<str>) -> Self {
+        TableName(name)
+    }
+}
+
+impl From<Box<str>> for TableName {
+    fn from(name: Box<str>) -> Self {
+        TableName(name.into())
+    }
+}
+
+impl From<String> for TableName {
+    fn from(name: String) -> Self {
+        TableName(name.into())
+    }
+}
+
+impl std::ops::Deref for TableName {
+    type Target = str;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl TableName {
+    pub fn table_name_from_str(name: &str) -> Self {
+        TableName(name.into())
+    }
+}
+
+impl std::fmt::Display for TableName {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
 /// A subscription defines a view over a table
 #[derive(Debug)]
 pub struct SubscriptionPlan {
     /// To which table are we subscribed?
     return_id: TableId,
     /// To which table are we subscribed?
-    return_name: Box<str>,
+    return_name: TableName,
     /// A subscription can read from multiple tables.
     /// From which tables do we read?
     table_ids: Vec<TableId>,
@@ -241,7 +286,7 @@ impl SubscriptionPlan {
     }
 
     /// To which table does this plan subscribe?
-    pub fn subscribed_table_name(&self) -> &str {
+    pub fn subscribed_table_name(&self) -> &TableName {
         &self.return_name
     }
 
@@ -330,6 +375,8 @@ impl SubscriptionPlan {
         }
 
         let mut subscriptions = vec![];
+
+        let return_name = TableName::from(return_name);
 
         for plan in plans {
             if has_non_index_join(&plan) {

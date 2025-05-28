@@ -1079,7 +1079,8 @@ mod tests {
 
         let (data, _, tx) = tx.commit_downgrade(Workload::ForTests);
         let table_id = plan.subscribed_table_id();
-        let table_name = plan.subscribed_table_name().into();
+        // This awful construction to convert `Arc<str>` into `Box<str>`.
+        let table_name = (&**plan.subscribed_table_name()).into();
         let tx = DeltaTx::new(&tx, &data);
 
         // IMPORTANT: FOR TESTING ONLY!

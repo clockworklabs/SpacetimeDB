@@ -13,6 +13,7 @@ use crate::messages::control_db::{Database, HostType};
 use crate::module_host_context::ModuleCreationContext;
 use crate::replica_context::ReplicaContext;
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
+use crate::subscription::module_subscription_manager::SubscriptionManager;
 use crate::util::{asyncify, spawn_rayon};
 use crate::worker_metrics::WORKER_METRICS;
 use anyhow::{anyhow, ensure, Context};
@@ -525,7 +526,9 @@ async fn make_replica_ctx(
     relational_db: Arc<RelationalDB>,
 ) -> anyhow::Result<ReplicaContext> {
     let logger = tokio::task::block_in_place(move || Arc::new(DatabaseLogger::open_today(path.module_logs())));
-    let subscriptions = <_>::default();
+    let subscriptions = Arc::new(parking_lot::RwLock::new(SubscriptionManager::for_database(
+        database.database_identity,
+    )));
     let downgraded = Arc::downgrade(&subscriptions);
     let subscriptions = ModuleSubscriptions::new(relational_db.clone(), subscriptions, database.owner_identity);
 

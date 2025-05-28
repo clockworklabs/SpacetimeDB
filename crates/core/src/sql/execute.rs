@@ -301,6 +301,8 @@ pub fn translate_col(tx: &Tx, field: FieldName) -> Option<Box<str>> {
 
 #[cfg(test)]
 pub(crate) mod tests {
+    use std::sync::Arc;
+
     use super::*;
     use crate::db::datastore::system_tables::{
         StRowLevelSecurityRow, StTableFields, ST_ROW_LEVEL_SECURITY_ID, ST_TABLE_ID, ST_TABLE_NAME,
@@ -317,20 +319,19 @@ pub(crate) mod tests {
     use spacetimedb_primitives::{col_list, ColId, TableId};
     use spacetimedb_sats::{product, AlgebraicType, ArrayValue, ProductType};
     use spacetimedb_vm::eval::test_helpers::create_game_data;
-    use std::sync::Arc;
 
     pub(crate) fn execute_for_testing(
         db: &RelationalDB,
         sql_text: &str,
         q: Vec<CrudExpr>,
     ) -> Result<Vec<MemTable>, DBError> {
-        let subs = ModuleSubscriptions::new(Arc::new(db.clone()), <_>::default(), Identity::ZERO);
+        let (subs, _runtime) = ModuleSubscriptions::for_test_new_runtime(Arc::new(db.clone()));
         execute_sql(db, sql_text, q, AuthCtx::for_testing(), Some(&subs))
     }
 
     /// Short-cut for simplify test execution
     pub(crate) fn run_for_testing(db: &RelationalDB, sql_text: &str) -> Result<Vec<ProductValue>, DBError> {
-        let subs = ModuleSubscriptions::new(Arc::new(db.clone()), <_>::default(), Identity::ZERO);
+        let (subs, _runtime) = ModuleSubscriptions::for_test_new_runtime(Arc::new(db.clone()));
         run(db, sql_text, AuthCtx::for_testing(), Some(&subs), &mut vec![]).map(|x| x.rows)
     }
 

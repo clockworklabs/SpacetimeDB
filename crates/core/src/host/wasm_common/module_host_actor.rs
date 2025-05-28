@@ -510,7 +510,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         let (event, _) = match self
             .info
             .subscriptions
-            .commit_and_broadcast_event(client.as_deref(), event, tx)
+            .commit_and_broadcast_event(client, event, tx)
             .unwrap()
         {
             Ok(ev) => ev,
