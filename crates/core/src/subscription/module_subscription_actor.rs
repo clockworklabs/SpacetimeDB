@@ -146,6 +146,24 @@ impl ModuleSubscriptions {
         }
     }
 
+    /// Construct a new [`ModuleSubscriptions`] for use in testing,
+    /// creating a new [`tokio::runtime::Runtime`] to run its send worker.
+    pub fn for_test_new_runtime(db: Arc<RelationalDB>) -> ModuleSubscriptions {
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let _rt = runtime.enter();
+        Self::for_test_enclosing_runtime(db)
+    }
+
+    /// Construct a new [`ModuleSubscriptions`] for use in testing,
+    /// running its send worker on the dynamically enclosing [`tokio::runtime::Runtime`]
+    pub fn for_test_enclosing_runtime(db: Arc<RelationalDB>) -> ModuleSubscriptions {
+        ModuleSubscriptions::new(
+            db,
+            SubscriptionManager::for_test_without_metrics_arc_rwlock(),
+            Identity::ZERO,
+        )
+    }
+
     // Recompute gauges to update metrics.
     pub fn update_gauges(&self) {
         let num_queries = self.subscriptions.read().calculate_gauge_stats();
@@ -789,32 +807,6 @@ mod tests {
         Ok(Arc::new(db))
     }
 
-    /// Initialize a [`ModuleSubscriptions`] manager.
-    ///
-    /// Will panic when called from within an `async` context,
-    /// as this function starts a new Tokio runtime to run the manager's background tasks.
-    fn module_subscriptions(db: Arc<RelationalDB>) -> ModuleSubscriptions {
-        let runtime = tokio::runtime::Runtime::new().unwrap();
-        let _rt = runtime.enter();
-        ModuleSubscriptions::new(
-            db,
-            SubscriptionManager::for_test_without_metrics_arc_rwlock(),
-            Identity::ZERO,
-        )
-    }
-
-    /// Initialize a [`ModuleSubscriptions`] manager.
-    ///
-    /// Must be called from within a multi-threaded Tokio runtime,
-    /// so that the manager's background tasks can run in parallel.
-    fn module_subscriptions_async(db: Arc<RelationalDB>) -> ModuleSubscriptions {
-        ModuleSubscriptions::new(
-            db,
-            SubscriptionManager::for_test_without_metrics_arc_rwlock(),
-            Identity::ZERO,
-        )
-    }
-
     /// A [SubscribeSingle] message for testing
     fn single_subscribe(sql: &str, query_id: u32) -> SubscribeSingle {
         SubscribeSingle {
@@ -1081,7 +1073,7 @@ mod tests {
         let (sender, _) = client_connection(client_id);
 
         let db = relational_db()?;
-        let subs = module_subscriptions(db.clone());
+        let subs = ModuleSubscriptions::for_test_new_runtime(db.clone());
 
         // Create a table `t` with index on `id`
         let table_id = db.create_table_for_test("t", &[("id", AlgebraicType::U64)], &[0.into()])?;
@@ -1136,7 +1128,7 @@ mod tests {
         let (tx, mut rx) = client_connection(client_id);
 
         let db = relational_db()?;
-        let subs = module_subscriptions_async(db.clone());
+        let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
 
         db.create_table_for_test("t", &[("x", AlgebraicType::U8)], &[])?;
 
@@ -1156,7 +1148,7 @@ mod tests {
         let (tx, mut rx) = client_connection(client_id);
 
         let db = relational_db()?;
-        let subs = module_subscriptions_async(db.clone());
+        let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
 
         db.create_table_for_test("t", &[("x", AlgebraicType::U8)], &[])?;
 
@@ -1176,7 +1168,7 @@ mod tests {
         let (tx, mut rx) = client_connection(client_id);
 
         let db = relational_db()?;
-        let subs = module_subscriptions_async(db.clone());
+        let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
 
         // Create a table `t` with an index on `id`
         let table_id = db.create_table_for_test("t", &[("id", AlgebraicType::U8)], &[0.into()])?;
@@ -1230,7 +1222,7 @@ mod tests {
         let (tx, mut rx) = client_connection(client_id);
 
         let db = relational_db()?;
-        let subs = module_subscriptions_async(db.clone());
+        let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
 
         // Create a table `t` with an index on `id`
         let table_id = db.create_table_for_test("t", &[("id", AlgebraicType::U8)], &[0.into()])?;
@@ -1284,7 +1276,7 @@ mod tests {
         let (tx, mut rx) = client_connection(client_id);
 
         let db = relational_db()?;
-        let subs = module_subscriptions_async(db.clone());
+        let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
 
         // Create two tables `t` and `s` with indexes on their `id` columns
         let t_id = db.create_table_for_test("t", &[("id", AlgebraicType::U8)], &[0.into()])?;
@@ -1347,7 +1339,7 @@ mod tests {
         let (tx_for_b, mut rx_for_b) = client_connection(client_id_for_b);
 
         let db = relational_db()?;
-        let subs = module_subscriptions_async(db.clone());
+        let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
 
         let schema = [("identity", AlgebraicType::identity())];
 
@@ -1413,7 +1405,7 @@ mod tests {
         let (tx_for_b, mut rx_for_b) = client_connection(client_id_for_b);
 
         let db = relational_db()?;
-        let subs = module_subscriptions_async(db.clone());
+        let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
 
         let schema = [("id", AlgebraicType::identity())];
 
@@ -1479,7 +1471,7 @@ mod tests {
         let (tx, mut rx) = client_connection(client_id_from_u8(1));
 
         let db = relational_db()?;
-        let subs = module_subscriptions_async(db.clone());
+        let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
 
         let schema = [("x", AlgebraicType::U8)];
 
@@ -1528,7 +1520,7 @@ mod tests {
         let (tx, mut rx) = client_connection_with_compression(client_id_from_u8(1), Compression::Brotli);
 
         let db = relational_db()?;
-        let subs = module_subscriptions_async(db.clone());
+        let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
 
         let table_id = db.create_table_for_test("t", &[("x", AlgebraicType::U64)], &[])?;
 
@@ -1574,7 +1566,7 @@ mod tests {
         let (tx, mut rx) = client_connection_with_compression(client_id_from_u8(1), Compression::Brotli);
 
         let db = relational_db()?;
-        let subs = module_subscriptions_async(db.clone());
+        let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
 
         let table_id = db.create_table_for_test("t", &[("x", AlgebraicType::U64)], &[])?;
 
@@ -1624,7 +1616,7 @@ mod tests {
             let (sender, mut rx) = client_connection(client_id_from_u8(1));
 
             let db = relational_db()?;
-            let subs = module_subscriptions_async(db.clone());
+            let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
 
             let p_schema = [("id", AlgebraicType::U64), ("signed_in", AlgebraicType::Bool)];
             let l_schema = [
@@ -1738,7 +1730,7 @@ mod tests {
         let (tx_for_b, mut rx_for_b) = client_connection(client_id_from_u8(2));
 
         let db = relational_db()?;
-        let subs = module_subscriptions_async(db.clone());
+        let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
 
         let u_id = db.create_table_for_test(
             "u",
@@ -1880,7 +1872,7 @@ mod tests {
         let (tx, mut rx) = client_connection(client_id_from_u8(1));
 
         let db = relational_db()?;
-        let subs = module_subscriptions_async(db.clone());
+        let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
 
         let schema = &[("id", AlgebraicType::U64), ("a", AlgebraicType::U64)];
         let indices = &[0.into()];

@@ -17,7 +17,8 @@ use parking_lot::RwLock;
 use prometheus::IntGauge;
 use scopeguard::ScopeGuard;
 use spacetimedb_client_api_messages::websocket::{
-    BsatnFormat, CompressableQueryUpdate, FormatSwitch, JsonFormat, QueryId, QueryUpdate, WebsocketFormat,
+    BsatnFormat, CompressableQueryUpdate, FormatSwitch, JsonFormat, QueryId, QueryUpdate, SingleQueryUpdate,
+    WebsocketFormat,
 };
 use spacetimedb_data_structures::map::{Entry, IntMap};
 use spacetimedb_lib::metrics::ExecutionMetrics;
@@ -343,21 +344,24 @@ pub struct SubscriptionManager {
     /// and waking the many per-client sender Tokio tasks.
     send_worker_tx: mpsc::UnboundedSender<ComputedQueries>,
 
+    /// Metric handle for the `subscription_send_queue_length` metric labeled with this database's [`Identity`],
+    /// or `None` when not running for a particular database, i.e. in tests.
     send_queue_length_metric: Option<IntGauge>,
 }
 
-struct ClientQueryUpdate<F: WebsocketFormat> {
-    update: F::QueryUpdate,
-    num_rows: u64,
-}
-
+/// A single update for one client and one query.
 struct ClientUpdate {
     id: ClientId,
     table_id: TableId,
     table_name: TableName,
-    update: FormatSwitch<ClientQueryUpdate<BsatnFormat>, ClientQueryUpdate<JsonFormat>>,
+    update: FormatSwitch<SingleQueryUpdate<BsatnFormat>, SingleQueryUpdate<JsonFormat>>,
 }
 
+/// The computed incremental update queries with sufficient information
+/// to not depend on the transaction lock so that further work can be
+/// done in a separate worker: [`SubscriptionManager::send_worker`].
+/// The queries in this structure have not been aggregated yet
+/// but will be in the worker.
 struct ComputedQueries {
     updates: Vec<ClientUpdate>,
     errs: Vec<(ClientId, Box<str>)>,
@@ -390,7 +394,7 @@ impl SubscriptionManager {
         let clean_up_metric = scopeguard::guard((), move |_| {
             let _ = WORKER_METRICS
                 .subscription_send_queue_length
-                .with_label_values(&database_identity);
+                .remove_label_values(&database_identity);
         });
 
         Self::with_metric(Some(metric), clean_up_metric)
@@ -901,7 +905,7 @@ impl SubscriptionManager {
                     updates: &UpdatesRelValue<'_>,
                     memory: &mut Option<(F::QueryUpdate, u64, usize)>,
                     metrics: &mut ExecutionMetrics,
-                ) -> ClientQueryUpdate<F> {
+                ) -> SingleQueryUpdate<F> {
                     let (update, num_rows, num_bytes) = memory
                         .get_or_insert_with(|| {
                             let encoded = updates.encode::<F>();
@@ -917,7 +921,7 @@ impl SubscriptionManager {
                     // Therefore every time we call this function,
                     // we update the `bytes_sent_to_clients` metric.
                     metrics.bytes_sent_to_clients += num_bytes;
-                    ClientQueryUpdate { update, num_rows }
+                    SingleQueryUpdate { update, num_rows }
                 }
 
                 // filter out clients that've dropped
@@ -1012,132 +1016,127 @@ impl SubscriptionManager {
         queue_length_metric: Option<IntGauge>,
         _clean_up_metric: ScopeGuard<(), impl FnOnce(()) + Send + 'static>,
     ) {
-        use FormatSwitch::{Bsatn, Json};
+        while let Some(queries) = rx.recv().await {
+            if let Some(metric) = &queue_length_metric {
+                metric.dec();
+            }
 
-        while let Some(ComputedQueries {
+            Self::send_one_computed_queries(queries);
+        }
+    }
+
+    fn send_one_computed_queries(
+        ComputedQueries {
             updates,
             errs,
             event,
             caller,
             clients,
-        }) = rx.recv().await
-        {
-            if let Some(metric) = &queue_length_metric {
-                metric.dec();
-            }
+        }: ComputedQueries,
+    ) {
+        use FormatSwitch::{Bsatn, Json};
 
-            let clients_with_errors = errs.iter().map(|(id, _)| id).collect::<HashSet<_>>();
+        let clients_with_errors = errs.iter().map(|(id, _)| id).collect::<HashSet<_>>();
 
-            let span = tracing::info_span!("eval_incr_group_messages_by_client");
+        let span = tracing::info_span!("eval_incr_group_messages_by_client");
 
-            let mut eval = updates
-                .into_iter()
-                // Filter out clients whose subscriptions failed
-                .filter(|upd| !clients_with_errors.contains(&upd.id))
-                // For each subscriber, aggregate all the updates for the same table.
-                // That is, we build a map `(subscriber_id, table_id) -> updates`.
-                // A particular subscriber uses only one format,
-                // so their `TableUpdate` will contain either JSON (`Protocol::Text`)
-                // or BSATN (`Protocol::Binary`).
-                .fold(
-                    HashMap::<(ClientId, TableId), SwitchedTableUpdate>::new(),
-                    |mut tables, upd| {
-                        match tables.entry((upd.id, upd.table_id)) {
-                            Entry::Occupied(mut entry) => match entry.get_mut().zip_mut(upd.update) {
-                                Bsatn((tbl_upd, update)) => tbl_upd.push(update.update, update.num_rows),
-                                Json((tbl_upd, update)) => tbl_upd.push(update.update, update.num_rows),
-                            },
-                            Entry::Vacant(entry) => drop(entry.insert(match upd.update {
-                                Bsatn(update) => Bsatn(TableUpdate::new(
-                                    upd.table_id,
-                                    (&*upd.table_name).into(),
-                                    update.update,
-                                    update.num_rows,
-                                )),
-                                Json(update) => Json(TableUpdate::new(
-                                    upd.table_id,
-                                    (&*upd.table_name).into(),
-                                    update.update,
-                                    update.num_rows,
-                                )),
-                            })),
-                        }
-                        tables
-                    },
-                )
-                .into_iter()
-                // Each client receives a single list of updates per transaction.
-                // So before sending the updates to each client,
-                // we must stitch together the `TableUpdate*`s into an aggregated list.
-                .fold(
-                    HashMap::<ClientId, SwitchedDbUpdate>::new(),
-                    |mut updates, ((id, _), update)| {
-                        let entry = updates.entry(id);
-                        let entry = entry.or_insert_with(|| match &update {
-                            Bsatn(_) => Bsatn(<_>::default()),
-                            Json(_) => Json(<_>::default()),
-                        });
-                        match entry.zip_mut(update) {
-                            Bsatn((list, elem)) => list.tables.push(elem),
-                            Json((list, elem)) => list.tables.push(elem),
-                        }
-                        updates
+        let mut eval = updates
+            .into_iter()
+            // Filter out clients whose subscriptions failed
+            .filter(|upd| !clients_with_errors.contains(&upd.id))
+            // For each subscriber, aggregate all the updates for the same table.
+            // That is, we build a map `(subscriber_id, table_id) -> updates`.
+            // A particular subscriber uses only one format,
+            // so their `TableUpdate` will contain either JSON (`Protocol::Text`)
+            // or BSATN (`Protocol::Binary`).
+            .fold(
+                HashMap::<(ClientId, TableId), SwitchedTableUpdate>::new(),
+                |mut tables, upd| {
+                    match tables.entry((upd.id, upd.table_id)) {
+                        Entry::Occupied(mut entry) => match entry.get_mut().zip_mut(upd.update) {
+                            Bsatn((tbl_upd, update)) => tbl_upd.push(update),
+                            Json((tbl_upd, update)) => tbl_upd.push(update),
+                        },
+                        Entry::Vacant(entry) => drop(entry.insert(match upd.update {
+                            Bsatn(update) => Bsatn(TableUpdate::new(upd.table_id, (&*upd.table_name).into(), update)),
+                            Json(update) => Json(TableUpdate::new(upd.table_id, (&*upd.table_name).into(), update)),
+                        })),
+                    }
+                    tables
+                },
+            )
+            .into_iter()
+            // Each client receives a single list of updates per transaction.
+            // So before sending the updates to each client,
+            // we must stitch together the `TableUpdate*`s into an aggregated list.
+            .fold(
+                HashMap::<ClientId, SwitchedDbUpdate>::new(),
+                |mut updates, ((id, _), update)| {
+                    let entry = updates.entry(id);
+                    let entry = entry.or_insert_with(|| match &update {
+                        Bsatn(_) => Bsatn(<_>::default()),
+                        Json(_) => Json(<_>::default()),
+                    });
+                    match entry.zip_mut(update) {
+                        Bsatn((list, elem)) => list.tables.push(elem),
+                        Json((list, elem)) => list.tables.push(elem),
+                    }
+                    updates
+                },
+            );
+
+        drop(clients_with_errors);
+        drop(span);
+
+        let _span = tracing::info_span!("eval_send").entered();
+
+        // We might have a known caller that hasn't been hidden from here..
+        // This caller may have subscribed to some query.
+        // If they haven't, we'll send them an empty update.
+        // Regardless, the update that we send to the caller, if we send any,
+        // is a full tx update, rather than a light one.
+        // That is, in the case of the caller, we don't respect the light setting.
+        if let Some(caller) = caller {
+            let caller_id = (caller.id.identity, caller.id.connection_id);
+            let database_update = eval
+                .remove(&caller_id)
+                .map(|update| SubscriptionUpdateMessage::from_event_and_update(&event, update))
+                .unwrap_or_else(|| {
+                    SubscriptionUpdateMessage::default_for_protocol(caller.config.protocol, event.request_id)
+                });
+            let message = TransactionUpdateMessage {
+                event: Some(event.clone()),
+                database_update,
+            };
+            send_to_client(&caller, message);
+        }
+
+        // Send all the other updates.
+        for (id, update) in eval {
+            let database_update = SubscriptionUpdateMessage::from_event_and_update(&event, update);
+            let client = clients[&id].outbound_ref.clone();
+            // Conditionally send out a full update or a light one otherwise.
+            let event = client.config.tx_update_full.then(|| event.clone());
+            let message = TransactionUpdateMessage { event, database_update };
+            send_to_client(&client, message);
+        }
+
+        // Send error messages and mark clients for removal
+        for (id, message) in errs {
+            if let Some(client) = clients.get(&id) {
+                client.dropped.store(true, Ordering::Release);
+                send_to_client(
+                    &client.outbound_ref,
+                    SubscriptionMessage {
+                        request_id: None,
+                        query_id: None,
+                        timer: None,
+                        result: SubscriptionResult::Error(SubscriptionError {
+                            table_id: None,
+                            message,
+                        }),
                     },
                 );
-
-            drop(clients_with_errors);
-            drop(span);
-
-            let _span = tracing::info_span!("eval_send").entered();
-
-            // We might have a known caller that hasn't been hidden from here..
-            // This caller may have subscribed to some query.
-            // If they haven't, we'll send them an empty update.
-            // Regardless, the update that we send to the caller, if we send any,
-            // is a full tx update, rather than a light one.
-            // That is, in the case of the caller, we don't respect the light setting.
-            if let Some(caller) = caller {
-                let caller_id = (caller.id.identity, caller.id.connection_id);
-                let database_update = eval
-                    .remove(&caller_id)
-                    .map(|update| SubscriptionUpdateMessage::from_event_and_update(&event, update))
-                    .unwrap_or_else(|| {
-                        SubscriptionUpdateMessage::default_for_protocol(caller.config.protocol, event.request_id)
-                    });
-                let message = TransactionUpdateMessage {
-                    event: Some(event.clone()),
-                    database_update,
-                };
-                send_to_client(&caller, message);
-            }
-
-            // Send all the other updates.
-            for (id, update) in eval {
-                let database_update = SubscriptionUpdateMessage::from_event_and_update(&event, update);
-                let client = clients[&id].outbound_ref.clone();
-                // Conditionally send out a full update or a light one otherwise.
-                let event = client.config.tx_update_full.then(|| event.clone());
-                let message = TransactionUpdateMessage { event, database_update };
-                send_to_client(&client, message);
-            }
-
-            // Send error messages and mark clients for removal
-            for (id, message) in errs {
-                if let Some(client) = clients.get(&id) {
-                    client.dropped.store(true, Ordering::Release);
-                    send_to_client(
-                        &client.outbound_ref,
-                        SubscriptionMessage {
-                            request_id: None,
-                            query_id: None,
-                            timer: None,
-                            result: SubscriptionResult::Error(SubscriptionError {
-                                table_id: None,
-                                message,
-                            }),
-                        },
-                    );
-                }
             }
         }
     }

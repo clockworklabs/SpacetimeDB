@@ -5,7 +5,7 @@ use module_subscription_manager::Plan;
 use prometheus::IntCounter;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use spacetimedb_client_api_messages::websocket::{
-    ByteListLen, Compression, DatabaseUpdate, QueryUpdate, TableUpdate, WebsocketFormat,
+    ByteListLen, Compression, DatabaseUpdate, QueryUpdate, SingleQueryUpdate, TableUpdate, WebsocketFormat,
 };
 use spacetimedb_execution::{pipelined::PipelinedProject, Datastore, DeltaStore};
 use spacetimedb_lib::{metrics::ExecutionMetrics, Identity};
@@ -142,7 +142,10 @@ where
         // after we release the tx lock.
         // There's no need to compress the inner table update too.
         let update = F::into_query_update(qu, Compression::None);
-        (TableUpdate::new(table_id, table_name, update, num_rows), metrics)
+        (
+            TableUpdate::new(table_id, table_name, SingleQueryUpdate { update, num_rows }),
+            metrics,
+        )
     })
 }
 

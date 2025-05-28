@@ -514,9 +514,7 @@ mod test {
         host::Scheduler,
         messages::control_db::{Database, HostType},
         replica_context::ReplicaContext,
-        subscription::{
-            module_subscription_actor::ModuleSubscriptions, module_subscription_manager::SubscriptionManager,
-        },
+        subscription::module_subscription_actor::ModuleSubscriptions,
     };
     use anyhow::{anyhow, Result};
     use spacetimedb_lib::db::auth::StAccess;
@@ -534,18 +532,6 @@ mod test {
         Ok(DatabaseLogger::open(path))
     }
 
-    /// An `InstanceEnv` requires `ModuleSubscriptions`
-    fn subscription_actor(relational_db: Arc<RelationalDB>) -> ModuleSubscriptions {
-        // Create and enter a Tokio runtime to run the `ModuleSubscriptions`' background workers in parallel.
-        let runtime = tokio::runtime::Runtime::new().unwrap();
-        let _rt = runtime.enter();
-        ModuleSubscriptions::new(
-            relational_db,
-            SubscriptionManager::for_test_without_metrics_arc_rwlock(),
-            Identity::ZERO,
-        )
-    }
-
     /// An `InstanceEnv` requires a `ReplicaContext`.
     /// For our purposes this is just a wrapper for `RelationalDB`.
     fn replica_ctx(relational_db: Arc<RelationalDB>) -> Result<ReplicaContext> {
@@ -559,7 +545,7 @@ mod test {
             },
             replica_id: 0,
             logger: Arc::new(temp_logger()?),
-            subscriptions: subscription_actor(relational_db.clone()),
+            subscriptions: ModuleSubscriptions::for_test_new_runtime(relational_db.clone()),
             relational_db,
         })
     }
