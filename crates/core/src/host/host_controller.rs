@@ -1006,9 +1006,13 @@ pub async fn extract_schema(program_bytes: Box<[u8]>, host_type: HostType) -> an
     let page_pool = PagePool::new(None);
     let core = DatabaseCore::default();
     let module_info = Host::try_init_in_memory_to_check(&runtimes, page_pool, database, program, core).await?;
-    let module_info = Arc::into_inner(module_info).unwrap();
+    // this should always succeed, but sometimes it doesn't
+    let module_def = match Arc::try_unwrap(module_info) {
+        Ok(info) => info.module_def,
+        Err(info) => info.module_def.clone(),
+    };
 
-    Ok(module_info.module_def)
+    Ok(module_def)
 }
 
 // Remove all gauges associated with a database.
