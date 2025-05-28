@@ -297,6 +297,16 @@ impl TableSchema {
             .map(|x| x.into())
     }
 
+    /// Retrieve the column ids for this index id
+    pub fn col_list_for_index_id(&self, index_id: IndexId) -> ColList {
+        self.indexes
+            .iter()
+            .find(|schema| schema.index_id == index_id)
+            .map(|schema| schema.index_algorithm.columns())
+            .map(|cols| ColList::from_iter(cols.iter()))
+            .unwrap_or_else(ColList::empty)
+    }
+
     /// Is there a unique constraint for this set of columns?
     pub fn is_unique(&self, cols: &ColList) -> bool {
         self.constraints
