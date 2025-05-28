@@ -269,8 +269,11 @@ impl TableSchema {
 
     /// Look up a list of columns by their positions in the table.
     /// Invalid column positions are permitted.
-    pub fn get_columns(&self, columns: &ColList) -> Vec<(ColId, Option<&ColumnSchema>)> {
-        columns.iter().map(|col| (col, self.columns.get(col.idx()))).collect()
+    pub fn get_columns<'a>(
+        &'a self,
+        columns: &'a ColList,
+    ) -> impl 'a + Iterator<Item = (ColId, Option<&'a ColumnSchema>)> {
+        columns.iter().map(|col| (col, self.columns.get(col.idx())))
     }
 
     /// Get a reference to a column by its position (`pos`) in the table.
@@ -411,19 +414,19 @@ impl TableSchema {
                 )
             }))
             .filter_map(|(ty, name, cols)| {
-                let empty: Vec<_> = self
+                let mut not_found_iter = self
                     .get_columns(&cols)
-                    .iter()
-                    .filter_map(|(col, x)| if x.is_none() { Some(*col) } else { None })
-                    .collect();
+                    .filter(|(_, x)| x.is_none())
+                    .map(|(col, _)| col)
+                    .peekable();
 
-                if empty.is_empty() {
+                if not_found_iter.peek().is_none() {
                     None
                 } else {
                     Some(SchemaError::ColumnsNotFound {
                         name,
                         table: self.table_name.clone(),
-                        columns: empty,
+                        columns: not_found_iter.collect(),
                         ty,
                     })
                 }
