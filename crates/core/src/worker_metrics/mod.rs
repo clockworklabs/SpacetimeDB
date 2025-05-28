@@ -262,6 +262,16 @@ metrics_group!(
         #[help = "The number of `ComputedQueries` waiting in the queue to be aggregated and broadcast by the `send_worker`"]
         #[labels(database_identity: Identity)]
         pub subscription_send_queue_length: IntGaugeVec,
+
+        #[name = spacetime_client_connection_incoming_queue_length]
+        #[help = "The number of client -> server WebSocket messages waiting in a client connection's incoming queue"]
+        #[labels(db: Identity, client_identity: Identity, connection_id: ConnectionId)]
+        pub client_connection_incoming_queue_length: IntGaugeVec,
+
+        #[name = spacetime_client_connection_outgoing_queue_length]
+        #[help = "The number of server -> client WebSocket messages waiting in a client connection's outgoing queue"]
+        #[labels(db: Identity, client_identity: Identity, connection_id: ConnectionId)]
+        pub client_connection_outgoing_queue_length: IntGaugeVec,
     }
 );
 
