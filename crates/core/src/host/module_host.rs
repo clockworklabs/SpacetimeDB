@@ -471,6 +471,7 @@ struct HostControllerActor<T: Module> {
 }
 
 impl<T: Module> HostControllerActor<T> {
+    #[allow(unused)]
     fn spinup_new_instance(&self) {
         let (module, instance_pool) = (self.module.clone(), self.instance_pool.clone());
         rayon::spawn(move || {
@@ -487,6 +488,7 @@ impl<T: Module> HostControllerActor<T> {
 
 /// runs future A and future B concurrently. if A completes before B, B is cancelled. if B completes
 /// before A, A is polled to completion
+#[allow(unused)]
 async fn select_first<A: Future, B: Future<Output = ()>>(fut_a: A, fut_b: B) -> A::Output {
     tokio::select! {
         ret = fut_a => ret,
