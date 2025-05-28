@@ -73,6 +73,7 @@ crashlytics-build.properties
 
 Build/
 .vscode/
+BenchmarkBuild/
 
 obj~
 bin~
