@@ -11,6 +11,7 @@ use crate::energy::{EnergyMonitor, EnergyQuanta, NullEnergyMonitor};
 use crate::messages::control_db::{Database, HostType};
 use crate::module_host_context::ModuleCreationContext;
 use crate::replica_context::ReplicaContext;
+use crate::startup::{DatabaseCore, DatabaseCores};
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use crate::util::{asyncify, spawn_rayon};
 use anyhow::{anyhow, ensure, Context};
@@ -92,6 +93,8 @@ pub struct HostController {
     pub page_pool: PagePool,
     /// The runtimes for running our modules.
     runtimes: Arc<HostRuntimes>,
+    /// The CPU cores that are reserved for running databases on.
+    db_cores: DatabaseCores,
 }
 
 struct HostRuntimes {
@@ -166,6 +169,7 @@ impl HostController {
         program_storage: ProgramStorage,
         energy_monitor: Arc<impl EnergyMonitor>,
         durability: Arc<dyn DurabilityProvider>,
+        db_cores: DatabaseCores,
     ) -> Self {
         Self {
             hosts: <_>::default(),
@@ -176,6 +180,7 @@ impl HostController {
             runtimes: HostRuntimes::new(Some(&data_dir)),
             data_dir,
             page_pool: PagePool::new(default_config.page_pool_max_size),
+            db_cores,
         }
     }
 
@@ -264,7 +269,14 @@ impl HostController {
     /// This is not necessary during hotswap publishes,
     /// as the automigration planner and executor accomplish the same validity checks.
     pub async fn check_module_validity(&self, database: Database, program: Program) -> anyhow::Result<Arc<ModuleInfo>> {
-        Host::try_init_in_memory_to_check(&self.runtimes, self.page_pool.clone(), database, program).await
+        Host::try_init_in_memory_to_check(
+            &self.runtimes,
+            self.page_pool.clone(),
+            database,
+            program,
+            self.db_cores.take(),
+        )
+        .await
     }
 
     /// Run a computation on the [`RelationalDB`] of a [`ModuleHost`] managed by
@@ -335,6 +347,7 @@ impl HostController {
                 program,
                 self.energy_monitor.clone(),
                 self.unregister_fn(replica_id),
+                self.db_cores.take(),
             )
             .await?;
 
@@ -412,6 +425,7 @@ impl HostController {
                     program,
                     self.energy_monitor.clone(),
                     self.unregister_fn(replica_id),
+                    self.db_cores.take(),
                 )
                 .await?;
             match update_result {
@@ -551,6 +565,7 @@ async fn make_replica_ctx(
 
 /// Initialize a module host for the given program.
 /// The passed replica_ctx may not be configured for this version of the program's database schema yet.
+#[allow(clippy::too_many_arguments)]
 async fn make_module_host(
     runtimes: Arc<HostRuntimes>,
     host_type: HostType,
@@ -559,6 +574,7 @@ async fn make_module_host(
     program: Program,
     energy_monitor: Arc<dyn EnergyMonitor>,
     unregister: impl Fn() + Send + Sync + 'static,
+    core: DatabaseCore,
 ) -> anyhow::Result<(Program, ModuleHost)> {
     spawn_rayon(move || {
         let module_host = match host_type {
@@ -572,7 +588,7 @@ async fn make_module_host(
                 let start = Instant::now();
                 let actor = runtimes.wasmtime.make_actor(mcc)?;
                 trace!("wasmtime::make_actor blocked for {:?}", start.elapsed());
-                ModuleHost::new(actor, unregister)
+                ModuleHost::new(actor, unregister, core)
             }
         };
         Ok((program, module_host))
@@ -605,6 +621,7 @@ async fn launch_module(
     energy_monitor: Arc<dyn EnergyMonitor>,
     replica_dir: ReplicaDir,
     runtimes: Arc<HostRuntimes>,
+    core: DatabaseCore,
 ) -> anyhow::Result<(Program, LaunchedModule)> {
     let db_identity = database.database_identity;
     let host_type = database.host_type;
@@ -621,6 +638,7 @@ async fn launch_module(
         program,
         energy_monitor.clone(),
         on_panic,
+        core,
     )
     .await?;
 
@@ -771,6 +789,7 @@ impl Host {
             energy_monitor.clone(),
             replica_dir,
             runtimes.clone(),
+            host_controller.db_cores.take(),
         )
         .await?;
 
@@ -829,6 +848,7 @@ impl Host {
         page_pool: PagePool,
         database: Database,
         program: Program,
+        core: DatabaseCore,
     ) -> anyhow::Result<Arc<ModuleInfo>> {
         // Even in-memory databases acquire a lockfile.
         // Grab a tempdir to put that lockfile in.
@@ -860,6 +880,7 @@ impl Host {
             Arc::new(NullEnergyMonitor),
             phony_replica_dir,
             runtimes.clone(),
+            core,
         )
         .await?;
 
@@ -890,6 +911,7 @@ impl Host {
         program: Program,
         energy_monitor: Arc<dyn EnergyMonitor>,
         on_panic: impl Fn() + Send + Sync + 'static,
+        core: DatabaseCore,
     ) -> anyhow::Result<UpdateDatabaseResult> {
         let replica_ctx = &self.replica_ctx;
         let (scheduler, scheduler_starter) = Scheduler::open(self.replica_ctx.relational_db.clone());
@@ -902,6 +924,7 @@ impl Host {
             program,
             energy_monitor,
             on_panic,
+            core,
         )
         .await?;
 
@@ -976,7 +999,8 @@ pub async fn extract_schema(program_bytes: Box<[u8]>, host_type: HostType) -> an
 
     let runtimes = HostRuntimes::new(None);
     let page_pool = PagePool::new(None);
-    let module_info = Host::try_init_in_memory_to_check(&runtimes, page_pool, database, program).await?;
+    let core = DatabaseCore::default();
+    let module_info = Host::try_init_in_memory_to_check(&runtimes, page_pool, database, program, core).await?;
     let module_info = Arc::into_inner(module_info).unwrap();
 
     Ok(module_info.module_def)

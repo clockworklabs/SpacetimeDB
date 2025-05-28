@@ -1,5 +1,8 @@
+use core_affinity::CoreId;
+use crossbeam_queue::ArrayQueue;
 use spacetimedb_paths::server::{ConfigToml, LogsDir};
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 use tracing_appender::rolling;
 use tracing_core::LevelFilter;
@@ -11,23 +14,6 @@ use tracing_subscriber::prelude::*;
 use tracing_subscriber::{reload, EnvFilter};
 
 use crate::config::{ConfigFile, LogConfig};
-
-pub struct StartupOptions {
-    /// Options for tracing to configure the global tracing subscriber. Tracing will be disabled
-    /// if `None`.
-    pub tracing: Option<TracingOptions>,
-    /// Whether or not to configure the global rayon threadpool.
-    pub rayon: bool,
-}
-
-impl Default for StartupOptions {
-    fn default() -> Self {
-        Self {
-            tracing: Some(TracingOptions::default()),
-            rayon: true,
-        }
-    }
-}
 
 pub struct TracingOptions {
     pub config: LogConfig,
@@ -54,19 +40,12 @@ impl Default for TracingOptions {
         }
     }
 }
-
-impl StartupOptions {
-    pub fn configure(self) {
-        if let Some(tracing_opts) = self.tracing {
-            configure_tracing(tracing_opts)
-        }
-        if self.rayon {
-            configure_rayon()
-        }
-    }
+#[must_use]
+pub fn pin_threads() -> Cores {
+    Cores::get().unwrap_or_default()
 }
 
-fn configure_tracing(opts: TracingOptions) {
+pub fn configure_tracing(opts: TracingOptions) {
     // Use this to change log levels at runtime.
     // This means you can change the default log level to trace
     // if you are trying to debug an issue and need more logs on then turn it off
@@ -172,10 +151,115 @@ fn reload_config<S>(conf_file: &ConfigToml, reload_handle: &reload::Handle<EnvFi
     }
 }
 
-fn configure_rayon() {
+pub struct Cores {
+    pub databases: DatabaseCores,
+    pub tokio_workers: TokioCores,
+    pub rest: usize,
+}
+
+impl Default for Cores {
+    fn default() -> Self {
+        Self {
+            databases: DatabaseCores::default(),
+            tokio_workers: TokioCores(None),
+            rest: std::thread::available_parallelism().map_or(4, |x| x.get()),
+        }
+    }
+}
+
+impl Cores {
+    fn get() -> Option<Self> {
+        let mut cores = core_affinity::get_core_ids()
+            .filter(|cores| cores.len() >= 8)?
+            .into_iter();
+
+        let total = cores.len() as f64;
+        let mut take = |frac: f64| cores.by_ref().take((total * frac).ceil() as usize).collect::<Vec<_>>();
+
+        let databases = DatabaseCores {
+            queue: Some(vec_to_queue(take(1.0 / 8.0))),
+        };
+
+        let tokio_workers = TokioCores(Some(take(5.0 / 8.0)));
+
+        Some(Self {
+            databases,
+            tokio_workers,
+            rest: cores.len(),
+        })
+    }
+}
+
+type CoreQueue = Arc<ArrayQueue<CoreId>>;
+fn vec_to_queue(cores: Vec<CoreId>) -> CoreQueue {
+    let queue = Arc::new(ArrayQueue::new(cores.len()));
+    for core in cores {
+        queue.push(core).unwrap();
+    }
+    queue
+}
+
+pub struct TokioCores(Option<Vec<CoreId>>);
+
+impl TokioCores {
+    pub fn configure(self, builder: &mut tokio::runtime::Builder) {
+        if let Some(cores) = self.0 {
+            let cores = vec_to_queue(cores);
+            // `on_thread_start` gets called for both async worker threads and blocking threads,
+            // but the first `worker_threads` threads that tokio spawns are worker threads,
+            // so this ends up working fine
+            builder.worker_threads(cores.len()).on_thread_start(move || {
+                if let Some(core) = cores.pop() {
+                    core_affinity::set_for_current(core);
+                }
+            });
+        }
+    }
+}
+
+#[derive(Clone, Default)]
+pub struct DatabaseCores {
+    queue: Option<CoreQueue>,
+}
+
+impl DatabaseCores {
+    pub fn take(&self) -> DatabaseCore {
+        if let Some(queue) = &self.queue {
+            if let Some(core) = queue.pop() {
+                return DatabaseCore {
+                    cores_id: Some((queue.clone(), core)),
+                };
+            }
+        }
+        DatabaseCore { cores_id: None }
+    }
+}
+
+#[derive(Default)]
+pub struct DatabaseCore {
+    cores_id: Option<(CoreQueue, CoreId)>,
+}
+
+impl DatabaseCore {
+    pub fn spawn(self, f: impl FnOnce() + Send + 'static) {
+        std::thread::spawn(move || {
+            if let Some((_, id)) = self.cores_id {
+                core_affinity::set_for_current(id);
+            }
+            scopeguard::defer!({
+                if let Some((queue, id)) = self.cores_id {
+                    queue.push(id).unwrap();
+                }
+            });
+            f();
+        });
+    }
+}
+
+pub fn configure_rayon(num_threads: usize, tokio_handle: &tokio::runtime::Handle) {
     rayon_core::ThreadPoolBuilder::new()
         .thread_name(|_idx| "rayon-worker".to_string())
-        .spawn_handler(thread_spawn_handler(tokio::runtime::Handle::current()))
+        .spawn_handler(thread_spawn_handler(tokio_handle))
         // TODO(perf, pgoldman 2024-02-22):
         // in the case where we have many modules running many reducers,
         // we'll wind up with Rayon threads competing with each other and with Tokio threads
@@ -187,7 +271,7 @@ fn configure_rayon() {
         // and Rayon threads to the other.
         // Then we should give Tokio and Rayon each a number of worker threads
         // equal to the size of their pool.
-        .num_threads(std::thread::available_parallelism().unwrap().get() / 2)
+        .num_threads(num_threads)
         .build_global()
         .unwrap()
 }
@@ -205,7 +289,9 @@ fn configure_rayon() {
 /// i.e. that every async operation they invoke immediately completes.
 /// I (pgoldman 2024-02-22) believe that our Rayon threads only ever send to unbounded channels,
 /// and therefore never wait.
-fn thread_spawn_handler(rt: tokio::runtime::Handle) -> impl FnMut(rayon::ThreadBuilder) -> Result<(), std::io::Error> {
+fn thread_spawn_handler(
+    rt: &tokio::runtime::Handle,
+) -> impl FnMut(rayon::ThreadBuilder) -> Result<(), std::io::Error> + '_ {
     move |thread| {
         let rt = rt.clone();
         let mut builder = std::thread::Builder::new();

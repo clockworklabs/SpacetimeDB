@@ -7,7 +7,7 @@ use clap::ArgAction::SetTrue;
 use clap::{Arg, ArgMatches};
 use spacetimedb::config::{CertificateAuthority, ConfigFile};
 use spacetimedb::db::{Config, Storage};
-use spacetimedb::startup::{self, TracingOptions};
+use spacetimedb::startup::{self, DatabaseCores, TracingOptions};
 use spacetimedb::worker_metrics;
 use spacetimedb_client_api::routes::database::DatabaseRoutes;
 use spacetimedb_client_api::routes::router;
@@ -75,7 +75,7 @@ pub fn cli() -> clap::Command {
     // .after_help("Run `spacetime help start` for more detailed information.")
 }
 
-pub async fn exec(args: &ArgMatches) -> anyhow::Result<()> {
+pub async fn exec(args: &ArgMatches, db_cores: DatabaseCores) -> anyhow::Result<()> {
     let listen_addr = args.get_one::<String>("listen_addr").unwrap();
     let cert_dir = args.get_one::<spacetimedb_paths::cli::ConfigDir>("jwt_key_dir");
     let certs = Option::zip(
@@ -122,24 +122,20 @@ pub async fn exec(args: &ArgMatches) -> anyhow::Result<()> {
         }
     };
 
-    startup::StartupOptions {
-        tracing: Some(TracingOptions {
-            config: config.logs,
-            reload_config: cfg!(debug_assertions).then_some(config_path),
-            disk_logging: std::env::var_os("SPACETIMEDB_DISABLE_DISK_LOGGING")
-                .is_none()
-                .then(|| data_dir.logs()),
-            edition: "standalone".to_owned(),
-            tracy: enable_tracy || std::env::var_os("SPACETIMEDB_TRACY").is_some(),
-            flamegraph: std::env::var_os("SPACETIMEDB_FLAMEGRAPH").map(|_| {
-                std::env::var_os("SPACETIMEDB_FLAMEGRAPH_PATH")
-                    .unwrap_or("/var/log/flamegraph.folded".into())
-                    .into()
-            }),
+    startup::configure_tracing(TracingOptions {
+        config: config.logs,
+        reload_config: cfg!(debug_assertions).then_some(config_path),
+        disk_logging: std::env::var_os("SPACETIMEDB_DISABLE_DISK_LOGGING")
+            .is_none()
+            .then(|| data_dir.logs()),
+        edition: "standalone".to_owned(),
+        tracy: enable_tracy || std::env::var_os("SPACETIMEDB_TRACY").is_some(),
+        flamegraph: std::env::var_os("SPACETIMEDB_FLAMEGRAPH").map(|_| {
+            std::env::var_os("SPACETIMEDB_FLAMEGRAPH_PATH")
+                .unwrap_or("/var/log/flamegraph.folded".into())
+                .into()
         }),
-        ..Default::default()
-    }
-    .configure();
+    });
 
     let certs = certs
         .or(config.certificate_authority)
@@ -147,11 +143,10 @@ pub async fn exec(args: &ArgMatches) -> anyhow::Result<()> {
         .context("cannot omit --jwt-{pub,priv}-key-path when those options are not specified in config.toml")?;
 
     let data_dir = Arc::new(data_dir.clone());
-    let ctx = StandaloneEnv::init(db_config, &certs, data_dir).await?;
+    let ctx = StandaloneEnv::init(db_config, &certs, data_dir, db_cores).await?;
     worker_metrics::spawn_jemalloc_stats(listen_addr.clone());
     worker_metrics::spawn_tokio_stats(listen_addr.clone());
     worker_metrics::spawn_page_pool_stats(listen_addr.clone(), ctx.page_pool().clone());
-
     let mut db_routes = DatabaseRoutes::default();
     db_routes.root_post = db_routes.root_post.layer(DefaultBodyLimit::disable());
     db_routes.db_put = db_routes.db_put.layer(DefaultBodyLimit::disable());

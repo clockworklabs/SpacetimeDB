@@ -13,6 +13,7 @@ use crate::messages::control_db::Database;
 use crate::replica_context::ReplicaContext;
 use crate::sql::ast::SchemaViewer;
 use crate::sql::parser::RowLevelExpr;
+use crate::startup::DatabaseCore;
 use crate::subscription::execute_plan;
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use crate::subscription::tx::DeltaTx;
@@ -46,6 +47,7 @@ use spacetimedb_vm::relation::RelValue;
 use std::fmt;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
+use tokio::sync::{mpsc, oneshot};
 
 #[derive(Debug, Default, Clone, From)]
 pub struct DatabaseUpdate {
@@ -444,6 +446,7 @@ pub struct ModuleHost {
     inner: Arc<dyn DynModuleHost>,
     /// Called whenever a reducer call on this host panics.
     on_panic: Arc<dyn Fn() + Send + Sync + 'static>,
+    job_tx: mpsc::Sender<Box<dyn FnOnce() + Send>>,
 }
 
 impl fmt::Debug for ModuleHost {
@@ -536,6 +539,7 @@ pub struct WeakModuleHost {
     info: Arc<ModuleInfo>,
     inner: Weak<dyn DynModuleHost>,
     on_panic: Weak<dyn Fn() + Send + Sync + 'static>,
+    tx: mpsc::WeakSender<Box<dyn FnOnce() + Send>>,
 }
 
 #[derive(Debug)]
@@ -596,7 +600,11 @@ pub enum ClientConnectedError {
 }
 
 impl ModuleHost {
-    pub fn new(mut module: impl Module, on_panic: impl Fn() + Send + Sync + 'static) -> Self {
+    pub(super) fn new(
+        mut module: impl Module,
+        on_panic: impl Fn() + Send + Sync + 'static,
+        core: DatabaseCore,
+    ) -> Self {
         let info = module.info();
         let instance_pool = LendingPool::new();
         instance_pool.add_multiple(module.initial_instances()).unwrap();
@@ -605,7 +613,18 @@ impl ModuleHost {
             instance_pool,
         });
         let on_panic = Arc::new(on_panic);
-        ModuleHost { info, inner, on_panic }
+        let (tx, mut rx) = mpsc::channel::<Box<dyn FnOnce() + Send>>(8);
+        core.spawn(move || {
+            while let Some(f) = rx.blocking_recv() {
+                f()
+            }
+        });
+        ModuleHost {
+            info,
+            inner,
+            on_panic,
+            job_tx: tx,
+        }
     }
 
     #[inline]
@@ -645,7 +664,14 @@ impl ModuleHost {
             log::warn!("reducer {reducer} panicked");
             (self.on_panic)();
         });
-        let result = asyncify(move || f(&mut *inst)).await;
+        let (ret_tx, ret_rx) = oneshot::channel();
+        self.job_tx
+            .send(Box::new(move || {
+                let _ = ret_tx.send(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(&mut *inst))));
+            }))
+            .await
+            .unwrap();
+        let result = ret_rx.await.unwrap().unwrap_or_else(|e| std::panic::resume_unwind(e));
         Ok(result)
     }
 
@@ -1117,6 +1143,7 @@ impl ModuleHost {
             info: self.info.clone(),
             inner: Arc::downgrade(&self.inner),
             on_panic: Arc::downgrade(&self.on_panic),
+            tx: self.job_tx.downgrade(),
         }
     }
 
@@ -1133,10 +1160,12 @@ impl WeakModuleHost {
     pub fn upgrade(&self) -> Option<ModuleHost> {
         let inner = self.inner.upgrade()?;
         let on_panic = self.on_panic.upgrade()?;
+        let tx = self.tx.upgrade()?;
         Some(ModuleHost {
             info: self.info.clone(),
             inner,
             on_panic,
+            job_tx: tx,
         })
     }
 }
