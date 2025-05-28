@@ -32,7 +32,6 @@ use crate::sql::ast::SchemaViewer;
 use crate::vm::{build_query, TxMode};
 use anyhow::Context;
 use itertools::Either;
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use spacetimedb_client_api_messages::websocket::{Compression, WebsocketFormat};
 use spacetimedb_data_structures::map::HashSet;
 use spacetimedb_lib::db::auth::{StAccess, StTableType};
@@ -523,7 +522,7 @@ impl ExecutionSet {
         let tables = self
             .exec_units
             // if you need eval to run single-threaded for debugging, change this to .iter()
-            .par_iter()
+            .iter()
             .filter_map(|unit| unit.eval(db, tx, &unit.sql, slow_query_threshold, compression))
             .collect();
         ws::DatabaseUpdate { tables }
