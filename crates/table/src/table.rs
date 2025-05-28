@@ -700,7 +700,7 @@ impl Table {
             .project(&target_index.indexed_columns)
             .expect("needle row should be valid");
         target_index.seek_point(&key).next().filter(|&target_ptr| {
-            // SAFETY:s
+            // SAFETY:
             // - Caller promised that the row layouts were the same.
             // - We know `target_ptr` exists, as it was in `target_index`, belonging to `target_table`.
             // - Caller promised that `needle_ptr` is valid for `needle_table`.
