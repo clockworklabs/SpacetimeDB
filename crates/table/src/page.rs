@@ -1837,8 +1837,16 @@ impl Page {
     /// The reset page supports `max_rows_in_page` at most.
     pub fn reset_for(&mut self, max_rows_in_page: usize) {
         self.header.reset_for(max_rows_in_page);
-        // SAFETY: We just reset the page header.
-        unsafe { self.zero_data() };
+
+        // NOTE(centril): We previously zeroed pages when resetting.
+        // This had an adverse performance impact.
+        // The reason why we previously zeroed was for security under a multi-tenant setup
+        // when exposing a module ABI that allows modules to memcpy whole pages over.
+        // However, we have no such ABI for the time being, so we can soundly avoid zeroing.
+        // If we ever decide to add such an ABI, we must start zeroing again.
+        //
+        // // SAFETY: We just reset the page header.
+        // unsafe { self.zero_data() };
     }
 
     /// Sets the header and the row data.
