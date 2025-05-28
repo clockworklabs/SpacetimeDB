@@ -238,12 +238,12 @@ impl From<String> for TableName {
 impl std::ops::Deref for TableName {
     type Target = str;
     fn deref(&self) -> &Self::Target {
-        &*self.0
+        &self.0
     }
 }
 
 impl TableName {
-    pub fn from_str(name: &str) -> Self {
+    pub fn table_name_from_str(name: &str) -> Self {
         TableName(name.into())
     }
 }
