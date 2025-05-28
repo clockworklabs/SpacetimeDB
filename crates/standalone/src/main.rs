@@ -69,6 +69,7 @@ fn main() -> anyhow::Result<()> {
     // Create a multi-threaded run loop
     Builder::new_multi_thread()
         .enable_all()
+        .event_interval(122)
         .build()
         .unwrap()
         .block_on(async_main())
