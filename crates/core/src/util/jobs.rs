@@ -107,7 +107,7 @@ impl JobCore {
         U: 'static,
         T: ?Sized + 'static,
     {
-        let (tx, rx) = mpsc::channel::<Box<Job<T>>>(8);
+        let (tx, rx) = mpsc::channel::<Box<Job<T>>>(50);
 
         let handle = tokio::runtime::Handle::current();
         std::thread::spawn(move || {
