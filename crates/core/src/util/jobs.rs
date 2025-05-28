@@ -76,7 +76,6 @@ impl JobCoresInner {
             Err(_) => (&mut self.cores[core_index], None),
         };
         let pos = core.jobs.iter().position(|x| *x == id).unwrap();
-        core.jobs.remove(pos);
         if let Some(job) = last_core.and_then(|last| last.jobs.pop()) {
             core.jobs[pos] = job;
             let sender = self.job_threads.get_mut(&job).unwrap();
