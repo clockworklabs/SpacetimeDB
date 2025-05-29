@@ -115,8 +115,7 @@ impl<T: Encode + Send + Sync + 'static> Local<T> {
     ///
     /// Background tasks are spawned onto the provided tokio runtime.
     pub fn open(root: CommitLogDir, rt: tokio::runtime::Handle, opts: Options) -> io::Result<Self> {
-        let backtrace = std::backtrace::Backtrace::force_capture();
-        info!("open local durability at {backtrace}");
+        info!("open local durability");
 
         let clog = Arc::new(Commitlog::open(root, opts.commitlog)?);
         let (queue, rx) = mpsc::unbounded_channel();

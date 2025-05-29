@@ -1555,6 +1555,8 @@ pub type LocalDurability = Arc<durability::Local<ProductValue>>;
 /// Note that this operation can be expensive, as it needs to traverse a suffix
 /// of the commitlog.
 pub async fn local_durability(commitlog_dir: CommitLogDir) -> io::Result<(LocalDurability, DiskSizeFn)> {
+    let backtrace = std::backtrace::Backtrace::force_capture();
+    log::info!("local_durability from Tokio thread at {backtrace}");
     let rt = tokio::runtime::Handle::current();
     // TODO: Should this better be spawn_blocking?
     let local = spawn_rayon(move || {
