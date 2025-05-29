@@ -174,6 +174,8 @@ impl HostController {
         durability: Arc<dyn DurabilityProvider>,
         db_cores: JobCores,
     ) -> Self {
+        let backtrace = std::backtrace::Backtrace::force_capture();
+        log::info!("HostController::new(data_dir: {data_dir:?}, ...) from {backtrace}");
         Self {
             hosts: <_>::default(),
             default_config,
@@ -525,7 +527,7 @@ impl HostController {
 
     async fn try_init_host(&self, database: Database, replica_id: u64) -> anyhow::Result<Host> {
         let backtrace = std::backtrace::Backtrace::force_capture();
-        log::info!("try_init_host at {backtrace}");
+        log::info!("try_init_host(database: {database:?}, replica_id: {replica_id}) at {backtrace}");
         Host::try_init(self, database, replica_id).await
     }
 }

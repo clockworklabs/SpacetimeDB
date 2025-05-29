@@ -20,7 +20,7 @@ pub struct EnergyBalance {
 }
 
 /// Description of a database.
-#[derive(Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Serialize, Deserialize, Debug)]
 pub struct Database {
     /// Internal id of the database, assigned by the control database.
     pub id: u64,
