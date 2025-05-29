@@ -290,12 +290,12 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
                 log::warn!("Database update failed: {} @ {}", e, stdb.database_identity());
                 self.system_logger().warn(&format!("Database update failed: {e}"));
                 let (tx_metrics, reducer) = stdb.rollback_mut_tx(tx);
-                tx_metrics.report_with_db(&reducer, stdb, None);
+                stdb.report(&reducer, &tx_metrics, None);
                 Ok(UpdateDatabaseResult::ErrorExecutingMigration(e))
             }
             Ok(()) => {
                 if let Some((tx_data, tx_metrics, reducer)) = stdb.commit_tx(tx)? {
-                    tx_metrics.report_with_db(&reducer, stdb, Some(&tx_data));
+                    stdb.report(&reducer, &tx_metrics, Some(&tx_data));
                 }
                 self.system_logger().info("Database updated");
                 log::info!("Database updated, {}", stdb.database_identity());
@@ -510,7 +510,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         let (event, _) = match self
             .info
             .subscriptions
-            .commit_and_broadcast_event(client.as_deref(), event, tx)
+            .commit_and_broadcast_event(client, event, tx)
             .unwrap()
         {
             Ok(ev) => ev,

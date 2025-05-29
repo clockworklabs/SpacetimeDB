@@ -9,6 +9,7 @@ use super::{
 use crate::{
     db::{
         datastore::{
+            error::{IndexError, TableError},
             system_tables::{
                 system_tables, StColumnRow, StConstraintData, StConstraintRow, StIndexRow, StSequenceRow,
                 StTableFields, StTableRow, SystemTable, ST_CLIENT_ID, ST_CLIENT_IDX, ST_COLUMN_ID, ST_COLUMN_IDX,
@@ -21,7 +22,6 @@ use crate::{
         },
         db_metrics::DB_METRICS,
     },
-    error::{IndexError, TableError},
     execution_context::ExecutionContext,
 };
 use anyhow::anyhow;

@@ -9,20 +9,26 @@ use crate::error::DBError;
 use crate::host::module_host::{DatabaseTableUpdate, ModuleEvent, UpdatesRelValue};
 use crate::messages::websocket::{self as ws, TableUpdate};
 use crate::subscription::delta::eval_delta;
+use crate::worker_metrics::WORKER_METRICS;
 use hashbrown::hash_map::OccupiedError;
 use hashbrown::{HashMap, HashSet};
 use itertools::Itertools;
+use parking_lot::RwLock;
+use prometheus::IntGauge;
+use scopeguard::ScopeGuard;
 use spacetimedb_client_api_messages::websocket::{
-    BsatnFormat, CompressableQueryUpdate, FormatSwitch, JsonFormat, QueryId, QueryUpdate, WebsocketFormat,
+    BsatnFormat, CompressableQueryUpdate, FormatSwitch, JsonFormat, QueryId, QueryUpdate, SingleQueryUpdate,
+    WebsocketFormat,
 };
 use spacetimedb_data_structures::map::{Entry, IntMap};
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::{AlgebraicValue, ConnectionId, Identity, ProductValue};
-use spacetimedb_primitives::{ColId, TableId};
-use spacetimedb_subscription::SubscriptionPlan;
+use spacetimedb_primitives::{ColId, IndexId, TableId};
+use spacetimedb_subscription::{SubscriptionPlan, TableName};
 use std::collections::BTreeSet;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use tokio::sync::mpsc;
 
 /// Clients are uniquely identified by their Identity and ConnectionId.
 /// Identity is insufficient because different ConnectionIds can use the same Identity.
@@ -37,6 +43,10 @@ type SwitchedDbUpdate = FormatSwitch<ws::DatabaseUpdate<BsatnFormat>, ws::Databa
 type ClientQueryId = QueryId;
 /// SubscriptionId is a globally unique identifier for a subscription.
 type SubscriptionId = (ClientId, ClientQueryId);
+
+// Type aliases that oddly aren't included in parking_lot...
+type ArcRwLockReadGuard<T> = parking_lot::ArcRwLockReadGuard<parking_lot::RawRwLock, T>;
+type ArcRwLockWriteGuard<T> = parking_lot::ArcRwLockWriteGuard<parking_lot::RawRwLock, T>;
 
 #[derive(Debug)]
 pub struct Plan {
@@ -66,6 +76,15 @@ impl Plan {
     /// This method returns the name of that table.
     pub fn subscribed_table_name(&self) -> &str {
         self.plans[0].subscribed_table_name()
+    }
+
+    /// Returns the index ids from which this subscription reads
+    pub fn index_ids(&self) -> impl Iterator<Item = (TableId, IndexId)> {
+        self.plans
+            .iter()
+            .flat_map(|plan| plan.index_ids())
+            .collect::<HashSet<_>>()
+            .into_iter()
     }
 
     /// Returns the table ids from which this subscription reads
@@ -162,6 +181,11 @@ impl QueryState {
     // This returns all of the clients listening to a query. If a client has multiple subscriptions for this query, it will appear twice.
     fn all_clients(&self) -> impl Iterator<Item = &ClientId> {
         itertools::chain(&self.legacy_subscribers, &self.subscriptions)
+    }
+
+    /// Return the [`Query`] for this [`QueryState`]
+    pub fn query(&self) -> &Query {
+        &self.query
     }
 
     /// Return the search arguments for this query
@@ -293,28 +317,148 @@ impl SearchArguments {
     }
 }
 
+type ClientsMap = HashMap<ClientId, ClientInfo>;
+
+/// Keeps track of the indexes that are used in subscriptions.
+#[derive(Debug, Default)]
+pub struct QueriedTableIndexIds {
+    ids: HashMap<TableId, HashMap<IndexId, usize>>,
+}
+
+impl FromIterator<(TableId, IndexId)> for QueriedTableIndexIds {
+    fn from_iter<T: IntoIterator<Item = (TableId, IndexId)>>(iter: T) -> Self {
+        let mut index_ids = Self::default();
+        for (table_id, index_id) in iter {
+            index_ids.insert_index_id(table_id, index_id);
+        }
+        index_ids
+    }
+}
+
+impl QueriedTableIndexIds {
+    /// Returns the index ids that are used in subscriptions for this table.
+    /// Note, it does not return all of the index ids that are defined on this table.
+    /// Only those that are used by at least one subscription query.
+    pub fn index_ids_for_table(&self, table_id: TableId) -> impl Iterator<Item = IndexId> + '_ {
+        self.ids
+            .get(&table_id)
+            .into_iter()
+            .flat_map(|index_ids| index_ids.keys())
+            .copied()
+    }
+
+    /// Insert a new `table_id` `index_id` pair into this container.
+    /// Note, different queries may read from the same index.
+    /// Hence we may already be tracking this index, in which case we bump its ref count.
+    pub fn insert_index_id(&mut self, table_id: TableId, index_id: IndexId) {
+        *self.ids.entry(table_id).or_default().entry(index_id).or_default() += 1;
+    }
+
+    /// Remove a `table_id` `index_id` pair from this container.
+    /// Note, different queries may read from the same index.
+    /// Hence we only remove this key from the map if its ref count goes to zero.
+    pub fn delete_index_id(&mut self, table_id: TableId, index_id: IndexId) {
+        if let Some(ids) = self.ids.get_mut(&table_id) {
+            if let Some(n) = ids.get_mut(&index_id) {
+                *n -= 1;
+
+                if *n == 0 {
+                    ids.remove(&index_id);
+
+                    if ids.is_empty() {
+                        self.ids.remove(&table_id);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Insert the index ids from which a query reads into this mapping.
+    /// Note, an index may already be tracked if another query is already using it.
+    /// In this case we just bump its ref count.
+    pub fn insert_index_ids_for_query(&mut self, query: &Query) {
+        for (table_id, index_id) in query.index_ids() {
+            self.insert_index_id(table_id, index_id);
+        }
+    }
+
+    /// Delete the index ids from which a query reads from this mapping
+    /// Note, we will not remove an index id from this mapping if another query is using it.
+    /// Instead we decrement its ref count.
+    pub fn delete_index_ids_for_query(&mut self, query: &Query) {
+        for (table_id, index_id) in query.index_ids() {
+            self.delete_index_id(table_id, index_id);
+        }
+    }
+}
+
 /// Responsible for the efficient evaluation of subscriptions.
 /// It performs basic multi-query optimization,
 /// in that if a query has N subscribers,
 /// it is only executed once,
 /// with the results copied to the N receivers.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct SubscriptionManager {
-    // State for each client.
-    clients: HashMap<ClientId, ClientInfo>,
+    /// State for each client.
+    ///
+    /// Protected by an `Arc<RwLock>` because the [`Self::send_worker`] needs to read from it
+    /// in order to dispatch messages to clients.
+    clients: Arc<RwLock<ClientsMap>>,
 
-    // Queries for which there is at least one subscriber.
+    /// Queries for which there is at least one subscriber.
     queries: HashMap<QueryHash, QueryState>,
 
-    // If a query reads from a table,
-    // but does not have a simple equality filter on that table,
-    // we map the table to the query in this inverted index.
+    /// If a query reads from a table,
+    /// but does not have a simple equality filter on that table,
+    /// we map the table to the query in this inverted index.
     tables: IntMap<TableId, HashSet<QueryHash>>,
 
-    // If a query reads from a table,
-    // and has a simple equality filter on that table,
-    // we map the filter values to the query in this lookup table.
+    /// Tracks the indices used across all subscriptions
+    /// to enable building the appropriate indexes for row updates.
+    indexes: QueriedTableIndexIds,
+
+    /// If a query reads from a table,
+    /// and has a simple equality filter on that table,
+    /// we map the filter values to the query in this lookup table.
     search_args: SearchArguments,
+
+    /// Transmit side of a channel to the manager's [`Self::send_worker`] task.
+    ///
+    /// The send worker runs in parallel and pops [`ComputedQueries`]es out in order,
+    /// aggregates each client's full set of updates,
+    /// then passes them to the clients' websocket workers.
+    /// This allows transaction processing to proceed on the main thread
+    /// ahead of post-processing and broadcasting updates
+    /// while still ensuring that those updates are sent in the correct serial order.
+    /// Additionally, it avoids starving the next reducer request of Tokio workers,
+    /// as it imposes a delay between unlocking the datastore
+    /// and waking the many per-client sender Tokio tasks.
+    send_worker_tx: mpsc::UnboundedSender<ComputedQueries>,
+
+    /// Metric handle for the `subscription_send_queue_length` metric labeled with this database's [`Identity`],
+    /// or `None` when not running for a particular database, i.e. in tests.
+    send_queue_length_metric: Option<IntGauge>,
+}
+
+/// A single update for one client and one query.
+struct ClientUpdate {
+    id: ClientId,
+    table_id: TableId,
+    table_name: TableName,
+    update: FormatSwitch<SingleQueryUpdate<BsatnFormat>, SingleQueryUpdate<JsonFormat>>,
+}
+
+/// The computed incremental update queries with sufficient information
+/// to not depend on the transaction lock so that further work can be
+/// done in a separate worker: [`SubscriptionManager::send_worker`].
+/// The queries in this structure have not been aggregated yet
+/// but will be in the worker.
+struct ComputedQueries {
+    updates: Vec<ClientUpdate>,
+    errs: Vec<(ClientId, Box<str>)>,
+    event: Arc<ModuleEvent>,
+    caller: Option<Arc<ClientConnectionSender>>,
+    clients: ArcRwLockReadGuard<ClientsMap>,
 }
 
 // Tracks some gauges related to subscriptions.
@@ -332,8 +476,49 @@ pub struct SubscriptionGaugeStats {
 }
 
 impl SubscriptionManager {
+    pub fn for_database(database_identity: Identity) -> Self {
+        let metric = WORKER_METRICS
+            .subscription_send_queue_length
+            .with_label_values(&database_identity);
+
+        // The `Self::send_worker` will drop this `ScopeGuard` when it exits, thus cleaning up the metric.
+        let clean_up_metric = scopeguard::guard((), move |_| {
+            let _ = WORKER_METRICS
+                .subscription_send_queue_length
+                .remove_label_values(&database_identity);
+        });
+
+        Self::with_metric(Some(metric), clean_up_metric)
+    }
+
+    pub fn for_test_without_metrics_arc_rwlock() -> Arc<RwLock<Self>> {
+        Arc::new(RwLock::new(Self::for_test_without_metrics()))
+    }
+
+    pub fn for_test_without_metrics() -> Self {
+        let clean_up_metric = scopeguard::guard((), |_| {});
+        Self::with_metric(None, clean_up_metric)
+    }
+
+    fn with_metric(
+        metric: Option<IntGauge>,
+        clean_up_metric: ScopeGuard<(), impl FnOnce(()) + Send + 'static>,
+    ) -> Self {
+        let (send_worker_tx, rx) = mpsc::unbounded_channel();
+        tokio::spawn(Self::send_worker(rx, metric.clone(), clean_up_metric));
+        Self {
+            clients: Default::default(),
+            queries: Default::default(),
+            indexes: Default::default(),
+            tables: Default::default(),
+            search_args: Default::default(),
+            send_worker_tx,
+            send_queue_length_metric: metric,
+        }
+    }
+
     pub fn client(&self, id: &ClientId) -> Client {
-        self.clients[id].outbound_ref.clone()
+        self.clients.read()[id].outbound_ref.clone()
     }
 
     pub fn query(&self, hash: &QueryHash) -> Option<Query> {
@@ -341,12 +526,12 @@ impl SubscriptionManager {
     }
 
     pub fn calculate_gauge_stats(&self) -> SubscriptionGaugeStats {
+        let clients = self.clients.read();
         let num_queries = self.queries.len();
-        let num_connections = self.clients.len();
+        let num_connections = clients.len();
         let num_query_subscriptions = self.queries.values().map(|state| state.subscriptions.len()).sum();
-        let num_subscription_sets = self.clients.values().map(|ci| ci.subscriptions.len()).sum();
-        let num_legacy_subscriptions = self
-            .clients
+        let num_subscription_sets = clients.values().map(|ci| ci.subscriptions.len()).sum();
+        let num_legacy_subscriptions = clients
             .values()
             .filter(|ci| !ci.legacy_subscriptions.is_empty())
             .count();
@@ -371,7 +556,7 @@ impl SubscriptionManager {
 
     #[cfg(test)]
     fn contains_client(&self, subscriber: &ClientId) -> bool {
-        self.clients.contains_key(subscriber)
+        self.clients.read().contains_key(subscriber)
     }
 
     #[cfg(test)]
@@ -400,8 +585,8 @@ impl SubscriptionManager {
             .any(|id| id == col_id)
     }
 
-    fn remove_legacy_subscriptions(&mut self, client: &ClientId) {
-        if let Some(ci) = self.clients.get_mut(client) {
+    fn remove_legacy_subscriptions(&mut self, clients: &mut ArcRwLockWriteGuard<ClientsMap>, client: &ClientId) {
+        if let Some(ci) = clients.get_mut(client) {
             let mut queries_to_remove = Vec::new();
             for query_hash in ci.legacy_subscriptions.iter() {
                 let Some(query_state) = self.queries.get_mut(query_hash) else {
@@ -413,6 +598,7 @@ impl SubscriptionManager {
                 if !query_state.has_subscribers() {
                     SubscriptionManager::remove_query_from_tables(
                         &mut self.tables,
+                        &mut self.indexes,
                         &mut self.search_args,
                         &query_state.query,
                     );
@@ -428,10 +614,11 @@ impl SubscriptionManager {
 
     /// Remove any clients that have been marked for removal
     pub fn remove_dropped_clients(&mut self) {
-        for id in self.clients.keys().copied().collect::<Vec<_>>() {
-            if let Some(client) = self.clients.get(&id) {
+        let mut clients = self.clients.write_arc();
+        for id in clients.keys().copied().collect::<Vec<_>>() {
+            if let Some(client) = clients.get(&id) {
                 if client.dropped.load(Ordering::Relaxed) {
-                    self.remove_all_subscriptions(&id);
+                    self.remove_all_subscriptions_inner(&mut clients, &id);
                 }
             }
         }
@@ -440,9 +627,9 @@ impl SubscriptionManager {
     /// Remove a single subscription for a client.
     /// This will return an error if the client does not have a subscription with the given query id.
     pub fn remove_subscription(&mut self, client_id: ClientId, query_id: ClientQueryId) -> Result<Vec<Query>, DBError> {
+        let mut clients = self.clients.write();
         let subscription_id = (client_id, query_id);
-        let Some(ci) = self
-            .clients
+        let Some(ci) = clients
             .get_mut(&client_id)
             .filter(|ci| !ci.dropped.load(Ordering::Acquire))
         else {
@@ -478,6 +665,7 @@ impl SubscriptionManager {
             if !query_state.has_subscribers() {
                 SubscriptionManager::remove_query_from_tables(
                     &mut self.tables,
+                    &mut self.indexes,
                     &mut self.search_args,
                     &query_state.query,
                 );
@@ -502,19 +690,19 @@ impl SubscriptionManager {
         queries: Vec<Query>,
         query_id: ClientQueryId,
     ) -> Result<Vec<Query>, DBError> {
+        let mut clients = self.clients.write_arc();
+
         let client_id = (client.id.identity, client.id.connection_id);
 
         // Clean up any dropped subscriptions
-        if self
-            .clients
+        if clients
             .get(&client_id)
             .is_some_and(|ci| ci.dropped.load(Ordering::Acquire))
         {
-            self.remove_all_subscriptions(&client_id);
+            self.remove_all_subscriptions_inner(&mut clients, &client_id);
         }
 
-        let ci = self
-            .clients
+        let ci = clients
             .entry(client_id)
             .or_insert_with(|| ClientInfo::new(client.clone()));
         #[cfg(test)]
@@ -545,7 +733,7 @@ impl SubscriptionManager {
                 .entry(hash)
                 .or_insert_with(|| QueryState::new(query.clone()));
 
-            Self::insert_query(&mut self.tables, &mut self.search_args, query_state);
+            Self::insert_query(&mut self.tables, &mut self.indexes, &mut self.search_args, query_state);
 
             let entry = ci.subscription_ref_count.entry(hash).or_insert(0);
             *entry += 1;
@@ -576,13 +764,14 @@ impl SubscriptionManager {
     /// its table ids added to the inverted index.
     // #[tracing::instrument(level = "trace", skip_all)]
     pub fn set_legacy_subscription(&mut self, client: Client, queries: impl IntoIterator<Item = Query>) {
+        let mut clients = self.clients.write_arc();
+
         let client_id = (client.id.identity, client.id.connection_id);
         // First, remove any existing legacy subscriptions.
-        self.remove_legacy_subscriptions(&client_id);
+        self.remove_legacy_subscriptions(&mut clients, &client_id);
 
         // Now, add the new subscriptions.
-        let ci = self
-            .clients
+        let ci = clients
             .entry(client_id)
             .or_insert_with(|| ClientInfo::new(client.clone()));
         for unit in queries {
@@ -592,7 +781,7 @@ impl SubscriptionManager {
                 .queries
                 .entry(hash)
                 .or_insert_with(|| QueryState::new(unit.clone()));
-            Self::insert_query(&mut self.tables, &mut self.search_args, query_state);
+            Self::insert_query(&mut self.tables, &mut self.indexes, &mut self.search_args, query_state);
             query_state.legacy_subscribers.insert(client_id);
         }
     }
@@ -602,11 +791,13 @@ impl SubscriptionManager {
     // This takes a ref to the table map instead of `self` to avoid borrowing issues.
     fn remove_query_from_tables(
         tables: &mut IntMap<TableId, HashSet<QueryHash>>,
+        index_ids: &mut QueriedTableIndexIds,
         search_args: &mut SearchArguments,
         query: &Query,
     ) {
         let hash = query.hash();
         search_args.remove_query(&hash);
+        index_ids.delete_index_ids_for_query(query);
         for table_id in query.table_ids() {
             if let Entry::Occupied(mut entry) = tables.entry(table_id) {
                 let hashes = entry.get_mut();
@@ -622,11 +813,13 @@ impl SubscriptionManager {
     // This takes a ref to the table map instead of `self` to avoid borrowing issues.
     fn insert_query(
         tables: &mut IntMap<TableId, HashSet<QueryHash>>,
+        index_ids: &mut QueriedTableIndexIds,
         search_args: &mut SearchArguments,
         query_state: &QueryState,
     ) {
         // If this is new, we need to update the table to query mapping.
         if !query_state.has_subscribers() {
+            index_ids.insert_index_ids_for_query(query_state.query());
             let hash = query_state.query.hash();
             let mut table_ids = query_state.query.table_ids().collect::<HashSet<_>>();
             for (table_id, col_id, arg) in query_state.search_args() {
@@ -641,13 +834,15 @@ impl SubscriptionManager {
         }
     }
 
-    /// Removes a client from the subscriber mapping.
-    /// If a query no longer has any subscribers,
-    /// it is removed from the index along with its table ids.
-    #[tracing::instrument(level = "trace", skip_all)]
-    pub fn remove_all_subscriptions(&mut self, client: &ClientId) {
-        self.remove_legacy_subscriptions(client);
-        let Some(client_info) = self.clients.remove(client) else {
+    /// Remove all subscriptions for `client` from `clients` and `self`,
+    /// when the caller already has a lock on `self.clients`.
+    ///
+    /// Dirty hack alert! This method takes an `ArcRwLockWriteGuard`
+    /// to the `clients` which is inside of `self`.
+    /// We take the `Arc` version to avoid borrowck complaining about multiple borrows on `self` coexisting.
+    fn remove_all_subscriptions_inner(&mut self, clients: &mut ArcRwLockWriteGuard<ClientsMap>, client: &ClientId) {
+        self.remove_legacy_subscriptions(clients, client);
+        let Some(client_info) = clients.remove(client) else {
             return;
         };
         debug_assert!(client_info.legacy_subscriptions.is_empty());
@@ -663,6 +858,7 @@ impl SubscriptionManager {
                 queries_to_remove.push(*query_hash);
                 SubscriptionManager::remove_query_from_tables(
                     &mut self.tables,
+                    &mut self.indexes,
                     &mut self.search_args,
                     &query_state.query,
                 );
@@ -671,6 +867,15 @@ impl SubscriptionManager {
         for query_hash in queries_to_remove {
             self.queries.remove(&query_hash);
         }
+    }
+
+    /// Removes a client from the subscriber mapping.
+    /// If a query no longer has any subscribers,
+    /// it is removed from the index along with its table ids.
+    #[tracing::instrument(level = "trace", skip_all)]
+    pub fn remove_all_subscriptions(&mut self, client: &ClientId) {
+        let mut clients = self.clients.write_arc();
+        self.remove_all_subscriptions_inner(&mut clients, client);
     }
 
     /// Find the queries that need to be evaluated for this table update.
@@ -719,6 +924,11 @@ impl SubscriptionManager {
         queries.into_iter()
     }
 
+    /// Returns the index ids that are used in subscription queries
+    pub fn index_ids_for_subscriptions(&self) -> &QueriedTableIndexIds {
+        &self.indexes
+    }
+
     /// This method takes a set of delta tables,
     /// evaluates only the necessary queries for those delta tables,
     /// and then sends the results to each client.
@@ -732,26 +942,20 @@ impl SubscriptionManager {
         &self,
         tx: &DeltaTx,
         event: Arc<ModuleEvent>,
-        caller: Option<&ClientConnectionSender>,
+        caller: Option<Arc<ClientConnectionSender>>,
     ) -> ExecutionMetrics {
         use FormatSwitch::{Bsatn, Json};
+
+        let clients = self.clients.read_arc();
 
         let tables = &event.status.database_update().unwrap().tables;
 
         let span = tracing::info_span!("eval_incr").entered();
 
-        type ClientQueryUpdate<F> = (<F as WebsocketFormat>::QueryUpdate, /* num_rows */ u64);
-        struct ClientUpdate<'a> {
-            id: &'a ClientId,
-            table_id: TableId,
-            table_name: &'a str,
-            update: FormatSwitch<ClientQueryUpdate<BsatnFormat>, ClientQueryUpdate<JsonFormat>>,
-        }
-
         #[derive(Default)]
-        struct FoldState<'a> {
-            updates: Vec<ClientUpdate<'a>>,
-            errs: Vec<(&'a ClientId, Box<str>)>,
+        struct FoldState {
+            updates: Vec<ClientUpdate>,
+            errs: Vec<(ClientId, Box<str>)>,
             metrics: ExecutionMetrics,
         }
 
@@ -777,7 +981,7 @@ impl SubscriptionManager {
             // which involves cloning BSATN (binary) or product values (json).
             .fold(FoldState::default(), |mut acc, (qstate, plan)| {
                 let table_id = plan.subscribed_table_id();
-                let table_name = plan.subscribed_table_name();
+                let table_name = plan.subscribed_table_name().clone();
                 // Store at most one copy for both the serialization to BSATN and JSON.
                 // Each subscriber gets to pick which of these they want,
                 // but we only fill `ops_bin_uncompressed` and `ops_json` at most once.
@@ -805,7 +1009,7 @@ impl SubscriptionManager {
                     updates: &UpdatesRelValue<'_>,
                     memory: &mut Option<(F::QueryUpdate, u64, usize)>,
                     metrics: &mut ExecutionMetrics,
-                ) -> (F::QueryUpdate, u64) {
+                ) -> SingleQueryUpdate<F> {
                     let (update, num_rows, num_bytes) = memory
                         .get_or_insert_with(|| {
                             let encoded = updates.encode::<F>();
@@ -821,12 +1025,12 @@ impl SubscriptionManager {
                     // Therefore every time we call this function,
                     // we update the `bytes_sent_to_clients` metric.
                     metrics.bytes_sent_to_clients += num_bytes;
-                    (update, num_rows)
+                    SingleQueryUpdate { update, num_rows }
                 }
 
                 // filter out clients that've dropped
                 let clients_for_query = qstate.all_clients().filter(|id| {
-                    self.clients
+                    clients
                         .get(*id)
                         .is_some_and(|info| !info.dropped.load(Ordering::Acquire))
                 });
@@ -845,14 +1049,14 @@ impl SubscriptionManager {
                         .to_string()
                         .into_boxed_str();
 
-                        acc.errs.extend(clients_for_query.map(|id| (id, err.clone())))
+                        acc.errs.extend(clients_for_query.map(|id| (*id, err.clone())))
                     }
                     // The query didn't return any rows to update
                     Ok(None) => {}
                     // The query did return updates - process them and add them to the accumulator
                     Ok(Some(delta_updates)) => {
                         let row_iter = clients_for_query.map(|id| {
-                            let client = &self.clients[id].outbound_ref;
+                            let client = &clients[id].outbound_ref;
                             let update = match client.config.protocol {
                                 Protocol::Binary => Bsatn(memo_encode::<BsatnFormat>(
                                     &delta_updates,
@@ -866,9 +1070,9 @@ impl SubscriptionManager {
                                 )),
                             };
                             ClientUpdate {
-                                id,
+                                id: *id,
                                 table_id,
-                                table_name,
+                                table_name: table_name.clone(),
                                 update,
                             }
                         });
@@ -879,19 +1083,78 @@ impl SubscriptionManager {
                 acc
             });
 
-        let clients_with_errors = errs.iter().map(|(id, _)| *id).collect::<HashSet<_>>();
+        if let Some(metric) = &self.send_queue_length_metric {
+            metric.inc();
+        }
+
+        // We've now finished all of the work which needs to read from the datastore,
+        // so get this work off the main thread and over to the `send_worker`,
+        // then return ASAP in order to unlock the datastore and start running the next transaction.
+        // See comment on the `send_worker_tx` field in [`SubscriptionManager`] for more motivation.
+        self.send_worker_tx
+            .send(ComputedQueries {
+                updates,
+                errs,
+                event,
+                caller,
+                clients,
+            })
+            .expect("send worker has panicked, or otherwise dropped its recv queue!");
+
+        drop(span);
+
+        metrics
+    }
+
+    /// Asynchronous background worker which aggregates each of the clients' updates from a [`ComputedQueries`]
+    /// into `DbUpdate`s and then sends them to the clients' WebSocket workers.
+    ///
+    /// See comment on the `send_worker_tx` field in [`SubscriptionManager`] for motivation.
+    ///
+    /// If `queue_length_metric` is supplied, it will be decremented each time we pop a [`ComputedQueries`] from `rx`.
+    ///
+    /// `_clean_up_metric` will be dropped upon exiting this worker,
+    /// and should be a [`ScopeGuard`] which does `remove_label_values` on the `queue_length_metric`.
+    async fn send_worker(
+        mut rx: mpsc::UnboundedReceiver<ComputedQueries>,
+        queue_length_metric: Option<IntGauge>,
+        _clean_up_metric: ScopeGuard<(), impl FnOnce(()) + Send + 'static>,
+    ) {
+        while let Some(queries) = rx.recv().await {
+            if let Some(metric) = &queue_length_metric {
+                metric.dec();
+            }
+
+            Self::send_one_computed_queries(queries);
+        }
+    }
+
+    fn send_one_computed_queries(
+        ComputedQueries {
+            updates,
+            errs,
+            event,
+            caller,
+            clients,
+        }: ComputedQueries,
+    ) {
+        use FormatSwitch::{Bsatn, Json};
+
+        let clients_with_errors = errs.iter().map(|(id, _)| id).collect::<HashSet<_>>();
+
+        let span = tracing::info_span!("eval_incr_group_messages_by_client");
 
         let mut eval = updates
             .into_iter()
             // Filter out clients whose subscriptions failed
-            .filter(|upd| !clients_with_errors.contains(upd.id))
+            .filter(|upd| !clients_with_errors.contains(&upd.id))
             // For each subscriber, aggregate all the updates for the same table.
             // That is, we build a map `(subscriber_id, table_id) -> updates`.
             // A particular subscriber uses only one format,
             // so their `TableUpdate` will contain either JSON (`Protocol::Text`)
             // or BSATN (`Protocol::Binary`).
             .fold(
-                HashMap::<(&ClientId, TableId), SwitchedTableUpdate>::new(),
+                HashMap::<(ClientId, TableId), SwitchedTableUpdate>::new(),
                 |mut tables, upd| {
                     match tables.entry((upd.id, upd.table_id)) {
                         Entry::Occupied(mut entry) => match entry.get_mut().zip_mut(upd.update) {
@@ -899,8 +1162,8 @@ impl SubscriptionManager {
                             Json((tbl_upd, update)) => tbl_upd.push(update),
                         },
                         Entry::Vacant(entry) => drop(entry.insert(match upd.update {
-                            Bsatn(update) => Bsatn(TableUpdate::new(upd.table_id, upd.table_name.into(), update)),
-                            Json(update) => Json(TableUpdate::new(upd.table_id, upd.table_name.into(), update)),
+                            Bsatn(update) => Bsatn(TableUpdate::new(upd.table_id, (&*upd.table_name).into(), update)),
+                            Json(update) => Json(TableUpdate::new(upd.table_id, (&*upd.table_name).into(), update)),
                         })),
                     }
                     tables
@@ -911,7 +1174,7 @@ impl SubscriptionManager {
             // So before sending the updates to each client,
             // we must stitch together the `TableUpdate*`s into an aggregated list.
             .fold(
-                HashMap::<&ClientId, SwitchedDbUpdate>::new(),
+                HashMap::<ClientId, SwitchedDbUpdate>::new(),
                 |mut updates, ((id, _), update)| {
                     let entry = updates.entry(id);
                     let entry = entry.or_insert_with(|| match &update {
@@ -937,9 +1200,10 @@ impl SubscriptionManager {
         // Regardless, the update that we send to the caller, if we send any,
         // is a full tx update, rather than a light one.
         // That is, in the case of the caller, we don't respect the light setting.
-        if let Some((caller, conn_id)) = caller.zip(event.caller_connection_id) {
+        if let Some(caller) = caller {
+            let caller_id = (caller.id.identity, caller.id.connection_id);
             let database_update = eval
-                .remove(&(event.caller_identity, conn_id))
+                .remove(&caller_id)
                 .map(|update| SubscriptionUpdateMessage::from_event_and_update(&event, update))
                 .unwrap_or_else(|| {
                     SubscriptionUpdateMessage::default_for_protocol(caller.config.protocol, event.request_id)
@@ -948,13 +1212,13 @@ impl SubscriptionManager {
                 event: Some(event.clone()),
                 database_update,
             };
-            send_to_client(caller, message);
+            send_to_client(&caller, message);
         }
 
         // Send all the other updates.
         for (id, update) in eval {
             let database_update = SubscriptionUpdateMessage::from_event_and_update(&event, update);
-            let client = self.client(id);
+            let client = clients[&id].outbound_ref.clone();
             // Conditionally send out a full update or a light one otherwise.
             let event = client.config.tx_update_full.then(|| event.clone());
             let message = TransactionUpdateMessage { event, database_update };
@@ -963,7 +1227,7 @@ impl SubscriptionManager {
 
         // Send error messages and mark clients for removal
         for (id, message) in errs {
-            if let Some(client) = self.clients.get(id) {
+            if let Some(client) = clients.get(&id) {
                 client.dropped.store(true, Ordering::Release);
                 send_to_client(
                     &client.outbound_ref,
@@ -979,8 +1243,6 @@ impl SubscriptionManager {
                 );
             }
         }
-
-        metrics
     }
 }
 
@@ -1060,7 +1322,10 @@ mod tests {
         let id = id(0);
         let client = Arc::new(client(0));
 
-        let mut subscriptions = SubscriptionManager::default();
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let _rt = runtime.enter();
+
+        let mut subscriptions = SubscriptionManager::for_test_without_metrics();
         subscriptions.set_legacy_subscription(client.clone(), [plan.clone()]);
 
         assert!(subscriptions.contains_query(&hash));
@@ -1082,7 +1347,11 @@ mod tests {
         let client = Arc::new(client(0));
 
         let query_id: ClientQueryId = QueryId::new(1);
-        let mut subscriptions = SubscriptionManager::default();
+
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let _rt = runtime.enter();
+
+        let mut subscriptions = SubscriptionManager::for_test_without_metrics();
         subscriptions.add_subscription(client.clone(), plan.clone(), query_id)?;
         assert!(subscriptions.query_reads_from_table(&hash, &table_id));
 
@@ -1101,7 +1370,11 @@ mod tests {
         let client = Arc::new(client(0));
 
         let query_id: ClientQueryId = QueryId::new(1);
-        let mut subscriptions = SubscriptionManager::default();
+
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let _rt = runtime.enter();
+
+        let mut subscriptions = SubscriptionManager::for_test_without_metrics();
         subscriptions.add_subscription(client.clone(), plan.clone(), query_id)?;
         assert!(subscriptions.query_reads_from_table(&hash, &table_id));
 
@@ -1123,7 +1396,11 @@ mod tests {
         let client = Arc::new(client(0));
 
         let query_id: ClientQueryId = QueryId::new(1);
-        let mut subscriptions = SubscriptionManager::default();
+
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let _rt = runtime.enter();
+
+        let mut subscriptions = SubscriptionManager::for_test_without_metrics();
         subscriptions.add_subscription(client.clone(), plan.clone(), query_id)?;
 
         let client_id = (client.id.identity, client.id.connection_id);
@@ -1144,7 +1421,11 @@ mod tests {
         let client = Arc::new(client(0));
 
         let query_id: ClientQueryId = QueryId::new(1);
-        let mut subscriptions = SubscriptionManager::default();
+
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let _rt = runtime.enter();
+
+        let mut subscriptions = SubscriptionManager::for_test_without_metrics();
         subscriptions.add_subscription(client.clone(), plan.clone(), query_id)?;
         subscriptions.add_subscription(client.clone(), plan.clone(), QueryId::new(2))?;
 
@@ -1169,7 +1450,11 @@ mod tests {
         let client = Arc::new(client(0));
 
         let query_id: ClientQueryId = QueryId::new(1);
-        let mut subscriptions = SubscriptionManager::default();
+
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let _rt = runtime.enter();
+
+        let mut subscriptions = SubscriptionManager::for_test_without_metrics();
         let added_query = subscriptions.add_subscription_multi(client.clone(), vec![plan.clone()], query_id)?;
         assert!(added_query.len() == 1);
         assert_eq!(added_query[0].hash, hash);
@@ -1203,7 +1488,11 @@ mod tests {
 
         // All of the clients are using the same query id.
         let query_id: ClientQueryId = QueryId::new(1);
-        let mut subscriptions = SubscriptionManager::default();
+
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let _rt = runtime.enter();
+
+        let mut subscriptions = SubscriptionManager::for_test_without_metrics();
         subscriptions.add_subscription(clients[0].clone(), plan.clone(), query_id)?;
         subscriptions.add_subscription(clients[1].clone(), plan.clone(), query_id)?;
         subscriptions.add_subscription(clients[2].clone(), plan.clone(), query_id)?;
@@ -1240,7 +1529,11 @@ mod tests {
 
         // All of the clients are using the same query id.
         let query_id: ClientQueryId = QueryId::new(1);
-        let mut subscriptions = SubscriptionManager::default();
+
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let _rt = runtime.enter();
+
+        let mut subscriptions = SubscriptionManager::for_test_without_metrics();
         subscriptions.add_subscription(clients[0].clone(), plan.clone(), query_id)?;
         subscriptions.add_subscription(clients[1].clone(), plan.clone(), query_id)?;
         subscriptions.add_subscription(clients[2].clone(), plan.clone(), query_id)?;
@@ -1284,7 +1577,11 @@ mod tests {
             .collect::<ResultTest<Vec<_>>>()?;
 
         let client = Arc::new(client(0));
-        let mut subscriptions = SubscriptionManager::default();
+
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let _rt = runtime.enter();
+
+        let mut subscriptions = SubscriptionManager::for_test_without_metrics();
         subscriptions.add_subscription(client.clone(), queries[0].clone(), QueryId::new(1))?;
         subscriptions.add_subscription(client.clone(), queries[1].clone(), QueryId::new(2))?;
         subscriptions.add_subscription(client.clone(), queries[2].clone(), QueryId::new(3))?;
@@ -1325,7 +1622,11 @@ mod tests {
             .collect::<ResultTest<Vec<_>>>()?;
 
         let client = Arc::new(client(0));
-        let mut subscriptions = SubscriptionManager::default();
+
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let _rt = runtime.enter();
+
+        let mut subscriptions = SubscriptionManager::for_test_without_metrics();
         let added = subscriptions.add_subscription_multi(client.clone(), vec![queries[0].clone()], QueryId::new(1))?;
         assert_eq!(added.len(), 1);
         assert_eq!(added[0].hash, queries[0].hash());
@@ -1365,7 +1666,11 @@ mod tests {
         let table_id = create_table(&db, "t")?;
 
         let client = Arc::new(client(0));
-        let mut subscriptions = SubscriptionManager::default();
+
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let _rt = runtime.enter();
+
+        let mut subscriptions = SubscriptionManager::for_test_without_metrics();
 
         // Subscribe to queries that have search arguments
         let queries = (0u8..5)
@@ -1434,7 +1739,11 @@ mod tests {
         let table_id = create_table(&db, "t")?;
 
         let client = Arc::new(client(0));
-        let mut subscriptions = SubscriptionManager::default();
+
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let _rt = runtime.enter();
+
+        let mut subscriptions = SubscriptionManager::for_test_without_metrics();
 
         let queries = (0u8..5)
             .map(|name| format!("select * from t where a = {}", name))
@@ -1500,7 +1809,11 @@ mod tests {
         let s_id = db.create_table_for_test("s", &schema, &[0.into()])?;
 
         let client = Arc::new(client(0));
-        let mut subscriptions = SubscriptionManager::default();
+
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let _rt = runtime.enter();
+
+        let mut subscriptions = SubscriptionManager::for_test_without_metrics();
 
         let plan = compile_plan(&db, "select t.* from t join s on t.id = s.id where s.a = 1")?;
         let hash = plan.hash;
@@ -1570,7 +1883,11 @@ mod tests {
         let client = Arc::new(client(0));
 
         let query_id: ClientQueryId = QueryId::new(1);
-        let mut subscriptions = SubscriptionManager::default();
+
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let _rt = runtime.enter();
+
+        let mut subscriptions = SubscriptionManager::for_test_without_metrics();
         subscriptions.add_subscription(client.clone(), plan.clone(), query_id)?;
 
         assert!(subscriptions
@@ -1591,7 +1908,11 @@ mod tests {
         let client = Arc::new(client(0));
 
         let query_id: ClientQueryId = QueryId::new(1);
-        let mut subscriptions = SubscriptionManager::default();
+
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let _rt = runtime.enter();
+
+        let mut subscriptions = SubscriptionManager::for_test_without_metrics();
         let result = subscriptions.add_subscription_multi(client.clone(), vec![plan.clone()], query_id)?;
         assert_eq!(result[0].hash, plan.hash);
 
@@ -1614,7 +1935,10 @@ mod tests {
         let id = id(0);
         let client = Arc::new(client(0));
 
-        let mut subscriptions = SubscriptionManager::default();
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let _rt = runtime.enter();
+
+        let mut subscriptions = SubscriptionManager::for_test_without_metrics();
         subscriptions.set_legacy_subscription(client, [plan]);
         subscriptions.remove_all_subscriptions(&id);
 
@@ -1637,7 +1961,10 @@ mod tests {
         let id = id(0);
         let client = Arc::new(client(0));
 
-        let mut subscriptions = SubscriptionManager::default();
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let _rt = runtime.enter();
+
+        let mut subscriptions = SubscriptionManager::for_test_without_metrics();
         subscriptions.set_legacy_subscription(client.clone(), [plan.clone()]);
         subscriptions.set_legacy_subscription(client.clone(), [plan.clone()]);
 
@@ -1669,7 +1996,10 @@ mod tests {
         let id1 = id(1);
         let client1 = Arc::new(client(1));
 
-        let mut subscriptions = SubscriptionManager::default();
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let _rt = runtime.enter();
+
+        let mut subscriptions = SubscriptionManager::for_test_without_metrics();
         subscriptions.set_legacy_subscription(client0, [plan.clone()]);
         subscriptions.set_legacy_subscription(client1, [plan.clone()]);
 
@@ -1714,7 +2044,9 @@ mod tests {
         let id1 = id(1);
         let client1 = Arc::new(client(1));
 
-        let mut subscriptions = SubscriptionManager::default();
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let _rt = runtime.enter();
+        let mut subscriptions = SubscriptionManager::for_test_without_metrics();
         subscriptions.set_legacy_subscription(client0, [plan_scan.clone(), plan_select0.clone()]);
         subscriptions.set_legacy_subscription(client1, [plan_scan.clone(), plan_select1.clone()]);
 
@@ -1771,7 +2103,9 @@ mod tests {
         let config = ClientConfig::for_test();
         let (client0, mut rx) = ClientConnectionSender::dummy_with_channel(client0, config);
 
-        let subscriptions = SubscriptionManager::default();
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let _rt = runtime.enter();
+        let subscriptions = SubscriptionManager::for_test_without_metrics();
 
         let event = Arc::new(ModuleEvent {
             timestamp: Timestamp::now(),
@@ -1790,20 +2124,16 @@ mod tests {
         });
 
         db.with_read_only(Workload::Update, |tx| {
-            subscriptions.eval_updates_sequential(&(&*tx).into(), event, Some(&client0))
+            subscriptions.eval_updates_sequential(&(&*tx).into(), event, Some(Arc::new(client0)))
         });
 
-        tokio::runtime::Builder::new_current_thread()
-            .enable_time()
-            .build()
-            .unwrap()
-            .block_on(async move {
-                tokio::time::timeout(Duration::from_millis(20), async move {
-                    rx.recv().await.expect("Expected at least one message");
-                })
-                .await
-                .expect("Timed out waiting for a message to the client");
-            });
+        runtime.block_on(async move {
+            tokio::time::timeout(Duration::from_millis(20), async move {
+                rx.recv().await.expect("Expected at least one message");
+            })
+            .await
+            .expect("Timed out waiting for a message to the client");
+        });
 
         Ok(())
     }

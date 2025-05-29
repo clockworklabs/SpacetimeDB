@@ -61,6 +61,7 @@ pub struct TableSchema {
     pub table_id: TableId,
 
     /// The name of the table.
+    // TODO(perf): This should likely be an `Arc<str>`, not a `Box<str>`, as we `Clone` it somewhat frequently.
     pub table_name: Box<str>,
 
     /// The columns of the table.
@@ -269,8 +270,11 @@ impl TableSchema {
 
     /// Look up a list of columns by their positions in the table.
     /// Invalid column positions are permitted.
-    pub fn get_columns(&self, columns: &ColList) -> Vec<(ColId, Option<&ColumnSchema>)> {
-        columns.iter().map(|col| (col, self.columns.get(col.idx()))).collect()
+    pub fn get_columns<'a>(
+        &'a self,
+        columns: &'a ColList,
+    ) -> impl 'a + Iterator<Item = (ColId, Option<&'a ColumnSchema>)> {
+        columns.iter().map(|col| (col, self.columns.get(col.idx())))
     }
 
     /// Get a reference to a column by its position (`pos`) in the table.
@@ -291,6 +295,16 @@ impl TableSchema {
             .iter()
             .position(|x| &*x.col_name == col_name)
             .map(|x| x.into())
+    }
+
+    /// Retrieve the column ids for this index id
+    pub fn col_list_for_index_id(&self, index_id: IndexId) -> ColList {
+        self.indexes
+            .iter()
+            .find(|schema| schema.index_id == index_id)
+            .map(|schema| schema.index_algorithm.columns())
+            .map(|cols| ColList::from_iter(cols.iter()))
+            .unwrap_or_else(ColList::empty)
     }
 
     /// Is there a unique constraint for this set of columns?
@@ -411,19 +425,19 @@ impl TableSchema {
                 )
             }))
             .filter_map(|(ty, name, cols)| {
-                let empty: Vec<_> = self
+                let mut not_found_iter = self
                     .get_columns(&cols)
-                    .iter()
-                    .filter_map(|(col, x)| if x.is_none() { Some(*col) } else { None })
-                    .collect();
+                    .filter(|(_, x)| x.is_none())
+                    .map(|(col, _)| col)
+                    .peekable();
 
-                if empty.is_empty() {
+                if not_found_iter.peek().is_none() {
                     None
                 } else {
                     Some(SchemaError::ColumnsNotFound {
                         name,
                         table: self.table_name.clone(),
-                        columns: empty,
+                        columns: not_found_iter.collect(),
                         ty,
                     })
                 }

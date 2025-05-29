@@ -5,14 +5,17 @@ use module_subscription_manager::Plan;
 use prometheus::IntCounter;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use spacetimedb_client_api_messages::websocket::{
-    ByteListLen, Compression, DatabaseUpdate, QueryUpdate, TableUpdate, WebsocketFormat,
+    ByteListLen, Compression, DatabaseUpdate, QueryUpdate, SingleQueryUpdate, TableUpdate, WebsocketFormat,
 };
 use spacetimedb_execution::{pipelined::PipelinedProject, Datastore, DeltaStore};
 use spacetimedb_lib::{metrics::ExecutionMetrics, Identity};
 use spacetimedb_primitives::TableId;
 
 use crate::{
-    db::db_metrics::DB_METRICS, error::DBError, execution_context::WorkloadType, worker_metrics::WORKER_METRICS,
+    db::{datastore::locking_tx_datastore::datastore::MetricsRecorder, db_metrics::DB_METRICS},
+    error::DBError,
+    execution_context::WorkloadType,
+    worker_metrics::WORKER_METRICS,
 };
 
 pub mod delta;
@@ -84,6 +87,12 @@ impl ExecutionCounters {
     }
 }
 
+impl MetricsRecorder for ExecutionCounters {
+    fn record(&self, metrics: &ExecutionMetrics) {
+        self.record(metrics);
+    }
+}
+
 /// Execute a subscription query
 pub fn execute_plan<Tx, F>(plan_fragments: &[PipelinedProject], tx: &Tx) -> Result<(F::List, u64, ExecutionMetrics)>
 where
@@ -142,7 +151,10 @@ where
         // after we release the tx lock.
         // There's no need to compress the inner table update too.
         let update = F::into_query_update(qu, Compression::None);
-        (TableUpdate::new(table_id, table_name, (update, num_rows)), metrics)
+        (
+            TableUpdate::new(table_id, table_name, SingleQueryUpdate { update, num_rows }),
+            metrics,
+        )
     })
 }
 
@@ -171,7 +183,7 @@ where
                 .clone()
                 .optimize()
                 .map(|plan| (sql, PipelinedProject::from(plan)))
-                .and_then(|(_, plan)| collect_table_update(&[plan], table_id, table_name.into(), tx, update_type))
+                .and_then(|(_, plan)| collect_table_update(&[plan], table_id, (&**table_name).into(), tx, update_type))
                 .map_err(|err| DBError::WithSql {
                     sql: sql.into(),
                     error: Box::new(DBError::Other(err)),
