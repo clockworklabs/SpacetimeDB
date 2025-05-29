@@ -524,6 +524,8 @@ impl HostController {
     }
 
     async fn try_init_host(&self, database: Database, replica_id: u64) -> anyhow::Result<Host> {
+        let backtrace = std::backtrace::Backtrace::force_capture();
+        log::info!("try_init_host at {backtrace}");
         Host::try_init(self, database, replica_id).await
     }
 }
