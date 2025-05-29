@@ -1,7 +1,7 @@
 use self::module_host_actor::ReducerOp;
 
 use super::wasm_instance_env::WasmInstanceEnv;
-use super::{Mem, WasmtimeFuel};
+use super::{Mem, WasmtimeFuel, EPOCH_TICKS_PER_SECOND};
 use crate::energy::ReducerBudget;
 use crate::host::instance_env::InstanceEnv;
 use crate::host::wasm_common::module_host_actor::{DescribeError, InitializationError};
@@ -99,8 +99,18 @@ impl module_host_actor::WasmInstancePre for WasmtimeModule {
         let mem = Mem::extract(&instance, &mut store).unwrap();
         store.data_mut().instantiate(mem);
 
+        store.epoch_deadline_callback(|store| {
+            let env = store.data();
+            let database = env.instance_env().replica_ctx.database_identity;
+            let reducer = env.reducer_name();
+            let dur = env.reducer_start().elapsed();
+            tracing::warn!(reducer, ?database, "Wasm has been running for {dur:?}");
+            Ok(wasmtime::UpdateDeadline::Continue(EPOCH_TICKS_PER_SECOND))
+        });
+
         // Note: this budget is just for initializers
         set_store_fuel(&mut store, ReducerBudget::DEFAULT_BUDGET.into());
+        store.set_epoch_deadline(EPOCH_TICKS_PER_SECOND);
 
         for preinit in &func_names.preinits {
             let func = instance.get_typed_func::<(), ()>(&mut store, preinit).unwrap();
@@ -193,6 +203,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         // otherwise, we'd return something like `used: i128::MAX - u64::MAX`, which is inaccurate.
         set_store_fuel(store, budget.into());
         let original_fuel = get_store_fuel(store);
+        store.set_epoch_deadline(EPOCH_TICKS_PER_SECOND);
 
         // Prepare sender identity and connection ID, as LITTLE-ENDIAN byte arrays.
         let [sender_0, sender_1, sender_2, sender_3] = bytemuck::must_cast(op.caller_identity.to_byte_array());
