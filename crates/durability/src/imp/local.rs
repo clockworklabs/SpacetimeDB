@@ -46,18 +46,7 @@ impl Default for Options {
     }
 }
 
-/// [`Durability`] implementation backed by a [`Commitlog`] on local storage.
-///
-/// The commitlog is constrained to store the canonical [`Txdata`] payload,
-/// where the generic parameter `T` is the type of the row data stored in
-/// the mutations section.
-///
-/// `T` is left generic in order to allow bypassing the `ProductValue`
-/// intermediate representation in the future.
-///
-/// Note, however, that instantiating `T` to a different type may require to
-/// change the log format version!
-pub struct Local<T> {
+struct LocalInner<T> {
     /// The [`Commitlog`] this [`Durability`] and [`History`] impl wraps.
     clog: Arc<Commitlog<Txdata<T>>>,
     /// The durable transaction offset, as reported by the background
@@ -88,6 +77,37 @@ pub struct Local<T> {
     persister_task: JoinHandle<()>,
 }
 
+/// [`Durability`] implementation backed by a [`Commitlog`] on local storage.
+///
+/// The commitlog is constrained to store the canonical [`Txdata`] payload,
+/// where the generic parameter `T` is the type of the row data stored in
+/// the mutations section.
+///
+/// `T` is left generic in order to allow bypassing the `ProductValue`
+/// intermediate representation in the future.
+///
+/// Note, however, that instantiating `T` to a different type may require to
+/// change the log format version!
+pub struct Local<T>(Option<LocalInner<T>>);
+
+impl<T> Drop for Local<T> {
+    fn drop(&mut self) {
+        if self.0.is_some() {
+            let backtrace = std::backtrace::Backtrace::force_capture();
+
+            log::error!("Dropping local durability without first calling `close` at {backtrace}");
+        }
+    }
+}
+
+impl<T> Local<T> {
+    fn inner(&self) -> &LocalInner<T> {
+        self.0
+            .as_ref()
+            .expect("Accessing `Local` durability after `close`... huh?")
+    }
+}
+
 impl<T: Encode + Send + Sync + 'static> Local<T> {
     /// Create a [`Local`] instance at the `root` directory.
     ///
@@ -95,7 +115,8 @@ impl<T: Encode + Send + Sync + 'static> Local<T> {
     ///
     /// Background tasks are spawned onto the provided tokio runtime.
     pub fn open(root: CommitLogDir, rt: tokio::runtime::Handle, opts: Options) -> io::Result<Self> {
-        info!("open local durability");
+        let backtrace = std::backtrace::Backtrace::force_capture();
+        info!("open local durability at {backtrace}");
 
         let clog = Arc::new(Commitlog::open(root, opts.commitlog)?);
         let (queue, rx) = mpsc::unbounded_channel();
@@ -124,58 +145,61 @@ impl<T: Encode + Send + Sync + 'static> Local<T> {
             .run(),
         );
 
-        Ok(Self {
+        Ok(Local(Some(LocalInner {
             clog,
             durable_offset: offset,
             queue,
             queue_depth,
             persister_task,
-        })
+        })))
     }
 
     /// Inspect how many transactions added via [`Self::append_tx`] are pending
     /// to be applied to the underlying [`Commitlog`].
     pub fn queue_depth(&self) -> u64 {
-        self.queue_depth.load(Relaxed)
+        self.inner().queue_depth.load(Relaxed)
     }
 
     /// Obtain an iterator over the [`Commit`]s in the underlying log.
     pub fn commits_from(&self, offset: TxOffset) -> impl Iterator<Item = Result<Commit, error::Traversal>> {
-        self.clog.commits_from(offset).map_ok(Commit::from)
+        self.inner().clog.commits_from(offset).map_ok(Commit::from)
     }
 
     /// Get a list of segment offsets, sorted in ascending order.
     pub fn existing_segment_offsets(&self) -> io::Result<Vec<TxOffset>> {
-        self.clog.existing_segment_offsets()
+        self.inner().clog.existing_segment_offsets()
     }
 
     /// Compress the segments at the offsets provided, marking them as immutable.
     pub fn compress_segments(&self, offsets: &[TxOffset]) -> io::Result<()> {
-        self.clog.compress_segments(offsets)
+        self.inner().clog.compress_segments(offsets)
     }
 
     /// Apply all outstanding transactions to the [`Commitlog`] and flush it
     /// to disk.
     ///
     /// Returns the durable [`TxOffset`], if any.
-    pub async fn close(self) -> anyhow::Result<Option<TxOffset>> {
-        info!("close local durability");
+    pub async fn close(mut self) -> anyhow::Result<Option<TxOffset>> {
+        let backtrace = std::backtrace::Backtrace::force_capture();
+        info!("close local durability at {backtrace}");
 
-        drop(self.queue);
-        if let Err(e) = self.persister_task.await {
+        let this = self.0.take().unwrap();
+
+        drop(this.queue);
+        if let Err(e) = this.persister_task.await {
             if e.is_panic() {
                 return Err(e).context("persister task panicked");
             }
         }
 
-        spawn_blocking(move || self.clog.flush_and_sync())
+        spawn_blocking(move || this.clog.flush_and_sync())
             .await?
             .context("failed to sync commitlog")
     }
 
     /// Get the size on disk of the underlying [`Commitlog`].
     pub fn size_on_disk(&self) -> io::Result<u64> {
-        self.clog.size_on_disk()
+        self.inner().clog.size_on_disk()
     }
 }
 
@@ -284,6 +308,7 @@ impl<T: Send + Sync + 'static> FlushAndSyncTask<T> {
             let task = spawn_blocking(move || clog.flush_and_sync()).await;
             match task {
                 Err(e) => {
+                    log::error!("flush_and_sync error: {e:?}");
                     if e.is_panic() {
                         self.abort.abort();
                         panic::resume_unwind(e.into_panic())
@@ -311,12 +336,12 @@ impl<T: Send + Sync + 'static> Durability for Local<T> {
     type TxData = Txdata<T>;
 
     fn append_tx(&self, tx: Self::TxData) {
-        self.queue.send(tx).expect("commitlog persister task vanished");
-        self.queue_depth.fetch_add(1, Relaxed);
+        self.inner().queue.send(tx).expect("commitlog persister task vanished");
+        self.inner().queue_depth.fetch_add(1, Relaxed);
     }
 
     fn durable_tx_offset(&self) -> Option<TxOffset> {
-        let offset = self.durable_offset.load(Acquire);
+        let offset = self.inner().durable_offset.load(Acquire);
         (offset > -1).then_some(offset as u64)
     }
 }
@@ -329,7 +354,7 @@ impl<T: Encode + 'static> History for Local<T> {
         D: Decoder,
         D::Error: From<error::Traversal>,
     {
-        self.clog.fold_transactions_from(offset, decoder)
+        self.inner().clog.fold_transactions_from(offset, decoder)
     }
 
     fn transactions_from<'a, D>(
@@ -342,12 +367,12 @@ impl<T: Encode + 'static> History for Local<T> {
         D::Error: From<error::Traversal>,
         Self::TxData: 'a,
     {
-        self.clog.transactions_from(offset, decoder)
+        self.inner().clog.transactions_from(offset, decoder)
     }
 
     fn tx_range_hint(&self) -> (TxOffset, Option<TxOffset>) {
-        let min = self.clog.min_committed_offset().unwrap_or_default();
-        let max = self.clog.max_committed_offset();
+        let min = self.inner().clog.min_committed_offset().unwrap_or_default();
+        let max = self.inner().clog.max_committed_offset();
 
         (min, max)
     }
