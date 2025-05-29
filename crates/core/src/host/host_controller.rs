@@ -244,7 +244,7 @@ impl HostController {
         // We didn't find a running module, so take a write lock.
         // Since [`tokio::sync::RwLock`] doesn't support upgrading of read locks,
         // we'll need to check again if a module was added meanwhile.
-        let mut guard = self.acquire_write_lock(replica_id).await;
+        let mut guard: OwnedRwLockWriteGuard<Option<Host>> = self.acquire_write_lock(replica_id).await;
         if let Some(host) = &*guard {
             trace!(
                 "cached host {}/{} (lock upgrade)",
@@ -516,12 +516,12 @@ impl HostController {
     }
 
     async fn acquire_write_lock(&self, replica_id: u64) -> OwnedRwLockWriteGuard<Option<Host>> {
-        let lock = self.hosts.lock().entry(replica_id).or_default().clone();
+        let lock: HostCell = Arc::clone(self.hosts.lock().entry(replica_id).or_default());
         lock.write_owned().await
     }
 
     async fn acquire_read_lock(&self, replica_id: u64) -> OwnedRwLockReadGuard<Option<Host>> {
-        let lock = self.hosts.lock().entry(replica_id).or_default().clone();
+        let lock: HostCell = Arc::clone(self.hosts.lock().entry(replica_id).or_default());
         lock.read_owned().await
     }
 
