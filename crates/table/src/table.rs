@@ -1752,6 +1752,16 @@ impl<'a> TableAndIndex<'a> {
         self.index
     }
 
+    /// Wraps `ptr` in a [`RowRef`].
+    ///
+    /// # Safety
+    ///
+    /// The `self.table().is_row_present(ptr)` must hold.
+    pub unsafe fn combine_with_ptr(&self, ptr: RowPointer) -> RowRef<'a> {
+        // SAFETY: forward caller requirement.
+        unsafe { self.table.get_row_ref_unchecked(self.blob_store, ptr) }
+    }
+
     /// Returns an iterator yielding all rows in this index for `key`.
     ///
     /// Matching is defined by `Ord for AlgebraicValue`.
@@ -1786,6 +1796,13 @@ pub struct IndexScanPointIter<'a> {
     blob_store: &'a dyn BlobStore,
     /// The iterator performing the index scan yielding row pointers.
     btree_index_iter: TableIndexPointIter<'a>,
+}
+
+impl<'a> IndexScanPointIter<'a> {
+    /// Consume the iterator, returning the inner one.
+    pub fn index(self) -> TableIndexPointIter<'a> {
+        self.btree_index_iter
+    }
 }
 
 impl<'a> Iterator for IndexScanPointIter<'a> {
