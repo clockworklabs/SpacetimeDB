@@ -28,15 +28,15 @@ set_target_properties(${MODULE_NAME} PROPERTIES SUFFIX ".wasm")
 # 2. Built as part of a parent CMake project (use target_link_libraries with the SDK's target name).
 # 3. Located at a known relative path (simpler for bundled examples).
 
-# Option 3: Using relative paths (adjust if your structure differs)
-# This assumes this example module is in something like 'spacetime_project/examples/quickstart_cpp_kv'
-# and the SDK is in 'spacetime_project/sdk'
-get_filename_component(PROJECT_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../ ABSOLUTE)
-set(SPACETIMEDB_SDK_DIR ${PROJECT_ROOT_DIR}/sdk CACHE PATH "Path to SpacetimeDB C++ SDK root directory")
+# Option 3: Using relative paths
+# Path to the SDK directory, relative to this CMakeLists.txt (which is in examples/quickstart_cpp_kv)
+# ../../sdk correctly navigates from cpp_sdk/examples/quickstart_cpp_kv/ to cpp_sdk/sdk/
+set(SPACETIMEDB_SDK_DIR_REL ../../sdk)
+get_filename_component(SPACETIMEDB_SDK_DIR ${SPACETIMEDB_SDK_DIR_REL} ABSOLUTE CACHE PATH "Absolute path to SpacetimeDB C++ SDK root directory")
 
 # Check if the SDK directory exists
 if(NOT IS_DIRECTORY ${SPACETIMEDB_SDK_DIR})
-    message(FATAL_ERROR "SpacetimeDB SDK directory not found at ${SPACETIMEDB_SDK_DIR}. Please ensure the relative path is correct or set SPACETIMEDB_SDK_DIR.")
+    message(FATAL_ERROR "SpacetimeDB SDK directory not found. Calculated absolute path: ${SPACETIMEDB_SDK_DIR}. Please ensure the relative path '${SPACETIMEDB_SDK_DIR_REL}' is correct.")
 endif()
 
 # Add the SDK as a subdirectory. This builds the SDK if not already built,
