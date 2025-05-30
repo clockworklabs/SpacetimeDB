@@ -1,0 +1,190 @@
+# --- sdk/CMakeLists.txt ---
+cmake_minimum_required(VERSION 3.15)
+project(SpacetimeDB_Cpp_SDK CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+# Define the SDK library
+add_library(spacetimedb_cpp_sdk_core STATIC
+    bsatn.cpp
+    spacetimedb_sdk_types.cpp
+    reducer_context.cpp
+    database.cpp
+    spacetimedb_sdk_table_registry.cpp
+)
+
+# Define an interface library for headers
+add_library(spacetimedb_cpp_sdk_headers INTERFACE)
+target_include_directories(spacetimedb_cpp_sdk_headers INTERFACE 
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include> # Path for installed headers
+)
+
+# Link headers to the core library (for its own compilation) and also make them available
+# to anything that links against spacetimedb_cpp_sdk (which bundles the interface)
+target_link_libraries(spacetimedb_cpp_sdk_core INTERFACE spacetimedb_cpp_sdk_headers)
+
+
+# Public target that users will link against
+add_library(spacetimedb_cpp_sdk ALIAS spacetimedb_cpp_sdk_core)
+
+# Installation (optional, but good practice)
+# This helps if you want to install the SDK and find it with find_package
+# For this exercise, we'll keep it simple and assume direct linking or relative paths.
+# install(TARGETS spacetimedb_cpp_sdk_core spacetimedb_cpp_sdk_headers
+#     EXPORT SpacetimeDBCppSDKTargets
+#     ARCHIVE DESTINATION lib
+#     LIBRARY DESTINATION lib
+#     RUNTIME DESTINATION bin
+#     INTERFACE_INCLUDE_DIRECTORIES DESTINATION include
+# )
+# install(EXPORT SpacetimeDBCppSDKTargets
+#     FILE SpacetimeDBCppSDKConfig.cmake
+#     NAMESPACE spacetimedb::
+#     DESTINATION lib/cmake/SpacetimeDBCppSDK
+# )
+
+message(STATUS "SDK Source Dir: ${CMAKE_CURRENT_SOURCE_DIR}")
+message(STATUS "SDK Include Dir (Build): ${CMAKE_CURRENT_SOURCE_DIR}/include")
+
+
+# --- toolchains/wasm_toolchain.cmake ---
+# CMake Toolchain file for Emscripten (WebAssembly)
+
+# Set the system name to Emscripten for CMake to recognize it
+set(CMAKE_SYSTEM_NAME Emscripten)
+set(CMAKE_SYSTEM_PROCESSOR wasm32) # or wasm64 if needed
+
+# Specify the cross-compiler.
+# Try to find Emscripten via EMSDK environment variable or PATH.
+if(DEFINED ENV{EMSDK})
+    set(EMSDK_PATH $ENV{EMSDK})
+    find_program(EMCC_EXECUTABLE emcc PATHS "${EMSDK_PATH}" "${EMSDK_PATH}/upstream/emscripten" NO_DEFAULT_PATH)
+    find_program(EMXX_EXECUTABLE em++ PATHS "${EMSDK_PATH}" "${EMSDK_PATH}/upstream/emscripten" NO_DEFAULT_PATH)
+    find_program(EMAR_EXECUTABLE emar PATHS "${EMSDK_PATH}" "${EMSDK_PATH}/upstream/emscripten" NO_DEFAULT_PATH)
+elseif(DEFINED ENV{EMSDK_ROOT}) # Alternative common env var
+    set(EMSDK_PATH $ENV{EMSDK_ROOT})
+    find_program(EMCC_EXECUTABLE emcc PATHS "${EMSDK_PATH}" "${EMSDK_PATH}/upstream/emscripten" NO_DEFAULT_PATH)
+    find_program(EMXX_EXECUTABLE em++ PATHS "${EMSDK_PATH}" "${EMSDK_PATH}/upstream/emscripten" NO_DEFAULT_PATH)
+    find_program(EMAR_EXECUTABLE emar PATHS "${EMSDK_PATH}" "${EMSDK_PATH}/upstream/emscripten" NO_DEFAULT_PATH)
+endif()
+
+if(NOT EMCC_EXECUTABLE)
+    find_program(EMCC_EXECUTABLE emcc)
+endif()
+if(NOT EMXX_EXECUTABLE)
+    find_program(EMXX_EXECUTABLE em++)
+endif()
+if(NOT EMAR_EXECUTABLE)
+    find_program(EMAR_EXECUTABLE emar)
+endif()
+
+
+if(NOT EMCC_EXECUTABLE OR NOT EMXX_EXECUTABLE)
+    message(FATAL_ERROR "Emscripten compilers (emcc/em++) not found. Please ensure EMSDK is set or they are in PATH.")
+else()
+    message(STATUS "Using Emscripten C compiler: ${EMCC_EXECUTABLE}")
+    message(STATUS "Using Emscripten CXX compiler: ${EMXX_EXECUTABLE}")
+endif()
+
+set(CMAKE_C_COMPILER "${EMCC_EXECUTABLE}")
+set(CMAKE_CXX_COMPILER "${EMXX_EXECUTABLE}")
+if(EMAR_EXECUTABLE)
+    set(CMAKE_AR "${EMAR_EXECUTABLE}" CACHE FILEPATH "Emscripten Archiver")
+endif()
+
+# Set target properties for WASM
+set(CMAKE_EXECUTABLE_SUFFIX ".wasm")
+
+# Default compile flags for WASM modules
+# -s WASM=1 is usually default now, but can be explicit.
+# -s SIDE_MODULE=1 is crucial for non-main modules (like SpacetimeDB reducers).
+# -s STRICT=1 enables more checks and helps catch issues.
+# -O2 or -O3 for optimization. -Oz for size.
+set(CMAKE_CXX_FLAGS_INIT "-O2 -s SIDE_MODULE=1 -s STRICT=1 --no-entry")
+set(CMAKE_C_FLAGS_INIT "-O2 -s SIDE_MODULE=1 -s STRICT=1 --no-entry")
+
+# Linker flags
+# --no-entry is important for side modules.
+# EXPORT_ALL=1 can be used for easier debugging but for production, explicit exports are better.
+# The SPACETIMEDB_REDUCER macro uses __attribute__((export_name(...))) which should work.
+# If not, one might need to list exported functions: -s EXPORTED_FUNCTIONS=['_func1','_func2']
+set(CMAKE_EXE_LINKER_FLAGS_INIT "") 
+# set(CMAKE_STATIC_LINKER_FLAGS_INIT "") # Not typically needed for emar
+# set(CMAKE_MODULE_LINKER_FLAGS_INIT "") # Not typically needed for side modules
+
+# Skip rpath handling for Emscripten builds
+set(CMAKE_SKIP_RPATH TRUE)
+
+# Set find root path mode for cross-compiling
+# This tells CMake to search for headers/libraries in the sysroot first
+set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
+set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
+set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
+set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)
+
+
+# --- examples/user_module/CMakeLists.txt ---
+cmake_minimum_required(VERSION 3.15)
+project(SpacetimeDBUserModule CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+# This assumes the wasm_toolchain.cmake is in a known location relative to this file,
+# or specified via -DCMAKE_TOOLCHAIN_FILE on the command line.
+# If running cmake from a build directory inside examples/user_module:
+# set(CMAKE_TOOLCHAIN_FILE ../../toolchains/wasm_toolchain.cmake CACHE STRING "Toolchain for WASM")
+
+# Add your module source files
+add_executable(my_module
+    main.cpp
+    # player.cpp 
+    # etc.
+)
+
+# --- Option 1: Assuming SDK is built in a known relative location ---
+# Adjust relative paths as needed based on your project structure.
+# This path points from examples/user_module/build to project_root/sdk
+set(SPACETIMEDB_SDK_INCLUDE_DIR ../../../sdk/include)
+set(SPACETIMEDB_SDK_LIBRARY ../../../sdk/build/libspacetimedb_cpp_sdk_core.a) # Adjust if name/path differs
+
+target_include_directories(my_module PUBLIC 
+    ${SPACETIMEDB_SDK_INCLUDE_DIR}
+    # Add any local include directories for your module
+    # include
+)
+target_link_libraries(my_module PUBLIC ${SPACETIMEDB_SDK_LIBRARY})
+# --- End Option 1 ---
+
+# --- Option 2: Using find_package (if SDK was installed with CMake export files) ---
+# find_package(SpacetimeDBCppSDK REQUIRED)
+# target_link_libraries(my_module PUBLIC spacetimedb::spacetimedb_cpp_sdk)
+# --- End Option 2 ---
+
+
+# Ensure the reducer functions exported by SPACETIMEDB_REDUCER are kept.
+# The __attribute__((export_name(...))) in the macro should handle this.
+# If Emscripten's dead code elimination is too aggressive, you might need:
+# target_link_options(my_module PUBLIC "-s EXPORT_ALL=1") # Use with caution, increases size
+# Or, more selectively:
+# target_link_options(my_module PUBLIC "-s EXPORTED_FUNCTIONS=['_my_reducer1','_my_reducer2']")
+# where _my_reducer1 is the name given in export_name. The SPACETIMEDB_REDUCER
+# macro uses the direct function name for export, so it would be:
+# target_link_options(my_module PUBLIC "-s EXPORTED_FUNCTIONS=['my_reducer_sum','another_reducer']")
+
+# Set the output extension to .wasm (handled by toolchain file, but can be explicit)
+set_target_properties(my_module PROPERTIES SUFFIX ".wasm")
+
+# Optional: If you want a specific output name different from the target name
+# set_target_properties(my_module PROPERTIES OUTPUT_NAME "custom_module_name")
+
+message(STATUS "Building user module: my_module.wasm")
+message(STATUS "SDK Include Dir: ${SPACETIMEDB_SDK_INCLUDE_DIR}")
+message(STATUS "SDK Library: ${SPACETIMEDB_SDK_LIBRARY}")
+message(STATUS "Make sure to configure CMake with the WASM toolchain file, e.g.:")
+message(STATUS "cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE=../../toolchains/wasm_toolchain.cmake")
+message(STATUS "Then build with: cmake --build build")
