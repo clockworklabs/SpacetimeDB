@@ -5,9 +5,10 @@ use log::{debug, info, trace, warn};
 
 use crate::{
     commit::StoredCommit,
-    error,
+    error::{self, source_chain},
+    index::IndexError,
     payload::Decoder,
-    repo::{self, Repo},
+    repo::{self, Repo, TxOffsetIndex},
     segment::{self, FileLike, Transaction, Writer},
     Commit, Encode, Options, DEFAULT_LOG_FORMAT_VERSION,
 };
@@ -476,25 +477,8 @@ fn reset_to_internal(repo: &impl Repo, segments: &[u64], offset: u64) -> io::Res
             // Read commit-wise until we find the byte offset.
             let mut reader = repo::open_segment_reader(repo, DEFAULT_LOG_FORMAT_VERSION, segment)?;
 
-            let (index_file, mut byte_offset) = repo
-                .get_offset_index(segment)
-                .and_then(|index_file| {
-                    let (key, byte_offset) = index_file.key_lookup(offset).map_err(|e| {
-                        io::Error::new(io::ErrorKind::NotFound, format!("Offset index cannot be used: {e:?}"))
-                    })?;
-
-                    reader.seek_to_offset(&index_file, key).map_err(|e| {
-                        io::Error::new(
-                            io::ErrorKind::InvalidData,
-                            format!("Offset index is not used at offset {key}: {e}"),
-                        )
-                    })?;
-
-                    Ok((Some(index_file), byte_offset))
-                })
-                .inspect_err(|e| {
-                    warn!("commitlog offset index is not used: {e:?}");
-                })
+            let (index_file, mut byte_offset) = try_seek_using_offset_index(repo, &mut reader, offset)
+                .map(|(index_file, byte_offset)| (Some(index_file), byte_offset))
                 .unwrap_or((None, segment::Header::LEN as u64));
 
             let commits = reader.commits();
@@ -732,18 +716,7 @@ impl<R: Repo> Commits<R> {
     /// index to advance the segment reader.
     fn try_seek_to_initial_offset(&self, segment: &mut segment::Reader<R::SegmentReader>) {
         if let CommitInfo::Initial { next_offset } = &self.last_commit {
-            let _ = self
-                .segments
-                .repo
-                .get_offset_index(segment.min_tx_offset)
-                .map_err(Into::into)
-                .and_then(|index_file| segment.seek_to_offset(&index_file, *next_offset))
-                .inspect_err(|e| {
-                    warn!(
-                        "commitlog offset index is not used at segment {}: {}",
-                        segment.min_tx_offset, e
-                    );
-                });
+            try_seek_using_offset_index(&self.segments.repo, segment, *next_offset);
         }
     }
 }
@@ -792,6 +765,48 @@ impl<R: Repo> Iterator for CommitsWithVersion<R> {
             Err(e) => Some(Err(e)),
         }
     }
+}
+
+/// Try to advance `reader` to `offset` using the offset index.
+///
+/// If successful, returns the offset index and the byte position of `reader`.
+/// `None` if the position of `reader` is unchanged.
+fn try_seek_using_offset_index<R: Repo>(
+    repo: &R,
+    reader: &mut segment::Reader<R::SegmentReader>,
+    offset: u64,
+) -> Option<(TxOffsetIndex, u64)> {
+    let segment_offset = reader.min_tx_offset;
+    let index = repo
+        .get_offset_index(segment_offset)
+        .inspect_err(|e| {
+            if e.kind() == io::ErrorKind::NotFound {
+                debug!("offset index does not exist segment={segment_offset}");
+            } else {
+                warn!(
+                    "error opening offset index segment={segment_offset}: {e} {}",
+                    source_chain(&e)
+                );
+            }
+        })
+        .ok()?;
+
+    reader
+        .seek_to_offset(&index, offset)
+        .inspect_err(|e| match e {
+            // Can happen if the segment is empty or small, so don't spam the logs.
+            IndexError::KeyNotFound => {
+                debug!("offset not found segment={segment_offset} offset={offset}");
+            }
+            e => {
+                warn!(
+                    "error reading index segment={segment_offset} offset={offset}: {e} {}",
+                    source_chain(&e)
+                );
+            }
+        })
+        .ok()
+        .map(|pos| (index, pos))
 }
 
 #[cfg(test)]
