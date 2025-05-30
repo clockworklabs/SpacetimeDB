@@ -1,0 +1,159 @@
+# --- Cargo.toml (for C++ module) ---
+[package]
+name = "my_cpp_module" # This should match the CMake target name for the .wasm output
+version = "0.1.0"
+edition = "2021"
+
+# This Cargo.toml file is primarily for compatibility with the `spacetime publish` CLI.
+# It helps the CLI identify the project name and expected output path for the pre-compiled WASM module.
+# The C++ code itself is built using CMake and a C++ toolchain (e.g., Emscripten via wasm_toolchain.cmake).
+
+[lib]
+crate-type = ["cdylib"] # Typically used for WASM libraries, may be checked by the CLI
+
+# Optional: If your module has dependencies that are managed by SpacetimeDB's system
+# and the CLI needs to know about them, they might be listed here.
+# However, for a pre-compiled C++ module, this is less likely to be used for actual linking.
+# [dependencies]
+# example_crate = "0.1.0"
+
+
+# --- Updated sections of examples/user_module/CMakeLists.txt ---
+# (Assume this is within examples/user_module/CMakeLists.txt)
+
+# Near the top of the file, after project() command:
+# [...]
+project(MyCppModuleCXX CXX) # Original project command, can be different from module name for wasm
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+# Define the module name, this MUST match the 'name' in Cargo.toml
+set(MY_MODULE_NAME "my_cpp_module")
+
+# Set the output directory and filename to match Rust's convention
+# Output directory relative to the source directory (where Cargo.toml is)
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/target/wasm32-unknown-unknown/release)
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/target/wasm32-unknown-unknown/release)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/target/wasm32-unknown-unknown/release)
+
+# Add your module source files
+add_executable(${MY_MODULE_NAME}
+    main.cpp
+    # player.cpp 
+    # etc.
+)
+
+# Set the output name of the WASM file explicitly (CMake might add "lib" prefix or ".exe" otherwise)
+set_target_properties(${MY_MODULE_NAME} PROPERTIES OUTPUT_NAME "${MY_MODULE_NAME}")
+set_target_properties(${MY_MODULE_NAME} PROPERTIES SUFFIX ".wasm")
+
+
+# --- SDK Linking and Include Directories (remains similar to previous version) ---
+# Option 1: Assuming SDK is built in a known relative location
+set(SPACETIMEDB_SDK_INCLUDE_DIR ../../../sdk/include) # Path from examples/user_module
+set(SPACETIMEDB_SDK_LIBRARY ../../../sdk/build/libspacetimedb_cpp_sdk_core.a) 
+
+target_include_directories(${MY_MODULE_NAME} PUBLIC 
+    ${SPACETIMEDB_SDK_INCLUDE_DIR}
+)
+target_link_libraries(${MY_MODULE_NAME} PUBLIC ${SPACETIMEDB_SDK_LIBRARY})
+# --- End SDK Linking ---
+
+
+# Ensure the reducer functions exported by SPACETIMEDB_REDUCER are kept.
+# The __attribute__((export_name(...))) in the macro should handle this.
+# If Emscripten's dead code elimination is too aggressive, you might need:
+# target_link_options(${MY_MODULE_NAME} PUBLIC "-s EXPORT_ALL=1") # Use with caution
+# Or, more selectively (preferred):
+# set(EXPORTED_REDUCER_FUNCTIONS "['my_reducer1','my_reducer2']") # Collect from SPACETIMEDB_REDUCER calls
+# target_link_options(${MY_MODULE_NAME} PUBLIC "-s EXPORTED_FUNCTIONS=${EXPORTED_REDUCER_FUNCTIONS}")
+
+message(STATUS "Building user module: ${MY_MODULE_NAME}.wasm")
+message(STATUS "Output directory: ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
+message(STATUS "Make sure to configure CMake with the WASM toolchain file, e.g.:")
+message(STATUS "cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE=../../toolchains/wasm_toolchain.cmake")
+message(STATUS "Then build with: cmake --build build")
+
+# [...] Rest of the CMakeLists.txt file
+
+
+# --- build_and_publish.sh (Updated) ---
+#!/bin/bash
+
+# Exit immediately if a command exits with a non-zero status.
+set -e
+
+# --- Configuration ---
+# Path to the CMake toolchain file for WASM (Emscripten)
+# Assumes this script is in examples/user_module/ and toolchains dir is at ../../toolchains
+TOOLCHAIN_FILE="../../toolchains/wasm_toolchain.cmake"
+
+# Build directory for CMake
+BUILD_DIR="build"
+
+# Read module name from Cargo.toml
+# This requires a TOML parser or simple grep/awk. Using grep/awk for simplicity.
+MODULE_NAME=$(grep -E '^name\s*=\s*".*"' Cargo.toml | sed -E 's/name\s*=\s*"(.*)"/\1/')
+
+if [ -z "${MODULE_NAME}" ]; then
+    echo "Error: Could not parse module name from Cargo.toml"
+    exit 1
+fi
+
+echo "--- Module Name (from Cargo.toml): ${MODULE_NAME} ---"
+
+# Expected WASM file path based on Rust conventions
+WASM_FILE_PATH="target/wasm32-unknown-unknown/release/${MODULE_NAME}.wasm"
+
+# Name of the database to publish to on SpacetimeDB
+# This could also be derived from Cargo.toml or be a script argument
+DATABASE_NAME="${MODULE_NAME}_db_test"
+
+# --- Script Logic ---
+
+# 1. Create the CMake build directory if it doesn't exist
+echo "--- Creating CMake build directory: ${BUILD_DIR} ---"
+mkdir -p "${BUILD_DIR}"
+
+# 2. Also create the Rust conventional target directory structure
+echo "--- Ensuring Rust conventional target directory exists: $(dirname ${WASM_FILE_PATH}) ---"
+mkdir -p "$(dirname "${WASM_FILE_PATH}")"
+
+
+# 3. Run CMake to configure the project
+# The CMakeLists.txt is now responsible for setting MY_MODULE_NAME
+# and ensuring output goes to the correct target/... directory.
+echo "--- Configuring CMake with Emscripten toolchain ---"
+cmake -B "${BUILD_DIR}" -S . -DCMAKE_TOOLCHAIN_FILE="${TOOLCHAIN_FILE}"
+
+# 4. Run CMake to build the project
+# The output will go to target/wasm32-unknown-unknown/release/${MODULE_NAME}.wasm
+# as configured in the user module's CMakeLists.txt
+echo "--- Building WASM module ---"
+cmake --build "${BUILD_DIR}"
+
+# 5. Check if the WASM file was created successfully at the conventional path
+if [ ! -f "${WASM_FILE_PATH}" ]; then
+    echo "Error: WASM file not found at ${WASM_FILE_PATH} after build."
+    echo "Please check that MY_MODULE_NAME in CMakeLists.txt matches the name in Cargo.toml ('${MODULE_NAME}')"
+    echo "and that CMAKE_RUNTIME_OUTPUT_DIRECTORY is set correctly."
+    exit 1
+else
+    echo "--- WASM module built successfully: ${WASM_FILE_PATH} ---"
+fi
+
+# 6. Run spacetime publish, assuming it uses Cargo.toml context
+# The CLI might implicitly find Cargo.toml in the current directory,
+# determine the module name and expected WASM path.
+# Or it might take the module name as an argument if it's not just `spacetime publish .`
+echo "--- Publishing module to SpacetimeDB as '${DATABASE_NAME}' ---"
+# Assuming 'spacetime publish <module_name_from_cargo>' which then finds the wasm file by convention
+# or 'spacetime publish --project-path .' which uses Cargo.toml to find name and then wasm file.
+# For this task, we'll use the explicit module name derived from Cargo.toml.
+spacetime publish "${MODULE_NAME}" --name "${DATABASE_NAME}"
+# If the CLI just works from the current directory context:
+# spacetime publish --name "${DATABASE_NAME}"
+
+echo "--- Build and publish script completed successfully! ---"

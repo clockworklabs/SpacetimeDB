@@ -1,0 +1,243 @@
+# --- quickstart_cpp_kv/Cargo.toml ---
+[package]
+name = "kvstore_module"
+version = "0.1.0"
+edition = "2021"
+
+# This Cargo.toml file is primarily for compatibility with the `spacetime publish` CLI.
+# It helps the CLI identify the project name and expected output path for the pre-compiled WASM module.
+# The C++ code itself is built using CMake and a C++ toolchain (e.g., Emscripten via wasm_toolchain.cmake).
+
+[lib]
+crate-type = ["cdylib"] # Typically used for WASM libraries, may be checked by the CLI
+
+
+# --- quickstart_cpp_kv/CMakeLists.txt ---
+cmake_minimum_required(VERSION 3.15)
+project(KVStoreModuleCMakeProject CXX) # CMake project name can be different
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+# Define the module name, this MUST match the 'name' in Cargo.toml
+set(MY_MODULE_NAME "kvstore_module")
+
+# Set the output directory and filename to match Rust's convention
+# Output directory relative to the source directory (where Cargo.toml is)
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/target/wasm32-unknown-unknown/release)
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/target/wasm32-unknown-unknown/release)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/target/wasm32-unknown-unknown/release)
+
+# Add your module source files
+add_executable(${MY_MODULE_NAME}
+    src/kv_store.cpp
+)
+
+# Set the output name of the WASM file explicitly
+set_target_properties(${MY_MODULE_NAME} PROPERTIES OUTPUT_NAME "${MY_MODULE_NAME}")
+set_target_properties(${MY_MODULE_NAME} PROPERTIES SUFFIX ".wasm")
+
+# --- SpacetimeDB C++ SDK Linking ---
+# This section assumes the SpacetimeDB C++ SDK has been built or installed
+# in a location findable by CMake or specified by environment variables/CMake options.
+# For this example, we use relative paths, assuming a specific project structure
+# where the SDK is located at ../../sdk relative to this module's root.
+# Adjust these paths if your SDK is located elsewhere.
+
+# Path to the SDK's include directory
+set(SPACETIMEDB_SDK_INCLUDE_DIR ../../sdk/include CACHE PATH "Path to SpacetimeDB SDK include directory")
+# Path to the built SDK static library
+set(SPACETIMEDB_SDK_LIBRARY ../../sdk/build/libspacetimedb_cpp_sdk_core.a CACHE FILEPATH "Path to SpacetimeDB SDK library")
+# Note: The library name might be libspacetimedb_cpp_sdk.a or spacetimedb_cpp_sdk.a depending on the SDK's CMake.
+# The example SDK CMakeLists.txt created libspacetimedb_cpp_sdk_core.a.
+
+if(NOT EXISTS ${SPACETIMEDB_SDK_INCLUDE_DIR})
+    message(FATAL_ERROR "SpacetimeDB SDK include directory not found: ${SPACETIMEDB_SDK_INCLUDE_DIR}. Please build the SDK or set SPACETIMEDB_SDK_INCLUDE_DIR.")
+endif()
+if(NOT EXISTS ${SPACETIMEDB_SDK_LIBRARY})
+    message(FATAL_ERROR "SpacetimeDB SDK library not found: ${SPACETIMEDB_SDK_LIBRARY}. Please build the SDK or set SPACETIMEDB_SDK_LIBRARY.")
+endif()
+
+target_include_directories(${MY_MODULE_NAME} PUBLIC 
+    ${SPACETIMEDB_SDK_INCLUDE_DIR}
+    src # Local include directory for kv_store.h
+)
+target_link_libraries(${MY_MODULE_NAME} PUBLIC ${SPACETIMEDB_SDK_LIBRARY})
+# --- End SDK Linking ---
+
+# Ensure the reducer functions exported by SPACETIMEDB_REDUCER are kept.
+# The __attribute__((export_name(...))) in the macro should handle this.
+# If Emscripten's dead code elimination is too aggressive for some reason,
+# you might need to explicitly list exported functions.
+# For example, if kv_put, kv_get, kv_del are your reducer C++ function names:
+# target_link_options(${MY_MODULE_NAME} PUBLIC "-s EXPORTED_FUNCTIONS=['kv_put','kv_get','kv_del','_spacetimedb_sdk_init']")
+# (The _spacetimedb_sdk_init is also important to export if not done by default)
+
+message(STATUS "Building user module: ${MY_MODULE_NAME}.wasm")
+message(STATUS "Output directory: ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
+message(STATUS "Make sure to configure CMake with the WASM toolchain file, e.g.:")
+message(STATUS "cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE=../../toolchains/wasm_toolchain.cmake") # Adjust path to toolchain
+message(STATUS "Then build with: cmake --build build")
+
+
+# --- quickstart_cpp_kv/src/kv_store.h ---
+#ifndef KV_STORE_H
+#define KV_STORE_H
+
+#include "spacetimedb_sdk_types.h"      // For Identity, Timestamp from SDK
+#include "bsatn.h"                      // For BsatnSerializable, bsatn_writer, bsatn_reader from SDK
+#include "spacetimedb_sdk_table_registry.h" // For SPACETIMEDB_REGISTER_TABLE from SDK
+#include "reducer_context.h"            // For ReducerContext from SDK
+
+#include <string>
+#include <vector>
+
+namespace spacetimedb_quickstart {
+
+// Log levels for _console_log
+const uint8_t LOG_LEVEL_DEBUG = 0; // Or map to your preferred levels
+const uint8_t LOG_LEVEL_INFO = 1;
+const uint8_t LOG_LEVEL_WARN = 2;
+const uint8_t LOG_LEVEL_ERROR = 3;
+
+
+struct KeyValue : public spacetimedb::sdk::bsatn::BsatnSerializable {
+    std::string key_str;   // Primary Key
+    std::string value_str;
+
+    // Default constructor
+    KeyValue() = default;
+
+    // Constructor (optional, but good for usability)
+    KeyValue(std::string k, std::string v) : key_str(std::move(k)), value_str(std::move(v)) {}
+
+    void bsatn_serialize(spacetimedb::sdk::bsatn::bsatn_writer& writer) const override;
+    void bsatn_deserialize(spacetimedb::sdk::bsatn::bsatn_reader& reader) override;
+
+    // For direct comparison if needed, though not strictly required by SDK for this example
+    bool operator==(const KeyValue& other) const {
+        return key_str == other.key_str && value_str == other.value_str;
+    }
+};
+
+// Reducer function declarations
+void kv_put(spacetimedb::sdk::ReducerContext& ctx, const std::string& key, const std::string& value);
+void kv_get(spacetimedb::sdk::ReducerContext& ctx, const std::string& key);
+void kv_del(spacetimedb::sdk::ReducerContext& ctx, const std::string& key);
+
+} // namespace spacetimedb_quickstart
+
+#endif // KV_STORE_H
+
+
+# --- quickstart_cpp_kv/src/kv_store.cpp ---
+#include "kv_store.h"
+
+#include "spacetimedb_sdk_reducer.h" // For SPACETIMEDB_REDUCER macro
+#include "spacetimedb_abi.h"         // For direct ABI calls like _console_log
+#include "database.h"              // For spacetimedb::sdk::Database
+#include "table.h"                 // For spacetimedb::sdk::Table
+
+#include <string>
+#include <vector>
+#include <stdexcept> // For std::runtime_error
+
+// Make sure SDK's global DB is initialized (usually called by host via _spacetimedb_sdk_init)
+// If not, reducers might fail to get a context. The reducer macro has a fallback, but explicit init is best.
+
+namespace spacetimedb_quickstart {
+
+// KeyValue BSATN implementation
+void KeyValue::bsatn_serialize(spacetimedb::sdk::bsatn::bsatn_writer& writer) const {
+    writer.write_string(key_str);
+    writer.write_string(value_str);
+}
+
+void KeyValue::bsatn_deserialize(spacetimedb::sdk::bsatn::bsatn_reader& reader) {
+    key_str = reader.read_string();
+    value_str = reader.read_string();
+}
+
+// Register the KeyValue table
+// Assumes "key_str" is the primary key and corresponds to column index 0 due to serialization order.
+SPACETIMEDB_REGISTER_TABLE(spacetimedb_quickstart::KeyValue, "kv_pairs", "key_str");
+
+// Helper for logging from reducers
+static void log_message(spacetimedb::sdk::ReducerContext& ctx, uint8_t level, const std::string& message) {
+    // Using the raw ABI call for logging. A real SDK might wrap this.
+    // The ABI _console_log takes: level, target_ptr, target_len, message_ptr, message_len
+    // We'll omit target for now (or use a default).
+    _console_log(level, nullptr, 0, reinterpret_cast<const uint8_t*>(message.c_str()), message.length());
+}
+
+// Reducer Implementations
+void kv_put(spacetimedb::sdk::ReducerContext& ctx, const std::string& key, const std::string& value) {
+    std::string log_prefix = "[kv_put] ";
+    try {
+        auto kv_table = ctx.db().get_table<KeyValue>("kv_pairs");
+        
+        // Attempt to find if the key already exists
+        std::vector<KeyValue> existing_rows = kv_table.find_by_col_eq(0, key); // 0 for key_str (PK)
+
+        if (!existing_rows.empty()) {
+            // Key exists, update it. To update, we'd typically need an update operation.
+            // SpacetimeDB might handle `insert` as an upsert if the PK matches,
+            // or it might fail. For simplicity, let's assume we need to delete then insert for an update.
+            // This is not efficient but demonstrates usage. A proper upsert or update ABI would be better.
+            log_message(ctx, LOG_LEVEL_DEBUG, log_prefix + "Key '" + key + "' exists. Deleting before re-inserting.");
+            kv_table.delete_by_col_eq(0, key);
+        }
+
+        KeyValue row_to_insert(key, value);
+        kv_table.insert(row_to_insert); // insert will modify row_to_insert if PK is auto-gen, but not here.
+        
+        log_message(ctx, LOG_LEVEL_INFO, log_prefix + "Successfully put key: " + key + " value: " + value);
+
+    } catch (const std::runtime_error& e) {
+        log_message(ctx, LOG_LEVEL_ERROR, log_prefix + "Error: " + e.what());
+        // Optionally re-throw or handle if reducers can signal failure differently
+    }
+}
+
+void kv_get(spacetimedb::sdk::ReducerContext& ctx, const std::string& key) {
+    std::string log_prefix = "[kv_get] ";
+    try {
+        auto kv_table = ctx.db().get_table<KeyValue>("kv_pairs");
+        std::vector<KeyValue> rows = kv_table.find_by_col_eq(0, key); // PK is column 0 ("key_str")
+
+        if (!rows.empty()) {
+            const auto& row = rows[0]; // Should be unique by PK
+            log_message(ctx, LOG_LEVEL_INFO, log_prefix + "Key: " + row.key_str + ", Value: " + row.value_str);
+        } else {
+            log_message(ctx, LOG_LEVEL_INFO, log_prefix + "Key not found: " + key);
+        }
+    } catch (const std::runtime_error& e) {
+        log_message(ctx, LOG_LEVEL_ERROR, log_prefix + "Error: " + e.what());
+    }
+}
+
+void kv_del(spacetimedb::sdk::ReducerContext& ctx, const std::string& key) {
+    std::string log_prefix = "[kv_del] ";
+    try {
+        auto kv_table = ctx.db().get_table<KeyValue>("kv_pairs");
+        uint32_t deleted_count = kv_table.delete_by_col_eq(0, key); // PK is column 0 ("key_str")
+
+        if (deleted_count > 0) {
+            log_message(ctx, LOG_LEVEL_INFO, log_prefix + "Successfully deleted " + std::to_string(deleted_count) + " item(s) for key: " + key);
+        } else {
+            log_message(ctx, LOG_LEVEL_INFO, log_prefix + "No items found to delete for key: " + key);
+        }
+    } catch (const std::runtime_error& e) {
+        log_message(ctx, LOG_LEVEL_ERROR, log_prefix + "Error: " + e.what());
+    }
+}
+
+// Register Reducers
+// The types listed here must match the C++ function signature after ReducerContext.
+// The actual exported WASM function name will be "kv_put", "kv_get", "kv_del".
+SPACETIMEDB_REDUCER(spacetimedb_quickstart::kv_put, const std::string&, const std::string&);
+SPACETIMEDB_REDUCER(spacetimedb_quickstart::kv_get, const std::string&);
+SPACETIMEDB_REDUCER(spacetimedb_quickstart::kv_del, const std::string&);
+
+} // namespace spacetimedb_quickstart
