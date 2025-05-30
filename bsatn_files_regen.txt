@@ -1,0 +1,417 @@
+# --- bsatn.h ---
+#ifndef BSATN_H
+#define BSATN_H
+
+#include <vector>
+#include <string>
+#include <cstdint>
+#include <stdexcept>     // For std::runtime_error
+#include <algorithm>     // For std::reverse (not used if direct byte manipulation)
+#include <type_traits>   // For std::is_integral, std::is_floating_point, std::is_base_of_v, std::is_same_v
+#include <cstring>       // For memcpy
+
+// Forward declaration for user-defined types
+class BsatnSerializable;
+
+namespace spacetimedb {
+namespace bsatn {
+
+class bsatn_writer {
+public:
+    bsatn_writer();
+
+    void write_bool(bool value);
+    void write_u8(uint8_t value);
+    void write_u16(uint16_t value);
+    void write_u32(uint32_t value);
+    void write_u64(uint64_t value);
+    void write_i8(int8_t value);
+    void write_i16(int16_t value);
+    void write_i32(int32_t value);
+    void write_i64(int64_t value);
+    void write_f32(float value);
+    void write_f64(double value);
+    void write_string(const std::string& str);
+    void write_bytes(const std::vector<uint8_t>& bytes);
+
+    template<typename T>
+    void write_object(const T& obj);
+
+    template<typename T>
+    void write_array(const std::vector<T>& vec);
+
+    void write_sum_discriminant(uint8_t discriminant);
+
+    const std::vector<uint8_t>& get_buffer() const;
+    std::vector<uint8_t>&& move_buffer(); // Allow moving the buffer out
+
+private:
+    void write_raw_bytes(const void* data, size_t len);
+    std::vector<uint8_t> buffer;
+};
+
+class bsatn_reader {
+public:
+    bsatn_reader(const uint8_t* data, size_t len);
+    explicit bsatn_reader(const std::vector<uint8_t>& data);
+
+    bool read_bool();
+    uint8_t read_u8();
+    uint16_t read_u16();
+    uint32_t read_u32();
+    uint64_t read_u64();
+    int8_t read_i8();
+    int16_t read_i16();
+    int32_t read_i32();
+    int64_t read_i64();
+    float read_f32();
+    double read_f64();
+    std::string read_string();
+    std::vector<uint8_t> read_bytes();
+
+    template<typename T>
+    void read_object(T& obj); // obj is out-param
+
+    template<typename T>
+    std::vector<T> read_array();
+
+    uint8_t read_sum_discriminant();
+
+    bool eof() const;
+    size_t remaining_bytes() const;
+
+private:
+    void read_raw_bytes(void* data, size_t len); // For reading into a pre-allocated buffer
+    const uint8_t* current_ptr;
+    const uint8_t* end_ptr;
+};
+
+// Interface for user-defined serializable types
+class BsatnSerializable {
+public:
+    virtual ~BsatnSerializable() = default;
+    virtual void bsatn_serialize(bsatn_writer& writer) const = 0;
+    virtual void bsatn_deserialize(bsatn_reader& reader) = 0;
+};
+
+// Template implementations for bsatn_writer
+
+template<typename T>
+void bsatn_writer::write_object(const T& obj) {
+    // This relies on T having a bsatn_serialize method.
+    // The BsatnSerializable interface ensures this for types that inherit from it.
+    // For other types, it's duck typing.
+    obj.bsatn_serialize(*this);
+}
+
+template<typename T>
+void bsatn_writer::write_array(const std::vector<T>& vec) {
+    write_u32(static_cast<uint32_t>(vec.size()));
+    for (const auto& item : vec) {
+        // Dispatch to appropriate writer method based on type T
+        if constexpr (std::is_same_v<T, bool>) write_bool(item);
+        else if constexpr (std::is_same_v<T, uint8_t>) write_u8(item);
+        else if constexpr (std::is_same_v<T, uint16_t>) write_u16(item);
+        else if constexpr (std::is_same_v<T, uint32_t>) write_u32(item);
+        else if constexpr (std::is_same_v<T, uint64_t>) write_u64(item);
+        else if constexpr (std::is_same_v<T, int8_t>) write_i8(item);
+        else if constexpr (std::is_same_v<T, int16_t>) write_i16(item);
+        else if constexpr (std::is_same_v<T, int32_t>) write_i32(item);
+        else if constexpr (std::is_same_v<T, int64_t>) write_i64(item);
+        else if constexpr (std::is_same_v<T, float>) write_f32(item);
+        else if constexpr (std::is_same_v<T, double>) write_f64(item);
+        else if constexpr (std::is_same_v<T, std::string>) write_string(item);
+        else if constexpr (std::is_same_v<T, std::vector<uint8_t>>) write_bytes(item);
+        else if constexpr (std::is_base_of_v<BsatnSerializable, T> ||
+                           requires(const T& t, bsatn_writer& w) { t.bsatn_serialize(w); }) {
+            write_object(item); // Assumes T is an object with bsatn_serialize
+        } else {
+            // If you hit this, T is not a supported primitive and does not have bsatn_serialize
+            static_assert(std::is_void_v<T>, "Unsupported type in write_array. Type must be a primitive, std::string, std::vector<uint8_t>, or implement bsatn_serialize/BsatnSerializable.");
+        }
+    }
+}
+
+// Template implementations for bsatn_reader
+
+template<typename T>
+void bsatn_reader::read_object(T& obj) {
+    // Relies on T having bsatn_deserialize method.
+    obj.bsatn_deserialize(*this);
+}
+
+template<typename T>
+std::vector<T> bsatn_reader::read_array() {
+    uint32_t size = read_u32();
+    std::vector<T> vec;
+    vec.reserve(size); // Pre-allocate memory
+    for (uint32_t i = 0; i < size; ++i) {
+        if constexpr (std::is_same_v<T, bool>) vec.push_back(read_bool());
+        else if constexpr (std::is_same_v<T, uint8_t>) vec.push_back(read_u8());
+        else if constexpr (std::is_same_v<T, uint16_t>) vec.push_back(read_u16());
+        else if constexpr (std::is_same_v<T, uint32_t>) vec.push_back(read_u32());
+        else if constexpr (std::is_same_v<T, uint64_t>) vec.push_back(read_u64());
+        else if constexpr (std::is_same_v<T, int8_t>) vec.push_back(read_i8());
+        else if constexpr (std::is_same_v<T, int16_t>) vec.push_back(read_i16());
+        else if constexpr (std::is_same_v<T, int32_t>) vec.push_back(read_i32());
+        else if constexpr (std::is_same_v<T, int64_t>) vec.push_back(read_i64());
+        else if constexpr (std::is_same_v<T, float>) vec.push_back(read_f32());
+        else if constexpr (std::is_same_v<T, double>) vec.push_back(read_f64());
+        else if constexpr (std::is_same_v<T, std::string>) vec.push_back(read_string());
+        else if constexpr (std::is_same_v<T, std::vector<uint8_t>>) vec.push_back(read_bytes());
+        else if constexpr (std::is_base_of_v<BsatnSerializable, T> ||
+                           requires(T& t, bsatn_reader& r) { t.bsatn_deserialize(r); }) {
+            T item; // Create default-constructed item
+            read_object(item); // Deserialize into it
+            vec.push_back(std::move(item)); // Move into vector
+        } else {
+            static_assert(std::is_void_v<T>, "Unsupported type in read_array. Type must be a primitive, std::string, std::vector<uint8_t>, or implement bsatn_deserialize/BsatnSerializable.");
+        }
+    }
+    return vec;
+}
+
+} // namespace bsatn
+} // namespace spacetimedb
+
+#endif // BSATN_H
+
+# --- bsatn.cpp ---
+#include "bsatn.h"
+#include <cstring>   // For memcpy
+#include <limits>    // For std::numeric_limits
+#include <algorithm> // For std::min (not strictly needed with current impl)
+
+namespace spacetimedb {
+namespace bsatn {
+
+// bsatn_writer implementation
+bsatn_writer::bsatn_writer() {
+    // Optional: Reserve some initial capacity for the buffer if common sizes are known
+    // buffer.reserve(256);
+}
+
+void bsatn_writer::write_raw_bytes(const void* data, size_t len) {
+    buffer.insert(buffer.end(), static_cast<const uint8_t*>(data), static_cast<const uint8_t*>(data) + len);
+}
+
+void bsatn_writer::write_bool(bool value) {
+    write_u8(static_cast<uint8_t>(value ? 1 : 0));
+}
+
+void bsatn_writer::write_u8(uint8_t value) {
+    buffer.push_back(value);
+}
+
+void bsatn_writer::write_u16(uint16_t value) {
+    uint8_t bytes[2];
+    bytes[0] = static_cast<uint8_t>(value & 0xFF);          // LSB
+    bytes[1] = static_cast<uint8_t>((value >> 8) & 0xFF);   // MSB
+    write_raw_bytes(bytes, 2);
+}
+
+void bsatn_writer::write_u32(uint32_t value) {
+    uint8_t bytes[4];
+    bytes[0] = static_cast<uint8_t>(value & 0xFF);
+    bytes[1] = static_cast<uint8_t>((value >> 8) & 0xFF);
+    bytes[2] = static_cast<uint8_t>((value >> 16) & 0xFF);
+    bytes[3] = static_cast<uint8_t>((value >> 24) & 0xFF);
+    write_raw_bytes(bytes, 4);
+}
+
+void bsatn_writer::write_u64(uint64_t value) {
+    uint8_t bytes[8];
+    bytes[0] = static_cast<uint8_t>(value & 0xFF);
+    bytes[1] = static_cast<uint8_t>((value >> 8) & 0xFF);
+    bytes[2] = static_cast<uint8_t>((value >> 16) & 0xFF);
+    bytes[3] = static_cast<uint8_t>((value >> 24) & 0xFF);
+    bytes[4] = static_cast<uint8_t>((value >> 32) & 0xFF);
+    bytes[5] = static_cast<uint8_t>((value >> 40) & 0xFF);
+    bytes[6] = static_cast<uint8_t>((value >> 48) & 0xFF);
+    bytes[7] = static_cast<uint8_t>((value >> 56) & 0xFF);
+    write_raw_bytes(bytes, 8);
+}
+
+void bsatn_writer::write_i8(int8_t value) {
+    write_u8(static_cast<uint8_t>(value)); // Cast to uint8_t for raw byte writing
+}
+
+void bsatn_writer::write_i16(int16_t value) {
+    write_u16(static_cast<uint16_t>(value)); // Cast for raw bit pattern
+}
+
+void bsatn_writer::write_i32(int32_t value) {
+    write_u32(static_cast<uint32_t>(value)); // Cast for raw bit pattern
+}
+
+void bsatn_writer::write_i64(int64_t value) {
+    write_u64(static_cast<uint64_t>(value)); // Cast for raw bit pattern
+}
+
+void bsatn_writer::write_f32(float value) {
+    uint32_t bits;
+    std::memcpy(&bits, &value, sizeof(float)); // Type punning
+    write_u32(bits);
+}
+
+void bsatn_writer::write_f64(double value) {
+    uint64_t bits;
+    std::memcpy(&bits, &value, sizeof(double)); // Type punning
+    write_u64(bits);
+}
+
+void bsatn_writer::write_string(const std::string& str) {
+    if (str.length() > std::numeric_limits<uint32_t>::max()) {
+        throw std::runtime_error("BSATN: string length exceeds uint32_t max");
+    }
+    write_u32(static_cast<uint32_t>(str.length()));
+    write_raw_bytes(str.data(), str.length()); // data() gives const char*, compatible with const void*
+}
+
+void bsatn_writer::write_bytes(const std::vector<uint8_t>& bytes) {
+    if (bytes.size() > std::numeric_limits<uint32_t>::max()) {
+        throw std::runtime_error("BSATN: byte array length exceeds uint32_t max");
+    }
+    write_u32(static_cast<uint32_t>(bytes.size()));
+    write_raw_bytes(bytes.data(), bytes.size());
+}
+
+void bsatn_writer::write_sum_discriminant(uint8_t discriminant) {
+    write_u8(discriminant);
+}
+
+const std::vector<uint8_t>& bsatn_writer::get_buffer() const {
+    return buffer;
+}
+
+std::vector<uint8_t>&& bsatn_writer::move_buffer() {
+    return std::move(buffer);
+}
+
+// bsatn_reader implementation
+bsatn_reader::bsatn_reader(const uint8_t* data, size_t len)
+    : current_ptr(data), end_ptr(data + len) {
+    if (!data && len > 0) {
+        throw std::runtime_error("BSATN reader: null data pointer with non-zero length");
+    }
+}
+
+bsatn_reader::bsatn_reader(const std::vector<uint8_t>& data)
+    : current_ptr(data.data()), end_ptr(data.data() + data.size()) {}
+
+void bsatn_reader::read_raw_bytes(void* data, size_t len) {
+    if (len == 0) return; // Nothing to read
+    if (!data) {
+        throw std::runtime_error("BSATN reader: null output buffer provided to read_raw_bytes");
+    }
+    if (static_cast<size_t>(end_ptr - current_ptr) < len) {
+        throw std::runtime_error("BSATN read past end of buffer (in read_raw_bytes)");
+    }
+    std::memcpy(data, current_ptr, len);
+    current_ptr += len;
+}
+
+bool bsatn_reader::read_bool() {
+    return read_u8() != 0;
+}
+
+uint8_t bsatn_reader::read_u8() {
+    if (current_ptr >= end_ptr) {
+        throw std::runtime_error("BSATN read past end of buffer (u8)");
+    }
+    return *current_ptr++;
+}
+
+uint16_t bsatn_reader::read_u16() {
+    uint8_t bytes[2];
+    read_raw_bytes(bytes, 2);
+    return static_cast<uint16_t>(static_cast<uint16_t>(bytes[0]) | (static_cast<uint16_t>(bytes[1]) << 8));
+}
+
+uint32_t bsatn_reader::read_u32() {
+    uint8_t bytes[4];
+    read_raw_bytes(bytes, 4);
+    return static_cast<uint32_t>(bytes[0]) |
+           (static_cast<uint32_t>(bytes[1]) << 8) |
+           (static_cast<uint32_t>(bytes[2]) << 16) |
+           (static_cast<uint32_t>(bytes[3]) << 24);
+}
+
+uint64_t bsatn_reader::read_u64() {
+    uint8_t bytes[8];
+    read_raw_bytes(bytes, 8);
+    return static_cast<uint64_t>(bytes[0]) |
+           (static_cast<uint64_t>(bytes[1]) << 8) |
+           (static_cast<uint64_t>(bytes[2]) << 16) |
+           (static_cast<uint64_t>(bytes[3]) << 24) |
+           (static_cast<uint64_t>(bytes[4]) << 32) |
+           (static_cast<uint64_t>(bytes[5]) << 40) |
+           (static_cast<uint64_t>(bytes[6]) << 48) |
+           (static_cast<uint64_t>(bytes[7]) << 56);
+}
+
+int8_t bsatn_reader::read_i8() {
+    return static_cast<int8_t>(read_u8());
+}
+
+int16_t bsatn_reader::read_i16() {
+    return static_cast<int16_t>(read_u16());
+}
+
+int32_t bsatn_reader::read_i32() {
+    return static_cast<int32_t>(read_u32());
+}
+
+int64_t bsatn_reader::read_i64() {
+    return static_cast<int64_t>(read_u64());
+}
+
+float bsatn_reader::read_f32() {
+    uint32_t bits = read_u32();
+    float value;
+    std::memcpy(&value, &bits, sizeof(float)); // Type punning
+    return value;
+}
+
+double bsatn_reader::read_f64() {
+    uint64_t bits = read_u64();
+    double value;
+    std::memcpy(&value, &bits, sizeof(double)); // Type punning
+    return value;
+}
+
+std::string bsatn_reader::read_string() {
+    uint32_t len = read_u32();
+    if (static_cast<size_t>(end_ptr - current_ptr) < len) {
+        throw std::runtime_error("BSATN read past end of buffer (string data)");
+    }
+    std::string str(reinterpret_cast<const char*>(current_ptr), len);
+    current_ptr += len;
+    return str;
+}
+
+std::vector<uint8_t> bsatn_reader::read_bytes() {
+    uint32_t len = read_u32();
+    if (static_cast<size_t>(end_ptr - current_ptr) < len) {
+        throw std::runtime_error("BSATN read past end of buffer (byte array data)");
+    }
+    std::vector<uint8_t> bytes(current_ptr, current_ptr + len);
+    current_ptr += len;
+    return bytes;
+}
+
+uint8_t bsatn_reader::read_sum_discriminant() {
+    return read_u8();
+}
+
+bool bsatn_reader::eof() const {
+    return current_ptr >= end_ptr;
+}
+
+size_t bsatn_reader::remaining_bytes() const {
+    if (current_ptr > end_ptr) return 0; // Should not happen if checks are correct
+    return static_cast<size_t>(end_ptr - current_ptr);
+}
+
+} // namespace bsatn
+} // namespace spacetimedb

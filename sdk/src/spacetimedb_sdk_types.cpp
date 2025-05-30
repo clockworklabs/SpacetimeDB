@@ -1,8 +1,9 @@
-#include "spacetimedb_sdk_types.h"
-#include "bsatn.h" // For bsatn_writer, bsatn_reader
+#include <spacetimedb/sdk/spacetimedb_sdk_types.h>
+#include <spacetimedb/bsatn/bsatn.h> // For bsatn_writer, bsatn_reader
 #include <iomanip>  // For std::setw, std::setfill with to_hex_string
 #include <sstream>  // For std::ostringstream with to_hex_string
 #include <algorithm> // for std::copy
+#include <stdexcept> // For std::runtime_error
 
 namespace spacetimedb {
 namespace sdk {
@@ -36,19 +37,21 @@ bool Identity::operator!=(const Identity& other) const {
 }
 
 bool Identity::operator<(const Identity& other) const {
-    return value < other.value;
+    // Lexicographical comparison for std::map ordering
+    return std::lexicographical_compare(value.begin(), value.end(),
+                                        other.value.begin(), other.value.end());
 }
 
 void Identity::bsatn_serialize(bsatn::bsatn_writer& writer) const {
-    // Serialize as a fixed-size byte array (length-prefixed by bsatn_writer::write_bytes)
+    // Serialize as a length-prefixed byte array
     std::vector<uint8_t> bytes_vec(value.begin(), value.end());
-    writer.write_bytes(bytes_vec); 
+    writer.write_bytes(bytes_vec);
 }
 
 void Identity::bsatn_deserialize(bsatn::bsatn_reader& reader) {
     std::vector<uint8_t> bytes_vec = reader.read_bytes();
     if (bytes_vec.size() != IDENTITY_SIZE) {
-        throw std::runtime_error("BSATN deserialization error: Identity size mismatch. Expected " + 
+        throw std::runtime_error("BSATN deserialization error: Identity size mismatch. Expected " +
                                  std::to_string(IDENTITY_SIZE) + ", got " + std::to_string(bytes_vec.size()));
     }
     std::copy(bytes_vec.begin(), bytes_vec.end(), value.begin());

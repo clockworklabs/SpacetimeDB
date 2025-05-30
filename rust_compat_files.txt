@@ -41,7 +41,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/target/wasm32-unknown-unk
 # Add your module source files
 add_executable(${MY_MODULE_NAME}
     main.cpp
-    # player.cpp 
+    # player.cpp
     # etc.
 )
 
@@ -53,9 +53,9 @@ set_target_properties(${MY_MODULE_NAME} PROPERTIES SUFFIX ".wasm")
 # --- SDK Linking and Include Directories (remains similar to previous version) ---
 # Option 1: Assuming SDK is built in a known relative location
 set(SPACETIMEDB_SDK_INCLUDE_DIR ../../../sdk/include) # Path from examples/user_module
-set(SPACETIMEDB_SDK_LIBRARY ../../../sdk/build/libspacetimedb_cpp_sdk_core.a) 
+set(SPACETIMEDB_SDK_LIBRARY ../../../sdk/build/libspacetimedb_cpp_sdk_core.a)
 
-target_include_directories(${MY_MODULE_NAME} PUBLIC 
+target_include_directories(${MY_MODULE_NAME} PUBLIC
     ${SPACETIMEDB_SDK_INCLUDE_DIR}
 )
 target_link_libraries(${MY_MODULE_NAME} PUBLIC ${SPACETIMEDB_SDK_LIBRARY})

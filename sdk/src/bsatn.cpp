@@ -33,7 +33,7 @@ static T internal_read_little_endian(const uint8_t*& current_ptr, const uint8_t*
     if (static_cast<size_t>(end_ptr - current_ptr) < sizeof(T)) {
         throw std::runtime_error("BSATN read past end of buffer (in internal_read_little_endian)");
     }
-    
+
     T value;
     uint8_t bytes[sizeof(T)];
 

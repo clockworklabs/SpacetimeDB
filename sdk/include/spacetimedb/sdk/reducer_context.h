@@ -1,13 +1,13 @@
 #ifndef REDUCER_CONTEXT_H
 #define REDUCER_CONTEXT_H
 
-#include "spacetimedb_sdk_types.h" // For Identity, Timestamp
+#include <spacetimedb/sdk/spacetimedb_sdk_types.h> // For Identity, Timestamp
 
 namespace spacetimedb {
 namespace sdk {
 
 // Forward declaration
-class Database; 
+class Database;
 
 class ReducerContext {
 public:
@@ -24,16 +24,15 @@ public:
 
     // Provides access to database operations.
     Database& db();
-    const Database& db() const;
+    const Database& db() const; // Const overload
 
 
 private:
     Identity current_sender;
     Timestamp current_timestamp;
-    Database& database_instance; 
+    Database& database_instance;
     // Note: Storing a reference to Database implies Database lifetime management
     // is handled externally and outlives ReducerContext.
-    // If Database were owned or managed differently, a pointer or smart pointer might be used.
 };
 
 } // namespace sdk

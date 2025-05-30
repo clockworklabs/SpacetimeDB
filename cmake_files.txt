@@ -17,7 +17,7 @@ add_library(spacetimedb_cpp_sdk_core STATIC
 
 # Define an interface library for headers
 add_library(spacetimedb_cpp_sdk_headers INTERFACE)
-target_include_directories(spacetimedb_cpp_sdk_headers INTERFACE 
+target_include_directories(spacetimedb_cpp_sdk_headers INTERFACE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include> # Path for installed headers
 )
@@ -111,7 +111,7 @@ set(CMAKE_C_FLAGS_INIT "-O2 -s SIDE_MODULE=1 -s STRICT=1 --no-entry")
 # EXPORT_ALL=1 can be used for easier debugging but for production, explicit exports are better.
 # The SPACETIMEDB_REDUCER macro uses __attribute__((export_name(...))) which should work.
 # If not, one might need to list exported functions: -s EXPORTED_FUNCTIONS=['_func1','_func2']
-set(CMAKE_EXE_LINKER_FLAGS_INIT "") 
+set(CMAKE_EXE_LINKER_FLAGS_INIT "")
 # set(CMAKE_STATIC_LINKER_FLAGS_INIT "") # Not typically needed for emar
 # set(CMAKE_MODULE_LINKER_FLAGS_INIT "") # Not typically needed for side modules
 
@@ -142,7 +142,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # Add your module source files
 add_executable(my_module
     main.cpp
-    # player.cpp 
+    # player.cpp
     # etc.
 )
 
@@ -152,7 +152,7 @@ add_executable(my_module
 set(SPACETIMEDB_SDK_INCLUDE_DIR ../../../sdk/include)
 set(SPACETIMEDB_SDK_LIBRARY ../../../sdk/build/libspacetimedb_cpp_sdk_core.a) # Adjust if name/path differs
 
-target_include_directories(my_module PUBLIC 
+target_include_directories(my_module PUBLIC
     ${SPACETIMEDB_SDK_INCLUDE_DIR}
     # Add any local include directories for your module
     # include

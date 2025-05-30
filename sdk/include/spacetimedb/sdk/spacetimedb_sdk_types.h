@@ -8,11 +8,12 @@
 #include <chrono> // For Timestamp::current()
 #include <stdexcept> // For std::runtime_error in Identity deserialization
 
-// Forward declarations from bsatn.h
+// Forward declarations from bsatn.h - needed for BsatnSerializable usage
 namespace spacetimedb {
 namespace bsatn {
 class bsatn_writer;
 class bsatn_reader;
+class BsatnSerializable; // Ensure BsatnSerializable itself is forward-declared or included if it's a base
 } // namespace bsatn
 } // namespace spacetimedb
 
@@ -26,8 +27,7 @@ class Identity {
 public:
     Identity();
     explicit Identity(const std::array<uint8_t, IDENTITY_SIZE>& bytes);
-    // Optional: Constructor from hex string
-    // static Identity from_hex_string(const std::string& hex_str);
+    // static Identity from_hex_string(const std::string& hex_str); // Implementation can be added if needed
 
     const std::array<uint8_t, IDENTITY_SIZE>& get_bytes() const;
     std::string to_hex_string() const;
@@ -36,7 +36,7 @@ public:
     bool operator!=(const Identity& other) const;
     bool operator<(const Identity& other) const; // For std::map keys
 
-    // BSATN Serialization methods
+    // BSATN Serialization methods (duck-typed, or inherit BsatnSerializable)
     void bsatn_serialize(bsatn::bsatn_writer& writer) const;
     void bsatn_deserialize(bsatn::bsatn_reader& reader);
 
@@ -50,11 +50,9 @@ public:
     explicit Timestamp(uint64_t milliseconds_since_epoch);
 
     uint64_t as_milliseconds() const;
-    
-    // Note: In-reducer timestamps should typically come from ReducerContext
-    static Timestamp current(); 
 
-    // Comparison operators
+    static Timestamp current();
+
     bool operator==(const Timestamp& other) const;
     bool operator!=(const Timestamp& other) const;
     bool operator<(const Timestamp& other) const;

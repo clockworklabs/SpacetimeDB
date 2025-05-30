@@ -1,0 +1,11 @@
+[package]
+name = "kvstore_module" # This MUST match MY_MODULE_NAME in the example's CMakeLists.txt
+version = "0.1.0"
+edition = "2021"
+
+# This Cargo.toml file is primarily for compatibility with the `spacetime publish` CLI.
+# It helps the CLI identify the project name and expected output path for the pre-compiled WASM module.
+# The C++ code itself is built using CMake and a C++ toolchain (e.g., Emscripten via wasm_toolchain.cmake).
+
+[lib]
+crate-type = ["cdylib"] # Typically used for WASM libraries, may be checked by the CLI to identify compatible modules.

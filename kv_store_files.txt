@@ -59,7 +59,7 @@ if(NOT EXISTS ${SPACETIMEDB_SDK_LIBRARY})
     message(FATAL_ERROR "SpacetimeDB SDK library not found: ${SPACETIMEDB_SDK_LIBRARY}. Please build the SDK or set SPACETIMEDB_SDK_LIBRARY.")
 endif()
 
-target_include_directories(${MY_MODULE_NAME} PUBLIC 
+target_include_directories(${MY_MODULE_NAME} PUBLIC
     ${SPACETIMEDB_SDK_INCLUDE_DIR}
     src # Local include directory for kv_store.h
 )
@@ -176,7 +176,7 @@ void kv_put(spacetimedb::sdk::ReducerContext& ctx, const std::string& key, const
     std::string log_prefix = "[kv_put] ";
     try {
         auto kv_table = ctx.db().get_table<KeyValue>("kv_pairs");
-        
+
         // Attempt to find if the key already exists
         std::vector<KeyValue> existing_rows = kv_table.find_by_col_eq(0, key); // 0 for key_str (PK)
 
@@ -191,7 +191,7 @@ void kv_put(spacetimedb::sdk::ReducerContext& ctx, const std::string& key, const
 
         KeyValue row_to_insert(key, value);
         kv_table.insert(row_to_insert); // insert will modify row_to_insert if PK is auto-gen, but not here.
-        
+
         log_message(ctx, LOG_LEVEL_INFO, log_prefix + "Successfully put key: " + key + " value: " + value);
 
     } catch (const std::runtime_error& e) {

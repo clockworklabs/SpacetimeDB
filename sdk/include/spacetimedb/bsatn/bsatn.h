@@ -73,7 +73,7 @@ public:
 
     template<typename T>
     std::vector<T> read_array();
-    
+
     uint8_t read_sum_discriminant();
 
     bool eof() const;

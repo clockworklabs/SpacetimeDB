@@ -1,6 +1,6 @@
-#include "database.h"
+#include <spacetimedb/sdk/database.h>
 
-// spacetimedb_abi.h is included via database.h (which includes table.h, which includes spacetimedb_abi.h)
+// spacetimedb_abi.h is included via database.h -> table.h -> spacetimedb/abi/spacetimedb_abi.h
 // If not, it should be included here for any ABI calls made directly by Database methods,
 // though get_table<T> is templated and in the header.
 
