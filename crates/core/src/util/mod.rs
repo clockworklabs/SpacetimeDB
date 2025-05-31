@@ -6,6 +6,7 @@ use tracing::Span;
 
 pub mod prometheus_handle;
 
+pub mod jobs;
 pub mod lending_pool;
 pub mod notify_once;
 pub mod slow;

@@ -263,15 +263,15 @@ metrics_group!(
         #[labels(database_identity: Identity)]
         pub subscription_send_queue_length: IntGaugeVec,
 
-        #[name = spacetime_total_incoming_queue_length]
-        #[help = "The number of client -> server WebSocket messages waiting any client's incoming queue"]
-        #[labels(db: Identity)]
-        pub total_incoming_queue_length: IntGaugeVec,
+        #[name = spacetime_client_connection_incoming_queue_length]
+        #[help = "The number of client -> server WebSocket messages waiting in a client connection's incoming queue"]
+        #[labels(db: Identity, client_identity: Identity, connection_id: ConnectionId)]
+        pub client_connection_incoming_queue_length: IntGaugeVec,
 
-        #[name = spacetime_total_outgoing_queue_length]
-        #[help = "The number of server -> client WebSocket messages waiting in any client's outgoing queue"]
-        #[labels(db: Identity)]
-        pub total_outgoing_queue_length: IntGaugeVec,
+        #[name = spacetime_client_connection_outgoing_queue_length]
+        #[help = "The number of server -> client WebSocket messages waiting in a client connection's outgoing queue"]
+        #[labels(db: Identity, client_identity: Identity, connection_id: ConnectionId)]
+        pub client_connection_outgoing_queue_length: IntGaugeVec,
     }
 );
 

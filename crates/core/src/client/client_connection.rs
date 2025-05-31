@@ -78,7 +78,6 @@ pub struct ClientConnectionSender {
     sendtx: mpsc::Sender<SerializableMessage>,
     abort_handle: AbortHandle,
     cancelled: AtomicBool,
-
     /// Handles on Prometheus metrics related to connections to this database.
     ///
     /// Will be `None` when constructed by [`ClientConnectionSender::dummy_with_channel`]
@@ -91,19 +90,11 @@ pub struct ClientConnectionSender {
 pub struct ClientConnectionMetrics {
     pub websocket_request_msg_size: Histogram,
     pub websocket_requests: IntCounter,
-
-    /// The `total_outgoing_queue_length` metric labeled with this database's `Identity`,
-    /// which we'll increment whenever sending a message.
-    ///
-    /// This metric will be decremented, and cleaned up,
-    /// by `ws_client_actor_inner` in client-api/src/routes/subscribe.rs.
-    /// Care must be taken not to increment it after the client has disconnected
-    /// and performed its clean-up.
     pub sendtx_queue_size: IntGauge,
 }
 
 impl ClientConnectionMetrics {
-    fn new(database_identity: Identity, protocol: Protocol) -> Self {
+    fn new(database_identity: Identity, protocol: Protocol, client_id: &ClientActorId) -> Self {
         let message_kind = protocol.as_str();
         let websocket_request_msg_size = WORKER_METRICS
             .websocket_request_msg_size
@@ -111,9 +102,10 @@ impl ClientConnectionMetrics {
         let websocket_requests = WORKER_METRICS
             .websocket_requests
             .with_label_values(&database_identity, message_kind);
+
         let sendtx_queue_size = WORKER_METRICS
-            .total_outgoing_queue_length
-            .with_label_values(&database_identity);
+            .client_connection_outgoing_queue_length
+            .with_label_values(&database_identity, &client_id.identity, &client_id.connection_id);
 
         Self {
             websocket_request_msg_size,
@@ -139,7 +131,6 @@ impl ClientConnectionSender {
             Ok(h) => h.spawn(async {}).abort_handle(),
             Err(_) => tokio::runtime::Runtime::new().unwrap().spawn(async {}).abort_handle(),
         };
-
         let cancelled = AtomicBool::new(false);
         let sender = Self {
             id,
@@ -165,26 +156,21 @@ impl ClientConnectionSender {
             return Err(ClientSendError::Cancelled);
         }
 
-        match self.sendtx.try_send(message) {
-            Err(mpsc::error::TrySendError::Full(_)) => {
+        if let Some(metrics) = &self.metrics {
+            metrics.sendtx_queue_size.inc();
+        }
+
+        self.sendtx.try_send(message).map_err(|e| match e {
+            mpsc::error::TrySendError::Full(_) => {
                 // we've hit CLIENT_CHANNEL_CAPACITY messages backed up in
                 // the channel, so forcibly kick the client
                 tracing::warn!(identity = %self.id.identity, connection_id = %self.id.connection_id, "client channel capacity exceeded");
                 self.abort_handle.abort();
                 self.cancelled.store(true, Relaxed);
-                return Err(ClientSendError::Cancelled);
+                ClientSendError::Cancelled
             }
-            Err(mpsc::error::TrySendError::Closed(_)) => return Err(ClientSendError::Disconnected),
-            Ok(()) => {
-                // If we successfully pushed a message into the queue, increment the queue size metric.
-                // Don't do this before pushing because, if the client has disconnected,
-                // it will already have performed its clean-up,
-                // and so would never perform the corresponding `dec` to this `inc`.
-                if let Some(metrics) = &self.metrics {
-                    metrics.sendtx_queue_size.inc();
-                }
-            }
-        }
+            mpsc::error::TrySendError::Closed(_) => ClientSendError::Disconnected,
+        })?;
 
         Ok(())
     }
@@ -286,7 +272,7 @@ impl ClientConnection {
         })
         .abort_handle();
 
-        let metrics = ClientConnectionMetrics::new(database_identity, config.protocol);
+        let metrics = ClientConnectionMetrics::new(database_identity, config.protocol, &id);
 
         let sender = Arc::new(ClientConnectionSender {
             id,
