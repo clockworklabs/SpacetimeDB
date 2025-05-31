@@ -8,7 +8,8 @@ class Domains(Smoketest):
     def test_set_name(self):
         """Tests the functionality of the set-name command"""
 
-        self.publish_module()
+        orig_name = random_string()
+        self.publish_module(orig_name)
 
         rand_name = random_string()
 
@@ -20,6 +21,10 @@ class Domains(Smoketest):
 
         # Now we're essentially just testing that it *doesn't* throw an exception
         self.spacetime("logs", rand_name)
+
+        # This should throw an exception because the original name shouldn't exist anymore
+        with self.assertRaises(Exception):
+            self.spacetime("logs", orig_name)
 
     @unittest.expectedFailure
     def test_subdomain_behavior(self):
