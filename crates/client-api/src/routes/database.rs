@@ -124,7 +124,7 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
                     StatusCode::NOT_FOUND
                 }
                 ReducerCallError::LifecycleReducer(lifecycle) => {
-                    log::debug!("Attempt to call {lifecycle:?} lifeycle reducer {}", reducer);
+                    log::debug!("Attempt to call {lifecycle:?} lifecycle reducer {}", reducer);
                     StatusCode::BAD_REQUEST
                 }
             };

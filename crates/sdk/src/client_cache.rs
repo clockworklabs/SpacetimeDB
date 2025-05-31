@@ -106,7 +106,7 @@ impl<Row> Default for TableAppliedDiff<'_, Row> {
 
 impl<'r, Row> TableAppliedDiff<'r, Row> {
     /// Returns the applied diff restructured
-    /// with row updates where deletes and inserts are found accoring to `derive_pk`.
+    /// with row updates where deletes and inserts are found according to `derive_pk`.
     pub fn with_updates_by_pk<Pk: Eq + Hash>(mut self, derive_pk: impl Fn(&Row) -> &Pk) -> Self {
         self.derive_updates(derive_pk);
         self

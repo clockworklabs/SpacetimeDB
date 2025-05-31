@@ -139,7 +139,7 @@ pub const CURRENT_MODULE_ABI_VERSION: [u16; 2] = [7, 0];
 /// File extension of snapshot directories.
 pub const SNAPSHOT_DIR_EXT: &str = "snapshot_dir";
 
-/// File extension of snapshot files, which contain BSATN-encoded [`Snapshot`]s preceeded by [`blake3::Hash`]es.
+/// File extension of snapshot files, which contain BSATN-encoded [`Snapshot`]s preceded by [`blake3::Hash`]es.
 pub const SNAPSHOT_FILE_EXT: &str = "snapshot_bsatn";
 
 /// File extension of snapshots which have been marked invalid by [`SnapshotRepository::invalidate_newer_snapshots`].
@@ -874,7 +874,7 @@ impl SnapshotRepository {
             .filter(|path| path.extension() == Some(OsStr::new(SNAPSHOT_DIR_EXT)))
             // Ignore entries whose lockfile still exists.
             .filter(|path| !Lockfile::lock_path(path).exists())
-            // Parse each entry's TxOffset from the file name; ignore unparseable.
+            // Parse each entry's TxOffset from the file name; ignore unparsable.
             // Also ignore if the snapshot file doesn't exists.
             // This can happen on incomplete transfers, or if something went
             // wrong during creation.

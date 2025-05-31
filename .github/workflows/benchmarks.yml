@@ -177,7 +177,7 @@ jobs:
     name: run callgrind benchmarks
     # DON'T run on benchmarks-runner, using docker on a self-hosted runner has
     # been broken for 4 years: https://github.com/actions/runner/issues/434 .
-    # Fortunately, we can run on standard Github Actions infra because we don't care
+    # Fortunately, we can run on standard GitHub Actions infra because we don't care
     # about other stuff running on the machine!
     # runs-on: benchmarks-runner
     runs-on: ubuntu-latest
@@ -236,7 +236,7 @@ jobs:
           # summary PR" step). otherwise, we can use a fully shallow checkout
           fetch-depth: ${{ env.PR_NUMBER && 1 || 2 }}
 
-      - name: Unbork Github Actions state
+      - name: Unbork GitHub Actions state
         shell: bash
         run: |
           echo "Letting anybody touch our git repo, in order to avoid breaking other jobs"

@@ -1,4 +1,4 @@
-//! Types, traits, and macros for working with non-empty streams of errorrs.
+//! Types, traits, and macros for working with non-empty streams of errors.
 //!
 //! The `ErrorStream<_>` type provides a collection that stores a non-empty, unordered stream of errors.
 //! This is valuable for collecting as many errors as possible before returning them to the user,

@@ -561,7 +561,7 @@ The following changes are allowed, but may break clients:
 - ⚠️ **Changing or removing reducers**. Clients that attempt to call the old version of a changed reducer will receive runtime errors.
 - ⚠️ **Changing tables from public to private**. Clients that are subscribed to a newly-private table will receive runtime errors.
 - ⚠️ **Removing `#[primary_key]` annotations**. Non-updated clients will still use the old `#[primary_key]` as a unique key in their local cache, which can result in non-deterministic behavior when updates are received.
-- ⚠️ **Removing indexes**. This is only breaking in some situtations.
+- ⚠️ **Removing indexes**. This is only breaking in some situations.
   The specific problem is subscription queries <!-- TODO: clientside link --> involving semijoins, such as:
     ```sql
     SELECT Employee.*

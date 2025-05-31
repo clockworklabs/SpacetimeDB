@@ -34,7 +34,7 @@ pub mod serde {
     pub use crate::de::serde::{deserialize_from as deserialize, SerdeDeserializer};
     pub use crate::ser::serde::{serialize_to as serialize, SerdeSerializer};
 
-    /// A wrapper around a `serde` error which occured while translating SATS <-> serde.
+    /// A wrapper around a `serde` error which occurred while translating SATS <-> serde.
     #[repr(transparent)]
     pub struct SerdeError<E>(pub E);
 

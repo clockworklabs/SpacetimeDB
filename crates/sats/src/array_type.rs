@@ -3,7 +3,7 @@ use crate::de::Deserialize;
 use crate::meta_type::MetaType;
 use crate::{impl_deserialize, impl_serialize, impl_st};
 
-/// An array type is a homegeneous product type of dynamic length.
+/// An array type is a homogeneous product type of dynamic length.
 ///
 /// That is, it is a product type
 /// where every element / factor / field is of the same type

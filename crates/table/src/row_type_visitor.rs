@@ -368,8 +368,8 @@ impl MemoryUsage for VarLenVisitorProgram {
     }
 }
 
-/// Evalutes the `program`,
-/// provided the `instr_ptr` as its program counter / intruction pointer,
+/// Evaluates the `program`,
+/// provided the `instr_ptr` as its program counter / instruction pointer,
 /// and a callback `read_tag` to extract a tag at the given offset,
 /// until `Some(offset)` is reached,
 /// or the program halts.
