@@ -5,7 +5,7 @@ use std::{
     mem,
 };
 
-use log::debug;
+use log::{debug, trace};
 use memmap2::MmapMut;
 use spacetimedb_paths::server::OffsetIndexFile;
 
@@ -190,19 +190,32 @@ impl<Key: Into<u64> + From<u64>> IndexFileMut<Key> {
         self.inner.flush_async()
     }
 
-    /// Truncates the index file starting from the entry with a key greater than or equal to the given key.
+    /// Truncates the index file starting from the entry with a key greater than
+    /// or equal to the given key.
+    ///
+    /// If successful, `key` will no longer be in the index.
     pub(crate) fn truncate(&mut self, key: Key) -> Result<(), IndexError> {
         let key = key.into();
-        let (found_key, index) = self.find_index(Key::from(key))?;
+        let (found_key, index) = self
+            .find_index(Key::from(key))
+            .map(|(found, index)| (found.into(), index))?;
 
-        // If returned key is smalled than asked key, truncate from next entry
-        self.num_entries = if found_key.into() == key {
+        // If returned key is smaller than asked key, truncate from next entry
+        self.num_entries = if found_key == key {
             index as usize
         } else {
             index as usize + 1
         };
 
         let start = self.num_entries * ENTRY_SIZE;
+        trace!(
+            "truncate key={} found={} index={} num-entries={} start={}",
+            key,
+            found_key,
+            index,
+            self.num_entries,
+            start
+        );
 
         if start < self.inner.len() {
             self.inner[start..].fill(0);
