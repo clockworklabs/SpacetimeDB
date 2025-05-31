@@ -130,7 +130,7 @@ impl Header {
         )
     }
 
-    /// Finds the index of the column wth a matching `FieldName`.
+    /// Finds the index of the column with a matching `FieldName`.
     pub fn column_pos(&self, col: FieldName) -> Option<ColId> {
         self.fields.iter().position(|f| f.field == col).map(Into::into)
     }

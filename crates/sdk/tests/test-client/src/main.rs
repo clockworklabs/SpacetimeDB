@@ -1391,7 +1391,7 @@ fn exec_insert_delete_large_table() {
                                 ..
                             })
                         ) {
-                            anyhow::bail!("Unexpected event: expeced InsertLargeTable but found {:?}", ctx.event,);
+                            anyhow::bail!("Unexpected event: expected InsertLargeTable but found {:?}", ctx.event,);
                         }
 
                         // Now we'll delete the row we just inserted and check that the delete callback is called.
@@ -1437,7 +1437,7 @@ fn exec_insert_delete_large_table() {
                                 ..
                             })
                         ) {
-                            anyhow::bail!("Unexpected event: expeced DeleteLargeTable but found {:?}", ctx.event,);
+                            anyhow::bail!("Unexpected event: expected DeleteLargeTable but found {:?}", ctx.event,);
                         }
                         Ok(())
                     };
@@ -1527,7 +1527,7 @@ fn exec_insert_primitives_as_strings() {
                             })
                         ) {
                             anyhow::bail!(
-                                "Unexpected Event: expeced reducer InsertPrimitivesAsStrings but found {:?}",
+                                "Unexpected Event: expected reducer InsertPrimitivesAsStrings but found {:?}",
                                 ctx.event,
                             );
                         }

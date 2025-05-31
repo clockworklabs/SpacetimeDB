@@ -14,7 +14,7 @@
 //!
 //! Because hitting `u32::MAX` is substantially more likely than `u64::MAX`,
 //! the risk of overflow is greater.
-//! To mitigate this issue, rather than default to panicing,
+//! To mitigate this issue, rather than default to panicking,
 //! this module tries, for the most part,
 //! to force its user to handle any overflow
 //! when converting to the slimmer types.
@@ -25,18 +25,18 @@
 //! - [`SlimSmallSliceBox<T, N>`], a slimmer version of `SmallVec<[T; N]>`
 //!   but without the growing functionality.
 //! - [`SlimStrBox`], a slimmer version of `Box<str>`
-//! - [`SlimSlice<'a, T>`], a slimmer verion of `&'a [T]`
+//! - [`SlimSlice<'a, T>`], a slimmer version of `&'a [T]`
 //! - [`SlimSliceMut<'a, T>`], a slimmer version of `&'a mut [T]`
 //! - [`SlimStr<'a>`], a slimmer version of `&'a str`
 //! - [`SlimStrMut<'a>`], a slimmer version of `&'a mut str`
 //!
 //! The following convenience conversion functions are provided:
 //!
-//! - [`from_slice`] converts `&[T] -> SlimSlice<T>`, panicing on overflow
-//! - [`from_slice_mut`] converts `&mut [T] -> SlimSliceMut<T>`, panicing on overflow
-//! - [`from_str`] converts `&str -> SlimStr`, panicing on overflow
-//! - [`from_str_mut`] converts `&mut str -> SlimStrMut`, panicing on overflow
-//! - [`from_string`] converts `&str -> SlimStrBox`, panicing on overflow
+//! - [`from_slice`] converts `&[T] -> SlimSlice<T>`, panicking on overflow
+//! - [`from_slice_mut`] converts `&mut [T] -> SlimSliceMut<T>`, panicking on overflow
+//! - [`from_str`] converts `&str -> SlimStr`, panicking on overflow
+//! - [`from_str_mut`] converts `&mut str -> SlimStrMut`, panicking on overflow
+//! - [`from_string`] converts `&str -> SlimStrBox`, panicking on overflow
 //!
 //! These conversions should be reserved for cases where it is known
 //! that the length `<= u32::MAX` and should be used sparingly.

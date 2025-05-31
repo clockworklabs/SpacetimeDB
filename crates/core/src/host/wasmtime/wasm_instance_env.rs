@@ -1100,7 +1100,7 @@ impl WasmInstanceEnv {
         })
     }
 
-    /// Logs at `level` a `message` message occuring in `filename:line_number`
+    /// Logs at `level` a `message` message occurring in `filename:line_number`
     /// with [`target`](target) being the module path at the `log!` invocation site.
     ///
     /// These various pointers are interpreted lossily as UTF-8 strings with a corresponding `_len`.
