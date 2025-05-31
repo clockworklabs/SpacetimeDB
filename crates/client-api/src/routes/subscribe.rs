@@ -49,7 +49,7 @@ pub struct SubscribeQueryParams {
     #[serde(default)]
     pub compression: Compression,
     /// Whether we want "light" responses, tailored to network bandwidth constrained clients.
-    /// This knob works by setting other, more specifc, knobs to the value.
+    /// This knob works by setting other, more specific, knobs to the value.
     #[serde(default)]
     pub light: bool,
 }

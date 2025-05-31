@@ -201,7 +201,7 @@ pub use spacetimedb_bindings_macro::client_visibility_filter;
 /// Tables are private by default. This means that clients cannot read their contents
 /// or see that they exist.
 ///
-/// If you'd like to make your table publically accessible by clients,
+/// If you'd like to make your table publicly accessible by clients,
 /// put `public` in the macro arguments (e.g.
 /// `#[spacetimedb::table(public)]`). You can also specify `private` if
 /// you'd like to be specific.

@@ -1462,7 +1462,7 @@ impl<Ctx: __sdk::DbContext<
 ///
 /// If `event_type` is `Some`, `event_type_doc_link` should be as well.
 /// It should be a rustdoc-formatted link (including square brackets and all) to the `event_type`.
-/// This may differ (in the `strcmp` sense) from `event_type` because it should not inlcude generic parameters.
+/// This may differ (in the `strcmp` sense) from `event_type` because it should not include generic parameters.
 fn define_event_context(
     out: &mut Indenter,
     struct_and_trait_name: &str,

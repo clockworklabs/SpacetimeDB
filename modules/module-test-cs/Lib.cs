@@ -298,7 +298,7 @@ static partial class Module
         // Delete rows using the "foo" index (from 5 up to, but not including, 10).
         for (uint row = 5; row < 10; row++)
         {
-            // FIXME: Apprently in Rust you can delete by index, but in C# you can't.
+            // FIXME: Apparently in Rust you can delete by index, but in C# you can't.
             // numDeleted += ctx.Db.test_a.foo.Delete(row);
         }
 

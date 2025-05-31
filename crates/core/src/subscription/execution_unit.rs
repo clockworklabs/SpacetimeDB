@@ -132,7 +132,7 @@ impl PartialEq for ExecutionUnit {
 impl From<SupportedQuery> for ExecutionUnit {
     // Used in tests and benches.
     // TODO(bikeshedding): Remove this impl,
-    // in favor of more explcit calls to `ExecutionUnit::new` with `QueryHash::NONE`.
+    // in favor of more explicit calls to `ExecutionUnit::new` with `QueryHash::NONE`.
     fn from(plan: SupportedQuery) -> Self {
         Self::new(plan, QueryHash::NONE).unwrap()
     }

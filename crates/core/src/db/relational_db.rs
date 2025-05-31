@@ -401,7 +401,7 @@ impl RelationalDB {
     /// Records the database's identity, owner and module parameters in the
     /// system tables. The transactional context is supplied by the caller.
     ///
-    /// It is an error to call this method on an alread-initialized database.
+    /// It is an error to call this method on an already-initialized database.
     ///
     /// See [`Self::open`] for further information.
     pub fn set_initialized(&self, tx: &mut MutTx, host_type: HostType, program: Program) -> Result<(), DBError> {
@@ -990,8 +990,8 @@ impl RelationalDB {
     {
         let mut tx = self.begin_tx(workload);
         let res = f(&mut tx);
-        let (tx_metics, reducer) = self.release_tx(tx);
-        self.report_tx_metricses(&reducer, None, None, &tx_metics);
+        let (tx_metrics, reducer) = self.release_tx(tx);
+        self.report_tx_metricses(&reducer, None, None, &tx_metrics);
         res
     }
 

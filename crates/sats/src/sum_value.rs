@@ -1,7 +1,7 @@
 use crate::algebraic_value::AlgebraicValue;
 use crate::sum_type::SumType;
 
-/// A value of a sum type chosing a specific variant of the type.
+/// A value of a sum type choosing a specific variant of the type.
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct SumValue {
     /// A tag representing the choice of one variant of the sum type's variants.

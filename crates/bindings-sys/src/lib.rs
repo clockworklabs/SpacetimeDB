@@ -519,7 +519,7 @@ pub mod raw {
         /// ```
         pub fn bytes_source_read(source: BytesSource, buffer_ptr: *mut u8, buffer_len_ptr: *mut usize) -> i16;
 
-        /// Logs at `level` a `message` message occuring in `filename:line_number`
+        /// Logs at `level` a `message` message occurring in `filename:line_number`
         /// with `target` being the module path at the `log!` invocation site.
         ///
         /// These various pointers are interpreted lossily as UTF-8 strings with a corresponding `_len`.
@@ -1039,7 +1039,7 @@ pub enum LogLevel {
     Panic = raw::LOG_LEVEL_PANIC,
 }
 
-/// Log at `level` a `text` message occuring in `filename:line_number`
+/// Log at `level` a `text` message occurring in `filename:line_number`
 /// with [`target`] being the module path at the `log!` invocation site.
 ///
 /// [`target`]: https://docs.rs/log/latest/log/struct.Record.html#method.target

@@ -1024,7 +1024,7 @@ impl<F: FnMut(u64)> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVi
     type Error = ReplayError;
     // NOTE: Technically, this could be `()` if and when we can extract the
     // row data without going through `ProductValue` (PV).
-    // To accomodate auxiliary traversals (e.g. for analytics), we may want to
+    // To accommodate auxiliary traversals (e.g. for analytics), we may want to
     // provide a separate visitor yielding PVs.
     type Row = ProductValue;
 

@@ -1,10 +1,10 @@
-# These have been dervived from:
+# These have been derived from:
 # Annex F: SQL feature taxonomy
 # Page 1635
 mandatory:
   E011: Numeric data types
   E011-01: INTEGER and SMALLINT data types (including all spellings)
-  E011-02: REAL, DOUBLE PRECISON, and FLOAT data types
+  E011-02: REAL, DOUBLE PRECISION, and FLOAT data types
   E011-03: DECIMAL and NUMERIC data types
   E011-04: Arithmetic operators
   E011-05: Numeric comparison

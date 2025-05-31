@@ -727,7 +727,7 @@ pub struct OneOffTable<F: WebsocketFormat> {
     /// The set of rows which matched the query, encoded as BSATN or JSON according to the table's schema
     /// and the client's requested protocol.
     ///
-    /// TODO(centril, 1.0): Evalutate whether we want to conditionally compress these.
+    /// TODO(centril, 1.0): Evaluate whether we want to conditionally compress these.
     pub rows: F::List,
 }
 

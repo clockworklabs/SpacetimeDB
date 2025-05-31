@@ -131,7 +131,7 @@ impl Timestamp {
         Some(TimeDuration::from_micros(delta))
     }
 
-    /// Parses an RFC 3339 formated timestamp string
+    /// Parses an RFC 3339 formatted timestamp string
     pub fn parse_from_rfc3339(str: &str) -> anyhow::Result<Timestamp> {
         DateTime::parse_from_rfc3339(str)
             .map_err(|err| anyhow::anyhow!(err))
