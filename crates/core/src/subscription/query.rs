@@ -150,6 +150,7 @@ mod tests {
     use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdate, UpdatesRelValue};
     use crate::sql::execute::collect_result;
     use crate::sql::execute::tests::run_for_testing;
+    use crate::subscription::module_subscription_manager::QueriedTableIndexIds;
     use crate::subscription::subscription::{legacy_get_all, ExecutionSet};
     use crate::subscription::tx::DeltaTx;
     use crate::vm::tests::create_table_with_rows;
@@ -1079,8 +1080,9 @@ mod tests {
 
         let (data, _, tx) = tx.commit_downgrade(Workload::ForTests);
         let table_id = plan.subscribed_table_id();
-        let table_name = plan.subscribed_table_name().into();
-        let tx = DeltaTx::new(&tx, &data);
+        // This awful construction to convert `Arc<str>` into `Box<str>`.
+        let table_name = (&**plan.subscribed_table_name()).into();
+        let tx = DeltaTx::new(&tx, &data, &QueriedTableIndexIds::from_iter(plan.index_ids()));
 
         // IMPORTANT: FOR TESTING ONLY!
         //
@@ -1283,10 +1285,9 @@ mod tests {
         assert_eq!(result.tables.len(), 1);
         assert_eq!(result.tables[0], insert_op(lhs_id, "lhs", product!(5, 10)));
 
-        // The lhs row must always probe the rhs index.
-        // The rhs row passes the rhs filter,
-        // resulting in a probe of the rhs index.
-        assert_eq!(metrics.index_seeks, 2);
+        // Because we only have inserts, only 3 delta queries are evaluated,
+        // each one an index join, and each one probing the join index exactly once.
+        assert_eq!(metrics.index_seeks, 3);
         Ok(())
     }
 
@@ -1313,10 +1314,13 @@ mod tests {
         // No updates to report
         assert_eq!(result.tables.len(), 0);
 
-        // The lhs row must always probe the rhs index.
-        // The rhs row doesn't pass the rhs filter,
+        // Because we only have inserts, only 3 delta queries are evaluated,
+        // each one an index join, and each one probing the join index at most once.
+        //
+        // The lhs row always probes the rhs index,
+        // but the rhs row doesn't pass the rhs filter,
         // hence it doesn't survive to probe the lhs index.
-        assert_eq!(metrics.index_seeks, 1);
+        assert_eq!(metrics.index_seeks, 2);
         Ok(())
     }
 
@@ -1344,10 +1348,9 @@ mod tests {
         assert_eq!(result.tables.len(), 1);
         assert_eq!(result.tables[0], delete_op(lhs_id, "lhs", product!(0, 5)));
 
-        // The lhs row must always probe the rhs index.
-        // The rhs row passes the rhs filter,
-        // resulting in a probe of the rhs index.
-        assert_eq!(metrics.index_seeks, 2);
+        // Because we only have inserts, only 3 delta queries are evaluated,
+        // each one an index join, and each one probing the join index exactly once.
+        assert_eq!(metrics.index_seeks, 3);
         Ok(())
     }
 
@@ -1374,10 +1377,13 @@ mod tests {
         // No updates to report
         assert_eq!(result.tables.len(), 0);
 
-        // The lhs row must always probe the rhs index.
-        // The rhs row doesn't pass the rhs filter,
+        // Because we only have inserts, only 3 delta queries are evaluated,
+        // each one an index join, and each one probing the join index at most once.
+        //
+        // The lhs row always probes the rhs index,
+        // but the rhs row doesn't pass the rhs filter,
         // hence it doesn't survive to probe the lhs index.
-        assert_eq!(metrics.index_seeks, 1);
+        assert_eq!(metrics.index_seeks, 2);
         Ok(())
     }
 
@@ -1423,10 +1429,10 @@ mod tests {
             },
         );
 
-        // The lhs rows must always probe the rhs index.
-        // The rhs rows pass the rhs filter,
-        // resulting in probes of the rhs index.
-        assert_eq!(metrics.index_seeks, 4);
+        // Because we have deletes and inserts for both tables,
+        // all 8 delta queries are evaluated,
+        // each one probing the join index exactly once.
+        assert_eq!(metrics.index_seeks, 8);
         Ok(())
     }
 }

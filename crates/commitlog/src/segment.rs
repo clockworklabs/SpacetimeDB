@@ -697,6 +697,7 @@ mod tests {
     use super::*;
     use crate::{payload::ArrayDecoder, repo, Options};
     use itertools::Itertools;
+    use pretty_assertions::assert_matches;
     use proptest::prelude::*;
     use spacetimedb_paths::server::CommitLogDir;
     use tempfile::tempdir;
@@ -926,16 +927,28 @@ mod tests {
 
         // Truncating to any offset in the written range or larger
         // retains that offset - 1, or the max offset written.
-        let truncate_to: TxOffset = rand::random_range(1..=32);
-        let retained_key = truncate_to.saturating_sub(1).min(10);
-        let retained_val = retained_key * 128;
-        let retained = (retained_key, retained_val);
+        for truncate_to in (2..=10u64).rev() {
+            let retained_key = truncate_to.saturating_sub(1).min(10);
+            let retained_val = retained_key * 128;
+            let retained = (retained_key, retained_val);
 
-        writer.ftruncate(truncate_to, rand::random()).unwrap();
-        assert_eq!(writer.head.key_lookup(truncate_to).unwrap(), retained);
-        // Make sure this also holds after reopen.
-        drop(writer);
-        let index = TxOffsetIndex::open_index_file(&index_path).unwrap();
-        assert_eq!(index.key_lookup(truncate_to).unwrap(), retained);
+            writer.ftruncate(truncate_to, rand::random()).unwrap();
+            assert_matches!(
+                writer.head.key_lookup(truncate_to),
+                Ok(x) if x == retained,
+                "truncate to {truncate_to} should retain {retained:?}"
+            );
+            // Make sure this also holds after reopen.
+            let index = TxOffsetIndex::open_index_file(&index_path).unwrap();
+            assert_matches!(
+                index.key_lookup(truncate_to),
+                Ok(x) if x == retained,
+                "truncate to {truncate_to} should retain {retained:?} after reopen"
+            );
+        }
+
+        // Truncating to 1 leaves no entries in the index
+        writer.ftruncate(1, rand::random()).unwrap();
+        assert_matches!(writer.head.key_lookup(1), Err(IndexError::KeyNotFound));
     }
 }

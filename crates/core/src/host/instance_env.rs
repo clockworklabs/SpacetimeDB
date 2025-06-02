@@ -2,7 +2,7 @@ use super::scheduler::{get_schedule_from_row, ScheduleError, Scheduler};
 use crate::database_logger::{BacktraceProvider, LogLevel, Record};
 use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::db::relational_db::{MutTx, RelationalDB};
-use crate::error::{DBError, IndexError, NodesError};
+use crate::error::{DBError, DatastoreError, IndexError, NodesError};
 use crate::replica_context::ReplicaContext;
 use core::mem;
 use parking_lot::{Mutex, MutexGuard};
@@ -222,7 +222,7 @@ impl InstanceEnv {
                 #[cold]
                 #[inline(never)]
                 |e| match e {
-                    DBError::Index(IndexError::UniqueConstraintViolation(_)) => {}
+                    DBError::Datastore(DatastoreError::Index(IndexError::UniqueConstraintViolation(_))) => {}
                     _ => {
                         let res = stdb.table_name_from_id_mut(tx, table_id);
                         if let Ok(Some(table_name)) = res {
@@ -258,7 +258,7 @@ impl InstanceEnv {
             .table_scheduled_id_and_at(tx, table_id)?
             .expect("schedule_row should only be called when we know its a scheduler table");
 
-        let row_ref = tx.get(table_id, row_ptr)?.unwrap();
+        let row_ref = tx.get(table_id, row_ptr).map_err(DBError::from)?.unwrap();
         let (schedule_id, schedule_at) = get_schedule_from_row(&row_ref, id_column, at_column)
             // NOTE(centril): Should never happen,
             // as we successfully inserted and thus `ret` is verified against the table schema.
@@ -291,7 +291,7 @@ impl InstanceEnv {
                 #[cold]
                 #[inline(never)]
                 |e| match e {
-                    DBError::Index(IndexError::UniqueConstraintViolation(_)) => {}
+                    DBError::Datastore(DatastoreError::Index(IndexError::UniqueConstraintViolation(_))) => {}
                     _ => {
                         let res = stdb.table_name_from_id_mut(tx, table_id);
                         if let Ok(Some(table_name)) = res {
@@ -532,38 +532,41 @@ mod test {
         Ok(DatabaseLogger::open(path))
     }
 
-    /// An `InstanceEnv` requires `ModuleSubscriptions`
-    fn subscription_actor(relational_db: Arc<RelationalDB>) -> ModuleSubscriptions {
-        ModuleSubscriptions::new(relational_db, <_>::default(), Identity::ZERO)
-    }
-
     /// An `InstanceEnv` requires a `ReplicaContext`.
     /// For our purposes this is just a wrapper for `RelationalDB`.
-    fn replica_ctx(relational_db: Arc<RelationalDB>) -> Result<ReplicaContext> {
-        Ok(ReplicaContext {
-            database: Database {
-                id: 0,
-                database_identity: Identity::ZERO,
-                owner_identity: Identity::ZERO,
-                host_type: HostType::Wasm,
-                initial_program: Hash::ZERO,
+    fn replica_ctx(relational_db: Arc<RelationalDB>) -> Result<(ReplicaContext, tokio::runtime::Runtime)> {
+        let (subs, runtime) = ModuleSubscriptions::for_test_new_runtime(relational_db.clone());
+        Ok((
+            ReplicaContext {
+                database: Database {
+                    id: 0,
+                    database_identity: Identity::ZERO,
+                    owner_identity: Identity::ZERO,
+                    host_type: HostType::Wasm,
+                    initial_program: Hash::ZERO,
+                },
+                replica_id: 0,
+                logger: Arc::new(temp_logger()?),
+                subscriptions: subs,
+                relational_db,
             },
-            replica_id: 0,
-            logger: Arc::new(temp_logger()?),
-            subscriptions: subscription_actor(relational_db.clone()),
-            relational_db,
-        })
+            runtime,
+        ))
     }
 
     /// An `InstanceEnv` used for testing the database syscalls.
-    fn instance_env(db: Arc<RelationalDB>) -> Result<InstanceEnv> {
+    fn instance_env(db: Arc<RelationalDB>) -> Result<(InstanceEnv, tokio::runtime::Runtime)> {
         let (scheduler, _) = Scheduler::open(db.clone());
-        Ok(InstanceEnv {
-            replica_ctx: Arc::new(replica_ctx(db)?),
-            scheduler,
-            tx: TxSlot::default(),
-            start_time: Timestamp::now(),
-        })
+        let (replica_context, runtime) = replica_ctx(db)?;
+        Ok((
+            InstanceEnv {
+                replica_ctx: Arc::new(replica_context),
+                scheduler,
+                tx: TxSlot::default(),
+                start_time: Timestamp::now(),
+            },
+            runtime,
+        ))
     }
 
     /// An in-memory `RelationalDB` for testing.
@@ -662,7 +665,7 @@ mod test {
     #[test]
     fn table_scan_metrics() -> Result<()> {
         let db = relational_db()?;
-        let env = instance_env(db.clone())?;
+        let (env, _runtime) = instance_env(db.clone())?;
 
         let (table_id, _) = create_table_with_index(&db)?;
 
@@ -694,7 +697,7 @@ mod test {
     #[test]
     fn index_scan_metrics() -> Result<()> {
         let db = relational_db()?;
-        let env = instance_env(db.clone())?;
+        let (env, _runtime) = instance_env(db.clone())?;
 
         let (_, index_id) = create_table_with_index(&db)?;
 
@@ -746,7 +749,7 @@ mod test {
     #[test]
     fn insert_metrics() -> Result<()> {
         let db = relational_db()?;
-        let env = instance_env(db.clone())?;
+        let (env, _runtime) = instance_env(db.clone())?;
 
         let (table_id, _) = create_table_with_index(&db)?;
 
@@ -783,7 +786,7 @@ mod test {
     #[test]
     fn update_metrics() -> Result<()> {
         let db = relational_db()?;
-        let env = instance_env(db.clone())?;
+        let (env, _runtime) = instance_env(db.clone())?;
 
         let (table_id, index_id) = create_table_with_unique_index(&db)?;
 
@@ -810,7 +813,7 @@ mod test {
     #[test]
     fn delete_by_index_metrics() -> Result<()> {
         let db = relational_db()?;
-        let env = instance_env(db.clone())?;
+        let (env, _runtime) = instance_env(db.clone())?;
 
         let (_, index_id) = create_table_with_index(&db)?;
 
@@ -838,7 +841,7 @@ mod test {
     #[test]
     fn delete_by_value_metrics() -> Result<()> {
         let db = relational_db()?;
-        let env = instance_env(db.clone())?;
+        let (env, _runtime) = instance_env(db.clone())?;
 
         let (table_id, _) = create_table_with_index(&db)?;
 
