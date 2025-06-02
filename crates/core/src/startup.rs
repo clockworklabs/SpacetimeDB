@@ -155,8 +155,8 @@ fn reload_config<S>(conf_file: &ConfigToml, reload_handle: &reload::Handle<EnvFi
 #[derive(Default)]
 pub struct Cores {
     pub databases: JobCores,
-    pub tokio_workers: ThreadPoolCores,
-    pub rayon: ThreadPoolCores,
+    pub tokio: TokioCores,
+    pub rayon: RayonCores,
 }
 
 impl Cores {
@@ -170,13 +170,25 @@ impl Cores {
 
         let databases = cores.take(frac(1.0 / 8.0)).collect();
 
-        let tokio_workers = ThreadPoolCores(Some(cores.take(frac(4.0 / 8.0)).collect()));
+        let tokio_workers = cores.take(frac(4.0 / 8.0)).collect();
 
-        let rayon = ThreadPoolCores(Some(cores.take(frac(1.0 / 8.0)).collect()));
+        let rayon = RayonCores(Some(cores.take(frac(1.0 / 8.0)).collect()));
+
+        #[cfg(target_os = "linux")]
+        let remaining = cores.try_fold(nix::sched::CpuSet::new(), |mut cpuset, core| {
+            cpuset.set(core.id).ok()?;
+            Some(cpuset)
+        });
+
+        let tokio = TokioCores {
+            workers: Some(tokio_workers),
+            #[cfg(target_os = "linux")]
+            blocking: remaining,
+        };
 
         Some(Self {
             databases,
-            tokio_workers,
+            tokio,
             rayon,
         })
     }
@@ -192,30 +204,40 @@ fn vec_to_queue(cores: Vec<CoreId>) -> CoreQueue {
 }
 
 #[derive(Default)]
-pub struct ThreadPoolCores(Option<Vec<CoreId>>);
+pub struct TokioCores {
+    workers: Option<Vec<CoreId>>,
+    #[cfg(target_os = "linux")]
+    blocking: Option<nix::sched::CpuSet>,
+}
 
-impl ThreadPoolCores {
-    fn into_setup_fn(self) -> Option<(usize, impl Fn())> {
-        self.0.map(|cores| {
+impl TokioCores {
+    pub fn configure(self, builder: &mut tokio::runtime::Builder) {
+        if let Some(cores) = self.workers {
+            let num = cores.len();
             let cores = vec_to_queue(cores);
-            (cores.len(), move || {
-                if let Some(core) = cores.pop() {
-                    core_affinity::set_for_current(core);
-                }
-            })
-        })
-    }
-
-    pub fn configure_tokio(self, builder: &mut tokio::runtime::Builder) {
-        if let Some((num, setup)) = self.into_setup_fn() {
             // `on_thread_start` gets called for both async worker threads and blocking threads,
             // but the first `worker_threads` threads that tokio spawns are worker threads,
             // so this ends up working fine
-            builder.worker_threads(num).on_thread_start(setup);
+            builder.worker_threads(num).on_thread_start(move || {
+                if let Some(core) = cores.pop() {
+                    core_affinity::set_for_current(core);
+                } else {
+                    #[cfg(target_os = "linux")]
+                    if let Some(cpuset) = &self.blocking {
+                        let this = nix::unistd::Pid::from_raw(0);
+                        let _ = nix::sched::sched_setaffinity(this, cpuset);
+                    }
+                }
+            });
         }
     }
+}
 
-    pub fn configure_rayon(self, tokio_handle: &tokio::runtime::Handle) {
+#[derive(Default)]
+pub struct RayonCores(Option<Vec<CoreId>>);
+
+impl RayonCores {
+    pub fn configure(self, tokio_handle: &tokio::runtime::Handle) {
         rayon_core::ThreadPoolBuilder::new()
             .thread_name(|_idx| "rayon-worker".to_string())
             .spawn_handler(thread_spawn_handler(tokio_handle))

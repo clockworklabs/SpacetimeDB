@@ -73,8 +73,8 @@ fn main() -> anyhow::Result<()> {
     // Create a multi-threaded run loop
     let mut builder = Builder::new_multi_thread();
     builder.enable_all();
-    cores.tokio_workers.configure_tokio(&mut builder);
+    cores.tokio.configure(&mut builder);
     let rt = builder.build().unwrap();
-    cores.rayon.configure_rayon(rt.handle());
+    cores.rayon.configure(rt.handle());
     rt.block_on(async_main(cores.databases))
 }
