@@ -534,9 +534,9 @@ impl SubscriptionManager {
     /// that the [`SendWorker`] should also add this client.
     ///
     /// Horrible signature to enable split borrows on [`Self`].
-    fn get_or_make_client_info_and_inform_send_worker<'clients, 'send_worker_tx>(
+    fn get_or_make_client_info_and_inform_send_worker<'clients>(
         clients: &'clients mut HashMap<ClientId, ClientInfo>,
-        send_worker_tx: &'send_worker_tx mut mpsc::UnboundedSender<SendWorkerMessage>,
+        send_worker_tx: &mut mpsc::UnboundedSender<SendWorkerMessage>,
         client_id: ClientId,
         outbound_ref: Client,
     ) -> &'clients mut ClientInfo {
@@ -1126,10 +1126,6 @@ struct SendWorkerClient {
 /// into `DbUpdate`s and then sends them to the clients' WebSocket workers.
 ///
 /// See comment on the `send_worker_tx` field in [`SubscriptionManager`] for motivation.
-///
-
-///
-
 struct SendWorker {
     /// Receiver end of the [`SubscriptionManager`]'s `send_worker_tx` channel.
     rx: mpsc::UnboundedReceiver<SendWorkerMessage>,
