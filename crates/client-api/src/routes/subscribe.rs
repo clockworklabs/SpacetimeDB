@@ -296,7 +296,8 @@ async fn ws_client_actor_inner(
                     // TODO: this isn't great. when we receive a close request from the peer,
                     //       tungstenite doesn't let us send any new messages on the socket,
                     //       even though the websocket RFC allows it. should we fork tungstenite?
-                    log::info!("dropping messages due to ws already being closed: {:?}", &rx_buf[..n]);
+                    log::info!("dropping {n} messages due to ws already being closed");
+                    log::debug!("dropped messages: {:?}", &rx_buf[..n]);
                 } else {
                 let send_all = async {
                     for msg in rx_buf.drain(..n) {
