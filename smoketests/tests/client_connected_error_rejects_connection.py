@@ -17,6 +17,7 @@ pub fn init(ctx: &ReducerContext) {
 }
 """
 
+
 class ClientConnectedErrorRejectsConnection(Smoketest):
     MODULE_CODE = MODULE_HEADER + """
 
@@ -33,11 +34,12 @@ pub fn identity_disconnected(_ctx: &ReducerContext) {
 
     def test_client_connected_error_rejects_connection(self):
         with self.assertRaises(Exception):
-            self.subscribe("select * from all_u8s", n = 0)()
+            self.subscribe("select * from all_u8s", n=0)()
 
         logs = self.logs(100)
         self.assertIn('Rejecting connection from client', logs)
         self.assertNotIn('This should never be called, since we reject all connections!', logs)
+
 
 class ClientDisconnectedErrorStillDeletesStClient(Smoketest):
     MODULE_CODE = MODULE_HEADER + """
@@ -53,13 +55,12 @@ pub fn identity_disconnected(_ctx: &ReducerContext) {
 """
 
     def test_client_disconnected_error_still_deletes_st_client(self):
-        self.subscribe("select * from all_u8s", n = 0)()
+        self.subscribe("select * from all_u8s", n=0)()
 
         logs = self.logs(100)
         self.assertIn('This should be called, but the `st_client` row should still be deleted', logs)
 
         sql_out = self.spacetime("sql", self.database_identity, "select * from st_client")
-
         self.assertMultiLineEqual(sql_out, """ identity | connection_id 
 ----------+---------------
 """)
