@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 use std::mem;
 use std::pin::{pin, Pin};
+use std::sync::Arc;
 use std::time::Duration;
 
 use axum::extract::{Path, Query, State};
@@ -14,12 +15,14 @@ use futures::{Future, FutureExt, SinkExt, StreamExt};
 use http::{HeaderValue, StatusCode};
 use scopeguard::ScopeGuard;
 use serde::Deserialize;
-use spacetimedb::client::messages::{serialize, IdentityTokenMessage, SerializableMessage};
+use spacetimedb::client::messages::{serialize, IdentityTokenMessage, SerializableMessage, SerializeBufferPool};
 use spacetimedb::client::{ClientActorId, ClientConfig, ClientConnection, DataMessage, MessageHandleError, Protocol};
+use spacetimedb::execution_context::WorkloadType;
 use spacetimedb::host::module_host::ClientConnectedError;
 use spacetimedb::host::NoSuchModule;
 use spacetimedb::util::also_poll;
 use spacetimedb::worker_metrics::WORKER_METRICS;
+use spacetimedb::Identity;
 use spacetimedb_client_api_messages::websocket::{self as ws_api, Compression};
 use spacetimedb_lib::connection_id::{ConnectionId, ConnectionIdForUrl};
 use std::time::Instant;
@@ -125,6 +128,8 @@ where
         name: ctx.client_actor_index().next_client_name(),
     };
 
+    let serialize_buffer_pool = ctx.websocket_send_serialize_buffer_pool().clone();
+
     let ws_config = WebSocketConfig::default()
         .max_message_size(Some(0x2000000))
         .max_frame_size(None)
@@ -146,7 +151,7 @@ where
             None => log::debug!("New client connected from unknown ip"),
         }
 
-        let actor = |client, sendrx| ws_client_actor(client, ws, sendrx);
+        let actor = |client, sendrx| ws_client_actor(client, ws, sendrx, serialize_buffer_pool);
         let client = match ClientConnection::spawn(client_id, client_config, leader.replica_id, module_rx, actor).await
         {
             Ok(s) => s,
@@ -180,13 +185,18 @@ where
 
 const LIVELINESS_TIMEOUT: Duration = Duration::from_secs(60);
 
-async fn ws_client_actor(client: ClientConnection, ws: WebSocketStream, sendrx: mpsc::Receiver<SerializableMessage>) {
+async fn ws_client_actor(
+    client: ClientConnection,
+    ws: WebSocketStream,
+    sendrx: mpsc::Receiver<SerializableMessage>,
+    serialize_buffer_pool: Arc<SerializeBufferPool>,
+) {
     // ensure that even if this task gets cancelled, we always cleanup the connection
     let mut client = scopeguard::guard(client, |client| {
         tokio::spawn(client.disconnect());
     });
 
-    ws_client_actor_inner(&mut client, ws, sendrx).await;
+    ws_client_actor_inner(&mut client, ws, sendrx, &serialize_buffer_pool).await;
 
     ScopeGuard::into_inner(client).disconnect().await;
 }
@@ -203,6 +213,7 @@ async fn ws_client_actor_inner(
     client: &mut ClientConnection,
     mut ws: WebSocketStream,
     mut sendrx: mpsc::Receiver<SerializableMessage>,
+    serialize_buffer_pool: &SerializeBufferPool,
 ) {
     let mut liveness_check_interval = tokio::time::interval(LIVELINESS_TIMEOUT);
     let mut got_pong = true;
@@ -299,31 +310,31 @@ async fn ws_client_actor_inner(
                     log::info!("dropping {n} messages due to ws already being closed");
                     log::debug!("dropped messages: {:?}", &rx_buf[..n]);
                 } else {
-                let send_all = async {
-                    for msg in rx_buf.drain(..n) {
-                        let workload = msg.workload();
-                        let num_rows = msg.num_rows();
+                    let send_all = async {
+                        for msg in rx_buf.drain(..n) {
+                            let workload = msg.workload();
+                            let num_rows = msg.num_rows();
 
-                        let msg = datamsg_to_wsmsg(serialize(msg, client.config));
+                            // Serialize the message, report metrics,
+                            // and keep a handle to the buffer.
+                            let msg_data = serialize(serialize_buffer_pool, msg, client.config);
+                            report_ws_sent_metrics(&addr, workload, num_rows, &msg_data);
+                            let msg_alloc = msg_data.allocation();
 
-                        // These metrics should be updated together,
-                        // or not at all.
-                        if let (Some(workload), Some(num_rows)) = (workload, num_rows) {
-                            WORKER_METRICS
-                                .websocket_sent_num_rows
-                                .with_label_values(&addr, &workload)
-                                .observe(num_rows as f64);
-                            WORKER_METRICS
-                                .websocket_sent_msg_size
-                                .with_label_values(&addr, &workload)
-                                .observe(msg.len() as f64);
+                            // Buffer the message without necessarily sending it.
+                            ws.feed(datamsg_to_wsmsg(msg_data)).await?;
+
+                            // At this point,
+                            // the underlying allocation of `msg_data` should have a single referent
+                            // and this should be `msg_alloc`.
+                            // We can put this back into our pool.
+                            let msg_alloc = msg_alloc.try_into_mut()
+                                .expect("should have a unique referent to `msg_alloc`");
+                            serialize_buffer_pool.put(msg_alloc);
                         }
-                        // feed() buffers the message, but does not necessarily send it
-                        ws.feed(msg).await?;
-                    }
-                    // now we flush all the messages to the socket
-                     ws.flush().await
-                 };
+                        // now we flush all the messages to the socket
+                        ws.flush().await
+                    };
                     // Flush the websocket while continuing to poll the `handle_queue`,
                     // to avoid deadlocks or delays due to enqueued futures holding resources.
                     let send_all = also_poll(send_all, make_progress(&mut current_message));
@@ -394,10 +405,24 @@ async fn ws_client_actor_inner(
                 if let Err(e) = res {
                     if let MessageHandleError::Execution(err) = e {
                         log::error!("{err:#}");
-                        let msg = serialize(err, client.config);
-                        if let Err(error) = ws.send(datamsg_to_wsmsg(msg)).await {
+                        // Serialize the message and keep a handle to the buffer.
+                        let msg_data = serialize(serialize_buffer_pool, err, client.config);
+                        let msg_alloc = msg_data.allocation();
+
+                        // Buffer the message without necessarily sending it.
+                        if let Err(error) = ws.send(datamsg_to_wsmsg(msg_data)).await {
                             log::warn!("Websocket send error: {error}")
                         }
+
+                        // At this point,
+                        // the underlying allocation of `msg_data` should have a single referent
+                        // and this should be `msg_alloc`.
+                        // We can put this back into our pool.
+                        let msg_alloc = msg_alloc
+                            .try_into_mut()
+                            .expect("should have a unique referent to `msg_alloc`");
+                        serialize_buffer_pool.put(msg_alloc);
+
                         continue;
                     }
                     log::debug!("Client caused error on text message: {}", e);
@@ -458,6 +483,27 @@ impl ClientMessage {
             // WebSocket::read_message() never returns a raw Message::Frame
             WsMessage::Frame(_) => unreachable!(),
         }
+    }
+}
+
+/// Report metrics on sent rows and message sizes to a websocket client.
+fn report_ws_sent_metrics(
+    addr: &Identity,
+    workload: Option<WorkloadType>,
+    num_rows: Option<usize>,
+    msg_ws: &DataMessage,
+) {
+    // These metrics should be updated together,
+    // or not at all.
+    if let (Some(workload), Some(num_rows)) = (workload, num_rows) {
+        WORKER_METRICS
+            .websocket_sent_num_rows
+            .with_label_values(addr, &workload)
+            .observe(num_rows as f64);
+        WORKER_METRICS
+            .websocket_sent_msg_size
+            .with_label_values(addr, &workload)
+            .observe(msg_ws.len() as f64);
     }
 }
 
