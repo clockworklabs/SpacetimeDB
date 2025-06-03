@@ -1,4 +1,3 @@
-use std::cmp;
 use std::sync::{Arc, Mutex, Weak};
 
 use core_affinity::CoreId;
@@ -28,17 +27,18 @@ pub struct JobCores {
 struct JobCoresInner {
     /// A map to the repin_tx for each job thread
     job_threads: HashMap<JobThreadId, watch::Sender<CoreId>>,
-    /// Kept sorted by `CoreInfo.jobs.len()`, in ascending order
     cores: IndexMap<CoreId, CoreInfo>,
+    /// An index into `cores` of the next core to put a new job onto.
+    ///
+    /// This acts as a partition point in `cores`; all cores in `..index` have
+    /// one fewer job on them than the cores in `index..`.
+    next_core: usize,
     next_id: JobThreadId,
 }
 
 #[derive(Default)]
 struct CoreInfo {
     jobs: SmallVec<[JobThreadId; 4]>,
-}
-fn cores_cmp(_: &CoreId, v1: &CoreInfo, _: &CoreId, v2: &CoreInfo) -> cmp::Ordering {
-    Ord::cmp(&v1.jobs.len(), &v2.jobs.len())
 }
 
 #[derive(Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
@@ -49,18 +49,7 @@ impl JobCores {
     pub fn take(&self) -> JobCore {
         let inner = if let Some(inner) = &self.inner {
             let cores = Arc::downgrade(inner);
-            let mut inner = inner.lock().unwrap();
-
-            let id = inner.next_id;
-            inner.next_id.0 += 1;
-
-            let (&core_id, core) = inner.cores.first_mut().unwrap();
-            core.jobs.push(id);
-            inner.cores.sort_by(cores_cmp);
-
-            let (repin_tx, repin_rx) = watch::channel(core_id);
-            inner.job_threads.insert(id, repin_tx);
-
+            let (id, repin_rx) = inner.lock().unwrap().allocate();
             Some(JobCoreInner {
                 repin_rx,
                 _guard: JobCoreGuard { cores, id },
@@ -80,6 +69,7 @@ impl FromIterator<CoreId> for JobCores {
             Arc::new(Mutex::new(JobCoresInner {
                 job_threads: HashMap::default(),
                 cores,
+                next_core: 0,
                 next_id: JobThreadId(0),
             }))
         });
@@ -88,31 +78,51 @@ impl FromIterator<CoreId> for JobCores {
 }
 
 impl JobCoresInner {
+    fn allocate(&mut self) -> (JobThreadId, watch::Receiver<CoreId>) {
+        let id = self.next_id;
+        self.next_id.0 += 1;
+
+        let (&core_id, core) = self.cores.get_index_mut(self.next_core).unwrap();
+        core.jobs.push(id);
+        self.next_core = (self.next_core + 1) % self.cores.len();
+
+        let (repin_tx, repin_rx) = watch::channel(core_id);
+        self.job_threads.insert(id, repin_tx);
+
+        (id, repin_rx)
+    }
+
     /// Run when a `JobThread` exits.
-    fn on_thread_exit(&mut self, id: JobThreadId) {
+    fn deallocate(&mut self, id: JobThreadId) {
         let core_id = *self.job_threads.remove(&id).unwrap().borrow();
 
         let core_index = self.cores.get_index_of(&core_id).unwrap();
-        let last_index = self.cores.len() - 1;
 
-        // `last_core` will be Some if `core_index` is not `last_index`
-        // FIXME(noa): this will fail to level sometimes; we should keep a partition point and
-        //     manually move cores before it when they're low and above it when they're high.
-        let (core, last_core) = match self.cores.get_disjoint_indices_mut([core_index, last_index]) {
-            Ok([(_, core), (_, last)]) => (core, Some(last)),
-            Err(_) => (&mut self.cores[core_index], None),
-        };
+        // This core is now less busy than it should be - bump `next_core` back
+        // by 1 and steal a thread from the core there.
+        //
+        // This wraps around in the 0 case, so the partition point is simply
+        // moved to the end of the ring buffer.
 
-        let job_pos = core.jobs.iter().position(|x| *x == id).unwrap();
+        let steal_from = self.next_core.checked_sub(1).unwrap_or(self.cores.len() - 1);
 
-        if let Some(job) = last_core.and_then(|last| last.jobs.pop()) {
-            core.jobs[job_pos] = job;
-            let sender = self.job_threads.get_mut(&job).unwrap();
-            sender.send_replace(core_id);
+        if let Ok([(_, core), (_, steal_from)]) = self.cores.get_disjoint_indices_mut([core_index, steal_from]) {
+            // This unwrap will never fail, since cores below `next_core` always have
+            // at least 1 thread on them. Edge case: if `next_core` is 0, `steal_from`
+            // would wrap around to the end - but when `next_core` is 0, every core has
+            // the same number of threads; so, if the last core is empty, all the cores
+            // would be empty, but we know that's impossible because we're deallocating
+            // a thread right now.
+            let stolen = steal_from.jobs.pop().unwrap();
+
+            let pos = core.jobs.iter().position(|x| *x == id).unwrap();
+            core.jobs[pos] = stolen;
+
+            self.job_threads[&stolen].send_replace(core_id);
         } else {
-            core.jobs.remove(job_pos);
+            // this core was already at `next_core - 1` - nothing needs to be done!
+            self.next_core = steal_from;
         }
-        self.cores.sort_by(cores_cmp);
     }
 }
 
@@ -191,7 +201,7 @@ struct JobCoreGuard {
 impl Drop for JobCoreGuard {
     fn drop(&mut self) {
         if let Some(cores) = self.cores.upgrade() {
-            cores.lock().unwrap().on_thread_exit(self.id);
+            cores.lock().unwrap().deallocate(self.id);
         }
     }
 }
