@@ -236,17 +236,6 @@ impl RayonCores {
         rayon_core::ThreadPoolBuilder::new()
             .thread_name(|_idx| "rayon-worker".to_string())
             .spawn_handler(thread_spawn_handler(tokio_handle))
-            // TODO(perf, pgoldman 2024-02-22):
-            // in the case where we have many modules running many reducers,
-            // we'll wind up with Rayon threads competing with each other and with Tokio threads
-            // for CPU time.
-            //
-            // We should investigate creating two separate CPU pools,
-            // possibly via https://docs.rs/nix/latest/nix/sched/fn.sched_setaffinity.html,
-            // and restricting Tokio threads to one CPU pool
-            // and Rayon threads to the other.
-            // Then we should give Tokio and Rayon each a number of worker threads
-            // equal to the size of their pool.
             .num_threads(self.0.as_ref().map_or(0, |cores| cores.len()))
             .start_handler(move |i| {
                 if let Some(cores) = &self.0 {
