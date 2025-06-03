@@ -52,8 +52,8 @@ pub(crate) fn sats_type_from_derive(
     crate_fallback: TokenStream,
 ) -> syn::Result<SatsType<'_>> {
     let data = match &input.data {
-        syn::Data::Struct(struct) => {
-            let fields = struct.fields.iter().map(|field| SatsField {
+        syn::Data::Struct(s) => {
+            let fields = s.fields.iter().map(|field| SatsField {
                 ident: field.ident.as_ref(),
                 vis: &field.vis,
                 name: field.ident.as_ref().map(syn::Ident::to_string),
