@@ -96,7 +96,7 @@ pub struct HostController {
     pub page_pool: PagePool,
     /// The runtimes for running our modules.
     runtimes: Arc<HostRuntimes>,
-    /// The CPU cores that are reserved for running databases on.
+    /// The CPU cores that are reserved for ModuleHost operations to run on.
     db_cores: JobCores,
 }
 
@@ -581,6 +581,7 @@ async fn make_module_host(
     unregister: impl Fn() + Send + Sync + 'static,
     core: JobCore,
 ) -> anyhow::Result<(Program, ModuleHost)> {
+    // `make_actor` is blocking, as it needs to compile the wasm to native code.
     asyncify(move || {
         let module_host = match host_type {
             HostType::Wasm => {

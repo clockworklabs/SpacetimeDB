@@ -6,7 +6,7 @@ use smallvec::SmallVec;
 use spacetimedb_data_structures::map::HashMap;
 use tokio::sync::{mpsc, oneshot, watch};
 
-/// A pool of CPU cores for running jobs on.
+/// A handle to a pool of CPU cores for running job threads on.
 ///
 /// Each thread is represented by a [`JobThread`], which is pinned to a single
 /// core and sequentially runs the jobs that are passed to [`JobThread::run`].
@@ -19,6 +19,10 @@ use tokio::sync::{mpsc, oneshot, watch};
 /// Construction is done via the `FromIterator` impl. If created from an empty
 /// iterator or via `JobCores::default()`, the job threads will work but not be
 /// pinned to any threads.
+///
+/// This handle is cheaply cloneable. If all instances of it are dropped,
+/// threads will continue running, but will no longer repin each other
+/// when one exits.
 #[derive(Default, Clone)]
 pub struct JobCores {
     inner: Option<Arc<Mutex<JobCoresInner>>>,
@@ -208,8 +212,11 @@ impl Drop for JobCoreGuard {
 
 /// A handle to a thread running a job loop; see [`JobCores`] for more details.
 ///
-/// This handle is cheaply cloneäble, and the thread will shut down when all
-/// handles to it have been dropped.
+/// The thread stores data of type `T`; jobs run on the thread will be given
+/// mutable access to it.
+///
+/// This handle is cheaply cloneable. If all strong handles have been dropped,
+/// the thread will shut down.
 pub struct JobThread<T: ?Sized> {
     tx: mpsc::Sender<Box<Job<T>>>,
 }
@@ -223,7 +230,7 @@ impl<T: ?Sized> Clone for JobThread<T> {
 type Job<T> = dyn FnOnce(&mut T) + Send;
 
 impl<T: ?Sized> JobThread<T> {
-    /// Run a blocking job on this thread.
+    /// Run a blocking job on this `JobThread`.
     ///
     /// The job (`f`) will be placed in a queue, and will run strictly after
     /// jobs ahead of it in the queue. If `f` panics, it will be bubbled up to

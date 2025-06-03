@@ -40,10 +40,6 @@ impl Default for TracingOptions {
         }
     }
 }
-#[must_use]
-pub fn pin_threads() -> Cores {
-    Cores::get().unwrap_or_default()
-}
 
 pub fn configure_tracing(opts: TracingOptions) {
     // Use this to change log levels at runtime.
@@ -151,10 +147,47 @@ fn reload_config<S>(conf_file: &ConfigToml, reload_handle: &reload::Handle<EnvFi
     }
 }
 
+/// Divide up the available CPU cores into pools for different purposes.
+///
+/// Use the fields of the returned [`Cores`] value to actually configure
+/// cores to be pinned.
+///
+/// Pinning different subsystems to different threads reduces overhead from
+/// unnecessary context switching.
+///
+/// * Database instances are critical to overall performance, and keeping each
+///   one on only one thread was shown to significantly increase CCU.
+/// * Tokio and Rayon have their own userspace task schedulers, so if the OS
+///   scheduler is trying to schedule threads as well, it's likely to just
+///   cause interference.
+///
+/// Call only once per process. If obtaining the number of cores fails, or if
+/// there are too few cores, this function may return `Cores::default()`, which
+/// performs no thread pinning.
+// TODO: pinning threads might not be desirable on a machine with other
+//       processes running - this should probably be some sort of flag.
+#[must_use]
+pub fn pin_threads() -> Cores {
+    Cores::get().unwrap_or_default()
+}
+
+/// A type holding cores divvied up into different sets.
+///
+/// Obtained from [`pin_threads()`].
 #[derive(Default)]
 pub struct Cores {
+    /// The cores to run database instances on.
+    ///
+    /// Currently, this is 1/8 of num_cpus.
     pub databases: JobCores,
+    /// The cores to run tokio worker and blocking threads on.
+    ///
+    /// Currently, tokio worker threads are 4/8 of num_cpus, and tokio blocking
+    /// threads are pinned non-exclusively to 2/8 of num_cpus.
     pub tokio: TokioCores,
+    /// The cores to run rayon threads on.
+    ///
+    /// Currently, this is 1/8 of num_cpus.
     pub rayon: RayonCores,
 }
 
@@ -196,11 +229,17 @@ impl Cores {
 #[derive(Default)]
 pub struct TokioCores {
     workers: Option<Vec<CoreId>>,
+    // For blocking threads, we don't want to limit them to a specific number
+    // and pin them to their own cores - they're supposed to run concurrently
+    // with each other. However, `core_affinity` doesn't support affinity masks,
+    // so we just use the Linux-specific API, since this is only a slight boost
+    // and we don't care enough about performance on other platforms.
     #[cfg(target_os = "linux")]
     blocking: Option<nix::sched::CpuSet>,
 }
 
 impl TokioCores {
+    /// Configures `builder` to pin its worker threads to specific cores.
     pub fn configure(self, builder: &mut tokio::runtime::Builder) {
         if let Some(cores) = self.workers {
             builder.worker_threads(cores.len());
@@ -232,6 +271,9 @@ impl TokioCores {
 pub struct RayonCores(Option<Vec<CoreId>>);
 
 impl RayonCores {
+    /// Configures a global rayon threadpool, pinning its threads to specific cores.
+    ///
+    /// All rayon threads will be run with `tokio_handle` enetered into.
     pub fn configure(self, tokio_handle: &tokio::runtime::Handle) {
         rayon_core::ThreadPoolBuilder::new()
             .thread_name(|_idx| "rayon-worker".to_string())
