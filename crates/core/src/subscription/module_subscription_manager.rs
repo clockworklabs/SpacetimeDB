@@ -111,8 +111,11 @@ struct ClientInfo {
     subscription_ref_count: HashMap<QueryHash, usize>,
     // This should be removed when we migrate to SubscribeSingle.
     legacy_subscriptions: HashSet<QueryHash>,
-    // This flag is set if an error occurs during a tx update.
-    // It will be cleaned up async or on resubscribe.
+    /// This flag is set if an error occurs during a tx update.
+    /// It will be cleaned up async or on resubscribe.
+    ///
+    /// [`Arc`]ed so that this can be updated by the [`SendWorker`]
+    /// and observed by [`SubscriptionManager::remove_dropped_clients`].
     dropped: Arc<AtomicBool>,
 }
 
@@ -450,13 +453,25 @@ struct ComputedQueries {
     caller: Option<Arc<ClientConnectionSender>>,
 }
 
+/// Message sent by the [`SubscriptionManager`] to the [`SendWorker`].
 enum SendWorkerMessage {
+    /// A transaction has completed and the [`SubscriptionManager`] has evaluated the incremental queries,
+    /// so the [`SendWorker`] should broadcast them to clients.
     Broadcast(ComputedQueries),
+
+    /// A new client has been registered in the [`SubscriptionManager`],
+    /// so the [`SendWorker`] should also record its existence.
     AddClient {
         client_id: ClientId,
+        /// Shared handle on the `dropped` flag in the [`Subscriptionmanager`]'s [`ClientInfo`].
+        ///
+        /// Will be updated by [`SendWorker::run`] and read by [`SubscriptionManager::remove_dropped_clients`].
         dropped: Arc<AtomicBool>,
         outbound_ref: Client,
     },
+
+    /// A client previously added by a [`Self::AddClient`] message has been removed from the [`SubscriptionManager`],
+    /// so the [`SendWorker`] should also forget it.
     RemoveClient(ClientId),
 }
 
@@ -553,15 +568,14 @@ impl SubscriptionManager {
         })
     }
 
+    /// Remove a [`ClientInfo`] from the `clients` map,
+    /// and broadcast a message along `send_worker_tx` that the [`SendWorker`] should also remove it.
     fn remove_client_and_inform_send_worker(&mut self, client_id: ClientId) -> Option<ClientInfo> {
-        if let Some(client) = self.clients.remove(&client_id) {
+        self.clients.remove(&client_id).inspect(|_| {
             self.send_worker_tx
                 .send(SendWorkerMessage::RemoveClient(client_id))
                 .expect("send worker has panicked, or otherwise dropped its recv queue!");
-            Some(client)
-        } else {
-            None
-        }
+        })
     }
 
     pub fn num_unique_queries(&self) -> usize {
@@ -1118,6 +1132,11 @@ impl SubscriptionManager {
 }
 
 struct SendWorkerClient {
+    /// This flag is set if an error occurs during a tx update.
+    /// It will be cleaned up async or on resubscribe.
+    ///
+    /// [`Arc`]ed so that this can be updated by [`Self::run`]
+    /// and observed by [`SubscriptionManager::remove_dropped_clients`].
     dropped: Arc<AtomicBool>,
     outbound_ref: Client,
 }
@@ -1141,7 +1160,7 @@ struct SendWorker {
     /// Mirror of the [`SubscriptionManager`]'s `clients` map local to this actor.
     ///
     /// Updated by [`SendWorkerMessage::AddClient`] and [`SendWorkerMessage::RemoveClient`] messages
-    /// send along `self.rx`.
+    /// sent along `self.rx`.
     clients: HashMap<ClientId, SendWorkerClient>,
 
     /// The `Identity` which labels the `queue_length_metric`.
