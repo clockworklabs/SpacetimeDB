@@ -9,8 +9,8 @@ use crate::error::DBError;
 use crate::host::module_host::ClientConnectedError;
 use crate::host::{ModuleHost, NoSuchModule, ReducerArgs, ReducerCallError, ReducerCallResult};
 use crate::messages::websocket::Subscribe;
-use crate::util::asyncify;
 use crate::util::prometheus_handle::IntGaugeExt;
+use crate::util::{asyncify, spawn_rayon};
 use crate::worker_metrics::WORKER_METRICS;
 use bytes::Bytes;
 use bytestring::ByteString;
@@ -408,12 +408,18 @@ impl ClientConnection {
         timer: Instant,
     ) -> Result<Option<ExecutionMetrics>, DBError> {
         let me = self.clone();
-        asyncify(move || {
+        spawn_rayon(move || {
             me.module
                 .subscriptions()
                 .add_multi_subscription(me.sender, request, timer, None)
         })
         .await
+        // asyncify(move || {
+        //     me.module
+        //         .subscriptions()
+        //         .add_multi_subscription(me.sender, request, timer, None)
+        // })
+        // .await
     }
 
     pub async fn unsubscribe_multi(
@@ -422,12 +428,18 @@ impl ClientConnection {
         timer: Instant,
     ) -> Result<Option<ExecutionMetrics>, DBError> {
         let me = self.clone();
-        asyncify(move || {
+        spawn_rayon(move || {
             me.module
                 .subscriptions()
                 .remove_multi_subscription(me.sender, request, timer)
         })
         .await
+        // asyncify(move || {
+        //     me.module
+        //         .subscriptions()
+        //         .remove_multi_subscription(me.sender, request, timer)
+        // })
+        // .await
     }
 
     pub async fn subscribe(&self, subscription: Subscribe, timer: Instant) -> Result<ExecutionMetrics, DBError> {
