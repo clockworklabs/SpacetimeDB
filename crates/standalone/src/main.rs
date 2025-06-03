@@ -69,6 +69,8 @@ fn main() -> anyhow::Result<()> {
     // Create a multi-threaded run loop
     Builder::new_multi_thread()
         .enable_all()
+        // The lifo slot optimization can cause deadlocks, since it makes some tasks unstealable.
+        .disable_lifo_slot()
         .build()
         .unwrap()
         .block_on(async_main())
