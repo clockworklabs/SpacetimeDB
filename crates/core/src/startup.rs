@@ -1,5 +1,6 @@
 use core_affinity::CoreId;
 use crossbeam_queue::ArrayQueue;
+use itertools::Itertools;
 use spacetimedb_paths::server::{ConfigToml, LogsDir};
 use std::path::PathBuf;
 use std::time::Duration;
@@ -194,7 +195,14 @@ pub struct Cores {
 impl Cores {
     fn get() -> Option<Self> {
         let cores = &mut core_affinity::get_core_ids()
-            .filter(|cores| cores.len() >= 8)?
+            .filter(|cores| cores.len() >= 10)?
+            .into_iter()
+            // We reserve the first two cores for the OS.
+            // This allows us to pin interrupt handlers (IRQs) to these cores,
+            // particularly those for incoming network traffic,
+            // preventing them from preempting the main reducer threads.
+            .filter(|core_id| core_id.id > 1)
+            .collect_vec()
             .into_iter();
 
         let total = cores.len() as f64;
