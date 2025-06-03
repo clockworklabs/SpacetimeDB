@@ -1,5 +1,6 @@
 use core_affinity::CoreId;
 use crossbeam_queue::ArrayQueue;
+use itertools::Itertools;
 use spacetimedb_paths::server::{ConfigToml, LogsDir};
 use std::path::PathBuf;
 use std::time::Duration;
@@ -194,7 +195,10 @@ pub struct Cores {
 impl Cores {
     fn get() -> Option<Self> {
         let cores = &mut core_affinity::get_core_ids()
-            .filter(|cores| cores.len() >= 8)?
+            .filter(|cores| cores.len() >= 10)?
+            .into_iter()
+            .filter(|core_id| core_id.id > 1)
+            .collect_vec()
             .into_iter();
 
         let total = cores.len() as f64;
