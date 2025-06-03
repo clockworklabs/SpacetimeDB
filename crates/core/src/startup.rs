@@ -2,7 +2,6 @@ use core_affinity::CoreId;
 use crossbeam_queue::ArrayQueue;
 use spacetimedb_paths::server::{ConfigToml, LogsDir};
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::time::Duration;
 use tracing_appender::rolling;
 use tracing_core::LevelFilter;
@@ -194,15 +193,6 @@ impl Cores {
     }
 }
 
-type CoreQueue = Arc<ArrayQueue<CoreId>>;
-fn vec_to_queue(cores: Vec<CoreId>) -> CoreQueue {
-    let queue = Arc::new(ArrayQueue::new(cores.len()));
-    for core in cores {
-        queue.push(core).unwrap();
-    }
-    queue
-}
-
 #[derive(Default)]
 pub struct TokioCores {
     workers: Option<Vec<CoreId>>,
@@ -213,13 +203,18 @@ pub struct TokioCores {
 impl TokioCores {
     pub fn configure(self, builder: &mut tokio::runtime::Builder) {
         if let Some(cores) = self.workers {
-            let num = cores.len();
-            let cores = vec_to_queue(cores);
+            builder.worker_threads(cores.len());
+
+            let cores_queue = Box::new(ArrayQueue::new(cores.len()));
+            for core in cores {
+                cores_queue.push(core).unwrap();
+            }
+
             // `on_thread_start` gets called for both async worker threads and blocking threads,
             // but the first `worker_threads` threads that tokio spawns are worker threads,
             // so this ends up working fine
-            builder.worker_threads(num).on_thread_start(move || {
-                if let Some(core) = cores.pop() {
+            builder.on_thread_start(move || {
+                if let Some(core) = cores_queue.pop() {
                     core_affinity::set_for_current(core);
                 } else {
                     #[cfg(target_os = "linux")]
