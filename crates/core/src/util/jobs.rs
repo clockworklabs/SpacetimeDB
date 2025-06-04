@@ -129,8 +129,9 @@ impl JobCoresInner {
             self.job_threads[&stolen].send_replace(core_id);
         } else {
             // this core was already at `next_core - 1` - nothing needs to be done!
-            self.next_core = steal_from;
         }
+
+        self.next_core = steal_from;
     }
 }
 
