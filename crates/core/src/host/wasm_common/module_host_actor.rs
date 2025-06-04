@@ -15,7 +15,8 @@ use crate::energy::{EnergyMonitor, EnergyQuanta, ReducerBudget, ReducerFingerpri
 use crate::execution_context::{self, ReducerContext, Workload};
 use crate::host::instance_env::InstanceEnv;
 use crate::host::module_host::{
-    CallReducerParams, DatabaseUpdate, EventStatus, Module, ModuleEvent, ModuleFunctionCall, ModuleInfo, ModuleInstance,
+    CallReducerParams, DatabaseUpdate, DynModule, EventStatus, Module, ModuleEvent, ModuleFunctionCall, ModuleInfo,
+    ModuleInstance,
 };
 use crate::host::{ReducerCallResult, ReducerId, ReducerOutcome, Scheduler, UpdateDatabaseResult};
 use crate::identity::Identity;
@@ -200,6 +201,16 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
     }
 }
 
+impl<T: WasmModule> DynModule for WasmModuleHostActor<T> {
+    fn replica_ctx(&self) -> &Arc<ReplicaContext> {
+        &self.replica_context
+    }
+
+    fn scheduler(&self) -> &Scheduler {
+        &self.scheduler
+    }
+}
+
 impl<T: WasmModule> Module for WasmModuleHostActor<T> {
     type Instance = WasmModuleInstance<T::Instance>;
 
@@ -223,14 +234,6 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
             .expect("failed to initialize instance");
         let _ = instance.extract_descriptions();
         self.make_from_instance(instance)
-    }
-
-    fn replica_ctx(&self) -> &ReplicaContext {
-        &self.replica_context
-    }
-
-    fn scheduler(&self) -> &Scheduler {
-        &self.scheduler
     }
 }
 

@@ -1,10 +1,14 @@
+use std::pin::pin;
 use std::sync::{Arc, Mutex, Weak};
 
 use core_affinity::CoreId;
+use futures::FutureExt;
 use indexmap::IndexMap;
 use smallvec::SmallVec;
 use spacetimedb_data_structures::map::HashMap;
 use tokio::sync::{mpsc, oneshot, watch};
+
+use super::notify_once::NotifyOnce;
 
 /// A handle to a pool of CPU cores for running job threads on.
 ///
@@ -154,22 +158,24 @@ impl JobCore {
         T: ?Sized + 'static,
     {
         let (tx, rx) = mpsc::channel::<Box<Job<T>>>(Self::JOB_CHANNEL_LENGTH);
+        let close = Arc::new(NotifyOnce::new());
 
+        let closed = close.clone();
         let handle = tokio::runtime::Handle::current();
         std::thread::spawn(move || {
             let mut data = init();
             let data = unsize(&mut data);
-            handle.block_on(self.job_loop(rx, data))
+            handle.block_on(self.job_loop(rx, closed, data))
         });
 
-        JobThread { tx }
+        JobThread { tx, close }
     }
 
     // this shouldn't matter too much, since callers will need to wait for
     // the job to finish anyway.
     const JOB_CHANNEL_LENGTH: usize = 50;
 
-    async fn job_loop<T: ?Sized>(mut self, mut rx: mpsc::Receiver<Box<Job<T>>>, data: &mut T) {
+    async fn job_loop<T: ?Sized>(mut self, mut rx: mpsc::Receiver<Box<Job<T>>>, closed: Arc<NotifyOnce>, data: &mut T) {
         // this function is async because we need to recv on the repin channel
         // and the jobs channel, but the jobs being run are blocking
 
@@ -184,11 +190,18 @@ impl JobCore {
         };
 
         let job_loop = async {
-            while let Some(job) = rx.recv().await {
-                // blocking in place means that other futures on the same task
-                // won't get polled - in this case, that's just the repin loop,
-                // which is fine because it can just run before the next job.
-                tokio::task::block_in_place(|| job(data))
+            let mut closed = pin!(closed.notified().fuse());
+            loop {
+                tokio::select! {
+                    job = rx.recv() => {
+                        let Some(job) = job else { break };
+                        // blocking in place means that other futures on the same task
+                        // won't get polled - in this case, that's just the repin loop,
+                        // which is fine because it can just run before the next job.
+                        tokio::task::block_in_place(|| job(data))
+                    }
+                    () = &mut closed => rx.close(),
+                }
             }
         };
 
@@ -219,11 +232,15 @@ impl Drop for JobCoreGuard {
 /// the thread will shut down.
 pub struct JobThread<T: ?Sized> {
     tx: mpsc::Sender<Box<Job<T>>>,
+    close: Arc<NotifyOnce>,
 }
 
 impl<T: ?Sized> Clone for JobThread<T> {
     fn clone(&self) -> Self {
-        Self { tx: self.tx.clone() }
+        Self {
+            tx: self.tx.clone(),
+            close: self.close.clone(),
+        }
     }
 }
 
@@ -235,7 +252,7 @@ impl<T: ?Sized> JobThread<T> {
     /// The job (`f`) will be placed in a queue, and will run strictly after
     /// jobs ahead of it in the queue. If `f` panics, it will be bubbled up to
     /// the calling task.
-    pub async fn run<F, R>(&self, f: F) -> R
+    pub async fn run<F, R>(&self, f: F) -> Result<R, JobThreadClosed>
     where
         F: FnOnce(&mut T) -> R + Send + 'static,
         R: Send + 'static,
@@ -252,25 +269,43 @@ impl<T: ?Sized> JobThread<T> {
                 }
             }))
             .await
-            .expect("job thread terminated unexpectedly");
+            .map_err(|_| JobThreadClosed)?;
 
-        ret_rx.await.unwrap().unwrap_or_else(|e| std::panic::resume_unwind(e))
+        match ret_rx.await {
+            Ok(Ok(ret)) => Ok(ret),
+            Ok(Err(panic)) => std::panic::resume_unwind(panic),
+            Err(_closed) => Err(JobThreadClosed),
+        }
+    }
+
+    /// Shutdown the job thread.
+    pub fn close(&self) {
+        self.close.notify();
+    }
+
+    /// Returns a future that resolves once the job thread has been closed.
+    pub async fn closed(&self) {
+        self.tx.closed().await
     }
 
     /// Obtain a weak version of this handle.
     pub fn downgrade(&self) -> WeakJobThread<T> {
         let tx = self.tx.downgrade();
-        WeakJobThread { tx }
+        let close = Arc::downgrade(&self.close);
+        WeakJobThread { tx, close }
     }
 }
+
+pub struct JobThreadClosed;
 
 /// A weak version of `JobThread` that does not hold the thread open.
 pub struct WeakJobThread<T: ?Sized> {
     tx: mpsc::WeakSender<Box<Job<T>>>,
+    close: Weak<NotifyOnce>,
 }
 
 impl<T: ?Sized> WeakJobThread<T> {
     pub fn upgrade(&self) -> Option<JobThread<T>> {
-        self.tx.upgrade().map(|tx| JobThread { tx })
+        Option::zip(self.tx.upgrade(), self.close.upgrade()).map(|(tx, close)| JobThread { tx, close })
     }
 }

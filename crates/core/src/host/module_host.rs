@@ -17,14 +17,12 @@ use crate::subscription::execute_plan;
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use crate::subscription::tx::DeltaTx;
 use crate::util::asyncify;
-use crate::util::jobs::{JobCore, JobThread, WeakJobThread};
-use crate::util::lending_pool::{LendingPool, PoolClosed};
+use crate::util::jobs::{JobCore, JobThread, JobThreadClosed, WeakJobThread};
 use crate::vm::check_row_limit;
 use crate::worker_metrics::WORKER_METRICS;
 use anyhow::Context;
 use bytes::Bytes;
 use derive_more::From;
-use futures::{Future, FutureExt};
 use indexmap::IndexSet;
 use itertools::Itertools;
 use prometheus::{Histogram, IntGauge};
@@ -295,14 +293,17 @@ impl ReducersMap {
     }
 }
 
-pub trait Module: Send + Sync + 'static {
+pub trait DynModule: Send + Sync + 'static {
+    fn replica_ctx(&self) -> &Arc<ReplicaContext>;
+    fn scheduler(&self) -> &Scheduler;
+}
+
+pub trait Module: DynModule {
     type Instance: ModuleInstance;
     type InitialInstances<'a>: IntoIterator<Item = Self::Instance> + 'a;
     fn initial_instances(&mut self) -> Self::InitialInstances<'_>;
     fn info(&self) -> Arc<ModuleInfo>;
     fn create_instance(&self) -> Self::Instance;
-    fn replica_ctx(&self) -> &ReplicaContext;
-    fn scheduler(&self) -> &Scheduler;
 }
 
 pub trait ModuleInstance: Send + 'static {
@@ -442,7 +443,7 @@ impl<T: Module> ModuleInstance for AutoReplacingModuleInstance<T> {
 #[derive(Clone)]
 pub struct ModuleHost {
     pub info: Arc<ModuleInfo>,
-    inner: Arc<dyn DynModuleHost>,
+    module: Arc<dyn DynModule>,
     /// Called whenever a reducer call on this host panics.
     on_panic: Arc<dyn Fn() + Send + Sync + 'static>,
     job_tx: JobThread<dyn ModuleInstance>,
@@ -452,99 +453,14 @@ impl fmt::Debug for ModuleHost {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ModuleHost")
             .field("info", &self.info)
-            .field("inner", &Arc::as_ptr(&self.inner))
+            .field("module", &Arc::as_ptr(&self.module))
             .finish()
-    }
-}
-
-#[async_trait::async_trait]
-trait DynModuleHost: Send + Sync + 'static {
-    // async fn get_instance(&self, db: Identity) -> Result<Box<dyn ModuleInstance>, NoSuchModule>;
-    fn replica_ctx(&self) -> &ReplicaContext;
-    async fn exit(&self);
-    async fn exited(&self);
-}
-
-struct HostControllerActor<T: Module> {
-    module: Arc<T>,
-    instance_pool: LendingPool<T::Instance>,
-}
-
-impl<T: Module> HostControllerActor<T> {
-    #[allow(unused)]
-    fn spinup_new_instance(&self) {
-        let (module, instance_pool) = (self.module.clone(), self.instance_pool.clone());
-        rayon::spawn(move || {
-            let instance = module.create_instance();
-            match instance_pool.add(instance) {
-                Ok(()) => {}
-                Err(PoolClosed) => {
-                    // if the module closed since this new instance was requested, oh well, just throw it away
-                }
-            }
-        })
-    }
-}
-
-/// runs future A and future B concurrently. if A completes before B, B is cancelled. if B completes
-/// before A, A is polled to completion
-#[allow(unused)]
-async fn select_first<A: Future, B: Future<Output = ()>>(fut_a: A, fut_b: B) -> A::Output {
-    tokio::select! {
-        ret = fut_a => ret,
-        Err(x) = fut_b.never_error() => match x {},
-    }
-}
-
-#[async_trait::async_trait]
-impl<T: Module> DynModuleHost for HostControllerActor<T> {
-    /*
-    async fn get_instance(&self, db: Identity) -> Result<Box<dyn ModuleInstance>, NoSuchModule> {
-        // in the future we should do something like in the else branch here -- add more instances based on load.
-        // we need to do write-skew retries first - right now there's only ever once instance per module.
-        /*
-        let inst = if true {
-            self.instance_pool
-                .request_with_context(db)
-                .await
-                .map_err(|_| NoSuchModule)?
-        } else {
-            const GET_INSTANCE_TIMEOUT: Duration = Duration::from_millis(500);
-            select_first(
-                self.instance_pool.request_with_context(db),
-                tokio::time::sleep(GET_INSTANCE_TIMEOUT).map(|()| self.spinup_new_instance()),
-            )
-            .await
-            .map_err(|_| NoSuchModule)?
-        };
-
-         */
-        Ok(Box::new(AutoReplacingModuleInstance {
-            inst: self.module.create_instance(),
-            module: self.module.clone(),
-        }))
-    }
-
-     */
-
-    fn replica_ctx(&self) -> &ReplicaContext {
-        self.module.replica_ctx()
-    }
-
-    async fn exit(&self) {
-        self.module.scheduler().close();
-        self.instance_pool.close();
-        self.exited().await
-    }
-
-    async fn exited(&self) {
-        tokio::join!(self.module.scheduler().closed(), self.instance_pool.closed());
     }
 }
 
 pub struct WeakModuleHost {
     info: Arc<ModuleInfo>,
-    inner: Weak<dyn DynModuleHost>,
+    inner: Weak<dyn DynModule>,
     on_panic: Weak<dyn Fn() + Send + Sync + 'static>,
     tx: WeakJobThread<dyn ModuleInstance>,
 }
@@ -609,12 +525,7 @@ pub enum ClientConnectedError {
 impl ModuleHost {
     pub(super) fn new(module: impl Module, on_panic: impl Fn() + Send + Sync + 'static, core: JobCore) -> Self {
         let info = module.info();
-        let instance_pool = LendingPool::new();
         let module = Arc::new(module);
-        let inner = Arc::new(HostControllerActor {
-            module: module.clone(),
-            instance_pool,
-        });
         let on_panic = Arc::new(on_panic);
 
         let module_clone = module.clone();
@@ -627,7 +538,7 @@ impl ModuleHost {
         );
         ModuleHost {
             info,
-            inner,
+            module,
             on_panic,
             job_tx,
         }
@@ -678,15 +589,14 @@ impl ModuleHost {
             log::warn!("reducer {reducer} panicked");
             (self.on_panic)();
         });
-        let result = self
-            .job_tx
+        self.job_tx
             .run(move |inst| {
                 queue_timer.stop_and_record();
                 queue_length_gauge.dec();
                 f(inst)
             })
-            .await;
-        Ok(result)
+            .await
+            .map_err(|_: JobThreadClosed| NoSuchModule)
     }
 
     pub async fn disconnect_client(&self, client_id: ClientActorId) {
@@ -777,7 +687,7 @@ impl ModuleHost {
                 arg_bsatn: Bytes::new(),
             });
 
-            let stdb = self.inner.replica_ctx().relational_db.clone();
+            let stdb = self.module.replica_ctx().relational_db.clone();
             asyncify(move || {
                 stdb.with_auto_commit(workload, |mut_tx| {
                     mut_tx
@@ -830,7 +740,7 @@ impl ModuleHost {
                 timestamp: Timestamp::now(),
                 arg_bsatn: Bytes::new(),
             });
-            let stdb = self.inner.replica_ctx().relational_db.clone();
+            let stdb = self.module.replica_ctx().relational_db.clone();
             let database_identity = self.info.database_identity;
             asyncify(move || {
                 stdb.with_auto_commit(workload, |mut_tx| {
@@ -992,7 +902,7 @@ impl ModuleHost {
         &self,
         call_reducer_params: impl FnOnce(&MutTxId) -> anyhow::Result<Option<CallReducerParams>> + Send + 'static,
     ) -> Result<ReducerCallResult, ReducerCallError> {
-        let db = self.inner.replica_ctx().relational_db.clone();
+        let db = self.module.replica_ctx().relational_db.clone();
         // scheduled reducer name not fetched yet, anyway this is only for logging purpose
         const REDUCER: &str = "scheduled_reducer";
         let module = self.info.clone();
@@ -1038,7 +948,7 @@ impl ModuleHost {
     }
 
     pub async fn init_database(&self, program: Program) -> Result<Option<ReducerCallResult>, InitDatabaseError> {
-        let replica_ctx = self.inner.replica_ctx().clone();
+        let replica_ctx = self.module.replica_ctx().clone();
         let info = self.info.clone();
         self.call("<init_database>", move |inst| {
             init_database(&replica_ctx, &info.module_def, inst, program)
@@ -1060,11 +970,13 @@ impl ModuleHost {
     }
 
     pub async fn exit(&self) {
-        self.inner.exit().await
+        self.module.scheduler().close();
+        self.job_tx.close();
+        self.exited().await;
     }
 
     pub async fn exited(&self) {
-        self.inner.exited().await
+        tokio::join!(self.module.scheduler().closed(), self.job_tx.closed());
     }
 
     pub fn inject_logs(&self, log_level: LogLevel, message: &str) {
@@ -1160,7 +1072,7 @@ impl ModuleHost {
     pub fn downgrade(&self) -> WeakModuleHost {
         WeakModuleHost {
             info: self.info.clone(),
-            inner: Arc::downgrade(&self.inner),
+            inner: Arc::downgrade(&self.module),
             on_panic: Arc::downgrade(&self.on_panic),
             tx: self.job_tx.downgrade(),
         }
@@ -1171,7 +1083,7 @@ impl ModuleHost {
     }
 
     pub(crate) fn replica_ctx(&self) -> &ReplicaContext {
-        self.inner.replica_ctx()
+        self.module.replica_ctx()
     }
 }
 
@@ -1182,7 +1094,7 @@ impl WeakModuleHost {
         let tx = self.tx.upgrade()?;
         Some(ModuleHost {
             info: self.info.clone(),
-            inner,
+            module: inner,
             on_panic,
             job_tx: tx,
         })
