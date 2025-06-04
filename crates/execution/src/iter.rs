@@ -5,9 +5,9 @@ use spacetimedb_lib::{query::Delta, AlgebraicValue, ProductValue};
 use spacetimedb_physical_plan::plan::{
     HashJoin, IxJoin, IxScan, PhysicalExpr, PhysicalPlan, ProjectField, ProjectPlan, Sarg, Semi, TableScan, TupleField,
 };
+use spacetimedb_primitives::{IndexId, TableId};
 use spacetimedb_table::{
-    blob_store::BlobStore,
-    table::{IndexScanPointIter, IndexScanRangeIter, Table, TableScanIter},
+    table::{IndexScanPointIter, IndexScanRangeIter, TableAndIndex, TableScanIter},
     table_index::{TableIndex, TableIndexPointIter},
 };
 
@@ -383,13 +383,16 @@ pub struct UniqueIxJoin<'a> {
     /// The lhs of the join
     lhs: Box<Iter<'a>>,
     /// The rhs index
-    rhs_index: &'a TableIndex,
-    /// A handle to the datastore
-    rhs_table: &'a Table,
-    /// A handle to the blobstore
-    blob_store: &'a dyn BlobStore,
+    rhs_index: TableAndIndex<'a>,
     /// The lhs probe field
     lhs_field: &'a TupleField,
+}
+
+pub(super) fn get_index(tx: &impl Datastore, table_id: TableId, index_id: IndexId) -> Result<TableAndIndex<'_>> {
+    let table = tx.table_or_err(table_id)?;
+    table
+        .get_index_by_id_with_table(tx.blob_store(), index_id)
+        .ok_or_else(|| anyhow!("IndexId `{}` does not exist", index_id))
 }
 
 impl<'a> UniqueIxJoin<'a> {
@@ -398,15 +401,10 @@ impl<'a> UniqueIxJoin<'a> {
         Tx: Datastore + DeltaStore,
     {
         let lhs = Iter::build(&join.lhs, tx)?;
-        let rhs_table = tx.table_or_err(join.rhs.table_id)?;
-        let rhs_index = rhs_table
-            .get_index_by_id(join.rhs_index)
-            .ok_or_else(|| anyhow!("IndexId `{}` does not exist", join.rhs_index))?;
+        let rhs_index = get_index(tx, join.rhs.table_id, join.rhs_index)?;
         Ok(Self {
             lhs: Box::new(lhs),
             rhs_index,
-            rhs_table,
-            blob_store: tx.blob_store(),
             lhs_field: &join.lhs_field,
         })
     }
@@ -420,7 +418,6 @@ impl<'a> Iterator for UniqueIxJoin<'a> {
             self.rhs_index
                 .seek_point(&tuple.project(self.lhs_field))
                 .next()
-                .and_then(|ptr| self.rhs_table.get_row_ref(self.blob_store, ptr))
                 .map(Row::Ptr)
                 .map(|ptr| (tuple, ptr))
         })
@@ -468,11 +465,7 @@ pub struct UniqueIxJoinRhs<'a> {
     /// The lhs of the join
     lhs: Box<Iter<'a>>,
     /// The rhs index
-    rhs_index: &'a TableIndex,
-    /// A handle to the datastore
-    rhs_table: &'a Table,
-    /// A handle to the blobstore
-    blob_store: &'a dyn BlobStore,
+    rhs_index: TableAndIndex<'a>,
     /// The lhs probe field
     lhs_field: &'a TupleField,
 }
@@ -483,15 +476,10 @@ impl<'a> UniqueIxJoinRhs<'a> {
         Tx: Datastore + DeltaStore,
     {
         let lhs = Iter::build(&join.lhs, tx)?;
-        let rhs_table = tx.table_or_err(join.rhs.table_id)?;
-        let rhs_index = rhs_table
-            .get_index_by_id(join.rhs_index)
-            .ok_or_else(|| anyhow!("IndexId `{}` does not exist", join.rhs_index))?;
+        let rhs_index = get_index(tx, join.rhs.table_id, join.rhs_index)?;
         Ok(Self {
             lhs: Box::new(lhs),
             rhs_index,
-            rhs_table,
-            blob_store: tx.blob_store(),
             lhs_field: &join.lhs_field,
         })
     }
@@ -505,7 +493,6 @@ impl<'a> Iterator for UniqueIxJoinRhs<'a> {
             self.rhs_index
                 .seek_point(&tuple.project(self.lhs_field))
                 .next()
-                .and_then(|ptr| self.rhs_table.get_row_ref(self.blob_store, ptr))
                 .map(Row::Ptr)
         })
     }
@@ -518,13 +505,9 @@ pub struct IxJoinIter<'a> {
     /// The current lhs tuple
     lhs_tuple: Option<Tuple<'a>>,
     /// The rhs index
-    rhs_index: &'a TableIndex,
+    rhs_index: TableAndIndex<'a>,
     /// The current rhs index cursor
     rhs_index_cursor: Option<TableIndexPointIter<'a>>,
-    /// A handle to the datastore
-    rhs_table: &'a Table,
-    /// A handle to the blobstore
-    blob_store: &'a dyn BlobStore,
     /// The lhs probe field
     lhs_field: &'a TupleField,
 }
@@ -535,17 +518,12 @@ impl<'a> IxJoinIter<'a> {
         Tx: Datastore + DeltaStore,
     {
         let lhs = Iter::build(&join.lhs, tx)?;
-        let rhs_table = tx.table_or_err(join.rhs.table_id)?;
-        let rhs_index = rhs_table
-            .get_index_by_id(join.rhs_index)
-            .ok_or_else(|| anyhow!("IndexId `{}` does not exist", join.rhs_index))?;
+        let rhs_index = get_index(tx, join.rhs.table_id, join.rhs_index)?;
         Ok(Self {
             lhs: Box::new(lhs),
             lhs_tuple: None,
             rhs_index,
             rhs_index_cursor: None,
-            rhs_table,
-            blob_store: tx.blob_store(),
             lhs_field: &join.lhs_field,
         })
     }
@@ -558,27 +536,22 @@ impl<'a> Iterator for IxJoinIter<'a> {
         self.lhs_tuple
             .as_ref()
             .and_then(|tuple| {
-                self.rhs_index_cursor.as_mut().and_then(|cursor| {
-                    cursor.next().and_then(|ptr| {
-                        self.rhs_table
-                            .get_row_ref(self.blob_store, ptr)
-                            .map(Row::Ptr)
-                            .map(|ptr| (tuple.clone(), ptr))
-                    })
-                })
+                self.rhs_index_cursor
+                    .as_mut()
+                    .and_then(|cursor| cursor.next())
+                    // SAFETY: `ptr` came from `self.rhs_index`.
+                    .map(|ptr| unsafe { self.rhs_index.combine_with_ptr(ptr) })
+                    .map(Row::Ptr)
+                    .map(|ptr| (tuple.clone(), ptr))
             })
             .or_else(|| {
                 self.lhs.find_map(|tuple| {
                     let mut cursor = self.rhs_index.seek_point(&tuple.project(self.lhs_field));
-                    cursor.next().and_then(|ptr| {
-                        self.rhs_table
-                            .get_row_ref(self.blob_store, ptr)
-                            .map(Row::Ptr)
-                            .map(|ptr| {
-                                self.lhs_tuple = Some(tuple.clone());
-                                self.rhs_index_cursor = Some(cursor);
-                                (tuple, ptr)
-                            })
+                    cursor.next().map(|ptr| {
+                        let ptr = Row::Ptr(ptr);
+                        self.lhs_tuple = Some(tuple.clone());
+                        self.rhs_index_cursor = Some(cursor.index());
+                        (tuple, ptr)
                     })
                 })
             })
@@ -645,13 +618,9 @@ pub struct IxJoinRhs<'a> {
     /// The lhs of the join
     lhs: Box<Iter<'a>>,
     /// The rhs index
-    rhs_index: &'a TableIndex,
+    rhs_index: TableAndIndex<'a>,
     /// The current rhs index cursor
     rhs_index_cursor: Option<TableIndexPointIter<'a>>,
-    /// A handle to the datastore
-    rhs_table: &'a Table,
-    /// A handle to the blobstore
-    blob_store: &'a dyn BlobStore,
     /// The lhs probe field
     lhs_field: &'a TupleField,
 }
@@ -662,16 +631,11 @@ impl<'a> IxJoinRhs<'a> {
         Tx: Datastore + DeltaStore,
     {
         let lhs = Iter::build(&join.lhs, tx)?;
-        let rhs_table = tx.table_or_err(join.rhs.table_id)?;
-        let rhs_index = rhs_table
-            .get_index_by_id(join.rhs_index)
-            .ok_or_else(|| anyhow!("IndexId `{}` does not exist", join.rhs_index))?;
+        let rhs_index = get_index(tx, join.rhs.table_id, join.rhs_index)?;
         Ok(Self {
             lhs: Box::new(lhs),
             rhs_index,
             rhs_index_cursor: None,
-            rhs_table,
-            blob_store: tx.blob_store(),
             lhs_field: &join.lhs_field,
         })
     }
@@ -686,18 +650,17 @@ impl<'a> Iterator for IxJoinRhs<'a> {
             .and_then(|cursor| {
                 cursor
                     .next()
-                    .and_then(|ptr| self.rhs_table.get_row_ref(self.blob_store, ptr))
+                    // SAFETY: `ptr` came from `self.rhs_index`.
+                    .map(|ptr| unsafe { self.rhs_index.combine_with_ptr(ptr) })
                     .map(Row::Ptr)
             })
             .or_else(|| {
                 self.lhs.find_map(|tuple| {
                     let mut cursor = self.rhs_index.seek_point(&tuple.project(self.lhs_field));
-                    cursor.next().and_then(|ptr| {
-                        self.rhs_table
-                            .get_row_ref(self.blob_store, ptr)
-                            .map(Row::Ptr)
-                            .inspect(|_| self.rhs_index_cursor = Some(cursor))
-                    })
+                    cursor
+                        .next()
+                        .map(Row::Ptr)
+                        .inspect(|_| self.rhs_index_cursor = Some(cursor.index()))
                 })
             })
     }
