@@ -7,6 +7,7 @@ using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using SpacetimeDB.BSATN;
 using SpacetimeDB.ClientApi;
+using SpacetimeDB.EventHandling;
 
 #nullable enable
 namespace SpacetimeDB
@@ -134,8 +135,18 @@ namespace SpacetimeDB
         // I didn't do that because that delays the index updates until after the row is processed.
         // In theory, that shouldn't be the issue, but I didn't want to break it right before leaving :)
         //          - Ingvar
-        private event Action<Row>? OnInternalInsert;
-        private event Action<Row>? OnInternalDelete;
+        private AbstractEventHandler<Row> OnInternalInsertHandler { get; } = new();
+        private event Action<Row> OnInternalInsert
+        {
+            add => OnInternalInsertHandler.AddListener(value);
+            remove => OnInternalInsertHandler.RemoveListener(value);
+        }
+        private AbstractEventHandler<Row> OnInternalDeleteHandler { get; } = new();
+        private event Action<Row> OnInternalDelete
+        {
+            add => OnInternalDeleteHandler.AddListener(value);
+            remove => OnInternalDeleteHandler.RemoveListener(value);
+        }
 
         // These are implementations of the type-erased interface.
         object? IRemoteTableHandle.GetPrimaryKey(IStructuralReadWrite row) => GetPrimaryKey((Row)row);
@@ -177,12 +188,29 @@ namespace SpacetimeDB
         IStructuralReadWrite IRemoteTableHandle.DecodeValue(BinaryReader reader) => Serializer.Read(reader);
 
         public delegate void RowEventHandler(EventContext context, Row row);
-        public event RowEventHandler? OnInsert;
-        public event RowEventHandler? OnDelete;
-        public event RowEventHandler? OnBeforeDelete;
+        private CustomRowEventHandler OnInsertHandler { get; } = new();
+        public event RowEventHandler OnInsert {
+            add => OnInsertHandler.AddListener(value);
+            remove => OnInsertHandler.RemoveListener(value);
+        }
+        private CustomRowEventHandler OnDeleteHandler { get; } = new();
+        public event RowEventHandler OnDelete {
+            add => OnDeleteHandler.AddListener(value);
+            remove => OnDeleteHandler.RemoveListener(value);
+        }
+        private CustomRowEventHandler OnBeforeDeleteHandler { get; } = new();
+        public event RowEventHandler OnBeforeDelete {
+            add => OnBeforeDeleteHandler.AddListener(value);
+            remove => OnBeforeDeleteHandler.RemoveListener(value);
+        }
 
         public delegate void UpdateEventHandler(EventContext context, Row oldRow, Row newRow);
-        public event UpdateEventHandler? OnUpdate;
+        private CustomUpdateEventHandler OnUpdateHandler { get; } = new();
+        public event UpdateEventHandler OnUpdate
+        {
+            add => OnUpdateHandler.AddListener(value);
+            remove => OnUpdateHandler.RemoveListener(value);
+        }
 
         public int Count => (int)Entries.CountDistinct;
 
@@ -195,7 +223,7 @@ namespace SpacetimeDB
         {
             try
             {
-                OnInsert?.Invoke((EventContext)context, (Row)row);
+                OnInsertHandler.Invoke((EventContext)context, (Row)row);
             }
             catch (Exception e)
             {
@@ -207,7 +235,7 @@ namespace SpacetimeDB
         {
             try
             {
-                OnDelete?.Invoke((EventContext)context, (Row)row);
+                OnDeleteHandler.Invoke((EventContext)context, (Row)row);
             }
             catch (Exception e)
             {
@@ -219,7 +247,7 @@ namespace SpacetimeDB
         {
             try
             {
-                OnBeforeDelete?.Invoke((EventContext)context, (Row)row);
+                OnBeforeDeleteHandler.Invoke((EventContext)context, (Row)row);
             }
             catch (Exception e)
             {
@@ -231,7 +259,7 @@ namespace SpacetimeDB
         {
             try
             {
-                OnUpdate?.Invoke((EventContext)context, (Row)oldRow, (Row)newRow);
+                OnUpdateHandler.Invoke((EventContext)context, (Row)oldRow, (Row)newRow);
             }
             catch (Exception e)
             {
@@ -276,7 +304,7 @@ namespace SpacetimeDB
             {
                 if (value is Row newRow)
                 {
-                    OnInternalInsert?.Invoke(newRow);
+                    OnInternalInsertHandler.Invoke(newRow);
                 }
                 else
                 {
@@ -287,7 +315,7 @@ namespace SpacetimeDB
             {
                 if (oldValue is Row oldRow)
                 {
-                    OnInternalDelete?.Invoke((Row)oldValue);
+                    OnInternalDeleteHandler.Invoke(oldRow);
                 }
                 else
                 {
@@ -297,7 +325,7 @@ namespace SpacetimeDB
 
                 if (newValue is Row newRow)
                 {
-                    OnInternalInsert?.Invoke(newRow);
+                    OnInternalInsertHandler.Invoke(newRow);
                 }
                 else
                 {
@@ -309,7 +337,7 @@ namespace SpacetimeDB
             {
                 if (value is Row oldRow)
                 {
-                    OnInternalDelete?.Invoke(oldRow);
+                    OnInternalDeleteHandler.Invoke(oldRow);
                 }
             }
         }
@@ -332,6 +360,37 @@ namespace SpacetimeDB
             wasUpdated.Clear();
             wasRemoved.Clear();
 
+        }
+        
+        private class CustomRowEventHandler
+        {
+            private EventListeners<RowEventHandler> Listeners { get; } = new();
+
+            public void Invoke(EventContext ctx, Row row)
+            {
+                for (var i = Listeners.Count - 1; i >= 0; i--)
+                {
+                    Listeners[i]?.Invoke(ctx, row);
+                }
+            }
+        
+            public void AddListener(RowEventHandler listener) => Listeners.Add(listener);
+            public void RemoveListener(RowEventHandler listener) => Listeners.Remove(listener);
+        }
+        private class CustomUpdateEventHandler
+        {
+            private EventListeners<UpdateEventHandler> Listeners { get; } = new();
+
+            public void Invoke(EventContext ctx, Row oldRow, Row newRow)
+            {
+                for (var i = Listeners.Count - 1; i >= 0; i--)
+                {
+                    Listeners[i]?.Invoke(ctx, oldRow, newRow);
+                }
+            }
+        
+            public void AddListener(UpdateEventHandler listener) => Listeners.Add(listener);
+            public void RemoveListener(UpdateEventHandler listener) => Listeners.Remove(listener);
         }
     }
 }
