@@ -1,4 +1,4 @@
-use core_affinity::CoreId;
+pub use core_affinity::CoreId;
 use crossbeam_queue::ArrayQueue;
 use spacetimedb_paths::server::{ConfigToml, LogsDir};
 use std::path::PathBuf;
@@ -157,6 +157,7 @@ pub struct Cores {
     pub databases: JobCores,
     pub tokio_workers: ThreadPoolCores,
     pub rayon: ThreadPoolCores,
+    pub remaining: Box<[CoreId]>,
 }
 
 impl Cores {
@@ -174,10 +175,13 @@ impl Cores {
 
         let rayon = ThreadPoolCores(Some(cores.take(frac(1.0 / 8.0)).collect()));
 
+        let remaining = cores.collect();
+
         Some(Self {
             databases,
             tokio_workers,
             rayon,
+            remaining,
         })
     }
 }
