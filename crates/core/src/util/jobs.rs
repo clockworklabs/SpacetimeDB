@@ -112,9 +112,18 @@ impl JobCoresInner {
         // This wraps around in the 0 case, so the partition point is simply
         // moved to the end of the ring buffer.
 
-        let steal_from = self.next_core.checked_sub(1).unwrap_or(self.cores.len() - 1);
+        let steal_from_index = self.next_core.checked_sub(1).unwrap_or(self.cores.len() - 1);
 
-        if let Ok([(_, core), (_, steal_from)]) = self.cores.get_disjoint_indices_mut([core_index, steal_from]) {
+        // if this core was already at `next_core - 1`, we don't need to steal from anywhere
+        let (core, steal_from) = match self.cores.get_disjoint_indices_mut([core_index, steal_from_index]) {
+            Ok([(_, core), (_, steal_from)]) => (core, Some(steal_from)),
+            Err(_) => (&mut self.cores[core_index], None),
+        };
+
+        let pos = core.jobs.iter().position(|x| *x == id).unwrap();
+        core.jobs.remove(pos);
+
+        if let Some(steal_from) = steal_from {
             // This unwrap will never fail, since cores below `next_core` always have
             // at least 1 thread on them. Edge case: if `next_core` is 0, `steal_from`
             // would wrap around to the end - but when `next_core` is 0, every core has
@@ -122,16 +131,13 @@ impl JobCoresInner {
             // would be empty, but we know that's impossible because we're deallocating
             // a thread right now.
             let stolen = steal_from.jobs.pop().unwrap();
-
-            let pos = core.jobs.iter().position(|x| *x == id).unwrap();
-            core.jobs[pos] = stolen;
-
+            // the way we pop and push here means that older job threads will be less
+            // likely to be repinned, while younger ones are liable to bounce around.
+            core.jobs.push(stolen);
             self.job_threads[&stolen].send_replace(core_id);
-        } else {
-            // this core was already at `next_core - 1` - nothing needs to be done!
         }
 
-        self.next_core = steal_from;
+        self.next_core = steal_from_index;
     }
 }
 
