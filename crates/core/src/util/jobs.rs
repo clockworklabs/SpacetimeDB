@@ -1,8 +1,6 @@
-use std::pin::pin;
 use std::sync::{Arc, Mutex, Weak};
 
 use core_affinity::CoreId;
-use futures::FutureExt;
 use indexmap::IndexMap;
 use smallvec::SmallVec;
 use spacetimedb_data_structures::map::HashMap;
@@ -197,22 +195,20 @@ impl JobCore {
         };
 
         let job_loop = async {
-            let mut closed = pin!(closed.notified().fuse());
-            loop {
-                tokio::select! {
-                    job = rx.recv() => {
-                        let Some(job) = job else { break };
-                        // blocking in place means that other futures on the same task
-                        // won't get polled - in this case, that's just the repin loop,
-                        // which is fine because it can just run before the next job.
-                        tokio::task::block_in_place(|| job(data))
-                    }
-                    () = &mut closed => rx.close(),
-                }
+            while let Some(job) = rx.recv().await {
+                // blocking in place means that other futures on the same task
+                // won't get polled - in this case, that's just the repin loop,
+                // which is fine because it can just run before the next job.
+                tokio::task::block_in_place(|| job(data))
             }
         };
 
-        super::also_poll(job_loop, repin_loop).await
+        tokio::select! {
+            () = super::also_poll(job_loop, repin_loop) => {}
+            // when we receive a close notification, we immediately drop all
+            // remaining jobs in the queue.
+            () = closed.notified() => {}
+        }
     }
 }
 
