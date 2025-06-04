@@ -178,7 +178,7 @@ impl JobCore {
 
     // this shouldn't matter too much, since callers will need to wait for
     // the job to finish anyway.
-    const JOB_CHANNEL_LENGTH: usize = 50;
+    const JOB_CHANNEL_LENGTH: usize = 64;
 
     async fn job_loop<T: ?Sized>(mut self, mut rx: mpsc::Receiver<Box<Job<T>>>, closed: Arc<NotifyOnce>, data: &mut T) {
         // this function is async because we need to recv on the repin channel
