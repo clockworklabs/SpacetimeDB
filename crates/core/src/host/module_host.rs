@@ -17,7 +17,8 @@ use crate::subscription::execute_plan;
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use crate::subscription::tx::DeltaTx;
 use crate::util::asyncify;
-use crate::util::lending_pool::{LendingPool, LentResource, PoolClosed};
+use crate::util::jobs::{JobCore, JobThread, WeakJobThread};
+use crate::util::lending_pool::{LendingPool, PoolClosed};
 use crate::vm::check_row_limit;
 use crate::worker_metrics::WORKER_METRICS;
 use anyhow::Context;
@@ -406,14 +407,14 @@ pub struct CallReducerParams {
 // TODO: figure out how we want to handle traps. maybe it should just not return to the LendingPool and
 //       let the get_instance logic handle it?
 struct AutoReplacingModuleInstance<T: Module> {
-    inst: LentResource<T::Instance>,
+    inst: T::Instance,
     module: Arc<T>,
 }
 
 impl<T: Module> AutoReplacingModuleInstance<T> {
     fn check_trap(&mut self) {
         if self.inst.trapped() {
-            *self.inst = self.module.create_instance()
+            self.inst = self.module.create_instance()
         }
     }
 }
@@ -444,6 +445,7 @@ pub struct ModuleHost {
     inner: Arc<dyn DynModuleHost>,
     /// Called whenever a reducer call on this host panics.
     on_panic: Arc<dyn Fn() + Send + Sync + 'static>,
+    job_tx: JobThread<dyn ModuleInstance>,
 }
 
 impl fmt::Debug for ModuleHost {
@@ -457,7 +459,7 @@ impl fmt::Debug for ModuleHost {
 
 #[async_trait::async_trait]
 trait DynModuleHost: Send + Sync + 'static {
-    async fn get_instance(&self, db: Identity) -> Result<Box<dyn ModuleInstance>, NoSuchModule>;
+    // async fn get_instance(&self, db: Identity) -> Result<Box<dyn ModuleInstance>, NoSuchModule>;
     fn replica_ctx(&self) -> &ReplicaContext;
     async fn exit(&self);
     async fn exited(&self);
@@ -494,9 +496,11 @@ async fn select_first<A: Future, B: Future<Output = ()>>(fut_a: A, fut_b: B) -> 
 
 #[async_trait::async_trait]
 impl<T: Module> DynModuleHost for HostControllerActor<T> {
+    /*
     async fn get_instance(&self, db: Identity) -> Result<Box<dyn ModuleInstance>, NoSuchModule> {
         // in the future we should do something like in the else branch here -- add more instances based on load.
         // we need to do write-skew retries first - right now there's only ever once instance per module.
+        /*
         let inst = if true {
             self.instance_pool
                 .request_with_context(db)
@@ -511,11 +515,15 @@ impl<T: Module> DynModuleHost for HostControllerActor<T> {
             .await
             .map_err(|_| NoSuchModule)?
         };
+
+         */
         Ok(Box::new(AutoReplacingModuleInstance {
-            inst,
+            inst: self.module.create_instance(),
             module: self.module.clone(),
         }))
     }
+
+     */
 
     fn replica_ctx(&self) -> &ReplicaContext {
         self.module.replica_ctx()
@@ -536,6 +544,7 @@ pub struct WeakModuleHost {
     info: Arc<ModuleInfo>,
     inner: Weak<dyn DynModuleHost>,
     on_panic: Weak<dyn Fn() + Send + Sync + 'static>,
+    tx: WeakJobThread<dyn ModuleInstance>,
 }
 
 #[derive(Debug)]
@@ -596,16 +605,30 @@ pub enum ClientConnectedError {
 }
 
 impl ModuleHost {
-    pub fn new(mut module: impl Module, on_panic: impl Fn() + Send + Sync + 'static) -> Self {
+    pub(super) fn new(module: impl Module, on_panic: impl Fn() + Send + Sync + 'static, core: JobCore) -> Self {
         let info = module.info();
         let instance_pool = LendingPool::new();
-        instance_pool.add_multiple(module.initial_instances()).unwrap();
+        let module = Arc::new(module);
         let inner = Arc::new(HostControllerActor {
-            module: Arc::new(module),
+            module: module.clone(),
             instance_pool,
         });
         let on_panic = Arc::new(on_panic);
-        ModuleHost { info, inner, on_panic }
+
+        let module_clone = module.clone();
+        let job_tx = core.start(
+            move || AutoReplacingModuleInstance {
+                inst: module_clone.create_instance(),
+                module: module_clone,
+            },
+            |x| x as &mut dyn ModuleInstance,
+        );
+        ModuleHost {
+            info,
+            inner,
+            on_panic,
+            job_tx,
+        }
     }
 
     #[inline]
@@ -623,14 +646,11 @@ impl ModuleHost {
         F: FnOnce(&mut dyn ModuleInstance) -> R + Send + 'static,
         R: Send + 'static,
     {
-        let mut inst = {
-            // Record the time spent waiting in the queue
-            let _guard = WORKER_METRICS
-                .reducer_wait_time
-                .with_label_values(&self.info.database_identity, reducer)
-                .start_timer();
-            self.inner.get_instance(self.info.database_identity).await?
-        };
+        // Record the time until our function starts running.
+        let queue_timer = WORKER_METRICS
+            .reducer_wait_time
+            .with_label_values(&self.info.database_identity, reducer)
+            .start_timer();
 
         // Operations on module instances (e.g. calling reducers) is blocking,
         // partially because the computation can potentialyl take a long time
@@ -645,7 +665,13 @@ impl ModuleHost {
             log::warn!("reducer {reducer} panicked");
             (self.on_panic)();
         });
-        let result = asyncify(move || f(&mut *inst)).await;
+        let result = self
+            .job_tx
+            .run(move |inst| {
+                queue_timer.stop_and_record();
+                f(inst)
+            })
+            .await;
         Ok(result)
     }
 
@@ -1122,6 +1148,7 @@ impl ModuleHost {
             info: self.info.clone(),
             inner: Arc::downgrade(&self.inner),
             on_panic: Arc::downgrade(&self.on_panic),
+            tx: self.job_tx.downgrade(),
         }
     }
 
@@ -1138,10 +1165,12 @@ impl WeakModuleHost {
     pub fn upgrade(&self) -> Option<ModuleHost> {
         let inner = self.inner.upgrade()?;
         let on_panic = self.on_panic.upgrade()?;
+        let tx = self.tx.upgrade()?;
         Some(ModuleHost {
             info: self.info.clone(),
             inner,
             on_panic,
+            job_tx: tx,
         })
     }
 }

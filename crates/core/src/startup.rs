@@ -1,5 +1,8 @@
+use core_affinity::CoreId;
+use crossbeam_queue::ArrayQueue;
 use spacetimedb_paths::server::{ConfigToml, LogsDir};
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 use tracing_appender::rolling;
 use tracing_core::LevelFilter;
@@ -11,23 +14,7 @@ use tracing_subscriber::prelude::*;
 use tracing_subscriber::{reload, EnvFilter};
 
 use crate::config::{ConfigFile, LogConfig};
-
-pub struct StartupOptions {
-    /// Options for tracing to configure the global tracing subscriber. Tracing will be disabled
-    /// if `None`.
-    pub tracing: Option<TracingOptions>,
-    /// Whether or not to configure the global rayon threadpool.
-    pub rayon: bool,
-}
-
-impl Default for StartupOptions {
-    fn default() -> Self {
-        Self {
-            tracing: Some(TracingOptions::default()),
-            rayon: true,
-        }
-    }
-}
+use crate::util::jobs::JobCores;
 
 pub struct TracingOptions {
     pub config: LogConfig,
@@ -54,19 +41,12 @@ impl Default for TracingOptions {
         }
     }
 }
-
-impl StartupOptions {
-    pub fn configure(self) {
-        if let Some(tracing_opts) = self.tracing {
-            configure_tracing(tracing_opts)
-        }
-        if self.rayon {
-            configure_rayon()
-        }
-    }
+#[must_use]
+pub fn pin_threads() -> Cores {
+    Cores::get().unwrap_or_default()
 }
 
-fn configure_tracing(opts: TracingOptions) {
+pub fn configure_tracing(opts: TracingOptions) {
     // Use this to change log levels at runtime.
     // This means you can change the default log level to trace
     // if you are trying to debug an issue and need more logs on then turn it off
@@ -172,24 +152,93 @@ fn reload_config<S>(conf_file: &ConfigToml, reload_handle: &reload::Handle<EnvFi
     }
 }
 
-fn configure_rayon() {
-    rayon_core::ThreadPoolBuilder::new()
-        .thread_name(|_idx| "rayon-worker".to_string())
-        .spawn_handler(thread_spawn_handler(tokio::runtime::Handle::current()))
-        // TODO(perf, pgoldman 2024-02-22):
-        // in the case where we have many modules running many reducers,
-        // we'll wind up with Rayon threads competing with each other and with Tokio threads
-        // for CPU time.
-        //
-        // We should investigate creating two separate CPU pools,
-        // possibly via https://docs.rs/nix/latest/nix/sched/fn.sched_setaffinity.html,
-        // and restricting Tokio threads to one CPU pool
-        // and Rayon threads to the other.
-        // Then we should give Tokio and Rayon each a number of worker threads
-        // equal to the size of their pool.
-        .num_threads(std::thread::available_parallelism().unwrap().get() / 2)
-        .build_global()
-        .unwrap()
+#[derive(Default)]
+pub struct Cores {
+    pub databases: JobCores,
+    pub tokio_workers: ThreadPoolCores,
+    pub rayon: ThreadPoolCores,
+}
+
+impl Cores {
+    fn get() -> Option<Self> {
+        let cores = &mut core_affinity::get_core_ids()
+            .filter(|cores| cores.len() >= 8)?
+            .into_iter();
+
+        let total = cores.len() as f64;
+        let frac = |frac: f64| (total * frac).ceil() as usize;
+
+        let databases = cores.take(frac(1.0 / 8.0)).collect();
+
+        let tokio_workers = ThreadPoolCores(Some(cores.take(frac(4.0 / 8.0)).collect()));
+
+        let rayon = ThreadPoolCores(Some(cores.take(frac(1.0 / 8.0)).collect()));
+
+        Some(Self {
+            databases,
+            tokio_workers,
+            rayon,
+        })
+    }
+}
+
+type CoreQueue = Arc<ArrayQueue<CoreId>>;
+fn vec_to_queue(cores: Vec<CoreId>) -> CoreQueue {
+    let queue = Arc::new(ArrayQueue::new(cores.len()));
+    for core in cores {
+        queue.push(core).unwrap();
+    }
+    queue
+}
+
+#[derive(Default)]
+pub struct ThreadPoolCores(Option<Vec<CoreId>>);
+
+impl ThreadPoolCores {
+    fn into_setup_fn(self) -> Option<(usize, impl Fn())> {
+        self.0.map(|cores| {
+            let cores = vec_to_queue(cores);
+            (cores.len(), move || {
+                if let Some(core) = cores.pop() {
+                    core_affinity::set_for_current(core);
+                }
+            })
+        })
+    }
+
+    pub fn configure_tokio(self, builder: &mut tokio::runtime::Builder) {
+        if let Some((num, setup)) = self.into_setup_fn() {
+            // `on_thread_start` gets called for both async worker threads and blocking threads,
+            // but the first `worker_threads` threads that tokio spawns are worker threads,
+            // so this ends up working fine
+            builder.worker_threads(num).on_thread_start(setup);
+        }
+    }
+
+    pub fn configure_rayon(self, tokio_handle: &tokio::runtime::Handle) {
+        rayon_core::ThreadPoolBuilder::new()
+            .thread_name(|_idx| "rayon-worker".to_string())
+            .spawn_handler(thread_spawn_handler(tokio_handle))
+            // TODO(perf, pgoldman 2024-02-22):
+            // in the case where we have many modules running many reducers,
+            // we'll wind up with Rayon threads competing with each other and with Tokio threads
+            // for CPU time.
+            //
+            // We should investigate creating two separate CPU pools,
+            // possibly via https://docs.rs/nix/latest/nix/sched/fn.sched_setaffinity.html,
+            // and restricting Tokio threads to one CPU pool
+            // and Rayon threads to the other.
+            // Then we should give Tokio and Rayon each a number of worker threads
+            // equal to the size of their pool.
+            .num_threads(self.0.as_ref().map_or(0, |cores| cores.len()))
+            .start_handler(move |i| {
+                if let Some(cores) = &self.0 {
+                    core_affinity::set_for_current(cores[i]);
+                }
+            })
+            .build_global()
+            .unwrap()
+    }
 }
 
 /// A Rayon [spawn_handler](https://docs.rs/rustc-rayon-core/latest/rayon_core/struct.ThreadPoolBuilder.html#method.spawn_handler)
@@ -205,7 +254,9 @@ fn configure_rayon() {
 /// i.e. that every async operation they invoke immediately completes.
 /// I (pgoldman 2024-02-22) believe that our Rayon threads only ever send to unbounded channels,
 /// and therefore never wait.
-fn thread_spawn_handler(rt: tokio::runtime::Handle) -> impl FnMut(rayon::ThreadBuilder) -> Result<(), std::io::Error> {
+fn thread_spawn_handler(
+    rt: &tokio::runtime::Handle,
+) -> impl FnMut(rayon::ThreadBuilder) -> Result<(), std::io::Error> + '_ {
     move |thread| {
         let rt = rt.clone();
         let mut builder = std::thread::Builder::new();
