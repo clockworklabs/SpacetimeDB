@@ -32,6 +32,7 @@ use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_table::page_pool::PagePool;
 use std::future::Future;
 use std::ops::Deref;
+use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tempfile::TempDir;
@@ -98,6 +99,18 @@ pub struct HostController {
     runtimes: Arc<HostRuntimes>,
     /// The CPU cores that are reserved for running databases on.
     db_cores: JobCores,
+
+    /// Opaque identifier for this `HostController`.
+    ///
+    /// I (pgoldman 2025-06-04) am using this to determine
+    /// whether we have multiple competing `HostController`s.
+    nonce: u64,
+}
+
+fn next_host_controller_nonce() -> u64 {
+    static HOST_CONSTROLLER_NONCE: AtomicU64 = AtomicU64::new(0);
+
+    HOST_CONSTROLLER_NONCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
 
 struct HostRuntimes {
@@ -174,8 +187,8 @@ impl HostController {
         durability: Arc<dyn DurabilityProvider>,
         db_cores: JobCores,
     ) -> Self {
-        let backtrace = std::backtrace::Backtrace::force_capture();
-        log::info!("HostController::new(data_dir: {data_dir:?}, ...) from {backtrace}");
+        let nonce = next_host_controller_nonce();
+        log::info!("HostController::new(data_dir: {data_dir:?}, ...) with nonce {nonce}");
         Self {
             hosts: <_>::default(),
             default_config,
@@ -186,6 +199,7 @@ impl HostController {
             data_dir,
             page_pool: PagePool::new(default_config.page_pool_max_size),
             db_cores,
+            nonce,
         }
     }
 
@@ -232,11 +246,13 @@ impl HostController {
         database: Database,
         replica_id: u64,
     ) -> anyhow::Result<watch::Receiver<ModuleHost>> {
+        let nonce = self.nonce;
+        info!("[{nonce}] watch_maybe_launch_module_host({database:#?}, {replica_id})",);
         // Try a read lock first.
         {
             let guard = self.acquire_read_lock(replica_id).await;
             if let Some(host) = &*guard {
-                trace!("cached host {}/{}", database.database_identity, replica_id);
+                info!("[{nonce}] cached host {}/{}", database.database_identity, replica_id);
                 return Ok(host.module.subscribe());
             }
         }
@@ -246,15 +262,14 @@ impl HostController {
         // we'll need to check again if a module was added meanwhile.
         let mut guard: OwnedRwLockWriteGuard<Option<Host>> = self.acquire_write_lock(replica_id).await;
         if let Some(host) = &*guard {
-            trace!(
-                "cached host {}/{} (lock upgrade)",
-                database.database_identity,
-                replica_id
+            info!(
+                "[{nonce}] cached host {}/{} (lock upgrade)",
+                database.database_identity, replica_id
             );
             return Ok(host.module.subscribe());
         }
 
-        trace!("launch host {}/{}", database.database_identity, replica_id);
+        info!("[{nonce}] launch host {}/{}", database.database_identity, replica_id);
         let host = self.try_init_host(database, replica_id).await?;
 
         let rx = host.module.subscribe();
@@ -526,8 +541,6 @@ impl HostController {
     }
 
     async fn try_init_host(&self, database: Database, replica_id: u64) -> anyhow::Result<Host> {
-        let backtrace = std::backtrace::Backtrace::force_capture();
-        log::info!("try_init_host(database: {database:?}, replica_id: {replica_id}) at {backtrace}");
         Host::try_init(self, database, replica_id).await
     }
 }

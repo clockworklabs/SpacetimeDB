@@ -179,9 +179,6 @@ impl<T: Encode + Send + Sync + 'static> Local<T> {
     ///
     /// Returns the durable [`TxOffset`], if any.
     pub async fn close(mut self) -> anyhow::Result<Option<TxOffset>> {
-        let backtrace = std::backtrace::Backtrace::force_capture();
-        info!("close local durability at {backtrace}");
-
         let this = self.0.take().unwrap();
 
         drop(this.queue);
