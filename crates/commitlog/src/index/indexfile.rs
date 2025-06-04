@@ -17,7 +17,7 @@ const ENTRY_SIZE: usize = KEY_SIZE + mem::size_of::<u64>();
 ///
 /// `IndexFileMut` provides efficient read and write access to an index file, which stores
 /// key-value pairs
-/// Succesive key written should be sorted in ascending order, 0 is invalid-key value
+/// Successive key written should be sorted in ascending order, 0 is invalid-key value
 #[derive(Debug)]
 pub struct IndexFileMut<Key> {
     // A mutable memory-mapped buffer that represents the file contents.
@@ -185,7 +185,7 @@ impl<Key: Into<u64> + From<u64>> IndexFileMut<Key> {
     /// Asynchronously flushes any pending changes to the index file
     ///
     /// Due to Async nature, `Ok(())` does not guarantee that the changes are flushed.
-    /// an `Err` value indicates it definately did not succeed
+    /// an `Err` value indicates it definitely did not succeed
     pub fn async_flush(&self) -> io::Result<()> {
         self.inner.flush_async()
     }

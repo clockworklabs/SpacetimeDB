@@ -217,7 +217,7 @@ pub struct SpacetimePaths {
 }
 
 impl SpacetimePaths {
-    /// Get the default directories for the currrent platform.
+    /// Get the default directories for the current platform.
     ///
     /// Returns an error if the platform director(y/ies) cannot be found.
     pub fn platform_defaults() -> anyhow::Result<Self> {

@@ -324,7 +324,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
     // case.
     //
     /// The method also performs various measurements and records energy usage,
-    /// as well as broadcasting a [`ModuleEvent`] containg information about
+    /// as well as broadcasting a [`ModuleEvent`] containing information about
     /// the outcome of the call.
     #[tracing::instrument(level = "trace", skip_all)]
     fn call_reducer_with_tx(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> ReducerCallResult {
@@ -472,7 +472,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
                 );
                 EventStatus::Failed(errmsg.into())
             }
-            // We haven't actually comitted yet - `commit_and_broadcast_event` will commit
+            // We haven't actually committed yet - `commit_and_broadcast_event` will commit
             // for us and replace this with the actual database update.
             //
             // Detecting a new client, and inserting it in `st_clients`

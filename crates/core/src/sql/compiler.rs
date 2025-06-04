@@ -431,7 +431,7 @@ mod tests {
 
         let tx = begin_tx(&db);
         // Note, order does not matter.
-        // The sargable predicate occurs first adn we can generate an index scan.
+        // The sargable predicate occurs first and we can generate an index scan.
         let sql = "select * from test where b = 2 and a = 1";
         let CrudExpr::Query(QueryExpr { source: _, query }) = compile_sql(&db, &tx, sql)?.remove(0) else {
             panic!("Expected QueryExpr");

@@ -37,7 +37,7 @@ HAVE_DOCKER = False
 # and a dotnet installation is detected
 HAVE_DOTNET = False
 
-# default value can be overriden by `--compose-file` flag
+# default value can be overridden by `--compose-file` flag
 COMPOSE_FILE = "./docker-compose.yml"
 
 # we need to late-bind the output stream to allow unittests to capture stdout/stderr.
@@ -237,7 +237,7 @@ class Smoketest(unittest.TestCase):
                 code = proc.wait()
                 if code:
                     raise subprocess.CalledProcessError(code, fake_args)
-                print("no inital update, but no error code either")
+                print("no initial update, but no error code either")
             except subprocess.TimeoutExpired:
                 print("no initial update, but process is still running")
 
