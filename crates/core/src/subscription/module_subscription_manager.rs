@@ -426,14 +426,11 @@ pub struct SubscriptionManager {
     /// Additionally, it avoids starving the next reducer request of Tokio workers,
     /// as it imposes a delay between unlocking the datastore
     /// and waking the many per-client sender Tokio tasks.
-    send_worker_tx: mpsc::UnboundedSender<SendWorkerMessage>,
-
-    /// Metric handle for the `subscription_send_queue_length` metric labeled with this database's [`Identity`],
-    /// or `None` when not running for a particular database, i.e. in tests.
-    send_queue_length_metric: Option<IntGauge>,
+    send_worker_queue: BroadcastQueue,
 }
 
 /// A single update for one client and one query.
+#[derive(Debug)]
 struct ClientUpdate {
     id: ClientId,
     table_id: TableId,
@@ -446,6 +443,7 @@ struct ClientUpdate {
 /// done in a separate worker: [`SubscriptionManager::send_worker`].
 /// The queries in this structure have not been aggregated yet
 /// but will be in the worker.
+#[derive(Debug)]
 struct ComputedQueries {
     updates: Vec<ClientUpdate>,
     errs: Vec<(ClientId, Box<str>)>,
@@ -453,7 +451,38 @@ struct ComputedQueries {
     caller: Option<Arc<ClientConnectionSender>>,
 }
 
+// Wraps a sender so that it will increment a gauge.
+#[derive(Debug)]
+struct SenderWithGauge<T> {
+    tx: mpsc::UnboundedSender<T>,
+    metric: Option<IntGauge>,
+}
+impl<T> Clone for SenderWithGauge<T> {
+    fn clone(&self) -> Self {
+        SenderWithGauge {
+            tx: self.tx.clone(),
+            metric: self.metric.clone(),
+        }
+    }
+}
+
+impl<T> SenderWithGauge<T> {
+    fn new(tx: mpsc::UnboundedSender<T>, metric: Option<IntGauge>) -> Self {
+        Self { tx, metric }
+    }
+
+    /// Send a message to the worker and update the queue length metric.
+    pub fn send(&self, msg: T) -> Result<(), mpsc::error::SendError<T>> {
+        if let Some(metric) = &self.metric {
+            metric.inc();
+        }
+        // Note, this could number would be permanently off if the send call panics.
+        self.tx.send(msg)
+    }
+}
+
 /// Message sent by the [`SubscriptionManager`] to the [`SendWorker`].
+#[derive(Debug)]
 enum SendWorkerMessage {
     /// A transaction has completed and the [`SubscriptionManager`] has evaluated the incremental queries,
     /// so the [`SendWorker`] should broadcast them to clients.
@@ -468,6 +497,12 @@ enum SendWorkerMessage {
         /// Will be updated by [`SendWorker::run`] and read by [`SubscriptionManager::remove_dropped_clients`].
         dropped: Arc<AtomicBool>,
         outbound_ref: Client,
+    },
+
+    // Send a message to a client.
+    SendMessage {
+        recipient: Arc<ClientConnectionSender>,
+        message: SerializableMessage,
     },
 
     /// A client previously added by a [`Self::AddClient`] message has been removed from the [`SubscriptionManager`],
@@ -490,34 +525,22 @@ pub struct SubscriptionGaugeStats {
 }
 
 impl SubscriptionManager {
-    pub fn for_database(database_identity: Identity) -> Self {
-        // We will clean up this metric in [`SendWorker::drop`].
-        let metric = WORKER_METRICS
-            .subscription_send_queue_length
-            .with_label_values(&database_identity);
-
-        Self::with_metric(Some(metric), Some(database_identity))
-    }
-
     pub fn for_test_without_metrics_arc_rwlock() -> Arc<RwLock<Self>> {
         Arc::new(RwLock::new(Self::for_test_without_metrics()))
     }
 
     pub fn for_test_without_metrics() -> Self {
-        Self::with_metric(None, None)
+        Self::new(SendWorker::spawn_new(None))
     }
 
-    fn with_metric(metric: Option<IntGauge>, database_identity_to_clean_up_metric: Option<Identity>) -> Self {
-        let (send_worker_tx, rx) = mpsc::unbounded_channel();
-        tokio::spawn(SendWorker::new(rx, metric.clone(), database_identity_to_clean_up_metric).run());
+    pub fn new(send_worker_queue: BroadcastQueue) -> Self {
         Self {
             clients: Default::default(),
             queries: Default::default(),
             indexes: Default::default(),
             tables: Default::default(),
             search_args: Default::default(),
-            send_worker_tx,
-            send_queue_length_metric: metric,
+            send_worker_queue,
         }
     }
 
@@ -551,7 +574,7 @@ impl SubscriptionManager {
     /// Horrible signature to enable split borrows on [`Self`].
     fn get_or_make_client_info_and_inform_send_worker<'clients>(
         clients: &'clients mut HashMap<ClientId, ClientInfo>,
-        send_worker_tx: &mut mpsc::UnboundedSender<SendWorkerMessage>,
+        send_worker_tx: &BroadcastQueue,
         client_id: ClientId,
         outbound_ref: Client,
     ) -> &'clients mut ClientInfo {
@@ -572,7 +595,7 @@ impl SubscriptionManager {
     /// and broadcast a message along `send_worker_tx` that the [`SendWorker`] should also remove it.
     fn remove_client_and_inform_send_worker(&mut self, client_id: ClientId) -> Option<ClientInfo> {
         self.clients.remove(&client_id).inspect(|_| {
-            self.send_worker_tx
+            self.send_worker_queue
                 .send(SendWorkerMessage::RemoveClient(client_id))
                 .expect("send worker has panicked, or otherwise dropped its recv queue!");
         })
@@ -735,7 +758,7 @@ impl SubscriptionManager {
 
         let ci = Self::get_or_make_client_info_and_inform_send_worker(
             &mut self.clients,
-            &mut self.send_worker_tx,
+            &self.send_worker_queue,
             client_id,
             client,
         );
@@ -806,7 +829,7 @@ impl SubscriptionManager {
         // Now, add the new subscriptions.
         let ci = Self::get_or_make_client_info_and_inform_send_worker(
             &mut self.clients,
-            &mut self.send_worker_tx,
+            &self.send_worker_queue,
             client_id,
             client,
         );
@@ -955,6 +978,21 @@ impl SubscriptionManager {
     pub fn index_ids_for_subscriptions(&self) -> &QueriedTableIndexIds {
         &self.indexes
     }
+
+    /*
+    pub fn send_client_message(
+        &self,
+        recipient: Arc<ClientConnectionSender>,
+        message: impl Into<SerializableMessage>,
+    ) {
+        self.send_worker_queue
+            .send(SendWorkerMessage::SendMessage {
+                recipient,
+                message: message.into(),
+            })
+            .expect("send worker has panicked, or otherwise dropped its recv queue!")
+    }
+     */
 
     /// This method takes a set of delta tables,
     /// evaluates only the necessary queries for those delta tables,
@@ -1108,15 +1146,12 @@ impl SubscriptionManager {
                 acc
             });
 
-        if let Some(metric) = &self.send_queue_length_metric {
-            metric.inc();
-        }
-
         // We've now finished all of the work which needs to read from the datastore,
         // so get this work off the main thread and over to the `send_worker`,
         // then return ASAP in order to unlock the datastore and start running the next transaction.
         // See comment on the `send_worker_tx` field in [`SubscriptionManager`] for more motivation.
-        self.send_worker_tx
+        self.send_worker_queue
+            .clone()
             .send(SendWorkerMessage::Broadcast(ComputedQueries {
                 updates,
                 errs,
@@ -1179,6 +1214,34 @@ impl Drop for SendWorker {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct BroadcastQueue(SenderWithGauge<SendWorkerMessage>);
+
+#[derive(thiserror::Error, Debug)]
+#[error(transparent)]
+pub struct BroadcastError(#[from] mpsc::error::SendError<SendWorkerMessage>);
+
+impl BroadcastQueue {
+    fn send(&self, message: SendWorkerMessage) -> Result<(), BroadcastError> {
+        self.0.send(message)?;
+        Ok(())
+    }
+
+    pub fn send_client_message(
+        &self,
+        recipient: Arc<ClientConnectionSender>,
+        message: impl Into<SerializableMessage>,
+    ) -> Result<(), BroadcastError> {
+        self.0.send(SendWorkerMessage::SendMessage {
+            recipient,
+            message: message.into(),
+        })?;
+        Ok(())
+    }
+}
+pub fn spawn_send_worker(metric_database_identity: Option<Identity>) -> BroadcastQueue {
+    SendWorker::spawn_new(metric_database_identity)
+}
 impl SendWorker {
     fn new(
         rx: mpsc::UnboundedReceiver<SendWorkerMessage>,
@@ -1191,6 +1254,20 @@ impl SendWorker {
             clients: Default::default(),
             database_identity_to_clean_up_metric,
         }
+    }
+
+    // Spawn a new send worker.
+    // If a `metric_database_identity` is provided, we will decrement the corresponding
+    // `subscription_send_queue_length` metric, and clean it up on drop.
+    fn spawn_new(metric_database_identity: Option<Identity>) -> BroadcastQueue {
+        let metric = metric_database_identity.map(|identity| {
+            WORKER_METRICS
+                .subscription_send_queue_length
+                .with_label_values(&identity)
+        });
+        let (send_worker_tx, rx) = mpsc::unbounded_channel();
+        tokio::spawn(Self::new(rx, metric.clone(), metric_database_identity).run());
+        BroadcastQueue(SenderWithGauge::new(send_worker_tx, metric))
     }
 
     async fn run(mut self) {
@@ -1207,6 +1284,9 @@ impl SendWorker {
                 } => {
                     self.clients
                         .insert(client_id, SendWorkerClient { dropped, outbound_ref });
+                }
+                SendWorkerMessage::SendMessage { recipient, message } => {
+                    let _ = recipient.send_message(message);
                 }
                 SendWorkerMessage::RemoveClient(client_id) => {
                     self.clients.remove(&client_id);
