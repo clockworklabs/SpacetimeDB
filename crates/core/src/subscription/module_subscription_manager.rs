@@ -979,21 +979,6 @@ impl SubscriptionManager {
         &self.indexes
     }
 
-    /*
-    pub fn send_client_message(
-        &self,
-        recipient: Arc<ClientConnectionSender>,
-        message: impl Into<SerializableMessage>,
-    ) {
-        self.send_worker_queue
-            .send(SendWorkerMessage::SendMessage {
-                recipient,
-                message: message.into(),
-            })
-            .expect("send worker has panicked, or otherwise dropped its recv queue!")
-    }
-     */
-
     /// This method takes a set of delta tables,
     /// evaluates only the necessary queries for those delta tables,
     /// and then sends the results to each client.
@@ -1151,7 +1136,6 @@ impl SubscriptionManager {
         // then return ASAP in order to unlock the datastore and start running the next transaction.
         // See comment on the `send_worker_tx` field in [`SubscriptionManager`] for more motivation.
         self.send_worker_queue
-            .clone()
             .send(SendWorkerMessage::Broadcast(ComputedQueries {
                 updates,
                 errs,
