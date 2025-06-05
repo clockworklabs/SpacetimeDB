@@ -15,7 +15,7 @@ use crate::db::db_metrics::DB_METRICS;
 use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::error::DBError;
 use crate::estimation::estimate_rows_scanned;
-use crate::execution_context::Workload;
+use crate::execution_context::{Workload, WorkloadType};
 use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent};
 use crate::messages::websocket::Subscribe;
 use crate::subscription::execute_plans;
@@ -23,7 +23,7 @@ use crate::subscription::query::is_subscribe_to_all_tables;
 use crate::vm::check_row_limit;
 use crate::worker_metrics::WORKER_METRICS;
 use parking_lot::RwLock;
-use prometheus::IntGauge;
+use prometheus::{HistogramTimer, IntGauge};
 use spacetimedb_client_api_messages::websocket::{
     self as ws, BsatnFormat, FormatSwitch, JsonFormat, SubscribeMulti, SubscribeSingle, TableUpdate, Unsubscribe,
     UnsubscribeMulti,
@@ -453,6 +453,18 @@ impl ModuleSubscriptions {
             )
         };
 
+        let num_waiters = DB_METRICS
+            .subscription_lock_waiters
+            .with_label_values(&self.owner_identity, &WorkloadType::Unsubscribe);
+
+        let wait_time = DB_METRICS
+            .subscription_lock_wait_time
+            .with_label_values(&self.owner_identity, &WorkloadType::Unsubscribe);
+
+        let compile_time = DB_METRICS
+            .subscription_compile_time
+            .with_label_values(&self.owner_identity, &WorkloadType::Unsubscribe);
+
         // Always lock the db before the subscription lock to avoid deadlocks.
         let tx = scopeguard::guard(self.relational_db.begin_tx(Workload::Unsubscribe), |tx| {
             let (tx_metrics, reducer) = self.relational_db.release_tx(tx);
@@ -460,7 +472,12 @@ impl ModuleSubscriptions {
         });
 
         let removed_queries = {
+            num_waiters.inc();
+            let _compile_timer = compile_time.start_timer();
+            let _wait_timer = wait_time.start_timer();
             let mut subscriptions = self.subscriptions.write();
+            drop(_wait_timer);
+            num_waiters.dec();
 
             return_on_err!(
                 subscriptions.remove_subscription((sender.id.identity, sender.id.connection_id), request.query_id),
@@ -468,6 +485,21 @@ impl ModuleSubscriptions {
                 None
             )
         };
+
+        DB_METRICS
+            .num_queries_subscribed
+            .with_label_values(&self.owner_identity, &WorkloadType::Unsubscribe)
+            .inc_by(removed_queries.len() as u64);
+
+        DB_METRICS
+            .num_queries_evaluated
+            .with_label_values(&self.owner_identity, &WorkloadType::Unsubscribe)
+            .inc_by(removed_queries.len() as u64);
+
+        let _timer = DB_METRICS
+            .subscription_exec_time
+            .with_label_values(&self.owner_identity, &WorkloadType::Unsubscribe)
+            .start_timer();
 
         let (update, metrics) = return_on_err!(
             self.evaluate_queries(
@@ -480,6 +512,8 @@ impl ModuleSubscriptions {
             send_err_msg,
             None
         );
+
+        drop(_timer);
 
         // Note: to make sure transaction updates are consistent, we need to put this in the broadcast
         // queue while we are still holding a read-lock on the database.
@@ -513,12 +547,13 @@ impl ModuleSubscriptions {
     ///
     /// Instead we generate two hashes and outside of the tx lock.
     /// If either one is currently tracked, we can avoid recompilation.
+    #[allow(clippy::type_complexity)]
     fn compile_queries(
         &self,
         sender: Identity,
         queries: impl IntoIterator<Item = Box<str>>,
         num_queries: usize,
-    ) -> Result<(Vec<Arc<Plan>>, AuthCtx, TxId), DBError> {
+    ) -> Result<(Vec<Arc<Plan>>, AuthCtx, TxId, HistogramTimer), DBError> {
         let mut subscribe_to_all_tables = false;
         let mut plans = Vec::with_capacity(num_queries);
         let mut query_hashes = Vec::with_capacity(num_queries);
@@ -540,7 +575,25 @@ impl ModuleSubscriptions {
             let (tx_metrics, reducer) = self.relational_db.release_tx(tx);
             self.relational_db.report(&reducer, &tx_metrics, None);
         });
+
+        let num_waiters = DB_METRICS
+            .subscription_lock_waiters
+            .with_label_values(&self.owner_identity, &WorkloadType::Subscribe);
+
+        let wait_time = DB_METRICS
+            .subscription_lock_wait_time
+            .with_label_values(&self.owner_identity, &WorkloadType::Subscribe);
+
+        let compile_time = DB_METRICS
+            .subscription_compile_time
+            .with_label_values(&self.owner_identity, &WorkloadType::Subscribe);
+
+        num_waiters.inc();
+        let _compile_timer = compile_time.start_timer();
+        let _wait_timer = wait_time.start_timer();
         let guard = self.subscriptions.read();
+        drop(_wait_timer);
+        num_waiters.dec();
 
         if subscribe_to_all_tables {
             plans.extend(
@@ -549,6 +602,8 @@ impl ModuleSubscriptions {
                     .map(Arc::new),
             );
         }
+
+        let mut new_queries = 0;
 
         for (sql, hash, hash_with_param) in query_hashes {
             if let Some(unit) = guard.query(&hash) {
@@ -564,10 +619,16 @@ impl ModuleSubscriptions {
                         }
                     })?,
                 ));
+                new_queries += 1;
             }
         }
 
-        Ok((plans, auth, scopeguard::ScopeGuard::into_inner(tx)))
+        DB_METRICS
+            .num_new_queries_subscribed
+            .with_label_values(&self.owner_identity, &WorkloadType::Subscribe)
+            .inc_by(new_queries);
+
+        Ok((plans, auth, scopeguard::ScopeGuard::into_inner(tx), _compile_timer))
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
@@ -595,7 +656,16 @@ impl ModuleSubscriptions {
         };
 
         let num_queries = request.query_strings.len();
-        let (queries, auth, tx) = return_on_err!(
+
+        let num_waiters = DB_METRICS
+            .subscription_lock_waiters
+            .with_label_values(&self.owner_identity, &WorkloadType::Subscribe);
+
+        let wait_time = DB_METRICS
+            .subscription_lock_wait_time
+            .with_label_values(&self.owner_identity, &WorkloadType::Subscribe);
+
+        let (queries, auth, tx, _timer) = return_on_err!(
             self.compile_queries(sender.id.identity, request.query_strings, num_queries),
             send_err_msg,
             None
@@ -610,10 +680,31 @@ impl ModuleSubscriptions {
         // an `commit_and_broadcast_event` grabs a read lock on `subscriptions` while it still has a
         // write lock on the db.
         let queries = {
+            num_waiters.inc();
+            let _wait_timer = wait_time.start_timer();
             let mut subscriptions = self.subscriptions.write();
+            drop(_wait_timer);
+            num_waiters.dec();
 
             subscriptions.add_subscription_multi(sender.clone(), queries, request.query_id)?
         };
+
+        drop(_timer);
+
+        DB_METRICS
+            .num_queries_subscribed
+            .with_label_values(&self.owner_identity, &WorkloadType::Subscribe)
+            .inc_by(num_queries as u64);
+
+        DB_METRICS
+            .num_queries_evaluated
+            .with_label_values(&self.owner_identity, &WorkloadType::Subscribe)
+            .inc_by(queries.len() as u64);
+
+        let _timer = DB_METRICS
+            .subscription_exec_time
+            .with_label_values(&self.owner_identity, &WorkloadType::Subscribe)
+            .start_timer();
 
         let Ok((update, metrics)) =
             self.evaluate_queries(sender.clone(), &queries, &tx, &auth, TableUpdateType::Subscribe)
@@ -624,6 +715,8 @@ impl ModuleSubscriptions {
             send_err_msg("Internal error evaluating queries".into());
             return Ok(None);
         };
+
+        drop(_timer);
 
         #[cfg(test)]
         if let Some(assert) = _assert {
@@ -661,8 +754,17 @@ impl ModuleSubscriptions {
         timer: Instant,
         _assert: Option<AssertTxFn>,
     ) -> Result<ExecutionMetrics, DBError> {
+        let num_waiters = DB_METRICS
+            .subscription_lock_waiters
+            .with_label_values(&self.owner_identity, &WorkloadType::Subscribe);
+
+        let wait_time = DB_METRICS
+            .subscription_lock_wait_time
+            .with_label_values(&self.owner_identity, &WorkloadType::Subscribe);
+
         let num_queries = subscription.query_strings.len();
-        let (queries, auth, tx) = self.compile_queries(sender.id.identity, subscription.query_strings, num_queries)?;
+        let (queries, auth, tx, _timer) =
+            self.compile_queries(sender.id.identity, subscription.query_strings, num_queries)?;
         let tx = scopeguard::guard(tx, |tx| {
             let (tx_metrics, reducer) = self.relational_db.release_tx(tx);
             self.relational_db.report(&reducer, &tx_metrics, None);
@@ -680,6 +782,13 @@ impl ModuleSubscriptions {
             &auth,
         )?;
 
+        drop(_timer);
+
+        let _timer = DB_METRICS
+            .subscription_exec_time
+            .with_label_values(&self.owner_identity, &WorkloadType::Subscribe)
+            .start_timer();
+
         let tx = DeltaTx::from(&*tx);
         let (database_update, metrics) = match sender.config.protocol {
             Protocol::Binary => execute_plans(&queries, &tx, TableUpdateType::Subscribe)
@@ -688,10 +797,16 @@ impl ModuleSubscriptions {
                 .map(|(table_update, metrics)| (FormatSwitch::Json(table_update), metrics))?,
         };
 
+        drop(_timer);
+
         // It acquires the subscription lock after `eval`, allowing `add_subscription` to run concurrently.
         // This also makes it possible for `broadcast_event` to get scheduled before the subsequent part here
         // but that should not pose an issue.
+        num_waiters.inc();
+        let _wait_timer = wait_time.start_timer();
         let mut subscriptions = self.subscriptions.write();
+        drop(_wait_timer);
+        num_waiters.dec();
         subscriptions.set_legacy_subscription(sender.clone(), queries.into_iter());
 
         #[cfg(test)]
@@ -735,7 +850,19 @@ impl ModuleSubscriptions {
     ) -> Result<Result<(Arc<ModuleEvent>, ExecutionMetrics), WriteConflict>, DBError> {
         // Take a read lock on `subscriptions` before committing tx
         // else it can result in subscriber receiving duplicate updates.
+        let num_waiters = DB_METRICS
+            .subscription_lock_waiters
+            .with_label_values(&self.owner_identity, &WorkloadType::Update);
+
+        let wait_time = DB_METRICS
+            .subscription_lock_wait_time
+            .with_label_values(&self.owner_identity, &WorkloadType::Update);
+
+        num_waiters.inc();
+        let _wait_timer = wait_time.start_timer();
         let subscriptions = self.subscriptions.read();
+        drop(_wait_timer);
+        num_waiters.dec();
         let stdb = &self.relational_db;
         // Downgrade mutable tx.
         // We'll later ensure tx is released/cleaned up once out of scope.
