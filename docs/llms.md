@@ -809,13 +809,16 @@ Scheduled reducer calls originate from the SpacetimeDB scheduler itself, not fro
 
 #### Row-Level Security (RLS)
 
-Row Level Security (RLS) allows module authors to grant clients access to specific rows
-of tables that are *not* marked as `public`. By default, tables without the `public` 
-attribute are private and inaccessible to clients. RLS provides a mechanism to selectively
-expose certain rows from these private tables based on rules evaluated for each client.
+Row Level Security (RLS) allows module authors to restrict client access to specific rows
+of tables that are marked as `public`. By default, tables *without* the `public`
+attribute are private and completely inaccessible to clients. Tables *with* the `public`
+attribute are, by default, fully visible to any client that subscribes to them. RLS provides
+a mechanism to selectively restrict access to certain rows of these `public` tables based
+on rules evaluated for each client.
 
-Tables marked `public` are always fully visible to any client that subscribes to them,
-and RLS rules do not apply to (and cannot restrict access to) `public` tables.
+Private tables (those *without* the `public` attribute) are always completely inaccessible
+to clients, and RLS rules do not apply to them. RLS rules are defined for `public` tables
+to filter which rows are visible.
 
 These access-granting rules are expressed in SQL and evaluated automatically for queries
 and subscriptions made by clients against private tables with associated RLS rules.
@@ -837,14 +840,14 @@ spacetimedb = { version = "1.1.0", features = ["unstable"] } # at least version 
 
 **How It Works**
 
-RLS rules are attached to private tables (tables without `#[table(..., public)]`)
+RLS rules are attached to `public` tables (tables with `#[table(..., public)]`)
 and are expressed in SQL using constants of type `Filter`.
 
 ```rust
 use spacetimedb::{client_visibility_filter, Filter, table, Identity};
 
-// Define a private table
-#[table(name = account)] // No 'public' flag
+// Define a public table for RLS
+#[table(name = account, public)] // Now a public table
 struct Account {
     #[primary_key]
     identity: Identity,
@@ -857,7 +860,8 @@ struct Account {
 const ACCOUNT_VISIBILITY: Filter = Filter::Sql(
     // This query is evaluated per client request.
     // :sender is automatically bound to the requesting client's identity.
-    // Only rows matching this filter are returned to the client from the private 'account' table.
+    // Only rows matching this filter are returned to the client from the public 'account' table,
+    // overriding its default full visibility for matching clients.
     "SELECT * FROM account WHERE identity = :sender"
 );
 ```
@@ -869,19 +873,19 @@ A module will fail to publish if any of its RLS rules are invalid or malformed.
 You can use the special `:sender` parameter in your rules for user-specific access control.
 This parameter is automatically bound to the requesting client's [Identity](#identity).
 
-Note that module owners have unrestricted access to all tables, including private ones,
-regardless of RLS rules.
+Note that module owners have unrestricted access to all tables, including all rows of
+`public` tables (bypassing RLS rules) and `private` tables.
 
 **Semantic Constraints**
 
-RLS rules act as filters defining which rows of a private table are visible to a client.
+RLS rules act as filters defining which rows of a `public` table are visible to a client.
 Like subscriptions, arbitrary column projections are **not** allowed.
 Joins **are** allowed (e.g., to check permissions in another table), but each rule must
-ultimately return rows from the single private table it applies to.
+ultimately return rows from the single public table it applies to.
 
 **Multiple Rules Per Table**
 
-Multiple RLS rules may be declared for the same private table. They are evaluated as a
+Multiple RLS rules may be declared for the same `public` table. They are evaluated as a
 logical `OR`, meaning clients can see any row that matches at least one rule.
 
 **Example (Building on previous Account table)**
@@ -915,7 +919,7 @@ const ACCOUNT_ADMIN_VISIBILITY: Filter = Filter::Sql(
 RLS rules can reference other tables that might *also* have RLS rules. These rules are applied recursively.
 For instance, if Rule A depends on Table B, and Table B has its own RLS rules, a client only gets results
 from Rule A if they also have permission to see the relevant rows in Table B according to Table B's rules.
-This ensures data from private tables is not inadvertently leaked through indirect access patterns.
+This ensures that the intended row visibility on `public` tables is maintained even through indirect access patterns.
 
 **Example (Building on previous Account/Admin tables)**
 
@@ -993,7 +997,7 @@ const PLAYER_NEEDS_ACCOUNT: Filter = Filter::Sql(
 
 **Usage in Subscriptions**
 
-When a client subscribes to a table that has RLS rules defined (implicitly, a private table),
+When a client subscribes to a `public` table that has RLS rules defined,
 the server automatically applies those rules. The subscription results (both initial
 and subsequent updates) will only contain rows that the specific client is allowed to
 see based on the RLS rules evaluating successfully for that client.
@@ -1007,7 +1011,7 @@ the subscription itself might fail, even if the RLS rule is valid for direct que
 
 **Best Practices**
 
-1.  Define RLS rules primarily for tables that should be private by default.
+1.  Define RLS rules for `public` tables where you need to restrict row visibility for different clients.
 2.  Use `:sender` for client-specific filtering within your rules.
 3.  Keep RLS rules as simple as possible while enforcing desired access.
 4.  Be mindful of potential performance implications of complex joins in RLS rules, especially when combined with subscriptions.
@@ -1783,8 +1787,8 @@ To enable RLS, include the following preprocessor directive at the top of your m
 
 **How It Works**
 
-RLS rules are attached to private tables (tables without `Public = true`) and are
-expressed in SQL using public static readonly fields of type `Filter` annotated with
+RLS rules are attached to `public` tables (tables with `#[table(..., public)]`)
+and are expressed in SQL using public static readonly fields of type `Filter` annotated with
 `[SpacetimeDB.ClientVisibilityFilter]`.
 
 ```cs
@@ -1792,8 +1796,8 @@ using SpacetimeDB;
 
 #pragma warning disable STDB_UNSTABLE
 
-// Define a private table
-[Table(Name = "account")] // No Public = true
+// Define a public table for RLS
+[Table(Name = "account", Public = true)] // Ensures correct C# syntax for public table
 public partial class Account
 {
     [PrimaryKey] public Identity Identity;
@@ -1805,13 +1809,14 @@ public partial class Module
 {
     /// <summary>
     /// RLS Rule: Allow a client to see *only* their own account record.
-    /// This rule applies to the private 'account' table.
+    /// This rule applies to the public 'account' table.
     /// </summary>
     [SpacetimeDB.ClientVisibilityFilter]
     public static readonly Filter ACCOUNT_VISIBILITY = new Filter.Sql(
         // This query is evaluated per client request.
         // :sender is automatically bound to the requesting client's identity.
-        // Only rows matching this filter are returned to the client from the private 'account' table.
+        // Only rows matching this filter are returned to the client from the public 'account' table,
+        // overriding its default full visibility for matching clients.
         "SELECT * FROM account WHERE identity = :sender"
     );
 }
@@ -1824,8 +1829,8 @@ A module will fail to publish if any of its RLS rules are invalid or malformed.
 You can use the special `:sender` parameter in your rules for user specific access control.
 This parameter is automatically bound to the requesting client's [Identity](#identity).
 
-Note that module owners have unrestricted access to all tables, including private ones,
-regardless of RLS rules.
+Note that module owners have unrestricted access to all tables, including all rows of
+`public` tables (bypassing RLS rules) and `private` tables.
 
 **Semantic Constraints**
 
@@ -1835,7 +1840,7 @@ Joins **are** allowed, but each rule must return rows from one and only one tabl
 
 **Multiple Rules Per Table**
 
-Multiple rules may be declared for the same table and will be evaluated as a logical `OR`.
+Multiple rules may be declared for the same `public` table. They are evaluated as a logical `OR`.
 This means clients will be able to see to any row that matches at least one rule.
 
 **Example**
