@@ -730,6 +730,16 @@ struct Host {
     /// The task collects metrics from the `replica_ctx`, and so stays alive as long
     /// as the `replica_ctx` is live. The task is aborted when [`Host`] is dropped.
     metrics_task: AbortHandle,
+
+    /// Opaque identifier for this `HostController`.
+    ///
+    /// I (pgoldman 2025-06-05) am using this to determine the lifetimes of individual `Host` instances.
+    nonce: u64,
+}
+
+fn next_host_nonce() -> u64 {
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
 
 impl Host {
@@ -739,6 +749,8 @@ impl Host {
     /// create on-disk artifacts if the host / database did not exist.
     #[tracing::instrument(level = "debug", skip_all)]
     async fn try_init(host_controller: &HostController, database: Database, replica_id: u64) -> anyhow::Result<Self> {
+        let host_nonce = next_host_nonce();
+
         let HostController {
             data_dir,
             default_config: config,
@@ -747,22 +759,30 @@ impl Host {
             runtimes,
             durability,
             page_pool,
+            nonce: host_controller_nonce,
             ..
         } = host_controller;
+
+        log::info!("[{host_controller_nonce}/{host_nonce}] try_init({database:#?}, {replica_id})");
+
         let on_panic = host_controller.unregister_fn(replica_id);
         let replica_dir = data_dir.replica(replica_id);
 
         let (db, connected_clients) = match config.storage {
-            db::Storage::Memory => RelationalDB::open(
-                &replica_dir,
-                database.database_identity,
-                database.owner_identity,
-                EmptyHistory::new(),
-                None,
-                None,
-                page_pool.clone(),
-            )?,
+            db::Storage::Memory => {
+                log::info!("[{host_controller_nonce}/{host_nonce}] Storage::Memory");
+                RelationalDB::open(
+                    &replica_dir,
+                    database.database_identity,
+                    database.owner_identity,
+                    EmptyHistory::new(),
+                    None,
+                    None,
+                    page_pool.clone(),
+                )?
+            }
             db::Storage::Disk => {
+                log::info!("[{host_controller_nonce}/{host_nonce}] Storage::Disk");
                 let snapshot_repo =
                     relational_db::open_snapshot_repo(replica_dir.snapshots(), database.database_identity, replica_id)?;
                 let (history, _) = relational_db::local_durability(replica_dir.commit_log()).await?;
@@ -781,6 +801,7 @@ impl Host {
                 // as a single line, with the help of `anyhow`.
                 .map_err(anyhow::Error::from)
                 .inspect_err(|e| {
+                    log::error!("[{host_controller_nonce}/{host_nonce}] Failed to open database: {e:#?}");
                     tracing::error!(
                         database = %database.database_identity,
                         replica = replica_id,
@@ -796,10 +817,16 @@ impl Host {
         };
         let (program, program_needs_init) = match db.program()? {
             // Launch module with program from existing database.
-            Some(program) => (program, false),
+            Some(program) => {
+                log::info!("[{host_controller_nonce}/{host_nonce}] program already initialized");
+                (program, false)
+            }
             // Database is empty, load program from external storage and run
             // initialization.
-            None => (load_program(program_storage, database.initial_program).await?, true),
+            None => {
+                log::info!("[{host_controller_nonce}/{host_nonce}] calling load_program");
+                (load_program(program_storage, database.initial_program).await?, true)
+            }
         };
 
         let (program, launched) = launch_module(
@@ -852,6 +879,7 @@ impl Host {
             replica_ctx,
             scheduler,
             metrics_task,
+            nonce: host_nonce,
         })
     }
 
@@ -935,6 +963,9 @@ impl Host {
         on_panic: impl Fn() + Send + Sync + 'static,
         core: JobCore,
     ) -> anyhow::Result<UpdateDatabaseResult> {
+        let host_nonce = self.nonce;
+        log::info!("[{host_nonce}] update_module");
+
         let replica_ctx = &self.replica_ctx;
         let (scheduler, scheduler_starter) = Scheduler::open(self.replica_ctx.relational_db.clone());
 
@@ -974,6 +1005,8 @@ impl Host {
 
 impl Drop for Host {
     fn drop(&mut self) {
+        let host_nonce = self.nonce;
+        log::info!("[{host_nonce}] drop");
         self.metrics_task.abort();
     }
 }
