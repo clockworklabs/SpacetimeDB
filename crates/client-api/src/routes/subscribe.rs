@@ -1,7 +1,6 @@
 use std::collections::VecDeque;
 use std::mem;
 use std::pin::{pin, Pin};
-use std::sync::Arc;
 use std::time::Duration;
 
 use axum::extract::{Path, Query, State};
@@ -15,7 +14,7 @@ use futures::{Future, FutureExt, SinkExt, StreamExt};
 use http::{HeaderValue, StatusCode};
 use scopeguard::ScopeGuard;
 use serde::Deserialize;
-use spacetimedb::client::messages::{serialize, IdentityTokenMessage, SerializableMessage, SerializeBufferPool};
+use spacetimedb::client::messages::{serialize, IdentityTokenMessage, SerializableMessage, SerializeBuffer};
 use spacetimedb::client::{ClientActorId, ClientConfig, ClientConnection, DataMessage, MessageHandleError, Protocol};
 use spacetimedb::execution_context::WorkloadType;
 use spacetimedb::host::module_host::ClientConnectedError;
@@ -128,8 +127,6 @@ where
         name: ctx.client_actor_index().next_client_name(),
     };
 
-    let serialize_buffer_pool = ctx.websocket_send_serialize_buffer_pool().clone();
-
     let ws_config = WebSocketConfig::default()
         .max_message_size(Some(0x2000000))
         .max_frame_size(None)
@@ -151,7 +148,7 @@ where
             None => log::debug!("New client connected from unknown ip"),
         }
 
-        let actor = |client, sendrx| ws_client_actor(client, ws, sendrx, serialize_buffer_pool);
+        let actor = |client, sendrx| ws_client_actor(client, ws, sendrx);
         let client = match ClientConnection::spawn(client_id, client_config, leader.replica_id, module_rx, actor).await
         {
             Ok(s) => s,
@@ -185,18 +182,13 @@ where
 
 const LIVELINESS_TIMEOUT: Duration = Duration::from_secs(60);
 
-async fn ws_client_actor(
-    client: ClientConnection,
-    ws: WebSocketStream,
-    sendrx: mpsc::Receiver<SerializableMessage>,
-    serialize_buffer_pool: Arc<SerializeBufferPool>,
-) {
+async fn ws_client_actor(client: ClientConnection, ws: WebSocketStream, sendrx: mpsc::Receiver<SerializableMessage>) {
     // ensure that even if this task gets cancelled, we always cleanup the connection
     let mut client = scopeguard::guard(client, |client| {
         tokio::spawn(client.disconnect());
     });
 
-    ws_client_actor_inner(&mut client, ws, sendrx, &serialize_buffer_pool).await;
+    ws_client_actor_inner(&mut client, ws, sendrx).await;
 
     ScopeGuard::into_inner(client).disconnect().await;
 }
@@ -213,7 +205,6 @@ async fn ws_client_actor_inner(
     client: &mut ClientConnection,
     mut ws: WebSocketStream,
     mut sendrx: mpsc::Receiver<SerializableMessage>,
-    serialize_buffer_pool: &SerializeBufferPool,
 ) {
     let mut liveness_check_interval = tokio::time::interval(LIVELINESS_TIMEOUT);
     let mut got_pong = true;
@@ -257,6 +248,7 @@ async fn ws_client_actor_inner(
         outgoing_queue_length_metric.sub(sendrx.len() as _);
     };
 
+    let mut msg_buffer = SerializeBuffer::new(client.config);
     loop {
         rx_buf.clear();
         enum Item {
@@ -317,29 +309,33 @@ async fn ws_client_actor_inner(
 
                             // Serialize the message, report metrics,
                             // and keep a handle to the buffer.
-                            let msg_data = serialize(serialize_buffer_pool, msg, client.config);
+                            let (msg_alloc, msg_data) = serialize(msg_buffer, msg, client.config);
                             report_ws_sent_metrics(&addr, workload, num_rows, &msg_data);
-                            let msg_alloc = msg_data.allocation();
 
                             // Buffer the message without necessarily sending it.
-                            ws.feed(datamsg_to_wsmsg(msg_data)).await?;
+                            let res = ws.feed(datamsg_to_wsmsg(msg_data)).await;
 
                             // At this point,
                             // the underlying allocation of `msg_data` should have a single referent
                             // and this should be `msg_alloc`.
                             // We can put this back into our pool.
-                            let msg_alloc = msg_alloc.try_into_mut()
+                            msg_buffer = msg_alloc.try_reclaim()
                                 .expect("should have a unique referent to `msg_alloc`");
-                            serialize_buffer_pool.put(msg_alloc);
+
+                            if res.is_err() {
+                                return (res, msg_buffer);
+                            }
                         }
                         // now we flush all the messages to the socket
-                        ws.flush().await
+                        (ws.flush().await, msg_buffer)
                     };
                     // Flush the websocket while continuing to poll the `handle_queue`,
                     // to avoid deadlocks or delays due to enqueued futures holding resources.
                     let send_all = also_poll(send_all, make_progress(&mut current_message));
                     let t1 = Instant::now();
-                    if let Err(error) = send_all.await {
+                    let (send_all_result, buf) = send_all.await;
+                    msg_buffer = buf;
+                    if let Err(error) = send_all_result {
                         log::warn!("Websocket send error: {error}")
                     }
                     let time = t1.elapsed();
@@ -406,8 +402,7 @@ async fn ws_client_actor_inner(
                     if let MessageHandleError::Execution(err) = e {
                         log::error!("{err:#}");
                         // Serialize the message and keep a handle to the buffer.
-                        let msg_data = serialize(serialize_buffer_pool, err, client.config);
-                        let msg_alloc = msg_data.allocation();
+                        let (msg_alloc, msg_data) = serialize(msg_buffer, err, client.config);
 
                         // Buffer the message without necessarily sending it.
                         if let Err(error) = ws.send(datamsg_to_wsmsg(msg_data)).await {
@@ -418,10 +413,9 @@ async fn ws_client_actor_inner(
                         // the underlying allocation of `msg_data` should have a single referent
                         // and this should be `msg_alloc`.
                         // We can put this back into our pool.
-                        let msg_alloc = msg_alloc
-                            .try_into_mut()
+                        msg_buffer = msg_alloc
+                            .try_reclaim()
                             .expect("should have a unique referent to `msg_alloc`");
-                        serialize_buffer_pool.put(msg_alloc);
 
                         continue;
                     }

@@ -5,7 +5,6 @@ use async_trait::async_trait;
 use axum::response::ErrorResponse;
 use http::StatusCode;
 
-use spacetimedb::client::messages::SerializeBufferPool;
 use spacetimedb::client::ClientActorIndex;
 use spacetimedb::energy::{EnergyBalance, EnergyQuanta};
 use spacetimedb::host::{HostController, ModuleHost, NoSuchModule, UpdateDatabaseResult};
@@ -40,8 +39,6 @@ pub trait NodeDelegate: Send + Sync {
     /// The [`Host`] is spawned implicitly if not already running.
     async fn leader(&self, database_id: u64) -> anyhow::Result<Option<Host>>;
     fn module_logs_dir(&self, replica_id: u64) -> ModuleLogsDir;
-
-    fn websocket_send_serialize_buffer_pool(&self) -> &Arc<SerializeBufferPool>;
 }
 
 /// Client view of a running module.
@@ -373,10 +370,6 @@ impl<T: NodeDelegate + ?Sized> NodeDelegate for Arc<T> {
 
     fn module_logs_dir(&self, replica_id: u64) -> ModuleLogsDir {
         (**self).module_logs_dir(replica_id)
-    }
-
-    fn websocket_send_serialize_buffer_pool(&self) -> &Arc<SerializeBufferPool> {
-        (**self).websocket_send_serialize_buffer_pool()
     }
 }
 

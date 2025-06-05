@@ -5470,7 +5470,6 @@ dependencies = [
  "core_affinity",
  "criterion",
  "crossbeam-channel",
- "crossbeam-queue",
  "derive_more",
  "dirs",
  "enum-as-inner",

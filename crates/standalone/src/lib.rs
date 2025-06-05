@@ -8,7 +8,6 @@ use crate::subcommands::{extract_schema, start};
 use anyhow::{ensure, Context, Ok};
 use async_trait::async_trait;
 use clap::{ArgMatches, Command};
-use spacetimedb::client::messages::SerializeBufferPool;
 use spacetimedb::client::ClientActorIndex;
 use spacetimedb::config::{CertificateAuthority, MetadataFile};
 use spacetimedb::db::datastore::traits::Program;
@@ -161,9 +160,6 @@ impl NodeDelegate for StandaloneEnv {
     }
     fn module_logs_dir(&self, replica_id: u64) -> ModuleLogsDir {
         self.data_dir().replica(replica_id).module_logs()
-    }
-    fn websocket_send_serialize_buffer_pool(&self) -> &Arc<SerializeBufferPool> {
-        &self.host_controller.websocket_send_serialize_buffer_pool
     }
 }
 
