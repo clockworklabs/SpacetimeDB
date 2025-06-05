@@ -3,6 +3,9 @@ use crate::execution_context::WorkloadType;
 use crate::host::module_host::{EventStatus, ModuleEvent};
 use crate::host::ArgsTuple;
 use crate::messages::websocket as ws;
+use bytes::{BufMut, BytesMut};
+use bytestring::ByteString;
+use crossbeam_queue::SegQueue;
 use derive_more::From;
 use spacetimedb_client_api_messages::websocket::{
     BsatnFormat, Compression, FormatSwitch, JsonFormat, OneOffTable, RowListLen, WebsocketFormat,
@@ -27,36 +30,87 @@ pub trait ToProtocol {
 pub(super) type SwitchedServerMessage = FormatSwitch<ws::ServerMessage<BsatnFormat>, ws::ServerMessage<JsonFormat>>;
 pub(super) type SwitchedDbUpdate = FormatSwitch<ws::DatabaseUpdate<BsatnFormat>, ws::DatabaseUpdate<JsonFormat>>;
 
+/// The initial size of a `serialize` buffer.
+/// Currently 4k to align with the linux page size
+/// and this should be more than enough in the common case.
+const SERIALIZE_BUFFER_INIT_CAP: usize = 4096;
+
+// A pool of buffers used by [`serialize`].
+#[derive(Default)]
+pub struct SerializeBufferPool {
+    pool: SegQueue<BytesMut>,
+}
+
+impl SerializeBufferPool {
+    /// Puts back a buffer into the pool.
+    pub fn put(&self, buf: BytesMut) {
+        self.pool.push(buf);
+    }
+
+    /// Returns a buffer from the pool or creates a new one.
+    fn take(&self) -> BytesMut {
+        match self.pool.pop() {
+            Some(mut buf) => {
+                buf.clear();
+                buf
+            }
+            None => BytesMut::with_capacity(SERIALIZE_BUFFER_INIT_CAP),
+        }
+    }
+
+    /// Returns a buffer and inserts a leading `tag`.
+    fn take_with_tag(&self, tag: u8) -> BytesMut {
+        let mut buf = self.take();
+        buf.put_u8(tag);
+        buf
+    }
+
+    /// Returns a buffer, inserts a leading `tag`, and then runs `write`.
+    fn take_with_tag_and_writer(&self, tag: u8, write: impl FnOnce(&mut bytes::buf::Writer<BytesMut>)) -> BytesMut {
+        let mut writer = self.take_with_tag(tag).writer();
+        write(&mut writer);
+        writer.into_inner()
+    }
+}
+
 /// Serialize `msg` into a [`DataMessage`] containing a [`ws::ServerMessage`].
 ///
 /// If `protocol` is [`Protocol::Binary`],
 /// the message will be conditionally compressed by this method according to `compression`.
-pub fn serialize(msg: impl ToProtocol<Encoded = SwitchedServerMessage>, config: ClientConfig) -> DataMessage {
-    // TODO(centril, perf): here we are allocating buffers only to throw them away eventually.
-    // Consider pooling these allocations so that we reuse them.
+pub fn serialize(
+    pool: &SerializeBufferPool,
+    msg: impl ToProtocol<Encoded = SwitchedServerMessage>,
+    config: ClientConfig,
+) -> DataMessage {
     match msg.to_protocol(config.protocol) {
-        FormatSwitch::Json(msg) => serde_json::to_string(&SerializeWrapper::new(msg)).unwrap().into(),
+        FormatSwitch::Json(msg) => {
+            let mut out: bytes::buf::Writer<BytesMut> = pool.take().writer();
+            serde_json::to_writer(&mut out, &SerializeWrapper::new(msg))
+                .expect("should be able to json encode a `ServerMessage`");
+            let out = out.into_inner();
+
+            let out = out.freeze();
+            // SAFETY: `serde_json::to_writer` states that:
+            // > "Serialization guarantees it only feeds valid UTF-8 sequences to the writer."
+            let msg_json = unsafe { ByteString::from_bytes_unchecked(out) };
+            msg_json.into()
+        }
         FormatSwitch::Bsatn(msg) => {
             // First write the tag so that we avoid shifting the entire message at the end.
-            let mut msg_bytes = vec![SERVER_MSG_COMPRESSION_TAG_NONE];
+            let mut msg_bytes = pool.take_with_tag(SERVER_MSG_COMPRESSION_TAG_NONE);
             bsatn::to_writer(&mut msg_bytes, &msg).unwrap();
 
             // Conditionally compress the message.
             let srv_msg = &msg_bytes[1..];
             let msg_bytes = match ws::decide_compression(srv_msg.len(), config.compression) {
                 Compression::None => msg_bytes,
-                Compression::Brotli => {
-                    let mut out = vec![SERVER_MSG_COMPRESSION_TAG_BROTLI];
-                    ws::brotli_compress(srv_msg, &mut out);
-                    out
-                }
-                Compression::Gzip => {
-                    let mut out = vec![SERVER_MSG_COMPRESSION_TAG_GZIP];
-                    ws::gzip_compress(srv_msg, &mut out);
-                    out
-                }
+                Compression::Brotli => pool.take_with_tag_and_writer(SERVER_MSG_COMPRESSION_TAG_BROTLI, |out| {
+                    ws::brotli_compress(srv_msg, out)
+                }),
+                Compression::Gzip => pool
+                    .take_with_tag_and_writer(SERVER_MSG_COMPRESSION_TAG_GZIP, |out| ws::gzip_compress(srv_msg, out)),
             };
-            msg_bytes.into()
+            msg_bytes.freeze().into()
         }
     }
 }
