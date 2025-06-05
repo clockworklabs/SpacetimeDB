@@ -9,6 +9,7 @@ use super::{
 use crate::{
     db::{
         datastore::{
+            error::{IndexError, TableError},
             system_tables::{
                 system_tables, StColumnRow, StConstraintData, StConstraintRow, StIndexRow, StSequenceRow,
                 StTableFields, StTableRow, SystemTable, ST_CLIENT_ID, ST_CLIENT_IDX, ST_COLUMN_ID, ST_COLUMN_IDX,
@@ -21,7 +22,6 @@ use crate::{
         },
         db_metrics::DB_METRICS,
     },
-    error::{IndexError, TableError},
     execution_context::ExecutionContext,
 };
 use anyhow::anyhow;
@@ -455,7 +455,7 @@ impl CommittedState {
         // Construct their schemas and insert tables for them.
         for table_id in table_ids {
             let schema = self.schema_for_table(table_id)?;
-            self.tables.insert(table_id, Self::make_table(schema));
+            self.create_table(table_id, schema);
         }
         Ok(())
     }

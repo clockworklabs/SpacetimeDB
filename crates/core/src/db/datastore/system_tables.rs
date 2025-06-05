@@ -11,8 +11,6 @@
 //! - Use [`st_fields_enum`] to define its column enum.
 //! - Register its schema in [`system_module_def`], making sure to call `validate_system_table` at the end of the function.
 
-use crate::db::relational_db::RelationalDB;
-use crate::error::DBError;
 use spacetimedb_lib::db::auth::{StAccess, StTableType};
 use spacetimedb_lib::db::raw_def::v9::{btree, RawSql};
 use spacetimedb_lib::db::raw_def::*;
@@ -21,7 +19,6 @@ use spacetimedb_lib::ser::Serialize;
 use spacetimedb_lib::st_var::StVarValue;
 use spacetimedb_lib::{ConnectionId, Identity, ProductValue, SpacetimeType};
 use spacetimedb_primitives::*;
-use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use spacetimedb_sats::algebraic_value::ser::value_serialize;
 use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::product_value::InvalidFieldError;
@@ -34,15 +31,12 @@ use spacetimedb_schema::schema::{
     TableSchema,
 };
 use spacetimedb_table::table::RowRef;
-use spacetimedb_vm::errors::{ErrorType, ErrorVm};
-use spacetimedb_vm::ops::parse;
 use std::cell::RefCell;
 use std::str::FromStr;
 use strum::Display;
 use v9::{RawModuleDefV9Builder, TableType};
 
-use super::locking_tx_datastore::tx::TxId;
-use super::locking_tx_datastore::MutTxId;
+use super::error::DatastoreError;
 
 /// The static ID of the table that defines tables
 pub(crate) const ST_TABLE_ID: TableId = TableId(1);
@@ -497,8 +491,8 @@ pub struct StTableRow {
 }
 
 impl TryFrom<RowRef<'_>> for StTableRow {
-    type Error = DBError;
-    fn try_from(row: RowRef<'_>) -> Result<Self, DBError> {
+    type Error = DatastoreError;
+    fn try_from(row: RowRef<'_>) -> Result<Self, DatastoreError> {
         read_via_bsatn(row)
     }
 }
@@ -551,8 +545,8 @@ pub struct StColumnRow {
 }
 
 impl TryFrom<RowRef<'_>> for StColumnRow {
-    type Error = DBError;
-    fn try_from(row: RowRef<'_>) -> Result<Self, DBError> {
+    type Error = DatastoreError;
+    fn try_from(row: RowRef<'_>) -> Result<Self, DatastoreError> {
         read_via_bsatn(row)
     }
 }
@@ -629,8 +623,8 @@ impl From<StIndexAlgorithm> for IndexAlgorithm {
 }
 
 impl TryFrom<RowRef<'_>> for StIndexRow {
-    type Error = DBError;
-    fn try_from(row: RowRef<'_>) -> Result<Self, DBError> {
+    type Error = DatastoreError;
+    fn try_from(row: RowRef<'_>) -> Result<Self, DatastoreError> {
         read_via_bsatn(row)
     }
 }
@@ -683,8 +677,8 @@ pub struct StSequenceRow {
 }
 
 impl TryFrom<RowRef<'_>> for StSequenceRow {
-    type Error = DBError;
-    fn try_from(row: RowRef<'_>) -> Result<Self, DBError> {
+    type Error = DatastoreError;
+    fn try_from(row: RowRef<'_>) -> Result<Self, DatastoreError> {
         read_via_bsatn(row)
     }
 }
@@ -752,8 +746,8 @@ impl From<ConstraintData> for StConstraintData {
 }
 
 impl TryFrom<RowRef<'_>> for StConstraintRow {
-    type Error = DBError;
-    fn try_from(row: RowRef<'_>) -> Result<Self, DBError> {
+    type Error = DatastoreError;
+    fn try_from(row: RowRef<'_>) -> Result<Self, DatastoreError> {
         read_via_bsatn(row)
     }
 }
@@ -791,8 +785,8 @@ pub struct StRowLevelSecurityRow {
 }
 
 impl TryFrom<RowRef<'_>> for StRowLevelSecurityRow {
-    type Error = DBError;
-    fn try_from(row: RowRef<'_>) -> Result<Self, DBError> {
+    type Error = DatastoreError;
+    fn try_from(row: RowRef<'_>) -> Result<Self, DatastoreError> {
         read_via_bsatn(row)
     }
 }
@@ -878,7 +872,7 @@ pub struct StModuleRow {
 }
 
 /// Read bytes directly from the column `col` in `row`.
-pub fn read_bytes_from_col(row: RowRef<'_>, col: impl StFields) -> Result<Box<[u8]>, DBError> {
+pub fn read_bytes_from_col(row: RowRef<'_>, col: impl StFields) -> Result<Box<[u8]>, DatastoreError> {
     let bytes = row.read_col::<ArrayValue>(col.col_id())?;
     if let ArrayValue::U8(bytes) = bytes {
         Ok(bytes)
@@ -894,19 +888,19 @@ pub fn read_bytes_from_col(row: RowRef<'_>, col: impl StFields) -> Result<Box<[u
 /// Read an [`Identity`] directly from the column `col` in `row`.
 ///
 /// The [`Identity`] is assumed to be stored as a flat byte array.
-pub fn read_identity_from_col(row: RowRef<'_>, col: impl StFields) -> Result<Identity, DBError> {
+pub fn read_identity_from_col(row: RowRef<'_>, col: impl StFields) -> Result<Identity, DatastoreError> {
     Ok(Identity::from_u256(row.read_col(col.col_id())?))
 }
 
 /// Read a [`Hash`] directly from the column `col` in `row`.
 ///
 /// The [`Hash`] is assumed to be stored as a flat byte array.
-pub fn read_hash_from_col(row: RowRef<'_>, col: impl StFields) -> Result<Hash, DBError> {
+pub fn read_hash_from_col(row: RowRef<'_>, col: impl StFields) -> Result<Hash, DatastoreError> {
     Ok(Hash::from_u256(row.read_col(col.col_id())?))
 }
 
 impl TryFrom<RowRef<'_>> for StModuleRow {
-    type Error = DBError;
+    type Error = DatastoreError;
 
     fn try_from(row: RowRef<'_>) -> Result<Self, Self::Error> {
         read_via_bsatn(row)
@@ -943,85 +937,10 @@ impl From<&StClientRow> for ProductValue {
 }
 
 impl TryFrom<RowRef<'_>> for StClientRow {
-    type Error = DBError;
+    type Error = DatastoreError;
 
     fn try_from(row: RowRef<'_>) -> Result<Self, Self::Error> {
         read_via_bsatn(row)
-    }
-}
-
-/// A handle for reading system variables from `st_var`
-pub struct StVarTable;
-
-impl StVarTable {
-    /// Read the value of [ST_VARNAME_ROW_LIMIT] from `st_var`
-    pub fn row_limit(db: &RelationalDB, tx: &TxId) -> Result<Option<u64>, DBError> {
-        let data = Self::read_var(db, tx, StVarName::RowLimit);
-
-        if let Some(StVarValue::U64(limit)) = data? {
-            return Ok(Some(limit));
-        }
-        Ok(None)
-    }
-
-    /// Read the value of [ST_VARNAME_SLOW_QRY] from `st_var`
-    pub fn query_limit(db: &RelationalDB, tx: &TxId) -> Result<Option<u64>, DBError> {
-        if let Some(StVarValue::U64(ms)) = Self::read_var(db, tx, StVarName::SlowQryThreshold)? {
-            return Ok(Some(ms));
-        }
-        Ok(None)
-    }
-
-    /// Read the value of [ST_VARNAME_SLOW_SUB] from `st_var`
-    pub fn sub_limit(db: &RelationalDB, tx: &TxId) -> Result<Option<u64>, DBError> {
-        if let Some(StVarValue::U64(ms)) = Self::read_var(db, tx, StVarName::SlowSubThreshold)? {
-            return Ok(Some(ms));
-        }
-        Ok(None)
-    }
-
-    /// Read the value of [ST_VARNAME_SLOW_INC] from `st_var`
-    pub fn incr_limit(db: &RelationalDB, tx: &TxId) -> Result<Option<u64>, DBError> {
-        if let Some(StVarValue::U64(ms)) = Self::read_var(db, tx, StVarName::SlowIncThreshold)? {
-            return Ok(Some(ms));
-        }
-        Ok(None)
-    }
-
-    /// Read the value of a system variable from `st_var`
-    pub fn read_var(db: &RelationalDB, tx: &TxId, name: StVarName) -> Result<Option<StVarValue>, DBError> {
-        if let Some(row_ref) = db
-            .iter_by_col_eq(tx, ST_VAR_ID, StVarFields::Name.col_id(), &name.into())?
-            .next()
-        {
-            return Ok(Some(StVarRow::try_from(row_ref)?.value));
-        }
-        Ok(None)
-    }
-
-    /// Update the value of a system variable in `st_var`
-    pub fn write_var(db: &RelationalDB, tx: &mut MutTxId, name: StVarName, literal: &str) -> Result<(), DBError> {
-        let value = Self::parse_var(name, literal)?;
-        if let Some(row_ref) = db
-            .iter_by_col_eq_mut(tx, ST_VAR_ID, StVarFields::Name.col_id(), &name.into())?
-            .next()
-        {
-            db.delete(tx, ST_VAR_ID, [row_ref.pointer()]);
-        }
-        tx.insert_via_serialize_bsatn(ST_VAR_ID, &StVarRow { name, value })?;
-        Ok(())
-    }
-
-    /// Parse the literal representation of a system variable
-    fn parse_var(name: StVarName, literal: &str) -> Result<StVarValue, DBError> {
-        StVarValue::try_from_primitive(parse::parse(literal, &name.type_of())?).map_err(|v| {
-            ErrorVm::Type(ErrorType::Parse {
-                value: literal.to_string(),
-                ty: fmt_algebraic_type(&name.type_of()).to_string(),
-                err: format!("error parsing value: {:?}", v),
-            })
-            .into()
-        })
     }
 }
 
@@ -1118,7 +1037,7 @@ impl StVarName {
 }
 
 impl TryFrom<RowRef<'_>> for StVarRow {
-    type Error = DBError;
+    type Error = DatastoreError;
 
     fn try_from(row: RowRef<'_>) -> Result<Self, Self::Error> {
         // The position of the `value` column in `st_var`
@@ -1155,8 +1074,8 @@ pub struct StScheduledRow {
 }
 
 impl TryFrom<RowRef<'_>> for StScheduledRow {
-    type Error = DBError;
-    fn try_from(row: RowRef<'_>) -> Result<Self, DBError> {
+    type Error = DatastoreError;
+    fn try_from(row: RowRef<'_>) -> Result<Self, DatastoreError> {
         read_via_bsatn(row)
     }
 }
@@ -1192,7 +1111,7 @@ pub(crate) fn with_sys_table_buf<R>(run: impl FnOnce(&mut Vec<u8>) -> R) -> R {
 }
 
 /// Read a value from a system table via BSATN.
-fn read_via_bsatn<T: DeserializeOwned>(row: RowRef<'_>) -> Result<T, DBError> {
+fn read_via_bsatn<T: DeserializeOwned>(row: RowRef<'_>) -> Result<T, DatastoreError> {
     with_sys_table_buf(|buf| Ok(row.read_via_bsatn::<T>(buf)?))
 }
 
@@ -1210,19 +1129,6 @@ fn to_product_value<T: Serialize>(value: &T) -> ProductValue {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::relational_db::tests_utils::{with_auto_commit, with_read_only, TestDB};
-
-    #[test]
-    fn test_system_variables() {
-        let db = TestDB::durable().expect("failed to create db");
-        let _ = with_auto_commit(&db, |tx| StVarTable::write_var(&db, tx, StVarName::RowLimit, "5"));
-        assert_eq!(
-            5,
-            with_read_only(&db, |tx| StVarTable::row_limit(&db, tx))
-                .expect("failed to read from st_var")
-                .expect("row_limit does not exist")
-        );
-    }
 
     #[test]
     fn test_sequences_within_reserved_range() {

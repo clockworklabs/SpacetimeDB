@@ -27,7 +27,7 @@ select * from inventory WHERE inventory_id = 1
 ----
 1	'health1'
 
-#Cheking using table identifiers
+#Checking using table identifiers
 query TI
 select name, inventory.inventory_id from inventory WHERE inventory_id = 1
 ----

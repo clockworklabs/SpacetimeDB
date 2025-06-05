@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <AssemblyName>SpacetimeDB.BSATN.Codegen</AssemblyName>
-    <Version>1.1.1</Version>
+    <Version>1.1.2</Version>
     <Title>SpacetimeDB BSATN Codegen</Title>
     <Description>The SpacetimeDB BSATN Codegen implements the Roslyn incremental generators for BSATN serialization/deserialization in C#.</Description>
   </PropertyGroup>

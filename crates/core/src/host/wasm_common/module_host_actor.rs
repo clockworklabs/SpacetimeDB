@@ -290,12 +290,12 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
                 log::warn!("Database update failed: {} @ {}", e, stdb.database_identity());
                 self.system_logger().warn(&format!("Database update failed: {e}"));
                 let (tx_metrics, reducer) = stdb.rollback_mut_tx(tx);
-                tx_metrics.report_with_db(&reducer, stdb, None);
+                stdb.report(&reducer, &tx_metrics, None);
                 Ok(UpdateDatabaseResult::ErrorExecutingMigration(e))
             }
             Ok(()) => {
                 if let Some((tx_data, tx_metrics, reducer)) = stdb.commit_tx(tx)? {
-                    tx_metrics.report_with_db(&reducer, stdb, Some(&tx_data));
+                    stdb.report(&reducer, &tx_metrics, Some(&tx_data));
                 }
                 self.system_logger().info("Database updated");
                 log::info!("Database updated, {}", stdb.database_identity());
@@ -324,7 +324,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
     // case.
     //
     /// The method also performs various measurements and records energy usage,
-    /// as well as broadcasting a [`ModuleEvent`] containg information about
+    /// as well as broadcasting a [`ModuleEvent`] containing information about
     /// the outcome of the call.
     #[tracing::instrument(level = "trace", skip_all)]
     fn call_reducer_with_tx(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> ReducerCallResult {
@@ -398,9 +398,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         )
         .entered();
 
-        // run the call_reducer call in rayon. it's important that we don't acquire a lock inside a rayon task,
-        // as that can lead to deadlock.
-        let (mut tx, result) = rayon::scope(|_| tx_slot.set(tx, || self.instance.call_reducer(op, budget)));
+        let (mut tx, result) = tx_slot.set(tx, || self.instance.call_reducer(op, budget));
 
         let ExecuteResult {
             energy,
@@ -474,7 +472,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
                 );
                 EventStatus::Failed(errmsg.into())
             }
-            // We haven't actually comitted yet - `commit_and_broadcast_event` will commit
+            // We haven't actually committed yet - `commit_and_broadcast_event` will commit
             // for us and replace this with the actual database update.
             //
             // Detecting a new client, and inserting it in `st_clients`
@@ -512,7 +510,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         let (event, _) = match self
             .info
             .subscriptions
-            .commit_and_broadcast_event(client.as_deref(), event, tx)
+            .commit_and_broadcast_event(client, event, tx)
             .unwrap()
         {
             Ok(ev) => ev,

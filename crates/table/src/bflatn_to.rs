@@ -2,12 +2,14 @@
 //! and [`write_row_to_page(page, blob_store, visitor, ty, val)`]
 //! which write `val: ProductValue` typed at `ty` to `page` and `pages` respectively.
 
+use crate::layout::ProductTypeLayoutView;
+
 use super::{
     blob_store::BlobStore,
     indexes::{Bytes, PageOffset, RowPointer, SquashedOffset},
     layout::{
-        align_to, bsatn_len, required_var_len_granules_for_row, AlgebraicTypeLayout, HasLayout, ProductTypeLayout,
-        RowTypeLayout, SumTypeLayout, VarLenType,
+        align_to, bsatn_len, required_var_len_granules_for_row, AlgebraicTypeLayout, HasLayout, RowTypeLayout,
+        SumTypeLayout, VarLenType,
     },
     page::{GranuleOffsetIter, Page, VarView},
     page_pool::PagePool,
@@ -227,7 +229,7 @@ impl BflatnSerializedRowBuffer<'_> {
             // and finally write the tag.
             (AlgebraicTypeLayout::Sum(ty), AlgebraicValue::Sum(val)) => self.write_sum(ty, val)?,
             // For products, write every element in order.
-            (AlgebraicTypeLayout::Product(ty), AlgebraicValue::Product(val)) => self.write_product(ty, val)?,
+            (AlgebraicTypeLayout::Product(ty), AlgebraicValue::Product(val)) => self.write_product(ty.view(), val)?,
 
             // For primitive types, write their contents by LE-encoding.
             (&AlgebraicTypeLayout::Bool, AlgebraicValue::Bool(val)) => self.write_bool(*val),
@@ -285,7 +287,7 @@ impl BflatnSerializedRowBuffer<'_> {
     }
 
     /// Write an `val`, a [`ProductValue`], typed at `ty`, to the buffer.
-    fn write_product(&mut self, ty: &ProductTypeLayout, val: &ProductValue) -> Result<(), Error> {
+    fn write_product(&mut self, ty: ProductTypeLayoutView<'_>, val: &ProductValue) -> Result<(), Error> {
         // `Iterator::zip` silently drops elements if the two iterators have different lengths,
         // so we need to check that our `ProductValue` has the same number of elements
         // as our `ProductTypeLayout` to be sure it's typed correctly.

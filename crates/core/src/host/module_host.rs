@@ -364,7 +364,7 @@ fn init_database(
     let rcr = match module_def.lifecycle_reducer(Lifecycle::Init) {
         None => {
             if let Some((tx_data, tx_metrics, reducer)) = stdb.commit_tx(tx)? {
-                tx_metrics.report_with_db(&reducer, stdb, Some(&tx_data));
+                stdb.report(&reducer, &tx_metrics, Some(&tx_data));
             }
             None
         }
@@ -740,13 +740,16 @@ impl ModuleHost {
             let stdb = self.inner.replica_ctx().relational_db.clone();
             asyncify(move || {
                 stdb.with_auto_commit(workload, |mut_tx| {
-                    mut_tx.insert_st_client(caller_identity, caller_connection_id)
+                    mut_tx
+                        .insert_st_client(caller_identity, caller_connection_id)
+                        .map_err(DBError::from)
                 })
             })
             .await
             .inspect_err(|e| {
                 log::error!("`call_identity_connected`: fallback transaction to insert into `st_client` failed: {e:#?}")
             })
+            .map_err(DBError::from)
             .map_err(Into::into)
         }
     }
@@ -791,7 +794,9 @@ impl ModuleHost {
             let database_identity = self.info.database_identity;
             asyncify(move || {
                 stdb.with_auto_commit(workload, |mut_tx| {
-                    mut_tx.delete_st_client(caller_identity, caller_connection_id, database_identity)
+                    mut_tx
+                        .delete_st_client(caller_identity, caller_connection_id, database_identity)
+                        .map_err(DBError::from)
                 })
             })
             .await
@@ -841,7 +846,7 @@ impl ModuleHost {
                     ..
                 }) => fallback().await,
 
-                // If it succeeded, as mentioend above, `st_client` is already updated.
+                // If it succeeded, as mentioned above, `st_client` is already updated.
                 Ok(ReducerCallResult {
                     outcome: ReducerOutcome::Committed,
                     ..

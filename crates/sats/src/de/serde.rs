@@ -529,10 +529,10 @@ impl<'de, T: super::DeserializeSeed<'de> + Clone, V: super::ArrayVisitor<'de, T:
     }
 }
 
-/// Translates `serde::SeqAcess<'de>` (the trait) to `ArrayAccess<'de>`
+/// Translates `serde::SeqAccess<'de>` (the trait) to `ArrayAccess<'de>`
 /// for implementing deserialization of array elements.
 struct ArrayAccess<A, T> {
-    /// The `serde::SeqAcess<'de>` implementation.
+    /// The `serde::SeqAccess<'de>` implementation.
     seq: A,
     /// The seed to pass onto `DeserializeSeed`.
     seed: T,

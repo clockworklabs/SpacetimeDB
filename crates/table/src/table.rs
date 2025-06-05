@@ -270,7 +270,7 @@ impl Table {
         // By default, we start off with an empty pointer map,
         // which is removed when the first unique index is added.
         let pm = Some(PointerMap::default());
-        Self::new_with_indexes_capacity(schema, row_layout, static_layout, visitor_prog, squashed_offset, pm)
+        Self::new_raw(schema, row_layout, static_layout, visitor_prog, squashed_offset, pm)
     }
 
     /// Returns whether this is a scheduler table.
@@ -1231,13 +1231,19 @@ impl Table {
     /// The new table will be completely empty
     /// and will use the given `squashed_offset` instead of that of `self`.
     pub fn clone_structure(&self, squashed_offset: SquashedOffset) -> Self {
+        // Clone a bunch of static data.
+        // NOTE(centril): It's important that these be cheap to clone.
+        // This is why they are all `Arc`ed or have some sort of small-vec optimization.
         let schema = self.schema.clone();
         let layout = self.row_layout().clone();
         let sbl = self.inner.static_layout.clone();
         let visitor = self.inner.visitor_prog.clone();
+
         // If we had a pointer map, we'll have one in the cloned one as well, but empty.
         let pm = self.pointer_map.as_ref().map(|_| PointerMap::default());
-        let mut new = Table::new_with_indexes_capacity(schema, layout, sbl, visitor, squashed_offset, pm);
+
+        // Make the new table.
+        let mut new = Table::new_raw(schema, layout, sbl, visitor, squashed_offset, pm);
 
         // Clone the index structure. The table is empty, so no need to `build_from_rows`.
         for (&index_id, index) in self.indexes.iter() {
@@ -1746,6 +1752,16 @@ impl<'a> TableAndIndex<'a> {
         self.index
     }
 
+    /// Wraps `ptr` in a [`RowRef`].
+    ///
+    /// # Safety
+    ///
+    /// The `self.table().is_row_present(ptr)` must hold.
+    pub unsafe fn combine_with_ptr(&self, ptr: RowPointer) -> RowRef<'a> {
+        // SAFETY: forward caller requirement.
+        unsafe { self.table.get_row_ref_unchecked(self.blob_store, ptr) }
+    }
+
     /// Returns an iterator yielding all rows in this index for `key`.
     ///
     /// Matching is defined by `Ord for AlgebraicValue`.
@@ -1780,6 +1796,13 @@ pub struct IndexScanPointIter<'a> {
     blob_store: &'a dyn BlobStore,
     /// The iterator performing the index scan yielding row pointers.
     btree_index_iter: TableIndexPointIter<'a>,
+}
+
+impl<'a> IndexScanPointIter<'a> {
+    /// Consume the iterator, returning the inner one.
+    pub fn index(self) -> TableIndexPointIter<'a> {
+        self.btree_index_iter
+    }
 }
 
 impl<'a> Iterator for IndexScanPointIter<'a> {
@@ -1829,26 +1852,36 @@ pub struct UniqueConstraintViolation {
 impl UniqueConstraintViolation {
     /// Returns a unique constraint violation error for the given `index`
     /// and the `value` that would have been duplicated.
+    ///
+    /// In this version, the [`IndexSchema`] is looked up in `schema` based on `index_id`.
     #[cold]
     fn build(schema: &TableSchema, index: &TableIndex, index_id: IndexId, value: AlgebraicValue) -> Self {
+        let index_schema = schema.indexes.iter().find(|i| i.index_id == index_id).unwrap();
+        Self::build_with_index_schema(schema, index, index_schema, value)
+    }
+
+    /// Returns a unique constraint violation error for the given `index`
+    /// and the `value` that would have been duplicated.
+    ///
+    /// In this version, the `index_schema` is explicitly passed.
+    #[cold]
+    pub fn build_with_index_schema(
+        schema: &TableSchema,
+        index: &TableIndex,
+        index_schema: &IndexSchema,
+        value: AlgebraicValue,
+    ) -> Self {
         // Fetch the table name.
         let table_name = schema.table_name.clone();
 
         // Fetch the names of the columns used in the index.
-        let cols = index
-            .indexed_columns
-            .iter()
-            .map(|x| schema.columns()[x.idx()].col_name.clone())
+        let cols = schema
+            .get_columns(&index.indexed_columns)
+            .map(|(_, cs)| cs.unwrap().col_name.clone())
             .collect();
 
         // Fetch the name of the index.
-        let constraint_name = schema
-            .indexes
-            .iter()
-            .find(|i| i.index_id == index_id)
-            .unwrap()
-            .index_name
-            .clone();
+        let constraint_name = index_schema.index_name.clone();
 
         Self {
             constraint_name,
@@ -1875,7 +1908,7 @@ impl Table {
     }
 
     /// Returns a new empty table using the particulars passed.
-    fn new_with_indexes_capacity(
+    fn new_raw(
         schema: Arc<TableSchema>,
         row_layout: RowTypeLayout,
         static_layout: Option<(StaticLayout, StaticBsatnValidator)>,

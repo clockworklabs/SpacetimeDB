@@ -622,13 +622,19 @@ pub struct TableUpdate<F: WebsocketFormat> {
     pub updates: SmallVec<[F::QueryUpdate; 1]>,
 }
 
+/// Computed update for a single query, annotated with the number of matching rows.
+pub struct SingleQueryUpdate<F: WebsocketFormat> {
+    pub update: F::QueryUpdate,
+    pub num_rows: u64,
+}
+
 impl<F: WebsocketFormat> TableUpdate<F> {
-    pub fn new(table_id: TableId, table_name: Box<str>, (update, num_rows): (F::QueryUpdate, u64)) -> Self {
+    pub fn new(table_id: TableId, table_name: Box<str>, update: SingleQueryUpdate<F>) -> Self {
         Self {
             table_id,
             table_name,
-            num_rows,
-            updates: [update].into(),
+            num_rows: update.num_rows,
+            updates: [update.update].into(),
         }
     }
 
@@ -641,9 +647,9 @@ impl<F: WebsocketFormat> TableUpdate<F> {
         }
     }
 
-    pub fn push(&mut self, (update, num_rows): (F::QueryUpdate, u64)) {
-        self.updates.push(update);
-        self.num_rows += num_rows;
+    pub fn push(&mut self, update: SingleQueryUpdate<F>) {
+        self.updates.push(update.update);
+        self.num_rows += update.num_rows;
     }
 
     pub fn num_rows(&self) -> usize {
@@ -721,7 +727,7 @@ pub struct OneOffTable<F: WebsocketFormat> {
     /// The set of rows which matched the query, encoded as BSATN or JSON according to the table's schema
     /// and the client's requested protocol.
     ///
-    /// TODO(centril, 1.0): Evalutate whether we want to conditionally compress these.
+    /// TODO(centril, 1.0): Evaluate whether we want to conditionally compress these.
     pub rows: F::List,
 }
 

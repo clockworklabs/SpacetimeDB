@@ -1,5 +1,5 @@
 //! Snapshot testing for the dependency tree of the `bindings` crate - we want
-//! to make sure we don't unknowningly add a bunch of dependencies here,
+//! to make sure we don't unknowingly add a bunch of dependencies here,
 //! slowing down compilation for every spacetime module.
 
 // We need to remove the `cpufeatures` and `libc` dependencies from the output, it added on `arm` architecture:

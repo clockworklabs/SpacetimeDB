@@ -27,12 +27,12 @@ metrics_group!(
 
         #[name = spacetime_websocket_requests_total]
         #[help = "The cumulative number of websocket request messages"]
-        #[labels(replica_id: u64, protocol: str)]
+        #[labels(database_identity: Identity, protocol: str)]
         pub websocket_requests: IntCounterVec,
 
         #[name = spacetime_websocket_request_msg_size]
         #[help = "The size of messages received on connected sessions"]
-        #[labels(replica_id: u64, protocol: str)]
+        #[labels(database_identity: Identity, protocol: str)]
         pub websocket_request_msg_size: HistogramVec,
 
         #[name = jemalloc_active_bytes]
@@ -257,6 +257,21 @@ metrics_group!(
         #[help = "The cumulative number of bytes sent to clients"]
         #[labels(txn_type: WorkloadType, db: Identity)]
         pub bytes_sent_to_clients: IntCounterVec,
+
+        #[name = spacetime_subscription_send_queue_length]
+        #[help = "The number of `ComputedQueries` waiting in the queue to be aggregated and broadcast by the `send_worker`"]
+        #[labels(database_identity: Identity)]
+        pub subscription_send_queue_length: IntGaugeVec,
+
+        #[name = spacetime_total_incoming_queue_length]
+        #[help = "The number of client -> server WebSocket messages waiting any client's incoming queue"]
+        #[labels(db: Identity)]
+        pub total_incoming_queue_length: IntGaugeVec,
+
+        #[name = spacetime_total_outgoing_queue_length]
+        #[help = "The number of server -> client WebSocket messages waiting in any client's outgoing queue"]
+        #[labels(db: Identity)]
+        pub total_outgoing_queue_length: IntGaugeVec,
     }
 );
 
@@ -265,14 +280,15 @@ pub static WORKER_METRICS: Lazy<WorkerMetrics> = Lazy::new(WorkerMetrics::new);
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemalloc_ctl::{epoch, stats};
 
+#[cfg(not(target_env = "msvc"))]
 static SPAWN_JEMALLOC_GUARD: Once = Once::new();
-pub fn spawn_jemalloc_stats(node_id: String) {
+pub fn spawn_jemalloc_stats(_node_id: String) {
     #[cfg(not(target_env = "msvc"))]
     SPAWN_JEMALLOC_GUARD.call_once(|| {
         spawn(async move {
-            let allocated_bytes = WORKER_METRICS.jemalloc_allocated_bytes.with_label_values(&node_id);
-            let resident_bytes = WORKER_METRICS.jemalloc_resident_bytes.with_label_values(&node_id);
-            let active_bytes = WORKER_METRICS.jemalloc_active_bytes.with_label_values(&node_id);
+            let allocated_bytes = WORKER_METRICS.jemalloc_allocated_bytes.with_label_values(&_node_id);
+            let resident_bytes = WORKER_METRICS.jemalloc_resident_bytes.with_label_values(&_node_id);
+            let active_bytes = WORKER_METRICS.jemalloc_active_bytes.with_label_values(&_node_id);
 
             let e = epoch::mib().unwrap();
             loop {

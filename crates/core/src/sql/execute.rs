@@ -1,9 +1,7 @@
 use std::time::Duration;
 
 use super::ast::SchemaViewer;
-use crate::db::datastore::locking_tx_datastore::datastore::report_tx_metricses;
 use crate::db::datastore::locking_tx_datastore::state_view::StateView;
-use crate::db::datastore::system_tables::StVarTable;
 use crate::db::datastore::traits::IsolationLevel;
 use crate::db::relational_db::{RelationalDB, Tx};
 use crate::energy::EnergyQuanta;
@@ -73,7 +71,7 @@ fn execute(
     updates: &mut Vec<DatabaseTableUpdate>,
 ) -> Result<Vec<MemTable>, DBError> {
     let slow_query_threshold = if let TxMode::Tx(tx) = p.tx {
-        StVarTable::query_limit(p.db, tx)?.map(Duration::from_millis)
+        p.db.query_limit(tx)?.map(Duration::from_millis)
     } else {
         None
     };
@@ -174,6 +172,8 @@ pub fn execute_sql_tx<'a>(
 
 pub struct SqlResult {
     pub rows: Vec<ProductValue>,
+    /// These metrics will be reported via `report_tx_metrics`.
+    /// They should not be reported separately to avoid double counting.
     pub metrics: ExecutionMetrics,
 }
 
@@ -185,7 +185,7 @@ pub fn run(
     subs: Option<&ModuleSubscriptions>,
     head: &mut Vec<(Box<str>, AlgebraicType)>,
 ) -> Result<SqlResult, DBError> {
-    // We parse the sql statement in a mutable transation.
+    // We parse the sql statement in a mutable transaction.
     // If it turns out to be a query, we downgrade the tx.
     let (tx, stmt) = db.with_auto_rollback(db.begin_mut_tx(IsolationLevel::Serializable, Workload::Sql), |tx| {
         compile_sql_stmt(sql_text, &SchemaViewer::new(tx, &auth), &auth)
@@ -199,10 +199,10 @@ pub fn run(
             // and hence there are no deltas to process.
             let (tx_data, tx_metrics_mut, tx) = tx.commit_downgrade(Workload::Sql);
 
-            // Release the tx on drop, so that we record metrics
+            // Release the tx on drop, so that we record metrics.
             let mut tx = scopeguard::guard(tx, |tx| {
                 let (tx_metrics_downgrade, reducer) = db.release_tx(tx);
-                report_tx_metricses(&reducer, db, Some(&tx_data), Some(tx_metrics_mut), tx_metrics_downgrade);
+                db.report_tx_metricses(&reducer, Some(&tx_data), Some(&tx_metrics_mut), &tx_metrics_downgrade);
             });
 
             // Compute the header for the result set
@@ -247,7 +247,7 @@ pub fn run(
                 let metrics = tx.metrics;
                 return db.commit_tx(tx).map(|tx_opt| {
                     if let Some((tx_data, tx_metrics, reducer)) = tx_opt {
-                        tx_metrics.report_with_db(&reducer, db, Some(&tx_data));
+                        db.report(&reducer, &tx_metrics, Some(&tx_data));
                     }
                     SqlResult { rows: vec![], metrics }
                 });
@@ -301,6 +301,8 @@ pub fn translate_col(tx: &Tx, field: FieldName) -> Option<Box<str>> {
 
 #[cfg(test)]
 pub(crate) mod tests {
+    use std::sync::Arc;
+
     use super::*;
     use crate::db::datastore::system_tables::{
         StRowLevelSecurityRow, StTableFields, ST_ROW_LEVEL_SECURITY_ID, ST_TABLE_ID, ST_TABLE_NAME,
@@ -317,20 +319,19 @@ pub(crate) mod tests {
     use spacetimedb_primitives::{col_list, ColId, TableId};
     use spacetimedb_sats::{product, AlgebraicType, ArrayValue, ProductType};
     use spacetimedb_vm::eval::test_helpers::create_game_data;
-    use std::sync::Arc;
 
     pub(crate) fn execute_for_testing(
         db: &RelationalDB,
         sql_text: &str,
         q: Vec<CrudExpr>,
     ) -> Result<Vec<MemTable>, DBError> {
-        let subs = ModuleSubscriptions::new(Arc::new(db.clone()), <_>::default(), Identity::ZERO);
+        let (subs, _runtime) = ModuleSubscriptions::for_test_new_runtime(Arc::new(db.clone()));
         execute_sql(db, sql_text, q, AuthCtx::for_testing(), Some(&subs))
     }
 
     /// Short-cut for simplify test execution
     pub(crate) fn run_for_testing(db: &RelationalDB, sql_text: &str) -> Result<Vec<ProductValue>, DBError> {
-        let subs = ModuleSubscriptions::new(Arc::new(db.clone()), <_>::default(), Identity::ZERO);
+        let (subs, _runtime) = ModuleSubscriptions::for_test_new_runtime(Arc::new(db.clone()));
         run(db, sql_text, AuthCtx::for_testing(), Some(&subs), &mut vec![]).map(|x| x.rows)
     }
 
