@@ -2,7 +2,6 @@ use super::module_host::{EventStatus, ModuleHost, ModuleInfo, NoSuchModule};
 use super::scheduler::SchedulerStarter;
 use super::wasmtime::WasmtimeRuntime;
 use super::{Scheduler, UpdateDatabaseResult};
-use crate::client::messages::SerializeBufferPool;
 use crate::database_logger::DatabaseLogger;
 use crate::db::datastore::traits::Program;
 use crate::db::db_metrics::data_size::DATA_SIZE_METRICS;
@@ -94,8 +93,6 @@ pub struct HostController {
     durability: Arc<dyn DurabilityProvider>,
     /// The page pool all databases will use by cloning the ref counted pool.
     pub page_pool: PagePool,
-    // The buffer pool used for serializing websocket messages to send.
-    pub websocket_send_serialize_buffer_pool: Arc<SerializeBufferPool>,
     /// The runtimes for running our modules.
     runtimes: Arc<HostRuntimes>,
 }
@@ -182,7 +179,6 @@ impl HostController {
             runtimes: HostRuntimes::new(Some(&data_dir)),
             data_dir,
             page_pool: PagePool::new(default_config.page_pool_max_size),
-            websocket_send_serialize_buffer_pool: <_>::default(),
         }
     }
 

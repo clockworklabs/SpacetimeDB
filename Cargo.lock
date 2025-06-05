@@ -5446,7 +5446,6 @@ dependencies = [
  "chrono",
  "criterion",
  "crossbeam-channel",
- "crossbeam-queue",
  "derive_more",
  "dirs",
  "enum-as-inner",

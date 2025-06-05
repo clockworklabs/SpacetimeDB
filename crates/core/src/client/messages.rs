@@ -3,9 +3,8 @@ use crate::execution_context::WorkloadType;
 use crate::host::module_host::{EventStatus, ModuleEvent};
 use crate::host::ArgsTuple;
 use crate::messages::websocket as ws;
-use bytes::{BufMut, BytesMut};
+use bytes::{BufMut, Bytes, BytesMut};
 use bytestring::ByteString;
-use crossbeam_queue::SegQueue;
 use derive_more::From;
 use spacetimedb_client_api_messages::websocket::{
     BsatnFormat, Compression, FormatSwitch, JsonFormat, OneOffTable, RowListLen, WebsocketFormat,
@@ -35,41 +34,89 @@ pub(super) type SwitchedDbUpdate = FormatSwitch<ws::DatabaseUpdate<BsatnFormat>,
 /// and this should be more than enough in the common case.
 const SERIALIZE_BUFFER_INIT_CAP: usize = 4096;
 
-// A pool of buffers used by [`serialize`].
-#[derive(Default)]
-pub struct SerializeBufferPool {
-    pool: SegQueue<BytesMut>,
+/// A buffer used by [`serialize`]
+pub struct SerializeBuffer {
+    uncompressed: BytesMut,
+    compressed: BytesMut,
 }
 
-impl SerializeBufferPool {
-    /// Puts back a buffer into the pool.
-    pub fn put(&self, buf: BytesMut) {
-        self.pool.push(buf);
-    }
-
-    /// Returns a buffer from the pool or creates a new one.
-    fn take(&self) -> BytesMut {
-        match self.pool.pop() {
-            Some(mut buf) => {
-                buf.clear();
-                buf
-            }
-            None => BytesMut::with_capacity(SERIALIZE_BUFFER_INIT_CAP),
+impl SerializeBuffer {
+    pub fn new(config: ClientConfig) -> Self {
+        let uncompressed_capacity = SERIALIZE_BUFFER_INIT_CAP;
+        let compressed_capacity = if config.compression == Compression::None || config.protocol == Protocol::Text {
+            0
+        } else {
+            SERIALIZE_BUFFER_INIT_CAP
+        };
+        Self {
+            uncompressed: BytesMut::with_capacity(uncompressed_capacity),
+            compressed: BytesMut::with_capacity(compressed_capacity),
         }
     }
 
-    /// Returns a buffer and inserts a leading `tag`.
-    fn take_with_tag(&self, tag: u8) -> BytesMut {
-        let mut buf = self.take();
-        buf.put_u8(tag);
-        buf
+    /// Take the uncompressed message as the one to use.
+    fn uncompressed(self) -> (InUseSerializeBuffer, Bytes) {
+        let uncompressed = self.uncompressed.freeze();
+        let in_use = InUseSerializeBuffer::Uncompressed {
+            uncompressed: uncompressed.clone(),
+            compressed: self.compressed,
+        };
+        (in_use, uncompressed)
     }
 
-    /// Returns a buffer, inserts a leading `tag`, and then runs `write`.
-    fn take_with_tag_and_writer(&self, tag: u8, write: impl FnOnce(&mut bytes::buf::Writer<BytesMut>)) -> BytesMut {
-        let mut writer = self.take_with_tag(tag).writer();
-        write(&mut writer);
-        writer.into_inner()
+    /// Write uncompressed data with a leading tag.
+    fn write_with_tag<F>(&mut self, tag: u8, write: F) -> &[u8]
+    where
+        F: FnOnce(bytes::buf::Writer<&mut BytesMut>),
+    {
+        self.uncompressed.put_u8(tag);
+        write((&mut self.uncompressed).writer());
+        &self.uncompressed[1..]
+    }
+
+    /// Compress the data from a `write_with_tag` call, and change the tag.
+    fn compress_with_tag(
+        self,
+        tag: u8,
+        write: impl FnOnce(&[u8], &mut bytes::buf::Writer<BytesMut>),
+    ) -> (InUseSerializeBuffer, Bytes) {
+        let mut writer = self.compressed.writer();
+        writer.get_mut().put_u8(tag);
+        write(&self.uncompressed[1..], &mut writer);
+        let compressed = writer.into_inner().freeze();
+        let in_use = InUseSerializeBuffer::Compressed {
+            uncompressed: self.uncompressed,
+            compressed: compressed.clone(),
+        };
+        (in_use, compressed)
+    }
+}
+
+type BytesMutWriter<'a> = bytes::buf::Writer<&'a mut BytesMut>;
+
+pub enum InUseSerializeBuffer {
+    Uncompressed { uncompressed: Bytes, compressed: BytesMut },
+    Compressed { uncompressed: BytesMut, compressed: Bytes },
+}
+
+impl InUseSerializeBuffer {
+    pub fn try_reclaim(self) -> Option<SerializeBuffer> {
+        let (mut uncompressed, mut compressed) = match self {
+            Self::Uncompressed {
+                uncompressed,
+                compressed,
+            } => (uncompressed.try_into_mut().ok()?, compressed),
+            Self::Compressed {
+                uncompressed,
+                compressed,
+            } => (uncompressed, compressed.try_into_mut().ok()?),
+        };
+        uncompressed.clear();
+        compressed.clear();
+        Some(SerializeBuffer {
+            uncompressed,
+            compressed,
+        })
     }
 }
 
@@ -78,39 +125,35 @@ impl SerializeBufferPool {
 /// If `protocol` is [`Protocol::Binary`],
 /// the message will be conditionally compressed by this method according to `compression`.
 pub fn serialize(
-    pool: &SerializeBufferPool,
+    mut buffer: SerializeBuffer,
     msg: impl ToProtocol<Encoded = SwitchedServerMessage>,
     config: ClientConfig,
-) -> DataMessage {
+) -> (InUseSerializeBuffer, DataMessage) {
     match msg.to_protocol(config.protocol) {
         FormatSwitch::Json(msg) => {
-            let mut out: bytes::buf::Writer<BytesMut> = pool.take().writer();
-            serde_json::to_writer(&mut out, &SerializeWrapper::new(msg))
+            let out: BytesMutWriter<'_> = (&mut buffer.uncompressed).writer();
+            serde_json::to_writer(out, &SerializeWrapper::new(msg))
                 .expect("should be able to json encode a `ServerMessage`");
-            let out = out.into_inner();
 
-            let out = out.freeze();
+            let (in_use, out) = buffer.uncompressed();
             // SAFETY: `serde_json::to_writer` states that:
             // > "Serialization guarantees it only feeds valid UTF-8 sequences to the writer."
             let msg_json = unsafe { ByteString::from_bytes_unchecked(out) };
-            msg_json.into()
+            (in_use, msg_json.into())
         }
         FormatSwitch::Bsatn(msg) => {
             // First write the tag so that we avoid shifting the entire message at the end.
-            let mut msg_bytes = pool.take_with_tag(SERVER_MSG_COMPRESSION_TAG_NONE);
-            bsatn::to_writer(&mut msg_bytes, &msg).unwrap();
+            let srv_msg = buffer.write_with_tag(SERVER_MSG_COMPRESSION_TAG_NONE, |w| {
+                bsatn::to_writer(w.into_inner(), &msg).unwrap()
+            });
 
             // Conditionally compress the message.
-            let srv_msg = &msg_bytes[1..];
-            let msg_bytes = match ws::decide_compression(srv_msg.len(), config.compression) {
-                Compression::None => msg_bytes,
-                Compression::Brotli => pool.take_with_tag_and_writer(SERVER_MSG_COMPRESSION_TAG_BROTLI, |out| {
-                    ws::brotli_compress(srv_msg, out)
-                }),
-                Compression::Gzip => pool
-                    .take_with_tag_and_writer(SERVER_MSG_COMPRESSION_TAG_GZIP, |out| ws::gzip_compress(srv_msg, out)),
+            let (in_use, msg_bytes) = match ws::decide_compression(srv_msg.len(), config.compression) {
+                Compression::None => buffer.uncompressed(),
+                Compression::Brotli => buffer.compress_with_tag(SERVER_MSG_COMPRESSION_TAG_BROTLI, ws::brotli_compress),
+                Compression::Gzip => buffer.compress_with_tag(SERVER_MSG_COMPRESSION_TAG_GZIP, ws::gzip_compress),
             };
-            msg_bytes.freeze().into()
+            (in_use, msg_bytes.into())
         }
     }
 }
