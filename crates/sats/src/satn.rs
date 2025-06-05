@@ -232,7 +232,7 @@ struct SatnFormatter<'a, 'f> {
     f: Writer<'a, 'f>,
 }
 
-/// An error occured during serialization to the SATS data format.
+/// An error occurred during serialization to the SATS data format.
 #[derive(From, Into)]
 struct SatnError(fmt::Error);
 

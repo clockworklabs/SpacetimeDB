@@ -298,7 +298,7 @@ impl IncrementalJoin {
     /// B(t) refers to the state of table B as of transaction t.
     /// In particular, B(t) includes all of the changes from t.
     /// B(s) refers to the state of table B as of transaction s,
-    /// where s is the transaction immediately preceeding t.
+    /// where s is the transaction immediately preceding t.
     ///
     /// Now we may ask,
     /// given a set of updates to tables A and/or B,
@@ -315,7 +315,7 @@ impl IncrementalJoin {
     /// Because they have no bearing on newly inserted rows of A.
     ///
     /// Now consider rows that were deleted from A.
-    /// Similary we want to know if they join with any deleted rows of B,
+    /// Similarly we want to know if they join with any deleted rows of B,
     /// or if they join with any previously existing rows of B.
     /// That is:
     ///

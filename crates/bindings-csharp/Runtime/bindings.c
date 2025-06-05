@@ -165,7 +165,7 @@ EXPORT(int16_t, __call_reducer__,
 
 #define WASI_NAME(name) __imported_wasi_snapshot_preview1_##name
 
-// Shim for WASI calls that always unconditionaly succeeds.
+// Shim for WASI calls that always unconditionally succeeds.
 // This is suitable for most (but not all) WASI functions used by .NET.
 #define WASI_SHIM(name, params) \
   int32_t WASI_NAME(name) params { return 0; }

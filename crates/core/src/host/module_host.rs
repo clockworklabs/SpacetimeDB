@@ -886,7 +886,7 @@ impl ModuleHost {
                     ..
                 }) => fallback().await,
 
-                // If it succeeded, as mentioend above, `st_client` is already updated.
+                // If it succeeded, as mentioned above, `st_client` is already updated.
                 Ok(ReducerCallResult {
                     outcome: ReducerOutcome::Committed,
                     ..
