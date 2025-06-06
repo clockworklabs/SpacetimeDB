@@ -9,6 +9,8 @@ use sqlparser::{
 };
 use thiserror::Error;
 
+// FIXME: reduce type size
+#[expect(clippy::large_enum_variant)]
 #[derive(Error, Debug)]
 pub enum SubscriptionUnsupported {
     #[error("Unsupported SELECT: {0}")]
@@ -25,6 +27,8 @@ impl SubscriptionUnsupported {
     }
 }
 
+// FIXME: reduce type size
+#[expect(clippy::large_enum_variant)]
 #[derive(Error, Debug)]
 pub enum SqlUnsupported {
     #[error("Unsupported literal expression: {0}")]
