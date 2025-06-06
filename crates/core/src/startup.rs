@@ -156,7 +156,7 @@ fn reload_config<S>(conf_file: &ConfigToml, reload_handle: &reload::Handle<EnvFi
 /// unnecessary context switching.
 ///
 /// * Database instances are critical to overall performance, and keeping each
-///   one on only one thread was shown to significantly increase CCU.
+///   one on only one thread was shown to significantly increase transaction throughput.
 /// * Tokio and Rayon have their own userspace task schedulers, so if the OS
 ///   scheduler is trying to schedule threads as well, it's likely to just
 ///   cause interference.
