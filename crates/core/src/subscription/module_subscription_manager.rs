@@ -15,7 +15,6 @@ use hashbrown::{HashMap, HashSet};
 use itertools::Itertools;
 use parking_lot::RwLock;
 use prometheus::IntGauge;
-use scopeguard::ScopeGuard;
 use spacetimedb_client_api_messages::websocket::{
     BsatnFormat, CompressableQueryUpdate, FormatSwitch, JsonFormat, QueryId, QueryUpdate, SingleQueryUpdate,
     WebsocketFormat,
@@ -43,10 +42,6 @@ type SwitchedDbUpdate = FormatSwitch<ws::DatabaseUpdate<BsatnFormat>, ws::Databa
 type ClientQueryId = QueryId;
 /// SubscriptionId is a globally unique identifier for a subscription.
 type SubscriptionId = (ClientId, ClientQueryId);
-
-// Type aliases that oddly aren't included in parking_lot...
-type ArcRwLockReadGuard<T> = parking_lot::ArcRwLockReadGuard<parking_lot::RawRwLock, T>;
-type ArcRwLockWriteGuard<T> = parking_lot::ArcRwLockWriteGuard<parking_lot::RawRwLock, T>;
 
 #[derive(Debug)]
 pub struct Plan {
@@ -116,9 +111,12 @@ struct ClientInfo {
     subscription_ref_count: HashMap<QueryHash, usize>,
     // This should be removed when we migrate to SubscribeSingle.
     legacy_subscriptions: HashSet<QueryHash>,
-    // This flag is set if an error occurs during a tx update.
-    // It will be cleaned up async or on resubscribe.
-    dropped: AtomicBool,
+    /// This flag is set if an error occurs during a tx update.
+    /// It will be cleaned up async or on resubscribe.
+    ///
+    /// [`Arc`]ed so that this can be updated by the [`SendWorker`]
+    /// and observed by [`SubscriptionManager::remove_dropped_clients`].
+    dropped: Arc<AtomicBool>,
 }
 
 impl ClientInfo {
@@ -128,7 +126,7 @@ impl ClientInfo {
             subscriptions: HashMap::default(),
             subscription_ref_count: HashMap::default(),
             legacy_subscriptions: HashSet::default(),
-            dropped: AtomicBool::new(false),
+            dropped: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -317,8 +315,6 @@ impl SearchArguments {
     }
 }
 
-type ClientsMap = HashMap<ClientId, ClientInfo>;
-
 /// Keeps track of the indexes that are used in subscriptions.
 #[derive(Debug, Default)]
 pub struct QueriedTableIndexIds {
@@ -400,10 +396,7 @@ impl QueriedTableIndexIds {
 #[derive(Debug)]
 pub struct SubscriptionManager {
     /// State for each client.
-    ///
-    /// Protected by an `Arc<RwLock>` because the [`Self::send_worker`] needs to read from it
-    /// in order to dispatch messages to clients.
-    clients: Arc<RwLock<ClientsMap>>,
+    clients: HashMap<ClientId, ClientInfo>,
 
     /// Queries for which there is at least one subscriber.
     queries: HashMap<QueryHash, QueryState>,
@@ -422,7 +415,7 @@ pub struct SubscriptionManager {
     /// we map the filter values to the query in this lookup table.
     search_args: SearchArguments,
 
-    /// Transmit side of a channel to the manager's [`Self::send_worker`] task.
+    /// Transmit side of a channel to the manager's [`SendWorker`] task.
     ///
     /// The send worker runs in parallel and pops [`ComputedQueries`]es out in order,
     /// aggregates each client's full set of updates,
@@ -433,14 +426,11 @@ pub struct SubscriptionManager {
     /// Additionally, it avoids starving the next reducer request of Tokio workers,
     /// as it imposes a delay between unlocking the datastore
     /// and waking the many per-client sender Tokio tasks.
-    send_worker_tx: mpsc::UnboundedSender<ComputedQueries>,
-
-    /// Metric handle for the `subscription_send_queue_length` metric labeled with this database's [`Identity`],
-    /// or `None` when not running for a particular database, i.e. in tests.
-    send_queue_length_metric: Option<IntGauge>,
+    send_worker_queue: BroadcastQueue,
 }
 
 /// A single update for one client and one query.
+#[derive(Debug)]
 struct ClientUpdate {
     id: ClientId,
     table_id: TableId,
@@ -453,12 +443,71 @@ struct ClientUpdate {
 /// done in a separate worker: [`SubscriptionManager::send_worker`].
 /// The queries in this structure have not been aggregated yet
 /// but will be in the worker.
+#[derive(Debug)]
 struct ComputedQueries {
     updates: Vec<ClientUpdate>,
     errs: Vec<(ClientId, Box<str>)>,
     event: Arc<ModuleEvent>,
     caller: Option<Arc<ClientConnectionSender>>,
-    clients: ArcRwLockReadGuard<ClientsMap>,
+}
+
+// Wraps a sender so that it will increment a gauge.
+#[derive(Debug)]
+struct SenderWithGauge<T> {
+    tx: mpsc::UnboundedSender<T>,
+    metric: Option<IntGauge>,
+}
+impl<T> Clone for SenderWithGauge<T> {
+    fn clone(&self) -> Self {
+        SenderWithGauge {
+            tx: self.tx.clone(),
+            metric: self.metric.clone(),
+        }
+    }
+}
+
+impl<T> SenderWithGauge<T> {
+    fn new(tx: mpsc::UnboundedSender<T>, metric: Option<IntGauge>) -> Self {
+        Self { tx, metric }
+    }
+
+    /// Send a message to the worker and update the queue length metric.
+    pub fn send(&self, msg: T) -> Result<(), mpsc::error::SendError<T>> {
+        if let Some(metric) = &self.metric {
+            metric.inc();
+        }
+        // Note, this could number would be permanently off if the send call panics.
+        self.tx.send(msg)
+    }
+}
+
+/// Message sent by the [`SubscriptionManager`] to the [`SendWorker`].
+#[derive(Debug)]
+enum SendWorkerMessage {
+    /// A transaction has completed and the [`SubscriptionManager`] has evaluated the incremental queries,
+    /// so the [`SendWorker`] should broadcast them to clients.
+    Broadcast(ComputedQueries),
+
+    /// A new client has been registered in the [`SubscriptionManager`],
+    /// so the [`SendWorker`] should also record its existence.
+    AddClient {
+        client_id: ClientId,
+        /// Shared handle on the `dropped` flag in the [`Subscriptionmanager`]'s [`ClientInfo`].
+        ///
+        /// Will be updated by [`SendWorker::run`] and read by [`SubscriptionManager::remove_dropped_clients`].
+        dropped: Arc<AtomicBool>,
+        outbound_ref: Client,
+    },
+
+    // Send a message to a client.
+    SendMessage {
+        recipient: Arc<ClientConnectionSender>,
+        message: SerializableMessage,
+    },
+
+    /// A client previously added by a [`Self::AddClient`] message has been removed from the [`SubscriptionManager`],
+    /// so the [`SendWorker`] should also forget it.
+    RemoveClient(ClientId),
 }
 
 // Tracks some gauges related to subscriptions.
@@ -476,49 +525,23 @@ pub struct SubscriptionGaugeStats {
 }
 
 impl SubscriptionManager {
-    pub fn for_database(database_identity: Identity) -> Self {
-        let metric = WORKER_METRICS
-            .subscription_send_queue_length
-            .with_label_values(&database_identity);
-
-        // The `Self::send_worker` will drop this `ScopeGuard` when it exits, thus cleaning up the metric.
-        let clean_up_metric = scopeguard::guard((), move |_| {
-            let _ = WORKER_METRICS
-                .subscription_send_queue_length
-                .remove_label_values(&database_identity);
-        });
-
-        Self::with_metric(Some(metric), clean_up_metric)
-    }
-
     pub fn for_test_without_metrics_arc_rwlock() -> Arc<RwLock<Self>> {
         Arc::new(RwLock::new(Self::for_test_without_metrics()))
     }
 
     pub fn for_test_without_metrics() -> Self {
-        let clean_up_metric = scopeguard::guard((), |_| {});
-        Self::with_metric(None, clean_up_metric)
+        Self::new(SendWorker::spawn_new(None))
     }
 
-    fn with_metric(
-        metric: Option<IntGauge>,
-        clean_up_metric: ScopeGuard<(), impl FnOnce(()) + Send + 'static>,
-    ) -> Self {
-        let (send_worker_tx, rx) = mpsc::unbounded_channel();
-        tokio::spawn(Self::send_worker(rx, metric.clone(), clean_up_metric));
+    pub fn new(send_worker_queue: BroadcastQueue) -> Self {
         Self {
             clients: Default::default(),
             queries: Default::default(),
             indexes: Default::default(),
             tables: Default::default(),
             search_args: Default::default(),
-            send_worker_tx,
-            send_queue_length_metric: metric,
+            send_worker_queue,
         }
-    }
-
-    pub fn client(&self, id: &ClientId) -> Client {
-        self.clients.read()[id].outbound_ref.clone()
     }
 
     pub fn query(&self, hash: &QueryHash) -> Option<Query> {
@@ -526,12 +549,12 @@ impl SubscriptionManager {
     }
 
     pub fn calculate_gauge_stats(&self) -> SubscriptionGaugeStats {
-        let clients = self.clients.read();
         let num_queries = self.queries.len();
-        let num_connections = clients.len();
+        let num_connections = self.clients.len();
         let num_query_subscriptions = self.queries.values().map(|state| state.subscriptions.len()).sum();
-        let num_subscription_sets = clients.values().map(|ci| ci.subscriptions.len()).sum();
-        let num_legacy_subscriptions = clients
+        let num_subscription_sets = self.clients.values().map(|ci| ci.subscriptions.len()).sum();
+        let num_legacy_subscriptions = self
+            .clients
             .values()
             .filter(|ci| !ci.legacy_subscriptions.is_empty())
             .count();
@@ -545,6 +568,39 @@ impl SubscriptionManager {
         }
     }
 
+    /// Add a new [`ClientInfo`] to the `clients` map, and broadcast a message along `send_worker_tx`
+    /// that the [`SendWorker`] should also add this client.
+    ///
+    /// Horrible signature to enable split borrows on [`Self`].
+    fn get_or_make_client_info_and_inform_send_worker<'clients>(
+        clients: &'clients mut HashMap<ClientId, ClientInfo>,
+        send_worker_tx: &BroadcastQueue,
+        client_id: ClientId,
+        outbound_ref: Client,
+    ) -> &'clients mut ClientInfo {
+        clients.entry(client_id).or_insert_with(|| {
+            let info = ClientInfo::new(outbound_ref.clone());
+            send_worker_tx
+                .send(SendWorkerMessage::AddClient {
+                    client_id,
+                    dropped: info.dropped.clone(),
+                    outbound_ref,
+                })
+                .expect("send worker has panicked, or otherwise dropped its recv queue!");
+            info
+        })
+    }
+
+    /// Remove a [`ClientInfo`] from the `clients` map,
+    /// and broadcast a message along `send_worker_tx` that the [`SendWorker`] should also remove it.
+    fn remove_client_and_inform_send_worker(&mut self, client_id: ClientId) -> Option<ClientInfo> {
+        self.clients.remove(&client_id).inspect(|_| {
+            self.send_worker_queue
+                .send(SendWorkerMessage::RemoveClient(client_id))
+                .expect("send worker has panicked, or otherwise dropped its recv queue!");
+        })
+    }
+
     pub fn num_unique_queries(&self) -> usize {
         self.queries.len()
     }
@@ -556,7 +612,7 @@ impl SubscriptionManager {
 
     #[cfg(test)]
     fn contains_client(&self, subscriber: &ClientId) -> bool {
-        self.clients.read().contains_key(subscriber)
+        self.clients.contains_key(subscriber)
     }
 
     #[cfg(test)]
@@ -585,8 +641,8 @@ impl SubscriptionManager {
             .any(|id| id == col_id)
     }
 
-    fn remove_legacy_subscriptions(&mut self, clients: &mut ArcRwLockWriteGuard<ClientsMap>, client: &ClientId) {
-        if let Some(ci) = clients.get_mut(client) {
+    fn remove_legacy_subscriptions(&mut self, client: &ClientId) {
+        if let Some(ci) = self.clients.get_mut(client) {
             let mut queries_to_remove = Vec::new();
             for query_hash in ci.legacy_subscriptions.iter() {
                 let Some(query_state) = self.queries.get_mut(query_hash) else {
@@ -614,11 +670,10 @@ impl SubscriptionManager {
 
     /// Remove any clients that have been marked for removal
     pub fn remove_dropped_clients(&mut self) {
-        let mut clients = self.clients.write_arc();
-        for id in clients.keys().copied().collect::<Vec<_>>() {
-            if let Some(client) = clients.get(&id) {
+        for id in self.clients.keys().copied().collect::<Vec<_>>() {
+            if let Some(client) = self.clients.get(&id) {
                 if client.dropped.load(Ordering::Relaxed) {
-                    self.remove_all_subscriptions_inner(&mut clients, &id);
+                    self.remove_all_subscriptions(&id);
                 }
             }
         }
@@ -627,9 +682,9 @@ impl SubscriptionManager {
     /// Remove a single subscription for a client.
     /// This will return an error if the client does not have a subscription with the given query id.
     pub fn remove_subscription(&mut self, client_id: ClientId, query_id: ClientQueryId) -> Result<Vec<Query>, DBError> {
-        let mut clients = self.clients.write();
         let subscription_id = (client_id, query_id);
-        let Some(ci) = clients
+        let Some(ci) = self
+            .clients
             .get_mut(&client_id)
             .filter(|ci| !ci.dropped.load(Ordering::Acquire))
         else {
@@ -690,21 +745,24 @@ impl SubscriptionManager {
         queries: Vec<Query>,
         query_id: ClientQueryId,
     ) -> Result<Vec<Query>, DBError> {
-        let mut clients = self.clients.write_arc();
-
         let client_id = (client.id.identity, client.id.connection_id);
 
         // Clean up any dropped subscriptions
-        if clients
+        if self
+            .clients
             .get(&client_id)
             .is_some_and(|ci| ci.dropped.load(Ordering::Acquire))
         {
-            self.remove_all_subscriptions_inner(&mut clients, &client_id);
+            self.remove_all_subscriptions(&client_id);
         }
 
-        let ci = clients
-            .entry(client_id)
-            .or_insert_with(|| ClientInfo::new(client.clone()));
+        let ci = Self::get_or_make_client_info_and_inform_send_worker(
+            &mut self.clients,
+            &self.send_worker_queue,
+            client_id,
+            client,
+        );
+
         #[cfg(test)]
         ci.assert_ref_count_consistency();
         let subscription_id = (client_id, query_id);
@@ -764,16 +822,18 @@ impl SubscriptionManager {
     /// its table ids added to the inverted index.
     // #[tracing::instrument(level = "trace", skip_all)]
     pub fn set_legacy_subscription(&mut self, client: Client, queries: impl IntoIterator<Item = Query>) {
-        let mut clients = self.clients.write_arc();
-
         let client_id = (client.id.identity, client.id.connection_id);
         // First, remove any existing legacy subscriptions.
-        self.remove_legacy_subscriptions(&mut clients, &client_id);
+        self.remove_legacy_subscriptions(&client_id);
 
         // Now, add the new subscriptions.
-        let ci = clients
-            .entry(client_id)
-            .or_insert_with(|| ClientInfo::new(client.clone()));
+        let ci = Self::get_or_make_client_info_and_inform_send_worker(
+            &mut self.clients,
+            &self.send_worker_queue,
+            client_id,
+            client,
+        );
+
         for unit in queries {
             let hash = unit.hash();
             ci.legacy_subscriptions.insert(hash);
@@ -834,17 +894,16 @@ impl SubscriptionManager {
         }
     }
 
-    /// Remove all subscriptions for `client` from `clients` and `self`,
-    /// when the caller already has a lock on `self.clients`.
-    ///
-    /// Dirty hack alert! This method takes an `ArcRwLockWriteGuard`
-    /// to the `clients` which is inside of `self`.
-    /// We take the `Arc` version to avoid borrowck complaining about multiple borrows on `self` coexisting.
-    fn remove_all_subscriptions_inner(&mut self, clients: &mut ArcRwLockWriteGuard<ClientsMap>, client: &ClientId) {
-        self.remove_legacy_subscriptions(clients, client);
-        let Some(client_info) = clients.remove(client) else {
+    /// Removes a client from the subscriber mapping.
+    /// If a query no longer has any subscribers,
+    /// it is removed from the index along with its table ids.
+    #[tracing::instrument(level = "trace", skip_all)]
+    pub fn remove_all_subscriptions(&mut self, client: &ClientId) {
+        self.remove_legacy_subscriptions(client);
+        let Some(client_info) = self.remove_client_and_inform_send_worker(*client) else {
             return;
         };
+
         debug_assert!(client_info.legacy_subscriptions.is_empty());
         let mut queries_to_remove = Vec::new();
         for query_hash in client_info.subscription_ref_count.keys() {
@@ -867,15 +926,6 @@ impl SubscriptionManager {
         for query_hash in queries_to_remove {
             self.queries.remove(&query_hash);
         }
-    }
-
-    /// Removes a client from the subscriber mapping.
-    /// If a query no longer has any subscribers,
-    /// it is removed from the index along with its table ids.
-    #[tracing::instrument(level = "trace", skip_all)]
-    pub fn remove_all_subscriptions(&mut self, client: &ClientId) {
-        let mut clients = self.clients.write_arc();
-        self.remove_all_subscriptions_inner(&mut clients, client);
     }
 
     /// Find the queries that need to be evaluated for this table update.
@@ -945,8 +995,6 @@ impl SubscriptionManager {
         caller: Option<Arc<ClientConnectionSender>>,
     ) -> ExecutionMetrics {
         use FormatSwitch::{Bsatn, Json};
-
-        let clients = self.clients.read_arc();
 
         let tables = &event.status.database_update().unwrap().tables;
 
@@ -1030,7 +1078,7 @@ impl SubscriptionManager {
 
                 // filter out clients that've dropped
                 let clients_for_query = qstate.all_clients().filter(|id| {
-                    clients
+                    self.clients
                         .get(*id)
                         .is_some_and(|info| !info.dropped.load(Ordering::Acquire))
                 });
@@ -1056,7 +1104,7 @@ impl SubscriptionManager {
                     // The query did return updates - process them and add them to the accumulator
                     Ok(Some(delta_updates)) => {
                         let row_iter = clients_for_query.map(|id| {
-                            let client = &clients[id].outbound_ref;
+                            let client = &self.clients[id].outbound_ref;
                             let update = match client.config.protocol {
                                 Protocol::Binary => Bsatn(memo_encode::<BsatnFormat>(
                                     &delta_updates,
@@ -1083,59 +1131,164 @@ impl SubscriptionManager {
                 acc
             });
 
-        if let Some(metric) = &self.send_queue_length_metric {
-            metric.inc();
-        }
-
         // We've now finished all of the work which needs to read from the datastore,
         // so get this work off the main thread and over to the `send_worker`,
         // then return ASAP in order to unlock the datastore and start running the next transaction.
         // See comment on the `send_worker_tx` field in [`SubscriptionManager`] for more motivation.
-        self.send_worker_tx
-            .send(ComputedQueries {
+        self.send_worker_queue
+            .send(SendWorkerMessage::Broadcast(ComputedQueries {
                 updates,
                 errs,
                 event,
                 caller,
-                clients,
-            })
+            }))
             .expect("send worker has panicked, or otherwise dropped its recv queue!");
 
         drop(span);
 
         metrics
     }
+}
 
-    /// Asynchronous background worker which aggregates each of the clients' updates from a [`ComputedQueries`]
-    /// into `DbUpdate`s and then sends them to the clients' WebSocket workers.
+struct SendWorkerClient {
+    /// This flag is set if an error occurs during a tx update.
+    /// It will be cleaned up async or on resubscribe.
     ///
-    /// See comment on the `send_worker_tx` field in [`SubscriptionManager`] for motivation.
+    /// [`Arc`]ed so that this can be updated by [`Self::run`]
+    /// and observed by [`SubscriptionManager::remove_dropped_clients`].
+    dropped: Arc<AtomicBool>,
+    outbound_ref: Client,
+}
+
+/// Asynchronous background worker which aggregates each of the clients' updates from a [`ComputedQueries`]
+/// into `DbUpdate`s and then sends them to the clients' WebSocket workers.
+///
+/// See comment on the `send_worker_tx` field in [`SubscriptionManager`] for motivation.
+struct SendWorker {
+    /// Receiver end of the [`SubscriptionManager`]'s `send_worker_tx` channel.
+    rx: mpsc::UnboundedReceiver<SendWorkerMessage>,
+
+    /// `subscription_send_queue_length` metric labeled for this database's `Identity`.
     ///
-    /// If `queue_length_metric` is supplied, it will be decremented each time we pop a [`ComputedQueries`] from `rx`.
+    /// If `Some`, this metric will be decremented each time we pop a [`ComputedQueries`] from `rx`.
     ///
-    /// `_clean_up_metric` will be dropped upon exiting this worker,
-    /// and should be a [`ScopeGuard`] which does `remove_label_values` on the `queue_length_metric`.
-    async fn send_worker(
-        mut rx: mpsc::UnboundedReceiver<ComputedQueries>,
+    /// Will be `None` in contexts where there is no database `Identity` to use as label,
+    /// i.e. in tests.
+    queue_length_metric: Option<IntGauge>,
+
+    /// Mirror of the [`SubscriptionManager`]'s `clients` map local to this actor.
+    ///
+    /// Updated by [`SendWorkerMessage::AddClient`] and [`SendWorkerMessage::RemoveClient`] messages
+    /// sent along `self.rx`.
+    clients: HashMap<ClientId, SendWorkerClient>,
+
+    /// The `Identity` which labels the `queue_length_metric`.
+    ///
+    /// If `Some`, this type's `drop` method will do `remove_label_values` to clean up the metric on exit.
+    database_identity_to_clean_up_metric: Option<Identity>,
+}
+
+impl Drop for SendWorker {
+    fn drop(&mut self) {
+        if let Some(identity) = self.database_identity_to_clean_up_metric {
+            let _ = WORKER_METRICS
+                .subscription_send_queue_length
+                .remove_label_values(&identity);
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct BroadcastQueue(SenderWithGauge<SendWorkerMessage>);
+
+#[derive(thiserror::Error, Debug)]
+#[error(transparent)]
+pub struct BroadcastError(#[from] mpsc::error::SendError<SendWorkerMessage>);
+
+impl BroadcastQueue {
+    fn send(&self, message: SendWorkerMessage) -> Result<(), BroadcastError> {
+        self.0.send(message)?;
+        Ok(())
+    }
+
+    pub fn send_client_message(
+        &self,
+        recipient: Arc<ClientConnectionSender>,
+        message: impl Into<SerializableMessage>,
+    ) -> Result<(), BroadcastError> {
+        self.0.send(SendWorkerMessage::SendMessage {
+            recipient,
+            message: message.into(),
+        })?;
+        Ok(())
+    }
+}
+pub fn spawn_send_worker(metric_database_identity: Option<Identity>) -> BroadcastQueue {
+    SendWorker::spawn_new(metric_database_identity)
+}
+impl SendWorker {
+    fn new(
+        rx: mpsc::UnboundedReceiver<SendWorkerMessage>,
         queue_length_metric: Option<IntGauge>,
-        _clean_up_metric: ScopeGuard<(), impl FnOnce(()) + Send + 'static>,
-    ) {
-        while let Some(queries) = rx.recv().await {
-            if let Some(metric) = &queue_length_metric {
+        database_identity_to_clean_up_metric: Option<Identity>,
+    ) -> Self {
+        Self {
+            rx,
+            queue_length_metric,
+            clients: Default::default(),
+            database_identity_to_clean_up_metric,
+        }
+    }
+
+    // Spawn a new send worker.
+    // If a `metric_database_identity` is provided, we will decrement the corresponding
+    // `subscription_send_queue_length` metric, and clean it up on drop.
+    fn spawn_new(metric_database_identity: Option<Identity>) -> BroadcastQueue {
+        let metric = metric_database_identity.map(|identity| {
+            WORKER_METRICS
+                .subscription_send_queue_length
+                .with_label_values(&identity)
+        });
+        let (send_worker_tx, rx) = mpsc::unbounded_channel();
+        tokio::spawn(Self::new(rx, metric.clone(), metric_database_identity).run());
+        BroadcastQueue(SenderWithGauge::new(send_worker_tx, metric))
+    }
+
+    async fn run(mut self) {
+        while let Some(message) = self.rx.recv().await {
+            if let Some(metric) = &self.queue_length_metric {
                 metric.dec();
             }
 
-            Self::send_one_computed_queries(queries);
+            match message {
+                SendWorkerMessage::AddClient {
+                    client_id,
+                    dropped,
+                    outbound_ref,
+                } => {
+                    self.clients
+                        .insert(client_id, SendWorkerClient { dropped, outbound_ref });
+                }
+                SendWorkerMessage::SendMessage { recipient, message } => {
+                    let _ = recipient.send_message(message);
+                }
+                SendWorkerMessage::RemoveClient(client_id) => {
+                    self.clients.remove(&client_id);
+                }
+                SendWorkerMessage::Broadcast(queries) => {
+                    self.send_one_computed_queries(queries);
+                }
+            }
         }
     }
 
     fn send_one_computed_queries(
+        &self,
         ComputedQueries {
             updates,
             errs,
             event,
             caller,
-            clients,
         }: ComputedQueries,
     ) {
         use FormatSwitch::{Bsatn, Json};
@@ -1218,7 +1371,7 @@ impl SubscriptionManager {
         // Send all the other updates.
         for (id, update) in eval {
             let database_update = SubscriptionUpdateMessage::from_event_and_update(&event, update);
-            let client = clients[&id].outbound_ref.clone();
+            let client = self.clients[&id].outbound_ref.clone();
             // Conditionally send out a full update or a light one otherwise.
             let event = client.config.tx_update_full.then(|| event.clone());
             let message = TransactionUpdateMessage { event, database_update };
@@ -1227,7 +1380,7 @@ impl SubscriptionManager {
 
         // Send error messages and mark clients for removal
         for (id, message) in errs {
-            if let Some(client) = clients.get(&id) {
+            if let Some(client) = self.clients.get(&id) {
                 client.dropped.store(true, Ordering::Release);
                 send_to_client(
                     &client.outbound_ref,

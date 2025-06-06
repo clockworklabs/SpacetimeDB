@@ -1,5 +1,7 @@
 use super::execution_unit::QueryHash;
-use super::module_subscription_manager::{Plan, SubscriptionGaugeStats, SubscriptionManager};
+use super::module_subscription_manager::{
+    spawn_send_worker, BroadcastQueue, Plan, SubscriptionGaugeStats, SubscriptionManager,
+};
 use super::query::compile_query_with_hashes;
 use super::tx::DeltaTx;
 use super::{collect_table_update, TableUpdateType};
@@ -40,6 +42,7 @@ pub struct ModuleSubscriptions {
     /// If taking a lock (tx) on the db at the same time, ALWAYS lock the db first.
     /// You will deadlock otherwise.
     subscriptions: Subscriptions,
+    broadcast_queue: BroadcastQueue,
     owner_identity: Identity,
     stats: Arc<SubscriptionGauges>,
 }
@@ -133,13 +136,19 @@ macro_rules! return_on_err_with_sql {
 }
 
 impl ModuleSubscriptions {
-    pub fn new(relational_db: Arc<RelationalDB>, subscriptions: Subscriptions, owner_identity: Identity) -> Self {
+    pub fn new(
+        relational_db: Arc<RelationalDB>,
+        subscriptions: Subscriptions,
+        broadcast_queue: BroadcastQueue,
+        owner_identity: Identity,
+    ) -> Self {
         let db = &relational_db.database_identity();
         let stats = Arc::new(SubscriptionGauges::new(db));
 
         Self {
             relational_db,
             subscriptions,
+            broadcast_queue,
             owner_identity,
             stats,
         }
@@ -156,9 +165,11 @@ impl ModuleSubscriptions {
     /// Construct a new [`ModuleSubscriptions`] for use in testing,
     /// running its send worker on the dynamically enclosing [`tokio::runtime::Runtime`]
     pub fn for_test_enclosing_runtime(db: Arc<RelationalDB>) -> ModuleSubscriptions {
+        let send_worker_queue = spawn_send_worker(None);
         ModuleSubscriptions::new(
             db,
             SubscriptionManager::for_test_without_metrics_arc_rwlock(),
+            send_worker_queue,
             Identity::ZERO,
         )
     }
@@ -263,15 +274,18 @@ impl ModuleSubscriptions {
     ) -> Result<Option<ExecutionMetrics>, DBError> {
         // Send an error message to the client
         let send_err_msg = |message| {
-            sender.send_message(SubscriptionMessage {
-                request_id: Some(request.request_id),
-                query_id: Some(request.query_id),
-                timer: Some(timer),
-                result: SubscriptionResult::Error(SubscriptionError {
-                    table_id: None,
-                    message,
-                }),
-            })
+            self.broadcast_queue.send_client_message(
+                sender.clone(),
+                SubscriptionMessage {
+                    request_id: Some(request.request_id),
+                    query_id: Some(request.query_id),
+                    timer: Some(timer),
+                    result: SubscriptionResult::Error(SubscriptionError {
+                        table_id: None,
+                        message,
+                    }),
+                },
+            )
         };
 
         let sql = request.query;
@@ -319,20 +333,26 @@ impl ModuleSubscriptions {
             assert(&tx);
         }
 
-        // NOTE: It is important to send the state in this thread because if you spawn a new
-        // thread it's possible for messages to get sent to the client out of order. If you do
-        // spawn in another thread messages will need to be buffered until the state is sent out
-        // on the wire
-        let _ = sender.send_message(SubscriptionMessage {
-            request_id: Some(request.request_id),
-            query_id: Some(request.query_id),
-            timer: Some(timer),
-            result: SubscriptionResult::Subscribe(SubscriptionRows {
-                table_id: query.subscribed_table_id(),
-                table_name: query.subscribed_table_name().into(),
-                table_rows,
-            }),
-        });
+        // Note: to make sure transaction updates are consistent, we need to put this in the broadcast
+        // queue while we are still holding a read-lock on the database.
+
+        // That will avoid race conditions because reducers first grab a write lock on the db, then
+        // grab a read lock on the subscriptions.
+
+        // Holding a write lock on `self.subscriptions` would also be sufficient.
+        let _ = self.broadcast_queue.send_client_message(
+            sender.clone(),
+            SubscriptionMessage {
+                request_id: Some(request.request_id),
+                query_id: Some(request.query_id),
+                timer: Some(timer),
+                result: SubscriptionResult::Subscribe(SubscriptionRows {
+                    table_id: query.subscribed_table_id(),
+                    table_name: query.subscribed_table_name().into(),
+                    table_rows,
+                }),
+            },
+        );
         Ok(Some(metrics))
     }
 
@@ -345,15 +365,18 @@ impl ModuleSubscriptions {
     ) -> Result<Option<ExecutionMetrics>, DBError> {
         // Send an error message to the client
         let send_err_msg = |message| {
-            sender.send_message(SubscriptionMessage {
-                request_id: Some(request.request_id),
-                query_id: Some(request.query_id),
-                timer: Some(timer),
-                result: SubscriptionResult::Error(SubscriptionError {
-                    table_id: None,
-                    message,
-                }),
-            })
+            self.broadcast_queue.send_client_message(
+                sender.clone(),
+                SubscriptionMessage {
+                    request_id: Some(request.request_id),
+                    query_id: Some(request.query_id),
+                    timer: Some(timer),
+                    result: SubscriptionResult::Error(SubscriptionError {
+                        table_id: None,
+                        message,
+                    }),
+                },
+            )
         };
 
         let mut subscriptions = self.subscriptions.write();
@@ -383,16 +406,26 @@ impl ModuleSubscriptions {
             send_err_msg
         );
 
-        let _ = sender.send_message(SubscriptionMessage {
-            request_id: Some(request.request_id),
-            query_id: Some(request.query_id),
-            timer: Some(timer),
-            result: SubscriptionResult::Unsubscribe(SubscriptionRows {
-                table_id: query.subscribed_table_id(),
-                table_name: query.subscribed_table_name().into(),
-                table_rows,
-            }),
-        });
+        // Note: to make sure transaction updates are consistent, we need to put this in the broadcast
+        // queue while we are still holding a read-lock on the database.
+
+        // That will avoid race conditions because reducers first grab a write lock on the db, then
+        // grab a read lock on the subscriptions.
+
+        // Holding a write lock on `self.subscriptions` would also be sufficient.
+        let _ = self.broadcast_queue.send_client_message(
+            sender.clone(),
+            SubscriptionMessage {
+                request_id: Some(request.request_id),
+                query_id: Some(request.query_id),
+                timer: Some(timer),
+                result: SubscriptionResult::Unsubscribe(SubscriptionRows {
+                    table_id: query.subscribed_table_id(),
+                    table_name: query.subscribed_table_name().into(),
+                    table_rows,
+                }),
+            },
+        );
         Ok(Some(metrics))
     }
 
@@ -406,15 +439,18 @@ impl ModuleSubscriptions {
     ) -> Result<Option<ExecutionMetrics>, DBError> {
         // Send an error message to the client
         let send_err_msg = |message| {
-            sender.send_message(SubscriptionMessage {
-                request_id: Some(request.request_id),
-                query_id: Some(request.query_id),
-                timer: Some(timer),
-                result: SubscriptionResult::Error(SubscriptionError {
-                    table_id: None,
-                    message,
-                }),
-            })
+            self.broadcast_queue.send_client_message(
+                sender.clone(),
+                SubscriptionMessage {
+                    request_id: Some(request.request_id),
+                    query_id: Some(request.query_id),
+                    timer: Some(timer),
+                    result: SubscriptionResult::Error(SubscriptionError {
+                        table_id: None,
+                        message,
+                    }),
+                },
+            )
         };
 
         // Always lock the db before the subscription lock to avoid deadlocks.
@@ -445,12 +481,22 @@ impl ModuleSubscriptions {
             None
         );
 
-        let _ = sender.send_message(SubscriptionMessage {
-            request_id: Some(request.request_id),
-            query_id: Some(request.query_id),
-            timer: Some(timer),
-            result: SubscriptionResult::UnsubscribeMulti(SubscriptionData { data: update }),
-        });
+        // Note: to make sure transaction updates are consistent, we need to put this in the broadcast
+        // queue while we are still holding a read-lock on the database.
+
+        // That will avoid race conditions because reducers first grab a write lock on the db, then
+        // grab a read lock on the subscriptions.
+
+        // Holding a write lock on `self.subscriptions` would also be sufficient.
+        let _ = self.broadcast_queue.send_client_message(
+            sender,
+            SubscriptionMessage {
+                request_id: Some(request.request_id),
+                query_id: Some(request.query_id),
+                timer: Some(timer),
+                result: SubscriptionResult::UnsubscribeMulti(SubscriptionData { data: update }),
+            },
+        );
 
         Ok(Some(metrics))
     }
@@ -534,15 +580,18 @@ impl ModuleSubscriptions {
     ) -> Result<Option<ExecutionMetrics>, DBError> {
         // Send an error message to the client
         let send_err_msg = |message| {
-            let _ = sender.send_message(SubscriptionMessage {
-                request_id: Some(request.request_id),
-                query_id: Some(request.query_id),
-                timer: Some(timer),
-                result: SubscriptionResult::Error(SubscriptionError {
-                    table_id: None,
-                    message,
-                }),
-            });
+            let _ = self.broadcast_queue.send_client_message(
+                sender.clone(),
+                SubscriptionMessage {
+                    request_id: Some(request.request_id),
+                    query_id: Some(request.query_id),
+                    timer: Some(timer),
+                    result: SubscriptionResult::Error(SubscriptionError {
+                        table_id: None,
+                        message,
+                    }),
+                },
+            );
         };
 
         let num_queries = request.query_strings.len();
@@ -581,16 +630,23 @@ impl ModuleSubscriptions {
             assert(&tx);
         }
 
-        // NOTE: It is important to send the state in this thread because if you spawn a new
-        // thread it's possible for messages to get sent to the client out of order. If you do
-        // spawn in another thread messages will need to be buffered until the state is sent out
-        // on the wire
-        let _ = sender.send_message(SubscriptionMessage {
-            request_id: Some(request.request_id),
-            query_id: Some(request.query_id),
-            timer: Some(timer),
-            result: SubscriptionResult::SubscribeMulti(SubscriptionData { data: update }),
-        });
+        // Note: to make sure transaction updates are consistent, we need to put this in the broadcast
+        // queue while we are still holding a read-lock on the database.
+
+        // That will avoid race conditions because reducers first grab a write lock on the db, then
+        // grab a read lock on the subscriptions.
+
+        // Holding a write lock on `self.subscriptions` would also be sufficient.
+
+        let _ = self.broadcast_queue.send_client_message(
+            sender.clone(),
+            SubscriptionMessage {
+                request_id: Some(request.request_id),
+                query_id: Some(request.query_id),
+                timer: Some(timer),
+                result: SubscriptionResult::SubscribeMulti(SubscriptionData { data: update }),
+            },
+        );
 
         Ok(Some(metrics))
     }
@@ -643,15 +699,21 @@ impl ModuleSubscriptions {
             assert(&tx);
         }
 
-        // NOTE: It is important to send the state in this thread because if you spawn a new
-        // thread it's possible for messages to get sent to the client out of order. If you do
-        // spawn in another thread messages will need to be buffered until the state is sent out
-        // on the wire
-        let _ = sender.send_message(SubscriptionUpdateMessage {
-            database_update,
-            request_id: Some(subscription.request_id),
-            timer: Some(timer),
-        });
+        // Note: to make sure transaction updates are consistent, we need to put this in the broadcast
+        // queue while we are still holding a read-lock on the database.
+
+        // That will avoid race conditions because reducers first grab a write lock on the db, then
+        // grab a read lock on the subscriptions.
+
+        // Holding a write lock on `self.subscriptions` would also be sufficient.
+        let _ = self.broadcast_queue.send_client_message(
+            sender,
+            SubscriptionUpdateMessage {
+                database_update,
+                request_id: Some(subscription.request_id),
+                timer: Some(timer),
+            },
+        );
 
         Ok(metrics)
     }
@@ -715,7 +777,8 @@ impl ModuleSubscriptions {
                         event: Some(event.clone()),
                         database_update: SubscriptionUpdateMessage::default_for_protocol(client.config.protocol, None),
                     };
-                    let _ = client.send_message(message);
+
+                    let _ = self.broadcast_queue.send_client_message(client, message);
                 } else {
                     log::trace!("Reducer failed but there is no client to send the failure to!")
                 }
@@ -748,7 +811,7 @@ mod tests {
     use crate::error::DBError;
     use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall};
     use crate::messages::websocket as ws;
-    use crate::subscription::module_subscription_manager::SubscriptionManager;
+    use crate::subscription::module_subscription_manager::{spawn_send_worker, SubscriptionManager};
     use crate::subscription::query::compile_read_only_query;
     use crate::subscription::TableUpdateType;
     use hashbrown::HashMap;
@@ -780,9 +843,11 @@ mod tests {
         let client = ClientActorId::for_test(Identity::ZERO);
         let config = ClientConfig::for_test();
         let sender = Arc::new(ClientConnectionSender::dummy(client, config));
+        let send_worker_queue = spawn_send_worker(None);
         let module_subscriptions = ModuleSubscriptions::new(
             db.clone(),
             SubscriptionManager::for_test_without_metrics_arc_rwlock(),
+            send_worker_queue,
             owner,
         );
 

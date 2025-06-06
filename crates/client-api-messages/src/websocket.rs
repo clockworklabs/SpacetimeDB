@@ -623,6 +623,7 @@ pub struct TableUpdate<F: WebsocketFormat> {
 }
 
 /// Computed update for a single query, annotated with the number of matching rows.
+#[derive(Debug)]
 pub struct SingleQueryUpdate<F: WebsocketFormat> {
     pub update: F::QueryUpdate,
     pub num_rows: u64,
