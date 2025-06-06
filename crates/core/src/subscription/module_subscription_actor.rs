@@ -333,10 +333,13 @@ impl ModuleSubscriptions {
             assert(&tx);
         }
 
-        // NOTE: It is important to send the state in this thread because if you spawn a new
-        // thread it's possible for messages to get sent to the client out of order. If you do
-        // spawn in another thread messages will need to be buffered until the state is sent out
-        // on the wire
+        // Note: to make sure transaction updates are consistent, we need to put this in the broadcast
+        // queue while we are still holding a read-lock on the database.
+
+        // That will avoid race conditions because reducers first grab a write lock on the db, then
+        // grab a read lock on the subscriptions.
+
+        // Holding a write lock on `self.subscriptions` would also be sufficient.
         let _ = self.broadcast_queue.send_client_message(
             sender.clone(),
             SubscriptionMessage {
@@ -403,6 +406,13 @@ impl ModuleSubscriptions {
             send_err_msg
         );
 
+        // Note: to make sure transaction updates are consistent, we need to put this in the broadcast
+        // queue while we are still holding a read-lock on the database.
+
+        // That will avoid race conditions because reducers first grab a write lock on the db, then
+        // grab a read lock on the subscriptions.
+
+        // Holding a write lock on `self.subscriptions` would also be sufficient.
         let _ = self.broadcast_queue.send_client_message(
             sender.clone(),
             SubscriptionMessage {
@@ -471,6 +481,13 @@ impl ModuleSubscriptions {
             None
         );
 
+        // Note: to make sure transaction updates are consistent, we need to put this in the broadcast
+        // queue while we are still holding a read-lock on the database.
+
+        // That will avoid race conditions because reducers first grab a write lock on the db, then
+        // grab a read lock on the subscriptions.
+
+        // Holding a write lock on `self.subscriptions` would also be sufficient.
         let _ = self.broadcast_queue.send_client_message(
             sender,
             SubscriptionMessage {
@@ -613,10 +630,13 @@ impl ModuleSubscriptions {
             assert(&tx);
         }
 
-        // NOTE: It is important to send the state in this thread because if you spawn a new
-        // thread it's possible for messages to get sent to the client out of order. If you do
-        // spawn in another thread messages will need to be buffered until the state is sent out
-        // on the wire
+        // Note: to make sure transaction updates are consistent, we need to put this in the broadcast
+        // queue while we are still holding a read-lock on the database.
+
+        // That will avoid race conditions because reducers first grab a write lock on the db, then
+        // grab a read lock on the subscriptions.
+
+        // Holding a write lock on `self.subscriptions` would also be sufficient.
 
         let _ = self.broadcast_queue.send_client_message(
             sender.clone(),
@@ -679,10 +699,13 @@ impl ModuleSubscriptions {
             assert(&tx);
         }
 
-        // NOTE: It is important to send the state in this thread because if you spawn a new
-        // thread it's possible for messages to get sent to the client out of order. If you do
-        // spawn in another thread messages will need to be buffered until the state is sent out
-        // on the wire
+        // Note: to make sure transaction updates are consistent, we need to put this in the broadcast
+        // queue while we are still holding a read-lock on the database.
+
+        // That will avoid race conditions because reducers first grab a write lock on the db, then
+        // grab a read lock on the subscriptions.
+
+        // Holding a write lock on `self.subscriptions` would also be sufficient.
         let _ = self.broadcast_queue.send_client_message(
             sender,
             SubscriptionUpdateMessage {
