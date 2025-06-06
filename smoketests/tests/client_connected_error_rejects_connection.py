@@ -55,12 +55,19 @@ pub fn identity_disconnected(_ctx: &ReducerContext) {
 """
 
     def test_client_disconnected_error_still_deletes_st_client(self):
+        # The st_client table should only have the data of the current connection
         self.subscribe("select * from all_u8s", n=0)()
 
         logs = self.logs(100)
         self.assertIn('This should be called, but the `st_client` row should still be deleted', logs)
 
         sql_out = self.spacetime("sql", self.database_identity, "select * from st_client")
-        self.assertMultiLineEqual(sql_out, """ identity | connection_id 
-----------+---------------
-""")
+        row = []
+        # Get only the rows with numeric data
+        # identity                                                                      | connection_id
+        # ------------------------------------------------------------------------------+-----------------------------------------
+        for x in sql_out.splitlines()[1:]:
+            x = x.split("|")[0].strip()
+            if x.isdigit():
+                row.append(x)
+        self.assertEqual(len(row), 1)
