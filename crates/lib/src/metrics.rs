@@ -22,7 +22,7 @@ pub struct ExecutionMetrics {
     ///
     /// In addition to the same BSATN serialization of the output rows,
     /// queries will dereference a `RowPointer` for column projections.
-    /// Such is the case for fiters as well as index and hash joins.
+    /// Such is the case for filters as well as index and hash joins.
     ///
     /// One place where this metric is not tracked is index scans.
     /// Specifically the key comparisons that occur during the scan.

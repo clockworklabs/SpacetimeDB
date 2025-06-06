@@ -67,7 +67,7 @@ fn generate_algebraic_type_from_leaves(
                     .collect())
                 .prop_map(Vec::into_boxed_slice)
                 .prop_map(AlgebraicType::product),
-            // Do not generate nevers here; we can't store never in a page.
+            // Do not generate never here; we can't store never in a page.
             vec(gen_element.clone().prop_map_into(), 1..=SIZE)
                 .prop_map(|vec| vec
                     .into_iter()

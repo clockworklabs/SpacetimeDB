@@ -1327,7 +1327,7 @@ mod tests {
         Ok(())
     }
 
-    /// Test that clients receieve error messages on tx updates
+    /// Test that clients receive error messages on tx updates
     #[tokio::test]
     async fn tx_update_error() -> anyhow::Result<()> {
         let client_id = client_id_from_u8(1);

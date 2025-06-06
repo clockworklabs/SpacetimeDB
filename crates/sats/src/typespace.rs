@@ -21,7 +21,7 @@ pub enum TypeRefError {
 
 /// A `Typespace` represents the typing context in SATS.
 ///
-/// That is, this is the `Δ` or `Γ` you'll see in type theory litterature.
+/// That is, this is the `Δ` or `Γ` you'll see in type theory literature.
 ///
 /// We use (sort of) [deBrujin indices](https://en.wikipedia.org/wiki/De_Bruijn_index)
 /// to represent our type variables.

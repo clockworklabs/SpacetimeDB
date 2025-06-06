@@ -15,7 +15,8 @@ use crate::energy::{EnergyMonitor, EnergyQuanta, ReducerBudget, ReducerFingerpri
 use crate::execution_context::{self, ReducerContext, Workload};
 use crate::host::instance_env::InstanceEnv;
 use crate::host::module_host::{
-    CallReducerParams, DatabaseUpdate, EventStatus, Module, ModuleEvent, ModuleFunctionCall, ModuleInfo, ModuleInstance,
+    CallReducerParams, DatabaseUpdate, DynModule, EventStatus, Module, ModuleEvent, ModuleFunctionCall, ModuleInfo,
+    ModuleInstance,
 };
 use crate::host::{ReducerCallResult, ReducerId, ReducerOutcome, Scheduler, UpdateDatabaseResult};
 use crate::identity::Identity;
@@ -200,6 +201,16 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
     }
 }
 
+impl<T: WasmModule> DynModule for WasmModuleHostActor<T> {
+    fn replica_ctx(&self) -> &Arc<ReplicaContext> {
+        &self.replica_context
+    }
+
+    fn scheduler(&self) -> &Scheduler {
+        &self.scheduler
+    }
+}
+
 impl<T: WasmModule> Module for WasmModuleHostActor<T> {
     type Instance = WasmModuleInstance<T::Instance>;
 
@@ -223,14 +234,6 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
             .expect("failed to initialize instance");
         let _ = instance.extract_descriptions();
         self.make_from_instance(instance)
-    }
-
-    fn replica_ctx(&self) -> &ReplicaContext {
-        &self.replica_context
-    }
-
-    fn scheduler(&self) -> &Scheduler {
-        &self.scheduler
     }
 }
 
@@ -324,7 +327,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
     // case.
     //
     /// The method also performs various measurements and records energy usage,
-    /// as well as broadcasting a [`ModuleEvent`] containg information about
+    /// as well as broadcasting a [`ModuleEvent`] containing information about
     /// the outcome of the call.
     #[tracing::instrument(level = "trace", skip_all)]
     fn call_reducer_with_tx(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> ReducerCallResult {
@@ -472,7 +475,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
                 );
                 EventStatus::Failed(errmsg.into())
             }
-            // We haven't actually comitted yet - `commit_and_broadcast_event` will commit
+            // We haven't actually committed yet - `commit_and_broadcast_event` will commit
             // for us and replace this with the actual database update.
             //
             // Detecting a new client, and inserting it in `st_clients`

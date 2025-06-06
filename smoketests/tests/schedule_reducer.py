@@ -86,7 +86,7 @@ pub fn my_reducer(ctx: &ReducerContext, arg: ScheduledTable) {
 
     def test_scheduled_table_subscription(self):
         """This test deploys a module with a scheduled reducer and check if client receives subscription update for scheduled table entry and deletion of reducer once it ran"""
-        # subscribe to empy scheduled_table
+        # subscribe to empty scheduled_table
         sub = self.subscribe("SELECT * FROM scheduled_table", n=2)
         # call a reducer to schedule a reducer
         self.call("schedule_reducer")
@@ -112,7 +112,7 @@ pub fn my_reducer(ctx: &ReducerContext, arg: ScheduledTable) {
 
     def test_scheduled_table_subscription_repeated_reducer(self):
         """This test deploys a module with a  repeated reducer and check if client receives subscription update for scheduled table entry and no delete entry"""
-        # subscribe to emptry scheduled_table
+        # subscribe to empty scheduled_table
         sub = self.subscribe("SELECT * FROM scheduled_table", n=2)
         # call a reducer to schedule a reducer
         self.call("schedule_repeated_reducer")

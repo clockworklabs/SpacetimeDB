@@ -1,3 +1,5 @@
+use core_affinity::CoreId;
+use crossbeam_queue::ArrayQueue;
 use spacetimedb_paths::server::{ConfigToml, LogsDir};
 use std::path::PathBuf;
 use std::time::Duration;
@@ -11,23 +13,7 @@ use tracing_subscriber::prelude::*;
 use tracing_subscriber::{reload, EnvFilter};
 
 use crate::config::{ConfigFile, LogConfig};
-
-pub struct StartupOptions {
-    /// Options for tracing to configure the global tracing subscriber. Tracing will be disabled
-    /// if `None`.
-    pub tracing: Option<TracingOptions>,
-    /// Whether or not to configure the global rayon threadpool.
-    pub rayon: bool,
-}
-
-impl Default for StartupOptions {
-    fn default() -> Self {
-        Self {
-            tracing: Some(TracingOptions::default()),
-            rayon: true,
-        }
-    }
-}
+use crate::util::jobs::JobCores;
 
 pub struct TracingOptions {
     pub config: LogConfig,
@@ -55,18 +41,7 @@ impl Default for TracingOptions {
     }
 }
 
-impl StartupOptions {
-    pub fn configure(self) {
-        if let Some(tracing_opts) = self.tracing {
-            configure_tracing(tracing_opts)
-        }
-        if self.rayon {
-            configure_rayon()
-        }
-    }
-}
-
-fn configure_tracing(opts: TracingOptions) {
+pub fn configure_tracing(opts: TracingOptions) {
     // Use this to change log levels at runtime.
     // This means you can change the default log level to trace
     // if you are trying to debug an issue and need more logs on then turn it off
@@ -172,24 +147,147 @@ fn reload_config<S>(conf_file: &ConfigToml, reload_handle: &reload::Handle<EnvFi
     }
 }
 
-fn configure_rayon() {
-    rayon_core::ThreadPoolBuilder::new()
-        .thread_name(|_idx| "rayon-worker".to_string())
-        .spawn_handler(thread_spawn_handler(tokio::runtime::Handle::current()))
-        // TODO(perf, pgoldman 2024-02-22):
-        // in the case where we have many modules running many reducers,
-        // we'll wind up with Rayon threads competing with each other and with Tokio threads
-        // for CPU time.
-        //
-        // We should investigate creating two separate CPU pools,
-        // possibly via https://docs.rs/nix/latest/nix/sched/fn.sched_setaffinity.html,
-        // and restricting Tokio threads to one CPU pool
-        // and Rayon threads to the other.
-        // Then we should give Tokio and Rayon each a number of worker threads
-        // equal to the size of their pool.
-        .num_threads(std::thread::available_parallelism().unwrap().get() / 2)
-        .build_global()
-        .unwrap()
+/// Divide up the available CPU cores into pools for different purposes.
+///
+/// Use the fields of the returned [`Cores`] value to actually configure
+/// cores to be pinned.
+///
+/// Pinning different subsystems to different threads reduces overhead from
+/// unnecessary context switching.
+///
+/// * Database instances are critical to overall performance, and keeping each
+///   one on only one thread was shown to significantly increase transaction throughput.
+/// * Tokio and Rayon have their own userspace task schedulers, so if the OS
+///   scheduler is trying to schedule threads as well, it's likely to just
+///   cause interference.
+///
+/// Call only once per process. If obtaining the number of cores fails, or if
+/// there are too few cores, this function may return `Cores::default()`, which
+/// performs no thread pinning.
+// TODO: pinning threads might not be desirable on a machine with other
+//       processes running - this should probably be some sort of flag.
+#[must_use]
+pub fn pin_threads() -> Cores {
+    Cores::get().unwrap_or_default()
+}
+
+/// A type holding cores divvied up into different sets.
+///
+/// Obtained from [`pin_threads()`].
+#[derive(Default)]
+pub struct Cores {
+    /// The cores to run database instances on.
+    ///
+    /// Currently, this is 1/8 of num_cpus.
+    pub databases: JobCores,
+    /// The cores to run tokio worker and blocking threads on.
+    ///
+    /// Currently, tokio worker threads are 4/8 of num_cpus, and tokio blocking
+    /// threads are pinned non-exclusively to 2/8 of num_cpus.
+    pub tokio: TokioCores,
+    /// The cores to run rayon threads on.
+    ///
+    /// Currently, this is 1/8 of num_cpus.
+    pub rayon: RayonCores,
+}
+
+impl Cores {
+    fn get() -> Option<Self> {
+        let cores = &mut core_affinity::get_core_ids()
+            .filter(|cores| cores.len() >= 8)?
+            .into_iter();
+
+        let total = cores.len() as f64;
+        let frac = |frac: f64| (total * frac).ceil() as usize;
+
+        let databases = cores.take(frac(1.0 / 8.0)).collect();
+
+        let tokio_workers = cores.take(frac(4.0 / 8.0)).collect();
+
+        let rayon = RayonCores(Some(cores.take(frac(1.0 / 8.0)).collect()));
+
+        // see comment on `TokioCores.blocking`
+        #[cfg(target_os = "linux")]
+        let remaining = cores.try_fold(nix::sched::CpuSet::new(), |mut cpuset, core| {
+            cpuset.set(core.id).ok()?;
+            Some(cpuset)
+        });
+
+        let tokio = TokioCores {
+            workers: Some(tokio_workers),
+            #[cfg(target_os = "linux")]
+            blocking: remaining,
+        };
+
+        Some(Self {
+            databases,
+            tokio,
+            rayon,
+        })
+    }
+}
+
+#[derive(Default)]
+pub struct TokioCores {
+    workers: Option<Vec<CoreId>>,
+    // For blocking threads, we don't want to limit them to a specific number
+    // and pin them to their own cores - they're supposed to run concurrently
+    // with each other. However, `core_affinity` doesn't support affinity masks,
+    // so we just use the Linux-specific API, since this is only a slight boost
+    // and we don't care enough about performance on other platforms.
+    #[cfg(target_os = "linux")]
+    blocking: Option<nix::sched::CpuSet>,
+}
+
+impl TokioCores {
+    /// Configures `builder` to pin its worker threads to specific cores.
+    pub fn configure(self, builder: &mut tokio::runtime::Builder) {
+        if let Some(cores) = self.workers {
+            builder.worker_threads(cores.len());
+
+            let cores_queue = Box::new(ArrayQueue::new(cores.len()));
+            for core in cores {
+                cores_queue.push(core).unwrap();
+            }
+
+            // `on_thread_start` gets called for both async worker threads and blocking threads,
+            // but the first `worker_threads` threads that tokio spawns are worker threads,
+            // so this ends up working fine
+            builder.on_thread_start(move || {
+                if let Some(core) = cores_queue.pop() {
+                    core_affinity::set_for_current(core);
+                } else {
+                    #[cfg(target_os = "linux")]
+                    if let Some(cpuset) = &self.blocking {
+                        let this = nix::unistd::Pid::from_raw(0);
+                        let _ = nix::sched::sched_setaffinity(this, cpuset);
+                    }
+                }
+            });
+        }
+    }
+}
+
+#[derive(Default)]
+pub struct RayonCores(Option<Vec<CoreId>>);
+
+impl RayonCores {
+    /// Configures a global rayon threadpool, pinning its threads to specific cores.
+    ///
+    /// All rayon threads will be run with `tokio_handle` enetered into.
+    pub fn configure(self, tokio_handle: &tokio::runtime::Handle) {
+        rayon_core::ThreadPoolBuilder::new()
+            .thread_name(|_idx| "rayon-worker".to_string())
+            .spawn_handler(thread_spawn_handler(tokio_handle))
+            .num_threads(self.0.as_ref().map_or(0, |cores| cores.len()))
+            .start_handler(move |i| {
+                if let Some(cores) = &self.0 {
+                    core_affinity::set_for_current(cores[i]);
+                }
+            })
+            .build_global()
+            .unwrap()
+    }
 }
 
 /// A Rayon [spawn_handler](https://docs.rs/rustc-rayon-core/latest/rayon_core/struct.ThreadPoolBuilder.html#method.spawn_handler)
@@ -205,7 +303,9 @@ fn configure_rayon() {
 /// i.e. that every async operation they invoke immediately completes.
 /// I (pgoldman 2024-02-22) believe that our Rayon threads only ever send to unbounded channels,
 /// and therefore never wait.
-fn thread_spawn_handler(rt: tokio::runtime::Handle) -> impl FnMut(rayon::ThreadBuilder) -> Result<(), std::io::Error> {
+fn thread_spawn_handler(
+    rt: &tokio::runtime::Handle,
+) -> impl FnMut(rayon::ThreadBuilder) -> Result<(), std::io::Error> + '_ {
     move |thread| {
         let rt = rt.clone();
         let mut builder = std::thread::Builder::new();

@@ -104,7 +104,7 @@ impl DeltaStore for MutTxId {
         None
     }
 
-    /// Subscriptions are currently evaluated using read-only transcations.
+    /// Subscriptions are currently evaluated using read-only transactions.
     /// Hence this will never be called on a mutable transaction.
     fn index_scan_range_for_delta(
         &self,
@@ -116,7 +116,7 @@ impl DeltaStore for MutTxId {
         std::iter::empty()
     }
 
-    /// Subscriptions are currently evaluated using read-only transcations.
+    /// Subscriptions are currently evaluated using read-only transactions.
     /// Hence this will never be called on a mutable transaction.
     fn index_scan_point_for_delta(
         &self,

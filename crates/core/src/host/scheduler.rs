@@ -324,14 +324,14 @@ impl SchedulerActor {
                 let Ok(schedule_row) = get_schedule_row_mut(tx, &db, id) else {
                     // if the row is not found, it means the schedule is cancelled by the user
                     log::debug!(
-                        "table row corresponding to yeild scheduler id not found: tableid {}, schedulerId {}",
+                        "table row corresponding to yield scheduler id not found: tableid {}, schedulerId {}",
                         id.table_id,
                         id.schedule_id
                     );
                     return Ok(None);
                 };
 
-                let ScheduledReducer { reducer, bsatn_args } = proccess_schedule(tx, &db, id.table_id, &schedule_row)?;
+                let ScheduledReducer { reducer, bsatn_args } = process_schedule(tx, &db, id.table_id, &schedule_row)?;
 
                 let (reducer_id, reducer_seed) = module_info
                     .module_def
@@ -480,7 +480,7 @@ fn commit_and_broadcast_deletion_event(tx: MutTxId, module_host: ModuleHost) {
 }
 
 /// Generate `ScheduledReducer` for given `ScheduledReducerId`
-fn proccess_schedule(
+fn process_schedule(
     tx: &MutTxId,
     db: &RelationalDB,
     table_id: TableId,

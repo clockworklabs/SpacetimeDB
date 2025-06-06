@@ -178,9 +178,10 @@ impl CompiledModule {
         };
 
         let certs = CertificateAuthority::in_cli_config_dir(&paths.cli_config_dir);
-        let env = spacetimedb_standalone::StandaloneEnv::init(config, &certs, paths.data_dir.into())
-            .await
-            .unwrap();
+        let env =
+            spacetimedb_standalone::StandaloneEnv::init(config, &certs, paths.data_dir.into(), Default::default())
+                .await
+                .unwrap();
         // TODO: Fix this when we update identity generation.
         let identity = Identity::ZERO;
         let db_identity = SpacetimeAuth::alloc(&env).await.unwrap().identity;

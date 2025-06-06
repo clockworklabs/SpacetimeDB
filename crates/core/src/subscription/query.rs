@@ -762,7 +762,7 @@ mod tests {
     }
 
     #[test]
-    /// TODO: This test is a slight modifaction of [test_eval_incr_for_index_join].
+    /// TODO: This test is a slight modification of [test_eval_incr_for_index_join].
     /// Essentially the WHERE condition is on different tables.
     /// Should refactor to reduce duplicate logic between the two tests.
     fn test_eval_incr_for_left_semijoin() -> ResultTest<()> {
