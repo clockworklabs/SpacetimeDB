@@ -1,17 +1,31 @@
 # Rejecting Client Connections
 
 SpacetimeDB provides a way to disconnect a client during a client connection attempt.
+
 :::server-rust
-In Rust, if we returned and error (or a panic) during the `client_connected` reducer, the client would be disconnected.
+In Rust, if we returned and error (or a panic) during the `client_connected` reducer, the client will be disconnected.
 
 Here is a simple example where the server module throws an error for all incoming client connections.
 ```rust
 #[reducer(client_connected)]
-// Called when a client connects to a SpacetimeDB database server
-pub fn client_connected(ctx: &ReducerContext) {
-    return Err("All incoming client connections are being rejected. Normally you'd want to only throw an error after your validation logic indicates the client is not authorized.".into());
+pub fn client_connected(_ctx: &ReducerContext) -> Result<(), String> {
+    let client_is_rejected = true;
+    if client_is_rejected {
+        Err("The client connection was rejected. With our current code logic, all clients will be rejected.".to_string())
+    } else {
+        Ok(())
+    }
 }
 ```
+
+From a rust client's perspective, this disconnection behavior is currently undefined and will cause a panic reading:
+`Unable to send subscribe message: WS sender loop has dropped its recv channel: TrySendError { kind: Disconnected }`
+
+From a C# client's perspective, this disconnection behavior is currently undefined and will cause an error reading:
+`Disconnected abnormally: System.Net.WebSockets.WebSocketException (0x80004005): The remote party closed the WebSocket connection without completing the close handshake.`
+
+Regardless of the client type, from the rust server's perspective, the client will be disconnected and the server module's logs will contain an entry reading:
+`ERROR: : The client connection was rejected. With our current code logic, all clients will be rejected.`
 :::
 :::server-csharp
 In C#, if we throw an exception during the `ClientConnected` reducer, the client would be disconnected.
@@ -22,9 +36,15 @@ Here is a simple example where the server module throws an error for all incomin
 // Called when a client connects to a SpacetimeDB database server
 public static void ClientConnected(ReducerContext ctx)
 {
-    throw new Exception("All incoming client connections are being rejected. Normally you'd want to only throw an error after your validation logic indicates the client is not authorized.");
+    throw new Exception("The client connection was rejected. With our current code logic, all clients will be rejected.");
 }
 ```
-:::
 
-From the client's perspective, this disconnection behavior is currently undefined, but they will be disconnected from the server's perspective.
+From a C# client's perspective, this disconnection behavior is currently undefined and will cause an error reading:
+`Disconnected abnormally: System.Net.WebSockets.WebSocketException (0x80004005): The remote party closed the WebSocket connection without completing the close handshake.`
+
+From a Rust client's perspective, they will receive an `on_disconnected` event with no error message.
+
+Regardless of the client type, from the C# server's perspective, the client will be disconnected and the server module's logs will contain an entry reading:
+`ERROR: : System.Exception: The client connection was rejected. With our current code logic, all clients will be rejected.`
+:::
