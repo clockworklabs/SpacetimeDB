@@ -587,7 +587,10 @@ async fn make_module_host(
     core: JobCore,
 ) -> anyhow::Result<(Program, ModuleHost)> {
     // `make_actor` is blocking, as it needs to compile the wasm to native code,
-    // which may be computationally expensive.
+    // which may be computationally expensive - sometimes up to 1s for a large module.
+    // TODO: change back to using `spawn_rayon` here - asyncify runs on tokio blocking
+    //       threads, but those aren't for computation. Also, wasmtime uses rayon
+    //       to run compilation in parallel, so it'll need to run stuff in rayon anyway.
     asyncify(move || {
         let module_host = match host_type {
             HostType::Wasm => {
