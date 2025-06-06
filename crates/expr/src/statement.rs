@@ -128,16 +128,10 @@ pub fn type_insert(insert: SqlInsert, tx: &impl SchemaView) -> TypingResult<Tabl
                 (SqlLiteral::Bool(v), AlgebraicType::Bool) => {
                     values.push(AlgebraicValue::Bool(v));
                 }
-                (SqlLiteral::Str(v), AlgebraicType::String) => {
-                    values.push(AlgebraicValue::String(v));
-                }
                 (SqlLiteral::Bool(_), _) => {
                     return Err(UnexpectedType::new(ty, &AlgebraicType::Bool).into());
                 }
-                (SqlLiteral::Str(_), _) => {
-                    return Err(UnexpectedType::new(ty, &AlgebraicType::String).into());
-                }
-                (SqlLiteral::Hex(v), ty) | (SqlLiteral::Num(v), ty) => {
+                (SqlLiteral::Num(v), ty) | (SqlLiteral::Hex(v), ty) | (SqlLiteral::Str(v), ty) => {
                     values.push(parse(&v, ty).map_err(|_| InvalidLiteral::new(v.into_string(), ty))?);
                 }
             }
