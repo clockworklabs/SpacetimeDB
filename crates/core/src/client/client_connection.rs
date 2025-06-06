@@ -156,6 +156,8 @@ impl ClientConnectionSender {
         Self::dummy_with_channel(id, config).0
     }
 
+    /// Send a message to the client. For data-related messages, you should probably use
+    /// `BroadcastQueue::send` to ensure that the client sees data messages in a consistent order.
     pub fn send_message(&self, message: impl Into<SerializableMessage>) -> Result<(), ClientSendError> {
         self.send(message.into())
     }
