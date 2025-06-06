@@ -299,7 +299,7 @@ pub async fn get_login_token_or_log_in(
     target_server: Option<&str>,
     interactive: bool,
 ) -> anyhow::Result<String> {
-    if let Some(token) = config.spacetimedb_token() {
+    if let Some(token) = config.spacetimedb_token(target_server, true) {
         return Ok(token.clone());
     }
 
@@ -314,10 +314,10 @@ pub async fn get_login_token_or_log_in(
 
     if full_login {
         let host = Url::parse(DEFAULT_AUTH_HOST)?;
-        spacetimedb_login_force(config, &host, false).await
+        spacetimedb_login_force(config, &host, None, false).await
     } else {
         let host = Url::parse(&config.get_host_url(target_server)?)?;
-        spacetimedb_login_force(config, &host, true).await
+        spacetimedb_login_force(config, &host, target_server, true).await
     }
 }
 
