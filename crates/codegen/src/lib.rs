@@ -5,11 +5,16 @@ mod code_indenter;
 pub mod csharp;
 pub mod rust;
 pub mod typescript;
+pub mod presets;
+
 mod util;
 
 pub use self::csharp::Csharp;
 pub use self::rust::Rust;
 pub use self::typescript::TypeScript;
+pub use self::presets::LangPreset;
+
+
 pub use util::AUTO_GENERATED_PREFIX;
 
 pub fn generate(module: &ModuleDef, lang: &dyn Lang) -> Vec<(String, String)> {
@@ -27,11 +32,17 @@ pub fn generate(module: &ModuleDef, lang: &dyn Lang) -> Vec<(String, String)> {
             )
         }),
         lang.generate_globals(module),
+        lang.preset().map_or_else(|| Vec::new(), |p| p.generate(module)),
     )
     .collect()
 }
 
+
 pub trait Lang {
+    fn preset(&self) -> Option<&'static dyn LangPreset> {
+        None
+    }
+
     fn table_filename(&self, module: &ModuleDef, table: &TableDef) -> String;
     fn type_filename(&self, type_name: &ScopedTypeName) -> String;
     fn reducer_filename(&self, reducer_name: &Identifier) -> String;

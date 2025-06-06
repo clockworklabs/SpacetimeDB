@@ -1,4 +1,4 @@
-use crate::indent_scope;
+use crate::{indent_scope, LangPreset};
 use crate::util::{is_reducer_invokable, iter_reducers, iter_tables, iter_types, iter_unique_cols};
 
 use super::util::{collect_case, print_auto_generated_file_comment, type_ref_name};
@@ -22,9 +22,15 @@ type Imports = BTreeSet<AlgebraicTypeRef>;
 
 const INDENT: &str = "  ";
 
-pub struct TypeScript;
+pub struct TypeScript {
+    pub preset: Option<&'static dyn LangPreset>
+}
 
 impl Lang for TypeScript {
+    fn preset(&self) -> Option<&'static dyn LangPreset> {
+        self.preset
+    }
+
     fn table_filename(
         &self,
         _module: &spacetimedb_schema::def::ModuleDef,
