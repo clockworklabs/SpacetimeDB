@@ -1,10 +1,10 @@
 use crate::common_args;
 use crate::config::Config;
-use crate::util::{add_auth_header_opt, decode_identity, get_auth_header, get_login_token_or_log_in, ResponseExt};
+use crate::util::{add_auth_header_opt, get_auth_header, ResponseExt};
 use clap::ArgMatches;
 use clap::{Arg, Command};
 
-use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult};
+use spacetimedb_client_api_messages::name::{DomainName, SetDomainsResult};
 
 pub fn cli() -> Command {
     Command::new("rename")
@@ -30,70 +30,39 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let database_identity = args.get_one::<String>("database-identity").unwrap();
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
     let force = args.get_flag("force");
-    let token = get_login_token_or_log_in(&mut config, server, !force).await?;
-    let identity = decode_identity(&token)?;
     let auth_header = get_auth_header(&mut config, false, server, !force).await?;
 
     let domain: DomainName = domain.parse()?;
 
     let builder = reqwest::Client::new()
-        .post(format!(
+        .put(format!(
             "{}/v1/database/{database_identity}/names",
             config.get_host_url(server)?
         ))
-        .body(String::from(domain));
+        .header(reqwest::header::CONTENT_TYPE, "application/json")
+        .body(serde_json::to_string(&[&domain])?);
     let builder = add_auth_header_opt(builder, &auth_header);
 
-    let result = builder.send().await?.json_or_error().await?;
-    match result {
-        InsertDomainResult::Success {
-            domain,
-            database_identity,
-        } => {
-            println!("Domain set to {} for identity {}.", domain, database_identity);
-        }
-        InsertDomainResult::TldNotRegistered { domain } => {
-            return Err(anyhow::anyhow!(
-                "The top level domain that you provided is not registered.\n\
-            This tld is not yet registered to any identity. You can register this domain with the following command:\n\
-            \n\
-            \tspacetime dns register-tld {}\n",
-                domain.tld()
-            ));
-        }
-        InsertDomainResult::PermissionDenied { domain } => {
-            //TODO(jdetter): Have a nice name generator here, instead of using some abstract characters
-            // we should perhaps generate fun names like 'green-fire-dragon' instead
-            let suggested_tld: String = identity.chars().take(12).collect();
-            if let Some(sub_domain) = domain.sub_domain() {
-                return Err(anyhow::anyhow!(
-                    "The top level domain {} is not registered to the identity you provided.\n\
-                We suggest you register a new tld:\n\
-                \tspacetime dns register-tld {}\n\
-                \n\
-                And then push to the domain that uses that tld:\n\
-                \tspacetime publish {}/{}\n",
-                    domain.tld(),
-                    suggested_tld,
-                    suggested_tld,
-                    sub_domain
-                ));
-            } else {
-                return Err(anyhow::anyhow!(
-                    "The top level domain {} is not registered to the identity you provided.\n\
-                We suggest you register a new tld:\n\
-                \tspacetime dns register-tld {}\n\
-                \n\
-                And then push to the domain that uses that tld:\n\
-                \tspacetime publish {}\n",
-                    domain.tld(),
-                    suggested_tld,
-                    suggested_tld
-                ));
-            }
-        }
-        InsertDomainResult::OtherError(e) => return Err(anyhow::anyhow!(e)),
+    let response = builder.send().await?;
+    let status = &response.status();
+    let result: SetDomainsResult = response.json_or_error().await?;
+
+    if !status.is_success() {
+        anyhow::bail!(match result {
+            SetDomainsResult::Success => "".to_string(),
+            SetDomainsResult::PermissionDenied { domain } => format!("Permission denied for domain: {}", domain),
+            SetDomainsResult::PermissionDeniedOnAny { domains } =>
+                format!("Permission denied for domains: {:?}", domains),
+            SetDomainsResult::DatabaseNotFound => format!("Database {} not found", database_identity),
+            SetDomainsResult::NotYourDatabase { .. } => format!(
+                "You cannot rename {} because it is owned by another identity.",
+                database_identity
+            ),
+            SetDomainsResult::OtherError(err) => err,
+        });
     }
+
+    println!("Name set to {} for identity {}.", domain, database_identity);
 
     Ok(())
 }
