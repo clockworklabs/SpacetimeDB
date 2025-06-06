@@ -813,10 +813,18 @@ impl From<StRowLevelSecurityRow> for RowLevelSecuritySchema {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ModuleKind(u8);
 
-/// The [`ModuleKind`] of WASM-based modules.
-///
-/// This is currently the only known kind.
-pub const WASM_MODULE: ModuleKind = ModuleKind(0);
+impl ModuleKind {
+    /// The [`ModuleKind`] of WASM-based modules.
+    pub const WASM: ModuleKind = ModuleKind(0);
+}
+
+impl From<crate::messages::control_db::HostType> for ModuleKind {
+    fn from(host_type: crate::messages::control_db::HostType) -> Self {
+        match host_type {
+            crate::messages::control_db::HostType::Wasm => Self::WASM,
+        }
+    }
+}
 
 impl_serialize!([] ModuleKind, (self, ser) => self.0.serialize(ser));
 impl_deserialize!([] ModuleKind, de => u8::deserialize(de).map(Self));
@@ -852,7 +860,7 @@ impl From<Identity> for IdentityViaU256 {
 ///
 /// * `database_identity` is the [`Identity`] of the database.
 /// * `owner_identity` is the [`Identity`] of the owner of the database.
-/// * `program_kind` is the [`ModuleKind`] (currently always [`WASM_MODULE`]).
+/// * `program_kind` is the [`ModuleKind`] (currently always [`ModuleKind::WASM`]).
 /// * `program_hash` is the [`Hash`] of the raw bytes of the (compiled) module.
 /// * `program_bytes` are the raw bytes of the (compiled) module.
 /// * `module_version` is the version of the module.
