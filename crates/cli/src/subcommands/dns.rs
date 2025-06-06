@@ -45,21 +45,21 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
     let response = builder.send().await?;
     let status = &response.status();
-    let result : SetDomainsResult = response.json_or_error().await?;
+    let result: SetDomainsResult = response.json_or_error().await?;
 
     if !status.is_success() {
         anyhow::bail!(match result {
             SetDomainsResult::Success => "".to_string(),
-            SetDomainsResult::PermissionDenied { domain } =>
-                format!("Permission denied for domain: {}", domain),
+            SetDomainsResult::PermissionDenied { domain } => format!("Permission denied for domain: {}", domain),
             SetDomainsResult::PermissionDeniedOnAny { domains } =>
                 format!("Permission denied for domains: {:?}", domains),
-            SetDomainsResult::DatabaseNotFound =>
-                format!("Database {} not found", database_identity),
-            SetDomainsResult::NotYourDatabase { .. } =>
-                format!("You cannot rename {} because it is owned by another identity.", database_identity),
+            SetDomainsResult::DatabaseNotFound => format!("Database {} not found", database_identity),
+            SetDomainsResult::NotYourDatabase { .. } => format!(
+                "You cannot rename {} because it is owned by another identity.",
+                database_identity
+            ),
             SetDomainsResult::OtherError(err) => err,
-            });
+        });
     }
 
     println!("Name set to {} for identity {}.", domain, database_identity);
