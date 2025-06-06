@@ -206,6 +206,7 @@ impl Cores {
 
         let rayon = RayonCores(Some(cores.take(frac(1.0 / 8.0)).collect()));
 
+        // see comment on `TokioCores.blocking`
         #[cfg(target_os = "linux")]
         let remaining = cores.try_fold(nix::sched::CpuSet::new(), |mut cpuset, core| {
             cpuset.set(core.id).ok()?;

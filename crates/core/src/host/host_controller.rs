@@ -586,7 +586,8 @@ async fn make_module_host(
     unregister: impl Fn() + Send + Sync + 'static,
     core: JobCore,
 ) -> anyhow::Result<(Program, ModuleHost)> {
-    // `make_actor` is blocking, as it needs to compile the wasm to native code.
+    // `make_actor` is blocking, as it needs to compile the wasm to native code,
+    // which may be computationally expensive.
     asyncify(move || {
         let module_host = match host_type {
             HostType::Wasm => {
