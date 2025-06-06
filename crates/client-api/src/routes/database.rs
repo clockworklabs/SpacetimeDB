@@ -704,13 +704,12 @@ pub async fn set_names<S: ControlStateDelegate>(
         ));
     }
 
-    for name in validated_names {
+    for name in &validated_names {
         if ctx.lookup_identity(name.as_str()).unwrap().is_some() {
             return Ok((
                 StatusCode::BAD_REQUEST,
                 axum::Json(name::SetDomainsResult::OtherError(
-                    format!("Cannot rename to {} because it already is in use.", name.as_str()))),
-            ));
+                    format!("Cannot rename to {} because it already is in use.", name.as_str())))));
         }
     }
 
