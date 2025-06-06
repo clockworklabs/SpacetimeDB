@@ -132,10 +132,10 @@ pub fn type_insert(insert: SqlInsert, tx: &impl SchemaView) -> TypingResult<Tabl
                     values.push(AlgebraicValue::String(v));
                 }
                 (SqlLiteral::Bool(_), _) => {
-                    return Err(UnexpectedType::new(&AlgebraicType::Bool, ty).into());
+                    return Err(UnexpectedType::new(ty, &AlgebraicType::Bool).into());
                 }
                 (SqlLiteral::Str(_), _) => {
-                    return Err(UnexpectedType::new(&AlgebraicType::String, ty).into());
+                    return Err(UnexpectedType::new(ty, &AlgebraicType::String).into());
                 }
                 (SqlLiteral::Hex(v), ty) | (SqlLiteral::Num(v), ty) => {
                     values.push(parse(&v, ty).map_err(|_| InvalidLiteral::new(v.into_string(), ty))?);
@@ -199,10 +199,10 @@ pub fn type_update(update: SqlUpdate, tx: &impl SchemaView) -> TypingResult<Tabl
                 values.push((*col_id, AlgebraicValue::String(v)));
             }
             (SqlLiteral::Bool(_), _) => {
-                return Err(UnexpectedType::new(&AlgebraicType::Bool, ty).into());
+                return Err(UnexpectedType::new(ty, &AlgebraicType::Bool).into());
             }
             (SqlLiteral::Str(_), _) => {
-                return Err(UnexpectedType::new(&AlgebraicType::String, ty).into());
+                return Err(UnexpectedType::new(ty, &AlgebraicType::String).into());
             }
             (SqlLiteral::Hex(v), ty) | (SqlLiteral::Num(v), ty) => {
                 values.push((
