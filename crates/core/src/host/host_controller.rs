@@ -277,6 +277,11 @@ impl HostController {
             self.page_pool.clone(),
             database,
             program,
+            // This takes a db core to check validity, and we will later take
+            // another core to actually run the module. Due to the round-robin
+            // algorithm that JobCores uses, that will likely just be the same
+            // core - there's not a concern that we'll only end up using 1/2
+            // of the actual cores.
             self.db_cores.take(),
         )
         .await

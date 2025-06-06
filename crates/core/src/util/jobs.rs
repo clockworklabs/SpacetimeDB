@@ -302,6 +302,7 @@ impl<T: ?Sized> JobThread<T> {
 pub struct JobThreadClosed;
 
 /// A weak version of `JobThread` that does not hold the thread open.
+// used in crate::core::module_host::WeakModuleHost
 pub struct WeakJobThread<T: ?Sized> {
     tx: mpsc::WeakSender<Box<Job<T>>>,
     close: Weak<NotifyOnce>,
