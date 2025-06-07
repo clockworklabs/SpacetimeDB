@@ -312,6 +312,9 @@ pub const SERVER_MSG_COMPRESSION_TAG_BROTLI: u8 = 1;
 /// The tag recognized by the host and SDKs to mean brotli compression  of a [`ServerMessage`].
 pub const SERVER_MSG_COMPRESSION_TAG_GZIP: u8 = 2;
 
+/// The tag recognized by the host and SDKs to mean brotli compression  of a [`ServerMessage`].
+pub const SERVER_MSG_COMPRESSION_TAG_ZSTD: u8 = 3;
+
 /// Messages sent from the server to the client.
 #[derive(SpacetimeType, derive_more::From)]
 #[sats(crate = spacetimedb_lib)]
@@ -664,6 +667,7 @@ pub enum CompressableQueryUpdate<F: WebsocketFormat> {
     Uncompressed(QueryUpdate<F>),
     Brotli(Bytes),
     Gzip(Bytes),
+    Zstd(Bytes),
 }
 
 impl CompressableQueryUpdate<BsatnFormat> {
@@ -676,6 +680,10 @@ impl CompressableQueryUpdate<BsatnFormat> {
             }
             Self::Gzip(bytes) => {
                 let bytes = gzip_decompress(&bytes).unwrap();
+                bsatn::from_slice(&bytes).unwrap()
+            }
+            Self::Zstd(bytes) => {
+                let bytes = zstd_decompress(&bytes).unwrap();
                 bsatn::from_slice(&bytes).unwrap()
             }
         }
@@ -830,6 +838,12 @@ impl WebsocketFormat for BsatnFormat {
                 gzip_compress(&bytes, &mut out);
                 CompressableQueryUpdate::Gzip(out.into())
             }
+            Compression::Zstd => {
+                let bytes = bsatn::to_vec(&qu).unwrap();
+                let mut out = Vec::new();
+                zstd_compress(&bytes, &mut out);
+                CompressableQueryUpdate::Zstd(out.into())
+            }
         }
     }
 }
@@ -844,6 +858,8 @@ pub enum Compression {
     Brotli,
     /// Compress using gzip if a certain size threshold was met.
     Gzip,
+    /// Compress using zstd if a certain size threshold was met.
+    Zstd,
 }
 
 pub fn decide_compression(len: usize, compression: Compression) -> Compression {
@@ -895,6 +911,18 @@ pub fn gzip_compress(bytes: &[u8], out: &mut Vec<u8>) {
 pub fn gzip_decompress(bytes: &[u8]) -> Result<Vec<u8>, io::Error> {
     let mut decompressed = Vec::new();
     let _ = flate2::read::GzDecoder::new(bytes).read_to_end(&mut decompressed)?;
+    Ok(decompressed)
+}
+
+pub fn zstd_compress(bytes: &[u8], out: &mut Vec<u8>) {
+    const ZSTD_LEVEL: i32 = 5;
+
+    zstd::stream::copy_encode(bytes, out, ZSTD_LEVEL).expect("Failed to zstd compress `bytes`");
+}
+
+pub fn zstd_decompress(bytes: &[u8]) -> Result<Vec<u8>, io::Error> {
+    let mut decompressed = Vec::new();
+    zstd::stream::copy_decode(bytes, &mut decompressed)?;
     Ok(decompressed)
 }
 

@@ -10,10 +10,7 @@ use bytes::Bytes;
 use futures::{SinkExt, StreamExt as _, TryStreamExt};
 use futures_channel::mpsc;
 use http::uri::{InvalidUri, Scheme, Uri};
-use spacetimedb_client_api_messages::websocket::{
-    brotli_decompress, gzip_decompress, BsatnFormat, Compression, BIN_PROTOCOL, SERVER_MSG_COMPRESSION_TAG_BROTLI,
-    SERVER_MSG_COMPRESSION_TAG_GZIP, SERVER_MSG_COMPRESSION_TAG_NONE,
-};
+use spacetimedb_client_api_messages::websocket::{brotli_decompress, gzip_decompress, zstd_decompress, BsatnFormat, Compression, BIN_PROTOCOL, SERVER_MSG_COMPRESSION_TAG_BROTLI, SERVER_MSG_COMPRESSION_TAG_GZIP, SERVER_MSG_COMPRESSION_TAG_NONE, SERVER_MSG_COMPRESSION_TAG_ZSTD};
 use spacetimedb_client_api_messages::websocket::{ClientMessage, ServerMessage};
 use spacetimedb_lib::{bsatn, ConnectionId};
 use thiserror::Error;
@@ -145,6 +142,7 @@ fn make_uri(host: Uri, db_name: &str, connection_id: ConnectionId, params: WsPar
         // The host uses the same default as the sdk,
         // but in case this changes, we prefer to be explicit now.
         Compression::Brotli => path.push_str("&compression=Brotli"),
+        Compression::Zstd => path.push_str("&compression=Zstd"),
     };
 
     // Specify the `light` mode if requested.
@@ -250,6 +248,13 @@ impl WsConnection {
             SERVER_MSG_COMPRESSION_TAG_GZIP => {
                 bsatn::from_slice(&gzip_decompress(bytes).map_err(|source| WsError::Decompress {
                     scheme: "gzip",
+                    source: Arc::new(source),
+                })?)
+                .map_err(|source| WsError::DeserializeMessage { source })?
+            }
+            SERVER_MSG_COMPRESSION_TAG_ZSTD => {
+                bsatn::from_slice(&zstd_decompress(bytes).map_err(|source| WsError::Decompress {
+                    scheme: "zstd",
                     source: Arc::new(source),
                 })?)
                 .map_err(|source| WsError::DeserializeMessage { source })?
