@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::time::{Duration, SystemTime};
 
 use axum::extract::{Query, Request, State};
@@ -197,8 +198,16 @@ pub struct JwtKeyAuthProvider<TV: TokenValidator + Send + Sync> {
 pub type DefaultJwtAuthProvider = JwtKeyAuthProvider<DefaultValidator>;
 
 // Create a new AuthEnvironment using the default caching validator.
-pub fn default_auth_environment(keys: JwtKeys, local_issuer: String) -> JwtKeyAuthProvider<DefaultValidator> {
-    let validator = new_validator(keys.public.clone(), local_issuer.clone());
+pub fn default_auth_environment(
+    keys: JwtKeys, 
+    local_issuer: String,
+    allowed_oidc_issuers: Option<HashSet<String>>
+) -> JwtKeyAuthProvider<DefaultValidator> {
+    let validator = new_validator(
+        keys.public.clone(), 
+        local_issuer.clone(),
+        allowed_oidc_issuers,
+    );
     JwtKeyAuthProvider::new(keys, local_issuer, validator)
 }
 
@@ -269,23 +278,36 @@ impl<S: NodeDelegate + Send + Sync> axum::extract::FromRequestParts<S> for Space
     type Rejection = AuthorizationRejection;
     async fn from_request_parts(parts: &mut request::Parts, state: &S) -> Result<Self, Self::Rejection> {
         let Some(creds) = SpacetimeCreds::from_request_parts(parts)? else {
+            // No token was provided at all. This is a legitimate anonymous user.
             return Ok(Self { auth: None });
         };
 
-        let claims = state
+        // Credentials ARE present. They MUST now be validated successfully.
+        let validation_result = state
             .jwt_auth_provider()
             .validator()
             .validate_token(&creds.token)
-            .await
-            .map_err(AuthorizationRejection::Custom)?;
+            .await;
 
-        let auth = SpacetimeAuth {
-            creds,
-            identity: claims.identity,
-            subject: claims.subject,
-            issuer: claims.issuer,
-        };
-        Ok(Self { auth: Some(auth) })
+        match validation_result {
+            Ok(claims) => {
+                // The token is valid. Create the auth struct.
+                let auth = SpacetimeAuth {
+                    creds,
+                    identity: claims.identity,
+                    subject: claims.subject,
+                    issuer: claims.issuer,
+                };
+                Ok(Self { auth: Some(auth) })
+            }
+            Err(validation_error) => {
+                // The token was present but INVALID.
+                // This is a hard failure. We must reject the request.
+                // We are explicitly returning an Err that will halt the request
+                // with a 401 Unauthorized status.
+                Err(AuthorizationRejection::Custom(validation_error))
+            }
+        }
     }
 }
 
@@ -423,7 +445,17 @@ pub async fn anon_auth_middleware<S: ControlStateDelegate + NodeDelegate>(
     mut req: Request,
     next: Next,
 ) -> axum::response::Result<impl IntoResponse> {
-    let auth = auth.get_or_create(&worker_ctx).await?;
+    let auth = match auth.get() {
+        None => {
+            if worker_ctx.auth_required() {
+                log::warn!("Rejecting anonymous connection because --auth-required is set.");
+                Err(AuthorizationRejection::Required.into())
+            } else {
+                SpacetimeAuth::alloc(&worker_ctx).await
+            }
+        }
+        Some(authorization) => {Ok(authorization)}
+    }?;
     req.extensions_mut().insert(auth.clone());
     let resp = next.run(req).await;
     Ok((auth.into_headers(), resp))

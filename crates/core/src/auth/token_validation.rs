@@ -10,6 +10,7 @@ pub use jsonwebtoken::{DecodingKey, EncodingKey};
 use jwks::Jwks;
 use lazy_static::lazy_static;
 use serde::Serialize;
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 use thiserror;
@@ -118,13 +119,36 @@ where
     }
 }
 
-pub type DefaultValidator = FullTokenValidator<CachingOidcTokenValidator>;
+pub type DefaultValidator = FullTokenValidator<
+    AllowedIssuersValidator<CachingOidcTokenValidator>
+>;
 
-pub fn new_validator(local_key: DecodingKey, local_issuer: String) -> FullTokenValidator<CachingOidcTokenValidator> {
+pub fn new_validator(
+    local_key: DecodingKey, 
+    local_issuer: String,
+    // Accept an optional list of allowed OIDC issuers.
+    allowed_oidc_issuers: Option<HashSet<String>>,
+) -> DefaultValidator {
+    // If the allow-list is empty or not provided, log a prominent security warning.
+    if allowed_oidc_issuers.is_none() || allowed_oidc_issuers.as_ref().unwrap().is_empty() {
+        log::warn!(
+            "SECURITY WARNING: No OIDC issuer allow-list is configured. \
+            Any valid OIDC token from ANY issuer will be accepted. \
+            This is NOT recommended for production environments. \
+            Please configure 'allowed_oidc_issuers'."
+        );
+    }
+
+    let caching_validator = CachingOidcTokenValidator::get_default();
+    let oidc_validator = AllowedIssuersValidator {
+        allowed_issuers: allowed_oidc_issuers,
+        inner_validator: caching_validator,
+    };
+
     FullTokenValidator {
         local_key,
         local_issuer,
-        oidc_validator: CachingOidcTokenValidator::get_default(),
+        oidc_validator,
     }
 }
 
@@ -194,6 +218,39 @@ impl CachingOidcTokenValidator {
 
     pub fn get_default() -> Self {
         Self::new(Duration::from_secs(300), Some(Duration::from_secs(7200)))
+    }
+}
+
+/// A validator that wraps another validator and adds an issuer allow-list.
+/// If `allowed_issuers` is `None`, it will permit any issuer (with a warning).
+pub struct AllowedIssuersValidator<T: TokenValidator> {
+    // We use an Option to clearly distinguish between "enforce this list"
+    // and "allow any issuer".
+    allowed_issuers: Option<HashSet<String>>,
+    inner_validator: T,
+}
+
+#[async_trait]
+impl<T: TokenValidator + Send + Sync> TokenValidator for AllowedIssuersValidator<T> {
+    async fn validate_token(
+        &self,
+        token: &str,
+    ) -> Result<SpacetimeIdentityClaims, TokenValidationError> {
+        if let Some(allowed) = &self.allowed_issuers {
+            // Get the issuer without full validation first.
+            let issuer = get_raw_issuer(token)?;
+
+            // Check if the issuer is in our allow-list.
+            if !allowed.contains(&issuer) {
+                log::warn!("Token validation failed: issuer '{}' is not in the allowed list.", issuer);
+                return Err(TokenValidationError::Other(anyhow::anyhow!(
+                    "Issuer is not in the allowed list"
+                )));
+            }
+        }
+
+        // If the check passes (or if no list is configured), proceed with the inner validator.
+        self.inner_validator.validate_token(token).await
     }
 }
 

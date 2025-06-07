@@ -1,10 +1,11 @@
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use crate::StandaloneEnv;
 use anyhow::Context;
 use axum::extract::DefaultBodyLimit;
 use clap::ArgAction::SetTrue;
-use clap::{Arg, ArgMatches};
+use clap::{Arg, ArgAction, ArgMatches};
 use spacetimedb::config::{CertificateAuthority, ConfigFile};
 use spacetimedb::db::{Config, Storage};
 use spacetimedb::startup::{self, TracingOptions};
@@ -73,6 +74,20 @@ pub fn cli() -> clap::Command {
                 "The maximum size of the page pool in bytes. Should be a multiple of 64KiB. The default is 8GiB.",
             ),
         )
+        .arg(
+            Arg::new("allowed-oidc-issuer")
+                .long("allowed-oidc-issuer")
+                .help("Allow tokens from this OIDC issuer. Can be specified multiple times. If not set, all issuers are allowed (NOT RECOMMENDED FOR PRODUCTION).")
+                // This allows the user to provide the flag multiple times,
+                // e.g., --allowed-oidc-issuer https://a.com --allowed-oidc-issuer https://b.com
+                .action(ArgAction::Append)
+        )
+        .arg(
+            Arg::new("auth-required")
+                .long("auth-required")
+                .action(SetTrue)
+                .help("If specified, anonymous user creation is disabled and all connections must provide a valid JWT.")
+        )
     // .after_help("Run `spacetime help start` for more detailed information.")
 }
 
@@ -104,6 +119,10 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
         storage,
         page_pool_max_size,
     };
+    let allowed_oidc_issuers: Option<HashSet<String>> =
+        args.get_many::<String>("allowed-oidc-issuer")
+            .map(|vals| vals.cloned().collect());
+    let auth_required = args.get_flag("auth-required");
 
     banner();
     let exe_name = std::env::current_exe()?;
@@ -144,7 +163,7 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
         .context("cannot omit --jwt-{pub,priv}-key-path when those options are not specified in config.toml")?;
 
     let data_dir = Arc::new(data_dir.clone());
-    let ctx = StandaloneEnv::init(db_config, &certs, data_dir, db_cores).await?;
+    let ctx = StandaloneEnv::init(db_config, &certs, data_dir, db_cores, allowed_oidc_issuers, auth_required).await?;
     worker_metrics::spawn_jemalloc_stats(listen_addr.clone());
     worker_metrics::spawn_tokio_stats(listen_addr.clone());
     worker_metrics::spawn_page_pool_stats(listen_addr.clone(), ctx.page_pool().clone());
