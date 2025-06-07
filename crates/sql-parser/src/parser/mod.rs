@@ -225,6 +225,12 @@ fn parse_expr(expr: Expr, depth: usize) -> SqlParseResult<SqlExpr> {
         Expr::Nested(expr) => parse_expr(*expr, depth + 1),
         Expr::Value(Value::Placeholder(param)) if &param == ":sender" => Ok(SqlExpr::Param(Parameter::Sender)),
         Expr::Value(v) => Ok(SqlExpr::Lit(parse_literal(v)?)),
+        Expr::Tuple(ref t) => Ok(SqlExpr::Tup(t.iter().map(|x| {
+            match x {
+                Expr::Value(v) => parse_literal(v.clone()),
+                _ => Err(SqlUnsupported::Expr(expr.clone()).into()),
+            }
+        }).collect::<SqlParseResult<Vec<_>>>()?)),
         Expr::UnaryOp {
             op: UnaryOperator::Plus,
             expr,

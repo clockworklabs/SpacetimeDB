@@ -14,7 +14,7 @@ use expr::AggType;
 use expr::{Expr, FieldProject, ProjectList, ProjectName, RelExpr};
 use spacetimedb_lib::ser::Serialize;
 use spacetimedb_lib::Timestamp;
-use spacetimedb_lib::{from_hex_pad, AlgebraicType, AlgebraicValue, ConnectionId, Identity};
+use spacetimedb_lib::{from_hex_pad, AlgebraicType, AlgebraicValue, ConnectionId, Identity, ProductType, ProductTypeElement};
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use spacetimedb_sats::algebraic_value::ser::ValueSerializer;
 use spacetimedb_sats::uuid::Uuid;
@@ -98,6 +98,28 @@ fn _type_expr(vars: &Relvars, expr: SqlExpr, expected: Option<&AlgebraicType>, d
             parse(&v, ty).map_err(|_| InvalidLiteral::new(v.into_string(), ty))?,
             ty.clone(),
         )),
+        (SqlExpr::Tup(_), None) => {
+            Err(Unresolved::Literal.into())
+        }
+        (SqlExpr::Tup(t), Some(&AlgebraicType::Product(ref pty))) => Ok(Expr::Tuple(
+            t.iter().zip(pty.elements.iter()).map(|(lit, ty)| {
+                match (lit, ty) {
+                    (SqlLiteral::Bool(v), ProductTypeElement { algebraic_type: AlgebraicType::Bool, .. }) => {
+                        Ok(AlgebraicValue::Bool(*v))
+                    }
+                    (SqlLiteral::Bool(_), ProductTypeElement { algebraic_type: ty, .. }) => {
+                        Err(UnexpectedType::new(&AlgebraicType::Bool, ty).into())
+                    }
+                    (SqlLiteral::Str(v) | SqlLiteral::Num(v) | SqlLiteral::Hex(v), ProductTypeElement { algebraic_type: ty, .. }) => {
+                        Ok(parse(&v, ty).map_err(|_| InvalidLiteral::new(v.clone().into_string(), ty))?)
+                    }
+                }
+            }).collect::<TypingResult<Box<[AlgebraicValue]>>>()?,
+            AlgebraicType::Product(pty.clone()),
+        )),
+        (SqlExpr::Tup(_), Some(ty)) => {
+            Err(UnexpectedType::new(&AlgebraicType::Product(ProductType::unit()), ty).into())
+        }
         (SqlExpr::Field(SqlIdent(table), SqlIdent(field)), None) => {
             let table_type = vars.deref().get(&table).ok_or_else(|| Unresolved::var(&table))?;
             let ColumnSchema { col_pos, col_type, .. } = table_type
@@ -158,16 +180,20 @@ pub(crate) fn type_expr(vars: &Relvars, expr: SqlExpr, expected: Option<&Algebra
 }
 
 /// Is this type compatible with this binary operator?
-fn op_supports_type(_op: BinOp, t: &AlgebraicType) -> bool {
-    t.is_bool()
-        || t.is_integer()
-        || t.is_float()
-        || t.is_string()
-        || t.is_bytes()
-        || t.is_identity()
-        || t.is_connection_id()
-        || t.is_timestamp()
-        || t.is_uuid()
+fn op_supports_type(op: BinOp, ty: &AlgebraicType) -> bool {
+    match (ty, op) {
+        (AlgebraicType::Product(_), BinOp::Eq | BinOp::Ne) => true,
+        _ if ty.is_bool() => true,
+        _ if ty.is_integer() => true,
+        _ if ty.is_float() => true,
+        _ if ty.is_string() => true,
+        _ if ty.is_bytes() => true,
+        _ if ty.is_identity() => true,
+        _ if ty.is_connection_id() => true,
+        _ if ty.is_timestamp() => true,
+        _ if ty.is_uuid() => true,
+        _ => false,
+    }
 }
 
 /// Parse an integer literal into an [AlgebraicValue]
