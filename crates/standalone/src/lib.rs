@@ -3,6 +3,7 @@ pub mod subcommands;
 pub mod util;
 pub mod version;
 
+use std::collections::HashSet;
 use crate::control_db::ControlDb;
 use crate::subcommands::{extract_schema, start};
 use anyhow::{ensure, Context, Ok};
@@ -40,6 +41,7 @@ pub struct StandaloneEnv {
     metrics_registry: prometheus::Registry,
     _pid_file: PidFile,
     auth_provider: auth::DefaultJwtAuthProvider,
+    pub auth_required: bool,
 }
 
 impl StandaloneEnv {
@@ -48,6 +50,8 @@ impl StandaloneEnv {
         certs: &CertificateAuthority,
         data_dir: Arc<ServerDataDir>,
         db_cores: JobCores,
+        allowed_oidc_issuers: Option<HashSet<String>>,
+        auth_required: bool,
     ) -> anyhow::Result<Arc<Self>> {
         let _pid_file = data_dir.pid_file()?;
         let meta_path = data_dir.metadata_toml();
@@ -75,7 +79,11 @@ impl StandaloneEnv {
         let client_actor_index = ClientActorIndex::new();
         let jwt_keys = certs.get_or_create_keys()?;
 
-        let auth_env = auth::default_auth_environment(jwt_keys, LOCALHOST.to_owned());
+        let auth_env = auth::default_auth_environment(
+            jwt_keys, 
+            LOCALHOST.to_owned(),
+            allowed_oidc_issuers,
+        );
 
         let metrics_registry = prometheus::Registry::new();
         metrics_registry.register(Box::new(&*WORKER_METRICS)).unwrap();
@@ -90,6 +98,7 @@ impl StandaloneEnv {
             metrics_registry,
             _pid_file,
             auth_provider: auth_env,
+            auth_required,
         }))
     }
 
@@ -140,6 +149,10 @@ impl NodeDelegate for StandaloneEnv {
         &self.auth_provider
     }
 
+    fn auth_required(&self) -> bool {
+        self.auth_required
+    }
+    
     async fn leader(&self, database_id: u64) -> anyhow::Result<Option<Host>> {
         let leader = match self.control_db.get_leader_replica_by_database(database_id) {
             Some(leader) => leader,
@@ -519,9 +532,11 @@ mod tests {
             page_pool_max_size: None,
         };
 
-        let _env = StandaloneEnv::init(config, &ca, data_dir.clone(), Default::default()).await?;
+        // We pass `None` here to test the default behavior (allow all).
+        // TODO: Test with list of allowed OIDC issuers
+        let _env = StandaloneEnv::init(config, &ca, data_dir.clone(), Default::default(), None, false).await?;
         // Ensure that we have a lock.
-        assert!(StandaloneEnv::init(config, &ca, data_dir.clone(), Default::default())
+        assert!(StandaloneEnv::init(config, &ca, data_dir.clone(), Default::default(), None, false)
             .await
             .is_err());
 
