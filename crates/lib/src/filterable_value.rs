@@ -1,4 +1,4 @@
-use crate::{ConnectionId, Identity};
+use crate::{ConnectionId, Identity, TimeDuration, Timestamp};
 use core::ops;
 use spacetimedb_sats::bsatn;
 use spacetimedb_sats::{hash::Hash, i256, u256, Serialize};
@@ -95,6 +95,8 @@ impl_filterable_value! {
 
     Identity: Copy,
     ConnectionId: Copy,
+    Timestamp: Copy,
+    TimeDuration: Copy,
     Hash: Copy,
 
     // Some day we will likely also want to support `Vec<u8>` and `[u8]`,
