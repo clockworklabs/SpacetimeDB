@@ -383,6 +383,8 @@ pub enum Expr {
     LogOp(LogOp, Box<Expr>, Box<Expr>),
     /// A typed literal expression
     Value(AlgebraicValue, AlgebraicType),
+    /// A typed literal tuple expression
+    Tuple(Box<[AlgebraicValue]>, AlgebraicType),
     /// A field projection
     Field(FieldProject),
 }
@@ -396,7 +398,7 @@ impl Expr {
                 a.visit(f);
                 b.visit(f);
             }
-            Self::Value(..) | Self::Field(..) => {}
+            Self::Value(..) | Self::Tuple(..) | Self::Field(..) => {}
         }
     }
 
@@ -408,7 +410,7 @@ impl Expr {
                 a.visit_mut(f);
                 b.visit_mut(f);
             }
-            Self::Value(..) | Self::Field(..) => {}
+            Self::Value(..) | Self::Tuple(..) | Self::Field(..) => {}
         }
     }
 
@@ -426,7 +428,7 @@ impl Expr {
     pub fn ty(&self) -> &AlgebraicType {
         match self {
             Self::BinOp(..) | Self::LogOp(..) => &AlgebraicType::Bool,
-            Self::Value(_, ty) | Self::Field(FieldProject { ty, .. }) => ty,
+            Self::Value(_, ty) | Self::Tuple(_, ty) | Self::Field(FieldProject { ty, .. }) => ty,
         }
     }
 }
