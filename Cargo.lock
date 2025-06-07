@@ -5399,6 +5399,7 @@ dependencies = [
  "spacetimedb-sats",
  "strum",
  "thiserror 1.0.69",
+ "zstd",
 ]
 
 [[package]]
