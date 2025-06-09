@@ -21,9 +21,9 @@ use crate::{
 
 use super::{
     check::{SchemaView, TypeChecker, TypingResult},
-    errors::{InsertFieldsError, InsertValuesError, TypingError, UnexpectedType, Unresolved},
+    errors::{InsertFieldsError, InsertValuesError, TypingError, UnexpectedArrayType, UnexpectedType, Unresolved},
     expr::Expr,
-    parse, type_expr, type_proj, type_select, StatementCtx, StatementSource,
+    parse, parse_array_value, type_expr, type_proj, type_select, StatementCtx, StatementSource,
 };
 
 pub enum Statement {
@@ -144,6 +144,12 @@ pub fn type_insert(insert: SqlInsert, tx: &impl SchemaView) -> TypingResult<Tabl
                 (SqlLiteral::Hex(v), ty) | (SqlLiteral::Num(v), ty) => {
                     values.push(parse(&v, ty).map_err(|_| InvalidLiteral::new(v.into_string(), ty))?);
                 }
+                (SqlLiteral::Arr(v), AlgebraicType::Array(a)) => {
+                    values.push(parse_array_value(&v, a).map_err(|_| InvalidLiteral::new("[…]".into(), &a.elem_ty))?);
+                }
+                (SqlLiteral::Arr(_), _) => {
+                    return Err(UnexpectedArrayType::new(ty).into());
+                }
             }
         }
         rows.push(ProductValue::from(values));
@@ -222,6 +228,15 @@ pub fn type_update(update: SqlUpdate, tx: &impl SchemaView) -> TypingResult<Tabl
                     parse(&v, ty).map_err(|_| InvalidLiteral::new(v.into_string(), ty))?,
                 ));
             }
+            (SqlLiteral::Arr(v), AlgebraicType::Array(a)) => {
+                values.push((
+                    *col_id,
+                    parse_array_value(&v, a).map_err(|_| InvalidLiteral::new("[…]".into(), &a.elem_ty))?,
+                ));
+            }
+            (SqlLiteral::Arr(_), _) => {
+                return Err(UnexpectedArrayType::new(ty).into());
+            }
         }
     }
     let mut vars = Relvars::default();
@@ -281,6 +296,7 @@ pub fn type_and_rewrite_set(set: SqlSet, tx: &impl SchemaView) -> TypingResult<T
         SqlLiteral::Bool(_) => Err(UnexpectedType::new(&AlgebraicType::U64, &AlgebraicType::Bool).into()),
         SqlLiteral::Str(_) => Err(UnexpectedType::new(&AlgebraicType::U64, &AlgebraicType::String).into()),
         SqlLiteral::Hex(_) => Err(UnexpectedType::new(&AlgebraicType::U64, &AlgebraicType::bytes()).into()),
+        SqlLiteral::Arr(_) => Err(UnexpectedArrayType::new(&AlgebraicType::U64).into()),
         SqlLiteral::Num(n) => {
             let table = tx.schema(ST_VAR_NAME).ok_or_else(|| Unresolved::table(ST_VAR_NAME))?;
             let var_name = AlgebraicValue::String(var_name);

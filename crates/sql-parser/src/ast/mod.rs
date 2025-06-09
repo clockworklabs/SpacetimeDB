@@ -209,6 +209,8 @@ pub enum SqlLiteral {
     Num(Box<str>),
     /// A string value
     Str(Box<str>),
+    /// A literal array
+    Arr(Box<[SqlLiteral]>),
 }
 
 /// Binary infix operators

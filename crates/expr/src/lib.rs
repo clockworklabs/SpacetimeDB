@@ -7,7 +7,7 @@ use anyhow::Context;
 use bigdecimal::BigDecimal;
 use bigdecimal::ToPrimitive;
 use check::{Relvars, TypingResult};
-use errors::{DuplicateName, InvalidLiteral, InvalidOp, InvalidWildcard, UnexpectedType, Unresolved};
+use errors::{DuplicateName, InvalidLiteral, InvalidOp, InvalidWildcard, UnexpectedArrayType, UnexpectedType, Unresolved};
 use ethnum::i256;
 use ethnum::u256;
 use expr::AggType;
@@ -15,6 +15,7 @@ use expr::{Expr, FieldProject, ProjectList, ProjectName, RelExpr};
 use spacetimedb_lib::ser::Serialize;
 use spacetimedb_lib::Timestamp;
 use spacetimedb_lib::{from_hex_pad, AlgebraicType, AlgebraicValue, ConnectionId, Identity, ProductType, ProductTypeElement};
+use spacetimedb_sats::{ArrayType, ArrayValue, F32, F64};
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use spacetimedb_sats::algebraic_value::ser::ValueSerializer;
 use spacetimedb_sats::uuid::Uuid;
@@ -98,6 +99,12 @@ fn _type_expr(vars: &Relvars, expr: SqlExpr, expected: Option<&AlgebraicType>, d
             parse(&v, ty).map_err(|_| InvalidLiteral::new(v.into_string(), ty))?,
             ty.clone(),
         )),
+        (SqlExpr::Lit(SqlLiteral::Arr(_)), None) => {
+            Err(Unresolved::Literal.into())
+        }
+        (SqlExpr::Lit(SqlLiteral::Arr(_)), Some(ty)) => {
+            Err(UnexpectedArrayType::new(ty).into())
+        }
         (SqlExpr::Tup(_), None) => {
             Err(Unresolved::Literal.into())
         }
@@ -112,6 +119,12 @@ fn _type_expr(vars: &Relvars, expr: SqlExpr, expected: Option<&AlgebraicType>, d
                     }
                     (SqlLiteral::Str(v) | SqlLiteral::Num(v) | SqlLiteral::Hex(v), ProductTypeElement { algebraic_type: ty, .. }) => {
                         Ok(parse(&v, ty).map_err(|_| InvalidLiteral::new(v.clone().into_string(), ty))?)
+                    }
+                    (SqlLiteral::Arr(v), ProductTypeElement { algebraic_type: AlgebraicType::Array(a), .. }) => {
+                        Ok(parse_array_value(v, a).map_err(|_| UnexpectedArrayType::new(&a.elem_ty))?)
+                    }
+                    (SqlLiteral::Arr(_), ProductTypeElement { algebraic_type: ty, .. }) => {
+                        Err(UnexpectedArrayType::new(ty).into())
                     }
                 }
             }).collect::<TypingResult<Box<[AlgebraicValue]>>>()?,
@@ -390,6 +403,50 @@ pub(crate) fn parse(value: &str, ty: &AlgebraicType) -> anyhow::Result<Algebraic
         t if t.is_uuid() => to_uuid(),
         t => bail!("Literal values for type {} are not supported", fmt_algebraic_type(t)),
     }
+}
+
+macro_rules! parse_array_number {
+    ($arr:expr, $elem_ty:expr, $($t:ident, $ty:ty),*) => {
+        match $elem_ty {
+            AlgebraicType::Bool => ArrayValue::Bool($arr.iter().map(|x| match x {
+                SqlLiteral::Bool(b) => Ok(*b),
+                _ => Err(UnexpectedType::new(&$elem_ty, &AlgebraicType::Bool).into()),
+            }).collect::<TypingResult<Box<[bool]>>>()?),
+            AlgebraicType::String => ArrayValue::String($arr.iter().map(|x| match x {
+                SqlLiteral::Str(b) => Ok(b.clone()),
+                _ => Err(UnexpectedType::new(&$elem_ty, &AlgebraicType::String).into()),
+            }).collect::<TypingResult<Box<[Box<str>]>>>()?),
+            $(AlgebraicType::$t => ArrayValue::$t($arr.iter().map(|x| match x {
+                SqlLiteral::Num(v) | SqlLiteral::Hex(v) => Ok(match parse(v, &$elem_ty).map_err(|_| InvalidLiteral::new(v.clone().into_string(), &$elem_ty))? {
+                    AlgebraicValue::$t(r) => r,
+                    _ => unreachable!(),  // guaranteed by `parse()'
+                }.into()),
+                SqlLiteral::Str(_) => Err(UnexpectedType::new(&$elem_ty, &AlgebraicType::String).into()),
+                SqlLiteral::Bool(_) => Err(UnexpectedType::new(&$elem_ty, &AlgebraicType::Bool).into()),
+                SqlLiteral::Arr(_) => Err(UnexpectedArrayType::new(&$elem_ty).into()),
+            }).collect::<anyhow::Result<Box<[$ty]>>>()?),)*
+            _ => {
+                return Err(UnexpectedArrayType::new(&$elem_ty).into());
+            }
+        }
+    }
+}
+
+pub(crate) fn parse_array_value(arr: &Box<[SqlLiteral]>, a: &ArrayType) -> anyhow::Result<AlgebraicValue> {
+    Ok(AlgebraicValue::Array(parse_array_number!(arr, *a.elem_ty,
+        I8, i8,
+        U8, u8,
+        I16, i16,
+        U16, u16,
+        I32, i32,
+        U32, u32,
+        I128, i128,
+        U128, u128,
+        /*I256, i256,
+        U256, u256,*/ // TODO: Boxed
+        F32, F32,
+        F64, F64
+    )))
 }
 
 /// The source of a statement
