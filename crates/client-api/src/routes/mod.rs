@@ -12,6 +12,7 @@ mod internal;
 pub mod metrics;
 pub mod prometheus;
 pub mod subscribe;
+pub mod unstable;
 
 /// This API call is just designed to allow clients to determine whether or not they can
 /// establish a connection to SpacetimeDB. This API call doesn't actually do anything.
@@ -40,4 +41,5 @@ where
     axum::Router::new()
         .nest("/v1", router.layer(cors))
         .nest("/internal", internal::router())
+        .nest("/unstable", unstable::router())
 }
