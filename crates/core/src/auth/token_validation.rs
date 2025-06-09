@@ -119,12 +119,10 @@ where
     }
 }
 
-pub type DefaultValidator = FullTokenValidator<
-    AllowedIssuersValidator<CachingOidcTokenValidator>
->;
+pub type DefaultValidator = FullTokenValidator<AllowedIssuersValidator<CachingOidcTokenValidator>>;
 
 pub fn new_validator(
-    local_key: DecodingKey, 
+    local_key: DecodingKey,
     local_issuer: String,
     // Accept an optional list of allowed OIDC issuers.
     allowed_oidc_issuers: Option<HashSet<String>>,
@@ -232,17 +230,17 @@ pub struct AllowedIssuersValidator<T: TokenValidator> {
 
 #[async_trait]
 impl<T: TokenValidator + Send + Sync> TokenValidator for AllowedIssuersValidator<T> {
-    async fn validate_token(
-        &self,
-        token: &str,
-    ) -> Result<SpacetimeIdentityClaims, TokenValidationError> {
+    async fn validate_token(&self, token: &str) -> Result<SpacetimeIdentityClaims, TokenValidationError> {
         if let Some(allowed) = &self.allowed_issuers {
             // Get the issuer without full validation first.
             let issuer = get_raw_issuer(token)?;
 
             // Check if the issuer is in our allow-list.
             if !allowed.contains(&issuer) {
-                log::warn!("Token validation failed: issuer '{}' is not in the allowed list.", issuer);
+                log::warn!(
+                    "Token validation failed: issuer '{}' is not in the allowed list.",
+                    issuer
+                );
                 return Err(TokenValidationError::Other(anyhow::anyhow!(
                     "Issuer is not in the allowed list"
                 )));

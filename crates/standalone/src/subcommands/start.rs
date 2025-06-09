@@ -119,9 +119,9 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
         storage,
         page_pool_max_size,
     };
-    let allowed_oidc_issuers: Option<HashSet<String>> =
-        args.get_many::<String>("allowed-oidc-issuer")
-            .map(|vals| vals.cloned().collect());
+    let allowed_oidc_issuers: Option<HashSet<String>> = args
+        .get_many::<String>("allowed-oidc-issuer")
+        .map(|vals| vals.cloned().collect());
     let auth_required = args.get_flag("auth-required");
 
     banner();
@@ -163,7 +163,15 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
         .context("cannot omit --jwt-{pub,priv}-key-path when those options are not specified in config.toml")?;
 
     let data_dir = Arc::new(data_dir.clone());
-    let ctx = StandaloneEnv::init(db_config, &certs, data_dir, db_cores, allowed_oidc_issuers, auth_required).await?;
+    let ctx = StandaloneEnv::init(
+        db_config,
+        &certs,
+        data_dir,
+        db_cores,
+        allowed_oidc_issuers,
+        auth_required,
+    )
+    .await?;
     worker_metrics::spawn_jemalloc_stats(listen_addr.clone());
     worker_metrics::spawn_tokio_stats(listen_addr.clone());
     worker_metrics::spawn_page_pool_stats(listen_addr.clone(), ctx.page_pool().clone());

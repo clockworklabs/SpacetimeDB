@@ -199,15 +199,11 @@ pub type DefaultJwtAuthProvider = JwtKeyAuthProvider<DefaultValidator>;
 
 // Create a new AuthEnvironment using the default caching validator.
 pub fn default_auth_environment(
-    keys: JwtKeys, 
+    keys: JwtKeys,
     local_issuer: String,
-    allowed_oidc_issuers: Option<HashSet<String>>
+    allowed_oidc_issuers: Option<HashSet<String>>,
 ) -> JwtKeyAuthProvider<DefaultValidator> {
-    let validator = new_validator(
-        keys.public.clone(), 
-        local_issuer.clone(),
-        allowed_oidc_issuers,
-    );
+    let validator = new_validator(keys.public.clone(), local_issuer.clone(), allowed_oidc_issuers);
     JwtKeyAuthProvider::new(keys, local_issuer, validator)
 }
 
@@ -283,11 +279,7 @@ impl<S: NodeDelegate + Send + Sync> axum::extract::FromRequestParts<S> for Space
         };
 
         // Credentials ARE present. They MUST now be validated successfully.
-        let validation_result = state
-            .jwt_auth_provider()
-            .validator()
-            .validate_token(&creds.token)
-            .await;
+        let validation_result = state.jwt_auth_provider().validator().validate_token(&creds.token).await;
 
         match validation_result {
             Ok(claims) => {
@@ -454,7 +446,7 @@ pub async fn anon_auth_middleware<S: ControlStateDelegate + NodeDelegate>(
                 SpacetimeAuth::alloc(&worker_ctx).await
             }
         }
-        Some(authorization) => {Ok(authorization)}
+        Some(authorization) => Ok(authorization),
     }?;
     req.extensions_mut().insert(auth.clone());
     let resp = next.run(req).await;

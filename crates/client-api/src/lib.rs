@@ -30,7 +30,7 @@ pub mod util;
 pub trait NodeDelegate: Send + Sync {
     fn gather_metrics(&self) -> Vec<prometheus::proto::MetricFamily>;
     fn client_actor_index(&self) -> &ClientActorIndex;
-    
+
     type JwtAuthProviderT: auth::JwtAuthProvider;
     fn jwt_auth_provider(&self) -> &Self::JwtAuthProviderT;
     fn auth_required(&self) -> bool;

@@ -3,7 +3,6 @@ pub mod subcommands;
 pub mod util;
 pub mod version;
 
-use std::collections::HashSet;
 use crate::control_db::ControlDb;
 use crate::subcommands::{extract_schema, start};
 use anyhow::{ensure, Context, Ok};
@@ -29,6 +28,7 @@ use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, Regi
 use spacetimedb_paths::server::{ModuleLogsDir, PidFile, ServerDataDir};
 use spacetimedb_paths::standalone::StandaloneDataDirExt;
 use spacetimedb_table::page_pool::PagePool;
+use std::collections::HashSet;
 use std::sync::Arc;
 
 pub use spacetimedb_client_api::routes::subscribe::{BIN_PROTOCOL, TEXT_PROTOCOL};
@@ -79,11 +79,7 @@ impl StandaloneEnv {
         let client_actor_index = ClientActorIndex::new();
         let jwt_keys = certs.get_or_create_keys()?;
 
-        let auth_env = auth::default_auth_environment(
-            jwt_keys, 
-            LOCALHOST.to_owned(),
-            allowed_oidc_issuers,
-        );
+        let auth_env = auth::default_auth_environment(jwt_keys, LOCALHOST.to_owned(), allowed_oidc_issuers);
 
         let metrics_registry = prometheus::Registry::new();
         metrics_registry.register(Box::new(&*WORKER_METRICS)).unwrap();
@@ -152,7 +148,7 @@ impl NodeDelegate for StandaloneEnv {
     fn auth_required(&self) -> bool {
         self.auth_required
     }
-    
+
     async fn leader(&self, database_id: u64) -> anyhow::Result<Option<Host>> {
         let leader = match self.control_db.get_leader_replica_by_database(database_id) {
             Some(leader) => leader,
@@ -536,9 +532,11 @@ mod tests {
         // TODO: Test with list of allowed OIDC issuers
         let _env = StandaloneEnv::init(config, &ca, data_dir.clone(), Default::default(), None, false).await?;
         // Ensure that we have a lock.
-        assert!(StandaloneEnv::init(config, &ca, data_dir.clone(), Default::default(), None, false)
-            .await
-            .is_err());
+        assert!(
+            StandaloneEnv::init(config, &ca, data_dir.clone(), Default::default(), None, false)
+                .await
+                .is_err()
+        );
 
         Ok(())
     }
