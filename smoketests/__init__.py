@@ -264,10 +264,11 @@ class Smoketest(unittest.TestCase):
             log_cmd([method, path])
             conn.request(method, path, body, headers)
             resp = conn.getresponse()
-            logging.debug(f"{resp.status} {resp.read()}")
+            body = resp.read()
+            logging.debug(f"{resp.status} {body}")
             if resp.status != 200:
                 raise resp
-            resp
+            return body
 
 
     @classmethod
