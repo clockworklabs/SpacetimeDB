@@ -216,3 +216,6 @@ new.json
 # Keys
 *.pem
 .ok.sql
+
+# Intermediate file generated when updating the external client SDKs' WS format bindings
+crates/client-api-messages/ws_schema.json
