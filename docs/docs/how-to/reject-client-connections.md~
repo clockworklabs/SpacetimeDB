@@ -44,7 +44,7 @@ public static void ClientConnected(ReducerContext ctx)
 ```
 
 Client behavior can vary by client type. For example:
-* **C# clients**: Client disconnection behavior is currently undefined and will generate an error reading:
+* **C# clients**: Client disconnection behavior is currently undefined and will cause an error reading:
 `Disconnected abnormally: System.Net.WebSockets.WebSocketException (0x80004005): The remote party closed the WebSocket connection without completing the close handshake.`
 
 * **Rust clients**: Client will receive an `on_disconnected` event with no error message.
