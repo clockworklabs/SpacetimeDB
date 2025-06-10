@@ -31,7 +31,7 @@ Regardless of the client type, from the rust server's perspective, the client wi
 `ERROR: : The client connection was rejected. With our current code logic, all clients will be rejected.`
 :::
 :::server-csharp
-In C#, if we throw an exception during the `ClientConnected` reducer, the client would be disconnected.
+In C#, if we throw an exception during the `ClientConnected` reducer, the client will be disconnected.
 
 Here is a simple example where the server module throws an error for all incoming client connections.
 ```csharp
