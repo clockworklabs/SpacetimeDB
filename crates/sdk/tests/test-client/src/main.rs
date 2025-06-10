@@ -1666,7 +1666,7 @@ fn exec_reauth_part_1() {
             save_result(creds_store().save(token).map_err(Into::into));
         })
         .on_connect_error(|_ctx, error| panic!("Connect failed: {:?}", error))
-        .with_module_name(name)
+        .with_database_name(name)
         .with_uri(LOCALHOST)
         .build()
         .unwrap()
@@ -1700,7 +1700,7 @@ fn exec_reauth_part_2() {
             }
         })
         .on_connect_error(|_ctx, error| panic!("Connect failed: {:?}", error))
-        .with_module_name(name)
+        .with_database_name(name)
         .with_token(Some(token))
         .with_uri(LOCALHOST)
         .build()
@@ -1718,7 +1718,7 @@ fn exec_reconnect_same_connection_id() {
     let disconnect_result = disconnect_test_counter.add_test("disconnect");
 
     let initial_connection = DbConnection::builder()
-        .with_module_name(db_name_or_panic())
+        .with_database_name(db_name_or_panic())
         .with_uri(LOCALHOST)
         .on_connect_error(|_ctx, error| panic!("on_connect_error: {:?}", error))
         .on_connect(move |_, _, _| {
@@ -1746,7 +1746,7 @@ fn exec_reconnect_same_connection_id() {
     let addr_after_reconnect_result = reconnect_test_counter.add_test("addr_after_reconnect");
 
     let re_connection = DbConnection::builder()
-        .with_module_name(db_name_or_panic())
+        .with_database_name(db_name_or_panic())
         .with_uri(LOCALHOST)
         .on_connect_error(|_ctx, error| panic!("on_connect_error: {:?}", error))
         .on_connect(move |ctx, _, _| {
