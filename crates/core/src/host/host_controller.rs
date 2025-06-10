@@ -246,13 +246,19 @@ impl HostController {
         database: Database,
         replica_id: u64,
     ) -> anyhow::Result<watch::Receiver<ModuleHost>> {
-        let nonce = self.nonce;
-        info!("[{nonce}] watch_maybe_launch_module_host({database:#?}, {replica_id})",);
+        let host_controller_nonce = self.nonce;
+        static CALL_NONCE: AtomicU64 = AtomicU64::new(0);
+        let call_nonce = CALL_NONCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+        info!("[{host_controller_nonce}/{call_nonce}] watch_maybe_launch_module_host({database:#?}, {replica_id})",);
         // Try a read lock first.
         {
             let guard = self.acquire_read_lock(replica_id).await;
             if let Some(host) = &*guard {
-                info!("[{nonce}] cached host {}/{}", database.database_identity, replica_id);
+                info!(
+                    "[{host_controller_nonce}/{call_nonce}] cached host {}/{}",
+                    database.database_identity, replica_id
+                );
                 return Ok(host.module.subscribe());
             }
         }
@@ -263,17 +269,33 @@ impl HostController {
         let mut guard: OwnedRwLockWriteGuard<Option<Host>> = self.acquire_write_lock(replica_id).await;
         if let Some(host) = &*guard {
             info!(
-                "[{nonce}] cached host {}/{} (lock upgrade)",
+                "[{host_controller_nonce}/{call_nonce}] cached host {}/{} (lock upgrade)",
                 database.database_identity, replica_id
             );
             return Ok(host.module.subscribe());
         }
 
-        info!("[{nonce}] launch host {}/{}", database.database_identity, replica_id);
-        let host = self.try_init_host(database, replica_id).await?;
+        info!(
+            "[{host_controller_nonce}/{call_nonce}] launch host {}/{}",
+            database.database_identity, replica_id
+        );
+        let host = self.try_init_host(database, replica_id, call_nonce).await;
+        let host = match host {
+            Err(e) => {
+                log::error!("[{host_controller_nonce}/{call_nonce}] try_init_host returned Err({e:#?})");
+                return Err(e);
+            }
+            Ok(host) => {
+                log::info!("[{host_controller_nonce}/{call_nonce}] try_init_host returned Ok(_)");
+                host
+            }
+        };
 
+        log::info!("[{host_controller_nonce}/{call_nonce}] subscribing to module");
         let rx = host.module.subscribe();
+        log::info!("[{host_controller_nonce}/{call_nonce}] writing host into guard");
         *guard = Some(host);
+        log::info!("[{host_controller_nonce}/{call_nonce}] wrote host into guard, returning");
 
         Ok(rx)
     }
@@ -540,8 +562,8 @@ impl HostController {
         lock.read_owned().await
     }
 
-    async fn try_init_host(&self, database: Database, replica_id: u64) -> anyhow::Result<Host> {
-        Host::try_init(self, database, replica_id).await
+    async fn try_init_host(&self, database: Database, replica_id: u64, call_nonce: u64) -> anyhow::Result<Host> {
+        Host::try_init(self, database, replica_id, call_nonce).await
     }
 }
 
@@ -748,7 +770,12 @@ impl Host {
     /// Note that this does **not** run module initialization routines, but may
     /// create on-disk artifacts if the host / database did not exist.
     #[tracing::instrument(level = "debug", skip_all)]
-    async fn try_init(host_controller: &HostController, database: Database, replica_id: u64) -> anyhow::Result<Self> {
+    async fn try_init(
+        host_controller: &HostController,
+        database: Database,
+        replica_id: u64,
+        call_nonce: u64,
+    ) -> anyhow::Result<Self> {
         let host_nonce = next_host_nonce();
 
         let HostController {
@@ -763,14 +790,14 @@ impl Host {
             ..
         } = host_controller;
 
-        log::info!("[{host_controller_nonce}/{host_nonce}] try_init({database:#?}, {replica_id})");
+        log::info!("[{host_controller_nonce}/{call_nonce}/{host_nonce}] try_init({database:#?}, {replica_id})");
 
         let on_panic = host_controller.unregister_fn(replica_id);
         let replica_dir = data_dir.replica(replica_id);
 
         let (db, connected_clients) = match config.storage {
             db::Storage::Memory => {
-                log::info!("[{host_controller_nonce}/{host_nonce}] Storage::Memory");
+                log::info!("[{host_controller_nonce}/{call_nonce}/{host_nonce}] Storage::Memory");
                 RelationalDB::open(
                     &replica_dir,
                     database.database_identity,
@@ -782,7 +809,7 @@ impl Host {
                 )?
             }
             db::Storage::Disk => {
-                log::info!("[{host_controller_nonce}/{host_nonce}] Storage::Disk");
+                log::info!("[{host_controller_nonce}/{call_nonce}/{host_nonce}] Storage::Disk");
                 let snapshot_repo =
                     relational_db::open_snapshot_repo(replica_dir.snapshots(), database.database_identity, replica_id)?;
                 let (history, _) = relational_db::local_durability(replica_dir.commit_log()).await?;
@@ -801,7 +828,7 @@ impl Host {
                 // as a single line, with the help of `anyhow`.
                 .map_err(anyhow::Error::from)
                 .inspect_err(|e| {
-                    log::error!("[{host_controller_nonce}/{host_nonce}] Failed to open database: {e:#?}");
+                    log::error!("[{host_controller_nonce}/{call_nonce}/{host_nonce}] Failed to open database: {e:#?}");
                     tracing::error!(
                         database = %database.database_identity,
                         replica = replica_id,
@@ -818,13 +845,13 @@ impl Host {
         let (program, program_needs_init) = match db.program()? {
             // Launch module with program from existing database.
             Some(program) => {
-                log::info!("[{host_controller_nonce}/{host_nonce}] program already initialized");
+                log::info!("[{host_controller_nonce}/{call_nonce}/{host_nonce}] program already initialized");
                 (program, false)
             }
             // Database is empty, load program from external storage and run
             // initialization.
             None => {
-                log::info!("[{host_controller_nonce}/{host_nonce}] calling load_program");
+                log::info!("[{host_controller_nonce}/{call_nonce}/{host_nonce}] calling load_program");
                 (load_program(program_storage, database.initial_program).await?, true)
             }
         };
