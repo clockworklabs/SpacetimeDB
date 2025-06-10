@@ -37,6 +37,7 @@ fn hack_keccack(cmd: String) -> String {
 }
 
 #[test]
+#[cfg_attr(target_family = "windows", ignore)] // dependency structure is different on windows
 fn deptree_snapshot() -> std::io::Result<()> {
     let cmd = "cargo tree -p spacetimedb -f {lib} -e no-dev";
     let deps_tree = hack_keccack(run_cmd(cmd));
