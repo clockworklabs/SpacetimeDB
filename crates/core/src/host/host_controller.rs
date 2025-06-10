@@ -375,7 +375,7 @@ impl HostController {
         let mut host = match guard.take() {
             None => {
                 trace!("host not running, try_init");
-                self.try_init_host(database, replica_id).await?
+                self.try_init_host(database, replica_id, -1 as _).await?
             }
             Some(host) => {
                 trace!("host found, updating");
@@ -431,7 +431,7 @@ impl HostController {
         let mut guard = self.acquire_write_lock(replica_id).await;
         let mut host = match guard.take() {
             Some(host) => host,
-            None => self.try_init_host(database, replica_id).await?,
+            None => self.try_init_host(database, replica_id, -1 as _).await?,
         };
         let module = host.module.subscribe();
 
