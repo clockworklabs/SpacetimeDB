@@ -27,69 +27,6 @@ const RADIUS_RATIO: f32 = 0.866025404;
 const TERRAIN_OUTER_RADIUS: f32 = 10.0;
 const TERRAIN_INNER_RADIUS: f32 = TERRAIN_OUTER_RADIUS * RADIUS_RATIO;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, spacetimedb::SpacetimeType)]
-#[sats(name = "CharacterStatType")]
-#[repr(i32)]
-enum CharacterStatType {
-    MaxHealth,
-    MaxStamina,
-    PassiveHealthRegenRate,
-    PassiveStaminaRegenRate,
-    MovementMultiplier,
-    SprintMultiplier,
-    SprintStaminaDrain,
-    Armor,
-    CooldownMultiplier,
-    HuntingWeaponPower,
-    Strength,
-    ColdProtection,
-    HeatProtection,
-    Evasion,
-    ToolbeltSlots,
-    CraftingSpeed,
-    GatheringSpeed,
-    BuildingSpeed,
-    SatiationRegenRate,
-    MaxSatiation,
-    DefenseLevel,
-    //DAB Note: values below are temporary, see comment inside `SkillType` definition
-    //Profession stats
-    ForestrySpeed,
-    CarpentrySpeed,
-    MasonrySpeed,
-    MiningSpeed,
-    SmithingSpeed,
-    ScholarSpeed,
-    LeatherworkingSpeed,
-    HuntingSpeed,
-    TailoringSpeed,
-    FarmingSpeed,
-    FishingSpeed,
-    CookingSpeed,
-    ForagingSpeed,
-    ForestryPower,
-    CarpentryPower,
-    MasonryPower,
-    MiningPower,
-    SmithingPower,
-    ScholarPower,
-    LeatherworkingPower,
-    HuntingPower,
-    TailoringPower,
-    FarmingPower,
-    FishingPower,
-    CookingPower,
-    ForagingPower,
-    //Move these values up once the temporary values get removed
-    ActiveHealthRegenRate,
-    ActiveStaminaRegenRate,
-    ClimbProficiency,
-    ExperienceRate,
-    Accuracy,
-    MaxTeleportationEnergy,
-    TeleportationEnergyRegenRate,
-}
-
 #[derive(SpacetimeType, Clone, Debug)]
 struct ActiveBuff {
     pub buff_id: i32,
@@ -107,13 +44,6 @@ struct ExperienceStackF32 {
 #[derive(SpacetimeType, Clone, Debug)]
 struct OnlineTimestamp {
     pub value: i32,
-}
-
-#[derive(SpacetimeType, Debug, Clone)]
-struct CsvStatEntry {
-    pub id: CharacterStatType,
-    pub value: f32,
-    pub is_pct: bool,
 }
 
 #[spacetimedb::table(name = character_stats_state, public)]
@@ -218,14 +148,14 @@ struct PlayerMoveRequest {
 
 #[spacetimedb::reducer]
 fn player_move_timestamp(ctx: &ReducerContext, _request: PlayerMoveRequest) -> Result<(), String> {
-    let actor_id = game_state::actor_id(&ctx, true)?;
+    let actor_id = game_state::actor_id(&ctx)?;
     PlayerTimestampState::refresh(ctx, actor_id, ctx.timestamp);
     Ok(())
 }
 
 #[spacetimedb::reducer]
 fn player_move_move(ctx: &ReducerContext, request: PlayerMoveRequest) -> Result<(), String> {
-    let actor_id = game_state::actor_id(&ctx, true)?;
+    let actor_id = game_state::actor_id(&ctx)?;
 
     let target_coordinates: FloatHexTile =
         unwrap_or_err!(request.destination, "Expected destination in move request").into();
@@ -332,7 +262,7 @@ pub enum PlayerActionResult {
 
 #[spacetimedb::reducer]
 fn player_move_action(ctx: &ReducerContext, request: PlayerMoveRequest) -> Result<(), String> {
-    let actor_id = game_state::actor_id(&ctx, true)?;
+    let actor_id = game_state::actor_id(&ctx)?;
 
     let target_coordinates: FloatHexTile =
         unwrap_or_err!(request.destination, "Expected destination in move request").into();
@@ -832,13 +762,6 @@ impl PlayerTimestampState {
     }
 }
 
-#[spacetimedb::table(name = signed_in_player_state, public)]
-#[derive(Clone, Debug)]
-pub struct SignedInPlayerState {
-    #[primary_key]
-    pub entity_id: u64,
-}
-
 #[spacetimedb::table(name = user_state, public)]
 #[derive(Clone, Debug)]
 pub struct UserState {
@@ -850,7 +773,6 @@ pub struct UserState {
 }
 
 mod game_state {
-    use super::signed_in_player_state;
     use super::user_state;
     use spacetimedb::ReducerContext;
     use spacetimedb::Timestamp;
@@ -859,21 +781,9 @@ mod game_state {
         return now.duration_since(Timestamp::UNIX_EPOCH).unwrap().as_millis() as u64;
     }
 
-    pub fn ensure_signed_in(ctx: &ReducerContext, entity_id: u64) -> Result<(), String> {
-        if ctx.db.signed_in_player_state().entity_id().find(&entity_id).is_none() {
-            return Err("Not signed in".into());
-        }
-        return Ok(());
-    }
-
-    pub fn actor_id(ctx: &ReducerContext, must_be_signed_in: bool) -> Result<u64, String> {
+    pub fn actor_id(ctx: &ReducerContext) -> Result<u64, String> {
         match ctx.db.user_state().identity().find(&ctx.sender) {
-            Some(user) => {
-                if must_be_signed_in {
-                    ensure_signed_in(ctx, user.entity_id)?;
-                }
-                Ok(user.entity_id)
-            }
+            Some(user) => Ok(user.entity_id),
             None => Err("Invalid sender".into()),
         }
     }
