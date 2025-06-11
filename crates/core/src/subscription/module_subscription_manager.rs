@@ -5,6 +5,7 @@ use crate::client::messages::{
     TransactionUpdateMessage,
 };
 use crate::client::{ClientConnectionSender, Protocol};
+use crate::db::datastore::locking_tx_datastore::state_view::StateView;
 use crate::error::DBError;
 use crate::host::module_host::{DatabaseTableUpdate, ModuleEvent, UpdatesRelValue};
 use crate::messages::websocket::{self as ws, TableUpdate};
@@ -23,8 +24,8 @@ use spacetimedb_data_structures::map::{Entry, IntMap};
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::{AlgebraicValue, ConnectionId, Identity, ProductValue};
 use spacetimedb_primitives::{ColId, IndexId, TableId};
-use spacetimedb_subscription::{SubscriptionPlan, TableName};
-use std::collections::BTreeSet;
+use spacetimedb_subscription::{JoinEdge, SubscriptionPlan, TableName};
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -95,6 +96,11 @@ impl Plan {
     /// Will only return one element unless there is a table with multiple RLS rules.
     pub fn plans_fragments(&self) -> impl Iterator<Item = &SubscriptionPlan> + '_ {
         self.plans.iter()
+    }
+
+    /// Returns the join edges for this plan, if any.
+    pub fn join_edges(&self) -> impl Iterator<Item = (JoinEdge, AlgebraicValue)> + '_ {
+        self.plans.iter().filter_map(|plan| plan.join_edge())
     }
 
     /// The `SQL` text of this subscription.
@@ -193,7 +199,7 @@ impl QueryState {
             .query
             .plans
             .iter()
-            .flat_map(|subscription| subscription.physical_plan().search_args())
+            .flat_map(|subscription| subscription.optimized_physical_plan().search_args())
         {
             args.insert(arg);
         }
@@ -388,6 +394,50 @@ impl QueriedTableIndexIds {
     }
 }
 
+/// A sorted set of join edges used for pruning queries.
+/// See [`JoinEdge`] for more details.
+#[derive(Debug, Default)]
+pub struct JoinEdges {
+    edges: BTreeMap<JoinEdge, HashMap<AlgebraicValue, QueryHash>>,
+}
+
+impl JoinEdges {
+    /// If this query has any join edges, add them to the map.
+    fn add_query(&mut self, qs: &QueryState) -> bool {
+        let mut inserted = false;
+        for (edge, rhs_val) in qs.query.join_edges() {
+            inserted = true;
+            self.edges.entry(edge).or_default().insert(rhs_val, qs.query.hash);
+        }
+        inserted
+    }
+
+    /// If this query has any join edges, remove them from the map.
+    fn remove_query(&mut self, query: &Query) {
+        for (edge, rhs_val) in query.join_edges() {
+            if let Some(hashes) = self.edges.get_mut(&edge) {
+                hashes.remove(&rhs_val);
+                if hashes.is_empty() {
+                    self.edges.remove(&edge);
+                }
+            }
+        }
+    }
+
+    /// Searches for queries that must be evaluated for this row,
+    /// and effectively prunes queries that do not.
+    fn queries_for_row<'a>(
+        &'a self,
+        table_id: TableId,
+        row: &'a ProductValue,
+        find_rhs_val: impl Fn(&JoinEdge, &ProductValue) -> Option<AlgebraicValue>,
+    ) -> impl Iterator<Item = &'a QueryHash> {
+        self.edges
+            .range(JoinEdge::range_for_table(table_id))
+            .filter_map(move |(edge, hashes)| find_rhs_val(edge, row).as_ref().and_then(|rhs_val| hashes.get(rhs_val)))
+    }
+}
+
 /// Responsible for the efficient evaluation of subscriptions.
 /// It performs basic multi-query optimization,
 /// in that if a query has N subscribers,
@@ -414,6 +464,10 @@ pub struct SubscriptionManager {
     /// and has a simple equality filter on that table,
     /// we map the filter values to the query in this lookup table.
     search_args: SearchArguments,
+
+    /// A sorted set of join edges used for pruning queries.
+    /// See [`JoinEdge`] for more details.
+    join_edges: JoinEdges,
 
     /// Transmit side of a channel to the manager's [`SendWorker`] task.
     ///
@@ -540,6 +594,7 @@ impl SubscriptionManager {
             indexes: Default::default(),
             tables: Default::default(),
             search_args: Default::default(),
+            join_edges: Default::default(),
             send_worker_queue,
         }
     }
@@ -654,6 +709,7 @@ impl SubscriptionManager {
                 if !query_state.has_subscribers() {
                     SubscriptionManager::remove_query_from_tables(
                         &mut self.tables,
+                        &mut self.join_edges,
                         &mut self.indexes,
                         &mut self.search_args,
                         &query_state.query,
@@ -720,6 +776,7 @@ impl SubscriptionManager {
             if !query_state.has_subscribers() {
                 SubscriptionManager::remove_query_from_tables(
                     &mut self.tables,
+                    &mut self.join_edges,
                     &mut self.indexes,
                     &mut self.search_args,
                     &query_state.query,
@@ -791,7 +848,13 @@ impl SubscriptionManager {
                 .entry(hash)
                 .or_insert_with(|| QueryState::new(query.clone()));
 
-            Self::insert_query(&mut self.tables, &mut self.indexes, &mut self.search_args, query_state);
+            Self::insert_query(
+                &mut self.tables,
+                &mut self.join_edges,
+                &mut self.indexes,
+                &mut self.search_args,
+                query_state,
+            );
 
             let entry = ci.subscription_ref_count.entry(hash).or_insert(0);
             *entry += 1;
@@ -841,7 +904,13 @@ impl SubscriptionManager {
                 .queries
                 .entry(hash)
                 .or_insert_with(|| QueryState::new(unit.clone()));
-            Self::insert_query(&mut self.tables, &mut self.indexes, &mut self.search_args, query_state);
+            Self::insert_query(
+                &mut self.tables,
+                &mut self.join_edges,
+                &mut self.indexes,
+                &mut self.search_args,
+                query_state,
+            );
             query_state.legacy_subscribers.insert(client_id);
         }
     }
@@ -851,11 +920,13 @@ impl SubscriptionManager {
     // This takes a ref to the table map instead of `self` to avoid borrowing issues.
     fn remove_query_from_tables(
         tables: &mut IntMap<TableId, HashSet<QueryHash>>,
+        join_edges: &mut JoinEdges,
         index_ids: &mut QueriedTableIndexIds,
         search_args: &mut SearchArguments,
         query: &Query,
     ) {
         let hash = query.hash();
+        join_edges.remove_query(query);
         search_args.remove_query(&hash);
         index_ids.delete_index_ids_for_query(query);
         for table_id in query.table_ids() {
@@ -873,21 +944,33 @@ impl SubscriptionManager {
     // This takes a ref to the table map instead of `self` to avoid borrowing issues.
     fn insert_query(
         tables: &mut IntMap<TableId, HashSet<QueryHash>>,
+        join_edges: &mut JoinEdges,
         index_ids: &mut QueriedTableIndexIds,
         search_args: &mut SearchArguments,
         query_state: &QueryState,
     ) {
         // If this is new, we need to update the table to query mapping.
         if !query_state.has_subscribers() {
-            index_ids.insert_index_ids_for_query(query_state.query());
-            let hash = query_state.query.hash();
-            let mut table_ids = query_state.query.table_ids().collect::<HashSet<_>>();
+            let hash = query_state.query.hash;
+            let query = query_state.query();
+            let return_table = query.subscribed_table_id();
+            let mut table_ids = query.table_ids().collect::<HashSet<_>>();
+
+            // Update the index id mapping
+            index_ids.insert_index_ids_for_query(query);
+
+            // Update the search arguments
             for (table_id, col_id, arg) in query_state.search_args() {
                 table_ids.remove(&table_id);
                 search_args.insert_query(table_id, col_id, arg, hash);
             }
-            // Update the `tables` map if this query reads from a table,
-            // but does not have a search argument for that table.
+
+            // Update the join edges if the return table didn't have any search arguments
+            if table_ids.contains(&return_table) && join_edges.add_query(query_state) {
+                table_ids.remove(&return_table);
+            }
+
+            // Finally update the `tables` map if the query didn't have a search argument or a join edge for a table
             for table_id in table_ids {
                 tables.entry(table_id).or_default().insert(hash);
             }
@@ -917,6 +1000,7 @@ impl SubscriptionManager {
                 queries_to_remove.push(*query_hash);
                 SubscriptionManager::remove_query_from_tables(
                     &mut self.tables,
+                    &mut self.join_edges,
                     &mut self.indexes,
                     &mut self.search_args,
                     &query_state.query,
@@ -958,13 +1042,14 @@ impl SubscriptionManager {
     fn queries_for_table_update<'a>(
         &'a self,
         table_update: &'a DatabaseTableUpdate,
+        find_rhs_val: &impl Fn(&JoinEdge, &ProductValue) -> Option<AlgebraicValue>,
     ) -> impl Iterator<Item = &'a QueryHash> {
         let mut queries = HashSet::new();
         for hash in table_update
             .inserts
             .iter()
             .chain(table_update.deletes.iter())
-            .flat_map(|row| self.search_args.queries_for_row(table_update.table_id, row))
+            .flat_map(|row| self.queries_for_row(table_update.table_id, row, find_rhs_val))
         {
             queries.insert(hash);
         }
@@ -972,6 +1057,18 @@ impl SubscriptionManager {
             queries.insert(hash);
         }
         queries.into_iter()
+    }
+
+    /// Find the queries that need to be evaluated for this row.
+    fn queries_for_row<'a>(
+        &'a self,
+        table_id: TableId,
+        row: &'a ProductValue,
+        find_rhs_val: impl Fn(&JoinEdge, &ProductValue) -> Option<AlgebraicValue>,
+    ) -> impl Iterator<Item = &'a QueryHash> {
+        self.search_args
+            .queries_for_row(table_id, row)
+            .chain(self.join_edges.queries_for_row(table_id, row, find_rhs_val))
     }
 
     /// Returns the index ids that are used in subscription queries
@@ -1007,10 +1104,30 @@ impl SubscriptionManager {
             metrics: ExecutionMetrics,
         }
 
+        /// Returns the value pointed to by this join edge
+        fn find_rhs_val(edge: &JoinEdge, row: &ProductValue, tx: &DeltaTx) -> Option<AlgebraicValue> {
+            tx.iter_by_col_eq(
+                edge.rhs_table,
+                edge.rhs_join_col,
+                &row.elements[edge.lhs_join_col.idx()],
+            )
+            // Reading from this column should always succeed.
+            // It is a bug if it doesn't.
+            .unwrap()
+            .next()
+            .map(|row| {
+                // Reading from this column should always succeed.
+                // It is a bug if it doesn't.
+                row.read_col(edge.rhs_col).unwrap()
+            })
+        }
+
         let FoldState { updates, errs, metrics } = tables
             .iter()
             .filter(|table| !table.inserts.is_empty() || !table.deletes.is_empty())
-            .flat_map(|table_update| self.queries_for_table_update(table_update))
+            .flat_map(|table_update| {
+                self.queries_for_table_update(table_update, &|edge, row| find_rhs_val(edge, row, tx))
+            })
             // deduplicate queries by their hash
             .filter({
                 let mut seen = HashSet::new();
@@ -1925,7 +2042,7 @@ mod tests {
         };
 
         let hashes = subscriptions
-            .queries_for_table_update(&table_update)
+            .queries_for_table_update(&table_update, &|_, _| None)
             .collect::<Vec<_>>();
 
         assert!(hashes.len() == 3);
@@ -1943,7 +2060,7 @@ mod tests {
         };
 
         let hashes = subscriptions
-            .queries_for_table_update(&table_update)
+            .queries_for_table_update(&table_update, &|_, _| None)
             .collect::<Vec<_>>();
 
         assert!(hashes.len() == 1);
@@ -1984,7 +2101,7 @@ mod tests {
         };
 
         let hashes = subscriptions
-            .queries_for_table_update(&table_update)
+            .queries_for_table_update(&table_update, &|_, _| None)
             .cloned()
             .collect::<Vec<_>>();
 
@@ -2000,7 +2117,7 @@ mod tests {
         };
 
         let hashes = subscriptions
-            .queries_for_table_update(&table_update)
+            .queries_for_table_update(&table_update, &|_, _| None)
             .cloned()
             .collect::<Vec<_>>();
 
@@ -2016,7 +2133,7 @@ mod tests {
         };
 
         let hashes = subscriptions
-            .queries_for_table_update(&table_update)
+            .queries_for_table_update(&table_update, &|_, _| None)
             .cloned()
             .collect::<Vec<_>>();
 

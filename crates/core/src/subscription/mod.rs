@@ -179,7 +179,7 @@ where
         })
         .map(|(sql, plan)| (sql, plan, plan.subscribed_table_id(), plan.subscribed_table_name()))
         .map(|(sql, plan, table_id, table_name)| {
-            plan.physical_plan()
+            plan.optimized_physical_plan()
                 .clone()
                 .optimize()
                 .map(|plan| (sql, PipelinedProject::from(plan)))

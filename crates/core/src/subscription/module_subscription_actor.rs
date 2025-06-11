@@ -201,7 +201,7 @@ impl ModuleSubscriptions {
             tx,
             |plan, tx| {
                 plan.plans_fragments()
-                    .map(|plan_fragment| estimate_rows_scanned(tx, plan_fragment.physical_plan()))
+                    .map(|plan_fragment| estimate_rows_scanned(tx, plan_fragment.optimized_physical_plan()))
                     .fold(0, |acc, rows_scanned| acc.saturating_add(rows_scanned))
             },
             auth,
@@ -212,7 +212,7 @@ impl ModuleSubscriptions {
 
         let plans = query
             .plans_fragments()
-            .map(|fragment| fragment.physical_plan())
+            .map(|fragment| fragment.optimized_physical_plan())
             .cloned()
             .map(|plan| plan.optimize())
             .collect::<Result<Vec<_>, _>>()?
@@ -244,7 +244,7 @@ impl ModuleSubscriptions {
             tx,
             |plan, tx| {
                 plan.plans_fragments()
-                    .map(|plan_fragment| estimate_rows_scanned(tx, plan_fragment.physical_plan()))
+                    .map(|plan_fragment| estimate_rows_scanned(tx, plan_fragment.optimized_physical_plan()))
                     .fold(0, |acc, rows_scanned| acc.saturating_add(rows_scanned))
             },
             auth,
@@ -686,7 +686,7 @@ impl ModuleSubscriptions {
             &tx,
             |plan, tx| {
                 plan.plans_fragments()
-                    .map(|plan_fragment| estimate_rows_scanned(tx, plan_fragment.physical_plan()))
+                    .map(|plan_fragment| estimate_rows_scanned(tx, plan_fragment.optimized_physical_plan()))
                     .fold(0, |acc, rows_scanned| acc.saturating_add(rows_scanned))
             },
             &auth,
