@@ -6,7 +6,6 @@
 //! These, and others, determine what the layout of objects typed at those types are.
 //! They also implement [`HasLayout`] which generalizes over layout annotated types.
 
-use super::var_len::VarLenRef;
 use core::mem;
 use core::ops::{Index, Mul};
 use derive_more::{Add, Sub};
@@ -444,13 +443,11 @@ impl MemoryUsage for VarLenType {
 }
 
 /// The layout of var-len objects. Aligned at a `u16` which it has 2 of.
-const VAR_LEN_REF_LAYOUT: Layout = Layout {
+pub const VAR_LEN_REF_LAYOUT: Layout = Layout {
     size: 4,
     align: 2,
     fixed: false,
 };
-const _: () = assert!(VAR_LEN_REF_LAYOUT.size as usize == mem::size_of::<VarLenRef>());
-const _: () = assert!(VAR_LEN_REF_LAYOUT.align as usize == mem::align_of::<VarLenRef>());
 
 impl HasLayout for VarLenType {
     fn layout(&self) -> &Layout {

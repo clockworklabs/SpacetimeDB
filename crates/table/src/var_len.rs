@@ -35,7 +35,7 @@ use super::{
     indexes::{Byte, Bytes, PageOffset},
     layout::Size,
 };
-use crate::{static_assert_align, static_assert_size};
+use crate::{layout::VAR_LEN_REF_LAYOUT, static_assert_align, static_assert_size};
 use core::iter;
 use core::marker::PhantomData;
 use core::mem::{self};
@@ -63,6 +63,9 @@ pub struct VarLenRef {
 // `size = 4` and `align = 2` of `VarLenRef`.
 static_assert_size!(VarLenRef, 4);
 static_assert_align!(VarLenRef, 2);
+
+const _: () = assert!(VAR_LEN_REF_LAYOUT.size as usize == mem::size_of::<VarLenRef>());
+const _: () = assert!(VAR_LEN_REF_LAYOUT.align as usize == mem::align_of::<VarLenRef>());
 
 impl VarLenRef {
     /// Does this refer to a large blob object
