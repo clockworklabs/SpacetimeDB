@@ -12,7 +12,9 @@ pub fn num_rows(tx: &Tx, expr: &QueryExpr) -> u64 {
 /// Use cardinality estimates to predict the total number of rows scanned by a query
 pub fn estimate_rows_scanned(tx: &Tx, plan: &PhysicalPlan) -> u64 {
     match plan {
-        PhysicalPlan::TableScan(..) | PhysicalPlan::IxScan(..) => row_estimate(tx, plan),
+        PhysicalPlan::TableScan(..) | PhysicalPlan::IxScan(..) | PhysicalPlan::IxScansAnd(_, _) => {
+            row_estimate(tx, plan)
+        }
         PhysicalPlan::Filter(input, _) => estimate_rows_scanned(tx, input).saturating_add(row_estimate(tx, input)),
         PhysicalPlan::NLJoin(lhs, rhs) => estimate_rows_scanned(tx, lhs)
             .saturating_add(estimate_rows_scanned(tx, rhs))
@@ -50,6 +52,7 @@ pub fn row_estimate(tx: &Tx, plan: &PhysicalPlan) -> u64 {
         // Use a row limit as the estimate if present
         PhysicalPlan::TableScan(TableScan { limit: Some(n), .. }, _)
         | PhysicalPlan::IxScan(IxScan { limit: Some(n), .. }, _) => *n,
+        PhysicalPlan::IxScansAnd(idx, _) => idx.iter().map(|plan| row_estimate(tx, plan)).sum(),
         // Table scans return the number of rows in the table
         PhysicalPlan::TableScan(
             TableScan {

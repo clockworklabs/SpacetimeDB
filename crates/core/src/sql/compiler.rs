@@ -456,8 +456,8 @@ Index Scan using Index test_b_idx_btree (test.b) on test
             "select * from test where b = 2 and a = 1",
             expect![
                 r#"
-Index Scan using Index test_a_b_idx_btree (test.b, test.a) on test
-  Index Cond: (test.b = U64(2), test.a = U64(1))
+Index Scan using Index test_a_b_idx_btree (test.a, test.b) on test
+  Index Cond: (test.a = U64(1), test.b = U64(2))
   Output: test.a, test.b, test.c, test.d"#
             ],
         );
@@ -513,15 +513,14 @@ Seq Scan on test
         db.create_table_for_test("test", schema, indexes)?;
 
         let tx = begin_tx(&db);
-        // TODO: Need support for index range scans.
         expect_query(
             &tx,
             "select * from test where b > 2",
             expect![
                 r#"
-Seq Scan on test
-  Output: test.a, test.b
-  -> Filter: (test.b > U64(2))"#
+Index Scan using Index test_b_idx_btree (test.b) on test
+  Index Cond: (test.b > U64(2))
+  Output: test.a, test.b"#
             ],
         );
 
@@ -538,15 +537,15 @@ Seq Scan on test
         db.create_table_for_test("test", schema, indexes)?;
 
         let tx = begin_tx(&db);
-        //TODO(sql): Need support for index scans for ranges
         expect_query(
             &tx,
             "select * from test where b > 2 and b < 5",
             expect![
                 r#"
-Seq Scan on test
+Index Scan using Index test_b_idx_btree (test.b) on test
+  Index Cond: (test.b > U64(2))
   Output: test.a, test.b
-  -> Filter: (test.b > U64(2) AND test.b < U64(5))"#
+  -> Filter: (test.b < U64(5))"#
             ],
         );
 
@@ -563,17 +562,20 @@ Seq Scan on test
         db.create_table_for_test("test", schema, indexes)?;
 
         let tx = begin_tx(&db);
-        // Note, order matters - the equality condition occurs first which
-        // means an index scan will be generated rather than the range condition.
         expect_query(
             &tx,
-            "select * from test where a = 3 and b > 2 and b < 5",
+            "select * from test where  b > 2 and b < 5 and a = 3",
             expect![
                 r#"
-Index Scan using Index test_a_idx_btree (test.a) on test
-  Index Cond: (test.a = U64(3))
+Union
+  -> Index Scan using Index test_a_idx_btree (test.a) on test
+     Index Cond: (test.a = U64(3))
+     Output: test.a, test.b
+  -> Index Scan using Index test_b_idx_btree (test.b) on test
+     Index Cond: (test.b > U64(2))
+     Output: test.a, test.b
   Output: test.a, test.b
-  -> Filter: (test.b < U64(5) AND test.b > U64(2))"#
+  -> Filter: (test.b < U64(5))"#
             ],
         );
 
@@ -717,9 +719,9 @@ Hash Join: Lhs
      Index Cond: (lhs.a = U64(3))
      Output: lhs.a, lhs.b
   -> Hash Build: rhs.b
-     -> Seq Scan on rhs
-        Output: rhs.b, rhs.c
-        -> Filter: (rhs.c < U64(4))"#
+     -> Index Scan using Index rhs_c_idx_btree (rhs.c) on rhs
+        Index Cond: (rhs.c < U64(4))
+        Output: rhs.b, rhs.c"#
             ],
         );
 
@@ -756,9 +758,10 @@ Index Join: Rhs on lhs
   Inner Unique: false
   Join Cond: (rhs.b = lhs.b)
   Output: lhs.a, lhs.b
-  -> Seq Scan on rhs
+  -> Index Scan using Index rhs_c_idx_btree (rhs.c) on rhs
+     Index Cond: (rhs.c > U64(2))
      Output: rhs.b, rhs.c, rhs.d
-     -> Filter: (rhs.c > U64(2) AND rhs.c < U64(4) AND rhs.d = U64(3))"#
+     -> Filter: (rhs.c < U64(4) AND rhs.d = U64(3))"#
             ],
         );
 
@@ -795,8 +798,8 @@ Index Join: Rhs on lhs
   Inner Unique: false
   Join Cond: (rhs.b = lhs.b)
   Output: lhs.a, lhs.b
-  -> Index Scan using Index rhs_b_c_idx_btree (rhs.c, rhs.b) on rhs
-     Index Cond: (rhs.c = U64(2), rhs.b = U64(4))
+  -> Index Scan using Index rhs_b_c_idx_btree (rhs.b, rhs.c) on rhs
+     Index Cond: (rhs.b = U64(4), rhs.c = U64(2))
      Output: rhs.b, rhs.c, rhs.d
      -> Filter: (rhs.d = U64(3))"#
             ],

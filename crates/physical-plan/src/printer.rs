@@ -544,6 +544,21 @@ fn scan_tables<'a>(lines: &mut Lines<'a>, plan: &'a PhysicalPlan) -> PrinterPlan
                 output,
             }
         }
+        PhysicalPlan::IxScansAnd(idx, filter) => {
+            let mut plans = Vec::new();
+            for plan in idx {
+                plans.push(scan_tables(lines, plan));
+            }
+            let output = plans.last().map(|x| x.output()).unwrap_or(Output::Empty);
+            PrinterPlan::Filter {
+                plan: Box::new(PrinterPlan::Union {
+                    output: output.clone(),
+                    plans,
+                }),
+                expr: filter,
+                output,
+            }
+        }
         PhysicalPlan::IxJoin(idx, semi) => {
             lines.add_table(idx.rhs_label, &idx.rhs);
             let plan = scan_tables(lines, &idx.lhs);
