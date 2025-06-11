@@ -1,4 +1,5 @@
 use super::{ArgsTuple, InvalidReducerArguments, ReducerArgs, ReducerCallResult, ReducerId, ReducerOutcome, Scheduler};
+use crate::client::messages::{OneOffQueryResponseMessage, SerializableMessage};
 use crate::client::{ClientActorId, ClientConnectionSender};
 use crate::database_logger::{LogLevel, Record};
 use crate::db::datastore::locking_tx_datastore::MutTxId;
@@ -32,6 +33,7 @@ use spacetimedb_data_structures::map::{HashCollectionExt as _, IntMap};
 use spacetimedb_execution::pipelined::PipelinedProject;
 use spacetimedb_lib::db::raw_def::v9::Lifecycle;
 use spacetimedb_lib::identity::{AuthCtx, RequestId};
+use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::ConnectionId;
 use spacetimedb_lib::Timestamp;
 use spacetimedb_primitives::TableId;
@@ -993,60 +995,106 @@ impl ModuleHost {
         )
     }
 
+    /// Execute a one-off query and send the results to the given client.
+    /// This only returns an error if there is a db-level problem.
+    /// An error with the query itself will be sent to the client.
     #[tracing::instrument(level = "trace", skip_all)]
-    pub fn one_off_query<F: WebsocketFormat>(
+    pub async fn one_off_query<F: WebsocketFormat>(
         &self,
         caller_identity: Identity,
         query: String,
-    ) -> Result<OneOffTable<F>, anyhow::Error> {
+        client: Arc<ClientConnectionSender>,
+        message_id: Vec<u8>,
+        timer: Instant,
+        // We take this because we only have a way to convert with the concrete types (Bsatn and Json)
+        into_message: impl FnOnce(OneOffQueryResponseMessage<F>) -> SerializableMessage + Send + 'static,
+    ) -> Result<(), anyhow::Error> {
         let replica_ctx = self.replica_ctx();
-        let db = &replica_ctx.relational_db;
+        let db = replica_ctx.relational_db.clone();
+        let subscriptions = replica_ctx.subscriptions.clone();
         let auth = AuthCtx::new(replica_ctx.owner_identity, caller_identity);
         log::debug!("One-off query: {query}");
+        let metrics = asyncify(move || {
+            db.with_read_only(Workload::Sql, |tx| {
+                // We wrap the actual query in a closure so we can use ? to handle errors without making
+                // the entire transaction abort with an error.
+                let result: Result<(OneOffTable<F>, ExecutionMetrics), anyhow::Error> = (|| {
+                    let tx = SchemaViewer::new(tx, &auth);
 
-        let (rows, metrics) = db.with_read_only(Workload::Sql, |tx| {
-            let tx = SchemaViewer::new(tx, &auth);
+                    let (
+                        // A query may compile down to several plans.
+                        // This happens when there are multiple RLS rules per table.
+                        // The original query is the union of these plans.
+                        plans,
+                        _,
+                        table_name,
+                        _,
+                    ) = compile_subscription(&query, &tx, &auth)?;
 
-            let (
-                // A query may compile down to several plans.
-                // This happens when there are multiple RLS rules per table.
-                // The original query is the union of these plans.
-                plans,
-                _,
-                table_name,
-                _,
-            ) = compile_subscription(&query, &tx, &auth)?;
+                    // Optimize each fragment
+                    let optimized = plans
+                        .into_iter()
+                        .map(|plan| plan.optimize())
+                        .collect::<Result<Vec<_>, _>>()?;
 
-            // Optimize each fragment
-            let optimized = plans
-                .into_iter()
-                .map(|plan| plan.optimize())
-                .collect::<Result<Vec<_>, _>>()?;
+                    check_row_limit(
+                        &optimized,
+                        &db,
+                        &tx,
+                        // Estimate the number of rows this query will scan
+                        |plan, tx| estimate_rows_scanned(tx, plan),
+                        &auth,
+                    )?;
 
-            check_row_limit(
-                &optimized,
-                db,
-                &tx,
-                // Estimate the number of rows this query will scan
-                |plan, tx| estimate_rows_scanned(tx, plan),
-                &auth,
-            )?;
+                    let optimized = optimized
+                        .into_iter()
+                        // Convert into something we can execute
+                        .map(PipelinedProject::from)
+                        .collect::<Vec<_>>();
 
-            let optimized = optimized
-                .into_iter()
-                // Convert into something we can execute
-                .map(PipelinedProject::from)
-                .collect::<Vec<_>>();
+                    // Execute the union and return the results
+                    execute_plan::<_, F>(&optimized, &DeltaTx::from(&*tx))
+                        .map(|(rows, _, metrics)| (OneOffTable { table_name, rows }, metrics))
+                        .context("One-off queries are not allowed to modify the database")
+                })();
 
-            // Execute the union and return the results
-            execute_plan::<_, F>(&optimized, &DeltaTx::from(&*tx))
-                .map(|(rows, _, metrics)| (OneOffTable { table_name, rows }, metrics))
-                .context("One-off queries are not allowed to modify the database")
-        })?;
+                let total_host_execution_duration = timer.elapsed().into();
+                let (message, metrics): (SerializableMessage, Option<ExecutionMetrics>) = match result {
+                    Ok((rows, metrics)) => (
+                        into_message(OneOffQueryResponseMessage {
+                            message_id,
+                            error: None,
+                            results: vec![rows],
+                            total_host_execution_duration,
+                        }),
+                        Some(metrics),
+                    ),
+                    Err(err) => (
+                        into_message(OneOffQueryResponseMessage {
+                            message_id,
+                            error: Some(format!("{}", err)),
+                            results: vec![],
+                            total_host_execution_duration,
+                        }),
+                        None,
+                    ),
+                };
 
-        db.exec_counters_for(WorkloadType::Sql).record(&metrics);
+                subscriptions.send_client_message(client, message, tx)?;
+                Ok::<Option<ExecutionMetrics>, anyhow::Error>(metrics)
+            })
+        })
+        .await?;
 
-        Ok(rows)
+        if let Some(metrics) = metrics {
+            // Record the metrics for the one-off query
+            replica_ctx
+                .relational_db
+                .exec_counters_for(WorkloadType::Sql)
+                .record(&metrics);
+        }
+
+        Ok(())
     }
 
     /// FIXME(jgilles): this is a temporary workaround for deleting not currently being supported
