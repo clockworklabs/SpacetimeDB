@@ -440,26 +440,40 @@ impl ClientConnection {
         .await
     }
 
-    pub fn one_off_query_json(&self, query: &str, message_id: &[u8], timer: Instant) -> Result<(), anyhow::Error> {
-        self.module.one_off_query::<JsonFormat>(
-            self.id.identity,
-            query.to_owned(),
-            self.sender.clone(),
-            message_id.to_owned(),
-            timer,
-            |msg: OneOffQueryResponseMessage<JsonFormat>| msg.into(),
-        )
+    pub async fn one_off_query_json(
+        &self,
+        query: &str,
+        message_id: &[u8],
+        timer: Instant,
+    ) -> Result<(), anyhow::Error> {
+        self.module
+            .one_off_query::<JsonFormat>(
+                self.id.identity,
+                query.to_owned(),
+                self.sender.clone(),
+                message_id.to_owned(),
+                timer,
+                |msg: OneOffQueryResponseMessage<JsonFormat>| msg.into(),
+            )
+            .await
     }
 
-    pub fn one_off_query_bsatn(&self, query: &str, message_id: &[u8], timer: Instant) -> Result<(), anyhow::Error> {
-        self.module.one_off_query::<BsatnFormat>(
-            self.id.identity,
-            query.to_owned(),
-            self.sender.clone(),
-            message_id.to_owned(),
-            timer,
-            |msg: OneOffQueryResponseMessage<BsatnFormat>| msg.into(),
-        )
+    pub async fn one_off_query_bsatn(
+        &self,
+        query: &str,
+        message_id: &[u8],
+        timer: Instant,
+    ) -> Result<(), anyhow::Error> {
+        self.module
+            .one_off_query::<BsatnFormat>(
+                self.id.identity,
+                query.to_owned(),
+                self.sender.clone(),
+                message_id.to_owned(),
+                timer,
+                |msg: OneOffQueryResponseMessage<BsatnFormat>| msg.into(),
+            )
+            .await
     }
 
     pub async fn disconnect(self) {
