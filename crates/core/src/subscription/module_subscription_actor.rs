@@ -572,7 +572,7 @@ impl ModuleSubscriptions {
 
     /// Send a message to a client connection.
     /// This will eventually be sent by the send-worker.
-    /// This takes a TxId, because this should be called while still holding a lock on the database.
+    /// This takes a `TxId`, because this should be called while still holding a lock on the database.
     pub fn send_client_message(
         &self,
         recipient: Arc<ClientConnectionSender>,
