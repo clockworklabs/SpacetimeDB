@@ -1106,18 +1106,22 @@ impl SubscriptionManager {
 
         /// Returns the value pointed to by this join edge
         fn find_rhs_val(edge: &JoinEdge, row: &ProductValue, tx: &DeltaTx) -> Option<AlgebraicValue> {
+            // What if the joining row was deleted in this tx?
+            // Will we prune a query that we shouldn't have?
+            //
+            // Ultimately no we will not.
+            // We may prune it for this row specifically,
+            // but we will eventually include it for the joining row.
             tx.iter_by_col_eq(
                 edge.rhs_table,
                 edge.rhs_join_col,
                 &row.elements[edge.lhs_join_col.idx()],
             )
-            // Reading from this column should always succeed.
-            // It is a bug if it doesn't.
+            // This read should always succeed, and it's a bug if it doesn't.
             .unwrap()
             .next()
             .map(|row| {
-                // Reading from this column should always succeed.
-                // It is a bug if it doesn't.
+                // Similarly this read should always succeed
                 row.read_col(edge.rhs_col).unwrap()
             })
         }

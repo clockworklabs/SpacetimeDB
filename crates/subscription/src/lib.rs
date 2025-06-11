@@ -413,8 +413,9 @@ impl SubscriptionPlan {
     /// Returns a join edge for this query if it has one.
     ///
     /// Requirements include:
-    /// 1. The index for the join must be unique
-    /// 2. There must be a single column index lookup on the rhs table
+    /// 1. Unique join index
+    /// 2. Single column index lookup on the rhs table
+    /// 3. No self joins
     pub fn join_edge(&self) -> Option<(JoinEdge, AlgebraicValue)> {
         if !self.is_join() {
             return None;
@@ -444,7 +445,7 @@ impl SubscriptionPlan {
                         ..
                     },
                     _,
-                ) if prefix.is_empty() => {
+                ) if schema.table_id != self.return_id && prefix.is_empty() => {
                     let lhs_table = self.return_id;
                     let rhs_table = schema.table_id;
                     let rhs_col = *rhs_col;
