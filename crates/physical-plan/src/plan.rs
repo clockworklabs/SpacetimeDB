@@ -15,7 +15,7 @@ use spacetimedb_sql_parser::ast::{BinOp, LogOp};
 use spacetimedb_table::table::RowRef;
 
 use crate::rules::{
-    ComputePositions, HashToIxJoin, IxScanAnd, IxScanEq, IxScanEq2Col, IxScanEq3Col, PullFilterAboveHashJoin,
+    ComputePositions, HashToIxJoin, IxScanAnd, IxScanBinOp, IxScanOp2Col, IxScanOp3Col, PullFilterAboveHashJoin,
     PushConstAnd, PushConstEq, PushLimit, ReorderDeltaJoinRhs, ReorderHashJoin, RewriteRule, UniqueHashJoinRule,
     UniqueIxJoinRule,
 };
@@ -393,9 +393,9 @@ impl PhysicalPlan {
             .apply_rec::<PushConstEq>()?
             .apply_rec::<ReorderDeltaJoinRhs>()?
             .apply_rec::<PullFilterAboveHashJoin>()?
-            .apply_rec::<IxScanEq3Col>()?
-            .apply_rec::<IxScanEq2Col>()?
-            .apply_rec::<IxScanEq>()?
+            .apply_rec::<IxScanOp3Col>()?
+            .apply_rec::<IxScanOp2Col>()?
+            .apply_rec::<IxScanBinOp>()?
             .apply_rec::<IxScanAnd>()?
             .apply_rec::<ReorderHashJoin>()?
             .apply_rec::<HashToIxJoin>()?
@@ -977,6 +977,17 @@ pub enum Sarg {
 }
 
 impl Sarg {
+    pub fn from_op(op: BinOp, col: ColId, value: AlgebraicValue) -> Self {
+        match op {
+            BinOp::Eq => Sarg::Eq(col, value),
+            BinOp::Ne => unreachable!("Cannot create a search argument for inequality"),
+            BinOp::Lt => Sarg::Range(col, Bound::Unbounded, Bound::Excluded(value)),
+            BinOp::Gt => Sarg::Range(col, Bound::Excluded(value), Bound::Unbounded),
+            BinOp::Lte => Sarg::Range(col, Bound::Unbounded, Bound::Included(value)),
+            BinOp::Gte => Sarg::Range(col, Bound::Included(value), Bound::Unbounded),
+        }
+    }
+
     /// Decodes the sarg into a binary operator
     pub fn to_op(&self) -> BinOp {
         match self {
@@ -1233,20 +1244,47 @@ pub mod tests_utils {
             plan
         };
 
-        let explain = Explain::new(&plan).with_options(options);
+        let explain = Explain::new(&plan).with_options(options).build();
 
-        let explain = explain.build();
         expect.assert_eq(&explain.to_string());
+    }
+    #[cfg(test)]
+    fn check_assert(plan: PhysicalCtx, options: ExplainOptions, expect: String) {
+        let plan = if options.optimize {
+            plan.optimize().unwrap()
+        } else {
+            plan
+        };
+
+        let explain = Explain::new(&plan).with_options(options).build();
+
+        pretty_assertions::assert_eq!(explain.to_string(), expect, "{}", plan.sql)
     }
 
     pub fn check_sub(db: &impl SchemaView, options: ExplainOptions, auth: &AuthCtx, sql: &str, expect: Expect) {
         let plan = sub(db, auth, sql);
         check(plan, options, expect);
     }
+    #[cfg(test)]
+    pub fn check_sub_assert(db: &impl SchemaView, options: ExplainOptions, auth: &AuthCtx, sql: &str, expect: String) {
+        let plan = sub(db, auth, sql);
+        check_assert(plan, options, expect);
+    }
 
     pub fn check_query(db: &impl SchemaView, options: ExplainOptions, auth: &AuthCtx, sql: &str, expect: Expect) {
         let plan = query(db, auth, sql);
         check(plan, options, expect);
+    }
+    #[cfg(test)]
+    pub fn check_query_assert(
+        db: &impl SchemaView,
+        options: ExplainOptions,
+        auth: &AuthCtx,
+        sql: &str,
+        expect: String,
+    ) {
+        let plan = query(db, auth, sql);
+        check_assert(plan, options, expect);
     }
 }
 
@@ -1367,8 +1405,16 @@ mod tests {
         tests_utils::check_sub(db, db.options, &AuthCtx::for_testing(), sql, expect);
     }
 
+    fn check_sub_assert(db: &SchemaViewer, sql: &str, expect: String) {
+        tests_utils::check_sub_assert(db, db.options, &AuthCtx::for_testing(), sql, expect);
+    }
+
     fn check_query(db: &SchemaViewer, sql: &str, expect: Expect) {
         tests_utils::check_query(db, db.options, &AuthCtx::for_testing(), sql, expect);
+    }
+
+    fn check_query_assert(db: &SchemaViewer, sql: &str, expect: String) {
+        tests_utils::check_query_assert(db, db.options, &AuthCtx::for_testing(), sql, expect);
     }
 
     fn data() -> SchemaViewer {
@@ -1574,9 +1620,7 @@ Seq Scan on t
         );
     }
 
-    /// Test single and multi-column index selections
-    #[test]
-    fn index_scans() {
+    fn make_table_index() -> SchemaViewer {
         let t_id = TableId(1);
 
         let t = Arc::new(schema(
@@ -1588,12 +1632,158 @@ Seq Scan on t
                 ("y", AlgebraicType::U8),
                 ("z", AlgebraicType::U8),
             ],
-            &[&[1], &[2, 3], &[1, 2, 3]],
+            &[&[1], &[2, 3], &[1, 2, 3], &[0, 1, 2, 3]],
             &[],
             None,
         ));
 
-        let db = SchemaViewer::new(vec![t.clone()]).optimize(true);
+        SchemaViewer::new(vec![t.clone()]).optimize(true)
+    }
+
+    // We optimize up to 3 columns in an index, and:
+    // - `!=` are always a full table scan
+    // - Multi-column indexes are only used if the query has a prefix match (ie all operators are `=`
+    // - Else are converted to a single column index scan on the leftmost column and a filter on the rest
+
+    /// Test index selections on 1 column
+    #[test]
+    fn index_scans_1_col() {
+        let db = make_table_index();
+
+        for op in ["=", ">", "<", ">=", "<="] {
+            check_sub_assert(
+                &db,
+                &format!("SELECT * FROM t WHERE x {op} 4"),
+                format!(
+                    "Index Scan using Index id 0 (t.x) on t
+  Index Cond: (t.x {op} U8(4))
+  Output: t.w, t.x, t.y, t.z",
+                ),
+            )
+        }
+        // `!=` is not supported in index scans
+        check_query(
+            &db,
+            "select * from t where  x != 4",
+            expect![
+                r#"
+Seq Scan on t
+  Output: t.w, t.x, t.y, t.z
+  -> Filter: (t.x <> U8(4))"#
+            ],
+        );
+
+        // Select index on x
+        check_query(
+            &db,
+            "select * from t where w = 5 and x = 4",
+            expect![
+                r#"
+Index Scan using Index id 0 (t.x) on t
+  Index Cond: (t.x = U8(4))
+  Output: t.w, t.x, t.y, t.z
+  -> Filter: (t.w = U8(5))"#
+            ],
+        );
+
+        // Do not select index on (y, z)
+        check_query(
+            &db,
+            "select * from t where y = 1",
+            expect![
+                r#"
+Seq Scan on t
+  Output: t.w, t.x, t.y, t.z
+  -> Filter: (t.y = U8(1))"#
+            ],
+        );
+    }
+
+    /// Test index selections on 2 columns
+    #[test]
+    fn index_scans_2_col() {
+        let db = make_table_index();
+
+        // TODO: The `Index Cond` should be `y, z` ie: match the index columns
+        // This is not to be fixed on the printer side, but on the planner side
+
+        // Select index on [y, z]
+        check_query(
+            &db,
+            "select * from t where y = 1 and z = 2",
+            expect![
+                r#"
+Index Scan using Index id 1 (t.z, t.y) on t
+  Index Cond: (t.z = U8(2), t.y = U8(1))
+  Output: t.w, t.x, t.y, t.z"#
+            ],
+        );
+        for op in [">", "<", ">=", "<="] {
+            check_query_assert(
+                &db,
+                &format!("select * from t where y {op} 1 and z {op} 2"),
+                format!(
+                    r#"Index Scan using Index id 1 (t.y) on t
+  Index Cond: (t.y {op} U8(1))
+  Output: t.w, t.x, t.y, t.z
+  -> Filter: (t.z {op} U8(2))"#
+                ),
+            );
+
+            // Check permutations of the same query
+            check_query_assert(
+                &db,
+                &format!("select * from t where z {op} 2 and y {op} 1"),
+                format!(
+                    r#"Index Scan using Index id 1 (t.y) on t
+  Index Cond: (t.y {op} U8(1))
+  Output: t.w, t.x, t.y, t.z
+  -> Filter: (t.z {op} U8(2))"#
+                ),
+            );
+
+            check_query_assert(
+                &db,
+                &format!("select * from t where z != 2 and y {op} 1"),
+                format!(
+                    r#"Index Scan using Index id 1 (t.y) on t
+  Index Cond: (t.y {op} U8(1))
+  Output: t.w, t.x, t.y, t.z
+  -> Filter: (t.z <> U8(2))"#
+                ),
+            );
+        }
+
+        // Select index on (y, z) and filter on (w)
+        check_query(
+            &db,
+            "select * from t where w = 1 and y = 2 and z = 3",
+            expect![
+                r#"
+Index Scan using Index id 1 (t.z, t.y) on t
+  Index Cond: (t.z = U8(3), t.y = U8(2))
+  Output: t.w, t.x, t.y, t.z
+  -> Filter: (t.w = U8(1))"#
+            ],
+        );
+
+        // `!=` is not supported in index scans
+        check_query(
+            &db,
+            "select * from t where y != 1 and z != 2",
+            expect![
+                r#"
+Seq Scan on t
+  Output: t.w, t.x, t.y, t.z
+  -> Filter: (t.y <> U8(1) AND t.z <> U8(2))"#
+            ],
+        );
+    }
+
+    /// Test index selections on 3 columns
+    #[test]
+    fn index_scans_3_col() {
+        let db = make_table_index();
         // Select index on (x, y, z)
         check_sub(
             &db,
@@ -1617,78 +1807,83 @@ Index Scan using Index id 2 (t.z, t.x, t.y) on t
   Output: t.w, t.x, t.y, t.z"#
             ],
         );
-        // Select index on x
-        check_sub(
-            &db,
-            "select * from t where x = 3 and y = 4",
-            expect![
-                r#"
-Index Scan using Index id 0 (t.x) on t
-  Index Cond: (t.x = U8(3))
+
+        for op in [">", "<", ">=", "<="] {
+            check_sub_assert(
+                &db,
+                &format!("select * from t where x {op} 3 and y {op} 4 and z {op} 5"),
+                format!(
+                    r#"Index Scan using Index id 2 (t.x) on t
+  Index Cond: (t.x {op} U8(3))
   Output: t.w, t.x, t.y, t.z
-  -> Filter: (t.y = U8(4))"#
-            ],
-        );
-        // Select index on x
+  -> Filter: (t.y {op} U8(4) AND t.z {op} U8(5))"#
+                ),
+            );
+
+            // Check permutations of the same query
+            check_sub_assert(
+                &db,
+                &format!("select * from t where z {op} 5 and y {op} 4 and x {op} 3"),
+                format!(
+                    r#"Index Scan using Index id 2 (t.x) on t
+  Index Cond: (t.x {op} U8(3))
+  Output: t.w, t.x, t.y, t.z
+  -> Filter: (t.z {op} U8(5) AND t.y {op} U8(4))"#
+                ),
+            );
+
+            check_sub_assert(
+                &db,
+                &format!("select * from t where x {op} 3 and y != 4 and z {op} 5"),
+                format!(
+                    r#"Index Scan using Index id 2 (t.x) on t
+  Index Cond: (t.x {op} U8(3))
+  Output: t.w, t.x, t.y, t.z
+  -> Filter: (t.y <> U8(4) AND t.z {op} U8(5))"#
+                ),
+            );
+        }
+
+        // `!=` is not supported in index scans
         check_query(
             &db,
-            "select * from t where w = 5 and x = 4",
-            expect![
-                r#"
-Index Scan using Index id 0 (t.x) on t
-  Index Cond: (t.x = U8(4))
-  Output: t.w, t.x, t.y, t.z
-  -> Filter: (t.w = U8(5))"#
-            ],
-        );
-        // Do not select index on (y, z)
-        check_query(
-            &db,
-            "select * from t where y = 1",
+            "select * from t where x != 3 and y != 4 and z != 5",
             expect![
                 r#"
 Seq Scan on t
   Output: t.w, t.x, t.y, t.z
-  -> Filter: (t.y = U8(1))"#
+  -> Filter: (t.x <> U8(3) AND t.y <> U8(4) AND t.z <> U8(5))"#
+            ],
+        );
+    }
+
+    /// Test index selections above 3 columns
+    #[test]
+    fn index_scans_after_3_col() {
+        let db = make_table_index();
+        // Select index on (x, y, z)
+        check_sub(
+            &db,
+            "select * from t as x where x = 3 and y = 4 and z = 5 and w = 6",
+            expect![
+                r#"
+Index Scan using Index id 2 (t.z, t.x, t.y) on t
+  Index Cond: (x.z = U8(5), x.x = U8(3), x.y = U8(4))
+  Output: x.w, x.x, x.y, x.z
+  -> Filter: (x.w = U8(6))"#
             ],
         );
 
-        // TODO: The `Index Cond` should be `y, z` ie: match the index columns
-        // This is not to be fixed on the printer side, but on the planner side
-
-        // Select index on [y, z]
-        check_query(
+        // Test permutations of the same query
+        check_sub(
             &db,
-            "select * from t where y = 1 and z = 2",
+            "select * from t where z = 5 and y = 4 and w = 6 and x = 3",
             expect![
                 r#"
-Index Scan using Index id 1 (t.z, t.y) on t
-  Index Cond: (t.z = U8(2), t.y = U8(1))
-  Output: t.w, t.x, t.y, t.z"#
-            ],
-        );
-
-        // Check permutations of the same query
-        check_query(
-            &db,
-            "select * from t where z = 2 and y = 1",
-            expect![
-                r#"
-Index Scan using Index id 1 (t.z, t.y) on t
-  Index Cond: (t.z = U8(2), t.y = U8(1))
-  Output: t.w, t.x, t.y, t.z"#
-            ],
-        );
-        // Select index on (y, z) and filter on (w)
-        check_query(
-            &db,
-            "select * from t where w = 1 and y = 2 and z = 3",
-            expect![
-                r#"
-Index Scan using Index id 1 (t.z, t.y) on t
-  Index Cond: (t.z = U8(3), t.y = U8(2))
+Index Scan using Index id 2 (t.z, t.x, t.y) on t
+  Index Cond: (t.z = U8(5), t.x = U8(3), t.y = U8(4))
   Output: t.w, t.x, t.y, t.z
-  -> Filter: (t.w = U8(1))"#
+  -> Filter: (t.w = U8(6))"#
             ],
         );
     }

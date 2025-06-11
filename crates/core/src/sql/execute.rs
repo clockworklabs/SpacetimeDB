@@ -316,7 +316,7 @@ pub(crate) mod tests {
     use spacetimedb_lib::error::{ResultTest, TestError};
     use spacetimedb_lib::relation::Header;
     use spacetimedb_lib::{AlgebraicValue, Identity};
-    use spacetimedb_primitives::{col_list, ColId, TableId};
+    use spacetimedb_primitives::{col_list, ColId, ColList, TableId};
     use spacetimedb_sats::{product, AlgebraicType, ArrayValue, ProductType};
     use spacetimedb_vm::eval::test_helpers::create_game_data;
 
@@ -335,20 +335,49 @@ pub(crate) mod tests {
         run(db, sql_text, AuthCtx::for_testing(), Some(&subs), &mut vec![]).map(|x| x.rows)
     }
 
-    fn create_data(total_rows: u64) -> ResultTest<(TestDB, MemTable)> {
+    #[derive(Debug, Clone, Copy)]
+    pub(crate) enum TestData {
+        /// Data with no index
+        Scans,
+        /// Single column index on `inventory_id`
+        IndexId,
+        /// Index on all columns
+        IndexAll,
+        /// Index on [`x`, `y`]
+        IndexMultiColumn,
+        /// Index on [`x`, `y`] and `inventory_id`
+        IndexMixed,
+    }
+
+    fn create_data(total_rows: u64, using: TestData) -> ResultTest<(TestDB, MemTable)> {
         let stdb = TestDB::durable()?;
 
         let rows: Vec<_> = (1..=total_rows)
-            .map(|i| product!(i, format!("health{i}").into_boxed_str()))
+            .map(|i| product!(i, format!("health{i}").into_boxed_str(), i, i))
             .collect();
-        let head = ProductType::from([("inventory_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
-
+        let head = [
+            ("inventory_id", AlgebraicType::U64),
+            ("name", AlgebraicType::String),
+            ("x", AlgebraicType::U64),
+            ("y", AlgebraicType::U64),
+        ];
+        let (single, multi) = match using {
+            TestData::IndexId => (vec![0.into()], ColList::empty()),
+            TestData::IndexAll => (vec![0.into(), 1.into(), 2.into(), 3.into()], ColList::empty()),
+            TestData::IndexMultiColumn => (vec![], col_list![2, 3]),
+            TestData::IndexMixed => (vec![0.into()], col_list![2, 3]),
+            TestData::Scans => (vec![], ColList::empty()),
+        };
+        let table_id = stdb.create_table_for_test_mix_indexes("inventory", &head, &single, multi)?;
         let schema = with_auto_commit(&stdb, |tx| {
-            create_table_with_rows(&stdb, tx, "inventory", head.clone(), &rows, StAccess::Public)
+            for row in rows.iter() {
+                insert(&stdb, tx, table_id, row)?;
+            }
+            stdb.schema_for_table_mut(tx, table_id)
         })?;
         let header = Header::from(&*schema).into();
 
-        Ok((stdb, MemTable::new(header, schema.table_access, rows)))
+        Ok((stdb, MemTable::new(header, StAccess::Public, rows)))
     }
 
     fn create_identity_table(table_name: &str) -> ResultTest<(TestDB, MemTable)> {
@@ -366,7 +395,7 @@ pub(crate) mod tests {
 
     #[test]
     fn test_select_star() -> ResultTest<()> {
-        let (db, input) = create_data(1)?;
+        let (db, input) = create_data(1, TestData::Scans)?;
 
         let result = run_for_testing(&db, "SELECT * FROM inventory")?;
 
@@ -376,11 +405,11 @@ pub(crate) mod tests {
 
     #[test]
     fn test_limit() -> ResultTest<()> {
-        let (db, _) = create_data(5)?;
+        let (db, _) = create_data(5, TestData::Scans)?;
 
         let result = run_for_testing(&db, "SELECT * FROM inventory limit 2")?;
 
-        let (_, input) = create_data(2)?;
+        let (_, input) = create_data(2, TestData::Scans)?;
 
         assert_eq!(result, input.data, "Inventory");
         Ok(())
@@ -388,7 +417,7 @@ pub(crate) mod tests {
 
     #[test]
     fn test_count() -> ResultTest<()> {
-        let (db, _) = create_data(5)?;
+        let (db, _) = create_data(5, TestData::Scans)?;
 
         let sql = "SELECT count(*) as n FROM inventory";
         let result = run_for_testing(&db, sql)?;
@@ -878,7 +907,7 @@ pub(crate) mod tests {
 
     #[test]
     fn test_select_star_table() -> ResultTest<()> {
-        let (db, input) = create_data(1)?;
+        let (db, input) = create_data(1, TestData::Scans)?;
 
         let result = run_for_testing(&db, "SELECT inventory.* FROM inventory")?;
 
@@ -896,7 +925,7 @@ pub(crate) mod tests {
 
     #[test]
     fn test_select_catalog() -> ResultTest<()> {
-        let (db, _) = create_data(1)?;
+        let (db, _) = create_data(1, TestData::Scans)?;
 
         let tx = begin_tx(&db);
         let _ = db.release_tx(tx);
@@ -921,7 +950,7 @@ pub(crate) mod tests {
 
     #[test]
     fn test_select_column() -> ResultTest<()> {
-        let (db, _) = create_data(1)?;
+        let (db, _) = create_data(1, TestData::Scans)?;
 
         let result = run_for_testing(&db, "SELECT inventory_id FROM inventory")?;
 
@@ -933,34 +962,61 @@ pub(crate) mod tests {
 
     #[test]
     fn test_where() -> ResultTest<()> {
-        let (db, _) = create_data(1)?;
+        for data in [TestData::Scans, TestData::IndexId] {
+            let (db, _) = create_data(10, data)?;
 
-        let result = run_for_testing(&db, "SELECT inventory_id FROM inventory WHERE inventory_id = 1")?;
-
-        let row = product![1u64];
-
-        assert_eq!(result, vec![row], "Inventory");
+            for op in ["=", "<", ">", "<=", ">=", "!="] {
+                let sql = format!("SELECT inventory_id FROM inventory WHERE inventory_id {op} 5");
+                let result = run_for_testing(&db, &sql)?;
+                let expected: Vec<ProductValue> = (1u64..=10)
+                    .filter(|&i| match op {
+                        "=" => i == 5,
+                        "<" => i < 5,
+                        ">" => i > 5,
+                        "<=" => i <= 5,
+                        ">=" => i >= 5,
+                        "!=" => i != 5,
+                        _ => false,
+                    })
+                    .map(|i| product![i])
+                    .collect();
+                assert_eq!(result, expected, "Inventory with {:?}: {}", data, sql);
+            }
+        }
         Ok(())
     }
 
     #[test]
     fn test_or() -> ResultTest<()> {
-        let (db, _) = create_data(2)?;
+        for data in [TestData::Scans, TestData::IndexId] {
+            let (db, _) = create_data(10, data)?;
 
-        let mut result = run_for_testing(
-            &db,
-            "SELECT inventory_id FROM inventory WHERE inventory_id = 1 OR inventory_id = 2",
-        )?;
+            for op in ["=", "<", ">", "<=", ">=", "!="] {
+                let sql =
+                    format!("SELECT inventory_id FROM inventory WHERE inventory_id {op} 5 OR inventory_id {op} 6");
+                let result = run_for_testing(&db, &sql)?;
+                let expected: Vec<ProductValue> = (1u64..=10)
+                    .filter(|&i| match op {
+                        "=" => i == 5 || i == 6,
+                        "<" => i < 5 || i < 6,
+                        ">" => i > 5 || i > 6,
+                        "<=" => i <= 5 || i <= 6,
+                        ">=" => i >= 5 || i >= 6,
+                        "!=" => i != 5 || i != 6,
+                        _ => false,
+                    })
+                    .map(|i| product![i])
+                    .collect();
+                assert_eq!(result, expected, "Inventory with {:?}: {}", data, sql);
+            }
+        }
 
-        result.sort();
-
-        assert_eq!(result, vec![product![1u64], product![2u64]], "Inventory");
         Ok(())
     }
 
     #[test]
     fn test_nested() -> ResultTest<()> {
-        let (db, _) = create_data(2)?;
+        let (db, _) = create_data(2, TestData::Scans)?;
 
         let mut result = run_for_testing(
             &db,
@@ -1029,15 +1085,18 @@ pub(crate) mod tests {
 
     #[test]
     fn test_insert() -> ResultTest<()> {
-        let (db, mut input) = create_data(1)?;
+        let (db, mut input) = create_data(1, TestData::Scans)?;
 
-        let result = run_for_testing(&db, "INSERT INTO inventory (inventory_id, name) VALUES (2, 'test')")?;
+        let result = run_for_testing(
+            &db,
+            "INSERT INTO inventory (inventory_id, name, x, y) VALUES (2, 'test', 0, 0)",
+        )?;
 
         assert_eq!(result.len(), 0, "Return results");
 
         let mut result = run_for_testing(&db, "SELECT * FROM inventory")?;
 
-        input.data.push(product![2u64, "test"]);
+        input.data.push(product![2u64, "test", 0u64, 0u64]);
         input.data.sort();
         result.sort();
 
@@ -1048,10 +1107,16 @@ pub(crate) mod tests {
 
     #[test]
     fn test_delete() -> ResultTest<()> {
-        let (db, _input) = create_data(1)?;
+        let (db, _input) = create_data(1, TestData::Scans)?;
 
-        run_for_testing(&db, "INSERT INTO inventory (inventory_id, name) VALUES (2, 't2')")?;
-        run_for_testing(&db, "INSERT INTO inventory (inventory_id, name) VALUES (3, 't3')")?;
+        run_for_testing(
+            &db,
+            "INSERT INTO inventory (inventory_id, name, x, y) VALUES (2, 't2', 0, 0)",
+        )?;
+        run_for_testing(
+            &db,
+            "INSERT INTO inventory (inventory_id, name, x, y) VALUES (3, 't3', 0, 0)",
+        )?;
 
         let result = run_for_testing(&db, "SELECT * FROM inventory")?;
         assert_eq!(result.len(), 3, "Not return results");
@@ -1071,10 +1136,16 @@ pub(crate) mod tests {
 
     #[test]
     fn test_update() -> ResultTest<()> {
-        let (db, input) = create_data(1)?;
+        let (db, input) = create_data(1, TestData::Scans)?;
 
-        run_for_testing(&db, "INSERT INTO inventory (inventory_id, name) VALUES (2, 't2')")?;
-        run_for_testing(&db, "INSERT INTO inventory (inventory_id, name) VALUES (3, 't3')")?;
+        run_for_testing(
+            &db,
+            "INSERT INTO inventory (inventory_id, name, x, y) VALUES (2, 't2', 0, 0)",
+        )?;
+        run_for_testing(
+            &db,
+            "INSERT INTO inventory (inventory_id, name, x, y) VALUES (3, 't3', 0, 0)",
+        )?;
 
         run_for_testing(&db, "UPDATE inventory SET name = 'c2' WHERE inventory_id = 2")?;
 
@@ -1082,7 +1153,7 @@ pub(crate) mod tests {
 
         let mut change = input;
         change.data.clear();
-        change.data.push(product![2u64, "c2"]);
+        change.data.push(product![2u64, "c2", 0u64, 0u64]);
 
         assert_eq!(result, change.data, "Update Inventory 2");
 
@@ -1101,7 +1172,7 @@ pub(crate) mod tests {
 
     #[test]
     fn test_multi_column() -> ResultTest<()> {
-        let (db, _input) = create_data(1)?;
+        let (db, _input) = create_data(1, TestData::Scans)?;
 
         // Create table [test] with index on [a, b]
         let schema = &[
