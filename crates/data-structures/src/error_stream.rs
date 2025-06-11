@@ -407,8 +407,8 @@ impl<T, E, I: Iterator<Item = Result<T, ErrorStream<E>>>> CollectAllErrors for I
 /// - `$result` must be a `Result<_, ErrorStream<E>>`.
 /// - `$expected` is a pattern to match against the error.
 /// - `$cond` is an optional expression that should evaluate to `true` if the error matches.
-///     Variables from `$expected` are bound in `$cond` behind references.
-///     Do not use any asserts in `$cond` as it may be called against multiple errors.
+///   Variables from `$expected` are bound in `$cond` behind references.
+///   Do not use any asserts in `$cond` as it may be called against multiple errors.
 ///
 /// ```
 /// use spacetimedb_data_structures::error_stream::{
