@@ -317,7 +317,11 @@ impl HostController {
                 let panic_payload = e.into_panic();
                 let err = DatabaseLifecycleTracker::panic_payload_to_error("while `using_database`", &panic_payload);
                 log::error!("{err:?}");
+
+                // FIXME: Find a way to avoid this `.await` while still stopping the metrics task.
+                #[allow(clippy::await_holding_lock)]
                 lifecycle.lock().stop_database(err).await;
+
                 std::panic::resume_unwind(panic_payload)
             }
         }
