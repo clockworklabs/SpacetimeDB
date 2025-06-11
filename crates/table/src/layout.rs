@@ -6,18 +6,18 @@
 //! These, and others, determine what the layout of objects typed at those types are.
 //! They also implement [`HasLayout`] which generalizes over layout annotated types.
 
+use super::var_len::VarLenRef;
 use crate::MemoryUsage;
-
-use super::{indexes::Size, var_len::VarLenRef};
 use core::mem;
-use core::ops::Index;
+use core::ops::{Index, Mul};
+use derive_more::{Add, Sub};
 use enum_as_inner::EnumAsInner;
 use spacetimedb_sats::{
     de::{
         Deserialize, DeserializeSeed, Deserializer, Error, NamedProductAccess, ProductVisitor, SeqProductAccess,
         SumAccess, SumVisitor, ValidNames, VariantAccess as _, VariantVisitor,
     },
-    i256,
+    i256, impl_deserialize, impl_serialize,
     sum_type::{OPTION_NONE_TAG, OPTION_SOME_TAG},
     u256, AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement, ProductValue, SumType, SumTypeVariant,
     SumValue, WithTypespace,
@@ -41,6 +41,34 @@ pub const fn align_to(base: usize, required_alignment: usize) -> usize {
             let padding = required_alignment - misalignment;
             base + padding
         }
+    }
+}
+
+/// The size of something in page storage in bytes.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Add, Sub)]
+pub struct Size(pub u16);
+
+impl MemoryUsage for Size {}
+
+// We need to be able to serialize and deserialize `Size` because they appear in the `PageHeader`.
+impl_serialize!([] Size, (self, ser) => self.0.serialize(ser));
+impl_deserialize!([] Size, de => u16::deserialize(de).map(Size));
+
+impl Size {
+    /// Returns the size for use in `usize` computations.
+    #[inline]
+    #[allow(clippy::len_without_is_empty)]
+    pub const fn len(self) -> usize {
+        self.0 as usize
+    }
+}
+
+impl Mul<usize> for Size {
+    type Output = Size;
+
+    #[inline]
+    fn mul(self, rhs: usize) -> Self::Output {
+        Size((self.len() * rhs) as u16)
     }
 }
 

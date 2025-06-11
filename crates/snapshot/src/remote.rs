@@ -798,8 +798,8 @@ mod tests {
     use spacetimedb_paths::{server::SnapshotsPath, FromPathUnchecked};
     use spacetimedb_table::{
         blob_store::NullBlobStore,
-        indexes::{PageOffset, Size},
-        layout::row_size_for_type,
+        indexes::PageOffset,
+        layout::{row_size_for_type, Size},
         page::Page,
         var_len::AlignedVarLenOffsets,
     };

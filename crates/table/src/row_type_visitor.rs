@@ -509,7 +509,7 @@ impl<'row> Iterator for VarLenVisitorProgramIterMut<'_, 'row> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::indexes::Size;
+    use crate::layout::Size;
     use spacetimedb_sats::{AlgebraicType, ProductType};
 
     fn row_type<T: Into<ProductType>>(row_ty: T) -> RowTypeLayout {

@@ -5,8 +5,8 @@
 
 use crate::{
     bflatn_from,
-    indexes::{PageOffset, Size},
-    layout::{AlgebraicTypeLayout, PrimitiveType, ProductTypeElementLayout, VarLenType},
+    indexes::PageOffset,
+    layout::{AlgebraicTypeLayout, PrimitiveType, ProductTypeElementLayout, Size, VarLenType},
     table::RowRef,
 };
 use spacetimedb_sats::{

@@ -296,7 +296,7 @@ pub(super) mod test {
     use core::iter::repeat_with;
 
     use super::*;
-    use crate::indexes::Size;
+    use crate::layout::Size;
 
     const FIXED_ROW_SIZE: Size = Size(4 * 4);
 

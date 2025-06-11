@@ -35,8 +35,8 @@
 use super::{
     blob_store::BlobStore,
     fixed_bit_set::FixedBitSet,
-    indexes::{Byte, Bytes, PageOffset, Size, PAGE_HEADER_SIZE, PAGE_SIZE},
-    layout::MIN_ROW_SIZE,
+    indexes::{Byte, Bytes, PageOffset, PAGE_HEADER_SIZE, PAGE_SIZE},
+    layout::{Size, MIN_ROW_SIZE},
     var_len::{is_granule_offset_aligned, VarLenGranule, VarLenGranuleHeader, VarLenMembers, VarLenRef},
 };
 use crate::{fixed_bit_set::IterSet, indexes::max_rows_in_page, static_assert_size, table::BlobNumBytes, MemoryUsage};
