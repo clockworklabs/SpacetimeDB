@@ -4,7 +4,8 @@ use once_cell::sync::Lazy;
 use prometheus::{GaugeVec, HistogramVec, IntCounterVec, IntGaugeVec};
 use spacetimedb_lib::{ConnectionId, Identity};
 use spacetimedb_metrics::metrics_group;
-use spacetimedb_table::{page_pool::PagePool, MemoryUsage};
+use spacetimedb_sats::memory_usage::MemoryUsage;
+use spacetimedb_table::page_pool::PagePool;
 use std::{sync::Once, time::Duration};
 use tokio::{spawn, time::sleep};
 

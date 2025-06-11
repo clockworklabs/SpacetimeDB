@@ -21,11 +21,6 @@
 //! one of 20 bytes to copy the leading `(u64, u64, u32)`, which contains no padding,
 //! and then one of 8 bytes to copy the trailing `u64`, skipping over 4 bytes of padding in between.
 
-use smallvec::SmallVec;
-use spacetimedb_data_structures::slim_slice::SlimSmallSliceBox;
-
-use crate::layout::ProductTypeLayoutView;
-
 use super::{
     indexes::{Byte, Bytes},
     layout::{
@@ -33,10 +28,13 @@ use super::{
         SumTypeVariantLayout,
     },
     util::range_move,
-    MemoryUsage,
 };
+use crate::layout::ProductTypeLayoutView;
 use core::mem::MaybeUninit;
 use core::ptr;
+use smallvec::SmallVec;
+use spacetimedb_data_structures::slim_slice::SlimSmallSliceBox;
+use spacetimedb_sats::memory_usage::MemoryUsage;
 
 /// A precomputed layout for a type whose encoded BSATN and BFLATN lengths are both known constants,
 /// enabling fast BFLATN <-> BSATN conversions.

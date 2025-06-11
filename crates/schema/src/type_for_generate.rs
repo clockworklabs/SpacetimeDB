@@ -1,5 +1,9 @@
 //! `AlgebraicType` extensions for generating client code.
 
+use crate::{
+    error::{IdentifierError, PrettyAlgebraicType},
+    identifier::Identifier,
+};
 use enum_as_inner::EnumAsInner;
 use petgraph::{
     algo::tarjan_scc,
@@ -11,13 +15,10 @@ use spacetimedb_data_structures::{
     map::{HashMap, HashSet},
 };
 use spacetimedb_lib::{AlgebraicType, ProductTypeElement};
-use spacetimedb_sats::{typespace::TypeRefError, AlgebraicTypeRef, ArrayType, SumTypeVariant, Typespace};
-use std::{cell::RefCell, ops::Index, sync::Arc};
-
-use crate::{
-    error::{IdentifierError, PrettyAlgebraicType},
-    identifier::Identifier,
+use spacetimedb_sats::{
+    memory_usage::MemoryUsage, typespace::TypeRefError, AlgebraicTypeRef, ArrayType, SumTypeVariant, Typespace,
 };
+use std::{cell::RefCell, ops::Index, sync::Arc};
 
 /// Errors that can occur when rearranging types for client codegen.
 #[derive(thiserror::Error, Debug, PartialOrd, Ord, PartialEq, Eq)]
@@ -261,6 +262,8 @@ pub enum PrimitiveType {
     F32,
     F64,
 }
+
+impl MemoryUsage for PrimitiveType {}
 
 impl PrimitiveType {
     pub fn algebraic_type(&self) -> AlgebraicType {

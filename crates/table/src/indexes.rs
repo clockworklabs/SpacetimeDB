@@ -3,12 +3,13 @@
 
 use super::layout::Size;
 use super::util::range_move;
-use crate::{static_assert_size, MemoryUsage};
+use crate::static_assert_size;
 use ahash::RandomState;
 use core::fmt;
 use core::ops::{AddAssign, Div, Range, SubAssign};
 use derive_more::{Add, Sub};
 use spacetimedb_data_structures::map::ValidAsIdentityHash;
+use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::{impl_deserialize, impl_serialize};
 
 /// A byte is a `u8`.

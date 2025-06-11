@@ -39,8 +39,9 @@ use super::{
     layout::{Size, MIN_ROW_SIZE},
     var_len::{is_granule_offset_aligned, VarLenGranule, VarLenGranuleHeader, VarLenMembers, VarLenRef},
 };
-use crate::{fixed_bit_set::IterSet, indexes::max_rows_in_page, static_assert_size, table::BlobNumBytes, MemoryUsage};
+use crate::{fixed_bit_set::IterSet, indexes::max_rows_in_page, static_assert_size, table::BlobNumBytes};
 use core::{mem, ops::ControlFlow};
+use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::{de::Deserialize, ser::Serialize};
 use thiserror::Error;
 
