@@ -17,9 +17,11 @@ spacetimedb-fs-utils.workspace = true
 
 blake3.workspace = true
 bytes.workspace = true
+crossbeam-queue.workspace = true
 futures.workspace = true
 hex.workspace = true
 log.workspace = true
+scopeguard.workspace = true
 tempfile.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["io-util"] }
@@ -28,9 +30,10 @@ tokio-util = { workspace = true, features = ["io"] }
 zstd-framed.workspace = true
 
 [dev-dependencies]
-spacetimedb-core = { workspace = true, features = ["test"] }
-spacetimedb-schema.workspace = true
+spacetimedb-core = { path = "../core", features = ["test"] }
+spacetimedb-schema = { path = "../schema" }
 
 anyhow.workspace = true
 env_logger.workspace = true
 pretty_assertions = { workspace = true, features = ["unstable"] }
+rand.workspace = true

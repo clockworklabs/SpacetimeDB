@@ -12,15 +12,22 @@ partial class InAnotherNamespace
 
         public void WriteFields(System.IO.BinaryWriter writer) { }
 
+        object SpacetimeDB.BSATN.IStructuralReadWrite.GetSerializer()
+        {
+            return new BSATN();
+        }
+
         public override string ToString() => $"TestDuplicateTableName {{  }}";
 
         public readonly partial struct BSATN
             : SpacetimeDB.BSATN.IReadWrite<InAnotherNamespace.TestDuplicateTableName>
         {
-            public InAnotherNamespace.TestDuplicateTableName Read(System.IO.BinaryReader reader) =>
-                SpacetimeDB.BSATN.IStructuralReadWrite.Read<InAnotherNamespace.TestDuplicateTableName>(
-                    reader
-                );
+            public InAnotherNamespace.TestDuplicateTableName Read(System.IO.BinaryReader reader)
+            {
+                var ___result = new InAnotherNamespace.TestDuplicateTableName();
+                ___result.ReadFields(reader);
+                return ___result;
+            }
 
             public void Write(
                 System.IO.BinaryWriter writer,

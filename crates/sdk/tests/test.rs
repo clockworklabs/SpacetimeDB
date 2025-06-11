@@ -255,6 +255,11 @@ macro_rules! declare_tests_with_suffix {
             fn indexed_simple_enum() {
                 make_test("indexed-simple-enum").run();
             }
+
+            #[test]
+            fn overlapping_subscriptions() {
+                make_test("overlapping-subscriptions").run();
+            }
         }
     };
 }

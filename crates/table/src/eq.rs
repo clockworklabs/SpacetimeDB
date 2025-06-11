@@ -2,10 +2,12 @@
 //! which, for `value_a/b = page_a/b.get_row_data(offset_a/b, fixed_row_size)` typed at `ty`,
 //! compares `value_a` and `value_b` for equality.
 
+use crate::layout::ProductTypeLayoutView;
+
 use super::{
     bflatn_from::read_tag,
     indexes::{Bytes, PageOffset},
-    layout::{align_to, AlgebraicTypeLayout, HasLayout, ProductTypeLayout, RowTypeLayout},
+    layout::{align_to, AlgebraicTypeLayout, HasLayout, RowTypeLayout},
     page::Page,
     row_hash::read_from_bytes,
     static_layout::StaticLayout,
@@ -102,7 +104,7 @@ struct EqCtx<'page_a, 'page_b> {
 /// 1. `value_a/b` must be valid at type `ty` and properly aligned for `ty`.
 /// 2. for any `vlr_a/b: VarLenRef` stored in `value_a/b`,
 ///    `vlr_a/b.first_offset` must either be `NULL` or point to a valid granule in `page_a/b`.
-unsafe fn eq_product(ctx: &mut EqCtx<'_, '_>, ty: &ProductTypeLayout) -> bool {
+unsafe fn eq_product(ctx: &mut EqCtx<'_, '_>, ty: ProductTypeLayoutView<'_>) -> bool {
     let base_offset = ctx.curr_offset;
     ty.elements.iter().all(|elem_ty| {
         ctx.curr_offset = base_offset + elem_ty.offset as usize;
@@ -155,7 +157,7 @@ unsafe fn eq_value(ctx: &mut EqCtx<'_, '_>, ty: &AlgebraicTypeLayout) -> bool {
         }
         AlgebraicTypeLayout::Product(ty) => {
             // SAFETY: `value_a/b` are valid at `ty` and `VarLenRef`s won't be dangling.
-            unsafe { eq_product(ctx, ty) }
+            unsafe { eq_product(ctx, ty.view()) }
         }
 
         // The primitive types:
@@ -229,7 +231,7 @@ fn eq_byte_array(ctx: &mut EqCtx<'_, '_>, len: usize) -> bool {
 
 #[cfg(test)]
 mod test {
-    use crate::blob_store::NullBlobStore;
+    use crate::{blob_store::NullBlobStore, page_pool::PagePool};
     use spacetimedb_sats::{product, AlgebraicType, AlgebraicValue, ProductType};
 
     #[test]
@@ -241,29 +243,30 @@ mod test {
             AlgebraicType::product([AlgebraicType::U8, AlgebraicType::U32]), // xpppxxxx
         ])]);
 
+        let pool = PagePool::new_for_test();
         let bs = &mut NullBlobStore;
         let mut table_a = crate::table::test::table(ty.clone());
         let mut table_b = crate::table::test::table(ty);
 
         // Insert u64::MAX with tag 0 and then delete it.
         let a0 = product![AlgebraicValue::sum(0, u64::MAX.into())];
-        let (_, a0_rr) = table_a.insert(bs, &a0).unwrap();
+        let (_, a0_rr) = table_a.insert(&pool, bs, &a0).unwrap();
         let a0_ptr = a0_rr.pointer();
         assert!(table_a.delete(bs, a0_ptr, |_| {}).is_some());
 
         // Insert u64::ALTERNATING_BIT_PATTERN with tag 0 and then delete it.
         let b0 = 0b01010101_01010101_01010101_01010101_01010101_01010101_01010101_01010101u64;
         let b0 = product![AlgebraicValue::sum(0, b0.into())];
-        let (_, b0_rr) = table_b.insert(bs, &b0).unwrap();
+        let (_, b0_rr) = table_b.insert(&pool, bs, &b0).unwrap();
         let b0_ptr = b0_rr.pointer();
         assert!(table_b.delete(bs, b0_ptr, |_| {}).is_some());
 
         // Insert two identical rows `a1` and `b2` into the tables.
         // They should occupy the spaces of the previous rows.
         let v1 = product![AlgebraicValue::sum(1, product![0u8, 0u32].into())];
-        let (_, a1_rr) = table_a.insert(bs, &v1).unwrap();
+        let (_, a1_rr) = table_a.insert(&pool, bs, &v1).unwrap();
         let bs = &mut NullBlobStore;
-        let (_, b1_rr) = table_b.insert(bs, &v1).unwrap();
+        let (_, b1_rr) = table_b.insert(&pool, bs, &v1).unwrap();
         assert_eq!(a0_ptr, a1_rr.pointer());
         assert_eq!(b0_ptr, b1_rr.pointer());
 

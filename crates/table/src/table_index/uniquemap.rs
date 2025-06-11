@@ -81,6 +81,21 @@ impl<K: Ord, V: Ord> UniqueMap<K, V> {
     pub fn clear(&mut self) {
         self.map.clear();
     }
+
+    /// Returns whether `other` can be merged into `self`
+    /// with an error containing the element in `self` that caused the violation.
+    ///
+    /// The closure `ignore` indicates whether a row in `self` should be ignored.
+    pub(crate) fn can_merge(&self, other: &Self, ignore: impl Fn(&V) -> bool) -> Result<(), &V> {
+        let Some(found) = other
+            .map
+            .keys()
+            .find_map(|key| self.map.get(key).filter(|val| !ignore(val)))
+        else {
+            return Ok(());
+        };
+        Err(found)
+    }
 }
 
 /// An iterator over the potential value in a [`UniqueMap`] for a given key.

@@ -8,6 +8,7 @@ use clap::{Arg, ArgMatches};
 use spacetimedb::config::{CertificateAuthority, ConfigFile};
 use spacetimedb::db::{Config, Storage};
 use spacetimedb::startup::{self, TracingOptions};
+use spacetimedb::util::jobs::JobCores;
 use spacetimedb::worker_metrics;
 use spacetimedb_client_api::routes::database::DatabaseRoutes;
 use spacetimedb_client_api::routes::router;
@@ -67,10 +68,15 @@ pub fn cli() -> clap::Command {
         .arg(Arg::new("in_memory").long("in-memory").action(SetTrue).help(
             "If specified the database will run entirely in memory. After the process exits all data will be lost.",
         ))
+        .arg(
+            Arg::new("page_pool_max_size").long("page_pool_max_size").help(
+                "The maximum size of the page pool in bytes. Should be a multiple of 64KiB. The default is 8GiB.",
+            ),
+        )
     // .after_help("Run `spacetime help start` for more detailed information.")
 }
 
-pub async fn exec(args: &ArgMatches) -> anyhow::Result<()> {
+pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
     let listen_addr = args.get_one::<String>("listen_addr").unwrap();
     let cert_dir = args.get_one::<spacetimedb_paths::cli::ConfigDir>("jwt_key_dir");
     let certs = Option::zip(
@@ -88,7 +94,16 @@ pub async fn exec(args: &ArgMatches) -> anyhow::Result<()> {
     } else {
         Storage::Disk
     };
-    let db_config = Config { storage };
+    let page_pool_max_size = args
+        .get_one::<&str>("page_pool_max_size")
+        .map(|size| parse_size::Config::new().with_binary().parse_size(size))
+        .transpose()
+        .context("unrecognized format in `page_pool_max_size`")?
+        .map(|size| size as usize);
+    let db_config = Config {
+        storage,
+        page_pool_max_size,
+    };
 
     banner();
     let exe_name = std::env::current_exe()?;
@@ -108,24 +123,20 @@ pub async fn exec(args: &ArgMatches) -> anyhow::Result<()> {
         }
     };
 
-    startup::StartupOptions {
-        tracing: Some(TracingOptions {
-            config: config.logs,
-            reload_config: cfg!(debug_assertions).then_some(config_path),
-            disk_logging: std::env::var_os("SPACETIMEDB_DISABLE_DISK_LOGGING")
-                .is_none()
-                .then(|| data_dir.logs()),
-            edition: "standalone".to_owned(),
-            tracy: enable_tracy || std::env::var_os("SPACETIMEDB_TRACY").is_some(),
-            flamegraph: std::env::var_os("SPACETIMEDB_FLAMEGRAPH").map(|_| {
-                std::env::var_os("SPACETIMEDB_FLAMEGRAPH_PATH")
-                    .unwrap_or("/var/log/flamegraph.folded".into())
-                    .into()
-            }),
+    startup::configure_tracing(TracingOptions {
+        config: config.logs,
+        reload_config: cfg!(debug_assertions).then_some(config_path),
+        disk_logging: std::env::var_os("SPACETIMEDB_DISABLE_DISK_LOGGING")
+            .is_none()
+            .then(|| data_dir.logs()),
+        edition: "standalone".to_owned(),
+        tracy: enable_tracy || std::env::var_os("SPACETIMEDB_TRACY").is_some(),
+        flamegraph: std::env::var_os("SPACETIMEDB_FLAMEGRAPH").map(|_| {
+            std::env::var_os("SPACETIMEDB_FLAMEGRAPH_PATH")
+                .unwrap_or("/var/log/flamegraph.folded".into())
+                .into()
         }),
-        ..Default::default()
-    }
-    .configure();
+    });
 
     let certs = certs
         .or(config.certificate_authority)
@@ -133,10 +144,10 @@ pub async fn exec(args: &ArgMatches) -> anyhow::Result<()> {
         .context("cannot omit --jwt-{pub,priv}-key-path when those options are not specified in config.toml")?;
 
     let data_dir = Arc::new(data_dir.clone());
-    let ctx = StandaloneEnv::init(db_config, &certs, data_dir).await?;
+    let ctx = StandaloneEnv::init(db_config, &certs, data_dir, db_cores).await?;
     worker_metrics::spawn_jemalloc_stats(listen_addr.clone());
     worker_metrics::spawn_tokio_stats(listen_addr.clone());
-
+    worker_metrics::spawn_page_pool_stats(listen_addr.clone(), ctx.page_pool().clone());
     let mut db_routes = DatabaseRoutes::default();
     db_routes.root_post = db_routes.root_post.layer(DefaultBodyLimit::disable());
     db_routes.db_put = db_routes.db_put.layer(DefaultBodyLimit::disable());

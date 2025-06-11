@@ -29,17 +29,15 @@ use spacetimedb_fs_utils::{
     dir_trie::{o_excl, o_rdonly, CountCreated, DirTrie},
     lockfile::{Lockfile, LockfileError},
 };
-use spacetimedb_lib::{
-    bsatn::{self},
-    de::Deserialize,
-    ser::Serialize,
-    Identity,
-};
+use spacetimedb_lib::Identity;
 use spacetimedb_paths::server::{SnapshotDirPath, SnapshotFilePath, SnapshotsPath};
+use spacetimedb_paths::FromPathUnchecked;
 use spacetimedb_primitives::TableId;
+use spacetimedb_sats::{bsatn, de::Deserialize, ser::Serialize};
 use spacetimedb_table::{
     blob_store::{BlobHash, BlobStore, HashMapBlobStore},
     page::Page,
+    page_pool::PagePool,
     table::Table,
 };
 use std::{
@@ -51,8 +49,10 @@ use std::{
     ops::{Add, AddAssign},
     path::PathBuf,
 };
+use tokio::task::spawn_blocking;
 
 pub mod remote;
+use remote::verify_snapshot;
 
 #[derive(Debug, Copy, Clone)]
 /// An object which may be associated with an error during snapshotting.
@@ -139,7 +139,7 @@ pub const CURRENT_MODULE_ABI_VERSION: [u16; 2] = [7, 0];
 /// File extension of snapshot directories.
 pub const SNAPSHOT_DIR_EXT: &str = "snapshot_dir";
 
-/// File extension of snapshot files, which contain BSATN-encoded [`Snapshot`]s preceeded by [`blake3::Hash`]es.
+/// File extension of snapshot files, which contain BSATN-encoded [`Snapshot`]s preceded by [`blake3::Hash`]es.
 pub const SNAPSHOT_FILE_EXT: &str = "snapshot_bsatn";
 
 /// File extension of snapshots which have been marked invalid by [`SnapshotRepository::invalidate_newer_snapshots`].
@@ -399,6 +399,7 @@ impl Snapshot {
     fn reconstruct_one_table_pages(
         object_repo: &DirTrie,
         pages: &[blake3::Hash],
+        page_pool: &PagePool,
     ) -> Result<Vec<Box<Page>>, SnapshotError> {
         pages
             .iter()
@@ -413,7 +414,8 @@ impl Snapshot {
                     })?;
 
                 // Deserialize the bytes into a `Page`.
-                let page = bsatn::from_slice::<Box<Page>>(&buf).map_err(|cause| SnapshotError::Deserialize {
+                let page = page_pool.take_deserialize_from(&buf);
+                let page = page.map_err(|cause| SnapshotError::Deserialize {
                     ty: ObjectType::Page(*hash),
                     source_repo: object_repo.root().to_path_buf(),
                     cause,
@@ -441,8 +443,12 @@ impl Snapshot {
     fn reconstruct_one_table(
         object_repo: &DirTrie,
         TableEntry { table_id, pages }: &TableEntry,
+        page_pool: &PagePool,
     ) -> Result<(TableId, Vec<Box<Page>>), SnapshotError> {
-        Ok((*table_id, Self::reconstruct_one_table_pages(object_repo, pages)?))
+        Ok((
+            *table_id,
+            Self::reconstruct_one_table_pages(object_repo, pages, page_pool)?,
+        ))
     }
 
     /// Reconstruct all the table data from `self`,
@@ -455,10 +461,14 @@ impl Snapshot {
     /// Fails if any object file referenced in `self` (as a page or large blob)
     /// is missing or corrupted,
     /// as detected by comparing the hash of its bytes to the hash recorded in `self`.
-    fn reconstruct_tables(&self, object_repo: &DirTrie) -> Result<BTreeMap<TableId, Vec<Box<Page>>>, SnapshotError> {
+    fn reconstruct_tables(
+        &self,
+        object_repo: &DirTrie,
+        page_pool: &PagePool,
+    ) -> Result<BTreeMap<TableId, Vec<Box<Page>>>, SnapshotError> {
         self.tables
             .iter()
-            .map(|tbl| Self::reconstruct_one_table(object_repo, tbl))
+            .map(|tbl| Self::reconstruct_one_table(object_repo, tbl, page_pool))
             .collect()
     }
 
@@ -536,6 +546,7 @@ impl fmt::Debug for SnapshotSize {
 }
 
 /// A repository of snapshots of a particular database instance.
+#[derive(Clone)]
 pub struct SnapshotRepository {
     /// The directory which contains all the snapshots.
     root: SnapshotsPath,
@@ -717,7 +728,11 @@ impl SnapshotRepository {
     ///
     /// This means that callers must inspect the returned [`ReconstructedSnapshot`]
     /// and verify that they can handle its contained database identity, instance ID, module ABI version and transaction offset.
-    pub fn read_snapshot(&self, tx_offset: TxOffset) -> Result<ReconstructedSnapshot, SnapshotError> {
+    pub fn read_snapshot(
+        &self,
+        tx_offset: TxOffset,
+        page_pool: &PagePool,
+    ) -> Result<ReconstructedSnapshot, SnapshotError> {
         let snapshot_dir = self.snapshot_dir_path(tx_offset);
         let lockfile = Lockfile::lock_path(&snapshot_dir);
         if lockfile.try_exists()? {
@@ -741,11 +756,12 @@ impl SnapshotRepository {
             });
         }
 
+        let snapshot_dir = self.snapshot_dir_path(tx_offset);
         let object_repo = Self::object_repo(&snapshot_dir)?;
 
         let blob_store = snapshot.reconstruct_blob_store(&object_repo)?;
 
-        let tables = snapshot.reconstruct_tables(&object_repo)?;
+        let tables = snapshot.reconstruct_tables(&object_repo, page_pool)?;
 
         Ok(ReconstructedSnapshot {
             database_identity: snapshot.database_identity,
@@ -756,6 +772,60 @@ impl SnapshotRepository {
             tables,
             compress_type,
         })
+    }
+
+    /// Read the [`Snapshot`] metadata at `tx_offset` and verify the integrity
+    /// of all objects it refers to.
+    ///
+    /// Fails if:
+    ///
+    /// - No snapshot exists in `self` for `tx_offset`
+    /// - The snapshot is incomplete, as detected by its lockfile still existing.
+    /// - The snapshot file's magic number does not match [`MAGIC`].
+    /// - Any object file (page or large blob) referenced by the snapshot file
+    ///   is missing or corrupted.
+    ///
+    /// The following conditions are not detected or considered as errors:
+    ///
+    /// - The snapshot file's version does not match [`CURRENT_SNAPSHOT_VERSION`].
+    /// - The snapshot file's database identity or instance ID do not match
+    ///   those in `self`.
+    /// - The snapshot file's module ABI version does not match
+    ///   [`CURRENT_MODULE_ABI_VERSION`].
+    /// - The snapshot file's recorded transaction offset does not match
+    ///   `tx_offset`.
+    ///
+    /// Callers may want to inspect the returned [`Snapshot`] and ensure its
+    /// contents match their expectations.
+    pub async fn verify_snapshot(&self, tx_offset: TxOffset) -> Result<Snapshot, SnapshotError> {
+        let snapshot_dir = self.snapshot_dir_path(tx_offset);
+        let snapshot = spawn_blocking({
+            let snapshot_dir = snapshot_dir.clone();
+            move || {
+                let lockfile = Lockfile::lock_path(&snapshot_dir);
+                if lockfile.try_exists()? {
+                    return Err(SnapshotError::Incomplete { tx_offset, lockfile });
+                }
+
+                let snapshot_file_path = snapshot_dir.snapshot_file(tx_offset);
+                let (snapshot, _compress_type) = Snapshot::read_from_file(&snapshot_file_path)?;
+
+                if snapshot.magic != MAGIC {
+                    return Err(SnapshotError::BadMagic {
+                        tx_offset,
+                        magic: snapshot.magic,
+                    });
+                }
+                Ok(snapshot)
+            }
+        })
+        .await
+        .unwrap()?;
+        let object_repo = Self::object_repo(&snapshot_dir)?;
+        verify_snapshot(object_repo, self.root.clone(), snapshot.clone())
+            .await
+            .map(drop)?;
+        Ok(snapshot)
     }
 
     /// Open a repository at `root`, failing if the `root` doesn't exist or isn't a directory.
@@ -804,9 +874,20 @@ impl SnapshotRepository {
             .filter(|path| path.extension() == Some(OsStr::new(SNAPSHOT_DIR_EXT)))
             // Ignore entries whose lockfile still exists.
             .filter(|path| !Lockfile::lock_path(path).exists())
-            // Parse each entry's TxOffset from the file name; ignore unparseable.
+            // Parse each entry's TxOffset from the file name; ignore unparsable.
+            // Also ignore if the snapshot file doesn't exists.
+            // This can happen on incomplete transfers, or if something went
+            // wrong during creation.
             // Item = TxOffset
-            .filter_map(|path| TxOffset::from_str_radix(path.file_stem()?.to_str()?, 10).ok()))
+            .filter_map(|path| {
+                let offset = TxOffset::from_str_radix(path.file_stem()?.to_str()?, 10).ok()?;
+                let snapshot_file = SnapshotDirPath::from_path_unchecked(path).snapshot_file(offset);
+                if !snapshot_file.0.exists() {
+                    None
+                } else {
+                    Some(offset)
+                }
+            }))
     }
 
     /// Return the `TxOffset` of the highest-offset complete snapshot in the repository.
@@ -1025,4 +1106,55 @@ pub struct ReconstructedSnapshot {
     pub tables: BTreeMap<TableId, Vec<Box<Page>>>,
     /// If the snapshot was compressed or not.
     pub compress_type: CompressType,
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs::OpenOptions;
+
+    use tempfile::tempdir;
+
+    use super::*;
+
+    #[test]
+    fn listing_ignores_if_snapshot_file_is_missing() -> anyhow::Result<()> {
+        let tmp = tempdir()?;
+
+        let root = SnapshotsPath::from_path_unchecked(tmp.path());
+        let repo = SnapshotRepository::open(root, Identity::ZERO, 42)?;
+        for i in 0..10 {
+            repo.snapshot_dir_path(i).create()?;
+        }
+        repo.snapshot_dir_path(5)
+            .snapshot_file(5)
+            .open_file(OpenOptions::new().write(true).create_new(true))
+            .map(drop)?;
+
+        assert_eq!(vec![5], repo.all_snapshots()?.collect::<Vec<_>>());
+
+        Ok(())
+    }
+
+    #[test]
+    fn listing_ignores_if_lockfile_exists() -> anyhow::Result<()> {
+        let tmp = tempdir()?;
+
+        let root = SnapshotsPath::from_path_unchecked(tmp.path());
+        let repo = SnapshotRepository::open(root, Identity::ZERO, 42)?;
+        for i in 0..10 {
+            let snapshot_dir = repo.snapshot_dir_path(i);
+            snapshot_dir.create()?;
+            snapshot_dir
+                .snapshot_file(i)
+                .open_file(OpenOptions::new().write(true).create_new(true))
+                .map(drop)?;
+        }
+        let _lock = Lockfile::for_file(repo.snapshot_dir_path(5))?;
+
+        let mut snapshots = repo.all_snapshots()?.collect::<Vec<_>>();
+        snapshots.sort();
+        assert_eq!(vec![0, 1, 2, 3, 4, 6, 7, 8, 9], snapshots);
+
+        Ok(())
+    }
 }

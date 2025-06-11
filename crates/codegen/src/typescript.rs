@@ -1,5 +1,5 @@
-use crate::generate::util::{is_reducer_invokable, iter_reducers, iter_tables, iter_types, iter_unique_cols};
 use crate::indent_scope;
+use crate::util::{is_reducer_invokable, iter_reducers, iter_tables, iter_types, iter_unique_cols};
 
 use super::util::{collect_case, print_auto_generated_file_comment, type_ref_name};
 
@@ -16,7 +16,7 @@ use spacetimedb_schema::type_for_generate::{AlgebraicTypeDef, AlgebraicTypeUse, 
 
 use super::code_indenter::{CodeIndenter, Indenter};
 use super::Lang;
-use std::path::PathBuf;
+use spacetimedb_lib::version::spacetimedb_lib_version;
 
 type Imports = BTreeSet<AlgebraicTypeRef>;
 
@@ -39,11 +39,6 @@ impl Lang for TypeScript {
 
     fn reducer_filename(&self, reducer_name: &Identifier) -> String {
         reducer_module_name(reducer_name) + ".ts"
-    }
-
-    fn format_files(&self, _generated_files: BTreeSet<PathBuf>) -> anyhow::Result<()> {
-        // TODO: implement formatting.
-        Ok(())
     }
 
     fn generate_type(&self, module: &ModuleDef, typ: &TypeDef) -> String {
@@ -110,7 +105,7 @@ impl Lang for TypeScript {
 
         writeln!(
             out,
-            "import {{ EventContext, Reducer, RemoteReducers, RemoteTables }} from \".\";"
+            "import {{ type EventContext, type Reducer, RemoteReducers, RemoteTables }} from \".\";"
         );
 
         let table_name = table.name.deref();
@@ -157,7 +152,7 @@ export class {table_handle} {{
         for (unique_field_ident, unique_field_type_use) in
             iter_unique_cols(module.typespace_for_generate(), &schema, product_def)
         {
-            let unique_field_name = unique_field_ident.deref().to_case(Case::Snake);
+            let unique_field_name = unique_field_ident.deref().to_case(Case::Camel);
             let unique_field_name_pascalcase = unique_field_name.to_case(Case::Pascal);
 
             let unique_constraint = table_name_pascalcase.clone() + &unique_field_name_pascalcase + "Unique";
@@ -325,7 +320,22 @@ removeOnUpdate = (cb: (ctx: EventContext, onRow: {row_type}, newRow: {row_type})
             writeln!(out, "tableName: \"{}\",", table.name);
             writeln!(out, "rowType: {row_type}.getTypeScriptAlgebraicType(),");
             if let Some(pk) = schema.pk() {
+                // This is left here so we can release the codegen change before releasing a new
+                // version of the SDK.
+                //
+                // Eventually we can remove this and only generate use the `primaryKeyInfo` field.
                 writeln!(out, "primaryKey: \"{}\",", pk.col_name.to_string().to_case(Case::Camel));
+
+                writeln!(out, "primaryKeyInfo: {{");
+                out.indent(1);
+                writeln!(out, "colName: \"{}\",", pk.col_name.to_string().to_case(Case::Camel));
+                writeln!(
+                    out,
+                    "colType: {row_type}.getTypeScriptAlgebraicType().product.elements[{}].algebraicType,",
+                    pk.col_pos.0
+                );
+                out.dedent(1);
+                writeln!(out, "}},");
             }
             out.dedent(1);
             writeln!(out, "}},");
@@ -346,6 +356,11 @@ removeOnUpdate = (cb: (ctx: EventContext, onRow: {row_type}, newRow: {row_type})
             out.dedent(1);
             writeln!(out, "}},");
         }
+        out.dedent(1);
+        writeln!(out, "}},");
+        writeln!(out, "versionInfo: {{");
+        out.indent(1);
+        writeln!(out, "cliVersion: \"{}\",", spacetimedb_lib_version());
         out.dedent(1);
         writeln!(out, "}},");
         writeln!(
@@ -423,10 +438,6 @@ setReducerFlagsConstructor: () => {{
         );
 
         vec![("index.ts".to_string(), (output.into_inner()))]
-    }
-
-    fn clap_value() -> clap::builder::PossibleValue {
-        clap::builder::PossibleValue::new("typescript").aliases(["ts", "TS"])
     }
 }
 
@@ -625,16 +636,16 @@ fn print_spacetimedb_imports(out: &mut Indenter) {
         "DbConnectionBuilder",
         "TableCache",
         "BinaryWriter",
-        "CallReducerFlags",
-        "EventContextInterface",
-        "ReducerEventContextInterface",
-        "SubscriptionEventContextInterface",
-        "ErrorContextInterface",
+        "type CallReducerFlags",
+        "type EventContextInterface",
+        "type ReducerEventContextInterface",
+        "type SubscriptionEventContextInterface",
+        "type ErrorContextInterface",
         "SubscriptionBuilderImpl",
         "BinaryReader",
         "DbConnectionImpl",
-        "DbContext",
-        "Event",
+        "type DbContext",
+        "type Event",
         "deepEqual",
     ];
     types.sort();
@@ -956,6 +967,29 @@ pub fn type_name(module: &ModuleDef, ty: &AlgebraicTypeUse) -> String {
     s
 }
 
+// This should return true if we should wrap the type in parentheses when it is the element type of
+// an array. This is needed if the type has a `|` in it, e.g. `Option<T>` or `Foo | Bar`, since
+// without parens, `Foo | Bar[]` would be parsed as `Foo | (Bar[])`.
+fn needs_parens_within_array(ty: &AlgebraicTypeUse) -> bool {
+    match ty {
+        AlgebraicTypeUse::Unit
+        | AlgebraicTypeUse::Never
+        | AlgebraicTypeUse::Identity
+        | AlgebraicTypeUse::ConnectionId
+        | AlgebraicTypeUse::Timestamp
+        | AlgebraicTypeUse::TimeDuration
+        | AlgebraicTypeUse::Primitive(_)
+        | AlgebraicTypeUse::Array(_)
+        | AlgebraicTypeUse::Ref(_) // We use the type name for these.
+        | AlgebraicTypeUse::String => {
+            false
+        }
+        AlgebraicTypeUse::ScheduleAt | AlgebraicTypeUse::Option(_) => {
+            true
+        }
+    }
+}
+
 pub fn write_type<W: Write>(
     module: &ModuleDef,
     out: &mut W,
@@ -999,7 +1033,15 @@ pub fn write_type<W: Write>(
             if matches!(&**elem_ty, AlgebraicTypeUse::Primitive(PrimitiveType::U8)) {
                 return write!(out, "Uint8Array");
             }
+            let needs_parens = needs_parens_within_array(elem_ty);
+            // We wrap the inner type in parentheses to avoid ambiguity with the [] binding.
+            if needs_parens {
+                write!(out, "(")?;
+            }
             write_type(module, out, elem_ty, ref_prefix)?;
+            if needs_parens {
+                write!(out, ")")?;
+            }
             write!(out, "[]")?;
         }
         AlgebraicTypeUse::Ref(r) => {

@@ -1,11 +1,12 @@
-use std::time::Duration;
-
 use crate::execution_context::WorkloadType;
 use crate::hash::Hash;
 use once_cell::sync::Lazy;
 use prometheus::{GaugeVec, HistogramVec, IntCounterVec, IntGaugeVec};
 use spacetimedb_lib::{ConnectionId, Identity};
 use spacetimedb_metrics::metrics_group;
+use spacetimedb_table::{page_pool::PagePool, MemoryUsage};
+use std::{sync::Once, time::Duration};
+use tokio::{spawn, time::sleep};
 
 metrics_group!(
     pub struct WorkerMetrics {
@@ -14,14 +15,24 @@ metrics_group!(
         #[labels(database_identity: Identity)]
         pub connected_clients: IntGaugeVec,
 
+        #[name = spacetime_worker_ws_clients_spawned]
+        #[help = "Number of new ws client connections spawned. Counted after any on_connect reducers are run."]
+        #[labels(database_identity: Identity)]
+        pub ws_clients_spawned: IntGaugeVec,
+
+        #[name = spacetime_worker_ws_clients_aborted]
+        #[help = "Number of ws client connections aborted"]
+        #[labels(database_identity: Identity)]
+        pub ws_clients_aborted: IntGaugeVec,
+
         #[name = spacetime_websocket_requests_total]
         #[help = "The cumulative number of websocket request messages"]
-        #[labels(replica_id: u64, protocol: str)]
+        #[labels(database_identity: Identity, protocol: str)]
         pub websocket_requests: IntCounterVec,
 
         #[name = spacetime_websocket_request_msg_size]
         #[help = "The size of messages received on connected sessions"]
-        #[labels(replica_id: u64, protocol: str)]
+        #[labels(database_identity: Identity, protocol: str)]
         pub websocket_request_msg_size: HistogramVec,
 
         #[name = jemalloc_active_bytes]
@@ -38,6 +49,31 @@ metrics_group!(
         #[help = "Total memory used by jemalloc"]
         #[labels(node_id: str)]
         pub jemalloc_resident_bytes: IntGaugeVec,
+
+        #[name = page_pool_resident_bytes]
+        #[help = "Total memory used by the page pool"]
+        #[labels(node_id: str)]
+        pub page_pool_resident_bytes: IntGaugeVec,
+
+        #[name = page_pool_dropped_pages]
+        #[help = "Total number of pages dropped by the page pool"]
+        #[labels(node_id: str)]
+        pub page_pool_dropped_pages: IntGaugeVec,
+
+        #[name = page_pool_new_pages_allocated]
+        #[help = "Total number of fresh pages allocated by the page pool"]
+        #[labels(node_id: str)]
+        pub page_pool_new_pages_allocated: IntGaugeVec,
+
+        #[name = page_pool_pages_reused]
+        #[help = "Total number of pages reused by the page pool"]
+        #[labels(node_id: str)]
+        pub page_pool_pages_reused: IntGaugeVec,
+
+        #[name = page_pool_pages_returned]
+        #[help = "Total number of pages returned to the page pool"]
+        #[labels(node_id: str)]
+        pub page_pool_pages_returned: IntGaugeVec,
 
         #[name = tokio_num_workers]
         #[help = "Number of core tokio workers"]
@@ -221,6 +257,21 @@ metrics_group!(
         #[help = "The cumulative number of bytes sent to clients"]
         #[labels(txn_type: WorkloadType, db: Identity)]
         pub bytes_sent_to_clients: IntCounterVec,
+
+        #[name = spacetime_subscription_send_queue_length]
+        #[help = "The number of `ComputedQueries` waiting in the queue to be aggregated and broadcast by the `send_worker`"]
+        #[labels(database_identity: Identity)]
+        pub subscription_send_queue_length: IntGaugeVec,
+
+        #[name = spacetime_total_incoming_queue_length]
+        #[help = "The number of client -> server WebSocket messages waiting any client's incoming queue"]
+        #[labels(db: Identity)]
+        pub total_incoming_queue_length: IntGaugeVec,
+
+        #[name = spacetime_total_outgoing_queue_length]
+        #[help = "The number of server -> client WebSocket messages waiting in any client's outgoing queue"]
+        #[labels(db: Identity)]
+        pub total_outgoing_queue_length: IntGaugeVec,
     }
 );
 
@@ -229,31 +280,50 @@ pub static WORKER_METRICS: Lazy<WorkerMetrics> = Lazy::new(WorkerMetrics::new);
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemalloc_ctl::{epoch, stats};
 
-use std::sync::Once;
-use tokio::{spawn, time::sleep};
+#[cfg(not(target_env = "msvc"))]
 static SPAWN_JEMALLOC_GUARD: Once = Once::new();
-pub fn spawn_jemalloc_stats(node_id: String) {
+pub fn spawn_jemalloc_stats(_node_id: String) {
     #[cfg(not(target_env = "msvc"))]
     SPAWN_JEMALLOC_GUARD.call_once(|| {
         spawn(async move {
+            let allocated_bytes = WORKER_METRICS.jemalloc_allocated_bytes.with_label_values(&_node_id);
+            let resident_bytes = WORKER_METRICS.jemalloc_resident_bytes.with_label_values(&_node_id);
+            let active_bytes = WORKER_METRICS.jemalloc_active_bytes.with_label_values(&_node_id);
+
             let e = epoch::mib().unwrap();
             loop {
                 e.advance().unwrap();
+
                 let allocated = stats::allocated::read().unwrap();
-                WORKER_METRICS
-                    .jemalloc_allocated_bytes
-                    .with_label_values(&node_id)
-                    .set(allocated as i64);
                 let resident = stats::resident::read().unwrap();
-                WORKER_METRICS
-                    .jemalloc_resident_bytes
-                    .with_label_values(&node_id)
-                    .set(resident as i64);
                 let active = stats::active::read().unwrap();
-                WORKER_METRICS
-                    .jemalloc_active_bytes
-                    .with_label_values(&node_id)
-                    .set(active as i64);
+
+                allocated_bytes.set(allocated as i64);
+                resident_bytes.set(resident as i64);
+                active_bytes.set(active as i64);
+
+                sleep(Duration::from_secs(10)).await;
+            }
+        });
+    });
+}
+
+static SPAWN_PAGE_POOL_GUARD: Once = Once::new();
+pub fn spawn_page_pool_stats(node_id: String, page_pool: PagePool) {
+    SPAWN_PAGE_POOL_GUARD.call_once(|| {
+        spawn(async move {
+            let resident_bytes = WORKER_METRICS.page_pool_resident_bytes.with_label_values(&node_id);
+            let dropped_pages = WORKER_METRICS.page_pool_dropped_pages.with_label_values(&node_id);
+            let new_pages = WORKER_METRICS.page_pool_new_pages_allocated.with_label_values(&node_id);
+            let reused_pages = WORKER_METRICS.page_pool_pages_reused.with_label_values(&node_id);
+            let returned_pages = WORKER_METRICS.page_pool_pages_returned.with_label_values(&node_id);
+
+            loop {
+                resident_bytes.set(page_pool.heap_usage() as i64);
+                dropped_pages.set(page_pool.dropped_pages_count() as i64);
+                new_pages.set(page_pool.new_pages_allocated_count() as i64);
+                reused_pages.set(page_pool.pages_reused_count() as i64);
+                returned_pages.set(page_pool.pages_reused_count() as i64);
 
                 sleep(Duration::from_secs(10)).await;
             }

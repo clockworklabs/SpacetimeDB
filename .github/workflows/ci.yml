@@ -60,8 +60,8 @@ jobs:
         with: { python-version: '3.12' }
         if: runner.os == 'Windows'
       - name: Run smoketests
-        # Note: clear_database only works in private
-        run: python -m smoketests ${{ matrix.smoketest_args }} -x clear_database
+        # Note: clear_database and replication only work in private
+        run: python -m smoketests ${{ matrix.smoketest_args }} -x clear_database replication
       - name: Stop containers (Linux)
         if: always() && runner.os == 'Linux'
         run: docker compose down
@@ -102,12 +102,12 @@ jobs:
         run: cargo test --all
 
       - name: Check that the test outputs are up-to-date
-        run: git diff --exit-code
+        run: bash tools/check-diff.sh
 
       - name: Ensure C# autogen bindings are up-to-date
         run: |
-          cargo run --example regen-csharp-moduledef
-          git diff --exit-code -- crates/bindings-csharp
+          cargo run -p spacetimedb-codegen --example regen-csharp-moduledef
+          bash tools/check-diff.sh crates/bindings-csharp
 
       - name: C# bindings tests
         working-directory: crates/bindings-csharp
@@ -213,8 +213,82 @@ jobs:
       - uses: dsherret/rust-toolchain-file@v1
       - run: echo ::add-matcher::.github/workflows/rust_matcher.json
 
+      # Make sure the `Cargo.lock` file reflects the latest available versions.
+      # This is what users would end up with on a fresh module, so we want to
+      # catch any compile errors arising from a different transitive closure
+      # of dependencies than what is in the workspace lock file.
+      #
+      # For context see also: https://github.com/clockworklabs/SpacetimeDB/pull/2714
+      - name: Update dependencies
+        run: cargo update
+
       - name: Build module-test
         run: cargo run -p spacetimedb-cli -- build --project-path modules/module-test
 
       - name: Run bindgen tests
-        run: cargo test -p spacetimedb-cli
+        run: cargo test -p spacetimedb-codegen
+
+  publish_checks:
+    name: Check that packages are publishable
+    runs-on: ubuntu-latest
+    permissions: read-all
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python env
+        run: |
+          test -d venv || python3 -m venv venv
+          venv/bin/pip3 install argparse toml
+      - name: Run checks
+        run: |
+          FAILED=0
+          # This definition of ROOTS and invocation of find-publish-list.py is copied from publish-crates.sh
+          ROOTS=(bindings sdk cli standalone)
+          for crate in $(venv/bin/python3 tools/find-publish-list.py --recursive --quiet "${ROOTS[@]}"); do
+            if ! venv/bin/python3 tools/crate-publish-checks.py "crates/$crate"; then
+              FAILED=$(( $FAILED + 1 ))
+            fi
+          done
+          if [ $FAILED -gt 0 ]; then
+            exit 1
+          fi
+
+  update:
+    name: Test spacetimedb-update flow
+    permissions: read-all
+    strategy:
+      matrix:
+        include:
+          - { target: x86_64-unknown-linux-gnu, runner: spacetimedb-runner }
+          - { target: aarch64-unknown-linux-gnu, runner: arm-runner }
+          - { target: aarch64-apple-darwin, runner: macos-latest }
+          - { target: x86_64-pc-windows-msvc, runner: windows-latest }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Install Rust
+        uses: dsherret/rust-toolchain-file@v1
+
+      - name: Install rust target
+        run: rustup target add ${{ matrix.target }}
+
+      - name: Install packages
+        if: ${{ matrix.runner == 'arm-runner' }}
+        shell: bash
+        run: sudo apt install libssl-dev
+
+      - name: Build spacetimedb-update
+        run: cargo build --features github-token-auth --target ${{ matrix.target }} -p spacetimedb-update
+
+      - name: Run self-install
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          ROOT_DIR="$(mktemp -d)"
+          # NOTE(bfops): We need the `github-token-auth` feature because we otherwise tend to get ratelimited when we try to fetch `/releases/latest`.
+          # My best guess is that, on the GitHub runners, the "anonymous" ratelimit is shared by *all* users of that runner (I think this because it
+          # happens very frequently on the `macos-runner`, but we haven't seen it on any others).
+          cargo run --features github-token-auth --target ${{ matrix.target }} -p spacetimedb-update -- self-install --root-dir="${ROOT_DIR}" --yes
+          "${ROOT_DIR}"/spacetime --root-dir="${ROOT_DIR}" help

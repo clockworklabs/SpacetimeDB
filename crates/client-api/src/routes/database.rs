@@ -1,3 +1,4 @@
+use std::num::NonZeroU8;
 use std::str::FromStr;
 use std::time::Duration;
 
@@ -123,7 +124,7 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
                     StatusCode::NOT_FOUND
                 }
                 ReducerCallError::LifecycleReducer(lifecycle) => {
-                    log::debug!("Attempt to call {lifecycle:?} lifeycle reducer {}", reducer);
+                    log::debug!("Attempt to call {lifecycle:?} lifecycle reducer {}", reducer);
                     StatusCode::BAD_REQUEST
                 }
             };
@@ -471,6 +472,7 @@ pub struct PublishDatabaseParams {
 pub struct PublishDatabaseQueryParams {
     #[serde(default)]
     clear: bool,
+    num_replicas: Option<usize>,
 }
 
 use std::env;
@@ -498,7 +500,7 @@ fn allow_creation(auth: &SpacetimeAuth) -> Result<(), ErrorResponse> {
 pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
     State(ctx): State<S>,
     Path(PublishDatabaseParams { name_or_identity }): Path<PublishDatabaseParams>,
-    Query(PublishDatabaseQueryParams { clear }): Query<PublishDatabaseQueryParams>,
+    Query(PublishDatabaseQueryParams { clear, num_replicas }): Query<PublishDatabaseQueryParams>,
     Extension(auth): Extension<SpacetimeAuth>,
     body: Bytes,
 ) -> axum::response::Result<axum::Json<PublishResult>> {
@@ -572,13 +574,21 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
         }
     };
 
+    let num_replicas = num_replicas
+        .map(|n| {
+            let n = u8::try_from(n).map_err(|_| (StatusCode::BAD_REQUEST, "Replication factor {n} out of bounds"))?;
+            Ok::<_, ErrorResponse>(NonZeroU8::new(n))
+        })
+        .transpose()?
+        .flatten();
+
     let maybe_updated = ctx
         .publish_database(
             &auth.identity,
             DatabaseDef {
                 database_identity,
                 program_bytes: body.into(),
-                num_replicas: 1,
+                num_replicas,
                 host_type: HostType::Wasm,
             },
         )

@@ -367,8 +367,8 @@ unsafe impl ReadColumn for SumTag {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::blob_store::HashMapBlobStore;
     use crate::table::test::table;
+    use crate::{blob_store::HashMapBlobStore, page_pool::PagePool};
     use proptest::{prelude::*, prop_assert_eq, proptest, test_runner::TestCaseResult};
     use spacetimedb_sats::{product, proptest::generate_typed_row};
 
@@ -382,10 +382,11 @@ mod test {
         /// inserting the row, then doing `AlgebraicValue::read_column` on each column of the row
         /// returns the expected value.
         fn read_column_same_value((ty, val) in generate_typed_row()) {
+            let pool = PagePool::new_for_test();
             let mut blob_store = HashMapBlobStore::default();
             let mut table = table(ty);
 
-            let (_, row_ref) = table.insert(&mut blob_store, &val).unwrap();
+            let (_, row_ref) = table.insert(&pool, &mut blob_store, &val).unwrap();
 
             for (idx, orig_col_value) in val.into_iter().enumerate() {
                 let read_col_value = row_ref.read_col::<AlgebraicValue>(idx).unwrap();
@@ -398,10 +399,11 @@ mod test {
         /// which does not match the actual column type
         /// returns an appropriate error.
         fn read_column_wrong_type((ty, val) in generate_typed_row()) {
+            let pool = PagePool::new_for_test();
             let mut blob_store = HashMapBlobStore::default();
             let mut table = table(ty.clone());
 
-            let (_, row_ref) = table.insert(&mut blob_store, &val).unwrap();
+            let (_, row_ref) = table.insert(&pool, &mut blob_store, &val).unwrap();
 
             for (idx, col_ty) in ty.elements.iter().enumerate() {
                 assert_wrong_type_error::<u8>(row_ref, idx, &col_ty.algebraic_type, AlgebraicType::U8)?;
@@ -428,10 +430,11 @@ mod test {
         /// i.e. with an out-of-bounds index,
         /// returns an appropriate error.
         fn read_column_out_of_bounds((ty, val) in generate_typed_row()) {
+            let pool = PagePool::new_for_test();
             let mut blob_store = HashMapBlobStore::default();
             let mut table = table(ty.clone());
 
-            let (_, row_ref) = table.insert(&mut blob_store, &val).unwrap();
+            let (_, row_ref) = table.insert(&pool, &mut blob_store, &val).unwrap();
 
             let oob = ty.elements.len();
 
@@ -485,11 +488,12 @@ mod test {
         ($name:ident { $algebraic_type:expr => $rust_type:ty = $val:expr }) => {
             #[test]
             fn $name() {
+                let pool = PagePool::new_for_test();
                 let mut blob_store = HashMapBlobStore::default();
                 let mut table = table(ProductType::from_iter([$algebraic_type]));
 
                 let val: $rust_type = $val;
-                let (_, row_ref) = table.insert(&mut blob_store, &product![val.clone()]).unwrap();
+                let (_, row_ref) = table.insert(&pool, &mut blob_store, &product![val.clone()]).unwrap();
 
                 assert_eq!(val, row_ref.read_col::<$rust_type>(0).unwrap());
             }
@@ -546,11 +550,12 @@ mod test {
     fn read_sum_tag_from_sum_with_payload() {
         let algebraic_type = AlgebraicType::sum([("a", AlgebraicType::U8), ("b", AlgebraicType::U16)]);
 
+        let pool = PagePool::new_for_test();
         let mut blob_store = HashMapBlobStore::default();
         let mut table = table(ProductType::from([algebraic_type]));
 
         let val = SumValue::new(1, 42u16);
-        let (_, row_ref) = table.insert(&mut blob_store, &product![val.clone()]).unwrap();
+        let (_, row_ref) = table.insert(&pool, &mut blob_store, &product![val.clone()]).unwrap();
 
         assert_eq!(val.tag, row_ref.read_col::<SumTag>(0).unwrap().0);
     }

@@ -3,6 +3,7 @@ use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::{ops::RangeBounds, sync::Arc};
 
+use super::locking_tx_datastore::datastore::TxMetrics;
 use super::system_tables::ModuleKind;
 use super::Result;
 use crate::db::datastore::system_tables::ST_TABLE_ID;
@@ -165,6 +166,9 @@ pub enum IsolationLevel {
 }
 
 /// A record of all the operations within a transaction.
+///
+/// Some extra information is embedded here
+/// so that the recording of execution metrics can be done without holding the tx lock.
 #[derive(Default)]
 pub struct TxData {
     /// The inserted rows per table.
@@ -214,6 +218,11 @@ impl TxData {
         self.inserts.iter()
     }
 
+    /// Get the `i`th inserted row for `table_id` if it exists
+    pub fn get_ith_insert(&self, table_id: TableId, i: usize) -> Option<&ProductValue> {
+        self.inserts.get(&table_id).and_then(|rows| rows.get(i))
+    }
+
     /// Obtain an iterator over the inserted rows per table.
     ///
     /// If you don't need access to the table name, [`Self::inserts`] is
@@ -231,6 +240,11 @@ impl TxData {
     /// Obtain an iterator over the deleted rows per table.
     pub fn deletes(&self) -> impl Iterator<Item = (&TableId, &Arc<[ProductValue]>)> + '_ {
         self.deletes.iter()
+    }
+
+    /// Get the `i`th deleted row for `table_id` if it exists
+    pub fn get_ith_delete(&self, table_id: TableId, i: usize) -> Option<&ProductValue> {
+        self.deletes.get(&table_id).and_then(|rows| rows.get(i))
     }
 
     /// Obtain an iterator over the inserted rows per table.
@@ -257,6 +271,16 @@ impl TxData {
                 reducer_context.map(|rcx| rcx.name.strip_prefix("__identity_")),
                 Some(Some("connected__" | "disconnected__"))
             )
+    }
+
+    /// Returns a list of tables affected in this transaction.
+    pub fn table_ids_and_names(&self) -> impl '_ + Iterator<Item = (TableId, &str)> {
+        self.tables.iter().map(|(k, v)| (*k, &**v))
+    }
+
+    /// Returns the number o tables affected in this transaction.
+    pub fn num_tables_affected(&self) -> usize {
+        self.tables.len()
     }
 }
 
@@ -297,16 +321,37 @@ pub trait DataRow: Send + Sync {
 pub trait Tx {
     type Tx;
 
+    /// Begins a read-only transaction under the given `workload`.
     fn begin_tx(&self, workload: Workload) -> Self::Tx;
-    fn release_tx(&self, tx: Self::Tx);
+
+    /// Release this read-only transaction.
+    ///
+    /// Returns:
+    /// - [`TxMetrics`], various measurements of the work performed by this transaction.
+    /// - `String`, the name of the reducer which ran within this transaction.
+    fn release_tx(&self, tx: Self::Tx) -> (TxMetrics, String);
 }
 
 pub trait MutTx {
     type MutTx;
 
+    /// Begins a mutable transaction under the given `isolation_level` and `workload`.
     fn begin_mut_tx(&self, isolation_level: IsolationLevel, workload: Workload) -> Self::MutTx;
-    fn commit_mut_tx(&self, tx: Self::MutTx) -> Result<Option<TxData>>;
-    fn rollback_mut_tx(&self, tx: Self::MutTx);
+
+    /// Commits `tx`, applying its changes to the committed state.
+    ///
+    /// Returns:
+    /// - [`TxData`], the set of inserts and deletes performed by this transaction.
+    /// - [`TxMetrics`], various measurements of the work performed by this transaction.
+    /// - `String`, the name of the reducer which ran during this transaction.
+    fn commit_mut_tx(&self, tx: Self::MutTx) -> Result<Option<(TxData, TxMetrics, String)>>;
+
+    /// Rolls back this transaction, discarding its changes.
+    ///
+    /// Returns:
+    /// - [`TxMetrics`], various measurements of the work performed by this transaction.
+    /// - `String`, the name of the reducer which ran within this transaction.
+    fn rollback_mut_tx(&self, tx: Self::MutTx) -> (TxMetrics, String);
 }
 
 /// Standard metadata associated with a database.

@@ -8,7 +8,9 @@ use crate::host::module_host::{DatabaseTableUpdate, DatabaseTableUpdateRelValue,
 use crate::messages::websocket::TableUpdate;
 use crate::util::slow::SlowQueryLogger;
 use crate::vm::{build_query, TxMode};
-use spacetimedb_client_api_messages::websocket::{Compression, QueryUpdate, RowListLen as _, WebsocketFormat};
+use spacetimedb_client_api_messages::websocket::{
+    Compression, QueryUpdate, RowListLen as _, SingleQueryUpdate, WebsocketFormat,
+};
 use spacetimedb_lib::db::error::AuthError;
 use spacetimedb_lib::relation::DbTable;
 use spacetimedb_lib::{Identity, ProductValue};
@@ -37,7 +39,7 @@ use std::time::Duration;
 /// as is the case for incremental joins.
 /// And we want to associate a hash with the entire unit of execution,
 /// rather than an individual plan.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct QueryHash {
     data: [u8; 32],
 }
@@ -49,7 +51,14 @@ impl From<QueryHash> for u256 {
 }
 
 impl QueryHash {
+    /// The zero value of a QueryHash
     pub const NONE: Self = Self { data: [0; 32] };
+
+    /// The min value of a QueryHash
+    pub const MIN: Self = Self::NONE;
+
+    /// The max value of a QueryHash
+    pub const MAX: Self = Self { data: [0xFFu8; 32] };
 
     pub fn from_bytes(bytes: &[u8]) -> Self {
         Self {
@@ -123,7 +132,7 @@ impl PartialEq for ExecutionUnit {
 impl From<SupportedQuery> for ExecutionUnit {
     // Used in tests and benches.
     // TODO(bikeshedding): Remove this impl,
-    // in favor of more explcit calls to `ExecutionUnit::new` with `QueryHash::NONE`.
+    // in favor of more explicit calls to `ExecutionUnit::new` with `QueryHash::NONE`.
     fn from(plan: SupportedQuery) -> Self {
         Self::new(plan, QueryHash::NONE).unwrap()
     }
@@ -247,7 +256,11 @@ impl ExecutionUnit {
             let deletes = F::List::default();
             let qu = QueryUpdate { deletes, inserts };
             let update = F::into_query_update(qu, compression);
-            TableUpdate::new(self.return_table(), self.return_name(), (update, num_rows))
+            TableUpdate::new(
+                self.return_table(),
+                self.return_name(),
+                SingleQueryUpdate { update, num_rows },
+            )
         })
     }
 

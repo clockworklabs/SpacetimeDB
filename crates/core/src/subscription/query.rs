@@ -12,11 +12,22 @@ use spacetimedb_vm::expr::{self, Crud, CrudExpr, QueryExpr};
 use super::execution_unit::QueryHash;
 use super::module_subscription_manager::Plan;
 
-pub(crate) static WHITESPACE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\s+").unwrap());
-pub const SUBSCRIBE_TO_ALL_QUERY: &str = "SELECT * FROM *";
+static WHITESPACE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^\s*$").unwrap());
+static SUBSCRIBE_TO_ALL_TABLES_REGEX: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"^\s*(?i)\bSELECT\s+\*\s+FROM\s+\*\s*$").unwrap());
+
+/// Is this string all whitespace?
+pub fn is_whitespace_or_empty(sql: &str) -> bool {
+    WHITESPACE.is_match_at(sql, 0)
+}
+
+/// Is this a `SELECT * FROM *` query?
+pub fn is_subscribe_to_all_tables(sql: &str) -> bool {
+    SUBSCRIBE_TO_ALL_TABLES_REGEX.is_match_at(sql, 0)
+}
 
 // TODO: Remove this after the SubscribeSingle migration.
-// TODO: It's semantically wrong to `SUBSCRIBE_TO_ALL_QUERY`
+// TODO: It's semantically wrong to `SELECT * FROM *`
 // as it can only return back the changes valid for the tables in scope *right now*
 // instead of **continuously updating** the db changes
 // with system table modifications (add/remove tables, indexes, ...).
@@ -70,19 +81,36 @@ pub fn compile_read_only_queryset(
 /// Compile a string into a single read-only query.
 /// This returns an error if the string has multiple queries or mutations.
 pub fn compile_read_only_query(auth: &AuthCtx, tx: &Tx, input: &str) -> Result<Plan, DBError> {
-    let input = input.trim();
-    if input.is_empty() {
+    if is_whitespace_or_empty(input) {
         return Err(SubscriptionError::Empty.into());
     }
 
-    // Remove redundant whitespace, and in particular newlines, for debug info.
-    let input = WHITESPACE.replace_all(input, " ");
+    let tx = SchemaViewer::new(tx, auth);
+    let (plans, has_param) = SubscriptionPlan::compile(input, &tx, auth)?;
+    let hash = QueryHash::from_string(input, auth.caller, has_param);
+    Ok(Plan::new(plans, hash, input.to_owned()))
+}
+
+/// Compile a string into a single read-only query.
+/// This returns an error if the string has multiple queries or mutations.
+pub fn compile_query_with_hashes(
+    auth: &AuthCtx,
+    tx: &Tx,
+    input: &str,
+    hash: QueryHash,
+    hash_with_param: QueryHash,
+) -> Result<Plan, DBError> {
+    if is_whitespace_or_empty(input) {
+        return Err(SubscriptionError::Empty.into());
+    }
 
     let tx = SchemaViewer::new(tx, auth);
-    let (plans, has_param) = SubscriptionPlan::compile(&input, &tx, auth)?;
-    let hash = QueryHash::from_string(&input, auth.caller, has_param);
+    let (plans, has_param) = SubscriptionPlan::compile(input, &tx, auth)?;
 
-    Ok(Plan::new(plans, hash, input.into_owned()))
+    if has_param {
+        return Ok(Plan::new(plans, hash_with_param, input.to_owned()));
+    }
+    Ok(Plan::new(plans, hash, input.to_owned()))
 }
 
 /// The kind of [`QueryExpr`] currently supported for incremental evaluation.
@@ -114,13 +142,15 @@ pub fn classify(expr: &QueryExpr) -> Option<Supported> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::datastore::traits::IsolationLevel;
-    use crate::db::relational_db::tests_utils::{insert, TestDB};
+    use crate::db::relational_db::tests_utils::{
+        begin_mut_tx, begin_tx, insert, with_auto_commit, with_read_only, TestDB,
+    };
     use crate::db::relational_db::MutTx;
     use crate::execution_context::Workload;
     use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdate, UpdatesRelValue};
     use crate::sql::execute::collect_result;
     use crate::sql::execute::tests::run_for_testing;
+    use crate::subscription::module_subscription_manager::QueriedTableIndexIds;
     use crate::subscription::subscription::{legacy_get_all, ExecutionSet};
     use crate::subscription::tx::DeltaTx;
     use crate::vm::tests::create_table_with_rows;
@@ -352,6 +382,25 @@ mod tests {
     }
 
     #[test]
+    fn test_whitespace_regex() -> ResultTest<()> {
+        assert!(is_whitespace_or_empty(""));
+        assert!(is_whitespace_or_empty(" "));
+        assert!(is_whitespace_or_empty("\n \t"));
+        assert!(!is_whitespace_or_empty(" a"));
+        Ok(())
+    }
+
+    #[test]
+    fn test_subscribe_to_all_tables_regex() -> ResultTest<()> {
+        assert!(is_subscribe_to_all_tables("SELECT * FROM *"));
+        assert!(is_subscribe_to_all_tables("Select * From *"));
+        assert!(is_subscribe_to_all_tables("select * from *"));
+        assert!(is_subscribe_to_all_tables("\nselect *\nfrom * "));
+        assert!(!is_subscribe_to_all_tables("select * from * where"));
+        Ok(())
+    }
+
+    #[test]
     fn test_compile_incr_plan() -> ResultTest<()> {
         let db = TestDB::durable()?;
 
@@ -360,7 +409,7 @@ mod tests {
         db.create_table_for_test("a", schema, indexes)?;
         db.create_table_for_test("b", schema, indexes)?;
 
-        let tx = db.begin_tx(Workload::ForTests);
+        let tx = begin_tx(&db);
         let sql = "SELECT b.* FROM b JOIN a ON b.n = a.n WHERE b.data > 200";
         let result = compile_read_only_query(&AuthCtx::for_testing(), &tx, sql);
         assert!(result.is_ok());
@@ -376,7 +425,7 @@ mod tests {
         let indexes = &[1.into()];
         let table_id = db.create_table_for_test("test", schema, indexes)?;
 
-        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let mut tx = begin_mut_tx(&db);
         let mut deletes = Vec::new();
         for i in 0u64..9u64 {
             insert(&db, &mut tx, table_id, &product!(i, i))?;
@@ -393,7 +442,7 @@ mod tests {
         };
 
         db.commit_tx(tx)?;
-        let tx = db.begin_tx(Workload::ForTests);
+        let tx = begin_tx(&db);
 
         let sql = "select * from test where b = 3";
         let mut exp = compile_sql(&db, &AuthCtx::for_testing(), &tx, sql)?;
@@ -425,14 +474,14 @@ mod tests {
     fn test_subscribe() -> ResultTest<()> {
         let db = TestDB::durable()?;
 
-        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let mut tx = begin_mut_tx(&db);
 
         let (schema, table, data, q) = make_inv(&db, &mut tx, StAccess::Public)?;
         db.commit_tx(tx)?;
         assert_eq!(schema.table_type, StTableType::User);
         assert_eq!(schema.table_access, StAccess::Public);
 
-        let tx = db.begin_tx(Workload::ForTests);
+        let tx = begin_tx(&db);
         let q_1 = q.clone();
         check_query(&db, &table, &tx, &q_1, &data)?;
 
@@ -448,7 +497,7 @@ mod tests {
     fn test_subscribe_private() -> ResultTest<()> {
         let db = TestDB::durable()?;
 
-        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let mut tx = begin_mut_tx(&db);
 
         let (schema, table, data, q) = make_inv(&db, &mut tx, StAccess::Private)?;
         db.commit_tx(tx)?;
@@ -456,7 +505,7 @@ mod tests {
         assert_eq!(schema.table_access, StAccess::Private);
 
         let row = product!(1u64, "health");
-        let tx = db.begin_tx(Workload::ForTests);
+        let tx = begin_tx(&db);
         check_query(&db, &table, &tx, &q, &data)?;
 
         // SELECT * FROM inventory WHERE inventory_id = 1
@@ -548,7 +597,7 @@ mod tests {
         AND MobileEntityState.location_z > 96000 \
         AND MobileEntityState.location_z < 192000";
 
-        let tx = db.begin_tx(Workload::ForTests);
+        let tx = begin_tx(&db);
         let qset = compile_read_only_queryset(&db, &AuthCtx::for_testing(), &tx, sql_query)?;
 
         for q in qset {
@@ -569,7 +618,7 @@ mod tests {
     fn test_subscribe_all() -> ResultTest<()> {
         let db = TestDB::durable()?;
 
-        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let mut tx = begin_mut_tx(&db);
 
         let (schema_1, _, _, _) = make_inv(&db, &mut tx, StAccess::Public)?;
         let (schema_2, _, _, _) = make_player(&db, &mut tx)?;
@@ -623,7 +672,7 @@ mod tests {
         let indexes = &[ColId(0), ColId(1)];
         db.create_table_for_test("rhs", schema, indexes)?;
 
-        let tx = db.begin_tx(Workload::ForTests);
+        let tx = begin_tx(&db);
 
         // All single table queries are supported
         let scans = [
@@ -670,7 +719,7 @@ mod tests {
     fn create_lhs_table_for_eval_incr(db: &RelationalDB) -> ResultTest<TableId> {
         const I32: AlgebraicType = AlgebraicType::I32;
         let lhs_id = db.create_table_for_test("lhs", &[("id", I32), ("x", I32)], &[0.into()])?;
-        db.with_auto_commit(Workload::ForTests, |tx| {
+        with_auto_commit(db, |tx| {
             for i in 0..5 {
                 let row = product!(i, i + 5);
                 insert(db, tx, lhs_id, &row)?;
@@ -683,7 +732,7 @@ mod tests {
     fn create_rhs_table_for_eval_incr(db: &RelationalDB) -> ResultTest<TableId> {
         const I32: AlgebraicType = AlgebraicType::I32;
         let rhs_id = db.create_table_for_test("rhs", &[("rid", I32), ("id", I32), ("y", I32)], &[1.into()])?;
-        db.with_auto_commit(Workload::ForTests, |tx| {
+        with_auto_commit(db, |tx| {
             for i in 10..20 {
                 let row = product!(i, i - 10, i - 8);
                 insert(db, tx, rhs_id, &row)?;
@@ -693,7 +742,7 @@ mod tests {
     }
 
     fn compile_query(db: &RelationalDB) -> ResultTest<SubscriptionPlan> {
-        db.with_read_only(Workload::ForTests, |tx| {
+        with_read_only(db, |tx| {
             let auth = AuthCtx::for_testing();
             let tx = SchemaViewer::new(tx, &auth);
             // Should be answered using an index semijion
@@ -713,12 +762,12 @@ mod tests {
     }
 
     #[test]
-    /// TODO: This test is a slight modifaction of [test_eval_incr_for_index_join].
+    /// TODO: This test is a slight modification of [test_eval_incr_for_index_join].
     /// Essentially the WHERE condition is on different tables.
     /// Should refactor to reduce duplicate logic between the two tests.
     fn test_eval_incr_for_left_semijoin() -> ResultTest<()> {
         fn compile_query(db: &RelationalDB) -> ResultTest<SubscriptionPlan> {
-            db.with_read_only(Workload::ForTests, |tx| {
+            with_read_only(db, |tx| {
                 let auth = AuthCtx::for_testing();
                 let tx = SchemaViewer::new(tx, &auth);
                 // Should be answered using an index semijion
@@ -1019,7 +1068,7 @@ mod tests {
         plan: &SubscriptionPlan,
         ops: Vec<(TableId, ProductValue, bool)>,
     ) -> ResultTest<DatabaseUpdate> {
-        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let mut tx = begin_mut_tx(db);
 
         for (table_id, row, insert) in ops {
             if insert {
@@ -1029,10 +1078,11 @@ mod tests {
             }
         }
 
-        let (data, tx) = tx.commit_downgrade(Workload::ForTests);
+        let (data, _, tx) = tx.commit_downgrade(Workload::ForTests);
         let table_id = plan.subscribed_table_id();
-        let table_name = plan.subscribed_table_name().into();
-        let tx = DeltaTx::new(&tx, &data);
+        // This awful construction to convert `Arc<str>` into `Box<str>`.
+        let table_name = (&**plan.subscribed_table_name()).into();
+        let tx = DeltaTx::new(&tx, &data, &QueriedTableIndexIds::from_iter(plan.index_ids()));
 
         // IMPORTANT: FOR TESTING ONLY!
         //
@@ -1235,10 +1285,9 @@ mod tests {
         assert_eq!(result.tables.len(), 1);
         assert_eq!(result.tables[0], insert_op(lhs_id, "lhs", product!(5, 10)));
 
-        // The lhs row must always probe the rhs index.
-        // The rhs row passes the rhs filter,
-        // resulting in a probe of the rhs index.
-        assert_eq!(metrics.index_seeks, 2);
+        // Because we only have inserts, only 3 delta queries are evaluated,
+        // each one an index join, and each one probing the join index exactly once.
+        assert_eq!(metrics.index_seeks, 3);
         Ok(())
     }
 
@@ -1265,10 +1314,13 @@ mod tests {
         // No updates to report
         assert_eq!(result.tables.len(), 0);
 
-        // The lhs row must always probe the rhs index.
-        // The rhs row doesn't pass the rhs filter,
+        // Because we only have inserts, only 3 delta queries are evaluated,
+        // each one an index join, and each one probing the join index at most once.
+        //
+        // The lhs row always probes the rhs index,
+        // but the rhs row doesn't pass the rhs filter,
         // hence it doesn't survive to probe the lhs index.
-        assert_eq!(metrics.index_seeks, 1);
+        assert_eq!(metrics.index_seeks, 2);
         Ok(())
     }
 
@@ -1296,10 +1348,9 @@ mod tests {
         assert_eq!(result.tables.len(), 1);
         assert_eq!(result.tables[0], delete_op(lhs_id, "lhs", product!(0, 5)));
 
-        // The lhs row must always probe the rhs index.
-        // The rhs row passes the rhs filter,
-        // resulting in a probe of the rhs index.
-        assert_eq!(metrics.index_seeks, 2);
+        // Because we only have inserts, only 3 delta queries are evaluated,
+        // each one an index join, and each one probing the join index exactly once.
+        assert_eq!(metrics.index_seeks, 3);
         Ok(())
     }
 
@@ -1326,10 +1377,13 @@ mod tests {
         // No updates to report
         assert_eq!(result.tables.len(), 0);
 
-        // The lhs row must always probe the rhs index.
-        // The rhs row doesn't pass the rhs filter,
+        // Because we only have inserts, only 3 delta queries are evaluated,
+        // each one an index join, and each one probing the join index at most once.
+        //
+        // The lhs row always probes the rhs index,
+        // but the rhs row doesn't pass the rhs filter,
         // hence it doesn't survive to probe the lhs index.
-        assert_eq!(metrics.index_seeks, 1);
+        assert_eq!(metrics.index_seeks, 2);
         Ok(())
     }
 
@@ -1375,10 +1429,10 @@ mod tests {
             },
         );
 
-        // The lhs rows must always probe the rhs index.
-        // The rhs rows pass the rhs filter,
-        // resulting in probes of the rhs index.
-        assert_eq!(metrics.index_seeks, 4);
+        // Because we have deletes and inserts for both tables,
+        // all 8 delta queries are evaluated,
+        // each one probing the join index exactly once.
+        assert_eq!(metrics.index_seeks, 8);
         Ok(())
     }
 }

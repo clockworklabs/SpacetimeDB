@@ -267,9 +267,14 @@ impl RewriteRule for PushConstEq {
     type Info = Label;
 
     fn matches(plan: &PhysicalPlan) -> Option<Self::Info> {
+        // Is this plan a table scan followed by a sequence of filters?
+        // If so, it's already in a normalized state, so no need to push.
+        let is_filter = |plan: &PhysicalPlan| {
+            !plan.any(&|plan| !matches!(plan, PhysicalPlan::TableScan(..) | PhysicalPlan::Filter(..)))
+        };
         if let PhysicalPlan::Filter(input, PhysicalExpr::BinOp(_, expr, value)) = plan {
             if let (PhysicalExpr::Field(TupleField { label, .. }), PhysicalExpr::Value(_)) = (&**expr, &**value) {
-                return (input.has_table_scan(Some(label)) && !input.is_table_scan(None)).then_some(*label);
+                return (input.has_table_scan(Some(label)) && !is_filter(input)).then_some(*label);
             }
         }
         None
@@ -328,12 +333,17 @@ impl RewriteRule for PushConstAnd {
     type Info = Label;
 
     fn matches(plan: &PhysicalPlan) -> Option<Self::Info> {
+        // Is this plan a table scan followed by a sequence of filters?
+        // If so, it's already in a normalized state, so no need to push.
+        let is_filter = |plan: &PhysicalPlan| {
+            !plan.any(&|plan| !matches!(plan, PhysicalPlan::TableScan(..) | PhysicalPlan::Filter(..)))
+        };
         if let PhysicalPlan::Filter(input, PhysicalExpr::LogOp(LogOp::And, exprs)) = plan {
             return exprs.iter().find_map(|expr| {
                 if let PhysicalExpr::BinOp(_, expr, value) = expr {
                     if let (PhysicalExpr::Field(TupleField { label, .. }), PhysicalExpr::Value(_)) = (&**expr, &**value)
                     {
-                        return (input.has_table_scan(Some(label)) && !input.is_table_scan(None)).then_some(*label);
+                        return (input.has_table_scan(Some(label)) && !is_filter(input)).then_some(*label);
                     }
                 }
                 None
@@ -416,7 +426,7 @@ impl RewriteRule for IxScanEq {
                 TableScan {
                     schema,
                     limit: None,
-                    delta: None,
+                    delta: _,
                 },
                 _,
             ) = &**input
@@ -446,20 +456,13 @@ impl RewriteRule for IxScanEq {
 
     fn rewrite(plan: PhysicalPlan, (index_id, col_id): Self::Info) -> Result<PhysicalPlan> {
         if let PhysicalPlan::Filter(input, PhysicalExpr::BinOp(BinOp::Eq, _, value)) = plan {
-            if let PhysicalPlan::TableScan(
-                TableScan {
-                    schema,
-                    limit,
-                    delta: None,
-                },
-                var,
-            ) = *input
-            {
+            if let PhysicalPlan::TableScan(TableScan { schema, limit, delta }, var) = *input {
                 if let PhysicalExpr::Value(v) = *value {
                     return Ok(PhysicalPlan::IxScan(
                         IxScan {
                             schema,
                             limit,
+                            delta,
                             index_id,
                             prefix: vec![],
                             arg: Sarg::Eq(col_id, v),
@@ -494,7 +497,7 @@ impl RewriteRule for IxScanAnd {
                 TableScan {
                     schema,
                     limit: None,
-                    delta: None,
+                    delta: _,
                 },
                 _,
             ) = &**input
@@ -529,15 +532,7 @@ impl RewriteRule for IxScanAnd {
 
     fn rewrite(plan: PhysicalPlan, (index_id, i, col_id): Self::Info) -> Result<PhysicalPlan> {
         if let PhysicalPlan::Filter(input, PhysicalExpr::LogOp(LogOp::And, mut exprs)) = plan {
-            if let PhysicalPlan::TableScan(
-                TableScan {
-                    schema,
-                    limit,
-                    delta: None,
-                },
-                label,
-            ) = *input
-            {
+            if let PhysicalPlan::TableScan(TableScan { schema, limit, delta }, label) = *input {
                 if let PhysicalExpr::BinOp(BinOp::Eq, _, value) = exprs.swap_remove(i) {
                     if let PhysicalExpr::Value(v) = *value {
                         return Ok(PhysicalPlan::Filter(
@@ -545,6 +540,7 @@ impl RewriteRule for IxScanAnd {
                                 IxScan {
                                     schema,
                                     limit,
+                                    delta,
                                     index_id,
                                     prefix: vec![],
                                     arg: Sarg::Eq(col_id, v),
@@ -588,7 +584,7 @@ impl RewriteRule for IxScanEq2Col {
             TableScan {
                 schema,
                 limit: None,
-                delta: None,
+                delta: _,
             },
             _,
         ) = &**input
@@ -612,13 +608,20 @@ impl RewriteRule for IxScanEq2Col {
                     .indexes
                     .iter()
                     .filter(|idx| idx.index_algorithm.columns().len() == 2) // TODO: Support prefix scans
-                    .find_map(|idx| {
+                    .map(|idx| (idx.index_id, idx.index_algorithm.columns()))
+                    .find_map(|(index_id, columns)| {
+                        let mut columns = columns.iter();
+                        let x = columns.next()?;
+                        if x.idx() != u.field_pos {
+                            return None;
+                        }
+                        let y = columns.next()?;
+                        if y.idx() != v.field_pos {
+                            return None;
+                        }
                         Some(IxScanInfo {
-                            index_id: idx.index_id,
-                            cols: vec![
-                                (i, idx.index_algorithm.find_col_index(u.field_pos)?),
-                                (j, idx.index_algorithm.find_col_index(v.field_pos)?),
-                            ],
+                            index_id,
+                            cols: vec![(i, x), (j, y)],
                         })
                     })
                 {
@@ -634,15 +637,7 @@ impl RewriteRule for IxScanEq2Col {
         match info.cols.as_slice() {
             [(i, a), (j, b)] => {
                 if let PhysicalPlan::Filter(input, PhysicalExpr::LogOp(LogOp::And, exprs)) = plan {
-                    if let PhysicalPlan::TableScan(
-                        TableScan {
-                            schema,
-                            limit,
-                            delta: None,
-                        },
-                        label,
-                    ) = *input
-                    {
+                    if let PhysicalPlan::TableScan(TableScan { schema, limit, delta }, label) = *input {
                         if let (
                             Some(PhysicalExpr::BinOp(BinOp::Eq, _, u)),
                             Some(PhysicalExpr::BinOp(BinOp::Eq, _, v)),
@@ -659,6 +654,7 @@ impl RewriteRule for IxScanEq2Col {
                                         IxScan {
                                             schema,
                                             limit,
+                                            delta,
                                             index_id: info.index_id,
                                             prefix: vec![(*a, u.clone())],
                                             arg: Sarg::Eq(*b, v.clone()),
@@ -675,6 +671,7 @@ impl RewriteRule for IxScanEq2Col {
                                             IxScan {
                                                 schema,
                                                 limit,
+                                                delta,
                                                 index_id: info.index_id,
                                                 prefix: vec![(*a, u.clone())],
                                                 arg: Sarg::Eq(*b, v.clone()),
@@ -696,6 +693,7 @@ impl RewriteRule for IxScanEq2Col {
                                             IxScan {
                                                 schema,
                                                 limit,
+                                                delta,
                                                 index_id: info.index_id,
                                                 prefix: vec![(*a, u.clone())],
                                                 arg: Sarg::Eq(*b, v.clone()),
@@ -749,7 +747,7 @@ impl RewriteRule for IxScanEq3Col {
             TableScan {
                 schema,
                 limit: None,
-                delta: None,
+                delta: _,
             },
             _,
         ) = &**input
@@ -785,14 +783,24 @@ impl RewriteRule for IxScanEq3Col {
                         .indexes
                         .iter()
                         .filter(|idx| idx.index_algorithm.columns().len() == 3)
-                        .find_map(|idx| {
+                        .map(|idx| (idx.index_id, idx.index_algorithm.columns()))
+                        .find_map(|(index_id, columns)| {
+                            let mut columns = columns.iter();
+                            let x = columns.next()?;
+                            if x.idx() != u.field_pos {
+                                return None;
+                            }
+                            let y = columns.next()?;
+                            if y.idx() != v.field_pos {
+                                return None;
+                            }
+                            let z = columns.next()?;
+                            if z.idx() != w.field_pos {
+                                return None;
+                            }
                             Some(IxScanInfo {
-                                index_id: idx.index_id,
-                                cols: vec![
-                                    (i, idx.index_algorithm.find_col_index(u.field_pos)?),
-                                    (j, idx.index_algorithm.find_col_index(v.field_pos)?),
-                                    (k, idx.index_algorithm.find_col_index(w.field_pos)?),
-                                ],
+                                index_id,
+                                cols: vec![(i, x), (j, y), (k, z)],
                             })
                         })
                     {
@@ -809,15 +817,7 @@ impl RewriteRule for IxScanEq3Col {
         match info.cols.as_slice() {
             [(i, a), (j, b), (k, c)] => {
                 if let PhysicalPlan::Filter(input, PhysicalExpr::LogOp(LogOp::And, exprs)) = plan {
-                    if let PhysicalPlan::TableScan(
-                        TableScan {
-                            schema,
-                            limit,
-                            delta: None,
-                        },
-                        label,
-                    ) = *input
-                    {
+                    if let PhysicalPlan::TableScan(TableScan { schema, limit, delta }, label) = *input {
                         if let (
                             Some(PhysicalExpr::BinOp(BinOp::Eq, _, u)),
                             Some(PhysicalExpr::BinOp(BinOp::Eq, _, v)),
@@ -837,6 +837,7 @@ impl RewriteRule for IxScanEq3Col {
                                         IxScan {
                                             schema,
                                             limit,
+                                            delta,
                                             index_id: info.index_id,
                                             prefix: vec![(*a, u.clone()), (*b, v.clone())],
                                             arg: Sarg::Eq(*c, w.clone()),
@@ -853,6 +854,7 @@ impl RewriteRule for IxScanEq3Col {
                                             IxScan {
                                                 schema,
                                                 limit,
+                                                delta,
                                                 index_id: info.index_id,
                                                 prefix: vec![(*a, u.clone()), (*b, v.clone())],
                                                 arg: Sarg::Eq(*c, w.clone()),
@@ -874,6 +876,7 @@ impl RewriteRule for IxScanEq3Col {
                                             IxScan {
                                                 schema,
                                                 limit,
+                                                delta,
                                                 index_id: info.index_id,
                                                 prefix: vec![(*a, u.clone()), (*b, v.clone())],
                                                 arg: Sarg::Eq(*c, w.clone()),
@@ -928,8 +931,9 @@ impl RewriteRule for ReorderHashJoin {
     fn matches(plan: &Self::Plan) -> Option<Self::Info> {
         match plan {
             PhysicalPlan::HashJoin(HashJoin { lhs, rhs, .. }, Semi::All) => {
-                (matches!(&**lhs, PhysicalPlan::TableScan(..)) && !matches!(&**rhs, PhysicalPlan::TableScan(..)))
-                    .then_some(())
+                (matches!(&**lhs, PhysicalPlan::TableScan(TableScan { delta: None, .. }, _))
+                    && !matches!(&**rhs, PhysicalPlan::TableScan(..)))
+                .then_some(())
             }
             _ => None,
         }
@@ -953,7 +957,7 @@ impl RewriteRule for ReorderHashJoin {
     }
 }
 
-/// Reorder a hash join if the rhs is a delta table.
+/// Reorder a hash join if the rhs is a delta scan, but the lhs is not.
 ///
 /// ```text
 ///    x
@@ -978,11 +982,11 @@ impl RewriteRule for ReorderDeltaJoinRhs {
 
     fn matches(plan: &Self::Plan) -> Option<Self::Info> {
         if let PhysicalPlan::HashJoin(HashJoin { lhs, rhs, .. }, Semi::All) = plan {
-            if let PhysicalPlan::Filter(input, _) = &**lhs {
-                return (matches!(&**input, PhysicalPlan::TableScan(TableScan { delta: None, .. }, _))
-                    && matches!(&**rhs, PhysicalPlan::TableScan(TableScan { delta: Some(_), .. }, _)))
-                .then_some(());
-            }
+            return (match &**lhs {
+                PhysicalPlan::Filter(lhs, _) => rhs.is_delta_scan() && !lhs.is_delta_scan(),
+                lhs => rhs.is_delta_scan() && !lhs.is_delta_scan(),
+            })
+            .then_some(());
         }
         None
     }
@@ -1007,7 +1011,7 @@ impl RewriteRule for ReorderDeltaJoinRhs {
 
 /// Pull a filter above a hash join if:
 ///
-/// 1. The lhs is a delta table
+/// 1. The lhs is a delta scan
 /// 2. The rhs has an index for the join
 ///
 /// ```text
@@ -1040,14 +1044,8 @@ impl RewriteRule for PullFilterAboveHashJoin {
         ) = plan
         {
             if let PhysicalPlan::Filter(input, _) = &**rhs {
-                if let PhysicalPlan::TableScan(
-                    TableScan {
-                        schema, delta: None, ..
-                    },
-                    _,
-                ) = &**input
-                {
-                    return (matches!(&**lhs, PhysicalPlan::TableScan(TableScan { delta: Some(_), .. }, _))
+                if let PhysicalPlan::TableScan(TableScan { schema, .. }, _) = &**input {
+                    return (lhs.is_delta_scan()
                         && schema.indexes.iter().any(|schema| {
                             schema
                                 .index_algorithm
@@ -1104,7 +1102,7 @@ impl RewriteRule for HashToIxJoin {
                     TableScan {
                         schema,
                         limit: None,
-                        delta: None,
+                        delta: _,
                     },
                     _,
                 ) => {
@@ -1129,7 +1127,7 @@ impl RewriteRule for HashToIxJoin {
                 TableScan {
                     schema: rhs,
                     limit: None,
-                    delta: None,
+                    delta: rhs_delta,
                 },
                 rhs_label,
             ) = *join.rhs
@@ -1141,6 +1139,7 @@ impl RewriteRule for HashToIxJoin {
                         rhs_label,
                         rhs_index,
                         rhs_field,
+                        rhs_delta,
                         unique: false,
                         lhs_field: join.lhs_field,
                     },

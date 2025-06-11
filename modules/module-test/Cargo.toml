@@ -12,7 +12,7 @@ crate-type = ["cdylib"]
 bench = false
 
 [dependencies]
-spacetimedb = { path = "../../crates/bindings" }
+spacetimedb = { path = "../../crates/bindings", features = ["unstable"] }
 
 anyhow.workspace = true
 log.workspace = true

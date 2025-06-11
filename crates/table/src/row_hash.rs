@@ -5,11 +5,15 @@
 use super::{
     bflatn_from::read_tag,
     indexes::{Bytes, PageOffset},
-    layout::{align_to, AlgebraicTypeLayout, HasLayout, ProductTypeLayout, RowTypeLayout},
+    layout::{align_to, AlgebraicTypeLayout, HasLayout, RowTypeLayout},
     page::Page,
     var_len::VarLenRef,
 };
-use crate::{bflatn_from::vlr_blob_bytes, blob_store::BlobStore, layout::VarLenType};
+use crate::{
+    bflatn_from::vlr_blob_bytes,
+    blob_store::BlobStore,
+    layout::{ProductTypeLayoutView, VarLenType},
+};
 use core::hash::{Hash as _, Hasher};
 use core::mem;
 use core::str;
@@ -56,10 +60,10 @@ unsafe fn hash_product(
     page: &Page,
     blob_store: &dyn BlobStore,
     curr_offset: &mut usize,
-    ty: &ProductTypeLayout,
+    ty: ProductTypeLayoutView<'_>,
 ) {
     let base_offset = *curr_offset;
-    for elem_ty in &*ty.elements {
+    for elem_ty in ty.elements {
         *curr_offset = base_offset + elem_ty.offset as usize;
 
         // SAFETY: By 1., `value` is valid at `ty`,
@@ -112,7 +116,7 @@ unsafe fn hash_value(
         }
         AlgebraicTypeLayout::Product(ty) => {
             // SAFETY: `value` was valid at `ty` and `VarLenRef`s won't be dangling.
-            unsafe { hash_product(hasher, bytes, page, blob_store, curr_offset, ty) }
+            unsafe { hash_product(hasher, bytes, page, blob_store, curr_offset, ty.view()) }
         }
 
         // The primitive types:
@@ -224,7 +228,7 @@ pub unsafe fn read_from_bytes<T: Copy>(bytes: &Bytes, curr_offset: &mut usize) -
 
 #[cfg(test)]
 mod tests {
-    use crate::blob_store::HashMapBlobStore;
+    use crate::{blob_store::HashMapBlobStore, page_pool::PagePool};
     use core::hash::BuildHasher;
     use proptest::prelude::*;
     use spacetimedb_sats::proptest::generate_typed_row;
@@ -235,8 +239,9 @@ mod tests {
         fn pv_row_ref_hash_same_std_random_state((ty, val) in generate_typed_row()) {
             // Turn `val` into a `RowRef`.
             let mut table = crate::table::test::table(ty);
+            let pool = &PagePool::new_for_test();
             let blob_store = &mut HashMapBlobStore::default();
-            let (_, row) = table.insert(blob_store, &val).unwrap();
+            let (_, row) = table.insert(pool, blob_store, &val).unwrap();
 
             // Check hashing algos.
             let rs = std::hash::RandomState::new();
@@ -246,9 +251,10 @@ mod tests {
         #[test]
         fn pv_row_ref_hash_same_ahash((ty, val) in generate_typed_row()) {
             // Turn `val` into a `RowRef`.
+            let pool = &PagePool::new_for_test();
             let blob_store = &mut HashMapBlobStore::default();
             let mut table = crate::table::test::table(ty);
-            let (_, row) = table.insert(blob_store, &val).unwrap();
+            let (_, row) = table.insert(pool, blob_store, &val).unwrap();
 
             // Check hashing algos.
             let rs = std::hash::RandomState::new();

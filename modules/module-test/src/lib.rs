@@ -305,7 +305,13 @@ pub fn test(ctx: &ReducerContext, arg: TestAlias, arg2: TestB, arg3: TestC, arg4
 
 #[spacetimedb::reducer]
 pub fn add_player(ctx: &ReducerContext, name: String) -> Result<(), String> {
-    ctx.db.test_e().try_insert(TestE { id: 0, name })?;
+    // This always creates a new one because id is auto-incremented.
+    let inserted = ctx.db.test_e().id().try_insert_or_update(TestE { id: 0, name })?;
+
+    // Since the previous one is always inserted, at this point it's always updated by this function.
+    // This is a no-op, but we can still call it.
+    ctx.db.test_e().id().try_insert_or_update(inserted)?;
+
     Ok(())
 }
 

@@ -13,18 +13,20 @@ use crate::identity::Identity;
 use crate::messages::control_db::Database;
 use crate::replica_context::ReplicaContext;
 use crate::sql::ast::SchemaViewer;
+use crate::sql::parser::RowLevelExpr;
+use crate::subscription::execute_plan;
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use crate::subscription::tx::DeltaTx;
-use crate::subscription::{execute_plan, record_exec_metrics};
-use crate::util::lending_pool::{LendingPool, LentResource, PoolClosed};
+use crate::util::asyncify;
+use crate::util::jobs::{JobCore, JobThread, JobThreadClosed, WeakJobThread};
 use crate::vm::check_row_limit;
 use crate::worker_metrics::WORKER_METRICS;
 use anyhow::Context;
 use bytes::Bytes;
 use derive_more::From;
-use futures::{Future, FutureExt};
 use indexmap::IndexSet;
 use itertools::Itertools;
+use prometheus::{Histogram, IntGauge};
 use spacetimedb_client_api_messages::websocket::{ByteListLen, Compression, OneOffTable, QueryUpdate, WebsocketFormat};
 use spacetimedb_data_structures::error_stream::ErrorStream;
 use spacetimedb_data_structures::map::{HashCollectionExt as _, IntMap};
@@ -39,6 +41,7 @@ use spacetimedb_sats::ProductValue;
 use spacetimedb_schema::auto_migrate::AutoMigrateError;
 use spacetimedb_schema::def::deserialize::ReducerArgsDeserializeSeed;
 use spacetimedb_schema::def::{ModuleDef, ReducerDef};
+use spacetimedb_schema::schema::{Schema, TableSchema};
 use spacetimedb_vm::relation::RelValue;
 use std::fmt;
 use std::sync::{Arc, Weak};
@@ -129,13 +132,17 @@ impl UpdatesRelValue<'_> {
         !(self.deletes.is_empty() && self.inserts.is_empty())
     }
 
-    pub fn encode<F: WebsocketFormat>(&self, compression: Compression) -> (F::QueryUpdate, u64, usize) {
+    pub fn encode<F: WebsocketFormat>(&self) -> (F::QueryUpdate, u64, usize) {
         let (deletes, nr_del) = F::encode_list(self.deletes.iter());
         let (inserts, nr_ins) = F::encode_list(self.inserts.iter());
         let num_rows = nr_del + nr_ins;
         let num_bytes = deletes.num_bytes() + inserts.num_bytes();
         let qu = QueryUpdate { deletes, inserts };
-        let cqu = F::into_query_update(qu, compression);
+        // We don't compress individual table updates.
+        // Previously we were, but the benefits, if any, were unclear.
+        // Note, each message is still compressed before being sent to clients,
+        // but we no longer have to hold a tx lock when doing so.
+        let cqu = F::into_query_update(qu, Compression::None);
         (cqu, num_rows, num_bytes)
     }
 }
@@ -193,6 +200,45 @@ pub struct ModuleInfo {
     pub log_tx: tokio::sync::broadcast::Sender<bytes::Bytes>,
     /// Subscriptions to this module.
     pub subscriptions: ModuleSubscriptions,
+    /// Metrics handles for this module.
+    pub metrics: ModuleMetrics,
+}
+
+#[derive(Debug)]
+pub struct ModuleMetrics {
+    pub connected_clients: IntGauge,
+    pub ws_clients_spawned: IntGauge,
+    pub ws_clients_aborted: IntGauge,
+    pub request_round_trip_subscribe: Histogram,
+    pub request_round_trip_unsubscribe: Histogram,
+    pub request_round_trip_sql: Histogram,
+}
+
+impl ModuleMetrics {
+    fn new(db: &Identity) -> Self {
+        let connected_clients = WORKER_METRICS.connected_clients.with_label_values(db);
+        let ws_clients_spawned = WORKER_METRICS.ws_clients_spawned.with_label_values(db);
+        let ws_clients_aborted = WORKER_METRICS.ws_clients_aborted.with_label_values(db);
+        let request_round_trip_subscribe =
+            WORKER_METRICS
+                .request_round_trip
+                .with_label_values(&WorkloadType::Subscribe, db, "");
+        let request_round_trip_unsubscribe =
+            WORKER_METRICS
+                .request_round_trip
+                .with_label_values(&WorkloadType::Unsubscribe, db, "");
+        let request_round_trip_sql = WORKER_METRICS
+            .request_round_trip
+            .with_label_values(&WorkloadType::Sql, db, "");
+        Self {
+            connected_clients,
+            ws_clients_spawned,
+            ws_clients_aborted,
+            request_round_trip_subscribe,
+            request_round_trip_unsubscribe,
+            request_round_trip_sql,
+        }
+    }
 }
 
 impl ModuleInfo {
@@ -206,6 +252,7 @@ impl ModuleInfo {
         log_tx: tokio::sync::broadcast::Sender<bytes::Bytes>,
         subscriptions: ModuleSubscriptions,
     ) -> Arc<Self> {
+        let metrics = ModuleMetrics::new(&database_identity);
         Arc::new(ModuleInfo {
             module_def,
             owner_identity,
@@ -213,6 +260,7 @@ impl ModuleInfo {
             module_hash,
             log_tx,
             subscriptions,
+            metrics,
         })
     }
 }
@@ -246,21 +294,21 @@ impl ReducersMap {
     }
 }
 
-pub trait Module: Send + Sync + 'static {
+pub trait DynModule: Send + Sync + 'static {
+    fn replica_ctx(&self) -> &Arc<ReplicaContext>;
+    fn scheduler(&self) -> &Scheduler;
+}
+
+pub trait Module: DynModule {
     type Instance: ModuleInstance;
     type InitialInstances<'a>: IntoIterator<Item = Self::Instance> + 'a;
     fn initial_instances(&mut self) -> Self::InitialInstances<'_>;
     fn info(&self) -> Arc<ModuleInfo>;
     fn create_instance(&self) -> Self::Instance;
-    fn replica_ctx(&self) -> &ReplicaContext;
-    fn scheduler(&self) -> &Scheduler;
 }
 
 pub trait ModuleInstance: Send + 'static {
     fn trapped(&self) -> bool;
-
-    /// If the module instance's replica_ctx is uninitialized, initialize it.
-    fn init_database(&mut self, program: Program) -> anyhow::Result<Option<ReducerCallResult>>;
 
     /// Update the module instance's database to match the schema of the module instance.
     fn update_database(
@@ -270,6 +318,81 @@ pub trait ModuleInstance: Send + 'static {
     ) -> anyhow::Result<UpdateDatabaseResult>;
 
     fn call_reducer(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> ReducerCallResult;
+}
+
+/// If the module instance's replica_ctx is uninitialized, initialize it.
+fn init_database(
+    replica_ctx: &ReplicaContext,
+    module_def: &ModuleDef,
+    inst: &mut dyn ModuleInstance,
+    program: Program,
+) -> anyhow::Result<Option<ReducerCallResult>> {
+    log::debug!("init database");
+    let timestamp = Timestamp::now();
+    let stdb = &*replica_ctx.relational_db;
+    let logger = replica_ctx.logger.system_logger();
+
+    let tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
+    let auth_ctx = AuthCtx::for_current(replica_ctx.database.owner_identity);
+    let (tx, ()) = stdb
+        .with_auto_rollback(tx, |tx| {
+            let mut table_defs: Vec<_> = module_def.tables().collect();
+            table_defs.sort_by(|a, b| a.name.cmp(&b.name));
+
+            for def in table_defs {
+                let table_name = &def.name;
+                logger.info(&format!("Creating table `{table_name}`"));
+                let schema = TableSchema::from_module_def(module_def, def, (), TableId::SENTINEL);
+                stdb.create_table(tx, schema)
+                    .with_context(|| format!("failed to create table {table_name}"))?;
+            }
+            // Insert the late-bound row-level security expressions.
+            for rls in module_def.row_level_security() {
+                logger.info(&format!("Creating row level security `{}`", rls.sql));
+
+                let rls = RowLevelExpr::build_row_level_expr(tx, &auth_ctx, rls)
+                    .with_context(|| format!("failed to create row-level security: `{}`", rls.sql))?;
+                let table_id = rls.def.table_id;
+                let sql = rls.def.sql.clone();
+                stdb.create_row_level_security(tx, rls.def)
+                    .with_context(|| format!("failed to create row-level security for table `{table_id}`: `{sql}`",))?;
+            }
+
+            stdb.set_initialized(tx, replica_ctx.host_type, program)?;
+
+            anyhow::Ok(())
+        })
+        .inspect_err(|e| log::error!("{e:?}"))?;
+
+    let rcr = match module_def.lifecycle_reducer(Lifecycle::Init) {
+        None => {
+            if let Some((tx_data, tx_metrics, reducer)) = stdb.commit_tx(tx)? {
+                stdb.report(&reducer, &tx_metrics, Some(&tx_data));
+            }
+            None
+        }
+
+        Some((reducer_id, _)) => {
+            logger.info("Invoking `init` reducer");
+            let caller_identity = replica_ctx.database.owner_identity;
+            Some(inst.call_reducer(
+                Some(tx),
+                CallReducerParams {
+                    timestamp,
+                    caller_identity,
+                    caller_connection_id: ConnectionId::ZERO,
+                    client: None,
+                    request_id: None,
+                    timer: None,
+                    reducer_id,
+                    args: ArgsTuple::nullary(),
+                },
+            ))
+        }
+    };
+
+    logger.info("Database initialized");
+    Ok(rcr)
 }
 
 pub struct CallReducerParams {
@@ -286,14 +409,14 @@ pub struct CallReducerParams {
 // TODO: figure out how we want to handle traps. maybe it should just not return to the LendingPool and
 //       let the get_instance logic handle it?
 struct AutoReplacingModuleInstance<T: Module> {
-    inst: LentResource<T::Instance>,
+    inst: T::Instance,
     module: Arc<T>,
 }
 
 impl<T: Module> AutoReplacingModuleInstance<T> {
     fn check_trap(&mut self) {
         if self.inst.trapped() {
-            *self.inst = self.module.create_instance()
+            self.inst = self.module.create_instance()
         }
     }
 }
@@ -301,11 +424,6 @@ impl<T: Module> AutoReplacingModuleInstance<T> {
 impl<T: Module> ModuleInstance for AutoReplacingModuleInstance<T> {
     fn trapped(&self) -> bool {
         self.inst.trapped()
-    }
-    fn init_database(&mut self, program: Program) -> anyhow::Result<Option<ReducerCallResult>> {
-        let ret = self.inst.init_database(program);
-        self.check_trap();
-        ret
     }
     fn update_database(
         &mut self,
@@ -326,105 +444,30 @@ impl<T: Module> ModuleInstance for AutoReplacingModuleInstance<T> {
 #[derive(Clone)]
 pub struct ModuleHost {
     pub info: Arc<ModuleInfo>,
-    inner: Arc<dyn DynModuleHost>,
+    module: Arc<dyn DynModule>,
     /// Whenever host execution panics while executing a reducer,
     /// we'll signal the [`DatabaseLifecycleTracker`] to shut down this database.
     ///
     /// Note that this does not apply to in-WASM panics or error returns,
     /// only to host panics.
     pub lifecycle: DatabaseLifecycleTrackerHandle,
+    job_tx: JobThread<dyn ModuleInstance>,
 }
 
 impl fmt::Debug for ModuleHost {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ModuleHost")
             .field("info", &self.info)
-            .field("inner", &Arc::as_ptr(&self.inner))
+            .field("module", &Arc::as_ptr(&self.module))
             .finish()
-    }
-}
-
-#[async_trait::async_trait]
-trait DynModuleHost: Send + Sync + 'static {
-    async fn get_instance(&self, db: Identity) -> Result<Box<dyn ModuleInstance>, NoSuchModule>;
-    fn replica_ctx(&self) -> &ReplicaContext;
-    async fn exit(&self);
-    async fn exited(&self);
-}
-
-struct HostControllerActor<T: Module> {
-    module: Arc<T>,
-    instance_pool: LendingPool<T::Instance>,
-}
-
-impl<T: Module> HostControllerActor<T> {
-    fn spinup_new_instance(&self) {
-        let (module, instance_pool) = (self.module.clone(), self.instance_pool.clone());
-        rayon::spawn(move || {
-            let instance = module.create_instance();
-            match instance_pool.add(instance) {
-                Ok(()) => {}
-                Err(PoolClosed) => {
-                    // if the module closed since this new instance was requested, oh well, just throw it away
-                }
-            }
-        })
-    }
-}
-
-/// runs future A and future B concurrently. if A completes before B, B is cancelled. if B completes
-/// before A, A is polled to completion
-async fn select_first<A: Future, B: Future<Output = ()>>(fut_a: A, fut_b: B) -> A::Output {
-    tokio::select! {
-        ret = fut_a => ret,
-        Err(x) = fut_b.never_error() => match x {},
-    }
-}
-
-#[async_trait::async_trait]
-impl<T: Module> DynModuleHost for HostControllerActor<T> {
-    async fn get_instance(&self, db: Identity) -> Result<Box<dyn ModuleInstance>, NoSuchModule> {
-        // in the future we should do something like in the else branch here -- add more instances based on load.
-        // we need to do write-skew retries first - right now there's only ever once instance per module.
-        let inst = if true {
-            self.instance_pool
-                .request_with_context(db)
-                .await
-                .map_err(|_| NoSuchModule)?
-        } else {
-            const GET_INSTANCE_TIMEOUT: Duration = Duration::from_millis(500);
-            select_first(
-                self.instance_pool.request_with_context(db),
-                tokio::time::sleep(GET_INSTANCE_TIMEOUT).map(|()| self.spinup_new_instance()),
-            )
-            .await
-            .map_err(|_| NoSuchModule)?
-        };
-        Ok(Box::new(AutoReplacingModuleInstance {
-            inst,
-            module: self.module.clone(),
-        }))
-    }
-
-    fn replica_ctx(&self) -> &ReplicaContext {
-        self.module.replica_ctx()
-    }
-
-    async fn exit(&self) {
-        self.module.scheduler().close();
-        self.instance_pool.close();
-        self.exited().await
-    }
-
-    async fn exited(&self) {
-        tokio::join!(self.module.scheduler().closed(), self.instance_pool.closed());
     }
 }
 
 pub struct WeakModuleHost {
     info: Arc<ModuleInfo>,
-    inner: Weak<dyn DynModuleHost>,
+    module: Weak<dyn DynModule>,
     lifecycle: Weak<parking_lot::Mutex<DatabaseLifecycleTracker>>,
+    tx: WeakJobThread<dyn ModuleInstance>,
 }
 
 #[derive(Debug)]
@@ -485,15 +528,23 @@ pub enum ClientConnectedError {
 }
 
 impl ModuleHost {
-    pub fn new(mut module: impl Module, lifecycle: DatabaseLifecycleTrackerHandle) -> Self {
+    pub(super) fn new(module: impl Module, lifecycle: DatabaseLifecycleTrackerHandle, core: JobCore) -> Self {
         let info = module.info();
-        let instance_pool = LendingPool::new();
-        instance_pool.add_multiple(module.initial_instances()).unwrap();
-        let inner = Arc::new(HostControllerActor {
-            module: Arc::new(module),
-            instance_pool,
-        });
-        ModuleHost { info, inner, lifecycle }
+        let module = Arc::new(module);
+        let module_clone = module.clone();
+        let job_tx = core.start(
+            move || AutoReplacingModuleInstance {
+                inst: module_clone.create_instance(),
+                module: module_clone,
+            },
+            |x| x as &mut dyn ModuleInstance,
+        );
+        ModuleHost {
+            info,
+            module,
+            lifecycle,
+            job_tx,
+        }
     }
 
     #[inline]
@@ -511,17 +562,30 @@ impl ModuleHost {
         F: FnOnce(&mut dyn ModuleInstance) -> R + Send + 'static,
         R: Send + 'static,
     {
-        let mut inst = {
-            // Record the time spent waiting in the queue
-            let _guard = WORKER_METRICS
-                .reducer_wait_time
-                .with_label_values(&self.info.database_identity, reducer)
-                .start_timer();
-            self.inner.get_instance(self.info.database_identity).await?
-        };
+        // Record the time until our function starts running.
+        let queue_timer = WORKER_METRICS
+            .reducer_wait_time
+            .with_label_values(&self.info.database_identity, reducer)
+            .start_timer();
+        let queue_length_gauge = WORKER_METRICS
+            .instance_queue_length
+            .with_label_values(&self.info.database_identity);
+        queue_length_gauge.inc();
+        {
+            let queue_length = queue_length_gauge.get();
+            WORKER_METRICS
+                .instance_queue_length_histogram
+                .with_label_values(&self.info.database_identity)
+                .observe(queue_length as f64);
+        }
 
-        // Spawning a task allows to catch panics without proving to the
-        // compiler that `dyn ModuleInstance` is unwind safe.
+        // Operations on module instances (e.g. calling reducers) is blocking,
+        // partially because the computation can potentialyl take a long time
+        // and partially because interacting with the database requires taking
+        // a blocking lock. So, we run `f` inside of `asyncify()`, which runs
+        // the provided closure in a tokio blocking task, and bubbles up any
+        // panic that may occur.
+
         // If the host panics during a reducer call, we **must** ensure to notify `self.lifecycle`
         // so that the module is discarded by the host controller.
         // Note that this is not the same as the WASM execution panicking!
@@ -531,15 +595,25 @@ impl ModuleHost {
         // will resolve to `Ok(Err(_))`.
         // In that case, we should not stop the database,
         // as we can and will handle that error and recover.
-        let result = tokio::spawn(async move { f(&mut *inst) }).await;
+        let result = self
+            .job_tx
+            // If `f` panics, we'll going to `resume_unwind` in just a moment,
+            // after calling `stop_database`.
+            // We won't inspect any state captured by `f` in that path.
+            .run_catch_panic(move |inst| {
+                queue_timer.stop_and_record();
+                queue_length_gauge.dec();
+                f(inst)
+            })
+            .await
+            .map_err(|_: JobThreadClosed| NoSuchModule)?;
 
         match result {
             Ok(result) => Ok(result),
-            Err(e) => {
+            Err(panic_payload) => {
                 // We never cancel this task
                 // (it's pretty clearly `spawn`ed and then immediately `await`ed right above),
                 // so no need to check `e.is_panic` or `e.is_cancelled`.
-                let panic_payload = e.into_panic();
                 let err = DatabaseLifecycleTracker::panic_payload_to_error(
                     &format!("while executing reducer {reducer}"),
                     &panic_payload,
@@ -553,10 +627,7 @@ impl ModuleHost {
     pub async fn disconnect_client(&self, client_id: ClientActorId) {
         log::trace!("disconnecting client {}", client_id);
         let this = self.clone();
-        let _ = tokio::task::spawn_blocking(move || {
-            this.subscriptions().remove_subscriber(client_id);
-        })
-        .await;
+        asyncify(move || this.subscriptions().remove_subscriber(client_id)).await;
         // ignore NoSuchModule; if the module's already closed, that's fine
         if let Err(e) = self
             .call_identity_disconnected(client_id.identity, client_id.connection_id)
@@ -640,18 +711,21 @@ impl ModuleHost {
                 timestamp: Timestamp::now(),
                 arg_bsatn: Bytes::new(),
             });
-            self.inner
-                .replica_ctx()
-                .relational_db
-                .with_auto_commit(workload, |mut_tx| {
-                    mut_tx.insert_st_client(caller_identity, caller_connection_id)
+
+            let stdb = self.module.replica_ctx().relational_db.clone();
+            asyncify(move || {
+                stdb.with_auto_commit(workload, |mut_tx| {
+                    mut_tx
+                        .insert_st_client(caller_identity, caller_connection_id)
+                        .map_err(DBError::from)
                 })
-                .inspect_err(|e| {
-                    log::error!(
-                        "`call_identity_connected`: fallback transaction to insert into `st_client` failed: {e:#?}"
-                    );
-                })
-                .map_err(Into::into)
+            })
+            .await
+            .inspect_err(|e| {
+                log::error!("`call_identity_connected`: fallback transaction to insert into `st_client` failed: {e:#?}")
+            })
+            .map_err(DBError::from)
+            .map_err(Into::into)
         }
     }
 
@@ -678,7 +752,7 @@ impl ModuleHost {
         let reducer_lookup = self.info.module_def.lifecycle_reducer(Lifecycle::OnDisconnect);
 
         // A fallback transaction that deletes the client from `st_client`.
-        let fallback = || {
+        let fallback = || async {
             let reducer_name = reducer_lookup
                 .as_ref()
                 .map(|(_, def)| &*def.name)
@@ -691,24 +765,26 @@ impl ModuleHost {
                 timestamp: Timestamp::now(),
                 arg_bsatn: Bytes::new(),
             });
-            self.inner
-                .replica_ctx()
-                .relational_db
-                .with_auto_commit(workload, |mut_tx| {
-                    mut_tx.delete_st_client(caller_identity, caller_connection_id)
+            let stdb = self.module.replica_ctx().relational_db.clone();
+            let database_identity = self.info.database_identity;
+            asyncify(move || {
+                stdb.with_auto_commit(workload, |mut_tx| {
+                    mut_tx
+                        .delete_st_client(caller_identity, caller_connection_id, database_identity)
+                        .map_err(DBError::from)
                 })
-                .inspect_err(|e| {
-                    log::error!(
-                        "`call_identity_disconnected`: fallback transaction to delete from `st_client` failed: {e}"
-                    );
-                })
-                .map_err(|err| {
-                    InvalidReducerArguments {
-                        err: err.into(),
-                        reducer: reducer_name.into(),
-                    }
-                    .into()
-                })
+            })
+            .await
+            .map_err(|err| {
+                log::error!(
+                    "`call_identity_disconnected`: fallback transaction to delete from `st_client` failed: {err}"
+                );
+                InvalidReducerArguments {
+                    err: err.into(),
+                    reducer: reducer_name.into(),
+                }
+                .into()
+            })
         };
 
         if let Some((reducer_id, reducer_def)) = reducer_lookup {
@@ -738,14 +814,14 @@ impl ModuleHost {
             match result {
                 Err(e) => {
                     log::error!("call_reducer_inner of client_disconnected failed: {e:#?}");
-                    fallback()
+                    fallback().await
                 }
                 Ok(ReducerCallResult {
                     outcome: ReducerOutcome::Failed(_) | ReducerOutcome::BudgetExceeded,
                     ..
-                }) => fallback(),
+                }) => fallback().await,
 
-                // If it succeeded, as mentioend above, `st_client` is already updated.
+                // If it succeeded, as mentioned above, `st_client` is already updated.
                 Ok(ReducerCallResult {
                     outcome: ReducerOutcome::Committed,
                     ..
@@ -754,7 +830,7 @@ impl ModuleHost {
         } else {
             // The module doesn't define a `client_disconnected` reducer.
             // Commit a transaction to update `st_clients`.
-            fallback()
+            fallback().await
         }
     }
 
@@ -851,7 +927,7 @@ impl ModuleHost {
         &self,
         call_reducer_params: impl FnOnce(&MutTxId) -> anyhow::Result<Option<CallReducerParams>> + Send + 'static,
     ) -> Result<ReducerCallResult, ReducerCallError> {
-        let db = self.inner.replica_ctx().relational_db.clone();
+        let db = self.module.replica_ctx().relational_db.clone();
         // scheduled reducer name not fetched yet, anyway this is only for logging purpose
         const REDUCER: &str = "scheduled_reducer";
         let module = self.info.clone();
@@ -897,9 +973,13 @@ impl ModuleHost {
     }
 
     pub async fn init_database(&self, program: Program) -> Result<Option<ReducerCallResult>, InitDatabaseError> {
-        self.call("<init_database>", move |inst| inst.init_database(program))
-            .await?
-            .map_err(InitDatabaseError::Other)
+        let replica_ctx = self.module.replica_ctx().clone();
+        let info = self.info.clone();
+        self.call("<init_database>", move |inst| {
+            init_database(&replica_ctx, &info.module_def, inst, program)
+        })
+        .await?
+        .map_err(InitDatabaseError::Other)
     }
 
     pub async fn update_database(
@@ -915,11 +995,13 @@ impl ModuleHost {
     }
 
     pub async fn exit(&self) {
-        self.inner.exit().await
+        self.module.scheduler().close();
+        self.job_tx.close();
+        self.exited().await;
     }
 
     pub async fn exited(&self) {
-        self.inner.exited().await
+        tokio::join!(self.module.scheduler().closed(), self.job_tx.closed());
     }
 
     pub fn inject_logs(&self, log_level: LogLevel, message: &str) {
@@ -987,7 +1069,7 @@ impl ModuleHost {
                 .context("One-off queries are not allowed to modify the database")
         })?;
 
-        record_exec_metrics(&WorkloadType::Sql, &db.database_identity(), metrics);
+        db.exec_counters_for(WorkloadType::Sql).record(&metrics);
 
         Ok(rows)
     }
@@ -1015,8 +1097,9 @@ impl ModuleHost {
     pub fn downgrade(&self) -> WeakModuleHost {
         WeakModuleHost {
             info: self.info.clone(),
-            inner: Arc::downgrade(&self.inner),
+            module: Arc::downgrade(&self.module),
             lifecycle: Arc::downgrade(&self.lifecycle),
+            tx: self.job_tx.downgrade(),
         }
     }
 
@@ -1025,18 +1108,20 @@ impl ModuleHost {
     }
 
     pub(crate) fn replica_ctx(&self) -> &ReplicaContext {
-        self.inner.replica_ctx()
+        self.module.replica_ctx()
     }
 }
 
 impl WeakModuleHost {
     pub fn upgrade(&self) -> Option<ModuleHost> {
-        let inner = self.inner.upgrade()?;
+        let module = self.module.upgrade()?;
         let lifecycle = self.lifecycle.upgrade()?;
+        let job_tx = self.tx.upgrade()?;
         Some(ModuleHost {
             info: self.info.clone(),
-            inner,
+            module,
             lifecycle,
+            job_tx,
         })
     }
 }

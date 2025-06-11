@@ -26,7 +26,7 @@ static GLOBAL: MiMalloc = MiMalloc;
 async fn main() -> anyhow::Result<ExitCode> {
     // Compute matches before loading the config, because `Config` has an observable `drop` method
     // (which deletes a lockfile),
-    // and Clap calls `exit` on parse failure rather than panicing, so destructors never run.
+    // and Clap calls `exit` on parse failure rather than panicking, so destructors never run.
     let matches = get_command().get_matches();
     let (cmd, subcommand_args) = matches.subcommand().unwrap();
 

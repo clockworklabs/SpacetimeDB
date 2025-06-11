@@ -16,6 +16,11 @@ partial struct TestIndexIssues
         BSATN.SelfIndexingColumn.Write(writer, SelfIndexingColumn);
     }
 
+    object SpacetimeDB.BSATN.IStructuralReadWrite.GetSerializer()
+    {
+        return new BSATN();
+    }
+
     public override string ToString() =>
         $"TestIndexIssues {{ SelfIndexingColumn = {SpacetimeDB.BSATN.StringUtil.GenericToString(SelfIndexingColumn)} }}";
 
@@ -23,8 +28,12 @@ partial struct TestIndexIssues
     {
         internal static readonly SpacetimeDB.BSATN.I32 SelfIndexingColumn = new();
 
-        public TestIndexIssues Read(System.IO.BinaryReader reader) =>
-            SpacetimeDB.BSATN.IStructuralReadWrite.Read<TestIndexIssues>(reader);
+        public TestIndexIssues Read(System.IO.BinaryReader reader)
+        {
+            var ___result = new TestIndexIssues();
+            ___result.ReadFields(reader);
+            return ___result;
+        }
 
         public void Write(System.IO.BinaryWriter writer, TestIndexIssues value)
         {
@@ -53,13 +62,15 @@ partial struct TestIndexIssues
 
     public override int GetHashCode()
     {
-        return SelfIndexingColumn.GetHashCode();
+        var ___hashSelfIndexingColumn = SelfIndexingColumn.GetHashCode();
+        return ___hashSelfIndexingColumn;
     }
 
 #nullable enable
     public bool Equals(TestIndexIssues that)
     {
-        return SelfIndexingColumn.Equals(that.SelfIndexingColumn);
+        var ___eqSelfIndexingColumn = this.SelfIndexingColumn.Equals(that.SelfIndexingColumn);
+        return ___eqSelfIndexingColumn;
     }
 
     public override bool Equals(object? that)

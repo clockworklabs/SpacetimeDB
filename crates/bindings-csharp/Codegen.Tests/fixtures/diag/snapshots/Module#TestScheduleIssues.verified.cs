@@ -22,6 +22,11 @@ partial struct TestScheduleIssues
         BSATN.ScheduleAtCorrectType.Write(writer, ScheduleAtCorrectType);
     }
 
+    object SpacetimeDB.BSATN.IStructuralReadWrite.GetSerializer()
+    {
+        return new BSATN();
+    }
+
     public override string ToString() =>
         $"TestScheduleIssues {{ IdWrongType = {SpacetimeDB.BSATN.StringUtil.GenericToString(IdWrongType)}, IdCorrectType = {SpacetimeDB.BSATN.StringUtil.GenericToString(IdCorrectType)}, ScheduleAtWrongType = {SpacetimeDB.BSATN.StringUtil.GenericToString(ScheduleAtWrongType)}, ScheduleAtCorrectType = {SpacetimeDB.BSATN.StringUtil.GenericToString(ScheduleAtCorrectType)} }}";
 
@@ -32,8 +37,12 @@ partial struct TestScheduleIssues
         internal static readonly SpacetimeDB.BSATN.I32 ScheduleAtWrongType = new();
         internal static readonly SpacetimeDB.ScheduleAt.BSATN ScheduleAtCorrectType = new();
 
-        public TestScheduleIssues Read(System.IO.BinaryReader reader) =>
-            SpacetimeDB.BSATN.IStructuralReadWrite.Read<TestScheduleIssues>(reader);
+        public TestScheduleIssues Read(System.IO.BinaryReader reader)
+        {
+            var ___result = new TestScheduleIssues();
+            ___result.ReadFields(reader);
+            return ___result;
+        }
 
         public void Write(System.IO.BinaryWriter writer, TestScheduleIssues value)
         {
@@ -68,19 +77,34 @@ partial struct TestScheduleIssues
 
     public override int GetHashCode()
     {
-        return IdWrongType.GetHashCode()
-            ^ IdCorrectType.GetHashCode()
-            ^ ScheduleAtWrongType.GetHashCode()
-            ^ ScheduleAtCorrectType.GetHashCode();
+        var ___hashIdWrongType = IdWrongType == null ? 0 : IdWrongType.GetHashCode();
+        var ___hashIdCorrectType = IdCorrectType.GetHashCode();
+        var ___hashScheduleAtWrongType = ScheduleAtWrongType.GetHashCode();
+        var ___hashScheduleAtCorrectType =
+            ScheduleAtCorrectType == null ? 0 : ScheduleAtCorrectType.GetHashCode();
+        return ___hashIdWrongType
+            ^ ___hashIdCorrectType
+            ^ ___hashScheduleAtWrongType
+            ^ ___hashScheduleAtCorrectType;
     }
 
 #nullable enable
     public bool Equals(TestScheduleIssues that)
     {
-        return IdWrongType.Equals(that.IdWrongType)
-            && IdCorrectType.Equals(that.IdCorrectType)
-            && ScheduleAtWrongType.Equals(that.ScheduleAtWrongType)
-            && ScheduleAtCorrectType.Equals(that.ScheduleAtCorrectType);
+        var ___eqIdWrongType =
+            this.IdWrongType == null
+                ? that.IdWrongType == null
+                : this.IdWrongType.Equals(that.IdWrongType);
+        var ___eqIdCorrectType = this.IdCorrectType.Equals(that.IdCorrectType);
+        var ___eqScheduleAtWrongType = this.ScheduleAtWrongType.Equals(that.ScheduleAtWrongType);
+        var ___eqScheduleAtCorrectType =
+            this.ScheduleAtCorrectType == null
+                ? that.ScheduleAtCorrectType == null
+                : this.ScheduleAtCorrectType.Equals(that.ScheduleAtCorrectType);
+        return ___eqIdWrongType
+            && ___eqIdCorrectType
+            && ___eqScheduleAtWrongType
+            && ___eqScheduleAtCorrectType;
     }
 
     public override bool Equals(object? that)

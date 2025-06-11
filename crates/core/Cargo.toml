@@ -48,6 +48,7 @@ bytes.workspace = true
 bytestring.workspace = true
 chrono.workspace = true
 crossbeam-channel.workspace = true
+crossbeam-queue.workspace = true
 derive_more.workspace = true
 dirs.workspace = true
 enum-as-inner.workspace = true
@@ -113,10 +114,14 @@ wasmtime.workspace = true
 jwks.workspace = true
 async_cache = "0.3.1"
 faststr = "0.2.23"
+core_affinity = "0.8"
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = {workspace = true}
 tikv-jemalloc-ctl = {workspace = true}
+
+[target.'cfg(target_os = "linux")'.dependencies]
+nix = { workspace = true, features = ["sched"] }
 
 [features]
 # Print a warning when doing an unindexed `iter_by_col_range` on a large table.
@@ -132,7 +137,7 @@ perfmap = []
 [dev-dependencies]
 spacetimedb-lib = { path = "../lib", features = ["proptest"] }
 spacetimedb-sats = { path = "../sats", features = ["proptest"] }
-spacetimedb-commitlog = { workspace = true, features = ["test"] }
+spacetimedb-commitlog = { path = "../commitlog", features = ["test"] }
 
 criterion.workspace = true
 # Also as dev-dependencies for use in _this_ crate's tests.

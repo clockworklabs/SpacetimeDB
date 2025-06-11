@@ -9,17 +9,21 @@ use crate::error::DBError;
 use crate::host::module_host::ClientConnectedError;
 use crate::host::{ModuleHost, NoSuchModule, ReducerArgs, ReducerCallError, ReducerCallResult};
 use crate::messages::websocket::Subscribe;
+use crate::util::asyncify;
 use crate::util::prometheus_handle::IntGaugeExt;
 use crate::worker_metrics::WORKER_METRICS;
 use bytes::Bytes;
 use bytestring::ByteString;
 use derive_more::From;
 use futures::prelude::*;
+use prometheus::{Histogram, IntCounter, IntGauge};
 use spacetimedb_client_api_messages::websocket::{
     BsatnFormat, CallReducerFlags, Compression, FormatSwitch, JsonFormat, SubscribeMulti, SubscribeSingle, Unsubscribe,
     UnsubscribeMulti, WebsocketFormat,
 };
 use spacetimedb_lib::identity::RequestId;
+use spacetimedb_lib::metrics::ExecutionMetrics;
+use spacetimedb_lib::Identity;
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::AbortHandle;
 
@@ -30,6 +34,13 @@ pub enum Protocol {
 }
 
 impl Protocol {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Protocol::Text => "text",
+            Protocol::Binary => "binary",
+        }
+    }
+
     pub(crate) fn assert_matches_format_switch<B, J>(self, fs: &FormatSwitch<B, J>) {
         match (self, fs) {
             (Protocol::Text, FormatSwitch::Json(_)) | (Protocol::Binary, FormatSwitch::Bsatn(_)) => {}
@@ -67,6 +78,49 @@ pub struct ClientConnectionSender {
     sendtx: mpsc::Sender<SerializableMessage>,
     abort_handle: AbortHandle,
     cancelled: AtomicBool,
+
+    /// Handles on Prometheus metrics related to connections to this database.
+    ///
+    /// Will be `None` when constructed by [`ClientConnectionSender::dummy_with_channel`]
+    /// or [`ClientConnectionSender::dummy`], which are used in tests.
+    /// Will be `Some` whenever this `ClientConnectionSender` is wired up to an actual client connection.
+    metrics: Option<ClientConnectionMetrics>,
+}
+
+#[derive(Debug)]
+pub struct ClientConnectionMetrics {
+    pub websocket_request_msg_size: Histogram,
+    pub websocket_requests: IntCounter,
+
+    /// The `total_outgoing_queue_length` metric labeled with this database's `Identity`,
+    /// which we'll increment whenever sending a message.
+    ///
+    /// This metric will be decremented, and cleaned up,
+    /// by `ws_client_actor_inner` in client-api/src/routes/subscribe.rs.
+    /// Care must be taken not to increment it after the client has disconnected
+    /// and performed its clean-up.
+    pub sendtx_queue_size: IntGauge,
+}
+
+impl ClientConnectionMetrics {
+    fn new(database_identity: Identity, protocol: Protocol) -> Self {
+        let message_kind = protocol.as_str();
+        let websocket_request_msg_size = WORKER_METRICS
+            .websocket_request_msg_size
+            .with_label_values(&database_identity, message_kind);
+        let websocket_requests = WORKER_METRICS
+            .websocket_requests
+            .with_label_values(&database_identity, message_kind);
+        let sendtx_queue_size = WORKER_METRICS
+            .total_outgoing_queue_length
+            .with_label_values(&database_identity);
+
+        Self {
+            websocket_request_msg_size,
+            websocket_requests,
+            sendtx_queue_size,
+        }
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -85,22 +139,25 @@ impl ClientConnectionSender {
             Ok(h) => h.spawn(async {}).abort_handle(),
             Err(_) => tokio::runtime::Runtime::new().unwrap().spawn(async {}).abort_handle(),
         };
-        (
-            Self {
-                id,
-                config,
-                sendtx,
-                abort_handle,
-                cancelled: AtomicBool::new(false),
-            },
-            rx,
-        )
+
+        let cancelled = AtomicBool::new(false);
+        let sender = Self {
+            id,
+            config,
+            sendtx,
+            abort_handle,
+            cancelled,
+            metrics: None,
+        };
+        (sender, rx)
     }
 
     pub fn dummy(id: ClientActorId, config: ClientConfig) -> Self {
         Self::dummy_with_channel(id, config).0
     }
 
+    /// Send a message to the client. For data-related messages, you should probably use
+    /// `BroadcastQueue::send` to ensure that the client sees data messages in a consistent order.
     pub fn send_message(&self, message: impl Into<SerializableMessage>) -> Result<(), ClientSendError> {
         self.send(message.into())
     }
@@ -109,19 +166,36 @@ impl ClientConnectionSender {
         if self.cancelled.load(Relaxed) {
             return Err(ClientSendError::Cancelled);
         }
-        self.sendtx.try_send(message).map_err(|e| match e {
-            mpsc::error::TrySendError::Full(_) => {
+
+        match self.sendtx.try_send(message) {
+            Err(mpsc::error::TrySendError::Full(_)) => {
                 // we've hit CLIENT_CHANNEL_CAPACITY messages backed up in
                 // the channel, so forcibly kick the client
                 tracing::warn!(identity = %self.id.identity, connection_id = %self.id.connection_id, "client channel capacity exceeded");
                 self.abort_handle.abort();
                 self.cancelled.store(true, Relaxed);
-                ClientSendError::Cancelled
+                return Err(ClientSendError::Cancelled);
             }
-            mpsc::error::TrySendError::Closed(_) => ClientSendError::Disconnected,
-        })?;
+            Err(mpsc::error::TrySendError::Closed(_)) => return Err(ClientSendError::Disconnected),
+            Ok(()) => {
+                // If we successfully pushed a message into the queue, increment the queue size metric.
+                // Don't do this before pushing because, if the client has disconnected,
+                // it will already have performed its clean-up,
+                // and so would never perform the corresponding `dec` to this `inc`.
+                if let Some(metrics) = &self.metrics {
+                    metrics.sendtx_queue_size.inc();
+                }
+            }
+        }
 
         Ok(())
+    }
+
+    pub(crate) fn observe_websocket_request_message(&self, message: &DataMessage) {
+        if let Some(metrics) = &self.metrics {
+            metrics.websocket_request_msg_size.observe(message.len() as f64);
+            metrics.websocket_requests.inc();
+        }
     }
 }
 
@@ -199,18 +273,22 @@ impl ClientConnection {
 
         let (sendtx, sendrx) = mpsc::channel::<SerializableMessage>(CLIENT_CHANNEL_CAPACITY);
 
-        let db = module.info().database_identity;
-
         let (fut_tx, fut_rx) = oneshot::channel::<Fut>();
         // weird dance so that we can get an abort_handle into ClientConnection
+        let module_info = module.info.clone();
+        let database_identity = module_info.database_identity;
         let abort_handle = tokio::spawn(async move {
             let Ok(fut) = fut_rx.await else { return };
 
-            let _gauge_guard = WORKER_METRICS.connected_clients.with_label_values(&db).inc_scope();
+            let _gauge_guard = module_info.metrics.connected_clients.inc_scope();
+            module_info.metrics.ws_clients_spawned.inc();
+            scopeguard::defer!(module_info.metrics.ws_clients_aborted.inc());
 
             fut.await
         })
         .abort_handle();
+
+        let metrics = ClientConnectionMetrics::new(database_identity, config.protocol);
 
         let sender = Arc::new(ClientConnectionSender {
             id,
@@ -218,6 +296,7 @@ impl ClientConnection {
             sendtx,
             abort_handle,
             cancelled: AtomicBool::new(false),
+            metrics: Some(metrics),
         });
         let this = Self {
             sender,
@@ -299,59 +378,66 @@ impl ClientConnection {
             .await
     }
 
-    pub async fn subscribe_single(&self, subscription: SubscribeSingle, timer: Instant) -> Result<(), DBError> {
+    pub async fn subscribe_single(
+        &self,
+        subscription: SubscribeSingle,
+        timer: Instant,
+    ) -> Result<Option<ExecutionMetrics>, DBError> {
         let me = self.clone();
-        tokio::task::spawn_blocking(move || {
+        asyncify(move || {
             me.module
                 .subscriptions()
                 .add_single_subscription(me.sender, subscription, timer, None)
         })
         .await
-        .unwrap() // TODO: is unwrapping right here?
     }
 
-    pub async fn unsubscribe(&self, request: Unsubscribe, timer: Instant) -> Result<(), DBError> {
+    pub async fn unsubscribe(&self, request: Unsubscribe, timer: Instant) -> Result<Option<ExecutionMetrics>, DBError> {
         let me = self.clone();
-        tokio::task::spawn_blocking(move || {
+        asyncify(move || {
             me.module
                 .subscriptions()
                 .remove_single_subscription(me.sender, request, timer)
         })
         .await
-        .unwrap() // TODO: is unwrapping right here?
     }
 
-    pub async fn subscribe_multi(&self, request: SubscribeMulti, timer: Instant) -> Result<(), DBError> {
+    pub async fn subscribe_multi(
+        &self,
+        request: SubscribeMulti,
+        timer: Instant,
+    ) -> Result<Option<ExecutionMetrics>, DBError> {
         let me = self.clone();
-        tokio::task::spawn_blocking(move || {
+        asyncify(move || {
             me.module
                 .subscriptions()
                 .add_multi_subscription(me.sender, request, timer, None)
         })
         .await
-        .unwrap() // TODO: is unwrapping right here?
     }
 
-    pub async fn unsubscribe_multi(&self, request: UnsubscribeMulti, timer: Instant) -> Result<(), DBError> {
+    pub async fn unsubscribe_multi(
+        &self,
+        request: UnsubscribeMulti,
+        timer: Instant,
+    ) -> Result<Option<ExecutionMetrics>, DBError> {
         let me = self.clone();
-        tokio::task::spawn_blocking(move || {
+        asyncify(move || {
             me.module
                 .subscriptions()
                 .remove_multi_subscription(me.sender, request, timer)
         })
         .await
-        .unwrap() // TODO: is unwrapping right here?
     }
 
-    pub async fn subscribe(&self, subscription: Subscribe, timer: Instant) -> Result<(), DBError> {
+    pub async fn subscribe(&self, subscription: Subscribe, timer: Instant) -> Result<ExecutionMetrics, DBError> {
         let me = self.clone();
-        tokio::task::spawn_blocking(move || {
+        asyncify(move || {
             me.module
                 .subscriptions()
                 .add_legacy_subscriber(me.sender, subscription, timer, None)
         })
         .await
-        .unwrap()
     }
 
     pub fn one_off_query_json(&self, query: &str, message_id: &[u8], timer: Instant) -> Result<(), anyhow::Error> {

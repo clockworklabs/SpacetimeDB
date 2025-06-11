@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::time::Duration;
 
 use anyhow::Context;
 use spacetimedb_paths::server::{ServerDataDir, WasmtimeCacheDir};
@@ -23,12 +24,17 @@ pub struct WasmtimeRuntime {
     linker: Box<Linker<WasmInstanceEnv>>,
 }
 
+const EPOCH_TICK_LENGTH: Duration = Duration::from_millis(10);
+
+const EPOCH_TICKS_PER_SECOND: u64 = Duration::from_secs(1).div_duration_f64(EPOCH_TICK_LENGTH) as u64;
+
 impl WasmtimeRuntime {
-    pub fn new(data_dir: &ServerDataDir) -> Self {
+    pub fn new(data_dir: Option<&ServerDataDir>) -> Self {
         let mut config = wasmtime::Config::new();
         config
             .cranelift_opt_level(wasmtime::OptLevel::Speed)
             .consume_fuel(true)
+            .epoch_interruption(true)
             .wasm_backtrace_details(wasmtime::WasmBacktraceDetails::Enable);
 
         // Offer a compile-time flag for enabling perfmap generation,
@@ -39,9 +45,21 @@ impl WasmtimeRuntime {
         config.profiler(wasmtime::ProfilingStrategy::PerfMap);
 
         // ignore errors for this - if we're not able to set up caching, that's fine, it's just an optimization
-        let _ = Self::set_cache_config(&mut config, data_dir.wasmtime_cache());
+        if let Some(data_dir) = data_dir {
+            let _ = Self::set_cache_config(&mut config, data_dir.wasmtime_cache());
+        }
 
         let engine = Engine::new(&config).unwrap();
+
+        let weak_engine = engine.weak();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(EPOCH_TICK_LENGTH);
+            loop {
+                interval.tick().await;
+                let Some(engine) = weak_engine.upgrade() else { break };
+                engine.increment_epoch();
+            }
+        });
 
         let mut linker = Box::new(Linker::new(&engine));
         WasmtimeModule::link_imports(&mut linker).unwrap();

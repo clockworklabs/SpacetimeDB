@@ -345,7 +345,10 @@ impl<T: Encode + 'static> History for Local<T> {
         self.clog.transactions_from(offset, decoder)
     }
 
-    fn max_tx_offset(&self) -> Option<TxOffset> {
-        self.clog.max_committed_offset()
+    fn tx_range_hint(&self) -> (TxOffset, Option<TxOffset>) {
+        let min = self.clog.min_committed_offset().unwrap_or_default();
+        let max = self.clog.max_committed_offset();
+
+        (min, max)
     }
 }
