@@ -709,7 +709,6 @@ mod tests {
             panic!("expected an index join, but got {join:#?}");
         };
 
-        //TODO(sql): Remove manual checks to just `EXPLAIN` the query.
         expect_sub(
             &tx,
             sql,
@@ -719,9 +718,10 @@ Index Join: Rhs on lhs
   Inner Unique: false
   Join Cond: (rhs.b = lhs.b)
   Output: lhs.a, lhs.b
-  -> Seq Scan on rhs
+  -> Index Scan using Index rhs_c_idx_btree (rhs.c) on rhs
+     Index Cond: (rhs.c > U64(2))
      Output: rhs.b, rhs.c, rhs.d
-     -> Filter: (rhs.c > U64(2) AND rhs.c < U64(4) AND rhs.d = U64(3))"#
+     -> Filter: (rhs.c < U64(4) AND rhs.d = U64(3))"#
             ],
         );
 
@@ -805,8 +805,7 @@ Index Join: Rhs on lhs
             panic!("expected an index join, but got {join:#?}");
         };
 
-        //TODO(sql): Remove manual checks to just `EXPLAIN` the query.
-        // Why this generate same plan than the previous test? 'compile_incremental_index_join_index_side'
+        //TODO(sql): Why this generate same plan than the previous test? 'compile_incremental_index_join_index_side'
         expect_sub(
             &tx,
             sql,
@@ -816,9 +815,10 @@ Index Join: Rhs on lhs
   Inner Unique: false
   Join Cond: (rhs.b = lhs.b)
   Output: lhs.a, lhs.b
-  -> Seq Scan on rhs
+  -> Index Scan using Index rhs_c_idx_btree (rhs.c) on rhs
+     Index Cond: (rhs.c > U64(2))
      Output: rhs.b, rhs.c, rhs.d
-     -> Filter: (rhs.c > U64(2) AND rhs.c < U64(4) AND rhs.d = U64(3))"#
+     -> Filter: (rhs.c < U64(4) AND rhs.d = U64(3))"#
             ],
         );
 
@@ -908,8 +908,7 @@ Index Join: Rhs on lhs
             "expected an index join, but got {src_join:#?}"
         );
 
-        //TODO(sql): Remove manual checks to just `EXPLAIN` the query.
-        // Why this generate same plan than the previous test? 'compile_incremental_index_join_index_side'
+        //TODO(sql): Why this generate same plan than the previous test? 'compile_incremental_index_join_index_side'
         expect_sub(
             &tx,
             sql,
@@ -919,9 +918,10 @@ Index Join: Rhs on lhs
   Inner Unique: false
   Join Cond: (rhs.b = lhs.b)
   Output: lhs.a, lhs.b
-  -> Seq Scan on rhs
+  -> Index Scan using Index rhs_c_idx_btree (rhs.c) on rhs
+     Index Cond: (rhs.c > U64(2))
      Output: rhs.b, rhs.c, rhs.d
-     -> Filter: (rhs.c > U64(2) AND rhs.c < U64(4) AND rhs.d = U64(3))"#
+     -> Filter: (rhs.c < U64(4) AND rhs.d = U64(3))"#
             ],
         );
 

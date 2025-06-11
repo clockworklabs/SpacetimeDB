@@ -75,6 +75,7 @@ pub enum Iter<'a> {
     Row(RowRefIter<'a>),
     Join(LeftDeepJoinIter<'a>),
     Filter(Filter<'a, Iter<'a>>),
+    FilterIdx(FilterIdx<'a>),
 }
 
 impl<'a> Iterator for Iter<'a> {
@@ -85,6 +86,7 @@ impl<'a> Iterator for Iter<'a> {
             Self::Row(iter) => iter.next().map(Tuple::Row),
             Self::Join(iter) => iter.next(),
             Self::Filter(iter) => iter.next(),
+            Self::FilterIdx(iter) => iter.next(),
         }
     }
 }
@@ -96,6 +98,12 @@ impl<'a> Iter<'a> {
     {
         match plan {
             PhysicalPlan::TableScan(..) | PhysicalPlan::IxScan(..) => RowRefIter::build(plan, tx).map(Self::Row),
+            PhysicalPlan::IxScansAnd(input) => {
+                let input: Vec<_> = input.iter().map(|plan| Iter::build(plan, tx)).collect::<Result<_>>()?;
+                Ok(Iter::FilterIdx(FilterIdx {
+                    input: input.into_boxed_slice(),
+                }))
+            }
             PhysicalPlan::Filter(input, expr) => {
                 // Build a filter iterator
                 Iter::build(input, tx)
@@ -1048,5 +1056,19 @@ impl<'a> Iterator for Filter<'a, Iter<'a>> {
 
     fn next(&mut self) -> Option<Self::Item> {
         self.input.find(|tuple| self.expr.eval_bool(tuple))
+    }
+}
+
+/// A tuple-at-a-time filter iterator based on check multiple indexes
+pub struct FilterIdx<'a> {
+    input: Box<[Iter<'a>]>,
+}
+
+impl<'a> Iterator for FilterIdx<'a> {
+    type Item = Tuple<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        // Find the row that matches all the indexes
+        self.input.iter_mut().find_map(|iter| iter.next())
     }
 }
