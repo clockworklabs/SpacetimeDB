@@ -2,7 +2,6 @@ use super::{
     indexes::max_rows_in_page,
     layout::Size,
     page::{Page, PageHeader},
-    MemoryUsage,
 };
 use core::sync::atomic::{AtomicUsize, Ordering};
 use crossbeam_queue::ArrayQueue;
@@ -10,6 +9,7 @@ use spacetimedb_sats::bsatn::{self, DecodeError};
 use spacetimedb_sats::de::{
     DeserializeSeed, Deserializer, Error, NamedProductAccess, ProductVisitor, SeqProductAccess,
 };
+use spacetimedb_sats::memory_usage::MemoryUsage;
 use std::sync::Arc;
 
 /// A page pool of currently unused pages available for use in [`Pages`](super::pages::Pages).

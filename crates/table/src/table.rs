@@ -18,7 +18,6 @@ use super::{
     static_layout::StaticLayout,
     table_index::{TableIndex, TableIndexPointIter, TableIndexRangeIter},
     var_len::VarLenMembers,
-    MemoryUsage,
 };
 use core::ops::RangeBounds;
 use core::{fmt, ptr};
@@ -31,6 +30,7 @@ use enum_as_inner::EnumAsInner;
 use smallvec::SmallVec;
 use spacetimedb_lib::{bsatn::DecodeError, de::DeserializeOwned};
 use spacetimedb_primitives::{ColId, ColList, IndexId, SequenceId};
+use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::{
     algebraic_value::ser::ValueSerializer,
     bsatn::{self, ser::BsatnError, ToBsatn},

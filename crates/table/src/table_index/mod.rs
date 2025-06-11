@@ -26,9 +26,10 @@
 /// we support direct unique indices, where key are indices into `Vec`s.
 use super::indexes::RowPointer;
 use super::table::RowRef;
-use crate::{read_column::ReadColumn, static_assert_size, MemoryUsage};
+use crate::{read_column::ReadColumn, static_assert_size};
 use core::ops::RangeBounds;
 use spacetimedb_primitives::ColList;
+use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::{
     algebraic_value::Packed, i256, product_value::InvalidFieldError, sum_value::SumTag, u256, AlgebraicType,
     AlgebraicValue, ProductType, F32, F64,

@@ -27,17 +27,17 @@
 //! The `VarLenMembers` impl for `VarLenVisitorProgram`
 //! implements a simple interpreter loop for the var-len visitor bytecode.
 
-use crate::{layout::ProductTypeLayoutView, MemoryUsage};
-
 use super::{
     indexes::{Byte, Bytes, PageOffset},
     layout::{align_to, AlgebraicTypeLayout, HasLayout, RowTypeLayout, SumTypeLayout},
     page::get_ref,
     var_len::{VarLenMembers, VarLenRef},
 };
+use crate::layout::ProductTypeLayoutView;
 use core::fmt;
 use core::marker::PhantomData;
 use itertools::Itertools;
+use spacetimedb_sats::memory_usage::MemoryUsage;
 use std::sync::Arc;
 
 /// Construct an implementor of `VarLenMembers`,

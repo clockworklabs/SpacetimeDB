@@ -7,7 +7,6 @@
 //! They also implement [`HasLayout`] which generalizes over layout annotated types.
 
 use super::var_len::VarLenRef;
-use crate::MemoryUsage;
 use core::mem;
 use core::ops::{Index, Mul};
 use derive_more::{Add, Sub};
@@ -18,6 +17,7 @@ use spacetimedb_sats::{
         SumAccess, SumVisitor, ValidNames, VariantAccess as _, VariantVisitor,
     },
     i256, impl_deserialize, impl_serialize,
+    memory_usage::MemoryUsage,
     sum_type::{OPTION_NONE_TAG, OPTION_SOME_TAG},
     u256, AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement, ProductValue, SumType, SumTypeVariant,
     SumValue, WithTypespace,
@@ -383,8 +383,6 @@ impl MemoryUsage for SumTypeVariantLayout {
         ty.heap_usage() + name.heap_usage()
     }
 }
-
-impl MemoryUsage for PrimitiveType {}
 
 impl HasLayout for PrimitiveType {
     fn layout(&self) -> &'static Layout {

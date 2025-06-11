@@ -34,13 +34,13 @@ use spacetimedb_lib::{
 };
 use spacetimedb_primitives::{ColList, ColSet, IndexId, TableId};
 use spacetimedb_sats::{AlgebraicValue, ProductValue};
+use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_schema::{def::IndexAlgorithm, schema::TableSchema};
 use spacetimedb_table::{
     blob_store::{BlobStore, HashMapBlobStore},
     indexes::{RowPointer, SquashedOffset},
     page_pool::PagePool,
     table::{IndexScanRangeIter, InsertError, RowRef, Table, TableAndIndex},
-    MemoryUsage,
 };
 use std::collections::BTreeMap;
 use std::sync::Arc;

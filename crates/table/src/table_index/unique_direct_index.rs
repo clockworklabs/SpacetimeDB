@@ -1,8 +1,8 @@
 use crate::indexes::{PageIndex, PageOffset, RowPointer, SquashedOffset};
-use crate::MemoryUsage;
 use core::mem;
 use core::ops::{Bound, RangeBounds};
 use core::option::IntoIter;
+use spacetimedb_sats::memory_usage::MemoryUsage;
 
 /// A direct index for relating unsigned integer keys [`u8`..`u64`] to [`RowPointer`].
 ///

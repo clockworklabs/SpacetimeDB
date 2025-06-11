@@ -10,6 +10,7 @@ pub mod convert;
 pub mod de;
 pub mod hash;
 pub mod hex;
+pub mod memory_usage;
 pub mod meta_type;
 pub mod primitives;
 pub mod product_type;
