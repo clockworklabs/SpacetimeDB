@@ -562,6 +562,13 @@ impl ModuleHost {
         F: FnOnce(&mut dyn ModuleInstance) -> R + Send + 'static,
         R: Send + 'static,
     {
+        // For the `stop_database` call when we encounter a panic.
+        // Frustratingly, it seems this lint can't be ignored on a per-expression basis,
+        // only at the function level or higher.
+        // TODO: Rework so that we don't have to ignore this lint,
+        // possibly using an async lock?
+        #![allow(clippy::await_holding_lock)]
+
         // Record the time until our function starts running.
         let queue_timer = WORKER_METRICS
             .reducer_wait_time
@@ -611,14 +618,13 @@ impl ModuleHost {
         match result {
             Ok(result) => Ok(result),
             Err(panic_payload) => {
-                // We never cancel this task
-                // (it's pretty clearly `spawn`ed and then immediately `await`ed right above),
-                // so no need to check `e.is_panic` or `e.is_cancelled`.
                 let err = DatabaseLifecycleTracker::panic_payload_to_error(
                     &format!("while executing reducer {reducer}"),
                     &panic_payload,
                 );
+
                 self.lifecycle.lock().stop_database(err).await;
+
                 std::panic::resume_unwind(panic_payload);
             }
         }

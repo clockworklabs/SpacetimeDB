@@ -302,6 +302,13 @@ impl HostController {
         F: FnOnce(&RelationalDB) -> T + Send + 'static,
         T: Send + 'static,
     {
+        // For the `stop_database` call when we encounter a panic.
+        // Frustratingly, it seems this lint can't be ignored on a per-expression basis,
+        // only at the function level or higher.
+        // TODO: Rework so that we don't have to ignore this lint,
+        // possibly using an async lock?
+        #![allow(clippy::await_holding_lock)]
+
         trace!("using database {}/{}", database.database_identity, replica_id);
         let module = self.get_or_launch_module_host(database, replica_id).await?;
         let lifecycle = Arc::clone(&module.lifecycle);
@@ -318,8 +325,6 @@ impl HostController {
                 let err = DatabaseLifecycleTracker::panic_payload_to_error("while `using_database`", &panic_payload);
                 log::error!("{err:?}");
 
-                // FIXME: Find a way to avoid this `.await` while still stopping the metrics task.
-                #[allow(clippy::await_holding_lock)]
                 lifecycle.lock().stop_database(err).await;
 
                 std::panic::resume_unwind(panic_payload)
