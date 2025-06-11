@@ -6,11 +6,7 @@
 //! These, and others, determine what the layout of objects typed at those types are.
 //! They also implement [`HasLayout`] which generalizes over layout annotated types.
 
-use core::mem;
-use core::ops::{Index, Mul};
-use derive_more::{Add, Sub};
-use enum_as_inner::EnumAsInner;
-use spacetimedb_sats::{
+use crate::{
     de::{
         Deserialize, DeserializeSeed, Deserializer, Error, NamedProductAccess, ProductVisitor, SeqProductAccess,
         SumAccess, SumVisitor, ValidNames, VariantAccess as _, VariantVisitor,
@@ -21,7 +17,10 @@ use spacetimedb_sats::{
     u256, AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement, ProductValue, SumType, SumTypeVariant,
     SumValue, WithTypespace,
 };
-pub use spacetimedb_schema::type_for_generate::PrimitiveType;
+use core::mem;
+use core::ops::{Index, Mul};
+use derive_more::{Add, Sub};
+use enum_as_inner::EnumAsInner;
 use std::sync::Arc;
 
 /// Aligns a `base` offset to the `required_alignment` (in the positive direction) and returns it.
@@ -834,10 +833,10 @@ impl VariantVisitor for &SumTypeLayout {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::proptest::generate_algebraic_type;
     use itertools::Itertools as _;
     use proptest::collection::vec;
     use proptest::prelude::*;
-    use spacetimedb_sats::proptest::generate_algebraic_type;
 
     #[test]
     fn align_to_expected() {
@@ -994,7 +993,7 @@ mod test {
         fn variant_order_irrelevant_for_layout(
             variants in vec(generate_algebraic_type(), 0..5)
         ) {
-            use spacetimedb_sats::SumTypeVariant;
+            use crate::SumTypeVariant;
 
             let len = variants.len();
             // Compute all permutations of the sum type with `variants`.
