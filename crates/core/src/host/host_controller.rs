@@ -790,6 +790,17 @@ impl Host {
             ..
         } = host_controller;
 
+        scopeguard::defer_on_unwind! {
+            let backtrace = std::backtrace::Backtrace::force_capture();
+            log::error!("[{host_controller_nonce}/{call_nonce}/{host_nonce}] Unwinding from `try_init` at {backtrace}");
+        }
+        scopeguard::defer_on_success! {
+            log::info!("[{host_controller_nonce}/{call_nonce}/{host_nonce}] Returning from `try_init` successfully!");
+        }
+        scopeguard::defer! {
+            log::info!("[{host_controller_nonce}/{call_nonce}/{host_nonce}] Exiting `try_init` somehow!");
+        }
+
         log::info!("[{host_controller_nonce}/{call_nonce}/{host_nonce}] try_init({database:#?}, {replica_id})");
 
         let on_panic = host_controller.unregister_fn(replica_id);
@@ -856,7 +867,9 @@ impl Host {
             }
         };
 
-        let (program, launched) = launch_module(
+        log::info!("[{host_controller_nonce}/{call_nonce}/{host_nonce}] calling launch_module");
+
+        let launch_module_res = launch_module(
             database,
             replica_id,
             program,
@@ -867,14 +880,57 @@ impl Host {
             runtimes.clone(),
             host_controller.db_cores.take(),
         )
-        .await?;
+        .await;
+
+        let (program, launched) = match launch_module_res {
+            Err(e) => {
+                log::error!("[{host_controller_nonce}/{call_nonce}/{host_nonce}] launch_module returned error {e:#?}");
+                return Err(e);
+            }
+            Ok(stuff) => {
+                log::info!("[{host_controller_nonce}/{call_nonce}/{host_nonce}] launch_module returned ok");
+                stuff
+            }
+        };
 
         if program_needs_init {
-            let call_result = launched.module_host.init_database(program).await?;
+            log::info!(
+                "[{host_controller_nonce}/{call_nonce}/{host_nonce}] program_needs_init is true, calling init_database"
+            );
+
+            let call_result = launched.module_host.init_database(program).await;
+
+            let call_result = match call_result {
+                Err(e) => {
+                    log::error!(
+                        "[{host_controller_nonce}/{call_nonce}/{host_nonce}] init_database returned outer error {e:#?}"
+                    );
+                    return Err(e.into());
+                }
+                Ok(res) => {
+                    log::info!("[{host_controller_nonce}/{call_nonce}/{host_nonce}] init_database returned outer ok");
+                    res
+                }
+            };
             if let Some(call_result) = call_result {
-                Result::from(call_result)?;
+                log::info!("[{host_controller_nonce}/{call_nonce}/{host_nonce}] call_result is Some");
+                let res = Result::from(call_result);
+                match res {
+                    Ok(_) => {
+                        log::info!("[{host_controller_nonce}/{call_nonce}/{host_nonce}] call_result contains Ok");
+                    }
+                    Err(e) => {
+                        log::error!(
+                            "[{host_controller_nonce}/{call_nonce}/{host_nonce}] call_result contains error {e:#?}"
+                        );
+                        return Err(e.into());
+                    }
+                }
+            } else {
+                log::info!("[{host_controller_nonce}/{call_nonce}/{host_nonce}] call_result is None");
             }
         } else {
+            log::info!("[{host_controller_nonce}/{call_nonce}/{host_nonce}] program_needs_init is false");
             drop(program)
         }
 
@@ -884,6 +940,8 @@ impl Host {
             scheduler,
             scheduler_starter,
         } = launched;
+
+        log::info!("[{host_controller_nonce}/{call_nonce}/{host_nonce}] calling client_disconnected for all outstanding clients");
 
         // Disconnect dangling clients.
         for (identity, connection_id) in connected_clients {
@@ -898,8 +956,25 @@ impl Host {
                 })?;
         }
 
-        scheduler_starter.start(&module_host)?;
+        log::info!("[{host_controller_nonce}/{call_nonce}/{host_nonce}] done calling client_disconnected, spawning scheduler and metrics task");
+
+        let sched_res = scheduler_starter.start(&module_host);
+
+        match sched_res {
+            Ok(_) => {
+                log::info!("[{host_controller_nonce}/{call_nonce}/{host_nonce}] scheduler_starter.start returned Ok");
+            }
+            Err(e) => {
+                log::error!(
+                    "[{host_controller_nonce}/{call_nonce}/{host_nonce}] scheduler_start.start returned error {e:#?}"
+                );
+                return Err(e.into());
+            }
+        }
+
         let metrics_task = tokio::spawn(metric_reporter(replica_ctx.clone())).abort_handle();
+
+        log::info!("[{host_controller_nonce}/{call_nonce}/{host_nonce}] spawned metric tasic, returning");
 
         Ok(Host {
             module: watch::Sender::new(module_host),
