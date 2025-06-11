@@ -1,6 +1,9 @@
-use super::{indexes::Size, page::Page};
-use crate::indexes::max_rows_in_page;
-use crate::{page::PageHeader, MemoryUsage};
+use super::{
+    indexes::max_rows_in_page,
+    layout::Size,
+    page::{Page, PageHeader},
+    MemoryUsage,
+};
 use core::sync::atomic::{AtomicUsize, Ordering};
 use crossbeam_queue::ArrayQueue;
 use spacetimedb_sats::bsatn::{self, DecodeError};

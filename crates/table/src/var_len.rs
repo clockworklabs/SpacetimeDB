@@ -32,7 +32,8 @@
 
 use super::{
     blob_store::BlobHash,
-    indexes::{Byte, Bytes, PageOffset, Size},
+    indexes::{Byte, Bytes, PageOffset},
+    layout::Size,
 };
 use crate::{static_assert_align, static_assert_size};
 use core::iter;
