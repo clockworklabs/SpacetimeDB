@@ -1,11 +1,11 @@
-use spacetimedb_primitives::{ColId, ColList};
-
 use crate::algebraic_value::de::{ValueDeserializeError, ValueDeserializer};
 use crate::algebraic_value::ser::value_serialize;
 use crate::de::Deserialize;
 use crate::meta_type::MetaType;
 use crate::product_value::InvalidFieldError;
 use crate::{AlgebraicType, AlgebraicValue, ProductTypeElement, SpacetimeType, ValueWithType, WithTypespace};
+use core::ops::Deref;
+use spacetimedb_primitives::{ColId, ColList};
 
 /// The tag used inside the special `Identity` product type.
 pub const IDENTITY_TAG: &str = "__identity__";
@@ -49,6 +49,14 @@ pub struct ProductType {
     /// These factors can either be named or unnamed.
     /// When all the factors are unnamed, we can regard this as a plain tuple type.
     pub elements: Box<[ProductTypeElement]>,
+}
+
+impl Deref for ProductType {
+    type Target = [ProductTypeElement];
+
+    fn deref(&self) -> &Self::Target {
+        &self.elements
+    }
 }
 
 impl std::fmt::Debug for ProductType {
