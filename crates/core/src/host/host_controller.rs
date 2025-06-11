@@ -795,7 +795,8 @@ impl Host {
             log::error!("[{host_controller_nonce}/{call_nonce}/{host_nonce}] Unwinding from `try_init` at {backtrace}");
         }
         scopeguard::defer_on_success! {
-            log::info!("[{host_controller_nonce}/{call_nonce}/{host_nonce}] Returning from `try_init` successfully!");
+            let backtrace = std::backtrace::Backtrace::force_capture();
+            log::info!("[{host_controller_nonce}/{call_nonce}/{host_nonce}] Returning from `try_init` successfully at {backtrace}!");
         }
         scopeguard::defer! {
             log::info!("[{host_controller_nonce}/{call_nonce}/{host_nonce}] Exiting `try_init` somehow!");
