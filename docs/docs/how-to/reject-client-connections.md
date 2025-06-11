@@ -23,7 +23,7 @@ Client behavior can vary by client type. For example:
   `Unable to send subscribe message: WS sender loop has dropped its recv channel: TrySendError { kind: Disconnected }`
 
 * **Rust clients**: Client disconnection behavior is currently undefined and will generate an error reading:
-  `Disconnected abnormally: System.Net.WebSockets.WebSocketException (0x80004005): The remote party closed the WebSocket connection without completing the close handshake.`
+  `Unable to send subscribe message: WS sender loop has dropped its recv channel: TrySendError { kind: Disconnected }`
 
 * **TypeScript clients**: Client will receive an `Error connecting to SpacetimeDB:` and a `CloseEvent` with a code of 1006.
 
