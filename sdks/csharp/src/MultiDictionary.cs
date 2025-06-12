@@ -18,6 +18,7 @@ namespace SpacetimeDB
     /// <typeparam name="TKey"></typeparam>
     /// <typeparam name="TValue"></typeparam>
     internal struct MultiDictionary<TKey, TValue> : IEquatable<MultiDictionary<TKey, TValue>>
+    where TValue : struct
     {
         // The actual data.
         readonly Dictionary<TKey, (TValue Value, uint Multiplicity)> RawDict;
@@ -66,10 +67,6 @@ namespace SpacetimeDB
         /// <returns>Whether the key is entirely new to the dictionary. If it was already present, we assert that the old value is equal to the new value.</returns>
         public bool Add(TKey key, TValue value)
         {
-            if (value == null)
-            {
-                throw new NullReferenceException("Null values are forbidden in multidictionary");
-            }
             Debug.Assert(RawDict != null);
             Debug.Assert(key != null);
             if (RawDict.TryGetValue(key, out var result))
@@ -362,6 +359,7 @@ namespace SpacetimeDB
     /// <typeparam name="TKey"></typeparam>
     /// <typeparam name="TValue"></typeparam>
     internal struct MultiDictionaryDelta<TKey, TValue> : IEquatable<MultiDictionaryDelta<TKey, TValue>>
+    where TValue : struct
     {
         /// <summary>
         /// A change to an individual value associated to a key.
@@ -638,10 +636,6 @@ namespace SpacetimeDB
         /// <param name="item"></param>
         public void Add(TKey key, TValue value)
         {
-            if (value == null)
-            {
-                throw new NullReferenceException("Null values are forbidden in multidictionary");
-            }
             Debug.Assert(RawDict != null);
             Debug.Assert(key != null);
             KeyDelta result;
