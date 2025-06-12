@@ -2,12 +2,9 @@
 //! and [`write_row_to_page(page, blob_store, visitor, ty, val)`]
 //! which write `val: ProductValue` typed at `ty` to `page` and `pages` respectively.
 
-use crate::layout::ProductTypeLayoutView;
-
 use super::{
     blob_store::BlobStore,
     indexes::{Bytes, PageOffset, RowPointer, SquashedOffset},
-    layout::{align_to, AlgebraicTypeLayout, HasLayout, RowTypeLayout, SumTypeLayout, VarLenType},
     page::{GranuleOffsetIter, Page, VarView},
     page_pool::PagePool,
     pages::Pages,
@@ -19,7 +16,11 @@ use spacetimedb_sats::{
     bsatn::{self, to_writer, DecodeError},
     buffer::BufWriter,
     de::DeserializeSeed as _,
-    i256, u256, AlgebraicType, AlgebraicValue, ProductValue, SumValue,
+    i256,
+    layout::{
+        align_to, AlgebraicTypeLayout, HasLayout, ProductTypeLayoutView, RowTypeLayout, SumTypeLayout, VarLenType,
+    },
+    u256, AlgebraicType, AlgebraicValue, ProductValue, SumValue,
 };
 use thiserror::Error;
 

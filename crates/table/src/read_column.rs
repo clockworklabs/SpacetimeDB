@@ -3,12 +3,8 @@
 //! we are interested in only a single column (or a small set of columns),
 //! and would like to avoid the allocation required by a `ProductValue`.
 
-use crate::{
-    bflatn_from,
-    indexes::PageOffset,
-    layout::{AlgebraicTypeLayout, PrimitiveType, ProductTypeElementLayout, Size, VarLenType},
-    table::RowRef,
-};
+use crate::{bflatn_from, indexes::PageOffset, table::RowRef};
+use spacetimedb_sats::layout::{AlgebraicTypeLayout, PrimitiveType, ProductTypeElementLayout, Size, VarLenType};
 use spacetimedb_sats::{
     algebraic_value::{ser::ValueSerializer, Packed},
     i256,

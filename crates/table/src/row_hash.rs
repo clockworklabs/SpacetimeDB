@@ -5,18 +5,16 @@
 use super::{
     bflatn_from::read_tag,
     indexes::{Bytes, PageOffset},
-    layout::{align_to, AlgebraicTypeLayout, HasLayout, RowTypeLayout},
     page::Page,
     var_len::VarLenRef,
 };
-use crate::{
-    bflatn_from::vlr_blob_bytes,
-    blob_store::BlobStore,
-    layout::{ProductTypeLayoutView, VarLenType},
-};
+use crate::{bflatn_from::vlr_blob_bytes, blob_store::BlobStore};
 use core::hash::{Hash as _, Hasher};
 use core::mem;
 use core::str;
+use spacetimedb_sats::layout::{
+    align_to, AlgebraicTypeLayout, HasLayout, ProductTypeLayoutView, RowTypeLayout, VarLenType,
+};
 use spacetimedb_sats::{algebraic_value::ser::concat_byte_chunks_buf, bsatn::Deserializer, i256, u256, F32, F64};
 
 /// Hashes the row in `page` where the fixed part starts at `fixed_offset`

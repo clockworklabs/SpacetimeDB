@@ -2,12 +2,9 @@
 //! which serializes `value = page.get_row_data(fixed_offset, fixed_row_size)` typed at `ty`
 //! and associated var len objects in `value` into the serializer `ser`.
 
-use crate::layout::ProductTypeLayoutView;
-
 use super::{
     blob_store::BlobStore,
     indexes::{Bytes, PageOffset},
-    layout::{align_to, AlgebraicTypeLayout, HasLayout as _, RowTypeLayout, SumTypeLayout, VarLenType},
     page::Page,
     row_hash,
     var_len::VarLenRef,
@@ -16,6 +13,9 @@ use core::cell::Cell;
 use core::str;
 use spacetimedb_sats::{
     i256, impl_serialize,
+    layout::{
+        align_to, AlgebraicTypeLayout, HasLayout as _, ProductTypeLayoutView, RowTypeLayout, SumTypeLayout, VarLenType,
+    },
     ser::{SerializeNamedProduct, Serializer},
     u256, AlgebraicType,
 };

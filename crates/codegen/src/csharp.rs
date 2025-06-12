@@ -12,13 +12,13 @@ use crate::util::{
     type_ref_name,
 };
 use convert_case::{Case, Casing};
+use spacetimedb_lib::sats::layout::PrimitiveType;
 use spacetimedb_primitives::ColId;
 use spacetimedb_schema::def::{BTreeAlgorithm, IndexAlgorithm, ModuleDef, TableDef, TypeDef};
 use spacetimedb_schema::identifier::Identifier;
 use spacetimedb_schema::schema::{Schema, TableSchema};
 use spacetimedb_schema::type_for_generate::{
-    AlgebraicTypeDef, AlgebraicTypeUse, PlainEnumTypeDef, PrimitiveType, ProductTypeDef, SumTypeDef,
-    TypespaceForGenerate,
+    AlgebraicTypeDef, AlgebraicTypeUse, PlainEnumTypeDef, ProductTypeDef, SumTypeDef, TypespaceForGenerate,
 };
 
 const INDENT: &str = "    ";
@@ -187,7 +187,7 @@ const REDUCER_EVENTS: &str = r#"
                 return Event;
             }
         }
-        
+
         /// <summary>
         /// Access to tables in the client cache, which stores a read-only replica of the remote database state.
         ///
@@ -368,11 +368,11 @@ const REDUCER_EVENTS: &str = r#"
 
         /// <summary>
         /// Subscribe to the following SQL queries.
-        /// 
+        ///
         /// This method returns immediately, with the data not yet added to the DbConnection.
         /// The provided callbacks will be invoked once the data is returned from the remote server.
         /// Data from all the provided queries will be returned at the same time.
-        /// 
+        ///
         /// See the SpacetimeDB SQL docs for more information on SQL syntax:
         /// <a href="https://spacetimedb.com/docs/sql">https://spacetimedb.com/docs/sql</a>
         /// </summary>

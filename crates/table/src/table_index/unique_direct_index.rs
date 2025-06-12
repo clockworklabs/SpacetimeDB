@@ -293,10 +293,9 @@ impl Iterator for UniqueDirectIndexRangeIter<'_> {
 
 #[cfg(test)]
 pub(super) mod test {
-    use core::iter::repeat_with;
-
     use super::*;
-    use crate::layout::Size;
+    use core::iter::repeat_with;
+    use spacetimedb_sats::layout::Size;
 
     const FIXED_ROW_SIZE: Size = Size(4 * 4);
 
