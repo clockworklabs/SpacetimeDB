@@ -1534,6 +1534,83 @@ mod tests {
         Ok(())
     }
 
+    /// Test that a client and the database owner can subscribe to the same query
+    #[tokio::test]
+    async fn test_rls_for_owner() -> anyhow::Result<()> {
+        // Establish a connection for owner and client
+        let (tx_for_a, mut rx_for_a) = client_connection(client_id_from_u8(0));
+        let (tx_for_b, mut rx_for_b) = client_connection(client_id_from_u8(1));
+
+        let db = relational_db()?;
+        let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
+
+        // Create table `t`
+        let table_id = db.create_table_for_test("t", &[("id", AlgebraicType::identity())], &[0.into()])?;
+
+        // Restrict access to `t`
+        insert_rls_rules(&db, [table_id], ["select * from t where id = :sender"])?;
+
+        let mut query_ids = 0;
+
+        // Have owner and client subscribe to `t`
+        subscribe_multi(&subs, &["select * from t"], tx_for_a, &mut query_ids)?;
+        subscribe_multi(&subs, &["select * from t"], tx_for_b, &mut query_ids)?;
+
+        // Wait for both subscriptions
+        assert_matches!(
+            rx_for_a.recv().await,
+            Some(SerializableMessage::Subscription(SubscriptionMessage {
+                result: SubscriptionResult::SubscribeMulti(_),
+                ..
+            }))
+        );
+        assert_matches!(
+            rx_for_b.recv().await,
+            Some(SerializableMessage::Subscription(SubscriptionMessage {
+                result: SubscriptionResult::SubscribeMulti(_),
+                ..
+            }))
+        );
+
+        let schema = ProductType::from([AlgebraicType::identity()]);
+
+        let id_for_b = identity_from_u8(1);
+        let id_for_c = identity_from_u8(2);
+
+        commit_tx(
+            &db,
+            &subs,
+            [],
+            [
+                // Insert an identity for client `b` plus a random identity
+                (table_id, product![id_for_b]),
+                (table_id, product![id_for_c]),
+            ],
+        )?;
+
+        assert_tx_update_for_table(
+            &mut rx_for_a,
+            table_id,
+            &schema,
+            // The owner should receive both identities
+            [product![id_for_b], product![id_for_c]],
+            [],
+        )
+        .await;
+
+        assert_tx_update_for_table(
+            &mut rx_for_b,
+            table_id,
+            &schema,
+            // Client `b` should only receive its identity
+            [product![id_for_b]],
+            [],
+        )
+        .await;
+
+        Ok(())
+    }
+
     /// Test that we do not send empty updates to clients
     #[tokio::test]
     async fn test_no_empty_updates() -> anyhow::Result<()> {
