@@ -1117,12 +1117,11 @@ impl SubscriptionManager {
                 edge.rhs_join_col,
                 &row.elements[edge.lhs_join_col.idx()],
             )
-            // This read should always succeed, and it's a bug if it doesn't.
             .expect("This read should always succeed, and it's a bug if it doesn't")
             .next()
             .map(|row| {
-                // Similarly this read should always succeed
-                row.read_col(edge.rhs_col).expect("This read should always succeed, and it's a bug if it doesn't")
+                row.read_col(edge.rhs_col)
+                    .expect("This read should always succeed, and it's a bug if it doesn't")
             })
         }
 
