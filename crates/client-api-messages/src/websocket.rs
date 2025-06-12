@@ -859,25 +859,19 @@ pub fn decide_compression(len: usize, compression: Compression) -> Compression {
     }
 }
 
-pub fn brotli_compress(bytes: &[u8], out: &mut Vec<u8>) {
-    let reader = &mut &bytes[..];
-
-    // The default Brotli buffer size.
-    const BUFFER_SIZE: usize = 4096;
+pub fn brotli_compress(bytes: &[u8], out: &mut impl io::Write) {
     // We are optimizing for compression speed,
     // so we choose the lowest (fastest) level of compression.
     // Experiments on internal workloads have shown compression ratios between 7:1 and 10:1
     // for large `SubscriptionUpdate` messages at this level.
-    const COMPRESSION_LEVEL: u32 = 1;
-    // The default value for an internal compression parameter.
-    // See `BrotliEncoderParams` for more details.
-    const LG_WIN: u32 = 22;
+    const COMPRESSION_LEVEL: i32 = 1;
 
-    let mut encoder = brotli::CompressorReader::new(reader, BUFFER_SIZE, COMPRESSION_LEVEL, LG_WIN);
-
-    encoder
-        .read_to_end(out)
-        .expect("Failed to Brotli compress `SubscriptionUpdateMessage`");
+    let params = brotli::enc::BrotliEncoderParams {
+        quality: COMPRESSION_LEVEL,
+        ..<_>::default()
+    };
+    let reader = &mut &bytes[..];
+    brotli::BrotliCompress(reader, out, &params).expect("should be able to BrotliCompress");
 }
 
 pub fn brotli_decompress(bytes: &[u8]) -> Result<Vec<u8>, io::Error> {
@@ -886,10 +880,10 @@ pub fn brotli_decompress(bytes: &[u8]) -> Result<Vec<u8>, io::Error> {
     Ok(decompressed)
 }
 
-pub fn gzip_compress(bytes: &[u8], out: &mut Vec<u8>) {
+pub fn gzip_compress(bytes: &[u8], out: &mut impl io::Write) {
     let mut encoder = flate2::write::GzEncoder::new(out, flate2::Compression::fast());
     encoder.write_all(bytes).unwrap();
-    encoder.finish().expect("Failed to gzip compress `bytes`");
+    encoder.finish().expect("should be able to gzip compress `bytes`");
 }
 
 pub fn gzip_decompress(bytes: &[u8]) -> Result<Vec<u8>, io::Error> {
