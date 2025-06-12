@@ -1,7 +1,7 @@
 using System.Collections;
 using System.Collections.Generic;
-using System.Linq.Expressions;
 using System.Runtime.CompilerServices;
+using System.Threading;
 
 #nullable enable
 
@@ -14,7 +14,14 @@ internal struct SmallHashSet<T, EQ> : IEnumerable<T>
 where T : struct
 where EQ : IEqualityComparer<T>, new()
 {
-    static EQ DefaultEqualityComparer = new();
+    static readonly EQ DefaultEqualityComparer = new();
+    static readonly ThreadLocal<Stack<HashSet<T>>> Pool = new(() => new(), false);
+
+    // Assuming each HashSet<T> uses 128 bytes of memory, this means
+    // our pool will use at most 512 MB of memory per thread.
+    // Since in the current design of the SDK, only the main thread produces SmallHashSets,
+    // this should be fine.
+    static readonly int MAX_POOL_SIZE = 4_000_000;
 
     // Invariant: zero or one of the following is not null.
     T? Value;
@@ -31,11 +38,9 @@ where EQ : IEqualityComparer<T>, new()
             }
             else
             {
-                Values = new(2, DefaultEqualityComparer)
-                {
-                    newValue,
-                    Value.Value
-                };
+                Values = AllocHashSet();
+                Values.Add(newValue);
+                Values.Add(Value.Value);
                 Value = null;
             }
         }
@@ -51,11 +56,19 @@ where EQ : IEqualityComparer<T>, new()
         {
             Value = null;
         }
-        if (Values != null && Values.Contains(remValue))
+        else if (Values != null && Values.Contains(remValue))
         {
             Values.Remove(remValue);
-            // Do not try to go back to single-row state.
-            // We might as well keep the allocation around if this set has needed to store multiple values before.
+
+            // If we're not storing values and there's room in the pool, reuse this allocation.
+            // Otherwise, we can keep the allocation around: all of the logic in this class will still
+            // work.
+            var LocalPool = Pool.Value;
+            if (Values.Count == 0 && LocalPool.Count < MAX_POOL_SIZE)
+            {
+                LocalPool.Push(Values);
+                Values = null;
+            }
         }
     }
 
@@ -66,7 +79,7 @@ where EQ : IEqualityComparer<T>, new()
         {
             return Values.Contains(value);
         }
-        if (Value != null)
+        else if (Value != null)
         {
             return DefaultEqualityComparer.Equals(Value.Value, value);
         }
@@ -109,6 +122,23 @@ where EQ : IEqualityComparer<T>, new()
     IEnumerator IEnumerable.GetEnumerator()
     {
         return GetEnumerator();
+    }
+
+    /// <summary>
+    /// Allocate a new HashSet with the capacity to store at least 2 elements.
+    /// </summary>
+    /// <returns></returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static HashSet<T> AllocHashSet()
+    {
+        if (Pool.Value.TryPop(out var result))
+        {
+            return result;
+        }
+        else
+        {
+            return new(2, DefaultEqualityComparer);
+        }
     }
 }
 
@@ -188,5 +218,136 @@ where T : struct
     {
     }
 }
+
+
+internal struct SmallHashSetOfPreHashedRow : IEnumerable<PreHashedRow>
+{
+    static readonly ThreadLocal<Stack<HashSet<PreHashedRow>>> Pool = new(() => new(), false);
+
+    // Assuming each HashSet<T> uses 128 bytes of memory, this means
+    // our pool will use at most 512 MB of memory per thread.
+    // Since in the current design of the SDK, only the main thread produces SmallHashSets,
+    // this should be fine.
+    static readonly int MAX_POOL_SIZE = 4_000_000;
+
+    // Invariant: zero or one of the following is not null.
+    PreHashedRow? Value;
+    HashSet<PreHashedRow>? Values;
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void Add(PreHashedRow newValue)
+    {
+        if (Values == null)
+        {
+            if (Value == null)
+            {
+                Value = newValue;
+            }
+            else
+            {
+                Values = AllocHashSet();
+                Values.Add(newValue);
+                Values.Add(Value.Value);
+                Value = null;
+            }
+        }
+        else
+        {
+            Values.Add(newValue);
+        }
+    }
+
+    public void Remove(PreHashedRow remValue)
+    {
+        if (Value != null && Value.Value.Equals(remValue))
+        {
+            Value = null;
+        }
+        else if (Values != null && Values.Contains(remValue))
+        {
+            Values.Remove(remValue);
+
+            // If we're not storing values and there's room in the pool, reuse this allocation.
+            // Otherwise, we can keep the allocation around: all of the logic in this class will still
+            // work.
+            var LocalPool = Pool.Value;
+            if (Values.Count == 0 && LocalPool.Count < MAX_POOL_SIZE)
+            {
+                LocalPool.Push(Values);
+                Values = null;
+            }
+        }
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public bool Contains(PreHashedRow value)
+    {
+        if (Values != null)
+        {
+            return Values.Contains(value);
+        }
+        else if (Value != null)
+        {
+            return Value.Value.Equals(value);
+        }
+        return false;
+    }
+
+    public int Count
+    {
+        get
+        {
+            if (Value != null)
+            {
+                return 1;
+            }
+            else if (Values != null)
+            {
+                return Values.Count;
+            }
+            return 0;
+        }
+
+    }
+
+    public IEnumerator<PreHashedRow> GetEnumerator()
+    {
+        if (Value != null)
+        {
+            return new SingleElementEnumerator<PreHashedRow>(Value.Value);
+        }
+        else if (Values != null)
+        {
+            return Values.GetEnumerator();
+        }
+        else
+        {
+            return new NoElementEnumerator<PreHashedRow>();
+        }
+    }
+
+    IEnumerator IEnumerable.GetEnumerator()
+    {
+        return GetEnumerator();
+    }
+
+    /// <summary>
+    /// Allocate a new HashSet with the capacity to store at least 2 elements.
+    /// </summary>
+    /// <returns></returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static HashSet<PreHashedRow> AllocHashSet()
+    {
+        if (Pool.Value.TryPop(out var result))
+        {
+            return result;
+        }
+        else
+        {
+            return new(2, PreHashedRowComparer.Default);
+        }
+    }
+}
+
 
 #nullable disable

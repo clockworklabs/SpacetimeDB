@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
+using System.Text;
 using CsCheck;
 
 public class SmallHashSetTests
@@ -37,11 +38,29 @@ public class SmallHashSetTests
                     ints.Add(value);
                     smallInts.Add(value);
                 }
-                Debug.Assert(ints.SetEquals(smallInts));
+                Debug.Assert(ints.SetEquals(smallInts), $"{CollectionToString(ints)} != {CollectionToString(smallInts)}");
             }
 
         }, iter: 10_000);
 
+    }
+
+    string CollectionToString<T>(IEnumerable<T> collection)
+    {
+        StringBuilder result = new();
+        result.Append("{");
+        bool first = true;
+        foreach (var item in collection)
+        {
+            if (!first)
+            {
+                result.Append($", ");
+            }
+            first = false;
+            result.Append(item);
+        }
+        result.Append("}");
+        return result.ToString();
     }
 
 }
