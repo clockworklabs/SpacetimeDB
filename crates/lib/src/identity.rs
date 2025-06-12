@@ -22,6 +22,10 @@ impl AuthCtx {
     pub fn for_current(owner: Identity) -> Self {
         Self { owner, caller: owner }
     }
+    /// Does `owner == caller`
+    pub fn is_owner(&self) -> bool {
+        self.owner == self.caller
+    }
     /// WARNING: Use this only for simple test were the `auth` don't matter
     pub fn for_testing() -> Self {
         AuthCtx {

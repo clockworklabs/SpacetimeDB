@@ -614,13 +614,25 @@ pub(crate) fn get_all(relational_db: &RelationalDB, tx: &Tx, auth: &AuthCtx) -> 
         .get_all_tables(tx)?
         .iter()
         .map(Deref::deref)
-        .filter(|t| {
-            t.table_type == StTableType::User && (auth.owner == auth.caller || t.table_access == StAccess::Public)
-        })
+        .filter(|t| t.table_type == StTableType::User && (auth.is_owner() || t.table_access == StAccess::Public))
         .map(|schema| {
             let sql = format!("SELECT * FROM {}", schema.table_name);
-            SubscriptionPlan::compile(&sql, &SchemaViewer::new(tx, auth), auth)
-                .map(|(plans, has_param)| Plan::new(plans, QueryHash::from_string(&sql, auth.caller, has_param), sql))
+            let tx = SchemaViewer::new(tx, auth);
+            SubscriptionPlan::compile(&sql, &tx, auth).map(|(plans, has_param)| {
+                Plan::new(
+                    plans,
+                    QueryHash::from_string(
+                        &sql,
+                        auth.caller,
+                        // Note that when generating hashes for queries from owners,
+                        // we always treat them as if they were parameterized by :sender.
+                        // This is because RLS is not applicable to owners.
+                        // Hence owner hashes must never overlap with client hashes.
+                        auth.is_owner() || has_param,
+                    ),
+                    sql,
+                )
+            })
         })
         .collect::<Result<_, _>>()?)
 }
@@ -638,9 +650,7 @@ pub(crate) fn legacy_get_all(
         .get_all_tables(tx)?
         .iter()
         .map(Deref::deref)
-        .filter(|t| {
-            t.table_type == StTableType::User && (auth.owner == auth.caller || t.table_access == StAccess::Public)
-        })
+        .filter(|t| t.table_type == StTableType::User && (auth.is_owner() || t.table_access == StAccess::Public))
         .map(|src| SupportedQuery {
             kind: query::Supported::Select,
             expr: QueryExpr::new(src),
