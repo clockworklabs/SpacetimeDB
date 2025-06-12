@@ -1,7 +1,7 @@
+use spacetimedb_sats::layout::Size;
 use spacetimedb_table::{
     fixed_bit_set::FixedBitSet,
     indexes::{max_rows_in_page, PageIndex, PageOffset, RowPointer, SquashedOffset},
-    layout::Size,
 };
 
 /// A table recording which rows of a table in the [`CommittedState`] that have been deleted.

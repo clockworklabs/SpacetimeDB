@@ -13,7 +13,6 @@ pub mod eq;
 mod eq_to_pv;
 pub mod fixed_bit_set;
 pub mod indexes;
-pub mod layout;
 pub mod page;
 pub mod page_pool;
 pub mod pages;

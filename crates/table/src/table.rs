@@ -5,7 +5,6 @@ use super::{
     eq::eq_row_in_page,
     eq_to_pv::eq_row_in_page_to_pv,
     indexes::{Bytes, PageIndex, PageOffset, RowHash, RowPointer, SquashedOffset, PAGE_DATA_SIZE},
-    layout::{AlgebraicTypeLayout, RowTypeLayout, Size},
     page::{FixedLenRowsIter, Page},
     page_pool::PagePool,
     pages::Pages,
@@ -30,6 +29,7 @@ use enum_as_inner::EnumAsInner;
 use smallvec::SmallVec;
 use spacetimedb_lib::{bsatn::DecodeError, de::DeserializeOwned};
 use spacetimedb_primitives::{ColId, ColList, IndexId, SequenceId};
+use spacetimedb_sats::layout::{AlgebraicTypeLayout, PrimitiveType, RowTypeLayout, Size};
 use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::{
     algebraic_value::ser::ValueSerializer,
@@ -43,7 +43,6 @@ use spacetimedb_sats::{
 use spacetimedb_schema::{
     def::IndexAlgorithm,
     schema::{IndexSchema, TableSchema},
-    type_for_generate::PrimitiveType,
 };
 use std::{
     collections::{btree_map, BTreeMap},

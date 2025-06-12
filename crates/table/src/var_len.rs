@@ -33,12 +33,12 @@
 use super::{
     blob_store::BlobHash,
     indexes::{Byte, Bytes, PageOffset},
-    layout::Size,
 };
-use crate::{layout::VAR_LEN_REF_LAYOUT, static_assert_align, static_assert_size};
+use crate::{static_assert_align, static_assert_size};
 use core::iter;
 use core::marker::PhantomData;
 use core::mem::{self};
+use spacetimedb_sats::layout::{Size, VAR_LEN_REF_LAYOUT};
 
 /// Reference to var-len object within a page.
 // TODO: make this larger and do short-string optimization?

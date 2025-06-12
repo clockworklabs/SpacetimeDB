@@ -23,17 +23,16 @@
 
 use super::{
     indexes::{Byte, Bytes},
-    layout::{
-        AlgebraicTypeLayout, HasLayout, PrimitiveType, ProductTypeElementLayout, RowTypeLayout, SumTypeLayout,
-        SumTypeVariantLayout,
-    },
     util::range_move,
 };
-use crate::layout::ProductTypeLayoutView;
 use core::mem::MaybeUninit;
 use core::ptr;
 use smallvec::SmallVec;
 use spacetimedb_data_structures::slim_slice::SlimSmallSliceBox;
+use spacetimedb_sats::layout::{
+    AlgebraicTypeLayout, HasLayout, PrimitiveType, ProductTypeElementLayout, ProductTypeLayoutView, RowTypeLayout,
+    SumTypeLayout, SumTypeVariantLayout,
+};
 use spacetimedb_sats::memory_usage::MemoryUsage;
 
 /// A precomputed layout for a type whose encoded BSATN and BFLATN lengths are both known constants,
