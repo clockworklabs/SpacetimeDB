@@ -7,7 +7,10 @@ use spacetimedb_lib::{
     db::raw_def::v9::{RawRowLevelSecurityDefV9, TableType},
     AlgebraicType,
 };
-use spacetimedb_sats::WithTypespace;
+use spacetimedb_sats::{
+    layout::{HasLayout, SumTypeLayout},
+    WithTypespace,
+};
 
 pub type Result<T> = std::result::Result<T, ErrorStream<AutoMigrateError>>;
 
@@ -159,6 +162,30 @@ pub enum AutoMigrateError {
         .0.column, .0.table, .0.type1, .0.type2
     )]
     ChangeWithinColumnTypeFewerVariants(ChangeColumnTypeParts),
+
+    #[error(
+        "Changing the type of column {} in table {} from {:?} to {:?}, requires a manual migration, due to size mismatch",
+        .0.column, .0.table, .0.type1, .0.type2
+    )]
+    ChangeColumnTypeSizeMismatch(ChangeColumnTypeParts),
+
+    #[error(
+        "Changing a type within column {} in table {} from {:?} to {:?}, requires a manual migration, due to size mismatch",
+        .0.column, .0.table, .0.type1, .0.type2
+    )]
+    ChangeWithinColumnTypeSizeMismatch(ChangeColumnTypeParts),
+
+    #[error(
+        "Changing the type of column {} in table {} from {:?} to {:?}, requires a manual migration, due to alignment mismatch",
+        .0.column, .0.table, .0.type1, .0.type2
+    )]
+    ChangeColumnTypeAlignMismatch(ChangeColumnTypeParts),
+
+    #[error(
+        "Changing a type within column {} in table {} from {:?} to {:?}, requires a manual migration, due to alignment mismatch",
+        .0.column, .0.table, .0.type1, .0.type2
+    )]
+    ChangeWithinColumnTypeAlignMismatch(ChangeColumnTypeParts),
 
     #[error(
         "Changing the type of column {} in table {} from {:?} to {:?}, with fewer fields, requires a manual migration",
@@ -397,13 +424,10 @@ fn ensure_old_ty_upgradable_to_new(
             // The number of variants in `new_ty` cannot decrease.
             let var_lens_ok = if old_vars.len() <= new_vars.len() {
                 Ok(())
+            } else if within {
+                Err(ChangeWithinColumnTypeFewerVariants(parts_for_error()).into())
             } else {
-                Err(if within {
-                    ChangeWithinColumnTypeFewerVariants(parts_for_error())
-                } else {
-                    ChangeColumnTypeFewerVariants(parts_for_error())
-                }
-                .into())
+                Err(ChangeColumnTypeFewerVariants(parts_for_error()).into())
             };
 
             // The variants in `old_ty` must be upgradable to those in `old_ty`.
@@ -416,7 +440,27 @@ fn ensure_old_ty_upgradable_to_new(
                 .map(ensure)
                 .collect_all_errors::<()>();
 
-            (var_lens_ok, prefix_ok).combine_errors().map(drop)
+            // The old and the new sum types must have matching layout sizes and alignments.
+            let old_ty = SumTypeLayout::from(old_ty.clone());
+            let new_ty = SumTypeLayout::from(new_ty.clone());
+            let old_layout = old_ty.layout();
+            let new_layout = new_ty.layout();
+            let size_ok = if old_layout.size == new_layout.size {
+                Ok(())
+            } else if within {
+                Err(ChangeWithinColumnTypeSizeMismatch(parts_for_error()).into())
+            } else {
+                Err(ChangeColumnTypeSizeMismatch(parts_for_error()).into())
+            };
+            let align_ok = if old_layout.align == new_layout.align {
+                Ok(())
+            } else if within {
+                Err(ChangeWithinColumnTypeAlignMismatch(parts_for_error()).into())
+            } else {
+                Err(ChangeColumnTypeAlignMismatch(parts_for_error()).into())
+            };
+
+            (var_lens_ok, prefix_ok, size_ok, align_ok).combine_errors().map(drop)
         }
 
         // For products,
@@ -850,7 +894,7 @@ mod tests {
         let foo_refty = old_builder.add_algebraic_type([], "foo", foo_ty.clone(), true);
         let sum1_ty = AlgebraicType::sum([
             ("foo", AlgebraicType::array(foo_refty.into())),
-            ("bar", AlgebraicType::U8),
+            ("bar", AlgebraicType::U128),
         ]);
         let sum1_refty = old_builder.add_algebraic_type([], "sum1", sum1_ty.clone(), true);
 
@@ -1027,6 +1071,30 @@ mod tests {
             && type1.0 == foo2_ty && type2.0 == new_foo2_ty
         );
 
+        // Size of inner sum changed.
+        expect_error_matching!(
+            result,
+            AutoMigrateError::ChangeWithinColumnTypeSizeMismatch(ChangeColumnTypeParts {
+                table,
+                column,
+                type1,
+                type2
+            }) => table == &apples && column == &sum1
+            && type1.0 == foo2_ty && type2.0 == new_foo2_ty
+        );
+
+        // Align of inner sum changed.
+        expect_error_matching!(
+            result,
+            AutoMigrateError::ChangeWithinColumnTypeAlignMismatch(ChangeColumnTypeParts {
+                table,
+                column,
+                type1,
+                type2
+            }) => table == &apples && column == &sum1
+            && type1.0 == foo2_ty && type2.0 == new_foo2_ty
+        );
+
         // Remove field `foo3`.
         expect_error_matching!(
             result,
@@ -1043,6 +1111,30 @@ mod tests {
         expect_error_matching!(
             result,
             AutoMigrateError::ChangeColumnTypeFewerVariants(ChangeColumnTypeParts {
+                table,
+                column,
+                type1,
+                type2
+            }) => table == &apples && column == &sum1
+            && type1.0 == resolve_old(&sum1_ty) && type2.0 == resolve_new(&new_sum1_ty)
+        );
+
+        // Size of outer sum changed.
+        expect_error_matching!(
+            result,
+            AutoMigrateError::ChangeColumnTypeSizeMismatch(ChangeColumnTypeParts {
+                table,
+                column,
+                type1,
+                type2
+            }) => table == &apples && column == &sum1
+            && type1.0 == resolve_old(&sum1_ty) && type2.0 == resolve_new(&new_sum1_ty)
+        );
+
+        // Align of outer sum changed.
+        expect_error_matching!(
+            result,
+            AutoMigrateError::ChangeColumnTypeAlignMismatch(ChangeColumnTypeParts {
                 table,
                 column,
                 type1,
