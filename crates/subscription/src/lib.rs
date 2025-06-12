@@ -300,7 +300,7 @@ impl std::fmt::Display for TableName {
 pub struct JoinEdge {
     /// The [`TableId`] for `a`
     pub lhs_table: TableId,
-    /// The [`TableId`] for `a`
+    /// The [`TableId`] for `b`
     pub rhs_table: TableId,
     /// The [`ColId`] for `a.id`
     pub lhs_join_col: ColId,
