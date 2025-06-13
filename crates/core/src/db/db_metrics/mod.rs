@@ -163,12 +163,12 @@ metrics_group!(
 
         #[name = spacetime_subscription_lock_num_waiters]
         #[help = "The number of clients waiting to acquire the subscription lock"]
-        #[labels(db: Identity)]
+        #[labels(db: Identity, workload: WorkloadType)]
         pub subscription_lock_waiters: IntGaugeVec,
 
         #[name = spacetime_subscription_lock_wait_time_sec]
         #[help = "How much time (in seconds) do we spend waiting to acquire the subscription lock"]
-        #[labels(db: Identity)]
+        #[labels(db: Identity, workload: WorkloadType)]
         pub subscription_lock_wait_time: HistogramVec,
 
         #[name = spacetime_num_queries_subscribed]

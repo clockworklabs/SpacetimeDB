@@ -113,8 +113,8 @@ pub struct SubscriptionMetrics {
 impl SubscriptionMetrics {
     pub fn new(db: &Identity, workload: &WorkloadType) -> Self {
         Self {
-            lock_waiters: DB_METRICS.subscription_lock_waiters.with_label_values(db),
-            lock_wait_time: DB_METRICS.subscription_lock_wait_time.with_label_values(db),
+            lock_waiters: DB_METRICS.subscription_lock_waiters.with_label_values(db, workload),
+            lock_wait_time: DB_METRICS.subscription_lock_wait_time.with_label_values(db, workload),
             compilation_time: DB_METRICS.subscription_compile_time.with_label_values(db, workload),
             num_queries_subscribed: DB_METRICS.num_queries_subscribed.with_label_values(db),
             num_new_queries_subscribed: DB_METRICS.num_new_queries_subscribed.with_label_values(db),
