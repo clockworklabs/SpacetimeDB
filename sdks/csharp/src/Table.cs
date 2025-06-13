@@ -95,7 +95,7 @@ namespace SpacetimeDB
             where Column : IEquatable<Column>, IComparable<Column>
         {
             // TODO: change to SortedDictionary when adding support for range queries.
-            private readonly Dictionary<Column, SmallHashSet<PreHashedRow, PreHashedRowComparer>> cache = new();
+            private readonly Dictionary<Column, SmallHashSetOfPreHashedRow> cache = new();
 
             public BTreeIndexBase(RemoteTableHandle<EventContext, Row> table)
             {

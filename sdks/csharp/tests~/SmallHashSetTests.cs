@@ -3,7 +3,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Text;
 using CsCheck;
 
-public class SmallHashSetTests
+public partial class SmallHashSetTests
 {
     Gen<List<(int Value, bool Remove)>> GenOperationList = Gen.Int[0, 32].SelectMany(count =>
         Gen.Select(Gen.Int[0, 3].List[count], Gen.Bool.List[count], (values, removes) => values.Zip(removes).ToList())
@@ -23,11 +23,46 @@ public class SmallHashSetTests
     {
         GenOperationList.Sample(ops =>
         {
-            HashSet<int> ints = new();
+            HashSet<int> ints = new(new IntEqualityComparer());
             SmallHashSet<int, IntEqualityComparer> smallInts = new();
             foreach (var it in ops)
             {
                 var (value, remove) = it;
+                if (remove)
+                {
+                    ints.Remove(value);
+                    smallInts.Remove(value);
+                }
+                else
+                {
+                    ints.Add(value);
+                    smallInts.Add(value);
+                }
+                Debug.Assert(ints.SetEquals(smallInts), $"{CollectionToString(ints)} != {CollectionToString(smallInts)}");
+            }
+
+        }, iter: 10_000);
+
+    }
+
+    [SpacetimeDB.Type]
+    partial class IntHolder
+    {
+        public int Int;
+    }
+
+    [Fact]
+    public void SmallHashSet_PreHashedRow_IsLikeHashSet()
+    {
+        GenOperationList.Sample(ops =>
+        {
+            HashSet<PreHashedRow> ints = new(new PreHashedRowComparer());
+            SmallHashSetOfPreHashedRow smallInts = new();
+            foreach (var it in ops)
+            {
+                var (valueWrapped, remove) = it;
+                var value = new PreHashedRow(new IntHolder { Int = valueWrapped });
+
                 if (remove)
                 {
                     ints.Remove(value);
