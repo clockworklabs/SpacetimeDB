@@ -577,6 +577,14 @@ impl ModuleHost {
                 .with_label_values(&self.info.database_identity)
                 .observe(queue_length as f64);
         }
+        // Ensure that we always decrement the gauge.
+        let timer_guard = scopeguard::guard((), move |_| {
+            // Decrement the queue length gauge when we're done.
+            // This is done in a defer so that it happens even if the reducer call panics.
+            queue_length_gauge.dec();
+            queue_timer.stop_and_record();
+            
+        });
 
         // Operations on module instances (e.g. calling reducers) is blocking,
         // partially because the computation can potentialyl take a long time
@@ -593,8 +601,7 @@ impl ModuleHost {
         });
         self.job_tx
             .run(move |inst| {
-                queue_timer.stop_and_record();
-                queue_length_gauge.dec();
+                drop(timer_guard);
                 f(inst)
             })
             .await
