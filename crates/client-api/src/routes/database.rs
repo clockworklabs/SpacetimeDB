@@ -371,7 +371,7 @@ fn mime_ndjson() -> mime::Mime {
     "application/x-ndjson".parse().unwrap()
 }
 
-async fn worker_ctx_find_database(
+pub(crate) async fn worker_ctx_find_database(
     worker_ctx: &(impl ControlStateDelegate + ?Sized),
     database_identity: &Identity,
 ) -> axum::response::Result<Option<Database>> {
