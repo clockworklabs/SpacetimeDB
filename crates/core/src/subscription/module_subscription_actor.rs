@@ -1,13 +1,13 @@
 use super::execution_unit::QueryHash;
 use super::module_subscription_manager::{
-    spawn_send_worker, BroadcastQueue, Plan, SubscriptionGaugeStats, SubscriptionManager,
+    spawn_send_worker, BroadcastError, BroadcastQueue, Plan, SubscriptionGaugeStats, SubscriptionManager,
 };
 use super::query::compile_query_with_hashes;
 use super::tx::DeltaTx;
 use super::{collect_table_update, TableUpdateType};
 use crate::client::messages::{
-    SubscriptionData, SubscriptionError, SubscriptionMessage, SubscriptionResult, SubscriptionRows,
-    SubscriptionUpdateMessage, TransactionUpdateMessage,
+    SerializableMessage, SubscriptionData, SubscriptionError, SubscriptionMessage, SubscriptionResult,
+    SubscriptionRows, SubscriptionUpdateMessage, TransactionUpdateMessage,
 };
 use crate::client::{ClientActorId, ClientConnectionSender, Protocol};
 use crate::db::datastore::locking_tx_datastore::tx::TxId;
@@ -568,6 +568,18 @@ impl ModuleSubscriptions {
         }
 
         Ok((plans, auth, scopeguard::ScopeGuard::into_inner(tx)))
+    }
+
+    /// Send a message to a client connection.
+    /// This will eventually be sent by the send-worker.
+    /// This takes a `TxId`, because this should be called while still holding a lock on the database.
+    pub fn send_client_message(
+        &self,
+        recipient: Arc<ClientConnectionSender>,
+        message: impl Into<SerializableMessage>,
+        _tx_id: &TxId,
+    ) -> Result<(), BroadcastError> {
+        self.broadcast_queue.send_client_message(recipient, message)
     }
 
     #[tracing::instrument(level = "trace", skip_all)]

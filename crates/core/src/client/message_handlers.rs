@@ -120,8 +120,8 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
             message_id,
         }) => {
             let res = match client.config.protocol {
-                Protocol::Binary => client.one_off_query_bsatn(&query, &message_id, timer),
-                Protocol::Text => client.one_off_query_json(&query, &message_id, timer),
+                Protocol::Binary => client.one_off_query_bsatn(&query, &message_id, timer).await,
+                Protocol::Text => client.one_off_query_json(&query, &message_id, timer).await,
             };
             mod_metrics
                 .request_round_trip_sql
