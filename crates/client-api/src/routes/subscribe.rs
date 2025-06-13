@@ -226,6 +226,8 @@ async fn ws_client_actor_inner(
     let mut closed = false;
     let mut rx_buf = Vec::new();
 
+    let mut connected_clients_watcher = client.module.lifecycle.lock().connected_clients_watcher.clone();
+
     let addr = client.module.info().database_identity;
 
     // Grab handles on the total incoming and outgoing queue length metrics,
@@ -275,13 +277,16 @@ async fn ws_client_actor_inner(
 
             // If we've received an incoming message,
             // grab it to handle in the next `match`.
-            message = ws.next() => match message {
+            incoming_ws_message = ws.next() => match incoming_ws_message {
                 Some(Ok(m)) => Item::Message(ClientMessage::from_message(m)),
                 Some(Err(error)) => {
                     log::warn!("Websocket receive error: {}", error);
+
+                    // TODO: Should we error and drop the connection here?
                     continue;
                 }
-                // the client sent us a close frame
+                // the client sent us a close frame, or we closed the connection ourselves.
+                // Calls to `ws.close()` will eventually wind up here.
                 None => {
                     clean_up_metrics(&message_queue, &sendrx);
                     break
@@ -329,6 +334,7 @@ async fn ws_client_actor_inner(
                     let send_all = also_poll(send_all, make_progress(&mut current_message));
                     let t1 = Instant::now();
                     if let Err(error) = send_all.await {
+                        // TODO: Should this drop the connection?
                         log::warn!("Websocket send error: {error}")
                     }
                     let time = t1.elapsed();
@@ -359,6 +365,50 @@ async fn ws_client_actor_inner(
                 continue;
             }
 
+            notif = connected_clients_watcher.changed() => {
+                match notif {
+                    // The `DatabaseLifecycleTracker` for this database got dropped
+                    // without first notifying clients to disconnect.
+                    Err(_) => {
+                        log::error!("`connected_clients_watcher` sender dropped without shutdown notification");
+
+                        // Send a close frame while continuing to poll the `handle_queue`,
+                        // to avoid deadlocks or delays due to enqueued futures holding resources.
+                        let close = also_poll(
+                            ws.close(Some(CloseFrame { code: CloseCode::Error, reason: "module exited without notification".into() })),
+                            make_progress(&mut current_message),
+                        );
+                        if let Err(e) = close.await {
+                            log::warn!("error closing: {e:#}")
+                        }
+                        closed = true;
+                    }
+
+                    Ok(()) => {
+                        // Nasty dance to avoid holding a `tokio::sync::watch::Ref` across an await point:
+                        // Grab the ref, clone the `String` error reason, then drop the ref as soon as possible.
+                        let reason = if let Some(reason) = connected_clients_watcher.borrow_and_update().as_ref() {
+                            reason.clone()
+                        } else {
+                            // Spurious wakeup; odd but not problematic.
+                            continue;
+                        };
+
+                        // Send a close frame while continuing to poll the `handle_queue`,
+                        // to avoid deadlocks or delays due to enqueued futures holding resources.
+                        let close = also_poll(
+                            ws.close(Some(CloseFrame { code: CloseCode::Error, reason: reason.into(), })),
+                            make_progress(&mut current_message),
+                        );
+                        if let Err(e) = close.await {
+                            log::warn!("error closing: {e:#}")
+                        }
+                        closed = true;
+                    }
+                }
+                continue;
+            }
+
             // If it's time to send a ping...
             _ = liveness_check_interval.tick() => {
                 // If we received a pong at some point, send a fresh ping.
@@ -366,6 +416,7 @@ async fn ws_client_actor_inner(
                     // Send a ping message while continuing to poll the `handle_queue`,
                     // to avoid deadlocks or delays due to enqueued futures holding resources.
                     if let Err(e) = also_poll(ws.send(WsMessage::Ping(Bytes::new())), make_progress(&mut current_message)).await {
+                        // Should this drop the connection?
                         log::warn!("error sending ping: {e:#}");
                     }
                     continue;
@@ -392,15 +443,18 @@ async fn ws_client_actor_inner(
             }
             Item::HandleResult(res) => {
                 if let Err(e) = res {
+                    // If it's an execution error, broadcast, then continue the loop.
                     if let MessageHandleError::Execution(err) = e {
                         log::error!("{err:#}");
                         let msg = serialize(err, client.config);
                         if let Err(error) = ws.send(datamsg_to_wsmsg(msg)).await {
+                            // Should we drop the connection?
                             log::warn!("Websocket send error: {error}")
                         }
                         continue;
                     }
                     log::debug!("Client caused error on text message: {}", e);
+                    // If it's any other kind of error, drop the connection.
                     if let Err(e) = ws
                         .close(Some(CloseFrame {
                             code: CloseCode::Error,

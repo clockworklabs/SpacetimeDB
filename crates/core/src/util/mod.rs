@@ -2,6 +2,7 @@ use futures::{Future, FutureExt};
 use std::borrow::Cow;
 use std::pin::pin;
 use tokio::sync::oneshot;
+use tokio::task::JoinError;
 use tracing::Span;
 
 pub mod prometheus_handle;
@@ -35,8 +36,16 @@ pub fn spawn_rayon<R: Send + 'static>(f: impl FnOnce() -> R + Send + 'static) ->
 
 /// Ergonomic wrapper for `tokio::task::spawn_blocking(f).await`.
 ///
-/// If `f` panics, it will be bubbled up to the calling task.
-pub async fn asyncify<F, R>(f: F) -> R
+/// [`crate::host::host_controller::HostController::using_database`]
+/// uses this method instead of [`asyncify`] so it can clean up the [`crate::host_controller::DatabaseLifecycleTracker`]
+/// before resuming the panic.
+///
+/// This function should be used for blocking operations,
+/// i.e. those which make syscalls which put the calling thread to sleep,
+/// but should not be used for CPU-bound work.
+/// CPU-bound work should instead be placed on a [`jobs::JobThread`].
+/// As of writing (pgoldman 2025-06-11), our codebase violates this guideline in several places.
+pub async fn asyncify_catch_panic<F, R>(f: F) -> Result<R, JoinError>
 where
     F: FnOnce() -> R + Send + 'static,
     R: Send + 'static,
@@ -49,11 +58,29 @@ where
         f()
     })
     .await
-    .unwrap_or_else(|e| match e.try_into_panic() {
-        Ok(panic_payload) => std::panic::resume_unwind(panic_payload),
-        // the only other variant is cancelled, which shouldn't happen because we don't cancel it.
-        Err(e) => panic!("Unexpected JoinError: {e}"),
-    })
+}
+
+/// Ergonomic wrapper for `tokio::task::spawn_blocking(f).await`.
+///
+/// If `f` panics, it will be bubbled up to the calling task.
+///
+/// This function should be used for blocking operations,
+/// i.e. those which make syscalls which put the calling thread to sleep,
+/// but should not be used for CPU-bound work.
+/// CPU-bound work should instead be placed on a [`jobs::JobThread`].
+/// As of writing (pgoldman 2025-06-11), our codebase violates this guideline in several places.
+pub async fn asyncify<F, R>(f: F) -> R
+where
+    F: FnOnce() -> R + Send + 'static,
+    R: Send + 'static,
+{
+    asyncify_catch_panic(f)
+        .await
+        .unwrap_or_else(|e| match e.try_into_panic() {
+            Ok(panic_payload) => std::panic::resume_unwind(panic_payload),
+            // the only other variant is cancelled, which shouldn't happen because we don't cancel it.
+            Err(e) => panic!("Unexpected JoinError: {e}"),
+        })
 }
 
 /// Await `fut`, while also polling `also`.

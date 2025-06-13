@@ -1,3 +1,4 @@
+use super::host_controller::{DatabaseLifecycleTracker, DatabaseLifecycleTrackerHandle};
 use super::{ArgsTuple, InvalidReducerArguments, ReducerArgs, ReducerCallResult, ReducerId, ReducerOutcome, Scheduler};
 use crate::client::messages::{OneOffQueryResponseMessage, SerializableMessage};
 use crate::client::{ClientActorId, ClientConnectionSender};
@@ -446,8 +447,12 @@ impl<T: Module> ModuleInstance for AutoReplacingModuleInstance<T> {
 pub struct ModuleHost {
     pub info: Arc<ModuleInfo>,
     module: Arc<dyn DynModule>,
-    /// Called whenever a reducer call on this host panics.
-    on_panic: Arc<dyn Fn() + Send + Sync + 'static>,
+    /// Whenever host execution panics while executing a reducer,
+    /// we'll signal the [`DatabaseLifecycleTracker`] to shut down this database.
+    ///
+    /// Note that this does not apply to in-WASM panics or error returns,
+    /// only to host panics.
+    pub lifecycle: DatabaseLifecycleTrackerHandle,
     job_tx: JobThread<dyn ModuleInstance>,
 }
 
@@ -462,8 +467,8 @@ impl fmt::Debug for ModuleHost {
 
 pub struct WeakModuleHost {
     info: Arc<ModuleInfo>,
-    inner: Weak<dyn DynModule>,
-    on_panic: Weak<dyn Fn() + Send + Sync + 'static>,
+    module: Weak<dyn DynModule>,
+    lifecycle: Weak<parking_lot::Mutex<DatabaseLifecycleTracker>>,
     tx: WeakJobThread<dyn ModuleInstance>,
 }
 
@@ -525,11 +530,9 @@ pub enum ClientConnectedError {
 }
 
 impl ModuleHost {
-    pub(super) fn new(module: impl Module, on_panic: impl Fn() + Send + Sync + 'static, core: JobCore) -> Self {
+    pub(super) fn new(module: impl Module, lifecycle: DatabaseLifecycleTrackerHandle, core: JobCore) -> Self {
         let info = module.info();
         let module = Arc::new(module);
-        let on_panic = Arc::new(on_panic);
-
         let module_clone = module.clone();
         let job_tx = core.start(
             move || AutoReplacingModuleInstance {
@@ -541,7 +544,7 @@ impl ModuleHost {
         ModuleHost {
             info,
             module,
-            on_panic,
+            lifecycle,
             job_tx,
         }
     }
@@ -561,6 +564,13 @@ impl ModuleHost {
         F: FnOnce(&mut dyn ModuleInstance) -> R + Send + 'static,
         R: Send + 'static,
     {
+        // For the `stop_database` call when we encounter a panic.
+        // Frustratingly, it seems this lint can't be ignored on a per-expression basis,
+        // only at the function level or higher.
+        // TODO: Rework so that we don't have to ignore this lint,
+        // possibly using an async lock?
+        #![allow(clippy::await_holding_lock)]
+
         // Record the time until our function starts running.
         let queue_timer = WORKER_METRICS
             .reducer_wait_time
@@ -585,20 +595,41 @@ impl ModuleHost {
         // the provided closure in a tokio blocking task, and bubbles up any
         // panic that may occur.
 
-        // If a reducer call panics, we **must** ensure to call `self.on_panic`
+        // If the host panics during a reducer call, we **must** ensure to notify `self.lifecycle`
         // so that the module is discarded by the host controller.
-        scopeguard::defer_on_unwind!({
-            log::warn!("reducer {reducer} panicked");
-            (self.on_panic)();
-        });
-        self.job_tx
-            .run(move |inst| {
+        // Note that this is not the same as the WASM execution panicking!
+        // If the WASM code exits with error during [`Self::call_reducer_inner`],
+        // either by returning `Err`, panicking or throwing an exception,
+        // then `f` here will return `Err(_)`, *not* panic, and so the `tokio::spawn` `JoinHandle`
+        // will resolve to `Ok(Err(_))`.
+        // In that case, we should not stop the database,
+        // as we can and will handle that error and recover.
+        let result = self
+            .job_tx
+            // If `f` panics, we'll going to `resume_unwind` in just a moment,
+            // after calling `stop_database`.
+            // We won't inspect any state captured by `f` in that path.
+            .run_catch_panic(move |inst| {
                 queue_timer.stop_and_record();
                 queue_length_gauge.dec();
                 f(inst)
             })
             .await
-            .map_err(|_: JobThreadClosed| NoSuchModule)
+            .map_err(|_: JobThreadClosed| NoSuchModule)?;
+
+        match result {
+            Ok(result) => Ok(result),
+            Err(panic_payload) => {
+                let err = DatabaseLifecycleTracker::panic_payload_to_error(
+                    &format!("while executing reducer {reducer}"),
+                    &panic_payload,
+                );
+
+                self.lifecycle.lock().stop_database(err).await;
+
+                std::panic::resume_unwind(panic_payload);
+            }
+        }
     }
 
     pub async fn disconnect_client(&self, client_id: ClientActorId) {
@@ -1120,8 +1151,8 @@ impl ModuleHost {
     pub fn downgrade(&self) -> WeakModuleHost {
         WeakModuleHost {
             info: self.info.clone(),
-            inner: Arc::downgrade(&self.module),
-            on_panic: Arc::downgrade(&self.on_panic),
+            module: Arc::downgrade(&self.module),
+            lifecycle: Arc::downgrade(&self.lifecycle),
             tx: self.job_tx.downgrade(),
         }
     }
@@ -1137,14 +1168,14 @@ impl ModuleHost {
 
 impl WeakModuleHost {
     pub fn upgrade(&self) -> Option<ModuleHost> {
-        let inner = self.inner.upgrade()?;
-        let on_panic = self.on_panic.upgrade()?;
-        let tx = self.tx.upgrade()?;
+        let module = self.module.upgrade()?;
+        let lifecycle = self.lifecycle.upgrade()?;
+        let job_tx = self.tx.upgrade()?;
         Some(ModuleHost {
             info: self.info.clone(),
-            module: inner,
-            on_panic,
-            job_tx: tx,
+            module,
+            lifecycle,
+            job_tx,
         })
     }
 }
