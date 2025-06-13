@@ -61,9 +61,9 @@ IMPORT(int16_t, row_iter_bsatn_advance,
        (RowIter iter, uint8_t* buffer_ptr, size_t* buffer_len_ptr),
        (iter, buffer_ptr, buffer_len_ptr));
 IMPORT(uint16_t, row_iter_bsatn_close, (RowIter iter), (iter));
-IMPORT(Status, datastore_insert_bsatn, (TableId table_id, const uint8_t* row_ptr, size_t* row_len_ptr),
+IMPORT(Status, datastore_insert_bsatn, (TableId table_id, uint8_t* row_ptr, size_t* row_len_ptr),
        (table_id, row_ptr, row_len_ptr));
-IMPORT(Status, datastore_update_bsatn, (TableId table_id, IndexId index_id, const uint8_t* row_ptr, size_t* row_len_ptr),
+IMPORT(Status, datastore_update_bsatn, (TableId table_id, IndexId index_id, uint8_t* row_ptr, size_t* row_len_ptr),
        (table_id, index_id, row_ptr, row_len_ptr));
 IMPORT(Status, datastore_delete_by_index_scan_range_bsatn,
        (IndexId index_id, const uint8_t* prefix, uint32_t prefix_len, ColId prefix_elems,
