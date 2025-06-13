@@ -168,8 +168,8 @@ fn reload_config<S>(conf_file: &ConfigToml, reload_handle: &reload::Handle<EnvFi
 // TODO: pinning threads might not be desirable on a machine with other
 //       processes running - this should probably be some sort of flag.
 #[must_use]
-pub fn pin_threads() -> Cores {
-    Cores::get().unwrap_or_default()
+pub fn pin_threads(reserve: f64) -> Cores {
+    Cores::get(reserve).unwrap_or_default()
 }
 
 /// A type holding cores divvied up into different sets.
@@ -190,10 +190,15 @@ pub struct Cores {
     ///
     /// Currently, this is 1/8 of num_cpus.
     pub rayon: RayonCores,
+
+    pub reserved: Option<Vec<CoreId>>,
+
+    #[cfg(target_os = "linux")]
+    pub blocking: Option<nix::sched::CpuSet>,
 }
 
 impl Cores {
-    fn get() -> Option<Self> {
+    fn get(reserve: f64) -> Option<Self> {
         let cores = &mut core_affinity::get_core_ids()
             .filter(|cores| cores.len() >= 10)?
             .into_iter()
@@ -214,6 +219,11 @@ impl Cores {
 
         let rayon = RayonCores(Some(cores.take(frac(1.0 / 8.0)).collect()));
 
+        let reserved = {
+            let reserved = cores.take(frac(reserve / 8.0)).collect_vec();
+            (!reserved.is_empty()).then_some(reserved)
+        };
+
         // see comment on `TokioCores.blocking`
         #[cfg(target_os = "linux")]
         let remaining = cores.try_fold(nix::sched::CpuSet::new(), |mut cpuset, core| {
@@ -231,20 +241,23 @@ impl Cores {
             databases,
             tokio,
             rayon,
+            reserved,
+            #[cfg(target_os = "linux")]
+            blocking: remaining,
         })
     }
 }
 
 #[derive(Default)]
 pub struct TokioCores {
-    workers: Option<Vec<CoreId>>,
+    pub workers: Option<Vec<CoreId>>,
     // For blocking threads, we don't want to limit them to a specific number
     // and pin them to their own cores - they're supposed to run concurrently
     // with each other. However, `core_affinity` doesn't support affinity masks,
     // so we just use the Linux-specific API, since this is only a slight boost
     // and we don't care enough about performance on other platforms.
     #[cfg(target_os = "linux")]
-    blocking: Option<nix::sched::CpuSet>,
+    pub blocking: Option<nix::sched::CpuSet>,
 }
 
 impl TokioCores {
