@@ -18,10 +18,9 @@ where EQ : IEqualityComparer<T>, new()
     static readonly ThreadLocal<Stack<HashSet<T>>> Pool = new(() => new(), false);
 
     // Assuming each HashSet<T> uses 128 bytes of memory, this means
-    // our pool will use at most 512 MB of memory per thread.
-    // Since in the current design of the SDK, only the main thread produces SmallHashSets,
-    // this should be fine.
-    static readonly int MAX_POOL_SIZE = 4_000_000;
+    // our pool will use ~64 MB of memory per thread when full.
+    // However, the HashSets in use will only grow, so the pool may get larger over time.
+    static readonly int MAX_POOL_SIZE = 500_000;
 
     // Invariant: zero or one of the following is not null.
     T? Value;
@@ -154,7 +153,7 @@ where T : struct
     {
         Unstarted,
         Started,
-        finished
+        Finished
     }
 
     State state;
@@ -182,7 +181,7 @@ where T : struct
         }
         else if (state == State.Started)
         {
-            state = State.finished;
+            state = State.Finished;
             return false;
         }
         return false;
