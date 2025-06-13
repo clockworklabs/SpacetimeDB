@@ -850,7 +850,7 @@ impl ModuleSubscriptions {
         mut event: ModuleEvent,
         tx: MutTx,
     ) -> Result<Result<(Arc<ModuleEvent>, ExecutionMetrics), WriteConflict>, DBError> {
-        let subscription_metrics = SubscriptionMetrics::new(&self.owner_identity, &WorkloadType::Subscribe);
+        let subscription_metrics = SubscriptionMetrics::new(&self.owner_identity, &WorkloadType::Update);
 
         // Take a read lock on `subscriptions` before committing tx
         // else it can result in subscriber receiving duplicate updates.
