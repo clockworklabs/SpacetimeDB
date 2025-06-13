@@ -2,6 +2,7 @@ use core_affinity::CoreId;
 use crossbeam_queue::ArrayQueue;
 use itertools::Itertools;
 use spacetimedb_paths::server::{ConfigToml, LogsDir};
+use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::time::Duration;
 use tracing_appender::rolling;
@@ -169,7 +170,18 @@ fn reload_config<S>(conf_file: &ConfigToml, reload_handle: &reload::Handle<EnvFi
 //       processes running - this should probably be some sort of flag.
 #[must_use]
 pub fn pin_threads() -> Cores {
-    Cores::get().unwrap_or_default()
+    Cores::get(0).unwrap_or_default()
+}
+
+/// Like [`pin_threads`], but reserve up to `reserved_cores` for other uses.
+///
+/// The reservation is not guaranteed, it will be obtained after the CPU cores
+/// for I/O, databases, tokio and rayon have been allocated.
+///
+/// Call only once per process, mutually exclusive with [`pin_threads`].
+#[must_use]
+pub fn pin_threads_with_reserved_cores(reserved_cores: NonZeroUsize) -> Cores {
+    Cores::get(reserved_cores.get()).unwrap_or_default()
 }
 
 /// A type holding cores divvied up into different sets.
@@ -190,10 +202,20 @@ pub struct Cores {
     ///
     /// Currently, this is 1/8 of num_cpus.
     pub rayon: RayonCores,
+    /// Extra cores if [`Self::get`] was called with a non-zero argument.
+    ///
+    /// `None` if no reservation could be made, otherwise `Some` containing a
+    /// non-empty vector of up to the requested number of cores.
+    pub reserved: Option<Vec<CoreId>>,
+    /// Cores shared between tokio runtimes to schedule blocking tasks on.
+    ///
+    /// See `Tokio.blocking` for more context.
+    #[cfg(target_os = "linux")]
+    pub blocking: Option<nix::sched::CpuSet>,
 }
 
 impl Cores {
-    fn get() -> Option<Self> {
+    fn get(reserve: usize) -> Option<Self> {
         let cores = &mut core_affinity::get_core_ids()
             .filter(|cores| cores.len() >= 10)?
             .into_iter()
@@ -214,6 +236,11 @@ impl Cores {
 
         let rayon = RayonCores(Some(cores.take(frac(1.0 / 8.0)).collect()));
 
+        let reserved = {
+            let reserved = cores.take(reserve).collect_vec();
+            (!reserved.is_empty()).then_some(reserved)
+        };
+
         // see comment on `TokioCores.blocking`
         #[cfg(target_os = "linux")]
         let remaining = cores.try_fold(nix::sched::CpuSet::new(), |mut cpuset, core| {
@@ -231,20 +258,23 @@ impl Cores {
             databases,
             tokio,
             rayon,
+            reserved,
+            #[cfg(target_os = "linux")]
+            blocking: remaining,
         })
     }
 }
 
 #[derive(Default)]
 pub struct TokioCores {
-    workers: Option<Vec<CoreId>>,
+    pub workers: Option<Vec<CoreId>>,
     // For blocking threads, we don't want to limit them to a specific number
     // and pin them to their own cores - they're supposed to run concurrently
     // with each other. However, `core_affinity` doesn't support affinity masks,
     // so we just use the Linux-specific API, since this is only a slight boost
     // and we don't care enough about performance on other platforms.
     #[cfg(target_os = "linux")]
-    blocking: Option<nix::sched::CpuSet>,
+    pub blocking: Option<nix::sched::CpuSet>,
 }
 
 impl TokioCores {
