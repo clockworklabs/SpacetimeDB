@@ -84,7 +84,7 @@ partial struct TestIndexIssues
         {
             return false;
         }
-        return Equals(that_);
+        return Equals(that_.Value);
     }
 
     public static bool operator ==(TestIndexIssues this_, TestIndexIssues that)

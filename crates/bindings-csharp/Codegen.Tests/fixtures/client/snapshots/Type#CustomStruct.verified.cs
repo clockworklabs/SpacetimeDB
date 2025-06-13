@@ -88,7 +88,7 @@ partial struct CustomStruct
         {
             return false;
         }
-        return Equals(that_);
+        return Equals(that_.Value);
     }
 
     public static bool operator ==(CustomStruct this_, CustomStruct that)

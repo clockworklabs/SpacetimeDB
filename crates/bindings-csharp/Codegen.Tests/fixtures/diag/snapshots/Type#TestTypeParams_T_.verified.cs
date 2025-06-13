@@ -82,7 +82,7 @@ partial struct TestTypeParams<T>
         {
             return false;
         }
-        return Equals(that_);
+        return Equals(that_.Value);
     }
 
     public static bool operator ==(TestTypeParams<T> this_, TestTypeParams<T> that)

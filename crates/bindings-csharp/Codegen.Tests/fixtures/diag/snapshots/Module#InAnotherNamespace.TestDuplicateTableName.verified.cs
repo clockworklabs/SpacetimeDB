@@ -73,7 +73,7 @@ partial class InAnotherNamespace
             {
                 return false;
             }
-            return Equals(that_);
+            return Equals(that_.Value);
         }
 
         public static bool operator ==(

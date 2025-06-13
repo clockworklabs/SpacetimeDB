@@ -118,7 +118,7 @@ partial struct TestScheduleIssues
         {
             return false;
         }
-        return Equals(that_);
+        return Equals(that_.Value);
     }
 
     public static bool operator ==(TestScheduleIssues this_, TestScheduleIssues that)

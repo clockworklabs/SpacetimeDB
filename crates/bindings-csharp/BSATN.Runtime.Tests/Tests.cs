@@ -384,18 +384,21 @@ public static partial class BSATNRuntimeTests
                 if (example.c1 == example.c2)
                 {
                     Assert.Equal(class1, class2);
+                    Assert.Equal(class1, (object)class2);
                     Assert.True(class1 == class2);
                     Assert.False(class1 != class2);
                     Assert.Equal(class1.ToString(), class2.ToString());
                     Assert.Equal(class1.GetHashCode(), class2.GetHashCode());
 
                     Assert.Equal(struct1, struct2);
+                    Assert.Equal(struct1, (object)struct2);
                     Assert.True(struct1 == struct2);
                     Assert.False(struct1 != struct2);
                     Assert.Equal(struct1.ToString(), struct2.ToString());
                     Assert.Equal(struct1.GetHashCode(), struct2.GetHashCode());
 
                     Assert.Equal(record1, record2);
+                    Assert.Equal(record1, (object)record2);
                     Assert.True(record1 == record2);
                     Assert.False(record1 != record2);
                     Assert.Equal(record1.ToString(), record2.ToString());
@@ -444,7 +447,8 @@ public static partial class BSATNRuntimeTests
             BasicDataClass U,
             BasicDataStruct V,
             BasicDataRecord W
-        )> { }
+        )>
+    { }
 
     static readonly Gen<BasicEnum> GenBasicEnum = Gen.SelectMany<int, BasicEnum>(
         Gen.Int[0, 7],
@@ -499,6 +503,7 @@ public static partial class BSATNRuntimeTests
                 if (equal)
                 {
                     Assert.Equal(example.e1, example.e2);
+                    Assert.Equal(example.e1, (object)example.e2);
                     Assert.True(example.e1 == example.e2);
                     Assert.False(example.e1 != example.e2);
                     Assert.Equal(example.e1.ToString(), example.e2.ToString());

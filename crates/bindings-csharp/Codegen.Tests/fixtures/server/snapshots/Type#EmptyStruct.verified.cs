@@ -63,7 +63,7 @@ partial struct EmptyStruct : System.IEquatable<EmptyStruct>, SpacetimeDB.BSATN.I
         {
             return false;
         }
-        return Equals(that_);
+        return Equals(that_.Value);
     }
 
     public static bool operator ==(EmptyStruct this_, EmptyStruct that)

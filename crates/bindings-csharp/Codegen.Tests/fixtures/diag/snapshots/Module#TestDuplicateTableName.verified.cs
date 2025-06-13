@@ -67,7 +67,7 @@ partial struct TestDuplicateTableName
         {
             return false;
         }
-        return Equals(that_);
+        return Equals(that_.Value);
     }
 
     public static bool operator ==(TestDuplicateTableName this_, TestDuplicateTableName that)

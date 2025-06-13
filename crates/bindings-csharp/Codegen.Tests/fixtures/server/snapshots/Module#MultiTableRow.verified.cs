@@ -91,7 +91,7 @@ partial struct MultiTableRow
         {
             return false;
         }
-        return Equals(that_);
+        return Equals(that_.Value);
     }
 
     public static bool operator ==(MultiTableRow this_, MultiTableRow that)

@@ -618,7 +618,7 @@ public abstract record BaseTypeDeclaration<M>
                     if (((object?)that_) == null) {
                         return false;
                     }
-                    return Equals(that_);
+                    return Equals(that_{{(Scope.IsStruct ? ".Value" : "")}});
                 }
 
                 public static bool operator == ({{fullNameMaybeRef}} this_, {{fullNameMaybeRef}} that) {

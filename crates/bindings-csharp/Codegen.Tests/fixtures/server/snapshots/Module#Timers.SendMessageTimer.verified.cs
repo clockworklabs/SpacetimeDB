@@ -98,7 +98,7 @@ partial class Timers
             {
                 return false;
             }
-            return Equals(that_);
+            return Equals(that_.Value);
         }
 
         public static bool operator ==(Timers.SendMessageTimer this_, Timers.SendMessageTimer that)

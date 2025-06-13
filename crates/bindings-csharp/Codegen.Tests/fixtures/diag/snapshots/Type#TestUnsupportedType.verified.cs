@@ -122,7 +122,7 @@ partial struct TestUnsupportedType
         {
             return false;
         }
-        return Equals(that_);
+        return Equals(that_.Value);
     }
 
     public static bool operator ==(TestUnsupportedType this_, TestUnsupportedType that)
