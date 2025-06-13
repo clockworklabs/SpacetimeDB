@@ -75,7 +75,7 @@ pub fn configure_tracing(opts: TracingOptions) {
     let env_filter_layer = conf_to_filter(opts.config);
 
     let tracy_layer = if opts.tracy {
-        Some(tracing_tracy::TracyLayer::new())
+        Some(tracing_tracy::TracyLayer::default())
     } else {
         None
     };

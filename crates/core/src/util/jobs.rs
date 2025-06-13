@@ -1,4 +1,7 @@
-use std::sync::{Arc, Mutex, Weak};
+use std::{
+    any::Any,
+    sync::{Arc, Mutex, Weak},
+};
 
 use core_affinity::CoreId;
 use indexmap::IndexMap;
@@ -250,12 +253,24 @@ impl<T: ?Sized> Clone for JobThread<T> {
 type Job<T> = dyn FnOnce(&mut T) + Send;
 
 impl<T: ?Sized> JobThread<T> {
-    /// Run a blocking job on this `JobThread`.
+    /// Run a CPU-bound job on this `JobThread`.
     ///
     /// The job (`f`) will be placed in a queue, and will run strictly after
-    /// jobs ahead of it in the queue. If `f` panics, it will be bubbled up to
-    /// the calling task.
-    pub async fn run<F, R>(&self, f: F) -> Result<R, JobThreadClosed>
+    /// jobs ahead of it in the queue.
+    ///
+    /// If `f` panics, its panic payload will be returned in the inner `Result` returned by this method.
+    ///
+    /// We're playing a little fast and loose with panic safety here.
+    /// Ideally, we'd like to put a [`std::panic::PanicSafe`] bound on `F`,
+    /// but [`std::panic::AssertUnwindSafe`] can only wrap `FnOnce` closures with no arguments,
+    /// so passing a closure into this method would become quite painful.
+    /// Note that, despite its name, "unwind safety" is not a safety contract the way `unsafe` is,
+    /// and safe code which violates unwind safety will never invoke UB.
+    ///
+    /// [`crate::host::module_host::ModuleHost::call`] uses this method rather than [`Self::run`]
+    /// so that it can signal the [`crate::host::host_controller::DatabaseLifecycleTracker`]
+    /// before unwinding.
+    pub async fn run_catch_panic<F, R>(&self, f: F) -> Result<Result<R, Box<dyn Any + Send + 'static>>, JobThreadClosed>
     where
         F: FnOnce(&mut T) -> R + Send + 'static,
         R: Send + 'static,
@@ -274,10 +289,23 @@ impl<T: ?Sized> JobThread<T> {
             .await
             .map_err(|_| JobThreadClosed)?;
 
-        match ret_rx.await {
-            Ok(Ok(ret)) => Ok(ret),
+        ret_rx.await.map_err(|_| JobThreadClosed)
+    }
+
+    /// Run a CPU-bound job on this `JobThread`.
+    ///
+    /// The job (`f`) will be placed in a queue, and will run strictly after
+    /// jobs ahead of it in the queue. If `f` panics, it will be bubbled up to
+    /// the calling task.
+    pub async fn run<F, R>(&self, f: F) -> Result<R, JobThreadClosed>
+    where
+        F: FnOnce(&mut T) -> R + Send + 'static,
+        R: Send + 'static,
+    {
+        match self.run_catch_panic(f).await {
+            Ok(Ok(res)) => Ok(res),
             Ok(Err(panic)) => std::panic::resume_unwind(panic),
-            Err(_closed) => Err(JobThreadClosed),
+            Err(closed) => Err(closed),
         }
     }
 

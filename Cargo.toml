@@ -310,7 +310,7 @@ features = [
 ]
 
 [workspace.dependencies.tracing-tracy]
-version = "0.10.4"
+version = "0.11.4"
 # We use the "ondemand" feature to allow connecting after the start,
 # and reconnecting, from the tracy client to the database.
 # TODO(George): Need to be able to remove "broadcast" in some build configurations.
