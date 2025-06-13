@@ -15,7 +15,7 @@ class TimestampRoute(Smoketest):
         with self.assertRaises(Exception) as err:
             self.api_call(
                 "GET",
-                f"/database/{name}/timestamp",
+                f"/v1/database/{name}/unstable/timestamp",
             )
         # ... with code 404.
         self.assertEqual(err.exception.args[0].status, 404)
@@ -25,7 +25,7 @@ class TimestampRoute(Smoketest):
         # A request for the timestamp at an extant database is a success...
         resp = self.api_call(
             "GET",
-            f"/database/{name}/timestamp",
+            f"/v1/database/{name}/unstable/timestamp",
         )
 
         # ... and the response body is a SATS-JSON encoded `Timestamp`.
