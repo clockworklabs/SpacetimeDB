@@ -13,6 +13,7 @@ spacetimedb-sats = { workspace = true, features = ["bytestring"] }
 bytes.workspace = true
 bytestring.workspace = true
 brotli.workspace = true
+zstd.workspace = true
 chrono = { workspace = true, features = ["serde"] }
 enum-as-inner.workspace = true
 flate2.workspace = true
