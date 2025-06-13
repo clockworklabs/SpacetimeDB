@@ -583,7 +583,6 @@ impl ModuleHost {
             // This is done in a defer so that it happens even if the reducer call panics.
             queue_length_gauge.dec();
             queue_timer.stop_and_record();
-            
         });
 
         // Operations on module instances (e.g. calling reducers) is blocking,
