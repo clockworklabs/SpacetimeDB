@@ -114,7 +114,7 @@ pub enum AlgebraicValue {
 
 /// Wraps `T` making the outer type packed with alignment 1.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[repr(packed)]
+#[repr(Rust, packed)]
 pub struct Packed<T>(pub T);
 
 impl<T> From<T> for Packed<T> {

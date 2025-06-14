@@ -395,7 +395,7 @@ Fetch the server's fingerprint with:
 
         let cfg = self.find_server_mut(server)?;
         let old_nickname = if let Some(new_nickname) = new_nickname {
-            std::mem::replace(&mut cfg.nickname, Some(new_nickname.to_string()))
+            cfg.nickname.replace(new_nickname.to_string())
         } else {
             None
         };

@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 license-file = "LICENSE"
 description = "Assorted data structures used in spacetimedb"
+rust-version.workspace = true
 
 [features]
 serde = ["dep:serde", "hashbrown/serde"]
@@ -15,3 +16,6 @@ nohash-hasher.workspace = true
 serde = { workspace = true, optional = true }
 thiserror.workspace = true
 smallvec.workspace = true
+
+[lints]
+workspace = true
