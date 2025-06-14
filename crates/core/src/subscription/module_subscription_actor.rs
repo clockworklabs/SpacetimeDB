@@ -476,7 +476,8 @@ impl ModuleSubscriptions {
             )
         };
 
-        let subscription_metrics = SubscriptionMetrics::new(&self.owner_identity, &WorkloadType::Unsubscribe);
+        let database_identity = self.relational_db.database_identity();
+        let subscription_metrics = SubscriptionMetrics::new(&database_identity, &WorkloadType::Unsubscribe);
 
         // Always lock the db before the subscription lock to avoid deadlocks.
         let tx = scopeguard::guard(self.relational_db.begin_tx(Workload::Unsubscribe), |tx| {
@@ -659,7 +660,8 @@ impl ModuleSubscriptions {
 
         let num_queries = request.query_strings.len();
 
-        let subscription_metrics = SubscriptionMetrics::new(&self.owner_identity, &WorkloadType::Subscribe);
+        let database_identity = self.relational_db.database_identity();
+        let subscription_metrics = SubscriptionMetrics::new(&database_identity, &WorkloadType::Subscribe);
 
         // How many queries make up this subscription?
         subscription_metrics.num_queries_subscribed.inc_by(num_queries as _);
@@ -756,7 +758,8 @@ impl ModuleSubscriptions {
         _assert: Option<AssertTxFn>,
     ) -> Result<ExecutionMetrics, DBError> {
         let num_queries = subscription.query_strings.len();
-        let subscription_metrics = SubscriptionMetrics::new(&self.owner_identity, &WorkloadType::Subscribe);
+        let database_identity = self.relational_db.database_identity();
+        let subscription_metrics = SubscriptionMetrics::new(&database_identity, &WorkloadType::Subscribe);
 
         // How many queries make up this subscription?
         subscription_metrics.num_queries_subscribed.inc_by(num_queries as _);
@@ -850,7 +853,8 @@ impl ModuleSubscriptions {
         mut event: ModuleEvent,
         tx: MutTx,
     ) -> Result<Result<(Arc<ModuleEvent>, ExecutionMetrics), WriteConflict>, DBError> {
-        let subscription_metrics = SubscriptionMetrics::new(&self.owner_identity, &WorkloadType::Update);
+        let database_identity = self.relational_db.database_identity();
+        let subscription_metrics = SubscriptionMetrics::new(&database_identity, &WorkloadType::Update);
 
         // Take a read lock on `subscriptions` before committing tx
         // else it can result in subscriber receiving duplicate updates.
