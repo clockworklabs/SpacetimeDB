@@ -234,16 +234,26 @@ impl From<Vec<u8>> for DataMessage {
 }
 
 impl DataMessage {
+    /// Returns the number of bytes this message consists of.
     pub fn len(&self) -> usize {
         match self {
-            DataMessage::Text(s) => s.len(),
-            DataMessage::Binary(b) => b.len(),
+            Self::Text(s) => s.len(),
+            Self::Binary(b) => b.len(),
         }
     }
 
+    /// Is the message empty?
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
+    }
+
+    /// Returns a handle to the underlying allocation of the message without consuming it.
+    pub fn allocation(&self) -> Bytes {
+        match self {
+            DataMessage::Text(alloc) => alloc.as_bytes().clone(),
+            DataMessage::Binary(alloc) => alloc.clone(),
+        }
     }
 }
 
