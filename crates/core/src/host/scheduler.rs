@@ -388,7 +388,8 @@ impl SchedulerActor {
             // delete the scheduled reducer row if its not repeated reducer
             Ok(_) | Err(_) => {
                 if let Some(id) = id {
-                    self.delete_scheduled_reducer_row(&db, id, module_host_clone).await;
+                    // TODO: Handle errors here?
+                    let _ = self.delete_scheduled_reducer_row(&db, id, module_host_clone).await;
                 }
             }
         }
@@ -398,16 +399,50 @@ impl SchedulerActor {
         };
     }
 
-    /// Handle repeated schedule by adding it back to queue
-    /// return true if it is repeated schedule
-    fn handle_repeated_schedule(
+    async fn delete_scheduled_reducer_row(
         &mut self,
+        db: &RelationalDB,
         id: ScheduledReducerId,
-        schedule_row: &RowRef<'_>,
-    ) -> Result<bool, anyhow::Error> {
-        let schedule_at = read_schedule_at(schedule_row, id.at_column)?;
+        module_host: ModuleHost,
+    ) -> anyhow::Result<()> {
+        let host_clone = module_host.clone();
+        let db = db.clone();
+        let schedule_at = host_clone
+            .on_module_thread("delete_scheduled_reducer_row", move || {
+                let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
 
-        if let ScheduleAt::Interval(dur) = schedule_at {
+                match get_schedule_row_mut(&tx, &db, id) {
+                    Ok(schedule_row) => {
+                        if let Ok(schedule_at) = read_schedule_at(&schedule_row, id.at_column) {
+                            // If the schedule is an interval, we handle it as a repeated schedule
+                            if let ScheduleAt::Interval(_) = schedule_at {
+                                return Some(schedule_at);
+                            }
+                            let row_ptr = schedule_row.pointer();
+                            db.delete(&mut tx, id.table_id, [row_ptr]);
+
+                            commit_and_broadcast_deletion_event(tx, module_host);
+                        } else {
+                            log::debug!(
+                                "Failed to read 'scheduled_at' from row: table_id {}, schedule_id {}",
+                                id.table_id,
+                                id.schedule_id
+                            );
+                        }
+                    }
+                    Err(_) => {
+                        log::debug!(
+                            "Table row corresponding to yield scheduler ID not found: table_id {}, scheduler_id {}",
+                            id.table_id,
+                            id.schedule_id
+                        );
+                    }
+                }
+                None
+            })
+            .await?;
+        // If this was repeated, we need to add it back to the queue.
+        if let Some(ScheduleAt::Interval(dur)) = schedule_at {
             let key = self.queue.insert(
                 QueueItem::Id {
                     id,
@@ -416,41 +451,8 @@ impl SchedulerActor {
                 dur.to_duration().unwrap_or(Duration::ZERO),
             );
             self.key_map.insert(id, key);
-            Ok(true)
-        } else {
-            Ok(false)
         }
-    }
-
-    async fn delete_scheduled_reducer_row(
-        &mut self,
-        db: &RelationalDB,
-        id: ScheduledReducerId,
-        module_host: ModuleHost,
-    ) {
-        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
-
-        match get_schedule_row_mut(&tx, db, id) {
-            Ok(schedule_row) => {
-                if let Ok(is_repeated) = self.handle_repeated_schedule(id, &schedule_row) {
-                    if is_repeated {
-                        return; // Do not delete entry for repeated reducer
-                    }
-
-                    let row_ptr = schedule_row.pointer();
-                    db.delete(&mut tx, id.table_id, [row_ptr]);
-
-                    commit_and_broadcast_deletion_event(tx, module_host);
-                }
-            }
-            Err(_) => {
-                log::debug!(
-                    "Table row corresponding to yield scheduler ID not found: table_id {}, scheduler_id {}",
-                    id.table_id,
-                    id.schedule_id
-                );
-            }
-        }
+        Ok(())
     }
 }
 
