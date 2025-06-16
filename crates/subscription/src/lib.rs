@@ -9,7 +9,7 @@ use spacetimedb_execution::{
 use spacetimedb_expr::check::SchemaView;
 use spacetimedb_lib::{identity::AuthCtx, metrics::ExecutionMetrics, query::Delta, AlgebraicValue};
 use spacetimedb_physical_plan::plan::{IxJoin, IxScan, Label, PhysicalPlan, ProjectPlan, Sarg, TableScan, TupleField};
-use spacetimedb_primitives::{ColId, IndexId, TableId};
+use spacetimedb_primitives::{ColId, ColList, IndexId, TableId};
 use spacetimedb_query::compile_subscription;
 use std::sync::Arc;
 use std::{collections::HashSet, ops::RangeBounds};
@@ -432,7 +432,6 @@ impl SubscriptionPlan {
                             field_pos: rhs_join_col,
                             ..
                         },
-                    unique: true,
                     ..
                 },
                 _,
@@ -445,7 +444,10 @@ impl SubscriptionPlan {
                         ..
                     },
                     _,
-                ) if schema.table_id != self.return_id && prefix.is_empty() => {
+                ) if schema.table_id != self.return_id
+                    && prefix.is_empty()
+                    && schema.is_unique(&ColList::new((*rhs_join_col).into())) =>
+                {
                     let lhs_table = self.return_id;
                     let rhs_table = schema.table_id;
                     let rhs_col = *rhs_col;
