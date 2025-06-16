@@ -17,8 +17,8 @@ use crate::{
     u256, AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement, ProductValue, SumType, SumTypeVariant,
     SumValue, WithTypespace,
 };
-use core::mem;
 use core::ops::{Index, Mul};
+use core::{mem, ops::Deref};
 use derive_more::{Add, Sub};
 use enum_as_inner::EnumAsInner;
 use std::sync::Arc;
@@ -185,6 +185,26 @@ impl AlgebraicTypeLayout {
     pub const F32: Self = Self::Primitive(PrimitiveType::F32);
     pub const F64: Self = Self::Primitive(PrimitiveType::F64);
     pub const String: Self = Self::VarLen(VarLenType::String);
+
+    /// Can `self` be changed compatibly to `new`?
+    fn is_compatible_with(&self, new: &Self) -> bool {
+        match (self, new) {
+            (Self::Sum(old), Self::Sum(new)) => old.is_compatible_with(new),
+            (Self::Product(old), Self::Product(new)) => old.view().is_compatible_with(new.view()),
+            (Self::Primitive(old), Self::Primitive(new)) => old == new,
+            (Self::VarLen(VarLenType::Array(old)), Self::VarLen(VarLenType::Array(new))) => {
+                // NOTE(perf, centril): This might clone and heap allocate,
+                // but we don't care to avoid that and optimize right now,
+                // as this is only executed during upgrade / migration,
+                // and that doesn't need to be fast right now.
+                let old = AlgebraicTypeLayout::from(old.deref().clone());
+                let new = AlgebraicTypeLayout::from(new.deref().clone());
+                old.is_compatible_with(&new)
+            }
+            (Self::VarLen(VarLenType::String), Self::VarLen(VarLenType::String)) => true,
+            _ => false,
+        }
+    }
 }
 
 /// A collection of items, so that we can easily swap out the backing type.
@@ -249,6 +269,11 @@ impl RowTypeLayout {
     pub fn size(&self) -> Size {
         Size(self.product().size() as u16)
     }
+
+    /// Can `self` be changed compatibly to `new`?
+    pub fn is_compatible_with(&self, new: &RowTypeLayout) -> bool {
+        self.layout == new.layout && self.product().is_compatible_with(new.product())
+    }
 }
 
 impl HasLayout for RowTypeLayout {
@@ -265,7 +290,7 @@ impl Index<usize> for RowTypeLayout {
 }
 
 /// A mirror of [`ProductType`] annotated with a [`Layout`].
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub struct ProductTypeLayoutView<'a> {
     /// The memoized layout of the product type.
     pub layout: Layout,
@@ -276,6 +301,18 @@ pub struct ProductTypeLayoutView<'a> {
 impl HasLayout for ProductTypeLayoutView<'_> {
     fn layout(&self) -> &Layout {
         &self.layout
+    }
+}
+
+impl ProductTypeLayoutView<'_> {
+    /// Can `self` be changed compatibly to `new`?
+    fn is_compatible_with(self, new: Self) -> bool {
+        self.elements.len() == new.elements.len()
+            && self
+                .elements
+                .iter()
+                .zip(new.elements.iter())
+                .all(|(old, new)| old.ty.is_compatible_with(&new.ty))
     }
 }
 
@@ -701,6 +738,18 @@ impl SumTypeLayout {
                 .map(SumTypeVariantLayout::sum_type_variant)
                 .collect(),
         }
+    }
+
+    /// Can `self` be changed compatibly to `new`?
+    ///
+    /// In the case of sums, the old variants need only be a prefix of the new.
+    fn is_compatible_with(&self, new: &SumTypeLayout) -> bool {
+        self.variants.len() <= new.variants.len()
+            && self
+                .variants
+                .iter()
+                .zip(self.variants.iter())
+                .all(|(old, new)| old.ty.is_compatible_with(&new.ty))
     }
 }
 
