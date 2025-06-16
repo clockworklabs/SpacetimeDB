@@ -718,9 +718,10 @@ Index Join: Rhs on lhs
   Inner Unique: false
   Join Cond: (rhs.b = lhs.b)
   Output: lhs.a, lhs.b
-  -> Seq Scan on rhs
+  -> Index Scan using Index rhs_c_idx_btree (rhs.c) on rhs
+     Index Cond: (rhs.c > U64(2))
      Output: rhs.b, rhs.c, rhs.d
-     -> Filter: (rhs.c > U64(2) AND rhs.c < U64(4) AND rhs.d = U64(3))"#
+     -> Filter: (rhs.d = U64(3) AND rhs.c < U64(4))"#
             ],
         );
 
@@ -815,9 +816,10 @@ Index Join: Rhs on lhs
   Inner Unique: false
   Join Cond: (rhs.b = lhs.b)
   Output: lhs.a, lhs.b
-  -> Seq Scan on rhs
+  -> Index Scan using Index rhs_c_idx_btree (rhs.c) on rhs
+     Index Cond: (rhs.c > U64(2))
      Output: rhs.b, rhs.c, rhs.d
-     -> Filter: (rhs.c > U64(2) AND rhs.c < U64(4) AND rhs.d = U64(3))"#
+     -> Filter: (rhs.d = U64(3) AND rhs.c < U64(4))"#
             ],
         );
 
@@ -919,9 +921,10 @@ Index Join: Rhs on lhs
   Inner Unique: false
   Join Cond: (rhs.b = lhs.b)
   Output: lhs.a, lhs.b
-  -> Seq Scan on rhs
+  -> Index Scan using Index rhs_c_idx_btree (rhs.c) on rhs
+     Index Cond: (rhs.c > U64(2))
      Output: rhs.b, rhs.c, rhs.d
-     -> Filter: (rhs.c > U64(2) AND rhs.c < U64(4) AND rhs.d = U64(3))"#
+     -> Filter: (rhs.d = U64(3) AND rhs.c < U64(4))"#
             ],
         );
 
