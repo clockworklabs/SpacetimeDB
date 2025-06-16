@@ -10,6 +10,7 @@ pub mod convert;
 pub mod de;
 pub mod hash;
 pub mod hex;
+pub mod layout;
 pub mod memory_usage;
 pub mod meta_type;
 pub mod primitives;
@@ -26,7 +27,6 @@ pub mod sum_value;
 pub mod time_duration;
 pub mod timestamp;
 pub mod typespace;
-pub mod layout;
 
 #[cfg(any(test, feature = "proptest"))]
 pub mod proptest;
