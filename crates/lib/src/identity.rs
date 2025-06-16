@@ -1,9 +1,9 @@
 use crate::from_hex_pad;
 use blake3;
-use spacetimedb_sats::memory_usage::MemoryUsage;
 use core::mem;
 use spacetimedb_bindings_macro::{Deserialize, Serialize};
 use spacetimedb_sats::hex::HexString;
+use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::{impl_st, u256, AlgebraicType, AlgebraicValue};
 use std::{fmt, str::FromStr};
 
