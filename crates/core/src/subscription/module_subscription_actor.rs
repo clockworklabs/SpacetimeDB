@@ -2189,7 +2189,9 @@ mod tests {
                 ("b", AlgebraicType::U64),
             ],
             &[0.into()],
-            &[0.into()],
+            // The join column for this table does not have to be unique,
+            // because pruning only requires us to probe the join index on `v`.
+            &[],
             StAccess::Public,
         )?;
         let v_id = db.create_table_for_test_with_the_works(
