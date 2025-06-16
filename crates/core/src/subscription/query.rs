@@ -107,7 +107,11 @@ pub fn compile_query_with_hashes(
     let tx = SchemaViewer::new(tx, auth);
     let (plans, has_param) = SubscriptionPlan::compile(input, &tx, auth)?;
 
-    if has_param {
+    if auth.is_owner() || has_param {
+        // Note that when generating hashes for queries from owners,
+        // we always treat them as if they were parameterized by :sender.
+        // This is because RLS is not applicable to owners.
+        // Hence owner hashes must never overlap with client hashes.
         return Ok(Plan::new(plans, hash_with_param, input.to_owned()));
     }
     Ok(Plan::new(plans, hash, input.to_owned()))

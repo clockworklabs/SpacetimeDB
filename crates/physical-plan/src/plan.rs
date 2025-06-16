@@ -917,25 +917,31 @@ impl PhysicalPlan {
     /// If this plan has any simple equality filters such as `x = 0`,
     /// this method returns the values along with the appropriate table and column.
     /// Note, this excludes compound equality filters such as `x = 0 and y = 1`.
-    /// Also note that it is not valid to call this method on an optimized plan.
-    /// This is because we assume that index scans have not yet been generated.
+    /// Note, this must be called on an optimized plan.
+    /// Hence we must assume index scans have already been generated.
     pub fn search_args(&self) -> Vec<(TableId, ColId, AlgebraicValue)> {
         let mut args = vec![];
-        self.visit(&mut |op| {
-            if let PhysicalPlan::Filter(input, PhysicalExpr::BinOp(BinOp::Eq, a, b)) = op {
-                match (&**a, &**b) {
-                    (PhysicalExpr::Field(field), PhysicalExpr::Value(value))
-                    | (PhysicalExpr::Value(value), PhysicalExpr::Field(field)) => {
-                        input.visit(&mut |op| match op {
-                            PhysicalPlan::TableScan(scan, name) if *name == field.label => {
-                                args.push((scan.schema.table_id, field.field_pos.into(), value.clone()));
-                            }
-                            _ => {}
-                        });
-                    }
-                    _ => {}
+        self.visit(&mut |op| match op {
+            PhysicalPlan::IxScan(
+                scan @ IxScan {
+                    arg: Sarg::Eq(col_id, value),
+                    ..
+                },
+                _,
+            ) if scan.prefix.is_empty() => {
+                args.push((scan.schema.table_id, *col_id, value.clone()));
+            }
+            PhysicalPlan::Filter(input, PhysicalExpr::BinOp(BinOp::Eq, a, b)) => {
+                if let (PhysicalExpr::Field(field), PhysicalExpr::Value(value)) = (&**a, &**b) {
+                    input.visit(&mut |op| match op {
+                        PhysicalPlan::TableScan(scan, name) if *name == field.label => {
+                            args.push((scan.schema.table_id, field.field_pos.into(), value.clone()));
+                        }
+                        _ => {}
+                    });
                 }
             }
+            _ => {}
         });
         args
     }

@@ -19,7 +19,7 @@ use futures::prelude::*;
 use prometheus::{Histogram, IntCounter, IntGauge};
 use spacetimedb_client_api_messages::websocket::{
     BsatnFormat, CallReducerFlags, Compression, FormatSwitch, JsonFormat, SubscribeMulti, SubscribeSingle, Unsubscribe,
-    UnsubscribeMulti, WebsocketFormat,
+    UnsubscribeMulti,
 };
 use spacetimedb_lib::identity::RequestId;
 use spacetimedb_lib::metrics::ExecutionMetrics;
@@ -450,41 +450,40 @@ impl ClientConnection {
         .await
     }
 
-    pub fn one_off_query_json(&self, query: &str, message_id: &[u8], timer: Instant) -> Result<(), anyhow::Error> {
-        let response = self.one_off_query::<JsonFormat>(query, message_id, timer);
-        self.send_message(response)?;
-        Ok(())
-    }
-
-    pub fn one_off_query_bsatn(&self, query: &str, message_id: &[u8], timer: Instant) -> Result<(), anyhow::Error> {
-        let response = self.one_off_query::<BsatnFormat>(query, message_id, timer);
-        self.send_message(response)?;
-        Ok(())
-    }
-
-    fn one_off_query<F: WebsocketFormat>(
+    pub async fn one_off_query_json(
         &self,
         query: &str,
         message_id: &[u8],
         timer: Instant,
-    ) -> OneOffQueryResponseMessage<F> {
-        let result = self.module.one_off_query::<F>(self.id.identity, query.to_owned());
-        let message_id = message_id.to_owned();
-        let total_host_execution_duration = timer.elapsed().into();
-        match result {
-            Ok(results) => OneOffQueryResponseMessage {
-                message_id,
-                error: None,
-                results: vec![results],
-                total_host_execution_duration,
-            },
-            Err(err) => OneOffQueryResponseMessage {
-                message_id,
-                error: Some(format!("{}", err)),
-                results: vec![],
-                total_host_execution_duration,
-            },
-        }
+    ) -> Result<(), anyhow::Error> {
+        self.module
+            .one_off_query::<JsonFormat>(
+                self.id.identity,
+                query.to_owned(),
+                self.sender.clone(),
+                message_id.to_owned(),
+                timer,
+                |msg: OneOffQueryResponseMessage<JsonFormat>| msg.into(),
+            )
+            .await
+    }
+
+    pub async fn one_off_query_bsatn(
+        &self,
+        query: &str,
+        message_id: &[u8],
+        timer: Instant,
+    ) -> Result<(), anyhow::Error> {
+        self.module
+            .one_off_query::<BsatnFormat>(
+                self.id.identity,
+                query.to_owned(),
+                self.sender.clone(),
+                message_id.to_owned(),
+                timer,
+                |msg: OneOffQueryResponseMessage<BsatnFormat>| msg.into(),
+            )
+            .await
     }
 
     pub async fn disconnect(self) {
