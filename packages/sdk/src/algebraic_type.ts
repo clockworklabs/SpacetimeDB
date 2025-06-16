@@ -62,7 +62,7 @@ export class SumType {
       this.variants[0].name === 'some' &&
       this.variants[1].name === 'none'
     ) {
-      if (value) {
+      if (value !== null && value !== undefined) {
         writer.writeByte(0);
         this.variants[0].algebraicType.serialize(writer, value);
       } else {
