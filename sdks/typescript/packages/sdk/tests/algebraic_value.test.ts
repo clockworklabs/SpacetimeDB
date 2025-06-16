@@ -7,6 +7,7 @@ import {
   SumValue,
 } from '../src/algebraic_value';
 import BinaryReader from '../src/binary_reader';
+import BinaryWriter from '../src/binary_writer';
 
 describe('AlgebraicValue', () => {
   test('when created with a ProductValue it assigns the product property', () => {
@@ -25,6 +26,52 @@ describe('AlgebraicValue', () => {
     let av = new AlgebraicValue('foo');
 
     expect(av.asString()).toBe('foo');
+  });
+
+  test('options handle falsy strings', () => {
+    let stringOptionType = AlgebraicType.createOptionType(
+      AlgebraicType.createStringType()
+    );
+    let writer = new BinaryWriter(1024);
+    stringOptionType.serialize(writer, '');
+    let parsed = stringOptionType.deserialize(
+      new BinaryReader(writer.getBuffer())
+    );
+    // Make sure we don't turn this into undefined.
+    expect(parsed).toEqual('');
+
+    writer = new BinaryWriter(1024);
+    stringOptionType.serialize(writer, null);
+    parsed = stringOptionType.deserialize(new BinaryReader(writer.getBuffer()));
+    expect(parsed).toEqual(undefined);
+
+    writer = new BinaryWriter(1024);
+    stringOptionType.serialize(writer, undefined);
+    parsed = stringOptionType.deserialize(new BinaryReader(writer.getBuffer()));
+    expect(parsed).toEqual(undefined);
+  });
+
+  test('options handle falsy numbers', () => {
+    let stringOptionType = AlgebraicType.createOptionType(
+      AlgebraicType.createU32Type()
+    );
+    let writer = new BinaryWriter(1024);
+    stringOptionType.serialize(writer, 0);
+    let parsed = stringOptionType.deserialize(
+      new BinaryReader(writer.getBuffer())
+    );
+    // Make sure we don't turn this into undefined.
+    expect(parsed).toEqual(0);
+
+    writer = new BinaryWriter(1024);
+    stringOptionType.serialize(writer, null);
+    parsed = stringOptionType.deserialize(new BinaryReader(writer.getBuffer()));
+    expect(parsed).toEqual(undefined);
+
+    writer = new BinaryWriter(1024);
+    stringOptionType.serialize(writer, undefined);
+    parsed = stringOptionType.deserialize(new BinaryReader(writer.getBuffer()));
+    expect(parsed).toEqual(undefined);
   });
 
   test('when created with a AlgebraicValue(AlgebraicValue[]) it can be requested as an array', () => {
