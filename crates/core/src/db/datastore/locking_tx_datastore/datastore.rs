@@ -40,7 +40,7 @@ use spacetimedb_paths::server::SnapshotDirPath;
 use spacetimedb_primitives::{ColList, ConstraintId, IndexId, SequenceId, TableId};
 use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::{bsatn, buffer::BufReader, AlgebraicValue, ProductValue};
-use spacetimedb_schema::schema::{IndexSchema, SequenceSchema, TableSchema};
+use spacetimedb_schema::schema::{ColumnSchema, IndexSchema, SequenceSchema, TableSchema};
 use spacetimedb_snapshot::{ReconstructedSnapshot, SnapshotRepository};
 use spacetimedb_table::{indexes::RowPointer, page_pool::PagePool, table::RowRef};
 use std::borrow::Cow;
@@ -300,12 +300,21 @@ impl Locking {
         Ok(iter)
     }
 
-    pub(crate) fn alter_table_access_mut_tx(&self, tx: &mut MutTxId, name: Box<str>, access: StAccess) -> Result<()> {
+    pub(crate) fn alter_table_access_mut_tx(&self, tx: &mut MutTxId, name: &str, access: StAccess) -> Result<()> {
         let table_id = self
-            .table_id_from_name_mut_tx(tx, &name)?
+            .table_id_from_name_mut_tx(tx, name)?
             .ok_or_else(|| TableError::NotFound(name.into()))?;
 
         tx.alter_table_access(table_id, access)
+    }
+
+    pub(crate) fn alter_table_row_type_mut_tx(
+        &self,
+        tx: &mut MutTxId,
+        table_id: TableId,
+        column_schemas: Vec<ColumnSchema>,
+    ) -> Result<()> {
+        tx.alter_table_row_type(table_id, column_schemas)
     }
 }
 

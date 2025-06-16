@@ -1,3 +1,5 @@
+use core::{cmp::Ordering, ops::Add};
+
 use crate::{def::*, error::PrettyAlgebraicType, identifier::Identifier};
 use spacetimedb_data_structures::{
     error_stream::{CollectAllErrors, CombineErrors, ErrorStream},
@@ -102,6 +104,11 @@ pub enum AutoMigrateStep<'def> {
     RemoveSchedule(<ScheduleDef as ModuleDefLookup>::Key<'def>),
     /// Remove a row-level security query.
     RemoveRowLevelSecurity(<RawRowLevelSecurityDefV9 as ModuleDefLookup>::Key<'def>),
+
+    /// Change the column types of a table, in a layout compatible way.
+    ///
+    /// This should be done before any new indices are added.
+    ChangeColumns(<TableDef as ModuleDefLookup>::Key<'def>),
 
     /// Add a table, including all indexes, constraints, and sequences.
     /// There will NOT be separate steps in the plan for adding indexes, constraints, and sequences.
@@ -350,10 +357,10 @@ fn auto_migrate_table<'def>(plan: &mut AutoMigratePlan<'def>, old: &'def TableDe
         }
     }
 
-    let columns_ok: Result<()> = diff(plan.old, plan.new, |def| {
+    let columns_ok = diff(plan.old, plan.new, |def| {
         def.lookup_expect::<TableDef>(key).columns.iter()
     })
-    .map(|col_diff| -> Result<()> {
+    .map(|col_diff| -> Result<_> {
         match col_diff {
             Diff::Add { new } => Err(AutoMigrateError::AddColumn {
                 table: new.table_name.clone(),
@@ -385,15 +392,36 @@ fn auto_migrate_table<'def>(plan: &mut AutoMigratePlan<'def>, old: &'def TableDe
                     }
                     .into())
                 };
-                let ((), ()) = (types_ok, positions_ok).combine_errors()?;
-                Ok(())
+
+                (types_ok, positions_ok).combine_errors().map(|(x, _)| x)
             }
         }
     })
-    .collect_all_errors();
+    .collect_all_errors::<Any>();
 
-    let ((), ()) = (type_ok, columns_ok).combine_errors()?;
+    let ((), Any(row_type_changed)) = (type_ok, columns_ok).combine_errors()?;
+
+    if row_type_changed {
+        plan.steps.push(AutoMigrateStep::ChangeColumns(key));
+    }
+
     Ok(())
+}
+
+/// An "any" monoid with `false` as identity and `||` as the operator.
+struct Any(bool);
+
+impl FromIterator<Any> for Any {
+    fn from_iter<T: IntoIterator<Item = Any>>(iter: T) -> Self {
+        Any(iter.into_iter().any(|Any(x)| x))
+    }
+}
+
+impl Add for Any {
+    type Output = Self;
+    fn add(self, rhs: Self) -> Self::Output {
+        Self(self.0 || rhs.0)
+    }
 }
 
 fn ensure_old_ty_upgradable_to_new(
@@ -401,7 +429,7 @@ fn ensure_old_ty_upgradable_to_new(
     old: &ColumnDef,
     old_ty: &AlgebraicType,
     new_ty: &AlgebraicType,
-) -> Result<()> {
+) -> Result<Any> {
     use AutoMigrateError::*;
 
     // Ensures an `old_ty` within `old` is upgradable to `new_ty`.
@@ -422,12 +450,11 @@ fn ensure_old_ty_upgradable_to_new(
             let new_vars = &*new_ty.variants;
 
             // The number of variants in `new_ty` cannot decrease.
-            let var_lens_ok = if old_vars.len() <= new_vars.len() {
-                Ok(())
-            } else if within {
-                Err(ChangeWithinColumnTypeFewerVariants(parts_for_error()).into())
-            } else {
-                Err(ChangeColumnTypeFewerVariants(parts_for_error()).into())
+            let var_lens_ok = match old_vars.len().cmp(&new_vars.len()) {
+                Ordering::Less => Ok(Any(true)),
+                Ordering::Equal => Ok(Any(false)),
+                Ordering::Greater if within => Err(ChangeWithinColumnTypeFewerVariants(parts_for_error()).into()),
+                Ordering::Greater => Err(ChangeColumnTypeFewerVariants(parts_for_error()).into()),
             };
 
             // The variants in `old_ty` must be upgradable to those in `old_ty`.
@@ -438,7 +465,7 @@ fn ensure_old_ty_upgradable_to_new(
                 .zip(new_vars)
                 .map(|(o, n)| (&o.algebraic_type, &n.algebraic_type))
                 .map(ensure)
-                .collect_all_errors::<()>();
+                .collect_all_errors::<Any>();
 
             // The old and the new sum types must have matching layout sizes and alignments.
             let old_ty = SumTypeLayout::from(old_ty.clone());
@@ -460,7 +487,8 @@ fn ensure_old_ty_upgradable_to_new(
                 Err(ChangeColumnTypeAlignMismatch(parts_for_error()).into())
             };
 
-            (var_lens_ok, prefix_ok, size_ok, align_ok).combine_errors().map(drop)
+            let (len_changed, prefix_changed, ..) = (var_lens_ok, prefix_ok, size_ok, align_ok).combine_errors()?;
+            Ok(len_changed + prefix_changed)
         }
 
         // For products,
@@ -486,9 +514,9 @@ fn ensure_old_ty_upgradable_to_new(
                 .zip(new_ty.iter())
                 .map(|(o, n)| (&o.algebraic_type, &n.algebraic_type))
                 .map(ensure)
-                .collect_all_errors::<()>();
+                .collect_all_errors::<Any>();
 
-            (len_eq_ok, fields_ok).combine_errors().map(drop)
+            (len_eq_ok, fields_ok).combine_errors().map(|(_, x)| x)
         }
 
         // For arrays, we need to check each field's upgradability due to sums.
@@ -497,7 +525,7 @@ fn ensure_old_ty_upgradable_to_new(
         }
 
         // We only have the simple cases left, and there, no change is good change.
-        (old_ty, new_ty) if old_ty == new_ty => Ok(()),
+        (old_ty, new_ty) if old_ty == new_ty => Ok(Any(false)),
         _ => Err(if within {
             ChangeWithinColumnType(parts_for_error())
         } else {

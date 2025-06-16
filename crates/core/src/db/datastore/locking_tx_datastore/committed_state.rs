@@ -33,8 +33,8 @@ use spacetimedb_lib::{
     Identity,
 };
 use spacetimedb_primitives::{ColList, ColSet, IndexId, TableId};
-use spacetimedb_sats::{AlgebraicValue, ProductValue};
 use spacetimedb_sats::memory_usage::MemoryUsage;
+use spacetimedb_sats::{AlgebraicValue, ProductValue};
 use spacetimedb_schema::{def::IndexAlgorithm, schema::TableSchema};
 use spacetimedb_table::{
     blob_store::{BlobStore, HashMapBlobStore},
@@ -652,7 +652,6 @@ impl CommittedState {
     ) -> Option<()> {
         use PendingSchemaChange::*;
         match change {
-            // An index was removed. Add it back.
             IndexRemoved(table_id, index_id, table_index, index_schema) => {
                 let table = self.tables.get_mut(&table_id)?;
                 // SAFETY: `table_index` was derived from `table`.
@@ -660,49 +659,52 @@ impl CommittedState {
                 table.with_mut_schema(|s| s.update_index(index_schema));
                 self.index_id_map.insert(index_id, table_id);
             }
-            // An index was added. Remove it.
             IndexAdded(table_id, index_id, pointer_map) => {
                 let table = self.tables.get_mut(&table_id)?;
                 table.delete_index(&self.blob_store, index_id, pointer_map);
                 table.with_mut_schema(|s| s.remove_index(index_id));
                 self.index_id_map.remove(&index_id);
             }
-            // A table was removed. Add it back.
             TableRemoved(table_id, table) => {
                 // We don't need to deal with sub-components.
                 // That is, we don't need to add back indices and such.
                 // Instead, there will be separate pending schema changes like `IndexRemoved`.
                 self.tables.insert(table_id, table);
             }
-            // A table was added. Remove it.
             TableAdded(table_id) => {
                 // We don't need to deal with sub-components.
                 // That is, we don't need to remove indices and such.
                 // Instead, there will be separate pending schema changes like `IndexAdded`.
                 self.tables.remove(&table_id);
             }
-            // A table's access was changed. Change back to the old one.
             TableAlterAccess(table_id, access) => {
                 let table = self.tables.get_mut(&table_id)?;
                 table.with_mut_schema(|s| s.table_access = access);
             }
-            // A constraint was removed. Add it back.
+            TableAlterRowType(table_id, column_schemas) => {
+                let table = self.tables.get_mut(&table_id)?;
+                // SAFETY: `validate = false`.
+                // We must ensure that `column_schemas` is compatible with the existing rows of `table`.
+                // This is the commit table,
+                // so new rows exploiting the changed schema, e.g., by using a new variant,
+                // have not been added here as the commit table is immutable to row addition
+                // during a transaction.
+                unsafe { table.change_columns_to(column_schemas, false) }
+                    .expect("should not error when `validate = false`");
+            }
             ConstraintRemoved(table_id, constraint_schema) => {
                 let table = self.tables.get_mut(&table_id)?;
                 table.with_mut_schema(|s| s.update_constraint(constraint_schema));
             }
-            // A constraint was added. Remove it.
             ConstraintAdded(table_id, constraint_id) => {
                 let table = self.tables.get_mut(&table_id)?;
                 table.with_mut_schema(|s| s.remove_constraint(constraint_id));
             }
-            // A sequence was removed. Add it back.
             SequenceRemoved(table_id, seq, schema) => {
                 let table = self.tables.get_mut(&table_id)?;
                 table.with_mut_schema(|s| s.update_sequence(schema));
                 seq_state.insert(seq);
             }
-            // A sequence was added. Remove it.
             SequenceAdded(table_id, sequence_id) => {
                 let table = self.tables.get_mut(&table_id)?;
                 table.with_mut_schema(|s| s.remove_sequence(sequence_id));
