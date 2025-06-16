@@ -290,6 +290,7 @@ xdg = "2.5"
 tikv-jemallocator = { version = "0.6.0", features = ["profiling", "stats"] }
 tikv-jemalloc-ctl = { version = "0.6.0", features = ["stats"] }
 jemalloc_pprof = { version = "0.7", features = ["symbolize", "flamegraph"] }
+zstd = "0.13"
 zstd-framed = { version = "0.1.1", features = ["tokio"] }
 
 # Vendor the openssl we rely on, rather than depend on a

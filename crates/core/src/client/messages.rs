@@ -4,10 +4,7 @@ use crate::host::module_host::{EventStatus, ModuleEvent};
 use crate::host::ArgsTuple;
 use crate::messages::websocket as ws;
 use derive_more::From;
-use spacetimedb_client_api_messages::websocket::{
-    BsatnFormat, Compression, FormatSwitch, JsonFormat, OneOffTable, RowListLen, WebsocketFormat,
-    SERVER_MSG_COMPRESSION_TAG_BROTLI, SERVER_MSG_COMPRESSION_TAG_GZIP, SERVER_MSG_COMPRESSION_TAG_NONE,
-};
+use spacetimedb_client_api_messages::websocket::{BsatnFormat, Compression, FormatSwitch, JsonFormat, OneOffTable, RowListLen, WebsocketFormat, SERVER_MSG_COMPRESSION_TAG_BROTLI, SERVER_MSG_COMPRESSION_TAG_GZIP, SERVER_MSG_COMPRESSION_TAG_NONE, SERVER_MSG_COMPRESSION_TAG_ZSTD};
 use spacetimedb_lib::identity::RequestId;
 use spacetimedb_lib::ser::serde::SerializeWrapper;
 use spacetimedb_lib::{ConnectionId, TimeDuration};
@@ -53,6 +50,11 @@ pub fn serialize(msg: impl ToProtocol<Encoded = SwitchedServerMessage>, config: 
                 Compression::Gzip => {
                     let mut out = vec![SERVER_MSG_COMPRESSION_TAG_GZIP];
                     ws::gzip_compress(srv_msg, &mut out);
+                    out
+                }
+                Compression::Zstd => {
+                    let mut out = vec![SERVER_MSG_COMPRESSION_TAG_ZSTD];
+                    ws::zstd_compress(srv_msg, &mut out);
                     out
                 }
             };
