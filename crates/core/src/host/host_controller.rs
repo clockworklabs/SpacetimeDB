@@ -21,7 +21,6 @@ use anyhow::{anyhow, ensure, Context};
 use async_trait::async_trait;
 use durability::{Durability, EmptyHistory};
 use log::{info, trace, warn};
-use parking_lot::Mutex;
 use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_durability::{self as durability, TxOffset};
 use spacetimedb_lib::{hash_bytes, Identity};
@@ -35,6 +34,7 @@ use std::ops::Deref;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tempfile::TempDir;
+use tokio::sync::Mutex;
 use tokio::sync::{watch, OwnedRwLockReadGuard, OwnedRwLockWriteGuard, RwLock as AsyncRwLock};
 use tokio::task::AbortHandle;
 
@@ -530,7 +530,7 @@ impl HostController {
     #[tracing::instrument(level = "trace", skip_all)]
     pub async fn exit_module_host(&self, replica_id: u64) -> Result<(), anyhow::Error> {
         trace!("exit module host {}", replica_id);
-        let lock = self.hosts.lock().remove(&replica_id);
+        let lock = self.hosts.lock().await.remove(&replica_id);
         if let Some(lock) = lock {
             if let Some(host) = lock.write_owned().await.take() {
                 let module = host.module.borrow().clone();
@@ -586,18 +586,20 @@ impl HostController {
         let hosts = Arc::downgrade(&self.hosts);
         move || {
             if let Some(hosts) = hosts.upgrade() {
-                hosts.lock().remove(&replica_id);
+                tokio::runtime::Handle::current().block_on(async move {
+                    hosts.lock().await.remove(&replica_id);
+                })
             }
         }
     }
 
     async fn acquire_write_lock(&self, replica_id: u64) -> OwnedRwLockWriteGuard<Option<Host>> {
-        let lock = self.hosts.lock().entry(replica_id).or_default().clone();
+        let lock = self.hosts.lock().await.entry(replica_id).or_default().clone();
         lock.write_owned().await
     }
 
     async fn acquire_read_lock(&self, replica_id: u64) -> OwnedRwLockReadGuard<Option<Host>> {
-        let lock = self.hosts.lock().entry(replica_id).or_default().clone();
+        let lock = self.hosts.lock().await.entry(replica_id).or_default().clone();
         lock.read_owned().await
     }
 
