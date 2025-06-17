@@ -7,7 +7,7 @@ use std::{
             AtomicI64, AtomicU64,
             Ordering::{Acquire, Relaxed, Release},
         },
-        Arc,
+        Arc, Weak,
     },
     time::Duration,
 };
@@ -116,7 +116,7 @@ impl<T: Encode + Send + Sync + 'static> Local<T> {
         );
         rt.spawn(
             FlushAndSyncTask {
-                clog: clog.clone(),
+                clog: Arc::downgrade(&clog),
                 period: opts.sync_interval,
                 offset: offset.clone(),
                 abort: persister_task.abort_handle(),
@@ -254,7 +254,7 @@ fn flush_error(e: io::Error) {
 }
 
 struct FlushAndSyncTask<T> {
-    clog: Arc<Commitlog<Txdata<T>>>,
+    clog: Weak<Commitlog<Txdata<T>>>,
     period: Duration,
     offset: Arc<AtomicI64>,
     /// Handle to abort the [`PersisterTask`] if fsync panics.
@@ -272,15 +272,17 @@ impl<T: Send + Sync + 'static> FlushAndSyncTask<T> {
         loop {
             interval.tick().await;
 
+            let Some(clog) = self.clog.upgrade() else {
+                break;
+            };
             // Skip if nothing changed.
-            if let Some(committed) = self.clog.max_committed_offset() {
+            if let Some(committed) = clog.max_committed_offset() {
                 let durable = self.offset.load(Acquire);
                 if durable.is_positive() && committed == durable as _ {
                     continue;
                 }
             }
 
-            let clog = self.clog.clone();
             let task = spawn_blocking(move || clog.flush_and_sync()).await;
             match task {
                 Err(e) => {
