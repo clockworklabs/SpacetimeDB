@@ -486,6 +486,7 @@ impl ModuleSubscriptions {
         });
 
         let removed_queries = {
+            let _compile_timer = subscription_metrics.compilation_time.start_timer();
             let mut subscriptions = {
                 // How contended is the lock?
                 let _wait_guard = subscription_metrics.lock_waiters.inc_scope();
