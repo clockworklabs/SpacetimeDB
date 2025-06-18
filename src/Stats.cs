@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 
 namespace SpacetimeDB
 {
@@ -137,47 +136,66 @@ namespace SpacetimeDB
             }
         }
 
-        // The remaining methods in this class do not need to lock, since they are only called from OnProcessMessageComplete.
+        /// <summary>
+        /// Finish tracking a request. Assume the request finished processing now.
+        /// </summary>
+        /// <param name="requestId">The ID of the request.</param>
+        /// <param name="metadata">The metadata for the request, if we should override the existing metadata.</param>
+        /// <returns></returns>
 
-        internal bool FinishTrackingRequest(uint requestId)
+        internal bool FinishTrackingRequest(uint requestId, string? metadata = null)
         {
-            if (!_requests.Remove(requestId, out var entry))
-            {
-                // TODO: When we implement requestId json support for SpacetimeDB this shouldn't happen anymore!
-                // var minKey = _requests.Keys.Min();
-                // entry = _requests[minKey];
-                //
-                // if (!_requests.Remove(minKey))
-                // {
-                //     return false;
-                // }
-                return false;
-            }
+            return FinishTrackingRequest(requestId, DateTime.UtcNow, metadata);
+        }
 
-            // Calculate the duration and add it to the queue
-            InsertRequest(entry.Start, entry.Metadata);
-            return true;
+        /// <summary>
+        /// Finish tracking a request.
+        /// </summary>
+        /// <param name="requestId">The ID of the request.</param>
+        /// <param name="finished">The time we should consider the request as having finished.</param>
+        /// <param name="metadata">The metadata for the request, if we should override the existing metadata.</param>
+        /// <returns></returns>
+        internal bool FinishTrackingRequest(uint requestId, DateTime finished, string? metadata = null)
+        {
+            lock (this)
+            {
+                if (!_requests.Remove(requestId, out var entry))
+                {
+                    return false;
+                }
+                if (metadata != null)
+                {
+                    entry.Metadata = metadata;
+                }
+
+                // Calculate the duration and add it to the queue
+                InsertRequest(finished - entry.Start, entry.Metadata);
+                return true;
+            }
         }
 
         internal void InsertRequest(TimeSpan duration, string metadata)
         {
-            var sample = (duration, metadata);
+            lock (this)
+            {
+                var sample = (duration, metadata);
 
-            if (AllTimeMin == null || AllTimeMin.Value.Duration > duration)
-            {
-                AllTimeMin = sample;
-            }
-            if (AllTimeMax == null || AllTimeMax.Value.Duration < duration)
-            {
-                AllTimeMax = sample;
-            }
-            _totalSamples += 1;
+                if (AllTimeMin == null || AllTimeMin.Value.Duration > duration)
+                {
+                    AllTimeMin = sample;
+                }
+                if (AllTimeMax == null || AllTimeMax.Value.Duration < duration)
+                {
+                    AllTimeMax = sample;
+                }
+                _totalSamples += 1;
 
-            foreach (var window in TrackerWindows)
-            {
-                var tracker = Trackers[window];
-                tracker.InsertRequest(duration, metadata);
-                Trackers[window] = tracker; // Needed because struct.
+                foreach (var window in TrackerWindows)
+                {
+                    var tracker = Trackers[window];
+                    tracker.InsertRequest(duration, metadata);
+                    Trackers[window] = tracker; // Needed because struct.
+                }
             }
         }
 
@@ -199,16 +217,19 @@ namespace SpacetimeDB
         /// <param name="_deprecated">Present for backwards-compatibility, does nothing.</param>
         public ((TimeSpan Duration, string Metadata) Min, (TimeSpan Duration, string Metadata) Max)? GetMinMaxTimes(int lastSeconds = 0)
         {
-            if (lastSeconds <= 0) return null;
+            lock (this)
+            {
+                if (lastSeconds <= 0) return null;
 
-            if (Trackers.TryGetValue(lastSeconds, out var tracker))
-            {
-                return tracker.GetMinMaxTimes();
-            }
-            else if (TrackerWindows.Count < MAX_TRACKERS)
-            {
-                TrackerWindows.Add(lastSeconds);
-                Trackers.Add(lastSeconds, new Tracker(lastSeconds));
+                if (Trackers.TryGetValue(lastSeconds, out var tracker))
+                {
+                    return tracker.GetMinMaxTimes();
+                }
+                else if (TrackerWindows.Count < MAX_TRACKERS)
+                {
+                    TrackerWindows.Add(lastSeconds);
+                    Trackers.Add(lastSeconds, new Tracker(lastSeconds));
+                }
             }
 
             return null;
@@ -229,10 +250,61 @@ namespace SpacetimeDB
 
     public class Stats
     {
+        /// <summary>
+        /// Tracks times from reducers requests being sent to their responses being received.
+        /// Includes: network send + host + network receive time.
+        /// 
+        /// GetRequestsAwaitingResponse() is meaningful here.
+        /// </summary>
         public readonly NetworkRequestTracker ReducerRequestTracker = new();
-        public readonly NetworkRequestTracker OneOffRequestTracker = new();
+
+        /// <summary>
+        /// Tracks times from subscriptions being sent to their responses being received.
+        /// Includes: network send + host + network receive time.
+        /// 
+        /// GetRequestsAwaitingResponse() is meaningful here.
+        /// </summary>
         public readonly NetworkRequestTracker SubscriptionRequestTracker = new();
+
+        /// <summary>
+        /// Tracks times from one-off requests being sent to their responses being received.
+        /// Includes: network send + host + receive + parse + queue times.
+        /// 
+        /// GetRequestsAwaitingResponse() is meaningful here.
+        /// </summary>
+        public readonly NetworkRequestTracker OneOffRequestTracker = new();
+
+        /// <summary>
+        /// Tracks host-side execution times for reducers.
+        /// Includes: host-side execution time.
+        /// </summary>
         public readonly NetworkRequestTracker AllReducersTracker = new();
+
+        /// <summary>
+        /// Tracks time between messages being received, and the start of their being parsed.
+        /// Includes: time waiting in parsing queue.
+        /// 
+        /// GetRequestsAwaitingResponse() is meaningful here.
+        /// </summary>
+        public readonly NetworkRequestTracker ParseMessageQueueTracker = new();
+
+        /// <summary>
+        /// Tracks times messages take to be parsed (on a background thread).
+        /// Includes: parse time.
+        /// </summary>
         public readonly NetworkRequestTracker ParseMessageTracker = new();
+
+        /// <summary>
+        /// Tracks times from messages being parsed on a background thread to their being applied on the main thread.
+        /// Includes: time waiting in pre-application queue.
+        /// GetRequestsAwaitingResponse() is meaningful here.
+        /// </summary>
+        public readonly NetworkRequestTracker ApplyMessageQueueTracker = new();
+
+        /// <summary>
+        /// Tracks times from messages being parsed on a background thread to their being applied on the main thread.
+        /// Includes: apply time (on main thread).
+        /// </summary>
+        public readonly NetworkRequestTracker ApplyMessageTracker = new();
     }
 }
