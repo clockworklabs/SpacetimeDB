@@ -279,7 +279,7 @@ partial struct PublicTable : System.IEquatable<PublicTable>, SpacetimeDB.BSATN.I
             this.CustomClassField == null
                 ? that.CustomClassField == null
                 : this.CustomClassField.Equals(that.CustomClassField);
-        var ___eqCustomEnumField = this.CustomEnumField.Equals(that.CustomEnumField);
+        var ___eqCustomEnumField = this.CustomEnumField == that.CustomEnumField;
         var ___eqCustomTaggedEnumField =
             this.CustomTaggedEnumField == null
                 ? that.CustomTaggedEnumField == null

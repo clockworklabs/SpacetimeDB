@@ -104,7 +104,7 @@ partial struct TestUnsupportedType
             this.UnresolvedType == null
                 ? that.UnresolvedType == null
                 : this.UnresolvedType.Equals(that.UnresolvedType);
-        var ___eqUnsupportedEnum = this.UnsupportedEnum.Equals(that.UnsupportedEnum);
+        var ___eqUnsupportedEnum = this.UnsupportedEnum == that.UnsupportedEnum;
         return ___eqUnsupportedSpecialType
             && ___eqUnsupportedSystemType
             && ___eqUnresolvedType
