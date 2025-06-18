@@ -964,7 +964,7 @@ mod tests {
     use spacetimedb_sats::product;
     use std::time::Instant;
     use std::{sync::Arc, time::Duration};
-    use tokio::sync::mpsc::{self, Receiver};
+    use tokio::sync::mpsc::{self};
 
     fn add_subscriber(db: Arc<RelationalDB>, sql: &str, assert: Option<AssertTxFn>) -> Result<(), DBError> {
         // Create and enter a Tokio runtime to run the `ModuleSubscriptions`' background workers in parallel.
@@ -1161,7 +1161,7 @@ mod tests {
 
     /// Pull a message from receiver and assert that it is a `TxUpdate` with the expected rows
     async fn assert_tx_update_for_table(
-        rx: &mut Receiver<SerializableMessage>,
+        rx: &mut MeteredReceiver<SerializableMessage>,
         table_id: TableId,
         schema: &ProductType,
         inserts: impl IntoIterator<Item = ProductValue>,

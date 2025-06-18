@@ -27,7 +27,6 @@ use spacetimedb::Identity;
 use spacetimedb_client_api_messages::websocket::{self as ws_api, Compression};
 use spacetimedb_lib::connection_id::{ConnectionId, ConnectionIdForUrl};
 use std::time::Instant;
-use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Utf8Bytes;
 
 use crate::auth::SpacetimeAuth;
@@ -242,12 +241,9 @@ async fn ws_client_actor_inner(
     // by the number of messages still waiting in this client's queue,
     // or else they will grow without bound as clients disconnect, and be useless.
     let incoming_queue_length_metric = WORKER_METRICS.total_incoming_queue_length.with_label_values(&addr);
-    let outgoing_queue_length_metric = WORKER_METRICS.total_outgoing_queue_length.with_label_values(&addr);
 
-    let clean_up_metrics = |message_queue: &VecDeque<(DataMessage, Instant)>,
-                            sendrx: &mpsc::Receiver<SerializableMessage>| {
+    let clean_up_metrics = |message_queue: &VecDeque<(DataMessage, Instant)>| {
         incoming_queue_length_metric.sub(message_queue.len() as _);
-        outgoing_queue_length_metric.sub(sendrx.len() as _);
     };
 
     let mut msg_buffer = SerializeBuffer::new(client.config);
@@ -288,7 +284,7 @@ async fn ws_client_actor_inner(
                 }
                 // the client sent us a close frame
                 None => {
-                    clean_up_metrics(&message_queue, &sendrx);
+                    clean_up_metrics(&message_queue);
                     break
                 },
             },
@@ -296,7 +292,6 @@ async fn ws_client_actor_inner(
             // If we have an outgoing message to send, send it off.
             // No incoming `message` to handle, so `continue`.
             Some(n) = sendrx.recv_many(&mut rx_buf, 32).map(|n| (n != 0).then_some(n)) => {
-                outgoing_queue_length_metric.sub(n as _);
                 if closed {
                     // TODO: this isn't great. when we receive a close request from the peer,
                     //       tungstenite doesn't let us send any new messages on the socket,
@@ -381,7 +376,7 @@ async fn ws_client_actor_inner(
                 } else {
                     // the client never responded to our ping; drop them without trying to send them a Close
                     log::warn!("client {} timed out", client.id);
-                    clean_up_metrics(&message_queue, &sendrx);
+                    clean_up_metrics(&message_queue);
                     break;
                 }
             }

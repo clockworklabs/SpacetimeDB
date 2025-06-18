@@ -1,4 +1,4 @@
-use std::ops::{Deref, DerefMut};
+use std::ops::Deref;
 use std::sync::atomic::{AtomicBool, Ordering::Relaxed};
 use std::sync::Arc;
 use std::time::Instant;
@@ -265,19 +265,6 @@ pub struct MeteredReceiver<T> {
     gauge: Option<IntGauge>,
 }
 
-impl<T> Deref for MeteredReceiver<T> {
-    type Target = mpsc::Receiver<T>;
-    fn deref(&self) -> &Self::Target {
-        &self.inner
-    }
-}
-
-impl<T> DerefMut for MeteredReceiver<T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.inner
-    }
-}
-
 impl<T> MeteredReceiver<T> {
     pub fn new(inner: mpsc::Receiver<T>) -> Self {
         Self { inner, gauge: None }
@@ -288,6 +275,34 @@ impl<T> MeteredReceiver<T> {
             inner,
             gauge: Some(gauge),
         }
+    }
+
+    pub async fn recv(&mut self) -> Option<T> {
+        self.inner.recv().await.inspect(|_| {
+            if let Some(gauge) = &self.gauge {
+                gauge.dec();
+            }
+        })
+    }
+
+    pub async fn recv_many(&mut self, buf: &mut Vec<T>, max: usize) -> usize {
+        let n = self.inner.recv_many(buf, max).await;
+        if let Some(gauge) = &self.gauge {
+            gauge.sub(n as _);
+        }
+        n
+    }
+
+    pub fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.inner.is_empty()
+    }
+
+    pub fn close(&mut self) {
+        self.inner.close();
     }
 }
 
