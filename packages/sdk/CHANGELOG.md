@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.0
+
+### Patch Changes
+
+- [#176](https://github.com/clockworklabs/spacetimedb-typescript-sdk/pull/176) [`941cf4e`](https://github.com/clockworklabs/spacetimedb-typescript-sdk/commit/941cf4eba6b7df934d74696b373b89cc62764673) Thanks [@BastianGanze](https://github.com/BastianGanze)! - Make ws connection fail when token is invalid
+
 ## 1.0.0-rc1.0
 
 ### Major Changes
