@@ -932,7 +932,7 @@ mod tests {
         SerializableMessage, SubscriptionData, SubscriptionError, SubscriptionMessage, SubscriptionResult,
         SubscriptionUpdateMessage, TransactionUpdateMessage,
     };
-    use crate::client::{ClientActorId, ClientConfig, ClientConnectionSender, ClientName, Protocol};
+    use crate::client::{ClientActorId, ClientConfig, ClientConnectionSender, ClientName, MeteredReceiver, Protocol};
     use crate::db::datastore::system_tables::{StRowLevelSecurityRow, ST_ROW_LEVEL_SECURITY_ID};
     use crate::db::relational_db::tests_utils::{
         begin_mut_tx, begin_tx, insert, with_auto_commit, with_read_only, TestDB,
@@ -964,7 +964,7 @@ mod tests {
     use spacetimedb_sats::product;
     use std::time::Instant;
     use std::{sync::Arc, time::Duration};
-    use tokio::sync::mpsc::{self, Receiver};
+    use tokio::sync::mpsc::{self};
 
     fn add_subscriber(db: Arc<RelationalDB>, sql: &str, assert: Option<AssertTxFn>) -> Result<(), DBError> {
         // Create and enter a Tokio runtime to run the `ModuleSubscriptions`' background workers in parallel.
@@ -1072,7 +1072,7 @@ mod tests {
     fn client_connection_with_compression(
         client_id: ClientActorId,
         compression: Compression,
-    ) -> (Arc<ClientConnectionSender>, Receiver<SerializableMessage>) {
+    ) -> (Arc<ClientConnectionSender>, MeteredReceiver<SerializableMessage>) {
         let (sender, rx) = ClientConnectionSender::dummy_with_channel(
             client_id,
             ClientConfig {
@@ -1085,7 +1085,9 @@ mod tests {
     }
 
     /// Instantiate a client connection
-    fn client_connection(client_id: ClientActorId) -> (Arc<ClientConnectionSender>, Receiver<SerializableMessage>) {
+    fn client_connection(
+        client_id: ClientActorId,
+    ) -> (Arc<ClientConnectionSender>, MeteredReceiver<SerializableMessage>) {
         client_connection_with_compression(client_id, Compression::None)
     }
 
@@ -1159,7 +1161,7 @@ mod tests {
 
     /// Pull a message from receiver and assert that it is a `TxUpdate` with the expected rows
     async fn assert_tx_update_for_table(
-        rx: &mut Receiver<SerializableMessage>,
+        rx: &mut MeteredReceiver<SerializableMessage>,
         table_id: TableId,
         schema: &ProductType,
         inserts: impl IntoIterator<Item = ProductValue>,

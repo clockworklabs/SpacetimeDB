@@ -1,4 +1,3 @@
-use std::collections::VecDeque;
 use std::mem;
 use std::pin::{pin, Pin};
 use std::time::Duration;
@@ -15,7 +14,10 @@ use http::{HeaderValue, StatusCode};
 use scopeguard::ScopeGuard;
 use serde::Deserialize;
 use spacetimedb::client::messages::{serialize, IdentityTokenMessage, SerializableMessage, SerializeBuffer};
-use spacetimedb::client::{ClientActorId, ClientConfig, ClientConnection, DataMessage, MessageHandleError, Protocol};
+use spacetimedb::client::{
+    ClientActorId, ClientConfig, ClientConnection, DataMessage, MessageHandleError, MeteredDeque, MeteredReceiver,
+    Protocol,
+};
 use spacetimedb::execution_context::WorkloadType;
 use spacetimedb::host::module_host::ClientConnectedError;
 use spacetimedb::host::NoSuchModule;
@@ -25,7 +27,6 @@ use spacetimedb::Identity;
 use spacetimedb_client_api_messages::websocket::{self as ws_api, Compression};
 use spacetimedb_lib::connection_id::{ConnectionId, ConnectionIdForUrl};
 use std::time::Instant;
-use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Utf8Bytes;
 
 use crate::auth::SpacetimeAuth;
@@ -182,7 +183,7 @@ where
 
 const LIVELINESS_TIMEOUT: Duration = Duration::from_secs(60);
 
-async fn ws_client_actor(client: ClientConnection, ws: WebSocketStream, sendrx: mpsc::Receiver<SerializableMessage>) {
+async fn ws_client_actor(client: ClientConnection, ws: WebSocketStream, sendrx: MeteredReceiver<SerializableMessage>) {
     // ensure that even if this task gets cancelled, we always cleanup the connection
     let mut client = scopeguard::guard(client, |client| {
         tokio::spawn(client.disconnect());
@@ -204,10 +205,12 @@ async fn make_progress<Fut: Future>(fut: &mut Pin<&mut MaybeDone<Fut>>) {
 async fn ws_client_actor_inner(
     client: &mut ClientConnection,
     mut ws: WebSocketStream,
-    mut sendrx: mpsc::Receiver<SerializableMessage>,
+    mut sendrx: MeteredReceiver<SerializableMessage>,
 ) {
     let mut liveness_check_interval = tokio::time::interval(LIVELINESS_TIMEOUT);
     let mut got_pong = true;
+
+    let addr = client.module.info().database_identity;
 
     // Build a queue of incoming messages to handle, to be processed one at a time,
     // in the order they're received.
@@ -222,31 +225,13 @@ async fn ws_client_actor_inner(
     //       `select!` for examples of how to do this.
     //
     // TODO: do we want this to have a fixed capacity? or should it be unbounded
-    let mut message_queue = VecDeque::<(DataMessage, Instant)>::new();
+    let mut message_queue = MeteredDeque::<(DataMessage, Instant)>::new(
+        WORKER_METRICS.total_incoming_queue_length.with_label_values(&addr),
+    );
     let mut current_message = pin!(MaybeDone::Gone);
 
     let mut closed = false;
     let mut rx_buf = Vec::new();
-
-    let addr = client.module.info().database_identity;
-
-    // Grab handles on the total incoming and outgoing queue length metrics,
-    // which we'll increment and decrement as we push into and pull out of those queues.
-    // Note that `total_outgoing_queue_length` is incremented separately,
-    // by `ClientConnectionSender::send` in core/src/client/client_connection.rs;
-    // we're only responsible for decrementing that one.
-    // Also note that much care must be taken to clean up these metrics when the connection closes!
-    // Any path which exits this function must decrement each of these metrics
-    // by the number of messages still waiting in this client's queue,
-    // or else they will grow without bound as clients disconnect, and be useless.
-    let incoming_queue_length_metric = WORKER_METRICS.total_incoming_queue_length.with_label_values(&addr);
-    let outgoing_queue_length_metric = WORKER_METRICS.total_outgoing_queue_length.with_label_values(&addr);
-
-    let clean_up_metrics = |message_queue: &VecDeque<(DataMessage, Instant)>,
-                            sendrx: &mpsc::Receiver<SerializableMessage>| {
-        incoming_queue_length_metric.sub(message_queue.len() as _);
-        outgoing_queue_length_metric.sub(sendrx.len() as _);
-    };
 
     let mut msg_buffer = SerializeBuffer::new(client.config);
     loop {
@@ -257,7 +242,6 @@ async fn ws_client_actor_inner(
         }
         if let MaybeDone::Gone = *current_message {
             if let Some((message, timer)) = message_queue.pop_front() {
-                incoming_queue_length_metric.dec();
                 let client = client.clone();
                 let fut = async move { client.handle_message(message, timer).await };
                 current_message.set(MaybeDone::Future(fut));
@@ -286,7 +270,6 @@ async fn ws_client_actor_inner(
                 }
                 // the client sent us a close frame
                 None => {
-                    clean_up_metrics(&message_queue, &sendrx);
                     break
                 },
             },
@@ -294,7 +277,6 @@ async fn ws_client_actor_inner(
             // If we have an outgoing message to send, send it off.
             // No incoming `message` to handle, so `continue`.
             Some(n) = sendrx.recv_many(&mut rx_buf, 32).map(|n| (n != 0).then_some(n)) => {
-                outgoing_queue_length_metric.sub(n as _);
                 if closed {
                     // TODO: this isn't great. when we receive a close request from the peer,
                     //       tungstenite doesn't let us send any new messages on the socket,
@@ -379,7 +361,6 @@ async fn ws_client_actor_inner(
                 } else {
                     // the client never responded to our ping; drop them without trying to send them a Close
                     log::warn!("client {} timed out", client.id);
-                    clean_up_metrics(&message_queue, &sendrx);
                     break;
                 }
             }
@@ -394,7 +375,6 @@ async fn ws_client_actor_inner(
         match message {
             Item::Message(ClientMessage::Message(message)) => {
                 let timer = Instant::now();
-                incoming_queue_length_metric.inc();
                 message_queue.push_back((message, timer))
             }
             Item::HandleResult(res) => {
