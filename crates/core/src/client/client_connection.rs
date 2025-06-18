@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use std::ops::Deref;
 use std::sync::atomic::{AtomicBool, Ordering::Relaxed};
 use std::sync::Arc;
@@ -255,6 +256,59 @@ impl DataMessage {
             DataMessage::Text(alloc) => alloc.as_bytes().clone(),
             DataMessage::Binary(alloc) => alloc.clone(),
         }
+    }
+}
+
+/// Wraps a [VecDeque] with a gauge for tracking its size.
+/// We subtract its size from the gauge on drop to avoid leaking the metric.
+pub struct MeteredDeque<T> {
+    inner: VecDeque<T>,
+    gauge: IntGauge,
+}
+
+impl<T> MeteredDeque<T> {
+    pub fn new(gauge: IntGauge) -> Self {
+        Self {
+            inner: VecDeque::new(),
+            gauge,
+        }
+    }
+
+    pub fn pop_front(&mut self) -> Option<T> {
+        self.inner.pop_front().inspect(|_| {
+            self.gauge.dec();
+        })
+    }
+
+    pub fn pop_back(&mut self) -> Option<T> {
+        self.inner.pop_back().inspect(|_| {
+            self.gauge.dec();
+        })
+    }
+
+    pub fn push_front(&mut self, value: T) {
+        self.gauge.inc();
+        self.inner.push_front(value);
+    }
+
+    pub fn push_back(&mut self, value: T) {
+        self.gauge.inc();
+        self.inner.push_back(value);
+    }
+
+    pub fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.inner.is_empty()
+    }
+}
+
+impl<T> Drop for MeteredDeque<T> {
+    fn drop(&mut self) {
+        // Record the number of elements still in the deque on drop
+        self.gauge.sub(self.inner.len() as _);
     }
 }
 
