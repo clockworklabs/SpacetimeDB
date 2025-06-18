@@ -496,7 +496,7 @@ SampleUserInsert("k5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", null, true)
             client.OnMessageReceived(sample, DateTime.UtcNow);
             // Wait for this message to be picked up by the background thread, preprocessed and stored in the preprocessed queue.
             // Otherwise we'll get inconsistent output order between test reruns.
-            while (!client.HasPreProcessedMessage) { }
+            while (!client.HasMessageToApply) { }
             // Once the message is in the preprocessed queue, we can invoke Update() to handle events on the main thread.
             client.FrameTick();
         }

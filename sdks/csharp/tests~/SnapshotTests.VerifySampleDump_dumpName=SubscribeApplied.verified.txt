@@ -661,13 +661,22 @@
     ReducerRequestTracker: {
       requestsAwaitingResponse: 9
     },
-    OneOffRequestTracker: {},
     SubscriptionRequestTracker: {},
+    OneOffRequestTracker: {},
     AllReducersTracker: {
       sampleCount: 9
     },
+    ParseMessageQueueTracker: {
+      sampleCount: 15
+    },
     ParseMessageTracker: {
-      sampleCount: 14
+      sampleCount: 15
+    },
+    ApplyMessageQueueTracker: {
+      sampleCount: 15
+    },
+    ApplyMessageTracker: {
+      sampleCount: 15
     }
   }
 }

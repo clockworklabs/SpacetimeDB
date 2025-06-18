@@ -516,15 +516,24 @@
     ReducerRequestTracker: {
       requestsAwaitingResponse: 9
     },
-    OneOffRequestTracker: {},
     SubscriptionRequestTracker: {
       sampleCount: 1
     },
+    OneOffRequestTracker: {},
     AllReducersTracker: {
       sampleCount: 9
     },
+    ParseMessageQueueTracker: {
+      sampleCount: 11
+    },
     ParseMessageTracker: {
-      sampleCount: 10
+      sampleCount: 11
+    },
+    ApplyMessageQueueTracker: {
+      sampleCount: 11
+    },
+    ApplyMessageTracker: {
+      sampleCount: 11
     }
   }
 }
