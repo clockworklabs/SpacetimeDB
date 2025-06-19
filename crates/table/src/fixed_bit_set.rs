@@ -5,8 +5,7 @@ use core::{
 };
 pub use internal_unsafe::FixedBitSet;
 use internal_unsafe::Len;
-
-use crate::MemoryUsage;
+use spacetimedb_sats::memory_usage::MemoryUsage;
 
 /// A type used to represent blocks in a bit set.
 /// A smaller type, compared to usize,

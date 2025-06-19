@@ -2,12 +2,14 @@
 //! bytes, row hashes, (page) sizes, offsets, and indices.
 
 use super::util::range_move;
-use crate::{static_assert_size, MemoryUsage};
+use crate::static_assert_size;
 use ahash::RandomState;
 use core::fmt;
-use core::ops::{AddAssign, Div, Mul, Range, SubAssign};
+use core::ops::{AddAssign, Div, Range, SubAssign};
 use derive_more::{Add, Sub};
 use spacetimedb_data_structures::map::ValidAsIdentityHash;
+use spacetimedb_sats::layout::Size;
+use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::{impl_deserialize, impl_serialize};
 
 /// A byte is a `u8`.
@@ -65,34 +67,6 @@ impl RowHash {
     pub fn hasher_builder() -> RandomState {
         // For equal `row`s, all calls within the same process will yield the same hash.
         RandomState::with_seed(0x42)
-    }
-}
-
-/// The size of something in page storage in bytes.
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Add, Sub)]
-pub struct Size(pub u16);
-
-impl MemoryUsage for Size {}
-
-// We need to be able to serialize and deserialize `Size` because they appear in the `PageHeader`.
-impl_serialize!([] Size, (self, ser) => self.0.serialize(ser));
-impl_deserialize!([] Size, de => u16::deserialize(de).map(Size));
-
-impl Size {
-    /// Returns the size for use in `usize` computations.
-    #[inline]
-    #[allow(clippy::len_without_is_empty)]
-    pub const fn len(self) -> usize {
-        self.0 as usize
-    }
-}
-
-impl Mul<usize> for Size {
-    type Output = Size;
-
-    #[inline]
-    fn mul(self, rhs: usize) -> Self::Output {
-        Size((self.len() * rhs) as u16)
     }
 }
 

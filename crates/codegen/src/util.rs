@@ -8,6 +8,7 @@ use std::{
 use super::code_indenter::Indenter;
 use convert_case::{Case, Casing};
 use itertools::Itertools;
+use spacetimedb_lib::sats::layout::PrimitiveType;
 use spacetimedb_lib::version;
 use spacetimedb_lib::{db::raw_def::v9::Lifecycle, sats::AlgebraicTypeRef};
 use spacetimedb_primitives::ColList;
@@ -20,7 +21,7 @@ use spacetimedb_schema::{
 use spacetimedb_schema::{
     def::{ModuleDef, ReducerDef},
     identifier::Identifier,
-    type_for_generate::{AlgebraicTypeUse, PrimitiveType},
+    type_for_generate::AlgebraicTypeUse,
 };
 
 /// Turns a closure `f: Fn(&mut Formatter) -> Result` into `fmt::Display`.

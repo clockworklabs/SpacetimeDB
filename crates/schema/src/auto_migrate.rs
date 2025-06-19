@@ -1,10 +1,18 @@
+use core::{cmp::Ordering, ops::Add};
+
 use crate::{def::*, error::PrettyAlgebraicType, identifier::Identifier};
 use spacetimedb_data_structures::{
     error_stream::{CollectAllErrors, CombineErrors, ErrorStream},
     map::HashSet,
 };
-use spacetimedb_lib::db::raw_def::v9::{RawRowLevelSecurityDefV9, TableType};
-use spacetimedb_sats::WithTypespace;
+use spacetimedb_lib::{
+    db::raw_def::v9::{RawRowLevelSecurityDefV9, TableType},
+    AlgebraicType,
+};
+use spacetimedb_sats::{
+    layout::{HasLayout, SumTypeLayout},
+    WithTypespace,
+};
 
 pub type Result<T> = std::result::Result<T, ErrorStream<AutoMigrateError>>;
 
@@ -97,6 +105,11 @@ pub enum AutoMigrateStep<'def> {
     /// Remove a row-level security query.
     RemoveRowLevelSecurity(<RawRowLevelSecurityDefV9 as ModuleDefLookup>::Key<'def>),
 
+    /// Change the column types of a table, in a layout compatible way.
+    ///
+    /// This should be done before any new indices are added.
+    ChangeColumns(<TableDef as ModuleDefLookup>::Key<'def>),
+
     /// Add a table, including all indexes, constraints, and sequences.
     /// There will NOT be separate steps in the plan for adding indexes, constraints, and sequences.
     AddTable(<TableDef as ModuleDefLookup>::Key<'def>),
@@ -113,6 +126,14 @@ pub enum AutoMigrateStep<'def> {
     ChangeAccess(<TableDef as ModuleDefLookup>::Key<'def>),
 }
 
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ChangeColumnTypeParts {
+    pub table: Identifier,
+    pub column: Identifier,
+    pub type1: PrettyAlgebraicType,
+    pub type2: PrettyAlgebraicType,
+}
+
 /// Something that might prevent an automatic migration.
 #[derive(thiserror::Error, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum AutoMigrateError {
@@ -126,14 +147,64 @@ pub enum AutoMigrateError {
     ReorderTable { table: Identifier },
 
     #[error(
-        "Changing the type of column {column} in table {table} from {type1:?} to {type2:?} requires a manual migration"
+        "Changing the type of column {} in table {} from {:?} to {:?} requires a manual migration",
+        .0.column, .0.table, .0.type1, .0.type2
     )]
-    ChangeColumnType {
-        table: Identifier,
-        column: Identifier,
-        type1: PrettyAlgebraicType,
-        type2: PrettyAlgebraicType,
-    },
+    ChangeColumnType(ChangeColumnTypeParts),
+
+    #[error(
+        "Changing a type within column {} in table {} from {:?} to {:?} requires a manual migration",
+        .0.column, .0.table, .0.type1, .0.type2
+    )]
+    ChangeWithinColumnType(ChangeColumnTypeParts),
+
+    #[error(
+        "Changing the type of column {} in table {} from {:?} to {:?}, with fewer variants, requires a manual migration",
+        .0.column, .0.table, .0.type1, .0.type2
+    )]
+    ChangeColumnTypeFewerVariants(ChangeColumnTypeParts),
+
+    #[error(
+        "Changing a type within column {} in table {} from {:?} to {:?}, with fewer variants, requires a manual migration",
+        .0.column, .0.table, .0.type1, .0.type2
+    )]
+    ChangeWithinColumnTypeFewerVariants(ChangeColumnTypeParts),
+
+    #[error(
+        "Changing the type of column {} in table {} from {:?} to {:?}, requires a manual migration, due to size mismatch",
+        .0.column, .0.table, .0.type1, .0.type2
+    )]
+    ChangeColumnTypeSizeMismatch(ChangeColumnTypeParts),
+
+    #[error(
+        "Changing a type within column {} in table {} from {:?} to {:?}, requires a manual migration, due to size mismatch",
+        .0.column, .0.table, .0.type1, .0.type2
+    )]
+    ChangeWithinColumnTypeSizeMismatch(ChangeColumnTypeParts),
+
+    #[error(
+        "Changing the type of column {} in table {} from {:?} to {:?}, requires a manual migration, due to alignment mismatch",
+        .0.column, .0.table, .0.type1, .0.type2
+    )]
+    ChangeColumnTypeAlignMismatch(ChangeColumnTypeParts),
+
+    #[error(
+        "Changing a type within column {} in table {} from {:?} to {:?}, requires a manual migration, due to alignment mismatch",
+        .0.column, .0.table, .0.type1, .0.type2
+    )]
+    ChangeWithinColumnTypeAlignMismatch(ChangeColumnTypeParts),
+
+    #[error(
+        "Changing the type of column {} in table {} from {:?} to {:?}, with fewer fields, requires a manual migration",
+        .0.column, .0.table, .0.type1, .0.type2
+    )]
+    ChangeColumnTypeFewerFields(ChangeColumnTypeParts),
+
+    #[error(
+        "Changing a type within column {} in table {} from {:?} to {:?}, with fewer fields, requires a manual migration",
+        .0.column, .0.table, .0.type1, .0.type2
+    )]
+    ChangeWithinColumnTypeFewerFields(ChangeColumnTypeParts),
 
     #[error("Adding a unique constraint {constraint} requires a manual migration")]
     AddUniqueConstraint { constraint: Box<str> },
@@ -286,10 +357,10 @@ fn auto_migrate_table<'def>(plan: &mut AutoMigratePlan<'def>, old: &'def TableDe
         }
     }
 
-    let columns_ok: Result<()> = diff(plan.old, plan.new, |def| {
+    let columns_ok = diff(plan.old, plan.new, |def| {
         def.lookup_expect::<TableDef>(key).columns.iter()
     })
-    .map(|col_diff| -> Result<()> {
+    .map(|col_diff| -> Result<_> {
         match col_diff {
             Diff::Add { new } => Err(AutoMigrateError::AddColumn {
                 table: new.table_name.clone(),
@@ -302,23 +373,15 @@ fn auto_migrate_table<'def>(plan: &mut AutoMigratePlan<'def>, old: &'def TableDe
             }
             .into()),
             Diff::MaybeChange { old, new } => {
+                // Check column type upgradability.
                 let old_ty = WithTypespace::new(plan.old.typespace(), &old.ty)
                     .resolve_refs()
                     .expect("valid TableDef must have valid type refs");
                 let new_ty = WithTypespace::new(plan.new.typespace(), &new.ty)
                     .resolve_refs()
                     .expect("valid TableDef must have valid type refs");
-                let types_ok = if old_ty == new_ty {
-                    Ok(())
-                } else {
-                    Err(AutoMigrateError::ChangeColumnType {
-                        table: old.table_name.clone(),
-                        column: old.name.clone(),
-                        type1: old_ty.clone().into(),
-                        type2: new_ty.clone().into(),
-                    }
-                    .into())
-                };
+                let types_ok = ensure_old_ty_upgradable_to_new(false, old, &old_ty, &new_ty);
+
                 // Note that the diff algorithm relies on `ModuleDefLookup` for `ColumnDef`,
                 // which looks up columns by NAME, NOT position: precisely to allow this step to work!
                 let positions_ok = if old.col_id == new.col_id {
@@ -329,15 +392,147 @@ fn auto_migrate_table<'def>(plan: &mut AutoMigratePlan<'def>, old: &'def TableDe
                     }
                     .into())
                 };
-                let ((), ()) = (types_ok, positions_ok).combine_errors()?;
-                Ok(())
+
+                (types_ok, positions_ok).combine_errors().map(|(x, _)| x)
             }
         }
     })
-    .collect_all_errors();
+    .collect_all_errors::<Any>();
 
-    let ((), ()) = (type_ok, columns_ok).combine_errors()?;
+    let ((), Any(row_type_changed)) = (type_ok, columns_ok).combine_errors()?;
+
+    if row_type_changed {
+        plan.steps.push(AutoMigrateStep::ChangeColumns(key));
+    }
+
     Ok(())
+}
+
+/// An "any" monoid with `false` as identity and `||` as the operator.
+struct Any(bool);
+
+impl FromIterator<Any> for Any {
+    fn from_iter<T: IntoIterator<Item = Any>>(iter: T) -> Self {
+        Any(iter.into_iter().any(|Any(x)| x))
+    }
+}
+
+impl Add for Any {
+    type Output = Self;
+    fn add(self, rhs: Self) -> Self::Output {
+        Self(self.0 || rhs.0)
+    }
+}
+
+fn ensure_old_ty_upgradable_to_new(
+    within: bool,
+    old: &ColumnDef,
+    old_ty: &AlgebraicType,
+    new_ty: &AlgebraicType,
+) -> Result<Any> {
+    use AutoMigrateError::*;
+
+    // Ensures an `old_ty` within `old` is upgradable to `new_ty`.
+    let ensure = |(old_ty, new_ty)| ensure_old_ty_upgradable_to_new(true, old, old_ty, new_ty);
+
+    // Returns a `ChangeColumnTypeParts` error using the current `old_ty` and `new_ty`.
+    let parts_for_error = || ChangeColumnTypeParts {
+        table: old.table_name.clone(),
+        column: old.name.clone(),
+        type1: old_ty.clone().into(),
+        type2: new_ty.clone().into(),
+    };
+
+    match (old_ty, new_ty) {
+        // For sums, we allow the variants in `old_ty` to be a prefix of `new_ty`.
+        (AlgebraicType::Sum(old_ty), AlgebraicType::Sum(new_ty)) => {
+            let old_vars = &*old_ty.variants;
+            let new_vars = &*new_ty.variants;
+
+            // The number of variants in `new_ty` cannot decrease.
+            let var_lens_ok = match old_vars.len().cmp(&new_vars.len()) {
+                Ordering::Less => Ok(Any(true)),
+                Ordering::Equal => Ok(Any(false)),
+                Ordering::Greater if within => Err(ChangeWithinColumnTypeFewerVariants(parts_for_error()).into()),
+                Ordering::Greater => Err(ChangeColumnTypeFewerVariants(parts_for_error()).into()),
+            };
+
+            // The variants in `old_ty` must be upgradable to those in `old_ty`.
+            // Strict equality is *not* imposed in the prefix!
+            // We also don't care about variant names, as they don't impact BFLATN.
+            let prefix_ok = old_vars
+                .iter()
+                .zip(new_vars)
+                .map(|(o, n)| (&o.algebraic_type, &n.algebraic_type))
+                .map(ensure)
+                .collect_all_errors::<Any>();
+
+            // The old and the new sum types must have matching layout sizes and alignments.
+            let old_ty = SumTypeLayout::from(old_ty.clone());
+            let new_ty = SumTypeLayout::from(new_ty.clone());
+            let old_layout = old_ty.layout();
+            let new_layout = new_ty.layout();
+            let size_ok = if old_layout.size == new_layout.size {
+                Ok(())
+            } else if within {
+                Err(ChangeWithinColumnTypeSizeMismatch(parts_for_error()).into())
+            } else {
+                Err(ChangeColumnTypeSizeMismatch(parts_for_error()).into())
+            };
+            let align_ok = if old_layout.align == new_layout.align {
+                Ok(())
+            } else if within {
+                Err(ChangeWithinColumnTypeAlignMismatch(parts_for_error()).into())
+            } else {
+                Err(ChangeColumnTypeAlignMismatch(parts_for_error()).into())
+            };
+
+            let (len_changed, prefix_changed, ..) = (var_lens_ok, prefix_ok, size_ok, align_ok).combine_errors()?;
+            Ok(len_changed + prefix_changed)
+        }
+
+        // For products,
+        // we need to check each field's upgradability due to sums,
+        // and there must be as many fields.
+        // Note that we don't care about field names.
+        (AlgebraicType::Product(old_ty), AlgebraicType::Product(new_ty)) => {
+            // The number of variants in `new_ty` cannot decrease.
+            let len_eq_ok = if old_ty.len() == new_ty.len() {
+                Ok(())
+            } else {
+                Err(if within {
+                    ChangeWithinColumnTypeFewerFields(parts_for_error())
+                } else {
+                    ChangeColumnTypeFewerFields(parts_for_error())
+                }
+                .into())
+            };
+
+            // The fields in `old_ty` must be upgradable to those in `old_ty`.
+            let fields_ok = old_ty
+                .iter()
+                .zip(new_ty.iter())
+                .map(|(o, n)| (&o.algebraic_type, &n.algebraic_type))
+                .map(ensure)
+                .collect_all_errors::<Any>();
+
+            (len_eq_ok, fields_ok).combine_errors().map(|(_, x)| x)
+        }
+
+        // For arrays, we need to check each field's upgradability due to sums.
+        (AlgebraicType::Array(old_ty), AlgebraicType::Array(new_ty)) => {
+            ensure_old_ty_upgradable_to_new(true, old, &old_ty.elem_ty, &new_ty.elem_ty)
+        }
+
+        // We only have the simple cases left, and there, no change is good change.
+        (old_ty, new_ty) if old_ty == new_ty => Ok(Any(false)),
+        _ => Err(if within {
+            ChangeWithinColumnType(parts_for_error())
+        } else {
+            ChangeColumnType(parts_for_error())
+        }
+        .into()),
+    }
 }
 
 fn auto_migrate_indexes(plan: &mut AutoMigratePlan<'_>, new_tables: &HashSet<&Identifier>) -> Result<()> {
@@ -713,12 +908,39 @@ mod tests {
     fn auto_migration_errors() {
         let mut old_builder = RawModuleDefV9Builder::new();
 
+        let foo2_ty = AlgebraicType::sum([
+            ("foo21", AlgebraicType::Bool),
+            ("foo22", AlgebraicType::U32),
+            ("foo23", AlgebraicType::U32),
+        ]);
+        let foo2_refty = old_builder.add_algebraic_type([], "foo2", foo2_ty.clone(), true);
+        let foo_ty = AlgebraicType::product([
+            ("foo1", AlgebraicType::String),
+            ("foo2", foo2_refty.into()),
+            ("foo3", AlgebraicType::I32),
+        ]);
+        let foo_refty = old_builder.add_algebraic_type([], "foo", foo_ty.clone(), true);
+        let sum1_ty = AlgebraicType::sum([
+            ("foo", AlgebraicType::array(foo_refty.into())),
+            ("bar", AlgebraicType::U128),
+        ]);
+        let sum1_refty = old_builder.add_algebraic_type([], "sum1", sum1_ty.clone(), true);
+
+        let prod1_ty = AlgebraicType::product([
+            ("baz", AlgebraicType::Bool),
+            // We'll remove this field.
+            ("qux", AlgebraicType::Bool),
+        ]);
+        let prod1_refty = old_builder.add_algebraic_type([], "prod1", prod1_ty.clone(), true);
+
         old_builder
             .build_table_with_new_type(
                 "Apples",
                 ProductType::from([
                     ("id", AlgebraicType::U64),
                     ("name", AlgebraicType::String),
+                    ("sum1", sum1_refty.into()),
+                    ("prod1", prod1_refty.into()),
                     ("count", AlgebraicType::U16),
                 ]),
                 true,
@@ -745,8 +967,34 @@ mod tests {
             .finish()
             .try_into()
             .expect("old_def should be a valid database definition");
+        let resolve_old = |ty| old_def.typespace().with_type(ty).resolve_refs().unwrap();
 
         let mut new_builder = RawModuleDefV9Builder::new();
+
+        // Remove variant `foo23`.
+        let new_foo2_ty = AlgebraicType::sum([
+            ("foo21", AlgebraicType::Bool),
+            // U32 -> U64
+            ("foo22", AlgebraicType::U64),
+        ]);
+        let new_foo2_refty = new_builder.add_algebraic_type([], "foo2", new_foo2_ty.clone(), true);
+        let new_foo_ty = AlgebraicType::product([
+            // Remove field `foo3`.
+            ("foo1", AlgebraicType::String),
+            ("foo2", new_foo2_refty.into()),
+        ]);
+        let new_foo_refty = new_builder.add_algebraic_type([], "foo", new_foo_ty.clone(), true);
+        let new_sum1_ty = AlgebraicType::sum([
+            // Remove variant `bar`.
+            ("foo", AlgebraicType::array(new_foo_refty.into())),
+        ]);
+        let new_sum1_refty = new_builder.add_algebraic_type([], "sum1", new_sum1_ty.clone(), true);
+
+        let new_prod1_ty = AlgebraicType::product([
+            // Removed field `qux`.
+            ("baz", AlgebraicType::Bool),
+        ]);
+        let new_prod1_refty = new_builder.add_algebraic_type([], "prod1", new_prod1_ty.clone(), true);
 
         new_builder
             .build_table_with_new_type(
@@ -754,6 +1002,8 @@ mod tests {
                 ProductType::from([
                     ("name", AlgebraicType::U32), // change type of `name`
                     ("id", AlgebraicType::U64),   // change order
+                    ("sum1", new_sum1_refty.into()),
+                    ("prod1", new_prod1_refty.into()),
                     // remove count
                     ("weight", AlgebraicType::U16), // add weight
                 ]),
@@ -779,6 +1029,7 @@ mod tests {
             .finish()
             .try_into()
             .expect("new_def should be a valid database definition");
+        let resolve_new = |ty| new_def.typespace().with_type(ty).resolve_refs().unwrap();
 
         let result = ponder_auto_migrate(&old_def, &new_def);
 
@@ -790,6 +1041,8 @@ mod tests {
         let weight = expect_identifier("weight");
         let count = expect_identifier("count");
         let name = expect_identifier("name");
+        let sum1 = expect_identifier("sum1");
+        let prod1 = expect_identifier("prod1");
 
         expect_error_matching!(
             result,
@@ -814,12 +1067,120 @@ mod tests {
 
         expect_error_matching!(
             result,
-            AutoMigrateError::ChangeColumnType {
+            AutoMigrateError::ChangeColumnType(ChangeColumnTypeParts {
                 table,
                 column,
                 type1,
                 type2
-            } => table == &apples && column == &name && type1.0 == AlgebraicType::String && type2.0 == AlgebraicType::U32
+            }) => table == &apples && column == &name && type1.0 == AlgebraicType::String && type2.0 == AlgebraicType::U32
+        );
+
+        // foo22: U32 -> U64.
+        expect_error_matching!(
+            result,
+            AutoMigrateError::ChangeWithinColumnType(ChangeColumnTypeParts {
+                table,
+                column,
+                type1,
+                type2
+            }) => table == &apples && column == &sum1
+            && type1.0 == AlgebraicType::U32 && type2.0 == AlgebraicType::U64
+        );
+
+        // Remove variant `foo23`.
+        expect_error_matching!(
+            result,
+            AutoMigrateError::ChangeWithinColumnTypeFewerVariants(ChangeColumnTypeParts {
+                table,
+                column,
+                type1,
+                type2
+            }) => table == &apples && column == &sum1
+            && type1.0 == foo2_ty && type2.0 == new_foo2_ty
+        );
+
+        // Size of inner sum changed.
+        expect_error_matching!(
+            result,
+            AutoMigrateError::ChangeWithinColumnTypeSizeMismatch(ChangeColumnTypeParts {
+                table,
+                column,
+                type1,
+                type2
+            }) => table == &apples && column == &sum1
+            && type1.0 == foo2_ty && type2.0 == new_foo2_ty
+        );
+
+        // Align of inner sum changed.
+        expect_error_matching!(
+            result,
+            AutoMigrateError::ChangeWithinColumnTypeAlignMismatch(ChangeColumnTypeParts {
+                table,
+                column,
+                type1,
+                type2
+            }) => table == &apples && column == &sum1
+            && type1.0 == foo2_ty && type2.0 == new_foo2_ty
+        );
+
+        // Remove field `foo3`.
+        expect_error_matching!(
+            result,
+            AutoMigrateError::ChangeWithinColumnTypeFewerFields(ChangeColumnTypeParts {
+                table,
+                column,
+                type1,
+                type2
+            }) => table == &apples && column == &sum1
+            && type1.0 == resolve_old(&foo_ty) && type2.0 == resolve_new(&new_foo_ty)
+        );
+
+        // Remove variant `bar`.
+        expect_error_matching!(
+            result,
+            AutoMigrateError::ChangeColumnTypeFewerVariants(ChangeColumnTypeParts {
+                table,
+                column,
+                type1,
+                type2
+            }) => table == &apples && column == &sum1
+            && type1.0 == resolve_old(&sum1_ty) && type2.0 == resolve_new(&new_sum1_ty)
+        );
+
+        // Size of outer sum changed.
+        expect_error_matching!(
+            result,
+            AutoMigrateError::ChangeColumnTypeSizeMismatch(ChangeColumnTypeParts {
+                table,
+                column,
+                type1,
+                type2
+            }) => table == &apples && column == &sum1
+            && type1.0 == resolve_old(&sum1_ty) && type2.0 == resolve_new(&new_sum1_ty)
+        );
+
+        // Align of outer sum changed.
+        expect_error_matching!(
+            result,
+            AutoMigrateError::ChangeColumnTypeAlignMismatch(ChangeColumnTypeParts {
+                table,
+                column,
+                type1,
+                type2
+            }) => table == &apples && column == &sum1
+            && type1.0 == resolve_old(&sum1_ty) && type2.0 == resolve_new(&new_sum1_ty)
+        );
+
+        // Remove field `qux`.
+        expect_error_matching!(
+            result,
+            AutoMigrateError::ChangeColumnTypeFewerFields(ChangeColumnTypeParts {
+                table,
+                column,
+                type1,
+                type2
+            }) => table == &apples && column == &prod1
+            && type1.0 == prod1_ty && type2.0 == new_prod1_ty
         );
 
         expect_error_matching!(

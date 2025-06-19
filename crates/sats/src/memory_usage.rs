@@ -1,11 +1,10 @@
+use crate::{
+    algebraic_value::Packed, i256, u256, AlgebraicType, AlgebraicValue, ArrayType, ArrayValue, ProductType,
+    ProductTypeElement, ProductValue, SumType, SumTypeVariant, SumValue, F32, F64,
+};
 use core::sync::atomic::AtomicUsize;
 use std::hash::{BuildHasher, Hash};
 use std::mem;
-
-use spacetimedb_sats::{
-    algebraic_value::Packed, i256, u256, AlgebraicType, AlgebraicValue, ArrayType, ArrayValue, ProductType,
-    ProductTypeElement, ProductValue, SumType, SumTypeVariant, SumValue,
-};
 
 /// For inspecting how much memory a value is using.
 ///
@@ -39,8 +38,8 @@ impl MemoryUsage for isize {}
 impl MemoryUsage for f32 {}
 impl MemoryUsage for f64 {}
 
-impl MemoryUsage for spacetimedb_sats::F32 {}
-impl MemoryUsage for spacetimedb_sats::F64 {}
+impl MemoryUsage for F32 {}
+impl MemoryUsage for F64 {}
 
 impl<T: MemoryUsage + ?Sized> MemoryUsage for &T {
     fn heap_usage(&self) -> usize {
@@ -249,6 +248,3 @@ impl<T: MemoryUsage + Copy> MemoryUsage for Packed<T> {
         { self.0 }.heap_usage()
     }
 }
-
-impl MemoryUsage for spacetimedb_lib::ConnectionId {}
-impl MemoryUsage for spacetimedb_lib::Identity {}

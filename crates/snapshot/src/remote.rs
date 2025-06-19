@@ -791,23 +791,19 @@ impl AsyncWrite for AsyncBufWriter<'_> {
 
 #[cfg(test)]
 mod tests {
-    use std::io::Cursor;
-
-    use pretty_assertions::assert_matches;
-    use spacetimedb_lib::{bsatn, Identity};
-    use spacetimedb_paths::{server::SnapshotsPath, FromPathUnchecked};
-    use spacetimedb_table::{
-        blob_store::NullBlobStore,
-        indexes::{PageOffset, Size},
-        layout::row_size_for_type,
-        page::Page,
-        var_len::AlignedVarLenOffsets,
-    };
-    use tempfile::tempdir;
-    use zstd_framed::AsyncZstdWriter;
-
     use super::{default_page_pool, BlobProvider, BufPool, SnapshotFetcher};
     use crate::{Snapshot, SnapshotError, CURRENT_MODULE_ABI_VERSION, CURRENT_SNAPSHOT_VERSION, MAGIC};
+    use pretty_assertions::assert_matches;
+    use spacetimedb_lib::Identity;
+    use spacetimedb_paths::{server::SnapshotsPath, FromPathUnchecked};
+    use spacetimedb_sats::bsatn;
+    use spacetimedb_sats::layout::{row_size_for_type, Size};
+    use spacetimedb_table::{
+        blob_store::NullBlobStore, indexes::PageOffset, page::Page, var_len::AlignedVarLenOffsets,
+    };
+    use std::io::Cursor;
+    use tempfile::tempdir;
+    use zstd_framed::AsyncZstdWriter;
 
     const ZEROES: &[u8] = &[0; 32];
     const DUMMY_SNAPSHOT: Snapshot = Snapshot {

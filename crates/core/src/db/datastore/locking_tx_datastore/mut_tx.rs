@@ -40,7 +40,9 @@ use spacetimedb_sats::{
     ser::Serialize,
     AlgebraicType, AlgebraicValue, ProductType, ProductValue, WithTypespace,
 };
-use spacetimedb_schema::schema::{ConstraintSchema, IndexSchema, RowLevelSecuritySchema, SequenceSchema, TableSchema};
+use spacetimedb_schema::schema::{
+    ColumnSchema, ConstraintSchema, IndexSchema, RowLevelSecuritySchema, SequenceSchema, TableSchema,
+};
 use spacetimedb_table::{
     blob_store::BlobStore,
     indexes::{RowPointer, SquashedOffset},
@@ -417,14 +419,40 @@ impl MutTxId {
     pub(crate) fn alter_table_access(&mut self, table_id: TableId, access: StAccess) -> Result<()> {
         // Write to the table in the tx state.
         let ((tx_table, ..), (commit_table, ..)) = self.get_or_create_insert_table_mut(table_id)?;
-        tx_table.with_mut_schema(|s| s.table_access = access);
-        commit_table.with_mut_schema(|s| s.table_access = access);
+        tx_table.with_mut_schema_and_clone(commit_table, |s| s.table_access = access);
 
         // Update system tables.
         let old_access = self.update_st_table_row(table_id, |st| mem::replace(&mut st.table_access, access))?;
 
         // Remember the pending change so we can undo if necessary.
         self.push_schema_change(PendingSchemaChange::TableAlterAccess(table_id, old_access));
+
+        Ok(())
+    }
+
+    /// Change the row type of the table identified by `table_id.
+    ///
+    /// In practice, this should not error,
+    /// as the update machinery should disallow any incompatible change.
+    /// However, or redundancy and internal soundness of the datastore,
+    /// the compatibility is also checked here.
+    pub(crate) fn alter_table_row_type(&mut self, table_id: TableId, column_schemas: Vec<ColumnSchema>) -> Result<()> {
+        // Write to the table in the tx state.
+        let ((tx_table, ..), (commit_table, ..)) = self.get_or_create_insert_table_mut(table_id)?;
+
+        // Try to change the tables into what we want.
+        // SAFETY: `validate = true`.
+        let old_column_schemas = unsafe {
+            tx_table
+                .change_columns_to(column_schemas, true)
+                .map_err(TableError::from)
+        }?;
+        // SAFETY: `commit_table` should have a schema identical to that of `tx_table`
+        // prior to changing it just now.
+        unsafe { commit_table.set_layout_and_schema_to(tx_table) };
+
+        // Remember the pending change so we can undo if necessary.
+        self.push_schema_change(PendingSchemaChange::TableAlterRowType(table_id, old_column_schemas));
 
         Ok(())
     }
@@ -521,9 +549,7 @@ impl MutTxId {
         unsafe { table.add_index(index_id, tx_index) };
         let pointer_map = unsafe { commit_table.add_index(index_id, commit_index) };
         // Update the table's schema.
-        // This won't clone-write when creating a table but likely to otherwise.
-        table.with_mut_schema(|s| s.indexes.push(index_schema.clone()));
-        commit_table.with_mut_schema(|s| s.indexes.push(index_schema));
+        table.with_mut_schema_and_clone(commit_table, |s| s.indexes.push(index_schema.clone()));
         // Note the index in pending schema changes.
         self.push_schema_change(PendingSchemaChange::IndexAdded(table_id, index_id, pointer_map));
 
@@ -548,9 +574,15 @@ impl MutTxId {
         let ((tx_table, tx_bs, _), (commit_table, commit_bs, idx_map)) =
             self.get_or_create_insert_table_mut(table_id)?;
         tx_table.delete_index(tx_bs, index_id, None);
-        let (commit_index, index_schema) = commit_table
+        let commit_index = commit_table
             .delete_index(commit_bs, index_id, None)
             .expect("there should be a schema in the committed state if we reach here");
+
+        // Remove index from schema.
+        let index_schema = commit_table
+            .with_mut_schema_and_clone(tx_table, |s| s.remove_index(index_id))
+            .expect("there should be an index with `index_id`");
+
         // Remove the `index_id -> (table_id, col_list)` association.
         idx_map.remove(&index_id);
         // Note the index in pending schema changes.
@@ -845,8 +877,7 @@ impl MutTxId {
         let schema: SequenceSchema = sequence_row.into();
         let ((tx_table, ..), (commit_table, ..)) = self.get_or_create_insert_table_mut(table_id)?;
         // This won't clone-write when creating a table but likely to otherwise.
-        tx_table.with_mut_schema(|s| s.update_sequence(schema.clone()));
-        commit_table.with_mut_schema(|s| s.update_sequence(schema.clone()));
+        tx_table.with_mut_schema_and_clone(commit_table, |s| s.update_sequence(schema.clone()));
         self.sequence_state_lock.insert(Sequence::new(schema));
         self.push_schema_change(PendingSchemaChange::SequenceAdded(table_id, seq_id));
 
@@ -874,9 +905,8 @@ impl MutTxId {
         let ((tx_table, ..), (commit_table, ..)) = self.get_or_create_insert_table_mut(table_id)?;
         // This likely will do a clone-write as over time?
         // The schema might have found other referents.
-        tx_table.with_mut_schema(|s| s.remove_sequence(sequence_id));
         let schema = commit_table
-            .with_mut_schema(|s| s.remove_sequence(sequence_id))
+            .with_mut_schema_and_clone(tx_table, |s| s.remove_sequence(sequence_id))
             .expect("there should be a schema in the committed state if we reach here");
         self.push_schema_change(PendingSchemaChange::SequenceRemoved(table_id, sequence, schema));
 
@@ -945,8 +975,7 @@ impl MutTxId {
         let ((tx_table, ..), (commit_table, ..)) = self.get_or_create_insert_table_mut(table_id)?;
         constraint.constraint_id = constraint_id;
         // This won't clone-write when creating a table but likely to otherwise.
-        tx_table.with_mut_schema(|s| s.update_constraint(constraint.clone()));
-        commit_table.with_mut_schema(|s| s.update_constraint(constraint));
+        tx_table.with_mut_schema_and_clone(commit_table, |s| s.update_constraint(constraint.clone()));
         self.push_schema_change(PendingSchemaChange::ConstraintAdded(table_id, constraint_id));
 
         log::trace!("CONSTRAINT CREATED: {constraint_id}");
@@ -970,9 +999,8 @@ impl MutTxId {
         let ((tx_table, ..), (commit_table, ..)) = self.get_or_create_insert_table_mut(table_id)?;
         // This likely will do a clone-write as over time?
         // The schema might have found other referents.
-        tx_table.with_mut_schema(|s| s.remove_constraint(constraint_id));
         let schema = commit_table
-            .with_mut_schema(|s| s.remove_constraint(constraint_id))
+            .with_mut_schema_and_clone(tx_table, |s| s.remove_constraint(constraint_id))
             .expect("there should be a schema in the committed state if we reach here");
         self.push_schema_change(PendingSchemaChange::ConstraintRemoved(table_id, schema));
         // TODO(1.0): we should also re-initialize `table` without a unique constraint.

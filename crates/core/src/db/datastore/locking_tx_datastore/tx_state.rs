@@ -4,7 +4,7 @@ use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_lib::db::auth::StAccess;
 use spacetimedb_primitives::{ColList, ConstraintId, IndexId, SequenceId, TableId};
 use spacetimedb_sats::AlgebraicValue;
-use spacetimedb_schema::schema::{ConstraintSchema, IndexSchema, SequenceSchema};
+use spacetimedb_schema::schema::{ColumnSchema, ConstraintSchema, IndexSchema, SequenceSchema};
 use spacetimedb_table::{
     blob_store::{BlobStore, HashMapBlobStore},
     indexes::{RowPointer, SquashedOffset},
@@ -102,6 +102,9 @@ pub(super) enum PendingSchemaChange {
     /// The access of the table with [`TableId`] was changed.
     /// The old access was stored.
     TableAlterAccess(TableId, StAccess),
+    /// The row type of the table with [`TableId`] was changed.
+    /// The old column schemas was stored.
+    TableAlterRowType(TableId, Vec<ColumnSchema>),
     /// The constraint with [`ConstraintSchema`] was added to the table with [`TableId`].
     ConstraintRemoved(TableId, ConstraintSchema),
     /// The constraint with [`ConstraintId`] was added to the table with [`TableId`].

@@ -1,5 +1,5 @@
-use crate::MemoryUsage;
 use core::{ops::RangeBounds, option::IntoIter};
+use spacetimedb_sats::memory_usage::MemoryUsage;
 use std::collections::btree_map::{BTreeMap, Entry, Range};
 
 /// A "unique map" that relates a `K` to a `V`.

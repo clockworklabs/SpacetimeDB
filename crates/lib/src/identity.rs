@@ -3,6 +3,7 @@ use blake3;
 use core::mem;
 use spacetimedb_bindings_macro::{Deserialize, Serialize};
 use spacetimedb_sats::hex::HexString;
+use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::{impl_st, u256, AlgebraicType, AlgebraicValue};
 use std::{fmt, str::FromStr};
 
@@ -59,6 +60,8 @@ pub struct Identity {
 }
 
 impl_st!([] Identity, AlgebraicType::identity());
+
+impl MemoryUsage for Identity {}
 
 #[cfg(feature = "metrics_impls")]
 impl spacetimedb_metrics::typed_prometheus::AsPrometheusLabel for Identity {

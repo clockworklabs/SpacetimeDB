@@ -1,13 +1,14 @@
 //! Provides [`Pages`], a page manager dealing with [`Page`]s as a collection.
 
 use super::blob_store::BlobStore;
-use super::indexes::{Bytes, PageIndex, PageOffset, RowPointer, Size};
+use super::indexes::{Bytes, PageIndex, PageOffset, RowPointer};
 use super::page::Page;
 use super::page_pool::PagePool;
 use super::table::BlobNumBytes;
 use super::var_len::VarLenMembers;
-use crate::MemoryUsage;
 use core::ops::{ControlFlow, Deref, Index, IndexMut};
+use spacetimedb_sats::layout::Size;
+use spacetimedb_sats::memory_usage::MemoryUsage;
 use std::ops::DerefMut;
 use thiserror::Error;
 
