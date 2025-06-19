@@ -1037,6 +1037,8 @@ pub enum PhysicalExpr {
     BinOp(BinOp, Box<PhysicalExpr>, Box<PhysicalExpr>),
     /// A constant algebraic value
     Value(AlgebraicValue),
+    /// A tuple of constant algebraic values
+    Tuple(Box<[AlgebraicValue]>),
     /// A field projection expression
     Field(TupleField),
 }
@@ -1100,6 +1102,7 @@ impl PhysicalExpr {
     pub fn map(self, f: &impl Fn(Self) -> Self) -> Self {
         match f(self) {
             value @ Self::Value(..) => value,
+            values @ Self::Tuple(..) => values,
             field @ Self::Field(..) => field,
             Self::BinOp(op, a, b) => Self::BinOp(op, Box::new(a.map(f)), Box::new(b.map(f))),
             Self::LogOp(op, exprs) => Self::LogOp(op, exprs.into_iter().map(|expr| expr.map(f)).collect()),
@@ -1161,6 +1164,7 @@ impl PhysicalExpr {
                 Cow::Owned(value)
             }
             Self::Value(v) => Cow::Borrowed(v),
+            Self::Tuple(t) => Cow::Owned(AlgebraicValue::Product(ProductValue {elements: t.clone()})),
         }
     }
 
@@ -1179,7 +1183,7 @@ impl PhysicalExpr {
                     .collect(),
             ),
             Self::BinOp(op, a, b) => Self::BinOp(op, Box::new(a.flatten()), Box::new(b.flatten())),
-            Self::Field(..) | Self::Value(..) => self,
+            Self::Field(..) | Self::Value(..) | Self::Tuple(..) => self,
         }
     }
 }
