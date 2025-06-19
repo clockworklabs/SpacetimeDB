@@ -73,7 +73,11 @@ public abstract record TypeUse(string Name, string BSATNName)
                     Parse(member, named.TypeArguments[0], diag)
                 ),
                 _ => named.IsValueType
-                    ? (named.TypeKind == Microsoft.CodeAnalysis.TypeKind.Enum ? new EnumUse(type, typeInfo) : new ValueUse(type, typeInfo))
+                    ? (
+                        named.TypeKind == Microsoft.CodeAnalysis.TypeKind.Enum
+                            ? new EnumUse(type, typeInfo)
+                            : new ValueUse(type, typeInfo)
+                    )
                     : new ReferenceUse(type, typeInfo),
             },
             _ => throw new InvalidOperationException($"Unsupported type {type}"),
