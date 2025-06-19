@@ -10,3 +10,6 @@ license-file = "LICENSE"
 spacetimedb-sdk = { path = "../.." }
 test-counter = { path = "../test-counter" }
 anyhow.workspace = true
+
+[lints]
+workspace = true

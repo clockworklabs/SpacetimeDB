@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 license-file = "LICENSE"
 description = "Primitives such as TableId and ColumnIndexAttribute"
+rust-version.workspace = true
 
 [dependencies]
 bitflags.workspace = true
@@ -13,3 +14,6 @@ itertools.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true
+
+[lints]
+workspace = true
