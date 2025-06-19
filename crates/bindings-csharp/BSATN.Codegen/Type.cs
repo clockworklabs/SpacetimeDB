@@ -123,7 +123,7 @@ public record EnumUse(string Type, string TypeInfo) : TypeUse(Type, TypeInfo)
     // We just use `==` here, rather than `.Equals`, because
     // C# enums don't provide a `bool Equals(Self other)`, and
     // using `.Equals(object other)` allocates, which we want to avoid.
-    // 
+    //
     // We could instead generate custom .Equals for enums -- except that requires
     // partial enums, and I'm not sure such things exist.
     public override string EqualsStatement(

@@ -444,7 +444,8 @@ public static partial class BSATNRuntimeTests
             BasicDataClass U,
             BasicDataStruct V,
             BasicDataRecord W
-        )> { }
+        )>
+    { }
 
     static readonly Gen<BasicEnum> GenBasicEnum = Gen.SelectMany<int, BasicEnum>(
         Gen.Int[0, 7],
@@ -669,6 +670,7 @@ public static partial class BSATNRuntimeTests
         PisangRaja,
     }
 
+
     [Fact]
     public static void EnumSerializationWorks()
     {
@@ -819,5 +821,38 @@ public static partial class BSATNRuntimeTests
             ).ToString()
         );
 #pragma warning restore CS8625 // Cannot convert null literal to non-nullable reference type.
+    }
+
+    [Type]
+    partial struct ContainsEnum
+    {
+        public Banana TheBanana;
+        public int BananaCount;
+    }
+
+    static readonly Gen<(Banana, int)> GenContainsEnum = Gen.Select(Gen.Enum<Banana>(), Gen.Int[0, 3]);
+    static readonly Gen<((Banana, int), (Banana, int))> GenTwoContainsEnum = Gen.Select(GenContainsEnum, GenContainsEnum);
+
+    [Fact]
+    public static void GeneratedEnumEqualsWorks()
+    {
+        GenTwoContainsEnum.Sample(example =>
+        {
+            var ((b1, c1), (b2, c2)) = example;
+            var struct1 = new ContainsEnum { TheBanana = b1, BananaCount = c1 };
+            var struct2 = new ContainsEnum { TheBanana = b2, BananaCount = c2 };
+
+            if ((b1, c1) == (b2, c2))
+            {
+                Assert.True(struct1.Equals(struct2));
+                Assert.Equal(struct1, struct2);
+            }
+            else
+            {
+                Assert.False(struct1.Equals(struct2));
+                Assert.NotEqual(struct1, struct2);
+            }
+
+        }, iter: 10_000);
     }
 }
