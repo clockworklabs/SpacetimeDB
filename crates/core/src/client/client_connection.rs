@@ -404,7 +404,12 @@ impl ClientConnection {
 
             let _gauge_guard = module_info.metrics.connected_clients.inc_scope();
             module_info.metrics.ws_clients_spawned.inc();
-            scopeguard::defer!(module_info.metrics.ws_clients_aborted.inc());
+            scopeguard::defer! {
+                let database_identity = module_info.database_identity;
+                let client_identity = id.identity;
+                log::warn!("websocket connection aborted for client identity `{client_identity}` and database identity `{database_identity}`");
+                module_info.metrics.ws_clients_aborted.inc();
+            };
 
             fut.await
         })
