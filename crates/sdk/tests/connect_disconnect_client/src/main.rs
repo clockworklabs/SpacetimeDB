@@ -21,7 +21,7 @@ fn main() {
     let sub_applied_one_row_result = connect_test_counter.add_test("connected_row");
 
     let connection = DbConnection::builder()
-        .with_module_name(db_name_or_panic())
+        .with_database_name(db_name_or_panic())
         .with_uri(LOCALHOST)
         .on_connect_error(|_ctx, error| panic!("on_connect_error: {:?}", error))
         .on_connect(move |ctx, _, _| {
@@ -75,7 +75,7 @@ fn main() {
         .on_connect(move |_ctx, _, _| {
             reconnected_result(Ok(()));
         })
-        .with_module_name(db_name_or_panic())
+        .with_database_name(db_name_or_panic())
         .with_uri(LOCALHOST)
         .build()
         .unwrap();
