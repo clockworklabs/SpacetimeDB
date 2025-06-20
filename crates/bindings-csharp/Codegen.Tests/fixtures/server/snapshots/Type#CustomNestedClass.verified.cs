@@ -152,7 +152,7 @@ partial class CustomNestedClass
             this.NestedNullableClass == null
                 ? that.NestedNullableClass == null
                 : this.NestedNullableClass.Equals(that.NestedNullableClass);
-        var ___eqNestedEnum = this.NestedEnum.Equals(that.NestedEnum);
+        var ___eqNestedEnum = this.NestedEnum == that.NestedEnum;
         var ___eqNestedNullableEnum = this.NestedNullableEnum.Equals(that.NestedNullableEnum);
         var ___eqNestedTaggedEnum =
             this.NestedTaggedEnum == null
