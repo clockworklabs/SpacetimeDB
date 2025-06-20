@@ -388,7 +388,7 @@ impl SchedulerActor {
             // delete the scheduled reducer row if its not repeated reducer
             Ok(_) | Err(_) => {
                 if let Some(id) = id {
-                    let _ = self.delete_scheduled_reducer_row(&db, id, module_host_clone).await;
+                    self.delete_scheduled_reducer_row(&db, id, module_host_clone).await;
                 }
             }
         }
