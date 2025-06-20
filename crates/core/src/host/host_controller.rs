@@ -1063,8 +1063,13 @@ async fn metric_reporter(replica_ctx: Arc<ReplicaContext>) {
         .with_label_values(&replica_ctx.database_identity);
 
     loop {
-        let disk_usage = tokio::task::block_in_place(|| replica_ctx.total_disk_usage());
-        replica_ctx.update_gauges();
+        // We spawn a blocking task here because this grabs blocking locks.
+        {
+            let ctx = replica_ctx.clone();
+            let _ = tokio::task::spawn_blocking(move || ctx.update_gauges()).await;
+        }
+        let ctx = replica_ctx.clone();
+        let disk_usage = tokio::task::block_in_place(move || ctx.total_disk_usage());
         if let Some(num_bytes) = disk_usage.durability {
             message_log_size.set(num_bytes as i64);
         }
