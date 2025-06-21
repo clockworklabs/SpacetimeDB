@@ -1019,7 +1019,23 @@ impl ModuleHost {
         let db = replica_ctx.relational_db.clone();
         let subscriptions = replica_ctx.subscriptions.clone();
         let auth = AuthCtx::new(replica_ctx.owner_identity, caller_identity);
-        log::debug!("One-off query: {query}");
+
+        const BUILDING_STATE_SQL: &str = "SELECT location_state.* FROM location_state JOIN building_state ON building_state.entity_id = location_state.entity_id";
+        const CLAIM_STATE_SQL: &str = "SELECT location_state.* FROM location_state JOIN claim_state ON claim_state.owner_building_entity_id = location_state.entity_id";
+
+        const OPT_BUILDING_STATE_SQL: &str = "SELECT location_state.* FROM building_state JOIN location_state ON building_state.entity_id = location_state.entity_id";
+        const OPT_CLAIM_STATE_SQL: &str = "SELECT location_state.* FROM claim_state JOIN location_state ON claim_state.owner_building_entity_id = location_state.entity_id";
+
+        let query = if query == BUILDING_STATE_SQL {
+            OPT_BUILDING_STATE_SQL.to_owned()
+        } else if query == CLAIM_STATE_SQL {
+            OPT_CLAIM_STATE_SQL.to_owned()
+        } else {
+            query
+        };
+
+        log::info!("One-off query: {query}");
+
         let metrics = asyncify(move || {
             db.with_read_only(Workload::Sql, |tx| {
                 // We wrap the actual query in a closure so we can use ? to handle errors without making
