@@ -434,7 +434,7 @@ impl MutTxId {
     ///
     /// In practice, this should not error,
     /// as the update machinery should disallow any incompatible change.
-    /// However, or redundancy and internal soundness of the datastore,
+    /// However, for redundancy and internal soundness of the datastore,
     /// the compatibility is also checked here.
     pub(crate) fn alter_table_row_type(&mut self, table_id: TableId, column_schemas: Vec<ColumnSchema>) -> Result<()> {
         // Write to the table in the tx state.
