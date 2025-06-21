@@ -3301,8 +3301,12 @@ mod tests {
         );
         commit(&datastore, tx)?;
 
+        // Check that we can successfully scan using the new schema type post commit.
         let tx = begin_tx(&datastore);
-        let row_ref = datastore.iter_by_col_eq_tx(&tx, table_id, 1, &sum_val.into())?.next().unwrap();
+        let row_ref = datastore
+            .iter_by_col_eq_tx(&tx, table_id, 1, &sum_val.into())?
+            .next()
+            .unwrap();
         assert_eq!(row_ref.read_col::<u64>(0).unwrap(), id);
 
         Ok(())

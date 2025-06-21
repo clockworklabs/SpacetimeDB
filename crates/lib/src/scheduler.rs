@@ -2,7 +2,12 @@ use std::fmt::Debug;
 
 use spacetimedb_lib::{TimeDuration, Timestamp};
 use spacetimedb_sats::{
-    algebraic_value::de::{ValueDeserializeError, ValueDeserializer}, de::Deserialize, impl_st, ser::Serialize, sum_type::{SCHEDULE_AT_INTERVAL_TAG, SCHEDULE_AT_TIME_TAG}, AlgebraicType, AlgebraicValue
+    algebraic_value::de::{ValueDeserializeError, ValueDeserializer},
+    de::Deserialize,
+    impl_st,
+    ser::Serialize,
+    sum_type::{SCHEDULE_AT_INTERVAL_TAG, SCHEDULE_AT_TIME_TAG},
+    AlgebraicType, AlgebraicValue,
 };
 
 /// When a scheduled reducer should execute,
