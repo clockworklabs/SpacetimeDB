@@ -7,7 +7,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use super::instrumentation::CallTimes;
-use crate::database_logger::{self, SystemLogger};
+// use crate::database_logger;
+use crate::database_logger::SystemLogger;
 use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::db::datastore::traits::{IsolationLevel, Program};
 use crate::db::db_metrics::DB_METRICS;
