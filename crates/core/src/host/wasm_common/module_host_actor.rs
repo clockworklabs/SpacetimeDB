@@ -462,17 +462,17 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             Ok(Err(errmsg)) => {
                 // log::info!("reducer returned error: {errmsg}");
 
-                self.replica_context().logger.write(
-                    database_logger::LogLevel::Error,
-                    &database_logger::Record {
-                        ts: chrono::DateTime::from_timestamp_micros(timestamp.to_micros_since_unix_epoch()).unwrap(),
-                        target: Some(reducer_name),
-                        filename: None,
-                        line_number: None,
-                        message: &errmsg,
-                    },
-                    &(),
-                );
+                // self.replica_context().logger.write(
+                //     database_logger::LogLevel::Error,
+                //     &database_logger::Record {
+                //         ts: chrono::DateTime::from_timestamp_micros(timestamp.to_micros_since_unix_epoch()).unwrap(),
+                //         target: Some(reducer_name),
+                //         filename: None,
+                //         line_number: None,
+                //         message: &errmsg,
+                //     },
+                //     &(),
+                // );
                 EventStatus::Failed(errmsg.into())
             }
             // We haven't actually committed yet - `commit_and_broadcast_event` will commit
