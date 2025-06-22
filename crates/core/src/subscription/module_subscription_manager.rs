@@ -1520,9 +1520,9 @@ impl SendWorker {
 }
 
 fn send_to_client(client: &ClientConnectionSender, message: impl Into<SerializableMessage>) {
-    // if let Err(e) = client.send_message(message) {
-    //     tracing::warn!(%client.id, "failed to send update message to client: {e}")
-    // }
+    if let Err(_e) = client.send_message(message) {
+        //     tracing::warn!(%client.id, "failed to send update message to client: {e}")
+    }
 }
 
 #[cfg(test)]
