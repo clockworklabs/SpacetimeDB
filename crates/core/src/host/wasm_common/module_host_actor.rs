@@ -7,7 +7,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use super::instrumentation::CallTimes;
-use crate::database_logger::{self, SystemLogger};
+// use crate::database_logger;
+use crate::database_logger::SystemLogger;
 use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::db::datastore::traits::{IsolationLevel, Program};
 use crate::db::db_metrics::DB_METRICS;
@@ -460,19 +461,19 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
                 }
             }
             Ok(Err(errmsg)) => {
-                log::info!("reducer returned error: {errmsg}");
+                // log::info!("reducer returned error: {errmsg}");
 
-                self.replica_context().logger.write(
-                    database_logger::LogLevel::Error,
-                    &database_logger::Record {
-                        ts: chrono::DateTime::from_timestamp_micros(timestamp.to_micros_since_unix_epoch()).unwrap(),
-                        target: Some(reducer_name),
-                        filename: None,
-                        line_number: None,
-                        message: &errmsg,
-                    },
-                    &(),
-                );
+                // self.replica_context().logger.write(
+                //     database_logger::LogLevel::Error,
+                //     &database_logger::Record {
+                //         ts: chrono::DateTime::from_timestamp_micros(timestamp.to_micros_since_unix_epoch()).unwrap(),
+                //         target: Some(reducer_name),
+                //         filename: None,
+                //         line_number: None,
+                //         message: &errmsg,
+                //     },
+                //     &(),
+                // );
                 EventStatus::Failed(errmsg.into())
             }
             // We haven't actually committed yet - `commit_and_broadcast_event` will commit
