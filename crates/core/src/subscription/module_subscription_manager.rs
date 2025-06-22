@@ -1521,9 +1521,14 @@ impl SendWorker {
 }
 
 fn send_to_client(client: &ClientConnectionSender, message: impl Into<SerializableMessage>) {
+    // TODO: We should at least have a metric for this.
+    // There is some other issue causing this, which we need to fix.
+    let _ = client.send_message(message);
+    /*
     if let Err(e) = client.send_message(message) {
         tracing::warn!(%client.id, "failed to send update message to client: {e}")
     }
+     */
 }
 
 #[cfg(test)]
