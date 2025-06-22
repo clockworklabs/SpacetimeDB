@@ -460,7 +460,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
                 }
             }
             Ok(Err(errmsg)) => {
-                log::info!("reducer returned error: {errmsg}");
+                // log::info!("reducer returned error: {errmsg}");
 
                 self.replica_context().logger.write(
                     database_logger::LogLevel::Error,
