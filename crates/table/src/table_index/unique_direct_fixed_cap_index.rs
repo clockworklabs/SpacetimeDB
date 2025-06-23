@@ -135,6 +135,20 @@ impl UniqueDirectFixedCapIndex {
         }
         Ok(())
     }
+
+    /// Merge `src`, mapped through `translate`, into `self`.
+    pub(crate) fn merge_from(&mut self, src: Self, translate: impl Fn(RowPointer) -> RowPointer) {
+        assert_eq!(self.array.len(), src.array.len());
+        self.len += src.len;
+
+        src.array
+            .into_vec()
+            .into_iter()
+            .enumerate()
+            // Ignore unset slots.
+            .filter(|(_, ptr)| *ptr != NONE_PTR)
+            .for_each(|(key, ptr)| self.array[key] = translate(ptr));
+    }
 }
 
 /// An iterator over a range of keys in a [`UniqueDirectFixedCapIndex`].
