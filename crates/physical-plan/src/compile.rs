@@ -80,7 +80,7 @@ fn compile_rel_expr(var: &mut impl VarLabel, ast: RelExpr) -> PhysicalPlan {
             let input = Box::new(input);
             PhysicalPlan::Filter(input, compile_expr(expr, var))
         }
-        RelExpr::EqJoin(
+        RelExpr::InnerEqJoin(
             LeftDeepJoin {
                 lhs,
                 rhs:
@@ -115,6 +115,46 @@ fn compile_rel_expr(var: &mut impl VarLabel, ast: RelExpr) -> PhysicalPlan {
                     field_pos: b,
                 },
                 unique: false,
+                outer: false,
+            },
+            Semi::All,
+        ),
+        RelExpr::LeftOuterEqJoin(
+            LeftDeepJoin {
+                lhs,
+                rhs:
+                    Relvar {
+                        schema: rhs_schema,
+                        alias: rhs_alias,
+                        delta,
+                        ..
+                    },
+            },
+            FieldProject { table: u, field: a, .. },
+            FieldProject { table: v, field: b, .. },
+        ) => PhysicalPlan::HashJoin(
+            HashJoin {
+                lhs: Box::new(compile_rel_expr(var, *lhs)),
+                rhs: Box::new(PhysicalPlan::TableScan(
+                    TableScan {
+                        schema: rhs_schema,
+                        limit: None,
+                        delta,
+                    },
+                    var.label(&rhs_alias),
+                )),
+                lhs_field: TupleField {
+                    label: var.label(u.as_ref()),
+                    label_pos: None,
+                    field_pos: a,
+                },
+                rhs_field: TupleField {
+                    label: var.label(v.as_ref()),
+                    label_pos: None,
+                    field_pos: b,
+                },
+                unique: false,
+                outer: true,
             },
             Semi::All,
         ),
