@@ -1,0 +1,38 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 19101, guid: 0000000000000000e000000000000000, type: 0}
+  m_Name: PanelSettings
+  m_EditorClassIdentifier: 
+  themeUss: {fileID: -4733365628477956816, guid: da3dce996ec19374fa867b6e4967827c, type: 3}
+  m_TargetTexture: {fileID: 0}
+  m_ScaleMode: 1
+  m_ReferenceSpritePixelsPerUnit: 100
+  m_Scale: 1
+  m_ReferenceDpi: 96
+  m_FallbackDpi: 96
+  m_ReferenceResolution: {x: 1200, y: 800}
+  m_ScreenMatchMode: 0
+  m_Match: 0
+  m_SortingOrder: 0
+  m_TargetDisplay: 0
+  m_ClearDepthStencil: 1
+  m_ClearColor: 0
+  m_ColorClearValue: {r: 0, g: 0, b: 0, a: 0}
+  m_DynamicAtlasSettings:
+    m_MinAtlasSize: 64
+    m_MaxAtlasSize: 4096
+    m_MaxSubTextureSize: 64
+    m_ActiveFilters: 31
+  m_AtlasBlitShader: {fileID: 9101, guid: 0000000000000000f000000000000000, type: 0}
+  m_RuntimeShader: {fileID: 9100, guid: 0000000000000000f000000000000000, type: 0}
+  m_RuntimeWorldShader: {fileID: 9102, guid: 0000000000000000f000000000000000, type: 0}
+  textSettings: {fileID: 0}

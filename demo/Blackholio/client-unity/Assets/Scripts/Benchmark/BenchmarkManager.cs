@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.UI;
 
 using System;
 using System.Threading;
@@ -63,6 +64,8 @@ public class BenchmarkVisualizer : MonoBehaviour
     public Material cubeMaterial;
     public GameObject labelPrefab;
 
+    List<GameObject> plotObjects = new();
+
     private List<(int N, double timeNs)> results = new List<(int, double)>();
     private double maxTime;
     private double mapY(double timeNs)
@@ -74,8 +77,6 @@ public class BenchmarkVisualizer : MonoBehaviour
 
     void Start()
     {
-        Thread benchmarkThread = new Thread(() => RunBenchmarks());
-        benchmarkThread.Start();
     }
 
     void Update()
@@ -83,6 +84,7 @@ public class BenchmarkVisualizer : MonoBehaviour
         if (benchmarksComplete)
         {
             benchmarksComplete = false;
+            ClearPlot();
             DrawResults();
         }
     }
@@ -92,8 +94,10 @@ public class BenchmarkVisualizer : MonoBehaviour
         return (inVal - inLo) / (inHi - inLo) * (outHi - outLo) + outLo;
     }
 
-    void RunBenchmarks()
+    public void RunBenchmarks(string name)
     {
+        results.Clear();
+        var bench = benchmarks[name];
         // warmup
         for (int i = 0; i < count; i++)
         {
@@ -101,12 +105,7 @@ public class BenchmarkVisualizer : MonoBehaviour
 
             for (int j = 0; j < countPer; j++)
             {
-                Stopwatch stopwatch = new Stopwatch();
-                stopwatch.Start();
-                BlackBox.Consume(RunBench(N));
-                stopwatch.Stop();
-
-                double timeNs = stopwatch.Elapsed.Ticks * 100.0;
+                bench(N);
             }
         }
         // execute
@@ -116,12 +115,9 @@ public class BenchmarkVisualizer : MonoBehaviour
 
             for (int j = 0; j < countPer; j++)
             {
-                Stopwatch stopwatch = new Stopwatch();
-                stopwatch.Start();
-                BlackBox.Consume(RunBench(N));
-                stopwatch.Stop();
+                var elapsed = bench(N);
 
-                double timeNs = (double)stopwatch.Elapsed.Ticks * 100.0;
+                double timeNs = (double)elapsed.Ticks * 100.0;
                 results.Add((N, timeNs));
             }
         }
@@ -176,20 +172,22 @@ public class BenchmarkVisualizer : MonoBehaviour
             .Max();
     }
 
+    Dictionary<string, Func<int, TimeSpan>> benchmarks = new()
+    {
+        { "Serialize", SerializeBench },
+        { "Apply", ApplyBench }
+    };
 
-    Dictionary<int, TestCase<BucketOfVectors>> PrefabbedData = new();
-    struct TestCase<T>
+    static Dictionary<int, SerializeTestCase<BucketOfVectors>> PrefabbedSerializeData = new();
+    struct SerializeTestCase<T>
     {
         public MemoryStream Serialized;
         public IReadWrite<T> Serializer;
     }
-
-
-    // Replace with your actual benchmarking logic
-    BucketOfVectors RunBench(int N)
+    static TimeSpan SerializeBench(int N)
     {
         // Prepare computation (only runs during setup)
-        if (!PrefabbedData.TryGetValue(N, out var testCase))
+        if (!PrefabbedSerializeData.TryGetValue(N, out var testCase))
         {
             var random = new System.Random();
             var prefabUnser = new BucketOfVectors { TheVectors = Enumerable.Range(0, N).Select(_ => new DbVector2((float)random.NextDouble(), (float)random.NextDouble())).ToList() };
@@ -197,14 +195,38 @@ public class BenchmarkVisualizer : MonoBehaviour
             var writer = new BinaryWriter(stream);
             var serializer = (IReadWrite<BucketOfVectors>)((IStructuralReadWrite)prefabUnser).GetSerializer();
             serializer.Write(writer, prefabUnser);
-            testCase = new TestCase<BucketOfVectors> { Serialized = stream, Serializer = serializer };
-            PrefabbedData[N] = testCase;
+            testCase = new SerializeTestCase<BucketOfVectors> { Serialized = stream, Serializer = serializer };
+            PrefabbedSerializeData[N] = testCase;
         }
+
+        Stopwatch stopwatch = new Stopwatch();
+        stopwatch.Start();
 
         // Simulate computation
         testCase.Serialized.Seek(0, SeekOrigin.Begin);
         var reader = new BinaryReader(testCase.Serialized);
-        return testCase.Serializer.Read(reader);
+        BlackBox.Consume(testCase.Serializer.Read(reader));
+
+        stopwatch.Stop();
+        return stopwatch.Elapsed;
+    }
+
+
+    struct ApplyTestCase
+    {
+        // TODO: need to make MultiDictionary and MultiDictionaryDelta visible to this project.
+    }
+    static TimeSpan ApplyBench(int N)
+    {
+        Stopwatch stopwatch = new Stopwatch();
+        stopwatch.Start();
+        for (int i = 0; i < N * 1000; i++)
+        {
+            BlackBox.Consume(i);
+        } 
+        // ...
+        stopwatch.Stop();
+        return stopwatch.Elapsed;
     }
 
     void DrawResults()
@@ -218,6 +240,7 @@ public class BenchmarkVisualizer : MonoBehaviour
             cube.transform.localScale = Vector3.one * (float)cubeSize;
             if (cubeMaterial != null)
                 cube.GetComponent<Renderer>().material = cubeMaterial;
+            plotObjects.Add(cube);
         }
 
         DrawAxisLabels();
@@ -235,11 +258,21 @@ public class BenchmarkVisualizer : MonoBehaviour
         {
             GameObject xLabel = Instantiate(labelPrefab, new Vector3((float)MapRange(0, i, 20, 0, 100), -1, 0), Quaternion.identity);
             xLabel.GetComponent<TextMesh>().text = $"{MapRange(0, i, 20, 0, maxN)}";
+            plotObjects.Add(xLabel);
         }
         for (int i = 0; i < 20; i++)
         {
             GameObject yLabel = Instantiate(labelPrefab, new Vector3(-1, (float)MapRange(0, i, 20, 0, 100), 0), Quaternion.identity);
             yLabel.GetComponent<TextMesh>().text = $"{MapRange(0, i, 20, 0, maxTime)}ns";
+            plotObjects.Add(yLabel);
         }
+
+    }
+    void ClearPlot()
+    {
+        foreach (var obj in plotObjects) {
+            DestroyImmediate(obj);
+        }
+        plotObjects.Clear();
     }
 }
