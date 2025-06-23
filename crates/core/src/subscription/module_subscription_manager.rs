@@ -1522,7 +1522,12 @@ impl SendWorker {
 
 fn send_to_client(client: &ClientConnectionSender, message: impl Into<SerializableMessage>) {
     if let Err(e) = client.send_message(message) {
-        tracing::warn!(%client.id, "failed to send update message to client: {e}")
+        if client
+            .not_warned_failed_to_send_message
+            .fetch_and(false, Ordering::AcqRel)
+        {
+            tracing::warn!(%client.id, "failed to send update message to client: {e}")
+        }
     }
 }
 
