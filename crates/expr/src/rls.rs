@@ -219,7 +219,8 @@ fn resolve_views_for_expr(
     view.visit(&mut |expr| match expr {
         RelExpr::RelVar(rhs)
         | RelExpr::LeftDeepJoin(LeftDeepJoin { rhs, .. })
-        | RelExpr::EqJoin(LeftDeepJoin { rhs, .. }, ..)
+        | RelExpr::InnerEqJoin(LeftDeepJoin { rhs, .. }, ..)
+        | RelExpr::LeftOuterEqJoin(LeftDeepJoin { rhs, .. }, ..)
             if !is_return_table(rhs) =>
         {
             names.push((rhs.schema.table_id, rhs.alias.clone()));
@@ -365,7 +366,8 @@ fn alpha_rename(expr: &mut RelExpr, f: &mut impl FnMut(&str) -> Box<str>) {
         RelExpr::RelVar(rhs) | RelExpr::LeftDeepJoin(LeftDeepJoin { rhs, .. }) => {
             rename(rhs, f);
         }
-        RelExpr::EqJoin(LeftDeepJoin { rhs, .. }, a, b) => {
+        RelExpr::InnerEqJoin(LeftDeepJoin { rhs, .. }, a, b)
+        | RelExpr::LeftOuterEqJoin(LeftDeepJoin { rhs, .. }, a, b) => {
             rename(rhs, f);
             rename_field(a, f);
             rename_field(b, f);
@@ -427,7 +429,15 @@ fn extend_lhs(expr: RelExpr, with: RelExpr) -> RelExpr {
             lhs: Box::new(extend_lhs(*join.lhs, with)),
             ..join
         }),
-        RelExpr::EqJoin(join, a, b) => RelExpr::EqJoin(
+        RelExpr::InnerEqJoin(join, a, b) => RelExpr::InnerEqJoin(
+            LeftDeepJoin {
+                lhs: Box::new(extend_lhs(*join.lhs, with)),
+                ..join
+            },
+            a,
+            b,
+        ),
+        RelExpr::LeftOuterEqJoin(join, a, b) => RelExpr::LeftOuterEqJoin(
             LeftDeepJoin {
                 lhs: Box::new(extend_lhs(*join.lhs, with)),
                 ..join
@@ -451,11 +461,23 @@ fn expand_leaf(expr: RelExpr, table_id: TableId, alias: &str, with: &RelExpr) ->
             lhs: Box::new(expand_leaf(*lhs, table_id, alias, with)),
             rhs,
         }),
-        RelExpr::EqJoin(join, a, b) if ok(&join.rhs) => RelExpr::Select(
-            Box::new(extend_lhs(with.clone(), *join.lhs)),
-            Expr::BinOp(BinOp::Eq, Box::new(Expr::Field(a)), Box::new(Expr::Field(b))),
+        RelExpr::InnerEqJoin(join, a, b)
+        | RelExpr::LeftOuterEqJoin(join, a, b)
+        if ok(&join.rhs) => {
+            RelExpr::Select(
+                Box::new(extend_lhs(with.clone(), *join.lhs)),
+                Expr::BinOp(BinOp::Eq, Box::new(Expr::Field(a)), Box::new(Expr::Field(b))),
+            )
+        }
+        RelExpr::InnerEqJoin(LeftDeepJoin { lhs, rhs }, a, b) => RelExpr::InnerEqJoin(
+            LeftDeepJoin {
+                lhs: Box::new(expand_leaf(*lhs, table_id, alias, with)),
+                rhs,
+            },
+            a,
+            b,
         ),
-        RelExpr::EqJoin(LeftDeepJoin { lhs, rhs }, a, b) => RelExpr::EqJoin(
+        RelExpr::LeftOuterEqJoin(LeftDeepJoin { lhs, rhs }, a, b) => RelExpr::LeftOuterEqJoin(
             LeftDeepJoin {
                 lhs: Box::new(expand_leaf(*lhs, table_id, alias, with)),
                 rhs,

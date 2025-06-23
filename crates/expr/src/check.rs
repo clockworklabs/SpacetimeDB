@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
+use crate::ast::{CrossJoin, InnerJoin, OuterJoin};
 use crate::expr::LeftDeepJoin;
 use crate::expr::{Expr, ProjectList, ProjectName, Relvar};
 use spacetimedb_lib::identity::AuthCtx;
@@ -78,34 +79,56 @@ pub trait TypeChecker {
                     delta: None,
                 });
 
-                for SqlJoin {
-                    var: SqlIdent(name),
-                    alias: SqlIdent(alias),
-                    on,
-                } in joins
-                {
+                for jn in joins {
                     // Check for duplicate aliases
-                    if vars.contains_key(&alias) {
-                        return Err(DuplicateName(alias.into_string()).into());
+                    match jn {
+                        SqlJoin::Cross(CrossJoin { alias: SqlIdent(alias), .. })
+                        | SqlJoin::Inner(InnerJoin { alias: SqlIdent(alias), .. })
+                        | SqlJoin::Left(OuterJoin { alias: SqlIdent(alias), .. })
+                        if vars.contains_key(&alias) => {
+                            return Err(DuplicateName(alias.into_string()).into());
+                        }
+                        SqlJoin::Cross(_) => (),
+                        SqlJoin::Inner(_) => (),
+                        SqlJoin::Left(_) => (),
                     }
 
                     let lhs = Box::new(join);
-                    let rhs = Relvar {
-                        schema: Self::type_relvar(tx, &name)?,
-                        alias,
-                        delta: None,
+                    let rhs = match &jn {
+                        SqlJoin::Cross(CrossJoin { var: SqlIdent(name), alias: SqlIdent(alias), .. })
+                        | SqlJoin::Inner(InnerJoin { var: SqlIdent(name), alias: SqlIdent(alias), .. })
+                        | SqlJoin::Left(OuterJoin { var: SqlIdent(name), alias: SqlIdent(alias), .. }) => {
+                            Relvar {
+                                schema: Self::type_relvar(tx, &name)?,
+                                alias: alias.clone(),
+                                delta: None,
+                            }
+                        }
                     };
 
                     vars.insert(rhs.alias.clone(), rhs.schema.clone());
 
-                    if let Some(on) = on {
-                        if let Expr::BinOp(BinOp::Eq, a, b) = type_expr(vars, on, Some(&AlgebraicType::Bool))? {
-                            if let (Expr::Field(a), Expr::Field(b)) = (*a, *b) {
-                                join = RelExpr::EqJoin(LeftDeepJoin { lhs, rhs }, a, b);
-                                continue;
+                    match jn {
+                        SqlJoin::Cross(_) => (),
+                        SqlJoin::Inner(InnerJoin { on: Some(on), .. }) => {
+                            if let Expr::BinOp(BinOp::Eq, a, b) = type_expr(vars, on, Some(&AlgebraicType::Bool))? {
+                                if let (Expr::Field(a), Expr::Field(b)) = (*a, *b) {
+                                    join = RelExpr::InnerEqJoin(LeftDeepJoin { lhs, rhs }, a, b);
+                                    continue;
+                                }
                             }
+                            unreachable!("Unreachability guaranteed by parser")
                         }
-                        unreachable!("Unreachability guaranteed by parser")
+                        SqlJoin::Inner(_) => (),
+                        SqlJoin::Left(OuterJoin { on, .. }) => {
+                            if let Expr::BinOp(BinOp::Eq, a, b) = type_expr(vars, on, Some(&AlgebraicType::Bool))? {
+                                if let (Expr::Field(a), Expr::Field(b)) = (*a, *b) {
+                                    join = RelExpr::LeftOuterEqJoin(LeftDeepJoin { lhs, rhs }, a, b);
+                                    continue;
+                                }
+                            }
+                            unreachable!("Unreachability guaranteed by parser")
+                        }
                     }
 
                     join = RelExpr::LeftDeepJoin(LeftDeepJoin { lhs, rhs });

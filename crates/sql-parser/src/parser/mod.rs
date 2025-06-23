@@ -6,7 +6,8 @@ use sqlparser::ast::{
 };
 
 use crate::ast::{
-    BinOp, LogOp, Parameter, Project, ProjectElem, ProjectExpr, SqlExpr, SqlFrom, SqlIdent, SqlJoin, SqlLiteral,
+    BinOp, CrossJoin, InnerJoin, LogOp, OuterJoin, Parameter, Project, ProjectElem, ProjectExpr,
+    SqlExpr, SqlFrom, SqlIdent, SqlJoin, SqlLiteral,
 };
 
 pub mod errors;
@@ -50,8 +51,8 @@ trait RelParser {
     fn parse_join(join: Join) -> SqlParseResult<SqlJoin> {
         let (var, alias) = Self::parse_relvar(join.relation)?;
         match join.join_operator {
-            JoinOperator::CrossJoin => Ok(SqlJoin { var, alias, on: None }),
-            JoinOperator::Inner(JoinConstraint::None) => Ok(SqlJoin { var, alias, on: None }),
+            JoinOperator::CrossJoin => Ok(SqlJoin::Cross(CrossJoin { var, alias })),
+            JoinOperator::Inner(JoinConstraint::None) => Ok(SqlJoin::Inner(InnerJoin { var, alias, on: None })),
             JoinOperator::Inner(JoinConstraint::On(Expr::BinaryOp {
                 left,
                 op: BinaryOperator::Eq,
@@ -59,7 +60,7 @@ trait RelParser {
             })) if matches!(*left, Expr::Identifier(..) | Expr::CompoundIdentifier(..))
                 && matches!(*right, Expr::Identifier(..) | Expr::CompoundIdentifier(..)) =>
             {
-                Ok(SqlJoin {
+                Ok(SqlJoin::Inner(InnerJoin {
                     var,
                     alias,
                     on: Some(parse_expr(
@@ -70,9 +71,29 @@ trait RelParser {
                         },
                         0,
                     )?),
-                })
+                }))
             }
-            _ => Err(SqlUnsupported::JoinType.into()),
+            JoinOperator::LeftOuter(JoinConstraint::On(Expr::BinaryOp {
+                left,
+                op: BinaryOperator::Eq,
+                right,
+            })) if matches!(*left, Expr::Identifier(..) | Expr::CompoundIdentifier(..))
+                && matches!(*right, Expr::Identifier(..) | Expr::CompoundIdentifier(..)) =>
+            {
+                Ok(SqlJoin::Left(OuterJoin {
+                    var,
+                    alias,
+                    on: parse_expr(
+                        Expr::BinaryOp {
+                            left,
+                            op: BinaryOperator::Eq,
+                            right,
+                        },
+                        0,
+                    )?,
+                }))
+            }
+            _ => Err(SqlUnsupported::JoinConstraintType.into()),
         }
     }
 

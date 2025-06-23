@@ -102,6 +102,7 @@ pub trait DeltaStore {
 
 #[derive(Clone)]
 pub enum Row<'a> {
+    Null,
     Ptr(RowRef<'a>),
     Ref(&'a ProductValue),
 }
@@ -113,6 +114,7 @@ impl PartialEq for Row<'_> {
             (Self::Ref(x), Self::Ref(y)) => x == y,
             (Self::Ptr(x), Self::Ref(y)) => x == *y,
             (Self::Ref(x), Self::Ptr(y)) => y == *x,
+            (Self::Null, _) | (_, Self::Null) => false,
         }
     }
 }
@@ -122,6 +124,7 @@ impl Eq for Row<'_> {}
 impl Hash for Row<'_> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         match self {
+            Self::Null => AlgebraicValue::unit().hash(state),
             Self::Ptr(x) => x.hash(state),
             Self::Ref(x) => x.hash(state),
         }
@@ -131,6 +134,7 @@ impl Hash for Row<'_> {
 impl Row<'_> {
     pub fn to_product_value(&self) -> ProductValue {
         match self {
+            Self::Null => ProductValue { elements: Box::new([]) },
             Self::Ptr(ptr) => ptr.to_product_value(),
             Self::Ref(val) => (*val).clone(),
         }
@@ -145,6 +149,7 @@ impl Row<'_> {
 }
 
 impl_serialize!(['a] Row<'a>, (self, ser) => match self {
+    Self::Null => AlgebraicValue::unit().serialize(ser),
     Self::Ptr(row) => row.serialize(ser),
     Self::Ref(row) => row.serialize(ser),
 });
@@ -152,6 +157,7 @@ impl_serialize!(['a] Row<'a>, (self, ser) => match self {
 impl ToBsatn for Row<'_> {
     fn static_bsatn_size(&self) -> Option<u16> {
         match self {
+            Self::Null => self.to_product_value().static_bsatn_size(),
             Self::Ptr(ptr) => ptr.static_bsatn_size(),
             Self::Ref(val) => val.static_bsatn_size(),
         }
@@ -159,6 +165,7 @@ impl ToBsatn for Row<'_> {
 
     fn to_bsatn_extend(&self, buf: &mut Vec<u8>) -> std::result::Result<(), EncodeError> {
         match self {
+            Self::Null => self.to_product_value().to_bsatn_extend(buf),
             Self::Ptr(ptr) => ptr.to_bsatn_extend(buf),
             Self::Ref(val) => val.to_bsatn_extend(buf),
         }
@@ -166,6 +173,7 @@ impl ToBsatn for Row<'_> {
 
     fn to_bsatn_vec(&self) -> std::result::Result<Vec<u8>, EncodeError> {
         match self {
+            Self::Null => self.to_product_value().to_bsatn_vec(),
             Self::Ptr(ptr) => ptr.to_bsatn_vec(),
             Self::Ref(val) => val.to_bsatn_vec(),
         }
@@ -175,6 +183,7 @@ impl ToBsatn for Row<'_> {
 impl ProjectField for Row<'_> {
     fn project(&self, field: &TupleField) -> AlgebraicValue {
         match self {
+            Self::Null => AlgebraicValue::unit(),
             Self::Ptr(ptr) => ptr.project(field),
             Self::Ref(val) => val.project(field),
         }
@@ -200,7 +209,7 @@ impl ProjectField for Tuple<'_> {
                 .label_pos
                 .and_then(|i| ptrs.get(i))
                 .map(|ptr| ptr.project(field))
-                .unwrap(),
+                .unwrap_or(AlgebraicValue::unit()),
         }
     }
 }
