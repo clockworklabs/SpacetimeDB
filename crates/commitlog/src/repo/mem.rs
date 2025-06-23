@@ -223,7 +223,7 @@ impl Repo for Memory {
             btree_map::Entry::Occupied(entry) => {
                 let entry = entry.get();
                 let read_guard = entry.read().unwrap();
-                if read_guard.len() == 0 {
+                if read_guard.is_empty() {
                     Ok(Segment::from(Arc::clone(entry)))
                 } else {
                     Err(io::Error::new(
