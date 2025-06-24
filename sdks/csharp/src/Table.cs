@@ -360,6 +360,7 @@ namespace SpacetimeDB
             // (And we need to do it before ANY PostApply is called.)
 
             // First, we gather the updated rows into buffers.
+            // This is also when we verify that the PreHashedRows store rows of the correct types.
             foreach (var (_, value) in wasInserted)
             {
                 if (value.Row is Row newRow)
@@ -382,7 +383,7 @@ namespace SpacetimeDB
             {
                 if (oldValue.Row is Row oldRow)
                 {
-                    scratchInsertBuffer.Add(oldValue);
+                    scratchDeleteBuffer.Add(oldValue);
                 }
                 else
                 {
@@ -390,7 +391,7 @@ namespace SpacetimeDB
                 }
                 if (newValue.Row is Row newRow)
                 {
-                    scratchDeleteBuffer.Add(newValue);
+                    scratchInsertBuffer.Add(newValue);
                 }
                 else
                 {
