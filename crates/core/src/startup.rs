@@ -232,7 +232,7 @@ impl Cores {
 
         let databases = cores.take(frac(1.0 / 8.0)).collect();
 
-        let tokio_workers = cores.take(frac(4.0 / 8.0)).collect();
+        let tokio_workers = cores.take(frac(1.5 / 8.0)).collect();
 
         let rayon = RayonCores(Some(cores.take(frac(1.0 / 8.0)).collect()));
 
