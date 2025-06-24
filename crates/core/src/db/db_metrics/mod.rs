@@ -86,6 +86,11 @@ metrics_group!(
         #[buckets(10e-6, 50e-6, 100e-6, 500e-6, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5, 10)]
         pub rdb_txn_cpu_time_sec: HistogramVec,
 
+        #[name = spacetime_tx_waiters]
+        #[help = "Tracks the waiters on the transaction lock"]
+        #[labels(db: Identity)]
+        pub rdb_tx_waiters: IntGaugeVec,
+
         #[name = spacetime_message_log_size_bytes]
         #[help = "For a given database, the number of bytes occupied by its message log"]
         #[labels(db: Identity)]

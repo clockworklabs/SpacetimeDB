@@ -29,6 +29,7 @@ use fs2::FileExt;
 use futures::channel::mpsc;
 use futures::StreamExt;
 use parking_lot::RwLock;
+use prometheus::IntGauge;
 use spacetimedb_commitlog as commitlog;
 use spacetimedb_durability::{self as durability, TxOffset};
 use spacetimedb_lib::db::auth::StAccess;
@@ -116,6 +117,7 @@ pub struct RelationalDB {
 
     /// A map from workload types to their cached prometheus counters.
     workload_type_to_exec_counters: Arc<EnumMap<WorkloadType, ExecutionCounters>>,
+    tx_waiters: IntGauge,
 }
 
 #[derive(Clone)]
@@ -235,6 +237,7 @@ impl RelationalDB {
             snapshot_repo.map(|repo| SnapshotWorker::new(inner.committed_state.clone(), repo.clone()));
         let workload_type_to_exec_counters =
             Arc::new(EnumMap::from_fn(|ty| ExecutionCounters::new(&ty, &database_identity)));
+        let tx_waiters = DB_METRICS.rdb_tx_waiters.with_label_values(&database_identity);
 
         Self {
             inner,
@@ -249,6 +252,7 @@ impl RelationalDB {
 
             _lock: lock,
             workload_type_to_exec_counters,
+            tx_waiters,
         }
     }
 
@@ -760,16 +764,20 @@ impl RelationalDB {
     #[tracing::instrument(level = "trace", skip_all)]
     pub fn begin_mut_tx(&self, isolation_level: IsolationLevel, workload: Workload) -> MutTx {
         log::trace!("BEGIN MUT TX");
+        self.tx_waiters.inc();
         let r = self.inner.begin_mut_tx(isolation_level, workload);
         log::trace!("ACQUIRED MUT TX");
+        self.tx_waiters.dec();
         r
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
     pub fn begin_tx(&self, workload: Workload) -> Tx {
         log::trace!("BEGIN TX");
+        self.tx_waiters.inc();
         let r = self.inner.begin_tx(workload);
         log::trace!("ACQUIRED TX");
+        self.tx_waiters.dec();
         r
     }
 
