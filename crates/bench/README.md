@@ -28,7 +28,7 @@ Which will build the docker image and run the callgrind benchmarks inside of it.
 
 You can also comment "benchmarks please" or "callgrind please" on a pull request in the SpacetimeDB repository to run the criterion/callgrind benchmarks on that PR. The results will be posted in a comment on the PR.
 
-This is coordinated using the benchmarks Github Actions: see [`../../.github/workflows/benchmarks.yml`](../../.github/workflows/benchmarks.yml), and
+This is coordinated using the benchmarks GitHub Actions: see [`../../.github/workflows/benchmarks.yml`](../../.github/workflows/benchmarks.yml), and
 [`../../.github/workflows/callgrind_benchmarks.yml`](../../.github/workflows/callgrind_benchmarks.yml). 
 These also rely on the benchmarks-viewer application (https://github.com/clockworklabs/benchmarks-viewer).
 

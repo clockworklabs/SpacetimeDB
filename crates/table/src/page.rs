@@ -857,7 +857,7 @@ impl<'page> VarView<'page> {
         // TODO(perf,future-work): if `chunk` is at the HWM, return it to the gap.
         //       Returning a single chunk to the gap is easy,
         //       but we want to return a whole "run" of sequential freed chunks,
-        //       which requries some bookkeeping (or an O(> n) linked list traversal).
+        //       which requires some bookkeeping (or an O(> n) linked list traversal).
         self.header.freelist_len += 1;
         self.header.num_granules -= 1;
         let adjuster = self.adjuster();
@@ -1398,7 +1398,7 @@ impl Page {
 
         // Store all var-len refs into their appropriate slots in the fixed-len row.
         // SAFETY:
-        // - The `fixed_len_offset` given by `alloc_fixed_len` resuls in `row`
+        // - The `fixed_len_offset` given by `alloc_fixed_len` results in `row`
         //   being properly aligned for the row type.
         // - Caller promised that `fixed_row.len()` matches the row type size exactly.
         // - `var_len_visitor` is suitable for `fixed_row`.
@@ -1837,8 +1837,16 @@ impl Page {
     /// The reset page supports `max_rows_in_page` at most.
     pub fn reset_for(&mut self, max_rows_in_page: usize) {
         self.header.reset_for(max_rows_in_page);
-        // SAFETY: We just reset the page header.
-        unsafe { self.zero_data() };
+
+        // NOTE(centril): We previously zeroed pages when resetting.
+        // This had an adverse performance impact.
+        // The reason why we previously zeroed was for security under a multi-tenant setup
+        // when exposing a module ABI that allows modules to memcpy whole pages over.
+        // However, we have no such ABI for the time being, so we can soundly avoid zeroing.
+        // If we ever decide to add such an ABI, we must start zeroing again.
+        //
+        // // SAFETY: We just reset the page header.
+        // unsafe { self.zero_data() };
     }
 
     /// Sets the header and the row data.

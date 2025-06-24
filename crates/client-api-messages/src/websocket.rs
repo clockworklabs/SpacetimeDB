@@ -622,13 +622,20 @@ pub struct TableUpdate<F: WebsocketFormat> {
     pub updates: SmallVec<[F::QueryUpdate; 1]>,
 }
 
+/// Computed update for a single query, annotated with the number of matching rows.
+#[derive(Debug)]
+pub struct SingleQueryUpdate<F: WebsocketFormat> {
+    pub update: F::QueryUpdate,
+    pub num_rows: u64,
+}
+
 impl<F: WebsocketFormat> TableUpdate<F> {
-    pub fn new(table_id: TableId, table_name: Box<str>, (update, num_rows): (F::QueryUpdate, u64)) -> Self {
+    pub fn new(table_id: TableId, table_name: Box<str>, update: SingleQueryUpdate<F>) -> Self {
         Self {
             table_id,
             table_name,
-            num_rows,
-            updates: [update].into(),
+            num_rows: update.num_rows,
+            updates: [update.update].into(),
         }
     }
 
@@ -641,9 +648,9 @@ impl<F: WebsocketFormat> TableUpdate<F> {
         }
     }
 
-    pub fn push(&mut self, (update, num_rows): (F::QueryUpdate, u64)) {
-        self.updates.push(update);
-        self.num_rows += num_rows;
+    pub fn push(&mut self, update: SingleQueryUpdate<F>) {
+        self.updates.push(update.update);
+        self.num_rows += update.num_rows;
     }
 
     pub fn num_rows(&self) -> usize {
@@ -721,7 +728,7 @@ pub struct OneOffTable<F: WebsocketFormat> {
     /// The set of rows which matched the query, encoded as BSATN or JSON according to the table's schema
     /// and the client's requested protocol.
     ///
-    /// TODO(centril, 1.0): Evalutate whether we want to conditionally compress these.
+    /// TODO(centril, 1.0): Evaluate whether we want to conditionally compress these.
     pub rows: F::List,
 }
 
@@ -852,25 +859,19 @@ pub fn decide_compression(len: usize, compression: Compression) -> Compression {
     }
 }
 
-pub fn brotli_compress(bytes: &[u8], out: &mut Vec<u8>) {
-    let reader = &mut &bytes[..];
-
-    // The default Brotli buffer size.
-    const BUFFER_SIZE: usize = 4096;
+pub fn brotli_compress(bytes: &[u8], out: &mut impl io::Write) {
     // We are optimizing for compression speed,
     // so we choose the lowest (fastest) level of compression.
     // Experiments on internal workloads have shown compression ratios between 7:1 and 10:1
     // for large `SubscriptionUpdate` messages at this level.
-    const COMPRESSION_LEVEL: u32 = 1;
-    // The default value for an internal compression parameter.
-    // See `BrotliEncoderParams` for more details.
-    const LG_WIN: u32 = 22;
+    const COMPRESSION_LEVEL: i32 = 1;
 
-    let mut encoder = brotli::CompressorReader::new(reader, BUFFER_SIZE, COMPRESSION_LEVEL, LG_WIN);
-
-    encoder
-        .read_to_end(out)
-        .expect("Failed to Brotli compress `SubscriptionUpdateMessage`");
+    let params = brotli::enc::BrotliEncoderParams {
+        quality: COMPRESSION_LEVEL,
+        ..<_>::default()
+    };
+    let reader = &mut &bytes[..];
+    brotli::BrotliCompress(reader, out, &params).expect("should be able to BrotliCompress");
 }
 
 pub fn brotli_decompress(bytes: &[u8]) -> Result<Vec<u8>, io::Error> {
@@ -879,10 +880,10 @@ pub fn brotli_decompress(bytes: &[u8]) -> Result<Vec<u8>, io::Error> {
     Ok(decompressed)
 }
 
-pub fn gzip_compress(bytes: &[u8], out: &mut Vec<u8>) {
+pub fn gzip_compress(bytes: &[u8], out: &mut impl io::Write) {
     let mut encoder = flate2::write::GzEncoder::new(out, flate2::Compression::fast());
     encoder.write_all(bytes).unwrap();
-    encoder.finish().expect("Failed to gzip compress `bytes`");
+    encoder.finish().expect("should be able to gzip compress `bytes`");
 }
 
 pub fn gzip_decompress(bytes: &[u8]) -> Result<Vec<u8>, io::Error> {

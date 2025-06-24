@@ -120,6 +120,21 @@ impl UniqueDirectFixedCapIndex {
         self.array.fill(NONE_PTR);
         self.len = 0;
     }
+
+    /// Returns whether `other` can be merged into `self`
+    /// with an error containing the element in `self` that caused the violation.
+    ///
+    /// The closure `ignore` indicates whether a row in `self` should be ignored.
+    pub(crate) fn can_merge(&self, other: &Self, ignore: impl Fn(&RowPointer) -> bool) -> Result<(), RowPointer> {
+        for (slot_s, slot_o) in self.array.iter().zip(other.array.iter()) {
+            let ptr_s = slot_s.with_reserved_bit(false);
+            if *slot_s != NONE_PTR && *slot_o != NONE_PTR && !ignore(&ptr_s) {
+                // For the same key, we found both slots occupied, so we cannot merge.
+                return Err(ptr_s);
+            }
+        }
+        Ok(())
+    }
 }
 
 /// An iterator over a range of keys in a [`UniqueDirectFixedCapIndex`].

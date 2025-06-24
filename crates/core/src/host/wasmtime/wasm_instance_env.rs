@@ -97,7 +97,7 @@ impl WasmInstanceEnv {
             timing_spans: Default::default(),
             reducer_start,
             call_times: CallTimes::new(),
-            reducer_name: String::from(""),
+            reducer_name: String::from("<initializing>"),
             chunk_pool: <_>::default(),
         }
     }
@@ -157,6 +157,16 @@ impl WasmInstanceEnv {
         self.instance_env.start_reducer(ts);
 
         (args, errors)
+    }
+
+    /// Returns the name of the most recent reducer to be run in this environment.
+    pub fn reducer_name(&self) -> &str {
+        &self.reducer_name
+    }
+
+    /// Returns the name of the most recent reducer to be run in this environment.
+    pub fn reducer_start(&self) -> Instant {
+        self.reducer_start
     }
 
     /// Signal to this `WasmInstanceEnv` that a reducer call is over.
@@ -1090,7 +1100,7 @@ impl WasmInstanceEnv {
         })
     }
 
-    /// Logs at `level` a `message` message occuring in `filename:line_number`
+    /// Logs at `level` a `message` message occurring in `filename:line_number`
     /// with [`target`](target) being the module path at the `log!` invocation site.
     ///
     /// These various pointers are interpreted lossily as UTF-8 strings with a corresponding `_len`.

@@ -1,11 +1,13 @@
 use super::execution_unit::QueryHash;
-use super::module_subscription_manager::{Plan, SubscriptionGaugeStats, SubscriptionManager};
+use super::module_subscription_manager::{
+    spawn_send_worker, BroadcastError, BroadcastQueue, Plan, SubscriptionGaugeStats, SubscriptionManager,
+};
 use super::query::compile_query_with_hashes;
 use super::tx::DeltaTx;
-use super::{collect_table_update, record_exec_metrics, TableUpdateType};
+use super::{collect_table_update, TableUpdateType};
 use crate::client::messages::{
-    SubscriptionData, SubscriptionError, SubscriptionMessage, SubscriptionResult, SubscriptionRows,
-    SubscriptionUpdateMessage, TransactionUpdateMessage,
+    SerializableMessage, SubscriptionData, SubscriptionError, SubscriptionMessage, SubscriptionResult,
+    SubscriptionRows, SubscriptionUpdateMessage, TransactionUpdateMessage,
 };
 use crate::client::{ClientActorId, ClientConnectionSender, Protocol};
 use crate::db::datastore::locking_tx_datastore::tx::TxId;
@@ -18,10 +20,11 @@ use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent};
 use crate::messages::websocket::Subscribe;
 use crate::subscription::execute_plans;
 use crate::subscription::query::is_subscribe_to_all_tables;
+use crate::util::prometheus_handle::IntGaugeExt;
 use crate::vm::check_row_limit;
 use crate::worker_metrics::WORKER_METRICS;
 use parking_lot::RwLock;
-use prometheus::IntGauge;
+use prometheus::{Histogram, HistogramTimer, IntCounter, IntGauge};
 use spacetimedb_client_api_messages::websocket::{
     self as ws, BsatnFormat, FormatSwitch, JsonFormat, SubscribeMulti, SubscribeSingle, TableUpdate, Unsubscribe,
     UnsubscribeMulti,
@@ -40,8 +43,9 @@ pub struct ModuleSubscriptions {
     /// If taking a lock (tx) on the db at the same time, ALWAYS lock the db first.
     /// You will deadlock otherwise.
     subscriptions: Subscriptions,
+    broadcast_queue: BroadcastQueue,
     owner_identity: Identity,
-    stats: Box<SubscriptionGauges>,
+    stats: Arc<SubscriptionGauges>,
 }
 
 #[derive(Debug, Clone)]
@@ -97,6 +101,28 @@ impl SubscriptionGauges {
     }
 }
 
+pub struct SubscriptionMetrics {
+    pub lock_waiters: IntGauge,
+    pub lock_wait_time: Histogram,
+    pub compilation_time: Histogram,
+    pub num_queries_subscribed: IntCounter,
+    pub num_new_queries_subscribed: IntCounter,
+    pub num_queries_evaluated: IntCounter,
+}
+
+impl SubscriptionMetrics {
+    pub fn new(db: &Identity, workload: &WorkloadType) -> Self {
+        Self {
+            lock_waiters: DB_METRICS.subscription_lock_waiters.with_label_values(db, workload),
+            lock_wait_time: DB_METRICS.subscription_lock_wait_time.with_label_values(db, workload),
+            compilation_time: DB_METRICS.subscription_compile_time.with_label_values(db, workload),
+            num_queries_subscribed: DB_METRICS.num_queries_subscribed.with_label_values(db),
+            num_new_queries_subscribed: DB_METRICS.num_new_queries_subscribed.with_label_values(db),
+            num_queries_evaluated: DB_METRICS.num_queries_evaluated.with_label_values(db, workload),
+        }
+    }
+}
+
 type AssertTxFn = Arc<dyn Fn(&Tx)>;
 type SubscriptionUpdate = FormatSwitch<TableUpdate<BsatnFormat>, TableUpdate<JsonFormat>>;
 type FullSubscriptionUpdate = FormatSwitch<ws::DatabaseUpdate<BsatnFormat>, ws::DatabaseUpdate<JsonFormat>>;
@@ -126,21 +152,49 @@ macro_rules! return_on_err_with_sql {
             Err(e) => {
                 // TODO: Handle errors sending messages.
                 let _ = $handler(e.to_string().into());
-                return Ok(());
+                return Ok(None);
             }
         }
     };
 }
 
 impl ModuleSubscriptions {
-    pub fn new(relational_db: Arc<RelationalDB>, subscriptions: Subscriptions, owner_identity: Identity) -> Self {
-        let stats = Box::new(SubscriptionGauges::new(&relational_db.database_identity()));
+    pub fn new(
+        relational_db: Arc<RelationalDB>,
+        subscriptions: Subscriptions,
+        broadcast_queue: BroadcastQueue,
+        owner_identity: Identity,
+    ) -> Self {
+        let db = &relational_db.database_identity();
+        let stats = Arc::new(SubscriptionGauges::new(db));
+
         Self {
             relational_db,
             subscriptions,
+            broadcast_queue,
             owner_identity,
             stats,
         }
+    }
+
+    /// Construct a new [`ModuleSubscriptions`] for use in testing,
+    /// creating a new [`tokio::runtime::Runtime`] to run its send worker.
+    pub fn for_test_new_runtime(db: Arc<RelationalDB>) -> (ModuleSubscriptions, tokio::runtime::Runtime) {
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let _rt = runtime.enter();
+        (Self::for_test_enclosing_runtime(db), runtime)
+    }
+
+    /// Construct a new [`ModuleSubscriptions`] for use in testing,
+    /// running its send worker on the dynamically enclosing [`tokio::runtime::Runtime`]
+    pub fn for_test_enclosing_runtime(db: Arc<RelationalDB>) -> ModuleSubscriptions {
+        let send_worker_queue = spawn_send_worker(None);
+        ModuleSubscriptions::new(
+            db,
+            SubscriptionManager::for_test_without_metrics_arc_rwlock(),
+            send_worker_queue,
+            Identity::ZERO,
+        )
     }
 
     // Recompute gauges to update metrics.
@@ -170,7 +224,7 @@ impl ModuleSubscriptions {
             tx,
             |plan, tx| {
                 plan.plans_fragments()
-                    .map(|plan_fragment| estimate_rows_scanned(tx, plan_fragment.physical_plan()))
+                    .map(|plan_fragment| estimate_rows_scanned(tx, plan_fragment.optimized_physical_plan()))
                     .fold(0, |acc, rows_scanned| acc.saturating_add(rows_scanned))
             },
             auth,
@@ -181,7 +235,7 @@ impl ModuleSubscriptions {
 
         let plans = query
             .plans_fragments()
-            .map(|fragment| fragment.physical_plan())
+            .map(|fragment| fragment.optimized_physical_plan())
             .cloned()
             .map(|plan| plan.optimize())
             .collect::<Result<Vec<_>, _>>()?
@@ -213,7 +267,7 @@ impl ModuleSubscriptions {
             tx,
             |plan, tx| {
                 plan.plans_fragments()
-                    .map(|plan_fragment| estimate_rows_scanned(tx, plan_fragment.physical_plan()))
+                    .map(|plan_fragment| estimate_rows_scanned(tx, plan_fragment.optimized_physical_plan()))
                     .fold(0, |acc, rows_scanned| acc.saturating_add(rows_scanned))
             },
             auth,
@@ -240,18 +294,21 @@ impl ModuleSubscriptions {
         request: SubscribeSingle,
         timer: Instant,
         _assert: Option<AssertTxFn>,
-    ) -> Result<(), DBError> {
+    ) -> Result<Option<ExecutionMetrics>, DBError> {
         // Send an error message to the client
         let send_err_msg = |message| {
-            sender.send_message(SubscriptionMessage {
-                request_id: Some(request.request_id),
-                query_id: Some(request.query_id),
-                timer: Some(timer),
-                result: SubscriptionResult::Error(SubscriptionError {
-                    table_id: None,
-                    message,
-                }),
-            })
+            self.broadcast_queue.send_client_message(
+                sender.clone(),
+                SubscriptionMessage {
+                    request_id: Some(request.request_id),
+                    query_id: Some(request.query_id),
+                    timer: Some(timer),
+                    result: SubscriptionResult::Error(SubscriptionError {
+                        table_id: None,
+                        message,
+                    }),
+                },
+            )
         };
 
         let sql = request.query;
@@ -260,7 +317,8 @@ impl ModuleSubscriptions {
         let hash_with_param = QueryHash::from_string(&sql, auth.caller, true);
 
         let tx = scopeguard::guard(self.relational_db.begin_tx(Workload::Subscribe), |tx| {
-            self.relational_db.release_tx(tx);
+            let (tx_metrics, reducer) = self.relational_db.release_tx(tx);
+            self.relational_db.report(&reducer, &tx_metrics, None);
         });
 
         let existing_query = {
@@ -287,12 +345,6 @@ impl ModuleSubscriptions {
             send_err_msg
         );
 
-        record_exec_metrics(
-            &WorkloadType::Subscribe,
-            &self.relational_db.database_identity(),
-            metrics,
-        );
-
         // It acquires the subscription lock after `eval`, allowing `add_subscription` to run concurrently.
         // This also makes it possible for `broadcast_event` to get scheduled before the subsequent part here
         // but that should not pose an issue.
@@ -304,21 +356,27 @@ impl ModuleSubscriptions {
             assert(&tx);
         }
 
-        // NOTE: It is important to send the state in this thread because if you spawn a new
-        // thread it's possible for messages to get sent to the client out of order. If you do
-        // spawn in another thread messages will need to be buffered until the state is sent out
-        // on the wire
-        let _ = sender.send_message(SubscriptionMessage {
-            request_id: Some(request.request_id),
-            query_id: Some(request.query_id),
-            timer: Some(timer),
-            result: SubscriptionResult::Subscribe(SubscriptionRows {
-                table_id: query.subscribed_table_id(),
-                table_name: query.subscribed_table_name().into(),
-                table_rows,
-            }),
-        });
-        Ok(())
+        // Note: to make sure transaction updates are consistent, we need to put this in the broadcast
+        // queue while we are still holding a read-lock on the database.
+
+        // That will avoid race conditions because reducers first grab a write lock on the db, then
+        // grab a read lock on the subscriptions.
+
+        // Holding a write lock on `self.subscriptions` would also be sufficient.
+        let _ = self.broadcast_queue.send_client_message(
+            sender.clone(),
+            SubscriptionMessage {
+                request_id: Some(request.request_id),
+                query_id: Some(request.query_id),
+                timer: Some(timer),
+                result: SubscriptionResult::Subscribe(SubscriptionRows {
+                    table_id: query.subscribed_table_id(),
+                    table_name: query.subscribed_table_name().into(),
+                    table_rows,
+                }),
+            },
+        );
+        Ok(Some(metrics))
     }
 
     /// Remove a subscription for a single query.
@@ -327,44 +385,42 @@ impl ModuleSubscriptions {
         sender: Arc<ClientConnectionSender>,
         request: Unsubscribe,
         timer: Instant,
-    ) -> Result<(), DBError> {
+    ) -> Result<Option<ExecutionMetrics>, DBError> {
         // Send an error message to the client
         let send_err_msg = |message| {
-            sender.send_message(SubscriptionMessage {
-                request_id: Some(request.request_id),
-                query_id: Some(request.query_id),
-                timer: Some(timer),
-                result: SubscriptionResult::Error(SubscriptionError {
-                    table_id: None,
-                    message,
-                }),
-            })
+            self.broadcast_queue.send_client_message(
+                sender.clone(),
+                SubscriptionMessage {
+                    request_id: Some(request.request_id),
+                    query_id: Some(request.query_id),
+                    timer: Some(timer),
+                    result: SubscriptionResult::Error(SubscriptionError {
+                        table_id: None,
+                        message,
+                    }),
+                },
+            )
         };
 
         let mut subscriptions = self.subscriptions.write();
 
-        let query =
-            match subscriptions.remove_subscription((sender.id.identity, sender.id.connection_id), request.query_id) {
-                Ok(queries) => {
-                    // This is technically a bug, since this could be empty if the client has another duplicate subscription.
-                    // This whole function should be removed soon, so I don't think we need to fix it.
-                    if queries.len() == 1 {
-                        queries[0].clone()
-                    } else {
-                        // Apparently we ignore errors sending messages.
-                        let _ = send_err_msg("Internal error".into());
-                        return Ok(());
-                    }
-                }
-                Err(error) => {
-                    // Apparently we ignore errors sending messages.
-                    let _ = send_err_msg(error.to_string().into());
-                    return Ok(());
-                }
-            };
+        let queries = return_on_err!(
+            subscriptions.remove_subscription((sender.id.identity, sender.id.connection_id), request.query_id),
+            // Apparently we ignore errors sending messages.
+            send_err_msg,
+            None
+        );
+        // This is technically a bug, since this could be empty if the client has another duplicate subscription.
+        // This whole function should be removed soon, so I don't think we need to fix it.
+        let [query] = &*queries else {
+            // Apparently we ignore errors sending messages.
+            let _ = send_err_msg("Internal error".into());
+            return Ok(None);
+        };
 
         let tx = scopeguard::guard(self.relational_db.begin_tx(Workload::Unsubscribe), |tx| {
-            self.relational_db.release_tx(tx);
+            let (tx_metrics, reducer) = self.relational_db.release_tx(tx);
+            self.relational_db.report(&reducer, &tx_metrics, None);
         });
         let auth = AuthCtx::new(self.owner_identity, sender.id.identity);
         let (table_rows, metrics) = return_on_err_with_sql!(
@@ -373,26 +429,31 @@ impl ModuleSubscriptions {
             send_err_msg
         );
 
-        record_exec_metrics(
-            &WorkloadType::Subscribe,
-            &self.relational_db.database_identity(),
-            metrics,
-        );
+        // Note: to make sure transaction updates are consistent, we need to put this in the broadcast
+        // queue while we are still holding a read-lock on the database.
 
-        let _ = sender.send_message(SubscriptionMessage {
-            request_id: Some(request.request_id),
-            query_id: Some(request.query_id),
-            timer: Some(timer),
-            result: SubscriptionResult::Unsubscribe(SubscriptionRows {
-                table_id: query.subscribed_table_id(),
-                table_name: query.subscribed_table_name().into(),
-                table_rows,
-            }),
-        });
-        Ok(())
+        // That will avoid race conditions because reducers first grab a write lock on the db, then
+        // grab a read lock on the subscriptions.
+
+        // Holding a write lock on `self.subscriptions` would also be sufficient.
+        let _ = self.broadcast_queue.send_client_message(
+            sender.clone(),
+            SubscriptionMessage {
+                request_id: Some(request.request_id),
+                query_id: Some(request.query_id),
+                timer: Some(timer),
+                result: SubscriptionResult::Unsubscribe(SubscriptionRows {
+                    table_id: query.subscribed_table_id(),
+                    table_name: query.subscribed_table_name().into(),
+                    table_rows,
+                }),
+            },
+        );
+        Ok(Some(metrics))
     }
 
     /// Remove a client's subscription for a set of queries.
+    #[tracing::instrument(level = "trace", skip_all)]
     pub fn remove_multi_subscription(
         &self,
         sender: Arc<ClientConnectionSender>,
@@ -401,24 +462,37 @@ impl ModuleSubscriptions {
     ) -> Result<Option<ExecutionMetrics>, DBError> {
         // Send an error message to the client
         let send_err_msg = |message| {
-            sender.send_message(SubscriptionMessage {
-                request_id: Some(request.request_id),
-                query_id: Some(request.query_id),
-                timer: Some(timer),
-                result: SubscriptionResult::Error(SubscriptionError {
-                    table_id: None,
-                    message,
-                }),
-            })
+            self.broadcast_queue.send_client_message(
+                sender.clone(),
+                SubscriptionMessage {
+                    request_id: Some(request.request_id),
+                    query_id: Some(request.query_id),
+                    timer: Some(timer),
+                    result: SubscriptionResult::Error(SubscriptionError {
+                        table_id: None,
+                        message,
+                    }),
+                },
+            )
         };
+
+        let database_identity = self.relational_db.database_identity();
+        let subscription_metrics = SubscriptionMetrics::new(&database_identity, &WorkloadType::Unsubscribe);
 
         // Always lock the db before the subscription lock to avoid deadlocks.
         let tx = scopeguard::guard(self.relational_db.begin_tx(Workload::Unsubscribe), |tx| {
-            self.relational_db.release_tx(tx);
+            let (tx_metrics, reducer) = self.relational_db.release_tx(tx);
+            self.relational_db.report(&reducer, &tx_metrics, None);
         });
 
         let removed_queries = {
-            let mut subscriptions = self.subscriptions.write();
+            let _compile_timer = subscription_metrics.compilation_time.start_timer();
+            let mut subscriptions = {
+                // How contended is the lock?
+                let _wait_guard = subscription_metrics.lock_waiters.inc_scope();
+                let _wait_timer = subscription_metrics.lock_wait_time.start_timer();
+                self.subscriptions.write()
+            };
 
             return_on_err!(
                 subscriptions.remove_subscription((sender.id.identity, sender.id.connection_id), request.query_id),
@@ -439,12 +513,27 @@ impl ModuleSubscriptions {
             None
         );
 
-        let _ = sender.send_message(SubscriptionMessage {
-            request_id: Some(request.request_id),
-            query_id: Some(request.query_id),
-            timer: Some(timer),
-            result: SubscriptionResult::UnsubscribeMulti(SubscriptionData { data: update }),
-        });
+        // How many queries did we evaluate?
+        subscription_metrics
+            .num_queries_evaluated
+            .inc_by(removed_queries.len() as _);
+
+        // Note: to make sure transaction updates are consistent, we need to put this in the broadcast
+        // queue while we are still holding a read-lock on the database.
+
+        // That will avoid race conditions because reducers first grab a write lock on the db, then
+        // grab a read lock on the subscriptions.
+
+        // Holding a write lock on `self.subscriptions` would also be sufficient.
+        let _ = self.broadcast_queue.send_client_message(
+            sender,
+            SubscriptionMessage {
+                request_id: Some(request.request_id),
+                query_id: Some(request.query_id),
+                timer: Some(timer),
+                result: SubscriptionResult::UnsubscribeMulti(SubscriptionData { data: update }),
+            },
+        );
 
         Ok(Some(metrics))
     }
@@ -461,12 +550,14 @@ impl ModuleSubscriptions {
     ///
     /// Instead we generate two hashes and outside of the tx lock.
     /// If either one is currently tracked, we can avoid recompilation.
+    #[allow(clippy::type_complexity)]
     fn compile_queries(
         &self,
         sender: Identity,
         queries: impl IntoIterator<Item = Box<str>>,
         num_queries: usize,
-    ) -> Result<(Vec<Arc<Plan>>, AuthCtx, TxId), DBError> {
+        metrics: &SubscriptionMetrics,
+    ) -> Result<(Vec<Arc<Plan>>, AuthCtx, TxId, HistogramTimer), DBError> {
         let mut subscribe_to_all_tables = false;
         let mut plans = Vec::with_capacity(num_queries);
         let mut query_hashes = Vec::with_capacity(num_queries);
@@ -485,9 +576,18 @@ impl ModuleSubscriptions {
 
         // We always get the db lock before the subscription lock to avoid deadlocks.
         let tx = scopeguard::guard(self.relational_db.begin_tx(Workload::Subscribe), |tx| {
-            self.relational_db.release_tx(tx);
+            let (tx_metrics, reducer) = self.relational_db.release_tx(tx);
+            self.relational_db.report(&reducer, &tx_metrics, None);
         });
-        let guard = self.subscriptions.read();
+
+        let compile_timer = metrics.compilation_time.start_timer();
+
+        let guard = {
+            // How contended is the lock?
+            let _wait_guard = metrics.lock_waiters.inc_scope();
+            let _wait_timer = metrics.lock_wait_time.start_timer();
+            self.subscriptions.read()
+        };
 
         if subscribe_to_all_tables {
             plans.extend(
@@ -496,6 +596,8 @@ impl ModuleSubscriptions {
                     .map(Arc::new),
             );
         }
+
+        let mut new_queries = 0;
 
         for (sql, hash, hash_with_param) in query_hashes {
             if let Some(unit) = guard.query(&hash) {
@@ -511,10 +613,26 @@ impl ModuleSubscriptions {
                         }
                     })?,
                 ));
+                new_queries += 1;
             }
         }
 
-        Ok((plans, auth, scopeguard::ScopeGuard::into_inner(tx)))
+        // How many queries in this subscription are not cached?
+        metrics.num_new_queries_subscribed.inc_by(new_queries);
+
+        Ok((plans, auth, scopeguard::ScopeGuard::into_inner(tx), compile_timer))
+    }
+
+    /// Send a message to a client connection.
+    /// This will eventually be sent by the send-worker.
+    /// This takes a `TxId`, because this should be called while still holding a lock on the database.
+    pub fn send_client_message(
+        &self,
+        recipient: Arc<ClientConnectionSender>,
+        message: impl Into<SerializableMessage>,
+        _tx_id: &TxId,
+    ) -> Result<(), BroadcastError> {
+        self.broadcast_queue.send_client_message(recipient, message)
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
@@ -527,25 +645,41 @@ impl ModuleSubscriptions {
     ) -> Result<Option<ExecutionMetrics>, DBError> {
         // Send an error message to the client
         let send_err_msg = |message| {
-            let _ = sender.send_message(SubscriptionMessage {
-                request_id: Some(request.request_id),
-                query_id: Some(request.query_id),
-                timer: Some(timer),
-                result: SubscriptionResult::Error(SubscriptionError {
-                    table_id: None,
-                    message,
-                }),
-            });
+            let _ = self.broadcast_queue.send_client_message(
+                sender.clone(),
+                SubscriptionMessage {
+                    request_id: Some(request.request_id),
+                    query_id: Some(request.query_id),
+                    timer: Some(timer),
+                    result: SubscriptionResult::Error(SubscriptionError {
+                        table_id: None,
+                        message,
+                    }),
+                },
+            );
         };
 
         let num_queries = request.query_strings.len();
-        let (queries, auth, tx) = return_on_err!(
-            self.compile_queries(sender.id.identity, request.query_strings, num_queries),
+
+        let database_identity = self.relational_db.database_identity();
+        let subscription_metrics = SubscriptionMetrics::new(&database_identity, &WorkloadType::Subscribe);
+
+        // How many queries make up this subscription?
+        subscription_metrics.num_queries_subscribed.inc_by(num_queries as _);
+
+        let (queries, auth, tx, compile_timer) = return_on_err!(
+            self.compile_queries(
+                sender.id.identity,
+                request.query_strings,
+                num_queries,
+                &subscription_metrics
+            ),
             send_err_msg,
             None
         );
         let tx = scopeguard::guard(tx, |tx| {
-            self.relational_db.release_tx(tx);
+            let (tx_metrics, reducer) = self.relational_db.release_tx(tx);
+            self.relational_db.report(&reducer, &tx_metrics, None);
         });
 
         // We minimize locking so that other clients can add subscriptions concurrently.
@@ -553,36 +687,63 @@ impl ModuleSubscriptions {
         // an `commit_and_broadcast_event` grabs a read lock on `subscriptions` while it still has a
         // write lock on the db.
         let queries = {
-            let mut subscriptions = self.subscriptions.write();
+            let mut subscriptions = {
+                // How contended is the lock?
+                let _wait_guard = subscription_metrics.lock_waiters.inc_scope();
+                let _wait_timer = subscription_metrics.lock_wait_time.start_timer();
+                self.subscriptions.write()
+            };
 
             subscriptions.add_subscription_multi(sender.clone(), queries, request.query_id)?
         };
+
+        // Record how long it took to compile the subscription
+        drop(compile_timer);
 
         let Ok((update, metrics)) =
             self.evaluate_queries(sender.clone(), &queries, &tx, &auth, TableUpdateType::Subscribe)
         else {
             // If we fail the query, we need to remove the subscription.
-            let mut subscriptions = self.subscriptions.write();
-            subscriptions.remove_subscription((sender.id.identity, sender.id.connection_id), request.query_id)?;
+            let mut subscriptions = {
+                // How contended is the lock?
+                let _wait_guard = subscription_metrics.lock_waiters.inc_scope();
+                let _wait_timer = subscription_metrics.lock_wait_time.start_timer();
+                self.subscriptions.write()
+            };
+            {
+                let _compile_timer = subscription_metrics.compilation_time.start_timer();
+                subscriptions.remove_subscription((sender.id.identity, sender.id.connection_id), request.query_id)?;
+            }
+
             send_err_msg("Internal error evaluating queries".into());
             return Ok(None);
         };
+
+        // How many queries did we actually evaluate?
+        subscription_metrics.num_queries_evaluated.inc_by(queries.len() as _);
 
         #[cfg(test)]
         if let Some(assert) = _assert {
             assert(&tx);
         }
 
-        // NOTE: It is important to send the state in this thread because if you spawn a new
-        // thread it's possible for messages to get sent to the client out of order. If you do
-        // spawn in another thread messages will need to be buffered until the state is sent out
-        // on the wire
-        let _ = sender.send_message(SubscriptionMessage {
-            request_id: Some(request.request_id),
-            query_id: Some(request.query_id),
-            timer: Some(timer),
-            result: SubscriptionResult::SubscribeMulti(SubscriptionData { data: update }),
-        });
+        // Note: to make sure transaction updates are consistent, we need to put this in the broadcast
+        // queue while we are still holding a read-lock on the database.
+
+        // That will avoid race conditions because reducers first grab a write lock on the db, then
+        // grab a read lock on the subscriptions.
+
+        // Holding a write lock on `self.subscriptions` would also be sufficient.
+
+        let _ = self.broadcast_queue.send_client_message(
+            sender.clone(),
+            SubscriptionMessage {
+                request_id: Some(request.request_id),
+                query_id: Some(request.query_id),
+                timer: Some(timer),
+                result: SubscriptionResult::SubscribeMulti(SubscriptionData { data: update }),
+            },
+        );
 
         Ok(Some(metrics))
     }
@@ -598,9 +759,21 @@ impl ModuleSubscriptions {
         _assert: Option<AssertTxFn>,
     ) -> Result<ExecutionMetrics, DBError> {
         let num_queries = subscription.query_strings.len();
-        let (queries, auth, tx) = self.compile_queries(sender.id.identity, subscription.query_strings, num_queries)?;
+        let database_identity = self.relational_db.database_identity();
+        let subscription_metrics = SubscriptionMetrics::new(&database_identity, &WorkloadType::Subscribe);
+
+        // How many queries make up this subscription?
+        subscription_metrics.num_queries_subscribed.inc_by(num_queries as _);
+
+        let (queries, auth, tx, compile_timer) = self.compile_queries(
+            sender.id.identity,
+            subscription.query_strings,
+            num_queries,
+            &subscription_metrics,
+        )?;
         let tx = scopeguard::guard(tx, |tx| {
-            self.relational_db.release_tx(tx);
+            let (tx_metrics, reducer) = self.relational_db.release_tx(tx);
+            self.relational_db.report(&reducer, &tx_metrics, None);
         });
 
         check_row_limit(
@@ -609,11 +782,14 @@ impl ModuleSubscriptions {
             &tx,
             |plan, tx| {
                 plan.plans_fragments()
-                    .map(|plan_fragment| estimate_rows_scanned(tx, plan_fragment.physical_plan()))
+                    .map(|plan_fragment| estimate_rows_scanned(tx, plan_fragment.optimized_physical_plan()))
                     .fold(0, |acc, rows_scanned| acc.saturating_add(rows_scanned))
             },
             &auth,
         )?;
+
+        // Record how long it took to compile the subscription
+        drop(compile_timer);
 
         let tx = DeltaTx::from(&*tx);
         let (database_update, metrics) = match sender.config.protocol {
@@ -626,23 +802,39 @@ impl ModuleSubscriptions {
         // It acquires the subscription lock after `eval`, allowing `add_subscription` to run concurrently.
         // This also makes it possible for `broadcast_event` to get scheduled before the subsequent part here
         // but that should not pose an issue.
-        let mut subscriptions = self.subscriptions.write();
-        subscriptions.set_legacy_subscription(sender.clone(), queries.into_iter());
+        {
+            let _compile_timer = subscription_metrics.compilation_time.start_timer();
+
+            let mut subscriptions = {
+                // How contended is the lock?
+                let _wait_guard = subscription_metrics.lock_waiters.inc_scope();
+                let _wait_timer = subscription_metrics.lock_wait_time.start_timer();
+                self.subscriptions.write()
+            };
+
+            subscriptions.set_legacy_subscription(sender.clone(), queries.into_iter());
+        }
 
         #[cfg(test)]
         if let Some(assert) = _assert {
             assert(&tx);
         }
 
-        // NOTE: It is important to send the state in this thread because if you spawn a new
-        // thread it's possible for messages to get sent to the client out of order. If you do
-        // spawn in another thread messages will need to be buffered until the state is sent out
-        // on the wire
-        let _ = sender.send_message(SubscriptionUpdateMessage {
-            database_update,
-            request_id: Some(subscription.request_id),
-            timer: Some(timer),
-        });
+        // Note: to make sure transaction updates are consistent, we need to put this in the broadcast
+        // queue while we are still holding a read-lock on the database.
+
+        // That will avoid race conditions because reducers first grab a write lock on the db, then
+        // grab a read lock on the subscriptions.
+
+        // Holding a write lock on `self.subscriptions` would also be sufficient.
+        let _ = self.broadcast_queue.send_client_message(
+            sender,
+            SubscriptionUpdateMessage {
+                database_update,
+                request_id: Some(subscription.request_id),
+                timer: Some(timer),
+            },
+        );
 
         Ok(metrics)
     }
@@ -653,51 +845,61 @@ impl ModuleSubscriptions {
     }
 
     /// Commit a transaction and broadcast its ModuleEvent to all interested subscribers.
+    ///
+    /// The returned [`ExecutionMetrics`] are reported in this method via `report_tx_metrics`.
+    /// They are returned for testing purposes but should not be reported separately.
     pub fn commit_and_broadcast_event(
         &self,
-        caller: Option<&ClientConnectionSender>,
+        caller: Option<Arc<ClientConnectionSender>>,
         mut event: ModuleEvent,
         tx: MutTx,
     ) -> Result<Result<(Arc<ModuleEvent>, ExecutionMetrics), WriteConflict>, DBError> {
+        let database_identity = self.relational_db.database_identity();
+        let subscription_metrics = SubscriptionMetrics::new(&database_identity, &WorkloadType::Update);
+
         // Take a read lock on `subscriptions` before committing tx
         // else it can result in subscriber receiving duplicate updates.
-        let subscriptions = self.subscriptions.read();
+        let subscriptions = {
+            // How contended is the lock?
+            let _wait_guard = subscription_metrics.lock_waiters.inc_scope();
+            let _wait_timer = subscription_metrics.lock_wait_time.start_timer();
+            self.subscriptions.read()
+        };
+
         let stdb = &self.relational_db;
         // Downgrade mutable tx.
-        // Ensure tx is released/cleaned up once out of scope.
-        let (read_tx, tx_data) = match &mut event.status {
+        // We'll later ensure tx is released/cleaned up once out of scope.
+        let (read_tx, tx_data, tx_metrics_mut) = match &mut event.status {
             EventStatus::Committed(db_update) => {
-                let Some((tx_data, read_tx)) = stdb.commit_tx_downgrade(tx, Workload::Update)? else {
+                let Some((tx_data, tx_metrics, read_tx)) = stdb.commit_tx_downgrade(tx, Workload::Update)? else {
                     return Ok(Err(WriteConflict));
                 };
                 *db_update = DatabaseUpdate::from_writes(&tx_data);
-                (read_tx, Some(tx_data))
+                (read_tx, Some(tx_data), tx_metrics)
             }
             EventStatus::Failed(_) | EventStatus::OutOfEnergy => {
-                (stdb.rollback_mut_tx_downgrade(tx, Workload::Update), None)
+                let (tx_metrics, tx) = stdb.rollback_mut_tx_downgrade(tx, Workload::Update);
+                (tx, None, tx_metrics)
             }
         };
 
-        let read_tx = scopeguard::guard(read_tx, |tx| {
-            self.relational_db.release_tx(tx);
+        // When we're done with this method, release the tx and report metrics.
+        let mut read_tx = scopeguard::guard(read_tx, |tx| {
+            let (tx_metrics_read, reducer) = self.relational_db.release_tx(tx);
+            stdb.report_tx_metricses(&reducer, tx_data.as_ref(), Some(&tx_metrics_mut), &tx_metrics_read);
         });
-
-        let read_tx = tx_data
+        // Create the delta transaction we'll use to eval updates against.
+        let delta_read_tx = tx_data
             .as_ref()
-            .map(|tx_data| DeltaTx::new(&read_tx, tx_data))
+            .map(|tx_data| DeltaTx::new(&read_tx, tx_data, subscriptions.index_ids_for_subscriptions()))
             .unwrap_or_else(|| DeltaTx::from(&*read_tx));
 
         let event = Arc::new(event);
-        let mut metrics = ExecutionMetrics::default();
+        let mut update_metrics: ExecutionMetrics = ExecutionMetrics::default();
 
         match &event.status {
             EventStatus::Committed(_) => {
-                metrics.merge(subscriptions.eval_updates(
-                    &read_tx,
-                    event.clone(),
-                    caller,
-                    &self.relational_db.database_identity(),
-                ));
+                update_metrics = subscriptions.eval_updates_sequential(&delta_read_tx, event.clone(), caller);
             }
             EventStatus::Failed(_) => {
                 if let Some(client) = caller {
@@ -705,7 +907,8 @@ impl ModuleSubscriptions {
                         event: Some(event.clone()),
                         database_update: SubscriptionUpdateMessage::default_for_protocol(client.config.protocol, None),
                     };
-                    let _ = client.send_message(message);
+
+                    let _ = self.broadcast_queue.send_client_message(client, message);
                 } else {
                     log::trace!("Reducer failed but there is no client to send the failure to!")
                 }
@@ -713,7 +916,10 @@ impl ModuleSubscriptions {
             EventStatus::OutOfEnergy => {} // ?
         }
 
-        Ok(Ok((event, metrics)))
+        // Merge in the subscription evaluation metrics.
+        read_tx.metrics.merge(update_metrics);
+
+        Ok(Ok((event, update_metrics)))
     }
 }
 
@@ -726,21 +932,21 @@ mod tests {
         SerializableMessage, SubscriptionData, SubscriptionError, SubscriptionMessage, SubscriptionResult,
         SubscriptionUpdateMessage, TransactionUpdateMessage,
     };
-    use crate::client::{ClientActorId, ClientConfig, ClientConnectionSender, ClientName, Protocol};
+    use crate::client::{ClientActorId, ClientConfig, ClientConnectionSender, ClientName, MeteredReceiver, Protocol};
     use crate::db::datastore::system_tables::{StRowLevelSecurityRow, ST_ROW_LEVEL_SECURITY_ID};
-    use crate::db::datastore::traits::IsolationLevel;
-    use crate::db::relational_db::tests_utils::{insert, TestDB};
+    use crate::db::relational_db::tests_utils::{
+        begin_mut_tx, begin_tx, insert, with_auto_commit, with_read_only, TestDB,
+    };
     use crate::db::relational_db::RelationalDB;
     use crate::error::DBError;
-    use crate::execution_context::Workload;
     use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall};
     use crate::messages::websocket as ws;
-    use crate::subscription::module_subscription_manager::SubscriptionManager;
+    use crate::sql::execute::run;
+    use crate::subscription::module_subscription_manager::{spawn_send_worker, SubscriptionManager};
     use crate::subscription::query::compile_read_only_query;
     use crate::subscription::TableUpdateType;
     use hashbrown::HashMap;
     use itertools::Itertools;
-    use parking_lot::RwLock;
     use pretty_assertions::assert_matches;
     use spacetimedb_client_api_messages::energy::EnergyQuanta;
     use spacetimedb_client_api_messages::websocket::{
@@ -758,15 +964,23 @@ mod tests {
     use spacetimedb_sats::product;
     use std::time::Instant;
     use std::{sync::Arc, time::Duration};
-    use tokio::sync::mpsc::{self, Receiver};
+    use tokio::sync::mpsc::{self};
 
     fn add_subscriber(db: Arc<RelationalDB>, sql: &str, assert: Option<AssertTxFn>) -> Result<(), DBError> {
+        // Create and enter a Tokio runtime to run the `ModuleSubscriptions`' background workers in parallel.
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let _rt = runtime.enter();
         let owner = Identity::from_byte_array([1; 32]);
         let client = ClientActorId::for_test(Identity::ZERO);
         let config = ClientConfig::for_test();
         let sender = Arc::new(ClientConnectionSender::dummy(client, config));
-        let module_subscriptions =
-            ModuleSubscriptions::new(db.clone(), Arc::new(RwLock::new(SubscriptionManager::default())), owner);
+        let send_worker_queue = spawn_send_worker(None);
+        let module_subscriptions = ModuleSubscriptions::new(
+            db.clone(),
+            SubscriptionManager::for_test_without_metrics_arc_rwlock(),
+            send_worker_queue,
+            owner,
+        );
 
         let subscribe = Subscribe {
             query_strings: [sql.into()].into(),
@@ -780,15 +994,6 @@ mod tests {
     fn relational_db() -> anyhow::Result<Arc<RelationalDB>> {
         let TestDB { db, .. } = TestDB::in_memory()?;
         Ok(Arc::new(db))
-    }
-
-    /// Initialize a module [SubscriptionManager]
-    fn module_subscriptions(db: Arc<RelationalDB>) -> ModuleSubscriptions {
-        ModuleSubscriptions::new(
-            db,
-            Arc::new(RwLock::new(SubscriptionManager::default())),
-            Identity::ZERO,
-        )
     }
 
     /// A [SubscribeSingle] message for testing
@@ -867,7 +1072,7 @@ mod tests {
     fn client_connection_with_compression(
         client_id: ClientActorId,
         compression: Compression,
-    ) -> (Arc<ClientConnectionSender>, Receiver<SerializableMessage>) {
+    ) -> (Arc<ClientConnectionSender>, MeteredReceiver<SerializableMessage>) {
         let (sender, rx) = ClientConnectionSender::dummy_with_channel(
             client_id,
             ClientConfig {
@@ -880,7 +1085,9 @@ mod tests {
     }
 
     /// Instantiate a client connection
-    fn client_connection(client_id: ClientActorId) -> (Arc<ClientConnectionSender>, Receiver<SerializableMessage>) {
+    fn client_connection(
+        client_id: ClientActorId,
+    ) -> (Arc<ClientConnectionSender>, MeteredReceiver<SerializableMessage>) {
         client_connection_with_compression(client_id, Compression::None)
     }
 
@@ -890,7 +1097,7 @@ mod tests {
         table_ids: impl IntoIterator<Item = TableId>,
         rules: impl IntoIterator<Item = &'static str>,
     ) -> anyhow::Result<()> {
-        db.with_auto_commit(Workload::ForTests, |tx| {
+        with_auto_commit(db, |tx| {
             for (table_id, sql) in table_ids.into_iter().zip(rules) {
                 db.insert(
                     tx,
@@ -954,7 +1161,7 @@ mod tests {
 
     /// Pull a message from receiver and assert that it is a `TxUpdate` with the expected rows
     async fn assert_tx_update_for_table(
-        rx: &mut Receiver<SerializableMessage>,
+        rx: &mut MeteredReceiver<SerializableMessage>,
         table_id: TableId,
         schema: &ProductType,
         inserts: impl IntoIterator<Item = ProductValue>,
@@ -1037,7 +1244,7 @@ mod tests {
         deletes: impl IntoIterator<Item = (TableId, ProductValue)>,
         inserts: impl IntoIterator<Item = (TableId, ProductValue)>,
     ) -> anyhow::Result<ExecutionMetrics> {
-        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let mut tx = begin_mut_tx(db);
         for (table_id, row) in deletes {
             tx.delete_product_value(table_id, &row)?;
         }
@@ -1057,18 +1264,18 @@ mod tests {
         let (sender, _) = client_connection(client_id);
 
         let db = relational_db()?;
-        let subs = module_subscriptions(db.clone());
+        let (subs, _runtime) = ModuleSubscriptions::for_test_new_runtime(db.clone());
 
         // Create a table `t` with index on `id`
         let table_id = db.create_table_for_test("t", &[("id", AlgebraicType::U64)], &[0.into()])?;
-        db.with_auto_commit(Workload::ForTests, |tx| -> anyhow::Result<_> {
+        with_auto_commit(&db, |tx| -> anyhow::Result<_> {
             db.insert(tx, table_id, &bsatn::to_vec(&product![1_u64])?)?;
             Ok(())
         })?;
 
         let auth = AuthCtx::for_testing();
         let sql = "select * from t where id = 1";
-        let tx = db.begin_tx(Workload::ForTests);
+        let tx = begin_tx(&db);
         let plan = compile_read_only_query(&auth, &tx, sql)?;
         let plan = Arc::new(plan);
 
@@ -1112,7 +1319,7 @@ mod tests {
         let (tx, mut rx) = client_connection(client_id);
 
         let db = relational_db()?;
-        let subs = module_subscriptions(db.clone());
+        let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
 
         db.create_table_for_test("t", &[("x", AlgebraicType::U8)], &[])?;
 
@@ -1132,7 +1339,7 @@ mod tests {
         let (tx, mut rx) = client_connection(client_id);
 
         let db = relational_db()?;
-        let subs = module_subscriptions(db.clone());
+        let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
 
         db.create_table_for_test("t", &[("x", AlgebraicType::U8)], &[])?;
 
@@ -1152,11 +1359,11 @@ mod tests {
         let (tx, mut rx) = client_connection(client_id);
 
         let db = relational_db()?;
-        let subs = module_subscriptions(db.clone());
+        let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
 
         // Create a table `t` with an index on `id`
         let table_id = db.create_table_for_test("t", &[("id", AlgebraicType::U8)], &[0.into()])?;
-        let index_id = db.with_read_only(Workload::ForTests, |tx| {
+        let index_id = with_read_only(&db, |tx| {
             db.schema_for_table(&*tx, table_id).map(|schema| {
                 schema
                     .indexes
@@ -1182,7 +1389,7 @@ mod tests {
         ));
 
         // Remove the index from `id`
-        db.with_auto_commit(Workload::ForTests, |tx| db.drop_index(tx, index_id))?;
+        with_auto_commit(&db, |tx| db.drop_index(tx, index_id))?;
 
         // Unsubscribe from `t`
         unsubscribe_single(&subs, tx, query_id)?;
@@ -1198,17 +1405,19 @@ mod tests {
     }
 
     /// Test that clients receive error messages on unsubscribe
-    #[tokio::test]
+    ///
+    /// Needs a multi-threaded tokio runtime so that the module subscription worker can run in parallel.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     async fn unsubscribe_multi_error() -> anyhow::Result<()> {
         let client_id = client_id_from_u8(1);
         let (tx, mut rx) = client_connection(client_id);
 
         let db = relational_db()?;
-        let subs = module_subscriptions(db.clone());
+        let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
 
         // Create a table `t` with an index on `id`
         let table_id = db.create_table_for_test("t", &[("id", AlgebraicType::U8)], &[0.into()])?;
-        let index_id = db.with_read_only(Workload::ForTests, |tx| {
+        let index_id = with_read_only(&db, |tx| {
             db.schema_for_table(&*tx, table_id).map(|schema| {
                 schema
                     .indexes
@@ -1236,7 +1445,7 @@ mod tests {
         ));
 
         // Remove the index from `id`
-        db.with_auto_commit(Workload::ForTests, |tx| db.drop_index(tx, index_id))?;
+        with_auto_commit(&db, |tx| db.drop_index(tx, index_id))?;
 
         // Unsubscribe from `t`
         unsubscribe_multi(&subs, tx, query_id)?;
@@ -1251,19 +1460,19 @@ mod tests {
         Ok(())
     }
 
-    /// Test that clients receieve error messages on tx updates
+    /// Test that clients receive error messages on tx updates
     #[tokio::test]
     async fn tx_update_error() -> anyhow::Result<()> {
         let client_id = client_id_from_u8(1);
         let (tx, mut rx) = client_connection(client_id);
 
         let db = relational_db()?;
-        let subs = module_subscriptions(db.clone());
+        let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
 
         // Create two tables `t` and `s` with indexes on their `id` columns
         let t_id = db.create_table_for_test("t", &[("id", AlgebraicType::U8)], &[0.into()])?;
         let s_id = db.create_table_for_test("s", &[("id", AlgebraicType::U8)], &[0.into()])?;
-        let index_id = db.with_read_only(Workload::ForTests, |tx| {
+        let index_id = with_read_only(&db, |tx| {
             db.schema_for_table(&*tx, s_id).map(|schema| {
                 schema
                     .indexes
@@ -1285,10 +1494,10 @@ mod tests {
         ));
 
         // Remove the index from `s`
-        db.with_auto_commit(Workload::ForTests, |tx| db.drop_index(tx, index_id))?;
+        with_auto_commit(&db, |tx| db.drop_index(tx, index_id))?;
 
         // Start a new transaction and insert a new row into `t`
-        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let mut tx = begin_mut_tx(&db);
         db.insert(&mut tx, t_id, &bsatn::to_vec(&product![2_u8])?)?;
 
         assert!(matches!(
@@ -1321,7 +1530,7 @@ mod tests {
         let (tx_for_b, mut rx_for_b) = client_connection(client_id_for_b);
 
         let db = relational_db()?;
-        let subs = module_subscriptions(db.clone());
+        let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
 
         let schema = [("identity", AlgebraicType::identity())];
 
@@ -1355,7 +1564,7 @@ mod tests {
         ));
 
         // Insert two identities - one for each caller - into the table
-        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let mut tx = begin_mut_tx(&db);
         db.insert(&mut tx, table_id, &bsatn::to_vec(&product![id_for_a])?)?;
         db.insert(&mut tx, table_id, &bsatn::to_vec(&product![id_for_b])?)?;
 
@@ -1387,7 +1596,7 @@ mod tests {
         let (tx_for_b, mut rx_for_b) = client_connection(client_id_for_b);
 
         let db = relational_db()?;
-        let subs = module_subscriptions(db.clone());
+        let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
 
         let schema = [("id", AlgebraicType::identity())];
 
@@ -1427,7 +1636,7 @@ mod tests {
         // Insert a row into `u` for client "a".
         // Insert a row into `v` for client "b".
         // Insert a row into `w` for both.
-        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let mut tx = begin_mut_tx(&db);
         db.insert(&mut tx, u_id, &bsatn::to_vec(&product![id_for_a])?)?;
         db.insert(&mut tx, v_id, &bsatn::to_vec(&product![id_for_b])?)?;
         db.insert(&mut tx, w_id, &bsatn::to_vec(&product![id_for_a])?)?;
@@ -1446,6 +1655,83 @@ mod tests {
         Ok(())
     }
 
+    /// Test that a client and the database owner can subscribe to the same query
+    #[tokio::test]
+    async fn test_rls_for_owner() -> anyhow::Result<()> {
+        // Establish a connection for owner and client
+        let (tx_for_a, mut rx_for_a) = client_connection(client_id_from_u8(0));
+        let (tx_for_b, mut rx_for_b) = client_connection(client_id_from_u8(1));
+
+        let db = relational_db()?;
+        let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
+
+        // Create table `t`
+        let table_id = db.create_table_for_test("t", &[("id", AlgebraicType::identity())], &[0.into()])?;
+
+        // Restrict access to `t`
+        insert_rls_rules(&db, [table_id], ["select * from t where id = :sender"])?;
+
+        let mut query_ids = 0;
+
+        // Have owner and client subscribe to `t`
+        subscribe_multi(&subs, &["select * from t"], tx_for_a, &mut query_ids)?;
+        subscribe_multi(&subs, &["select * from t"], tx_for_b, &mut query_ids)?;
+
+        // Wait for both subscriptions
+        assert_matches!(
+            rx_for_a.recv().await,
+            Some(SerializableMessage::Subscription(SubscriptionMessage {
+                result: SubscriptionResult::SubscribeMulti(_),
+                ..
+            }))
+        );
+        assert_matches!(
+            rx_for_b.recv().await,
+            Some(SerializableMessage::Subscription(SubscriptionMessage {
+                result: SubscriptionResult::SubscribeMulti(_),
+                ..
+            }))
+        );
+
+        let schema = ProductType::from([AlgebraicType::identity()]);
+
+        let id_for_b = identity_from_u8(1);
+        let id_for_c = identity_from_u8(2);
+
+        commit_tx(
+            &db,
+            &subs,
+            [],
+            [
+                // Insert an identity for client `b` plus a random identity
+                (table_id, product![id_for_b]),
+                (table_id, product![id_for_c]),
+            ],
+        )?;
+
+        assert_tx_update_for_table(
+            &mut rx_for_a,
+            table_id,
+            &schema,
+            // The owner should receive both identities
+            [product![id_for_b], product![id_for_c]],
+            [],
+        )
+        .await;
+
+        assert_tx_update_for_table(
+            &mut rx_for_b,
+            table_id,
+            &schema,
+            // Client `b` should only receive its identity
+            [product![id_for_b]],
+            [],
+        )
+        .await;
+
+        Ok(())
+    }
+
     /// Test that we do not send empty updates to clients
     #[tokio::test]
     async fn test_no_empty_updates() -> anyhow::Result<()> {
@@ -1453,7 +1739,7 @@ mod tests {
         let (tx, mut rx) = client_connection(client_id_from_u8(1));
 
         let db = relational_db()?;
-        let subs = module_subscriptions(db.clone());
+        let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
 
         let schema = [("x", AlgebraicType::U8)];
 
@@ -1466,7 +1752,7 @@ mod tests {
         assert!(matches!(rx.recv().await, Some(SerializableMessage::Subscription(_))));
 
         // Insert a row that does not match the query
-        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let mut tx = begin_mut_tx(&db);
         db.insert(&mut tx, t_id, &bsatn::to_vec(&product![1_u8])?)?;
 
         assert!(matches!(
@@ -1475,7 +1761,7 @@ mod tests {
         ));
 
         // Insert a row that does match the query
-        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let mut tx = begin_mut_tx(&db);
         db.insert(&mut tx, t_id, &bsatn::to_vec(&product![0_u8])?)?;
 
         assert!(matches!(
@@ -1494,13 +1780,15 @@ mod tests {
     /// Test that we do not compress within a [SubscriptionMessage].
     /// The message itself is compressed before being sent over the wire,
     /// but we don't care about that for this test.
-    #[tokio::test]
+    ///
+    /// Needs a multi-threaded tokio runtime so that the module subscription worker can run in parallel.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     async fn test_no_compression_for_subscribe() -> anyhow::Result<()> {
         // Establish a client connection with compression
         let (tx, mut rx) = client_connection_with_compression(client_id_from_u8(1), Compression::Brotli);
 
         let db = relational_db()?;
-        let subs = module_subscriptions(db.clone());
+        let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
 
         let table_id = db.create_table_for_test("t", &[("x", AlgebraicType::U64)], &[])?;
 
@@ -1537,6 +1825,51 @@ mod tests {
         Ok(())
     }
 
+    /// Test that we receive subscription updates for DML
+    #[tokio::test]
+    async fn test_updates_for_dml() -> anyhow::Result<()> {
+        // Establish a client connection
+        let (tx, mut rx) = client_connection(client_id_from_u8(1));
+
+        let db = relational_db()?;
+        let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
+        let schema = [("x", AlgebraicType::U8), ("y", AlgebraicType::U8)];
+        let t_id = db.create_table_for_test("t", &schema, &[])?;
+
+        // Subscribe to `t`
+        subscribe_multi(&subs, &["select * from t"], tx, &mut 0)?;
+
+        // Wait to receive the initial subscription message
+        assert_matches!(rx.recv().await, Some(SerializableMessage::Subscription(_)));
+
+        let schema = ProductType::from([AlgebraicType::U8, AlgebraicType::U8]);
+
+        // Only the owner can invoke DML commands
+        let auth = AuthCtx::new(identity_from_u8(0), identity_from_u8(0));
+
+        run(
+            &db,
+            "INSERT INTO t (x, y) VALUES (0, 1)",
+            auth,
+            Some(&subs),
+            &mut vec![],
+        )?;
+
+        // Client should receive insert
+        assert_tx_update_for_table(&mut rx, t_id, &schema, [product![0_u8, 1_u8]], []).await;
+
+        run(&db, "UPDATE t SET y=2 WHERE x=0", auth, Some(&subs), &mut vec![])?;
+
+        // Client should receive update
+        assert_tx_update_for_table(&mut rx, t_id, &schema, [product![0_u8, 2_u8]], [product![0_u8, 1_u8]]).await;
+
+        run(&db, "DELETE FROM t WHERE x=0", auth, Some(&subs), &mut vec![])?;
+
+        // Client should receive delete
+        assert_tx_update_for_table(&mut rx, t_id, &schema, [], [product![0_u8, 2_u8]]).await;
+        Ok(())
+    }
+
     /// Test that we do not compress within a [TransactionUpdateMessage].
     /// The message itself is compressed before being sent over the wire,
     /// but we don't care about that for this test.
@@ -1546,7 +1879,7 @@ mod tests {
         let (tx, mut rx) = client_connection_with_compression(client_id_from_u8(1), Compression::Brotli);
 
         let db = relational_db()?;
-        let subs = module_subscriptions(db.clone());
+        let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
 
         let table_id = db.create_table_for_test("t", &[("x", AlgebraicType::U64)], &[])?;
 
@@ -1596,7 +1929,7 @@ mod tests {
             let (sender, mut rx) = client_connection(client_id_from_u8(1));
 
             let db = relational_db()?;
-            let subs = module_subscriptions(db.clone());
+            let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
 
             let p_schema = [("id", AlgebraicType::U64), ("signed_in", AlgebraicType::Bool)];
             let l_schema = [
@@ -1701,14 +2034,16 @@ mod tests {
     }
 
     /// Test that we do not evaluate queries that we know will not match table update rows
-    #[tokio::test]
+    ///
+    /// Needs a multi-threaded tokio runtime so that the module subscription worker can run in parallel.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     async fn test_query_pruning() -> anyhow::Result<()> {
         // Establish a connection for each client
         let (tx_for_a, mut rx_for_a) = client_connection(client_id_from_u8(1));
         let (tx_for_b, mut rx_for_b) = client_connection(client_id_from_u8(2));
 
         let db = relational_db()?;
-        let subs = module_subscriptions(db.clone());
+        let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
 
         let u_id = db.create_table_for_test(
             "u",
@@ -1841,14 +2176,274 @@ mod tests {
         Ok(())
     }
 
-    /// Test that we do not evaluate queries that return trivially empty results
+    /// Test that we do not evaluate queries that we know will not match row updates
     #[tokio::test]
+    async fn test_join_pruning() -> anyhow::Result<()> {
+        let (tx, mut rx) = client_connection(client_id_from_u8(1));
+
+        let db = relational_db()?;
+        let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
+
+        let u_id = db.create_table_for_test_with_the_works(
+            "u",
+            &[
+                ("i", AlgebraicType::U64),
+                ("a", AlgebraicType::U64),
+                ("b", AlgebraicType::U64),
+            ],
+            &[0.into()],
+            // The join column for this table does not have to be unique,
+            // because pruning only requires us to probe the join index on `v`.
+            &[],
+            StAccess::Public,
+        )?;
+        let v_id = db.create_table_for_test_with_the_works(
+            "v",
+            &[
+                ("i", AlgebraicType::U64),
+                ("x", AlgebraicType::U64),
+                ("y", AlgebraicType::U64),
+            ],
+            &[0.into(), 1.into()],
+            &[0.into()],
+            StAccess::Public,
+        )?;
+
+        let schema = ProductType::from([AlgebraicType::U64, AlgebraicType::U64, AlgebraicType::U64]);
+
+        commit_tx(
+            &db,
+            &subs,
+            [],
+            [
+                (v_id, product![1u64, 1u64, 1u64]),
+                (v_id, product![2u64, 2u64, 2u64]),
+                (v_id, product![3u64, 3u64, 3u64]),
+                (v_id, product![4u64, 4u64, 4u64]),
+                (v_id, product![5u64, 5u64, 5u64]),
+            ],
+        )?;
+
+        let mut query_ids = 0;
+
+        subscribe_multi(
+            &subs,
+            &[
+                "select u.* from u join v on u.i = v.i where v.x = 1",
+                "select u.* from u join v on u.i = v.i where v.x = 2",
+                "select u.* from u join v on u.i = v.i where v.x = 3",
+                "select u.* from u join v on u.i = v.i where v.x = 4",
+                "select u.* from u join v on u.i = v.i where v.x = 5",
+            ],
+            tx,
+            &mut query_ids,
+        )?;
+
+        assert_matches!(
+            rx.recv().await,
+            Some(SerializableMessage::Subscription(SubscriptionMessage {
+                result: SubscriptionResult::SubscribeMulti(_),
+                ..
+            }))
+        );
+
+        // Insert a new row into `u` that joins with `x = 1`
+        let metrics = commit_tx(&db, &subs, [], [(u_id, product![1u64, 2u64, 3u64])])?;
+
+        assert_tx_update_for_table(&mut rx, u_id, &schema, [product![1u64, 2u64, 3u64]], []).await;
+
+        // We should only have evaluated a single query
+        assert_eq!(metrics.delta_queries_evaluated, 1);
+        assert_eq!(metrics.delta_queries_matched, 1);
+
+        // UPDATE v SET y = 2 WHERE id = 1
+        let metrics = commit_tx(
+            &db,
+            &subs,
+            [(v_id, product![1u64, 1u64, 1u64])],
+            [(v_id, product![1u64, 1u64, 2u64])],
+        )?;
+
+        // We should only have evaluated a single query
+        assert_eq!(metrics.delta_queries_evaluated, 1);
+        assert_eq!(metrics.delta_queries_matched, 0);
+
+        // UPDATE v SET x = 2 WHERE id = 1
+        let metrics = commit_tx(
+            &db,
+            &subs,
+            [(v_id, product![1u64, 1u64, 2u64])],
+            [(v_id, product![1u64, 2u64, 2u64])],
+        )?;
+
+        // Results in a no-op
+        assert_tx_update_for_table(&mut rx, u_id, &schema, [], []).await;
+
+        // We should have evaluated queries for `x = 1` and `x = 2`
+        assert_eq!(metrics.delta_queries_evaluated, 2);
+        assert_eq!(metrics.delta_queries_matched, 2);
+
+        // Insert new row into `u` that joins with `x = 3`
+        // UPDATE v SET x = 4 WHERE id = 3
+        let metrics = commit_tx(
+            &db,
+            &subs,
+            [(v_id, product![3u64, 3u64, 3u64])],
+            [(v_id, product![3u64, 4u64, 3u64]), (u_id, product![3u64, 4u64, 5u64])],
+        )?;
+
+        assert_tx_update_for_table(&mut rx, u_id, &schema, [product![3u64, 4u64, 5u64]], []).await;
+
+        // We should have evaluated queries for `x = 3` and `x = 4`
+        assert_eq!(metrics.delta_queries_evaluated, 2);
+        assert_eq!(metrics.delta_queries_matched, 2);
+
+        // UPDATE v SET x = 0 WHERE id = 3
+        let metrics = commit_tx(
+            &db,
+            &subs,
+            [(v_id, product![3u64, 4u64, 3u64])],
+            [(v_id, product![3u64, 0u64, 3u64])],
+        )?;
+
+        assert_tx_update_for_table(&mut rx, u_id, &schema, [], [product![3u64, 4u64, 5u64]]).await;
+
+        // We should only have evaluated the query for `x = 4`
+        assert_eq!(metrics.delta_queries_evaluated, 1);
+        assert_eq!(metrics.delta_queries_matched, 1);
+
+        // Insert new row into `u` that joins with `x = 5`
+        // UPDATE v SET x = 6 WHERE id = 5
+        let metrics = commit_tx(
+            &db,
+            &subs,
+            [(v_id, product![5u64, 5u64, 5u64])],
+            [(v_id, product![5u64, 6u64, 6u64]), (u_id, product![5u64, 6u64, 7u64])],
+        )?;
+
+        // Results in a no-op
+        assert_tx_update_for_table(&mut rx, u_id, &schema, [], []).await;
+
+        // We should only have evaluated the query for `x = 5`
+        assert_eq!(metrics.delta_queries_evaluated, 1);
+        assert_eq!(metrics.delta_queries_matched, 1);
+
+        Ok(())
+    }
+
+    /// Test that one client unsubscribing does not affect another
+    #[tokio::test]
+    async fn test_unsubscribe() -> anyhow::Result<()> {
+        // Establish a connection for each client
+        let (tx_for_a, mut rx_for_a) = client_connection(client_id_from_u8(1));
+        let (tx_for_b, mut rx_for_b) = client_connection(client_id_from_u8(2));
+
+        let db = relational_db()?;
+        let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
+
+        let u_id = db.create_table_for_test(
+            "u",
+            &[
+                ("i", AlgebraicType::U64),
+                ("a", AlgebraicType::U64),
+                ("b", AlgebraicType::U64),
+            ],
+            &[0.into()],
+        )?;
+        let v_id = db.create_table_for_test(
+            "v",
+            &[
+                ("i", AlgebraicType::U64),
+                ("x", AlgebraicType::U64),
+                ("y", AlgebraicType::U64),
+            ],
+            &[0.into(), 1.into()],
+        )?;
+
+        commit_tx(&db, &subs, [], [(v_id, product![1u64, 1u64, 1u64])])?;
+
+        let mut query_ids = 0;
+
+        subscribe_multi(
+            &subs,
+            &["select u.* from u join v on u.i = v.i where v.x = 1"],
+            tx_for_a,
+            &mut query_ids,
+        )?;
+        subscribe_multi(
+            &subs,
+            &["select u.* from u join v on u.i = v.i where v.x = 1"],
+            tx_for_b.clone(),
+            &mut query_ids,
+        )?;
+
+        // Wait for both subscriptions
+        assert_matches!(
+            rx_for_a.recv().await,
+            Some(SerializableMessage::Subscription(SubscriptionMessage {
+                result: SubscriptionResult::SubscribeMulti(_),
+                ..
+            }))
+        );
+        assert_matches!(
+            rx_for_b.recv().await,
+            Some(SerializableMessage::Subscription(SubscriptionMessage {
+                result: SubscriptionResult::SubscribeMulti(_),
+                ..
+            }))
+        );
+
+        unsubscribe_multi(&subs, tx_for_b, query_ids)?;
+
+        assert_matches!(
+            rx_for_b.recv().await,
+            Some(SerializableMessage::Subscription(SubscriptionMessage {
+                result: SubscriptionResult::UnsubscribeMulti(_),
+                ..
+            }))
+        );
+
+        // Insert a new row into `u`
+        let metrics = commit_tx(&db, &subs, [], [(u_id, product![1u64, 0u64, 0u64])])?;
+
+        assert_tx_update_for_table(
+            &mut rx_for_a,
+            u_id,
+            &ProductType::from([AlgebraicType::U64, AlgebraicType::U64, AlgebraicType::U64]),
+            [product![1u64, 0u64, 0u64]],
+            [],
+        )
+        .await;
+
+        // We should only have evaluated a single query
+        assert_eq!(metrics.delta_queries_evaluated, 1);
+        assert_eq!(metrics.delta_queries_matched, 1);
+
+        // Modify a matching row in `v`
+        let metrics = commit_tx(
+            &db,
+            &subs,
+            [(v_id, product![1u64, 1u64, 1u64])],
+            [(v_id, product![1u64, 2u64, 2u64])],
+        )?;
+
+        // We should only have evaluated a single query
+        assert_eq!(metrics.delta_queries_evaluated, 1);
+        assert_eq!(metrics.delta_queries_matched, 1);
+
+        Ok(())
+    }
+
+    /// Test that we do not evaluate queries that return trivially empty results
+    ///
+    /// Needs a multi-threaded tokio runtime so that the module subscription worker can run in parallel.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     async fn test_query_pruning_for_empty_tables() -> anyhow::Result<()> {
         // Establish a client connection
         let (tx, mut rx) = client_connection(client_id_from_u8(1));
 
         let db = relational_db()?;
-        let subs = module_subscriptions(db.clone());
+        let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
 
         let schema = &[("id", AlgebraicType::U64), ("a", AlgebraicType::U64)];
         let indices = &[0.into()];
@@ -1895,9 +2490,7 @@ mod tests {
 
         // Create table with one row
         let table_id = db.create_table_for_test("T", &[("a", AlgebraicType::U8)], &[])?;
-        db.with_auto_commit(Workload::ForTests, |tx| {
-            insert(&db, tx, table_id, &product!(1_u8)).map(drop)
-        })?;
+        with_auto_commit(&db, |tx| insert(&db, tx, table_id, &product!(1_u8)).map(drop))?;
 
         let (send, mut recv) = mpsc::unbounded_channel();
 
@@ -1923,9 +2516,7 @@ mod tests {
         // Write a second row to T concurrently with the reader thread
         let write_handle = runtime.spawn(async move {
             let _ = recv.recv().await;
-            db2.with_auto_commit(Workload::ForTests, |tx| {
-                insert(&db2, tx, table_id, &product!(2_u8)).map(drop)
-            })
+            with_auto_commit(&db2, |tx| insert(&db2, tx, table_id, &product!(2_u8)).map(drop))
         });
 
         runtime.block_on(write_handle)??;

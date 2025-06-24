@@ -7,7 +7,7 @@ use std::num::NonZeroU16;
 use std::time::Instant;
 
 use super::{scheduler::ScheduleError, AbiCall};
-use crate::error::{DBError, IndexError, NodesError};
+use crate::error::{DBError, DatastoreError, IndexError, NodesError};
 use spacetimedb_primitives::errno;
 use spacetimedb_sats::typespace::TypeRefError;
 use spacetimedb_table::table::UniqueConstraintViolation;
@@ -348,12 +348,14 @@ pub fn err_to_errno(err: &NodesError) -> Option<NonZeroU16> {
         NodesError::ScheduleError(ScheduleError::DelayTooLong(_)) => Some(errno::SCHEDULE_AT_DELAY_TOO_LONG),
         NodesError::AlreadyExists(_) => Some(errno::UNIQUE_ALREADY_EXISTS),
         NodesError::Internal(internal) => match **internal {
-            DBError::Index(IndexError::UniqueConstraintViolation(UniqueConstraintViolation {
-                constraint_name: _,
-                table_name: _,
-                cols: _,
-                value: _,
-            })) => Some(errno::UNIQUE_ALREADY_EXISTS),
+            DBError::Datastore(DatastoreError::Index(IndexError::UniqueConstraintViolation(
+                UniqueConstraintViolation {
+                    constraint_name: _,
+                    table_name: _,
+                    cols: _,
+                    value: _,
+                },
+            ))) => Some(errno::UNIQUE_ALREADY_EXISTS),
             _ => None,
         },
         _ => None,

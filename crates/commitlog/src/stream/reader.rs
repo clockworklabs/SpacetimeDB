@@ -3,7 +3,7 @@ use std::{io::SeekFrom, ops::RangeBounds};
 use async_stream::try_stream;
 use bytes::{Buf as _, Bytes};
 use futures::Stream;
-use log::{debug, trace, warn};
+use log::{trace, warn};
 use tokio::{
     io::{self, AsyncBufRead, AsyncReadExt as _, AsyncSeek, AsyncSeekExt as _},
     task::spawn_blocking,
@@ -12,6 +12,8 @@ use tokio_util::io::SyncIoBridge;
 
 use crate::{
     commit,
+    error::source_chain,
+    index::IndexError,
     repo::Repo,
     segment::{self, seek_to_offset, CHECKSUM_LEN},
 };
@@ -83,13 +85,23 @@ fn read_segment(
             segment = spawn_blocking(move || {
                 let mut segment = SyncIoBridge::new(segment);
                 if let Ok(offset_index) = repo.get_offset_index(segment_start) {
-                    debug!("seek_to_offset segment={} start={}", segment_start, range.start);
+                    trace!("seek_to_offset segment={} start={}", segment_start, range.start);
                     seek_to_offset(&mut segment, &offset_index, range.start)
-                        .inspect_err(|e| {
-                            warn!(
-                                "error seeking to offset {} in segment {}: {}",
-                                range.start, segment_start, e
-                            )
+                        .inspect_err(|e| match e {
+                            IndexError::KeyNotFound =>
+                                trace!(
+                                    "offset not found segment={} offset={}",
+                                    segment_start, range.start
+                                ),
+                            e => {
+                                warn!(
+                                    "error reading index segment={} offset={}: {} {}",
+                                    segment_start,
+                                    range.start,
+                                    e,
+                                    source_chain(&e)
+                                )
+                            }
                         })
                         .ok();
                 }

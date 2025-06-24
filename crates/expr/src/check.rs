@@ -362,7 +362,7 @@ mod tests {
         ] {
             let sql = format!("select * from t where {ty} = 127");
             let result = parse_and_type_sub(&sql, &tx);
-            assert!(result.is_ok(), "Faild to parse {ty}: {}", result.unwrap_err());
+            assert!(result.is_ok(), "Failed to parse {ty}: {}", result.unwrap_err());
         }
     }
 

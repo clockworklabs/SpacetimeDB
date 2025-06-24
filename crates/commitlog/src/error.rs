@@ -72,3 +72,17 @@ pub enum SegmentMetadata {
     #[error(transparent)]
     Io(#[from] io::Error),
 }
+
+/// Recursively concatenate `e.source()`, separated by ": ".
+pub(crate) fn source_chain(e: &impl std::error::Error) -> String {
+    let mut s = String::new();
+    let mut source = e.source();
+    while let Some(cause) = source {
+        s.push(':');
+        s.push(' ');
+        s.push_str(&cause.to_string());
+        source = cause.source()
+    }
+
+    s
+}

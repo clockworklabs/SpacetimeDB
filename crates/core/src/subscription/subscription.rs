@@ -32,7 +32,6 @@ use crate::sql::ast::SchemaViewer;
 use crate::vm::{build_query, TxMode};
 use anyhow::Context;
 use itertools::Either;
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use spacetimedb_client_api_messages::websocket::{Compression, WebsocketFormat};
 use spacetimedb_data_structures::map::HashSet;
 use spacetimedb_lib::db::auth::{StAccess, StTableType};
@@ -299,7 +298,7 @@ impl IncrementalJoin {
     /// B(t) refers to the state of table B as of transaction t.
     /// In particular, B(t) includes all of the changes from t.
     /// B(s) refers to the state of table B as of transaction s,
-    /// where s is the transaction immediately preceeding t.
+    /// where s is the transaction immediately preceding t.
     ///
     /// Now we may ask,
     /// given a set of updates to tables A and/or B,
@@ -316,7 +315,7 @@ impl IncrementalJoin {
     /// Because they have no bearing on newly inserted rows of A.
     ///
     /// Now consider rows that were deleted from A.
-    /// Similary we want to know if they join with any deleted rows of B,
+    /// Similarly we want to know if they join with any deleted rows of B,
     /// or if they join with any previously existing rows of B.
     /// That is:
     ///
@@ -523,7 +522,7 @@ impl ExecutionSet {
         let tables = self
             .exec_units
             // if you need eval to run single-threaded for debugging, change this to .iter()
-            .par_iter()
+            .iter()
             .filter_map(|unit| unit.eval(db, tx, &unit.sql, slow_query_threshold, compression))
             .collect();
         ws::DatabaseUpdate { tables }
@@ -615,13 +614,25 @@ pub(crate) fn get_all(relational_db: &RelationalDB, tx: &Tx, auth: &AuthCtx) -> 
         .get_all_tables(tx)?
         .iter()
         .map(Deref::deref)
-        .filter(|t| {
-            t.table_type == StTableType::User && (auth.owner == auth.caller || t.table_access == StAccess::Public)
-        })
+        .filter(|t| t.table_type == StTableType::User && (auth.is_owner() || t.table_access == StAccess::Public))
         .map(|schema| {
             let sql = format!("SELECT * FROM {}", schema.table_name);
-            SubscriptionPlan::compile(&sql, &SchemaViewer::new(tx, auth), auth)
-                .map(|(plans, has_param)| Plan::new(plans, QueryHash::from_string(&sql, auth.caller, has_param), sql))
+            let tx = SchemaViewer::new(tx, auth);
+            SubscriptionPlan::compile(&sql, &tx, auth).map(|(plans, has_param)| {
+                Plan::new(
+                    plans,
+                    QueryHash::from_string(
+                        &sql,
+                        auth.caller,
+                        // Note that when generating hashes for queries from owners,
+                        // we always treat them as if they were parameterized by :sender.
+                        // This is because RLS is not applicable to owners.
+                        // Hence owner hashes must never overlap with client hashes.
+                        auth.is_owner() || has_param,
+                    ),
+                    sql,
+                )
+            })
         })
         .collect::<Result<_, _>>()?)
 }
@@ -639,9 +650,7 @@ pub(crate) fn legacy_get_all(
         .get_all_tables(tx)?
         .iter()
         .map(Deref::deref)
-        .filter(|t| {
-            t.table_type == StTableType::User && (auth.owner == auth.caller || t.table_access == StAccess::Public)
-        })
+        .filter(|t| t.table_type == StTableType::User && (auth.is_owner() || t.table_access == StAccess::Public))
         .map(|src| SupportedQuery {
             kind: query::Supported::Select,
             expr: QueryExpr::new(src),
@@ -653,8 +662,7 @@ pub(crate) fn legacy_get_all(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::relational_db::tests_utils::TestDB;
-    use crate::execution_context::Workload;
+    use crate::db::relational_db::tests_utils::{begin_tx, TestDB};
     use crate::sql::compiler::compile_sql;
     use spacetimedb_lib::relation::DbTable;
     use spacetimedb_lib::{error::ResultTest, identity::AuthCtx};
@@ -681,7 +689,7 @@ mod tests {
         let indexes = &[0.into(), 1.into()];
         let rhs_id = db.create_table_for_test("rhs", schema, indexes)?;
 
-        let tx = db.begin_tx(Workload::ForTests);
+        let tx = begin_tx(&db);
         // Should generate an index join since there is an index on `lhs.b`.
         // Should push the sargable range condition into the index join's probe side.
         let sql = "select lhs.* from lhs join rhs on lhs.b = rhs.b where rhs.c > 2 and rhs.c < 4 and rhs.d = 3";
@@ -761,7 +769,7 @@ mod tests {
         let indexes = &[0.into(), 1.into()];
         let _ = db.create_table_for_test("rhs", schema, indexes)?;
 
-        let tx = db.begin_tx(Workload::ForTests);
+        let tx = begin_tx(&db);
         // Should generate an index join since there is an index on `lhs.b`.
         // Should push the sargable range condition into the index join's probe side.
         let sql = "select lhs.* from lhs join rhs on lhs.b = rhs.b where rhs.c > 2 and rhs.c < 4 and rhs.d = 3";
@@ -845,7 +853,7 @@ mod tests {
             .create_table_for_test("rhs", schema, indexes)
             .expect("Failed to create_table_for_test rhs");
 
-        let tx = db.begin_tx(Workload::ForTests);
+        let tx = begin_tx(&db);
 
         // Should generate an index join since there is an index on `lhs.b`.
         // Should push the sargable range condition into the index join's probe side.

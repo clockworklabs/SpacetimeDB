@@ -49,6 +49,13 @@ pub fn cli() -> clap::Command {
                 .help("The system path (absolute or relative) to the compiled wasm binary we should publish, instead of building the project."),
         )
         .arg(
+            Arg::new("num_replicas")
+                .value_parser(clap::value_parser!(u8))
+                .long("num-replicas")
+                .hide(true)
+                .help("UNSTABLE: The number of replicas the database should have")
+        )
+        .arg(
             common_args::anonymous()
         )
         .arg(
@@ -79,6 +86,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let wasm_file = args.get_one::<PathBuf>("wasm_file");
     let database_host = config.get_host_url(server)?;
     let build_options = args.get_one::<String>("build_options").unwrap();
+    let num_replicas = args.get_one::<u8>("num_replicas");
 
     // If the user didn't specify an identity and we didn't specify an anonymous identity, then
     // we want to use the default identity
@@ -151,6 +159,10 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             return Ok(());
         }
         builder = builder.query(&[("clear", true)]);
+    }
+    if let Some(n) = num_replicas {
+        eprintln!("WARNING: Use of unstable option `--num-replicas`.\n");
+        builder = builder.query(&[("num_replicas", *n)]);
     }
 
     println!("Publishing module...");

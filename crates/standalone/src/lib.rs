@@ -20,6 +20,7 @@ use spacetimedb::host::{
 };
 use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, Node, Replica};
+use spacetimedb::util::jobs::JobCores;
 use spacetimedb::worker_metrics::WORKER_METRICS;
 use spacetimedb_client_api::auth::{self, LOCALHOST};
 use spacetimedb_client_api::{Host, NodeDelegate};
@@ -46,6 +47,7 @@ impl StandaloneEnv {
         config: Config,
         certs: &CertificateAuthority,
         data_dir: Arc<ServerDataDir>,
+        db_cores: JobCores,
     ) -> anyhow::Result<Arc<Self>> {
         let _pid_file = data_dir.pid_file()?;
         let meta_path = data_dir.metadata_toml();
@@ -68,6 +70,7 @@ impl StandaloneEnv {
             program_store.clone(),
             energy_monitor,
             durability_provider,
+            db_cores,
         );
         let client_actor_index = ClientActorIndex::new();
         let jwt_keys = certs.get_or_create_keys()?;
@@ -230,6 +233,9 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
     ) -> anyhow::Result<Option<UpdateDatabaseResult>> {
         let existing_db = self.control_db.get_database_by_identity(&spec.database_identity)?;
 
+        // standalone does not support replication.
+        let num_replicas = 1;
+
         match existing_db {
             // The database does not already exist, so we'll create it.
             None => {
@@ -258,7 +264,7 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
                 let database_id = self.control_db.insert_database(database.clone())?;
                 database.id = database_id;
 
-                self.schedule_replicas(database_id, spec.num_replicas).await?;
+                self.schedule_replicas(database_id, num_replicas).await?;
 
                 Ok(None)
             }
@@ -275,7 +281,6 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
                 let database_id = database.id;
                 let database_identity = database.database_identity;
 
-                let num_replicas = spec.num_replicas;
                 let leader = self
                     .leader(database_id)
                     .await?
@@ -416,7 +421,7 @@ impl StandaloneEnv {
         Ok(())
     }
 
-    async fn schedule_replicas(&self, database_id: u64, num_replicas: u32) -> Result<(), anyhow::Error> {
+    async fn schedule_replicas(&self, database_id: u64, num_replicas: u8) -> Result<(), anyhow::Error> {
         // Just scheduling a bunch of replicas to the only machine
         for i in 0..num_replicas {
             let replica = Replica {
@@ -459,9 +464,9 @@ impl StandaloneEnv {
     }
 }
 
-pub async fn exec_subcommand(cmd: &str, args: &ArgMatches) -> Result<(), anyhow::Error> {
+pub async fn exec_subcommand(cmd: &str, args: &ArgMatches, db_cores: JobCores) -> Result<(), anyhow::Error> {
     match cmd {
-        "start" => start::exec(args).await,
+        "start" => start::exec(args, db_cores).await,
         "extract-schema" => extract_schema::exec(args).await,
         unknown => Err(anyhow::anyhow!("Invalid subcommand: {}", unknown)),
     }
@@ -477,7 +482,7 @@ pub async fn start_server(data_dir: &ServerDataDir, cert_dir: Option<&std::path:
         args.extend(["--jwt-key-dir".as_ref(), cert_dir.as_os_str()])
     }
     let args = start::cli().try_get_matches_from(args)?;
-    start::exec(&args).await
+    start::exec(&args, JobCores::default()).await
 }
 
 #[cfg(test)]
@@ -514,9 +519,11 @@ mod tests {
             page_pool_max_size: None,
         };
 
-        let _env = StandaloneEnv::init(config, &ca, data_dir.clone()).await?;
+        let _env = StandaloneEnv::init(config, &ca, data_dir.clone(), Default::default()).await?;
         // Ensure that we have a lock.
-        assert!(StandaloneEnv::init(config, &ca, data_dir.clone()).await.is_err());
+        assert!(StandaloneEnv::init(config, &ca, data_dir.clone(), Default::default())
+            .await
+            .is_err());
 
         Ok(())
     }

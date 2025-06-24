@@ -219,6 +219,11 @@ fn send_message(ctx: &ReducerContext, text: String) {
         super().setUpClass()
         cls.root_config = cls.project_path / "root_config"
 
+    def tearDown(self):
+        # Ensure containers that were brought down during a test are back up.
+        self.docker.compose("up", "-d")
+        super().tearDown()
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 

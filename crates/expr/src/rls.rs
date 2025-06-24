@@ -18,7 +18,7 @@ pub fn resolve_views_for_sub(
     has_param: &mut bool,
 ) -> anyhow::Result<Vec<ProjectName>> {
     // RLS does not apply to the database owner
-    if auth.caller == auth.owner {
+    if auth.is_owner() {
         return Ok(vec![expr]);
     }
 
@@ -56,7 +56,7 @@ pub fn resolve_views_for_sub(
 /// Mainly a wrapper around [resolve_views_for_expr].
 pub fn resolve_views_for_sql(tx: &impl SchemaView, expr: ProjectList, auth: &AuthCtx) -> anyhow::Result<ProjectList> {
     // RLS does not apply to the database owner
-    if auth.caller == auth.owner {
+    if auth.is_owner() {
         return Ok(expr);
     }
     // The subscription language is a subset of the sql language.

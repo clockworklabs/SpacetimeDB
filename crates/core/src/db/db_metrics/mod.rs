@@ -155,6 +155,36 @@ metrics_group!(
         #[help = "Number of subscriptions via the legacy api"]
         #[labels(database_identity: Identity)]
         pub num_legacy_subscriptions: IntGaugeVec,
+
+        #[name = spacetime_subscription_compile_time_sec]
+        #[help = "How much time (in seconds) do we spend compiling subscriptions"]
+        #[labels(db: Identity, workload: WorkloadType)]
+        pub subscription_compile_time: HistogramVec,
+
+        #[name = spacetime_subscription_lock_num_waiters]
+        #[help = "The number of clients waiting to acquire the subscription lock"]
+        #[labels(db: Identity, workload: WorkloadType)]
+        pub subscription_lock_waiters: IntGaugeVec,
+
+        #[name = spacetime_subscription_lock_wait_time_sec]
+        #[help = "How much time (in seconds) do we spend waiting to acquire the subscription lock"]
+        #[labels(db: Identity, workload: WorkloadType)]
+        pub subscription_lock_wait_time: HistogramVec,
+
+        #[name = spacetime_num_queries_subscribed]
+        #[help = "How many total queries make up each subscribe call"]
+        #[labels(db: Identity)]
+        pub num_queries_subscribed: IntCounterVec,
+
+        #[name = spacetime_num_new_queries_subscribed]
+        #[help = "How many new (uncached) queries are make up each subscribe call"]
+        #[labels(db: Identity)]
+        pub num_new_queries_subscribed: IntCounterVec,
+
+        #[name = spacetime_num_queries_evaluated]
+        #[help = "How many queries are evaluated in each subscribe and unsubscribe"]
+        #[labels(db: Identity, workload: WorkloadType)]
+        pub num_queries_evaluated: IntCounterVec,
     }
 );
 
