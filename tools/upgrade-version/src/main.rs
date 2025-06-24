@@ -1,5 +1,6 @@
 #![allow(clippy::disallowed_macros)]
 
+use chrono::{Datelike, Local};
 use clap::{Arg, Command};
 use duct::cmd;
 use regex::Regex;
@@ -10,12 +11,24 @@ use std::path::PathBuf;
 
 fn process_license_file(upgrade_version: &str) {
     let path = "LICENSE.txt";
-    let file = fs::read_to_string(path).unwrap();
-    let re = Regex::new(r"(?m)^(Licensed Work:\s+SpacetimeDB )([\d\.]+)$").unwrap();
-    let file = re.replace_all(&file, |caps: &regex::Captures| {
+    let contents = fs::read_to_string(path).unwrap();
+
+    let version_re = Regex::new(r"(?m)^(Licensed Work:\s+SpacetimeDB )([\d\.]+)$").unwrap();
+    let date_re = Regex::new(r"(?m)^Change Date:\s+\d{4}-\d{2}-\d{2}$").unwrap();
+
+    let updated = version_re.replace_all(&contents, |caps: &regex::Captures| {
         format!("{}{}", &caps[1], upgrade_version)
     });
-    fs::write(path, &*file).unwrap();
+
+    let new_date = Local::now()
+        .with_year(Local::now().year() + 5)
+        .unwrap()
+        .format("Change Date:          %Y-%m-%d")
+        .to_string();
+
+    let final_text = date_re.replace_all(&updated, new_date.as_str());
+
+    fs::write(path, final_text.as_ref()).unwrap();
 }
 
 fn edit_toml(path: impl AsRef<Path>, f: impl FnOnce(&mut toml_edit::DocumentMut)) -> anyhow::Result<()> {
