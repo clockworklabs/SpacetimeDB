@@ -12,6 +12,7 @@ using SpacetimeDB.Internal;
 using SpacetimeDB.ClientApi;
 using Thread = System.Threading.Thread;
 using System.Diagnostics;
+using System.Text;
 
 
 namespace SpacetimeDB
@@ -870,6 +871,16 @@ namespace SpacetimeDB
 
                         if (processed.reducerEvent is { } reducerEvent)
                         {
+                            var lightSourceStates = 0;
+                            foreach (var (key, val) in dbOps.Updates)
+                            {
+                                if (key.RemoteTableName == "light_source_state")
+                                {
+                                    lightSourceStates += 1;
+                                }
+                            }
+                            Log.Warn($"Reducer call: {processed.reducerEvent.Reducer.GetType()} Light source state count: {lightSourceStates}");
+
                             var legacyEventContext = ToEventContext(new Event<Reducer>.Reducer(reducerEvent));
                             OnMessageProcessCompleteUpdate(legacyEventContext, dbOps);
                             var eventContext = ToReducerEventContext(reducerEvent);
