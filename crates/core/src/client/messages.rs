@@ -152,7 +152,7 @@ pub fn serialize(
             const COMPRESS_THRESHOLD_OTHER: usize = 1024;
             /// The threshold beyond which we start to compress messages for update messages.
             /// This is 4 KiB currently.
-            const COMPRESS_THRESHOLD_UPDATE: usize = 8 * COMPRESS_THRESHOLD_OTHER;
+            const COMPRESS_THRESHOLD_UPDATE: usize = 16 * COMPRESS_THRESHOLD_OTHER;
             // Route to the correct compression threshold.
             let threshold = match msg {
                 ServerMessage::TransactionUpdate(_) | ServerMessage::TransactionUpdateLight(_) => {
