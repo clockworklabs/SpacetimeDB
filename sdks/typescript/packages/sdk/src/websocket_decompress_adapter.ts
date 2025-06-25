@@ -107,6 +107,12 @@ export class WebsocketDecompressAdapter {
     }
 
     const databaseUrl = new URL(`v1/database/${nameOrAddress}/subscribe`, url);
+    if (url.searchParams.has('token')) {
+      databaseUrl.searchParams.set(
+        'token',
+        url.searchParams.get('token') ?? ''
+      );
+    }
     databaseUrl.searchParams.set(
       'compression',
       compression === 'gzip' ? 'Gzip' : 'None'
