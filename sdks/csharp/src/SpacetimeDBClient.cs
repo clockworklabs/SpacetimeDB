@@ -502,6 +502,9 @@ namespace SpacetimeDB
 
             void PreProcessTable(IRemoteTableHandle table, TableUpdate update, ProcessedDatabaseUpdate dbOps)
             {
+                var insertCount = 0;
+                var deleteCount = 0;
+                
                 var delta = dbOps.DeltaForTable(table);
                 foreach (var cqu in update.Updates)
                 {
@@ -509,22 +512,29 @@ namespace SpacetimeDB
 
                     // Because we are accumulating into a MultiDictionaryDelta that will be applied all-at-once
                     // to the table, it doesn't matter that we call Add before Remove here.
-
                     var (insertReader, insertRowCount) = ParseRowList(qu.Inserts);
+                    insertCount += insertRowCount;
+                    
                     for (var i = 0; i < insertRowCount; i++)
                     {
                         var obj = Decode(table, insertReader, out var pk);
                         delta.Add(pk, obj);
                     }
 
+                    
                     var (deleteReader, deleteRowCount) = ParseRowList(qu.Deletes);
+                    deleteCount += deleteRowCount;
                     for (var i = 0; i < deleteRowCount; i++)
                     {
                         var obj = Decode(table, deleteReader, out var pk);
                         delta.Remove(pk, obj);
                     }
                 }
-
+                
+                if (table.RemoteTableName == "light_source_state")
+                {
+                    Log.Warn($"Reducer call: {table.RemoteTableName} Light source state count: {insertCount} deletes? {deleteCount}");    
+                }
             }
 
             ProcessedDatabaseUpdate PreProcessUnsubscribeMultiApplied(UnsubscribeMultiApplied unsubMultiApplied)
@@ -542,20 +552,14 @@ namespace SpacetimeDB
             ProcessedDatabaseUpdate PreProcessDatabaseUpdate(DatabaseUpdate updates, string reducerName)
             {
                 var dbOps = ProcessedDatabaseUpdate.New();
-
-                var lightSourceStates = 0;
+                
                 foreach (var (table, update) in GetTables(updates))
                 {
                     if (table.RemoteTableName == "light_source_state")
                     {
-                        lightSourceStates += 1;
+                        Log.Warn($"Reducer call: {reducerName} Light source state table is present in update.");
                     }
                     PreProcessTable(table, update, dbOps);
-                }
-
-                if (reducerName == "project_site_advance_project")
-                {
-                    Log.Warn($"Reducer call: {reducerName} Light source state count: {lightSourceStates}");    
                 }
                 
                 return dbOps;
