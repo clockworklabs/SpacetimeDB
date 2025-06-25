@@ -94,8 +94,12 @@ pub trait WebsocketFormat: Sized {
     type QueryUpdate: SpacetimeType + for<'de> Deserialize<'de> + Serialize + Debug + Clone + Send;
 
     /// Convert a `QueryUpdate` into `Self::QueryUpdate`.
-    /// This allows some formats to e.g., compress the update.
-    fn into_query_update(qu: QueryUpdate<Self>, compression: Compression) -> Self::QueryUpdate;
+    ///
+    /// We don't compress individual table updates anymore for any format.
+    /// Previously we did, but the benefits, if any, were unclear.
+    /// Note that each message is still compressed before being sent to clients,
+    /// but we no longer have to hold a tx lock when doing so.
+    fn into_query_update(qu: QueryUpdate<Self>) -> Self::QueryUpdate;
 }
 
 /// Messages sent from the client to the server.
@@ -770,7 +774,7 @@ impl WebsocketFormat for JsonFormat {
 
     type QueryUpdate = QueryUpdate<Self>;
 
-    fn into_query_update(qu: QueryUpdate<Self>, _: Compression) -> Self::QueryUpdate {
+    fn into_query_update(qu: QueryUpdate<Self>) -> Self::QueryUpdate {
         qu
     }
 }
@@ -813,24 +817,8 @@ impl WebsocketFormat for BsatnFormat {
 
     type QueryUpdate = CompressableQueryUpdate<Self>;
 
-    fn into_query_update(qu: QueryUpdate<Self>, compression: Compression) -> Self::QueryUpdate {
-        let qu_len_would_have_been = bsatn::to_len(&qu).unwrap();
-
-        match decide_compression(qu_len_would_have_been, compression) {
-            Compression::None => CompressableQueryUpdate::Uncompressed(qu),
-            Compression::Brotli => {
-                let bytes = bsatn::to_vec(&qu).unwrap();
-                let mut out = Vec::new();
-                brotli_compress(&bytes, &mut out);
-                CompressableQueryUpdate::Brotli(out.into())
-            }
-            Compression::Gzip => {
-                let bytes = bsatn::to_vec(&qu).unwrap();
-                let mut out = Vec::new();
-                gzip_compress(&bytes, &mut out);
-                CompressableQueryUpdate::Gzip(out.into())
-            }
-        }
+    fn into_query_update(qu: QueryUpdate<Self>) -> Self::QueryUpdate {
+        CompressableQueryUpdate::Uncompressed(qu)
     }
 }
 
@@ -846,13 +834,9 @@ pub enum Compression {
     Gzip,
 }
 
-pub fn decide_compression(len: usize, compression: Compression) -> Compression {
-    /// The threshold beyond which we start to compress messages.
-    /// 1KiB was chosen without measurement.
-    /// TODO(perf): measure!
-    const COMPRESS_THRESHOLD: usize = 1024;
-
-    if len > COMPRESS_THRESHOLD {
+/// Based on the `len` of a message and a `threshold`, potentially clamp `compression` to `None`.
+pub fn decide_compression(len: usize, threshold: usize, compression: Compression) -> Compression {
+    if len > threshold {
         compression
     } else {
         Compression::None

@@ -27,7 +27,7 @@ use derive_more::From;
 use indexmap::IndexSet;
 use itertools::Itertools;
 use prometheus::{Histogram, IntGauge};
-use spacetimedb_client_api_messages::websocket::{ByteListLen, Compression, OneOffTable, QueryUpdate, WebsocketFormat};
+use spacetimedb_client_api_messages::websocket::{ByteListLen, OneOffTable, QueryUpdate, WebsocketFormat};
 use spacetimedb_data_structures::error_stream::ErrorStream;
 use spacetimedb_data_structures::map::{HashCollectionExt as _, IntMap};
 use spacetimedb_execution::pipelined::PipelinedProject;
@@ -139,11 +139,7 @@ impl UpdatesRelValue<'_> {
         let num_rows = nr_del + nr_ins;
         let num_bytes = deletes.num_bytes() + inserts.num_bytes();
         let qu = QueryUpdate { deletes, inserts };
-        // We don't compress individual table updates.
-        // Previously we were, but the benefits, if any, were unclear.
-        // Note, each message is still compressed before being sent to clients,
-        // but we no longer have to hold a tx lock when doing so.
-        let cqu = F::into_query_update(qu, Compression::None);
+        let cqu = F::into_query_update(qu);
         (cqu, num_rows, num_bytes)
     }
 }

@@ -7,7 +7,7 @@ use bytes::{BufMut, Bytes, BytesMut};
 use bytestring::ByteString;
 use derive_more::From;
 use spacetimedb_client_api_messages::websocket::{
-    BsatnFormat, Compression, FormatSwitch, JsonFormat, OneOffTable, RowListLen, WebsocketFormat,
+    BsatnFormat, Compression, FormatSwitch, JsonFormat, OneOffTable, RowListLen, ServerMessage, WebsocketFormat,
     SERVER_MSG_COMPRESSION_TAG_BROTLI, SERVER_MSG_COMPRESSION_TAG_GZIP, SERVER_MSG_COMPRESSION_TAG_NONE,
 };
 use spacetimedb_lib::identity::RequestId;
@@ -147,8 +147,30 @@ pub fn serialize(
                 bsatn::to_writer(w.into_inner(), &msg).unwrap()
             });
 
+            /// The threshold beyond which we start to compress messages for non-update messages.
+            /// This is 1 KiB currently.
+            const COMPRESS_THRESHOLD_OTHER: usize = 1024;
+            /// The threshold beyond which we start to compress messages for update messages.
+            /// This is 4 KiB currently.
+            const COMPRESS_THRESHOLD_UPDATE: usize = 4 * COMPRESS_THRESHOLD_OTHER;
+            // Route to the correct compression threshold.
+            let threshold = match msg {
+                ServerMessage::TransactionUpdate(_) | ServerMessage::TransactionUpdateLight(_) => {
+                    COMPRESS_THRESHOLD_UPDATE
+                }
+
+                ServerMessage::InitialSubscription(_)
+                | ServerMessage::IdentityToken(_)
+                | ServerMessage::OneOffQueryResponse(_)
+                | ServerMessage::SubscribeApplied(_)
+                | ServerMessage::UnsubscribeApplied(_)
+                | ServerMessage::SubscriptionError(_)
+                | ServerMessage::SubscribeMultiApplied(_)
+                | ServerMessage::UnsubscribeMultiApplied(_) => COMPRESS_THRESHOLD_OTHER,
+            };
+
             // Conditionally compress the message.
-            let (in_use, msg_bytes) = match ws::decide_compression(srv_msg.len(), config.compression) {
+            let (in_use, msg_bytes) = match ws::decide_compression(srv_msg.len(), threshold, config.compression) {
                 Compression::None => buffer.uncompressed(),
                 Compression::Brotli => buffer.compress_with_tag(SERVER_MSG_COMPRESSION_TAG_BROTLI, ws::brotli_compress),
                 Compression::Gzip => buffer.compress_with_tag(SERVER_MSG_COMPRESSION_TAG_GZIP, ws::gzip_compress),

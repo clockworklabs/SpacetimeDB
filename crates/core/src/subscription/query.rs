@@ -160,7 +160,7 @@ mod tests {
     use crate::vm::tests::create_table_with_rows;
     use crate::vm::DbProgram;
     use itertools::Itertools;
-    use spacetimedb_client_api_messages::websocket::{BsatnFormat, Compression};
+    use spacetimedb_client_api_messages::websocket::BsatnFormat;
     use spacetimedb_lib::bsatn;
     use spacetimedb_lib::db::auth::{StAccess, StTableType};
     use spacetimedb_lib::error::ResultTest;
@@ -353,7 +353,7 @@ mod tests {
         total_tables: usize,
         rows: &[ProductValue],
     ) -> ResultTest<()> {
-        let result = s.eval::<BsatnFormat>(db, tx, None, Compression::Brotli).tables;
+        let result = s.eval::<BsatnFormat>(db, tx, None).tables;
         assert_eq!(
             result.len(),
             total_tables,
