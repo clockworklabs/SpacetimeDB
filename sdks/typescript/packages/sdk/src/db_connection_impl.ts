@@ -196,7 +196,7 @@ export class DbConnectionImpl<
 
     let url = new URL(uri);
     if (!/^wss?:/.test(uri.protocol)) {
-      url.protocol = 'ws:';
+      url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
     }
 
     this.identity = identity;
