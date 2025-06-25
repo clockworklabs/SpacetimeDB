@@ -21,9 +21,14 @@ metrics_group!(
         pub ws_clients_spawned: IntGaugeVec,
 
         #[name = spacetime_worker_ws_clients_aborted]
-        #[help = "Number of ws client connections aborted"]
+        #[help = "Number of ws client connections aborted by either the server or the client"]
         #[labels(database_identity: Identity)]
         pub ws_clients_aborted: IntGaugeVec,
+
+        #[name = spacetime_worker_ws_clients_closed_connection]
+        #[help = "Number of ws client connections closed by the client as opposed to being termiated by the server"]
+        #[labels(database_identity: Identity)]
+        pub ws_clients_closed_connection: IntGaugeVec,
 
         #[name = spacetime_websocket_requests_total]
         #[help = "The cumulative number of websocket request messages"]

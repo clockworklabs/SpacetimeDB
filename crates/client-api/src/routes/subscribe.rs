@@ -431,8 +431,15 @@ async fn ws_client_actor_inner(
 
                 // if this is the closed-by-them case, let the ClientConnectionSenders know now.
                 sendrx.close();
-                closed = true;
                 log::trace!("Close frame {:?}", close_frame);
+                if !closed {
+                    // This is the client telling us they want to close.
+                    WORKER_METRICS
+                        .ws_clients_closed_connection
+                        .with_label_values(&addr)
+                        .inc();
+                }
+                closed = true;
             }
         }
     }
