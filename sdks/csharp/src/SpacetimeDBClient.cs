@@ -500,7 +500,7 @@ namespace SpacetimeDB
                 }
             }
 
-            void PreProcessTable(IRemoteTableHandle table, TableUpdate update, ProcessedDatabaseUpdate dbOps)
+            void PreProcessTable(IRemoteTableHandle table, TableUpdate update, ProcessedDatabaseUpdate dbOps, Dictionary<string, (int, int)> map)
             {
                 var insertCount = 0;
                 var deleteCount = 0;
@@ -530,7 +530,16 @@ namespace SpacetimeDB
                         delta.Remove(pk, obj);
                     }
                 }
-                
+
+                if (map.TryGetValue(table.RemoteTableName, out var result))
+                {
+                    map[table.RemoteTableName] = (result.Item1 + insertCount, result.Item2 + deleteCount);
+                }
+                else
+                {
+                    map[table.RemoteTableName] = (insertCount, deleteCount);
+                }
+
                 if (table.RemoteTableName == "light_source_state")
                 {
                     Log.Warn($"Reducer call: {table.RemoteTableName} Light source state count: {insertCount} deletes? {deleteCount}");    
@@ -552,6 +561,8 @@ namespace SpacetimeDB
             ProcessedDatabaseUpdate PreProcessDatabaseUpdate(DatabaseUpdate updates, string reducerName)
             {
                 var dbOps = ProcessedDatabaseUpdate.New();
+
+                var map = new Dictionary<string, (int, int)>();
                 
                 foreach (var (table, update) in GetTables(updates))
                 {
@@ -559,9 +570,18 @@ namespace SpacetimeDB
                     {
                         Log.Warn($"Reducer call: {reducerName} Light source state table is present in update.");
                     }
-                    PreProcessTable(table, update, dbOps);
+                    PreProcessTable(table, update, dbOps, map);
                 }
-                
+
+                if (reducerName == "cheat_building_place" || reducerName == "project_site_advance_project")
+                {
+                    Log.Warn($"Captured reducer updates: {reducerName}");
+                    foreach (var (key, val) in map)
+                    {
+                        Log.Warn($"\t{key} -> inserts: {val.Item1}, deletes: {val.Item2}");
+                    }
+                }
+
                 return dbOps;
             }
 
@@ -633,6 +653,7 @@ namespace SpacetimeDB
 
                         if (transactionUpdate.Status is UpdateStatus.Committed(var committed))
                         {
+                            Log.Warn($"Reducer: {transactionUpdate.ReducerCall.ReducerName}");
                             dbOps = PreProcessDatabaseUpdate(committed, transactionUpdate.ReducerCall.ReducerName);
                         }
                         break;
