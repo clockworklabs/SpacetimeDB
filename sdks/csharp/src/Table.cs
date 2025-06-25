@@ -353,7 +353,7 @@ namespace SpacetimeDB
             // Update indices.
             // This is a local operation -- it only looks at our indices and doesn't invoke user code.
             // So we don't need to wait for other tables to be updated to do it.
-            // (And we need to do it before ANY PostApply is called.)
+            // (And we need to do it before ANY client callback is invoked.)
 
             // First, we gather the updated rows into buffers.
             // This is also when we verify that the PreHashedRows store rows of the correct types.
