@@ -914,7 +914,10 @@ mod tests {
         );
 
         assert!(steps.contains(&AutoMigrateStep::ChangeColumns(&apples)), "{steps:?}");
-        assert!(steps.contains(&AutoMigrateStep::ChangeColumns(&deliveries)), "{steps:?}");
+        assert!(
+            steps.contains(&AutoMigrateStep::ChangeColumns(&deliveries)),
+            "{steps:?}"
+        );
     }
 
     #[test]
