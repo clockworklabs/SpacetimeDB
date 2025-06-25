@@ -665,6 +665,8 @@ mod tests {
     fn successful_auto_migration() {
         let mut old_builder = RawModuleDefV9Builder::new();
         let old_schedule_at = old_builder.add_type::<ScheduleAt>();
+        let old_sum_ty = AlgebraicType::sum([("v1", AlgebraicType::U64)]);
+        let old_sum_refty = old_builder.add_algebraic_type([], "sum", old_sum_ty, true);
         old_builder
             .build_table_with_new_type(
                 "Apples",
@@ -672,6 +674,7 @@ mod tests {
                     ("id", AlgebraicType::U64),
                     ("name", AlgebraicType::String),
                     ("count", AlgebraicType::U16),
+                    ("sum", old_sum_refty.into()),
                 ]),
                 true,
             )
@@ -700,6 +703,7 @@ mod tests {
                 ProductType::from([
                     ("scheduled_id", AlgebraicType::U64),
                     ("scheduled_at", old_schedule_at.clone()),
+                    ("sum", AlgebraicType::array(old_sum_refty.into())),
                 ]),
                 true,
             )
@@ -736,6 +740,8 @@ mod tests {
         let mut new_builder = RawModuleDefV9Builder::new();
         let _ = new_builder.add_type::<u32>(); // reposition ScheduleAt in the typespace, should have no effect.
         let new_schedule_at = new_builder.add_type::<ScheduleAt>();
+        let new_sum_ty = AlgebraicType::sum([("v1", AlgebraicType::U64), ("v2", AlgebraicType::Bool)]);
+        let new_sum_refty = new_builder.add_algebraic_type([], "sum", new_sum_ty, true);
         new_builder
             .build_table_with_new_type(
                 "Apples",
@@ -743,6 +749,7 @@ mod tests {
                     ("id", AlgebraicType::U64),
                     ("name", AlgebraicType::String),
                     ("count", AlgebraicType::U16),
+                    ("sum", new_sum_refty.into()),
                 ]),
                 true,
             )
@@ -776,6 +783,7 @@ mod tests {
                 ProductType::from([
                     ("scheduled_id", AlgebraicType::U64),
                     ("scheduled_at", new_schedule_at.clone()),
+                    ("sum", AlgebraicType::array(new_sum_refty.into())),
                 ]),
                 true,
             )
@@ -830,7 +838,9 @@ mod tests {
 
         let plan = ponder_auto_migrate(&old_def, &new_def).expect("auto migration should succeed");
 
+        let apples = expect_identifier("Apples");
         let bananas = expect_identifier("Bananas");
+        let deliveries = expect_identifier("Deliveries");
         let oranges = expect_identifier("Oranges");
 
         let bananas_sequence = "Bananas_id_seq";
@@ -902,6 +912,9 @@ mod tests {
             steps.contains(&AutoMigrateStep::AddRowLevelSecurity(&sql_new.sql)),
             "{steps:?}"
         );
+
+        assert!(steps.contains(&AutoMigrateStep::ChangeColumns(&apples)), "{steps:?}");
+        assert!(steps.contains(&AutoMigrateStep::ChangeColumns(&deliveries)), "{steps:?}");
     }
 
     #[test]
