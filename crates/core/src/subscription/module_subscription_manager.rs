@@ -399,7 +399,7 @@ impl QueriedTableIndexIds {
 /// See [`JoinEdge`] for more details.
 #[derive(Debug, Default)]
 pub struct JoinEdges {
-    edges: BTreeMap<JoinEdge, HashMap<AlgebraicValue, QueryHash>>,
+    edges: BTreeMap<JoinEdge, HashMap<AlgebraicValue, HashSet<QueryHash>>>,
 }
 
 impl JoinEdges {
@@ -408,7 +408,12 @@ impl JoinEdges {
         let mut inserted = false;
         for (edge, rhs_val) in qs.query.join_edges() {
             inserted = true;
-            self.edges.entry(edge).or_default().insert(rhs_val, qs.query.hash);
+            self.edges
+                .entry(edge)
+                .or_default()
+                .entry(rhs_val)
+                .or_default()
+                .insert(qs.query.hash);
         }
         inserted
     }
@@ -416,10 +421,15 @@ impl JoinEdges {
     /// If this query has any join edges, remove them from the map.
     fn remove_query(&mut self, query: &Query) {
         for (edge, rhs_val) in query.join_edges() {
-            if let Some(hashes) = self.edges.get_mut(&edge) {
-                hashes.remove(&rhs_val);
-                if hashes.is_empty() {
-                    self.edges.remove(&edge);
+            if let Some(values) = self.edges.get_mut(&edge) {
+                if let Some(hashes) = values.get_mut(&rhs_val) {
+                    hashes.remove(&query.hash);
+                    if hashes.is_empty() {
+                        values.remove(&rhs_val);
+                        if values.is_empty() {
+                            self.edges.remove(&edge);
+                        }
+                    }
                 }
             }
         }
@@ -436,6 +446,7 @@ impl JoinEdges {
         self.edges
             .range(JoinEdge::range_for_table(table_id))
             .filter_map(move |(edge, hashes)| find_rhs_val(edge, row).as_ref().and_then(|rhs_val| hashes.get(rhs_val)))
+            .flatten()
     }
 }
 
