@@ -539,14 +539,25 @@ namespace SpacetimeDB
                 return dbOps;
             }
 
-            ProcessedDatabaseUpdate PreProcessDatabaseUpdate(DatabaseUpdate updates)
+            ProcessedDatabaseUpdate PreProcessDatabaseUpdate(DatabaseUpdate updates, string reducerName)
             {
                 var dbOps = ProcessedDatabaseUpdate.New();
 
+                var lightSourceStates = 0;
                 foreach (var (table, update) in GetTables(updates))
                 {
+                    if (table.RemoteTableName == "light_source_state")
+                    {
+                        lightSourceStates += 1;
+                    }
                     PreProcessTable(table, update, dbOps);
                 }
+
+                if (reducerName == "project_site_advance_project")
+                {
+                    Log.Warn($"Reducer call: {reducerName} Light source state count: {lightSourceStates}");    
+                }
+                
                 return dbOps;
             }
 
@@ -618,7 +629,7 @@ namespace SpacetimeDB
 
                         if (transactionUpdate.Status is UpdateStatus.Committed(var committed))
                         {
-                            dbOps = PreProcessDatabaseUpdate(committed);
+                            dbOps = PreProcessDatabaseUpdate(committed, transactionUpdate.ReducerCall.ReducerName);
                         }
                         break;
                     case ServerMessage.TransactionUpdateLight(var update):
@@ -871,16 +882,6 @@ namespace SpacetimeDB
 
                         if (processed.reducerEvent is { } reducerEvent)
                         {
-                            var lightSourceStates = 0;
-                            foreach (var (key, val) in dbOps.Updates)
-                            {
-                                if (key.RemoteTableName == "light_source_state")
-                                {
-                                    lightSourceStates += 1;
-                                }
-                            }
-                            Log.Warn($"Reducer call: {processed.reducerEvent.Reducer.GetType()} Light source state count: {lightSourceStates}");
-
                             var legacyEventContext = ToEventContext(new Event<Reducer>.Reducer(reducerEvent));
                             OnMessageProcessCompleteUpdate(legacyEventContext, dbOps);
                             var eventContext = ToReducerEventContext(reducerEvent);
