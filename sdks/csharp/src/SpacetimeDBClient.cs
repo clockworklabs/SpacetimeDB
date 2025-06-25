@@ -633,7 +633,7 @@ namespace SpacetimeDB
                         }
                         break;
                     case ServerMessage.TransactionUpdateLight(var update):
-                        dbOps = PreProcessDatabaseUpdate(update.Update);
+                        dbOps = PreProcessDatabaseUpdate(update.Update, "light");
                         break;
                     case ServerMessage.IdentityToken(var identityToken):
                         break;
