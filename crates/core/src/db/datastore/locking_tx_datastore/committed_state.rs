@@ -25,7 +25,7 @@ use crate::{
     execution_context::ExecutionContext,
 };
 use anyhow::anyhow;
-use core::ops::RangeBounds;
+use core::{convert::Infallible, ops::RangeBounds};
 use itertools::Itertools;
 use spacetimedb_data_structures::map::{HashSet, IntMap};
 use spacetimedb_lib::{
@@ -689,8 +689,8 @@ impl CommittedState {
                 // so new rows exploiting the changed schema, e.g., by using a new variant,
                 // have not been added here as the commit table is immutable to row addition
                 // during a transaction.
-                unsafe { table.change_columns_to(column_schemas, false) }
-                    .expect("should not error when `validate = false`");
+                unsafe { table.change_columns_to_unchecked(column_schemas, |_, _, _| Ok::<_, Infallible>(())) }
+                    .unwrap_or_else(|e| match e {});
             }
             ConstraintRemoved(table_id, constraint_schema) => {
                 let table = self.tables.get_mut(&table_id)?;

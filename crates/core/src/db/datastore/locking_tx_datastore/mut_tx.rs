@@ -441,12 +441,7 @@ impl MutTxId {
         let ((tx_table, ..), (commit_table, ..)) = self.get_or_create_insert_table_mut(table_id)?;
 
         // Try to change the tables into what we want.
-        // SAFETY: `validate = true`.
-        let old_column_schemas = unsafe {
-            tx_table
-                .change_columns_to(column_schemas, true)
-                .map_err(TableError::from)
-        }?;
+        let old_column_schemas = tx_table.change_columns_to(column_schemas).map_err(TableError::from)?;
         // SAFETY: `commit_table` should have a schema identical to that of `tx_table`
         // prior to changing it just now.
         unsafe { commit_table.set_layout_and_schema_to(tx_table) };

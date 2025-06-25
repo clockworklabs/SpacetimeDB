@@ -294,24 +294,19 @@ impl Table {
     /// Change the columns of `self` to those in `column_schemas`.
     ///
     /// Returns an error if the new list of column is incompatible with the old.
-    ///
-    /// # Safety
-    ///
-    /// If `!validate`, the caller must ensure that `column_schemas`
-    /// forms a row type and layout that is compatible with the rows existing in `self`.
-    pub unsafe fn change_columns_to(
+    pub fn change_columns_to(
         &mut self,
         column_schemas: Vec<ColumnSchema>,
-        validate: bool,
     ) -> Result<Vec<ColumnSchema>, ChangeColumnsError> {
-        // Compute the new row type, layout, and related stuff.
-        let new_row_type = columns_to_row_type(&column_schemas);
-        let (new_row_layout, new_static_layout, new_visitor_prog) = table_row_type_dependents(new_row_type.clone());
-
-        if validate {
+        fn validate(
+            this: &Table,
+            new_row_layout: &RowTypeLayout,
+            column_schemas: &[ColumnSchema],
+        ) -> Result<(), ChangeColumnsError> {
             // Validate that the old row type layout can be changed to the new.
-            let schema = self.get_schema();
-            let row_layout = self.row_layout();
+            let schema = this.get_schema();
+            let row_layout = this.row_layout();
+
             // Require that a scheduler table doesn't change the `id` and `at` fields.
             let schedule_compat = schema
                 .schedule
@@ -322,15 +317,41 @@ impl Table {
                     let id_col = pk.col_pos.idx();
                     row_layout[at_col] == new_row_layout[at_col] && row_layout[id_col] == new_row_layout[id_col]
                 });
-            if !(schedule_compat && row_layout.is_compatible_with(&new_row_layout)) {
-                return Err(ChangeColumnsError {
-                    table_id: schema.table_id,
-                    table_name: schema.table_name.clone(),
-                    old: schema.columns().to_vec(),
-                    new: column_schemas,
-                });
+
+            // The `row_layout` must also be compatible with the new.
+            if schedule_compat && row_layout.is_compatible_with(new_row_layout) {
+                return Ok(());
             }
+
+            Err(ChangeColumnsError {
+                table_id: schema.table_id,
+                table_name: schema.table_name.clone(),
+                old: schema.columns().to_vec(),
+                new: column_schemas.to_vec(),
+            })
         }
+
+        unsafe { self.change_columns_to_unchecked(column_schemas, validate) }
+    }
+
+    /// Change the columns of `self` to those in `column_schemas`.
+    ///
+    /// Returns an error if the new list of column is incompatible with the old.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure, using `validate`,
+    /// that `new_row_layout` is compatible with the rows existing in `self`.
+    pub unsafe fn change_columns_to_unchecked<E>(
+        &mut self,
+        column_schemas: Vec<ColumnSchema>,
+        validate: impl FnOnce(&Self, &RowTypeLayout, &[ColumnSchema]) -> Result<(), E>,
+    ) -> Result<Vec<ColumnSchema>, E> {
+        // Compute the new row type, layout, and related stuff.
+        let new_row_type: ProductType = columns_to_row_type(&column_schemas);
+        let (new_row_layout, new_static_layout, new_visitor_prog) = table_row_type_dependents(new_row_type.clone());
+
+        validate(self, &new_row_layout, &column_schemas)?;
 
         // Set the new layout and friends.
         self.inner.row_layout = new_row_layout;
