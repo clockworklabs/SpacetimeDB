@@ -291,7 +291,8 @@ impl Table {
         Self::new_raw(schema, row_layout, static_layout, visitor_prog, squashed_offset, pm)
     }
 
-    /// Change the columns of `self` to those in `column_schemas`.
+    /// Change the columns of `self` to those in `column_schemas`
+    /// and returns the old column schemas.
     ///
     /// Returns an error if the new list of column is incompatible with the old.
     pub fn change_columns_to(
@@ -334,7 +335,8 @@ impl Table {
         unsafe { self.change_columns_to_unchecked(column_schemas, validate) }
     }
 
-    /// Change the columns of `self` to those in `column_schemas`.
+    /// Change the columns of `self` to those in `column_schemas`
+    /// and returns the old column schemas.
     ///
     /// Returns an error if the new list of column is incompatible with the old.
     ///

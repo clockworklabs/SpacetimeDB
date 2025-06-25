@@ -436,9 +436,19 @@ impl MutTxId {
     /// as the update machinery should disallow any incompatible change.
     /// However, for redundancy and internal soundness of the datastore,
     /// the compatibility is also checked here.
-    pub(crate) fn alter_table_row_type(&mut self, table_id: TableId, column_schemas: Vec<ColumnSchema>) -> Result<()> {
+    pub(crate) fn alter_table_row_type(
+        &mut self,
+        table_id: TableId,
+        mut column_schemas: Vec<ColumnSchema>,
+    ) -> Result<()> {
         // Write to the table in the tx state.
         let ((tx_table, ..), (commit_table, ..)) = self.get_or_create_insert_table_mut(table_id)?;
+
+        // Ensure the columns have the right `table_id`.
+        // NOTE(centril): This should already be done by the update machinery,
+        // but do it redundantly here too, just in case.
+        // This is not performance critical, so we don't care that there is overhead.
+        column_schemas.iter_mut().for_each(|c| c.table_id = table_id);
 
         // Try to change the tables into what we want.
         let old_column_schemas = tx_table.change_columns_to(column_schemas).map_err(TableError::from)?;
