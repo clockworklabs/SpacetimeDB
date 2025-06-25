@@ -180,10 +180,6 @@ namespace SpacetimeDB
         //
         // These callbacks can assume the Row stored in the PreHashedRow passed is of the correct type;
         // the check is done before performing these callbacks.
-        //
-        // The `object` in these KeyValuePairs comes from MultiDictionary and is the *primary key* of the row, *not* the 
-        // key w.r.t the index!
-        // Probably this should be removed entirely from MultiDictionary's interface, since it doesn't seem to be used anywhere.
         private AbstractEventHandler<List<PreHashedRow>> OnInternalInsertHandler { get; } = new();
         private event Action<List<PreHashedRow>> OnInternalInsert
         {
