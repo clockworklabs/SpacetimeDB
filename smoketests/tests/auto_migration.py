@@ -61,7 +61,7 @@ fn kind_to_string(Student: PersonKind) -> &'static str {
 """
 
     MODULE_CODE_UPDATED = (
-        MODULE_CODE
+        MODULE_CODE_INIT
         + """
 #[derive(SpacetimeType, Clone, Copy, PartialEq, Eq)]
 pub enum PersonKind {
