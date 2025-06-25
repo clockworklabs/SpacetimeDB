@@ -8,30 +8,35 @@ use axum::Extension;
 use axum_extra::TypedHeader;
 use bytes::Bytes;
 use bytestring::ByteString;
+use derive_more::From;
 use futures::future::MaybeDone;
+use futures::stream::SplitSink;
 use futures::{Future, FutureExt, SinkExt, StreamExt};
 use http::{HeaderValue, StatusCode};
 use scopeguard::ScopeGuard;
 use serde::Deserialize;
-use spacetimedb::client::messages::{serialize, IdentityTokenMessage, SerializableMessage, SerializeBuffer};
+use spacetimedb::client::messages::{
+    serialize, IdentityTokenMessage, SerializableMessage, SerializeBuffer, SwitchedServerMessage, ToProtocol,
+};
 use spacetimedb::client::{
-    ClientActorId, ClientConfig, ClientConnection, DataMessage, MessageHandleError, MeteredDeque, MeteredReceiver,
-    Protocol,
+    ClientActorId, ClientConfig, ClientConnection, DataMessage, MessageExecutionError, MessageHandleError,
+    MeteredDeque, MeteredReceiver, Protocol,
 };
 use spacetimedb::execution_context::WorkloadType;
 use spacetimedb::host::module_host::ClientConnectedError;
 use spacetimedb::host::NoSuchModule;
-use spacetimedb::util::also_poll;
+use spacetimedb::util::asyncify;
 use spacetimedb::worker_metrics::WORKER_METRICS;
 use spacetimedb::Identity;
 use spacetimedb_client_api_messages::websocket::{self as ws_api, Compression};
 use spacetimedb_lib::connection_id::{ConnectionId, ConnectionIdForUrl};
 use std::time::Instant;
+use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Utf8Bytes;
 
 use crate::auth::SpacetimeAuth;
 use crate::util::websocket::{
-    CloseCode, CloseFrame, Message as WsMessage, WebSocketConfig, WebSocketStream, WebSocketUpgrade,
+    CloseCode, CloseFrame, Message as WsMessage, WebSocketConfig, WebSocketStream, WebSocketUpgrade, WsError,
 };
 use crate::util::{NameOrIdentity, XForwardedFor};
 use crate::{log_and_500, ControlStateDelegate, NodeDelegate};
@@ -204,8 +209,8 @@ async fn make_progress<Fut: Future>(fut: &mut Pin<&mut MaybeDone<Fut>>) {
 
 async fn ws_client_actor_inner(
     client: &mut ClientConnection,
-    mut ws: WebSocketStream,
-    mut sendrx: MeteredReceiver<SerializableMessage>,
+    ws: WebSocketStream,
+    sendrx: MeteredReceiver<SerializableMessage>,
 ) {
     let mut liveness_check_interval = tokio::time::interval(LIVELINESS_TIMEOUT);
     let mut got_pong = true;
@@ -228,14 +233,21 @@ async fn ws_client_actor_inner(
     let mut message_queue = MeteredDeque::<(DataMessage, Instant)>::new(
         WORKER_METRICS.total_incoming_queue_length.with_label_values(&addr),
     );
+    // Holds the future processing the current client message,
+    // the output of that future,
+    // or nothing at all (`MaybeDone::Gone`).
     let mut current_message = pin!(MaybeDone::Gone);
 
+    // If true, we sent the client a close frame, and are waiting for a reply.
     let mut closed = false;
-    let mut rx_buf = Vec::new();
+    // If true, the module exited. Outstanding messages can be dropped.
+    let mut exited = false;
 
-    let mut msg_buffer = SerializeBuffer::new(client.config);
+    let (ws_send, mut ws_recv) = ws.split();
+    let (unordered_tx, unordered_rx) = mpsc::unbounded_channel();
+    tokio::spawn(ws_send_loop(addr, client.config, ws_send, sendrx, unordered_rx));
+
     loop {
-        rx_buf.clear();
         enum Item {
             Message(ClientMessage),
             HandleResult(Result<(), MessageHandleError>),
@@ -262,8 +274,13 @@ async fn ws_client_actor_inner(
 
             // If we've received an incoming message,
             // grab it to handle in the next `match`.
-            message = ws.next() => match message {
-                Some(Ok(m)) => Item::Message(ClientMessage::from_message(m)),
+            message = ws_recv.next() => match message {
+                Some(Ok(m)) => if exited {
+                    // Drop the incoming message while we're waiting for a close ack.
+                    continue;
+                } else {
+                    Item::Message(ClientMessage::from_message(m))
+                },
                 Some(Err(error)) => {
                     log::warn!("Websocket receive error: {}", error);
                     continue;
@@ -274,75 +291,31 @@ async fn ws_client_actor_inner(
                 },
             },
 
-            // If we have an outgoing message to send, send it off.
-            // No incoming `message` to handle, so `continue`.
-            Some(n) = sendrx.recv_many(&mut rx_buf, 32).map(|n| (n != 0).then_some(n)) => {
-                if closed {
-                    // TODO: this isn't great. when we receive a close request from the peer,
-                    //       tungstenite doesn't let us send any new messages on the socket,
-                    //       even though the websocket RFC allows it. should we fork tungstenite?
-                    log::info!("dropping {n} messages due to ws already being closed");
-                    log::debug!("dropped messages: {:?}", &rx_buf[..n]);
-                } else {
-                    let send_all = async {
-                        for msg in rx_buf.drain(..n) {
-                            let workload = msg.workload();
-                            let num_rows = msg.num_rows();
-
-                            // Serialize the message, report metrics,
-                            // and keep a handle to the buffer.
-                            let (msg_alloc, msg_data) = serialize(msg_buffer, msg, client.config);
-                            report_ws_sent_metrics(&addr, workload, num_rows, &msg_data);
-
-                            // Buffer the message without necessarily sending it.
-                            let res = ws.feed(datamsg_to_wsmsg(msg_data)).await;
-
-                            // At this point,
-                            // the underlying allocation of `msg_data` should have a single referent
-                            // and this should be `msg_alloc`.
-                            // We can put this back into our pool.
-                            msg_buffer = msg_alloc.try_reclaim()
-                                .expect("should have a unique referent to `msg_alloc`");
-
-                            if res.is_err() {
-                                return (res, msg_buffer);
-                            }
-                        }
-                        // now we flush all the messages to the socket
-                        (ws.flush().await, msg_buffer)
-                    };
-                    // Flush the websocket while continuing to poll the `handle_queue`,
-                    // to avoid deadlocks or delays due to enqueued futures holding resources.
-                    let send_all = also_poll(send_all, make_progress(&mut current_message));
-                    let t1 = Instant::now();
-                    let (send_all_result, buf) = send_all.await;
-                    msg_buffer = buf;
-                    if let Err(error) = send_all_result {
-                        log::warn!("Websocket send error: {error}")
-                    }
-                    let time = t1.elapsed();
-                    if time > Duration::from_millis(50) {
-                        tracing::warn!(?time, "send_all took a very long time");
-                    }
-                }
-                continue;
-            }
-
+            // Update the module host of the client connection if it was
+            // updated (hotswapped).
+            //
+            // If `closed` is true, we already sent a close frame and will exit
+            // the loop once the client acknowledges (`ws_recv.next()` returns
+            // `None`).
+            //
+            // If the module exited, we'll send a close frame and wait for an ack.
             res = client.watch_module_host(), if !closed => {
                 match res {
                     Ok(()) => {}
                     // If the module has exited, close the websocket.
                     Err(NoSuchModule) => {
-                        // Send a close frame while continuing to poll the `handle_queue`,
-                        // to avoid deadlocks or delays due to enqueued futures holding resources.
-                        let close = also_poll(
-                            ws.close(Some(CloseFrame { code: CloseCode::Away, reason: "module exited".into() })),
-                            make_progress(&mut current_message),
-                        );
-                        if let Err(e) = close.await {
-                            log::warn!("error closing: {e:#}")
-                        }
+                        let close = CloseFrame {
+                            code: CloseCode::Away,
+                            reason: "module exited".into()
+                        };
+                        // If the sender is already gone,
+                        // we won't be sending close, and not receive an ack,
+                        // so exit the loop here.
+                        if unordered_tx.send(close.into()).is_err() {
+                            break;
+                        };
                         closed = true;
+                        exited = true;
                     }
                 }
                 continue;
@@ -352,11 +325,9 @@ async fn ws_client_actor_inner(
             _ = liveness_check_interval.tick() => {
                 // If we received a pong at some point, send a fresh ping.
                 if mem::take(&mut got_pong) {
-                    // Send a ping message while continuing to poll the `handle_queue`,
-                    // to avoid deadlocks or delays due to enqueued futures holding resources.
-                    if let Err(e) = also_poll(ws.send(WsMessage::Ping(Bytes::new())), make_progress(&mut current_message)).await {
-                        log::warn!("error sending ping: {e:#}");
-                    }
+                    // If the sender is already gone,
+                    // we'll time out the connection eventually.
+                    let _ = unordered_tx.send(UnorderedWsMessage::Ping(Bytes::new()));
                     continue;
                 } else {
                     // the client never responded to our ping; drop them without trying to send them a Close
@@ -381,34 +352,22 @@ async fn ws_client_actor_inner(
                 if let Err(e) = res {
                     if let MessageHandleError::Execution(err) = e {
                         log::error!("{err:#}");
-                        // Serialize the message and keep a handle to the buffer.
-                        let (msg_alloc, msg_data) = serialize(msg_buffer, err, client.config);
-
-                        // Buffer the message without necessarily sending it.
-                        if let Err(error) = ws.send(datamsg_to_wsmsg(msg_data)).await {
-                            log::warn!("Websocket send error: {error}")
-                        }
-
-                        // At this point,
-                        // the underlying allocation of `msg_data` should have a single referent
-                        // and this should be `msg_alloc`.
-                        // We can put this back into our pool.
-                        msg_buffer = msg_alloc
-                            .try_reclaim()
-                            .expect("should have a unique referent to `msg_alloc`");
-
+                        // Ignoring send errors is apparently fine in this case.
+                        let _ = unordered_tx.send(err.into());
                         continue;
                     }
                     log::debug!("Client caused error on text message: {}", e);
-                    if let Err(e) = ws
-                        .close(Some(CloseFrame {
-                            code: CloseCode::Error,
-                            reason: format!("{e:#}").into(),
-                        }))
-                        .await
-                    {
-                        log::warn!("error closing websocket: {e:#}")
+                    let close = CloseFrame {
+                        code: CloseCode::Error,
+                        reason: format!("{e:#}").into(),
                     };
+                    // If the sender is already gone,
+                    // we won't be sending close, and not receive an ack,
+                    // so exit the lopp here.
+                    if unordered_tx.send(close.into()).is_err() {
+                        break;
+                    }
+                    closed = true;
                 }
             }
             Item::Message(ClientMessage::Ping(_message)) => {
@@ -422,15 +381,18 @@ async fn ws_client_actor_inner(
             }
             Item::Message(ClientMessage::Close(close_frame)) => {
                 // This happens in 2 cases:
+                //
                 // a) We sent a Close frame and this is the ack.
                 // b) This is the client telling us they want to close.
-                // in either case, after the remaining messages in the queue flush,
-                // ws.next() will return None and we'll exit the loop.
-                // NOTE: No need to send a close frame, it's is queued
+                //
+                // In either case, after the remaining messages in the queue
+                // are drained, `ws_recv.next()` will return `None` and we'll
+                // exit the loop
+                //
+                // NOTE: No need to send a close frame, it is queued
                 //       automatically by tungstenite.
-
-                // if this is the closed-by-them case, let the ClientConnectionSenders know now.
-                sendrx.close();
+                //       We need to continue polling the websocket, however,
+                //       to have the close frame sent.
                 log::trace!("Close frame {:?}", close_frame);
                 if !closed {
                     // This is the client telling us they want to close.
@@ -444,7 +406,125 @@ async fn ws_client_actor_inner(
         }
     }
     log::debug!("Client connection ended");
-    sendrx.close();
+}
+
+/// Outgoing messages that don't need to be ordered wrt subscription updates.
+#[derive(From)]
+enum UnorderedWsMessage {
+    Close(CloseFrame),
+    Ping(Bytes),
+    Error(MessageExecutionError),
+}
+
+async fn ws_send_loop(
+    database_identity: Identity,
+    config: ClientConfig,
+    mut ws: SplitSink<WebSocketStream, WsMessage>,
+    mut messages: MeteredReceiver<SerializableMessage>,
+    mut unordered: mpsc::UnboundedReceiver<UnorderedWsMessage>,
+) {
+    let mut messages_buf = Vec::with_capacity(32);
+    let mut serialize_buf = SerializeBuffer::new(config);
+
+    loop {
+        tokio::select! {
+            // `biased` towards the unordered queue, which may initiate a
+            // connection shutdown.
+            biased;
+
+            Some(msg) = unordered.recv() => {
+                match msg {
+                    UnorderedWsMessage::Close(close_frame) => {
+                        if let Err(e) = ws.send(WsMessage::Close(Some(close_frame))).await {
+                            log::warn!("error sending close frame: {e:#}");
+                            break;
+                        }
+                    },
+                    UnorderedWsMessage::Ping(bytes) => {
+                        let _ = ws
+                            .feed(WsMessage::Ping(bytes))
+                            .await
+                            .inspect_err(|e| log::warn!("error sending ping: {e:#}"));
+                    },
+                    UnorderedWsMessage::Error(err) => {
+                        let (msg_alloc, res) = send_message(
+                            &mut ws,
+                            &database_identity,
+                            config,
+                            serialize_buf,
+                            None,
+                            err
+                        ).await;
+                        serialize_buf = msg_alloc;
+
+                        if let Err(e) = res {
+                            log::warn!("websocket send error: {e}");
+                            break;
+                        }
+                    },
+                }
+            },
+
+            Some(n) = messages.recv_many(&mut messages_buf, 32).map(|n| (n != 0).then_some(n)) => {
+                for msg in messages_buf.drain(..n) {
+                    let (msg_alloc, res) = send_message(
+                        &mut ws,
+                        &database_identity,
+                        config,
+                        serialize_buf,
+                        msg.workload().zip(msg.num_rows()),
+                        msg
+                    ).await;
+                    serialize_buf = msg_alloc;
+
+                    if let Err(e) = res {
+                        log::warn!("websocket send error: {e}");
+                        break;
+                    }
+                }
+            },
+
+            else => break,
+        }
+
+        if let Err(e) = ws.flush().await {
+            log::warn!("error flushing websocket: {e}");
+            break;
+        }
+    }
+}
+
+/// Serialize and potentially compress `message`, and feed it to the `ws` sink.
+async fn send_message(
+    ws: &mut SplitSink<WebSocketStream, WsMessage>,
+    database_identity: &Identity,
+    config: ClientConfig,
+    serialize_buf: SerializeBuffer,
+    metrics_metadata: Option<(WorkloadType, usize)>,
+    message: impl ToProtocol<Encoded = SwitchedServerMessage> + Send + 'static,
+) -> (SerializeBuffer, Result<(), WsError>) {
+    let (workload, num_rows) = metrics_metadata.unzip();
+    let start_serialize = Instant::now();
+    // Move large messages to a blocking thread,
+    // as serialization and compression can take a long time.
+    // The threshold of 1024 rows is arbitrary, and may need to be refined.
+    let (msg_alloc, msg_data) = if num_rows.is_some_and(|n| n > 1024) {
+        asyncify(move || serialize(serialize_buf, message, config)).await
+    } else {
+        serialize(serialize_buf, message, config)
+    };
+    report_ws_sent_metrics(
+        database_identity,
+        workload,
+        num_rows,
+        start_serialize.elapsed(),
+        &msg_data,
+    );
+
+    let res = ws.feed(datamsg_to_wsmsg(msg_data)).await;
+    // TODO: Reclaim seems to never succeed. What changed?
+    let buf = msg_alloc.try_reclaim().unwrap_or_else(|| SerializeBuffer::new(config));
+    (buf, res)
 }
 
 enum ClientMessage {
@@ -472,6 +552,7 @@ fn report_ws_sent_metrics(
     addr: &Identity,
     workload: Option<WorkloadType>,
     num_rows: Option<usize>,
+    serialize_duration: Duration,
     msg_ws: &DataMessage,
 ) {
     // These metrics should be updated together,
@@ -486,6 +567,11 @@ fn report_ws_sent_metrics(
             .with_label_values(addr, &workload)
             .observe(msg_ws.len() as f64);
     }
+
+    WORKER_METRICS
+        .websocket_serialize_secs
+        .with_label_values(addr)
+        .observe(serialize_duration.as_secs_f64());
 }
 
 fn datamsg_to_wsmsg(msg: DataMessage) -> WsMessage {

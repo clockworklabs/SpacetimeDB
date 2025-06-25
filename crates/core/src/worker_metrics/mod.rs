@@ -205,6 +205,12 @@ metrics_group!(
         #[buckets(5, 10, 50, 100, 500, 1e3, 5e3, 10e3, 50e3, 100e3, 250e3, 500e3, 750e3, 1e6, 5e6)]
         pub websocket_sent_num_rows: HistogramVec,
 
+        #[name = spacetime_websocket_serialize_secs]
+        #[help = "How long it took to serialize and maybe compress an outgoing websocket message"]
+        #[labels(db: Identity)]
+        #[buckets(0.001, 0.01, 0.05, 0.1, 0.25, 0.5, 1.0)]
+        pub websocket_serialize_secs: HistogramVec,
+
         #[name = spacetime_worker_instance_operation_queue_length]
         #[help = "Length of the wait queue for access to a module instance."]
         #[labels(database_identity: Identity)]
