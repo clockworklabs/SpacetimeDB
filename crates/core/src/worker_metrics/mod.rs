@@ -26,7 +26,7 @@ metrics_group!(
         pub ws_clients_aborted: IntGaugeVec,
 
         #[name = spacetime_worker_ws_clients_closed_connection]
-        #[help = "Number of ws connections closed by the client"]
+        #[help = "Number of ws client connections closed by the client as opposed to being termiated by the server"]
         #[labels(database_identity: Identity)]
         pub ws_clients_closed_connection: IntGaugeVec,
 
