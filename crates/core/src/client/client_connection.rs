@@ -1,5 +1,6 @@
 use std::collections::VecDeque;
 use std::ops::Deref;
+use std::sync::atomic::Ordering;
 use std::sync::atomic::{AtomicBool, Ordering::Relaxed};
 use std::sync::Arc;
 use std::time::Instant;
@@ -156,6 +157,10 @@ impl ClientConnectionSender {
 
     pub fn dummy(id: ClientActorId, config: ClientConfig) -> Self {
         Self::dummy_with_channel(id, config).0
+    }
+
+    pub fn is_cancelled(&self) -> bool {
+        self.cancelled.load(Ordering::Acquire)
     }
 
     /// Send a message to the client. For data-related messages, you should probably use

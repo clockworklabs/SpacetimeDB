@@ -1209,12 +1209,7 @@ impl SubscriptionManager {
                     SingleQueryUpdate { update, num_rows }
                 }
 
-                // filter out clients that've dropped
-                let clients_for_query = qstate.all_clients().filter(|id| {
-                    self.clients
-                        .get(*id)
-                        .is_some_and(|info| !info.dropped.load(Ordering::Acquire))
-                });
+                let clients_for_query = qstate.all_clients();
 
                 match eval_delta(tx, &mut acc.metrics, plan) {
                     Err(err) => {
@@ -1293,6 +1288,16 @@ struct SendWorkerClient {
     outbound_ref: Client,
 }
 
+impl SendWorkerClient {
+    fn is_dropped(&self) -> bool {
+        self.dropped.load(Ordering::Acquire)
+    }
+
+    fn is_cancelled(&self) -> bool {
+        self.outbound_ref.is_cancelled()
+    }
+}
+
 /// Asynchronous background worker which aggregates each of the clients' updates from a [`ComputedQueries`]
 /// into `DbUpdate`s and then sends them to the clients' WebSocket workers.
 ///
@@ -1336,6 +1341,14 @@ impl Drop for SendWorker {
                 .subscription_send_queue_length
                 .remove_label_values(&identity);
         }
+    }
+}
+
+impl SendWorker {
+    fn is_client_dropped_or_cancelled(&self, client_id: &ClientId) -> bool {
+        self.clients
+            .get(client_id)
+            .is_some_and(|client| client.is_cancelled() || client.is_dropped())
     }
 }
 
@@ -1451,6 +1464,8 @@ impl SendWorker {
         // or BSATN (`Protocol::Binary`).
         let mut client_table_id_updates = updates
             .into_iter()
+            // Filter out dropped or cancelled clients
+            .filter(|upd| !self.is_client_dropped_or_cancelled(&upd.id))
             // Filter out clients whose subscriptions failed
             .filter(|upd| !clients_with_errors.contains(&upd.id))
             // Do the aggregation.
