@@ -1290,6 +1290,8 @@ struct SendWorkerClient {
 
 impl SendWorkerClient {
     fn is_dropped(&self) -> bool {
+        // We check this when processing subscription updates to exit early for dropped clients.
+        // We use `Acquire` here because we prioritize early exit over cheaper loads.
         self.dropped.load(Ordering::Acquire)
     }
 

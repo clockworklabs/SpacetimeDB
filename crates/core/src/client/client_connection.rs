@@ -160,6 +160,8 @@ impl ClientConnectionSender {
     }
 
     pub fn is_cancelled(&self) -> bool {
+        // We check this when processing subscription updates to exit early for dropped clients.
+        // We use `Acquire` here because we prioritize early exit over cheaper loads.
         self.cancelled.load(Ordering::Acquire)
     }
 
@@ -180,7 +182,9 @@ impl ClientConnectionSender {
                 // the channel, so forcibly kick the client
                 tracing::warn!(identity = %self.id.identity, connection_id = %self.id.connection_id, "client channel capacity exceeded");
                 self.abort_handle.abort();
-                self.cancelled.store(true, Relaxed);
+                // We check this when processing subscription updates to exit early for dropped clients.
+                // We use `Release` here because we prioritize early exit over cheaper stores.
+                self.cancelled.store(true, Ordering::Release);
                 return Err(ClientSendError::Cancelled);
             }
             Err(mpsc::error::TrySendError::Closed(_)) => return Err(ClientSendError::Disconnected),
