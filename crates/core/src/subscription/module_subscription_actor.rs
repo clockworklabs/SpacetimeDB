@@ -554,7 +554,7 @@ impl ModuleSubscriptions {
     fn compile_queries(
         &self,
         sender: Identity,
-        queries: impl IntoIterator<Item = Box<str>>,
+        queries: &[Box<str>],
         num_queries: usize,
         metrics: &SubscriptionMetrics,
     ) -> Result<(Vec<Arc<Plan>>, AuthCtx, TxId, HistogramTimer), DBError> {
@@ -563,12 +563,13 @@ impl ModuleSubscriptions {
         let mut query_hashes = Vec::with_capacity(num_queries);
 
         for sql in queries {
-            if is_subscribe_to_all_tables(&sql) {
+            let sql = sql.trim();
+            if is_subscribe_to_all_tables(sql) {
                 subscribe_to_all_tables = true;
                 continue;
             }
-            let hash = QueryHash::from_string(&sql, sender, false);
-            let hash_with_param = QueryHash::from_string(&sql, sender, true);
+            let hash = QueryHash::from_string(sql, sender, false);
+            let hash_with_param = QueryHash::from_string(sql, sender, true);
             query_hashes.push((sql, hash, hash_with_param));
         }
 
@@ -606,10 +607,10 @@ impl ModuleSubscriptions {
                 plans.push(unit);
             } else {
                 plans.push(Arc::new(
-                    compile_query_with_hashes(&auth, &tx, &sql, hash, hash_with_param).map_err(|err| {
+                    compile_query_with_hashes(&auth, &tx, sql, hash, hash_with_param).map_err(|err| {
                         DBError::WithSql {
                             error: Box::new(DBError::Other(err.into())),
-                            sql,
+                            sql: sql.into(),
                         }
                     })?,
                 ));
@@ -670,7 +671,7 @@ impl ModuleSubscriptions {
         let (queries, auth, tx, compile_timer) = return_on_err!(
             self.compile_queries(
                 sender.id.identity,
-                request.query_strings,
+                &request.query_strings,
                 num_queries,
                 &subscription_metrics
             ),
@@ -767,7 +768,7 @@ impl ModuleSubscriptions {
 
         let (queries, auth, tx, compile_timer) = self.compile_queries(
             sender.id.identity,
-            subscription.query_strings,
+            &subscription.query_strings,
             num_queries,
             &subscription_metrics,
         )?;
@@ -2331,9 +2332,9 @@ mod tests {
         Ok(())
     }
 
-    /// Test that one client unsubscribing does not affect another
+    /// Test that one client subscribing does not affect another
     #[tokio::test]
-    async fn test_unsubscribe() -> anyhow::Result<()> {
+    async fn test_subscribe_distinct_queries_same_plan() -> anyhow::Result<()> {
         // Establish a connection for each client
         let (tx_for_a, mut rx_for_a) = client_connection(client_id_from_u8(1));
         let (tx_for_b, mut rx_for_b) = client_connection(client_id_from_u8(2));
@@ -2341,7 +2342,7 @@ mod tests {
         let db = relational_db()?;
         let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
 
-        let u_id = db.create_table_for_test(
+        let u_id = db.create_table_for_test_with_the_works(
             "u",
             &[
                 ("i", AlgebraicType::U64),
@@ -2349,8 +2350,12 @@ mod tests {
                 ("b", AlgebraicType::U64),
             ],
             &[0.into()],
+            // The join column for this table does not have to be unique,
+            // because pruning only requires us to probe the join index on `v`.
+            &[],
+            StAccess::Public,
         )?;
-        let v_id = db.create_table_for_test(
+        let v_id = db.create_table_for_test_with_the_works(
             "v",
             &[
                 ("i", AlgebraicType::U64),
@@ -2358,6 +2363,101 @@ mod tests {
                 ("y", AlgebraicType::U64),
             ],
             &[0.into(), 1.into()],
+            &[0.into()],
+            StAccess::Public,
+        )?;
+
+        commit_tx(&db, &subs, [], [(v_id, product![1u64, 1u64, 1u64])])?;
+
+        let mut query_ids = 0;
+
+        // Both clients subscribe to the same query modulo whitespace
+        subscribe_multi(
+            &subs,
+            &["select u.* from u join v on u.i = v.i where v.x = 1"],
+            tx_for_a,
+            &mut query_ids,
+        )?;
+        subscribe_multi(
+            &subs,
+            &["select u.* from u join v on u.i = v.i where v.x =  1"],
+            tx_for_b.clone(),
+            &mut query_ids,
+        )?;
+
+        // Wait for both subscriptions
+        assert_matches!(
+            rx_for_a.recv().await,
+            Some(SerializableMessage::Subscription(SubscriptionMessage {
+                result: SubscriptionResult::SubscribeMulti(_),
+                ..
+            }))
+        );
+        assert_matches!(
+            rx_for_b.recv().await,
+            Some(SerializableMessage::Subscription(SubscriptionMessage {
+                result: SubscriptionResult::SubscribeMulti(_),
+                ..
+            }))
+        );
+
+        // Insert a new row into `u`
+        commit_tx(&db, &subs, [], [(u_id, product![1u64, 0u64, 0u64])])?;
+
+        assert_tx_update_for_table(
+            &mut rx_for_a,
+            u_id,
+            &ProductType::from([AlgebraicType::U64, AlgebraicType::U64, AlgebraicType::U64]),
+            [product![1u64, 0u64, 0u64]],
+            [],
+        )
+        .await;
+
+        assert_tx_update_for_table(
+            &mut rx_for_b,
+            u_id,
+            &ProductType::from([AlgebraicType::U64, AlgebraicType::U64, AlgebraicType::U64]),
+            [product![1u64, 0u64, 0u64]],
+            [],
+        )
+        .await;
+
+        Ok(())
+    }
+
+    /// Test that one client unsubscribing does not affect another
+    #[tokio::test]
+    async fn test_unsubscribe_distinct_queries_same_plan() -> anyhow::Result<()> {
+        // Establish a connection for each client
+        let (tx_for_a, mut rx_for_a) = client_connection(client_id_from_u8(1));
+        let (tx_for_b, mut rx_for_b) = client_connection(client_id_from_u8(2));
+
+        let db = relational_db()?;
+        let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
+
+        let u_id = db.create_table_for_test_with_the_works(
+            "u",
+            &[
+                ("i", AlgebraicType::U64),
+                ("a", AlgebraicType::U64),
+                ("b", AlgebraicType::U64),
+            ],
+            &[0.into()],
+            // The join column for this table does not have to be unique,
+            // because pruning only requires us to probe the join index on `v`.
+            &[],
+            StAccess::Public,
+        )?;
+        let v_id = db.create_table_for_test_with_the_works(
+            "v",
+            &[
+                ("i", AlgebraicType::U64),
+                ("x", AlgebraicType::U64),
+                ("y", AlgebraicType::U64),
+            ],
+            &[0.into(), 1.into()],
+            &[0.into()],
+            StAccess::Public,
         )?;
 
         commit_tx(&db, &subs, [], [(v_id, product![1u64, 1u64, 1u64])])?;
@@ -2372,7 +2472,7 @@ mod tests {
         )?;
         subscribe_multi(
             &subs,
-            &["select u.* from u join v on u.i = v.i where v.x = 1"],
+            &["select u.* from u join v on u.i = v.i where  v.x = 1"],
             tx_for_b.clone(),
             &mut query_ids,
         )?;
