@@ -5,7 +5,8 @@ use clap::parser::ValueSource;
 use clap::Arg;
 use clap::ArgAction::Set;
 use fs_err as fs;
-use spacetimedb_codegen::{generate, Csharp, Lang, Rust, TypeScript, AUTO_GENERATED_PREFIX};
+use spacetimedb_codegen::{generate, Csharp, Lang, LangPreset, Rust, TypeScript, AUTO_GENERATED_PREFIX};
+use spacetimedb_codegen::presets::{React};
 use spacetimedb_lib::de::serde::DeserializeWrapper;
 use spacetimedb_lib::{sats, RawModuleDef};
 use spacetimedb_schema;
@@ -77,6 +78,13 @@ pub fn cli() -> clap::Command {
                 .help("The language to generate"),
         )
         .arg(
+            Arg::new("preset")
+                .required(false)
+                .long("preset")
+                .value_parser(clap::value_parser!(Preset))
+                .help("The preset to apply"),
+        )
+        .arg(
             Arg::new("build_options")
                 .long("build-options")
                 .alias("build-opts")
@@ -103,6 +111,7 @@ pub async fn exec_ex(
     let json_module = args.get_many::<PathBuf>("json_module");
     let out_dir = args.get_one::<PathBuf>("out_dir").unwrap();
     let lang = *args.get_one::<Language>("lang").unwrap();
+    let preset = args.get_one::<Preset>("preset").copied();
     let namespace = args.get_one::<String>("namespace").unwrap();
     let force = args.get_flag("force");
     let build_options = args.get_one::<String>("build_options").unwrap();
@@ -127,13 +136,21 @@ pub async fn exec_ex(
         };
         let spinner = indicatif::ProgressBar::new_spinner();
         spinner.enable_steady_tick(std::time::Duration::from_millis(60));
+        println!("{}", wasm_path.display());
+
         spinner.set_message("Extracting schema from wasm...");
+
         extract_descriptions(&wasm_path).context("could not extract schema")?
     };
 
     fs::create_dir_all(out_dir)?;
 
     let mut paths = BTreeSet::new();
+
+    let gen_preset: Option<&dyn LangPreset> = match preset {
+        Some(Preset::React) => Some(&React),
+        None => None
+    };
 
     let csharp_lang;
     let gen_lang = match lang {
@@ -142,11 +159,13 @@ pub async fn exec_ex(
             &csharp_lang as &dyn Lang
         }
         Language::Rust => &Rust,
-        Language::TypeScript => &TypeScript,
+        Language::TypeScript => &TypeScript { preset: gen_preset },
     };
 
     for (fname, code) in generate(&module, gen_lang) {
         let fname = Path::new(&fname);
+        print!("{}", &fname.to_str().unwrap());
+
         // If a generator asks for a file in a subdirectory, create the subdirectory first.
         if let Some(parent) = fname.parent().filter(|p| !p.as_os_str().is_empty()) {
             fs::create_dir_all(out_dir.join(parent))?;
@@ -215,6 +234,11 @@ pub enum Language {
     Rust,
 }
 
+#[derive(Clone, Copy, PartialEq)]
+pub enum Preset {
+    React
+}
+
 impl clap::ValueEnum for Language {
     fn value_variants<'a>() -> &'a [Self] {
         &[Self::Csharp, Self::TypeScript, Self::Rust]
@@ -224,6 +248,17 @@ impl clap::ValueEnum for Language {
             Self::Csharp => clap::builder::PossibleValue::new("csharp").aliases(["c#", "cs"]),
             Self::TypeScript => clap::builder::PossibleValue::new("typescript").aliases(["ts", "TS"]),
             Self::Rust => clap::builder::PossibleValue::new("rust").aliases(["rs", "RS"]),
+        })
+    }
+}
+
+impl clap::ValueEnum for Preset {
+    fn value_variants<'a>() -> &'a [Self] {
+        &[Self::React]
+    }
+    fn to_possible_value(&self) -> Option<PossibleValue> {
+        Some(match self {
+            Self::React => clap::builder::PossibleValue::new("react").aliases(["react"]),
         })
     }
 }
