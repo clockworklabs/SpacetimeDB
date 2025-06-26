@@ -857,7 +857,7 @@ impl PipelinedIxJoin {
                         .map(Row::Ptr)
                         .map(Tuple::Row)
                     {
-                        f(u.clone().join(v.clone()))?;
+                        f(u.clone().join(v))?;
                     }
                     Ok(())
                 })?;
