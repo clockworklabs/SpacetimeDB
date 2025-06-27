@@ -104,6 +104,8 @@ pub(super) enum PendingSchemaChange {
     TableAlterAccess(TableId, StAccess),
     /// The row type of the table with [`TableId`] was changed.
     /// The old column schemas was stored.
+    /// Only non-representational row-type changes are allowed here,
+    /// so existing rows in the table will be compatible with the new row type.
     TableAlterRowType(TableId, Vec<ColumnSchema>),
     /// The constraint with [`ConstraintSchema`] was added to the table with [`TableId`].
     ConstraintRemoved(TableId, ConstraintSchema),

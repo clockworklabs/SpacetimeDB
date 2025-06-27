@@ -687,7 +687,7 @@ impl CommittedState {
                 table.with_mut_schema(|s| s.table_access = access);
             }
             // A table's row type was changed. Change back to the old one.
-            // The row representation of old rows hasn't change,
+            // The row representation of old rows hasn't changed,
             // so it's safe to not rewrite the rows and merely change the type back.
             TableAlterRowType(table_id, column_schemas) => {
                 let table = self.tables.get_mut(&table_id)?;
