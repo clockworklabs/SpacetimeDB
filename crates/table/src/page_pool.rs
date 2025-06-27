@@ -1,12 +1,15 @@
-use super::{indexes::Size, page::Page};
-use crate::indexes::max_rows_in_page;
-use crate::{page::PageHeader, MemoryUsage};
+use super::{
+    indexes::max_rows_in_page,
+    page::{Page, PageHeader},
+};
 use core::sync::atomic::{AtomicUsize, Ordering};
 use crossbeam_queue::ArrayQueue;
 use spacetimedb_sats::bsatn::{self, DecodeError};
 use spacetimedb_sats::de::{
     DeserializeSeed, Deserializer, Error, NamedProductAccess, ProductVisitor, SeqProductAccess,
 };
+use spacetimedb_sats::layout::Size;
+use spacetimedb_sats::memory_usage::MemoryUsage;
 use std::sync::Arc;
 
 /// A page pool of currently unused pages available for use in [`Pages`](super::pages::Pages).

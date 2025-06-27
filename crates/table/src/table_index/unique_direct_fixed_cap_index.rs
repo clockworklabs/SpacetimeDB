@@ -1,9 +1,9 @@
 use super::unique_direct_index::{UniqueDirectIndexPointIter, NONE_PTR};
 use crate::indexes::RowPointer;
-use crate::MemoryUsage;
 use core::mem;
 use core::ops::{Bound, RangeBounds};
 use core::slice::Iter;
+use spacetimedb_sats::memory_usage::MemoryUsage;
 
 /// A direct index with for relating unsigned integer keys to [`RowPointer`].
 /// The index is provided a capacity on creation and will have that during its lifetime.
