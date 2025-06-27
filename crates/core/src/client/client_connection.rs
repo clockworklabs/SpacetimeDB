@@ -1,5 +1,6 @@
 use std::collections::VecDeque;
 use std::ops::Deref;
+use std::sync::atomic::Ordering;
 use std::sync::atomic::{AtomicBool, Ordering::Relaxed};
 use std::sync::Arc;
 use std::time::Instant;
@@ -158,6 +159,10 @@ impl ClientConnectionSender {
         Self::dummy_with_channel(id, config).0
     }
 
+    pub fn is_cancelled(&self) -> bool {
+        self.cancelled.load(Ordering::Relaxed)
+    }
+
     /// Send a message to the client. For data-related messages, you should probably use
     /// `BroadcastQueue::send` to ensure that the client sees data messages in a consistent order.
     pub fn send_message(&self, message: impl Into<SerializableMessage>) -> Result<(), ClientSendError> {
@@ -175,7 +180,7 @@ impl ClientConnectionSender {
                 // the channel, so forcibly kick the client
                 tracing::warn!(identity = %self.id.identity, connection_id = %self.id.connection_id, "client channel capacity exceeded");
                 self.abort_handle.abort();
-                self.cancelled.store(true, Relaxed);
+                self.cancelled.store(true, Ordering::Relaxed);
                 return Err(ClientSendError::Cancelled);
             }
             Err(mpsc::error::TrySendError::Closed(_)) => return Err(ClientSendError::Disconnected),
