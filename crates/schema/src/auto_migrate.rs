@@ -1,4 +1,4 @@
-use core::{cmp::Ordering, ops::Add};
+use core::{cmp::Ordering, ops::BitOr};
 
 use crate::{def::*, error::PrettyAlgebraicType, identifier::Identifier};
 use spacetimedb_data_structures::{
@@ -408,7 +408,7 @@ fn auto_migrate_table<'def>(plan: &mut AutoMigratePlan<'def>, old: &'def TableDe
     Ok(())
 }
 
-/// An "any" monoid with `false` as identity and `||` as the operator.
+/// An "any" monoid with `false` as identity and `|` as the operator.
 struct Any(bool);
 
 impl FromIterator<Any> for Any {
@@ -417,10 +417,10 @@ impl FromIterator<Any> for Any {
     }
 }
 
-impl Add for Any {
+impl BitOr for Any {
     type Output = Self;
-    fn add(self, rhs: Self) -> Self::Output {
-        Self(self.0 || rhs.0)
+    fn bitor(self, rhs: Self) -> Self::Output {
+        Self(self.0 | rhs.0)
     }
 }
 
@@ -488,7 +488,7 @@ fn ensure_old_ty_upgradable_to_new(
             };
 
             let (len_changed, prefix_changed, ..) = (var_lens_ok, prefix_ok, size_ok, align_ok).combine_errors()?;
-            Ok(len_changed + prefix_changed)
+            Ok(len_changed | prefix_changed)
         }
 
         // For products,
