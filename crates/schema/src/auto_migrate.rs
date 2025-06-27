@@ -171,6 +171,18 @@ pub enum AutoMigrateError {
     ChangeWithinColumnTypeFewerVariants(ChangeColumnTypeParts),
 
     #[error(
+        "Changing the type of column {} in table {} from {:?} to {:?}, with a renamed variant, requires a manual migration",
+        .0.column, .0.table, .0.type1, .0.type2
+    )]
+    ChangeColumnTypeRenamedVariant(ChangeColumnTypeParts),
+
+    #[error(
+        "Changing the type of column {} in table {} from {:?} to {:?}, with a renamed variant, requires a manual migration",
+        .0.column, .0.table, .0.type1, .0.type2
+    )]
+    ChangeWithinColumnTypeRenamedVariant(ChangeColumnTypeParts),
+
+    #[error(
         "Changing the type of column {} in table {} from {:?} to {:?}, requires a manual migration, due to size mismatch",
         .0.column, .0.table, .0.type1, .0.type2
     )]
@@ -205,6 +217,18 @@ pub enum AutoMigrateError {
         .0.column, .0.table, .0.type1, .0.type2
     )]
     ChangeWithinColumnTypeFewerFields(ChangeColumnTypeParts),
+
+    #[error(
+        "Changing the type of column {} in table {} from {:?} to {:?}, with a renamed field, requires a manual migration",
+        .0.column, .0.table, .0.type1, .0.type2
+    )]
+    ChangeColumnTypeRenamedField(ChangeColumnTypeParts),
+
+    #[error(
+        "Changing the type of column {} in table {} from {:?} to {:?}, with a renamed field, requires a manual migration",
+        .0.column, .0.table, .0.type1, .0.type2
+    )]
+    ChangeWithinColumnTypeRenamedField(ChangeColumnTypeParts),
 
     #[error("Adding a unique constraint {constraint} requires a manual migration")]
     AddUniqueConstraint { constraint: Box<str> },
@@ -459,12 +483,22 @@ fn ensure_old_ty_upgradable_to_new(
 
             // The variants in `old_ty` must be upgradable to those in `old_ty`.
             // Strict equality is *not* imposed in the prefix!
-            // We also don't care about variant names, as they don't impact BFLATN.
             let prefix_ok = old_vars
                 .iter()
                 .zip(new_vars)
-                .map(|(o, n)| (&o.algebraic_type, &n.algebraic_type))
-                .map(ensure)
+                .map(|(o, n)| {
+                    // Ensure type compatibility.
+                    let res_ty = ensure((&o.algebraic_type, &n.algebraic_type));
+                    // Ensure name doesn't change.
+                    let res_name = if o.name() == n.name() {
+                        Ok(())
+                    } else if within {
+                        Err(ChangeWithinColumnTypeRenamedVariant(parts_for_error()).into())
+                    } else {
+                        Err(ChangeColumnTypeRenamedVariant(parts_for_error()).into())
+                    };
+                    (res_ty, res_name).combine_errors().map(|(c, ())| c)
+                })
                 .collect_all_errors::<Any>();
 
             // The old and the new sum types must have matching layout sizes and alignments.
@@ -512,8 +546,19 @@ fn ensure_old_ty_upgradable_to_new(
             let fields_ok = old_ty
                 .iter()
                 .zip(new_ty.iter())
-                .map(|(o, n)| (&o.algebraic_type, &n.algebraic_type))
-                .map(ensure)
+                .map(|(o, n)| {
+                    // Ensure type compatibility.
+                    let res_ty = ensure((&o.algebraic_type, &n.algebraic_type));
+                    // Ensure name doesn't change.
+                    let res_name = if o.name() == n.name() {
+                        Ok(())
+                    } else if within {
+                        Err(ChangeWithinColumnTypeRenamedField(parts_for_error()).into())
+                    } else {
+                        Err(ChangeColumnTypeRenamedField(parts_for_error()).into())
+                    };
+                    (res_ty, res_name).combine_errors().map(|(c, ())| c)
+                })
                 .collect_all_errors::<Any>();
 
             (len_eq_ok, fields_ok).combine_errors().map(|(_, x)| x)
@@ -987,28 +1032,28 @@ mod tests {
 
         let mut new_builder = RawModuleDefV9Builder::new();
 
-        // Remove variant `foo23`.
+        // Remove variant `foo23` and rename variant `foo21` to `bad`.
         let new_foo2_ty = AlgebraicType::sum([
-            ("foo21", AlgebraicType::Bool),
+            ("bad", AlgebraicType::Bool),
             // U32 -> U64
             ("foo22", AlgebraicType::U64),
         ]);
         let new_foo2_refty = new_builder.add_algebraic_type([], "foo2", new_foo2_ty.clone(), true);
         let new_foo_ty = AlgebraicType::product([
-            // Remove field `foo3`.
-            ("foo1", AlgebraicType::String),
+            // Remove field `foo3` and rename `foo1` to `bad`.
+            ("bad", AlgebraicType::String),
             ("foo2", new_foo2_refty.into()),
         ]);
         let new_foo_refty = new_builder.add_algebraic_type([], "foo", new_foo_ty.clone(), true);
         let new_sum1_ty = AlgebraicType::sum([
-            // Remove variant `bar`.
-            ("foo", AlgebraicType::array(new_foo_refty.into())),
+            // Remove variant `bar` and rename `foo` to `bad`.
+            ("bad", AlgebraicType::array(new_foo_refty.into())),
         ]);
         let new_sum1_refty = new_builder.add_algebraic_type([], "sum1", new_sum1_ty.clone(), true);
 
         let new_prod1_ty = AlgebraicType::product([
-            // Removed field `qux`.
-            ("baz", AlgebraicType::Bool),
+            // Removed field `qux` and renamed `baz` to `bad`.
+            ("bad", AlgebraicType::Bool),
         ]);
         let new_prod1_refty = new_builder.add_algebraic_type([], "prod1", new_prod1_ty.clone(), true);
 
@@ -1091,6 +1136,18 @@ mod tests {
             }) => table == &apples && column == &name && type1.0 == AlgebraicType::String && type2.0 == AlgebraicType::U32
         );
 
+        // Rename variant `foo21`.
+        expect_error_matching!(
+            result,
+            AutoMigrateError::ChangeWithinColumnTypeRenamedVariant(ChangeColumnTypeParts {
+                table,
+                column,
+                type1,
+                type2
+            }) => table == &apples && column == &sum1
+            && type1.0 == foo2_ty && type2.0 == new_foo2_ty
+        );
+
         // foo22: U32 -> U64.
         expect_error_matching!(
             result,
@@ -1139,6 +1196,18 @@ mod tests {
             && type1.0 == foo2_ty && type2.0 == new_foo2_ty
         );
 
+        // Rename field `foo1`.
+        expect_error_matching!(
+            result,
+            AutoMigrateError::ChangeWithinColumnTypeRenamedField(ChangeColumnTypeParts {
+                table,
+                column,
+                type1,
+                type2
+            }) => table == &apples && column == &sum1
+            && type1.0 == resolve_old(&foo_ty) && type2.0 == resolve_new(&new_foo_ty)
+        );
+
         // Remove field `foo3`.
         expect_error_matching!(
             result,
@@ -1149,6 +1218,18 @@ mod tests {
                 type2
             }) => table == &apples && column == &sum1
             && type1.0 == resolve_old(&foo_ty) && type2.0 == resolve_new(&new_foo_ty)
+        );
+
+        // Rename variant `bar`.
+        expect_error_matching!(
+            result,
+            AutoMigrateError::ChangeColumnTypeRenamedVariant(ChangeColumnTypeParts {
+                table,
+                column,
+                type1,
+                type2
+            }) => table == &apples && column == &sum1
+            && type1.0 == resolve_old(&sum1_ty) && type2.0 == resolve_new(&new_sum1_ty)
         );
 
         // Remove variant `bar`.
@@ -1185,6 +1266,18 @@ mod tests {
                 type2
             }) => table == &apples && column == &sum1
             && type1.0 == resolve_old(&sum1_ty) && type2.0 == resolve_new(&new_sum1_ty)
+        );
+
+        // Rename field `baz`.
+        expect_error_matching!(
+            result,
+            AutoMigrateError::ChangeColumnTypeRenamedField(ChangeColumnTypeParts {
+                table,
+                column,
+                type1,
+                type2
+            }) => table == &apples && column == &prod1
+            && type1.0 == prod1_ty && type2.0 == new_prod1_ty
         );
 
         // Remove field `qux`.
