@@ -1,3 +1,4 @@
+use std::future::poll_fn;
 use std::mem;
 use std::pin::{pin, Pin};
 use std::time::Duration;
@@ -521,9 +522,20 @@ async fn send_message(
         &msg_data,
     );
 
-    let res = ws.feed(datamsg_to_wsmsg(msg_data)).await;
-    // TODO: Reclaim seems to never succeed. What changed?
-    let buf = msg_alloc.try_reclaim().unwrap_or_else(|| SerializeBuffer::new(config));
+    let res = async {
+        ws.feed(datamsg_to_wsmsg(msg_data)).await?;
+        // To reclaim the `msg_alloc` memory, we need `SplitSink` to push down
+        // its item slot to the inner sink, which will copy the `Bytes` and
+        // drop the reference.
+        // We don't want to flush the inner sink just yet, as we might be
+        // writing many messages.
+        // `SplitSink::poll_ready` does what we want.
+        poll_fn(|cx| ws.poll_ready_unpin(cx)).await
+    }
+    .await;
+    let buf = msg_alloc
+        .try_reclaim()
+        .expect("should have a unique referent to `msg_alloc`");
     (buf, res)
 }
 
