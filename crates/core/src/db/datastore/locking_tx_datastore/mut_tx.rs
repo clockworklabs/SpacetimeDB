@@ -436,6 +436,11 @@ impl MutTxId {
     /// as the update machinery should disallow any incompatible change.
     /// However, for redundancy and internal soundness of the datastore,
     /// the compatibility is also checked here.
+    ///
+    /// A compatible change is restricted to adding variants to the tail of a sum type
+    /// while preserving the [`Layout`](spacetimedb_table::layout::Layout) of the row type.
+    /// For timer/scheduler tables, the `id` an `at` columns must not change at all.
+    /// All other changes, including reordering of columns, are incompatible.
     pub(crate) fn alter_table_row_type(
         &mut self,
         table_id: TableId,
