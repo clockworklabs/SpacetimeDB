@@ -5,7 +5,8 @@ use module_subscription_manager::Plan;
 use prometheus::IntCounter;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use spacetimedb_client_api_messages::websocket::{
-    ByteListLen, Compression, DatabaseUpdate, QueryUpdate, SingleQueryUpdate, TableUpdate, WebsocketFormat,
+    ByteListLen, Compression, DatabaseUpdate, QueryUpdate, RowListBuilder as _, SingleQueryUpdate, TableUpdate,
+    WebsocketFormat,
 };
 use spacetimedb_execution::{pipelined::PipelinedProject, Datastore, DeltaStore};
 use spacetimedb_lib::{metrics::ExecutionMetrics, Identity};
@@ -97,20 +98,22 @@ where
     Tx: Datastore + DeltaStore,
     F: WebsocketFormat,
 {
-    let mut rows = vec![];
+    let mut count = 0;
+    let mut list = F::ListBuilder::default();
     let mut metrics = ExecutionMetrics::default();
 
     for fragment in plan_fragments {
         fragment.execute(tx, &mut metrics, &mut |row| {
-            rows.push(row);
+            count += 1;
+            list.push(row);
             Ok(())
         })?;
     }
 
-    let (list, n) = F::encode_list(rows.into_iter());
+    let list = list.finish();
     metrics.bytes_scanned += list.num_bytes();
     metrics.bytes_sent_to_clients += list.num_bytes();
-    Ok((list, n, metrics))
+    Ok((list, count, metrics))
 }
 
 /// When collecting a table update are we inserting or deleting rows?
