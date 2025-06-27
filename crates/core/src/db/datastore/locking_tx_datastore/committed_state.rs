@@ -691,12 +691,16 @@ impl CommittedState {
             // so it's safe to not rewrite the rows and merely change the type back.
             TableAlterRowType(table_id, column_schemas) => {
                 let table = self.tables.get_mut(&table_id)?;
-                // SAFETY: `validate = false`.
-                // We must ensure that `column_schemas` is compatible with the existing rows of `table`.
-                // This is the commit table,
-                // so new rows exploiting the changed schema, e.g., by using a new variant,
-                // have not been added here as the commit table is immutable to row addition
-                // during a transaction.
+                // SAFETY:
+                // Let the "old" type/schema be the one in `column_schemas`.
+                // Let the "new" type/schema be the one used by the table which we are rolling back.
+                // There's no need to validate "old",
+                // as it was the row type prior to the change which we're rolling back.
+                // We can use "old", as this is the commit table,
+                // which is immutable to row addition during a transaction,
+                // and thus will only have rows compatible with it.
+                // The rows in the tx state might not be, as they may use e.g., a new variant.
+                // However, we don't care about that, as the tx state is being discarded.
                 unsafe { table.change_columns_to_unchecked(column_schemas, |_, _, _| Ok::<_, Infallible>(())) }
                     .unwrap_or_else(|e| match e {});
             }
