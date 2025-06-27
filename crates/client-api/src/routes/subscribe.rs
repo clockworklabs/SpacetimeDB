@@ -494,7 +494,9 @@ async fn ws_client_actor_inner(
                 //
                 // Notably though the reducer itself will run to completion,
                 // however when it tries to notify this task that it is done,
-                // it will encounter a closed sender in `JobThread::run`.
+                // it will encounter a closed sender in `JobThread::run`,
+                // dropping the value that it's trying to send.
+                // In particular it will not throw an error or panic.
                 break;
             }
         }
