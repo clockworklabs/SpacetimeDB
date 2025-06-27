@@ -241,8 +241,6 @@ async fn ws_client_actor_inner(
 
     // If true, we sent the client a close frame, and are waiting for a reply.
     let mut closed = false;
-    // If true, the module exited. Outstanding messages can be dropped.
-    let mut exited = false;
 
     let (ws_send, mut ws_recv) = ws.split();
     let (unordered_tx, unordered_rx) = mpsc::unbounded_channel();
@@ -276,10 +274,13 @@ async fn ws_client_actor_inner(
             // If we've received an incoming message,
             // grab it to handle in the next `match`.
             message = ws_recv.next() => match message {
-                Some(Ok(m)) => if exited {
-                    // Drop the incoming message while we're waiting for a close ack.
+                // Drop incoming messages if we already sent a close frame.
+                // We're not supposed to send more data, so there's no point
+                // processing it.
+                Some(Ok(_)) if closed => {
                     continue;
-                } else {
+                },
+                Some(Ok(m)) => {
                     Item::Message(ClientMessage::from_message(m))
                 },
                 Some(Err(error)) => {
@@ -299,7 +300,10 @@ async fn ws_client_actor_inner(
             // the loop once the client acknowledges (`ws_recv.next()` returns
             // `None`).
             //
-            // If the module exited, we'll send a close frame and wait for an ack.
+            // If the module exited, we'll send a close frame and wait for an
+            // acknowledgement from the client.
+            // The branch is disabled if `closed == true` to avoid sending
+            // another close frame.
             res = client.watch_module_host(), if !closed => {
                 match res {
                     Ok(()) => {}
@@ -316,7 +320,6 @@ async fn ws_client_actor_inner(
                             break;
                         };
                         closed = true;
-                        exited = true;
                     }
                 }
                 continue;
@@ -364,7 +367,7 @@ async fn ws_client_actor_inner(
                     };
                     // If the sender is already gone,
                     // we won't be sending close, and not receive an ack,
-                    // so exit the lopp here.
+                    // so exit the loop here.
                     if unordered_tx.send(close.into()).is_err() {
                         break;
                     }
@@ -388,7 +391,7 @@ async fn ws_client_actor_inner(
                 //
                 // In either case, after the remaining messages in the queue
                 // are drained, `ws_recv.next()` will return `None` and we'll
-                // exit the loop
+                // exit the loop.
                 //
                 // NOTE: No need to send a close frame, it is queued
                 //       automatically by tungstenite.
@@ -427,19 +430,38 @@ async fn ws_send_loop(
     let mut messages_buf = Vec::with_capacity(32);
     let mut serialize_buf = SerializeBuffer::new(config);
 
+    // If true, we already sent a close frame.
+    //
+    // RFC 6455, Section 5.5.1:
+    //
+    // > The application MUST NOT send any more data frames after sending a
+    // > Close frame.
+    let mut closed = false;
+
     loop {
         tokio::select! {
-            // `biased` towards the unordered queue, which may initiate a
-            // connection shutdown.
+            // `biased` towards the unordered queue,
+            // which may initiate a connection shutdown.
             biased;
 
             Some(msg) = unordered.recv() => {
+                // We shall not sent more data after a close frame,
+                // but keep polling `unordered` so that `ws_client_actor` keeps
+                // waiting for an acknowledgement from the client,
+                // event if it spuriously initiates another close itself.
+                if closed {
+                    continue;
+                }
                 match msg {
                     UnorderedWsMessage::Close(close_frame) => {
                         if let Err(e) = ws.send(WsMessage::Close(Some(close_frame))).await {
                             log::warn!("error sending close frame: {e:#}");
                             break;
                         }
+                        closed = true;
+                        // We won't be polling `messages` anymore,
+                        // so let senders know.
+                        messages.close();
                     },
                     UnorderedWsMessage::Ping(bytes) => {
                         let _ = ws
@@ -466,7 +488,7 @@ async fn ws_send_loop(
                 }
             },
 
-            Some(n) = messages.recv_many(&mut messages_buf, 32).map(|n| (n != 0).then_some(n)) => {
+            Some(n) = messages.recv_many(&mut messages_buf, 32).map(|n| (n != 0).then_some(n)), if !closed => {
                 for msg in messages_buf.drain(..n) {
                     let (msg_alloc, res) = send_message(
                         &mut ws,
