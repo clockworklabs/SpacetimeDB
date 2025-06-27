@@ -117,6 +117,7 @@ spacetimedb
 │   │   │   └── keccak
 │   │   ├── smallvec
 │   │   ├── spacetimedb_bindings_macro (*)
+│   │   ├── spacetimedb_data_structures (*)
 │   │   ├── spacetimedb_primitives (*)
 │   │   └── thiserror (*)
 │   └── thiserror (*)

@@ -6,10 +6,10 @@ use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::db::auth::StTableType;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::AlgebraicValue;
-use spacetimedb_primitives::ColSet;
+use spacetimedb_primitives::{ColSet, TableId};
 use spacetimedb_schema::auto_migrate::{AutoMigratePlan, ManualMigratePlan, MigratePlan};
 use spacetimedb_schema::def::TableDef;
-use spacetimedb_schema::schema::{IndexSchema, Schema, SequenceSchema, TableSchema};
+use spacetimedb_schema::schema::{column_schemas_from_defs, IndexSchema, Schema, SequenceSchema, TableSchema};
 use std::sync::Arc;
 
 /// Update the database according to the migration plan.
@@ -116,7 +116,7 @@ fn auto_migrate_database(
 
                 // Recursively sets IDs to 0.
                 // They will be initialized by the database when the table is created.
-                let table_schema = TableSchema::from_module_def(plan.new, table_def, (), 0.into());
+                let table_schema = TableSchema::from_module_def(plan.new, table_def, (), TableId::SENTINEL);
 
                 system_logger.info(&format!("Creating table `{}`", table_name));
                 log::info!("Creating table `{}`", table_name);
@@ -213,9 +213,19 @@ fn auto_migrate_database(
                 log::info!("Dropping sequence `{}` from table `{}`", sequence_name, table_def.name);
                 stdb.drop_sequence(tx, sequence_schema.sequence_id)?;
             }
+            spacetimedb_schema::auto_migrate::AutoMigrateStep::ChangeColumns(table_name) => {
+                let table_def = plan.new.stored_in_table_def(table_name).unwrap();
+                let table_id = stdb.table_id_from_name_mut(tx, table_name).unwrap().unwrap();
+                let column_schemas = column_schemas_from_defs(plan.new, &table_def.columns, table_id);
+
+                system_logger.info(&format!("Changing columns of table `{}`", table_name));
+                log::info!("Changing columns of table `{}`", table_name);
+
+                stdb.alter_table_row_type(tx, table_id, column_schemas)?;
+            }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::ChangeAccess(table_name) => {
                 let table_def = plan.new.stored_in_table_def(table_name).unwrap();
-                stdb.alter_table_access(tx, table_name[..].into(), table_def.table_access.into())?;
+                stdb.alter_table_access(tx, table_name, table_def.table_access.into())?;
             }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::AddSchedule(_) => {
                 anyhow::bail!("Adding schedules is not yet implemented");

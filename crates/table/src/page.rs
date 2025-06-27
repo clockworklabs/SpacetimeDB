@@ -35,12 +35,13 @@
 use super::{
     blob_store::BlobStore,
     fixed_bit_set::FixedBitSet,
-    indexes::{Byte, Bytes, PageOffset, Size, PAGE_HEADER_SIZE, PAGE_SIZE},
-    layout::MIN_ROW_SIZE,
+    indexes::{Byte, Bytes, PageOffset, PAGE_HEADER_SIZE, PAGE_SIZE},
     var_len::{is_granule_offset_aligned, VarLenGranule, VarLenGranuleHeader, VarLenMembers, VarLenRef},
 };
-use crate::{fixed_bit_set::IterSet, indexes::max_rows_in_page, static_assert_size, table::BlobNumBytes, MemoryUsage};
+use crate::{fixed_bit_set::IterSet, indexes::max_rows_in_page, static_assert_size, table::BlobNumBytes};
 use core::{mem, ops::ControlFlow};
+use spacetimedb_sats::layout::{Size, MIN_ROW_SIZE};
+use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::{de::Deserialize, ser::Serialize};
 use thiserror::Error;
 
@@ -1970,11 +1971,10 @@ impl<'page> Iterator for VarLenGranulesIter<'page> {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use crate::{
-        blob_store::NullBlobStore, layout::row_size_for_type, page_pool::PagePool, var_len::AlignedVarLenOffsets,
-    };
+    use crate::{blob_store::NullBlobStore, page_pool::PagePool, var_len::AlignedVarLenOffsets};
     use proptest::{collection::vec, prelude::*};
-    use spacetimedb_lib::bsatn;
+    use spacetimedb_sats::bsatn;
+    use spacetimedb_sats::layout::row_size_for_type;
 
     fn u64_row_size() -> Size {
         let fixed_row_size = row_size_for_type::<u64>();
