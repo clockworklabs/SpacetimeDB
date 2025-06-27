@@ -1194,6 +1194,8 @@ impl SubscriptionManager {
                 ) -> SingleQueryUpdate<F> {
                     let (update, num_rows, num_bytes) = memory
                         .get_or_insert_with(|| {
+                            // TODO(centril): consider pushing the encoding of each row into
+                            // `eval_delta` instead, to avoid building the temporary `Vec`s in `UpdatesRelValue`.
                             let encoded = updates.encode::<F>();
                             // The first time we insert into this map, we call encode.
                             // This is when we serialize the rows to BSATN/JSON.
