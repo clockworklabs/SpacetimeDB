@@ -430,7 +430,7 @@ impl MutTxId {
         Ok(())
     }
 
-    /// Change the row type of the table identified by `table_id.
+    /// Change the row type of the table identified by `table_id`.
     ///
     /// In practice, this should not error,
     /// as the update machinery should disallow any incompatible change.
