@@ -9,7 +9,7 @@ use axum_extra::TypedHeader;
 use bytes::Bytes;
 use bytestring::ByteString;
 use futures::future::MaybeDone;
-use futures::{Future, FutureExt, SinkExt, StreamExt};
+use futures::{Future, SinkExt, StreamExt};
 use http::{HeaderValue, StatusCode};
 use scopeguard::ScopeGuard;
 use serde::Deserialize;
@@ -182,6 +182,7 @@ where
 }
 
 const LIVELINESS_TIMEOUT: Duration = Duration::from_secs(60);
+const SEND_TIMEOUT: Duration = Duration::from_secs(5);
 
 async fn ws_client_actor(client: ClientConnection, ws: WebSocketStream, sendrx: MeteredReceiver<SerializableMessage>) {
     // ensure that even if this task gets cancelled, we always cleanup the connection
@@ -276,54 +277,79 @@ async fn ws_client_actor_inner(
 
             // If we have an outgoing message to send, send it off.
             // No incoming `message` to handle, so `continue`.
-            Some(n) = sendrx.recv_many(&mut rx_buf, 32).map(|n| (n != 0).then_some(n)) => {
+            n = sendrx.recv_many(&mut rx_buf, 32) => {
+                // The receiver has been closed and there are no pending messages.
+                // This is due to the client sending a close frame, so break from the loop.
+                if n == 0 {
+                    break;
+                }
                 if closed {
                     // TODO: this isn't great. when we receive a close request from the peer,
                     //       tungstenite doesn't let us send any new messages on the socket,
                     //       even though the websocket RFC allows it. should we fork tungstenite?
                     log::info!("dropping {n} messages due to ws already being closed");
                     log::debug!("dropped messages: {:?}", &rx_buf[..n]);
-                } else {
-                    let send_all = async {
-                        for msg in rx_buf.drain(..n) {
-                            let workload = msg.workload();
-                            let num_rows = msg.num_rows();
+                    break;
+                }
+                let send_all = async {
+                    for msg in rx_buf.drain(..n) {
+                        let workload = msg.workload();
+                        let num_rows = msg.num_rows();
 
-                            // Serialize the message, report metrics,
-                            // and keep a handle to the buffer.
-                            let (msg_alloc, msg_data) = serialize(msg_buffer, msg, client.config);
-                            report_ws_sent_metrics(&addr, workload, num_rows, &msg_data);
+                        // Serialize the message, report metrics,
+                        // and keep a handle to the buffer.
+                        let (msg_alloc, msg_data) = serialize(msg_buffer, msg, client.config);
+                        report_ws_sent_metrics(&addr, workload, num_rows, &msg_data);
 
-                            // Buffer the message without necessarily sending it.
-                            let res = ws.feed(datamsg_to_wsmsg(msg_data)).await;
+                        // Buffer the message without necessarily sending it.
+                        let res = ws.feed(datamsg_to_wsmsg(msg_data)).await;
 
-                            // At this point,
-                            // the underlying allocation of `msg_data` should have a single referent
-                            // and this should be `msg_alloc`.
-                            // We can put this back into our pool.
-                            msg_buffer = msg_alloc.try_reclaim()
-                                .expect("should have a unique referent to `msg_alloc`");
+                        // At this point,
+                        // the underlying allocation of `msg_data` should have a single referent
+                        // and this should be `msg_alloc`.
+                        // We can put this back into our pool.
+                        msg_buffer = msg_alloc.try_reclaim()
+                            .expect("should have a unique referent to `msg_alloc`");
 
-                            if res.is_err() {
-                                return (res, msg_buffer);
-                            }
+                        if res.is_err() {
+                            return (res, msg_buffer);
                         }
-                        // now we flush all the messages to the socket
-                        (ws.flush().await, msg_buffer)
-                    };
-                    // Flush the websocket while continuing to poll the `handle_queue`,
-                    // to avoid deadlocks or delays due to enqueued futures holding resources.
-                    let send_all = also_poll(send_all, make_progress(&mut current_message));
-                    let t1 = Instant::now();
-                    let (send_all_result, buf) = send_all.await;
-                    msg_buffer = buf;
-                    if let Err(error) = send_all_result {
-                        log::warn!("Websocket send error: {error}")
                     }
-                    let time = t1.elapsed();
-                    if time > Duration::from_millis(50) {
-                        tracing::warn!(?time, "send_all took a very long time");
+                    // now we flush all the messages to the socket
+                    (ws.flush().await, msg_buffer)
+                };
+                // Build a future that both times out and drives the send.
+                //
+                // Note that if flushing cannot immediately complete for whatever reason,
+                // it will wait without polling the other futures in the `select!` arms.
+                // Among other things, this means our liveness tick will not be polled.
+                //
+                // To avoid waiting indefinitely, we wrap the send in a timeout.
+                // A timeout is treated as an unresponsive client and we drop the connection.
+                let send_all = async {
+                    tokio::time::timeout(SEND_TIMEOUT, send_all).await
+                };
+                // Flush the websocket while continuing to poll the `handle_queue`,
+                // to avoid deadlocks or delays due to enqueued futures holding resources.
+                let send_all = also_poll(send_all, make_progress(&mut current_message));
+                let t1 = Instant::now();
+                let (send_all_result, buf) = match send_all.await {
+                    Ok((send_all_result, buf)) => {
+                        (send_all_result, buf)
                     }
+                    Err(e) => {
+                        // Our send timed out; drop client without trying to send them a Close
+                        log::warn!("send_all timed out after: {e}");
+                        break;
+                    }
+                };
+                msg_buffer = buf;
+                if let Err(error) = send_all_result {
+                    log::warn!("Websocket send error: {error}")
+                }
+                let time = t1.elapsed();
+                if time > Duration::from_millis(50) {
+                    tracing::warn!(?time, "send_all took a very long time");
                 }
                 continue;
             }
@@ -352,10 +378,29 @@ async fn ws_client_actor_inner(
             _ = liveness_check_interval.tick() => {
                 // If we received a pong at some point, send a fresh ping.
                 if mem::take(&mut got_pong) {
+                    // Build a future that both times out and drives the send.
+                    //
+                    // Note that if the send cannot immediately complete for whatever reason,
+                    // it will wait without polling the other futures in the `select!` arms.
+                    // Among other things, this means we won't poll the websocket for a Close frame.
+                    //
+                    // To avoid waiting indefinitely, we wrap the ping in a timeout.
+                    // A timeout is treated as an unresponsive client and we drop the connection.
+                    let ping_with_timeout = async {
+                        tokio::time::timeout(SEND_TIMEOUT, ws.send(WsMessage::Ping(Bytes::new()))).await
+                    };
                     // Send a ping message while continuing to poll the `handle_queue`,
                     // to avoid deadlocks or delays due to enqueued futures holding resources.
-                    if let Err(e) = also_poll(ws.send(WsMessage::Ping(Bytes::new())), make_progress(&mut current_message)).await {
-                        log::warn!("error sending ping: {e:#}");
+                    match also_poll(ping_with_timeout, make_progress(&mut current_message)).await {
+                        Ok(Err(e)) => {
+                            log::warn!("error sending ping: {e:#}");
+                        }
+                        Err(e) => {
+                            // Our ping timed out; drop them without trying to send them a Close
+                            log::warn!("ping timed out after: {e}");
+                            break;
+                        }
+                        _ => {}
                     }
                     continue;
                 } else {
@@ -380,7 +425,7 @@ async fn ws_client_actor_inner(
             Item::HandleResult(res) => {
                 if let Err(e) = res {
                     if let MessageHandleError::Execution(err) = e {
-                        log::error!("{err:#}");
+                        log::error!("reducer execution error: {err:#}");
                         // Serialize the message and keep a handle to the buffer.
                         let (msg_alloc, msg_data) = serialize(msg_buffer, err, client.config);
 
@@ -399,7 +444,7 @@ async fn ws_client_actor_inner(
 
                         continue;
                     }
-                    log::debug!("Client caused error on text message: {}", e);
+                    log::warn!("Client caused error on text message: {}", e);
                     if let Err(e) = ws
                         .close(Some(CloseFrame {
                             code: CloseCode::Error,
@@ -439,7 +484,18 @@ async fn ws_client_actor_inner(
                         .with_label_values(&addr)
                         .inc();
                 }
-                closed = true;
+
+                // Is it correct to break if a reducer is still in progress?
+                // Answer: Yes it is.
+                //
+                // If a reducer is currently being executed,
+                // we are waiting for the `current_message` future to complete.
+                // When we break, the task completes and this future is dropped.
+                //
+                // Notably though the reducer itself will run to completion,
+                // however when it tries to notify this task that it is done,
+                // it will encounter a closed sender in `JobThread::run`.
+                break;
             }
         }
     }
