@@ -21,6 +21,7 @@ use crate::db::datastore::system_tables::StModuleRow;
 use crate::error::{DBError, DatabaseError, RestoreSnapshotError};
 use crate::execution_context::{ReducerContext, Workload, WorkloadType};
 use crate::messages::control_db::HostType;
+use crate::subscription::module_subscription_manager::{spawn_metrics_recorder, MetricsRecorderQueue};
 use crate::subscription::ExecutionCounters;
 use crate::util::{asyncify, spawn_rayon};
 use anyhow::{anyhow, Context};
@@ -118,6 +119,9 @@ pub struct RelationalDB {
 
     /// A map from workload types to their cached prometheus counters.
     workload_type_to_exec_counters: Arc<EnumMap<WorkloadType, ExecutionCounters>>,
+
+    /// An async queue for recording transaction metrics off the main thread
+    metrics_recorder_queue: MetricsRecorderQueue,
 }
 
 #[derive(Clone)]
@@ -237,6 +241,7 @@ impl RelationalDB {
             snapshot_repo.map(|repo| SnapshotWorker::new(inner.committed_state.clone(), repo.clone()));
         let workload_type_to_exec_counters =
             Arc::new(EnumMap::from_fn(|ty| ExecutionCounters::new(&ty, &database_identity)));
+        let metrics_recorder_queue = spawn_metrics_recorder();
 
         Self {
             inner,
@@ -251,6 +256,7 @@ impl RelationalDB {
 
             _lock: lock,
             workload_type_to_exec_counters,
+            metrics_recorder_queue,
         }
     }
 
@@ -749,6 +755,11 @@ impl RelationalDB {
         Ok(AlgebraicValue::decode(col_ty, &mut &*bytes)?)
     }
 
+    /// Returns the execution counters for this database.
+    pub fn exec_counter_map(&self) -> Arc<EnumMap<WorkloadType, ExecutionCounters>> {
+        self.workload_type_to_exec_counters.clone()
+    }
+
     /// Returns the execution counters for `workload_type` for this database.
     pub fn exec_counters_for(&self, workload_type: WorkloadType) -> &ExecutionCounters {
         &self.workload_type_to_exec_counters[workload_type]
@@ -988,7 +999,7 @@ impl RelationalDB {
         let mut tx = self.begin_tx(workload);
         let res = f(&mut tx);
         let (tx_metrics, reducer) = self.release_tx(tx);
-        self.report_tx_metricses(&reducer, None, None, &tx_metrics);
+        self.report_tx_metrics(reducer, Arc::new(None), None, Some(tx_metrics));
         res
     }
 
@@ -999,11 +1010,11 @@ impl RelationalDB {
     {
         if res.is_err() {
             let (tx_metrics, reducer) = self.rollback_mut_tx(tx);
-            self.report(&reducer, &tx_metrics, None);
+            self.report(reducer, tx_metrics, None);
         } else {
             match self.commit_tx(tx).map_err(E::from)? {
                 Some((tx_data, tx_metrics, reducer)) => {
-                    self.report(&reducer, &tx_metrics, Some(&tx_data));
+                    self.report(reducer, tx_metrics, Some(tx_data));
                 }
                 None => panic!("TODO: retry?"),
             }
@@ -1018,7 +1029,7 @@ impl RelationalDB {
         match res {
             Err(e) => {
                 let (tx_metrics, reducer) = self.rollback_mut_tx(tx);
-                self.report(&reducer, &tx_metrics, None);
+                self.report(reducer, tx_metrics, None);
 
                 Err(e)
             }
@@ -1042,17 +1053,20 @@ impl RelationalDB {
     /// Reports the `TxMetrics`s passed.
     ///
     /// Should only be called after the tx lock has been fully released.
-    pub(crate) fn report_tx_metricses(
+    pub(crate) fn report_tx_metrics(
         &self,
-        reducer: &str,
-        tx_data: Option<&TxData>,
-        metrics_mut: Option<&TxMetrics>,
-        metrics_read: &TxMetrics,
+        reducer: String,
+        tx_data: Arc<Option<TxData>>,
+        metrics_for_writer: Option<TxMetrics>,
+        metrics_for_reader: Option<TxMetrics>,
     ) {
-        if let Some(metrics_mut) = metrics_mut {
-            self.report(reducer, metrics_mut, tx_data);
-        }
-        self.report(reducer, metrics_read, None);
+        self.metrics_recorder_queue.send_metrics(
+            reducer,
+            metrics_for_writer,
+            metrics_for_reader,
+            tx_data,
+            self.exec_counter_map(),
+        );
     }
 }
 
@@ -1403,8 +1417,8 @@ impl RelationalDB {
     }
 
     /// Reports the metrics for `reducer`, using counters provided by `db`.
-    pub fn report(&self, reducer: &str, metrics: &TxMetrics, tx_data: Option<&TxData>) {
-        metrics.report(tx_data, reducer, |wl: WorkloadType| self.exec_counters_for(wl));
+    pub fn report(&self, reducer: String, metrics: TxMetrics, tx_data: Option<TxData>) {
+        self.report_tx_metrics(reducer, Arc::new(tx_data), Some(metrics), None);
     }
 
     /// Read the value of [ST_VARNAME_ROW_LIMIT] from `st_var`

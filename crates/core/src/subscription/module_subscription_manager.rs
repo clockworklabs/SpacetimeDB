@@ -5,13 +5,18 @@ use crate::client::messages::{
     TransactionUpdateMessage,
 };
 use crate::client::{ClientConnectionSender, Protocol};
+use crate::db::datastore::locking_tx_datastore::datastore::TxMetrics;
 use crate::db::datastore::locking_tx_datastore::state_view::StateView;
+use crate::db::datastore::traits::TxData;
 use crate::error::DBError;
+use crate::execution_context::WorkloadType;
 use crate::host::module_host::{DatabaseTableUpdate, ModuleEvent, UpdatesRelValue};
 use crate::messages::websocket::{self as ws, TableUpdate};
 use crate::subscription::delta::eval_delta;
+use crate::subscription::ExecutionCounters;
 use crate::worker_metrics::WORKER_METRICS;
 use core::mem;
+use enum_map::EnumMap;
 use hashbrown::hash_map::OccupiedError;
 use hashbrown::{HashMap, HashSet};
 use parking_lot::RwLock;
@@ -26,6 +31,7 @@ use spacetimedb_lib::{AlgebraicValue, ConnectionId, Identity, ProductValue};
 use spacetimedb_primitives::{ColId, IndexId, TableId};
 use spacetimedb_subscription::{JoinEdge, SubscriptionPlan, TableName};
 use std::collections::BTreeMap;
+use std::fmt::Debug;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -1281,6 +1287,62 @@ impl SubscriptionManager {
 
         metrics
     }
+}
+
+struct MetricsMessage {
+    reducer: String,
+    metrics_for_writer: Option<TxMetrics>,
+    metrics_for_reader: Option<TxMetrics>,
+    tx_data: Arc<Option<TxData>>,
+    counters: Arc<EnumMap<WorkloadType, ExecutionCounters>>,
+}
+
+#[derive(Clone)]
+pub struct MetricsRecorderQueue {
+    tx: mpsc::UnboundedSender<MetricsMessage>,
+}
+
+impl MetricsRecorderQueue {
+    pub fn send_metrics(
+        &self,
+        reducer: String,
+        metrics_for_writer: Option<TxMetrics>,
+        metrics_for_reader: Option<TxMetrics>,
+        tx_data: Arc<Option<TxData>>,
+        counters: Arc<EnumMap<WorkloadType, ExecutionCounters>>,
+    ) {
+        if let Err(err) = self.tx.send(MetricsMessage {
+            reducer,
+            metrics_for_writer,
+            metrics_for_reader,
+            tx_data,
+            counters,
+        }) {
+            log::warn!("failed to send metrics: {err}");
+        }
+    }
+}
+
+pub fn spawn_metrics_recorder() -> MetricsRecorderQueue {
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    tokio::spawn(async move {
+        while let Some(MetricsMessage {
+            reducer,
+            metrics_for_writer,
+            metrics_for_reader,
+            tx_data,
+            counters,
+        }) = rx.recv().await
+        {
+            if let Some(tx_metrics) = metrics_for_writer {
+                tx_metrics.report(tx_data.as_ref().as_ref(), &reducer, |wl| &counters[wl]);
+            }
+            if let Some(tx_metrics) = metrics_for_reader {
+                tx_metrics.report(tx_data.as_ref().as_ref(), &reducer, |wl| &counters[wl]);
+            }
+        }
+    });
+    MetricsRecorderQueue { tx }
 }
 
 struct SendWorkerClient {
