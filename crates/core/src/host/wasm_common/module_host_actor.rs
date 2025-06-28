@@ -293,12 +293,12 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
                 log::warn!("Database update failed: {} @ {}", e, stdb.database_identity());
                 self.system_logger().warn(&format!("Database update failed: {e}"));
                 let (tx_metrics, reducer) = stdb.rollback_mut_tx(tx);
-                stdb.report(&reducer, &tx_metrics, None);
+                stdb.report_mut_tx_metrics(reducer, tx_metrics, None);
                 Ok(UpdateDatabaseResult::ErrorExecutingMigration(e))
             }
             Ok(()) => {
                 if let Some((tx_data, tx_metrics, reducer)) = stdb.commit_tx(tx)? {
-                    stdb.report(&reducer, &tx_metrics, Some(&tx_data));
+                    stdb.report_mut_tx_metrics(reducer, tx_metrics, Some(tx_data));
                 }
                 self.system_logger().info("Database updated");
                 log::info!("Database updated, {}", stdb.database_identity());

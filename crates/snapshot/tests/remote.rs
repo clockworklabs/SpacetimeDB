@@ -231,7 +231,7 @@ async fn create_snapshot(repo: Arc<SnapshotRepository>) -> anyhow::Result<TxOffs
     let start = Instant::now();
     let mut watch = spawn_blocking(|| {
         let tmp = TempReplicaDir::new()?;
-        let db = TestDB::open_db(&tmp, EmptyHistory::new(), None, Some(repo), 0)?;
+        let db = TestDB::open_db(&tmp, EmptyHistory::new(), None, Some(repo), None, 0)?;
         let watch = db.subscribe_to_snapshots().unwrap();
 
         let table_id = db.with_auto_commit(Workload::Internal, |tx| {
