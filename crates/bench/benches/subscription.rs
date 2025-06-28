@@ -1,4 +1,5 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use spacetimedb::db::relational_db::RelationalDB;
 use spacetimedb::error::DBError;
 use spacetimedb::execution_context::Workload;
 use spacetimedb::host::module_host::DatabaseTableUpdate;
@@ -9,7 +10,6 @@ use spacetimedb::subscription::query::compile_read_only_queryset;
 use spacetimedb::subscription::subscription::ExecutionSet;
 use spacetimedb::subscription::tx::DeltaTx;
 use spacetimedb::subscription::{collect_table_update, TableUpdateType};
-use spacetimedb::{db::relational_db::RelationalDB, messages::websocket::Compression};
 use spacetimedb_bench::database::BenchDatabase as _;
 use spacetimedb_bench::spacetime_raw::SpacetimeRaw;
 use spacetimedb_execution::pipelined::PipelinedProject;
@@ -151,14 +151,7 @@ fn eval(c: &mut Criterion) {
             let query = compile_read_only_queryset(&raw.db, &AuthCtx::for_testing(), &tx, sql).unwrap();
             let query: ExecutionSet = query.into();
 
-            b.iter(|| {
-                drop(black_box(query.eval::<BsatnFormat>(
-                    &raw.db,
-                    &tx,
-                    None,
-                    Compression::None,
-                )))
-            })
+            b.iter(|| drop(black_box(query.eval::<BsatnFormat>(&raw.db, &tx, None))))
         });
     };
 
