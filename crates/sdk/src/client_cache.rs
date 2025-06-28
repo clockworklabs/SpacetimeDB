@@ -5,7 +5,7 @@
 use crate::callbacks::CallbackId;
 use crate::db_connection::{PendingMutation, SharedCell};
 use crate::spacetime_module::{InModule, SpacetimeModule, TableUpdate, WithBsatn};
-use anymap::{any::Any, Map};
+use anymap::Map;
 use bytes::Bytes;
 use core::any::type_name;
 use core::hash::Hash;
@@ -282,7 +282,7 @@ impl<Row: Clone + Send + Sync + 'static> TableCache<Row> {
     /// Called by the codegen when initializing the client cache during [`crate::DbConnectionBuilder::build`].
     pub fn add_unique_constraint<Col>(&mut self, unique_index_name: &'static str, get_unique_col: fn(&Row) -> &Col)
     where
-        Col: Any + Clone + std::hash::Hash + Eq + Send + Sync + std::fmt::Debug + 'static,
+        Col: std::any::Any + Clone + std::hash::Hash + Eq + Send + Sync + std::fmt::Debug + 'static,
     {
         assert!(self.entries.is_empty(), "Cannot add a unique constraint to a populated table; constraints should only be added during initialization, before subscribing to any rows.");
         if self
@@ -306,7 +306,7 @@ pub struct ClientCache<M: SpacetimeModule + ?Sized> {
     /// "keyed" on the type `HashMap<&'static str, TableCache<Row>`.
     ///
     /// The strings are table names, since we may have multiple tables with the same row type.
-    tables: Map<dyn Any + Send + Sync>,
+    tables: Map<dyn std::any::Any + Send + Sync>,
 
     _module: PhantomData<M>,
 }
@@ -572,7 +572,7 @@ pub struct UniqueIndexImpl<Row, Col> {
 impl<Row, Col> UniqueIndexDyn for UniqueIndexImpl<Row, Col>
 where
     Row: Clone + Send + Sync + 'static,
-    Col: Any + Clone + std::hash::Hash + Eq + Send + Sync + std::fmt::Debug + 'static,
+    Col: std::any::Any + Clone + std::hash::Hash + Eq + Send + Sync + std::fmt::Debug + 'static,
 {
     type Row = Row;
     fn add_row(&mut self, row: Self::Row) {
