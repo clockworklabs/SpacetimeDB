@@ -79,6 +79,7 @@ pub struct ClientConnectionSender {
     sendtx: mpsc::Sender<SerializableMessage>,
     abort_handle: AbortHandle,
     cancelled: AtomicBool,
+    pub(crate) not_warned_failed_to_send_message: AtomicBool,
 
     /// Handles on Prometheus metrics related to connections to this database.
     ///
@@ -143,12 +144,14 @@ impl ClientConnectionSender {
 
         let rx = MeteredReceiver::new(rx);
         let cancelled = AtomicBool::new(false);
+        let not_warned_failed_to_send_message = AtomicBool::new(true);
         let sender = Self {
             id,
             config,
             sendtx,
             abort_handle,
             cancelled,
+            not_warned_failed_to_send_message,
             metrics: None,
         };
         (sender, rx)
@@ -418,12 +421,14 @@ impl ClientConnection {
         let metrics = ClientConnectionMetrics::new(database_identity, config.protocol);
         let sendrx = MeteredReceiver::with_gauge(sendrx, metrics.sendtx_queue_size.clone());
 
+        let not_warned_failed_to_send_message = AtomicBool::new(true);
         let sender = Arc::new(ClientConnectionSender {
             id,
             config,
             sendtx,
             abort_handle,
             cancelled: AtomicBool::new(false),
+            not_warned_failed_to_send_message,
             metrics: Some(metrics),
         });
         let this = Self {
