@@ -34,6 +34,7 @@ use spacetimedb_client_api_messages::websocket::{self as ws_api, Compression};
 use spacetimedb_lib::connection_id::{ConnectionId, ConnectionIdForUrl};
 use std::time::Instant;
 use tokio::sync::mpsc;
+use tokio::time::error::Elapsed;
 use tokio::time::timeout;
 use tokio_tungstenite::tungstenite::Utf8Bytes;
 
@@ -368,13 +369,24 @@ fn ws_recv_loop(
         loop {
             let Some(res) = async {
                 if state.closed() {
-                    log::trace!("await next client message with timeout");
-                    match timeout(Duration::from_millis(150), ws.next()).await {
-                        Err(_) => {
+                    log::trace!("drain websocket waiting for client close");
+                    let res: Result<Option<Result<WsMessage, WsError>>, Elapsed> =
+                        timeout(Duration::from_millis(250), async {
+                            while let Some(item) = ws.next().await {
+                                match item {
+                                    Ok(message) => drop(message),
+                                    Err(e) => return Some(Err(e)),
+                                }
+                            }
+                            None
+                        })
+                        .await;
+                    match res {
+                        Err(_elapsed) => {
                             log::warn!("timeout waiting for client close");
                             None
-                        },
-                        Ok(item) => item
+                        }
+                        Ok(item) => item, // either error or `None`
                     }
                 } else {
                     log::trace!("await next client message without timeout");
