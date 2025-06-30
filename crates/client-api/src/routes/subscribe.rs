@@ -35,7 +35,6 @@ use spacetimedb_lib::connection_id::{ConnectionId, ConnectionIdForUrl};
 use std::time::Instant;
 use tokio::sync::mpsc;
 use tokio::time::timeout;
-use tokio_stream::wrappers::UnboundedReceiverStream;
 use tokio_tungstenite::tungstenite::Utf8Bytes;
 
 use crate::auth::SpacetimeAuth;
@@ -244,69 +243,46 @@ async fn ws_client_actor_inner(
     sendrx: MeteredReceiver<SerializableMessage>,
 ) {
     let database = client.module.info().database_identity;
-
     let client_closed_metric = WORKER_METRICS.ws_clients_closed_connection.with_label_values(&database);
-    let incoming_queue_length = WORKER_METRICS.total_incoming_queue_length.with_label_values(&database);
-
     let state = ActorState::new(database, client.id);
-
     let mut liveness_check_interval = tokio::time::interval(LIVELINESS_TIMEOUT);
 
     // Channel for [`UnorderedWsMessage`]s.
     let (unordered_tx, unordered_rx) = mpsc::unbounded_channel();
-    // Channel for submitting work to the [`ws_eval_handler`].
-    //
-    // Note that we buffer client messages unboundedly, so that we don't delay
-    // subscription updates in the `select!` loop while we're waiting for an
-    // evaluation result.
-    // Being able to observe the backlog (via `incoming_queue_length`) is useful
-    // to identify performance issues.
-    // Yet, we may consider to instead spawn a task for the receive end, and not
-    // buffer at all, in order to apply backpressure to client.
-    let (eval_tx, eval_rx) = mpsc::unbounded_channel();
-    let mut eval_rx = scopeguard::guard(UnboundedReceiverStream::new(eval_rx), |stream| {
-        incoming_queue_length.sub(stream.into_inner().len() as _);
-    });
 
     // Split websocket into send and receive halves.
     let (ws_send, ws_recv) = ws.split();
-    // Make a stream that reads from the socket and yields [`ClientMessage`]s.
-    let recv_loop = pin!(ws_recv_loop(state.clone(), ws_recv));
-    let recv_handler = ws_client_message_handler(state.clone(), client_closed_metric, recv_loop);
-    // Stream that consumes from `eval_tx` and evaluates the tasks.
-    // Yields `Result<(), MessageHandleError>`.
-    let eval_handler = ws_eval_handler(client.clone(), &mut *eval_rx);
-    // Sink that sends subscription updates and reducer results from `sendrx`,
-    // as well as [`UnorderedWsMessage`]s to the socket..
+
+    // Spawn a task to send outgoing messages obtained from `sendrx` and
+    // `unordered_rx`. We just let this run to completion.
     let send_loop = ws_send_loop(state.clone(), client.config, ws_send, sendrx, unordered_rx);
     tokio::spawn(send_loop);
 
-    pin_mut!(recv_handler);
-    pin_mut!(eval_handler);
+    // Spawn a task to handle incoming messages.
+    // Keep a handle to the task, so we can exit the select loop below when
+    // the task terminates.
+    let mut recv_task = tokio::spawn({
+        let unordered_tx = unordered_tx.clone();
+        let state = state.clone();
+        let client = client.clone();
+        async move {
+            // Compose the streams to:
+            //
+            // - read from the websocket,
+            // - handle client messages,
+            // - and evaluate data messages
+            //
+            let recv_loop = pin!(ws_recv_loop(state.clone(), ws_recv));
+            let recv_handler = pin!(ws_client_message_handler(
+                state.clone(),
+                client_closed_metric,
+                recv_loop
+            ));
+            let eval_handler = ws_eval_handler(client, recv_handler);
+            pin_mut!(eval_handler);
 
-    loop {
-        tokio::select! {
-            // Get the next client message and submit it for evaluation.
-            res = recv_handler.next() => {
-                match res {
-                    Some(task) => {
-                        log::trace!("received new task");
-                        if eval_tx.send(task).is_err() {
-                            log::trace!("eval_tx already closed");
-                            break;
-                        };
-                        incoming_queue_length.inc();
-                    },
-                    None => {
-                        log::trace!("recv handler exhausted");
-                        break;
-                    }
-                }
-            },
-            // Get the next evaluation result and handle errors.
-            Some(result) = eval_handler.next() => {
+            while let Some(result) = eval_handler.next().await {
                 log::trace!("received task result");
-                incoming_queue_length.dec();
                 if let Err(e) = result {
                     if let MessageHandleError::Execution(err) = e {
                         log::error!("{err:#}");
@@ -316,33 +292,37 @@ async fn ws_client_actor_inner(
                     log::debug!("Client caused error: {e}");
                     let close = CloseFrame {
                         code: CloseCode::Error,
-                        reason: format!("{e:#}").into()
+                        reason: format!("{e:#}").into(),
                     };
-                    // If the sender is already gone,
-                    // we won't be sending close, and not receive an ack,
-                    // so exit the loop here.
+                    // Break if unable to initiate close handshake.
                     if unordered_tx.send(close.into()).is_err() {
-                        log::trace!("unordered_tx already closed");
                         break;
-                    }
+                    };
                 }
+            }
+        }
+    });
+
+    loop {
+        let closed = state.closed();
+
+        tokio::select! {
+            _ = &mut recv_task => {
+                break;
             },
 
             // Update the client's module host if it was hotswapped,
             // or close the session if the module exited.
             //
             // Branch is disabled if we already sent a close frame.
-            res = client.watch_module_host(), if !state.closed() => {
+            res = client.watch_module_host(), if !closed => {
                 if let Err(NoSuchModule) = res {
                     let close = CloseFrame {
                         code: CloseCode::Away,
                         reason: "module exited".into()
                     };
-                    // If the sender is already gone,
-                    // we won't be sending close, and not receive an ack,
-                    // so exit the loop here.
+                    // Break if unable to initiate close handshake.
                     if unordered_tx.send(close.into()).is_err() {
-                        log::trace!("unordered_tx already closed");
                         break;
                     };
                 }
@@ -350,15 +330,14 @@ async fn ws_client_actor_inner(
 
             // Send ping or time out the client.
             //
-            // Branch is disabled if we lready sent a close frame.
-            _ = liveness_check_interval.tick(), if !state.closed() => {
+            // Branch is disabled if we already sent a close frame.
+            _ = liveness_check_interval.tick(), if !closed => {
                 let was_ponged = state.reset_ponged();
                 if was_ponged {
                     // If the sender is already gone,
                     // we expect to receive an error on the receiver stream,
                     // but we can just as well exit here.
                     if unordered_tx.send(UnorderedWsMessage::Ping(Bytes::new())).is_err() {
-                        log::trace!("unordered_tx already closed");
                         break;
                     };
                 } else {
@@ -366,8 +345,6 @@ async fn ws_client_actor_inner(
                     break;
                 }
             }
-
-            else => break,
         }
     }
     log::info!("Client connection ended: {}", client.id);
