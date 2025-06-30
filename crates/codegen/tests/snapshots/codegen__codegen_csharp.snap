@@ -1,5 +1,5 @@
 ---
-source: crates/cli/tests/codegen.rs
+source: crates/codegen/tests/codegen.rs
 expression: outfiles
 ---
 "Reducers/Add.g.cs" = '''
@@ -1215,7 +1215,7 @@ namespace SpacetimeDB
                     return Event;
                 }
             }
-            
+
             /// <summary>
             /// Access to tables in the client cache, which stores a read-only replica of the remote database state.
             ///
@@ -1396,11 +1396,11 @@ namespace SpacetimeDB
 
             /// <summary>
             /// Subscribe to the following SQL queries.
-            /// 
+            ///
             /// This method returns immediately, with the data not yet added to the DbConnection.
             /// The provided callbacks will be invoked once the data is returned from the remote server.
             /// Data from all the provided queries will be returned at the same time.
-            /// 
+            ///
             /// See the SpacetimeDB SQL docs for more information on SQL syntax:
             /// <a href="https://spacetimedb.com/docs/sql">https://spacetimedb.com/docs/sql</a>
             /// </summary>

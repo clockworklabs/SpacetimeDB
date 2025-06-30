@@ -14,12 +14,13 @@
 //! retrieval is probably no more than 100% slower.
 
 use super::indexes::{PageIndex, PageOffset, RowHash, RowPointer, SquashedOffset};
-use crate::{static_assert_size, MemoryUsage};
+use crate::static_assert_size;
 use core::{hint, slice};
 use spacetimedb_data_structures::map::{
     Entry,
     IntMap, // No need to hash a hash.
 };
+use spacetimedb_sats::memory_usage::MemoryUsage;
 
 /// An index to the outer layer of `colliders` in `PointerMap`.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

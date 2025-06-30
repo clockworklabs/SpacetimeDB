@@ -656,6 +656,51 @@ public static partial class BSATNRuntimeTests
         }
     }
 
+    [Type]
+    enum Banana
+    {
+        Cavendish,
+        LadyFinger,
+        RedBanana,
+        Manzano,
+        BlueJava,
+        GreenPlantain,
+        YellowPlantain,
+        PisangRaja,
+    }
+
+    [Fact]
+    public static void EnumSerializationWorks()
+    {
+        var serializer = new Enum<Banana>();
+        var bananas = new Banana[]
+        {
+            Banana.Cavendish,
+            Banana.LadyFinger,
+            Banana.RedBanana,
+            Banana.Manzano,
+            Banana.BlueJava,
+            Banana.GreenPlantain,
+            Banana.YellowPlantain,
+            Banana.PisangRaja,
+        };
+        for (var i = 0; i < bananas.Length; i++)
+        {
+            var stream = new MemoryStream();
+            var writer = new BinaryWriter(stream);
+            var banana = bananas[i];
+            serializer.Write(writer, banana);
+
+            stream.Seek(0, SeekOrigin.Begin);
+            var tag = new BinaryReader(stream).ReadByte();
+            Assert.Equal(tag, i);
+
+            stream.Seek(0, SeekOrigin.Begin);
+            var newBanana = serializer.Read(new BinaryReader(stream));
+            Assert.Equal(banana, newBanana);
+        }
+    }
+
     [Fact]
     public static void GeneratedNestedListEqualsWorks()
     {
@@ -774,5 +819,46 @@ public static partial class BSATNRuntimeTests
             ).ToString()
         );
 #pragma warning restore CS8625 // Cannot convert null literal to non-nullable reference type.
+    }
+
+    [Type]
+    partial struct ContainsEnum
+    {
+        public Banana TheBanana;
+        public int BananaCount;
+    }
+
+    static readonly Gen<(Banana, int)> GenContainsEnum = Gen.Select(
+        Gen.Enum<Banana>(),
+        Gen.Int[0, 3]
+    );
+    static readonly Gen<((Banana, int), (Banana, int))> GenTwoContainsEnum = Gen.Select(
+        GenContainsEnum,
+        GenContainsEnum
+    );
+
+    [Fact]
+    public static void GeneratedEnumEqualsWorks()
+    {
+        GenTwoContainsEnum.Sample(
+            example =>
+            {
+                var ((b1, c1), (b2, c2)) = example;
+                var struct1 = new ContainsEnum { TheBanana = b1, BananaCount = c1 };
+                var struct2 = new ContainsEnum { TheBanana = b2, BananaCount = c2 };
+
+                if ((b1, c1) == (b2, c2))
+                {
+                    Assert.True(struct1.Equals(struct2));
+                    Assert.Equal(struct1, struct2);
+                }
+                else
+                {
+                    Assert.False(struct1.Equals(struct2));
+                    Assert.NotEqual(struct1, struct2);
+                }
+            },
+            iter: 10_000
+        );
     }
 }

@@ -253,6 +253,10 @@ class Smoketest(unittest.TestCase):
         # and **not raise any exceptions to the caller**.
         return ReturnThread(run).join
 
+    # Make an HTTP call with `method` to `path`.
+    #
+    # If the response is 200, return the body.
+    # Otherwise, throw an `Exception` constructed with two arguments, the response object and the body.
     def api_call(self, method, path, body = None, headers = {}):
         with open(self.config_path, "rb") as f:
             config = tomllib.load(f)
@@ -267,7 +271,7 @@ class Smoketest(unittest.TestCase):
             body = resp.read()
             logging.debug(f"{resp.status} {body}")
             if resp.status != 200:
-                raise resp
+                raise Exception(resp, body)
             return body
 
 

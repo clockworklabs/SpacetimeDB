@@ -4,7 +4,8 @@ use once_cell::sync::Lazy;
 use prometheus::{GaugeVec, HistogramVec, IntCounterVec, IntGaugeVec};
 use spacetimedb_lib::{ConnectionId, Identity};
 use spacetimedb_metrics::metrics_group;
-use spacetimedb_table::{page_pool::PagePool, MemoryUsage};
+use spacetimedb_sats::memory_usage::MemoryUsage;
+use spacetimedb_table::page_pool::PagePool;
 use std::{sync::Once, time::Duration};
 use tokio::{spawn, time::sleep};
 
@@ -21,9 +22,14 @@ metrics_group!(
         pub ws_clients_spawned: IntGaugeVec,
 
         #[name = spacetime_worker_ws_clients_aborted]
-        #[help = "Number of ws client connections aborted"]
+        #[help = "Number of ws client connections aborted by either the server or the client"]
         #[labels(database_identity: Identity)]
         pub ws_clients_aborted: IntGaugeVec,
+
+        #[name = spacetime_worker_ws_clients_closed_connection]
+        #[help = "Number of ws client connections closed by the client as opposed to being termiated by the server"]
+        #[labels(database_identity: Identity)]
+        pub ws_clients_closed_connection: IntGaugeVec,
 
         #[name = spacetime_websocket_requests_total]
         #[help = "The cumulative number of websocket request messages"]

@@ -51,8 +51,7 @@ pub trait DbContext {
 
     /// Get the [`Identity`] of this connection.
     ///
-    /// This method panics if the connection was constructed anonymously
-    /// and we have not yet received our newly-generated [`Identity`] from the host.
+    /// This method panics if we have not yet received our [`Identity`] from the host.
     /// For a non-panicking version, see [`Self::try_identity`].
     fn identity(&self) -> Identity {
         self.try_identity().unwrap()
@@ -60,8 +59,7 @@ pub trait DbContext {
 
     /// Get the [`Identity`] of this connection.
     ///
-    /// This method returns `None` if the connection was constructed anonymously
-    /// and we have not yet received our newly-generated [`Identity`] from the host.
+    /// This method returns `None` if we have not yet received our [`Identity`] from the host.
     /// For a panicking version, see [`Self::identity`].
     fn try_identity(&self) -> Option<Identity>;
 

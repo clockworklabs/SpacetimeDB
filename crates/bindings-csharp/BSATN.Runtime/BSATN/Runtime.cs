@@ -118,24 +118,37 @@ public interface IReadWrite<T>
 }
 
 /// <summary>
-/// Present for backwards-compatibility reasons, but no longer used.
-/// The auto-generated serialization code for enum now reads/writes
-/// the tag byte directly to the wire. This avoids calling into reflective code.
+/// Serializer for enums.
 /// </summary>
 /// <typeparam name="T"></typeparam>
 public readonly struct Enum<T> : IReadWrite<T>
     where T : struct, Enum
 {
-    private static readonly ulong NumVariants;
+    /// <summary>
+    /// Map from tag -> value, implemented as an array.
+    /// Note: the [Type] macro rejects enums with explicitly set values (see Codegen.Tests),
+    /// so this array is guaranteed to be continuous and indexed starting from 0.
+    /// </summary>
+    private static readonly T[] TagToValue = Enum.GetValues(typeof(T)).Cast<T>().ToArray();
 
-    static Enum()
+    public T Read(BinaryReader reader)
     {
-        NumVariants = (ulong)Enum.GetValues(typeof(T)).Length;
+        var tag = reader.ReadByte();
+        try
+        {
+            return TagToValue[tag];
+        }
+        catch
+        {
+            throw new ArgumentOutOfRangeException(
+                $"Tag {tag} is out of range of enum {typeof(T).Name}"
+            );
+        }
     }
 
-    private static T Validate(T value)
+    public void Write(BinaryWriter writer, T value)
     {
-        // Previously this was: `if (!Enum.IsDefined(typeof(T), value))`.
+        // Previously this was: `if (Enum.IsDefined(typeof(T), value))`.
         // This was quite expensive because:
         //   1. It uses reflection
         //   2. It allocates
@@ -144,23 +157,21 @@ public readonly struct Enum<T> : IReadWrite<T>
         // However, enum values are guaranteed to be sequential and zero based.
         // Hence we only ever need to do an upper bound check.
         // See `SpacetimeDB.Type.ParseEnum` for the syntax analysis.
-
-        // Later note: this STILL uses reflection. We've deprecated this class entirely
-        // because of this.
-        if (Convert.ToUInt64(value) >= NumVariants)
+        //
+        // Note: this actually still uses reflection and allocates.
+        // It's hard to figure out how to avoid this without custom-generating a writer for each enum type.
+        var tag = Convert.ToByte(value);
+        if (tag < TagToValue.Length)
+        {
+            writer.Write(tag);
+        }
+        else
         {
             throw new ArgumentOutOfRangeException(
-                nameof(value),
-                $"Value {value} is out of range of enum {typeof(T).Name}"
+                $"Value {value} is out of range for enum {typeof(T).Name}"
             );
         }
-        return value;
     }
-
-    public T Read(BinaryReader reader) => Validate((T)Enum.ToObject(typeof(T), reader.ReadByte()));
-
-    public void Write(BinaryWriter writer, T value) =>
-        writer.Write(Convert.ToByte(Validate(value)));
 
     public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) =>
         registrar.RegisterType<T>(

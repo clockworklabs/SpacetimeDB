@@ -3,17 +3,13 @@
 //! we are interested in only a single column (or a small set of columns),
 //! and would like to avoid the allocation required by a `ProductValue`.
 
-use crate::{
-    bflatn_from,
-    indexes::{PageOffset, Size},
-    layout::{AlgebraicTypeLayout, PrimitiveType, ProductTypeElementLayout, VarLenType},
-    table::RowRef,
-};
+use crate::{bflatn_from, indexes::PageOffset, table::RowRef};
+use spacetimedb_sats::layout::{AlgebraicTypeLayout, PrimitiveType, ProductTypeElementLayout, Size, VarLenType};
 use spacetimedb_sats::{
     algebraic_value::{ser::ValueSerializer, Packed},
     i256,
     sum_value::SumTag,
-    u256, AlgebraicType, AlgebraicValue, ArrayValue, ProductType, ProductValue, SumValue,
+    u256, AlgebraicType, AlgebraicValue, ArrayValue, ProductType, ProductValue, SumValue, F32, F64,
 };
 use std::{cell::Cell, mem};
 use thiserror::Error;
@@ -339,6 +335,8 @@ impl_read_column_via_from! {
     i128 => Packed<i128>;
     u256 => Box<u256>;
     i256 => Box<i256>;
+    f32 => F32;
+    f64 => F64;
 }
 
 /// SAFETY: `is_compatible_type` only returns true for sum types,

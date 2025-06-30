@@ -4,8 +4,7 @@ use super::{
     blob_store::BlobStore,
     eq::eq_row_in_page,
     eq_to_pv::eq_row_in_page_to_pv,
-    indexes::{Bytes, PageIndex, PageOffset, RowHash, RowPointer, Size, SquashedOffset, PAGE_DATA_SIZE},
-    layout::{AlgebraicTypeLayout, RowTypeLayout},
+    indexes::{Bytes, PageIndex, PageOffset, RowHash, RowPointer, SquashedOffset, PAGE_DATA_SIZE},
     page::{FixedLenRowsIter, Page},
     page_pool::PagePool,
     pages::Pages,
@@ -18,19 +17,20 @@ use super::{
     static_layout::StaticLayout,
     table_index::{TableIndex, TableIndexPointIter, TableIndexRangeIter},
     var_len::VarLenMembers,
-    MemoryUsage,
 };
-use core::ops::RangeBounds;
 use core::{fmt, ptr};
 use core::{
     hash::{Hash, Hasher},
     hint::unreachable_unchecked,
 };
+use core::{mem, ops::RangeBounds};
 use derive_more::{Add, AddAssign, From, Sub, SubAssign};
 use enum_as_inner::EnumAsInner;
 use smallvec::SmallVec;
 use spacetimedb_lib::{bsatn::DecodeError, de::DeserializeOwned};
-use spacetimedb_primitives::{ColId, ColList, IndexId, SequenceId};
+use spacetimedb_primitives::{ColId, ColList, IndexId, SequenceId, TableId};
+use spacetimedb_sats::layout::{AlgebraicTypeLayout, PrimitiveType, RowTypeLayout, Size};
+use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::{
     algebraic_value::ser::ValueSerializer,
     bsatn::{self, ser::BsatnError, ToBsatn},
@@ -42,8 +42,7 @@ use spacetimedb_sats::{
 };
 use spacetimedb_schema::{
     def::IndexAlgorithm,
-    schema::{IndexSchema, TableSchema},
-    type_for_generate::PrimitiveType,
+    schema::{columns_to_row_type, ColumnSchema, IndexSchema, TableSchema},
 };
 use std::{
     collections::{btree_map, BTreeMap},
@@ -98,6 +97,8 @@ pub struct Table {
     is_scheduler: bool,
 }
 
+type StaticLayoutInTable = Option<(StaticLayout, StaticBsatnValidator)>;
+
 /// The part of a `Table` concerned only with storing rows.
 ///
 /// Separated from the "outer" parts of `Table`, especially the `indexes`,
@@ -114,7 +115,7 @@ pub(crate) struct TableInner {
     ///
     /// A [`StaticBsatnValidator`] is also included.
     /// It's used to validate BSATN-encoded rows before converting to BFLATN.
-    static_layout: Option<(StaticLayout, StaticBsatnValidator)>,
+    static_layout: StaticLayoutInTable,
     /// The visitor program for `row_layout`.
     ///
     /// Must be in the `TableInner` so that [`RowRef::blob_store_bytes`] can use it.
@@ -260,17 +261,143 @@ pub enum ReadViaBsatnError {
     DecodeError(#[from] DecodeError),
 }
 
+#[derive(Error, Debug)]
+#[error("Cannot change the columns of table `{table_name}` with id {table_id} from `{old:?}` to `{new:?}`")]
+pub struct ChangeColumnsError {
+    table_id: TableId,
+    table_name: Box<str>,
+    old: Vec<ColumnSchema>,
+    new: Vec<ColumnSchema>,
+}
+
+/// Computes the parts of a table definition, that are row type dependent, from the row type.
+fn table_row_type_dependents(row_type: ProductType) -> (RowTypeLayout, StaticLayoutInTable, VarLenVisitorProgram) {
+    let row_layout: RowTypeLayout = row_type.into();
+    let static_layout = StaticLayout::for_row_type(&row_layout).map(|sl| (sl, static_bsatn_validator(&row_layout)));
+    let visitor_prog = row_type_visitor(&row_layout);
+
+    (row_layout, static_layout, visitor_prog)
+}
+
 // Public API:
 impl Table {
     /// Creates a new empty table with the given `schema` and `squashed_offset`.
     pub fn new(schema: Arc<TableSchema>, squashed_offset: SquashedOffset) -> Self {
-        let row_layout: RowTypeLayout = schema.get_row_type().clone().into();
-        let static_layout = StaticLayout::for_row_type(&row_layout).map(|sl| (sl, static_bsatn_validator(&row_layout)));
-        let visitor_prog = row_type_visitor(&row_layout);
+        let (row_layout, static_layout, visitor_prog) = table_row_type_dependents(schema.get_row_type().clone());
+
         // By default, we start off with an empty pointer map,
         // which is removed when the first unique index is added.
         let pm = Some(PointerMap::default());
         Self::new_raw(schema, row_layout, static_layout, visitor_prog, squashed_offset, pm)
+    }
+
+    /// Change the columns of `self` to those in `column_schemas`
+    /// and returns the old column schemas.
+    ///
+    /// Returns an error if the new list of column is incompatible with the old.
+    pub fn change_columns_to(
+        &mut self,
+        column_schemas: Vec<ColumnSchema>,
+    ) -> Result<Vec<ColumnSchema>, ChangeColumnsError> {
+        fn validate(
+            this: &Table,
+            new_row_layout: &RowTypeLayout,
+            column_schemas: &[ColumnSchema],
+        ) -> Result<(), ChangeColumnsError> {
+            // Validate that the old row type layout can be changed to the new.
+            let schema = this.get_schema();
+            let row_layout = this.row_layout();
+
+            // Require that a scheduler table doesn't change the `id` and `at` fields.
+            let schedule_compat = schema
+                .schedule
+                .as_ref()
+                .zip(schema.pk())
+                .map_or(true, |(schedule, pk)| {
+                    let at_col = schedule.at_column.idx();
+                    let id_col = pk.col_pos.idx();
+                    row_layout[at_col] == new_row_layout[at_col] && row_layout[id_col] == new_row_layout[id_col]
+                });
+
+            // The `row_layout` must also be compatible with the new.
+            if schedule_compat && row_layout.is_compatible_with(new_row_layout) {
+                return Ok(());
+            }
+
+            Err(ChangeColumnsError {
+                table_id: schema.table_id,
+                table_name: schema.table_name.clone(),
+                old: schema.columns().to_vec(),
+                new: column_schemas.to_vec(),
+            })
+        }
+
+        unsafe { self.change_columns_to_unchecked(column_schemas, validate) }
+    }
+
+    /// Change the columns of `self` to those in `column_schemas`
+    /// and returns the old column schemas.
+    ///
+    /// Returns an error if the new list of column is incompatible with the old.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure, using `validate`,
+    /// that `new_row_layout` is compatible with the rows existing in `self`.
+    pub unsafe fn change_columns_to_unchecked<E>(
+        &mut self,
+        column_schemas: Vec<ColumnSchema>,
+        validate: impl FnOnce(&Self, &RowTypeLayout, &[ColumnSchema]) -> Result<(), E>,
+    ) -> Result<Vec<ColumnSchema>, E> {
+        // Compute the new row type, layout, and related stuff.
+        let new_row_type: ProductType = columns_to_row_type(&column_schemas);
+        let (new_row_layout, new_static_layout, new_visitor_prog) = table_row_type_dependents(new_row_type.clone());
+
+        validate(self, &new_row_layout, &column_schemas)?;
+
+        // Set the new layout and friends.
+        self.inner.row_layout = new_row_layout;
+        self.inner.static_layout = new_static_layout;
+        self.inner.visitor_prog = new_visitor_prog;
+
+        // Update the schema.
+        let old_column_schemas = self.with_mut_schema(|s| {
+            s.row_type = new_row_type;
+            mem::replace(&mut s.columns, column_schemas)
+        });
+
+        // Recompute the index types.
+        self.compute_index_types();
+
+        Ok(old_column_schemas)
+    }
+
+    /// Change the row layout and schema to the one of `other`.
+    ///
+    /// # Safety
+    ///
+    /// This is safe when a `ChangeColumnsError` would not occur
+    /// when using `other.get_schema().columns.clone()`.
+    /// The actual safety requirements are more complex but the above
+    /// is a super-set of the actual requirements.
+    pub unsafe fn set_layout_and_schema_to(&mut self, other: &Table) {
+        self.inner.row_layout = other.inner.row_layout.clone();
+        self.inner.static_layout = other.inner.static_layout.clone();
+        self.inner.visitor_prog = other.inner.visitor_prog.clone();
+
+        self.use_schema_of(other);
+        self.compute_index_types();
+    }
+
+    /// Re-computes the index key types.
+    fn compute_index_types(&mut self) {
+        let schema = self.get_schema().clone();
+        let row_type = schema.get_row_type();
+        for index in self.indexes.values_mut() {
+            index.key_type = row_type
+                .project(&index.indexed_columns)
+                .expect("new row type should have as many columns as before")
+        }
     }
 
     /// Returns whether this is a scheduler table.
@@ -1104,6 +1231,21 @@ impl Table {
         with(Arc::make_mut(&mut self.schema))
     }
 
+    /// Runs a mutation on the [`TableSchema`] of this table
+    /// and then sets the schema of `other` to that of `self`.
+    pub fn with_mut_schema_and_clone<R>(&mut self, other: &mut Table, with: impl FnOnce(&mut TableSchema) -> R) -> R {
+        let ret = self.with_mut_schema(with);
+        other.use_schema_of(self);
+        ret
+    }
+
+    /// Makes `self` use the schema of `other`.
+    ///
+    /// Here, `self` will typically be a commit table and `other` a tx table, or the reverse.
+    fn use_schema_of(&mut self, other: &Self) {
+        self.schema = other.get_schema().clone();
+    }
+
     /// Returns a new [`TableIndex`] for `table`.
     pub fn new_index(&self, algo: &IndexAlgorithm, is_unique: bool) -> Result<TableIndex, InvalidFieldError> {
         TableIndex::new(self.get_schema().get_row_type(), algo, is_unique)
@@ -1158,7 +1300,7 @@ impl Table {
         blob_store: &dyn BlobStore,
         index_id: IndexId,
         pointer_map: Option<PointerMap>,
-    ) -> Option<(TableIndex, IndexSchema)> {
+    ) -> Option<TableIndex> {
         let index = self.indexes.remove(&index_id)?;
 
         // If we removed the last unique index, add a pointer map.
@@ -1166,14 +1308,7 @@ impl Table {
             self.pointer_map = Some(pointer_map.unwrap_or_else(|| self.rebuild_pointer_map(blob_store)));
         }
 
-        // Remove index from schema.
-        //
-        // This likely will do a clone-write as over time?
-        // The schema might have found other referents.
-        let schema = self
-            .with_mut_schema(|s| s.remove_index(index_id))
-            .expect("there should be an index with `index_id`");
-        Some((index, schema))
+        Some(index)
     }
 
     /// Returns an iterator over all the rows of `self`, yielded as [`RefRef`]s.

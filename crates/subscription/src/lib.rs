@@ -7,12 +7,12 @@ use spacetimedb_execution::{
     Datastore, DeltaStore, Row,
 };
 use spacetimedb_expr::check::SchemaView;
-use spacetimedb_lib::{identity::AuthCtx, metrics::ExecutionMetrics, query::Delta};
-use spacetimedb_physical_plan::plan::{HashJoin, IxJoin, Label, PhysicalPlan, ProjectPlan, TableScan};
-use spacetimedb_primitives::{IndexId, TableId};
+use spacetimedb_lib::{identity::AuthCtx, metrics::ExecutionMetrics, query::Delta, AlgebraicValue};
+use spacetimedb_physical_plan::plan::{IxJoin, IxScan, Label, PhysicalPlan, ProjectPlan, Sarg, TableScan, TupleField};
+use spacetimedb_primitives::{ColId, ColList, IndexId, TableId};
 use spacetimedb_query::compile_subscription;
-use std::collections::HashSet;
 use std::sync::Arc;
+use std::{collections::HashSet, ops::RangeBounds};
 
 /// A subscription is a view over a particular table.
 /// How do we incrementally maintain that view?
@@ -285,6 +285,60 @@ impl std::fmt::Display for TableName {
     }
 }
 
+/// A join edge is used for pruning queries when evaluating subscription updates.
+///
+/// If we have the following subscriptions:
+/// ```sql
+/// SELECT a.* FROM a JOIN b ON a.id = b.id WHERE b.x = 1
+/// SELECT a.* FROM a JOIN b ON a.id = b.id WHERE b.x = 2
+/// ...
+/// SELECT a.* FROM a JOIN b ON a.id = b.id WHERE b.x = n
+/// ```
+///
+/// Whenever `a` is updated, only the relevant queries are evaluated.
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct JoinEdge {
+    /// The [`TableId`] for `a`
+    pub lhs_table: TableId,
+    /// The [`TableId`] for `b`
+    pub rhs_table: TableId,
+    /// The [`ColId`] for `a.id`
+    pub lhs_join_col: ColId,
+    /// The [`ColId`] for `b.id`
+    pub rhs_join_col: ColId,
+    /// The [`ColId`] for `b.x`
+    pub rhs_col: ColId,
+}
+
+impl JoinEdge {
+    /// A helper method for finding a range of join edges for a particular table in a sorted set.
+    fn min_for_table(lhs_table: TableId) -> Self {
+        Self {
+            lhs_table,
+            rhs_table: TableId(u32::MIN),
+            lhs_join_col: ColId(u16::MIN),
+            rhs_join_col: ColId(u16::MIN),
+            rhs_col: ColId(u16::MIN),
+        }
+    }
+
+    /// A helper method for finding a range of join edges for a particular table in a sorted set.
+    fn max_for_table(lhs_table: TableId) -> Self {
+        Self {
+            lhs_table,
+            rhs_table: TableId(u32::MAX),
+            lhs_join_col: ColId(u16::MAX),
+            rhs_join_col: ColId(u16::MAX),
+            rhs_col: ColId(u16::MAX),
+        }
+    }
+
+    /// A helper method for finding a range of join edges for a particular table in a sorted set.
+    pub fn range_for_table(lhs_table: TableId) -> impl RangeBounds<Self> {
+        Self::min_for_table(lhs_table)..=Self::max_for_table(lhs_table)
+    }
+}
+
 /// A subscription defines a view over a table
 #[derive(Debug)]
 pub struct SubscriptionPlan {
@@ -297,12 +351,8 @@ pub struct SubscriptionPlan {
     table_ids: Vec<TableId>,
     /// The plan fragments for updating the view
     fragments: Fragments,
-    /// The original plan without any delta scans.
-    ///
-    /// TODO: Used for cardinality estimation,
-    /// but not for maintaining the view,
-    /// therefore it should ultimately be removed.
-    plan: ProjectPlan,
+    /// The optimized plan without any delta scans
+    plan_opt: ProjectPlan,
 }
 
 impl SubscriptionPlan {
@@ -326,13 +376,9 @@ impl SubscriptionPlan {
         self.table_ids.iter().copied()
     }
 
-    /// The original plan without any delta scans.
-    ///
-    /// TODO: Used for cardinality estimation,
-    /// but not for maintaining the view,
-    /// therefore it should ultimately be removed.
-    pub fn physical_plan(&self) -> &ProjectPlan {
-        &self.plan
+    /// The optimized plan without any delta scans
+    pub fn optimized_physical_plan(&self) -> &ProjectPlan {
+        &self.plan_opt
     }
 
     /// From which indexes does this plan read?
@@ -364,48 +410,100 @@ impl SubscriptionPlan {
         self.fragments.for_each_delete(tx, metrics, f)
     }
 
+    /// Returns a join edge for this query if it has one.
+    ///
+    /// Requirements include:
+    /// 1. Unique join index
+    /// 2. Single column index lookup on the rhs table
+    /// 3. No self joins
+    pub fn join_edge(&self) -> Option<(JoinEdge, AlgebraicValue)> {
+        if !self.is_join() {
+            return None;
+        }
+        let mut join_edge = None;
+        self.plan_opt.visit(&mut |op| match op {
+            PhysicalPlan::IxJoin(
+                IxJoin {
+                    lhs,
+                    rhs,
+                    rhs_field: lhs_join_col,
+                    lhs_field:
+                        TupleField {
+                            field_pos: rhs_join_col,
+                            ..
+                        },
+                    ..
+                },
+                _,
+            ) if rhs.table_id == self.return_id => match &**lhs {
+                PhysicalPlan::IxScan(
+                    IxScan {
+                        schema,
+                        prefix,
+                        arg: Sarg::Eq(rhs_col, rhs_val),
+                        ..
+                    },
+                    _,
+                ) if schema.table_id != self.return_id
+                    && prefix.is_empty()
+                    && schema.is_unique(&ColList::new((*rhs_join_col).into())) =>
+                {
+                    let lhs_table = self.return_id;
+                    let rhs_table = schema.table_id;
+                    let rhs_col = *rhs_col;
+                    let rhs_val = rhs_val.clone();
+                    let lhs_join_col = *lhs_join_col;
+                    let rhs_join_col = (*rhs_join_col).into();
+                    let edge = JoinEdge {
+                        lhs_table,
+                        rhs_table,
+                        lhs_join_col,
+                        rhs_join_col,
+                        rhs_col,
+                    };
+                    join_edge = Some((edge, rhs_val));
+                }
+                _ => {}
+            },
+            _ => {}
+        });
+        join_edge
+    }
+
     /// Generate a plan for incrementally maintaining a subscription
     pub fn compile(sql: &str, tx: &impl SchemaView, auth: &AuthCtx) -> Result<(Vec<Self>, bool)> {
         let (plans, return_id, return_name, has_param) = compile_subscription(sql, tx, auth)?;
 
         /// Does this plan have any non-index joins?
         fn has_non_index_join(plan: &PhysicalPlan) -> bool {
-            let mut ix_joins = true;
-            plan.visit(&mut |plan| match plan {
-                PhysicalPlan::IxJoin(IxJoin { lhs_field, .. }, _) => {
-                    ix_joins = ix_joins && plan.index_on_field(&lhs_field.label, lhs_field.field_pos);
-                }
-                PhysicalPlan::HashJoin(
-                    HashJoin {
-                        lhs_field, rhs_field, ..
-                    },
-                    _,
-                ) => {
-                    ix_joins = ix_joins && plan.index_on_field(&lhs_field.label, lhs_field.field_pos);
-                    ix_joins = ix_joins && plan.index_on_field(&rhs_field.label, rhs_field.field_pos);
-                }
-                _ => {}
-            });
-            !ix_joins
+            plan.any(&|op| matches!(op, PhysicalPlan::HashJoin(..) | PhysicalPlan::NLJoin(..)))
         }
 
         /// What tables are involved in this plan?
         fn table_ids_for_plan(plan: &PhysicalPlan) -> (Vec<TableId>, Vec<Label>) {
             let mut table_aliases = vec![];
             let mut table_ids = vec![];
-            plan.visit(&mut |plan| {
-                if let PhysicalPlan::TableScan(
+            plan.visit(&mut |plan| match plan {
+                PhysicalPlan::TableScan(
                     TableScan {
+                        // What table are we reading?
                         schema,
-                        limit: None,
-                        delta: None,
+                        ..
                     },
                     alias,
-                ) = plan
-                {
+                )
+                | PhysicalPlan::IxScan(
+                    IxScan {
+                        // What table are we reading?
+                        schema,
+                        ..
+                    },
+                    alias,
+                ) => {
                     table_aliases.push(*alias);
                     table_ids.push(schema.table_id);
                 }
+                _ => {}
             });
             (table_ids, table_aliases)
         }
@@ -415,7 +513,9 @@ impl SubscriptionPlan {
         let return_name = TableName::from(return_name);
 
         for plan in plans {
-            if has_non_index_join(&plan) {
+            let plan_opt = plan.clone().optimize()?;
+
+            if has_non_index_join(&plan_opt) {
                 bail!("Subscriptions require indexes on join columns")
             }
 
@@ -427,7 +527,7 @@ impl SubscriptionPlan {
                 return_id,
                 return_name: return_name.clone(),
                 table_ids,
-                plan,
+                plan_opt,
                 fragments,
             });
         }
