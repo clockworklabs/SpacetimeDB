@@ -671,9 +671,10 @@ async fn send_message(
         poll_fn(|cx| ws.poll_ready_unpin(cx)).await
     }
     .await;
-    let buf = msg_alloc
-        .try_reclaim()
-        .expect("should have a unique referent to `msg_alloc`");
+    // Reclaim can fail if we didn't succeed pushing down the data to the
+    // websocket. We must return a buffer, though, so create a fresh one.
+    let buf = msg_alloc.try_reclaim().unwrap_or_else(|| SerializeBuffer::new(config));
+
     (buf, res)
 }
 
