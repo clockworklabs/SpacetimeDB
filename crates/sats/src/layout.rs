@@ -6,27 +6,21 @@
 //! These, and others, determine what the layout of objects typed at those types are.
 //! They also implement [`HasLayout`] which generalizes over layout annotated types.
 
-use crate::MemoryUsage;
-
-use super::{
-    indexes::Size,
-    var_len::{VarLenGranule, VarLenRef},
-};
-use core::mem;
-use core::ops::Index;
-use enum_as_inner::EnumAsInner;
-use spacetimedb_sats::{
-    bsatn,
+use crate::{
     de::{
         Deserialize, DeserializeSeed, Deserializer, Error, NamedProductAccess, ProductVisitor, SeqProductAccess,
         SumAccess, SumVisitor, ValidNames, VariantAccess as _, VariantVisitor,
     },
-    i256,
+    i256, impl_deserialize, impl_serialize,
+    memory_usage::MemoryUsage,
     sum_type::{OPTION_NONE_TAG, OPTION_SOME_TAG},
     u256, AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement, ProductValue, SumType, SumTypeVariant,
     SumValue, WithTypespace,
 };
-pub use spacetimedb_schema::type_for_generate::PrimitiveType;
+use core::ops::{Index, Mul};
+use core::{mem, ops::Deref};
+use derive_more::{Add, Sub};
+use enum_as_inner::EnumAsInner;
 use std::sync::Arc;
 
 /// Aligns a `base` offset to the `required_alignment` (in the positive direction) and returns it.
@@ -45,6 +39,34 @@ pub const fn align_to(base: usize, required_alignment: usize) -> usize {
             let padding = required_alignment - misalignment;
             base + padding
         }
+    }
+}
+
+/// The size of something in page storage in bytes.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Add, Sub)]
+pub struct Size(pub u16);
+
+impl MemoryUsage for Size {}
+
+// We need to be able to serialize and deserialize `Size` because they appear in the `PageHeader`.
+impl_serialize!([] Size, (self, ser) => self.0.serialize(ser));
+impl_deserialize!([] Size, de => u16::deserialize(de).map(Size));
+
+impl Size {
+    /// Returns the size for use in `usize` computations.
+    #[inline]
+    #[allow(clippy::len_without_is_empty)]
+    pub const fn len(self) -> usize {
+        self.0 as usize
+    }
+}
+
+impl Mul<usize> for Size {
+    type Output = Size;
+
+    #[inline]
+    fn mul(self, rhs: usize) -> Self::Output {
+        Size((self.len() * rhs) as u16)
     }
 }
 
@@ -163,6 +185,26 @@ impl AlgebraicTypeLayout {
     pub const F32: Self = Self::Primitive(PrimitiveType::F32);
     pub const F64: Self = Self::Primitive(PrimitiveType::F64);
     pub const String: Self = Self::VarLen(VarLenType::String);
+
+    /// Can `self` be changed compatibly to `new`?
+    fn is_compatible_with(&self, new: &Self) -> bool {
+        match (self, new) {
+            (Self::Sum(old), Self::Sum(new)) => old.is_compatible_with(new),
+            (Self::Product(old), Self::Product(new)) => old.view().is_compatible_with(new.view()),
+            (Self::Primitive(old), Self::Primitive(new)) => old == new,
+            (Self::VarLen(VarLenType::Array(old)), Self::VarLen(VarLenType::Array(new))) => {
+                // NOTE(perf, centril): This might clone and heap allocate,
+                // but we don't care to avoid that and optimize right now,
+                // as this is only executed during upgrade / migration,
+                // and that doesn't need to be fast right now.
+                let old = AlgebraicTypeLayout::from(old.deref().clone());
+                let new = AlgebraicTypeLayout::from(new.deref().clone());
+                old.is_compatible_with(&new)
+            }
+            (Self::VarLen(VarLenType::String), Self::VarLen(VarLenType::String)) => true,
+            _ => false,
+        }
+    }
 }
 
 /// A collection of items, so that we can easily swap out the backing type.
@@ -227,6 +269,11 @@ impl RowTypeLayout {
     pub fn size(&self) -> Size {
         Size(self.product().size() as u16)
     }
+
+    /// Can `self` be changed compatibly to `new`?
+    pub fn is_compatible_with(&self, new: &RowTypeLayout) -> bool {
+        self.layout == new.layout && self.product().is_compatible_with(new.product())
+    }
 }
 
 impl HasLayout for RowTypeLayout {
@@ -243,7 +290,7 @@ impl Index<usize> for RowTypeLayout {
 }
 
 /// A mirror of [`ProductType`] annotated with a [`Layout`].
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub struct ProductTypeLayoutView<'a> {
     /// The memoized layout of the product type.
     pub layout: Layout,
@@ -254,6 +301,18 @@ pub struct ProductTypeLayoutView<'a> {
 impl HasLayout for ProductTypeLayoutView<'_> {
     fn layout(&self) -> &Layout {
         &self.layout
+    }
+}
+
+impl ProductTypeLayoutView<'_> {
+    /// Can `self` be changed compatibly to `new`?
+    fn is_compatible_with(self, new: Self) -> bool {
+        self.elements.len() == new.elements.len()
+            && self
+                .elements
+                .iter()
+                .zip(new.elements.iter())
+                .all(|(old, new)| old.ty.is_compatible_with(&new.ty))
     }
 }
 
@@ -360,7 +419,50 @@ impl MemoryUsage for SumTypeVariantLayout {
     }
 }
 
+/// Scalar types, i.e. bools, integers and floats.
+/// These types do not require a `VarLenRef` indirection when stored in a `spacetimedb_table::table::Table`.
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
+pub enum PrimitiveType {
+    Bool,
+    I8,
+    U8,
+    I16,
+    U16,
+    I32,
+    U32,
+    I64,
+    U64,
+    I128,
+    U128,
+    I256,
+    U256,
+    F32,
+    F64,
+}
+
 impl MemoryUsage for PrimitiveType {}
+
+impl PrimitiveType {
+    pub fn algebraic_type(&self) -> AlgebraicType {
+        match self {
+            PrimitiveType::Bool => AlgebraicType::Bool,
+            PrimitiveType::I8 => AlgebraicType::I8,
+            PrimitiveType::U8 => AlgebraicType::U8,
+            PrimitiveType::I16 => AlgebraicType::I16,
+            PrimitiveType::U16 => AlgebraicType::U16,
+            PrimitiveType::I32 => AlgebraicType::I32,
+            PrimitiveType::U32 => AlgebraicType::U32,
+            PrimitiveType::I64 => AlgebraicType::I64,
+            PrimitiveType::U64 => AlgebraicType::U64,
+            PrimitiveType::I128 => AlgebraicType::I128,
+            PrimitiveType::U128 => AlgebraicType::U128,
+            PrimitiveType::I256 => AlgebraicType::I256,
+            PrimitiveType::U256 => AlgebraicType::U256,
+            PrimitiveType::F32 => AlgebraicType::F32,
+            PrimitiveType::F64 => AlgebraicType::F64,
+        }
+    }
+}
 
 impl HasLayout for PrimitiveType {
     fn layout(&self) -> &'static Layout {
@@ -422,13 +524,11 @@ impl MemoryUsage for VarLenType {
 }
 
 /// The layout of var-len objects. Aligned at a `u16` which it has 2 of.
-const VAR_LEN_REF_LAYOUT: Layout = Layout {
+pub const VAR_LEN_REF_LAYOUT: Layout = Layout {
     size: 4,
     align: 2,
     fixed: false,
 };
-const _: () = assert!(VAR_LEN_REF_LAYOUT.size as usize == mem::size_of::<VarLenRef>());
-const _: () = assert!(VAR_LEN_REF_LAYOUT.align as usize == mem::align_of::<VarLenRef>());
 
 impl HasLayout for VarLenType {
     fn layout(&self) -> &Layout {
@@ -599,7 +699,7 @@ impl VarLenType {
 }
 
 impl ProductTypeLayoutView<'_> {
-    pub(crate) fn product_type(&self) -> ProductType {
+    pub fn product_type(&self) -> ProductType {
         ProductType {
             elements: self
                 .elements
@@ -638,6 +738,18 @@ impl SumTypeLayout {
                 .map(SumTypeVariantLayout::sum_type_variant)
                 .collect(),
         }
+    }
+
+    /// Can `self` be changed compatibly to `new`?
+    ///
+    /// In the case of sums, the old variants need only be a prefix of the new.
+    fn is_compatible_with(&self, new: &SumTypeLayout) -> bool {
+        self.variants.len() <= new.variants.len()
+            && self
+                .variants
+                .iter()
+                .zip(self.variants.iter())
+                .all(|(old, new)| old.ty.is_compatible_with(&new.ty))
     }
 }
 
@@ -683,42 +795,6 @@ impl SumTypeLayout {
         //
         0
     }
-}
-
-/// Counts the number of [`VarLenGranule`] allocations required to store `val` in a page.
-pub fn required_var_len_granules_for_row(val: &ProductValue) -> usize {
-    fn traverse_av(val: &AlgebraicValue, count: &mut usize) {
-        match val {
-            AlgebraicValue::Product(val) => traverse_product(val, count),
-            AlgebraicValue::Sum(val) => traverse_av(&val.value, count),
-            AlgebraicValue::Array(_) => add_for_bytestring(bsatn_len(val), count),
-            AlgebraicValue::String(val) => add_for_bytestring(val.len(), count),
-            _ => (),
-        }
-    }
-
-    fn traverse_product(val: &ProductValue, count: &mut usize) {
-        for elt in val {
-            traverse_av(elt, count);
-        }
-    }
-
-    fn add_for_bytestring(len_in_bytes: usize, count: &mut usize) {
-        *count += VarLenGranule::bytes_to_granules(len_in_bytes).0;
-    }
-
-    let mut required_granules: usize = 0;
-    traverse_product(val, &mut required_granules);
-    required_granules
-}
-
-/// Computes the size of `val` when BSATN encoding without actually encoding.
-pub fn bsatn_len(val: &AlgebraicValue) -> usize {
-    // We store arrays and maps BSATN-encoded,
-    // so we need to go through BSATN encoding to determine the size of the resulting byte blob,
-    // but we don't actually need that byte blob in this calculation,
-    // instead, we can just count them as a serialization format.
-    bsatn::to_len(val).unwrap()
 }
 
 impl<'de> DeserializeSeed<'de> for &AlgebraicTypeLayout {
@@ -851,10 +927,10 @@ impl VariantVisitor for &SumTypeLayout {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::proptest::generate_algebraic_type;
     use itertools::Itertools as _;
     use proptest::collection::vec;
     use proptest::prelude::*;
-    use spacetimedb_sats::proptest::generate_algebraic_type;
 
     #[test]
     fn align_to_expected() {
@@ -1011,7 +1087,7 @@ mod test {
         fn variant_order_irrelevant_for_layout(
             variants in vec(generate_algebraic_type(), 0..5)
         ) {
-            use spacetimedb_sats::SumTypeVariant;
+            use crate::SumTypeVariant;
 
             let len = variants.len();
             // Compute all permutations of the sum type with `variants`.

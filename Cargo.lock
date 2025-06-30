@@ -5793,6 +5793,7 @@ dependencies = [
  "sha3",
  "smallvec",
  "spacetimedb-bindings-macro",
+ "spacetimedb-data-structures",
  "spacetimedb-metrics",
  "spacetimedb-primitives",
  "thiserror 1.0.69",

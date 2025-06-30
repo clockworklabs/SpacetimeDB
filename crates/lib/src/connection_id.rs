@@ -3,6 +3,7 @@ use core::{fmt, net::Ipv6Addr};
 use spacetimedb_bindings_macro::{Deserialize, Serialize};
 use spacetimedb_lib::from_hex_pad;
 use spacetimedb_sats::hex::HexString;
+use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::{impl_deserialize, impl_serialize, impl_st, AlgebraicType, AlgebraicValue};
 
 /// A unique identifier for a client connection to a SpacetimeDB database.
@@ -31,6 +32,8 @@ pub struct ConnectionId {
 }
 
 impl_st!([] ConnectionId, AlgebraicType::connection_id());
+
+impl MemoryUsage for ConnectionId {}
 
 #[cfg(feature = "metrics_impls")]
 impl spacetimedb_metrics::typed_prometheus::AsPrometheusLabel for ConnectionId {

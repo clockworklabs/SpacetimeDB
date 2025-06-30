@@ -25,7 +25,7 @@ use crate::{
     execution_context::ExecutionContext,
 };
 use anyhow::anyhow;
-use core::ops::RangeBounds;
+use core::{convert::Infallible, ops::RangeBounds};
 use itertools::Itertools;
 use spacetimedb_data_structures::map::{HashSet, IntMap};
 use spacetimedb_lib::{
@@ -33,6 +33,7 @@ use spacetimedb_lib::{
     Identity,
 };
 use spacetimedb_primitives::{ColList, ColSet, IndexId, TableId};
+use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::{AlgebraicValue, ProductValue};
 use spacetimedb_schema::{def::IndexAlgorithm, schema::TableSchema};
 use spacetimedb_table::{
@@ -40,7 +41,6 @@ use spacetimedb_table::{
     indexes::{RowPointer, SquashedOffset},
     page_pool::PagePool,
     table::{IndexScanRangeIter, InsertError, RowRef, Table, TableAndIndex},
-    MemoryUsage,
 };
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -685,6 +685,24 @@ impl CommittedState {
             TableAlterAccess(table_id, access) => {
                 let table = self.tables.get_mut(&table_id)?;
                 table.with_mut_schema(|s| s.table_access = access);
+            }
+            // A table's row type was changed. Change back to the old one.
+            // The row representation of old rows hasn't changed,
+            // so it's safe to not rewrite the rows and merely change the type back.
+            TableAlterRowType(table_id, column_schemas) => {
+                let table = self.tables.get_mut(&table_id)?;
+                // SAFETY:
+                // Let the "old" type/schema be the one in `column_schemas`.
+                // Let the "new" type/schema be the one used by the table which we are rolling back.
+                // There's no need to validate "old",
+                // as it was the row type prior to the change which we're rolling back.
+                // We can use "old", as this is the commit table,
+                // which is immutable to row addition during a transaction,
+                // and thus will only have rows compatible with it.
+                // The rows in the tx state might not be, as they may use e.g., a new variant.
+                // However, we don't care about that, as the tx state is being discarded.
+                unsafe { table.change_columns_to_unchecked(column_schemas, |_, _, _| Ok::<_, Infallible>(())) }
+                    .unwrap_or_else(|e| match e {});
             }
             // A constraint was removed. Add it back.
             ConstraintRemoved(table_id, constraint_schema) => {

@@ -9,7 +9,8 @@ use rand::{prelude::*, seq::SliceRandom};
 use smallvec::SmallVec;
 use spacetimedb::db::datastore::locking_tx_datastore::delete_table;
 use spacetimedb_data_structures::map::HashSet;
-use spacetimedb_table::indexes::{PageIndex, PageOffset, RowPointer, Size, SquashedOffset};
+use spacetimedb_sats::layout::Size;
+use spacetimedb_table::indexes::{PageIndex, PageOffset, RowPointer, SquashedOffset};
 use std::collections::BTreeSet;
 
 fn time<R>(body: impl FnOnce() -> R) -> Duration {

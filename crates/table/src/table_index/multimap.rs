@@ -1,9 +1,8 @@
 use core::ops::RangeBounds;
 use core::slice;
 use smallvec::SmallVec;
+use spacetimedb_sats::memory_usage::MemoryUsage;
 use std::collections::btree_map::{BTreeMap, Range};
-
-use crate::MemoryUsage;
 
 /// A multi map that relates a `K` to a *set* of `V`s.
 #[derive(Debug, PartialEq, Eq)]

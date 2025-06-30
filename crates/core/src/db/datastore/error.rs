@@ -82,6 +82,8 @@ pub enum TableError {
     Duplicate(#[from] table::DuplicateError),
     #[error(transparent)]
     ReadColTypeError(#[from] read_column::TypeError),
+    #[error(transparent)]
+    ChangeColumnsError(#[from] table::ChangeColumnsError),
 }
 
 #[derive(Error, Debug, PartialEq, Eq)]
