@@ -12,7 +12,6 @@ use axum_extra::TypedHeader;
 use bytes::Bytes;
 use bytestring::ByteString;
 use derive_more::From;
-use futures::future::FusedFuture as _;
 use futures::{pin_mut, FutureExt, Sink, SinkExt, Stream, StreamExt};
 use http::{HeaderValue, StatusCode};
 use prometheus::IntGauge;
@@ -279,11 +278,11 @@ async fn ws_client_actor_inner(
     let eval_handler = ws_eval_handler(client.clone(), &mut *eval_rx);
     // Sink that sends subscription updates and reducer results from `sendrx`,
     // as well as [`UnorderedWsMessage`]s to the socket..
-    let send_loop = ws_send_loop(state.clone(), client.config, ws_send, sendrx, unordered_rx).fuse();
+    let send_loop = ws_send_loop(state.clone(), client.config, ws_send, sendrx, unordered_rx);
+    tokio::spawn(send_loop);
 
     pin_mut!(recv_handler);
     pin_mut!(eval_handler);
-    pin_mut!(send_loop);
 
     loop {
         tokio::select! {
@@ -327,10 +326,6 @@ async fn ws_client_actor_inner(
                         break;
                     }
                 }
-            },
-            // Poll the send loop until it's done.
-            _ = &mut send_loop, if !send_loop.is_terminated() => {
-                log::trace!("send loop terminated");
             },
 
             // Update the client's module host if it was hotswapped,
