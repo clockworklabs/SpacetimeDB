@@ -5333,6 +5333,7 @@ name = "spacetimedb-client-api"
 version = "1.2.0"
 dependencies = [
  "anyhow",
+ "async-stream",
  "async-trait",
  "axum",
  "axum-extra",
