@@ -9,6 +9,7 @@ license-file = "LICENSE"
 [dependencies]
 toml_edit = "0.22.4"
 anyhow.workspace = true
+chrono = { workspace = true, features=["clock"] }
 clap.workspace = true
 regex.workspace = true
 duct.workspace = true
