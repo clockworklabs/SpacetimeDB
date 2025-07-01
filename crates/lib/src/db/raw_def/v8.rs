@@ -3,7 +3,6 @@
 //! Nothing to do with Chrome.
 
 use crate::db::auth::{StAccess, StTableType};
-use crate::relation::FieldName;
 use crate::{AlgebraicType, ProductType, SpacetimeType};
 use derive_more::Display;
 use spacetimedb_data_structures::map::HashSet;
@@ -507,13 +506,6 @@ impl RawTableDefV8 {
             .iter()
             .filter(move |idx| !cols.contains(&idx.columns))
             .map(|idx| self.gen_constraint_def(Constraints::from_is_unique(idx.is_unique), idx.columns.clone()))
-    }
-
-    /// Check if the `name` of the [FieldName] exist on this [RawTableDefV8]
-    ///
-    /// Warning: It ignores the `table_id`
-    pub fn get_column_by_field(&self, field: FieldName) -> Option<&RawColumnDefV8> {
-        self.get_column(field.col.idx())
     }
 
     /// Get a column by its position in the table.
