@@ -7,7 +7,7 @@ use crate::db::datastore::traits::Program;
 use crate::db::db_metrics::data_size::DATA_SIZE_METRICS;
 use crate::db::db_metrics::DB_METRICS;
 use crate::db::relational_db::{self, DiskSizeFn, RelationalDB, Txdata};
-use crate::db::{self, spawn_metrics_recorder};
+use crate::db::{self, spawn_tx_metrics_recorder};
 use crate::energy::{EnergyMonitor, EnergyQuanta, NullEnergyMonitor};
 use crate::messages::control_db::{Database, HostType};
 use crate::module_host_context::ModuleCreationContext;
@@ -801,10 +801,10 @@ struct Host {
     ///
     /// The task collects metrics from the `replica_ctx`, and so stays alive as long
     /// as the `replica_ctx` is live. The task is aborted when [`Host`] is dropped.
-    metrics_reporter_task: AbortHandle,
-    /// Handle to a host's metrics recorder task.
+    disk_metrics_recorder_task: AbortHandle,
+    /// Handle to the task responsible for recording metrics for each transaction.
     /// The task is aborted when [`Host`] is dropped.
-    metrics_recorder_task: AbortHandle,
+    tx_metrics_recorder_task: AbortHandle,
 }
 
 impl Host {
@@ -826,7 +826,7 @@ impl Host {
         } = host_controller;
         let on_panic = host_controller.unregister_fn(replica_id);
         let replica_dir = data_dir.replica(replica_id);
-        let (metrics_recorder_queue, metrics_recorder_task) = spawn_metrics_recorder();
+        let (tx_metrics_queue, tx_metrics_recorder_task) = spawn_tx_metrics_recorder();
 
         let (db, connected_clients) = match config.storage {
             db::Storage::Memory => RelationalDB::open(
@@ -836,7 +836,7 @@ impl Host {
                 EmptyHistory::new(),
                 None,
                 None,
-                Some(metrics_recorder_queue),
+                Some(tx_metrics_queue),
                 page_pool.clone(),
             )?,
             db::Storage::Disk => {
@@ -852,7 +852,7 @@ impl Host {
                     history,
                     Some(durability),
                     Some(snapshot_repo),
-                    Some(metrics_recorder_queue),
+                    Some(tx_metrics_queue),
                     page_pool.clone(),
                 )
                 // Make sure we log the source chain of the error
@@ -923,14 +923,14 @@ impl Host {
         }
 
         scheduler_starter.start(&module_host)?;
-        let metrics_reporter_task = tokio::spawn(metric_reporter(replica_ctx.clone())).abort_handle();
+        let disk_metrics_recorder_task = tokio::spawn(metric_reporter(replica_ctx.clone())).abort_handle();
 
         Ok(Host {
             module: watch::Sender::new(module_host),
             replica_ctx,
             scheduler,
-            metrics_reporter_task,
-            metrics_recorder_task,
+            disk_metrics_recorder_task,
+            tx_metrics_recorder_task,
         })
     }
 
@@ -1054,8 +1054,8 @@ impl Host {
 
 impl Drop for Host {
     fn drop(&mut self) {
-        self.metrics_reporter_task.abort();
-        self.metrics_recorder_task.abort();
+        self.disk_metrics_recorder_task.abort();
+        self.tx_metrics_recorder_task.abort();
     }
 }
 

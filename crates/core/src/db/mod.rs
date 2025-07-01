@@ -79,9 +79,9 @@ impl MetricsRecorderQueue {
     }
 }
 
-/// Spawns a task for recording metrics.
+/// Spawns a task for recording transaction metrics.
 /// Returns the handle for pushing metrics to the recorder.
-pub fn spawn_metrics_recorder() -> (MetricsRecorderQueue, tokio::task::AbortHandle) {
+pub fn spawn_tx_metrics_recorder() -> (MetricsRecorderQueue, tokio::task::AbortHandle) {
     let (tx, mut rx) = mpsc::unbounded_channel();
     let abort_handle = tokio::spawn(async move {
         while let Some(MetricsMessage {
@@ -93,10 +93,23 @@ pub fn spawn_metrics_recorder() -> (MetricsRecorderQueue, tokio::task::AbortHand
         }) = rx.recv().await
         {
             if let Some(tx_metrics) = metrics_for_writer {
-                tx_metrics.report(tx_data.as_deref(), &reducer, |wl| &counters[wl]);
+                tx_metrics.report(
+                    // If row updates are present,
+                    // they will always belong to the writer transaction.
+                    tx_data.as_deref(),
+                    &reducer,
+                    |wl| &counters[wl],
+                );
             }
             if let Some(tx_metrics) = metrics_for_reader {
-                tx_metrics.report(None, &reducer, |wl| &counters[wl]);
+                tx_metrics.report(
+                    // If row updates are present,
+                    // they will never belong to the reader transaction.
+                    // Passing row updates here will most likely panic.
+                    None,
+                    &reducer,
+                    |wl| &counters[wl],
+                );
             }
         }
     })
