@@ -26,6 +26,7 @@ use spacetimedb_lib::{AlgebraicValue, ConnectionId, Identity, ProductValue};
 use spacetimedb_primitives::{ColId, IndexId, TableId};
 use spacetimedb_subscription::{JoinEdge, SubscriptionPlan, TableName};
 use std::collections::BTreeMap;
+use std::fmt::Debug;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::sync::mpsc;

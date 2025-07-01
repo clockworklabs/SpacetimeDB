@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::time::Duration;
 
 use super::ast::SchemaViewer;
@@ -202,7 +203,12 @@ pub fn run(
             // Release the tx on drop, so that we record metrics.
             let mut tx = scopeguard::guard(tx, |tx| {
                 let (tx_metrics_downgrade, reducer) = db.release_tx(tx);
-                db.report_tx_metricses(&reducer, Some(&tx_data), Some(&tx_metrics_mut), &tx_metrics_downgrade);
+                db.report_tx_metrics(
+                    reducer,
+                    Some(Arc::new(tx_data)),
+                    Some(tx_metrics_mut),
+                    Some(tx_metrics_downgrade),
+                );
             });
 
             // Compute the header for the result set
@@ -247,7 +253,7 @@ pub fn run(
                 let metrics = tx.metrics;
                 return db.commit_tx(tx).map(|tx_opt| {
                     if let Some((tx_data, tx_metrics, reducer)) = tx_opt {
-                        db.report(&reducer, &tx_metrics, Some(&tx_data));
+                        db.report_mut_tx_metrics(reducer, tx_metrics, Some(tx_data));
                     }
                     SqlResult { rows: vec![], metrics }
                 });

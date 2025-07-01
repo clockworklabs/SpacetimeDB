@@ -37,7 +37,7 @@ use std::{sync::Arc, time::Instant};
 
 type Subscriptions = Arc<RwLock<SubscriptionManager>>;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ModuleSubscriptions {
     relational_db: Arc<RelationalDB>,
     /// If taking a lock (tx) on the db at the same time, ALWAYS lock the db first.
@@ -318,7 +318,7 @@ impl ModuleSubscriptions {
 
         let tx = scopeguard::guard(self.relational_db.begin_tx(Workload::Subscribe), |tx| {
             let (tx_metrics, reducer) = self.relational_db.release_tx(tx);
-            self.relational_db.report(&reducer, &tx_metrics, None);
+            self.relational_db.report_read_tx_metrics(reducer, tx_metrics);
         });
 
         let existing_query = {
@@ -420,7 +420,7 @@ impl ModuleSubscriptions {
 
         let tx = scopeguard::guard(self.relational_db.begin_tx(Workload::Unsubscribe), |tx| {
             let (tx_metrics, reducer) = self.relational_db.release_tx(tx);
-            self.relational_db.report(&reducer, &tx_metrics, None);
+            self.relational_db.report_read_tx_metrics(reducer, tx_metrics);
         });
         let auth = AuthCtx::new(self.owner_identity, sender.id.identity);
         let (table_rows, metrics) = return_on_err_with_sql!(
@@ -482,7 +482,7 @@ impl ModuleSubscriptions {
         // Always lock the db before the subscription lock to avoid deadlocks.
         let tx = scopeguard::guard(self.relational_db.begin_tx(Workload::Unsubscribe), |tx| {
             let (tx_metrics, reducer) = self.relational_db.release_tx(tx);
-            self.relational_db.report(&reducer, &tx_metrics, None);
+            self.relational_db.report_read_tx_metrics(reducer, tx_metrics);
         });
 
         let removed_queries = {
@@ -578,7 +578,7 @@ impl ModuleSubscriptions {
         // We always get the db lock before the subscription lock to avoid deadlocks.
         let tx = scopeguard::guard(self.relational_db.begin_tx(Workload::Subscribe), |tx| {
             let (tx_metrics, reducer) = self.relational_db.release_tx(tx);
-            self.relational_db.report(&reducer, &tx_metrics, None);
+            self.relational_db.report_read_tx_metrics(reducer, tx_metrics);
         });
 
         let compile_timer = metrics.compilation_time.start_timer();
@@ -680,7 +680,7 @@ impl ModuleSubscriptions {
         );
         let tx = scopeguard::guard(tx, |tx| {
             let (tx_metrics, reducer) = self.relational_db.release_tx(tx);
-            self.relational_db.report(&reducer, &tx_metrics, None);
+            self.relational_db.report_read_tx_metrics(reducer, tx_metrics);
         });
 
         // We minimize locking so that other clients can add subscriptions concurrently.
@@ -774,7 +774,7 @@ impl ModuleSubscriptions {
         )?;
         let tx = scopeguard::guard(tx, |tx| {
             let (tx_metrics, reducer) = self.relational_db.release_tx(tx);
-            self.relational_db.report(&reducer, &tx_metrics, None);
+            self.relational_db.report_read_tx_metrics(reducer, tx_metrics);
         });
 
         check_row_limit(
@@ -884,13 +884,17 @@ impl ModuleSubscriptions {
             }
         };
 
+        let tx_data = tx_data.map(Arc::new);
+
         // When we're done with this method, release the tx and report metrics.
         let mut read_tx = scopeguard::guard(read_tx, |tx| {
             let (tx_metrics_read, reducer) = self.relational_db.release_tx(tx);
-            stdb.report_tx_metricses(&reducer, tx_data.as_ref(), Some(&tx_metrics_mut), &tx_metrics_read);
+            self.relational_db
+                .report_tx_metrics(reducer, tx_data.clone(), Some(tx_metrics_mut), Some(tx_metrics_read));
         });
         // Create the delta transaction we'll use to eval updates against.
         let delta_read_tx = tx_data
+            .as_ref()
             .as_ref()
             .map(|tx_data| DeltaTx::new(&read_tx, tx_data, subscriptions.index_ids_for_subscriptions()))
             .unwrap_or_else(|| DeltaTx::from(&*read_tx));

@@ -185,7 +185,6 @@ pub struct ModuleEvent {
 }
 
 /// Information about a running module.
-#[derive(Debug)]
 pub struct ModuleInfo {
     /// The definition of the module.
     /// Loaded by loading the module's program from the system tables, extracting its definition,
@@ -203,6 +202,17 @@ pub struct ModuleInfo {
     pub subscriptions: ModuleSubscriptions,
     /// Metrics handles for this module.
     pub metrics: ModuleMetrics,
+}
+
+impl fmt::Debug for ModuleInfo {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ModuleInfo")
+            .field("module_def", &self.module_def)
+            .field("owner_identity", &self.owner_identity)
+            .field("database_identity", &self.database_identity)
+            .field("module_hash", &self.module_hash)
+            .finish()
+    }
 }
 
 #[derive(Debug)]
@@ -368,7 +378,7 @@ fn init_database(
     let rcr = match module_def.lifecycle_reducer(Lifecycle::Init) {
         None => {
             if let Some((tx_data, tx_metrics, reducer)) = stdb.commit_tx(tx)? {
-                stdb.report(&reducer, &tx_metrics, Some(&tx_data));
+                stdb.report_mut_tx_metrics(reducer, tx_metrics, Some(tx_data));
             }
             None
         }
