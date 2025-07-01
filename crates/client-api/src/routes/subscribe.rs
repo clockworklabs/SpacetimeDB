@@ -1,4 +1,5 @@
 use std::future::poll_fn;
+use std::num::NonZeroUsize;
 use std::panic;
 use std::pin::pin;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -588,6 +589,8 @@ async fn ws_send_loop(
     let mut serialize_buf = SerializeBuffer::new(config);
 
     loop {
+        let closed = state.closed();
+
         tokio::select! {
             // `biased` towards the unordered queue,
             // which may initiate a connection shutdown.
@@ -598,7 +601,7 @@ async fn ws_send_loop(
                 // but keep polling `unordered` so that `ws_client_actor` keeps
                 // waiting for an acknowledgement from the client,
                 // even if it spuriously initiates another close itself.
-                if state.closed() {
+                if closed {
                     continue;
                 }
                 match msg {
@@ -640,9 +643,9 @@ async fn ws_send_loop(
                 }
             },
 
-            Some(n) = messages.recv_many(&mut messages_buf, 32).map(|n| (n != 0).then_some(n)), if !state.closed() => {
+            Some(n) = messages.recv_many(&mut messages_buf, 32).map(NonZeroUsize::new), if !closed => {
                 log::trace!("sending {n} outgoing messages");
-                for msg in messages_buf.drain(..n) {
+                for msg in messages_buf.drain(..n.get()) {
                     let (msg_alloc, res) = send_message(
                         &state.database,
                         config,
@@ -656,7 +659,7 @@ async fn ws_send_loop(
                     if let Err(e) = res {
                         log::warn!("websocket send error: {e}");
                         messages.close();
-                        break;
+                        return;
                     }
                 }
             },
