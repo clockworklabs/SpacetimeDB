@@ -673,14 +673,17 @@ async fn ws_send_loop(
                 match msg {
                     UnorderedWsMessage::Close(close_frame) => {
                         log::trace!("sending close frame");
-                        state.close();
-                        // We won't be polling `messages` anymore,
-                        // so let senders know.
-                        messages.close();
                         if let Err(e) = ws.send(WsMessage::Close(Some(close_frame))).await {
                             log::warn!("error sending close frame: {e:#}");
                             break;
                         }
+                        // NOTE: It's ok to not update the state if we fail to
+                        // send the close frame, because we assume that the main
+                        // loop will exit when this future terminates.
+                        state.close();
+                        // We won't be polling `messages` anymore,
+                        // so let senders know.
+                        messages.close();
                     },
                     UnorderedWsMessage::Ping(bytes) => {
                         log::trace!("sending ping");
