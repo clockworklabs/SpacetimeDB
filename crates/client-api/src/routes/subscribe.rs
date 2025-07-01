@@ -314,6 +314,7 @@ async fn ws_client_actor_inner(
                         panic::resume_unwind(e.into_panic());
                     }
                 }
+                break;
             },
 
             // Update the client's module host if it was hotswapped,
