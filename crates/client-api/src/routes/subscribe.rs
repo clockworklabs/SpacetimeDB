@@ -190,23 +190,22 @@ where
     Ok(res)
 }
 
-const LIVELINESS_TIMEOUT: Duration = Duration::from_secs(60);
-
-#[derive(Clone)]
 struct ActorState {
     pub client_id: ClientActorId,
     pub database: Identity,
-    closed: Arc<AtomicBool>,
-    got_pong: Arc<AtomicBool>,
+    config: ActorConfig,
+    closed: AtomicBool,
+    got_pong: AtomicBool,
 }
 
 impl ActorState {
-    fn new(database: Identity, client_id: ClientActorId) -> Self {
+    fn new(database: Identity, client_id: ClientActorId, config: ActorConfig) -> Self {
         Self {
             database,
             client_id,
-            closed: Arc::new(AtomicBool::new(false)),
-            got_pong: Arc::new(AtomicBool::new(true)),
+            config,
+            closed: AtomicBool::new(false),
+            got_pong: AtomicBool::new(true),
         }
     }
 
@@ -224,6 +223,20 @@ impl ActorState {
 
     fn reset_ponged(&self) -> bool {
         self.got_pong.swap(false, Ordering::Relaxed)
+    }
+}
+
+struct ActorConfig {
+    ping_interval: Duration,
+    close_handshake_timeout: Duration,
+}
+
+impl Default for ActorConfig {
+    fn default() -> Self {
+        Self {
+            ping_interval: Duration::from_secs(60),
+            close_handshake_timeout: Duration::from_millis(250),
+        }
     }
 }
 
@@ -245,8 +258,8 @@ async fn ws_client_actor_inner(
 ) {
     let database = client.module.info().database_identity;
     let client_closed_metric = WORKER_METRICS.ws_clients_closed_connection.with_label_values(&database);
-    let state = ActorState::new(database, client.id);
-    let mut liveness_check_interval = tokio::time::interval(LIVELINESS_TIMEOUT);
+    let state = Arc::new(ActorState::new(database, client.id, <_>::default()));
+    let mut liveness_check_interval = tokio::time::interval(state.config.ping_interval);
 
     // Channel for [`UnorderedWsMessage`]s.
     let (unordered_tx, unordered_rx) = mpsc::unbounded_channel();
@@ -362,37 +375,46 @@ async fn ws_client_actor_inner(
 /// websocket close handshake to complete. Any messages received while in this
 /// state are dropped.
 fn ws_recv_loop(
-    state: ActorState,
+    state: Arc<ActorState>,
     mut ws: impl Stream<Item = Result<WsMessage, WsError>> + Unpin,
 ) -> impl Stream<Item = ClientMessage> {
+    // Get the next message from `ws`, or `None` if the stream is exhausted.
+    //
+    // If `state.closed`, `ws` is drained until it either yields an `Err`, is
+    // exhausted, or a timeout of 250ms has elapsed.
+    async fn next_message(
+        state: &ActorState,
+        ws: &mut (impl Stream<Item = Result<WsMessage, WsError>> + Unpin),
+    ) -> Option<Result<WsMessage, WsError>> {
+        if state.closed() {
+            log::trace!("drain websocket waiting for client close");
+            let res: Result<Option<Result<WsMessage, WsError>>, Elapsed> =
+                timeout(state.config.close_handshake_timeout, async {
+                    while let Some(item) = ws.next().await {
+                        match item {
+                            Ok(message) => drop(message),
+                            Err(e) => return Some(Err(e)),
+                        }
+                    }
+                    None
+                })
+                .await;
+            match res {
+                Err(_elapsed) => {
+                    log::warn!("timeout waiting for client close");
+                    None
+                }
+                Ok(item) => item, // either error or `None`
+            }
+        } else {
+            log::trace!("await next client message without timeout");
+            ws.next().await
+        }
+    }
+
     stream! {
         loop {
-            let Some(res) = async {
-                if state.closed() {
-                    log::trace!("drain websocket waiting for client close");
-                    let res: Result<Option<Result<WsMessage, WsError>>, Elapsed> =
-                        timeout(Duration::from_millis(250), async {
-                            while let Some(item) = ws.next().await {
-                                match item {
-                                    Ok(message) => drop(message),
-                                    Err(e) => return Some(Err(e)),
-                                }
-                            }
-                            None
-                        })
-                        .await;
-                    match res {
-                        Err(_elapsed) => {
-                            log::warn!("timeout waiting for client close");
-                            None
-                        }
-                        Ok(item) => item, // either error or `None`
-                    }
-                } else {
-                    log::trace!("await next client message without timeout");
-                    ws.next().await
-                }
-            }.await else {
+            let Some(res) = next_message(&state, &mut ws).await else {
                 log::trace!("recv stream exhausted");
                 break;
             };
@@ -441,9 +463,9 @@ fn ws_recv_loop(
 /// i.e. the client initiated a close handshake, which we track using the
 /// `client_closed_metric`.
 ///
-/// Terminates when the input stream terminates.
+/// Terminates if and when the input stream terminates.
 fn ws_client_message_handler(
-    state: ActorState,
+    state: Arc<ActorState>,
     client_closed_metric: IntGauge,
     mut messages: impl Stream<Item = ClientMessage> + Unpin,
 ) -> impl Stream<Item = (DataMessage, Instant)> {
@@ -475,7 +497,7 @@ fn ws_client_message_handler(
     }
 }
 
-/// Stream that consumed [`DataMessage`]s, evaluates them, and yields the result.
+/// Stream that consumes [`DataMessage`]s, evaluates them, and yields the result.
 ///
 /// Terminates when the input stream terminates.
 fn ws_eval_handler(
@@ -526,7 +548,7 @@ enum UnorderedWsMessage {
 /// socket until the close handshake completes -- it would otherwise exit early
 /// when sending to `unordered` fails.
 async fn ws_send_loop(
-    state: ActorState,
+    state: Arc<ActorState>,
     config: ClientConfig,
     mut ws: impl Sink<WsMessage, Error = WsError> + Unpin,
     mut messages: MeteredReceiver<SerializableMessage>,
