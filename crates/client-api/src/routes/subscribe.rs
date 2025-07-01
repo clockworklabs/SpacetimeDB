@@ -1,5 +1,5 @@
+use std::fmt::Display;
 use std::future::poll_fn;
-use std::num::NonZeroUsize;
 use std::panic;
 use std::pin::pin;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -14,7 +14,7 @@ use axum_extra::TypedHeader;
 use bytes::Bytes;
 use bytestring::ByteString;
 use derive_more::From;
-use futures::{future, pin_mut, FutureExt, Sink, SinkExt, Stream, StreamExt};
+use futures::{future, pin_mut, Sink, SinkExt, Stream, StreamExt};
 use http::{HeaderValue, StatusCode};
 use prometheus::IntGauge;
 use scopeguard::{defer, ScopeGuard};
@@ -272,19 +272,20 @@ async fn ws_client_actor(client: ClientConnection, ws: WebSocketStream, sendrx: 
         tokio::spawn(client.disconnect());
     });
 
-    ws_client_actor_inner(&mut client, ws, sendrx).await;
+    ws_client_actor_inner(&mut client, <_>::default(), ws, sendrx).await;
 
     ScopeGuard::into_inner(client).disconnect().await;
 }
 
 async fn ws_client_actor_inner(
     client: &mut ClientConnection,
-    ws: WebSocketStream,
+    config: ActorConfig,
+    ws: impl Stream<Item = Result<WsMessage, WsError>> + Sink<WsMessage, Error = WsError> + Send + 'static,
     sendrx: MeteredReceiver<SerializableMessage>,
 ) {
     let database = client.module.info().database_identity;
     let client_closed_metric = WORKER_METRICS.ws_clients_closed_connection.with_label_values(&database);
-    let state = Arc::new(ActorState::new(database, client.id, <_>::default()));
+    let state = Arc::new(ActorState::new(database, client.id, config));
     let mut ping_interval = tokio::time::interval(state.config.ping_interval);
 
     // Channel for [`UnorderedWsMessage`]s.
@@ -363,6 +364,8 @@ async fn ws_client_actor_inner(
             },
 
             // Send ping.
+            //
+            // Branch is disabled if we already sent a close frame.
             _ = ping_interval.tick(), if !closed => {
                 let was_ponged = state.reset_ponged();
                 if was_ponged {
@@ -393,9 +396,7 @@ async fn ws_idle_timer(mut activity: watch::Receiver<Instant>) {
 
     loop {
         tokio::select! {
-            () = &mut sleep => {
-                break;
-            },
+            biased;
 
             Ok(()) = activity.changed() => {
                 let new_deadline = *activity.borrow_and_update();
@@ -403,6 +404,10 @@ async fn ws_idle_timer(mut activity: watch::Receiver<Instant>) {
                     deadline = new_deadline;
                     sleep.as_mut().reset(deadline.into());
                 }
+            },
+
+            () = &mut sleep => {
+                break;
             },
         }
     }
@@ -639,7 +644,7 @@ async fn ws_send_loop(
     state: Arc<ActorState>,
     idle_tx: watch::Sender<Instant>,
     config: ClientConfig,
-    mut ws: impl Sink<WsMessage, Error = WsError> + Unpin,
+    mut ws: impl Sink<WsMessage, Error: Display> + Unpin,
     mut messages: MeteredReceiver<SerializableMessage>,
     mut unordered: mpsc::UnboundedReceiver<UnorderedWsMessage>,
 ) {
@@ -654,7 +659,10 @@ async fn ws_send_loop(
             // which may initiate a connection shutdown.
             biased;
 
-            Some(msg) = unordered.recv() => {
+            maybe_msg = unordered.recv() => {
+                let Some(msg) = maybe_msg else {
+                    break;
+                };
                 // We shall not sent more data after a close frame,
                 // but keep polling `unordered` so that `ws_client_actor` keeps
                 // waiting for an acknowledgement from the client,
@@ -665,21 +673,21 @@ async fn ws_send_loop(
                 match msg {
                     UnorderedWsMessage::Close(close_frame) => {
                         log::trace!("sending close frame");
-                        if let Err(e) = ws.send(WsMessage::Close(Some(close_frame))).await {
-                            log::warn!("error sending close frame: {e:#}");
-                            break;
-                        }
                         state.close();
                         // We won't be polling `messages` anymore,
                         // so let senders know.
                         messages.close();
+                        if let Err(e) = ws.send(WsMessage::Close(Some(close_frame))).await {
+                            log::warn!("error sending close frame: {e:#}");
+                            break;
+                        }
                     },
                     UnorderedWsMessage::Ping(bytes) => {
                         log::trace!("sending ping");
-                        let _ = ws
-                            .feed(WsMessage::Ping(bytes))
-                            .await
-                            .inspect_err(|e| log::warn!("error sending ping: {e:#}"));
+                        if let Err(e) = ws.feed(WsMessage::Ping(bytes)).await {
+                            log::warn!("error sending ping: {e:#}");
+                            break;
+                        }
                     },
                     UnorderedWsMessage::Error(err) => {
                         log::trace!("sending error result");
@@ -701,9 +709,12 @@ async fn ws_send_loop(
                 }
             },
 
-            Some(n) = messages.recv_many(&mut messages_buf, 32).map(NonZeroUsize::new), if !closed => {
+            n = messages.recv_many(&mut messages_buf, 32), if !closed => {
+                if n == 0 {
+                    continue;
+                }
                 log::trace!("sending {n} outgoing messages");
-                for msg in messages_buf.drain(..n.get()) {
+                for msg in messages_buf.drain(..n) {
                     let (msg_alloc, res) = send_message(
                         &state.database,
                         config,
@@ -716,13 +727,10 @@ async fn ws_send_loop(
 
                     if let Err(e) = res {
                         log::warn!("websocket send error: {e}");
-                        messages.close();
                         return;
                     }
                 }
             },
-
-            else => break,
         }
 
         if let Err(e) = ws.flush().await {
@@ -735,14 +743,14 @@ async fn ws_send_loop(
 }
 
 /// Serialize and potentially compress `message`, and feed it to the `ws` sink.
-async fn send_message(
+async fn send_message<S: Sink<WsMessage> + Unpin>(
     database_identity: &Identity,
     config: ClientConfig,
     serialize_buf: SerializeBuffer,
     metrics_metadata: Option<(WorkloadType, usize)>,
-    ws: &mut (impl Sink<WsMessage, Error = WsError> + Unpin),
+    ws: &mut S,
     message: impl ToProtocol<Encoded = SwitchedServerMessage> + Send + 'static,
-) -> (SerializeBuffer, Result<(), WsError>) {
+) -> (SerializeBuffer, Result<(), S::Error>) {
     let (workload, num_rows) = metrics_metadata.unzip();
     // Move large messages to a rayon thread,
     // as serialization and compression can take a long time.
@@ -777,6 +785,7 @@ async fn send_message(
     (buf, res)
 }
 
+#[derive(Debug)]
 enum ClientMessage {
     Message(DataMessage),
     Ping(Bytes),
@@ -843,9 +852,27 @@ fn bytestring_to_utf8bytes(s: ByteString) -> Utf8Bytes {
 
 #[cfg(test)]
 mod tests {
+    use std::{future::Future, task::Poll};
+
+    use future::FutureExt as _;
+    use futures::{sink, stream};
+    use pretty_assertions::assert_matches;
+    use spacetimedb::client::ClientName;
     use tokio::time::sleep;
 
     use super::*;
+
+    fn dummy_client_id() -> ClientActorId {
+        ClientActorId {
+            identity: Identity::ZERO,
+            connection_id: ConnectionId::ZERO,
+            name: ClientName(0),
+        }
+    }
+
+    fn dummy_actor_state() -> ActorState {
+        ActorState::new(Identity::ZERO, dummy_client_id(), <_>::default())
+    }
 
     #[tokio::test]
     async fn idle_timer_extends_sleep() {
@@ -867,5 +894,200 @@ mod tests {
             elapsed.as_millis(),
             expected.as_millis(),
         );
+    }
+
+    #[tokio::test]
+    async fn recv_loop_terminates_when_input_exhausted() {
+        let state = Arc::new(dummy_actor_state());
+        let (idle_tx, _idle_rx) = watch::channel(Instant::now() + state.config.idle_timeout);
+
+        let input = stream::iter(vec![Ok(WsMessage::Ping(Bytes::new()))]);
+        pin_mut!(input);
+
+        let recv_loop = ws_recv_loop(state, idle_tx, input);
+        pin_mut!(recv_loop);
+
+        assert_matches!(recv_loop.next().await, Some(ClientMessage::Ping(_)));
+        assert_matches!(recv_loop.next().await, None);
+    }
+
+    #[tokio::test]
+    async fn recv_loop_terminates_when_input_yields_err() {
+        let state = Arc::new(dummy_actor_state());
+        let (idle_tx, _idle_rx) = watch::channel(Instant::now() + state.config.idle_timeout);
+
+        let input = stream::iter(vec![
+            Ok(WsMessage::Ping(Bytes::new())),
+            Err(WsError::ConnectionClosed),
+            Ok(WsMessage::Pong(Bytes::new())),
+        ]);
+        pin_mut!(input);
+
+        let recv_loop = ws_recv_loop(state, idle_tx, input);
+        pin_mut!(recv_loop);
+
+        assert_matches!(recv_loop.next().await, Some(ClientMessage::Ping(_)));
+        assert_matches!(recv_loop.next().await, None);
+    }
+
+    #[tokio::test]
+    async fn recv_loop_drains_remaining_messages_when_closed() {
+        let state = Arc::new(dummy_actor_state());
+        let (idle_tx, _idle_rx) = watch::channel(Instant::now() + state.config.idle_timeout);
+
+        let input = stream::iter(vec![
+            Ok(WsMessage::Ping(Bytes::new())),
+            Ok(WsMessage::Pong(Bytes::new())),
+        ]);
+        pin_mut!(input);
+        {
+            let recv_loop = ws_recv_loop(state.clone(), idle_tx, &mut input);
+            pin_mut!(recv_loop);
+
+            state.close();
+            assert_matches!(recv_loop.next().await, None);
+        }
+        assert_matches!(input.next().await, None);
+    }
+
+    #[tokio::test]
+    async fn recv_loop_stops_at_error_while_draining() {
+        let state = Arc::new(dummy_actor_state());
+        let (idle_tx, _idle_rx) = watch::channel(Instant::now() + state.config.idle_timeout);
+
+        let input = stream::iter(vec![
+            Ok(WsMessage::Ping(Bytes::new())),
+            Err(WsError::ConnectionClosed),
+            Ok(WsMessage::Pong(Bytes::new())),
+        ]);
+        pin_mut!(input);
+        {
+            let recv_loop = ws_recv_loop(state.clone(), idle_tx, &mut input);
+            pin_mut!(recv_loop);
+
+            state.close();
+            assert_matches!(recv_loop.next().await, None);
+        }
+        assert_matches!(input.next().await, Some(Ok(WsMessage::Pong(_))));
+    }
+
+    #[tokio::test]
+    async fn recv_loop_updates_idle_channel() {
+        let state = Arc::new(dummy_actor_state());
+        let idle_deadline = Instant::now() + state.config.idle_timeout;
+        let (idle_tx, mut idle_rx) = watch::channel(idle_deadline);
+
+        let input = stream::iter(vec![
+            Ok(WsMessage::Ping(Bytes::new())),
+            Ok(WsMessage::Pong(Bytes::new())),
+        ]);
+        let recv_loop = ws_recv_loop(state, idle_tx, input);
+        pin_mut!(recv_loop);
+
+        let mut new_idle_deadline = *idle_rx.borrow();
+        while let Some(message) = recv_loop.next().await {
+            drop(message);
+            assert!(idle_rx.has_changed().unwrap());
+            new_idle_deadline = *idle_rx.borrow_and_update();
+        }
+        assert!(new_idle_deadline > idle_deadline);
+    }
+
+    #[tokio::test]
+    async fn client_message_handler_terminates_when_input_exhausted() {
+        let state = Arc::new(dummy_actor_state());
+        let metric = IntGauge::new("bleep", "unhelpful").unwrap();
+
+        let input = stream::iter(vec![
+            ClientMessage::Ping(Bytes::new()),
+            ClientMessage::Message(DataMessage::from("hello".to_owned())),
+        ]);
+        let handler = ws_client_message_handler(state, metric, input);
+        pin_mut!(handler);
+
+        assert_matches!(
+            handler.next().await,
+            Some((DataMessage::Text(data), _instant)) if data == "hello"
+        );
+        assert_matches!(handler.next().await, None);
+    }
+
+    #[tokio::test]
+    async fn client_message_handler_updates_pong_and_closed_states_and_metric() {
+        let state = Arc::new(dummy_actor_state());
+        state.reset_ponged();
+        let metric = IntGauge::new("bleep", "unhelpful").unwrap();
+
+        let input = stream::iter(vec![ClientMessage::Pong(Bytes::new()), ClientMessage::Close(None)]);
+        let handler = ws_client_message_handler(state.clone(), metric.clone(), input);
+        handler
+            .for_each(|item| async {
+                drop(item);
+            })
+            .await;
+
+        assert!(state.closed());
+        assert!(state.reset_ponged());
+        assert_eq!(metric.get(), 1);
+    }
+
+    #[tokio::test]
+    async fn send_loop_terminates_when_unordered_closed() {
+        let state = Arc::new(dummy_actor_state());
+        let (idle_tx, _idle_rx) = watch::channel(Instant::now() + state.config.idle_timeout);
+        let (messages_tx, messages_rx) = mpsc::channel(64);
+        let messages = MeteredReceiver::new(messages_rx);
+        let (unordered_tx, unordered_rx) = mpsc::unbounded_channel();
+
+        let send_loop = ws_send_loop(
+            state,
+            idle_tx,
+            ClientConfig::for_test(),
+            sink::drain(),
+            messages,
+            unordered_rx,
+        );
+        pin_mut!(send_loop);
+
+        assert!(is_pending(&mut send_loop).await);
+        drop(messages_tx);
+        assert!(is_pending(&mut send_loop).await);
+
+        drop(unordered_tx);
+        send_loop.await;
+    }
+
+    #[tokio::test]
+    async fn send_loop_close_message_closes_state_and_messages() {
+        let state = Arc::new(dummy_actor_state());
+        let (idle_tx, _idle_rx) = watch::channel(Instant::now() + state.config.idle_timeout);
+        let (messages_tx, messages_rx) = mpsc::channel(64);
+        let messages = MeteredReceiver::new(messages_rx);
+        let (unordered_tx, unordered_rx) = mpsc::unbounded_channel();
+
+        let send_loop = ws_send_loop(
+            state.clone(),
+            idle_tx,
+            ClientConfig::for_test(),
+            sink::drain(),
+            messages,
+            unordered_rx,
+        );
+        pin_mut!(send_loop);
+
+        unordered_tx
+            .send(UnorderedWsMessage::Close(CloseFrame {
+                code: CloseCode::Away,
+                reason: "done".into(),
+            }))
+            .unwrap();
+
+        assert!(is_pending(&mut send_loop).await);
+        assert!(state.closed());
+        assert!(messages_tx.is_closed());
+    }
+
+    async fn is_pending(fut: &mut (impl Future + Unpin)) -> bool {
+        poll_fn(|cx| Poll::Ready(fut.poll_unpin(cx).is_pending())).await
     }
 }
