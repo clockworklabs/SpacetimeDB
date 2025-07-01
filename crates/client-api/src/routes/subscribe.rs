@@ -1,4 +1,5 @@
 use std::future::poll_fn;
+use std::panic;
 use std::pin::pin;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -15,7 +16,7 @@ use derive_more::From;
 use futures::{pin_mut, FutureExt, Sink, SinkExt, Stream, StreamExt};
 use http::{HeaderValue, StatusCode};
 use prometheus::IntGauge;
-use scopeguard::ScopeGuard;
+use scopeguard::{defer, ScopeGuard};
 use serde::Deserialize;
 use spacetimedb::client::messages::{
     serialize, IdentityTokenMessage, SerializableMessage, SerializeBuffer, SwitchedServerMessage, ToProtocol,
@@ -268,61 +269,50 @@ async fn ws_client_actor_inner(
     let (ws_send, ws_recv) = ws.split();
 
     // Spawn a task to send outgoing messages obtained from `sendrx` and
-    // `unordered_rx`. We just let this run to completion.
-    let send_loop = ws_send_loop(state.clone(), client.config, ws_send, sendrx, unordered_rx);
-    tokio::spawn(send_loop);
-
+    // `unordered_rx`.
+    let mut send_task = tokio::spawn(ws_send_loop(
+        state.clone(),
+        client.config,
+        ws_send,
+        sendrx,
+        unordered_rx,
+    ));
     // Spawn a task to handle incoming messages.
-    // Keep a handle to the task, so we can exit the select loop below when
-    // the task terminates.
-    let mut recv_task = tokio::spawn({
-        let unordered_tx = unordered_tx.clone();
-        let state = state.clone();
-        let client = client.clone();
-        async move {
-            // Compose the streams to:
-            //
-            // - read from the websocket,
-            // - handle client messages,
-            // - and evaluate data messages
-            //
-            let recv_loop = pin!(ws_recv_loop(state.clone(), ws_recv));
-            let recv_handler = pin!(ws_client_message_handler(
-                state.clone(),
-                client_closed_metric,
-                recv_loop
-            ));
-            let eval_handler = ws_eval_handler(client, recv_handler);
-            pin_mut!(eval_handler);
+    let mut recv_task = tokio::spawn(ws_recv_task(
+        state.clone(),
+        client.clone(),
+        client_closed_metric,
+        unordered_tx.clone(),
+        ws_recv,
+    ));
 
-            while let Some(result) = eval_handler.next().await {
-                log::trace!("received task result");
-                if let Err(e) = result {
-                    if let MessageHandleError::Execution(err) = e {
-                        log::error!("{err:#}");
-                        let _ = unordered_tx.send(err.into());
-                        continue;
-                    }
-                    log::debug!("Client caused error: {e}");
-                    let close = CloseFrame {
-                        code: CloseCode::Error,
-                        reason: format!("{e:#}").into(),
-                    };
-                    // Break if unable to initiate close handshake.
-                    if unordered_tx.send(close.into()).is_err() {
-                        break;
-                    };
-                }
-            }
-        }
-    });
+    // Ensure we terminate both tasks if either breaks the select loop.
+    let abort_send = send_task.abort_handle();
+    let abort_recv = recv_task.abort_handle();
+    defer! {
+        abort_send.abort();
+        abort_recv.abort();
+    };
 
     loop {
         let closed = state.closed();
 
         tokio::select! {
-            _ = &mut recv_task => {
+            res = &mut recv_task => {
+                if let Err(e) = res {
+                    if e.is_panic() {
+                        panic::resume_unwind(e.into_panic())
+                    }
+                }
                 break;
+            },
+
+            res = &mut send_task => {
+                if let Err(e) = res {
+                    if e.is_panic() {
+                        panic::resume_unwind(e.into_panic());
+                    }
+                }
             },
 
             // Update the client's module host if it was hotswapped,
@@ -362,6 +352,46 @@ async fn ws_client_actor_inner(
         }
     }
     log::info!("Client connection ended: {}", client.id);
+}
+
+/// Consumes `ws` by composing [`ws_recv_loop`], [`ws_client_message_handler`]
+/// and [`ws_eval_handler`]. `unordered_tx` is used to send message exection
+/// errors or initiating a close handshake.
+async fn ws_recv_task(
+    state: Arc<ActorState>,
+    client: ClientConnection,
+    client_closed_metric: IntGauge,
+    unordered_tx: mpsc::UnboundedSender<UnorderedWsMessage>,
+    ws: impl Stream<Item = Result<WsMessage, WsError>> + Unpin,
+) {
+    let recv_loop = pin!(ws_recv_loop(state.clone(), ws));
+    let recv_handler = pin!(ws_client_message_handler(
+        state.clone(),
+        client_closed_metric,
+        recv_loop
+    ));
+    let eval_handler = ws_eval_handler(client, recv_handler);
+    pin_mut!(eval_handler);
+
+    while let Some(result) = eval_handler.next().await {
+        log::trace!("received task result");
+        if let Err(e) = result {
+            if let MessageHandleError::Execution(err) = e {
+                log::error!("{err:#}");
+                let _ = unordered_tx.send(err.into());
+                continue;
+            }
+            log::debug!("Client caused error: {e}");
+            let close = CloseFrame {
+                code: CloseCode::Error,
+                reason: format!("{e:#}").into(),
+            };
+            // Break if unable to initiate close handshake.
+            if unordered_tx.send(close.into()).is_err() {
+                break;
+            };
+        }
+    }
 }
 
 /// Stream that consumes a stream of [`WsMessage`]s and yields [`ClientMessage`]s.
