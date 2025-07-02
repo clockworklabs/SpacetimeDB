@@ -414,7 +414,7 @@ async fn ws_idle_timer(mut activity: watch::Receiver<Instant>) {
 }
 
 /// Consumes `ws` by composing [`ws_recv_loop`], [`ws_client_message_handler`]
-/// and [`ws_eval_handler`]. `unordered_tx` is used to send message exection
+/// and [`ws_eval_handler`]. `unordered_tx` is used to send message execution
 /// errors or initiating a close handshake.
 async fn ws_recv_task(
     state: Arc<ActorState>,
@@ -438,7 +438,10 @@ async fn ws_recv_task(
         if let Err(e) = result {
             if let MessageHandleError::Execution(err) = e {
                 log::error!("{err:#}");
-                let _ = unordered_tx.send(err.into());
+                // Break if send task is gone.
+                if unordered_tx.send(err.into()).is_err() {
+                    break;
+                }
                 continue;
             }
             log::debug!("Client caused error: {e}");
