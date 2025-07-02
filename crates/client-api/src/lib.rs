@@ -33,6 +33,7 @@ pub trait NodeDelegate: Send + Sync {
 
     type JwtAuthProviderT: auth::JwtAuthProvider;
     fn jwt_auth_provider(&self) -> &Self::JwtAuthProviderT;
+    fn auth_required(&self) -> bool;
     /// Return the leader [`Host`] of `database_id`.
     ///
     /// Returns `None` if the current leader is not hosted by this node.
@@ -363,7 +364,9 @@ impl<T: NodeDelegate + ?Sized> NodeDelegate for Arc<T> {
     fn jwt_auth_provider(&self) -> &Self::JwtAuthProviderT {
         (**self).jwt_auth_provider()
     }
-
+    fn auth_required(&self) -> bool {
+        (**self).auth_required()
+    }
     async fn leader(&self, database_id: u64) -> anyhow::Result<Option<Host>> {
         (**self).leader(database_id).await
     }
