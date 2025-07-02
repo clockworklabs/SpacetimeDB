@@ -142,7 +142,7 @@ use crate::ast::{
 };
 
 use super::{
-    errors::SqlUnsupported, parse_expr_opt, parse_ident, parse_literal, parse_parts, parse_projection, RelParser,
+    errors::SqlUnsupported, parse_expr_opt, parse_ident, parse_literal, parse_literal_array, parse_parts, parse_projection, RelParser,
     SqlParseResult,
 };
 
@@ -242,10 +242,10 @@ fn parse_values(values: Query) -> SqlParseResult<SqlValues> {
                 for row in rows {
                     let mut literals = Vec::new();
                     for expr in row {
-                        if let Expr::Value(value) = expr {
-                            literals.push(parse_literal(value)?);
-                        } else {
-                            return Err(SqlUnsupported::InsertValue(expr).into());
+                        match expr {
+                            Expr::Array(array) => literals.push(parse_literal_array(array)?),
+                            Expr::Value(value) => literals.push(parse_literal(value)?),
+                            _ => return Err(SqlUnsupported::InsertValue(expr).into()),
                         }
                     }
                     row_literals.push(literals);
