@@ -1,9 +1,8 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using SpacetimeDB.BSATN;
 using SpacetimeDB.ClientApi;
@@ -28,22 +27,50 @@ namespace SpacetimeDB
         internal string RemoteTableName { get; }
 
         internal Type ClientTableType { get; }
-        internal IStructuralReadWrite DecodeValue(BinaryReader reader);
+
+        /// <summary>
+        /// Creates and returns a parsed table update for the current table.
+        /// </summary>
+        /// <returns>An <see cref="IParsedTableUpdate"/> representing the parsed update.</returns>
+        internal IParsedTableUpdate MakeParsedTableUpdate();
+
+        /// <summary>
+        /// Parses an insert-only table update and applies the results to the specified parsed database update.
+        /// </summary>
+        /// <param name="update">The table update containing insert operations.</param>
+        /// <param name="dbOps">The parsed database update to apply changes to.</param>
+        internal void ParseInsertOnly(TableUpdate update, ParsedDatabaseUpdate dbOps);
+        
+        /// <summary>
+        /// Parses a delete-only table update and applies the results to the specified parsed database update.
+        /// </summary>
+        /// <param name="update">The table update containing delete operations.</param>
+        /// <param name="dbOps">The parsed database update to apply changes to.</param>
+        internal void ParseDeleteOnly(TableUpdate update, ParsedDatabaseUpdate dbOps);
+
+        /// <summary>
+        /// Parses a general table update (insert, delete) and applies the results to the specified parsed database update.
+        /// </summary>
+        /// <param name="update">The table update containing operations.</param>
+        /// <param name="dbOps">The parsed database update to apply changes to.</param>
+        internal void Parse(TableUpdate update, ParsedDatabaseUpdate dbOps);
 
         /// <summary>
         /// Start applying a delta to the table.
         /// This is called for all tables before any updates are actually applied, allowing OnBeforeDelete to be invoked correctly.
         /// </summary>
-        /// <param name="multiDictionaryDelta"></param>
-        internal void PreApply(IEventContext context, MultiDictionaryDelta<object, IStructuralReadWrite> multiDictionaryDelta);
+        /// <param name="context"></param>
+        /// <param name="parsedTableUpdate"></param>
+        internal void PreApply(IEventContext context, IParsedTableUpdate parsedTableUpdate);
 
         /// <summary>
         /// Apply a delta to the table.
         /// Should not invoke any user callbacks, since not all tables have been updated yet.
         /// Should fix up indices, to be ready for PostApply.
         /// </summary>
-        /// <param name="multiDictionaryDelta"></param>
-        internal void Apply(IEventContext context, MultiDictionaryDelta<object, IStructuralReadWrite> multiDictionaryDelta);
+        /// <param name="context"></param>
+        /// <param name="parsedTableUpdate"></param>
+        internal void Apply(IEventContext context, IParsedTableUpdate parsedTableUpdate);
 
         /// <summary>
         /// Finish applying a delta to a table.
@@ -52,6 +79,9 @@ namespace SpacetimeDB
         internal void PostApply(IEventContext context);
     }
 
+    interface IParsedTableUpdate
+    {
+    }
 
     /// <summary>
     /// Base class for views of remote tables.
@@ -122,6 +152,18 @@ namespace SpacetimeDB
                 cache.TryGetValue(value, out var rows) ? rows : Enumerable.Empty<Row>();
         }
 
+        /// <summary>
+        /// Represents a parsed update to a table, storing the changes as a multi-dictionary delta
+        /// mapping primary keys to their corresponding row updates.
+        /// </summary>
+        internal class ParsedTableUpdate : IParsedTableUpdate
+        {
+            /// <summary>
+            /// Stores the set of changes for the table, mapping primary keys to updated rows.
+            /// </summary>
+            internal MultiDictionaryDelta<object, Row> Delta = new(EqualityComparer<object>.Default, EqualityComparer<Row>.Default);
+        }
+
         protected abstract string RemoteTableName { get; }
         string IRemoteTableHandle.RemoteTableName => RemoteTableName;
 
@@ -159,7 +201,7 @@ namespace SpacetimeDB
         // - Primary keys, if we have them.
         // - The entire row itself, if we don't.
         // But really, the keys are whatever SpacetimeDBClient chooses to give us.
-        private readonly MultiDictionary<object, IStructuralReadWrite> Entries = new(EqualityComparer<object>.Default, EqualityComparer<Object>.Default);
+        private readonly MultiDictionary<object, Row> Entries = new(EqualityComparer<object>.Default, EqualityComparer<Row>.Default);
 
         private static IReadWrite<Row>? _serializer;
 
@@ -185,7 +227,120 @@ namespace SpacetimeDB
         }
 
         // The function to use for decoding a type value.
-        IStructuralReadWrite IRemoteTableHandle.DecodeValue(BinaryReader reader) => Serializer.Read(reader);
+        Row DecodeValue(BinaryReader reader) => Serializer.Read(reader);
+        
+        /// <summary>
+        /// Decode a row for a table, producing a primary key.
+        /// If the table has a specific column marked `#[primary_key]`, use that.
+        /// If not, the BSATN for the entire row is used instead.
+        /// </summary>
+        /// <param name="table"></param>
+        /// <param name="reader"></param>
+        /// <param name="primaryKey"></param>
+        /// <returns></returns>
+        public Row Decode(BinaryReader reader, out object primaryKey)
+        {
+            var obj = DecodeValue(reader);
+
+            // TODO(1.1): we should exhaustively check that GenericEqualityComparer works
+            // for all types that are allowed to be primary keys.
+            var primaryKey_ = GetPrimaryKey(obj);
+            primaryKey_ ??= obj;
+            primaryKey = primaryKey_;
+
+            return obj;
+        }
+        
+        /// <summary>
+        /// Creates and returns a parsed table update for the current table.
+        /// </summary>
+        /// <returns>An <see cref="IParsedTableUpdate"/> representing the parsed update.</returns>
+        IParsedTableUpdate IRemoteTableHandle.MakeParsedTableUpdate()
+        {
+            return new ParsedTableUpdate();
+        }
+
+        /// <summary>
+        /// Parses an insert-only table update and applies the results to the specified parsed database update.
+        /// </summary>
+        /// <param name="update">The table update containing insert operations.</param>
+        /// <param name="dbOps">The parsed database update to apply changes to.</param>
+        void IRemoteTableHandle.ParseInsertOnly(TableUpdate update, ParsedDatabaseUpdate dbOps)
+        {
+            var delta = (ParsedTableUpdate)dbOps.DeltaForTable(this);
+
+            foreach (var cqu in update.Updates)
+            {
+                var qu = CompressionHelpers.DecompressDecodeQueryUpdate(cqu);
+                if (qu.Deletes.RowsData.Count > 0)
+                {
+                    Log.Warn("Non-insert during an insert-only server message!");
+                }
+                var (insertReader, insertRowCount) = CompressionHelpers.ParseRowList(qu.Inserts);
+                for (var i = 0; i < insertRowCount; i++)
+                {
+                    var obj = Decode(insertReader, out var pk);
+                    delta.Delta.Add(pk, obj);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Parses a delete-only table update and applies the results to the specified parsed database update.
+        /// </summary>
+        /// <param name="update">The table update containing delete operations.</param>
+        /// <param name="dbOps">The parsed database update to apply changes to.</param>
+        void IRemoteTableHandle.ParseDeleteOnly(TableUpdate update, ParsedDatabaseUpdate dbOps)
+        {
+            var delta = (ParsedTableUpdate)dbOps.DeltaForTable(this);
+            foreach (var cqu in update.Updates)
+            {
+                var qu = CompressionHelpers.DecompressDecodeQueryUpdate(cqu);
+                if (qu.Inserts.RowsData.Count > 0)
+                {
+                    Log.Warn("Non-delete during a delete-only operation!");
+                }
+
+                var (deleteReader, deleteRowCount) = CompressionHelpers.ParseRowList(qu.Deletes);
+                for (var i = 0; i < deleteRowCount; i++)
+                {
+                    var obj = Decode(deleteReader, out var pk);
+                    delta.Delta.Remove(pk, obj);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Parses a general table update (insert, update, delete) and applies the results to the specified parsed database update.
+        /// </summary>
+        /// <param name="update">The table update containing operations.</param>
+        /// <param name="dbOps">The parsed database update to apply changes to.</param>
+        void IRemoteTableHandle.Parse(TableUpdate update, ParsedDatabaseUpdate dbOps)
+        {
+            var delta = (ParsedTableUpdate)dbOps.DeltaForTable(this);
+            foreach (var cqu in update.Updates)
+            {
+                var qu = CompressionHelpers.DecompressDecodeQueryUpdate(cqu);
+
+                // Because we are accumulating into a MultiDictionaryDelta that will be applied all-at-once
+                // to the table, it doesn't matter that we call Add before Remove here.
+
+                var (insertReader, insertRowCount) = CompressionHelpers.ParseRowList(qu.Inserts);
+                for (var i = 0; i < insertRowCount; i++)
+                {
+                    var obj = Decode(insertReader, out var pk);
+                    delta.Delta.Add(pk, obj);
+                }
+
+                var (deleteReader, deleteRowCount) = CompressionHelpers.ParseRowList(qu.Deletes);
+                for (var i = 0; i < deleteRowCount; i++)
+                {
+                    var obj = Decode(deleteReader, out var pk);
+                    delta.Delta.Remove(pk, obj);
+                }
+            }
+
+        }
 
         public delegate void RowEventHandler(EventContext context, Row row);
         private CustomRowEventHandler OnInsertHandler { get; } = new();
@@ -270,29 +425,30 @@ namespace SpacetimeDB
             }
         }
 
-        List<KeyValuePair<object, IStructuralReadWrite>> wasInserted = new();
-        List<(object key, IStructuralReadWrite oldValue, IStructuralReadWrite newValue)> wasUpdated = new();
-        List<KeyValuePair<object, IStructuralReadWrite>> wasRemoved = new();
+        List<KeyValuePair<object, Row>> wasInserted = new();
+        List<(object key, Row oldValue, Row newValue)> wasUpdated = new();
+        List<KeyValuePair<object, Row>> wasRemoved = new();
 
-        void IRemoteTableHandle.PreApply(IEventContext context, MultiDictionaryDelta<object, IStructuralReadWrite> multiDictionaryDelta)
+        void IRemoteTableHandle.PreApply(IEventContext context, IParsedTableUpdate parsedTableUpdate)
         {
             Debug.Assert(wasInserted.Count == 0 && wasUpdated.Count == 0 && wasRemoved.Count == 0, "Call Apply and PostApply before calling PreApply again");
-
-            foreach (var (_, value) in Entries.WillRemove(multiDictionaryDelta))
+            var delta = (ParsedTableUpdate)parsedTableUpdate;
+            foreach (var (_, value) in Entries.WillRemove(delta.Delta))
             {
                 InvokeBeforeDelete(context, value);
             }
         }
 
-        void IRemoteTableHandle.Apply(IEventContext context, MultiDictionaryDelta<object, IStructuralReadWrite> multiDictionaryDelta)
+        void IRemoteTableHandle.Apply(IEventContext context, IParsedTableUpdate parsedTableUpdate)
         {
             try
             {
-                Entries.Apply(multiDictionaryDelta, wasInserted, wasUpdated, wasRemoved);
+                var delta = (ParsedTableUpdate)parsedTableUpdate;
+                Entries.Apply(delta.Delta, wasInserted, wasUpdated, wasRemoved);
             }
             catch (Exception e)
             {
-                var deltaString = multiDictionaryDelta.ToString();
+                var deltaString = parsedTableUpdate.ToString();
                 deltaString = deltaString[..Math.Min(deltaString.Length, 10_000)];
                 var entriesString = Entries.ToString();
                 entriesString = entriesString[..Math.Min(entriesString.Length, 10_000)];
