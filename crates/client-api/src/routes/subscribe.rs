@@ -304,7 +304,6 @@ async fn ws_client_actor_inner(
     // obtained from `sendrx` and `unordered_rx`.
     let send_task = tokio::spawn(ws_send_loop(
         state.clone(),
-        idle_tx.clone(),
         client.config,
         ws_send,
         sendrx,
@@ -669,7 +668,6 @@ enum UnorderedWsMessage {
 /// when sending to `unordered` fails.
 async fn ws_send_loop(
     state: Arc<ActorState>,
-    idle_tx: watch::Sender<Instant>,
     config: ClientConfig,
     mut ws: impl Sink<WsMessage, Error: Display> + Unpin,
     mut messages: MeteredReceiver<SerializableMessage>,
@@ -767,8 +765,6 @@ async fn ws_send_loop(
             log::warn!("error flushing websocket: {e}");
             break;
         }
-
-        idle_tx.send(state.next_idle_deadline()).ok();
     }
 }
 
@@ -1072,19 +1068,11 @@ mod tests {
     #[tokio::test]
     async fn send_loop_terminates_when_unordered_closed() {
         let state = Arc::new(dummy_actor_state());
-        let (idle_tx, _idle_rx) = watch::channel(Instant::now() + state.config.idle_timeout);
         let (messages_tx, messages_rx) = mpsc::channel(64);
         let messages = MeteredReceiver::new(messages_rx);
         let (unordered_tx, unordered_rx) = mpsc::unbounded_channel();
 
-        let send_loop = ws_send_loop(
-            state,
-            idle_tx,
-            ClientConfig::for_test(),
-            sink::drain(),
-            messages,
-            unordered_rx,
-        );
+        let send_loop = ws_send_loop(state, ClientConfig::for_test(), sink::drain(), messages, unordered_rx);
         pin_mut!(send_loop);
 
         assert!(is_pending(&mut send_loop).await);
@@ -1098,14 +1086,12 @@ mod tests {
     #[tokio::test]
     async fn send_loop_close_message_closes_state_and_messages() {
         let state = Arc::new(dummy_actor_state());
-        let (idle_tx, _idle_rx) = watch::channel(Instant::now() + state.config.idle_timeout);
         let (messages_tx, messages_rx) = mpsc::channel(64);
         let messages = MeteredReceiver::new(messages_rx);
         let (unordered_tx, unordered_rx) = mpsc::unbounded_channel();
 
         let send_loop = ws_send_loop(
             state.clone(),
-            idle_tx,
             ClientConfig::for_test(),
             sink::drain(),
             messages,
@@ -1123,61 +1109,6 @@ mod tests {
         assert!(is_pending(&mut send_loop).await);
         assert!(state.closed());
         assert!(messages_tx.is_closed());
-    }
-
-    #[tokio::test]
-    async fn send_loop_updates_idle_channel() {
-        let state = Arc::new(dummy_actor_state());
-        let idle_deadline = Instant::now() + state.config.idle_timeout;
-        let (idle_tx, mut idle_rx) = watch::channel(idle_deadline);
-        let (messages_tx, messages_rx) = mpsc::channel(64);
-        let messages = MeteredReceiver::new(messages_rx);
-        let (unordered_tx, unordered_rx) = mpsc::unbounded_channel();
-
-        let send_loop = ws_send_loop(
-            state.clone(),
-            idle_tx,
-            ClientConfig::for_test(),
-            sink::drain(),
-            messages,
-            unordered_rx,
-        );
-        pin_mut!(send_loop);
-
-        let input = [
-            Either::Left(UnorderedWsMessage::Ping(Bytes::new())),
-            Either::Left(UnorderedWsMessage::Error(MessageExecutionError {
-                reducer: None,
-                reducer_id: None,
-                caller_identity: Identity::ZERO,
-                caller_connection_id: None,
-                err: anyhow!("it did not work"),
-            })),
-            // TODO: This is the easiest to construct,
-            // but maybe we want other variants, too.
-            Either::Right(SerializableMessage::Identity(IdentityTokenMessage {
-                identity: Identity::ZERO,
-                token: "macaron".into(),
-                connection_id: ConnectionId::ZERO,
-            })),
-            Either::Left(UnorderedWsMessage::Close(CloseFrame {
-                code: CloseCode::Away,
-                reason: "bah!".into(),
-            })),
-        ];
-
-        let mut new_idle_deadline = idle_deadline;
-        for msg in input {
-            match msg {
-                Either::Left(unordered) => unordered_tx.send(unordered).unwrap(),
-                Either::Right(msg) => messages_tx.send(msg).await.unwrap(),
-            }
-            assert!(is_pending(&mut send_loop).await);
-            assert!(idle_rx.has_changed().unwrap());
-            new_idle_deadline = *idle_rx.borrow_and_update();
-        }
-
-        assert!(new_idle_deadline > idle_deadline);
     }
 
     #[tokio::test]
@@ -1206,14 +1137,12 @@ mod tests {
 
         for msg in input {
             let state = Arc::new(dummy_actor_state());
-            let (idle_tx, _idle_rx) = watch::channel(Instant::now() + state.config.idle_timeout);
             let (messages_tx, messages_rx) = mpsc::channel(64);
             let messages = MeteredReceiver::new(messages_rx);
             let (unordered_tx, unordered_rx) = mpsc::unbounded_channel();
 
             let send_loop = ws_send_loop(
                 state.clone(),
-                idle_tx,
                 ClientConfig::for_test(),
                 UnfeedableSink,
                 messages,
@@ -1255,14 +1184,12 @@ mod tests {
 
         for msg in input {
             let state = Arc::new(dummy_actor_state());
-            let (idle_tx, _idle_rx) = watch::channel(Instant::now() + state.config.idle_timeout);
             let (messages_tx, messages_rx) = mpsc::channel(64);
             let messages = MeteredReceiver::new(messages_rx);
             let (unordered_tx, unordered_rx) = mpsc::unbounded_channel();
 
             let send_loop = ws_send_loop(
                 state.clone(),
-                idle_tx,
                 ClientConfig::for_test(),
                 UnflushableSink,
                 messages,
@@ -1310,22 +1237,25 @@ mod tests {
         let (idle_tx, idle_rx) = watch::channel(state.next_idle_deadline());
 
         let start = Instant::now();
-        let mut t = tokio::spawn(async move {
-            ws_main_loop(
-                state,
-                future::pending,
-                ws_idle_timer(idle_rx),
-                tokio::spawn(future::pending()),
-                tokio::spawn(future::pending()),
-                |_| Ok(()),
-            )
-            .await
+        let mut t = tokio::spawn({
+            let state = state.clone();
+            async move {
+                ws_main_loop(
+                    state,
+                    future::pending,
+                    ws_idle_timer(idle_rx),
+                    tokio::spawn(future::pending()),
+                    tokio::spawn(future::pending()),
+                    |_| Ok(()),
+                )
+                .await
+            }
         });
 
         let loop_start = Instant::now();
         for _ in 0..5 {
             sleep(Duration::from_millis(5)).await;
-            idle_tx.send(Instant::now() + Duration::from_millis(10)).unwrap();
+            idle_tx.send(state.next_idle_deadline()).unwrap();
             assert!(is_pending(&mut t).await);
         }
         let timeout = loop_start.elapsed() + Duration::from_millis(10);
@@ -1344,6 +1274,8 @@ mod tests {
             ..<_>::default()
         }));
         let (idle_tx, idle_rx) = watch::channel(state.next_idle_deadline());
+        // Pretend we received a pong immediately after sending a ping,
+        // but only five times.
         let unordered_tx = {
             let state = state.clone();
             let pings = AtomicUsize::new(0);
@@ -1389,13 +1321,12 @@ mod tests {
     async fn main_loop_terminates_when_module_exits() {
         let state = Arc::new(dummy_actor_state());
 
-        let (idle_tx, idle_rx) = watch::channel(state.next_idle_deadline());
+        let (_idle_tx, idle_rx) = watch::channel(state.next_idle_deadline());
         let unordered_tx = {
             let state = state.clone();
             move |m| {
                 if let UnorderedWsMessage::Close(_) = m {
                     state.close();
-                    idle_tx.send(state.next_idle_deadline()).ok();
                 }
                 Ok(())
             }
