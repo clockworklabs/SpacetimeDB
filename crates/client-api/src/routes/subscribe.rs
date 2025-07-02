@@ -299,7 +299,6 @@ async fn ws_client_actor_inner(
     // Set up the idle timer.
     let (idle_tx, idle_rx) = watch::channel(state.next_idle_deadline());
     let idle_timer = ws_idle_timer(idle_rx);
-    pin_mut!(idle_timer);
 
     // Spawn a task to send outgoing messages
     // obtained from `sendrx` and `unordered_rx`.
@@ -326,8 +325,13 @@ async fn ws_client_actor_inner(
         unordered_tx.clone(),
         ws_recv,
     ));
-    let hotswap = client.watch_module_host();
-    pin_mut!(hotswap);
+    let hotswap = {
+        let client = client.clone();
+        move || {
+            let mut client = client.clone();
+            async move { client.watch_module_host().await }
+        }
+    };
 
     ws_main_loop(state, hotswap, idle_timer, send_task, recv_task, move |msg| {
         unordered_tx.send(msg)
@@ -339,14 +343,16 @@ async fn ws_client_actor_inner(
 /// The main `select!` loop of the websocket client actor.
 ///
 /// This exists so we can test its behavior without a proper `ClientConnection`.
-async fn ws_main_loop(
+async fn ws_main_loop<HotswapWatcher>(
     state: Arc<ActorState>,
-    mut hotswap: impl Future<Output = Result<(), NoSuchModule>> + Unpin,
-    mut idle_timer: impl Future<Output = ()> + Unpin,
+    hotswap: impl Fn() -> HotswapWatcher,
+    idle_timer: impl Future<Output = ()>,
     mut send_task: JoinHandle<()>,
     mut recv_task: JoinHandle<()>,
     unordered_tx: impl Fn(UnorderedWsMessage) -> Result<(), SendError<UnorderedWsMessage>>,
-) {
+) where
+    HotswapWatcher: Future<Output = Result<(), NoSuchModule>>,
+{
     // Ensure we terminate both tasks if either exits.
     let abort_send = send_task.abort_handle();
     let abort_recv = recv_task.abort_handle();
@@ -356,6 +362,11 @@ async fn ws_main_loop(
     };
     // Set up the ping interval.
     let mut ping_interval = tokio::time::interval(state.config.ping_interval);
+    // Arm the first hotswap watcher.
+    let watch_hotswap = hotswap();
+
+    pin_mut!(watch_hotswap);
+    pin_mut!(idle_timer);
 
     loop {
         let closed = state.closed();
@@ -387,7 +398,7 @@ async fn ws_main_loop(
             // or close the session if the module exited.
             //
             // Branch is disabled if we already sent a close frame.
-            res = &mut hotswap, if !closed => {
+            res = &mut watch_hotswap, if !closed => {
                 if let Err(NoSuchModule) = res {
                     let close = CloseFrame {
                         code: CloseCode::Away,
@@ -396,6 +407,7 @@ async fn ws_main_loop(
                     // If `send_task` is gone, we'll exit the loop.
                     unordered_tx(close.into()).ok();
                 }
+                watch_hotswap.set(hotswap());
             },
 
             // Send ping.
@@ -446,15 +458,15 @@ async fn ws_idle_timer(mut activity: watch::Receiver<Instant>) {
 /// Consumes `ws` by composing [`ws_recv_loop`], [`ws_client_message_handler`]
 /// and [`ws_eval_handler`]. `unordered_tx` is used to send message execution
 /// errors or initiating a close handshake.
-async fn ws_recv_task<Fut>(
+async fn ws_recv_task<MessageHandler>(
     state: Arc<ActorState>,
     idle_tx: watch::Sender<Instant>,
     client_closed_metric: IntGauge,
-    message_handler: impl Fn(DataMessage, Instant) -> Fut,
+    message_handler: impl Fn(DataMessage, Instant) -> MessageHandler,
     unordered_tx: mpsc::UnboundedSender<UnorderedWsMessage>,
     ws: impl Stream<Item = Result<WsMessage, WsError>> + Unpin,
 ) where
-    Fut: Future<Output = Result<(), MessageHandleError>>,
+    MessageHandler: Future<Output = Result<(), MessageHandleError>>,
 {
     let recv_loop = pin!(ws_recv_loop(state.clone(), idle_tx, ws));
     let recv_handler = ws_client_message_handler(state.clone(), client_closed_metric, recv_loop);
@@ -1275,7 +1287,7 @@ mod tests {
         let state = Arc::new(dummy_actor_state());
         ws_main_loop(
             state.clone(),
-            future::pending(),
+            future::pending,
             future::pending(),
             tokio::spawn(sleep(Duration::from_millis(10))),
             tokio::spawn(future::pending()),
@@ -1284,7 +1296,7 @@ mod tests {
         .await;
         ws_main_loop(
             state,
-            future::pending(),
+            future::pending,
             future::pending(),
             tokio::spawn(future::pending()),
             tokio::spawn(sleep(Duration::from_millis(10))),
@@ -1303,13 +1315,10 @@ mod tests {
 
         let start = Instant::now();
         let mut t = tokio::spawn(async move {
-            let idle_timer = ws_idle_timer(idle_rx);
-            pin_mut!(idle_timer);
-
             ws_main_loop(
                 state,
-                future::pending(),
-                idle_timer,
+                future::pending,
+                ws_idle_timer(idle_rx),
                 tokio::spawn(future::pending()),
                 tokio::spawn(future::pending()),
                 |_| Ok(()),
@@ -1358,13 +1367,10 @@ mod tests {
         let t = tokio::spawn({
             let state = state.clone();
             async move {
-                let idle_timer = ws_idle_timer(idle_rx);
-                pin_mut!(idle_timer);
-
                 ws_main_loop(
                     state,
-                    future::pending(),
-                    idle_timer,
+                    future::pending,
+                    ws_idle_timer(idle_rx),
                     tokio::spawn(future::pending()),
                     tokio::spawn(future::pending()),
                     unordered_tx,
@@ -1401,19 +1407,15 @@ mod tests {
 
         let start = Instant::now();
         tokio::spawn(async move {
-            let idle_timer = ws_idle_timer(idle_rx);
-            pin_mut!(idle_timer);
-
-            let hotswap = async {
+            let hotswap = || async {
                 sleep(Duration::from_millis(5)).await;
                 Err(NoSuchModule)
             };
-            pin_mut!(hotswap);
 
             ws_main_loop(
                 state.clone(),
                 hotswap,
-                idle_timer,
+                ws_idle_timer(idle_rx),
                 // Pretend we received a close immediately after sending one.
                 tokio::spawn(async move {
                     loop {
