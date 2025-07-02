@@ -1062,11 +1062,7 @@ mod tests {
 
         let input = stream::iter(vec![ClientMessage::Pong(Bytes::new()), ClientMessage::Close(None)]);
         let handler = ws_client_message_handler(state.clone(), metric.clone(), input);
-        handler
-            .for_each(|item| async {
-                drop(item);
-            })
-            .await;
+        handler.map(drop).for_each(future::ready).await;
 
         assert!(state.closed());
         assert!(state.reset_ponged());
