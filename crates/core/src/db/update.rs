@@ -61,6 +61,14 @@ fn manual_migrate_database(
     unimplemented!("Manual database migrations are not yet implemented")
 }
 
+/// Logs with `info` level to `$system_logger` as well as via the `log` crate.
+macro_rules! log_info {
+    ($system_logger:expr, $($tokens:tt)*) => {
+        $system_logger.info(&format!($($tokens)*));
+        log::info!($($tokens)*);
+    };
+}
+
 /// Automatically migrate a database.
 fn auto_migrate_database(
     stdb: &RelationalDB,
@@ -118,8 +126,7 @@ fn auto_migrate_database(
                 // They will be initialized by the database when the table is created.
                 let table_schema = TableSchema::from_module_def(plan.new, table_def, (), TableId::SENTINEL);
 
-                system_logger.info(&format!("Creating table `{}`", table_name));
-                log::info!("Creating table `{}`", table_name);
+                log_info!(system_logger, "Creating table `{table_name}`");
 
                 stdb.create_table(tx, table_schema)?;
             }
@@ -136,11 +143,12 @@ fn auto_migrate_database(
                     .filter_map(|(_, c)| c.data.unique_columns())
                     .any(|unique_cols| unique_cols == &index_cols);
 
-                system_logger.info(&format!(
+                log_info!(
+                    system_logger,
                     "Creating index `{}` on table `{}`",
-                    index_name, table_def.name
-                ));
-                log::info!("Creating index `{}` on table `{}`", index_name, table_def.name);
+                    index_name,
+                    table_def.name
+                );
 
                 let index_schema = IndexSchema::from_module_def(plan.new, index_def, table_id, 0.into());
 
@@ -156,11 +164,12 @@ fn auto_migrate_database(
                     .find(|index| index.index_name[..] == index_name[..])
                     .unwrap();
 
-                system_logger.info(&format!(
+                log_info!(
+                    system_logger,
                     "Dropping index `{}` on table `{}`",
-                    index_name, table_def.name
-                ));
-                log::info!("Dropping index `{}` on table `{}`", index_name, table_def.name);
+                    index_name,
+                    table_def.name
+                );
                 stdb.drop_index(tx, index_schema.index_id)?;
             }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::RemoveConstraint(constraint_name) => {
@@ -172,11 +181,8 @@ fn auto_migrate_database(
                     .find(|constraint| constraint.constraint_name[..] == constraint_name[..])
                     .unwrap();
 
-                system_logger.info(&format!(
-                    "Dropping constraint `{}` on table `{}`",
-                    constraint_name, table_def.name
-                ));
-                log::info!(
+                log_info!(
+                    system_logger,
                     "Dropping constraint `{}` on table `{}`",
                     constraint_name,
                     table_def.name
@@ -188,11 +194,12 @@ fn auto_migrate_database(
                 let sequence_def = table_def.sequences.get(sequence_name).unwrap();
                 let table_schema = &table_schemas_by_name[&table_def.name[..]];
 
-                system_logger.info(&format!(
+                log_info!(
+                    system_logger,
                     "Adding sequence `{}` to table `{}`",
-                    sequence_name, table_def.name
-                ));
-                log::info!("Adding sequence `{}` to table `{}`", sequence_name, table_def.name);
+                    sequence_name,
+                    table_def.name
+                );
                 let sequence_schema =
                     SequenceSchema::from_module_def(plan.new, sequence_def, table_schema.table_id, 0.into());
                 stdb.create_sequence(tx, sequence_schema)?;
@@ -206,11 +213,12 @@ fn auto_migrate_database(
                     .find(|sequence| sequence.sequence_name[..] == sequence_name[..])
                     .unwrap();
 
-                system_logger.info(&format!(
+                log_info!(
+                    system_logger,
                     "Dropping sequence `{}` from table `{}`",
-                    sequence_name, table_def.name
-                ));
-                log::info!("Dropping sequence `{}` from table `{}`", sequence_name, table_def.name);
+                    sequence_name,
+                    table_def.name
+                );
                 stdb.drop_sequence(tx, sequence_schema.sequence_id)?;
             }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::ChangeColumns(table_name) => {
@@ -218,8 +226,7 @@ fn auto_migrate_database(
                 let table_id = stdb.table_id_from_name_mut(tx, table_name).unwrap().unwrap();
                 let column_schemas = column_schemas_from_defs(plan.new, &table_def.columns, table_id);
 
-                system_logger.info(&format!("Changing columns of table `{}`", table_name));
-                log::info!("Changing columns of table `{}`", table_name);
+                log_info!(system_logger, "Changing columns of table `{}`", table_name);
 
                 stdb.alter_table_row_type(tx, table_id, column_schemas)?;
             }
@@ -234,16 +241,14 @@ fn auto_migrate_database(
                 anyhow::bail!("Removing schedules is not yet implemented");
             }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::AddRowLevelSecurity(sql_rls) => {
-                system_logger.info(&format!("Adding row-level security `{sql_rls}`"));
-                log::info!("Adding row-level security `{sql_rls}`");
+                log_info!(system_logger, "Adding row-level security `{sql_rls}`");
                 let rls = plan.new.lookup_expect(sql_rls);
                 let rls = RowLevelExpr::build_row_level_expr(tx, &auth_ctx, rls)?;
 
                 stdb.create_row_level_security(tx, rls.def)?;
             }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::RemoveRowLevelSecurity(sql_rls) => {
-                system_logger.info(&format!("Removing-row level security `{sql_rls}`"));
-                log::info!("Removing row-level security `{sql_rls}`");
+                log_info!(system_logger, "Removing-row level security `{sql_rls}`");
                 stdb.drop_row_level_security(tx, sql_rls.clone())?;
             }
         }
