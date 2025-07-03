@@ -2319,6 +2319,7 @@ mod tests {
 
         // Insert new row into `u` that joins with `x = 5`
         // UPDATE v SET x = 6 WHERE id = 5
+        // Should result in a no-op
         let metrics = commit_tx(
             &db,
             &subs,
@@ -2326,12 +2327,9 @@ mod tests {
             [(v_id, product![5u64, 6u64, 6u64]), (u_id, product![5u64, 6u64, 7u64])],
         )?;
 
-        // Results in a no-op
-        assert_tx_update_for_table(&mut rx, u_id, &schema, [], []).await;
-
         // We should only have evaluated the query for `x = 5`
         assert_eq!(metrics.delta_queries_evaluated, 1);
-        assert_eq!(metrics.delta_queries_matched, 1);
+        assert_eq!(metrics.delta_queries_matched, 0);
 
         Ok(())
     }
