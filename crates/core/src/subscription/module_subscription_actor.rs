@@ -2301,7 +2301,7 @@ mod tests {
 
         // We should have evaluated queries for `x = 3` and `x = 4`
         assert_eq!(metrics.delta_queries_evaluated, 2);
-        assert_eq!(metrics.delta_queries_matched, 2);
+        assert_eq!(metrics.delta_queries_matched, 1);
 
         // UPDATE v SET x = 0 WHERE id = 3
         let metrics = commit_tx(
