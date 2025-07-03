@@ -12,6 +12,17 @@ use spacetimedb_schema::def::TableDef;
 use spacetimedb_schema::schema::{column_schemas_from_defs, IndexSchema, Schema, SequenceSchema, TableSchema};
 use std::sync::Arc;
 
+/// The logger used for by [`update_database`] and friends.
+pub trait UpdateLogger {
+    fn info(&self, msg: &str);
+}
+
+impl UpdateLogger for SystemLogger {
+    fn info(&self, msg: &str) {
+        self.info(msg);
+    }
+}
+
 /// Update the database according to the migration plan.
 ///
 /// The update is performed within the transactional context `tx`.
@@ -27,7 +38,7 @@ pub fn update_database(
     tx: &mut MutTxId,
     auth_ctx: AuthCtx,
     plan: MigratePlan,
-    system_logger: &SystemLogger,
+    logger: &dyn UpdateLogger,
 ) -> anyhow::Result<()> {
     let existing_tables = stdb.get_all_tables_mut(tx)?;
 
@@ -45,8 +56,8 @@ pub fn update_database(
     }
 
     match plan {
-        MigratePlan::Manual(plan) => manual_migrate_database(stdb, tx, plan, system_logger, existing_tables),
-        MigratePlan::Auto(plan) => auto_migrate_database(stdb, tx, auth_ctx, plan, system_logger, existing_tables),
+        MigratePlan::Manual(plan) => manual_migrate_database(stdb, tx, plan, logger, existing_tables),
+        MigratePlan::Auto(plan) => auto_migrate_database(stdb, tx, auth_ctx, plan, logger, existing_tables),
     }
 }
 
@@ -55,16 +66,16 @@ fn manual_migrate_database(
     _stdb: &RelationalDB,
     _tx: &mut MutTxId,
     _plan: ManualMigratePlan,
-    _system_logger: &SystemLogger,
+    _logger: &dyn UpdateLogger,
     _existing_tables: Vec<Arc<TableSchema>>,
 ) -> anyhow::Result<()> {
     unimplemented!("Manual database migrations are not yet implemented")
 }
 
-/// Logs with `info` level to `$system_logger` as well as via the `log` crate.
-macro_rules! log_info {
-    ($system_logger:expr, $($tokens:tt)*) => {
-        $system_logger.info(&format!($($tokens)*));
+/// Logs with `info` level to `$logger` as well as via the `log` crate.
+macro_rules! log {
+    ($logger:expr, $($tokens:tt)*) => {
+        $logger.info(&format!($($tokens)*));
         log::info!($($tokens)*);
     };
 }
@@ -75,7 +86,7 @@ fn auto_migrate_database(
     tx: &mut MutTxId,
     auth_ctx: AuthCtx,
     plan: AutoMigratePlan,
-    system_logger: &SystemLogger,
+    logger: &dyn UpdateLogger,
     existing_tables: Vec<Arc<TableSchema>>,
 ) -> anyhow::Result<()> {
     // We have already checked in `migrate_database` that `existing_tables` are compatible with the `old` definition in `plan`.
@@ -126,7 +137,7 @@ fn auto_migrate_database(
                 // They will be initialized by the database when the table is created.
                 let table_schema = TableSchema::from_module_def(plan.new, table_def, (), TableId::SENTINEL);
 
-                log_info!(system_logger, "Creating table `{table_name}`");
+                log!(logger, "Creating table `{table_name}`");
 
                 stdb.create_table(tx, table_schema)?;
             }
@@ -143,12 +154,7 @@ fn auto_migrate_database(
                     .filter_map(|(_, c)| c.data.unique_columns())
                     .any(|unique_cols| unique_cols == &index_cols);
 
-                log_info!(
-                    system_logger,
-                    "Creating index `{}` on table `{}`",
-                    index_name,
-                    table_def.name
-                );
+                log!(logger, "Creating index `{}` on table `{}`", index_name, table_def.name);
 
                 let index_schema = IndexSchema::from_module_def(plan.new, index_def, table_id, 0.into());
 
@@ -164,12 +170,7 @@ fn auto_migrate_database(
                     .find(|index| index.index_name[..] == index_name[..])
                     .unwrap();
 
-                log_info!(
-                    system_logger,
-                    "Dropping index `{}` on table `{}`",
-                    index_name,
-                    table_def.name
-                );
+                log!(logger, "Dropping index `{}` on table `{}`", index_name, table_def.name);
                 stdb.drop_index(tx, index_schema.index_id)?;
             }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::RemoveConstraint(constraint_name) => {
@@ -181,8 +182,8 @@ fn auto_migrate_database(
                     .find(|constraint| constraint.constraint_name[..] == constraint_name[..])
                     .unwrap();
 
-                log_info!(
-                    system_logger,
+                log!(
+                    logger,
                     "Dropping constraint `{}` on table `{}`",
                     constraint_name,
                     table_def.name
@@ -194,8 +195,8 @@ fn auto_migrate_database(
                 let sequence_def = table_def.sequences.get(sequence_name).unwrap();
                 let table_schema = &table_schemas_by_name[&table_def.name[..]];
 
-                log_info!(
-                    system_logger,
+                log!(
+                    logger,
                     "Adding sequence `{}` to table `{}`",
                     sequence_name,
                     table_def.name
@@ -213,8 +214,8 @@ fn auto_migrate_database(
                     .find(|sequence| sequence.sequence_name[..] == sequence_name[..])
                     .unwrap();
 
-                log_info!(
-                    system_logger,
+                log!(
+                    logger,
                     "Dropping sequence `{}` from table `{}`",
                     sequence_name,
                     table_def.name
@@ -226,7 +227,7 @@ fn auto_migrate_database(
                 let table_id = stdb.table_id_from_name_mut(tx, table_name).unwrap().unwrap();
                 let column_schemas = column_schemas_from_defs(plan.new, &table_def.columns, table_id);
 
-                log_info!(system_logger, "Changing columns of table `{}`", table_name);
+                log!(logger, "Changing columns of table `{}`", table_name);
 
                 stdb.alter_table_row_type(tx, table_id, column_schemas)?;
             }
@@ -241,14 +242,14 @@ fn auto_migrate_database(
                 anyhow::bail!("Removing schedules is not yet implemented");
             }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::AddRowLevelSecurity(sql_rls) => {
-                log_info!(system_logger, "Adding row-level security `{sql_rls}`");
+                log!(logger, "Adding row-level security `{sql_rls}`");
                 let rls = plan.new.lookup_expect(sql_rls);
                 let rls = RowLevelExpr::build_row_level_expr(tx, &auth_ctx, rls)?;
 
                 stdb.create_row_level_security(tx, rls.def)?;
             }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::RemoveRowLevelSecurity(sql_rls) => {
-                log_info!(system_logger, "Removing-row level security `{sql_rls}`");
+                log!(logger, "Removing-row level security `{sql_rls}`");
                 stdb.drop_row_level_security(tx, sql_rls.clone())?;
             }
         }
@@ -256,4 +257,98 @@ fn auto_migrate_database(
 
     log::info!("Database update complete");
     Ok(())
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::{
+        db::{
+            datastore::locking_tx_datastore::PendingSchemaChange,
+            relational_db::tests_utils::{begin_mut_tx, insert, TestDB},
+        },
+        host::module_host::create_table_from_def,
+    };
+    use spacetimedb_lib::db::raw_def::v9::{btree, RawModuleDefV9Builder, TableAccess};
+    use spacetimedb_sats::{product, AlgebraicType::U64};
+    use spacetimedb_schema::{auto_migrate::ponder_migrate, def::ModuleDef};
+
+    struct TestLogger;
+    impl UpdateLogger for TestLogger {
+        fn info(&self, _: &str) {}
+    }
+
+    #[test]
+    fn update_db_repro_2761() -> anyhow::Result<()> {
+        let auth_ctx = AuthCtx::for_testing();
+        let stdb = TestDB::durable()?;
+
+        // Define the old and new modules, the latter with the index on `b`.
+        let define_p = |builder: &mut RawModuleDefV9Builder| {
+            builder
+                .build_table_with_new_type("p", [("x", U64), ("y", U64)], true)
+                .with_unique_constraint(0)
+                .with_unique_constraint(1)
+                .with_index(btree(0), "idx_x")
+                .with_index(btree(1), "idx_y")
+                .with_access(TableAccess::Public)
+                .finish()
+        };
+        let define_t = |builder: &mut RawModuleDefV9Builder, with_index| {
+            let builder = builder
+                .build_table_with_new_type("t", [("a", U64), ("b", U64)], true)
+                .with_access(TableAccess::Public);
+
+            let builder = if with_index {
+                builder.with_index(btree(1), "idx_b")
+            } else {
+                builder
+            };
+
+            builder.finish()
+        };
+        let module_def = |with_index| -> ModuleDef {
+            let mut builder = RawModuleDefV9Builder::new();
+            define_p(&mut builder);
+            define_t(&mut builder, with_index);
+            builder
+                .finish()
+                .try_into()
+                .expect("builder should create a valid database definition")
+        };
+
+        let old = module_def(false);
+        let new = module_def(true);
+
+        // Create tables for `old`.
+        let mut tx = begin_mut_tx(&stdb);
+        for def in old.tables() {
+            create_table_from_def(&stdb, &mut tx, &old, def)?;
+        }
+
+        // Write two rows to `t`
+        // that would cause a unique constraint violation if `idx_b` was unique.
+        let t_id = stdb
+            .table_id_from_name_mut(&tx, "t")?
+            .expect("there should be a table with name `t`");
+        insert(&stdb, &mut tx, t_id, &product![0u64, 42u64])?;
+        insert(&stdb, &mut tx, t_id, &product![1u64, 42u64])?;
+        stdb.commit_tx(tx)?;
+
+        // Try to update the db.
+        let mut tx = begin_mut_tx(&stdb);
+        let plan = ponder_migrate(&old, &new)?;
+        update_database(&stdb, &mut tx, auth_ctx, plan, &TestLogger)?;
+
+        // Expect the schema change.
+        let idx_b_id = stdb
+            .index_id_from_name(&tx, "t_b_idx_btree")?
+            .expect("there should be an index named `idx_b`");
+        assert_eq!(
+            tx.pending_schema_changes(),
+            [PendingSchemaChange::IndexAdded(t_id, idx_b_id, None)]
+        );
+
+        Ok(())
+    }
 }
