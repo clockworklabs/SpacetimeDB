@@ -126,14 +126,14 @@ fn auto_migrate_database(
             spacetimedb_schema::auto_migrate::AutoMigrateStep::AddIndex(index_name) => {
                 let table_def = plan.new.stored_in_table_def(index_name).unwrap();
                 let index_def = table_def.indexes.get(index_name).unwrap();
-                let table_schema = &table_schemas_by_name[&table_def.name[..]];
+                let table_id = table_schemas_by_name[&table_def.name[..]].table_id;
 
                 let index_cols = ColSet::from(index_def.algorithm.columns());
 
-                let is_unique = plan
-                    .new
-                    .constraints()
-                    .filter_map(|c| c.data.unique_columns())
+                let is_unique = table_def
+                    .constraints
+                    .iter()
+                    .filter_map(|(_, c)| c.data.unique_columns())
                     .any(|unique_cols| unique_cols == &index_cols);
 
                 system_logger.info(&format!(
@@ -142,7 +142,7 @@ fn auto_migrate_database(
                 ));
                 log::info!("Creating index `{}` on table `{}`", index_name, table_def.name);
 
-                let index_schema = IndexSchema::from_module_def(plan.new, index_def, table_schema.table_id, 0.into());
+                let index_schema = IndexSchema::from_module_def(plan.new, index_def, table_id, 0.into());
 
                 stdb.create_index(tx, index_schema, is_unique)?;
             }
