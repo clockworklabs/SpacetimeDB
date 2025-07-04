@@ -8,13 +8,12 @@ use itertools::Itertools;
 use smallvec::SmallVec;
 use spacetimedb_data_structures::map::{HashSet, IntMap};
 use spacetimedb_lib::db::auth::{StAccess, StTableType};
-use spacetimedb_lib::db::error::{AuthError, RelationError};
-use spacetimedb_lib::relation::{ColExpr, DbTable, FieldName, Header};
-use spacetimedb_lib::{AlgebraicType, Identity};
+use spacetimedb_lib::Identity;
 use spacetimedb_primitives::*;
-use spacetimedb_sats::algebraic_value::AlgebraicValue;
 use spacetimedb_sats::satn::Satn;
-use spacetimedb_sats::ProductValue;
+use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductValue};
+use spacetimedb_schema::def::error::{AuthError, RelationError};
+use spacetimedb_schema::relation::{ColExpr, DbTable, FieldName, Header};
 use spacetimedb_schema::schema::TableSchema;
 use std::borrow::Cow;
 use std::cmp::Reverse;
@@ -2118,9 +2117,9 @@ impl From<Code> for CodeResult {
 mod tests {
     use super::*;
 
-    use spacetimedb_lib::{db::raw_def::v9::RawModuleDefV9Builder, relation::Column};
+    use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9Builder;
     use spacetimedb_sats::{product, AlgebraicType, ProductType};
-    use spacetimedb_schema::{def::ModuleDef, schema::Schema};
+    use spacetimedb_schema::{def::ModuleDef, relation::Column, schema::Schema};
     use typed_arena::Arena;
 
     const ALICE: Identity = Identity::from_byte_array([1; 32]);

@@ -3,10 +3,8 @@
 //! Nothing to do with Chrome.
 
 use crate::db::auth::{StAccess, StTableType};
-use crate::relation::FieldName;
 use crate::{AlgebraicType, ProductType, SpacetimeType};
 use derive_more::Display;
-use spacetimedb_data_structures::map::HashSet;
 use spacetimedb_primitives::*;
 
 // TODO(1.0): move these definitions into this file,
@@ -388,7 +386,7 @@ impl RawTableDefV8 {
         self
     }
 
-    fn gen_constraint_def(&self, kind: Constraints, columns: impl Into<ColList>) -> RawConstraintDefV8 {
+    pub fn gen_constraint_def(&self, kind: Constraints, columns: impl Into<ColList>) -> RawConstraintDefV8 {
         let columns = columns.into();
         RawConstraintDefV8::for_column(&self.table_name, &self.generate_cols_name(&columns), kind, columns)
     }
@@ -453,67 +451,6 @@ impl RawTableDefV8 {
                 })
                 .collect::<Vec<_>>(),
         )
-    }
-
-    /// Get an iterator deriving [RawIndexDefV8]s from the constraints that require them like `UNIQUE`.
-    ///
-    /// It looks into [Self::constraints] for possible duplicates and remove them from the result
-    pub fn generated_indexes(&self) -> impl Iterator<Item = RawIndexDefV8> + '_ {
-        self.constraints
-            .iter()
-            // We are only interested in constraints implying an index.
-            .filter(|x| x.constraints.has_indexed())
-            // Create the `IndexDef`.
-            .map(|x| {
-                let is_unique = x.constraints.has_unique();
-                RawIndexDefV8::for_column(&self.table_name, &x.constraint_name, x.columns.clone(), is_unique)
-            })
-            // Only keep those we don't yet have in the list of indices (checked by name).
-            .filter(|idx| self.indexes.iter().all(|x| x.index_name != idx.index_name))
-    }
-
-    /// Get an iterator deriving [RawSequenceDefV8] from the constraints that require them like `IDENTITY`.
-    ///
-    /// It looks into [Self::constraints] for possible duplicates and remove them from the result
-    pub fn generated_sequences(&self) -> impl Iterator<Item = RawSequenceDefV8> + '_ {
-        let cols: HashSet<_> = self.sequences.iter().map(|seq| ColList::new(seq.col_pos)).collect();
-
-        self.constraints
-            .iter()
-            // We are only interested in constraints implying a sequence.
-            .filter(move |x| !cols.contains(&x.columns) && x.constraints.has_autoinc())
-            // Create the `SequenceDef`.
-            .map(|x| RawSequenceDefV8::for_column(&self.table_name, &x.constraint_name, x.columns.head().unwrap()))
-            // Only keep those we don't yet have in the list of sequences (checked by name).
-            .filter(|seq| self.sequences.iter().all(|x| x.sequence_name != seq.sequence_name))
-    }
-
-    /// Get an iterator deriving [RawConstraintDefV8] from the indexes that require them like `UNIQUE`.
-    ///
-    /// It looks into Self::constraints for possible duplicates and remove them from the result
-    pub fn generated_constraints(&self) -> impl Iterator<Item = RawConstraintDefV8> + '_ {
-        // Collect the set of all col-lists with a constraint.
-        let cols: HashSet<_> = self
-            .constraints
-            .iter()
-            .filter(|x| x.constraints.kind() != ConstraintKind::UNSET)
-            .map(|x| &x.columns)
-            .collect();
-
-        // Those indices that are not present in the constraints above
-        // have constraints generated for them.
-        // When `idx.is_unique`, a unique constraint is generated rather than an indexed one.
-        self.indexes
-            .iter()
-            .filter(move |idx| !cols.contains(&idx.columns))
-            .map(|idx| self.gen_constraint_def(Constraints::from_is_unique(idx.is_unique), idx.columns.clone()))
-    }
-
-    /// Check if the `name` of the [FieldName] exist on this [RawTableDefV8]
-    ///
-    /// Warning: It ignores the `table_id`
-    pub fn get_column_by_field(&self, field: FieldName) -> Option<&RawColumnDefV8> {
-        self.get_column(field.col.idx())
     }
 
     /// Get a column by its position in the table.

@@ -23,13 +23,19 @@ proptest = ["dep:proptest", "dep:proptest-derive"]
 test = ["proptest", "spacetimedb-sats/test"]
 metrics_impls = ["dep:spacetimedb-metrics", "spacetimedb-sats/metrics_impls"]
 enum-map = ["dep:enum-map"]
+# Gated to avoid including this in `spacetimedb_bindings`.
+memory-usage = [
+    "dep:spacetimedb-memory-usage",
+    "spacetimedb-primitives/memory-usage",
+    "spacetimedb-sats/memory-usage",
+]
 
 [dependencies]
 spacetimedb-bindings-macro.workspace = true
 spacetimedb-sats.workspace = true
 spacetimedb-primitives.workspace = true
+spacetimedb-memory-usage = { workspace = true, optional = true }
 spacetimedb-metrics = { workspace = true, optional = true }
-spacetimedb-data-structures.workspace = true
 
 anyhow.workspace = true
 bitflags.workspace = true

@@ -21,6 +21,7 @@ spacetimedb-lib = { workspace = true, features = ["serde", "metrics_impls"] }
 spacetimedb-client-api-messages.workspace = true
 spacetimedb-commitlog.workspace = true
 spacetimedb-durability.workspace = true
+spacetimedb-memory-usage.workspace = true
 spacetimedb-metrics.workspace = true
 spacetimedb-primitives.workspace = true
 spacetimedb-paths.workspace = true

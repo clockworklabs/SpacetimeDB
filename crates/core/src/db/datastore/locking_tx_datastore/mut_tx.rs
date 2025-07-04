@@ -150,6 +150,12 @@ impl MutTxId {
         self.tx_state.pending_schema_changes.push(change);
     }
 
+    /// Get the list of current pending schema changes, for testing.
+    #[cfg(test)]
+    pub(crate) fn pending_schema_changes(&self) -> &[PendingSchemaChange] {
+        &self.tx_state.pending_schema_changes
+    }
+
     /// Deletes all the rows in table with `table_id`
     /// where the column with `col_pos` equals `value`.
     fn delete_col_eq(&mut self, table_id: TableId, col_pos: ColId, value: &AlgebraicValue) -> Result<()> {

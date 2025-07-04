@@ -10,6 +10,8 @@ pub use state_view::{IterByColEqTx, IterByColRangeTx};
 pub mod delete_table;
 pub(crate) mod tx;
 mod tx_state;
+#[cfg(test)]
+pub(crate) use tx_state::PendingSchemaChange;
 
 use parking_lot::{
     lock_api::{ArcMutexGuard, ArcRwLockReadGuard, ArcRwLockWriteGuard},
