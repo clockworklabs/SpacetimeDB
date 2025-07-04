@@ -810,7 +810,7 @@ const DEFAULT_BUFFER_CAPACITY: usize = spacetimedb_primitives::ROW_ITER_CHUNK_SI
 #[doc(hidden)]
 pub fn table_id_from_name(table_name: &str) -> TableId {
     sys::table_id_from_name(table_name).unwrap_or_else(|_| {
-        panic!("Failed to get table with name: {}", table_name);
+        panic!("Failed to get table with name: {table_name}");
     })
 }
 

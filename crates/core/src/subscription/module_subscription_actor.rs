@@ -1237,7 +1237,7 @@ mod tests {
                     deletes.into_iter().sorted().collect::<Vec<_>>()
                 );
             }
-            Some(msg) => panic!("expected a TxUpdate, but got {:#?}", msg),
+            Some(msg) => panic!("expected a TxUpdate, but got {msg:#?}"),
             None => panic!("The receiver closed due to an error"),
         }
     }
@@ -1314,7 +1314,7 @@ mod tests {
             );
             return;
         }
-        panic!("Expected a subscription error message, but got: {:?}", result);
+        panic!("Expected a subscription error message, but got: {result:?}");
     }
 
     /// Test that clients receive error messages on subscribe

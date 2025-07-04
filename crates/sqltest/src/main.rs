@@ -175,7 +175,7 @@ async fn run_serial(test_suite: &mut TestSuite, files: Vec<PathBuf>, engine: DbT
     }
 
     if !failed_case.is_empty() {
-        println!("some test case failed:\n{:#?}", failed_case);
+        println!("some test case failed:\n{failed_case:#?}");
     }
     println!();
 

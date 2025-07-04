@@ -41,7 +41,7 @@ impl TestCounter {
         {
             let mut lock = self.inner.lock().expect("TestCounterInner Mutex is poisoned");
             if !lock.registered.insert(test_name.clone().into()) {
-                panic!("Duplicate test name: {}", test_name);
+                panic!("Duplicate test name: {test_name}");
             }
         }
         let dup = Arc::clone(self);
@@ -68,31 +68,31 @@ impl TestCounter {
                 match lock.outcomes.get(test) {
                     None => {
                         timeout_count += 1;
-                        println!("TIMEOUT: {}", test);
+                        println!("TIMEOUT: {test}");
                     }
                     Some(Err(e)) => {
                         failed_count += 1;
-                        println!("FAILED:  {}:\n\t{:?}\n", test, e);
+                        println!("FAILED:  {test}:\n\t{e:?}\n");
                     }
                     Some(Ok(())) => {
-                        println!("PASSED:  {}", test);
+                        println!("PASSED:  {test}");
                     }
                 }
             }
-            panic!("{} tests timed out and {} tests failed", timeout_count, failed_count)
+            panic!("{timeout_count} tests timed out and {failed_count} tests failed")
         } else {
             let mut failed_count = 0;
             for (test, outcome) in lock.outcomes.iter() {
                 match outcome {
-                    Ok(()) => println!("PASSED: {}", test),
+                    Ok(()) => println!("PASSED: {test}"),
                     Err(e) => {
                         failed_count += 1;
-                        println!("FAILED: {}:\n\t{:?}\n", test, e);
+                        println!("FAILED: {test}:\n\t{e:?}\n");
                     }
                 }
             }
             if failed_count != 0 {
-                panic!("{} tests failed", failed_count);
+                panic!("{failed_count} tests failed");
             } else {
                 println!("All tests passed");
             }

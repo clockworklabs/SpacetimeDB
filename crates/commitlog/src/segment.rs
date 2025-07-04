@@ -149,7 +149,7 @@ impl<W: io::Write> Writer<W> {
             index
                 .append_after_commit(self.commit.min_tx_offset, self.bytes_written, commit_len)
                 .map_err(|e| {
-                    debug!("failed to append to offset index: {:?}", e);
+                    debug!("failed to append to offset index: {e:?}");
                 })
         });
 
@@ -654,7 +654,7 @@ impl Metadata {
 
         Err(io::Error::new(
             ErrorKind::InvalidData,
-            format!("No valid commit found in index up to key: {}", candidate_last_key),
+            format!("No valid commit found in index up to key: {candidate_last_key}"),
         ))
     }
 

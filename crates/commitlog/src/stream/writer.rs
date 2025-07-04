@@ -127,8 +127,7 @@ where
                         idx.ftruncate(sofar.tx_range.end, sofar.size_in_bytes)
                             .inspect_err(|e| {
                                 error!(
-                                    "failed to truncate offset index for segment {} containing trailing data: {}",
-                                    last, e
+                                    "failed to truncate offset index for segment {last} containing trailing data: {e}"
                                 )
                             })?;
                         segment.ftruncate(sofar.tx_range.end, sofar.size_in_bytes)?;

@@ -352,7 +352,7 @@ fn retrieve_one_page_fixed_len(c: &mut Criterion) {
 // then time to insert into those holes
 fn insert_with_holes_fixed_len(c: &mut Criterion) {
     fn bench_insert_with_holes<R: FixedLenRow>(c: &mut Criterion, var_len_visitor: &impl VarLenMembers, name: &str) {
-        let mut group = c.benchmark_group(format!("insert_with_holes_fixed_len/{}", name));
+        let mut group = c.benchmark_group(format!("insert_with_holes_fixed_len/{name}"));
         let val = R::from_u64(0xdeadbeef_0badbeef);
         for delete_ratio in [0.1f64, 0.25, 0.5, 0.75, 0.9, 1.0] {
             let num_pages = 16;
@@ -430,7 +430,7 @@ fn insert_with_holes_fixed_len(c: &mut Criterion) {
 
 fn copy_filter_fixed_len(c: &mut Criterion) {
     fn bench_copy_filter<R: FixedLenRow>(c: &mut Criterion, name: &str) {
-        let mut group = c.benchmark_group(format!("copy_filter_fixed_len/{}", name));
+        let mut group = c.benchmark_group(format!("copy_filter_fixed_len/{name}"));
         let row_size = black_box(row_size_for_type::<R>());
 
         let val = R::from_u64(0xdeadbeef_0badbeef);
