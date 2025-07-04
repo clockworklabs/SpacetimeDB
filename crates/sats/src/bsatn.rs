@@ -1,7 +1,10 @@
+use core::mem::MaybeUninit;
+
 use crate::buffer::{BufReader, BufWriter, CountWriter};
 use crate::de::{BasicSmallVecVisitor, Deserialize, DeserializeSeed, Deserializer as _};
 use crate::ser::Serialize;
 use crate::{ProductValue, Typespace, WithTypespace};
+use bytes::BytesMut;
 use ser::BsatnError;
 use smallvec::SmallVec;
 
@@ -106,6 +109,52 @@ codec_funcs!(val: crate::AlgebraicValue);
 codec_funcs!(val: crate::ProductValue);
 codec_funcs!(val: crate::SumValue);
 
+/// Provides a view over a buffer that an reserve an additional `len` bytes
+/// and then provide those as an uninitialized buffer to write into.
+pub trait BufReservedFill {
+    /// Reserves space for `len` in `self` and then runs `fill` to fill it,
+    /// adding `len` to the total length of `self`.
+    ///
+    /// # Safety
+    ///
+    /// `fill` must initialize every byte in the slice.
+    unsafe fn reserve_and_fill(&mut self, len: usize, fill: impl FnOnce(&mut [MaybeUninit<u8>]));
+}
+
+impl BufReservedFill for Vec<u8> {
+    unsafe fn reserve_and_fill(&mut self, len: usize, fill: impl FnOnce(&mut [MaybeUninit<u8>])) {
+        // Get an uninitialized slice within `self` of `len` bytes.
+        let start = self.len();
+        self.reserve(len);
+        let sink = &mut self.spare_capacity_mut()[..len];
+
+        // Run the filling logic.
+        fill(sink);
+
+        // SAFETY: Caller promised that `sink` was fully initialized,
+        // which entails that we initialized `start .. start + len`,
+        // so now we have initialized up to `start + len`.
+        unsafe { self.set_len(start + len) }
+    }
+}
+
+impl BufReservedFill for BytesMut {
+    unsafe fn reserve_and_fill(&mut self, len: usize, fill: impl FnOnce(&mut [MaybeUninit<u8>])) {
+        // Get an uninitialized slice within `self` of `len` bytes.
+        let start = self.len();
+        self.reserve(len);
+        let sink = &mut self.spare_capacity_mut()[..len];
+
+        // Run the filling logic.
+        fill(sink);
+
+        // SAFETY: Caller promised that `sink` was fully initialized,
+        // which entails that we initialized `start .. start + len`,
+        // so now we have initialized up to `start + len`.
+        unsafe { self.set_len(start + len) }
+    }
+}
+
 /// Types that can be encoded to BSATN.
 ///
 /// Implementations of this trait may be more efficient than directly calling [`to_vec`].
@@ -117,7 +166,7 @@ pub trait ToBsatn {
 
     /// BSATN-encode the row referred to by `self` into `buf`,
     /// pushing `self`'s bytes onto the end of `buf`, similar to [`Vec::extend`].
-    fn to_bsatn_extend(&self, buf: &mut Vec<u8>) -> Result<(), BsatnError>;
+    fn to_bsatn_extend(&self, buf: &mut (impl BufWriter + BufReservedFill)) -> Result<(), BsatnError>;
 
     /// Returns the static size of the type of this object.
     ///
@@ -129,7 +178,7 @@ impl<T: ToBsatn> ToBsatn for &T {
     fn to_bsatn_vec(&self) -> Result<Vec<u8>, BsatnError> {
         T::to_bsatn_vec(*self)
     }
-    fn to_bsatn_extend(&self, buf: &mut Vec<u8>) -> Result<(), BsatnError> {
+    fn to_bsatn_extend(&self, buf: &mut (impl BufWriter + BufReservedFill)) -> Result<(), BsatnError> {
         T::to_bsatn_extend(*self, buf)
     }
     fn static_bsatn_size(&self) -> Option<u16> {
@@ -142,7 +191,7 @@ impl ToBsatn for ProductValue {
         to_vec(self)
     }
 
-    fn to_bsatn_extend(&self, buf: &mut Vec<u8>) -> Result<(), BsatnError> {
+    fn to_bsatn_extend(&self, buf: &mut (impl BufWriter + BufReservedFill)) -> Result<(), BsatnError> {
         to_writer(buf, self)
     }
 

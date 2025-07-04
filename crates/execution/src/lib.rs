@@ -1,18 +1,13 @@
-use std::{
-    hash::{Hash, Hasher},
-    ops::RangeBounds,
-};
-
 use anyhow::Result;
-use spacetimedb_lib::{
-    bsatn::{EncodeError, ToBsatn},
-    query::Delta,
-    sats::impl_serialize,
-    AlgebraicValue, ProductValue,
-};
+use core::hash::{Hash, Hasher};
+use core::ops::RangeBounds;
+use spacetimedb_lib::query::Delta;
 use spacetimedb_physical_plan::plan::{ProjectField, TupleField};
 use spacetimedb_primitives::{ColList, IndexId, TableId};
+use spacetimedb_sats::bsatn::{BufReservedFill, EncodeError, ToBsatn};
+use spacetimedb_sats::buffer::BufWriter;
 use spacetimedb_sats::product_value::InvalidFieldError;
+use spacetimedb_sats::{impl_serialize, AlgebraicValue, ProductValue};
 use spacetimedb_table::{static_assert_size, table::RowRef};
 
 pub mod dml;
@@ -157,7 +152,7 @@ impl ToBsatn for Row<'_> {
         }
     }
 
-    fn to_bsatn_extend(&self, buf: &mut Vec<u8>) -> std::result::Result<(), EncodeError> {
+    fn to_bsatn_extend(&self, buf: &mut (impl BufWriter + BufReservedFill)) -> std::result::Result<(), EncodeError> {
         match self {
             Self::Ptr(ptr) => ptr.to_bsatn_extend(buf),
             Self::Ref(val) => val.to_bsatn_extend(buf),
