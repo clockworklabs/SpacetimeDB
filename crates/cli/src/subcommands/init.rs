@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 pub fn cli() -> clap::Command {
     clap::Command::new("init")
-        .about(format!("Initializes a new spacetime project. {}", UNSTABLE_WARNING))
+        .about(format!("Initializes a new spacetime project. {UNSTABLE_WARNING}"))
         .arg(
             Arg::new("project-path")
                 .value_parser(clap::value_parser!(PathBuf))
@@ -40,7 +40,7 @@ fn check_for_cargo() -> bool {
             println!("{}", "Warning: You have created a rust project, but you are missing `cargo`. Visit https://www.rust-lang.org/tools/install for installation instructions:\n\n\tYou have created a rust project, but you are missing cargo.\n".yellow());
         }
         unsupported_os => {
-            println!("{}", format!("This OS may be unsupported: {}", unsupported_os).yellow());
+            println!("{}", format!("This OS may be unsupported: {unsupported_os}").yellow());
         }
     }
     false
@@ -107,14 +107,14 @@ fn check_for_git() -> bool {
             println!("{}", "Warning: You are missing git. You should install git from here:\n\n\thttps://git-scm.com/download/win\n".yellow());
         }
         unsupported_os => {
-            println!("{}", format!("This OS may be unsupported: {}", unsupported_os).yellow());
+            println!("{}", format!("This OS may be unsupported: {unsupported_os}").yellow());
         }
     }
     false
 }
 
 pub async fn exec(_config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    eprintln!("{}\n", UNSTABLE_WARNING);
+    eprintln!("{UNSTABLE_WARNING}\n");
 
     let project_path = args.get_one::<PathBuf>("project-path").unwrap();
     let project_lang = *args.get_one::<ModuleLanguage>("lang").unwrap();
