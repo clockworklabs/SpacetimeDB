@@ -11,7 +11,10 @@ pub mod de;
 pub mod hash;
 pub mod hex;
 pub mod layout;
-pub mod memory_usage;
+#[cfg(feature = "memory-usage")]
+mod memory_usage_impls;
+#[cfg(feature = "memory-usage")]
+pub use spacetimedb_memory_usage as memory_usage;
 pub mod meta_type;
 pub mod primitives;
 pub mod product_type;

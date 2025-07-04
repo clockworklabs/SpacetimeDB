@@ -35,11 +35,12 @@ use itertools::Either;
 use spacetimedb_client_api_messages::websocket::{Compression, WebsocketFormat};
 use spacetimedb_data_structures::map::HashSet;
 use spacetimedb_lib::db::auth::{StAccess, StTableType};
-use spacetimedb_lib::db::error::AuthError;
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::relation::DbTable;
-use spacetimedb_lib::{Identity, ProductValue};
+use spacetimedb_lib::Identity;
 use spacetimedb_primitives::TableId;
+use spacetimedb_sats::ProductValue;
+use spacetimedb_schema::def::error::AuthError;
+use spacetimedb_schema::relation::DbTable;
 use spacetimedb_subscription::SubscriptionPlan;
 use spacetimedb_vm::expr::{self, AuthAccess, IndexJoin, Query, QueryExpr, SourceExpr, SourceProvider, SourceSet};
 use spacetimedb_vm::rel_ops::RelOps;
@@ -664,9 +665,9 @@ mod tests {
     use super::*;
     use crate::db::relational_db::tests_utils::{begin_tx, TestDB};
     use crate::sql::compiler::compile_sql;
-    use spacetimedb_lib::relation::DbTable;
     use spacetimedb_lib::{error::ResultTest, identity::AuthCtx};
     use spacetimedb_sats::{product, AlgebraicType};
+    use spacetimedb_schema::relation::DbTable;
     use spacetimedb_vm::expr::{CrudExpr, IndexJoin, Query, SourceExpr};
 
     #[test]
