@@ -1,5 +1,6 @@
 use super::module_host::{EventStatus, ModuleHost, ModuleInfo, NoSuchModule};
 use super::scheduler::SchedulerStarter;
+use super::v8::V8Runtime;
 use super::wasmtime::WasmtimeRuntime;
 use super::{Scheduler, UpdateDatabaseResult};
 use crate::database_logger::DatabaseLogger;
@@ -106,12 +107,14 @@ pub struct HostController {
 
 struct HostRuntimes {
     wasmtime: WasmtimeRuntime,
+    v8: V8Runtime,
 }
 
 impl HostRuntimes {
     fn new(data_dir: Option<&ServerDataDir>) -> Arc<Self> {
         let wasmtime = WasmtimeRuntime::new(data_dir);
-        Arc::new(Self { wasmtime })
+        let v8 = V8Runtime::new();
+        Arc::new(Self { wasmtime, v8 })
     }
 }
 
@@ -668,18 +671,22 @@ async fn make_module_host(
     //       threads, but those aren't for computation. Also, wasmtime uses rayon
     //       to run compilation in parallel, so it'll need to run stuff in rayon anyway.
     asyncify(move || {
+        let mcc = ModuleCreationContext {
+            replica_ctx,
+            scheduler,
+            program: &program,
+            energy_monitor,
+        };
         let module_host = match host_type {
             HostType::Wasm => {
-                let mcc = ModuleCreationContext {
-                    replica_ctx,
-                    scheduler,
-                    program: &program,
-                    energy_monitor,
-                };
                 let start = Instant::now();
                 let actor = runtimes.wasmtime.make_actor(mcc)?;
                 trace!("wasmtime::make_actor blocked for {:?}", start.elapsed());
                 ModuleHost::new(actor, unregister, core)
+            }
+            HostType::Js => {
+                let actor = runtimes.v8.make_actor(mcc)?;
+                ModuleHost::new(actor, unregister)
             }
         };
         Ok((program, module_host))
