@@ -130,7 +130,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
     let host_url = config.get_host_url(server)?;
 
-    let builder = reqwest::Client::new().get(format!("{}/v1/database/{}/logs", host_url, database_identity));
+    let builder = reqwest::Client::new().get(format!("{host_url}/v1/database/{database_identity}/logs"));
     let builder = add_auth_header_opt(builder, &auth_header);
     let mut res = builder.query(&query_params).send().await?;
     let status = res.status();

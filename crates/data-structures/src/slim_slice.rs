@@ -1597,8 +1597,8 @@ mod tests {
     }
 
     fn debug_properties<T: Debug, U: ?Sized + Debug>(a: &T, b: &T, a_cmp: &U, b_cmp: &U) {
-        assert_eq!(format!("{:?}", a), format!("{:?}", a_cmp));
-        assert_eq!(format!("{:?}", b), format!("{:?}", b_cmp));
+        assert_eq!(format!("{a:?}"), format!("{:?}", a_cmp));
+        assert_eq!(format!("{b:?}"), format!("{:?}", b_cmp));
     }
 
     fn display_properties<T: Debug + Display, U: ?Sized + Display>(a: &T, b: &T, a_cmp: &U, b_cmp: &U) {

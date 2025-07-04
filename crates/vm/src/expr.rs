@@ -131,10 +131,10 @@ impl fmt::Display for FieldOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Field(x) => {
-                write!(f, "{}", x)
+                write!(f, "{x}")
             }
             Self::Cmp { op, lhs, rhs } => {
-                write!(f, "{} {} {}", lhs, op, rhs)
+                write!(f, "{lhs} {op} {rhs}")
             }
         }
     }
@@ -1987,10 +1987,10 @@ impl fmt::Display for Query {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Query::IndexScan(op) => {
-                write!(f, "index_scan {:?}", op)
+                write!(f, "index_scan {op:?}")
             }
             Query::IndexJoin(op) => {
-                write!(f, "index_join {:?}", op)
+                write!(f, "index_join {op:?}")
             }
             Query::Select(q) => {
                 write!(f, "select {q}")

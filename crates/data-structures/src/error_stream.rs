@@ -61,7 +61,7 @@
 //!     // single ErrorStream.
 //!     let (name, age, friends): (Name, Age, HashSet<Name>) =
 //!         (name, age, friends).combine_errors()?;
-//!     
+//!
 //!     Ok((name, age, friends))
 //! }
 //! ```
@@ -193,7 +193,7 @@ impl<E: fmt::Display> fmt::Display for ErrorStream<E> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "Errors occurred:")?;
         for error in self.iter() {
-            writeln!(f, "{}\n", error)?;
+            writeln!(f, "{error}\n")?;
         }
         Ok(())
     }

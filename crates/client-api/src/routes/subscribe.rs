@@ -151,14 +151,14 @@ where
         let ws = match ws_upgrade.upgrade(ws_config).await {
             Ok(ws) => ws,
             Err(err) => {
-                log::error!("WebSocket init error: {}", err);
+                log::error!("WebSocket init error: {err}");
                 return;
             }
         };
 
         match forwarded_for {
             Some(TypedHeader(XForwardedFor(ip))) => {
-                log::debug!("New client connected from ip {}", ip)
+                log::debug!("New client connected from ip {ip}")
             }
             None => log::debug!("New client connected from unknown ip"),
         }
@@ -346,7 +346,7 @@ async fn ws_client_actor_inner(
         let _ = unordered_tx.send(msg);
     })
     .await;
-    log::info!("Client connection ended: {}", client_id);
+    log::info!("Client connection ended: {client_id}");
 }
 
 /// The main `select!` loop of the websocket client actor.

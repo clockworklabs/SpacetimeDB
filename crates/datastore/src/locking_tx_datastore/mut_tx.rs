@@ -194,7 +194,7 @@ impl MutTxId {
         }
 
         let table_name = table_schema.table_name.clone();
-        log::trace!("TABLE CREATING: {}", table_name);
+        log::trace!("TABLE CREATING: {table_name}");
 
         // Insert the table row into `st_tables`
         // NOTE: Because `st_tables` has a unique index on `table_name`, this will
@@ -274,7 +274,7 @@ impl MutTxId {
             self.create_sequence(seq)?;
         }
 
-        log::trace!("TABLE CREATED: {}, table_id: {table_id}", table_name);
+        log::trace!("TABLE CREATED: {table_name}, table_id: {table_id}");
 
         Ok(table_id)
     }
@@ -575,7 +575,7 @@ impl MutTxId {
     }
 
     pub fn drop_index(&mut self, index_id: IndexId) -> Result<()> {
-        log::trace!("INDEX DROPPING: {}", index_id);
+        log::trace!("INDEX DROPPING: {index_id}");
         // Find the index in `st_indexes`.
         let st_index_ref = self
             .iter_by_col_eq(ST_INDEX_ID, StIndexFields::IndexId, &index_id.into())?
@@ -611,7 +611,7 @@ impl MutTxId {
             index_schema,
         ));
 
-        log::trace!("INDEX DROPPED: {}", index_id);
+        log::trace!("INDEX DROPPED: {index_id}");
         Ok(())
     }
 
@@ -899,7 +899,7 @@ impl MutTxId {
         self.sequence_state_lock.insert(Sequence::new(schema));
         self.push_schema_change(PendingSchemaChange::SequenceAdded(table_id, seq_id));
 
-        log::trace!("SEQUENCE CREATED: id = {}", seq_id);
+        log::trace!("SEQUENCE CREATED: id = {seq_id}");
 
         Ok(seq_id)
     }
