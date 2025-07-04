@@ -5,7 +5,10 @@ mod impls;
 #[cfg(feature = "serde")]
 pub mod serde;
 
+use crate::{algebraic_value::ser::ValueSerializer, bsatn, buffer::BufWriter, AlgebraicType};
 use core::fmt;
+use ethnum::{i256, u256};
+pub use spacetimedb_bindings_macro::Serialize;
 
 /// A data format that can deserialize any data structure supported by SATs.
 ///
@@ -128,7 +131,18 @@ pub trait Serializer: Sized {
     ///
     /// - `AlgebraicValue::decode(ty, &mut bsatn).is_ok()`.
     ///   That is, `bsatn` encodes a valid element of `ty`.
-    unsafe fn serialize_bsatn(self, ty: &AlgebraicType, bsatn: &[u8]) -> Result<Self::Ok, Self::Error>;
+    unsafe fn serialize_bsatn(self, ty: &AlgebraicType, bsatn: &[u8]) -> Result<Self::Ok, Self::Error> {
+        // TODO(Centril): Consider instead deserializing the `bsatn` through a
+        // deserializer that serializes into `self` directly.
+
+        // First convert the BSATN to an `AlgebraicValue`.
+        // SAFETY: Forward caller requirements of this method to that we are calling.
+        let res = unsafe { ValueSerializer.serialize_bsatn(ty, bsatn) };
+        let value = res.unwrap_or_else(|x| match x {});
+
+        // Then serialize that.
+        value.serialize(self)
+    }
 
     /// Serialize the given `bsatn` encoded data of type `ty`.
     ///
@@ -160,7 +174,19 @@ pub trait Serializer: Sized {
         ty: &AlgebraicType,
         total_bsatn_len: usize,
         bsatn: I,
-    ) -> Result<Self::Ok, Self::Error>;
+    ) -> Result<Self::Ok, Self::Error> {
+        // TODO(Centril): Unlike above, in this case we must at minimum concatenate `bsatn`
+        // before we can do the piping mentioned above, but that's better than
+        // serializing to `AlgebraicValue` first, so consider that.
+
+        // First convert the BSATN to an `AlgebraicValue`.
+        // SAFETY: Forward caller requirements of this method to that we are calling.
+        let res = unsafe { ValueSerializer.serialize_bsatn_in_chunks(ty, total_bsatn_len, bsatn) };
+        let value = res.unwrap_or_else(|x| match x {});
+
+        // Then serialize that.
+        value.serialize(self)
+    }
 
     /// Serialize the given `string`.
     ///
@@ -194,13 +220,17 @@ pub trait Serializer: Sized {
         self,
         total_len: usize,
         string: I,
-    ) -> Result<Self::Ok, Self::Error>;
+    ) -> Result<Self::Ok, Self::Error> {
+        // First convert the `string` to an `AlgebraicValue`.
+        // SAFETY: Forward caller requirements of this method to that we are calling.
+        let res = unsafe { ValueSerializer.serialize_str_in_chunks(total_len, string) };
+        let value = res.unwrap_or_else(|x| match x {});
+
+        // Then serialize that.
+        // This incurs a very minor cost of branching on `AlgebraicValue::String`.
+        value.serialize(self)
+    }
 }
-
-use ethnum::{i256, u256};
-pub use spacetimedb_bindings_macro::Serialize;
-
-use crate::{bsatn, buffer::BufWriter, AlgebraicType};
 
 /// A **data structure** that can be serialized into any data format supported by
 /// the SpacetimeDB Algebraic Type System.
