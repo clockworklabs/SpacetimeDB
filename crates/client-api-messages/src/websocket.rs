@@ -15,7 +15,7 @@
 //! rather than using an external mirror of this schema.
 
 use crate::energy::EnergyQuanta;
-use bytes::Bytes;
+use bytes::{Bytes, BytesMut};
 use bytestring::ByteString;
 use core::{
     fmt::Debug,
@@ -41,8 +41,15 @@ use std::{
 pub const TEXT_PROTOCOL: &str = "v1.json.spacetimedb";
 pub const BIN_PROTOCOL: &str = "v1.bsatn.spacetimedb";
 
+/// A source of row list builders for a given [`WebsocketFormat`].
+pub trait RowListBuilderSource<F: WebsocketFormat> {
+    /// Returns a row list builder from the source `self`.
+    fn take_row_list_builder(&self) -> F::ListBuilder;
+}
+
 /// A list of rows being built.
-pub trait RowListBuilder: Default {
+pub trait RowListBuilder {
+    /// The type of a finished list returned by [`RowListBuilder::finish`].
     type FinishedList;
 
     /// Push a row to the list in a serialized format.
@@ -98,13 +105,17 @@ pub trait WebsocketFormat: Sized {
         + Clone
         + Default;
 
-    /// The builder for [`Self::List`].
+    /// The builder for [`WebsocketFormat::List`].
     type ListBuilder: RowListBuilder<FinishedList = Self::List>;
 
     /// Encodes the `elems` to a list in the format and also returns the length of the list.
-    fn encode_list<R: ToBsatn + Serialize>(elems: impl Iterator<Item = R>) -> (Self::List, u64) {
+    ///
+    /// Needs to be provided with an empty [`WebsocketFormat::ListBuilder`].
+    fn encode_list<R: ToBsatn + Serialize>(
+        mut list: Self::ListBuilder,
+        elems: impl Iterator<Item = R>,
+    ) -> (Self::List, u64) {
         let mut num_rows = 0;
-        let mut list = Self::ListBuilder::default();
         for elem in elems {
             num_rows += 1;
             list.push(elem);
@@ -116,7 +127,7 @@ pub trait WebsocketFormat: Sized {
     /// This type exists so that some formats, e.g., BSATN, can compress an update.
     type QueryUpdate: SpacetimeType + for<'de> Deserialize<'de> + Serialize + Debug + Clone + Send;
 
-    /// Convert a `QueryUpdate` into `Self::QueryUpdate`.
+    /// Convert a `QueryUpdate` into [`WebsocketFormat::QueryUpdate`].
     /// This allows some formats to e.g., compress the update.
     fn into_query_update(qu: QueryUpdate<Self>, compression: Compression) -> Self::QueryUpdate;
 }
@@ -976,6 +987,11 @@ impl BsatnRowList {
         let data_range = self.size_hint.index_to_range(index, data_end)?;
         Some(self.rows_data.slice(data_range))
     }
+
+    /// Consumes the list and returns the parts.
+    pub fn into_inner(self) -> (RowSizeHint, Bytes) {
+        (self.size_hint, self.rows_data)
+    }
 }
 
 /// An iterator over all the elements in a [`BsatnRowList`].
@@ -1008,7 +1024,7 @@ pub struct BsatnRowListBuilder {
     /// intended to facilitate parallel decode purposes on large initial updates.
     size_hint: RowSizeHintBuilder,
     /// The flattened byte array for a list of rows.
-    rows_data: Vec<u8>,
+    rows_data: BytesMut,
 }
 
 /// A [`RowSizeHint`] under construction.
@@ -1093,6 +1109,14 @@ impl RowListBuilder for BsatnRowListBuilder {
         };
         let rows_data = rows_data.into();
         BsatnRowList { size_hint, rows_data }
+    }
+}
+
+impl BsatnRowListBuilder {
+    /// Returns a new builder using an empty [`BytesMut`] for the `rows_data` buffer.
+    pub fn new_from_bytes(rows_data: BytesMut) -> Self {
+        let size_hint = <_>::default();
+        Self { size_hint, rows_data }
     }
 }
 

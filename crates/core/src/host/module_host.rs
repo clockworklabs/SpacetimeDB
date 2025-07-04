@@ -28,7 +28,9 @@ use derive_more::From;
 use indexmap::IndexSet;
 use itertools::Itertools;
 use prometheus::{Histogram, IntGauge};
-use spacetimedb_client_api_messages::websocket::{ByteListLen, Compression, OneOffTable, QueryUpdate, WebsocketFormat};
+use spacetimedb_client_api_messages::websocket::{
+    ByteListLen, Compression, OneOffTable, QueryUpdate, RowListBuilderSource, WebsocketFormat,
+};
 use spacetimedb_data_structures::error_stream::ErrorStream;
 use spacetimedb_data_structures::map::{HashCollectionExt as _, IntMap};
 use spacetimedb_execution::pipelined::PipelinedProject;
@@ -134,9 +136,9 @@ impl UpdatesRelValue<'_> {
         !(self.deletes.is_empty() && self.inserts.is_empty())
     }
 
-    pub fn encode<F: WebsocketFormat>(&self) -> (F::QueryUpdate, u64, usize) {
-        let (deletes, nr_del) = F::encode_list(self.deletes.iter());
-        let (inserts, nr_ins) = F::encode_list(self.inserts.iter());
+    pub fn encode<F: WebsocketFormat>(&self, rlb_pool: &impl RowListBuilderSource<F>) -> (F::QueryUpdate, u64, usize) {
+        let (deletes, nr_del) = F::encode_list(rlb_pool.take_row_list_builder(), self.deletes.iter());
+        let (inserts, nr_ins) = F::encode_list(rlb_pool.take_row_list_builder(), self.inserts.iter());
         let num_rows = nr_del + nr_ins;
         let num_bytes = deletes.num_bytes() + inserts.num_bytes();
         let qu = QueryUpdate { deletes, inserts };
@@ -1033,6 +1035,7 @@ impl ModuleHost {
         client: Arc<ClientConnectionSender>,
         message_id: Vec<u8>,
         timer: Instant,
+        rlb_pool: impl 'static + Send + RowListBuilderSource<F>,
         // We take this because we only have a way to convert with the concrete types (Bsatn and Json)
         into_message: impl FnOnce(OneOffQueryResponseMessage<F>) -> SerializableMessage + Send + 'static,
     ) -> Result<(), anyhow::Error> {
@@ -1080,7 +1083,7 @@ impl ModuleHost {
                         .collect::<Vec<_>>();
 
                     // Execute the union and return the results
-                    execute_plan::<_, F>(&optimized, &DeltaTx::from(&*tx))
+                    execute_plan::<_, F>(&optimized, &DeltaTx::from(&*tx), &rlb_pool)
                         .map(|(rows, _, metrics)| (OneOffTable { table_name, rows }, metrics))
                         .context("One-off queries are not allowed to modify the database")
                 })();

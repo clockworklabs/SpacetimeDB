@@ -9,7 +9,7 @@ use crate::messages::websocket::TableUpdate;
 use crate::util::slow::SlowQueryLogger;
 use crate::vm::{build_query, TxMode};
 use spacetimedb_client_api_messages::websocket::{
-    Compression, QueryUpdate, RowListLen as _, SingleQueryUpdate, WebsocketFormat,
+    Compression, QueryUpdate, RowListBuilderSource, RowListLen as _, SingleQueryUpdate, WebsocketFormat,
 };
 use spacetimedb_lib::Identity;
 use spacetimedb_primitives::TableId;
@@ -240,6 +240,7 @@ impl ExecutionUnit {
         &self,
         db: &RelationalDB,
         tx: &Tx,
+        rlb_pool: &impl RowListBuilderSource<F>,
         sql: &str,
         slow_query_threshold: Option<Duration>,
         compression: Compression,
@@ -250,7 +251,7 @@ impl ExecutionUnit {
         let tx = &tx.into();
         let mut inserts = build_query(db, tx, &self.eval_plan, &mut NoInMemUsed);
         let inserts = inserts.iter();
-        let (inserts, num_rows) = F::encode_list(inserts);
+        let (inserts, num_rows) = F::encode_list(rlb_pool.take_row_list_builder(), inserts);
 
         (!inserts.is_empty()).then(|| {
             let deletes = F::List::default();
