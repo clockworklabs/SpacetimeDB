@@ -47,14 +47,14 @@ impl ProjectListExecutor {
         &self,
         tx: &Tx,
         metrics: &mut ExecutionMetrics,
-        f: &mut dyn FnMut(ProductValue) -> Result<()>,
+        mut f: impl FnMut(ProductValue) -> Result<()>,
     ) -> Result<()> {
         let mut n = 0;
         let mut bytes_scanned = 0;
         match self {
             Self::Name(plans) => {
                 for plan in plans {
-                    plan.execute(tx, metrics, &mut |row| {
+                    plan.execute(tx, metrics, |row| {
                         n += 1;
                         let row = row.to_product_value();
                         bytes_scanned += row.size_of();
@@ -64,7 +64,7 @@ impl ProjectListExecutor {
             }
             Self::List(plans, fields) => {
                 for plan in plans {
-                    plan.execute(tx, metrics, &mut |t| {
+                    plan.execute(tx, metrics, |t| {
                         n += 1;
                         let row = ProductValue::from_iter(fields.iter().map(|field| t.project(field)));
                         bytes_scanned += row.size_of();
@@ -73,7 +73,7 @@ impl ProjectListExecutor {
                 }
             }
             Self::Limit(plan, limit) => {
-                plan.execute(tx, metrics, &mut |row| {
+                plan.execute_dyn(tx, metrics, |row| {
                     n += 1;
                     if n <= *limit as usize {
                         f(row)?;
@@ -106,6 +106,16 @@ impl ProjectListExecutor {
         metrics.rows_scanned += n;
         metrics.bytes_scanned += bytes_scanned;
         Ok(())
+    }
+
+    pub fn execute_dyn<Tx: Datastore + DeltaStore>(
+        &self,
+        tx: &Tx,
+        metrics: &mut ExecutionMetrics,
+        mut f: impl FnMut(ProductValue) -> Result<()>,
+    ) -> Result<()> {
+        let f_dyn: &mut dyn FnMut(ProductValue) -> Result<()> = &mut f;
+        self.execute(tx, metrics, f_dyn)
     }
 }
 
@@ -147,7 +157,7 @@ impl PipelinedProject {
         &self,
         tx: &'a Tx,
         metrics: &mut ExecutionMetrics,
-        f: &mut dyn FnMut(Row<'a>) -> Result<()>,
+        mut f: impl FnMut(Row<'a>) -> Result<()>,
     ) -> Result<()> {
         let mut n = 0;
         match self {
@@ -155,7 +165,7 @@ impl PipelinedProject {
                 // No explicit projection.
                 // This means the input does not return tuples.
                 // It returns either row ids or product values.
-                plan.execute(tx, metrics, &mut |t| {
+                plan.execute(tx, metrics, |t| {
                     n += 1;
                     if let Tuple::Row(row) = t {
                         f(row)?;
@@ -166,7 +176,7 @@ impl PipelinedProject {
             Self::Some(plan, i) => {
                 // The contrary is true for explicit projections.
                 // They return a tuple of row ids or product values.
-                plan.execute(tx, metrics, &mut |t| {
+                plan.execute(tx, metrics, |t| {
                     n += 1;
                     if let Some(row) = t.select(*i) {
                         f(row)?;
@@ -317,7 +327,7 @@ impl PipelinedExecutor {
         &self,
         tx: &'a Tx,
         metrics: &mut ExecutionMetrics,
-        f: &mut dyn FnMut(Tuple<'a>) -> Result<()>,
+        f: impl FnMut(Tuple<'a>) -> Result<()>,
     ) -> Result<()> {
         match self {
             Self::TableScan(scan) => scan.execute(tx, metrics, f),
@@ -330,6 +340,16 @@ impl PipelinedExecutor {
             Self::Filter(filter) => filter.execute(tx, metrics, f),
             Self::Limit(limit) => limit.execute(tx, metrics, f),
         }
+    }
+
+    pub fn execute_dyn<'a, Tx: Datastore + DeltaStore>(
+        &self,
+        tx: &'a Tx,
+        metrics: &mut ExecutionMetrics,
+        mut f: impl FnMut(Tuple<'a>) -> Result<()>,
+    ) -> Result<()> {
+        let f_dyn: &mut dyn FnMut(Tuple<'a>) -> Result<()> = &mut f;
+        self.execute(tx, metrics, f_dyn)
     }
 }
 
@@ -355,7 +375,7 @@ impl PipelinedScan {
         &self,
         tx: &'a Tx,
         metrics: &mut ExecutionMetrics,
-        f: &mut dyn FnMut(Tuple<'a>) -> Result<()>,
+        mut f: impl FnMut(Tuple<'a>) -> Result<()>,
     ) -> Result<()> {
         // A physical table scan
         let table_scan = || tx.table_scan(self.table);
@@ -506,7 +526,7 @@ impl PipelinedIxDeltaScan {
         &self,
         tx: &'a Tx,
         metrics: &mut ExecutionMetrics,
-        f: &mut dyn FnMut(Tuple<'a>) -> Result<()>,
+        mut f: impl FnMut(Tuple<'a>) -> Result<()>,
     ) -> Result<()> {
         let mut n = 0;
         let mut f = |t| {
@@ -625,7 +645,7 @@ impl PipelinedIxScan {
         &self,
         tx: &'a Tx,
         metrics: &mut ExecutionMetrics,
-        f: &mut dyn FnMut(Tuple<'a>) -> Result<()>,
+        mut f: impl FnMut(Tuple<'a>) -> Result<()>,
     ) -> Result<()> {
         // A single column index scan
         let single_col_scan = || {
@@ -726,7 +746,7 @@ impl PipelinedIxJoin {
         &self,
         tx: &'a Tx,
         metrics: &mut ExecutionMetrics,
-        f: &mut dyn FnMut(Tuple<'a>) -> Result<()>,
+        mut f: impl FnMut(Tuple<'a>) -> Result<()>,
     ) -> Result<()> {
         let rhs_index = get_index(tx, self.rhs_table, self.rhs_index)?;
 
@@ -744,7 +764,7 @@ impl PipelinedIxJoin {
             } => {
                 // Should we evaluate the lhs tuple?
                 // Probe the index to see if there is a matching row.
-                lhs.execute(tx, metrics, &mut |u| {
+                lhs.execute_dyn(tx, metrics, |u| {
                     n += 1;
                     index_seeks += 1;
                     if rhs_index
@@ -764,7 +784,7 @@ impl PipelinedIxJoin {
                 ..
             } => {
                 // Probe the index and evaluate the matching rhs row
-                lhs.execute(tx, metrics, &mut |u| {
+                lhs.execute_dyn(tx, metrics, |u| {
                     n += 1;
                     index_seeks += 1;
                     if let Some(v) = rhs_index
@@ -786,7 +806,7 @@ impl PipelinedIxJoin {
                 ..
             } => {
                 // Probe the index and evaluate the matching rhs row
-                lhs.execute(tx, metrics, &mut |u| {
+                lhs.execute_dyn(tx, metrics, |u| {
                     n += 1;
                     index_seeks += 1;
                     if let Some(v) = rhs_index
@@ -809,7 +829,7 @@ impl PipelinedIxJoin {
             } => {
                 // How many times should we evaluate the lhs tuple?
                 // Probe the index for the number of matching rows.
-                lhs.execute(tx, metrics, &mut |u| {
+                lhs.execute_dyn(tx, metrics, |u| {
                     n += 1;
                     index_seeks += 1;
                     if let Some(n) = rhs_index.index().count(&project(&u, lhs_field, &mut bytes_scanned)) {
@@ -828,7 +848,7 @@ impl PipelinedIxJoin {
                 ..
             } => {
                 // Probe the index and evaluate the matching rhs rows
-                lhs.execute(tx, metrics, &mut |u| {
+                lhs.execute_dyn(tx, metrics, |u| {
                     n += 1;
                     index_seeks += 1;
                     for v in rhs_index
@@ -849,7 +869,7 @@ impl PipelinedIxJoin {
                 ..
             } => {
                 // Probe the index and evaluate the matching rhs rows
-                lhs.execute(tx, metrics, &mut |u| {
+                lhs.execute_dyn(tx, metrics, |u| {
                     n += 1;
                     index_seeks += 1;
                     for v in rhs_index
@@ -908,7 +928,7 @@ impl PipelinedIxDeltaJoin {
         &self,
         tx: &'a Tx,
         metrics: &mut ExecutionMetrics,
-        f: &mut dyn FnMut(Tuple<'a>) -> Result<()>,
+        mut f: impl FnMut(Tuple<'a>) -> Result<()>,
     ) -> Result<()> {
         let mut n = 0;
         let mut index_seeks = 0;
@@ -924,7 +944,7 @@ impl PipelinedIxDeltaJoin {
             } => {
                 // Should we evaluate the lhs tuple?
                 // Probe the index to see if there is a matching row.
-                lhs.execute(tx, metrics, &mut |u| {
+                lhs.execute_dyn(tx, metrics, |u| {
                     n += 1;
                     index_seeks += 1;
                     if tx
@@ -950,7 +970,7 @@ impl PipelinedIxDeltaJoin {
                 ..
             } => {
                 // Probe the index and evaluate the matching rhs row
-                lhs.execute(tx, metrics, &mut |u| {
+                lhs.execute_dyn(tx, metrics, |u| {
                     n += 1;
                     index_seeks += 1;
                     if let Some(v) = tx
@@ -976,7 +996,7 @@ impl PipelinedIxDeltaJoin {
                 ..
             } => {
                 // Probe the index and evaluate the matching rhs row
-                lhs.execute(tx, metrics, &mut |u| {
+                lhs.execute_dyn(tx, metrics, |u| {
                     n += 1;
                     index_seeks += 1;
                     if let Some(v) = tx
@@ -1003,7 +1023,7 @@ impl PipelinedIxDeltaJoin {
             } => {
                 // How many times should we evaluate the lhs tuple?
                 // Probe the index for the number of matching rows.
-                lhs.execute(tx, metrics, &mut |u| {
+                lhs.execute_dyn(tx, metrics, |u| {
                     n += 1;
                     index_seeks += 1;
                     for _ in 0..tx
@@ -1028,7 +1048,7 @@ impl PipelinedIxDeltaJoin {
                 ..
             } => {
                 // Probe the index and evaluate the matching rhs rows
-                lhs.execute(tx, metrics, &mut |u| {
+                lhs.execute_dyn(tx, metrics, |u| {
                     n += 1;
                     index_seeks += 1;
                     for v in tx
@@ -1053,7 +1073,7 @@ impl PipelinedIxDeltaJoin {
                 ..
             } => {
                 // Probe the index and evaluate the matching rhs rows
-                lhs.execute(tx, metrics, &mut |u| {
+                lhs.execute_dyn(tx, metrics, |u| {
                     n += 1;
                     index_seeks += 1;
                     for v in tx
@@ -1101,7 +1121,7 @@ impl BlockingHashJoin {
         &self,
         tx: &'a Tx,
         metrics: &mut ExecutionMetrics,
-        f: &mut dyn FnMut(Tuple<'a>) -> Result<()>,
+        mut f: impl FnMut(Tuple<'a>) -> Result<()>,
     ) -> Result<()> {
         let mut n = 0;
         let mut bytes_scanned = 0;
@@ -1115,7 +1135,7 @@ impl BlockingHashJoin {
                 semijoin: Semi::Lhs,
             } => {
                 let mut rhs_table = HashSet::new();
-                rhs.execute(tx, metrics, &mut |v| {
+                rhs.execute_dyn(tx, metrics, |v| {
                     rhs_table.insert(project(&v, rhs_field, &mut bytes_scanned));
                     Ok(())
                 })?;
@@ -1123,7 +1143,7 @@ impl BlockingHashJoin {
                 // How many rows did we pull from the rhs?
                 n += rhs_table.len();
 
-                lhs.execute(tx, metrics, &mut |u| {
+                lhs.execute_dyn(tx, metrics, |u| {
                     n += 1;
                     if rhs_table.contains(&project(&u, lhs_field, &mut bytes_scanned)) {
                         f(u)?;
@@ -1140,7 +1160,7 @@ impl BlockingHashJoin {
                 semijoin: Semi::Rhs,
             } => {
                 let mut rhs_table = HashMap::new();
-                rhs.execute(tx, metrics, &mut |v| {
+                rhs.execute_dyn(tx, metrics, |v| {
                     rhs_table.insert(project(&v, rhs_field, &mut bytes_scanned), v);
                     Ok(())
                 })?;
@@ -1148,7 +1168,7 @@ impl BlockingHashJoin {
                 // How many rows did we pull from the rhs?
                 n += rhs_table.len();
 
-                lhs.execute(tx, metrics, &mut |u| {
+                lhs.execute_dyn(tx, metrics, |u| {
                     n += 1;
                     if let Some(v) = rhs_table.get(&project(&u, lhs_field, &mut bytes_scanned)) {
                         f(v.clone())?;
@@ -1165,7 +1185,7 @@ impl BlockingHashJoin {
                 semijoin: Semi::All,
             } => {
                 let mut rhs_table = HashMap::new();
-                rhs.execute(tx, metrics, &mut |v| {
+                rhs.execute_dyn(tx, metrics, |v| {
                     rhs_table.insert(project(&v, rhs_field, &mut bytes_scanned), v);
                     Ok(())
                 })?;
@@ -1173,7 +1193,7 @@ impl BlockingHashJoin {
                 // How many rows did we pull from the rhs?
                 n += rhs_table.len();
 
-                lhs.execute(tx, metrics, &mut |u| {
+                lhs.execute_dyn(tx, metrics, |u| {
                     n += 1;
                     if let Some(v) = rhs_table.get(&project(&u, lhs_field, &mut bytes_scanned)) {
                         f(u.clone().join(v.clone()))?;
@@ -1190,7 +1210,7 @@ impl BlockingHashJoin {
                 semijoin: Semi::Lhs,
             } => {
                 let mut rhs_table = HashMap::new();
-                rhs.execute(tx, metrics, &mut |v| {
+                rhs.execute_dyn(tx, metrics, |v| {
                     n += 1;
                     rhs_table
                         .entry(project(&v, rhs_field, &mut bytes_scanned))
@@ -1198,7 +1218,7 @@ impl BlockingHashJoin {
                         .or_insert(1);
                     Ok(())
                 })?;
-                lhs.execute(tx, metrics, &mut |u| {
+                lhs.execute_dyn(tx, metrics, |u| {
                     n += 1;
                     if let Some(n) = rhs_table.get(&project(&u, lhs_field, &mut bytes_scanned)).copied() {
                         for _ in 0..n {
@@ -1217,7 +1237,7 @@ impl BlockingHashJoin {
                 semijoin: Semi::Rhs,
             } => {
                 let mut rhs_table: HashMap<AlgebraicValue, Vec<_>> = HashMap::new();
-                rhs.execute(tx, metrics, &mut |v| {
+                rhs.execute_dyn(tx, metrics, |v| {
                     n += 1;
                     let key = project(&v, rhs_field, &mut bytes_scanned);
                     if let Some(tuples) = rhs_table.get_mut(&key) {
@@ -1227,7 +1247,7 @@ impl BlockingHashJoin {
                     }
                     Ok(())
                 })?;
-                lhs.execute(tx, metrics, &mut |u| {
+                lhs.execute_dyn(tx, metrics, |u| {
                     n += 1;
                     if let Some(rhs_tuples) = rhs_table.get(&project(&u, lhs_field, &mut bytes_scanned)) {
                         for v in rhs_tuples {
@@ -1246,7 +1266,7 @@ impl BlockingHashJoin {
                 semijoin: Semi::All,
             } => {
                 let mut rhs_table: HashMap<AlgebraicValue, Vec<_>> = HashMap::new();
-                rhs.execute(tx, metrics, &mut |v| {
+                rhs.execute_dyn(tx, metrics, |v| {
                     n += 1;
                     let key = project(&v, rhs_field, &mut bytes_scanned);
                     if let Some(tuples) = rhs_table.get_mut(&key) {
@@ -1256,7 +1276,7 @@ impl BlockingHashJoin {
                     }
                     Ok(())
                 })?;
-                lhs.execute(tx, metrics, &mut |u| {
+                lhs.execute_dyn(tx, metrics, |u| {
                     n += 1;
                     if let Some(rhs_tuples) = rhs_table.get(&project(&u, lhs_field, &mut bytes_scanned)) {
                         for v in rhs_tuples {
@@ -1292,10 +1312,10 @@ impl BlockingNLJoin {
         &self,
         tx: &'a Tx,
         metrics: &mut ExecutionMetrics,
-        f: &mut dyn FnMut(Tuple<'a>) -> Result<()>,
+        mut f: impl FnMut(Tuple<'a>) -> Result<()>,
     ) -> Result<()> {
         let mut rhs = vec![];
-        self.rhs.execute(tx, metrics, &mut |v| {
+        self.rhs.execute_dyn(tx, metrics, |v| {
             rhs.push(v);
             Ok(())
         })?;
@@ -1303,7 +1323,7 @@ impl BlockingNLJoin {
         // How many rows did we pull from the rhs?
         let mut n = rhs.len();
 
-        self.lhs.execute(tx, metrics, &mut |u| {
+        self.lhs.execute_dyn(tx, metrics, |u| {
             n += 1;
             for v in rhs.iter() {
                 f(u.clone().join(v.clone()))?;
@@ -1333,11 +1353,11 @@ impl PipelinedFilter {
         &self,
         tx: &'a Tx,
         metrics: &mut ExecutionMetrics,
-        f: &mut dyn FnMut(Tuple<'a>) -> Result<()>,
+        mut f: impl FnMut(Tuple<'a>) -> Result<()>,
     ) -> Result<()> {
         let mut n = 0;
         let mut bytes_scanned = 0;
-        self.input.execute(tx, metrics, &mut |t| {
+        self.input.execute_dyn(tx, metrics, |t| {
             n += 1;
             if self.expr.eval_bool_with_metrics(&t, &mut bytes_scanned) {
                 f(t)?;
@@ -1368,10 +1388,10 @@ impl PipelinedLimit {
         &self,
         tx: &'a Tx,
         metrics: &mut ExecutionMetrics,
-        f: &mut dyn FnMut(Tuple<'a>) -> Result<()>,
+        mut f: impl FnMut(Tuple<'a>) -> Result<()>,
     ) -> Result<()> {
         let mut n = 0;
-        self.input.execute(tx, metrics, &mut |t| {
+        self.input.execute_dyn(tx, metrics, |t| {
             n += 1;
             if n <= self.limit as usize {
                 f(t)?;

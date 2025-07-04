@@ -63,11 +63,11 @@ impl Fragments {
         &self,
         tx: &'a Tx,
         metrics: &mut ExecutionMetrics,
-        f: &mut dyn FnMut(Row<'a>) -> Result<()>,
+        mut f: impl FnMut(Row<'a>) -> Result<()>,
     ) -> Result<()> {
         for plan in &self.insert_plans {
             if !plan.is_empty(tx) {
-                plan.execute(tx, metrics, f)?;
+                plan.execute(tx, metrics, &mut f)?;
             }
         }
         Ok(())
@@ -80,11 +80,11 @@ impl Fragments {
         &self,
         tx: &'a Tx,
         metrics: &mut ExecutionMetrics,
-        f: &mut dyn FnMut(Row<'a>) -> Result<()>,
+        mut f: impl FnMut(Row<'a>) -> Result<()>,
     ) -> Result<()> {
         for plan in &self.delete_plans {
             if !plan.is_empty(tx) {
-                plan.execute(tx, metrics, f)?;
+                plan.execute(tx, metrics, &mut f)?;
             }
         }
         Ok(())
@@ -393,7 +393,7 @@ impl SubscriptionPlan {
         &self,
         tx: &'a Tx,
         metrics: &mut ExecutionMetrics,
-        f: &mut dyn FnMut(Row<'a>) -> Result<()>,
+        f: impl FnMut(Row<'a>) -> Result<()>,
     ) -> Result<()> {
         self.fragments.for_each_insert(tx, metrics, f)
     }
@@ -405,7 +405,7 @@ impl SubscriptionPlan {
         &self,
         tx: &'a Tx,
         metrics: &mut ExecutionMetrics,
-        f: &mut dyn FnMut(Row<'a>) -> Result<()>,
+        f: impl FnMut(Row<'a>) -> Result<()>,
     ) -> Result<()> {
         self.fragments.for_each_delete(tx, metrics, f)
     }

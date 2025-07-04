@@ -33,12 +33,12 @@ pub fn eval_delta<'a, Tx: Datastore + DeltaStore>(
     if !plan.is_join() {
         // Single table plans will never return redundant rows,
         // so there's no need to track row counts.
-        plan.for_each_insert(tx, metrics, &mut |row| {
+        plan.for_each_insert(tx, metrics, |row| {
             inserts.push(row.into());
             Ok(())
         })?;
 
-        plan.for_each_delete(tx, metrics, &mut |row| {
+        plan.for_each_delete(tx, metrics, |row| {
             deletes.push(row.into());
             Ok(())
         })?;

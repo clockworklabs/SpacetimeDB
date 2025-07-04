@@ -87,7 +87,7 @@ impl DeleteExecutor {
     fn execute<Tx: MutDatastore>(&self, tx: &mut Tx, metrics: &mut ExecutionMetrics) -> Result<()> {
         // TODO: Delete by row id instead of product value
         let mut deletes = vec![];
-        self.filter.execute(tx, metrics, &mut |row| {
+        self.filter.execute(tx, metrics, |row| {
             deletes.push(row.to_product_value());
             Ok(())
         })?;
@@ -124,7 +124,7 @@ impl From<UpdatePlan> for UpdateExecutor {
 impl UpdateExecutor {
     fn execute<Tx: MutDatastore>(&self, tx: &mut Tx, metrics: &mut ExecutionMetrics) -> Result<()> {
         let mut deletes = vec![];
-        self.filter.execute(tx, metrics, &mut |row| {
+        self.filter.execute(tx, metrics, |row| {
             deletes.push(row.to_product_value());
             Ok(())
         })?;
