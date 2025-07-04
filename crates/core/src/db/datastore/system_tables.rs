@@ -816,12 +816,15 @@ pub struct ModuleKind(u8);
 impl ModuleKind {
     /// The [`ModuleKind`] of WASM-based modules.
     pub const WASM: ModuleKind = ModuleKind(0);
+    /// The [`ModuleKind`] of JS modules.
+    pub const JS: ModuleKind = ModuleKind(1);
 }
 
 impl From<crate::messages::control_db::HostType> for ModuleKind {
     fn from(host_type: crate::messages::control_db::HostType) -> Self {
         match host_type {
             crate::messages::control_db::HostType::Wasm => Self::WASM,
+            crate::messages::control_db::HostType::Js => Self::JS,
         }
     }
 }

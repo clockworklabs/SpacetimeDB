@@ -16,8 +16,10 @@ mod host_controller;
 pub mod module_host;
 pub mod scheduler;
 pub mod wasmtime;
+
 // Visible for integration testing.
 pub mod instance_env;
+pub mod v8; // only pub for testing
 mod wasm_common;
 
 pub use disk_storage::DiskStorage;
