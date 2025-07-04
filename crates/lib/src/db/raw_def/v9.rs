@@ -493,12 +493,17 @@ impl RawModuleDefV9Builder {
     pub fn build_table_with_new_type(
         &mut self,
         table_name: impl Into<RawIdentifier>,
-        product_type: spacetimedb_sats::ProductType,
+        product_type: impl Into<spacetimedb_sats::ProductType>,
         custom_ordering: bool,
     ) -> RawTableDefBuilder {
         let table_name = table_name.into();
 
-        let product_type_ref = self.add_algebraic_type([], table_name.clone(), product_type.into(), custom_ordering);
+        let product_type_ref = self.add_algebraic_type(
+            [],
+            table_name.clone(),
+            AlgebraicType::from(product_type.into()),
+            custom_ordering,
+        );
 
         self.build_table(table_name, product_type_ref)
     }
