@@ -5572,6 +5572,7 @@ name = "spacetimedb-data-structures"
 version = "1.2.0"
 dependencies = [
  "ahash 0.8.12",
+ "crossbeam-queue",
  "hashbrown 0.15.3",
  "nohash-hasher",
  "serde",
