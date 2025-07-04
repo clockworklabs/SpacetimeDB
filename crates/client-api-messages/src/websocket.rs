@@ -19,6 +19,7 @@ use bytes::Bytes;
 use bytestring::ByteString;
 use core::{
     fmt::Debug,
+    mem,
     ops::{Deref, Range},
 };
 use enum_as_inner::EnumAsInner;
@@ -40,8 +41,19 @@ use std::{
 pub const TEXT_PROTOCOL: &str = "v1.json.spacetimedb";
 pub const BIN_PROTOCOL: &str = "v1.bsatn.spacetimedb";
 
+/// A list of rows being built.
+pub trait RowListBuilder: Default {
+    type FinishedList;
+
+    /// Push a row to the list in a serialized format.
+    fn push(&mut self, row: impl ToBsatn + Serialize);
+
+    /// Finish the in flight list, throwing away the capability to mutate.
+    fn finish(self) -> Self::FinishedList;
+}
+
 pub trait RowListLen {
-    /// Returns the length of the list.
+    /// Returns the length, in number of rows, not bytes, of the row list.
     fn len(&self) -> usize;
     /// Returns whether the list is empty or not.
     fn is_empty(&self) -> bool {
@@ -86,8 +98,19 @@ pub trait WebsocketFormat: Sized {
         + Clone
         + Default;
 
+    /// The builder for [`Self::List`].
+    type ListBuilder: RowListBuilder<FinishedList = Self::List>;
+
     /// Encodes the `elems` to a list in the format and also returns the length of the list.
-    fn encode_list<R: ToBsatn + Serialize>(elems: impl Iterator<Item = R>) -> (Self::List, u64);
+    fn encode_list<R: ToBsatn + Serialize>(elems: impl Iterator<Item = R>) -> (Self::List, u64) {
+        let mut num_rows = 0;
+        let mut list = Self::ListBuilder::default();
+        for elem in elems {
+            num_rows += 1;
+            list.push(elem);
+        }
+        (list.finish(), num_rows)
+    }
 
     /// The type used to encode query updates.
     /// This type exists so that some formats, e.g., BSATN, can compress an update.
@@ -758,20 +781,23 @@ impl WebsocketFormat for JsonFormat {
     type Single = ByteString;
 
     type List = Vec<ByteString>;
-
-    fn encode_list<R: ToBsatn + Serialize>(elems: impl Iterator<Item = R>) -> (Self::List, u64) {
-        let mut count = 0;
-        let list = elems
-            .map(|elem| serde_json::to_string(&SerializeWrapper::new(elem)).unwrap().into())
-            .inspect(|_| count += 1)
-            .collect();
-        (list, count)
-    }
+    type ListBuilder = Self::List;
 
     type QueryUpdate = QueryUpdate<Self>;
 
     fn into_query_update(qu: QueryUpdate<Self>, _: Compression) -> Self::QueryUpdate {
         qu
+    }
+}
+
+impl RowListBuilder for Vec<ByteString> {
+    type FinishedList = Self;
+    fn push(&mut self, row: impl ToBsatn + Serialize) {
+        let value = serde_json::to_string(&SerializeWrapper::new(row)).unwrap().into();
+        self.push(value);
+    }
+    fn finish(self) -> Self::FinishedList {
+        self
     }
 }
 
@@ -783,33 +809,7 @@ impl WebsocketFormat for BsatnFormat {
     type Single = Box<[u8]>;
 
     type List = BsatnRowList;
-
-    fn encode_list<R: ToBsatn + Serialize>(mut elems: impl Iterator<Item = R>) -> (Self::List, u64) {
-        // For an empty list, the size of a row is unknown, so use `RowOffsets`.
-        let Some(first) = elems.next() else {
-            return (BsatnRowList::row_offsets(), 0);
-        };
-        // We have at least one row. Determine the static size from that, if available.
-        let (mut list, mut scratch) = match first.static_bsatn_size() {
-            Some(size) => (BsatnRowListBuilder::fixed(size), Vec::with_capacity(size as usize)),
-            None => (BsatnRowListBuilder::row_offsets(), Vec::new()),
-        };
-        // Add the first element and then the rest.
-        // We assume that the schema of rows yielded by `elems` stays the same,
-        // so once the size is fixed, it will stay that way.
-        let mut count = 0;
-        let mut push = |elem: R| {
-            elem.to_bsatn_extend(&mut scratch).unwrap();
-            list.push(&scratch);
-            scratch.clear();
-            count += 1;
-        };
-        push(first);
-        for elem in elems {
-            push(elem);
-        }
-        (list.finish(), count)
-    }
+    type ListBuilder = BsatnRowListBuilder;
 
     type QueryUpdate = CompressableQueryUpdate<Self>;
 
@@ -896,20 +896,14 @@ type RowSize = u16;
 type RowOffset = u64;
 
 /// A packed list of BSATN-encoded rows.
-#[derive(SpacetimeType, Debug, Clone)]
+#[derive(SpacetimeType, Debug, Clone, Default)]
 #[sats(crate = spacetimedb_lib)]
-pub struct BsatnRowList<B = Bytes, I = Arc<[RowOffset]>> {
+pub struct BsatnRowList {
     /// A size hint about `rows_data`
     /// intended to facilitate parallel decode purposes on large initial updates.
-    size_hint: RowSizeHint<I>,
+    size_hint: RowSizeHint,
     /// The flattened byte array for a list of rows.
-    rows_data: B,
-}
-
-impl Default for BsatnRowList {
-    fn default() -> Self {
-        Self::row_offsets()
-    }
+    rows_data: Bytes,
 }
 
 /// NOTE(centril, 1.0): We might want to add a `None` variant to this
@@ -917,17 +911,23 @@ impl Default for BsatnRowList {
 /// The use-case for this is clients who are bandwidth limited and where every byte counts.
 #[derive(SpacetimeType, Debug, Clone)]
 #[sats(crate = spacetimedb_lib)]
-pub enum RowSizeHint<I> {
+pub enum RowSizeHint {
     /// Each row in `rows_data` is of the same fixed size as specified here.
     FixedSize(RowSize),
     /// The offsets into `rows_data` defining the boundaries of each row.
     /// Only stores the offset to the start of each row.
     /// The ends of each row is inferred from the start of the next row, or `rows_data.len()`.
     /// The behavior of this is identical to that of `PackedStr`.
-    RowOffsets(I),
+    RowOffsets(Arc<[RowOffset]>),
 }
 
-impl<I: AsRef<[RowOffset]>> RowSizeHint<I> {
+impl Default for RowSizeHint {
+    fn default() -> Self {
+        Self::RowOffsets([].into())
+    }
+}
+
+impl RowSizeHint {
     fn index_to_range(&self, index: usize, data_end: usize) -> Option<Range<usize>> {
         match self {
             Self::FixedSize(size) => {
@@ -952,37 +952,17 @@ impl<I: AsRef<[RowOffset]>> RowSizeHint<I> {
     }
 }
 
-impl<B: Default, I> BsatnRowList<B, I> {
-    pub fn fixed(row_size: RowSize) -> Self {
-        Self {
-            size_hint: RowSizeHint::FixedSize(row_size),
-            rows_data: <_>::default(),
-        }
-    }
-
-    /// Returns a new empty list using indices
-    pub fn row_offsets() -> Self
-    where
-        I: From<[RowOffset; 0]>,
-    {
-        Self {
-            size_hint: RowSizeHint::RowOffsets([].into()),
-            rows_data: <_>::default(),
-        }
-    }
-}
-
-impl<B: AsRef<[u8]>, I: AsRef<[RowOffset]>> RowListLen for BsatnRowList<B, I> {
-    /// Returns the length of the row list.
+impl RowListLen for BsatnRowList {
     fn len(&self) -> usize {
         match &self.size_hint {
+            // `size != 0` is always the case for `FixedSize`.
             RowSizeHint::FixedSize(size) => self.rows_data.as_ref().len() / *size as usize,
             RowSizeHint::RowOffsets(offsets) => offsets.as_ref().len(),
         }
     }
 }
 
-impl<B: AsRef<[u8]>, I> ByteListLen for BsatnRowList<B, I> {
+impl ByteListLen for BsatnRowList {
     /// Returns the uncompressed size of the list in bytes
     fn num_bytes(&self) -> usize {
         self.rows_data.as_ref().len()
@@ -1022,26 +1002,100 @@ impl Iterator for BsatnRowListIter<'_> {
 }
 
 /// A [`BsatnRowList`] that can be added to.
-pub type BsatnRowListBuilder = BsatnRowList<Vec<u8>, Vec<RowOffset>>;
+#[derive(Default)]
+pub struct BsatnRowListBuilder {
+    /// A size hint about `rows_data`
+    /// intended to facilitate parallel decode purposes on large initial updates.
+    size_hint: RowSizeHintBuilder,
+    /// The flattened byte array for a list of rows.
+    rows_data: Vec<u8>,
+}
 
-impl BsatnRowListBuilder {
-    /// Adds `row`, BSATN-encoded to this list.
-    #[inline]
-    pub fn push(&mut self, row: &[u8]) {
-        if let RowSizeHint::RowOffsets(offsets) = &mut self.size_hint {
-            offsets.push(self.rows_data.len() as u64);
-        }
-        self.rows_data.extend_from_slice(row);
+/// A [`RowSizeHint`] under construction.
+pub enum RowSizeHintBuilder {
+    /// We haven't seen any rows yet.
+    Empty,
+    /// Each row in `rows_data` is of the same fixed size as specified here
+    /// but we don't know whether the size fits in `RowSize`
+    /// and we don't know whether future rows will also have this size.
+    FixedSizeDyn(usize),
+    /// Each row in `rows_data` is of the same fixed size as specified here
+    /// and we know that this will be the case for future rows as well.
+    FixedSizeStatic(RowSize),
+    /// The offsets into `rows_data` defining the boundaries of each row.
+    /// Only stores the offset to the start of each row.
+    /// The ends of each row is inferred from the start of the next row, or `rows_data.len()`.
+    /// The behavior of this is identical to that of `PackedStr`.
+    RowOffsets(Vec<RowOffset>),
+}
+
+impl Default for RowSizeHintBuilder {
+    fn default() -> Self {
+        Self::Empty
+    }
+}
+
+impl RowListBuilder for BsatnRowListBuilder {
+    type FinishedList = BsatnRowList;
+
+    fn push(&mut self, row: impl ToBsatn + Serialize) {
+        use RowSizeHintBuilder::*;
+
+        // Record the length before. It will be the starting offset of `row`.
+        let len_before = self.rows_data.len();
+        // BSATN-encode the row directly to the buffer.
+        row.to_bsatn_extend(&mut self.rows_data).unwrap();
+
+        let encoded_len = || self.rows_data.len() - len_before;
+        let push_row_offset = |mut offsets: Vec<_>| {
+            offsets.push(len_before as u64);
+            RowOffsets(offsets)
+        };
+
+        let hint = mem::replace(&mut self.size_hint, Empty);
+        self.size_hint = match hint {
+            // Static size that is unchanging.
+            h @ FixedSizeStatic(_) => h,
+            // Dynamic size that is unchanging.
+            h @ FixedSizeDyn(size) if size == encoded_len() => h,
+            // Size mismatch for the dynamic fixed size.
+            // Now we must construct `RowOffsets` for all rows thus far.
+            // We know that `size != 0` here, as this was excluded when we had `Empty`.
+            FixedSizeDyn(size) => RowOffsets(collect_offsets_from_num_rows(1 + len_before / size, size)),
+            // Once there's a size for each row, we'll just add to it.
+            RowOffsets(offsets) => push_row_offset(offsets),
+            // First time a row is seen. Use `encoded_len()` as the hint.
+            // If we have a static layout, we'll always have a fixed size.
+            // Otherwise, let's start out with a potentially fixed size.
+            // In either case, if `encoded_len() == 0`, we have to store offsets,
+            // as we cannot recover the number of elements otherwise.
+            Empty => match row.static_bsatn_size() {
+                Some(0) => push_row_offset(Vec::new()),
+                Some(size) => FixedSizeStatic(size),
+                None => match encoded_len() {
+                    0 => push_row_offset(Vec::new()),
+                    size => FixedSizeDyn(size),
+                },
+            },
+        };
     }
 
-    /// Finish the in flight list, throwing away the capability to mutate.
-    pub fn finish(self) -> BsatnRowList {
+    fn finish(self) -> Self::FinishedList {
         let Self { size_hint, rows_data } = self;
-        let rows_data = rows_data.into();
         let size_hint = match size_hint {
-            RowSizeHint::FixedSize(fs) => RowSizeHint::FixedSize(fs),
-            RowSizeHint::RowOffsets(ro) => RowSizeHint::RowOffsets(ro.into()),
+            RowSizeHintBuilder::Empty => RowSizeHint::RowOffsets([].into()),
+            RowSizeHintBuilder::FixedSizeStatic(fs) => RowSizeHint::FixedSize(fs),
+            RowSizeHintBuilder::FixedSizeDyn(fs) => match u16::try_from(fs) {
+                Ok(fs) => RowSizeHint::FixedSize(fs),
+                Err(_) => RowSizeHint::RowOffsets(collect_offsets_from_num_rows(rows_data.len() / fs, fs).into()),
+            },
+            RowSizeHintBuilder::RowOffsets(ro) => RowSizeHint::RowOffsets(ro.into()),
         };
+        let rows_data = rows_data.into();
         BsatnRowList { size_hint, rows_data }
     }
+}
+
+fn collect_offsets_from_num_rows(num_rows: usize, size: usize) -> Vec<u64> {
+    (0..num_rows).map(|i| i * size).map(|o| o as u64).collect()
 }
