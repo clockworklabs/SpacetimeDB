@@ -276,9 +276,11 @@ impl ColList {
         let addr = unsafe { self.check };
         addr & 1 != 0
     }
+}
 
-    #[doc(hidden)]
-    pub fn heap_size(&self) -> usize {
+#[cfg(feature = "memory-usage")]
+impl spacetimedb_memory_usage::MemoryUsage for ColList {
+    fn heap_usage(&self) -> usize {
         match self.as_inline() {
             Ok(_) => 0,
             Err(heap) => heap.capacity() as usize,

@@ -6,17 +6,16 @@
 // TODO(1.0): change all the `Box<str>`s in this file to `Identifier`.
 // This doesn't affect the ABI so can wait until 1.0.
 
+use crate::def::error::{DefType, SchemaError};
+use crate::relation::{combine_constraints, Column, DbTable, FieldName, Header};
 use core::mem;
 use itertools::Itertools;
 use spacetimedb_lib::db::auth::{StAccess, StTableType};
-use spacetimedb_lib::db::error::{DefType, SchemaError};
 use spacetimedb_lib::db::raw_def::v9::RawSql;
 use spacetimedb_lib::db::raw_def::{generate_cols_name, RawConstraintDefV8};
-use spacetimedb_lib::relation::{combine_constraints, Column, DbTable, FieldName, Header};
-use spacetimedb_lib::{AlgebraicType, ProductType, ProductTypeElement};
 use spacetimedb_primitives::*;
 use spacetimedb_sats::product_value::InvalidFieldError;
-use spacetimedb_sats::WithTypespace;
+use spacetimedb_sats::{AlgebraicType, ProductType, ProductTypeElement, WithTypespace};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 

@@ -12,7 +12,6 @@ use crate::{
         SumAccess, SumVisitor, ValidNames, VariantAccess as _, VariantVisitor,
     },
     i256, impl_deserialize, impl_serialize,
-    memory_usage::MemoryUsage,
     sum_type::{OPTION_NONE_TAG, OPTION_SOME_TAG},
     u256, AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement, ProductValue, SumType, SumTypeVariant,
     SumValue, WithTypespace,
@@ -46,7 +45,8 @@ pub const fn align_to(base: usize, required_alignment: usize) -> usize {
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Add, Sub)]
 pub struct Size(pub u16);
 
-impl MemoryUsage for Size {}
+#[cfg(feature = "memory-usage")]
+impl spacetimedb_memory_usage::MemoryUsage for Size {}
 
 // We need to be able to serialize and deserialize `Size` because they appear in the `PageHeader`.
 impl_serialize!([] Size, (self, ser) => self.0.serialize(ser));
@@ -91,7 +91,8 @@ pub struct Layout {
     pub fixed: bool,
 }
 
-impl MemoryUsage for Layout {}
+#[cfg(feature = "memory-usage")]
+impl spacetimedb_memory_usage::MemoryUsage for Layout {}
 
 /// A type which knows what its layout is.
 ///
@@ -145,7 +146,8 @@ pub enum AlgebraicTypeLayout {
     VarLen(VarLenType),
 }
 
-impl MemoryUsage for AlgebraicTypeLayout {
+#[cfg(feature = "memory-usage")]
+impl spacetimedb_memory_usage::MemoryUsage for AlgebraicTypeLayout {
     fn heap_usage(&self) -> usize {
         match self {
             AlgebraicTypeLayout::Sum(x) => x.heap_usage(),
@@ -250,7 +252,8 @@ pub struct RowTypeLayout {
     pub elements: Arc<[ProductTypeElementLayout]>,
 }
 
-impl MemoryUsage for RowTypeLayout {
+#[cfg(feature = "memory-usage")]
+impl spacetimedb_memory_usage::MemoryUsage for RowTypeLayout {
     fn heap_usage(&self) -> usize {
         let Self { layout, elements } = self;
         layout.heap_usage() + elements.heap_usage()
@@ -334,7 +337,8 @@ impl ProductTypeLayout {
     }
 }
 
-impl MemoryUsage for ProductTypeLayout {
+#[cfg(feature = "memory-usage")]
+impl spacetimedb_memory_usage::MemoryUsage for ProductTypeLayout {
     fn heap_usage(&self) -> usize {
         let Self { layout, elements } = self;
         layout.heap_usage() + elements.heap_usage()
@@ -363,7 +367,8 @@ pub struct ProductTypeElementLayout {
     pub name: Option<Box<str>>,
 }
 
-impl MemoryUsage for ProductTypeElementLayout {
+#[cfg(feature = "memory-usage")]
+impl spacetimedb_memory_usage::MemoryUsage for ProductTypeElementLayout {
     fn heap_usage(&self) -> usize {
         let Self { offset, ty, name } = self;
         offset.heap_usage() + ty.heap_usage() + name.heap_usage()
@@ -382,7 +387,8 @@ pub struct SumTypeLayout {
     pub payload_offset: u16,
 }
 
-impl MemoryUsage for SumTypeLayout {
+#[cfg(feature = "memory-usage")]
+impl spacetimedb_memory_usage::MemoryUsage for SumTypeLayout {
     fn heap_usage(&self) -> usize {
         let Self {
             layout,
@@ -412,7 +418,8 @@ pub struct SumTypeVariantLayout {
     pub name: Option<Box<str>>,
 }
 
-impl MemoryUsage for SumTypeVariantLayout {
+#[cfg(feature = "memory-usage")]
+impl spacetimedb_memory_usage::MemoryUsage for SumTypeVariantLayout {
     fn heap_usage(&self) -> usize {
         let Self { ty, name } = self;
         ty.heap_usage() + name.heap_usage()
@@ -440,7 +447,8 @@ pub enum PrimitiveType {
     F64,
 }
 
-impl MemoryUsage for PrimitiveType {}
+#[cfg(feature = "memory-usage")]
+impl spacetimedb_memory_usage::MemoryUsage for PrimitiveType {}
 
 impl PrimitiveType {
     pub fn algebraic_type(&self) -> AlgebraicType {
@@ -514,7 +522,8 @@ pub enum VarLenType {
     Array(Box<AlgebraicType>),
 }
 
-impl MemoryUsage for VarLenType {
+#[cfg(feature = "memory-usage")]
+impl spacetimedb_memory_usage::MemoryUsage for VarLenType {
     fn heap_usage(&self) -> usize {
         match self {
             VarLenType::String => 0,
