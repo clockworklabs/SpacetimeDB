@@ -11,6 +11,7 @@ use crate::error::DBError;
 use crate::host::module_host::ClientConnectedError;
 use crate::host::{ModuleHost, NoSuchModule, ReducerArgs, ReducerCallError, ReducerCallResult};
 use crate::messages::websocket::Subscribe;
+use crate::subscription::row_list_builder_pool::JsonRowListBuilderFakePool;
 use crate::util::asyncify;
 use crate::util::prometheus_handle::IntGaugeExt;
 use crate::worker_metrics::WORKER_METRICS;
@@ -586,6 +587,7 @@ impl ClientConnection {
                 self.sender.clone(),
                 message_id.to_owned(),
                 timer,
+                JsonRowListBuilderFakePool,
                 |msg: OneOffQueryResponseMessage<JsonFormat>| msg.into(),
             )
             .await
@@ -597,6 +599,7 @@ impl ClientConnection {
         message_id: &[u8],
         timer: Instant,
     ) -> Result<(), anyhow::Error> {
+        let bsatn_rlb_pool = self.module.replica_ctx().subscriptions.bsatn_rlb_pool.clone();
         self.module
             .one_off_query::<BsatnFormat>(
                 self.id.identity,
@@ -604,6 +607,7 @@ impl ClientConnection {
                 self.sender.clone(),
                 message_id.to_owned(),
                 timer,
+                bsatn_rlb_pool,
                 |msg: OneOffQueryResponseMessage<BsatnFormat>| msg.into(),
             )
             .await

@@ -234,6 +234,8 @@ async fn ws_client_actor_inner(
     let mut closed = false;
     let mut rx_buf = Vec::new();
 
+    let bsatn_rlb_pool = &client.module.subscriptions().bsatn_rlb_pool.clone();
+
     let mut msg_buffer = SerializeBuffer::new(client.config);
     loop {
         rx_buf.clear();
@@ -292,7 +294,7 @@ async fn ws_client_actor_inner(
 
                             // Serialize the message, report metrics,
                             // and keep a handle to the buffer.
-                            let (msg_alloc, msg_data) = serialize(msg_buffer, msg, client.config);
+                            let (msg_alloc, msg_data) = serialize(bsatn_rlb_pool, msg_buffer, msg, client.config);
                             report_ws_sent_metrics(&addr, workload, num_rows, &msg_data);
 
                             // Buffer the message without necessarily sending it.
@@ -440,7 +442,7 @@ async fn ws_client_actor_inner(
                     if let MessageHandleError::Execution(err) = e {
                         log::error!("reducer execution error: {err:#}");
                         // Serialize the message and keep a handle to the buffer.
-                        let (msg_alloc, msg_data) = serialize(msg_buffer, err, client.config);
+                        let (msg_alloc, msg_data) = serialize(bsatn_rlb_pool, msg_buffer, err, client.config);
 
                         let send = async { ws.send(datamsg_to_wsmsg(msg_data)).await };
                         let send = tokio::time::timeout(SEND_TIMEOUT, send);
