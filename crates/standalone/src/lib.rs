@@ -149,7 +149,7 @@ impl NodeDelegate for StandaloneEnv {
         let database = self
             .control_db
             .get_database_by_id(database_id)?
-            .with_context(|| format!("Database {} not found", database_id))?;
+            .with_context(|| format!("Database {database_id} not found"))?;
 
         self.host_controller
             .get_or_launch_module_host(database, leader.id)
@@ -292,7 +292,7 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
                     let replicas = self.control_db.get_replicas_by_database(database_id)?;
                     let desired_replicas = num_replicas as usize;
                     if desired_replicas == 0 {
-                        log::info!("Decommissioning all replicas of database {}", database_identity);
+                        log::info!("Decommissioning all replicas of database {database_identity}");
                         for instance in replicas {
                             self.delete_replica(instance.id).await?;
                         }
@@ -326,9 +326,7 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
                         }
                     } else {
                         log::debug!(
-                            "Desired replica count {} for database {} already satisfied",
-                            desired_replicas,
-                            database_identity
+                            "Desired replica count {desired_replicas} for database {database_identity} already satisfied"
                         );
                     }
                 }

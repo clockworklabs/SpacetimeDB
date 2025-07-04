@@ -239,9 +239,9 @@ fn error_on_field<'a, 'de>(
         f.write_str(problem)?;
         f.write_str(field_kind)?;
         if let Some(name) = name {
-            write!(f, " `{}`", name)
+            write!(f, " `{name}`")
         } else {
-            write!(f, " (index {})", index)
+            write!(f, " (index {index})")
         }
     })
 }

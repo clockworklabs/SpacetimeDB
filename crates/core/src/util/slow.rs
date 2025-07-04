@@ -114,44 +114,35 @@ mod tests {
         }
 
         // Check we can read the default config
-        let row1 = fetch_row(run_query(&db, format!("SHOW {}", ST_VARNAME_SLOW_QRY))?);
-        let row2 = fetch_row(run_query(&db, format!("SHOW {}", ST_VARNAME_SLOW_SUB))?);
-        let row3 = fetch_row(run_query(&db, format!("SHOW {}", ST_VARNAME_SLOW_INC))?);
+        let row1 = fetch_row(run_query(&db, format!("SHOW {ST_VARNAME_SLOW_QRY}"))?);
+        let row2 = fetch_row(run_query(&db, format!("SHOW {ST_VARNAME_SLOW_SUB}"))?);
+        let row3 = fetch_row(run_query(&db, format!("SHOW {ST_VARNAME_SLOW_INC}"))?);
 
         assert_eq!(row1, None);
         assert_eq!(row2, None);
         assert_eq!(row3, None);
 
         // Check we can write a new config
-        run_query_write(&db, format!("SET {} TO 1", ST_VARNAME_SLOW_QRY))?;
-        run_query_write(&db, format!("SET {} TO 1", ST_VARNAME_SLOW_SUB))?;
-        run_query_write(&db, format!("SET {} TO 1", ST_VARNAME_SLOW_INC))?;
+        run_query_write(&db, format!("SET {ST_VARNAME_SLOW_QRY} TO 1"))?;
+        run_query_write(&db, format!("SET {ST_VARNAME_SLOW_SUB} TO 1"))?;
+        run_query_write(&db, format!("SET {ST_VARNAME_SLOW_INC} TO 1"))?;
 
-        let row1 = fetch_row(run_query(&db, format!("SHOW {}", ST_VARNAME_SLOW_QRY))?);
-        let row2 = fetch_row(run_query(&db, format!("SHOW {}", ST_VARNAME_SLOW_SUB))?);
-        let row3 = fetch_row(run_query(&db, format!("SHOW {}", ST_VARNAME_SLOW_INC))?);
+        let row1 = fetch_row(run_query(&db, format!("SHOW {ST_VARNAME_SLOW_QRY}"))?);
+        let row2 = fetch_row(run_query(&db, format!("SHOW {ST_VARNAME_SLOW_SUB}"))?);
+        let row3 = fetch_row(run_query(&db, format!("SHOW {ST_VARNAME_SLOW_INC}"))?);
 
         assert_eq!(row1, Some(product!(StVarName::SlowQryThreshold, StVarValue::U64(1))));
         assert_eq!(row2, Some(product!(StVarName::SlowSubThreshold, StVarValue::U64(1))));
         assert_eq!(row3, Some(product!(StVarName::SlowIncThreshold, StVarValue::U64(1))));
 
         // And disable the config
-        run_query_write(
-            &db,
-            format!("DELETE FROM st_var WHERE name = '{}'", ST_VARNAME_SLOW_QRY),
-        )?;
-        run_query_write(
-            &db,
-            format!("DELETE FROM st_var WHERE name = '{}'", ST_VARNAME_SLOW_SUB),
-        )?;
-        run_query_write(
-            &db,
-            format!("DELETE FROM st_var WHERE name = '{}'", ST_VARNAME_SLOW_INC),
-        )?;
+        run_query_write(&db, format!("DELETE FROM st_var WHERE name = '{ST_VARNAME_SLOW_QRY}'"))?;
+        run_query_write(&db, format!("DELETE FROM st_var WHERE name = '{ST_VARNAME_SLOW_SUB}'"))?;
+        run_query_write(&db, format!("DELETE FROM st_var WHERE name = '{ST_VARNAME_SLOW_INC}'"))?;
 
-        let row1 = fetch_row(run_query(&db, format!("SHOW {}", ST_VARNAME_SLOW_QRY))?);
-        let row2 = fetch_row(run_query(&db, format!("SHOW {}", ST_VARNAME_SLOW_SUB))?);
-        let row3 = fetch_row(run_query(&db, format!("SHOW {}", ST_VARNAME_SLOW_INC))?);
+        let row1 = fetch_row(run_query(&db, format!("SHOW {ST_VARNAME_SLOW_QRY}"))?);
+        let row2 = fetch_row(run_query(&db, format!("SHOW {ST_VARNAME_SLOW_SUB}"))?);
+        let row3 = fetch_row(run_query(&db, format!("SHOW {ST_VARNAME_SLOW_INC}"))?);
 
         assert_eq!(row1, None);
         assert_eq!(row2, None);

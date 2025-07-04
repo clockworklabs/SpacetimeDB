@@ -580,7 +580,7 @@ mod tests {
             ..
         }) = exp
         else {
-            panic!("unexpected expression: {:#?}", exp);
+            panic!("unexpected expression: {exp:#?}");
         };
 
         assert_eq!(source_lhs.table_id().unwrap(), lhs_id);
@@ -632,7 +632,7 @@ mod tests {
             ..
         }) = exp
         else {
-            panic!("unexpected expression: {:#?}", exp);
+            panic!("unexpected expression: {exp:#?}");
         };
         assert_eq!(source_lhs.table_id().unwrap(), lhs_id);
         assert_eq!(query.len(), 3);
@@ -689,7 +689,7 @@ mod tests {
             ..
         }) = exp
         else {
-            panic!("unexpected expression: {:#?}", exp);
+            panic!("unexpected expression: {exp:#?}");
         };
 
         assert_eq!(source_lhs.table_id().unwrap(), lhs_id);
@@ -748,7 +748,7 @@ mod tests {
             ..
         }) = exp
         else {
-            panic!("unexpected result from compilation: {:?}", exp);
+            panic!("unexpected result from compilation: {exp:?}");
         };
 
         assert_eq!(source_lhs.table_id().unwrap(), lhs_id);
@@ -819,7 +819,7 @@ mod tests {
             ..
         }) = exp
         else {
-            panic!("unexpected result from compilation: {:?}", exp);
+            panic!("unexpected result from compilation: {exp:?}");
         };
 
         assert_eq!(table_id, lhs_id);
@@ -901,7 +901,7 @@ mod tests {
             ..
         }) = exp
         else {
-            panic!("unexpected result from compilation: {:?}", exp);
+            panic!("unexpected result from compilation: {exp:?}");
         };
 
         assert_eq!(table_id, lhs_id);

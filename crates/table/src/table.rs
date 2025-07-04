@@ -2241,7 +2241,7 @@ pub(crate) mod test {
                 assert_eq!(cols.iter().map(|c| c.to_string()).collect::<Vec<_>>(), &["unique_col"]);
                 assert_eq!(value, AlgebraicValue::I32(0));
             }
-            Err(e) => panic!("Expected UniqueConstraintViolation but found {:?}", e),
+            Err(e) => panic!("Expected UniqueConstraintViolation but found {e:?}"),
         }
 
         // Second insert did clear the hash while we had a constraint violation,

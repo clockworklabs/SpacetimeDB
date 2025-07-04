@@ -476,9 +476,9 @@ impl HostController {
             // - `Some` expected hash, in which case we update to the desired one
             // - `None` expected hash, in which case we also update
             let stored_hash = stored_program_hash(host.db())?
-                .with_context(|| format!("[{}] database improperly initialized", db_addr))?;
+                .with_context(|| format!("[{db_addr}] database improperly initialized"))?;
             if stored_hash == program_hash {
-                info!("[{}] database up-to-date with {}", db_addr, program_hash);
+                info!("[{db_addr}] database up-to-date with {program_hash}");
                 *guard = Some(host);
             } else {
                 if let Some(expected_hash) = expected_hash {
@@ -490,10 +490,7 @@ impl HostController {
                         stored_hash
                     );
                 }
-                info!(
-                    "[{}] updating database from `{}` to `{}`",
-                    db_addr, stored_hash, program_hash
-                );
+                info!("[{db_addr}] updating database from `{stored_hash}` to `{program_hash}`");
                 let program = load_program(&this.program_storage, program_hash).await?;
                 let update_result = host
                     .update_module(
@@ -529,7 +526,7 @@ impl HostController {
     /// and deregister it from the controller.
     #[tracing::instrument(level = "trace", skip_all)]
     pub async fn exit_module_host(&self, replica_id: u64) -> Result<(), anyhow::Error> {
-        trace!("exit module host {}", replica_id);
+        trace!("exit module host {replica_id}");
         let lock = self.hosts.lock().remove(&replica_id);
         if let Some(lock) = lock {
             if let Some(host) = lock.write_owned().await.take() {
@@ -550,7 +547,7 @@ impl HostController {
     /// the host if it is not running.
     #[tracing::instrument(level = "trace", skip_all)]
     pub async fn get_module_host(&self, replica_id: u64) -> Result<ModuleHost, NoSuchModule> {
-        trace!("get module host {}", replica_id);
+        trace!("get module host {replica_id}");
         let guard = self.acquire_read_lock(replica_id).await;
         guard
             .as_ref()
@@ -565,7 +562,7 @@ impl HostController {
     /// launches the host if it is not running.
     #[tracing::instrument(level = "trace", skip_all)]
     pub async fn watch_module_host(&self, replica_id: u64) -> Result<watch::Receiver<ModuleHost>, NoSuchModule> {
-        trace!("watch module host {}", replica_id);
+        trace!("watch module host {replica_id}");
         let guard = self.acquire_read_lock(replica_id).await;
         guard
             .as_ref()
@@ -694,7 +691,7 @@ async fn load_program(storage: &ProgramStorage, hash: Hash) -> anyhow::Result<Pr
     let bytes = storage
         .lookup(hash)
         .await?
-        .with_context(|| format!("program {} not found", hash))?;
+        .with_context(|| format!("program {hash} not found"))?;
     Ok(Program { hash, bytes })
 }
 

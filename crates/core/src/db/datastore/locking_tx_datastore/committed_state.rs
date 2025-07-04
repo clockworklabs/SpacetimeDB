@@ -584,7 +584,7 @@ impl CommittedState {
                     tx_data.set_deletes_for_table(table_id, table_name, deletes.into());
                 }
             } else if !row_ptrs.is_empty() {
-                panic!("Deletion for non-existent table {:?}... huh?", table_id);
+                panic!("Deletion for non-existent table {table_id:?}... huh?");
             }
         }
     }

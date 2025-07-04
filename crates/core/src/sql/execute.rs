@@ -909,7 +909,7 @@ pub(crate) mod tests {
 
         let result = run_for_testing(
             &db,
-            &format!("SELECT * FROM {} WHERE table_id = {}", ST_TABLE_NAME, ST_TABLE_ID),
+            &format!("SELECT * FROM {ST_TABLE_NAME} WHERE table_id = {ST_TABLE_ID}"),
         )?;
 
         let pk_col_id: ColId = StTableFields::TableId.into();
@@ -1171,7 +1171,7 @@ pub(crate) mod tests {
         assert!(result.is_empty());
 
         let result = run_for_testing(&db, "select * from test where x >= 5 and x < 4").unwrap();
-        assert!(result.is_empty(), "Expected no rows but found {:#?}", result);
+        assert!(result.is_empty(), "Expected no rows but found {result:#?}");
 
         let result = run_for_testing(&db, "select * from test where x > 5 and x <= 4").unwrap();
         assert!(result.is_empty());

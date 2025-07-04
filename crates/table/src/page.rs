@@ -814,8 +814,7 @@ impl<'page> VarView<'page> {
 
         debug_assert!(
             is_granule_offset_aligned(granule),
-            "Allocated an unaligned var-len granule: {:x}",
-            granule,
+            "Allocated an unaligned var-len granule: {granule:x}",
         );
 
         self.header.num_granules += 1;
@@ -2059,8 +2058,7 @@ pub(crate) mod tests {
             let row_val = read_u64(&page, row_idx);
             assert_eq!(
                 row_val, expected_val,
-                "row_val {:x} /= expected_val {:x}",
-                row_val, expected_val
+                "row_val {row_val:x} /= expected_val {expected_val:x}"
             );
         }
     }
@@ -2241,8 +2239,7 @@ pub(crate) mod tests {
                 assert_eq!(
                     data,
                     chunk,
-                    "Chunk {} does not match. Left is found, right is expected.",
-                    i,
+                    "Chunk {i} does not match. Left is found, right is expected.",
                 );
             }
 
@@ -2399,8 +2396,7 @@ pub(crate) mod tests {
         for (i, (data, chunk)) in (&mut data_iter).zip(&mut chunks_iter).enumerate() {
             assert_eq!(
                 data, chunk,
-                "Chunk {} does not match. Left is found, right is expected.",
-                i,
+                "Chunk {i} does not match. Left is found, right is expected.",
             );
         }
 

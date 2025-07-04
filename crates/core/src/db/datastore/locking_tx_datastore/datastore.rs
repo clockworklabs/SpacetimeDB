@@ -589,7 +589,7 @@ impl MutTxDatastore for Locking {
         let mut num_deleted = 0;
         for row_ptr in row_ptrs {
             match tx.delete(table_id, row_ptr) {
-                Err(e) => log::error!("delete_mut_tx: {:?}", e),
+                Err(e) => log::error!("delete_mut_tx: {e:?}"),
                 Ok(b) => num_deleted += b as u32,
             }
         }
@@ -605,7 +605,7 @@ impl MutTxDatastore for Locking {
         let mut num_deleted = 0;
         for row in relation {
             match tx.delete_by_row_value(table_id, &row) {
-                Err(e) => log::error!("delete_by_rel_mut_tx: {:?}", e),
+                Err(e) => log::error!("delete_by_rel_mut_tx: {e:?}"),
                 Ok(b) => num_deleted += b as u32,
             }
         }
