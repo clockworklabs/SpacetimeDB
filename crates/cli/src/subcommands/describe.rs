@@ -10,8 +10,7 @@ use spacetimedb_lib::sats;
 pub fn cli() -> clap::Command {
     clap::Command::new("describe")
         .about(format!(
-            "Describe the structure of a database or entities within it. {}",
-            UNSTABLE_WARNING
+            "Describe the structure of a database or entities within it. {UNSTABLE_WARNING}"
         ))
         .arg(
             Arg::new("database")
@@ -53,7 +52,7 @@ enum EntityType {
 }
 
 pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    eprintln!("{}\n", UNSTABLE_WARNING);
+    eprintln!("{UNSTABLE_WARNING}\n");
 
     let entity_name = args.get_one::<String>("entity_name");
     let entity_type = args.get_one::<EntityType>("entity_type");

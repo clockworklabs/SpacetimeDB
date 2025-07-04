@@ -137,14 +137,14 @@ where
         let ws = match ws_upgrade.upgrade(ws_config).await {
             Ok(ws) => ws,
             Err(err) => {
-                log::error!("WebSocket init error: {}", err);
+                log::error!("WebSocket init error: {err}");
                 return;
             }
         };
 
         match forwarded_for {
             Some(TypedHeader(XForwardedFor(ip))) => {
-                log::debug!("New client connected from ip {}", ip)
+                log::debug!("New client connected from ip {ip}")
             }
             None => log::debug!("New client connected from unknown ip"),
         }
@@ -266,7 +266,7 @@ async fn ws_client_actor_inner(
             message = ws.next() => match message {
                 Some(Ok(m)) => Item::Message(ClientMessage::from_message(m)),
                 Some(Err(error)) => {
-                    log::warn!("Websocket receive error: {}", error);
+                    log::warn!("Websocket receive error: {error}");
                     break;
                 }
                 // the client sent us a close frame
@@ -466,7 +466,7 @@ async fn ws_client_actor_inner(
 
                         continue;
                     }
-                    log::warn!("Client caused error on text message: {}", e);
+                    log::warn!("Client caused error on text message: {e}");
                     let close = ws.close(Some(CloseFrame {
                         code: CloseCode::Error,
                         reason: format!("{e:#}").into(),
@@ -505,7 +505,7 @@ async fn ws_client_actor_inner(
 
                 // if this is the closed-by-them case, let the ClientConnectionSenders know now.
                 sendrx.close();
-                log::trace!("Close frame {:?}", close_frame);
+                log::trace!("Close frame {close_frame:?}");
                 if !closed {
                     // This is the client telling us they want to close.
                     WORKER_METRICS

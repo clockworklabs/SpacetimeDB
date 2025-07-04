@@ -14,7 +14,7 @@ use spacetimedb_lib::sats::{satn, ProductType, ProductValue, Typespace};
 
 pub fn cli() -> clap::Command {
     clap::Command::new("sql")
-        .about(format!("Runs a SQL query on the database. {}", UNSTABLE_WARNING))
+        .about(format!("Runs a SQL query on the database. {UNSTABLE_WARNING}"))
         .arg(
             Arg::new("database")
                 .required(true)
@@ -129,7 +129,7 @@ fn print_stmt_result(
 
     if let Some(with_stats) = with_stats {
         f.write_char('\n')?;
-        f.write_str(&format!("Roundtrip time: {:.2?}", with_stats))?;
+        f.write_str(&format!("Roundtrip time: {with_stats:.2?}"))?;
         f.write_char('\n')?;
     }
     Ok(())
@@ -151,7 +151,7 @@ pub(crate) async fn run_sql(builder: RequestBuilder, sql: &str, with_stats: bool
 
     let mut out = String::new();
     print_stmt_result(&stmt_result_json, with_stats.then_some(now.elapsed()), &mut out)?;
-    println!("{}", out);
+    println!("{out}");
 
     Ok(())
 }
@@ -170,7 +170,7 @@ fn stmt_result_to_table(stmt_result: &SqlStmtResult) -> anyhow::Result<(StmtStat
 }
 
 pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    eprintln!("{}\n", UNSTABLE_WARNING);
+    eprintln!("{UNSTABLE_WARNING}\n");
     let interactive = args.get_one::<bool>("interactive").unwrap_or(&false);
     if *interactive {
         let con = parse_req(config, args).await?;

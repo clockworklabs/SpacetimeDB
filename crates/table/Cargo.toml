@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 license-file = "LICENSE"
 description = "A database Table implementation and friends"
+rust-version.workspace = true
 
 [[bench]]
 name = "pointer_map"
@@ -58,3 +59,6 @@ criterion.workspace = true
 proptest.workspace = true
 proptest-derive.workspace = true
 rand.workspace = true
+
+[lints]
+workspace = true

@@ -533,6 +533,8 @@ pub enum InitDatabaseError {
     Other(anyhow::Error),
 }
 
+// FIXME: reduce type size
+#[expect(clippy::large_enum_variant)]
 #[derive(thiserror::Error, Debug)]
 pub enum ClientConnectedError {
     #[error(transparent)]
@@ -629,7 +631,7 @@ impl ModuleHost {
     }
 
     pub async fn disconnect_client(&self, client_id: ClientActorId) {
-        log::trace!("disconnecting client {}", client_id);
+        log::trace!("disconnecting client {client_id}");
         let this = self.clone();
         asyncify(move || this.subscriptions().remove_subscriber(client_id)).await;
         // ignore NoSuchModule; if the module's already closed, that's fine
@@ -728,7 +730,6 @@ impl ModuleHost {
             .inspect_err(|e| {
                 log::error!("`call_identity_connected`: fallback transaction to insert into `st_client` failed: {e:#?}")
             })
-            .map_err(DBError::from)
             .map_err(Into::into)
         }
     }
@@ -907,13 +908,11 @@ impl ModuleHost {
 
         let log_message = match &res {
             Err(ReducerCallError::NoSuchReducer) => Some(format!(
-                "External attempt to call nonexistent reducer \"{}\" failed. Have you run `spacetime generate` recently?",
-                reducer_name
+                "External attempt to call nonexistent reducer \"{reducer_name}\" failed. Have you run `spacetime generate` recently?"
             )),
             Err(ReducerCallError::Args(_)) => Some(format!(
-                "External attempt to call reducer \"{}\" failed, invalid arguments.\n\
+                "External attempt to call reducer \"{reducer_name}\" failed, invalid arguments.\n\
                  This is likely due to a mismatched client schema, have you run `spacetime generate` recently?",
-                reducer_name,
             )),
             _ => None,
         };
@@ -969,7 +968,6 @@ impl ModuleHost {
         })
         .await
         .unwrap_or_else(|e| Err(e.into()))
-        .map_err(Into::into)
     }
 
     pub fn subscribe_to_logs(&self) -> anyhow::Result<tokio::sync::broadcast::Receiver<bytes::Bytes>> {
@@ -995,7 +993,6 @@ impl ModuleHost {
             inst.update_database(program, old_module_info)
         })
         .await?
-        .map_err(Into::into)
     }
 
     pub async fn exit(&self) {
@@ -1099,7 +1096,7 @@ impl ModuleHost {
                     Err(err) => (
                         into_message(OneOffQueryResponseMessage {
                             message_id,
-                            error: Some(format!("{}", err)),
+                            error: Some(format!("{err}")),
                             results: vec![],
                             total_host_execution_duration,
                         }),

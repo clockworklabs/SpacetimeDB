@@ -59,10 +59,10 @@ impl RawSequenceDefV8 {
     /// ```
     pub fn for_column(table: &str, column_or_name: &str, col_pos: ColId) -> Self {
         //removes the auto-generated suffix...
-        let seq_name = column_or_name.trim_start_matches(&format!("ct_{}_", table));
+        let seq_name = column_or_name.trim_start_matches(&format!("ct_{table}_"));
 
         RawSequenceDefV8 {
-            sequence_name: format!("seq_{}_{}", table, seq_name).into(),
+            sequence_name: format!("seq_{table}_{seq_name}").into(),
             col_pos,
             increment: 1,
             start: None,
@@ -153,7 +153,7 @@ impl RawIndexDefV8 {
         let unique = if is_unique { "unique" } else { "non_unique" };
 
         // Removes the auto-generated suffix from the index name.
-        let name = index_or_name.trim_start_matches(&format!("ct_{}_", table));
+        let name = index_or_name.trim_start_matches(&format!("ct_{table}_"));
 
         // Constructs the index name using a predefined format.
         // No duplicate the `kind_name` that was added by an constraint
@@ -275,7 +275,7 @@ impl RawConstraintDefV8 {
         columns: impl Into<ColList>,
     ) -> Self {
         //removes the auto-generated suffix...
-        let name = column_or_name.trim_start_matches(&format!("idx_{}_", table));
+        let name = column_or_name.trim_start_matches(&format!("idx_{table}_"));
 
         let kind_name = format!("{:?}", constraints.kind()).to_lowercase();
         // No duplicate the `kind_name` that was added by an index

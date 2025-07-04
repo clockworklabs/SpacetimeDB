@@ -16,8 +16,7 @@ use tabled::{
 pub fn cli() -> Command {
     Command::new("list")
         .about(format!(
-            "Lists the databases attached to an identity. {}",
-            UNSTABLE_WARNING
+            "Lists the databases attached to an identity. {UNSTABLE_WARNING}"
         ))
         .arg(common_args::server().help("The nickname, host name or URL of the server from which to list databases"))
         .arg(common_args::yes())
@@ -35,7 +34,7 @@ struct IdentityRow {
 }
 
 pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    eprintln!("{}\n", UNSTABLE_WARNING);
+    eprintln!("{UNSTABLE_WARNING}\n");
 
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
     let force = args.get_flag("force");
@@ -63,10 +62,10 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         table
             .with(Style::psql())
             .with(Modify::new(Columns::first()).with(Alignment::left()));
-        println!("Associated database identities for {}:\n", identity);
-        println!("{}", table);
+        println!("Associated database identities for {identity}:\n");
+        println!("{table}");
     } else {
-        println!("No databases found for {}.", identity);
+        println!("No databases found for {identity}.");
     }
 
     Ok(())

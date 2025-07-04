@@ -124,7 +124,7 @@ pub async fn spacetime_dns(
 }
 
 pub async fn spacetime_server_fingerprint(url: &str) -> anyhow::Result<String> {
-    let builder = reqwest::Client::new().get(format!("{}/v1/identity/public-key", url).as_str());
+    let builder = reqwest::Client::new().get(format!("{url}/v1/identity/public-key").as_str());
     let res = builder.send().await?.error_for_status()?;
     let fingerprint = res.text().await?;
     Ok(fingerprint)
@@ -261,7 +261,7 @@ pub fn y_or_n(force: bool, prompt: &str) -> anyhow::Result<bool> {
         return Ok(true);
     }
     let mut input = String::new();
-    print!("{} [y/N]", prompt);
+    print!("{prompt} [y/N]");
     std::io::stdout().flush()?;
     std::io::stdin().read_line(&mut input)?;
     let input = input.trim().to_lowercase();

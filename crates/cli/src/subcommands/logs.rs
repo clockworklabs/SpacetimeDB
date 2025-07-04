@@ -130,7 +130,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
     let host_url = config.get_host_url(server)?;
 
-    let builder = reqwest::Client::new().get(format!("{}/v1/database/{}/logs", host_url, database_identity));
+    let builder = reqwest::Client::new().get(format!("{host_url}/v1/database/{database_identity}/logs"));
     let builder = add_auth_header_opt(builder, &auth_header);
     let mut res = builder.query(&query_params).send().await?;
     let status = res.status();
@@ -156,10 +156,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let out = termcolor::StandardStream::stdout(term_color);
     let mut out = out.lock();
 
-    let mut rdr = res
-        .bytes_stream()
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
-        .into_async_read();
+    let mut rdr = res.bytes_stream().map_err(io::Error::other).into_async_read();
     let mut line = String::new();
     while rdr.read_line(&mut line).await? != 0 {
         let record = serde_json::from_str::<Record<'_>>(&line)?;

@@ -117,7 +117,7 @@ impl fmt::Display for ErrorLang {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:?}Error", self.kind)?;
         if let Some(msg) = &self.msg {
-            writeln!(f, ": \"{}\"", msg)?;
+            writeln!(f, ": \"{msg}\"")?;
         }
         if let Some(err) = self.context.as_deref() {
             writeln!(f, " Context:")?;

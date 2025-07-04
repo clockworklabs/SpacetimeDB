@@ -147,7 +147,7 @@ impl<M: SpacetimeModule> SubscriptionManager<M> {
     pub(crate) fn unsubscribe_applied(&mut self, ctx: &M::SubscriptionEventContext, sub_id: u32) {
         let Some(mut sub) = self.new_subscriptions.remove(&sub_id) else {
             // TODO: double check error handling.
-            log::debug!("Unsubscribe applied called for missing query {:?}", sub_id);
+            log::debug!("Unsubscribe applied called for missing query {sub_id:?}");
             return;
         };
         if let Some(callback) = sub.on_ended() {
@@ -159,7 +159,7 @@ impl<M: SpacetimeModule> SubscriptionManager<M> {
     pub(crate) fn subscription_error(&mut self, ctx: &M::ErrorContext, sub_id: u32) {
         let Some(mut sub) = self.new_subscriptions.remove(&sub_id) else {
             // TODO: double check error handling.
-            log::warn!("Unsubscribe applied called for missing query {:?}", sub_id);
+            log::warn!("Unsubscribe applied called for missing query {sub_id:?}");
             return;
         };
         if let Some(callback) = sub.on_error() {
