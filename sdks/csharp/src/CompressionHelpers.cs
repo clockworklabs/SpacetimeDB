@@ -13,7 +13,7 @@ namespace SpacetimeDB
             Brotli = 1,
             Gzip = 2,
         }
-        
+
         /// <summary>
         /// Creates a <see cref="BrotliStream"/> for decompressing the provided stream.
         /// </summary>
@@ -23,7 +23,7 @@ namespace SpacetimeDB
         {
             return new BrotliStream(stream, CompressionMode.Decompress);
         }
-        
+
         /// <summary>
         /// Creates a <see cref="GZipStream"/> for decompressing the provided stream.
         /// </summary>
@@ -33,7 +33,7 @@ namespace SpacetimeDB
         {
             return new GZipStream(stream, CompressionMode.Decompress);
         }
-        
+
         /// <summary>
         /// Decompresses and decodes a serialized <see cref="ServerMessage"/> from a byte array,
         /// automatically handling the specified compression algorithm (None, Brotli, or Gzip).
@@ -46,7 +46,7 @@ namespace SpacetimeDB
         internal static ServerMessage DecompressDecodeMessage(byte[] bytes)
         {
             using var stream = new MemoryStream(bytes);
-        
+
             // The stream will never be empty. It will at least contain the compression algo.
             var compression = (CompressionAlgos)stream.ReadByte();
             // Conditionally decompress and decode.
@@ -57,7 +57,7 @@ namespace SpacetimeDB
                 CompressionAlgos.Gzip => GzipReader(stream),
                 _ => throw new InvalidOperationException("Unknown compression type"),
             };
-        
+
             // TODO: consider pooling these.
             // DO NOT TRY TO TAKE THIS OUT. The BrotliStream ReadByte() implementation allocates an array
             // PER BYTE READ. You have to do it all at once to avoid that problem.
@@ -66,7 +66,7 @@ namespace SpacetimeDB
             memoryStream.Seek(0, SeekOrigin.Begin);
             return new ServerMessage.BSATN().Read(new BinaryReader(memoryStream));
         }
-        
+
 
         /// <summary>
         /// Decompresses and decodes a <see cref="CompressableQueryUpdate"/> into a <see cref="QueryUpdate"/> object,
@@ -105,7 +105,7 @@ namespace SpacetimeDB
             memoryStream.Seek(0, SeekOrigin.Begin);
             return new QueryUpdate.BSATN().Read(new BinaryReader(memoryStream));
         }
-        
+
         /// <summary>
         /// Prepare to read a BsatnRowList.
         ///

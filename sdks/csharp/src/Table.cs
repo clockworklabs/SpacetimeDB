@@ -40,7 +40,7 @@ namespace SpacetimeDB
         /// <param name="update">The table update containing insert operations.</param>
         /// <param name="dbOps">The parsed database update to apply changes to.</param>
         internal void ParseInsertOnly(TableUpdate update, ParsedDatabaseUpdate dbOps);
-        
+
         /// <summary>
         /// Parses a delete-only table update and applies the results to the specified parsed database update.
         /// </summary>
@@ -228,7 +228,7 @@ namespace SpacetimeDB
 
         // The function to use for decoding a type value.
         Row DecodeValue(BinaryReader reader) => Serializer.Read(reader);
-        
+
         /// <summary>
         /// Decode a row for a table, producing a primary key.
         /// If the table has a specific column marked `#[primary_key]`, use that.
@@ -250,7 +250,7 @@ namespace SpacetimeDB
 
             return obj;
         }
-        
+
         /// <summary>
         /// Creates and returns a parsed table update for the current table.
         /// </summary>
