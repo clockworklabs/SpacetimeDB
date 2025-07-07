@@ -421,7 +421,7 @@ namespace SpacetimeDB
 
 #if UNITY_WEBGL && !UNITY_EDITOR
                 yield return null;
-                while (_messageQueue.Count > 0)
+                while (_parseQueue.Count > 0)
 #endif
                 try
                 {
