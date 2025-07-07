@@ -735,3 +735,39 @@ fn one_of_names(names: impl Fn(&mut dyn ValidNames)) -> Option<impl fmt::Display
     // There was at least one name; render those names.
     (count != 0).then(|| fmt_fn(move |fmt| OneOfNames::new(count, fmt).run(&names).f.map(drop)))
 }
+
+/// Deserializes `none` variant of an optional value.
+pub struct NoneAccess<E>(PhantomData<E>);
+
+impl<E: Error> NoneAccess<E> {
+    /// Returns a new [`NoneAccess`].
+    pub fn new() -> Self {
+        Self(PhantomData)
+    }
+}
+
+impl<E: Error> Default for NoneAccess<E> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<E: Error> SumAccess<'_> for NoneAccess<E> {
+    type Error = E;
+    type Variant = Self;
+
+    fn variant<V: VariantVisitor>(self, visitor: V) -> Result<(V::Output, Self::Variant), Self::Error> {
+        visitor.visit_name("none").map(|var| (var, self))
+    }
+}
+impl<'de, E: Error> VariantAccess<'de> for NoneAccess<E> {
+    type Error = E;
+    fn deserialize_seed<T: DeserializeSeed<'de>>(self, seed: T) -> Result<T::Output, Self::Error> {
+        use crate::algebraic_value::de::*;
+        seed.deserialize(ValueDeserializer::new(crate::AlgebraicValue::unit()))
+            .map_err(|err| match err {
+                ValueDeserializeError::MismatchedType => E::custom("mismatched type"),
+                ValueDeserializeError::Custom(err) => E::custom(err),
+            })
+    }
+}
