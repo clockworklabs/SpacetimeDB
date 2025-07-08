@@ -361,7 +361,14 @@ pub trait FieldNameVisitor<'de> {
     /// Provides the visitor the chance to add valid names into `names`.
     fn field_names(&self, names: &mut dyn ValidNames);
 
+    fn nth_name(&self, i: usize) -> Option<&str> {
+        let _ = i;
+        None
+    }
+
     fn visit<E: Error>(self, name: &str) -> Result<Self::Output, E>;
+
+    fn visit_seq<E: Error>(self, i: usize) -> Result<Self::Output, E>;
 }
 
 /// A trait for types storing a set of valid names.

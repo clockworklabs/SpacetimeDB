@@ -347,7 +347,7 @@ pub(crate) fn derive_deserialize(ty: &SatsType<'_>) -> TokenStream {
     de_generics.params.insert(0, de_lt_param.into());
     let (de_impl_generics, _, de_where_clause) = de_generics.split_for_impl();
 
-    let (iter_n, iter_n2, iter_n3) = (0usize.., 0usize.., 0usize..);
+    let (iter_n, iter_n2, iter_n3, iter_n4) = (0usize.., 0usize.., 0usize.., 0usize..);
 
     match &ty.data {
         SatsTypeData::Product(fields) => {
@@ -447,10 +447,21 @@ pub(crate) fn derive_deserialize(ty: &SatsType<'_>) -> TokenStream {
                             names.extend::<&[&str]>(&[#(#field_strings),*])
                         }
 
+                        fn nth_name(&self, i: usize) -> Option<&str> {
+                            [#(#field_strings),*].get(i).copied()
+                        }
+
                         fn visit<__E: #spacetimedb_lib::de::Error>(self, name: &str) -> Result<Self::Output, __E> {
                             match name {
                                 #(#field_strings => Ok(__ProductFieldIdent::#field_names),)*
                                 _ => Err(#spacetimedb_lib::de::Error::unknown_field_name(name, &self)),
+                            }
+                        }
+
+                        fn visit_seq<__E: #spacetimedb_lib::de::Error>(self, i: usize) -> Result<Self::Output, __E> {
+                            match i {
+                                #(#iter_n4 => Ok(__ProductFieldIdent::#field_names),)*
+                                _ => Err(#spacetimedb_lib::de::Error::invalid_product_length(i.saturating_add(1), &self)),
                             }
                         }
                     }
