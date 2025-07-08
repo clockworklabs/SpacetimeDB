@@ -9,7 +9,7 @@
 use crate::{
     de::{
         Deserialize, DeserializeSeed, Deserializer, Error, NamedProductAccess, ProductVisitor, SeqProductAccess,
-        SumAccess, SumVisitor, ValidNames, VariantAccess as _, VariantVisitor,
+        SumAccess, SumVisitor, VariantAccess as _, VariantVisitor,
     },
     i256, impl_deserialize, impl_serialize,
     sum_type::{OPTION_NONE_TAG, OPTION_SOME_TAG},
@@ -906,12 +906,12 @@ impl<'de> SumVisitor<'de> for &SumTypeLayout {
     }
 }
 
-impl VariantVisitor for &SumTypeLayout {
+impl VariantVisitor<'_> for &SumTypeLayout {
     type Output = u8;
 
-    fn variant_names(&self, names: &mut dyn ValidNames) {
+    fn variant_names(&self) -> impl '_ + Iterator<Item = &str> {
         // Provide the names known from the `SumType`.
-        names.extend(self.variants.iter().filter_map(|v| v.name.as_deref()));
+        self.variants.iter().filter_map(|v| v.name.as_deref())
     }
 
     fn visit_tag<E: Error>(self, tag: u8) -> Result<Self::Output, E> {

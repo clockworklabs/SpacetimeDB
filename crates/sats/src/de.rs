@@ -184,7 +184,7 @@ pub trait Error: Sized {
             ProductKind::Normal => "field",
             ProductKind::ReducerArgs => "reducer argument",
         };
-        if let Some(one_of) = one_of_names(|n| expected.field_names(n)) {
+        if let Some(one_of) = one_of_names(|| expected.field_names()) {
             Self::custom(format_args!("unknown {el_ty} `{field_name}`, expected {one_of}"))
         } else {
             Self::custom(format_args!("unknown {el_ty} `{field_name}`, there are no {el_ty}s"))
@@ -200,8 +200,8 @@ pub trait Error: Sized {
     }
 
     /// The `name` is not that of a variant of the sum type.
-    fn unknown_variant_name<T: VariantVisitor>(name: &str, expected: &T) -> Self {
-        if let Some(one_of) = one_of_names(|n| expected.variant_names(n)) {
+    fn unknown_variant_name<'de, T: VariantVisitor<'de>>(name: &str, expected: &T) -> Self {
+        if let Some(one_of) = one_of_names(|| expected.variant_names().map(Some)) {
             Self::custom(format_args!("unknown variant `{name}`, expected {one_of}",))
         } else {
             Self::custom(format_args!("unknown variant `{name}`, there are no variants"))
@@ -358,39 +358,18 @@ pub trait FieldNameVisitor<'de> {
         ProductKind::Normal
     }
 
-    /// Provides the visitor the chance to add valid names into `names`.
-    fn field_names(&self, names: &mut dyn ValidNames);
+    /// Provides a list of valid field names.
+    ///
+    /// Where `None` is yielded, this indicates a nameless field.
+    fn field_names(&self) -> impl '_ + Iterator<Item = Option<&str>>;
 
+    /// Deserializes the name of a field using `name`.
     fn visit<E: Error>(self, name: &str) -> Result<Self::Output, E>;
-}
 
-/// A trait for types storing a set of valid names.
-pub trait ValidNames {
-    /// Adds the name `s` to the set.
-    fn push(&mut self, s: &str);
-
-    /// Runs the function `names` provided with `self` as the store
-    /// and then returns back `self`.
-    /// This method exists for convenience.
-    fn run(mut self, names: &impl Fn(&mut dyn ValidNames)) -> Self
-    where
-        Self: Sized,
-    {
-        names(&mut self);
-        self
-    }
-}
-
-impl dyn ValidNames + '_ {
-    /// Adds the names in `iter` to the set.
-    pub fn extend<I: IntoIterator>(&mut self, iter: I)
-    where
-        I::Item: AsRef<str>,
-    {
-        for name in iter {
-            self.push(name.as_ref())
-        }
-    }
+    /// Deserializes the name of a field using `index`.
+    ///
+    /// The `name` is provided for error messages.
+    fn visit_seq<E: Error>(self, index: usize, name: &str) -> Result<Self::Output, E>;
 }
 
 /// A visitor walking through a [`Deserializer`] for sums.
@@ -442,17 +421,17 @@ pub trait SumAccess<'de> {
     /// The `visitor` is provided by the [`Deserializer`].
     /// This method is typically called from [`SumVisitor::visit_sum`]
     /// which will provide the [`V: VariantVisitor`](VariantVisitor).
-    fn variant<V: VariantVisitor>(self, visitor: V) -> Result<(V::Output, Self::Variant), Self::Error>;
+    fn variant<V: VariantVisitor<'de>>(self, visitor: V) -> Result<(V::Output, Self::Variant), Self::Error>;
 }
 
 /// A visitor passed from [`SumVisitor`] to [`SumAccess::variant`]
 /// which the latter uses to decide what variant to deserialize.
-pub trait VariantVisitor {
+pub trait VariantVisitor<'de> {
     /// The result of identifying a variant, e.g., some index type.
     type Output;
 
-    /// Provides the visitor the chance to add valid names into `names`.
-    fn variant_names(&self, names: &mut dyn ValidNames);
+    /// Provides a list of variant names.
+    fn variant_names(&self) -> impl '_ + Iterator<Item = &str>;
 
     /// Identify the variant based on `tag`.
     fn visit_tag<E: Error>(self, tag: u8) -> Result<Self::Output, E>;
@@ -669,71 +648,42 @@ impl<'de, T, const N: usize> ArrayVisitor<'de, T> for BasicArrayVisitor<N> {
     }
 }
 
-/// Provided a function `names` that is allowed to store a name into a valid set,
+/// Provided a list of names,
 /// returns a human readable list of all the names,
 /// or `None` in the case of an empty list of names.
-fn one_of_names(names: impl Fn(&mut dyn ValidNames)) -> Option<impl fmt::Display> {
-    /// An implementation of `ValidNames` that just counts how many valid names are pushed into it.
-    struct CountNames(usize);
+fn one_of_names<'a, I: Iterator<Item = Option<&'a str>>>(names: impl Fn() -> I) -> Option<impl fmt::Display> {
+    // Count how many names there are.
+    let count = names().count();
 
-    impl ValidNames for CountNames {
-        fn push(&mut self, _: &str) {
-            self.0 += 1
-        }
-    }
-
-    /// An implementation of `ValidNames` that provides a human friendly enumeration of names.
-    struct OneOfNames<'a, 'b> {
-        /// A `.push(_)` counter.
-        index: usize,
-        /// How many names there were.
-        count: usize,
-        /// Result of formatting thus far.
-        f: Result<&'a mut fmt::Formatter<'b>, fmt::Error>,
-    }
-
-    impl<'a, 'b> OneOfNames<'a, 'b> {
-        fn new(count: usize, f: &'a mut fmt::Formatter<'b>) -> Self {
-            Self {
-                index: 0,
-                count,
-                f: Ok(f),
-            }
-        }
-    }
-
-    impl ValidNames for OneOfNames<'_, '_> {
-        fn push(&mut self, name: &str) {
-            // This will give us, after all `.push()`es have been made, the following:
+    // There was at least one name; render those names.
+    (count != 0).then(move || {
+        fmt_fn(move |f| {
+            let mut anon_name = 0;
+            // An example of what happens for names "foo", "bar", and "baz":
             //
             // count = 1 -> "`foo`"
             //       = 2 -> "`foo` or `bar`"
             //       > 2 -> "one of `foo`, `bar`, or `baz`"
-
-            let Ok(f) = &mut self.f else {
-                return;
-            };
-
-            self.index += 1;
-
-            if let Err(e) = match (self.count, self.index) {
-                (1, _) => write!(f, "`{name}`"),
-                (2, 1) => write!(f, "`{name}`"),
-                (2, 2) => write!(f, "`or `{name}`"),
-                (_, 1) => write!(f, "one of `{name}`"),
-                (c, i) if i < c => write!(f, ", `{name}`"),
-                (_, _) => write!(f, ", `, or {name}`"),
-            } {
-                self.f = Err(e);
+            for (index, mut name) in names().enumerate() {
+                let mut name_buf: String = String::new();
+                let name = name.get_or_insert_with(|| {
+                    name_buf = format!("{anon_name}");
+                    anon_name += 1;
+                    &name_buf
+                });
+                match (count, index) {
+                    (1, _) => write!(f, "`{name}`"),
+                    (2, 1) => write!(f, "`{name}`"),
+                    (2, 2) => write!(f, "`or `{name}`"),
+                    (_, 1) => write!(f, "one of `{name}`"),
+                    (c, i) if i < c => write!(f, ", `{name}`"),
+                    (_, _) => write!(f, ", `, or {name}`"),
+                }?;
             }
-        }
-    }
 
-    // Count how many names have been pushed.
-    let count = CountNames(0).run(&names).0;
-
-    // There was at least one name; render those names.
-    (count != 0).then(|| fmt_fn(move |fmt| OneOfNames::new(count, fmt).run(&names).f.map(drop)))
+            Ok(())
+        })
+    })
 }
 
 /// Deserializes `none` variant of an optional value.
@@ -752,11 +702,11 @@ impl<E: Error> Default for NoneAccess<E> {
     }
 }
 
-impl<E: Error> SumAccess<'_> for NoneAccess<E> {
+impl<'de, E: Error> SumAccess<'de> for NoneAccess<E> {
     type Error = E;
     type Variant = Self;
 
-    fn variant<V: VariantVisitor>(self, visitor: V) -> Result<(V::Output, Self::Variant), Self::Error> {
+    fn variant<V: VariantVisitor<'de>>(self, visitor: V) -> Result<(V::Output, Self::Variant), Self::Error> {
         visitor.visit_name("none").map(|var| (var, self))
     }
 }
