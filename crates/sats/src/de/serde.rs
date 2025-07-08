@@ -2,7 +2,6 @@ use super::Deserializer;
 use crate::serde::{SerdeError, SerdeWrapper};
 use crate::{i256, u256};
 use core::fmt;
-use core::marker::PhantomData;
 use serde::de as serde;
 
 /// Converts any [`serde::Deserializer`] to a SATS [`Deserializer`]
@@ -235,28 +234,6 @@ impl<'de, A: serde::SeqAccess<'de>> super::SeqProductAccess<'de> for SeqTupleAcc
     }
 }
 
-/// Deserializes `none` variant of an optional value.
-struct NoneAccess<E>(PhantomData<E>);
-impl<E: super::Error> super::SumAccess<'_> for NoneAccess<E> {
-    type Error = E;
-    type Variant = Self;
-
-    fn variant<V: super::VariantVisitor>(self, visitor: V) -> Result<(V::Output, Self::Variant), Self::Error> {
-        visitor.visit_name("none").map(|var| (var, self))
-    }
-}
-impl<'de, E: super::Error> super::VariantAccess<'de> for NoneAccess<E> {
-    type Error = E;
-    fn deserialize_seed<T: super::DeserializeSeed<'de>>(self, seed: T) -> Result<T::Output, Self::Error> {
-        use crate::algebraic_value::de::*;
-        seed.deserialize(ValueDeserializer::new(crate::AlgebraicValue::unit()))
-            .map_err(|err| match err {
-                ValueDeserializeError::MismatchedType => E::custom("mismatched type"),
-                ValueDeserializeError::Custom(err) => E::custom(err),
-            })
-    }
-}
-
 /// Converts a SATS `SumVisitor` to `serde::Visitor`.
 struct EnumVisitor<V> {
     /// The `SumVisitor`.
@@ -289,7 +266,7 @@ impl<'de, V: super::SumVisitor<'de>> serde::Visitor<'de> for EnumVisitor<V> {
 
     fn visit_unit<E: serde::Error>(self) -> Result<Self::Value, E> {
         if self.visitor.is_option() {
-            self.visitor.visit_sum(NoneAccess(PhantomData)).map_err(unwrap_error)
+            self.visitor.visit_sum(super::NoneAccess::new()).map_err(unwrap_error)
         } else {
             Err(E::invalid_type(serde::Unexpected::Unit, &self))
         }

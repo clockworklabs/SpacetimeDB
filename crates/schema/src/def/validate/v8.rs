@@ -1,6 +1,9 @@
 //! Backwards-compatibility for the previous version of the schema definition format.
 //! This will be removed before 1.0.
 
+use crate::def::{validate::Result, ModuleDef};
+use crate::error::{RawColumnName, ValidationError, ValidationErrors};
+use spacetimedb_data_structures::map::HashSet;
 use spacetimedb_lib::db::raw_def::{v8::*, v9::*};
 use spacetimedb_lib::{
     // TODO: rename these types globally in a followup PR
@@ -11,11 +14,8 @@ use spacetimedb_lib::{
     TableDesc as RawTableDescV8,
     TypeAlias as RawTypeAliasV8,
 };
-use spacetimedb_primitives::{ColId, ColList};
+use spacetimedb_primitives::{ColId, ColList, ConstraintKind, Constraints};
 use spacetimedb_sats::{AlgebraicTypeRef, Typespace, WithTypespace};
-
-use crate::def::{validate::Result, ModuleDef};
-use crate::error::{RawColumnName, ValidationError, ValidationErrors};
 
 const INIT_NAME: &str = "__init__";
 const IDENTITY_CONNECTED_NAME: &str = "__identity_connected__";
@@ -62,6 +62,63 @@ fn upgrade_module(def: RawModuleDefV8, extra_errors: &mut Vec<ValidationError>) 
     }
 }
 
+/// Get an iterator deriving [RawIndexDefV8]s from the constraints that require them like `UNIQUE`.
+///
+/// It looks into [Self::constraints] for possible duplicates and remove them from the result
+pub fn generated_indexes(table: &RawTableDefV8) -> impl Iterator<Item = RawIndexDefV8> + '_ {
+    table
+        .constraints
+        .iter()
+        // We are only interested in constraints implying an index.
+        .filter(|x| x.constraints.has_indexed())
+        // Create the `IndexDef`.
+        .map(|x| {
+            let is_unique = x.constraints.has_unique();
+            RawIndexDefV8::for_column(&table.table_name, &x.constraint_name, x.columns.clone(), is_unique)
+        })
+        // Only keep those we don't yet have in the list of indices (checked by name).
+        .filter(|idx| table.indexes.iter().all(|x| x.index_name != idx.index_name))
+}
+
+/// Get an iterator deriving [RawSequenceDefV8] from the constraints that require them like `IDENTITY`.
+///
+/// It looks into [Self::constraints] for possible duplicates and remove them from the result
+pub fn generated_sequences(table: &RawTableDefV8) -> impl Iterator<Item = RawSequenceDefV8> + '_ {
+    let cols: HashSet<_> = table.sequences.iter().map(|seq| ColList::new(seq.col_pos)).collect();
+
+    table
+        .constraints
+        .iter()
+        // We are only interested in constraints implying a sequence.
+        .filter(move |x| !cols.contains(&x.columns) && x.constraints.has_autoinc())
+        // Create the `SequenceDef`.
+        .map(|x| RawSequenceDefV8::for_column(&table.table_name, &x.constraint_name, x.columns.head().unwrap()))
+        // Only keep those we don't yet have in the list of sequences (checked by name).
+        .filter(|seq| table.sequences.iter().all(|x| x.sequence_name != seq.sequence_name))
+}
+
+/// Get an iterator deriving [RawConstraintDefV8] from the indexes that require them like `UNIQUE`.
+///
+/// It looks into Self::constraints for possible duplicates and remove them from the result
+pub fn generated_constraints(table: &RawTableDefV8) -> impl Iterator<Item = RawConstraintDefV8> + '_ {
+    // Collect the set of all col-lists with a constraint.
+    let cols: HashSet<_> = table
+        .constraints
+        .iter()
+        .filter(|x| x.constraints.kind() != ConstraintKind::UNSET)
+        .map(|x| &x.columns)
+        .collect();
+
+    // Those indices that are not present in the constraints above
+    // have constraints generated for them.
+    // When `idx.is_unique`, a unique constraint is generated rather than an indexed one.
+    table
+        .indexes
+        .iter()
+        .filter(move |idx: &&RawIndexDefV8| !cols.contains(&idx.columns))
+        .map(|idx| table.gen_constraint_def(Constraints::from_is_unique(idx.is_unique), idx.columns.clone()))
+}
+
 /// Upgrade a table, returning a v9 table definition and a stream of v8-only validation errors.
 fn upgrade_table(
     table: RawTableDescV8,
@@ -70,9 +127,9 @@ fn upgrade_table(
 ) -> RawTableDefV9 {
     // First, generate all the various things that are needed.
     // This is the hairiest part of v8.
-    let generated_constraints = table.schema.generated_constraints().collect::<Vec<_>>();
-    let generated_sequences = table.schema.generated_sequences().collect::<Vec<_>>();
-    let generated_indexes = table.schema.generated_indexes().collect::<Vec<_>>();
+    let generated_constraints = generated_constraints(&table.schema).collect::<Vec<_>>();
+    let generated_sequences = generated_sequences(&table.schema).collect::<Vec<_>>();
+    let generated_indexes = generated_indexes(&table.schema).collect::<Vec<_>>();
 
     let RawTableDescV8 {
         schema:

@@ -49,6 +49,9 @@ macro_rules! system_id {
                 Self(value as _)
             }
         }
+
+        #[cfg(feature = "memory-usage")]
+        impl spacetimedb_memory_usage::MemoryUsage for $name {}
     };
 }
 // TODO(1.0): convert this into a proper trait.

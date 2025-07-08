@@ -1,16 +1,12 @@
 use crate::time_duration::TimeDuration;
 use crate::timestamp::Timestamp;
-use crate::{
-    algebraic_value::ser::ValueSerializer,
-    ser::{self, Serialize},
-    ProductType, ProductTypeElement,
-};
 use crate::{i256, u256};
+use crate::{ser, ProductType, ProductTypeElement};
 use core::fmt;
 use core::fmt::Write as _;
 use derive_more::{From, Into};
 
-/// An extension trait for [`Serialize`] providing formatting methods.
+/// An extension trait for [`Serialize`](ser::Serialize) providing formatting methods.
 pub trait Satn: ser::Serialize {
     /// Formats the value using the SATN data format into the formatter `f`.
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -348,53 +344,6 @@ impl<'a, 'f> ser::Serializer for SatnFormatter<'a, 'f> {
             Ok(())
         })?;
         write!(self, ")")
-    }
-
-    unsafe fn serialize_bsatn(self, ty: &crate::AlgebraicType, bsatn: &[u8]) -> Result<Self::Ok, Self::Error> {
-        // TODO(Centril): Consider instead deserializing the `bsatn` through a
-        // deserializer that serializes into `self` directly.
-
-        // First convert the BSATN to an `AlgebraicValue`.
-        // SAFETY: Forward caller requirements of this method to that we are calling.
-        let res = unsafe { ValueSerializer.serialize_bsatn(ty, bsatn) };
-        let value = res.unwrap_or_else(|x| match x {});
-
-        // Then serialize that.
-        value.serialize(self)
-    }
-
-    unsafe fn serialize_bsatn_in_chunks<'c, I: Clone + Iterator<Item = &'c [u8]>>(
-        self,
-        ty: &crate::AlgebraicType,
-        total_bsatn_len: usize,
-        bsatn: I,
-    ) -> Result<Self::Ok, Self::Error> {
-        // TODO(Centril): Unlike above, in this case we must at minimum concatenate `bsatn`
-        // before we can do the piping mentioned above, but that's better than
-        // serializing to `AlgebraicValue` first, so consider that.
-
-        // First convert the BSATN to an `AlgebraicValue`.
-        // SAFETY: Forward caller requirements of this method to that we are calling.
-        let res = unsafe { ValueSerializer.serialize_bsatn_in_chunks(ty, total_bsatn_len, bsatn) };
-        let value = res.unwrap_or_else(|x| match x {});
-
-        // Then serialize that.
-        value.serialize(self)
-    }
-
-    unsafe fn serialize_str_in_chunks<'c, I: Clone + Iterator<Item = &'c [u8]>>(
-        self,
-        total_len: usize,
-        string: I,
-    ) -> Result<Self::Ok, Self::Error> {
-        // First convert the `string` to an `AlgebraicValue`.
-        // SAFETY: Forward caller requirements of this method to that we are calling.
-        let res = unsafe { ValueSerializer.serialize_str_in_chunks(total_len, string) };
-        let value = res.unwrap_or_else(|x| match x {});
-
-        // Then serialize that.
-        // This incurs a very minor cost of branching on `AlgebraicValue::String`.
-        value.serialize(self)
     }
 }
 

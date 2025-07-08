@@ -24,11 +24,16 @@ blake3 = ["dep:blake3"]
 # which we don't want in `spacetimedb_bindings`.
 bytestring = ["dep:bytestring"]
 metrics_impls = ["dep:spacetimedb-metrics"]
+# Gated to avoid including this in `spacetimedb_bindings`.
+memory-usage = ["dep:spacetimedb-memory-usage", "spacetimedb-primitives/memory-usage"]
 
 [dependencies]
 spacetimedb-bindings-macro.workspace = true
-spacetimedb-data-structures.workspace = true
 spacetimedb-primitives.workspace = true
+spacetimedb-memory-usage = { workspace = true, optional = true, default-features = false, features = [
+    "ethnum",
+    "decorum",
+] }
 spacetimedb-metrics = { workspace = true, optional = true }
 
 anyhow.workspace = true

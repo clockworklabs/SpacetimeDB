@@ -1,9 +1,9 @@
-use crate::db::auth::{StAccess, StTableType};
-use crate::db::error::{RelationError, TypeError};
+use crate::def::error::{RelationError, TypeError};
 use core::fmt;
 use core::hash::Hash;
 use derive_more::From;
 use spacetimedb_data_structures::map::HashSet;
+use spacetimedb_lib::db::auth::{StAccess, StTableType};
 use spacetimedb_primitives::{ColId, ColList, ColSet, Constraints, TableId};
 use spacetimedb_sats::algebraic_value::AlgebraicValue;
 use spacetimedb_sats::satn::Satn;

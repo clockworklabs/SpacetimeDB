@@ -6,12 +6,15 @@ license-file = "LICENSE"
 description = "Assorted data structures used in spacetimedb"
 
 [features]
+memory-usage = ["dep:spacetimedb-memory-usage"]
 serde = ["dep:serde", "hashbrown/serde"]
 
 [dependencies]
+spacetimedb-memory-usage = { workspace = true, optional = true, default-features = false }
 ahash.workspace = true
+crossbeam-queue.workspace = true
 hashbrown.workspace = true
 nohash-hasher.workspace = true
 serde = { workspace = true, optional = true }
-thiserror.workspace = true
 smallvec.workspace = true
+thiserror.workspace = true

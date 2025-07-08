@@ -29,10 +29,11 @@ proptest = ["dep:proptest", "dep:proptest-derive", "spacetimedb-sats/proptest"]
 blake3_pure = ["blake3/pure"]
 
 [dependencies]
-spacetimedb-data-structures.workspace = true
+spacetimedb-data-structures = { workspace = true, features = ["memory-usage"] }
+spacetimedb-memory-usage = { workspace = true, features = ["hashbrown", "ethnum", "smallvec"] }
 spacetimedb-primitives.workspace = true
 spacetimedb-sats = { workspace = true, features = ["blake3"] }
-spacetimedb-lib.workspace = true
+spacetimedb-lib = { workspace = true, features = ["memory-usage"] }
 spacetimedb-schema.workspace = true
 
 ahash.workspace = true
