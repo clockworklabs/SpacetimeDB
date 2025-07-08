@@ -179,9 +179,11 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
         task.await
     };
 
-    // Close the connection gracefully, unless it's a websocket error.
+    // Close the connection gracefully, unless it's a websocket error,
+    // in which case the connection is most likely already unusable.
     if !res.as_ref().is_err_and(|e| e.downcast_ref::<WsError>().is_some()) {
-        ws.close(None).await?;
+        // Ignore errors here, we're going to drop the connection anyways.
+        let _ = ws.close(None).await;
     }
 
     res
@@ -251,7 +253,7 @@ where
         }
         let Some(msg) = ws.try_next().await? else {
             eprintln!("disconnected by server");
-            break Ok(());
+            break Err(WsError::ConnectionClosed.into());
         };
 
         let Some(msg) = parse_msg_json(&msg) else { continue };
