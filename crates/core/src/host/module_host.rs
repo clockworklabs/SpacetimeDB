@@ -577,7 +577,8 @@ impl ModuleHost {
     }
 
     /// Run a function on the JobThread for this module.
-    /// This will deadlock if it is called within another call to `on_module_thread`.
+    /// This would deadlock if it is called within another call to `on_module_thread`.
+    /// Since this is async, and `f` is sync, deadlocking shouldn't be a problem.
     pub async fn on_module_thread<F, R>(&self, label: &str, f: F) -> Result<R, anyhow::Error>
     where
         F: FnOnce() -> R + Send + 'static,
@@ -591,7 +592,8 @@ impl ModuleHost {
             .map_err(|_| anyhow::Error::from(NoSuchModule))
     }
 
-    async fn call<F, R>(&self, reducer: &str, f: F) -> Result<R, NoSuchModule>
+    /// Run a function on the JobThread for this module which has access to the module instance.
+    async fn call<F, R>(&self, label: &str, f: F) -> Result<R, NoSuchModule>
     where
         F: FnOnce(&mut dyn ModuleInstance) -> R + Send + 'static,
         R: Send + 'static,
@@ -599,7 +601,7 @@ impl ModuleHost {
         // Record the time until our function starts running.
         let queue_timer = WORKER_METRICS
             .reducer_wait_time
-            .with_label_values(&self.info.database_identity, reducer)
+            .with_label_values(&self.info.database_identity, label)
             .start_timer();
         let queue_length_gauge = WORKER_METRICS
             .instance_queue_length
@@ -630,7 +632,7 @@ impl ModuleHost {
         // If a reducer call panics, we **must** ensure to call `self.on_panic`
         // so that the module is discarded by the host controller.
         scopeguard::defer_on_unwind!({
-            log::warn!("reducer {reducer} panicked");
+            log::warn!("reducer {label} panicked");
             (self.on_panic)();
         });
         self.job_tx
@@ -645,16 +647,13 @@ impl ModuleHost {
     pub async fn disconnect_client(&self, client_id: ClientActorId) {
         log::trace!("disconnecting client {}", client_id);
         let this = self.clone();
-        self.on_module_thread("disconnect_client", move || {
-            // Remove the client from the module's subscriptions.
-            // This will also remove the client from the `st_client` table.
-            this.subscriptions().remove_subscriber(client_id);
-        })
-        .await
-        .unwrap();
-        // ignore NoSuchModule; if the module's already closed, that's fine
         if let Err(e) = self
-            .call_identity_disconnected(client_id.identity, client_id.connection_id)
+            .call("disconnect_client", move |inst| {
+                // Call the `client_disconnected` reducer, if it exists.
+                // This is a no-op if the module doesn't define such a reducer.
+                this.subscriptions().remove_subscriber(client_id);
+                this.call_identity_disconnected_inner(client_id.identity, client_id.connection_id, inst)
+            })
             .await
         {
             log::error!("Error from client_disconnected transaction: {e}");
@@ -756,6 +755,94 @@ impl ModuleHost {
         .map_err(Into::<ReducerCallError>::into)?
     }
 
+    pub fn call_identity_disconnected_inner(
+        &self,
+        caller_identity: Identity,
+        caller_connection_id: ConnectionId,
+        inst: &mut dyn ModuleInstance,
+    ) -> Result<(), ReducerCallError> {
+        let me = self.clone();
+        let reducer_lookup = me.info.module_def.lifecycle_reducer(Lifecycle::OnDisconnect);
+
+        // A fallback transaction that deletes the client from `st_client`.
+        let fallback = || {
+            let reducer_name = reducer_lookup
+                .as_ref()
+                .map(|(_, def)| &*def.name)
+                .unwrap_or("__identity_disconnected__");
+
+            let workload = Workload::Reducer(ReducerContext {
+                name: reducer_name.to_owned(),
+                caller_identity,
+                caller_connection_id,
+                timestamp: Timestamp::now(),
+                arg_bsatn: Bytes::new(),
+            });
+            let stdb = me.module.replica_ctx().relational_db.clone();
+            let database_identity = me.info.database_identity;
+            stdb.with_auto_commit(workload, |mut_tx| {
+                mut_tx
+                    .delete_st_client(caller_identity, caller_connection_id, database_identity)
+                    .map_err(DBError::from)
+            })
+            .map_err(|err| {
+                log::error!(
+                    "`call_identity_disconnected`: fallback transaction to delete from `st_client` failed: {err}"
+                );
+                InvalidReducerArguments {
+                    err: err.into(),
+                    reducer: reducer_name.into(),
+                }
+                .into()
+            })
+        };
+
+        if let Some((reducer_id, reducer_def)) = reducer_lookup {
+            // The module defined a lifecycle reducer to handle disconnects. Call it.
+            // If it succeeds, `WasmModuleInstance::call_reducer_with_tx` has already ensured
+            // that `st_client` is updated appropriately.
+            let result = me.call_reducer_inner_with_inst(
+                caller_identity,
+                Some(caller_connection_id),
+                None,
+                None,
+                None,
+                reducer_id,
+                reducer_def,
+                ReducerArgs::Nullary,
+                inst,
+            );
+
+            // If it failed, we still need to update `st_client`: the client's not coming back.
+            // Commit a separate transaction that just updates `st_client`.
+            //
+            // It's OK for this to not be atomic with the previous transaction,
+            // since that transaction didn't commit. If we crash before committing this one,
+            // we'll run the `client_disconnected` reducer again unnecessarily,
+            // but the commitlog won't contain two invocations of it, which is what we care about.
+            match result {
+                Err(e) => {
+                    log::error!("call_reducer_inner of client_disconnected failed: {e:#?}");
+                    fallback()
+                }
+                Ok(ReducerCallResult {
+                    outcome: ReducerOutcome::Failed(_) | ReducerOutcome::BudgetExceeded,
+                    ..
+                }) => fallback(),
+
+                // If it succeeded, as mentioned above, `st_client` is already updated.
+                Ok(ReducerCallResult {
+                    outcome: ReducerOutcome::Committed,
+                    ..
+                }) => Ok(()),
+            }
+        } else {
+            // The module doesn't define a `client_disconnected` reducer.
+            // Commit a transaction to update `st_clients`.
+            fallback()
+        }
+    }
+
     /// Invoke the module's `client_disconnected` reducer, if it has one,
     /// and delete the client's row from `st_client`, if any.
     ///
@@ -778,85 +865,7 @@ impl ModuleHost {
     ) -> Result<(), ReducerCallError> {
         let me = self.clone();
         self.call("call_identity_connected", move |inst| {
-            let reducer_lookup = me.info.module_def.lifecycle_reducer(Lifecycle::OnDisconnect);
-
-            // A fallback transaction that deletes the client from `st_client`.
-            let fallback = || {
-                let reducer_name = reducer_lookup
-                    .as_ref()
-                    .map(|(_, def)| &*def.name)
-                    .unwrap_or("__identity_disconnected__");
-
-                let workload = Workload::Reducer(ReducerContext {
-                    name: reducer_name.to_owned(),
-                    caller_identity,
-                    caller_connection_id,
-                    timestamp: Timestamp::now(),
-                    arg_bsatn: Bytes::new(),
-                });
-                let stdb = me.module.replica_ctx().relational_db.clone();
-                let database_identity = me.info.database_identity;
-                stdb.with_auto_commit(workload, |mut_tx| {
-                    mut_tx
-                        .delete_st_client(caller_identity, caller_connection_id, database_identity)
-                        .map_err(DBError::from)
-                })
-                .map_err(|err| {
-                    log::error!(
-                        "`call_identity_disconnected`: fallback transaction to delete from `st_client` failed: {err}"
-                    );
-                    InvalidReducerArguments {
-                        err: err.into(),
-                        reducer: reducer_name.into(),
-                    }
-                    .into()
-                })
-            };
-
-            if let Some((reducer_id, reducer_def)) = reducer_lookup {
-                // The module defined a lifecycle reducer to handle disconnects. Call it.
-                // If it succeeds, `WasmModuleInstance::call_reducer_with_tx` has already ensured
-                // that `st_client` is updated appropriately.
-                let result = me.call_reducer_inner_with_inst(
-                    caller_identity,
-                    Some(caller_connection_id),
-                    None,
-                    None,
-                    None,
-                    reducer_id,
-                    reducer_def,
-                    ReducerArgs::Nullary,
-                    inst,
-                );
-
-                // If it failed, we still need to update `st_client`: the client's not coming back.
-                // Commit a separate transaction that just updates `st_client`.
-                //
-                // It's OK for this to not be atomic with the previous transaction,
-                // since that transaction didn't commit. If we crash before committing this one,
-                // we'll run the `client_disconnected` reducer again unnecessarily,
-                // but the commitlog won't contain two invocations of it, which is what we care about.
-                match result {
-                    Err(e) => {
-                        log::error!("call_reducer_inner of client_disconnected failed: {e:#?}");
-                        fallback()
-                    }
-                    Ok(ReducerCallResult {
-                        outcome: ReducerOutcome::Failed(_) | ReducerOutcome::BudgetExceeded,
-                        ..
-                    }) => fallback(),
-
-                    // If it succeeded, as mentioned above, `st_client` is already updated.
-                    Ok(ReducerCallResult {
-                        outcome: ReducerOutcome::Committed,
-                        ..
-                    }) => Ok(()),
-                }
-            } else {
-                // The module doesn't define a `client_disconnected` reducer.
-                // Commit a transaction to update `st_clients`.
-                fallback()
-            }
+            me.call_identity_disconnected_inner(caller_identity, caller_connection_id, inst)
         })
         .await
         .map_err(Into::<ReducerCallError>::into)?
