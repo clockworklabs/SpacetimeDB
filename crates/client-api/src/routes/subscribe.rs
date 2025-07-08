@@ -11,7 +11,6 @@ use bytestring::ByteString;
 use futures::future::MaybeDone;
 use futures::{Future, FutureExt, SinkExt, StreamExt};
 use http::{HeaderValue, StatusCode};
-use scopeguard::ScopeGuard;
 use serde::Deserialize;
 use spacetimedb::client::messages::{serialize, IdentityTokenMessage, SerializableMessage, SerializeBuffer};
 use spacetimedb::client::{
@@ -192,7 +191,10 @@ async fn ws_client_actor(client: ClientConnection, ws: WebSocketStream, sendrx: 
 
     ws_client_actor_inner(&mut client, ws, sendrx).await;
 
-    ScopeGuard::into_inner(client).disconnect().await;
+    // Commenting this out because this task is not cancel safe after the call to `into_inner`.
+    // I don't think it matters that this function can return while the disconnect function is
+    // still running.
+    // ScopeGuard::into_inner(client).disconnect().await;
 }
 
 async fn make_progress<Fut: Future>(fut: &mut Pin<&mut MaybeDone<Fut>>) {
