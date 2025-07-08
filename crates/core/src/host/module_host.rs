@@ -12,6 +12,7 @@ use crate::execution_context::{ExecutionContext, ReducerContext, Workload, Workl
 use crate::hash::Hash;
 use crate::identity::Identity;
 use crate::messages::control_db::Database;
+use crate::module_host_context::ModuleCreationContext;
 use crate::replica_context::ReplicaContext;
 use crate::sql::ast::SchemaViewer;
 use crate::sql::parser::RowLevelExpr;
@@ -304,6 +305,12 @@ impl ReducersMap {
         let result = self.0.get_index(reducer_id.0 as _)?;
         Some(&**result)
     }
+}
+
+/// A runtime that can create modules.
+pub trait ModuleRuntime {
+    /// Creates a module based on the context `mcc`.
+    fn make_actor(&self, mcc: ModuleCreationContext<'_>) -> anyhow::Result<impl Module>;
 }
 
 pub trait DynModule: Send + Sync + 'static {
