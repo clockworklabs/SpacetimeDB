@@ -206,7 +206,7 @@ impl<'de, V: super::FieldNameVisitor<'de>> serde::Visitor<'de> for FieldNameVisi
     type Value = V::Output;
 
     fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if let Some(one_of) = super::one_of_names(|n| self.visitor.field_names(n)) {
+        if let Some(one_of) = super::one_of_names(|| self.visitor.field_names()) {
             write!(f, "a tuple field ({one_of})")
         } else {
             f.write_str("a tuple field, but there are no fields")
@@ -279,7 +279,7 @@ struct VariantVisitor<V> {
     visitor: V,
 }
 
-impl<'de, V: super::VariantVisitor> serde::DeserializeSeed<'de> for VariantVisitor<V> {
+impl<'de, V: super::VariantVisitor<'de>> serde::DeserializeSeed<'de> for VariantVisitor<V> {
     type Value = V::Output;
 
     fn deserialize<D: serde::Deserializer<'de>>(self, deserializer: D) -> Result<Self::Value, D::Error> {
@@ -287,7 +287,7 @@ impl<'de, V: super::VariantVisitor> serde::DeserializeSeed<'de> for VariantVisit
     }
 }
 
-impl<V: super::VariantVisitor> serde::Visitor<'_> for VariantVisitor<V> {
+impl<'de, V: super::VariantVisitor<'de>> serde::Visitor<'de> for VariantVisitor<V> {
     type Value = V::Output;
 
     fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -323,7 +323,7 @@ impl<'de, A: serde::MapAccess<'de>> super::SumAccess<'de> for EnumAccess<A> {
     type Error = SerdeError<A::Error>;
     type Variant = Self;
 
-    fn variant<V: super::VariantVisitor>(mut self, visitor: V) -> Result<(V::Output, Self::Variant), Self::Error> {
+    fn variant<V: super::VariantVisitor<'de>>(mut self, visitor: V) -> Result<(V::Output, Self::Variant), Self::Error> {
         let errmsg = "expected map representing sum type to have exactly one field";
         let key = self
             .access
@@ -351,7 +351,7 @@ impl<'de, A: serde::SeqAccess<'de>> super::SumAccess<'de> for SeqEnumAccess<A> {
     type Error = SerdeError<A::Error>;
     type Variant = Self;
 
-    fn variant<V: super::VariantVisitor>(mut self, visitor: V) -> Result<(V::Output, Self::Variant), Self::Error> {
+    fn variant<V: super::VariantVisitor<'de>>(mut self, visitor: V) -> Result<(V::Output, Self::Variant), Self::Error> {
         let key = self
             .access
             .next_element_seed(VariantVisitor { visitor })
