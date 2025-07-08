@@ -9,6 +9,7 @@ use crate::db::db_metrics::DB_METRICS;
 use crate::db::relational_db::{self, DiskSizeFn, RelationalDB, Txdata};
 use crate::db::{self, spawn_tx_metrics_recorder};
 use crate::energy::{EnergyMonitor, EnergyQuanta, NullEnergyMonitor};
+use crate::host::module_host::ModuleRuntime as _;
 use crate::host::v8::V8Runtime;
 use crate::messages::control_db::{Database, HostType};
 use crate::module_host_context::ModuleCreationContext;
@@ -113,7 +114,7 @@ struct HostRuntimes {
 impl HostRuntimes {
     fn new(data_dir: Option<&ServerDataDir>) -> Arc<Self> {
         let wasmtime = WasmtimeRuntime::new(data_dir);
-        let v8 = V8Runtime::new();
+        let v8 = V8Runtime::default();
         Arc::new(Self { wasmtime, v8 })
     }
 }

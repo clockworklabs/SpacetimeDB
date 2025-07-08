@@ -7,6 +7,7 @@ use wasmtime::{Engine, Linker, Module, StoreContext, StoreContextMut};
 
 use crate::energy::{EnergyQuanta, ReducerBudget};
 use crate::error::NodesError;
+use crate::host::module_host::ModuleRuntime;
 use crate::module_host_context::ModuleCreationContext;
 
 mod wasm_instance_env;
@@ -80,11 +81,10 @@ impl WasmtimeRuntime {
         config.cache_config_load(tmpfile.path())?;
         Ok(())
     }
+}
 
-    pub fn make_actor(
-        &self,
-        mcc: ModuleCreationContext,
-    ) -> Result<impl super::module_host::Module, ModuleCreationError> {
+impl ModuleRuntime for WasmtimeRuntime {
+    fn make_actor(&self, mcc: ModuleCreationContext) -> anyhow::Result<impl super::module_host::Module> {
         let module = Module::new(&self.engine, &mcc.program.bytes).map_err(ModuleCreationError::WasmCompileError)?;
 
         let func_imports = module

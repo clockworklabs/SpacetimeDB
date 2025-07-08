@@ -1,33 +1,45 @@
 use crate::{
     db::datastore::locking_tx_datastore::MutTxId,
     host::{
-        module_host::{DynModule, Module, ModuleInfo, ModuleInstance},
+        module_host::{DynModule, Module, ModuleInfo, ModuleInstance, ModuleRuntime},
         Scheduler,
     },
     module_host_context::ModuleCreationContext,
     replica_context::ReplicaContext,
 };
 use anyhow::anyhow;
-use std::sync::{Arc, Once};
+use std::sync::{Arc, LazyLock};
 
 use super::module_host::CallReducerParams;
 
+/// The V8 runtime, for modules written in e.g., JS or TypeScript.
+#[derive(Default)]
 pub struct V8Runtime {
     _priv: (),
 }
 
-impl V8Runtime {
+impl ModuleRuntime for V8Runtime {
+    fn make_actor(&self, mcc: ModuleCreationContext<'_>) -> anyhow::Result<impl Module> {
+        V8_RUNTIME_GLOBAL.make_actor(mcc)
+    }
+}
+
+static V8_RUNTIME_GLOBAL: LazyLock<V8RuntimeInner> = LazyLock::new(V8RuntimeInner::new);
+
+/// The actual V8 runtime, with initialization of V8.
+struct V8RuntimeInner {
+    _priv: (),
+}
+
+impl V8RuntimeInner {
     #[allow(clippy::new_without_default)]
-    pub fn new() -> Self {
-        static V8_INIT: Once = Once::new();
-        V8_INIT.call_once(|| {
-            // TODO
-        });
+    const fn new() -> Self {
+        // TODO: actually setup V8.
 
         Self { _priv: () }
     }
 
-    pub fn make_actor(&self, _: ModuleCreationContext<'_>) -> anyhow::Result<impl Module> {
+    fn make_actor(&self, _: ModuleCreationContext<'_>) -> anyhow::Result<impl Module> {
         Err::<JsModule, _>(anyhow!("v8_todo"))
     }
 }
