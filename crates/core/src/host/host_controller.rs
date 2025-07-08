@@ -641,7 +641,7 @@ async fn make_replica_ctx(
             let Some(subscriptions) = downgraded.upgrade() else {
                 break;
             };
-            // This should happen on the module thread.
+            // This should happen on the module thread, but we haven't created the module yet.
             asyncify(move || subscriptions.write().remove_dropped_clients()).await
         }
     });
