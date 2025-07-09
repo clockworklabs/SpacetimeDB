@@ -35,7 +35,6 @@ use spacetimedb::Identity;
 use spacetimedb_client_api_messages::websocket::{self as ws_api, Compression};
 use spacetimedb_lib::connection_id::{ConnectionId, ConnectionIdForUrl};
 use std::time::Instant;
-use tokio::sync::mpsc::error::SendError;
 use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
 use tokio::time::error::Elapsed;
@@ -333,7 +332,7 @@ async fn ws_client_actor_inner(
     };
 
     ws_main_loop(state, hotswap, idle_timer, send_task, recv_task, move |msg| {
-        unordered_tx.send(msg)
+        let _ = unordered_tx.send(msg);
     })
     .await;
     log::info!("Client connection ended: {}", client_id);
@@ -341,14 +340,114 @@ async fn ws_client_actor_inner(
 
 /// The main `select!` loop of the websocket client actor.
 ///
-/// This exists so we can test its behavior without a proper `ClientConnection`.
+/// > This function is defined standalone with generic parameters so that its
+/// > behavior can be tested in isolation, not requiring I/O and allowing to
+/// > mock effects easily.
+///
+/// The loop's responsibilities are:
+///
+/// - Drive the tasks handling the send and receive ends of the websockets to
+///   completion, terminating when either of them completes.
+///
+/// - Terminating if the connection is idle for longer than [`ActorConfig::idle_timeout`].
+///   The connection becomes idle if nothing is received from the socket.
+///
+/// - Periodically sending `Ping` frames to prevent the connection from becoming
+///   idle (the client is supposed to respond with `Pong`, which resets the
+///   idle timer). See [`ActorConfig::ping_interval`].
+///
+/// - Watch for changes to the [`ClientConnection`]'s module reference.
+///   If it changes, the [`ClientConnection`] "hotswaps" the module, if it
+///   is exited, the loop schedules a `Close` frame to be sent, initiating a
+///   connection shutdown.
+///
+/// A peculiarity of handling termination is the websocket [close handshake]:
+/// whichever side wants to close the connection sends a `Close` frame and needs
+/// to wait for the other end to respond with a `Close` for the connection to
+/// end cleanly.
+///
+/// `tungstenite` handles the protocol details of the close handshake for us,
+/// but for it to work properly, we must keep polling the socket until the
+/// handshake is complete.
+///
+/// This is straightforward when the client initiates the close, as the receive
+/// stream will just become exhausted, and we'll exit the loop.
+///
+/// In the case of a server-initiated close, it's a bit more tricky, as we're
+/// not supposed to send any more data after a `Close` frame (and `tungstenite`
+/// prevents it). Yet, we need to keep polling the receive end until either
+/// the `Close` response (which could be queued behind a large number of
+/// outstanding messages) arrives, or a timeout elapses (in case the client
+/// never responds).
+///
+/// The implementations [`ws_recv_loop`] and [`ws_send_loop`] thus share the
+/// [`ActorState`], which tracks whether the connection is in the closing phase
+/// ([`ActorState::closed()`]). If closed, both the send and receive loops keep
+/// running, but drop any incoming or outgoing messages respectively until
+/// either the `Close` response arrives or [`ActorConfig::close_handshake_timeout`]
+/// elapses.
+///
+///
+/// Parameters:
+///
+/// * **state**:
+///   The shared [`ActorState`], updated here when a `Pong` message is received.
+///
+/// * **hotswap**:
+///   An abstraction for [`ClientConnection::watch_module_host`], which updates
+///   the connection's internal reference to the module if it was updated,
+///   allowing database updates without disconnecting clients.
+///
+///   It is polled here for its error return value: if the output of the future
+///   is `Err(NoSuchModule)`, the database was shut down and existing clients
+///   must be disconnected.
+///
+/// * **idle_timer**:
+///   Abstraction for [`ws_idle_timer`]: if and when the future completes, the
+///   connection is considered unresponsive, and the connection is closed.
+///
+///   The idle timer should be reset whenever data is received from the websocket.
+///
+/// * **send_task**:
+///   Task handling outgoing messages. Holds the receive end of `unordered_tx`.
+///
+///   If the task returns, the connection is considered bad, and the main loop
+///   exits. If the task panicked, the panic is resumed on the current thread.
+///
+///   Note that the send task must not terminate after it has sent `Close` frame
+///   (via `unordered_tx`) -- the websocket protocol mandates that the
+///   initiator of the close handshake wait for the other end to respond with
+///   a `Close` frame. Thus, the loop must continue to poll `recv_task` and not
+///   exit due to `send_task` being complete.
+///
+///   See [`ws_send_loop`].
+///
+/// * **recv_task**:
+///   Task handling incoming messages.
+///
+///   If the task returns, the connection is considered closed, and the main
+///   loop exits. If the task panicked, the panic is resumed on the current
+///   thread.
+///
+///   See [`ws_recv_task`].
+///
+/// * **unordered_tx**:
+///   Channel connected to `send_task` that allows the loop to send `Ping` and
+///   `Close` frames.
+///
+///   Note that messages sent while the receiving `send_task` is already
+///   terminated are silently ignored. This is safe because the loop will exit
+///   anyway when the `send_task` is complete.
+///
+///
+/// [close handshake]: https://datatracker.ietf.org/doc/html/rfc6455#section-7
 async fn ws_main_loop<HotswapWatcher>(
     state: Arc<ActorState>,
     hotswap: impl Fn() -> HotswapWatcher,
     idle_timer: impl Future<Output = ()>,
     mut send_task: JoinHandle<()>,
     mut recv_task: JoinHandle<()>,
-    unordered_tx: impl Fn(UnorderedWsMessage) -> Result<(), SendError<UnorderedWsMessage>>,
+    unordered_tx: impl Fn(UnorderedWsMessage),
 ) where
     HotswapWatcher: Future<Output = Result<(), NoSuchModule>>,
 {
@@ -371,6 +470,18 @@ async fn ws_main_loop<HotswapWatcher>(
         let closed = state.closed();
 
         tokio::select! {
+            // Drive send and receive tasks to completion,
+            // propagating panics.
+            //
+            // If either task completes,
+            // the connection is considered closed and we break the loop.
+            //
+            // NOTE: We don't abort the tasks until this function returns,
+            // so the `Err` can't contain an `is_cancelled()` value.
+            //
+            // Even if the tasks were cancelled (e.g. if the caller retains
+            // [`tokio::task::AbortHandle`]s), the reasonable thing to do is to
+            // exit the loop as if the tasks completed normally.
             res = &mut send_task => {
                 if let Err(e) = res {
                     if e.is_panic() {
@@ -388,6 +499,7 @@ async fn ws_main_loop<HotswapWatcher>(
                 break;
             },
 
+            // Exit if we haven't heard from the client for too long.
             _ = &mut idle_timer => {
                 log::warn!("Client {} timed out", state.client_id);
                 break;
@@ -403,20 +515,25 @@ async fn ws_main_loop<HotswapWatcher>(
                         code: CloseCode::Away,
                         reason: "module exited".into()
                     };
-                    // If `send_task` is gone, we'll exit the loop.
-                    unordered_tx(close.into()).ok();
+                    unordered_tx(close.into());
                 }
                 watch_hotswap.set(hotswap());
             },
 
             // Send ping.
             //
+            // If we didn't receive a response to the last ping,
+            // we don't bother sending a fresh one.
+            //
+            // Either the connection is idle (in which case the timer will kick
+            // in), or there is a massive backlog to process until the pong
+            // appears on the ordered stream.
+            //
             // Branch is disabled if we already sent a close frame.
             _ = ping_interval.tick(), if !closed => {
                 let was_ponged = state.reset_ponged();
                 if was_ponged {
-                    // If `send_task` is gone, we'll exit the loop.
-                    unordered_tx(UnorderedWsMessage::Ping(Bytes::new())).ok();
+                    unordered_tx(UnorderedWsMessage::Ping(Bytes::new()));
                 }
             }
         }
@@ -429,7 +546,7 @@ async fn ws_main_loop<HotswapWatcher>(
 /// i.e. if a new deadline appears before the sleep finishes,
 /// the sleep is reset to the new deadline.
 ///
-/// The `activity` should be updated whenever a new message is received or sent.
+/// The `activity` should be updated whenever a new message is received.
 async fn ws_idle_timer(mut activity: watch::Receiver<Instant>) {
     let mut deadline = *activity.borrow();
     let sleep = sleep_until(deadline.into());
@@ -455,8 +572,24 @@ async fn ws_idle_timer(mut activity: watch::Receiver<Instant>) {
 }
 
 /// Consumes `ws` by composing [`ws_recv_loop`], [`ws_client_message_handler`]
-/// and [`ws_eval_handler`]. `unordered_tx` is used to send message execution
-/// errors or initiating a close handshake.
+/// and `message_handler`.
+///
+/// `idle_tx` is the sending end of a [`ws_idle_timer`]. The [`ws_recv_loop`]
+/// sends a new, extended deadline whenever it receives a message.
+///
+/// `unordered_tx` is used to send message execution errors
+/// or to initiate a close handshake.
+///
+/// Initiates a close handshake if the `message_handler` returns any variant
+/// of [`MessageHandleError`] that is **not** [`MessageHandleError::Execution`].
+///
+/// Terminates if:
+///
+/// - the `ws` stream is exhausted
+/// - or, `unordered_tx` is already closed
+///
+/// In the latter case, we assume that the connection is in an errored state,
+/// such that we wouldn't be able to receive any more messages anyway.
 async fn ws_recv_task<MessageHandler>(
     state: Arc<ActorState>,
     idle_tx: watch::Sender<Instant>,
@@ -612,6 +745,8 @@ fn ws_client_message_handler(
                 },
                 ClientMessage::Ping(_bytes) => {
                     log::trace!("Received ping from client {}", state.client_id);
+                    // `tungstenite` will respond with `Pong` for us,
+                    // no need to send it ourselves.
                 },
                 ClientMessage::Pong(_bytes) => {
                     log::trace!("Received pong from client {}", state.client_id);
@@ -1214,7 +1349,7 @@ mod tests {
             future::pending(),
             tokio::spawn(sleep(Duration::from_millis(10))),
             tokio::spawn(future::pending()),
-            |_| Ok(()),
+            drop,
         )
         .await;
         ws_main_loop(
@@ -1223,7 +1358,7 @@ mod tests {
             future::pending(),
             tokio::spawn(future::pending()),
             tokio::spawn(sleep(Duration::from_millis(10))),
-            |_| Ok(()),
+            drop,
         )
         .await;
     }
@@ -1246,7 +1381,7 @@ mod tests {
                     ws_idle_timer(idle_rx),
                     tokio::spawn(future::pending()),
                     tokio::spawn(future::pending()),
-                    |_| Ok(()),
+                    drop,
                 )
                 .await
             }
@@ -1287,7 +1422,6 @@ mod tests {
                         idle_tx.send(state.next_idle_deadline()).ok();
                     }
                 }
-                Ok(())
             }
         };
 
@@ -1328,7 +1462,6 @@ mod tests {
                 if let UnorderedWsMessage::Close(_) = m {
                     state.close();
                 }
-                Ok(())
             }
         };
 
