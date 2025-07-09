@@ -42,6 +42,7 @@ use spacetimedb_sats::AlgebraicType;
 use spacetimedb_sats::{AlgebraicTypeRef, Typespace};
 
 pub mod deserialize;
+pub mod error;
 pub mod validate;
 
 /// A map from `Identifier`s to values of type `T`.

@@ -166,10 +166,10 @@ mod tests {
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::identity::AuthCtx;
     use spacetimedb_lib::metrics::ExecutionMetrics;
-    use spacetimedb_lib::relation::FieldName;
     use spacetimedb_lib::Identity;
     use spacetimedb_primitives::{ColId, TableId};
     use spacetimedb_sats::{product, AlgebraicType, ProductType, ProductValue};
+    use spacetimedb_schema::relation::FieldName;
     use spacetimedb_schema::schema::*;
     use spacetimedb_vm::eval::run_ast;
     use spacetimedb_vm::eval::test_helpers::{mem_table, mem_table_without_table_name, scalar};

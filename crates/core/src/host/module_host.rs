@@ -4,6 +4,7 @@ use crate::client::{ClientActorId, ClientConnectionSender};
 use crate::database_logger::{LogLevel, Record};
 use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::db::datastore::traits::{IsolationLevel, Program, TxData};
+use crate::db::relational_db::RelationalDB;
 use crate::energy::EnergyQuanta;
 use crate::error::DBError;
 use crate::estimation::estimate_rows_scanned;
@@ -11,6 +12,7 @@ use crate::execution_context::{ExecutionContext, ReducerContext, Workload, Workl
 use crate::hash::Hash;
 use crate::identity::Identity;
 use crate::messages::control_db::Database;
+use crate::module_host_context::ModuleCreationContext;
 use crate::replica_context::ReplicaContext;
 use crate::sql::ast::SchemaViewer;
 use crate::sql::parser::RowLevelExpr;
@@ -41,7 +43,7 @@ use spacetimedb_query::compile_subscription;
 use spacetimedb_sats::ProductValue;
 use spacetimedb_schema::auto_migrate::AutoMigrateError;
 use spacetimedb_schema::def::deserialize::ReducerArgsDeserializeSeed;
-use spacetimedb_schema::def::{ModuleDef, ReducerDef};
+use spacetimedb_schema::def::{ModuleDef, ReducerDef, TableDef};
 use spacetimedb_schema::schema::{Schema, TableSchema};
 use spacetimedb_vm::relation::RelValue;
 use std::fmt;
@@ -305,6 +307,12 @@ impl ReducersMap {
     }
 }
 
+/// A runtime that can create modules.
+pub trait ModuleRuntime {
+    /// Creates a module based on the context `mcc`.
+    fn make_actor(&self, mcc: ModuleCreationContext<'_>) -> anyhow::Result<impl Module>;
+}
+
 pub trait DynModule: Send + Sync + 'static {
     fn replica_ctx(&self) -> &Arc<ReplicaContext>;
     fn scheduler(&self) -> &Scheduler;
@@ -331,6 +339,19 @@ pub trait ModuleInstance: Send + 'static {
     fn call_reducer(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> ReducerCallResult;
 }
 
+/// Creates the table for `table_def` in `stdb`.
+pub fn create_table_from_def(
+    stdb: &RelationalDB,
+    tx: &mut MutTxId,
+    module_def: &ModuleDef,
+    table_def: &TableDef,
+) -> anyhow::Result<()> {
+    let schema = TableSchema::from_module_def(module_def, table_def, (), TableId::SENTINEL);
+    stdb.create_table(tx, schema)
+        .with_context(|| format!("failed to create table {}", &table_def.name))?;
+    Ok(())
+}
+
 /// If the module instance's replica_ctx is uninitialized, initialize it.
 fn init_database(
     replica_ctx: &ReplicaContext,
@@ -351,11 +372,8 @@ fn init_database(
             table_defs.sort_by(|a, b| a.name.cmp(&b.name));
 
             for def in table_defs {
-                let table_name = &def.name;
-                logger.info(&format!("Creating table `{table_name}`"));
-                let schema = TableSchema::from_module_def(module_def, def, (), TableId::SENTINEL);
-                stdb.create_table(tx, schema)
-                    .with_context(|| format!("failed to create table {table_name}"))?;
+                logger.info(&format!("Creating table `{}`", &def.name));
+                create_table_from_def(stdb, tx, module_def, def)?;
             }
             // Insert the late-bound row-level security expressions.
             for rls in module_def.row_level_security() {

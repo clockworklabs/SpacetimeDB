@@ -332,10 +332,10 @@ pub fn spawn_page_pool_stats(node_id: String, page_pool: PagePool) {
 
             loop {
                 resident_bytes.set(page_pool.heap_usage() as i64);
-                dropped_pages.set(page_pool.dropped_pages_count() as i64);
-                new_pages.set(page_pool.new_pages_allocated_count() as i64);
-                reused_pages.set(page_pool.pages_reused_count() as i64);
-                returned_pages.set(page_pool.pages_reused_count() as i64);
+                dropped_pages.set(page_pool.dropped_count() as i64);
+                new_pages.set(page_pool.new_allocated_count() as i64);
+                reused_pages.set(page_pool.reused_count() as i64);
+                returned_pages.set(page_pool.reused_count() as i64);
 
                 sleep(Duration::from_secs(10)).await;
             }

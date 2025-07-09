@@ -5531,6 +5531,7 @@ dependencies = [
  "spacetimedb-jsonwebtoken",
  "spacetimedb-jwks",
  "spacetimedb-lib",
+ "spacetimedb-memory-usage",
  "spacetimedb-metrics",
  "spacetimedb-paths",
  "spacetimedb-physical-plan",
@@ -5573,10 +5574,12 @@ name = "spacetimedb-data-structures"
 version = "1.2.0"
 dependencies = [
  "ahash 0.8.12",
+ "crossbeam-queue",
  "hashbrown 0.15.3",
  "nohash-hasher",
  "serde",
  "smallvec",
+ "spacetimedb-memory-usage",
  "thiserror 1.0.69",
 ]
 
@@ -5690,11 +5693,21 @@ dependencies = [
  "serde",
  "serde_json",
  "spacetimedb-bindings-macro",
- "spacetimedb-data-structures",
+ "spacetimedb-memory-usage",
  "spacetimedb-metrics",
  "spacetimedb-primitives",
  "spacetimedb-sats",
  "thiserror 1.0.69",
+]
+
+[[package]]
+name = "spacetimedb-memory-usage"
+version = "1.2.0"
+dependencies = [
+ "decorum",
+ "ethnum",
+ "hashbrown 0.15.3",
+ "smallvec",
 ]
 
 [[package]]
@@ -5748,6 +5761,7 @@ dependencies = [
  "itertools 0.12.1",
  "nohash-hasher",
  "proptest",
+ "spacetimedb-memory-usage",
 ]
 
 [[package]]
@@ -5794,7 +5808,7 @@ dependencies = [
  "sha3",
  "smallvec",
  "spacetimedb-bindings-macro",
- "spacetimedb-data-structures",
+ "spacetimedb-memory-usage",
  "spacetimedb-metrics",
  "spacetimedb-primitives",
  "thiserror 1.0.69",
@@ -5805,6 +5819,7 @@ name = "spacetimedb-schema"
 version = "1.2.0"
 dependencies = [
  "anyhow",
+ "derive_more",
  "enum-as-inner",
  "enum-map",
  "hashbrown 0.15.3",
@@ -5967,6 +5982,7 @@ dependencies = [
  "smallvec",
  "spacetimedb-data-structures",
  "spacetimedb-lib",
+ "spacetimedb-memory-usage",
  "spacetimedb-primitives",
  "spacetimedb-sats",
  "spacetimedb-schema",

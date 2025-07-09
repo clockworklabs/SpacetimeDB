@@ -14,7 +14,7 @@
 use blake3::hash;
 use spacetimedb_data_structures::map::{Entry, HashMap};
 use spacetimedb_lib::{de::Deserialize, ser::Serialize};
-use spacetimedb_sats::memory_usage::MemoryUsage;
+use spacetimedb_memory_usage::MemoryUsage;
 
 /// The content address of a blob-stored object.
 #[derive(Eq, PartialEq, PartialOrd, Ord, Clone, Copy, Hash, Debug, Serialize, Deserialize)]

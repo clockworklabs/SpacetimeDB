@@ -1,10 +1,10 @@
 use core::hash::{Hash, Hasher};
 use spacetimedb_execution::Row;
 use spacetimedb_lib::db::auth::StAccess;
-use spacetimedb_lib::relation::{ColExpr, ColExprRef, Header};
 use spacetimedb_sats::bsatn::{ser::BsatnError, ToBsatn};
 use spacetimedb_sats::product_value::ProductValue;
 use spacetimedb_sats::{impl_serialize, AlgebraicValue};
+use spacetimedb_schema::relation::{ColExpr, ColExprRef, Header};
 use spacetimedb_table::read_column::ReadColumn;
 use spacetimedb_table::table::RowRef;
 use std::borrow::Cow;

@@ -9,6 +9,8 @@ use crate::db::db_metrics::DB_METRICS;
 use crate::db::relational_db::{self, DiskSizeFn, RelationalDB, Txdata};
 use crate::db::{self, spawn_tx_metrics_recorder};
 use crate::energy::{EnergyMonitor, EnergyQuanta, NullEnergyMonitor};
+use crate::host::module_host::ModuleRuntime as _;
+use crate::host::v8::V8Runtime;
 use crate::messages::control_db::{Database, HostType};
 use crate::module_host_context::ModuleCreationContext;
 use crate::replica_context::ReplicaContext;
@@ -106,12 +108,14 @@ pub struct HostController {
 
 struct HostRuntimes {
     wasmtime: WasmtimeRuntime,
+    v8: V8Runtime,
 }
 
 impl HostRuntimes {
     fn new(data_dir: Option<&ServerDataDir>) -> Arc<Self> {
         let wasmtime = WasmtimeRuntime::new(data_dir);
-        Arc::new(Self { wasmtime })
+        let v8 = V8Runtime::default();
+        Arc::new(Self { wasmtime, v8 })
     }
 }
 
@@ -671,17 +675,23 @@ async fn make_module_host(
     //       threads, but those aren't for computation. Also, wasmtime uses rayon
     //       to run compilation in parallel, so it'll need to run stuff in rayon anyway.
     asyncify(move || {
+        let mcc = ModuleCreationContext {
+            replica_ctx,
+            scheduler,
+            program: &program,
+            energy_monitor,
+        };
+
+        let start = Instant::now();
         let module_host = match host_type {
             HostType::Wasm => {
-                let mcc = ModuleCreationContext {
-                    replica_ctx,
-                    scheduler,
-                    program: &program,
-                    energy_monitor,
-                };
-                let start = Instant::now();
                 let actor = runtimes.wasmtime.make_actor(mcc)?;
                 trace!("wasmtime::make_actor blocked for {:?}", start.elapsed());
+                ModuleHost::new(actor, unregister, core)
+            }
+            HostType::Js => {
+                let actor = runtimes.v8.make_actor(mcc)?;
+                trace!("v8::make_actor blocked for {:?}", start.elapsed());
                 ModuleHost::new(actor, unregister, core)
             }
         };
