@@ -188,7 +188,8 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
         let _ = ws.close(None).await;
     }
 
-    res.map_err(Into::into)
+    res.or_else(|e| if e.is_closed_normally() { Ok(()) } else { Err(e) })
+        .map_err(anyhow::Error::from)
 }
 
 #[derive(Debug, Error)]
@@ -216,6 +217,17 @@ enum Error {
     Serde(#[from] serde_json::Error),
     #[error(transparent)]
     Io(#[from] io::Error),
+}
+
+impl Error {
+    fn is_closed_normally(&self) -> bool {
+        matches!(
+            self,
+            Self::Websocket {
+                source: WsError::ConnectionClosed
+            }
+        )
+    }
 }
 
 /// Send the subscribe message.
