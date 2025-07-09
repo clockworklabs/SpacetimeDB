@@ -609,7 +609,7 @@ async fn ws_recv_task<MessageHandler>(
         if let Err(e) = result {
             if let MessageHandleError::Execution(err) = e {
                 log::error!("{err:#}");
-                // Break if send task is gone.
+                // If the send task has exited, also exit this recv task.
                 if unordered_tx.send(err.into()).is_err() {
                     break;
                 }
@@ -620,7 +620,8 @@ async fn ws_recv_task<MessageHandler>(
                 code: CloseCode::Error,
                 reason: format!("{e:#}").into(),
             };
-            // Break if unable to initiate close handshake.
+            // If the send task has exited, also exit this recv task.
+            // No need to send the close handshake in that case; the client is already gone.
             if unordered_tx.send(close.into()).is_err() {
                 break;
             };
