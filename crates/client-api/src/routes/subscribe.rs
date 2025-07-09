@@ -527,7 +527,8 @@ async fn ws_main_loop<HotswapWatcher>(
             //
             // Either the connection is idle (in which case the timer will kick
             // in), or there is a massive backlog to process until the pong
-            // appears on the ordered stream.
+            // appears on the ordered stream. In either case, adding more pings
+            // is of no value.
             //
             // Branch is disabled if we already sent a close frame.
             _ = ping_interval.tick(), if !closed => {
