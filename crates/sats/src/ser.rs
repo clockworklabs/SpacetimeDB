@@ -6,7 +6,8 @@ mod impls;
 pub mod serde;
 
 use crate::{algebraic_value::ser::ValueSerializer, bsatn, buffer::BufWriter, AlgebraicType};
-use core::fmt;
+use core::marker::PhantomData;
+use core::{convert::Infallible, fmt};
 use ethnum::{i256, u256};
 pub use spacetimedb_bindings_macro::Serialize;
 
@@ -383,5 +384,52 @@ impl<S: SerializeSeqProduct> SerializeNamedProduct for ForwardNamedToSeqProduct<
 
     fn end(self) -> Result<Self::Ok, Self::Error> {
         self.tup.end()
+    }
+}
+
+/// A type usable in one of the associated types of [`Serializer`]
+/// when the data format does not support the data.
+pub struct Impossible<Ok, Error> {
+    // They gave each other a pledge. Unheard of, absurd.
+    absurd: Infallible,
+    marker: PhantomData<(Ok, Error)>,
+}
+
+impl<Ok, Error: self::Error> SerializeArray for Impossible<Ok, Error> {
+    type Ok = Ok;
+    type Error = Error;
+
+    fn serialize_element<T: Serialize + ?Sized>(&mut self, _: &T) -> Result<(), Self::Error> {
+        match self.absurd {}
+    }
+
+    fn end(self) -> Result<Self::Ok, Self::Error> {
+        match self.absurd {}
+    }
+}
+
+impl<Ok, Error: self::Error> SerializeSeqProduct for Impossible<Ok, Error> {
+    type Ok = Ok;
+    type Error = Error;
+
+    fn serialize_element<T: Serialize + ?Sized>(&mut self, _: &T) -> Result<(), Self::Error> {
+        match self.absurd {}
+    }
+
+    fn end(self) -> Result<Self::Ok, Self::Error> {
+        match self.absurd {}
+    }
+}
+
+impl<Ok, Error: self::Error> SerializeNamedProduct for Impossible<Ok, Error> {
+    type Ok = Ok;
+    type Error = Error;
+
+    fn serialize_element<T: Serialize + ?Sized>(&mut self, _: Option<&str>, _: &T) -> Result<(), Self::Error> {
+        match self.absurd {}
+    }
+
+    fn end(self) -> Result<Self::Ok, Self::Error> {
+        match self.absurd {}
     }
 }
