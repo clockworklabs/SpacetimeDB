@@ -1,9 +1,11 @@
 use std::fmt::Display;
 use std::future::{poll_fn, Future};
+use std::num::NonZeroUsize;
 use std::panic;
-use std::pin::pin;
+use std::pin::{pin, Pin};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::task::{Context, Poll};
 use std::time::Duration;
 
 use async_stream::stream;
@@ -255,6 +257,12 @@ struct ActorConfig {
     ///
     /// Default: 250ms
     close_handshake_timeout: Duration,
+    /// Maximum number of messages to queue for processing.
+    ///
+    /// If this number is exceeded, the client is disconnected.
+    ///
+    /// Default: 2048
+    incoming_queue_length: NonZeroUsize,
 }
 
 impl Default for ActorConfig {
@@ -263,6 +271,9 @@ impl Default for ActorConfig {
             ping_interval: Duration::from_secs(15),
             idle_timeout: Duration::from_secs(30),
             close_handshake_timeout: Duration::from_millis(250),
+            incoming_queue_length:
+                // SAFETY: 2048 > 0, qed
+                unsafe { NonZeroUsize::new_unchecked(2048) }
         }
     }
 }
@@ -414,8 +425,8 @@ async fn ws_client_actor_inner(
 ///   If the task returns, the connection is considered bad, and the main loop
 ///   exits. If the task panicked, the panic is resumed on the current thread.
 ///
-///   Note that the send task must not terminate after it has sent `Close` frame
-///   (via `unordered_tx`) -- the websocket protocol mandates that the
+///   Note that the send task must not terminate after it has sent a `Close`
+///   frame (via `unordered_tx`) -- the websocket protocol mandates that the
 ///   initiator of the close handshake wait for the other end to respond with
 ///   a `Close` frame. Thus, the loop must continue to poll `recv_task` and not
 ///   exit due to `send_task` being complete.
@@ -572,8 +583,8 @@ async fn ws_idle_timer(mut activity: watch::Receiver<Instant>) {
     }
 }
 
-/// Consumes `ws` by composing [`ws_recv_loop`], [`ws_client_message_handler`]
-/// and `message_handler`.
+/// Consumes `ws` by composing [`ws_recv_queue`], [`ws_recv_loop`],
+/// [`ws_client_message_handler`] and `message_handler`.
 ///
 /// `idle_tx` is the sending end of a [`ws_idle_timer`]. The [`ws_recv_loop`]
 /// sends a new, extended deadline whenever it receives a message.
@@ -597,11 +608,12 @@ async fn ws_recv_task<MessageHandler>(
     client_closed_metric: IntGauge,
     message_handler: impl Fn(DataMessage, Instant) -> MessageHandler,
     unordered_tx: mpsc::UnboundedSender<UnorderedWsMessage>,
-    ws: impl Stream<Item = Result<WsMessage, WsError>> + Unpin,
+    ws: impl Stream<Item = Result<WsMessage, WsError>> + Unpin + Send + 'static,
 ) where
     MessageHandler: Future<Output = Result<(), MessageHandleError>>,
 {
-    let recv_loop = pin!(ws_recv_loop(state.clone(), idle_tx, ws));
+    let recv_queue = ws_recv_queue(state.clone(), unordered_tx.clone(), ws);
+    let recv_loop = pin!(ws_recv_loop(state.clone(), idle_tx, recv_queue));
     let recv_handler = ws_client_message_handler(state.clone(), client_closed_metric, recv_loop);
     pin_mut!(recv_handler);
 
@@ -724,6 +736,109 @@ fn ws_recv_loop(
     }
 }
 
+/// Consumes `ws` and queues its items in a channel.
+///
+/// The channel is initialized with [`ActorConfig::incoming_queue_length`].
+/// If it is at capacity, a connection shutdown is initiated by sending
+/// [`UnorderedWsMessage::Close`] via `unordered_tx`.
+///
+/// Returns the channel receiver.
+///
+/// NOTE: This function is provided for backwards-compatibility, in particular
+/// SDK clients not handling backpressure gracefully, and for observability of
+/// transaction backlogging. It will probably go away in the future, see [#1851].
+///
+/// [#1851]: https://github.com/clockworklabs/SpacetimeDBPrivate/issues/1851
+fn ws_recv_queue(
+    state: Arc<ActorState>,
+    unordered_tx: mpsc::UnboundedSender<UnorderedWsMessage>,
+    mut ws: impl Stream<Item = Result<WsMessage, WsError>> + Unpin + Send + 'static,
+) -> impl Stream<Item = Result<WsMessage, WsError>> {
+    const CLOSE: UnorderedWsMessage = UnorderedWsMessage::Close(CloseFrame {
+        code: CloseCode::Again,
+        reason: Utf8Bytes::from_static("too many requests"),
+    });
+    let on_message_after_close = move |client_id| {
+        log::warn!("client {client_id} sent message after close or error");
+    };
+
+    let (tx, rx) = mpsc::channel(state.config.incoming_queue_length.get());
+    let rx = MeteredReceiverStream {
+        inner: MeteredReceiver::with_gauge(
+            rx,
+            WORKER_METRICS
+                .total_incoming_queue_length
+                .with_label_values(&state.database),
+        ),
+    };
+
+    tokio::spawn(async move {
+        while let Some(item) = ws.next().await {
+            if let Err(e) = tx.try_send(item) {
+                match e {
+                    // If the queue is full, disconnect the client.
+                    mpsc::error::TrySendError::Full(item) => {
+                        // If we can't send close (send task already terminated):
+                        //
+                        // - Let downstream handlers know that we're closing,
+                        //   so that remaining items in the queue are dropped.
+                        //
+                        // - Then exit the loop, as we won't be processing any
+                        //   more messages, and we don't expect a close response
+                        //   to arrive from the client.
+                        if unordered_tx.send(CLOSE).is_err() {
+                            state.close();
+                            break;
+                        }
+                        // If we successfully enqueued `CLOSE`, enqueue `item`
+                        // as well, as soon as there is space in the channel.
+                        //
+                        // This is to allow the client to complete the close
+                        // handshake, for which the downstream handler needs to
+                        // drain the queue.
+                        //
+                        // If `tx.send` fails, the pipeline is broken, so exit.
+                        // See commentary on the `TrySendError::Closed` match
+                        // arm below.
+                        if tx.send(item).await.is_err() {
+                            on_message_after_close(state.client_id);
+                            break;
+                        }
+                    }
+                    // If the downstream consumer went away,
+                    // it has consumed a `Close` frame or `Err` value
+                    // from the queue and thus has determined that it's done.
+                    //
+                    // Well-behaved clients shouldn't send anything after
+                    // closing, so issue a warning.
+                    //
+                    // We're done either way, so break.
+                    mpsc::error::TrySendError::Closed(_item) => {
+                        on_message_after_close(state.client_id);
+                        break;
+                    }
+                }
+            }
+        }
+    });
+
+    rx
+}
+
+/// Turns a [`MeteredReceiver`] into a [`Stream`],
+/// like [`tokio_stream::wrappers::ReceiverStream`] does for [`mpsc::Receiver`].
+struct MeteredReceiverStream<T> {
+    inner: MeteredReceiver<T>,
+}
+
+impl<T> Stream for MeteredReceiverStream<T> {
+    type Item = T;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        self.inner.poll_recv(cx)
+    }
+}
+
 /// Stream that consumes [`ClientMessage`]s and yields [`DataMessage`]s for
 /// evaluation.
 ///
@@ -769,7 +884,7 @@ fn ws_client_message_handler(
 }
 
 /// Outgoing messages that don't need to be ordered wrt subscription updates.
-#[derive(From)]
+#[derive(Debug, From)]
 enum UnorderedWsMessage {
     /// Server-initiated close.
     Close(CloseFrame),
@@ -1497,6 +1612,40 @@ mod tests {
         let elapsed = start.elapsed();
         assert!(elapsed >= Duration::from_millis(5));
         assert!(elapsed < Duration::from_millis(10));
+    }
+
+    #[tokio::test]
+    async fn recv_queue_sends_close_when_at_capacity() {
+        let state = Arc::new(dummy_actor_state_with_config(ActorConfig {
+            incoming_queue_length: 10.try_into().unwrap(),
+            ..<_>::default()
+        }));
+
+        let (unordered_tx, mut unordered_rx) = mpsc::unbounded_channel();
+        let input = stream::iter((0..20).map(|i| Ok(WsMessage::text(format!("message {i}")))));
+
+        let received = ws_recv_queue(state, unordered_tx, input).collect::<Vec<_>>().await;
+        assert_matches!(unordered_rx.recv().await, Some(UnorderedWsMessage::Close(_)));
+        // Should have received all of the input.
+        assert_eq!(received.len(), 20);
+    }
+
+    #[tokio::test]
+    async fn recv_queue_closes_state_if_sender_gone() {
+        let state = Arc::new(dummy_actor_state_with_config(ActorConfig {
+            incoming_queue_length: 10.try_into().unwrap(),
+            ..<_>::default()
+        }));
+
+        let (unordered_tx, _) = mpsc::unbounded_channel();
+        let input = stream::iter((0..20).map(|i| Ok(WsMessage::text(format!("message {i}")))));
+
+        let received = ws_recv_queue(state.clone(), unordered_tx, input)
+            .collect::<Vec<_>>()
+            .await;
+        assert!(state.closed());
+        // Should have received up to capacity.
+        assert_eq!(received.len(), 10);
     }
 
     async fn is_pending(fut: &mut (impl Future + Unpin)) -> bool {
