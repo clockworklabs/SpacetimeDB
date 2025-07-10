@@ -864,7 +864,7 @@ impl ModuleHost {
         caller_connection_id: ConnectionId,
     ) -> Result<(), ReducerCallError> {
         let me = self.clone();
-        self.call("call_identity_connected", move |inst| {
+        self.call("call_identity_disconnected", move |inst| {
             me.call_identity_disconnected_inner(caller_identity, caller_connection_id, inst)
         })
         .await
