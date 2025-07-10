@@ -74,5 +74,5 @@ pub struct NodeStatus {
 #[repr(i32)]
 pub enum HostType {
     Wasm = 0,
-    Js,
+    Js = 1,
 }
