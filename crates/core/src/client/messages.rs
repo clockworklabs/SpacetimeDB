@@ -26,7 +26,7 @@ pub trait ToProtocol {
     fn to_protocol(self, protocol: Protocol) -> Self::Encoded;
 }
 
-pub(super) type SwitchedServerMessage = FormatSwitch<ws::ServerMessage<BsatnFormat>, ws::ServerMessage<JsonFormat>>;
+pub type SwitchedServerMessage = FormatSwitch<ws::ServerMessage<BsatnFormat>, ws::ServerMessage<JsonFormat>>;
 pub(super) type SwitchedDbUpdate = FormatSwitch<ws::DatabaseUpdate<BsatnFormat>, ws::DatabaseUpdate<JsonFormat>>;
 
 /// The initial size of a `serialize` buffer.

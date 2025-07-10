@@ -1,8 +1,10 @@
 use std::collections::VecDeque;
+use std::future::poll_fn;
 use std::ops::Deref;
 use std::sync::atomic::Ordering;
 use std::sync::atomic::{AtomicBool, Ordering::Relaxed};
 use std::sync::Arc;
+use std::task::{Context, Poll};
 use std::time::Instant;
 
 use super::messages::{OneOffQueryResponseMessage, SerializableMessage};
@@ -337,19 +339,30 @@ impl<T> MeteredReceiver<T> {
     }
 
     pub async fn recv(&mut self) -> Option<T> {
-        self.inner.recv().await.inspect(|_| {
-            if let Some(gauge) = &self.gauge {
-                gauge.dec();
-            }
-        })
+        poll_fn(|cx| self.poll_recv(cx)).await
     }
 
     pub async fn recv_many(&mut self, buf: &mut Vec<T>, max: usize) -> usize {
-        let n = self.inner.recv_many(buf, max).await;
-        if let Some(gauge) = &self.gauge {
-            gauge.sub(n as _);
-        }
-        n
+        poll_fn(|cx| self.poll_recv_many(cx, buf, max)).await
+    }
+
+    pub fn poll_recv(&mut self, cx: &mut Context<'_>) -> Poll<Option<T>> {
+        self.inner.poll_recv(cx).map(|maybe_item| {
+            maybe_item.inspect(|_| {
+                if let Some(gauge) = &self.gauge {
+                    gauge.dec()
+                }
+            })
+        })
+    }
+
+    pub fn poll_recv_many(&mut self, cx: &mut Context<'_>, buf: &mut Vec<T>, max: usize) -> Poll<usize> {
+        self.inner.poll_recv_many(cx, buf, max).map(|n| {
+            if let Some(gauge) = &self.gauge {
+                gauge.sub(n as _);
+            }
+            n
+        })
     }
 
     pub fn len(&self) -> usize {
