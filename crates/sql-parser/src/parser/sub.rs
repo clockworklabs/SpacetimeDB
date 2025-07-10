@@ -142,7 +142,7 @@ fn parse_select(select: Select) -> SqlParseResult<SqlSelect> {
         {
             Ok(SqlSelect {
                 from: SubParser::parse_from(from)?,
-                filter: parse_expr_opt(selection)?,
+                filter: parse_expr_opt(selection, &mut 0)?,
                 project: parse_projection(projection)?,
             })
         }

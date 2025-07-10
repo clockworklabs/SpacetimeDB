@@ -19,6 +19,7 @@ use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use spacetimedb_sats::algebraic_value::ser::ValueSerializer;
 use spacetimedb_schema::schema::ColumnSchema;
 use spacetimedb_sql_parser::ast::{self, BinOp, ProjectElem, SqlExpr, SqlIdent, SqlLiteral};
+use spacetimedb_sql_parser::parser::recursion;
 
 pub mod check;
 pub mod errors;
@@ -30,7 +31,7 @@ pub mod statement;
 pub(crate) fn type_select(input: RelExpr, expr: SqlExpr, vars: &Relvars) -> TypingResult<RelExpr> {
     Ok(RelExpr::Select(
         Box::new(input),
-        type_expr(vars, expr, Some(&AlgebraicType::Bool))?,
+        type_expr(vars, expr, Some(&AlgebraicType::Bool), &mut 0)?,
     ))
 }
 
@@ -68,7 +69,7 @@ pub(crate) fn type_proj(input: RelExpr, proj: ast::Project, vars: &Relvars) -> T
                     return Err(DuplicateName(alias.into_string()).into());
                 }
 
-                if let Expr::Field(p) = type_expr(vars, expr.into(), None)? {
+                if let Expr::Field(p) = type_expr(vars, expr.into(), None, &mut 0)? {
                     projections.push((alias, p));
                 }
             }
@@ -79,7 +80,14 @@ pub(crate) fn type_proj(input: RelExpr, proj: ast::Project, vars: &Relvars) -> T
 }
 
 /// Type check and lower a [SqlExpr] into a logical [Expr].
-pub(crate) fn type_expr(vars: &Relvars, expr: SqlExpr, expected: Option<&AlgebraicType>) -> TypingResult<Expr> {
+pub(crate) fn type_expr(
+    vars: &Relvars,
+    expr: SqlExpr,
+    expected: Option<&AlgebraicType>,
+    depth: &mut usize,
+) -> TypingResult<Expr> {
+    recursion::guard(depth, recursion::MAX_RECURSION_TYP_EXPR, "expr::type_expr")?;
+
     match (expr, expected) {
         (SqlExpr::Lit(SqlLiteral::Bool(v)), None | Some(AlgebraicType::Bool)) => Ok(Expr::bool(v)),
         (SqlExpr::Lit(SqlLiteral::Bool(_)), Some(ty)) => Err(UnexpectedType::new(&AlgebraicType::Bool, ty).into()),
@@ -117,21 +125,21 @@ pub(crate) fn type_expr(vars: &Relvars, expr: SqlExpr, expected: Option<&Algebra
             }))
         }
         (SqlExpr::Log(a, b, op), None | Some(AlgebraicType::Bool)) => {
-            let a = type_expr(vars, *a, Some(&AlgebraicType::Bool))?;
-            let b = type_expr(vars, *b, Some(&AlgebraicType::Bool))?;
+            let a = type_expr(vars, *a, Some(&AlgebraicType::Bool), depth)?;
+            let b = type_expr(vars, *b, Some(&AlgebraicType::Bool), depth)?;
             Ok(Expr::LogOp(op, Box::new(a), Box::new(b)))
         }
         (SqlExpr::Bin(a, b, op), None | Some(AlgebraicType::Bool)) if matches!(&*a, SqlExpr::Lit(_)) => {
-            let b = type_expr(vars, *b, None)?;
-            let a = type_expr(vars, *a, Some(b.ty()))?;
+            let b = type_expr(vars, *b, None, depth)?;
+            let a = type_expr(vars, *a, Some(b.ty()), depth)?;
             if !op_supports_type(op, a.ty()) {
                 return Err(InvalidOp::new(op, a.ty()).into());
             }
             Ok(Expr::BinOp(op, Box::new(a), Box::new(b)))
         }
         (SqlExpr::Bin(a, b, op), None | Some(AlgebraicType::Bool)) => {
-            let a = type_expr(vars, *a, None)?;
-            let b = type_expr(vars, *b, Some(a.ty()))?;
+            let a = type_expr(vars, *a, None, depth)?;
+            let b = type_expr(vars, *b, Some(a.ty()), depth)?;
             if !op_supports_type(op, a.ty()) {
                 return Err(InvalidOp::new(op, a.ty()).into());
             }
