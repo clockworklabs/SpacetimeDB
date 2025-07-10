@@ -1,0 +1,134 @@
+{
+  "format": 1,
+  "restore": {
+    "/Users/mamcx/Proyectos/space/SpacetimeDB/sdks/csharp/examples~/quickstart-chat/client/client.csproj": {}
+  },
+  "projects": {
+    "/Users/mamcx/Proyectos/space/SpacetimeDB/sdks/csharp/examples~/quickstart-chat/client/client.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "/Users/mamcx/Proyectos/space/SpacetimeDB/sdks/csharp/examples~/quickstart-chat/client/client.csproj",
+        "projectName": "client",
+        "projectPath": "/Users/mamcx/Proyectos/space/SpacetimeDB/sdks/csharp/examples~/quickstart-chat/client/client.csproj",
+        "packagesPath": "/Users/mamcx/.nuget/packages/",
+        "outputPath": "/Users/mamcx/Proyectos/space/SpacetimeDB/sdks/csharp/examples~/quickstart-chat/client/obj~/",
+        "projectStyle": "PackageReference",
+        "configFilePaths": [
+          "/Users/mamcx/.nuget/NuGet/NuGet.Config"
+        ],
+        "originalTargetFrameworks": [
+          "net8.0"
+        ],
+        "sources": {
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net8.0": {
+            "targetAlias": "net8.0",
+            "projectReferences": {
+              "/Users/mamcx/Proyectos/space/SpacetimeDB/sdks/csharp/SpacetimeDB.ClientSDK.csproj": {
+                "projectPath": "/Users/mamcx/Proyectos/space/SpacetimeDB/sdks/csharp/SpacetimeDB.ClientSDK.csproj"
+              }
+            }
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        }
+      },
+      "frameworks": {
+        "net8.0": {
+          "targetAlias": "net8.0",
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "/usr/local/share/dotnet/sdk/8.0.400/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    },
+    "/Users/mamcx/Proyectos/space/SpacetimeDB/sdks/csharp/SpacetimeDB.ClientSDK.csproj": {
+      "version": "1.2.2",
+      "restore": {
+        "projectUniqueName": "/Users/mamcx/Proyectos/space/SpacetimeDB/sdks/csharp/SpacetimeDB.ClientSDK.csproj",
+        "projectName": "SpacetimeDB.ClientSDK",
+        "projectPath": "/Users/mamcx/Proyectos/space/SpacetimeDB/sdks/csharp/SpacetimeDB.ClientSDK.csproj",
+        "packagesPath": "/Users/mamcx/Proyectos/space/SpacetimeDB/sdks/csharp/packages",
+        "outputPath": "/Users/mamcx/Proyectos/space/SpacetimeDB/sdks/csharp/obj~/",
+        "projectStyle": "PackageReference",
+        "configFilePaths": [
+          "/Users/mamcx/.nuget/NuGet/NuGet.Config"
+        ],
+        "originalTargetFrameworks": [
+          "netstandard2.1"
+        ],
+        "sources": {
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "netstandard2.1": {
+            "targetAlias": "netstandard2.1",
+            "projectReferences": {}
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        }
+      },
+      "frameworks": {
+        "netstandard2.1": {
+          "targetAlias": "netstandard2.1",
+          "dependencies": {
+            "SpacetimeDB.BSATN.Runtime": {
+              "target": "Package",
+              "version": "[1.2.*, )"
+            }
+          },
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "frameworkReferences": {
+            "NETStandard.Library": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "/usr/local/share/dotnet/sdk/8.0.400/RuntimeIdentifierGraph.json"
+        }
+      }
+    }
+  }
+}

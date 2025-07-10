@@ -1,0 +1,12 @@
+{
+  "version": 2,
+  "dgSpecHash": "V/I6DzQd2Ws=",
+  "success": true,
+  "projectFilePath": "/Users/mamcx/Proyectos/space/SpacetimeDB/sdks/csharp/examples~/regression-tests/server/StdbModule.csproj",
+  "expectedPackageFiles": [
+    "/Users/mamcx/.nuget/packages/microsoft.net.illink.tasks/8.0.8/microsoft.net.illink.tasks.8.0.8.nupkg.sha512",
+    "/Users/mamcx/.nuget/packages/spacetimedb.bsatn.runtime/1.2.1/spacetimedb.bsatn.runtime.1.2.1.nupkg.sha512",
+    "/Users/mamcx/.nuget/packages/spacetimedb.runtime/1.2.1/spacetimedb.runtime.1.2.1.nupkg.sha512"
+  ],
+  "logs": []
+}

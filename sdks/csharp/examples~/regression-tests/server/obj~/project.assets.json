@@ -1,0 +1,264 @@
+{
+  "version": 3,
+  "targets": {
+    "net8.0": {
+      "Microsoft.NET.ILLink.Tasks/8.0.8": {
+        "type": "package",
+        "build": {
+          "build/Microsoft.NET.ILLink.Tasks.props": {}
+        }
+      },
+      "SpacetimeDB.BSATN.Runtime/1.2.1": {
+        "type": "package",
+        "compile": {
+          "lib/net8.0/SpacetimeDB.BSATN.Runtime.dll": {
+            "related": ".xml"
+          }
+        },
+        "runtime": {
+          "lib/net8.0/SpacetimeDB.BSATN.Runtime.dll": {
+            "related": ".xml"
+          }
+        }
+      },
+      "SpacetimeDB.Runtime/1.2.1": {
+        "type": "package",
+        "dependencies": {
+          "SpacetimeDB.BSATN.Runtime": "1.2.1"
+        },
+        "compile": {
+          "lib/net8.0/SpacetimeDB.Runtime.dll": {
+            "related": ".xml"
+          }
+        },
+        "runtime": {
+          "lib/net8.0/SpacetimeDB.Runtime.dll": {
+            "related": ".xml"
+          }
+        },
+        "build": {
+          "build/SpacetimeDB.Runtime.props": {},
+          "build/SpacetimeDB.Runtime.targets": {}
+        }
+      }
+    },
+    "net8.0/wasi-wasm": {
+      "Microsoft.NET.ILLink.Tasks/8.0.8": {
+        "type": "package",
+        "build": {
+          "build/Microsoft.NET.ILLink.Tasks.props": {}
+        }
+      },
+      "SpacetimeDB.BSATN.Runtime/1.2.1": {
+        "type": "package",
+        "compile": {
+          "lib/net8.0/SpacetimeDB.BSATN.Runtime.dll": {
+            "related": ".xml"
+          }
+        },
+        "runtime": {
+          "lib/net8.0/SpacetimeDB.BSATN.Runtime.dll": {
+            "related": ".xml"
+          }
+        }
+      },
+      "SpacetimeDB.Runtime/1.2.1": {
+        "type": "package",
+        "dependencies": {
+          "SpacetimeDB.BSATN.Runtime": "1.2.1"
+        },
+        "compile": {
+          "lib/net8.0/SpacetimeDB.Runtime.dll": {
+            "related": ".xml"
+          }
+        },
+        "runtime": {
+          "lib/net8.0/SpacetimeDB.Runtime.dll": {
+            "related": ".xml"
+          }
+        },
+        "build": {
+          "build/SpacetimeDB.Runtime.props": {},
+          "build/SpacetimeDB.Runtime.targets": {}
+        }
+      }
+    }
+  },
+  "libraries": {
+    "Microsoft.NET.ILLink.Tasks/8.0.8": {
+      "sha512": "P8wR6MUWwYXIjPJuBaZgo5zlI/GWI6QEAo6NyVIbPefa9CCkohYu7dP2rD/mrqnjEqfRHyl+h9VZrDoGpELqYg==",
+      "type": "package",
+      "path": "microsoft.net.illink.tasks/8.0.8",
+      "hasTools": true,
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "Icon.png",
+        "LICENSE.TXT",
+        "Sdk/Sdk.props",
+        "THIRD-PARTY-NOTICES.TXT",
+        "analyzers/dotnet/cs/ILLink.CodeFixProvider.dll",
+        "analyzers/dotnet/cs/ILLink.RoslynAnalyzer.dll",
+        "build/Microsoft.NET.ILLink.Analyzers.props",
+        "build/Microsoft.NET.ILLink.Tasks.props",
+        "build/Microsoft.NET.ILLink.targets",
+        "microsoft.net.illink.tasks.8.0.8.nupkg.sha512",
+        "microsoft.net.illink.tasks.nuspec",
+        "tools/net472/ILLink.Tasks.dll",
+        "tools/net472/ILLink.Tasks.dll.config",
+        "tools/net472/Mono.Cecil.Mdb.dll",
+        "tools/net472/Mono.Cecil.Pdb.dll",
+        "tools/net472/Mono.Cecil.Rocks.dll",
+        "tools/net472/Mono.Cecil.dll",
+        "tools/net472/Sdk/Sdk.props",
+        "tools/net472/System.Buffers.dll",
+        "tools/net472/System.Collections.Immutable.dll",
+        "tools/net472/System.Memory.dll",
+        "tools/net472/System.Numerics.Vectors.dll",
+        "tools/net472/System.Reflection.Metadata.dll",
+        "tools/net472/System.Runtime.CompilerServices.Unsafe.dll",
+        "tools/net472/build/Microsoft.NET.ILLink.Analyzers.props",
+        "tools/net472/build/Microsoft.NET.ILLink.Tasks.props",
+        "tools/net472/build/Microsoft.NET.ILLink.targets",
+        "tools/net8.0/ILLink.Tasks.deps.json",
+        "tools/net8.0/ILLink.Tasks.dll",
+        "tools/net8.0/Mono.Cecil.Mdb.dll",
+        "tools/net8.0/Mono.Cecil.Pdb.dll",
+        "tools/net8.0/Mono.Cecil.Rocks.dll",
+        "tools/net8.0/Mono.Cecil.dll",
+        "tools/net8.0/Sdk/Sdk.props",
+        "tools/net8.0/build/Microsoft.NET.ILLink.Analyzers.props",
+        "tools/net8.0/build/Microsoft.NET.ILLink.Tasks.props",
+        "tools/net8.0/build/Microsoft.NET.ILLink.targets",
+        "tools/net8.0/illink.deps.json",
+        "tools/net8.0/illink.dll",
+        "tools/net8.0/illink.runtimeconfig.json",
+        "useSharedDesignerContext.txt"
+      ]
+    },
+    "SpacetimeDB.BSATN.Runtime/1.2.1": {
+      "sha512": "hJNisLPPwnExUql9x2ZIfscbu54Y0FQqToA8Q5JTiuRv9fhty0s4XHrnzEEY2J22NEqEh0Jp+fORzBRVMRVpMg==",
+      "type": "package",
+      "path": "spacetimedb.bsatn.runtime/1.2.1",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "LICENSE",
+        "README.md",
+        "analyzers/dotnet/cs/SpacetimeDB.BSATN.Codegen.dll",
+        "lib/net8.0/SpacetimeDB.BSATN.Runtime.dll",
+        "lib/net8.0/SpacetimeDB.BSATN.Runtime.xml",
+        "lib/netstandard2.1/SpacetimeDB.BSATN.Runtime.dll",
+        "lib/netstandard2.1/SpacetimeDB.BSATN.Runtime.xml",
+        "logo.png",
+        "spacetimedb.bsatn.runtime.1.2.1.nupkg.sha512",
+        "spacetimedb.bsatn.runtime.nuspec"
+      ]
+    },
+    "SpacetimeDB.Runtime/1.2.1": {
+      "sha512": "UMNbpONqljpFHY2TjIKlzvKYpXollQj+07bWzkHyahZWvteuUslD2mjTTbpyrG3wmHvXNAik+cSqRVPLpKl7Ig==",
+      "type": "package",
+      "path": "spacetimedb.runtime/1.2.1",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "LICENSE",
+        "README.md",
+        "analyzers/dotnet/cs/SpacetimeDB.Codegen.dll",
+        "bindings.c",
+        "build/SpacetimeDB.Runtime.props",
+        "build/SpacetimeDB.Runtime.targets",
+        "driver.h",
+        "lib/net8.0/SpacetimeDB.Runtime.dll",
+        "lib/net8.0/SpacetimeDB.Runtime.xml",
+        "logo.png",
+        "spacetimedb.runtime.1.2.1.nupkg.sha512",
+        "spacetimedb.runtime.nuspec"
+      ]
+    }
+  },
+  "projectFileDependencyGroups": {
+    "net8.0": [
+      "Microsoft.NET.ILLink.Tasks >= 8.0.8",
+      "SpacetimeDB.Runtime >= 1.2.*"
+    ]
+  },
+  "packageFolders": {
+    "/Users/mamcx/.nuget/packages/": {}
+  },
+  "project": {
+    "version": "1.0.0",
+    "restore": {
+      "projectUniqueName": "/Users/mamcx/Proyectos/space/SpacetimeDB/sdks/csharp/examples~/regression-tests/server/StdbModule.csproj",
+      "projectName": "StdbModule",
+      "projectPath": "/Users/mamcx/Proyectos/space/SpacetimeDB/sdks/csharp/examples~/regression-tests/server/StdbModule.csproj",
+      "packagesPath": "/Users/mamcx/.nuget/packages/",
+      "outputPath": "/Users/mamcx/Proyectos/space/SpacetimeDB/sdks/csharp/examples~/regression-tests/server/obj~/",
+      "projectStyle": "PackageReference",
+      "configFilePaths": [
+        "/Users/mamcx/.nuget/NuGet/NuGet.Config"
+      ],
+      "originalTargetFrameworks": [
+        "net8.0"
+      ],
+      "sources": {
+        "https://api.nuget.org/v3/index.json": {}
+      },
+      "frameworks": {
+        "net8.0": {
+          "targetAlias": "net8.0",
+          "projectReferences": {}
+        }
+      },
+      "warningProperties": {
+        "warnAsError": [
+          "NU1605"
+        ]
+      },
+      "restoreAuditProperties": {
+        "enableAudit": "true",
+        "auditLevel": "low",
+        "auditMode": "direct"
+      }
+    },
+    "frameworks": {
+      "net8.0": {
+        "targetAlias": "net8.0",
+        "dependencies": {
+          "Microsoft.NET.ILLink.Tasks": {
+            "suppressParent": "All",
+            "target": "Package",
+            "version": "[8.0.8, )",
+            "autoReferenced": true
+          },
+          "SpacetimeDB.Runtime": {
+            "target": "Package",
+            "version": "[1.2.*, )"
+          }
+        },
+        "imports": [
+          "net461",
+          "net462",
+          "net47",
+          "net471",
+          "net472",
+          "net48",
+          "net481"
+        ],
+        "assetTargetFallback": true,
+        "warn": true,
+        "frameworkReferences": {
+          "Microsoft.NETCore.App": {
+            "privateAssets": "all"
+          }
+        },
+        "runtimeIdentifierGraphPath": "/usr/local/share/dotnet/sdk/8.0.400/PortableRuntimeIdentifierGraph.json"
+      }
+    },
+    "runtimes": {
+      "wasi-wasm": {
+        "#import": []
+      }
+    }
+  }
+}

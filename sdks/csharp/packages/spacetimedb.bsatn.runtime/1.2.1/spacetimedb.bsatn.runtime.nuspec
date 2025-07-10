@@ -1,0 +1,21 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2012/06/nuspec.xsd">
+  <metadata>
+    <id>SpacetimeDB.BSATN.Runtime</id>
+    <version>1.2.1</version>
+    <title>SpacetimeDB BSATN Runtime</title>
+    <authors>RReverser</authors>
+    <license type="file">LICENSE</license>
+    <licenseUrl>https://aka.ms/deprecateLicenseUrl</licenseUrl>
+    <icon>logo.png</icon>
+    <readme>README.md</readme>
+    <projectUrl>https://spacetimedb.com/</projectUrl>
+    <description>The SpacetimeDB BSATN Runtime implements APIs for BSATN serialization/deserialization in C#.</description>
+    <copyright>2024</copyright>
+    <repository type="git" url="https://github.com/clockworklabs/SpacetimeDB" commit="747869df9e3ed93751f23c70c67c713ead3f1a1a" />
+    <dependencies>
+      <group targetFramework="net8.0" />
+      <group targetFramework=".NETStandard2.1" />
+    </dependencies>
+  </metadata>
+</package>

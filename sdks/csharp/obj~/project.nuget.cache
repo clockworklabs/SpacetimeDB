@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "dgSpecHash": "wZPTsSrAHlY=",
+  "success": true,
+  "projectFilePath": "/Users/mamcx/Proyectos/space/SpacetimeDB/sdks/csharp/SpacetimeDB.ClientSDK.csproj",
+  "expectedPackageFiles": [
+    "/Users/mamcx/Proyectos/space/SpacetimeDB/sdks/csharp/packages/spacetimedb.bsatn.runtime/1.2.1/spacetimedb.bsatn.runtime.1.2.1.nupkg.sha512"
+  ],
+  "logs": []
+}

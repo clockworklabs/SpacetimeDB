@@ -1,0 +1,113 @@
+{
+  "version": 3,
+  "targets": {
+    ".NETStandard,Version=v2.1": {
+      "SpacetimeDB.BSATN.Runtime/1.2.1": {
+        "type": "package",
+        "compile": {
+          "lib/netstandard2.1/SpacetimeDB.BSATN.Runtime.dll": {
+            "related": ".xml"
+          }
+        },
+        "runtime": {
+          "lib/netstandard2.1/SpacetimeDB.BSATN.Runtime.dll": {
+            "related": ".xml"
+          }
+        }
+      }
+    }
+  },
+  "libraries": {
+    "SpacetimeDB.BSATN.Runtime/1.2.1": {
+      "sha512": "hJNisLPPwnExUql9x2ZIfscbu54Y0FQqToA8Q5JTiuRv9fhty0s4XHrnzEEY2J22NEqEh0Jp+fORzBRVMRVpMg==",
+      "type": "package",
+      "path": "spacetimedb.bsatn.runtime/1.2.1",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "LICENSE",
+        "README.md",
+        "analyzers/dotnet/cs/SpacetimeDB.BSATN.Codegen.dll",
+        "lib/net8.0/SpacetimeDB.BSATN.Runtime.dll",
+        "lib/net8.0/SpacetimeDB.BSATN.Runtime.xml",
+        "lib/netstandard2.1/SpacetimeDB.BSATN.Runtime.dll",
+        "lib/netstandard2.1/SpacetimeDB.BSATN.Runtime.xml",
+        "logo.png",
+        "spacetimedb.bsatn.runtime.1.2.1.nupkg.sha512",
+        "spacetimedb.bsatn.runtime.nuspec"
+      ]
+    }
+  },
+  "projectFileDependencyGroups": {
+    ".NETStandard,Version=v2.1": [
+      "SpacetimeDB.BSATN.Runtime >= 1.2.*"
+    ]
+  },
+  "packageFolders": {
+    "/Users/mamcx/Proyectos/space/SpacetimeDB/sdks/csharp/packages": {}
+  },
+  "project": {
+    "version": "1.2.2",
+    "restore": {
+      "projectUniqueName": "/Users/mamcx/Proyectos/space/SpacetimeDB/sdks/csharp/SpacetimeDB.ClientSDK.csproj",
+      "projectName": "SpacetimeDB.ClientSDK",
+      "projectPath": "/Users/mamcx/Proyectos/space/SpacetimeDB/sdks/csharp/SpacetimeDB.ClientSDK.csproj",
+      "packagesPath": "/Users/mamcx/Proyectos/space/SpacetimeDB/sdks/csharp/packages",
+      "outputPath": "/Users/mamcx/Proyectos/space/SpacetimeDB/sdks/csharp/obj~/",
+      "projectStyle": "PackageReference",
+      "configFilePaths": [
+        "/Users/mamcx/.nuget/NuGet/NuGet.Config"
+      ],
+      "originalTargetFrameworks": [
+        "netstandard2.1"
+      ],
+      "sources": {
+        "https://api.nuget.org/v3/index.json": {}
+      },
+      "frameworks": {
+        "netstandard2.1": {
+          "targetAlias": "netstandard2.1",
+          "projectReferences": {}
+        }
+      },
+      "warningProperties": {
+        "warnAsError": [
+          "NU1605"
+        ]
+      },
+      "restoreAuditProperties": {
+        "enableAudit": "true",
+        "auditLevel": "low",
+        "auditMode": "direct"
+      }
+    },
+    "frameworks": {
+      "netstandard2.1": {
+        "targetAlias": "netstandard2.1",
+        "dependencies": {
+          "SpacetimeDB.BSATN.Runtime": {
+            "target": "Package",
+            "version": "[1.2.*, )"
+          }
+        },
+        "imports": [
+          "net461",
+          "net462",
+          "net47",
+          "net471",
+          "net472",
+          "net48",
+          "net481"
+        ],
+        "assetTargetFallback": true,
+        "warn": true,
+        "frameworkReferences": {
+          "NETStandard.Library": {
+            "privateAssets": "all"
+          }
+        },
+        "runtimeIdentifierGraphPath": "/usr/local/share/dotnet/sdk/8.0.400/RuntimeIdentifierGraph.json"
+      }
+    }
+  }
+}

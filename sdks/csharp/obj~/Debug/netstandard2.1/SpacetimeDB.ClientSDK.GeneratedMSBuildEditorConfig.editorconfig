@@ -1,0 +1,5 @@
+is_global = true
+build_property.RootNamespace = SpacetimeDB.ClientSDK
+build_property.ProjectDir = /Users/mamcx/Proyectos/space/SpacetimeDB/sdks/csharp/
+build_property.EnableComHosting = 
+build_property.EnableGeneratedComInterfaceComImportInterop = 

@@ -1,0 +1,129 @@
+{
+  "version": 3,
+  "targets": {
+    "net8.0": {
+      "SpacetimeDB.BSATN.Runtime/1.2.1": {
+        "type": "package",
+        "compile": {
+          "lib/net8.0/SpacetimeDB.BSATN.Runtime.dll": {
+            "related": ".xml"
+          }
+        },
+        "runtime": {
+          "lib/net8.0/SpacetimeDB.BSATN.Runtime.dll": {
+            "related": ".xml"
+          }
+        }
+      },
+      "SpacetimeDB.ClientSDK/1.2.2": {
+        "type": "project",
+        "framework": ".NETStandard,Version=v2.1",
+        "dependencies": {
+          "SpacetimeDB.BSATN.Runtime": "1.2.0"
+        },
+        "compile": {
+          "bin/placeholder/SpacetimeDB.ClientSDK.dll": {}
+        },
+        "runtime": {
+          "bin/placeholder/SpacetimeDB.ClientSDK.dll": {}
+        }
+      }
+    }
+  },
+  "libraries": {
+    "SpacetimeDB.BSATN.Runtime/1.2.1": {
+      "sha512": "hJNisLPPwnExUql9x2ZIfscbu54Y0FQqToA8Q5JTiuRv9fhty0s4XHrnzEEY2J22NEqEh0Jp+fORzBRVMRVpMg==",
+      "type": "package",
+      "path": "spacetimedb.bsatn.runtime/1.2.1",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "LICENSE",
+        "README.md",
+        "analyzers/dotnet/cs/SpacetimeDB.BSATN.Codegen.dll",
+        "lib/net8.0/SpacetimeDB.BSATN.Runtime.dll",
+        "lib/net8.0/SpacetimeDB.BSATN.Runtime.xml",
+        "lib/netstandard2.1/SpacetimeDB.BSATN.Runtime.dll",
+        "lib/netstandard2.1/SpacetimeDB.BSATN.Runtime.xml",
+        "logo.png",
+        "spacetimedb.bsatn.runtime.1.2.1.nupkg.sha512",
+        "spacetimedb.bsatn.runtime.nuspec"
+      ]
+    },
+    "SpacetimeDB.ClientSDK/1.2.2": {
+      "type": "project",
+      "path": "../../../SpacetimeDB.ClientSDK.csproj",
+      "msbuildProject": "../../../SpacetimeDB.ClientSDK.csproj"
+    }
+  },
+  "projectFileDependencyGroups": {
+    "net8.0": [
+      "SpacetimeDB.ClientSDK >= 1.2.2"
+    ]
+  },
+  "packageFolders": {
+    "/Users/mamcx/.nuget/packages/": {}
+  },
+  "project": {
+    "version": "1.0.0",
+    "restore": {
+      "projectUniqueName": "/Users/mamcx/Proyectos/space/SpacetimeDB/sdks/csharp/examples~/regression-tests/client/client.csproj",
+      "projectName": "client",
+      "projectPath": "/Users/mamcx/Proyectos/space/SpacetimeDB/sdks/csharp/examples~/regression-tests/client/client.csproj",
+      "packagesPath": "/Users/mamcx/.nuget/packages/",
+      "outputPath": "/Users/mamcx/Proyectos/space/SpacetimeDB/sdks/csharp/examples~/regression-tests/client/obj~/",
+      "projectStyle": "PackageReference",
+      "configFilePaths": [
+        "/Users/mamcx/.nuget/NuGet/NuGet.Config"
+      ],
+      "originalTargetFrameworks": [
+        "net8.0"
+      ],
+      "sources": {
+        "https://api.nuget.org/v3/index.json": {}
+      },
+      "frameworks": {
+        "net8.0": {
+          "targetAlias": "net8.0",
+          "projectReferences": {
+            "/Users/mamcx/Proyectos/space/SpacetimeDB/sdks/csharp/SpacetimeDB.ClientSDK.csproj": {
+              "projectPath": "/Users/mamcx/Proyectos/space/SpacetimeDB/sdks/csharp/SpacetimeDB.ClientSDK.csproj"
+            }
+          }
+        }
+      },
+      "warningProperties": {
+        "warnAsError": [
+          "NU1605"
+        ]
+      },
+      "restoreAuditProperties": {
+        "enableAudit": "true",
+        "auditLevel": "low",
+        "auditMode": "direct"
+      }
+    },
+    "frameworks": {
+      "net8.0": {
+        "targetAlias": "net8.0",
+        "imports": [
+          "net461",
+          "net462",
+          "net47",
+          "net471",
+          "net472",
+          "net48",
+          "net481"
+        ],
+        "assetTargetFallback": true,
+        "warn": true,
+        "frameworkReferences": {
+          "Microsoft.NETCore.App": {
+            "privateAssets": "all"
+          }
+        },
+        "runtimeIdentifierGraphPath": "/usr/local/share/dotnet/sdk/8.0.400/PortableRuntimeIdentifierGraph.json"
+      }
+    }
+  }
+}
