@@ -94,6 +94,13 @@ pub enum SqlRequired {
 }
 
 #[derive(Error, Debug)]
+#[error("Recursion limit exceeded, `{message}` limit: {limit}")]
+pub struct RecursionError {
+    pub(crate) limit: usize,
+    pub(crate) message: String,
+}
+
+#[derive(Error, Debug)]
 pub enum SqlParseError {
     #[error(transparent)]
     SqlUnsupported(#[from] SqlUnsupported),
@@ -103,4 +110,6 @@ pub enum SqlParseError {
     SqlRequired(#[from] SqlRequired),
     #[error(transparent)]
     ParserError(#[from] ParserError),
+    #[error(transparent)]
+    Recursion(#[from] RecursionError),
 }
