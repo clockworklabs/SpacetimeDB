@@ -386,11 +386,17 @@ fn auto_migrate_table<'def>(plan: &mut AutoMigratePlan<'def>, old: &'def TableDe
     })
     .map(|col_diff| -> Result<_> {
         match col_diff {
-            Diff::Add { new } => Err(AutoMigrateError::AddColumn {
-                table: new.table_name.clone(),
-                column: new.name.clone(),
+            Diff::Add { new } => {
+                if new.col_id >= old.columns.len().into() {
+                    Ok(Any(true))  // column type is inherently new as we're creating a new one
+                } else {
+                    Err(AutoMigrateError::AddColumn {
+                        table: new.table_name.clone(),
+                        column: new.name.clone(),
+                    }
+                    .into())
+                }
             }
-            .into()),
             Diff::Remove { old } => Err(AutoMigrateError::RemoveColumn {
                 table: old.table_name.clone(),
                 column: old.name.clone(),
@@ -423,9 +429,9 @@ fn auto_migrate_table<'def>(plan: &mut AutoMigratePlan<'def>, old: &'def TableDe
     })
     .collect_all_errors::<Any>();
 
-    let ((), Any(row_type_changed)) = (type_ok, columns_ok).combine_errors()?;
+    let ((), Any(column_type_changed)) = (type_ok, columns_ok).combine_errors()?;
 
-    if row_type_changed {
+    if column_type_changed {
         plan.steps.push(AutoMigrateStep::ChangeColumns(key));
     }
 
